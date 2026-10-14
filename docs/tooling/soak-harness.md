@@ -34,6 +34,11 @@ omissions. The harness does what the hosts do:
 | shop / prize counter | a shop or prize counter the tick staged opens in a `MenuRuntime`; while it is up the field gets a neutral pad (or is frozen whole, for a session that suspends it), the session steps on the frame's edges, and a closed one unparks the field script (`finish_field_shop` / `finish_prize_exchange`) - the play window's `tick_menu_runtime_session` |
 | save screen | a Save pick writes `save_full` into an in-memory card and refreshes the grid's snapshot; a Load pick resumes that block's file through `resume_save` - the play window's `apply_save_commit`, with the card held in memory |
 
+The L1 map display on a kingdom map needs no duty of the harness - the tick
+runs it - but it is a modal the pad drives, so it is in the progress digest
+(mode, cursor, overlay, panned camera, the fade-up ramp) and names its own
+holder.
+
 A minigame run is a pseudo-scene `<venue>+mg<sub_id>`: the venue is entered,
 then `World::request_minigame_warp` arms the same mode-24 door warp the
 cabinet's op-`0x3E` makes, so the next tick loads the minigame overlay
@@ -63,7 +68,7 @@ from one carries its card. The card does not enter the run's seed.
 
 An `@<save>` run still enters its scene by name, not through a door the
 save's story opens, so a finding only such a run raises needs that door
-before it is an engine defect. Two of the shape are known. From `PRO-04` on,
+before it is an engine defect. Three of the shape are known. From `PRO-04` on,
 `map01`'s entry script (`P1[0]`, behind system flag `0x3BA`) walls in Rim
 Elm's footprint (tiles `95..97 x 24..27` and row 25 from 94 to 98, leaving
 `(96, 27)`); the `town0b` and `town0c` exits land on `(96, 25)`, inside
@@ -71,9 +76,16 @@ those walls, so `town0c@PRO-04` leaves the party boxed in on the overworld. That
 the chapter-1 town: in this stretch of the story the party's Rim Elm is
 `town0d`, which the spine reaches through `concend`, not the overworld. And `korb3`'s default entry seat is walled
 on all four sides once the arrival cutscene that moves the party off it is
-gated off by the save's flags. Both are listed in the harness's `SAVE_ENTRY_ARTIFACTS`: when every
-hit of such a signature comes from an `@<save>` run, the report names it on a
-"known entry artifact" line instead of the findings table.
+gated off by the save's flags. A third is `dream`: a save whose flags arm one
+of its vignettes plays it, and the closing record then picks the scene to
+return to (`3F` to `doman`, `bubu1`, `son`, ...) by a flag the sleep that
+leads there sets. Entered by name no branch matches, the record ends on its
+`0x21`, and the party is left hidden where the vignette put it
+(`dream+talk` from `PRO-02`, `PRO-07` and `PRO-12`, each vignette on its own tile). It becomes an engine defect only if a sleep that
+sets the flag still ends there. All three are listed in the harness's
+`SAVE_ENTRY_ARTIFACTS`: when every hit of such a signature comes from an
+`@<save>` run, the report names it on a "known entry artifact" line instead
+of the findings table.
 
 `opurud+rt` once failed its save / load round trip on the party records
 (records 1 and 2 read zero at their first byte after the resume). That one
@@ -101,13 +113,29 @@ the scene's shops (`World::scene_shop_session`) to the menu runtime, as the
 merchant's op `0x49` would. Random walking almost never reaches a merchant
 and picks Buy, so without it the buy / sell / quantity screens go unsoaked.
 
+A talk run is a pseudo-scene `<scene>+talk`, one per field scene. Every
+`TALK_VISIT_EVERY` free field frames it stands the player in front of the
+scene's next action-button target, facing it, and presses the button on the
+frames that follow: the NPC anchors and the interaction-carrying walk-touch
+placements first, then the solid interact-gated props that carry a record (a
+spring, a cupboard, a switch). The seat is where the engine's own probe
+answers with that target (`World::field_interact_probe_slot`, then
+`World::field_interact_prop_anchor`) and is taken only on the authored
+walk-visible floor, so an actor parked in the off-map hide box is skipped.
+The press is recorded in the pad stream; the seat is a function of the frame
+and the world, so a replay takes the same seats. Random walking reaches a
+handful of a scene's conversations and almost none of its props, and a
+conversation that cannot be left is invisible to it until someone opens that
+one. A talk run leaves the random encounter roll disarmed: a New Game party
+loses a dungeon's first fight, and the run is there for the records.
+
 ### The scene set
 
 Every CDNAME label that resolves to a playable scene (a kingdom overworld, or
 a scene whose field MAN resolves), unioned with the decoded `0x3F`
 destinations of those scenes, plus the five minigame pseudo-scenes, a `+rt`
-round-trip twin of every scene, and a `+shop` twin of every scene with a
-shop. Nothing is hand-listed.
+round-trip twin of every scene, a `+talk` twin of every field scene, and a
+`+shop` twin of every scene with a shop. Nothing is hand-listed.
 
 ## Policies
 
@@ -118,7 +146,8 @@ what holds the frame:
 | state | policy |
 |---|---|
 | field / overworld | segments of: held walks (one direction or a diagonal, sometimes with Cross taps), Cross/Circle mashing, a Start tap, idle, and chaos (random masks of every button but Start) |
-| dialogue owns input | mostly Cross, some directions (pickers), some Circle |
+| dialogue owns input, or a script holds the player | mostly Cross, some directions, some Circle - a cutscene timeline pages its own text boxes, and the ending's last record waits on a held confirm |
+| a picker is up | a random number of Down taps, then Cross - mashing confirm only ever takes a picker's first rows, and a conversation whose way out is its last option then reads as one that cannot be left |
 | pause menu | random taps for a random budget, then Circle until it closes |
 | battle | mostly the route ladder's fighter (Begin, Attack, Auto, confirm the target, Cross any message box), otherwise random taps |
 | minigame / other | random face buttons and held directions, and rarely Start - the minigames' escape |
@@ -138,10 +167,13 @@ on one frame and neutral on the next.
 | `battle_loop` | three battles open from one parked timeline PC |
 | `menu_stuck` | the pause menu stays open through the Circle back-out |
 | `battle_endless` | one battle outlasts `LEGAIA_SOAK_BATTLE_FRAMES` |
+| `control_starved` | the field refuses the pad for `LEGAIA_SOAK_STARVE_FRAMES` with no free-roam frame, the script reaches no PC it has not already been at, and the window holds the confirm presses that would page a conversation through |
+| `confined` | from the frame the field hands the player back, 900 direction-held frames never carry them 48 units |
+| `door_loop` | six scene changes inside 600 frames with no direction pressed between them |
 | `dropped_to_title` | the world mode becomes `Title` without a game over |
 | `unknown_scene` | a transition names a map id with no scene, or a label outside the scene set |
 | `non_finite` | a camera float or the caption alpha is NaN or infinite |
-| `value` | roster HP / MP over max, a level outside `1..=99`, battle HP over max, money out of range, a bag stack over 99, a count on a free slot, or two stacks of one id inside the active window |
+| `value` | roster HP / MP over max, a live HP / MP maximum that is not the stat aggregator's rebuild of the base window, a level outside `1..=99`, battle HP over max, money out of range, a bag stack over 99, a count on a free slot, or two stacks of one id inside the active window |
 | `unbounded_growth` | an engine queue grows past a cap |
 | `effect_residue` | on the first field or world-map frame after a battle exit or a scene load, `World::battle_effect_residue` names a battle effect still live (the `efect.dat` pool, a move-FX / effect-script / summon scene-graph, the streak block, a cast-band request) - retail resets the whole actor pool at both points ([`effect-vm.md`](../subsystems/effect-vm.md#battle-effects-die-with-the-battle)) |
 | `save_roundtrip` | in a `+rt` run, the save taken after a resume disagrees with the save it resumed; the location names the first differing field (`party[i]+offset`, `ext.money`, `ext_v2.field_position`, ...) |
@@ -167,13 +199,37 @@ trade a park on one screen for an idle shore that merely waits for a cast. A bat
 minigame (they suspend the field VM by design), nor frames under a
 player-owned modal (name entry, a shop).
 
+`control_starved` is the detector for a script going round. The softlock and
+script-stall clocks restart whenever anything moves, so a conversation that
+reopens its own question, or a cutscene that cycles its PCs, passes both for
+as long as it likes. Its clock restarts on a free-roam frame, on a scene
+change, and whenever the modal timeline, its dialog panel, the first helper
+or the inline runner stands on a PC this stretch has not seen - a linear
+scene still playing, the ending's credits among them, is not starved. The
+presses must be in the window and still arriving in its last quarter: a text
+box waits for its confirm for as long as it takes. A conversation whose
+picker has one way out is starved only until the policy picks it, so a
+finding there is first a question about the stream: a picker whose *every*
+option returns to it is the defect, one whose first option does is not.
+
+`confined` is measured with the walk controller rather than predicted from
+the collision grid: the controller's leading-edge probes let a player rest
+on sub-cells a flood of the grid calls walled, and a seat it calls open can
+be shut by an actor.
+
+`door_loop` ignores a change made under a held direction. A two-way stair
+sets the player down one tile from the door back, facing away from it
+(`kor4` and `koin4`: each `0x3F` names the tile next to the other's pad), so
+a direction held across the arrival walks straight back in.
+
 ## Findings, signatures and reports
 
 A finding's **signature** is `detector|scene|location`. Findings are
 deduplicated by signature and ranked: panics, hangs and tick errors first;
-softlocks, battle loops, stuck menus, endless battles, drops to title and
-unknown scenes next; free-roam immobility and script stalls after; value,
-non-finite, queue-growth and save round-trip checks last.
+softlocks, battle loops, door loops, stuck menus, endless battles, drops to
+title and unknown scenes next; free-roam immobility, script stalls, starved
+control and confinement after; value, non-finite, queue-growth and save
+round-trip checks last.
 
 A soak writes `target/soak/<tag>/` (gitignored with `target/`):
 
@@ -189,11 +245,15 @@ pads, truncated to the finding frame, and checked to fire again) and then
 fires, a bounded delta-debugging pass (`LEGAIA_SOAK_MINIMIZE` attempts). A
 softlock is reduced under the neutral-pad control (`min_distinct = 1`), so the
 input that only fed the frozen window drops out; its replay records that in a
-`# soak-min-distinct` header.
+`# soak-min-distinct` header. A `control_starved` finding is reduced only
+ahead of its window: the window is evidence as the policy pressed it, and a
+stream cut down to confirming one looping option starves on a healthy
+conversation too.
 
 The replay format carries no scene field, so the start scene and seed ride in
 header comments (`# soak-scene`, `# soak-seed`, `# soak-signature`) that
-TOML ignores.
+TOML ignores. A replay recorded under a non-default starve window carries it
+too (`# soak-starve-frames`), and is judged by it.
 
 ## Running
 
@@ -217,11 +277,13 @@ LEGAIA_SOAK_SEEDS=30 LEGAIA_SOAK_FRAMES=18000 LEGAIA_SOAK_JOBS=8 LEGAIA_SOAK_TAG
 | `LEGAIA_SOAK_JOBS` | worker threads |
 | `LEGAIA_SOAK_TAG` / `LEGAIA_SOAK_OUT` | report directory name / base |
 | `LEGAIA_SOAK_SOFTLOCK_FRAMES` | softlock and script-stall window |
+| `LEGAIA_SOAK_STARVE_FRAMES` | `control_starved` window (default 5400) |
 | `LEGAIA_SOAK_BATTLE_FRAMES` | endless-battle threshold |
 | `LEGAIA_SOAK_HANG_SECS` | single-tick watchdog |
 | `LEGAIA_SOAK_MINIMIZE` / `LEGAIA_SOAK_CONFIRM_MAX` / `LEGAIA_SOAK_NO_CONFIRM` | reduction budget per signature / signatures confirmed / skip confirmation |
 | `LEGAIA_SOAK_SAVE` / `LEGAIA_SOAK_CARD` | play every run from that card save / read saves from that library card |
 | `LEGAIA_SOAK_NO_ENCOUNTERS` | disarm the random-encounter roll (a triage control: a battle that still starts is scripted) |
+| `LEGAIA_SOAK_REDUCE` / `LEGAIA_SOAK_REDUCE_SIG` / `LEGAIA_SOAK_REDUCE_OUT` | `soak_reduce`: reduce a saved replay again, towards that signature (default: its recorded one), into that file |
 
 Runs are cheap - the headless engine ticks far faster than real time - so a
 soak is bounded by the minimiser, not the runs. Chunk long soaks with
@@ -252,12 +314,25 @@ display / accumulator - plus each distinct script body a timeline or helper
 runs, once, as hex (the first `LEGAIA_SOAK_TRACE_BYTES` bytes, `0x400` by
 default). `LEGAIA_SOAK_TRACE_NPC=<slot>` adds that placement's position to
 every line, walking or not, which is how to find where an actor stood before a
-walk started. The trace goes to the terminal only; it is never written
-into a report.
+walk started. The inline runner's record (an NPC talk, a prop record) is
+dumped with the script bodies, and a roster line prints whenever a member's
+level, base maxima or live maxima move - the frame a level-up or a stat item
+landed on. The trace goes to the terminal only; it is never written into a
+report.
 
 A useful first question for any `softlock` or `script_stall` is whether the
 input matters at all: `LEGAIA_SOAK_MIN_DISTINCT=1` with an all-neutral replay
 is the control.
+
+`soak_reduce` runs the minimiser over a replay that already exists: one
+whose first reduction ran out of budget, or a run that should pin a
+different finding than the one it was written for (a value check that fires
+six thousand frames before the symptom it was caught by).
+
+A fix is checked both ways. The replay must stop firing on the fixed engine,
+and it must still fire on the engine without the fix under the harness as it
+now stands - a detector that changed since the replay was written can leave
+it passing for the wrong reason.
 
 ## Fixtures
 
@@ -307,9 +382,15 @@ regression.
 | `jouina_final_heal_readout_overshoot` | `jouina@...:PRO-01`: a member downed and Final-Healed by one enemy hit parked the `0x51` bar-drain gate | the Final Heal sweep re-syncs the readout before its revive seed; the killing hit's undrained remainder had stacked above max HP |
 | `retockin_monster_curse_folded_as_capture` | `retockin+rt@...:PRO-04`: a monster's Curse took a party member off the field and parked the `0x51` gate | a capture roll downs only a monster seat; the boot catalog resolves Curse's `0x40` to the disc-free demo "Reseal" capture |
 | `tower_floor_door_glides_ignored` | `tower@PRO-10`: a floor door set the player down inside the far door's doorway, walled on every side | a touched object's record plays its cross-context compass walks on the player (`B7 F8` / `C1 F8`) as legs it runs on past, and the out leg carries the player clear |
+| `town0d_tetsu_talk_never_ends` | `concend+talk`: Tetsu's conversation in `town0d` restarted from its greeting on every way out, "Nothing in particular." included | a touch-resumed placement context ends at the parking byte after a dismissed box, as the inline runner does |
+| `izumi_spring_question_never_ends` | `izumi`: the spring asked "Do you wish to drink this water?" again after either answer, for good | a prop record ends at the parking byte after a dismissed box too |
+| `map01_life_water_live_max_stale` | `map01@...:PRO-01`: a Life Water under a Max HP +10% accessory left the live maximum one short of the base's rebuild, and the next battle healed past it | a stat-up item raises the base window and the live maxima are rebuilt from it |
+| `edlast_ending_unequip_live_max_stale` | `edbalden+rt@...:PRO-00`: the ending's scripted unequip left a Max HP +10% on a record whose accessory was gone | the aggregator pass every equipment change runs rebuilds the live maxima with the ability bits |
 
 The field-side fixes are described with their retail evidence in
-[`script-vm.md`](../subsystems/script-vm.md#engagement-and-the-system-script).
+[`script-vm.md`](../subsystems/script-vm.md#engagement-and-the-system-script);
+the stat-up item's in
+[`item-effect-table.md`](../formats/item-effect-table.md#stat-up--buff-items-class-567).
 
 ## What it cannot detect
 

@@ -194,7 +194,7 @@ nothing can produce an out-of-range `y`: `0xF0` is the 320x240 stage's own
 height, every rect in the disc window table passes, and the one rect retail
 stamps per open - the options value popup, window 47 - is already flipped up by
 its own rule when its bottom would pass `0xB0`
-(`engine-core::options::options_popup_content_rect`). Gating a host on this
+(`engine-menus::options::options_popup_content_rect`). Gating a host on this
 adds a branch nothing can take. Second, the guard is only half of a pair: the
 fill it gates is `FUN_80034B6C`'s mode selector plus packed RGB word, which has
 no port, so the engine's boxes are UI-atlas sprites whose colour comes from the
@@ -248,6 +248,7 @@ the world, or has paused out of it. Everything in `skips` advances world or
 scene presentation, which is exactly what freezing means here. The two steps
 the arm DOES take are the ones whose output the frame still draws: the menu
 SFX drain (cues queued by the menu this frame) and the party-HUD kernel.
+`poll_game_over` runs ahead of every arm, so no arm skips it.
 """
 skips = [
     "advance_ocean_animation",
@@ -258,6 +259,7 @@ skips = [
     "drain_anim_cues",
     "drain_baka_sfx_cues",
     "maybe_install_demo_tile_board",
+    "poll_field_shop",
     "rebind_live_npc_models",
     "sync_battle_render",
     "sync_dialog_panel",
@@ -267,6 +269,8 @@ skips = [
     "tick_minigame_extras",
     "tick_muscle_time_meter",
     "tick_play_clock",
+    "tick_sfx",
+    "tick_world_effects",
 ]
 
 [[frame_arm]]
@@ -291,6 +295,7 @@ skips = [
     "drain_anim_cues",
     "drain_baka_sfx_cues",
     "maybe_install_demo_tile_board",
+    "poll_field_shop",
     "rebind_live_npc_models",
     "sync_battle_render",
     "sync_dialog_panel",
@@ -300,6 +305,8 @@ skips = [
     "tick_minigame_extras",
     "tick_muscle_time_meter",
     "tick_play_clock",
+    "tick_sfx",
+    "tick_world_effects",
 ]
 
 [[frame_arm]]
@@ -322,6 +329,7 @@ skips = [
     "drain_anim_cues",
     "drain_baka_sfx_cues",
     "maybe_install_demo_tile_board",
+    "poll_field_shop",
     "rebind_live_npc_models",
     "sync_battle_render",
     "sync_dialog_panel",
@@ -331,6 +339,8 @@ skips = [
     "tick_minigame_extras",
     "tick_muscle_time_meter",
     "tick_play_clock",
+    "tick_sfx",
+    "tick_world_effects",
 ]
 
 [[frame_arm]]
@@ -352,6 +362,7 @@ skips = [
     "drain_anim_cues",
     "drain_baka_sfx_cues",
     "maybe_install_demo_tile_board",
+    "poll_field_shop",
     "rebind_live_npc_models",
     "sync_battle_render",
     "sync_dialog_panel",
@@ -361,6 +372,8 @@ skips = [
     "tick_minigame_extras",
     "tick_muscle_time_meter",
     "tick_play_clock",
+    "tick_sfx",
+    "tick_world_effects",
 ]
 
 # --- web: the runtime's `tick_frame` ---------------------------------------
@@ -387,6 +400,7 @@ skips = [
     "tick_field_party_hud",
     "tick_fishing_banners",
     "tick_minigame_ui",
+    "tick_muscle_time_meter",
     "tick_passive_hud",
     "tick_play_clock",
     "tick_sfx",
@@ -416,6 +430,7 @@ skips = [
     "tick_field_party_hud",
     "tick_fishing_banners",
     "tick_minigame_ui",
+    "tick_muscle_time_meter",
     "tick_passive_hud",
     "tick_play_clock",
     "tick_sfx",
@@ -445,6 +460,7 @@ skips = [
     "tick_field_party_hud",
     "tick_fishing_banners",
     "tick_minigame_ui",
+    "tick_muscle_time_meter",
     "tick_passive_hud",
     "tick_play_clock",
     "tick_sfx",
@@ -473,6 +489,7 @@ skips = [
     "drain_anim_cues",
     "drain_baka_sfx_cues",
     "maybe_install_demo_tile_board",
+    "poll_field_shop",
     "rebind_live_npc_models",
     "sync_battle_render",
     "sync_dialog_panel",
@@ -483,6 +500,8 @@ skips = [
     "tick_minigame_extras",
     "tick_muscle_time_meter",
     "tick_play_clock",
+    "tick_sfx",
+    "tick_world_effects",
 ]
 
 # --- page: the browser's OTHER frame path, in JavaScript --------------------
@@ -491,10 +510,10 @@ skips = [
 host = "page"
 arm = "advance && !menuOpen && !shopOpen && !namingOpen"
 reason = """
-`site/js/play-app.js::_frame` calls `rt.tick_frame()` inside this guard and
-`this._drawOverlay()` outside it, so on a guarded frame the page draws with
-NO kernel having run - all twenty at once, from whatever answer they last
-held. Three of the four terms are panels that suspend the field on the engine
+`site/js/play-view-frame.js::_frame` calls `rt.tick_frame()` inside this guard
+and `this._drawOverlay()` outside it, so on a guarded frame the page draws
+with NO kernel having run - the whole `skips` list at once, from whatever
+answer each last held. Three of the four terms are panels that suspend the field on the engine
 side as well (the pause menu, a field merchant's op-`0x49`, the naming
 prompt); the fourth is the page's own pause / step-one-frame control.
 
@@ -522,6 +541,7 @@ skips = [
     "tick_field_party_hud",
     "tick_fishing_banners",
     "tick_minigame_ui",
+    "tick_muscle_time_meter",
     "tick_passive_hud",
     "tick_play_clock",
     "tick_sfx",
@@ -573,7 +593,7 @@ reason = "A native-only repair: the window uploads battle textures into a wgpu-r
 host = "native"
 kernel = "drain_baka_sfx_cues"
 host_only = true
-reason = "The Baka Fighter exchange-hit cues (`BakaFight::take_cues`). The page drains the same lane inside `tick_minigame_ui`, in its per-game `tick_baka_ui` step, beside the shared minigame lane (`drain_minigame_sfx_cues_web`), rather than as a separately named kernel."
+reason = "The Baka Fighter exchange-hit cues, drained by the session step `BootSession::enqueue_baka_sfx_cues`. The page calls the same step inside `tick_minigame_ui`, from its per-game `tick_baka_ui`, rather than as a separately named kernel."
 
 [[frame_kernel]]
 host = "native"
@@ -606,12 +626,6 @@ host_only = true
 reason = "Commits the `4C E1` balloon's measured width while `self` is still mutable, because the window's draw passes take `&self`. The page measures in its own draw builder, which has no such split."
 
 [[frame_kernel]]
-host = "native"
-kernel = "tick_muscle_time_meter"
-host_only = true
-reason = "The Muscle Dome round timer. The page runs the same `DomeContest::tick_time_meter` from inside `tick_minigame_ui`."
-
-[[frame_kernel]]
 host = "web"
 kernel = "run_pending_bgm_handoff"
 host_only = true
@@ -625,27 +639,9 @@ reason = "The page's FMV beat service. The native window runs the same beat outs
 
 [[frame_kernel]]
 host = "web"
-kernel = "tick_world_effects"
-host_only = true
-reason = "One page-side wrapper over the effect steps the native loop spells out inline: the two spawn-request drains, then the shared `World::tick_effect_scene_graphs` kernel (summon / move-FX / field-FX) both hosts call."
-
-[[frame_kernel]]
-host = "web"
-kernel = "tick_sfx"
-host_only = true
-reason = "The page's SFX channel: footstep cadence, delay scheduler, matured cues. The native window's equivalent is split across `tick_menu_sfx` and the `AudioDirector`'s own per-frame `tick_sfx_frame`."
-
-[[frame_kernel]]
-host = "web"
 kernel = "tick_battle_intro"
 host_only = true
 reason = "Caches the field-to-battle transition's screen-prim geometry for the page's pass. The native window builds the same prims in its draw section, after the tick loop, where it already holds the frame's geometry."
-
-[[frame_kernel]]
-host = "web"
-kernel = "poll_game_over"
-host_only = true
-reason = "The party-wipe probe. The native window runs the identical probe inline at the top of its tick loop rather than as a named step."
 
 [[frame_kernel]]
 host = "web"
@@ -659,12 +655,6 @@ kernel = "audio_director"
 host_only = true
 reason = "Builds the page's audio director on first use (off wasm; on wasm once the user has enabled sound) and stages its resident banks, so the session's tick has a director to route into. The native session opens its output and stages the same banks once, at boot (`BootSession::from_host`)."
 
-[[frame_kernel]]
-host = "web"
-kernel = "poll_field_shop"
-host_only = true
-reason = "Hands an op-`0x49` merchant to the menu runtime. The native window does the same `take_pending_field_shop` / `open_shop_menu` pair inline in its tick loop."
-
 # --- kernel pairing: two paired kernels, two engine call sets (tier 12) ---
 # `[[frame_content]]` rows declare a PAIRED frame kernel whose two bodies
 # reach different engine functions. The two lists are the ratchet: when the
@@ -675,16 +665,23 @@ reason = "Hands an op-`0x49` merchant to the menu runtime. The native window doe
 [[frame_content]]
 native = "drain_and_log_battle_events"
 web = "tick_battle_presentation"
-native_only = ["play_art_shout", "play_xa_clip", "tick", "tick_audio_frame"]
+native_only = ["play_art_shout", "play_xa_clip", "tick"]
 web_only = ["action_id", "apply_battle_vram_moves", "armed", "battle_monster_slots", "battle_party_forms", "battle_stage_entry", "battle_stage_object_indices", "build_targeted_with_options", "clear_popups", "contains_prot_index", "current_frame", "cut", "discard_battle_vram_edits", "drain_battle_clut_stages", "ensure_battle_party_forms", "entry_bytes_extended", "far_colour_for_prot_index", "install_monster_battle_form", "monster_tex_slots_used", "party_roster_slot", "read_span_sectors", "release_summon_seat", "replay", "reset", "shout", "stage_effect_clut", "stage_luminance", "system_ui_bundle", "tmd_bytes", "upload_battle_stage_tims_into_vram", "upload_flame_atlas_into_vram"]
-reason = "Native-only `play_art_shout` / `play_xa_clip` / `tick_audio_frame` are the native window's director calls in this step - the arts shout, the battle CD-XA clips, and the duck ramp plus scheduler drain. The page reaches the same director calls through its XA lane's host fns of the first two names (which the walk excludes by name; the lane's own bank pick and read-span cut list web-only as `shout` / `cut` / `read_span_sectors`), and runs the director's `tick_audio_frame` in `tick_sfx`, a later step of its frame. `tick` is a name collision: the page defines a host fn of that name, which the walk excludes by name. The page folds its whole battle presentation frame into this one named step: stage and atlas upload (with the ground-fog stage brightness `fog_volume::stage_luminance`, which the window takes in its own `enter_battle_render`, pinned by a SIM_PAIRS row), the monster battle-form install and the party forms' read-back, the CLUT stage drain, the shout XA request, and the popup retire. The native window does that same work, but spread across its draw section and window/battle.rs rather than inside the kernel its frame path names, so the difference is where the code sits and not whether the host does it. Checked name by name: every presentation call has a call site in the native sources (most of them in window/battle.rs; the arena object list and the Cort hand-back ground blank are the engine's own `SceneHost::battle_stage_object_indices` / `World::apply_battle_vram_moves`, which the window reaches from its stage-rebuild path outside this kernel; the monster battle-form install is the one engine kernel `engine-core::battle_party_form` both hosts call, and the party forms are the engine's own - `SceneHost::ensure_battle_party_forms` builds and installs them from `SceneHost::tick` for every session, and both hosts call it again before their render build and read `battle_party_forms`, replaying its VRAM writes with `replay`). The page-only packet_color::hybrid now sits inside the page's stage-shell builder, below this kernel: it is the CPU-side per-vertex colour stream the page hands WebGL, and the wgpu renderer resolves the same packet colour in its fragment shader instead. The empty native-only side is the other half of the check: nothing the window reaches here is missing from the page. The audio half - the duck target, the strike / cast cues and the reward bank - is the shared director's on both hosts (`AudioDirector::set_duck_pct` / `enqueue_battle_cues`, engine-session), so it lists on neither side. `entry_bytes_extended` is the page reading the battle stage and effect entries off PROT inside this step; the window reads them from its stage-rebuild path outside its kernel. `discard_battle_vram_edits` is the page dropping queued battle VRAM edits when it holds no battle VRAM image; the native window does the same in `tick_battle_stage_shell`, outside this kernel."
+reason = "Native-only `play_art_shout` / `play_xa_clip` are the native window's director calls in this step - the arts shout and the battle CD-XA clips. The page reaches the same director calls through its XA lane's host fns of those names (which the walk excludes by name; the lane's own bank pick and read-span cut list web-only as `shout` / `cut` / `read_span_sectors`). The audio frame that sounds the queued cues is the next step of both frame paths (`tick_sfx`, the session's `BootSession::step_audio_frame`), so it lists on neither side. `tick` is a name collision: the page defines a host fn of that name, which the walk excludes by name. The page folds its whole battle presentation frame into this one named step: stage and atlas upload (with the ground-fog stage brightness `fog_volume::stage_luminance`, which the window takes in its own `enter_battle_render`, pinned by a SIM_PAIRS row), the monster battle-form install and the party forms' read-back, the CLUT stage drain, the shout XA request, and the popup retire. The native window does that same work, but spread across its draw section and window/battle.rs rather than inside the kernel its frame path names, so the difference is where the code sits and not whether the host does it. Checked name by name: every presentation call has a call site in the native sources (most of them in window/battle.rs; the arena object list and the Cort hand-back ground blank are the engine's own `SceneHost::battle_stage_object_indices` / `World::apply_battle_vram_moves`, which the window reaches from its stage-rebuild path outside this kernel; the monster battle-form install is the one engine kernel `engine-core::battle_party_form` both hosts call, and the party forms are the engine's own - `SceneHost::ensure_battle_party_forms` builds and installs them from `SceneHost::tick` for every session, and both hosts call it again before their render build and read `battle_party_forms`, replaying its VRAM writes with `replay`). The page-only packet_color::hybrid now sits inside the page's stage-shell builder, below this kernel: it is the CPU-side per-vertex colour stream the page hands WebGL, and the wgpu renderer resolves the same packet colour in its fragment shader instead. The empty native-only side is the other half of the check: nothing the window reaches here is missing from the page. The audio half - the duck target, the strike / cast cues and the reward bank - is the shared director's on both hosts (`AudioDirector::set_duck_pct` / `enqueue_battle_cues`, engine-session), so it lists on neither side. `entry_bytes_extended` is the page reading the battle stage and effect entries off PROT inside this step; the window reads them from its stage-rebuild path outside its kernel. `discard_battle_vram_edits` is the page dropping queued battle VRAM edits when it holds no battle VRAM image; the native window does the same in `tick_battle_stage_shell`, outside this kernel."
+
+[[frame_content]]
+native = "tick_sfx"
+web = "tick_sfx"
+native_only = []
+web_only = ["cut", "drain_field_xa_cues", "drain_field_xa_prestage", "read_span_sectors", "tick_cadence"]
+reason = "The audio frame is one session step on both hosts (`BootSession::step_audio_frame`: duck ramp, delay scheduler, matured cues), so it lists on neither side. What the page adds in the same step is its own: `tick_cadence` is the footstep cadence, which is silent (no cue is bound to it) and feeds only the page's readout; `drain_field_xa_cues` / `drain_field_xa_prestage` are the field CD-XA lane, with `cut` / `read_span_sectors` the lane's read-span cut and span sizing. The native window plays the same field XA requests inside `BootSession::tick` (`route_field_sfx`), reading a clip's span synchronously; the page declared itself as staging field XA, so the session leaves those two queues to this step."
 
 [[frame_content]]
 native = "drain_anim_cues"
 web = "drive_npc_clips"
 native_only = []
-web_only = ["advance", "field_npc_clips_advance", "sync_npc_clip", "take_npc_morph_dirty"]
-reason = "The cue drain is one engine kernel on both hosts; `sync_npc_clip` / `advance` are the page posing its NPC clip players for this tick inside the same step, under the engine's `World::field_npc_clips_advance` gate: from the world-owned cursor `World::tick_npc_clips` steps under each actor's `+0x62` word, or free-running for a slot the world binds no cursor to. The native window does the same `sync_npc_clip`-else-`advance` in its draw pass, behind the same gate, because the pose key it yields keys the pose cache that pass reads - so the step and its gate sit outside this kernel natively, and both hosts hold the clips still off the field. `take_npc_morph_dirty` (op-`0x4B` NPC morphs) is drained here on the page into a per-slot generation, and natively in `take_npc_morph_rebuilds` ahead of the redraw's renderer borrow, where it evicts that same pose cache; both stage through `World::npc_morphed_tmd`."
+web_only = ["take_npc_morph_dirty"]
+reason = "The cue drain is one engine kernel on both hosts, and so is the tick's step of the NPC clip players that follows it (`engine-session`'s `step_npc_clip_players`: the per-tick `World::field_npc_clips_advance` gate, then each slot posed off the world-owned cursor or free-run one frame), so neither lists on either side. `take_npc_morph_dirty` (op-`0x4B` NPC morphs) is drained here on the page into a per-slot generation, and natively in `take_npc_morph_rebuilds` ahead of the redraw's renderer borrow, where it evicts that same pose cache; both stage through `World::npc_morphed_tmd`."
 
 [[frame_content]]
 native = "tick_dev_menu"
@@ -703,9 +700,23 @@ reason = "Native-only `tick` is `FieldPartyHud::tick`, which both hosts call; it
 [[frame_content]]
 native = "tick_minigame_extras"
 web = "tick_minigame_ui"
-native_only = ["build", "build_filtered_vram_mesh_lit", "enqueue_sfx", "entry_bytes", "frame", "frame0_bone_offsets", "from_venue", "glyph_u", "has_assets", "hud_vram_rects", "key_on_voice_attr", "parse_sprite_table", "place_point", "play_xa_clip", "rotate", "set_assets", "stage_dance_hud_vram", "still_sheet_rgba", "walk_heightfield"]
-web_only = ["apply", "course", "cut", "drain_minigame_sfx_cues", "finish_dance_if_over", "last_result", "opponent_roster", "phase", "prot_dat_raw_bytes", "read_span_sectors", "round", "settle_muscle_contest", "sync_dance_venue", "take_cues", "tick_time_meter", "with_system_ui"]
-reason = "Native-only `enqueue_sfx` / `key_on_voice_attr` / `play_xa_clip` are the native window reaching the shared director (`AudioDirector`) for the minigame cues, the dome tally voice and the announcer lines; the page reaches the same director through host fns of the same first two names (which the walk excludes by name) and plays the lines through its XA lane, whose read-span cut and span sizing list web-only (`cut` / `read_span_sectors`). Native-only `frame` is `DanceCastSurface::frame`, which both hosts pose the dance cast through; it lists native-only because the page defines a host fn of the same name, which the walk excludes by name. The sub-step table in docs/tooling/host-drift.md is this row in long form. The fishing VENUE actors are no longer a difference: both hosts' `tick_fishing_actors` is the one engine kernel `fishing_venue::tick_fishing_venue_on_host` plus `VenueCameraWrites::apply` onto that host's camera - `apply` lists as web-only only because the native window has a host fn of its own named `apply` (window/field_render.rs), which the walk excludes by name. Native-only `glyph_u`: the window resolves each Baka chrome glyph draw's stamped cell rect against its parsed widget table and carries it beside the draw; both browser hosts consume the same chrome frame (the play page prints it through the shared label kernel and plays its announcer line in `tick_baka_ui`; the minigames page stamps `glyph_u` in its `baka_chrome_json` export and samples the strip there, outside this kernel). The dance venue: both hosts step the one engine kernel `dance_venue::sync_dance_venue` onto their own camera - it lists as web-only only because the native window's wrapper method carries the same name, which the walk excludes by name (as with `apply`). `build` / `build_filtered_vram_mesh_lit` / `frame0_bone_offsets` / `place_point` / `rotate` / `walk_heightfield` are the window uploading that venue (`DanceVenue::build`) to wgpu on the staging edge; the pages bake the same `DanceVenue::build`, placed through the same `EnvDraw::place_point` (a SIM_PAIRS row), once at disc load in their minigame art (`load_dance_bodies`), outside this kernel. `entry_bytes` / `from_venue` / `has_assets` / `set_assets` are the same staging edge handing the floor's bodies (`dance_cast_scene::DanceCastAssets::from_venue`, kind 0's mesh read off PROT 0874) to the engine cast surface; the play page builds the same assets once in `load_dance_bodies` and installs them in its `play_mg_dance_scene_frame` export, and both hosts then pose through the one `DanceCastSurface::frame`, outside this kernel. `hud_vram_rects` / `stage_dance_hud_vram` are the window's dance HUD page residency; the page stages the same rects through `sync_dance_hud_residency` and its `play_dance_art` exports. `parse_sprite_table` and `still_sheet_rgba` are the Muscle Dome hub assets and ringside still, which the page loads and bakes in its own `play_mg_muscle_hub_*` exports. The hub's screen timers are one engine kernel on both hosts (`muscle_ringside::HubTimers::tick`), so their leg-edge reads list on neither side; `course` / `round` are the page's staged-opponent read for its dome mesh (`enter_muscle_ui`). `cut` / `read_span_sectors` are the page's CD-XA clip path under the Baka chrome's and the dome hub's announcer lines (the read-span cut and the span sizing) - the window plays the same lines through `AudioDirector::play_xa_clip`. `phase` / `last_result` are the page's slot payout-edge detector (`tick_slot_ui`) feeding its JavaScript marquee's credit caption. The machine's dot buffer is composed on both hosts from the same `SlotMachine::marquee` through `engine-ui::slot_cabinet::SlotMarqueeClock::frame` (`tick_slot_marquee` here, `tick_slot_ui` on the page), so it lists on neither side. Web-only: the page drain and settle spellings plus the dome time meter, each of which the window steps as its own named kernel. The dome tally voice keys through the shared director on both hosts (`AudioDirector::key_on_voice_attr`), so it lists on neither side. `prot_dat_raw_bytes` / `with_system_ui` are the page's minigame bundle (built on first use from a compact PROT image with no pre-TOC head) taking the slot machine's resident system-UI sheet off the real PROT.DAT; the window uploads the same sheet through `SlotCabinetAssets::with_system_ui` when it first decodes the machine (`refresh_slot_cabinet_gpu`), outside this kernel."
+native_only = ["build", "build_filtered_vram_mesh_lit", "entry_bytes", "frame", "frame0_bone_offsets", "from_venue", "glyph_u", "has_assets", "hud_vram_rects", "key_on_voice_attr", "parse_sprite_table", "place_point", "play_xa_clip", "rotate", "set_assets", "stage_dance_hud_vram", "still_sheet_rgba", "walk_heightfield"]
+web_only = ["apply", "course", "cut", "enqueue_baka_sfx_cues", "finish_dance_if_over", "last_result", "opponent_roster", "phase", "prot_dat_raw_bytes", "read_span_sectors", "round", "settle_muscle_contest", "sync_dance_venue", "with_system_ui"]
+reason = "The minigame cue queue is one session step on both hosts (`BootSession::enqueue_minigame_sfx_cues`), so it lists on neither side. Web-only `enqueue_baka_sfx_cues` is the Baka Fighter exchange-hit drain, the session step the page calls from `tick_baka_ui` inside this kernel and the window calls from its own named step `drain_baka_sfx_cues`. Native-only `key_on_voice_attr` / `play_xa_clip` are the native window reaching the shared director (`AudioDirector`) for the dome tally voice and the announcer lines; the page reaches the same director through a host fn of the first name (which the walk excludes by name) and plays the lines through its XA lane, whose read-span cut and span sizing list web-only (`cut` / `read_span_sectors`). Native-only `frame` is `DanceCastSurface::frame`, which both hosts pose the dance cast through; it lists native-only because the page defines a host fn of the same name, which the walk excludes by name. The sub-step table in docs/tooling/host-drift.md is this row in long form. The fishing VENUE actors are no longer a difference: both hosts' `tick_fishing_actors` is the one engine kernel `fishing_venue::tick_fishing_venue_on_host` plus `VenueCameraWrites::apply` onto that host's camera - `apply` lists as web-only only because the native window has a host fn of its own named `apply` (window/field_render.rs), which the walk excludes by name. Native-only `glyph_u`: the window resolves each Baka chrome glyph draw's stamped cell rect against its parsed widget table and carries it beside the draw; both browser hosts consume the same chrome frame (the play page prints it through the shared label kernel and plays its announcer line in `tick_baka_ui`; the minigames page stamps `glyph_u` in its `baka_chrome_json` export and samples the strip there, outside this kernel). The dance venue: both hosts step the one engine kernel `dance_venue::sync_dance_venue` onto their own camera - it lists as web-only only because the native window's wrapper method carries the same name, which the walk excludes by name (as with `apply`). `build` / `build_filtered_vram_mesh_lit` / `frame0_bone_offsets` / `place_point` / `rotate` / `walk_heightfield` are the window uploading that venue (`DanceVenue::build`) to wgpu on the staging edge; the pages bake the same `DanceVenue::build`, placed through the same `EnvDraw::place_point` (a SIM_PAIRS row), once at disc load in their minigame art (`load_dance_bodies`), outside this kernel. `entry_bytes` / `from_venue` / `has_assets` / `set_assets` are the same staging edge handing the floor's bodies (`dance_cast_scene::DanceCastAssets::from_venue`, kind 0's mesh read off PROT 0874) to the engine cast surface; the play page builds the same assets once in `load_dance_bodies` and installs them in its `play_mg_dance_scene_frame` export, and both hosts then pose through the one `DanceCastSurface::frame`, outside this kernel. `hud_vram_rects` / `stage_dance_hud_vram` are the window's dance HUD page residency; the page stages the same rects through `sync_dance_hud_residency` and its `play_dance_art` exports. `parse_sprite_table` and `still_sheet_rgba` are the Muscle Dome hub assets and ringside still, which the page loads and bakes in its own `play_mg_muscle_hub_*` exports. The hub's screen timers are one engine kernel on both hosts (`muscle_ringside::HubTimers::tick`), so their leg-edge reads list on neither side; `course` / `round` are the page's staged-opponent read for its dome mesh (`enter_muscle_ui`). `cut` / `read_span_sectors` are the page's CD-XA clip path under the Baka chrome's and the dome hub's announcer lines (the read-span cut and the span sizing) - the window plays the same lines through `AudioDirector::play_xa_clip`. `phase` / `last_result` are the page's slot payout-edge detector (`tick_slot_ui`) feeding its JavaScript marquee's credit caption. The machine's dot buffer is composed on both hosts from the same `SlotMachine::marquee` through `engine-ui::slot_cabinet::SlotMarqueeClock::frame` (`tick_slot_marquee` here, `tick_slot_ui` on the page), so it lists on neither side. Web-only `settle_muscle_contest` / `finish_dance_if_over` are the page's settle and dance auto-end spellings, which the window makes from its tick body beside this kernel; the dome time meter is a named step of both frame paths (`tick_muscle_time_meter`), so it lists on neither side. The dome tally voice keys through the shared director on both hosts (`AudioDirector::key_on_voice_attr`), so it lists on neither side. `prot_dat_raw_bytes` / `with_system_ui` are the page's minigame bundle (built on first use from a compact PROT image with no pre-TOC head) taking the slot machine's resident system-UI sheet off the real PROT.DAT; the window uploads the same sheet through `SlotCabinetAssets::with_system_ui` when it first decodes the machine (`refresh_slot_cabinet_gpu`), outside this kernel."
+
+[[frame_content]]
+native = "poll_field_shop"
+web = "poll_field_shop"
+native_only = ["enqueue_sfx", "seru_trade_enabled"]
+web_only = ["compose_screen_prims", "fade_level", "fire_now", "pause_wipe"]
+reason = "The open and the screen's first no-edge step are one kernel on both hosts (`MenuRuntime::poll_field_overlay`), so they list on neither side; what differs is what each host does with the result. The cue: the window queues the first step's blip on the director at delay 0 (`enqueue_sfx`, through `fire_menu_cue`) and its audio frame later in the same tick sounds it, while the page keys it at once (`fire_now`, through `play_sfx`) - the page also defines a host fn named `enqueue_sfx`, which the walk excludes by name. `seru_trade_enabled` gates the window's boot-SCUS read for the Trade row's names (`ensure_seru_names`); the page decodes those names once at disc load. `compose_screen_prims` / `pause_wipe` / `fade_level` are the page rebuilding its cached screen-prim geometry on the opening tick (`rebuild_screen_geom`), because its draw pass holds no `&mut self`; the window composes the same layers through `screen_layers::compose_screen_prims` in its draw section."
+
+[[frame_content]]
+native = "tick_world_effects"
+web = "tick_world_effects"
+native_only = ["entry_bytes"]
+web_only = []
+reason = "The move-FX spawn, its cue and the scene-graph tick are one session step on both hosts (`BootSession::step_effect_scene_graphs`), so they list on neither side. `entry_bytes` is each host's summon seat reading the cast's `summon.dat` record off PROT (`spawn_summon_creature` / `spawn_summon_creature_web`, both through `summon::summon_spawn_asset`); it lists native-only because the page defines host fns of that name, which the walk excludes by name."
 
 # --- boot installs: a World table the native boot installs (tier 13) ---
 # `[[boot_install]]` rows name a `world.install_*` / `world.set_*` call in

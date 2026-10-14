@@ -152,7 +152,7 @@ and the battle mode init closes it before the battle loader fills slot 2
 checks behind each pin: [`formats/sfx-table.md`](../formats/sfx-table.md#which-prot-entry-reaches-which-slot).
 
 The seeder and the reader are ported at opposite ends and never meet:
-`legaia_engine_core::scus_leaf_kernels::seed_boot_offset_table` writes the
+`legaia_engine_system::scus_leaf_kernels::seed_boot_offset_table` writes the
 twelve-word image and `legaia_game_tables::sfx_table::spu_base_for_slot` answers the
 query the engine's audio host actually makes, returning the same values as
 literals. `crates/engine-core/tests/infra_boot_offset_table.rs` asserts the two
@@ -1734,10 +1734,11 @@ still calls the cue drainer `FUN_80016B6C` (`jal` at `0x80025F9C`, after
 default handler `FUN_80025EEC`. A cue already delayed when the screen opened
 therefore keeps ageing under it and fires on time.
 
-Both hosts step the scheduler once per sim tick under such a screen: the native
-window's frozen arms call `tick_menu_sfx`, and the page's frame loop, which runs
-no `tick_frame` while the field is frozen, calls the export
-`play_tick_overlay_sfx`, the same scheduler step. Menu blips themselves fire
+Both hosts step the scheduler once per sim tick under such a screen, through
+one session step, `BootSession::step_overlay_sfx`: the native window's frozen
+arms call it as `tick_menu_sfx`, and the page's frame loop, which runs no
+`tick_frame` while the field is frozen, calls it through the export
+`play_tick_overlay_sfx`. Menu blips themselves fire
 immediately on both.
 
 ### Minigame announcer lines are listed ahead of use

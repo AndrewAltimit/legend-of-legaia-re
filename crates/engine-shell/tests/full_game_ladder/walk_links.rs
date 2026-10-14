@@ -63,7 +63,22 @@ pub(super) fn ledge_hops(session: &NativeSession) -> WarpMap {
                     // (`deroa` P2[12] / P2[14], the platforms between its
                     // shaft rooms).
                     let mut walks = Vec::new();
+                    // Story flags the record raises and lowers: a transport
+                    // lowers every one it raises (its hold), a story beat
+                    // leaves its mark.
+                    let (mut sets, mut clears) = (BTreeSet::new(), BTreeSet::new());
                     for insn in LinearWalker::new(body, pc0).flatten() {
+                        if let InsnInfo::SystemFlag { kind, idx, .. } = insn.info {
+                            match kind {
+                                legaia_scene_formats::field_disasm::FlagKind::Set => {
+                                    sets.insert(idx);
+                                }
+                                legaia_scene_formats::field_disasm::FlagKind::Clear => {
+                                    clears.insert(idx);
+                                }
+                                _ => {}
+                            }
+                        }
                         if insn.opcode == 0x47
                             && insn.extended == Some(0xF8)
                             && let (Some(&x), Some(&z)) =
@@ -119,6 +134,18 @@ pub(super) fn ledge_hops(session: &NativeSession) -> WarpMap {
                         // where its last arc does.
                         ([.., (x, z)], []) if !forks => Some(cell_of(at(*x), at(*z))),
                         ([], [(x, z)]) if !leaves => Some(cell_of(*x, *z)),
+                        // A fork-free pad that shows the player something on
+                        // the way lands where its last snap does: `garmel`'s
+                        // transport pads P2[0] / P2[1] / P2[8] / P2[9] snap
+                        // the party to the tank room (8, 117) for the ride's
+                        // cutscene, then to the far pad. Every flag such a
+                        // pad raises it lowers again; a cutscene that leaves
+                        // one up is a story beat, not a way across (`rayman`
+                        // P2[19] seats the player three times and raises
+                        // `0x1FC`).
+                        ([], [.., (x, z)]) if !forks && !leaves && sets.is_subset(&clears) => {
+                            Some(cell_of(*x, *z))
+                        }
                         // A fork-free run of player walk legs ends where its
                         // last leg does.
                         ([], []) if !forks && !leaves => {
@@ -566,6 +593,13 @@ pub(super) fn door_openings(session: &NativeSession) -> HashMap<(u8, u8), Option
                     kind: FlagKind::Set,
                     bit: 0,
                 } if insn.extended.is_none() => return Some(boxed),
+                // A prop that parks itself on the hide tile is out of the
+                // way as surely: `vozz` P0[1], the thickets across East
+                // Voz's paths, run `23 7F 7F` on the action button once
+                // `0x079` is up.
+                InsnInfo::MoveTo { xb: 0x7F, zb: 0x7F } if insn.extended.is_none() => {
+                    return Some(boxed);
+                }
                 InsnInfo::BBoxTest {
                     x_min,
                     z_min,

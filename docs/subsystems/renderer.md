@@ -696,7 +696,7 @@ case: three corners on the town floor, one on the plateau 384 units up.
 The port keeps the bit as `WalkHeightfield::far_bucket`
 (`legaia_scene_formats::field_objects::CELL_GROUND_DEPTH_SORTED`, field ground only;
 the overworld emitter keys every cell on its own corners). The shared kernel
-`legaia_engine_core::field_ground::flat_refs` marks cells in the per-vertex
+`legaia_engine_scene::field_ground::flat_refs` marks cells in the per-vertex
 flat-depth references both hosts upload beside the ground, and the ground
 shaders - `field_far_bucket_depth` in `engine-render`, `fieldFarBucket` in
 `site/js/webgl-shaders.js` - act on the mark:
@@ -1775,7 +1775,7 @@ particle's depth, not a world-space quad
 The records come from the ambient emitter's spawner `FUN_801D629C`
 ([`field-ambient-fx.md`](field-ambient-fx.md#the-fog-pool-spawner-records-render-pass)).
 
-Port: `engine-core::fog_particles` is the pool and the pass's arithmetic,
+Port: `engine-field::fog_particles` is the pool and the pass's arithmetic,
 `World::fog_render_step` is the draw-path call each host makes with its
 follow camera, and the quads join this pass through
 `screen_prim::fog_puff_prim`. Each quad carries a scene depth and is
@@ -1898,7 +1898,7 @@ triangles. What removes geometry is retail's own rules:
 
 | Rule | Where | Port |
 |---|---|---|
-| Visible-tile crop | Retail's render library walks only the `.MAP` cells inside the camera's visible tile window ([encounter.md](../formats/encounter.md#the-scratchpad-window-0x1f8003e8eb)), clipped to the walk region (`FUN_801F7088` prologue) | `engine-core::field_view_window`; both hosts gate the terrain draws (`terrain_draw_visible`) and the ground index list on it |
+| Visible-tile crop | Retail's render library walks only the `.MAP` cells inside the camera's visible tile window ([encounter.md](../formats/encounter.md#the-scratchpad-window-0x1f8003e8eb)), clipped to the walk region (`FUN_801F7088` prologue) | `engine-scene::field_view_window`; both hosts gate the terrain draws (`terrain_draw_visible`) and the ground index list on it |
 | Actor cull | Placed objects and NPCs | `placed_actor_visible` / `npc_actor_visible` over `World::field_actor_culled_at`; the play page reads the NPC half as `play_npc_culled` |
 | Back-face cull | Field pass and battle bodies | [below](#the-field-pass-culls-back-faces) |
 | Placed-object near reject | Field actor draw walk | [below](#the-placed-object-near-reject) |
@@ -2512,7 +2512,7 @@ hosts turn it on by default.
 The fade has two halves: a per-frame **visibility gate** deciding whether to
 fade at all, and a per-fragment rule deciding which pixels dissolve.
 
-**The visibility gate** (`legaia_engine_core::field_occlusion`, one kernel:
+**The visibility gate** (`legaia_engine_scene::field_occlusion`, one kernel:
 the native window calls it directly, the play page through the wasm export
 `field_player_occluded`). `FieldOccluders::fully_occluded` ray-casts a 5-point body cross (centre, head,
 hips, both shoulders) from the camera eye to the character against the

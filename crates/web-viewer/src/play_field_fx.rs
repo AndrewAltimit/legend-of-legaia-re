@@ -5,7 +5,7 @@
 //! (`FUN_8003F348` at `0x80026F24`, gated on game mode `3` and
 //! `_DAT_8007B854`), two textured semi-transparent quads per live particle
 //! through `FUN_8003F86C`. The simulation of that pass is
-//! `legaia_engine_core::fog_particles` and its `World::fog_render_step`
+//! `legaia_engine_field::fog_particles` and its `World::fog_render_step`
 //! seam; this file is the page's draw-path call into it, the twin of the
 //! native window's `take_field_fog_prims`. Both wrap the quads through
 //! `legaia_render_kernels::screen_prim::fog_puff_prim`, and both resolve the
@@ -189,7 +189,7 @@ impl LegaiaRuntime {
     /// The walk-ground heightfield's flat bucket-depth references, flattened
     /// eight floats per drawn vertex (`[x0, z0, x1, z1, y00, y10, y01,
     /// y11]` of its cell) - the shared
-    /// [`legaia_engine_core::field_ground::flat_refs`] over
+    /// [`legaia_engine_scene::field_ground::flat_refs`] over
     /// the same drawn positions `field_ground_positions` returns, so the
     /// page's ground draws each overworld cell at its ordering-table
     /// bucket's depth, and each sloped far-bucket field cell under every
@@ -205,10 +205,10 @@ impl LegaiaRuntime {
         // Over the positions currently drawn: re-resolved through the live
         // ladder once `field_ground_live_positions` has moved them.
         let positions = match f.ground_lut_applied.as_ref() {
-            Some(lut) => legaia_engine_core::field_ground::live_render_positions(hf, lut),
-            None => legaia_engine_core::field_ground::render_positions(hf),
+            Some(lut) => legaia_engine_scene::field_ground::live_render_positions(hf, lut),
+            None => legaia_engine_scene::field_ground::render_positions(hf),
         };
-        legaia_engine_core::field_ground::flat_refs(hf, &positions)
+        legaia_engine_scene::field_ground::flat_refs(hf, &positions)
             .into_iter()
             .flatten()
             .collect()

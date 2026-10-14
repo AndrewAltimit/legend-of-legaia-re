@@ -29,7 +29,7 @@ Three things it is **not**:
 | Data file | `data\field\other6.lzs` = extraction 1220..=1225 (hub art, ringside stills, arena backdrop) |
 | Ladder + score tables | PROT 0977: roster `0x801D1920`, course descriptors `0x801D1A08`, score table `0x801D1860` |
 | Ringside still loader | `FUN_801F6B24`, PROT 0978 (`field_back_read`, slot-B base `0x801F69D8`) |
-| Port | [Engine port](#engine-port): `engine-minigames::muscle_dome`, `engine-menus::muscle_dome_session`, `engine-core::muscle_ringside`, `engine-minigame-scenes::muscle_dome_scene`, `web-viewer::minigames_muscle` |
+| Port | [Engine port](#engine-port): `engine-minigames::muscle_dome`, `engine-menus::muscle_dome_session`, `engine-minigames::muscle_ringside`, `engine-minigame-scenes::muscle_dome_scene`, `web-viewer::minigames_muscle` |
 | Disc parsers | `legaia_minigame_formats::muscle_dome` (deck tables), `muscle_dome::parse_course_ladder` / `parse_score_table` |
 
 Throughout, "ctx" is the shared battle context at `_DAT_8007BD24` and "actor" is a battle actor record reached through `&DAT_801C9370`. Port paths written `muscle_dome::X` resolve as `legaia_engine_minigames::muscle_dome::X`; the leg session is `legaia_engine_menus::muscle_dome_session`.
@@ -195,7 +195,7 @@ No turn boundary reaches the table above. The two boundaries are written by diff
 
 While a leg runs the game is in battle mode, so the hub - the only thing that draws INTERVAL and the tally - is not executing. Retail has no beat between turns: the command cluster comes straight back.
 
-Both boundaries reach a port host as "the turn's playback ended", so the verdict lives in one shared place: `muscle_dome::leg_boundary_raises_interval` (`engine-minigames`), called at the leg boundary by the hub timer kernel both play hosts drive (`engine-core::muscle_ringside::HubTimers`) and by the browser dome page (the `muscle_leg_shows_interval` binding). `MusclePhase::ends_turn` / `ends_leg` name the same split on the session side. Locked by `engine-menus/tests/muscle_intermission_cadence.rs` and `web-viewer/tests/muscle_page_cadence.rs`.
+Both boundaries reach a port host as "the turn's playback ended", so the verdict lives in one shared place: `muscle_dome::leg_boundary_raises_interval` (`engine-minigames`), called at the leg boundary by the hub timer kernel both play hosts drive (`engine-minigames::muscle_ringside::HubTimers`) and by the browser dome page (the `muscle_leg_shows_interval` binding). `MusclePhase::ends_turn` / `ends_leg` name the same split on the session side. Locked by `engine-menus/tests/muscle_intermission_cadence.rs` and `web-viewer/tests/muscle_page_cadence.rs`.
 
 <a id="course-ladder-the-opponent-per-course-round"></a>
 
@@ -959,7 +959,7 @@ Battle context (offsets relative to `_DAT_8007BD24` unless noted):
 | `ctx+0x6d8` | u16 | AP spent this round (pennant cursor) | Confirmed |
 | `ctx+0x6dc` | u16 | remaining AP budget (seeded from actor `+0x154`) | Confirmed |
 | `ctx+0x880` | u32 | chosen direction bitmask | Confirmed |
-| `ctx+0x884` | u32 | latched input mask for the round | Inferred |
+| `ctx+0x884` | u32 | the press parked while a widget glide was landing, read by the first dispatched pass ([the stepper's return](battle-hud.md#the-steppers-return-holds-the-pad)) | Confirmed |
 | `ctx+0x1074[0..0x27]` | ptr[40] | active sprite-handle array (flags at `ctx+0x11B7` / `ctx+0x11B4`) | Confirmed |
 | `ctx+0x1114 … +0x1120` | ptr[4] | the four direction-slot sprite handles | Confirmed |
 | `ctx+0x11b4[0..0x27]` | u8[40] / `+ i*0xC` records | per-handle active flags and glide records (walked by `FUN_801D9BBC`) | Confirmed |
@@ -1019,7 +1019,7 @@ The port models the same two layers and shares every rule between the native `pl
 | Ladder + score tables | `engine-minigames::muscle_dome` (`course.rs`) | `parse_course_ladder`, `parse_score_table`, `course_score_cell` off raw PROT 0977 |
 | Contest | `engine-minigames::muscle_dome` (`contest.rs`) | `DomeContest` (cursor, unlock seed, Master clamp, tally rows, start restore), `settle_contest`, `leg_boundary_raises_interval` |
 | Damage | `engine-minigames::muscle_dome` (`damage.rs`) | `DomeDamageModel`: move-power row via the id map, predamage roll (`FUN_801DD0AC`), element affinity (`FUN_801DD864`), finisher (`FUN_801DDB30`), on a PsyQ `rand()` stream in retail call order; defender's `+0x170` gauge accrues per hit |
-| Hub envelopes | `engine-minigames::muscle_dome` (`hub.rs`), `engine-core::muscle_ringside` | `HubScreen`, `HubTimers`, `HubBackdrop`, `FirstVisitHub` |
+| Hub envelopes | `engine-minigames::muscle_dome` (`hub.rs`), `engine-minigames::muscle_ringside` | `HubScreen`, `HubTimers`, `HubBackdrop`, `FirstVisitHub` |
 | Leg session | `engine-menus::muscle_dome_session` (`session.rs`) | `MuscleDomeSession`: deal, budget-gated commit, queue, tokenizer, cast, KO-only ending |
 | Command flow | `engine-menus::muscle_dome_session` (`menu.rs`, `ring.rs`, `loadout.rs`) | `DomeMenu`, `DomeRing`, `ChipMark`, `DomeMagic`, `art_catalog_for`; world loadout via `engine-core::world_views::muscle_dome::magic_loadout_for` |
 | World | `engine-core` (`world/frame_tick/minigame_sessions/muscle_dome.rs`, `scene/host/minigame_warp.rs`) | `SceneMode::MuscleDome`, `World::enter_muscle_dome` / `tick_muscle_dome` / `leave_muscle_dome` / `report_muscle_leg` / `settle_muscle_contest` |

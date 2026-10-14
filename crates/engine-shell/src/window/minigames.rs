@@ -115,20 +115,11 @@ impl PlayWindowApp {
 
 impl PlayWindowApp {
     /// Fire the minigame sessions' queued SFX cues (the fishing hub's and
-    /// point exchange's blips) into the BGM director's scheduler. The dance's
-    /// cues do not come this way: `World::tick_dance` stores them into the
-    /// SFX ring, which the session's `route_world_sfx` drains on both hosts.
+    /// point exchange's blips) into the director's scheduler - the session's
+    /// step (`BootSession::enqueue_minigame_sfx_cues`), shared with the
+    /// browser play page.
     pub(super) fn drain_minigame_sfx_cues(&mut self) {
-        let cues = self.session.host.world.drain_minigame_sfx_cues();
-        if cues.is_empty() {
-            return;
-        }
-        let Some(bgm) = self.session.bgm.as_mut() else {
-            return;
-        };
-        for cue in cues {
-            bgm.enqueue_sfx(cue, 0, 0, 0);
-        }
+        let _ = self.session.enqueue_minigame_sfx_cues();
     }
 }
 

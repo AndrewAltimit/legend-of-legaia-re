@@ -104,6 +104,12 @@ fn live_battle_overlay_draws_the_retail_party_surface_and_no_banner() {
     const PARTY_TOP: f64 = 164.0 * 3.0;
     const PARTY_BOT: f64 = 212.0 * 3.0;
 
+    // The round prompt opens on a sixteen-vsync glide (sub-draw step 0
+    // spawns the panels under the screen and the chips on the cluster
+    // centre); the packet-pinned bands are where it lands.
+    for _ in 0..16 {
+        rt.tick_frame().expect("tick");
+    }
     let v = overlay(&mut rt);
     assert_eq!(v["open"], true, "battle overlay must report open");
     assert!(

@@ -130,7 +130,7 @@ dissolve scene fragments that sit between the camera and the player to a
 by default in the renderer, and off IS retail** - the disabled path is pixel-identical
 (the WGSL `occl_keep` returns 1.0, which no Bayer threshold reaches).
 `strength` is the host's eased output of the **visibility gate**
-(`engine-core::field_occlusion`): a 5-point eye-to-player ray-cast against
+(`engine-scene::field_occlusion`): a 5-point eye-to-player ray-cast against
 the static scene that arms the fade only when the character is completely
 hidden - a partially visible character never fades. A fragment then fades
 only when its draw is environment geometry (the

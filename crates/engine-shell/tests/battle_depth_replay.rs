@@ -180,6 +180,16 @@ fn extracted_dir() -> Option<PathBuf> {
 /// `just_pressed`, so a held mask is a single event no matter how long it is
 /// held - a driver that holds a direction enters one command, not four.
 fn tap(session: &mut NativeSession, button: PadButton) {
+    // The menu SM reads no pad while a prompt's or the ring's glide is in
+    // flight (`World::battle_command_pad_held`): wait it out, as a player
+    // does.
+    for _ in 0..64 {
+        if !session.host.world.battle_command_pad_held() {
+            break;
+        }
+        session.host.world.set_pad(0);
+        let _ = session.tick();
+    }
     session.host.world.set_pad(InputState::mask_of([button]));
     let _ = session.tick();
     session.host.world.set_pad(0);

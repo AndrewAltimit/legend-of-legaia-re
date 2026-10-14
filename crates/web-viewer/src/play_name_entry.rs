@@ -124,17 +124,13 @@ impl LegaiaRuntime {
     /// display frame's fixed-timestep step count, which is exactly what the
     /// native window's catch-up ticks spend on the same counter.
     pub fn name_entry_advance_frames(&mut self, steps: u32) {
-        let Some((h, camera)) = self.scene_host.host_cam_mut() else {
-            return;
-        };
-        if !h.world.name_entry_active() {
-            return;
-        }
         // The display frames pass under the prompt too (retail's frame loop
         // keeps stepping the camera mover around it), and the camera's half
-        // runs, as `BootSession::step_name_entry_frame` does natively.
-        h.world.name_entry_display_frames(steps.min(64));
-        legaia_engine_core::frame_step::camera_after_world_tick(camera, &mut h.world, false);
+        // runs once per step - the session's kernel, the one the native
+        // window's per-tick arm runs through `step_name_entry_frame`.
+        if let Some(session) = self.scene_host.session_mut() {
+            session.pass_name_entry_frames(steps.min(64));
+        }
     }
 
     /// Live overlay state for the page's status line (and headless checks):

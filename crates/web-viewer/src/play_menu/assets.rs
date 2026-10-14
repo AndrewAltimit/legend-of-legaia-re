@@ -258,6 +258,9 @@ impl LegaiaRuntime {
 /// the same field-by-field mapping the native window does at atlas upload.
 fn save_menu_rects(a: &SaveMenuAtlas) -> SaveMenuAtlasRects {
     SaveMenuAtlasRects {
+        class0_dark: Some(legaia_engine_ui::Class0SkinRects::from_cells(
+            a.band_class0_dark(),
+        )),
         panel_tl: a.band_panel_tl(),
         panel_tr: a.band_panel_tr(),
         panel_bl: a.band_panel_bl(),

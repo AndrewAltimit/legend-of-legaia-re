@@ -94,8 +94,20 @@ impl MenuRuntimeHost<'_> {
         let Some(info) = self.equip_info.as_ref() else {
             return;
         };
-        let can_equip: Vec<bool> = (0..self.world.party.roster.members.len().min(3))
-            .map(|i| info.can_equip(item.item_id, i as u8))
+        // One row per **present** member, in party-list order: retail hands
+        // the cursor kernel `DAT_80084594 + 1` rows (`lbu a1,0x454(s1)` /
+        // `addiu a1,a1,1` at `0x801DB434`) and resolves a confirmed row to
+        // its character through the party list (`lbu s0,0x457(v0)` at
+        // `0x801DB554`, `0x80084597 + row`), whose id indexes the character
+        // mask table `0x801E43F0`. A lone Noa is row 1, and a member who
+        // has not joined has no row.
+        // REF: FUN_801DB380
+        let can_equip: Vec<bool> = self
+            .world
+            .present_party_list()
+            .iter()
+            .take(3)
+            .map(|&ch| info.can_equip(item.item_id, ch))
             .collect();
         let price = u16::try_from(item.price).unwrap_or(u16::MAX);
         let point_card_held = self.world.point_card_held();

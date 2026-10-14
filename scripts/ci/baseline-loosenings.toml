@@ -23,3 +23,10 @@ reason = "Field-VM waits now credit on the game-frame grid (capture-verified at 
 changes = [
   ["states/minigame_baka_pcsx/image", 0.962, 0.961],
 ]
+
+[[loosening]]
+file = "scripts/ci/retail-compare-baseline.json"
+reason = "The frame was never one value: the coplanar draw-lift pass ranked planes in hash-map order, so jouine's stacked flesh shells sat about a unit apart from launch to launch and the score ran 0.893 to 0.900 on one binary (1000 to 1008 of 1120 blocks over ten runs). The baseline held the top of that spread. With the planes in key order the frame is one frame and scores 1007 blocks. Patched-disc state, outside the ratchet."
+changes = [
+  ["states/cort_evolved_pre_battle/image", 0.9, 0.899],
+]

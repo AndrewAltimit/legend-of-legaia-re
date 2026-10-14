@@ -37,6 +37,26 @@ impl MenuRuntime {
         opened
     }
 
+    /// The field-overlay poll both play hosts run once per sim tick: open
+    /// whichever screen the field VM requested
+    /// ([`Self::open_field_overlay_requests`]) and take that screen's first
+    /// step, on no edge ([`Self::session_edge`]).
+    ///
+    /// `None` when nothing opened. `Some(cue)` on the tick a screen opened,
+    /// carrying the blip its first step raised for the host to key.
+    ///
+    /// The first step belongs to the opening tick rather than to the next
+    /// one: the shop's field fade and window slides are tick-counted from it,
+    /// so a host that deferred it ran them a tick behind the other. A host
+    /// that also steps open sessions every tick ([`Self::step_field_session`])
+    /// skips that step on a tick this returned `Some`.
+    pub fn poll_field_overlay(&mut self, world: &mut World) -> Option<Option<u8>> {
+        if !self.open_field_overlay_requests(world) {
+            return None;
+        }
+        Some(self.step_field_session(world, Self::session_edge(true, 0)))
+    }
+
     /// The pad edge a session step takes this tick: none on the tick a
     /// screen opened ([`Self::open_field_overlay_requests`]), else the
     /// tick's own.

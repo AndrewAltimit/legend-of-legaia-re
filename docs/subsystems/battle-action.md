@@ -1112,6 +1112,11 @@ So the summon sweep's `+0x4 = 0` / `+0x21C = 0xFF` pair at `0x801E4B50` is a
 group walk reads the twin. The two are **not** interchangeable - an empty seat
 reads `+0x21C == 0` where retail rejects it on `+0x4`, and a monster that dies
 mid-fade keeps `0xFF` forever because the `0x36` clear is gated on liveness.
+The cast's re-face therefore rejects an empty seat on its own test (a monster
+seat with no max HP was never stood on): counted, it sits at the origin and
+pulls a three-monster centroid a quarter of the way there - Noa's group cast
+faced `3828` where `gizam_summon_mid_cast` and `terra_summon_mid_cast` hold
+`3859`, the bearing to the three seated monsters.
 `engine-vm`'s `battle_target_group` module doc carries the full comparison and
 why seeding `+0x4` without also porting the tween would be worse than the twin.
 

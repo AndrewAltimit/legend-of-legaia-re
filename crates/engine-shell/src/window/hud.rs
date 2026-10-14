@@ -16,7 +16,7 @@ mod text_list;
 /// One on-screen sparring-tutorial box with its stage rect `(x, y, w, h)`.
 pub(super) type TutorialStageBox<'a> = (
     (i32, i32, i32, i32),
-    &'a legaia_engine_core::battle_flow::ActiveTutorialBox,
+    &'a legaia_engine_menus::battle_flow::ActiveTutorialBox,
 );
 
 /// Project the simulation's arts-input phase onto the presentation
@@ -41,7 +41,9 @@ fn arts_input_screen(
 /// onto the leaf crate's own enum).
 pub(super) type CommandChips = (
     Vec<(String, bool)>,
-    usize,
+    // The highlighted chip (`battle_hud::battle_chip_highlight`): `None`
+    // under the directional-buttons command entry.
+    Option<usize>,
     legaia_engine_ui::battle_command_ui::ChipPhase,
 );
 

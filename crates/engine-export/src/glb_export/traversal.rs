@@ -7,14 +7,14 @@ use super::*;
 /// (`World::sample_field_floor_height`, `FUN_80019278`), so manifest spawn
 /// heights match where the engine grounds an actor.
 pub struct FloorSampler {
-    world: Box<crate::world::World>,
+    world: Box<legaia_engine_core::world::World>,
 }
 
 impl FloorSampler {
     /// Build from the scene's on-disc geometry; every input is optional (a
     /// missing grid just samples 0, same as retail before the install).
     pub fn build(index: &ProtIndex, scene: &Scene) -> Self {
-        let mut world = Box::<crate::world::World>::default();
+        let mut world = Box::<legaia_engine_core::world::World>::default();
         if let Ok(Some(grid)) = scene.field_collision_grid(index) {
             world.load_field_collision_grid(&grid);
         }

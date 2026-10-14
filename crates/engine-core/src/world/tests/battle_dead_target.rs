@@ -90,6 +90,64 @@ fn the_redirect_stays_on_the_dead_targets_side_and_lands_alive() {
     assert_eq!(world.redirect_dead_battle_target(2, 4, 0), 2);
 }
 
+/// The same call covers a single-target cast: `FUN_801DB124`'s Magic arm
+/// (`0x801DB198..0x801DB1D8`) re-rolls a category-2 action whose dead target
+/// is an enemy slot. A cast left on the corpse walked its summon at a victim
+/// the range poll never brings into reach, and state `0x36` held the round
+/// forever - the continuous ladder run's `vozz` formation-1 stall, where an
+/// art earlier in the round felled the monster a queued Gimard named.
+#[test]
+fn a_cast_at_a_dead_monster_rerolls_onto_a_living_one() {
+    use legaia_engine_battle::target_picker::CursorRow;
+    let mut world = world_one_vs_three();
+    world.tables.spell_catalog = legaia_engine_battle::retail_magic::retail_seru_magic_catalog();
+    world.actors[0].battle.mp = 99;
+    kill(&mut world, 1);
+    kill(&mut world, 2);
+    arm_turn(
+        &mut world,
+        0,
+        PendingPartyAction::Spell {
+            spell_id: 0x81,
+            target_row: CursorRow::Enemy,
+            target_slot: 0,
+        },
+    );
+    world.cycle_battle_turn();
+    assert_eq!(
+        world.battle_ctx.active_actor, 0,
+        "the member was dispatched"
+    );
+    assert_eq!(world.actors[0].battle.action_category, 2);
+    assert_eq!(
+        world.actors[0].battle.active_target, 3,
+        "the only living monster takes the cast"
+    );
+}
+
+/// A cast whose target still stands is left alone and draws nothing.
+#[test]
+fn a_cast_at_a_living_monster_keeps_its_target() {
+    use legaia_engine_battle::target_picker::CursorRow;
+    let mut world = world_one_vs_three();
+    world.tables.spell_catalog = legaia_engine_battle::retail_magic::retail_seru_magic_catalog();
+    world.actors[0].battle.mp = 99;
+    kill(&mut world, 1);
+    arm_turn(
+        &mut world,
+        0,
+        PendingPartyAction::Spell {
+            spell_id: 0x81,
+            target_row: CursorRow::Enemy,
+            target_slot: 1,
+        },
+    );
+    let rng_before = world.rng_state;
+    world.cycle_battle_turn();
+    assert_eq!(world.actors[0].battle.active_target, 2);
+    assert_eq!(world.rng_state, rng_before);
+}
+
 /// The whole monster side down mid-round: the next idle is not a dispatch
 /// at a corpse but the wipe scan, and the fight resolves as a victory. The
 /// round still owes the party member its strike (committed before the

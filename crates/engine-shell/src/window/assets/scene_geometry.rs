@@ -486,7 +486,7 @@ impl PlayWindowApp {
             // A sloped far-bucket field cell carries the marker that draws
             // it under everything, as retail's ground pass does
             // (`field_ground::flat_refs`).
-            let flat_refs = legaia_engine_core::field_ground::flat_refs(&hf, &vmesh.positions);
+            let flat_refs = legaia_engine_scene::field_ground::flat_refs(&hf, &vmesh.positions);
             match r.upload_vram_mesh_with_flat_refs(
                 &vmesh.positions,
                 &vmesh.uvs,

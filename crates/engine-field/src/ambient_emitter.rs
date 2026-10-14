@@ -159,7 +159,7 @@ impl AmbientEmitter {
     /// `legaia_engine_core::world::World::install_field_scene_elements` installs the one
     /// element it runs on at every cold field entry (descriptor `0x801F271C`,
     /// spawn site `0x801D6FD8`). Each particle it names goes to the fog
-    /// spawner `legaia_engine_core::fog_particles::FogPool::spawn` (`FUN_801D629C`),
+    /// spawner `crate::fog_particles::FogPool::spawn` (`FUN_801D629C`),
     /// which is what retail's `jal 0x801d629c` at `0x801D6148` /
     /// `0x801D6248` reach.
     pub fn step(

@@ -71,8 +71,15 @@ fn face_cast_target<H: BattleActionHost + ?Sized>(host: &mut H, ctx: &BattleActi
             };
             let live = host.actor(engine_slot).is_some_and(|a| {
                 // Party arm: the roster byte, i.e. seat occupancy. Monster arm:
-                // retail's `+0x4` prim word, read through its `+0x21C` twin.
-                retail_slot < MONSTER_SLOT_FIRST || a.render_flag != RENDER_FLAG_HIDDEN
+                // retail's `+0x4` prim word, read through its `+0x21C` twin -
+                // and, for a seat no monster was ever stood on (whose prim
+                // word retail leaves zero), through the max HP the seating
+                // never wrote. Counted, an empty seat pulls the centroid a
+                // quarter of the way to the origin: Noa's group cast on three
+                // monsters faced `3828` where retail's faces `3859`
+                // (`gizam_summon_mid_cast`, `terra_summon_mid_cast`).
+                retail_slot < MONSTER_SLOT_FIRST
+                    || (a.max_hp != 0 && a.render_flag != RENDER_FLAG_HIDDEN)
             });
             *out = GroupSlot { live, x, z };
         }

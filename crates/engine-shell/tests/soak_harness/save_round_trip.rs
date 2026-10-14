@@ -19,6 +19,9 @@ pub(super) fn round_trip_ready(s: &NativeSession) -> bool {
         && !w.name_entry_active()
         && !w.shops.shop_open
         && w.active_fmv().is_none()
+        // A record that engages the player refuses the menu button with the
+        // rest of the pad (`World::script_context_engages_player`).
+        && !w.script_context_engages_player()
 }
 
 /// The first field two saves disagree on, named, with a short detail.

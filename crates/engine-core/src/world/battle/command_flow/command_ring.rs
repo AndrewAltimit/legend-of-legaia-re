@@ -10,7 +10,7 @@ impl World {
     /// queued action / target is filled in by [`Self::tick_battle_command`]
     /// once the player confirms. No-op unless [`crate::world::BattleState::player_driven`].
     pub(in crate::world) fn open_battle_command(&mut self, actor: u8) {
-        use crate::battle_flow::BattleFlowState as Flow;
+        use legaia_engine_menus::battle_flow::BattleFlowState as Flow;
         use legaia_engine_menus::battle_input::BattleCommandSession;
         if !self.battle.player_driven {
             return;
@@ -48,6 +48,9 @@ impl World {
         if self.battle.commit_log_launch.is_some() {
             self.launch_commit_log(true);
         }
+        if round_open {
+            self.start_round_prompt_glide();
+        }
         self.battle.command = Some(if round_open {
             BattleCommandSession::new_round_open(actor, actor, self.battle.no_escape)
         } else {
@@ -67,7 +70,6 @@ impl World {
         use crate::battle_round::PendingPartyAction;
         use legaia_engine_battle::target_picker::CursorRow;
         use legaia_engine_menus::battle_input::{BattleCommandInput, CommandPhase, Resolution};
-        use legaia_engine_system::input::PadButton;
 
         let Some(mut session) = self.battle.command.take() else {
             return;
@@ -79,16 +81,9 @@ impl World {
         // test - see `super::super::validator_host`.
         let (party, monsters) = self.battle_target_rows();
 
-        let mut ev = BattleCommandInput {
-            up: self.input.just_pressed(PadButton::Up),
-            down: self.input.just_pressed(PadButton::Down),
-            left: self.input.just_pressed(PadButton::Left),
-            right: self.input.just_pressed(PadButton::Right),
-            cross: self.input.just_pressed(PadButton::Cross),
-            circle: self.input.just_pressed(PadButton::Circle),
-            // The ring's Attack arm reads the option word with the pad.
-            select_attack: self.toggles.select_attack,
-        };
+        // The pad word of a dispatched pass: a press parked while the
+        // prompt's glide was landing stands in for a tick with none.
+        let mut ev: BattleCommandInput = self.take_command_pad_buffer();
         // The ring's two status refusals (`ring_arm_refused`): a press on
         // a refused arm is dropped with the buzz cue, and the ring stays up.
         if let CommandPhase::Menu { .. } = session.phase {
@@ -137,6 +132,13 @@ impl World {
         {
             session.phase = CommandPhase::CommitConfirm { cursor: 0 };
         }
+        // `Begin` onto the ring is sub-draw step 1 (`li a0,0x1` /
+        // `jal 0x801D388C` at `0x801D109C`): its records spawn at seat A
+        // and glide in, and the ring reads no pad until they land.
+        // REF: FUN_801D0748 (state 0x1E confirm arm)
+        if was_round_prompt && matches!(session.phase, CommandPhase::Menu { .. }) {
+            self.start_ring_open_glide();
+        }
         // Target-cursor tint: retail stamps the four monster slots bright /
         // dimmed while the cursor is walking them and clears the tint the
         // moment it closes.
@@ -166,7 +168,7 @@ impl World {
         if self.battle.tutorial.is_some()
             && let Some(res) = resolution
         {
-            use crate::battle_flow::BattleFlowState as Flow;
+            use legaia_engine_menus::battle_flow::BattleFlowState as Flow;
             let rejected = match res {
                 // Attack is the only command that reaches Confirmed with a
                 // target in the engine; it commits category 3.

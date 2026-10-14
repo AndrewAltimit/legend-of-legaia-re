@@ -49,6 +49,11 @@ code spans, since rustdoc cannot resolve a link into a dependent crate.
   the title; see
   [`docs/subsystems/asset-loader.md`](../../docs/subsystems/asset-loader.md))
   and `scene_name_sync` (the name-based scene-change packet).
+- **SCUS leaf kernels** - `scus_leaf_kernels` (the small `SCUS_942.54`
+  setters and seeders the overlays call: the SFX-cue delay set, the timed
+  sound-source arm, the sound-stream request pair, the scene control block's
+  reset values, the boot offset table, the identity index-list init and the
+  dialog line count). The reset's body over a `World` is in `engine-core`.
 - **RAM + frame census** - `ram_map` (the registry of well-known PSX RAM
   cells the cheat applier targets) and `draw_census` (a per-draw census of a
   host's frame keyed the way a retail display list is). The codified

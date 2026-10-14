@@ -123,6 +123,9 @@ A milestone may also name `via` scenes: story waypoints the anchors show the ret
 | Zora Castle | `nilboa` (its own start scene), then `deene` and `son` | Koru's fight thaws the overworld's way south ([route notes](#route-notes)). |
 | Noaru Valley | `chitei2` (its own start scene), then `concend`, `jou` and `retockin` | `chitei2`'s chain ends on the `0x4C8` that opens the `map03` portal to `concend`; the way back from Drake was by land and cart, not the Uru Mais warp. |
 | Sol Tower | `dohaty` (its own start scene) | Its P2[13] sets the `0x1D4` every `station` placement, the ticket seller among them, waits on. |
+| Zeto's dungeon | `vozz` (its own start scene) | A run that walks in from Drake arrives at `vozz`'s east mouth and can walk straight back out to `map01`, on the side `garmel`'s door is not; the way on is the Genesis Tree beat (`vozz` P1[7]), whose flight lands by `bylon`. |
+| Sky Gardens | `garmel` (its own start scene) | `garmel`'s transport pads join the Songi band to the `map01` door, so the cheapest route leaves the dungeon; the story's way out is the Zeto fight (`garmel` P2[12], `0x198`). |
+| Ratayu | `retona` (its own start scene) | A run that arrives at Mt. Letona's trailhead has reached the `mt_letona` milestone on its first step and would turn round; the anchor gained the summit chain (`0x354`..`0x357`, `0x367`). |
 | Dohati Castle | `retock` (its own start scene), then `jagaroom` twice | Ratayu's west gate (`retock` P2[27]) turns the party back until `0x33E` is set. `jagaroom`'s entry script raises it only once Eliza's scene (`retock` P2[33], `0x33C`), the talk `jagaroom` P1[8] (`0x351`), the door cutscene `jagaroom` P2[8] (`0x33B`) and the return `jagaroom` P2[9] (`0x34F`) have played in that order. |
 
 A waypoint whose own arrival script carries the party on counts as visited: `concend`'s P2[0] is its beat, and it ends in the hop to `town0d`. Part A checks every waypoint is a disc scene.
@@ -200,30 +203,132 @@ continuous run is the only pass in which those writes are load-bearing:
 - **Growth.** Levels, gold and the bag are whatever the run earned. The
   seeded passes flee every random encounter, which costs them nothing; a
   run that does the same reaches its first boss at level 1.
+- **The shop screen.** No seeded pass talks to a merchant. A hand that buys
+  drives the merchant's op `0x49` through the talk that reaches it, the buy
+  list, the quantity stepper and the equipment recipient picker, and comes
+  back to the same counter later. The picker's rows are the present party
+  in party-list order (`FUN_801DB380`), and the talk parks on the shop op
+  until the screen closes, then resumes past it.
+- **Captured Seru.** A party that fights learns Seru magic and casts it, in
+  rounds where another member's strike may land first: a cast queued at a
+  monster that has since died goes through the turn picker's dead-target
+  redirect (`FUN_801DB124`'s Magic arm) like a strike does.
 
-So the continuous hand differs from the pad tier's in two ways, both things
-a player does and both off in the segmented passes:
+### How the continuous hand plays
 
-- It **takes the random encounters it expects to win.** At each round
-  prompt it prices the fight - what the foes still hold, times what the
-  run's fights have cost so far in party HP per foe HP, times `(n + 1) / 2`
-  for a group of `n` - and fights while that is under three fifths of what
-  the party has left. The exchange rate is learned across the whole run, so
-  the hand takes on larger groups as the party levels and gears up, and a
-  fight that turns goes back to Run on the next prompt.
-- It **wears what it picks up**: before each stretch, Start, Equip, each
-  member, the Best Equipment row.
+The continuous hand is the pad tier's hand plus what a player who means to
+finish the game does between fights. Everything below is off in the
+segmented passes, which play exactly as the sections further down describe.
 
-It still does not shop, and it still takes the cheapest route between two
-milestones, with the beats pass only where a door refuses or a reach flag
-is unset. That second limit decides where it stops. A `scene` milestone is
-reached on arrival, so the hand walks on past what retail did there: Noa's
-stretch begins in `cave01` beside the way out to `map01`, and the hand
-leaves by it, without the staged talks with Terra (`cave01` P1[2], the
-`0x158`..`0x15E` chain every later anchor carries, whose late stages run the
-`4C 82` restore), the cave's fixed fights (P1[3..7]) or its item pickups
-(P1[9..12]). She then climbs `rikuroa` alone at level 1 with an empty bag,
-where the retail anchor holds her at level 6.
+**On arrival in a field scene**, before it heads for the next door, it runs
+one upkeep pass, in this order:
+
+1. **Shops.** It walks to each placed NPC whose record (or a record it
+   spawns) carries a priced stock list (op `0x49` sub-0) and talks. The
+   ladder plays the host's part for the screen: it opens the staged shop in
+   a menu runtime of its own (`MenuRuntime::open_field_overlay_requests`),
+   steps it on pad edges with the field frozen
+   (`MenuRuntime::step_field_session`), and lets the merchant's record
+   resume once the screen has closed. It buys three healing items first,
+   then the affordable piece of equipment that improves a present member's
+   slot the most (through the recipient picker, which equips it on the
+   spot), then healing items up to fifteen for each present member. At a
+   counter that sells no healing item, a bag short of its three keeps 300
+   gold back for the counter that does. A merchant is visited again only
+   with a different purse or bag, or once a counter the story had closed
+   has opened ([below](#a-counter-the-story-has-closed)).
+2. **Equipment.** Start, Equip, each member, the Best Equipment row.
+3. **Rest.** Under four fifths of its HP in a scene that rolls no
+   encounters, it takes the scene's rest: a bed's walk-on band, or a
+   keeper whose record runs the `4C 82` restore. A keeper's offer is a
+   picker, answered with the option whose branch reaches the restore
+   soonest. Where encounters roll, only a rest within 32 tiles is worth the
+   walk, and only to a party under half.
+4. **The scene's story.** It plays the beats pass
+   ([below](#the-beats-pass)) without waiting for a door to refuse, for up
+   to twelve rounds while a round still gains a flag (a staged talk plays
+   one stage a contact: `cave01` P1[2], Terra, raises `0x158`..`0x15E` one
+   talk at a time). Outside the milestone's own scene this pass walks only
+   the bands that carry the story - a record that raises a still-clear flag
+   the anchors ahead carry and that nothing in the scene lowers again. A
+   room marker is raised on the way in and cleared on the way out, and
+   crossing a dungeon for one costs fights and buys nothing.
+   The extra rounds past the segmented pass's three go on only while a
+   round raises a flag the pass has not seen up before: a room marker
+   toggles with every walk across the scene (`bylon`'s `0x528` / `0x529`),
+   and a round that only moved those gained nothing.
+5. **Training.** While a present member is more than a level short of the
+   target, and the scene has a rest, it trains from that bed: out to where
+   the encounters roll (the scene itself when its rest is close by, else
+   the next scene of the route), walking legs and taking the fights it
+   prices as winnable until a member is under 55%, then back to the bed. It
+   spends nothing from the bag on those legs. When the levels are there it
+   shops and rests once more and moves on. A walk that stalls ends the
+   training, not the stretch, and an outing leg that does not arrive sends
+   the next one somewhere else.
+
+A talk or a stay that carries the party out of the scene (`dolk2`'s inn
+plays Noa's dream and brings it back) leaves the rest of the pass for the
+return: the scene's story and its training still follow.
+
+The **level target** is the anchors' own curve: each character's level in
+the anchor five milestones ahead, read only as far as every later anchor
+agrees with it (several chapter-1 anchors are other sessions), and leaving
+out the anchors outside the order check. Five ahead, because a party is
+trained where the rests are, not inside the dungeon an anchor was saved in.
+
+**Which beats it plays** is still the next anchor's flags. One exception:
+standing early in the scene of the milestone after next, it plays toward
+that milestone's anchor as well. Noa's stretch begins in `cave01` during the
+stretch that ends at `ravine`, whose anchor is another session's and
+carries none of the cave's flags.
+
+**In a fight** it takes the random encounters it expects to win. At each
+round prompt it prices the fight - what the foes still hold, times what the
+run's fights have cost so far in party HP per foe HP, times `(n + 1) / 2`
+for a group of `n` - and fights while that is under three fifths of what
+the party has left. The exchange rate is learned across the whole run, so
+the hand takes on larger groups as the party levels and gears up, and a
+fight that turns goes back to Run on the next prompt.
+
+**Its MP is for the fights it cannot run from.** In a random encounter a
+member casts only a spell that leaves it half its MP; a fight that forbids
+running is cast at freely.
+
+**Its bag is for the fights.** On the road a party of two or more spends a
+restorative only under 45%, a lone member under 65%; it does not open the
+menu on an empty bag. Before a staged fight it wears what the last chest
+held, takes a rest that is close by, and opens the bag only under three
+fifths.
+
+What it still does not do: sell, use magic outside battle, or leave the
+cheapest route for a chest that sets no flag an anchor carries.
+
+### A counter the story has closed
+
+A merchant's talk can run and sell nothing. `dolk2`'s Arms Dealer (P1[11])
+and Tool Dealer (P1[12]) each test `0x27D` ahead of their shop op and, while
+it is up, call out their sale and loop back. The flag is the festival's:
+the market's walk-on band P2[11] raises it (with its own latch `0x27C`) the
+first time the party crosses `(69..71, 94)` after Caruban, which is on the
+way to both counters. The keepers P1[13] and P1[46] test it too. Three records
+lower it again: P2[14], the last stage of Noa's talk ladder (P1[2] raises
+`0x2FE`, then `0x2FF`, then spawns it), and P2[16] / P2[15], which the gate
+bands P2[0] / P2[1] spawn in place of their scene change while it is up.
+
+So when a talk opens no shop screen, the hand reads the merchant's record
+for a system flag it tests that is up and that some record of the scene
+lowers, and plays what lowers it: first the NPC whose record, or a record
+it spawns, does (one stage a contact, up to six), then a walk-on band whose
+record does. It then goes back to the counters. A counter still closed
+after that is remembered with the flags it was closed on, and the hand
+looks in again before it leaves the scene once one of them has come down.
+
+### Budget
+
+A stretch has the pad segment's walking budget, and four times its battle
+allowance: this hand takes the fights it can win, so a stretch's battles
+run long past the fleeing hand's.
 
 ### The carried-state diff
 
@@ -244,6 +349,28 @@ not. It is the instrument that tells an engine defect from a weak party:
 Chapter-1 anchors come from several sessions, some with cheat-seeded
 parties (three members before the story joins them, a full bag), so a line
 of the retail side is evidence only where the next anchor agrees with it.
+
+### A later start
+
+`LEGAIA_FGL_CONTINUOUS_FROM` seeds the run once from a later milestone's
+anchor. Its first stretch is the seeded pad pass played by the continuous
+hand; every stretch after it starts where the engine's own run arrived,
+which is the scene's door rather than the spot the retail save was taken
+at. A stall on a second stretch is therefore read against the anchor's
+position before its flags:
+
+| The stall shows | Reading |
+|---|---|
+| The milestone was reached in a second or two and the next hop has no path | A `scene` milestone reached on arrival: the stretch's story lies deeper in the scene and the cheapest route walks back out. The start scene becomes a waypoint of the next milestone. |
+| A reach band or a door a walk component short, in a dungeon the seeded segment starts inside | The way through is a link the planner does not model (a pad, a ride, a switch). |
+| `party wiped` on a boss the seeded segment beats | The party the run carried in: levels, MP spent on the way, what it wears. |
+| `battle unresolved` with no `[commit]` and no `[hit]` to the end | The engine parked: read the action state and the last commits. |
+
+Only the last is an engine defect on its face. The flags a run holds that
+its anchor lacks are mostly positional - the entry scripts' zone and camera
+bands (`garmel` P1[0] keeps `0x527`..`0x52E` and `0x19D`..`0x1A5` for
+where the player stands) - and `LEGAIA_FGL_SITES` names the record behind
+any that is not.
 
 [`scripts/ci/play-depth.py`](../../scripts/ci/play-depth.py) prints this
 figure beside the retail-compare image floor, from the committed baselines.
@@ -267,6 +394,7 @@ cargo test -p legaia-engine-shell --profile release-test \
 | `LEGAIA_FGL_NO_PAD=1` | Skips the pad tier. |
 | `LEGAIA_FGL_RNG_SEED=<u32>` | Re-seeds the world rand stream once a pad segment is seeded, dealing it another hand. |
 | `LEGAIA_FGL_SEATED_RNG_SEED=<u32>` | The same for the seated pass - how a seated boss fight is checked across streams. |
+| `LEGAIA_FGL_CONTINUOUS_FROM=<id>` | Starts part C at that milestone, seeded once from its retail anchor and never again, and does not assert the baseline. A probe for a later stretch's carried state; the party it sets out with is retail's, so it is not the continuous score. |
 
 The ratchet asserts every per-segment tier, both headline counts and the tier sum `>=` the baseline. Raise the baseline in a reviewed edit from the block the run prints; never lower it to make a red run green. The trace and debug switches are under [Diagnostics](#diagnostics).
 
@@ -582,7 +710,10 @@ map as its street:
   button-gated contact) whose resumed record reaches `31 00` opens the same
   way on the action button, which the follower taps when held against it:
   `chitei2` P0[2], the gate at (41, 122) in front of the kind-0 teleport at
-  (41, 124) into the Jette pocket. The touch is read from the record's resume point (past its first
+  (41, 124) into the Jette pocket. A prop whose resumed record parks itself
+  on the hide tile (`23 7F 7F`) opens the same way: `vozz` P0[1], the
+  thickets across East Voz's paths, once `0x079` is up - the flag P1[1]
+  raises with the item that cuts them. The touch is read from the record's resume point (past its first
   `21`) with story-flag tests followed against the live flags; a door whose
   opening sits behind a box test of the player opens only from a cell inside
   that box (`ropeway` P0[2], the Octam station door, opens for a player on
@@ -612,7 +743,13 @@ map as its street:
   all land on one tile and which leaves the scene by neither `0x3F` nor a
   movie - is an edge the same way. Rogue Tower's floors join only through
   these: `rugi` P2[0..37] fade out, test `0x462`, and snap the party to one
-  landing on either branch.
+  landing on either branch. A pad with no fork that seats the player
+  somewhere else on the way lands where its last snap does, provided every
+  story flag it raises it lowers again: `garmel`'s transport pads P2[0] /
+  P2[1] / P2[8] / P2[9] show the tank room at (8, 117) and then seat the
+  party on the far pad. A record that leaves a flag up is a story beat, not
+  a way across (`rayman` P2[19] seats the player three times and raises
+  `0x1FC`).
 - a **transporter** - the same kind of record whose player moves are walk
   legs (op `0x47` on the `0xF8` channel, `C7 F8 x z mode`) - is an edge to
   its last leg's tile: `deroa`'s shaft platforms (P2[12] / P2[13] / P2[14])
@@ -628,7 +765,7 @@ map as its street:
 - **Cross-axis offset.** The follower leaves a cross-axis offset of a few units alone while the other axis still has ground to cover. Chasing its own overshoot flips the diagonal every frame, and along a terrace edge the side-step toward the drop is a ledge hop (`tunnela`'s corridor at (89, 79) drops the party to (89, 80), a one-way hop it cannot climb back).
 - **A script that fires and changes no flag** more than a couple of dozen times on one walk makes that walk a stall. `retock` P2[26], the Mt. Letona checkpoint, turns the party back every time it is crossed without Lord Saryu's key. The count is per record as well as per park site: `jouinc`'s camera bands P2[3..57], one every three tiles of the way to `jouind`, all park at the same `pc` and op, and are distinct records, not one script firing repeatedly.
 - **A script that carries the walker to a landing it has carried it to before**, leaving the same flags, is a loop after the third time, even when the flags it toggles keep the first count from building. `chitei2`'s transport rides between (98, 102) and (94, 22), each ride flipping the car's flags (met on a walk to P2[9]).
-- **Teleports and notches.** The follower presses a teleport waypoint until the jump lands, and backs out of a diagonal-wall notch where all four lattice steps read blocked.
+- **Teleports and notches.** The follower presses a teleport waypoint until the jump lands, and backs out of a diagonal-wall notch where all four lattice steps read blocked. The lattice cannot say which neighbouring cell the free movement reaches, so each second the walk stays wedged it heads for the next open cell in turn: on `retona`'s stair landing at (16, 99) the nearest one lies west, and the slide toward it carries the player straight back.
 - **The action button.** Held against something for a second, the follower tries the action button. In a field the tap waits for a frame the player did not move: the stall counter also counts a run step that stays inside one cell, and a tap there would stand the player still one frame in every few.
 - **A script that runs on the way and changes nothing** - no flag, no cell, no scene (an examined prop with nothing to say) - leaves the route as it was rather than re-planning the walk component.
 - **Walk-on bands.** Walks avoid the live walk-on bands unless one is the only way through. A band whose record's story gates shut it is walkable, and so is an inert band that only sets the camera or the view, such as `retona` P2[0] across the summit's passes. A band that turns the party back (`retona` P2[24], until `0x367`) stays avoided.
@@ -671,7 +808,8 @@ The pad hand's beats are the seated tier's, played as a player plays them:
   a round before the party acts, and a three-monster group can catch Run
   several rounds running), the hand heals through the pause menu:
   Start, Items, Use, the first HP restorative, the weakest member, Circle
-  back out;
+  back out. The list's hand walks every bag row, usable in the field or
+  not, so the hand steps down to the restorative's row;
 - still below half HP after that, in a scene that rolls encounters, with an
   Incense (`0x8A`) in the bag and its window `_DAT_8007B600` run out, the
   hand burns one: Start, Items, Use, the Incense row, Yes. The region roll
@@ -917,6 +1055,7 @@ clips and matches the same arts a windowed one does. Beyond that:
 | `LEGAIA_FGL_TRACE=1` | One line per played beat: what ran, how it ended and the flags it set. As `[hop]`, the hop failure that sent the pass to the beats, which the final stall would otherwise hide. A `[battle]` line at each fight's start and end (formation, both sides' HP, the action-SM state). Each pad segment's frames and planner cost. On success, the seated tier's trail, so a pad stall can be read against the route the seated tier took. |
 | `LEGAIA_FGL_TRACE_BATTLE=1` | A `[battle]` line every 1000 ticks. |
 | `LEGAIA_FGL_TRACE_HITS=1` | Each HP change with its actor and action state. |
+| `LEGAIA_FGL_HEAL_DEBUG=1` | Each pad edge of the field heal with the Items screen's focus, list rows, usable rows and target rows. |
 | `LEGAIA_FGL_WALK_DEBUG` | A stalled walk's wall map, the scene's teleports, tile triggers and door colliders. |
 | `LEGAIA_FGL_PLAN_DEBUG` | Each object-door edge the planner adds. |
 | `LEGAIA_FGL_COMP_DEBUG` | The tile map of every walk component a plan failed inside (`o` reached, `A` avoided door tile, `b` actor box, `G` the goal), with the overworld's installed entities, the live NPCs, the solid props with their bind records, and the self-opening doors. Beside it, a sub-cell flood of the wall bits alone. |
@@ -925,6 +1064,7 @@ clips and matches the same arts a windowed one does. Beyond that:
 | `LEGAIA_FGL_PROBE_AT=<scene>:<x>,<z>;U;R;...` | Seats the player at the start of the first pad hop in that scene and holds each listed direction for 40 frames, printing where it went. |
 | `LEGAIA_FGL_EDGES=<scene>,...` | Part A: each named scene's out- and in-edges (`*` marks a scripted one). |
 | `LEGAIA_FGL_GAINED=<id>,...` | Part A: every flag each named milestone's anchor gained or lost over its predecessor, with its disc SET sites - the evidence a waypoint is chosen from. |
+| `LEGAIA_FGL_SITES=0x19F,...` | Part A: every disc site that sets or clears each named flag - how a flag in the carried-state diff is traced to the record that wrote it. |
 
 Two reading notes. When the `COMP_DEBUG` wall-bit flood stops short of the goal too, the gap is a join the walls do not show - a script or a story gate - not the planner. And `PROBE_AT` is the way to ask the engine, rather than the lattice, whether a spot can be walked off.
 
@@ -934,10 +1074,11 @@ Two reading notes. When the `COMP_DEBUG` wall-bit flood stops short of the goal 
   scene graph, not locomotion; the pad tier is the locomotion claim.
 - The seated tier talks only to NPCs whose record reaches a flag the next
   anchor carries or a destination the route needs, and picks conversation
-  options by rotation, not by reading them. Neither tier buys, and only the
-  pad tier opens the pause menu (to heal, or to equip a boss's elemental
-  guard on a retry); a beat that waits on a purchase or an equip reads as a
-  stall at that beat.
+  options by rotation, not by reading them. Neither segmented tier buys,
+  and only the pad tier opens the pause menu (to heal, or to equip a boss's
+  elemental guard on a retry); a beat that waits on a purchase or an equip
+  reads as a stall at that beat. The continuous run's hand does buy
+  ([above](#how-the-continuous-hand-plays)).
 - The fighter guards only a foe that hits hard every other round, never
   targets a weakness, changes equipment only to guard a boss's element after
   losing to it, and flees a random encounter. A fight that needs anything
@@ -954,10 +1095,10 @@ Two reading notes. When the `COMP_DEBUG` wall-bit flood stops short of the goal 
   of those flags but the last is in the next anchor, so a flag-reach test
   alone never picks the controller. A crossing whose beat changed scene lets
   the landing's arrival run before the position is read.
-- The pad hand heals only with items it already carries and with a free
-  or affordable rest in a scene that rolls no encounters, and wards off
-  encounters only with an Incense it carries; it does not buy items or use
-  magic.
+- The segmented pad hand heals only with items it already carries and with
+  a free or affordable rest in a scene that rolls no encounters, and wards
+  off encounters only with an Incense it carries; it does not buy items or
+  use magic.
 - Routes follow `0x3F` names and FMV hand-offs, and prefer walk-on bands. A
   transport an entry script spawns on a story flag (`map01`'s P1[0] spawns
   the P2[31] / P2[32] flights on `0x2C3` / `0x2C5`; `station`'s spawns the

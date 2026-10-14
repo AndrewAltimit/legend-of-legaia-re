@@ -5,7 +5,7 @@
 //!
 //! Usage: sample_floor_ring <scene> <world_x> <world_z> [ring_psx...]
 
-use legaia_engine_core::glb_export::FloorSampler;
+use legaia_engine_export::glb_export::FloorSampler;
 use legaia_engine_scene::scene::{ProtIndex, Scene};
 
 fn main() {

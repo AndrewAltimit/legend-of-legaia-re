@@ -129,6 +129,124 @@ fn round_prompt_is_panels_only() {
     assert_eq!(chips.chips.len(), 2);
 }
 
+/// Sub-draw step 0 spawns its five records at seat A: the chips on the
+/// cluster centre, the panels under the screen, and no D-pad glyph until the
+/// sixteen-vsync glide lands.
+#[test]
+fn the_round_prompt_opens_on_a_glide_from_seat_a() {
+    use legaia_engine_menus::battle_input::BattleCommandSession;
+    let mut w = battle_world(1);
+    w.battle.command = Some(BattleCommandSession::new_round_open(0, 0, false));
+    // No glide recorded: everything at rest.
+    assert_eq!(battle_round_prompt_panels_dy(&w), 0);
+    assert_eq!(battle_chip_offsets(&w), [(0, 0); 4]);
+    assert!(battle_chip_dpad_visible(&w));
+
+    w.start_round_prompt_glide();
+    // Records 0 / 3: `x = 142` to `104` / `180`. Records 6 / 0x4E / 0x4F:
+    // `y = 236` to `170`.
+    assert_eq!(battle_chip_offsets(&w)[..2], [(38, 0), (-38, 0)]);
+    assert_eq!(battle_round_prompt_panels_dy(&w), 66);
+    assert!(!battle_chip_dpad_visible(&w));
+
+    // Half way: `FUN_801D9BBC`'s linear step.
+    for _ in 0..8 {
+        w.step_action_plate_glides();
+    }
+    assert_eq!(battle_chip_offsets(&w)[..2], [(19, 0), (-19, 0)]);
+    assert_eq!(battle_round_prompt_panels_dy(&w), 33);
+    assert!(!battle_chip_dpad_visible(&w));
+
+    for _ in 0..8 {
+        w.step_action_plate_glides();
+    }
+    assert_eq!(battle_chip_offsets(&w), [(0, 0); 4]);
+    assert_eq!(battle_round_prompt_panels_dy(&w), 0);
+    // The landing pass still leaves ahead of the state's arm (the stepper
+    // returns the record's flag); the glyph draws from the pass after.
+    assert!(!battle_chip_dpad_visible(&w));
+    w.step_action_plate_glides();
+    assert!(battle_chip_dpad_visible(&w));
+
+    // The capture seat: a retail record landing on a chip's or a panel's
+    // seat places the glide; the combo cluster's `(168, 168)` is not one.
+    w.start_round_prompt_glide();
+    assert!(!w.seat_battle_hud_glide([168, 168], 4));
+    assert!(w.seat_battle_hud_glide([114, 168], 12));
+    assert_eq!(battle_round_prompt_panels_dy(&w), 66 - 66 * 12 / 16);
+    assert!(w.seat_battle_hud_glide([104, 86], 16));
+    assert!(battle_chip_dpad_visible(&w));
+}
+
+/// Sub-draw step 1 spawns the ring's records at seat A: the four arms `168`
+/// to the right, the `Begin` tab on the prompt's `Begin` seat, the plaque
+/// above the top edge, the bar under the bottom one, the AP plate off the
+/// right edge - and sinks the roster panels from their rest row.
+#[test]
+fn the_ring_opens_on_a_glide_from_seat_a() {
+    use legaia_engine_menus::battle_input::BattleCommandSession;
+    let mut w = battle_world(1);
+    w.battle.command = Some(BattleCommandSession::new(0, 0));
+    assert_eq!(battle_command_surface(&w), Some(CommandSurface::Ring));
+    // No glide recorded: everything at rest, the panels parked.
+    assert_eq!(battle_chip_offsets(&w), [(0, 0); 4]);
+    assert_eq!(battle_begin_tab_offset(&w), (0, 0));
+    assert_eq!(battle_ring_ap_plate_dx(&w), 0);
+    assert!(!battle_panels_visible(&w));
+    assert!(battle_chip_dpad_visible(&w));
+
+    w.start_ring_open_glide();
+    // Records 9 / 0x0A / 8 / 0x0B: `x = seat + 168`. Record 1: `(104, 88)`
+    // to `(16, 14)`. Record 0x1A: `y = -24` to `14`. Record 7: `236` to
+    // `194`. Record 0x52: `x = 328` to `208`. Records 6 / 0x4E / 0x4F on
+    // mode 1: `170` back to `236`.
+    assert_eq!(battle_chip_offsets(&w), [(168, 0); 4]);
+    assert_eq!(battle_begin_tab_offset(&w), (88, 74));
+    assert_eq!(battle_action_plaque_dy(&w), -38);
+    assert_eq!(battle_readout_bar_dy(&w), 42);
+    assert_eq!(battle_ring_ap_plate_dx(&w), 120);
+    assert!(
+        battle_panels_visible(&w),
+        "the panels are on their way down"
+    );
+    assert_eq!(battle_round_prompt_panels_dy(&w), 0);
+    assert!(!battle_chip_dpad_visible(&w));
+
+    // Half way: `FUN_801D9BBC`'s linear step.
+    for _ in 0..8 {
+        w.step_action_plate_glides();
+    }
+    assert_eq!(battle_chip_offsets(&w), [(84, 0); 4]);
+    assert_eq!(battle_begin_tab_offset(&w), (44, 37));
+    assert_eq!(battle_action_plaque_dy(&w), -19);
+    assert_eq!(battle_readout_bar_dy(&w), 21);
+    assert_eq!(battle_ring_ap_plate_dx(&w), 60);
+    assert_eq!(battle_round_prompt_panels_dy(&w), 33);
+
+    for _ in 0..8 {
+        w.step_action_plate_glides();
+    }
+    assert_eq!(battle_chip_offsets(&w), [(0, 0); 4]);
+    assert_eq!(battle_begin_tab_offset(&w), (0, 0));
+    assert_eq!(battle_action_plaque_dy(&w), 0);
+    assert_eq!(battle_readout_bar_dy(&w), 0);
+    assert_eq!(battle_ring_ap_plate_dx(&w), 0);
+    assert!(!battle_panels_visible(&w), "parked under the screen");
+    // The landing pass leaves ahead of the ring's arm: no glyph yet.
+    assert!(!battle_chip_dpad_visible(&w));
+    w.step_action_plate_glides();
+    assert!(battle_chip_dpad_visible(&w));
+
+    // The capture seat: a retail record landing on an arm's, the plaque's
+    // or the plate's seat places the glide.
+    w.start_ring_open_glide();
+    assert!(w.seat_battle_hud_glide([204, 32], 4));
+    assert_eq!(battle_chip_offsets(&w)[0], (168 - 168 * 4 / 16, 0));
+    assert!(w.seat_battle_hud_glide([208, 172], 16));
+    assert_eq!(battle_ring_ap_plate_dx(&w), 0);
+    assert!(battle_chip_dpad_visible(&w));
+}
+
 /// A no-escape fight still labels the prompt's right chip `Run`: the
 /// flow SM draws the static SCUS word and never reads `ctx[+0x287]`.
 #[test]
@@ -444,6 +562,44 @@ fn a_party_attack_on_a_monster_shows_plaque_target_plaque_and_no_readout() {
     assert_eq!(battle_ring_ap_plate_value(&w), None);
     // No art has committed yet: a plain swing carries no move name.
     assert_eq!(battle_move_name(&w), None);
+}
+
+/// The Done band's teardown wipes the handle list and re-spawns the target
+/// plaque on its closing glide: it slides from its row back under the
+/// screen over sixteen vsyncs and is then gone until the next action's seed.
+#[test]
+fn the_done_teardown_slides_the_target_plaque_out_and_drops_it() {
+    use legaia_engine_battle_vm::battle_action::ActionCategory;
+    use legaia_engine_battle_vm::battle_cue_group::{HUD_CASTER_BANNER, HUD_TARGET_BANNER};
+    let mut w = battle_world(1);
+    arm_action(&mut w, 0, ActionCategory::Attack.as_byte(), 3);
+    w.note_action_plate_raise(HUD_CASTER_BANNER, 0);
+    w.note_action_plate_raise(HUD_TARGET_BANNER, 0);
+    w.land_battle_hud_glides();
+    assert!(battle_target_plaque(&w).is_some());
+    assert_eq!(battle_target_plaque_dy(&w), 0);
+
+    // The teardown: the plaque's unload (the wipe), then the sweep's
+    // `FUN_801D8DE8(0x51, 1)`.
+    w.note_action_plate_raise(HUD_CASTER_BANNER, 1);
+    assert!(battle_target_plaque(&w).is_none(), "wiped with the list");
+    w.note_action_plate_raise(HUD_TARGET_BANNER, 1);
+    assert!(battle_target_plaque(&w).is_some(), "re-spawned, closing");
+    assert_eq!(battle_target_plaque_dy(&w), 0);
+    for _ in 0..8 {
+        w.step_action_plate_glides();
+    }
+    // Record 0x51: `y = 194` back to `236`.
+    assert_eq!(battle_target_plaque_dy(&w), 21);
+    for _ in 0..8 {
+        w.step_action_plate_glides();
+    }
+    assert!(battle_target_plaque(&w).is_none(), "landed off screen");
+
+    // The next action's seed raises it afresh.
+    w.note_action_plate_raise(HUD_CASTER_BANNER, 0);
+    w.note_action_plate_raise(HUD_TARGET_BANNER, 0);
+    assert!(battle_target_plaque(&w).is_some());
 }
 
 #[test]

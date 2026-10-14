@@ -147,8 +147,8 @@ impl World {
     /// PORT: FUN_801D0748 (state `0x14`, `0x801D0EC4..0x801D0F0C`; the `0x0B`
     /// back-attack arm at `0x801D0E68..0x801D0EB0`)
     pub(in crate::world) fn begin_battle_round(&mut self) {
-        use crate::battle_flow::BattleFlowState;
         use crate::battle_round::RoundPhase;
+        use legaia_engine_menus::battle_flow::BattleFlowState;
         // The side-band holds the round start back in two fights. The
         // sparring fight's opening caption: retail's side-band tick sees
         // `0x14` stored, raises the caption and sets `ctx[+0x6B0]`, and
@@ -233,9 +233,9 @@ impl World {
     ///
     /// PORT: FUN_801D0748 (state `0xFE`, `0x801D31E8..0x801D3224`)
     pub(in crate::world) fn begin_round_execution(&mut self) {
-        use crate::battle_flow::BattleFlowState;
         use crate::battle_round::RoundPhase;
         use legaia_engine_battle_vm::battle_action::ActionState;
+        use legaia_engine_menus::battle_flow::BattleFlowState;
         self.battle.round_flow.phase = RoundPhase::Execute;
         self.battle.round_flow.flat_walk_last = None;
         self.battle.commit_log_launch = None;
@@ -318,7 +318,7 @@ impl World {
         self.battle.arts_menu = None;
         self.battle.arts_input = None;
         self.battle.round_flow.phase = RoundPhase::Execute;
-        self.set_battle_flow(crate::battle_flow::BattleFlowState::Idle);
+        self.set_battle_flow(legaia_engine_menus::battle_flow::BattleFlowState::Idle);
         // The capture's MP is already charged (the Magic band debits at
         // `0x28`, before the summon band); credit the catalog price back so
         // the band's own debit lands on the captured figure.
@@ -402,7 +402,7 @@ impl World {
     ///
     /// REF: FUN_801D0748 (state `0x6E`, `0x801D3024..0x801D31E4`)
     pub(in crate::world) fn open_commit_confirm(&mut self, actor: u8) {
-        use crate::battle_flow::BattleFlowState as Flow;
+        use legaia_engine_menus::battle_flow::BattleFlowState as Flow;
         use legaia_engine_menus::battle_input::BattleCommandSession;
         if !self.battle.player_driven {
             self.begin_round_execution();
@@ -474,8 +474,14 @@ impl World {
     ///
     /// The engine seats its first monster at `party_count` rather than at
     /// retail's fixed slot 3, so the kernel runs in retail's slot space and
-    /// the result maps back. Magic and item commands carry their own target
-    /// resolution at dispatch and are left alone here.
+    /// the result maps back.
+    ///
+    /// A single-target **cast** is asked too: a Seru summon walks its
+    /// creature onto the victim and its module holds on the same range poll
+    /// (PROT 0903's arm 11), so a cast left on a corpse holds state `0x36`
+    /// for good. The kernel's Item arm covers only ids `0xFE` / `0x98`,
+    /// which the engine folds on its own target list at dispatch; an item
+    /// command is not asked here.
     ///
     /// REF: FUN_801DABA4 (party arm, `0x801DAEC4..0x801DAF1C`)
     /// REF: FUN_801DB124 (`vm::battle_action::redirect_dead_target`)
@@ -506,6 +512,43 @@ impl World {
                 };
                 Pending::Art {
                     sequence,
+                    target_row,
+                    target_slot,
+                }
+            }
+            // A single-target cast (category `2`, the spell id in `+0x1DF`).
+            // The call at `0x801DAF14` has no category gate in front of it,
+            // and the kernel's Magic arm re-rolls when the spell-table class
+            // byte is `>= 0xA` or the dead target is an enemy slot
+            // (`0x801DB198..0x801DB1D8`). A group cast carries the side code
+            // `8` / `9` in `+0x1DD`, which fails the kernel's `< 8` test, so
+            // only the single shapes are asked.
+            Pending::Spell {
+                spell_id,
+                target_row,
+                target_slot,
+            } => {
+                use legaia_engine_battle::spells::SpellTarget;
+                use legaia_engine_battle::target_picker::CursorRow;
+                let single = self.tables.spell_catalog.get(spell_id).is_some_and(|d| {
+                    matches!(
+                        d.target,
+                        SpellTarget::OneEnemy | SpellTarget::OneAlly | SpellTarget::SelfOnly
+                    )
+                });
+                let party_count = self.party.party_count.clamp(1, 3);
+                let target_slot = match (single, target_row) {
+                    (false, _) => target_slot,
+                    (true, CursorRow::Enemy) => {
+                        self.redirect_dead_battle_target(party_count + target_slot, 2, spell_id)
+                            - party_count
+                    }
+                    (true, CursorRow::Ally) => {
+                        self.redirect_dead_battle_target(target_slot, 2, spell_id)
+                    }
+                };
+                Pending::Spell {
+                    spell_id,
                     target_row,
                     target_slot,
                 }
@@ -596,7 +639,7 @@ impl World {
     /// Retail's `0x14` arm sets `ctx[+0x06] = 0x1E` before any member picks,
     /// and the ring (`0x28`) is only reached through it - so the prompt is a
     /// property of the **round**, not of the turn. The port reads that off
-    /// [`crate::battle_flow::BattleFlowState::TurnPrompt`]: the round boundary
+    /// [`legaia_engine_menus::battle_flow::BattleFlowState::TurnPrompt`]: the round boundary
     /// parks the flow there and battle entry leaves it at `Idle`, and
     /// [`World::open_battle_command`] now builds the session **already on the
     /// prompt** in both cases. What is left for this pass is the one ordering
@@ -612,7 +655,7 @@ impl World {
     ///
     /// REF: FUN_801D0748 (states 0x14 / 0x1E)
     pub(super) fn arm_round_open_prompt(&mut self) {
-        use crate::battle_flow::BattleFlowState;
+        use legaia_engine_menus::battle_flow::BattleFlowState;
         use legaia_engine_menus::battle_input::CommandPhase;
         if self.battle.flow != BattleFlowState::TurnPrompt {
             return;
@@ -623,6 +666,7 @@ impl World {
         {
             session.no_escape = no_escape;
             session.phase = CommandPhase::RoundPrompt { cursor: 0 };
+            self.start_round_prompt_glide();
         }
     }
 

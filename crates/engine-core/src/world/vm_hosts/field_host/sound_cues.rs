@@ -47,7 +47,7 @@ impl FieldHostImpl<'_> {
             // frame-begin tick (`FUN_800267FC`) counts it down and raises
             // `pending_sound_release` on expiry.
             // PORT: FUN_800267A8 (live wiring; the arm record itself is
-            // `crate::scus_leaf_kernels::TimedSoundArm`)
+            // `legaia_engine_system::scus_leaf_kernels::TimedSoundArm`)
             self.world.arm_sound_release(i32::from(text_id));
         }
         // Free-roam picker staging: drop an ENTRY-WINDOW pause. A scene's
@@ -108,7 +108,7 @@ impl FieldHostImpl<'_> {
         // cue; the pair above is the engine-core mirror the gates read.
         //
         // PORT: FUN_80035BAC (live wiring; the table itself is
-        // `crate::scus_leaf_kernels::SfxCueDelays`)
+        // `legaia_engine_system::scus_leaf_kernels::SfxCueDelays`)
         // REF: FUN_80035B50
         // REF: FUN_800243F0 (the driver that settles the pair)
         let dev_gate = self.world.audio.dual_mode_gate != 0;

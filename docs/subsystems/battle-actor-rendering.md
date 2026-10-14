@@ -288,12 +288,24 @@ The per-actor draw tick `FUN_800480D8` runs `FUN_80049348`, which draws **two gh
 - A party seat copies the committed dynamic slot `+0x1D9` (`0x80047FCC`). A party art materialises at dynamic slot `0x10`, except the `0x1A` / re-staged-`0x10` commits, which land at `0x11`. Party mesh ghosts therefore belong to the **SpecialStarter dash** and to **chained** arts (a re-staged `0x10`); an ordinary art swing leaves the 2D weapon trail instead. Capture `battle_melee_hit_spark` holds Vahn at `+0x1D9 = +0x1FB = 0x11` mid-Somersault with his ghosts drawn, and Gimard at ring id `0x10` with none.
 - A monster seat stamps `record[+0x77] + 0x10`, or `0x11` when the record's `+0x87` solo byte is `1` (`0x80048044..0x80048060`). A monster ghosts only on a clip whose record carries a non-zero `+0x77` or `+0x87 == 1`: the solo / special entries (Tetsu's tag-`0x0F` special carries both; Gobu Gobu has none). No idle entry qualifies, so an idle or walking monster never ghosts. Not "any non-idle clip tag": see [re-do-not-re-walk.md](../reference/re-do-not-re-walk.md#battle--arts--level-up); disc census `crates/engine-battle/tests/battle_afterimage_gate_real.rs`.
 
-**Colour.** Flat additive. The draw wrapper `FUN_80043390` decodes the colour word's mode byte (`0x85`): bit `0x80` → the GP0 ABE bit, low bits → ABR mode 1 (B + F), bit `0x04` → the flat-colour prim bank with the GTE far colour as the RGB. The base colour is per character, from the SCUS word table `0x80076908` (Vahn red `0x60/0x30/0x30`, Noa green, Gala blue; monsters `0x80076914` olive `0x50/0x50/0x30`), stepped down `0x101010` per drawn ghost. The ghost's OT depth is pushed `0x50` buckets deeper than the live body (`FUN_80048A08`, the `+0x10` bit-`0x800000` arms).
+**Colour.** The body's texture modulated by the ghost colour, added over the frame - not a flat fill. The walk changes two words of the render node and calls the ordinary object draw: the colour word `+0x74 = rgb | 0x85000000` (`0x800494A4..0x800494C4`) and the weight `+0x78 = 0x1000` (`0x800493D8`). The draw wrapper `FUN_80043390` decodes the mode byte:
+
+| Bit of `0x85` | Effect | Site |
+|---|---|---|
+| `0x80` | the GP0 ABE bit on every packet | `0x80043510` |
+| `0x01` | ABR mode 1, `B + F` | `0x80043504` |
+| `0x04` | prim bank 2 (`0xA0` into the handler table `0x8007657C`) | `0x800434D8..0x800434E8` |
+
+Bank 2 is the tint bank (bank 1) with two handlers swapped. Kinds `12..=17` share bank 1's entries, and kinds 18 / 19 (the two gouraud-textured extended kinds) take single-colour handlers at `0x800457C4` / `0x80045988`: one DPCS on the prim's colour word, then a `0x24` `POLY_FT3` (`0x800458E0`) or its quad twin. Every textured kind stays textured. With the weight at `0x1000` the DPCS output is the far colour, which the wrapper loads from the colour word's RGB, so the packet colour is the ghost colour and the GPU draws `texel * rgb / 128`.
+
+`battle_melee_hit_spark` shows it: Vahn's two ghosts carry his texture's light and dark (skin reads near `(132, 49, 41)`, the vest near `(66, 8, 8)`), where a flat fill of the second ghost's `0x50/0x20/0x20` would read one colour throughout.
+
+The base colour is per character, from the SCUS word table `0x80076908` (Vahn red `0x60/0x30/0x30`, Noa green, Gala blue; monsters `0x80076914` olive `0x50/0x50/0x30`), stepped down `0x101010` per drawn ghost. The ghost's OT depth is pushed `0x50` buckets deeper than the live body (`FUN_80048A08`, the `+0x10` bit-`0x800000` arms).
 
 **Port.** Kernel `engine-battle::battle_afterimage` (schedule / gate / colour law, file `crates/engine-battle/src/battle_afterimage.rs`), history ring on `Actor::battle_pose_history`, plan API `World::battle_ghost_draws`.
 
-- The native window draws each ghost as a flat-coloured additive posed mesh on the colour pipeline.
-- The browser play page uploads per-actor ghost mesh copies on its flat + additive path and poses them from `play_battle_actor_ghost_pose`.
+- Both hosts draw a ghost through the body's own textured path, as retail does: the body's mesh at the historical pose with ABE and ABR 1 ORed into every prim's TSB (`battle_body_blend::apply_body_blend` with `battle_afterimage::GHOST_ABR`), and the ghost colour staged as a full-weight per-draw cue (`ghost_far_colour`), the port's seat for the DPCS far colour.
+- The native window re-poses and uploads the mesh each frame (`build_battle_ghost_uploads`); the browser play page keeps two per-actor ghost mesh copies and poses them from `play_battle_actor_ghost_pose`.
 - Both hosts' additive passes deliberately pass on **equal** depth (coplanar decals), so each carries retail's deeper-bucket ordering explicitly; otherwise a ghost coincident with the live body would wash the whole mesh additive. The native window scales each ghost uniformly about the eye until it sits past the body (`battle_afterimage::ghost_eye_push_scale` in the redraw pass). The play page draws ghost placements with a strictly-nearer depth test (`strictDepth` → `gl.LESS`). Either way the live body hides the overlap and only the separated trail shows.
 
 ## Tint and blend
@@ -371,7 +383,7 @@ Three different things trail a battle actor. The after-image ghosts above are co
 | Weapon trail | `POLY_G4`, untextured, semi-transparent | committed clip's `+0x77` identity byte | `FUN_8005112C` |
 | Move-FX afterimage | one `POLY_FT4` billboard | streak counter `ctx[+0x6C6] >= 0x281`, party | `FUN_801E1AB0` |
 | Move-FX ribbon | chained `POLY_FT4` strip | counter `< 0x201`, or any value for a monster | `FUN_801E1D98` |
-| Mesh after-image | actor mesh, flat additive | ring id `> 0x10` | `FUN_80049348` |
+| Mesh after-image | actor mesh, textured, additive | ring id `> 0x10` | `FUN_80049348` |
 
 ### Weapon trail builder (`FUN_8005112C` + `FUN_80048310` + `FUN_800485BC`)
 

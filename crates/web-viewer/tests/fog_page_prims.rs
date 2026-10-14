@@ -1,7 +1,7 @@
 //! Disc-gated: the play page composites the field fog sheets, off the same
 //! pool the native window draws.
 //!
-//! The pool (`legaia_engine_core::fog_particles`) is one simulation on one
+//! The pool (`legaia_engine_field::fog_particles`) is one simulation on one
 //! world; this file pins that the page's per-tick screen-prim assembly
 //! (`tick_battle_intro` -> `tick_field_fog_prims`) reaches it: after the
 //! scene's script raises the gate, `play_fog_stats()` reports drawn quads

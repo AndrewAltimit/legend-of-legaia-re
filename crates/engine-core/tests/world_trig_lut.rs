@@ -8,8 +8,8 @@
 //! the cosine view for the Z term (`lw v1,-0x4808(v1)`), both indexed by the
 //! same `& 0xFFF` angle and narrowed with `sra 0xc`.
 
+use legaia_engine_battle_vm::rotation_lut::retail_rotation_lut;
 use legaia_engine_core::world::World;
-use legaia_engine_effects::action_effect_script::retail_rotation_lut;
 
 #[test]
 fn world_new_fills_both_views_of_the_retail_table() {

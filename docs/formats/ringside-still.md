@@ -217,7 +217,7 @@ one of them, and it is this one.
 
 Both play hosts draw it. The pick runs at the port's battle end for a dome
 leg, `World::exit_muscle_dome`, over the fighter's live HP and the lead
-record's `+0x11C` maximum (`legaia_engine_core::muscle_ringside::still_prot_index`,
+record's `+0x11C` maximum (`legaia_engine_minigames::muscle_ringside::still_prot_index`,
 through the loader port's `backread_texture_variant`), and the world keeps the
 answer as `MinigameState::muscle_ringside_still`. When a finished leg raises the
 INTERVAL screen, each host arms a `muscle_ringside::HubBackdrop` - the level
@@ -246,7 +246,7 @@ ordinary PROT 867 record - so a real lead meets a real rung rather than a
 400-HP stand-in.
 
 The first visit runs as retail runs it, on all three hosts. The arms are
-`legaia_engine_core::muscle_ringside::FirstVisitHub` - intro strip, wall
+`legaia_engine_minigames::muscle_ringside::FirstVisitHub` - intro strip, wall
 rising under it, title zoom, course card (`FUN_801D042C`), wall draining, then
 arms `0x14..0x16`, where a first visit's `0x14` raises nothing (it tests the
 latch, `0x801CFEEC`, and passes straight to `0x15`), so the first ROUND card

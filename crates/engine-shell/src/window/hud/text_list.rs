@@ -562,8 +562,14 @@ impl PlayWindowApp {
                     &self.font,
                     &bcu::BattleCommandMenuFrame {
                         chips: &views,
-                        cursor: Some(cursor),
+                        cursor,
                         phase,
+                        offsets: legaia_engine_core::battle_hud::battle_chip_offsets(
+                            &self.session.host.world,
+                        ),
+                        dpad: legaia_engine_core::battle_hud::battle_chip_dpad_visible(
+                            &self.session.host.world,
+                        ),
                     },
                     origin,
                     scale,
@@ -841,8 +847,14 @@ impl PlayWindowApp {
                                 &self.font,
                                 &bcu::BattleCommandMenuFrame {
                                     chips: &views,
-                                    cursor: Some(cursor),
+                                    cursor,
                                     phase,
+                                    offsets: legaia_engine_core::battle_hud::battle_chip_offsets(
+                                        &self.session.host.world,
+                                    ),
+                                    dpad: legaia_engine_core::battle_hud::battle_chip_dpad_visible(
+                                        &self.session.host.world,
+                                    ),
                                 },
                                 origin,
                                 scale,

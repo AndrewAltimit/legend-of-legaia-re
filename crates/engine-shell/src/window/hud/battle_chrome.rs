@@ -100,15 +100,18 @@ impl PlayWindowApp {
                 active_slot: bh::battle_readout_bar_slot(w_ref),
                 panels_parked: !bh::battle_panels_visible(w_ref),
                 begin_tab: bh::battle_begin_tab_visible(w_ref),
+                begin_tab_offset: bh::battle_begin_tab_offset(w_ref),
                 third_tab: third_tab.as_deref(),
                 move_name: move_name.as_deref(),
                 target_plaque: target_plaque.as_ref().map(|(n, b)| (n.as_str(), *b)),
                 plaque_dy: bh::battle_action_plaque_dy(w_ref),
                 target_plaque_dy: bh::battle_target_plaque_dy(w_ref),
                 bar_dy: bh::battle_readout_bar_dy(w_ref),
+                panels_dy: bh::battle_round_prompt_panels_dy(w_ref),
                 target_select: target_select.as_ref().map(|(n, b)| (n.as_str(), *b)),
                 message_bar: message_bar.as_deref(),
                 ap_plate_value: bh::battle_ring_ap_plate_value(w_ref),
+                ap_plate_dx: bh::battle_ring_ap_plate_dx(w_ref),
                 commit_log: &commit_log,
                 intro_names: &intro_names,
                 stage_banner: stage_banner.as_ref().map(|(l, x, y)| (l.as_str(), *x, *y)),
@@ -183,7 +186,11 @@ impl PlayWindowApp {
             CommandChipPhase::AttackMode => ChipPhase::AttackMode,
             CommandChipPhase::CommitConfirm => ChipPhase::CommitConfirm,
         };
-        Some((chips.chips, chips.cursor, phase))
+        let highlight = legaia_engine_core::battle_hud::battle_chip_highlight(
+            &self.session.host.world,
+            chips.cursor,
+        );
+        Some((chips.chips, highlight, phase))
     }
 
     /// The battle HUD's chrome sprites (strip + plaque lozenges, gold `HP` /
@@ -259,10 +266,22 @@ impl PlayWindowApp {
             // engine read, the same call the browser page makes.
             out.extend(bcu::battle_command_menu_sprites(
                 &rects,
+                // Widget record 2's gold run, the highlighted arm's plate.
+                Some([
+                    assets.rects.tab_cap_l,
+                    assets.rects.tab_body,
+                    assets.rects.tab_cap_r,
+                ]),
                 &bcu::BattleCommandMenuFrame {
                     chips: &views,
-                    cursor: Some(cursor),
+                    cursor,
                     phase,
+                    offsets: legaia_engine_core::battle_hud::battle_chip_offsets(
+                        &self.session.host.world,
+                    ),
+                    dpad: legaia_engine_core::battle_hud::battle_chip_dpad_visible(
+                        &self.session.host.world,
+                    ),
                 },
                 legaia_engine_core::battle_hud::battle_ring_marks(&self.session.host.world),
                 origin,

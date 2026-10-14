@@ -152,6 +152,13 @@ impl PlayWindowApp {
         {
             self.session.host.world.seed_battle_backdrop_slot_1_yaw(yaw);
         }
+        // ... and, once a cast capture's gate holds, the summon close-up's
+        // accumulator (`PhaseGate::accum_align`).
+        if let Some(gate) = self.screenshot.as_ref().and_then(|sc| sc.phase_gate)
+            && gate.met(&self.session.host.world)
+        {
+            gate.align_camera(&mut self.session.host.world);
+        }
         // ... and, on the captured phase itself, the glide's origin
         // (`LEGAIA_BATTLE_CAM_ALIGN`, `BattleCamera::align_glide_origin`).
         if let Some((live, end)) = self.screenshot.as_ref().and_then(|sc| sc.battle_cam_align)
@@ -204,7 +211,7 @@ impl PlayWindowApp {
     /// cropped ground and the lit env meshes synced to it.
     pub(super) fn sync_field_view(
         &mut self,
-    ) -> Option<legaia_engine_core::field_view_window::ViewCells> {
+    ) -> Option<legaia_engine_scene::field_view_window::ViewCells> {
         // Retail's visible-tile crop: the cell rectangle the field render
         // library walks this frame (`field_view_window`, the shared kernel the
         // browser play page asks too). The terrain draws are gated per draw
@@ -212,7 +219,7 @@ impl PlayWindowApp {
         // rectangle moves.
         let view_cells = legaia_engine_core::field_view_window::field_view_cells(
             &self.session.host.world,
-            legaia_engine_core::field_view_window::framing_is_retail(&self.session.camera)
+            legaia_engine_scene::field_view_window::framing_is_retail(&self.session.camera)
                 && !self.field_debug_camera,
         );
         self.sync_ground_wave();

@@ -375,12 +375,23 @@ pub struct BattleHudFrame<'a> {
     /// / magic window is browsed, parked by the ring and every action but a
     /// party-wide one).
     pub panels_parked: bool,
+    /// Rows the roster panels sit below their rest seat this frame, while
+    /// the round prompt's open glide raises them from seat A
+    /// (`engine-core::battle_hud::battle_round_prompt_panels_dy`): records
+    /// 6 / `0x4E` / `0x4F` spawn at `y = 236` and walk to `170`. `0` at
+    /// rest.
+    pub panels_dy: i32,
     /// The `Begin` breadcrumb tab is up at `(16, 12)` and the plaque sits
     /// behind it at `(68, 12)` - retail's placement records 1 and 26, the
     /// shape every command-entry step from the ring on carries
     /// (`engine-core::battle_hud::battle_begin_tab_visible`). Without it the
     /// plaque takes its action seat `(16, 12)` (record 68).
     pub begin_tab: bool,
+    /// The `Begin` tab's offset from its seat while it walks there from the
+    /// round prompt's `Begin` seat, as the ring opens
+    /// (`engine-core::battle_hud::battle_begin_tab_offset`). `(0, 0)` at
+    /// rest.
+    pub begin_tab_offset: (i32, i32),
     /// The third breadcrumb tab behind `Begin | <name>` - the chosen ring
     /// arm's chip glided onto the trail (record `0x0D` `Attack` from the
     /// attack-mode prompt through the arts entry, record `0x0E` the Ra-Seru
@@ -427,6 +438,10 @@ pub struct BattleHudFrame<'a> {
     /// the plate is off. Drawn from the status screen's own gauge pieces,
     /// so it needs [`Self::chrome`].
     pub ap_plate_value: Option<u8>,
+    /// How far right of its seat the AP plate sits while it slides in with
+    /// the ring (`engine-core::battle_hud::battle_ring_ap_plate_dx`). `0` at
+    /// rest.
+    pub ap_plate_dx: i32,
     /// Stage rect (`x, y, w, h`) of a box the **host** draws on top of the
     /// battle screen this frame - today the sparring-tutorial prompt, whose
     /// rect is the retail emitter's own (`battle_tutorial::BoxStyle::box_rect`).

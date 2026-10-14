@@ -159,12 +159,12 @@ pub struct AudioState {
     /// sub-`5` arms the release.
     ///
     /// REF: FUN_800267A8
-    pub(crate) sound_arm: Option<crate::scus_leaf_kernels::TimedSoundArm>,
+    pub(crate) sound_arm: Option<legaia_engine_system::scus_leaf_kernels::TimedSoundArm>,
     /// The per-slot SFX-cue delay table (`DAT_8007C338`) the field VM's op
     /// `0x36` sub-`4` writes.
     ///
     /// REF: FUN_80035BAC
-    pub(crate) sfx_cue_delays: crate::scus_leaf_kernels::SfxCueDelays,
+    pub(crate) sfx_cue_delays: legaia_engine_system::scus_leaf_kernels::SfxCueDelays,
     /// This frame's calls into the SFX cue ring's producer trio, in call
     /// order, for the host's audio scheduler to replay onto its own ring
     /// (`legaia_engine_audio::SfxScheduler`). Retail's producers write the
@@ -176,7 +176,7 @@ pub struct AudioState {
     /// [`crate::world::AudioState::sfx_cue_delays`] is written through.
     pub(crate) sfx_parked_slot: i16,
     /// The enqueue's round-robin write cursor (`gp+0x158`), wrapping at
-    /// [`crate::scus_leaf_kernels::SFX_CUE_SLOTS`].
+    /// [`legaia_engine_system::scus_leaf_kernels::SFX_CUE_SLOTS`].
     pub(crate) sfx_cue_cursor: i16,
     /// The side-band sound-bank request / acknowledge pair
     /// `_DAT_8007BABC` / `_DAT_8007BAA0`, which op `0x36`'s bit-15 subs
@@ -184,7 +184,7 @@ pub struct AudioState {
     /// whole bit-15-clear XA arm.
     ///
     /// REF: FUN_800243F0
-    pub(crate) sound_stream: crate::scus_leaf_kernels::SoundStreamRequest,
+    pub(crate) sound_stream: legaia_engine_system::scus_leaf_kernels::SoundStreamRequest,
     /// `_DAT_8007B868` - the dev/dual-mode gate. Retail boots it `0` and no
     /// static writer ever sets it non-zero, so the engine keeps it `0`; the
     /// field applies it as retail does (it *skips* op `0x36`'s whole
@@ -250,8 +250,8 @@ impl AudioState {
             bgm_script_paused: false,
             sound_arm: None,
             levels: legaia_save::card::RetailAudioLevels::COLD_RESET,
-            sfx_cue_delays: crate::scus_leaf_kernels::SfxCueDelays::new(
-                crate::scus_leaf_kernels::SFX_CUE_SLOTS,
+            sfx_cue_delays: legaia_engine_system::scus_leaf_kernels::SfxCueDelays::new(
+                legaia_engine_system::scus_leaf_kernels::SFX_CUE_SLOTS,
             ),
             sfx_ring_ops: Vec::new(),
             sfx_parked_slot: 0,
@@ -261,7 +261,7 @@ impl AudioState {
             // engine's bank loads are synchronous - there is no in-flight
             // window - so the pair is born settled instead, the same way the
             // BGM barrier is satisfied on arrival.
-            sound_stream: crate::scus_leaf_kernels::SoundStreamRequest::IDLE_PAIR,
+            sound_stream: legaia_engine_system::scus_leaf_kernels::SoundStreamRequest::IDLE_PAIR,
             dual_mode_gate: 0,
             sound_detach: legaia_engine_system::sound_state::SoundDetachLatch::default(),
             residency: crate::world::SfxBankResidency::default(),
@@ -464,8 +464,8 @@ impl World {
     /// host keeps whatever bank it staged).
     pub fn side_band_bank(&self) -> Option<SideBandBank> {
         let pair = self.audio.sound_stream;
-        let id = if pair.acked == crate::scus_leaf_kernels::SoundStreamRequest::IDLE
-            && pair.requested == crate::scus_leaf_kernels::SoundStreamRequest::IDLE
+        let id = if pair.acked == legaia_engine_system::scus_leaf_kernels::SoundStreamRequest::IDLE
+            && pair.requested == legaia_engine_system::scus_leaf_kernels::SoundStreamRequest::IDLE
         {
             if matches!(self.mode, SceneMode::Field | SceneMode::WorldMap) {
                 FIELD_INIT_SIDE_BAND_REQUEST
@@ -559,7 +559,8 @@ mod sfx_ring_op_tests {
         w.audio.sound_stream.request(2016);
         w.audio.sound_stream.settle();
         assert_eq!(w.side_band_bank().unwrap().prot_entry, 1070 + 16);
-        w.audio.sound_stream = crate::scus_leaf_kernels::SoundStreamRequest::IDLE_PAIR;
+        w.audio.sound_stream =
+            legaia_engine_system::scus_leaf_kernels::SoundStreamRequest::IDLE_PAIR;
         w.mode = SceneMode::Battle;
         assert!(w.side_band_bank().is_none());
     }

@@ -197,6 +197,10 @@ pub fn run_engine_with(
         }
         hold_slot_table(&mut session, retail);
         session.tick()?;
+        // The scripted VRAM effects, as both hosts drain them each tick
+        // (`BootSession::field_vram_tick`): a cross-context CLUT fade left
+        // unstepped keeps its context halted for the whole run.
+        session.field_vram_tick();
         session.host.route_bgm_events(&mut director)?;
         if let Some(g) = &gate {
             if std::env::var_os("LEGAIA_RC_SCRIPT_TRACE").is_some()
@@ -359,7 +363,7 @@ pub(super) fn sample_engine(
             .npcs
             .cull_view
             .as_ref()
-            .map(|v| legaia_engine_core::field_view_window::view_cells(v).window),
+            .map(|v| legaia_engine_scene::field_view_window::view_cells(v).window),
         save,
         menu_subscreen,
         script: None,

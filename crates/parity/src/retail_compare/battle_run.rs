@@ -147,56 +147,94 @@ pub(super) fn run_battle(
     }
     // A driven action replays the pushes its capture already holds; run the
     // same stream once more from the ground the replay says retail started
-    // on (`RetailBattle::undrift`), and keep it when it still reaches the
-    // phase.
+    // on (`RetailBattle::undrift`), under each rule for the acting seat, and
+    // keep the run that still reaches the phase and stands the combatants
+    // nearest retail's pairs - a replay whose push depends on where it
+    // starts can land further off than the first run did.
     let undrifted;
-    let (battle, reached) = match reached
-        .as_ref()
-        .and_then(|e| battle.undrift(&e.ground_drift).map(|b| (b, e.rng_seed)))
-    {
-        Some((b, seed)) => match crate::retail_compare_battle::run_engine_battle(
-            opts.extracted,
-            retail,
-            &b,
-            seed,
-            reached_victims,
-        )
-        .inspect(|e| {
-            if seed_trace() {
-                eprintln!(
-                    "[seed] {} undrift seed={seed:#010X} from {:?}: mode={:?} driven={:?} \
-                     age_short={:?} drift={:?} residual {:?} against the first run's {:?}",
-                    entry.label,
-                    b.seeded_ground(),
-                    e.mode,
-                    e.driven,
-                    e.age_short,
-                    e.ground_drift,
-                    crate::retail_compare_battle::ground_residual(battle, &b, e),
-                    reached.as_ref().and_then(|r| {
-                        crate::retail_compare_battle::ground_residual(battle, battle, r)
-                    }),
-                );
+    let (battle, reached) = match reached {
+        Some(first_run) => {
+            let seed = first_run.rng_seed;
+            let mut best_residual =
+                crate::retail_compare_battle::ground_residual(battle, battle, &first_run);
+            let mut best: Option<(crate::retail_compare_battle::RetailBattle, _)> = None;
+            let mut tried: Vec<crate::retail_compare_battle::RetailBattle> = Vec::new();
+            for rule in crate::retail_compare_battle::UndriftActing::ALL {
+                // A replayed push depends on where it starts, so one step
+                // back by the measured drift can still stand a combatant
+                // short: the seat's own rule is iterated on each re-run's
+                // drift (`captured - drift` again) while its residual falls.
+                let mut drift = first_run.ground_drift;
+                let mut rule_best: Option<(crate::retail_compare_battle::RetailBattle, _, _)> =
+                    None;
+                for _ in 0..rule.rounds() {
+                    let Some(b) = battle.undrift(&drift, rule) else {
+                        break;
+                    };
+                    if tried.iter().any(|t| t.seeded_ground() == b.seeded_ground()) {
+                        break;
+                    }
+                    let run = crate::retail_compare_battle::run_engine_battle(
+                        opts.extracted,
+                        retail,
+                        &b,
+                        seed,
+                        reached_victims,
+                    );
+                    tried.push(b.clone());
+                    let Ok(e) = run else {
+                        break;
+                    };
+                    let residual = crate::retail_compare_battle::ground_residual(battle, &b, &e);
+                    if seed_trace() {
+                        eprintln!(
+                            "[seed] {} undrift ({rule:?}) seed={seed:#010X} from {:?}: mode={:?} \
+                             driven={:?} age_short={:?} drift={:?} residual {residual:?} against \
+                             the best so far {best_residual:?}",
+                            entry.label,
+                            b.seeded_ground(),
+                            e.mode,
+                            e.driven,
+                            e.age_short,
+                            e.ground_drift,
+                        );
+                    }
+                    let reaches = e.mode == legaia_engine_mode::mode::SceneMode::Battle
+                        && e.driven.is_some_and(|d| d.is_some())
+                        && e.age_short.is_none();
+                    if !reaches || rule_best.as_ref().is_some_and(|(_, _, r)| residual >= *r) {
+                        break;
+                    }
+                    drift = e.ground_drift;
+                    rule_best = Some((b, e, residual));
+                }
+                // The first rule has only to beat the first run. A later one
+                // replaces a rule that already stands the fight nearer only
+                // by a margin a framing can read (`UNDRIFT_MIN`): a few
+                // units of residual either way is two replays of one push,
+                // not a nearer ground.
+                if let Some((b, e, residual)) = rule_best {
+                    let nearer = match (best.is_some(), residual, best_residual) {
+                        (true, Some(r), Some(have)) => {
+                            r + i64::from(crate::retail_compare_battle::UNDRIFT_MIN) <= have
+                        }
+                        _ => residual < best_residual,
+                    };
+                    if nearer {
+                        best_residual = residual;
+                        best = Some((b, e));
+                    }
+                }
             }
-        }) {
-            // Kept only when it stands the combatants nearer retail's pairs
-            // than the first run did - a replay whose push depends on where
-            // it starts can land further off.
-            Ok(e)
-                if e.mode == legaia_engine_mode::mode::SceneMode::Battle
-                    && e.driven.is_some_and(|d| d.is_some())
-                    && e.age_short.is_none()
-                    && crate::retail_compare_battle::ground_residual(battle, &b, &e)
-                        < reached.as_ref().and_then(|r| {
-                            crate::retail_compare_battle::ground_residual(battle, battle, r)
-                        }) =>
-            {
-                undrifted = b;
-                (&undrifted, Some(e))
+            match best {
+                Some((b, e)) => {
+                    undrifted = b;
+                    (&undrifted, Some(e))
+                }
+                None => (battle, Some(first_run)),
             }
-            _ => (battle, reached),
-        },
-        None => (battle, reached),
+        }
+        None => (battle, None),
     };
     let engine = match reached.or(off_pose).map(Ok).or(first) {
         Some(Ok(e)) => e,

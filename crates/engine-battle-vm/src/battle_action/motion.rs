@@ -37,7 +37,7 @@ use crate::battle_approach::projected_separation;
 ///
 /// This is the formula of the SCUS-resident table at `0x80070A2C`
 /// (`_DAT_8007B81C`; disc-verified byte-exact by the engine's
-/// `action_effect_script::RetailRotationLut`, truncation toward zero). The
+/// [`crate::rotation_lut::RetailRotationLut`], truncation toward zero). The
 /// cosine read is the same table at `+0x800` bytes (`_DAT_8007B7F8`), i.e.
 /// the angle shifted a quarter turn.
 pub fn sin12(angle: u16) -> i16 {

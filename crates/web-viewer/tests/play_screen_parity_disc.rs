@@ -59,7 +59,7 @@ fn page_ground_uploads_the_shared_render_surface() {
         let idx = rt.field_ground_indices();
         assert_eq!(
             idx,
-            legaia_engine_core::field_ground::render_indices(hf),
+            legaia_engine_scene::field_ground::render_indices(hf),
             "{scene}: the page must upload the shared render winding"
         );
         assert_ne!(
@@ -67,7 +67,7 @@ fn page_ground_uploads_the_shared_render_surface() {
             "{scene}: the builder's raw order is the winding NCLIP discards"
         );
         let pos = rt.field_ground_positions();
-        let want: Vec<f32> = legaia_engine_core::field_ground::render_positions(hf)
+        let want: Vec<f32> = legaia_engine_scene::field_ground::render_positions(hf)
             .into_iter()
             .flatten()
             .collect();

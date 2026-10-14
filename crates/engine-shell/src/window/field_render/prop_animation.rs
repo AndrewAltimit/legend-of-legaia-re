@@ -173,7 +173,7 @@ impl PlayWindowApp {
         // the same gate the static placed pass asks.
         let view_cells = legaia_engine_core::field_view_window::field_view_cells(
             &self.session.host.world,
-            legaia_engine_core::field_view_window::framing_is_retail(&self.session.camera)
+            legaia_engine_scene::field_view_window::framing_is_retail(&self.session.camera)
                 && !self.field_debug_camera,
         );
         for (pi, p) in self.field_posed_props.iter().enumerate() {

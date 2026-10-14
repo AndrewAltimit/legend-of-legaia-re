@@ -63,6 +63,22 @@ pub(super) const DOWN: u16 = 0x0040;
 pub(super) const LEFT: u16 = 0x0080;
 pub(super) const DIRS: [u16; 4] = [UP, RIGHT, DOWN, LEFT];
 
+/// Whether a dialog picker is up on any of the three script runners: the
+/// modal timeline's panel, a helper's, or the inline runner's.
+pub(super) fn picker_open(s: &NativeSession) -> bool {
+    let w = &s.host.world;
+    w.cutscene
+        .timeline
+        .iter()
+        .chain(w.field_vm.helper_contexts.iter())
+        .any(|c| c.dialog.as_ref().is_some_and(|d| d.menu_active()))
+        || w.dialog
+            .inline
+            .as_ref()
+            .and_then(|d| d.panel.as_ref())
+            .is_some_and(|p| p.menu_active())
+}
+
 pub(super) fn b(p: PadButton) -> u16 {
     p.mask()
 }
@@ -101,6 +117,8 @@ pub(super) struct Policy {
     pub(super) chaos_left: u32,
     /// Tap duty cycle: the last frame's mask.
     pub(super) last: u16,
+    /// An open picker's plan: this many Down taps, then the confirm.
+    pub(super) picker_downs: Option<u32>,
 }
 
 impl Policy {
@@ -114,6 +132,7 @@ impl Policy {
             chaos_mask: 0,
             chaos_left: 0,
             last: 0,
+            picker_downs: None,
         }
     }
 
@@ -215,9 +234,35 @@ impl Policy {
                 self.tap(want)
             }
             SceneMode::Field | SceneMode::WorldMap => {
+                // A picker is up: move down a random number of rows, then
+                // confirm. Mashing confirm with the odd direction only ever
+                // takes the first rows, and a conversation whose way out is
+                // its last option ("Nothing in particular.") then reads as
+                // one that cannot be left.
+                if picker_open(s) && self.rng.chance(85) {
+                    let downs = *self.picker_downs.get_or_insert_with(|| self.rng.below(6));
+                    let pad = self.tap(if downs == 0 {
+                        b(PadButton::Cross)
+                    } else {
+                        b(PadButton::Down)
+                    });
+                    if pad != 0 {
+                        self.picker_downs = downs.checked_sub(1);
+                    }
+                    return pad;
+                }
+                if !picker_open(s) {
+                    self.picker_downs = None;
+                }
                 // A dialogue or a picker owns the pad: mostly confirm, some
                 // directions (pickers), some cancel.
-                if w.dialogue_owns_input() && self.rng.chance(70) {
+                // A script that holds the player (a cutscene timeline, an
+                // engaging record) pages its own text boxes, which
+                // `dialogue_owns_input` does not see: it gets the same
+                // presses.
+                if (w.dialogue_owns_input() || w.script_context_engages_player())
+                    && self.rng.chance(70)
+                {
                     let want = match self.rng.below(10) {
                         0..=5 => b(PadButton::Cross),
                         6..=7 => self.random_dir(),

@@ -113,7 +113,7 @@ pub(super) struct DrawCtx<'a, 'm> {
     pub r: &'a legaia_engine_render::Renderer,
     pub cam: Mat4,
     pub cutscene_cam: Option<CutsceneCam>,
-    pub view_cells: &'a Option<legaia_engine_core::field_view_window::ViewCells>,
+    pub view_cells: &'a Option<legaia_engine_scene::field_view_window::ViewCells>,
     pub in_world_map: bool,
     /// The party-wipe hold keeps drawing the frozen battle under the boot UI.
     pub game_over_hold: bool,

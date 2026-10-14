@@ -13,8 +13,10 @@
 //! as the geometry.
 
 use super::*;
-use crate::fog_particles::{FOG_CAP_DEFAULT, FOG_DPAD_MASK, FogFrameEnv, FogQuad, FogView};
 use legaia_engine_battle_vm::psx_camera::FieldCameraView;
+use legaia_engine_field::fog_particles::{
+    FOG_CAP_DEFAULT, FOG_DPAD_MASK, FogFrameEnv, FogQuad, FogView,
+};
 use legaia_engine_mode::mode::SceneMode;
 
 /// MAN sibling-section index (`sibling_sections()[3]`) that installs into
@@ -60,7 +62,7 @@ impl World {
     /// `DAT_80073ED8` / `DAT_80073EDC` pair `FUN_8003AEB0` sets from the
     /// section (`+3` = count, records from `+4`) - and the pool cap the same
     /// installer derives from the MAN header
-    /// ([`crate::fog_particles::fog_cap_for_man`]).
+    /// ([`legaia_engine_field::fog_particles::fog_cap_for_man`]).
     ///
     /// REF: FUN_8003AEB0
     pub fn install_fog_regions(
@@ -76,7 +78,7 @@ impl World {
             .unwrap_or_default();
         // `_DAT_8007BCB0`, seated by the same installer from the MAN's
         // header byte `+1` (`0x8003B6BC..0x8003B6E8`).
-        self.fog.cap = crate::fog_particles::fog_cap_for_man(man);
+        self.fog.cap = legaia_engine_field::fog_particles::fog_cap_for_man(man);
     }
 
     /// One rendered frame of the fog pool through `view` - the field render

@@ -6,6 +6,7 @@
 //! kernel crates do not depend on `engine-scene`.
 
 pub mod battle_open;
+pub mod battle_tutorial;
 pub mod dance;
 pub mod encounter_man;
 pub mod fishing_actors;

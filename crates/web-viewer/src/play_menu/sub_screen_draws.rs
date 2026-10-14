@@ -582,12 +582,12 @@ impl LegaiaRuntime {
     pub(super) fn options_popup_rect(
         &self,
         assets: &PlayMenuAssets,
-        popup: &legaia_engine_core::options::OptionsPopup,
+        popup: &legaia_engine_menus::options::OptionsPopup,
     ) -> (i32, i32, i32, i32) {
         use legaia_game_tables::menu_windows::window_ids;
         let (px, _, pw, _) = assets.window_rect(window_ids::OPTIONS_POPUP);
         let (_, sy, _, _) = assets.window_rect(window_ids::OPTIONS_MAIN);
-        legaia_engine_core::options::options_popup_content_rect(
+        legaia_engine_menus::options::options_popup_content_rect(
             sy,
             px,
             pw,

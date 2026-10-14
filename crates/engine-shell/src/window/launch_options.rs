@@ -189,7 +189,7 @@ pub struct ScreenshotConfig {
     /// `LEGAIA_SEAT_FOG`: a retail state's live fog-pool records, installed
     /// over the pool on the frame the capture is taken
     /// (`FogPool::install_snapshot`); taken once.
-    pub seat_fog: std::cell::Cell<Option<Vec<legaia_engine_core::fog_particles::FogParticle>>>,
+    pub seat_fog: std::cell::Cell<Option<Vec<legaia_engine_field::fog_particles::FogParticle>>>,
     /// `LEGAIA_SEAT_SPRITE_ARMS`: a retail state's live sprite-arm sheets,
     /// installed over the ambient pool's on the frame the capture is taken
     /// (`World::install_sprite_arm_snapshot`); taken once.

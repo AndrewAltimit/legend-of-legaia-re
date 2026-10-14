@@ -106,6 +106,7 @@ fn chrome_rects() -> SaveMenuAtlasRects {
         (n * 8, 0, 8, 8)
     };
     SaveMenuAtlasRects {
+        class0_dark: None,
         panel_tl: band(),
         panel_tr: band(),
         panel_bl: band(),

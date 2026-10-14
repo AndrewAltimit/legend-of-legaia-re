@@ -57,7 +57,7 @@ fn render_cell(
         [x1, ys[3], z1],
     ];
     let flat = if far_bucket {
-        // `legaia_engine_core::field_ground::flat_refs`'s marker: the x pair
+        // `legaia_engine_scene::field_ground::flat_refs`'s marker: the x pair
         // swapped.
         [x1, z0, x0, z1, ys[0], ys[1], ys[2], ys[3]]
     } else if refs {
@@ -465,7 +465,7 @@ fn a_distant_continent_cell_is_depth_cued_toward_white() {
     assert!(near.iter().all(|&v| v == plain[0]), "near cell unchanged");
 }
 
-/// The field ground's far bucket (`legaia_engine_core::field_ground::
+/// The field ground's far bucket (`legaia_engine_scene::field_ground::
 /// flat_refs`, retail `FUN_801F6D48`'s fixed far bucket): a sloped cell whose
 /// refs carry the swapped-x marker keeps its per-pixel depth order but is
 /// scaled into the thin slice at the far end of the renderer's reversed-Z

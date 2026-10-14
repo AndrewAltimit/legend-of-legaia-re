@@ -25,7 +25,7 @@
 //! it is the player's command selection, and the states are **regular decimal
 //! multiples of ten**. The sequencing is documented in
 //! [`battle.md`](../../../docs/subsystems/battle.md); the surfaces are
-//! [`legaia_engine_menus::battle_input`]'s three phases:
+//! [`crate::battle_input`]'s three phases:
 //!
 //! | `ctx[+0x06]` | State | What is on screen |
 //! |---|---|---|
@@ -46,7 +46,7 @@
 //! ## Why this byte matters beyond the menus
 //!
 //! It is the key the **sparring-tutorial** hook table indexes
-//! ([`crate::battle_tutorial`]). Overlay 967's tick subtracts `0x1E` from it
+//! ([`legaia_engine_battle::battle_tutorial`]). Overlay 967's tick subtracts `0x1E` from it
 //! and jumps a 91-entry table; the nine live slots are exactly the nine
 //! selection states above **minus** [`BattleFlowState::MagicWindow`] - the
 //! tutorial teaches attacks, items, spirit and hyper arts, and never magic.
@@ -54,7 +54,7 @@
 //! band is `{30,40,50,60,70,80,90,100,110,120}` is the cross-check that pins
 //! the mapping.
 
-use legaia_engine_menus::battle_input::CommandPhase;
+use crate::battle_input::CommandPhase;
 
 /// The battle command-flow cursor, retail `ctx[+0x06]`.
 ///
@@ -121,7 +121,7 @@ impl BattleFlowState {
 
 /// Which host-owned battle submenu is open, if any. The engine splits the
 /// windows retail drives from inside `FUN_801D0748` into separate sessions
-/// ([`legaia_engine_menus::inventory_use`] / [`legaia_engine_battle::battle_magic`] /
+/// ([`crate::inventory_use`] / [`legaia_engine_battle::battle_magic`] /
 /// [`legaia_engine_battle::battle_arts`]), so the flow state has to be recomposed from them.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum BattleMenuKind {
@@ -160,7 +160,7 @@ pub fn flow_state_for(phase: Option<&CommandPhase>, menu: BattleMenuKind) -> Bat
         // A confirmed target commits the action: retail's target cursor (0x5A)
         // goes straight to the commit state (0x6E) once the last member has
         // picked. Its 0x64 "target confirm" is the *item window's* own target
-        // step, which the engine runs inside `legaia_engine_menus::inventory_use` - so
+        // step, which the engine runs inside `crate::inventory_use` - so
         // nothing here produces `TargetConfirm` yet.
         Some(CommandPhase::Confirmed { .. }) => BattleFlowState::CommitBegin,
         // The commit-confirm screen itself, and the two exits it resolves to
@@ -209,7 +209,7 @@ pub struct ActiveTutorialBox {
     pub any_press_dismisses: bool,
     /// A box whose rect is a placement record's rather than the emitter's
     /// measured one: the sparring caption (HUD element `0x5A`,
-    /// [`crate::battle_tutorial::SPARRING_CAPTION_RECT`]). `None` for every
+    /// [`legaia_engine_battle::battle_tutorial::SPARRING_CAPTION_RECT`]). `None` for every
     /// `FUN_801F747C` emission.
     pub placed: Option<(i16, i16, i16, i16)>,
     /// A self-dismissing prompt of the 967 emitter - the text actor it
@@ -217,7 +217,7 @@ pub struct ActiveTutorialBox {
     /// stands until the next key-`1` registration reuses it or the hook
     /// unregisters it, so when this box leaves the queue it becomes the
     /// world's standing prompt
-    /// ([`crate::world::BattleState::tutorial_standing`]). `false` for a
+    /// (`legaia_engine_core::world::BattleState::tutorial_standing`). `false` for a
     /// waiting box (key `2`), the sparring caption and the battle-open
     /// banner, which are other actors.
     pub stands: bool,
@@ -233,18 +233,18 @@ impl ActiveTutorialBox {
     /// Top-left corner for this box, given the width its text measures in the
     /// host's font. Engine-core has no glyph metrics, so the host supplies the
     /// measured width and this applies the retail placement arithmetic
-    /// ([`crate::battle_tutorial::BoxStyle::position`]).
+    /// ([`legaia_engine_battle::battle_tutorial::BoxStyle::position`]).
     pub fn position(&self, text_width: i16) -> Option<(i16, i16)> {
         if let Some((x, y, _, _)) = self.placed {
             return Some((x, y));
         }
-        crate::battle_tutorial::BoxStyle::from_raw(self.style)
+        legaia_engine_battle::battle_tutorial::BoxStyle::from_raw(self.style)
             .map(|s| s.position(text_width, self.lines()))
     }
 
     /// The whole box rect `(x, y, w, h)` in 320x240 stage pixels - the rect
     /// retail's emitter registers the prompt's text actor with
-    /// ([`crate::battle_tutorial::BoxStyle::box_rect`]). Hosts frame the box
+    /// ([`legaia_engine_battle::battle_tutorial::BoxStyle::box_rect`]). Hosts frame the box
     /// with the standard window skin at this rect and draw the text at its
     /// origin on a 14-px row pitch.
     ///
@@ -254,7 +254,7 @@ impl ActiveTutorialBox {
         if self.placed.is_some() {
             return self.placed;
         }
-        crate::battle_tutorial::BoxStyle::from_raw(self.style)
+        legaia_engine_battle::battle_tutorial::BoxStyle::from_raw(self.style)
             .map(|s| s.box_rect(text_width, self.lines()))
     }
 }
@@ -272,13 +272,15 @@ pub const TUTORIAL_BOX_AUTO_FRAMES: u16 = 150;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::battle_tutorial::HOOK_STATES;
+    use legaia_engine_battle::battle_tutorial::HOOK_STATES;
 
     /// The sparring caption is a placement record's fixed box, so its rect
     /// does not move with the measured line; an emitter box still does.
     #[test]
     fn a_placed_box_keeps_its_records_rect_whatever_the_text_measures() {
-        use crate::battle_tutorial::{SPARRING_CAPTION_RECT, SPARRING_CAPTION_STYLE};
+        use legaia_engine_battle::battle_tutorial::{
+            SPARRING_CAPTION_RECT, SPARRING_CAPTION_STYLE,
+        };
         let mut b = ActiveTutorialBox {
             text: "one\ntwo".to_string(),
             style: SPARRING_CAPTION_STYLE,

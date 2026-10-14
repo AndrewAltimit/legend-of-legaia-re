@@ -94,6 +94,11 @@ impl SaveMenuAtlas {
     pub fn band_panel_interior(&self) -> (u32, u32, u32, u32) {
         title_pak::OVERLAY_SYSTEM_UI_PANEL_INTERIOR
     }
+    /// The dark class-0 window skin's nine cells
+    /// ([`ATLAS_RECTS_CLASS0_DARK`]): corners, edges, then the raw fill.
+    pub fn band_class0_dark(&self) -> [(u32, u32, u32, u32); 9] {
+        ATLAS_RECTS_CLASS0_DARK
+    }
     /// Raw marbled-blue filigree interior tile (32x32), un-baked. The
     /// pause-menu windows tile this in 2D as their navy damask interior.
     pub fn band_panel_filigree(&self) -> (u32, u32, u32, u32) {

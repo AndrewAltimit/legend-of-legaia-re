@@ -27,7 +27,7 @@
 
 use crate::world::World;
 use legaia_engine_battle_vm::psx_camera::{self, FieldCameraView};
-use legaia_engine_field::camera::Camera;
+use legaia_engine_field::camera::{CUTSCENE_WORLD_SCALE, Camera};
 use legaia_engine_mode::mode::SceneMode;
 
 /// Field follow-camera pitch (`_DAT_8007B790`), PSX 12-bit units - the town01
@@ -95,11 +95,6 @@ pub const RETAIL_FIELD_DEPTH_UNITS: f32 = 16384.0;
 /// While the zone camera is live, [`field_follow_view`] feeds the whole
 /// composed trio instead of this constant.
 pub const FIELD_CAM_DEPTH: f32 = RETAIL_FIELD_DEPTH_UNITS / CUTSCENE_WORLD_SCALE;
-
-/// Retail folds a 6x uniform world scale into the camera rotation (base
-/// matrix `DAT_8007BF10` = `24576 * I`, GTE `4096` = 1.0); the engine renders
-/// at 1x, so an op-`0x45` eye-space translation reduces by this factor.
-pub const CUTSCENE_WORLD_SCALE: f32 = 6.0;
 
 /// The same 6x scale as a *world* transform, which is how the overworld walk
 /// view composes it - the continent draws at raw world tile coordinates and

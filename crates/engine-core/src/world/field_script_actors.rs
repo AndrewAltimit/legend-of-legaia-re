@@ -405,7 +405,7 @@ impl World {
     /// extents are therefore **view-space units of the scaled view**: the rim
     /// radius is `H * ext / vz` with `vz` the eye depth in retail's `6x`
     /// space. The engine's eye space is the `1x` reduction of that one
-    /// (`tr_eye / S`, [`crate::camera_view::CUTSCENE_WORLD_SCALE`]), so the
+    /// (`tr_eye / S`, [`legaia_engine_field::camera::CUTSCENE_WORLD_SCALE`]), so the
     /// extents divide by the same `S` before the `H / z` scale - an extent
     /// of `0x1000` is `0x1000 / 6` world units, and `dolk`'s mask rim lands
     /// where retail's does. Empty outside a field scene.
@@ -413,7 +413,7 @@ impl World {
         if self.mode != SceneMode::Field || self.script_actors.lights.is_empty() {
             return Vec::new();
         }
-        let fog_view = crate::fog_particles::FogView::from_field_view(view);
+        let fog_view = legaia_engine_field::fog_particles::FogView::from_field_view(view);
         let mut out = Vec::new();
         for l in &self.script_actors.lights {
             let parent = self.attached_light_parent_flags(l.parent);
@@ -430,7 +430,8 @@ impl World {
                         Some((sx, sy, _)) if eye[2] > 1.0 => {
                             // `_DAT_8007BF10`'s uniform scale: the extents
                             // live in retail's scaled view space.
-                            let k = view.h / (eye[2] * crate::camera_view::CUTSCENE_WORLD_SCALE);
+                            let k = view.h
+                                / (eye[2] * legaia_engine_field::camera::CUTSCENE_WORLD_SCALE);
                             let ex = (f32::from(hw) * k).round() as i32;
                             let ey = (f32::from(hh) * k).round() as i32;
                             let c = |v: i32| v.clamp(-1024, 1023) as i16;

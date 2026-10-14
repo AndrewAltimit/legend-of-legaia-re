@@ -540,7 +540,7 @@ fn the_options_screen_remembers_an_edit_across_opens() {
         return;
     };
     let default_state =
-        serde_json::to_string(&legaia_engine_core::options::OptionsState::default()).unwrap();
+        serde_json::to_string(&legaia_engine_menus::options::OptionsState::default()).unwrap();
 
     rt.play_menu_open();
     rt.play_menu_settle();

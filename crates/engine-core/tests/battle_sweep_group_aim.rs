@@ -69,6 +69,10 @@ fn expected_facing(world: &World, caster: u8, code: u8) -> u16 {
         let Some(actor) = world.actors.get(engine_slot as usize) else {
             continue;
         };
+        // A seat no monster was stood on stays out of the centroid.
+        if retail_slot >= 3 && actor.battle.max_hp == 0 {
+            continue;
+        }
         *out = GroupSlot {
             live: true,
             x: actor.move_state.world_x,

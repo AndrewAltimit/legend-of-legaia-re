@@ -22,15 +22,22 @@ const CONTINUOUS_WIPE_ATTEMPTS: u32 = PAD_WIPE_ATTEMPTS;
 thread_local! {
     /// Set for the continuous run: the hand plays to keep a party it will
     /// still be holding thirty milestones on, not to cross one stretch.
-    /// It takes the random encounters it expects to win ([`worth_fighting`])
-    /// and wears what it picks up ([`pad_equip_best`]). The segmented passes
-    /// leave it clear and play exactly as before.
+    /// It takes the random encounters it expects to win ([`worth_fighting`]),
+    /// shops ([`pad_shop`]), wears what it buys and finds
+    /// ([`pad_equip_best`]), rests ([`pad_rest`]), plays each scene's story
+    /// on arrival and trains from a bed ([`pad_train`]). The segmented
+    /// passes leave it clear.
     pub(super) static PLAYS_ON: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
     /// What the run's fights have cost so far: party HP lost and foe HP
     /// taken, summed over every battle. Their ratio is the price of a fight
     /// the hand has learned, which falls as the party levels and gears up.
     /// Opens on a lone level-1 member's first fights, a little over one HP
     /// lost for each one dealt.
+    /// The scene of the milestone after next, and the flags the next two
+    /// anchors carry between them: what the continuous hand's beats pass
+    /// plays toward when it stands in that scene early.
+    pub(super) static PLAYED_AHEAD: std::cell::RefCell<Option<(String, BTreeSet<u16>)>> =
+        const { std::cell::RefCell::new(None) };
     pub(super) static EXCHANGE: std::cell::Cell<(u64, u64)> = const { std::cell::Cell::new((110, 100)) };
 }
 
@@ -181,21 +188,105 @@ fn part_c_continuous_run() {
         })
         .collect();
 
+    // The level each character holds in each anchor, read as a player's
+    // own growth curve: a line counts only as far as every later anchor
+    // agrees with it (several chapter-1 anchors are other sessions).
+    let mut anchor_levels: Vec<Vec<u8>> = spine
+        .iter()
+        .map(|m| {
+            // An anchor outside the order check is not a point on the
+            // playthrough's curve (a door-tile poke, the debug credits).
+            m.anchor
+                .as_ref()
+                .filter(|_| m.order_check)
+                .and_then(|r| load_anchor(&inp.library, r).ok())
+                .and_then(|a| {
+                    legaia_save::SaveFile::from_retail_sc_block(
+                        &a.sc,
+                        legaia_save::RETAIL_SC_PARTY_RECORDS,
+                    )
+                    .ok()
+                })
+                .map(|sf| {
+                    sf.party
+                        .members
+                        .iter()
+                        .map(|m| {
+                            if m.hp_mp_sp().hp_max == 0 {
+                                u8::MAX
+                            } else {
+                                m.level()
+                            }
+                        })
+                        .collect()
+                })
+                .unwrap_or_default()
+        })
+        .collect();
+    for j in (0..anchor_levels.len().saturating_sub(1)).rev() {
+        let next = anchor_levels[j + 1].clone();
+        for (c, lv) in anchor_levels[j].iter_mut().enumerate() {
+            *lv = (*lv).min(next.get(c).copied().unwrap_or(u8::MAX));
+        }
+        if anchor_levels[j].is_empty() {
+            anchor_levels[j] = next;
+        }
+    }
+
     let opts = live_opts(true);
     PLAYS_ON.with(|p| p.set(true));
+    reset_shopping();
     let mut session = open_session(&inp.extracted);
-    if let Err(e) = seed(&mut session, &spine[0], None, &opts) {
-        panic!("continuous run: New Game did not seed: {e}");
+    // `LEGAIA_FGL_CONTINUOUS_FROM=<milestone>` starts the run at a later
+    // milestone, seeded once from that milestone's retail anchor and never
+    // again. It is a probe, not the score: the party it sets out with is
+    // retail's, so the baseline is not asserted.
+    let from_id = std::env::var("LEGAIA_FGL_CONTINUOUS_FROM").ok();
+    let start = from_id.as_deref().map_or(0, |id| {
+        spine
+            .iter()
+            .position(|m| m.id == id)
+            .unwrap_or_else(|| panic!("LEGAIA_FGL_CONTINUOUS_FROM: no milestone `{id}`"))
+    });
+    let seed_at = (0..=start)
+        .rev()
+        .find(|&j| spine[j].seeds_next)
+        .unwrap_or(start);
+    let seed_anchor = spine[seed_at]
+        .anchor
+        .as_ref()
+        .and_then(|r| load_anchor(&inp.library, r).ok());
+    if let Err(e) = seed(&mut session, &spine[seed_at], seed_anchor.as_ref(), &opts) {
+        panic!("continuous run: {} did not seed: {e}", spine[seed_at].id);
     }
     let mut cp = checkpoint(&mut session);
 
     let mut reached_count = 0usize;
     let mut reloads = 0u32;
     let mut stall: Option<String> = None;
-    'spine: for i in 0..spine.len() - 1 {
+    'spine: for i in start..spine.len() - 1 {
         let to = &spine[i + 1];
+        // What the retail run had played by the next milestone and the one
+        // after it: chapter 1's anchors come from several sessions, and a
+        // stretch whose own anchor is another session's (the `ravine` state)
+        // would otherwise walk past the beats the next one records.
+        // Only in that later milestone's own scene: a run that stands there
+        // early is already where its stretch begins.
+        let played = spine.get(i + 2).and_then(|m| {
+            let mut flags = anchor_flags[i + 1].clone()?;
+            flags.extend(anchor_flags[i + 2].as_ref()?);
+            Some((m.scene.clone(), flags))
+        });
+        PLAYED_AHEAD.with(|a| *a.borrow_mut() = played);
         NEXT_ANCHOR_FLAGS.with(|a| *a.borrow_mut() = anchor_flags[i + 1].clone());
         LEARNED_CADENCE.with(|l| l.set(None));
+        let ahead = (i + LEVEL_LOOKAHEAD).min(spine.len() - 1);
+        TARGET_LEVELS.with(|t| {
+            *t.borrow_mut() = anchor_levels[ahead]
+                .iter()
+                .map(|&lv| if lv == u8::MAX { 0 } else { lv })
+                .collect();
+        });
         let mut prepare: Option<u8> = None;
         let mut attempt = 0u32;
         let t0 = std::time::Instant::now();
@@ -204,7 +295,9 @@ fn part_c_continuous_run() {
             LOST_TO_ELEMENT.with(|l| l.set(None));
             let played = catch_unwind(AssertUnwindSafe(|| {
                 PAD_DEADLINE.with(|d| d.set(session.frames + PAD_SEGMENT_FRAMES));
-                PAD_BATTLE_LEFT.with(|l| l.set(PAD_BATTLE_ALLOWANCE));
+                // This hand takes the fights it can win, so a stretch's
+                // battles run long past the fleeing hand's allowance.
+                PAD_BATTLE_LEFT.with(|l| l.set(4 * PAD_BATTLE_ALLOWANCE));
                 if let Some(element) = prepare {
                     pad_equip_guard(&mut session, element);
                 }
@@ -215,7 +308,7 @@ fn part_c_continuous_run() {
             }));
             let err = match played {
                 Ok(Ok(())) => {
-                    reached_count = i + 1;
+                    reached_count = i + 1 - start;
                     cp = checkpoint(&mut session);
                     if std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
                         print_state_diff(&mut session, &inp, to);
@@ -277,15 +370,21 @@ fn part_c_continuous_run() {
     }
 
     PLAYS_ON.with(|p| p.set(false));
-    let denom = spine.len() - 1;
+    TARGET_LEVELS.with(|t| t.borrow_mut().clear());
+    PLAYED_AHEAD.with(|a| *a.borrow_mut() = None);
+    let denom = spine.len() - 1 - start;
     eprintln!();
     eprintln!(
-        "[headline] one continuous New Game reaches {reached_count}/{denom} milestones on pad input, {reloads} reload(s) of its own saves"
+        "[headline] one continuous run from {} reaches {reached_count}/{denom} milestones on pad input, {reloads} reload(s) of its own saves",
+        spine[start].id
     );
     if let Some(s) = &stall {
         eprintln!("[stall] {s}");
     }
     eprintln!();
+    if from_id.is_some() {
+        return;
+    }
     eprintln!("# paste into scripts/replays/full_game_baseline.toml when the score rises:");
     eprintln!("[continuous]");
     eprintln!("reached = {reached_count}");

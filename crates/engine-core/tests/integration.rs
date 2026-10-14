@@ -178,7 +178,6 @@ mod free_roam_staging_disc;
 mod freeroam_field_channels_disc;
 mod game_over_routes_to_title;
 mod gated_field_arms_disc;
-mod glb_export_real;
 mod global_bgm_owned_vab_disc;
 mod host_parity_camera_kernels;
 mod hub_entry_sub_panel_disc;

@@ -71,6 +71,8 @@ mod run;
 mod save_rack_disk;
 #[path = "window/screens.rs"]
 mod screens;
+#[path = "window/session_steps.rs"]
+mod session_steps;
 #[path = "window/str_player.rs"]
 mod str_player;
 #[path = "window/title_save_draws.rs"]
@@ -203,12 +205,12 @@ impl PlayWindowApp {
     /// row's layout offset).
     fn options_popup_rect(
         &self,
-        popup: &legaia_engine_core::options::OptionsPopup,
+        popup: &legaia_engine_menus::options::OptionsPopup,
     ) -> (i32, i32, i32, i32) {
         use legaia_game_tables::menu_windows::window_ids;
         let (px, _, pw, _) = self.menu_window_rect(window_ids::OPTIONS_POPUP);
         let (_, sy, _, _) = self.menu_window_rect(window_ids::OPTIONS_MAIN);
-        legaia_engine_core::options::options_popup_content_rect(
+        legaia_engine_menus::options::options_popup_content_rect(
             sy,
             px,
             pw,

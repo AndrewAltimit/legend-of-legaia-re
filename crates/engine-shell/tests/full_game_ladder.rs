@@ -112,6 +112,8 @@ mod interactions;
 mod pad_field_upkeep;
 mod pad_follower;
 mod pad_hop;
+mod pad_shopping;
+mod pad_training;
 mod path_planner;
 mod script_runner;
 mod seated_hops;
@@ -132,6 +134,8 @@ use interactions::*;
 use pad_field_upkeep::*;
 use pad_follower::*;
 use pad_hop::*;
+use pad_shopping::*;
+use pad_training::*;
 use path_planner::*;
 use script_runner::*;
 use seated_hops::*;
@@ -406,6 +410,40 @@ fn part_a_spine_is_anchored_ordered_and_routed() {
             for f in prev.flags.difference(&cur.flags) {
                 eprintln!("    - {}", show(f));
             }
+        }
+    }
+
+    // `LEGAIA_FGL_SITES=0x19F,0x52B,...`: every disc site that sets or clears
+    // each named flag - how a flag in the continuous run's carried-state diff
+    // is traced to the record that wrote it.
+    if let Ok(list) = std::env::var("LEGAIA_FGL_SITES") {
+        for f in list.split(',').filter_map(|s| {
+            let s = s.trim();
+            u16::from_str_radix(s.strip_prefix("0x").unwrap_or(s), 16).ok()
+        }) {
+            let sites = |kind: FlagKind| -> String {
+                let v: Vec<String> = census
+                    .get(&f)
+                    .into_iter()
+                    .flatten()
+                    .filter(|s| s.kind == kind)
+                    .map(|s| {
+                        format!(
+                            "{} P{}[{}]{}",
+                            s.scene_name,
+                            s.partition,
+                            s.record,
+                            if s.clean { "" } else { "?" }
+                        )
+                    })
+                    .collect();
+                v.join(" / ")
+            };
+            eprintln!(
+                "[sites] 0x{f:03X} set: {} | clear: {}",
+                sites(FlagKind::Set),
+                sites(FlagKind::Clear)
+            );
         }
     }
 

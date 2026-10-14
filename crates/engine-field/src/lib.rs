@@ -58,6 +58,7 @@ pub mod field_submode;
 pub mod field_subsystem_enter;
 pub mod field_warp_tile;
 pub mod float_tween;
+pub mod fog_particles;
 pub mod incense_window;
 pub mod inline_dialogue;
 pub mod leader_swap;

@@ -144,7 +144,9 @@ fn water_line_stat_up_items_seed_and_apply_from_disc() {
         "Life Water is omitted until the disc table is installed"
     );
 
-    // One-member party with known stats to watch the raise land.
+    // One-member party with known stats to watch the raise land. The base
+    // window (`+0x11C..`) is what the handler raises, so the record carries
+    // one, as every real record does.
     let mut party = legaia_save::Party::zeroed(1);
     let mut hms = party.members[0].hp_mp_sp();
     hms.hp_cur = 50;
@@ -155,6 +157,12 @@ fn water_line_stat_up_items_seed_and_apply_from_disc() {
     ls.spd = 10;
     ls.int = 12;
     party.members[0].set_live_stats(ls);
+    let mut base = party.members[0].record_stats();
+    base.hp_max = 100;
+    base.atk = 20;
+    base.spd = 10;
+    base.int = 12;
+    party.members[0].set_record_stats(base);
 
     let mut world = World::new();
     world.load_party(party);
@@ -169,17 +177,40 @@ fn water_line_stat_up_items_seed_and_apply_from_disc() {
     assert_eq!(life.name, "Life Water");
     assert!(life.usable_in_field && !life.usable_in_battle);
 
-    // Life Water (tier 0): Max HP +16, current HP refilled by the gain.
+    // Life Water (tier 0): base Max HP +16, the live maximum rebuilt from
+    // it, current HP left where it was (`FUN_800402F4` writes `+0x11C`
+    // only; `FUN_80042558` rebuilds and clamps).
     let outcome = world.use_item(0x82, 0);
     assert_eq!(outcome, ItemOutcome::StatsRaised { count: 1 });
+    assert_eq!(world.party.roster.members[0].record_stats().hp_max, 116);
     assert_eq!(world.party.roster.members[0].hp_mp_sp().hp_max, 116);
+    assert_eq!(world.party.roster.members[0].hp_mp_sp().hp_cur, 50);
     assert_eq!(world.actors[0].battle.max_hp, 116);
 
-    // Power Water (tier 1): ATK +4.
+    // Under a Max HP +10% accessory (ability bit 0) the live maximum is the
+    // base plus a tenth of the base, not the old live value plus the
+    // increment: 116 + 16 = 132 -> 132 + 13 = 145.
+    world.set_accessory_passives(
+        legaia_engine_battle::accessory_passives::AccessoryPassives::from_entries([(0xD0, 0)], []),
+    );
+    let mut eq = world.party.roster.members[0].equipment();
+    eq.slots[5] = 0xD0;
+    world.party.roster.members[0].set_equipment(eq);
+    world.use_item(0x82, 0);
+    assert_eq!(world.party.roster.members[0].record_stats().hp_max, 132);
+    assert_eq!(world.party.roster.members[0].hp_mp_sp().hp_max, 145);
+    assert_eq!(world.actors[0].battle.max_hp, 145);
+    let mut eq = world.party.roster.members[0].equipment();
+    eq.slots[5] = 0;
+    world.party.roster.members[0].set_equipment(eq);
+    world.set_accessory_passives(Default::default());
+
+    // Power Water (tier 1): ATK +4, base and live.
     assert_eq!(
         world.use_item(0x83, 0),
         ItemOutcome::StatsRaised { count: 1 }
     );
+    assert_eq!(world.party.roster.members[0].record_stats().atk, 24);
     assert_eq!(world.party.roster.members[0].live_stats().atk, 24);
 
     // Swift Water (tier 3): SPD +4; Wisdom Water (tier 4): INT +4.

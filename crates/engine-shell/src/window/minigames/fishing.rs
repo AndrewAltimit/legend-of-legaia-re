@@ -4,37 +4,17 @@
 use super::*;
 
 impl PlayWindowApp {
-    /// Drive the fishing HUD's one-shot banner animations for this frame.
-    ///
-    /// Seeds a timer on each of the session's events this tick
-    /// (`World::minigames.fishing_events`: cadence splash, hook, landed,
-    /// snapped, recast), then services every timer through the retail
-    /// driver-tail loop
-    /// ([`BannerTimer::service`](legaia_engine_render::BannerTimer::service))
-    /// and caches this frame's draws for the HUD builder, which is `&self` and
-    /// cannot advance them itself.
-    ///
-    /// The frame step is the engine's fixed one tick per frame (retail reads
-    /// `DAT_1f800393`, its frame-rate compensation word).
+    /// Drive the fishing HUD's one-shot banner animations for this tick and
+    /// cache the draws for the HUD builder, which is `&self` and cannot
+    /// advance them itself. The step is the shared one
+    /// (`legaia_engine_screens::fishing_banner_frame`): the session's events
+    /// this tick seed the timers, each timer retires itself, and leaving the
+    /// minigame drops any half-run banner with the session.
     pub(in crate::window) fn tick_fishing_banners(&mut self) {
-        use legaia_engine_fishing::fishing::PondEvent;
-        let world = &self.session.host.world;
-        if world.minigames.fishing.is_none() {
-            // Left the minigame: drop any half-run banner with the session.
-            self.fishing_banners = Default::default();
-            self.fishing_banner_draws.clear();
-            return;
-        }
-        for e in &world.minigames.fishing_events {
-            match e {
-                PondEvent::Splash => self.fishing_banners.splash.start(),
-                PondEvent::Hooked(_) => self.fishing_banners.on_hook(),
-                PondEvent::Landed(_) => self.fishing_banners.on_landed(),
-                PondEvent::Snapped => self.fishing_banners.on_snapped(),
-                PondEvent::Recast => self.fishing_banners.on_recast(),
-            }
-        }
-        self.fishing_banner_draws = self.fishing_banners.service_frame(1);
+        self.fishing_banner_draws = legaia_engine_screens::fishing_banner_frame(
+            &self.session.host.world,
+            &mut self.fishing_banners,
+        );
     }
 }
 

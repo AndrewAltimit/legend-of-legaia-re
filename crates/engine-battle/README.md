@@ -77,6 +77,10 @@ resolve a link into a dependent crate.
   the status recolour pass of `FUN_8004CE2C`.
 - `battle_sideband` - the side-band tick keyed on the battle stage id
   (sparring caption, Cort's two boss-stage modules).
+- `battle_tutorial` - the sparring-tutorial prompt machine of the stage
+  overlay (PROT 967): the `(flow state, lesson)` dispatch, the box styles and
+  rects, and the prompt corpus parser `BattleTutorialScript::from_overlay`.
+  The disc read that feeds it is `engine-core::disc_readers::battle_tutorial`.
 - `battle_seats` - the authored stage seats battle setup stamps into every
   combatant (`FUN_800513F0`).
 - `battle_return_flags` - MAIN INIT's back-from-battle story-flag arm.

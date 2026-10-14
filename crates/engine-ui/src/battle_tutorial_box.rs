@@ -29,8 +29,10 @@
 //! from texel `(128, 32)` and every sprite under CLUT `(48, 511)` - the
 //! whole set one skin row down, a near-black marble - where the intro above
 //! it samples `(128, 0)` under `(32, 511)`. The style byte (`0x44 - waits`)
-//! is what parts them. The port has only tile-set 0 in its atlas, so a
-//! waiting box wears the blue frame with the dialog pager's confirm hand.
+//! is what parts them: it indexes the widget table, and record `0x43` is
+//! tile-set 1 on sub-palette 3 where `0x44` is tile-set 0 on sub-palette 2.
+//! Both hosts draw a waiting box in that dark skin
+//! ([`crate::SaveMenuAtlasRects::class0_dark`]).
 //!
 //! ## Coordinates
 //!
@@ -82,18 +84,18 @@ pub fn battle_tutorial_text_draws_for(
 }
 
 /// Window chrome for a tutorial prompt: the class-0 frame (marble fill +
-/// gold border) around the engine's centre `rect`, plus the page-advance
-/// hand on a box that waits for acknowledgement.
+/// gold border) around the engine's centre `rect`, in the skin its style
+/// byte names - the blue one for a self-dismissing prompt (`0x44`), the
+/// dark one for a prompt that waits for acknowledgement (`0x43`).
 ///
 /// `rect` is in stage pixels; `stage_origin` / `stage_scale` are the host's
 /// stage transform, as for every other chrome builder.
 ///
-/// The advance hand is a **port affordance**, not a traced one: retail's
-/// waiting styles register a different text actor (slot `2`, style byte
-/// `0x43`) rather than adding a marker sprite, and that actor signals the
-/// wait by its skin - the dark tile-set (see the module header). The hand is
-/// the engine's existing "press confirm" cue from the dialog pager, standing
-/// in for the skin the atlas does not carry.
+/// Retail adds no marker sprite for the wait: the waiting styles register a
+/// different text actor (slot `2`, style byte `0x43`), and that actor's skin
+/// is the signal (see the module header). Only an atlas built without the
+/// dark skin falls back to the blue frame with the dialog pager's advance
+/// hand, a port affordance standing in for it.
 pub fn battle_tutorial_chrome_draws_for(
     rects: &SaveMenuAtlasRects,
     rect: (i32, i32, i32, i32),
@@ -101,6 +103,14 @@ pub fn battle_tutorial_chrome_draws_for(
     stage_origin: (i32, i32),
     stage_scale: u32,
 ) -> Vec<SpriteDraw> {
+    if let (true, Some(dark)) = (waits_for_input, rects.class0_dark.as_ref()) {
+        return crate::battle_hud_chrome::text_actor_dark_frame_draws_for(
+            dark,
+            rect,
+            stage_origin,
+            stage_scale,
+        );
+    }
     let mut out = crate::battle_hud_chrome::text_actor_frame_draws_for(
         rects,
         rect,

@@ -8,9 +8,8 @@ use super::redraw::tick_menu_runtime_session;
 impl PlayWindowApp {
     /// Drain this redraw's sim ticks (the shared `frame_step::SimStepper`
     /// rule, or one tick under a `--screenshot` capture), ending a finished
-    /// windowed movie first. Returns the ticks that ran the field's whole
-    /// tail - the NPC clip playheads in the draw pass advance by this.
-    pub(super) fn run_frame_ticks(&mut self) -> u32 {
+    /// windowed movie first.
+    pub(super) fn run_frame_ticks(&mut self) {
         let dt = self.win.advance_tick(100);
         // The shared frame-step rule (`frame_step::SimStepper`): whole 1/60 s
         // ticks, at most four a frame, and a backlog past four dropped rather
@@ -52,12 +51,6 @@ impl PlayWindowApp {
         let held_pad = self.pad;
         let first_tick_pad = self.pad_taps.take_frame_word(held_pad);
         let mut first_tick = true;
-        // Ticks this frame that ran the field's whole tail. The NPC clip
-        // playheads in the draw pass advance by this, not by `run_ticks`, so
-        // a tick the field sat frozen under (a shop, the naming prompt, the
-        // pause menu) moves no clip - the browser page, which skips its whole
-        // `tick_frame` on those frames, freezes them the same way.
-        let mut field_tail_ticks = 0;
         for _ in 0..run_ticks {
             // A phase-gated capture stops ticking the frame its phase is
             // reached, so the frame drawn is that one and not up to three
@@ -71,9 +64,10 @@ impl PlayWindowApp {
                 held_pad
             };
             self.tick_no += 1;
-            if self.sim_tick() {
-                field_tail_ticks += 1;
-            }
+            // A tick the field sat frozen under (a shop, the naming prompt,
+            // the pause menu) returns before its tail, so it moves no NPC
+            // clip: the players step in the tail's `drain_anim_cues`.
+            self.sim_tick();
         }
         // The tap was one tick held; the word the key events maintain is
         // the held set again. The scripted harnesses own the pad word and
@@ -84,7 +78,6 @@ impl PlayWindowApp {
         if self.screenshot.is_some() {
             self.pad_taps.clear();
         }
-        field_tail_ticks
     }
 
     /// One sim tick, after the pad word and `tick_no` are set: the scripted
@@ -99,19 +92,11 @@ impl PlayWindowApp {
     /// native frame path and checks each arm's skipped kernels.
     fn sim_tick(&mut self) -> bool {
         self.inject_scripted_tick_input();
-        // Party wipe: the world raises `game_over` when a battle
-        // resolves to `BattleEndCause::PartyWipe`. Consume the flag and
-        // start the return-to-title hand-off, which owns the frame from
-        // here (the arm below skips the scene tick while any boot UI is
-        // active). Retail's wipe arm stores mode 22 CARD INIT with the
-        // title context word set, so the destination is the title screen
-        // and nothing is asked of the player on the way.
-        if self.session.host.world.game_over && !self.boot_ui.is_active() {
-            self.session.host.world.game_over = false;
-            self.boot_ui =
-                BootUiState::GameOver(legaia_engine_menus::game_over::GameOverSession::new());
-            log::info!("play-window: party wipe -> title screen");
-        }
+        // Party wipe: the world raises `game_over` when a battle resolves to
+        // `BattleEndCause::PartyWipe`. The probe starts the return-to-title
+        // hold, which owns the frame from here (the arm below skips the
+        // scene tick while any boot UI is active).
+        self.poll_game_over();
         // When the boot UI is active, route input there and skip
         // the scene tick - the player hasn't entered the world
         // yet (or has paused into save-select).
@@ -414,8 +399,10 @@ impl PlayWindowApp {
         // world state, and the knobs are host policy (options file + `R`
         // key), not world state. The browser page pushes the same set
         // through the same call.
-        self.options_state
-            .apply_to_world(&mut self.session.host.world);
+        legaia_engine_core::options::apply_to_world(
+            &self.options_state,
+            &mut self.session.host.world,
+        );
         // `set_pad` also latches the run button off the same word, so
         // there is nothing host-side to keep in sync.
         // A `LEGAIA_BATTLE_DRIVE` capture walks the fight's pad path
@@ -464,33 +451,32 @@ impl PlayWindowApp {
     }
 
     /// The tick's world step and the field's frame tail: the session tick
-    /// and its scene / battle edges, the minigame side channels, the menu
-    /// overlay and battle FX requests, the frame-tail effect passes, the menu
+    /// and its scene / battle edges, the minigame side channels, the field
+    /// overlay poll, the effect step, the frame-tail effect passes, the menu
     /// session step and the event drains.
     fn tick_field_tail(&mut self, pressed_edge: u16) {
         self.tick_session_step();
         self.tick_side_channels();
-        let shop_opened_this_tick = self.take_menu_overlay_requests();
-        self.take_battle_fx_requests();
-        self.tick_frame_tail_effects();
-        // A shop or prize counter opened on this tick (the take above)
-        // takes its first step now, on no edge: the press this tick
+        // A shop or prize counter the field VM opened this tick takes its
+        // first step inside the poll, on no edge: the press this tick
         // carries already went to the field - typically the Cross that
-        // closed the merchant's line and ran the script into op 0x49 -
-        // and handing it to the screen too committed the picker's first
-        // row on the same press. Retail's screen comes up on a later
-        // frame (the menu overlay swaps in), and the browser page hands a
-        // shop only the edges of the frames after it opened. An inn
-        // session runs here every tick on the tick's own edge.
-        let menu_edge = legaia_engine_core::menu_runtime::MenuRuntime::session_edge(
-            shop_opened_this_tick,
-            pressed_edge,
-        );
-        if let Some(cue) = tick_menu_runtime_session(
-            &mut self.menu_runtime,
-            &mut self.session.host.world,
-            menu_edge,
-        ) {
+        // closed the merchant's line and ran the script into op 0x49 - and
+        // handing it to the screen too committed the picker's first row on
+        // the same press. Retail's screen comes up on a later frame (the
+        // menu overlay swaps in).
+        let shop_opened_this_tick = self.poll_field_shop();
+        self.tick_world_effects();
+        self.tick_frame_tail_effects();
+        // An open session - an inn prompt, which does not suspend the field -
+        // steps here every tick on the tick's own edge, and a closed one
+        // unparks its script. Not on the opening tick: the poll stepped it.
+        if !shop_opened_this_tick
+            && let Some(cue) = tick_menu_runtime_session(
+                &mut self.menu_runtime,
+                &mut self.session.host.world,
+                pressed_edge,
+            )
+        {
             self.fire_menu_cue(u16::from(cue));
         }
         self.prev_pad = self.pad;
@@ -558,7 +544,7 @@ impl PlayWindowApp {
     fn tick_side_channels(&mut self) {
         // Baka Fighter duel: drain the exchange-hit SFX cue the rules
         // kernel queued this tick and enqueue it into the SFX scheduler
-        // (the per-frame `tick_sfx_frame` below fires it against the
+        // (the tick's audio frame, `tick_sfx` below, fires it against the
         // resident class-2 sound bank).
         self.drain_baka_sfx_cues();
         // Minigame side-channels: the dance count-in + tutorial + effect
@@ -608,62 +594,11 @@ impl PlayWindowApp {
         }
     }
 
-    /// A field-VM shop or casino prize counter opened this tick: hand the
-    /// player into it. Returns whether one opened.
-    fn take_menu_overlay_requests(&mut self) -> bool {
-        // A field-VM shop (op `0x49` sub-0) or casino prize counter
-        // (sub-7) opened this tick: hand the player into it through the
-        // shared drain (`MenuRuntime::open_field_overlay_requests`, the
-        // browser page's too). The field VM stays suspended (op-0x49
-        // Armed) until the player leaves.
-        let opened = self
-            .menu_runtime
-            .open_field_overlay_requests(&mut self.session.host.world);
-        // The Trade row's names come from the boot SCUS - a host read.
-        if opened && self.session.host.world.seru_trade_enabled() {
-            self.ensure_seru_names();
-        }
-        opened
-    }
-
-    /// The battle's summon-creature and move-FX spawn requests (with the
-    /// move's sound cue).
-    fn take_battle_fx_requests(&mut self) {
-        // Production cast-band trigger: a player summon cast
-        // (spell id 0x81..=0xA0) requests a summon spawn. The
-        // faithful render is the cast's own body drawn through the
-        // enemy animation pipeline (the namesake battle_data creature
-        // for 0x81..=0x95, the cast's summon.dat record above that),
-        // so spawn it as a battle creature rather than the move-VM
-        // scene-graph stand-in (`summon::summon_spawn_asset`).
-        if let Some((spell_id, _origin)) = self.session.host.world.take_pending_summon_spawn() {
-            self.spawn_summon_creature(spell_id);
-        }
-        // Production move-FX trigger, spawn to sound: the shared
-        // `battle_fx::spawn_pending_move_fx` (the browser page's step
-        // calls it too) seats the requested scene graph and resolves the
-        // move's cue through the retail dispatch decode; a ring value
-        // rides the same per-frame SFX scheduler the art-strike cues do.
-        if let Some(ring_value) =
-            legaia_engine_session::battle_fx::spawn_pending_move_fx(&mut self.session.host.world)
-        {
-            if let Some(bgm) = self.session.bgm.as_mut() {
-                bgm.enqueue_sfx(ring_value, 0, 0, 0);
-            }
-            log::debug!("battle move-FX cue -> SFX {ring_value:#06x}");
-        }
-    }
-
-    /// The frame-tail effect passes: the move-VM scene-graphs, the battle
-    /// face / CLUT / stage-shell steps, the ocean shimmer, the scripted
-    /// CLUT-cell effects and the battle VRAM residency check.
+    /// The frame-tail effect passes after the scene-graph tick
+    /// (`tick_world_effects`): the battle face / CLUT / stage-shell steps,
+    /// the ocean shimmer, the scripted CLUT-cell effects and the battle VRAM
+    /// residency check.
     fn tick_frame_tail_effects(&mut self) {
-        // Advance the three move-VM effect scene-graphs - an active
-        // Seru-magic summon (the cast above, or the `G` debug spawn), a
-        // battle move-FX (`H`), and the field op-`0x34` sub-3 prescript
-        // stagers - through the shared frame-tail kernel the browser page
-        // calls too. Each self-gates when nothing is live.
-        self.session.host.world.tick_effect_scene_graphs();
         // In battle, re-stamp the party's eye/mouth face frames
         // from the playing clips' facial tracks (the retail
         // per-frame facial animator). The clips themselves are
@@ -694,6 +629,9 @@ impl PlayWindowApp {
         // fold their gameplay-state side into the world (HP /
         // status), and ring them into the HUD log.
         self.drain_and_log_battle_events();
+        // The audio frame, once every cue of the tick is queued: the duck
+        // ramp, the delay scheduler, the matured cues.
+        self.tick_sfx();
         // Route field events: ActorSpawned events whose actor
         // carries a `tmd_ref` queue a render-pass mesh upload
         // so spawn-record actors appear in the scene.

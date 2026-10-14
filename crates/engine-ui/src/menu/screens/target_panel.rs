@@ -520,6 +520,7 @@ mod target_panel_tests {
         let members = [member("Vahn"), member("Noa"), member("Gala")];
         let z = (0, 0, 0, 0);
         let rects = SaveMenuAtlasRects {
+            class0_dark: None,
             panel_tl: z,
             panel_tr: z,
             panel_bl: z,

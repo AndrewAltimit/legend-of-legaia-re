@@ -346,7 +346,7 @@ fn a_retail_saves_audio_levels_are_honoured_on_import() {
     let arm = world.audio.sound_arm.expect("armed");
     assert_eq!(
         arm,
-        crate::scus_leaf_kernels::TimedSoundArm::arm(0, 30, 0x6B)
+        legaia_engine_system::scus_leaf_kernels::TimedSoundArm::arm(0, 30, 0x6B)
     );
 
     // And it goes back out: LGSF and a fresh retail block.

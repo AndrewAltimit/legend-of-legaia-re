@@ -81,7 +81,7 @@ pub fn scene_xa_prestage(man: &[u8]) -> Vec<legaia_engine_system::sound_state::X
 /// The minigame announcer lines a scene's **door** will need: when `man`
 /// carries an op-`0x3E` warp into the Muscle Dome (`3E 69`, sub-id 5 -
 /// koin1's P1[9] has three), the dome hub's two first-visit lines
-/// ([`crate::muscle_ringside::hub_xa_prestage`]).
+/// ([`legaia_engine_minigames::muscle_ringside::hub_xa_prestage`]).
 ///
 /// The hub starts its intro line on the very frame its leg opens, and the
 /// scene host drains the door warp inside the same scene tick as the field
@@ -113,7 +113,7 @@ pub fn scene_minigame_door_xa_prestage(
                     } = insn.info
                         && MinigameSubId::from_op0(op0) == Some(MinigameSubId::MuscleDome)
                     {
-                        return crate::muscle_ringside::hub_xa_prestage()
+                        return legaia_engine_minigames::muscle_ringside::hub_xa_prestage()
                             .into_iter()
                             .map(Into::into)
                             .collect();
@@ -130,22 +130,12 @@ pub fn scene_minigame_door_xa_prestage(
     Vec::new()
 }
 
-impl From<crate::muscle_ringside::HubXaCue> for legaia_engine_system::sound_state::XaVoiceClip {
-    fn from(c: crate::muscle_ringside::HubXaCue) -> Self {
-        Self {
-            clip: u32::from(c.clip),
-            channel: u32::from(c.channel),
-            duration_sectors: u32::from(c.duration_sectors),
-        }
-    }
-}
-
 impl World {
     /// Append a minigame's CD-XA lines to the prestage list both hosts drain
     /// ([`Self::drain_field_xa_prestage`]): the Baka Fighter chrome's
     /// announcer lines ([`legaia_engine_minigames::baka_fighter::BakaFight::take_xa_prestage`])
     /// and the dome hub's two
-    /// ([`crate::muscle_ringside::hub_xa_prestage`]). Skips a clip already
+    /// ([`legaia_engine_minigames::muscle_ringside::hub_xa_prestage`]). Skips a clip already
     /// listed.
     pub fn queue_xa_prestage<C: Into<legaia_engine_system::sound_state::XaVoiceClip>>(
         &mut self,
@@ -254,8 +244,8 @@ mod tests {
     #[test]
     fn queued_clips_are_deduplicated() {
         let mut w = World::default();
-        w.queue_xa_prestage(crate::muscle_ringside::hub_xa_prestage());
-        w.queue_xa_prestage(crate::muscle_ringside::hub_xa_prestage());
+        w.queue_xa_prestage(legaia_engine_minigames::muscle_ringside::hub_xa_prestage());
+        w.queue_xa_prestage(legaia_engine_minigames::muscle_ringside::hub_xa_prestage());
         assert_eq!(w.drain_field_xa_prestage().len(), 2);
     }
 
@@ -268,7 +258,7 @@ mod tests {
         let mut w = World::default();
         w.request_minigame_warp(MinigameSubId::MuscleDome.sub_id());
         let want: Vec<legaia_engine_system::sound_state::XaVoiceClip> =
-            crate::muscle_ringside::hub_xa_prestage()
+            legaia_engine_minigames::muscle_ringside::hub_xa_prestage()
                 .into_iter()
                 .map(Into::into)
                 .collect();

@@ -148,7 +148,14 @@ pub(super) fn plan_around(
 /// probe-checked steps reads blocked although the free movement that got
 /// it there can leave. Head for the nearest cell a step can leave; the
 /// route is planned again from there.
-pub(super) fn unwedge(session: &NativeSession, from: Cell) -> Vec<Cell> {
+///
+/// The lattice cannot say which of those cells the free movement reaches:
+/// the nearest can lie behind the wall the player is pressed against
+/// (`retona`'s stair landing at (16, 99), where the cell 32 units west is
+/// open and the slide toward it carries the player straight back). So each
+/// call a walk makes without having left the wedge takes the next candidate
+/// in turn, `nth` counting them.
+pub(super) fn unwedge(session: &NativeSession, from: Cell, nth: usize) -> Vec<Cell> {
     let w = &session.host.world;
     let open = |c: Cell| {
         let (x, z) = cell_center(c);
@@ -159,6 +166,7 @@ pub(super) fn unwedge(session: &NativeSession, from: Cell) -> Vec<Cell> {
     if open(from) {
         return Vec::new();
     }
+    let mut found = Vec::new();
     for r in 1..=3i16 {
         for dz in -r..=r {
             for dx in -r..=r {
@@ -168,12 +176,20 @@ pub(super) fn unwedge(session: &NativeSession, from: Cell) -> Vec<Cell> {
                 let c = (from.0 + dx, from.1 + dz);
                 let (x, z) = cell_center(c);
                 if !w.field_tile_is_wall(x, z) && open(c) {
-                    return vec![c];
+                    found.push(c);
                 }
             }
         }
+        // The first call keeps to the nearest ring that holds a way out;
+        // later ones may look a ring further.
+        if found.len() > nth {
+            break;
+        }
     }
-    Vec::new()
+    if found.is_empty() {
+        return Vec::new();
+    }
+    vec![found[nth % found.len()]]
 }
 
 /// The overworld's encounter step is a change of 128-unit tile, and a change
@@ -430,6 +446,8 @@ pub(super) fn pad_walk(
     let mut visited: HashSet<Cell> = HashSet::new();
     let mut since = 0u32;
     let mut planned_from = None;
+    // Wedge exits this walk has headed for ([`unwedge`]).
+    let mut unwedged = 0usize;
     let mut scripted_next = session.host.world.encounters.scripted_formation_pending;
     let mut path = Vec::new();
     // The overworld's corner-crossing walk ([`overworld_tile_route`]).
@@ -539,7 +557,8 @@ pub(super) fn pad_walk(
             } else {
                 path = plan_around(session, cell, goal, avoid, &doors);
                 if path.is_empty() {
-                    path = unwedge(session, cell);
+                    path = unwedge(session, cell, unwedged);
+                    unwedged += usize::from(!path.is_empty());
                 }
                 // A route over a band that stages a fight walks into a boss:
                 // a party not near full is topped up first, as before a

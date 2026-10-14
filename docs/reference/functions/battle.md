@@ -521,7 +521,7 @@ New battle-overlay (`0898`) functions the S5 trace found live (`game_mode 0x15`)
 A discrete overlay the [S5 trace](../../tooling/playthrough-coverage.md) surfaced: it drives the **in-battle tutorial prompts** of the scripted Tetsu sparring fight (the how-to-fight tutorial - basic attacks, items, spirit, Hyper-Arts lessons + the practice combo). Extraction **PROT 0967** (a distinct 14 KB overlay), loaded **co-resident at base `0x801F69D8`** (the shared summon/move-FX buffer `*DAT_80010390`), so its `0x801F6xxx..0x801F7xxx` code physically overlaps overlay `0898`'s *rodata* tail - `0898`'s own bytes there are menu label strings, which is why that region disassembled to garbage from the `0898` image.
 
 The line count `FUN_801F747C` sizes its box from is
-`engine-core::scus_leaf_kernels::text_line_count`. Two details of that walk are
+`engine-system::scus_leaf_kernels::text_line_count`. Two details of that walk are
 easy to lose: the `1` seed sits in the delay slot of the empty-string branch,
 so an empty prompt still measures one line, and a `0xC0..=0xCF` byte is a
 two-byte escape lead whose follower is consumed untested - a `0x7C` there is

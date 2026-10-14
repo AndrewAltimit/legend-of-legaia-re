@@ -37,8 +37,8 @@ impl Finding {
                     1
                 }
             }
-            "unknown_scene" => 1,
-            "script_stall" => 2,
+            "unknown_scene" | "door_loop" => 1,
+            "script_stall" | "control_starved" | "confined" => 2,
             "battle_loop" => 1,
             _ => 3,
         }

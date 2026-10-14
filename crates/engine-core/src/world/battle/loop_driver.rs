@@ -330,7 +330,7 @@ impl World {
         // prompt under it.
         if self.battle.inflight_seed.is_some()
             && self.battle.command.is_some()
-            && self.battle.flow == crate::battle_flow::BattleFlowState::TurnPrompt
+            && self.battle.flow == legaia_engine_menus::battle_flow::BattleFlowState::TurnPrompt
             && self
                 .battle
                 .camera
@@ -339,6 +339,24 @@ impl World {
             && let Some(seed) = self.battle.inflight_seed.take()
         {
             self.dispatch_inflight_seed(seed);
+        }
+
+        // The menu SM's pre-dispatch gate: while a tracked widget glide is
+        // in flight no command state runs, so no surface below reads the pad
+        // (`World::battle_command_glide_gate`). It is the menu SM's gate, not
+        // the action SM's, so it holds only while a command surface is up.
+        // REF: FUN_801D0748 (`0x801D0B2C..0x801D0BA4`)
+        let surface_up = self.battle.command.is_some()
+            || self.battle.arts_input.is_some()
+            || self.battle.arts_menu.is_some()
+            || self.battle.spell_menu.is_some()
+            || self.battle.item_menu.is_some();
+        if surface_up && self.battle_command_glide_gate() {
+            return None;
+        }
+        if self.battle.command.is_none() {
+            // Any other state's dispatch empties the park unread.
+            self.battle.command_pad_buffer = None;
         }
 
         // Player-driven: while the retail-model Arts command input is open
@@ -387,7 +405,7 @@ impl World {
         // Returning to Idle here is what lets the next turn's
         // `open_battle_command` raise the turn-start prompt again.
         if self.battle.tutorial.is_some() {
-            self.set_battle_flow(crate::battle_flow::BattleFlowState::Idle);
+            self.set_battle_flow(legaia_engine_menus::battle_flow::BattleFlowState::Idle);
         }
 
         // `ctx.menu_open` is retail's cast-menu latch: the summon-invoke arm

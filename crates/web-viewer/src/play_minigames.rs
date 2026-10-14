@@ -255,33 +255,21 @@ impl LegaiaRuntime {
         self.minigame_ui.art.as_deref()
     }
 
-    /// Fire one of the minigame rules engines' SFX cues through the page's
-    /// scheduler.
-    ///
-    /// The full `u16` goes through. [`Self::enqueue_sfx`] already takes
-    /// `impl Into<u16>` and classifies at fire time, so the `u8::try_from`
-    /// this used to narrow through dropped every runtime-bank id
-    /// (`>= 0x200`, e.g. the dance count-in's `COUNTIN_INTRO_CUE`) before any
-    /// counter could see it - the same width trap the strike-SFX scheduler
-    /// was caught by once already. A cue with no page-side voice is still
-    /// silent; it is now silent where the miss is counted.
-    pub(crate) fn minigame_sfx(&mut self, id: u16) {
-        self.enqueue_sfx(id, 0);
-    }
-
     /// Fire the minigame sessions' queued SFX cue ids (the fishing hub's and
     /// point exchange's blips) through the
     /// page's scheduler - the browser twin of the native window's
     /// `drain_minigame_sfx_cues`. Drained every frame, audio up or not, so
     /// the queue cannot grow on a muted page.
+    ///
+    /// The drain and the enqueue are the session's step
+    /// (`BootSession::enqueue_minigame_sfx_cues`); the count feeds the page's
+    /// readout.
     pub(crate) fn drain_minigame_sfx_cues_web(&mut self) {
-        let cues = match self.scene_host.host_mut() {
-            Some(h) => h.world.drain_minigame_sfx_cues(),
-            None => return,
-        };
-        for cue in cues {
-            self.minigame_sfx(cue);
-        }
+        let queued = self
+            .scene_host
+            .session_mut()
+            .map_or(0, |s| s.enqueue_minigame_sfx_cues());
+        self.sfx.queued += queued;
     }
 
     /// Per-tick presentation step. Cheap no-op outside a minigame mode.

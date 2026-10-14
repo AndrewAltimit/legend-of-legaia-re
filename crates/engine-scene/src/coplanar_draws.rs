@@ -180,9 +180,16 @@ pub fn mesh_planes(positions: &[[f32; 3]], indices: &[u32]) -> MeshPlanes {
             }
         }
     }
+    // In key order, never the map's own: a plane's index is what the offset
+    // pass ranks, pairs and repairs by, so a per-process iteration order made
+    // a multi-family draw's summed lift differ run to run (`jouine`'s stacked
+    // flesh shells moved a unit between two launches of one binary).
+    let mut acc: Vec<_> = acc.into_iter().collect();
+    acc.sort_unstable_by_key(|&(key, _)| key);
     MeshPlanes {
         planes: acc
-            .into_values()
+            .into_iter()
+            .map(|(_, a)| a)
             .filter(|a| a.area >= MIN_PLANE_AREA)
             .map(|a| Plane {
                 n: a.n,
@@ -718,6 +725,26 @@ mod tests {
             [size, 0.0, size],
         ];
         (p, vec![0, 1, 2, 2, 1, 3])
+    }
+
+    /// A mesh's planes come out in one order however the accumulator hashes:
+    /// the offset pass ranks and repairs by plane index.
+    #[test]
+    fn mesh_planes_order_is_stable_across_builds() {
+        let mut p = Vec::new();
+        let mut i = Vec::new();
+        for k in 0..48u32 {
+            let y = k as f32 * 4.0;
+            let base = p.len() as u32;
+            p.extend([[0.0, y, 0.0], [0.0, y, 32.0], [32.0, y, 0.0]]);
+            i.extend([base, base + 1, base + 2]);
+        }
+        let first: Vec<[f32; 3]> = mesh_planes(&p, &i).planes.iter().map(|q| q.point).collect();
+        assert_eq!(first.len(), 48);
+        for _ in 0..8 {
+            let again: Vec<[f32; 3]> = mesh_planes(&p, &i).planes.iter().map(|q| q.point).collect();
+            assert_eq!(first, again);
+        }
     }
 
     #[test]

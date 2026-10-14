@@ -1,0 +1,142 @@
+# Soak-harness finding (pad input only - no disc bytes).
+# soak-scene = "map01@playthrough-ladder-pro00-14.mcr:PRO-01"
+# soak-seed = 880902
+# soak-signature = "value|map01|roster.hp_max!=rebuilt(slot0)"
+# detail: live 589 against 590 from base 537 under ability bits 0x1
+# reproduce: LEGAIA_SOAK_REPLAY=<this file> cargo test -p legaia-engine-shell --profile release-test --test integration soak_harness::soak_replay -- --nocapture
+[meta]
+schema = "j-replay-v1"
+rng_seed = 3984052582
+frames = 11417
+
+[[event]]
+frame = 0
+pad = 0
+
+[[event]]
+frame = 11254
+pad = 8
+
+[[event]]
+frame = 11255
+pad = 0
+
+[[event]]
+frame = 11260
+pad = 16384
+
+[[event]]
+frame = 11261
+pad = 0
+
+[[event]]
+frame = 11268
+pad = 64
+
+[[event]]
+frame = 11269
+pad = 0
+
+[[event]]
+frame = 11270
+pad = 16384
+
+[[event]]
+frame = 11271
+pad = 0
+
+[[event]]
+frame = 11278
+pad = 16384
+
+[[event]]
+frame = 11279
+pad = 0
+
+[[event]]
+frame = 11280
+pad = 64
+
+[[event]]
+frame = 11281
+pad = 0
+
+[[event]]
+frame = 11282
+pad = 16384
+
+[[event]]
+frame = 11283
+pad = 0
+
+[[event]]
+frame = 11286
+pad = 8192
+
+[[event]]
+frame = 11287
+pad = 0
+
+[[event]]
+frame = 11304
+pad = 8192
+
+[[event]]
+frame = 11305
+pad = 0
+
+[[event]]
+frame = 11306
+pad = 8192
+
+[[event]]
+frame = 11307
+pad = 0
+
+[[event]]
+frame = 11389
+pad = 8
+
+[[event]]
+frame = 11390
+pad = 0
+
+[[event]]
+frame = 11395
+pad = 16384
+
+[[event]]
+frame = 11396
+pad = 0
+
+[[event]]
+frame = 11397
+pad = 16384
+
+[[event]]
+frame = 11398
+pad = 0
+
+[[event]]
+frame = 11399
+pad = 16
+
+[[event]]
+frame = 11400
+pad = 0
+
+[[event]]
+frame = 11413
+pad = 16384
+
+[[event]]
+frame = 11414
+pad = 0
+
+[[event]]
+frame = 11415
+pad = 16384
+
+[[event]]
+frame = 11416
+pad = 0

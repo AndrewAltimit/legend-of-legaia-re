@@ -127,7 +127,7 @@ impl PlayWindowApp {
     /// Keep the cropped ground in step with this frame's visible-tile cell
     /// rectangle: re-upload the ground with the index list
     /// `field_ground::crop_indices` keeps whenever
-    /// [`legaia_engine_core::field_view_window::ViewCells::stamp`] moves, and
+    /// [`legaia_engine_scene::field_view_window::ViewCells::stamp`] moves, and
     /// drop it when the crop is off. The browser play page re-uploads its
     /// ground indices through the same kernel on the same stamp.
     ///
@@ -151,15 +151,15 @@ impl PlayWindowApp {
         if src.lut_applied == Some(live)
             || (src.lut_applied.is_none()
                 && src.vmesh.positions
-                    == legaia_engine_core::field_ground::live_render_positions(&src.hf, &live))
+                    == legaia_engine_scene::field_ground::live_render_positions(&src.hf, &live))
         {
             src.lut_applied = Some(live);
             return;
         }
         src.lut_applied = Some(live);
         src.vmesh.positions =
-            legaia_engine_core::field_ground::live_render_positions(&src.hf, &live);
-        src.flat_refs = legaia_engine_core::field_ground::flat_refs(&src.hf, &src.vmesh.positions);
+            legaia_engine_scene::field_ground::live_render_positions(&src.hf, &live);
+        src.flat_refs = legaia_engine_scene::field_ground::flat_refs(&src.hf, &src.vmesh.positions);
         let Some(r) = self.win.renderer.as_ref() else {
             return;
         };
@@ -183,7 +183,7 @@ impl PlayWindowApp {
 impl PlayWindowApp {
     pub(in crate::window) fn sync_ground_crop(
         &mut self,
-        cells: Option<&legaia_engine_core::field_view_window::ViewCells>,
+        cells: Option<&legaia_engine_scene::field_view_window::ViewCells>,
     ) {
         let Some(cells) = cells else {
             self.ground_crop = None;
@@ -199,7 +199,7 @@ impl PlayWindowApp {
         };
         let v = &src.vmesh;
         let indices =
-            legaia_engine_core::field_ground::crop_indices(&v.positions, &v.indices, Some(cells));
+            legaia_engine_scene::field_ground::crop_indices(&v.positions, &v.indices, Some(cells));
         if let Some(d) = self.draw_census.as_mut() {
             d.ground_crop = Some(legaia_engine_system::draw_census::MeshCensus::from_mesh(
                 &v.positions,

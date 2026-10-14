@@ -1,0 +1,14 @@
+# Soak-harness finding (pad input only - no disc bytes).
+# soak-scene = "edbalden+rt@playthrough-ladder-pro00-14.mcr:PRO-00"
+# soak-seed = 221800
+# soak-signature = "value|edlast|roster.hp_max!=rebuilt(slot0)"
+# detail: live 426 against 388 from base 388 under ability bits 0x0
+# reproduce: LEGAIA_SOAK_REPLAY=<this file> cargo test -p legaia-engine-shell --profile release-test --test integration soak_harness::soak_replay -- --nocapture
+[meta]
+schema = "j-replay-v1"
+rng_seed = 4061622684
+frames = 14225
+
+[[event]]
+frame = 0
+pad = 0

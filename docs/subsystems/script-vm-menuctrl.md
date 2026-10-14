@@ -907,13 +907,26 @@ an item the player is *wearing* still removes it.
   `jal` at `0x801E1B84`). Its known user is the one-shot face-frame stamps onto
   the player texture atlas (town01's opening record stamps the Noa blink/mouth
   cells; see [`character-mesh.md`](../formats/character-mesh.md)).
-- **`4C 61`** is a 16-byte halt-acquire (`which = 0x61`) whose payload is a
-  **one-shot 16x1 VRAM CLUT-cell write**: source `(x, y)` at `+5`/`+7` ->
-  `MoveImage` cell copy, or a flat BGR555 fill of all 16 entries when the
-  source y is zero; destination `(x, y)` at `+9`/`+0xB`. It is the one-shot
-  half of the world-map palette cycling (see
+- **`4C 61`** is a 16-byte op whose payload is a **16x1 VRAM CLUT-cell
+  write**: source `(x, y)` at `+5`/`+7` -> `MoveImage` cell copy, or a flat
+  BGR555 fill of all 16 entries when the source y is zero; destination
+  `(x, y)` at `+9`/`+0xB`; a frame count at `+0xD` turns the write into a
+  cross-fade. It is the one-shot half of the world-map palette cycling (see
   [`functions.md` § 801E4C58](../reference/functions/script-vms.md#801e4c58)
   and [`world-map.md`](world-map.md) "Ocean animation").
+
+  Its halt-acquire (`which = 0x61`) is conditional twice over. The arm reads
+  the opcode byte back and the frame count (`lbu v0,0(s0)` / `andi v0,v0,0x80`
+  at `0x801E1B9C..0x801E1BA8`, `FUN_8003CE9C` on `+0xD` at `0x801E1BB0`) and
+  branches straight to the emitter call at `0x801E1C54`, with `a0 = 0` - no
+  owning context - unless the op is the **extended** form `CC <id> 61 ..`
+  *and* the count is non-zero. Only a cross-context fade raises the halt bit
+  and waits for the fade actor's last row to clear it; a plain `4C 61`, and a
+  zero-frame one-shot of either form, runs on. Every kingdom map's entry
+  script issues plain one-shots (`map01` `P1[0]` `+0x56..+0x86`, behind flag
+  `0x27B`), and its per-frame loop opens on a `CD F8` box test: a system
+  context halted by them returns at the halted-target early-out on that test
+  for the whole visit, and the loop never selects its room bit `0x528`.
 - `4C 62..6F` have no arm.
 
 ### 0x4C nibble-4 - immediate-or-ramp cluster

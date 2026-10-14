@@ -78,7 +78,7 @@ impl LegaiaRuntime {
     ///
     /// The oracles use it to put a disc-side precondition in place without
     /// replaying the script that would - e.g. flag
-    /// `legaia_engine_core::battle_tutorial::TUTORIAL_ARM_FLAG`, which town01's
+    /// `legaia_engine_battle::battle_tutorial::TUTORIAL_ARM_FLAG`, which town01's
     /// Tetsu record sets two ops before its battle-entry op. Deliberately a
     /// raw flag poke rather than a "start the tutorial" hook: a test that can
     /// only ask for the outcome cannot tell a wired condition from a shim.

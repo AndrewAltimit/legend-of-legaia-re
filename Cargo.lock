@@ -1550,10 +1550,7 @@ dependencies = [
  "legaia-ui-formats",
  "legaia-vab",
  "log",
- "serde",
- "serde_json",
  "tempfile",
- "toml",
 ]
 
 [[package]]
@@ -1577,6 +1574,22 @@ dependencies = [
  "legaia-render-kernels",
  "legaia-tim",
  "legaia-tmd",
+]
+
+[[package]]
+name = "legaia-engine-export"
+version = "0.1.0"
+dependencies = [
+ "legaia-actor-formats",
+ "legaia-engine-core",
+ "legaia-engine-field",
+ "legaia-engine-scene",
+ "legaia-engine-vm",
+ "legaia-game-tables",
+ "legaia-scene-formats",
+ "legaia-tim",
+ "legaia-tmd",
+ "serde_json",
 ]
 
 [[package]]
@@ -1637,6 +1650,7 @@ dependencies = [
  "legaia-tim",
  "legaia-ui-formats",
  "serde",
+ "toml",
 ]
 
 [[package]]
@@ -1763,6 +1777,7 @@ dependencies = [
  "legaia-engine-battle",
  "legaia-engine-core",
  "legaia-engine-effects",
+ "legaia-engine-fishing",
  "legaia-engine-menus",
  "legaia-engine-mode",
  "legaia-engine-scene",
@@ -1828,6 +1843,7 @@ dependencies = [
  "legaia-engine-core",
  "legaia-engine-dialog",
  "legaia-engine-effects",
+ "legaia-engine-export",
  "legaia-engine-field",
  "legaia-engine-fishing",
  "legaia-engine-menus",

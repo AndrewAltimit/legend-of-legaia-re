@@ -343,9 +343,10 @@ pub(super) struct PlayWindowApp {
         Vec<Option<legaia_engine_scene::field_env::PlacedWindowKey>>,
     /// Grid cell + record cull radius per `field_placement_draws` entry, for
     /// the placed-object actor cull (`field_view_window::placed_actor_visible`).
-    pub(super) field_placement_cell_keys: Vec<legaia_engine_core::field_view_window::CellKey>,
+    pub(super) field_placement_cell_keys: Vec<legaia_engine_scene::field_view_window::CellKey>,
     /// The same, per `field_placement_color_draws` entry.
-    pub(super) field_placement_color_cell_keys: Vec<legaia_engine_core::field_view_window::CellKey>,
+    pub(super) field_placement_color_cell_keys:
+        Vec<legaia_engine_scene::field_view_window::CellKey>,
     /// The bind record of each draw of `field_placement_draws` /
     /// `field_placement_color_draws` (parallel lists, `None` = unbound): the
     /// key the per-frame pass looks a script's live object displacement up by
@@ -507,9 +508,9 @@ pub(super) struct PlayWindowApp {
     pub(super) ground_crop: Option<(u32, Option<UploadedVramMesh>)>,
     /// Grid cell + cull radius per `field_terrain_draws` entry, for the
     /// visible-tile crop (`field_view_window::terrain_draw_visible`).
-    pub(super) field_terrain_cell_keys: Vec<legaia_engine_core::field_view_window::CellKey>,
+    pub(super) field_terrain_cell_keys: Vec<legaia_engine_scene::field_view_window::CellKey>,
     /// The same, per `field_terrain_color_draws` entry.
-    pub(super) field_terrain_color_cell_keys: Vec<legaia_engine_core::field_view_window::CellKey>,
+    pub(super) field_terrain_color_cell_keys: Vec<legaia_engine_scene::field_view_window::CellKey>,
     /// Per `field_terrain_draws` entry: a camera-facing cell's record flags
     /// and rotation (`EnvDraw::view_skip`), re-placed every frame.
     pub(super) field_terrain_facing: Vec<Option<field_render::CameraFacing>>,
@@ -852,7 +853,7 @@ pub(super) struct PlayWindowApp {
     /// User-editable settings (BGM / SFX volume, message speed, …). Wired
     /// to the Options screen's [`OptionsSession`] and persisted via
     /// the engine's options round-trip path.
-    pub(super) options_state: legaia_engine_core::options::OptionsState,
+    pub(super) options_state: legaia_engine_menus::options::OptionsState,
     /// Opt-in dynamic-lighting enhancement (NON-RETAIL - the field path has
     /// no light source). Seeded from `--dynamic-lighting`, toggled at
     /// runtime with the `I` key; mirrored into the renderer via
@@ -886,14 +887,14 @@ pub(super) struct PlayWindowApp {
     /// layers use. Each field frame the redraw pass ray-casts a 5-point
     /// eye->player cross against it and arms the fade only when EVERY
     /// sample is blocked - a partially visible character gets no fade at
-    /// all ([`legaia_engine_core::field_occlusion`]).
-    pub(super) field_occluders: legaia_engine_core::field_occlusion::FieldOccluders,
+    /// all ([`legaia_engine_scene::field_occlusion`]).
+    pub(super) field_occluders: legaia_engine_scene::field_occlusion::FieldOccluders,
     /// Eased occlusion-fade strength (0..1) staged as the shader's fade
     /// blend: ramps toward the gate verdict a quarter of the gap per frame,
     /// so the screen-door dissolves in/out instead of popping while the
     /// gate flickers at cover edges. `Cell` because the redraw pass updates
     /// it while the renderer borrow is live.
-    pub(super) occl_fade_strength: std::cell::Cell<legaia_engine_core::field_occlusion::FadeRamp>,
+    pub(super) occl_fade_strength: std::cell::Cell<legaia_engine_scene::field_occlusion::FadeRamp>,
     /// The current scene's derived point lights (world space), rebuilt by
     /// `upload_assets` at scene load and staged into the renderer each
     /// field frame together with the camera's view-projection.

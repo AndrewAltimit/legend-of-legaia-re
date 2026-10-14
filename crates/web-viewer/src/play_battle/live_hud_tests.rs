@@ -93,6 +93,30 @@ fn live_battle_overlay_carries_bars_and_enemy_target_strip() {
             .is_some_and(|h| h.world.battle.command.is_some()),
         "player-driven battle opens the command menu"
     );
+    // The round prompt opens on a sixteen-vsync glide (sub-draw step 0
+    // spawns the panels under the screen); the packet-pinned bands are
+    // where it lands.
+    for _ in 0..16 {
+        rt.tick_frame().expect("tick");
+    }
+
+    // The prompt opens on a glide - the panels rise from under the screen
+    // and the chips unfold - and the menu SM reads no pad until it lands
+    // (`World::battle_command_pad_held`). Sample the surface at rest.
+    let settle = |rt: &mut LegaiaRuntime| {
+        for _ in 0..64 {
+            let held = rt
+                .scene_host
+                .host()
+                .is_some_and(|h| h.world.battle_command_pad_held());
+            if !held {
+                break;
+            }
+            rt.set_pad(0);
+            rt.tick_frame().expect("tick");
+        }
+    };
+    settle(&mut rt);
 
     // (1) The retail party surface reaches the page's overlay draw list.
     // 960x720 -> stage scale 3, origin (0,0). At rest that surface is the
@@ -162,6 +186,7 @@ fn live_battle_overlay_carries_bars_and_enemy_target_strip() {
     {
         use legaia_engine_menus::battle_input::{AttackMode, BattleCommand, CommandPhase};
         let tap = |rt: &mut LegaiaRuntime, b: legaia_engine_system::input::PadButton| {
+            settle(rt);
             rt.set_pad(b.mask());
             rt.tick_frame().expect("tick");
             rt.set_pad(0);

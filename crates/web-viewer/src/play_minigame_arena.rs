@@ -131,16 +131,21 @@ impl LegaiaRuntime {
         }
     }
 
-    /// Per-tick inside the dome: the round time meter (retail's per-frame
-    /// arena driver step, which the engine's pad tick does not run) and the
-    /// turn-resolved edge the page keys its swing clips on.
+    /// Advance the Muscle Dome leg's round time meter one sim tick - the
+    /// session's step (`BootSession::step_muscle_time_meter`; retail's
+    /// per-frame arena driver step, which the engine's pad tick does not
+    /// run). Its own step of `tick_frame`, as it is of the native window's
+    /// frame path. No-op with no leg open.
+    pub(crate) fn tick_muscle_time_meter(&mut self) {
+        if let Some(s) = self.scene_host.session_mut() {
+            s.step_muscle_time_meter();
+        }
+    }
+
+    /// Per-tick inside the dome: the turn-resolved edge the page keys its
+    /// swing clips on.
     pub(crate) fn tick_muscle_ui(&mut self) {
         let phase = self.muscle_session().map(|s| s.phase());
-        if let Some(host) = self.scene_host.host_mut()
-            && let Some(s) = host.world.minigames.muscle_dome.as_mut()
-        {
-            s.tick_time_meter(1);
-        }
         let ui = &mut self.minigame_ui.muscle;
         if ui.prev_phase == Some(MusclePhase::Resolve) && phase != Some(MusclePhase::Resolve) {
             ui.turns_resolved = ui.turns_resolved.wrapping_add(1);
@@ -378,15 +383,18 @@ impl LegaiaRuntime {
         // A rung the cabinet seats inside the visit needs nothing here: the
         // duel surface (`play_mg_baka_scene_frame`) rebuilds its buffers and
         // VRAM when the seated pair changes, on both play hosts.
-        let (cues, xa): (Vec<u8>, _) = self
+        // The session's step (`BootSession::enqueue_baka_sfx_cues`), counted
+        // for the page's readout whether or not a director heard the cues.
+        let queued = self
+            .scene_host
+            .session_mut()
+            .map_or(0, |s| s.enqueue_baka_sfx_cues());
+        self.sfx.queued += queued;
+        let xa = self
             .scene_host
             .host_mut()
             .and_then(|h| h.world.minigames.baka_fighter.as_mut())
-            .map(|f| (f.take_cues(), f.chrome_frame().xa))
-            .unwrap_or_default();
-        for id in cues {
-            self.minigame_sfx(id as u16);
-        }
+            .and_then(|f| f.chrome_frame().xa);
         // The round chrome's announcer line (`FUN_8003D53C`), the native
         // window's `tick_baka_chrome` twin.
         if let Some(xa) = xa {

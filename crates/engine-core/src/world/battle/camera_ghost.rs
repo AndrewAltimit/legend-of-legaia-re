@@ -13,7 +13,7 @@
 //! mirrored byte for byte:
 //!
 //! - the command-flow byte `ctx[+6]` is the engine's own flow mirror
-//!   ([`crate::battle_flow::BattleFlowState`], the selection band `0x1E..=0x78`
+//!   ([`legaia_engine_menus::battle_flow::BattleFlowState`], the selection band `0x1E..=0x78`
 //!   byte for byte), `0xFF` while the action SM owns the round (every
 //!   catalogued state of a running action reads `0xFF`), and `0x14` - an
 //!   entry / round-start byte below the `0x1F` gate - before the first round
@@ -39,7 +39,7 @@
 use super::*;
 use legaia_engine_mode::mode::SceneMode;
 
-use legaia_engine_effects::action_effect_script::RotationLut;
+use legaia_engine_battle_vm::rotation_lut::RotationLut;
 
 impl World {
     /// The retail pool slot of engine actor `e`. Scope codes `8` / `9` pass
@@ -120,7 +120,7 @@ impl World {
                     .is_some_and(|v| v.side_band_request_up()),
             ),
         };
-        let lut = legaia_engine_effects::action_effect_script::retail_rotation_lut();
+        let lut = legaia_engine_battle_vm::rotation_lut::retail_rotation_lut();
         camera_ghost_pass(
             &inputs,
             &mut slots,

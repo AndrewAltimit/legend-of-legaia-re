@@ -58,7 +58,7 @@ mod value_readout;
 /// One on-screen sparring-tutorial box with its stage rect `(x, y, w, h)`.
 pub(crate) type TutorialStageBox<'a> = (
     (i32, i32, i32, i32),
-    &'a legaia_engine_core::battle_flow::ActiveTutorialBox,
+    &'a legaia_engine_menus::battle_flow::ActiveTutorialBox,
 );
 
 /// Top-left anchor of the battle HUD's slot-row block, in surface pixels
@@ -182,7 +182,9 @@ fn battle_hud_popup_views(hud: &BattleHud) -> Vec<HudPopupView> {
 /// onto the leaf crate's own enum).
 pub(crate) type CommandChips = (
     Vec<(String, bool)>,
-    usize,
+    // The highlighted chip (`battle_hud::battle_chip_highlight`): `None`
+    // under the directional-buttons command entry.
+    Option<usize>,
     legaia_engine_ui::battle_command_ui::ChipPhase,
 );
 
@@ -340,17 +342,21 @@ impl LegaiaRuntime {
 }
 
 impl LegaiaRuntime {
-    /// Raise the return-to-title hand-off on the `World::game_over` edge -
-    /// the browser twin of the native window's redraw-loop probe. Nothing is
-    /// scanned off the card rack any more: the hand-off has one destination
-    /// whether or not a save exists, because retail's wipe arm has one exit
-    /// store.
+    /// Raise the return-to-title hand-off on the `World::game_over` edge:
+    /// the session's probe (`BootSession::take_party_wipe`, the native
+    /// window's `poll_game_over` too), which consumes the flag and hands back
+    /// the hold this page then steps from `game_over_input`. Nothing is
+    /// scanned off the card rack: the hand-off has one destination whether or
+    /// not a save exists, because retail's wipe arm has one exit store.
     pub(crate) fn poll_game_over(&mut self) {
-        let wiped = self.scene_host.host().is_some_and(|h| h.world.game_over);
-        if !wiped || self.game_over.is_some() {
-            return;
+        let frame_owned = self.game_over.is_some();
+        if let Some(hold) = self
+            .scene_host
+            .session_mut()
+            .and_then(|s| s.take_party_wipe(frame_owned))
+        {
+            self.game_over = Some(hold);
         }
-        self.game_over = Some(legaia_engine_menus::game_over::GameOverSession::new());
     }
 }
 
@@ -363,7 +369,7 @@ mod live_hud_tests;
 
 #[cfg(test)]
 mod tests {
-    use legaia_engine_core::battle_tutorial::BoxStyle;
+    use legaia_engine_battle::battle_tutorial::BoxStyle;
 
     /// The tutorial box rect is in 320x240 stage space, so the page's own
     /// stage transform must carry it - the same law the native window applies

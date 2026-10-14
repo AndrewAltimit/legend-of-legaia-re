@@ -82,7 +82,7 @@ pub struct EnvDraw {
     /// The object-grid cell `(col, row)` whose word selected this draw's
     /// record - the cell retail's per-cell decoration pass (`FUN_801F7088`)
     /// walks, and so the key the camera's visible-tile crop
-    /// (`legaia_engine_core::field_view_window`) tests.
+    /// (`crate::field_view_window`) tests.
     pub cell: (u8, u8),
     /// The record's `+0x1E` cull radius ([`Placement::cull_radius`]), which
     /// widens that per-cell window test.
@@ -237,7 +237,7 @@ pub fn resolve_env_draws(
 ///
 /// Each mesh's object-local vertex extent is carried through its own
 /// placement transform - `T(world_xyz) . Ry(rot_y)`, the yaw-only form
-/// `legaia_engine_core::field_occlusion::FieldOccluders::add_instanced_mesh` already
+/// `crate::field_occlusion::FieldOccluders::add_instanced_mesh` already
 /// instances with - and the boxes are unioned. `ground`, when present, is
 /// already world-space (`WalkHeightfield::positions` are
 /// `(col*128, -lut[nibble], row*128)`) and joins the union directly.

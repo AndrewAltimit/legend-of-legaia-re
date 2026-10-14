@@ -5,12 +5,12 @@
 //! shell.
 
 use legaia_engine_battle::spells::{SpellCatalog, SpellOutcome};
-use legaia_engine_core::options::{OptionsInput, OptionsOutcome, OptionsSession, OptionsState};
 use legaia_engine_menus::field_menu::{
     FieldMenuInput, FieldMenuOutcome, FieldMenuRow, FieldMenuRowMask, FieldMenuSession,
 };
 use legaia_engine_menus::game_over::{GameOverOutcome, GameOverPhase, GameOverSession};
 use legaia_engine_menus::key_rebind::{KeyRebindInput, KeyRebindOutcome, KeyRebindSession};
+use legaia_engine_menus::options::{OptionsInput, OptionsOutcome, OptionsSession, OptionsState};
 use legaia_engine_menus::spell_menu::{
     CasterSlot, SpellMenuInput, SpellMenuOutcome, SpellMenuSession, TargetRow,
 };
@@ -226,7 +226,7 @@ fn the_options_screen_reaches_the_key_rebind_sub_screen_and_commits_a_bind() {
     });
     assert!(events.iter().any(|e| matches!(
         e,
-        legaia_engine_core::options::OptionsEvent::KeyRebindOpened { row: r } if *r == row
+        legaia_engine_menus::options::OptionsEvent::KeyRebindOpened { row: r } if *r == row
     )));
     assert!(s.popup().is_none(), "Select opens no value popup");
     let sub = s.key_rebind().expect("sub-screen open");
@@ -246,7 +246,7 @@ fn the_options_screen_reaches_the_key_rebind_sub_screen_and_commits_a_bind() {
     let events = s.tick_with_key(OptionsInput::default(), Some("K"));
     assert!(events.iter().any(|e| matches!(
         e,
-        legaia_engine_core::options::OptionsEvent::BindingsChanged
+        legaia_engine_menus::options::OptionsEvent::BindingsChanged
     )));
 
     // The committed table is on the session, and the dirty flag reports

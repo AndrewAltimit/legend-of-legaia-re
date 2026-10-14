@@ -39,6 +39,11 @@ pub use world_seam::*;
 pub use zone_arrival::*;
 pub use zone_follow::*;
 
+/// Retail folds a 6x uniform world scale into the camera rotation (base
+/// matrix `DAT_8007BF10` = `24576 * I`, GTE `4096` = 1.0); the engine renders
+/// at 1x, so an op-`0x45` eye-space translation reduces by this factor.
+pub const CUTSCENE_WORLD_SCALE: f32 = 6.0;
+
 /// The user's three **follow-camera knobs** - orbit, tilt and zoom - as one
 /// vocabulary both hosts steer from: the play-window's left-mouse drag and
 /// wheel, and the browser play page's `pointermove` / `wheel` handlers on the

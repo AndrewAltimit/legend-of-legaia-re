@@ -421,6 +421,22 @@ unavailable command, which still gets its chip, while a *forbidden* command
 wears the red cross-out X (`FUN_801DBC30`, port
 `battle_party_panel::cross_out_mark`).
 
+**The selection cue is the plate, not a tint.** Every chip packet carries the
+neutral colour `0x808080` and every label the same glyph palette, the `-` of an
+unavailable command included: the `koru_strip_forced` and
+`v0_1_battle_command_submenu` display lists hold both round-prompt chips and
+all four ring arms on CLUT `0x7FC4` at `0x808080`. A highlight exists only
+under the Battle Command option's cross-button value (`_DAT_800846C8 != 0`):
+the menu SM's pre-dispatch block stamps the highlighted arm's text actor
+`+0x1D = 2` and every other arm `1` (`0x801D0850..0x801D089C` for the Left arm,
+one such block per direction). That byte is the frame style, so the highlighted
+chip draws widget record `2`, the carved-gold plate run the actor plaque wears
+(tile-set 4, sub-palette 12), and the rest record `1`, the blue run. On the
+option's default, the directional buttons, the block is skipped and all chips
+are blue. Port: `battle_hud::battle_chip_highlight` gates the highlight on
+`WorldToggles::battle_command`, and `battle_command_ui` draws the gold run for
+the chip it names.
+
 **Port.** [`engine-ui::battle_command_ui`](../../crates/engine-ui/src/battle_command_ui.rs)
 draws the plate run, both clusters, the shared D-pad glyph cell and the `-`
 chip, and both hosts seat their command menu through it. The two clusters are
@@ -490,6 +506,113 @@ element:
 | `party_battle_gobu_gobu` / `terra_party_battle` | three / two panels |
 | `evil_medallion_rage_battle` (action `0x0A`) | nothing |
 
+#### The round prompt opens on a glide
+
+Step 0 is `[5][1][2]` with pairs `00/0 03/0 06/0 4E/0 4F/0`: every record on
+mode `0`, so each spawns at seat A and glides to seat B over sixteen vsyncs.
+
+| Record | Element | Seat A -> seat B |
+|---|---|---|
+| 0 | `Begin` | `x = 142 -> 104` |
+| 3 | `Run` | `x = 142 -> 180` |
+| 6 / `0x4E` / `0x4F` | roster panels | `y = 236 -> 170` |
+
+The two chips unfold from the cluster centre and the panels rise from under
+the screen.
+
+**No D-pad glyph until it lands.** The menu SM runs the glide stepper ahead of
+its state switch and leaves without dispatching while the stepper reports a
+glide in flight (`jal 0x801D9BBC` at `0x801D0B2C`, `bne s0,zero` at
+`0x801D0B38`, the exit at `0x801D0BA0`). The glyph is drawn by the state's own
+arm (`FUN_801DB8F4(0x98, 0x58)` at `0x801D1030` for `0x1E`), so an unfolding
+prompt shows none: the older of `koru_strip_forced`'s two ordering tables
+holds `Begin` and `Run` five pixels short of their seats, the panel nine rows
+short of its own, and no glyph packet.
+
+#### The ring opens on a glide
+
+Step 1 is `[12][1][4]` with pairs
+`09/0 0A/0 08/0 0B/0 01/0 05/0 06/1 4E/1 4F/1 07/0 1A/0 52/0`, run by the
+round prompt's confirm arm (`jal 0x801D388C` at `0x801D109C`):
+
+| Record | Element | Seat the step starts from -> seat it lands on |
+|---|---|---|
+| 9 / `0x0A` / 8 / `0x0B` | the four ring arms | `x = seat + 168 -> seat` (`328 -> 160` for record 9) |
+| 1 | `Begin`, now the tab | `(104, 88) -> (16, 14)`, from the prompt's own `Begin` seat |
+| 5 | `Run` | `x = 180 -> 328`, off the right edge |
+| 6 / `0x4E` / `0x4F` | roster panels (mode `1`) | `y = 170 -> 236`, sinking |
+| 7 | the bar | `y = 236 -> 194` |
+| `0x1A` | the plaque behind the tab | `y = -24 -> 14` |
+| `0x52` | the AP plate | `x = 328 -> 208` |
+
+#### The stepper's return holds the pad
+
+`FUN_801D9BBC` returns a value the menu SM reads as "a glide is still up":
+
+- it is seeded from the first live record's flag byte `+3`
+  (`0x801D9C00..0x801D9C08`), which is `ctx[+0x1B]` at spawn
+  (`lbu a2,0xa(s1)` at `0x801D93C0`) - `1` from the round reset
+  (`0x801D88FC..0x801D8900`), cleared only around the arts entry's own spawns
+  (`0x801D3D40`);
+- every record still in flight after its step rewrites it to
+  `total - elapsed + 1` (`0x801D9D04..0x801D9D18`);
+- a record that lands leaves it alone and retires (`sb zero,0(a1)` at
+  `0x801D9D1C`).
+
+So the pass a glide lands on still returns the flag, and the first zero return
+is the pass after. The menu SM's pre-dispatch block acts on it:
+
+```text
+s0 = FUN_801D9BBC()                              ; 0x801D0B2C
+if s0 != 0 || ctx[+0x26A] != 0 {
+    if s0 < 6 && s2 != 0 && ctx[+0x884] == 0 && _DAT_800846C8 == 0 {
+        ctx[+0x884] = s2                         ; 0x801D0B5C..0x801D0B98
+    }
+    ctx[+0x6B2] = s0; return                     ; 0x801D0B9C..0x801D0BA4
+}
+if ctx[+0x6B2] != 0 && stage_id != 0 {           ; 0x801D0BA8..0x801D0BCC
+    ctx[+0x6B2] = 0; return
+}
+...
+if s2 == 0 && ctx[+0x884] != 0 { s2 = ctx[+0x884] }   ; 0x801D0C1C..0x801D0C3C
+ctx[+0x884] = 0                                  ; 0x801D0C58
+```
+
+No state arm runs under a glide, so nothing reads the pad and the state's own
+draws are not issued. A press made while the return is under `6` - the last
+passes of the glide and the pass it lands on - is parked in `ctx[+0x884]`, one
+press only, and only under the Battle Command option's directional-buttons
+value (`_DAT_800846C8 == 0`). The first dispatched pass reads the parked word
+when it has no press of its own, and the park is emptied either way. A battle
+with a stage module paged in (`_DAT_8007B64A != 0`) spends one more pass
+clearing `ctx[+0x6B2]` before it dispatches.
+
+Port: `BattleState::round_prompt_glide` and `ring_open_glide`, started where
+the round prompt opens (`World::open_battle_command`, `arm_round_open_prompt`)
+and where `Begin` takes the ring (`World::tick_battle_command`), and stepped
+with the action plates by `World::step_action_plate_glides`, which also keeps
+the stepper's return. `World::battle_command_glide_gate` is the pre-dispatch
+block, ahead of every command surface in the battle tick, and
+`World::take_command_pad_buffer` hands the round prompt and the ring the
+parked press. `battle_hud::battle_round_prompt_panels_dy`,
+`battle_chip_offsets`, `battle_chip_dpad_visible`, `battle_begin_tab_offset`,
+`battle_ring_ap_plate_dx` and the two plate offsets
+(`battle_action_plaque_dy`, `battle_readout_bar_dy`) hand both hosts the
+seats.
+
+Differences from retail:
+
+- the port ticks once per vsync and retail's pass spans the frame step, so the
+  parking window opens on the tick the return first reads `5` rather than on
+  the pass that contains it - one vsync later at the battle's step of `2`;
+- the pad word is the newly-pressed edge alone; retail's also carries the
+  held-for-32-vsyncs term (`_DAT_8007B938`);
+- the `ctx[+0x26A]` term of the exit is not modelled;
+- `Run` sliding off the right edge as the ring opens is not drawn;
+- the steps past the ring - the windows, the attack-mode prompt, the target
+  cursors, the commit confirm - draw at rest and hold no pad. Their glides
+  are the same kernel over their own records.
+
 #### Action-phase openers
 
 The action SM raises the bar from three places:
@@ -521,7 +644,7 @@ at `(16, 192)` and the move name, and no cluster record). Port:
 | Record | Element | Behaviour |
 |---|---|---|
 | 68 | actor plaque | at `(16, 12)` through every action |
-| 81 | target plaque | a party member's action on a monster; `x` written to `304 - w` so the blue plate's cap ends at 312; rises from `y = 236` to the bar's row; closed in `0x51` only for categories `1..=3` |
+| 81 | target plaque | a party member's action on a monster; `x` written to `304 - w` so the blue plate's cap ends at 312; rises from `y = 236` to the bar's row; wiped by the `0x51` teardown, sliding back out for categories `1..=3` |
 | 76 / 77 | move name | `y = 150`, four X fields written to `0xA0 - width / 2`; plain glyphs, no plate |
 | 80 | combo cluster anchor | `(328, 170)` to `(168, 170)` over sixteen frames |
 
@@ -551,6 +674,15 @@ it out to seat A. A `0x51` capture taken before the teardown still shows the
 cluster at rest (`noa_levelup_fight_pre`); the continuation band `0x52` shows
 none (`rim_elm_gimard_seru_capture_after`). Port:
 `BattleHud::close_combo_on_fade_down`, keyed on the action SM's teardown latch.
+
+**The target plaque leaves the same way.** The wipe takes record 81 with the
+rest of the list, and the sweep re-spawns it with mode `1` only for a monster
+target under categories `1..=3` (`FUN_801D8DE8(0x51, 1)` at `0x801E6344`): it
+slides from its row back to `y = 236` over sixteen vsyncs and is gone, and a
+plaque the sweep does not re-spawn is gone at the wipe. The same `0x52` capture
+shows none. Port: `BattleState::action_hud_wiped`, set on the teardown's
+actor-plaque unload, with the closing launch on `target_plaque_glide`
+(`battle_hud::battle_target_plaque` / `battle_target_plaque_dy`).
 
 #### Party HP / MP seed
 
@@ -879,6 +1011,22 @@ The port raises both a mode-tick **after** the fight has handed the frame back
 to the field, where retail raises them on the battle result screen, so the
 widget is not gated on battle mode. A multi-line message grows the interior by
 the 14-px text pitch per extra row and nothing else moves.
+
+### The bottom message bar (record `0x5B`)
+
+The steal captions ("Stole the ...", a thief's loot handed back) rise on the
+active-actor bar's seat, and they are a framed window like the banner above,
+not a plate run like the bar. Placement record 91 ships seats `(16, 236)` /
+`(16, 194)` and content box `288 x 12` - the bar's (record 7) - but node kind
+`13` against the bar's `0`, and frame style `0x44` against the bar's `0x2B`.
+Style `0x44` is widget record `0x44`, byte-identical to the banner's record
+`3`.
+
+`player_steal_skeleton_banner` shows the result: the blue marble fill inside
+the gold border over `(8, 184)..(312, 212)`, the pen `(16, 192)` inflated by
+the class-0 frame's 8 pixels, with the caption on the pen. Port:
+`BattleHudFrame::message_bar` draws `class0_frame_draws_at` on the bar's name
+pen; while it is up neither the bar nor the target plaque on that row draws.
 
 ### The battle-intro enemy-name banner
 

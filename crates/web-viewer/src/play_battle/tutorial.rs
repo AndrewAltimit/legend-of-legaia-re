@@ -133,7 +133,7 @@ impl LegaiaRuntime {
         };
         let prompts = world.battle.tutorial_script.len();
         let flag_armed =
-            world.system_flag_test(legaia_engine_core::battle_tutorial::TUTORIAL_ARM_FLAG);
+            world.system_flag_test(legaia_engine_battle::battle_tutorial::TUTORIAL_ARM_FLAG);
         let Some(lesson) = world.battle_tutorial_lesson() else {
             return serde_json::json!({
                 "armed": false,

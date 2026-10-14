@@ -146,12 +146,23 @@ pub fn entry_latches(extracted: &Path, retail: &RetailObs, battle: &RetailBattle
         return Vec::new();
     };
     let held = crate::retail_compare::system_flag_ids(&save);
+    // The report flag is the entry tail's own write (`FUN_801DA51C`,
+    // `0x801DA6D8..0x801DA6E4`, under its arm), so a capture of the fight
+    // holds it for this fight and no entry script had read it yet: `cave01`'s
+    // install slice spawns Terra's after-battle record on it.
+    let tail: Vec<u16> = {
+        use legaia_engine_battle::battle_tutorial::{BATTLE_REPORT_ARM_FLAG, BATTLE_REPORT_FLAG};
+        (held.contains(&BATTLE_REPORT_ARM_FLAG) && held.contains(&BATTLE_REPORT_FLAG))
+            .then_some(BATTLE_REPORT_FLAG)
+            .into_iter()
+            .collect()
+    };
     let cfg = BootConfig {
         scene: retail.scene.clone(),
         enable_audio: false,
     };
     let Ok(mut session) = NativeSession::open(extracted, &cfg) else {
-        return Vec::new();
+        return tail;
     };
     let opts = FieldLiveOpts {
         live_loop: true,
@@ -161,13 +172,14 @@ pub fn entry_latches(extracted: &Path, retail: &RetailObs, battle: &RetailBattle
     let _landing = session.resume_save(save, &retail.scene, &opts);
     let world = &session.host.world;
     let Some(row) = matching_row(world, &battle.monster_ids) else {
-        return Vec::new();
+        return tail;
     };
     let mut out: Vec<u16> = world
         .scene_battle_entry_arms
         .iter()
         .filter(|a| u16::from(a.row) == row && held.contains(&a.flag))
         .map(|a| a.flag)
+        .chain(tail)
         .collect();
     out.sort_unstable();
     out.dedup();
@@ -214,6 +226,9 @@ pub fn run_engine_battle(
         // an arm retail had not reached (`jouind`'s spawn delay, 24 of 50).
         crate::retail_compare::hold_slot_table(&mut session, retail);
         session.tick()?;
+        // The scripted VRAM effects, as both hosts drain them each tick: a
+        // cross-context CLUT fade left unstepped keeps its context halted.
+        session.field_vram_tick();
         session.fog_render_tick();
         session.host.route_bgm_events(&mut director)?;
     }
@@ -316,6 +331,7 @@ pub fn run_engine_battle(
     let mut entered = false;
     for _ in 0..ENTRY_TICKS {
         session.tick()?;
+        session.field_vram_tick();
         session.fog_render_tick();
         session.host.route_bgm_events(&mut director)?;
         if session.host.world.mode == SceneMode::Battle {
@@ -328,6 +344,24 @@ pub fn run_engine_battle(
             "forced encounter ({source}) never reached battle mode in {ENTRY_TICKS} ticks (mode {:?})",
             session.host.world.mode
         );
+    }
+    // A battle-id fight was not entered by the field entity SM, so retail
+    // never ran the SM's entry tail: the flags the forced entry's tail just
+    // wrote go back to the capture's own (the `jou` boss casts hold the
+    // victory latch of an earlier fight right through theirs).
+    if battle.battle_id != 0 {
+        let held = retail
+            .save
+            .as_ref()
+            .map(crate::retail_compare::system_flag_ids)
+            .unwrap_or_default();
+        for idx in crate::retail_compare_battle::BATTLE_ENTRY_TAIL_FLAGS {
+            if held.contains(&idx) {
+                session.host.world.system_flag_set(idx);
+            } else {
+                session.host.world.system_flag_clear(idx);
+            }
+        }
     }
     // Read on the latch as well: the entry's own round-one Begin may have
     // run already and moved `+0x290` into `+0x291`.
@@ -493,6 +527,7 @@ pub fn run_engine_battle(
                     );
                 }
                 if gate.met(&session.host.world) {
+                    gate.align_camera(&mut session.host.world);
                     phase_tick = Some(t);
                     break;
                 }
@@ -530,6 +565,20 @@ pub fn run_engine_battle(
                 c.hp = a.battle.hp;
             }
         }
+    }
+    // The victory latch is the results sequencer's own write (`FUN_8004E568`,
+    // `0x8004EECC`), not a script's: on a drive that reached its phase it is
+    // read there, as the victims' HP is, where every other flag keeps the
+    // seed's reading.
+    if matches!(driven, Some(Some(_)))
+        && let Some(snap) = pre_drive.as_mut()
+    {
+        let latch = legaia_engine_core::world::VICTORY_STORY_FLAG;
+        crate::retail_compare::set_system_flag(
+            &mut snap.save,
+            latch,
+            session.host.world.system_flag_test(latch),
+        );
     }
     let snap = match pre_drive.take() {
         Some(snap) => snap,

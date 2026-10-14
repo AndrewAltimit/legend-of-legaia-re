@@ -21,43 +21,16 @@ impl PlayWindowApp {
 }
 
 impl PlayWindowApp {
-    /// Drain the Baka Fighter duel's queued SFX cues and enqueue them into the
-    /// BGM director's SFX scheduler, so the punch/exchange hit (`BAKA_CUE_HIT`
-    /// = `0x09`, written by the rules kernel's damage step) actually sounds in
-    /// the live engine. Mirrors the battle strike-SFX path
-    /// (`drain_and_log_battle_events` → `enqueue_sfx`); the director's
-    /// per-frame `tick_sfx_frame` (driven from `drain_and_log_battle_events`)
-    /// fires the enqueued cues against the resident class-2 SFX bank the same
-    /// frame. The cues carry no gameplay state, so nothing here affects
-    /// determinism. No-op outside the duel / when no audio is attached; the
-    /// fight's cue buffer is drained regardless so it never accumulates.
+    /// Drain the Baka Fighter duel's queued SFX cues into the director's SFX
+    /// scheduler, so the punch / exchange hit (`BAKA_CUE_HIT` = `0x09`,
+    /// written by the rules kernel's damage step) sounds in the live engine:
+    /// the session's step (`BootSession::enqueue_baka_sfx_cues`, which the
+    /// browser play page's `tick_baka_ui` calls too). The audio frame later in
+    /// the tick (`drain_and_log_battle_events`) fires them against the
+    /// resident class-2 SFX bank the same frame. The cues carry no gameplay
+    /// state, so nothing here affects determinism.
     pub(in crate::window) fn drain_baka_sfx_cues(&mut self) {
-        if self.session.host.world.mode != SceneMode::BakaFighter {
-            return;
-        }
-        let cues: Vec<u8> = self
-            .session
-            .host
-            .world
-            .minigames
-            .baka_fighter
-            .as_mut()
-            .map(|f| f.take_cues())
-            .unwrap_or_default();
-        if cues.is_empty() {
-            return;
-        }
-        if let Some(bgm) = self.session.bgm.as_mut() {
-            // Fire on the same frame (strike-relative delay 0); the duel has no
-            // actor/target slots, so pass 0/0 for the HUD-context fields.
-            for id in &cues {
-                bgm.enqueue_sfx(*id as u16, 0, 0, 0);
-            }
-        } else {
-            for id in &cues {
-                log::debug!("baka SFX cue {id:#04x} (no audio)");
-            }
-        }
+        let _ = self.session.enqueue_baka_sfx_cues();
     }
 }
 

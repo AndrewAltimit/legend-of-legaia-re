@@ -59,8 +59,8 @@ pub use message_banner::{
 pub use teardown::{BattleDefeatBanner, BattleSpoilsBanner};
 pub use victory::{
     LEVEL_UP_CUE, VICTORY_EXIT_PHASE, VICTORY_FADE_PHASE_SEED, VICTORY_LOAD_FRAMES,
-    VICTORY_RESULTS_HOLD_FRAMES, VICTORY_STREAM_FRAMES, VictoryPhase, VictorySequence,
-    victory_pose_column, victory_pose_id, victory_pose_tier,
+    VICTORY_RESULTS_HOLD_FRAMES, VICTORY_STORY_FLAG, VICTORY_STREAM_FRAMES, VictoryPhase,
+    VictorySequence, victory_pose_column, victory_pose_id, victory_pose_tier,
 };
 
 /// The staged command id a generic physical swing runs as.

@@ -25,8 +25,8 @@
 //! the flow byte and the box queue are engine state.
 
 use legaia_engine_battle_vm::battle_formulas::FormationAdvantage;
-use legaia_engine_core::battle_flow::BattleFlowState;
 use legaia_engine_core::world::World;
+use legaia_engine_menus::battle_flow::BattleFlowState;
 use legaia_engine_menus::battle_input::{
     BattleCommand, BattleCommandSession, CommandPhase, RoundChoice,
 };
@@ -44,6 +44,15 @@ fn player_driven_battle() -> World {
 /// One press frame plus one release frame - every battle surface reads
 /// `just_pressed`, so a held mask is one event.
 fn tap(world: &mut World, button: PadButton) {
+    // The menu SM reads no pad while the prompt's glide is in flight
+    // (`World::battle_command_pad_held`): wait it out, as a player does.
+    for _ in 0..64 {
+        if !world.battle_command_pad_held() {
+            break;
+        }
+        world.set_pad(0);
+        let _ = world.tick();
+    }
     world.set_pad(InputState::mask_of([button]));
     world.tick();
     world.set_pad(0);

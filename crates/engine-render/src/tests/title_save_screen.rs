@@ -189,6 +189,7 @@ fn save_select_with_confirm_prompt() {
 /// it for the status-page icon sprites).
 pub(super) fn pinned_save_menu_rects() -> SaveMenuAtlasRects {
     SaveMenuAtlasRects {
+        class0_dark: None,
         panel_tl: (160, 0, 4, 4),
         panel_tr: (188, 0, 4, 4),
         panel_bl: (160, 28, 4, 4),

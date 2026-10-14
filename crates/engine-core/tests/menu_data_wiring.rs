@@ -24,11 +24,11 @@ use legaia_engine_core::field_menu_dispatch::{
     FieldMenuSubsession, apply_inventory_outcome, apply_pause_items_outcome,
     build_pause_items_session, warp_destinations,
 };
-use legaia_engine_core::options::OptionsState;
 use legaia_engine_core::world::World;
 use legaia_engine_menus::field_menu::FieldMenuRow;
 use legaia_engine_menus::items::ItemCatalog;
 use legaia_engine_menus::menu_item_category::{CATEGORY_TABLE_OFFSET, CategoryEntry};
+use legaia_engine_menus::options::OptionsState;
 use legaia_engine_menus::pause_screens::{
     DOOR_OF_LIGHT_ITEM_ID, DOOR_OF_WIND_ITEM_ID, INCENSE_ITEM_ID, MENU_EXIT_CODE_FIELD_ESCAPE,
     MENU_EXIT_CODE_WORLD_MAP_WARP, PauseItemsSession, StagedWarp,

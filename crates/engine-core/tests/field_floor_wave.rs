@@ -14,7 +14,7 @@
 //! invisible: only the floor sampler (`World::sample_field_floor_height`, which
 //! reads the live array) moved. These tests pin the two kernels that close that
 //! gap - [`legaia_engine_scene::field_env::FloorWave`] for the translated env
-//! draws and [`legaia_engine_core::field_ground::live_render_positions`] for the
+//! draws and [`legaia_engine_scene::field_ground::live_render_positions`] for the
 //! per-vertex ground (PROT 0900's ground pass `FUN_801F6D48`) - end to end
 //! through the real field VM.
 //!
@@ -245,10 +245,10 @@ fn op_4c_90_deforms_the_ground_heightfield_per_vertex() {
         corner_tiers: tiers.to_vec(),
         far_bucket: Vec::new(),
     };
-    let baked = legaia_engine_core::field_ground::render_positions(&hf);
+    let baked = legaia_engine_scene::field_ground::render_positions(&hf);
     let mut world = world_on_ladder(man, arm_rung(4));
     assert_eq!(
-        legaia_engine_core::field_ground::live_render_positions(
+        legaia_engine_scene::field_ground::live_render_positions(
             &hf,
             &world.terrain.floor_height_lut
         ),
@@ -258,7 +258,7 @@ fn op_4c_90_deforms_the_ground_heightfield_per_vertex() {
     let mut moved = [false; 8];
     for _ in 0..128 {
         let _ = world.tick();
-        let live = legaia_engine_core::field_ground::live_render_positions(
+        let live = legaia_engine_scene::field_ground::live_render_positions(
             &hf,
             &world.terrain.floor_height_lut,
         );

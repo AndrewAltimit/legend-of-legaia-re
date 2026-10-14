@@ -2,9 +2,9 @@
 //! `CommandPhase -> ctx[+0x06]` bridge, the box queue, and the hook points the
 //! command flow calls into.
 //!
-//! [`crate::battle_tutorial`] is the ported machine; this is what makes it
+//! [`legaia_engine_battle::battle_tutorial`] is the ported machine; this is what makes it
 //! *fire*. Retail's hook key is the command-flow byte `ctx[+0x06]`
-//! ([`crate::battle_flow`]), which the engine has to recompose from its split
+//! ([`legaia_engine_menus::battle_flow`]), which the engine has to recompose from its split
 //! command session + submenus.
 //!
 //! ## Frame shape
@@ -22,8 +22,10 @@
 
 use super::*;
 
-use crate::battle_flow::{ActiveTutorialBox, BattleFlowState, TUTORIAL_BOX_AUTO_FRAMES};
-use crate::battle_tutorial::{BattleTutorial, BattleTutorialScript, TutorialLesson};
+use legaia_engine_battle::battle_tutorial::{BattleTutorial, BattleTutorialScript, TutorialLesson};
+use legaia_engine_menus::battle_flow::{
+    ActiveTutorialBox, BattleFlowState, TUTORIAL_BOX_AUTO_FRAMES,
+};
 
 impl World {
     /// Install the disc-read prompt corpus. Text only - this does **not** arm
@@ -41,7 +43,7 @@ impl World {
 
     /// Retail's own sparring-tutorial condition, consumed at battle entry.
     ///
-    /// Tests [`crate::battle_tutorial::TUTORIAL_ARM_FLAG`] in the system-flag
+    /// Tests [`legaia_engine_battle::battle_tutorial::TUTORIAL_ARM_FLAG`] in the system-flag
     /// bank and, when it is set, clears it and reports the armed stage. The
     /// clear is what makes the tutorial fire for exactly one battle - the same
     /// `TEST` / `CLEAR` pair the entity SM's battle-entry tail runs before it
@@ -53,12 +55,12 @@ impl World {
     /// gets the tutorial in the same fight retail does, and no other.
     ///
     /// The tail's arithmetic itself lives in
-    /// [`crate::battle_tutorial::stage_id_at_battle_entry`], which carries the
+    /// [`legaia_engine_battle::battle_tutorial::stage_id_at_battle_entry`], which carries the
     /// `PORT` anchor; this is its live consumption site.
     ///
     /// REF: FUN_801DA51C (`0x801DA698..0x801DA6B0`)
     pub fn take_battle_tutorial_arm(&mut self) -> bool {
-        use crate::battle_tutorial::{
+        use legaia_engine_battle::battle_tutorial::{
             TUTORIAL_ARM_FLAG, TUTORIAL_STAGE_ID, stage_id_at_battle_entry,
         };
         let armed = self.system_flag_test(TUTORIAL_ARM_FLAG);
@@ -77,7 +79,7 @@ impl World {
     /// or a host forced it with [`Self::prime_battle_tutorial`].
     pub fn sparring_fight_pending(&self) -> bool {
         self.battle.tutorial_pending
-            || self.system_flag_test(crate::battle_tutorial::TUTORIAL_ARM_FLAG)
+            || self.system_flag_test(legaia_engine_battle::battle_tutorial::TUTORIAL_ARM_FLAG)
     }
 
     /// Force the sparring tutorial onto the next [`World::enter_battle`],
@@ -97,7 +99,7 @@ impl World {
     /// hosts and tests can call it directly.
     pub fn arm_battle_tutorial(&mut self) {
         self.battle.tutorial = Some(BattleTutorial::new());
-        self.battle.stage_id = crate::battle_tutorial::TUTORIAL_STAGE_ID;
+        self.battle.stage_id = legaia_engine_battle::battle_tutorial::TUTORIAL_STAGE_ID;
         self.battle.tutorial_pending = false;
         self.battle.tutorial_boxes.clear();
         self.battle.tutorial_standing = None;
@@ -163,7 +165,7 @@ impl World {
     ///
     /// The disc-side condition is the pairing itself: the scene's own
     /// field-VM script carries a `SET` of
-    /// [`crate::battle_tutorial::TUTORIAL_ARM_FLAG`] within a few coherently
+    /// [`legaia_engine_battle::battle_tutorial::TUTORIAL_ARM_FLAG`] within a few coherently
     /// decoded ops of a `3E FF` that enters `formation_id`
     /// ([`Self::scene_battle_entry_arms`], read off the MAN at carrier
     /// install; the shape is [`legaia_engine_field::man_field_scripts::BattleEntryArm`]).
@@ -175,7 +177,7 @@ impl World {
     /// The faithful path needs none of this: the field VM executing the
     /// record raises the flag itself ([`Self::take_battle_tutorial_arm`]).
     pub fn replay_scripted_battle_arm(&mut self, formation_id: u16) -> bool {
-        use crate::battle_tutorial::TUTORIAL_ARM_FLAG;
+        use legaia_engine_battle::battle_tutorial::TUTORIAL_ARM_FLAG;
         let armed = self
             .scene_battle_entry_arms
             .iter()
@@ -346,14 +348,17 @@ impl World {
         let Some(mut tut) = self.battle.tutorial.take() else {
             return;
         };
-        let mut tick = crate::battle_tutorial::TutorialTick::default();
+        let mut tick = legaia_engine_battle::battle_tutorial::TutorialTick::default();
         tut.completion_tail(&mut tick);
         self.battle.tutorial = Some(tut);
         self.queue_tutorial_boxes(&tick.emission);
     }
 
     /// Queue one dispatch's boxes as one on-screen group.
-    fn queue_tutorial_boxes(&mut self, emission: &crate::battle_tutorial::TutorialEmission) {
+    fn queue_tutorial_boxes(
+        &mut self,
+        emission: &legaia_engine_battle::battle_tutorial::TutorialEmission,
+    ) {
         let group = self.next_battle_tutorial_group();
         for b in &emission.boxes {
             let Some(text) = self.battle.tutorial_script.text(b.message) else {
@@ -401,7 +406,7 @@ impl World {
         &mut self,
         phase: Option<&legaia_engine_menus::battle_input::CommandPhase>,
     ) -> bool {
-        use crate::battle_flow::{BattleMenuKind, flow_state_for};
+        use legaia_engine_menus::battle_flow::{BattleMenuKind, flow_state_for};
 
         let menu = if self.battle.item_menu.is_some() {
             BattleMenuKind::Item

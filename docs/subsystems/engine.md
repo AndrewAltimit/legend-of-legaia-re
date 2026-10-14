@@ -63,6 +63,7 @@ flowchart BT
     EAUD["engine-audio<br/>SPU + sequencer"]
     SESS["engine-session<br/>BootSession"]
     SCR["engine-screens"]
+    EXP["engine-export"]
     PAR["parity"]
     SHELL["engine-shell<br/>native host"]
     WEB["web-viewer<br/>browser hosts"]
@@ -103,6 +104,8 @@ flowchart BT
     PAR --> SESS
     SHELL --> PAR
     SHELL --> SCR
+    SHELL --> EXP
+    EXP --> CORE
     SHELL --> EREN
     WEB --> SESS
     WEB --> SCR
@@ -118,6 +121,7 @@ The shape to read off it:
 - **`engine-core` is where they meet.** It owns `World` and `SceneHost` and implements the per-VM `Host` traits. A module there that shares its name with a kernel module (`shop`, `dance`, `tile_board`, `mode`, `camera`, ...) holds only the functions that read a `World` or a `Scene`; the rules are in the kernel crate.
 - **Presentation is a separate branch.** `render-kernels` -> `engine-ui` -> `engine-render` and `engine-audio` do not depend on `engine-core`; the hosts compose them with it. `render-kernels` is also what the effect, field and minigame kernels link for GTE math.
 - **`engine-session` and `engine-screens` are the host-shared top.** `BootSession` (scene host + per-frame order + BGM director) and the shop-family screens are written once and ticked by both play hosts.
+- **`engine-export` is a tool layer above `engine-core`, not a host layer.** The `.glb` world exporter steps a scratch `World` to bake animation and traversal data, so it needs the simulation; nothing in the simulation needs it, and only the native binary links it.
 
 ### Dependency table
 
@@ -171,9 +175,10 @@ Internal dependencies as declared in each crate's `Cargo.toml`. "Format-family c
 | `engine-audio` | `xa`, `vab`, `seq`, `prot` | SPU model, sequencer, output backends. |
 | `engine-session` | `engine-core`, `engine-scene`, `engine-audio`, `engine-menus`, `engine-battle`, `engine-field`, `engine-mode`, `engine-system` + format-family and parser crates | `BootSession` + BGM director; no wgpu or winit. |
 | `engine-screens` | `engine-core`, `engine-scene`, `engine-ui`, `engine-battle`, `engine-effects`, `engine-menus`, `engine-mode`, `render-kernels`, `game-tables`, `minigame-formats`, `font` | Shop / prize / inn / banner screens both hosts draw. |
+| `engine-export` | `engine-core`, `engine-scene`, `engine-field`, `engine-vm`, `actor-formats`, `game-tables`, `scene-formats`, `tim`, `tmd` | The `.glb` world exporter behind `export-glb`. |
 | `engine-capture` | `engine-core`, `engine-battle`, `engine-battle-vm`, `engine-dialog`, `engine-effects`, `engine-field`, `engine-menus`, `engine-mode`, `engine-system`, `art`, `save`, `scene-formats` | Capture seeds, gates and pad drives shared by `parity` and the native capture child. |
 | `parity` | `engine-capture`, `engine-session`, `engine-core`, `engine-scene`, `engine-audio`, `engine-ui`, the kernel crates it measures, `mednafen`, `pcsx-redux`, `ram-image` + parser crates | Parity oracles + retail comparison. |
-| `engine-shell` | `parity`, `engine-capture`, `engine-session`, `engine-screens`, `engine-core`, `engine-scene`, `engine-render`, `engine-ui`, `engine-audio`, the kernel crates + format-family and parser crates | The native host. |
+| `engine-shell` | `parity`, `engine-capture`, `engine-session`, `engine-screens`, `engine-export`, `engine-core`, `engine-scene`, `engine-render`, `engine-ui`, `engine-audio`, the kernel crates + format-family and parser crates | The native host. |
 | `web-viewer` | `engine-session`, `engine-screens`, `engine-core`, `engine-scene`, `engine-ui`, `engine-audio`, the kernel crates, `patcher` and its layer crates + format-family and parser crates | The browser hosts and site tools. |
 | `asset-viewer` | `engine-core`, `engine-scene`, `engine-vm`, `engine-battle-vm`, `engine-dialog`, `engine-field`, `engine-mode`, `engine-system`, `engine-ui`, `engine-render`, `engine-audio`, `disc-audit` + format-family and parser crates | Standalone asset viewer. |
 
@@ -327,7 +332,7 @@ options is safe by default. A headless comparison against retail calls
 | `World::toggles.reduce_flashing` (`OptionsState::reduce_flashing`) | **on** | Photosensitivity guard: slew-limits the applied luminance channels of the ambient CLUT-cell palette cyclers ([field-ambient-fx](field-ambient-fx.md#photosensitivity-guard)). Retail's koin3 dance floor strobes bright/black at 15 Hz - far past the 3-flashes-per-second guideline - so the safe presentation is the default; off restores the retail-exact palette steps. Presentation-only: the move-VM simulation is identical either way. |
 | `OptionsState::bgm_volume` / `sfx_volume` (`legaia-options.toml` keys; no in-game row) | `8` / `8` = unity | Engine-only music and sound-effect levels, `0..=10` linear with `8` the retail mix and `10` a 1.25x boost. Each SPU voice is tagged at key-on with the bus of whoever keyed it - a sequencer note is BGM, a cue is SFX - and scaled before the dry sum and the reverb send; XA voice and FMV audio ride neither bus. Both play hosts apply it, and at the default the mix is bit-identical to the single-bus one ([audio](audio.md)). |
 | `World::toggles.entry_pulse_enabled` (`--no-entry-pulse` disables) | on | Scene-entry VDF pulse: a rolling vertex-morph envelope over the packs it is authored for (jou's flesh ground, Rim Elm's shoreline; every other scene keeps retail's still geometry; [field-ambient-fx](field-ambient-fx.md#mechanism-3---strip-cycling-and-vertex-morphs)). Retail-armed morph scenes are unaffected either way. |
-| `OptionsState::retail_view_window` -> `World::toggles.view_window_crop` | **on**, effective at retail framing only | Retail's visible-tile crop: the field ground and decoration cells are drawn only inside the camera's tile window clipped to the walk region ([`field_view_window`](../../crates/engine-core/src/field_view_window.rs), [encounter.md](../formats/encounter.md#the-scratchpad-window-0x1f8003e8eb)). Both hosts apply it while the camera is at `CameraDistance::Retail` with the drag / tilt / zoom knobs at identity and `F3` off, so the retail-distance frames the comparison corpus takes are cropped. Any wider or re-aimed view draws the map whole - see [below](#the-visible-tile-crop-follows-the-framing). |
+| `OptionsState::retail_view_window` -> `World::toggles.view_window_crop` | **on**, effective at retail framing only | Retail's visible-tile crop: the field ground and decoration cells are drawn only inside the camera's tile window clipped to the walk region ([`field_view_window`](../../crates/engine-scene/src/field_view_window.rs), [encounter.md](../formats/encounter.md#the-scratchpad-window-0x1f8003e8eb)). Both hosts apply it while the camera is at `CameraDistance::Retail` with the drag / tilt / zoom knobs at identity and `F3` off, so the retail-distance frames the comparison corpus takes are cropped. Any wider or re-aimed view draws the map whole - see [below](#the-visible-tile-crop-follows-the-framing). |
 | `Renderer::set_psx_mode` (`LEGAIA_PSX_RENDER=1`; "PSX rasterisation" checkbox on the browser play page) | off | Strict-PS1 rasterisation artefacts - see below. |
 | `Renderer::set_semi_blend` | **on** | Retail ABE semi-transparency blending. On because it *is* retail. |
 | `CameraDistance` (`T`) / debug orbit camera (`F3`) | `Far` / off | Framing only; never feeds the simulation. Both hosts carry both knobs: the default camera on each is the engine's ([`camera_view`](../../crates/engine-core/src/camera_view.rs)) - the retail zone-driven follow camera, whose pitch / yaw / `H` come from the scene's MAN section-3 camera-region record through the retail composer and ease ([`camera_zone`](../../crates/engine-field/src/camera_zone.rs), [encounter.md](../formats/encounter.md#man-section-3-the-camera-region-table)) - and `F3` swaps in that host's own wide vantage. |

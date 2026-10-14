@@ -105,6 +105,14 @@ pub fn build_atlas(
         copy_rect(&mut out, ATLAS_WIDTH, &panel_rgba, panel_src_w, tile, tile);
     }
 
+    // The dark class-0 skin (widget record 0x43): the same nine cells one
+    // skin row down, through sub-palette 3. The fill stays raw - the frame
+    // builder shades it row by row, as `FUN_8002BDC4`'s vertex greys do.
+    let dark_rgba = legaia_tim::decode_rgba8(&panel_parsed, CLASS0_DARK_CLUT_ROW)?;
+    for cell in ATLAS_RECTS_CLASS0_DARK {
+        copy_rect(&mut out, ATLAS_WIDTH, &dark_rgba, panel_src_w, cell, cell);
+    }
+
     // Pointing-finger cursor - same TIM, different CLUT row. Source
     // rect (152, 64, 16, 16) is well outside both the panel-tile and
     // pill regions, so it slots in without overlap.

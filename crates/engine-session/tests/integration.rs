@@ -20,6 +20,7 @@ mod field_actor_guard_skip;
 mod field_ambient_ring_cue;
 mod fmv_handoff;
 mod fog_gate_census;
+mod frame_step_kernels;
 mod free_roam_camera_reset;
 mod new_game_seed;
 mod npc_conversation_terminates;

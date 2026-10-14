@@ -31,6 +31,14 @@ pub(super) struct RunStats {
     pub(super) menu_rows: BTreeSet<String>,
     pub(super) shop_opens: u32,
     pub(super) round_trips: u32,
+    /// `+talk` runs: visits attempted, and those that found a seat the
+    /// interact probe answers from.
+    pub(super) talk_visits: u32,
+    pub(super) talk_seats: u32,
+    /// Seats taken at an examined prop rather than an actor.
+    pub(super) prop_seats: u32,
+    /// Seats whose action press took the frame off free roam.
+    pub(super) talk_opens: u32,
 }
 
 pub(super) struct RunOutcome {
@@ -53,7 +61,16 @@ pub(super) struct Tunables {
     /// Distinct pad masks the softlock window must contain. `1` turns the
     /// detector into a neutral-pad control (`LEGAIA_SOAK_MIN_DISTINCT=1`).
     pub(super) min_distinct: usize,
+    /// Field frames without one free-roam frame before `control_starved`.
+    pub(super) starve_frames: u64,
 }
+
+/// Confirm presses a `control_starved` window must contain.
+const STARVE_MIN_PRESSES: usize = 60;
+
+/// `door_loop`: this many scene changes inside this many frames.
+const DOOR_LOOP_COUNT: usize = 6;
+const DOOR_LOOP_SPAN: u64 = 600;
 
 impl Tunables {
     pub(super) fn from_env() -> Self {
@@ -65,6 +82,7 @@ impl Tunables {
             queue_cap: 4096,
             trace_every: env_u64("LEGAIA_SOAK_TRACE").unwrap_or(0),
             min_distinct: env_u64("LEGAIA_SOAK_MIN_DISTINCT").unwrap_or(3) as usize,
+            starve_frames: env_u64("LEGAIA_SOAK_STARVE_FRAMES").unwrap_or(5400),
         }
     }
 }
@@ -77,6 +95,13 @@ pub(super) struct WorkerStatus {
     pub(super) seed: u64,
     pub(super) frame: u64,
 }
+
+/// `confined`: the pocket's span in world units, and the direction-held
+/// free-roam frames the player is given to leave it.
+const CONFINE_SPAN: i16 = 48;
+const CONFINE_WALK_FRAMES: u32 = 900;
+/// The four d-pad bits.
+const DIR_MASK: u16 = DIRS[0] | DIRS[1] | DIRS[2] | DIRS[3];
 
 pub(super) type StatusBoard = Arc<Mutex<Vec<WorkerStatus>>>;
 
@@ -114,7 +139,17 @@ pub(super) fn value_checks(
             out.push((
                 "value",
                 format!("roster.hp>max(slot{i})"),
-                format!("{}/{}", hms.hp_cur, hms.hp_max),
+                // The base window and the equipment ride along: a live max
+                // the equipment's percent boosts no longer explain is the
+                // first thing to rule in or out.
+                format!(
+                    "{}/{} (base max {}, level {}, equip {:?})",
+                    hms.hp_cur,
+                    hms.hp_max,
+                    m.record_stats().hp_max,
+                    m.level(),
+                    m.equipment().slots
+                ),
             ));
         }
         if hms.mp_max > 0 && hms.mp_cur > hms.mp_max {
@@ -123,6 +158,57 @@ pub(super) fn value_checks(
                 format!("roster.mp>max(slot{i})"),
                 format!("{}/{}", hms.mp_cur, hms.mp_max),
             ));
+        }
+        // The live maxima are the stat aggregator's rebuild of the base
+        // window (`FUN_80042558`: base, plus a tenth for ability bit 0 / 2
+        // and a quarter for bit 1 / 3, clamped to 9999 / 999). A live value
+        // the base and the equipment do not explain was written by a path
+        // that skipped the rebuild. Only checked with the disc's passive
+        // table installed and on a record that carries a base window.
+        let base = m.record_stats();
+        if !w.tables.accessory_passives.is_empty() && base.hp_max != 0 {
+            let bits = w
+                .tables
+                .accessory_passives
+                .bits_for_equipment(&m.equipment().slots)[0];
+            let rebuilt = |base: u16, tenth: u32, quarter: u32, cap: u16| {
+                let mut v = base;
+                if bits & tenth != 0 {
+                    v = v.saturating_add(base / 10);
+                }
+                if bits & quarter != 0 {
+                    v = v.saturating_add(base >> 2);
+                }
+                v.min(cap)
+            };
+            let (hp, mp) = (
+                rebuilt(base.hp_max, 0x1, 0x2, 9999),
+                rebuilt(base.mp_max, 0x4, 0x8, 999),
+            );
+            if hms.hp_max != hp {
+                out.push((
+                    "value",
+                    format!("roster.hp_max!=rebuilt(slot{i})"),
+                    format!(
+                        "live {} against {hp} from base {} under ability bits {:#x}",
+                        hms.hp_max,
+                        base.hp_max,
+                        bits & 0xF
+                    ),
+                ));
+            }
+            if hms.mp_max != mp {
+                out.push((
+                    "value",
+                    format!("roster.mp_max!=rebuilt(slot{i})"),
+                    format!(
+                        "live {} against {mp} from base {} under ability bits {:#x}",
+                        hms.mp_max,
+                        base.mp_max,
+                        bits & 0xF
+                    ),
+                ));
+            }
         }
         // `+0x130` is the character level (`CharacterRecord::level`).
         let lv = m.level();
@@ -271,7 +357,8 @@ pub(super) fn run_one(
     let opts = FieldLiveOpts {
         // `LEGAIA_SOAK_NO_ENCOUNTERS=1` disarms the random-encounter roll - a
         // triage control that separates a scripted battle from a random one.
-        live_loop: !env_flag("LEGAIA_SOAK_NO_ENCOUNTERS"),
+        // A `+talk` run leaves it disarmed too (`split_talk`).
+        live_loop: !env_flag("LEGAIA_SOAK_NO_ENCOUNTERS") && !label.contains("+talk"),
         player_battle: true,
         battle_bgm: None,
     };
@@ -297,6 +384,7 @@ pub(super) fn run_one(
     // warp the op-`0x3E` arm makes (`World::request_minigame_warp`), so the
     // host's next tick loads the minigame overlay through the retail path.
     let (label, shop_visits) = split_shop(label);
+    let (label, talk_visits) = split_talk(label);
     let (label, round_trip) = split_round_trip(label);
     let (scene, minigame) = split_minigame(label);
     let entered = catch_unwind(AssertUnwindSafe(|| {
@@ -376,13 +464,32 @@ pub(super) fn run_one(
         reported.extend(v.into_iter().map(|(det, loc, _)| format!("{det}|{loc}")));
     }
     let mut traced_scripts: BTreeSet<u64> = BTreeSet::new();
+    let mut traced_stats: Vec<(u8, u16, u16, u16, u16)> = Vec::new();
+    let mut starved_since: Option<u64> = None;
+    type StarvedAt = (Option<usize>, Option<usize>, Option<usize>, Option<usize>);
+    let mut starved_seen: BTreeSet<StarvedAt> = BTreeSet::new();
+    let mut starved_scene = session.host.world.active_scene_label.clone();
+    // Starts `true`: the cold entry seat is the harness's, not a door's.
+    let mut was_free = true;
+    let mut confine: Option<(i16, i16, i16, i16, u32)> = None;
+    let mut door_frames: std::collections::VecDeque<u64> = std::collections::VecDeque::new();
+    let mut door_prev = String::new();
+    let mut door_dir_held = false;
     let mut battle_sites: BTreeMap<String, u32> = BTreeMap::new();
     let mut prev_pad = 0u16;
+
+    // Pads a run mode queued ahead of the policy (a talk visit's action
+    // press). They land in the recorded stream like any other pad.
+    let mut forced_pads: std::collections::VecDeque<u16> = std::collections::VecDeque::new();
+    let mut talk_check: Option<u64> = None;
 
     for frame in 0..spec.frames {
         let pad = match pads_override {
             Some(p) => p.get(frame as usize).copied().unwrap_or(0),
-            None => policy.pad(&session, frame),
+            None => match forced_pads.pop_front() {
+                Some(p) => p,
+                None => policy.pad(&session, frame),
+            },
         };
         pads.push(pad);
         let was_menu_open = session.field_menu.is_some();
@@ -570,6 +677,32 @@ pub(super) fn run_one(
                 stats.shop_opens += 1;
             }
         }
+        // `<scene>+talk`: stand in front of the scene's next talk target
+        // every `TALK_VISIT_EVERY` free field frames and press the action
+        // button. The seat is a function of the frame and the world, so a
+        // replay of the recorded pads takes the same seats.
+        if talk_visits
+            && !menu_rt.is_open()
+            && frame % TALK_VISIT_EVERY == TALK_VISIT_EVERY - 1
+            && round_trip_ready(&session)
+        {
+            let n = stats.talk_visits as usize;
+            stats.talk_visits += 1;
+            if let Some(target) = seat_at_talk_target(&mut session, n) {
+                stats.talk_seats += 1;
+                if matches!(target, TalkTarget::Prop(_)) {
+                    stats.prop_seats += 1;
+                }
+                forced_pads.extend([0, b(PadButton::Cross), 0]);
+                talk_check = Some(frame + 4);
+            }
+        }
+        if talk_check == Some(frame) {
+            talk_check = None;
+            if !round_trip_ready(&session) || session.host.world.script_context_engages_player() {
+                stats.talk_opens += 1;
+            }
+        }
         // `<scene>+rt`: a save / load round trip at a free field frame every
         // `ROUND_TRIP_EVERY` frames - `save_full`, then `resume_save` of that
         // file the way a Load resumes it, then `save_full` again. What the
@@ -669,8 +802,9 @@ pub(super) fn run_one(
                 ));
             }
         }
+        let scene_changed_this_frame = scene_changed;
         if scene_changed {
-            prev_scene = w.active_scene_label.clone();
+            door_prev = std::mem::replace(&mut prev_scene, w.active_scene_label.clone());
         }
         // Mode edges.
         if w.mode != prev_mode {
@@ -810,6 +944,151 @@ pub(super) fn run_one(
                 (None, _) => park = None,
             }
         }
+        // Control starved: the field has refused the pad (a timeline, a
+        // dialogue, an engaging helper, a parked scene change) for a whole
+        // window with no free-roam frame in it. The softlock and script-stall
+        // clocks both restart whenever anything moves, so a cutscene that
+        // cycles through its PCs without ever handing the player back passes
+        // them. A battle, the pause menu or a minigame pauses this clock.
+        if !field_frame {
+            starved_since = None;
+            starved_seen.clear();
+        } else {
+            let w = &session.host.world;
+            let free = round_trip_ready(&session) && !w.script_context_engages_player();
+            if free || w.active_scene_label != starved_scene {
+                starved_since = None;
+                starved_seen.clear();
+                starved_scene = w.active_scene_label.clone();
+            } else {
+                let holder = held_by(&session);
+                let kind = holder.split('@').next().unwrap_or("").to_string();
+                // A script that reaches a PC this stretch has not been at is
+                // a scene still playing - the ending's credits run their
+                // record start to finish for minutes - and restarts the
+                // clock. What is left is a script going round: every PC it
+                // steps on, it has stepped on before.
+                let at = (
+                    w.cutscene.timeline.as_ref().map(|tl| tl.pc),
+                    w.cutscene
+                        .timeline
+                        .as_ref()
+                        .and_then(|tl| tl.dialog.as_ref().map(|d| d.pc)),
+                    w.field_vm.helper_contexts.first().map(|h| h.pc),
+                    w.dialog.inline.as_ref().map(|d| d.pc),
+                );
+                if starved_seen.insert(at) {
+                    starved_since = Some(frame);
+                }
+                let since = *starved_since.get_or_insert(frame);
+                // A text box waits for its confirm press for as long as it
+                // takes, so the window must hold the presses that would have
+                // paged a conversation through: without them the field is
+                // waiting for the player, not refusing them.
+                // They must still be coming at the end of the window: a
+                // stream that pressed early and then went quiet is the same
+                // wait.
+                let cross = b(PadButton::Cross);
+                let presses = |from: u64| {
+                    pads[from as usize..]
+                        .windows(2)
+                        .filter(|p| p[1] & cross != 0 && p[0] & cross == 0)
+                        .count()
+                };
+                if frame - since >= t.starve_frames
+                    && presses(since) >= STARVE_MIN_PRESSES
+                    && presses(frame.saturating_sub(t.starve_frames / 4)) >= STARVE_MIN_PRESSES / 4
+                    && reported.insert(format!("control_starved|{}", w.active_scene_label))
+                {
+                    findings.push(mk(
+                        &session,
+                        "control_starved",
+                        frame,
+                        kind,
+                        format!(
+                            "no free-roam frame for {} frames; held by {holder}",
+                            frame - since
+                        ),
+                    ));
+                }
+            }
+            // Confined: from the frame the field hands the player back (a
+            // scene arrival, a cutscene's end) the player is walked for a
+            // whole budget of direction-held frames and never leaves a
+            // pocket less than a sub-cell across. The softlock detector only
+            // sees a seat no direction moves at all; a pocket that lets the
+            // player shuffle keeps its digest ticking. Measured with the
+            // walk controller itself rather than predicted from the grid.
+            if w.mode != SceneMode::Field || !free {
+                if !free {
+                    confine = None;
+                }
+            } else if let Some(a) = w.actors.get(player_slot(&session)) {
+                let (x, z) = (a.move_state.world_x, a.move_state.world_z);
+                if !was_free {
+                    confine = Some((x, x, z, z, 0));
+                }
+                if let Some((x0, x1, z0, z1, walked)) = confine.as_mut() {
+                    *x0 = (*x0).min(x);
+                    *x1 = (*x1).max(x);
+                    *z0 = (*z0).min(z);
+                    *z1 = (*z1).max(z);
+                    if pad & DIR_MASK != 0 {
+                        *walked += 1;
+                    }
+                    if *x1 - *x0 >= CONFINE_SPAN || *z1 - *z0 >= CONFINE_SPAN {
+                        confine = None;
+                    } else if *walked >= CONFINE_WALK_FRAMES {
+                        confine = None;
+                        if reported.insert(format!("confined|{}", w.active_scene_label)) {
+                            findings.push(mk(
+                                &session,
+                                "confined",
+                                frame,
+                                format!("tile({},{})", (x - 0x40) >> 7, (z - 0x40) >> 7),
+                                format!(
+                                    "handed back at ({x},{z}) and held inside {CONFINE_SPAN} \
+                                     units through {CONFINE_WALK_FRAMES} walked frames"
+                                ),
+                            ));
+                        }
+                    }
+                }
+            }
+            was_free = free;
+        }
+        // Door loop: scene change after scene change inside a short span -
+        // an arrival seat that stands on the door back.
+        // A direction held across an arrival walks a two-way stair straight
+        // back (`kor4` <-> `koin4`: each door sets the player down one tile
+        // from the other's pad, facing away from it), so only changes with
+        // no direction pressed since the last one count.
+        if pad & DIR_MASK != 0 {
+            door_dir_held = true;
+        }
+        if scene_changed_this_frame && std::mem::take(&mut door_dir_held) {
+            door_frames.clear();
+        } else if scene_changed_this_frame {
+            door_frames.push_back(frame);
+            while door_frames
+                .front()
+                .is_some_and(|&f| frame - f > DOOR_LOOP_SPAN)
+            {
+                door_frames.pop_front();
+            }
+            if door_frames.len() >= DOOR_LOOP_COUNT && reported.insert("door_loop".to_string()) {
+                findings.push(mk(
+                    &session,
+                    "door_loop",
+                    frame,
+                    format!("from:{door_prev}"),
+                    format!(
+                        "{} scene changes inside {DOOR_LOOP_SPAN} frames",
+                        door_frames.len()
+                    ),
+                ));
+            }
+        }
         // Softlock.
         if frame % t.digest_every == 0 {
             let d = progress_digest(&session) ^ menu_digest(&menu_rt);
@@ -836,6 +1115,29 @@ pub(super) fn run_one(
             }
         }
         if t.trace_every != 0 {
+            // A roster stat line whenever a member's level, base or live
+            // maximum moves: which frame a level-up or a stat item landed
+            // on, and whether the live window followed the base.
+            let stats: Vec<(u8, u16, u16, u16, u16)> = session
+                .host
+                .world
+                .party
+                .roster
+                .members
+                .iter()
+                .map(|m| {
+                    let (h, r) = (m.hp_mp_sp(), m.record_stats());
+                    (m.level(), r.hp_max, h.hp_max, r.mp_max, h.mp_max)
+                })
+                .collect();
+            if stats != traced_stats {
+                eprintln!(
+                    "[trace {frame:>6}] roster (level, base hp, live hp, base mp, live mp): {stats:?} in {:?} held={}",
+                    session.host.world.mode,
+                    held_by(&session)
+                );
+                traced_stats = stats;
+            }
             if frame % t.trace_every == 0 {
                 eprintln!("[trace {frame:>6}] {}", trace_line(&session, pad));
             }
@@ -848,7 +1150,10 @@ pub(super) fn run_one(
                 .timeline
                 .iter()
                 .chain(w.field_vm.helper_contexts.iter())
-                .map(|c| &c.bytecode);
+                .map(|c| &c.bytecode)
+                // The inline runner's record too: an NPC talk or a prop
+                // record is a script body like the others.
+                .chain(w.dialog.inline.iter().map(|d| &d.bytecode));
             for bc in bodies {
                 let mut h = std::collections::hash_map::DefaultHasher::new();
                 h.write(bc);

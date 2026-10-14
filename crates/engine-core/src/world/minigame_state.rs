@@ -138,9 +138,9 @@ pub struct MinigameState {
     /// The **ringside still** the last dome leg left resident in VRAM
     /// (`(384, 0)`), as an extraction PROT index - `1221` or `1222`, picked
     /// off the lead's HP at the leg's end by
-    /// [`crate::muscle_ringside::still_prot_index`]. `None` until a leg
+    /// [`legaia_engine_minigames::muscle_ringside::still_prot_index`]. `None` until a leg
     /// ends. A re-entered hub draws it as its backdrop
-    /// ([`crate::muscle_ringside::HubBackdrop`]).
+    /// ([`legaia_engine_minigames::muscle_ringside::HubBackdrop`]).
     pub muscle_ringside_still: Option<u32>,
     /// The arena hub is between two legs of an open contest: a survived leg
     /// with the course not exhausted keeps the mode on the arena, and the
@@ -157,10 +157,10 @@ pub struct MinigameState {
     /// card, the INTERVAL tally and the re-entered hub's backdrop - ticked by
     /// [`crate::world::World::tick_muscle_hub`]; both play hosts draw from
     /// it.
-    pub muscle_hub: crate::muscle_ringside::HubTimers,
+    pub muscle_hub: legaia_engine_minigames::muscle_ringside::HubTimers,
     /// Sounds the hub fired that the host has not drained yet
     /// ([`crate::world::World::take_muscle_hub_sounds`]).
-    pub(crate) muscle_hub_sounds: crate::muscle_ringside::HubTimersFrame,
+    pub(crate) muscle_hub_sounds: legaia_engine_minigames::muscle_ringside::HubTimersFrame,
     /// The casino coin bank (`_DAT_800845A4`, the GameShark "Infinite
     /// Coins" cell). Read to seed the slot machine's playing balance and
     /// **assigned** its final balance on cash-out (the retail state-100

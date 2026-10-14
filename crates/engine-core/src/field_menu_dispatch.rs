@@ -11,7 +11,7 @@
 //! | Arts    | [`legaia_engine_battle::tactical_arts_editor::ChainEditor`]          |
 //! | Status  | [`legaia_engine_menus::status_screen::StatusScreenSession`]         |
 //! | Save    | [`legaia_engine_menus::save_select::SaveSelectSession`] (Save mode) |
-//! | Config  | [`crate::options::OptionsSession`]                    |
+//! | Config  | [`legaia_engine_menus::options::OptionsSession`]                    |
 //!
 //! Pure plumbing - the dispatcher builds the right sub-session from
 //! [`World`] state, routes per-frame pad input into it, and exposes
@@ -21,7 +21,6 @@
 //! engine - see [`apply_equip_outcome`] / [`apply_inventory_outcome`] /
 //! [`apply_spell_outcome`] / [`apply_arts_outcome`] for the typed helpers.
 
-use crate::options::{OptionsInput, OptionsSession, OptionsState};
 use crate::world::World;
 use legaia_engine_battle::battle_stats::{EquipmentTable, StatusModifiers};
 use legaia_engine_battle::magic_xp::SpellLevelNotice;
@@ -33,6 +32,7 @@ use legaia_engine_menus::inventory_use::{
     InventoryContext, InventoryUseSession, TargetRow as InvTargetRow,
 };
 use legaia_engine_menus::list_order::{LIST_ORDER_STEP_MAGIC, ListOrderRow, ListOrderSession};
+use legaia_engine_menus::options::{OptionsInput, OptionsSession, OptionsState};
 use legaia_engine_menus::pause_screens::ItemDisplayText;
 use legaia_engine_menus::pause_screens::stat_record_from_character;
 use legaia_engine_menus::pause_screens::{PauseItemRow, PauseItemsSession};

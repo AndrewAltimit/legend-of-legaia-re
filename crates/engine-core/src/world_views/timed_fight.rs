@@ -12,7 +12,7 @@ use legaia_engine_menus::timed_fight::*;
 /// the module docs).
 pub fn strip_visible(world: &crate::world::World) -> bool {
     world.mode == legaia_engine_mode::mode::SceneMode::Battle
-        && world.battle.flow != crate::battle_flow::BattleFlowState::Idle
+        && world.battle.flow != legaia_engine_menus::battle_flow::BattleFlowState::Idle
 }
 
 /// The strip for this frame, or `None` when this is not Koru's fight, the

@@ -1061,7 +1061,7 @@ it in four places, each making the action shots calmer as it rises:
 Case 8 keeps its arms on Normal / Far in a scripted fight (`ctx[+0x287]`) once
 the results phase word `_DAT_8007BD2C` is non-zero.
 
-Port: `World::toggles.battle_camera`, pushed by `OptionsState::apply_to_world`
+Port: `World::toggles.battle_camera`, pushed by `engine-core::options::apply_to_world`
 on both hosts and read through `BattleCamera::set_camera_option`. Two parts are
 not carried: the scripted-fight exception above, and the skipped setup-band
 orbit store (the port runs one orbit for both of retail's writers).

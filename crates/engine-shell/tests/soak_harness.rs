@@ -73,6 +73,7 @@ mod report;
 mod run;
 mod save_round_trip;
 mod scene_set;
+mod talk_visit;
 
 use driver::*;
 use environment::*;
@@ -84,6 +85,7 @@ use report::*;
 use run::*;
 use save_round_trip::*;
 use scene_set::*;
+use talk_visit::*;
 
 // ---------------------------------------------------------------------------
 // Tests
@@ -244,6 +246,69 @@ fn soak_replay() {
             eprintln!("[soak-replay] recorded signature {sig:?} reproduced: {hit}");
         }
     }
+}
+
+/// Reduce a saved replay again: `LEGAIA_SOAK_REDUCE=<file>` replays it, picks
+/// the finding `LEGAIA_SOAK_REDUCE_SIG` names (default: the file's recorded
+/// signature), runs the minimiser on it under `LEGAIA_SOAK_MINIMIZE`, and
+/// writes the result to `LEGAIA_SOAK_REDUCE_OUT` (default `<file>.reduced`).
+/// For a replay whose first reduction ran out of budget, or one that should
+/// pin a different finding of the same run.
+#[test]
+fn soak_reduce() {
+    let Some(path) = std::env::var_os("LEGAIA_SOAK_REDUCE").map(PathBuf::from) else {
+        eprintln!("[skip] soak_reduce: set LEGAIA_SOAK_REDUCE=<file>");
+        return;
+    };
+    let Some(src) = source() else { return };
+    install_panic_hook();
+    let probe = open_session(&src);
+    let known: BTreeSet<String> = scene_set(&probe).into_iter().collect();
+    drop(probe);
+    let lr = load_replay(&path);
+    let want = std::env::var("LEGAIA_SOAK_REDUCE_SIG")
+        .ok()
+        .or(lr.signature.clone())
+        .expect("a signature to reduce towards");
+    let t = lr.tunables();
+    let (spec, pads) = (lr.spec, lr.pads);
+    let outcome = {
+        let (src, known) = (src.clone(), known.clone());
+        std::thread::Builder::new()
+            .name("soak-reduce".into())
+            .stack_size(64 << 20)
+            .spawn(move || run_one(&src, &known, &spec, Some(&pads), &t, None))
+            .unwrap()
+            .join()
+            .expect("reduce thread")
+    };
+    let Some(f) = outcome.findings.iter().find(|f| f.signature() == want) else {
+        panic!(
+            "{} does not raise `{want}`; it raises {:?}",
+            path.display(),
+            outcome
+                .findings
+                .iter()
+                .map(|f| f.signature())
+                .collect::<Vec<_>>()
+        );
+    };
+    let (ok, reduced, relaxed) = confirm(&src, &known, &outcome, f);
+    assert!(ok, "`{want}` did not reproduce from its own pads");
+    let out = std::env::var_os("LEGAIA_SOAK_REDUCE_OUT")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| path.with_extension("reduced"));
+    let spec = RunSpec {
+        frames: reduced.len() as u64,
+        ..outcome.spec.clone()
+    };
+    std::fs::write(&out, replay_text(&spec, &reduced, Some(f), relaxed)).expect("write replay");
+    eprintln!(
+        "[soak-reduce] `{want}`: {} frames, {} pad changes -> {}",
+        reduced.len(),
+        reduced.windows(2).filter(|w| w[0] != w[1]).count(),
+        out.display()
+    );
 }
 
 /// A replay path, or every `*.replay.toml` directly inside a directory.

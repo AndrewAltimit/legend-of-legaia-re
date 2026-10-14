@@ -1041,6 +1041,16 @@ the same chain (`801d84b0..`). When the applier reports through
 `_DAT_8007BB78` (seeded `0xFF` at `801d850c`), script `0x801E4C60` opens
 **window 8** and waits for a confirm before closing it (`0x801E4C68`).
 
+The rows are the **present party**, not the roster records. The cursor
+kernel is handed the party count (`lbu a1,0x454(s0)` over `0x80084140` at
+`0x801D83C0`) and the applier takes the roster id byte the row names
+(`lbu a2,0x458(v0)` at `0x801D851C`, `0x80084598 + cursor`); the spell
+target cast `FUN_801D9594` reads the same pair (`0x801D964C`, `0x801D96BC`).
+The New Game template seeds every record, so the two differ for most of
+the game. Port: `field_menu_dispatch`'s session builders list
+`World::present_party_list` in order, for the item targets and for the
+Magic screen's casters and targets alike.
+
 **Art-learned notice (window 8, `FUN_801DCD58`)**. The template string is in
 the overlay's data segment at `0x801E4700` (its only reference is this
 renderer's `lui` / `addiu` at `0x801DCD68` / `0x801DCD6C`). Each frame the
@@ -1703,7 +1713,7 @@ row`, `h = choices * 13 - 4`, flipped up by `choices * 13 + 0x1C` when the
 bottom would pass y = `0xB0`. `FUN_801D2B44` lists the choices at a 13-px
 pitch, text inset `+0x14`, cursor at the content origin.
 
-**Port**: `engine-core::options` (`OPTIONS_DISPLAY_ROWS`,
+**Port**: `engine-menus::options` (`OPTIONS_DISPLAY_ROWS`,
 `options_display_rows`, the `OptionsSession` Browsing -> Editing SM,
 `options_popup_content_rect`) + `engine-ui::options_draws_for`. Sound drives
 the mixer's monaural downmix (`AudioOut::set_mono`); Field HP Display sets the

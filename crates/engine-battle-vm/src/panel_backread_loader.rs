@@ -60,7 +60,7 @@
 //!
 //! - **The pick** ([`backread_texture_variant`]) is live. Every dome leg ends
 //!   through `legaia_engine_core::world::World::exit_muscle_dome`, which runs
-//!   it (via `legaia_engine_core::muscle_ringside::still_prot_index`) over the
+//!   it (via `legaia_engine_minigames::muscle_ringside::still_prot_index`) over the
 //!   fighter's live HP and the lead record's `+0x11C` maximum and leaves the
 //!   answer on `MinigameState::muscle_ringside_still` - the still a
 //!   re-entered hub then shows. Both hosts reach it through their dome pad
@@ -90,7 +90,7 @@
 //! which is why a search for the literal `0x180` never found the consumer.
 //! It is ported as `legaia_engine_ui::ringside_backdrop::ringside_still_quads`
 //! and drawn by both hosts over the re-entered hub; the level it is drawn at
-//! is `legaia_engine_core::muscle_ringside::HubBackdrop`.
+//! is `legaia_engine_minigames::muscle_ringside::HubBackdrop`.
 //! [`ringside-still.md`](../../../docs/formats/ringside-still.md) carries the
 //! packets and the `_DAT_801D1AE0` re-entry latch that selects the arm.
 

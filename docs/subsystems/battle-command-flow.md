@@ -16,7 +16,7 @@ The port runs the same flow on both play hosts: round prompt, direct-commit D-pa
 | Command-step helper | `FUN_801D388C(step)` (window choreography per step), cursor step `FUN_801D32BC` |
 | Next-member scans | `FUN_801DB81C` (from the current member), `FUN_801DBA04` (from zero) |
 | Stage overlays | 967 tutorial hook `FUN_801F6B70`; 968 arrival `FUN_801F69F4`; 969 form transition `FUN_801F69D8`; all ticked by the SCUS side-band `FUN_80056208` |
-| Port | `engine-menus::battle_input`, `engine-core::battle_flow` / `battle_tutorial` / `battle_stage_module` / `battle_sideband`, `engine-ui::battle_command_ui` |
+| Port | `engine-menus::battle_input`, `engine-menus::battle_flow` / `battle_tutorial` / `battle_stage_module` / `battle_sideband`, `engine-ui::battle_command_ui` |
 
 ```mermaid
 stateDiagram-v2
@@ -115,7 +115,7 @@ through rather than by being handled.
 That band is what pins the tutorial's table. Its nine live slots are exactly
 these ten states **minus the magic window** - the sparring fight teaches attacks,
 items, spirit and hyper arts, and never magic. Engine mirror
-[`engine-core::battle_flow`](../../crates/engine-core/src/battle_flow.rs), which
+[`engine-menus::battle_flow`](../../crates/engine-menus/src/battle_flow.rs), which
 carries that cross-check as a test.
 
 <a id="the-state-chain"></a>
@@ -600,7 +600,10 @@ and the engine syncs it at the same point
 
 A queued box parks the whole battle tick (`World::live_battle_tick` returns
 early), which is the port of retail returning before it reads the flow state
-while `FUN_801D9BBC` reports a box up (`ctx[+0x6B2]`). A hook that takes the
+while `FUN_801D9BBC` reports a box up (`ctx[+0x6B2]`). The same exit holds the
+pad while a tracked widget glide is in flight - the round prompt unfolding,
+the ring's arms sliding in - and parks one late press for the first dispatched
+pass; see [the stepper's return](battle-hud.md#the-steppers-return-holds-the-pad). A hook that takes the
 rewind exit discards the action and reopens the command menu.
 
 **No host arms it.** `World::enter_battle` consumes the disc's own one-shot
@@ -781,8 +784,24 @@ explainer under the intro (centre rect `(23, 194, 275, 10)`, style byte
 sprites under CLUT `(48, 511)` - the whole tile-set one skin row down and one
 palette on, a near-black marble - where the intro's `0x44` samples `(128, 0)`
 under `(32, 511)`. Retail adds no marker sprite for the wait; the skin is the
-signal. The port's atlas carries tile-set 0 only, so its waiting box wears the
-blue frame and the dialog pager's confirm hand in the dark skin's place.
+signal.
+
+The style byte parts them because it **is** the widget record: the frame
+emitter `FUN_8002C69C` indexes the widget table `0x800732A4` with it
+(`0x8002C798..0x8002C7AC`). Record `0x44` is byte-identical to the message
+banner's record `3` (class 0, tile-set 0, sub-palette 2, fill rect
+`(128, 0, 32, 32)`), and record `0x43` is class 0 on tile-set 1 and
+sub-palette 3 with fill rect `(128, 32, 32, 32)` - same class, same `(-8, -8)`
+bias, so the same geometry in the other skin. The port bakes both skins into
+its system-UI atlas (`save_menu_atlas::ATLAS_RECTS_CLASS0_DARK`) and
+`engine-ui::battle_tutorial_box` picks by the box's wait flag
+(`battle_hud_chrome::text_actor_dark_frame_draws_for`).
+
+A waiting box does not park the roster panels under it. They stay on the list
+and the box, a later node, paints over them: the same frame shows the panel's
+name row above the explainer's top edge. The hosts composite glyphs over
+sprites, so the HUD builder cuts the panels to what the box leaves visible
+(`cut_draws_under`) instead of layering them.
 
 The key decides how long a box stays. A self-dismissing prompt (key `1`) is
 never timed out: the next key-`1` registration reuses its node, and the only
@@ -805,10 +824,10 @@ because the string is the overlay's own, not heap; and kind `0x0D`'s slot in the
 `FUN_80030628`'s epilogue - so registering a prompt draws nothing that frame,
 and the box first appears on the next walk.
 
-Engine port: [`engine-core::battle_tutorial`](../../crates/engine-core/src/battle_tutorial.rs).
+Engine port: [`engine-battle::battle_tutorial`](../../crates/engine-battle/src/battle_tutorial.rs).
 The prompt **text is Sony data living in the overlay**, so the port commits only
 the string *addresses* and reads the text off the user's own disc at runtime
-(`BattleTutorialScript::from_overlay` / `::from_prot`) - the same rule the item /
+(`BattleTutorialScript::from_overlay`, fed by `engine-core::disc_readers::battle_tutorial::script_from_prot`) - the same rule the item /
 spell / dialog parsers follow. Disc-gated oracle
 `crates/engine-core/tests/battle_tutorial_disc.rs`.
 

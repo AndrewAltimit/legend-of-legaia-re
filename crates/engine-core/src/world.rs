@@ -164,8 +164,8 @@ pub use battle::{
     DEFAULT_BATTLE_FRAME_STEP, LEVEL_UP_CUE, MAGIC_LEVEL_BANNER_ELEMENT, PARTY_BODY_RADIUS,
     PendingCast, RoutedEffectSpawn, SUMMON_SPAWN_BEHIND, SUMMON_STRIKE_BEHIND, SummonPhase,
     SummonStager, TIMED_MESSAGE_ELEMENT, VICTORY_EXIT_PHASE, VICTORY_FADE_PHASE_SEED,
-    VICTORY_LOAD_FRAMES, VICTORY_RESULTS_HOLD_FRAMES, VICTORY_STREAM_FRAMES, VictoryPhase,
-    VictorySequence, victory_pose_column, victory_pose_id, victory_pose_tier,
+    VICTORY_LOAD_FRAMES, VICTORY_RESULTS_HOLD_FRAMES, VICTORY_STORY_FLAG, VICTORY_STREAM_FRAMES,
+    VictoryPhase, VictorySequence, victory_pose_column, victory_pose_id, victory_pose_tier,
 };
 pub use battle::{AutoComboInputs, AutoComboState};
 pub use battle::{CASTER_STAGE_TICK_LIMIT, CasterStagePhase, CasterStageRun};

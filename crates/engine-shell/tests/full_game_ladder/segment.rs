@@ -167,6 +167,100 @@ pub(super) fn traverse(
             }
             continue;
         }
+        // The continuous hand plays a scene before it leaves it: the talks,
+        // bands and props whose records raise a flag the next anchor
+        // carries are what the retail run did here, and they are where a
+        // party's rests, joins and grants come from. The segmented passes
+        // play a scene's beats only when a door refuses.
+        if pad
+            && continuous::PLAYS_ON.with(std::cell::Cell::get)
+            && session.host.world.mode == SceneMode::Field
+            && beaten.insert(cur.clone())
+        {
+            // Upkeep first, as a player arriving in a town: the shop, what
+            // it sold, the bed.
+            // A talk or a stay that carried the party off (`dolk2`'s inn
+            // plays Noa's dream and brings it back) leaves the rest of the
+            // scene for the return.
+            if let Some(s) = pad_shop(session).map_err(|e| format!("in {cur}, shopping: {e}"))? {
+                trail.push(format!("{s}(shop talk)"));
+                beaten.remove(&cur);
+                continue;
+            }
+            pad_equip_best(session);
+            if let Some(s) = pad_rest(session).map_err(|e| format!("in {cur}, resting: {e}"))? {
+                trail.push(format!("{s}(rest)"));
+                beaten.remove(&cur);
+                continue;
+            }
+            let mut log = Vec::new();
+            let aim = (via >= vias.len()).then(|| target.clone());
+            BEAT_TARGET.with(|t| *t.borrow_mut() = aim);
+            let ahead = continuous::PLAYED_AHEAD
+                .with(|a| a.borrow().clone())
+                .filter(|(scene, _)| *scene == cur && cur != target.scene)
+                .map(|(_, flags)| flags);
+            let near = ahead.map(|a| NEXT_ANCHOR_FLAGS.with(|n| n.replace(Some(a))));
+            // In the milestone's own scene the pass is the segmented one:
+            // every live band, since the reach beat is among them.
+            PROACTIVE.with(|p| p.set(cur != target.scene));
+            let left = play_beats(session, &mut log);
+            PROACTIVE.with(|p| p.set(false));
+            if let Some(near) = near {
+                NEXT_ANCHOR_FLAGS.with(|n| *n.borrow_mut() = near);
+            }
+            BEAT_TARGET.with(|t| *t.borrow_mut() = None);
+            let left = left.map_err(|b| format!("in {cur}, playing beats: {b}"))?;
+            beaten_flags.insert(cur.clone(), flags_of_world(session));
+            trail.push(format!("[{}]", log.join("; ")));
+            if let Some(s) = left {
+                trail.push(format!("{s}(beat)"));
+                continue;
+            }
+            // Then the levels: fight from this scene's bed until the party
+            // stands near where the retail run did by the coming milestones.
+            if scene_name(session) == cur && walking(session) {
+                let goal = vias.get(via).unwrap_or(&target.scene).clone();
+                let out = graph
+                    .route_avoiding(&cur, &goal, &dead)
+                    .and_then(|r| r.get(1).cloned());
+                if let Some(s) = pad_train(session, graph, out.as_deref())
+                    .map_err(|e| format!("in {cur}, training: {e}"))?
+                {
+                    trail.push(format!("{s}(training)"));
+                } else if scene_name(session) == cur && walking(session) {
+                    // What the fights paid goes over the counter, and the
+                    // party sets out rested.
+                    if let Some(s) =
+                        pad_shop(session).map_err(|e| format!("in {cur}, shopping: {e}"))?
+                    {
+                        trail.push(format!("{s}(shop talk)"));
+                        continue;
+                    }
+                    pad_equip_best(session);
+                    if let Some(s) =
+                        pad_rest(session).map_err(|e| format!("in {cur}, resting: {e}"))?
+                    {
+                        trail.push(format!("{s}(rest)"));
+                    }
+                }
+            }
+            continue;
+        }
+        // A counter the story had closed on arrival may have opened since
+        // (`dolk2`'s dealers sell again once the festival is over): the
+        // continuous hand looks in again before it leaves.
+        if pad
+            && continuous::PLAYS_ON.with(std::cell::Cell::get)
+            && session.host.world.mode == SceneMode::Field
+            && counters_reopened(session)
+        {
+            if let Some(s) = pad_shop(session).map_err(|e| format!("in {cur}, shopping: {e}"))? {
+                trail.push(format!("{s}(shop talk)"));
+                continue;
+            }
+            pad_equip_best(session);
+        }
         let goal = vias.get(via).unwrap_or(&target.scene).clone();
         // In the target scene with its beat unplayed, or stuck on a door:
         // play the scene's walkable beats once, then look again.

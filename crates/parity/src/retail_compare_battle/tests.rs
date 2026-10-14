@@ -194,3 +194,17 @@ fn combatant_score_skips_a_missing_engine_max_mp() {
     let (s, d) = combatant_score(&[Some(r)], &[], "p", &[]);
     assert_eq!(s, 0.0, "{d}");
 }
+
+/// The `Begin` chip's seat names the glide's `elapsed`: `koru_strip_forced`'s
+/// older ordering table draws the left cap on `x = 101` (fourteen vsyncs in)
+/// and its displayed frame on `x = 106` (twelve).
+#[test]
+fn begin_chip_seat_names_the_prompt_glide_elapsed() {
+    assert_eq!(begin_chip_elapsed(142), Some(0));
+    assert_eq!(begin_chip_elapsed(101 + 8), Some(14));
+    assert_eq!(begin_chip_elapsed(106 + 8), Some(12));
+    assert_eq!(begin_chip_elapsed(104), Some(16));
+    assert_eq!(begin_chip_elapsed(103), None);
+    // A RAM image with no ordering table yields no seat.
+    assert_eq!(round_prompt_pool_seat(&vec![0u8; 0x20_0000], 2), None);
+}

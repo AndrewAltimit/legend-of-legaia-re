@@ -142,6 +142,11 @@ anchor = { kind = "card", card = "playthrough-ladder-pro00-14.mcr", save = "PRO-
 id = "zeto_dungeon"
 scene = "garmel"
 reach = "scene"
+# A run that walks in from Drake arrives at vozz's east mouth and can walk
+# straight back out to map01, on the side garmel's door is not: the way on
+# is the Genesis Tree beat (vozz P1[7], 0x193 / 0x2AC / 0x2C3), whose flight
+# lands by bylon. The start scene is a waypoint so its beats play first.
+via = ["vozz"]
 anchor = { kind = "card", card = "playthrough-ladder-pro00-14.mcr", save = "PRO-02" }
 
 [[milestone]]
@@ -155,6 +160,10 @@ anchor = { kind = "card", card = "playthrough-ladder-pro00-14.mcr", save = "PRO-
 id = "sky_gardens"
 scene = "teien"
 reach = "scene"
+# garmel's transport pads join the Songi band to the map01 door, so the
+# cheapest route leaves the dungeon; the story's way out is the Zeto fight
+# (garmel P2[12], 0x198), whose aftermath carries the party to bylon.
+via = ["garmel"]
 anchor = { kind = "card", card = "playthrough-ladder-pro00-14.mcr", save = "PRO-04" }
 
 [[milestone]]
@@ -186,6 +195,10 @@ anchor = { kind = "card", card = "playthrough-ladder-pro00-14.mcr", save = "PRO-
 id = "ratayu"
 scene = "retock"
 reach = "scene"
+# The anchor gained Mt. Letona's summit chain (retona P2[17] / P2[18],
+# 0x354..0x357, 0x367). A run that arrives at the trailhead reaches the
+# mt_letona milestone on its first step and would turn round for Ratayu.
+via = ["retona"]
 anchor = { kind = "card", card = "playthrough-ladder-pro00-14.mcr", save = "PRO-07" }
 
 [[milestone]]

@@ -52,9 +52,21 @@
 //! diamond's left and right arms (records `85` / `84`). Every seat here
 //! is pinned - there is no invented row.
 //!
-//! Retail's selection cue is not pinned, so the port supplies one: the
-//! chip under the cursor keeps its full plate tint and a white label
-//! while the rest dim.
+//! ## The selection cue is the plate, not a tint
+//!
+//! Every chip packet carries the neutral colour `0x808080` and every label
+//! the one glyph palette, highlighted or not - the `koru_strip_forced` and
+//! `v0_1_battle_command_submenu` display lists hold `Begin` and `Run`, and
+//! all four ring arms, on CLUT `0x7FC4` at `0x808080`. What marks a chip is
+//! its **frame style**: with the Battle Command option on its cross-button
+//! value (`_DAT_800846C8 != 0`), the menu SM's pre-dispatch block stamps the
+//! highlighted arm's text actor `+0x1D = 2` and every other arm `1`
+//! (`0x801D0850..0x801D089C` for the Left arm, one block per direction).
+//! That byte indexes the widget table: record `1` is the blue plate run
+//! (tile-set 3, sub-palette 4) and record `2` the carved-gold one (tile-set
+//! 4, sub-palette 12, the row the actor plaque wears). On the option's
+//! default, the directional buttons, nothing is highlighted and every chip
+//! is blue. [`BattleCommandMenuFrame::cursor`] is that highlight.
 //!
 //! Geometry is mirrored from `battle_chrome` as literals. The old
 //! crate-graph excuse for the copy ("`engine-ui` sits below `engine-vm`")
@@ -294,26 +306,51 @@ pub struct CommandChipAtlas {
     pub plate_body: (u32, u32, u32, u32),
     pub plate_cap_r: (u32, u32, u32, u32),
     pub dpad: (u32, u32, u32, u32),
+    /// The highlighted chip's plate 3-slice (left cap, body, right cap):
+    /// widget record `2`'s carved-gold run. `None` on a host whose atlas
+    /// carries no gold row - the highlighted chip then stays blue.
+    pub highlight: Option<PlateRun>,
 }
+
+/// One plate run's atlas cells: left cap, body tile, right cap.
+pub type PlateRun = [(u32, u32, u32, u32); 3];
 
 impl CommandChipAtlas {
     /// The pieces at their natural system-UI sheet coordinates, which is
-    /// also where `engine-core`'s baked atlas seats every one of them.
+    /// also where `engine-core`'s baked atlas seats every one of them but
+    /// the gold row (the bake re-seats it; hosts hand theirs to
+    /// [`Self::from_battle_chrome`]).
     pub const SHEET: Self = Self {
         plate_cap_l: title_pak::OVERLAY_SYSTEM_UI_BATTLE_PLATE_CAP_L,
         plate_body: title_pak::OVERLAY_SYSTEM_UI_BATTLE_PLATE_BODY,
         plate_cap_r: title_pak::OVERLAY_SYSTEM_UI_BATTLE_PLATE_CAP_R,
         dpad: title_pak::OVERLAY_SYSTEM_UI_ARTS_DPAD,
+        highlight: Some([
+            title_pak::OVERLAY_SYSTEM_UI_TAB_CAP_L,
+            title_pak::OVERLAY_SYSTEM_UI_TAB_BODY,
+            title_pak::OVERLAY_SYSTEM_UI_TAB_CAP_R,
+        ]),
     };
 
     /// The pieces as a [`crate::BattleChromeRects`] carries them, keeping
-    /// the shared D-pad cell.
-    pub fn from_battle_chrome(r: &crate::BattleChromeRects) -> Self {
+    /// the shared D-pad cell, with the host's gold plate run for the
+    /// highlighted chip.
+    pub fn from_battle_chrome(r: &crate::BattleChromeRects, highlight: Option<PlateRun>) -> Self {
         Self {
             plate_cap_l: r.plate_cap_l,
             plate_body: r.plate_body,
             plate_cap_r: r.plate_cap_r,
             dpad: title_pak::OVERLAY_SYSTEM_UI_ARTS_DPAD,
+            highlight,
+        }
+    }
+
+    /// The plate run a chip draws: the gold run under the highlight when
+    /// the atlas has one, the blue run otherwise.
+    fn run(&self, highlighted: bool) -> PlateRun {
+        match self.highlight {
+            Some(gold) if highlighted => gold,
+            _ => [self.plate_cap_l, self.plate_body, self.plate_cap_r],
         }
     }
 }
@@ -350,33 +387,32 @@ pub fn command_chip_views(chips: &[(String, bool)]) -> Vec<CommandChipView<'_>> 
 #[derive(Clone, Copy, Debug)]
 pub struct BattleCommandMenuFrame<'a> {
     pub chips: &'a [CommandChipView<'a>],
-    /// Index of the chip under the cursor, if any.
+    /// Index of the **highlighted** chip - the arm retail's cross-button
+    /// command entry has stamped frame style `2` (the gold plate). `None`
+    /// under the directional-buttons entry, where no arm is highlighted
+    /// and a direction press commits its arm outright.
     pub cursor: Option<usize>,
     /// Which selection surface these chips belong to.
     pub phase: ChipPhase,
+    /// Each chip's offset from its seat this frame, in chip order - the
+    /// open glide of a cluster whose records spawn at seat A
+    /// (`engine-core::battle_hud::battle_chip_offsets`: the round prompt's
+    /// `Begin` and `Run` unfold from the cluster centre). Zero at rest.
+    pub offsets: [(i32, i32); 4],
+    /// Draw the D-pad glyph. The menu SM leaves before its state arm - the
+    /// glyph's emitter - while any widget glide is in flight, so a cluster
+    /// still unfolding shows none
+    /// (`engine-core::battle_hud::battle_chip_dpad_visible`).
+    pub dpad: bool,
 }
 
-/// Plate tint of the chip under the cursor - retail's selection cue is
-/// not pinned, so the port draws the selected plate at full brightness.
-pub const CHIP_TINT_SELECTED: [f32; 4] = [1.0, 1.0, 1.0, 1.0];
-/// Plate tint of an unselected chip.
-pub const CHIP_TINT_IDLE: [f32; 4] = [0.72, 0.74, 0.82, 1.0];
-/// Plate tint of a chip whose command cannot be chosen.
-pub const CHIP_TINT_DISABLED: [f32; 4] = [0.52, 0.52, 0.58, 1.0];
-/// Label ink of the chip under the cursor.
-pub const LABEL_SELECTED: [f32; 4] = [1.0, 1.0, 1.0, 1.0];
-/// Label ink of an unselected chip.
-pub const LABEL_IDLE: [f32; 4] = [0.70, 0.75, 0.86, 1.0];
-/// Label ink of the `-` an unavailable command draws.
-pub const LABEL_DISABLED: [f32; 4] = [0.55, 0.55, 0.58, 1.0];
-
-fn tints(selected: bool, enabled: bool) -> ([f32; 4], [f32; 4]) {
-    match (enabled, selected) {
-        (false, _) => (CHIP_TINT_DISABLED, LABEL_DISABLED),
-        (true, true) => (CHIP_TINT_SELECTED, LABEL_SELECTED),
-        (true, false) => (CHIP_TINT_IDLE, LABEL_IDLE),
-    }
-}
+/// Modulation colour of every chip plate and of the D-pad glyph: the
+/// packets' own `0x808080`, the texel unchanged. Highlighted, idle and
+/// unavailable chips all carry it.
+pub const CHIP_COLOR: [f32; 4] = [1.0, 1.0, 1.0, 1.0];
+/// Label ink of every chip, the `-` of an unavailable command included:
+/// one glyph palette for the whole cluster.
+pub const LABEL_INK: [f32; 4] = [1.0, 1.0, 1.0, 1.0];
 
 // --------------------------------------------------------------- builders
 
@@ -388,6 +424,25 @@ pub fn plate_run(
     atlas: &CommandChipAtlas,
     x: i32,
     y: i32,
+    interior_w: i32,
+    color: [f32; 4],
+    stage_origin: (i32, i32),
+    stage_scale: u32,
+) -> Vec<SpriteDraw> {
+    plate_run_of(
+        atlas.run(false),
+        (x, y),
+        interior_w,
+        color,
+        stage_origin,
+        stage_scale,
+    )
+}
+
+/// [`plate_run`] over an explicit cap / body / cap triple.
+fn plate_run_of(
+    [cap_l, body, cap_r]: PlateRun,
+    (x, y): (i32, i32),
     interior_w: i32,
     color: [f32; 4],
     stage_origin: (i32, i32),
@@ -407,15 +462,15 @@ pub fn plate_run(
             color,
         });
     };
-    blit(atlas.plate_cap_l, x, PLATE_CAP_W);
+    blit(cap_l, x, PLATE_CAP_W);
     let interior_x = x + PLATE_CAP_W;
     let mut done = 0;
     while done < interior_w {
         let w = PLATE_BODY_W.min(interior_w - done);
-        blit(atlas.plate_body, interior_x + done, w);
+        blit(body, interior_x + done, w);
         done += w;
     }
-    blit(atlas.plate_cap_r, interior_x + interior_w, PLATE_CAP_W);
+    blit(cap_r, interior_x + interior_w, PLATE_CAP_W);
     out
 }
 
@@ -435,19 +490,19 @@ pub fn battle_command_chip_sprites(
     let mut out: Vec<SpriteDraw> = Vec::new();
     let seats = frame.phase.seats();
     let mut any = false;
-    for (i, chip) in frame.chips.iter().enumerate() {
+    for (i, _) in frame.chips.iter().enumerate() {
         let Some(seat) = seats.get(i).copied() else {
             continue;
         };
         any = true;
-        let (plate_tint, _) = tints(frame.cursor == Some(i), chip.enabled);
+        // Frame style 2 (gold) on the highlighted arm, 1 (blue) on the rest.
         let (px, py) = seat.plate_origin();
-        out.extend(plate_run(
-            atlas,
-            px,
-            py,
+        let (dx, dy) = frame.offsets.get(i).copied().unwrap_or((0, 0));
+        out.extend(plate_run_of(
+            atlas.run(frame.cursor == Some(i)),
+            (px + dx, py + dy),
             seat.cluster().interior_w,
-            plate_tint,
+            CHIP_COLOR,
             stage_origin,
             stage_scale,
         ));
@@ -455,7 +510,7 @@ pub fn battle_command_chip_sprites(
     // The D-pad glyph sits at the centre of whichever cluster this
     // phase is drawing - retail draws exactly one, every frame of all
     // three selection states.
-    if any {
+    if any && frame.dpad {
         let (dx, dy, dw, dh) = frame.phase.cluster().dpad_rect();
         out.push(SpriteDraw {
             dst: (
@@ -465,7 +520,7 @@ pub fn battle_command_chip_sprites(
                 dh * scale,
             ),
             src: atlas.dpad,
-            color: CHIP_TINT_SELECTED,
+            color: CHIP_COLOR,
         });
     }
     out
@@ -515,7 +570,7 @@ pub fn mark_sprite(
             h * scale,
         ),
         src,
-        color: CHIP_TINT_SELECTED,
+        color: CHIP_COLOR,
     }
 }
 
@@ -588,15 +643,20 @@ pub fn curse_plate_sprite(
 /// different entry, and their relative order is not pinned here. A host whose
 /// atlas skipped a mark's bake (its rect `None`) draws the plates and no
 /// mark.
+///
+/// `highlight_plate` is the host atlas's carved-gold plate run (the
+/// `tab_*` cells), which the highlighted chip wears
+/// ([`CommandChipAtlas::highlight`]).
 pub fn battle_command_menu_sprites(
     rects: &crate::BattleChromeRects,
+    highlight_plate: Option<PlateRun>,
     frame: &BattleCommandMenuFrame<'_>,
     marks: RingMarks,
     stage_origin: (i32, i32),
     stage_scale: u32,
 ) -> Vec<SpriteDraw> {
     let mut out = battle_command_chip_sprites(
-        &CommandChipAtlas::from_battle_chrome(rects),
+        &CommandChipAtlas::from_battle_chrome(rects, highlight_plate),
         frame,
         stage_origin,
         stage_scale,
@@ -654,11 +714,15 @@ pub fn battle_command_chip_text(
         let Some(seat) = seats.get(i).copied() else {
             continue;
         };
-        let (_, ink) = tints(frame.cursor == Some(i), chip.enabled);
+        let ink = LABEL_INK;
         let text = if chip.enabled { chip.label } else { "-" };
         let layout = font.layout_ascii(text);
         let (lx, ly) = seat.label_seat();
-        let pen = (stage_origin.0 + lx * scale, stage_origin.1 + ly * scale);
+        let (dx, dy) = frame.offsets.get(i).copied().unwrap_or((0, 0));
+        let pen = (
+            stage_origin.0 + (lx + dx) * scale,
+            stage_origin.1 + (ly + dy) * scale,
+        );
         for g in &layout.glyphs {
             out.push(TextDraw {
                 dst: (
@@ -694,6 +758,8 @@ mod tests {
             chips,
             cursor: Some(cursor),
             phase: ChipPhase::CommandRing,
+            offsets: [(0, 0); 4],
+            dpad: true,
         }
     }
 
@@ -740,7 +806,7 @@ mod tests {
             ..Default::default()
         };
         let plates = battle_command_chip_sprites(
-            &CommandChipAtlas::from_battle_chrome(&baked),
+            &CommandChipAtlas::from_battle_chrome(&baked, None),
             &frame,
             (5, 9),
             3,
@@ -750,15 +816,16 @@ mod tests {
             raseru_forbidden: true,
             ..Default::default()
         };
-        let off = battle_command_menu_sprites(&baked, &frame, RingMarks::default(), (5, 9), 3);
+        let off =
+            battle_command_menu_sprites(&baked, None, &frame, RingMarks::default(), (5, 9), 3);
         assert_eq!(dbg(&off), dbg(&plates), "no bit, no mark");
-        let on = battle_command_menu_sprites(&baked, &frame, raseru, (5, 9), 3);
+        let on = battle_command_menu_sprites(&baked, None, &frame, raseru, (5, 9), 3);
         assert_eq!(on.len(), plates.len() + 1);
         assert_eq!(dbg(&on[..plates.len()]), dbg(&plates));
         let mark = cross_out_mark_sprite((0, 96, 64, 16), RASERU_MARK_ANCHOR, (5, 9), 3);
         assert_eq!(dbg(&on[plates.len()..]), dbg(&[mark]), "the X draws last");
         let unbaked = crate::BattleChromeRects::default();
-        let bare = battle_command_menu_sprites(&unbaked, &frame, raseru, (5, 9), 3);
+        let bare = battle_command_menu_sprites(&unbaked, None, &frame, raseru, (5, 9), 3);
         assert_eq!(bare.len(), plates.len(), "no atlas cell, no mark");
     }
 
@@ -810,8 +877,9 @@ mod tests {
             attack_rotted: true,
             magic_cursed: true,
         };
-        let plates = battle_command_menu_sprites(&rects, &frame, RingMarks::default(), (0, 0), 1);
-        let on = battle_command_menu_sprites(&rects, &frame, all, (0, 0), 1);
+        let plates =
+            battle_command_menu_sprites(&rects, None, &frame, RingMarks::default(), (0, 0), 1);
+        let on = battle_command_menu_sprites(&rects, None, &frame, all, (0, 0), 1);
         let srcs: Vec<_> = on[plates.len()..]
             .iter()
             .map(|s| (s.src.0, s.src.1, s.dst.0))
@@ -828,7 +896,7 @@ mod tests {
             attack_rotted: true,
             ..Default::default()
         };
-        let bare = battle_command_menu_sprites(&no_rot, &frame, rotted, (0, 0), 1);
+        let bare = battle_command_menu_sprites(&no_rot, None, &frame, rotted, (0, 0), 1);
         assert_eq!(bare.len(), plates.len(), "no Rot cell, no stamp");
     }
 
@@ -951,6 +1019,8 @@ mod tests {
                     chips: &all,
                     cursor: Some(0),
                     phase,
+                    offsets: [(0, 0); 4],
+                    dpad: true,
                 },
                 (0, 0),
                 1,
@@ -974,6 +1044,8 @@ mod tests {
                 chips: &[],
                 cursor: None,
                 phase: ChipPhase::CommandRing,
+                offsets: [(0, 0); 4],
+                dpad: true,
             },
             (0, 0),
             1,
@@ -1020,23 +1092,76 @@ mod tests {
         }
     }
 
-    /// Only the cursor's chip is drawn at full brightness.
+    /// The highlight is the plate's frame style, never a tint: every sprite
+    /// carries the neutral colour, the highlighted arm samples the gold row
+    /// (widget record 2) and the rest the blue one (record 1).
     #[test]
-    fn the_cursor_chip_is_the_only_bright_one() {
+    fn the_highlighted_chip_wears_the_gold_plate_and_nothing_is_tinted() {
         let all = chips(4);
         let sprites =
             battle_command_chip_sprites(&CommandChipAtlas::SHEET, &ring(&all, 0), (0, 0), 1);
-        let bright: Vec<&SpriteDraw> = sprites
-            .iter()
-            .filter(|s| s.color == CHIP_TINT_SELECTED)
-            .collect();
-        // The Item chip's five pieces, plus the D-pad glyph.
-        assert_eq!(bright.len(), 6);
+        assert!(sprites.iter().all(|s| s.color == CHIP_COLOR));
+        let gold_v = title_pak::OVERLAY_SYSTEM_UI_TAB_BODY.1;
+        let gold: Vec<&SpriteDraw> = sprites.iter().filter(|s| s.src.1 == gold_v).collect();
+        // The Item chip's five pieces: two caps and three body tiles.
+        assert_eq!(gold.len(), 5);
         let item = CLUSTER_COMMAND.plate_origin(ChipSeat::Up);
-        assert!(
-            bright
-                .iter()
-                .any(|s| s.dst.0 == item.0 && s.dst.1 == item.1)
-        );
+        assert!(gold.iter().all(|s| s.dst.1 == item.1));
+        assert!(gold.iter().any(|s| s.dst.0 == item.0));
+    }
+
+    /// An unfolding cluster: each chip's plate and label ride its offset,
+    /// and the D-pad glyph is not drawn until the glide lands.
+    #[test]
+    fn an_unfolding_prompt_offsets_its_chips_and_holds_the_dpad_back() {
+        let font = legaia_font::Font::placeholder();
+        let all = chips(2);
+        let rest = BattleCommandMenuFrame {
+            chips: &all,
+            cursor: None,
+            phase: ChipPhase::RoundPrompt,
+            offsets: [(0, 0); 4],
+            dpad: true,
+        };
+        let open = BattleCommandMenuFrame {
+            offsets: [(38, 0), (-38, 0), (0, 0), (0, 0)],
+            dpad: false,
+            ..rest
+        };
+        let a = battle_command_chip_sprites(&CommandChipAtlas::SHEET, &rest, (0, 0), 2);
+        let b = battle_command_chip_sprites(&CommandChipAtlas::SHEET, &open, (0, 0), 2);
+        assert_eq!(b.len(), a.len() - 1, "no D-pad glyph while unfolding");
+        // Begin's five pieces move right by 38 stage pixels, Run's left.
+        for (r, o) in a.iter().zip(&b).take(5) {
+            assert_eq!(o.dst.0, r.dst.0 + 38 * 2);
+            assert_eq!(o.dst.1, r.dst.1);
+        }
+        for (r, o) in a.iter().zip(&b).skip(5).take(5) {
+            assert_eq!(o.dst.0, r.dst.0 - 38 * 2);
+        }
+        let ta = battle_command_chip_text(&font, &rest, (0, 0), 2);
+        let tb = battle_command_chip_text(&font, &open, (0, 0), 2);
+        assert_eq!(ta.len(), tb.len());
+        assert_eq!(tb[0].dst.0, ta[0].dst.0 + 38 * 2);
+    }
+
+    /// The directional-buttons entry highlights nothing: four blue chips,
+    /// and an unavailable command's chip is as bright as the rest.
+    #[test]
+    fn no_highlight_draws_every_chip_blue_at_the_packet_colour() {
+        let mut all = chips(4);
+        all[2].enabled = false;
+        let frame = BattleCommandMenuFrame {
+            chips: &all,
+            cursor: None,
+            phase: ChipPhase::CommandRing,
+            offsets: [(0, 0); 4],
+            dpad: true,
+        };
+        let sprites = battle_command_chip_sprites(&CommandChipAtlas::SHEET, &frame, (0, 0), 1);
+        let blue_v = title_pak::OVERLAY_SYSTEM_UI_BATTLE_PLATE_BODY.1;
+        let plates = sprites.len() - 1; // less the D-pad glyph
+        assert_eq!(sprites.iter().filter(|s| s.src.1 == blue_v).count(), plates);
+        assert!(sprites.iter().all(|s| s.color == CHIP_COLOR));
     }
 }

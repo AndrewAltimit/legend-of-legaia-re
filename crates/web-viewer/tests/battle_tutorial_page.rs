@@ -36,7 +36,7 @@
 
 use std::path::PathBuf;
 
-use legaia_engine_core::battle_tutorial::{self as tut, BattleTutorialScript};
+use legaia_engine_battle::battle_tutorial::{self as tut, BattleTutorialScript};
 use legaia_engine_system::input::PadButton;
 use legaia_prot::archive::Archive;
 use legaia_web_viewer::runtime::LegaiaRuntime;

@@ -1153,10 +1153,10 @@ The `!= 4` term excludes the AI companion seat, the same `== 4` test the auto-fi
 
 - The Magic "class byte" is the spell record's cast class `+0` (`0x800754C8[id * 12]`). Every real class (`0x14` / `0x32` / `0x63`) clears `0xA`, so a cast at a fallen hero re-rolls onto a standing one. Only the class-`0` records (the internal `0x00..=0x24` tiers and the monster attacks `0x2E` / `0x2F`) keep a dead party target.
 - An all-side target code (`8` / `9`) fails the `< 8` test and is left alone.
-- **Party call site**: `FUN_801DABA4`'s party arm, `0x801DAF14`, gated on `ctx[+0x06] == 0xFF`. It stops a member whose target died earlier in the round from walking at the corpse: the short step `0x19` has no timeout, and the range law never brings a dead target into reach.
+- **Party call site**: `FUN_801DABA4`'s party arm, `0x801DAF14`, gated on `ctx[+0x06] == 0xFF`. It stops a member whose target died earlier in the round from walking at the corpse: the short step `0x19` has no timeout, and the range law never brings a dead target into reach. A committed **cast** goes through the same call under the Magic row: a summon left on a corpse walks its creature onto a seat with no defeat fade left to run, and the cast module's settle arm, which waits that fade out (PROT 0903 arm 12), holds the summon band's `0x36` for good.
 - **Monster call site**: unconditional, straight after the AI picker (`jal 0x801E9FD4` then `jal 0x801DB124` at `0x801DAF48..0x801DAF50`). That arm has no category gate, so it also reaches a monster's single-target **cast** (category `2`, spell id in `+0x1DF`).
 
-The engine runs it at each party dispatch and on a monster's strike and single-target cast (`World::redirect_dead_battle_target`, called from `take_monster_turn`).
+The engine runs it at each party dispatch - a strike, an arts string and a single-target cast alike (`World::redirect_pending_off_dead_target`) - and on a monster's strike and single-target cast (`World::redirect_dead_battle_target`, called from `take_monster_turn`). A party cast needs it as much as a strike does: a Seru summon's module walks its creature onto the victim and holds on the range poll (PROT 0903's arm 11), which a dead victim never satisfies, so a cast left on a corpse holds state `0x36`.
 
 ### The per-action target banner (`FUN_801E6D84`)
 

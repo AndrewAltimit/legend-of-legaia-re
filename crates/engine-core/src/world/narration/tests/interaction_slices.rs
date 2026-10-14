@@ -200,6 +200,56 @@ fn a_player_targeted_move_to_in_a_timeline_seats_the_player() {
     assert_eq!(w.cutscene.timeline.as_ref().unwrap().pc, 4);
 }
 
+/// A talker whose own context carries the party-bank class bit (`31 18`)
+/// seats ANOTHER actor with a cross-context MOVE_TO: the player stays where
+/// it stands. Retail's player arm is an identity compare of the resolved
+/// context against the player (`0x801DEC7C`), not the class bit. `vozz`
+/// P1[1] parks its helper actors at the hide tile this way.
+#[test]
+fn a_talk_seating_another_actor_leaves_the_player_where_it_stands() {
+    let mut w = World::new();
+    w.install_field_player(0);
+    w.actors[0].move_state.world_x = 4162;
+    w.actors[0].move_state.world_z = 9284;
+    // `31 18` (the class bit), `A3 06 7F 7F` (park actor 6), end.
+    w.start_inline_dialogue(vec![0x31, 0x18, 0xA3, 0x06, 0x7F, 0x7F, 0x21]);
+    for _ in 0..4 {
+        w.step_inline_dialogue(false, false, false);
+    }
+    let ms = &w.actors[0].move_state;
+    assert_eq!(
+        (ms.world_x, ms.world_z),
+        (4162, 9284),
+        "the seat names actor 6, not the player"
+    );
+}
+
+/// A talk whose lead plays the talker's own clip and waits on its end latch
+/// (`2C 08` / `2D 08`) runs the ops behind the wait even when the port holds
+/// no clip cursor for the talker: the latch is the anim tick's
+/// (`FUN_800204F8`), it always lands, and the record goes on from the op
+/// after it. Falling back to the first text segment instead skipped the
+/// grant and the flag between them - `vozz` P1[1] gives item `0xAA` and
+/// raises `0x079` there.
+#[test]
+fn an_own_clip_wait_with_no_cursor_runs_the_ops_behind_it() {
+    let mut w = World::new();
+    w.install_field_player(0);
+    // Clear the latch, wait on it, raise `0x079`, one text segment, end.
+    w.start_inline_dialogue_with_prologue(
+        vec![0x2C, 0x08, 0x2D, 0x08, 0x50, 0x79, 0x1F, b'A', 0x00, 0x21],
+        0,
+        6,
+    );
+    for _ in 0..4 {
+        w.step_inline_dialogue(false, false, false);
+    }
+    assert!(
+        w.system_flag_test(0x079),
+        "the flag behind the wait is raised before the box opens"
+    );
+}
+
 #[test]
 fn a_copy_from_player_then_walk_starts_at_the_player() {
     use legaia_engine_field::cutscene_timeline::CutsceneTimeline;

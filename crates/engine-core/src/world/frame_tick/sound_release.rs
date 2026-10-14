@@ -24,7 +24,7 @@ impl World {
     pub fn arm_sound_release(&mut self, deadline_vsyncs: i32) {
         self.audio.sound_release.arm(deadline_vsyncs);
         self.audio.pending_sound_release = false;
-        self.audio.sound_arm = Some(crate::scus_leaf_kernels::TimedSoundArm::arm(
+        self.audio.sound_arm = Some(legaia_engine_system::scus_leaf_kernels::TimedSoundArm::arm(
             0,
             deadline_vsyncs.max(0) as u32,
             self.audio.levels.configured_level,

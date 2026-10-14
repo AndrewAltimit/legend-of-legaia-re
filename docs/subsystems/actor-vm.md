@@ -199,7 +199,7 @@ PROT 0896's own head at an unrecovered base
 marks untrustworthy: 18 of its 42 `jal`s target `0x8002CDD0` and
 `0x8002D988`, the two non-enterable addresses that page names. PROT 0896's
 head is a Japanese-build options menu the USA build never runs
-(`crates/engine-core/src/options.rs`).
+(`crates/engine-menus/src/options.rs`).
 
 The menu family drops the floor to `1` on entry and writes the saved value back from `DAT_801EF19C` on exit, which is why the field floor survives a pause-menu round trip.
 

@@ -645,7 +645,7 @@ every frame and passes on all 24 draws of one frame.
 ### The fog pool: spawner, records, render pass
 
 Three routines, one pool at `_DAT_8007B7E0` (see
-[`fog_particles`](../../crates/engine-core/src/fog_particles.rs) for the
+[`fog_particles`](../../crates/engine-field/src/fog_particles.rs) for the
 byte layout):
 
 | Routine | Image | Role |
@@ -940,7 +940,7 @@ oscillators.
   (mode 4); morph kernels `scene-formats::vdf_morph` (record walk + delta
   blend), `engine-vm::vdf_morph` (actor lanes + envelope) and
   `engine-core::world::npc_morph`; enhancement pulse `engine-field::vdf_pulse`.
-- Fog: `engine-core::fog_particles::FogPool` (cap from the MAN header),
+- Fog: `engine-field::fog_particles::FogPool` (cap from the MAN header),
   emitter `engine-field::ambient_emitter::AmbientEmitter`, overworld
   flat bucket depth `engine-field::overworld_draw_order`, 5-bit blend
   `render-kernels::screen_prim::psx_texture_blend`. World draws stand in for BIOS

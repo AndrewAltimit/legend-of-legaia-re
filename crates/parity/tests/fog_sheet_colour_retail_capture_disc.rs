@@ -22,7 +22,7 @@
 //! Skips (and passes) when the scenario manifest or the save library is
 //! missing.
 
-use legaia_engine_core::fog_particles::{FOG_CLUT, FOG_POOL_SLOTS, FOG_TPAGE, FogParticle};
+use legaia_engine_field::fog_particles::{FOG_CLUT, FOG_POOL_SLOTS, FOG_TPAGE, FogParticle};
 use legaia_mednafen::SaveState;
 use legaia_ram_image::ScenarioManifest;
 use legaia_ram_image::prim_pool::{self, Prim};
@@ -200,7 +200,7 @@ fn fog_sheet_colours_match_the_retail_frame_record_for_record() {
 #[test]
 fn fog_sheet_geometry_matches_the_retail_frame() {
     use legaia_engine_battle_vm::psx_camera::FieldCameraView;
-    use legaia_engine_core::fog_particles::{FogFrameEnv, FogPool, FogView};
+    use legaia_engine_field::fog_particles::{FogFrameEnv, FogPool, FogView};
     let (Some(manifest_path), Some(library)) =
         (find("scripts/scenarios.toml"), find("saves/library"))
     else {

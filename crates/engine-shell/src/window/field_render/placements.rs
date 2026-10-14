@@ -280,13 +280,13 @@ impl PlayWindowApp {
 
     /// Build the occlusion-fade visibility gate's world-space occluder set
     /// from the same static draw list the render layers use (see
-    /// `legaia_engine_core::field_occlusion`). Rebuilt per scene load.
+    /// `legaia_engine_scene::field_occlusion`). Rebuilt per scene load.
     pub(in crate::window) fn build_field_occluders(
         &self,
         res: &SceneResources,
-    ) -> legaia_engine_core::field_occlusion::FieldOccluders {
+    ) -> legaia_engine_scene::field_occlusion::FieldOccluders {
         let draws = self.static_env_draws(res);
-        let occ = legaia_engine_core::field_occlusion::FieldOccluders::build(&[&draws], res);
+        let occ = legaia_engine_scene::field_occlusion::FieldOccluders::build(&[&draws], res);
         if !occ.is_empty() {
             log::info!(
                 "play-window: occlusion-fade gate armed with {} static triangles",
@@ -530,7 +530,7 @@ impl PlayWindowApp {
             draws.push((mesh_idx, model));
             floors.push(d.floor);
             window_keys.push(legaia_engine_scene::field_env::placed_window_key(d, binds));
-            cell_keys.push(legaia_engine_core::field_view_window::CellKey::of_draw(d));
+            cell_keys.push(legaia_engine_scene::field_view_window::CellKey::of_draw(d));
             records.push(record);
             facing.push((d.view_skip != 0 && !flip_y).then_some((d.view_skip, rot)));
         }

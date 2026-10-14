@@ -181,6 +181,39 @@ fn the_counter_hands_the_hosts_its_cues() {
     );
 }
 
+/// The field-overlay poll both play hosts run once per sim tick
+/// (`MenuRuntime::poll_field_overlay`): nothing pending answers `None` and
+/// opens nothing; a counter the script armed opens on the poll and takes its
+/// first step there, on no edge, so the press that ran the script into op
+/// `0x49` cannot also act on the screen. The request is consumed by the poll.
+#[test]
+fn the_overlay_poll_opens_and_steps_on_no_edge() {
+    let mut w = prize_world();
+    let mut menu = MenuRuntime::new(std::env::temp_dir());
+    assert_eq!(menu.poll_field_overlay(&mut w), None);
+    assert!(!menu.is_open());
+
+    assert!(w.try_arm_prize_exchange(&[0x49, 0x07, 0x00]));
+    assert_eq!(
+        menu.poll_field_overlay(&mut w),
+        Some(None),
+        "opened, and the no-edge first step raised no cue"
+    );
+    assert!(menu.is_open());
+    assert!(
+        w.shops.prize_exchange_open,
+        "the first step did not unpark the counter under an open screen"
+    );
+    assert_eq!(
+        menu.prize_session.as_ref().map(|s| s.cursor()),
+        Some(0),
+        "no edge reached the list"
+    );
+    // The request was taken: a second poll opens nothing.
+    assert_eq!(menu.poll_field_overlay(&mut w), None);
+    assert!(menu.is_open());
+}
+
 /// A refused redeem (short coins) leaves everything untouched and the
 /// session browsing.
 #[test]

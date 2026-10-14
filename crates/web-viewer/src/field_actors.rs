@@ -186,14 +186,14 @@ impl FieldActors {
             *g = g.wrapping_add(1);
         }
         // The playheads run only while the field owns the frame - the
-        // world's decision, shared with the native draw pass.
-        if host.world.field_npc_clips_advance() {
-            for (slot, clip) in self.clips.iter_mut() {
-                if !host.world.sync_npc_clip(*slot, &mut clip.player) {
-                    clip.player.advance(1);
-                }
-            }
-        }
+        // session's step, the one the native window runs from its own
+        // clip-cue step.
+        legaia_engine_session::session::step_npc_clip_players(
+            &host.world,
+            self.clips
+                .iter_mut()
+                .map(|(slot, clip)| (*slot, &mut clip.player)),
+        );
     }
 
     /// The bank NPC `slot`'s clip ids name: the locomotion bundle when the
@@ -677,7 +677,7 @@ impl FieldActors {
     pub fn culled(
         &self,
         host: &SceneHost,
-        cells: Option<&legaia_engine_core::field_view_window::ViewCells>,
+        cells: Option<&legaia_engine_scene::field_view_window::ViewCells>,
     ) -> Vec<u8> {
         let (Some(n), Some(_)) = (self.npcs.as_ref(), cells) else {
             return Vec::new();

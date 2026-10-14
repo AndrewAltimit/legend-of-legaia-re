@@ -23,10 +23,10 @@ use legaia_engine_battle::magic_xp::SpellLevelNotice;
 use legaia_engine_core::field_menu_dispatch::{
     FieldMenuSubsession, SubsessionHandoff, finish_subsession, tick_open_subsession, tick_root_list,
 };
-use legaia_engine_core::options::OptionsState;
 use legaia_engine_core::scene_host::{BgmDirector, SceneHost, SceneTickEvent};
 use legaia_engine_field::camera::Camera;
 use legaia_engine_menus::field_menu::{FieldMenuGate, FieldMenuSession};
+use legaia_engine_menus::options::OptionsState;
 use legaia_engine_menus::save_screen::{SaveCommit, SaveScreenFlow};
 use legaia_engine_menus::save_select::{SaveRack, SlotSnapshot};
 use legaia_engine_mode::mode::SceneMode;
@@ -38,11 +38,13 @@ use crate::audio_director::AudioDirector;
 mod construct;
 mod disc_tables;
 mod field_menu;
+mod frame_steps;
 mod frame_tick;
 mod scene_entry;
 
 use disc_tables::*;
 pub use disc_tables::{BATTLE_XA_CLIP_SLOTS, attach_escape_icons};
+pub use frame_steps::step_npc_clip_players;
 
 /// What one menu-button press did ([`BootSession::press_field_menu`]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

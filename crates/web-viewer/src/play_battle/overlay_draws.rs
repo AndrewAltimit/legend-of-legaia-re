@@ -305,15 +305,18 @@ impl LegaiaRuntime {
                 active_slot: world.and_then(bh::battle_readout_bar_slot),
                 panels_parked: !world.is_some_and(bh::battle_panels_visible),
                 begin_tab: world.is_some_and(bh::battle_begin_tab_visible),
+                begin_tab_offset: world.map(bh::battle_begin_tab_offset).unwrap_or((0, 0)),
                 third_tab: third_tab.as_deref(),
                 move_name: move_name.as_deref(),
                 target_plaque: target_plaque.as_ref().map(|(n, b)| (n.as_str(), *b)),
                 plaque_dy: world.map(bh::battle_action_plaque_dy).unwrap_or(0),
                 target_plaque_dy: world.map(bh::battle_target_plaque_dy).unwrap_or(0),
                 bar_dy: world.map(bh::battle_readout_bar_dy).unwrap_or(0),
+                panels_dy: world.map(bh::battle_round_prompt_panels_dy).unwrap_or(0),
                 target_select: target_select.as_ref().map(|(n, b)| (n.as_str(), *b)),
                 message_bar: message_bar.as_deref(),
                 ap_plate_value: world.and_then(bh::battle_ring_ap_plate_value),
+                ap_plate_dx: world.map(bh::battle_ring_ap_plate_dx).unwrap_or(0),
                 commit_log: &commit_log,
                 intro_names: &intro_names,
                 stage_banner: stage_banner.as_ref().map(|(l, x, y)| (l.as_str(), *x, *y)),
@@ -350,6 +353,18 @@ impl LegaiaRuntime {
     /// feeds both halves of the cluster (the plate sprites and the labels),
     /// so the page's two draw arrays cannot disagree about whether the menu
     /// is up.
+    /// The command cluster's open glide this frame: each chip's offset from
+    /// its seat and whether the D-pad glyph draws
+    /// (`battle_hud::battle_chip_offsets` / `battle_chip_dpad_visible`), at
+    /// rest without a world. The native window reads the same pair.
+    pub(crate) fn battle_chip_glide(&self) -> ([(i32, i32); 4], bool) {
+        use legaia_engine_core::battle_hud as bh;
+        match self.scene_host.host().map(|h| &h.world) {
+            Some(w) => (bh::battle_chip_offsets(w), bh::battle_chip_dpad_visible(w)),
+            None => ([(0, 0); 4], true),
+        }
+    }
+
     pub(crate) fn battle_command_menu_chips(&self) -> Option<CommandChips> {
         use legaia_engine_core::battle_hud::battle_command_chips;
         use legaia_engine_menus::battle_input::CommandChipPhase;
@@ -365,7 +380,8 @@ impl LegaiaRuntime {
             CommandChipPhase::AttackMode => ChipPhase::AttackMode,
             CommandChipPhase::CommitConfirm => ChipPhase::CommitConfirm,
         };
-        Some((chips.chips, chips.cursor, phase))
+        let highlight = legaia_engine_core::battle_hud::battle_chip_highlight(world, chips.cursor);
+        Some((chips.chips, highlight, phase))
     }
 
     /// The battle HUD's chrome sprites (strip + plaque lozenges, gold `HP` /
@@ -455,10 +471,16 @@ impl LegaiaRuntime {
             // engine read, the same call the native window makes.
             out.extend(bcu::battle_command_menu_sprites(
                 &rects,
+                // Widget record 2's gold run, the highlighted arm's plate.
+                assets
+                    .chrome_rects()
+                    .map(|r| [r.tab_cap_l, r.tab_body, r.tab_cap_r]),
                 &bcu::BattleCommandMenuFrame {
                     chips: &views,
-                    cursor: Some(cursor),
+                    cursor,
                     phase,
+                    offsets: self.battle_chip_glide().0,
+                    dpad: self.battle_chip_glide().1,
                 },
                 self.scene_host
                     .host()
@@ -503,8 +525,10 @@ impl LegaiaRuntime {
                     assets.font_ref(),
                     &bcu::BattleCommandMenuFrame {
                         chips: &views,
-                        cursor: Some(cursor),
+                        cursor,
                         phase,
+                        offsets: self.battle_chip_glide().0,
+                        dpad: self.battle_chip_glide().1,
                     },
                     origin,
                     scale,
@@ -740,8 +764,10 @@ impl LegaiaRuntime {
                             font,
                             &bcu::BattleCommandMenuFrame {
                                 chips: &views,
-                                cursor: Some(cursor),
+                                cursor,
                                 phase,
+                                offsets: self.battle_chip_glide().0,
+                                dpad: self.battle_chip_glide().1,
                             },
                             origin,
                             scale,

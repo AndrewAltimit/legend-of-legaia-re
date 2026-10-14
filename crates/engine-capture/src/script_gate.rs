@@ -215,10 +215,19 @@ impl ScriptGate {
         if tick == SCRIPT_RESUME_TICK {
             return resume_record(host, self);
         }
+        // A placement the engine holds only on its idle channel is as much
+        // "not running" as a record with no context: the resume engages it.
+        // Retail's post-fight return does that from the install slice itself
+        // (`town01` `P1[0]` tests `0x23C` at `+0x91` and runs `B1 2E 08`), so
+        // `v0_1_post_battle_tetsu_town` holds the system context on the
+        // install park with the talk up, and an engagement left to the
+        // settle tick let the loop select `0x19D` first.
         let early = tick < SCRIPT_RESUME_TICK
             && self.system_pc == Some(host.world.field_pc)
             && !loops_back_to(&host.world.field_bytecode, host.world.field_pc)
-            && self.context(&host.world).is_none();
+            && self
+                .context(&host.world)
+                .is_none_or(|c| matches!(c.kind, EngineContextKind::Channel(_)));
         if early && resume_record(host, self) {
             self.resumed_early.set(true);
             return true;

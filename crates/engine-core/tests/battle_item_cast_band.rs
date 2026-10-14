@@ -86,6 +86,15 @@ fn enter_battle(w: &mut World) {
 /// Press one button for a tick, then release for a tick (so `just_pressed`
 /// edges fire exactly once), recording every action-SM state seen.
 fn press(w: &mut World, b: PadButton, trace: &mut Vec<u8>) {
+    // The menu SM reads no pad while the prompt's glide is in flight
+    // (`World::battle_command_pad_held`): wait it out, as a player does.
+    for _ in 0..64 {
+        if !w.battle_command_pad_held() {
+            break;
+        }
+        w.set_pad(0);
+        let _ = w.tick();
+    }
     w.set_pad(InputState::mask_of([b]));
     let _ = w.tick();
     trace.push(w.battle_ctx.action_state);

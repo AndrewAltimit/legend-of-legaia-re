@@ -15,7 +15,7 @@ use crate::*;
 // enhancement toggle, not on the default path.
 
 /// One row in the options panel (mirrors
-/// `legaia_engine_core::options::OptionsRowView`).
+/// `legaia_engine_menus::options::OptionsRowView`).
 pub struct OptionsRowView<'a> {
     pub label: &'a str,
     /// Right-column value string; `None` on the "Dual Shock" header row.
@@ -47,7 +47,7 @@ pub fn options_window_extra_height(rows: &[OptionsRowView<'_>]) -> i32 {
 /// edited.
 pub struct OptionsPopupDraw<'a> {
     /// Popup **content** rect in stage pixels (see
-    /// `legaia_engine_core::options::options_popup_content_rect`).
+    /// `legaia_engine_menus::options::options_popup_content_rect`).
     pub rect: (i32, i32, i32, i32),
     pub choices: &'a [&'a str],
     pub cursor: u8,

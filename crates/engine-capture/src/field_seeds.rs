@@ -221,7 +221,7 @@ pub fn morphs_from_env(v: &str) -> Vec<MorphSeed> {
 
 /// `retail_fog` as `LEGAIA_SEAT_FOG`: `slot,age,rate,vx,vz,x,z,y,grey` per
 /// record, `;`-separated.
-pub fn fog_env(fog: &[legaia_engine_core::fog_particles::FogParticle]) -> String {
+pub fn fog_env(fog: &[legaia_engine_field::fog_particles::FogParticle]) -> String {
     fog.iter()
         .map(|p| {
             format!(
@@ -234,12 +234,12 @@ pub fn fog_env(fog: &[legaia_engine_core::fog_particles::FogParticle]) -> String
 }
 
 /// Inverse of [`fog_env`]; malformed entries are dropped.
-pub fn fog_from_env(s: &str) -> Vec<legaia_engine_core::fog_particles::FogParticle> {
+pub fn fog_from_env(s: &str) -> Vec<legaia_engine_field::fog_particles::FogParticle> {
     s.split(';')
         .filter_map(|e| {
             let v: Vec<i64> = e.split(',').filter_map(|x| x.trim().parse().ok()).collect();
             let [slot, age, rate, vx, vz, x, z, y, grey] = <[i64; 9]>::try_from(v).ok()?;
-            Some(legaia_engine_core::fog_particles::FogParticle {
+            Some(legaia_engine_field::fog_particles::FogParticle {
                 age: age as u16,
                 rate: rate as u16,
                 slot: slot as u8,

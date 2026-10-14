@@ -201,7 +201,7 @@ impl LegaiaMinigames {
             confirm: bits & 16 != 0,
             cancel: bits & 32 != 0,
             triangle: bits & 64 != 0,
-            select_attack: legaia_engine_core::options::OptionsState::default()
+            select_attack: legaia_engine_menus::options::OptionsState::default()
                 .battle_select_attack,
         };
         use legaia_engine_menus::muscle_dome_session::DomeMenuEvent as E;

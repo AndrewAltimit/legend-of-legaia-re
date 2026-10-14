@@ -1266,7 +1266,7 @@ VAs, which no sibling image can share.
 """
 
 [[waiver]]
-key = "module-orphan:crates/engine-core/src/battle_tutorial.rs:801da51c"
+key = "module-orphan:crates/engine-battle/src/battle_tutorial.rs:801da51c"
 reason = """
 The tag claims only the battle-entry stage-id tail, and the bytes say so:
 `li a0,0x19` (0x801DA67C), `jal 0x8003CE64` with `sb zero,-0x49B6(s0)` in its
@@ -1274,16 +1274,6 @@ delay slot (stage id 0x8007B64A cleared), `beq v0,zero` past a `sb 1` and a
 `jal 0x8003CE34` clearing flag 0x19 (0x801DA698..0x801DA6B0) - which is
 `stage_id_at_battle_entry`. The module's siblings are overlay 967's prompt
 machine (801F747C / 801F7628), a different image the stage id pages in.
-"""
-
-[[waiver]]
-key = "module-orphan:crates/engine-effects/src/action_effect_script.rs:80026be0"
-reason = """
-FUN_80026BE0 is fourteen instructions: `jal 0x8005B818` with a0 = 0xA0,
-then `0x80070A2C` stored to 0x8007B81C and `0x80070A2C + 0x800` to
-0x8007B7F8 (0x80026BF0..0x80026C0C) - the LUT pair the tag says it installs.
-Its one datum is the SCUS sine table, which the module's overlay siblings
-(801DEA50 / 801E09F8) reach through those two pointers, never by address.
 """
 
 [[waiver]]

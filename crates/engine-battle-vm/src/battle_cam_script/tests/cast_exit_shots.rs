@@ -47,6 +47,66 @@ fn the_summon_band_frames_the_cast_close_up() {
     );
 }
 
+/// The capture harness's accumulator alignment: the close-up is carried from
+/// the accumulator its last camera step ran on to the capture's, a pass
+/// restarts there, and a gap wider than a pass is left for the channel to
+/// read.
+#[test]
+fn the_close_up_accumulator_aligns_within_a_pass() {
+    let mut cam = BattleCamera::new(BattleCamPhase::Menu, 0);
+    cam.set_phase(BattleCamPhase::Action);
+    cam.observe_action_state(0x32);
+    cam.observe_action_state(0x34);
+    // An odd frame: one display frame past the last camera step.
+    for f in 1..=81u64 {
+        cam.advance_to(f);
+    }
+    assert_eq!(cam.frame_accum, 1);
+    let have = cam.close_up_accum();
+    let before = cam.framing_pose();
+    // Outside the tolerance nothing moves.
+    assert!(!cam.align_close_up_accum(have + 32));
+    assert_eq!(cam.framing_pose(), before);
+    assert_eq!(cam.close_up_accum(), have);
+    // Two vsyncs back: the pose was stepped on `have - 8`, so it is carried
+    // `-8` of accumulator - `2` a unit on the yaw and the eye height.
+    assert!(cam.align_close_up_accum(have - 16));
+    let after = cam.framing_pose();
+    assert_eq!(cam.close_up_accum(), have - 16);
+    assert_eq!(cam.frame_accum, 0);
+    assert_eq!(after.tr[1], before.tr[1] - 16.0);
+    assert_eq!(after.yaw, (before.yaw - 16.0).rem_euclid(4096.0));
+    assert_eq!(after.pitch, before.pitch);
+    assert_eq!(after.focus, before.focus);
+    // Already there: no move.
+    assert!(!cam.align_close_up_accum(have - 16));
+    // The same accumulator between two camera steps still moves the pose up
+    // to the capture's pass boundary.
+    cam.advance_to(82);
+    let (acc, mid) = (cam.close_up_accum(), cam.framing_pose());
+    assert_eq!(cam.frame_accum, 1);
+    assert!(cam.align_close_up_accum(acc));
+    assert_eq!(cam.framing_pose().tr[1], mid.tr[1] + 16.0);
+    // Outside the summon close-up it is inert.
+    cam.observe_action_state(0x35);
+    assert!(!cam.align_close_up_accum(acc + 8));
+
+    // An early capture, the ramp still under its cap: the pitch is `-2` a
+    // unit of ramp and is carried with the rest.
+    let mut cam = BattleCamera::new(BattleCamPhase::Menu, 0);
+    cam.set_phase(BattleCamPhase::Action);
+    cam.observe_action_state(0x33);
+    cam.attack.ctx.accum = 0;
+    cam.attack.ctx.ramp = 0;
+    cam.advance_to(2);
+    cam.advance_to(3);
+    let (acc, before) = (cam.close_up_accum(), cam.framing_pose());
+    assert_eq!((acc, cam.attack.ctx.ramp, cam.frame_accum), (24, 24, 1));
+    assert!(cam.align_close_up_accum(acc));
+    assert_eq!(cam.framing_pose().pitch, before.pitch - 16.0);
+    assert_eq!(cam.attack.ctx.ramp, 24);
+}
+
 /// **The battle-over arm's win-pose script, pinned against retail RAM.**
 /// `noa_levelup_banner` is parked in the results hold with Vahn (character
 /// `1`, seat 0) posing `0x14`: display trio `(78, -183, -15)`, heading

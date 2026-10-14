@@ -76,10 +76,10 @@ use crate::runtime::LegaiaRuntime;
 use legaia_engine_core::field_menu_dispatch::{
     self, ArtsEditorPhaseTag, FieldMenuSubsession, status_snapshots,
 };
-use legaia_engine_core::options::OptionsSession;
 use legaia_engine_menus::equip_session::EquipSession;
 use legaia_engine_menus::field_menu::{FieldMenuOutcome, FieldMenuRow, FieldMenuSession};
 use legaia_engine_menus::inventory_use::{InventoryUseSession, InventoryUseState};
+use legaia_engine_menus::options::OptionsSession;
 use legaia_engine_menus::save_menu_atlas::{SaveMenuAtlas, build_atlas};
 use legaia_engine_menus::save_screen::{SaveCommitKind, SaveRefusal, SaveScreenFlow};
 use legaia_engine_menus::save_select::{SaveRack, SaveSelectSession};
@@ -199,7 +199,7 @@ pub(crate) fn quad_json(d: &TextDraw) -> serde_json::Value {
 /// consumes stays exactly the player-facing API.
 #[cfg(not(target_arch = "wasm32"))]
 impl LegaiaRuntime {
-    /// The runtime's live [`legaia_engine_core::options::OptionsState`] as
+    /// The runtime's live [`legaia_engine_menus::options::OptionsState`] as
     /// JSON - what the next Options open seeds itself from.
     pub fn debug_options_json(&self) -> String {
         serde_json::to_string(&self.options_state).unwrap_or_default()

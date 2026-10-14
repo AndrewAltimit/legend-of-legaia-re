@@ -511,21 +511,41 @@ impl World {
     /// Apply a permanent multi-stat boost ([`legaia_engine_menus::items::ItemEffect::StatUp`],
     /// the class-6 *Water* line) to party slot `target_slot`. The per-stat
     /// changes are resolved from the installed on-disc item-effect table via the
-    /// item's `(class, tier)` descriptor (`legaia_game_tables::item_effect`), then each
-    /// is applied through the shared [`Self::apply_stat_raise`] persistent path.
-    /// `Defense` raises both defence facets (DEF-up + DEF-down), matching the
-    /// retail apply handler. Returns [`legaia_engine_menus::items::ItemOutcome::NoEffect`] when
-    /// no table is installed or the id isn't a permanent stat-up.
+    /// item's `(class, tier)` descriptor (`legaia_game_tables::item_effect`).
+    ///
+    /// Retail's apply handler raises the record's **base** window
+    /// (`+0x11C..+0x12C`) and nothing else: Life Water is `lhu / addiu 0x10 /
+    /// sh` on `+0x11C` with the `9999` clamp (`0x8004119C..0x800411C0`), and
+    /// every other arm has the same shape on its own halfword. The live
+    /// window follows because the menu's use routine calls the stat
+    /// aggregator straight after the handler (`jal 0x800402F4` at
+    /// `0x801D8538`, `jal 0x80042558` at `0x801D8540`), and the aggregator
+    /// rebuilds each live value from its base
+    /// ([`Self::rebuild_live_hp_mp`]). So a raised maximum is the base plus
+    /// whatever percent boost the equipment carries, and current HP / MP are
+    /// only clamped to it - the gain is not refilled.
+    ///
+    /// Adding the increment to the live maximum instead left it one short
+    /// of the rebuilt value under a Max HP +10% accessory (`537 + 53` against
+    /// `573 + 16`), and the next battle - which derives its ceiling from the
+    /// base - healed the member past the record's maximum.
+    ///
+    /// The combat stats take the base raise and the same increment on the
+    /// live value: the aggregator's equipment and percent arms for them are
+    /// the battle seed's ([`Self::seed_party_battle_stats`]), which reads the
+    /// base window. `Defense` raises both facets, as the handler does.
+    /// Returns [`legaia_engine_menus::items::ItemOutcome::NoEffect`] when no
+    /// table is installed or the id isn't a permanent stat-up.
+    ///
+    /// REF: FUN_800402F4 (class-6 arms, jump table `0x800151B0`),
+    /// FUN_801D8308 (`0x801D8538..0x801D8540`), FUN_80042558
     fn apply_stat_up_item(
         &mut self,
         item_id: u8,
         target_slot: u8,
     ) -> legaia_engine_menus::items::ItemOutcome {
-        use legaia_engine_menus::items::StatBoostTarget as T;
         use legaia_game_tables::item_effect::{StatItemEffect, StatTarget};
         let idx = target_slot as usize;
-        // Resolve to an owned value so the immutable table borrow is dropped
-        // before the mutable `apply_stat_raise` calls.
         let resolved = self
             .tables
             .item_effects
@@ -534,30 +554,123 @@ impl World {
         let Some(StatItemEffect::Permanent(changes)) = resolved else {
             return legaia_engine_menus::items::ItemOutcome::NoEffect;
         };
-        let mut raises: Vec<(T, u16)> = Vec::with_capacity(changes.len() + 1);
+        let Some(rec) = self.party.roster.members.get_mut(idx) else {
+            return legaia_engine_menus::items::ItemOutcome::NoEffect;
+        };
+        let mut base = rec.record_stats();
+        let mut live = rec.live_stats();
+        let mut count = 0u8;
         for ch in &changes {
+            // `lhu / addiu delta / sh`, then the `sltiu cap + 1` clamp.
+            let raise = |v: u16| v.saturating_add(ch.delta).min(ch.cap);
+            // The live value moves by what the base actually gained.
+            let follow = |live: u16, old: u16, new: u16| live.saturating_add(new - old);
             match ch.stat {
-                StatTarget::MaxHp => raises.push((T::HpMax, ch.delta)),
-                StatTarget::MaxMp => raises.push((T::MpMax, ch.delta)),
-                StatTarget::Attack => raises.push((T::Attack, ch.delta)),
-                // The retail handler writes both defence facets for one item.
-                StatTarget::Defense => {
-                    raises.push((T::Udf, ch.delta));
-                    raises.push((T::Ldf, ch.delta));
+                StatTarget::MaxHp => base.hp_max = raise(base.hp_max),
+                StatTarget::MaxMp => base.mp_max = raise(base.mp_max),
+                StatTarget::Attack => {
+                    let new = raise(base.atk);
+                    live.atk = follow(live.atk, base.atk, new);
+                    base.atk = new;
                 }
-                StatTarget::Speed => raises.push((T::Speed, ch.delta)),
-                StatTarget::Intelligence => raises.push((T::Intelligence, ch.delta)),
-                StatTarget::Agility => raises.push((T::Agility, ch.delta)),
+                StatTarget::Defense => {
+                    let (udf, ldf) = (raise(base.udf), raise(base.ldf));
+                    live.udf = follow(live.udf, base.udf, udf);
+                    live.ldf = follow(live.ldf, base.ldf, ldf);
+                    (base.udf, base.ldf) = (udf, ldf);
+                    // Two halfwords, two raises.
+                    count = count.saturating_add(1);
+                }
+                StatTarget::Speed => {
+                    let new = raise(base.spd);
+                    live.spd = follow(live.spd, base.spd, new);
+                    base.spd = new;
+                }
+                StatTarget::Intelligence => {
+                    let new = raise(base.int);
+                    live.int = follow(live.int, base.int, new);
+                    base.int = new;
+                }
+                StatTarget::Agility => {
+                    let new = raise(base.agl);
+                    live.agl = follow(live.agl, base.agl, new);
+                    base.agl = new;
+                }
             }
+            count = count.saturating_add(1);
         }
-        let count = raises.len().min(u8::MAX as usize) as u8;
-        for (target, delta) in raises {
-            self.apply_stat_raise(idx, target, delta);
-        }
+        rec.set_record_stats(base);
+        rec.set_live_stats(live);
+        self.rebuild_live_hp_mp(idx);
+        self.seed_party_battle_stats();
         if count == 0 {
             legaia_engine_menus::items::ItemOutcome::NoEffect
         } else {
             legaia_engine_menus::items::ItemOutcome::StatsRaised { count }
+        }
+    }
+
+    /// Rebuild roster record `rslot`'s live HP / MP maxima from its base
+    /// window ([`Self::rebuild_record_live_hp_mp`]) and carry them to the
+    /// member's battle actor.
+    pub(crate) fn rebuild_live_hp_mp(&mut self, rslot: usize) {
+        self.rebuild_record_live_hp_mp(rslot);
+        self.mirror_roster_hp_mp(rslot);
+    }
+
+    /// Rebuild roster record `rslot`'s live HP / MP maxima from its base
+    /// window, the way the stat aggregator does, and publish the MP ceiling.
+    /// The record only: the battle actor is not touched, so the aggregator
+    /// pass can run mid-battle, where the actor and not the record holds the
+    /// live HP.
+    ///
+    /// The aggregator copies the base maxima over the live ones
+    /// (`+0x11C -> +0x104`, `+0x11E -> +0x108`, `0x800425C4..0x80042600`),
+    /// adds the equipment's percent boosts off the **base** - ability bit 0
+    /// is a tenth of base HP (`multu 0xCCCCCCCD` / `srl 3`), bit 1 a quarter
+    /// (`srl 2`), bits 2 and 3 the same two for MP
+    /// (`0x800429A0..0x80042A5C`) - clamps them to `9999` and `999`
+    /// (`0x80042C0C..0x80042C38`), and lowers a current value that now
+    /// exceeds its maximum (`0x80042CE4..0x80042D18`).
+    ///
+    /// A record with an empty base window is left alone: it was never built
+    /// by the aggregator (a synthetic party that sets its live maxima
+    /// directly), and a rebuild would zero it.
+    ///
+    /// REF: FUN_80042558
+    pub(crate) fn rebuild_record_live_hp_mp(&mut self, rslot: usize) {
+        let Some(rec) = self.party.roster.members.get(rslot) else {
+            return;
+        };
+        let base = rec.record_stats();
+        if base.hp_max == 0 {
+            return;
+        }
+        let bits = self
+            .tables
+            .accessory_passives
+            .bits_for_equipment(&rec.equipment().slots)[0];
+        let boosted = |base: u16, tenth: bool, quarter: bool, cap: u16| {
+            let mut v = base;
+            if tenth {
+                v = v.saturating_add(base / 10);
+            }
+            if quarter {
+                v = v.saturating_add(base >> 2);
+            }
+            v.min(cap)
+        };
+        let mut hms = rec.hp_mp_sp();
+        hms.hp_max = boosted(base.hp_max, bits & 0x1 != 0, bits & 0x2 != 0, 9999);
+        hms.mp_max = boosted(base.mp_max, bits & 0x4 != 0, bits & 0x8 != 0, 999);
+        hms.hp_cur = hms.hp_cur.min(hms.hp_max);
+        hms.mp_cur = hms.mp_cur.min(hms.mp_max);
+        self.party.roster.members[rslot].set_hp_mp_sp(hms);
+        let n = (self.party.party_count as usize).min(self.actors.len());
+        for member in 0..n {
+            if self.party_roster_slot(member) == rslot {
+                self.set_character_max_mp(member as u8, hms.mp_max);
+            }
         }
     }
 

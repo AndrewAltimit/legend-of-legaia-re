@@ -15,6 +15,7 @@ legaia-engine-ui.workspace = true
 legaia-font.workspace = true
 legaia-engine-battle.workspace = true
 legaia-engine-effects.workspace = true
+legaia-engine-fishing.workspace = true
 legaia-engine-menus.workspace = true
 legaia-engine-mode.workspace = true
 legaia-game-tables.workspace = true

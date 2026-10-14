@@ -905,7 +905,7 @@ fn announcer_cues() -> Vec<legaia_engine_minigames::baka_fighter_chrome::XaCue> 
     // The Muscle Dome hub's two announcer lines share the lane: the minigames
     // page plays them off the same staged bank.
     cues.extend(
-        legaia_engine_core::muscle_ringside::hub_xa_prestage()
+        legaia_engine_minigames::muscle_ringside::hub_xa_prestage()
             .into_iter()
             .map(|c| legaia_engine_minigames::baka_fighter_chrome::XaCue {
                 clip: c.clip,

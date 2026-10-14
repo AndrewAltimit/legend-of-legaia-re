@@ -115,7 +115,7 @@ pub struct LegaiaMinigames {
     baka_xa: legaia_engine_audio::XaClipBank,
     /// The Muscle Dome hub's live first visit, stepped by the page
     /// (`muscle_first_visit_reset` / `muscle_first_visit_step`).
-    muscle_hub: Option<legaia_engine_core::muscle_ringside::FirstVisitHub>,
+    muscle_hub: Option<legaia_engine_minigames::muscle_ringside::FirstVisitHub>,
     /// Announcer lines the live first visit has started.
     muscle_hub_xa_fired: u32,
     /// Announcer lines started (a read-out for the page's checks).

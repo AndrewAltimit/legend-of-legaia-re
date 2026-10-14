@@ -100,17 +100,21 @@ impl LegaiaRuntime {
         // In-world minigame presentation (casino / dance / arena sessions
         // the scene host installed): the draw-side state the page reads.
         self.tick_minigame_ui();
+        // Muscle Dome: the round time meter, the session's step the native
+        // window names the same way.
+        self.tick_muscle_time_meter();
         // Sound-effect channel: feed the footstep cadence this tick's movement
         // magnitude, advance the delay scheduler, key whatever matured.
         //
-        // **After** the two queue drains above, not before them. The native
-        // window enqueues a battle tick's cues and calls `tick_sfx_frame` in
-        // the same pass (`drain_and_log_battle_events`), so a cue whose
-        // `timing_frames` is `0` - every strike impact, every minigame blip -
-        // sounds on the tick that raised it. Advancing the scheduler first
-        // made this host's copy of that cue wait a whole frame, which is not
-        // a delay anyone can hear on its own but puts the impact one frame
-        // off the animation it is supposed to land on.
+        // **After** the two queue drains above, not before them. The audio
+        // frame is one session step on both hosts
+        // (`BootSession::step_audio_frame`), which the native window runs
+        // from its own `tick_sfx` right after its battle-event drain, so a
+        // cue whose `timing_frames` is `0` - every strike impact, every
+        // minigame blip - sounds on the tick that raised it. Advancing the
+        // scheduler first made this host's copy of that cue wait a whole
+        // frame, which is not a delay anyone can hear on its own but puts
+        // the impact one frame off the animation it is supposed to land on.
         self.tick_sfx();
         // The field-to-battle intro emitter: armed while the encounter
         // session sits in `Transition`, dropped when it leaves; caches this
@@ -303,31 +307,23 @@ fn wall_clock_ms() -> f64 {
 }
 
 impl LegaiaRuntime {
-    /// Tick the world's effect scene-graphs - the browser twin of the native
-    /// window's per-frame effects block, now leg for leg:
+    /// The tick's effect step, the native window's `tick_world_effects` leg
+    /// for leg: seat a cast's summon creature, then the session's move-FX
+    /// spawn + scene-graph tick (`BootSession::step_effect_scene_graphs`).
     ///
     /// * `take_pending_summon_spawn` -> [`Self::spawn_summon_creature_web`]:
     ///   a player Seru-magic cast's namesake `battle_data` creature, seated
     ///   and drawn through the enemy animation pipeline
-    ///   ([`crate::play_battle_fx`]). This used to be *deliberately* left
-    ///   undrained, on the reasoning that the browser had no battle 3D layer
-    ///   to draw it into - the layer exists now, so the request is honoured.
-    /// * `take_pending_move_fx_spawn` ->
+    ///   ([`crate::play_battle_fx`]). The seat is a mesh bind, which is this
+    ///   host's, and it runs first so the creature's first frame ticks on the
+    ///   tick that cast it.
+    /// * the session step: `take_pending_move_fx_spawn` ->
     ///   [`World::spawn_move_fx`](legaia_engine_core::world::World::spawn_move_fx),
-    ///   whose parts ride the FX part-draw seam.
-    /// * the spawned move's sound cue through the retail dispatch decode
-    ///   (`classify_cue` = `FUN_8004FCC8`) into the page's SFX scheduler - a
-    ///   `Ring` cue's `ring_value` is the `SfxBank` descriptor id. Voice cues
-    ///   (`id >= 0x100`) are streamed XA triggers neither host has a lane for.
-    /// * `tick_summon` / `tick_move_fx` / `tick_field_fx` at the retail
-    ///   `0x0400` anim-speed step. Each self-gates to a no-op when nothing is
-    ///   live.
+    ///   the spawned move's sound cue through the retail dispatch decode
+    ///   (`classify_cue` = `FUN_8004FCC8`) onto the director's scheduler, then
+    ///   `tick_summon` / `tick_move_fx` / `tick_field_fx` at the retail
+    ///   `0x0400` anim-speed step. Each self-gates when nothing is live.
     fn tick_world_effects(&mut self) {
-        // The native window's order, leg for leg: seat the summon creature,
-        // spawn the move-FX, then tick the scene graphs - so a summon cast
-        // ticks its creature's first frame on the same tick on both hosts.
-        // The creature seat needs `&mut self`, so it runs between two host
-        // borrows.
         let summon = match self.scene_host.host_mut() {
             Some(host) => host.world.take_pending_summon_spawn(),
             None => return,
@@ -335,15 +331,13 @@ impl LegaiaRuntime {
         if let Some((spell_id, _origin)) = summon {
             self.spawn_summon_creature_web(spell_id);
         }
-        let Some(host) = self.scene_host.host_mut() else {
-            return;
-        };
-        // Spawn to sound through the shared step the native window runs
-        // (`battle_fx::spawn_pending_move_fx`), then the frame-tail kernel.
-        let ring = legaia_engine_session::battle_fx::spawn_pending_move_fx(&mut host.world);
-        host.world.tick_effect_scene_graphs();
-        if let Some(ring_value) = ring {
-            self.enqueue_sfx(ring_value, 0);
+        let cue = self
+            .scene_host
+            .session_mut()
+            .and_then(|s| s.step_effect_scene_graphs());
+        // Counted for the page's readout whether or not a director heard it.
+        if cue.is_some() {
+            self.sfx.queued += 1;
         }
     }
 

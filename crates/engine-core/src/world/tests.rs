@@ -348,6 +348,7 @@ mod physics_steal_shop;
 mod placement_heading;
 mod player_clip_pick;
 mod player_scale;
+mod round_prompt_gate;
 mod save_state;
 mod script_teleport;
 mod scripted_menu_press;

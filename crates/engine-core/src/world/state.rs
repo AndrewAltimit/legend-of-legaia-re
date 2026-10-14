@@ -60,8 +60,8 @@ pub struct World {
     pub flags: StoryFlagState,
     /// The field fog-particle pool (`_DAT_8007B7E0`) the ambient emitter
     /// spawns into and the render pass draws from - see
-    /// [`crate::fog_particles`].
-    pub fog: crate::fog_particles::FogPool,
+    /// [`legaia_engine_field::fog_particles`].
+    pub fog: legaia_engine_field::fog_particles::FogPool,
     /// The volumetric ground-fog **enhancement** (not retail): a drifting
     /// mist bank the moving actors part, stepped once per tick while
     /// [`WorldToggles::volumetric_fog`] is raised - see
@@ -80,7 +80,7 @@ pub struct World {
     /// `FUN_80026BE0`): `0x1000` entries of `trunc(sin(i * 2pi / 4096) *
     /// 4096)`. Read by move-VM op `0x03` (the X term) and the world-map
     /// horizon emitter `FUN_801D7EA0`. Filled by [`World::new`] from
-    /// [`legaia_engine_effects::action_effect_script::retail_rotation_lut`], byte-exact
+    /// [`legaia_engine_battle_vm::rotation_lut::retail_rotation_lut`], byte-exact
     /// with the disc table.
     pub sin_lut: Vec<i16>,
     /// The cosine view, `_DAT_8007B7F8` = the same table `+0x400` entries
@@ -277,7 +277,7 @@ pub struct World {
     /// and reset on every scene load.
     ///
     /// REF: FUN_8003A024
-    pub scene_control_block: crate::scus_leaf_kernels::SceneControlBlockReset,
+    pub scene_control_block: legaia_engine_system::scus_leaf_kernels::SceneControlBlockReset,
 
     /// The system flags the active scene's own field-VM records SET on
     /// their way into a `3E FF <row>` scripted battle entry, each paired
@@ -385,15 +385,15 @@ impl World {
             party: PartyState::new(),
             presentation: ScreenFxState::new(),
             flags: StoryFlagState::new(),
-            fog: crate::fog_particles::FogPool::new(),
+            fog: legaia_engine_field::fog_particles::FogPool::new(),
             fog_volume: legaia_render_kernels::fog_volume::FogVolume::new(),
             script_actors: FieldScriptActorState::default(),
             rng_state: 0x1234_5678,
             casting: CastFxState::new(),
-            sin_lut: legaia_engine_effects::action_effect_script::retail_rotation_lut()
+            sin_lut: legaia_engine_battle_vm::rotation_lut::retail_rotation_lut()
                 .sin_table()
                 .to_vec(),
-            cos_lut: legaia_engine_effects::action_effect_script::retail_rotation_lut()
+            cos_lut: legaia_engine_battle_vm::rotation_lut::retail_rotation_lut()
                 .cos_table()
                 .to_vec(),
             object_effect: legaia_engine_effects::object_effect::ObjectEffectTable::boot(),
@@ -419,7 +419,7 @@ impl World {
             seru: SeruState::new(),
             clock: FrameClock::new(),
             ambient: AmbientFxState::new(),
-            scene_control_block: crate::scus_leaf_kernels::SCENE_CONTROL_BLOCK_RESET,
+            scene_control_block: legaia_engine_system::scus_leaf_kernels::SCENE_CONTROL_BLOCK_RESET,
             shops: ShopState::new(),
             menu: MenuState::new(),
             active_scene_label: String::new(),

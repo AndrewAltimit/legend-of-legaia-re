@@ -29,7 +29,7 @@
 //! call - [`FloorWave`] for the terrain / decoration cells (the live rungs)
 //! and [`crate::world::World::placed_floor_offsets`] for placed objects (the
 //! ladder their actors spawned on),
-//! [`crate::field_ground::live_render_positions`] for the walk ground,
+//! [`legaia_engine_scene::field_ground::live_render_positions`] for the walk ground,
 //! [`legaia_engine_scene::field_env::PropAnimBank::pose_key`] for props and
 //! [`crate::world::World::step_field_vram_effects`] for VRAM.
 //!
@@ -354,14 +354,16 @@ impl LiveScene {
     }
 
     /// The walk ground's drawn positions, each cell under its room's live
-    /// ladder ([`crate::field_ground::live_render_positions_by_cell`]).
-    /// `cells` is [`crate::field_ground::vertex_cells`] of `hf`.
+    /// ladder ([`legaia_engine_scene::field_ground::live_render_positions_by_cell`]).
+    /// `cells` is [`legaia_engine_scene::field_ground::vertex_cells`] of `hf`.
     pub fn ground_positions(
         &self,
         hf: &legaia_scene_formats::field_objects::WalkHeightfield,
         cells: &[Option<(i32, i32)>],
     ) -> Vec<[f32; 3]> {
-        crate::field_ground::live_render_positions_by_cell(hf, cells, |c| self.floor_lut_at(c))
+        legaia_engine_scene::field_ground::live_render_positions_by_cell(hf, cells, |c| {
+            self.floor_lut_at(c)
+        })
     }
 
     /// A key that changes whenever any ladder a ground vertex reads changes

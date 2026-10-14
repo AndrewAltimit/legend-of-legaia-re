@@ -337,6 +337,96 @@ fn field_vm_op49_opens_a_gold_shop_then_resumes() {
     );
 }
 
+/// A merchant's talk reaches its shop op through the inline dialogue runner,
+/// not the field script: the runner parks on the op under the open shop and
+/// takes the Done edge once the shop closes, so the arm clears. Ended at the
+/// op instead, the arm stood with nothing to resume it and the next talk to
+/// reach a shop op spent that stale Done edge - every second visit to a
+/// counter opened no shop.
+#[test]
+fn a_merchant_talk_parks_on_its_shop_and_reopens_on_the_next_visit() {
+    let mut world = World::new();
+    let mut prices = [0u16; 256];
+    prices[0x22] = 50;
+    prices[0x34] = 120;
+    world.shops.item_shop_data =
+        Some(legaia_engine_menus::shop_catalog::ShopItemData::from_prices(prices));
+    *world
+        .party
+        .inventory
+        .entry(legaia_engine_menus::menu_list_rows::SHOP_TAIL_CARD_ID)
+        .or_insert(0) = 1;
+    // The shop op, then the record's terminator.
+    let mut record = shop_op49_script();
+    record.push(0x21);
+
+    for visit in 0..2 {
+        world.start_inline_dialogue(record.clone());
+        world.step_inline_dialogue(false, false, false);
+        assert!(
+            world.shops.shop_armed && world.shops.shop_open,
+            "visit {visit}: the talk opened its shop"
+        );
+        assert!(
+            world.dialog.inline.as_ref().is_some_and(|id| !id.done),
+            "visit {visit}: the talk is parked on the shop op, not ended"
+        );
+        assert!(world.take_pending_field_shop().is_some());
+        // Still open: the park holds.
+        world.step_inline_dialogue(false, false, false);
+        assert!(world.dialog.inline.as_ref().is_some_and(|id| !id.done));
+        // The player leaves the shop; the record resumes past the op.
+        world.finish_field_shop();
+        world.step_inline_dialogue(false, false, false);
+        assert!(
+            !world.shops.shop_armed,
+            "visit {visit}: the resume cleared the arm"
+        );
+        world.dialog.inline = None;
+    }
+}
+
+/// The casino prize counter is the same park: a talk that reaches op `0x49`
+/// sub-7 holds on the op while the exchange is up and resumes past it on the
+/// close. Retail's op `0x49` makes no distinction by sub-op here - Armed
+/// returns the unchanged PC whatever opened the park
+/// (`bne v0,zero` at `0x801E097C` in `FUN_801DE840`).
+#[test]
+fn a_prize_counter_talk_parks_on_its_exchange_and_reopens_on_the_next_visit() {
+    use legaia_engine_minigames::prize_exchange::PrizeRecord;
+    let mut world = World::new();
+    world.shops.prize_blocks = vec![vec![PrizeRecord {
+        item_id: 0x10,
+        gate: 0,
+        price: 100,
+    }]];
+    // koin1's counter op (`49 07 00`), then the record's terminator.
+    let record = vec![0x49, 0x07, 0x00, 0x21];
+
+    for visit in 0..2 {
+        world.start_inline_dialogue(record.clone());
+        world.step_inline_dialogue(false, false, false);
+        assert!(
+            world.shops.prize_exchange_armed && world.shops.prize_exchange_open,
+            "visit {visit}: the talk opened the exchange"
+        );
+        assert!(
+            world.dialog.inline.as_ref().is_some_and(|id| !id.done),
+            "visit {visit}: the talk is parked on the counter op, not ended"
+        );
+        assert!(world.take_pending_prize_exchange().is_some());
+        world.step_inline_dialogue(false, false, false);
+        assert!(world.dialog.inline.as_ref().is_some_and(|id| !id.done));
+        world.finish_prize_exchange();
+        world.step_inline_dialogue(false, false, false);
+        assert!(
+            !world.shops.prize_exchange_armed,
+            "visit {visit}: the resume cleared the arm"
+        );
+        world.dialog.inline = None;
+    }
+}
+
 // --- Tile-board runtime install via field-VM op-0x49 sub-5 ---
 
 /// A field script carrying an op `0x49` sub-5 board install: 13-byte inline

@@ -157,7 +157,7 @@ fn overworld_flat_depth(clip: vec4<f32>, fa: vec4<f32>, fb: vec4<f32>, sz_scale:
     return vec4<f32>(clip.x, clip.y, ndc * clip.w, clip.w);
 }
 
-// The field ground pass's far bucket (`legaia_engine_core::field_ground::
+// The field ground pass's far bucket (`legaia_engine_scene::field_ground::
 // flat_refs`): retail links a field ground cell without the object-grid sort
 // bit `0x8000` into the ordering table's fixed far bucket, so every other
 // primitive paints over it. A sloped such cell is marked by a swapped x pair

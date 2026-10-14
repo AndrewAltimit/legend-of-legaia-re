@@ -89,6 +89,9 @@ const ITEM_PANELS_CLOSE_STATE: u8 = 0x52;
 pub fn battle_panels_visible(world: &crate::world::World) -> bool {
     match battle_hud_phase(world) {
         BattleHudPhase::RoundPrompt => true,
+        // The ring parks the panels on a glide (step 1's `06/1 4E/1 4F/1`):
+        // they are still on their way down while it runs.
+        BattleHudPhase::CommandEntry if ring_open_glide(world).is_some() => true,
         BattleHudPhase::CommandEntry => matches!(
             battle_command_surface(world),
             Some(CommandSurface::ItemBrowse | CommandSurface::SpellBrowse)

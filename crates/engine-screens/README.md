@@ -16,7 +16,10 @@ nothing. This crate is the projection between them for:
   list / confirm, the inn prompt and resting caption, the `[label]` stand-in -
   with its gold frame sized off the panel's own rows;
 - the **level-up / Seru-capture banners** (framed outside battle with the
-  chrome, loose pens without).
+  chrome, loose pens without);
+- the **fishing HUD banner step** (`fishing_banner_frame`): the pond session's
+  events seed the one-shot timers and the tick's draws come back for a draw
+  pass that cannot advance them.
 
 ## How a host uses it
 

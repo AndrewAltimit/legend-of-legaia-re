@@ -394,9 +394,9 @@ pub struct BattleState {
     /// The battle **command-flow** cursor - retail `ctx[+0x06]`, the byte the
     /// menu-half SM `FUN_801D0748` runs on and the key the sparring-tutorial
     /// hook table indexes. Recomposed each frame from the live command session
-    /// plus submenus by [`crate::battle_flow::flow_state_for`]; the turn-start
+    /// plus submenus by [`legaia_engine_menus::battle_flow::flow_state_for`]; the turn-start
     /// prompt is raised directly by `World::open_battle_command`.
-    pub flow: crate::battle_flow::BattleFlowState,
+    pub flow: legaia_engine_menus::battle_flow::BattleFlowState,
     /// The live loop's round state - which of retail's two round bands the
     /// battle is in (the command band collects every party member's command
     /// before the execution band dispatches anyone by initiative), the
@@ -444,6 +444,39 @@ pub struct BattleState {
     /// the item pre-arm for a party actor (`0x801E3DA0..0x801E3DC0`)
     /// ([`crate::battle_hud::battle_readout_bar_dy`]).
     pub(crate) readout_bar_glide: Option<legaia_engine_battle_vm::battle_commit_log::LogLaunch>,
+    /// The round prompt's open glide. The menu SM's round-start arm runs
+    /// sub-draw step 0 (`FUN_801D388C(0)` at `0x801D0EE4`), whose five pairs
+    /// are all mode `0`: `Begin` (record 0), `Run` (record 3) and the three
+    /// roster panels (records 6 / `0x4E` / `0x4F`) spawn at seat A and
+    /// `FUN_801D9BBC` walks each to seat B over the same `0x10` vsyncs - the
+    /// chips unfold from the cluster centre, the panels rise from under the
+    /// screen. `None` before a round's first prompt
+    /// ([`crate::battle_hud::battle_round_prompt_panels_dy`],
+    /// [`crate::battle_hud::battle_chip_offsets`]).
+    pub(crate) round_prompt_glide: Option<legaia_engine_battle_vm::battle_commit_log::LogLaunch>,
+    /// The ring's open glide. The round prompt's confirm arm runs sub-draw
+    /// step 1 (`FUN_801D388C(1)` at `0x801D109C`), whose twelve pairs are
+    /// `09/0 0A/0 08/0 0B/0 01/0 05/0 06/1 4E/1 4F/1 07/0 1A/0 52/0`: the
+    /// four arms slide in from the right, `Begin` (record 1) walks from its
+    /// prompt seat to the tab seat, `Run` (record 5) leaves to the right,
+    /// the roster panels sink (mode `1`, seat B to seat A), the bar rises,
+    /// the plaque drops in behind the tab and the AP plate slides in - all
+    /// on the one sixteen-vsync step. `None` before a round's first ring
+    /// (the `battle_hud::battle_ring_*` helpers and the plate offsets).
+    pub(crate) ring_open_glide: Option<legaia_engine_battle_vm::battle_commit_log::LogLaunch>,
+    /// What the glide stepper returned on this tick's pass - retail's `s0`
+    /// at `0x801D0B34`, the value the menu SM leaves in `ctx[+0x6B2]`.
+    /// Non-zero while a tracked glide is in flight and on the pass it lands;
+    /// the menu SM dispatches no state while it is
+    /// (`World::battle_command_glide_gate`).
+    pub(crate) widget_glide_return: u8,
+    /// `ctx[+0x6B2]`: the last non-zero stepper return, which costs a staged
+    /// battle (stage id non-zero) one more undispatched pass.
+    pub(crate) widget_glide_latch: u8,
+    /// `ctx[+0x884]`: the press parked while the stepper's return was under
+    /// `World::GLIDE_PAD_BUFFER_BELOW`, handed to the first dispatched pass
+    /// that reads no press of its own.
+    pub(crate) command_pad_buffer: Option<legaia_engine_menus::battle_input::BattleCommandInput>,
     /// The result windows' raise glide: the results frame spawns the report
     /// (`0x41`) or loss (`0x42`) window and the level-up window
     /// (`0x44 + mask`) at their seat A, off screen, and `FUN_801D9BBC` walks
@@ -456,6 +489,15 @@ pub struct BattleState {
     /// `0x801E36CC`, `s1 = 0x80076C10`), so the counterer's strikes carry no
     /// target plaque. The next action seed's raise rewrites it.
     pub target_plate_cleared: bool,
+    /// The Done band's teardown has wiped this action's HUD elements. The
+    /// `0x51` hold, once its countdown is under `0xC`, resets the whole
+    /// handle list (`FUN_801D99BC` at `0x801E6170`) and then re-spawns the
+    /// elements that leave on a glide with mode `1`, seat B to seat A: the
+    /// target plaque only for a monster target under categories `1..=3`
+    /// (`FUN_801D8DE8(0x51, 1)` at `0x801E6344`). So past the teardown the
+    /// plaque is either sliding out ([`Self::target_plaque_glide`], a
+    /// closing launch) or gone. Cleared by the next action seed's raise.
+    pub(crate) action_hud_wiped: bool,
     /// The counterer whose strikes the counterattack swap is running, while
     /// the HUD still holds the elements the **monster's** action seed opened.
     /// The swap runs no seed pass, so retail keeps the readout bar the
@@ -556,14 +598,14 @@ pub struct BattleState {
     pub camera: Option<legaia_engine_battle_vm::battle_cam_script::BattleCamera>,
     /// The sparring-tutorial prompt machine, armed only for the Tetsu
     /// tutorial fight (battle-stage id
-    /// [`crate::battle_tutorial::TUTORIAL_STAGE_ID`]) via
+    /// [`legaia_engine_battle::battle_tutorial::TUTORIAL_STAGE_ID`]) via
     /// [`crate::world::World::arm_battle_tutorial`]. `None` in every other battle - which is
     /// every battle but one, matching retail's stage-overlay dispatch.
-    pub tutorial: Option<crate::battle_tutorial::BattleTutorial>,
+    pub tutorial: Option<legaia_engine_battle::battle_tutorial::BattleTutorial>,
     /// Prompt text for [`crate::world::BattleState::tutorial`], read off the user's own disc
     /// copy of overlay 967. Empty when the host had no disc to read - the
     /// tutorial then emits no boxes rather than inventing text.
-    pub tutorial_script: crate::battle_tutorial::BattleTutorialScript,
+    pub tutorial_script: legaia_engine_battle::battle_tutorial::BattleTutorialScript,
     /// Tutorial boxes waiting to be shown, front first. While non-empty the
     /// whole battle loop is parked - the port of retail's `ctx[+0x6B2]`
     /// message-box guard, which makes `FUN_801D0748` return early.
@@ -571,7 +613,8 @@ pub struct BattleState {
     /// The queue is retail's single battle message box, so it carries more
     /// than the tutorial: the battle-open formation banner
     /// ([`crate::world::World::raise_battle_open_banner`]) rides it too.
-    pub tutorial_boxes: std::collections::VecDeque<crate::battle_flow::ActiveTutorialBox>,
+    pub tutorial_boxes:
+        std::collections::VecDeque<legaia_engine_menus::battle_flow::ActiveTutorialBox>,
     /// The sparring tutorial's **standing prompt**: the last self-dismissing
     /// box to leave [`Self::tutorial_boxes`]. Retail registers such a prompt
     /// as a text actor under sort key `1` (`FUN_801F747C` -> `FUN_8003541C`
@@ -584,7 +627,7 @@ pub struct BattleState {
     /// category ring). It holds nothing: the battle loop parks on the queue
     /// alone. Hosts draw it with the queue's front group
     /// ([`crate::world::World::battle_tutorial_boxes_on_screen`]).
-    pub tutorial_standing: Option<crate::battle_flow::ActiveTutorialBox>,
+    pub tutorial_standing: Option<legaia_engine_menus::battle_flow::ActiveTutorialBox>,
     /// The battle screen's chip / banner labels, read off the user's own disc
     /// ([`legaia_ui_formats::battle_ui_strings`]). Empty when the host had no disc
     /// to read - the port's own wording is used then, so the surfaces still
@@ -807,7 +850,7 @@ impl BattleState {
             arts_menu: None,
             arts_input: None,
             swing_costs: [[legaia_engine_battle::arts_command_input::FAVORED_COST; 4]; 3],
-            flow: crate::battle_flow::BattleFlowState::Idle,
+            flow: legaia_engine_menus::battle_flow::BattleFlowState::Idle,
             round_flow: crate::battle_round::RoundFlow::default(),
             inflight_seed: None,
             forced_monster_cast: None,
@@ -816,8 +859,14 @@ impl BattleState {
             action_plaque_glide: None,
             target_plaque_glide: None,
             readout_bar_glide: None,
+            round_prompt_glide: None,
+            ring_open_glide: None,
+            widget_glide_return: 0,
+            widget_glide_latch: 0,
+            command_pad_buffer: None,
             result_windows_glide: None,
             target_plate_cleared: false,
+            action_hud_wiped: false,
             counter_hud: None,
             sideband: Default::default(),
             stage_id: 0,
@@ -838,7 +887,7 @@ impl BattleState {
             auto_combo: Default::default(),
             camera: None,
             tutorial: None,
-            tutorial_script: crate::battle_tutorial::BattleTutorialScript::default(),
+            tutorial_script: legaia_engine_battle::battle_tutorial::BattleTutorialScript::default(),
             tutorial_boxes: std::collections::VecDeque::new(),
             tutorial_standing: None,
             ui_strings: legaia_ui_formats::battle_ui_strings::BattleUiStrings::default(),

@@ -76,11 +76,11 @@ impl LegaiaRuntime {
     pub(super) fn field_view_cells_now(
         &self,
         debug_camera: bool,
-    ) -> Option<legaia_engine_core::field_view_window::ViewCells> {
+    ) -> Option<legaia_engine_scene::field_view_window::ViewCells> {
         let h = self.scene_host.host()?;
         legaia_engine_core::field_view_window::field_view_cells(
             &h.world,
-            legaia_engine_core::field_view_window::framing_is_retail(self.scene_host.camera())
+            legaia_engine_scene::field_view_window::framing_is_retail(self.scene_host.camera())
                 && !debug_camera,
         )
     }
@@ -106,10 +106,12 @@ impl LegaiaRuntime {
         f.terrain
             .iter()
             .map(|d| {
-                u8::from(legaia_engine_core::field_view_window::terrain_draw_visible(
-                    cells.as_ref(),
-                    legaia_engine_core::field_view_window::CellKey::of_draw(d),
-                ))
+                u8::from(
+                    legaia_engine_scene::field_view_window::terrain_draw_visible(
+                        cells.as_ref(),
+                        legaia_engine_scene::field_view_window::CellKey::of_draw(d),
+                    ),
+                )
             })
             .collect()
     }
@@ -122,9 +124,9 @@ impl LegaiaRuntime {
             return Vec::new();
         };
         let cells = self.field_view_cells_now(debug_camera);
-        legaia_engine_core::field_ground::crop_indices(
+        legaia_engine_scene::field_ground::crop_indices(
             &hf.positions,
-            &legaia_engine_core::field_ground::render_indices(hf),
+            &legaia_engine_scene::field_ground::render_indices(hf),
             cells.as_ref(),
         )
     }
@@ -212,13 +214,13 @@ impl LegaiaRuntime {
     }
 
     /// The walk-ground heightfield's drawn positions, flattened - through the
-    /// shared [`legaia_engine_core::field_ground::render_positions`] kernel
+    /// shared [`legaia_engine_scene::field_ground::render_positions`] kernel
     /// (the `GROUND_SINK`) the native window's ground mesh also runs.
     pub fn field_ground_positions(&self) -> Vec<f32> {
         let Some(hf) = self.field.as_ref().and_then(|f| f.ground.as_ref()) else {
             return Vec::new();
         };
-        legaia_engine_core::field_ground::render_positions(hf)
+        legaia_engine_scene::field_ground::render_positions(hf)
             .into_iter()
             .flatten()
             .collect()
@@ -226,7 +228,7 @@ impl LegaiaRuntime {
 
     /// The walk-ground heightfield's drawn positions re-resolved through the
     /// world's **live** floor-height ladder
-    /// ([`legaia_engine_core::field_ground::live_render_positions`]), when it
+    /// ([`legaia_engine_scene::field_ground::live_render_positions`]), when it
     /// has moved since the last call - empty when nothing changed, so the
     /// page re-uploads only on a frame the ladder actually moved. Field VM op
     /// `0x4C` nibble 9 animates the ladder (`jouina`'s pulsing path,
@@ -251,7 +253,7 @@ impl LegaiaRuntime {
             return Vec::new();
         }
         f.ground_lut_applied = Some(live);
-        legaia_engine_core::field_ground::live_render_positions(hf, &live)
+        legaia_engine_scene::field_ground::live_render_positions(hf, &live)
             .into_iter()
             .flatten()
             .collect()
@@ -272,14 +274,14 @@ impl LegaiaRuntime {
     }
 
     /// The walk-ground heightfield's drawn triangles, through the shared
-    /// [`legaia_engine_core::field_ground::render_indices`] kernel: reversed
+    /// [`legaia_engine_scene::field_ground::render_indices`] kernel: reversed
     /// onto the scene TMDs' winding, so the cutscene camera's NCLIP pass keeps
     /// the ground on this page as it does in the native window.
     pub fn field_ground_indices(&self) -> Vec<u32> {
         self.field
             .as_ref()
             .and_then(|f| f.ground.as_ref())
-            .map(legaia_engine_core::field_ground::render_indices)
+            .map(legaia_engine_scene::field_ground::render_indices)
             .unwrap_or_default()
     }
 

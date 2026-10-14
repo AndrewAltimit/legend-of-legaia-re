@@ -25,8 +25,8 @@
 //! Skips (and passes) when `LEGAIA_DISC_BIN` / `extracted/` are missing
 //! (`LEGAIA_EXTRACTED_DIR` first, then repo-relative).
 
-use legaia_engine_core::fog_particles::{FOG_CAP_DEFAULT, FOG_CAP_RAISED, fog_cap_for_man};
 use legaia_engine_core::scene_host::SceneHost;
+use legaia_engine_field::fog_particles::{FOG_CAP_DEFAULT, FOG_CAP_RAISED, fog_cap_for_man};
 use legaia_engine_scene::scene::{ProtIndex, Scene};
 use std::path::PathBuf;
 

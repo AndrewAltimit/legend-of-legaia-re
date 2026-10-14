@@ -56,7 +56,7 @@ impl SceneHost {
     ///
     /// This is text only - it installs no arming. Whether the tutorial runs is
     /// decided by the disc, at battle entry, from the system-flag arm
-    /// ([`crate::battle_tutorial::TUTORIAL_ARM_FLAG`]). Loading it here rather
+    /// ([`legaia_engine_battle::battle_tutorial::TUTORIAL_ARM_FLAG`]). Loading it here rather
     /// than in a host is what keeps the two hosts on one model: neither has to
     /// know the tutorial exists, and a host that forgot to read the corpus
     /// used to be a host that could never show a prompt.
@@ -68,12 +68,12 @@ impl SceneHost {
             return;
         }
         self.battle_tutorial_loaded = true;
-        let script = crate::battle_tutorial::BattleTutorialScript::from_prot(&self.index);
+        let script = crate::disc_readers::battle_tutorial::script_from_prot(&self.index);
         if script.is_empty() {
             eprintln!(
                 "[scene] sparring-tutorial prompts (PROT {}) unreadable - the fight runs \
                  without its boxes",
-                crate::battle_tutorial::OVERLAY_967_PROT_INDEX
+                legaia_engine_battle::battle_tutorial::OVERLAY_967_PROT_INDEX
             );
         }
         self.world.set_battle_tutorial_script(script);

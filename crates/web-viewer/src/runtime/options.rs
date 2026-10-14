@@ -7,7 +7,7 @@ use super::*;
 /// of the native window's `OPTIONS_CONFIG_FILE`.
 ///
 /// The two hosts persist through the *same* serde impl on
-/// [`legaia_engine_core::options::OptionsState`]; only the byte store
+/// [`legaia_engine_menus::options::OptionsState`]; only the byte store
 /// differs, because a browser has no filesystem. Before this the browser had
 /// no store at all: the Sound row was decorative and every setting was lost
 /// on reload, which reads as "the options screen does nothing" rather than as
@@ -17,7 +17,7 @@ pub const OPTIONS_STORAGE_KEY: &str = "legaia.options";
 /// Read the persisted options, falling back to [`Default`] when nothing is
 /// stored, the store is unavailable (private mode, non-browser target) or the
 /// stored JSON no longer parses. Mirrors `OptionsState::load_or_default`.
-pub(super) fn load_persisted_options() -> legaia_engine_core::options::OptionsState {
+pub(super) fn load_persisted_options() -> legaia_engine_menus::options::OptionsState {
     #[cfg(target_arch = "wasm32")]
     {
         if let Some(raw) = options_storage().and_then(|s| s.get_item(OPTIONS_STORAGE_KEY).ok())
@@ -27,7 +27,7 @@ pub(super) fn load_persisted_options() -> legaia_engine_core::options::OptionsSt
             return state;
         }
     }
-    legaia_engine_core::options::OptionsState::default()
+    legaia_engine_menus::options::OptionsState::default()
 }
 
 /// The page's `localStorage`, when this target has one and the browser lets
@@ -74,7 +74,7 @@ impl LegaiaRuntime {
             // The simulation knobs (precise movement, Field Move default,
             // reduce flashing, battle Select Attack) through the one push the
             // native window re-asserts each tick.
-            self.options_state.apply_to_world(&mut host.world);
+            legaia_engine_core::options::apply_to_world(&self.options_state, &mut host.world);
             if let Some(on) = self.precise_movement_override {
                 host.world.locomotion.precise_movement = on;
             }

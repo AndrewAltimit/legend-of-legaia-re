@@ -32,6 +32,7 @@ impl SeatedHost {
                 .iter()
                 .map(|_| BattleActor {
                     liveness: 1,
+                    max_hp: 1,
                     ..Default::default()
                 })
                 .collect(),
@@ -154,6 +155,16 @@ fn a_hidden_monster_is_dropped_from_the_group_centroid() {
     assert_eq!(host.cast(0, 9), 0x800);
     // Hide the -X one and the group collapses onto +X.
     host.actors[4].render_flag = RENDER_FLAG_HIDDEN;
+    assert_eq!(host.cast(0, 9), 0x400);
+}
+
+/// A seat no monster was ever stood on (max HP `0`, retail's zero prim word
+/// `+0x4`) drops out the same way: counted, it would sit at the origin and
+/// pull the centroid off the row.
+#[test]
+fn an_empty_monster_seat_is_dropped_from_the_group_centroid() {
+    let mut host = SeatedHost::new(3, &[(0, 0), (-700, -100), (700, -100), (800, 0), (0, 0)]);
+    host.actors[4].max_hp = 0;
     assert_eq!(host.cast(0, 9), 0x400);
 }
 

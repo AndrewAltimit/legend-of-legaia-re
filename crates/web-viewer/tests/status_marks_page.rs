@@ -95,7 +95,13 @@ fn run(status: Option<&str>) -> Option<Run> {
             }
             let s = sprites(&mut rt);
             if applied && ring_up(&s) {
-                ring = Some(s);
+                // The ring opens on a glide (sub-draw step 1) and reads no
+                // pad until it lands: let it, and sample the ring at rest.
+                rt.set_pad(0);
+                for _ in 0..24 {
+                    rt.tick_frame().expect("tick");
+                }
+                ring = Some(sprites(&mut rt));
                 break;
             }
         }

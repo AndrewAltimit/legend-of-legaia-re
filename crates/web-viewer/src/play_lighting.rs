@@ -26,7 +26,7 @@
 //! (`_renderLightShadows`) from the light positions this packet carries (see
 //! `docs/tooling/host-drift.md`).
 //!
-//! [`OptionsState::lighting_time_of_day`]: legaia_engine_core::options::OptionsState::lighting_time_of_day
+//! [`OptionsState::lighting_time_of_day`]: legaia_engine_menus::options::OptionsState::lighting_time_of_day
 
 use crate::runtime::LegaiaRuntime;
 use legaia_engine_mode::mode::SceneMode;

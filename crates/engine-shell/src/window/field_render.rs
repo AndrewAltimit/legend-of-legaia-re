@@ -23,14 +23,14 @@ pub(super) const LIT_VARIANT_TAG: usize = 1 << 30;
 /// rungs each draw's Y came from, and which placed-object sweep owns each draw
 /// ([`legaia_engine_scene::field_env::placed_window_key`]), and each draw's
 /// grid cell + cull radius for the visible-tile crop
-/// ([`legaia_engine_core::field_view_window::CellKey`]), and each draw's bind
+/// ([`legaia_engine_scene::field_view_window::CellKey`]), and each draw's bind
 /// record ([`legaia_engine_scene::field_env::placed_bind_records`] - the key of
 /// its live scripted displacement), all parallel.
 pub(super) type PlacedDrawList = (
     Vec<(usize, Mat4)>,
     Vec<FloorAnchor>,
     Vec<Option<legaia_engine_scene::field_env::PlacedWindowKey>>,
-    Vec<legaia_engine_core::field_view_window::CellKey>,
+    Vec<legaia_engine_scene::field_view_window::CellKey>,
     Vec<Option<usize>>,
     Vec<Option<CameraFacing>>,
 );
@@ -48,7 +48,7 @@ pub(super) type CameraFacing = (u16, Mat4);
 pub(super) type TerrainDrawList = (
     Vec<(usize, Mat4)>,
     Vec<FloorAnchor>,
-    Vec<legaia_engine_core::field_view_window::CellKey>,
+    Vec<legaia_engine_scene::field_view_window::CellKey>,
     Vec<Option<CameraFacing>>,
 );
 

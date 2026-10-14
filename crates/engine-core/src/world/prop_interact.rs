@@ -374,18 +374,21 @@ impl World {
                     id.panel = None;
                 } else if panel.is_done() {
                     // Dismissed: resume the record just past the segment -
-                    // which for the cupboard is the close pass (`2B 07` set
-                    // reverse, ...), so the doors swing shut as the window
-                    // drops. Retail sequences it identically: the pager
-                    // returns to SM state 0 and the script continues.
+                    // which for the cupboard is `48`, a `26` to the shared
+                    // tail and the close pass (`2B 07` set reverse, ...), so
+                    // the doors swing shut as the window drops. Retail sequences it identically: the
+                    // pager returns to SM state 0 and the script continues -
+                    // unless the byte after the box parks the talk.
                     id.pc = panel.pc;
                     id.panel = None;
+                    end_prop_talk_at_post_box_byte(&mut id);
                 } else if panel.is_waiting_for_input() {
                     // Multi-page box: turn the page in the same window.
                     panel.advance_page();
                     if panel.is_done() {
                         id.pc = panel.pc;
                         id.panel = None;
+                        end_prop_talk_at_post_box_byte(&mut id);
                     }
                 } else {
                     // Still typing or scrolling: the pager's skip latch
@@ -421,6 +424,8 @@ impl World {
             id.ctx.local_flags = prop.anim.flags;
         }
         let mut parked = false;
+        // Where the record's own `23 <x> <z>` seated the prop this slice.
+        let mut own_seat: Option<(i32, i32)> = None;
         let door_teleports = self.props.bank.props.get(&anchor).is_some_and(|p| {
             self.props
                 .walk_touch_records
@@ -587,6 +592,23 @@ impl World {
                     &mut id.ctx
                 };
                 let step = field_step_routed(&mut host, ctx, &id.bytecode, id.pc);
+                // The record's own MOVE_TO seats the prop actor itself
+                // (`0x801DECAC`, the non-player arm: the tile goes into the
+                // executing actor's `+0x14` / `+0x18`). `vozz` P0[1], a
+                // thicket across East Voz's paths, parks itself on the hide
+                // tile with `23 7F 7F` once the player examines it holding
+                // `0x079`.
+                // REF: FUN_801DE840 (0x23 arm)
+                if b == 0x23
+                    && matches!(step, FieldStepResult::Advance { .. })
+                    && let (Some(&xb), Some(&zb)) =
+                        (id.bytecode.get(id.pc + 1), id.bytecode.get(id.pc + 2))
+                {
+                    let decode = |b: u8| -> i32 {
+                        i32::from(b & 0x7F) * 0x80 + 0x40 + if b & 0x80 != 0 { 0x40 } else { 0 }
+                    };
+                    own_seat = Some((decode(xb), decode(zb)));
+                }
                 if player_target && matches!(b & 0x7F, 0x2B..=0x2D) {
                     let hint = host.world.player_clip_frames_hint();
                     host.world.props.bank.player_clip(hint).flags = player_ctx.local_flags;
@@ -637,6 +659,9 @@ impl World {
         // Mirror the context back onto the live prop: anim word, rate, and
         // the `+0x10` class word (whose bit `0` is the door's collision-off).
         self.sync_prop_from_ctx(anchor, &id.ctx);
+        if let Some(seat) = own_seat {
+            self.seat_prop(anchor, seat);
+        }
         if parked {
             id.park_frames = id.park_frames.saturating_add(1);
             if id.park_frames > PROP_RUN_PARK_TIMEOUT {
@@ -669,6 +694,25 @@ impl World {
         }
         self.set_player_engaged(false);
         self.dialog.inline = None;
+    }
+
+    /// Move prop `anchor`'s actor to `seat`: its position, its contact-box
+    /// centre and its collider rows travel together, so a prop that parks
+    /// itself on the hide tile stops blocking where it stood - retail's
+    /// candidate walk `FUN_801CF754` culls an actor that far from the player.
+    fn seat_prop(&mut self, anchor: (u8, u8), seat: (i32, i32)) {
+        let Some(prop) = self.props.bank.props.get_mut(&anchor) else {
+            return;
+        };
+        let (dx, dz) = (seat.0 - prop.world.0, seat.1 - prop.world.1);
+        prop.world = seat;
+        prop.collider = (prop.collider.0 + dx, prop.collider.1 + dz);
+        for c in &mut self.props.colliders {
+            if c.anchor == Some(anchor) {
+                c.center = (c.center.0 + dx, c.center.1 + dz);
+                c.live = (c.live.0 + dx, c.live.1 + dz);
+            }
+        }
     }
 
     /// Copy the executing context's actor words back onto the live prop and
@@ -840,6 +884,35 @@ impl World {
     }
 }
 
+/// `FUN_80038050`'s verdict on the byte after a dismissed box, for a prop
+/// record: a parking byte ends the interaction with the cursor left **on**
+/// it, and the next touch runs it.
+///
+/// The dialog SM that runs a touched prop's record is the one that runs an
+/// NPC's (`FUN_80039B7C`; the call is `jal 0x80038050` at `0x80039C84`, and
+/// the `0` return clears the context's `+0x10 & 0x100` with no test of what
+/// kind of actor it is), so the rule is the same. The disc's prop records
+/// are written to it: a box is followed by `0x48`, `0x24` or `0x25` where
+/// the record goes on (a cupboard's close pass), by a picker's option bytes,
+/// and by a bare `0x26` where the interaction is over - nearly always the
+/// jump back to the record's first question.
+///
+/// Running that jump at once re-opened the question for good. A spring
+/// (`izumi`'s: "Do you wish to drink this water?", a Yes / No picker, each
+/// arm's last box followed by `26` back to the question) could not be left
+/// by either answer; the runner's revisit guard does not stop it, because a
+/// picker commit clears the visited map.
+///
+/// REF: FUN_80039B7C (`0x80039C84..0x80039CA8`), FUN_80038050
+fn end_prop_talk_at_post_box_byte(id: &mut legaia_engine_field::inline_dialogue::InlineDialogue) {
+    if let legaia_engine_field::inline_dialogue::TalkDispatch::EndParked(pc) =
+        legaia_engine_field::inline_dialogue::talk_dispatch(&id.bytecode, id.pc)
+    {
+        id.pc = pc;
+        id.done = true;
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -876,6 +949,123 @@ mod tests {
             },
         );
         (w, anchor)
+    }
+
+    /// A prop whose record parks itself (`23 7F 7F`) leaves the collision
+    /// layer where it stood: its collider rows move with the actor.
+    #[test]
+    fn a_prop_that_parks_itself_takes_its_collider_along() {
+        let mut w = World::new();
+        w.install_field_player(0);
+        let record = vec![
+            0x00, 0x00, // header
+            0x23, 0x7F, 0x7F, // MoveTo the hide tile
+            0x21, // end of interaction
+        ];
+        let anchor = (16, 19);
+        w.props.bank.props.insert(
+            anchor,
+            PropAnimState {
+                anim: PropAnim::spawned(1, 4, false, 0),
+                program: PropProgram::default(),
+                world: (2240, 2496),
+                collider: (2240, 2496),
+                record: 1,
+                record_body: std::sync::Arc::new(record),
+                parked_pc: 2,
+                cflags: 0x4000_0000,
+            },
+        );
+        w.props.colliders.push(crate::world::FieldPropCollider {
+            anchor: Some(anchor),
+            center: (2240, 2496),
+            live: (2240, 2496),
+            moving_box: false,
+            interact: true,
+            solid: true,
+        });
+        assert!(w.start_prop_interaction(anchor));
+        for _ in 0..4 {
+            w.step_prop_interaction();
+        }
+        let hide = 0x7F * 0x80 + 0x40;
+        assert_eq!(w.props.colliders[0].center, (hide, hide));
+        assert_eq!(w.props.bank.props[&anchor].world, (hide, hide));
+    }
+
+    /// A prop record whose box is followed by a bare `0x26` back to its own
+    /// question - the shape of a spring's answer arm. The interaction ends
+    /// when the box is dismissed, parked on the jump; the next touch runs the
+    /// jump and asks again. A box followed by `0x48` runs on.
+    #[test]
+    fn a_prop_talk_ends_parked_on_the_jump_after_its_box() {
+        use legaia_engine_system::input::PadButton;
+        let mut w = World::new();
+        w.install_field_player(0);
+        let record = vec![
+            0x00, 0x00, // header
+            0x1F, b'O', b'n', b'e', 0x00, // pc 2: first box
+            0x48, // pc 7: box closes, the record runs on
+            0x54, 0xF0, // pc 8: SysFlag.Set 0x4F0
+            0x1F, b'T', b'w', b'o', 0x00, // pc 10: second box
+            0x26, 0xF1, 0xFF, // pc 15: back to pc 2 (15 + 1 - 15)
+            0x21,
+        ];
+        let anchor = (16, 19);
+        w.props.bank.props.insert(
+            anchor,
+            PropAnimState {
+                anim: PropAnim::spawned(1, 4, false, 0),
+                program: PropProgram::default(),
+                world: (2240, 2496),
+                collider: (2240, 2496),
+                record: 33,
+                record_body: std::sync::Arc::new(record),
+                parked_pc: 2,
+                cflags: 0x4002_0000,
+            },
+        );
+        // Tap the confirm button every other frame until the run ends.
+        let run = |w: &mut World| {
+            let mut boxes = 0;
+            let mut was_open = false;
+            for f in 0..2_000 {
+                if w.dialog.inline.is_none() {
+                    break;
+                }
+                let open = w.dialog.inline.as_ref().is_some_and(|d| d.panel.is_some());
+                if open && !was_open {
+                    boxes += 1;
+                }
+                was_open = open;
+                w.set_pad(if f % 2 == 0 {
+                    PadButton::Cross.mask()
+                } else {
+                    0
+                });
+                w.dialog.input_consumed = false;
+                w.tick_prop_interactions();
+            }
+            boxes
+        };
+        assert!(w.start_prop_interaction(anchor));
+        assert_eq!(run(&mut w), 2, "both boxes show, once each");
+        assert!(
+            w.dialog.inline.is_none(),
+            "the talk ended after its last box"
+        );
+        assert!(
+            w.system_flag_test(0x4F0),
+            "the 0x48 box ran on into the flag write"
+        );
+        assert_eq!(
+            w.props.bank.props[&anchor].parked_pc, 15,
+            "parked on the jump, not past it"
+        );
+        // The next touch runs the jump and the record asks again.
+        assert!(w.start_prop_interaction(anchor));
+        assert_eq!(run(&mut w), 2);
+        assert_eq!(w.props.bank.props[&anchor].parked_pc, 15);
     }
 
     /// A spawned record's clip-word pokes at a placed object swing the clip

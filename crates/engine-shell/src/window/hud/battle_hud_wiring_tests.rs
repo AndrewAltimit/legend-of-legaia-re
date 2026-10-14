@@ -36,6 +36,7 @@ const BATTLE_MIRROR_RECTS: legaia_engine_ui::SaveMenuAtlasRects =
 const fn blank_rects() -> legaia_engine_ui::SaveMenuAtlasRects {
     const Z: (u32, u32, u32, u32) = (0, 0, 0, 0);
     legaia_engine_ui::SaveMenuAtlasRects {
+        class0_dark: None,
         panel_tl: Z,
         panel_tr: Z,
         panel_bl: Z,

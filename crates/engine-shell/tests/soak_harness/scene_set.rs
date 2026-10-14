@@ -133,6 +133,12 @@ pub(super) fn filter_scenes(all: &[String], extra: &[String]) -> Vec<String> {
             .chain(MINIGAME_RUNS.iter().map(|s| s.to_string()))
             // Every scene again as a save / load round-trip run.
             .chain(all.iter().map(|s| format!("{s}+rt")))
+            // Every field scene again as a talk-visit run.
+            .chain(
+                all.iter()
+                    .filter(|s| !is_world_map_scene(s))
+                    .map(|s| format!("{s}+talk")),
+            )
             .chain(extra.iter().cloned())
             .collect(),
     };

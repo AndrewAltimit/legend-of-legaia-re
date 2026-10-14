@@ -107,7 +107,7 @@ fn magic_screen_resolves_disc_descriptions_levels_and_mp_max() {
     let sub = FieldMenuSubsession::build(
         FieldMenuRow::Magic,
         &world,
-        &legaia_engine_core::options::OptionsState::default(),
+        &legaia_engine_menus::options::OptionsState::default(),
         &legaia_engine_menus::save_select::SaveRack::Blocks(Vec::new()),
         &legaia_engine_battle::tactical_arts_editor::ChainLibrary::new(),
         &world.tables.spell_catalog,

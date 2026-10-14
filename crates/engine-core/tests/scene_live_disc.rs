@@ -109,14 +109,14 @@ fn jouina_ground_pulses() {
     let a = assemble_field_scene(&index, "jouina").expect("assemble");
     let hf = a.ground.as_ref().expect("jouina has a walk ground");
     let mut live = LiveScene::enter(index, "jouina").expect("enter");
-    let baked = legaia_engine_core::field_ground::render_positions(hf);
+    let baked = legaia_engine_scene::field_ground::render_positions(hf);
     let mut ground_moved = false;
     let mut prev = None;
     let mut frames_changed = 0;
     for _ in 0..180 {
         live.tick();
         let pos =
-            legaia_engine_core::field_ground::live_render_positions(hf, &live.live_floor_lut());
+            legaia_engine_scene::field_ground::live_render_positions(hf, &live.live_floor_lut());
         ground_moved |= pos != baked;
         if prev.as_ref() != Some(&pos) {
             frames_changed += 1;
@@ -212,9 +212,9 @@ fn concnow_rooms_keep_their_own_ladders() {
     );
     // The walk ground too, per cell.
     let hf = a.ground.as_ref().expect("concnow has a walk ground");
-    let cells = legaia_engine_core::field_ground::vertex_cells(hf);
+    let cells = legaia_engine_scene::field_ground::vertex_cells(hf);
     let by_room = live.ground_positions(hf, &cells);
-    let entry_only = legaia_engine_core::field_ground::live_render_positions(hf, &entry);
+    let entry_only = legaia_engine_scene::field_ground::live_render_positions(hf, &entry);
     assert_ne!(by_room, entry_only, "the ground takes each room's ladder");
     // And a room with oscillators keeps moving on its own.
     let before: Vec<_> = live.rooms().iter().map(|r| r.lut).collect();

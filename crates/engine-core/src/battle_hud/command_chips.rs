@@ -5,6 +5,26 @@ use super::*;
 
 use legaia_engine_menus::battle_input::{BattleCommandChips, CommandChipPhase};
 
+/// The chip a cluster draws **highlighted**, given the session's cursor:
+/// `Some(cursor)` under the Battle Command option's cross-button value,
+/// `None` under its default, the directional buttons.
+///
+/// Retail's highlight exists only on the cross-button entry. The menu SM's
+/// pre-dispatch block runs when `_DAT_800846C8 != 0` and `ctx[+0x275] != 0`
+/// (`FUN_801D0748`, `0x801D07FC..0x801D0AC0`); on a direction press it
+/// stores the arm's mask in `ctx[+0x880]`, stamps that arm's text actor
+/// `+0x1D = 2` and every other arm's `1` (`0x801D0850..0x801D089C`) - frame
+/// styles, the gold plate run against the blue one. With the option clear
+/// the block is skipped, every arm keeps its record's style `1`, and a
+/// direction press commits its arm on the press. Both hosts feed this to
+/// `engine-ui::battle_command_ui::BattleCommandMenuFrame::cursor`.
+///
+/// REF: FUN_801D0748
+pub fn battle_chip_highlight(world: &crate::world::World, cursor: usize) -> Option<usize> {
+    use legaia_engine_menus::option_values::BattleCommandOpt;
+    (world.toggles.battle_command == BattleCommandOpt::CrossButton).then_some(cursor)
+}
+
 /// The chip cluster this frame draws, or `None` when no command prompt
 /// owns the frame (a submenu, an arts session or a dialogue box wins).
 ///

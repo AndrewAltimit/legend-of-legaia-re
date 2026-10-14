@@ -9,15 +9,15 @@
 use super::*;
 use legaia_engine_mode::mode::SceneMode;
 
-use crate::battle_flow::BattleFlowState;
-use crate::battle_tutorial::{BattleTutorialScript, TutorialLesson, msg};
+use legaia_engine_battle::battle_tutorial::{BattleTutorialScript, TutorialLesson, msg};
+use legaia_engine_menus::battle_flow::BattleFlowState;
 use legaia_engine_menus::battle_input::{BattleCommandSession, CommandPhase};
 
 /// A stand-in overlay blob: every message VA the machine can emit gets a short
 /// ASCII marker naming its own address, so a queued box is traceable back to the
 /// hook that produced it without shipping any retail text.
 fn synthetic_script() -> BattleTutorialScript {
-    let base = crate::battle_tutorial::OVERLAY_967_BASE_VA;
+    let base = legaia_engine_battle::battle_tutorial::OVERLAY_967_BASE_VA;
     let mut ids: Vec<u32> = BattleTutorialScript::MESSAGE_IDS.to_vec();
     ids.push(msg::ENTER_HIGH_LOW_HIGH);
     ids.push(msg::WRONG_COMMANDS);
@@ -83,7 +83,7 @@ fn priming_arms_the_machine_at_battle_entry() {
 /// needs to know the tutorial exists.
 #[test]
 fn the_disc_arm_flag_runs_the_tutorial_for_exactly_one_battle() {
-    use crate::battle_tutorial::TUTORIAL_ARM_FLAG;
+    use legaia_engine_battle::battle_tutorial::TUTORIAL_ARM_FLAG;
 
     let mut world = World::new();
     world.set_battle_tutorial_script(synthetic_script());
@@ -121,11 +121,42 @@ fn the_disc_arm_flag_runs_the_tutorial_for_exactly_one_battle() {
     );
 }
 
+/// The same tail's flag writes past the stage-id pair (`FUN_801DA51C`,
+/// `0x801DA6C4..0x801DA6EC`): under the report arm every entry raises flags
+/// `0` and `3`, and every entry lowers `0x35`, armed or not.
+#[test]
+fn battle_entry_raises_the_report_flags_only_under_their_arm() {
+    use legaia_engine_battle::battle_tutorial::{
+        BATTLE_ENTRY_CLEARED_FLAG, BATTLE_REPORT_ARM_FLAG, BATTLE_REPORT_FLAG,
+    };
+
+    let mut world = World::new();
+    world.system_flag_set(BATTLE_ENTRY_CLEARED_FLAG);
+    world.enter_battle(3, 2);
+    assert!(
+        !world.system_flag_test(BATTLE_REPORT_FLAG) && !world.system_flag_test(0),
+        "an unarmed entry reports nothing"
+    );
+    assert!(
+        !world.system_flag_test(BATTLE_ENTRY_CLEARED_FLAG),
+        "0x35 is lowered on every entry"
+    );
+
+    world.system_flag_set(BATTLE_REPORT_ARM_FLAG);
+    world.enter_battle(3, 2);
+    assert!(world.system_flag_test(BATTLE_REPORT_FLAG));
+    assert!(world.system_flag_test(0));
+    assert!(
+        world.system_flag_test(BATTLE_REPORT_ARM_FLAG),
+        "the arm is a mode, not a one-shot: the tail only tests it"
+    );
+}
+
 /// A forced (debug) tutorial still consumes a raised arm, so it cannot leave
 /// the flag behind to fire a second time on the next fight.
 #[test]
 fn a_forced_tutorial_consumes_the_disc_arm_too() {
-    use crate::battle_tutorial::TUTORIAL_ARM_FLAG;
+    use legaia_engine_battle::battle_tutorial::TUTORIAL_ARM_FLAG;
 
     let mut world = World::new();
     world.prime_battle_tutorial(synthetic_script());
@@ -145,7 +176,7 @@ fn a_forced_tutorial_consumes_the_disc_arm_too() {
 /// id `overlay_loader::battle_stage_overlay_entry` maps to PROT 0967.
 #[test]
 fn the_stage_id_resolver_matches_the_overlay_dispatch() {
-    use crate::battle_tutorial::{TUTORIAL_STAGE_ID, stage_id_at_battle_entry};
+    use legaia_engine_battle::battle_tutorial::{TUTORIAL_STAGE_ID, stage_id_at_battle_entry};
 
     assert_eq!(stage_id_at_battle_entry(false), 0);
     assert_eq!(stage_id_at_battle_entry(true), TUTORIAL_STAGE_ID);
@@ -160,7 +191,7 @@ fn the_stage_id_resolver_matches_the_overlay_dispatch() {
         legaia_engine_scene::overlay_loader::battle_stage_overlay_entry(stage_id_at_battle_entry(
             true
         )),
-        Some(crate::battle_tutorial::OVERLAY_967_PROT_INDEX),
+        Some(legaia_engine_battle::battle_tutorial::OVERLAY_967_PROT_INDEX),
         "the armed stage id must resolve to the prompt overlay's PROT entry"
     );
 }
@@ -521,7 +552,7 @@ fn the_fourth_completed_lesson_closes_the_fight_out() {
     assert!(tut.finished);
     assert_eq!(
         tut.countdown,
-        crate::battle_tutorial::COMPLETION_COUNTDOWN_VSYNCS
+        legaia_engine_battle::battle_tutorial::COMPLETION_COUNTDOWN_VSYNCS
     );
 }
 
@@ -647,7 +678,7 @@ fn a_closed_sparring_fight_runs_no_more_battle() {
 /// `3E FF <row>` names.
 #[test]
 fn replay_scripted_battle_arm_keys_on_the_records_entry_row() {
-    use crate::battle_tutorial::TUTORIAL_ARM_FLAG;
+    use legaia_engine_battle::battle_tutorial::TUTORIAL_ARM_FLAG;
     use legaia_scene_formats::man_section::{ManFile, ManHeader};
 
     // One controller record + one placement whose script is the retail
@@ -826,14 +857,14 @@ fn only_a_967_prompt_stands() {
     world
         .battle
         .tutorial_boxes
-        .push_back(crate::battle_flow::ActiveTutorialBox {
+        .push_back(legaia_engine_menus::battle_flow::ActiveTutorialBox {
             text: "caption".to_string(),
-            style: crate::battle_tutorial::SPARRING_CAPTION_STYLE,
+            style: legaia_engine_battle::battle_tutorial::SPARRING_CAPTION_STYLE,
             waits_for_input: false,
             frames_remaining: 2,
             group: 0,
             any_press_dismisses: true,
-            placed: Some(crate::battle_tutorial::SPARRING_CAPTION_RECT),
+            placed: Some(legaia_engine_battle::battle_tutorial::SPARRING_CAPTION_RECT),
             stands: false,
         });
     world.tick_battle_tutorial_boxes();

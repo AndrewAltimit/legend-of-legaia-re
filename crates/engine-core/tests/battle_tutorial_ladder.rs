@@ -28,12 +28,12 @@
 //! * a box on screen parks the battle loop (`ctx[+0x6B2]`), so no pad-driven
 //!   frame can advance the action SM past it.
 
-use legaia_engine_battle::monster_catalog::{vanilla_formation_table, vanilla_monster_catalog};
-use legaia_engine_core::battle_flow::BattleFlowState;
-use legaia_engine_core::battle_tutorial::{
+use legaia_engine_battle::battle_tutorial::{
     BattleTutorial, BattleTutorialScript, BoxStyle, OVERLAY_967_BASE_VA, TutorialLesson, msg,
 };
+use legaia_engine_battle::monster_catalog::{vanilla_formation_table, vanilla_monster_catalog};
 use legaia_engine_core::world::{Actor, World};
+use legaia_engine_menus::battle_flow::BattleFlowState;
 use legaia_engine_mode::mode::SceneMode;
 use legaia_engine_system::input::{InputState, PadButton};
 

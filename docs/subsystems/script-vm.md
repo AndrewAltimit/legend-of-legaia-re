@@ -816,7 +816,7 @@ at PC). Otherwise bit 15 of `sel` picks the arm:
 | bit 15 set, sub `1` | `_DAT_8007BABC = arg` - **guarded**, see below. |
 | bit 15 set, sub `2` | Gate only: halt unless `_DAT_8007BABC == _DAT_8007BAA0`. |
 | bit 15 set, sub `3` | `FUN_801D8450()` - the side-band stream **teardown**: `FUN_800653C8(0x17)` then `(0x16)`, `FUN_8001FF58(6)` (close VAB slot 6 - the field bank, or a side-band bank streamed over it), then `_DAT_8007BA88 = 0` and the field-bank latch `_DAT_8007BAFC = 0`, so the next field init reloads PROT 0876 ([`sfx-table.md`](../formats/sfx-table.md#one-region-per-mode-slot-2-and-slot-6)). Ungated, and it *yields the frame* rather than falling through. |
-| bit 15 set, sub `4` | `func_0x80035BAC(arg)` - store `arg` as the parked slot's delay, scheduling the cue instead of firing it. Ungated. Port: `engine-core::scus_leaf_kernels::SfxCueDelays`. |
+| bit 15 set, sub `4` | `func_0x80035BAC(arg)` - store `arg` as the parked slot's delay, scheduling the cue instead of firing it. Ungated. Port: `engine-system::scus_leaf_kernels::SfxCueDelays`. |
 
 #### The stream gates on op 0x36
 
@@ -850,7 +850,7 @@ static writer ever sets it non-zero (it is the dev/dual-mode flag - see the op-`
 sub-op `0xA` note above), so in play the sub-switch always runs and the XA arm always
 waits on the bank.
 
-The port models the pair as `engine-core::scus_leaf_kernels::SoundStreamRequest` on
+The port models the pair as `engine-system::scus_leaf_kernels::SoundStreamRequest` on
 `World::audio.sound_stream`, with `World::audio.dual_mode_gate` pinned at `0`; the arms live in
 the field host's op-`0x36` handler and the gates are covered by
 `engine-core::world::tests::sound_stream_gates`. Because the engine's bank loads are
@@ -943,7 +943,12 @@ walks the player out of the cave this way; the disassembler prints the op as
 `Yield (Standard)`, which is its dispatch class, not what it does. A record
 that waits for a player gesture pokes the clip and spins on its end latch
 (`A2 F8 <clip>` / `AC F8 08` / `AD F8 08`), and when the clip binds from the
-scene bank the spin lasts the clip's frames. Engine port:
+scene bank the spin lasts the clip's frames. A talk's lead waits on the
+talker's **own** latch the same way (`2C 08` / `2D 08`); where the port holds
+no clip cursor for that talker the wait is a clip of no length and the
+record runs on from the op behind it, since the grant and the flag a chest
+or a giver writes sit between the wait and the first box (`vozz` P1[1]:
+`39 AA`, `50 79`). Engine port:
 `CutsceneTimeline::player_glide` and `player_clip_wait`, on the modal
 timeline and on concurrent helpers alike, and `InlineDialogue::player_glide`
 for a touched object's record (`tower`'s floor doors glide the player into
@@ -1754,6 +1759,35 @@ which can write any index. These menus are per-scene and write named flags.
 
 A live whole-playthrough capture (PCSX-Redux exec-bps on `0x8003CE08`/`0x8003CE34`, probe `autorun_flag_firehose.lua`) shows every story-flag write across the chapter-1 scenes returning to the dispatcher's own `0x5x`/`0x6x` arms (`ra 0x801E3598` / `0x801E35C0`, field overlay resident) - the ops above are the **only** story-flag writers observed. The remaining callers touch only low system indices: `0`/`3` staged by the world-map entity SM (`FUN_801DA51C`), `0x35` set at battle-end victory (`FUN_8004E568`) and cleared by the entity SM, `0xB`/`0xC`/`0x18` interaction/engagement locks, `0xE` by two dispatcher spawn ops.
 That result is chapter-1-scoped: the mode-24 minigame overlays add native story-flag writers that are simply not resident in chapter 1 ([below](#native-flag-bank-writers-the-minigame-result-toggle-0x50a--the-0x5d6-negative)).
+
+### The entity SM's battle-entry flags
+
+The field entity tick `FUN_801DA51C` writes four low system flags on its way
+into a fight, in the state that copies the encounter record into the
+formation cell (`0x801DA698..0x801DA6EC`):
+
+| Flag | Write | Site |
+|---|---|---|
+| `0x19` | tested, and cleared when set; the stage-id byte `0x8007B64A` takes `1` | `0x801DA698..0x801DA6B0` |
+| `0x13` | tested only | `0x801DA6C8` |
+| `0x00`, `0x03` | set, while `0x13` is up | `0x801DA6D8` / `0x801DA6E0` |
+| `0x35` | cleared on every entry (the join states 2 and 3 enter on) | `0x801DA6E8` |
+
+`0x19` is the sparring tutorial's one-shot arm
+([battle-command-flow](battle-command-flow.md)). `0x13` is a mode rather than
+a latch: the tail never clears it, so every fight entered while it is up
+reports itself through `0x03`. The reader is a scene entry script on the
+return from the fight - `cave01`'s install slice tests `0x03` (`70 03` at
+`P1[0]` `+0x77`, behind a clear `0x142`) and spawns `P2[17]`, Terra's
+after-battle coaching, whose first op clears the flag (`60 03`). `0x35` is the
+victory latch the results sequencer raises on its results frame
+(`FUN_8004E568`, `0x8004EECC`), so it reads "the last fight was won" from
+that frame until the next entry.
+
+Port: `World::apply_battle_entry_flag_tail` beside the tutorial arm in
+`World::enter_battle`; the flags are `engine-battle::battle_tutorial`'s
+`BATTLE_REPORT_ARM_FLAG`, `BATTLE_REPORT_FLAG` and
+`BATTLE_ENTRY_CLEARED_FLAG`.
 
 The executed script bytes at the Mt. Rikuroa post-Caruban beat live in a heap-resident carrier that is **not** the scene's asset-table bundle MAN: it is a second, plain MAN shipped as the type-3 chunk of a standalone `data_field_streaming` PROT entry (the chunk header is the ordinary sub-asset descriptor `[u24 size][u8 type=0x03]`; the payload parses with `legaia_scene_formats::man_section` like any MAN).
 The resident copy byte-matches PROT `0157_rikuroa`'s chunk, and the story-flag `0x142` SET (`51 42`) it carries as a *beat* is the post-victory cutscene record `P2[50]`, whose C1 gate is `0x142` itself (the self-latching one-shot). The carrier's `P1[10..12]` hold the same `51 42`, but each is one arm of a `Clear`-labelled developer flag menu ([above](#shipped-scene-scripts-carry-developer-flag-setting-menus)) - a nine-flag Set ladder and its mirrored Clear ladder, not the beat.
@@ -2753,8 +2787,36 @@ there - through the loop-back, the selectors and the acquire, which is not an
 end. `crates/engine-core/tests/inn_stay_field_vm_disc.rs` pins the innkeeper: the
 stay parks at `+0x18A` and the second talk opens at the greeting again. Not
 modelled: a talk that ends on a raw `0x21` keeps its entry (retail's cursor
-moves past the `0x21`), and prop-bound records (doors, cupboards) run their tail
-through, since only NPC talks are captured.
+moves past the `0x21`).
+
+The rule is the dialog SM's, so it is every touched context's, and the port
+applies it on all three of its runners. The verdict call sits on the SM's one
+path past a finished box (`jal 0x80038050` at `0x80039C84`), and the `0`
+return clears the context's `+0x10 & 0x100` with no test of what kind of
+actor it belongs to.
+
+- **An NPC talk** runs on the inline runner, as above.
+- **A prop record** (a spring, a cupboard, a door) runs on the prop runner
+  (`World::step_prop_interaction`), which parks the prop's cursor on the
+  byte. The disc's prop records are written to the rule: a box is followed
+  by `0x48`, `0x24` or `0x25` where the record goes on (Rim Elm's cupboard:
+  its message box, `48`, a `26` to the shared tail, then the `2B 07` close
+  pass), by a picker's option bytes, and by a bare `0x26` where the
+  interaction is over. A spring is the plain case - `izumi`'s asks
+  "Do you wish to drink this water?" behind a Yes / No picker, and each
+  arm's last box is followed by a `26` back to the question. Run at once,
+  that jump asks again for good; parked, it is what the next press of the
+  button runs.
+- **A touch-resumed placement context** the engine runs as the interaction
+  timeline (a boss stager, a `B1 <id> 08` engagement:
+  `CutsceneTimeline::interaction_slot`) ends the same way, with the cursor
+  handed back to the placement's channel. `town0d`'s Tetsu closes his
+  "Nothing in particular." branch with a box, then `26 02 00` and the `26`
+  loop-back to his greeting; his other branches lead back to a picker.
+  Without the rule no option left the conversation.
+
+A spawned cutscene record keeps running past its boxes: it is not a touched
+context, and its boxes are followed by `0x48` or `0x24`.
 
 Two ops are easy to mistake for a dialog opener and are not: `0x3F` is the
 named scene-change, and `4C 53` / `4C 54` (`FUN_801D65D8`) are polls a script

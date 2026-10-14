@@ -792,9 +792,11 @@ difference is a failure class none of them can see.
 Both hosts drive the engine through one frame path - the native window's
 per-tick body (`sim_tick`, run once per tick the redraw drains, with its
 step helpers spliced back in), the browser runtime's `tick_frame` - and both
-paths short-circuit. The native body `return`s out of five arms; the browser
-runtime `return`s out of three; the page's own `_frame` gates the whole call
-to `tick_frame` behind a fourth kind of arm in JavaScript. The **draw** does
+paths short-circuit. The native body `return`s out of the arms that own
+a whole tick (the boot UI, the naming prompt, the prologue hand-off, the two
+pause-menu open arms, a shop); the browser runtime `return`s out of its own
+(no session, the naming prompt, a movie); the page's own `_frame` gates the
+whole call to `tick_frame` behind one more kind of arm in JavaScript. The **draw** does
 not short-circuit with them: the native draw passes run after the loop
 whatever an iteration did, and `tick_frame` returns to a page that draws
 either way. So an arm that skips a per-frame kernel does not skip the draw
@@ -832,7 +834,7 @@ The browser's frame path is **two** files, and the Rust half is the one
 without the interesting arm. `site/js/play-view-frame.js::_frame` calls
 `rt.tick_frame()` inside `if (advance && !menuOpen && !shopOpen &&
 !namingOpen)` and calls `this._drawOverlay()` outside it, so a guarded frame
-runs no kernel at all and still draws - all nineteen at once. A Rust-only scan
+runs no kernel at all and still draws - every one of them at once. A Rust-only scan
 sees none of that, which is how "the browser page has no early-out" came to be
 written down while the page carried the same defect the native window did. The
 tier therefore walks the JS function too, takes the guards `tick_frame` sits
@@ -1275,7 +1277,9 @@ The frame model is in [`engine.md`](../subsystems/engine.md#the-frame-model).
 | camera around the world tick | `camera_before_world_tick` / `camera_after_world_tick` |
 | cutscene glide clock | `CutsceneGlide`, reset on every entry (retail's `FUN_80025C24` kills the mover) |
 | move-VM strips | `MoveVmGlobals::strip_frame` |
-| field frame tail | `World::tick_effect_scene_graphs`, `step_field_vram_effects`, `drain_field_anim_cues`; headless: `World::step_world_frame_tail` ([`reach-triage.md`](reach-triage.md#what-a-pad-only-ladder-structurally-cannot-execute)) |
+| field frame tail | `BootSession::step_effect_scene_graphs`, `World::step_field_vram_effects`, `drain_field_anim_cues`; headless: `World::step_world_frame_tail` ([`reach-triage.md`](reach-triage.md#what-a-pad-only-ladder-structurally-cannot-execute)) |
+| party-wipe probe | `BootSession::take_party_wipe` |
+| scheduler under a frozen field | `BootSession::step_overlay_sfx` |
 | NPC clip playheads | `World::field_npc_clips_advance`, `tick_npc_clips` (a world cursor under each actor's `+0x62`), `sync_npc_clip` |
 | play clock | `World::tick_play_clock`, reset by `begin_new_game` |
 | field HUD suppression | `world_map_panel_host::field_hud_suppressed`, asked on the tick *and* the draw path; includes `field_battle_transition_active` |
@@ -1294,6 +1298,69 @@ runs the cue drainer `FUN_80016B6C`
 A suppressed `FieldPartyHud::tick` stores nothing but its cached decision, so
 stepping it under an overlay or not leaves the same picture
 (`a_suppressed_tick_changes_no_state`).
+
+<a id="the-steps-around-the-tick"></a>
+
+#### The steps around the tick
+
+A step with no host half - one that reads and writes the world and the audio
+director and nothing a renderer owns - is a `BootSession` method in
+`engine-session`'s `session/frame_steps.rs` (or a `MenuRuntime` method for the
+menu overlay), and each host's frame path names it as one step. The host's
+method is the kernel call plus the single thing only that host holds.
+
+| Step on both frame paths | Kernel | What each host adds |
+|---|---|---|
+| `poll_game_over` | `BootSession::take_party_wipe` | where it keeps the hold: the window's `BootUiState::GameOver`, the page's `game_over` |
+| `poll_field_shop` | `MenuRuntime::poll_field_overlay` | the first step's blip; the window's boot-SCUS read for the Trade row, the page's cached screen-prim rebuild |
+| `tick_world_effects` | `BootSession::step_effect_scene_graphs` | the summon creature's mesh bind, ahead of the kernel |
+| `tick_muscle_time_meter` | `BootSession::step_muscle_time_meter` | nothing |
+| `tick_fishing_banners` | `engine-screens::fishing_banner_frame` | the cache its `&self` draw pass reads |
+| `tick_sfx` | `BootSession::step_audio_frame` | the page's footstep cadence and field CD-XA lane, ahead of the kernel; the window nothing |
+
+`take_party_wipe` consumes `World::game_over` on the take and is handed one
+term, whether a host screen already owns the frame. `poll_field_overlay` opens
+the requested screen *and* takes its first no-edge step, so the shop's
+tick-counted fade starts on the opening tick on both hosts; the window's
+per-tick session step (an inn prompt does not suspend the field) skips the
+tick the poll answered on.
+
+Five more session steps run inside a host step that is named differently on
+each side, so they pair by call rather than by step name:
+
+| Kernel | Native caller | Page caller |
+|---|---|---|
+| `BootSession::enqueue_minigame_sfx_cues` | `tick_minigame_extras` | `tick_minigame_ui` |
+| `BootSession::enqueue_baka_sfx_cues` | `drain_baka_sfx_cues`, its own step | `tick_baka_ui`, inside `tick_minigame_ui` |
+| `BootSession::step_overlay_sfx` | `tick_menu_sfx`, in the arms that freeze the field | the export `play_tick_overlay_sfx`, from the page's frame loop |
+| `session::step_npc_clip_players` | `drain_anim_cues`, after the tick's re-targets | `drive_npc_clips` (`FieldActors::drive`), after the same |
+| `BootSession::pass_name_entry_frames` / `step_name_entry_frame` | the per-tick naming-prompt arm (`step_name_entry_frame`) | the export `name_entry_advance_frames`, with the frame's sim steps |
+
+`step_audio_frame` is the tick's **audio frame**: the duck ramp toward the
+world's configured level, the delay scheduler, and the cues that matured
+(`AudioDirector::tick_audio_frame`). Both hosts call it after every step of
+the tick that queues a cue - the battle-event step last among them - and ahead
+of the field-event drain, so a zero-delay cue sounds on its own tick on either
+host. The battle's CD-XA requests (clips, arts shouts) are issued in the
+battle-event step, ahead of it. Under a screen that freezes the field neither
+host reaches it; `step_overlay_sfx` steps the scheduler alone there.
+
+`step_npc_clip_players` asks `World::field_npc_clips_advance` **per tick**.
+Retail reaches the per-actor anim tick (`FUN_800204F8`) once per field frame,
+so a display frame that drains several ticks across a mode edge advances the
+clips for exactly the ticks the field owned. The window used to ask once per
+redraw, in its draw pass, and advance by the frame's tick count - the whole
+batch under whichever mode the last tick left - so the redraw that entered a
+battle dropped its field ticks and the one that returned from it ran its
+battle ticks as clip frames. Its draw pass now only reads the playheads.
+
+`pass_name_entry_frames` runs the camera's half once per **sim step** under
+the naming prompt. The name-entry actor holds the frame-step floor at `1`
+while it is up (`FUN_801F03F0`), so a retail frame there is one vsync and the
+field frame around the prompt steps the camera mover once per vsync. The page
+used to pass the frame's steps in one call and run the camera half once per
+display frame - never on a 30 Hz frame's second step, and once too many on a
+redraw that owed no step - which also moved its draws of the shake stream.
 
 ### Camera
 
@@ -1324,8 +1391,8 @@ screens.
 | pause-menu stack | `field_menu_dispatch::tick_root_list`, `tick_open_subsession`, `finish_subsession`; per host: rack I/O, key table, options store (`SubsessionHandoff`) |
 | pause-menu draw assembly | `engine-ui::pause_menu` (`engine-ui/tests/pause_menu_compose.rs`) |
 | boot Options | The title row opens the pause menu on the Options sub-screen (`open_menu_row_from_title`, `play_menu_open_row`); a `menu_from_title` / `PlayMenu::from_title` flag returns to the title. |
-| Options rows | `OptionsSession::screen_model`; simulation knobs `OptionsState::apply_to_world` |
-| shop / prize / inn step | `MenuRuntime::step_field_session` (returns the cue), `open_field_overlay_requests`, `session_edge` (the opening tick takes no edge), `suspends_field` (an inn is a field dialogue and is not suspended) |
+| Options rows | `OptionsSession::screen_model`; simulation knobs `engine-core::options::apply_to_world` |
+| shop / prize / inn step | `MenuRuntime::poll_field_overlay` (the open plus the opening tick's no-edge step), `step_field_session` (every later tick; returns the cue), `suspends_field` (an inn is a field dialogue and is not suspended) |
 | shop-family draw | `legaia_engine_screens::shop_overlay_frame`; frame rect from `shop_panel_rows` + `shop_panel_frame_rect`; labels `menu_runtime::shop_root_labels`, `MenuState::item_label` |
 | Seru-trade text | `seru_trade::trade_screen_text` |
 | save-select | `SaveScreenFlow::overlay_model`, `save_select_overlay_draws`, `title_band_sprites` + `TitleBandState` (page backdrop: `boot_title_backdrop_draws_json`) |
@@ -1602,7 +1669,7 @@ Three more surfaces sit outside every tier:
 | effect spawns | `World::route_battle_effect_spawns`; a `ui_element` raise is a placement index for the HUD spawner `FUN_801D8DE8`, not an effect |
 | effect ribbon (move-VM op `0x42`, `FUN_801CFA48`) | `World::active_effect_ribbons` (`effect_ribbon`); in play the carrier is Gilium's summon (PROT 0923) |
 | ground shadow, default draw-kind-4 arm | `engine-effects::effect_default_arm` (`FUN_80028158`), `World::active_effect_kind4_draws`, `World::battle_ground_shadows` ([`effect-vm.md`](../subsystems/effect-vm.md#the-default-arms-draw)) |
-| move-FX spawn to sound | `engine-session::battle_fx::spawn_pending_move_fx` |
+| move-FX spawn to sound | `BootSession::step_effect_scene_graphs`, over `engine-session::battle_fx::spawn_pending_move_fx` |
 | scene matrix for FX passes | `battle_scene_mvp`, at the stage's 4:3 |
 | labels | `battle_open::battle_ui_strings_for_disc`; `SCUS_LABELS` and `OVERLAY_LABELS` share no key |
 | party wipe | `GameOverOutcome::ReturnToTitle`; the whole overlay list is empty for the hold |
@@ -1763,7 +1830,7 @@ inside it. Tier 12 measures the inside, and the pair carries a
 
 | Native sub-step | Browser play page | Minigames page |
 |---|---|---|
-| `drain_minigame_sfx_cues` | `drain_minigame_sfx_cues_web` | per-game cue drain |
+| `drain_minigame_sfx_cues` (`BootSession::enqueue_minigame_sfx_cues`) | `drain_minigame_sfx_cues_web` (the same session step) | per-game cue drain |
 | `stage_dance_hud_art` | `sync_dance_hud_residency` + `ensure_minigame_art` | `dance_art_*` exports |
 | `tick_fishing_actors` | `tick_fishing_actors` | pond session only |
 | `tick_baka_chrome` | `tick_baka_ui` | `baka_chrome_json` |

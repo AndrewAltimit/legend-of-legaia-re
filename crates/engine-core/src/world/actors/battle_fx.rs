@@ -78,7 +78,7 @@ impl World {
             .and_then(|cat| cat.id_index_map_bytes().get(1..))
             .unwrap_or(&[]);
         let step = fx::step_effect_script(
-            legaia_engine_effects::action_effect_script::retail_rotation_lut(),
+            legaia_engine_battle_vm::rotation_lut::retail_rotation_lut(),
             script,
             script_actor,
             frame,
@@ -586,7 +586,7 @@ impl World {
     /// PORT: FUN_8004998C (`0x8004A5FC..0x8004A8D8`, the selector emit loop)
     pub(in crate::world) fn emit_battle_burn_sprites(&mut self) {
         use legaia_engine_battle_vm::battle_impact_fx as ifx;
-        use legaia_engine_effects::action_effect_script::RotationLut;
+        use legaia_engine_battle_vm::rotation_lut::RotationLut;
         let acc = (self.battle.burn_emit_accum & 0xF) + 8;
         self.battle.burn_emit_accum = acc;
         let emits = acc / ifx::BURN_EMIT_QUANTUM;
@@ -618,7 +618,7 @@ impl World {
             ];
             let facing = a.battle.facing_angle;
             let red = plan.tint.colour as u8;
-            let lut = legaia_engine_effects::action_effect_script::retail_rotation_lut();
+            let lut = legaia_engine_battle_vm::rotation_lut::retail_rotation_lut();
             for _ in 0..emits {
                 let idx = self.next_rand() as usize % objects.len();
                 let rands = [

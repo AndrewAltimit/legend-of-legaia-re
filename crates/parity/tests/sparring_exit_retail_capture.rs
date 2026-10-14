@@ -28,8 +28,8 @@
 //! The library is found through `LEGAIA_SAVES_LIBRARY` (the
 //! `saves/library` directory) before the repo-relative fallback.
 
+use legaia_engine_battle::battle_tutorial::{BattleTutorialScript, OVERLAY_967_BASE_VA, msg};
 use legaia_engine_battle::monster_catalog::{vanilla_formation_table, vanilla_monster_catalog};
-use legaia_engine_core::battle_tutorial::{BattleTutorialScript, OVERLAY_967_BASE_VA, msg};
 use legaia_engine_core::world::{Actor, World};
 use legaia_engine_mode::mode::SceneMode;
 use legaia_engine_system::input::{InputState, PadButton};
@@ -254,7 +254,7 @@ fn the_sparring_exit_leaves_the_flag_bank_as_retail_does() {
 /// the entered arrows otherwise.
 fn lesson_pad(w: &World) -> u16 {
     use legaia_engine_battle::arts_command_input::ArtsInputPhase;
-    use legaia_engine_core::battle_tutorial::TutorialLesson;
+    use legaia_engine_battle::battle_tutorial::TutorialLesson;
     use legaia_engine_menus::battle_input::CommandPhase;
     let cross = InputState::mask_of([PadButton::Cross]);
     if !w.battle.tutorial_boxes.is_empty() || w.battle.item_menu.is_some() {

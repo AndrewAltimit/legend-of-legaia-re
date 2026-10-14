@@ -19,6 +19,9 @@ depends on it. Hosts, tools and tests name its modules directly
 | `model_bank` | The retail model pool `DAT_8007C018` and the id space a placement's model byte and the scripted-motion VM's op `0x0E` share. |
 | `field_env` | The environment-geometry draw resolver: which `SceneResources` TMD each `.MAP` placement or terrain tile draws and where, object binds, prop animation, floor anchors. |
 | `coplanar_draws` | Cross-draw coplanar-surface separation over a resolved `EnvDraw` list. |
+| `field_view_window` | The camera's visible-tile crop: the cell rectangle one frame of `FUN_801F7088` walks (`view_cells`) and the per-cell decoration / ground gates. Whether a host crops this frame is `engine-core::field_view_window`. |
+| `field_ground` | The walk-ground heightfield as a render mesh: positions (static and live-wave), indices, flat refs, the visible-tile crop of the index list. |
+| `field_occlusion` | The camera-occlusion fade's visibility gate: a per-triangle eye-to-player ray-cast over the assembled static scene (`FieldOccluders`), and the strength ramp. Its arming terms over a `World` are `engine-core::field_occlusion`. |
 | `scene_assembly` | The full static scene assembly kernel (`AssembledScene`, `assemble_field_scene_with`) and the hybrid textured / vertex-colour mesh builders. |
 | `man_field_scripts` | A scene's MAN carriers and the scene-name entry points of the censuses whose decoders are `legaia_engine_field::man_field_scripts`. |
 | `clut_walk_anim` | The CLUT-walk shimmer: installs a scene's walker table and steps it over a VRAM. |
@@ -43,8 +46,9 @@ What stays above, in `engine-core`:
   the story-hidden record set (a scratch `World` staged at the scene's
   free-roam visit), and `assemble_field_scene`, which hands that set to
   `scene_assembly::assemble_field_scene_with`.
-- `npc_catalog` and `glb_export` - the first resolves placements against the
-  world's global model pool, the second steps a `World` to bake animation.
+- `npc_catalog` - resolves placements against the world's global model pool.
+  (`glb_export`, which steps a `World` to bake animation, is its own crate
+  above `engine-core`: `engine-export`.)
 - The per-subsystem disc readers that return another kernel crate's types
   (`battle_open`, `dance`).
 

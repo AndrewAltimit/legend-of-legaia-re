@@ -46,6 +46,48 @@ fn builds_real_save_menu_atlas_when_disc_extracted() {
     let atlas = build_atlas(hud_slice, &prot_899, Some(glyph_tim)).expect("build save-menu atlas");
     assert_eq!(atlas.width, ATLAS_WIDTH);
     assert_eq!(atlas.height, ATLAS_HEIGHT);
+
+    // The dark class-0 skin (widget record 0x43): its fill patch is fully
+    // opaque and a near-black neutral marble, with none of the blue skin's
+    // blue, and each border cell carries ink.
+    let px = |x: u32, y: u32| {
+        let o = ((y * ATLAS_WIDTH + x) * 4) as usize;
+        [
+            atlas.rgba[o],
+            atlas.rgba[o + 1],
+            atlas.rgba[o + 2],
+            atlas.rgba[o + 3],
+        ]
+    };
+    let mean = |(x0, y0, w, h): (u32, u32, u32, u32)| {
+        let mut sum = [0u32; 3];
+        for y in y0..y0 + h {
+            for x in x0..x0 + w {
+                let p = px(x, y);
+                assert_eq!(p[3], 255, "fill texel ({x}, {y}) is opaque");
+                for c in 0..3 {
+                    sum[c] += u32::from(p[c]);
+                }
+            }
+        }
+        sum.map(|s| s / (w * h))
+    };
+    let dark = atlas.band_class0_dark();
+    let dark_fill = mean(dark[8]);
+    let blue_fill = mean(atlas.band_panel_filigree());
+    let spread = |c: [u32; 3]| c.iter().max().unwrap() - c.iter().min().unwrap();
+    assert!(
+        spread(dark_fill) < 16 && dark_fill[2] * 2 < blue_fill[2],
+        "dark fill {dark_fill:?} is a neutral marble, the blue {blue_fill:?} is not"
+    );
+    for cell in &dark[..8] {
+        let (x0, y0, w, h) = *cell;
+        let ink = (y0..y0 + h)
+            .flat_map(|y| (x0..x0 + w).map(move |x| (x, y)))
+            .filter(|&(x, y)| px(x, y)[3] != 0)
+            .count();
+        assert!(ink > 0, "dark border cell {cell:?} decoded empty");
+    }
     assert_eq!(atlas.rgba.len(), (ATLAS_WIDTH * ATLAS_HEIGHT * 4) as usize);
 
     // The HUD numeral strip: ten 8x12 cells, every one carrying ink,
