@@ -257,6 +257,10 @@ one upkeep pass, in this order:
    round raises a flag the pass has not seen up before: a room marker
    toggles with every walk across the scene (`bylon`'s `0x528` / `0x529`),
    and a round that only moved those gained nothing.
+   When a hop out of a scene skimmed this way fails, the scene is owed the
+   segmented pass's full one: `retona`'s wall switches P2[4] / P2[5] raise
+   only room markers and are the way down from the summit, and `doman`'s
+   P2[1] walk is what carries the party to the side of the `map03` door.
 5. **Training.** While a present member is more than a level short of the
    target, and the scene has a rest, it trains from that bed: out to where
    the encounters roll (the scene itself when its rest is close by, else
@@ -350,7 +354,11 @@ looks in again before it leaves the scene once one of them has come down.
 
 A stretch has the pad segment's walking budget, and four times its battle
 allowance: this hand takes the fights it can win, so a stretch's battles
-run long past the fleeing hand's.
+run long past the fleeing hand's. Its hop budget counts hops only: a
+scene's arrival pass and the scripted rides its rests and outings come back
+on (`retock`'s inn plays the dream and returns) are bounded by the frame
+budget instead, or a stretch that trains on the way (`dohaty` to `kor5`)
+runs out of hops on the right route.
 
 ### The carried-state diff
 
