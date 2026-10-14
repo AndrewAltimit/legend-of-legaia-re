@@ -17,6 +17,18 @@ impl<'a> FieldFlagsHost for FieldHostImpl<'a> {
         self.world.clock.script_frame_delta()
     }
 
+    /// `4C C5` / `4C C6`: NOT WIRED - released at once. Retail holds the
+    /// script until a system flag is set / cleared, and the shipped waits'
+    /// raisers are native code the engine does not run (`town01` P2[25]
+    /// clears `0x0A`, fires an actor animation and waits on `0x0A`, which no
+    /// script sets; `0x0B` is raised by the scripted-scene actor
+    /// `FUN_801D4A60`). Holding faithfully parks those records for good -
+    /// the opening's mist Rim Elm hand-off among them - so the world answers
+    /// as the port did before the arm was read as a wait.
+    fn system_flag_wait_released(&self, _idx: u16, _until_set: bool) -> bool {
+        true
+    }
+
     fn extra_flags(&self) -> u32 {
         self.world.flags.extra_flags
     }

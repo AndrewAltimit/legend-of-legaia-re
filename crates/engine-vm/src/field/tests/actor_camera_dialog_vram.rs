@@ -273,14 +273,24 @@ fn op_4c_n_e_sub_8_truncated_buffer_returns_unknown() {
 }
 
 #[test]
-fn op_4c_n_d_sub_0_field_se_trigger_advances_6() {
-    // [4C, 0xD0, 0x34, 0x12, 0x78, 0x56] → a = 0x1234, b = 0x5678.
-    let bytecode = [0x4Cu8, 0xD0, 0x34, 0x12, 0x78, 0x56];
+fn op_4c_n_d_sub_0_holds_on_the_cursor_until_a_press() {
+    // [4C, 0xD0, 0x1B, 0x01, 0x0F, 0x00] - town0c's lesson prompt at
+    // (0x11B, 0x0F). No press: draw the cursor, restore the entry PC.
+    let bytecode = [0x4Cu8, 0xD0, 0x1B, 0x01, 0x0F, 0x00];
     let mut host = TestHost::default();
     let mut ctx = FieldCtx::default();
     let r = step(&mut host, &mut ctx, &bytecode, 0);
+    assert_eq!(r, StepResult::Halt { final_pc: 0 });
+    assert_eq!(host.n_d_sub_0_prompts, vec![(0x11B, 0x0F)]);
+    // A confirm / cancel press advances past the six bytes.
+    host.n_d_sub_0_pressed = true;
+    let r = step(&mut host, &mut ctx, &bytecode, 0);
     assert_eq!(r, StepResult::Advance { next_pc: 6 });
-    assert_eq!(host.n_d_sub_0_se_triggers, vec![(0x1234, 0x5678)]);
+    assert_eq!(
+        host.n_d_sub_0_prompts.len(),
+        1,
+        "no cursor on the press frame"
+    );
 }
 
 #[test]

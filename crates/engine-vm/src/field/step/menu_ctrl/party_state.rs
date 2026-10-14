@@ -26,21 +26,21 @@ pub(super) fn op_4c_nd<H: FieldHost>(
     op0: u8,
 ) -> StepResult {
     match op0 & 0x0F {
-        // Sub-0: 6-byte `[4C, 0xD0, a_lo, a_hi, b_lo, b_hi]`.
-        // Field SE trigger with conditional u16 pair. The
-        // original at lines 6936-6944 of the dispatcher dump
-        // gates the call on three flag globals; PC advances by
-        // 6 in both branches. Host owns the gate state and the
-        // SE pipeline.
+        // Sub-0: 6-byte `[4C, 0xD0, x_lo, x_hi, y_lo, y_hi]` - hold on a
+        // blinking cursor until confirm or cancel is pressed
+        // (`0x801E2AE4..0x801E2B38`, see `FieldDialogMenuHost::press_prompt`).
         0 => {
             if operand + 5 > bytecode.len() {
                 return StepResult::Unknown { opcode, pc };
             }
-            let a = crate::field::dispatch_leaves::load_u16_le(&bytecode[operand + 1..]);
-            let b = crate::field::dispatch_leaves::load_u16_le(&bytecode[operand + 3..]);
-            host.op4c_nd_sub0_gated_call(a, b);
-            StepResult::Advance {
-                next_pc: pc + header_size + 5,
+            let x = crate::field::dispatch_leaves::load_u16_le(&bytecode[operand + 1..]);
+            let y = crate::field::dispatch_leaves::load_u16_le(&bytecode[operand + 3..]);
+            if host.press_prompt(x, y) {
+                StepResult::Advance {
+                    next_pc: pc + header_size + 5,
+                }
+            } else {
+                StepResult::Halt { final_pc: pc }
             }
         }
         // Sub-1: 4-byte `[4C, 0xD1, skip_lo, skip_hi]` - skip while a

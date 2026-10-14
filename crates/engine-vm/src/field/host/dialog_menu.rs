@@ -193,4 +193,24 @@ pub trait FieldDialogMenuHost {
         let _ = ctx;
         false
     }
+
+    /// Op `0x4C` outer-nibble-D sub-0 - the **press-a-button prompt**.
+    ///
+    /// `[4C, 0xD0, x_lo, x_hi, y_lo, y_hi]`, arm at `0x801E2AE4`. The arm
+    /// advances `s8 += 6`, then tests the new-press pad word `_DAT_8007B874`
+    /// against the confirm and cancel masks `_DAT_800846D0 | _DAT_800846D4`:
+    /// a press returns the advanced PC. Otherwise it calls
+    /// `FUN_8002B994(1, 1, x, y)` - the menu selection-cursor emitter, the
+    /// blinking cursor at `(x, y)` - and restores the entry PC
+    /// (`j 0x801DEE50` / `move s8,s4`), so the op re-runs next frame.
+    /// `town0c`'s art lessons and `balden`'s use it to hold a line until the
+    /// player answers.
+    ///
+    /// Returns `true` once confirm or cancel is newly pressed. On `false` the
+    /// host draws the cursor for this frame and the VM holds. The default
+    /// reports a press, so a host without input advances at once.
+    fn press_prompt(&mut self, x: u16, y: u16) -> bool {
+        let _ = (x, y);
+        true
+    }
 }

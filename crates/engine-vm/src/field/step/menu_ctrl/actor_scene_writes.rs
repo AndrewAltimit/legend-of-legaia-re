@@ -6,8 +6,8 @@ use super::*;
 // Ported subset covers sub-0 (move-table cancel, PC += 2),
 // sub-1 (flag-loop reset, PC += 2), sub-2 (field_42), sub-3
 // (script-table teleport, PC += 2), sub-4 (sub-tile
-// broadcast), sub-5/6 (party-flag conditional jumps via
-// `func_0x8003CE9C` + `party_flag_test`), sub-7 (sound
+// broadcast), sub-5/6 (system-flag waits through
+// `FUN_8003CE64`), sub-7 (sound
 // trigger), sub-8 (field_74 XOR), sub-9 (global-pair compare
 // gate - PC += 2 unless globals differ, then halt), sub-0xA
 // / sub-0xB / sub-0xC (slot table writes), sub-0xD
@@ -42,37 +42,27 @@ pub(super) fn op_4c_nc<H: FieldHost>(
                 next_pc: pc + header_size + 1,
             }
         }
-        // Sub-5: 4-byte `[4C, 0xC5, idx_lo, idx_hi]`. Reads the
-        // 16-bit flag index via `load_u16_le`, queries the host's
-        // party-flag bank, and jumps to `LAB_801E2A10` when the
-        // bit is **clear** (jump-if-zero polarity). The original's
-        // jump target is the dispatcher's "no-op fallthrough" -
-        // both branches advance PC += 4.
-        5 => {
+        // Sub-5 / sub-6: 4-byte `[4C, 0xC5|0xC6, idx_lo, idx_hi]` - a
+        // busy-wait on one system flag. Both arms advance `s8 += 4`, read the
+        // index halfword (`FUN_8003CE9C(operand + 1)`) and test it with
+        // `FUN_8003CE64`, the routine the `0x7x` TEST ops call. Sub-5
+        // (`0x801E2894`) joins `0x801E2A10`: a set flag returns the advanced
+        // PC, a clear one restores the entry PC - wait until set. Sub-6
+        // (`0x801E28B0`) has the opposite polarity at `0x801E28C4` - wait
+        // until clear. The shipped uses wait on flags `0x0A` / `0x0B`, which
+        // native code raises (see `FieldFlagsHost::system_flag_wait_released`).
+        5 | 6 => {
             if operand + 3 > bytecode.len() {
                 return StepResult::Unknown { opcode, pc };
             }
             let flag_idx = crate::field::dispatch_leaves::load_u16_le(&bytecode[operand + 1..]);
-            let _bit_set = host.op4c_nc_sub56_flag_test(flag_idx);
-            // Both polarities (5 = jump-if-zero, 6 = jump-if-nonzero)
-            // share the same dispatcher fallthrough - the original's
-            // `joined_r0x801e28c4` block returns `param_2 + 4` either
-            // way. The polarity selects which arm runs the
-            // host-visible side effect, but PC delta is constant.
-            StepResult::Advance {
-                next_pc: pc + header_size + 3,
-            }
-        }
-        // Sub-6: 4-byte. Sister of sub-5 with opposite polarity
-        // (jump-if-nonzero). PC always advances by 4.
-        6 => {
-            if operand + 3 > bytecode.len() {
-                return StepResult::Unknown { opcode, pc };
-            }
-            let flag_idx = crate::field::dispatch_leaves::load_u16_le(&bytecode[operand + 1..]);
-            let _bit_set = host.op4c_nc_sub56_flag_test(flag_idx);
-            StepResult::Advance {
-                next_pc: pc + header_size + 3,
+            let until_set = op0 & 0x0F == 5;
+            if host.system_flag_wait_released(flag_idx, until_set) {
+                StepResult::Advance {
+                    next_pc: pc + header_size + 3,
+                }
+            } else {
+                StepResult::Halt { final_pc: pc }
             }
         }
         // Sub-D: 2-byte. Wait for the cutscene camera mover: halt at PC

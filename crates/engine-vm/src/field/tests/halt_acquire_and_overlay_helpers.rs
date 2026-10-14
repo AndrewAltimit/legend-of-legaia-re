@@ -376,54 +376,46 @@ fn op_4c_n_c_sub_3_script_teleport_advances_2_bytes() {
     assert_eq!(host.n_c_sub_3_teleports, 1);
 }
 
+/// Raise system flag `idx` in the test host's MSB-first bank.
+fn raise_system_flag(host: &mut TestHost, idx: u16) {
+    host.ensure_sys_flag_capacity();
+    host.system_flags[usize::from(idx >> 3)] |= 0x80 >> (idx & 7);
+}
+
 #[test]
-fn op_4c_n_c_sub_5_party_flag_jz_advances_4_bytes() {
-    // [4C, 0xC5, 0x05, 0x00] - flag idx 5. Bit 5 in the host's bank is
-    // unset, so the original "jump-if-zero" path fires; both branches
-    // advance PC by 4.
-    let bytecode = [0x4Cu8, 0xC5, 0x05, 0x00];
+fn op_4c_n_c_sub_5_waits_until_the_system_flag_is_set() {
+    // `0x801E2894`: `FUN_8003CE64(idx)` then `0x801E2A10` - a clear flag
+    // restores the entry PC, a set one advances four.
+    let bytecode = [0x4Cu8, 0xC5, 0x0B, 0x00];
     let mut host = TestHost::default();
-    host.n_c_party_flag_bits.insert(5, false);
+    let mut ctx = FieldCtx::default();
+    let r = step(&mut host, &mut ctx, &bytecode, 0);
+    assert_eq!(r, StepResult::Halt { final_pc: 0 });
+    raise_system_flag(&mut host, 0x0B);
+    let r = step(&mut host, &mut ctx, &bytecode, 0);
+    assert_eq!(r, StepResult::Advance { next_pc: 4 });
+}
+
+#[test]
+fn op_4c_n_c_sub_5_reads_a_16_bit_little_endian_index() {
+    let bytecode = [0x4Cu8, 0xC5, 0x34, 0x01]; // 0x0134
+    let mut host = TestHost::default();
+    raise_system_flag(&mut host, 0x0134);
     let mut ctx = FieldCtx::default();
     let r = step(&mut host, &mut ctx, &bytecode, 0);
     assert_eq!(r, StepResult::Advance { next_pc: 4 });
 }
 
 #[test]
-fn op_4c_n_c_sub_5_party_flag_jz_advances_4_bytes_when_set() {
-    // Bit set → original's "jump-if-zero" doesn't fire; PC still += 4.
-    let bytecode = [0x4Cu8, 0xC5, 0x07, 0x00];
-    let mut host = TestHost::default();
-    host.n_c_party_flag_bits.insert(7, true);
-    let mut ctx = FieldCtx::default();
-    let r = step(&mut host, &mut ctx, &bytecode, 0);
-    assert_eq!(r, StepResult::Advance { next_pc: 4 });
-}
-
-#[test]
-fn op_4c_n_c_sub_5_reads_16_bit_index_via_helper() {
-    // Verify the dispatcher reads the index through load_u16_le by
-    // setting two distinct flag bits and checking which one was queried.
-    let bytecode = [0x4Cu8, 0xC5, 0x34, 0x12]; // 0x1234
-    let mut host = TestHost::default();
-    host.n_c_party_flag_bits.insert(0x1234, true);
-    host.n_c_party_flag_bits.insert(0x3412, false);
-    let mut ctx = FieldCtx::default();
-    let r = step(&mut host, &mut ctx, &bytecode, 0);
-    assert_eq!(r, StepResult::Advance { next_pc: 4 });
-    // The 0x1234 bit is set in the bank - the dispatcher's load_u16_le
-    // must produce 0x1234 (LE), not 0x3412 (BE).
-    assert!(*host.n_c_party_flag_bits.get(&0x1234).unwrap());
-}
-
-#[test]
-fn op_4c_n_c_sub_6_party_flag_jnz_advances_4_bytes() {
-    // Same shape as sub-5 but opposite polarity. Both polarities share
-    // PC += 4 either way.
+fn op_4c_n_c_sub_6_waits_until_the_system_flag_is_clear() {
+    // `0x801E28B0` / `0x801E28C4`: the opposite polarity.
     let bytecode = [0x4Cu8, 0xC6, 0x09, 0x00];
     let mut host = TestHost::default();
-    host.n_c_party_flag_bits.insert(9, false);
+    raise_system_flag(&mut host, 0x09);
     let mut ctx = FieldCtx::default();
+    let r = step(&mut host, &mut ctx, &bytecode, 0);
+    assert_eq!(r, StepResult::Halt { final_pc: 0 });
+    host.system_flags.iter_mut().for_each(|b| *b = 0);
     let r = step(&mut host, &mut ctx, &bytecode, 0);
     assert_eq!(r, StepResult::Advance { next_pc: 4 });
 }

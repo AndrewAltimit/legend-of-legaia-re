@@ -165,10 +165,6 @@ impl FieldFlagsHost for ProbeHost {
         self.yes
     }
 
-    fn op4c_nc_sub56_flag_test(&self, _flag_idx: u16) -> bool {
-        self.yes
-    }
-
     fn flag_bit_is_set(&self, _ctx: &FieldCtx, _bank: u8, _bit: u8) -> bool {
         self.yes
     }

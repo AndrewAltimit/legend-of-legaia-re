@@ -186,7 +186,6 @@ struct TestHost {
     n_c_sub_3_teleports: u32,
     n_c_sub_d_queries: u32,
     n_c_sub_d_mover_idle: bool,
-    n_c_party_flag_bits: std::collections::HashMap<u16, bool>,
     n_e_sub_4_outside: bool,
     n_e_sub_4_bboxes: std::cell::RefCell<Vec<[i16; 4]>>,
     n_e_sub_5_coin_deltas: Vec<i32>,
@@ -206,7 +205,8 @@ struct TestHost {
     n_e_sub_3_camera_syncs: Vec<u8>,            // actor_id values
     n_e_sub_7_camera_animates: Vec<(u32, u16)>, // (target, duration)
     n_e_sub_8_camera_zooms: Vec<(i16, i16, i16, i16)>, // (zoom_x, zoom_y, zoom_z, mode)
-    n_d_sub_0_se_triggers: Vec<(u16, u16)>,
+    n_d_sub_0_prompts: Vec<(u16, u16)>,
+    n_d_sub_0_pressed: bool,
     n_5_sub_3_dialog_waits: u32,
     n_5_sub_4_dialog_active: bool,
     n_5_sub_4_polls: u32,
@@ -297,10 +297,6 @@ impl FieldFlagsHost for TestHost {
 
     fn snapshot_play_clock(&mut self) {
         self.n_e_snapshot_84570_calls += 1;
-    }
-
-    fn op4c_nc_sub56_flag_test(&self, flag_idx: u16) -> bool {
-        *self.n_c_party_flag_bits.get(&flag_idx).unwrap_or(&false)
     }
 }
 
@@ -597,10 +593,6 @@ impl FieldAudioHost for TestHost {
     fn apply_item_effect(&mut self, b1: u8, b2: u8) {
         self.n_c_sound_triggers.push((b1, b2));
     }
-
-    fn op4c_nd_sub0_gated_call(&mut self, a: u16, b: u16) {
-        self.n_d_sub_0_se_triggers.push((a, b));
-    }
 }
 
 impl FieldPartyInventoryHost for TestHost {
@@ -693,6 +685,13 @@ impl FieldPartyInventoryHost for TestHost {
 }
 
 impl FieldDialogMenuHost for TestHost {
+    fn press_prompt(&mut self, x: u16, y: u16) -> bool {
+        if !self.n_d_sub_0_pressed {
+            self.n_d_sub_0_prompts.push((x, y));
+        }
+        self.n_d_sub_0_pressed
+    }
+
     fn open_dialog(
         &mut self,
         text_id: u16,
