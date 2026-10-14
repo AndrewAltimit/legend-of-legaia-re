@@ -85,6 +85,8 @@ pub(super) fn play_beats(
     // playing the next stage, so stagers are approached every round until
     // a contact gains nothing.
     let mut stager_spent: BTreeSet<usize> = BTreeSet::new();
+    // Box-polled records stood in, with the flags they were stood in under.
+    let mut boxes_stood: BTreeSet<(u8, BTreeSet<u16>)> = BTreeSet::new();
     // A walk-on beat that ran and gained nothing ran on a gate its own
     // script tests and failed (`rayman` P2[18] wants `0x1FD..0x1FF`, which
     // the talks of the same pass raise): it plays again once the flags it
@@ -275,8 +277,17 @@ pub(super) fn play_beats(
             }
         }
         // A talk is re-tried each round while its flag stays clear: its
-        // record may branch on a flag the previous round's beats set.
-        for slot in talk_beats(session, &mf, &man) {
+        // record may branch on a flag the previous round's beats set. The
+        // continuous hand re-tries a dry talk at once when a later talk of
+        // the same round raises a flag, before the round's walk-ons can
+        // carry the party elsewhere: `doman`'s P1[3] has nothing to say
+        // until Dr. Usha (P1[15]) has raised `0x379`, and the walk-on after
+        // her talk rides the lift up to the street, a walk component and a
+        // code lock away from P1[3].
+        let mut talks: VecDeque<u8> = talk_beats(session, &mf, &man).into();
+        let mut dry: Vec<u8> = Vec::new();
+        let mut requeued = 0;
+        while let Some(slot) = talks.pop_front() {
             if let Some(w) = wiped(session) {
                 return Err(w);
             }
@@ -299,10 +310,29 @@ pub(super) fn play_beats(
                 finish(session, log, ran);
                 return Ok(Some(s));
             }
+            if pad_hand() && continuous::PLAYS_ON.with(std::cell::Cell::get) {
+                hold_talk_box(session, &mf, &man, slot);
+            }
             let r = talk_to(session, slot);
             let r = fight_committed(session, r);
             if matches!(r, Run::Released) && flags_of_world(session) == f0 {
                 note_dry_talk(session, slot);
+                dry.push(slot);
+            } else if pad_hand()
+                && continuous::PLAYS_ON.with(std::cell::Cell::get)
+                && flags_of_world(session) != f0
+                && requeued < 4
+            {
+                let live: Vec<u8> = dry
+                    .iter()
+                    .copied()
+                    .filter(|&d| !talk_ran_dry(session, d) && !talks.contains(&d))
+                    .collect();
+                dry.retain(|d| !live.contains(d));
+                for d in live.into_iter().rev() {
+                    requeued += 1;
+                    talks.push_front(d);
+                }
             }
             trace_beat(session, &f0, || format!("{name} talk P1[{slot}] -> {r:?}"));
             match r {
@@ -315,12 +345,114 @@ pub(super) fn play_beats(
                 Run::Released | Run::Parked(_) => {}
             }
         }
+        // A partition-1 record that polls a box of the player's tiles is a
+        // walk-on of its own: `doman` P1[18], Dr. Usha's intercom, runs
+        // while the player stands on (40..41, 81), and the continuous hand
+        // stands there for what it raises (the password's `0x36E`, the
+        // lift's `0x371`).
+        // Set when a band the box called carried the party off: the round's
+        // walk-ons wait for the next round, after its talks. Walked straight
+        // after the lift ride, `doman` P2[1] rides the party back up before
+        // Dr. Usha is spoken to.
+        let mut carried = false;
+        if pad_hand() && continuous::PLAYS_ON.with(std::cell::Cell::get) {
+            for (slot, tiles) in box_poll_beats(session, &mf, &man) {
+                if let Some(w) = wiped(session) {
+                    return Err(w);
+                }
+                pad_budget(session)?;
+                if ran >= MAX_BEATS || !boxes_stood.insert((slot, flags_of_world(session))) {
+                    continue;
+                }
+                ran += 1;
+                let f0 = flags_of_world(session);
+                let mut r = talk_to(session, slot);
+                if std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
+                    eprintln!("    [box] {name} P1[{slot}] talk -> {r:?}");
+                }
+                for &t in &tiles {
+                    r = match pad_walk(
+                        session,
+                        (i16::from(t.0), i16::from(t.1)),
+                        &pad_avoid(session, Some((i16::from(t.0), i16::from(t.1)))),
+                        0,
+                    ) {
+                        Ok(Walk::Entered(s)) => Run::Entered(s),
+                        Ok(Walk::Arrived) => run_while_moving(session, DEEP_EXIT_TICKS),
+                        Err(e) => Run::Parked(e),
+                    };
+                    if !matches!(&r, Run::Parked(e) if e.contains("no walkable path")) {
+                        break;
+                    }
+                }
+                trace_beat(session, &f0, || format!("{name} box P1[{slot}] -> {r:?}"));
+                // What the box called is taken at once: the lift band P2[7]
+                // waits on the `0x371` the intercom raises, and P2[3], met
+                // first in record order, sends the lift back up (clears it).
+                if matches!(r, Run::Released) {
+                    let gained: BTreeSet<u16> =
+                        flags_of_world(session).difference(&f0).copied().collect();
+                    for rec in bands_testing(&mf, &man, &gained) {
+                        let Some(mut tiles) = band.get(&rec).cloned() else {
+                            continue;
+                        };
+                        let (px, pz) = player_xz(session);
+                        let me = dispatch_tile(px, pz);
+                        tiles.sort_by_key(|&(x, z)| {
+                            (i32::from(x) - me.0).abs() + (i32::from(z) - me.1).abs()
+                        });
+                        let t = tiles[0];
+                        let f1 = flags_of_world(session);
+                        r = Run::Parked("no tile".into());
+                        for &t in &tiles {
+                            r = match pad_step_onto(session, t) {
+                                Ok(Walk::Entered(s)) => Run::Entered(s),
+                                Ok(Walk::Arrived) => run_while_moving(session, DEEP_EXIT_TICKS),
+                                Err(e) => Run::Parked(e),
+                            };
+                            // A ride that carried the party off is the beat
+                            // played, whatever the walk made of it.
+                            let (px, pz) = player_xz(session);
+                            let at = dispatch_tile(px, pz);
+                            let near =
+                                (at.0 - i32::from(t.0)).abs() + (at.1 - i32::from(t.1)).abs() <= 2;
+                            if !near {
+                                carried = true;
+                            }
+                            if !matches!(r, Run::Parked(_)) || !near {
+                                break;
+                            }
+                        }
+                        trace_beat(session, &f1, || {
+                            format!(
+                                "{name} walk P2[{rec}] at {t:?} (called by P1[{slot}]) -> {r:?}"
+                            )
+                        });
+                        if !matches!(r, Run::Released | Run::Parked(_)) {
+                            break;
+                        }
+                    }
+                }
+                match r {
+                    Run::Entered(s) => {
+                        finish(session, log, ran);
+                        return Ok(Some(s));
+                    }
+                    Run::Battle(b) => return Err(format!("box P1[{slot}]: {b}")),
+                    Run::Error(e) => return Err(e),
+                    Run::Released | Run::Parked(_) => {}
+                }
+            }
+        }
         let boss_band_live = first_tile.keys().any(|&rec| {
             record_stages_fight(&mf, &man, 2, usize::from(rec))
                 && partition2_record_gates(&mf, &man, usize::from(rec))
                     .is_some_and(|(c1, c2)| session.host.world.p2_record_gates_pass(&c1, &c2))
         });
         for (&rec, &tile) in &first_tile {
+            if carried {
+                break;
+            }
             if let Some(w) = wiped(session) {
                 return Err(w);
             }
@@ -1042,4 +1174,66 @@ pub(super) fn band_is_bare_link(
     !sites.iter().any(|s| {
         s.kind == FlagKind::Set && !w.system_flag_test(s.flag) && !lowered.contains(&s.flag)
     })
+}
+
+/// Before a talk whose branch waits on a flag a party member raises by
+/// standing in a box ([`talk_box_gate`]): inside a three-actor talk, walk
+/// the leader into the box and hand control to the next member (Square),
+/// who goes to the talk while the one left behind holds the flag up. Tried
+/// with each member as the one left in the box, until the flag stays up.
+fn hold_talk_box(
+    session: &mut NativeSession,
+    mf: &legaia_scene_formats::man_section::ManFile,
+    man: &[u8],
+    slot: u8,
+) {
+    let Some((flag, tiles)) = talk_box_gate(session, mf, man, slot) else {
+        return;
+    };
+    if session.host.world.dialog.three_actor_talk.is_none() {
+        return;
+    }
+    let trace = std::env::var_os("LEGAIA_FGL_TRACE").is_some();
+    // The box's middle first: the entry script carves its edges back out
+    // with half-tile `4C E4` tests (`nilboa` raises `0x4F2` only for a
+    // member near the centre of (54, 63)).
+    let mut tiles = tiles;
+    let (cx, cz) = tiles.iter().fold((0i32, 0i32), |(x, z), t| {
+        (x + i32::from(t.0), z + i32::from(t.1))
+    });
+    let n = tiles.len().max(1) as i32;
+    tiles.sort_by_key(|t| (i32::from(t.0) * n - cx).abs() + (i32::from(t.1) * n - cz).abs());
+    for _ in 0..3 {
+        let avoid = pad_avoid(session, None);
+        let stood = tiles
+            .iter()
+            .any(|&t| matches!(pad_walk(session, t, &avoid, 0), Ok(Walk::Arrived)));
+        if stood {
+            let _ = run_while_moving(session, 120);
+            for _ in 0..8 {
+                if session.tick().is_err() {
+                    break;
+                }
+            }
+        }
+        if !swap_leader(session) {
+            return;
+        }
+        for _ in 0..8 {
+            if session.tick().is_err() {
+                break;
+            }
+        }
+        let up = session.host.world.system_flag_test(flag);
+        if trace {
+            eprintln!(
+                "    [box-hold] P1[{slot}] stood {stood}, 0x{flag:03X} up {up}, talk at {:?}, leader at {:?}",
+                session.host.world.npcs.positions.get(&slot),
+                player_xz(session)
+            );
+        }
+        if up {
+            return;
+        }
+    }
 }

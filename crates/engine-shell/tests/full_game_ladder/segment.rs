@@ -146,6 +146,7 @@ pub(super) fn traverse(
         if here != last_here {
             came_from = std::mem::replace(&mut last_here, here.clone());
         }
+        let f_arrival = flags_of_world(session);
         match run_while_moving(session, SCRIPT_CEILING) {
             Run::Entered(s) => {
                 if upkeep {
@@ -157,8 +158,14 @@ pub(super) fn traverse(
                 // straight back where it came from was a stay, not a visit:
                 // `jiji`'s inn (P2[9]) sleeps the party over in `ropeway`
                 // and its arrival cutscene returns it to `jiji` before the
-                // station's own beats can play.
-                if vias.get(via).is_some_and(|w| *w == here) && s != came_from {
+                // station's own beats can play. A dream that plays and
+                // wakes the party where it fell asleep is a visit all the
+                // same: its arrival script is the beat, and it raises the
+                // flag the waking reads (`urudre3` P2[0] raises `0x3F4`,
+                // on which `uru`'s entry script spawns the waking P2[34]).
+                if vias.get(via).is_some_and(|w| *w == here)
+                    && (s != came_from || flags_of_world(session) != f_arrival)
+                {
                     via += 1;
                     trail.push(format!("[via {here}: arrival script]"));
                 }

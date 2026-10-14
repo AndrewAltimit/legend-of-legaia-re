@@ -37,10 +37,12 @@ thread_local! {
     /// continuous run and on every stretch that has none.
     pub(super) static ERRANDS: std::cell::RefCell<Vec<Errand>> =
         const { std::cell::RefCell::new(Vec::new()) };
-    /// Talks that ran and raised nothing, keyed by scene, slot and the
-    /// errand items the bag held then: a chest that wants a loaf the bag
-    /// does not hold is not worth a crossing until the bag changes.
-    static DRY_TALKS: std::cell::RefCell<HashSet<(String, u8, u32)>> = Default::default();
+    /// Talks that ran and raised nothing, keyed by scene, slot, the errand
+    /// items the bag held then and the state of the system flags the talk's
+    /// record tests ([`rest_flags_key`]): a chest that wants a loaf the bag
+    /// does not hold is not worth a crossing until the bag changes, and
+    /// `doman`'s P1[3] has nothing to say until Dr. Usha has raised `0x379`.
+    static DRY_TALKS: std::cell::RefCell<HashSet<(String, u8, u32, u64)>> = Default::default();
 }
 
 /// The errands of a stretch whose waypoints and milestone scene are
@@ -164,23 +166,29 @@ fn errand_holdings(w: &legaia_engine_core::world::World) -> u32 {
     })
 }
 
-/// Remember that talk `slot` of the loaded scene ran and raised nothing.
-pub(super) fn note_dry_talk(session: &NativeSession, slot: u8) {
-    let key = (
+/// A [`DRY_TALKS`] key for talk `slot` of the loaded scene.
+fn dry_talk_key(session: &NativeSession, slot: u8) -> (String, u8, u32, u64) {
+    let tested = scene_man_and_triggers(session).map_or(0, |(mf, man, _)| {
+        rest_flags_key(session, &mf, &man, 1, usize::from(slot))
+    });
+    (
         scene_name(session),
         slot,
         errand_holdings(&session.host.world),
-    );
+        tested,
+    )
+}
+
+/// Remember that talk `slot` of the loaded scene ran and raised nothing.
+pub(super) fn note_dry_talk(session: &NativeSession, slot: u8) {
+    let key = dry_talk_key(session, slot);
     DRY_TALKS.with(|d| d.borrow_mut().insert(key));
 }
 
-/// Did talk `slot` of the loaded scene run dry with the bag as it is?
+/// Did talk `slot` of the loaded scene run dry with the bag as it is and
+/// under the flags its record reads?
 pub(super) fn talk_ran_dry(session: &NativeSession, slot: u8) -> bool {
-    let key = (
-        scene_name(session),
-        slot,
-        errand_holdings(&session.host.world),
-    );
+    let key = dry_talk_key(session, slot);
     DRY_TALKS.with(|d| d.borrow().contains(&key))
 }
 
