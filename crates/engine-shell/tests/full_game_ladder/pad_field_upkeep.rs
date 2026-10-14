@@ -608,7 +608,264 @@ pub(super) fn pad_equip_best(session: &mut NativeSession) -> usize {
             }
         );
     }
+    if continuous::PLAYS_ON.with(std::cell::Cell::get) {
+        pad_equip_goods(session);
+    }
     changed
+}
+
+/// How much the continuous hand wants an accessory passive (the ability-bit
+/// index of `w.tables.accessory_passives`) on a member: the fight-winning
+/// ones first, then the guards and the rest. `0` for one it never wears -
+/// Rage takes the member's commands away, Zero Defense and Last Attack
+/// cost more than they give, No Escape keeps the party in a fight it is
+/// running from - and for the passives that only pay on the road.
+fn goods_score(passive: u8) -> u32 {
+    match passive {
+        0x01 => 100,                     // HP Boost 2
+        0x0D => 95,                      // Attack x2
+        0x06 => 90,                      // ATK Boost
+        0x2C => 85,                      // Arts Power
+        0x09 => 80,                      // UDF & LDF Boost
+        0x00 => 75,                      // HP Boost 1
+        0x2A | 0x29 => 70,               // Maximum AP, AP Boost 2
+        0x0A | 0x11 => 65,               // SPD Boost, First Attack
+        0x25 | 0x27 => 60,               // HP After, Final Heal
+        0x07 | 0x08 => 55,               // UDF / LDF Boost
+        0x0E | 0x0F | 0x13 => 50,        // Guard Attack, Counterattack, Bull's Eye
+        0x0B | 0x05 | 0x04 => 45,        // INT Boost, MP Used Down
+        0x28 | 0x2B | 0x14 => 40,        // AP Boost 1, AP Used Down, Shield Boost
+        0x1C | 0x24 => 35,               // Master Guard, All Guard
+        0x03 | 0x02 | 0x26 => 30,        // MP Boost, MP After
+        0x0C => 25,                      // AGL Boost
+        0x16..=0x1B | 0x1D..=0x23 => 20, // single status and element guards
+        0x2F | 0x31 | 0x33 | 0x35 => 10,
+        _ => 0,
+    }
+}
+
+/// The Goods slots of the equipment record (engine slots 5..=7).
+const GOODS_SLOTS: [u8; 3] = [5, 6, 7];
+
+fn goods_value(w: &legaia_engine_core::world::World, id: u8) -> u32 {
+    w.tables
+        .accessory_passives
+        .passive_index(id)
+        .map_or(0, goods_score)
+}
+
+/// The next (member, Goods slot) [`pad_equip_goods`] fills: an empty slot
+/// of a present member, while the bag holds an accessory worth wearing,
+/// past the ones whose candidate list showed nothing wanted.
+fn next_goods_slot(
+    w: &legaia_engine_core::world::World,
+    skipped: &HashSet<(u8, u8)>,
+) -> Option<(u8, u8)> {
+    if !w
+        .party
+        .inventory
+        .iter()
+        .any(|(&id, &n)| n > 0 && goods_value(w, id) > 0)
+    {
+        return None;
+    }
+    w.present_party_list().into_iter().find_map(|m| {
+        let slots = w
+            .party
+            .roster
+            .members
+            .get(usize::from(m))?
+            .equipment()
+            .slots;
+        GOODS_SLOTS
+            .iter()
+            .find(|&&s| slots[usize::from(s)] == 0 && !skipped.contains(&(m, s)))
+            .map(|&s| (m, s))
+    })
+}
+
+/// The passives member `m` already wears in its Goods slots.
+fn worn_passives(w: &legaia_engine_core::world::World, m: u8) -> Vec<u8> {
+    w.party
+        .roster
+        .members
+        .get(usize::from(m))
+        .map(|r| {
+            GOODS_SLOTS
+                .iter()
+                .map(|&g| r.equipment().slots[usize::from(g)])
+                .filter(|&id| id != 0)
+                .filter_map(|id| w.tables.accessory_passives.passive_index(id))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// Fill each present member's empty Goods slots from the bag, with the pad,
+/// as a player does: Best Equipment (retail's `FUN_801CF760`) ranks only the
+/// four armament slots, so an accessory a chest or a counter gave the run
+/// stays in the bag until it is put on by hand. Start, Equip, the member,
+/// the Goods row, the accessory, Yes. A slot already worn is left alone, and
+/// a member never wears two of one passive. Returns how many it put on.
+pub(super) fn pad_equip_goods(session: &mut NativeSession) -> usize {
+    use legaia_engine_core::field_menu_dispatch::FieldMenuSubsession;
+    use legaia_engine_menus::equip_session::{EquipState, browse_row_for_slot};
+    use legaia_engine_menus::field_menu::{FieldMenuPhase, FieldMenuRow};
+    let mut skipped: HashSet<(u8, u8)> = HashSet::new();
+    if !walking(session)
+        || !released(session)
+        || next_goods_slot(&session.host.world, &skipped).is_none()
+    {
+        return 0;
+    }
+    let count_worn = |w: &legaia_engine_core::world::World| -> usize {
+        w.present_party_list()
+            .iter()
+            .filter_map(|&m| w.party.roster.members.get(usize::from(m)))
+            .map(|r| {
+                GOODS_SLOTS
+                    .iter()
+                    .filter(|&&s| r.equipment().slots[usize::from(s)] != 0)
+                    .count()
+            })
+            .sum()
+    };
+    let before = count_worn(&session.host.world);
+    open_pause_menu(session);
+    if session.field_menu.is_none() {
+        return 0;
+    }
+    let equip_row = FieldMenuRow::Equip.index();
+    let list = session.host.world.present_party_list();
+    let pos = |s: u8| list.iter().position(|&x| x == s).unwrap_or(0);
+    // The item the open candidate list is aiming at, once chosen.
+    let mut aim: Option<u8> = None;
+    for _ in 0..600 {
+        let Some(menu) = session.field_menu.as_ref() else {
+            break;
+        };
+        let target = next_goods_slot(&session.host.world, &skipped);
+        let pad = match (session.field_menu_sub.as_ref(), target) {
+            (None, None) => PadButton::Circle.mask(),
+            (None, Some(_)) => match menu.phase() {
+                FieldMenuPhase::Browsing { cursor } if cursor < equip_row => PadButton::Down.mask(),
+                FieldMenuPhase::Browsing { cursor } if cursor > equip_row => PadButton::Up.mask(),
+                FieldMenuPhase::Browsing { .. } => PadButton::Cross.mask(),
+                _ => 0,
+            },
+            (
+                Some(FieldMenuSubsession::Equip {
+                    session: es,
+                    char_slot,
+                    picking,
+                }),
+                Some((t, slot)),
+            ) => {
+                if *picking {
+                    match pos(*char_slot).cmp(&pos(t)) {
+                        std::cmp::Ordering::Less => PadButton::Down.mask(),
+                        std::cmp::Ordering::Greater => PadButton::Up.mask(),
+                        std::cmp::Ordering::Equal => PadButton::Cross.mask(),
+                    }
+                } else if *char_slot != t {
+                    PadButton::Circle.mask()
+                } else {
+                    match es.state() {
+                        EquipState::SlotPicker { cursor } => {
+                            aim = None;
+                            match cursor.cmp(&browse_row_for_slot(slot)) {
+                                std::cmp::Ordering::Less => PadButton::Down.mask(),
+                                std::cmp::Ordering::Greater => PadButton::Up.mask(),
+                                std::cmp::Ordering::Equal => PadButton::Cross.mask(),
+                            }
+                        }
+                        EquipState::ItemPicker { slot: s, cursor } if s == slot => {
+                            let w = &session.host.world;
+                            let worn = worn_passives(w, t);
+                            let rows = es.items_for_slot(slot);
+                            let best = aim.or_else(|| {
+                                rows.iter()
+                                    .filter(|r| !r.equipped && r.owned && goods_value(w, r.id) > 0)
+                                    .filter(|r| {
+                                        w.tables
+                                            .accessory_passives
+                                            .passive_index(r.id)
+                                            .is_none_or(|p| !worn.contains(&p))
+                                    })
+                                    .max_by_key(|r| (goods_value(w, r.id), std::cmp::Reverse(r.id)))
+                                    .map(|r| r.id)
+                            });
+                            aim = best;
+                            let row = best
+                                .and_then(|id| rows.iter().position(|r| r.id == id && !r.equipped));
+                            match row {
+                                Some(k) => match usize::from(cursor).cmp(&k) {
+                                    std::cmp::Ordering::Less => PadButton::Down.mask(),
+                                    std::cmp::Ordering::Greater => PadButton::Up.mask(),
+                                    std::cmp::Ordering::Equal => PadButton::Cross.mask(),
+                                },
+                                None => {
+                                    skipped.insert((t, slot));
+                                    PadButton::Circle.mask()
+                                }
+                            }
+                        }
+                        EquipState::Confirm {
+                            item_id, cursor, ..
+                        } if Some(item_id) == aim => {
+                            if cursor == 0 {
+                                PadButton::Cross.mask()
+                            } else {
+                                PadButton::Left.mask()
+                            }
+                        }
+                        EquipState::Done(_) => 0,
+                        _ => {
+                            // Whatever else opened is backed out of, and the
+                            // slot it was for is not asked about again.
+                            skipped.insert((t, slot));
+                            PadButton::Circle.mask()
+                        }
+                    }
+                }
+            }
+            (Some(_), _) => PadButton::Circle.mask(),
+        };
+        if pad == 0 {
+            let _ = session.tick();
+            continue;
+        }
+        tap_pad(session, pad);
+    }
+    for _ in 0..16 {
+        if session.field_menu.is_none() {
+            break;
+        }
+        tap_pad(session, PadButton::Circle.mask());
+    }
+    let after = count_worn(&session.host.world);
+    let put_on = after.saturating_sub(before);
+    if std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
+        let w = &session.host.world;
+        let worn: Vec<[u8; 3]> = w
+            .present_party_list()
+            .iter()
+            .filter_map(|&m| w.party.roster.members.get(usize::from(m)))
+            .map(|r| {
+                let e = r.equipment().slots;
+                [e[5], e[6], e[7]]
+            })
+            .collect();
+        eprintln!(
+            "    [equip] goods: {put_on} put on; worn {worn:02X?}; menu {}",
+            if session.field_menu.is_some() {
+                "STILL OPEN"
+            } else {
+                "closed"
+            }
+        );
+    }
+    put_on
 }
 
 /// Walk into a fight ready, as the continuous hand does: restoratives up
