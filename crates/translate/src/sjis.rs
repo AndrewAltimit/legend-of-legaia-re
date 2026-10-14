@@ -186,10 +186,15 @@ pub fn step(man: &[u8], pc: usize) -> Option<(usize, Option<usize>)> {
         {
             return Some((name_lead + 1 + 2 * n + 1 - pc, Some(name_lead)));
         }
-        if let Some(n) = line_at(man, count_off)
-            && man.get(count_off + 1 + 2 * n) == Some(&0)
+        // The inline MES form takes its length from the operand's third
+        // byte (`lbu a0,0x2(s6)` at `0x801E08EC`, `s6` = op + 1) and its line
+        // starts at operand + 3 + length.
+        let mes_len = *man.get(pc + 3)? as usize;
+        let mes_lead = pc + 4 + mes_len;
+        if let Some(n) = line_at(man, mes_lead)
+            && man.get(mes_lead + 1 + 2 * n) == Some(&0)
         {
-            return Some((count_off + 1 + 2 * n + 1 - pc, Some(count_off)));
+            return Some((mes_lead + 1 + 2 * n + 1 - pc, Some(mes_lead)));
         }
     }
     match field_disasm::decode(man, pc) {
@@ -275,5 +280,13 @@ mod tests {
             0x49, 0x00, 0x00, 0x02, 0x10, 0x11, 0x01, 0x8C, 0xAE, 0x00, 0x21,
         ];
         assert_eq!(step(&shop, 0), Some((10, Some(6))));
+    }
+
+    #[test]
+    fn step_sizes_an_inline_mes_from_the_third_operand_byte() {
+        // 49 00 <b> len=1 arg N=1 tokens 00: retail reads the length at
+        // operand[2] and the line at operand + 3 + length.
+        let mes = [0x49, 0x00, 0x00, 0x01, 0x00, 0x01, 0x8C, 0xAE, 0x00, 0x21];
+        assert_eq!(step(&mes, 0), Some((9, Some(5))));
     }
 }
