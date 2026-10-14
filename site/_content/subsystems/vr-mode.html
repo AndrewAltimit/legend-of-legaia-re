@@ -11,7 +11,7 @@
     <dt>What forks</dt><dd>Only the framebuffer / viewport and the view-projection matrix - geometry, shaders and draw order are the flat renderer's, untouched</dd>
     <dt>Scale</dt><dd>One number, world units per metre: <code>2000</code> for the continent diorama, <code>~76</code> for human scale in a town; grips rescale live</dd>
     <dt>Modes</dt><dd>Play page: Spectator / First-person (what Vahn sees). World overview: Diorama / On the ground</dd>
-    <dt>Retail</dt><dd>None of this exists on the disc - VR sits alongside the port's other explicit toggles</dd>
+    <dt>Retail</dt><dd>None of this exists on the disc - VR is one of the port's <a href="engine.html#fidelity">enhancements</a>, and unlike enhanced lighting or ground fog it stays off until asked for</dd>
   </dl>
   <figure class="diagram">
     <svg viewBox="0 0 880 180" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Per-frame VR fork: each XR frame binds the XRWebGLLayer framebuffer, then for each eye scissors to that eye's viewport and swaps the view-projection builder for the eye's projection times inverse view times the world transform W, and calls the page's unchanged draw closure.">

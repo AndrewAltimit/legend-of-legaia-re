@@ -98,8 +98,8 @@
   <p>Chests and scripts (the field VM&rsquo;s <code>GIVE_ITEM</code> op), battle rewards, shops and the equip swap-back all change the bag through one small helper family, passing item ids or helper-returned slot numbers. The field, battle and menu overlays also read slots directly. There is no raw-index sort or swap primitive anywhere in retail.</p>
   <ul class="bullets">
     <li><strong>One direct write.</strong> The pause menu&rsquo;s Throw Out confirm (<code>FUN_801D8734</code> in PROT 0899) zeroes the selected slot&rsquo;s id and count with two <code>sb</code> of its own (<code>0x801D88FC</code> / <code>0x801D8910</code>).</li>
-    <li><strong>Two readers ignore the window.</strong> Both are capture-class cast modules: PROT 0941 (Steal) clamps its random slot against a live count; PROT 0954 (Fatal Decision) samples all 256 slots unclamped - the only reader that reaches the key-item band without going through a window.</li>
-    <li><strong>The census is closed, not sampled.</strong> The array sits <code>0xA640</code> above <code>gp</code>, so no <code>gp</code>-relative instruction can reach it; neither its base nor the block base appears as a literal word anywhere on the disc; and every one of the 125 accesses materialises the block base inline.</li>
+    <li><strong>Two readers ignore the window.</strong> Both are capture-class cast modules: PROT 0941 (Steal / Stone Circle) draws over the whole array and tests its pick only against the window-start halfword (<code>0x801F7828</code>; full rules <a href="#slot-order">below</a>); PROT 0954 (Fatal Decision) has no such test and samples all 256 slots, accepting the first whose id, count and item price are all non-zero within <code>0x400</code> tries - the only reader that reaches the key-item band without going through the menu window.</li>
+    <li><strong>The census is closed, not sampled.</strong> The array sits <code>0xA640</code> above <code>gp</code>, so no <code>gp</code>-relative instruction can reach it; neither its base nor the block base appears as a literal word anywhere on the disc; and every one of the 125 accesses materialises the block base inline. Only two are absolute (the new-game seed&rsquo;s slot-0 write); no instruction on the disc names an address inside the key-item band.</li>
   </ul>
   <table class="data-table">
     <thead><tr><th>Helper</th><th>What it does</th></tr></thead>
@@ -139,8 +139,18 @@
   <p>Because the bag is never compacted behind the player&rsquo;s back, holes are real, and two consumers address it by <em>slot</em> rather than by item:</p>
   <ul class="bullets">
     <li><strong>The pause item list.</strong> The selected row&rsquo;s payload is a bag slot index. The list hides empty slots, and nothing compacts the bag when the menu opens (the normalize helper has one call site, a guarded field-VM arm), so the row number and the slot number part ways as soon as a hole sits above the selection. Throw Out zeroes the slot the row names.</li>
-    <li><strong>The enemy Steal.</strong> PROT 0941 draws random slots over the whole array and accepts only a slot with an id, a count and a non-zero <em>shop price</em> - 96 of the 256 item ids are unpriced, so quest and found-only items can never be stolen. The removal, though, goes through the windowed consume helper: a steal that lands in the half the window does not cover announces an item the party keeps.</li>
+    <li><strong>The enemy Steal.</strong> PROT 0941 is a rejection sampler over the physical array, with four rules (below). The price test is the field a shop prices a purchase from, so quest and found-only items - 96 of the 256 ids are unpriced - can never be stolen. The removal goes through the windowed consume helper: a steal that lands in the half the window does not cover announces an item the party keeps. That asymmetry is retail&rsquo;s.</li>
   </ul>
+  <table class="data-table">
+    <thead><tr><th>Steal rule</th><th>Retail</th></tr></thead>
+    <tbody>
+      <tr><td>uniform draw over 256 slots, budget <code>0x400</code>, one <code>rand()</code> per rejection</td><td><code>0x801F77C4</code> loop</td></tr>
+      <tr><td>accept only <code>id &ne; 0</code>, <code>count &ne; 0</code> and a non-zero shop price</td><td><code>0x801F7884..0x801F78A4</code></td></tr>
+      <tr><td>re-draw while <code>slot &lt; window start</code> when the second party member is character 4</td><td><code>0x801F77E8</code>, floor <code>*(i16*)0x8007B5EA</code></td></tr>
+      <tr><td>the removal scans only the window and misses outside it</td><td><code>FUN_80042310</code>, miss arm <code>0x80042374</code></td></tr>
+    </tbody>
+  </table>
+  <p>Measured on a bag holed at slots 1, 3 and 6: the pause-list cursor stepped <code>0, 2, 4, 5, 7, 8</code> across six displayed rows and the normalize helper ran zero times. So removing by row ordinal is wrong as soon as a hole sits above the selection, and removing by item id is wrong as soon as one id occupies two slots.</p>
 </section>
 
 <section class="doc-section" id="adjacent-divisions">
@@ -157,17 +167,36 @@
 
 <section class="doc-section" id="off-by-one">
   <h2>The add helper&rsquo;s off-by-one</h2>
-  <p>The add helper stores the item id <em>before</em> it bound-checks. On a completely full window the scan exits at <code>i == end</code> and the id byte lands one slot past the window; only the count store is guarded. This is the core of the open arbitrary-code-execution reachability thread - see <a href="#how-we-know">How we know</a> for the exact addresses.</p>
+  <p>The add helper stores the item id <em>before</em> it bound-checks. On a completely full window the scan exits at <code>i == end</code> and the id byte lands one slot past the window; only the count store is guarded. This is the core of the arbitrary-code-execution reachability thread, which is <strong>settled</strong>: the write primitive is real and normal play cannot reach it (<a href="../reference/re-settled-threads.html#d-item-add-oob">settled threads</a>).</p>
   <details class="disclosure">
     <summary>Details: reaching the leak, and the probe trap</summary>
     <div class="disclosure-body">
-      <p>The stray id lands at <code>0x80085958 + end&middot;2</code>: <code>0x80085A58</code> when <code>end = 128</code>, <code>0x80085B58</code> when <code>end = 256</code>. Demonstrating it needs a bag genuinely filled to <code>end</code> (256 slots with a multi-member party) with the hit shown to land past the guard. An execution probe at <code>pc = 0x800422BC</code> fires on <strong>every</strong> successful add, before the guard, so a hit there is not out-of-bounds evidence by itself. The two windows fail differently: the merge pass keys on the id byte, so at most 255 distinct ids can be live and the <strong>full</strong> 256-slot window always keeps a hole. The <strong>half</strong> windows are 128 slots, and the id space does not save them - the <a href="../formats/item-table.html">item-name table</a> carries 250 non-empty names over its 256 ids, so 128 distinct live ids is arithmetically reachable; what bounds the half-window case is how much of that population is obtainable while a character travels alone, which nobody has measured. Status: <a href="../reference/open-rev-eng-threads.html">open RE threads</a>.</p>
+      <p>The stray id lands at <code>0x80085958 + end&middot;2</code>: <code>0x80085A58</code> when <code>end = 128</code>, <code>0x80085B58</code> when <code>end = 256</code>. Demonstrating it needs a bag genuinely filled to <code>end</code> (256 slots with a multi-member party) with the hit shown to land past the guard. An execution probe at <code>pc = 0x800422BC</code> fires on <strong>every</strong> successful add, before the guard, so a hit there is not out-of-bounds evidence by itself. The two windows fail differently: the merge pass keys on the id byte, so at most 255 distinct ids can be live and the <strong>full</strong> 256-slot window always keeps a hole. The <strong>half</strong> windows are 128 slots, and the id space does not save them - the <a href="../formats/item-table.html">item-name table</a> carries 250 non-empty names over its 256 ids, so 128 distinct live ids is arithmetically reachable; what bounds the half-window case is how much of that population is obtainable while a character travels alone - a progress bound, not a capacity one, and not measured.</p>
     </div>
   </details>
   <details class="disclosure">
     <summary>History: the 72-slot ACE ceiling</summary>
     <div class="disclosure-body"><p>The earlier ceiling &ldquo;<code>0x800859E8</code> = first key-item slot&rdquo; assumed the 72-slot display page was the window. The accessors bound on <code>end</code>, which is only ever 128 or 256, so every out-of-bounds figure derived from a 72-slot bag is void. See <a href="../reference/re-do-not-re-walk.html">do-not-re-walk</a>.</p></div>
   </details>
+</section>
+
+<section class="doc-section" id="use-legs">
+  <h2>Two use legs that are not a heal</h2>
+  <p>The item-use applier <code>FUN_800402F4</code> dispatches on the effect descriptor&rsquo;s <strong>class</strong> byte, and two of its arms are not target effects.</p>
+  <ul class="bullets">
+    <li><strong>The Hyper-Art books</strong> (classes 11 / 12 / 13, the Fire / Wind / Thunder Books I..III, arm <code>0x80041FB4</code>) write a character record&rsquo;s displayed-skill list. The record written is <code>class &minus; 11</code> - roster slot 0, 1 or 2 from the descriptor alone - so the picked target is never read: a Fire Book used on Noa still teaches Vahn. The descriptor&rsquo;s <code>tier</code> byte is the art id, not a book level, and the insert keeps the list ascending by id. The books are field-usable, not battle-usable.</li>
+    <li><strong>The Point Card strike</strong> (class 14, arm <code>0x8004209C</code>) spends <code>min(bank, 9999)</code> of the Point Card counter as HP damage. No item row resolves to class 14; the arm is reached by id instead - battle action state <code>0x3E</code> tests for item <code>0xFE</code> (<code>0x801E4080</code>) and forces the selector to <code>0x0E</code> (<code>0x801E40C0</code>). The purse is the one a <a href="shop.html">shop</a> buy credits.</li>
+  </ul>
+</section>
+
+<section class="doc-section" id="engine-port">
+  <h2>In the port</h2>
+  <p>The engine keeps the bag as an <code>ItemBag</code> over retail&rsquo;s own 256-slot array: <code>(id, count)</code> pairs in slot order, holes included, with the active window installed over them. The slot arithmetic lives once in <code>legaia_save::retail_inventory</code>, so the preservation tooling and the running engine share each routine. Id-addressed consumers (menu pages, <code>GIVE_ITEM</code>, buy / sell, the battle Item arm) use a map-shaped adapter over the array.</p>
+  <ul class="bullets">
+    <li><strong>Rows carry slots.</strong> The pause list and bag rows carry their slot, and Use, Throw Out and the shop&rsquo;s sell list remove through the by-slot consume, which zeroes the id in place and leaves the hole.</li>
+    <li><strong>Steal reproduces all four rules</strong>, including the draw-vs-removal asymmetry.</li>
+    <li><strong>Saves keep slot order.</strong> The engine save carries the whole array, holes intact, as an optional block beside the compact item list; a file without it seeds densely from the list. Lifting a retail save reads the whole <code>0x200</code>-byte span, not the 72-slot page.</li>
+  </ul>
 </section>
 
 <section class="doc-section" id="how-we-know">
@@ -180,6 +209,7 @@
       <tr><td>consume</td><td><code>FUN_80042310</code></td><td>zeroes the emptied id in place</td></tr>
       <tr><td>find / consume by slot</td><td><code>FUN_80042EE0</code> / <code>FUN_80043048</code></td><td>find-slot-by-id, and the by-index consume the port's Use, Throw Out and sell list take</td></tr>
       <tr><td>normalize</td><td><code>FUN_800423E0</code></td><td>calls window setup first; occupancy = <code>id &ne; 0</code></td></tr>
+      <tr><td>item-use applier</td><td><code>FUN_800402F4</code></td><td>class dispatch; arts-book arm <code>0x80041FB4</code>, Point Card arm <code>0x8004209C</code></td></tr>
       <tr><td>new-game seed</td><td><code>FUN_80034A6C</code></td><td>writes slot 0 = (<code>0x77</code> Healing Leaf, &times;5)</td></tr>
       <tr><td>battle rewards</td><td><code>FUN_8004E568</code></td><td>loot grants go through the add helper</td></tr>
       <tr><td>menu overlay sweep</td><td>PROT 0899, every function</td><td>one direct array write, the Throw Out confirm&rsquo;s <code>sb zero</code> pair (<code>FUN_801D8734</code>); every other inventory operation goes via the helpers</td></tr>
@@ -202,6 +232,7 @@
     <a href="../formats/item-table.html">Item table</a>
     <a href="../formats/item-effect-table.html">Item effects</a>
     <a href="../reference/cheats.html">Cheat database</a>
-    <a href="../reference/open-rev-eng-threads.html">Open RE threads</a>
+    <a href="../reference/re-settled-threads.html#d-item-add-oob">Item-add OOB (settled)</a>
+    <a href="level-up.html">Level-up</a>
   </div>
 </section>
