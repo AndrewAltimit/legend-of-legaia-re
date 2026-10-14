@@ -397,7 +397,7 @@ impl<S: AudioSink> AudioDirector<S> {
 
     /// Queue one tick's battle strike / cast cues at their strike-relative
     /// timing, `(actor, target)` riding along. A results-frame
-    /// [`LEVEL_UP_CUE`](legaia_engine_core::world::LEVEL_UP_CUE) first parks
+    /// [`LEVEL_UP_CUE`](legaia_engine_battle::victory::LEVEL_UP_CUE) first parks
     /// the reward bank behind the BGM ([`Self::ensure_reward_bank`]), as
     /// retail loads PROT 0889 at results time.
     // REF: FUN_8004E568
@@ -408,7 +408,7 @@ impl<S: AudioSink> AudioDirector<S> {
     ) {
         if cues
             .iter()
-            .any(|c| c.kind == legaia_engine_core::world::LEVEL_UP_CUE)
+            .any(|c| c.kind == legaia_engine_battle::victory::LEVEL_UP_CUE)
             && !self.ensure_reward_bank(|e| index.entry_bytes_extended(e).ok())
         {
             log::info!("level-up jingle bank (PROT 0889) did not stage behind the BGM");

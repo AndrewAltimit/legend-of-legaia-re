@@ -26,9 +26,9 @@
 //!   (`0x8004E5C0`) until it lands; it reads `0` on the results frame
 //!   (`noa_levelup_banner`). The engine streams nothing, so it takes the
 //!   measured span: raised for the first
-//!   [`crate::world::VICTORY_STREAM_FRAMES`] vsyncs of the load hold, idle
+//!   [`legaia_engine_battle::victory::VICTORY_STREAM_FRAMES`] vsyncs of the load hold, idle
 //!   for the rest of it (the phase walk's own CD waits) and from the results
-//!   frame on ([`crate::world::VictorySequence::side_band_request_up`]).
+//!   frame on ([`legaia_engine_battle::victory::VictorySequence::side_band_request_up`]).
 //!
 //! The driver's `gp[+0x330]` gate (`lb` at `0x800470EC`) is the battle-load
 //! stage byte `0x8007B648`: non-negative while `FUN_80052770` loads, negative

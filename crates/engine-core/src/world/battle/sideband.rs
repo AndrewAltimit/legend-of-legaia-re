@@ -114,7 +114,7 @@ impl World {
     /// REF: FUN_80046A20
     fn sparring_exit_gate(&mut self) {
         if self.battle.sideband.phase < 3
-            || self.battle.sideband.phase3_accum < super::victory::VICTORY_EXIT_PHASE
+            || self.battle.sideband.phase3_accum < legaia_engine_battle::victory::VICTORY_EXIT_PHASE
         {
             return;
         }

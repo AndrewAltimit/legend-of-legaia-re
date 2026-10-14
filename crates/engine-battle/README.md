@@ -50,6 +50,9 @@ resolve a link into a dependent crate.
 
 **Growth**
 
+- `victory` - the battle-end presentation's phase constants, the
+  `VictorySequence` state and the win-pose tier + pick (`FUN_8004E568`); the
+  walk over a `World` is engine-core's.
 - `levelup` - post-battle level-up tracker: per-slot XP against per-level
   thresholds and the stat-growth rows.
 - `magic_xp` - Seru-magic spell XP.

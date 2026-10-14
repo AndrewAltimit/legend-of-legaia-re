@@ -218,7 +218,7 @@ pub struct ActionSteer {
 /// `ctx[+0x13]` on the pose actor) through the whole load hold, results
 /// hold and exit fade. The action-SM state then names a span of several
 /// hundred vsyncs; the sequencer's own words place the capture in it
-/// ([`legaia_engine_core::world::VictoryPhase`] is the engine's twin):
+/// ([`legaia_engine_battle::victory::VictoryPhase`] is the engine's twin):
 /// the phase word `_DAT_8007BD2C`, the phase halfword `ctx[+0x6CE]` and the
 /// results hold `gp+0xA54` (`0x8007BD6C`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -468,7 +468,7 @@ impl SpanGate {
 
     /// Whether the engine's battle-end sequence holds this gate.
     pub fn met(self, world: &legaia_engine_core::world::World) -> bool {
-        use legaia_engine_core::world::VictoryPhase;
+        use legaia_engine_battle::victory::VictoryPhase;
         let Some(seq) = world.battle.victory else {
             return false;
         };

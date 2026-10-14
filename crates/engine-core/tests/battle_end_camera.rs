@@ -10,11 +10,12 @@
 //! Disc-free: synthetic party + the vanilla monster/formation tables.
 
 use legaia_engine_battle::monster_catalog::{vanilla_formation_table, vanilla_monster_catalog};
+use legaia_engine_battle::victory::VictoryPhase;
 use legaia_engine_battle_vm::battle_cam_script::{
     BattleCamPhase, PARTY_BODY_RADIUS, prescale_tr_z,
 };
 use legaia_engine_core::battle_cam_inputs::battle_cam_inputs;
-use legaia_engine_core::world::{Actor, VictoryPhase, World};
+use legaia_engine_core::world::{Actor, World};
 use legaia_engine_mode::mode::SceneMode;
 
 fn world_in_a_battle() -> World {

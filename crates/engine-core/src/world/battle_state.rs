@@ -194,7 +194,7 @@ pub struct BattleState {
     /// not step, and [`crate::world::World::tick_battle_end_sequence`] walks the load /
     /// results / exit-fade phases before [`crate::world::World::finish_battle`] runs. See
     /// `world::battle::victory`.
-    pub victory: Option<crate::world::VictorySequence>,
+    pub victory: Option<legaia_engine_battle::victory::VictorySequence>,
     /// Set by the results frame once [`crate::world::World::apply_battle_loot`] has run for
     /// this battle, so the deferred [`crate::world::World::finish_battle`] does not credit
     /// the rewards a second time. Cleared by `finish_battle`.

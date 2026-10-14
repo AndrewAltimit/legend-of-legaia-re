@@ -306,7 +306,7 @@ fn battle_end_cam_inputs(
     mut inputs: script::BattleCamInputs,
     actor_at: impl Fn(u8, Option<u8>) -> Option<script::BattleCamActor>,
 ) -> script::BattleCamInputs {
-    use crate::world::VictoryPhase;
+    use legaia_engine_battle::victory::VictoryPhase;
     use legaia_engine_battle_vm::battle_action::BattleEndCause;
     let Some(seq) = world.battle.victory else {
         return inputs;

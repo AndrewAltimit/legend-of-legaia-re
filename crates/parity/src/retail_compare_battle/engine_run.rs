@@ -574,7 +574,7 @@ pub fn run_engine_battle(
     if matches!(driven, Some(Some(_)))
         && let Some(snap) = pre_drive.as_mut()
     {
-        let latch = legaia_engine_core::world::VICTORY_STORY_FLAG;
+        let latch = legaia_engine_battle::victory::VICTORY_STORY_FLAG;
         crate::retail_compare::set_system_flag(
             &mut snap.save,
             latch,
