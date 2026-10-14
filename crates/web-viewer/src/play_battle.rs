@@ -261,10 +261,23 @@ impl LegaiaRuntime {
                 (_, SceneMode::Battle) => {
                     self.encounter_banner =
                         Some((ENCOUNTER_BANNER_FRAMES, encounter_banner_label(&host.world)));
+                    // The world half first: the stage class, the fog's stage
+                    // cap, each monster's texture slot and idle - the step
+                    // the native window runs on its own edge.
+                    let archive = host
+                        .index
+                        .entry_bytes_extended(
+                            legaia_engine_session::battle_stage::MONSTER_ARCHIVE_PROT_INDEX,
+                        )
+                        .ok();
+                    let stage = legaia_engine_session::battle_stage::stage_battle_world(
+                        host,
+                        self.scus.as_deref(),
+                        archive.as_deref(),
+                    );
                     // 3D layer: battle VRAM + backdrop / grid / monster /
-                    // party meshes ([`crate::play_battle_render`]). Ends the
-                    // `host` borrow first - the build re-borrows the host.
-                    self.enter_battle_render();
+                    // party meshes ([`crate::play_battle_render`]).
+                    self.enter_battle_render(stage, archive);
                 }
                 (Some(SceneMode::Battle), _) => {
                     self.encounter_banner = None;

@@ -101,6 +101,11 @@ pub struct HostTraceFrame {
     /// cursor. A host that binds these from its mesh upload rather than
     /// from the scene parts here (`scene_actors::bind_scene_actors`).
     pub bindings: u64,
+    /// What a battle's stage build leaves on the world: the stage class
+    /// (`battle.stage_outdoor`), the backdrop depth-cue weight it ramps, the
+    /// fog's stage luminance cap and each actor's battle texture slot. A
+    /// host that writes these from its battle mesh build parts here.
+    pub battle_stage: u64,
 }
 
 /// The host-held menu-overlay screen's state ([`HostTraceFrame::overlay`]).
@@ -214,6 +219,20 @@ pub fn sample<S: AudioSink>(session: &BootSession<S>) -> HostTraceFrame {
         ),
         naming: world.party.name_entry.as_ref().map(debug_digest),
         bindings: bindings_digest(world),
+        battle_stage: {
+            let tex: Vec<(usize, u8)> = world
+                .actors
+                .iter()
+                .enumerate()
+                .filter_map(|(i, a)| a.battle_tex_slot.map(|t| (i, t)))
+                .collect();
+            debug_digest(&(
+                world.battle.stage_outdoor,
+                world.battle_backdrop_cue().map(f32::to_bits),
+                world.fog_volume.battle_luma.map(f32::to_bits),
+                tex,
+            ))
+        },
     }
 }
 
@@ -269,6 +288,7 @@ pub const CHANNELS: &[&str] = &[
     "shop",
     "naming",
     "bindings",
+    "battle_stage",
 ];
 
 fn channel_equal(a: &HostTraceFrame, b: &HostTraceFrame, ch: &str) -> bool {
@@ -294,6 +314,7 @@ fn channel_equal(a: &HostTraceFrame, b: &HostTraceFrame, ch: &str) -> bool {
         "shop" => a.shop == b.shop,
         "naming" => a.naming == b.naming,
         "bindings" => a.bindings == b.bindings,
+        "battle_stage" => a.battle_stage == b.battle_stage,
         _ => true,
     }
 }

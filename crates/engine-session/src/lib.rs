@@ -6,6 +6,8 @@
 //! [`legaia_engine_audio::AudioSink`]), the GPU, and its input source.
 //!
 //! - [`battle_fx`] - the move-FX spawn-to-sound step.
+//! - [`battle_stage`] - a battle's stage, resolved on the battle edge, and the
+//!   world state it leaves (stage class, fog cap, monster texture slots).
 //! - [`audio_director`] - the BGM / SFX / CD-XA director over an `AudioSink`.
 //! - [`scene_actors`] - the scene-entry actor binding both hosts run before
 //!   building meshes (the lead's locomotion clips, NPC clip cursors, floor
@@ -21,6 +23,7 @@
 
 pub mod audio_director;
 pub mod battle_fx;
+pub mod battle_stage;
 pub mod host_trace;
 pub mod mode_trace;
 #[cfg(not(target_arch = "wasm32"))]

@@ -2771,8 +2771,9 @@ L`, with `L` the scene's measured luminance (`fog_volume::scene_luminance`):
 every textured triangle's texel at its UV centroid, through its CLUT, times
 its baked colour word over `128`, averaged by world area. The field
 measurement is `SceneHost`'s, once per scene label. The battle one is taken
-by each host at battle entry over the stage shell it built
-(`fog_volume::stage_luminance`, pinned by a `SIM_PAIRS` row) and scaled by
+on the battle edge over the stage shell, by the session step both hosts run
+(`engine-session::battle_stage::stage_battle_world` over
+`fog_volume::stage_luminance`, pinned by a `SIM_PAIRS` row), and scaled by
 the live battle ambient, so a summon close-up dims the bank with the stage.
 The floor keeps a night bank readable as a moonlit haze.
 

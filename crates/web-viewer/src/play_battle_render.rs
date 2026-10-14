@@ -74,10 +74,7 @@
 
 use crate::runtime::LegaiaRuntime;
 use legaia_engine_mode::mode::SceneMode;
-use legaia_engine_scene::scene::Scene;
-use legaia_engine_scene::scene_resources::{
-    BuildOptions, FIELD_SHARED_BLOCKS, SceneLoadKind, SceneResources,
-};
+use legaia_engine_session::battle_stage::BattleStage;
 use wasm_bindgen::prelude::*;
 
 mod actor_exports;
@@ -97,9 +94,6 @@ mod stage_exports;
 /// authored in this scaled space, so a class left at raw 1x would be
 /// orbited at four times the intended radius.
 pub(crate) const BATTLE_WORLD_SCALE: f32 = 4.0;
-
-/// PROT entry of the monster stat/mesh archive (`0867_battle_data`).
-const MONSTER_ARCHIVE_PROT_INDEX: u32 = 867;
 
 /// Host-safe log: the browser console on wasm, stderr on the native test
 /// build (`crate::console_log` is a hard wasm-only stub that panics off-web,
@@ -320,25 +314,6 @@ impl BattleRender {
     }
 }
 
-/// The stage bundle `build_battle_stage` resolves - the browser copy of the
-/// native `BattleStage`.
-struct WebBattleStage {
-    vram: legaia_tim::Vram,
-    dome: (legaia_tmd::Tmd, Vec<u8>),
-    second: legaia_scene_formats::battle_backdrop::SecondCopy,
-    grid_far: [f32; 3],
-    outdoor: bool,
-}
-
-/// What the mutate phase installs on a monster once the build borrow ends:
-/// its texture slot and archive idle clip. (The party's forms are the
-/// engine's to install - `SceneHost::ensure_battle_party_forms`.)
-struct PendingMonsterInstall {
-    actor_idx: usize,
-    tex_slot: u8,
-    idle: Option<legaia_actor_formats::monster_archive::MonsterAnimation>,
-}
-
 /// Flatten one animation frame to the `[tx, ty, tz, rx, ry, rz] x parts`
 /// stream the page animator consumes (angles unsigned 12-bit, `4096` = turn).
 fn flatten_frame(frame: &[legaia_actor_formats::monster_archive::PartPose]) -> Vec<i32> {
@@ -361,73 +336,6 @@ impl LegaiaRuntime {
     /// second-copy transform, grid far colour. The browser copy of the
     /// native `build_battle_stage`; `None` when the scene has no stage entry
     /// or the battle-kind resource build fails.
-    fn build_battle_stage(&self) -> Option<WebBattleStage> {
-        let host = self.scene_host.host()?;
-        let scene = host.scene.as_ref()?;
-        // The region the fight starts in names the backdrop
-        // (`SceneHost::battle_stage_entry`, retail `_DAT_8007BD60`).
-        let stage_entry = host.battle_stage_entry()?;
-        let mut shared: Vec<Scene> = Vec::new();
-        for name in FIELD_SHARED_BLOCKS {
-            if let Ok(s) = Scene::load(&host.index, name) {
-                shared.push(s);
-            }
-        }
-        let refs: Vec<&Scene> = shared.iter().collect();
-        let system_ui = host.index.system_ui_bundle().ok();
-        let (res, _) = SceneResources::build_targeted_with_options(
-            scene,
-            &refs,
-            BuildOptions {
-                kind: SceneLoadKind::Battle,
-                upload_all_tims: true,
-                system_ui: system_ui.as_deref(),
-            },
-        )
-        .ok()?;
-        let dome = res.tmds.iter().find(|t| t.entry_idx == stage_entry)?;
-        // Take back the VRAM this stage owns - a bundle's stage streams all
-        // declare the same pages + CLUT rows, and the DMA-every-TIM build
-        // leaves the last sibling holding them (see the shared kernel's doc).
-        let mut vram = res.vram.clone();
-        legaia_engine_scene::scene::upload_battle_stage_tims_into_vram(
-            scene,
-            stage_entry,
-            &mut vram,
-        );
-        // Which transform the SECOND backdrop copy takes: the SCUS mirror
-        // table names the X-mirrored stages (town01 included - half-turning
-        // it plants a second village wall across the open sea side); the
-        // default is the half turn, the safer arm with no readable SCUS.
-        let second = self
-            .scus
-            .as_deref()
-            .and_then(legaia_scene_formats::battle_backdrop::MirrorXTable::from_scus)
-            .map(|t| t.second_copy_for_prot_index(stage_entry))
-            .unwrap_or(legaia_scene_formats::battle_backdrop::SecondCopy::HalfTurn);
-        // Grid depth-cue far colour per stage class (`FUN_80050120`): the
-        // sibling SCUS table picks the brightened outdoor arm on the 13
-        // wide-open stages; indoor `>> 1` grey covers everything else.
-        let grid_far_bytes = self
-            .scus
-            .as_deref()
-            .and_then(legaia_engine_battle_vm::battle_ground_grid::OutdoorCueTable::from_scus)
-            .map(|t| t.far_colour_for_prot_index(stage_entry))
-            .unwrap_or(legaia_engine_battle_vm::battle_ground_grid::GRID_FAR_INDOOR);
-        let outdoor = self
-            .scus
-            .as_deref()
-            .and_then(legaia_engine_battle_vm::battle_ground_grid::OutdoorCueTable::from_scus)
-            .is_some_and(|t| t.contains_prot_index(stage_entry));
-        Some(WebBattleStage {
-            vram,
-            dome: (dome.tmd.clone(), dome.raw.clone()),
-            second,
-            grid_far: grid_far_bytes.map(|c| f32::from(c) / 255.0),
-            outdoor,
-        })
-    }
-
     /// React to the `Field -> Battle` mode edge: build the battle VRAM +
     /// meshes and install each actor's clips on the world so the shared
     /// battle SM poses them. The browser twin of the native
@@ -435,7 +343,16 @@ impl LegaiaRuntime {
     /// still gets monsters over the field VRAM, a failed assembly falls back
     /// to PROT 1204, a fully failed build leaves the overlay-only battle
     /// the page had before).
-    pub(crate) fn enter_battle_render(&mut self) {
+    ///
+    /// `stage` and `archive` are what the battle edge resolved
+    /// (`battle_stage::stage_battle_world`, which has already written the
+    /// world state the stage leaves - the native window's same step); this
+    /// build only reads them.
+    pub(crate) fn enter_battle_render(
+        &mut self,
+        stage: Option<BattleStage>,
+        archive: Option<Vec<u8>>,
+    ) {
         self.battle_render = None;
         // The party's forms are the engine's to build (normally already done
         // by the tick that entered the battle); this covers a battle entered
@@ -453,13 +370,12 @@ impl LegaiaRuntime {
         let Some(field_base) = host.resources.as_ref().map(|r| r.vram.clone()) else {
             return;
         };
-        let Ok(archive) = host.index.entry_bytes_extended(MONSTER_ARCHIVE_PROT_INDEX) else {
+        let Some(archive) = archive else {
             return;
         };
 
         // Stage backdrop (scene battle build). Its VRAM becomes the battle
         // base so the dome renders textured; field VRAM is the fallback.
-        let stage = self.build_battle_stage();
         let mut vram = match &stage {
             Some(s) => s.vram.clone(),
             None => field_base,
@@ -477,12 +393,11 @@ impl LegaiaRuntime {
         let mut shell = None;
         let mut ground = None;
         let mut grid_far = None;
-        let mut fog_stage_luma = None;
         let outdoor = stage.as_ref().is_some_and(|st| st.outdoor);
         // REF: FUN_800513f0 - the backdrop registration whose object-list
         // edit + second-copy transform this host consumes through
         // `legaia_scene_formats::battle_backdrop`, exactly like the native window.
-        if let Some(WebBattleStage {
+        if let Some(BattleStage {
             dome: (tmd, raw),
             second,
             grid_far: gf,
@@ -499,10 +414,6 @@ impl LegaiaRuntime {
                 .unwrap_or_else(|| {
                     legaia_scene_formats::battle_backdrop::drawn_object_indices(tmd.objects.len())
                 });
-            // The volumetric ground fog may not outshine the stage it lies
-            // on: the native window's measurement, same kernel, same shell.
-            fog_stage_luma =
-                legaia_render_kernels::fog_volume::stage_luminance(&vram, tmd, raw, &objects);
             // Every slot but 1 is the baked shell; slot 1 is the spun copy
             // (`SceneHost::battle_stage_layers`, the native window's split).
             let layers = legaia_engine_core::scene_host::BattleStageLayers::split(&objects);
@@ -531,7 +442,6 @@ impl LegaiaRuntime {
         // Monster meshes: per-slot texture injection into the battle VRAM +
         // idle / action clips for the shared SM pose hook.
         let mut actors: Vec<BattleActorRender> = Vec::new();
-        let mut pending: Vec<PendingMonsterInstall> = Vec::new();
         // The texture slots the monster binds consumed; a mid-battle summon
         // injects its creature texture into the next one.
         let mut bound_slots: Vec<u8> = Vec::new();
@@ -576,11 +486,6 @@ impl LegaiaRuntime {
                 object_ids,
                 rest_pose,
             });
-            pending.push(PendingMonsterInstall {
-                actor_idx,
-                tex_slot: slot,
-                idle,
-            });
         }
         let tex_slots_used =
             legaia_engine_core::battle_party_form::monster_tex_slots_used(bound_slots);
@@ -621,10 +526,8 @@ impl LegaiaRuntime {
             return;
         }
 
-        // Mutate phase: install each monster's texture slot and idle clip
-        // so the engine's own `tick_battle_animations` (already running in
-        // the browser tick) poses it exactly as it does under the native
-        // window.
+        // Each monster's texture slot and idle clip are the world's,
+        // installed on the battle edge (`battle_stage::stage_battle_world`).
         let faces = party_faces;
         // The battle boundary: retail rebuilds the battle context (the
         // `+0x220` Stone latches and the per-slot palette copies) per
@@ -632,12 +535,6 @@ impl LegaiaRuntime {
         // pristine copy from the last fight would restage the wrong
         // palette. The latch arm (`sync_status`) runs later this same tick.
         self.battle_hud.status_clut.reset();
-        if let Some(host) = self.scene_host.host_mut() {
-            for p in pending {
-                host.world
-                    .install_monster_battle_form(p.actor_idx, p.tex_slot, p.idle.as_ref());
-            }
-        }
 
         self.battle_render_generation = self.battle_render_generation.wrapping_add(1);
         web_log(&format!(
@@ -647,11 +544,6 @@ impl LegaiaRuntime {
             ground.is_some(),
             faces.len()
         ));
-        if let Some(h) = self.scene_host.host_mut() {
-            h.world.fog_volume.battle_luma = fog_stage_luma;
-            // The backdrop ramp's ceiling reads the same table byte.
-            h.world.battle.stage_outdoor = outdoor;
-        }
         self.battle_render = Some(BattleRender {
             vram,
             backdrop,

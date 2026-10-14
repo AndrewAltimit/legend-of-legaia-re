@@ -16,6 +16,11 @@ anyhow.workspace = true
 log.workspace = true
 serde.workspace = true
 legaia-actor-formats.workspace = true
+legaia-engine-battle-vm.workspace = true
+legaia-render-kernels.workspace = true
+legaia-scene-formats.workspace = true
+legaia-tim.workspace = true
+legaia-tmd.workspace = true
 legaia-art.workspace = true
 legaia-engine-audio.workspace = true
 legaia-engine-core.workspace = true
@@ -35,13 +40,9 @@ legaia-engine-system.workspace = true
 legaia-game-tables.workspace = true
 
 [dev-dependencies]
-legaia-actor-formats.workspace = true
-legaia-engine-battle-vm.workspace = true
 legaia-lzs.workspace = true
 legaia-mes.workspace = true
 legaia-prot.workspace = true
-legaia-scene-formats.workspace = true
-legaia-tim.workspace = true
 legaia-engine-audio.workspace = true
 legaia-engine-minigames.workspace = true
 legaia-minigame-formats.workspace = true

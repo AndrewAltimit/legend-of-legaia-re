@@ -280,8 +280,9 @@ also contains the Rim Elm dome, at offset `0x16038`, past entry 6's own
 `0x14000`. Entries 7 and 8 share a vertex count, so only the bytes separate
 them.
 
-Port: `ProtIndex::battle_stage_entry_for_scene`, consumed by each host's
-`build_battle_stage`. Tests
+Port: `ProtIndex::battle_stage_entry_for_scene`, consumed by the one stage
+resolver both hosts run on the battle edge
+(`engine-session::battle_stage::resolve_battle_stage`). Tests
 `crates/engine-core/tests/battle_stage_entries_real.rs` (disc) and
 `crates/parity/tests/battle_stage_live.rs` (save library).
 
@@ -348,7 +349,7 @@ holding the address. `town01`'s semi-transparent cloud band (`(768, 0)` at `v`
 191..254, palette `1` of row 473, a greyscale + STP ramp) would then draw
 through a sibling's rainbow CLUT-cycling ramp as flat green rectangles.
 `engine-scene::scene::upload_battle_stage_tims_into_vram` re-uploads the
-selected entry's own TIMs last; both hosts call it from `build_battle_stage`.
+selected entry's own TIMs last, from the shared `resolve_battle_stage`.
 Sweeps: `rim_elms_four_stage_streams_all_claim_the_same_vram` and
 `the_selected_stage_entry_owns_its_vram_after_the_reupload`.
 

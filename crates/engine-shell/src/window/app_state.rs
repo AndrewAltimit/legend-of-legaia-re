@@ -742,7 +742,7 @@ pub(super) struct PlayWindowApp {
     /// battle backdrop far colour retail stages at `0x8007BB48` and the grid
     /// emitter's four `DPCS` sites consume (capture-pinned: `(0x40,0x40,0x40)`
     /// on ordinary stages, `(0xFE,0xFE,0xFE)` on the `DAT_80078C1C` outdoor
-    /// stages). Resolved per battle in `build_battle_stage`;
+    /// stages). Resolved per battle in `battle_stage::resolve_battle_stage`;
     /// `None` outside a stage-dome battle.
     pub(super) battle_ground_cue_far: Option<[f32; 3]>,
     /// The pre-cue vertex colour the uploaded ground grid was built with -
@@ -751,7 +751,7 @@ pub(super) struct PlayWindowApp {
     /// Whether the current battle stage is on the `DAT_80078C1C` outdoor
     /// table - the tint pass's `DAT_8007BDA8` input
     /// (`World::battle_actor_draw_plan`). Resolved per battle in
-    /// `build_battle_stage`; `false` outside a stage-dome battle.
+    /// `battle_stage::resolve_battle_stage`; `false` outside a stage-dome battle.
     pub(super) battle_stage_outdoor: bool,
     pub(super) scene_aabb: ([f32; 3], [f32; 3]),
     /// Current held-button bitmask (PSX pad encoding). Updated per key event.

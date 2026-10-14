@@ -351,19 +351,18 @@ SIM_PAIRS: list[dict[str, object]] = [
         "symbols": ["packet_tsb"],
     },
     {
-        "what": "volumetric ground fog brightness, native vs play page - the "
-        "bank may not outshine the battle stage it lies on, so each host's "
-        "battle entry measures the stage shell it built through the one "
-        "kernel `fog_volume::stage_luminance` and stores it on the world",
+        "what": "battle stage world state, native vs play page - the stage "
+        "class the backdrop ramp reads, the volumetric fog's stage cap (the "
+        "bank may not outshine the stage it lies on) and each monster's "
+        "battle texture slot are written on the battle edge by the one "
+        "session step `battle_stage::stage_battle_world`, renderer or not, "
+        "never by a host's mesh build",
         "sites": {
-            "native": (
-                "crates/engine-shell/src/window/battle/scene_entry.rs",
-                "enter_battle_render",
-            ),
-            "web": ("crates/web-viewer/src/play_battle_render.rs", "enter_battle_render"),
+            "native": ("crates/engine-shell/src/window/battle.rs", "sync_battle_render"),
+            "web": ("crates/web-viewer/src/play_battle.rs", "tick_battle_presentation"),
         },
         "mode": "symbols_all",
-        "symbols": ["stage_luminance", "battle_luma"],
+        "symbols": ["stage_battle_world"],
     },
     {
         "what": "volumetric ground fog, native vs play page - the bank is "

@@ -298,7 +298,11 @@ native window alone. Driver recipe:
 ## Battle 3D scene (`play_battle_render`)
 
 The battle's 3D layer under that overlay - the browser twin of the native
-window's `enter_battle_render` / `build_battle_stage` (`window/battle.rs`).
+window's `enter_battle_render` (`window/battle/scene_entry.rs`). Both read
+the stage the session's battle-edge step resolved
+(`engine-session::battle_stage::stage_battle_world`), which has already
+written what the stage leaves on the world (its class, the fog's stage cap,
+each monster's texture slot).
 On the `Field -> Battle` edge it builds a **battle VRAM** (the scene rebuilt
 with `SceneLoadKind::Battle` so the stage dome + its textures are resident,
 plus the PROT 870 flame atlas, per-slot monster texture injection and the

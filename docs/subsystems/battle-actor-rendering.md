@@ -493,7 +493,8 @@ The engine draws the decoded monster through its standard PSX-VRAM texture path.
 
 The CLUT region (`x < 240`) and the texture pages (`x >= 320`) never overlap, so up to five monster slots coexist in one VRAM.
 
-`World::battle_monster_slots()` reports the active enemies as `(actor_index, monster_id, battle_slot)`. The world itself never loads the archive, so the host resolves each id to a `MonsterMesh`, injects it, and binds the relocated mesh to the actor. `play-window` does this on each `Field → Battle` transition in `enter_battle_render` (`crates/engine-shell/src/window/battle.rs`), against a throwaway copy of the VRAM so the field VRAM is clean for `exit_battle_render`. The same entry replays the party forms' `VramWriteLog`, builds the stage (`build_battle_stage`), and prunes the display list (`unregister_non_battle_meshes`); `spawn_summon_creature` adds a mid-battle summon's mesh and texture slot.
+`World::battle_monster_slots()` reports the active enemies as `(actor_index, monster_id, battle_slot)`. The world itself never loads the archive, so the host resolves each id to a `MonsterMesh`, injects it, and binds the relocated mesh to the actor. `play-window` does this on each `Field → Battle` transition in `enter_battle_render` (`crates/engine-shell/src/window/battle.rs`), against a throwaway copy of the VRAM so the field VRAM is clean for `exit_battle_render`.
+The same entry replays the party forms' `VramWriteLog`, draws the stage the session resolved on the battle edge (`engine-session::battle_stage::stage_battle_world`, which also installs each monster's texture slot and idle clip on the world, renderer or not), and prunes the display list (`unregister_non_battle_meshes`); `spawn_summon_creature` adds a mid-battle summon's mesh and texture slot.
 
 ### Browser play-page battle render
 

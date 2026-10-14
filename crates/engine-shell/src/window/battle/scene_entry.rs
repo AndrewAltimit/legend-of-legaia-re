@@ -54,111 +54,18 @@ pub(super) fn stage_slot_meshes(
     )
 }
 
-/// The loaded battle-stage backdrop bundle `build_battle_stage` returns.
-pub(in crate::window) struct BattleStage {
-    /// Scene + stage-dome textures resident - becomes the battle VRAM base.
-    pub(in crate::window) vram: legaia_tim::Vram,
-    /// The backdrop shell TMD plus the raw bytes it was parsed from.
-    pub(in crate::window) dome: (legaia_tmd::Tmd, Vec<u8>),
-    /// The second backdrop copy's per-stage transform (`DAT_80078B50`).
-    pub(in crate::window) second: legaia_scene_formats::battle_backdrop::SecondCopy,
-    /// Ground-grid depth-cue far colour, display `0..1` - the backdrop far
-    /// colour per stage class (`DAT_80078C1C` outdoor table).
-    pub(in crate::window) grid_far: [f32; 3],
-    /// `DAT_80078C1C` outdoor-table membership - the battle tint pass's
-    /// `DAT_8007BDA8` flag (`World::battle_actor_draw_plan`).
-    pub(in crate::window) outdoor: bool,
-}
+use legaia_engine_session::battle_stage::BattleStage;
 
 impl PlayWindowApp {
-    /// Build the current scene's battle-stage backdrop bundle: the stage
-    /// VRAM, the dome TMD (with its raw bytes), the second-copy transform
-    /// and the ground grid's depth-cue far colour.
-    pub(in crate::window) fn build_battle_stage(&self) -> Option<BattleStage> {
-        let scene = self.session.host.scene.as_ref()?;
-        let scene_name = scene.name.clone();
-        // Not the block's first stage stream: a scene bundle carries one per
-        // sub-area, and the region the fight starts in names which one
-        // (`SceneHost::battle_stage_entry`, the region reader's stage
-        // variant `_DAT_8007BD60`).
-        let stage_entry = self.session.host.battle_stage_entry()?;
-        let mut shared: Vec<Scene> = Vec::new();
-        for name in FIELD_SHARED_BLOCKS {
-            if let Ok(s) = Scene::load(&self.session.host.index, name) {
-                shared.push(s);
-            }
-        }
-        let refs: Vec<&Scene> = shared.iter().collect();
-        let system_ui = self.session.host.index.system_ui_bundle().ok();
-        let (res, _) = SceneResources::build_targeted_with_options(
-            scene,
-            &refs,
-            BuildOptions {
-                kind: SceneLoadKind::Battle,
-                upload_all_tims: true,
-                // Boot-resident system-UI bundle: resident through battle
-                // in retail (uploaded once at boot, never evicted).
-                system_ui: system_ui.as_deref(),
-            },
-        )
-        .ok()?;
-        // The stage dome is the leading TMD of the scene_tmd_stream stage entry.
-        let dome = res.tmds.iter().find(|t| t.entry_idx == stage_entry)?;
-        // Take back the VRAM this stage owns. A bundle carries one stream per
-        // sub-area and they all declare the SAME pages + CLUT rows, so the
-        // DMA-every-TIM build leaves whichever sibling was written last
-        // holding them. Retail only ever has the recorded stream resident.
-        let mut vram = res.vram.clone();
-        let restored = legaia_engine_scene::scene::upload_battle_stage_tims_into_vram(
-            scene,
-            stage_entry,
-            &mut vram,
-        );
-        // Which transform retail gives the SECOND backdrop copy. The default
-        // is a half turn about Y; the stages named by the `SCUS_942.54` table
-        // at `DAT_80078B50` get an X mirror instead. Getting this wrong is not
-        // cosmetic: `town01` IS on the mirror list, so half-turning it plants
-        // a second village wall across the open sea side. With no readable
-        // SCUS the default is the safer of the two - it never reflects.
-        let scus = self.scus_bytes();
-        let second = scus
-            .as_deref()
-            .and_then(legaia_scene_formats::battle_backdrop::MirrorXTable::from_scus)
-            .map(|t| t.second_copy_for_prot_index(stage_entry))
-            .unwrap_or(legaia_scene_formats::battle_backdrop::SecondCopy::HalfTurn);
-        // The ground grid's depth-cue far colour: the backdrop far colour
-        // retail derives per stage class (`FUN_80050120`) - the sibling
-        // SCUS table at `DAT_80078C1C` picks the brightened outdoor arm on
-        // the 13 wide-open stages, everything else takes the indoor `>> 1`
-        // arm. With no readable SCUS the indoor grey covers the vast
-        // majority of the stage corpus. Capture provenance:
-        // `scripts/pcsx-redux/autorun_grid_far_colour.lua`.
-        let grid_far_bytes = scus
-            .as_deref()
-            .and_then(legaia_engine_battle_vm::battle_ground_grid::OutdoorCueTable::from_scus)
-            .map(|t| t.far_colour_for_prot_index(stage_entry))
-            .unwrap_or(legaia_engine_battle_vm::battle_ground_grid::GRID_FAR_INDOOR);
-        let grid_far = grid_far_bytes.map(|c| f32::from(c) / 255.0);
-        let outdoor = scus
-            .as_deref()
-            .and_then(legaia_engine_battle_vm::battle_ground_grid::OutdoorCueTable::from_scus)
-            .is_some_and(|t| t.contains_prot_index(stage_entry));
-        log::info!(
-            "play-window: battle stage = scene '{scene_name}' PROT {stage_entry} \
-             ({} objects, drawn twice, {} second copy, {restored} stage TIM(s) re-uploaded)",
-            dome.tmd.objects.len(),
-            second.label()
-        );
-        Some(BattleStage {
-            vram,
-            dome: (dome.tmd.clone(), dome.raw.clone()),
-            second,
-            grid_far,
-            outdoor,
-        })
-    }
-
-    pub(in crate::window) fn enter_battle_render(&mut self) {
+    /// Build the battle's draw state on the `Field -> Battle` edge: the
+    /// battle VRAM (stage textures, the effect atlas, each monster's texture
+    /// pool injected at its slot), the backdrop shell and ground grid, and
+    /// the monster and party meshes, bound to their actors.
+    ///
+    /// `stage` is the fight's stage as the session resolved it on the
+    /// battle edge (`battle_stage::stage_battle_world`, which has already
+    /// written the world state it leaves); this build only reads it.
+    pub(in crate::window) fn enter_battle_render(&mut self, stage: Option<BattleStage>) {
         let monsters = self.session.host.world.battle_monster_slots();
         if monsters.is_empty() {
             return;
@@ -183,7 +90,6 @@ impl PlayWindowApp {
         // half-dome). Its VRAM (scene + stage-dome textures resident) becomes
         // the battle base, so the dome renders textured behind the actors;
         // fall back to the field VRAM when the scene has no stage.
-        let stage = self.build_battle_stage();
         let base = match &stage {
             Some(s) => s.vram.clone(),
             None => field_base,
@@ -221,7 +127,6 @@ impl PlayWindowApp {
         self.battle_stage_spun_color_mesh = None;
         self.battle_stage_shell = None;
         self.battle_stage_outdoor = false;
-        self.session.host.world.fog_volume.battle_luma = None;
         // REF: FUN_800513f0 - the backdrop registration whose object-list edit
         // and second-copy transform this host consumes through
         // `legaia_scene_formats::battle_backdrop`.
@@ -248,11 +153,6 @@ impl PlayWindowApp {
                 .session
                 .host
                 .battle_stage_object_indices(tmd.objects.len());
-            // The volumetric ground fog may not outshine the stage it lies
-            // on: measure the shell as drawn (the browser play page takes the
-            // same measurement in `enter_battle_render`).
-            self.session.host.world.fog_volume.battle_luma =
-                legaia_render_kernels::fog_volume::stage_luminance(&vram, tmd, raw, &objects);
             // The shell proper is every slot but 1, baked with its second
             // copy. Slot 1 is the object the backdrop draw turns about Y
             // each frame (`BattleStageLayers`), so it is one copy of its
@@ -320,8 +220,6 @@ impl PlayWindowApp {
                 self.battle_ground_mesh = None;
                 self.battle_ground_cue_far = None;
                 self.battle_stage_outdoor = *outdoor;
-                // The backdrop ramp's ceiling reads the same table byte.
-                self.session.host.world.battle.stage_outdoor = *outdoor;
                 // Pre-cue colour = the settled battle ambient
                 // (`0x8007B7B0` -> `RGBC`), see `build_ground_grid_rgbc`.
                 let grid = build_battle_ground_grid(
@@ -394,24 +292,9 @@ impl PlayWindowApp {
                     self.scene_tmd_data.push((tmd, mesh.tmd_bytes().to_vec()));
                     self.session.host.world.actors[actor_idx].tmd_binding = Some(idx);
                     registered.push(actor_idx);
-                    // The texture slot (the posed rebuild re-applies its
-                    // CBA/TSB relocation, or the animated monster samples
-                    // the wrong page and renders white) and the idle clip,
-                    // through the install the browser page runs too.
-                    let idle = match legaia_actor_formats::monster_archive::idle_animation(
-                        &archive, monster_id,
-                    ) {
-                        Ok(idle) => idle,
-                        Err(e) => {
-                            log::warn!("play-window: monster {monster_id} idle anim decode: {e:#}");
-                            None
-                        }
-                    };
-                    self.session.host.world.install_monster_battle_form(
-                        actor_idx,
-                        slot,
-                        idle.as_ref(),
-                    );
+                    // The texture slot and idle clip are the world's,
+                    // installed on the battle edge for every host
+                    // (`battle_stage::stage_battle_world`).
                     bound_slots.push(slot);
                     // The archive-order action-clip set (the `+0x4C` tag
                     // table the hit-reaction family and the AI's picked

@@ -163,7 +163,17 @@ impl PlayWindowApp {
         match (prev, mode) {
             (_, SceneMode::Battle) => {
                 self.arm_encounter_banner();
-                self.enter_battle_render();
+                // The world half first, renderer or not: the stage class,
+                // the fog's stage cap, each monster's texture slot and idle
+                // (the page runs the same step on its own edge).
+                let scus = self.scus_bytes();
+                let archive = self.monster_archive_bytes();
+                let stage = legaia_engine_session::battle_stage::stage_battle_world(
+                    &mut self.session.host,
+                    scus.as_deref(),
+                    archive.as_deref().map(Vec::as_slice),
+                );
+                self.enter_battle_render(stage);
             }
             (Some(SceneMode::Battle), _) => {
                 self.encounter_banner = None;

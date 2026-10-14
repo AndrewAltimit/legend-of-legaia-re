@@ -663,7 +663,7 @@ reason = "Builds the page's audio director on first use (off wasm; on wasm once 
 native = "drain_and_log_battle_events"
 web = "tick_battle_presentation"
 native_only = ["tick"]
-web_only = ["action_id", "apply_battle_vram_moves", "armed", "battle_monster_slots", "battle_party_forms", "battle_stage_entry", "battle_stage_object_indices", "build_targeted_with_options", "clear_popups", "contains_prot_index", "current_frame", "discard_battle_vram_edits", "drain_battle_clut_stages", "ensure_battle_party_forms", "entry_bytes_extended", "far_colour_for_prot_index", "install_monster_battle_form", "monster_tex_slots_used", "party_roster_slot", "release_summon_seat", "replay", "reset", "stage_effect_clut", "stage_luminance", "system_ui_bundle", "tmd_bytes", "upload_battle_stage_tims_into_vram", "upload_flame_atlas_into_vram"]
+web_only = ["action_id", "apply_battle_vram_moves", "armed", "battle_monster_slots", "battle_party_forms", "battle_stage_object_indices", "clear_popups", "current_frame", "discard_battle_vram_edits", "drain_battle_clut_stages", "ensure_battle_party_forms", "entry_bytes_extended", "monster_tex_slots_used", "party_roster_slot", "release_summon_seat", "replay", "reset", "stage_battle_world", "stage_effect_clut", "tmd_bytes", "upload_flame_atlas_into_vram"]
 reason = """
 The audio half is one session step on both hosts
 (`BootSession::route_battle_audio`: the duck target, the strike / cast cues,
@@ -673,23 +673,22 @@ collision: the page defines a host fn of that name, which the walk excludes by
 name.
 
 The web-only list is where the code sits, not whether the host does it. The
-page folds its whole battle presentation frame into this one named step: stage
-and atlas upload (with the ground-fog stage brightness
-`fog_volume::stage_luminance`, pinned by a SIM_PAIRS row), the monster
-battle-form install and the party forms' read-back, the CLUT stage drain and
-the popup retire. The native window does that same work spread across its draw
-section and window/battle.rs rather than inside the kernel its frame path
-names. Checked name by name: every presentation call has a call site in the
-native sources. The arena object list and the Cort hand-back ground blank are
+page folds its whole battle presentation frame into this one named step: the
+battle edge's world half (`battle_stage::stage_battle_world`: the stage
+resolve, its class, the fog's stage cap and the monster battle forms, pinned
+by a SIM_PAIRS row), the atlas upload, the party forms' read-back, the CLUT
+stage drain and the popup retire. The native window does that same work spread
+across its draw section and window/battle.rs (`sync_battle_render` runs the
+edge step) rather than inside the kernel its frame path names. Checked name by
+name: every presentation call has a call site in the native sources. The arena object list and the Cort hand-back ground blank are
 the engine's own `SceneHost::battle_stage_object_indices` /
 `World::apply_battle_vram_moves`, which the window reaches from its
-stage-rebuild path; the monster battle-form install is the one engine kernel
-`engine-core::battle_party_form`; the party forms are built by
+stage-rebuild path; the party forms are built by
 `SceneHost::ensure_battle_party_forms` from `SceneHost::tick` for every
 session, and both hosts call it again before their render build and replay its
 VRAM writes with `replay`. `entry_bytes_extended` is the page reading the
-battle stage and effect entries off PROT inside this step; the window reads
-them from its stage-rebuild path. `discard_battle_vram_edits` is the page
+monster archive off PROT inside this step; the window reads it from its
+cached copy. `discard_battle_vram_edits` is the page
 dropping queued battle VRAM edits when it holds no battle VRAM image; the
 window does the same in `tick_battle_stage_shell`.
 """

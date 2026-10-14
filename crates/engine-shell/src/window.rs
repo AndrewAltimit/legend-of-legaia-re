@@ -14,9 +14,7 @@ use legaia_engine_render::{
     window::{EngineWindow, orbit_camera_mvp},
 };
 use legaia_engine_scene::scene::Scene;
-use legaia_engine_scene::scene_resources::{
-    BuildOptions, FIELD_SHARED_BLOCKS, SceneLoadKind, SceneResources,
-};
+use legaia_engine_scene::scene_resources::{BuildOptions, SceneLoadKind, SceneResources};
 use legaia_engine_session::native::NativeSession;
 use legaia_engine_ui::{
     HudPopupView, HudSlotMeta, HudSlotView, TextDraw, battle_hud_draws_for,
