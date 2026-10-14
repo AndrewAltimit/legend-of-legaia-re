@@ -18,6 +18,29 @@
 <section class="doc-section" id="where-it-lives">
   <h2>Where it lives</h2>
   <p>Each monster's decoded archive block is: stat record with its <code>+0x4C</code> action-offset array, name, TMD mesh, the per-action entries, then the texture pool. The <code>+0x4A</code> count says how many entries there are. Each entry is an action descriptor - not just a spell - with a semantic tag, costs, effect and sound cue scripts, and a packed keyframe stream at <code>+0x8C</code>.</p>
+  <figure class="diagram">
+    <svg viewBox="0 0 880 364" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="PROT 867, the monster archive, holds one slot per monster at (id - 1) * 0x14000 with an LZS stream at slot + 4. The decoded block holds the stat record (+0x4A count, +0x4C u32 offsets array), the TMD mesh at +0x04 and the texture pool at +0x08. Each offset leads to action entry i, made of the head +0x00..+0x8B (tag, beats, effects, cues, motion) and the packed stream at +0x8C (parts x frames x 9 bytes).">
+      <defs><marker id="mon-arrow" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <rect class="dg-node" x="20" y="20" width="220" height="46" rx="4"/><text class="dg-label" x="130" y="40">PROT 867</text><text class="dg-sub" x="130" y="56">monster archive</text>
+      <rect class="dg-node" x="310" y="20" width="250" height="46" rx="4"/><text class="dg-label" x="435" y="40">slot (id-1) * 0x14000</text><text class="dg-sub" x="435" y="56">LZS stream at slot+4</text>
+      <rect class="dg-node" x="630" y="20" width="210" height="46" rx="4"/><text class="dg-label" x="735" y="47">decoded block</text>
+      <path class="dg-edge" d="M240 43 L308 43" marker-end="url(#mon-arrow)"/>
+      <path class="dg-edge" d="M560 43 L628 43" marker-end="url(#mon-arrow)"/>
+      <rect class="dg-node" x="180" y="128" width="280" height="46" rx="4"/><text class="dg-label" x="320" y="148">stat record</text><text class="dg-sub" x="320" y="164">+0x4A count, +0x4C u32 offsets[]</text>
+      <rect class="dg-node" x="520" y="128" width="160" height="46" rx="4"/><text class="dg-label" x="600" y="148">TMD mesh</text><text class="dg-sub" x="600" y="164">+0x04</text>
+      <rect class="dg-node" x="700" y="128" width="160" height="46" rx="4"/><text class="dg-label" x="780" y="148">texture pool</text><text class="dg-sub" x="780" y="164">+0x08</text>
+      <path class="dg-edge" d="M735 66 L735 98 L780 98 M735 98 L320 98 L320 126" marker-end="url(#mon-arrow)"/>
+      <path class="dg-edge" d="M600 98 L600 126" marker-end="url(#mon-arrow)"/>
+      <path class="dg-edge" d="M780 98 L780 126" marker-end="url(#mon-arrow)"/>
+      <rect class="dg-node-accent" x="220" y="210" width="200" height="40" rx="4"/><text class="dg-label" x="320" y="234">action entry i</text>
+      <path class="dg-edge" d="M320 174 L320 208" marker-end="url(#mon-arrow)"/>
+      <rect class="dg-node" x="60" y="298" width="270" height="46" rx="4"/><text class="dg-label" x="195" y="318">head +0x00..+0x8B</text><text class="dg-sub" x="195" y="334">tag, beats, effects, cues, motion</text>
+      <rect class="dg-node-accent" x="370" y="298" width="270" height="46" rx="4"/><text class="dg-label" x="505" y="318">+0x8C packed stream</text><text class="dg-sub" x="505" y="334">parts x frames x 9 bytes</text>
+      <path class="dg-edge" d="M320 250 L320 270 L195 270 L195 296" marker-end="url(#mon-arrow)"/>
+      <path class="dg-edge" d="M320 270 L505 270 L505 296" marker-end="url(#mon-arrow)"/>
+    </svg>
+    <figcaption>From the archive to one keyframe. The stat record's <code>+0x4C</code> offset array points at each action entry; each entry is a fixed head followed by its own keyframe stream.</figcaption>
+  </figure>
   <div class="byte-map" role="img" aria-label="Action entry head (widths not to scale), first half: tag, runtime pointers, root speed, end step, event frames, effect script">
     <div class="bm-cell bm-accent" style="--w:3"><span class="bm-off">+0x00</span><span class="bm-name">action tag</span><span class="bm-size">u8 (+3)</span></div>
     <div class="bm-cell bm-pad" style="--w:5"><span class="bm-off">+0x04</span><span class="bm-name">runtime ptrs</span><span class="bm-size">u32 &times; 2</span></div>
