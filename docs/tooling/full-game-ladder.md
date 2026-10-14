@@ -830,6 +830,18 @@ map as its street:
   plan time and does not time its step onto a pad. A leg's encoded point can sit in the
   pillar beside where the platform parks the player (the hub's west leg,
   `0xB6`), so a landing in a wall cell is moved to the nearest open cell.
+- a **lift** - the same kind of record whose player moves are compass legs
+  (ops `0x37` / `0x41` on the `0xF8` channel, `B7 F8 d n` / `C1 F8 d n`), with
+  no fork, lowering every story flag it raises - is an edge to the band tile
+  plus the legs' summed displacement: each leg moves the player
+  `rate * (n & 0x3F)` units along compass `d` (rate `0x80` for `0x37`, `0x40`
+  for `0x41`; the axis signs are the table at `0x80073F14`, the walk kernel
+  `FUN_8003774C`'s arm). `dohaty`'s stairs (P2[3..8]) join the castle's
+  floors this way; without them a run that walks in from `map02` stands in
+  the entry hall, a component away from P2[9] / P2[10], and P2[10]'s `0x345`
+  is what the entry script spawns the closing beat P2[13] on (`0x1D4`, which
+  every `station` placement waits on). A run of legs that ends inside a tile
+  of where it began is a step back off a band, not a ride.
 
 ### The follower
 
@@ -1110,6 +1122,14 @@ clips and matches the same arts a windowed one does. Beyond that:
   flags, and only the four right answers spawn the P2[5] that opens the
   Stone Flower. A reopened picker goes back to the rotation, since a staged
   conversation can want another answer first (`tunnelc` P1[4], Xain).
+- A picker whose one option clears collision-grid wall bits (op `4C` nibble
+  7, sub 0 or 2) while another sets them (sub 1 or 3) is answered with the
+  option that opens the way, as a player who wants through answers it.
+  `balden` P2[6], the lower elevator car's call band, asks "Are you human?":
+  Yes clears the car door's wall bits (`4C 72`) and arms the car, No paints
+  them back (`4C 73`). The rotation's No on a later crossing shut the door,
+  and the upper car (P0[14]) then set the party down inside the shut car at
+  (11, 119), walled on every side, with the call band beyond the door.
 - The continuous hand does not walk to a talk side off the scene's
   walk-visible floor. Retail's locomotion reads only the wall bits, so the
   black between a town's interior cutaways is open ground: `geremi` P1[68]
