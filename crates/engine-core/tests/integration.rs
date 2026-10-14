@@ -162,6 +162,7 @@ mod field_static_window_disc;
 mod field_submode_screen_wiring;
 mod field_unspawned_actor_draw_disc;
 mod field_view_window_disc;
+mod field_vm_branch_targets_disc;
 mod field_vm_full_record_drive;
 mod field_vm_op_arms_disc;
 mod field_walk_touch_disc;
