@@ -271,6 +271,7 @@ impl<S: AudioSink> BootSession<S> {
         }
         let finished = self.field_menu_sub.take().expect("sub was Some");
         let done = finish_subsession(finished, &mut self.host.world);
+        let close_menu = done.close_menu;
         // A renderer-less driver just latches the notices.
         if done.spell_level_notice.is_some() {
             self.spell_level_notice = done.spell_level_notice;
@@ -292,7 +293,7 @@ impl<S: AudioSink> BootSession<S> {
             SubsessionHandoff::Options(state) => self.options_state = state,
         }
         if let Some(menu) = self.field_menu.as_mut() {
-            let _ = menu.resume(false);
+            let _ = menu.resume(close_menu);
         }
     }
 }

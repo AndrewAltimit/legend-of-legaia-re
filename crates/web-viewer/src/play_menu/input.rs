@@ -154,7 +154,7 @@ impl LegaiaRuntime {
                     // router every host shares (equip swap / item use /
                     // spell cast / arts / reorder); only the card rack and
                     // the options store are this host's.
-                    let handoff = match self.scene_host.host_mut() {
+                    let (handoff, close_menu) = match self.scene_host.host_mut() {
                         Some(host) => {
                             let mut done =
                                 field_menu_dispatch::finish_subsession(*session, &mut host.world);
@@ -162,9 +162,12 @@ impl LegaiaRuntime {
                             // and the pre-empts at the top of this method hold
                             // the pad.
                             self.menu.arm_finished_notices(&mut done);
-                            done.handoff
+                            (done.handoff, done.close_menu)
                         }
-                        None => field_menu_dispatch::SubsessionHandoff::without_world(*session),
+                        None => (
+                            field_menu_dispatch::SubsessionHandoff::without_world(*session),
+                            false,
+                        ),
                     };
                     match handoff {
                         field_menu_dispatch::SubsessionHandoff::Applied => {}
@@ -184,15 +187,17 @@ impl LegaiaRuntime {
                     // A title-opened menu has no root screen to return to:
                     // `resume(true)` finishes the session and the menu
                     // closes on this same tick.
+                    // A Door use's exit code closes the whole menu
+                    // (`FinishedSubsession::close_menu`), as it does natively.
                     let close = if let Some(m) = self.play_menu.as_mut() {
                         let from_title = m.from_title;
-                        let close = from_title && m.pending_load_scene.is_none();
+                        let close = (from_title && m.pending_load_scene.is_none()) || close_menu;
                         if let Some(root) = self
                             .scene_host
                             .session_mut()
                             .and_then(|s| s.field_menu.as_mut())
                         {
-                            let _ = root.resume(from_title);
+                            let _ = root.resume(from_title || close_menu);
                         }
                         // A parked Load label must outlive this tick: the
                         // page collects it and closes the menu itself.

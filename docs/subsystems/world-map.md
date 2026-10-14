@@ -961,7 +961,12 @@ The menu's close adds `3`, so `7` selects phase 6 and handler `0x29`
 (Riremito) and `8` selects phase 7 and handler `0x2B` (Rula). See
 [field-locomotion.md](field-locomotion.md) for the arts. The engine's
 `World::tick_pause_session` runs this hand-off for the two items on both play
-hosts. The panel host mirrors the counter in
+hosts. The seed also ends the menu: `FUN_801DC6B4` dispatches its screens only
+from state `2` (jump table `0x801CEEB0`), and the `3..5` arm at
+`0x801DC9A4..0x801DC9E4` waits for the brightness, adds `3` and returns done.
+So a Door pick closes the whole menu rather than returning to the root list
+(`FinishedSubsession::close_menu`, which every host passes to the root's
+`resume`); the art never runs under an open menu. The panel host mirrors the counter in
 `PanelActorHost::release_flash_with`, which refuses to write it unless a
 hand-off is outstanding, as only the menu writes it in retail.
 

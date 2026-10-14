@@ -692,6 +692,7 @@ impl PlayWindowApp {
                         // the options file are this host's.
                         let finished = sub.take().expect("sub was Some");
                         let mut done = finish_subsession(finished, &mut self.session.host.world);
+                        let close_menu = done.close_menu;
                         // Windows 7 / 8: the runtime holds the beat and this
                         // arm's pre-empts above hold the pad.
                         self.menu_runtime.arm_finished_notices(&mut done);
@@ -724,8 +725,10 @@ impl PlayWindowApp {
                         }
                         // A title-opened menu has no root screen to return
                         // to: the sub-screen's exit closes it entirely.
+                        // A Door use's exit code closes the whole menu
+                        // (`FinishedSubsession::close_menu`).
                         if let Some(menu) = self.session.field_menu.as_mut() {
-                            let _ = menu.resume(self.menu_from_title);
+                            let _ = menu.resume(self.menu_from_title || close_menu);
                         }
                     }
                     // Adopt + persist the rebind now that the `self.boot_ui`
