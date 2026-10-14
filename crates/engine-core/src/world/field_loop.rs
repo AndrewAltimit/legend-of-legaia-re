@@ -995,6 +995,19 @@ impl World {
             FieldStepResult::Advance { next_pc } => next_pc,
             _ => pc + 4,
         };
+        if let Some(slot) = self.player_actor_slot
+            && let Some(a) = self.actors.get(slot as usize)
+        {
+            let (x, z) = (a.move_state.world_x, a.move_state.world_z);
+            let y = self.sample_field_floor_height(i32::from(x), i32::from(z)) as i16;
+            if let Some(a) = self.actors.get_mut(slot as usize) {
+                a.move_state.world_y = y;
+            }
+        }
+        // The slice's later `CD F8` box tests read the player where it now
+        // stands (`balden`'s per-frame loop tests the inn bands right after
+        // its `A3 F8 F7 CC`).
+        self.sync_field_ctx_player_anchor();
         self.field_pc = next_pc;
         Some(FieldStepResult::Advance { next_pc })
     }
