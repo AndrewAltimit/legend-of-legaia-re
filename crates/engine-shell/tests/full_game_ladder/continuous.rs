@@ -86,6 +86,59 @@ fn checkpoint(session: &mut NativeSession) -> Checkpoint {
     }
 }
 
+/// Where `LEGAIA_FGL_CHECKPOINT_DIR` keeps milestone `id`'s checkpoint: the
+/// engine's own save, and beside it the scene, the rand stream and the
+/// learned exchange rate.
+fn checkpoint_paths(id: &str) -> Option<(PathBuf, PathBuf)> {
+    let dir = PathBuf::from(std::env::var_os("LEGAIA_FGL_CHECKPOINT_DIR")?);
+    Some((
+        dir.join(format!("{id}.lgsf")),
+        dir.join(format!("{id}.txt")),
+    ))
+}
+
+/// Keep `cp` on disk for a later `LEGAIA_FGL_CONTINUOUS_RESUME`. The file is
+/// a save of disc-derived state, so the directory belongs under `target/`.
+fn store_checkpoint(id: &str, cp: &Checkpoint, session: &NativeSession) {
+    let Some((save, side)) = checkpoint_paths(id) else {
+        return;
+    };
+    let (lost, dealt) = EXCHANGE.with(std::cell::Cell::get);
+    let text = format!(
+        "{}\n{}\n{lost}\n{dealt}\n",
+        cp.scene, session.host.world.rng_state
+    );
+    if let Some(dir) = save.parent() {
+        let _ = std::fs::create_dir_all(dir);
+    }
+    if std::fs::write(&save, cp.save.write()).is_err() || std::fs::write(&side, text).is_err() {
+        eprintln!("    [checkpoint] could not write {}", save.display());
+    }
+}
+
+/// The checkpoint an earlier run stored for milestone `id`, with its rand
+/// stream and exchange rate put back.
+fn stored_checkpoint(id: &str) -> Result<(Checkpoint, u32), String> {
+    let (save, side) = checkpoint_paths(id).ok_or("LEGAIA_FGL_CHECKPOINT_DIR is not set")?;
+    let bytes = std::fs::read(&save).map_err(|e| format!("{}: {e}", save.display()))?;
+    let save = legaia_save::SaveFile::parse(&bytes).map_err(|e| format!("{e:#}"))?;
+    let text = std::fs::read_to_string(&side).map_err(|e| format!("{}: {e}", side.display()))?;
+    let mut lines = text.lines();
+    let scene = lines.next().unwrap_or_default().to_string();
+    let mut num = || {
+        lines
+            .next()
+            .and_then(|l| l.parse::<u64>().ok())
+            .unwrap_or(0)
+    };
+    let rng = num() as u32;
+    let (lost, dealt) = (num(), num());
+    if dealt > 0 {
+        EXCHANGE.with(|e| e.set((lost, dealt)));
+    }
+    Ok((Checkpoint { save, scene }, rng))
+}
+
 /// A fresh session resumed from `cp`, as a card load of that save.
 fn reload(inp: &Inputs, cp: &Checkpoint, opts: &FieldLiveOpts) -> Result<NativeSession, String> {
     let mut session = open_session(&inp.extracted);
@@ -241,7 +294,14 @@ fn part_c_continuous_run() {
     // milestone, seeded once from that milestone's retail anchor and never
     // again. It is a probe, not the score: the party it sets out with is
     // retail's, so the baseline is not asserted.
-    let from_id = std::env::var("LEGAIA_FGL_CONTINUOUS_FROM").ok();
+    // `LEGAIA_FGL_CONTINUOUS_RESUME=<milestone>` starts it there too, from
+    // the engine's own save an earlier run kept under
+    // `LEGAIA_FGL_CHECKPOINT_DIR`: the party is the run's, the picker
+    // rotation and the shopping memory are not, so it is a probe as well.
+    let resume_id = std::env::var("LEGAIA_FGL_CONTINUOUS_RESUME").ok();
+    let from_id = resume_id
+        .clone()
+        .or_else(|| std::env::var("LEGAIA_FGL_CONTINUOUS_FROM").ok());
     let start = from_id.as_deref().map_or(0, |id| {
         spine
             .iter()
@@ -256,10 +316,19 @@ fn part_c_continuous_run() {
         .anchor
         .as_ref()
         .and_then(|r| load_anchor(&inp.library, r).ok());
-    if let Err(e) = seed(&mut session, &spine[seed_at], seed_anchor.as_ref(), &opts) {
-        panic!("continuous run: {} did not seed: {e}", spine[seed_at].id);
-    }
-    let mut cp = checkpoint(&mut session);
+    let mut cp = if let Some(id) = &resume_id {
+        let (cp, rng) =
+            stored_checkpoint(id).unwrap_or_else(|e| panic!("LEGAIA_FGL_CONTINUOUS_RESUME: {e}"));
+        session = reload(&inp, &cp, &opts)
+            .unwrap_or_else(|e| panic!("LEGAIA_FGL_CONTINUOUS_RESUME: {e}"));
+        session.host.world.rng_state = rng;
+        cp
+    } else {
+        if let Err(e) = seed(&mut session, &spine[seed_at], seed_anchor.as_ref(), &opts) {
+            panic!("continuous run: {} did not seed: {e}", spine[seed_at].id);
+        }
+        checkpoint(&mut session)
+    };
 
     let mut reached_count = 0usize;
     let mut reloads = 0u32;
@@ -310,6 +379,7 @@ fn part_c_continuous_run() {
                 Ok(Ok(())) => {
                     reached_count = i + 1 - start;
                     cp = checkpoint(&mut session);
+                    store_checkpoint(&to.id, &cp, &session);
                     if std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
                         print_state_diff(&mut session, &inp, to);
                     }

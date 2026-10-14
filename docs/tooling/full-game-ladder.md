@@ -425,6 +425,8 @@ cargo test -p legaia-engine-shell --profile release-test \
 | `LEGAIA_FGL_RNG_SEED=<u32>` | Re-seeds the world rand stream once a pad segment is seeded, dealing it another hand. |
 | `LEGAIA_FGL_SEATED_RNG_SEED=<u32>` | The same for the seated pass - how a seated boss fight is checked across streams. |
 | `LEGAIA_FGL_CONTINUOUS_FROM=<id>` | Starts part C at that milestone, seeded once from its retail anchor and never again, and does not assert the baseline. A probe for a later stretch's carried state; the party it sets out with is retail's, so it is not the continuous score. |
+| `LEGAIA_FGL_CHECKPOINT_DIR=<dir>` | Part C keeps the engine's own save at each milestone it reaches in that directory (`<id>.lgsf`, with the scene, rand stream and learned exchange rate beside it). The saves hold disc-derived state: keep the directory under `target/`. |
+| `LEGAIA_FGL_CONTINUOUS_RESUME=<id>` | Starts part C at that milestone from the save an earlier run kept there, and does not assert the baseline. The party is the run's own; the picker rotation and the shopping memory start fresh, so a stall it shows is confirmed on the full run. |
 
 The ratchet asserts every per-segment tier, both headline counts and the tier sum `>=` the baseline. Raise the baseline in a reviewed edit from the block the run prints; never lower it to make a red run green. The trace and debug switches are under [Diagnostics](#diagnostics).
 
