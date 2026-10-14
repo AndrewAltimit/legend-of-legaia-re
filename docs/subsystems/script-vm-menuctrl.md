@@ -362,7 +362,7 @@ On the disc:
 | 1 | `[4C C1]` | **Fog-region enable reset** - [below](#4c-c1-fog-region-enable-reset). PC += 2. |
 | 3 | `[4C C3]` | Script-table teleport + spawn-section re-run - [below](#4c-c3-script-table-teleport). |
 | 4 | `[4C C4 x z]` | Camera-zone query at an explicit tile: arm `0x801E2878`, `FUN_801DE3E0(x & 0x7F, z & 0x7F)`. Frames a shot from a region record the player is not standing in. |
-| 5 / 6 | `[4C C5\|C6 lo hi]` | Wait on system flag `lo hi` (`FUN_8003CE64`, the `0x7x` test): sub-5 holds until it is set (`0x801E2894` -> `0x801E2A10`), sub-6 until it is clear (`0x801E28B0` / `0x801E28C4`); then PC += 4. The shipped waits are on `0x0A` / `0x0B`, partly raised by native code (`FUN_801D4A60` sets `0x0B`; `town01` P2[25]'s `0x0A` has no script setter), so the world host releases them at once - see [below](#the-system-flag-waits). |
+| 5 / 6 | `[4C C5\|C6 lo hi]` | Wait on system flag `lo hi` (`FUN_8003CE64`, the `0x7x` test): sub-5 holds until it is set (`0x801E2894` -> `0x801E2A10`), sub-6 until it is clear (`0x801E28B0` / `0x801E28C4`); then PC += 4. The shipped waits are on `0x0A`, `0x0B`, `0x556` and `0x557`, each flipped by a move-VM part the scene's stager table carries (`2F 1C` / `2F 1D`) - see [below](#the-system-flag-waits). |
 | 9 | `[4C C9]` | PC += 2 unless `_DAT_8007BAB8 != _DAT_8007BA9C`, then halts. |
 | A / B / C | `[4C CN slot lo hi]` | Slot-table set / add / subtract - [below](#4c-ca--cb--cc-script-counters). |
 | D | `[4C CD]` | [Camera-glide wait](#4c-cd-waits-for-the-camera-glide). |
@@ -1059,14 +1059,38 @@ animation set-up.
 ### The system-flag waits
 
 `4C C5` / `4C C6` hold the script until system flag `idx` is set / clear. The
-VM asks `FieldFlagsHost::system_flag_wait_released`, whose default is retail's
-`FUN_8003CE64` test. The shipped waits are on `0x0A` and `0x0B`, and their
-raisers are only partly scripts: `0x0B` is also set by the scripted-scene
-actor `FUN_801D4A60` and the travel-art actors, and `town01` P2[25] clears
-`0x0A`, fires an animation on actor `0x29` (`B4 29 30 09`) and waits on a
-`0x0A` that no script on the disc sets. The world host does not run those
-raisers, so it answers "released" and is disclosed as not wired: holding
-faithfully parks P2[25] and stops a cold New Game at the mist Rim Elm hand-off.
+VM asks `FieldFlagsHost::system_flag_wait_released`, whose default - and the
+world host's answer - is retail's `FUN_8003CE64` test.
+
+The shipped waits are on `0x0A`, `0x0B`, `0x556` and `0x557`, and no field
+script raises most of them: the record clears (or sets) the flag, stages a
+prescript record with op `0x34` sub-3, and waits for that record's **move-VM
+program** to flip it with ext sub-op `0x1C` / `0x1D` (`2F 1C <idx>` /
+`2F 1D <idx>`, the `FUN_801D362C` arms at `0x801D3DF4` / `0x801D3E08`). Every
+bundle-MAN wait's scene carries that raiser in its stager table. `town01`
+P2[25] is the shape: `60 0A`, `B4 29 30 09` (stage record 10), `4C C5 0A 00`;
+record 10 waits `0x1E`, runs `2F 1C 0A`, then spins on `2F 13 0A` until the
+script's own `60 0A` lets it spawn its tail.
+
+The native writers of the same flags, all in the field overlay (PROT 0897):
+
+| Writer | Flag | Sites | Port |
+|---|---|---|---|
+| Move-VM ext `0x1C` / `0x1D` | operand | `0x801D3DF4` / `0x801D3E08` | `MoveHost::ext_set_flag_bank` / `ext_clear_flag_bank` on the world |
+| Scripted-scene actor `FUN_801D4A60` | `0x0B` | set `0x801D4F50`, `0x801D52C0`; clear `0x801D4C6C`, `0x801D4EB0`, `0x801D51F4`, `0x801D5514` | `engine-field::field_actor_program` (`FLAG_PLAYER_BUSY`) |
+| Travel arts `FUN_801EE094` / `FUN_801EE328` | `0x0B` | set `0x801EE108` / `0x801EE39C` | `engine-field::travel_art_actor` |
+
+The remaining `FUN_8003CE08` / `FUN_8003CE34` callers take a computed index
+(a script operand, an actor word, a table entry) or a fixed one other than
+these four; no `jal` to either helper outside the field, menu, dance and arena
+overlays and `SCUS_942.54` exists.
+
+The wait is a timed park in every runner, as `4C CD` is: the field loop and
+the channel runners resume at the op, the inline-dialogue runner parks the talk
+on it, and the cutscene timeline holds it (counted against its anti-hang cap,
+which completes a record whose raiser never runs). The disc-gated test
+`crates/engine-core/tests/system_flag_wait_raisers_disc.rs` pins both the
+raiser census and `town01` record 10's raise.
 
 ### The relative skip exit
 

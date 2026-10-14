@@ -141,7 +141,7 @@
       <tr><td><code>4C C1</code></td><td>fog-region enable reset</td></tr>
       <tr><td><code>4C C3</code></td><td>script-table teleport and spawn-section re-run</td></tr>
       <tr><td><code>4C C4 x z</code></td><td>camera-zone query at an explicit tile: frames a shot from a region the player is not standing in</td></tr>
-      <tr><td><code>4C C5</code> / <code>C6</code></td><td>wait until a story flag is set / cleared. The flags these waits name are raised partly by native code the port does not run, so the port releases them at once</td></tr>
+      <tr><td><code>4C C5</code> / <code>C6</code></td><td>wait until a system flag is set / cleared. The flag is flipped by a move-VM part the record itself just spawned (ext sub-op <code>0x1C</code> / <code>0x1D</code> in the scene's stager record), so the wait lasts as long as that part takes to reach it</td></tr>
       <tr><td><code>4C CA</code> / <code>CB</code> / <code>CC</code></td><td>script counter set / add / subtract</td></tr>
       <tr><td><code>4C CD</code></td><td>wait for the camera glide</td></tr>
       <tr><td><code>4C CE</code></td><td>player clip override: re-points walk, idle and run at other scene-bank records</td></tr>
