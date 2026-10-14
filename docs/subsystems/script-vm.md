@@ -58,7 +58,7 @@ One row per opcode byte. "Enc" is the non-extended encoding (the cross-context f
 | `0x24` / `0x25` | (spawn-section marker) | 1 | PC += 1; a record opening on one gets its spawn section pre-run at scene load. | [markers](#shared-nop-cluster) |
 | `0x26` | `JMP_REL` | `26 lo hi` | Unconditional relative jump (16-bit wrap). | [0x22-0x26](#0x22-0x26-action--control-flow) |
 | `0x2B` / `0x2C` / `0x2D` | `LFLAG_SET` / `_CLR` / `_TST` | `op bit` | Set / clear / wait on a bit of the per-context word `+0x62` (also the clip-control word). | [flags](#0x2b-0x33-flag-manipulation-triplets) |
-| `0x2E` / `0x2F` / `0x30` | `GFLAG_SET` / `_CLR` / `_TST` | `op bit` | Same on the 32-bit scratchpad word `_DAT_1F800394`. | [flags](#0x2b-0x33-flag-manipulation-triplets) |
+| `0x2E` / `0x2F` / `0x30` | `GFLAG_SET` / `_CLR` / `_TST` | `op bit` | Same on the 32-bit scratchpad word `_DAT_1F800394`; `0x30` waits for the bit to clear. | [flags](#0x2b-0x33-flag-manipulation-triplets) |
 | `0x31` / `0x32` / `0x33` | `CFLAG_SET` / `_CLR` / `_TST` | `op bit` | Same on the context flag word `+0x10` (halt, engage, collision class). | [flags](#0x2b-0x33-flag-manipulation-triplets) |
 | `0x34` | `EFFECT` | 2..13 + block | Nibble-dispatched: colour fade setup, attached light, capture-and-yield, effect-record spawn. | [0x34](#0x34-effect-nibble-dispatched) |
 | `0x35` | `BGM` | `35 lo hi sub` | Music control: start, pause, resume, release timer, swap-commit. | [0x35](#0x35-bgm) |
@@ -90,7 +90,7 @@ One row per opcode byte. "Enc" is the non-extended encoding (the cross-context f
 
 Two stream elements are not opcodes but sit between them: a `0x1F` text segment and a `0x27..0x2A` picker - see [text segments and pickers](#text-segments-and-pickers-are-strides-of-the-stream).
 
-The rest of the page, in order: [on-disc form](#on-disc-form-the-scene-man---not-scene_event_scripts), [scheduling](#per-frame-scheduling), [dispatch](#top-level-dispatch) and [context struct](#context-struct), the [opcode reference](#opcode-reference), the [story-flag bank](#default-case-extension-opcodes---the-fourth-flag-bank) and its census, [BGM lookup](#bgm-lookup-table), [helpers](#helper-functions), [overlay support functions](#overlay-0897-command--submenu-support-functions), [field dialogue](#field-dialogue-has-no-opcode), [decompile quirks](#decompile-quirks-worth-knowing), the [disassembler](#disassembler-tool-asset-field-disasm) and [FMV triggers](#fmv-trigger-sites---exhaustive-backward-sweep).
+The rest of the page, in order: [on-disc form](#on-disc-form-the-scene-man---not-scene_event_scripts), [scheduling](#per-frame-scheduling), [dispatch](#top-level-dispatch) and [context struct](#context-struct), the [opcode reference](#opcode-reference), the [branch encodings](#branch-encodings), the [story-flag bank](#default-case-extension-opcodes---the-fourth-flag-bank) and its census, [BGM lookup](#bgm-lookup-table), [helpers](#helper-functions), [overlay support functions](#overlay-0897-command--submenu-support-functions), [field dialogue](#field-dialogue-has-no-opcode), [decompile quirks](#decompile-quirks-worth-knowing), the [disassembler](#disassembler-tool-asset-field-disasm) and [FMV triggers](#fmv-trigger-sites---exhaustive-backward-sweep).
 
 ## On-disc form: the scene MAN - NOT `scene_event_scripts`
 
@@ -586,7 +586,7 @@ The cleanest group - three separate 1-bit-flag banks each with set / clear / tes
 | 0x2D | `LFLAG_TST` | `[2D, bit]` | If `ctx[+0x62] & (1 << bit)` is 0, return `pc_offset` (halt); else continue. |
 | 0x2E | `GFLAG_SET` | `[2E, bit]` | `_DAT_1F800394 \|= 1 << (bit & 0x1F)`. Global story flag bank (32 bits, in PSX scratchpad). |
 | 0x2F | `GFLAG_CLR` | `[2F, bit]` | `_DAT_1F800394 &= ~(1 << (bit & 0x1F))`. |
-| 0x30 | `GFLAG_TST` | `[30, bit]` | If `_DAT_1F800394 & (1 << bit)` is 0, return; else continue. |
+| 0x30 | `GFLAG_TST` | `[30, bit]` | Busy-wait with `0x33`'s polarity: hold the PC while `_DAT_1F800394 & (1 << bit)` is set, advance once it is clear (`0x801DEE14` loads the word and joins `0x33`'s test at `0x801DEE3C`). |
 | 0x31 | `CFLAG_SET` | `[31, bit]` | `ctx[+0x10] \|= 1 << (bit & 0x1F)`. Ctx flag word (32 bits). **Bit 8 special case**: copies `ctx[+0x26] → ctx[+0x5A]`, returns immediately. |
 | 0x32 | `CFLAG_CLR` | `[32, bit]` | `ctx[+0x10] &= ~(1 << (bit & 0x1F))`. The bit-0x400 form is the only opcode that bypasses the dispatch-prelude halt check on extended opcodes. |
 | 0x33 | `CFLAG_TST` | `[33, bit]` | Busy-wait: hold the PC while `ctx[+0x10] & (1 << bit)` is set, advance once it is clear (`0x801DEE2C..0x801DEE54`: `s8 += 2`, `beq` on a zero mask takes it, a set bit restores the entry PC `s4`). |
@@ -1554,7 +1554,7 @@ shared compare:
 Sub-ops 5..8 are not absolute jumps and sub-op 4 is not "rand = next PC";
 both readings come from the collapsed decomp switch
 ([threads doc](../reference/open-rev-eng-threads.md), op-0x4E details).
-Ported: `field_disasm::decode_subops` + `engine-vm` `flow::op_4e`.
+Ported: `field_disasm::decode_subops` + `engine-vm` `flow::op_4e`; the world host answers every loader - HP / MP and level off the roster records, `rand()` off the world's one stream, the slot table, gold and coins. The shipped forms lean on the slot table (loader 7 compare 1 is the commonest), gold (loader 3) and the random-chance branch (loader 4).
 
 ### 0x4C MENU_CTRL - outer-nibble dispatch
 
@@ -1563,13 +1563,41 @@ The 0x4C dispatcher's **outer high nibble** of `op0` selects 16 sub-dispatchers 
 The **full** per-outer-nibble table, the 16×16 sub-dispatch coverage matrix, the actor-allocator + materializer wiring (`0x4C nibble-8 sub-0`), the immediate-or-ramp nibble-4 cluster, and the VRAM STP-bit nibble-D sub-4/sub-5 ops are in **[script-vm-menuctrl.md](script-vm-menuctrl.md)**.
 
 
+## Branch encodings
+
+Every conditional arm of `FUN_801DE840` that moves the PC anywhere but past its own bytes leaves through one of four places: the `0x26` arm itself, the shared add at `0x801E35F8` / `0x801E35FC` (base already in `v0`, delta built from two operand bytes), the flag-bank tail `0x801E35EC`, and the skip exit `0x801E3608` / `0x801E360C` / `0x801E3614`, which adds a signed halfword **less two** to a PC already past the instruction ([relative skip exit](script-vm-menuctrl.md#the-relative-skip-exit)). None of them takes an absolute target. In the table `pc` is the opcode's offset; the cross-context form adds one to every target, because the prelude steps `s8` past the id byte.
+
+| Arm | Bytes | Taken when | Target |
+|---|---|---|---|
+| `0x26` `JMP_REL` | `26 d:u16` | always | `pc + 1 + d` |
+| `0x42` `COND_JMP` | `42 mode sel d:u16` | mode 0: bit `sel` of `_DAT_8007B8F4`; mode 1: the held pad's compass or face button (`sel >= 0xC` always) | `pc + 3 + d` |
+| `0x4D` `BBOX_TEST` | `4D x0 z0 x1 z1 s:u16` | the context's tile is outside the box | `pc + 7 + s - 2` |
+| `0x4E` `INVENTORY_CMP` | `4E page mode v:u16 s:u16 [v_hi:u16]` | the loader's value is below (`mode & 0xF == 0`) / above (`1`) `v` | `pc + 5 + s`, at both widths |
+| `0x70..0x7F` TEST | `7x idx d:u16` | system flag set | `pc + 2 + d` |
+| `4C A0..A2` | `4C Ax bit s:u16` | the bit is set | `pc + 5 + s - 2` |
+| `4C 8B` | `4C 8B spell s:i16` | a present member knows `spell` | `pc + 5 + s - 2` |
+| `4C 8C` | `4C 8C s:i16` | `ctx[+0x68]` is zero | `pc + 4 + s - 2` |
+| `4C 8D` | `4C 8D char skill s:i16` | `char` has learned art `skill` | `pc + 6 + s - 2` |
+| `4C D1` | `4C D1 s:i16` | a cutscene camera glide is live | `pc + 4 + s - 2` |
+| `4C DC` / `4C DE` | `4C DC\|DE item s:i16` | the party holds / wears `item` | `pc + 5 + s - 2` |
+| `4C E4` | `4C E4 x0 z0 x1 z1 s:i16` | the actor is outside the world-unit box | `pc + 8 + s - 2` |
+| `4C EB` | `4C EB actor s:i16` | no context answers `actor` | `pc + 5 + s - 2` |
+
+`0x4E`'s 9-byte forms (loaders `0xA` / `0xB`) carry the skip in the same slot as the 7-byte ones, between the two value halves, so their target is `pc + 5 + s` too - four bytes short of the end, where the 7-byte form is two short.
+
+A second group never jumps but **waits** on a condition, restoring the entry PC until it holds: `0x2D` (local bit set), `0x30` and `0x33` (scratchpad / context bit clear), `4C C5` / `4C C6` (system flag set / clear, through `FUN_8003CE64`; the world host releases them at once, [see why](script-vm-menuctrl.md#the-system-flag-waits)), `4C CD` (no live camera glide), `4C D0` (a confirm or cancel press, drawing the cursor `FUN_8002B994` at its operand meanwhile) and `4C C9` (two globals equal).
+
+The disc-gated test `crates/engine-core/tests/field_vm_branch_targets_disc.rs` holds the port to this table: it walks every shipped script record, runs the port's `step` on each decoded instruction under a host answering every condition yes and then no, and fails on any PC that lands inside a record's decoded prefix but off an instruction boundary. A skip read as absolute, or measured from the wrong base, lands mid-instruction on some shipped record; so does a port arm whose width disagrees with the decoder's.
+
 ## Default-case "extension" opcodes - the fourth flag bank
 
 The default arm of the dispatcher checks `*pbVar43 & 0x70`:
 
 - `0x50`: `func_0x8003CE08((*pbVar43 & 0x8F) << 8 | pbVar43[1])` - **SET bit**.
 - `0x60`: `func_0x8003CE34(...)` - **CLEAR bit**.
-- `0x70`: `func_0x8003CE64(...)` - **TEST bit** (returns `0xFF` if set, `0` if clear). When non-zero, the dispatcher consumes two more operand bytes (`pbVar43[2..4]`) as the post-test action target.
+- `0x70`: `func_0x8003CE64(...)` - **TEST bit** (returns `0xFF` if set, `0` if clear). A set flag jumps `s8 + 2 + LE16(pbVar43[2..4])` - relative to the end of the index byte - and a clear one advances 4 (`0x801E35E8..0x801E3620`).
+
+The route is `opcode & 0x70`, so `0x58..0x5F`, `0x68..0x6F` and `0x78..0x7F` are SET / CLEAR / TEST with a high index nibble like their `0x_0..0x_7` siblings. Every byte the arm reads is off `pbVar43`, the opcode pointer, which the cross-context prelude does not move: on the extended form `0xD0..0xFF` the index byte is the target-id byte, and only the PC (`s8`) counts the prelude's step. No shipped script carries an extended flag op outside the `FF FF ..` filler records.
 
 The flag-op cluster's helper calls sit at fixed VAs shared by **every**
 slot-A sibling's copy of the dispatcher (disc-byte-verified `jal` words in
