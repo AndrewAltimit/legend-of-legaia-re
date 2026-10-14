@@ -746,11 +746,13 @@ impl BattleActor {
         }
     }
 
-    /// One frame of HP-bar ramp for this actor in `slot`
+    /// One frame of HP-bar ramp for this actor in retail pool slot `slot`
     /// ([`crate::battle_hp_bar::bar_step_for_slot`], retail `FUN_80047430`).
+    /// The arm select is on the pool slot, so an engine slot goes through
+    /// [`crate::battle_slot::SeatMap::retail`] first.
     ///
     /// REF: FUN_80047430 (kernel + `// PORT:` tags in `battle_hp_bar`)
-    pub fn tick_hp_bar(&mut self, slot: u8) {
+    pub fn tick_hp_bar(&mut self, slot: crate::battle_slot::RetailSlot) {
         let Some(display) = self.hp_display else {
             return;
         };

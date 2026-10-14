@@ -303,12 +303,7 @@ impl World {
     /// Engine actor index of retail actor-table slot `slot` (`0..=2` party,
     /// `3..` monsters), when the engine seats one there.
     fn retail_table_actor(&self, slot: usize) -> Option<usize> {
-        let pc = usize::from(self.party.party_count.clamp(1, 3));
-        let idx = if slot < 3 {
-            (slot < pc).then_some(slot)?
-        } else {
-            pc + slot - 3
-        };
+        let idx = usize::from(self.battle_seat_map().engine(u8::try_from(slot).ok()?)?);
         (idx < self.actors.len()).then_some(idx)
     }
 

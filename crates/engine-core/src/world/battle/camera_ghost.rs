@@ -42,15 +42,17 @@ use legaia_engine_mode::mode::SceneMode;
 use legaia_engine_system::rotation_lut::RotationLut;
 
 impl World {
+    /// This battle's map between engine slots and retail pool slots - the one
+    /// crossing every retail `slot < 3` test and every retail-numbered table
+    /// read goes through ([`legaia_engine_battle_vm::battle_slot`]).
+    pub fn battle_seat_map(&self) -> legaia_engine_battle_vm::battle_slot::SeatMap {
+        legaia_engine_battle_vm::battle_slot::SeatMap::new(self.party.party_count)
+    }
+
     /// The retail pool slot of engine actor `e`. Scope codes `8` / `9` pass
     /// through.
     pub(in crate::world) fn retail_pool_slot(&self, e: u8) -> u8 {
-        let pc = self.party.party_count.clamp(1, 3);
-        match e {
-            8.. => e,
-            e if e < pc => e,
-            e => e - pc + 3,
-        }
+        self.battle_seat_map().retail(e).get()
     }
 
     /// One frame of the ghost pass. No-op outside battle.
@@ -59,14 +61,8 @@ impl World {
         if self.mode != SceneMode::Battle {
             return;
         }
-        let pc = usize::from(self.party.party_count.clamp(1, 3));
-        let engine_of = |r: usize| -> Option<usize> {
-            if r < 3 {
-                (r < pc).then_some(r)
-            } else {
-                Some(pc + r - 3)
-            }
-        };
+        let seats = self.battle_seat_map();
+        let engine_of = |r: usize| seats.engine(r as u8).map(usize::from);
         let mut slots = [GhostSlot::default(); 7];
         for (r, s) in slots.iter_mut().enumerate() {
             let Some(a) = engine_of(r).and_then(|e| self.actors.get(e)) else {

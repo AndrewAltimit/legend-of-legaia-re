@@ -446,7 +446,8 @@ fn auto_fill_party_queues<H: BattleActionHost + ?Sized>(host: &mut H, ctx: &mut 
     // first seats: with the front monsters down and one standing behind
     // them, every roll landed on a dead seat and the redirect's unbounded
     // retry never returned.
-    const RETAIL_FIRST_MONSTER: u8 = 3;
+    use crate::battle_slot::RETAIL_FIRST_MONSTER;
+    let seats = crate::battle_slot::SeatMap::new(party);
     let monsters = (party..host.slot_count())
         .filter(|&s| {
             host.actor(s)
@@ -456,19 +457,13 @@ fn auto_fill_party_queues<H: BattleActionHost + ?Sized>(host: &mut H, ctx: &mut 
     let alive: Vec<bool> = (0..host.slot_count())
         .map(|s| host.actor(s).is_some_and(|a| a.liveness != 0))
         .collect();
-    let to_engine = |retail: u8| {
-        if retail >= RETAIL_FIRST_MONSTER {
-            retail - RETAIL_FIRST_MONSTER + party
-        } else {
-            retail
-        }
-    };
+    // An empty party seat has no engine slot; it is never alive.
+    let to_engine = |retail: u8| seats.engine(retail).unwrap_or(retail);
     let retail_alive = |retail: u8| {
-        (retail >= RETAIL_FIRST_MONSTER || retail < party)
-            && alive
-                .get(usize::from(to_engine(retail)))
-                .copied()
-                .unwrap_or(false)
+        seats
+            .engine(retail)
+            .and_then(|e| alive.get(usize::from(e)).copied())
+            .unwrap_or(false)
     };
     let monster_standing = (0..monsters).any(|m| retail_alive(RETAIL_FIRST_MONSTER + m));
     for slot in 0..party {
@@ -605,7 +600,7 @@ fn raise_target_banner<H: BattleActionHost + ?Sized>(
     actor_slot: u8,
     party_count: u8,
 ) {
-    use crate::battle_cue_group::{BannerInputs, MONSTER_SLOT_FIRST, plan_target_banner};
+    use crate::battle_cue_group::{BannerInputs, plan_target_banner};
     let Some(actor) = host.actor(actor_slot) else {
         return;
     };
@@ -620,15 +615,8 @@ fn raise_target_banner<H: BattleActionHost + ?Sized>(
     // The plan's slot tests are written in retail's fixed numbering (monsters
     // at 3..=6, the sentinels 8 and 9 above them), so re-express both slot
     // inputs in it. The sentinels pass through untouched.
-    let to_retail = |slot: u8| -> u8 {
-        if slot < party_count {
-            slot
-        } else if slot < 8 {
-            MONSTER_SLOT_FIRST + (slot - party_count)
-        } else {
-            slot
-        }
-    };
+    let seats = crate::battle_slot::SeatMap::new(party_count);
+    let to_retail = |slot: u8| -> u8 { seats.retail(slot).get() };
     let plan = plan_target_banner(
         &BannerInputs {
             active_slot: to_retail(actor_slot),

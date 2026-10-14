@@ -64,17 +64,16 @@ impl World {
     /// one frame (`FUN_80047430`'s `sltiu v0,s1,0x3` at `0x800474F4`). Retail
     /// seats monster `k` at pool slot `3 + k` whatever the party size; the
     /// engine compacts it to `party_count + k`, so the slot goes through
-    /// [`legaia_engine_battle_vm::battle_action::retail_pool_slot`] - read
-    /// raw, a small party's first monster ramped on the party arm.
+    /// [`World::battle_seat_map`] - read raw, a small party's first monster
+    /// ramped on the party arm.
     ///
     /// REF: FUN_80047430 (kernel + `// PORT:` tags in
     /// `legaia_engine_battle_vm::battle_hp_bar`)
     pub(in crate::world) fn tick_battle_hp_bars(&mut self) {
-        use legaia_engine_battle_vm::battle_action::retail_pool_slot;
-        let party_count = self.party.party_count;
+        let seats = self.battle_seat_map();
         for (slot, a) in self.actors.iter_mut().enumerate() {
             let slot = u8::try_from(slot).unwrap_or(u8::MAX);
-            a.battle.tick_hp_bar(retail_pool_slot(party_count, slot));
+            a.battle.tick_hp_bar(seats.retail(slot));
         }
     }
 
@@ -803,21 +802,17 @@ impl World {
     /// `party_count..`, so any retail kernel that switches on "is this index a
     /// party slot" needs the re-based value, not the seat.
     pub(in crate::world) fn retail_actor_category(&self, slot: u8) -> u8 {
-        let pc = self.party.party_count.min(3);
-        if slot < pc {
-            slot
-        } else {
-            3u8.saturating_add(slot.saturating_sub(pc)).min(7)
-        }
+        // Capped at `7`: the category byte names an actor-table row.
+        self.battle_seat_map().retail(slot).get().min(7)
     }
 
     /// Inverse of [`Self::retail_actor_category`].
     pub(in crate::world) fn engine_slot_of_retail_category(&self, category: u8) -> u8 {
-        let pc = self.party.party_count.min(3);
+        let seats = self.battle_seat_map();
         if category < 3 {
             category
         } else {
-            pc.saturating_add(category - 3)
+            seats.engine(category).unwrap_or(category)
         }
     }
 

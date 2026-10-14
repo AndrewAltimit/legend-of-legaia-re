@@ -67,28 +67,21 @@ use legaia_engine_battle_vm::battle_action::{FormationPos, normalize_formation_s
 /// party slots `0..3`, monster slots `3..7`.
 const RETAIL_POOL_WALK: usize = 7;
 
-/// The first retail monster slot (`addiu s0,s2,0x3` at `0x8005185C`).
-const RETAIL_FIRST_MONSTER_SLOT: usize = 3;
-
 impl World {
     /// The retail pool slot an engine battle slot occupies, or `None` for a
     /// slot retail's seven-slot walk does not reach (a fifth monster, or an
     /// actor past the combatant table).
     pub fn retail_battle_pool_slot(&self, engine_slot: usize) -> Option<usize> {
-        let pc = usize::from(self.party.party_count.clamp(1, 3));
-        let retail = if engine_slot < pc {
-            engine_slot
-        } else {
-            let k = engine_slot - pc;
-            let monster = self
-                .actors
-                .get(engine_slot)
-                .is_some_and(|a| a.battle_monster_id.is_some());
-            if !monster {
-                return None;
-            }
-            RETAIL_FIRST_MONSTER_SLOT + k
-        };
+        let seats = self.battle_seat_map();
+        let e = u8::try_from(engine_slot).ok()?;
+        let monster = self
+            .actors
+            .get(engine_slot)
+            .is_some_and(|a| a.battle_monster_id.is_some());
+        if !seats.is_party(e) && !monster {
+            return None;
+        }
+        let retail = usize::from(seats.retail(e).get());
         (retail < RETAIL_POOL_WALK).then_some(retail)
     }
 

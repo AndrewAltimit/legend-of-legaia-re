@@ -40,6 +40,7 @@ pub mod battle_party_panel;
 pub mod battle_pose_blend;
 pub mod battle_record_writer;
 pub mod battle_separation;
+pub mod battle_slot;
 pub mod battle_stream_slot;
 pub mod battle_target_group;
 pub mod battle_value_readout;
