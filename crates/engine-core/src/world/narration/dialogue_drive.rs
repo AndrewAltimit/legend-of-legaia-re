@@ -629,6 +629,20 @@ impl World {
                     id.pc = final_pc;
                     break;
                 }
+                // `4C C5` / `4C C6` hold while a system flag is clear / set,
+                // and what flips it is a move-VM part the talk spawned
+                // (`2F 1C` / `2F 1D` in a stager record, ticked by the frame
+                // tail): park and re-test next frame. Ending the talk here
+                // re-ran it from its first op - `town0b` P1[55]'s gathering
+                // parks on `4C C6 56 05` until its fade part clears `0x556`.
+                // REF: FUN_801DE840 (`0x801E2894` / `0x801E28B0`)
+                FieldStepResult::Halt { final_pc }
+                    if (b & 0x7F) == 0x4C
+                        && matches!(id.bytecode.get(id.pc + 1), Some(&(0xC5 | 0xC6))) =>
+                {
+                    id.pc = final_pc;
+                    break;
+                }
                 // A cross-context CFLAG_TST (`B3 <id> <bit>`) waits on
                 // another actor's context word - `town01` P1[32] closes its
                 // spar setup with `C1 44 02` (park actor `0x44`) and then

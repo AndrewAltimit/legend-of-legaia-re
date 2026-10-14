@@ -1201,6 +1201,16 @@ impl World {
                 // flight (the VM advances it otherwise), so its park is a
                 // timed wait to hold, not a handshake to step past.
                 let glide_wait = op == 0x4C && tl.bytecode.get(pc + 1) == Some(&0xCD);
+                // `4C C5` / `4C C6` hold while a system flag is clear / set.
+                // Its raiser is a move-VM part the record itself spawned
+                // (`2F 1C` / `2F 1D` in a stager record, ticked by the frame
+                // tail) or the scripted-scene actor, so it is a timed wait
+                // too: `town01` P2[25] fires `B4 29 30 09` and holds on
+                // `0x0A` until that record's `2F 1C 0A`.
+                // REF: FUN_801DE840 (`0x801E2894` / `0x801E28B0`)
+                let flag_wait = op == 0x4C
+                    && target.is_none()
+                    && matches!(tl.bytecode.get(pc + 1), Some(&(0xC5 | 0xC6)));
                 // NPC end-latch spin (`AD <id> 08`): the record re-tests the
                 // poked actor's `+0x62 & 0x100` every frame until its clip
                 // tick latches it - the clip's remaining length for a
@@ -1231,7 +1241,7 @@ impl World {
                 }
                 tl.npc_clip_spin_frames = 0;
                 let is_flag_test_handshake = matches!(op, 0x2D | 0x30 | 0x33)
-                    || (op == 0x4C && target.is_none() && !glide_wait);
+                    || (op == 0x4C && target.is_none() && !glide_wait && !flag_wait);
                 if matches!(
                     kind,
                     legaia_engine_field::cutscene_timeline::TraceResult::Halt
@@ -1239,6 +1249,7 @@ impl World {
                     && op != 0x4A
                     && op != 0x49
                     && !glide_wait
+                    && !flag_wait
                     && (target.is_none() || is_flag_test_handshake)
                 {
                     // By the op's own width: the flag tests are two bytes
