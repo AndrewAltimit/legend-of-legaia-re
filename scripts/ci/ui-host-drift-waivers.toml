@@ -409,9 +409,11 @@ arm = "if session.host.world.name_entry_active()"
 reason = """
 The naming prompt is modal: the field is frozen under it, as it is natively
 (`BootSession::tick` steps only the prompt while it is up and returns). The
-page's overlay steps the prompt from its own frame path (`play_name_entry`),
-so a catch-up tick that lands while it is up runs nothing - no stray pad edge
-reaches the prompt, and nothing behind it advances.
+page's tick loop hands each tick to the prompt before it reaches this
+function (`play_name_entry_tick`, the session's `step_name_entry_frame` - the
+native per-tick arm), so on the shipped bundle this arm is a guard: a driver
+that calls `tick_frame` while the prompt is up runs nothing - no stray pad
+edge reaches the prompt, and nothing behind it advances.
 """
 skips = [
     "drain_and_route_field_events_web",
@@ -470,8 +472,8 @@ reason = """
 A shop or the casino prize exchange is up. Retail runs both at game mode
 `0x17` with the field overlay swapped out for the menu overlay, so no field
 code is resident under the screen: the world tick and its whole tail stand
-still, which is the page's shape (its guard below skips all of `tick_frame`
-under `shopOpen`). The arm runs only the menu session on the tick's edges, the
+still, which is the page's shape (`play_shop_tick` takes such a tick before
+the loop reaches `tick_frame`). The arm runs only the menu session on the tick's edges, the
 unpark on close, and the SFX scheduler step the pause-menu arm also runs.
 `drain_and_log_battle_events` carries that step on the fall-through path; here
 the world raised nothing this tick, so the drain half has nothing to take.

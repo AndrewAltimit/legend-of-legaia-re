@@ -1207,6 +1207,24 @@ SIM_PAIRS: list[dict[str, object]] = [
             "object_draw_displacements",
         ],
     },
+    {
+        "what": "fog pool render step, native vs play page - the step ages "
+        "the pool and writes the live count and depth view the next tick's "
+        "spawner reads, and a spawn draws the world `rand()` stream, so it "
+        "is simulation. The window ran it per redraw from its draw prep and "
+        "the page per sim tick, which parted the two streams on any display "
+        "not at 60 Hz (`host_frame_parity`). Both hosts' per-tick step must "
+        "call the one session step",
+        "sites": {
+            "native": (
+                "crates/engine-shell/src/window/event_handler/redraw_tick.rs",
+                "tick_frame_tail_effects",
+            ),
+            "web": ("crates/web-viewer/src/play_field_fx.rs", "tick_field_fog_prims"),
+        },
+        "mode": "symbols_all",
+        "symbols": ["step_field_fog"],
+    },
 ]
 
 
