@@ -441,7 +441,7 @@ impl World {
     /// unless it skips on the floor. One call per vsync, so `dt = 1`.
     // PORT: FUN_80050120 (the trailing ambient / far-colour block; the
     // backdrop pair's `+0x78` / `+0x56` ramp is not modelled)
-    pub(super) fn tick_battle_ambient(&mut self) {
+    pub(crate) fn tick_battle_ambient(&mut self) {
         use legaia_engine_battle_vm::battle_ground_grid as grid;
         if self.mode != SceneMode::Battle {
             return;

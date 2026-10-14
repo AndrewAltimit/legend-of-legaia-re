@@ -622,18 +622,18 @@ mod tests {
         let mut world = battle_world();
         assert_eq!(world.battle_ambient_base(), [0x20; 3]);
         for _ in 0..48 {
-            world.tick_battle_animations();
+            world.tick_battle_ambient();
         }
         assert_eq!(world.battle_ambient_base(), [0x80; 3]);
         world.battle_ctx.gauge_rearm_latch = 1;
-        world.tick_battle_animations();
+        world.tick_battle_ambient();
         assert_eq!(world.battle_ambient_base(), [0x78; 3]);
         for _ in 0..20 {
-            world.tick_battle_animations();
+            world.tick_battle_ambient();
         }
         assert_eq!(world.battle_ambient_base(), [0x20; 3]);
         world.battle_ctx.gauge_rearm_latch = 0;
-        world.tick_battle_animations();
+        world.tick_battle_ambient();
         assert_eq!(world.battle_ambient_base(), [0x22; 3]);
     }
 
@@ -645,12 +645,12 @@ mod tests {
     fn the_band_latch_freezes_the_ambient_above_the_floor() {
         let mut world = battle_world();
         for _ in 0..48 {
-            world.tick_battle_animations();
+            world.tick_battle_ambient();
         }
         world.battle_ctx.gauge_rearm_latch = 1;
         world.battle_ctx.summon_staging_a = 1;
         for _ in 0..30 {
-            world.tick_battle_animations();
+            world.tick_battle_ambient();
         }
         assert_eq!(
             legaia_engine_battle_vm::battle_ground_grid::ambient_base_rgb(
@@ -660,7 +660,7 @@ mod tests {
         );
         assert_eq!(world.battle_ambient_base(), [0x28; 3]);
         world.battle_ctx.summon_staging_a = 0;
-        world.tick_battle_animations();
+        world.tick_battle_ambient();
         assert_eq!(world.battle_ambient_base(), [0x20; 3]);
     }
 
