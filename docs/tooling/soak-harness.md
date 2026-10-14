@@ -391,7 +391,7 @@ regression.
 | `izumi_spring_question_never_ends` | `izumi`: the spring asked "Do you wish to drink this water?" again after either answer, for good | a prop record ends at the parking byte after a dismissed box too |
 | `map01_life_water_live_max_stale` | `map01@...:PRO-01`: a Life Water under a Max HP +10% accessory left the live maximum one short of the base's rebuild, and the next battle healed past it | a stat-up item raises the base window and the live maxima are rebuilt from it |
 | `edlast_ending_unequip_live_max_stale` | `edbalden+rt@...:PRO-00`: the ending's scripted unequip left a Max HP +10% on a record whose accessory was gone | the aggregator pass every equipment change runs rebuilds the live maxima with the ability bits |
-| `map01_door_of_wind_carries_cupboard_run` | `chitei2+talk@PRO-03`: a cupboard opened while the Door of Wind's lift ran, and its record parked in `map01` on the cupboard's `2D 08` for good | a scene load drops the departing scene's prop run with its actor list |
+| `map01_door_of_wind_carries_cupboard_run` / `map02_door_of_light_carries_conversation` | `chitei2+talk@PRO-03` / `ropeway2+talk@...:PRO-02`: a cupboard or a conversation opened while a Door's travel art ran, and its record parked in the overworld for good | a scene load drops the departing scene's conversation and prop runs with its actor list |
 
 The field-side fixes are described with their retail evidence in
 [`script-vm.md`](../subsystems/script-vm.md#engagement-and-the-system-script);

@@ -119,23 +119,18 @@ impl SceneHost {
         // came from the previous scene's MAN.
         self.world.field_vm.helper_contexts.clear();
         self.world.field_vm.pending_record_spawns.clear();
-        // A prop record run is scene-scoped too: the touched object is an
-        // actor of the departing scene's list, which the load retires with
-        // the dialog SM context stepping it. Its anchor names a cell of the
-        // old `.MAP`, so a run carried across would park for good on a
-        // `2D 08` end-latch no actor of the new scene answers, holding the
-        // pad (a Door of Wind lift that lands while a cupboard is open).
-        // The player's engaged bit it raised drops with the hop lock below.
+        // So is a conversation or prop record run: the talker or the touched
+        // object is an actor of the departing scene's list, which the load
+        // retires with the dialog SM context stepping its record. Carried
+        // across, the run parks for good on a wait no actor of the new scene
+        // answers (a cupboard's `2D 08` end-latch, a talker's actor op) and
+        // holds the pad (a Door of Light or Wind art that lands while a
+        // cupboard or a conversation is open). The player's engaged bit the
+        // touch raised drops with the hop lock below. Battle entry drops the
+        // same pair.
         // REF: FUN_80039B7C, FUN_801D5B5C
-        if self
-            .world
-            .dialog
-            .inline
-            .as_ref()
-            .is_some_and(|id| id.prop_anchor.is_some())
-        {
-            self.world.dialog.inline = None;
-        }
+        self.world.dialog.inline = None;
+        self.world.dialog.current = None;
         self.world.cutscene.card = None;
         // Drop the previous scene's caption image (only `opdeene` re-decodes one
         // below); reset its fade + hold so a re-entry starts hidden.
