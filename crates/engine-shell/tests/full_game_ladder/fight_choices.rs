@@ -711,3 +711,19 @@ pub(super) fn direction_mask(b: u8) -> u16 {
         _ => PadButton::Up.mask(),
     }
 }
+
+/// Does the command ring refuse this member's Attack arm? All three Rot
+/// limbs (`+0x16E & 0x38 == 0x38`) leave the arts entry no direction, and
+/// the ring answers the Left press with the refusal cue and stays up
+/// (`FUN_801D0748`, `0x801D1560..0x801D156C`; `ring_arm_refused` in the
+/// engine). Sol's monster 120 rots limbs.
+pub(super) fn attack_refused(w: &legaia_engine_core::world::World, actor: u8) -> bool {
+    let raw = w
+        .actors
+        .get(usize::from(actor))
+        .map_or(0, |a| a.battle.field_flags)
+        | legaia_engine_battle_vm::status_effects::pack_display_flags(
+            w.battle.status_effects.statuses(actor),
+        );
+    raw & 0x38 == 0x38
+}

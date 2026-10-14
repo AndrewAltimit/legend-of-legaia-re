@@ -281,6 +281,11 @@ pub(super) fn fight_pad(session: &NativeSession) -> u16 {
             {
                 PadButton::Right.mask()
             }
+            // A member whose every limb is rotted cannot Attack: the ring
+            // refuses the arm and stays up, and pressing it for good left the
+            // fight unresolved (Sol's monster 120). The Spirit stance spends
+            // the turn instead.
+            CommandPhase::Menu { .. } if attack_refused(w, cmd.actor) => PadButton::Down.mask(),
             CommandPhase::RoundPrompt { .. }
             | CommandPhase::Menu { .. }
             | CommandPhase::AttackMode { .. }
