@@ -350,6 +350,36 @@ still until the countdown runs out, then looks at the scene again.
 `chitei2`'s collapse is the case: its expiry flag `0x4C7` is what the entry
 script's `0x4C8` hand-off tests, and no record on the disc sets it.
 
+### Talks the story reaches from elsewhere
+
+- **A dry talk is asked again.** A talk that ran and raised nothing is
+  remembered with the state of the system flags its record tests, and is
+  tried again in the same round once a later talk has moved one of them,
+  before the round's walk-ons can carry the party off. `doman`'s P1[3] has
+  nothing to say until Dr. Usha (P1[15]) has raised `0x379`, and the band
+  walked after her talk rides the lift up to the street.
+- **A record that polls a box is stood in.** A partition-1 record whose
+  first instructions box-test the player (`CD F8`) runs its story while the
+  player stands in the box once its talk has armed it. When its record
+  raises a still-clear flag the next anchor carries or a partition-2 record
+  of the scene tests, the hand talks to it, steps into the box, and then
+  straight onto the band that waits on what it raised. `doman` P1[18], Dr.
+  Usha's intercom at (40..41, 81), asks for the password and calls the lift
+  (`0x371`); the lift band P2[7] (41..43, 83) loops on `0x371` and rides the
+  party down to the lab. Walked in record order, P2[3] would send the lift
+  back up first; after the ride the round's other walk-ons wait for the next
+  round, whose talks come first.
+- **A talk gated on a member standing in a box** is played from a split
+  party (`43 02`): when the talk's record tests a clear flag the entry
+  script raises inside a player box test, the leader walks to the box's
+  middle (the entry script carves its edges out with half-tile `4C E4`
+  tests) and hands control on with Square, each member in turn, until the
+  flag stays up behind it.
+- **A dream is a visit.** A waypoint whose arrival script carries the party
+  straight back where it came from counts as visited when the stay moved a
+  system flag (`urudre3` P2[0] raises `0x3F4`, on which `uru`'s entry script
+  plays the waking).
+
 What it still does not do: sell outside an errand, use magic outside
 battle, or leave the cheapest route for a chest that sets no flag an anchor
 carries.
@@ -1211,6 +1241,14 @@ clips and matches the same arts a windowed one does. Beyond that:
   them back (`4C 73`). The rotation's No on a later crossing shut the door,
   and the upper car (P0[14]) then set the party down inside the shut car at
   (11, 119), walled on every side, with the call band beyond the door.
+- An op-`49 02` code lock (slot `0x21`, `FUN_801EED58`) gets its code
+  from the parked operand, one face button per symbol (Cross `0`, Circle
+  `1`, Square `2`, Triangle `3`). A player was told the password; Cross on
+  every symbol is the wrong answer.
+- A quiz is answered: of a picker with four options, the one whose
+  branch goes somewhere of its own while every other option's goes to one
+  shared reply. `doman` P1[3] asks four such questions before it raises
+  `0x4FF`, and each wrong answer ends the talk.
 - The continuous hand does not walk to a talk side off the scene's
   walk-visible floor. Retail's locomotion reads only the wall bits, so the
   black between a town's interior cutaways is open ground: `geremi` P1[68]
@@ -1383,9 +1421,33 @@ Scene-specific facts the route and the pad hand depend on. Each is a property of
   `nilboa`'s entry script raises it each pass that the leader or member
   `0x31` stands in the box `(53..55, 62..64)` clear of the sub-boxes its
   `4C E4` tests exclude, and lowers it otherwise.
-- `P2[32]`'s C2 gate is `0x370`, which `doman`'s Dr. Usha (`P1[2]` /
-  `P1[15]`) raises in the lab; the `usha_research` milestone is reached on
-  the street the `map03` door lands on, a walk component away from it.
+- `P2[32]`'s C2 gate is `0x370`, which Dr. Usha (`doman` P1[15]; P1[2]
+  is a developer flag menu) raises in the lab, a walk component below the
+  street the `map03` door lands on. The `usha_research` and `nivora`
+  milestones are both reached on arrival, so the story between them is all
+  waypoint play, and the retail anchors carry it as one chain:
+  1. `korb3`, Sol's lower floors: its P2[3] raises `0x511`, on which
+     `map03`'s entry script spawns P2[11], which raises `0x403` and returns
+     the party to `korb3`. `korb3`'s own story is a switch puzzle (P0[3..9]
+     raise `0x43E..0x444`; P2[2] waits on `0x41B`, `0x41C` and `0x436`).
+  2. `koin2` P1[19], Emperor Etora, stands at (127, 127) until `0x403` is
+     up; his talk raises `0x36D`, the password.
+  3. `doman` P1[18], the intercom, asks for it (`49 02`, then `0x36E`) and
+     calls the lift (`0x371`); the lift band P2[7] rides down to the lab.
+     Usha's first talk raises `0x379`; P1[3]'s quiz then raises `0x4FF`.
+  4. `uru`: P2[38] (C2 `0x379`, `0x4FF`) raises `0x3FC`, on which the entry
+     script clears the walls in front of the three statues; each statue
+     (P0[18..20]) carries the party to a corridor ending in a bed door
+     (P2[29] / P2[33] / P2[31]) into `urudre1` / `urudre2` / `urudre3`. The
+     entry script plays each waking (P2[30] / P2[32] / P2[34]) on the
+     dream's return flag, and the wakings raise `0x39A..0x39C` in turn;
+     P1[7] then spawns P2[36], which raises `0x36F` (and `map03`'s portal
+     to `uru` becomes `uru2`).
+  5. `doman` again: Usha's `0x36F` branch raises `0x370`.
+
+  The hand plays steps 3 to 5 from the `usha_research` anchor (spine vias
+  `doman`, `uru`, `urudre1`, `uru`, `urudre2`, `uru`, `urudre3`, `doman`);
+  a run of its own stops at step 1, so those vias are not in the spine yet.
 
 ### Overworld and dungeon joins
 
