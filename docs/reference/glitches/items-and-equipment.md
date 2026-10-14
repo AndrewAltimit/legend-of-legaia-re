@@ -2,8 +2,9 @@
 
 Five reported oversights in how the game handles items, stat boosts and equipment, each traced through the executable
 and overlays. Every claim here is read from instructions or decoded from disc bytes. One case, the Speed Elixir one,
-was also observed in a running game, captured on a poked state as its section describes; the other four have not been
-run, and each section says which parts are proven and which are predictions that follow from the code. The USA build
+was also observed in a running game, captured on a poked state as its section describes, and so was the enemy-item
+one; the other three have not been run, and each section says which parts are proven and which are predictions that
+follow from the code. The USA build
 is the one read throughout; the Elixir and coin-vendor sections also read the Japanese and French builds.
 
 Images and bases used on this page:
@@ -417,34 +418,81 @@ that logs the return address shows which event finally clears it.
 - Whether closing the pause menu re-runs the scene init.
 - A capture showing the effect surviving a scene change would mean a second path is involved.
 
-## Point Card softlock
+## Enemy items aimed at an ally
+
+<a id="point-card-softlock"></a>
 
 **Status:** explained
-**Reported as:** using the Point Card in battle with one of the party's own characters as the target hangs the battle.
+**Reported as:** an enemy-targeted battle item can be aimed at one of the party's own characters. With the Point Card
+the battle hangs (the "Point Card softlock"); with the Lippian Flute an ally can be killed and stay on their feet
+("Lippian Roulette"). The outcome matrix below is a community report by ZetaPhoenix.
 
-Two separate defects combine, and both are read directly from the instructions. Neither has been run.
+Two consumables can be aimed this way: the **Point Card** and the **Lippian Flute**. The Spikefish Flute cannot,
+because it targets every enemy at once and never opens a cursor.
 
-The first lets the cursor reach an ally. The Point Card is an enemy-targeted item. When it is picked, the game builds a
-ring of selectable targets that starts from whoever this character targeted last. It builds the ring first and only
-afterwards checks that the last target was an enemy. If the last action was aimed at an ally - any healing item or
-Elixir, whose cursor starts on the user - that ally is already stored as the ring's first entry. The cursor is moved to
-an enemy, but one press of Left steps back onto the ally.
+Three things combine. The first is shared; the other two decide what each item does to an ally.
 
-The second makes it hang. The Point Card's damage routine subtracts HP from its target and does nothing else. Every
-other routine that changes a party member's HP also records how far the on-screen HP number still has to count. At the
-end of an action the game waits until every targeted party member's on-screen HP equals the real HP. Here they differ
-and nothing is scheduled to close the gap, so it waits forever with the camera orbiting.
+1. **The cursor can reach an ally.** When a single-target enemy item is picked, the game builds a ring of selectable
+   targets that starts from whoever this character targeted last. It builds the ring first and only afterwards checks
+   that the last target was an enemy. If the last action was aimed at an ally - any healing item or Elixir, whose
+   cursor starts on the user - that ally is already stored as the ring's first entry. The cursor is moved to an enemy,
+   but one press of Left steps back onto the ally.
+2. **The Point Card's damage skips the HP readout.** Its routine subtracts HP from the target and does nothing else.
+   Every other routine that changes a party member's HP also records how far the on-screen HP number still has to
+   count. At the end of an action the game holds, turning the camera, until every party member's on-screen HP equals
+   the real HP. Here they differ and nothing is scheduled to close the gap, so the hold never ends.
+3. **Lippian's kill is written for a monster.** It zeroes HP, stages the target's knockdown and switches on the
+   monster's defeat fade. On a party seat that fade is the one a revive uses: the body goes black, is put back in its
+   standing pose and fades in again. HP stays 0, so the character is dead in every way but the pose.
 
-This is the first of the two softlock classes described in
-[`battle-action-exit-gates.md`](../../subsystems/battle-action-exit-gates.md): the state-`0x51` HP-readout park. It is
-not the state-`0x19` approach park. The trigger is a party-side HP write with no readout seed, reachable from the pad
-on an unmodified disc.
+### Outcome matrix
+
+Evidence: **C** = community report (ZetaPhoenix, in game), **D** = disassembly, **P** = captured on a poked state
+(see [What was captured](#what-was-captured-enemy-items)).
+
+| Item | Condition | Living ally | Dead ally |
+|---|---|---|---|
+| Point Card | holds points | Battle hangs: the camera orbits for ever. Lethal or not. (C, D, P) | No hang; the points are still spent. (C, D, P) |
+| Point Card | no points | Nothing; the turn is used. (C, D, P) | Nothing. (C, D) |
+| Lippian Flute | kill roll fails | Nothing; the flute is used up. (C, D, P) | Nothing. (C, D, P) |
+| Lippian Flute | kill roll lands | HP goes to 0 but the ally stands back up. (C, D, P) | The body stands up, still at 0 HP. (C, D, P) |
+
+Notes that go with the matrix:
+
+- **The dead-ally column holds only when the item user is the first fighter to act in the round.** For anyone acting
+  later the game re-rolls a dead target among the *living party members*, the user included, and the living-ally
+  column applies to whoever it picks (D, P). See [the dead-target redirect](#the-dead-target-redirect).
+- **Point Card on a dead ally is not quite nothing.** The whole bank, up to 9999, is spent, a damage number is shown
+  and the body replays its collapse. Nothing hangs because real and on-screen HP are both 0 (D, P).
+- **The Point Card itself is never used up.** It is taken from the bag at commit and added back when the action
+  starts. The Lippian Flute is consumed (D, P).
+- **The kill roll is 1 in 128,** not 1 in 126: `rand() & 0x7F`, kill on zero. The number 126 does appear on the item,
+  as the effect class byte of its descriptor, which is not a probability (D).
+- **A standing character at 0 HP is dead to the rules.** The command ring skips them, and when the last living member
+  is "killed" this way the battle ends in the ordinary defeat message with the character upright (D, P).
+
+### Which items the arm serves
+
+The Item window forks on two flag bits of the item's effect descriptor: `0x40` (enemy side) and `0x20` (all targets).
+Only `0x40` set with `0x20` clear enters the single-enemy picker, phase `0x5B`, which is the arm whose ring is built
+before its target is validated.
+
+| Item | Id | Descriptor | Flags | Phase | Reaches an ally |
+|---|---|---|---|---|---|
+| Point Card | `0xFE` | subtype `0x7E`: `01 00 C4 41` | one enemy | `0x5B` | yes |
+| Lippian Flute | `0x98` | subtype `0x27`: `7E 00 C4 41` | one enemy | `0x5B` | yes |
+| Spikefish Flute | `0x99` | subtype `0x28`: `7F 00 E4 41` | all enemies | `0x5D` | no: target byte `9`, no cursor |
+
+Those are the only three consumable records whose descriptor has `0x40` set. Descriptor rows `0x23` (`7E 00 C6 41`)
+and `0x24` (`7F 00 E6 41`) carry the same two classes with the field-usable bit added, and no consumable record
+selects either. The game's own code names the same pair: the dead-target redirect tests the item id against `0xFE`
+and `0x98` and nothing else.
 
 ### Mechanism
 
-1. **The item.** Item `0xFE` has record bytes `02 7E 00 00` and descriptor `01 00 C4 41`: flags `0xC4` are enemy side
-   (`0x40`), battle-usable (`0x04`), single target.
-2. **The Item window builds the ring before validating.** In `FUN_801D0748` of PROT entry 0898:
+**Reaching an ally (both items).**
+
+1. **The Item window builds the ring before validating.** In `FUN_801D0748` of PROT entry 0898:
 
    ```text
    801d18f8  jal 0x801d8a88       ; build the target ring
@@ -459,19 +507,25 @@ on an unmodified disc.
    The Magic window does the same two steps in the other order (validate at `0x801D1C8C..0x801D1CBC`, build at
    `0x801D1CC0`), and the Attack command validates at `0x801D1574..0x801D15AC` before its ring is built. Only the Item
    arm is out of order.
-3. **The ring builder** `FUN_801D8A88` counts living monsters into `ctx[+0x244]`, then stores the actor's current
+2. **The ring builder** `FUN_801D8A88` counts living monsters into `ctx[+0x244]`, then stores the actor's current
    target unchecked as the ring head: `sb v0,0x245(v1)` at `0x801D8B30`. Up to three other living monsters go to
    `ctx[+0x246..+0x248]`.
-4. **The cycler** `FUN_801D8D00` finds the current target at ring index `i`. "Previous" returns `ctx[+0x244 + i]` for
+3. **The cycler** `FUN_801D8D00` finds the current target at ring index `i`. "Previous" returns `ctx[+0x244 + i]` for
    `i != 0` (`0x801D8DAC..0x801D8DC4`); "next" returns the head when `i` is the last index (`0x801D8DA0`). With a stale
    ally in the head and the cursor on the first ringed monster, Left returns the ally.
-5. **The picker** (phase `0x5B`, handler `0x801D23F0`) stores the cycler's result at `0x801D2630`. Its confirm path
+4. **The picker** (phase `0x5B`, handler `0x801D23F0`) stores the cycler's result at `0x801D2630`. Its confirm path
    `0x801D24AC..0x801D2540` does not re-validate the target.
-6. **Where the stale ally comes from.** The single-ally item arm seeds the cursor with the actor's own seat
-   (`sb v1,0x1dd(v0)` at `0x801D19A0`). The target byte is set to `3` once at battle start (`0x801D87CC..0x801D87D8`)
-   and is only re-picked at a round boundary when its target is dead (`0x801D8A34..0x801D8A54`), so a living ally stays
-   there from turn to turn.
-7. **The action.** State `0x3E` of the action state machine `FUN_801E295C` special-cases the id:
+5. **Where the stale ally comes from.** The single-ally item arm seeds the cursor with the actor's own seat
+   (`sb v1,0x1dd(v0)` at `0x801D19A0`). The target byte is set to `3` once at battle start (`0x801D87CC..0x801D87D8`).
+   At a round boundary it is re-picked only when it names a dead seat (`0x801D8A00..0x801D8A54`), so a living ally
+   stays there from turn to turn and a dead one does not.
+
+**Point Card.**
+
+1. **The item.** Item `0xFE` has record bytes `02 7E 00 00`. At commit one card leaves the bag (`FUN_80042310` at
+   `0x801D24FC`). When the action reaches state `0x3E` of `FUN_801E295C`, the per-item routine `FUN_801F3990` puts it
+   back: `jal 0x800421d4` with `(0xFE, 1)` at `0x801F3A58`.
+2. **The selector override.** State `0x3E` special-cases the id:
 
    ```text
    801e4080  lbu v1,0x1df(s3)
@@ -481,22 +535,94 @@ on an unmodified disc.
    801e40c0  sb v0,0x1e8(s3)      ; applier selector = 0x0E
    ```
 
-   State `0x3F` calls `FUN_800402F4` with that selector and the target seat at `0x801E4134`.
-8. **The discharge arm** `0x8004209C` takes `min(bank, 9999)` points off the bank at `0x800845B4`, queues a flinch or
-   death clip (`+0x1DA`, `+0x1DC`) and writes HP (`sh v0,0x14c(v1)` at `0x8004219C`). It writes neither the pending
-   readout accumulator `+0x10` nor the displayed HP `+0x172`. The heal and revive arms of the same function seed the
-   accumulator at `0x800408FC`, `0x80040D28` and `0x800410BC`. An empty bank exits at `0x800420AC` before any store.
-9. **The park.** State `0x51` only counts its exit timer down while `FUN_801E7250` returns 0 (`0x801E6044`). For a
-   party target that function compares `lhu 0x14c` with `lhu 0x172` at `0x801E72A8..0x801E72B4` and returns 1 when they
-   differ. The displayed value only moves through a drain that is skipped when the accumulator is zero.
+   State `0x3F` calls `FUN_800402F4` with that selector and the target seat at `0x801E4134`. Neither state tests the
+   target's side or HP.
+3. **The discharge arm** `0x8004209C` exits at `0x800420AC` when the bank at `0x800845B4` is empty, before any store.
+   Otherwise it takes `min(bank, 9999)` off the bank, stages a reaction clip on the target (`+0x1DA`, `+0x1DC`) and
+   writes HP, clamped at 0 (`sh v0,0x14c(v1)` at `0x8004219C`). It writes neither the pending readout accumulator
+   `+0x10` nor the displayed HP `+0x172`. The heal and revive arms of the same function seed the accumulator at
+   `0x800408FC`, `0x80040D28` and `0x800410BC`.
+4. **The reaction is always the knockdown on a party seat.** The flinch is taken only when `+0x1F2` is zero and the
+   hit is survivable (`0x800420F4..0x80042124`), and every party actor has `+0x1F2 = 5`. A survivor's knockdown chains
+   into the get-up; at 0 HP it chains into the collapse (clips `7`, then `8`).
+5. **The hold.** State `0x51` turns the orbit yaw every frame (`0x801E6024..0x801E6040`) and counts its exit timer
+   down only while `FUN_801E7250` returns 0 (`0x801E6044`). For a party seat that function compares `lhu 0x14c` with
+   `lhu 0x172` at `0x801E72A8..0x801E72B4` and returns 1 when they differ. The displayed value only moves through a
+   drain that is skipped when the accumulator is zero. This is the first softlock class of
+   [`battle-action-exit-gates.md`](../../subsystems/battle-action-exit-gates.md), the state-`0x51` HP-readout park,
+   and not the state-`0x19` approach park.
+6. **A dead target cannot hang.** HP is already 0, the clamp writes 0 again, and `+0x14C == +0x172`. The bank is
+   debited all the same, because the arm never looks at the target before spending it.
+
+**Lippian Flute.** The flute casts spell `0x96`, whose module is `FUN_801F6A18` in PROT entry 0924. The module reads
+its victim from the caster's target byte on every tick (`0x801F6A68..0x801F6A78`) and never asks which side it is on.
+
+1. **The roll.** Phase 0 calls `rand` and raises the kill flag `0x801F7C4C` only when the low seven bits are zero
+   (`andi v0,v0,0x7f` at `0x801F6B14`).
+2. **What every cast does to the victim.** Tint and animation-rate writes only: `+0x04 = 0x20080200`, `+0x21C = 0`
+   (`0x801F73E0..0x801F73E8`), `+0x21D = 0` then `8` (`0x801F7468`, `0x801F7634`). No HP is touched.
+3. **The failed branch** (`beq a0,zero` at `0x801F7664`) leaves the victim at that. The only later difference is the
+   "Ultimate Rave" caption.
+4. **The kill branch**, `0x801F7684..0x801F76BC`:
+
+   ```text
+   801f7684  lbu v1,0x1f1(s3)     ; the victim's knockdown clip
+   801f7688  lhu t0,0x14c(s3)     ; its HP
+   801f7690  sb v0,0x225(s3)      ; = 2
+   801f7694  sb v0,0x21c(s3)      ; = 2, the defeat fade
+   801f76a0  sh zero,0x14c(s3)    ; HP = 0
+   801f76a4  sb v1,0x1da(s3)      ; stage the knockdown
+   801f76b4  addu v1,v1,t0
+   801f76bc  _sw v1,0x10(s3)      ; readout accumulator += old HP
+   ```
+
+   The accumulator is seeded, so the on-screen HP counts down to 0 and state `0x51` clears. This is the write the
+   Point Card arm is missing.
+5. **The fade arm reads a party seat as a revive.** `+0x21C = 2` selects arm 2 of the per-actor presentation tick
+   `FUN_80050120` (`0x80050230`). Its gate normally waits for the lying pose, and a non-zero `+0x225` opens it at once
+   (`0x8005023C..0x8005027C`). When the colour reaches black on a party seat it stores `+0x21C = 0`, **`+0x1DA = 0`**
+   (the idle clip) and `+0x1DC = 1` (commit now) at `0x80050348..0x80050350`. The revive arm of the item applier is
+   what normally sets `+0x21C = 2` on a party seat (`0x800410D0`), after it has restored HP.
+6. **Living victim.** The knockdown commits, the commit ladder of `FUN_8004AD80` chains it to the collapse because HP
+   is 0, and the fade then overwrites the staged clip with idle. The character drops, goes black and stands up.
+7. **Dead victim.** HP is 0, so the accumulator gains nothing. The same fade lifts the body out of its lying clip into
+   idle: it "gets up" at 0 HP.
+8. **Afterwards.** `+0x225` is cleared before the next action begins. Nothing restores HP, and HP is what the rest of the
+   battle reads: the next-member scans `FUN_801DBA04` / `FUN_801DB81C` skip a seat at 0 HP, and the party-wipe count
+   at state `0x5A` counts it as down.
+
+### The dead-target redirect
+
+`FUN_801DB124` in PROT entry 0898 re-aims a queued action whose target has died. For the item category it acts on
+exactly two ids, which is the game treating these as its two single-target enemy items:
+
+```text
+801db1e0  _li v0,0xfe
+801db1e4  lbu v1,0x1df(s0)
+801db1ec  beq v1,v0,0x801db1fc    ; Point Card
+801db1f0  _li v0,0x98
+801db1f4  bne v1,v0,0x801db300    ; anything but the Lippian Flute: leave it
+801db1fc  sltiu v0,a1,0x3         ; is the dead target a party seat?
+```
+
+A dead party seat is replaced by `rand() % party_count`, retried until the seat is alive (`0x801DB210..0x801DB274`);
+a dead monster seat by a living monster. The roll stays on the dead target's own side, so a card or flute aimed at a
+dead ally moves to a living ally.
+
+The redirect is called from the turn picker `FUN_801DABA4`, and for a party seat only while the command flow byte
+`ctx[+0x06]` reads `0xFF` (`0x801DAF04..0x801DAF14`). The round's first pick is made by the initiative seeder
+`FUN_801DA780`, which the command-flow machine `FUN_801D0748` calls (`0x801D0E8C`, `0x801D0ED8`) while that byte
+still holds a menu state: in the capture the first fighter is already chosen on the Begin / Run screen.
+The first fighter of a round is therefore never redirected, and every later one is.
 
 ### Addresses
 
 | Address | Image | What | Evidence |
 |---|---|---|---|
 | `0x800845B4` | RAM | Point Card bank, u32 | disassembly |
-| `0x80074F50` | SCUS | item `0xFE` record | disc data |
-| `0x800754B8` | SCUS | its effect descriptor `01 00 C4 41` | disc data |
+| `0x80074F50`, `0x800754B8` | SCUS | item `0xFE` record and its descriptor `01 00 C4 41` | disc data |
+| `0x80074A88`, `0x8007535C` | SCUS | item `0x98` record and its descriptor `7E 00 C4 41` | disc data |
+| `0x80074A94`, `0x80075360` | SCUS | item `0x99` record and its descriptor `7F 00 E4 41` | disc data |
 | `0x801D18E0` | PROT 0898 | Item window, enemy single-target arm, through `0x801D1964` | disassembly |
 | `0x801D8A88` | PROT 0898 | target ring builder; head store `0x801D8B30` | disassembly |
 | `0x801D8D00` | PROT 0898 | target ring cycler | disassembly |
@@ -504,38 +630,81 @@ on an unmodified disc.
 | `ctx[+0x244..+0x248]` | RAM | ring count, head, three more seats | disassembly |
 | `0x801D23F0` | PROT 0898 | phase `0x5B` picker; target store `0x801D2630` | disassembly |
 | `0x801D19A0` | PROT 0898 | ally-item arm seeding the actor's own seat | disassembly |
+| `0x801D8A00` | PROT 0898 | round-boundary re-pick of a dead stored target, through `0x801D8A54` | disassembly |
+| `0x801DB124` | PROT 0898 | dead-target redirect; item-id tests `0x801DB1E0..0x801DB1F4` | disassembly |
+| `0x801DAF04` | PROT 0898 | turn picker's gate on the redirect for a party seat | disassembly |
+| `0x801F3A58` | PROT 0898 | Point Card handed back to the bag | disassembly |
 | `0x801E4080` | PROT 0898 | state `0x3E` selector override for item `0xFE` | disassembly |
 | `0x801E4134` | PROT 0898 | state `0x3F` call into the applier | disassembly |
 | `0x8004209C` | SCUS | Point Card discharge arm, through `0x8004219C` | disassembly |
 | `0x801E7250` | PROT 0898 | HP-readout settle check | disassembly |
-| `0x801E6044` | PROT 0898 | state `0x51` gate on the settle check | disassembly |
+| `0x801E6044` | PROT 0898 | state `0x51` gate on the settle check; orbit yaw step at `0x801E6024` | disassembly |
+| `0x801F6B0C` | PROT 0924 | Lippian kill roll; flag at `0x801F7C4C` | disassembly |
+| `0x801F7684` | PROT 0924 | Lippian kill writes on the victim, through `0x801F76BC` | disassembly |
+| `0x80050230` | SCUS | presentation arm 2; party-seat completion at `0x80050348` | disassembly |
+| `0x800410D0` | SCUS | revive arm setting `+0x21C = 2` | disassembly |
 | actor `+0x10`, `+0x14C`, `+0x172` | RAM | readout accumulator, live HP, displayed HP | disassembly |
+| actor `+0x1DA`, `+0x1DC`, `+0x1F1` | RAM | staged clip, clip event flags, knockdown clip id (`4` on a party seat) | disassembly |
 | actor `+0x1DD`, `+0x1DF`, `+0x1E8` | RAM | target seat, item id, applier selector | disassembly |
+| actor `+0x21C`, `+0x225` | RAM | presentation arm, capture / fade-now byte | disassembly |
+
+<a id="what-was-captured-enemy-items"></a>
+
+### What was captured
+
+Probe `scripts/pcsx-redux/autorun_enemy_item_ally_target.lua`, on the catalogued state
+`cort_evolved_battle_first_menu` (three members on the first command screen). The cursor path is the real one: the
+probe presses Begin, opens the Item window, picks the item, presses Left and confirms. **Poked** once before the
+walk: the item into bag slot 0, the Point Card bank, the user's stored target byte (the stale ally a healing item
+leaves), and HP 0 plus a staged knockdown on the two members who are not the user, so that they are lying dead when
+the walk starts. For the flute rows the kill flag is forced, since the roll is 1 in 128.
+
+| Run | Logged |
+|---|---|
+| ring, any run | ring count 1, head = the ally seat, then the monster; Left moves the target byte from `3` to the ally |
+| Point Card, 50 points, user on self | bank `50 -> 0`, HP `3437 -> 3387`, displayed `3437`, accumulator 0; clips `4`, `5`, idle; state `0x51` to the end of the run |
+| Point Card, 9999 points, user on self | HP 0, displayed `3090`; clips `4`, `7`, then idle at state `0x51`; same hang |
+| Point Card, 0 points, user on self | no store on the target; the round goes on to the monster's turn |
+| Point Card, 50 points, dead ally, user first | bank `50 -> 0`, target HP 0 and displayed 0, clips `4`, `7`, `8`; no hang |
+| Point Card, 50 points, dead ally, user not first | target byte re-rolled to the living user at the pick, then the hang |
+| Lippian, kill forced, user on self | HP `3090 -> 0`, accumulator `3090` draining to 0; clips `4`, `7`, idle; `+0x21C` `2 -> 0`; defeat follows |
+| Lippian, kill forced, dead ally | clips `8`, `4`, `7`, idle; HP 0 throughout; the round goes on |
+| Lippian, roll forced to fail | no HP, clip or accumulator change on the target, living or dead |
+| card and flute counts | the card `3 -> 2` at commit, `-> 3` at state `0x3E`; the flute `3 -> 2` and no return |
+
+In the hang the screenshots show the "Points returned" caption still up, the HP bar at its old value and the camera
+at a different angle in each frame. In the kill-on-self runs the user is the last living member, so the standing
+character is followed by the party-defeat message and the title screen. The dead-ally rows were run with the user as
+the round's first fighter (seat 1 in that state) and once with a user who is not.
 
 ### Scope
 
-These follow from the code and are untested:
-
-- It hangs on any party target, not only the user. The user is just the seat the ally cursor leaves behind.
-- It hangs whether or not the hit is lethal. In the lethal case the readout shows the old HP on a character at 0.
-- With an empty bank nothing is written and the battle continues.
-- Aimed at a monster it is harmless: the settle check returns 0 for seats `3..7`.
-
-The out-of-order arm serves every single-target enemy-side item, which by the descriptor table is the Point Card and
-the summon flutes' single-target members. A flute takes a different applier path, so whether it also hangs is open.
+- The hang needs points in the bank and a living party target at the moment the card resolves. It is the same for a
+  lethal and a non-lethal hit.
+- A lethal Point Card hit on the user's own seat shows the character collapse and stand up again before the hang:
+  the end-of-action cleanup sets the acting actor's exit-to-idle flag (`+0x1DC` bit 2), which ends the collapse in
+  idle. The readout still shows the old HP. This is what a report of the character being "revived" describes.
+- Aimed at a monster both items behave as designed: the settle check returns 0 for seats `3..7`, and the defeat fade
+  on a monster seat removes it.
+- Japanese and PAL builds were not read for this entry.
 
 ### Verifying it
 
-Use a healing item on the acting character, or open and cancel its ally cursor. Next turn pick the Point Card and press
-Left. A breakpoint at `0x801D2630` shows `v0` in `0..2`. Confirm, then watch `ctx[+0x07] == 0x51` with `ctx[+0x6D8]`
-frozen at `0x3C`, the target's `+0x14C` different from its `+0x172`, and its `+0x10` zero. Writing `+0x172 = +0x14C`
-by hand releases the battle.
+Use a healing item on the acting character, or open and cancel its ally cursor. Next turn pick the Point Card or the
+Lippian Flute and press Left. A breakpoint at `0x801D2630` shows `v0` in `0..2`.
+
+- Point Card: confirm, then watch `ctx[+0x07] == 0x51` with `ctx[+0x6D8]` frozen at `0x3C`, the target's `+0x14C`
+  different from its `+0x172`, and its `+0x10` zero. Writing `+0x172 = +0x14C` by hand releases the battle.
+- Lippian Flute: write a non-zero word to `0x801F7C4C` once the cast's phase byte `ctx[+0x279]` has left 0. At
+  `0x801F76A0` register `s3` is the ally's actor. Afterwards its `+0x14C` is 0 and its playing clip `+0x1D9` is 0.
+- Redirect: break on `0x801DB260`. It is hit only when the user is not the round's first fighter.
 
 ### Open questions
 
-- One community report says the character is revived at once before the hang. State `0x50` runs the Lost Grail
-  auto-revive, which may be what was seen; it may also be the stale readout. Not traced.
-- Whether the Point Card debited at commit (`FUN_80042310` at `0x801D24FC`) is handed back.
+- Whether a revive item works normally on a member left standing at 0 HP, and whether monsters still pick that seat.
+- How a dead ally comes to be the stored target at command time. The round-boundary pass replaces a dead target, so
+  it has to be stored by an ally cursor within the same command phase; that path is not traced.
+- The outcome matrix was observed on the USA release; other builds are unread.
 
 ## Coin vendor purchases past 99 (Japanese release)
 

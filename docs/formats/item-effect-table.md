@@ -79,9 +79,12 @@ reads `DAT_800754C8 + id*0xC` `+2` at `0x801D1C48` and runs the identical
 low nibbles agree (an item's `0xC4` is `0x80 | 0x44` = the spell table's "one
 enemy", `0xE4` is `0x80 | 0x64` = "all enemies", `0x86`/`0xA6` are `0x80 | 0x06`
 / `0x80 | 0x26` = one / all allies), and the five `0x40` subtypes are exactly
-the enemy-directed consumables - the Point Card (subtype `0x7E`, flag `0xC4`)
-and the two summon-flute pairs, whose class-`126` member carries `0xC4`/`0xC6`
-(one enemy) and whose class-`127` member carries `0xE4`/`0xE6` (all enemies).
+the enemy-directed descriptors - the Point Card (subtype `0x7E`, flag `0xC4`)
+and two pairs for the summon flutes, whose class-`126` member carries
+`0xC4`/`0xC6` (one enemy) and whose class-`127` member carries `0xE4`/`0xE6`
+(all enemies). Three consumables select them: the Point Card, the Lippian Flute
+(subtype `0x27`, `0xC4`) and the Spikefish Flute (subtype `0x28`, `0xE4`). The
+`0xC6` / `0xE6` rows (subtypes `0x23`, `0x24`) are selected by no consumable.
 
 An opcode-decoding sweep of `SCUS_942.54` plus all 80 based overlay images for a
 `+2` byte load followed within five instructions by `andi ..., 0x40` finds

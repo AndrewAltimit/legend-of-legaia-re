@@ -1,12 +1,12 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../../index.html">home</a> &middot; <a href="../index.html">write-ups</a> &middot; <a href="index.html">glitches</a> &middot; items, stats and equipment</div>
   <h1>Items, stats and equipment</h1>
-  <p class="lede">Five reported oversights in how Legend of Legaia handles items, stat boosts and equipment, each followed through the game's own code: stacked Speed Elixirs that lock characters out of their turns and hand turns to empty slots, story events that take equipment without telling the rest of the game, a Point Card that can freeze a battle, a Japanese coin vendor that sells a hundredth item, and a prize that can be announced and never handed over.</p>
+  <p class="lede">Five reported oversights in how Legend of Legaia handles items, stat boosts and equipment, each followed through the game's own code: stacked Speed Elixirs that lock characters out of their turns and hand turns to empty slots, story events that take equipment without telling the rest of the game, enemy items that can be turned on your own party - a Point Card that freezes the battle and a flute that kills an ally who stays standing, a Japanese coin vendor that sells a hundredth item, and a prize that can be announced and never handed over.</p>
 </header>
 
 <div class="notice">
   <div class="notice-title">How to read this page</div>
-  Everything here is read from the instructions and data on the disc - the USA disc throughout, plus the Japanese and French discs for the Elixir and coin-vendor sections. One section, the Speed Elixir one, was also <strong>observed in a running game, captured on a poked state</strong>: values were written by hand in an emulator, as that section spells out. The other four were not run. Where a section says something "should" happen, that is a prediction that follows from the code and is marked as untested. Each glitch has an address table so another reader with a debugger can check it.
+  Everything here is read from the instructions and data on the disc - the USA disc throughout, plus the Japanese and French discs for the Elixir and coin-vendor sections. Two sections, the Speed Elixir one and the enemy-item one, were also <strong>observed in a running game, captured on a poked state</strong>: values were written by hand in an emulator, as each section spells out. The other three were not run. Where a section says something "should" happen, that is a prediction that follows from the code and is marked as untested. Each glitch has an address table so another reader with a debugger can check it.
 </div>
 
 <section class="doc-section" id="stat-boost-overflow">
@@ -326,20 +326,53 @@
   <p>Equip Yuma's Ring on Vahn: <code>0x800847FC</code> has bit <code>0x4</code> and the live max MP at <code>0x80084810</code> is 110% of the stored one at <code>0x80084826</code>. Give the ring to Zalan. Straight afterwards the slot bytes at <code>0x800848A3..0x800848A5</code> hold no ring, but the bit and the live max MP are unchanged. A breakpoint on <code>0x80042558</code> that logs the caller shows which event finally clears it. Related reference: <a href="../../formats/accessory-passive-table.html">accessory passives</a>, <a href="../../subsystems/script-vm.html">field script VM</a>.</p>
 </section>
 
-<section class="doc-section" id="point-card-softlock">
-  <h2>Point Card softlock</h2>
+<section class="doc-section" id="enemy-items-aimed-at-an-ally">
+  <h2>Enemy items aimed at an ally</h2>
+  <span id="point-card-softlock"></span>
   <dl class="kv">
-    <dt>Reported as</dt><dd>Using the Point Card in battle on one of your own characters hangs the battle (community report)</dd>
-    <dt>Cause</dt><dd>The target cursor can step onto an ally, and the Point Card's damage skips the HP-counter bookkeeping the end of the action waits on</dd>
-    <dt>Where</dt><dd>Item window at <code>0x801D18F8</code> and the action state machine in PROT 0898; discharge arm <code>0x8004209C</code> in <code>SCUS_942.54</code></dd>
-    <dt>Affects</dt><dd>Any party member as the target, as long as the Point Card holds points</dd>
-    <dt>Status</dt><dd><span class="tag tag-done">Explained</span> - from the instructions; not run</dd>
+    <dt>Reported as</dt><dd>An enemy-targeted battle item can be aimed at one of your own characters. The Point Card then hangs the battle (the "Point Card softlock"); the Lippian Flute can kill an ally who stays on their feet ("Lippian Roulette"). Outcome matrix from a community report by ZetaPhoenix</dd>
+    <dt>Cause</dt><dd>The target cursor can step onto an ally. The Point Card's damage skips the HP-counter bookkeeping the end of the action waits on; Lippian's kill runs a fade that stands a party member back up at 0 HP</dd>
+    <dt>Where</dt><dd>Item window at <code>0x801D18F8</code> and the action state machine in PROT 0898; discharge arm <code>0x8004209C</code> and fade arm <code>0x80050230</code> in <code>SCUS_942.54</code>; Lippian cast module <code>FUN_801F6A18</code> in PROT 0924</dd>
+    <dt>Affects</dt><dd>The Point Card and the Lippian Flute, aimed at any party member. Not the Spikefish Flute, which hits every enemy and never opens a cursor</dd>
+    <dt>Status</dt><dd><span class="tag tag-done">Explained</span> - read from the instructions, matched against the community matrix and captured on a poked state</dd>
   </dl>
 
-  <p>Two separate mistakes line up.</p>
-  <p><strong>The cursor can reach an ally.</strong> The Point Card is meant for enemies. When you pick it, the game builds a ring of targets that starts from whoever this character aimed at last. It builds the ring first and only afterwards checks that the last target was an enemy. If the last thing this character did was aimed at an ally - any healing item or Elixir, whose cursor starts on the user - that ally is already in the ring. The cursor is moved to an enemy, but one press of Left steps back onto the ally.</p>
-  <p><strong>The hit breaks the HP display.</strong> The Point Card's damage routine subtracts HP and does nothing else. Every other routine that changes a party member's HP also notes how far the on-screen number still has to count. At the end of an action the game waits until on-screen HP equals real HP. Here they differ and nothing is counting, so it waits forever while the camera circles.</p>
-  <p>This is the same end state as the first of the two known battle softlocks - the HP-counter wait - reached a new way, from the controller on an unmodified disc. It is not the approach softlock described in <a href="../gaza-orbit-softlock.html">the endless camera orbit</a>.</p>
+  <p>Two items in the game are meant for one enemy and nobody else: the Point Card and the Lippian Flute. Both can be pointed at your own party, and each does something its designers never drew.</p>
+  <p><strong>The cursor can reach an ally.</strong> When you pick one of these items, the game builds a ring of targets that starts from whoever this character aimed at last. It builds the ring first and only afterwards checks that the last target was an enemy. If the last thing this character did was aimed at an ally - any healing item or Elixir, whose cursor starts on the user - that ally is already in the ring. The cursor is moved to an enemy, but one press of Left steps back onto the ally.</p>
+  <p><strong>The Point Card breaks the HP display.</strong> Its damage routine subtracts HP and does nothing else. Every other routine that changes a party member's HP also notes how far the on-screen number still has to count. At the end of an action the game holds, slowly turning the camera, until on-screen HP equals real HP. Here they differ and nothing is counting, so the hold never ends: the "Points returned" caption stays up, the HP bar keeps its old value and the camera circles for good.</p>
+  <p><strong>Lippian's kill is written for a monster.</strong> It sets HP to 0, starts the target's knockdown and switches on the fade a defeated monster disappears with. On a party member that same fade is the one a revive uses: the body goes black, is put back in its standing pose and fades in again. HP stays at 0, so the character is dead in every way except how they look.</p>
+  <p>The Point Card hang is the same end state as the first of the two known battle softlocks - the HP-counter wait - reached from the controller on an unmodified disc. It is not the approach softlock described in <a href="../gaza-orbit-softlock.html">the endless camera orbit</a>.</p>
+
+  <h3>What happens, case by case</h3>
+  <p>Each cell says where it comes from: <strong>C</strong> a community report (ZetaPhoenix, in game), <strong>D</strong> the disassembly, <strong>P</strong> a capture on a poked state, described below.</p>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Item</th><th>Condition</th><th>Living ally</th><th>Dead ally</th></tr></thead>
+    <tbody>
+      <tr><td>Point Card</td><td>holds points</td><td>Battle hangs: the camera orbits for ever. Lethal or not. (C, D, P)</td><td>No hang; the points are still spent. (C, D, P)</td></tr>
+      <tr><td>Point Card</td><td>no points</td><td>Nothing; the turn is used. (C, D, P)</td><td>Nothing. (C, D)</td></tr>
+      <tr><td>Lippian Flute</td><td>kill roll fails</td><td>Nothing; the flute is used up. (C, D, P)</td><td>Nothing. (C, D, P)</td></tr>
+      <tr><td>Lippian Flute</td><td>kill roll lands</td><td>HP goes to 0 but the ally stands back up. (C, D, P)</td><td>The body stands up, still at 0 HP. (C, D, P)</td></tr>
+    </tbody>
+  </table></div>
+  <ul>
+    <li><strong>The dead-ally column holds only when the item user is the first fighter to act that round.</strong> For anyone acting later the game re-rolls a dead target among the <em>living party members</em>, the user included, and the living-ally column applies to whoever it picks (D, P).</li>
+    <li><strong>Point Card on a dead ally is not quite nothing.</strong> The whole bank, up to 9999 points, is spent, a damage number is shown and the body replays its collapse. Nothing hangs because real and on-screen HP are both 0 (D, P).</li>
+    <li><strong>The Point Card itself is never used up.</strong> It leaves the bag when you confirm and is added back when the action starts. The Lippian Flute is consumed (D, P).</li>
+    <li><strong>The kill roll is 1 in 128</strong>, not 1 in 126: a random number's low seven bits must all be zero. The number 126 does appear on the item, as the effect class of its descriptor, which is not a probability (D).</li>
+    <li><strong>A standing character at 0 HP is dead to the rules.</strong> The command ring skips them, and when the last living member is "killed" this way the battle ends in the ordinary defeat message with the character upright (D, P).</li>
+  </ul>
+
+  <h3>Which items can do this</h3>
+  <p>The Item window looks at two flags on the item: "enemy side" and "all targets". Only "enemy side, one target" opens the cursor whose ring is built too early.</p>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Item</th><th>Id</th><th>Descriptor</th><th>Target</th><th>Reaches an ally</th></tr></thead>
+    <tbody>
+      <tr><td>Point Card</td><td><code>0xFE</code></td><td><code>01 00 C4 41</code></td><td>one enemy</td><td>yes</td></tr>
+      <tr><td>Lippian Flute</td><td><code>0x98</code></td><td><code>7E 00 C4 41</code></td><td>one enemy</td><td>yes</td></tr>
+      <tr><td>Spikefish Flute</td><td><code>0x99</code></td><td><code>7F 00 E4 41</code></td><td>all enemies</td><td>no: no cursor is opened</td></tr>
+    </tbody>
+  </table></div>
+  <p>Those are the only three consumables with the enemy-side flag. Two more descriptor rows carry the flute classes (<code>7E 00 C6 41</code> and <code>7F 00 E6 41</code>), and no consumable uses either. The game's own code names the same pair: the routine that re-aims an action whose target has died tests the item id against <code>0xFE</code> and <code>0x98</code> and nothing else.</p>
 
   <figure class="diagram">
     <svg viewBox="0 0 640 330" role="img" aria-label="Top: the four-entry target ring. Its first entry is the acting character&#x27;s last target, here a stale ally seat; the next three are monsters. The cursor starts on the first monster and one press of Left moves it to the ally. Bottom: after the Point Card hit the real HP is 188 while the on-screen HP still reads 600, and the countdown that would close the 412-point gap is zero" xmlns="http://www.w3.org/2000/svg">
@@ -379,13 +412,12 @@
 
   <ol class="steps">
     <li><b>Aim at an ally</b><span>A healing item or Elixir leaves an ally seat in the actor's target byte <code>+0x1DD</code>.</span></li>
-    <li><b>Pick the Point Card</b><span>The ring is built at <code>0x801D18F8</code>; the enemy check comes after, at <code>0x801D1918</code>.</span></li>
+    <li><b>Pick the Point Card or the Lippian Flute</b><span>The ring is built at <code>0x801D18F8</code>; the enemy check comes after, at <code>0x801D1918</code>.</span></li>
     <li><b>Press Left</b><span>The cycler <code>FUN_801D8D00</code> returns the ring head: the ally.</span></li>
-    <li><b>The hit lands</b><span>Arm <code>0x8004209C</code> lowers HP and seeds no countdown.</span></li>
-    <li><b>The wait</b><span>State <code>0x51</code> asks <code>FUN_801E7250</code> every frame and is always told "not settled".</span></li>
+    <li><b>Point Card: the hit lands</b><span>Arm <code>0x8004209C</code> lowers HP and seeds no countdown, so state <code>0x51</code> asks <code>FUN_801E7250</code> every frame and is always told "not settled".</span></li>
+    <li><b>Lippian Flute: the roll</b><span>One chance in 128 at <code>0x801F6B14</code>. On a miss the target is only tinted.</span></li>
+    <li><b>Lippian Flute: the kill</b><span><code>0x801F7684</code> zeroes HP, seeds the countdown and sets the fade; the fade arm at <code>0x80050348</code> puts a party member back in the standing pose.</span></li>
   </ol>
-
-  <p>Predictions from the code, none of them tested: it hangs on <em>any</em> party target, not only the user; it hangs whether or not the hit is lethal; with an empty Point Card nothing is written and the battle continues; aimed at a monster it is harmless.</p>
 
   <details class="disclosure">
     <summary>The instructions</summary>
@@ -394,11 +426,26 @@
 801d1918  lbu v0,0x1dd(v0)     ; only now read the stored target
 801d1924  sltiu v0,v0,5        ; a monster seat (3..7)?
 801d1930  jal 0x801db8b4       ; if not: first living monster</pre>
-      <p>The Magic window runs the same two steps in the right order (check at <code>0x801D1C8C</code>, build at <code>0x801D1CC0</code>). The builder stores the unchecked target as the ring head with <code>sb v0,0x245(v1)</code> at <code>0x801D8B30</code>. The picker stores the cycler's answer at <code>0x801D2630</code> and its confirm path never re-checks it.</p>
+      <p>The Magic window runs the same two steps in the right order (check at <code>0x801D1C8C</code>, build at <code>0x801D1CC0</code>). The builder stores the unchecked target as the ring head with <code>sb v0,0x245(v1)</code> at <code>0x801D8B30</code>. The picker stores the cycler's answer at <code>0x801D2630</code> and its confirm path never re-checks it. At a round boundary a stored target is replaced only when it names a dead seat (<code>0x801D8A00..0x801D8A54</code>), so a living ally stays stored from turn to turn.</p>
 <pre>801e4084  addiu v0,zero,0xfe   ; item 0xFE?
 801e40bc  addiu v0,zero,0xe
 801e40c0  sb v0,0x1e8(s3)      ; applier selector = 0x0E</pre>
-      <p>The discharge arm spends <code>min(bank, 9999)</code> from <code>0x800845B4</code>, queues a reaction clip and writes HP at <code>0x8004219C</code>. It writes neither the countdown at actor <code>+0x10</code> nor the displayed HP at <code>+0x172</code>; the heal and revive arms of the same routine do, at <code>0x800408FC</code>, <code>0x80040D28</code> and <code>0x800410BC</code>. The settle check compares <code>+0x14C</code> with <code>+0x172</code> at <code>0x801E72A8..0x801E72B4</code>.</p>
+      <p>The discharge arm leaves at <code>0x800420AC</code> when the bank at <code>0x800845B4</code> is empty. Otherwise it spends <code>min(bank, 9999)</code>, queues a reaction clip and writes HP at <code>0x8004219C</code>, clamped at 0, without ever looking at the target first. It writes neither the countdown at actor <code>+0x10</code> nor the displayed HP at <code>+0x172</code>; the heal and revive arms of the same routine do, at <code>0x800408FC</code>, <code>0x80040D28</code> and <code>0x800410BC</code>. The settle check compares <code>+0x14C</code> with <code>+0x172</code> at <code>0x801E72A8..0x801E72B4</code>, and state <code>0x51</code> turns the orbit angle every frame at <code>0x801E6024</code> while it waits. On a dead target both values are 0, so nothing hangs. The card comes back to the bag at <code>0x801F3A58</code>.</p>
+<pre>801f6b14  andi v0,v0,0x7f      ; kill only when the low seven bits are zero
+801f7684  lbu v1,0x1f1(s3)     ; the victim's knockdown clip
+801f7688  lhu t0,0x14c(s3)     ; its HP
+801f7690  sb v0,0x225(s3)      ; = 2
+801f7694  sb v0,0x21c(s3)      ; = 2, the defeat fade
+801f76a0  sh zero,0x14c(s3)    ; HP = 0
+801f76a4  sb v1,0x1da(s3)      ; stage the knockdown
+801f76bc  sw v1,0x10(s3)       ; countdown += old HP</pre>
+      <p>The cast module reads its victim from the caster's target byte on every tick (<code>0x801F6A68</code>) and never asks which side it is on. Because the countdown is seeded here, the HP number counts to 0 and the action ends normally. The fade is arm 2 of the per-actor presentation tick <code>FUN_80050120</code>: a non-zero <code>+0x225</code> starts it at once, and when a party seat reaches black it stores <code>+0x21C = 0</code>, <code>+0x1DA = 0</code> (the standing clip) and <code>+0x1DC = 1</code> at <code>0x80050348..0x80050350</code>. The revive arm of the item routine is what normally sets <code>+0x21C = 2</code> on a party member (<code>0x800410D0</code>), after it has restored HP.</p>
+<pre>801db1e0  li v0,0xfe
+801db1ec  beq v1,v0,0x801db1fc    ; Point Card
+801db1f0  li v0,0x98
+801db1f4  bne v1,v0,0x801db300    ; anything but the Lippian Flute: leave it
+801db1fc  sltiu v0,a1,0x3         ; is the dead target a party seat?</pre>
+      <p>That is the dead-target redirect <code>FUN_801DB124</code>. A dead party seat is replaced by a random living party seat (<code>0x801DB210..0x801DB274</code>). It is called from the turn picker only while the command-flow byte reads <code>0xFF</code> (<code>0x801DAF04</code>), and the round's first fighter is picked earlier than that, from the menu half of the battle (<code>0x801D0E8C</code>, <code>0x801D0ED8</code>). So the first fighter of a round is never re-aimed and every later one is.</p>
     </div>
   </details>
 
@@ -406,26 +453,61 @@
     <thead><tr><th>Address</th><th>Image</th><th>What</th><th>Evidence</th></tr></thead>
     <tbody>
       <tr><td><code>0x800845B4</code></td><td>RAM</td><td>Point Card bank</td><td>disassembly</td></tr>
-      <tr><td><code>0x80074F50</code>, <code>0x800754B8</code></td><td>SCUS</td><td>Item <code>0xFE</code> record and its descriptor (flags <code>0xC4</code>: enemy side, battle, single)</td><td>disc data</td></tr>
+      <tr><td><code>0x80074F50</code>, <code>0x800754B8</code></td><td>SCUS</td><td>Item <code>0xFE</code> record and its descriptor</td><td>disc data</td></tr>
+      <tr><td><code>0x80074A88</code>, <code>0x8007535C</code></td><td>SCUS</td><td>Item <code>0x98</code> record and its descriptor</td><td>disc data</td></tr>
+      <tr><td><code>0x80074A94</code>, <code>0x80075360</code></td><td>SCUS</td><td>Item <code>0x99</code> record and its descriptor</td><td>disc data</td></tr>
       <tr><td><code>0x801D18E0</code></td><td>PROT 0898</td><td>Item window, enemy single-target arm</td><td>disassembly</td></tr>
       <tr><td><code>0x801D8A88</code></td><td>PROT 0898</td><td>Ring builder; head store <code>0x801D8B30</code></td><td>disassembly</td></tr>
       <tr><td><code>0x801D8D00</code></td><td>PROT 0898</td><td>Ring cycler</td><td>disassembly</td></tr>
       <tr><td><code>ctx[+0x244..+0x248]</code></td><td>RAM</td><td>Ring count, head, three more seats</td><td>disassembly</td></tr>
       <tr><td><code>0x801D23F0</code></td><td>PROT 0898</td><td>Target picker; store at <code>0x801D2630</code></td><td>disassembly</td></tr>
       <tr><td><code>0x801D19A0</code></td><td>PROT 0898</td><td>Ally-item arm seeding the user's own seat</td><td>disassembly</td></tr>
+      <tr><td><code>0x801DB124</code></td><td>PROT 0898</td><td>Dead-target redirect; item-id tests at <code>0x801DB1E0</code></td><td>disassembly</td></tr>
+      <tr><td><code>0x801DAF04</code></td><td>PROT 0898</td><td>Turn picker's gate on the redirect for a party seat</td><td>disassembly</td></tr>
+      <tr><td><code>0x801F3A58</code></td><td>PROT 0898</td><td>Point Card handed back to the bag</td><td>disassembly</td></tr>
       <tr><td><code>0x801E4080</code></td><td>PROT 0898</td><td>Action state <code>0x3E</code>: selector override for item <code>0xFE</code></td><td>disassembly</td></tr>
       <tr><td><code>0x801E4134</code></td><td>PROT 0898</td><td>Action state <code>0x3F</code>: call into the applier</td><td>disassembly</td></tr>
       <tr><td><code>0x8004209C</code></td><td>SCUS</td><td>Point Card discharge arm, through <code>0x8004219C</code></td><td>disassembly</td></tr>
       <tr><td><code>0x801E7250</code></td><td>PROT 0898</td><td>HP-counter settle check</td><td>disassembly</td></tr>
-      <tr><td><code>0x801E6044</code></td><td>PROT 0898</td><td>Action state <code>0x51</code> gate</td><td>disassembly</td></tr>
+      <tr><td><code>0x801E6044</code></td><td>PROT 0898</td><td>Action state <code>0x51</code> gate; orbit step at <code>0x801E6024</code></td><td>disassembly</td></tr>
+      <tr><td><code>0x801F6B0C</code></td><td>PROT 0924</td><td>Lippian kill roll; flag at <code>0x801F7C4C</code></td><td>disassembly</td></tr>
+      <tr><td><code>0x801F7684</code></td><td>PROT 0924</td><td>Lippian kill writes on the victim, through <code>0x801F76BC</code></td><td>disassembly</td></tr>
+      <tr><td><code>0x80050230</code></td><td>SCUS</td><td>Fade arm; party-seat completion at <code>0x80050348</code></td><td>disassembly</td></tr>
+      <tr><td><code>0x800410D0</code></td><td>SCUS</td><td>Revive arm setting <code>+0x21C = 2</code></td><td>disassembly</td></tr>
       <tr><td>actor <code>+0x10</code>, <code>+0x14C</code>, <code>+0x172</code>, <code>+0x1DD</code></td><td>RAM</td><td>Countdown, real HP, on-screen HP, target seat</td><td>disassembly</td></tr>
-      <tr><td>the hang itself</td><td>-</td><td>Follows from the two defects; not run</td><td>inference</td></tr>
+      <tr><td>actor <code>+0x1DA</code>, <code>+0x1F1</code>, <code>+0x21C</code>, <code>+0x225</code></td><td>RAM</td><td>Staged clip, knockdown clip id, presentation arm, fade-now byte</td><td>disassembly</td></tr>
     </tbody>
   </table></div>
 
+  <h3>What was captured</h3>
+  <p>The probe <code>scripts/pcsx-redux/autorun_enemy_item_ally_target.lua</code> runs on a catalogued save state with three members on the first command screen of a battle. The cursor path is the real one: it presses Begin, opens the Item window, picks the item, presses Left and confirms. <strong>Written by hand</strong> once beforehand: the item into the first bag slot, the Point Card's points, the user's stored target (the stale ally a healing item leaves), and 0 HP plus a staged knockdown on the two members who are not the user, so that they are lying dead when the walk starts. For the flute rows the kill flag is forced, since the roll is 1 in 128.</p>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Run</th><th>Logged</th></tr></thead>
+    <tbody>
+      <tr><td>The ring, every run</td><td>Ring head is the ally seat; Left moves the target byte from <code>3</code> to the ally</td></tr>
+      <tr><td>Point Card, 50 points, user on self</td><td>Bank 50 to 0, HP 3437 to 3387, on-screen 3437, countdown 0; knockdown, get-up; state <code>0x51</code> to the end of the run</td></tr>
+      <tr><td>Point Card, 9999 points, user on self</td><td>HP 0, on-screen 3090; collapse, then standing again at state <code>0x51</code>; the same hang</td></tr>
+      <tr><td>Point Card, 0 points, user on self</td><td>Nothing written to the target; the round goes on to the monster's turn</td></tr>
+      <tr><td>Point Card, 50 points, dead ally, user first</td><td>Bank 50 to 0; target HP and on-screen HP both 0; the body replays its collapse; no hang</td></tr>
+      <tr><td>Point Card, 50 points, dead ally, user not first</td><td>Target re-rolled to the living user when the turn is picked, then the hang</td></tr>
+      <tr><td>Lippian, kill forced, user on self</td><td>HP 3090 to 0, countdown 3090 draining to 0; knockdown, collapse, standing; defeat follows</td></tr>
+      <tr><td>Lippian, kill forced, dead ally</td><td>Lying, knockdown, collapse, standing; HP 0 throughout; the round goes on</td></tr>
+      <tr><td>Lippian, roll forced to fail</td><td>No HP, clip or countdown change on the target, living or dead</td></tr>
+      <tr><td>Card and flute counts</td><td>The card goes 3, 2 at confirm, 3 when the action starts; the flute goes 3, 2 and stays</td></tr>
+    </tbody>
+  </table></div>
+  <p>In the hang the screenshots show the "Points returned" caption still up, the HP bar at its old value and the camera at a different angle each time. In the kill-on-self runs the user is the last living member, so the standing character is followed by the party-defeat message and the title screen.</p>
+  <p>One detail explains an older report that the character is "revived" before the freeze. A lethal Point Card hit on the user's own seat shows the character collapse and stand up again: the end-of-action cleanup tells the acting character to return to the standing pose when its current clip ends. The HP bar still shows the old value, and the battle still hangs.</p>
+
   <h3>Verifying it</h3>
-  <p>Use a healing item on the acting character, or open and cancel its ally cursor. Next turn pick the Point Card and press Left: a breakpoint at <code>0x801D2630</code> shows a seat of 0, 1 or 2. Confirm, then watch the action state byte sit at <code>0x51</code> with its timer frozen at <code>0x3C</code>, the target's <code>+0x14C</code> different from its <code>+0x172</code> and its <code>+0x10</code> zero. Writing <code>+0x172 = +0x14C</code> by hand should release the battle. Related reference: <a href="../../subsystems/battle-action.html">battle action state machine</a>.</p>
-  <p>Open: one community report says the character is revived at once before the freeze. That was not traced.</p>
+  <p>Use a healing item on the acting character, or open and cancel its ally cursor. Next turn pick the Point Card or the Lippian Flute and press Left: a breakpoint at <code>0x801D2630</code> shows a seat of 0, 1 or 2.</p>
+  <ul>
+    <li><strong>Point Card:</strong> confirm, then watch the action state byte sit at <code>0x51</code> with its timer frozen at <code>0x3C</code>, the target's <code>+0x14C</code> different from its <code>+0x172</code> and its <code>+0x10</code> zero. Writing <code>+0x172 = +0x14C</code> by hand releases the battle.</li>
+    <li><strong>Lippian Flute:</strong> write a non-zero word to <code>0x801F7C4C</code> once the cast's phase byte <code>ctx[+0x279]</code> has left 0. At <code>0x801F76A0</code> register <code>s3</code> is the ally's actor. Afterwards its <code>+0x14C</code> is 0 and its playing clip <code>+0x1D9</code> is 0.</li>
+    <li><strong>Redirect:</strong> break on <code>0x801DB260</code>. It is hit only when the user is not the round's first fighter.</li>
+  </ul>
+  <p>Related reference: <a href="../../subsystems/battle-action.html">battle action state machine</a>, <a href="../../formats/item-effect-table.html">item-effect table</a>.</p>
+  <p>Open: whether a revive item works normally on a member left standing at 0 HP, and whether monsters still pick that seat; how a dead ally comes to be the stored target at command time (the round-boundary pass replaces a dead one); other builds were not read for this entry.</p>
 </section>
 
 <section class="doc-section" id="jp-coin-vendor-99">

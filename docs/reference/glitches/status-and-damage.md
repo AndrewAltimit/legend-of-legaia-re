@@ -43,23 +43,31 @@ that runs once per battle frame.
 From the frame in which the first blow lands until the animation runs out, 20 keyframes later,
 that routine flips a coin every battle frame and puts the confusion status on Noa's target
 whenever it comes up heads. Nothing records that the coin has already come up heads and nothing
-checks a resistance. How many flips fit into those 20 keyframes depends only on how many vertical
-blanks the game is spending per battle frame:
+checks a resistance.
 
-| Frame step | Tough Love: rolls | Chance it is on at the end | Love You: rolls | Love You: rolls after its last hit |
-|---|---|---|---|---|
-| 4 (slowest the game allows) | 10 | 99.90% (a miss is 1 in 1,024) | 40 | 34 |
-| 3 | 14 | 99.994% (1 in 16,384) | 54 | 46 |
-| 2 | 20 | 99.9999% (1 in 1,048,576) | 80 | 68 |
+In ordinary play that is **20 flips for Tough Love** and **80 for Love You**:
 
-Each roll is exactly one in two, so after `N` rolls the chance is `1 - 0.5^N`. For Love You only
-the rolls after its fourth hit count, because every hit wipes the status again; even the smallest
-figure, 34, leaves a miss at 1 in 17 billion.
+| Art | Rolls | Rolls that decide the outcome | Chance the status is on at the end |
+|---|---|---|---|
+| Tough Love | 20 | 20 | 99.9999% (a miss is 1 in 1,048,576) |
+| Love You | 80 | 68 | all but certain |
+
+Each roll is exactly one in two, so after `N` rolls the chance is `1 - 0.5^N`. The two roll columns
+differ only for Love You, and for one reason: every hit wipes the status again, so the rolls made
+before its fourth and last hit cannot decide anything. Tough Love has one hit and the window opens
+on it, so all of its rolls count.
+
+Those figures hold while the battle runs at its usual pace of one battle frame every two video
+frames. The roll is made once per battle frame, and the animation advances by a fixed amount of
+*time* per battle frame, so when the game drops frames the same animation is covered in fewer
+battle frames and fewer rolls. One battle frame every three video frames gives 14 rolls for Tough
+Love and 54 (46 deciding) for Love You; the floor, one in four, gives 10 and 40 (34 deciding).
+Even the floor leaves Tough Love at 99.90%.
 
 So the report is right in kind - it is a repeated roll, and it is close to unmissable - but the
 roll is tied to frames, not to hits, and the count is never seven. Seven rolls would be 99.22%;
-the frame step is capped at 4, so 10 is the fewest either art can make. Another community figure,
-"about 13", is the Tough Love count at a frame step of 3.
+10 is the fewest either art can make. Another community figure, "about 13", is the Tough Love
+count on a battle that is dropping to one frame in three.
 
 The status is the confusion group: the monster keeps its chosen action but aims it at its own
 side. It has no timer; it ends when the monster next takes damage. That is why it sticks only when
@@ -125,6 +133,18 @@ optional boss by monster id.
 
 ### The roll count
 
+Two different numbers enter the count, and they are easy to mix up.
+
+- The **playback rate** is a byte of the art record, entry `+0x78`: `4` on Tough Love, `2` on Love
+  You. It is disc data, fixed per art, and nothing in play changes it.
+- The **frame step** is the scratchpad byte `0x1F800393`: how many video frames (60ths of a second)
+  the game is spending on each battle frame. It belongs to no art. The frame driver rebuilds it
+  every frame from how long the last sixteen frames took to draw, so it measures how hard the
+  console is working: `2` in a normal battle, `3` while the screen is busy.
+
+The rate is why Love You makes four times as many rolls as Tough Love. The frame step is why
+neither art has one single count.
+
 The window is a stretch of the clip cursor, which counts sixteenths of a keyframe.
 
 - It opens in the frame the cursor first satisfies `(cursor >> 4) + 1 >= 0x19`, the first strike
@@ -149,10 +169,22 @@ staged as a Super Art, at 2. Tough Love therefore advances `8 * step` per frame 
 
 At step 3 the Tough Love count is 13 instead of 14 when the cursor does not land on 384 exactly.
 
-Which column a player gets depends on the frame step, which is the pacer's measure of the slowest
-of the last 16 frames (`0x80017098..0x8001715C`), capped at 4. Battle save states made on a
-timing-accurate emulator mostly hold 2 or 3, which points to 14 to 20 rolls for Tough Love on a
-console (inference). No value gives fewer than 10.
+Which column a player gets depends on the frame step. The frame driver `FUN_80016B6C` keeps the
+draw time of the last sixteen frames, in scanlines, and takes the slowest: under `0xF1` is step 1,
+under `0x1FF` step 2, under `0x2D1` step 3, and 4 only when the newest frame alone ran past that
+(`0x80017098..0x8001715C`). A per-mode floor is then applied, and the battle's floor is 1
+([battle-stage-camera.md](../../subsystems/battle-stage-camera.md#the-frame-step)).
+
+Battle save states from a timing-accurate emulator show what a console holds. Of 76 states that
+are in a battle, 57 hold step 2, 18 hold step 3, one (a loading frame) holds 1 and none holds 4.
+The step-3 states are summon close-ups, cast modules and other effect-heavy moments. Step 2, so 20
+rolls for Tough Love and 80 for Love You, is therefore the normal case, and step 3 the case for a
+busy screen. None of the 76 is taken inside either of these two animations, so which of the two
+steps Love You's own effects produce is inferred, not captured.
+
+Step 4 is what the capture emulator below runs at on its own. That is a property of its timing,
+not of the game: it is why the measured table starts at 10 and 40, the counts a console would
+rarely if ever show.
 
 Nothing in the window happens seven times: one strike or four, 20 keyframes, and 10 or more
 passes. The tempting reading - one roll per hit, or a fixed seven - fails on the first count.
@@ -181,7 +213,11 @@ the disc images first.
 | Love You | 3 (forced) | 54 | 46 | 28 |
 
 "Forced" means the frame-step byte `0x1F800393` was also overwritten each frame. Love You at step 2
-(80 and 68) is not captured; it is the same formula the six captures fit. In the first run the
+(80 and 68) is not captured; it is the same formula the six captures fit.
+
+The last column is not a property of the art. It is how many of that run's rolls happened to come
+up heads, and each of those writes the same bits again. It is there to show the write really
+happens more than once; another run of the same art gives a different number. In the first run the
 ten rolls read `1 0 0 1 0 0 0 0 0 1` (0 applies): seven writes, the first on the second roll, and
 the word then stays `0x0380` for the rest of the capture. Seven writes out of ten rolls is chance,
 not a count the code makes. In the queued-swings run the status is on when the clip ends and Noa's
@@ -199,7 +235,7 @@ next swing clears it.
 | entry `+0x77` | PROT 0864 `record[0]`, art bank at decoded `+0x5A30`, records 19 and 33 | Clip keys `0x29` (Tough Love) and `0x2D` (Love You) | disc data |
 | entry `+0x7A` | same records | Status selector, `0` on both arts | disc data |
 | entry `+0x76` | same records | `1` on both: no early cut after the last strike | disc data |
-| entry `+0x78` | same records | Playback rate: 4 (Tough Love), 2 (Love You) | disc data |
+| entry `+0x78` | same records | Playback rate: 4 (Tough Love), 2 (Love You). Fixed per art; not the frame step | disc data |
 | `actor[+0x1F4]` | RAM | Per-clip strike counter; raised at `0x801EECE8`, zeroed at `0x8004B064` | disassembly, capture |
 | `actor[+0x16E]` bits `0x0380` | RAM | AI-delegation (confusion) group the arm sets | disassembly |
 | `ctx[+0x287]` | RAM | Scripted-fight flag; non-zero disables the arm | disassembly |
@@ -212,6 +248,7 @@ next swing clears it.
 | `0x8004BB64..0x8004BBA4` | `SCUS_942.54` | Art commit: speed 2 or 4 from `ctx[+0x243]` | disassembly, capture |
 | `0x1F800393` | RAM (scratchpad) | Frame step, 1..4 | disassembly |
 | `0x80017098..0x8001715C` | `SCUS_942.54` | Pacer that sets the frame step; frame-cost ring at `0x80084098` | disassembly |
+| `0x80084098` | RAM | Draw time of the last sixteen frames, `s16[16]`, in scanlines; its maximum picks the step | disassembly, save states |
 
 ### Scope
 
@@ -238,8 +275,9 @@ each Love You hit clearing `0x380` at `0x801EDA60` and a later roll setting it a
 
 ### Open questions
 
-- The frame step a real console holds while these two animations play, which picks between 14 and
-  20 rolls for Tough Love. It does not change the outcome: every possible value gives 10 or more.
+- The frame step held while these two animations play, measured on a timing-accurate emulator or
+  a console. Battle states in general hold 2, and 3 on a busy screen; no state inside either
+  animation is on hand. It does not change the outcome: every possible value gives 10 or more.
 - A played confirmation, with the art entered from the arts menu instead of a rewritten queue.
 - Whether a strike that misses still opens the window. The counter is raised on the routine's
   common exit path, which suggests it does.
