@@ -99,7 +99,8 @@ a dependent crate.
 - **Submode, panels and the dev menu** - `submode_hub_actors` (the op-`0x49`
   submode system-actor handler family), `world_map_panel` /
   `world_map_panel_actors` (the panel window system and its actor state
-  machines), `dev_menu_leaves`, `dev_menu_adjust` and `dev_equip_commit`.
+  machines), `dev_menu_leaves`, `dev_menu_adjust`, `dev_menu_flags` (the
+  EVENT FLAG editor kernels) and `dev_equip_commit`.
 - **World map** - `world_map_entity` (the entity state machine
   `FUN_801DA51C`), `world_map_dim`, `world_map_horizon` and
   `travel_art_actor` (Riremito and Rula).

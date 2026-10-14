@@ -35,6 +35,7 @@ pub mod cutscene_narration;
 pub mod cutscene_timeline;
 pub mod dev_equip_commit;
 pub mod dev_menu_adjust;
+pub mod dev_menu_flags;
 pub mod dev_menu_leaves;
 pub mod dialog_state;
 pub mod escape_timer;

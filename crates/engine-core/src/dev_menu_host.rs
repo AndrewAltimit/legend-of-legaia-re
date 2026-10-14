@@ -29,9 +29,9 @@
 //! This screen is a developer tool, so the shell keeps it behind an explicit
 //! opt-in rather than a menu row a player can reach.
 
-use crate::dev_menu::EventFlagEditor;
 use legaia_engine_field::dev_equip_commit::{EquipCommit, EquipCommitHost, commit_equip};
 use legaia_engine_field::dev_menu_adjust::{clamp1_255_step, wrap12_step};
+use legaia_engine_field::dev_menu_flags::EventFlagEditor;
 use legaia_engine_field::dev_menu_leaves::{
     DevMenuRow as RetailRow, ListPickerPhase, PanelGeometry, decode_camera_readout,
     dev_menu_cursor_step, format_fixed_decimal, list_body_draws, panel_geometry,

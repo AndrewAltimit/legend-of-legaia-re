@@ -16,7 +16,6 @@ pub mod card_write;
 pub mod cheat_applier;
 pub mod cheats;
 pub mod dance_venue;
-pub mod dev_menu;
 pub mod dev_menu_host;
 pub mod disc_readers;
 pub mod field_menu_dispatch;

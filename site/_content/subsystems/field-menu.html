@@ -164,7 +164,7 @@
     <summary>Deep dive: popup geometry and the debug flag editor</summary>
     <div class="disclosure-body">
       <p>Popup (window 47): x/w static <code>(170,128)</code>; <code>y = settings-window y + 0x16 + &Sigma; advances above the cursor row</code>, <code>h = choices &times; 13 - 4</code>, flipped up when the bottom would pass <code>0xB0</code>. Rows advance 14 px, 20 px across the two group separators; labels ink 7 white (ink 5 teal on the indented Dual Shock sub-rows), values ink 6 gold at <code>x+140</code>. Committing Events to Off also zeroes the live rumble state.</p>
-      <p>The retail <em>debug</em> build's developer menu (overlay 0897) carries a raw EVENT FLAG index/value poke tool - not part of the retail pause menu. Two kernels are ported for completeness: the value step (Up/Down &plusmn;<code>0x8</code>, &plusmn;<code>0x80</code> with Triangle, Left/Right &plusmn;1, clamped <code>[0, 0xFFF]</code>) and the wrapping list cursor. Engine: <code>engine-core::dev_menu</code>.</p>
+      <p>The retail <em>debug</em> build's developer menu (overlay 0897) carries a raw EVENT FLAG index/value poke tool - not part of the retail pause menu. Two kernels are ported for completeness: the value step (Up/Down &plusmn;<code>0x8</code>, &plusmn;<code>0x80</code> with Triangle, Left/Right &plusmn;1, clamped <code>[0, 0xFFF]</code>) and the wrapping list cursor. Engine: <code>engine-field::dev_menu_flags</code>.</p>
     </div>
   </details>
 </section>
