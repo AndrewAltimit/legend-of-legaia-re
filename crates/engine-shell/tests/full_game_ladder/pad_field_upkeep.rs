@@ -82,6 +82,26 @@ pub(super) fn party_hp_permille(session: &NativeSession) -> u32 {
         .unwrap_or(1000)
 }
 
+/// The pad edge that moves a pause list's hand from row `cursor` toward row
+/// `want`, or Cross once it is there. Up and Down wrap inside the page
+/// (the kind-4 list kernel `FUN_80032A44`), so a row on another page is
+/// reached by paging first: Down from row 0 never reaches row 18.
+pub(super) fn list_step_toward(cursor: usize, want: usize) -> u16 {
+    use legaia_engine_menus::pause_screens::LIST_PAGE_ROWS;
+    let (page, want_page) = (cursor / LIST_PAGE_ROWS, want / LIST_PAGE_ROWS);
+    if page < want_page {
+        PadButton::Right.mask()
+    } else if page > want_page {
+        PadButton::Left.mask()
+    } else if cursor < want {
+        PadButton::Down.mask()
+    } else if cursor > want {
+        PadButton::Up.mask()
+    } else {
+        PadButton::Cross.mask()
+    }
+}
+
 /// Heal the party with the pad, as a player does before a boss or after a
 /// fight that left it low: Start opens the pause menu, the cursor walks to
 /// Items, Use, the first HP-restoring item, the weakest member; repeat while
@@ -218,15 +238,7 @@ pub(super) fn pad_field_restore(session: &mut NativeSession, threshold: u32, mp:
                         }
                     }
                     (PauseItemsFocus::List, InventoryUseState::Browsing { .. }) => {
-                        let want = want.unwrap_or(0);
-                        let cursor = p.list_cursor();
-                        if cursor < want {
-                            PadButton::Down.mask()
-                        } else if cursor > want {
-                            PadButton::Up.mask()
-                        } else {
-                            PadButton::Cross.mask()
-                        }
+                        list_step_toward(p.list_cursor(), want.unwrap_or(0))
                     }
                     (PauseItemsFocus::List, InventoryUseState::TargetSelect { cursor, .. }) => {
                         let weakest = p
@@ -703,14 +715,7 @@ pub(super) fn pad_field_repel(session: &mut NativeSession, threshold: u32) -> bo
                             }
                         }
                         (PauseItemsFocus::List, InventoryUseState::Browsing { .. }, Some(k)) => {
-                            let cursor = p.list_cursor();
-                            if cursor < k {
-                                PadButton::Down.mask()
-                            } else if cursor > k {
-                                PadButton::Up.mask()
-                            } else {
-                                PadButton::Cross.mask()
-                            }
+                            list_step_toward(p.list_cursor(), k)
                         }
                         _ => PadButton::Circle.mask(),
                     }
