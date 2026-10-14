@@ -229,6 +229,7 @@ pub(super) fn picker_pad(session: &NativeSession) -> Option<u16> {
     let want = split_stay_option(session)
         .or_else(|| beat_progress_option(session))
         .or_else(|| (visit == 1).then(|| wanted_flag_option(session)).flatten())
+        .or_else(|| open_way_option(session))
         .or_else(|| rest_option(session))
         .unwrap_or((visit - 1) % n);
     Some(if cursor < want {
@@ -430,6 +431,52 @@ pub(super) fn wanted_flag_option(session: &NativeSession) -> Option<usize> {
         );
     }
     (hits.len() == 1).then(|| hits[0])
+}
+
+/// The option of the open picker that opens the way when another option
+/// shuts it: the one branch that clears collision-grid wall bits (op `4C`
+/// nibble 7, sub 0 or 2) while another sets them (sub 1 or 3), each
+/// followed through its jumps to its first `0x21` or scene change. A
+/// player answers the question that lets them through. `balden` P2[6], the
+/// lower elevator car's call band, asks "Are you human?": Yes clears the
+/// car door's wall bits (`4C 72`) and starts the car, No paints them back
+/// (`4C 73`). The rotation's No on a later crossing shut the door, and the
+/// upper car (P0[14]) then set the party down inside the shut car, whose
+/// touch its own ride turns off until the call band - beyond the shut
+/// door - turns it back on.
+pub(super) fn open_way_option(session: &NativeSession) -> Option<usize> {
+    let (count, targets, bc) = open_picker(session)?;
+    // `Some(true)` opens, `Some(false)` shuts, `None` paints nothing.
+    let paints = |mut at: usize| -> Option<bool> {
+        for _ in 0..256 {
+            let i = legaia_scene_formats::field_disasm::decode(&bc, at).ok()?;
+            if bc[at] == 0x4C && bc.get(at + 1).is_some_and(|b| b & 0xF0 == 0x70) {
+                return Some(bc[at + 1] & 1 == 0);
+            }
+            if matches!(bc[at] & 0x7F, 0x21 | 0x3F) {
+                return None;
+            }
+            at = match i.info {
+                legaia_scene_formats::field_disasm::InsnInfo::JmpRel { target, .. } => target,
+                _ => at + i.size.max(1),
+            };
+        }
+        None
+    };
+    let painted: Vec<Option<bool>> = (0..count.min(4)).map(|k| paints(targets[k])).collect();
+    let opens: Vec<usize> = (0..painted.len())
+        .filter(|&k| painted[k] == Some(true))
+        .collect();
+    let pick = (opens.len() == 1 && painted.contains(&Some(false))).then(|| opens[0]);
+    if let Some(k) = pick
+        && std::env::var_os("LEGAIA_FGL_TRACE").is_some()
+    {
+        eprintln!(
+            "      [pick] {} picker: option {k} opens the way",
+            scene_name(session)
+        );
+    }
+    pick
 }
 
 /// The picker the modal timeline (or the first spawned record with a box)
