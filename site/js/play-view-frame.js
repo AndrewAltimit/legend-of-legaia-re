@@ -167,7 +167,18 @@
               }
               this.pulse.clear();
               this._repack();
-              break;
+              /* The hand-off took this tick; the frame's remaining ticks
+               * run on the new scene, as they do after a door and in the
+               * native window's loop (its prologue arm returns from one
+               * `sim_tick`, not from the frame). Breaking here dropped up to
+               * three ticks on a frame that carried several. They read the
+               * new scene's cutscene state: the opening's pad lock does not
+               * outlive the opening. */
+              if (typeof rt.play_cutscene_state_json === 'function') {
+                try { this._cut = JSON.parse(rt.play_cutscene_state_json()); }
+                catch (e) { /* keep the previous read */ }
+              }
+              continue;
             }
           }
           /* Party wipe: the engine raises game over and the overlay draws the
