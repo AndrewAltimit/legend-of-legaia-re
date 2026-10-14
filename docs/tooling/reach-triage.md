@@ -32,9 +32,16 @@ The current worklist is short. `801d31b0`, `801d553c`, `801dd4c4` and
 were bucket (a) - both drawing hosts call them and no ladder cast the spell -
 and read entered through `battle_render_ladder`'s seated Theeder rung.
 `8004629c`, `801f2134`,
-`800485bc`, `801dba90` and the battle-tutorial countdown arm `801f7628` (see
-[`worklist-classification.md`](worklist-classification.md#an-images-inherited-tail-is-not-its-code))
-read entered.
+`800485bc` and `801dba90` read entered.
+
+Three rows were bucket (a) and are converted, two by promoting a test that
+already drove the content and one by a rung:
+
+| address | what reaches it | what enters it |
+|---|---|---|
+| `801cf5e8` | The L1 map display's location stepper, run only by Square on the open display: Circle's own step arm (`0x801CEE54`) sits behind the exit test, which takes the same bit first. | `map_display_disc`, promoted: on every kingdom map Square must step from the player to the kingdom's last record and seat the survey on its clamped cell. |
+| `801d24ec` | The fishing pond's sky backdrop, built by `FishingSurface::frame` - the per-frame call both play hosts make while a fishing session is live. | `play_compose_ladder`'s fishing rung, which now poses the surface the way `play-minigames.js` does, on entry and after every cast. |
+| `801f7628` | The sparring tutorial's countdown arm, called only from the completion tail after the fourth lesson ([`worklist-classification.md`](worklist-classification.md#an-images-inherited-tail-is-not-its-code)). `battle_tutorial_ladder` walks the hooks with Cross alone and never finishes the drill. | `sparring_exit_retail_capture`, promoted: it plays each lesson's command by pad through a real encounter until the fight hands back to the field. |
 
 ## Running it
 
@@ -124,6 +131,7 @@ the ordinary engine path), and it counts **sites**, not disc occurrences.
 | <a id="a-ladder-that-fails-and-a-ladder-nobody-exported-are-the-same-line"></a>partial union | The `PARTIAL UNION` line names members with no `cov-*.json`; a member nobody exported and one whose run **failed** look the same. | Read the line against the export run's log. A red member silences every row it converts. |
 | <a id="a-worktree-export-is-a-disc-free-export-unless-the-data-is-found"></a>worktree export | Most members find `extracted/` and `saves/library` by relative path, and `critical_path_replay` / `minigame_replay` off the compile-time `CARGO_MANIFEST_DIR`. In a worktree they skip-pass and still export. | Newer members honour `LEGAIA_EXTRACTED_DIR` / `LEGAIA_SAVES_LIBRARY`. For the rest, run from a shadow crate directory whose `../..` links the real data. A member that found its data prints no `[skip]` line. |
 | dirty export | An export built partly before and partly after a source edit mixes two line maps for that file. | Export from a clean tree; a member whose own test file changed can be re-exported alone. |
+| stale export | A union that mixes exports from an older tree with fresh ones scores each old export against today's line map. A function that moved reads as never entered (the tutorial machine `801f6b70` / `801f747c` did), and a new function has no record in it at all. | Re-export every member whose code paths changed before reading a row; treat a never-entered row as a claim until a fresh export of the ladder that should enter it agrees. |
 | <a id="a-tag-between-two-functions-is-scored-by-the-next-function-that-has-regions"></a>tag between two functions | `FileCoverage.verdict_at` falls through to the next span at or after the tag. The three `mode_init_bare` tags inherited a later function's "executed" and read as disclosed-anchor-executed. | Treat a "disclosed `NOT WIRED` anchor executed" row as a claim: confirm a caller exists. |
 | <a id="a-module-tag-answers-for-its-file-not-for-its-routine"></a>module tag | A `//! PORT:` tag reads as "something in this file executed". A function-level tag in the same file now decides; the module tag is consulted only for an address that has none. A `type` anchor does not silence it. | `FUN_801CFA48` read entered only because a sibling borrowed the file's `RetailTrig` LUT. |
 | <a id="the-other-way-that-category-misfires-a-disclosure-about-one-arm"></a>disclosure about one arm | The `NOT WIRED:` marker is anchor-level. Written about one branch, it disclaims the whole routine. | Write a gap in an arm's **data** as prose. `FUN_801DBF9C` (the party cast trigger) runs on every pre-cast expiry; only its `spell_id < 0x25` arm lacks the overlay table at `0x801F4E64` / `0x801F4EDC`. |
