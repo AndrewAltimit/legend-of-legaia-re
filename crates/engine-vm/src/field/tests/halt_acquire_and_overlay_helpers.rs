@@ -107,10 +107,10 @@ fn op_4c_n_c_sub_1_flag_loop_reset_advances_2_bytes() {
 }
 
 #[test]
-fn op_4c_n_d_sub_1_no_jump_advances_4_bytes() {
-    let bytecode = [0x4Cu8, 0xD1, 0, 0];
+fn op_4c_n_d_sub_1_advances_4_bytes_without_a_live_glide() {
+    let bytecode = [0x4Cu8, 0xD1, 0x10, 0x00];
     let mut host = TestHost {
-        n_d_sub_1_jump_target: None,
+        n_c_sub_d_mover_idle: true,
         ..TestHost::default()
     };
     let mut ctx = FieldCtx::default();
@@ -119,15 +119,19 @@ fn op_4c_n_d_sub_1_no_jump_advances_4_bytes() {
 }
 
 #[test]
-fn op_4c_n_d_sub_1_jump_target_takes_ce9c_path() {
-    let bytecode = [0x4Cu8, 0xD1, 0, 0];
+fn op_4c_n_d_sub_1_skips_relative_while_a_glide_is_live() {
+    // `0x801E2B74`: the live-mover leg reaches `LAB_801E360C`, which adds
+    // the operand halfword less two to the PC already past the op.
+    let mut bytecode = vec![0x4Cu8, 0xD1, 0x05, 0x00];
+    bytecode.extend([0x4A, 0x01, 0x00, 0x21]);
     let mut host = TestHost {
-        n_d_sub_1_jump_target: Some(0xABCD),
+        n_c_sub_d_mover_idle: false,
         ..TestHost::default()
     };
     let mut ctx = FieldCtx::default();
     let r = step(&mut host, &mut ctx, &bytecode, 0);
-    assert_eq!(r, StepResult::Advance { next_pc: 0xABCD });
+    assert_eq!(r, StepResult::Advance { next_pc: 7 });
+    assert_eq!(bytecode[7], 0x21, "steps over the 3-byte wait");
 }
 
 // The three arms below advance in retail: the nibble-D jump table at

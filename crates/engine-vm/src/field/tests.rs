@@ -172,7 +172,6 @@ struct TestHost {
     n_e_snapshot_84570_calls: u32,
     // Overlay-helper hooks.
     n_c_sub_1_flag_loops: u32,
-    n_d_sub_1_jump_target: Option<usize>,
     n_d_sub_2_channel_calls: Vec<u8>,
     n_d_sub_7_list_walk_regs: u32,
     n_d_sub_b_e57f0_calls: Vec<Vec<u8>>,
@@ -486,10 +485,6 @@ impl FieldCameraMotionHost for TestHost {
 
     fn set_shake_amplitude(&mut self, value: u8) {
         self.n8_b630_writes.push(value);
-    }
-
-    fn jump_if_camera_glide_live(&mut self, _ctx: &FieldCtx) -> Option<usize> {
-        self.n_d_sub_1_jump_target
     }
 
     fn retire_camera_movers(&mut self) {

@@ -43,15 +43,31 @@ pub(super) fn op_4c_nd<H: FieldHost>(
                 next_pc: pc + header_size + 5,
             }
         }
-        // Sub-1: 1-byte. Linked-list lookup via `FUN_8003CF04`.
-        // Host returns `Some(new_pc)` for the ce9c-jump path,
-        // `None` for PC += 4 on miss. Default host returns None.
-        1 => match host.jump_if_camera_glide_live(ctx) {
-            Some(new_pc) => StepResult::Advance { next_pc: new_pc },
-            None => StepResult::Advance {
-                next_pc: pc + header_size + 3,
-            },
-        },
+        // Sub-1: 4-byte `[4C, 0xD1, skip_lo, skip_hi]` - skip while a
+        // cutscene camera glide is in flight. The arm at `0x801E2B3C`
+        // advances `s8 += 4`, then looks up the camera mover
+        // (`FUN_8003CF04(_DAT_8007C34C, 0x801DC0BC)`, the lookup `4C CD`
+        // waits on): no mover, or a mover with its dead bit `+0x10 & 8` up,
+        // returns the advanced PC; a live one takes the shared exit
+        // `LAB_801E360C` with `a0 = operand + 1`, the **relative** skip
+        // `pc + 4 + skip - 2`. No shipped script issues it.
+        1 => {
+            if operand + 3 > bytecode.len() {
+                return StepResult::Unknown { opcode, pc };
+            }
+            let next_pc = pc + header_size + 3;
+            if !host.camera_glide_live() {
+                return StepResult::Advance { next_pc };
+            }
+            let skip = crate::field::dispatch_leaves::load_u16_le(&bytecode[operand + 1..]) as i16;
+            let target = next_pc as isize + isize::from(skip) - 2;
+            if target < 0 {
+                return StepResult::Unknown { opcode, pc };
+            }
+            StepResult::Advance {
+                next_pc: target as usize,
+            }
+        }
         // Sub-2: 3-byte `[4C, 0xD2, b1]`. Calls the channel resolver
         // (and spawns the placement when no context answers), then
         // advances: both arms of `0x801E2B7C` leave through `0x801E00B8`,
