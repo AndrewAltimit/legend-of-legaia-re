@@ -301,6 +301,7 @@ mod submode_screen_ladder;
 mod summon_module_camera;
 mod summon_scene_real;
 mod super_art_live_battle;
+mod system_flag_wait_raisers_disc;
 mod talk_facing_static_class_disc;
 mod talk_proxy_disc;
 mod talk_skips_spawn_section_disc;

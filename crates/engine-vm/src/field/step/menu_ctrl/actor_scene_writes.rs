@@ -49,8 +49,8 @@ pub(super) fn op_4c_nc<H: FieldHost>(
         // (`0x801E2894`) joins `0x801E2A10`: a set flag returns the advanced
         // PC, a clear one restores the entry PC - wait until set. Sub-6
         // (`0x801E28B0`) has the opposite polarity at `0x801E28C4` - wait
-        // until clear. The shipped uses wait on flags `0x0A` / `0x0B`, which
-        // native code raises (see `FieldFlagsHost::system_flag_wait_released`).
+        // until clear. The shipped uses wait on flags a move-VM part the
+        // record spawned flips (see `FieldFlagsHost::system_flag_wait_released`).
         5 | 6 => {
             if operand + 3 > bytecode.len() {
                 return StepResult::Unknown { opcode, pc };

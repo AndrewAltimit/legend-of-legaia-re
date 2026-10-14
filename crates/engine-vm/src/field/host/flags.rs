@@ -121,11 +121,11 @@ pub trait FieldFlagsHost {
     /// restores the entry PC while the answer is "not yet"; the default is
     /// exactly that test over [`Self::system_flag_test`].
     ///
-    /// The shipped waits are on flags `0x0A` / `0x0B`, and their raisers
-    /// are partly native - the scripted-scene actor `FUN_801D4A60` and the
-    /// travel-art actors set `0x0B`, and `town01` P2[25] waits on a `0x0A`
-    /// that no script sets - so a host that does not run those may answer
-    /// `true` to keep the scripts moving.
+    /// The shipped waits are on flags `0x0A` / `0x0B` / `0x556` / `0x557`,
+    /// flipped by a move-VM part the waiting record spawned (ext sub-op
+    /// `0x1C` / `0x1D`), or for `0x0B` by the scripted-scene actor
+    /// `FUN_801D4A60` and the travel-art actors. A host that runs none of
+    /// those may answer `true` to keep the scripts moving.
     fn system_flag_wait_released(&self, idx: u16, until_set: bool) -> bool {
         self.system_flag_test(idx) == until_set
     }
