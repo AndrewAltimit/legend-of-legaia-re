@@ -562,6 +562,10 @@ pub struct BattleState {
     /// on ([`crate::world::World::tick_battle_pass_draw`]) - one draw a
     /// battle frame, however many vsyncs it spans.
     pub pass_draw_frame: Option<u64>,
+    /// The battle frame the defeat fade's sink last lowered its bodies on
+    /// (`World::tick_battle_defeat_sink`) - one
+    /// `(size * step) >> 2` step a battle frame, as retail's pass takes it.
+    pub defeat_sink_frame: Option<u64>,
     /// Battle VRAM uploads a cast's side-band stream made this frame - the
     /// `summon.dat` texture slots a player summon's case `0x32` streams to
     /// CLUT `(0, 488)` / page `(512, 0)` and `(0, 490)` / `(640, 0)`
@@ -879,6 +883,7 @@ impl BattleState {
             vram_scrolls: Vec::new(),
             frame_clock: Default::default(),
             pass_draw_frame: None,
+            defeat_sink_frame: None,
             vram_loads: Default::default(),
             form_transition: Default::default(),
             stage_camera: None,

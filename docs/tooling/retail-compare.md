@@ -1275,11 +1275,14 @@ an orbit clock. `evil_medallion_rage_battle` is one.
 - **Seat and timing.** A pick no seed reproduces (a monster's plain strike on a
   given seat) can run out of budget or end the fight first.
 - **A fading body retail does not draw.** `player_steal_skeleton_banner` holds
-  the killed skeleton in its defeat fade - lanes `0xF0`, mode word
-  `0x81000000`, node colour `0x3C3C3C`, sunk `183` - and the frame's ordering
-  table carries no packet for it: every monster packet is the standing
-  skeleton's, opaque at colour `0x44`. The engine draws the body lying at
-  those lanes. Which test drops it in retail is open.
+  the killed skeleton in its defeat fade - lanes `0xF0`, node colour
+  `0x3C3C3C`, sunk `183` - and the frame's ordering table carries no packet
+  for it. Its render node's `+0x42` reads `1`: the defeat sink raises it
+  beside the height (`0x800504AC`), and the battle draw clips such a body at
+  the stage floor ([renderer](../subsystems/renderer.md#the-disc-does-ship-writers-of-0x42)),
+  so a lying body `183` down is wholly under it. Both hosts clip it now; the
+  engine's body had also been drawn **raised** by its sink, its height going
+  into the placement unflipped.
 
 ### Replayed casts
 

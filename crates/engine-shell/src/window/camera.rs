@@ -555,6 +555,13 @@ impl PlayWindowApp {
             let rot = Mat4::from_rotation_y(
                 f32::from(a.battle.facing_angle & 0xFFF) / 4096.0 * std::f32::consts::TAU,
             );
+            // The translation takes the frame flip too (`T(F pos)`, as the
+            // effect parts and ground shadows are placed): the battle camera
+            // ends in `F`, so `F . T(pos) . R . F` puts the mesh back in
+            // retail's Y-down frame but would draw a body's height `+0x36`
+            // upside down - a killed monster the defeat fade sinks
+            // (`+0x36 += size * step / 4`) rose out of the floor instead.
+            let pos = Vec3::new(pos.x, -pos.y, pos.z);
             Mat4::from_translation(pos) * rot * Mat4::from_scale(Vec3::new(1.0, -1.0, 1.0))
         } else {
             let yaw = std::f32::consts::PI

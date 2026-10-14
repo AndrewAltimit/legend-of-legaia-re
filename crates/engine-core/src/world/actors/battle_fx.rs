@@ -539,6 +539,16 @@ impl World {
         if self.battle_ctx.absorbed_seru != 0 {
             return;
         }
+        // One sink step a battle frame: the pass multiplies the size by the
+        // frame step before the shift (`mult v1,v0` over `0x1F800393`,
+        // `sra 2`, `0x80050480..0x800504A0`), so a step-`2` frame sinks
+        // `(22 * 2) >> 2 = 11`, not two vsyncs of `22 >> 2 = 5`.
+        let frame = self.battle_frame_id();
+        if self.battle.defeat_sink_frame == Some(frame) {
+            return;
+        }
+        self.battle.defeat_sink_frame = Some(frame);
+        let step = i32::from(self.battle.frame_clock.step.max(1));
         let lone_scripted =
             self.battle_ctx.scripted_fight != 0 && self.battle_monster_slots().len() <= 1;
         let first = self.party.party_count as usize;
@@ -559,11 +569,14 @@ impl World {
                 self.battle_ctx.lone_defeat_latch = 1;
                 continue;
             }
-            // `(size * dt) >> 2` a battle frame of `dt` vsyncs; the engine
-            // ticks once a vsync.
-            let sink = i16::from(self.battle_size_class_of(slot as u8)) >> 2;
-            let ms = &mut self.actors[slot].move_state;
-            ms.world_y = ms.world_y.wrapping_add(sink);
+            // `(size * dt) >> 2` a battle frame of `dt` vsyncs.
+            let sink = ((i32::from(self.battle_size_class_of(slot as u8)) * step) >> 2) as i16;
+            let a = &mut self.actors[slot];
+            a.move_state.world_y = a.move_state.world_y.wrapping_add(sink);
+            // `sh s4,0x42(a0)` at `0x800504AC`, beside the height store: the
+            // sinking body draws clipped at the floor from here on
+            // (`World::battle_actor_floor_clip`).
+            a.battle.floor_clip = true;
         }
     }
 

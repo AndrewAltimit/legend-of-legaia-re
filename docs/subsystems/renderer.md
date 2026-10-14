@@ -136,7 +136,7 @@ and took the near arm every time ([`world-map.md`](world-map.md)).
 ### The disc does ship writers of `+0x42`
 
 The census is a statement about the sampled states, not about the disc.
-Three writer families put a non-zero value in that halfword:
+Four writer families put a non-zero value in that halfword:
 
 - **The actor allocator (dev-reachable only).** `FUN_80020DE0` clears `+0x42`
   at `0x80020EAC` and, when `_DAT_8007B6D0 & 2`, writes `2` at `0x80020EC0`
@@ -161,6 +161,16 @@ Three writer families put a non-zero value in that halfword:
   around a scripted beat; several targets are the player (`F8`). Placed field
   actors are drawn by `FUN_8001ADA4` / `FUN_8001B964`, so these actors are
   drawn through the far arm while the byte is up.
+- **The battle defeat sink.** The tint SM `FUN_80050120`'s defeat-fade arm
+  sinks a killed monster (`+0x36 += (record[+0x1F] * step) >> 2`) and
+  stores `1` into its render node's `+0x42` beside the height
+  (`sh s4,0x42(a0)` at `0x800504AC`, `a0 = actor[+0x22C]`). The per-actor
+  battle draw `FUN_80048A08` then takes its far arm for every object of the
+  body, under row 0 as battle setup seeds it (`lo = -0x7FFF`, `hi = 0`):
+  the half space at and above the stage floor, so the body goes down
+  through the floor and leaves no packet once it is under it
+  (`player_steal_skeleton_banner`, skeleton `183` down). Port:
+  `World::battle_actor_floor_clip`, staged as a per-draw clip on both hosts.
 
 The `sh $v0, 0x42(...)` pairs inside the brackets themselves (`0x8001B4C8`,
 `0x80048F24`) are not writers: their base register is the scratchpad packet

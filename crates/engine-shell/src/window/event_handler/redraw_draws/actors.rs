@@ -480,6 +480,20 @@ impl<'m> DrawCtx<'_, 'm> {
                 {
                     clip_marks.push((draws.len(), c));
                 }
+                // A body the defeat fade is sinking draws clipped at the
+                // stage floor (its node's `+0x42`, object-effect row 0 as
+                // battle setup seeds it) - `World::battle_actor_floor_clip`,
+                // the page's `play_battle_actor_floor_clips` too.
+                if in_battle && let Some(c) = app.session.host.world.battle_actor_floor_clip(i) {
+                    clip_marks.push((
+                        draws.len(),
+                        legaia_engine_render::DrawClip {
+                            m: c.m,
+                            lo: c.lo,
+                            hi: c.hi,
+                        },
+                    ));
+                }
                 // Retail draws a battle body single-sided unless its
                 // colour word carries the double-sided bit
                 // (`BattleActorDrawPlan::nclip_mode`, the page's
