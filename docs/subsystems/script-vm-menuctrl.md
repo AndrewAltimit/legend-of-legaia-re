@@ -207,7 +207,7 @@ Sub-table at `0x801CEF48`, indexed by `op0 & 0xF` under a `sltiu` bound of
 | 9 | `[4C 89 lo hi]` | `_DAT_80073F00 = i16`, the dialog pager's **automatic press** - [below](#4c-89-the-dialog-auto-press). |
 | B | `[4C 8B spell skip:i16]` | "Does a present member know `spell`?": for each present member below character 3, the learned-spell list at record `+0x13C` (count) / `+0x13D` (ids) (`0x801E2320..0x801E23E4`). A hit takes the [relative skip](#the-relative-skip-exit), else PC += 5. |
 | C | `[4C 8C skip:i16]` | `ctx[+0x68]` zero takes the [relative skip](#the-relative-skip-exit) (`pc + 4 + skip - 2`), non-zero advances 4 (`0x801E23EC`). |
-| D | `[4C 8D char marker lo hi]` | Tristate per-character actor search: empty slot -> advance 6, found -> jump to the u16, no match -> halt. |
+| D | `[4C 8D char skill skip:i16]` | "Has character `char` learned art `skill`?": the displayed-skill list at record `+0x185` (count) / `+0x186` (ids) (`0x801E2404..0x801E2474`). A match takes the [relative skip](#the-relative-skip-exit) (`pc + 6 + skip - 2`); an empty list or no match advances 6 - there is no halt. `town0c`'s Tetsu (P1[4]) asks it before teaching an art. |
 
 The slot in sub-2 is a literal operand, not "every active member". It is the
 primitive every inn / rest / infirmary script is built on; there is no inn
@@ -1059,7 +1059,7 @@ animation set-up.
 ### The relative skip exit
 
 `LAB_801E360C` is the exit every conditional-skip arm of `0x4C` shares
-(nibble A, `4C 8B` / `4C 8C`, `4C DC` / `4C DE`, `4C EB`):
+(nibble A, `4C 8B` / `4C 8C` / `4C 8D`, `4C DC` / `4C DE`, `4C EB`):
 
 ```text
 801e360c  jal  0x8003ce9c        ; v0 = signed halfword at a0 (the arm's operand + 2)

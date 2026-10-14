@@ -202,7 +202,7 @@ struct TestHost {
     n8_sub6_reflection_installs: Vec<(u8, [i16; 6])>,
     n8_sub6_source_present: bool,
     n_8_sub_b_present_types: std::collections::HashSet<u8>,
-    n_8_sub_d_search_result: ActorSearchResult,
+    n_8_sub_d_known: bool,
     n_8_sub_d_queries: std::cell::RefCell<Vec<(u8, u8)>>,
     n_e_sub_3_camera_syncs: Vec<u8>,            // actor_id values
     n_e_sub_7_camera_animates: Vec<(u32, u16)>, // (target, duration)
@@ -687,9 +687,9 @@ impl FieldPartyInventoryHost for TestHost {
         self.n_8_sub_b_present_types.contains(&type_byte)
     }
 
-    fn op4c_n8_subd_actor_search(&self, char_idx: u8, marker: u8) -> ActorSearchResult {
-        self.n_8_sub_d_queries.borrow_mut().push((char_idx, marker));
-        self.n_8_sub_d_search_result
+    fn op4c_n8_subd_skill_known(&self, char_idx: u8, skill: u8) -> bool {
+        self.n_8_sub_d_queries.borrow_mut().push((char_idx, skill));
+        self.n_8_sub_d_known
     }
 
     fn take_item(&mut self, item_id: u8) {

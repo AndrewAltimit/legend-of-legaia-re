@@ -1,7 +1,5 @@
 //! The [`FieldPartyInventoryHost`] supertrait of the field-VM host surface.
 
-use crate::field::ActorSearchResult;
-
 /// The party roster, the character records, the bag, gold and coins.
 ///
 /// One of the supertraits of [`FieldHost`](super::FieldHost), the surface the
@@ -245,28 +243,19 @@ pub trait FieldPartyInventoryHost {
         false
     }
 
-    /// Search a per-character actor sub-table for a matching marker
-    /// (op 0x4C n8 sub-D, 6 bytes).
+    /// Op 0x4C nibble-8 sub-D - "has character `char_idx` learned art
+    /// `skill`?".
     ///
-    /// `[4C, 0x8D, char_idx, marker, target_lo, target_hi]`. The original at
-    /// lines 6652-6667 indexes `DAT_8008488D[char_idx * 0x414]` for the
-    /// per-character sub-table size and walks the table comparing each entry
-    /// against `marker`.
-    ///
-    /// Three outcomes:
-    /// - [`ActorSearchResult::EmptySlot`]: per-character sub-table is empty
-    ///   (size byte is 0). Advance PC by 6.
-    /// - [`ActorSearchResult::Found`]: found a matching entry. Jump to
-    ///   absolute `LE_u16(operand+3..=operand+4)`.
-    /// - [`ActorSearchResult::NoMatch`]: sub-table is non-empty but no entry
-    ///   matched. Halt at PC.
-    ///
-    /// The default impl returns [`ActorSearchResult::EmptySlot`] (advance,
-    /// no match) which is the safest fallback for engines without an actor
-    /// pool.
-    fn op4c_n8_subd_actor_search(&self, char_idx: u8, marker: u8) -> ActorSearchResult {
-        let _ = (char_idx, marker);
-        ActorSearchResult::EmptySlot
+    /// 6-byte instruction `[4C, 0x8D, char_idx, skill, skip_lo, skip_hi]`.
+    /// The arm at `0x801E2404` advances `s8 += 6`, reads the displayed-skill
+    /// count at record `+0x185` of character `char_idx`
+    /// (`0x8008488D + char * 0x414`) and walks the ids at `+0x186..`; a match
+    /// takes the shared relative skip (`0x801E3608`, `a0 = operand + 3`), an
+    /// empty list or no match leaves the advance. `town0c`'s Tetsu (P1[4])
+    /// asks it before teaching an art. Default impl answers no.
+    fn op4c_n8_subd_skill_known(&self, char_idx: u8, skill: u8) -> bool {
+        let _ = (char_idx, skill);
+        false
     }
 
     /// Op 0x4C n5 sub-2 - **TAKE_ITEM**: remove one `item_id` from the party.

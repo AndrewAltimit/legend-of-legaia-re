@@ -158,6 +158,24 @@ impl<'a> FieldPartyInventoryHost for FieldHostImpl<'a> {
         })
     }
 
+    /// Op `4C 8D`: the displayed-skill list (`+0x185` count, `+0x186..` ids)
+    /// of character `char_idx`'s record, present or not.
+    // PORT: FUN_801DE840 (op 0x4C nibble-8 sub-D arm, 0x801E2404..0x801E2474)
+    fn op4c_n8_subd_skill_known(&self, char_idx: u8, skill: u8) -> bool {
+        self.world
+            .party
+            .roster
+            .members
+            .get(usize::from(char_idx))
+            .is_some_and(|m| {
+                let list = m.displayed_skills();
+                list.ids
+                    .iter()
+                    .take(usize::from(list.count))
+                    .any(|&id| id == skill)
+            })
+    }
+
     fn add_coins(&mut self, coin_delta: i32) {
         self.world.add_script_coins(coin_delta);
     }

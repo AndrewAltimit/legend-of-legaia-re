@@ -1,28 +1,6 @@
 //! Field VM result / parameter value types surfaced by the [`FieldHost`]
 //! trait methods.
 
-/// Tristate result for [`FieldPartyInventoryHost::op4c_n8_subd_actor_search`] (op 0x4C
-/// n8 sub-D).
-///
-/// The dispatcher's three-way branch maps:
-/// - [`EmptySlot`](Self::EmptySlot): the per-character actor sub-table is
-///   empty. The dispatcher takes the standard "advance PC by 6" tail.
-/// - [`Found`](Self::Found): a matching marker was located. The dispatcher
-///   takes the absolute-jump path (`LE_u16(operand+3..=operand+4)`).
-/// - [`NoMatch`](Self::NoMatch): the sub-table is non-empty but no entry
-///   matched the marker. The dispatcher halts at the current PC via the
-///   `switchD::default` fallthrough.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum ActorSearchResult {
-    /// Per-character sub-table is empty - advance PC.
-    #[default]
-    EmptySlot,
-    /// Marker matched - take the absolute-jump path.
-    Found,
-    /// Sub-table populated but no match - halt at PC.
-    NoMatch,
-}
-
 /// Camera parameter for op 0x45 CONFIGURE. The bit index in the mask
 /// determines the parameter slot (0..=9, MSB-first per the original); the
 /// value is a `u16` read from the operand stream.

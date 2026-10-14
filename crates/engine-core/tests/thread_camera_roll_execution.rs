@@ -48,10 +48,10 @@ use legaia_engine_mode::mode::SceneMode;
 use legaia_engine_scene::man_census::scene_man_carriers;
 use legaia_engine_scene::scene::{ProtIndex, Scene};
 use legaia_engine_vm::field::{
-    ActorSearchResult, CameraParam, FieldActorFxHost, FieldActorHost, FieldActorSpawnHost,
-    FieldAudioHost, FieldCameraHost, FieldCameraMotionHost, FieldCtx, FieldDialogMenuHost,
-    FieldFlagsHost, FieldHaltHost, FieldPartyInventoryHost, FieldPlayerHost, FieldSceneHost,
-    FieldScreenHost, FieldTerrainHost, StepResult, step,
+    CameraParam, FieldActorFxHost, FieldActorHost, FieldActorSpawnHost, FieldAudioHost,
+    FieldCameraHost, FieldCameraMotionHost, FieldCtx, FieldDialogMenuHost, FieldFlagsHost,
+    FieldHaltHost, FieldPartyInventoryHost, FieldPlayerHost, FieldSceneHost, FieldScreenHost,
+    FieldTerrainHost, StepResult, step,
 };
 use legaia_scene_formats::man_section;
 use std::collections::{BTreeMap, BTreeSet};
@@ -207,12 +207,8 @@ impl FieldPartyInventoryHost for ProbeHost {
         self.yes
     }
 
-    fn op4c_n8_subd_actor_search(&self, _char_idx: u8, _marker: u8) -> ActorSearchResult {
-        if self.yes {
-            ActorSearchResult::Found
-        } else {
-            ActorSearchResult::EmptySlot
-        }
+    fn op4c_n8_subd_skill_known(&self, _char_idx: u8, _skill: u8) -> bool {
+        self.yes
     }
 
     fn char_hp_mp_pair(&self, _page: u8, _sub_op: u8) -> (i32, i32) {

@@ -135,13 +135,9 @@ fn op_4c_n_8_sub_b_truncated_buffer_returns_unknown() {
 }
 
 #[test]
-fn op_4c_n_8_sub_d_empty_slot_advances_6() {
+fn op_4c_n_8_sub_d_unknown_skill_advances_6() {
     let bytecode = [0x4Cu8, 0x8D, 0x05, 0xAB, 0x34, 0x12];
-    let host_state = ActorSearchResult::EmptySlot;
-    let mut host = TestHost {
-        n_8_sub_d_search_result: host_state,
-        ..Default::default()
-    };
+    let mut host = TestHost::default();
     let mut ctx = FieldCtx::default();
     let r = step(&mut host, &mut ctx, &bytecode, 0);
     assert_eq!(r, StepResult::Advance { next_pc: 6 });
@@ -150,27 +146,18 @@ fn op_4c_n_8_sub_d_empty_slot_advances_6() {
 }
 
 #[test]
-fn op_4c_n_8_sub_d_found_jumps_to_le_target() {
-    let bytecode = [0x4Cu8, 0x8D, 0x05, 0xAB, 0x78, 0x56];
+fn op_4c_n_8_sub_d_known_skill_takes_the_relative_skip() {
+    // `town0c` P1[4] at `+0x57F`: `4C 8D 01 0F 49 00` - a Noa who knows art
+    // `0x0F` lands at `0x57F + 6 + 0x49 - 2`.
+    let mut bytecode = vec![0x21u8; 0x600];
+    bytecode[0x57F..0x585].copy_from_slice(&[0x4C, 0x8D, 0x01, 0x0F, 0x49, 0x00]);
     let mut host = TestHost {
-        n_8_sub_d_search_result: ActorSearchResult::Found,
+        n_8_sub_d_known: true,
         ..Default::default()
     };
     let mut ctx = FieldCtx::default();
-    let r = step(&mut host, &mut ctx, &bytecode, 0);
-    assert_eq!(r, StepResult::Advance { next_pc: 0x5678 });
-}
-
-#[test]
-fn op_4c_n_8_sub_d_no_match_halts_at_pc() {
-    let bytecode = [0x4Cu8, 0x8D, 0x05, 0xAB, 0x34, 0x12];
-    let mut host = TestHost {
-        n_8_sub_d_search_result: ActorSearchResult::NoMatch,
-        ..Default::default()
-    };
-    let mut ctx = FieldCtx::default();
-    let r = step(&mut host, &mut ctx, &bytecode, 0);
-    assert_eq!(r, StepResult::Halt { final_pc: 0 });
+    let r = step(&mut host, &mut ctx, &bytecode, 0x57F);
+    assert_eq!(r, StepResult::Advance { next_pc: 0x5CC });
 }
 
 #[test]

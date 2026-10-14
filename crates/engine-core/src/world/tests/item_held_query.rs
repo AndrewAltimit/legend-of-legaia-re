@@ -91,10 +91,44 @@ fn a_learned_spell_answers_4c_8b_for_the_three_heroes() {
         let mut host = FieldHostImpl { world: w };
         field_step_routed(&mut host, &mut ctx, &bc, 0)
     };
-    assert!(matches!(run(&mut w), FieldStepResult::Advance { next_pc: 5 }));
+    assert!(matches!(
+        run(&mut w),
+        FieldStepResult::Advance { next_pc: 5 }
+    ));
     let mut list = w.party.roster.members[1].spell_list();
     list.count = 1;
     list.ids[0] = spell;
     w.party.roster.members[1].set_spell_list(list);
-    assert!(matches!(run(&mut w), FieldStepResult::Advance { next_pc: 8 }));
+    assert!(matches!(
+        run(&mut w),
+        FieldStepResult::Advance { next_pc: 8 }
+    ));
+}
+
+#[test]
+fn a_known_art_answers_4c_8d_and_an_unknown_one_walks_on() {
+    // `town0c` P1[4] (Tetsu): `4C 8D 01 0F 49 00` asks whether Noa
+    // (character 1) lists art `0x0F` in her displayed-skill list
+    // (`+0x185` / `+0x186..`). Unknown: advance 6, never a halt.
+    let mut w = party_world();
+    let run = |w: &mut World| {
+        let mut bc = vec![0x21u8; 0x60];
+        bc[..6].copy_from_slice(&[0x4C, 0x8D, 0x01, 0x0F, 0x49, 0x00]);
+        let mut ctx = FieldCtx::default();
+        let mut host = FieldHostImpl { world: w };
+        field_step_routed(&mut host, &mut ctx, &bc, 0)
+    };
+    assert!(matches!(
+        run(&mut w),
+        FieldStepResult::Advance { next_pc: 6 }
+    ));
+    let mut list = w.party.roster.members[1].displayed_skills();
+    list.count = 2;
+    list.ids[0] = 0x0B;
+    list.ids[1] = 0x0F;
+    w.party.roster.members[1].set_displayed_skills(list);
+    assert!(matches!(
+        run(&mut w),
+        FieldStepResult::Advance { next_pc: 0x4D }
+    ));
 }

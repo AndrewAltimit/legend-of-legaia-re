@@ -213,27 +213,28 @@ pub(super) fn op_4c_n8<H: FieldHost>(
                 next_pc: target as usize,
             }
         }
-        // Sub-D: 6-byte `[4C, 0x8D, char_idx, marker, target_lo,
-        // target_hi]`. Tristate per-character actor sub-table
-        // search. Dispatcher lines 6652-6667.
+        // Sub-D: 6-byte `[4C, 0x8D, char_idx, skill, skip_lo, skip_hi]`.
+        // `s8 += 6` at `0x801E2404`; a character whose displayed-skill list
+        // holds `skill` takes the shared relative skip (`0x801E3608`,
+        // `pc + 6 + skip - 2`), an empty list or no match advances 6 (both
+        // exits return `s8`: there is no halt).
         0xD => {
             if operand + 5 > bytecode.len() {
                 return StepResult::Unknown { opcode, pc };
             }
             let char_idx = bytecode[operand + 1];
-            let marker = bytecode[operand + 2];
-            match host.op4c_n8_subd_actor_search(char_idx, marker) {
-                ActorSearchResult::EmptySlot => StepResult::Advance {
-                    next_pc: pc + header_size + 5,
-                },
-                ActorSearchResult::Found => {
-                    let target =
-                        crate::field::dispatch_leaves::load_u16_le(&bytecode[operand + 3..]);
-                    StepResult::Advance {
-                        next_pc: target as usize,
-                    }
-                }
-                ActorSearchResult::NoMatch => StepResult::Halt { final_pc: pc },
+            let skill = bytecode[operand + 2];
+            let next_pc = pc + header_size + 5;
+            if !host.op4c_n8_subd_skill_known(char_idx, skill) {
+                return StepResult::Advance { next_pc };
+            }
+            let skip = crate::field::dispatch_leaves::load_u16_le(&bytecode[operand + 3..]) as i16;
+            let target = next_pc as isize + isize::from(skip) - 2;
+            if target < 0 {
+                return StepResult::Unknown { opcode, pc };
+            }
+            StepResult::Advance {
+                next_pc: target as usize,
             }
         }
         // Sub-0: 3-byte header `[4C, 0x80, count]` + `count`
