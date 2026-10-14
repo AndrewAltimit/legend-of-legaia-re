@@ -302,11 +302,24 @@ const fn module_spawns<const N: usize>(vas: [u32; N], anchor: SpawnAnchor) -> [M
 /// PROT 0905 arm 0's four spawns, on the framed point at `y = -0x280`
 /// (`jal 0x80021B04` at `0x801F6C18` / `6C3C` / `6C58` / `6C7C`). The
 /// `vera_summon_mid_cast` capture holds exactly these four parts, risen to
-/// `y = -418` over the target's hand.
-pub const VERA_OPEN_SPAWNS: [ModuleSpawn; 4] = module_spawns(
-    [0x801F_81E4, 0x801F_823C, 0x801F_8294, 0x801F_82FC],
-    SpawnAnchor::ShotPoint { y: -0x280 },
-);
+/// `y = -418` over the target's hand. The last two are the same
+/// four-point star (shape `2`, four columns) at two brightnesses; the
+/// fourth call's delay slot turns its roll to `0x200` (`sh v0,0x24(sp)` at
+/// `0x801F6C80`), so retail's flash shows eight rays, not a cross.
+pub const VERA_OPEN_SPAWNS: [ModuleSpawn; 4] = {
+    let mut s = module_spawns(
+        [0x801F_81E4, 0x801F_823C, 0x801F_8294, 0x801F_82FC],
+        SpawnAnchor::ShotPoint {
+            y: -0x280,
+            roll: None,
+        },
+    );
+    s[3].anchor = SpawnAnchor::ShotPoint {
+        y: -0x280,
+        roll: Some(0x200),
+    };
+    s
+};
 
 /// PROT 0905 arm 4's three spawns, an eighth of a unit (`/ 32`) along the
 /// target's heading at `y = -0x1C2` (`0x801F710C` / `7128` / `7144`).

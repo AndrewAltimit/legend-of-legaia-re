@@ -337,6 +337,12 @@ fn vera_reports_its_spawns_on_their_arms() {
     let f = shot.unwrap().focus;
     assert_eq!(pos, [-f[0], -0x280, -f[2]]);
     assert_eq!(rot, [0; 3]);
+    // ...but the fourth, the dim star, is rolled an eighth of a turn so its
+    // rays fall between the third's.
+    let (pos4, rot4) =
+        spawn_anchor_point(VERA_OPEN_SPAWNS[3].anchor, None, Some(s.victim), shot).unwrap();
+    assert_eq!(pos4, pos);
+    assert_eq!(rot4, [0, 0, 0x200]);
 }
 
 /// Walk any director to its park, returning `(passes per arm, shots by arm)`.
