@@ -3,8 +3,9 @@
 Four community-reported oddities that live in the field and battle runtime rather than in one
 attack or item: a debug counter that reaches the screen on Mt. Rikuroa, the random battles that
 stop in Jette's Absolute Fortress, the camera orbit that ends the Gaza rematch, and three small
-slips in the English script. A closing section records the identity of the two summon flutes, as
-support for the flute pages.
+slips in the English script. One section is a mechanic rather than a fault: the two springs in
+Rogue's Tower that change the encounter rate. A closing section records the identity of the two
+summon flutes, as support for the flute pages.
 
 The base of every section is static analysis of the USA disc: disassembly of `SCUS_942.54` and its
 overlays, and decoded disc data. Two sections also rest on emulator captures, and each says which
@@ -23,7 +24,11 @@ against `CDNAME.TXT` ([`cdname.md`](../../formats/cdname.md#numbering-space)). `
 **Status:** partially explained
 
 **Reported as:** the debug text "WORK ERR2" appears in the top-left corner on Mt. Rikuroa right
-after the Golem fight, as the cave collapses, and stays (community reports).
+after the Golem fight, as the cave collapses, and stays (community reports; one
+[recorded playthrough](https://www.youtube.com/watch?v=Y212XJ_qQEQ) shows it, and two viewers of
+that recording report the same text at the same place). It is reported on a console and in
+DuckStation as well as in the emulator of the recording, so it is not one emulator's artefact; the
+console and DuckStation reports are relayed, not recorded.
 
 Everything that moves in a scene - the player, each townsperson, each door and prop, each rock and
 dust puff of a visual effect, each open dialogue box - is an *actor*, and all of them come out of
@@ -38,14 +43,16 @@ Mt. Rikuroa uses 97 of the 143 slots just standing still. When the Golem is beat
 not rebuild the scene: it restores the mountain exactly as it was before the fight, every actor
 included, and at once plays the cave collapse, which throws up to 40 rocks and dust puffs at the
 same moment a dialogue box opens. Replayed from a memory-card save, that moment leaves between
-four slots and no slots to spare. One or two more actors alive on that frame and their requests
-fail: the counter reads 1 or 2 and stays on screen until the next screen change. Nothing else
-breaks; a rock or two never appears.
+four slots and no slots to spare. A few more actors alive at the peak and the next requests fail:
+the counter reads 2 in every report and stays on screen until the next battle or scene load.
+Nothing else breaks; a part or two of the collapse never appears.
 
 What the message means is proven from the instructions, and the event that fills the pool is
 captured. The failed request itself is not: the replay reaches exactly 143 of 143 and never asks
-for a 144th, so the "2" and the identity of the last one or two actors in a player's run remain
-inferred. That is why the entry stays partial.
+for a 144th. A recorded playthrough shows the text arrive at the moment the replay's pool is
+fullest, but with the dialogue box already closed, which the replay survives with three or four
+slots free. A played run is therefore several actors heavier than the replay, and which actors
+those are is not known. That is why the entry stays partial.
 
 ### Mechanism
 
@@ -112,7 +119,11 @@ decompiled C and not re-read as instructions. The consequence is captured: every
 the fight started is alive again when the cutscene starts.
 
 A real scene change does not carry the resume word and does reseed, so nothing survives an area
-transition. The "transition" in the reports is the return from the battle into the field.
+transition. The "transition to the next area" in the reports is not one. `P2[47]` runs on after
+the collapse without leaving the scene: it fades the screen (`34 01 FF FF FF 3C 00` at `+0x131`,
+then `4A 3C 00`), moves the player and Terra to tile `(0x5D,0x5D)` (`A3 F8 5D 5D` at `+0x13D`,
+`A3 12 5E 5D` at `+0x145`) and plays the mountainside dialogue from the same record. No stage init
+runs across that fade, so the counter and the text carry over to the mountainside.
 
 #### The Golem fight and the collapse are one record
 
@@ -186,16 +197,63 @@ parts on the first field frame, one about every 15 vsyncs, then 21 in 18 vsyncs 
 vsyncs - two to seven per frame at the peak. The rest are the dialogue box (3), the system-script
 actor (1), a record runner (1) and two other spawn sites, `0x80024CA8` and `0x80024EB0` (9).
 
+#### The recorded run
+
+One [community recording](https://www.youtube.com/watch?v=Y212XJ_qQEQ) shows the event in an
+ordinary playthrough. It is the only played run in this section; times are positions in the video.
+The grade of everything read off it is **community report**: a video of someone else's session,
+with no access to its RAM.
+
+| Video time | What is on screen |
+|---|---|
+| 3:08..5:19 | the Golem fight: Noa alone at level 5, Terra beside her; Noa reaches level 6 |
+| 5:26.5 | the field returns; the "Terra: !" box is already open |
+| 5:29.7 | the second box ("the cave is about to collapse! Follow me!") closes |
+| 5:30.7 | `WORK ERR2` appears, reading 2 on its first frame; Terra has run off and Noa is running |
+| 5:31.3 | the scripted fade starts; the mountainside fades in at about 5:32.5 with the text still up |
+| 6:48 | Noa walks through a cave mouth, a short fade; the text is still up |
+| 6:52.3 | a random battle starts; the text is gone from the first battle frame |
+| 9:12 | the field returns after that battle; the text does not come back |
+
+What it settles:
+
+- **When.** The text arrives about four seconds, some 240 vsyncs, after the field returns. That is
+  the replay's second burst (+237 vsyncs, the 41-part run), the moment the replay measures the
+  pool at its fullest. It is not the return from the battle and not the fade to the mountainside,
+  which starts about 0.6 seconds later.
+- **The digit.** It reads 2 from the first frame it is drawn and never changes: both requests fail
+  within one frame of the recording (30 per second). No frame reads 1.
+- **How long.** About 82 seconds, across the fade to the mountainside and one walk through a cave
+  mouth, until the next battle. That matches the counter's one clear, in stage init: the fade is a
+  move inside the scene, and the battle entry and the battle return each run stage init. The save
+  menu later in the recording names the cave "Mt. Rikuroa", the same scene. Whether the cave mouth
+  at 6:48 is a move inside the scene is inferred from the text surviving it.
+- **The run.** Noa alone with Terra following, in Noa's opening chapter, after ordinary random
+  battles and a menu visit on the climb. The player does nothing unusual: both boxes are dismissed
+  promptly and the cutscene plays by itself. Two commenters on the recording report the same text
+  at the same place, so in a played run this is the common outcome, not a rare one.
+- **The platform.** The recording is an emulator at a raised internal resolution, with filtered
+  textures and a mouse pointer in some frames; the uploader names none. This is inference from the
+  picture.
+
+What it contradicts in the replay: the dialogue box. In the replay the pool only fills when the
+three-actor box is open on the peak frame, and with the box closed three or four slots stay free.
+In the recording the box has been closed for about a second when two requests fail. A played run
+therefore holds at least five more actors at the peak than the replay does. The replay is a
+different party on a poked state (Vahn alone, teleported between trigger tiles); the reported runs
+are Noa with Terra, walked. Which of those differences supplies the actors is not measured.
+
 #### The number on screen
 
 The counter goes up once per spawn attempted while the stack is empty and is cleared only by the
 next stage init. At the peak the stager asks for two to seven slots a frame, and parts free
-themselves two list walks after halting. A run that is one or two actors heavier than the replay
-therefore fails one or two requests in a single frame and then recovers: `WORK ERR1` or
-`WORK ERR2`, left on screen until the next mode switch. This is inference from the measured margin
-(zero to four free at the peak) and the measured spawn rate. The caller whose request fails is
-most likely `FUN_80021B04` creating a rock or dust part, or the dialogue box if it opens on the
-full frame.
+themselves two list walks after halting. A run that reaches the peak with the pool already full
+therefore fails the requests of one frame and then recovers, and the count is left on screen until
+the next stage init. Every report, the recording included, reads 2; nothing in the instructions
+fixes that number, so its constancy says the played run is the same few actors over the limit each
+time. This is inference from the measured spawn rate and the recording. The caller whose request
+fails is most likely `FUN_80021B04` creating a part of the collapse: the dialogue box, the other
+candidate, is closed when the text appears in the recording.
 
 Three other sources of the last slots are tested on the same set-up and ruled out. Finished
 cutscene records do not accumulate: seven trigger records run in a row return the pool to the same
@@ -258,16 +316,24 @@ Put an execute breakpoint on `0x80020E0C` and play the climb from the mountain e
 the Golem. A hit is a failed spawn: the caller's return address is at `sp+0x38` and `s1` is the
 template of the actor that did not get a slot. Logging the word at `0x8007C348` every frame shows
 the load directly: `0x8E` is an empty pool, `-1` is exhaustion. It needs a save from before the
-Golem tile (flag `0x284` clear).
+Golem tile (flag `0x284` clear) in Noa's opening chapter, with Terra following: that is the run
+the reports and the recording describe, and the one the poked replay does not reproduce.
+
+Without a debugger, the recording gives the check: beat the Golem, dismiss both of Terra's boxes,
+and the text appears about a second later, before the screen fades. It is gone after the next
+battle.
 
 ### Open questions
 
 - The failed spawn is not captured. The replay ties the limit and does not cross it, so the caller
-  and the "2" are inferred.
-- What supplies the last one or two actors in a player's run. The replay is a teleported route
-  with an assisted kill, not a walked climb with random battles and a fought Golem.
-- The dev text formatter `FUN_8001A068` is not traced for a gate of its own; the reports are the
-  evidence that it draws on a retail console.
+  is inferred. The recording shows that two requests fail and when, not which.
+- What makes a played run at least five actors heavier than the replay at the peak. The replay is
+  Vahn alone on a teleported route with an assisted kill; the reported runs are Noa with Terra on
+  a walked climb with random battles and a fought Golem. Terra's own actors, parts left by trigger
+  records the replay skips, and actors the walked route leaves behind are all untested.
+- Why the count is 2 in every report and never 1 or 3.
+- The dev text formatter `FUN_8001A068` is not traced for a gate of its own. The recording shows
+  it drawing in an emulator; that it draws on a retail console rests on a relayed report.
 
 ## No encounters in Jette's Absolute Fortress
 
@@ -293,13 +359,19 @@ The flag is one bit in the save and can be cleared; the check and the save-side 
 below. On the disc side the patcher's `--fortress-encounter-fix` makes the Fortress ignore the
 flag, which also repairs a file that already has it.
 
-Two other quiet states exist and are intended: once Jette is beaten a second flag switches the
-Fortress off permanently, and the boss room, the room before it, the council and Mist Generator
-rooms, the elevators and the bridge never roll.
+Two other quiet states exist and are intended. The boss room, the room before it, the council and
+Mist Generator rooms, the elevators and the bridge never roll. And a second flag, `0x521`,
+switches both scenes off - but not when Jette is beaten. It is set in the Mist Generator room
+after the Cort fight, as the Fortress starts to collapse, and from there the party is shut in that
+room until a cutscene carries it outside. Beating Jette changes nothing about encounters: the walk
+from his room to the Mist Generator rolls exactly as the walk in did.
 
 The clock code, the castle's script and the Fortress tables are read from the disc. The flag being
 raised by the clock and the Fortress going silent as a result are captured, on an edited save.
-One step is inferred: nobody played the castle escape to its last minute and then read the flag.
+One step is inferred here: nobody played the castle escape to its last minute and then read the
+flag. A player's own test supplies the observation from the other end - leaving the castle with
+under a minute left gives a Fortress with no encounters and no Door of Light (community report,
+first-hand) - without the flag byte being read.
 
 ### Mechanism
 
@@ -422,7 +494,7 @@ top of the walking. Loading a save while a clock is running restores it to its f
 The early visit, read from the scripts: the overworld entrance `map03` `P2[8]` has no header gate
 and changes scene to `deroa`. `deroa`'s entry script `P1[0]` sets its arrival latch `0x49B`,
 clears two transient flag bands, sets `0x1F` and clears `0x60E`; its one-shot arms sit behind
-post-Jette flags. The gate record `P2[4]` needs flag `0x3E1`, which the Conkram scenes write, so
+flags set after the Cort fight. The gate record `P2[4]` needs flag `0x3E1`, which the Conkram scenes write, so
 an early visit does not consume it. The three condition flags (`0x15`, `0x521`, `0x46D`) leave the
 visit as they entered it. This is a reading of the scripts; the route was not walked.
 
@@ -443,7 +515,7 @@ The patcher's `--fortress-encounter-fix`
 ([`randomizer.md`](../../tooling/randomizer.md#fortress-encounter-fix)) closes it on the disc, and
 it heals a save that already carries the flag. In both Fortress scenes it rewrites the leading
 condition group - 14 bytes of each scene's MAN, same size - into a duplicate of the scene's own
-post-Jette group: condition 0 tests flag `0x521` instead of `0x15`, and its row becomes a copy of
+collapse group: condition 0 tests flag `0x521` instead of `0x15`, and its row becomes a copy of
 that group's whole-map row. The Fortress then never reads flag `0x15`. With `0x521` clear the walk
 falls through to the same rooms and rates as on a healthy file; with it set it selects a row that
 reads the same as the one retail reaches one record later.
@@ -484,12 +556,43 @@ The last run settles a tempting theory, that the fault is a counter resting at z
 
 #### Flag `0x521`: the Fortress is collapsing
 
-The only field-script writers of flag `0x521` on the disc are `chitei2` `P2[15]` and `P2[19]`,
-each opening with `55 21`. They are the two variants of the scene that follows Jette's defeat and
-the Cort confrontation, in which the party is told the Fortress is collapsing. No record clears
-the flag. From then on both scenes select a zero-rate group, so the escape and any later visit
-have no random battles. This is the designers switching the dungeon off, not a defect, and it is
-not what the report describes: there Jette is still present.
+Flag `0x521` is not a "Jette is beaten" flag. Jette's record sets `0x470` and nothing the roll
+reads, so the Fortress rolls the same before and after him. The interior's story runs in this
+order, each step a `chitei2` record:
+
+| Step | Record | What happens | Flags it sets |
+|---|---|---|---|
+| 1 | `P2[11]`, Jette's room | Jette's speech, then the fight (formation row 12) | `0x470` |
+| 2 | - | the walk to the council chamber, through rooms that roll at rate 18 | - |
+| 3 | `P2[13]`, Mist Generator room | "We must destroy the Mist Generator!", Cort appears, the fight (row 13) | `0x4C4` |
+| 4 | `P2[14]` | Cort falls; the scene cuts to the entrance scene and back | - |
+| 5 | `P2[15]` or `P2[19]` | "Why did you do it?"; the room starts to shake | `0x521` |
+| 6 | `P2[18]`, or the end of `P2[19]` | "The Fortress is collapsing"; a 40-second clock is armed | - |
+| 7 | `P2[17]`, tile `(18, 94)` | a boulder seals the room's exit | `0x4C9` |
+| 8 | `P2[16]` | about 25 seconds in, Cara arrives and the scene changes to the entrance | `0x1B` |
+
+The only field-script writers of flag `0x521` on the disc are step 5's two records, each opening
+with `55 21`; the scene-entry script picks between them on flag `0x510`, and `P2[15]` hands over
+to a movie where `P2[19]` plays the collapse lines itself. No record clears the flag.
+
+From step 5 to step 8 the player has control in the Mist Generator room, which is rate 0 in every
+group, with the boulder trigger between the party and the way out. The clock at step 6 is the same
+op as the castle's, `4C D3` with flag `0x4C7` in both slots, duration 2400 ticks and threshold
+910; the scene-entry script runs `P2[16]` when the flag comes up. So inside the interior flag
+`0x521` has about 25 seconds to matter and a sealed zero-rate room to matter in: a player does not
+get to stand in a room that used to roll. That the boulder cannot be walked around is read from
+its wall paint over tiles `(15..19, 92)`, not tested.
+
+Where it does apply is the entrance scene, `deroa`. Its group for flag `0x521` is one whole-map
+rate-0 row, where its normal groups have five rate-18 rooms. `P2[16]` ends there, in a long
+cutscene with Cara outside the Fortress. `deroa`'s entry script has a branch for the collapsed
+state (flag `0x4C8`): it paints a solid wall over tiles `(55..59, 41..42)`, shows two props that
+are otherwise parked off the map, and changes the music. The overworld entrance record has no
+gate, so the scene reads as open to a later visit, with one passage sealed and no random battles.
+That is read from the scripts; the ground was not walked after the collapse.
+
+This is the designers switching the dungeon off, not a defect, and it is not what the report
+describes: there Jette is still present.
 
 #### Zero-rate rooms
 
@@ -519,9 +622,10 @@ triggers.
 None of these produces a silent Fortress; they change how long the counter lasts.
 
 - **Stacked rate modifiers.** Rate 18 is 9 with a Low Encounter accessory, and 4 if system flag
-  `0x1E` is also set. Flags `0x1D` and `0x1E` are set by two drinkable-water props in Rogue's
-  Tower (`rugi`, partition-1 records 29 and 30) and nothing on the disc clears either. At rate 4
-  the counter lasts between 122 and 365 steps.
+  `0x1E` is also set; at rate 4 the counter lasts between 122 and 365 steps. Flags `0x1D` and
+  `0x1E` come from the two springs in Rogue's Tower, which is reached after the Fortress, so in a
+  normal file neither is set here. They are traced in
+  [their own section](#rogues-tower-water-changes-the-encounter-rate).
 - **A top-up on every scene entry.** `FUN_8003AB2C` at `0x8003AC7C..0x8003AC90` adds half of a
   fresh counter roll whenever the counter is below 487 as a scene loads.
 - **Incense** suspends the roll outright while its window is open, for at most `0x100` ticks.
@@ -539,7 +643,7 @@ while a menu or submode is open.
 | `0x801D9F30..0x801D9FD8` | PROT entry 0897 | condition-list walk; first set flag wins | disassembly |
 | `0x801D9FE8..0x801DA054` | PROT entry 0897 | region search; first matching box wins | disassembly |
 | `0x801DA130..0x801DA180` | PROT entry 0897 | the four "step does not roll" gates | disassembly |
-| `0x801DA198..0x801DA204` | PROT entry 0897 | rate scaling: setting byte, two passives, flags `0x1D` / `0x1E` | disassembly |
+| `0x801DA198..0x801DA204` | PROT entry 0897 | rate scaling: setting byte, two passives, the two water flags | disassembly |
 | `0x801DA208..0x801DA21C` | PROT entry 0897 | counter subtract and the `bgtz` test | disassembly |
 | `0x801E2BDC..0x801E2C38` | PROT entry 0897 | op `4C D3` handler: arms the countdown | disassembly |
 | `0x801D2EBC` | PROT entry 0897 | clock actor; flag sets at `0x801D2F60` (expiry) and `0x801D2F84` (below threshold) | disassembly; capture (edited save) |
@@ -555,26 +659,29 @@ while a menu or submode is open.
 | `0x8007B600` | RAM | Incense window | disassembly |
 | `0x8008575A` mask `0x04` | RAM | system flag `0x15`; save-block `+0x161A` | disassembly |
 | `0x800857FC` mask `0x40` | RAM | system flag `0x521` | disassembly |
-| `0x8008575B` masks `0x04`, `0x02` | RAM | system flags `0x1D`, `0x1E` | disassembly |
 | PROT entry 373, `P2[29]` `+0x1508`, `+0x1533` | disc | `taiku`: the one clear of flag `0x15`, then the arming op (6:00, warning flag `0x15` at 1:00) | disc data |
 | PROT entry 373, `P2[16]` `+0x13` | disc | `taiku`: escape success; stops the clock, no clear of `0x15` | disc data |
 | PROT entry 373, `P2[12]` | disc | `taiku`: the script-side set of flag `0x15` (`50 15`) | disc data |
 | PROT entry 606, MAN offset `0x5B4B` | disc | `deroa` encounter section, `0x152` bytes | disc data |
 | PROT entry 706, MAN offset `0x6A1A` | disc | `chitei2` encounter section, `0x166` bytes | disc data |
-| PROT entry 706, `P2[15]` and `P2[19]` | disc | the two setters of flag `0x521` | disc data |
+| PROT entry 706, `P2[15]` and `P2[19]` | disc | the two setters of flag `0x521`: the scene after the Cort fight | disc data |
+| PROT entry 706, `P2[11]`, `P2[13]` | disc | the Jette fight (row 12, sets `0x470`) and the Cort fight (row 13, sets `0x4C4`) | disc data |
+| PROT entry 706, `P2[18]` `+0x3DD`, `P2[19]` `+0x42D` | disc | the collapse clock: `4C D3`, flag `0x4C7` twice, 2400 ticks, threshold 910 | disc data |
+| PROT entry 706, `P2[17]`, `P2[16]` | disc | the boulder at tile `(18, 94)`; Cara's arrival and the change to `deroa` | disc data |
+| PROT entry 606, `P1[0]` `+0x58..+0x72` | disc | `deroa` entry script, collapsed state: wall paint over `(55..59, 41..42)`, music | disc data |
 | PROT entries 703, 603 | disc | wall grids of `chitei2` and `deroa`: 39% and 8% of enclosed floor is rate 0 | disc data |
-| PROT entry 697, partition-1 records 29 and 30 | disc | the setters of flags `0x1D` and `0x1E` | disc data |
 | flag `0x15` set from `0x801D2F84`, Fortress silent | RAM | the clock raising the flag and the roll selecting row 0 | capture (edited save) |
 | Fortress rolls at rate 18 | RAM | the control: a played pre-Jette save | capture |
-| a real escape under 1:00 leaves the flag set | - | the one step not observed end to end | inference |
+| a real escape under 1:00 leaves the flag set | - | the flag read is not observed; the silent Fortress and blocked Door of Light after such an escape are | inference; community report |
+| the entrance scene is silent after the collapse | - | read from the table and the scripts, not walked | inference |
 
 ### Scope
 
 A story-gated group that is a single zero-rate row is the game's ordinary way of switching a
 dungeon off, and it is used across the disc. Flag `0x15` gates only the three scenes named above,
 so the leak shows in the Fortress and nowhere else. The clock actor is a general mechanism: the
-Fortress's own collapse timer uses it with flag `0x4C7`. The two water flags change the rate in
-every scene with random battles, for the rest of the save.
+Fortress's own collapse timer uses it with flag `0x4C7`. The two water flags are a
+separate mechanism with [their own section](#rogues-tower-water-changes-the-encounter-rate).
 
 ### Verifying it
 
@@ -588,12 +695,176 @@ breakpoint at `0x801D2F84`, reach the exit, and read byte `0x8008575A` on the ov
 ### Open questions
 
 - The end-to-end observation: a played castle escape that finishes under 1:00 and a save that then
-  shows the flag. Bit `0x04` at save-block `+0x161A` in the file of any player with the silent
-  Fortress settles it equally.
+  shows the flag. A player's test confirms the outcome (no encounters, no Door of Light); the bit
+  itself, `0x04` at save-block `+0x161A` in such a file, has not been read.
 - A native clear of flag `0x15` through a computed id is not excluded by the constant-id sweep;
   none of the computed clear sites reads as touching it.
 - Whether returning from a battle charges the clock the same 20 seconds as a scene change.
 - The locked early visit is read from the scripts, not walked.
+- Whether the entrance scene is walked again once the collapse flag is set: after the closing
+  cutscene, or on a later visit from the overworld.
+
+## Rogue's Tower water changes the encounter rate
+
+**Status:** explained
+
+**Reported as:** not a glitch report. The roll traced for the Fortress reads two more flags, and
+the question came back from the community: which water does what, does it last, and why is no
+difference visible in an old save (community question, first-hand testing on a late-game file).
+
+Rogue's Tower has two springs side by side. Examining one shows "It's strange green water!" or
+"It's strange blue water!" and asks whether to drink. Either one fully restores the party's HP and
+MP. Each also sets a flag that the random-battle roll reads on every step, in every area, for the
+rest of the file:
+
+| Water | Flag | Effect on the roll | In the tower's rate-20 rooms |
+|---|---|---|---|
+| neither | - | rate as written | a battle every 25 to 73 steps, 49 on average |
+| green | `0x1D` | rate doubled: twice as many battles | every 13 to 37 steps, 25 on average |
+| blue | `0x1E` | rate halved: half as many battles | every 49 to 146 steps, 98 on average |
+| both | both | doubled, then halved: exactly the written rate | as with neither |
+
+Nothing on the disc clears either flag, and both are saved with the file. The first drink of each
+colour is therefore the only one that changes anything. Drinking the same water again restores HP
+and MP and sets a flag that is already set. Drinking the other one cancels the first for good. A
+file that has tasted both - the natural thing to do with two free heals - is back at the normal
+rate permanently, and no amount of further drinking moves it. That is the likely reason an old
+save shows no difference.
+
+The effect is real but easy to miss even on a fresh file. The step count between battles is
+re-rolled over a three-to-one range after every fight, so the bands for "normal" and "green"
+overlap, and so do "normal" and "blue". A fair test counts steps over twenty or more battles in
+one room, or reads the rate in a debugger.
+
+The roll and both springs' scripts are read from the disc. Nothing here is captured: the flags
+were not watched changing in a running game.
+
+### Mechanism
+
+#### The scaling code
+
+The tail of the rate scaling in `FUN_801D9E1C` (PROT entry 0897), with the rate in `s0`:
+
+```
+801da1e0  jal  0x8003ce64 ; li a0,0x1d      ; test system flag 0x1D
+801da1e8  beqz v0,0x801da1f4
+801da1f0  sll  s0,s0,0x1                    ; set: rate * 2
+801da1f4  jal  0x8003ce64 ; li a0,0x1e      ; test system flag 0x1E
+801da1fc  beqz v0,0x801da208 ; andi v0,s0,0xffff
+801da204  srl  s0,v0,0x1                    ; set: rate / 2
+801da208  lw   v1,-0x4a04(a0)               ; the step counter 0x8007B5FC
+801da214  subu v1,v1,v0                     ; counter -= rate
+801da218  bgtz v1,0x801da360                ; still positive: no battle
+```
+
+The rate is what one step takes off the counter, so a larger rate means more battles. The counter
+restarts between 488 and 1460 after each battle, 974 on average
+([`script-vm-menuctrl.md`](../../subsystems/script-vm-menuctrl.md#encounter-step-counter-reroll-fun_801ddf48)),
+and a battle comes on step `ceil(counter / rate)`. Doubling the rate halves that step count and
+halving it doubles it.
+
+The two tests are independent and run in that order. With both flags set the rate is shifted left
+and then right by one bit, which returns the same number for every rate, odd or even. There is no
+cap and no floor other than the integer shift: a rate of 1 halves to 0, and a rate of 0 stays 0
+whatever is set.
+
+The same block applies the accessories first: High Encounter (Bad Luck Bell, Nemesis Gem)
+multiplies by four at `0x801DA1C8` and Low Encounter (Good Luck Bell, Evil Talisman) halves at
+`0x801DA1DC`. Everything stacks by plain shifts. Blue water with a Low Encounter accessory is a
+quarter of the written rate; green water with one is the written rate; green water with a High
+Encounter accessory is eight times it.
+
+`FUN_801D9E1C` is the roll for every field scene and for the overworld
+([`world-map.md`](../../subsystems/world-map.md)), so the scaling is not local to the tower. It
+does nothing in rooms whose rate is 0, to scripted fights, or while Incense holds the roll.
+
+#### The two springs
+
+Both are partition-1 placement records of `rugi` (Rogue's Tower, PROT entry 697). The developer
+name in each record's header is Shift-JIS for "green water" (record 29) and "blue water" (record
+30), matching the English line.
+
+| | `P1[29]` | `P1[30]` |
+|---|---|---|
+| First line | "It's strange green water!" | "It's strange blue water!" |
+| Placement | tile `(108, 89)` | tile `(105.5, 89)`, two and a half tiles west of it |
+| Flag writes after "Yes" | `50 1C`, `50 1D` at `+0xF1` | `50 1C`, `50 1E` at `+0xF0` |
+| Other effect | `4C 82 00`, `4C 82 01`, `4C 82 02`: full HP and MP for party slots 0 to 2 | the same |
+
+The records are otherwise the same script: the prompt, a two-way picker, the drinking animation,
+the three restores, the two flag writes, a fade, "What an amazing taste!" and "HP and MP are
+completely restored!", then a jump back to the prompt's entry so the spring can be used again.
+Answering "No" writes nothing. Neither record tests a flag anywhere, so nothing gates a spring
+and it works on every visit, any number of times.
+
+Flag `0x1C` is set by both and read by nothing: no script on the disc tests it and no native call
+names it. It reads as a "has drunk" marker that was never used.
+
+Both springs stand in the part of the tower that rolls at rate 20. The colour is taken from the
+script text and the record names; the water's texture was not examined.
+
+#### Who else touches the flags
+
+| Search | Flag `0x1D` | Flag `0x1E` |
+|---|---|---|
+| Field-script set, clear and test ops in every scene MAN and variant | one set, `rugi` `P1[29]` | one set, `rugi` `P1[30]` |
+| Motion-VM flag ops in every scene MAN | none | none |
+| Native calls to the set, clear and test helpers with a constant id | one test, `0x801DA1E0` | one test, `0x801DA1F4` |
+| Direct loads or stores of the flag byte in code | none | none |
+
+Six native clear calls take a computed id and are not excluded one by one; none of them reads as
+reaching these ids. Starting a new game is the only other way back to a clear bank.
+
+The flag bank is inside the saved window, so both flags travel with the memory-card file:
+
+| | Green, flag `0x1D` | Blue, flag `0x1E` |
+|---|---|---|
+| RAM | byte `0x8008575B`, bit `0x04` | byte `0x8008575B`, bit `0x02` |
+| Memory card | save-block `+0x161B`, bit `0x04` | save-block `+0x161B`, bit `0x02` |
+
+The same byte holds flag `0x1C` (bit `0x08`) and flag `0x1F` (bit `0x01`), which scene scripts
+set and clear all the time, so test the bits and do not compare the whole byte.
+
+### Addresses
+
+| Address | Image | What | Evidence |
+|---|---|---|---|
+| `0x801DA1B8..0x801DA1DC` | PROT entry 0897 | High Encounter passive `0x3B` (rate * 4), Low Encounter passive `0x3C` (rate / 2) | disassembly |
+| `0x801DA1E0..0x801DA1F0` | PROT entry 0897 | flag `0x1D` test; rate * 2 | disassembly |
+| `0x801DA1F4..0x801DA204` | PROT entry 0897 | flag `0x1E` test; rate / 2 | disassembly |
+| `0x801DA208..0x801DA21C` | PROT entry 0897 | counter subtract; `s0` is the final rate | disassembly |
+| `0x8008575B` masks `0x04`, `0x02` | RAM | system flags `0x1D`, `0x1E`; save-block `+0x161B` | disassembly |
+| `0x8008575B` mask `0x08` | RAM | system flag `0x1C`: written by both springs, read by nothing | disc data |
+| PROT entry 697, `P1[29]` `+0xF1` | disc | green water: `50 1C`, `50 1D` after three `4C 82` restores | disc data |
+| PROT entry 697, `P1[30]` `+0xF0` | disc | blue water: `50 1C`, `50 1E` after three `4C 82` restores | disc data |
+| PROT entry 697, MAN section 0 | disc | tower regions: `(0..58, 0..72)` rate 0, the rest rate 20 | disc data |
+| the rate changing in a running game | - | not observed | inference |
+
+### Scope
+
+Every scene with random battles and the overworld, from the first drink to the end of the file.
+The tower comes late, so what is left to feel it in is the tower itself, the final dungeon, the
+overworld and whatever optional areas are revisited. No other flag is read by the scaling code,
+and no other prop on the disc sets these two.
+
+### Verifying it
+
+Read byte `0x8008575B` before and after drinking: green raises bit `0x04`, blue raises bit `0x02`,
+and either raises bit `0x08`. To see the result directly, break at `0x801DA208` while walking a
+room that rolls: `s0` is the per-step rate. In the tower it reads 20 with neither or both, 40 with
+green only and 10 with blue only.
+
+To restore a file to the normal rate without drinking, clear bits `0x04` and `0x02` of
+`0x8008575B` and save. To test one water on a file that has had both, clear the other one's bit.
+On a memory card the byte is save-block `+0x161B`, and the block is re-summed as in the Fortress
+table above.
+
+### Open questions
+
+- The rate change is read, not captured.
+- Which spring is on which side on screen: the placements give tiles, and the camera decides left
+  and right.
+- Whether the colour is also visible in the water's texture.
 
 ## Gaza 2 softlock
 

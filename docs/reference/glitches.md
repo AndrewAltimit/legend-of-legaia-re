@@ -33,7 +33,7 @@ A status of *explained* means the cause is located in the code and accounts for 
 
 | Case | Status | Cause |
 |---|---|---|
-| Tough Love and Love You roll their status every frame | explained | A hand-written routine flips a 50% coin every battle frame from the first hit to the end of the animation: 10 to 20 flips for Tough Love, 40 to 80 for Love You. |
+| Tough Love and Love You roll their status every frame | explained | A hand-written routine flips a 50% coin every battle frame from the first hit to the end of the animation: 20 flips for Tough Love and 80 for Love You at the battle's normal pace, fewer when frames drop, never under 10. |
 | Seven boss attacks ignore the defensive jewels | explained | These attacks use a physical (ATK-based) damage wrapper that tells the shared finisher to skip its jewel block; it reads as intended. |
 | USA bosses cannot have ATK, INT or DEF lowered | explained | The debuff only lands if the boss's base stat still equals its disc record, and the USA difficulty boost changes the base before the fight starts. |
 | Every Berserker can be killed outright | explained | Instant-death summons treat a monster as a boss by a texture-size byte in its record, and that byte is 0 on all three Berserkers. |
@@ -66,7 +66,7 @@ A status of *explained* means the cause is located in the code and accounts for 
 |---|---|---|
 | Speed Elixirs and void turns | explained | The turn-order number rolled from Speed is 16 bits and the next-fighter picker reads its best-so-far as signed, so 32,768 or more can never win. |
 | Story equipment removal skips the re-check | explained | The script's take-item instruction empties the equipment slot but never calls the routine that turns slots into bonuses. |
-| Point Card softlock | explained | The target cursor can step onto an ally, and the Point Card's damage skips the HP-counter bookkeeping the end of the action waits on. |
+| Enemy items aimed at an ally (Point Card softlock, Lippian Flute) | explained | The target cursor can step onto an ally. The Point Card's damage skips the HP-counter bookkeeping the end of the action waits on; Lippian's kill runs a fade that stands a party member back up at 0 HP. |
 | Coin vendor sells past 99 (Japanese release) | explained | The Japanese prize counter only asks whether the coins cover the price; the bag then adds the item and silently trims the stack back to 99. |
 | War God Icon can be missed for good | explained | The item and its 'already awarded' flag come from two pieces of code that disagree about what clearing the course means. |
 
@@ -89,6 +89,7 @@ A status of *explained* means the cause is located in the code and accounts for 
 |---|---|---|
 | WORK ERR on Mt. Rikuroa | partially explained | The rock and dust burst after the Golem fight fills the fixed 143-slot actor pool; the number is how many requests arrived while it was full. |
 | No encounters in Jette's Absolute Fortress | explained | Escaping Zora's Floating Castle with under a minute on the clock leaves its "no battles" flag set for good, and the Fortress's encounter tables still obey it. |
+| Rogue's Tower water changes the encounter rate | explained | Not a glitch: drinking the green water doubles the random-battle rate for the rest of the file and the blue water halves it; a file that drank both is back to normal. |
 | Gaza 2 softlock | explained | A walking monster is carried only by its Move animation; a leftover flinch flag swaps it for idle and the wait for range never ends. |
 | Dialogue inconsistencies | explained | The English script renders one thing two ways; in the bath scene it turns a question and answer about the researcher into ones about Vahn. |
 
