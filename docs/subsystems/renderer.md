@@ -326,12 +326,21 @@ Structural facts, read from the raw table:
 - **Topology is parity-based** (from `AVSZ3` vs `AVSZ4`): even kinds are
   triangles, odd kinds quads.
 - **Bank 3** (offset `0xF0`) is a depth-cued handler set like banks 1 and 2,
-  not a blend mode. It is the only bank that selects `0x80045BB4`, a
-  composite / tessellating body (emits both `POLY_G3` and `LINE_F2`, dual
-  `RTPT`). No world-map capture sets the flag that reaches it
+  not a blend mode. It is the only bank that selects `0x80045BB4` for kind
+  19, a tessellating quad leaf: it averages the four corners into a centre,
+  fans four triangles from it over the rim and splits each at its edge
+  midpoints, emitting sixteen `POLY_GT3` (code `0x34`, `0x80045DE4`) per
+  quad, each vertex depth-cued by `DPCT`. The colours are the corners'
+  interpolation; what changes on screen is the affine texture map, which
+  follows the perspective far more closely over sixteen small triangles.
+  The mode-word bit `0x20000000` selects the bank (`0x800434EC`). No
+  world-map capture sets it
   ([`world-map-overlay.md`](../formats/world-map-overlay.md) has the per-bank
-  counts); unreached in a capture is not unreachable, so it belongs in any
-  sweep of the family.
+  counts); PROT 0903's fire tunnel does (mode byte `0xE9`), and
+  `gimard_burning_attack`'s ordering table holds its rings as `GT3`s only.
+  The port draws such a quad as one `GT4`; tessellating it scored the one
+  capture that shows it a little lower, because the tunnel's rotation and
+  scroll phase there are the engine's own, not retail's.
 - **`0x80044798` is not a table entry.** It sits between the lit set and the
   cued banks and is a transform-free `mfc2`-only read-back / packet-pack
   helper. The cued bodies for kinds 12..19 are full per-kind handlers past
