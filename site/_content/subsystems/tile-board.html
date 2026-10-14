@@ -1,0 +1,202 @@
+<header class="page-header">
+  <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">subsystems</a> &middot; tile board</div>
+  <h1>Tile-board grid mode</h1>
+  <p class="lede">A discrete board mode inside the field overlay. A field script hands the engine a small grid; the game fills it with random tiles, and the player then steps one cell per D-pad press. Walls block, animated tiles cycle as you walk, and reaching an event or trigger tile ends the board and raises story flags. <strong>No shipped scene installs one.</strong></p>
+</header>
+
+<section class="doc-section" id="at-a-glance">
+  <h2>At a glance</h2>
+  <dl class="kv">
+    <dt>Installed by</dt><dd>Field-VM op <code>0x49</code> sub-op <code>0x05</code>, a fixed 14-byte inline header (<code>_DAT_8007B450</code>)</dd>
+    <dt>Controller</dt><dd>Walk state machine <code>FUN_801EF2B0</code> in PROT 0897, fifteen states, jump table <code>0x801CF65C</code></dd>
+    <dt>Cells</dt><dd><code>width x height</code> bytes, heap-allocated and filled procedurally</dd>
+    <dt>Drawing</dt><dd>One field actor per cell <em>value</em>, repositioned and drawn per cell; the board carries no geometry</dd>
+    <dt>On the retail disc</dt><dd>A disc-wide census of every scene script finds no install site</dd>
+    <dt>Port</dt><dd><code>engine-minigames::tile_board</code> + <code>World::tick_tile_board</code>; <code>LEGAIA_TILE_BOARD_DEMO=1</code> synthesises an install</dd>
+  </dl>
+</section>
+
+<section class="doc-section" id="not-locomotion">
+  <h2>This is not town movement</h2>
+  <p>Towns use free movement through a separate controller, covered on <a href="field-locomotion.html">field locomotion</a>. The board shares the overlay and reads the same pad, but its one-cell steps, per-cell tile actors and procedural fill are its own. It is a puzzle / board minigame surface that the shipped game leaves script-reachable and unused.</p>
+</section>
+
+<section class="doc-section" id="board">
+  <h2>The board and its state machine</h2>
+  <figure class="diagram">
+    <svg viewBox="0 0 880 470" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="A tile board. Left: an example eight by five grid of cells showing walls (value 2), terrain (3 to 6), a trigger tile (7), three event tiles (8 to 10), animated tiles (0xB to 0xE) and the player start at column 4, row 0. Right: the walk state machine from init through fade in, walk in, arrival, input, and out through event, trigger or quit to fade out and teardown.">
+      <defs><marker id="tb-arrow" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <rect class="dg-node-warn" x="20" y="46" width="44" height="44" rx="2"/>
+      <text class="dg-label" x="42" y="73">2</text>
+      <rect class="dg-node-warn" x="66" y="46" width="44" height="44" rx="2"/>
+      <text class="dg-label" x="88" y="73">2</text>
+      <rect class="dg-node-warn" x="112" y="46" width="44" height="44" rx="2"/>
+      <text class="dg-label" x="134" y="73">2</text>
+      <rect class="dg-node-warn" x="158" y="46" width="44" height="44" rx="2"/>
+      <text class="dg-label" x="180" y="73">2</text>
+      <rect class="dg-node" x="204" y="46" width="44" height="44" rx="2"/>
+      <text class="dg-sub" x="226" y="73">start</text>
+      <rect class="dg-node-warn" x="250" y="46" width="44" height="44" rx="2"/>
+      <text class="dg-label" x="272" y="73">2</text>
+      <rect class="dg-node-warn" x="296" y="46" width="44" height="44" rx="2"/>
+      <text class="dg-label" x="318" y="73">2</text>
+      <rect class="dg-node-warn" x="342" y="46" width="44" height="44" rx="2"/>
+      <text class="dg-label" x="364" y="73">2</text>
+      <rect class="dg-node-warn" x="20" y="92" width="44" height="44" rx="2"/>
+      <text class="dg-label" x="42" y="119">2</text>
+      <rect class="dg-node" x="66" y="92" width="44" height="44" rx="2"/>
+      <text class="dg-label" x="88" y="119">3</text>
+      <rect class="dg-node" x="112" y="92" width="44" height="44" rx="2"/>
+      <rect class="dg-node" x="158" y="92" width="44" height="44" rx="2"/>
+      <text class="dg-label" x="180" y="119">B</text>
+      <rect class="dg-node" x="204" y="92" width="44" height="44" rx="2"/>
+      <rect class="dg-node" x="250" y="92" width="44" height="44" rx="2"/>
+      <rect class="dg-node" x="296" y="92" width="44" height="44" rx="2"/>
+      <text class="dg-label" x="318" y="119">4</text>
+      <rect class="dg-node-warn" x="342" y="92" width="44" height="44" rx="2"/>
+      <text class="dg-label" x="364" y="119">2</text>
+      <rect class="dg-node-warn" x="20" y="138" width="44" height="44" rx="2"/>
+      <text class="dg-label" x="42" y="165">2</text>
+      <rect class="dg-node" x="66" y="138" width="44" height="44" rx="2"/>
+      <rect class="dg-node-warn" x="112" y="138" width="44" height="44" rx="2"/>
+      <text class="dg-label" x="134" y="165">2</text>
+      <rect class="dg-node" x="158" y="138" width="44" height="44" rx="2"/>
+      <rect class="dg-node" x="204" y="138" width="44" height="44" rx="2"/>
+      <text class="dg-label" x="226" y="165">C</text>
+      <rect class="dg-node-warn" x="250" y="138" width="44" height="44" rx="2"/>
+      <text class="dg-label" x="272" y="165">2</text>
+      <rect class="dg-node" x="296" y="138" width="44" height="44" rx="2"/>
+      <rect class="dg-node-warn" x="342" y="138" width="44" height="44" rx="2"/>
+      <text class="dg-label" x="364" y="165">2</text>
+      <rect class="dg-node-warn" x="20" y="184" width="44" height="44" rx="2"/>
+      <text class="dg-label" x="42" y="211">2</text>
+      <rect class="dg-node-accent" x="66" y="184" width="44" height="44" rx="2"/>
+      <text class="dg-label" x="88" y="211">8</text>
+      <rect class="dg-node" x="112" y="184" width="44" height="44" rx="2"/>
+      <rect class="dg-node" x="158" y="184" width="44" height="44" rx="2"/>
+      <rect class="dg-node-warn" x="204" y="184" width="44" height="44" rx="2"/>
+      <text class="dg-label" x="226" y="211">2</text>
+      <rect class="dg-node" x="250" y="184" width="44" height="44" rx="2"/>
+      <rect class="dg-node-accent" x="296" y="184" width="44" height="44" rx="2"/>
+      <text class="dg-label" x="318" y="211">9</text>
+      <rect class="dg-node-warn" x="342" y="184" width="44" height="44" rx="2"/>
+      <text class="dg-label" x="364" y="211">2</text>
+      <rect class="dg-node-warn" x="20" y="230" width="44" height="44" rx="2"/>
+      <text class="dg-label" x="42" y="257">2</text>
+      <rect class="dg-node-warn" x="66" y="230" width="44" height="44" rx="2"/>
+      <text class="dg-label" x="88" y="257">2</text>
+      <rect class="dg-node-ok" x="112" y="230" width="44" height="44" rx="2"/>
+      <text class="dg-label" x="134" y="257">7</text>
+      <rect class="dg-node-warn" x="158" y="230" width="44" height="44" rx="2"/>
+      <text class="dg-label" x="180" y="257">2</text>
+      <rect class="dg-node-warn" x="204" y="230" width="44" height="44" rx="2"/>
+      <text class="dg-label" x="226" y="257">2</text>
+      <rect class="dg-node-accent" x="250" y="230" width="44" height="44" rx="2"/>
+      <text class="dg-label" x="272" y="257">A</text>
+      <rect class="dg-node-warn" x="296" y="230" width="44" height="44" rx="2"/>
+      <text class="dg-label" x="318" y="257">2</text>
+      <rect class="dg-node-warn" x="342" y="230" width="44" height="44" rx="2"/>
+      <text class="dg-label" x="364" y="257">2</text>
+      <text class="dg-sub dg-start" x="20" y="30">board[row * width + col], one byte per cell</text>
+      <rect class="dg-node-warn" x="20" y="300" width="20" height="20" rx="2"/>
+      <text class="dg-sub dg-start" x="50" y="315">2  wall</text>
+      <rect class="dg-node" x="20" y="330" width="20" height="20" rx="2"/>
+      <text class="dg-sub dg-start" x="50" y="345">3..6  terrain, sets the facing octant</text>
+      <rect class="dg-node-ok" x="20" y="360" width="20" height="20" rx="2"/>
+      <text class="dg-sub dg-start" x="50" y="375">7  trigger: leaves the board</text>
+      <rect class="dg-node-accent" x="20" y="390" width="20" height="20" rx="2"/>
+      <text class="dg-sub dg-start" x="50" y="405">8..0xA  event: raises story flags</text>
+      <rect class="dg-node" x="20" y="420" width="20" height="20" rx="2"/>
+      <text class="dg-sub dg-start" x="50" y="435">0xB..0xE  animated, cycle on each arrival</text>
+      <rect class="dg-node" x="470" y="20" width="180" height="40" rx="4"/>
+      <text class="dg-label" x="560" y="37">0 Init</text>
+      <text class="dg-sub" x="560" y="53">alloc, spawn, fill</text>
+      <rect class="dg-node" x="470" y="80" width="180" height="40" rx="4"/>
+      <text class="dg-label" x="560" y="97">1 Fade in</text>
+      <text class="dg-sub" x="560" y="113">scale to 0x1000</text>
+      <rect class="dg-node" x="470" y="140" width="180" height="40" rx="4"/>
+      <text class="dg-label" x="560" y="157">2 Walk to cell</text>
+      <text class="dg-sub" x="560" y="173">max 0x20 a step</text>
+      <rect class="dg-node" x="470" y="200" width="180" height="40" rx="4"/>
+      <text class="dg-label" x="560" y="217">3 Arrive</text>
+      <text class="dg-sub" x="560" y="233">cycle animated cells</text>
+      <rect class="dg-node-accent" x="470" y="260" width="180" height="40" rx="4"/>
+      <text class="dg-label" x="560" y="277">4 Input</text>
+      <text class="dg-sub" x="560" y="293">collide, commit</text>
+      <path class="dg-edge" d="M560 60 L560 78" marker-end="url(#tb-arrow)"/>
+      <path class="dg-edge" d="M560 120 L560 138" marker-end="url(#tb-arrow)"/>
+      <path class="dg-edge" d="M560 180 L560 198" marker-end="url(#tb-arrow)"/>
+      <path class="dg-edge" d="M560 240 L560 258" marker-end="url(#tb-arrow)"/>
+      <path class="dg-edge" d="M470 280 L440 280 L440 160 L468 160" marker-end="url(#tb-arrow)"/>
+      <text class="dg-edge-label" x="436" y="150" text-anchor="end">step</text>
+      <rect class="dg-node-accent" x="700" y="140" width="160" height="40" rx="4"/>
+      <text class="dg-label" x="780" y="157">8 Event</text>
+      <text class="dg-sub" x="780" y="173">flag writes</text>
+      <rect class="dg-node-ok" x="700" y="200" width="160" height="40" rx="4"/>
+      <text class="dg-label" x="780" y="224">7 Trigger</text>
+      <rect class="dg-node" x="700" y="260" width="160" height="40" rx="4"/>
+      <text class="dg-label" x="780" y="277">5 Quit prompt</text>
+      <text class="dg-sub" x="780" y="293">Triangle</text>
+      <path class="dg-edge" d="M650 212 L675 212 L675 160 L698 160" marker-end="url(#tb-arrow)"/>
+      <path class="dg-edge" d="M650 224 L698 224" marker-end="url(#tb-arrow)"/>
+      <path class="dg-edge" d="M650 280 L698 280" marker-end="url(#tb-arrow)"/>
+      <rect class="dg-node" x="470" y="340" width="390" height="40" rx="4"/>
+      <text class="dg-label" x="665" y="357">9..0xC Fade out</text>
+      <text class="dg-sub" x="665" y="373">tile actors shrink away</text>
+      <rect class="dg-node-ok" x="470" y="400" width="390" height="40" rx="4"/>
+      <text class="dg-label" x="665" y="417">0xD park, 0xE teardown</text>
+      <text class="dg-sub" x="665" y="433">frees the board; the script resumes</text>
+      <path class="dg-edge" d="M780 300 L780 338" marker-end="url(#tb-arrow)"/>
+      <path class="dg-edge" d="M665 380 L665 398" marker-end="url(#tb-arrow)"/>
+      <path class="dg-edge-dim" d="M860 160 L872 160 L872 322 L790 322 L790 338" marker-end="url(#tb-arrow)"/>
+      <path class="dg-edge-dim" d="M860 220 L872 220"/>
+    </svg>
+    <figcaption>Left, an illustrative board: the fill is procedural, so no two boards match and none of this layout is disc data. Right, the fifteen-state walk machine. State 0 seats the player at column 4, row 0 without moving the actor, so the walk-in walks them there from wherever they stood.</figcaption>
+  </figure>
+</section>
+
+<section class="doc-section" id="cells">
+  <h2>Cell values</h2>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Value</th><th>Meaning</th></tr></thead>
+    <tbody>
+      <tr><td><code>2</code></td><td><strong>wall</strong>: a destination cell of 2 rejects the move</td></tr>
+      <tr><td><code>3..6</code></td><td>walkable terrain; writes the facing octant <code>(v - 3) * 2</code></td></tr>
+      <tr><td><code>7</code></td><td>trigger: routes the walk machine to its exit</td></tr>
+      <tr><td><code>8..0xA</code></td><td>event tile: consumes the header&rsquo;s two flag bases, and the walker stops half a step short of its centre</td></tr>
+      <tr><td><code>0xB..0xE</code></td><td>animated: every plain arrival steps each one <code>0xB &rarr; 0xC &rarr; 0xD &rarr; 0xE &rarr; 0xB</code> across the <em>whole</em> board</td></tr>
+      <tr><td>other</td><td>plain floor</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>Each tile is <code>0x80</code> world units and the walker sits on the centre: <code>world = (header_origin + cell) * 0x80 + 0x40</code> on each axis.</p>
+</section>
+
+<section class="doc-section" id="input">
+  <h2>One step</h2>
+  <ol>
+    <li>A Triangle edge opens the quit prompt.</li>
+    <li>The held pad is remapped through a quantised 45-degree rotation, so &ldquo;screen up&rdquo; follows the octant the scene authored.</li>
+    <li>One direction is decoded, the destination cell is bounds-checked and tested against <code>2</code>; a wall or the edge is a bonk and the state stays put.</li>
+    <li>An accepted step commits the new cell and walks the actor to its centre, each axis clamped to <code>0x20</code> a tick.</li>
+  </ol>
+</section>
+
+<section class="doc-section" id="flags">
+  <h2>What an event tile writes</h2>
+  <p>With <code>v = cell - 8</code> and the header&rsquo;s two bases <code>A</code> and <code>B</code>, state 8 <strong>sets</strong> system flag <code>A + v + 1</code>, <strong>tests</strong> flag <code>B + v</code>, and when that test is clear also sets flag <code>A</code>. Each of the three event cells owns one flag above the base, the base records &ldquo;an event cell was reached&rdquo;, and the <code>B</code> bank lets a script pre-mark cells whose reach should not raise it.</p>
+  <p>The board ends by zeroing a byte in the scene control block. The op-<code>0x49</code> subsystem actor polls it, retires, and the parked opcode reads that as done and advances past its operand block.</p>
+</section>
+
+<section class="doc-section" id="see-also">
+  <h2>See also</h2>
+  <p>The header layout, the procedural fill, the octant store, the walk legs and the render tail are in <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/tile-board.md" target="_blank" rel="noopener"><code>docs/subsystems/tile-board.md</code></a>.</p>
+  <div class="see-also">
+    <span class="see-also-label">Reference</span>
+    <a href="script-vm.html">Field / event VM</a>
+    <a href="field-locomotion.html">Field locomotion</a>
+    <a href="vm-inventory.html">VM inventory</a>
+    <a href="../formats/encounter.html">Encounter record</a>
+  </div>
+</section>

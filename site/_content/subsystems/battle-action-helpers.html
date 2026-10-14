@@ -1,0 +1,195 @@
+<header class="page-header">
+  <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">subsystems</a> &middot; battle action helpers</div>
+  <h1>Battle action helpers</h1>
+  <p class="lede">The <a href="battle-action.html">battle action state machine</a> owns the order of a turn and almost none of its arithmetic. Range tests, damage rolls, the escape roll, AI picks, effect and summon spawns, camera framings and voice cues all live in helper routines it calls, or that run beside it each frame. This page is the map of those helpers: what each reads and writes, and the constants it carries.</p>
+</header>
+
+<section class="doc-section" id="at-a-glance">
+  <h2>At a glance</h2>
+  <dl class="kv">
+    <dt>Where</dt><dd>Mostly the battle overlay, PROT 0898 at base <code>0x801CE818</code>; a few in <code>SCUS_942.54</code></dd>
+    <dt>Context</dt><dd>The battle context struct, pointer at <code>0x8007BD24</code>: <code>ctx[7]</code> is the action state, <code>ctx[+0x13]</code> the acting slot</dd>
+    <dt>Actors</dt><dd>Pointer table <code>0x801C9370</code>, eight slots: <code>0..2</code> party, <code>3..</code> monsters</dd>
+    <dt>Roster ids</dt><dd><code>DAT_8007BD10[slot]</code>, 1-based: Vahn, Noa, Gala, and <code>4</code> the AI companion</dd>
+    <dt>Slot B</dt><dd>The second overlay slot at <code>0x801F69D8</code> where <a href="cast-module.html">cast modules</a> page in</dd>
+    <dt>Port</dt><dd><code>engine-battle-vm::battle_action</code>, <code>battle_formulas</code>, <code>battle_cam_script</code>; world glue in <code>engine-core::world::battle</code></dd>
+  </dl>
+</section>
+
+<section class="doc-section" id="map">
+  <h2>The helper families</h2>
+  <figure class="diagram">
+    <svg viewBox="0 0 880 400" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="The battle action state machine in the centre calls five families of helper: damage and status, AI and turn budget, effects and summons, camera and pose, audio and voice. Each family box lists its main routines.">
+      <defs><marker id="bah-arrow" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <rect class="dg-node-accent" x="330" y="16" width="220" height="50" rx="4"/>
+      <text class="dg-label" x="440" y="38">Action SM FUN_801E295C</text>
+      <text class="dg-sub" x="440" y="54">owns the order of a turn</text>
+      <rect class="dg-group" x="10" y="130" width="164" height="150" rx="6"/>
+      <text class="dg-label" x="92" y="152">Damage + status</text>
+      <text class="dg-sub" x="92" y="180">range FUN_8004E2F0</text>
+      <text class="dg-sub" x="92" y="202">rolls 801DD4B0 / 6B4</text>
+      <text class="dg-sub" x="92" y="224">DoT tick FUN_801E752C</text>
+      <text class="dg-sub" x="92" y="246">escape FUN_801E791C</text>
+      <path class="dg-edge" d="M440 66 L440 100 L92 100 L92 128" marker-end="url(#bah-arrow)"/>
+      <rect class="dg-group" x="184" y="130" width="164" height="150" rx="6"/>
+      <text class="dg-label" x="266" y="152">AI + turn budget</text>
+      <text class="dg-sub" x="266" y="180">queue FUN_801EED1C</text>
+      <text class="dg-sub" x="266" y="202">auto arts FUN_801F0450</text>
+      <text class="dg-sub" x="266" y="224">monster FUN_801E9FD4</text>
+      <text class="dg-sub" x="266" y="246">retarget FUN_801E7320</text>
+      <path class="dg-edge" d="M440 66 L440 100 L266 100 L266 128" marker-end="url(#bah-arrow)"/>
+      <rect class="dg-group" x="358" y="130" width="164" height="150" rx="6"/>
+      <text class="dg-label" x="440" y="152">Effects + summons</text>
+      <text class="dg-sub" x="440" y="180">spawn FUN_801DFDF8</text>
+      <text class="dg-sub" x="440" y="202">script FUN_801DEA50</text>
+      <text class="dg-sub" x="440" y="224">flight FUN_801E09F8</text>
+      <text class="dg-sub" x="440" y="246">loader B FUN_8003EC70</text>
+      <path class="dg-edge" d="M440 66 L440 100 L440 100 L440 128" marker-end="url(#bah-arrow)"/>
+      <rect class="dg-group" x="532" y="130" width="164" height="150" rx="6"/>
+      <text class="dg-label" x="614" y="152">Camera + pose</text>
+      <text class="dg-sub" x="614" y="180">pose FUN_801D5854</text>
+      <text class="dg-sub" x="614" y="202">tween FUN_801D829C</text>
+      <text class="dg-sub" x="614" y="224">framing 0x801F0348</text>
+      <text class="dg-sub" x="614" y="246">bounds FUN_801EFE44</text>
+      <path class="dg-edge" d="M440 66 L440 100 L614 100 L614 128" marker-end="url(#bah-arrow)"/>
+      <rect class="dg-group" x="706" y="130" width="164" height="150" rx="6"/>
+      <text class="dg-label" x="788" y="152">Audio + voice</text>
+      <text class="dg-sub" x="788" y="180">duck _DAT_8007B910</text>
+      <text class="dg-sub" x="788" y="202">XA FUN_8003D53C</text>
+      <text class="dg-sub" x="788" y="224">arts FUN_8004C140</text>
+      <text class="dg-sub" x="788" y="246">cast cue FUN_801F3990</text>
+      <path class="dg-edge" d="M440 66 L440 100 L788 100 L788 128" marker-end="url(#bah-arrow)"/>
+      <rect class="dg-node" x="140" y="320" width="260" height="56" rx="4"/>
+      <text class="dg-label" x="270" y="345">actor[+0x16E] status word</text>
+      <text class="dg-sub" x="270" y="361">read by nearly every scan</text>
+      <rect class="dg-node-warn" x="480" y="320" width="260" height="56" rx="4"/>
+      <text class="dg-label" x="610" y="345">actor[+0x14C] live HP</text>
+      <text class="dg-sub" x="610" y="361">zero = dead; there is no KO bit</text>
+      <path class="dg-edge-dim" d="M270 280 L270 318" marker-end="url(#bah-arrow)"/>
+      <path class="dg-edge-dim" d="M610 280 L610 318" marker-end="url(#bah-arrow)"/>
+    </svg>
+    <figcaption>The state machine sequences a turn; the arithmetic lives in the helpers. Most are in the battle overlay (PROT 0898, base <code>0x801CE818</code>); the range metric, stat aggregator, XA player and loader B are in the main executable. Every scan pairs the status halfword with the liveness halfword, because a dead actor is only one whose HP reads zero.</figcaption>
+  </figure>
+</section>
+
+<section class="doc-section" id="range">
+  <h2>Range metric</h2>
+  <p><code>FUN_8004E2F0</code> answers &ldquo;is the attacker close enough&rdquo; for the attack chain and for the animation tick&rsquo;s root-motion gate. It returns a 16-bit distance, and <strong>zero means in range</strong>.</p>
+  <ul class="bullets">
+    <li>The position read is asymmetric: the attacker&rsquo;s <em>live</em> pair <code>+0x34 / +0x38</code> against the target&rsquo;s <em>seat</em> pair <code>+0x3C / +0x40</code>.</li>
+    <li>A monster&rsquo;s size class is its record byte <code>+0x1F</code>. Small classes compare against the thresholds <code>{256, 384, 1024}</code> at <code>DAT_80078870</code>; a larger class compares against <code>size &lt;&lt; 4</code>, unsigned.</li>
+    <li>Each party member carries a reach offset at <code>DAT_80078878</code>: <code>{+43, 0, -53, -100}</code> for roster ids 1 to 4. It is <em>added to the distance</em>, so a positive value is a shorter reach.</li>
+    <li>A target code the law reads as out of range is how the flee staging walks the party away: the walk&rsquo;s root motion never finds its target.</li>
+  </ul>
+</section>
+
+<section class="doc-section" id="damage">
+  <h2>The two damage-roll wrappers</h2>
+  <p>Every capture-class hit goes through one of two sibling wrappers. Each draws an attacker roll and a defender roll, applies the element-affinity scale <code>FUN_801DD864</code>, then the closed-form finisher <code>FUN_801DDB30</code>.</p>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Wrapper</th><th>Stat mixed into both rolls</th><th>Fifth finisher argument</th><th>Party resist ladder</th></tr></thead>
+    <tbody>
+      <tr><td><code>FUN_801DD4B0</code></td><td>INT-working <code>+0x168</code></td><td><code>0</code></td><td>runs: jewels, elemental guards, All Guard</td></tr>
+      <tr><td><code>FUN_801DD6B4</code></td><td>ATK-working <code>+0x158</code></td><td><code>1</code></td><td><strong>skipped</strong></td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>The fifth argument is the resist bypass: the finisher tests it once (<code>bne a3,zero</code> at <code>0x801DDBD4</code>) and jumps past the whole party-defender block. That is the mechanism behind the boss casts that ignore elemental guards. The affinity scale still reads the caster&rsquo;s element either way. Formulas: <a href="battle-formulas.html">battle formulas</a>.</p>
+</section>
+
+<section class="doc-section" id="status">
+  <h2>The status word</h2>
+  <p>One actor halfword, <code>+0x16E</code>, carries every condition. Its bits are pinned by the HUD icon selector&rsquo;s priority ladder and by the appliers that set them.</p>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Bits</th><th>Condition</th></tr></thead>
+    <tbody>
+      <tr><td><code>0x0001</code> / <code>0x0002</code></td><td>Venom / Toxic</td></tr>
+      <tr><td><code>0x0004</code></td><td>Stone</td></tr>
+      <tr><td><code>0x0008</code> / <code>0x0010</code> / <code>0x0020</code></td><td>Rot, one rolled limb</td></tr>
+      <tr><td><code>0x0380</code></td><td>AI delegation, always set as a group</td></tr>
+      <tr><td><code>0x0400</code> / <code>0x0800</code></td><td>Numb / Sleep</td></tr>
+      <tr><td><code>0x1000</code></td><td>Curse</td></tr>
+      <tr><td><code>0x2000</code> and up</td><td>unused: no applier in the dumped corpus</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>Three masks are read as units: <code>0xF84</code> gates a slot out of the selectable scans, <code>0x0F80</code> is what taking damage clears, and <code>0x0404</code> is the whole-actor inert test. There is no KO bit: a dead actor is one whose HP halfword is zero, which is why every consumer pairs the two.</p>
+</section>
+
+<section class="doc-section" id="escape">
+  <h2>The escape roll</h2>
+  <p><code>FUN_801E791C</code> decides a flee. Both sides score from speed plus how hurt they are, and each rolls <code>rand() % score</code>:</p>
+<pre><code>party_score = sum over party   (SPD * 3) &gt;&gt; 1 + (maxHP - curHP) &gt;&gt; 4
+enemy_score = sum over enemies  SPD           + (maxHP - curHP) &gt;&gt; 5
+Escape Boost:  roll_p += roll_p &gt;&gt; 1
+Great Escape, a pre-emptive strike, or the forced-flee flag:  roll_p = roll_e
+FAIL iff  not forced  and  (roll_p &lt; roll_e  or  ctx[+0x287] != 0)</code></pre>
+  <ul class="bullets">
+    <li><strong>&ldquo;Assured&rdquo; describes the compare, not the outcome.</strong> Great Escape forces a tie so the compare cannot fail, but the scripted-fight flag <code>ctx[+0x287]</code> is tested afterwards and still blocks the flee. That is why the Chicken King is assured escape <em>from non-boss fights</em>.</li>
+    <li><code>ctx[+0x287]</code> is not a counter-attack byte. Battle setup derives it as <code>(DAT_8007BD60 &gt;&gt; 5) &amp; 4</code>, so it reads <code>0</code> or <code>4</code>.</li>
+    <li>The pre-emptive latch <code>ctx[+0x291]</code> is re-copied from a cell the first round clears, so a pre-emptive strike&rsquo;s unfailable compare lasts one round.</li>
+    <li>On success the routine also stages the scene: the party turns its back, takes an out-of-range target and walks off; downed members are floored at 1 HP in their records.</li>
+  </ul>
+</section>
+
+<section class="doc-section" id="ai">
+  <h2>AI picks and the turn budget</h2>
+  <ul class="bullets">
+    <li><strong>The companion watches the wrong actor by design.</strong> <code>FUN_801EED1C</code>&rsquo;s character-id-4 arm reads seat 0&rsquo;s HP and status and writes seat 1&rsquo;s queue. Its physical leg redraws <code>rand() % monster_count + 3</code> until the seat is alive.</li>
+    <li><strong>Auto and Rage members</strong> get their queue from the auto arts-combo assembler <code>FUN_801F0450</code>, which fills the same byte string a player would enter.</li>
+    <li><strong>Monsters</strong> queue several actions out of an agility budget (<code>FUN_801E9FD4</code>); a delegated or confused monster re-rolls its target through <code>FUN_801E7320</code> at the turn seed.</li>
+  </ul>
+  <p>The queue itself is on the <a href="battle-action-queue.html">action queue</a> page.</p>
+</section>
+
+<section class="doc-section" id="effects">
+  <h2>Effects, summons and the per-frame walkers</h2>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Routine</th><th>Role</th></tr></thead>
+    <tbody>
+      <tr><td><code>FUN_801DFDF8</code></td><td>Public spawn into the effect pool (sprite animations)</td></tr>
+      <tr><td><code>FUN_801D8DE8</code></td><td>Raises a HUD text or chrome widget by element id</td></tr>
+      <tr><td><code>FUN_801DEA50</code></td><td>Steps the acting actor&rsquo;s effect script and installs the move-power record</td></tr>
+      <tr><td><code>FUN_801E09F8</code></td><td>Counts outstanding effects; flies and lands projectiles. Its hit arm ORs <code>+0x1DC</code> and turns the victim <em>toward</em> the attacker</td></tr>
+      <tr><td><code>FUN_801E0080</code></td><td>Per-frame walker of the effect master and child pools</td></tr>
+      <tr><td><code>FUN_801DF6B8</code></td><td>The scaling damage-number popup</td></tr>
+      <tr><td><code>FUN_8003EC70</code></td><td>Loader B: pages a summon or cast module into slot B (raw index <code>arg + 0x381</code>)</td></tr>
+      <tr><td><code>0x801F1ED4</code> / <code>0x801F2160</code></td><td>Jump-table dispatch into the slot-B routine, by summon id or by effect class</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>The pool model is on the <a href="effect-vm.html">effect VM</a> page; what a paged module does is on <a href="cast-module.html">cast modules</a>.</p>
+</section>
+
+<section class="doc-section" id="camera">
+  <h2>Camera and pose</h2>
+  <p><code>FUN_801D5854</code> is the pose driver: one presentation program per pose id <code>0..9</code>, called with the acting slot. Three of its arms read the per-action style byte <code>ctx[+0xD]</code> through the same compare ladder: values <code>1</code> and <code>3</code> add half a turn of yaw, <code>2</code> and <code>3</code> tilt the pitch by <code>0x80</code> and store <code>TR.y = 0x400</code>. <code>FUN_801D829C</code> arms the eased tween every framing change goes through. The framings themselves are on <a href="battle-stage-camera.html">battle stage and camera</a>.</p>
+</section>
+
+<section class="doc-section" id="audio">
+  <h2>Audio and voice</h2>
+  <ul class="bullets">
+    <li><code>_DAT_8007B910</code> is the <strong>live audio level</strong>, not screen brightness. The summon and capture arms ramp it down and back; two of those duck arms sit behind the scripted-fight flag and never run in an ordinary encounter.</li>
+    <li>Battle voices are CD-XA clips played through <code>FUN_8003D53C</code>: a grunt per normal move, a shout per Tactical Art chosen by <code>FUN_8004C140</code>, and a fanfare per Hyper Art.</li>
+    <li><code>FUN_801F3990</code> fires the item and Spirit voice cue from the wait state <code>0x3D</code>.</li>
+  </ul>
+  <p>The overlay also carries its own small PRNG (<code>FUN_801D0290</code>). It is a shape hash for the lightning ribbon emitter and feeds no gameplay roll - those draw the BIOS <code>rand</code>.</p>
+</section>
+
+<section class="doc-section" id="see-also">
+  <h2>See also</h2>
+  <p>Every helper with its full read / write set, the leaf scans, the audio cue tables and the dump-alias list for the <code>0x801Fxxxx</code> band are in <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/battle-action-helpers.md" target="_blank" rel="noopener"><code>docs/subsystems/battle-action-helpers.md</code></a>.</p>
+  <div class="see-also">
+    <span class="see-also-label">Reference</span>
+    <a href="battle-action.html">Action state machine</a>
+    <a href="battle-action-queue.html">Action queue</a>
+    <a href="battle-formulas.html">Battle formulas</a>
+    <a href="battle-stage-camera.html">Stage and camera</a>
+    <a href="cast-module.html">Cast modules</a>
+    <a href="effect-vm.html">Effect VM</a>
+    <a href="battle-actor-rendering.html">Actor rendering</a>
+  </div>
+</section>

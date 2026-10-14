@@ -1,0 +1,162 @@
+<header class="page-header">
+  <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">subsystems</a> &middot; field ambient effects</div>
+  <h1>Field ambient effects</h1>
+  <p class="lede">Field maps are not static: water shimmers, waterfalls roll, mist drifts and the ground of one castle pulses under lightning. None of it is animated geometry. It is a small set of runtime mechanisms that repaint the scene&rsquo;s VRAM or bend its meshes at draw time, authored per scene and started at scene load.</p>
+</header>
+
+<section class="doc-section" id="at-a-glance">
+  <h2>At a glance</h2>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Mechanism</th><th>Carrier</th><th>Stepper</th><th>What it animates</th></tr></thead>
+    <tbody>
+      <tr><td><a href="#walkers">Walker table</a></td><td>scene bundle type-6 slot</td><td><code>FUN_8001ADA4</code> case <code>0xB</code></td><td>palette-cell cycling: water, waterfall shimmer</td></tr>
+      <tr><td><a href="#tree">Ambient move-VM tree</a></td><td>prescript stager records + MAN partition-1 scripts</td><td>move VM + render tail <code>FUN_80021DF4</code></td><td>palette pulses, texel scrolling, lightning, ambient sound</td></tr>
+      <tr><td><a href="#morphs">Strips and morphs</a></td><td>move records / bundle type-7 pack</td><td>morph stager <code>FUN_8001C604</code></td><td>texel strip frames, vertex deformation</td></tr>
+      <tr><td><a href="#fog">Particle emitter</a></td><td>field-overlay template + MAN section-4 regions</td><td><code>FUN_801D6058</code> + pool <code>FUN_8003F348</code></td><td>drifting fog and mist</td></tr>
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<section class="doc-section" id="carriers">
+  <h2>The four carriers</h2>
+  <figure class="diagram">
+    <svg viewBox="0 0 880 440" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Field ambient animation. Scene load feeds four carriers: the bundle type-6 slot spawns palette walker actors for water shimmer; MAN partition-1 placements run one field-VM slice whose op 0x34 sub-3 installs the ambient move-VM tree, which drives the palette HSV cycler, the VRAM rect scroller, ambient sound cues and morph lanes; the bundle type-7 slot feeds the same morph lanes; and field init spawns the particle emitter that fills the fog pool once a script raises its gate.">
+      <defs><marker id="faf-arrow" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <rect class="dg-node-accent" x="350" y="14" width="180" height="44" rx="4"/>
+      <text class="dg-label" x="440" y="40">Scene load</text>
+      <rect class="dg-node" x="20" y="100" width="180" height="50" rx="4"/>
+      <text class="dg-label" x="110" y="122">Bundle type-6 slot</text>
+      <text class="dg-sub" x="110" y="138">palette-walk table</text>
+      <path class="dg-edge" d="M440 58 L440 78 L110 78 L110 98" marker-end="url(#faf-arrow)"/>
+      <rect class="dg-node" x="240" y="100" width="180" height="50" rx="4"/>
+      <text class="dg-label" x="330" y="122">MAN partition-1</text>
+      <text class="dg-sub" x="330" y="138">one field-VM slice each</text>
+      <path class="dg-edge" d="M440 58 L440 78 L330 78 L330 98" marker-end="url(#faf-arrow)"/>
+      <rect class="dg-node" x="460" y="100" width="180" height="50" rx="4"/>
+      <text class="dg-label" x="550" y="122">Bundle type-7 slot</text>
+      <text class="dg-sub" x="550" y="138">VDF morph pack</text>
+      <path class="dg-edge" d="M440 58 L440 78 L550 78 L550 98" marker-end="url(#faf-arrow)"/>
+      <rect class="dg-node" x="680" y="100" width="180" height="50" rx="4"/>
+      <text class="dg-label" x="770" y="122">Field init</text>
+      <text class="dg-sub" x="770" y="138">spawns one emitter</text>
+      <path class="dg-edge" d="M440 58 L440 78 L770 78 L770 98" marker-end="url(#faf-arrow)"/>
+      <rect class="dg-node" x="20" y="190" width="180" height="50" rx="4"/>
+      <text class="dg-label" x="110" y="212">Walker actors</text>
+      <text class="dg-sub" x="110" y="228">park row onto a cell</text>
+      <path class="dg-edge" d="M110 150 L110 188" marker-end="url(#faf-arrow)"/>
+      <rect class="dg-node-ok" x="20" y="370" width="180" height="50" rx="4"/>
+      <text class="dg-label" x="110" y="392">Water shimmer</text>
+      <text class="dg-sub" x="110" y="408">palette cycling</text>
+      <path class="dg-edge" d="M110 240 L110 368" marker-end="url(#faf-arrow)"/>
+      <rect class="dg-node-accent" x="240" y="190" width="180" height="50" rx="4"/>
+      <text class="dg-label" x="330" y="212">Ambient move-VM tree</text>
+      <text class="dg-sub" x="330" y="228">op 0x34 sub-3 installs</text>
+      <path class="dg-edge" d="M330 150 L330 188" marker-end="url(#faf-arrow)"/>
+      <rect class="dg-node" x="215" y="280" width="110" height="50" rx="4"/>
+      <text class="dg-label" x="270" y="302">Mode 3</text>
+      <text class="dg-sub" x="270" y="318">HSV cycler</text>
+      <rect class="dg-node" x="335" y="280" width="110" height="50" rx="4"/>
+      <text class="dg-label" x="390" y="302">Mode 4</text>
+      <text class="dg-sub" x="390" y="318">rect scroller</text>
+      <path class="dg-edge" d="M300 240 L270 278" marker-end="url(#faf-arrow)"/>
+      <path class="dg-edge" d="M360 240 L390 278" marker-end="url(#faf-arrow)"/>
+      <rect class="dg-node-ok" x="215" y="370" width="110" height="50" rx="4"/>
+      <text class="dg-label" x="270" y="392">Pulses</text>
+      <text class="dg-sub" x="270" y="408">lightning</text>
+      <rect class="dg-node-ok" x="335" y="370" width="110" height="50" rx="4"/>
+      <text class="dg-label" x="390" y="392">Waterfalls</text>
+      <text class="dg-sub" x="390" y="408">energy columns</text>
+      <path class="dg-edge" d="M270 330 L270 368" marker-end="url(#faf-arrow)"/>
+      <path class="dg-edge" d="M390 330 L390 368" marker-end="url(#faf-arrow)"/>
+      <rect class="dg-node" x="460" y="190" width="180" height="50" rx="4"/>
+      <text class="dg-label" x="550" y="212">Morph lanes</text>
+      <text class="dg-sub" x="550" y="228">envelope per actor</text>
+      <path class="dg-edge" d="M550 150 L550 188" marker-end="url(#faf-arrow)"/>
+      <path class="dg-edge-dim" d="M420 215 L458 215" marker-end="url(#faf-arrow)"/>
+      <text class="dg-edge-label" x="424" y="208">0x0A</text>
+      <rect class="dg-node-ok" x="460" y="370" width="180" height="50" rx="4"/>
+      <text class="dg-label" x="550" y="392">Vertex morphs</text>
+      <text class="dg-sub" x="550" y="408">substituted at draw time</text>
+      <path class="dg-edge" d="M550 240 L550 368" marker-end="url(#faf-arrow)"/>
+      <rect class="dg-node" x="680" y="190" width="180" height="50" rx="4"/>
+      <text class="dg-label" x="770" y="212">Emitter</text>
+      <text class="dg-sub" x="770" y="228">24 draws a frame</text>
+      <path class="dg-edge" d="M770 150 L770 188" marker-end="url(#faf-arrow)"/>
+      <text class="dg-edge-label" x="776" y="174">gate: op 4C 30</text>
+      <rect class="dg-node" x="680" y="280" width="180" height="50" rx="4"/>
+      <text class="dg-label" x="770" y="302">Fog pool</text>
+      <text class="dg-sub" x="770" y="318">80 additive half-sheets</text>
+      <path class="dg-edge" d="M770 240 L770 278" marker-end="url(#faf-arrow)"/>
+      <rect class="dg-node-ok" x="680" y="370" width="180" height="50" rx="4"/>
+      <text class="dg-label" x="770" y="392">Ground mist</text>
+      <text class="dg-sub" x="770" y="408">view-space billboards</text>
+      <path class="dg-edge" d="M770 330 L770 368" marker-end="url(#faf-arrow)"/>
+    </svg>
+    <figcaption>Four carriers, all authored per scene on the disc and started when the scene loads. None of them is animated vertex data in the environment pack: the walkers and the effect tree repaint VRAM (palettes or texels) under meshes that never move, the morph lanes substitute vertices at draw time, and the emitter draws additive sheets.</figcaption>
+  </figure>
+</section>
+
+<section class="doc-section" id="walkers">
+  <h2>Palette walkers</h2>
+  <p>The <a href="world-map.html">world map</a>&rsquo;s ocean animation is not kingdom-only. The asset dispatcher installs <em>any</em> bundle&rsquo;s type-6 slot, and field init spawns one walker actor per entry. Each walker copies successive frames from a &ldquo;park&rdquo; palette row onto a destination cell, so the palette - and every texel drawn through it - cycles.</p>
+  <p>Twelve bundles ship a populated table: the three overworld maps (eight entries, byte-identical), two single-entry scenes, and a seven-scene family sharing one two-entry waterfall table. Every other scene&rsquo;s slot is a four-byte placeholder. Resolution is by type byte, not slot position.</p>
+</section>
+
+<section class="doc-section" id="tree">
+  <h2>The ambient effect tree</h2>
+  <p>Most ambience is a tree of small invisible actors running <a href="move-vm.html">move-VM</a> bytecode out of the scene&rsquo;s prescript bundle. A part draws no mesh; its render tail edits VRAM every frame, or it fires sound cues.</p>
+  <p><strong>Scene entry is not a second mechanism.</strong> The placement installer runs each partition-1 placement through the <a href="script-vm.html">field VM</a> for one frame slice, and every op <code>0x34</code> sub-3 that slice reaches installs one stager record - the same instruction a script reaches at run time. The part is seated at the executing actor&rsquo;s position, not the player&rsquo;s.</p>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Render mode</th><th>What it does</th><th>Seen as</th></tr></thead>
+    <tbody>
+      <tr><td><code>3</code> - palette-cell HSV cycler</td><td>captures a VRAM rect, then every frame converts each texel to HSV, adds the running H / S / V offsets and an optional white blend, and writes the row back (<code>FUN_80019D50</code>)</td><td>pulsating flesh, lightning flashes</td></tr>
+      <tr><td><code>4</code> - VRAM-rect scroller</td><td>rotates an authored texel rect in place on a period countdown; no vertex, UV or palette changes</td><td>falling water, energy columns</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>The pulsating ground never moves a vertex: it is palette-space colour cycling under a static mesh. The bytecode vocabulary these trees are written in is the <a href="move-vm-overlay-ext.html">move VM&rsquo;s overlay extension</a>. Record 0 of the stager bundle is not an effect at all - it is the scene&rsquo;s sound-effect descriptor bank.</p>
+</section>
+
+<section class="doc-section" id="morphs">
+  <h2>Strips and vertex morphs</h2>
+  <p>The bundle&rsquo;s type-7 slot is a vertex-delta pack. A morph lane holds an envelope per actor, and the renderer substitutes the blended vertices at draw time - the source mesh is never rewritten. Move-VM op <code>0x0A</code> drives the lanes from the ambient tree; a few scenes install theirs from a placed actor instead.</p>
+</section>
+
+<section class="doc-section" id="fog">
+  <h2>The fog pool</h2>
+  <p>The fourth carrier is a single actor spawned at field init. Each frame it takes twenty-four independent draws, each with a one-in-sixteen chance of bursting one to four particles at a point inside the camera&rsquo;s visible-tile span.</p>
+  <ul class="bullets">
+    <li><strong>The gate is script-driven, not per-scene data.</strong> <code>_DAT_8007B854</code> is raised by op <code>4C 30</code> and cleared by <code>4C 31</code> (see <a href="script-vm-menuctrl.html">op 0x4C</a>). It is the ambient-particle master gate; it is not an input lock.</li>
+    <li>The emitter names tiles and draws nothing. Each burst goes to the spawner, which checks the walk box, the region enable and the cap, and fills the pool at <code>_DAT_8007B7E0</code> - eighty records.</li>
+    <li>Each record draws as two additive half-sheets, and a sheet is a <strong>view-space billboard</strong>, not a world-space quad.</li>
+    <li>A warp entry - a return from battle, a minigame or a movie - skips the spawn, so the emitter exists only after a real field entry.</li>
+  </ul>
+</section>
+
+<section class="doc-section" id="guard">
+  <h2>Photosensitivity guard</h2>
+  <p>An engine enhancement, not retail behaviour. The casino dance venue&rsquo;s entry tree runs twenty-one palette cyclers, and one row re-keys its brightness offset between full black and neutral on consecutive ticks - a full-swing strobe far above the three-flashes-a-second guideline. The port&rsquo;s <code>reduce_flashing</code> option (default on) slews only the <em>applied</em> brightness and white blend toward the simulated target; hue and saturation pass through untouched, and the parts themselves always advance retail-exact. Turning it off restores the retail steps.</p>
+</section>
+
+<section class="doc-section" id="port">
+  <h2>In the port</h2>
+  <p>Walker tables decode in <code>scene-formats::clut_walk</code> and animate in <code>engine-scene::clut_walk_anim</code>. The tree is <code>engine-core::world::ambient</code>, installed by the scene-entry pre-run that executes each op <code>0x34</code> sub-3 once; its render tails are <code>engine-field::clut_cell_fx</code> and <code>world::ambient::vram_scroll</code>. Fog is <code>engine-field::fog_particles</code> and <code>ambient_emitter</code>. The separate volumetric ground fog is an enhancement and never touches this pool.</p>
+</section>
+
+<section class="doc-section" id="see-also">
+  <h2>See also</h2>
+  <p>The install chain instruction by instruction, the part pool and its control block, both render tails, the morph pack format, the fog records and the overworld draw order are in <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/field-ambient-fx.md" target="_blank" rel="noopener"><code>docs/subsystems/field-ambient-fx.md</code></a>.</p>
+  <div class="see-also">
+    <span class="see-also-label">Reference</span>
+    <a href="script-vm.html">Field / event VM</a>
+    <a href="script-vm-menuctrl.html">Op 0x4C</a>
+    <a href="move-vm.html">Move VM</a>
+    <a href="move-vm-overlay-ext.html">Move VM extension</a>
+    <a href="world-map.html">World map</a>
+    <a href="renderer.html">Renderer</a>
+    <a href="../formats/scene-bundles.html">Scene bundles</a>
+  </div>
+</section>

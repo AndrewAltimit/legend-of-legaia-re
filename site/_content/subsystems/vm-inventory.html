@@ -1,0 +1,127 @@
+<header class="page-header">
+  <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">subsystems</a> &middot; VM inventory</div>
+  <h1>VM inventory</h1>
+  <p class="lede">A census of every VM-shaped subsystem in the retail runtime - anything that walks a bytecode or record stream through a dispatcher, or advances a per-entity state byte through a switch each frame - with three independent facts for each: how completely it is decoded, whether the Rust port implements it, and whether a live caller in the port reaches it.</p>
+</header>
+
+<section class="doc-section" id="three-facts">
+  <h2>Three facts to keep apart</h2>
+  <ul class="bullets">
+    <li><strong>&ldquo;Five VMs&rdquo; is an orientation, not a census.</strong> Five bytecode-and-state drivers share the actor model. The <code>0x2F</code> extension, the <code>0x4C</code> sub-dispatcher and the battle-action, world-map and tile-board state machines are separate dispatchers with their own tables.</li>
+    <li><strong>&ldquo;Ported&rdquo; is not &ldquo;live&rdquo;.</strong> Port status and reachability are separate columns. A faithful, tested module that nothing outside its crate calls is inert.</li>
+    <li><strong>Whether the disc uses an op is a third fact.</strong> A ported, live handler can still have no carrier - no shipped scene issuing that opcode. For the field VM a disc-wide opcode census answers it per arm, and its zeros separate &ldquo;no fixture drives this&rdquo; from &ldquo;there is nothing to drive&rdquo;.</li>
+  </ul>
+</section>
+
+<section class="doc-section" id="nesting">
+  <h2>How the dispatchers nest</h2>
+  <figure class="diagram">
+    <svg viewBox="0 0 880 330" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="How the dispatchers nest at runtime. The per-actor animation dispatch calls the move VM, whose opcode 0x2F reaches the overlay extension while the field overlay is resident. The field and event VM reaches the MENU_CTRL sub-dispatchers through opcode 0x4C and the tile-board walk machine through opcode 0x49. The battle action state machine re-enters a cast module phase byte every frame until it is done. The two motion VMs and the window-widget actor VM stand alone.">
+      <defs><marker id="vmi-arrow" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <rect class="dg-node" x="20" y="20" width="250" height="50" rx="4"/>
+      <text class="dg-label" x="145" y="42">Per-actor anim dispatch</text>
+      <text class="dg-sub" x="145" y="58">FUN_80021DF4, 7 dispatch bytes</text>
+      <rect class="dg-node-accent" x="315" y="20" width="250" height="50" rx="4"/>
+      <text class="dg-label" x="440" y="42">Move VM</text>
+      <text class="dg-sub" x="440" y="58">FUN_80023070, 71 opcodes</text>
+      <rect class="dg-node" x="610" y="20" width="250" height="50" rx="4"/>
+      <text class="dg-label" x="735" y="42">0x2F extension</text>
+      <text class="dg-sub" x="735" y="58">FUN_801D362C, 61 sub-opcodes</text>
+      <path class="dg-edge" d="M270 45 L313 45" marker-end="url(#vmi-arrow)"/>
+      <path class="dg-edge" d="M565 45 L608 45" marker-end="url(#vmi-arrow)"/>
+      <text class="dg-edge-label" x="570" y="36">0x2F</text>
+      <rect class="dg-node-accent" x="20" y="110" width="250" height="50" rx="4"/>
+      <text class="dg-label" x="145" y="132">Field / event VM</text>
+      <text class="dg-sub" x="145" y="148">FUN_801DE840, 43 opcodes</text>
+      <rect class="dg-node" x="315" y="90" width="250" height="44" rx="4"/>
+      <text class="dg-label" x="440" y="109">MENU_CTRL</text>
+      <text class="dg-sub" x="440" y="125">16 outer nibbles</text>
+      <rect class="dg-node" x="315" y="144" width="250" height="44" rx="4"/>
+      <text class="dg-label" x="440" y="163">Tile-board walk SM</text>
+      <text class="dg-sub" x="440" y="179">15 states</text>
+      <path class="dg-edge" d="M270 125 L292 125 L292 112 L313 112" marker-end="url(#vmi-arrow)"/>
+      <text class="dg-edge-label" x="278" y="104">0x4C</text>
+      <path class="dg-edge" d="M270 145 L292 145 L292 166 L313 166" marker-end="url(#vmi-arrow)"/>
+      <text class="dg-edge-label" x="278" y="182">0x49</text>
+      <rect class="dg-node-accent" x="20" y="220" width="250" height="50" rx="4"/>
+      <text class="dg-label" x="145" y="242">Battle-action SM</text>
+      <text class="dg-sub" x="145" y="258">FUN_801E295C, 256-slot table</text>
+      <rect class="dg-node" x="315" y="220" width="250" height="50" rx="4"/>
+      <text class="dg-label" x="440" y="242">Cast-module phase byte</text>
+      <text class="dg-sub" x="440" y="258">ctx+0x279, one per image</text>
+      <path class="dg-edge" d="M270 245 L313 245" marker-end="url(#vmi-arrow)"/>
+      <text class="dg-edge-label" x="250" y="290" text-anchor="middle">every frame until done</text>
+      <rect class="dg-group" x="600" y="100" width="270" height="200" rx="6"/>
+      <text class="dg-sub dg-start" x="610" y="116">stand-alone dispatchers</text>
+      <rect class="dg-node" x="615" y="128" width="240" height="44" rx="4"/>
+      <text class="dg-label" x="735" y="147">Motion VM</text>
+      <text class="dg-sub" x="735" y="163">FUN_8003774C, pursue / patrol</text>
+      <rect class="dg-node" x="615" y="182" width="240" height="44" rx="4"/>
+      <text class="dg-label" x="735" y="201">Scripted motion VM</text>
+      <text class="dg-sub" x="735" y="217">FUN_80038158, 32 slots</text>
+      <rect class="dg-node" x="615" y="236" width="240" height="44" rx="4"/>
+      <text class="dg-label" x="735" y="255">Actor VM (window widgets)</text>
+      <text class="dg-sub" x="735" y="271">FUN_801D6628, 13 opcodes</text>
+    </svg>
+    <figcaption>Op and state counts are read off each dispatcher&rsquo;s bound in the disassembly - the compare immediate ahead of the indirect jump - not off the port. &ldquo;Five VMs&rdquo; is an orientation: several boxes here are separate dispatchers with their own tables.</figcaption>
+  </figure>
+</section>
+
+<section class="doc-section" id="inventory">
+  <h2>The inventory</h2>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Subsystem</th><th>Driver</th><th>Op / state space</th><th>Port</th></tr></thead>
+    <tbody>
+      <tr><td><a href="actor-vm.html">Actor / sprite VM</a></td><td><code>FUN_801D6628</code></td><td>13 opcodes, table <code>0x801CED70</code></td><td><code>engine-vm</code> root; live in the shop widget choreography</td></tr>
+      <tr><td><a href="move-vm.html">Move VM</a></td><td><code>FUN_80023070</code></td><td>71 opcodes <code>0x00..0x46</code>, table <code>0x80010778</code></td><td><code>move_vm</code></td></tr>
+      <tr><td><a href="move-vm-overlay-ext.html">Move-VM extension</a></td><td><code>FUN_801D362C</code></td><td>61 sub-opcodes, table <code>0x801CE868</code></td><td><code>move_vm::ext</code></td></tr>
+      <tr><td><a href="motion-vm.html">Motion VM</a>, pursue / patrol</td><td><code>FUN_8003774C</code></td><td>22-slot table <code>0x80010EE0</code></td><td><code>motion_vm</code></td></tr>
+      <tr><td><a href="motion-vm.html">Motion VM</a>, scripted</td><td><code>FUN_80038158</code></td><td>32-slot table <code>0x80010FE8</code>, ops <code>0x01..=0x20</code></td><td><code>ambient_motion</code></td></tr>
+      <tr><td><a href="script-vm.html">Field / event VM</a></td><td><code>FUN_801DE840</code></td><td>43 opcodes <code>0x21..0x4F</code> with gaps</td><td><code>field</code></td></tr>
+      <tr><td><a href="script-vm-menuctrl.html">Field VM MENU_CTRL</a></td><td>inline in the field VM</td><td>16 outer nibbles; two reach the error printer</td><td><code>field::step::menu_ctrl</code></td></tr>
+      <tr><td><a href="effect-vm.html">Effect VM</a></td><td><code>FUN_801E0088</code></td><td><strong>none</strong> - see below</td><td><code>effect_vm</code></td></tr>
+      <tr><td><a href="battle-action.html">Battle-action SM</a></td><td><code>FUN_801E295C</code></td><td>256-slot table <code>0x801CED44</code>, sparse bands, no default arm</td><td><code>battle_action</code></td></tr>
+      <tr><td><a href="world-map.html">World-map entity SM</a></td><td><code>FUN_801DA51C</code></td><td>5 states</td><td><code>world_map</code></td></tr>
+      <tr><td><a href="tile-board.html">Tile-board walk SM</a></td><td><code>FUN_801EF2B0</code></td><td>15 states, table <code>0x801CF65C</code></td><td><code>engine-minigames::tile_board</code></td></tr>
+      <tr><td><a href="cast-module.html">Cast-module phase machine</a></td><td>one tick per PROT 0903..0966 image</td><td>per image: the <code>ctx+0x279</code> byte through a word table or a compare chain</td><td><code>cast_module_ticks</code></td></tr>
+      <tr><td>Per-actor anim dispatch</td><td><code>FUN_80021DF4</code></td><td>7 dispatch bytes at <code>actor[+0x5A]</code></td><td><code>anim_vm</code></td></tr>
+      <tr><td>Title-screen tick</td><td><code>FUN_801DD35C</code></td><td>25-slot table <code>0x801CF244</code></td><td><code>title_overlay</code></td></tr>
+      <tr><td>Per-prim render dispatch</td><td><code>FUN_80043390</code></td><td>20 kind slots &times; 4 alpha banks</td><td><code>prim_dispatch</code></td></tr>
+      <tr><td>Status-effect ticker</td><td><code>FUN_801E752C</code></td><td>per-actor condition set</td><td><code>status_effects</code></td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>Every row has a live caller in the port. The battle-action state machine is the one row whose decode is graded partial: its table is sparse and not every band is mapped.</p>
+</section>
+
+<section class="doc-section" id="cast-band">
+  <h2>The cast band is 64 dispatchers and one row</h2>
+  <p>Each of the 64 slot-B images carries its own phase machine over the same context byte, so the &ldquo;cast-module phase machine&rdquo; is not one interpreter - it is a family that shares an ABI. The battle-action state machine re-enters the paged module&rsquo;s tick every frame and advances only on a zero return. See <a href="cast-module.html">cast modules</a>.</p>
+</section>
+
+<section class="doc-section" id="effect-vm">
+  <h2>The effect VM has no opcode space</h2>
+  <p>A low opcode count is not evidence of an incomplete decode, and here the count is zero by construction. <code>FUN_801E0088</code> has no central switch on a per-slot opcode byte: the bytes that look like state tokens are 5.3 fixed-point <strong>wait counters</strong>, and the walker is a pair of countdown-driven cursor walks. Searching for its opcode table is a documented dead end.</p>
+</section>
+
+<section class="doc-section" id="inert">
+  <h2>Ported but inert</h2>
+  <p>&ldquo;Inert&rdquo; is a reachability statement, not a correctness one. Two support modules stay inert today: the title sprite-emit primitives, and a standalone walker over the <code>0x2F</code> dispatcher. The second is owed no host - a disc-wide reference scan finds exactly one caller of that dispatcher, and the port hosts that caller.</p>
+</section>
+
+<section class="doc-section" id="see-also">
+  <h2>See also</h2>
+  <p>The per-row decode status, the two-ports-of-one-function note on the title tick, the inert list and the count of dispatcher copies are in <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/vm-inventory.md" target="_blank" rel="noopener"><code>docs/subsystems/vm-inventory.md</code></a>.</p>
+  <div class="see-also">
+    <span class="see-also-label">Reference</span>
+    <a href="move-vm.html">Move VM</a>
+    <a href="move-vm-overlay-ext.html">Move VM extension</a>
+    <a href="script-vm.html">Field / event VM</a>
+    <a href="script-vm-menuctrl.html">Op 0x4C</a>
+    <a href="motion-vm.html">Motion VM</a>
+    <a href="actor-vm.html">Actor VM</a>
+    <a href="effect-vm.html">Effect VM</a>
+    <a href="tile-board.html">Tile board</a>
+  </div>
+</section>

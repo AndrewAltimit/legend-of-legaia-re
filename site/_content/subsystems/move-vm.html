@@ -19,7 +19,7 @@
 
 <section class="doc-section" id="vm-family">
   <h2>The runtime VM family</h2>
-  <p>Legaia runs <strong>five</strong> bytecode / state VMs that share the actor model, and confusing them is the classic mistake in this corpus. Five is an orientation, not a census - the full list is the <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/vm-inventory.md" target="_blank" rel="noopener">VM inventory</a>.</p>
+  <p>Legaia runs <strong>five</strong> bytecode / state VMs that share the actor model, and confusing them is the classic mistake in this corpus. Five is an orientation, not a census - the full list is the <a href="vm-inventory.html">VM inventory</a>.</p>
   <div class="table-wrap">
   <table class="data-table">
     <thead><tr><th>VM</th><th>What it drives in the game</th><th>Driver</th><th>Where</th><th>Opcodes</th><th>Operands</th></tr></thead>
@@ -132,7 +132,7 @@
     </tbody>
   </table>
   </div>
-  <p>Every in-range sub-op has its own width (2 to 16 words); there is no size-1 arm. The widths sit in branch-delay slots, so the decompiled C reports the bounds-check default for every arm - the reason an earlier reading of the HSV ramps as a "size-1 density trick" was wrong. Per-sub-op detail: <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/move-vm-overlay-ext.md" target="_blank" rel="noopener"><code>move-vm-overlay-ext.md</code></a>.</p>
+  <p>Every in-range sub-op has its own width (2 to 16 words); there is no size-1 arm. The widths sit in branch-delay slots, so the decompiled C reports the bounds-check default for every arm - the reason an earlier reading of the HSV ramps as a "size-1 density trick" was wrong. Per-sub-op detail: <a href="move-vm-overlay-ext.html"><code>move-vm-overlay-ext.md</code></a>.</p>
   <p class="hint">A sibling that is <em>not</em> the move VM: puzzle rooms run a discrete <strong>tile-board mode</strong> in the same overlay, a byte-cell grid where each d-pad press moves exactly one cell. It is not town locomotion (that is <a href="field-locomotion.html">field locomotion</a>).</p>
 </section>
 

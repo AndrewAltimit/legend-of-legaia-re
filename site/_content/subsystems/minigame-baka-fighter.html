@@ -1,0 +1,145 @@
+<header class="page-header">
+  <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">subsystems</a> &middot; Baka Fighter</div>
+  <h1>Baka Fighter minigame</h1>
+  <p class="lede">The casino&rsquo;s one-on-one fighting cabinet. The player picks a battle-form party member and climbs a ladder of CPU opponents in best-of-three matches. Each exchange is a rock-paper-scissors matchup between three attacks, with damage scaled by per-fighter stats and combo length. Won rungs build a coin pot that can be banked or risked on the next rung.</p>
+</header>
+
+<section class="doc-section" id="at-a-glance">
+  <h2>At a glance</h2>
+  <dl class="kv">
+    <dt>Overlay</dt><dd>PROT 0976, <code>0xE000</code> bytes at base <code>0x801CE818</code>; init <code>FUN_801CF00C</code></dd>
+    <dt>Cabinet state machine</dt><dd><code>FUN_801CF388</code>, state word <code>DAT_801DBF44</code>, 37 states</dd>
+    <dt>Round state machine</dt><dd><code>FUN_801D3468</code>, phase <code>DAT_801DBF78</code></dd>
+    <dt>Exchange resolver</dt><dd><code>FUN_801D3A14</code></dd>
+    <dt>Damage / critical</dt><dd><code>FUN_801D3B18</code> / <code>FUN_801D6660</code></dd>
+    <dt>CPU move pick</dt><dd><code>FUN_801D487C</code></dd>
+    <dt>Fighter data</dt><dd>Roster table <code>0x801D769C</code>, 17 records, stride <code>0x6C</code></dd>
+    <dt>Art</dt><dd>Party pack PROT 1204 / 1205; ladder fighters 1206..=1219; HUD + stage 1203</dd>
+    <dt>Pot</dt><dd>Prize accumulator <code>_DAT_80084440</code>, banked into the coin bank <code>0x800845A4</code></dd>
+    <dt>Port</dt><dd><code>engine-minigames</code>: <code>baka_fighter</code>, <code>baka_cabinet</code>; 3D duel <code>engine-minigame-scenes::baka_duel_scene</code></dd>
+  </dl>
+</section>
+
+<section class="doc-section" id="entry">
+  <h2>Getting there</h2>
+  <p>The door is the <strong>mode-24 minigame warp</strong>: field-VM op <code>0x3E</code> with <code>op0 = 104</code> (sub-id 4) sets game mode <code>0x18</code> and loads the overlay. It is the ordinary scene-backup, overlay-load, return-to-field sequence, so the game returns to the exact field state it suspended. The mechanism is on the <a href="script-vm.html">field / event VM</a> page.</p>
+  <p>The three casino cabinets are interchangeable doors behind an entry gate and a one-coin fee. A fourth site on an overworld map is dev residue: a bare record with nothing but the warp, in a slot no reachable script spawns.</p>
+</section>
+
+<section class="doc-section" id="exchange">
+  <h2>The exchange and the round</h2>
+  <figure class="diagram">
+    <svg viewBox="0 0 880 300" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="The Baka Fighter exchange. Three attack types beat each other in a cycle: type 2 beats type 1, type 3 beats type 2, and type 1 beats type 3. Equal types draw. Type 4, the special, wins against anything. Beside it, the round state machine: setup, banners, open, committed, finisher, round over.">
+      <defs><marker id="bkf-arrow" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <rect class="dg-node-accent" x="135" y="15" width="110" height="50" rx="4"/>
+      <text class="dg-label" x="190" y="37">type 1</text>
+      <text class="dg-sub" x="190" y="53">attack</text>
+      <rect class="dg-node-accent" x="5" y="225" width="110" height="50" rx="4"/>
+      <text class="dg-label" x="60" y="247">type 2</text>
+      <text class="dg-sub" x="60" y="263">attack</text>
+      <rect class="dg-node-accent" x="265" y="225" width="110" height="50" rx="4"/>
+      <text class="dg-label" x="320" y="247">type 3</text>
+      <text class="dg-sub" x="320" y="263">attack</text>
+      <path class="dg-edge" d="M80 223 L170 67" marker-end="url(#bkf-arrow)"/>
+      <text class="dg-edge-label" x="104" y="140" text-anchor="end">2 beats 1</text>
+      <path class="dg-edge" d="M210 67 L300 223" marker-end="url(#bkf-arrow)"/>
+      <text class="dg-edge-label" x="276" y="140">1 beats 3</text>
+      <path class="dg-edge" d="M263 250 L117 250" marker-end="url(#bkf-arrow)"/>
+      <text class="dg-edge-label" x="190" y="272" text-anchor="middle">3 beats 2</text>
+      <rect class="dg-node-warn" x="135" y="140" width="110" height="46" rx="4"/>
+      <text class="dg-label" x="190" y="160">type 4</text>
+      <text class="dg-sub" x="190" y="176">special: wins</text>
+      <rect class="dg-node" x="430" y="16" width="190" height="48" rx="4"/>
+      <text class="dg-label" x="525" y="37">Setup</text>
+      <text class="dg-sub" x="525" y="53">HP 0xC80, seated</text>
+      <rect class="dg-node" x="430" y="82" width="190" height="48" rx="4"/>
+      <text class="dg-label" x="525" y="103">Banners</text>
+      <text class="dg-sub" x="525" y="119">READY / FIGHT</text>
+      <path class="dg-edge" d="M525 64 L525 80" marker-end="url(#bkf-arrow)"/>
+      <rect class="dg-node-accent" x="430" y="148" width="190" height="48" rx="4"/>
+      <text class="dg-label" x="525" y="169">Open</text>
+      <text class="dg-sub" x="525" y="185">cooldowns decay</text>
+      <path class="dg-edge" d="M525 130 L525 146" marker-end="url(#bkf-arrow)"/>
+      <rect class="dg-node" x="430" y="214" width="190" height="48" rx="4"/>
+      <text class="dg-label" x="525" y="235">Committed</text>
+      <text class="dg-sub" x="525" y="251">waits for the keyframe</text>
+      <path class="dg-edge" d="M525 196 L525 212" marker-end="url(#bkf-arrow)"/>
+      <path class="dg-edge-dim" d="M430 238 L408 238 L408 172 L428 172" marker-end="url(#bkf-arrow)"/>
+      <rect class="dg-node-warn" x="670" y="82" width="190" height="48" rx="4"/>
+      <text class="dg-label" x="765" y="103">Finisher</text>
+      <text class="dg-sub" x="765" y="119">one HP at 0: auto special</text>
+      <rect class="dg-node-ok" x="670" y="148" width="190" height="48" rx="4"/>
+      <text class="dg-label" x="765" y="169">Round over</text>
+      <text class="dg-sub" x="765" y="185">hold 0xB5 ticks</text>
+      <path class="dg-edge" d="M620 160 L645 160 L645 106 L668 106" marker-end="url(#bkf-arrow)"/>
+      <path class="dg-edge" d="M765 130 L765 146" marker-end="url(#bkf-arrow)"/>
+      <path class="dg-edge-dim" d="M620 184 L668 184" marker-end="url(#bkf-arrow)"/>
+      <text class="dg-edge-label" x="626" y="204">both HP at 0</text>
+      <path class="dg-edge-dim" d="M765 196 L765 280 L400 280 L400 40 L428 40" marker-end="url(#bkf-arrow)"/>
+      <text class="dg-edge-label" x="580" y="274">match open: next round</text>
+    </svg>
+    <figcaption>An exchange is undecided until both fighters have committed a type, and a committed exchange returns to Open once its damage is booked. A special is an immediate win for whoever throws it, with the player checked first. A round does not end when HP reaches zero: the standing fighter then auto-commits the special, and its last keyframe is what credits the round.</figcaption>
+  </figure>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>P1 \ P2</th><th><code>0</code></th><th><code>1</code></th><th><code>2</code></th><th><code>3</code></th><th><code>4</code></th></tr></thead>
+    <tbody>
+      <tr><td><code>0</code> idle</td><td>undecided</td><td>undecided</td><td>undecided</td><td>undecided</td><td><strong>P2</strong></td></tr>
+      <tr><td><code>1</code></td><td>undecided</td><td>draw</td><td><strong>P2</strong></td><td><strong>P1</strong></td><td><strong>P2</strong></td></tr>
+      <tr><td><code>2</code></td><td>undecided</td><td><strong>P1</strong></td><td>draw</td><td><strong>P2</strong></td><td><strong>P2</strong></td></tr>
+      <tr><td><code>3</code></td><td>undecided</td><td><strong>P2</strong></td><td><strong>P1</strong></td><td>draw</td><td><strong>P2</strong></td></tr>
+      <tr><td><code>4</code> special</td><td><strong>P1</strong></td><td><strong>P1</strong></td><td><strong>P1</strong></td><td><strong>P1</strong></td><td><strong>P1</strong></td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>The resolver&rsquo;s settle timer is vestigial: nothing in the overlay ever stores a positive value to it. Exchange pacing comes from the two per-fighter cooldowns.</p>
+</section>
+
+<section class="doc-section" id="damage">
+  <h2>Damage</h2>
+<pre><code>hit = power + power * ATK / 100
+dmg = (hit * (200 - (mod + mod * DEF / 100)) * 0x20) / 100  +  (combo - 1) * 0x40
+
+critical pending on the winner:  dmg = power &lt;&lt; 7</code></pre>
+  <ul class="bullets">
+    <li>ATK is the winner&rsquo;s and DEF the loser&rsquo;s, each picked from three values by that fighter&rsquo;s <strong>HP tier</strong> (above <code>0x8C0</code>, above <code>0x3C0</code>, below).</li>
+    <li><code>combo</code> is the loser&rsquo;s count of consecutive hits taken; winning an exchange clears it.</li>
+    <li>A critical is rolled only while a fighter&rsquo;s own HP is above zero and below <code>0x280</code> - a comeback mechanic.</li>
+    <li><strong>The special&rsquo;s HP delta is zero by construction.</strong> Its power is 0 for all seventeen fighters, and it only ever runs against a foe already at 0 HP. Its whole payoff is the round win, credited on its final keyframe.</li>
+  </ul>
+</section>
+
+<section class="doc-section" id="cpu">
+  <h2>How the CPU picks</h2>
+  <p>Each opponent mixes random throws with a canned sequence. With no pattern running, a roll of <code>rand() % 6</code> gives a three-in-six chance of one uniformly random attack and a three-in-six chance of starting the opponent&rsquo;s pattern. Once started, the pattern is consumed <strong>back to front</strong> to exhaustion regardless of later rolls. The result is always one of the three attacks; the CPU never opens with a special.</p>
+</section>
+
+<section class="doc-section" id="ladder">
+  <h2>The ladder, the pot and the secret rungs</h2>
+  <ul class="bullets">
+    <li>A match is best of three. The stage counter is seeded to 2 and maps to roster ids <code>stage + 3</code>, so the twelve rungs served first are roster ids 5 to 16, with prize gold strictly rising across them.</li>
+    <li><strong>The two secret opponents are score-gated, not lap-gated.</strong> Clearing stage 5 with a running high score above 250,000, or stage 13 above 700,000, arms an override that inserts one of them without advancing the stage. A score exactly on the threshold does not qualify.</li>
+    <li>Only the score tally adds to the pot. <strong>A mid-run loss forfeits it</strong>: the game-over state zeroes the accumulator before its banner spawns.</li>
+    <li>Every exit pays the accumulator into the casino <em>coin bank</em>, not party gold. A shutout pays a 30,000-point first tally row instead of 20,000.</li>
+  </ul>
+</section>
+
+<section class="doc-section" id="shared">
+  <h2>Shared with the Muscle Dome</h2>
+  <p>The 24-instruction tally drain scaler here and the one in the <a href="minigame-muscle-dome.html">Muscle Dome</a> hub are the same routine linked into two overlays; only the pair of instructions that loads its bypass flag differs.</p>
+</section>
+
+<section class="doc-section" id="see-also">
+  <h2>See also</h2>
+  <p>The 37 cabinet states, the fighter packs and action tables, the strike clock, the arena camera, the effect pair and the whole HUD are in <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/minigame-baka-fighter.md" target="_blank" rel="noopener"><code>docs/subsystems/minigame-baka-fighter.md</code></a>.</p>
+  <div class="see-also">
+    <span class="see-also-label">Reference</span>
+    <a href="script-vm.html">Field / event VM</a>
+    <a href="minigame-muscle-dome.html">Muscle Dome</a>
+    <a href="minigame-slot-machine.html">Slot machine</a>
+    <a href="minigame-dance.html">Dance</a>
+    <a href="minigame-fishing.html">Fishing</a>
+    <a href="../formats/battle-data-pack.html">Battle data pack</a>
+    <a href="../minigames.html">Minigames page</a>
+  </div>
+</section>

@@ -1,0 +1,156 @@
+<header class="page-header">
+  <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">subsystems</a> &middot; slot machine</div>
+  <h1>Casino slot machine</h1>
+  <p class="lede">Three reels of ten pictographic symbols. Every spin costs a flat three coins and plays all <strong>five</strong> paylines; a matched line pays a per-symbol amount, and a line of either jackpot symbol opens a bonus round on the same reels. It is a <strong>3D scene</strong>, not a sprite collage: the reels are textured cylinders, the paylines are 3D line segments and the cabinet is a mesh.</p>
+</header>
+
+<section class="doc-section" id="at-a-glance">
+  <h2>At a glance</h2>
+  <dl class="kv">
+    <dt>Overlay</dt><dd>Extraction PROT 975 at base <code>0x801CE818</code>; init <code>FUN_801CEC94</code></dd>
+    <dt>Reel state machine</dt><dd><code>FUN_801CF0D8</code>, state word <code>DAT_801D3C84</code></dd>
+    <dt>RNG</dt><dd>The slot generator <code>FUN_801D30CC</code> plus the BIOS <code>rand</code></dd>
+    <dt>Feature roll / stop / landing</dt><dd><code>FUN_801D258C</code> / <code>FUN_801D2114</code> / <code>FUN_801D2440</code></dd>
+    <dt>Win evaluation</dt><dd><code>FUN_801D13E8</code> over the display strip and the ten payout bytes at <code>DAT_801D3598</code></dd>
+    <dt>Coins</dt><dd>Overlay-local balance <code>DAT_801D4114</code>; global coin bank <code>0x800845A4</code></dd>
+    <dt>Assets</dt><dd>PROT 1200 (five textures, cabinet mesh, animation), 1198 (sounds), 1199 (effects)</dd>
+    <dt>Port</dt><dd>Rules <code>engine-minigames::slot_machine</code>; draws <code>engine-ui::slot_cabinet</code> / <code>slot_paylines</code></dd>
+  </dl>
+</section>
+
+<section class="doc-section" id="entry">
+  <h2>Getting there</h2>
+  <p>The door is the <strong>mode-24 minigame warp</strong>: field-VM op <code>0x3E</code> with <code>op0 = 103</code> (sub-id 3) sets game mode <code>0x18</code> and loads the overlay. It is the ordinary scene-backup, overlay-load, return-to-field sequence, so the game returns to the exact field state it suspended. The mechanism is on the <a href="script-vm.html">field / event VM</a> page.</p>
+  <p>A disc-wide walk finds five door records: three interchangeable cabinets in the Sol casino, and the Vidna cabinet in both variants of its scene. <strong>The door gate is a coin-bank compare</strong>, not an item check - a player with no coins never reaches the machine and sees the cabinet&rsquo;s refusal line instead. The debit before the warp is a <em>fee</em>, and at a slot cabinet it is zero, because the machine charges its own bets from the balance it copies in.</p>
+</section>
+
+<section class="doc-section" id="states">
+  <h2>Reel state machine</h2>
+  <figure class="diagram">
+    <svg viewBox="0 0 880 190" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Reel state machine: Init builds the strips, Idle waits for a face button and charges the bet, Spin-up runs until the spin timer expires, Stopping takes one stop press per reel, Payout tallies the win and returns to Idle. From Idle, Triangle or Select opens the cash-out picker, and a balance under three coins leads to the no-coins prompt; both can leave through Exit, which commits the balance to the coin bank.">
+      <defs><marker id="slt2-arrow" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <rect class="dg-node" x="20" y="20" width="150" height="46" rx="4"/>
+      <text class="dg-label" x="95" y="40">0 Init</text>
+      <text class="dg-sub" x="95" y="56">build strips</text>
+      <rect class="dg-node-accent" x="192" y="20" width="150" height="46" rx="4"/>
+      <text class="dg-label" x="267" y="40">1 Idle</text>
+      <text class="dg-sub" x="267" y="56">bet 3 coins</text>
+      <path class="dg-edge" d="M170 43 L190 43" marker-end="url(#slt2-arrow)"/>
+      <rect class="dg-node" x="364" y="20" width="150" height="46" rx="4"/>
+      <text class="dg-label" x="439" y="40">2 Spin-up</text>
+      <text class="dg-sub" x="439" y="56">until timer</text>
+      <path class="dg-edge" d="M342 43 L362 43" marker-end="url(#slt2-arrow)"/>
+      <rect class="dg-node" x="536" y="20" width="150" height="46" rx="4"/>
+      <text class="dg-label" x="611" y="40">3 Stopping</text>
+      <text class="dg-sub" x="611" y="56">one press a reel</text>
+      <path class="dg-edge" d="M514 43 L534 43" marker-end="url(#slt2-arrow)"/>
+      <rect class="dg-node" x="708" y="20" width="150" height="46" rx="4"/>
+      <text class="dg-label" x="783" y="40">4 Payout</text>
+      <text class="dg-sub" x="783" y="56">tally the win</text>
+      <path class="dg-edge" d="M686 43 L706 43" marker-end="url(#slt2-arrow)"/>
+      <path class="dg-edge-dim" d="M783 66 L783 86 L267 86 L267 68" marker-end="url(#slt2-arrow)"/>
+      <rect class="dg-node" x="120" y="120" width="180" height="46" rx="4"/>
+      <text class="dg-label" x="210" y="140">0x32 Picker</text>
+      <text class="dg-sub" x="210" y="156">Triangle or Select</text>
+      <rect class="dg-node-warn" x="340" y="120" width="180" height="46" rx="4"/>
+      <text class="dg-label" x="430" y="140">0x5A No coins</text>
+      <text class="dg-sub" x="430" y="156">balance under 3</text>
+      <rect class="dg-node-ok" x="580" y="120" width="220" height="46" rx="4"/>
+      <text class="dg-label" x="690" y="140">100 Exit</text>
+      <text class="dg-sub" x="690" y="156">bank = balance, return warp</text>
+      <path class="dg-edge" d="M240 66 L240 118" marker-end="url(#slt2-arrow)"/>
+      <path class="dg-edge" d="M290 66 L290 100 L430 100 L430 118" marker-end="url(#slt2-arrow)"/>
+      <path class="dg-edge" d="M520 143 L578 143" marker-end="url(#slt2-arrow)"/>
+      <path class="dg-edge-dim" d="M210 166 L210 180 L690 180 L690 168" marker-end="url(#slt2-arrow)"/>
+    </svg>
+    <figcaption>Idle reads the pad in a fixed order: the picker edge first, so the submenu opens even on an empty balance; then the coin gate; then the bet.</figcaption>
+  </figure>
+</section>
+
+<section class="doc-section" id="strips">
+  <h2>Reel strips</h2>
+  <p>Each reel is a 20-slot strip. Init builds two source strips per reel - the ten symbols and the ten bonus numerals - by drawing a random position and probing forward to a free one, so each value lands on two scattered positions. A third strip, the <strong>display strip</strong>, is the only one the win evaluator and the renderer read. It is refilled one row per frame, and that refill is how the bonus round swaps numerals onto the reels.</p>
+  <p>A reel position is a fixed-point angle; the on-screen symbol is <code>(pos &gt;&gt; 8) mod 0x14</code>.</p>
+</section>
+
+<section class="doc-section" id="paylines">
+  <h2>The five paylines</h2>
+  <figure class="diagram">
+    <svg viewBox="0 0 880 360" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="The slot machine window: three reels, three visible rows. Five paylines are read: line 0 the top row, line 1 the middle row, line 2 the bottom row, line 3 the diagonal from bottom left to top right, and line 4 the diagonal from top left to bottom right. Each line pays when its three cells hold the same symbol, and the highest-value matching line wins.">
+      <defs><marker id="slt-arrow" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <rect class="dg-group" x="110" y="20" width="540" height="320" rx="6"/>
+      <text class="dg-sub" x="200" y="44">reel 0</text>
+      <rect class="dg-node" x="140" y="45" width="120" height="70" rx="4"/>
+      <rect class="dg-node" x="140" y="145" width="120" height="70" rx="4"/>
+      <rect class="dg-node" x="140" y="245" width="120" height="70" rx="4"/>
+      <text class="dg-sub" x="380" y="44">reel 1</text>
+      <rect class="dg-node" x="320" y="45" width="120" height="70" rx="4"/>
+      <rect class="dg-node" x="320" y="145" width="120" height="70" rx="4"/>
+      <rect class="dg-node" x="320" y="245" width="120" height="70" rx="4"/>
+      <text class="dg-sub" x="560" y="44">reel 2</text>
+      <rect class="dg-node" x="500" y="45" width="120" height="70" rx="4"/>
+      <rect class="dg-node" x="500" y="145" width="120" height="70" rx="4"/>
+      <rect class="dg-node" x="500" y="245" width="120" height="70" rx="4"/>
+      <text class="dg-sub" x="96" y="84" text-anchor="end">row +1</text>
+      <text class="dg-sub" x="96" y="184" text-anchor="end">row 0</text>
+      <text class="dg-sub" x="96" y="284" text-anchor="end">row -1</text>
+      <path class="dg-edge" d="M140 80 L620 80"/>
+      <path class="dg-edge" d="M140 180 L620 180"/>
+      <path class="dg-edge" d="M140 280 L620 280"/>
+      <path class="dg-edge-dim" d="M140 313 L620 47"/>
+      <path class="dg-edge-dim" d="M140 47 L620 313"/>
+      <text class="dg-label dg-start" x="680" y="84">line 0  top</text>
+      <text class="dg-label dg-start" x="680" y="184">line 1  middle</text>
+      <text class="dg-label dg-start" x="680" y="284">line 2  bottom</text>
+      <text class="dg-sub dg-start" x="680" y="52">line 3  diagonal /</text>
+      <text class="dg-sub dg-start" x="680" y="318">line 4  diagonal \</text>
+    </svg>
+    <figcaption>Every spin plays all five lines for one flat charge; there is no bet-line selection. The evaluator keeps the highest-value matching line, and the winning line index doubles as the index of the medallion and lamp that light.</figcaption>
+  </figure>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Result</th><th>Credit</th><th>Side effect</th></tr></thead>
+    <tbody>
+      <tr><td>three of symbol <code>0..7</code> on a line</td><td>that symbol&rsquo;s payout byte</td><td>-</td></tr>
+      <tr><td>three of symbol <code>8</code>, the blue kick</td><td>its payout byte</td><td>one bonus round</td></tr>
+      <tr><td>three of symbol <code>9</code>, the red punch</td><td>its payout byte</td><td>three bonus rounds</td></tr>
+      <tr><td>any bonus-round spin</td><td>the product of the three centre-row numerals, <code>1..=1000</code></td><td>subtracted from the net take</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>During a bonus round the product is computed <strong>unconditionally</strong> - no match is needed and no payout byte is read. A separate scanner lights the &ldquo;reach&rdquo; presentation when two stopped reels already hold a jackpot pair; it sets no payout.</p>
+</section>
+
+<section class="doc-section" id="rng">
+  <h2>Two generators</h2>
+<pre><code>x = x * 5 + 1
+x = (x &lt;&lt; 16) + (x &gt;&gt; 16)        fold the halves</code></pre>
+  <p>The slot generator drives strip construction, reel landing and the feature-stays-on rolls, so reel outcomes are reproducible from its one word. The BIOS <code>rand</code> drives the per-spin feature roll and the landing-line row - the parts that should not be replayable from the visible reels.</p>
+  <p><strong>The machine pays back what it has taken.</strong> Feature odds are bracketed on a net-take counter, not on the balance: the denominators shrink from <code>700 / 500</code> to <code>175 / 125</code> once the machine is more than 2000 ahead, and each bonus payout is subtracted from the counter. A net take of exactly 1000 or 2000 falls in no bracket.</p>
+</section>
+
+<section class="doc-section" id="coins">
+  <h2>Coin economy</h2>
+  <p>The machine touches the coin bank in exactly two places: it copies the bank into its own balance on entry and assigns the balance back on exit. It is not debited per spin. A normal spin charges 3 from the local balance and a bonus spin charges 1; the not-enough gate tests for 3 either way.</p>
+  <p>That is why the well-known infinite-coins code works at the casino but does not make spins free: it pins the bank, and betting decrements the overlay-local balance.</p>
+</section>
+
+<section class="doc-section" id="render">
+  <h2>A 3D scene</h2>
+  <p>Each reel emits eight textured quads a frame around an ellipse of radius 585 in height and 512 in depth - a cylinder through the geometry coprocessor, which is why symbols curl away from the payline. The paylines are 3D segments, the medallions, lamps and marquee are billboards, and the marquee is composed as a dot-matrix display. The trig comes from the executable&rsquo;s shared sine table, whose entries truncate toward zero; that matters because the cylinder multiplies each entry by a radius before shifting back down.</p>
+</section>
+
+<section class="doc-section" id="see-also">
+  <h2>See also</h2>
+  <p>The strip builder, the bonus swap, the cash-out submenu, the RAM state block, every renderer routine and the art pack are in <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/minigame-slot-machine.md" target="_blank" rel="noopener"><code>docs/subsystems/minigame-slot-machine.md</code></a>.</p>
+  <div class="see-also">
+    <span class="see-also-label">Reference</span>
+    <a href="script-vm.html">Field / event VM</a>
+    <a href="minigame-fishing.html">Fishing</a>
+    <a href="minigame-baka-fighter.html">Baka Fighter</a>
+    <a href="minigame-dance.html">Dance</a>
+    <a href="minigame-muscle-dome.html">Muscle Dome</a>
+    <a href="shop.html">Shop</a>
+    <a href="../minigames.html">Minigames page</a>
+  </div>
+</section>

@@ -34,12 +34,12 @@
       <text class="dg-label" x="130" y="64">Live HP</text><text class="dg-sub" x="130" y="82">actor +0x14C</text>
       <rect class="dg-node-accent" x="340" y="40" width="200" height="60" rx="4"/>
       <text class="dg-label" x="440" y="64">Pending accumulator</text><text class="dg-sub" x="440" y="82">actor +0x10, signed</text>
-      <rect class="dg-node" x="650" y="40" width="200" height="60" rx="4"/>
-      <text class="dg-label" x="750" y="64">Displayed HP</text><text class="dg-sub" x="750" y="82">actor +0x172, drawn by the HUD</text>
-      <path class="dg-edge" d="M540 70 L648 70" marker-end="url(#beg-arrow)"/>
+      <rect class="dg-node" x="690" y="40" width="180" height="60" rx="4"/>
+      <text class="dg-label" x="780" y="64">Displayed HP</text><text class="dg-sub" x="780" y="82">actor +0x172, the HUD</text>
+      <path class="dg-edge" d="M540 70 L688 70" marker-end="url(#beg-arrow)"/>
       <text class="dg-edge-label" x="548" y="60">drain: 1/4 per frame</text>
       <text class="dg-edge-label" x="548" y="90">skipped when zero</text>
-      <text class="dg-sub" x="440" y="130">invariant: displayed - live = accumulator</text>
+      <text class="dg-sub" x="440" y="26">invariant: displayed - live = accumulator</text>
       <rect class="dg-node-ok" x="30" y="180" width="380" height="80" rx="4"/>
       <text class="dg-label" x="220" y="204">Accumulating seed (hit resolver)</text>
       <text class="dg-sub" x="220" y="224">accumulator += delta, paired with the live-HP write</text>
