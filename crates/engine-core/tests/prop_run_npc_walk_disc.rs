@@ -75,4 +75,49 @@ fn the_inn_counter_greets_after_walking_its_keeper() {
         greeted,
         "the greeting's box opened within 240 ticks (run parked at {pc:?})"
     );
+
+    // Page through the greeting and its picker. The party's purse is short
+    // of the 150 a night, so whichever answer lands the keeper says goodbye
+    // and the run ends.
+    let mut ended = false;
+    for t in 0..6000 {
+        host.world.set_pad(if t % 2 == 0 {
+            legaia_engine_system::input::PadButton::Cross.mask()
+        } else {
+            0
+        });
+        let _ = host.world.tick();
+        if host.world.dialog.inline.is_none() {
+            ended = true;
+            break;
+        }
+    }
+    host.world.set_pad(0);
+    assert!(ended, "the greeting ran to its end");
+
+    // The keeper's turn and walk leave no park on the counter's context:
+    // the next touch greets again as promptly as the first.
+    assert!(
+        host.world.start_prop_interaction(anchor),
+        "the counter's record starts again"
+    );
+    let mut again = false;
+    for _ in 0..240 {
+        let _ = host.world.tick();
+        if host
+            .world
+            .dialog
+            .inline
+            .as_ref()
+            .is_some_and(|id| id.prop_anchor == Some(anchor) && id.panel.is_some())
+        {
+            again = true;
+            break;
+        }
+    }
+    let pc = host.world.dialog.inline.as_ref().map(|id| id.pc);
+    assert!(
+        again,
+        "the second greeting's box opened within 240 ticks (run parked at {pc:?})"
+    );
 }
