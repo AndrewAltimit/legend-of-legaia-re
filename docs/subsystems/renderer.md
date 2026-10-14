@@ -1815,11 +1815,30 @@ particle's depth, not a world-space quad
 The records come from the ambient emitter's spawner `FUN_801D629C`
 ([`field-ambient-fx.md`](field-ambient-fx.md#the-fog-pool-spawner-records-render-pass)).
 
+The pass runs once per **game frame**, not once per VSync, and its `dt` is
+the frame step (grade: disassembly). The per-frame mode handler
+`FUN_80025EEC` runs `FUN_8001698C`, then the frame body `FUN_80016444(1)`,
+then the pacer `FUN_80016B6C`. The frame body reaches `FUN_8001D058` at
+exactly one of two sites (`0x80016688` when the game mode word `gp+0x524` is
+`0x15`, `0x80016784` otherwise), which calls `FUN_80026CE4` when
+`0x1F800394` bit 3 is set, and its fog stage calls `FUN_8003F348` once
+(`0x80026F24`). The pacer measures the VSyncs the frame took and stores
+them at `0x1F800393` (`0x80017068`, `0x80017164`), and each record's age
+advances by `rate * [0x1F800393]` (`0x8003F628..0x8003F648`), so a 30 Hz
+field frame ages the pool by two VSyncs' worth in one step. The pass draws
+no `rand()`: its only PRNG is `FUN_8003F838` over scratchpad `0x1F8002A8`,
+whose contribution the half-width keeps is always zero. The draws on the
+world `rand()` stream are the spawner's, in the emitter on the actor pass.
+
 Port: `engine-field::fog_particles` is the pool and the pass's arithmetic,
 `World::fog_render_step` is the render pass's step, which both hosts run once
 per sim tick through `BootSession::step_field_fog` with the follow camera (one
-`World::tick` is one retail frame), and the quads join this pass through
-`screen_prim::fog_puff_prim`. Each quad carries a scene depth and is
+`World::tick` is one game frame, and the tick's display frame step is banked
+as the step's `dt`), and the quads join this pass through
+`screen_prim::fog_puff_prim`. The retail comparison's capture frame is the
+one frame that steps twice: it installs the retail state's records and
+re-runs the frame's step over them (`BootSession::seat_field_fog`), since a
+seat installed after the tick's step never reaches a quad. Each quad carries a scene depth and is
 depth-tested, so nearer geometry covers a sheet as retail's shared ordering
 table does: the particle's own `SZ` on the field, the bucket depth on the
 overworld, where ridges stand in front of the fog behind them.

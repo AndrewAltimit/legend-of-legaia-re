@@ -340,7 +340,9 @@ engine verdict:
   replays; the image child installs the state's own live records (pool
   `_DAT_8007B7E0`, `retail_fog`, `LEGAIA_SEAT_FOG`) on the frame it
   captures (`FogPool::install_snapshot`), and the frame's render step ages,
-  drifts and draws them as retail's did. With the records installed, the
+  drifts and draws them as retail's did. The tick has stepped the engine's
+  own pool by then, so the frame's fog draw installs the records and re-runs
+  that step over them (`BootSession::seat_field_fog`). With the records installed, the
   overworld mist of `field_walled_collision_pin` matches retail's frame to
   within the metric's noise - the sheet renderer is exact, and the spread
   was only where the pool had put its sheets. The headless seed keeps its

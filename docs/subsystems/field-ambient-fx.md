@@ -655,6 +655,13 @@ byte layout):
 | `FUN_8003F3FC` | SCUS | **Per-particle update + draw.** Kills a record outside the walk box; brightness ramps `0..0xFF` over age `0..0x400`, holds to `0xC00`, then fades and kills; colour is `grey * tint * brightness >> 15` per channel with the tint the op `0x4C 0x12` global multiply (`_DAT_8007BCB8..BA`, `0x80` neutral); drift and age advance by `DAT_1F800393`; the player's `+-0x180 / +-0x80 / +-0x80` box ages it again, three times more with a d-pad bit held; then two halves through `FUN_8003F86C`, and a record whose two halves both cull is freed (`FUN_8001FA68`). |
 | `FUN_8003F86C` | SCUS | **Half-sheet emitter.** One `POLY_FT4` (tag `0x09` words, command `0x2E`: textured, semi-transparent, texture-blended), a **view-space billboard** at the particle's depth - see [the sheet is a billboard](#the-sheet-is-a-view-space-billboard); culled when both corners are off the `[-8, 0x148)` columns, both above row `0`, or both below row `0x190`; kept but not drawn between rows `0xF0` and `0x190`; NCLIP-culled at a signed area past `0x1F40` quarter-pixels; linked at OT bucket `SZ >> 5`. On the overworld it also drops a half nearer than `SZ 0x310`, links at `(SZ - 0x10) >> 5` and adds the curvature table's `SY` term. |
 
+The walk runs once per game frame, and the update ages each record by
+`rate * [0x1F800393]`, the frame step the pacer `FUN_80016B6C` measured in
+VSyncs (grade: disassembly; the chain is in
+[`renderer.md`](renderer.md#field-fog-sheets-fun_8003f348)). The walk draws
+nothing from `rand()`; only the spawner does. The port steps it once per sim
+tick on both hosts with the tick's frame step banked as its `dt`.
+
 ```text
 fog particle lifetime (brightness vs age)
 0xFF |      ______________________
