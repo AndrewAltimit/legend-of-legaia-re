@@ -228,6 +228,7 @@ pub(super) fn picker_pad(session: &NativeSession) -> Option<u16> {
     }
     let want = split_stay_option(session)
         .or_else(|| beat_progress_option(session))
+        .or_else(|| (visit == 1).then(|| wanted_flag_option(session)).flatten())
         .or_else(|| rest_option(session))
         .unwrap_or((visit - 1) % n);
     Some(if cursor < want {
@@ -352,6 +353,83 @@ pub(super) fn beat_progress_option(session: &NativeSession) -> Option<usize> {
         false
     };
     (0..count.min(4)).find(|&k| spawns(targets[k]))
+}
+
+/// The option of the open picker whose branch, and only its branch, raises
+/// a still-clear flag the next anchor carries: an answer the story records
+/// (`stone`'s four statues, P0[2..5], each a four-way question whose
+/// options raise their own flag of `0x1D8..0x1E7`; the right four answers
+/// are what spawn P2[5], which opens the Stone Flower). The branch is
+/// followed through its jumps to its first `0x21` or scene change. `None`
+/// when no option, or more than one, does. Asked on a picker's first
+/// opening only: a staged conversation can want another answer first
+/// (`tunnelc` P1[4], Xain, whose option 1 the rotation reaches on the
+/// second opening), and a reopened picker goes back to the rotation.
+pub(super) fn wanted_flag_option(session: &NativeSession) -> Option<usize> {
+    use legaia_scene_formats::field_disasm::{FlagKind, InsnInfo, decode};
+    let w = &session.host.world;
+    let (bc, mut pc): (&[u8], usize) = if let Some(id) = w.dialog.inline.as_ref() {
+        (id.bytecode.as_slice(), id.pc)
+    } else {
+        let tl = w
+            .cutscene
+            .timeline
+            .iter()
+            .filter(|t| t.dialog.is_some())
+            .chain(
+                w.field_vm
+                    .helper_contexts
+                    .iter()
+                    .filter(|t| t.dialog.is_some()),
+            )
+            .next()?;
+        (tl.bytecode.as_slice(), tl.pc)
+    };
+    let mut picker = None;
+    for _ in 0..16 {
+        let Ok(i) = decode(bc, pc) else { break };
+        if let InsnInfo::Picker { count, targets, .. } = i.info {
+            picker = Some((usize::from(count), targets));
+            break;
+        }
+        pc += i.size.max(1);
+    }
+    let (count, targets) = picker?;
+    let wanted = NEXT_ANCHOR_FLAGS.with(|a| a.borrow().clone())?;
+    let have = flags_of_world(session);
+    let raises = |mut at: usize| {
+        for _ in 0..256 {
+            let Ok(i) = decode(bc, at) else {
+                return false;
+            };
+            match i.info {
+                InsnInfo::SystemFlag {
+                    kind: FlagKind::Set,
+                    idx,
+                    ..
+                } if wanted.contains(&idx) && !have.contains(&idx) => return true,
+                InsnInfo::JmpRel { target, .. } => {
+                    at = target;
+                    continue;
+                }
+                _ => {}
+            }
+            if matches!(bc[at] & 0x7F, 0x21 | 0x3F) {
+                return false;
+            }
+            at += i.size.max(1);
+        }
+        false
+    };
+    let hits: Vec<usize> = (0..count.min(4)).filter(|&k| raises(targets[k])).collect();
+    if hits.len() == 1 && std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
+        eprintln!(
+            "      [pick] {} picker at 0x{pc:04X}: option {} raises a wanted flag",
+            scene_name(session),
+            hits[0]
+        );
+    }
+    (hits.len() == 1).then(|| hits[0])
 }
 
 /// The picker the modal timeline (or the first spawned record with a box)

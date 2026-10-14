@@ -464,6 +464,9 @@ pub(super) fn pad_walk(
     // Landings of walk-time scripts that moved the walker, by site and the
     // flags they left.
     let mut landings: HashMap<(String, BTreeSet<u16>, Cell), u32> = HashMap::new();
+    // Cells where the action tap opened a talk that changed nothing: the
+    // stalled walker is leaning on an NPC, not on a door.
+    let mut idle_taps: HashSet<Cell> = HashSet::new();
     for _ in 0..PAD_LEG_FRAMES {
         pad_budget(session)?;
         // Per overworld tile: the encounter step counter it left behind.
@@ -693,7 +696,10 @@ pub(super) fn pad_walk(
             tap_owed = false;
         } else {
             tap_owed |= since % 60 == 1;
-            if tap_owed && !(moved && walking_mode == SceneMode::Field) {
+            if tap_owed
+                && !(moved && walking_mode == SceneMode::Field)
+                && !idle_taps.contains(&cell_of(wx, wz))
+            {
                 pad = PadButton::Cross.mask();
                 tap_owed = false;
             }
@@ -794,6 +800,11 @@ pub(super) fn pad_walk(
             if before != (flags_of_world(session), cell_of(px, pz)) {
                 planned_from = None;
                 path.clear();
+            } else if pad == PadButton::Cross.mask() && site.starts_with("dialogue") {
+                // The tap talked to whoever the walker is pressed against
+                // and nothing came of it: tapping there again only pages
+                // the same conversation.
+                idle_taps.insert(before.1);
             }
             // A band that turns the walk back every time it is crossed
             // (`retock` P2[26], the Mt. Letona checkpoint: "Passage

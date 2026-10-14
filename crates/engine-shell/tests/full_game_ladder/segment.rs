@@ -130,11 +130,17 @@ pub(super) fn traverse(
     // come back on (`retock`'s inn plays the dream and returns) are not hops
     // either; the frame budget ([`pad_budget`]) still bounds them.
     let upkeep = pad && continuous::PLAYS_ON.with(std::cell::Cell::get);
+    // The scene the loop last stood in, and the one before it.
+    let mut last_here = scene_name(session);
+    let mut came_from = String::new();
     while steps < MAX_HOPS + vias.len() * 4 + dead.len() * 4 + upkept {
         steps += 1;
         pad_budget(session)?;
         // Let whatever the last landing started finish first.
         let here = scene_name(session);
+        if here != last_here {
+            came_from = std::mem::replace(&mut last_here, here.clone());
+        }
         match run_while_moving(session, SCRIPT_CEILING) {
             Run::Entered(s) => {
                 if upkeep {
@@ -142,8 +148,12 @@ pub(super) fn traverse(
                 }
                 // A waypoint whose own arrival script carries the party on
                 // (`concend`'s P2[0] ends in the hop to `town0d`) was
-                // visited: its beat is that script.
-                if vias.get(via).is_some_and(|w| *w == here) {
+                // visited: its beat is that script. One that carries it
+                // straight back where it came from was a stay, not a visit:
+                // `jiji`'s inn (P2[9]) sleeps the party over in `ropeway`
+                // and its arrival cutscene returns it to `jiji` before the
+                // station's own beats can play.
+                if vias.get(via).is_some_and(|w| *w == here) && s != came_from {
                     via += 1;
                     trail.push(format!("[via {here}: arrival script]"));
                 }
