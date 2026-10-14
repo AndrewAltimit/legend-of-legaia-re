@@ -2675,6 +2675,25 @@ every pass, so it moves with the phase of both clips):
   engine clip loops where retail's held another clip - the parked Gaza of
   `battle_gaza2_park_0x19_target_vahn` sits on its 45-frame idle (wrapped
   69 vsyncs before the save, `552` exactly) while the engine's still walks.
+- **A drive's stream is a search result, not a measurement.** The phase of
+  `battle_gaza2_park_0x19_target_vahn` is Gaza's swing on Vahn, and the
+  monster's pick of Vahn is a draw: the seed search keeps the first
+  `BATTLE_RNG_SEEDS` stream whose drive reaches it inside the
+  `4000`-tick budget (`LEGAIA_RC_SEED_TRACE` lists them). Its `camera` once
+  read `0.967` because six streams ran out of budget and the seventh
+  (`0x6A09E667`) reached the swing in round one, at `+660`, with Gaza
+  `436` units out of its seat at retail's clip age. Since the change that
+  gave the round prompt its open-glide pad hold, which the drive releases
+  under it, the drive's presses land on other ticks and the first stream
+  reaches the swing at `+3803`, after rounds of party swings that pushed Gaza back;
+  its approach lands at clip age `352`, short of retail's (the age-short
+  re-run), framing a Gaza `800` units along a walk retail's never took -
+  retail's is parked on its seat at `(0, 1490)` by the dead Move clip.
+  Neither stream frames retail's pose, so the drop to `0.899` (image
+  `0.608` to `0.503`) is which stream won, not a camera defect. A seed that
+  re-aimed the monster's first swing (the strike twin of the replayed
+  cast's target) brought it to `0.924` but cost `battle_gaza2_park_0x19`
+  its image, and was not kept.
 
 ## See also
 

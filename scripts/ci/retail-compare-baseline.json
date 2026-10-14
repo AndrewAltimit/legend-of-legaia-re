@@ -135,11 +135,11 @@
     "battle_gaza2_park_0x19_target_vahn": {
       "battle_party": 1.0,
       "bgm": 1.0,
-      "camera": 0.967,
+      "camera": 0.899,
       "enemies": 1.0,
       "enemy_hp": 1.0,
       "flags": 0.995,
-      "image": 0.608,
+      "image": 0.503,
       "inventory": 1.0,
       "mode": 1.0,
       "phase": 1.0,

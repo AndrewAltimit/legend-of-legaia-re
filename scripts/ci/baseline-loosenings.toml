@@ -37,3 +37,11 @@ reason = "PROT 0903's fire tunnel rings carry colour-word mode bit 0x20, which s
 changes = [
   ["states/gimard_burning_attack/image", 0.519, 0.514],
 ]
+
+[[loosening]]
+file = "scripts/ci/retail-compare-baseline.json"
+reason = "The phase is Gaza's swing on Vahn, a monster target draw, and the seed search keeps the first stream whose drive reaches it within 4000 ticks. The 0.967 / 0.608 came from the seventh stream (0x6A09E667) reaching it in round one at +660 after six ran out of budget; since the drive releases the round prompt's open-glide pad hold (squash 8a397ae7e; bisected b8bcf448f 0.967 -> 8a397ae7e 0.899) the first stream reaches it at +3803 with Gaza pushed back by earlier rounds and its approach ending at clip age 352 short of retail's 552. Retail's Gaza never walked (dead Move clip, parked at (0, 1490)), so neither stream frames retail's pose: the old value was the luck of the search. Patched-disc state, outside the ratchet."
+changes = [
+  ["states/battle_gaza2_park_0x19_target_vahn/camera", 0.967, 0.899],
+  ["states/battle_gaza2_park_0x19_target_vahn/image", 0.608, 0.503],
+]
