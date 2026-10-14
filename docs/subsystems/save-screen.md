@@ -874,6 +874,15 @@ looks like beyond records, flags page and bag:
   back - a block composed from scratch must not load the all-zero pair, which
   is silence.
 
+The window also carries the **Field Move** option (`0x800846CC`, SC `+0x58C`;
+nonzero = Run), so a retail card load restores whether the player runs or
+walks by default. The engine does not: it keeps Field Move as a host option
+(`OptionsState::field_move`, pushed onto `World::locomotion.run_default` by
+`options::apply_to_world`), and neither the lift nor `World::load_full` reads
+the word. A load into the engine leaves the host's setting standing - a known
+difference from retail's block, which a timed beat can feel (`jouind`'s
+switch pair must be crossed within 50 vsyncs).
+
 The `cross_host` test in `web-viewer/src/cards.rs` pins the resume seat over
 the library cards, together with byte-identical blocks from both hosts' Save
 and each host loading the other's block to the same world.

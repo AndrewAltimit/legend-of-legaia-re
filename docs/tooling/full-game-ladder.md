@@ -302,6 +302,13 @@ held, takes a rest that is close by, and opens the bag only under three
 fifths - for HP, and for MP when the member lowest on it is under three
 fifths, since the casts are half of what a boss is beaten with.
 
+**Its options survive a reload.** A wipe reloads the run's own save into a
+fresh session, and the engine keeps Field Move as a host option rather than
+save data (retail keeps it in the block, SC `+0x58C`;
+[`save-screen.md`](../subsystems/save-screen.md#what-a-card-load-restores)),
+so the reload carries it over from the session it replaces. Walking instead
+of running misses `jouind`'s timed switch pair on every try.
+
 **It waits on a running clock.** A hop that fails while the field's op
 `4C D3` countdown is armed (`FUN_801D2EBC`, read from the engine), with its
 expiry flag still clear, is the story waiting on the clock: the hand stands
@@ -771,7 +778,15 @@ map as its street:
   carry the walker across the walls between its rooms. A record whose only
   forks are story-flag tests is followed under the live flags: the hub
   P2[11] sends its platform to one of three rooms by the `chitei2` Rapid
-  Transport switches' `0x4EF` / `0x4F0`. A leg's encoded point can sit in the
+  Transport switches' `0x4EF` / `0x4F0`. On that path a player snap
+  (`A3 F8 x z`) is a landing as well as a walk leg: Rogue Tower's upper pads
+  (`rugi` P2[40..61]) walk the party onto the pad and then snap it to the
+  partner pad while `0x462` is clear, or back to the hub (86, 59) while it is
+  set. `0x462` / `0x463` are not story state: no field script writes them,
+  and the scene's ambient move-VM effect flips them as time passes (ext
+  sub-ops `0x1C` / `0x1D`, [`move-vm-overlay-ext.md`](../subsystems/move-vm-overlay-ext.md)),
+  so the pads change partner on a clock. The planner reads the landing at
+  plan time and does not time its step onto a pad. A leg's encoded point can sit in the
   pillar beside where the platform parks the player (the hub's west leg,
   `0xB6`), so a landing in a wall cell is moved to the nearest open cell.
 
