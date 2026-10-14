@@ -193,7 +193,7 @@ The edges among the `World`-free kernel crates are a committed table, [`scripts/
 | 1 | `engine-mode`, `engine-battle-vm`, `engine-motion-vm` |
 | 2 | `engine-battle`, `render-kernels` |
 | 3 | `engine-effects`, `engine-field`, `engine-ui` |
-| 4 | `engine-fishing` |
+| 4 | `engine-fishing`, `engine-scene` |
 | 5 | `engine-minigames` |
 | 6 | `engine-menus` |
 | 7 | `engine-minigame-scenes` |
