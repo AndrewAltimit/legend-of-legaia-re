@@ -566,5 +566,13 @@ CANONICAL_LADDERS = [
     # requires Square to seat the survey on the kingdom's last record.
     # Disc-gated; export WITHOUT `--release`.
     ("map_display_disc", "legaia-engine-core"),
+    # The sparring tutorial's countdown arm (`801f7628`), which only the
+    # completion tail calls - after the fourth lesson. `battle_tutorial_ladder`
+    # walks the hooks with Cross alone and never finishes the drill;
+    # `the_sparring_fight_is_won_by_playing_all_four_lessons` plays each
+    # lesson's command by pad through a real encounter until the fight hands
+    # back to the field. Disc-free (synthetic prompt script); the file's
+    # flag-bank halves are save-library-gated.
+    ("sparring_exit_retail_capture", "legaia-parity"),
 ]
 CANONICAL_LADDER_NAMES = [name for name, _pkg in CANONICAL_LADDERS]
