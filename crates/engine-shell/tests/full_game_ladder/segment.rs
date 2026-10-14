@@ -126,6 +126,10 @@ pub(super) fn traverse(
     // full pass a refused door earns: the record that carries the party on
     // (`taiku`'s way back to `map03`) need not raise any such flag.
     let mut proactive_only: BTreeSet<String> = BTreeSet::new();
+    // The scripted rides the continuous hand's rests and training outings
+    // come back on (`retock`'s inn plays the dream and returns) are not hops
+    // either; the frame budget ([`pad_budget`]) still bounds them.
+    let upkeep = pad && continuous::PLAYS_ON.with(std::cell::Cell::get);
     while steps < MAX_HOPS + vias.len() * 4 + dead.len() * 4 + upkept {
         steps += 1;
         pad_budget(session)?;
@@ -133,6 +137,9 @@ pub(super) fn traverse(
         let here = scene_name(session);
         match run_while_moving(session, SCRIPT_CEILING) {
             Run::Entered(s) => {
+                if upkeep {
+                    steps -= 1;
+                }
                 // A waypoint whose own arrival script carries the party on
                 // (`concend`'s P2[0] ends in the hop to `town0d`) was
                 // visited: its beat is that script.
