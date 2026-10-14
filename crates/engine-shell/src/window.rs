@@ -166,7 +166,11 @@ impl PlayWindowApp {
             return;
         }
         let path = std::path::PathBuf::from(OPTIONS_CONFIG_FILE);
-        if let Err(e) = self.options_state.save(&path) {
+        let to_save = match &self.options_before_retail_pin {
+            Some(stored) => self.options_state.unpinned_over(stored),
+            None => self.options_state.clone(),
+        };
+        if let Err(e) = to_save.save(&path) {
             log::warn!("options: save to {} failed: {e:#}", path.display());
         }
     }

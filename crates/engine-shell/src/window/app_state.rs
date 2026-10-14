@@ -854,6 +854,12 @@ pub(super) struct PlayWindowApp {
     /// to the Options screen's [`OptionsSession`] and persisted via
     /// the engine's options round-trip path.
     pub(super) options_state: legaia_engine_menus::options::OptionsState,
+    /// The options as loaded, before `--retail` pinned the engine-only
+    /// knobs for the session (`None` without the flag). A save writes the
+    /// pinned knobs back from here ([`OptionsState::unpinned_over`]).
+    ///
+    /// [`OptionsState::unpinned_over`]: legaia_engine_menus::options::OptionsState::unpinned_over
+    pub(super) options_before_retail_pin: Option<legaia_engine_menus::options::OptionsState>,
     /// Opt-in dynamic-lighting enhancement (NON-RETAIL - the field path has
     /// no light source). Seeded from `--dynamic-lighting`, toggled at
     /// runtime with the `I` key; mirrored into the renderer via
