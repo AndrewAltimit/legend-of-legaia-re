@@ -604,9 +604,6 @@ pub(super) struct PlayWindowApp {
     /// white-speckle class of bug), caught + self-healed by
     /// `check_battle_vram_residency`.
     pub(super) battle_vram_generation: Option<u64>,
-    /// Number of monster texture slots in use this battle (0..=4). A player
-    /// summon reuses the next free slot for its creature texture.
-    pub(super) battle_tex_slots_used: u8,
     /// Per-member battle facial-animation state (face tracks + last stamp
     /// set), populated by `enter_battle_render` for each assembled party
     /// member whose band pixels are the real texture-pool uploads. Driven

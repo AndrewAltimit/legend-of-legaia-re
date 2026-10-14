@@ -760,13 +760,6 @@ the real PROT.DAT; the window uploads the same sheet through
 (`refresh_slot_cabinet_gpu`).
 """
 
-[[frame_content]]
-native = "tick_world_effects"
-web = "tick_world_effects"
-native_only = ["entry_bytes"]
-web_only = []
-reason = "The move-FX spawn, its cue and the scene-graph tick are one session step on both hosts (`BootSession::step_effect_scene_graphs`), so they list on neither side. `entry_bytes` is each host's summon seat reading the cast's `summon.dat` record off PROT (`spawn_summon_creature` / `spawn_summon_creature_web`, both through `summon::summon_spawn_asset`); it lists native-only because the page defines host fns of that name, which the walk excludes by name."
-
 # --- boot installs: a World table the native boot installs (tier 13) ---
 # `[[boot_install]]` rows name a `world.install_*` / `world.set_*` call in
 # the native boot (crates/engine-session/src/session/) that no shipped crates/web-viewer source

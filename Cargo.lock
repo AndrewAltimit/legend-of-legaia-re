@@ -1820,6 +1820,7 @@ dependencies = [
  "legaia-engine-battle",
  "legaia-engine-battle-vm",
  "legaia-engine-core",
+ "legaia-engine-effects",
  "legaia-engine-field",
  "legaia-engine-menus",
  "legaia-engine-minigame-scenes",

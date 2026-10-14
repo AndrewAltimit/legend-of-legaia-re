@@ -116,7 +116,6 @@ impl PlayWindowApp {
             battle_intro: None,
             battle_intro_vram: None,
             battle_vram_generation: None,
-            battle_tex_slots_used: 0,
             battle_faces: Vec::new(),
             face_tables: None,
             art_mouth_tables: None,

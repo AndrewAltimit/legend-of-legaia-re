@@ -166,3 +166,89 @@ pub fn stage_battle_world(
     }
     stage
 }
+
+/// A cast's summon creature, seated on the world ([`seat_summon_creature`]).
+pub struct SummonSeat {
+    /// The high actor slot the creature holds.
+    pub slot: usize,
+    /// The battle texture slot its texture pool goes to: the first one past
+    /// the monsters' ([`legaia_engine_core::battle_party_form::monster_tex_slots_used`]).
+    pub tex_slot: u8,
+    /// The body (mesh, idle clip, archive-order clips).
+    pub asset: legaia_engine_effects::summon::SummonSpawnAsset,
+}
+
+/// Seat a player Seru-magic cast's creature on the world: the cast's own
+/// body (`summon::summon_spawn_asset` - the namesake `battle_data` creature
+/// for `0x81..=0x95`, the cast's `summon.dat` record above that) in a free
+/// high actor slot (`seat`, the one this fight already handed out, else
+/// `8 + party count`) on the party side, with its texture slot, idle clip
+/// and archive-order clip set, handed to the world's summon band
+/// (`World::seat_summon_actor`). Runs on the tick that cast it, renderer or
+/// not; a host's draw half then injects the texture and uploads the mesh
+/// from the returned seat. `None` outside battle or when no body resolves.
+pub fn seat_summon_creature(
+    host: &mut SceneHost,
+    spell_id: u8,
+    archive: &[u8],
+    seat: Option<usize>,
+) -> Option<SummonSeat> {
+    if host.world.mode != legaia_engine_mode::mode::SceneMode::Battle {
+        return None;
+    }
+    let summon_dat = host
+        .index
+        .entry_bytes(u32::from(
+            legaia_actor_formats::summon_readef::SUMMON_PROT_INDEX,
+        ))
+        .ok();
+    let asset = legaia_engine_effects::summon::summon_spawn_asset(
+        spell_id,
+        archive,
+        summon_dat.as_ref().map(|b| b.as_slice()),
+    )?;
+    legaia_tmd::parse(asset.mesh.tmd_bytes()).ok()?;
+    let world = &mut host.world;
+    let monster_slots: Vec<u8> = world
+        .battle_monster_slots()
+        .into_iter()
+        .filter(|(actor, _, _)| {
+            world
+                .actors
+                .get(*actor)
+                .is_some_and(|a| a.battle_tex_slot.is_some())
+        })
+        .map(|(_, _, slot)| slot)
+        .collect();
+    let tex_slot =
+        legaia_engine_core::battle_party_form::monster_tex_slots_used(monster_slots).min(4);
+    let slot = seat.unwrap_or(8 + world.party.party_count as usize);
+    if let Some(a) = world.actors.get_mut(slot) {
+        a.active = true;
+        a.battle_tex_slot = Some(tex_slot);
+        a.move_state.world_x = 0;
+        a.move_state.world_y = 0;
+        a.move_state.world_z = -350;
+    }
+    if let Some(idle) = asset.idle.as_ref()
+        && let Some(player) = legaia_engine_battle::battle_anim::MonsterAnimPlayer::new(idle)
+    {
+        world.set_actor_battle_animation(slot, player);
+    }
+    // The creature's archive-order clip set, so the stager's staged ids (the
+    // walk, clip 1) resolve through the same commit as a monster's.
+    if !asset.clips.is_empty() {
+        let clips: Vec<_> = asset.clips.iter().cloned().map(Some).collect();
+        world.set_actor_battle_action_clips(slot, std::sync::Arc::new(clips));
+    }
+    // Hand the seat to the world: a cast in its summon band places the
+    // creature at the stager's spawn point (behind the caster, facing the
+    // enemy) and retires it when the choreography ends; a debug spawn keeps
+    // the placement above.
+    world.seat_summon_actor(slot);
+    Some(SummonSeat {
+        slot,
+        tex_slot,
+        asset,
+    })
+}

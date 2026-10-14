@@ -5,35 +5,30 @@ use super::*;
 impl PlayWindowApp {
     /// Spawn the player Seru-magic summon as a battle creature, the faithful
     /// render (the summon reuses its namesake `battle_data` enemy creature -
-    /// see `summon::summon_creature_id`). Loads that creature's mesh + texture
-    /// (`battle_render_mesh`) into a free battle texture slot and binds it to a
-    /// high actor slot with its idle [`MonsterAnimPlayer`], so the existing
-    /// battle render animates + textures it exactly like an enemy. Replaces the
-    /// move-VM `SummonScene` stand-in for the visual. No-op outside battle.
+    /// see `summon::summon_creature_id`). The world half - the seat, its
+    /// texture slot, idle and clip set - is the session step both hosts run
+    /// (`battle_stage::seat_summon_creature`), renderer or not; this window
+    /// then loads the creature's texture into that slot (`battle_render_mesh`)
+    /// and binds its mesh to the seat, so the existing battle render animates
+    /// + textures it exactly like an enemy. No-op outside battle.
     pub(in crate::window) fn spawn_summon_creature(&mut self, spell_id: u8) {
-        if self.session.host.world.mode != SceneMode::Battle {
-            return;
-        }
         let Some(archive) = self.monster_archive_bytes() else {
             return;
         };
-        // The cast's own body: the archive twin for 0x81..=0x95, the cast's
-        // `summon.dat` record (PROT 893) for the high block.
-        let summon_dat = self
-            .session
-            .host
-            .index
-            .entry_bytes(u32::from(
-                legaia_actor_formats::summon_readef::SUMMON_PROT_INDEX,
-            ))
-            .ok();
-        let Some(asset) = legaia_engine_effects::summon::summon_spawn_asset(
+        let Some(seat) = legaia_engine_session::battle_stage::seat_summon_creature(
+            &mut self.session.host,
             spell_id,
             &archive,
-            summon_dat.as_ref().map(|b| b.as_slice()),
+            self.summon_actor_slot,
         ) else {
             return;
         };
+        self.summon_actor_slot = Some(seat.slot);
+        let legaia_engine_session::battle_stage::SummonSeat {
+            slot,
+            tex_slot,
+            asset,
+        } = seat;
         let Some(mut vram) = self.battle_vram.clone() else {
             return;
         };
@@ -44,8 +39,7 @@ impl PlayWindowApp {
         let Ok(tmd) = legaia_tmd::parse(mesh.tmd_bytes()) else {
             return;
         };
-        // Inject the creature texture into the next free battle slot.
-        let tex_slot = self.battle_tex_slots_used.min(4);
+        // Inject the creature texture into the seat's battle slot.
         let Some(vmesh) = mesh.battle_render_mesh(tex_slot, &mut vram) else {
             return;
         };
@@ -84,45 +78,10 @@ impl PlayWindowApp {
         // face stamps) don't drop the injected summon texture.
         self.battle_vram = Some(vram);
 
-        // Seat the summon in a free high actor slot (>= 8) so it never collides
-        // with the party/monster battle slots. Place it on the party side
-        // (`enter_battle` seats party at negative Z, enemies at positive Z),
-        // in front of the party and clearly clear of the enemy cluster, so
-        // the battle camera frames it distinct from the enemies it attacks.
-        let slot = self
-            .summon_actor_slot
-            .unwrap_or_else(|| 8 + (self.session.host.world.party.party_count as usize));
-        self.summon_actor_slot = Some(slot);
+        // The seat's mesh handle: this window's index into its mesh list.
         if let Some(a) = self.session.host.world.actors.get_mut(slot) {
-            a.active = true;
             a.tmd_binding = Some(idx);
-            a.battle_tex_slot = Some(tex_slot);
-            a.move_state.world_x = 0;
-            a.move_state.world_y = 0;
-            a.move_state.world_z = -350;
         }
-        if let Some(idle) = asset.idle.as_ref()
-            && let Some(player) = legaia_engine_battle::battle_anim::MonsterAnimPlayer::new(idle)
-        {
-            self.session
-                .host
-                .world
-                .set_actor_battle_animation(slot, player);
-        }
-        // The creature's archive-order clip set, so the stager's staged ids
-        // (the walk, clip 1) resolve through the same commit as a monster's.
-        if !asset.clips.is_empty() {
-            let clips: Vec<_> = asset.clips.iter().cloned().map(Some).collect();
-            self.session
-                .host
-                .world
-                .set_actor_battle_action_clips(slot, std::sync::Arc::new(clips));
-        }
-        // Hand the seat to the world: a cast in its summon band places the
-        // creature at the stager's spawn point (behind the caster, facing
-        // the enemy - the capture's slot-7 record) and retires it when the
-        // choreography ends; a debug spawn keeps the placement above.
-        self.session.host.world.seat_summon_actor(slot);
         log::info!(
             "play-window: summon spell {spell_id:#04x} -> creature {:?} \
              (mesh slot {idx}, tex slot {tex_slot}, actor slot {slot})",

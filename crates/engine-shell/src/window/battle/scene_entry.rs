@@ -250,7 +250,6 @@ impl PlayWindowApp {
             }
         }
         let mut bound = 0usize;
-        let mut bound_slots: Vec<u8> = Vec::new();
         // Every actor slot this call registers a battle mesh on. It is the
         // battle's whole display list - see the un-register pass after the
         // party loop for why the complement matters.
@@ -295,7 +294,6 @@ impl PlayWindowApp {
                     // The texture slot and idle clip are the world's,
                     // installed on the battle edge for every host
                     // (`battle_stage::stage_battle_world`).
-                    bound_slots.push(slot);
                     // The archive-order action-clip set (the `+0x4C` tag
                     // table the hit-reaction family and the AI's picked
                     // swings index) is the engine's to install:
@@ -403,12 +401,9 @@ impl PlayWindowApp {
                  {unregistered_count} field actor mesh(es) un-registered"
             );
         }
-        // Stash the battle VRAM + the monster-slot count so a mid-battle player
-        // summon can inject its creature texture into the next free slot.
-        // One past the highest slot bound - repeated species share a slot,
-        // so the bound count over-reads it (the shared kernel the page uses).
-        self.battle_tex_slots_used =
-            legaia_engine_core::battle_party_form::monster_tex_slots_used(bound_slots).min(4);
+        // Stash the battle VRAM so a mid-battle player summon can inject its
+        // creature texture into the slot its seat names
+        // (`battle_stage::seat_summon_creature`).
         self.battle_vram = Some(vram);
         self.log_battle_display_list(&unregistered);
     }
@@ -503,7 +498,6 @@ impl PlayWindowApp {
         }
         self.battle_vram = None;
         self.battle_vram_generation = None;
-        self.battle_tex_slots_used = 0;
         self.battle_stage_mesh = None;
         self.battle_stage_color_mesh = None;
         self.battle_stage_spun_mesh = None;
