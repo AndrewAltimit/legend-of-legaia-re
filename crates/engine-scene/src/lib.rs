@@ -18,6 +18,7 @@ pub mod field_occlusion;
 pub mod field_view_window;
 pub mod man_census;
 pub mod model_bank;
+pub mod npc_catalog;
 pub mod overlay_loader;
 pub mod scene;
 pub mod scene_assembly;

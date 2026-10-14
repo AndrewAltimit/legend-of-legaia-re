@@ -181,7 +181,7 @@ pub fn build_field_scene_live(index: Arc<ProtIndex>, pack: &mut FieldScenePack) 
     let scene = Scene::load(&index, &pack.name).ok();
     pack.scene_anm = scene
         .as_ref()
-        .and_then(legaia_engine_core::npc_catalog::scene_anm_bundle);
+        .and_then(legaia_engine_scene::npc_catalog::scene_anm_bundle);
     let binds = scene
         .as_ref()
         .and_then(|s| s.field_object_binds(&index).ok().flatten());

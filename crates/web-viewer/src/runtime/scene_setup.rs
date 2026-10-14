@@ -218,7 +218,7 @@ impl LegaiaRuntime {
         // `find_scene_anm_bundle` calls too (`npc_catalog::scene_anm_bundle`).
         // The scene bundle poses the MAN NPCs and the bound placed props; the
         // locomotion bundle poses the global-pool specials.
-        self.scene_anm = legaia_engine_core::npc_catalog::scene_anm_bundle(scene);
+        self.scene_anm = legaia_engine_scene::npc_catalog::scene_anm_bundle(scene);
         self.locomotion_anm = host
             .index
             .entry_bytes(legaia_actor_formats::character_pack::PROT_ENTRY_INDEX)

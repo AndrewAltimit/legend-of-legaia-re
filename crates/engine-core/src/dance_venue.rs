@@ -290,7 +290,7 @@ pub fn venue_scene_name(index: &ProtIndex, e: &DanceSceneEntry) -> Option<String
 pub fn dance_clip_bank(index: &ProtIndex) -> Option<PlayerAnmBundle> {
     let name = venue_scene_name(index, &dance_scene_entry())?;
     let scene = Scene::load(index, &name).ok()?;
-    crate::npc_catalog::scene_anm_bundle(&scene)
+    legaia_engine_scene::npc_catalog::scene_anm_bundle(&scene)
 }
 
 /// One of the venue's static draws with its cross-draw coplanar lift.
@@ -387,7 +387,7 @@ impl DanceVenue {
             }
         }
         let draws = venue_draws(index, &scene, &resources);
-        let anm = crate::npc_catalog::scene_anm_bundle(&scene);
+        let anm = legaia_engine_scene::npc_catalog::scene_anm_bundle(&scene);
         Some(Self {
             scene,
             resources,

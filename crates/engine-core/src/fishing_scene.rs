@@ -146,7 +146,7 @@ impl FishingSceneAssets {
             },
         )
         .ok()?;
-        let anm = crate::npc_catalog::scene_anm_bundle(&scene);
+        let anm = legaia_engine_scene::npc_catalog::scene_anm_bundle(&scene);
         let (env, env_flat) = bake_env(index, &scene, &res, anm.as_ref());
         if env.indices.is_empty() {
             return None;

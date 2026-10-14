@@ -90,7 +90,7 @@ Byte-equality against the live clip bank in the [`v0_1_pre_battle_tetsu`](../../
 
 The field-form bundles carry 69-72 records. Other scenes either hold a smaller bank or resolve to one of these.
 
-**A stream-borne bank.** A scene whose MAN arrives in a DATA_FIELD stream can ship its clip bank the same way: as the stream's type-`0x05` chunk, stored raw (the stream walker hands every chunk to the dispatcher with `copy_only = 1`). `rikuroa` is the case: its 72-record bank is the type-`0x05` chunk of PROT 157, between the MAN (type `0x03`) and the type-`0x07` chunk, and no entry of its block holds a container with an ANM section. One resolver serves every host: `legaia_actor_formats::player_anm::find_scene_bundle`, through `engine-core::npc_catalog::scene_anm_bundle`, tries the container sections first (entry-major), then a stream chunk.
+**A stream-borne bank.** A scene whose MAN arrives in a DATA_FIELD stream can ship its clip bank the same way: as the stream's type-`0x05` chunk, stored raw (the stream walker hands every chunk to the dispatcher with `copy_only = 1`). `rikuroa` is the case: its 72-record bank is the type-`0x05` chunk of PROT 157, between the MAN (type `0x03`) and the type-`0x07` chunk, and no entry of its block holds a container with an ANM section. One resolver serves every host: `legaia_actor_formats::player_anm::find_scene_bundle`, through `engine-scene::npc_catalog::scene_anm_bundle`, tries the container sections first (entry-major), then a stream chunk.
 
 ### Which clip an NPC plays
 

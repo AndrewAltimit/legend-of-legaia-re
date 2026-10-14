@@ -172,7 +172,7 @@ fn play_render_state_matches_native_field_pipeline() {
         // window resolves (`find_scene_anm_bundle`, over the shared
         // `npc_catalog::scene_anm_bundle`: container sections entry-major,
         // then a DATA_FIELD chunk).
-        let native_bundle = legaia_engine_core::npc_catalog::scene_anm_prot(scene);
+        let native_bundle = legaia_engine_scene::npc_catalog::scene_anm_prot(scene);
         match (&native_bundle, npcs.anm_prot) {
             (Some(idx), Some(prot)) => assert_eq!(
                 *idx, prot,

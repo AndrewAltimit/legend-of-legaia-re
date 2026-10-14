@@ -39,7 +39,7 @@ impl SceneHost {
         };
         // The scene ANM bundle resolves each posed prop's clip metadata
         // (frame count + step scaling) for the bank's end-latch timing.
-        let bundle = crate::npc_catalog::scene_anm_bundle(scene);
+        let bundle = legaia_engine_scene::npc_catalog::scene_anm_bundle(scene);
         let clip = |anim: u8| -> Option<(u16, bool, u8)> {
             let b = bundle.as_ref()?;
             let r = b.record(anim.checked_sub(1)? as usize).ok()?;

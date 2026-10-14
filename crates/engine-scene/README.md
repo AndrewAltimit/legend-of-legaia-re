@@ -13,10 +13,11 @@ depends on it. Hosts, tools and tests name its modules directly
 |---|---|
 | `vfs` | Where asset bytes come from: the `Vfs` trait, its `DirVfs` (an extracted directory), `DiscVfs` (a disc image) and `MemoryVfs` backends, and the `AssetCache` over them. |
 | `scene` | `ProtIndex` (the opened `PROT.DAT` + CDNAME map, with entry and class caches), `Scene` (one CDNAME block's classified entries and every per-scene resolver on it: MAN, `.MAP`, floor LUT, triggers, heightfield, encounters, BGM), the map-id resolvers, the cutscene label / `MVn.STR` map, and the effect-texture VRAM uploads. See [`asset-loader.md`](../../docs/subsystems/asset-loader.md). |
-| `scene_bundle` | The per-scene asset table inside a loaded `Scene`, walked into typed sub-assets. See [`scene-bundles.md`](../../docs/formats/scene-bundles.md). |
+| `scene_bundle` | The per-scene asset table inside a loaded `Scene`, walked into typed sub-assets, and the VDF buffer lookups (`find_vdf_buffer`, `vdf_entry`). See [`scene-bundles.md`](../../docs/formats/scene-bundles.md). |
 | `scene_assets` | `SceneAssets`: the typed per-scene snapshot (MES, SEQ / VAB stream entries, event scripts). |
 | `scene_resources` | `SceneResources`: a scene's TMD pools, ANM bundle and software VRAM, built per load kind (`build_targeted`). |
-| `model_bank` | The retail model pool `DAT_8007C018` and the id space a placement's model byte and the scripted-motion VM's op `0x0E` share. |
+| `model_bank` | The retail model pool `DAT_8007C018` (one slot = `GlobalTmd`) and the id space a placement's model byte and the scripted-motion VM's op `0x0E` share. |
+| `npc_catalog` | Every actor a scene's MAN places, resolved against a built `SceneResources` (and, for the play shape, the global model pool), plus the scene's ANM bundle lookup (`scene_anm_bundle`). |
 | `field_env` | The environment-geometry draw resolver: which `SceneResources` TMD each `.MAP` placement or terrain tile draws and where, object binds, prop animation, floor anchors. |
 | `coplanar_draws` | Cross-draw coplanar-surface separation over a resolved `EnvDraw` list. |
 | `field_view_window` | The camera's visible-tile crop: the cell rectangle one frame of `FUN_801F7088` walks (`view_cells`) and the per-cell decoration / ground gates. Whether a host crops this frame is `engine-core::field_view_window`. |
@@ -46,9 +47,8 @@ What stays above, in `engine-core`:
   the story-hidden record set (a scratch `World` staged at the scene's
   free-roam visit), and `assemble_field_scene`, which hands that set to
   `scene_assembly::assemble_field_scene_with`.
-- `npc_catalog` - resolves placements against the world's global model pool.
-  (`glb_export`, which steps a `World` to bake animation, is its own crate
-  above `engine-core`: `engine-export`.)
+- `glb_export`, which steps a `World` to bake animation, is its own crate
+  above `engine-core`: `engine-export`.
 - The per-subsystem disc readers that return another kernel crate's types
   (`battle_open`, `dance`).
 

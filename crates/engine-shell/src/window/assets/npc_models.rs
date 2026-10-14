@@ -22,7 +22,7 @@ impl PlayWindowApp {
             .host
             .scene
             .as_ref()
-            .and_then(legaia_engine_core::npc_catalog::scene_anm_bundle)
+            .and_then(legaia_engine_scene::npc_catalog::scene_anm_bundle)
     }
 
     /// Materialise one **scene-bank** model's mesh out of the loaded scene,

@@ -225,7 +225,7 @@ impl FieldActors {
         (rec.bone_count > 0).then_some(rec.bone_count as usize)
     }
 
-    fn entry(&self, i: u32) -> Option<&legaia_engine_core::npc_catalog::NpcEntry> {
+    fn entry(&self, i: u32) -> Option<&legaia_engine_scene::npc_catalog::NpcEntry> {
         self.npcs.as_ref()?.pack.entries.get(i as usize)
     }
 
@@ -286,7 +286,7 @@ impl FieldActors {
         &self,
         host: &SceneHost,
         banks: ActorBanks<'_>,
-        e: &legaia_engine_core::npc_catalog::NpcEntry,
+        e: &legaia_engine_scene::npc_catalog::NpcEntry,
     ) -> Option<usize> {
         let slot = e.placement.index as u8;
         match self.clips.get(&slot) {
