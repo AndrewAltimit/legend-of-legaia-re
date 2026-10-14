@@ -267,7 +267,7 @@ fn confirm_skips_the_opening_to_town01_name_entry() {
     assert!(committed, "Yes commits and closes name entry");
     assert!(!host.world.party_name(0).is_empty());
 
-    let hide = legaia_engine_core::world::FIELD_OFFMAP_HIDE_XZ;
+    let hide = legaia_engine_field::man_field_scripts::FIELD_OFFMAP_HIDE_XZ;
     let parked_at_hide = |w: &legaia_engine_core::world::World| {
         w.npcs
             .positions

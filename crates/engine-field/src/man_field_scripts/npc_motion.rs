@@ -17,6 +17,19 @@ pub fn grid_byte_to_world(b: u8) -> i16 {
     if b & 0x80 != 0 { base + 0x40 } else { base }
 }
 
+/// The off-map "hide box" world X/Z (`16320` = `0x3FC0`) a field script parks
+/// an actor at to remove it from the scene.
+///
+/// Two uses share it: a MAN placement whose spawn is already this box is a
+/// conditional actor retail hides until a script places it (skipped at NPC
+/// build time), and the `town01` opening cutscene `MoveTo`s the townsfolk here
+/// to clear the establishing shot, restoring them (via
+/// `FieldNpcState::positions` fallback to the MAN spawn) when
+/// the opening timeline completes. Both the build-time skip
+/// (`legaia_engine_shell` NPC upload) and the completion restore key off this
+/// value.
+pub const FIELD_OFFMAP_HIDE_XZ: i16 = 16320;
+
 /// Locality radius (world units) for an autonomous NPC-route waypoint. A
 /// placement's pre-text script mixes its local walk legs with story-flag-gated
 /// relocations to other parts of the scene (the linear walk sees every branch);

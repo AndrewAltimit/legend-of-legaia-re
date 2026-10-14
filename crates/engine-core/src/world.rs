@@ -53,8 +53,9 @@ use legaia_engine_battle_vm::battle_action::{
     BattleActionCtx, BattleActor, BattleEndCause, StepOutcome,
 };
 use legaia_engine_field::field_events::FieldEvent;
-use legaia_engine_field::man_field_scripts::WalkTouchEvent;
+use legaia_engine_field::man_field_scripts::{FIELD_OFFMAP_HIDE_XZ, WalkTouchEvent};
 use legaia_engine_field::world_map::WorldMapController;
+use legaia_engine_scene::model_bank::GlobalTmd;
 use legaia_engine_system::input;
 use legaia_engine_vm as vm;
 use legaia_engine_vm::MAX_ACTORS;
@@ -154,7 +155,6 @@ pub use cutscene_elements::{
     ElementKind, WorldRng,
 };
 mod assets_events;
-pub use assets_events::vdf_entry;
 mod bag_rows;
 pub use bag_rows::BagRow;
 mod battle;

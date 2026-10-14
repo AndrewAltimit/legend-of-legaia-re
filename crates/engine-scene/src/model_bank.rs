@@ -109,6 +109,22 @@ pub const SCENE_BANK_BASE: u16 = PLAYER_BANK_BASE + PLAYER_BANK_LEN;
 /// The unsigned split both consumers apply to a model id.
 pub const SPECIAL_MODEL_THRESHOLD: u16 = 0xF0;
 
+/// One entry in `World::global_tmd_pool`. Mirrors a single slot of the
+/// retail `DAT_8007C018` global TMD-pointer table - a parsed TMD plus its
+/// raw bytes so downstream renderers can drive `legaia_tmd::mesh::*` builders
+/// without re-fetching from disc.
+///
+/// The
+/// port treats the pool as opaque indexed storage: the field-VM
+/// `0x4C 0xD8` host hook reads slot `tmd_idx` and writes the resulting `Arc`
+/// onto `Actor::tmd_ref` - whatever populated the slot is the producer's
+/// concern.
+#[derive(Debug)]
+pub struct GlobalTmd {
+    pub tmd: legaia_tmd::Tmd,
+    pub raw: Vec<u8>,
+}
+
 /// Which half of the pool an id names.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ModelBank {

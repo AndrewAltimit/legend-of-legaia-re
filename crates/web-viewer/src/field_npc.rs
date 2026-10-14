@@ -117,7 +117,7 @@ pub fn build_npc_catalog_play(
     index: &ProtIndex,
     name: &str,
     res: &legaia_engine_scene::scene_resources::SceneResources,
-    global_pool: &[Option<std::sync::Arc<legaia_engine_core::world::GlobalTmd>>],
+    global_pool: &[Option<std::sync::Arc<legaia_engine_scene::model_bank::GlobalTmd>>],
 ) -> Result<FieldNpcPack, String> {
     build_npc_catalog_impl(index, name, res, Some(global_pool))
 }
@@ -129,7 +129,7 @@ fn build_npc_catalog_impl(
     index: &ProtIndex,
     name: &str,
     res: &legaia_engine_scene::scene_resources::SceneResources,
-    play_pool: Option<&[Option<std::sync::Arc<legaia_engine_core::world::GlobalTmd>>]>,
+    play_pool: Option<&[Option<std::sync::Arc<legaia_engine_scene::model_bank::GlobalTmd>>]>,
 ) -> Result<FieldNpcPack, String> {
     let legaia_engine_core::npc_catalog::NpcCatalog {
         scene,

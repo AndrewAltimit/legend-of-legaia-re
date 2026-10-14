@@ -1127,7 +1127,9 @@ impl SceneHost {
                 .map(|bytes| {
                     let raw = bytes?;
                     let tmd = legaia_tmd::parse(&raw).ok()?;
-                    Some(std::sync::Arc::new(crate::world::GlobalTmd { tmd, raw }))
+                    Some(std::sync::Arc::new(
+                        legaia_engine_scene::model_bank::GlobalTmd { tmd, raw },
+                    ))
                 })
                 .collect(),
             None => Vec::new(),

@@ -1236,7 +1236,7 @@ impl LegaiaViewer {
 
     /// The off-map hide-box coordinate the actor draw skips.
     pub fn field_offmap_hide_xz(&self) -> i32 {
-        legaia_engine_core::world::FIELD_OFFMAP_HIDE_XZ as i32
+        legaia_engine_field::man_field_scripts::FIELD_OFFMAP_HIDE_XZ as i32
     }
 }
 

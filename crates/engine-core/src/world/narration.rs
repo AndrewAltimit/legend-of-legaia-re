@@ -1207,7 +1207,7 @@ impl World {
     }
 
     /// Un-park every field NPC a cutscene left at the off-map hide box
-    /// ([`crate::world::FIELD_OFFMAP_HIDE_XZ`]), dropping its
+    /// ([`legaia_engine_field::man_field_scripts::FIELD_OFFMAP_HIDE_XZ`]), dropping its
     /// [`crate::world::FieldNpcState::positions`] / [`crate::world::FieldNpcState::headings`] overrides so
     /// the field render falls back to the NPC's MAN spawn tile.
     ///
@@ -1217,7 +1217,7 @@ impl World {
     /// completes (retail restores the town when control returns). No-op when
     /// nothing is parked there.
     fn restore_hidden_field_npcs(&mut self) {
-        let hide = crate::world::FIELD_OFFMAP_HIDE_XZ;
+        let hide = legaia_engine_field::man_field_scripts::FIELD_OFFMAP_HIDE_XZ;
         let restored: Vec<u8> = self
             .npcs
             .positions

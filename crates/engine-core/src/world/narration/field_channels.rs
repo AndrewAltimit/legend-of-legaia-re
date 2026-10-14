@@ -56,7 +56,7 @@ impl World {
     /// prologue says whether it currently *does*.
     // REF: FUN_8003A55C (bind-time prologue pre-run seats/parks the actor)
     pub fn hidden_object_records(&self) -> std::collections::HashSet<usize> {
-        let hide = crate::world::FIELD_OFFMAP_HIDE_XZ as u16;
+        let hide = legaia_engine_field::man_field_scripts::FIELD_OFFMAP_HIDE_XZ as u16;
         self.field_vm
             .channels
             .iter()
@@ -151,7 +151,7 @@ impl World {
     /// listed.
     // REF: FUN_8001ADA4 (case 5 draws at the actor position), FUN_8003A55C
     pub fn object_draw_displacements(&self) -> std::collections::HashMap<usize, [i32; 3]> {
-        let hide = crate::world::FIELD_OFFMAP_HIDE_XZ as u16;
+        let hide = legaia_engine_field::man_field_scripts::FIELD_OFFMAP_HIDE_XZ as u16;
         // A record bound at several tiles seats its one channel at the first
         // bind (`spawn_object_channels` skips the repeats).
         let mut seeds: std::collections::HashMap<usize, (i16, i16)> = Default::default();
@@ -542,7 +542,7 @@ impl World {
             }
             let slot = c.placement_index as u8;
             let (nx, nz) = (nx as i16, nz as i16);
-            let hide = crate::world::FIELD_OFFMAP_HIDE_XZ;
+            let hide = legaia_engine_field::man_field_scripts::FIELD_OFFMAP_HIDE_XZ;
             if (nx, nz) == (hide, hide) {
                 self.npcs.glide_speeds.remove(&slot);
                 self.npcs.motions.remove(&slot);

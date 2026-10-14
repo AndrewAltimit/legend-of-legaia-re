@@ -276,7 +276,8 @@ impl MoveSpawnHost for World {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::world::{GlobalTmd, World};
+    use crate::world::World;
+    use legaia_engine_scene::model_bank::GlobalTmd;
     use std::sync::Arc;
 
     fn make_world() -> World {

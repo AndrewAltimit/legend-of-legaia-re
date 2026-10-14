@@ -387,22 +387,6 @@ pub struct ActorSpriteRequest {
     pub tint: [f32; 4],
 }
 
-/// One entry in [`World::global_tmd_pool`]. Mirrors a single slot of the
-/// retail `DAT_8007C018` global TMD-pointer table - a parsed TMD plus its
-/// raw bytes so downstream renderers can drive `legaia_tmd::mesh::*` builders
-/// without re-fetching from disc.
-///
-/// The
-/// port treats the pool as opaque indexed storage: the field-VM
-/// `0x4C 0xD8` host hook reads slot `tmd_idx` and writes the resulting `Arc`
-/// onto [`Actor::tmd_ref`] - whatever populated the slot is the producer's
-/// concern.
-#[derive(Debug)]
-pub struct GlobalTmd {
-    pub tmd: legaia_tmd::Tmd,
-    pub raw: Vec<u8>,
-}
-
 /// One entry of an actor's battle **pose-history ring** (see
 /// [`Actor::battle_pose_history`]): the posed frame + world position the
 /// actor rendered with on that frame, and whether the frame is

@@ -235,7 +235,7 @@ pub(crate) fn facing_score(retail: &RetailObs, engine: &EngineObs) -> Option<(f6
     }
     let mut skipped = 0;
     let mut ambient = 0;
-    let hide = legaia_engine_core::world::FIELD_OFFMAP_HIDE_XZ;
+    let hide = legaia_engine_field::man_field_scripts::FIELD_OFFMAP_HIDE_XZ;
     let dump = std::env::var_os("LEGAIA_RC_FACING_DUMP").is_some();
     for a in &retail.actor_facings {
         let Some(&(e, ex, ez)) = engine.npc_facings.get(&a.flat) else {

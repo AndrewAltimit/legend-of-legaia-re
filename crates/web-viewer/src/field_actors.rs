@@ -614,7 +614,7 @@ impl FieldActors {
             return Vec::new();
         };
         let mut out = Vec::with_capacity(n.pack.entries.len() * 4);
-        let hide = legaia_engine_core::world::FIELD_OFFMAP_HIDE_XZ;
+        let hide = legaia_engine_field::man_field_scripts::FIELD_OFFMAP_HIDE_XZ;
         for e in &n.pack.entries {
             let slot = e.placement.index as u8;
             let (mut x, mut z) = host

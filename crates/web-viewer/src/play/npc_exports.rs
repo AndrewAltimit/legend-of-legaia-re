@@ -127,7 +127,7 @@ impl LegaiaRuntime {
     /// skips drawing any NPC whose live position is this tile on both axes,
     /// exactly as the native play-window's draw pass does.
     pub fn field_offmap_hide_xz(&self) -> i32 {
-        legaia_engine_core::world::FIELD_OFFMAP_HIDE_XZ as i32
+        legaia_engine_field::man_field_scripts::FIELD_OFFMAP_HIDE_XZ as i32
     }
 
     /// Live clip-playback state of every catalogued NPC, `[pose, generation,

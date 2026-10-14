@@ -13,8 +13,9 @@
 //! this with its render caches) and the native `legaia-engine export-glb`
 //! NPC exporter (`legaia_engine_export::glb_export`).
 
-use crate::world::{FIELD_OFFMAP_HIDE_XZ, GlobalTmd};
+use legaia_engine_field::man_field_scripts::FIELD_OFFMAP_HIDE_XZ;
 use legaia_engine_field::man_field_scripts::{PlacementKind, classify_placements};
+use legaia_engine_scene::model_bank::GlobalTmd;
 use legaia_engine_scene::scene::{ProtIndex, Scene};
 use legaia_engine_scene::scene_resources::SceneResources;
 use legaia_scene_formats::man_section::ActorPlacement;
