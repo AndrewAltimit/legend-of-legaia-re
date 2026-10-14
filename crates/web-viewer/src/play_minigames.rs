@@ -67,7 +67,7 @@ pub(crate) enum ActiveGame {
     Baka,
     Muscle,
     Dance,
-    /// The fishing pond (`legaia_engine_core::fishing_scene`); its HUD rides
+    /// The fishing pond (`legaia_engine_minigame_scenes::fishing_scene`); its HUD rides
     /// `play_fishing`, so this screen only owns the 3D view.
     Fishing,
 }
@@ -122,16 +122,16 @@ pub(crate) struct MinigameUi {
     /// drives too (`legaia_engine_minigame_scenes::baka_duel_scene::BakaDuelSurface`).
     pub(crate) baka_surface: legaia_engine_minigame_scenes::baka_duel_scene::BakaDuelSurface,
     /// The dance floor's bodies - the engine cache the native window drives
-    /// too (`legaia_engine_core::dance_cast_scene::DanceCastSurface`) - and
+    /// too (`legaia_engine_minigame_scenes::dance_cast_scene::DanceCastSurface`) - and
     /// the hall origin its positions are re-based on for this page.
-    pub(crate) dance_surface: legaia_engine_core::dance_cast_scene::DanceCastSurface,
+    pub(crate) dance_surface: legaia_engine_minigame_scenes::dance_cast_scene::DanceCastSurface,
     pub(crate) dance_origin: (f32, f32, f32),
     /// The Muscle Dome's 3D arena surface - the engine cache the native
     /// window drives too (`legaia_engine_minigame_scenes::muscle_dome_scene`).
     pub(crate) muscle_surface: legaia_engine_minigame_scenes::muscle_dome_scene::MuscleDomeSurface,
     /// The fishing pond surface - the engine cache the native window drives
-    /// too (`legaia_engine_core::fishing_scene`).
-    pub(crate) fishing_surface: legaia_engine_core::fishing_scene::FishingSurface,
+    /// too (`legaia_engine_minigame_scenes::fishing_scene`).
+    pub(crate) fishing_surface: legaia_engine_minigame_scenes::fishing_scene::FishingSurface,
 }
 
 /// The PROT entries the standalone presentation bundle reads, in extraction

@@ -109,7 +109,7 @@ pub struct LegaiaMinigames {
     /// The dance floor's cast surface (`engine-core::dance_cast_scene`) over
     /// this page's run - the per-host cache the native window and the play
     /// page pose the bodies through, off the run's own clip driver.
-    dance_surface: legaia_engine_core::dance_cast_scene::DanceCastSurface,
+    dance_surface: legaia_engine_minigame_scenes::dance_cast_scene::DanceCastSurface,
     /// The duel's CD-XA announcer lines (`XA32` / `XA33`), decoded at disc
     /// load while the raw sectors are still in hand.
     baka_xa: legaia_engine_audio::XaClipBank,
@@ -189,7 +189,7 @@ pub struct LegaiaMinigames {
     fishing_hud_last: Vec<legaia_engine_ui::HudDraw>,
     /// The lure row's captions off PROT 0972, resolved against the item
     /// table.
-    fishing_captions: Option<legaia_engine_core::world::FishingCaptionText>,
+    fishing_captions: Option<legaia_engine_minigame_scenes::minigame_state::FishingCaptionText>,
     /// This page's **effect-part pool** - the standalone twin of
     /// `World::minigames.fx`, which this page cannot use because it drives
     /// the session types directly and holds no `World`. Same model

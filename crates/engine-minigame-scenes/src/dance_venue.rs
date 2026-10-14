@@ -1,0 +1,773 @@
+//! The dance **venue**: what the dance overlay's own init `FUN_801CEF54`
+//! stages around the beat clock, and what its teardown `FUN_801D414C` puts
+//! back.
+//!
+//! Retail's dance *is* a scene: the mode-24 init switch `FUN_80025980` hands
+//! arm 6 to `FUN_801CEF54`, which saves the caller's scene-name buffer and
+//! PROT block base, loads the venue's field file (the `other7` block at raw
+//! TOC index `0x4CC`), seats the camera on the floor and pre-stamps the four
+//! dancer face rigs into VRAM. The port keeps the walked-in scene resident
+//! underneath (its actors, VM and field state are not torn down), so the
+//! save / restore pair becomes two halves here:
+//!
+//! * `legaia_engine_core::dance_venue::sync_dance_venue` - the **globals**: on the first frame the world is
+//!   in [`SceneMode::Dance`](legaia_engine_mode::mode::SceneMode::Dance) it writes the record's block base into the
+//!   `_DAT_80084540` mirror, the view window into the camera's visible-tile
+//!   window, and publishes the record's camera pose; on the first frame it is
+//!   not, it restores the saved block base and window. One call per host
+//!   frame, on both play hosts.
+//! * [`DanceVenue::build`] - the **venue itself**: the scene the record's
+//!   stream id names, its resources, its placed / terrain draw list, the HUD
+//!   page and the five entry face stamps, already applied to the venue VRAM.
+//!   The native window builds it on the staging edge and draws it in place of
+//!   the walked-in scene; the browser pages build it once per disc through
+//!   the same call.
+//!
+//! See `docs/subsystems/minigame-dance.md` § Entering and leaving the hall.
+
+use legaia_actor_formats::player_anm::PlayerAnmBundle;
+use legaia_engine_battle_vm::psx_camera::FieldCameraView;
+use legaia_engine_minigames::dance::{
+    DanceMode, DanceSceneEntry, dance_face_rig, dance_scene_entry,
+};
+use legaia_engine_scene::field_env::{self, EnvDraw};
+use legaia_engine_scene::scene::{ProtIndex, Scene};
+use legaia_engine_scene::scene_resources::{BuildOptions, SceneLoadKind, SceneResources};
+use legaia_minigame_formats::dance_art::{self, FaceRig};
+use legaia_tim::Vram;
+
+/// The world scale retail folds into the camera rotation under game mode 24:
+/// the mode initialiser `FUN_8001DCF8` loads `0x6000` into the diagonal of
+/// `_DAT_8007BF10` for mode `2` **and** mode `0x18`
+/// (`0x8001DF4C..0x8001DF70`), the same 6x the field frames through.
+const VENUE_WORLD_SCALE: f32 = legaia_engine_field::camera::CUTSCENE_WORLD_SCALE;
+
+fn angle_rad(units: u16) -> f32 {
+    f32::from(units as i16) / 4096.0 * std::f32::consts::TAU
+}
+
+/// The dance camera the entry stages, as the port's field-frame pose.
+///
+/// Angles, `H` and the eye-space translation are the record's stores
+/// ([`DanceSceneEntry::camera_angles`], [`DanceSceneEntry::gte_h`],
+/// [`DanceSceneEntry::camera_pair`] with `+0x0` cleared). The focus is the
+/// beat-clock actor's position: its tick writes the negated `+0x14` / `+0x18`
+/// into the focus trio every frame, and the Y global keeps the `0` the mode
+/// initialiser cleared it to (`0x8001E154`). The eye trio is reduced by the
+/// 6x world scale the way every field pose is.
+pub fn venue_camera(e: &DanceSceneEntry) -> FieldCameraView {
+    let (sx, _, sz) = e.dancer_spawn;
+    FieldCameraView {
+        focus: [f32::from(sx), 0.0, f32::from(sz)],
+        pitch: angle_rad(e.camera_angles.0),
+        yaw: angle_rad(e.camera_angles.1),
+        roll: angle_rad(e.camera_angles.2),
+        h: f32::from(e.gte_h),
+        tr_eye: [
+            0.0,
+            e.camera_pair.0 as f32 / VENUE_WORLD_SCALE,
+            e.camera_pair.1 as f32 / VENUE_WORLD_SCALE,
+        ],
+    }
+}
+
+// --- the camera keyframe track (FUN_801CF470, 0x801CF51C..0x801CF7D8) ----
+// Lives in the minigame crate (`dance::camera_track`).
+use legaia_engine_minigames::dance::DanceCameraPose;
+
+/// A track pose as the port's field-frame camera: the entry's `H` and the
+/// beat-clock actor's focus ([`venue_camera`]), with this pose's angles and
+/// its eye trio reduced by the 6x world scale.
+pub fn venue_camera_at(e: &DanceSceneEntry, pose: DanceCameraPose) -> FieldCameraView {
+    FieldCameraView {
+        pitch: angle_rad(pose.angles[0] as u16),
+        yaw: angle_rad(pose.angles[1] as u16),
+        roll: angle_rad(pose.angles[2] as u16),
+        tr_eye: pose.eye.map(|c| c as f32 / VENUE_WORLD_SCALE),
+        ..venue_camera(e)
+    }
+}
+
+// --- what the GPU refuses to draw (the hall under the far poses) ---------
+
+/// The GTE screen offset (`OFX`, `OFY`) a projected corner is centred on.
+/// Only the SXY saturation below reads it, and a polygon that saturates is
+/// already wider than the screen, so the exact origin does not move a verdict
+/// on an on-screen polygon.
+const GTE_SCREEN_OFFSET: [i64; 2] = [160, 120];
+
+/// The widest polygon the PSX GPU rasterises: a primitive whose vertices lie
+/// more than `1023` pixels apart horizontally or `511` vertically is skipped
+/// by the GPU whole, before a pixel is drawn. Retail's prim leaves hand the
+/// GPU the SXY FIFO as it stands, with no clip of their own (the field quad
+/// handler `FUN_80043768` tests only NCLIP and the near `OTZ` cutoff), so a
+/// large polygon close to the eye is simply not drawn.
+pub const PSX_GPU_MAX_SPAN: [i64; 2] = [1023, 511];
+
+/// Project one world point as the GTE does under `view`: `RTPS` in the 6x
+/// world scale the dance frames through ([`VENUE_WORLD_SCALE`]), the UNR
+/// divide with its near-camera saturation, then the SXY FIFO's signed
+/// 11-bit clamp. A point behind the eye is not special - `SZ3` clamps to `0`,
+/// the quotient saturates, and the corner smears to the screen edge exactly
+/// as retail's does.
+pub fn psx_screen_xy(view: &FieldCameraView, p: [f32; 3]) -> [i64; 2] {
+    screen_xy_of(view.h, view.eye_space(p))
+}
+
+fn screen_xy_of(h: f32, eye: [f32; 3]) -> [i64; 2] {
+    let g = eye.map(|c| (c * VENUE_WORLD_SCALE) as i64);
+    let sz3 = g[2].clamp(0, 0xFFFF) as u16;
+    let (q, _) = legaia_render_kernels::gte::divide::gte_divide(h as u16, sz3);
+    let ir = [g[0].clamp(-0x8000, 0x7FFF), g[1].clamp(-0x8000, 0x7FFF)];
+    std::array::from_fn(|i| (GTE_SCREEN_OFFSET[i] + ((ir[i] * q) >> 16)).clamp(-0x400, 0x3FF))
+}
+
+/// Whether the GPU draws a triangle with these three screen corners
+/// ([`PSX_GPU_MAX_SPAN`]).
+pub fn psx_gpu_draws_triangle(sxy: [[i64; 2]; 3]) -> bool {
+    (0..2).all(|axis| {
+        let lo = sxy.iter().map(|c| c[axis]).min().unwrap_or(0);
+        let hi = sxy.iter().map(|c| c[axis]).max().unwrap_or(0);
+        hi - lo <= PSX_GPU_MAX_SPAN[axis]
+    })
+}
+
+/// The triangles of a world-space triangle list the GPU would draw under
+/// `view`: `indices` filtered to the triples [`psx_gpu_draws_triangle`]
+/// keeps, in their original order. `origin` is added to every position first,
+/// for a host that bakes its buffer in a re-based frame.
+///
+/// This is what keeps the hall's near props out of the frame on the camera
+/// track's far poses: keys that ease the eye back to `z = 0x1810` carry it
+/// through the stage-entrance curtain (placement record `117`, the two-panel
+/// prop at `(0x1800, 0, 0x2F60)`), and from behind, the curtain's quads span
+/// more than a thousand pixels - retail's GPU drops them, and retail's frame
+/// shows the stage clear through the pull-back.
+pub fn psx_gpu_visible_indices(
+    view: &FieldCameraView,
+    positions: &[[f32; 3]],
+    origin: [f32; 3],
+    indices: &[u32],
+) -> Vec<u32> {
+    let r = legaia_engine_battle_vm::psx_camera::camera_rotation(view.pitch, view.yaw, view.roll);
+    let sxy: Vec<[i64; 2]> = positions
+        .iter()
+        .map(|p| {
+            let d = std::array::from_fn::<f32, 3, _>(|i| p[i] + origin[i] - view.focus[i]);
+            let mut e = view.tr_eye;
+            for (row, o) in e.iter_mut().enumerate() {
+                for (c, &dc) in d.iter().enumerate() {
+                    *o += r[c * 4 + row] * dc;
+                }
+            }
+            screen_xy_of(view.h, e)
+        })
+        .collect();
+    let mut out = Vec::with_capacity(indices.len());
+    for t in indices.as_chunks::<3>().0 {
+        let corner = |i: u32| sxy.get(i as usize).copied();
+        if let (Some(a), Some(b), Some(c)) = (corner(t[0]), corner(t[1]), corner(t[2]))
+            && psx_gpu_draws_triangle([a, b, c])
+        {
+            out.extend_from_slice(t);
+        }
+    }
+    out
+}
+
+/// One of the entry's resolved face stamps: which rig the selector picked
+/// and which pose it stamped.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct EntryFaceStamp {
+    /// The call's dancer slot (`a0`).
+    pub dancer: u8,
+    /// The pose (`a1`).
+    pub pose: u8,
+    /// The mode global in force for the call.
+    pub mode: DanceMode,
+    /// The rig [`dance_face_rig`] resolves - the strip the blit reads.
+    pub rig: usize,
+}
+
+/// Replay the entry's five `FUN_801D03C4` calls through the selector's own
+/// gates: a dancer past `3` stamps nothing, a pose equal to the dancer's
+/// latched pose stamps nothing, and the three-word latch is cleared to `-1`
+/// each time the entry rewrites the mode global. The retail result is rigs
+/// `0`, `1`, `2`, `2`, `3` - every rig the floor can show, stamped once
+/// before the first frame draws.
+pub fn entry_face_stamps(e: &DanceSceneEntry) -> Vec<EntryFaceStamp> {
+    let mut latch = [-1i32; 4];
+    let mut mode_prev: Option<u32> = None;
+    let mut out = Vec::new();
+    for (&(dancer, pose), &mode) in e.face_stamps.iter().zip(e.face_stamp_mode.iter()) {
+        if mode_prev != Some(mode) {
+            latch = [-1; 4];
+            mode_prev = Some(mode);
+        }
+        let d = usize::from(dancer);
+        if d >= latch.len() || latch[d] == i32::from(pose) {
+            continue;
+        }
+        latch[d] = i32::from(pose);
+        let mode = if mode == 0 {
+            DanceMode::Qualifier
+        } else {
+            DanceMode::Finals
+        };
+        if let Some(rig) = dance_face_rig(mode, d) {
+            out.push(EntryFaceStamp {
+                dancer,
+                pose,
+                mode,
+                rig,
+            });
+        }
+    }
+    out
+}
+
+/// Stamp `pose` of `rig` into `vram`: the selector's two `MoveImage` blits,
+/// eye cell then mouth cell, each from `base + (u >> 2, v)` of the pose's
+/// frame-table row to the rig's fixed destination. Returns `false` when the
+/// frame table is empty.
+///
+// REF: FUN_801d03c4, FUN_80058490 (the selector's two `MoveImage` blits)
+pub fn stamp_face(vram: &mut Vram, rig: &FaceRig, frames: &[[u8; 4]], pose: usize) -> bool {
+    let Some(frame) = frames.get(pose.min(frames.len().saturating_sub(1))) else {
+        return false;
+    };
+    vram.move_image(
+        rig.base.0 + u16::from(frame[0] >> 2),
+        rig.base.1 + u16::from(frame[1]),
+        rig.eyes.w_hw,
+        rig.eyes.h,
+        rig.eyes.dst.0,
+        rig.eyes.dst.1,
+    );
+    vram.move_image(
+        rig.base.0 + u16::from(frame[2] >> 2),
+        rig.base.1 + u16::from(frame[3]),
+        rig.mouth.w_hw,
+        rig.mouth.h,
+        rig.mouth.dst.0,
+        rig.mouth.dst.1,
+    );
+    true
+}
+
+/// The extraction-frame PROT entry of the entry's audio bank - raw
+/// [`DanceSceneEntry::stream_ids`]`.1` less the CDNAME frame shift.
+pub fn venue_sfx_vab_index(e: &DanceSceneEntry) -> u32 {
+    e.stream_ids.1 - legaia_prot::cdname::RAW_TOC_INDEX_OFFSET
+}
+
+/// A two-define CDNAME map framing only the venue block, for a host that
+/// holds the PROT bytes but not `CDNAME.TXT`: the block starts at the
+/// record's raw block base and ends at its audio bank, the first entry past
+/// the venue's scene data. Bounding the block there also keeps it off the
+/// TOC's zeroed tail.
+pub fn venue_cdname_stub(e: &DanceSceneEntry) -> String {
+    let name = legaia_minigame_formats::dance_cast::DANCE_SCENE_NAME;
+    format!(
+        "#define {name} {} \n#define {name}_end {} \n",
+        e.scene_block_base, e.stream_ids.1
+    )
+}
+
+/// The venue scene's CDNAME name: the block whose `#define` is exactly the
+/// record's raw block base.
+pub fn venue_scene_name(index: &ProtIndex, e: &DanceSceneEntry) -> Option<String> {
+    index.cdname_map()?.get(&e.stream_ids.0).cloned()
+}
+
+/// The dance hall's choreography bank - the venue scene's MOVE ANM bundle
+/// (PROT 1229), which every descriptor clip indexes - for
+/// [`legaia_engine_minigames::dance::DanceGame::attach_clip_bank`]. `None` when the venue block
+/// or its bundle does not resolve.
+pub fn dance_clip_bank(index: &ProtIndex) -> Option<PlayerAnmBundle> {
+    let name = venue_scene_name(index, &dance_scene_entry())?;
+    let scene = Scene::load(index, &name).ok()?;
+    legaia_engine_scene::npc_catalog::scene_anm_bundle(&scene)
+}
+
+/// One of the venue's static draws with its cross-draw coplanar lift.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct VenueDraw {
+    pub draw: EnvDraw,
+    pub lift: [f32; 3],
+}
+
+/// The loaded venue: the scene [`DanceSceneEntry::stream_ids`] names, with
+/// the VRAM the entry leaves resident.
+pub struct DanceVenue {
+    /// The venue scene (`other7`).
+    pub scene: Scene,
+    /// Its resources. `resources.vram` also carries the human dancer's field
+    /// atlas (the rig-0 face strip), the HUD page and the five entry face
+    /// stamps.
+    pub resources: SceneResources,
+    /// Terrain tiles then placed objects - the order the coplanar ranking
+    /// needs - each with its lift.
+    pub draws: Vec<VenueDraw>,
+    /// The scene's ANM bundle, the rest-pose source for bound props and the
+    /// dancers' choreography bank.
+    pub anm: Option<PlayerAnmBundle>,
+    /// The entry's face stamps, in call order.
+    pub face_stamps: Vec<EntryFaceStamp>,
+    /// How many of [`Self::face_stamps`] found their frame table and blitted.
+    pub faces_stamped: usize,
+    /// Whether the HUD page reached [`Self::resources`]' VRAM.
+    pub hud_staged: bool,
+    /// The record's camera ([`venue_camera`]).
+    pub camera: FieldCameraView,
+}
+
+impl DanceVenue {
+    /// Load the venue the entry record names. `overlay` is the dance overlay
+    /// (PROT 0980) in its loaded form - the face frame tables and the HUD
+    /// widget table live in its rodata; without it the venue still loads but
+    /// stamps no faces and stages no HUD page.
+    ///
+    /// `index` must carry a CDNAME map naming the record's block base (the
+    /// full map, or [`venue_cdname_stub`]).
+    pub fn build(index: &ProtIndex, overlay: Option<&[u8]>) -> Option<Self> {
+        let e = dance_scene_entry();
+        let name = venue_scene_name(index, &e)?;
+        let scene = Scene::load(index, &name).ok()?;
+        let (mut resources, _) = SceneResources::build_targeted_with_options(
+            &scene,
+            &[],
+            BuildOptions {
+                kind: SceneLoadKind::Field,
+                // The venue's field file is uploaded whole: the dancer atlases
+                // and their CLUT rows must all be resident.
+                upload_all_tims: true,
+                system_ui: None,
+            },
+        )
+        .ok()?;
+        // The human dancer's field atlas (PROT 0874 §2) - resident from the
+        // field in retail, and the strip rig 0 stamps into.
+        if let Ok(raw) =
+            index.entry_bytes(legaia_actor_formats::field_char_textures::PROT_ENTRY_INDEX)
+            && let Ok(pack) = legaia_actor_formats::field_char_textures::parse(&raw)
+        {
+            pack.upload_to_vram(&mut resources.vram, false);
+        }
+        let mut hud_staged = false;
+        let mut faces_stamped = 0;
+        let face_stamps = entry_face_stamps(&e);
+        if let Some(overlay) = overlay {
+            let mut rects: Vec<legaia_engine_minigames::dance::DanceHudRect> = Vec::new();
+            for (w, _) in legaia_engine_minigames::dance::dance_widgets_with_abr(overlay) {
+                let r = (
+                    w.tpage_xy(),
+                    (((w.clut & 0x3F) * 16), (w.clut >> 6) & 0x1FF),
+                );
+                if !rects.contains(&r) {
+                    rects.push(r);
+                }
+            }
+            hud_staged =
+                crate::dance_hud_art::stage_dance_hud_vram(index, &rects, &mut resources.vram) > 0;
+            for s in &face_stamps {
+                let Some(rig) = dance_art::FACE_RIGS.get(s.rig) else {
+                    continue;
+                };
+                let frames = dance_art::parse_face_frames(overlay, rig).unwrap_or_default();
+                if stamp_face(&mut resources.vram, rig, &frames, usize::from(s.pose)) {
+                    faces_stamped += 1;
+                }
+            }
+        }
+        let draws = venue_draws(index, &scene, &resources);
+        let anm = legaia_engine_scene::npc_catalog::scene_anm_bundle(&scene);
+        Some(Self {
+            scene,
+            resources,
+            draws,
+            anm,
+            face_stamps,
+            faces_stamped,
+            hud_staged,
+            camera: venue_camera(&e),
+        })
+    }
+
+    /// Frame-0 rigid transforms of scene-ANM record `anim_id - 1`, for a bound
+    /// prop's rest pose - `None` (draw unposed) when the record is missing or
+    /// its bone count is not the mesh's object count (retail's count-equality
+    /// contract in `FUN_8001B964`).
+    pub fn frame0_bone_offsets(
+        &self,
+        anim_id: u8,
+        objects: usize,
+    ) -> Option<Vec<([i16; 3], [i16; 3])>> {
+        let anm = self.anm.as_ref()?;
+        let rec_idx = usize::from(anim_id).checked_sub(1)?;
+        let rec = anm.record_lenient(rec_idx).ok()?;
+        if rec.bone_count as usize != objects {
+            return None;
+        }
+        Some(
+            (0..objects)
+                .map(|b| match anm.bone_transform(rec_idx, 0, b) {
+                    Some(t) => (
+                        [t.t_x as i16, t.t_y as i16, t.t_z as i16],
+                        [t.r_x as i16, t.r_y as i16, t.r_z as i16],
+                    ),
+                    None => ([0; 3], [0; 3]),
+                })
+                .collect(),
+        )
+    }
+}
+
+/// The venue's static draw list: terrain tiles (records without
+/// `FLAG_PLACED`) then placed objects, resolved through the same
+/// [`field_env`] calls the field scene uses, each with the cross-draw
+/// coplanar lift - ranked terrain first, as every host ranks them.
+fn venue_draws(index: &ProtIndex, scene: &Scene, res: &SceneResources) -> Vec<VenueDraw> {
+    use legaia_scene_formats::field_objects::FLAG_PLACED;
+    let env_tmds = field_env::env_pack_tmd_indices(scene, res);
+    let floor_lut = scene.field_floor_height_lut(index).ok().flatten();
+    let binds = scene.field_object_binds(index).ok().flatten();
+    let placement_records = scene
+        .field_object_placements(index)
+        .ok()
+        .flatten()
+        .unwrap_or_default();
+    let terrain_records: Vec<_> = scene
+        .field_terrain_tiles(index)
+        .ok()
+        .flatten()
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|p| p.flags & FLAG_PLACED == 0)
+        .collect();
+    let (placements, _) = field_env::resolve_placed_env_draws(
+        &env_tmds,
+        &placement_records,
+        floor_lut,
+        binds.as_ref(),
+    );
+    let (terrain, _) = field_env::resolve_env_draws(&env_tmds, &terrain_records, floor_lut);
+    let mut ranked: Vec<EnvDraw> = Vec::with_capacity(terrain.len() + placements.len());
+    ranked.extend(terrain.iter().copied());
+    ranked.extend(placements.iter().copied());
+    let planes = legaia_engine_scene::coplanar_draws::draw_plane_summaries(&ranked, res);
+    let lifts = legaia_engine_scene::coplanar_draws::coplanar_draw_offsets(&ranked, &planes);
+    ranked
+        .into_iter()
+        .map(|draw| VenueDraw {
+            draw,
+            lift: lifts.get(&draw).copied().unwrap_or([0.0; 3]),
+        })
+        .collect()
+}
+
+/// What the entry staged over the walked-in state, and what the teardown
+/// puts back. Lives on [`crate::minigame_state::MinigameState::dance_venue`] exactly
+/// while the dance runs.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct DanceVenueStage {
+    /// The record's camera ([`venue_camera`]); the dance arm of
+    /// `legaia_engine_core::camera_view::resolve_field_camera` frames with it.
+    pub camera: FieldCameraView,
+    /// `_DAT_80084540` as the walked-in scene had it (`0x801CF0D8` saves it
+    /// to `DAT_801D5180`; `0x801D4184` restores it).
+    pub saved_block_base: u32,
+    /// The camera's visible-tile window as the walked-in scene had it.
+    pub saved_view_window: [i8; 4],
+    /// Bumps per staging, so a host holding a built venue can tell a re-entry
+    /// from the run it built for.
+    pub generation: u32,
+}
+
+/// Which edge `legaia_engine_core::dance_venue::sync_dance_venue` took this
+/// frame.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DanceVenueEdge {
+    /// The entry's globals were staged (the dance began).
+    Staged,
+    /// The teardown's restores ran (the dance ended).
+    Restored,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use legaia_engine_minigames::dance::DANCE_CAMERA_EASE_LEN;
+    use legaia_engine_minigames::dance::DANCE_CAMERA_KEYS_QUALIFIER_VA;
+    use legaia_engine_minigames::dance::DANCE_CAMERA_KEYS_VA;
+    use legaia_engine_minigames::dance::DANCE_CAMERA_POSES_VA;
+    use legaia_engine_minigames::dance::DANCE_CAMERA_SEGMENT;
+    use legaia_engine_minigames::dance::DanceCameraTrack;
+    use legaia_engine_minigames::dance::dance_camera_ease_table;
+
+    #[test]
+    fn the_ease_table_is_a_half_cosine_rise_then_a_hold() {
+        let t = dance_camera_ease_table();
+        assert_eq!(t.len(), DANCE_CAMERA_EASE_LEN);
+        assert_eq!((t[0], t[0x200], t[0x3FF]), (0, 0x800, 0xFFF));
+        assert!(t[0x400..].iter().all(|&w| w == 0x1000));
+        assert!(t.windows(2).all(|w| w[0] <= w[1]), "monotonic");
+        for (i, &w) in t[..0x400].iter().enumerate() {
+            let model = 2048.0 * (1.0 - (std::f64::consts::PI * i as f64 / 1024.0).cos());
+            assert!(
+                (f64::from(w) - model).abs() <= 1.5,
+                "ease[{i}] = {w} vs {model}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_segment_step_is_the_magic_division_retail_runs() {
+        // `mult` by 0x309E0185, `mfhi`, `sra 6`, minus the sign word.
+        for timer in 0..=DANCE_CAMERA_SEGMENT {
+            let x = (DANCE_CAMERA_SEGMENT - timer) << 10;
+            let hi = ((i64::from(x) * 0x309E_0185_i64) >> 32) as i32;
+            let magic = (hi >> 6) - (x >> 31);
+            assert_eq!(magic, x / DANCE_CAMERA_SEGMENT, "timer {timer}");
+        }
+    }
+
+    /// An overlay-shaped buffer: every key of the qualifier table names pose
+    /// `k % 3`, every key of the other table pose `2`; pose `k` has angles
+    /// `(100k, -100k, 0)` and eye `(0, 1000k, -1000k)`.
+    fn synthetic_overlay() -> Vec<u8> {
+        let base = legaia_minigame_formats::dance_chart::DANCE_OVERLAY_BASE_VA;
+        let mut o = vec![0u8; (DANCE_CAMERA_KEYS_VA - base) as usize + 0x48];
+        for k in 0..13u32 {
+            let q = (DANCE_CAMERA_KEYS_QUALIFIER_VA - base + 4 * k) as usize;
+            o[q..q + 4].copy_from_slice(&(k % 3).to_le_bytes());
+            let r = (DANCE_CAMERA_KEYS_VA - base + 4 * k) as usize;
+            o[r..r + 4].copy_from_slice(&2u32.to_le_bytes());
+        }
+        for p in 0..3i16 {
+            let at = (DANCE_CAMERA_POSES_VA - base) as usize + 16 * p as usize;
+            for (i, c) in [100 * p, -100 * p, 0, 0, 0, 1000 * p, -1000 * p, 0]
+                .into_iter()
+                .enumerate()
+            {
+                o[at + 2 * i..at + 2 * i + 2].copy_from_slice(&c.to_le_bytes());
+            }
+        }
+        o
+    }
+
+    fn pose(k: i16) -> DanceCameraPose {
+        DanceCameraPose {
+            angles: [100 * k, -100 * k, 0],
+            eye: [0, 1000 * i32::from(k), -1000 * i32::from(k)],
+        }
+    }
+
+    #[test]
+    fn the_track_opens_on_key_zero_then_eases_segment_by_segment() {
+        let mut t = DanceCameraTrack::from_overlay(&synthetic_overlay()).expect("parses");
+        let q = DanceMode::Qualifier;
+        assert_eq!(t.counters(), (-1, 0));
+        assert_eq!(t.pose(q), Some(pose(0)), "the entry's pose before a tick");
+        // The first tick reloads the timer and lands on key 0 at weight 0.
+        assert_eq!(t.tick(q, 1), Some(pose(0)));
+        assert_eq!(t.counters(), (0, DANCE_CAMERA_SEGMENT));
+        // Half-way through the segment: ease[512] = 0x800, the mean pose.
+        let mut last = None;
+        for _ in 0..(DANCE_CAMERA_SEGMENT + 1) / 2 {
+            last = t.tick(q, 1);
+        }
+        let mid = last.unwrap();
+        let (_, timer) = t.counters();
+        let step = ((DANCE_CAMERA_SEGMENT - timer) << 10) / DANCE_CAMERA_SEGMENT;
+        let w = i32::from(dance_camera_ease_table()[step as usize]);
+        assert_eq!(mid.eye[1], 1000 * w / 0x1000);
+        assert_eq!(mid.angles[1], (-100 * w / 0x1000) as i16);
+        // The segment's last frame (timer 0) is the next key's pose exactly,
+        // and the reload holds it.
+        while t.counters().1 > 0 {
+            last = t.tick(q, 1);
+        }
+        assert_eq!(last, Some(pose(1)));
+        assert_eq!(t.tick(q, 1), Some(pose(1)));
+        assert_eq!(t.counters(), (1, DANCE_CAMERA_SEGMENT));
+    }
+
+    #[test]
+    fn the_key_wraps_to_one_never_zero() {
+        let mut t = DanceCameraTrack::from_overlay(&synthetic_overlay()).unwrap();
+        let q = DanceMode::Qualifier;
+        let mut keys = Vec::new();
+        for _ in 0..14 * (DANCE_CAMERA_SEGMENT + 1) {
+            t.tick(q, 1);
+            if keys.last() != Some(&t.counters().0) {
+                keys.push(t.counters().0);
+            }
+        }
+        assert_eq!(&keys[..14], &[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 1]);
+        // Key 12 eases toward key 1, not key 0 (`li s1,1` at 0x801CF580).
+        let mut t = DanceCameraTrack::from_overlay(&synthetic_overlay()).unwrap();
+        while t.counters() != (12, 0) {
+            t.tick(q, 1);
+        }
+        assert_eq!(t.pose(q), Some(pose(1)));
+    }
+
+    #[test]
+    fn the_mode_picks_the_table_and_the_how_to_demo_holds_the_entry_pose() {
+        let mut t = DanceCameraTrack::from_overlay(&synthetic_overlay()).unwrap();
+        assert_eq!(t.tick(DanceMode::Finals, 1), Some(pose(2)));
+        let mut t = DanceCameraTrack::from_overlay(&synthetic_overlay()).unwrap();
+        for _ in 0..500 {
+            assert_eq!(t.tick(DanceMode::HowTo, 1), None);
+        }
+        assert_eq!(t.counters(), (-1, 0), "the gate skips the whole block");
+        // A frame delta of 2 drains the segment twice as fast.
+        let mut t = DanceCameraTrack::from_overlay(&synthetic_overlay()).unwrap();
+        t.tick(DanceMode::Qualifier, 2);
+        t.tick(DanceMode::Qualifier, 2);
+        assert_eq!(t.counters(), (0, DANCE_CAMERA_SEGMENT - 2));
+    }
+
+    #[test]
+    fn a_track_pose_frames_through_the_entry_focus_and_h() {
+        let e = dance_scene_entry();
+        let entry = DanceCameraPose {
+            angles: [
+                e.camera_angles.0 as i16,
+                e.camera_angles.1 as i16,
+                e.camera_angles.2 as i16,
+            ],
+            eye: [0, e.camera_pair.0 as i32, e.camera_pair.1 as i32],
+        };
+        assert_eq!(venue_camera_at(&e, entry), venue_camera(&e));
+        let moved = venue_camera_at(
+            &e,
+            DanceCameraPose {
+                eye: [600, 0, 0],
+                ..entry
+            },
+        );
+        assert_eq!(moved.tr_eye, [100.0, 0.0, 0.0]);
+        assert_eq!(
+            (moved.focus, moved.h),
+            (venue_camera(&e).focus, venue_camera(&e).h)
+        );
+    }
+
+    /// A camera on the world origin looking down `+Z`, the eye `depth` world
+    /// units back.
+    fn straight_view(depth: f32) -> FieldCameraView {
+        FieldCameraView {
+            focus: [0.0; 3],
+            pitch: 0.0,
+            yaw: 0.0,
+            roll: 0.0,
+            h: 512.0,
+            tr_eye: [0.0, 0.0, depth],
+        }
+    }
+
+    #[test]
+    fn the_gpu_drops_a_polygon_wider_than_its_span_limit() {
+        // 1023 px is the widest span drawn; 1024 is refused.
+        assert!(psx_gpu_draws_triangle([[0, 0], [1023, 0], [0, 511]]));
+        assert!(!psx_gpu_draws_triangle([[0, 0], [1024, 0], [0, 10]]));
+        assert!(!psx_gpu_draws_triangle([[0, 0], [10, 0], [0, 512]]));
+    }
+
+    #[test]
+    fn a_large_quad_near_the_eye_is_dropped_and_the_same_quad_far_off_is_kept() {
+        // A 256-unit square in the z = 0 plane: one quad as two triangles.
+        let quad = [
+            [-128.0, -128.0, 0.0],
+            [128.0, -128.0, 0.0],
+            [-128.0, 128.0, 0.0],
+            [128.0, 128.0, 0.0],
+        ];
+        let idx = [0, 1, 2, 1, 3, 2];
+        // 2000 units off: 256 * 512 / 2000 = 65 px - drawn.
+        assert_eq!(
+            psx_gpu_visible_indices(&straight_view(2000.0), &quad, [0.0; 3], &idx),
+            idx
+        );
+        // 60 units off: 256 * 512 / 60 = 2184 px - saturated past both limits.
+        assert!(psx_gpu_visible_indices(&straight_view(60.0), &quad, [0.0; 3], &idx).is_empty());
+        // The re-base is applied before the projection.
+        let shifted: Vec<[f32; 3]> = quad.iter().map(|p| [p[0], p[1], p[2] - 500.0]).collect();
+        assert_eq!(
+            psx_gpu_visible_indices(&straight_view(1500.0), &shifted, [0.0, 0.0, 500.0], &idx),
+            idx
+        );
+    }
+
+    #[test]
+    fn a_corner_behind_the_eye_smears_to_the_edge_instead_of_vanishing() {
+        let v = straight_view(100.0);
+        // Behind the eye: the divide saturates and the corner lands at
+        // `OFX + 2 * IR1`, clamped to the SXY range.
+        let behind = psx_screen_xy(&v, [300.0, 0.0, -200.0]);
+        assert_eq!(behind[0], 0x3FF);
+        let ahead = psx_screen_xy(&v, [0.0, 0.0, 0.0]);
+        assert_eq!(ahead, [160, 120]);
+    }
+
+    #[test]
+    fn the_entry_face_stamps_preload_every_floor_rig() {
+        let s = entry_face_stamps(&dance_scene_entry());
+        let rigs: Vec<usize> = s.iter().map(|s| s.rig).collect();
+        assert_eq!(rigs, [0, 1, 2, 2, 3]);
+        assert_eq!(s[0].pose, 1);
+        assert!(s[1..].iter().all(|s| s.pose == 0));
+        assert!(s[..3].iter().all(|s| s.mode == DanceMode::Finals));
+        assert!(s[3..].iter().all(|s| s.mode == DanceMode::Qualifier));
+    }
+
+    #[test]
+    fn a_latched_pose_stamps_nothing() {
+        let mut e = dance_scene_entry();
+        // One mode for all five: the repeats of slots 1 and 2 hit the latch.
+        e.face_stamp_mode = [0; 5];
+        let rigs: Vec<usize> = entry_face_stamps(&e).iter().map(|s| s.rig).collect();
+        assert_eq!(rigs, [0, 2, 3]);
+    }
+
+    #[test]
+    fn the_venue_camera_frames_the_qualifier_floor() {
+        let e = dance_scene_entry();
+        let v = venue_camera(&e);
+        assert_eq!(v.focus, [6144.0, 0.0, 13056.0]);
+        assert_eq!(v.h, 512.0);
+        // The qualifier cast (`dance_cast`): Noa centre, kinds 2 / 3 flanking,
+        // all at `z 0x3480`, standing on the floor at the spawn's height.
+        let floor_y = f32::from(e.dancer_spawn.1);
+        let vp = v.vp(4.0 / 3.0);
+        for x in [0x1740, 0x1800, 0x18C0] {
+            for y in [floor_y, floor_y - 250.0] {
+                // `vp` is the Y-up render frame; the world is Y-down.
+                let p = [x as f32, -y, 0x3480 as f32, 1.0];
+                let mut c = [0.0f32; 4];
+                for (row, out) in c.iter_mut().enumerate() {
+                    *out = (0..4).map(|col| vp[col * 4 + row] * p[col]).sum();
+                }
+                assert!(c[3] > 0.0, "in front of the lens");
+                let (sx, sy) = (c[0] / c[3], c[1] / c[3]);
+                assert!(sx.abs() < 1.0 && sy.abs() < 1.0, "on screen: {sx} {sy}");
+            }
+        }
+    }
+
+    #[test]
+    fn the_stub_map_and_the_audio_bank_come_off_the_record() {
+        let e = dance_scene_entry();
+        assert_eq!(
+            venue_sfx_vab_index(&e),
+            dance_art::DANCE_SFX_VAB_PROT_INDEX as u32
+        );
+        let map = legaia_prot::cdname::parse_str(&venue_cdname_stub(&e)).unwrap();
+        assert_eq!(
+            map.get(&e.stream_ids.0).map(String::as_str),
+            Some(legaia_minigame_formats::dance_cast::DANCE_SCENE_NAME)
+        );
+    }
+}

@@ -5,13 +5,13 @@
 //! The native window's twin is `window/minigames.rs`'s `stage_dance_hud_art`
 //! plus `redraw`'s `dance_countin_prims`. The two hosts stage the same rects
 //! through the same kernel
-//! ([`legaia_engine_core::disc_readers::dance::stage_dance_hud_vram`]) and emit the same
+//! ([`legaia_engine_minigame_scenes::dance_hud_art::stage_dance_hud_vram`]) and emit the same
 //! quads through the same builder
 //! ([`legaia_engine_ui::dance::dance_countin_prims`]); what differs is only
 //! *where the VRAM lives*, and that is a genuine per-host fact.
 //!
 //! While a dance runs the native window draws the venue itself
-//! (`legaia_engine_core::dance_venue::DanceVenue::build`, the same build this
+//! (`legaia_engine_minigame_scenes::dance_venue::DanceVenue::build`, the same build this
 //! page's minigame art bakes), and that venue's VRAM already carries the page,
 //! so its residency claim is the venue build's `hud_staged`.
 //!

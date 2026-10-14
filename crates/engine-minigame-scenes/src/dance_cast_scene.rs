@@ -1,7 +1,7 @@
 //! The dance floor's **bodies as a 3D surface**: every actor the spawner puts
 //! on the floor ([`legaia_engine_minigames::dance::DanceGame::body_frames`]) as one combined,
 //! posed vertex buffer in raw retail world coordinates - one kernel every
-//! host draws, the dance twin of [`legaia_engine_minigame_scenes::baka_duel_scene`].
+//! host draws, the dance twin of [`crate::baka_duel_scene`].
 //!
 //! * **Who stands where** is the rules engine's: the mode's spawn table, the
 //!   how-to mode's Disco King, each body's display clip track. A host never

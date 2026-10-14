@@ -473,7 +473,7 @@ Entry and exit are two different routines forming a save / restore pair. The ent
 
 **Entry face stamps.** The init makes five `(dancer, pose)` face-stamp calls. It raises the mode global `DAT_801D514C` to `1` for the first three (no slot remap) and drops it to `0` for the last two (qualifier remap), clearing the three-word pose latch at `0x801D56CC` before each batch. The calls therefore stamp rigs `0`, `1`, `2`, `2`, `3` - every face the floor can show, before the first frame.
 
-**Port.** `dance::dance_scene_entry` carries every store and fixed-argument call of the init; `dance::dance_scene_stage` is the exit. `engine-core::dance_venue` consumes them:
+**Port.** `dance::dance_scene_entry` carries every store and fixed-argument call of the init; `dance::dance_scene_stage` is the exit. `engine-minigame-scenes::dance_venue` consumes them, with its `World` half in `engine-core::dance_venue`:
 
 - `sync_dance_venue` runs once a host frame on the native play window and the browser play page. On the first dance frame it saves and replaces the `_DAT_80084540` mirror (`World::battle.map_id`) with the record's block base and the camera's visible-tile window with the record's symmetric `(-8, -10, 8, 10)`, and publishes the venue camera. On the first frame after the run it restores both. While staged, `camera_view::resolve_field_camera` returns `FieldCameraFrame::Venue`.
 - The port keeps the walked-in scene loaded and suspended under the dance, so the scene-name save / restore has nothing to copy. `InputState::clear_edges` on the dance edges is a port affordance, not the `_DAT_8007B880` store.
@@ -635,7 +635,7 @@ So no second staging step exists: the page is up before the hall loads. Parser +
 
 In retail the dance **is** the `other7` scene, so the whole art pack is resident before the minigame starts. The port hosts the session over whichever scene the player walked in from and keeps that scene's VRAM, so it stages the HUD art **selectively**: only the rects the run's own widget table names. The pack's eleven other 256x256 members target `(576, 0)` through `(768, 256)`, the columns a field scene's texture pack occupies.
 
-Port: `engine-core::disc_readers::dance::stage_dance_hud_vram`, driven from `DanceGame::hud_vram_rects`. The residency flag is `World::minigames.dance_hud_art_staged`; both play hosts read it to choose between the retail sprites and placeholder font text.
+Port: `engine-minigame-scenes::dance_hud_art::stage_dance_hud_vram`, driven from `DanceGame::hud_vram_rects`. The residency flag is `World::minigames.dance_hud_art_staged`; both play hosts read it to choose between the retail sprites and placeholder font text.
 
 ### HUD render driver (`FUN_801d231c`)
 
@@ -838,7 +838,7 @@ The dance is fully playable in the port on all three surfaces. The rules, the ca
 | Tutorial | `legaia_engine_minigames::dance_tutorial` | the Disco King script's shape |
 | Marker kernel | `legaia_engine_fishing::dance_marker`, `minigame_floor::MarkerFloor` | marker flipbook + floor sweep |
 | World wiring | `engine-core`: `World::enter_dance` / `tick_dance` / `exit_dance`, `SceneMode::Dance` | suspending scene mode, flag writes, count-in, SFX |
-| Venue | `engine-core::dance_venue`, `dance_cast_scene` | hall build, staging, camera, face stamps, posed cast surface |
+| Venue | `engine-minigame-scenes::dance_venue`, `dance_cast_scene`; `engine-core::dance_venue::sync_dance_venue` | hall build, staging, camera, face stamps, posed cast surface |
 | Draw builders | `engine-ui::dance` | HUD / count-in / tutorial screen primitives |
 | Hosts | `engine-shell` (`window/minigames.rs`, `window/hud.rs`), `web-viewer` (`minigames_dance.rs`, `play_minigame_arena.rs`) | upload and input |
 
@@ -853,7 +853,7 @@ The dance is fully playable in the port on all three surfaces. The rules, the ca
 The HUD kernels kept in the rules crate: `dance_number_digits` / `dance_score_digit_u` / `dance_level_digit_u` (`FUN_801d32f8`), `dance_combo_window_bright` / `dance_beat_track_note_x` (`FUN_801d2524`), `dance_hit_sting_voices` (`FUN_801d3d78`), `good_banner_spawn` (`FUN_801d40dc`), `dance_face_rig` (`FUN_801d03c4`), `dance_countin_banner_envelope` (`FUN_801d2d98`), `dance_clip_driver_gate` (`FUN_801d4098`), `dance_hud_widget_quad` (`FUN_801d2f38`) and `dance_hud_draws` / `dance_score_box_slots` (`FUN_801d231c`).
 
 <a id="drawing-the-floor-one-cast-surface"></a>
-**Cast surface.** `DanceGame::body_frames` lists every body the spawner seats for the run's mode, each with a display track (the standing loop, the last judge move, the ticks since the track restarted), advanced every dance frame including the count-in. `legaia_engine_core::dance_cast_scene::DanceCastSurface` turns that into one posed vertex buffer in raw world coordinates: the meshes off the venue's scene TMD pool plus Noa's resident mesh (PROT 0874, capped to the ten live groups), the cursor through `actor_tick::clip_step` / `clip_end_ticks`, the record's sub-frame blend, `Rz.Ry.Rx . v + T` per object, then the render scale, the spin yaw and the position. The buffers rebuild when the run's model list changes.
+**Cast surface.** `DanceGame::body_frames` lists every body the spawner seats for the run's mode, each with a display track (the standing loop, the last judge move, the ticks since the track restarted), advanced every dance frame including the count-in. `legaia_engine_minigame_scenes::dance_cast_scene::DanceCastSurface` turns that into one posed vertex buffer in raw world coordinates: the meshes off the venue's scene TMD pool plus Noa's resident mesh (PROT 0874, capped to the ten live groups), the cursor through `actor_tick::clip_step` / `clip_end_ticks`, the record's sub-frame blend, `Rz.Ry.Rx . v + T` per object, then the render scale, the spin yaw and the position. The buffers rebuild when the run's model list changes.
 
 **Hosts.**
 

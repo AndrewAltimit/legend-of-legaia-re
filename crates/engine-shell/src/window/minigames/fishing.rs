@@ -122,7 +122,7 @@ impl PlayWindowApp {
     /// The fishing rod and line as screen primitives: the rod model the rod
     /// actor posed this frame (`PondSession::rod_faces`, wrapped by the shared
     /// `fishing::rod` builder), then the session's line for this frame
-    /// (`legaia_engine_core::fishing_venue::fishing_line_frame`, the fish end
+    /// (`legaia_engine_minigame_scenes::fishing_venue::fishing_line_frame`, the fish end
     /// projected through the follow camera the scene draws with), wrapped by
     /// the shared `fishing::line` builder. The browser play page makes the
     /// same calls. Empty with no rod and no line out.
@@ -139,9 +139,10 @@ impl PlayWindowApp {
         ];
         let world = &mut self.session.host.world;
         // The pond draws under the venue camera; the line projects through it.
-        let view = legaia_engine_core::fishing_venue::venue_view(&world.minigames).or_else(|| {
-            resolve_field_camera(world, &self.session.camera, None, center).field_view()
-        });
+        let view = legaia_engine_minigame_scenes::fishing_venue::venue_view(&world.minigames)
+            .or_else(|| {
+                resolve_field_camera(world, &self.session.camera, None, center).field_view()
+            });
         // The rod model first: its actor runs ahead of the lure tick, so in a
         // shared bucket its packets are the earlier `AddPrim`s.
         let mut prims: Vec<_> = world
@@ -154,7 +155,7 @@ impl PlayWindowApp {
             .map(|f| legaia_engine_ui::fishing::rod::fishing_rod_prim(f.xy, f.rgb, f.ot))
             .collect();
         prims.extend(
-            legaia_engine_core::fishing_venue::fishing_line_frame(
+            legaia_engine_minigame_scenes::fishing_venue::fishing_line_frame(
                 &mut world.minigames,
                 view.as_ref(),
             )
@@ -170,7 +171,7 @@ impl PlayWindowApp {
 
 impl PlayWindowApp {
     /// Pose the fishing pond - the `other1` venue with the party on its
-    /// shore seats (`legaia_engine_core::fishing_scene::FishingSurface`, the
+    /// shore seats (`legaia_engine_minigame_scenes::fishing_scene::FishingSurface`, the
     /// kernel the browser play page drives too) - and put it on the GPU. The
     /// redraw draws it in place of the walked-in field, which stays loaded
     /// underneath and is shown again unchanged when the session ends.

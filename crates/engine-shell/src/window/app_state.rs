@@ -668,9 +668,9 @@ pub(super) struct PlayWindowApp {
     pub(super) muscle_surface: legaia_engine_minigame_scenes::muscle_dome_scene::MuscleDomeSurface,
     /// The dome surface on the GPU while a dome session is live.
     pub(super) muscle_gpu: Option<minigames::BakaDuelGpu>,
-    /// The fishing pond surface (`legaia_engine_core::fishing_scene`) and its
+    /// The fishing pond surface (`legaia_engine_minigame_scenes::fishing_scene`) and its
     /// GPU copy while a fishing session is up.
-    pub(super) fishing_surface: legaia_engine_core::fishing_scene::FishingSurface,
+    pub(super) fishing_surface: legaia_engine_minigame_scenes::fishing_scene::FishingSurface,
     pub(super) fishing_gpu: Option<minigames::BakaDuelGpu>,
     /// The slot machine's disc data, decoded on the first visit (`Some(None)`
     /// remembers a disc it did not decode on).
@@ -688,9 +688,10 @@ pub(super) struct PlayWindowApp {
     /// The staging generation whose venue build failed, so a disc without
     /// the venue is not re-read every frame.
     pub(super) dance_venue_failed: Option<u32>,
-    /// The dance floor's bodies (`legaia_engine_core::dance_cast_scene`):
+    /// The dance floor's bodies (`legaia_engine_minigame_scenes::dance_cast_scene`):
     /// the engine surface every dance host poses the cast through.
-    pub(super) dance_cast_surface: legaia_engine_core::dance_cast_scene::DanceCastSurface,
+    pub(super) dance_cast_surface:
+        legaia_engine_minigame_scenes::dance_cast_scene::DanceCastSurface,
     /// This frame's GPU copy of that surface (see
     /// `PlayWindowApp::refresh_dance_cast_gpu`).
     pub(super) dance_cast_gpu: Option<minigames::DanceCastGpu>,

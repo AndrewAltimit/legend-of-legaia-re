@@ -631,7 +631,7 @@ pub enum WalkTouchEvent {
     /// ordinal warps the player to an unrelated scene instead of into the
     /// venue. The field-VM arm and this walk-on arm are the same opcode
     /// reached two ways, so both post
-    /// `legaia_engine_core::world::MinigameState::pending_warp`.
+    /// `legaia_engine_minigame_scenes::minigame_state::MinigameState::pending_warp`.
     Warp { sub_id: u8 },
     /// The script teleports the **player** (cross-context `0x23 | 0x80` into
     /// the [`PLAYER_CHANNEL`]): walking into the placement snaps the player to

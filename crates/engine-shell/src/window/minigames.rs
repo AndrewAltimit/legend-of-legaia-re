@@ -32,7 +32,7 @@ pub(super) struct BakaDuelGpu {
 }
 
 /// The dance venue on the GPU: the `other7` hall the dance overlay's entry
-/// loads (`legaia_engine_core::dance_venue::DanceVenue`), drawn in place of
+/// loads (`legaia_engine_minigame_scenes::dance_venue::DanceVenue`), drawn in place of
 /// the walked-in scene for as long as the entry's globals are staged. Its own
 /// VRAM (the venue upload plus the HUD page and the five entry face stamps),
 /// so the field VRAM is never touched and needs no restore.
@@ -58,7 +58,7 @@ pub(super) struct DanceVenueGpu {
     /// The floor's body meshes + choreography bank off this venue, handed to
     /// the cast surface when this copy is installed.
     pub(super) cast_assets:
-        Option<std::sync::Arc<legaia_engine_core::dance_cast_scene::DanceCastAssets>>,
+        Option<std::sync::Arc<legaia_engine_minigame_scenes::dance_cast_scene::DanceCastAssets>>,
 }
 
 /// The venue's textured half in world space, kept CPU-side so each frame can
@@ -83,7 +83,7 @@ pub(super) struct VenueColorBake {
 }
 
 /// The dance floor's posed bodies on the GPU for this frame
-/// ([`legaia_engine_core::dance_cast_scene::DanceCastSurface::frame`]). They
+/// ([`legaia_engine_minigame_scenes::dance_cast_scene::DanceCastSurface::frame`]). They
 /// sample the venue's VRAM and draw under the venue camera.
 pub(super) struct DanceCastGpu {
     pub(super) textured: Option<UploadedVramMesh>,

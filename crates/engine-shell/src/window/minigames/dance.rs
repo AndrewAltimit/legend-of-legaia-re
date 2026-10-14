@@ -54,9 +54,9 @@ impl PlayWindowApp {
         ) {
             Some(mut game) => {
                 // The hall's choreography bank times each judge move.
-                if let Some(bank) =
-                    legaia_engine_core::dance_venue::dance_clip_bank(&self.session.host.index)
-                {
+                if let Some(bank) = legaia_engine_minigame_scenes::dance_venue::dance_clip_bank(
+                    &self.session.host.index,
+                ) {
                     game.attach_clip_bank(&bank);
                 }
                 self.session.host.stage_dance_sfx_bundle();
@@ -133,7 +133,7 @@ impl PlayWindowApp {
         };
         let clean = base.clone();
         let mut staged = base.clone();
-        let n = legaia_engine_core::disc_readers::dance::stage_dance_hud_vram(
+        let n = legaia_engine_minigame_scenes::dance_hud_art::stage_dance_hud_vram(
             &self.session.host.index,
             &rects,
             &mut staged,
@@ -159,7 +159,7 @@ impl PlayWindowApp {
     /// ([`legaia_engine_core::dance_venue::sync_dance_venue`] - block base,
     /// the session camera's view window, the venue camera the frame resolves
     /// through), then keep the GPU copy of the venue in step with the staging:
-    /// built from [`legaia_engine_core::dance_venue::DanceVenue::build`] on a
+    /// built from [`legaia_engine_minigame_scenes::dance_venue::DanceVenue::build`] on a
     /// new generation, dropped the frame the teardown restores. The walked-in
     /// scene's render state is never rebuilt, so leaving the hall shows it
     /// exactly as it was.
@@ -212,7 +212,7 @@ impl PlayWindowApp {
     }
 
     pub(super) fn build_dance_venue_gpu(&self, generation: u32) -> Option<DanceVenueGpu> {
-        use legaia_engine_core::dance_venue::DanceVenue;
+        use legaia_engine_minigame_scenes::dance_venue::DanceVenue;
         use legaia_overlay_images::static_overlay;
         let r = self.win.renderer.as_ref()?;
         let index = &self.session.host.index;
@@ -232,7 +232,7 @@ impl PlayWindowApp {
                 let pack = index
                     .entry_bytes(legaia_actor_formats::character_pack::PROT_ENTRY_INDEX)
                     .ok();
-                legaia_engine_core::dance_cast_scene::DanceCastAssets::from_venue(
+                legaia_engine_minigame_scenes::dance_cast_scene::DanceCastAssets::from_venue(
                     &venue,
                     &cast,
                     pack.as_deref().map(|p| p.as_slice()),
@@ -338,11 +338,11 @@ impl PlayWindowApp {
 
     /// Put the hall on the GPU for this frame's venue camera: only the
     /// triangles the PSX GPU draws from this eye
-    /// ([`legaia_engine_core::dance_venue::psx_gpu_visible_indices`], the
+    /// ([`legaia_engine_minigame_scenes::dance_venue::psx_gpu_visible_indices`], the
     /// kernel the browser play page filters its baked hall through too).
     /// Re-uploads only when the kept set changes.
     pub(in crate::window) fn refresh_dance_venue_view(&mut self) {
-        use legaia_engine_core::dance_venue::psx_gpu_visible_indices;
+        use legaia_engine_minigame_scenes::dance_venue::psx_gpu_visible_indices;
         let Some(camera) = self
             .session
             .host
@@ -393,7 +393,7 @@ impl PlayWindowApp {
     /// Pose the dance floor's bodies for this frame and put them on the GPU.
     ///
     /// The cast, the clips and the pose are the engine's
-    /// ([`legaia_engine_core::dance_cast_scene::DanceCastSurface::frame`] over
+    /// ([`legaia_engine_minigame_scenes::dance_cast_scene::DanceCastSurface::frame`] over
     /// `World::minigames.dance`, the call the browser play page makes too);
     /// this host uploads the posed buffers and the redraw's venue branch
     /// draws them under the venue camera. Dropped whenever no venue is up.

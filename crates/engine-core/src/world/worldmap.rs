@@ -1331,7 +1331,7 @@ impl World {
     /// [`WorldMapEntityConfig::OverworldPortal`] surfaces a
     /// [`legaia_engine_field::field_events::FieldEvent::WorldMapTransition`], while a
     /// [`WorldMapEntityConfig::MinigameDoor`] arms
-    /// [`crate::world::MinigameState::pending_warp`] instead - its payload is a mode-24
+    /// [`legaia_engine_minigame_scenes::minigame_state::MinigameState::pending_warp`] instead - its payload is a mode-24
     /// sub-id, not a map id.
     ///
     /// Hosts can call this directly; `Self::auto_engage_world_map_portals`

@@ -23,7 +23,7 @@ The port runs the whole game as one session type, `PondSession`, on all three ho
 | Persistent state | `_DAT_8008444C..0x8008446C` in the save block ([RAM state](#ram-state)) |
 | Parsers | `legaia_minigame_formats::fishing_species`, `fishing_exchange`, `fishing_sprites`, `fishing_captions` |
 | Rules port | crate [`engine-fishing`](../../crates/engine-fishing/README.md) (`legaia_engine_fishing::fishing*`) |
-| World / scene port | `engine-core`: `fishing_venue`, `fishing_scene`, `fishing_hub`, `fishing_exchange_input`, `World::tick_fishing` |
+| World / scene port | `engine-minigame-scenes`: `fishing_venue`, `fishing_scene`, `fishing_rod`, `MinigameState`; `engine-core`: `fishing_venue::tick_fishing_venue_on_host`, `fishing_hub`, `fishing_exchange_input`, `World::tick_fishing` |
 | Draw port | `engine-ui`: `fishing`, `fishing::sprite`, `fishing::hub`, `fishing::exchange`, `fishing::line`, `fishing::rod` |
 
 Dump files are `ghidra/scripts/funcs/overlay_fishing_<addr>.txt` for every `FUN_801cxxxx` / `FUN_801dxxxx` named on this page.
@@ -544,7 +544,7 @@ The models are the global pool's party slots, so the three are the party in orde
 
 Port: `fishing_venue::party_placements` (the table), `venue_camera_view` (the camera), `lead_spawn`, and `fishing_actors::FishWander` / `fish_camera` (the lead's facing step, ripple roll and camera publish).
 
-Both play hosts draw the frame through one engine surface, `engine-core::fishing_scene::FishingSurface`: the `other1` venue (its environment pack instanced by the `.MAP` placements and terrain layers, plus the walk ground), the three seated bodies on their clips, and the venue camera over the lead, so the D-pad aim turns him and the view together. The native window uploads it into its minigame 3D slot (`refresh_fishing_gpu`); the browser play page draws it as its `fishing` screen (`play_mg_fishing_scene_*`). The minigames page seats the same three bodies and frames them through the same camera (`fishing_party_json` / `fishing_venue_vp`).
+Both play hosts draw the frame through one engine surface, `engine-minigame-scenes::fishing_scene::FishingSurface`: the `other1` venue (its environment pack instanced by the `.MAP` placements and terrain layers, plus the walk ground), the three seated bodies on their clips, and the venue camera over the lead, so the D-pad aim turns him and the view together. The native window uploads it into its minigame 3D slot (`refresh_fishing_gpu`); the browser play page draws it as its `fishing` screen (`play_mg_fishing_scene_*`). The minigames page seats the same three bodies and frames them through the same camera (`fishing_party_json` / `fishing_venue_vp`).
 
 Retail swaps the field out for the fishing scene and the return warp brings the backed-up field back. The port keeps the departure field loaded underneath and never touches its render state while the pond is up, so leaving shows that field exactly as it was. The cast lure anchors on the lead's seat at his rest facing `0x800`, as retail's lure spawn reads the lead actor's `+0x14` / `+0x18` / `+0x26` (`0x801CFC78..0x801CFC98`).
 

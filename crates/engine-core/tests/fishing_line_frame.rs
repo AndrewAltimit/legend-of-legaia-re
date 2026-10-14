@@ -8,7 +8,6 @@
 //! vertex 37 is the on-axis tip, one bend record on it). The last test lifts
 //! the real rods and bend out of the `other1` bank and is disc-gated.
 
-use legaia_engine_core::disc_readers::fishing_actors::rod_mesh_from_scene;
 use legaia_engine_fishing::fishing::{
     CAST_POWER_MAX, FishingRecord, PondInput, PondPhase, PondSession, PondVenue, ROD_PAD_RIGHT,
 };
@@ -16,6 +15,7 @@ use legaia_engine_fishing::fishing_actors::{
     LINE_CLIP_RECT, LINE_FISH_RGB, LINE_ROD_RGB, ROD_BEND_VDF_ENTRY, ROD_MODEL_BASE,
     ROD_TIP_VERTEX, RodMesh, RodSwing, VENUE_ANCHOR, clip_segment_2d,
 };
+use legaia_engine_minigame_scenes::fishing_rod::rod_mesh_from_scene;
 use legaia_minigame_formats::fishing_species::{
     CadenceStep, CadenceTemplate, FishingSpecies, SPAWN_BANDS,
 };

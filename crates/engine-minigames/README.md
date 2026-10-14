@@ -24,27 +24,23 @@ The fishing minigame (`PondSession`, its actors, the venue chrome, the hub
 screen and the venue floor grid `minigame_floor`) is the crate below this
 one, [`legaia-engine-fishing`](../engine-fishing/README.md).
 
-## What stays in `engine-core`, and why
+## What lives elsewhere, and why
 
-The split line is `World`. A module moves only when nothing in it needs the
-simulation crate:
+The split line is `World` (and, for scene assembly, `engine-scene`):
 
 - **World glue** - `World::enter_dance` / `tick_fishing` / the hub and
   exchange methods, `minigame_entry` (mode-24 door warps), `minigame_status`,
   `casino_coin_bank`, `fishing_exchange_input`, `timed_fight`.
-- **Scene assembly** - `dance_venue`, `dance_cast_scene`, `fishing_scene`,
-  `fishing_venue`: they build meshes and cameras out of a loaded `Scene` /
-  `SceneResources`. The duel and arena surfaces (`baka_duel_scene`,
-  `muscle_dome_scene`) load through a `read_prot` closure instead and live in
-  [`legaia-engine-minigame-scenes`](../engine-minigame-scenes/README.md), which
-  needs `engine-menus` and so cannot sit in this crate. The pure kernels
-  those modules run on (the duel camera, the dance camera track) are in this
-  crate.
-- **Disc and scene readers** - `dance::stage_dance_hud_vram` (reads the HUD
-  art through a `ProtIndex`) and `fishing_actors::rod_mesh_from_scene` (lifts
-  the rods out of a loaded `Scene`). `engine-core`'s `dance`, `fishing_actors`
-  and `fishing_hub` modules hold only these; the rules are named in the
-  owning crate.
+- **Scene assembly and the minigame seat** - `dance_venue`,
+  `dance_cast_scene`, `fishing_scene`, `fishing_venue` (meshes and cameras
+  out of a loaded `Scene` / `SceneResources`), the duel and arena surfaces,
+  the disc readers `dance_hud_art` and `fishing_rod`, and `MinigameState`
+  live in [`legaia-engine-minigame-scenes`](../engine-minigame-scenes/README.md),
+  which needs `engine-scene` and `engine-menus` and so cannot sit in this
+  crate. The pure kernels those modules run on (the duel camera, the dance
+  camera track) are in this crate. `engine-core` keeps only the `World` /
+  `SceneHost` halves (`dance_venue::sync_dance_venue`,
+  `fishing_venue::tick_fishing_venue_on_host`) and `fishing_hub`.
 - **The Muscle Dome leg** - a leg is an ordinary battle under the hood
   (spells, the battle command menu, the arts input), so `MuscleDomeSession`,
   its command menu, the ring / magic gates and the loadouts built off a live

@@ -23,8 +23,9 @@ nothing.
   enters scenes, ticks them and drains the queues a tick fills: door warps,
   BGM routing through `BgmDirector`, the FMV hand-off.
 - **The stateful side of battle, menus and minigames.** The round loop, the
-  command flow, the pause-menu runtime, the minigame sessions' entry points
-  and the scene assembly they need.
+  command flow, the pause-menu runtime and the minigame sessions' entry
+  points. The minigame venues and surfaces they drive, and the minigame
+  seat itself (`MinigameState`), are `engine-minigame-scenes`.
 - **Saves.** `World::save_full` / `load_full` over the LGSF container in
   `legaia-save`, and the retail memory-card write.
 - **Scene staging.** The scene questions that take simulation state: which
@@ -42,10 +43,10 @@ lives in the kernel crate for its area, where it can be unit-tested alone:
 | Battle arithmetic, monster AI, catalogs, encounters, level-up | [`engine-battle`](../engine-battle/README.md), [`engine-battle-vm`](../engine-battle-vm/README.md) |
 | Field actor programs, camera, regions, world map | [`engine-field`](../engine-field/README.md) |
 | Menus, title, shop, inn, memory card | [`engine-menus`](../engine-menus/README.md), [`engine-dialog`](../engine-dialog/README.md) |
-| Minigame rules and their 3D surfaces | [`engine-minigames`](../engine-minigames/README.md), [`engine-fishing`](../engine-fishing/README.md), [`engine-minigame-scenes`](../engine-minigame-scenes/README.md) |
+| Minigame rules, their 3D surfaces and venues, the minigame seat | [`engine-minigames`](../engine-minigames/README.md), [`engine-fishing`](../engine-fishing/README.md), [`engine-minigame-scenes`](../engine-minigame-scenes/README.md) |
 | Effects | [`engine-effects`](../engine-effects/README.md) |
 | Mode table, pad input, streaming, fades | [`engine-mode`](../engine-mode/README.md), [`engine-system`](../engine-system/README.md) |
-| Scene resolution and loading, the virtual filesystem | [`engine-scene`](../engine-scene/README.md) |
+| Scene resolution and loading, the NPC catalog, the virtual filesystem | [`engine-scene`](../engine-scene/README.md) |
 
 A module here that shares its name with a kernel module holds only the
 functions that need a `World` or a loaded scene; the rules are in the kernel
@@ -68,8 +69,8 @@ crate. Paths name the owning crate - nothing is re-exported.
 engine-shell / web-viewer / asset-viewer      hosts
 engine-session, engine-screens, parity        host-shared top
 engine-core                                   World, scene host, battle loop
-engine-scene                                  disc-facing scene loading
-engine-* kernel crates, render-kernels        World-free rules
+engine-minigame-scenes                        minigame venues + surfaces
+engine-scene, engine-* kernels, render-kernels   World-free rules + scene loading
 format crates                                 typed disc data
 ```
 

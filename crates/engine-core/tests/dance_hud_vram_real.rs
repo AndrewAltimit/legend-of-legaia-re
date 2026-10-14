@@ -16,7 +16,7 @@
 
 use std::path::PathBuf;
 
-use legaia_engine_core::disc_readers::dance::stage_dance_hud_vram;
+use legaia_engine_minigame_scenes::dance_hud_art::stage_dance_hud_vram;
 use legaia_engine_minigames::dance::{DANCE_HUD_ART_PROT_ENTRY, DanceGame, dance_widgets_with_abr};
 use legaia_engine_scene::scene::ProtIndex;
 use legaia_overlay_images::static_overlay;

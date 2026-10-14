@@ -367,7 +367,7 @@ impl<S: AudioSink> BootSession<S> {
     pub fn step_dance_tail(
         &mut self,
     ) -> (
-        Option<legaia_engine_core::dance_venue::DanceVenueEdge>,
+        Option<legaia_engine_minigame_scenes::dance_venue::DanceVenueEdge>,
         bool,
     ) {
         let finished = self.host.world.finish_dance_if_over();

@@ -5,7 +5,7 @@
 //! made the fishing splash, the wander ripples and the catch bursts a
 //! native-only presentation layer. It is
 //! [`legaia_engine_minigames::minigame_fx::MinigameFxPool`] on
-//! [`legaia_engine_core::world::MinigameState`] now, aged by the world tick
+//! [`legaia_engine_minigame_scenes::minigame_state::MinigameState`] now, aged by the world tick
 //! and drawn through `legaia_engine_ui::minigame_fx`, so every host draws the
 //! same parts. What is left here is the sprite-part projection; the dance HUD's
 //! quads draw as screen prims (`dance::dance_hud_prims`).

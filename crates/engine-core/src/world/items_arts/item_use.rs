@@ -406,7 +406,7 @@ impl World {
     /// stand-in for applier selector `0x0E` (`FUN_800402F4`, arm `0x8004209C`).
     ///
     /// The arm spends `min(bank, 0x270F)` of the counter retail keeps at
-    /// `0x800845B4` (the engine's [`crate::world::MinigameState::point_card`],
+    /// `0x800845B4` (the engine's [`legaia_engine_minigame_scenes::minigame_state::MinigameState::point_card`],
     /// the same purse a shop buy credits), writes the remainder back, applies
     /// the amount as HP damage with the band's kill-capable clamp, and stages
     /// the victim's reaction clip through the cast band's three-leg pick. The

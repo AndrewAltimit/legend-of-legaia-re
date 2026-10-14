@@ -326,7 +326,7 @@ pub fn dance_clip_driver_gate(clip_id: i16, flags: u32) -> bool {
 }
 
 // Wired: the dance entry's five face-stamp calls resolve their dancer slots
-// through it (`legaia_engine_core::dance_venue::entry_face_stamps`, applied to the venue
+// through it (`legaia_engine_minigame_scenes::dance_venue::entry_face_stamps`, applied to the venue
 // VRAM by `DanceVenue::build` on the native window and both browser pages).
 // The per-frame face draw on the browser page still resolves its rig from the
 // disc cast table's per-dancer kind (`castRigs()` in
@@ -458,7 +458,7 @@ pub struct DanceSceneEntry {
 /// record's globals over the walked-in scene on the first dance frame -
 /// [`DanceSceneEntry::scene_block_base`] into the `_DAT_80084540` mirror,
 /// [`DanceSceneEntry::view_window`] into the camera's visible-tile window, and
-/// the camera `legaia_engine_core::dance_venue::venue_camera` builds from
+/// the camera `legaia_engine_minigame_scenes::dance_venue::venue_camera` builds from
 /// [`DanceSceneEntry::dancer_spawn`] / [`DanceSceneEntry::camera_pair`] /
 /// [`DanceSceneEntry::camera_angles`] / [`DanceSceneEntry::gte_h`], which the
 /// frame resolver's `FieldCameraFrame::Venue` arm frames through - and

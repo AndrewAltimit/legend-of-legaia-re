@@ -782,7 +782,7 @@ impl LegaiaRuntime {
     // ---------------------------------------------------------- Fishing
 
     /// Pose the fishing pond surface for this frame
-    /// (`legaia_engine_core::fishing_scene::FishingSurface::frame`, the call
+    /// (`legaia_engine_minigame_scenes::fishing_scene::FishingSurface::frame`, the call
     /// the native window makes too) and return its generation - or `-1`
     /// outside a fishing session or when the pond does not decode. A new
     /// generation means the static buffers and the VRAM changed.
@@ -1114,7 +1114,7 @@ impl LegaiaRuntime {
     }
 
     /// Pose the dance floor's bodies for this frame through the engine's
-    /// cast surface (`legaia_engine_core::dance_cast_scene::DanceCastSurface::frame`
+    /// cast surface (`legaia_engine_minigame_scenes::dance_cast_scene::DanceCastSurface::frame`
     /// over the world's run - the call the native window makes too) and
     /// return its generation, or `-1` when no run is live. A generation the
     /// page has not seen means the static buffers changed (a run on another

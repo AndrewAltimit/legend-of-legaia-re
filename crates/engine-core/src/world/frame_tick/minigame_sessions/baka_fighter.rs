@@ -27,7 +27,7 @@ impl World {
 
     /// Leave the Baka Fighter duel through the mode-24 return warp
     /// ([`Self::minigame_return_warp`], retail `FUN_80026018`): the winnings
-    /// accumulator is banked into [`crate::world::MinigameState::casino_coins`], the backed-up scene
+    /// accumulator is banked into [`legaia_engine_minigame_scenes::minigame_state::MinigameState::casino_coins`], the backed-up scene
     /// name is restored and the mode drops back to the field.
     ///
     /// On a decided match with a player win, whatever prize the end-of-match

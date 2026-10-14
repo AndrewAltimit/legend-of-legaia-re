@@ -58,9 +58,10 @@ impl LegaiaMinigames {
                 let names = self.item_names.as_ref();
                 self.fishing_captions =
                     legaia_minigame_formats::fishing_captions::parse(ov).map(|raw| {
-                        legaia_engine_core::world::FishingCaptionText::resolve(&raw, |id| {
-                            names.and_then(|n| n.name(id)).map(str::to_string)
-                        })
+                        legaia_engine_minigame_scenes::minigame_state::FishingCaptionText::resolve(
+                            &raw,
+                            |id| names.and_then(|n| n.name(id)).map(str::to_string),
+                        )
                         .with_species_names(ov)
                     });
                 let venue_ok = self.fishing_spawn.is_some() && self.fishing_cadence.is_some();
@@ -146,7 +147,7 @@ impl LegaiaMinigames {
 /// undecoded asset - the page substitutes labelled text and says so).
 fn hud_draw_json(
     d: &HudDraw,
-    captions: Option<&legaia_engine_core::world::FishingCaptionText>,
+    captions: Option<&legaia_engine_minigame_scenes::minigame_state::FishingCaptionText>,
     out: &mut Vec<String>,
 ) {
     match *d {
@@ -335,7 +336,8 @@ impl LegaiaMinigames {
         {
             // Anchored on the lead's seat, as retail's lure spawn reads the
             // lead actor's own position (`fishing_venue::lead_spawn`).
-            let (anchor_x, _, anchor_z) = legaia_engine_core::fishing_venue::lead_spawn(venue);
+            let (anchor_x, _, anchor_z) =
+                legaia_engine_minigame_scenes::fishing_venue::lead_spawn(venue);
             p.attach_venue(legaia_engine_fishing::fishing::PondVenue {
                 map,
                 region_block: scene.region_block.clone(),
@@ -531,7 +533,7 @@ impl LegaiaMinigames {
         // them with for the two play hosts. This page keyed neither.
         let cues: Vec<u16> = events
             .iter()
-            .flat_map(legaia_engine_core::world::pond_event_cues)
+            .flat_map(legaia_engine_minigame_scenes::minigame_state::pond_event_cues)
             .collect();
         for cue in cues {
             self.minigame_sfx_cue(cue);

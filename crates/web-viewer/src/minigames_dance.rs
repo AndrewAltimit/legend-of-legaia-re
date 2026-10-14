@@ -16,7 +16,7 @@ use std::collections::HashMap;
 
 use legaia_actor_formats::player_anm::PlayerAnmBundle;
 use legaia_actor_formats::{character_pack, field_char_textures};
-use legaia_engine_core::dance_venue::{self, DanceVenue};
+use legaia_engine_minigame_scenes::dance_venue::{self, DanceVenue};
 use legaia_engine_minigames::dance::dance_hit_sting_voices;
 use legaia_engine_scene::field_env;
 use legaia_engine_scene::scene::{ProtIndex, Scene};
@@ -189,7 +189,7 @@ pub(crate) fn dance_venue_vp_in_frame(
 
 /// Bake the venue's full static map into one [`DanceEnv`] mesh: the
 /// kernel's ranked terrain + placement draw list
-/// ([`legaia_engine_core::dance_venue::DanceVenue::draws`], the same
+/// ([`legaia_engine_minigame_scenes::dance_venue::DanceVenue::draws`], the same
 /// [`field_env`] resolution and coplanar lifts every host draws the venue
 /// with; bound props posed at frame 0 of their clip) + the walk-ground
 /// heightfield, every draw transformed to world space and re-based on
@@ -301,9 +301,10 @@ pub(crate) struct DanceBodies {
     /// coordinates.
     camera: legaia_engine_battle_vm::psx_camera::FieldCameraView,
     /// The floor's body meshes + choreography bank for the engine's cast
-    /// surface ([`legaia_engine_core::dance_cast_scene`]), which the play page
+    /// surface ([`legaia_engine_minigame_scenes::dance_cast_scene`]), which the play page
     /// poses the run's own cast through - whatever mode it is.
-    cast_assets: Option<std::sync::Arc<legaia_engine_core::dance_cast_scene::DanceCastAssets>>,
+    cast_assets:
+        Option<std::sync::Arc<legaia_engine_minigame_scenes::dance_cast_scene::DanceCastAssets>>,
 }
 
 /// Number of clip slots exposed per dancer: idle, the dance loop, and the
@@ -436,7 +437,7 @@ impl LegaiaMinigames {
     /// never drawn - FUN_8001E890).
     fn build_noa_body(&self, spawn: (i16, i16)) -> Option<DanceBodyMesh> {
         let raw = entry_bytes(&self.prot, &self.entries, character_pack::PROT_ENTRY_INDEX)?;
-        let tmd_bytes = legaia_engine_core::dance_cast_scene::resident_body_tmd(raw, 1)?;
+        let tmd_bytes = legaia_engine_minigame_scenes::dance_cast_scene::resident_body_tmd(raw, 1)?;
         hybrid_body(&tmd_bytes, 0, spawn)
     }
 
@@ -469,12 +470,13 @@ impl LegaiaMinigames {
         )
         .ok()?;
         let venue = DanceVenue::build(&index, Some(&overlay))?;
-        let cast_assets = legaia_engine_core::dance_cast_scene::DanceCastAssets::from_venue(
-            &venue,
-            &cast,
-            entry_bytes(&self.prot, &self.entries, character_pack::PROT_ENTRY_INDEX),
-        )
-        .map(std::sync::Arc::new);
+        let cast_assets =
+            legaia_engine_minigame_scenes::dance_cast_scene::DanceCastAssets::from_venue(
+                &venue,
+                &cast,
+                entry_bytes(&self.prot, &self.entries, character_pack::PROT_ENTRY_INDEX),
+            )
+            .map(std::sync::Arc::new);
         let res = &venue.resources;
         // The scene's MOVE ANM bundle - the 60-record choreography bank.
         let anm = venue.anm.clone()?;
@@ -551,7 +553,7 @@ impl LegaiaMinigames {
     pub(crate) fn dance_cast_assets(
         &self,
     ) -> Option<(
-        std::sync::Arc<legaia_engine_core::dance_cast_scene::DanceCastAssets>,
+        std::sync::Arc<legaia_engine_minigame_scenes::dance_cast_scene::DanceCastAssets>,
         (f32, f32, f32),
     )> {
         let b = self.dance_bodies.as_ref()?;

@@ -122,7 +122,7 @@ pub fn fish_camera(x: i16, y: i16, z: i16, facing: i16) -> FishCamera {
 /// The name is historical: the tick (`FUN_801D2050` -> `FUN_801D2278`) was
 /// read as a free-swimming fish, but its actor pointer `DAT_801D928C` is the
 /// lead party member the setup spawns on the shore
-/// (`legaia_engine_core::fishing_venue::party_placements`) - the library state
+/// (`legaia_engine_minigame_scenes::fishing_venue::party_placements`) - the library state
 /// `minigame_fishing` holds the same pointer as the lead at `(4736, 10752)`.
 /// The D-pad aims him within `0x700..=0x900`, the camera follows him, and the
 /// dwell roll only places an ambient ripple out in the water; the actor
