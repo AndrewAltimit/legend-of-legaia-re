@@ -260,9 +260,17 @@ fn follow_view_with_knobs(
         // focus slots from a record that is **not** the modal timeline (a
         // spawned helper such as `jouine`'s evolved-Cort arrival stages every
         // shot through them). Framing on the actor there aims the lens at a
-        // point the retail frame is not looking at. The overworld keeps the
-        // actor: its walk arm scales the world about this point.
-        focus: if cam.zone.active && world.mode != SceneMode::WorldMap {
+        // point the retail frame is not looking at.
+        //
+        // The overworld is no exception. Its 6x world scale rides the
+        // rotation matrix, so the same MVMVA of `-focus` scales the world
+        // about the focus, not the player: `R6 (v - focus) + TR`. The two
+        // coincide in a plain walk, and part where a record moves the
+        // focus off the player - the credits' `map01` walk-away
+        // (`ending_vignette_rimelm_walkaway`: focus `(12091, 3449)`, player
+        // `(12194, 3550)`), whose frame the actor-anchored scale slid about
+        // 25 px sideways at that depth.
+        focus: if cam.zone.active {
             cam.globals.focus_world().map(|v| v as f32)
         } else {
             [wx, if cam.zone.active { 0.0 } else { floor_y }, wz]
@@ -1129,6 +1137,9 @@ mod tests {
         cam.globals.0[4] = 776;
         cam.globals.0[5] = 8875;
         cam.globals.0[9] = 368;
+        // The follow writeback's focus, on the player (stored negated).
+        cam.globals.0[6] = -8266;
+        cam.globals.0[8] = -8700;
         let frame = resolve_field_camera(&w, &cam, None, [0.0, 0.0]);
         let FieldCameraFrame::WorldMapWalk { view, player } = frame else {
             panic!("expected the walk frame, got {frame:?}");
@@ -1164,6 +1175,17 @@ mod tests {
                 "{p:?}: {pa:?} vs {pb:?}"
             );
         }
+
+        // A focus a record moved off the player is the point the world
+        // scales about (`ending_vignette_rimelm_walkaway`'s credits walk).
+        cam.globals.0[6] = -8166;
+        cam.globals.0[8] = -8600;
+        let FieldCameraFrame::WorldMapWalk { player, .. } =
+            resolve_field_camera(&w, &cam, None, [0.0, 0.0])
+        else {
+            panic!("expected the walk frame");
+        };
+        assert_eq!(player, [8166.0, 0.0, 8600.0]);
 
         // Without a zone pose the terrain-less fallback still frames it.
         cam.zone.active = false;

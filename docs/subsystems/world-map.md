@@ -1633,7 +1633,11 @@ are two region records' compositions.
 [`camera_view::resolve_field_camera`](../../crates/engine-core/src/camera_view.rs)'s
 world-map arm hands both hosts the pose as `FieldCameraFrame::WorldMapWalk`
 (the eye trio in retail GTE units, the 6x scale applied as a world transform
-about the player). `camera_view::world_map_walk_view` is the fallback pose for
+about the focus globals `0x80089118/20`). The scale rides retail's rotation
+matrix, so the view builder's MVMVA of `-focus` scales the world about the
+focus, not the player: the two coincide on a plain walk and part where a
+record moves the focus off the player, as the credits' `map01` walk-away
+does. `camera_view::world_map_walk_view` is the fallback pose for
 a world with no field terrain loaded. Oracle:
 `crates/parity/tests/world_map_zone_camera_oracle.rs` enters each
 library overworld state's scene, seats the player on the state's position and

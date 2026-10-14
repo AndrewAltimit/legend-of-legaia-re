@@ -2157,6 +2157,14 @@ lands within a few dozen units of retail's player; what remains is about a
 dozen frames between the walk and the glide (retail's glide is 123 frames
 in after 111 walked units, the engine's after 123).
 
+The frame matches once the overworld scales about the right point. The
+credits walk holds the focus `(12091, 3449)` about a hundred units off the
+player `(12194, 3550)`, and retail's 6x overworld scale, carried by the
+rotation matrix, scales the world about the focus; the port scaled it about
+the player, which slid the whole frame about 25 px sideways at that depth
+with every camera word on retail's
+([world-map](../subsystems/world-map.md#walk-view-camera-retail-model-ram-pinned)).
+
 The same record re-skins Rim Elm's landmark: `CC 08 50 20 00` puts record 8
 on model `32`, the village the frame's foreground shows. The engine had run
 the op without drawing it - the swap landed on no table a host read, and the
