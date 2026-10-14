@@ -123,6 +123,7 @@ A milestone may also name `via` scenes: story waypoints the anchors show the ret
 | Zora Castle | `nilboa` (its own start scene), then `deene` and `son` | Koru's fight thaws the overworld's way south ([route notes](#route-notes)). |
 | Noaru Valley | `chitei2` (its own start scene), then `concend`, `jou` and `retockin` | `chitei2`'s chain ends on the `0x4C8` that opens the `map03` portal to `concend`; the way back from Drake was by land and cart, not the Uru Mais warp. |
 | Sol Tower | `dohaty` (its own start scene) | Its P2[13] sets the `0x1D4` every `station` placement, the ticket seller among them, waits on. |
+| Sol Tower B2 | `koin2`, `koin4`, `koin2` | The [Sage's Gate errand](#an-errand-the-story-waits-on): the chests in `koin2`, the bread in `koin4`, then the chests again. |
 | Zeto's dungeon | `vozz` (its own start scene) | A run that walks in from Drake arrives at `vozz`'s east mouth and can walk straight back out to `map01`, on the side `garmel`'s door is not; the way on is the Genesis Tree beat (`vozz` P1[7]), whose flight lands by `bylon`. |
 | Sky Gardens | `garmel` (its own start scene) | `garmel`'s transport pads join the Songi band to the `map01` door, so the cheapest route leaves the dungeon; the story's way out is the Zeto fight (`garmel` P2[12], `0x198`). |
 | Ratayu | `retona` (its own start scene) | A run that arrives at Mt. Letona's trailhead has reached the `mt_letona` milestone on its first step and would turn round; the anchor gained the summit chain (`0x354`..`0x357`, `0x367`). |
@@ -282,6 +283,12 @@ one upkeep pass, in this order:
    next boss is beaten with does better with them than with the
    restoratives it would otherwise carry in.
 
+**At a waypoint** the hand plays the waypoint's story, not this upkeep -
+except that a party walking in with fewer heals than three a member stocks
+up and rests first. `retock`'s beats lead straight into the `jagaroom`
+fight (13245 HP); a party that arrived there with no heal, next to no MP
+and 36000 gold lost it six times.
+
 A talk or a stay that carries the party out of the scene (`dolk2`'s inn
 plays Noa's dream and brings it back) leaves the rest of the pass for the
 return: the scene's story and its training still follow. A stay taken
@@ -343,8 +350,50 @@ still until the countdown runs out, then looks at the scene again.
 `chitei2`'s collapse is the case: its expiry flag `0x4C7` is what the entry
 script's `0x4C8` hand-off tests, and no record on the disc sets it.
 
-What it still does not do: sell, use magic outside battle, or leave the
-cheapest route for a chest that sets no flag an anchor carries.
+What it still does not do: sell outside an errand, use magic outside
+battle, or leave the cheapest route for a chest that sets no flag an anchor
+carries.
+
+### An errand the story waits on
+
+A stretch can wait on an item the party has to buy. `kor`'s guard dogs
+(P1[9] / P1[10]) stand in the `korb2` doorway until `0x40A`, which `kor`
+P2[10] raises; the Sage's Gate (`kor` P1[13]) spawns it once all eight of
+`koin2`'s Sage's Treasure Chests (P1[8..15]) have raised `0x40B..0x412`, and
+each chest raises its flag only when it is handed a Soru Bread: it asks the
+bag with `4C DC B2` and takes the loaf with `4C 52 B2`. The one gold counter
+that sells the bread is Soru's Bakery in `koin4`, at 6000 a loaf. The
+retail anchors carry the chests fed and a 99 999 999 purse; a run of its
+own arrives with a few thousand.
+
+The hand reads such **errands** off the disc: for every flag the next
+anchor carries, the records of the stretch's waypoints and milestone scene
+that set it, and of those, each one that takes an item from the bag. While
+the bag is short of an errand's copies:
+
+- **Its talks are played wherever they stand.** The chests stand in five
+  rooms of `koin2`, each entered by its own `kor` door (P2[1..5]), so a chest
+  outside the player's walk component is reached by a round trip through
+  `kor` that lands on its side ([crossing scenes](#crossing-scenes)). The
+  first contact hands over the chest's own item and raises its
+  `0x413..0x41A`; a talk that runs and raises nothing is not crossed to again
+  until the bag holds more of the errand's item.
+- **It sells what the party has outgrown.** At any counter, an armament
+  piece no present member is better off wearing - worth less, summed over
+  its stat bonuses, than what each member who can wear it wears in its slot,
+  and for a weapon no cheaper to swing ([`arts-command-gauge.md`](../subsystems/arts-command-gauge.md))
+  - is sold, the whole stack, before anything is bought.
+- **It fights for the rest.** While the purse plus what the outgrown pieces
+  sell for is short of the errands' price, it trains as it trains for
+  levels, from a bed or, with no bed in reach and heals in the bag, from the
+  bag; `kor` rolls the encounters the floors above it do not.
+- **It keeps the price back.** A counter sells it the errand's item first;
+  heals and equipment come out of what is left over the price, and the
+  item is never used as a heal (a Soru Bread restores HP).
+
+The waypoints put the stretch in order: `koin2` for the chests' first
+contact (and the gold), `koin4` for the bread, `koin2` again to feed them.
+`kor` P1[13]'s talk then raises `0x40A` and the doorway is clear.
 
 ### A rest that stops resting
 

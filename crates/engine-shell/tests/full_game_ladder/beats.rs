@@ -301,6 +301,9 @@ pub(super) fn play_beats(
             }
             let r = talk_to(session, slot);
             let r = fight_committed(session, r);
+            if matches!(r, Run::Released) && flags_of_world(session) == f0 {
+                note_dry_talk(session, slot);
+            }
             trace_beat(session, &f0, || format!("{name} talk P1[{slot}] -> {r:?}"));
             match r {
                 Run::Entered(s) => {

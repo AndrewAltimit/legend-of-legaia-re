@@ -173,6 +173,7 @@ pub(super) fn pad_field_restore(session: &mut NativeSession, threshold: u32, mp:
         let w = &session.host.world;
         let holds_heal = w.party.inventory.iter().any(|(&id, &n)| {
             n > 0
+                && !errand_item(w, id)
                 && w.tables
                     .item_catalog
                     .get(id)
@@ -216,10 +217,11 @@ pub(super) fn pad_field_restore(session: &mut NativeSession, threshold: u32, mp:
             },
             Some(FieldMenuSubsession::Items(p)) => {
                 let heals = |id: u8| {
-                    p.inner
-                        .catalog
-                        .get(id)
-                        .is_some_and(|e| e.usable_in_field && restores(&e.effect))
+                    !errand_item(&session.host.world, id)
+                        && p.inner
+                            .catalog
+                            .get(id)
+                            .is_some_and(|e| e.usable_in_field && restores(&e.effect))
                 };
                 // The hand walks every bag row, usable here or not
                 // (`PauseItemsSession::list_cursor`): a row the field cannot
@@ -626,7 +628,7 @@ fn weapon_byte(member: u8) -> usize {
 }
 
 /// The weapon a member wears now.
-fn worn_weapon(session: &NativeSession, member: u8) -> u8 {
+pub(super) fn worn_weapon(session: &NativeSession, member: u8) -> u8 {
     session
         .host
         .world
@@ -642,7 +644,7 @@ fn worn_weapon(session: &NativeSession, member: u8) -> u8 {
 /// `863 + member`) the way the battle loader does (`FUN_800557B8`,
 /// `docs/subsystems/arts-command-gauge.md`): `0x1E` for a favoured weapon,
 /// `0x2A` / `0x36` off class.
-fn arm_cost(session: &NativeSession, member: u8, weapon: u8) -> Option<u8> {
+pub(super) fn arm_cost(session: &NativeSession, member: u8, weapon: u8) -> Option<u8> {
     if member > 2 {
         return None;
     }

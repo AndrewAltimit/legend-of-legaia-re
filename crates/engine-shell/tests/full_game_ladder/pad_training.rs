@@ -44,6 +44,21 @@ pub(super) fn under_levelled(session: &NativeSession) -> Vec<(u8, u8, u8)> {
     })
 }
 
+/// Is there a reason to train: a present member short of the target
+/// level, or a purse short of what the stretch's errand items cost
+/// ([`errand_gold_short`]) - the fights pay the gold as they pay the XP.
+pub(super) fn wants_training(session: &NativeSession) -> bool {
+    !under_levelled(session).is_empty() || errand_gold_short_after_sales(session)
+}
+
+/// Is the purse short of the errands' price even once the bag's outgrown
+/// armament is sold ([`outgrown_value`])? What the fights still owe.
+pub(super) fn errand_gold_short_after_sales(session: &NativeSession) -> bool {
+    let w = &session.host.world;
+    let cost = errand_cost(w);
+    cost > 0 && i64::from(w.party.money) + outgrown_value(session) < cost
+}
+
 fn party_xp(session: &NativeSession) -> u64 {
     let w = &session.host.world;
     w.present_party_list()
@@ -119,7 +134,7 @@ fn outing(session: &mut NativeSession, floor: u32) -> Result<Option<String>, Str
     let mut pick = 0usize;
     for leg in 0..OUTING_LEGS {
         pad_budget(session)?;
-        if party_hp_permille(session) < floor || under_levelled(session).is_empty() {
+        if party_hp_permille(session) < floor || !wants_training(session) {
             break;
         }
         if !walking(session) || !session.host.world.scene_can_roll_encounters() {
@@ -185,17 +200,20 @@ pub(super) fn pad_train(
     if session.host.world.mode != SceneMode::Field || !walking(session) || !released(session) {
         return Ok(None);
     }
-    let short = under_levelled(session);
-    if short.is_empty() {
+    if !wants_training(session) {
         return Ok(None);
     }
     let home = scene_name(session);
     let (beds, keepers) = rest_sites(session);
     let has_rest = !beds.is_empty() || !keepers.is_empty();
     let home_rolls = session.host.world.scene_can_roll_encounters();
+    // Fighting for an errand's price, the bag stands in for a bed it cannot
+    // walk to ([`pad_train_from`] heals from it at home): `koin2`'s inn
+    // keeper (P1[23]) stands in one of the scene's five rooms.
+    let for_gold = errand_gold_short_after_sales(session) && holds_field_heal(session);
     // The hand trains from a bed: a party worn down with nowhere to rest
     // walks into the next fight that way.
-    if !has_rest || (home_rolls && !rest_close_by(session)) {
+    if (!has_rest && !for_gold) || (home_rolls && !rest_close_by(session) && !for_gold) {
         return Ok(None);
     }
     // Training has its own time: the stretch's walking budget starts over
@@ -237,14 +255,16 @@ fn pad_train_from(
     let trace = std::env::var_os("LEGAIA_FGL_TRACE").is_some();
     if trace {
         eprintln!(
-            "    [train] {home}: short {short:?} (character, level, wanted); beds {} keepers {keepers:?}; rolls {home_rolls}; out {out:?}",
+            "    [train] {home}: short {short:?} (character, level, wanted), gold {} for errands {}; beds {} keepers {keepers:?}; rolls {home_rolls}; out {out:?}",
+            session.host.world.party.money,
+            errand_cost(&session.host.world),
             beds.len()
         );
     }
     let mut idle = 0usize;
     for round in 0..TRAIN_ROUNDS {
         pad_budget(session)?;
-        if under_levelled(session).is_empty() {
+        if !wants_training(session) {
             break;
         }
         let here = scene_name(session);
@@ -295,8 +315,10 @@ fn pad_train_from(
             }
         }
         let xp0 = party_xp(session);
+        let gold0 = session.host.world.party.money;
         let left = outing(session, if has_rest { 550 } else { 650 })?;
-        let gained = party_xp(session) - xp0.min(party_xp(session));
+        let gained = party_xp(session) - xp0.min(party_xp(session))
+            + u64::try_from(session.host.world.party.money - gold0).unwrap_or(0);
         if trace {
             let w = &session.host.world;
             let levels: Vec<u8> = w

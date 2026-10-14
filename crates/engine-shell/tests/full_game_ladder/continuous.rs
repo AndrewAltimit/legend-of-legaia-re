@@ -253,6 +253,7 @@ fn part_c_continuous_run() {
     let spine = load_spine();
     let index = ProtIndex::open_extracted(&inp.extracted).expect("open ProtIndex");
     let graph = DiscGraph::build(&index);
+    let census = system_flag_census(&index, index.cdname_scene_names());
     // The next anchor's flags tell the beats pass which story beats the
     // retail run played before the milestone. They are route knowledge, not
     // state: nothing of the anchor's party or bag reaches the session.
@@ -381,6 +382,34 @@ fn part_c_continuous_run() {
         });
         PLAYED_AHEAD.with(|a| *a.borrow_mut() = played);
         NEXT_ANCHOR_FLAGS.with(|a| *a.borrow_mut() = anchor_flags[i + 1].clone());
+        // The story items the stretch consumes ([`stretch_errands`]): what
+        // its waypoints' and milestone scene's records take from the bag on
+        // the way to a flag the next anchor carries.
+        reset_errands();
+        let errands = anchor_flags[i + 1]
+            .as_ref()
+            .map(|wanted| {
+                let scenes: BTreeSet<&str> = to
+                    .via
+                    .iter()
+                    .map(String::as_str)
+                    .chain([to.scene.as_str()])
+                    .collect();
+                stretch_errands(&index, &census, wanted, &scenes)
+            })
+            .unwrap_or_default();
+        if !errands.is_empty() && std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
+            eprintln!(
+                "    [errand] {}: {}",
+                to.id,
+                errands
+                    .iter()
+                    .map(|e| format!("item 0x{:02X} x{}", e.item, e.sites.len()))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            );
+        }
+        ERRANDS.with(|e| *e.borrow_mut() = errands);
         LEARNED_CADENCE.with(|l| l.set(None));
         let ahead = (i + LEVEL_LOOKAHEAD).min(spine.len() - 1);
         TARGET_LEVELS.with(|t| {
@@ -490,6 +519,7 @@ fn part_c_continuous_run() {
     PLAYS_ON.with(|p| p.set(false));
     TARGET_LEVELS.with(|t| t.borrow_mut().clear());
     PLAYED_AHEAD.with(|a| *a.borrow_mut() = None);
+    reset_errands();
     let denom = spine.len() - 1 - start;
     eprintln!();
     eprintln!(

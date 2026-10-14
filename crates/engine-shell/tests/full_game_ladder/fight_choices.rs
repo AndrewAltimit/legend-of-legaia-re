@@ -17,6 +17,10 @@ pub(super) fn item_restore(
     hp: u32,
 ) -> Option<u32> {
     use legaia_engine_menus::items::ItemEffect;
+    // A story item the stretch's errand still owes is not a heal.
+    if errand_item(w, id) {
+        return None;
+    }
     let max = u32::from(w.actors[slot].battle.max_hp);
     let e = w.tables.item_catalog.get(id)?;
     Some(match e.effect {

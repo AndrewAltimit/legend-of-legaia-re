@@ -189,6 +189,28 @@ pub(super) fn traverse(
         if let Some(w) = vias.get(via)
             && *w == cur
         {
+            // A continuous hand that walks into a waypoint with next to
+            // nothing in the bag stocks up before the waypoint's story, as
+            // a player does: `retock`'s beats lead straight into the
+            // `jagaroom` fight (13245 HP), and a party that arrived with no
+            // heal and 36000 gold lost it six times.
+            if upkeep && session.host.world.mode == SceneMode::Field && bag_short_of_heals(session)
+            {
+                upkept += 1;
+                if let Some(s) =
+                    pad_shop(session).map_err(|e| format!("in {cur} (via), shopping: {e}"))?
+                {
+                    trail.push(format!("{s}(shop talk)"));
+                    continue;
+                }
+                pad_equip_best(session);
+                if let Some(s) =
+                    pad_rest(session).map_err(|e| format!("in {cur} (via), resting: {e}"))?
+                {
+                    trail.push(format!("{s}(rest)"));
+                    continue;
+                }
+            }
             via += 1;
             let mut log = Vec::new();
             let left = play_beats(session, &mut log)
@@ -196,6 +218,28 @@ pub(super) fn traverse(
             trail.push(format!("[via {}]", log.join("; ")));
             if let Some(s) = left {
                 trail.push(format!("{s}(beat)"));
+                continue;
+            }
+            // The continuous hand finishes the waypoint's story before it
+            // moves on: its talks in the scene's other walk components, and
+            // the stretch's errand (an item to earn and buy).
+            if upkeep {
+                upkept += 1;
+                if let Some(s) = pad_far_talks(session, graph, &cur, trail)
+                    .map_err(|b| format!("in {cur} (via), crossing to a talk: {b}"))?
+                {
+                    trail.push(format!("{s}(talk crossing)"));
+                    continue;
+                }
+                if scene_name(session) == cur && walking(session) {
+                    let goal = vias.get(via).unwrap_or(&target.scene).clone();
+                    let out = graph
+                        .route_avoiding(&cur, &goal, &dead)
+                        .and_then(|r| r.get(1).cloned());
+                    if let Some(s) = pad_errand(session, graph, &cur, out.as_deref(), trail)? {
+                        trail.push(format!("{s}(errand)"));
+                    }
+                }
             }
             continue;
         }

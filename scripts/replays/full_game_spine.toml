@@ -236,6 +236,14 @@ anchor = { kind = "card", card = "playthrough-ladder-pro00-14.mcr", save = "PRO-
 id = "sol_tower_b2"
 scene = "korb2"
 reach = "scene"
+# kor's guard dogs P1[9] / P1[10] stand in the korb2 doorway until 0x40A,
+# which kor P2[10] raises; the Sage's Gate (kor P1[13]) spawns it once all
+# eight of koin2's Sage's Treasure Chests (P1[8..15], 0x413..0x41A on first
+# contact) have each taken a Soru Bread (4C 52 B2) and raised 0x40B..0x412.
+# The bread is sold only at Soru's Bakery in koin4 (the sol_tower anchor
+# gained koin4's 0x5D6). The anchors' purse is 99999999; a run of its own
+# opens the chests, earns and buys the bread, and comes back to feed them.
+via = ["koin2", "koin4", "koin2"]
 anchor = { kind = "card", card = "playthrough-ladder-pro00-14.mcr", save = "PRO-10" }
 
 [[milestone]]
