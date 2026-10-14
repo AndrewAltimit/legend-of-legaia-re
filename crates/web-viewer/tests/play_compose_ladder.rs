@@ -712,10 +712,25 @@ fn rung6_fishing(rt: &mut LegaiaRuntime, tally: &mut Tally) -> Result<(), String
     if state["live"] != true {
         return Err(format!("fishing state not live: {state}"));
     }
+    // The pond's 3D surface, posed the way `play-minigames.js` poses it each
+    // frame (`play_mg_fishing_scene_frame`, `FishingSurface::frame` - the call
+    // the native window makes too). Its first frame assembles the venue and
+    // the sky backdrop (`FUN_801D24EC`, `fishing_scene::sky_quads`); every
+    // later one re-seats the backdrop on the lead's aim.
+    let generation = rt.play_mg_fishing_scene_frame();
+    if generation < 0 {
+        return Err("the fishing pond surface did not decode".into());
+    }
+    if rt.play_mg_fishing_scene_positions().is_empty() {
+        return Err("the fishing pond surface has no geometry".into());
+    }
     // Drive a few cast presses through the world pad, composing each frame.
     for _ in 0..6 {
         tap(rt, tally, PadButton::Cross.mask());
         run(rt, tally, 8);
+        if rt.play_mg_fishing_scene_frame() < 0 {
+            return Err("the fishing pond surface dropped mid-session".into());
+        }
     }
     // Both point-exchange venues + one (gated) buy attempt.
     for venue in [0u32, 1] {
