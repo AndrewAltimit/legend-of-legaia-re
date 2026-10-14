@@ -299,7 +299,22 @@ running is cast at freely.
 restorative only under 45%, a lone member under 65%; it does not open the
 menu on an empty bag. Before a staged fight it wears what the last chest
 held, takes a rest that is close by, and opens the bag only under three
-fifths.
+fifths - for HP, and for MP when the member lowest on it is under three
+fifths, since the casts are half of what a boss is beaten with.
+
+**It waits on a running clock.** A hop that fails while the field's op
+`4C D3` countdown is armed (`FUN_801D2EBC`, read from the engine), with its
+expiry flag still clear, is the story waiting on the clock: the hand stands
+still until the countdown runs out, then looks at the scene again.
+`chitei2`'s collapse is the case: its expiry flag `0x4C7` is what the entry
+script's `0x4C8` hand-off tests, and no record on the disc sets it.
+
+**A refused hop still earns the full beats pass.** Outside the milestone's
+scene the arrival pass plays only the bands that raise a flag the anchors
+ahead carry. When a hop then fails, the scene gets the full pass a refused
+door earns once, as in the segmented passes: `taiku`'s way back to `map03`
+raises no such flag. The arrival passes do not count against the hop
+allowance.
 
 What it still does not do: sell, use magic outside battle, or leave the
 cheapest route for a chest that sets no flag an anchor carries.
