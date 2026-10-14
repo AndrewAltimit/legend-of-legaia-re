@@ -347,6 +347,21 @@ engine routes a system-script `MOVE_TO` to any resolved channel and the
 clip-control writes (`AB` / `AC <id> <bit>`, `CC <id> 35` / `36`) to a resolved
 object's channel and its prop clip (`World::step_field_cross_context_actor_op`).
 
+The player is one more target of the same resolve: `FUN_8003C83C(0xF8)`
+returns the player object `*0x8007C364`, so a system-script `A3 F8 <x> <z>`
+seats the **player**, and the identity compare at `0x801DEC7C` (the resolved
+object against `*(0x8007C348 + 0x1C)`) takes the player arm, the camera
+re-centre `FUN_80017EC8` on the operand tile. The inn dreams depend on it.
+An inn that plays a dream raises a return latch and changes scene to `dream`
+(`retock` `P1[26]`: `55 88`, then `3F .. DREAM 40 40`); `dream` `P2[5]` reads
+the latch and hands the party back with a `0x3F` whose entry tile is the
+off-map `(0x7F, 0x7F)`, and the destination's entry script does the seating:
+`retock` `P1[0]` tests `0x588`, raises `0x57F`, clears `0x588` and runs
+`A3 F8 F4 8B`, the inn bed at world `(14976, 1536)`. Stepped on the system
+context, the seat landed on the system context's own words and the party
+woke on the hide tile. The engine steps the op on a player stand-in context
+(`World::step_field_player_move_to`).
+
 A mid-talk glide on the talker itself (`37` / `41` / `47` with no target
 byte) parks the record (`+0x10 |= 0x400`) until the walk kernel's terminal
 frame clears the bit (`FUN_8003774C`). The engine's talk runner plays no walk

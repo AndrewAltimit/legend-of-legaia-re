@@ -101,6 +101,7 @@ mod dome_leg_ends_on_ko_real;
 mod dome_leg_ladder;
 mod door_arrival_menu_refusal_disc;
 mod door_item_retail_timeline;
+mod dream_return_seat_disc;
 mod effect_ribbon_carriers_real;
 mod effect_script_disc;
 mod effect_script_table_clut_disc;

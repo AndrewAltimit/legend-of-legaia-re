@@ -909,6 +909,9 @@ impl World {
         let pc = self.field_pc;
         let op = *self.field_bytecode.get(pc)?;
         let target = *self.field_bytecode.get(pc + 1)?;
+        if op == 0xA3 && target == legaia_engine_scene::field_env::PLAYER_ANCHOR_TARGET {
+            return self.step_field_player_move_to();
+        }
         if target == legaia_engine_scene::field_env::PLAYER_ANCHOR_TARGET || target == 0xFB {
             return None;
         }
@@ -956,6 +959,41 @@ impl World {
         let next_pc = match res {
             FieldStepResult::Advance { next_pc } => next_pc,
             _ => pc + width,
+        };
+        self.field_pc = next_pc;
+        Some(FieldStepResult::Advance { next_pc })
+    }
+
+    /// A system-script `MOVE_TO` aimed at the player (`A3 F8 <x> <z>`):
+    /// `FUN_8003C83C(0xF8)` returns the player object `*0x8007C364`, so the
+    /// op's seat writes the **player's** `+0x14` / `+0x18`, and the identity
+    /// compare at `0x801DEC7C` (`bne s5, *(0x8007C348 + 0x1C)`) takes the
+    /// player arm: the camera re-centre `FUN_80017EC8` on the operand tile.
+    /// Stepped on the system context instead, the seat landed on the system
+    /// context's own words and the player stayed where the arrival put it.
+    ///
+    /// The inn dreams are the case: `dream` P2[5] hands the party back with a
+    /// `0x3F` whose entry tile is the off-map `(0x7F, 0x7F)`, and the
+    /// destination's entry script seats them - `retock` P1[0] tests `0x588`,
+    /// clears it and runs `A3 F8 F4 8B`, the bed in the inn.
+    ///
+    /// REF: FUN_801DE840 (case 0x23, `0x801DEBB0..0x801DECA8`), FUN_8003C83C
+    fn step_field_player_move_to(&mut self) -> Option<FieldStepResult> {
+        let pc = self.field_pc;
+        let mut player_ctx = vm::field::FieldCtx {
+            script_id: u16::from(legaia_engine_scene::field_env::PLAYER_ANCHOR_TARGET),
+            flags: 0x0100_0000,
+            ..Default::default()
+        };
+        let bc = std::mem::take(&mut self.field_bytecode);
+        let res = {
+            let mut host = FieldHostImpl { world: self };
+            vm::field::step(&mut host, &mut player_ctx, &bc, pc)
+        };
+        self.field_bytecode = bc;
+        let next_pc = match res {
+            FieldStepResult::Advance { next_pc } => next_pc,
+            _ => pc + 4,
         };
         self.field_pc = next_pc;
         Some(FieldStepResult::Advance { next_pc })
