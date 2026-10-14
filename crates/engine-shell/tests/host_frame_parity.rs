@@ -329,7 +329,10 @@ fn page_trace(
 /// Run `sc` at each cadence on both hosts; the lines name every channel that
 /// parted, with the frame it parted on.
 fn run(sc: &Scenario, cadences: &[Cadence]) -> Vec<String> {
-    let Ok(disc) = std::env::var("LEGAIA_DISC_BIN") else {
+    let Some(disc) = std::env::var("LEGAIA_DISC_BIN")
+        .ok()
+        .filter(|d| std::path::Path::new(d).is_file())
+    else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
         return Vec::new();
     };
