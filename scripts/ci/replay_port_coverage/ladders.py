@@ -559,5 +559,12 @@ CANONICAL_LADDERS = [
     # `34 30 05`, and composes the spawned sprite-arm quads through
     # `play_field_fx_sync`.
     ("dream_yaw_part_page_ladder", "legaia-web-viewer"),
+    # The map display's location stepper (`801cf5e8`), reached only by a
+    # Square press on the open L1 display (Circle's own step arm sits behind
+    # the exit test). Enters each kingdom map through
+    # `SceneHost::enter_world_map_scene`, opens the display by pad, and
+    # requires Square to seat the survey on the kingdom's last record.
+    # Disc-gated; export WITHOUT `--release`.
+    ("map_display_disc", "legaia-engine-core"),
 ]
 CANONICAL_LADDER_NAMES = [name for name, _pkg in CANONICAL_LADDERS]
