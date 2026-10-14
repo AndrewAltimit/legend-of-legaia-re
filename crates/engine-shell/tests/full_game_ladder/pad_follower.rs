@@ -467,7 +467,15 @@ pub(super) fn pad_walk(
     // Cells where the action tap opened a talk that changed nothing: the
     // stalled walker is leaning on an NPC, not on a door.
     let mut idle_taps: HashSet<Cell> = HashSet::new();
-    for _ in 0..PAD_LEG_FRAMES {
+    // Talks an action tap opened that changed no flag, by park site; one
+    // opened that way twice and this walk taps no more. The leaning cell
+    // above misses a talk that nudges the walker a sub-cell each time
+    // (`jiji`'s inn counter, P0[8..10]: the witch's "Want to stay?" on every
+    // tap of the walk past it, two thousand frames each).
+    let mut idle_talks: HashSet<String> = HashSet::new();
+    let mut taps_off = false;
+    let mut tapped_at: Option<usize> = None;
+    for step in 0..PAD_LEG_FRAMES as usize {
         pad_budget(session)?;
         // Per overworld tile: the encounter step counter it left behind.
         if std::env::var_os("LEGAIA_FGL_WALK_DEBUG").is_some()
@@ -699,9 +707,11 @@ pub(super) fn pad_walk(
             if tap_owed
                 && !(moved && walking_mode == SceneMode::Field)
                 && !idle_taps.contains(&cell_of(wx, wz))
+                && !taps_off
             {
                 pad = PadButton::Cross.mask();
                 tap_owed = false;
+                tapped_at = Some(step);
             }
         }
         pressed_at = Some((wx, wz));
@@ -797,6 +807,14 @@ pub(super) fn pad_walk(
                 }
             }
             let (px, pz) = player_xz(session);
+            // The talk a tap opens owns the pad a tick or two after it.
+            if tapped_at.is_some_and(|t| step.saturating_sub(t) <= 3)
+                && site.starts_with("dialogue")
+                && before.0 == flags_of_world(session)
+                && !idle_talks.insert(site.clone())
+            {
+                taps_off = true;
+            }
             if before != (flags_of_world(session), cell_of(px, pz)) {
                 planned_from = None;
                 path.clear();
