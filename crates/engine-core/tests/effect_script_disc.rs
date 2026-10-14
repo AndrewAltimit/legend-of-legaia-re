@@ -16,9 +16,9 @@
 //!   (monster archive / player record[0]);
 //! - the stepper regressing against real record data.
 
-use legaia_engine_battle_vm::rotation_lut::retail_rotation_lut;
 use legaia_engine_effects::action_effect_script::{EffectRecord, MAX_CURSOR, step_effect_script};
 use legaia_engine_effects::action_effect_script::{EffectScriptActor, FacingBias, rotate_offset};
+use legaia_engine_system::rotation_lut::retail_rotation_lut;
 use std::path::PathBuf;
 
 fn prot_file(name: &str) -> Option<Vec<u8>> {

@@ -345,7 +345,7 @@ fn theeder_ray_swings_about_the_facing() {
     );
     // A quarter phase: swung by sin/16 = +0x100.
     let tip = theeder_ray_tip(mouth, 0, 0x400);
-    let (s, c) = crate::battle_action::motion::trig12(0x100);
+    let (s, c) = legaia_engine_system::trig::trig12(0x100);
     assert_eq!(tip[0], (i32::from(s) * 2 / 3) as i16);
     assert_eq!(tip[2], 0x5C + (i32::from(c) * 2 / 3) as i16);
 }

@@ -1865,7 +1865,7 @@ divide it as a 15-bit quantity, so the shape matters.
 | `World::next_rng` | the raw 32-bit LCG state step |
 | `bios_rand_shape` | `(state >> 16) & 0x7FFF` |
 | `World::next_rand` | the retail draw: next state through `bios_rand_shape` |
-| `world_lcg_step` / `world_rand` | the same step + shape for code holding `World::rng_state` without `&mut World` |
+| `world_lcg_step` / `world_rand` | the same step + shape for code holding `World::rng_state` without `&mut World` (`engine-system::rand`, beside `bios_rand_shape`) |
 | `psyq_rand_step`, `BiosRand` | already-shaped generators for minigames and pure kernels with a private seed |
 | `World::tick_battle_pass_draw` | the driver's discarded draw: one on the first tick of every battle frame (`BattleFrameClock`), under every battle owner of the frame; `WorldToggles::battle_pass_rand_draw` turns it off for an A/B |
 
@@ -1905,7 +1905,6 @@ not reproduced as a whole; the state machine lives in
 
 | File | Functions | Retail source |
 |---|---|---|
-| `basic.rs` | `psyq_rand_step`, `bios_rand_shape`, `world_lcg_step`, `world_rand` | BIOS `rand`, `FUN_80056798` |
 | `basic.rs` | `spirit_damage` | `FUN_801E295C` states `0x3E` / `0x46` |
 | `basic.rs` | `mp_cost_after_ability_bits`, `MpCostModifier` | `FUN_801E295C` state `0x28`, `FUN_80035394` |
 | `basic.rs` | `accuracy_roll`, `damage_cap_for_party_slot`, `buff_ramp` | `FUN_800402F4` selectors 9, 0, 1..7 |

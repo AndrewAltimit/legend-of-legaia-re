@@ -94,7 +94,7 @@
 //! flat depths the hosts draw with.
 
 use legaia_engine_battle_vm::psx_camera::FieldCameraView;
-use legaia_engine_battle_vm::rotation_lut::RotationLut;
+use legaia_engine_system::rotation_lut::RotationLut;
 use legaia_render_kernels::fog_volume::FogRegion;
 
 /// Pool capacity - `pool[+2]`, `addiu a2,zero,0x50` at `0x801D7374`.
@@ -928,8 +928,8 @@ mod tests {
         assert_eq!(fog_cap_for_man(&[0x05]), FOG_CAP_DEFAULT);
     }
 
-    fn lut() -> &'static legaia_engine_battle_vm::rotation_lut::RetailRotationLut {
-        legaia_engine_battle_vm::rotation_lut::retail_rotation_lut()
+    fn lut() -> &'static legaia_engine_system::rotation_lut::RetailRotationLut {
+        legaia_engine_system::rotation_lut::retail_rotation_lut()
     }
 
     /// A view that looks straight down -Z... expressed as the identity-ish

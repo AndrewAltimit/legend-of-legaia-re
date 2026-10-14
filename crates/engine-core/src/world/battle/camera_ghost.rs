@@ -39,7 +39,7 @@
 use super::*;
 use legaia_engine_mode::mode::SceneMode;
 
-use legaia_engine_battle_vm::rotation_lut::RotationLut;
+use legaia_engine_system::rotation_lut::RotationLut;
 
 impl World {
     /// The retail pool slot of engine actor `e`. Scope codes `8` / `9` pass
@@ -120,7 +120,7 @@ impl World {
                     .is_some_and(|v| v.side_band_request_up()),
             ),
         };
-        let lut = legaia_engine_battle_vm::rotation_lut::retail_rotation_lut();
+        let lut = legaia_engine_system::rotation_lut::retail_rotation_lut();
         camera_ghost_pass(
             &inputs,
             &mut slots,

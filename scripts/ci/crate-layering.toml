@@ -65,7 +65,13 @@ dev = ["engine-field"]
 
 [crates.engine-effects]
 role = "World-free effect kernels"
-deps = ["engine-battle", "engine-battle-vm", "engine-vm", "render-kernels"]
+deps = [
+    "engine-battle",
+    "engine-battle-vm",
+    "engine-system",
+    "engine-vm",
+    "render-kernels",
+]
 
 [crates.engine-field]
 role = "World-free field kernels"
@@ -141,13 +147,13 @@ deps = [
 [[coupling]]
 from = "engine-field"
 to = "engine-battle-vm"
-items = ["camera_mover", "retail_cam", "psx_camera", "battle_camera::apply_shake", "battle_action::motion::trig12", "rotation_lut::RotationLut"]
-reason = "the shared GTE camera, its mover and the 12-bit trig live with the battle camera script that calls them"
+items = ["camera_mover", "retail_cam", "psx_camera", "battle_camera::apply_shake"]
+reason = "the shared GTE camera and its mover live with the battle camera script that calls them"
 
 [[coupling]]
 from = "engine-minigames"
 to = "engine-battle-vm"
-items = ["psx_camera", "retail_cam", "camera_rel_actor", "camera_rel_glide", "battle_action::motion::sin12"]
+items = ["psx_camera", "retail_cam", "camera_rel_actor", "camera_rel_glide"]
 reason = "the Baka Fighter duel runs on the same camera kernels; only battle_formulas is the Muscle Dome's by role"
 
 [[coupling]]

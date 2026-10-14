@@ -1568,6 +1568,7 @@ dependencies = [
  "legaia-actor-formats",
  "legaia-engine-battle",
  "legaia-engine-battle-vm",
+ "legaia-engine-system",
  "legaia-engine-vm",
  "legaia-overlay-images",
  "legaia-prot",

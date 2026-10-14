@@ -356,7 +356,7 @@ impl World {
                 ms.world_x = vx;
                 ms.world_z = vz;
             } else {
-                let (sin, cos) = legaia_engine_battle_vm::battle_action::motion::trig12(facing);
+                let (sin, cos) = legaia_engine_system::trig::trig12(facing);
                 ms.world_x = (i32::from(ms.world_x)
                     + ((i32::from(sin) * SUMMON_DIRECTED_WALK_STEP) >> 12))
                     as i16;

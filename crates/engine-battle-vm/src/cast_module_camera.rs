@@ -48,8 +48,9 @@
 //!
 //! REF: FUN_801D829C (the tween every shot arms), FUN_80019B28 (the headings)
 
-use crate::battle_action::{bearing_12bit_approx, motion::trig12};
+use crate::battle_action::bearing_12bit_approx;
 use crate::battle_cam_script::{BattleCamPose, prescale_tr_z};
+use legaia_engine_system::trig::trig12;
 
 /// `*(0x1F80037D)` in battle - the speed scalar the battle seating seeds
 /// ([`crate::battle_anim_rate::RATE_NORMAL`]).

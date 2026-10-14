@@ -80,7 +80,7 @@ pub struct World {
     /// `FUN_80026BE0`): `0x1000` entries of `trunc(sin(i * 2pi / 4096) *
     /// 4096)`. Read by move-VM op `0x03` (the X term) and the world-map
     /// horizon emitter `FUN_801D7EA0`. Filled by [`World::new`] from
-    /// [`legaia_engine_battle_vm::rotation_lut::retail_rotation_lut`], byte-exact
+    /// [`legaia_engine_system::rotation_lut::retail_rotation_lut`], byte-exact
     /// with the disc table.
     pub sin_lut: Vec<i16>,
     /// The cosine view, `_DAT_8007B7F8` = the same table `+0x400` entries
@@ -390,10 +390,10 @@ impl World {
             script_actors: FieldScriptActorState::default(),
             rng_state: 0x1234_5678,
             casting: CastFxState::new(),
-            sin_lut: legaia_engine_battle_vm::rotation_lut::retail_rotation_lut()
+            sin_lut: legaia_engine_system::rotation_lut::retail_rotation_lut()
                 .sin_table()
                 .to_vec(),
-            cos_lut: legaia_engine_battle_vm::rotation_lut::retail_rotation_lut()
+            cos_lut: legaia_engine_system::rotation_lut::retail_rotation_lut()
                 .cos_table()
                 .to_vec(),
             object_effect: legaia_engine_effects::object_effect::ObjectEffectTable::boot(),

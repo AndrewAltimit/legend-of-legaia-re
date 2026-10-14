@@ -42,9 +42,9 @@
 //!
 //! PORT: overlay_cast_fatal_decision_0954_801f6a58 (PROT 0954; every arm: the camera, the wheel, the stop, the sixteen outcomes)
 
-use crate::battle_action::motion::sin12;
 use crate::cast_module_camera::{ModuleSeat, ModuleShot, SPEED_SCALAR, heading};
 use crate::cast_module_ticks::CastModuleCtx;
+use legaia_engine_system::trig::sin12;
 
 /// The band entry.
 pub const FATAL_DECISION_ENTRY: u32 = 954;

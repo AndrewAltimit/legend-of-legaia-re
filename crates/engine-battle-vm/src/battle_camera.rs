@@ -71,7 +71,7 @@
 
 // REF: FUN_80021248 (the arming routine that signs this builder's records
 // and hands them to the per-frame walker)
-use crate::battle_formulas::world_rand;
+use legaia_engine_system::rand::world_rand;
 
 /// The camera rotation/shake/focus trios `FUN_801D829C` tweens. Mirrors the
 /// nine 16-bit globals paired against the caller-provided targets:

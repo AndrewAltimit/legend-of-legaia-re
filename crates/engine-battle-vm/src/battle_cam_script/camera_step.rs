@@ -818,7 +818,7 @@ impl BattleCamera {
                 // track column (`ctx[+0x26D] = rand() % 2`) and the ramps
                 // restart from zero, so the swing frames from one of the
                 // table's two columns.
-                let coin = crate::battle_formulas::world_rand(&mut self.rand_state) & 1 != 0;
+                let coin = legaia_engine_system::rand::world_rand(&mut self.rand_state) & 1 != 0;
                 self.attack.ctx.begin_action(coin);
                 self.clip_age = 0;
                 // Retail re-arms case 6 on the state change and tweens over

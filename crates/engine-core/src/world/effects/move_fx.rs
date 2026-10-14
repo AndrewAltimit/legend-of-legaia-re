@@ -305,10 +305,10 @@ impl World {
                 self.world.next_rand() as i32
             }
             fn sin(&self, index: u32) -> i16 {
-                legaia_engine_battle_vm::battle_action::motion::trig12(index as u16).0
+                legaia_engine_system::trig::trig12(index as u16).0
             }
             fn cos(&self, index: u32) -> i16 {
-                legaia_engine_battle_vm::battle_action::motion::trig12(index as u16).1
+                legaia_engine_system::trig::trig12(index as u16).1
             }
             fn parent_yaw(&self) -> i16 {
                 self.yaw

@@ -96,9 +96,7 @@ impl World {
                     let step = p.end_root_step();
                     if step != 0 {
                         let frames = p.frame_count().min(255) as u8;
-                        let (sin, cos) = legaia_engine_battle_vm::battle_action::motion::trig12(
-                            a.battle.facing_angle,
-                        );
+                        let (sin, cos) = legaia_engine_system::trig::trig12(a.battle.facing_angle);
                         let (dx, dz) =
                             legaia_engine_battle_vm::battle_action::motion::event_cut_root_step(
                                 sin, cos, step, frame, frames,

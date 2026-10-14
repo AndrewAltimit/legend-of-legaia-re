@@ -495,7 +495,7 @@ pub fn drive(
 
 /// [`drive`] on a lent `rand()` stream: `rng` is copied into the camera before
 /// it steps and the advanced state is written back, so every camera draw is
-/// one draw on the caller's stream ([`crate::battle_formulas::world_rand`]).
+/// one draw on the caller's stream ([`legaia_engine_system::rand::world_rand`]).
 /// The world's battle tick passes `World::rng_state` here - retail has one
 /// `rand()` seed, and a private camera stream would interleave the battle's
 /// own draws differently from retail.

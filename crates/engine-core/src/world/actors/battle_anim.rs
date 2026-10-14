@@ -151,9 +151,8 @@ impl World {
                         .flag_bits
                         .has(legaia_engine_battle_vm::battle_action::ActorFlags::FX_SUPPRESSED);
                     if step != 0 && !latched && (actor.battle.hp != 0 || seru_staged) {
-                        let (sin, cos) = legaia_engine_battle_vm::battle_action::motion::trig12(
-                            actor.battle.facing_angle,
-                        );
+                        let (sin, cos) =
+                            legaia_engine_system::trig::trig12(actor.battle.facing_angle);
                         let (dx, dz) =
                             legaia_engine_battle_vm::battle_action::motion::end_root_step(
                                 sin, cos, step,
@@ -611,9 +610,7 @@ impl World {
                 && self.battle_ctx.gauge_rearm_latch != 2
                 && self.battle_ctx.active_actor < self.party.party_count
             {
-                let coin =
-                    (legaia_engine_battle_vm::battle_formulas::world_rand(&mut self.rng_state) & 1)
-                        as u8;
+                let coin = (legaia_engine_system::rand::world_rand(&mut self.rng_state) & 1) as u8;
                 self.battle_ctx.swing_yaw_seeds = self.battle_ctx.swing_yaw_seeds.wrapping_add(1);
                 self.battle_ctx.swing_yaw_coin = coin;
                 self.battle_ctx.camera_variant = 0;

@@ -451,7 +451,7 @@ fn scale_q12(t: i16, k: i32) -> i16 {
 /// ahead of the summon seat `(x, z)` along `facing`, at
 /// [`THEEDER_MOUTH_Y`].
 pub fn theeder_mouth(x: i16, z: i16, facing: u16) -> [i16; 3] {
-    let (s, c) = crate::battle_action::motion::trig12(facing);
+    let (s, c) = legaia_engine_system::trig::trig12(facing);
     [
         x.wrapping_add(scale_q12(s, THEEDER_MOUTH_REACH)),
         THEEDER_MOUTH_Y,
@@ -468,10 +468,10 @@ pub fn theeder_mouth(x: i16, z: i16, facing: u16) -> [i16; 3] {
 /// circle (`* 0x55555556` on the doubled sample) and its height bobs by
 /// `sin[(c * 2) & 0xFFE] / 16` about [`THEEDER_MOUTH_Y`].
 pub fn theeder_ray_tip(mouth: [i16; 3], facing: u16, c: u16) -> [i16; 3] {
-    let swing = crate::battle_action::motion::sin12(c & 0x0FFF) / 16;
+    let swing = legaia_engine_system::trig::sin12(c & 0x0FFF) / 16;
     let bearing = facing.wrapping_add(swing as u16) & 0x0FFF;
-    let (s, co) = crate::battle_action::motion::trig12(bearing);
-    let bob = crate::battle_action::motion::sin12(c.wrapping_mul(2) & 0x0FFE) / 16;
+    let (s, co) = legaia_engine_system::trig::trig12(bearing);
+    let bob = legaia_engine_system::trig::sin12(c.wrapping_mul(2) & 0x0FFE) / 16;
     [
         mouth[0].wrapping_add(((i32::from(s) * 2) / 3) as i16),
         bob.wrapping_add(THEEDER_MOUTH_Y),
@@ -482,7 +482,7 @@ pub fn theeder_ray_tip(mouth: [i16; 3], facing: u16, c: u16) -> [i16; 3] {
 /// Arm 11's short charge beam: the root plus `sin / 8` along the facing
 /// (`0x801F77C0..`, `addiu 7` / `sra 3`), both at [`THEEDER_MOUTH_Y`].
 pub fn theeder_charge_tip(mouth: [i16; 3], facing: u16) -> [i16; 3] {
-    let (s, c) = crate::battle_action::motion::trig12(facing);
+    let (s, c) = legaia_engine_system::trig::trig12(facing);
     [
         mouth[0].wrapping_add(s / 8),
         THEEDER_MOUTH_Y,
@@ -493,7 +493,7 @@ pub fn theeder_charge_tip(mouth: [i16; 3], facing: u16) -> [i16; 3] {
 /// Arm 11's exit frame: the full-length ray straight down the facing
 /// (`2/3` of the unit circle), the first sample the trail takes.
 pub fn theeder_ray_rest_tip(mouth: [i16; 3], facing: u16) -> [i16; 3] {
-    let (s, c) = crate::battle_action::motion::trig12(facing);
+    let (s, c) = legaia_engine_system::trig::trig12(facing);
     [
         mouth[0].wrapping_add(((i32::from(s) * 2) / 3) as i16),
         THEEDER_MOUTH_Y,
@@ -512,7 +512,7 @@ pub fn theeder_seat_placement(victim: (i16, i16), caster: (i16, i16)) -> (i16, i
     let facing = crate::battle_action::bearing_12bit_approx(victim.1, victim.0, caster.1, caster.0)
         .wrapping_add(0x800)
         & 0x0FFF;
-    let (s, c) = crate::battle_action::motion::trig12(facing);
+    let (s, c) = legaia_engine_system::trig::trig12(facing);
     (
         victim.0.wrapping_sub(s / 2),
         victim.1.wrapping_sub(c / 2),
@@ -524,9 +524,9 @@ pub fn theeder_seat_placement(victim: (i16, i16), caster: (i16, i16)) -> (i16, i
 /// facing plus `0x5C` a quarter turn to either side, at
 /// [`THEEDER_PRONG_Y`] (`0x801F7600..0x801F7700`, two `FUN_801F815C` calls).
 pub fn theeder_prong_tips(x: i16, z: i16, facing: u16) -> [[i16; 3]; 2] {
-    let (s, c) = crate::battle_action::motion::trig12(facing);
+    let (s, c) = legaia_engine_system::trig::trig12(facing);
     let side = |turn: u16| {
-        let (ss, sc) = crate::battle_action::motion::trig12(turn & 0x0FFF);
+        let (ss, sc) = legaia_engine_system::trig::trig12(turn & 0x0FFF);
         [
             x.wrapping_add(scale_q12(s, THEEDER_PRONG_REACH))
                 .wrapping_add(scale_q12(ss, THEEDER_MOUTH_REACH)),

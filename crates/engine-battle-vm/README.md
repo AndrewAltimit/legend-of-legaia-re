@@ -218,10 +218,6 @@ The crate's remaining modules are leaf kernels; by family:
   `camera_rel_actor` / `camera_rel_glide` (the camera-relative effect-actor
   spawn `FUN_80021248` and its glide tick) - here, beside the mover, because
   the field camera and the Baka Fighter duel camera both use them.
-- **12-bit trig** - `rotation_lut` (`RotationLut`, the sine / cosine pair
-  every 12-bit rotation indexes, and `RetailRotationLut`, the byte-exact
-  `SCUS_942.54` table `FUN_80026BE0` installs), beside `sin12` / `trig12`,
-  so the effect steppers and the field fog pool can both name it.
 - **Battle transition** - `battle_intro_transition` (+ `battle_intro_styles`
   / `battle_intro_tiles` / `battle_intro_swirl` / `battle_intro_particles`):
   the field-to-battle overlay's state machine and per-style kernels;
