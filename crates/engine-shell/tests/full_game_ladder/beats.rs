@@ -6,6 +6,14 @@ use super::*;
 /// Walk-on beat records tried per scene visit.
 pub(super) const MAX_BEATS: usize = 120;
 
+/// Touches one prop beat may take in a row while it turns like a dial
+/// ([`play_beats`]): a `stone` statue's four facings and two touches that
+/// land while it is still turning.
+const DIAL_TURNS: usize = 6;
+
+/// Idle ticks between two turns of a dial.
+const DIAL_SETTLE_TICKS: usize = 90;
+
 /// The **beats** pass of the seated tier: in the loaded field scene, approach
 /// every boss stager whose park gate is clear (the touch dispatch runs its
 /// placement record) and step onto every gate-1 walk-on tile whose
@@ -583,22 +591,68 @@ pub(super) fn play_beats(
                 continue;
             }
             ran += 1;
-            let f0 = flags_of_world(session);
-            let r = if gated {
-                examine_prop(session, anchor, at)
-            } else {
-                touch_prop(session, anchor, at)
-            };
-            let r = fight_committed(session, r);
-            trace_beat(session, &f0, || format!("{name} prop {anchor:?} -> {r:?}"));
-            match r {
-                Run::Entered(s) => {
-                    finish(session, log, ran);
-                    return Ok(Some(s));
+            // A prop whose touch moves its flags and still leaves the one
+            // the next anchor holds clear is a dial: it is turned again
+            // until it stands where the retail run left it. `stone`'s four
+            // statues each step through four facings (`0x1D8..0x1DB`,
+            // `0x1DC..0x1DF`, `0x1E0..0x1E3`, `0x1E4..0x1E7`) and the way on
+            // opens on one combination; turned once a round, all four moved
+            // in step and the pass ran out of fresh flags short of it.
+            let mut dial: BTreeSet<u16> = BTreeSet::new();
+            let mut stuck = false;
+            for turn in 0..DIAL_TURNS {
+                if turn > 0 {
+                    // A statue still turning from the last touch takes no
+                    // new one: let it settle first.
+                    session.host.world.set_pad(0);
+                    for _ in 0..DIAL_SETTLE_TICKS {
+                        if session.tick().is_err() {
+                            break;
+                        }
+                    }
                 }
-                Run::Battle(b) => return Err(format!("prop {anchor:?}: {b}")),
-                Run::Error(e) => return Err(e),
-                Run::Released | Run::Parked(_) => {}
+                let f0 = flags_of_world(session);
+                let r = if gated {
+                    examine_prop(session, anchor, at)
+                } else {
+                    touch_prop(session, anchor, at)
+                };
+                let r = fight_committed(session, r);
+                trace_beat(session, &f0, || format!("{name} prop {anchor:?} -> {r:?}"));
+                match r {
+                    Run::Entered(s) => {
+                        finish(session, log, ran);
+                        return Ok(Some(s));
+                    }
+                    Run::Battle(b) => return Err(format!("prop {anchor:?}: {b}")),
+                    Run::Error(e) => return Err(e),
+                    Run::Parked(_) => break,
+                    Run::Released => {}
+                }
+                // The dial is the flags its turns have moved; it stands
+                // right when each of them agrees with the next anchor.
+                let f1 = flags_of_world(session);
+                dial.extend(f0.symmetric_difference(&f1).copied());
+                let anchored = NEXT_ANCHOR_FLAGS.with(|a| a.borrow().is_some());
+                // One touch that turned nothing may be the statue still
+                // settling; two in a row and it is not a dial.
+                if f1 == f0 {
+                    if stuck || turn == 0 {
+                        break;
+                    }
+                    stuck = true;
+                    continue;
+                }
+                stuck = false;
+                if turn + 1 >= DIAL_TURNS
+                    || !anchored
+                    || dial.iter().all(|&f| f1.contains(&f) == next_anchor_has(f))
+                    || !prop_beats(session, &mf, &man)
+                        .iter()
+                        .any(|(a, _, _)| *a == anchor)
+                {
+                    break;
+                }
             }
         }
         let now = flags_of_world(session);
