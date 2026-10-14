@@ -168,7 +168,7 @@ Most scans on this page read one actor halfword. The bits are pinned individuall
 | `0x0008` / `0x0010` / `0x0020` | Rot, one rolled limb | `1 << (rand % 3 + 3)` |
 | `0x0040` | inside the Rot group, never set | - |
 | `0x0080` / `0x0100` / `0x0200` | AI delegation, always as the group `0x0380` | `FUN_80047430`, from accessory passive bit 45 |
-| `0x0400` | Numb | status applier |
+| `0x0400` | Numb (guard disabled) | PROT 0955's Kiss of Death miss arm only (`ori v0,v0,0x400` at `0x801F8CFC`) |
 | `0x0800` | Sleep | status applier |
 | `0x1000` | Curse | curse applier, 1/4 |
 | `0x2000` / `0x4000` / `0x8000` | unused: no applier in the dumped corpus | - |

@@ -1558,7 +1558,8 @@ and the roll scales.
   becomes its luminance `(r+g+b) >> 2` and is re-stamped via `MoveImage`.
 - **`0x400`** is a guard-disabling status (read at `801ec3e4:2640` and the AI
   picker `801e9fd4:3035`; a victim carrying it auto-fails its block roll). Its
-  applier is not in the byte map above nor anywhere in the dumped corpus. A
+  one applier is not in the byte map above: PROT 0955's Kiss of Death miss
+  arm ORs it in (`ori v0,v0,0x400` at `0x801F8CFC`). A
   per-round waker `FUN_801F45A4` clears it on `rand & 7 == 0` for each live
   afflicted actor (`andi 0xFBFF` at `0x801F4610`).
 
@@ -1944,7 +1945,6 @@ Kernels that live elsewhere: `engine-battle-vm::status_effects` (`toxic_tick_dam
   cursor's sub-frame carry at the commit is not modelled. (3) Whether the anim
   commit's counter / guard window (`+0x1F6`, `0x8004AFC0..`) uses the same beat
   for a parry is untraced.
-- **Status bit `0x400`.** Its applier is not in the dumped corpus.
 - **Spell-entry effect descriptor.** The descriptor the
   [spell list](#spell-list-record-0x4c) indices resolve to has open interior
   fields; its consumer is the cast / effect path.

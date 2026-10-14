@@ -234,7 +234,7 @@
       <tr><td>Faint</td><td>8</td><td>KO at 0 HP; revive only</td></tr>
     </tbody>
   </table>
-  <p>Bit <code>0x400</code> has no setter on the disc - every write that touches it is a clear (accessory cure, the per-round waker, item cures, the on-hit strip, battle exit). It is a latent status with a full consumer lifecycle and no infliction path. Rot (kind 5 in the art-record space) sets one random bit of <code>0x38</code>, greying out the rolled limb's attack command. Full writer inventory: <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/battle.md#the-0x16e-status-halfword---retail-writer-inventory" target="_blank" rel="noopener">battle.md</a>.</p>
+  <p>Bit <code>0x400</code> has one setter on the disc, in a cast image: PROT 0955's Kiss of Death <strong>miss</strong> arm (<code>ori v0,v0,0x400</code> at <code>0x801F8CFC</code>). Every other write that touches it is a clear (accessory cure, the per-round waker, item cures, the on-hit strip, battle exit). Rot (kind 5 in the art-record space) sets one random bit of <code>0x38</code>, greying out the rolled limb's attack command. Full writer inventory: <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/battle.md#the-0x16e-status-halfword---retail-writer-inventory" target="_blank" rel="noopener">battle.md</a>.</p>
 </section>
 
 <section class="doc-section" id="cast-modules">

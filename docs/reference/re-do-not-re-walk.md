@@ -190,6 +190,7 @@ op `4C 8A`) is what made the town's lit rows look baked. See
 
 | Thread | Verdict | Why |
 |---|---|---|
+| Battle status bit `0x400` has no retail setter | falsified (PROT 0955's Kiss of Death miss arm sets it) | Plausible: a word-level sweep of `SCUS_942.54` and every static overlay found only clears. The setter lives in a slot-B cast image loaded at `0x801F69D8`, which that sweep never covered: `lhu v0,0x16e(s0)` at `0x801F8CF4`, `ori v0,v0,0x400` at `0x801F8CFC`, `sh v0,0x16e(s0)` at `0x801F8D04`. A negative over code images says nothing about the images it did not decode. |
 | The loss window is a pause-menu window descriptor | falsified (a SCUS placement record) | Plausible: it opens and closes like a pause-menu window. `FUN_801D8DE8` ids index the placement table `0x80076C10`, not the menu's descriptor table, and `0x41` / `0x42` share one record shape. |
 | The battle pose decoder unwraps angles as `FUN_8001D088` does | falsified (the guards differ at half a turn) | Battle tests `> 0x800` (`slti 0x801`), the field helper `>= 0x800`, so the battle blend has its own kernel. |
 | The battle ground shadow's `+0x6A` skip flag is an unmodelled divergence | falsified (the port already drew what retail draws) | `FUN_800480D8` raises it only around the after-image walk (`0x80048258`) and clears it before the body draw unless `+0x5A == 7`; a battle body's `+0x5A` is its pool slot (0..6), so bodies always cast a shadow and ghosts never do. Ported as `body_shadow_skip`. |
