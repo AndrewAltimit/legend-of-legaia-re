@@ -212,6 +212,19 @@ pub(super) fn pad_talk_to(session: &mut NativeSession, slot: u8) -> Run {
                 None => break,
             }
         };
+        // A side off the authored floor is not somewhere a player stands to
+        // talk. Retail's locomotion reads only the wall bits, so the black
+        // between a town's interior cutaways is open ground: `geremi`
+        // P1[68] stands in the gap at (90, 124) in the south wall of a house
+        // whose interior ends there, and stepping round it to (90, 125) put
+        // the party in the void, from which the next walk crossed to the
+        // outside of the tower door instead of the house behind it.
+        if attempt > 0 && session.host.world.mode == SceneMode::Field {
+            let (cx, cz) = tile_center(side);
+            if !session.host.world.field_tile_is_walk_visible(cx, cz) {
+                continue;
+            }
+        }
         let walk = pad_walk(session, side, &avoid, within);
         if std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
             eprintln!(
