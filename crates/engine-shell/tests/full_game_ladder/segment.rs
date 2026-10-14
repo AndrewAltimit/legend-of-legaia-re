@@ -116,7 +116,11 @@ pub(super) fn traverse(
     // routes around them (see the `dead` arm below).
     let mut dead: BTreeSet<(String, String)> = BTreeSet::new();
     let mut steps = 0usize;
-    while steps < MAX_HOPS + vias.len() * 4 + dead.len() * 4 {
+    // The continuous hand's arrival pass (upkeep and the scene's story) is
+    // one turn of this loop per scene it plays, not a hop: it does not come
+    // out of the hop allowance.
+    let mut upkept = 0usize;
+    while steps < MAX_HOPS + vias.len() * 4 + dead.len() * 4 + upkept {
         steps += 1;
         pad_budget(session)?;
         // Let whatever the last landing started finish first.
@@ -177,6 +181,7 @@ pub(super) fn traverse(
             && session.host.world.mode == SceneMode::Field
             && beaten.insert(cur.clone())
         {
+            upkept += 1;
             // Upkeep first, as a player arriving in a town: the shop, what
             // it sold, the bed.
             // A talk or a stay that carried the party off (`dolk2`'s inn
@@ -283,6 +288,20 @@ pub(super) fn traverse(
                 format!("hop {cur} -> {next} at tile {:?}: {e}", tile_of(x, z))
             })
         };
+        // A hop that fails while a scripted countdown runs (op `4C D3`) with
+        // its expiry flag still clear: the story is waiting
+        // on the clock, not on a door. Wait it out where the party stands,
+        // then look at the scene again.
+        if hop.is_err()
+            && pad
+            && continuous::PLAYS_ON.with(std::cell::Cell::get)
+            && wait_out_story_timer(session)?
+        {
+            beaten.remove(&cur);
+            crossed.retain(|(s, _), _| *s != cur);
+            trail.push(format!("[{cur}: timer ran out]"));
+            continue;
+        }
         match hop {
             Ok(entered) => {
                 if pad && std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
@@ -706,4 +725,45 @@ pub(super) fn run_segment(
         }
     }
     rep
+}
+
+/// Stand still until the field's scripted countdown expires, when its
+/// expiry flag is still clear. An armed countdown is story the scene is
+/// running: the flag it raises need not survive to the next anchor
+/// (`chitei2`'s `0x4C7` does not), so the anchor is not consulted.
+/// `true` once the countdown ran out (or the scene changed under it);
+/// `false` when no such countdown is armed.
+///
+/// The countdown is retail's `4C D3` scheduler (`FUN_801D2EBC`), read from
+/// the engine: `chitei2`'s collapse sets `0x4C7` on expiry, and only then
+/// does the scene's entry script hand the party on (`0x4C8`).
+fn wait_out_story_timer(session: &mut NativeSession) -> Result<bool, String> {
+    let (armed, remaining, flag) = {
+        let b = &session.host.world.battle;
+        (
+            b.escape_timer.armed,
+            b.escape_timer.remaining,
+            ((b.escape_timer_flag_word >> 16) & 0xFFF) as u16,
+        )
+    };
+    if !armed || session.host.world.system_flag_test(flag) {
+        return Ok(false);
+    }
+    if std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
+        eprintln!(
+            "    [timer] waiting out {remaining} frame(s) for 0x{flag:03X} (frame {})",
+            session.frames
+        );
+    }
+    let here = scene_name(session);
+    let limit = session.frames + u64::try_from(remaining.max(0)).unwrap_or(0) + 600;
+    while session.frames < limit
+        && !session.host.world.system_flag_test(flag)
+        && scene_name(session) == here
+    {
+        pad_budget(session)?;
+        session.host.world.set_pad(0);
+        session.tick().map_err(|e| format!("{e:#}"))?;
+    }
+    Ok(session.host.world.system_flag_test(flag) || scene_name(session) != here)
 }
