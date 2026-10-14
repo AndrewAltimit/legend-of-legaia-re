@@ -63,7 +63,23 @@ impl PlayWindowApp {
             })
         };
         if changed {
+            // `upload_assets` is the scene-entry upload: it resets the CPU
+            // VRAM to the load-time image and re-installs the CLUT-walk
+            // animator. A mid-scene re-bind changes meshes only, so the live
+            // VRAM - with every scripted stamp, CLUT-cell fade and palette
+            // cycle the frame tail has written into it - and the animator's
+            // phase are carried across. The browser page re-reads one mesh
+            // and never touches its VRAM here; without the carry a model
+            // swap in this window snapped a faded palette back and restarted
+            // the water shimmer.
+            let live_vram = self.cpu_vram_base.take();
+            let live_anim = self.ocean_anim.take();
             self.upload_assets();
+            if let Some(vram) = live_vram {
+                self.cpu_vram_base = Some(vram);
+                self.ocean_anim = live_anim;
+                self.upload_cpu_vram();
+            }
         }
     }
 }
