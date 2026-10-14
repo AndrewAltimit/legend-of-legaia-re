@@ -1088,9 +1088,18 @@ overlays and `SCUS_942.54` exists.
 The wait is a timed park in every runner, as `4C CD` is: the field loop and
 the channel runners resume at the op, the inline-dialogue runner parks the talk
 on it, and the cutscene timeline holds it (counted against its anti-hang cap,
-which completes a record whose raiser never runs). The disc-gated test
-`crates/engine-core/tests/system_flag_wait_raisers_disc.rs` pins both the
-raiser census and `town01` record 10's raise.
+which completes a record whose raiser never runs). The raising parts tick in
+the frame tail's VRAM step (`World::step_field_vram_effects`, which runs
+`World::step_ambient_fx`), not in `SceneHost::tick`: every play host and
+`BootSession` run it, and any other headless driver owes
+`SceneHost::step_headless_frame_tail` after each tick. Without it the
+timeline holds on the wait until the cap completes the record, and the
+record's tail never runs - `garmel` P2[12] stages record 2 with
+`B4 1D 30 01`, parks on `4C C6 0A 00`, and lost its `3E FF 09` Zeto fight
+that way. The disc-gated test
+`crates/engine-core/tests/system_flag_wait_raisers_disc.rs` pins the raiser
+census, `town01` record 10's raise, and that every partition-2 wait a
+cold-entered timeline reaches is passed under the tail.
 
 ### The relative skip exit
 

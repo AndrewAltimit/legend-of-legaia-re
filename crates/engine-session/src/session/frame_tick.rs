@@ -254,22 +254,17 @@ impl<S: AudioSink> BootSession<S> {
     /// nothing - except the spawned move's sound cue, which goes to the
     /// director when one is attached, the way both hosts route it.
     fn run_world_frame_tail(&mut self) {
-        // The summon spawn request's seat: both play hosts bind the creature
-        // mesh and seat it here, and a directed module's walk arm reads the
-        // seat, so a headless run seats it unrendered.
-        self.host.world.seat_summon_creature_unrendered();
-        let tail = self.host.world.step_world_frame_tail(None, None, |_| None);
+        // The summon spawn request's seat (both play hosts bind the creature
+        // mesh and seat it; a directed module's walk arm reads the seat, so a
+        // headless run seats it unrendered), the world tail and the VRAM
+        // effects: one body with every other headless driver
+        // (`SceneHost::step_headless_frame_tail`).
+        let tail = self.host.step_headless_frame_tail();
         if let (Some(cue), Some(bgm)) = (tail.move_fx_cue, self.bgm.as_mut())
             && let legaia_engine_audio::CueDispatch::Ring { ring_value, .. } =
                 legaia_engine_audio::classify_cue(u32::from(cue))
         {
             bgm.enqueue_sfx(ring_value, 0, 0, 0);
-        }
-        if let Some(res) = self.host.resources.as_mut() {
-            let _ = self
-                .host
-                .world
-                .step_field_vram_effects(&mut res.vram, false);
         }
     }
 

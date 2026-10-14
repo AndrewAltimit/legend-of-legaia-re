@@ -327,6 +327,30 @@ impl SceneHost {
         Ok(SceneTickEvent::Stepped)
     }
 
+    /// The world-side frame tail a headless driver owes after each
+    /// [`Self::tick`]: seat a requested summon creature unrendered, run
+    /// [`crate::world::World::step_world_frame_tail`] with no clip banks, and
+    /// step [`crate::world::World::step_field_vram_effects`] over the scene's
+    /// own VRAM image. `engine-session`'s `BootSession` runs exactly this on
+    /// every tick it does not hand to a play host.
+    ///
+    /// The tail is not presentation-only. The VRAM step is where the ambient
+    /// move-VM parts tick (`World::step_ambient_fx`), and a part staged by
+    /// op `0x34` sub-3 is what flips the system flag a `4C C5` / `4C C6` wait
+    /// holds on (`2F 1C` / `2F 1D`): `garmel` P2[12] stages record 2 with
+    /// `B4 1D 30 01` and parks on `4C C6 0A 00` until that part clears
+    /// `0x0A`. A driver that ticks the scene without this tail parks there
+    /// for good. What the tail hands back for drawing is returned; a headless
+    /// caller drops it.
+    pub fn step_headless_frame_tail(&mut self) -> crate::world::WorldFrameTail {
+        self.world.seat_summon_creature_unrendered();
+        let tail = self.world.step_world_frame_tail(None, None, |_| None);
+        if let Some(res) = self.resources.as_mut() {
+            let _ = self.world.step_field_vram_effects(&mut res.vram, false);
+        }
+        tail
+    }
+
     /// Measure the field scene's luminance for the volumetric ground fog
     /// (`legaia_render_kernels::fog_volume::scene_luminance` over every textured mesh the
     /// scene's resources carry), once per scene label and only while the

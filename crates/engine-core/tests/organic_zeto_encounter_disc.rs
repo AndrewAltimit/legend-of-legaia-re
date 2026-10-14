@@ -196,6 +196,11 @@ fn zeto_battle_enters_organically_from_the_beat_record() {
             0
         });
         host.tick().expect("tick");
+        // The frame tail every host runs after the scene tick. The record
+        // stages stager record 2 (`B4 1D 30 01`) and parks on `4C C6 0A 00`
+        // until that move-VM part's `2F 1D 0A` clears flag `0x0A`; the part
+        // ticks in the tail's VRAM step, so a bare `tick` loop parks for good.
+        let _ = host.step_headless_frame_tail();
         ticks += 1;
         if matches!(host.world.mode, legaia_engine_mode::mode::SceneMode::Battle) {
             entered_battle = true;
