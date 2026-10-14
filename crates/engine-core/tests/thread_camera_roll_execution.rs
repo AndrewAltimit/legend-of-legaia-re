@@ -203,7 +203,7 @@ impl FieldScreenHost for ProbeHost {
 impl FieldAudioHost for ProbeHost {}
 
 impl FieldPartyInventoryHost for ProbeHost {
-    fn op4c_n8_subb_actor_type_present(&self, _type_byte: u8) -> bool {
+    fn op4c_n8_subb_spell_known(&self, _type_byte: u8) -> bool {
         self.yes
     }
 

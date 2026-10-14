@@ -100,13 +100,14 @@ fn op_4c_n_8_sub_6_signed_decode_round_trip() {
 
 #[test]
 fn op_4c_n_8_sub_b_jumps_when_actor_type_present() {
-    // [4C, 0x8B, type=0x12, target_lo=0x34, target_hi=0x12] → jump 0x1234
+    // [4C, 0x8B, type=0x12, skip=0x1234] → the relative skip exit:
+    // `pc + 5 + 0x1234 - 2`.
     let bytecode = [0x4Cu8, 0x8B, 0x12, 0x34, 0x12];
     let mut host = TestHost::default();
     host.n_8_sub_b_present_types.insert(0x12);
     let mut ctx = FieldCtx::default();
     let r = step(&mut host, &mut ctx, &bytecode, 0);
-    assert_eq!(r, StepResult::Advance { next_pc: 0x1234 });
+    assert_eq!(r, StepResult::Advance { next_pc: 0x1237 });
 }
 
 #[test]

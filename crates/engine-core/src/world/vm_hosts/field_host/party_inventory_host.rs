@@ -136,6 +136,28 @@ impl<'a> FieldPartyInventoryHost for FieldHostImpl<'a> {
         })
     }
 
+    /// Op `4C 8B`: the learned-spell list (`+0x13C` count, `+0x13D..` ids)
+    /// of each present member below character 3.
+    // PORT: FUN_801DE840 (op 0x4C nibble-8 sub-B arm, 0x801E2320..0x801E23E4)
+    fn op4c_n8_subb_spell_known(&self, spell: u8) -> bool {
+        self.world.present_party_list().iter().any(|&ch| {
+            ch < 3
+                && self
+                    .world
+                    .party
+                    .roster
+                    .members
+                    .get(usize::from(ch))
+                    .is_some_and(|m| {
+                        let list = m.spell_list();
+                        list.ids
+                            .iter()
+                            .take(usize::from(list.count))
+                            .any(|&id| id == spell)
+                    })
+        })
+    }
+
     fn add_coins(&mut self, coin_delta: i32) {
         self.world.add_script_coins(coin_delta);
     }

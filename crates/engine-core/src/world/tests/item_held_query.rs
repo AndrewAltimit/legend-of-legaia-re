@@ -77,3 +77,24 @@ fn a_worn_piece_answers_both_questions_for_present_members_only() {
         FieldStepResult::Advance { next_pc: 5 }
     ));
 }
+
+#[test]
+fn a_learned_spell_answers_4c_8b_for_the_three_heroes() {
+    // `4C 8B spell 05 00`: a present member below character 3 whose
+    // learned-spell list (`+0x13C` / `+0x13D..`) holds `spell` takes the
+    // relative skip over the `JmpRel` after it.
+    let spell = 0x87;
+    let mut w = party_world();
+    let run = |w: &mut World| {
+        let bc = [0x4Cu8, 0x8B, spell, 0x05, 0x00, 0x26, 0x10, 0x00, 0x21];
+        let mut ctx = FieldCtx::default();
+        let mut host = FieldHostImpl { world: w };
+        field_step_routed(&mut host, &mut ctx, &bc, 0)
+    };
+    assert!(matches!(run(&mut w), FieldStepResult::Advance { next_pc: 5 }));
+    let mut list = w.party.roster.members[1].spell_list();
+    list.count = 1;
+    list.ids[0] = spell;
+    w.party.roster.members[1].set_spell_list(list);
+    assert!(matches!(run(&mut w), FieldStepResult::Advance { next_pc: 8 }));
+}

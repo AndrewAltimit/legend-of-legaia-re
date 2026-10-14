@@ -235,7 +235,8 @@ fn op_4c_n8_sub2_restore_party_slot_advances_three_bytes() {
 
 #[test]
 fn op_4c_n8_sub_c_branch_taken_when_field_68_zero() {
-    // [4C, 0x8C, 0x10, 0x00] - field_68 = 0 → branch to 0x0010.
+    // [4C, 0x8C, 0x10, 0x00] - field_68 = 0 → the relative skip exit:
+    // `pc + 4 + 0x10 - 2`.
     let bytecode = [0x4Cu8, 0x8C, 0x10, 0x00];
     let mut host = TestHost::default();
     let mut ctx = FieldCtx {
@@ -243,7 +244,23 @@ fn op_4c_n8_sub_c_branch_taken_when_field_68_zero() {
         ..FieldCtx::default()
     };
     let r = step(&mut host, &mut ctx, &bytecode, 0);
-    assert_eq!(r, StepResult::Advance { next_pc: 0x10 });
+    assert_eq!(r, StepResult::Advance { next_pc: 0x12 });
+}
+
+#[test]
+fn op_4c_n8_sub_c_extended_form_skips_relative_to_its_end() {
+    // `retock` P1[46] at `+0x49`: `CC 0D 8C 18 00` on a context whose
+    // `+0x68` is zero lands at `0x49 + 2 + 3 + 0x18 - 2 = 0x64`.
+    let mut bytecode = vec![0x21u8; 0x80];
+    bytecode[0x49..0x4E].copy_from_slice(&[0xCC, 0x0D, 0x8C, 0x18, 0x00]);
+    let mut host = TestHost::default();
+    let mut ctx = FieldCtx {
+        script_id: 0x0D,
+        field_68: 0,
+        ..FieldCtx::default()
+    };
+    let r = step(&mut host, &mut ctx, &bytecode, 0x49);
+    assert_eq!(r, StepResult::Advance { next_pc: 0x64 });
 }
 
 #[test]

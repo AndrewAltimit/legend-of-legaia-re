@@ -205,7 +205,8 @@ Sub-table at `0x801CEF48`, indexed by `op0 & 0xF` under a `sltiu` bound of
 | 6 | `[4C 86 w0..w5 actor]` (15 bytes) | Installs the [reflection controller](#4c-86--4c-87-are-the-reflection-controllers-install-and-teardown). |
 | 7 | `[4C 87]` | Retires every reflection controller. |
 | 9 | `[4C 89 lo hi]` | `_DAT_80073F00 = i16`, the dialog pager's **automatic press** - [below](#4c-89-the-dialog-auto-press). |
-| B | `[4C 8B type lo hi]` | Jump to absolute u16 if any actor of `type` is active, else PC += 5. |
+| B | `[4C 8B spell skip:i16]` | "Does a present member know `spell`?": for each present member below character 3, the learned-spell list at record `+0x13C` (count) / `+0x13D` (ids) (`0x801E2320..0x801E23E4`). A hit takes the [relative skip](#the-relative-skip-exit), else PC += 5. |
+| C | `[4C 8C skip:i16]` | `ctx[+0x68]` zero takes the [relative skip](#the-relative-skip-exit) (`pc + 4 + skip - 2`), non-zero advances 4 (`0x801E23EC`). |
 | D | `[4C 8D char marker lo hi]` | Tristate per-character actor search: empty slot -> advance 6, found -> jump to the u16, no match -> halt. |
 
 The slot in sub-2 is a literal operand, not "every active member". It is the
@@ -1058,7 +1059,7 @@ animation set-up.
 ### The relative skip exit
 
 `LAB_801E360C` is the exit every conditional-skip arm of `0x4C` shares
-(nibble A, `4C DC` / `4C DE`, `4C EB`, `4C 8B`):
+(nibble A, `4C 8B` / `4C 8C`, `4C DC` / `4C DE`, `4C EB`):
 
 ```text
 801e360c  jal  0x8003ce9c        ; v0 = signed halfword at a0 (the arm's operand + 2)

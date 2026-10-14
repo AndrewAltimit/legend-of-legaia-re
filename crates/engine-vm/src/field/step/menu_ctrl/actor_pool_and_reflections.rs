@@ -131,19 +131,27 @@ pub(super) fn op_4c_n8<H: FieldHost>(
                 next_pc: pc + header_size + 10,
             }
         }
+        // Sub-C: 4-byte `[4C, 0x8C, skip_lo, skip_hi]`. `lh v0,0x68(s5)`
+        // at `0x801E23EC`, `s8 += 4` in the delay slot of the branch; a
+        // non-zero `ctx[+0x68]` exits there, a zero one takes the shared
+        // relative skip `LAB_801E360C` with `a0 = operand + 1`
+        // (`pc + 4 + skip - 2`). `retock` P1[46] pairs it with nibble A:
+        // `CC 0D A0 00 05 00`, `26 1D 00`, `CC 0D 8C 18 00`.
         0xC => {
             if operand + 3 > bytecode.len() {
                 return StepResult::Unknown { opcode, pc };
             }
-            if host.op4c_n8_subc_field_68_is_zero(ctx) {
-                let target = i16::from_le_bytes([bytecode[operand + 1], bytecode[operand + 2]]);
-                StepResult::Advance {
-                    next_pc: target as i32 as usize,
-                }
-            } else {
-                StepResult::Advance {
-                    next_pc: pc + header_size + 3,
-                }
+            let next_pc = pc + header_size + 3;
+            if !host.op4c_n8_subc_field_68_is_zero(ctx) {
+                return StepResult::Advance { next_pc };
+            }
+            let skip = i16::from_le_bytes([bytecode[operand + 1], bytecode[operand + 2]]);
+            let target = next_pc as isize + isize::from(skip) - 2;
+            if target < 0 {
+                return StepResult::Unknown { opcode, pc };
+            }
+            StepResult::Advance {
+                next_pc: target as usize,
             }
         }
         // Sub-9: write `_DAT_80073F00 = i16(operand[1..3])`, then
@@ -182,25 +190,27 @@ pub(super) fn op_4c_n8<H: FieldHost>(
                 StepResult::Halt { final_pc: pc }
             }
         }
-        // Sub-B: 5-byte `[4C, 0x8B, type_byte, target_lo,
-        // target_hi]`. Conditional jump if any actor of
-        // `type_byte` is active. Dispatcher lines 6621-6644:
-        // count > 0 → jump to absolute u16; count == 0 →
-        // advance PC by 5.
+        // Sub-B: 5-byte `[4C, 0x8B, type_byte, skip_lo, skip_hi]`.
+        // `s8 += 5` at `0x801E2320`, then a count over the present
+        // members; a non-zero count takes the shared relative skip
+        // `LAB_801E360C` with `a0 = operand + 2` (`pc + 5 + skip - 2`),
+        // a zero count advances 5.
         0xB => {
             if operand + 4 > bytecode.len() {
                 return StepResult::Unknown { opcode, pc };
             }
             let type_byte = bytecode[operand + 1];
-            if host.op4c_n8_subb_actor_type_present(type_byte) {
-                let target = crate::field::dispatch_leaves::load_u16_le(&bytecode[operand + 2..]);
-                StepResult::Advance {
-                    next_pc: target as usize,
-                }
-            } else {
-                StepResult::Advance {
-                    next_pc: pc + header_size + 4,
-                }
+            let next_pc = pc + header_size + 4;
+            if !host.op4c_n8_subb_spell_known(type_byte) {
+                return StepResult::Advance { next_pc };
+            }
+            let skip = crate::field::dispatch_leaves::load_u16_le(&bytecode[operand + 2..]) as i16;
+            let target = next_pc as isize + isize::from(skip) - 2;
+            if target < 0 {
+                return StepResult::Unknown { opcode, pc };
+            }
+            StepResult::Advance {
+                next_pc: target as usize,
             }
         }
         // Sub-D: 6-byte `[4C, 0x8D, char_idx, marker, target_lo,

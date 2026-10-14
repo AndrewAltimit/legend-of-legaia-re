@@ -232,22 +232,16 @@ pub trait FieldPartyInventoryHost {
         let _ = coin_delta;
     }
 
-    /// Count active actors of a given type (op 0x4C n8 sub-B, 5 bytes).
+    /// Op 0x4C nibble-8 sub-B - "does a present member know spell `spell`?".
     ///
-    /// `[4C, 0x8B, type_byte, target_lo, target_hi]`. The original at lines
-    /// 6621-6644 walks the active actor pool (`DAT_80084594` = pool count;
-    /// each slot is 0x414 bytes wide, indexed by the per-slot type byte at
-    /// `+0x458`) and increments a count for every entry whose stored type
-    /// matches `type_byte`.
-    ///
-    /// If any match: jump to absolute `LE_u16(operand+2..=operand+3)`.
-    /// If no match: advance PC by 5.
-    ///
-    /// The host decides the pool layout - this hook just answers
-    /// "is there at least one actor of `type_byte` active?". Default impl
-    /// returns `false` (no actor pool).
-    fn op4c_n8_subb_actor_type_present(&self, type_byte: u8) -> bool {
-        let _ = type_byte;
+    /// 5-byte instruction `[4C, 0x8B, spell, skip_lo, skip_hi]`. The arm at
+    /// `0x801E2320` walks the present members (`0x80084594` count,
+    /// `0x80084598` roster), and for each one below character 3 counts the
+    /// hits of `spell` in the learned-spell list of its record (`+0x13C`
+    /// count, `+0x13D..` ids). A non-zero count takes the shared relative
+    /// skip; the dispatcher computes it. Default impl answers no.
+    fn op4c_n8_subb_spell_known(&self, spell: u8) -> bool {
+        let _ = spell;
         false
     }
 
