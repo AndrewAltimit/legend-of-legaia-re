@@ -9,6 +9,7 @@
 --   * bag slot 0 = Spikefish Flute (item 0x99) x9
 --   * the step counter 0x8007B5FC = 1, so the next rolling step starts a
 --     random battle
+--   * optionally (LEGAIA_FORM) the region's formation rows, see below
 -- Everything after that is the game's own code driven by the pad:
 --   LEGAIA_ESCAPE=flute  Begin, then every member picks Item -> slot 0;
 --                        the first flute to act flees (PROT 0925 arm 8)
@@ -40,7 +41,18 @@ local pad   = require("probe.pad")
 local GM, RET, BD60, LOADB = 0x8007B83C, 0x8007B8B8, 0x8007BD60, 0x8007BC4C
 local BYTE, STEP, INV, CTXP = 0x8008575B, 0x8007B5FC, 0x80085958, 0x8007BD24
 
+-- PROT 0978's field-back read: buffer pointer and sector count, and the
+-- first word of the side-band buffer's caption string (0x800B995C in the
+-- captured fights)
+local FBR_BUF, FBR_SEC = 0x8007B8C4, 0x8007B6FC
+local CAPTION = probe.getenv_num("LEGAIA_CAPTION", 0x800B995C)
 local VAL    = probe.getenv_num("LEGAIA_BYTE", 0x0A)
+-- LEGAIA_FORM="n:id,id,id": rewrite every resident formation row that
+-- names LEGAIA_FORM_FROM (default 0xA1, Gilium Lv3) to n monsters of these
+-- ids, so the forced battle is a chosen formation (jouind's random rows
+-- are 3x 0x9E and 3x 0xA1)
+local FORM      = probe.getenv("LEGAIA_FORM", "")
+local FORM_FROM = probe.getenv_num("LEGAIA_FORM_FROM", 0xA1)
 local MODE   = probe.getenv("LEGAIA_ESCAPE", "flute")
 local DELAY  = probe.getenv_num("LEGAIA_DELAY", 10)
 local FRAMES = probe.getenv_num("LEGAIA_FRAMES", 6000)
@@ -89,10 +101,12 @@ probe.run({
             flow, st = mem.read_u8(c + 6) or 0, mem.read_u8(c + 7) or 0
         end
         local line = string.format(
-            "gm=%02x ret=%d bd60=%02x loadB=%d byte=%02x flow=%02x st=%02x",
+            "gm=%02x ret=%d bd60=%02x loadB=%d byte=%02x flow=%02x st=%02x"
+            .. " fbr_buf=%08x fbr_sec=%d cap=%08x",
             gm, mem.read_u32(RET) or -1, mem.read_u8(BD60) or 0,
             mem.read_u32(LOADB) or -1, mem.read_u8(BYTE) or 0,
-            flow % 256, st % 256)
+            flow % 256, st % 256, mem.read_u32(FBR_BUF) or 0,
+            mem.read_u32(FBR_SEC) or 0, mem.read_u32(CAPTION) or 0)
         if line ~= last_line then
             PCSX.log(string.format("[st] f=%d %s", el, line)); last_line = line
         end
@@ -116,6 +130,41 @@ probe.run({
             mem.write_u8(BYTE, bit.bor(bit.band(b, 0xF1), VAL))
             mem.write_u8(INV, 0x99); mem.write_u8(INV + 1, 9)
             mem.write_u32(STEP, 1)
+            if FORM ~= "" then
+                local n, list = string.match(FORM, "(%d+):(.*)")
+                local ids = {}
+                for t in string.gmatch(list or "", "[^,]+") do ids[#ids + 1] = tonumber(t) end
+                local hits = 0
+                for base = 0x80000000, 0x801F0000, 0x10000 do
+                    local blob = mem.read_bytes(base, 0x10000)
+                    local str = blob and tostring(blob) or ""
+                    local pat = string.char(0, 0, 0, 3, FORM_FROM, FORM_FROM, FORM_FROM, 0)
+                    local i = string.find(str, pat, 1, true)
+                    while i do
+                        local a = base + i - 1
+                        mem.write_u8(a + 3, tonumber(n))
+                        for k = 0, 3 do mem.write_u8(a + 4 + k, ids[k + 1] or 0) end
+                        hits = hits + 1
+                        PCSX.log(string.format("[form] row at %08x -> %s", a, FORM))
+                        i = string.find(str, pat, i + 1, true)
+                    end
+                end
+                -- the other random row of the region too (3x 0x9E in jouind)
+                for base = 0x80000000, 0x801F0000, 0x10000 do
+                    local blob = mem.read_bytes(base, 0x10000)
+                    local str = blob and tostring(blob) or ""
+                    local pat = string.char(0, 0, 0, 3, 0x9E, 0x9E, 0x9E, 0)
+                    local i = string.find(str, pat, 1, true)
+                    while i and FORM_FROM == 0xA1 do
+                        local a = base + i - 1
+                        mem.write_u8(a + 3, tonumber(n))
+                        for k = 0, 3 do mem.write_u8(a + 4 + k, ids[k + 1] or 0) end
+                        PCSX.log(string.format("[form] row at %08x -> %s", a, FORM))
+                        i = string.find(str, pat, i + 1, true)
+                    end
+                end
+                if hits == 0 then PCSX.log("[form] no row found") end
+            end
             PCSX.log(string.format("[poke] f=%d byte %02x -> %02x, bag0=99 x9, step=1",
                 el, b, mem.read_u8(BYTE) or 0))
         end

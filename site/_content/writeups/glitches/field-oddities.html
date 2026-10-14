@@ -598,7 +598,7 @@
     <dt>Reported as</dt><dd>Escaping a battle in Bio Castle with the Spikefish Flute freezes the game, first noticed while testing the Rogue&#x27;s Tower water flags ; narrowed down further, escaping three Gillium Lv3 with the flute always freezes, right after the escape sequence (community report, first-hand, ZetaPhoenix). The captured fight is exactly that formation</dd>
     <dt>Cause</dt><dd>The flute&#x27;s escape skips the end of its attack, so its &ldquo;Blowfish&rdquo; caption stays up after the battle frees the caption&#x27;s text; once field data is read back over it, drawing it can send the text routine into a copy that never ends</dd>
     <dt>Where</dt><dd>Arm 8 of <code>FUN_801F6A00</code>, PROT entry 0925 (the flee); text widget draw at <code>0x800321E0</code>; runaway copy at <code>0x800367E4</code> in <code>FUN_80036514</code>, <code>SCUS_942.54</code></dd>
-    <dt>Affects</dt><dd>Spikefish Flute escapes; whether a fight hangs depends on its memory layout. The three-Gillium-Lv3 formation in Bio Castle froze on every captured run and is reported to always freeze; the same escape in Rogue&#x27;s Tower did not. A plain Run is safe</dd>
+    <dt>Affects</dt><dd>Spikefish Flute escapes from a fixed set of scene-and-fight pairs (14 of 406 random formation rows, predicted by simulation; three Bio Castle freezes captured). Three Gillium Lv3 in Bio Castle (D) always freezes. A plain Run is safe</dd>
     <dt>Status</dt><dd><span class="tag tag-done">Explained</span> - captured on a poked state; the water flags play no part</dd>
   </dl>
   <p>The flute's attack shows a caption with the attack's name, &ldquo;Blowfish&rdquo;. The flute's escape skips the end of its own attack, so the caption is never taken down. It stays on screen through the escape and keeps pointing at its text after the battle has freed that memory. When the game reads the field's data back into the freed memory, the caption's &ldquo;text&rdquo; becomes picture data. Drawing it as text can send the text routine into a copy that never ends, and the game locks up on the black screen after the escape. Whether a given fight hits that depends on where the caption's text landed and on what overwrites it, not on the water.</p>
@@ -617,20 +617,77 @@
       <tr><td><code>rugi</code></td><td><code>0x0A</code></td><td>Spikefish Flute</td><td>back in the field; the byte reads <code>0x08</code></td></tr>
     </tbody>
   </table>
+  <p>Six more <code>jouind</code> runs had the formation rows rewritten in RAM before the forced battle (a seventh poke), to test the prediction below. The byte was <code>0x0A</code> in each:</p>
+  <table>
+    <thead><tr><th>Formation forced in <code>jouind</code></th><th>Field-back read</th><th>Predicted</th><th>Result</th></tr></thead>
+    <tbody>
+      <tr><td>three Gillium Lv3 (161), the scene's own row</td><td>127 sectors</td><td>freeze</td><td>freezes</td></tr>
+      <tr><td>three Puera Lv3 (158), the scene's other row</td><td>115</td><td>survive</td><td>back in the field</td></tr>
+      <tr><td>one Gimard Lv3 (12)</td><td>112</td><td>survive</td><td>back in the field</td></tr>
+      <tr><td>three Gimard Lv3 (12)</td><td>112</td><td>survive</td><td>back in the field</td></tr>
+      <tr><td>three Gizam Lv3 (57)</td><td>115</td><td>survive</td><td>back in the field</td></tr>
+      <tr><td>three Barra Lv3 (143)</td><td>116</td><td>freeze</td><td>freezes</td></tr>
+      <tr><td>Aluru (80) + Orb Lv2 (84)</td><td>134</td><td>freeze</td><td>freezes</td></tr>
+    </tbody>
+  </table>
   <p>The <code>rugi</code> row uses the catalogued <code>rugi_field_card_boot</code> state with the same pokes. It confirms that a flute escape which survives reaches the same clean-up as a plain one. Every Bio Castle flute run takes the same frames, so the flute's flee always lands at action state <code>0x65</code> on frame 2732 or 2733.</p>
   <p>The runs disagree with one row of the community table: the blue bit alone also freezes here. The table's runs were each a different fight, so a fight that lays out memory differently can survive.</p>
 
   <h3>The mechanism</h3>
   <ol>
     <li><strong>The caption outlives the attack</strong> (capture). While the flute's attack runs, the retained widget list <code>FUN_80031D00</code> draws a text widget every frame: <code>jal 0x80036888</code> at <code>0x800321E0</code>, string pointer at widget <code>+0x18</code>. In this fight the string is <code>"Blowfish"</code> at heap address <code>0x800B995C</code>. Arm 8 of <code>FUN_801F6A00</code> in PROT entry 0925 moves the action state machine to the run wait <code>0x65</code> and never removes that widget. The caption is still drawn every frame through states <code>0x65</code>, <code>0x66</code> and <code>0x67</code>, beside the &ldquo;successfully escaped&rdquo; banner.</li>
-    <li><strong>Its text is overwritten</strong> (capture). At state <code>0x67</code> the teardown in <code>FUN_8004E568</code> frees the enemy record buffers and the side-band stream buffer, and the loader-B id <code>0x8007BC4C</code> goes from <code>0x1E</code> (PROT 0925) to <code>0x53</code> (PROT 0978, the field-back-read module). PROT 0978 streams the field's textures back through the freed space. From then on the widget's string at <code>0x800B995C</code> reads <code>f8 f2 f2 ff fa ef da ...</code>: pixel data with no zero byte nearby.</li>
+    <li><strong>Its text is overwritten</strong> (capture, disassembly). At state <code>0x67</code> the teardown in <code>FUN_8004E568</code> frees the enemy record buffers and the side-band stream buffer, and the loader-B id <code>0x8007BC4C</code> goes from <code>0x1E</code> (PROT 0925) to <code>0x53</code> (PROT 0978, the field-back-read module). PROT 0978 re-reads the scene's own data from disc into the largest free heap block, which now covers the caption. From then on the widget's string at <code>0x800B995C</code> reads <code>f8 f2 f2 ff fa ef da ...</code>, which is <code>jouind</code>'s PROT entry 681 at offset <code>0xE4BC</code>, with no zero byte nearby.</li>
     <li><strong>The text routine never comes back</strong> (capture, interpreter core). The renderer <code>FUN_80036888</code> hands that &ldquo;string&rdquo; to the substitution expander <code>FUN_80036514</code>. The expander's first pass rewrites each <code>0xFF</code> in the source to <code>0xCF</code> in place, so it also corrupts the freed memory it reads. The copy loop at <code>0x800367E4</code> then follows a substitution code whose source pointer <code>t0</code> lands in the expander's own output buffer (from <code>0x800740EC</code>). The read cursor trails the write cursor by <code>0x1FE</code> bytes and never meets a zero. The copy runs on through <code>0x80074723</code>, <code>0x80075E93</code> and <code>0x80079543</code> (logged every 2000 passes), overwriting everything after the buffer. Under the fast core the emulator stops with &ldquo;Unrecoverable error while running recompiler&rdquo; at pc <code>0x80036868</code>, the loop's tail. On hardware the game hangs.</li>
   </ol>
   <p>A plain escape never installs the caption, so it cannot hit this. The water flags are read only after the battle has ended, by which time the copy has already locked up.</p>
 
   <h3 id="why-one-fight-and-not-another">Why one fight and not another</h3>
-  <p>Two things decide whether the stale caption hangs or only draws a frame of garbage: where the heap put the caption's text, which follows from the size of the fight's enemy data, and what the field-back read writes over it. Both follow from the formation, so the outcome is fixed per fight: the captured three-Gillium-Lv3 fight froze on every run, and ZetaPhoenix reports that this formation always freezes, while other fights escape cleanly. A first zero byte before any bad substitution code ends the copy harmlessly. In Rogue's Tower, with the same save and pokes, the flute escape returns to the field (capture). The exact condition there was not traced (inference).</p>
-  <p>The first two rows of the community table are first-hand play. The freeze rows above are <strong>captured on a poked state</strong> (the byte, the bag slot and the step counter). Probe <code>scripts/pcsx-redux/autorun_spikefish_text_hang.lua</code> replays the end of a run on the interpreter from the escape-wait checkpoint, logging the renderer calls and the runaway loop.</p>
+  <p>The outcome is a fixed function of the scene and the formation's distinct monster species. Three links make it so.</p>
+  <p><strong>Where the caption text sits</strong> (capture). The caption string is the attack name inside the Spikefish's actor record. That record is streamed into the side-band slot at the bottom of the enemy stager buffer, so the text sits at <code>0x800B990C + 0x50</code> = <code>0x800B995C</code>. The stager buffer (<code>0x2E390</code> bytes) sits at <code>0x800B9900</code> in every captured fight, in both scenes.</p>
+  <p><strong>How much the field-back read loads</strong> (disassembly, capture). PROT 0978's routine <code>0x801F6B24</code> works in three steps:</p>
+  <ol>
+    <li>It takes the largest free heap block (<code>FUN_8002B790</code>, at <code>0x801F6F08</code>), counts whole sectors in it, and caps the count at <code>0xC5</code>.</li>
+    <li>It allocates that many sectors less 4 bytes (<code>FUN_80017888</code>, at <code>0x801F6F74</code>). The best-fit allocator <code>FUN_8002B468</code> cuts the allocation from the top of the block, so the buffer ends at <code>0x800E7C9C</code>, where the freed stager buffer ended.</li>
+    <li>It reads that many sectors from 32 sectors into the scene's first PROT entry (<code>0x801F726C..0x801F7298</code>), the scene's own field data.</li>
+  </ol>
+  <p>After the teardown the largest free block is the stager plus the monster blocks allocated directly below it. There is one monster block per distinct species, each the species' battle-heap cost (<code>block[+0x08]</code> of its PROT 867 record) plus a 12-byte header:</p>
+  <pre><code>sectors = min((0x2E390 + 0xA8 + sum(cost + 12 over distinct species)) / 0x800, 0xC5)
+caption reads scene_data[sectors * 0x800 - 0x2E344]   (reached only from 93 sectors up)</code></pre>
+  <p>The <code>0xA8</code> is fitted: it is one more freed <code>0x9C</code> node, and without it Gizam Lv3 predicts 114 sectors where the capture reads 115. The formula gives the measured count for all eight captured fights, in both scenes.</p>
+  <p><strong>What the text routine does with those bytes</strong> (simulation). The script <code>scripts/asset-investigation/spikefish_caption_predict.py</code> places the scene's disc bytes at the caption and runs the renderer and expander logic from the disassembly over them:</p>
+  <ul>
+    <li>a first byte below <code>0x20</code> draws nothing;</li>
+    <li>otherwise it follows the normalisation pass, the token count, the <code>C1..C7</code> substitution table at <code>0x80010EC0</code> and the nested name copy.</li>
+  </ul>
+  <p>A copy that runs past 64 KiB, or touches an address outside RAM and its mirrors (a bus error on hardware), is called a freeze. It needs a battle RAM image as a backdrop for the tables it dereferences; two different backdrops give identical results. The script agrees with all eight captured outcomes, among them the three Barra Lv3 and Aluru + Orb Lv2 freezes, which were predicted before those runs.</p>
+
+  <h4>Predicted freezes</h4>
+  <p>The script was run over every random formation row (encounter regions with a non-zero rate) of the bundle MAN of every scene in the scene table: 406 rows in 51 scenes. It predicts a freeze for 14 rows; every other row survives:</p>
+  <table>
+    <thead><tr><th>Scene</th><th>Formation</th><th>Sectors</th><th>Failure</th></tr></thead>
+    <tbody>
+      <tr><td><code>jouind</code>, Bio Castle (D)</td><td>three Gillium Lv3</td><td>127</td><td>runaway copy (captured)</td></tr>
+      <tr><td><code>jouinc</code>, Bio Castle (C)</td><td>three Barra Lv3</td><td>116</td><td>bus error (the same fight froze when forced in <code>jouind</code>)</td></tr>
+      <tr><td><code>jouina</code>, Bio Castle (A)</td><td>three Zenoir Lv3</td><td>114</td><td>runaway copy</td></tr>
+      <tr><td><code>jouina</code>, Bio Castle (A)</td><td>three Gola Gola Lv3</td><td>110</td><td>bus error</td></tr>
+      <tr><td><code>cave01</code>, Snowdrift Cave</td><td>one Mushroom; one Blue Piura</td><td>110</td><td>runaway copy</td></tr>
+      <tr><td><code>map01</code>, world map (Drake Kingdom)</td><td>one or two Gobu Gobu</td><td>117</td><td>runaway copy</td></tr>
+      <tr><td><code>dohaty</code>, Dohati's Castle</td><td>Aluru + Orb Lv2; Nova Lv2 + Gola Gola</td><td>134</td><td>runaway copy</td></tr>
+      <tr><td><code>tunnelb</code>, Fire Path</td><td>Nova + Gel Frog</td><td>139</td><td>bus error</td></tr>
+      <tr><td><code>tunnelb</code>, Fire Path</td><td>Stone Lizard + two Warman</td><td>134</td><td>runaway copy</td></tr>
+      <tr><td><code>nilboa</code>, Nivora Ravine</td><td>two Amethyst + Neo Grude</td><td>131</td><td>bus error</td></tr>
+      <tr><td><code>nilboa</code>, Nivora Ravine</td><td>one Amethyst</td><td>102</td><td>runaway copy</td></tr>
+    </tbody>
+  </table>
+  <p>Three rows sit within the fit's error of a sector boundary, where the neighbouring count gives the other answer:</p>
+  <ul>
+    <li>Fire Path two Nova (117; 116 would freeze);</li>
+    <li>Sol Tower <code>koin2</code> Spoon + Shade (141; 142 would freeze);</li>
+    <li>Fire Path Stone Lizard + two Warman (134; 135 survives).</li>
+  </ul>
+  <p>The same formation can differ between rooms, because the bytes come from each room's own data: three Gillium Lv3 freezes in Bio Castle (D) but is predicted to survive in Bio Castle (E) (<code>jouine</code>).</p>
+  <p>That fits both community reports. The three-Gillium-Lv3 freeze is first-hand. A Bio Castle flute escape that did not freeze is consistent with three Puera Lv3, the room's other formation, which survives here.</p>
+  <p>The first two rows of the community table are first-hand play. The freeze rows above are <strong>captured on a poked state</strong> (the byte, the bag slot and the step counter, plus the formation row for the forced formations). Probe <code>scripts/pcsx-redux/autorun_spikefish_text_hang.lua</code> replays the end of a run on the interpreter from the escape-wait checkpoint, logging the renderer calls and the runaway loop.</p>
   <h3>Addresses</h3>
   <table>
     <thead><tr><th>Address</th><th>Image</th><th>What</th><th>Evidence</th></tr></thead>
@@ -648,7 +705,10 @@
 
   <h3>Still open</h3>
   <ul>
-    <li>The exact layout condition under which the stale caption hangs: which fights put its text where the field-back read overwrites it with bytes that send the copy into its own buffer.</li>
+    <li>Whether the party (members, equipment) moves the stager or the free block. Every capture used one party.</li>
+    <li>The <code>0xA8</code> slack is fitted, not traced to the node it stands for.</li>
+    <li>The world-map rows (Drake Kingdom, Gobu Gobu) assume the world map's field-back read is the same as a field scene's; no world-map flute escape was captured.</li>
+    <li>Formations in the streamed MAN variants are not evaluated.</li>
     <li>Whether other summon-flute or item captions survive an escape the same way.</li>
   </ul>
 </section>
