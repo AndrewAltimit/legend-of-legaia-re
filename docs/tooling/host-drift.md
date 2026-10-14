@@ -1725,7 +1725,7 @@ Three more surfaces sit outside every tier:
 | ground shadow, default draw-kind-4 arm | `engine-effects::effect_default_arm` (`FUN_80028158`), `World::active_effect_kind4_draws`, `World::battle_ground_shadows` ([`effect-vm.md`](../subsystems/effect-vm.md#the-default-arms-draw)) |
 | move-FX spawn to sound | `BootSession::step_effect_scene_graphs`, over `engine-session::battle_fx::spawn_pending_move_fx` |
 | scene matrix for FX passes | `battle_scene_mvp`, at the stage's 4:3 |
-| labels | `battle_open::battle_ui_strings_for_disc`; `SCUS_LABELS` and `OVERLAY_LABELS` share no key |
+| labels | `engine-scene::battle_overlay_readers::battle_ui_strings_for_disc`; `SCUS_LABELS` and `OVERLAY_LABELS` share no key |
 | party wipe | `GameOverOutcome::ReturnToTitle`; the whole overlay list is empty for the hold |
 | spoils leader | `World::battle_spoils_leader` |
 | summon seat order | seated before the effect scene-graph tick (`tick_world_effects`) |
