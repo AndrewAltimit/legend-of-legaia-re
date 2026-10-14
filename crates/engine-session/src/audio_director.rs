@@ -40,7 +40,7 @@ mod xa_clips;
 
 #[cfg(test)]
 use sfx_banks::resolve_sfx_slot;
-pub use xa_clips::XaChannelSource;
+pub use xa_clips::{XA_GAIN_UNITY, XaChannelSource, XaLaneStats, XaStageRequest};
 
 /// The pause menu's cursor-step cue, re-exported from the one engine-side
 /// table both hosts fire from ([`legaia_engine_menus::menu_cues`], provenance
@@ -117,6 +117,15 @@ pub struct AudioDirector<S: AudioSink> {
     /// until a cast names its channel, and then only the read span the
     /// starter would have covered. `None` on a disc-free boot.
     xa_lazy: Option<Box<dyn XaChannelSource + Send + Sync>>,
+    /// Each `XA<n>.XA`'s `(first sector, sector count)` by clip slot
+    /// `n - 1`, for a host that slices sectors itself
+    /// ([`Self::set_xa_file_extents`]). Empty when lazy staging reads the
+    /// disc directly.
+    xa_extents: BTreeMap<u8, (u32, u32)>,
+    /// Channel spans waiting on the host ([`Self::xa_stage_requests`]).
+    xa_pending: Vec<XaStageRequest>,
+    /// The XA lane's request counters ([`Self::xa_stats`]).
+    xa_stats: XaLaneStats,
     /// The battle audio duck, in retail's own units: `_DAT_8007B910` is the
     /// live level (seeded `0xD7` = [`DUCK_LEVEL_REF`] by the cold reset
     /// `FUN_8001FFA4`), ramped one unit per vsync toward a target the action
@@ -212,6 +221,9 @@ impl<S: AudioSink> AudioDirector<S> {
             shout_bank: None,
             xa_clip_bank: None,
             xa_lazy: None,
+            xa_extents: BTreeMap::new(),
+            xa_pending: Vec::new(),
+            xa_stats: XaLaneStats::default(),
             duck_level: DUCK_LEVEL_REF,
             duck_target: DUCK_LEVEL_REF,
             duck_ref: DUCK_LEVEL_REF,

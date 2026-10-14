@@ -204,7 +204,8 @@ impl<S: AudioSink> BootSession<S> {
             queue_marks: HostQueueMarks::default(),
             camera_azimuth_override: None,
             host_owns_pause_menu: false,
-            host_stages_field_xa: false,
+            footstep: Default::default(),
+            footstep_prev_pos: None,
         })
     }
 
@@ -223,13 +224,6 @@ impl<S: AudioSink> BootSession<S> {
     /// [`Self::tick`] leaves the Start edge and [`Self::field_menu`] alone.
     pub fn set_host_owns_pause_menu(&mut self, on: bool) {
         self.host_owns_pause_menu = on;
-    }
-
-    /// Declare that the caller plays the field's CD-XA cues itself, so
-    /// [`Self::tick`] leaves the world's field-XA cue and prestage queues for
-    /// it to drain.
-    pub fn set_host_stages_field_xa(&mut self, on: bool) {
-        self.host_stages_field_xa = on;
     }
 }
 

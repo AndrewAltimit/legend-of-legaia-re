@@ -48,9 +48,9 @@ impl LegaiaRuntime {
             // seat's frame, the camera's half before the world tick (with the
             // page's own azimuth), the world tick, the tick's BGM events, the
             // camera's half after it, the SFX queue dropped on a door, the
-            // field SFX routing, and the mode word adopted. The page owns the
-            // pause menu, the field CD-XA lane and the per-tick queue drains,
-            // which the session was told at install.
+            // field SFX routing (CD-XA lines included), and the mode word
+            // adopted. The page owns the pause menu and the per-tick queue
+            // drains, which the session was told at install.
             session.camera_azimuth_override = self.camera_azimuth_override.take();
             session
                 .tick()
@@ -77,6 +77,14 @@ impl LegaiaRuntime {
         // Advance the world's play clock off the page's wall clock, the same
         // delta-against-a-high-water-mark the native window runs.
         self.tick_play_clock();
+        // A field-VM op-0x49 sub-0 merchant (or sub-7 prize counter) armed a
+        // screen this tick: hand it to the menu runtime so the page can open
+        // it, where the native window polls - after the session tick, ahead
+        // of the effect step and of the tick's audio frame, which sounds the
+        // opening blip. The field VM stays suspended (op-0x49 Armed) until
+        // `play_shop_input` sees the session end and calls
+        // `finish_field_shop`.
+        self.poll_field_shop();
         // Effect scene-graphs, ticked exactly where the native window ticks
         // them: drain the two production spawn requests (a player Seru-magic
         // cast, and a non-summon move whose power record carries a spawnable
@@ -103,8 +111,8 @@ impl LegaiaRuntime {
         // Muscle Dome: the round time meter, the session's step the native
         // window names the same way.
         self.tick_muscle_time_meter();
-        // Sound-effect channel: feed the footstep cadence this tick's movement
-        // magnitude, advance the delay scheduler, key whatever matured.
+        // Sound-effect channel: step the footstep cadence, advance the delay
+        // scheduler, key whatever matured.
         //
         // **After** the two queue drains above, not before them. The audio
         // frame is one session step on both hosts
@@ -177,11 +185,6 @@ impl LegaiaRuntime {
         {
             self.build_player_rig();
         }
-        // A field-VM op-0x49 sub-0 merchant armed a shop this tick: hand it to
-        // the menu runtime so the page can open the store. The field VM stays
-        // suspended (op-0x49 Armed) until `play_shop_input` sees the session
-        // end and calls `finish_field_shop`.
-        self.poll_field_shop();
         self.drive_npc_clips();
         Ok(entered)
     }

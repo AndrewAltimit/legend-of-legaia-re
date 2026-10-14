@@ -39,15 +39,23 @@
 //!   starter `FUN_8003D53C(clip_slot, channel, duration_sectors)` takes.
 //!
 //! Both banks belong to the page's audio director once it exists (the native
-//! window's `AudioDirector`), and both play through its `play_art_shout` /
-//! `play_xa_clip` - the native calls, over the page's output: the modelled
-//! CD-response start delay so the voice trails the animation, the one-deep
-//! back-to-back queue, and a mix point **before** the page's post-mixer gain,
-//! so a shout sits against the music at the same ratio as under the native
-//! window. What this module keeps is the page's side: installing the files the
-//! page slices off its disc bytes (the banks live here until a director
-//! takes them), the deferred span staging a cast voice rides, and the
-//! readout's counters.
+//! window's `AudioDirector`), and every request - a battle's clips and
+//! shouts, a field line, a minigame announcer - reaches it through the
+//! session steps the native window runs (`BootSession::route_battle_audio`,
+//! its field SFX routing, `sound_muscle_hub`, `sound_baka_announcer`), so
+//! the modelled CD-response start delay, the one-deep back-to-back queue and
+//! the mix point **before** the page's post-mixer gain are the director's on
+//! both hosts.
+//!
+//! What this module keeps is the page's side of **staging**. The native
+//! director reads a clip the bank lacks straight off the disc image; the
+//! page's disc bytes live on the JavaScript side, so its director is told
+//! where each `XA<n>.XA` sits (`AudioDirector::set_xa_file_extents`) and
+//! *defers* such a clip: it lists the span it wants
+//! ([`LegaiaRuntime::play_xa_stage_requests_json`]), the page slices those
+//! sectors and hands them back ([`LegaiaRuntime::play_xa_install_span`]),
+//! and the director plays the waiting request. The banks installed before a
+//! director exists live here until one takes them.
 //!
 //! REF: FUN_8004C140 (arts-voice cue selector), FUN_8003D53C (CD-XA clip
 //! starter both banks stand in for).
@@ -57,69 +65,25 @@ use legaia_art::arts_voice::ArtsVoiceTable;
 #[cfg(target_arch = "wasm32")]
 use legaia_engine_audio::AudioSink;
 use legaia_engine_audio::{ArtsShoutBank, XaClipBank};
-use legaia_engine_session::xa_banks::{XaBankFile, bank_file, file_key, wanted_files};
+use legaia_engine_session::audio_director::XaLaneStats;
+use legaia_engine_session::xa_banks::{
+    XaBankFile, bank_file, clip_slot_of, file_key, wanted_files,
+};
 use std::collections::BTreeMap;
 use wasm_bindgen::prelude::*;
 
-/// One raw Mode 2 sector as the page slices it out of the disc bytes.
-pub(crate) const RAW_SECTOR_BYTES: usize = legaia_xa::demux::RAW_SECTOR_BYTES;
-
-/// Unity XA gain (Q1.14), what both native XA players pass.
-#[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
-pub(crate) const XA_GAIN_UNITY: u16 = 0x4000;
-
-/// Live state of the page's XA lane.
+/// The page's side of the XA lane: the banks installed before a director
+/// exists, and what was installed.
 #[derive(Default)]
 pub struct PlayXa {
-    /// Arts-voice shout bank; `None` until a shout file installs.
+    /// Arts-voice shout bank; `None` until a shout file installs, and again
+    /// once a director has taken it.
     pub shout_bank: Option<ArtsShoutBank>,
-    /// Battle one-shot clip bank; `None` until a clip file installs.
+    /// Battle one-shot clip bank; `None` until a clip file installs, and
+    /// again once a director has taken it.
     pub clip_bank: Option<XaClipBank>,
     /// Installed file -> decoded channel count.
     pub installed: BTreeMap<String, u32>,
-    /// Shouts that resolved to a clip and were handed to the mixer.
-    pub shouts_fired: u32,
-    /// Shout requests that resolved to nothing (bank absent, art unvoiced,
-    /// channel not decoded) - retail's silent-art degradation.
-    pub shouts_unvoiced: u32,
-    /// Clip requests handed to the mixer.
-    pub clips_fired: u32,
-    /// Clip requests for a `(slot, channel)` this module has not staged.
-    pub clips_unstaged: u32,
-    /// The most recent shout: `(cslot, action, channel)`.
-    pub last_shout: Option<(u8, u8, u8)>,
-    /// The most recent clip: `(slot, channel, frames cut)`.
-    pub last_clip: Option<(u8, u8, u32)>,
-    /// Clip requests waiting for the page to slice their sectors - the
-    /// **lazy** tier the cast voices ride ([`LegaiaRuntime::play_xa_stage_requests_json`]).
-    /// One per `(slot, channel)`; the request is replayed when its span
-    /// installs.
-    pub pending_stage: Vec<PendingXaStage>,
-    /// Clip requests that went to the lazy tier instead of playing at once.
-    pub clips_deferred: u32,
-    /// Channel spans the page installed lazily.
-    pub lazy_installed: u32,
-}
-
-/// One lazy staging request: which raw sectors of which file the page
-/// should hand to [`LegaiaRuntime::play_xa_install_span`], and the clip
-/// request that wants them.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct PendingXaStage {
-    /// The ISO path as `disc_file_extent_json` resolves it.
-    pub path: String,
-    /// First raw sector of the file.
-    pub lba: u32,
-    /// Sectors to slice from `lba`: the clip starter's read span, capped at
-    /// the file.
-    pub sectors: u32,
-    pub slot: u8,
-    pub channel: u8,
-    pub duration_sectors: u32,
-    /// Whether a clip request is waiting on this span (play it once the span
-    /// installs), or the span was only staged ahead of a cast
-    /// ([`LegaiaRuntime::prestage_xa_clip`]).
-    pub replay: bool,
 }
 
 impl LegaiaRuntime {
@@ -130,86 +94,32 @@ impl LegaiaRuntime {
         ArtsVoiceTable::parse_from_scus(self.scus.as_deref()?)
     }
 
-    /// Fire the Tactical-Arts shout for `(cslot, action_constant)` through
-    /// the XA mixing path - the twin of the native
-    /// `AudioDirector::play_art_shout`. Resolves the cue against the
-    /// bank's channel pools (retail `FUN_8004C140`'s pick, no immediate
-    /// repeat) and stages the clip with the modelled CD-response delay so the
-    /// shout starts *after* the art animation that requested it. A second
-    /// shout while one is sounding queues behind it. Returns the fired
-    /// channel, or `None` when the bank is absent or the art is unvoiced.
-    /// Off wasm the resolution runs and is counted; nothing sounds.
-    pub(crate) fn play_art_shout(&mut self, cslot: u8, action: u8) -> Option<u8> {
-        // Through the director once one exists (it keys the mixer); before
-        // that the lane's own bank resolves the pick and nothing sounds.
-        let fired = match self.scene_host.director_mut() {
-            Some(d) => d.play_art_shout(cslot, action),
-            None => self
-                .sfx
-                .xa
-                .shout_bank
-                .as_mut()
-                .and_then(|b| b.shout(cslot, action))
-                .map(|(channel, _)| channel),
-        };
-        match fired {
-            Some(channel) => {
-                self.sfx.xa.shouts_fired += 1;
-                self.sfx.xa.last_shout = Some((cslot, action, channel));
-            }
-            None => self.sfx.xa.shouts_unvoiced += 1,
-        }
-        fired
+    /// Where each `XA<n>.XA` sits on the loaded disc, as the director's
+    /// `(clip slot, first sector, sector count)` rows. Empty before a disc
+    /// is loaded.
+    pub(crate) fn xa_file_extents(&self) -> Vec<(u8, u32, u32)> {
+        self.disc_files
+            .iter()
+            .filter_map(|f| Some((clip_slot_of(&f.path)?, f.lba, f.size.div_ceil(2048))))
+            .collect()
     }
 
-    /// Play one CD-XA clip request - the engine's `FUN_8003D53C(clip,
-    /// channel, dur)`, the twin of the native `AudioDirector::play_xa_clip`:
-    /// the staged `(slot, channel)` PCM cut at the retail read span
-    /// (`XaClipBank::cut_frames`), through the same XA path as the shouts
-    /// with the same start delay.
-    ///
-    /// A `(slot, channel)` the bank does not hold whose file is on the disc
-    /// is **deferred**: the request is queued for the page to slice the
-    /// file's read span out of its disc bytes
-    /// ([`Self::play_xa_stage_requests_json`]) and replays when the span
-    /// installs ([`Self::play_xa_install_span`]) - the cast voices' path,
-    /// the native window's disc read done by the page instead. Returns
-    /// `false` when nothing plays this call (deferred, or no such file).
-    // REF: FUN_8003D53C
-    pub(crate) fn play_xa_clip(
-        &mut self,
-        clip_slot: u32,
-        channel: u32,
-        duration_sectors: u32,
-    ) -> bool {
-        let (Ok(slot), Ok(ch)) = (u8::try_from(clip_slot), u8::try_from(channel)) else {
-            self.sfx.xa.clips_unstaged += 1;
-            return false;
-        };
-        let Some(cut) = self
-            .xa_clip_bank()
-            .and_then(|b| b.cut(slot, ch, duration_sectors))
-        else {
-            if self.defer_xa_clip(slot, ch, duration_sectors, true) {
-                self.sfx.xa.clips_deferred += 1;
-            } else {
-                self.sfx.xa.clips_unstaged += 1;
-            }
-            return false;
-        };
-        let frames = (if cut.stereo {
-            cut.pcm.len() / 2
-        } else {
-            cut.pcm.len()
-        }) as u32;
-        // The director cuts and plays the same span; before one exists the
-        // request is counted and nothing sounds.
+    /// Hand the director the loaded disc's XA file extents, so a clip its
+    /// bank lacks is deferred to the page rather than dropped. Called when a
+    /// director is built and when a disc loads under an existing one.
+    pub(crate) fn sync_xa_file_extents(&mut self) {
+        let extents = self.xa_file_extents();
         if let Some(d) = self.scene_host.director_mut() {
-            let _ = d.play_xa_clip(clip_slot, channel, duration_sectors);
+            d.set_xa_file_extents(extents);
         }
-        self.sfx.xa.clips_fired += 1;
-        self.sfx.xa.last_clip = Some((slot, ch, frames));
-        true
+    }
+
+    /// The lane's request counters: the director's, zero before one exists.
+    fn xa_stats(&self) -> XaLaneStats {
+        self.scene_host
+            .director()
+            .map(|d| d.xa_stats().clone())
+            .unwrap_or_default()
     }
 
     /// The shout bank: the director's once one exists, the lane's own before.
@@ -249,87 +159,33 @@ impl LegaiaRuntime {
     }
 }
 
-impl LegaiaRuntime {
-    /// Stage `(clip_slot, channel)` ahead of the cast that will ask for it:
-    /// queue a lazy staging request that installs the span **without**
-    /// playing it, unless the bank already holds the channel. The engine
-    /// lists the round's candidates at the round's start
-    /// (`World::drain_battle_xa_prestage`), so by the time the cast raises its
-    /// clip the page has sliced and decoded it and [`Self::play_xa_clip`] cuts
-    /// it on the same call, as the native window does.
-    pub(crate) fn prestage_xa_clip(&mut self, clip_slot: u32, channel: u32, duration_sectors: u32) {
-        let (Ok(slot), Ok(ch)) = (u8::try_from(clip_slot), u8::try_from(channel)) else {
-            return;
-        };
-        let held = self
-            .xa_clip_bank()
-            .is_some_and(|b| b.cut(slot, ch, duration_sectors).is_some());
-        if !held {
-            self.defer_xa_clip(slot, ch, duration_sectors, false);
-        }
-    }
-
-    /// Queue a lazy staging request for `(slot, ch)` when the disc carries
-    /// `XA<slot + 1>.XA`: the file's first `read_span_sectors(dur)` sectors
-    /// (capped at the file), the span the clip starter would have read.
-    /// One request per `(slot, ch)` at a time. `false` when the disc has no
-    /// such file (or no disc is loaded).
-    fn defer_xa_clip(&mut self, slot: u8, ch: u8, duration_sectors: u32, replay: bool) -> bool {
-        let name = format!("XA{}.XA", u32::from(slot) + 1);
-        let Some(f) = self.disc_files.iter().find(|f| file_key(&f.path) == name) else {
-            return false;
-        };
-        let file_sectors = f.size.div_ceil(2048);
-        let sectors = legaia_engine_audio::xa_clip_bank::read_span_sectors(duration_sectors)
-            .min(file_sectors)
-            .max(1);
-        let req = PendingXaStage {
-            path: f.path.clone(),
-            lba: f.lba,
-            sectors,
-            slot,
-            channel: ch,
-            duration_sectors,
-            replay,
-        };
-        let pending = &mut self.sfx.xa.pending_stage;
-        if let Some(p) = pending
-            .iter_mut()
-            .find(|p| p.slot == slot && p.channel == ch)
-        {
-            // Re-requested before the page served it: keep the wider span
-            // and the latest request.
-            p.sectors = p.sectors.max(sectors);
-            if replay {
-                // A live request takes over a prestage one.
-                p.duration_sectors = duration_sectors;
-                p.replay = true;
-            }
-        } else {
-            pending.push(req);
-        }
-        true
-    }
-}
-
 #[wasm_bindgen]
 impl LegaiaRuntime {
     /// The lazy staging requests the page should serve now, as a JSON
-    /// array of `{ "path", "lba", "sectors", "slot", "channel" }`. For each,
+    /// array of `{ "path", "lba", "sectors", "slot", "channel" }` - the
+    /// director's own list (`AudioDirector::xa_stage_requests`), each row
+    /// named by the ISO path `disc_file_extent_json` resolves. For each,
     /// the page slices `bytes.subarray(lba * 2352, (lba + sectors) * 2352)`
     /// out of the disc bytes it holds and calls
     /// [`Self::play_xa_install_span`] with the same `path` and `channel`.
     /// A request stays listed until served, so a page that polls every
-    /// frame sees each one until it installs.
+    /// frame sees each one until it installs. Empty before audio is up.
     pub fn play_xa_stage_requests_json(&self) -> String {
         let reqs: Vec<serde_json::Value> = self
-            .sfx
-            .xa
-            .pending_stage
+            .scene_host
+            .director()
+            .map(|d| d.xa_stage_requests())
+            .unwrap_or_default()
             .iter()
             .map(|p| {
+                let path = self
+                    .disc_files
+                    .iter()
+                    .find(|f| clip_slot_of(&f.path) == Some(p.slot))
+                    .map(|f| f.path.clone())
+                    .unwrap_or_else(|| format!("XA{}.XA", u32::from(p.slot) + 1));
                 serde_json::json!({
-                    "path": p.path,
+                    "path": path,
                     "lba": p.lba,
                     "sectors": p.sectors,
                     "slot": p.slot,
@@ -341,39 +197,19 @@ impl LegaiaRuntime {
     }
 
     /// Install one channel of one file from the raw sectors the page
-    /// sliced for a [`Self::play_xa_stage_requests_json`] request: demux +
-    /// decode that channel only, stage it lazily under the bank's cap, and
-    /// replay the clip request that asked for it (through the same XA path,
-    /// with the modelled CD-response delay). Returns whether the channel
-    /// decoded. The sectors are borrowed for the call only.
+    /// sliced for a [`Self::play_xa_stage_requests_json`] request
+    /// (`AudioDirector::install_xa_span`): demux + decode that channel only,
+    /// stage it lazily under the bank's cap, and play the clip request that
+    /// asked for it (through the same XA path, with the modelled CD-response
+    /// delay). Returns whether the channel decoded. The sectors are borrowed
+    /// for the call only.
     pub fn play_xa_install_span(&mut self, path: &str, sectors: &[u8], channel: u32) -> bool {
-        let key = file_key(path);
-        let Ok(ch) = u8::try_from(channel) else {
+        let (Some(slot), Ok(ch)) = (clip_slot_of(path), u8::try_from(channel)) else {
             return false;
         };
-        let Some(pos) = self
-            .sfx
-            .xa
-            .pending_stage
-            .iter()
-            .position(|p| file_key(&p.path) == key && p.channel == ch)
-        else {
-            return false;
-        };
-        let req = self.sfx.xa.pending_stage.remove(pos);
-        let Some((clip, width)) =
-            legaia_engine_audio::xa_clip_bank::decode_channel_span(sectors, ch)
-        else {
-            self.sfx.xa.clips_unstaged += 1;
-            return false;
-        };
-        self.xa_clip_bank_mut()
-            .insert_lazy(req.slot, ch, clip, width);
-        self.sfx.xa.lazy_installed += 1;
-        if req.replay {
-            self.play_xa_clip(u32::from(req.slot), u32::from(ch), req.duration_sectors);
-        }
-        true
+        self.scene_host
+            .director_mut()
+            .is_some_and(|d| d.install_xa_span(slot, ch, sectors))
     }
 }
 
@@ -459,10 +295,14 @@ impl LegaiaRuntime {
         let active = self.audio_out.as_ref().map(|o| o.xa_active());
         #[cfg(not(target_arch = "wasm32"))]
         let active: Option<bool> = None;
-        let xa = &self.sfx.xa;
+        let xa = self.xa_stats();
+        let pending = self
+            .scene_host
+            .director()
+            .map_or(0, |d| d.xa_stage_requests().len());
         serde_json::json!({
             "wanted": wanted_files(),
-            "installed": xa.installed,
+            "installed": self.sfx.xa.installed,
             "shout_bank": self.xa_shout_bank().is_some_and(|b| b.has_clips()),
             "clip_bank": self.xa_clip_bank().is_some_and(|b| b.has_clips()),
             "voice_tables": self.arts_voice_table().is_some(),
@@ -472,7 +312,7 @@ impl LegaiaRuntime {
             "clips_unstaged": xa.clips_unstaged,
             "clips_deferred": xa.clips_deferred,
             "lazy_installed": xa.lazy_installed,
-            "pending_stage": xa.pending_stage.len(),
+            "pending_stage": pending,
             "last_shout": xa.last_shout.map(|(c, a, ch)| [c, a, ch]),
             "last_clip": xa.last_clip.map(|(s, c, f)| [u32::from(s), u32::from(c), f]),
             "xa_active": active,
@@ -527,7 +367,9 @@ impl LegaiaRuntime {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use legaia_xa::demux::{AUDIO_BYTES_PER_SECTOR, SUBHEADER_OFFSET, USER_DATA_OFFSET};
+    use legaia_xa::demux::{
+        AUDIO_BYTES_PER_SECTOR, RAW_SECTOR_BYTES, SUBHEADER_OFFSET, USER_DATA_OFFSET,
+    };
 
     /// One synthetic raw Mode 2 Form 2 audio sector for `(file, ch)` with
     /// the given coding byte and a constant audio fill.
@@ -543,20 +385,46 @@ mod tests {
         s
     }
 
-    /// A clip whose file the disc carries is deferred to the lazy tier:
-    /// one request per `(slot, channel)` naming the starter's read span,
-    /// listed until the page serves it; installing the span decodes only
-    /// that channel and replays the request. The cast voices' path.
-    #[test]
-    fn a_clip_the_disc_carries_is_deferred_then_replayed_when_its_span_installs() {
+    /// A runtime whose disc carries `XA7.XA` and whose director knows it.
+    fn runtime_with_xa7() -> LegaiaRuntime {
         let mut rt = LegaiaRuntime::new();
         rt.disc_files.push(crate::disc::FileEntry {
             path: "XA/XA7.XA;1".into(),
             lba: 1000,
             size: 8 * 2048 * 300,
         });
+        assert!(
+            rt.audio_director().is_some(),
+            "off wasm: built on first use"
+        );
+        rt
+    }
+
+    /// An 8-channel interleave with real audio on channel 4.
+    fn xa7_run() -> Vec<u8> {
+        let mut run = Vec::new();
+        for _ in 0..4 {
+            for ch in 0..8u8 {
+                run.extend(sector(1, ch, 0x00, if ch == 4 { 0x77 } else { 0x00 }));
+            }
+        }
+        run
+    }
+
+    /// A clip whose file the disc carries is deferred by the director: the
+    /// page lists one request per `(slot, channel)` naming the starter's
+    /// read span under the file's ISO path, until it serves it; installing
+    /// the span decodes only that channel and plays the request. The cast
+    /// voices' path.
+    #[test]
+    fn a_clip_the_disc_carries_is_listed_then_played_when_its_span_installs() {
+        let mut rt = runtime_with_xa7();
         // Gimard: slot 6 channel 4, span 686 vsyncs -> 1717 sectors.
-        assert!(!rt.play_xa_clip(6, 4, 686), "nothing plays this call");
+        let d = rt.audio_director().unwrap();
+        assert!(
+            d.play_xa_clip(6, 4, 686).is_none(),
+            "nothing plays this call"
+        );
         let v: serde_json::Value = serde_json::from_str(&rt.play_xa_state_json()).unwrap();
         assert_eq!(v["clips_deferred"], 1);
         assert_eq!(v["clips_unstaged"], 0);
@@ -568,78 +436,58 @@ mod tests {
         assert_eq!(reqs[0]["sectors"], (686 * 150 + 149) / 60);
         assert_eq!(reqs[0]["slot"], 6);
         assert_eq!(reqs[0]["channel"], 4);
-        // Re-requesting before the page serves it does not duplicate.
-        assert!(!rt.play_xa_clip(6, 4, 700));
-        assert_eq!(rt.sfx.xa.pending_stage.len(), 1);
-        assert_eq!(rt.sfx.xa.pending_stage[0].duration_sectors, 700);
         // A slot the disc has no file for is unstaged, not deferred.
-        assert!(!rt.play_xa_clip(0x21, 0, 60));
-        assert_eq!(rt.sfx.xa.clips_unstaged, 1);
-        assert_eq!(rt.sfx.xa.pending_stage.len(), 1);
+        let d = rt.audio_director().unwrap();
+        assert!(d.play_xa_clip(0x21, 0, 60).is_none());
+        assert_eq!(d.xa_stats().clips_unstaged, 1);
+        assert_eq!(d.xa_stage_requests().len(), 1);
 
-        // The page serves the request: an 8-channel interleave with real
-        // audio on channel 4.
-        let mut run = Vec::new();
-        for _ in 0..4 {
-            for ch in 0..8u8 {
-                run.extend(sector(1, ch, 0x00, if ch == 4 { 0x77 } else { 0x00 }));
-            }
-        }
+        // The page serves the request.
+        let run = xa7_run();
         assert!(rt.play_xa_install_span("XA/XA7.XA;1", &run, 4));
-        assert!(rt.sfx.xa.pending_stage.is_empty(), "served");
-        assert_eq!(rt.sfx.xa.lazy_installed, 1);
-        assert_eq!(rt.sfx.xa.clips_fired, 1, "the deferred request replayed");
-        assert_eq!(rt.sfx.xa.last_clip.map(|(s, c, _)| (s, c)), Some((6, 4)));
+        let v: serde_json::Value = serde_json::from_str(&rt.play_xa_state_json()).unwrap();
+        assert_eq!(v["pending_stage"], 0, "served");
+        assert_eq!(v["lazy_installed"], 1);
+        assert_eq!(v["clips_fired"], 1, "the deferred request played");
+        assert_eq!(v["last_clip"][0], 6);
+        assert_eq!(v["last_clip"][1], 4);
         let bank = rt.xa_clip_bank().unwrap();
         assert!(bank.is_staged(6, 4));
         assert_eq!(bank.channel_count(6), 8);
-        // Staged now: the next request plays at once.
-        assert!(rt.play_xa_clip(6, 4, 686));
         // An install nobody asked for is refused.
         assert!(!rt.play_xa_install_span("XA/XA7.XA;1", &run, 5));
+        assert!(!rt.play_xa_install_span("SCUS_942.54;1", &run, 4));
     }
 
-    /// The request counters are the readout: a shout with no bank is
-    /// counted as unvoiced, a clip with no bank as unstaged, and neither
-    /// panics without audio.
-    /// A cast voice staged at the round's start installs without playing,
-    /// and the cast's own request then plays on the call that raises it -
-    /// the native window's timing. Without the prestage the request was
-    /// deferred and sounded only after the page served the slice.
+    /// The director learns the disc's XA extents when it is built, and
+    /// again when a disc loads under it.
     #[test]
-    fn a_prestaged_cast_voice_installs_silently_and_plays_on_its_cast() {
+    fn the_director_is_told_the_disc_xa_extents() {
         let mut rt = LegaiaRuntime::new();
+        assert!(rt.xa_file_extents().is_empty());
+        // No extent: a request is unstaged, never deferred.
+        let d = rt.audio_director().unwrap();
+        assert!(d.play_xa_clip(6, 4, 686).is_none());
+        assert!(d.xa_stage_requests().is_empty());
         rt.disc_files.push(crate::disc::FileEntry {
             path: "XA/XA7.XA;1".into(),
             lba: 1000,
-            size: 8 * 2048 * 300,
+            size: 2048 * 10,
         });
-        rt.prestage_xa_clip(6, 4, 686);
-        assert_eq!(rt.sfx.xa.pending_stage.len(), 1);
-        assert!(!rt.sfx.xa.pending_stage[0].replay);
-        let mut run = Vec::new();
-        for _ in 0..4 {
-            for ch in 0..8u8 {
-                run.extend(sector(1, ch, 0x00, if ch == 4 { 0x77 } else { 0x00 }));
-            }
-        }
-        assert!(rt.play_xa_install_span("XA/XA7.XA;1", &run, 4));
-        assert_eq!(rt.sfx.xa.clips_fired, 0, "a prestage plays nothing");
-        assert!(
-            rt.play_xa_clip(6, 4, 686),
-            "the cast's request plays at once"
-        );
-        assert_eq!(rt.sfx.xa.clips_deferred, 0);
-        // Prestaging a held channel queues nothing.
-        rt.prestage_xa_clip(6, 4, 686);
-        assert!(rt.sfx.xa.pending_stage.is_empty());
+        assert_eq!(rt.xa_file_extents(), vec![(6, 1000, 10)]);
+        rt.sync_xa_file_extents();
+        let d = rt.audio_director().unwrap();
+        assert!(d.play_xa_clip(6, 4, 686).is_none());
+        // Capped at the file.
+        assert_eq!(d.xa_stage_requests()[0].sectors, 10);
     }
 
     #[test]
     fn requests_without_banks_are_counted_not_dropped_silently() {
         let mut rt = LegaiaRuntime::new();
-        assert!(rt.play_art_shout(0, 0x27).is_none());
-        assert!(!rt.play_xa_clip(26, 0, 60));
+        let d = rt.audio_director().unwrap();
+        assert!(d.play_art_shout(0, 0x27).is_none());
+        assert!(d.play_xa_clip(26, 0, 60).is_none());
         let v: serde_json::Value = serde_json::from_str(&rt.play_xa_state_json()).unwrap();
         assert_eq!(v["shouts_unvoiced"], 1);
         assert_eq!(v["clips_unstaged"], 1);

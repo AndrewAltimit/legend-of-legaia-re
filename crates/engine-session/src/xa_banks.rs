@@ -69,6 +69,15 @@ pub fn file_key(path: &str) -> String {
     base.trim().to_ascii_uppercase()
 }
 
+/// The clip slot a path's file occupies: `XA<n>.XA` is slot `n - 1`, the
+/// way the boot filler `FUN_801CFA78` builds the clip table at `0x801C6ED8`
+/// (`XA/XA7.XA;1` -> `6`). `None` for any other file.
+pub fn clip_slot_of(path: &str) -> Option<u8> {
+    let key = file_key(path);
+    let n: u32 = key.strip_prefix("XA")?.strip_suffix(".XA")?.parse().ok()?;
+    u8::try_from(n.checked_sub(1)?).ok()
+}
+
 /// Which bank a file stages into.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum XaBankFile {

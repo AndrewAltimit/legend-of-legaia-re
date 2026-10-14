@@ -1942,7 +1942,8 @@ stage is `0` on a resident side-band, the `FUN_8003DE7C(1)` span countdown is
 the starter's stop point and that one channel decoded
 (`XaClipBank::decode_channel_span`, `read_span_sectors`), kept under
 `LAZY_CLIP_CAP` - the native director off the disc image
-(`AudioDirector::set_xa_lazy_source`), the play page through a
+(`AudioDirector::set_xa_lazy_source`), the play page's director by deferring
+the request (`XaStageRequest`) until the page has served it through a
 `play_xa_stage_requests_json` / `play_xa_install_span` round trip over the disc
 bytes it holds. The per-host wiring is on
 [`host-drift.md`](../tooling/host-drift.md#the-cast-voice-leg).

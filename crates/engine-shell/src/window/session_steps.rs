@@ -23,25 +23,14 @@ impl PlayWindowApp {
     }
 
     /// A field-VM shop (op `0x49` sub-0) or casino prize counter (sub-7)
-    /// opened this tick: hand the player into it and take the screen's first
-    /// step on no edge, through the shared poll
-    /// (`MenuRuntime::poll_field_overlay`). The field VM stays suspended
-    /// (op-`0x49` Armed) until the player leaves. Returns whether one opened.
+    /// opened this tick: hand the player into it, take the screen's first
+    /// step on no edge and queue its blip - the session's step
+    /// (`BootSession::poll_field_overlay` over `MenuRuntime::poll_field_overlay`),
+    /// which the browser play page runs at the same point of its frame. The
+    /// field VM stays suspended (op-`0x49` Armed) until the player leaves.
+    /// Returns whether one opened.
     pub(super) fn poll_field_shop(&mut self) -> bool {
-        let Some(cue) = self
-            .menu_runtime
-            .poll_field_overlay(&mut self.session.host.world)
-        else {
-            return false;
-        };
-        if let Some(cue) = cue {
-            self.fire_menu_cue(u16::from(cue));
-        }
-        // The Trade row's names come from the boot SCUS - a host read.
-        if self.session.host.world.seru_trade_enabled() {
-            self.ensure_seru_names();
-        }
-        true
+        self.session.poll_field_overlay(&mut self.menu_runtime)
     }
 
     /// The tick's effect step: seat a cast's summon creature, then the

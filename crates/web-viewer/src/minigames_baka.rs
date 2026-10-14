@@ -926,7 +926,7 @@ fn announcer_cues() -> Vec<legaia_engine_minigames::baka_fighter_chrome::XaCue> 
 /// or channel is missing is left out and plays silent.
 pub(crate) fn stage_baka_announcer(image: &[u8]) -> legaia_engine_audio::XaClipBank {
     use legaia_engine_audio::xa_clip_bank::{decode_channel_span, read_span_sectors};
-    const RAW: usize = crate::play_xa::RAW_SECTOR_BYTES;
+    const RAW: usize = legaia_xa::demux::RAW_SECTOR_BYTES;
     let mut bank = legaia_engine_audio::XaClipBank::new();
     for cue in announcer_cues() {
         let path = format!("XA/XA{}.XA", u32::from(cue.clip) + 1);
@@ -966,7 +966,7 @@ impl LegaiaMinigames {
                 pcm.pcm,
                 pcm.sample_rate,
                 channels,
-                crate::play_xa::XA_GAIN_UNITY,
+                legaia_engine_session::audio_director::XA_GAIN_UNITY,
                 legaia_engine_audio::SHOUT_CD_RESPONSE_DELAY,
             );
         }

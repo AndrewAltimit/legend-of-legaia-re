@@ -17,6 +17,8 @@ impl LegaiaRuntime {
         use crate::disc::{extract_cdname_txt, extract_prot_dat, extract_scus, is_mode2_2352_disc};
 
         self.disc_files = crate::disc::walk_iso_files(&raw_bytes);
+        // A director built before this disc loaded learns its XA extents.
+        self.sync_xa_file_extents();
         let (prot_bytes, auto_cdname, scus) = if is_mode2_2352_disc(&raw_bytes) {
             let prot = extract_prot_dat(&raw_bytes)
                 .ok_or_else(|| JsValue::from_str("load_disc: PROT.DAT not found in disc image"))?;

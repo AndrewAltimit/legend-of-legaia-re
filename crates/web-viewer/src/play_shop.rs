@@ -58,24 +58,23 @@ use wasm_bindgen::prelude::*;
 
 impl LegaiaRuntime {
     /// Hand a field-VM-armed shop or prize counter to the menu runtime.
-    /// Called once per [`LegaiaRuntime::tick_frame`]; the open and the
-    /// screen's first no-edge step are the shared poll
-    /// (`MenuRuntime::poll_field_overlay`, the native window's
+    /// Called once per [`LegaiaRuntime::tick_frame`]; the open, the screen's
+    /// first no-edge step and its blip are the session's step
+    /// (`BootSession::poll_field_overlay` over
+    /// `MenuRuntime::poll_field_overlay`, the native window's
     /// `poll_field_shop` too). The press this tick carried already went to
     /// the field (the Cross that closed the merchant's line), so the screen
     /// steps on no edge; without the step its fade and window slides would
-    /// run one tick behind the window's.
+    /// run one tick behind the window's. The tick's screen-prim rebuild
+    /// (`tick_battle_intro`) follows it, so the opening fade is in this
+    /// frame's geometry.
     pub(crate) fn poll_field_shop(&mut self) {
-        let Some(host) = self.scene_host.host_mut() else {
+        let Some(session) = self.scene_host.session_mut() else {
             return;
         };
-        let Some(cue) = self.menu.poll_field_overlay(&mut host.world) else {
-            return;
-        };
-        if let Some(cue) = cue {
-            self.play_sfx(u32::from(cue));
+        if session.poll_field_overlay(&mut self.menu) {
+            self.sfx.queued += 1;
         }
-        self.rebuild_screen_geom();
     }
 
     /// The shop-family overlay for this frame over a `surface_w x surface_h`

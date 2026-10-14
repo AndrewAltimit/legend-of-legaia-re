@@ -165,8 +165,8 @@ impl HostSlot {
     /// The session boots no scene (the page enters its first scene through
     /// its own picker) and opens no audio (the page's output exists only after
     /// a user gesture, and its director is the page's own). The page drains
-    /// the world's per-tick queues, opens its pause menu and plays the field's
-    /// CD-XA itself, so the session is told all three. Every cold entry on
+    /// the world's per-tick queues and opens its pause menu itself, so the
+    /// session is told both. Every cold entry on
     /// this page is a scene-picker entry, so the new-game defaults stand up
     /// the full Vahn / Noa / Gala party, as the native picker does.
     pub(crate) fn install(&mut self, host: SceneHost, scus: Option<&[u8]>) -> anyhow::Result<()> {
@@ -194,7 +194,6 @@ impl HostSlot {
         session.bgm = self.director.take();
         session.set_host_drains_queues(true);
         session.set_host_owns_pause_menu(true);
-        session.set_host_stages_field_xa(true);
         if let Some(defaults) = session.host.new_game_defaults.as_mut() {
             defaults.picker_party = true;
         }

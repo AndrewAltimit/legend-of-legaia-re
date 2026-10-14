@@ -33,16 +33,14 @@ impl PlayWindowApp {
     /// second `fold_battle_event` would apply an art strike's HP twice.
     pub(super) fn drain_and_log_battle_events(&mut self) {
         let events = self.session.host.world.drain_battle_events();
+        // The tick's battle audio - the duck target, the strike / cast cues
+        // at their strike-relative timing, the round's cast-voice prestage,
+        // the one-shot CD-XA clips and the arts shouts - is one session step
+        // on both hosts (`BootSession::route_battle_audio`). The tick's audio
+        // frame (`tick_sfx`, the next step of the frame path) ramps the duck
+        // and fires whatever matured.
+        let _ = self.session.route_battle_audio(&events);
         for ev in events {
-            // The audio duck: the summon / capture arms lower the BGM to 75%
-            // of its reference, the Done band's `0x51` arm raises it back.
-            // The director ramps one retail unit per frame (`tick_duck`).
-            if let legaia_engine_battle::battle_events::BattleEvent::DuckAudioLevel { target_pct } =
-                &ev
-                && let Some(bgm) = self.session.bgm.as_mut()
-            {
-                bgm.set_duck_pct(*target_pct);
-            }
             // Surface in the HUD ring.
             if self.battle_event_log.len() >= Self::BATTLE_EVENT_LOG_CAP {
                 self.battle_event_log.pop_front();
@@ -99,70 +97,6 @@ impl PlayWindowApp {
                 if h.applied { " APPLIED" } else { "" },
                 if h.is_art { " art" } else { "" },
             ));
-        }
-
-        // Battle sound cues: the art-strike outcomes resolve per-strike SFX
-        // cues (kind = the SfxBank id, played directly without classify_cue).
-        // Enqueue each into the director's SfxScheduler at its strike-relative
-        // timing; the tick's audio frame (`tick_sfx`, the next step of the
-        // frame path) advances the scheduler and fires any matured cue
-        // through the scene VAB. Drain first so the world borrow ends before
-        // the director borrow. SFX touch the SPU only - no RNG - so battle
-        // determinism stays bit-exact.
-        let cues = self.session.host.world.drain_battle_sfx_cues();
-        // Arts-voice shouts: one cue per executed party art, queued on the
-        // art's animation-start frame. The director resolves the (character,
-        // action) pair against the demuxed XA clip bank and fires the CD-XA
-        // shout with the modeled CD-response delay, so the voice trails the
-        // animation (the retail contract) instead of leading it.
-        let shouts = self.session.host.world.drain_battle_shout_cues();
-        // One-shot CD-XA clip requests (the melee grunt / attack sting):
-        // `(clip_slot, channel, dur)` in the retail starter's terms, played
-        // off the boot-staged clip bank through the same XA mixing path.
-        let xa_cues = self.session.host.world.drain_battle_xa_cues();
-        // The round's cast-voice prestage list is for a host that decodes
-        // clips asynchronously (the browser play page); this director cuts
-        // clips out of its boot-staged bank on demand, so it has nothing to
-        // stage ahead. Drained so the list does not grow.
-        let _ = self.session.host.world.drain_battle_xa_prestage();
-        if let Some(bgm) = self.session.bgm.as_mut() {
-            for xa in &xa_cues {
-                let fired = bgm
-                    .play_xa_clip(xa.clip, xa.channel, xa.duration_sectors)
-                    .is_some();
-                log::debug!(
-                    "battle XA clip slot {} ch {} dur {} -> {}",
-                    xa.clip,
-                    xa.channel,
-                    xa.duration_sectors,
-                    if fired { "playing" } else { "not staged" }
-                );
-            }
-            bgm.enqueue_battle_cues(&cues, &self.session.host.index);
-            for shout in &shouts {
-                match bgm.play_art_shout(shout.cslot, shout.action) {
-                    Some(ch) => log::debug!(
-                        "arts shout cslot {} action {:#04x} fired on XA channel {ch}",
-                        shout.cslot,
-                        shout.action
-                    ),
-                    None => log::debug!(
-                        "arts shout cslot {} action {:#04x} unvoiced / bank absent",
-                        shout.cslot,
-                        shout.action
-                    ),
-                }
-            }
-        } else {
-            for cue in &cues {
-                log::debug!(
-                    "battle SFX cue {:#04x} @ +{} frames (actor {} -> target {}; no audio)",
-                    cue.kind,
-                    cue.timing_frames,
-                    cue.actor_slot,
-                    cue.target_slot
-                );
-            }
         }
 
         // Battle effect-script spawn requests: one per effect record the

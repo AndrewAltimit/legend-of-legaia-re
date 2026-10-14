@@ -164,10 +164,10 @@ impl PlayWindowApp {
     /// scene's render state is never rebuilt, so leaving the hall shows it
     /// exactly as it was.
     pub(in crate::window) fn sync_dance_venue(&mut self) {
-        use legaia_engine_core::dance_venue as dv;
-        if let Some(edge) =
-            dv::sync_dance_venue(&mut self.session.host.world, &mut self.session.camera)
-        {
+        // The auto-end and the venue globals are the session's step
+        // (`BootSession::step_dance_tail`), which the browser play page
+        // runs too; what follows is this window's GPU copy.
+        if let (Some(edge), _) = self.session.step_dance_tail() {
             log::info!("dance venue: {edge:?}");
         }
         let Some(generation) = self

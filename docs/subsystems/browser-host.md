@@ -22,7 +22,7 @@ The split is deliberate:
   returns the label of the scene a door just walked into, so the page rebuilds
   around a transition), and `state_json()` (frame / mode / player transform /
   live dialogue box). The page tells the session what it does itself (the
-  pause menu, the field CD-XA lane, the per-tick queue drains; see the
+  pause menu, the per-tick queue drains; see the
   [`engine-session` README](../../crates/engine-session/README.md)). The session holds
   the port's seat at retail's **mode table** (`engine-mode::mode::ModeSeat`),
   reconciled once per frame, plus the two INIT modes a host enters by hand
