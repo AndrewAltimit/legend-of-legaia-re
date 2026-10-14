@@ -353,6 +353,11 @@ fn part_c_continuous_run() {
             // milestone, and another hand of the rand stream unless this is
             // the guard retry (which measures the guard alone).
             reloads += 1;
+            // The player's Field Move option survives the reload: retail
+            // keeps it in the save block (`0x800846CC`, SC `+0x58C`), and the
+            // engine as a host option the fresh session would otherwise
+            // reset to Walk - which misses `jouind`'s 50-vsync switch pair.
+            let run_default = session.host.world.locomotion.run_default;
             session = match reload(&inp, &cp, &opts) {
                 Ok(s) => s,
                 Err(e) => {
@@ -360,6 +365,7 @@ fn part_c_continuous_run() {
                     break 'spine;
                 }
             };
+            session.host.world.locomotion.run_default = run_default;
             if !(attempt == 1 && prepare.is_some()) {
                 let w = &mut session.host.world;
                 w.rng_state = w
