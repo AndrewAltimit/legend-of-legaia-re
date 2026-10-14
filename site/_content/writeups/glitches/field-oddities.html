@@ -552,7 +552,26 @@
       <tr><td><code>0x04</code> alone</td><td><code>0x04</code> stays</td><td><code>0x04</code> stays</td><td><code>0x04</code> stays</td></tr>
     </tbody>
   </table>
-  <p>A plain escape returns through the same clean-up as a win. The freeze is not explained; the same flute escape in Rogue's Tower with the bits set does not freeze.</p>
+  <p>A plain escape returns through the same clean-up as a win. So does a flute escape, as far as the code shows, and the same flute escape in Rogue's Tower with the bits set does not freeze. The flag byte has no way to cause the freeze (next section).</p>
+
+  <h3 id="the-spikefish-flute-freeze-in-bio-castle">The Spikefish Flute freeze in Bio Castle</h3>
+  <p><strong>Status of this part:</strong> open. The freeze is a first-hand report. The code read so far rules the water flags out as its cause, and the Bio Castle side has not been captured.</p>
+  <ol>
+    <li><strong>The flute's flee is a copy of the plain escape's success branch</strong> (disassembly). Arm 8 of <code>FUN_801F6A00</code> in PROT entry 0925 makes the same three stores as the escape roll <code>FUN_801E791C</code> in PROT entry 0898 makes on a successful run, then sets <code>ctx[7] = 0x65</code> and <code>ctx[+0x6D8] = 0x3C</code>, the state and timer of the run command, so both escapes leave through the same teardown state <code>0x66</code>.</li>
+    <li><strong>The battle exit cannot tell them apart</strong> (disassembly). The exit selector <code>FUN_80046A20</code> chooses the next mode from the arena bit <code>_DAT_8007BAC0 &amp; 0x100</code>, the halfword at <code>0x8007B7FC</code> and the return marker <code>_DAT_8007B8B8</code> (<code>0x80046DD8..0x80046E60</code>). None of these records how the party fled. Both escapes reach the <code>_DAT_8007B8B8 == 2</code> arm of <code>FUN_8003AEB0</code> (inference from the code, not captured for the flute).</li>
+    <li><strong>Flag <code>0x1C</code> gates nothing else.</strong> In that arm it decides only whether <code>0x1D</code> and <code>0x1E</code> are cleared. With <code>0x1C</code> set, a flute escape leaves the byte exactly as a plain escape leaves it, and a plain escape does not freeze. Between the community's freezing and non-freezing flute runs the only difference on the way back is green water cleared against green water kept, which changes the encounter rate and nothing else.</li>
+    <li><strong>Nothing in Bio Castle reads the byte</strong> (disc data, disassembly). In every partition-1 and partition-2 script of the five Bio Castle rooms (<code>jouina</code> to <code>jouine</code>) and the two Juggernaut rooms (<code>juui1</code>, <code>juui2</code>), the only flag ops in <code>0x18..0x1F</code> are a clear of <code>0x1F</code> near the start of each room's entry script (<code>rugi</code>'s does the same) and sets of <code>0x1B</code> in <code>juui1</code>. A scan for every load and store with offset <code>0x1618..0x161B</code> or <code>0x5758..0x575B</code> finds none in the battle overlay 0898 or the cast modules.</li>
+  </ol>
+  <table>
+    <thead><tr><th>Store</th><th>Flute, PROT 0925</th><th>Run, PROT 0898</th></tr></thead>
+    <tbody>
+      <tr><td>escape outcome <code>_DAT_8007726C = ctx + 0x159</code></td><td><code>0x801F7400</code></td><td><code>0x801E7B84</code></td></tr>
+      <tr><td>escape counter, word <code>0x800846A8</code> plus one</td><td><code>0x801F78E0..0x801F78EC</code></td><td><code>0x801E7B5C..0x801E7B68</code></td></tr>
+      <tr><td>survived latch, bit <code>0x80</code> of <code>DAT_8007BD60</code></td><td><code>0x801F78C4..0x801F78CC</code></td><td><code>0x801E8028..0x801E802C</code></td></tr>
+    </tbody>
+  </table>
+  <p>What the flute leaves behind that a run does not: the cast module PROT 0925 resident in slot B (<code>0x801F69D8</code>, loader-B tracker <code>0x8007BC4C = 0x1E</code>), and its music bed, XA cue <code>0x188</code> on <code>XA18.XA</code> (24.78 s), which the flee may leave playing. Either could hang the return to the field, and neither depends on the flag byte (inference). The community table has one run per cell, so the link to <code>0x1C</code> may be chance.</p>
+  <p>The capture that settles it needs a retail, card-loaded Bio Castle field state; the project's library has none. On such a state, poke the byte to <code>0x0C</code>, <code>0x04</code> and <code>0x08</code> once the field runs (several runs each), force a battle through the step counter, flee with the Spikefish Flute, and log the game mode <code>0x8007B83C</code>, <code>_DAT_8007B8B8</code>, <code>DAT_8007BD60</code>, <code>0x8007BC4C</code> and any write to <code>0x8008575B</code>, then sample the PC once the mode stops changing. That shows whether the freeze follows the flag at all, and where the hang loops.</p>
   <p>Every late-game save state in the project's library reads <code>0x08</code> in this byte, never <code>0x0C</code> or <code>0x0A</code>: a file that drank, after its next battle.</p>
 
   <h3>The two springs</h3>
@@ -579,6 +598,9 @@
       <tr><td><code>0x8003B504..0x8003B510</code></td><td><code>SCUS_942.54</code></td><td>same-scene re-entry arm of <code>FUN_8003AEB0</code>, <code>_DAT_8007B8B8 == 2</code></td><td>disassembly</td></tr>
       <tr><td><code>0x8003B544..0x8003B568</code></td><td><code>SCUS_942.54</code></td><td>clears flags <code>0x1D</code> and <code>0x1E</code> when flag <code>0x1C</code> is set</td><td>disassembly, capture</td></tr>
       <tr><td><code>0x8008575B</code> masks <code>0x08</code>, <code>0x04</code>, <code>0x02</code></td><td>RAM</td><td>system flags <code>0x1C</code>, <code>0x1D</code>, <code>0x1E</code>; save-block <code>+0x161B</code></td><td>disassembly, capture</td></tr>
+      <tr><td><code>0x801F7400</code>, <code>0x801F78C4..0x801F78F8</code></td><td>PROT 0925</td><td>Spikefish Flute flee: outcome, survived latch, escape counter, <code>ctx[7] = 0x65</code></td><td>disassembly</td></tr>
+      <tr><td><code>0x801E7B5C..0x801E7B84</code>, <code>0x801E8028..0x801E802C</code></td><td>PROT 0898</td><td>the run command's matching success stores in <code>FUN_801E791C</code></td><td>disassembly</td></tr>
+      <tr><td><code>0x80046DD8..0x80046E60</code></td><td><code>SCUS_942.54</code></td><td>battle-exit mode choice in <code>FUN_80046A20</code>; reads no escape kind</td><td>disassembly</td></tr>
       <tr><td>PROT entry 697, <code>P1[29]</code> <code>+0xF1</code>, <code>P1[30]</code> <code>+0xF0</code></td><td>disc</td><td>the springs' flag writes after three <code>4C 82</code> restores</td><td>disc data</td></tr>
       <tr><td>PROT entry 697, encounter section</td><td>disc</td><td>tower regions: <code>(0..58, 0..72)</code> rate 0, the rest rate 20</td><td>disc data</td></tr>
     </tbody>
@@ -587,7 +609,7 @@
   <h3>Still open</h3>
   <ul>
     <li>Which other same-scene re-entries besides a battle return reach the clean-up, for example a scripted fight or a cutscene that resumes in place.</li>
-    <li>Why a Spikefish Flute escape freezes the game in Bio Castle when flag <code>0x1C</code> is set, while a plain escape, a win, or the same flute escape without <code>0x1C</code> does not (community report).</li>
+    <li>What hangs after a Spikefish Flute escape in Bio Castle. The water flags are ruled out by the code, so the flute's own leftovers come first: the slot-B module, the XA bed. The capture is laid out <a href="#the-spikefish-flute-freeze-in-bio-castle">above</a>.</li>
     <li>Which spring is on which side on screen: the placements give tiles, and the camera decides left and right.</li>
     <li>Whether the colour is also visible in the water's texture.</li>
   </ul>

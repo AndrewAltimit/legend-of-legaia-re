@@ -881,8 +881,62 @@ ZetaPhoenix's in-game tests in Bio Castle agree with the gate and add the escape
 | `0x08` and `0x04` set | `0x04` cleared | `0x04` cleared | the game freezes |
 | `0x04` alone | `0x04` stays | `0x04` stays | `0x04` stays |
 
-A plain escape returns through the same clean-up as a win. The freeze is not explained; the same
-flute escape in Rogue's Tower with the bits set does not freeze.
+A plain escape returns through the same clean-up as a win. So does a flute escape, as far as the
+code shows, and the same flute escape in Rogue's Tower with the bits set does not freeze. The flag
+byte has no way to cause the freeze (next section).
+
+### The Spikefish Flute freeze in Bio Castle
+
+**Status of this part:** open. The freeze is a first-hand report. The code read so far rules the
+water flags out as its cause, and the Bio Castle side has not been captured.
+
+1. **The flute's flee is a copy of the plain escape's success branch** (disassembly). Arm 8 of
+   `FUN_801F6A00` in PROT entry 0925 makes the same three stores as the escape roll
+   `FUN_801E791C` in PROT entry 0898 makes on a successful run:
+
+   | Store | Flute, PROT 0925 | Run, PROT 0898 |
+   |---|---|---|
+   | escape outcome `_DAT_8007726C = ctx + 0x159` | `0x801F7400` | `0x801E7B84` |
+   | escape counter, word `0x800846A8` plus one | `0x801F78E0..0x801F78EC` | `0x801E7B5C..0x801E7B68` |
+   | survived latch, bit `0x80` of `DAT_8007BD60` | `0x801F78C4..0x801F78CC` | `0x801E8028..0x801E802C` |
+
+   It then sets `ctx[7] = 0x65` and `ctx[+0x6D8] = 0x3C`, the state and timer of the run
+   command, so both escapes leave through the same teardown state `0x66`.
+2. **The battle exit cannot tell them apart** (disassembly). The exit selector `FUN_80046A20`
+   chooses the next mode from the arena bit `_DAT_8007BAC0 & 0x100`, the halfword at
+   `0x8007B7FC` and the return marker `_DAT_8007B8B8` (`0x80046DD8..0x80046E60`). None of these
+   records how the party fled. Both escapes reach the `_DAT_8007B8B8 == 2` arm of
+   `FUN_8003AEB0` (inference from the code, not captured for the flute).
+3. **Flag `0x1C` gates nothing else.** In that arm it decides only whether `0x1D` and `0x1E` are
+   cleared. With `0x1C` set, a flute escape leaves the byte exactly as a plain escape leaves it,
+   and a plain escape does not freeze. Between the community's freezing and non-freezing flute
+   runs the only difference on the way back is green water cleared against green water kept,
+   which changes the encounter rate and nothing else.
+4. **Nothing in Bio Castle reads the byte** (disc data, disassembly). In every partition-1 and
+   partition-2 script of the five Bio Castle rooms (`jouina` to `jouine`) and the two Juggernaut
+   rooms (`juui1`, `juui2`), the only flag ops in `0x18..0x1F` are a clear of `0x1F` near the
+   start of each room's entry script (`rugi`'s does the same) and sets of `0x1B` in `juui1`. A
+   scan for every load and store with offset `0x1618..0x161B` or `0x5758..0x575B` finds none in
+   the battle overlay 0898 or the cast modules.
+
+What the flute leaves behind that a run does not: the cast module PROT 0925 resident in slot B
+(`0x801F69D8`, loader-B tracker `0x8007BC4C = 0x1E`), and its music bed, XA cue `0x188` on
+`XA18.XA` (24.78 s), which the flee may leave playing. Either could hang the return to the field,
+and neither depends on the flag byte (inference). The community table has one run per cell, so
+the link to `0x1C` may be chance.
+
+The capture that settles it needs a retail, card-loaded Bio Castle field state. The library has
+none: its `jouind` and `jouine` states are battle states or come from a patched disc. On such a
+state:
+
+1. Poke the byte from `on_capture` once the game mode reads `0x03`: `0x0C`, `0x04` and `0x08`,
+   several runs each.
+2. Force a battle through the step counter (as `autorun_water_flag_clear.lua` does) and flee
+   with the Spikefish Flute.
+3. Log the game mode `0x8007B83C`, `_DAT_8007B8B8`, `DAT_8007BD60`, `0x8007BC4C` and any write to
+   `0x8008575B`, then sample the PC once the mode stops changing.
+
+That shows whether the freeze follows the flag at all, and where the hang loops.
 
 ### Addresses
 
@@ -895,6 +949,9 @@ flute escape in Rogue's Tower with the bits set does not freeze.
 | `0x8003B504..0x8003B510` | `SCUS_942.54` | `FUN_8003AEB0`: the same-scene re-entry arm, `_DAT_8007B8B8 == 2` | disassembly |
 | `0x8003B544..0x8003B568` | `SCUS_942.54` | clears flags `0x1D` and `0x1E` when flag `0x1C` is set | disassembly, capture |
 | `0x8008575B` masks `0x08`, `0x04`, `0x02` | RAM | system flags `0x1C`, `0x1D`, `0x1E`; save-block `+0x161B` | disassembly, capture |
+| `0x801F7400`, `0x801F78C4..0x801F78F8` | PROT entry 0925 | Spikefish Flute flee: outcome, survived latch, escape counter, `ctx[7] = 0x65` | disassembly |
+| `0x801E7B5C..0x801E7B84`, `0x801E8028..0x801E802C` | PROT entry 0898 | the run command's matching success stores in `FUN_801E791C` | disassembly |
+| `0x80046DD8..0x80046E60` | `SCUS_942.54` | battle-exit mode choice in `FUN_80046A20`; reads no escape kind | disassembly |
 | PROT entry 697, `P1[29]` `+0xF1` | disc | green water: `50 1C`, `50 1D` after three `4C 82` restores | disc data |
 | PROT entry 697, `P1[30]` `+0xF0` | disc | blue water: `50 1C`, `50 1E` after three `4C 82` restores | disc data |
 | PROT entry 697, MAN section 0 | disc | tower regions: `(0..58, 0..72)` rate 0, the rest rate 20 | disc data |
@@ -917,8 +974,9 @@ watch on the byte catches the clear at `0x8003B568`.
 
 - Which other same-scene re-entries (`_DAT_8007B8B8 == 2`) besides a battle return reach the
   clean-up, for example a scripted fight or a cutscene that resumes in place.
-- Why a Spikefish Flute escape freezes the game in Bio Castle when flag `0x1C` is set, while a
-  plain escape, a win, or the same flute escape without `0x1C` does not (community report).
+- What hangs after a Spikefish Flute escape in Bio Castle. The water flags are ruled out by the
+  code, so the flute's own leftovers come first: the slot-B module, the XA bed. The capture is
+  laid out [above](#the-spikefish-flute-freeze-in-bio-castle).
 - Which spring is on which side on screen: the placements give tiles, and the camera decides left
   and right.
 - Whether the colour is also visible in the water's texture.
