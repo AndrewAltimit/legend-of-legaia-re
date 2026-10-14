@@ -1,6 +1,7 @@
 //! Browser battle **3D presentation**: the browser twin of the native
-//! window's `enter_battle_render` / `exit_battle_render` / `build_battle_stage`
-//! (`crates/engine-shell/.../window/battle.rs`). [`crate::play_battle`] owns
+//! window's `enter_battle_render` / `exit_battle_render`
+//! (`crates/engine-shell/.../window/battle/scene_entry.rs`), over the stage
+//! both resolve through `legaia_engine_session::battle_stage`. [`crate::play_battle`] owns
 //! the rules-side presentation (HUD rows, banner, submenus); this module owns
 //! what stands *behind* that overlay once a random encounter fires:
 //!
@@ -332,13 +333,8 @@ fn flatten_frame(frame: &[legaia_actor_formats::monster_archive::PartPose]) -> V
 }
 
 impl LegaiaRuntime {
-    /// Build the current scene's battle-stage bundle: stage VRAM, dome TMD,
-    /// second-copy transform, grid far colour. The browser copy of the
-    /// native `build_battle_stage`; `None` when the scene has no stage entry
-    /// or the battle-kind resource build fails.
     /// React to the `Field -> Battle` mode edge: build the battle VRAM +
-    /// meshes and install each actor's clips on the world so the shared
-    /// battle SM poses them. The browser twin of the native
+    /// meshes the shared battle SM's poses are drawn with. The browser twin of the native
     /// `enter_battle_render`; soft-fails leg by leg (a scene with no stage
     /// still gets monsters over the field VRAM, a failed assembly falls back
     /// to PROT 1204, a fully failed build leaves the overlay-only battle

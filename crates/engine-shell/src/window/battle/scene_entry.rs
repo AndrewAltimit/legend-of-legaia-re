@@ -238,7 +238,7 @@ impl PlayWindowApp {
                         self.battle_ground_rgbc =
                             legaia_engine_battle_vm::battle_ground_grid::GRID_RGBC_SETTLED;
                         // The grid's GTE depth cue: far colour per stage
-                        // class (resolved in `build_battle_stage`), ramped
+                        // class (resolved in `battle_stage::resolve_battle_stage`), ramped
                         // by the emitter's per-vertex `SZ >> 2` law at draw
                         // time (see the redraw grid push).
                         self.battle_ground_cue_far = Some(*grid_far);
