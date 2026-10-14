@@ -527,6 +527,14 @@ impl PlayWindowApp {
                 0
             };
             sc.battle_drive_held.set(held);
+            if sc.display_lag > 0 {
+                let world = &self.session.host.world;
+                sc.state_since.set(
+                    drive
+                        .in_action_state(world)
+                        .then(|| sc.state_since.get().unwrap_or(self.tick_no)),
+                );
+            }
         }
         // The Field <-> Battle mode edge, latched on the tick that
         // crossed it. The battle load it runs installs gameplay state as

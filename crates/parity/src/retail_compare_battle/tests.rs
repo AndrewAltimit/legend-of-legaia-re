@@ -208,3 +208,25 @@ fn begin_chip_seat_names_the_prompt_glide_elapsed() {
     // A RAM image with no ordering table yields no seat.
     assert_eq!(round_prompt_pool_seat(&vec![0u8; 0x20_0000], 2), None);
 }
+
+/// `nivora_duel_mid_blazing_slash`'s tween table: yaw `4640` closing on
+/// `4051` by `59` a pass, TR z `4368` on `4915` by `55`, at frame step `2`.
+/// Two passes back the walker stood one table step (`2 * 59`) plus one
+/// re-arm step on the wider gap (`2 * ceil(707 / 10)`) further off.
+#[test]
+fn the_displayed_camera_stands_two_passes_short() {
+    let mut ram = vec![0u8; 0x20_0000];
+    let ctx = 0x800E_B654;
+    let rec = |k: u32| ctx + camera_align::TWEEN_TABLE + k * 4;
+    put16(&mut ram, 0x8007_B792, 4640);
+    put16(&mut ram, rec(1), 59);
+    put16(&mut ram, rec(1) + 2, 4051);
+    put32(&mut ram, 0x8008_40C0, 4368);
+    put16(&mut ram, rec(5), 55);
+    put16(&mut ram, rec(5) + 2, 4915);
+    let p = camera_align::displayed_cam_live(&ram, ctx, 2, 2);
+    assert_eq!(p.yaw, (544 + 118 + 142) as f32);
+    assert_eq!(p.tr[2], (4368 - 110 - 2 * 66) as f32);
+    // No lag, no walk back.
+    assert_eq!(camera_align::displayed_cam_live(&ram, ctx, 0, 2).yaw, 544.0);
+}

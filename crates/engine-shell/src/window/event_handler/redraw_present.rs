@@ -222,6 +222,7 @@ impl PlayWindowApp {
         if capture_due {
             eprintln!("capture at tick {}", self.tick_no);
             self.diag_capture_state();
+            self.note_display_retake();
             let path = self
                 .screenshot
                 .as_ref()
@@ -275,6 +276,34 @@ impl PlayWindowApp {
         }
         if let Err(e) = r.render(target(scene)) {
             log::error!("render: {e:#}");
+        }
+    }
+}
+
+impl PlayWindowApp {
+    /// A lagged battle drive's gate ([`ScreenshotConfig::display_lag`]):
+    /// when the drive's action state already held `lag` ticks back, name that
+    /// tick beside the frame (`<shot>.retake`) - the frame retail's display
+    /// shows - for the caller to re-run the child on. A gate under `lag`
+    /// ticks into its state names none: its displayed frame belongs to the
+    /// state before, which a drive does not reproduce.
+    fn note_display_retake(&self) {
+        let Some(sc) = self.screenshot.as_ref() else {
+            return;
+        };
+        let (Some(path), Some(since)) = (sc.path.as_ref(), sc.state_since.get()) else {
+            return;
+        };
+        if sc.display_lag == 0 || std::env::var_os("LEGAIA_DIAG_CAPTURE_TICK").is_some() {
+            return;
+        }
+        if let Some(want) = self
+            .tick_no
+            .checked_sub(sc.display_lag)
+            .filter(|&t| t >= since)
+        {
+            eprintln!("display lag: retake at tick {want} (state since {since})");
+            let _ = std::fs::write(path.with_extension("retake"), want.to_string());
         }
     }
 }

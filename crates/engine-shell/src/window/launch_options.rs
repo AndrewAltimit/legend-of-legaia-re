@@ -222,6 +222,17 @@ pub struct ScreenshotConfig {
     /// [`legaia_engine_capture::battle_drive::BattleDrive::hold_ticks`]
     /// of them, as the headless seed does.
     pub battle_drive_held: std::cell::Cell<u32>,
+    /// `LEGAIA_CAPTURE_DISPLAY_LAG=<ticks>`: the frame a retail capture's
+    /// display shows is this many vsyncs older than its RAM (two game
+    /// frames). On a battle drive whose action state already held that
+    /// many ticks before the gate, the child writes the earlier tick beside
+    /// its frame (`<shot>.retake`) for the caller to take the frame on
+    /// (`LEGAIA_DIAG_CAPTURE_TICK`). The caller sets it only for the span
+    /// gates where the displayed frame measures closer
+    /// (`RetailBattle::display_retake` in `legaia-parity`).
+    pub display_lag: u64,
+    /// The first tick of the drive's current run in its action state.
+    pub state_since: std::cell::Cell<Option<u64>>,
     /// `LEGAIA_BATTLE_BARS=slot:hp:mp,...`: the capture's mid-fight HP / MP,
     /// seeded on the first battle tick as the headless seed seeds them
     /// ([`legaia_engine_capture::bar_seeds::apply_bar_seeds`]).
@@ -549,6 +560,11 @@ impl ScreenshotConfig {
                 .and_then(|v| legaia_engine_capture::battle_drive::BattleDrive::from_env(&v)),
             battle_drive_primed: std::cell::Cell::new(false),
             battle_drive_held: std::cell::Cell::new(0),
+            display_lag: std::env::var("LEGAIA_CAPTURE_DISPLAY_LAG")
+                .ok()
+                .and_then(|v| v.trim().parse().ok())
+                .unwrap_or(0),
+            state_since: std::cell::Cell::new(None),
             battle_bars: std::env::var("LEGAIA_BATTLE_BARS")
                 .map(|v| legaia_engine_capture::bar_seeds::bar_seeds_from_env(&v))
                 .unwrap_or_default(),

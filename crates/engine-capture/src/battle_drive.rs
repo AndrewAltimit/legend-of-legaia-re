@@ -897,6 +897,19 @@ impl BattleDrive {
         }
     }
 
+    /// Whether the engine sits in an action phase's state - the acting seat,
+    /// its state and the steer's target - whatever its span gate reads.
+    pub fn in_action_state(&self, world: &legaia_engine_core::world::World) -> bool {
+        let mut base = *self;
+        match &mut base {
+            Self::Action { end, .. } => {
+                *end = SpanGate::None;
+                base.reached(world)
+            }
+            _ => false,
+        }
+    }
+
     /// Whether the engine sits in an [`SpanGate::Age`] action phase's state
     /// at all, whatever its age.
     pub fn in_aged_state(&self, world: &legaia_engine_core::world::World) -> bool {

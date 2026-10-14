@@ -313,6 +313,9 @@ pub struct RetailBattle {
         legaia_engine_camera::projection::BattleCamPose,
         legaia_engine_camera::projection::BattleCamPose,
     ),
+    /// [`Self::cam_tween`] with the live pose walked back to the frame the
+    /// display shows ([`displayed_cam_live`]).
+    pub displayed_cam_live: legaia_engine_camera::projection::BattleCamPose,
     /// The frame driver's entry counter `gp+0x330` ([`ENTRY_COUNTER`]).
     pub entry_counter: u8,
     /// The options screen's Battle Camera word `0x800846C0` (Close `0` /

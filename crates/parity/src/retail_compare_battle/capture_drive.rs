@@ -43,6 +43,47 @@ impl RetailBattle {
             .collect()
     }
 
+    /// Whether the image child takes the frame the display showed - the
+    /// drive's tick less [`Self::display_lag`] - rather than the RAM's
+    /// (`LEGAIA_CAPTURE_DISPLAY_LAG`; the child keeps the gate's own frame
+    /// when the drive's state is younger than the lag). Measured per span
+    /// gate over the corpus:
+    ///
+    /// * a party seat's [`SpanGate::Age`] and any [`SpanGate::CaptureFade`]
+    ///   take it - every such frame rose (`battle_vahn_tri_somersault_super`
+    ///   `0.716` to `0.824`, `nivora_duel_mid_blazing_slash` to `0.996`);
+    /// * a [`SpanGate::Landed`] capture keeps the RAM's frame: retail sat
+    ///   parked on the CD wait with its glide long landed, while the
+    ///   engine's gate is the tick its own glide lands, so the frames before
+    ///   it are mid-glide (`evil_medallion_rage_battle` `0.913` to `0.395`);
+    /// * a monster's [`SpanGate::Age`] keeps it: Tail Fire's rays run on the
+    ///   engine's own clock and both `battle_gimard_tail_fire_*` frames fell;
+    /// * a [`SpanGate::DoneHold`] keeps it (`noa_levelup_fight_pre` fell).
+    pub fn display_retake(&self) -> bool {
+        self.display_lag > 0
+            && match self.seed_plan() {
+                SeedPlan::Action { seat, .. } => match self.span_gate {
+                    SpanGate::Age { .. } => seat < 3,
+                    SpanGate::CaptureFade { .. } => true,
+                    _ => false,
+                },
+                _ => false,
+            }
+    }
+
+    /// Whether the image child's camera is aligned to the pose the
+    /// displayed frame was drawn at ([`Self::displayed_cam_live`]) rather
+    /// than the RAM's. Every action drive but a [`SpanGate::DoneHold`]:
+    /// the Done band's captures part on where the engine's replay left
+    /// the bodies, and walking the camera back moved `noa_levelup_fight_pre`
+    /// off retail's. Elsewhere it rose wherever it moved - with the frame
+    /// itself left at the RAM's instant too (`battle_gimard_tail_fire_b`
+    /// `0.745` to `0.772`).
+    pub fn displayed_camera(&self) -> bool {
+        matches!(self.seed_plan(), SeedPlan::Action { .. })
+            && !matches!(self.span_gate, SpanGate::DoneHold { .. })
+    }
+
     /// The pad drive that reaches this capture, when its plan has one.
     pub fn battle_drive(&self) -> Option<BattleDrive> {
         match self.seed_plan() {

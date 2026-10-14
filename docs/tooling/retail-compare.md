@@ -1746,6 +1746,46 @@ showed Tail Fire's hit rays forty ticks ahead of the gate - the fold on the
 wrong edge, not a missing effect
 ([battle-action](../subsystems/battle-action.md#a-monsters-cast-lands-from-its-homing-flight)).
 
+### A drive's frame is the one the display showed
+
+A battle drive stops on the first engine tick that holds the RAM's phase,
+but the frame on retail's screen is two game frames older than the RAM
+([above](#replayed-casts)): `2 * step` vsyncs, the step rebuilt from the
+frame-duration history (`display_lag_vsyncs`). Two things are taken back by
+that lag, each where the corpus measures it better
+(`RetailBattle::display_retake`, `RetailBattle::displayed_camera`).
+
+**The frame.** The parent hands the child the lag
+(`LEGAIA_CAPTURE_DISPLAY_LAG`). The child notes the first tick of its current
+run in the drive's state; when the gate holds and that run already held `lag`
+ticks back, it names the earlier tick beside its frame (`<shot>.retake`), and
+the parent runs the child again with `LEGAIA_DIAG_CAPTURE_TICK` set to it.
+The child is tick-locked, so the re-run walks the same frames. A party seat's
+clip-age gate and every capture-band hold take it; the rest keep the gate's
+own frame:
+
+| Gate | Why it keeps the RAM's frame |
+|---|---|
+| under `lag` ticks into its state | the displayed frame belongs to the state before, which the drive reaches on its own clock; taken back across the entry the `super_queue_*` captures fell from `0.654` to `0.327` |
+| `Landed` | retail sat on the CD wait with its glide long landed, and the engine's gate is the tick its own glide lands: the frames before it are mid-glide (`evil_medallion_rage_battle` `0.913` to `0.395`) |
+| a monster's clip age | Tail Fire's hit rays run on the engine's own clock ([above](#the-frames-either-side-of-a-gated-capture)); both `battle_gimard_tail_fire_*` frames fell |
+| `DoneHold` | the Done band's captures part on where the replay left the bodies (`noa_levelup_fight_pre` fell) |
+
+**The camera.** A camera still closing on its framing draws the displayed
+frame well short of the RAM's pose, and the ease is fastest at its start.
+The walker `FUN_8002149C` steps each component by `increment * frame_step`
+a pass and the re-arm sets `ceil((gap + frame_step * increment) / 0xC)`
+([battle-stage-camera](../subsystems/battle-stage-camera.md#the-tween-is-an-ease-out)),
+so the pass before stood one step back and each earlier one
+`gap / (0xC - frame_step)` further again (`displayed_cam_live`, the divisor
+read off the table's largest increment). The child aligns its glide to that
+pose rather than the RAM's. On `nivora_duel_mid_blazing_slash` the case-6
+yaw still has `589` to go: two passes back the camera stands some `250`
+units round, the far ice crystals swing across the screen while the two
+duellists hold still, and the frame read `0.611` against retail's with the
+crystals `70` to `90` px off. Every action drive but a `DoneHold` takes the
+displayed pose, also where its frame stays at the RAM's instant.
+
 ## Divergence shapes
 
 Shapes the corpus separates, each with what it indicates:
@@ -2463,7 +2503,10 @@ every pass, so it moves with the phase of both clips):
   step table's increments put retail's start near `1720`, a shortest arc
   *down* through the wrap to `4051`, while the drive hands `0x6E` the engine's
   `0x0C` framing at `2620`, a shortest arc up. No word in the state records
-  the camera before the cast, so the start is a seeding limit.
+  the camera before the cast, so the start is a seeding limit. The frame is
+  another matter: the display shows the pose two passes short of the RAM's,
+  which the image child is aligned to
+  ([below](#a-drives-frame-is-the-one-the-display-showed)).
 - **A yaw base the settle arm zeroes.** `shiny_refactor_gimard_levelup` is
   held in the Done band's `0x51` after Gimard's breath killed its victim; the
   step table's endpoints are case 6 on the caster (yaw `ctx[+0x6DA] + 0x800 -
