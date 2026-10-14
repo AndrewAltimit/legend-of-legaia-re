@@ -52,6 +52,7 @@ impl SceneHost {
             man_bytes,
             clip,
         );
+        self.world.props.object_shifts.clear();
         self.world.props.colliders = placements
             .iter()
             .map(|p| {
@@ -491,6 +492,7 @@ impl SceneHost {
         // stale scene's props never leak across a transition into a scene
         // whose MAN fails to parse.
         self.world.props.colliders = Vec::new();
+        self.world.props.object_shifts.clear();
         self.world.props.bank = Default::default();
         self.world.props.pending_touch = None;
         // The 16-entry floor-height LUT the collision grid's low nibble

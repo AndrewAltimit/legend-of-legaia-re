@@ -383,8 +383,8 @@ every region off under `0x51C` with the gate raised and the pool empty.
 
 Resolves `func_0x8003C8F0(field_50, 0)` and writes `world_x/z` with the
 tile-centre formula `b * 0x80 + 0x40`. It also rebases the context's script
-offset `+0x9E` onto the record's first opcode (`0x801E2798..0x801E27A4`), and
-when that opcode is `0x25` runs the record inline through `FUN_8003CF7C`
+offset `+0x9E` onto the byte after the placement header - a placement's first
+opcode (`0x801E2798..0x801E27A4`) - and when that byte is `0x25` runs the record inline through `FUN_8003CF7C`
 (`0x801E2800..0x801E2820`) - the same op-until-`0x21` slice the scene-entry
 install gives a placement, so the spawn section's story-flag dispatch runs
 again (a seat op seats that actor, never the player).
@@ -397,6 +397,23 @@ again (a seat op seats that actor, never the player).
   the gate guard (`P1[18]`) returns beside the `tunnelb` door and, once `0x1FC`
   is up, steps aside to `(13, 44)`; that last re-seat is spawned by `P2[19]`'s
   closing `44 7A`.
+
+The header read does not follow the record's partition. `FUN_8003D0BC`
+skips the `[u8 N][N*2]` name field and the arm takes the next four bytes as
+`[model, anim, bx, bz]`, rebasing `+0x9E` to the byte after them
+(`0x801E2700..0x801E27A4`). That is the partition-1 placement header. A
+partition-0 object record has a single attribute byte there
+(`FUN_8003A55C` seats `+0x9E` at `1 + N*2 + 1`), so on an object context the
+anim is the record's first opcode, the tile is the two bytes after it, and
+`+0x9E` lands three bytes into the script, which is not `0x25`, so nothing
+re-runs:
+
+- `nilboa` `P2[11]` raises `0x455` / `0x456` and then sends the six ravine
+  objects home (`CC 05 C3`, `CC 00 C3` .. `CC 04 C3`). Every one of those
+  records opens `25 74 56 05` (the `0x456` test), so all six land on tile
+  `(0x74, 0x56)`, off the walkable map: the ice gate `P0[4]` leaves the way
+  west to Koru on the frame the beat sets the flag, rather than through its
+  own spawn section's `23 7F 7F`.
 
 #### `4C CA` / `CB` / `CC`: script counters
 

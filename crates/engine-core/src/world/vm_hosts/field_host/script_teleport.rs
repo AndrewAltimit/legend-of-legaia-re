@@ -13,9 +13,24 @@ use super::*;
 /// spawner writes `+0x50 = N0 + placement_index`, the record it lands on is
 /// the context's own partition-1 placement record - NOT partition-0 record
 /// `script_id`. [`legaia_engine_field::man_field_scripts::flat_record_span`] models that
-/// index space; the partition-1 header shape then applies, which is what
-/// `FUN_8003D0BC` (skip the `[u8 N][N*2]` name/locals field) plus the 4-byte
-/// placement header `[model, anim, bx, bz]` expects.
+/// index space.
+///
+/// The header read is **not** partition-aware. `FUN_8003D0BC` skips the
+/// `[u8 N][N*2]` name / locals field and the arm reads the four bytes after
+/// it as `[model, anim, bx, bz]`, then rebases the script offset `+0x9E` to
+/// the byte after those four (`0x801E2700..0x801E27A4`). That is the
+/// partition-1 placement header. A partition-0 **object** record carries one
+/// attribute byte there, not four (`FUN_8003A55C` seats `+0x9E` at
+/// `1 + N*2 + 1`), so the same read on an object context takes `anim` from the
+/// record's first opcode and `bx` / `bz` from the two bytes after it, and
+/// leaves the script offset three bytes into the script. `nilboa` `P2[11]`
+/// does exactly that to its six ravine objects (`CC 05 C3`, `CC 00 C3` ..
+/// `CC 04 C3`, each record opening `25 74 56 05`): all six land on tile
+/// `(0x74, 0x56)`, off the walkable map, which is how the ice gate `P0[4]`
+/// stops blocking the way west the moment the beat sets `0x456`.
+///
+/// Returns the rebased script offset (`1 + N*2 + 4`, relative to the record)
+/// on success.
 ///
 /// It then writes (`overlay_0897_801de840.txt` case 3 of the nibble-C
 /// dispatcher):
@@ -31,31 +46,27 @@ use super::*;
 ///
 /// - `+0x78` (the tint blend) = 0.
 ///
-/// The `+0x9E` rebase and the `0x25` spawn-section re-run that follow are
+/// The `0x25` spawn-section re-run that follows is
 /// [`FieldHostImpl::rerun_spawn_section`]. Not modelled (no [`FieldCtx`]
 /// counterpart): the `+0x70`/`+0x9C`/`+0x2A` zeroes and the linked `+0x44`
 /// struct's `+0x9A = 0xFFFF` write.
 ///
-/// Returns `false` (ctx untouched) when the record cannot be resolved.
+/// Returns `None` (ctx untouched) when the record cannot be resolved.
+// REF: FUN_8003D0BC, FUN_8003A55C
 pub(in crate::world) fn apply_script_table_teleport(
     man_file: &legaia_scene_formats::man_section::ManFile,
     man: &[u8],
     ctx: &mut FieldCtx,
-) -> bool {
-    let Some((script_start, pc0, _body_len)) =
-        legaia_engine_field::man_field_scripts::flat_record_span(
-            man_file,
-            man,
-            ctx.script_id as usize,
-        )
-    else {
-        return false;
-    };
-    // The 4-byte placement header sits right before the record's first
-    // opcode (`pc0 = 1 + N*2 + 4`): [model, anim, bx, bz].
-    let Some(hdr) = man.get(script_start + pc0 - 4..script_start + pc0) else {
-        return false;
-    };
+) -> Option<usize> {
+    let (script_start, _pc0, _body_len) = legaia_engine_field::man_field_scripts::flat_record_span(
+        man_file,
+        man,
+        ctx.script_id as usize,
+    )?;
+    // `FUN_8003D0BC`: past the `[u8 N][N*2]` field, whatever the partition.
+    let n = usize::from(*man.get(script_start)?);
+    let hdr_at = script_start + 1 + n * 2;
+    let hdr = man.get(hdr_at..hdr_at + 4)?;
     let (anim, bx, bz) = (hdr[1], hdr[2], hdr[3]);
     let center = |b: u8| -> u16 {
         let base = u16::from(b & 0x7F) * 0x80 + 0x40;
@@ -83,7 +94,7 @@ pub(in crate::world) fn apply_script_table_teleport(
     // `+0x8D` (named for its op-0x23 facing role) carries the tile ROW here.
     ctx.npc_facing = grid(ctx.world_z);
     ctx.field_8b = 0;
-    true
+    Some(1 + n * 2 + 4)
 }
 
 impl FieldHostImpl<'_> {
@@ -91,8 +102,9 @@ impl FieldHostImpl<'_> {
     /// section.
     ///
     /// After the teleport retail rebases the context's script offset `+0x9E`
-    /// onto its record's first opcode (`0x801E2798..0x801E27A4`), and when
-    /// that opcode is `0x25` it raises the scene word `*(_DAT_801C6EA4) + 8`,
+    /// to the byte after the four header bytes (`0x801E2798..0x801E27A4`;
+    /// `pc0` here, a partition-1 record's first opcode), and when
+    /// that byte is `0x25` it raises the scene word `*(_DAT_801C6EA4) + 8`,
     /// runs the context through `FUN_8003CF7C` from there and drops the word
     /// again (`0x801E2800..0x801E282C`). `FUN_8003CF7C` executes ops until it
     /// has run a `0x21`, the PC stops moving, or the next byte is below the
@@ -114,11 +126,12 @@ impl FieldHostImpl<'_> {
         man_file: &legaia_scene_formats::man_section::ManFile,
         man: &[u8],
         ctx: &mut FieldCtx,
+        pc0: usize,
     ) {
         if self.world.field_vm.respawn_rerun {
             return;
         }
-        let Some((start, pc0, _len)) = legaia_engine_field::man_field_scripts::flat_record_span(
+        let Some((start, _pc0, _len)) = legaia_engine_field::man_field_scripts::flat_record_span(
             man_file,
             man,
             ctx.script_id as usize,
@@ -185,9 +198,9 @@ impl FieldHostImpl<'_> {
         let Ok(man_file) = legaia_scene_formats::man_section::parse(&man) else {
             return;
         };
-        if !apply_script_table_teleport(&man_file, &man, ctx) {
+        let Some(pc0) = apply_script_table_teleport(&man_file, &man, ctx) else {
             return;
-        }
-        self.rerun_spawn_section(&man_file, &man, ctx);
+        };
+        self.rerun_spawn_section(&man_file, &man, ctx, pc0);
     }
 }

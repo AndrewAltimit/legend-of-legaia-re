@@ -60,7 +60,7 @@ fn teleport_reseats_ctx_at_its_own_placement_record_header() {
         field_8b: 0xEE,
         ..Default::default()
     };
-    assert!(apply_script_table_teleport(&man_file, &man, &mut ctx));
+    assert!(apply_script_table_teleport(&man_file, &man, &mut ctx).is_some());
     // Tile-centre coords: (b & 0x7F) * 0x80 + 0x40.
     assert_eq!(ctx.world_x, 3 * 0x80 + 0x40);
     assert_eq!(ctx.world_z, 4 * 0x80 + 0x40);
@@ -85,7 +85,7 @@ fn coord_high_bit_adds_the_half_tile_offset() {
     let man = man_bytes_with_placement_records(&[[0x00, 0, 0x83, 0x04]]);
     let man_file = legaia_scene_formats::man_section::parse(&man).expect("fixture parses");
     let mut ctx = FieldCtx::default();
-    assert!(apply_script_table_teleport(&man_file, &man, &mut ctx));
+    assert!(apply_script_table_teleport(&man_file, &man, &mut ctx).is_some());
     assert_eq!(ctx.world_x, 3 * 0x80 + 0x40 + 0x40);
     assert_eq!(ctx.world_z, 4 * 0x80 + 0x40);
     // The half-tile lands in the same grid column (0x200 - 0x40 >> 7 = 3).
@@ -102,7 +102,7 @@ fn unresolvable_script_id_leaves_ctx_untouched() {
         flags: 0xFFFF_FFFF,
         ..Default::default()
     };
-    assert!(!apply_script_table_teleport(&man_file, &man, &mut ctx));
+    assert!(apply_script_table_teleport(&man_file, &man, &mut ctx).is_none());
     assert_eq!(ctx.world_x, 0x1234);
     assert_eq!(ctx.flags, 0xFFFF_FFFF);
 }
@@ -192,5 +192,51 @@ fn a_record_opening_on_0x24_is_not_rerun() {
     assert_eq!(
         (ctx.world_x, ctx.world_z),
         (3 * 0x80 + 0x40, 4 * 0x80 + 0x40)
+    );
+}
+
+/// A partition-0 **object** record under the same read. The arm skips the
+/// name field with `FUN_8003D0BC` and takes the next four bytes as the
+/// placement header whatever partition the record is in
+/// (`0x801E2700..0x801E27A4`); an object record has one attribute byte
+/// there, so the anim is its first opcode, the tile is the two bytes after
+/// it, and the rebased script offset lands three bytes into the script -
+/// not on a `0x25`, so nothing re-runs.
+#[test]
+fn an_object_record_is_read_at_the_placement_header_offsets() {
+    // One partition-0 record: `[n=1][name][attr][25][74 56 05 00][23 7F 7F][21]`.
+    let body = [
+        0x01, 0xAA, 0xBB, 0x07, 0x25, 0x74, 0x56, 0x05, 0x00, 0x23, 0x7F, 0x7F, 0x21,
+    ];
+    let mut man = vec![0u8; 0x2B + 3];
+    man[0x22] = 1; // N0 = 1, N1 = N2 = 0
+    man[0x28..0x2B].copy_from_slice(&(body.len() as u32).to_le_bytes()[..3]);
+    man.extend_from_slice(&body);
+    man.extend_from_slice(&[0u8; 18]);
+    let man_file = legaia_scene_formats::man_section::parse(&man).expect("fixture parses");
+    let mut ctx = FieldCtx::default();
+    assert_eq!(
+        apply_script_table_teleport(&man_file, &man, &mut ctx),
+        Some(7),
+        "script offset = name skip + 4"
+    );
+    assert_eq!(ctx.move_id, 0x25);
+    assert_eq!(
+        (ctx.world_x, ctx.world_z),
+        (0x74 * 0x80 + 0x40, 0x56 * 0x80 + 0x40)
+    );
+
+    // Through the host: the byte at the rebased offset is `0x05`, so the
+    // spawn section (whose flag arm would park the object at the hide box)
+    // is not re-run and the header seat stands.
+    let mut world = World::new();
+    world.field_vm.channels_man = Some(std::sync::Arc::new(man));
+    let mut ctx = FieldCtx::default();
+    let code = [0x4C, 0xC3, 0x00];
+    let mut host = FieldHostImpl { world: &mut world };
+    let _ = vm::field::step(&mut host, &mut ctx, &code, 0);
+    assert_eq!(
+        (ctx.world_x, ctx.world_z),
+        (0x74 * 0x80 + 0x40, 0x56 * 0x80 + 0x40)
     );
 }

@@ -73,6 +73,12 @@ pub struct FieldPropState {
     /// clears once no probe point of the player reaches its contact box -
     /// the player is off the platform, as after retail's `B2`.
     pub arrival_exempt: Vec<(u8, (i16, i16))>,
+    /// How far each placed object's collider rows have been carried from
+    /// their `.MAP` seat to follow the object's actor, keyed by the flat
+    /// partition-0 record of its bind
+    /// ([`crate::world::World::sync_prop_colliders_to_object_actors`]). Scene-scoped:
+    /// cleared with [`Self::colliders`].
+    pub(crate) object_shifts: std::collections::HashMap<usize, (i32, i32)>,
     /// The current scene's **field move-VM stager table** - the prescript
     /// records (`scene_event_scripts` / `scene_v12_table` offset `0x800`) parsed
     /// as summon-format move-VM stager records, the field-resident sibling of the
@@ -118,6 +124,7 @@ impl FieldPropState {
             walk_touch_records: std::collections::BTreeMap::new(),
             active_walk_touch: None,
             arrival_exempt: Vec::new(),
+            object_shifts: Default::default(),
             stagers: Vec::new(),
             stager_bytes: Vec::new(),
             active_fx: Vec::new(),
