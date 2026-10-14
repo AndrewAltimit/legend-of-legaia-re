@@ -108,15 +108,43 @@
        * scheduler does: retail's mode-0x17 frame handler still runs the cue
        * drainer, so a cue already delayed when the screen opened keeps
        * ageing (the native window's `tick_menu_sfx`). */
-      if (advance && (menuOpen || shopOpen)
+      /* The pause menu takes its sim ticks one at a time inside the loop
+       * below (`play_menu_tick`), so it does not freeze the whole frame;
+       * a bundle without the export keeps the frame-level freeze. */
+      const perTickMenu = typeof rt.play_menu_tick === 'function';
+      const menuFreezes = menuOpen && !perTickMenu;
+      if (advance && (menuFreezes || shopOpen)
           && typeof rt.play_tick_overlay_sfx === 'function') {
         for (let s = 0; s < simSteps; s++) {
           try { rt.play_tick_overlay_sfx(); } catch (e) { break; }
         }
       }
-      if (advance && !menuOpen && !shopOpen && !namingOpen) {
+      if (advance && !menuFreezes && !shopOpen && !namingOpen) {
         const steps = simSteps;
+        let menuTicked = false;
         for (let s = 0; s < steps; s++) {
+          /* The pause menu's per-tick arms, in the native window's
+           * `sim_tick` order: the menu once the wipe has spawned it, the
+           * hand-over tick, the press that opens it (Start on this frame's
+           * first tick, or a script's save point / ready check). Each takes
+           * the whole tick; the SFX scheduler still steps, as retail's
+           * mode-0x17 handler runs the cue drainer. While the field darkens
+           * under the wipe it answers 0 and the field ticks. */
+          if (perTickMenu) {
+            let own = 0;
+            try { own = rt.play_menu_tick(padMaskOf(this.pulse)); } catch (e) { own = 0; }
+            if (own !== 0) {
+              if (own === 2) this.sfxEvent('menu_confirm');
+              if (own >= 2) this._ensureMenuBlitters();
+              menuTicked = true;
+              this.pulse.clear();
+              this._repack();
+              if (typeof rt.play_tick_overlay_sfx === 'function') {
+                try { rt.play_tick_overlay_sfx(); } catch (e) {}
+              }
+              continue;
+            }
+          }
           /* Retail prologue intro-skip (FUN_801D1344): while the opening
            * chain plays, a Cross press skips the whole remaining opening to
            * town01 - available mid-narration too. The engine returns the
@@ -259,6 +287,7 @@
            * them up next frame. */
           if (this._modalOpenedThisTick()) break;
         }
+        if (menuTicked) this._afterMenuTicks();
       } else {
         /* Keep the sim clock current while paused so unpausing doesn't dump the
          * accumulated wall-clock gap as a burst of catch-up ticks. */

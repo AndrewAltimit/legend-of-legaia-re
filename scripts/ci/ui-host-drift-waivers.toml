@@ -503,14 +503,18 @@ skips = [
 
 [[frame_arm]]
 host = "page"
-arm = "advance && !menuOpen && !shopOpen && !namingOpen"
+arm = "advance && !menuFreezes && !shopOpen && !namingOpen"
 reason = """
 `site/js/play-view-frame.js::_frame` calls `rt.tick_frame()` inside this guard
 and `this._drawOverlay()` outside it, so on a guarded frame the page draws
 with NO kernel having run - the whole `skips` list at once, from whatever
-answer each last held. Three of the four terms are panels that suspend the field on the engine
-side as well (the pause menu, a field merchant's op-`0x49`, the naming
-prompt); the fourth is the page's own pause / step-one-frame control.
+answer each last held. Two of the terms are panels that suspend the field on
+the engine side as well (a field merchant's op-`0x49`, the naming prompt);
+`advance` is the page's own pause / step-one-frame control. The pause menu
+is not a frame-level term on the shipped bundle: it takes its ticks one at a
+time inside the loop (`play_menu_tick`, the native `sim_tick` arms), so the
+field ticks under the wipe and on the close frame's remaining ticks as it does
+natively; `menuFreezes` holds only for a cached bundle without that export.
 
 This is disclosed rather than closed because the guard is the page's field
 freeze and moving the tick outside it would advance the world under a menu.

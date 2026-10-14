@@ -51,7 +51,11 @@ impl LegaiaRuntime {
         if !session.field_menu_is_open() {
             return false;
         }
-        self.play_menu = Some(PlayMenu::new());
+        // No press, so no wipe: the menu owns the frame from the open, as
+        // the native title rows hand it straight to the boot-UI arm.
+        let mut menu = PlayMenu::new();
+        menu.owns_frame = true;
+        self.play_menu = Some(menu);
         true
     }
 
