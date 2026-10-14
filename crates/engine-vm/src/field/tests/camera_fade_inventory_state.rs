@@ -484,31 +484,57 @@ fn op_49_done_subop_a_halts_at_pc() {
 
 #[test]
 fn op_49_done_sub0_walks_inline_mes_payload() {
-    // `[49, 0, length, ...length args..., ...mes_bytes, terminator, ...]`.
-    // The original at FUN_801DE840 (case 0x49 / DONE / sub-0) reads
-    // `length = pbVar47[2]`, then walks the inline MES bytecode starting
-    // at `pbVar47 + length + 3` via `func_0x8003ca38` (counts bytes > 0x1E,
-    // pair-extends 0xCx prefix bytes), and advances PC by `5 + length +
-    // walked`.
+    // `[49, 0, x, length, ...length args..., ...mes_bytes, terminator]`.
+    // FUN_801DE840 (case 0x49 / DONE / sub-0) reads `length = s6[2]` with
+    // `s6` the operand pointer (`lbu a0,0x2(s6)` at 0x801E08EC), walks the
+    // inline MES from `s6 + length + 3` via FUN_8003CA38 (counts bytes
+    // > 0x1E, pair-extends 0xCx prefix bytes) and advances PC by
+    // `5 + length + walked`.
     let mut host = TestHost {
         op49_state_value: Op49State::Done,
         ..Default::default()
     };
     let mut ctx = FieldCtx::default();
     // length = 2 (two args), MES bytes = [0x50, 0xC3, 0xAA, 0x00 terminator]
-    // → walker counts 4 bytes (0x50 = 1, 0xC3 0xAA pair = 2, then sees 0x00).
+    // → walker counts 3 bytes (0x50 = 1, 0xC3 0xAA pair = 2, then sees 0x00).
     let bc = &[
         0x49, // opcode
         0x00, // sub-op
+        0x00, // s6[1], not read by the Done arm
         0x02, // length
         0xAA, 0xBB, // 2 args (ignored by walker - walker starts past them)
         0x50, 0xC3, 0xAA, 0x00, // MES body (3 bytes walked) + terminator
     ];
     let r = step(&mut host, &mut ctx, bc, 0);
-    // PC = 0 + (header_size=1) + 4 + length=2 + walked=3 = 10. The
-    // terminator is NOT consumed by the walker - it stops at it.
+    // PC = 0 + (header_size=1) + 4 + length=2 + walked=3 = 10: the
+    // terminator, which the walker stops at.
     assert_eq!(r, StepResult::Advance { next_pc: 10 });
     assert_eq!(host.op49_clears, 1);
+}
+
+#[test]
+fn op_49_done_sub0_shop_record_resumes_past_the_shop_name() {
+    // `ropeway` P1[24]'s shop: `49 00 00 11`, seventeen ids (fourteen on
+    // sale and the 01 02 03 template tail), "Items Shop\0", then the
+    // "Thank you!" line. The Done arm reads the id count as `length` and
+    // walks the name, so the talk resumes on the line - not inside the id
+    // list, where `DE DF E0` decodes as an extended `SysFlag.Set 0x8EE0`.
+    let mut host = TestHost {
+        op49_state_value: Op49State::Done,
+        ..Default::default()
+    };
+    let mut ctx = FieldCtx::default();
+    let mut bc = vec![0x49, 0x00, 0x00, 0x11];
+    bc.extend([
+        0xDD, 0xDE, 0xDF, 0xE0, 0xE1, 0xE2, 0xE3, 0x78, 0x7A, 0x7C, 0x7F, 0x80, 0x88, 0x89, 0x01,
+        0x02, 0x03,
+    ]);
+    bc.extend(b"Items Shop\0");
+    bc.push(0x1F);
+    let r = step(&mut host, &mut ctx, &bc, 0);
+    // 1 + 4 + 17 + 10 = 32: past the name's terminator, on the next line.
+    assert_eq!(r, StepResult::Advance { next_pc: 32 });
+    assert_eq!(bc[32], 0x1F);
 }
 
 #[test]

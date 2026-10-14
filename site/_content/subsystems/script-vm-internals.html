@@ -176,7 +176,7 @@
   <table class="data-table">
     <thead><tr><th>Sub-op</th><th>Screen</th></tr></thead>
     <tbody>
-      <tr><td><code>0</code></td><td>No screen of its own; carries the town-shop stock record <code>[count][ids..][name\0]</code></td></tr>
+      <tr><td><code>0</code></td><td>No screen of its own; carries the town-shop stock record <code>49 00 00 [count][ids..][name\0]</code>. Done reads the count as the payload length and walks the name, so the talk resumes on the line after the record</td></tr>
       <tr><td><code>1</code>, <code>7</code>, <code>D</code></td><td>No screen (the save point's <code>49 01</code> opens the menu session)</td></tr>
       <tr><td><code>2</code></td><td>Code lock (five-symbol code in the operands)</td></tr>
       <tr><td><code>3 n</code></td><td>Name entry for party slot <code>n</code> (<a href="#name-entry">below</a>)</td></tr>

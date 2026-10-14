@@ -199,17 +199,23 @@ pub(super) fn op_49<H: FieldHost>(
             host.op49_clear();
             match sub_op {
                 // sub-0 in DONE state - embedded MES bytecode walker.
-                // Instruction: `[49, 0, length, ...length args..., ...mes_bytes]`.
-                // The original reads `length = pbVar47[2]`, then calls
-                // `func_0x8003ca38(pbVar47 + length + 3)` (= the MES-shape
-                // walker that counts bytes > 0x1E, with one-byte
-                // peek-extension for 0xCx prefix bytes), and returns
-                // `param_2 + length + 5 + mes_count`.
+                // Instruction: `[49, 0, x, length, ...length args...,
+                // ...mes_bytes]`. With `s6` the operand pointer (`s6[0]` is
+                // the sub-op the arm branches on at `0x801E08E4`), the arm
+                // reads `length = s6[2]` (`lbu a0,0x2(s6)` at `0x801E08EC`),
+                // walks the inline MES from `s6 + length + 3`
+                // (`FUN_8003CA38`: counts bytes > 0x1E, pair-extends 0xCx
+                // prefix bytes) and advances PC by `length + 5 + walked`.
+                // A shop record is this shape: `49 00 00 <count> <ids>
+                // <name\0>`, so `length` is the id count and the walk is
+                // the name, and the talk resumes on the line after it.
+                // `s6[1]` is not read here.
+                // REF: FUN_801DE840 (case 0x49 Done sub-0, 0x801E08DC..0x801E0910)
                 0 => {
-                    let Some(&length) = bytecode.get(operand + 1) else {
+                    let Some(&length) = bytecode.get(operand + 2) else {
                         return StepResult::Unknown { opcode, pc };
                     };
-                    let mes_start = operand + 2 + length as usize;
+                    let mes_start = operand + 3 + length as usize;
                     if mes_start > bytecode.len() {
                         return StepResult::Unknown { opcode, pc };
                     }
