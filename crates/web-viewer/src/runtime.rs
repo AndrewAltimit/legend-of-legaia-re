@@ -318,6 +318,11 @@ pub struct LegaiaRuntime {
     /// cue table (`DAT_80078C1C`). `None` on a PROT.DAT-only load - the
     /// battle render then takes the half-turn / indoor-grey fallbacks.
     pub(crate) scus: Option<Vec<u8>>,
+    /// The field VM opened a menu-overlay screen on this tick (the poll in
+    /// [`Self::tick_frame`] took its first step), so
+    /// [`Self::play_shop_after_tick`] skips its step - the native window's
+    /// `shop_opened_this_tick`.
+    pub(crate) shop_opened_this_tick: bool,
     /// The page's sound-effect channel: disc descriptor bank, delay scheduler,
     /// footstep cadence ([`crate::play_sfx`]).
     pub(crate) sfx: crate::play_sfx::PlaySfx,
@@ -476,6 +481,7 @@ impl LegaiaRuntime {
             summon_actor_slot: None,
             precise_movement_override: None,
             scus: None,
+            shop_opened_this_tick: false,
             sfx: Default::default(),
             game_over: None,
             #[cfg(target_arch = "wasm32")]
@@ -592,5 +598,11 @@ impl LegaiaRuntime {
         &self,
     ) -> Option<&legaia_engine_session::BootSession<legaia_engine_audio::TestAudioSink>> {
         self.scene_host.session()
+    }
+
+    /// The page's menu-overlay screen (shop, prize exchange, inn) - read-only,
+    /// for the same native tests. Not a wasm export.
+    pub fn debug_menu_runtime(&self) -> &legaia_engine_core::menu_runtime::MenuRuntime {
+        &self.menu
     }
 }

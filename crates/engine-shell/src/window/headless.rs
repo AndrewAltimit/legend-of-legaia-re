@@ -100,6 +100,11 @@ impl HeadlessPlayWindow {
         &mut self.app.session
     }
 
+    /// The window's menu-overlay screen (shop, prize exchange, inn).
+    pub fn menu_runtime(&self) -> &legaia_engine_core::menu_runtime::MenuRuntime {
+        &self.app.menu_runtime
+    }
+
     /// Whether the window's pause menu owns the frame (the boot-UI arm).
     pub fn boot_ui_active(&self) -> bool {
         self.app.boot_ui.is_active()

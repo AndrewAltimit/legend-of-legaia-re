@@ -64,6 +64,10 @@ struct Scenario {
     /// What the run must have exercised, so a green run is not a vacuous
     /// one (the hosts agreeing on a world that never moved).
     exercised: fn(&[HostTraceFrame]) -> Result<(), String>,
+    /// `(tick, idx)`: stage scene shop `idx` the way its merchant's op-`0x49`
+    /// record would (`World::debug_arm_scene_shop`) ahead of the display
+    /// frame that reaches `tick`, on both hosts at the same frame.
+    arm_shop: Option<(u32, usize)>,
 }
 
 const UP: u16 = 0x0010;
@@ -149,21 +153,50 @@ fn visited_battle(tr: &[HostTraceFrame]) -> Result<(), String> {
     }
 }
 
-fn native_trace(disc: &str, sc: &Scenario, cadence: Cadence) -> (Vec<HostTraceFrame>, Vec<u16>) {
+/// What the native run hands the page run: its trace, the pad word of every
+/// display frame, and the frame the shop was staged ahead of.
+struct NativeRun {
+    trace: Vec<HostTraceFrame>,
+    pads: Vec<u16>,
+    arm_frame: Option<u32>,
+}
+
+fn native_trace(disc: &str, sc: &Scenario, cadence: Cadence) -> NativeRun {
     let mut w = HeadlessPlayWindow::open(std::path::Path::new(disc), sc.scene).expect("open");
-    let mut out = vec![host_trace::sample(w.session())];
+    let mut out = vec![host_trace::sample_with_overlay(
+        w.session(),
+        w.menu_runtime(),
+    )];
     let mut pads = Vec::new();
+    let mut arm_frame = None;
     let (mut t, mut f) = (0u32, 0u32);
     while t < sc.ticks {
         let n = cadence.ticks(f).min(sc.ticks - t);
+        if let Some((at, idx)) = sc.arm_shop
+            && arm_frame.is_none()
+            && t + 1 >= at
+        {
+            assert!(
+                w.session_mut().host.world.debug_arm_scene_shop(idx),
+                "scene shop {idx} stages"
+            );
+            arm_frame = Some(f);
+        }
         let pad = (sc.pad)(t + 1, out.last().expect("sampled"));
         pads.push(pad);
         w.display_frame(pad, n);
         t += n;
         f += 1;
-        out.push(host_trace::sample(w.session()));
+        out.push(host_trace::sample_with_overlay(
+            w.session(),
+            w.menu_runtime(),
+        ));
     }
-    (out, pads)
+    NativeRun {
+        trace: out,
+        pads,
+        arm_frame,
+    }
 }
 
 /// The play page's frame, replayed from `site/js/play-view-frame.js::_frame`
@@ -178,7 +211,6 @@ struct PageDriver {
     /// `this._cut`: the post-tick re-read of `play_cutscene_state_json`.
     cut_locked: bool,
     cut_chain: bool,
-    shop_holds_pad: bool,
 }
 
 impl PageDriver {
@@ -187,12 +219,6 @@ impl PageDriver {
             serde_json::from_str(&self.rt.play_cutscene_state_json()).unwrap_or_default();
         self.cut_locked = v["locked"].as_bool().unwrap_or(false);
         self.cut_chain = v["chain"].as_bool().unwrap_or(false);
-    }
-
-    /// `_updateFieldMenu`: with `play_menu_tick` the frame-level step only
-    /// answers whether a menu is up; the menu's ticks run in the loop.
-    fn field_menu(&mut self) -> bool {
-        self.rt.play_menu_is_open()
     }
 
     /// `_updateNameEntry`.
@@ -207,44 +233,16 @@ impl PageDriver {
         rt.name_entry_is_active()
     }
 
-    /// `_updateFieldShop`.
-    fn field_shop(&mut self, pulse: &mut u16, steps: u32) -> bool {
-        self.shop_holds_pad = false;
-        if !self.rt.play_shop_is_open() {
-            return false;
-        }
-        if steps > 0 {
-            let edge = *pulse;
-            for s in 0..steps {
-                self.rt.play_shop_input(if s == 0 { edge } else { 0 });
-            }
-            *pulse = 0;
-        }
-        if !self.rt.play_shop_is_open() {
-            return false;
-        }
-        self.shop_holds_pad = true;
-        self.rt.play_shop_suspends_field()
-    }
-
-    /// `_modalOpenedThisTick`.
-    fn modal_opened_this_tick(&self) -> bool {
-        !self.shop_holds_pad && self.rt.play_shop_is_open()
-    }
-
     fn frame(&mut self, pad: u16, steps: u32) {
         self.pulse |= pad & !self.prev;
         self.prev = pad;
         let mut pulse = self.pulse;
-        let menu_open = self.field_menu();
+        // `_updateFieldMenu` / `_updateFieldShop`: with the per-tick exports
+        // the frame level only answers whether a screen is up; their ticks
+        // run in the loop. `_updateNameEntry` still steps at frame level.
+        let menu_open = self.rt.play_menu_is_open();
         let naming_open = !menu_open && self.name_entry(&mut pulse, steps);
-        let shop_open = !menu_open && !naming_open && self.field_shop(&mut pulse, steps);
-        if shop_open {
-            for _ in 0..steps {
-                self.rt.play_tick_overlay_sfx();
-            }
-        }
-        if !shop_open && !naming_open {
+        if !naming_open {
             let mut menu_ticked = false;
             for _ in 0..steps {
                 // `play_menu_tick`: the pause menu's per-tick arms.
@@ -267,18 +265,21 @@ impl PageDriver {
                     let _ = self.rt.game_over_input(pulse);
                     break;
                 }
-                let word = if self.cut_locked || self.shop_holds_pad {
-                    0
-                } else {
-                    pad
-                };
+                // `play_shop_tick`: a suspending screen takes the tick; the
+                // inn holds the pad neutral and steps after it.
+                let tick_edge = pulse;
+                let shop = self.rt.play_shop_tick(tick_edge);
+                if shop == 1 {
+                    pulse = 0;
+                    self.rt.play_tick_overlay_sfx();
+                    continue;
+                }
+                let word = if self.cut_locked || shop == 2 { 0 } else { pad };
                 self.rt.set_pad(word);
                 pulse = 0;
                 self.rt.tick_frame().expect("tick_frame");
+                self.rt.play_shop_after_tick(tick_edge);
                 self.read_cut();
-                if self.modal_opened_this_tick() {
-                    break;
-                }
             }
             // `_afterMenuTicks`.
             if menu_ticked {
@@ -292,7 +293,12 @@ impl PageDriver {
     }
 }
 
-fn page_trace(disc: Vec<u8>, sc: &Scenario, cadence: Cadence, pads: &[u16]) -> Vec<HostTraceFrame> {
+fn page_trace(
+    disc: Vec<u8>,
+    sc: &Scenario,
+    cadence: Cadence,
+    run: &NativeRun,
+) -> Vec<HostTraceFrame> {
     let mut rt = LegaiaRuntime::new();
     rt.load_disc(disc, String::new()).expect("load_disc");
     rt.enter_field(sc.scene).expect("enter_field");
@@ -302,17 +308,29 @@ fn page_trace(disc: Vec<u8>, sc: &Scenario, cadence: Cadence, pads: &[u16]) -> V
         pulse: 0,
         cut_locked: false,
         cut_chain: false,
-        shop_holds_pad: false,
     };
     d.read_cut();
-    let mut out = vec![host_trace::sample(d.rt.debug_session().expect("session"))];
+    let mut out = vec![host_trace::sample_with_overlay(
+        d.rt.debug_session().expect("session"),
+        d.rt.debug_menu_runtime(),
+    )];
     let (mut t, mut f) = (0u32, 0u32);
     while t < sc.ticks {
         let n = cadence.ticks(f).min(sc.ticks - t);
-        d.frame(pads[f as usize], n);
+        if run.arm_frame == Some(f) {
+            let idx = sc.arm_shop.expect("armed").1;
+            assert!(
+                d.rt.debug_arm_scene_shop(idx as u32),
+                "page stages shop {idx}"
+            );
+        }
+        d.frame(run.pads[f as usize], n);
         t += n;
         f += 1;
-        out.push(host_trace::sample(d.rt.debug_session().expect("session")));
+        out.push(host_trace::sample_with_overlay(
+            d.rt.debug_session().expect("session"),
+            d.rt.debug_menu_runtime(),
+        ));
     }
     out
 }
@@ -327,8 +345,9 @@ fn run(sc: &Scenario, cadences: &[Cadence]) -> Vec<String> {
     let bytes = std::fs::read(&disc).expect("read disc");
     let mut all = Vec::new();
     for &c in cadences {
-        let (n, pads) = native_trace(&disc, sc, c);
-        let p = page_trace(bytes.clone(), sc, c, &pads);
+        let run = native_trace(&disc, sc, c);
+        let p = page_trace(bytes.clone(), sc, c, &run);
+        let n = run.trace;
         assert_eq!(n.len(), p.len());
         let label = format!("{} {:?}", sc.scene, c);
         if let Err(e) = (sc.exercised)(&n) {
@@ -371,6 +390,7 @@ fn town01_walk_frames_match_across_hosts() {
         pad: walk_pad,
         ticks: 300,
         exercised: moved,
+        arm_shop: None,
     };
     let parted = run(&sc, ALL);
     assert!(parted.is_empty(), "hosts diverge: {parted:#?}");
@@ -383,6 +403,7 @@ fn town01_pause_menu_frames_match_across_hosts() {
         pad: menu_pad,
         ticks: 420,
         exercised: visited_menu,
+        arm_shop: None,
     };
     let parted = run(&sc, ALL);
     assert!(parted.is_empty(), "hosts diverge: {parted:#?}");
@@ -395,6 +416,7 @@ fn fogged_field_frames_match_across_hosts() {
         pad: walk_pad,
         ticks: 300,
         exercised: moved,
+        arm_shop: None,
     };
     let parted = run(&sc, ALL);
     assert!(parted.is_empty(), "hosts diverge: {parted:#?}");
@@ -407,6 +429,7 @@ fn encounter_and_battle_frames_match_across_hosts() {
         pad: encounter_pad,
         ticks: 1800,
         exercised: visited_battle,
+        arm_shop: None,
     };
     let parted = run(&sc, &[Cadence::Hz60, Cadence::Hz30]);
     assert!(parted.is_empty(), "hosts diverge: {parted:#?}");
@@ -481,6 +504,7 @@ fn prologue_skip_and_naming_frames_match_across_hosts() {
         pad: confirm_pad,
         ticks: 1200,
         exercised: left_the_prologue,
+        arm_shop: None,
     };
     let parted = run(&sc, ALL);
     assert!(parted.is_empty(), "hosts diverge: {parted:#?}");
@@ -493,6 +517,44 @@ fn village_dialogue_frames_match_across_hosts() {
         pad: talk_pad,
         ticks: 900,
         exercised: opened_a_dialogue,
+        arm_shop: None,
+    };
+    let parted = run(&sc, ALL);
+    assert!(parted.is_empty(), "hosts diverge: {parted:#?}");
+}
+
+/// The shop's screens, pressed through: Buy, a row, the quantity and the
+/// confirm, then back out.
+fn shop_pad(t: u32, _: &HostTraceFrame) -> u16 {
+    tap(t, 70, CROSS)
+        | tap(t, 110, DOWN)
+        | tap(t, 140, CROSS)
+        | tap(t, 180, CROSS)
+        | tap(t, 220, CROSS)
+        | tap(t, 260, CIRCLE)
+        | tap(t, 300, CIRCLE)
+        | tap(t, 340, DOWN)
+        | tap(t, 360, DOWN)
+        | tap(t, 380, CROSS)
+        | tap(t, 420, CROSS)
+}
+
+fn opened_the_shop(tr: &[HostTraceFrame]) -> Result<(), String> {
+    if tr.iter().any(|f| f.shop.1) {
+        Ok(())
+    } else {
+        Err("the shop never opened".into())
+    }
+}
+
+#[test]
+fn shop_frames_match_across_hosts() {
+    let sc = Scenario {
+        scene: "bylon",
+        pad: shop_pad,
+        ticks: 480,
+        exercised: opened_the_shop,
+        arm_shop: Some((30, 0)),
     };
     let parted = run(&sc, ALL);
     assert!(parted.is_empty(), "hosts diverge: {parted:#?}");

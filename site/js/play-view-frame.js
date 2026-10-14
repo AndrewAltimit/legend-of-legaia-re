@@ -112,6 +112,7 @@
        * below (`play_menu_tick`), so it does not freeze the whole frame;
        * a bundle without the export keeps the frame-level freeze. */
       const perTickMenu = typeof rt.play_menu_tick === 'function';
+      const perTickShop = typeof rt.play_shop_tick === 'function';
       const menuFreezes = menuOpen && !perTickMenu;
       if (advance && (menuFreezes || shopOpen)
           && typeof rt.play_tick_overlay_sfx === 'function') {
@@ -230,15 +231,36 @@
            * to set the azimuth unconditionally from its own orbit yaw, which
            * is why the engine's own camera state and the controls it drove
            * could not agree. */
+          /* A menu-overlay screen's claim on the tick (`play_shop_tick`):
+           * a shop or the prize exchange suspends the field and takes the
+           * tick (the native `field_suspended` arm, with the SFX scheduler
+           * step); the inn prompt lets the field tick on a neutral pad and
+           * steps after it (`play_shop_after_tick`). */
+          const tickEdge = padMaskOf(this.pulse);
+          let shopPad = false;
+          if (perTickShop) {
+            let own = 0;
+            try { own = rt.play_shop_tick(tickEdge); } catch (e) { own = 0; }
+            if (own === 1) {
+              this.pulse.clear();
+              this._repack();
+              if (typeof rt.play_tick_overlay_sfx === 'function') {
+                try { rt.play_tick_overlay_sfx(); } catch (e) {}
+              }
+              continue;
+            }
+            shopPad = own === 2;
+          }
           const lockedPad = this._cut && this._cut.locked;
+          const neutral = lockedPad || this._shopHoldsPad || shopPad;
           if (this._vrDrive) {
             rt.set_camera_azimuth(this._vrDrive.azimuth);
-            rt.set_pad((lockedPad || this._shopHoldsPad) ? 0 : (this.pad | this._vrDrive.pad));
+            rt.set_pad(neutral ? 0 : (this.pad | this._vrDrive.pad));
           } else {
             if (this.debugCamera || !this.cam.vp) {
               rt.set_camera_azimuth(azimuthUnits(this.cam.yaw));
             }
-            rt.set_pad((lockedPad || this._shopHoldsPad) ? 0 : this.pad);
+            rt.set_pad(neutral ? 0 : this.pad);
           }
           /* A tap's just-pressed edge fires on the first tick of this frame
            * only; later catch-up ticks see the held set, so a one-frame tap
@@ -249,6 +271,9 @@
           try { entered = rt.tick_frame(); } catch (e) {
             this._onEngineTrap('engine tick', e);
             return;
+          }
+          if (perTickShop) {
+            try { rt.play_shop_after_tick(tickEdge); } catch (e) {}
           }
           /* The CD-XA lane's lazy tier: a cast names a clip the bank does
            * not hold and the engine asks for that file's read span. The

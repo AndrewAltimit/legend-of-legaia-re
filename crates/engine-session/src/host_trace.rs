@@ -83,6 +83,43 @@ pub struct HostTraceFrame {
     pub field_ctx: u64,
     /// Whether the pause menu is open, and where its field wipe stands.
     pub menu: (bool, legaia_engine_system::pause_wipe::PauseWipe),
+    /// The open menu-overlay screen (shop, prize exchange, inn), which each
+    /// host holds beside the session rather than in it: whether it is open,
+    /// its UI frame word, the shop's opening fade, its state byte and cursor,
+    /// and the shop screen it shows. `None` from [`sample`], which sees only
+    /// the session; [`sample_with_overlay`] fills it.
+    pub overlay: Option<OverlayTrace>,
+    /// The op-`0x49` merchant gate (`ShopState::shop_armed`), whether a shop
+    /// is open (`shop_open`) and whether one is staged for the hosts' drain.
+    pub shop: (bool, bool, bool),
+}
+
+/// The host-held menu-overlay screen's state ([`HostTraceFrame::overlay`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OverlayTrace {
+    pub open: bool,
+    pub ui_frame: u32,
+    pub fade: Option<u8>,
+    pub state: u8,
+    pub cursor: u8,
+    pub phase: Option<legaia_engine_menus::shop::ShopScreenPhase>,
+}
+
+/// [`sample`], plus the host's menu-overlay screen.
+pub fn sample_with_overlay<S: AudioSink>(
+    session: &BootSession<S>,
+    menu: &legaia_engine_core::menu_runtime::MenuRuntime,
+) -> HostTraceFrame {
+    let mut f = sample(session);
+    f.overlay = Some(OverlayTrace {
+        open: menu.is_open(),
+        ui_frame: menu.ui_frame(),
+        fade: menu.shop_fade_level(),
+        state: menu.ctx_state(),
+        cursor: menu.cursor(),
+        phase: menu.shop_screen_phase(),
+    });
+    f
 }
 
 fn digest<T: Hash + ?Sized>(v: &T) -> u64 {
@@ -160,6 +197,12 @@ pub fn sample<S: AudioSink>(session: &BootSession<S>) -> HostTraceFrame {
         battle: debug_digest(&world.battle_ctx),
         field_ctx: debug_digest(&world.field_ctx),
         menu: (session.field_menu_is_open(), *session.pause_wipe()),
+        overlay: None,
+        shop: (
+            world.shops.shop_armed,
+            world.shops.shop_open,
+            world.shops.pending_shop.is_some(),
+        ),
     }
 }
 
@@ -182,6 +225,8 @@ pub const CHANNELS: &[&str] = &[
     "battle",
     "field_ctx",
     "menu",
+    "overlay",
+    "shop",
 ];
 
 fn channel_equal(a: &HostTraceFrame, b: &HostTraceFrame, ch: &str) -> bool {
@@ -203,6 +248,8 @@ fn channel_equal(a: &HostTraceFrame, b: &HostTraceFrame, ch: &str) -> bool {
         "battle" => a.battle == b.battle,
         "field_ctx" => a.field_ctx == b.field_ctx,
         "menu" => a.menu == b.menu,
+        "overlay" => a.overlay == b.overlay,
+        "shop" => a.shop == b.shop,
         _ => true,
     }
 }

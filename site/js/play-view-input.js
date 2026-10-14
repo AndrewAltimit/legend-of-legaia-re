@@ -453,6 +453,10 @@
       try { open = rt.play_shop_is_open(); } catch (e) { return false; }
       if (!open) return false;
       this._ensureMenuBlitters();
+      /* The per-tick owner (`play_shop_tick` / `play_shop_after_tick`, the
+       * native window's `sim_tick` arms) steps the screen inside the frame's
+       * tick loop, so the frame-level step only stages its blitters. */
+      if (typeof rt.play_shop_tick === 'function') return false;
       const freezes = () => {
         let open2 = false;
         try { open2 = rt.play_shop_is_open(); } catch (e) { return false; }
@@ -482,8 +486,12 @@
      * field ticks under) is not a new one. */
     _modalOpenedThisTick() {
       const rt = this.rt;
+      /* A screen the tick opened takes the frame's next tick through
+       * `play_shop_tick`, inside the loop, as the native window's next
+       * `sim_tick` does; only a bundle without that export ends the frame. */
       try {
-        if (!this._shopHoldsPad && typeof rt.play_shop_is_open === 'function'
+        if (!this._shopHoldsPad && typeof rt.play_shop_tick !== 'function'
+            && typeof rt.play_shop_is_open === 'function'
             && rt.play_shop_is_open()) return true;
       } catch (e) { /* fall through */ }
       /* A scripted menu press is picked up by the next tick's
