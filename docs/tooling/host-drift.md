@@ -1226,6 +1226,7 @@ reverse-engineering questions, so they are not on
 | shop panel rows, inn prompt text | Written once per host over shared leaves; they agree today. |
 | level-up banner without menu chrome | Raw surface pixels natively, stage-scaled on the page; only a run with no system-UI atlas takes that path. |
 | cheats | One `World::cheat_*` call each; restore HP / MP is page-only, a GameShark file native-only, and native applies once at boot. |
+| launch switches | The native window throws `--retail`, `--set-flag`, `--learn-spell`, `LEGAIA_SMART_MONSTERS` and `LEGAIA_WORLD_MAP_MARKERS` at launch; the page throws the same engine writes at runtime (`play_toggles`, `learn_spell`). `--psx-render` is the launch twin of the page's PSX box. |
 | fishing wander readout | Native dev-menu aid for `FUN_801d2050`'s tracked points; no page twin by choice. |
 | fishing exchange panel pen | Native adds the venue overlay's idle sway (`FUN_801d03b0`). |
 | op `0x35` sub-op `8` | Open on purpose: `FUN_80019898` replays the record at `0x8007057C` through `FUN_80026478`, which in every captured state is silent, so the default no-op is faithful ([`audio.md`](../subsystems/audio.md#sub-op-8-replays-an-empty-record)). |

@@ -74,6 +74,13 @@ impl LegaiaRuntime {
         // `town01` re-enter through here too, and a card Load's resume is not
         // a picker visit either.
         host.world.stage_picker_entry(name, resume);
+        // The page's runtime twins of the native launch switches
+        // (`crate::play_toggles`).
+        self.apply_page_toggles();
+        let host = self
+            .scene_host
+            .host_mut()
+            .ok_or_else(|| "enter_field: call load_disc first".to_string())?;
         let world_map = legaia_engine_scene::scene::is_world_map_scene(name);
         if world_map {
             host.enter_world_map_scene(name)

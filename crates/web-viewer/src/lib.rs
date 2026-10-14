@@ -57,6 +57,7 @@ pub mod play_name_entry;
 pub mod play_sfx;
 pub mod play_shop;
 pub mod play_tile_board;
+pub mod play_toggles;
 pub mod play_world_map_markers;
 pub mod play_xa;
 pub mod player_anm;

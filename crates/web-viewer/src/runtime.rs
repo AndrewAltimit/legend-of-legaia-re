@@ -41,7 +41,7 @@ mod options;
 mod scene_setup;
 mod state_json;
 pub use options::OPTIONS_STORAGE_KEY;
-use options::load_persisted_options;
+pub(crate) use options::load_persisted_options;
 
 /// Default BGM output gain for the play page, parked on
 /// [`legaia_engine_audio::WebAudioOut`]'s post-mixer `GainNode` at
@@ -373,6 +373,9 @@ pub struct LegaiaRuntime {
     /// the scene entry once the save has landed, or by the next tick when
     /// the page declined the entry.
     pub(crate) bgm_handoff_pending: bool,
+    /// The native launch switches the page throws at runtime
+    /// ([`crate::play_toggles`]), re-asserted on every scene entry.
+    pub(crate) page_toggles: crate::play_toggles::PageToggles,
 }
 
 /// Sentinel [`LegaiaRuntime::set_field_player_screen_y`] reads as "the lead
@@ -478,6 +481,7 @@ impl LegaiaRuntime {
             #[cfg(target_arch = "wasm32")]
             audio_out: None,
             bgm_handoff_pending: false,
+            page_toggles: Default::default(),
         }
     }
 }
