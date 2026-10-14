@@ -89,6 +89,40 @@ pub(super) fn party_hp_permille(session: &NativeSession) -> u32 {
 /// then Circle back out to the field. Every step is a pad edge through the
 /// same menu sessions both play hosts drive. Returns how many items it used.
 pub(super) fn pad_field_heal(session: &mut NativeSession, threshold: u32) -> usize {
+    pad_field_restore(session, threshold, false)
+}
+
+/// The weakest present member's MP, per mille of its maximum (members with
+/// no MP pool count as full).
+pub(super) fn party_mp_permille(session: &NativeSession) -> u32 {
+    let w = &session.host.world;
+    w.present_party_list()
+        .into_iter()
+        .filter_map(|s| {
+            let v = w.party.roster.members.get(usize::from(s))?.hp_mp_sp();
+            (v.mp_max > 0).then(|| u32::from(v.mp_cur) * 1000 / u32::from(v.mp_max))
+        })
+        .min()
+        .unwrap_or(1000)
+}
+
+/// [`pad_field_heal`] for either pool: `mp` walks the same Items screen to
+/// the first MP restorative and the member lowest on MP.
+pub(super) fn pad_field_restore(session: &mut NativeSession, threshold: u32, mp: bool) -> usize {
+    let gauge = |s: &NativeSession| {
+        if mp {
+            party_mp_permille(s)
+        } else {
+            party_hp_permille(s)
+        }
+    };
+    let restores = move |effect: &ItemEffect| {
+        if mp {
+            matches!(effect, ItemEffect::HealMp { .. })
+        } else {
+            matches!(effect, ItemEffect::Heal { .. } | ItemEffect::HealAll)
+        }
+    };
     use legaia_engine_core::field_menu_dispatch::FieldMenuSubsession;
     use legaia_engine_menus::field_menu::FieldMenuRow;
     use legaia_engine_menus::inventory_use::InventoryUseState;
@@ -112,17 +146,17 @@ pub(super) fn pad_field_heal(session: &mut NativeSession, threshold: u32) -> usi
     } else {
         threshold
     };
-    if !walking(session) || !released(session) || party_hp_permille(session) >= threshold {
+    if !walking(session) || !released(session) || gauge(session) >= threshold {
         return 0;
     }
     if plays_on {
         let w = &session.host.world;
         let holds_heal = w.party.inventory.iter().any(|(&id, &n)| {
             n > 0
-                && w.tables.item_catalog.get(id).is_some_and(|e| {
-                    e.usable_in_field
-                        && matches!(e.effect, ItemEffect::Heal { .. } | ItemEffect::HealAll)
-                })
+                && w.tables
+                    .item_catalog
+                    .get(id)
+                    .is_some_and(|e| e.usable_in_field && restores(&e.effect))
         });
         if !holds_heal {
             return 0;
@@ -145,7 +179,7 @@ pub(super) fn pad_field_heal(session: &mut NativeSession, threshold: u32) -> usi
         let pad = match session.field_menu_sub.as_ref() {
             None => match menu.phase() {
                 legaia_engine_menus::field_menu::FieldMenuPhase::Browsing { cursor } => {
-                    if party_hp_permille(session) >= threshold
+                    if gauge(session) >= threshold
                         || used >= 4
                         || used_at_entry.is_some_and(|u| u == used)
                         || used > 0 && cursor != items_row
@@ -162,10 +196,10 @@ pub(super) fn pad_field_heal(session: &mut NativeSession, threshold: u32) -> usi
             },
             Some(FieldMenuSubsession::Items(p)) => {
                 let heals = |id: u8| {
-                    p.inner.catalog.get(id).is_some_and(|e| {
-                        e.usable_in_field
-                            && matches!(e.effect, ItemEffect::Heal { .. } | ItemEffect::HealAll)
-                    })
+                    p.inner
+                        .catalog
+                        .get(id)
+                        .is_some_and(|e| e.usable_in_field && restores(&e.effect))
                 };
                 // The hand walks every bag row, usable here or not
                 // (`PauseItemsSession::list_cursor`): a row the field cannot
@@ -173,7 +207,7 @@ pub(super) fn pad_field_heal(session: &mut NativeSession, threshold: u32) -> usi
                 // the same counter) is stepped over, not confirmed.
                 let want = p.rows.iter().position(|r| heals(r.id));
                 match (p.focus, &p.inner.state) {
-                    _ if party_hp_permille(session) >= threshold || want.is_none() || used >= 4 => {
+                    _ if gauge(session) >= threshold || want.is_none() || used >= 4 => {
                         PadButton::Circle.mask()
                     }
                     (PauseItemsFocus::Command, _) => {
@@ -201,7 +235,13 @@ pub(super) fn pad_field_heal(session: &mut NativeSession, threshold: u32) -> usi
                             .iter()
                             .enumerate()
                             .filter(|(_, t)| !t.is_enemy && t.alive && t.hp_max > 0)
-                            .min_by_key(|(_, t)| u32::from(t.hp) * 1000 / u32::from(t.hp_max))
+                            .min_by_key(|(_, t)| {
+                                if mp {
+                                    u32::from(t.mp) * 1000 / u32::from(t.mp_max.max(1))
+                                } else {
+                                    u32::from(t.hp) * 1000 / u32::from(t.hp_max)
+                                }
+                            })
                             .map_or(0, |(k, _)| k);
                         if *cursor < weakest {
                             PadButton::Down.mask()
@@ -252,8 +292,9 @@ pub(super) fn pad_field_heal(session: &mut NativeSession, threshold: u32) -> usi
     }
     if std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
         eprintln!(
-            "    [heal] used {used} item(s); weakest now {} per-mille; menu {}",
-            party_hp_permille(session),
+            "    [heal] used {used} {} item(s); weakest now {} per-mille; menu {}",
+            if mp { "MP" } else { "HP" },
+            gauge(session),
             if session.field_menu.is_some() {
                 "STILL OPEN"
             } else {
@@ -568,6 +609,11 @@ pub(super) fn pad_ready(session: &mut NativeSession) -> Result<Option<String>, S
     }
     // What the last chest held goes on first.
     pad_equip_best(session);
+    // A party that spent its MP on the way tops it up from the bag: the
+    // casts are half of what a boss fight is won with.
+    if party_mp_permille(session) < 600 {
+        pad_field_restore(session, 900, true);
+    }
     // A rest close by is free; the bag is for the fight, and is opened
     // before it only by a party under three fifths.
     if party_hp_permille(session) < 900
