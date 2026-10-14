@@ -393,6 +393,14 @@
      *
      * Returns `true` while the overlay is up, so `_frame` freezes the field -
      * the naming prompt is modal, as it is natively. */
+    /* The naming prompt committed: hand the entered name to the page. */
+    _nameCommitted() {
+      if (typeof this.opts.onNamed !== 'function') return;
+      let name = '';
+      try { name = this.rt.party_display_name(0); } catch (e) {}
+      this.opts.onNamed(name);
+    }
+
     _updateNameEntry(simSteps) {
       const rt = this.rt;
       if (typeof rt.name_entry_is_active !== 'function') return false;
@@ -400,6 +408,10 @@
       try { open = rt.name_entry_is_active(); } catch (e) { return false; }
       if (!open) return false;
       this._ensureMenuBlitters();
+      /* The per-tick owner (`play_name_entry_tick`, the native window's
+       * per-tick arm) steps the prompt inside the frame's tick loop, edge
+       * and caret clock together; the frame level only stages blitters. */
+      if (typeof rt.play_name_entry_tick === 'function') return false;
       let edge = 0;
       edge |= padMaskOf(this.pulse);
       let committed = false;
@@ -412,11 +424,7 @@
       if (typeof rt.name_entry_advance_frames === 'function') {
         try { rt.name_entry_advance_frames(simSteps | 0); } catch (e) {}
       }
-      if (committed && typeof this.opts.onNamed === 'function') {
-        let name = '';
-        try { name = rt.party_display_name(0); } catch (e) {}
-        this.opts.onNamed(name);
-      }
+      if (committed) this._nameCommitted();
       /* The overlay owns every edge while it is up - clear them so none leak
        * into the frozen field on the next tick. */
       this.pulse.clear();

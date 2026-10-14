@@ -221,28 +221,14 @@ impl PageDriver {
         self.cut_chain = v["chain"].as_bool().unwrap_or(false);
     }
 
-    /// `_updateNameEntry`.
-    fn name_entry(&mut self, pulse: &mut u16, steps: u32) -> bool {
-        let rt = &mut self.rt;
-        if !rt.name_entry_is_active() {
-            return false;
-        }
-        let _ = rt.name_entry_input(*pulse);
-        rt.name_entry_advance_frames(steps);
-        *pulse = 0;
-        rt.name_entry_is_active()
-    }
-
     fn frame(&mut self, pad: u16, steps: u32) {
         self.pulse |= pad & !self.prev;
         self.prev = pad;
         let mut pulse = self.pulse;
-        // `_updateFieldMenu` / `_updateFieldShop`: with the per-tick exports
-        // the frame level only answers whether a screen is up; their ticks
-        // run in the loop. `_updateNameEntry` still steps at frame level.
-        let menu_open = self.rt.play_menu_is_open();
-        let naming_open = !menu_open && self.name_entry(&mut pulse, steps);
-        if !naming_open {
+        // `_updateFieldMenu` / `_updateNameEntry` / `_updateFieldShop`: with
+        // the per-tick exports the frame level only stages blitters; the
+        // screens' ticks run in the loop.
+        {
             let mut menu_ticked = false;
             for _ in 0..steps {
                 // `play_menu_tick`: the pause menu's per-tick arms.
@@ -250,6 +236,11 @@ impl PageDriver {
                     menu_ticked = true;
                     pulse = 0;
                     self.rt.play_tick_overlay_sfx();
+                    continue;
+                }
+                // `play_name_entry_tick`: the naming prompt's per-tick arm.
+                if self.rt.play_name_entry_tick(pulse) != 0 {
+                    pulse = 0;
                     continue;
                 }
                 if self.cut_chain && pulse & CROSS != 0 {
@@ -351,6 +342,10 @@ fn run(sc: &Scenario, cadences: &[Cadence]) -> Vec<String> {
         assert_eq!(n.len(), p.len());
         let label = format!("{} {:?}", sc.scene, c);
         if let Err(e) = (sc.exercised)(&n) {
+            eprintln!(
+                "[host-frame] {label}: vacuous ({e}); last native sample {:?}",
+                n.last()
+            );
             all.push(format!("{label}: native run is vacuous: {e}"));
         }
         let divs = host_trace::first_divergences(&n, &p);
@@ -480,10 +475,12 @@ fn talk_pad(t: u32, f: &HostTraceFrame) -> u16 {
 
 fn left_the_prologue(tr: &[HostTraceFrame]) -> Result<(), String> {
     if tr.last().and_then(|f| f.scene.as_deref()) == Some("opdeene") {
-        Err("the opening chain was never skipped".into())
-    } else {
-        Ok(())
+        return Err("the opening chain was never skipped".into());
     }
+    if !tr.iter().any(|f| f.naming.is_some()) {
+        return Err("the naming prompt never opened".into());
+    }
+    Ok(())
 }
 
 fn opened_a_dialogue(tr: &[HostTraceFrame]) -> Result<(), String> {
@@ -502,7 +499,7 @@ fn prologue_skip_and_naming_frames_match_across_hosts() {
     let sc = Scenario {
         scene: "opdeene",
         pad: confirm_pad,
-        ticks: 1200,
+        ticks: 2400,
         exercised: left_the_prologue,
         arm_shop: None,
     };

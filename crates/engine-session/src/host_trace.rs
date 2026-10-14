@@ -92,6 +92,9 @@ pub struct HostTraceFrame {
     /// The op-`0x49` merchant gate (`ShopState::shop_armed`), whether a shop
     /// is open (`shop_open`) and whether one is staged for the hosts' drain.
     pub shop: (bool, bool, bool),
+    /// The naming prompt (`PartyState::name_entry`), as its debug form:
+    /// cursor, entered glyphs and confirm state.
+    pub naming: Option<u64>,
 }
 
 /// The host-held menu-overlay screen's state ([`HostTraceFrame::overlay`]).
@@ -203,6 +206,7 @@ pub fn sample<S: AudioSink>(session: &BootSession<S>) -> HostTraceFrame {
             world.shops.shop_open,
             world.shops.pending_shop.is_some(),
         ),
+        naming: world.party.name_entry.as_ref().map(debug_digest),
     }
 }
 
@@ -227,6 +231,7 @@ pub const CHANNELS: &[&str] = &[
     "menu",
     "overlay",
     "shop",
+    "naming",
 ];
 
 fn channel_equal(a: &HostTraceFrame, b: &HostTraceFrame, ch: &str) -> bool {
@@ -250,6 +255,7 @@ fn channel_equal(a: &HostTraceFrame, b: &HostTraceFrame, ch: &str) -> bool {
         "menu" => a.menu == b.menu,
         "overlay" => a.overlay == b.overlay,
         "shop" => a.shop == b.shop,
+        "naming" => a.naming == b.naming,
         _ => true,
     }
 }

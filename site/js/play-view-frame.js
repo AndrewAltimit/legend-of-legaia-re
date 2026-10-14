@@ -113,6 +113,7 @@
        * a bundle without the export keeps the frame-level freeze. */
       const perTickMenu = typeof rt.play_menu_tick === 'function';
       const perTickShop = typeof rt.play_shop_tick === 'function';
+      const perTickNaming = typeof rt.play_name_entry_tick === 'function';
       const menuFreezes = menuOpen && !perTickMenu;
       if (advance && (menuFreezes || shopOpen)
           && typeof rt.play_tick_overlay_sfx === 'function') {
@@ -143,6 +144,19 @@
               if (typeof rt.play_tick_overlay_sfx === 'function') {
                 try { rt.play_tick_overlay_sfx(); } catch (e) {}
               }
+              continue;
+            }
+          }
+          /* The naming prompt (`play_name_entry_tick`, the native window's
+           * next arm): modal, so while it is up it takes the tick - the edge
+           * into the entry SM and one frame of its caret and camera. */
+          if (perTickNaming) {
+            let own = 0;
+            try { own = rt.play_name_entry_tick(padMaskOf(this.pulse)); } catch (e) { own = 0; }
+            if (own !== 0) {
+              this.pulse.clear();
+              this._repack();
+              if (own === 2) this._nameCommitted();
               continue;
             }
           }
