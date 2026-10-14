@@ -59,16 +59,22 @@ impl World {
 
     /// One frame of HP-bar ramp across every battle slot.
     ///
-    /// The retail split is by slot index, not by side: slots `0..=2` drain a
+    /// The retail split is by pool slot, not by side: slots `0..=2` drain a
     /// quarter of the outstanding delta per frame, everything else settles in
-    /// one frame (`FUN_80047430`'s `sltiu v0,s1,0x3` at `0x800474F4`). The
-    /// engine seats the party in the same low slots, so the same test holds.
+    /// one frame (`FUN_80047430`'s `sltiu v0,s1,0x3` at `0x800474F4`). Retail
+    /// seats monster `k` at pool slot `3 + k` whatever the party size; the
+    /// engine compacts it to `party_count + k`, so the slot goes through
+    /// [`legaia_engine_battle_vm::battle_action::retail_pool_slot`] - read
+    /// raw, a small party's first monster ramped on the party arm.
     ///
     /// REF: FUN_80047430 (kernel + `// PORT:` tags in
     /// `legaia_engine_battle_vm::battle_hp_bar`)
     pub(in crate::world) fn tick_battle_hp_bars(&mut self) {
+        use legaia_engine_battle_vm::battle_action::retail_pool_slot;
+        let party_count = self.party.party_count;
         for (slot, a) in self.actors.iter_mut().enumerate() {
-            a.battle.tick_hp_bar(slot as u8);
+            let slot = u8::try_from(slot).unwrap_or(u8::MAX);
+            a.battle.tick_hp_bar(retail_pool_slot(party_count, slot));
         }
     }
 

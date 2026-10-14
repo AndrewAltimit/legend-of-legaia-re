@@ -133,6 +133,15 @@ See `ghidra/scripts/funcs/overlay_battle_action_801e7250.txt`. It reads the acti
 
 Port: `battle_action::hp_bar_drain_pending` (`crates/engine-battle-vm/src/battle_action/done.rs`).
 
+<a id="port-the-slot-test-is-on-the-retail-pool-slot"></a>
+### Port: the slot test is on the retail pool slot
+
+The `0..2` / `3..7` split above is retail's **pool** numbering. The battle loader seats party member `i` at pool slot `i` and monster `k` at `3 + k` for every party size (`FUN_800513F0`, `addiu s0,s2,0x3` at `0x8005185C`), so in retail `+0x1DD < 3` can never name a monster. The engine compacts the monster row to `party_count + k`, and `+0x1DD` holds an engine slot. Both the settle check and the ramp's arm select (`sltiu v0,s1,0x3` at `0x800474F4`) therefore map the engine slot through `battle_action::retail_pool_slot` before testing it.
+
+Read raw, a two-member party's first monster (engine slot 2) took the party arm of both. Any monster-side live-HP write that seeds no readout then parked the action that targeted it. Retail has several such writers, harmless there because nothing reads a monster's readout: PROT 0907 Nighto's instant-death arm (`FUN_801F69E8` arm 13) stores `+0x14C = 0` and leaves `+0x10` alone. The full-game runs hit exactly that in `vell` - Vahn's Nighto aimed at enemy slot 0 of formation `[49, 43]`, the action parked in `0x51` with the second monster untouched. This was a port divergence, not a retail softlock: retail cannot reach it, so there is no toggle and no retail-faithful mode to keep it.
+
+Regressions: `a_small_partys_first_monster_never_holds_the_settle_gate` (`engine-battle-vm`, disc-free) and the disc-gated `nighto_kill_on_a_two_member_partys_first_monster_releases_the_done_band` (`engine-core`), which runs the real PROT 0907 module.
+
 <a id="why-only-the-party-side-has-anything-to-wait-for"></a>
 ### Why only the party side waits
 
