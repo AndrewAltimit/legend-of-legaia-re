@@ -343,12 +343,12 @@ mod scene_entry;
 mod sustained_sfx;
 
 pub use effects::*;
+use legaia_engine_system::sustained_sfx::SustainedSfx;
 pub use minigame_warp::{
     DOME_FAVORED_COST, DOME_STANDIN_BUDGET, DOME_STANDIN_COMBATANT, DOME_STANDIN_HP,
     DomeLeadFighter, MinigameWarpOutcome,
 };
 pub use scene_entry::FmvHandoffOutcome;
-pub use sustained_sfx::{SPU_VOICE_COUNT, SUSTAINED_BASE_VOICE, SustainedSfx};
 
 #[cfg(test)]
 mod tests;

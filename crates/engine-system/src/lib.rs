@@ -32,4 +32,5 @@ pub mod scene_name_sync;
 pub mod scus_leaf_kernels;
 pub mod sound_state;
 pub mod story_flag_state;
+pub mod sustained_sfx;
 pub mod trig;
