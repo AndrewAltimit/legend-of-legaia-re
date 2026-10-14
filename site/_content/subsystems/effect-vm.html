@@ -11,10 +11,14 @@
     <dt>Input</dt><dd><code>efect.dat</code> (extraction 0873) - a 2-pack of 14 sprite-animation records and 33 effect scripts; see <a href="../formats/effect.html">effect format</a></dd>
     <dt>Capacity</dt><dd>32 effects (master slots, 28 B each) &times; 128 sprites (child slots, 32 B each)</dd>
     <dt>Textures</dt><dd>Effect atlas <code>etim.dat</code> (0870, battle-only) and the field-resident character texture band (0874 &sect;2)</dd>
-    <dt>In the port</dt><dd><code>engine-vm::effect_vm</code> (<code>Pool::tick_retail</code>, <code>Pool::child_billboards</code>)</dd>
+    <dt>In the port</dt><dd><code>engine-vm::effect_vm</code> (<code>Pool::tick_retail</code>, <code>Pool::child_billboards</code>), driven by <code>World::tick_effects</code> - the engine's only per-frame effect path; the render-mode-4 emitters are <code>engine-effects</code> (<code>effect_ribbon</code>, <code>effect_sprite_arm</code>, <code>effect_default_arm</code>)</dd>
     <dt>Confidence</dt><dd>Confirmed - walker and spawn traced instruction-for-instruction</dd>
-    <dt>Used by</dt><dd><a href="battle-action.html">Battle action SM</a>, item and Spirit appliers, the move-power effect lists</dd>
+    <dt>Used by</dt><dd>The animation effect arm, the per-action effect-script walk, the move-power effect lists and the per-move effect-list spawner (<a href="#spawn-sources">spawn sources</a>)</dd>
   </dl>
+  <div class="notice">
+    <p class="notice-title">Two addresses per entry</p>
+    <p>Both the spawn API and the walker begin two words ahead of their stack prologue, loading the pool-ready byte <code>0x8007BD58</code> first. Every <code>jal</code> on the disc names <code>0x801DFDF0</code> and <code>0x801E0080</code>; dumps and pages citing <code>0x801DFDF8</code> / <code>0x801E0088</code> name the prologue word of the same routines.</p>
+  </div>
 </section>
 
 <section class="doc-section" id="how-it-works">
@@ -81,6 +85,9 @@
     <li><strong>Graceful exhaustion.</strong> On a full pool the record is still consumed with no child - effects degrade rather than stall.</li>
     <li><strong>Delays wrap.</strong> The wait is stored in a byte after the <code>&lt;&lt; 3</code>, so a delay of 32 frames or more wraps modulo 32.</li>
     <li><strong>Motion.</strong> Each step is <code>pos += vel &times; frame.speed</code> with the retail pool scale; each child also gets two random UV-mirror bits for variety.</li>
+    <li><strong>Idle early-out.</strong> A sweep that finds no active master and no active child skips the remaining catch-up iterations.</li>
+    <li><strong>Retirement overrun.</strong> Retiring a child zeroes its active flag and its wait, but the frame-advance loop tests only the wait, so retail keeps reading 6-byte strides past the batch end on the already-dead slot until it meets a non-zero delay byte. Only the dead slot is touched (the next seed rewrites it), so the port stops at retirement instead.</li>
+    <li><strong>Summon side call.</strong> Spawn ids <code>4</code> and <code>0x13</code> first call the move-VM part spawner <code>0x80050ED4</code>, then take the ordinary spawn path.</li>
   </ul>
 </section>
 
@@ -90,8 +97,10 @@
     <li><strong>Brightness envelope.</strong> With <code>n = frame_count &gt;&gt; 3</code>, the colour ramps in over the first eighth of the animation and back out over the rest, clamped at <code>0x80</code> (neutral) and written as <code>r = g = b</code>.</li>
     <li><strong>Size.</strong> Atlas <code>w/h &times; sprite_scale &gt;&gt; 8</code> (retail scale <code>0xA00</code>, ten times the texel size) is the <em>half</em>-extent, applied in <strong>view space</strong> after the centre is transformed - so the battle camera's 4&times; world scale never touches it.</li>
     <li><strong>UVs.</strong> From the 8-byte atlas entry, corner order swapped by the child's mirror bits; CLUT from atlas <code>+4</code>, texture page from atlas <code>+6</code>.</li>
-    <li><strong>Blend.</strong> The packet's prim code <code>0x2E</code> is a semi-transparent textured quad, so every effect child blends, and the page's own ABR bits pick how: pages <code>(320,0)</code> / <code>(448,0)</code> are additive (<code>B + F</code>), page <code>(384,0)</code> is <code>B + 0.25F</code> - why walk dust reads as almost nothing over a bright floor. The atlas stores its page in one byte, so the blend enable has nowhere to come from except the code byte; a port that copies the page alone draws the flames as opaque tan blobs.</li>
+    <li><strong>Battle centres are Y-flipped.</strong> The pool integrates in raw PSX units, Y down. The battle view-projection both hosts share carries a trailing <code>scale(1, -1, 1)</code> that cancels the per-model Y-flip every mesh draw carries; a billboard has no model matrix, so the port flips its centre before building corners (<code>effect_billboard::battle_billboard_centre</code>). Without it a spark rising past an actor's head draws as far below its feet.</li>
+    <li><strong>Blend.</strong> The packet's prim code <code>0x2E</code> is a semi-transparent textured quad, so every effect child blends, and the page's own ABR bits pick how: pages <code>(320,0)</code> / <code>(448,0)</code> are additive (<code>B + F</code>), page <code>(384,0)</code> is <code>B + 0.25F</code> - why walk dust reads as almost nothing over a bright floor. Every effect the Rim Elm spar fires resolves to the <code>(384,0)</code> page under a dark warm-grey CLUT row, so it is faint by data, not by a bug; the bright additive pages belong to effect ids that fight never requests. The atlas stores its page in one byte, so the blend enable has nowhere to come from except the code byte; a port that copies the page alone draws the flames as opaque tan blobs.</li>
   </ul>
+  <p>Each host also carries a tinted <strong>billboard outline</strong> builder - a flat rectangle around each quad, faded by age. Retail draws no such rectangle; it is a diagnostic, off by default on both hosts (<code>LEGAIA_DIAG_FX=1</code> on the native window, <code>set_battle_fx_outline(true)</code> on the play page).</p>
 </section>
 
 <section class="doc-section" id="render-mode-4">
@@ -100,18 +109,50 @@
   <table class="data-table">
     <thead><tr><th>Selector</th><th>Emitter</th><th>Set by move op</th><th>Where it appears</th></tr></thead>
     <tbody>
-      <tr><td>none</td><td>Default emitter <code>FUN_80028158</code></td><td><code>0x13</code></td><td>Most render-mode-4 nodes in captured battles</td></tr>
-      <tr><td><code>0x4000</code></td><td>Sprite arm <code>FUN_8002A5A4</code></td><td><code>0x23</code></td><td>Captured in battle states alongside the default</td></tr>
+      <tr><td>neither bit</td><td>Default emitter <code>FUN_80028158</code> - the ring / disc / fan family</td><td><code>0x13</code></td><td>Most render-mode-4 nodes in captured battles; the bulk of the summons' procedural geometry</td></tr>
+      <tr><td><code>0x4000</code></td><td>Sprite arm <code>FUN_8002A5A4</code> - one textured quad</td><td><code>0x23</code></td><td>Captured in battle states alongside the default</td></tr>
       <tr><td><code>0x2000</code></td><td>Random-walk <strong>ribbon</strong> <code>FUN_801CFA48</code> - lightning bolts, beams, whips</td><td><code>0x42</code></td><td>Only in slot-B cast / summon images (PROT 0923, 0934, 0957, 0964)</td></tr>
     </tbody>
   </table>
-  <p>All three arms carry shipped content. An earlier census concluded the default arm was the only reachable one; it swept for the stores in the wrong form and missed the move VM's own.</p>
+  <p>All three arms carry shipped content. An earlier census concluded the default arm was the only reachable one; it swept for the stores in the wrong form and missed the move VM's own. Both hosts draw every live kind-4 node of the summon, move-FX, effect-script and field ambient parts through <code>World::active_effect_kind4_draws</code>, composed like a mesh part.</p>
+  <p>None of the three emitters draws anything itself. Each writes a small Legaia TMD object into a scratch buffer, and the render dispatcher then draws it as the actor's own model through the ordinary TMD path.</p>
+  <h3 id="ribbon">The ribbon</h3>
+  <p>Per step the ribbon writes six vertices and six packets joining them to the next step: a core strip stored twice in the core colour, two inner flares fading core to flare colour, and two outer fringes fading flare to black. Every packet samples one fixed 2&times;2 texel patch, so the colour words carry the look. In play the ribbon is Gilium's summon; the other carriers are not staged as scenes by the engine.</p>
+  <h3 id="sprite-arm">The sprite arm</h3>
+  <p>The sprite arm builds one textured quad and falls into the ordinary model draw: scaled by the part's render scale <code>+0x72 / 0x1000</code>, turned by the rotation banks, and handed to the prim dispatcher with the colour word <code>+0x74</code> and level <code>+0x78</code>. The scale is seated by the spawn call, not the record - nearly every seater passes <code>0x1000</code>, and the engine seats every staged part at that value. Its builder is main-executable code, so unlike the ribbon it draws in every mode; Baka Fighter's impact flash uses the same quad kernel.</p>
+  <h3 id="default-arm">The default arm</h3>
+  <p>The default builder takes a packed count / phase argument and a parameter block (inner / outer colours, a UV rectangle, page and CLUT, inner / outer radius and height, two in-plane scales). Besides move-VM op <code>0x13</code> it is called directly by the battle ground shadow, the field battle-intro ring and Baka Fighter's floor disc. Its mode word splits three ways:</p>
+  <table class="data-table">
+    <thead><tr><th>Bits</th><th>Selects</th></tr></thead>
+    <tbody>
+      <tr><td><code>mode &amp; 3</code></td><td>The plane the three builder axes land in; mode <code>1</code> lays a ring on the ground</td></tr>
+      <tr><td><code>(mode &gt;&gt; 3) &amp; 0xF</code></td><td>The shape: <code>0</code> a ring or open arc of <code>count</code> columns (a disc when the inner radius is zero), <code>1</code>..<code>3</code> multi-quad and fan variants, <code>4</code>..<code>7</code> jittered, shifted and pivoted rings</td></tr>
+      <tr><td><code>mode &gt;&gt; 8</code></td><td>The texture mode, read for shape <code>0</code> only: the ribbon's fixed patch, or the parameter block's rectangle mapped polar, as-is or turned; a page word carrying <code>0x4000</code> samples the display page itself</td></tr>
+    </tbody>
+  </table>
+  <p>The captured battle states use shapes <code>0</code>..<code>3</code> and none of <code>4</code>..<code>7</code>. The port's <code>effect_default_arm</code> transliterates the builder onto a byte buffer and is held byte-for-byte to the scratch blocks retail captures left behind, including every ground-shadow build.</p>
+</section>
+
+<section class="doc-section" id="vdf-morph">
+  <h2>Battle effect parts morph through vdf.dat</h2>
+  <p>The effect-script table form stages move-VM parts like any other scene graph, and a part with op <code>0x0A</code> lanes draws <strong>morphed</strong>: the lanes index the battle VDF pack <code>vdf.dat</code> (PROT 0872), whose sub-entry table battle init rebuilds from index 0. The Spirit charge is the visible case - two small rest meshes that VDF entry 12 grows into the aura cone.</p>
+  <ul class="bullets">
+    <li><strong>Waits drain at retail's per-frame rate.</strong> The part tick subtracts the frame factor times the rate byte from the wait each frame, so a wait of <code>v</code> holds <code>v</code> frames.</li>
+    <li><strong>Lanes grow from the frame after the spawn.</strong> The ramp envelope runs from the part tick's tail, which the spawn's own first VM step does not reach. Captures read the lane at exactly <code>0x66</code> per elapsed frame, so the cone takes <code>0x28</code> frames to open.</li>
+    <li><strong>The model draw applies the part's scale and colour word.</strong> The aura's op <code>0x0C</code> writes an additive colour word at full level; op <code>0x0D</code>'s level rate takes the level to 0 over <code>0x20</code> frames and back to full over the last <code>0x0B</code>.</li>
+  </ul>
+</section>
+
+<section class="doc-section" id="teardown">
+  <h2>Battle effects die with the battle</h2>
+  <p>Retail never tears effects down one by one. The mode initialiser calls the per-stage init <code>FUN_8001E1B4</code> on every mode switch, which re-seeds the 143-slot actor free stack and re-pops the seven actor-list sentinels, unlinking every effect actor still on a list with no walk. The <code>efect.dat</code> pool needs no reset on the way out: its walker is battle-overlay code behind the pool-ready byte, and the battle loader re-initialises it on the way in.</p>
+  <p>The port's <code>World</code> outlives every mode switch and both hosts draw effect state with no mode test, so it drops the same state by name: <code>World::teardown_battle_effects</code> runs at battle entry, at battle exit and at every scene load, resetting the pool and every battle-scoped cast, move-FX and effect-script scene graph. A staged cast module's scene is retired earlier, when the action state machine opens the next action, because the engine runs its records as data and nothing else would halt their infinite loops.</p>
 </section>
 
 <section class="doc-section" id="render-bridge">
   <h2>Textures and models</h2>
   <p>Effect sprites sample two texture pools. The flame atlas <code>etim.dat</code> is uploaded at battle entry only (its VRAM columns hold town textures on the field), while the character texture band stays resident from the field through battle - the Gimard summon flame samples the latter. A separate 30-entry model library, <code>etmd.dat</code>, gives 3D effects their meshes, and effect parts morph through <code>vdf.dat</code>.</p>
-  <p>The player <strong>summon</strong> (Gimard's Burning Attack, and friends) is not an effect-pool child at all: it is posed like an enemy body through the battle per-actor draw and the rigid-keyframe decoder, and its flame animation is geometric, not palette cycling. The floating damage numeral is not a pool child either; it samples the third <code>etim</code> TIM through its own sub-palette.</p>
+  <p>The player <strong>summon</strong> (Gimard's Burning Attack, and friends) is not an effect-pool child at all: it is posed like an enemy body through the battle per-actor draw and the rigid-keyframe decoder, and its flame animation is geometric, not palette cycling. The floating damage numeral is not a pool child either; it samples the third <code>etim</code> TIM through its own sub-palette. Read from retail's own display list, the digit run keeps its horizontal centre while each cell grows toward its 1:1 24-pixel size and the run rises to a fixed screen row; the quads are unmodulated, so the numeral never fades. Placing it is a host job - the seat is the struck actor's projected screen position - and both hosts emit the cells through one builder, <code>battle_numerals</code>.</p>
   <details class="disclosure">
     <summary>History: superseded readings</summary>
     <div class="disclosure-body">
@@ -160,9 +201,29 @@
   </table>
 </section>
 
+<section class="doc-section" id="spawn-sources">
+  <h2>Spawn sources</h2>
+  <p>The effect catalog (<code>efect.dat</code>) loads at scene entry and stays resident across field / battle transitions. Four producers feed the spawn API:</p>
+  <table class="data-table">
+    <thead><tr><th>Producer</th><th>Retail</th><th>Port</th></tr></thead>
+    <tbody>
+      <tr><td>Animation effect arm</td><td><code>FUN_8004998C</code>, spawning at the actor's position and facing</td><td><code>BattleActionHost::ui_element</code></td></tr>
+      <tr><td>Per-action effect-script walk</td><td><code>FUN_801DEA50</code></td><td><code>World::route_battle_effect_spawns</code></td></tr>
+      <tr><td>Move-power effect-id lists</td><td><code>FUN_801E09F8</code></td><td><code>World::spawn_move_fx</code></td></tr>
+      <tr><td>Per-move effect-list spawner</td><td><code>FUN_801E22C8</code>, called by the battle effect driver <code>FUN_800402F4</code></td><td><code>battle_cue_group::expand_cue_group</code></td></tr>
+    </tbody>
+  </table>
+  <ul class="bullets">
+    <li><strong>A spawn is seated at an actor, never the world origin</strong>: the caller copies the actor's world position, offsets it by the effect's planar legs rotated through its facing, and passes the facing as the spawn angle.</li>
+    <li><strong>The effect-script walk has two record forms.</strong> Its <code>0x80</code>-flagged records route into this pool; its table-form records stage a small move-VM scene graph instead (see <a href="#vdf-morph">vdf.dat morphs</a>).</li>
+    <li><strong>The last two producers share the bit-7 multiplex</strong> (<a href="../formats/effect.html">effect format</a>).</li>
+    <li><strong>HUD screen-element raises do not spawn here</strong>: the HUD spawner calls no effect routine.</li>
+  </ul>
+</section>
+
 <section class="doc-section" id="effect-id-mapping">
   <h2>Naming an effect id</h2>
-  <p>Effect ids are anonymous - no string table says &ldquo;fireball&rdquo;. Two producers feed the spawn API: the move-power record's effect-id lists and the per-move cue-group list walked by the battle effect driver, both through the same bit-7 multiplex (<a href="../formats/effect.html">effect format</a>). To name an id, correlate the literal byte a caller passes with the action that triggered it.</p>
+  <p>Effect ids are anonymous - no string table says &ldquo;fireball&rdquo;. To name an id, trace the call sites of the spawn API: each caller passes a literal byte, which correlates with the action that triggered it (a Tactical Art, an item use, a spell cast).</p>
 </section>
 
 <section class="doc-section" id="how-we-know">
@@ -174,8 +235,9 @@
       <tr><td>Spawn API</td><td><code>0x801DFDF0</code></td><td><code>(effect_id, world_pos*, angle)</code>; master seeding; every <code>jal</code> on the disc names this entry</td><td><code>overlay_battle_801dfdf8.txt</code> (prologue word)</td></tr>
       <tr><td>Per-frame walker</td><td><code>0x801E0080</code></td><td>Pass 1 timers / spawn, pass 2 quads; ready flag; catch-up factor <code>DAT_1F800393</code></td><td><code>overlay_battle_801e0088.txt</code> (prologue word)</td></tr>
       <tr><td>Spawn caller</td><td><code>FUN_8004998C</code> effect arm</td><td>Spawns at the actor's position and facing</td><td><code>funcs/8004998c.txt</code></td></tr>
-      <tr><td>Producers</td><td><code>FUN_801E09F8</code>, <code>FUN_801E22C8</code>, <code>FUN_800402F4</code></td><td>The two producers of the spawn API</td><td>battle overlay dumps</td></tr>
+      <tr><td>Producers</td><td><code>FUN_801DEA50</code>, <code>FUN_801E09F8</code>, <code>FUN_801E22C8</code> (via <code>FUN_800402F4</code>)</td><td>The script walk, move-power lists and per-move list spawner</td><td>battle overlay dumps</td></tr>
       <tr><td>Render dispatcher</td><td><code>FUN_8001ADA4</code> case 4</td><td>The three emitters on the <code>+0x9E</code> selector</td><td><code>funcs/8001ada4.txt</code></td></tr>
+      <tr><td>Per-stage init</td><td><code>FUN_8001E1B4</code></td><td>Every mode switch re-seeds the actor free stack and list sentinels</td><td><code>funcs/8001e1b4.txt</code></td></tr>
       <tr><td>Streaming handler</td><td><code>0x801F17F8</code> via <code>FUN_800558FC</code></td><td>Raw-TOC-index load of summon / readef; byte-verified RAM&harr;disc in a mid-cast state</td><td>-</td></tr>
       <tr><td>Sprite projector</td><td><code>FUN_800195A8</code></td><td>Corners offset after the centre transform</td><td><code>funcs/800195a8.txt</code></td></tr>
     </tbody>
