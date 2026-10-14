@@ -271,6 +271,10 @@ impl RetailBattle {
     /// display was scanning out, two game frames older.
     pub fn display_phase_gate(&self) -> Option<PhaseGate> {
         let mut g = self.phase_gate()?;
+        // The displayed frame is the pass that entered the state.
+        if self.display_lag > 0 {
+            g.camera_pass = false;
+        }
         if let Some(f) = g.fade.as_mut() {
             f.age = f.age.saturating_sub(self.display_lag);
         }
@@ -343,6 +347,8 @@ impl RetailBattle {
             done_hold,
             module_countdown,
             accum_align,
+            // The summon head's RAM is a pass in (`PhaseGate::steer`).
+            camera_pass: self.action_state == SUMMON_INVOKE_STATE,
         })
     }
 }

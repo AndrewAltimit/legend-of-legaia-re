@@ -531,6 +531,7 @@ pub fn run_engine_battle(
                     phase_tick = Some(t);
                     break;
                 }
+                gate.steer(&mut session.host.world);
                 session.tick()?;
                 session.fog_render_tick();
                 session.host.route_bgm_events(&mut director)?;

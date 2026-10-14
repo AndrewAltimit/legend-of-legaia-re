@@ -419,6 +419,11 @@ impl PlayWindowApp {
                 &sc.battle_bars,
             );
         }
+        // A replayed cast's gate holds the summon head's CD poll for a pass
+        // (`PhaseGate::steer`), as the headless seed does.
+        if let Some(gate) = self.screenshot.as_ref().and_then(|sc| sc.phase_gate) {
+            gate.steer(&mut self.session.host.world);
+        }
         match self.screenshot.as_ref() {
             Some(sc) if let Some(drive) = sc.battle_drive => {
                 let world = &mut self.session.host.world;

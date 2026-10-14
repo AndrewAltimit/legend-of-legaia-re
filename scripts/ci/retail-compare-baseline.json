@@ -846,7 +846,7 @@
     "flute_lippian_midcast": {
       "battle_party": 1.0,
       "bgm": 1.0,
-      "camera": 0.912,
+      "camera": 0.973,
       "enemies": 1.0,
       "enemy_hp": 1.0,
       "flags": 1.0,
@@ -859,7 +859,7 @@
     "flute_spikefish_midcast": {
       "battle_party": 1.0,
       "bgm": 1.0,
-      "camera": 0.929,
+      "camera": 0.986,
       "enemies": 1.0,
       "enemy_hp": 1.0,
       "flags": 1.0,

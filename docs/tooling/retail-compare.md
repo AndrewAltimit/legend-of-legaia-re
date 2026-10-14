@@ -2539,14 +2539,27 @@ every pass, so it moves with the phase of both clips):
   which the focus and the heading are read off.
 - **A wait lasts as long as the stream took.** `flute_lippian_midcast` and
   `flute_spikefish_midcast` are captured in `0x32`, which runs case 6 on the
-  caster every pass and holds until the sound bank is resident
-  (`FUN_8003DE7C(1)`, `0x801E498C`). Retail's camera is part-way through
-  that ease when the capture lands - the step table's TR z endpoint is
-  `2457`, the live word `4279`, the accumulator `ctx[+0x87C]` at `96` - but
-  the engine's bank is resident at once, so its `0x32` is one tick long and
-  its frame is the ease's first. The accumulator says how long retail had
-  waited; the engine's state does not last long enough to be gated on it,
-  since the wait is CD timing.
+  caster every pass (`0x801E4984`) and holds until the summon archive read
+  `0x29`'s route arm queued (`jal 0x8003EC70` at `0x801E463C`) is done
+  (`FUN_8003DE7C(1)`, `0x801E498C`). That route arm stores the summon
+  close-up's depth `ctx[+0x6D0] = 0x600` (`0x801E4604`) and falls through to
+  `0x29`'s own case-6 call (`0x801E4748`), so the step table a `0x32`
+  capture holds already targets it: TR z `2457` = `prescale(0x600)`, the
+  live word `4279` one pass into that ease. The engine's poll is ready at
+  once, so its `0x32` lasted the entry tick, a tick its camera did not step
+  on - its frame was still the `0x29` chase toward `prescale(0xC00)`. The
+  gate (`PhaseGate::camera_pass`) holds the engine's poll busy until its
+  camera has run one pass in the state (`PhaseGate::steer`), which lands
+  both step-table endpoints on retail's. Neither the accumulator nor the
+  yaw counter places the capture further: the accumulator (`96`, the
+  engine `184` on entering the state) counts from the caster's last idle
+  wrap, and the yaw counter (`0x818`, 24 frames since the seed) is the value
+  the engine's reads on entering the state. What the channel still reads
+  is the ease's start - retail's pitch `10` and TR y `1250` climb onto the
+  target from below, where the engine's come down to it - the camera
+  history before the item command, which the capture does not record. The
+  image gate takes the displayed frame two game frames older, the pass
+  that entered the state, so it leaves the hold off.
 - **An opening sampled after the sweep.** `v0_1_battle_start_tetsu` (flow
   `0x14`, past the intro timer) is taken once the engine's entry sweep and
   then its intro-name hold are over - the order retail runs them in, since

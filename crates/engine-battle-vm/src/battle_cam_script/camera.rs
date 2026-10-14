@@ -255,6 +255,8 @@ pub struct BattleCamera {
     pub(super) last_active_installs: Option<u32>,
     /// [`BattleCamera::clip_age`]'s counter.
     pub(super) clip_age: u32,
+    /// [`BattleCamera::steps_in_state`]'s counter.
+    pub(super) steps_in_state: u32,
     /// The camera's copy of the `rand()` stream. Retail draws the shake pair
     /// (`FUN_801D9D30`), the strike-loop yaw coin (`FUN_8004E13C`'s party arm)
     /// and the per-art track column (`ctx[+0x26D] = rand() % 2`) from the one
