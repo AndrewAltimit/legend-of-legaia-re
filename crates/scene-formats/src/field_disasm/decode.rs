@@ -557,7 +557,7 @@ pub fn text_lead(bytecode: &[u8], insn: &Insn) -> Option<usize> {
         InsnInfo::StateResume {
             sub_op: 0,
             kind: StateResumeKind::DoneSub0Mes { length, .. },
-        } => lead_at(operand + 2 + *length as usize),
+        } => lead_at(operand + 3 + *length as usize),
         InsnInfo::MenuCtrl {
             kind: MenuCtrlKind::HighNibble {
                 outer: 0xE, sub: 1, ..
