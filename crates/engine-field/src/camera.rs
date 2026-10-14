@@ -19,11 +19,11 @@
 //! that's easy to drive from `legaia_engine_core::scene_host::SceneHost`.
 
 use crate::field_events::FieldEvent;
-use legaia_engine_battle_vm::camera_mover::{AXIS_COUNT, CameraMover};
+use legaia_engine_camera::camera_mover::{AXIS_COUNT, CameraMover};
 use legaia_engine_motion_vm::motion_vm::{MotionState, MotionTarget, StepResult, step};
 use serde::{Deserialize, Serialize};
 
-use legaia_engine_battle_vm::retail_cam::RetailCamGlobals;
+use legaia_engine_camera::retail_cam::RetailCamGlobals;
 
 mod event_routing;
 mod manual_knobs;

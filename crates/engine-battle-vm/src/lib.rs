@@ -5,9 +5,9 @@
 //! crates), so the crate sits strictly below `legaia-engine-vm` with no
 //! cycle.
 //!
-//! `psx_camera` and `camera_mover` live here because the battle camera
-//! script and the GTE camera build call each other; the field VM in
-//! `legaia-engine-vm` names them here.
+//! The shared GTE camera (`psx_camera`, `camera_mover`, the projection
+//! constants and `BattleCamPose`) is `legaia-engine-camera`, below this
+//! crate; the battle camera script here builds its poses over it.
 //!
 //! Doc comments name `legaia-engine-vm` modules in plain code spans, since
 //! rustdoc cannot resolve a link into a dependent crate. See the crate README for the module map.
@@ -23,7 +23,6 @@ pub mod battle_approach;
 pub mod battle_arts_auto_combo;
 pub mod battle_attack_camera;
 pub mod battle_cam_script;
-pub mod battle_camera;
 pub mod battle_cast_census;
 pub mod battle_cast_cue;
 pub mod battle_cast_dispatch;
@@ -51,9 +50,6 @@ pub mod battle_target_group;
 pub mod battle_trail;
 pub mod battle_value_readout;
 pub mod bgr555_grey;
-pub mod camera_mover;
-pub mod camera_rel_actor;
-pub mod camera_rel_glide;
 pub mod cast_arm_ticks;
 pub mod cast_fatal_decision;
 pub mod cast_module_camera;
@@ -62,8 +58,6 @@ pub mod mes_escape_append;
 pub mod move_no_effect_guard;
 pub mod nested_record_copy;
 pub mod panel_backread_loader;
-pub mod psx_camera;
-pub mod retail_cam;
 pub mod rgb_wash_scale;
 pub mod seru_magic_ticks;
 pub mod seru_side_effect;

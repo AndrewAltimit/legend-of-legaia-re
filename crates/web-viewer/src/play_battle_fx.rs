@@ -144,7 +144,7 @@ pub(crate) struct BattleFxFrame {
 }
 
 /// Column-major 4x4 multiply, `out = a * b` (WebGL `mat4` layout - the same
-/// convention [`legaia_engine_battle_vm::battle_cam_script::battle_vp`] emits).
+/// convention [`legaia_engine_camera::projection::battle_vp`] emits).
 fn mat_mul(a: &[f32; 16], b: &[f32; 16]) -> [f32; 16] {
     let mut out = [0.0f32; 16];
     for c in 0..4 {
@@ -1220,11 +1220,7 @@ mod tests {
     #[test]
     fn fx_camera_inverse_round_trips() {
         let pose = legaia_engine_battle_vm::battle_cam_script::BOOT_POSE;
-        let vp = legaia_engine_battle_vm::battle_cam_script::battle_vp(
-            &pose,
-            BATTLE_WORLD_SCALE,
-            4.0 / 3.0,
-        );
+        let vp = legaia_engine_camera::projection::battle_vp(&pose, BATTLE_WORLD_SCALE, 4.0 / 3.0);
         let scale: [f32; 16] = [
             4.0, 0.0, 0.0, 0.0, //
             0.0, 4.0, 0.0, 0.0, //

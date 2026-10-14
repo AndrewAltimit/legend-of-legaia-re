@@ -155,7 +155,7 @@ impl PlayWindowApp {
             return self.camera_mvp(aspect) * FIELD_WORLD_FLIP;
         }
         let cutscene = cutscene_cam.map(|(focus, pitch, yaw, roll, h, tr_eye)| {
-            legaia_engine_battle_vm::psx_camera::FieldCameraView {
+            legaia_engine_camera::psx_camera::FieldCameraView {
                 focus,
                 pitch,
                 yaw,
@@ -210,7 +210,7 @@ impl PlayWindowApp {
             return None;
         }
         let cutscene = cutscene_cam.map(|(focus, pitch, yaw, roll, h, tr_eye)| {
-            legaia_engine_battle_vm::psx_camera::FieldCameraView {
+            legaia_engine_camera::psx_camera::FieldCameraView {
                 focus,
                 pitch,
                 yaw,
@@ -247,7 +247,7 @@ impl PlayWindowApp {
             return 0.0;
         }
         let cutscene = cutscene_cam.map(|(focus, pitch, yaw, roll, h, tr_eye)| {
-            legaia_engine_battle_vm::psx_camera::FieldCameraView {
+            legaia_engine_camera::psx_camera::FieldCameraView {
                 focus,
                 pitch,
                 yaw,

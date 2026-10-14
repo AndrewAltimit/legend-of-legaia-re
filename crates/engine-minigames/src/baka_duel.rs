@@ -20,8 +20,8 @@
 //!   [`SPECIAL_CAMERA_TABLE_VA`], or [`OPPONENT_SPECIAL_GLIDE`] for the
 //!   opponent. Both glides are the SCUS camera-relative glide family
 //!   (`FUN_80021248` normalizes, `FUN_8002149C` walks), run here through
-//!   [`legaia_engine_battle_vm::camera_rel_actor`] and
-//!   [`legaia_engine_battle_vm::camera_rel_glide`]. The world is drawn through the
+//!   [`legaia_engine_camera::camera_rel_actor`] and
+//!   [`legaia_engine_camera::camera_rel_glide`]. The world is drawn through the
 //!   field view build `FUN_800172C0` with the base matrix at `0x6000` (6x,
 //!   captured in the parked `minigame_baka_fighter` state along with
 //!   `H = 512`), so [`DuelCamera::view`] divides the eye trio by
@@ -32,10 +32,10 @@
 //!   seat and steps it every tick.
 
 use crate::baka_fighter::ClipHeader;
-use legaia_engine_battle_vm::camera_rel_actor::normalize_camera_relative_params;
-use legaia_engine_battle_vm::camera_rel_glide::CameraRelGlide;
-use legaia_engine_battle_vm::psx_camera::FieldCameraView;
-use legaia_engine_battle_vm::retail_cam::RetailCamGlobals;
+use legaia_engine_camera::camera_rel_actor::normalize_camera_relative_params;
+use legaia_engine_camera::camera_rel_glide::CameraRelGlide;
+use legaia_engine_camera::psx_camera::FieldCameraView;
+use legaia_engine_camera::retail_cam::RetailCamGlobals;
 use legaia_minigame_formats::baka_opponents as bo;
 
 // ---------------------------------------------------------------- camera
@@ -59,7 +59,7 @@ pub const SWEEP_END_YAW: i32 = 0x1001;
 /// The glide state `0x35` arms once the spin ends (`0x801D03D0..0x801D0454`):
 /// the angles and the eye X parked (step `0`), eye Y to `0x898` at `0x1E`,
 /// eye Z to `0x3520` at `0xC8`, focus and `H` parked. `(step, target)` pairs
-/// in the camera-relative record order ([`legaia_engine_battle_vm::camera_rel_glide`]).
+/// in the camera-relative record order ([`legaia_engine_camera::camera_rel_glide`]).
 pub const SWEEP_GLIDE: [i16; 20] = [
     0, 0, 0, 0, 0, 0, // angles
     0, 0, 0x1E, 0x898, 0xC8, 0x3520, // eye trio
@@ -285,9 +285,9 @@ impl DuelCamera {
     /// world vertex by: [`FieldCameraView::vp`] times the Y negation it
     /// expects of a model matrix. Both hosts upload exactly this.
     pub fn vp_raw(&self, aspect: f32) -> [f32; 16] {
-        legaia_engine_battle_vm::psx_camera::mat4_mul(
+        legaia_engine_camera::psx_camera::mat4_mul(
             &self.view().vp(aspect),
-            &legaia_engine_battle_vm::psx_camera::WORLD_FLIP,
+            &legaia_engine_camera::psx_camera::WORLD_FLIP,
         )
     }
 }

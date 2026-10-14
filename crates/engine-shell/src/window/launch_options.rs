@@ -134,8 +134,8 @@ pub struct ScreenshotConfig {
     /// ([`legaia_engine_battle_vm::battle_cam_script::BattleCamera::align_glide_origin`]).
     /// Set by the retail-compare image channel.
     pub battle_cam_align: Option<(
-        legaia_engine_battle_vm::battle_cam_script::BattleCamPose,
-        legaia_engine_battle_vm::battle_cam_script::BattleCamPose,
+        legaia_engine_camera::projection::BattleCamPose,
+        legaia_engine_camera::projection::BattleCamPose,
     )>,
     /// `LEGAIA_SEAT_HUD_GLIDES_LANDED=1`: the retail capture's HUD widget
     /// glides had all landed, so the captured frame lands the engine's too

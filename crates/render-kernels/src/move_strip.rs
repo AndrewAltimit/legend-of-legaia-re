@@ -19,8 +19,8 @@
 //! divide by the same `z`, which is the projector's own recipe
 //! ([`crate::billboard`]).
 
-use legaia_engine_battle_vm::battle_cam_script::GTE_OFY;
-use legaia_engine_battle_vm::psx_camera::FieldCameraView;
+use legaia_engine_camera::projection::GTE_OFY;
+use legaia_engine_camera::psx_camera::FieldCameraView;
 use legaia_engine_vm::move_ext_strip::{
     StripClip, StripEmit, StripProjection, StripQuad, StripRequest, emit_strip,
 };

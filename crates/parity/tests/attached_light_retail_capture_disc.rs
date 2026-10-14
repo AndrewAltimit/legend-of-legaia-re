@@ -36,7 +36,7 @@
 //! Disc- and capture-gated: skip-passes without `LEGAIA_DISC_BIN`,
 //! `extracted/`, or the save library directory.
 
-use legaia_engine_battle_vm::psx_camera::FieldCameraView;
+use legaia_engine_camera::psx_camera::FieldCameraView;
 use legaia_engine_core::scene_host::SceneHost;
 use legaia_engine_field::field_script_actor_state::ScriptActorRef;
 use std::path::PathBuf;

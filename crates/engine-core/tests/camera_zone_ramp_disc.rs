@@ -21,7 +21,7 @@
 
 use std::path::PathBuf;
 
-use legaia_engine_battle_vm::retail_cam::RetailCamGlobals;
+use legaia_engine_camera::retail_cam::RetailCamGlobals;
 use legaia_engine_core::world::World;
 use legaia_engine_field::camera::Camera;
 use legaia_engine_field::man_field_scripts::{CLEAN_RESYNC_INSNS, partition_record_span};

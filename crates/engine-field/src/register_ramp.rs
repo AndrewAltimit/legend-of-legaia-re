@@ -24,7 +24,7 @@
 //! | `DAT_8007B618` | GTE `H`, the projection register (`_DAT_8007B6F4`) | `0x300` |
 //!
 //! All four are read by the field-overlay camera composer into the same
-//! descriptor whose ten fields are `legaia_engine_battle_vm::retail_cam::RetailCamGlobals` - see
+//! descriptor whose ten fields are `legaia_engine_camera::retail_cam::RetailCamGlobals` - see
 //! [`RampSlot::camera_axis`] for the per-register store sites. The pitch
 //! default is the same `0x1B8` that `FUN_80025C24` seeds into
 //! `RetailCamGlobals::FIELD_RESET`, which is what identifies the register.
@@ -130,7 +130,7 @@ impl RampSlot {
         }
     }
 
-    /// Which of the ten `legaia_engine_battle_vm::retail_cam::RetailCamGlobals` axes this
+    /// Which of the ten `legaia_engine_camera::retail_cam::RetailCamGlobals` axes this
     /// register drives.
     ///
     /// Every one of the four is read by the field-overlay camera composer

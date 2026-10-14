@@ -821,7 +821,7 @@ It rewrites **slot 5 only**, `TR.z`, as `(z << 8) / 0xA0`. That converts a world
 
 The fourth argument is a **frame count**, not a speed. The stored word is the per-frame increment and the tween lasts that many vsyncs. The submenu call passes `0xC`; the action-camera sites pass `1` (instant cut) and `0x30`.
 
-Port: the framing rules are `legaia_engine_battle_vm::battle_cam_script` (`BattleCamActor::submenu_pose` for case `0`, `menu_framing` for case `9`), which the native window (`crates/engine-shell/src/window/battle_cam.rs`) and the browser play page both consume. The fixed-point tween kernel is `legaia_engine_battle_vm::battle_camera`. The port tweens the focus trio on the same clock as the rotation and translation trios and uses it as the look-at target, so a non-Vahn seat frames on the acting member.
+Port: the framing rules are `legaia_engine_battle_vm::battle_cam_script` (`BattleCamActor::submenu_pose` for case `0`, `menu_framing` for case `9`), which the native window (`crates/engine-shell/src/window/battle_cam.rs`) and the browser play page both consume. The fixed-point tween kernel is `legaia_engine_camera::battle_camera`. The port tweens the focus trio on the same clock as the rotation and translation trios and uses it as the look-at target, so a non-Vahn seat frames on the acting member.
 
 ### `0x801F0348` - target-size camera framing
 

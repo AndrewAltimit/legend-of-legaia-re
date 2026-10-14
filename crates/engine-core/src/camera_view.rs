@@ -17,7 +17,7 @@
 //! camera, and that the op-`0x45` cutscene shots were re-mapped onto - while
 //! the native window consumed the retail model directly.
 //!
-//! The projection itself is [`legaia_engine_battle_vm::psx_camera`], whose frame
+//! The projection itself is [`legaia_engine_camera::psx_camera`], whose frame
 //! convention (every matrix is for the **Y-up** render frame; a host keeping
 //! raw retail Y-down world state post-multiplies one `scale(1,-1,1)`) is the
 //! one rule both hosts follow.
@@ -26,7 +26,8 @@
 //! (the field follow camera), FUN_801E76D4 (the world-map controller).
 
 use crate::world::World;
-use legaia_engine_battle_vm::psx_camera::{self, FieldCameraView};
+use legaia_engine_camera::psx_camera;
+use legaia_engine_camera::psx_camera::FieldCameraView;
 use legaia_engine_field::camera::{CUTSCENE_WORLD_SCALE, Camera};
 use legaia_engine_mode::mode::SceneMode;
 
@@ -61,7 +62,7 @@ pub const FIELD_FOLLOW_YAW_UNITS: f32 = -160.0;
 /// battle - written per phase, unlike `OFX` / `OFY`.
 ///
 /// [`field_follow_view`] prefers the live
-/// [`legaia_engine_battle_vm::retail_cam::RetailCamGlobals::h`] whenever the camera carries one -
+/// [`legaia_engine_camera::retail_cam::RetailCamGlobals::h`] whenever the camera carries one -
 /// the zone camera's composed `B618`, or an op-`0x45` slot-`9` beat. Retail's
 /// scene-entry reset leaves `H` at `0` ("as the scene establishes it"), which
 /// is what makes this the fallback rather than dead code.
@@ -494,7 +495,7 @@ pub fn map_display_frame(world: &World) -> Option<FieldCameraFrame> {
 
 /// Which camera owns this frame. One arm per camera retail runs in a walkable
 /// scene; battle has its own kernel
-/// ([`legaia_engine_battle_vm::battle_cam_script::battle_vp`]) and is not resolved
+/// ([`legaia_engine_camera::projection::battle_vp`]) and is not resolved
 /// here.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum FieldCameraFrame {
@@ -669,7 +670,7 @@ pub fn prim_near_cut(mode: SceneMode, retail_camera: bool) -> Option<(f32, u32)>
 /// Resolve this frame's camera from the live world.
 ///
 /// `cutscene` is the host's already-glided cutscene view (see
-/// [`legaia_engine_battle_vm::psx_camera::CutsceneCameraInterp`]) or `None` when no
+/// [`legaia_engine_camera::psx_camera::CutsceneCameraInterp`]) or `None` when no
 /// timeline owns the frame; `scene_center_xz` is the host's fallback focus.
 ///
 /// The world-map gate is the one place a reading is easy to get wrong: a

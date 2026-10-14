@@ -259,8 +259,8 @@ mod battle_camera_tests {
                 return None;
             }
             Some((
-                256.0 * e[0] / ez + legaia_engine_battle_vm::battle_cam_script::GTE_OFX,
-                256.0 * (e[1] + 1280.0) / ez + legaia_engine_battle_vm::battle_cam_script::GTE_OFY,
+                256.0 * e[0] / ez + legaia_engine_camera::projection::GTE_OFX,
+                256.0 * (e[1] + 1280.0) / ez + legaia_engine_camera::projection::GTE_OFY,
             ))
         }
         // Sample several world points and orbit angles (4:3 so aspect_fix == 1).

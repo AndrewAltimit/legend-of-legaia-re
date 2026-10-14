@@ -1,16 +1,18 @@
 # legaia-engine-battle-vm
 
 The battle-side VM kernels: the per-actor battle action state machine
-(`FUN_801E295C`), the battle formulas, the phase-scripted battle camera and
-the shared retail GTE camera, the cast-module tick bodies, and the
+(`FUN_801E295C`), the battle formulas, the phase-scripted battle camera, the
+cast-module tick bodies, and the
 battle-overlay leaves around them. Ported from the routines' disassembly like
 the VMs in [`legaia-engine-vm`](../engine-vm/README.md), with no bytes from
 the original executable.
 
 This crate does not depend on `legaia-engine-vm`: every module's whole
 dependency closure inside the engine is in this crate (plus the format
-crates, `legaia-art` and `legaia-engine-system`, for the BIOS `rand` and the fade
-template the summon flash converts into). Consumers name the modules here
+crates, `legaia-art`, `legaia-engine-system` for the BIOS `rand` and the fade
+template the summon flash converts into, and
+[`legaia-engine-camera`](../engine-camera/README.md) for the shared GTE camera
+the battle camera script builds its poses over). Consumers name the modules here
 directly (`legaia_engine_battle_vm::battle_action`). Free of wgpu, winit and
 cpal, so it builds for native and `wasm32` alike.
 
@@ -18,8 +20,10 @@ cpal, so it builds for native and `wasm32` alike.
 
 A battle-side module moves here when nothing in its closure reaches back into
 `legaia-engine-vm`. `battle_burst` (named by `move_vm`'s host) stays in
-`legaia-engine-vm` for that reason; `psx_camera` and `camera_mover` are here
-because the battle camera script and the GTE camera build call each other.
+`legaia-engine-vm` for that reason. The GTE camera build, the projection
+constants and `BattleCamPose` are one crate down in `legaia-engine-camera`,
+because the field camera, the Baka Fighter duel and the draw kernels run on
+them too.
 Doc links that point at `legaia-engine-vm` modules are plain code
 spans, since rustdoc cannot resolve a link into a crate this one does not
 depend on.
@@ -28,7 +32,6 @@ depend on.
 
 - [`battle_action` - `FUN_801E295C`](#battle_action---fun_801e295c)
 - [`battle_cam_script` - `FUN_801D5854`](#battle_cam_script---fun_801d5854)
-- [`psx_camera` - the shared retail GTE camera](#psx_camera---the-shared-retail-gte-camera)
 - [`battle_actor_tick` / `battle_actor_tint` - `FUN_800480D8` / `FUN_8004A908`](#battle_actor_tick--battle_actor_tint---fun_800480d8--fun_8004a908)
 - [Battle-overlay leaves outside the action SM](#battle-overlay-leaves-outside-the-action-sm)
 - [`battle_formulas`](#battle_formulas)
@@ -109,33 +112,6 @@ mid-approach never re-opens; and the resting yaw is the free-running orbit a
 fight *inherits* from the field camera, not a constant - five retail states at
 one framing read five different yaws.
 
-## `psx_camera` - the shared retail GTE camera
-
-The projection every camera in the port runs through, held once below both
-hosts. `psx_camera_vp` is retail's
-`screen = H * (R * (v - focus) + tr_eye) / Ez` with `R = Rx * Ry * Rz`
-(the order `FUN_80026988` composes the camera's Euler angles in) and the GTE control file's `(OFX, OFY)`,
-written as one column-major 4x4; `psx_camera_eye` is its analytic inverse, the
-world-space lens. `battle_vp` above is this kernel with the battle pose's
-constants, so the field camera and the battle camera cannot diverge in their
-arithmetic.
-
-The frame convention is the part worth reading before using it: **every matrix
-this module returns is for the Y-up render frame** - the caller's model
-matrices carry the PSX `scale(1,-1,1)` and the projection's trailing flip
-cancels it. A host that instead keeps raw retail Y-down world state (the
-native window's field frame) post-multiplies one more `scale(1,-1,1)` and
-lands on the same net transform.
-
-`CutsceneCameraInterp` - the between-beat glide for op-`0x45` Camera Configure
-(`PORT: FUN_801DC0BC`, the `f32` rendition of `camera_mover`'s integer law) -
-lives here rather than in the wgpu-linked renderer crate, which is what lets
-the browser play page ease a scripted shot instead of snapping every
-`apply > 0` beat.
-
-Which camera owns a given frame, and what its inputs are, is one layer up:
-`engine-core::camera_view`.
-
 ## `battle_actor_tick` / `battle_actor_tint` - `FUN_800480D8` / `FUN_8004A908`
 
 The per-body battle draw decision: the draw tick (whether the body draws, the
@@ -212,12 +188,6 @@ consumption-site mirrors remain where they are used - liveness/kind gating in
 
 The crate's remaining modules are leaf kernels; by family:
 
-- **Cameras** - `camera_mover` (the op-`0x45` cutscene glide,
-  `FUN_801DC0BC`), `battle_camera` (tween step table and shake jitter),
-  `retail_cam` (the ten live camera globals as one value) and
-  `camera_rel_actor` / `camera_rel_glide` (the camera-relative effect-actor
-  spawn `FUN_80021248` and its glide tick) - here, beside the mover, because
-  the field camera and the Baka Fighter duel camera both use them.
 - **Battle transition** - `battle_intro_transition` (+ `battle_intro_styles`
   / `battle_intro_tiles` / `battle_intro_swirl` / `battle_intro_particles`):
   the field-to-battle overlay's state machine and per-style kernels;

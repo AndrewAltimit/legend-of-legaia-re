@@ -1424,7 +1424,7 @@ screens.
 
 | Decision | Kernel |
 |---|---|
-| retail GTE projection, cutscene glide, frame convention | `legaia_engine_battle_vm::psx_camera` |
+| retail GTE projection, cutscene glide, frame convention | `legaia_engine_camera::psx_camera` |
 | which camera owns the frame | `legaia_engine_core::camera_view::resolve_field_camera` + `frame_vp` (follow focus written back to `_DAT_80089118/20`) |
 | compass azimuth | `compass_azimuth_units` |
 | drag / wheel / double-click | `engine-field::camera::follow_knobs` |

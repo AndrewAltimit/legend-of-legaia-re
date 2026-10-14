@@ -310,8 +310,8 @@ pub struct RetailBattle {
     /// (`ctx[+0x118C]`) steps toward, in the engine's pose space
     /// ([`retail_cam_tween`]): `(live, end)`.
     pub cam_tween: (
-        legaia_engine_battle_vm::battle_cam_script::BattleCamPose,
-        legaia_engine_battle_vm::battle_cam_script::BattleCamPose,
+        legaia_engine_camera::projection::BattleCamPose,
+        legaia_engine_camera::projection::BattleCamPose,
     ),
     /// The frame driver's entry counter `gp+0x330` ([`ENTRY_COUNTER`]).
     pub entry_counter: u8,

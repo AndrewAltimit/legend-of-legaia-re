@@ -25,7 +25,7 @@
 //! Needs the mednafen library (`LEGAIA_SAVES_LIBRARY`, else `saves/library`);
 //! skips and passes without it.
 
-use legaia_engine_battle_vm::psx_camera::camera_rotation;
+use legaia_engine_camera::psx_camera::camera_rotation;
 use legaia_mednafen::SaveState;
 use legaia_ram_image::prim_pool;
 use legaia_render_kernels::gte::{

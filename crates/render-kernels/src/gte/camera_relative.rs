@@ -32,8 +32,8 @@
 //! no prefix, and the host draws exactly what it drew before.
 
 use super::{GteMat3, camera_view_rotation, view_rot_flags};
-use legaia_engine_battle_vm::battle_cam_script::BattleCamPose;
-use legaia_engine_battle_vm::psx_camera::{FieldCameraView, camera_rotation};
+use legaia_engine_camera::projection::BattleCamPose;
+use legaia_engine_camera::psx_camera::{FieldCameraView, camera_rotation};
 
 /// The `+0x52` bits that route a node through `FUN_8001CF50` (`andi
 /// v0,v0,0x780` at `0x8001B374` in the render dispatcher).

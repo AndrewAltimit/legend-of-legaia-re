@@ -568,8 +568,8 @@ impl World {
 }
 
 /// A stage camera as the phase-scripted camera's pose type.
-fn stage_camera_pose(c: &StageCamera) -> legaia_engine_battle_vm::battle_cam_script::BattleCamPose {
-    legaia_engine_battle_vm::battle_cam_script::BattleCamPose {
+fn stage_camera_pose(c: &StageCamera) -> legaia_engine_camera::projection::BattleCamPose {
+    legaia_engine_camera::projection::BattleCamPose {
         pitch: c.pitch as f32,
         yaw: c.yaw as f32,
         tr: c.tr.map(|v| v as f32),

@@ -48,7 +48,7 @@ impl LegaiaRuntime {
         if world.mode != legaia_engine_mode::mode::SceneMode::Battle {
             return None;
         }
-        let vp = legaia_engine_battle_vm::battle_cam_script::battle_vp(
+        let vp = legaia_engine_camera::projection::battle_vp(
             &self.battle_cam_pose(),
             BATTLE_WORLD_SCALE_LOCAL,
             4.0 / 3.0,

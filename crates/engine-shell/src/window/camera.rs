@@ -377,7 +377,7 @@ impl PlayWindowApp {
         let b = -near * far / (far - near);
         let aspect_fix = (4.0 / 3.0) / aspect.max(0.01);
         // The `y`-from-`w` term is retail's screen centre
-        // `legaia_engine_battle_vm::battle_cam_script::GTE_OFY` = 114, not the naive
+        // `legaia_engine_camera::projection::GTE_OFY` = 114, not the naive
         // `240 / 2`: the GTE control file carries `OFX = 160` / `OFY = 114`
         // unchanged through field, battle, battle load and minigame, so every
         // projected point sits six rows above the geometric centre of the
@@ -388,7 +388,7 @@ impl PlayWindowApp {
             Vec4::new(0.0, -h / 120.0, 0.0, 0.0),
             Vec4::new(
                 0.0,
-                legaia_engine_battle_vm::battle_cam_script::GTE_OFY_NDC_BIAS,
+                legaia_engine_camera::projection::GTE_OFY_NDC_BIAS,
                 a,
                 1.0,
             ),
@@ -741,6 +741,7 @@ mod follow_compass_tests {
 mod battle_cam_shared_tests {
     use super::*;
     use legaia_engine_battle_vm::battle_cam_script as script;
+    use legaia_engine_camera::projection;
     use legaia_engine_core::battle_cam_inputs::battle_cam_inputs;
     use legaia_engine_core::world::World;
     use legaia_engine_mode::mode::SceneMode;
@@ -750,7 +751,10 @@ mod battle_cam_shared_tests {
     /// so the constant is duplicated there by design - this is the pin).
     #[test]
     fn scene_far_paired_with_renderer() {
-        assert_eq!(script::SCENE_FAR, legaia_engine_render::window::SCENE_FAR);
+        assert_eq!(
+            projection::SCENE_FAR,
+            legaia_engine_render::window::SCENE_FAR
+        );
     }
 
     /// The shared `battle_vp` must reproduce the native glam composition
@@ -763,19 +767,19 @@ mod battle_cam_shared_tests {
         let to_rad = |units: f32| units / 4096.0 * std::f32::consts::TAU;
         let poses = [
             script::BOOT_POSE,
-            script::BattleCamPose {
+            projection::BattleCamPose {
                 pitch: 32.0,
                 yaw: 224.0,
                 tr: [0.0, 1280.0, 7680.0],
                 focus: [100.0, 0.0, -50.0],
             },
-            script::BattleCamPose {
+            projection::BattleCamPose {
                 pitch: 32.0,
                 yaw: 2288.0,
                 tr: [-512.0, 1152.0, 2457.0],
                 focus: [0.0, 0.0, -800.0],
             },
-            script::BattleCamPose {
+            projection::BattleCamPose {
                 pitch: 256.0,
                 yaw: 4064.0,
                 tr: [0.0, 1536.0, 3276.0],
@@ -794,7 +798,7 @@ mod battle_cam_shared_tests {
                     aspect,
                 )
                 .to_cols_array();
-                let shared = script::battle_vp(p, BATTLE_WORLD_SCALE, aspect);
+                let shared = projection::battle_vp(p, BATTLE_WORLD_SCALE, aspect);
                 for (i, (a, b)) in shared.iter().zip(native.iter()).enumerate() {
                     assert!(
                         (a - b).abs() <= 1e-3 * b.abs().max(1.0),
@@ -1146,7 +1150,7 @@ mod battle_cam_shared_tests {
                 to_rad(pose.pitch),
                 to_rad(pose.yaw),
                 0.0,
-                script::GTE_H,
+                projection::GTE_H,
                 Vec3::from(pose.tr),
                 Vec3::from(pose.focus) * BATTLE_WORLD_SCALE,
                 4.0 / 3.0,
@@ -1255,7 +1259,7 @@ mod cutscene_framing_tests {
     /// is exact: `OFX + h * tr.x / tr.z` = `172.0` on the nose, so a wrong
     /// eye-back depth moves it immediately. `Y` is `OFY + h * tr.y / tr.z`
     /// with the retail screen centre `OFY = 114` (see
-    /// `legaia_engine_battle_vm::battle_cam_script::GTE_OFY`), giving `173.7`. The
+    /// `legaia_engine_camera::projection::GTE_OFY`), giving `173.7`. The
     /// framebuffer read this expectation was first taken from said "~180",
     /// which is what a soft eyeball of a *cluster* of small actors gives
     /// against a projection of the single ground anchor they stand around -
@@ -1274,8 +1278,7 @@ mod cutscene_framing_tests {
             (px - 172.0).abs() < 3.0,
             "focus X projects to retail ~172, got {px}"
         );
-        let want_y =
-            legaia_engine_battle_vm::battle_cam_script::GTE_OFY + 792.0 * (1293.0 / 17145.0);
+        let want_y = legaia_engine_camera::projection::GTE_OFY + 792.0 * (1293.0 / 17145.0);
         assert!(
             (py - want_y).abs() < 3.0,
             "focus Y projects to OFY + h*tr.y/tr.z = {want_y} (lower-centre), got {py}"

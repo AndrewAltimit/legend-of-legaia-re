@@ -187,11 +187,7 @@ impl LegaiaRuntime {
         // page's scaled placement space, so the eye comes back scaled - the
         // ghost push runs in raw actor units.
         let pose = self.battle_cam_pose();
-        let vp = legaia_engine_battle_vm::battle_cam_script::battle_vp(
-            &pose,
-            BATTLE_WORLD_SCALE,
-            4.0 / 3.0,
-        );
+        let vp = legaia_engine_camera::projection::battle_vp(&pose, BATTLE_WORLD_SCALE, 4.0 / 3.0);
         let eye_raw = ai::camera_eye_from_vp(&vp).map(|e| e.map(|c| c / BATTLE_WORLD_SCALE));
         // Positions in the placement frame (`T(F pos)`,
         // `battle_afterimage::placement_pos`) - the frame the eye comes

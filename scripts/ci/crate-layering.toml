@@ -42,9 +42,13 @@ deps = []
 role = "game-mode seat and the 28-mode driver"
 deps = ["engine-system"]
 
-[crates.engine-battle-vm]
-role = "battle action SM, formulas, battle camera, cast-module ticks"
+[crates.engine-camera]
+role = "the shared GTE camera: build, projection, mover, shake, camera-relative glide"
 deps = ["engine-system"]
+
+[crates.engine-battle-vm]
+role = "battle action SM, formulas, battle camera script, cast-module ticks"
+deps = ["engine-camera", "engine-system"]
 
 [crates.engine-motion-vm]
 role = "the two per-actor motion VMs"
@@ -56,12 +60,12 @@ deps = ["engine-battle-vm", "engine-system"]
 
 [crates.render-kernels]
 role = "GTE math, screen prims, VRAM capture, effect emitters; no wgpu"
-deps = ["engine-battle-vm", "engine-vm"]
+deps = ["engine-battle-vm", "engine-camera", "engine-vm"]
 
 [crates.engine-ui]
 role = "renderer-agnostic draw-list builders"
 deps = ["engine-battle-vm", "render-kernels"]
-dev = ["engine-field"]
+dev = ["engine-camera", "engine-field"]
 
 [crates.engine-effects]
 role = "World-free effect kernels"
@@ -76,7 +80,7 @@ deps = [
 [crates.engine-field]
 role = "World-free field kernels"
 deps = [
-    "engine-battle-vm",
+    "engine-camera",
     "engine-dialog",
     "engine-mode",
     "engine-motion-vm",
@@ -93,6 +97,7 @@ deps = ["engine-field", "engine-system", "render-kernels"]
 role = "minigame rules engines"
 deps = [
     "engine-battle-vm",
+    "engine-camera",
     "engine-fishing",
     "engine-system",
     "engine-vm",
@@ -127,6 +132,7 @@ role = "the minigames' 3D scene surfaces, venues and the World's minigame seat"
 deps = [
     "engine-battle",
     "engine-battle-vm",
+    "engine-camera",
     "engine-field",
     "engine-fishing",
     "engine-menus",
@@ -145,22 +151,16 @@ deps = [
 # coupling that gets cut has to be deleted here in the same change.
 
 [[coupling]]
-from = "engine-field"
-to = "engine-battle-vm"
-items = ["camera_mover", "retail_cam", "psx_camera", "battle_camera::apply_shake"]
-reason = "the shared GTE camera and its mover live with the battle camera script that calls them"
-
-[[coupling]]
 from = "engine-minigames"
 to = "engine-battle-vm"
-items = ["psx_camera", "retail_cam", "camera_rel_actor", "camera_rel_glide"]
-reason = "the Baka Fighter duel runs on the same camera kernels; only battle_formulas is the Muscle Dome's by role"
+items = ["panel_backread_loader::backread_texture_variant"]
+reason = "the ringside still the contest hub keeps resident is picked by the battle panel back-read loader; battle_formulas is the Muscle Dome's by role"
 
 [[coupling]]
 from = "render-kernels"
 to = "engine-battle-vm"
-items = ["psx_camera", "battle_cam_script", "battle_intro_*"]
-reason = "the projection constants and the battle-intro model types the draw kernels consume are defined beside the battle camera"
+items = ["battle_intro_*", "battle_trail", "battle_value_readout", "battle_action::FlashQuad", "seru_magic_ticks::TheederPacket"]
+reason = "the battle-intro model types and the numeral, trail and Theeder records the draw kernels consume are defined beside the battle kernels that fill them"
 
 [[coupling]]
 from = "engine-effects"

@@ -93,7 +93,7 @@
 //! cells link into; [`crate::overworld_draw_order`] turns both keys into the
 //! flat depths the hosts draw with.
 
-use legaia_engine_battle_vm::psx_camera::FieldCameraView;
+use legaia_engine_camera::psx_camera::FieldCameraView;
 use legaia_engine_system::rotation_lut::RotationLut;
 use legaia_render_kernels::fog_volume::FogRegion;
 

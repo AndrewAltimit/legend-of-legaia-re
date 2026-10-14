@@ -313,7 +313,7 @@ fn the_fmv_handoff_resets_the_camera_like_a_door() {
         eprintln!("LEGAIA_DISC_BIN unset; skipping");
         return;
     };
-    use legaia_engine_battle_vm::retail_cam::RetailCamGlobals;
+    use legaia_engine_camera::retail_cam::RetailCamGlobals;
     let mut rt = loaded_in(&disc, "town01");
     assert!(rt.play_fmv_trigger(1));
     // Stand in for the trigger scene's scripted shot: every reset axis off

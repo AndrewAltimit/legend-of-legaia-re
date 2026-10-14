@@ -335,7 +335,7 @@ impl BattleCamera {
     /// otherwise leave it stranded.
     ///
     /// REF: FUN_801D9D30 (the kernel is
-    /// [`crate::battle_camera::apply_shake`])
+    /// [`legaia_engine_camera::battle_camera::apply_shake`])
     pub fn set_shake_amplitude(&mut self, amplitude: u8) {
         self.shake.amplitude = u32::from(amplitude);
     }
@@ -1196,7 +1196,7 @@ impl BattleCamera {
         // is the resting state and backs the previous offset straight out, so
         // an un-shaken camera returns to its framing pose on the next step
         // rather than holding the last kick.
-        crate::battle_camera::apply_shake(
+        legaia_engine_camera::battle_camera::apply_shake(
             &mut self.shake.accum,
             &mut self.shake.offset,
             self.shake.amplitude,

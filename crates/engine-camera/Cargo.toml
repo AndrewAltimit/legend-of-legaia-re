@@ -1,0 +1,23 @@
+[package]
+name = "legaia-engine-camera"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+# tests/integration.rs gathers every tests/*.rs into one binary.
+autotests = false
+
+[lib]
+name = "legaia_engine_camera"
+path = "src/lib.rs"
+
+[dependencies]
+legaia-engine-system.workspace = true
+
+[dev-dependencies]
+# The camera-mover recomp oracle parses the external frame-tagged JSONL
+# captures (env-gated via LEGAIA_RECOMP_TRACE_DIR; never committed).
+serde_json.workspace = true
+
+[[test]]
+name = "integration"
+path = "tests/integration.rs"

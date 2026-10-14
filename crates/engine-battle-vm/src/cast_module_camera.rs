@@ -13,7 +13,7 @@
 //! ## The shot kernel
 //!
 //! Each camera arm fills three stack trios and hands them to the tween builder
-//! `FUN_801D829C` ([`crate::battle_camera::build_camera_angle_tween`]):
+//! `FUN_801D829C` ([`legaia_engine_camera::battle_camera::build_camera_angle_tween`]):
 //!
 //! ```text
 //! sp+0x20  pitch, yaw, roll          ; roll is zeroed in the prologue
@@ -49,7 +49,8 @@
 //! REF: FUN_801D829C (the tween every shot arms), FUN_80019B28 (the headings)
 
 use crate::battle_action::bearing_12bit_approx;
-use crate::battle_cam_script::{BattleCamPose, prescale_tr_z};
+use crate::battle_cam_script::prescale_tr_z;
+use legaia_engine_camera::projection::BattleCamPose;
 use legaia_engine_system::trig::trig12;
 
 /// `*(0x1F80037D)` in battle - the speed scalar the battle seating seeds

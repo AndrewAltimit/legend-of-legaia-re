@@ -323,7 +323,7 @@ impl PlayWindowApp {
             // beats first (retail order: the mover snaps to an `apply 0` beat,
             // then glides from there when a same-tick follow-up beat
             // re-stages - the map01 fly-in pair).
-            let target = legaia_engine_battle_vm::psx_camera::FieldCameraView {
+            let target = legaia_engine_camera::psx_camera::FieldCameraView {
                 focus,
                 pitch,
                 yaw,

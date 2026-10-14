@@ -77,7 +77,7 @@ impl Glide {
         steps: u32,
         yaw: bool,
     ) -> Self {
-        use crate::battle_camera::{CameraAngles, build_camera_angle_tween};
+        use legaia_engine_camera::battle_camera::{CameraAngles, build_camera_angle_tween};
 
         let trio = |v: [f32; 3]| [v[0] as i16, v[1] as i16, v[2] as i16];
         let mut cur = CameraAngles {

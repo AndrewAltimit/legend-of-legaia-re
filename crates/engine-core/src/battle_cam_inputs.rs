@@ -18,6 +18,7 @@
 use crate::world::World;
 use legaia_engine_battle_vm::battle_cam_script as script;
 use legaia_engine_battle_vm::battle_formulas as vm_formulas;
+use legaia_engine_camera::projection;
 
 /// Derive the shared battle-camera drive inputs from the live world state -
 /// phase, acting actor, formation box.
@@ -734,9 +735,9 @@ impl World {
     /// globals (the Cort arrival / form transition,
     /// [`legaia_engine_battle::battle_stage_module`]) this is the module's camera instead,
     /// so both hosts draw what it frames.
-    pub fn battle_cam_pose(&self) -> script::BattleCamPose {
+    pub fn battle_cam_pose(&self) -> projection::BattleCamPose {
         if let Some(c) = self.battle.stage_camera.as_ref() {
-            return script::BattleCamPose {
+            return projection::BattleCamPose {
                 pitch: c.pitch as f32,
                 yaw: c.yaw as f32,
                 tr: c.tr.map(|v| v as f32),

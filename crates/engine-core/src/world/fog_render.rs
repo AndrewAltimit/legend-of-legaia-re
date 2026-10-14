@@ -13,7 +13,7 @@
 //! as the geometry.
 
 use super::*;
-use legaia_engine_battle_vm::psx_camera::FieldCameraView;
+use legaia_engine_camera::psx_camera::FieldCameraView;
 use legaia_engine_field::fog_particles::{
     FOG_CAP_DEFAULT, FOG_DPAD_MASK, FogFrameEnv, FogQuad, FogView,
 };

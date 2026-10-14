@@ -269,8 +269,8 @@ crates; each row's site names the owning crate.
 | `8003c9ac` | `motion_pause_kick` + module | `crates/engine-field/src/motion_pause.rs` | WIRE (wired) |
 | `8003fb10` | `validate_action` | `crates/engine-battle-vm/src/battle_action/validator.rs` | WIRE (wired) |
 | `80046898` | `item_count_gate` | `crates/engine-battle-vm/src/battle_action/validator.rs` | WIRE (wired) |
-| `801d829c` | `build_camera_angle_tween` | `crates/engine-battle-vm/src/battle_camera.rs` | WIRE (wired) |
-| `801d9d30` | `apply_shake` | `crates/engine-battle-vm/src/battle_camera.rs` | DISCLOSE |
+| `801d829c` | `build_camera_angle_tween` | `crates/engine-camera/src/battle_camera.rs` | WIRE (wired) |
+| `801d9d30` | `apply_shake` | `crates/engine-camera/src/battle_camera.rs` | DISCLOSE |
 | `801e0088` | `child_billboards` / `pass2_brightness` | `crates/engine-vm/src/effect_vm/pool.rs` | FALSE INERT |
 | `801e36c4` | `exec_centered_bar` | `crates/engine-menus/src/title_prim.rs` | DISCLOSE |
 | `801e373c` | `init_card_state` / `exec_card_init` | `crates/engine-menus/src/title_prim.rs` | DISCLOSE |

@@ -11,6 +11,7 @@ name = "legaia_engine_core"
 path = "src/lib.rs"
 
 [dependencies]
+legaia-engine-camera.workspace = true
 legaia-engine-mode.workspace = true
 legaia-engine-scene.workspace = true
 legaia-render-kernels.workspace = true

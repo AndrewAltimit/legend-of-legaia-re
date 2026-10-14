@@ -1090,7 +1090,7 @@ including frames where the staging trio differs from the live one;
 `FUN_80026988` forms the camera rotation in q3.12 from the truncating sin
 LUT, with every product shifted down on its own; the port's retail-exact
 rendition is `render-kernels::battle_intro::euler_rot_psx`. Both play hosts build
-the camera from the shared `engine-battle-vm::psx_camera::camera_rotation` instead -
+the camera from the shared `engine-camera::psx_camera::camera_rotation` instead -
 the same `Rx * Ry * Rz` product in `f32`. The two differ by at most about
 2.4/4096 in any element over the camera angle trios of the 98 catalogued
 mednafen states.
@@ -1379,7 +1379,7 @@ dialog boxes, menu windows), authored in the space `OFY = 114` lives in. The
 projection puts the GTE origin on row 114 of the port's frame as well, as a
 constant `w`-scaled term on clip `y`, `GTE_OFY_NDC_BIAS = (120 - OFY) / 120`,
 which survives the perspective divide:
-`legaia_engine_battle_vm::battle_cam_script::battle_vp` (shared by the play page)
+`legaia_engine_camera::projection::battle_vp` (shared by the play page)
 and `psx_camera_mvp` (native window). Guard:
 `the_projected_origin_lands_on_the_retail_screen_centre`, which reads the
 expected row from `GTE_OFY`, so a projection rebuilt on `240 / 2` fails it.

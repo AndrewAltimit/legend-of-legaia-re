@@ -34,7 +34,7 @@
 //! [`legaia_engine_vm::frame_clock::FrameClock::display_frames`], so a redraw on which no tick
 //! ran advances it by nothing.
 
-use legaia_engine_battle_vm::psx_camera::{CutsceneCameraInterp, FieldCameraView};
+use legaia_engine_camera::psx_camera::{CutsceneCameraInterp, FieldCameraView};
 
 use crate::world::World;
 use legaia_engine_field::camera::Camera;

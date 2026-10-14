@@ -110,7 +110,7 @@ pub struct SkySprite {
 /// and `TR` = the raw eye trio.
 ///
 /// `globals` is the retail camera globals block
-/// ([`legaia_engine_battle_vm::retail_cam::RetailCamGlobals`]): pitch / yaw / roll, the eye
+/// ([`legaia_engine_camera::retail_cam::RetailCamGlobals`]): pitch / yaw / roll, the eye
 /// trio, the focus trio and `H`.
 pub fn far_point_screen(globals: &[i32; 10]) -> (i32, i32) {
     let pitch = globals[0] as i16;

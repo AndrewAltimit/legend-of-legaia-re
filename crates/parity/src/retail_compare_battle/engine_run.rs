@@ -612,7 +612,7 @@ pub fn run_engine_battle(
     if std::env::var_os("LEGAIA_RC_CAM_TRACE").is_some()
         && let Some(cam) = session.host.world.battle.camera.as_ref()
     {
-        let p = |p: legaia_engine_battle_vm::battle_cam_script::BattleCamPose| {
+        let p = |p: legaia_engine_camera::projection::BattleCamPose| {
             format!(
                 "{}/{} tr={:?} focus={:?}",
                 p.pitch,

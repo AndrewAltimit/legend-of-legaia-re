@@ -131,12 +131,12 @@ pub fn venue_camera_view(
     y: i16,
     z: i16,
     facing: i16,
-) -> legaia_engine_battle_vm::psx_camera::FieldCameraView {
+) -> legaia_engine_camera::psx_camera::FieldCameraView {
     let reset = fc::venue_camera_reset();
     let publish = legaia_engine_fishing::fishing_actors::fish_camera(x, y, z, facing);
     let s = legaia_engine_field::camera::CUTSCENE_WORLD_SCALE;
     let to_rad = |u: i32| u as f32 * (std::f32::consts::TAU / 4096.0);
-    legaia_engine_battle_vm::psx_camera::FieldCameraView {
+    legaia_engine_camera::psx_camera::FieldCameraView {
         focus: [
             -publish.translation.0 as f32,
             publish.translation.1 as f32,
@@ -158,9 +158,7 @@ pub fn venue_camera_view(
 /// aim), while a fishing session is up: the view both play hosts draw the
 /// pond with and project the fishing line through. `None` before the venue
 /// has armed.
-pub fn venue_view(
-    mg: &MinigameState,
-) -> Option<legaia_engine_battle_vm::psx_camera::FieldCameraView> {
+pub fn venue_view(mg: &MinigameState) -> Option<legaia_engine_camera::psx_camera::FieldCameraView> {
     mg.fishing.as_ref()?;
     let w = mg.fishing_venue.wander.as_ref()?;
     Some(venue_camera_view(w.x, w.y, w.z, w.facing))
@@ -394,7 +392,7 @@ pub fn tick_fishing_venue(
 /// with no session, no camera or no line out.
 pub fn fishing_line_frame(
     mg: &mut MinigameState,
-    view: Option<&legaia_engine_battle_vm::psx_camera::FieldCameraView>,
+    view: Option<&legaia_engine_camera::psx_camera::FieldCameraView>,
 ) -> Option<legaia_engine_fishing::fishing_actors::FishingLine> {
     let view = view?;
     mg.fishing
@@ -406,7 +404,7 @@ pub fn fishing_line_frame(
 /// 320x240 screen space - `RTPS`'s `OFX/OFY + H * xy / z`, saturated to the
 /// `SXY` range, floored as the GTE's `>> 16` floors. `None` behind the eye.
 pub fn project_to_retail_screen(
-    view: &legaia_engine_battle_vm::psx_camera::FieldCameraView,
+    view: &legaia_engine_camera::psx_camera::FieldCameraView,
     p: [i32; 3],
 ) -> Option<(i16, i16)> {
     let e = view.eye_space([p[0] as f32, p[1] as f32, p[2] as f32]);

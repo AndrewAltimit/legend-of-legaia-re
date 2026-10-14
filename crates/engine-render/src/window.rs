@@ -287,7 +287,7 @@ pub fn world_map_camera_mvp(
     pan_z: i32,
     aspect: f32,
 ) -> Mat4 {
-    Mat4::from_cols_array(&legaia_engine_battle_vm::psx_camera::world_map_top_view_vp(
+    Mat4::from_cols_array(&legaia_engine_camera::psx_camera::world_map_top_view_vp(
         aabb_lo, aabb_hi, azimuth, zoom, pan_x, pan_z, aspect,
     ))
 }
@@ -461,7 +461,7 @@ pub fn cutscene_camera_mvp(
 #[cfg(test)]
 mod camera_tests {
     use super::*;
-    use legaia_engine_battle_vm::psx_camera::CutsceneCameraInterp;
+    use legaia_engine_camera::psx_camera::CutsceneCameraInterp;
 
     const LO: [f32; 3] = [-100.0, -100.0, -100.0];
     const HI: [f32; 3] = [100.0, 100.0, 100.0];

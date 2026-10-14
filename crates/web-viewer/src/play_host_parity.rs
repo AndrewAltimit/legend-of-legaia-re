@@ -42,7 +42,7 @@ impl LegaiaRuntime {
     /// its reset value, so a test can tell "reset on this entry" from "was
     /// never moved". Test support only; the page never calls it.
     pub fn debug_perturb_camera_globals(&mut self) {
-        use legaia_engine_battle_vm::retail_cam::RetailCamGlobals;
+        use legaia_engine_camera::retail_cam::RetailCamGlobals;
         for axis in RetailCamGlobals::FIELD_RESET_AXES {
             self.scene_host.camera_mut().globals.0[axis] =
                 RetailCamGlobals::FIELD_RESET.0[axis] + 0x123;

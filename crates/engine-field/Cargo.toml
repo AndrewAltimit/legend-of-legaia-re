@@ -11,11 +11,11 @@ name = "legaia_engine_field"
 path = "src/lib.rs"
 
 [dependencies]
+legaia-engine-camera.workspace = true
 legaia-engine-mode.workspace = true
 legaia-engine-motion-vm.workspace = true
 legaia-engine-dialog.workspace = true
 legaia-render-kernels.workspace = true
-legaia-engine-battle-vm.workspace = true
 legaia-anm.workspace = true
 legaia-engine-system.workspace = true
 legaia-engine-vm.workspace = true

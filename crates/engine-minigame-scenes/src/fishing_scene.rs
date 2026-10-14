@@ -28,7 +28,7 @@ use std::sync::Arc;
 
 use legaia_actor_formats::player_anm::PlayerAnmBundle;
 use legaia_actor_formats::{character_pack, field_char_textures};
-use legaia_engine_battle_vm::psx_camera::FieldCameraView;
+use legaia_engine_camera::psx_camera::FieldCameraView;
 use legaia_scene_formats::field_objects::FLAG_PLACED;
 use legaia_tmd::mesh::VramMesh;
 
@@ -334,7 +334,7 @@ pub const SKY_CLEAR_RGB: [u8; 3] = [0x17, 0x50, 0xA0];
 
 /// GTE screen centre the backdrop projects through (`OFX`, `OFY`).
 const SKY_OFX: f32 = 160.0;
-const SKY_OFY: f32 = legaia_engine_battle_vm::battle_cam_script::GTE_OFY;
+const SKY_OFY: f32 = legaia_engine_camera::projection::GTE_OFY;
 
 /// Eye-space depths the backdrop's world-space stand-ins sit at: far behind
 /// any venue geometry, inside the projection's far plane, the clear colour
@@ -419,7 +419,7 @@ fn unproject(view: &FieldCameraView, x: f32, y: f32, z: f32) -> [f32; 3] {
         e[1] - view.tr_eye[1],
         e[2] - view.tr_eye[2],
     ];
-    let r = legaia_engine_battle_vm::psx_camera::camera_rotation(view.pitch, view.yaw, view.roll);
+    let r = legaia_engine_camera::psx_camera::camera_rotation(view.pitch, view.yaw, view.roll);
     // `R^T d`; column-major `r[c*4 + row]` stores `R[row][c]`.
     let mut out = view.focus;
     for (i, o) in out.iter_mut().enumerate() {
@@ -524,7 +524,7 @@ impl FishingScene {
     /// world vertex by: the camera's Y-up-frame matrix with the single world
     /// flip folded in.
     pub fn vp_raw(&self, aspect: f32) -> [f32; 16] {
-        use legaia_engine_battle_vm::psx_camera::{WORLD_FLIP, mat4_mul};
+        use legaia_engine_camera::psx_camera::{WORLD_FLIP, mat4_mul};
         mat4_mul(&self.camera.vp(aspect), &WORLD_FLIP)
     }
 }

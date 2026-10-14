@@ -13,7 +13,7 @@ use legaia_engine_mode::mode::SceneMode;
 use legaia_engine_battle_vm::battle_actor_draw::LimbDimPlan;
 use legaia_engine_battle_vm::battle_actor_tick as tick;
 use legaia_engine_battle_vm::battle_actor_tint as tint;
-use legaia_engine_battle_vm::battle_cam_script::BattleCamPose;
+use legaia_engine_camera::projection::BattleCamPose;
 
 /// The body radius a party seat carries at `*(actor[+0x22C]) + 0x58`:
 /// `640` on 212 of the 213 party seats read across the catalogued battle
@@ -258,7 +258,7 @@ impl World {
         };
         let b = &actor.battle;
         let view_z = match pose {
-            Some(p) => legaia_engine_battle_vm::battle_cam_script::battle_view_depth(
+            Some(p) => legaia_engine_camera::projection::battle_view_depth(
                 p,
                 world_scale,
                 [
