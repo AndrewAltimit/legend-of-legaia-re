@@ -61,6 +61,9 @@ pub struct HostTraceFrame {
     pub field_pc: usize,
     /// Every active actor slot.
     pub actors: Vec<ActorTrace>,
+    /// The field NPCs' live positions (`FieldNpcState::positions`), by
+    /// placement slot: villagers are not `World::actors` slots.
+    pub npcs: Vec<(u8, i16, i16)>,
     /// The retail camera globals: pitch / yaw / roll (12-bit), eye-space
     /// translation, stored focus.
     pub cam: ([i32; 3], [i32; 3], [i32; 3]),
@@ -71,9 +74,9 @@ pub struct HostTraceFrame {
     pub party: u64,
     /// The item bag.
     pub bag: u64,
-    /// The open dialog request's text id, if any, and whether an inline
-    /// dialogue runner is live.
-    pub dialog: (Option<u16>, bool),
+    /// The open dialog request's text id, whether an inline dialogue runner
+    /// is live, and the placement slot an inline talk runs for.
+    pub dialog: (Option<u16>, bool, Option<u8>),
     /// `World::battle_ctx` (the action SM's context).
     pub battle: u64,
     /// `World::field_ctx` (the field VM's context).
@@ -110,6 +113,13 @@ pub fn sample<S: AudioSink>(session: &BootSession<S>) -> HostTraceFrame {
             heading: (a.move_state.render_26 as u16) & 0xFFF,
         })
         .collect();
+    let mut npcs: Vec<(u8, i16, i16)> = world
+        .npcs
+        .positions
+        .iter()
+        .map(|(&slot, &(x, z))| (slot, x, z))
+        .collect();
+    npcs.sort_unstable();
     let flags = {
         let f = &world.flags;
         digest(&(
@@ -133,6 +143,7 @@ pub fn sample<S: AudioSink>(session: &BootSession<S>) -> HostTraceFrame {
         rng: world.rng_state,
         field_pc: world.field_pc,
         actors,
+        npcs,
         cam: (
             [angles[0] & 0xFFF, angles[1] & 0xFFF, angles[2] & 0xFFF],
             g.tr_eye(),
@@ -144,6 +155,7 @@ pub fn sample<S: AudioSink>(session: &BootSession<S>) -> HostTraceFrame {
         dialog: (
             world.dialog.current.as_ref().map(|d| d.text_id),
             world.dialog.inline.is_some(),
+            world.dialog.active_inline_slot,
         ),
         battle: debug_digest(&world.battle_ctx),
         field_ctx: debug_digest(&world.field_ctx),
@@ -161,6 +173,7 @@ pub const CHANNELS: &[&str] = &[
     "rng",
     "field_pc",
     "actors",
+    "npcs",
     "cam",
     "flags",
     "party",
@@ -181,6 +194,7 @@ fn channel_equal(a: &HostTraceFrame, b: &HostTraceFrame, ch: &str) -> bool {
         "rng" => a.rng == b.rng,
         "field_pc" => a.field_pc == b.field_pc,
         "actors" => a.actors == b.actors,
+        "npcs" => a.npcs == b.npcs,
         "cam" => a.cam == b.cam,
         "flags" => a.flags == b.flags,
         "party" => a.party == b.party,

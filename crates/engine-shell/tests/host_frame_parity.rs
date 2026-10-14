@@ -55,8 +55,11 @@ impl Cadence {
 
 struct Scenario {
     scene: &'static str,
-    /// Pad word held over sim tick `t` (1-based).
-    pad: fn(u32) -> u16,
+    /// Pad word held over a display frame whose first sim tick is `t`
+    /// (1-based), given the native host's latest sample. The native run's
+    /// words are recorded and replayed to the page, so a pad that steers off
+    /// the world still hands both hosts the same input.
+    pad: fn(u32, &HostTraceFrame) -> u16,
     ticks: u32,
     /// What the run must have exercised, so a green run is not a vacuous
     /// one (the hosts agreeing on a world that never moved).
@@ -76,7 +79,7 @@ fn tap(t: u32, at: u32, mask: u16) -> u16 {
     if (at..at + 4).contains(&t) { mask } else { 0 }
 }
 
-fn walk_pad(t: u32) -> u16 {
+fn walk_pad(t: u32, _: &HostTraceFrame) -> u16 {
     if (20..160).contains(&t) {
         PadButton::Up.mask()
     } else if (160..285).contains(&t) {
@@ -88,7 +91,7 @@ fn walk_pad(t: u32) -> u16 {
 
 /// Walk, open the pause menu, step its root list, enter one sub-screen and
 /// back out of it, close the menu (Circle on the root list), walk again.
-fn menu_pad(t: u32) -> u16 {
+fn menu_pad(t: u32, _: &HostTraceFrame) -> u16 {
     let walk = if (10..40).contains(&t) || (330..380).contains(&t) {
         UP
     } else {
@@ -105,7 +108,7 @@ fn menu_pad(t: u32) -> u16 {
 
 /// Walk a box on an encounter field, confirming every so often: the walk
 /// rolls encounters, the confirms drive whatever battle opens.
-fn encounter_pad(t: u32) -> u16 {
+fn encounter_pad(t: u32, _: &HostTraceFrame) -> u16 {
     let dir = match (t / 90) % 4 {
         0 => UP,
         1 => RIGHT,
@@ -146,18 +149,21 @@ fn visited_battle(tr: &[HostTraceFrame]) -> Result<(), String> {
     }
 }
 
-fn native_trace(disc: &str, sc: &Scenario, cadence: Cadence) -> Vec<HostTraceFrame> {
+fn native_trace(disc: &str, sc: &Scenario, cadence: Cadence) -> (Vec<HostTraceFrame>, Vec<u16>) {
     let mut w = HeadlessPlayWindow::open(std::path::Path::new(disc), sc.scene).expect("open");
     let mut out = vec![host_trace::sample(w.session())];
+    let mut pads = Vec::new();
     let (mut t, mut f) = (0u32, 0u32);
     while t < sc.ticks {
         let n = cadence.ticks(f).min(sc.ticks - t);
-        w.display_frame((sc.pad)(t + 1), n);
+        let pad = (sc.pad)(t + 1, out.last().expect("sampled"));
+        pads.push(pad);
+        w.display_frame(pad, n);
         t += n;
         f += 1;
         out.push(host_trace::sample(w.session()));
     }
-    out
+    (out, pads)
 }
 
 /// The play page's frame, replayed from `site/js/play-view-frame.js::_frame`
@@ -252,7 +258,9 @@ impl PageDriver {
                     let target = self.rt.play_take_prologue_handoff(true);
                     if !target.is_empty() {
                         self.rt.enter_field(&target).expect("prologue hand-off");
-                        break;
+                        pulse = 0;
+                        self.read_cut();
+                        continue;
                     }
                 }
                 if self.rt.is_game_over() {
@@ -284,7 +292,7 @@ impl PageDriver {
     }
 }
 
-fn page_trace(disc: Vec<u8>, sc: &Scenario, cadence: Cadence) -> Vec<HostTraceFrame> {
+fn page_trace(disc: Vec<u8>, sc: &Scenario, cadence: Cadence, pads: &[u16]) -> Vec<HostTraceFrame> {
     let mut rt = LegaiaRuntime::new();
     rt.load_disc(disc, String::new()).expect("load_disc");
     rt.enter_field(sc.scene).expect("enter_field");
@@ -301,7 +309,7 @@ fn page_trace(disc: Vec<u8>, sc: &Scenario, cadence: Cadence) -> Vec<HostTraceFr
     let (mut t, mut f) = (0u32, 0u32);
     while t < sc.ticks {
         let n = cadence.ticks(f).min(sc.ticks - t);
-        d.frame((sc.pad)(t + 1), n);
+        d.frame(pads[f as usize], n);
         t += n;
         f += 1;
         out.push(host_trace::sample(d.rt.debug_session().expect("session")));
@@ -319,8 +327,8 @@ fn run(sc: &Scenario, cadences: &[Cadence]) -> Vec<String> {
     let bytes = std::fs::read(&disc).expect("read disc");
     let mut all = Vec::new();
     for &c in cadences {
-        let n = native_trace(&disc, sc, c);
-        let p = page_trace(bytes.clone(), sc, c);
+        let (n, pads) = native_trace(&disc, sc, c);
+        let p = page_trace(bytes.clone(), sc, c, &pads);
         assert_eq!(n.len(), p.len());
         let label = format!("{} {:?}", sc.scene, c);
         if let Err(e) = (sc.exercised)(&n) {
@@ -401,5 +409,91 @@ fn encounter_and_battle_frames_match_across_hosts() {
         exercised: visited_battle,
     };
     let parted = run(&sc, &[Cadence::Hz60, Cadence::Hz30]);
+    assert!(parted.is_empty(), "hosts diverge: {parted:#?}");
+}
+
+/// Confirm every 40 ticks: skips the opening chain to `town01`, then pages
+/// whatever the scene opens - the naming prompt included.
+fn confirm_pad(t: u32, _: &HostTraceFrame) -> u16 {
+    if t % 40 < 3 { CROSS } else { 0 }
+}
+
+/// Walk to the nearest villager and confirm at it: steer the lead toward
+/// the nearest field NPC (Up = +Z, Right = +X on this scene's
+/// framing), and once within reach stand and press Cross every 30 ticks.
+fn talk_pad(t: u32, f: &HostTraceFrame) -> u16 {
+    let Some(me) = f.actors.first() else {
+        return 0;
+    };
+    let near = f
+        .npcs
+        .iter()
+        .min_by_key(|n| (i32::from(n.1) - me.x).abs() + (i32::from(n.2) - me.z).abs());
+    let Some(&(_, nx, nz)) = near else {
+        return 0;
+    };
+    let (dx, dz) = (i32::from(nx) - me.x, i32::from(nz) - me.z);
+    if dx.abs() + dz.abs() < 200 {
+        // In reach: lean into the villager along the dominant axis (a solid
+        // NPC holds the lead in place, facing it) and confirm.
+        let face = if dx.abs() > dz.abs() {
+            if dx > 0 { RIGHT } else { LEFT }
+        } else if dz > 0 {
+            UP
+        } else {
+            DOWN
+        };
+        return face | if t % 30 < 3 { CROSS } else { 0 };
+    }
+    let mut pad = 0;
+    if dz.abs() > 40 {
+        pad |= if dz > 0 { UP } else { DOWN };
+    }
+    if dx.abs() > 40 {
+        pad |= if dx > 0 { RIGHT } else { LEFT };
+    }
+    pad
+}
+
+fn left_the_prologue(tr: &[HostTraceFrame]) -> Result<(), String> {
+    if tr.last().and_then(|f| f.scene.as_deref()) == Some("opdeene") {
+        Err("the opening chain was never skipped".into())
+    } else {
+        Ok(())
+    }
+}
+
+fn opened_a_dialogue(tr: &[HostTraceFrame]) -> Result<(), String> {
+    if tr
+        .iter()
+        .any(|f| f.dialog.0.is_some() || f.dialog.1 || f.dialog.2.is_some())
+    {
+        Ok(())
+    } else {
+        Err("no dialogue opened".into())
+    }
+}
+
+#[test]
+fn prologue_skip_and_naming_frames_match_across_hosts() {
+    let sc = Scenario {
+        scene: "opdeene",
+        pad: confirm_pad,
+        ticks: 1200,
+        exercised: left_the_prologue,
+    };
+    let parted = run(&sc, ALL);
+    assert!(parted.is_empty(), "hosts diverge: {parted:#?}");
+}
+
+#[test]
+fn village_dialogue_frames_match_across_hosts() {
+    let sc = Scenario {
+        scene: "town01",
+        pad: talk_pad,
+        ticks: 900,
+        exercised: opened_a_dialogue,
+    };
+    let parted = run(&sc, ALL);
     assert!(parted.is_empty(), "hosts diverge: {parted:#?}");
 }
