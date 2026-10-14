@@ -120,6 +120,12 @@ pub(super) fn traverse(
     // one turn of this loop per scene it plays, not a hop: it does not come
     // out of the hop allowance.
     let mut upkept = 0usize;
+    // Scenes whose only beats pass so far was the arrival pass's filtered
+    // one (outside the milestone's scene it plays only the bands that raise
+    // a flag the anchors ahead carry). A hop that then fails still gets the
+    // full pass a refused door earns: the record that carries the party on
+    // (`taiku`'s way back to `map03`) need not raise any such flag.
+    let mut proactive_only: BTreeSet<String> = BTreeSet::new();
     while steps < MAX_HOPS + vias.len() * 4 + dead.len() * 4 + upkept {
         steps += 1;
         pad_budget(session)?;
@@ -209,6 +215,9 @@ pub(super) fn traverse(
             // In the milestone's own scene the pass is the segmented one:
             // every live band, since the reach beat is among them.
             PROACTIVE.with(|p| p.set(cur != target.scene));
+            if cur != target.scene {
+                proactive_only.insert(cur.clone());
+            }
             let left = play_beats(session, &mut log);
             PROACTIVE.with(|p| p.set(false));
             if let Some(near) = near {
@@ -352,7 +361,8 @@ pub(super) fn traverse(
                 {
                     beaten.remove(&cur);
                 }
-                if beaten.insert(cur.clone()) {
+                let fresh = beaten.insert(cur.clone());
+                if fresh || proactive_only.remove(&cur) {
                     if !e.is_empty() && std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
                         eprintln!(
                             "    [hop] {e}; playing {cur}'s beats (frame {})",
