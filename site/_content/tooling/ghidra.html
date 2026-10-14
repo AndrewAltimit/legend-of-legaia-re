@@ -88,7 +88,7 @@ sw    a0, 0(v1)           ; the store Ghidra never attributes</code></pre>
 <section class="doc-section" id="adding-a-new-function-dump">
   <h2>Adding a function dump</h2>
   <ol class="steps">
-    <li><b>Add the entry point</b><span>Append the address to <code>TARGETS</code> in <code>dump_funcs.py</code> - SCUS-resident addresses only. Overlay addresses (<code>&gt;= 0x801C0000</code>) go in a per-overlay <code>dump_&lt;label&gt;_overlay.py</code>, whose output is prefixed <code>overlay_&lt;label&gt;_</code> so aliased VAs cannot collide. <code>ghidra/scripts</code></span></li>
+    <li><b>Add the entry point</b><span>Append the address to <code>TARGETS</code> in <code>dump_funcs.py</code> - SCUS-resident addresses only. Overlay addresses (<code>&gt;= 0x801C0000</code>) go in a per-overlay <code>dump_&lt;label&gt;_overlay.py</code>, run with <code>-process overlay_&lt;label&gt;.bin -noanalysis</code> against that overlay's own program - overlays sharing a load base hold different code at the same address. Each such script is a header, a <code>TARGETS</code> list and one <code>dump_targets(currentProgram, TARGETS)</code> call into the shared <code>lib_dump.py</code>, which skips addresses the program does not hold and prefixes output <code>overlay_&lt;label&gt;_</code> so aliased VAs cannot collide. <code>list_programs.py</code> names the programs; <code>report_program_bases.py</code> says where each is based - check it before trusting printed addresses. <code>ghidra/scripts</code></span></li>
     <li><b>Dump just that one</b><span><code>docker compose exec -e DUMP_ONLY=8002735c ghidra ... -postScript /scripts/dump_funcs.py</code>. Without <code>DUMP_ONLY</code> the whole catalogue re-dumps. The variable is read inside the container, so it must travel via <code>exec -e</code>. <code>dump_funcs.py</code></span></li>
     <li><b>Read the disassembly</b><span>Open <code>funcs/&lt;addr&gt;.txt</code>. Port and document from the instruction stream; the C is a hint about where to look (see <a href="#decompiler-artifacts">artifacts</a>). <code>funcs/</code></span></li>
     <li><b>Record it</b><span>Notable entry points join the <a href="../reference/functions.html">function directory</a>; a port carries a <code>// PORT: FUN_&lt;addr&gt;</code> tag the <a href="port-catalog.html">catalog</a> reads.</span></li>
@@ -103,18 +103,23 @@ sw    a0, 0(v1)           ; the store Ghidra never attributes</code></pre>
     <tbody>
       <tr><td rowspan="2">Symbols</td><td><code>apply_known_symbols.py</code></td><td>Re-apply the project's pinned function names and one-line comments to a fresh import (SCUS range only)</td></tr>
       <tr><td><code>dump_globals.py</code></td><td>Authoritative <code>DAT_</code> names + lengths for the probe symbol resolver</td></tr>
-      <tr><td rowspan="6">Dumps</td><td><code>dump_funcs.py</code></td><td>Disassembly + C for a <code>TARGETS</code> list of SCUS entry points</td></tr>
+      <tr><td rowspan="8">Dumps</td><td><code>dump_funcs.py</code></td><td>Disassembly + C for a <code>TARGETS</code> list of SCUS entry points</td></tr>
+      <tr><td><code>dump_&lt;label&gt;_overlay.py</code>, <code>lib_dump.py</code></td><td>The per-overlay dumper family (title, shop / menu, dialog, cutscene, level-up, world map, save UI, minigames, ...) over one shared <code>dump_targets</code> body</td></tr>
+      <tr><td><code>dump_wave_closeout.py</code></td><td>Works the <a href="port-catalog.html">port catalog</a>'s <code>--missing-dumps</code> worklist, separating real function entries from citation artifacts such as interior addresses</td></tr>
       <tr><td><code>dump_pending_helpers.py</code></td><td>The overlay-aware pattern: one target list, <code>in_program()</code> skips absent addresses, output prefixed per program</td></tr>
       <tr><td><code>dump_scus_gaps.py</code></td><td>Dumps every function inside address <code>RANGES</code> from the <a href="disc-coverage.html">disc-coverage</a> gap worklist; <code>FORCE_RANGES</code> force-disassembles uncovered runs</td></tr>
       <tr><td><code>repair_truncated_dumps.py</code></td><td>Rebuilds dumps whose body ends before the routine does (tracks the highest forward branch target, so an early <code>jr ra</code> is not the end)</td></tr>
       <tr><td><code>force_disasm_dump.py</code></td><td>Create + dump functions Ghidra missed (JALR-only entries); targets from <code>force_disasm_targets.txt</code></td></tr>
       <tr><td><code>dump_&lt;subsystem&gt;_*.py</code></td><td>Per-cluster dumpers (battle render tail, effect overlay 0967, field locomotion, arts input, 4C jump tables, menu inventory refs, terrain trigger, field loader trace)</td></tr>
-      <tr><td rowspan="5">Address resolution</td><td><code>find_lui_writers.py</code></td><td>Generic LUI+ADDIU resolver over a <code>[LO, HI]</code> range</td></tr>
+      <tr><td rowspan="6">Address resolution</td><td><code>find_lui_writers.py</code></td><td>Generic LUI+ADDIU resolver over a <code>[LO, HI]</code> range</td></tr>
       <tr><td><code>find_addr_materializers.py</code></td><td>Per-address materializer sites with use-classification context</td></tr>
+      <tr><td><code>find_addr_data_xref.py</code>, <code>find_addr_const_allprogs.py</code></td><td>One address as a data word or a <code>lui</code>+<code>addiu</code> / <code>lui</code>+<code>ori</code> target in one pass - in the current program, or swept across every program</td></tr>
       <tr><td><code>find_addr_data.py</code>, <code>find_data_word.py</code></td><td>The address as a 4-byte word in memory - function-pointer tables, with surrounding dwords</td></tr>
       <tr><td><code>find_terrain_emitter_caller.py</code></td><td>Reference manager + LUI/ORI + <code>jal</code>/<code>j</code> sweep for a target set across every imported overlay</td></tr>
       <tr><td><code>find_string_xrefs.py</code></td><td>Dev-path string literals to RAM addresses and every code site referencing them</td></tr>
-      <tr><td rowspan="3">Callers</td><td><code>find_callers_of.py</code></td><td>Direct callers of <code>TARGETS_HEX</code></td></tr>
+      <tr><td rowspan="5">Callers</td><td><code>find_callers_of.py</code></td><td>Direct callers of <code>TARGETS_HEX</code></td></tr>
+      <tr><td><code>find_jal_target.py</code>, <code>find_jal_allprogs.py</code></td><td>Every <code>jal</code> to a target in the current program, or <code>jal</code> / jump / branch across every program, independent of the reference manager</td></tr>
+      <tr><td><code>find_jal_rawbytes_allprogs.py</code>, <code>find_refs_allprogs.py</code></td><td>Raw-byte <code>jal TARGET</code> sweep (catches never-disassembled regions); reference-manager query in every program</td></tr>
       <tr><td><code>dispatcher_callers.py</code></td><td>Callers of the asset dispatcher and the LZS decoder</td></tr>
       <tr><td><code>find_jalr_handlers.py</code></td><td>Dispatch-table indirect calls (<code>lw R, +0x10(...)</code> then <code>jalr R</code>)</td></tr>
       <tr><td rowspan="5">Overlays</td><td><code>find_overlay_candidates.py</code></td><td>Host-side: ranks PROT entries by MIPS-code likelihood</td></tr>
@@ -167,10 +172,10 @@ sw    a0, 0(v1)           ; the store Ghidra never attributes</code></pre>
       <tr><td>Reordered or dropped stores</td><td>"Only three of four slots are written"</td><td>Take store order and count from the instructions</td></tr>
       <tr><td>Hand-written annotations</td><td>A label such as <code>path_opener</code> read as fact; it is someone's earlier guess</td><td>Read the body - that one is a dev-station host trap, not a filesystem</td></tr>
       <tr><td><code>0 instructions</code> dumps</td><td>C with an empty disassembly section - nothing to cross-check</td><td>Disassemble from the extracted image directly</td></tr>
-      <tr><td>Dump-sweep negatives</td><td>"No dump references X" - but a sixth of dumps hold no instructions</td><td>Sweep <strong>bytes</strong> (capstone over the images), and state coverage</td></tr>
+      <tr><td>Dump-sweep negatives</td><td>"No dump references X" - but instruction-less dumps contribute nothing to the sweep</td><td>Sweep <strong>bytes</strong> (capstone over the images), and state coverage</td></tr>
       <tr><td>Mis-based dumps</td><td>Every address off by a constant (often exactly <code>0xE818</code>) with plausible text</td><td>Verify against the extracted image; filename prefixes prove nothing</td></tr>
       <tr><td><code>unaff_*</code> / <code>in_stack_*</code></td><td>Read as proof of a mid-function fragment</td><td>A fragment needs a missing <code>addiu sp,sp,-N</code> plus unsaved callee-saved reads</td></tr>
-      <tr><td>Absolute-only sweeps</td><td>"No static writers" from a scan of the <code>lui</code>+offset form only</td><td>The gp-relative form carries a different immediate; <code>0x8007B8C2</code>'s writer is <code>sh v0,0x5aa(gp)</code></td></tr>
+      <tr><td>Absolute-only sweeps</td><td>"No static writers" from a scan of the <code>lui</code>+offset form only</td><td>The gp-relative form carries a different immediate; <code>0x8007B8C2</code>'s writer is <code>sh v0,0x5aa(gp)</code>, and three gp-relative reads bring its read total to 43 where an absolute scan finds 40. Hold a "no writers" negative to the same bar as a positive - the executable's header has <code>b_size = 0</code>, so no BSS zero-init stands in for a missing writer</td></tr>
       <tr><td>Label-calls</td><td><code>iVar = FUN_801xxxxx(); return iVar;</code> inside a big dispatcher</td><td>If the address is a <code>j</code> target in the same function, it is a label - catalogued on <a href="../subsystems/script-vm.html#dispatch">script VM</a></td></tr>
     </tbody>
   </table>

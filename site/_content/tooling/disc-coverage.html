@@ -48,6 +48,7 @@
 
 <section class="doc-section" id="two-halves">
   <h2>The two halves measure different things</h2>
+  <p>Three instruments share the work, each with its own denominator: this page's code half (is a byte inside a dumped function?) and data half (is an entry's format class known?), <a href="byte-accounting.html">byte accounting</a> under the data half (which bytes does a parser consume?), and the <a href="port-catalog.html">port catalog</a>, which measures the addresses the project cites rather than the disc.</p>
   <table>
     <thead><tr><th></th><th>Kind</th><th>What a percentage means</th></tr></thead>
     <tbody>
@@ -55,7 +56,7 @@
       <tr><td><strong>Data</strong></td><td>format recognition</td><td>an entry's format class is known; its bytes are not individually accounted for</td></tr>
     </tbody>
   </table>
-  <p>The data figure is an <strong>upper bound</strong>: knowing an entry is a <code>scene_vab_stream</code> is not the same as consuming every byte inside it, and no parser in the tree reports consumed-versus-unconsumed extents. The data denominator also counts some disc bytes more than once - entry weights use <code>max(indexed_size_sectors, footprint_sectors)</code>, and only the footprint is an entry's real extent (see <a href="../formats/prot.html">PROT TOC</a>) - so the totals run to roughly 2.5&times; the archive's real size. <strong>Quote the shares, not the totals</strong>; when a single entry's weight makes a residue look significant, check its footprint first.</p>
+  <p>The data figure is an <strong>upper bound</strong>: knowing an entry is a <code>scene_vab_stream</code> is not the same as consuming every byte inside it. That gap has its own measurement, a third denominator rather than a refinement of this one: <a href="byte-accounting.html">byte accounting</a> reports, per entry, which bytes a parser actually claims, and <code>scripts/ci/byte-account-coverage.py --check</code> ratchets it the way this page's gate ratchets the code figure. The data denominator also counts some disc bytes more than once - entry weights use <code>max(indexed_size_sectors, footprint_sectors)</code>, and only the footprint is an entry's real extent (see <a href="../formats/prot.html">PROT TOC</a>) - so the totals run to roughly 2.5&times; the archive's real size. <strong>Quote the shares, not the totals</strong>; when a single entry's weight makes a residue look significant, check its footprint first.</p>
   <h3>A statistical class is not a verdict</h3>
   <p><code>asset categorize</code> ends in a statistical fallback that buckets unclaimed entries by zero fraction and entropy (<code>mostly_zeros</code>, <code>unknown_low_entropy</code>, ...). When reading the per-class table:</p>
   <ul class="bullets">
@@ -167,6 +168,7 @@
   <div class="see-also">
     <span class="see-also-label">Tooling</span>
     <a href="port-catalog.html">Port catalog</a>
+    <a href="byte-accounting.html">Byte accounting</a>
     <a href="address-reference-scan.html">Address-reference scan</a>
     <a href="static-overlay-pipeline.html">Static overlay pipeline</a>
     <a href="ghidra.html">Ghidra in Docker</a>

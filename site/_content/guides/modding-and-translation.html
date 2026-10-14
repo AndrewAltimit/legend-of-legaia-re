@@ -26,7 +26,8 @@
       <li><strong>Nothing shareable contains Sony bytes.</strong> The PPF patch and the manifest are safe to share; a patched <code>.bin</code> (<code>--output</code>) is for local play only, never redistribute it.</li>
     </ul>
   </div>
-  <p class="hint">No terminal? The <a href="../tooling/rom-patcher.html">browser ROM patcher</a> runs the randomizer and the texture-replacement flow client-side - your disc never leaves the tab.</p>
+  <p class="hint">No terminal? The <a href="../tooling/rom-patcher.html">browser ROM patcher</a> runs the randomizer, the language packs and the texture-replacement flow client-side - the same code compiled to WebAssembly; your disc never leaves the tab.</p>
+  <p>A patched USA image also boots in the port (<code>legaia-engine</code> accepts it like the retail disc). The port reads the disc's data, so data edits - drops, steals, encounters, chests, doors, shops, starting items - take effect there; mods that work by injecting MIPS code into the game's executable only run where that executable runs, on an emulator or a console.</p>
 </section>
 
 <section class="doc-section" id="randomize">
