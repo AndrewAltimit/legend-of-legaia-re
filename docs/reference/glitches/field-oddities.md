@@ -624,7 +624,7 @@ None of these produces a silent Fortress; they change how long the counter lasts
 - **Stacked rate modifiers.** Rate 18 is 9 with a Low Encounter accessory, and 4 if system flag
   `0x1E` is also set; at rate 4 the counter lasts between 122 and 365 steps. Flags `0x1D` and
   `0x1E` come from the two springs in Rogue's Tower, which is reached after the Fortress, so in a
-  normal file neither is set here. They are traced in
+  normal file neither is set here; each lasts only until the next battle ends. They are traced in
   [their own section](#rogues-tower-water-changes-the-encounter-rate).
 - **A top-up on every scene entry.** `FUN_8003AB2C` at `0x8003AC7C..0x8003AC90` adds half of a
   fresh counter roll whenever the counter is below 487 as a scene loads.
@@ -710,34 +710,41 @@ breakpoint at `0x801D2F84`, reach the exit, and read byte `0x8008575A` on the ov
 
 **Reported as:** not a glitch report. The roll traced for the Fortress reads two more flags, and
 the question came back from the community: which water does what, does it last, and why is no
-difference visible in an old save (community question, first-hand testing on a late-game file).
+difference visible in an old save. ZetaPhoenix then observed that of the three bits the springs
+set, only the shared one survives a random battle (community report, first-hand), which the
+capture below confirms.
 
 Rogue's Tower has two springs side by side. Examining one shows "It's strange green water!" or
 "It's strange blue water!" and asks whether to drink. Either one fully restores the party's HP and
-MP. Each also sets a flag that the random-battle roll reads on every step, in every area, for the
-rest of the file:
+MP. Each also sets a flag that the random-battle roll reads on every step, **until the next random
+battle is over**:
 
-| Water | Flag | Effect on the roll | In the tower's rate-20 rooms |
+| Water | Flag | Effect on the roll | Steps to the next battle in the tower's rate-20 rooms |
 |---|---|---|---|
-| neither | - | rate as written | a battle every 25 to 73 steps, 49 on average |
-| green | `0x1D` | rate doubled: twice as many battles | every 13 to 37 steps, 25 on average |
-| blue | `0x1E` | rate halved: half as many battles | every 49 to 146 steps, 98 on average |
+| neither | - | rate as written | 25 to 73, 49 on average |
+| green | `0x1D` | rate doubled: the next battle comes in half the steps | 13 to 37, 25 on average |
+| blue | `0x1E` | rate halved: the next battle takes twice the steps | 49 to 146, 98 on average |
 | both | both | doubled, then halved: exactly the written rate | as with neither |
 
-Nothing on the disc clears either flag, and both are saved with the file. The first drink of each
-colour is therefore the only one that changes anything. Drinking the same water again restores HP
-and MP and sets a flag that is already set. Drinking the other one cancels the first for good. A
-file that has tasted both - the natural thing to do with two free heals - is back at the normal
-rate permanently, and no amount of further drinking moves it. That is the likely reason an old
-save shows no difference.
+When the field comes back after a battle, the game clears both water flags. The drink is a
+one-battle charm: green pulls the next fight closer, blue pushes it away, and from the fight after
+that on the rate is back to normal. Drinking again re-arms it for one more battle, and the springs
+work on every visit. That is why an old save shows no difference: whatever was drunk wore off at
+its next battle.
 
-The effect is real but easy to miss even on a fresh file. The step count between battles is
+Both springs also set a third flag, `0x1C`, which nothing ever clears. It is the switch for the
+clean-up: the battle-return code clears the two water flags only when `0x1C` is set, and `0x1C` is
+only ever set together with one of them. A file that has drunk once keeps `0x1C` for good, and
+the bits read `0x08` after any later battle.
+
+The effect is real but easy to miss even inside its one battle. The step count between battles is
 re-rolled over a three-to-one range after every fight, so the bands for "normal" and "green"
-overlap, and so do "normal" and "blue". A fair test counts steps over twenty or more battles in
-one room, or reads the rate in a debugger.
+overlap, and so do "normal" and "blue". A fair test is to drink, count steps to the next battle,
+and repeat many times, or to read the rate in a debugger.
 
-The roll and both springs' scripts are read from the disc. Nothing here is captured: the flags
-were not watched changing in a running game.
+The roll and both springs' scripts are read from the disc. The clean-up is **captured on a poked
+state**: the two water bits were written into a Rogue's Tower save, a random battle was forced
+and won, and the write that cleared them was logged on the return to the field.
 
 ### Mechanism
 
@@ -775,8 +782,32 @@ quarter of the written rate; green water with one is the written rate; green wat
 Encounter accessory is eight times it.
 
 `FUN_801D9E1C` is the roll for every field scene and for the overworld
-([`world-map.md`](../../subsystems/world-map.md)), so the scaling is not local to the tower. It
-does nothing in rooms whose rate is 0, to scripted fights, or while Incense holds the roll.
+([`world-map.md`](../../subsystems/world-map.md)), so while a flag is set the scaling is not local
+to the tower. It does nothing in rooms whose rate is 0, to scripted fights, or while Incense holds
+the roll.
+
+#### The clean-up after a battle
+
+The scene-entry map init `FUN_8003AEB0` in `SCUS_942.54` has an arm for a field re-entry that
+stays in the current scene (`_DAT_8007B8B8 == 2`, tested at `0x8003B504..0x8003B510`), which is
+how the field resumes after a battle. With `a0 = 0x80084140`, the base of the flag bank at
+`+0x1618`:
+
+```
+8003b528  li   a3,-0x3                      ; mask 0xFD
+8003b538  addiu a2,a0,0x3                   ; flag byte 3: flags 0x18..0x1F
+8003b544  lbu  v1,0x1618(a2)
+8003b54c  andi v0,v1,0x8                    ; flag 0x1C set?
+8003b55c  beq  a1,zero,0x8003b56c           ; no: leave the byte alone
+8003b560  _andi v0,v1,0xfb                  ; clear 0x04, flag 0x1D (green)
+8003b564  and  v0,v0,a3                     ; clear 0x02, flag 0x1E (blue)
+8003b568  sb   v0,0x1618(a2)
+```
+
+The same arm clears flag `0x0E` one byte earlier (`0x8003B540`) with no condition. The arm runs on
+every re-entry of that kind, not only after a random battle; a scene change through a door takes
+the other side of the `0x8003B510` branch and leaves the water flags alone (read from the branch,
+not captured).
 
 #### The two springs
 
@@ -797,33 +828,61 @@ completely restored!", then a jump back to the prompt's entry so the spring can 
 Answering "No" writes nothing. Neither record tests a flag anywhere, so nothing gates a spring
 and it works on every visit, any number of times.
 
-Flag `0x1C` is set by both and read by nothing: no script on the disc tests it and no native call
-names it. It reads as a "has drunk" marker that was never used.
-
 Both springs stand in the part of the tower that rolls at rate 20. The colour is taken from the
 script text and the record names; the water's texture was not examined.
 
 #### Who else touches the flags
 
-| Search | Flag `0x1D` | Flag `0x1E` |
+| Search | Flag `0x1C` | Flag `0x1D` | Flag `0x1E` |
+|---|---|---|---|
+| Field-script set, clear and test ops in every scene MAN and variant | both springs set it | one set, `P1[29]` | one set, `P1[30]` |
+| Motion-VM flag ops in every scene MAN | none | none | none |
+| Native calls to the flag helpers with a constant id | none | one test, `0x801DA1E0` | one test, `0x801DA1F4` |
+| Inline byte access to the bank in code | the test at `0x8003B54C` | the clear at `0x8003B568` | the clear at `0x8003B568` |
+
+The clean-up is an inline `lbu` / `sb` on the bank through a base register pointed at byte 3, so
+a search for calls to the flag helpers, or for the absolute address of the byte, does not find it.
+
+The flag bank is inside the saved window:
+
+| | Flag `0x1C` | Green, flag `0x1D` | Blue, flag `0x1E` |
+|---|---|---|---|
+| RAM | byte `0x8008575B`, bit `0x08` | same byte, bit `0x04` | same byte, bit `0x02` |
+| Memory card | save-block `+0x161B`, bit `0x08` | same byte, bit `0x04` | same byte, bit `0x02` |
+
+The same byte holds flag `0x1F` (bit `0x01`), which scene scripts set and clear all the time, so
+test the bits and do not compare the whole byte. Every late-game save state in the project's
+library reads `0x08` in this byte, never `0x0C` or `0x0A`: a file that drank, after its next
+battle.
+
+### What was captured
+
+Probe `scripts/pcsx-redux/autorun_water_flag_clear.lua` on the catalogued state
+`rugi_field_card_boot` (Rogue's Tower, rate-20 region, a card-loaded endgame file whose byte reads
+`0x08`). **Poked:** the byte raised to `0x0E` and the step counter set to 1 once the state runs.
+The walk, the battle entry, the fight and the return are the game's own code; the fight was won by
+holding the monsters at 1 HP while Cross was pressed.
+
+| Moment | Byte `0x8008575B` | Game mode |
 |---|---|---|
-| Field-script set, clear and test ops in every scene MAN and variant | one set, `rugi` `P1[29]` | one set, `rugi` `P1[30]` |
-| Motion-VM flag ops in every scene MAN | none | none |
-| Native calls to the set, clear and test helpers with a constant id | one test, `0x801DA1E0` | one test, `0x801DA1F4` |
-| Direct loads or stores of the flag byte in code | none | none |
+| after the poke, walking | `0x0E` | `0x03` field |
+| battle entry and the whole fight | `0x0E` | `0x09`, then `0x15` battle |
+| return to the field, before the arm | `0x0E` | `0x02` field init |
+| after `sb` at `0x8003B568` (caller `0x801D6DB0`) | `0x08` | `0x02` |
+| field resumed, to the end of the run | `0x08` | `0x03` |
 
-Six native clear calls take a computed id and are not excluded one by one; none of them reads as
-reaching these ids. Starting a new game is the only other way back to a clear bank.
+No other write touched the byte during the run.
 
-The flag bank is inside the saved window, so both flags travel with the memory-card file:
+ZetaPhoenix's in-game tests in Bio Castle agree with the gate and add the escape case
+(community report, first-hand; bits named here by mask):
 
-| | Green, flag `0x1D` | Blue, flag `0x1E` |
-|---|---|---|
-| RAM | byte `0x8008575B`, bit `0x04` | byte `0x8008575B`, bit `0x02` |
-| Memory card | save-block `+0x161B`, bit `0x04` | save-block `+0x161B`, bit `0x02` |
+| Byte before the battle | Won | Escaped | Escaped with the Spikefish Flute |
+|---|---|---|---|
+| `0x08` and `0x04` set | `0x04` cleared | `0x04` cleared | the game freezes |
+| `0x04` alone | `0x04` stays | `0x04` stays | `0x04` stays |
 
-The same byte holds flag `0x1C` (bit `0x08`) and flag `0x1F` (bit `0x01`), which scene scripts
-set and clear all the time, so test the bits and do not compare the whole byte.
+A plain escape returns through the same clean-up as a win. The freeze is not explained; the same
+flute escape in Rogue's Tower with the bits set does not freeze.
 
 ### Addresses
 
@@ -833,35 +892,33 @@ set and clear all the time, so test the bits and do not compare the whole byte.
 | `0x801DA1E0..0x801DA1F0` | PROT entry 0897 | flag `0x1D` test; rate * 2 | disassembly |
 | `0x801DA1F4..0x801DA204` | PROT entry 0897 | flag `0x1E` test; rate / 2 | disassembly |
 | `0x801DA208..0x801DA21C` | PROT entry 0897 | counter subtract; `s0` is the final rate | disassembly |
-| `0x8008575B` masks `0x04`, `0x02` | RAM | system flags `0x1D`, `0x1E`; save-block `+0x161B` | disassembly |
-| `0x8008575B` mask `0x08` | RAM | system flag `0x1C`: written by both springs, read by nothing | disc data |
+| `0x8003B504..0x8003B510` | `SCUS_942.54` | `FUN_8003AEB0`: the same-scene re-entry arm, `_DAT_8007B8B8 == 2` | disassembly |
+| `0x8003B544..0x8003B568` | `SCUS_942.54` | clears flags `0x1D` and `0x1E` when flag `0x1C` is set | disassembly, capture |
+| `0x8008575B` masks `0x08`, `0x04`, `0x02` | RAM | system flags `0x1C`, `0x1D`, `0x1E`; save-block `+0x161B` | disassembly, capture |
 | PROT entry 697, `P1[29]` `+0xF1` | disc | green water: `50 1C`, `50 1D` after three `4C 82` restores | disc data |
 | PROT entry 697, `P1[30]` `+0xF0` | disc | blue water: `50 1C`, `50 1E` after three `4C 82` restores | disc data |
 | PROT entry 697, MAN section 0 | disc | tower regions: `(0..58, 0..72)` rate 0, the rest rate 20 | disc data |
-| the rate changing in a running game | - | not observed | inference |
 
 ### Scope
 
-Every scene with random battles and the overworld, from the first drink to the end of the file.
-The tower comes late, so what is left to feel it in is the tower itself, the final dungeon, the
-overworld and whatever optional areas are revisited. No other flag is read by the scaling code,
-and no other prop on the disc sets these two.
+Every scene with random battles and the overworld, from the drink to the end of the next battle;
+after a drink in the tower that battle is almost always in the tower. No other flag is read by the
+scaling code, and no other prop on the disc sets these two.
 
 ### Verifying it
 
 Read byte `0x8008575B` before and after drinking: green raises bit `0x04`, blue raises bit `0x02`,
-and either raises bit `0x08`. To see the result directly, break at `0x801DA208` while walking a
-room that rolls: `s0` is the per-step rate. In the tower it reads 20 with neither or both, 40 with
-green only and 10 with blue only.
-
-To restore a file to the normal rate without drinking, clear bits `0x04` and `0x02` of
-`0x8008575B` and save. To test one water on a file that has had both, clear the other one's bit.
-On a memory card the byte is save-block `+0x161B`, and the block is re-summed as in the Fortress
-table above.
+and either raises bit `0x08`. Break at `0x801DA208` while walking a room that rolls: `s0` is the
+per-step rate, 20 in the tower with neither or both, 40 with green only and 10 with blue only.
+Win the next battle and read the byte again: `0x04` and `0x02` are gone and `0x08` stays. A write
+watch on the byte catches the clear at `0x8003B568`.
 
 ### Open questions
 
-- The rate change is read, not captured.
+- Which other same-scene re-entries (`_DAT_8007B8B8 == 2`) besides a battle return reach the
+  clean-up, for example a scripted fight or a cutscene that resumes in place.
+- Why a Spikefish Flute escape freezes the game in Bio Castle when flag `0x1C` is set, while a
+  plain escape, a win, or the same flute escape without `0x1C` does not (community report).
 - Which spring is on which side on screen: the placements give tiles, and the camera decides left
   and right.
 - Whether the colour is also visible in the water's texture.

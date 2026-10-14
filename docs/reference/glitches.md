@@ -89,7 +89,7 @@ A status of *explained* means the cause is located in the code and accounts for 
 |---|---|---|
 | WORK ERR on Mt. Rikuroa | partially explained | The rock and dust burst after the Golem fight fills the fixed 143-slot actor pool; the number is how many requests arrived while it was full. |
 | No encounters in Jette's Absolute Fortress | explained | Escaping Zora's Floating Castle with under a minute on the clock leaves its "no battles" flag set for good, and the Fortress's encounter tables still obey it. |
-| Rogue's Tower water changes the encounter rate | explained | Not a glitch: drinking the green water doubles the random-battle rate for the rest of the file and the blue water halves it; a file that drank both is back to normal. |
+| Rogue's Tower water changes the encounter rate | explained | Not a glitch: green water doubles the random-battle rate and blue water halves it until the next battle ends, when the game clears both flags again. |
 | Gaza 2 softlock | explained | A walking monster is carried only by its Move animation; a leftover flinch flag swaps it for idle and the wait for range never ends. |
 | Dialogue inconsistencies | explained | The English script renders one thing two ways; in the bath scene it turns a question and answer about the researcher into ones about Vahn. |
 
