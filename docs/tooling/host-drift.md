@@ -604,7 +604,7 @@ sampled retail's 24x24 cells out of VRAM while the browser restyled the same
 digits in the dialog font. Every tier saw one model, because both hosts named
 the kernel; what differed was the record family the resolved cells became. The
 rule closes the gap the layout kernel left: a surface that resolves the layout
-must also reach `render-kernels::battle_numerals` and one of its prim builders, so a
+must also reach `engine-ui::battle_numerals` and one of its prim builders, so a
 font path is an explicit before-the-atlas fallback rather than the draw.
 
 **The tilt rule earns its place on measured data, not on plausibility.** The
@@ -1221,7 +1221,7 @@ decidable per instance, not from a source pattern.
 
 | Shape | Worked case | Where the fix lives |
 |---|---|---|
-| **Same layout, different letterforms.** A shared layout is not a shared draw. | Battle numerals: VRAM cells natively, dialog font on the page. | `render-kernels::battle_numerals` + the fifth tier-7 rule. |
+| **Same layout, different letterforms.** A shared layout is not a shared draw. | Battle numerals: VRAM cells natively, dialog font on the page. | `engine-ui::battle_numerals` + the fifth tier-7 rule. |
 | **Same override set, different bodies.** | Two `BgmDirector`s disagreed on the duplicate-start guard, master volume and the pause gate. | One body: `engine-session`'s `AudioDirector`. |
 | **A law written twice in two shading languages.** | See [shading](#the-two-hosts-do-not-share-a-shading-law). | Only a rendered frame from each host compares them. |
 | **A draw list that carries half a mesh.** | A surface running `tmd_to_vram_mesh` alone drops every untextured prim. | Assert the **untextured corner count**, never the total. |
@@ -1629,7 +1629,7 @@ the dialogue, the party readout and the menu at full brightness.
 | screen-effect wash (op `0x34` sub-0) | `screen_prim::screen_effect_push_prims`, `_split` | `FUN_80024EE4(a0, a1, packed)`: `a0` is an OT bucket, `a1` an ABR equation, `packed` a GP0 colour word with red in the low byte. Glyphs sit at bucket `1`; a push at bucket `0` draws over them ([`cutscene.md`](../subsystems/cutscene.md#a-push-in-front-of-the-text-or-behind-it)). |
 | drop shadow | `render-kernels::drop_shadow`, `World::field_drop_shadows`, `screen_prim::drop_shadow_prim` | `FUN_8001C394`, called from `FUN_8001B964`; matched to retail on three captured frames (`drop_shadow_retail_capture_disc.rs`). |
 | world-map markers | `marker_quads` + `world_map_marker_prim` | A port marker, not a retail draw; `MarkerQuad::depth` restores occlusion. |
-| battle numerals | `engine-battle-vm::battle_value_readout` + `render-kernels::battle_numerals` | 24x24 cells off page `0x27` / CLUT `0x7703`; the font builders are the mutually exclusive before-the-atlas fallback on both hosts. |
+| battle numerals | `engine-battle-vm::battle_value_readout` + `engine-ui::battle_numerals` | 24x24 cells off page `0x27` / CLUT `0x7703`; the font builders are the mutually exclusive before-the-atlas fallback on both hosts. |
 | effect billboards | `EffectSprite::packet_tsb` | Retail sends prim code `0x2E` (semi-transparency bit set); the port forces TSB bit 15. |
 | dance HUD | `engine-ui::dance::dance_hud_prims`, `dance_countin_prims` | `DanceGame::hud_draw_quads` emits in `FUN_801d231c`'s order: digits, frames, gauges. |
 

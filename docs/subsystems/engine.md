@@ -79,7 +79,8 @@ flowchart BT
     EMV --> FAM
     EVM --> FAM
     EB --> EBV
-    RK --> EBV
+    EB --> RK
+    RK --> ECAM
     RK --> EVM
     EFX --> RK
     EFX --> EB
@@ -98,6 +99,7 @@ flowchart BT
     CORE --> EFX
     CORE --> EMGS
     EUI --> RK
+    EUI --> EBV
     EREN --> EUI
     EAUD --> FMT
     SESS --> CORE
@@ -164,8 +166,8 @@ Internal dependencies as declared in each crate's `Cargo.toml`. "Format-family c
 | `engine-battle-vm` | `engine-camera`, `engine-system`, `actor-formats`, `game-tables`, `overlay-images`, `scene-formats`, `art` | Battle action SM, formulas, battle camera script, cast ticks. |
 | `engine-motion-vm` | `engine-system`, `scene-formats` | The two per-actor motion VMs. |
 | `engine-vm` | `scene-formats`, `minigame-formats`, `anm` | Field, move, effect and window-widget VMs; no GPU or audio deps. |
-| `engine-battle` | `engine-battle-vm`, `engine-system`, `actor-formats`, `game-tables`, `scene-formats`, `ui-formats`, `art`, `anm`, `save`, `tim`, `tmd`, `bytes` | `World`-free battle kernels. |
-| `render-kernels` | `engine-battle-vm`, `engine-camera`, `engine-vm`, `actor-formats`, `overlay-images`, `scene-formats`, `tim`, `tmd` | GTE math, screen prims, VRAM capture, effect emitters; no wgpu. |
+| `engine-battle` | `engine-battle-vm`, `engine-system`, `render-kernels`, `actor-formats`, `game-tables`, `scene-formats`, `ui-formats`, `art`, `anm`, `save`, `tim`, `tmd`, `bytes` | `World`-free battle kernels. |
+| `render-kernels` | `engine-camera`, `engine-vm`, `actor-formats`, `overlay-images`, `scene-formats`, `tim`, `tmd` | GTE math, screen prims, VRAM capture, effect emitters, the battle-intro model; no wgpu. |
 | `engine-effects` | `engine-battle`, `engine-battle-vm`, `engine-system`, `engine-vm`, `render-kernels`, `actor-formats`, `overlay-images`, `tmd` | Effect kernels. |
 | `engine-field` | `engine-mode`, `engine-motion-vm`, `engine-dialog`, `engine-camera`, `engine-system`, `engine-vm`, `render-kernels`, `actor-formats`, `overlay-images`, `scene-formats`, `anm`, `mes`, `save`, `tmd` | Field kernels: actor programs, camera, cue routers. |
 | `engine-fishing` | `engine-field`, `engine-system`, `render-kernels`, `game-tables`, `minigame-formats`, `scene-formats`, `tmd` | Fishing rules engine. |
@@ -175,7 +177,7 @@ Internal dependencies as declared in each crate's `Cargo.toml`. "Format-family c
 | `engine-scene` | `engine-field`, `engine-dialog`, `engine-system`, `engine-vm`, `render-kernels`, `disc-audit` + the format-family and parser crates | Scene resolution and loading, environment draws, virtual filesystem; no `World`. |
 | `engine-core` | `engine-scene`, every `engine-*` kernel crate above, `render-kernels` + the format-family and parser crates | `World`, scene host, battle loop, menu runtime, saves. |
 | `engine-ui` | `render-kernels`, `engine-battle-vm`, `game-tables`, `minigame-formats`, `ui-formats`, `tim`, `font` | Draw-list builders; no wgpu. |
-| `engine-render` | `engine-ui`, `render-kernels`, `engine-battle-vm`, `engine-camera`, `tim`, `font` | wgpu renderer. |
+| `engine-render` | `engine-ui`, `render-kernels`, `engine-camera`, `tim`, `font` | wgpu renderer. |
 | `engine-audio` | `xa`, `vab`, `seq`, `prot` | SPU model, sequencer, output backends. |
 | `engine-session` | `engine-core`, `engine-scene`, `engine-audio`, `engine-menus`, `engine-minigame-scenes`, `engine-battle`, `engine-field`, `engine-mode`, `engine-system` + format-family and parser crates | `BootSession` + BGM director; no wgpu or winit. |
 | `engine-screens` | `engine-core`, `engine-scene`, `engine-ui`, `engine-battle`, `engine-effects`, `engine-menus`, `engine-mode`, `render-kernels`, `game-tables`, `minigame-formats`, `font` | Shop / prize / inn / banner screens both hosts draw. |
@@ -194,24 +196,23 @@ The edges among the `World`-free kernel crates are a committed table, [`scripts/
 |---|---|
 | 0 | `engine-system`, `engine-dialog`, `engine-vm` |
 | 1 | `engine-camera`, `engine-mode`, `engine-motion-vm` |
-| 2 | `engine-battle-vm` |
-| 3 | `engine-battle`, `render-kernels` |
-| 4 | `engine-effects`, `engine-field`, `engine-ui` |
-| 5 | `engine-fishing`, `engine-scene` |
-| 6 | `engine-minigames` |
-| 7 | `engine-menus` |
-| 8 | `engine-minigame-scenes` |
+| 2 | `engine-battle-vm`, `render-kernels` |
+| 3 | `engine-battle`, `engine-field`, `engine-ui` |
+| 4 | `engine-effects`, `engine-fishing`, `engine-scene` |
+| 5 | `engine-minigames` |
+| 6 | `engine-menus` |
+| 7 | `engine-minigame-scenes` |
 
 Three more rules ride on the same table. A kernel crate depends only on kernel crates, so nothing in it can reach `engine-core`, the session, the renderer or a host. A crate outside the engine layer (a format, tool or patcher crate) never depends on an engine-layer crate. And `engine-system` carries a `foreign` set: the only workspace crates it names are the two label crates `cheats` and `gamedata`.
 
 Most rows follow from the crates' roles. The ones that do not are listed in the table as `[[coupling]]` rows, each naming the items that hold the edge and why it stands. A coupling is an edge that moving a few items would not cut:
 
-- **`render-kernels -> engine-battle-vm` is the battle-intro model and the battle draw records.** The `battle_intro_*` state machine and per-style kernels, the weapon-trail schedule, the numeral readout, the flash quads and the Theeder packet are defined beside the battle kernels that fill them, and it is why `render-kernels` sits above the battle VM.
+- **`engine-battle -> render-kernels` is one constant,** the encounter session's default transition length `battle_intro_styles::INTRO_DURATION_FRAMES`: the battle-intro model sits with its draw half.
 - **`engine-minigames -> engine-battle-vm` is the ringside still.** The contest hub picks the still a battle end leaves resident through `panel_backread_loader`; `battle_formulas` is the Muscle Dome's by role.
 - **`engine-effects -> engine-battle` is one lookup,** the summon catalogue resolving a spell id to its name through `retail_magic`.
 - **`engine-menus -> engine-field` is the equip commit.** The applier is a field-overlay dev-menu body (`dev_equip_commit`) that the pause menu's equip session calls too.
 - **`engine-fishing -> engine-field` is `field_regions`.** A venue floor is a field `.MAP` walk grid with tile triggers.
-- **`engine-ui -> engine-battle-vm` is the battle HUD model** (`battle_party_panel`, `battle_commit_log`): the draw-list builders project types defined beside the kernels that fill them.
+- **`engine-ui -> engine-battle-vm` is the battle HUD model** (`battle_party_panel`, `battle_commit_log`, the value readout, the Theeder packet): the draw-list builders project types defined beside the kernels that fill them.
 
 Adding an edge means editing the table, which is the point: the row is where the reason goes. A test that exercises another crate's code belongs in that crate's `tests/`, so a `[dev-dependencies]` edge needs its own `dev` entry.
 

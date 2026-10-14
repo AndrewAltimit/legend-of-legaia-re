@@ -13,7 +13,6 @@ mod battle_cast_facing;
 mod battle_cue_group_real;
 mod battle_cue_group_wiring;
 mod battle_grid_cue_scus_real;
-mod battle_intro_chain;
 mod battle_physical_predamage;
 mod battle_strike_facing;
 mod cast_arm_retail_gating;

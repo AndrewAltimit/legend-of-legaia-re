@@ -329,7 +329,7 @@ three drains the native window runs - and the page re-uploads the texture on
 guard). Battle exit drops the state and the page restores the untouched
 field VRAM. The damage numerals, the `N HIT` / `TOTAL` combo cluster and the
 `<word> ARTS!!` banner draw in retail's 24x24 cells off the resident battle
-effect atlas through the shared `legaia_render_kernels::battle_numerals` builder the
+effect atlas through the shared `legaia_engine_ui::battle_numerals` builder the
 native window emits through; the font-atlas layout is only the fallback for
 frames before the battle VRAM exists.
 

@@ -199,10 +199,10 @@ impl World {
     /// `Transition`, so nothing is in flight to hold a phase.
     ///
     /// PORT: FUN_801CF5BC (live wiring; the kernel is
-    /// `legaia_engine_battle_vm::battle_intro_transition::tick_transition`)
+    /// `legaia_render_kernels::battle_intro_transition::tick_transition`)
     fn tick_battle_intro(&mut self) {
         use legaia_engine_battle::encounter::EncounterPhase;
-        use legaia_engine_battle_vm::battle_intro_transition::{
+        use legaia_render_kernels::battle_intro_transition::{
             TransitionEffect, TransitionGlobals, TransitionResponses, tick_transition,
         };
 
@@ -342,7 +342,7 @@ impl World {
     /// transition. The mode *word* must not follow it that early:
     /// `FUN_801CF5BC` writes `_DAT_8007B83C = 0x14` only once the intro clock
     /// has passed its full duration **and** `TransitionEntity::ready == 3`
-    /// (`legaia_engine_battle_vm::battle_intro_transition::TransitionTick::entered_battle_mode`).
+    /// (`legaia_render_kernels::battle_intro_transition::TransitionTick::entered_battle_mode`).
     /// [`legaia_engine_mode::mode::ModeSeat::adopt_world_mode`] consults this, so both
     /// hosts take the retail edge rather than the trigger frame.
     ///

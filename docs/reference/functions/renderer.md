@@ -203,7 +203,7 @@ The armed-wash pair reaches the same emitter: `FUN_8004695C(rgb)` only sets
 `0x1F800393`, clamps to `0xFF`, clears the armed flag - one-shot per arm - and
 calls `FUN_80024EE4(otlen - 1, 2, rgb)`: farthest bucket, subtractive.
 
-Port: `legaia_engine_battle_vm::battle_intro_styles::{IntroFade, intro_fade}` and
+Port: `legaia_render_kernels::battle_intro_styles::{IntroFade, intro_fade}` and
 `legaia_render_kernels::battle_intro::{fade_quad, wash_prim}`. See
 [`cutscene.md`](../../subsystems/cutscene.md#the-fades-second-argument-is-a-blend-mode-not-a-depth).
 

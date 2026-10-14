@@ -56,11 +56,11 @@ deps = ["engine-system"]
 
 [crates.engine-battle]
 role = "World-free battle kernels"
-deps = ["engine-battle-vm", "engine-system"]
+deps = ["engine-battle-vm", "engine-system", "render-kernels"]
 
 [crates.render-kernels]
-role = "GTE math, screen prims, VRAM capture, effect emitters; no wgpu"
-deps = ["engine-battle-vm", "engine-camera", "engine-vm"]
+role = "GTE math, screen prims, VRAM capture, effect emitters, the battle-intro model; no wgpu"
+deps = ["engine-camera", "engine-vm"]
 
 [crates.engine-ui]
 role = "renderer-agnostic draw-list builders"
@@ -157,10 +157,10 @@ items = ["panel_backread_loader::backread_texture_variant"]
 reason = "the ringside still the contest hub keeps resident is picked by the battle panel back-read loader; battle_formulas is the Muscle Dome's by role"
 
 [[coupling]]
-from = "render-kernels"
-to = "engine-battle-vm"
-items = ["battle_intro_*", "battle_trail", "battle_value_readout", "battle_action::FlashQuad", "seru_magic_ticks::TheederPacket"]
-reason = "the battle-intro model types and the numeral, trail and Theeder records the draw kernels consume are defined beside the battle kernels that fill them"
+from = "engine-battle"
+to = "render-kernels"
+items = ["battle_intro_styles::INTRO_DURATION_FRAMES"]
+reason = "the encounter session's default transition length is the battle-intro model's, which sits with its draw half"
 
 [[coupling]]
 from = "engine-effects"
@@ -183,5 +183,5 @@ reason = "a venue floor is a field .MAP walk grid with tile triggers, read throu
 [[coupling]]
 from = "engine-ui"
 to = "engine-battle-vm"
-items = ["battle_party_panel", "battle_commit_log", "panel_backread_loader"]
-reason = "the battle HUD model the draw-list builders project is defined with the battle kernels that fill it"
+items = ["battle_party_panel", "battle_commit_log", "panel_backread_loader", "battle_value_readout", "battle_action::FlashQuad", "seru_magic_ticks::TheederPacket"]
+reason = "the battle HUD model, the numeral readout and the Theeder packet the draw-list builders project are defined with the battle kernels that fill them"

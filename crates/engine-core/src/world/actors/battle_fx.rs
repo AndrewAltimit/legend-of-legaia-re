@@ -830,7 +830,7 @@ impl World {
 
     /// Plan this frame's weapon-trail sweeps - the engine seat of the
     /// retail trigger `FUN_8005112C` + sweep driver `FUN_80048310`
-    /// (kernels in `legaia_engine_battle_vm::battle_trail`; geometry emission in
+    /// (kernels in `legaia_render_kernels::battle_trail`; geometry emission in
     /// `legaia_render_kernels::battle_trail`).
     ///
     /// For each party battle actor whose committed clip's `+0x77`
@@ -845,7 +845,7 @@ impl World {
     // REF: FUN_80048310 (sweep capture - the ring sampling here replaces
     // the rewound re-decode; see `engine-battle-vm::battle_trail` module docs)
     pub fn battle_weapon_trail_draws(&self) -> Vec<BattleWeaponTrailDraw> {
-        use legaia_engine_battle_vm::battle_trail as wt;
+        use legaia_render_kernels::battle_trail as wt;
         let mut out = Vec::new();
         for (i, actor) in self.actors.iter().enumerate() {
             // Party-only: retail's trigger gates on seat < 3; the engine

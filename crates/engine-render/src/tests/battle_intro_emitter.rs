@@ -22,10 +22,10 @@
 //! `crates/engine-render/tests/battle_intro_table_real.rs`.
 
 use crate::tests::screen_overlay_gpu::{build_harness_vram, headless_device, render_frame_rgba};
-use legaia_engine_battle_vm::battle_intro_particles::ParticleEnv;
-use legaia_engine_battle_vm::battle_intro_styles::{CURTAIN_COLS, CURTAIN_ROWS, IntroStyle};
-use legaia_engine_battle_vm::battle_intro_swirl::SwirlTrig;
 use legaia_render_kernels::battle_intro::{BattleIntro, IntroQuadTable};
+use legaia_render_kernels::battle_intro_particles::ParticleEnv;
+use legaia_render_kernels::battle_intro_styles::{CURTAIN_COLS, CURTAIN_ROWS, IntroStyle};
+use legaia_render_kernels::battle_intro_swirl::SwirlTrig;
 use legaia_render_kernels::screen_prim::ScreenPrim;
 use legaia_render_kernels::vram_capture::{
     CaptureOpts, FIELD_CAPTURE_COLS, FIELD_CAPTURE_ROWS, PSX_SCREEN_HEIGHT, PSX_SCREEN_WIDTH,
@@ -37,13 +37,13 @@ use legaia_tim::Vram;
 /// shape `engine-vm`'s `battle_intro_chain.rs` uses, kept synthetic so this
 /// file needs no disc.
 struct Env {
-    rng: legaia_engine_battle_vm::battle_intro_particles::IntroRng,
+    rng: legaia_render_kernels::battle_intro_particles::IntroRng,
 }
 
 impl Env {
     fn new() -> Self {
         Self {
-            rng: legaia_engine_battle_vm::battle_intro_particles::IntroRng::new(0x1234_5678),
+            rng: legaia_render_kernels::battle_intro_particles::IntroRng::new(0x1234_5678),
         }
     }
     fn sin_q12(units: i32) -> i16 {
@@ -139,7 +139,7 @@ fn field_frame() -> Vec<u8> {
 /// than slack to be tolerated:
 ///
 /// * **The style's modulation.** Every strip is drawn with `param_5 = 0x80`
-///   ([`legaia_engine_battle_vm::battle_intro_styles::CURTAIN_INTENSITY`]) and the
+///   ([`legaia_render_kernels::battle_intro_styles::CURTAIN_INTENSITY`]) and the
 ///   disc's descriptor records carry `0xFF` on both edges, so
 ///   `build_intro_quad`'s `c * intensity / 256` shades white to `0x7F` - and
 ///   PSX texture modulation is `(texel * colour) >> 7` at the framebuffer's
@@ -504,7 +504,7 @@ fn split_particle_frame(
 
 #[test]
 fn the_scatter_field_reconstructs_the_screen_as_8px_patches_at_rest() {
-    use legaia_engine_battle_vm::battle_intro_styles::{PARTICLE_TICK_COUNT, PARTICLE_TPAGE_BIAS};
+    use legaia_render_kernels::battle_intro_styles::{PARTICLE_TICK_COUNT, PARTICLE_TPAGE_BIAS};
     let mut it = intro(IntroStyle::ScatterParticles, 400);
     it.tick(0, 1);
     let f = it.tick(1, 1);
@@ -545,7 +545,7 @@ fn the_scatter_field_reconstructs_the_screen_as_8px_patches_at_rest() {
 
 #[test]
 fn the_spinup_field_draws_confetti_and_the_expanding_ring() {
-    use legaia_engine_battle_vm::battle_intro_styles::PARTICLE_TICK_COUNT;
+    use legaia_render_kernels::battle_intro_styles::PARTICLE_TICK_COUNT;
     let mut it = intro(IntroStyle::SpinUpParticles, 400);
     it.tick(0, 1);
     let f = it.tick(1, 1);
@@ -626,7 +626,7 @@ fn the_spinup_ring_expands_fades_and_expires() {
 
 #[test]
 fn the_swirl_draws_both_halves_of_every_drawing_band() {
-    use legaia_engine_battle_vm::battle_intro_swirl::{
+    use legaia_render_kernels::battle_intro_swirl::{
         BANDS_DRAWN, COLUMNS, TPAGE_MIRRORED, TPAGE_PRIMARY,
     };
     let mut it = intro(IntroStyle::Swirl, 400);
@@ -695,7 +695,7 @@ fn swirl_bands_fly_along_z_and_wind_down_bands_stop_drawing() {
 
 #[test]
 fn the_swirl_washes_once_the_late_phase_arrives() {
-    use legaia_engine_battle_vm::battle_intro_swirl::LATE_PHASE_FRAME;
+    use legaia_render_kernels::battle_intro_swirl::LATE_PHASE_FRAME;
     let mut it = intro(IntroStyle::Swirl, 400);
     it.tick(0, 1);
     // The wash reads the previous frame's clock, so it lags the crossing.
@@ -802,16 +802,16 @@ fn prim_bbox(f: &legaia_render_kernels::battle_intro::IntroFrame) -> (i16, i16, 
 ///
 /// 1. the seeder's PRNG stand-in was a degenerate LCG that returned one
 ///    constant from its sixth draw on, so all 256 records got the *same*
-///    spawn delay ([`IntroRng`](legaia_engine_battle_vm::battle_intro_particles::IntroRng));
+///    spawn delay ([`IntroRng`](legaia_render_kernels::battle_intro_particles::IntroRng));
 /// 2. the transition ran for 32 frames against a spawn window that needs 84
-///    ([`INTRO_DURATION_FRAMES`](legaia_engine_battle_vm::battle_intro_styles::INTRO_DURATION_FRAMES)
+///    ([`INTRO_DURATION_FRAMES`](legaia_render_kernels::battle_intro_styles::INTRO_DURATION_FRAMES)
 ///    is retail's `0x84`).
 ///
 /// Either one alone parks the grid, so the test drives a retail-length
 /// transition and asserts the box **grows past the sheet on every side**.
 #[test]
 fn the_tile_sheet_breaks_apart_over_a_retail_length_transition() {
-    use legaia_engine_battle_vm::battle_intro_styles::{
+    use legaia_render_kernels::battle_intro_styles::{
         INTRO_DURATION_FRAMES, intro_duration_frames,
     };
 
@@ -873,7 +873,7 @@ fn a_short_transition_still_moves_the_early_records() {
 
 #[test]
 fn the_shade_faces_carry_the_three_literals_and_blend_additively() {
-    use legaia_engine_battle_vm::battle_intro_tiles::{SHADE_CLUT, SHADE_TPAGE, SHADE_UVS};
+    use legaia_render_kernels::battle_intro_tiles::{SHADE_CLUT, SHADE_TPAGE, SHADE_UVS};
     let mut it = intro(IntroStyle::TileShatter, 200);
     it.tick(0, 1);
     let f = it.tick(1, 1);
@@ -898,7 +898,7 @@ fn the_shade_faces_carry_the_three_literals_and_blend_additively() {
 
 #[test]
 fn a_shade_face_draws_on_top_of_its_opaque_sibling() {
-    use legaia_engine_battle_vm::battle_intro_tiles::SHADE_TPAGE;
+    use legaia_render_kernels::battle_intro_tiles::SHADE_TPAGE;
     use legaia_render_kernels::screen_prim::order_primitives;
     let mut it = intro(IntroStyle::TileShatter, 200);
     it.tick(0, 1);
@@ -974,8 +974,8 @@ fn the_euler_kernel_matches_the_cardinal_rotations() {
 }
 
 /// A tile with the seeded local shape at an arbitrary `pos.z`.
-fn boxy_tile(pos_z: i16) -> legaia_engine_battle_vm::battle_intro_tiles::TileRecord {
-    use legaia_engine_battle_vm::battle_intro_tiles::TileRecord;
+fn boxy_tile(pos_z: i16) -> legaia_render_kernels::battle_intro_tiles::TileRecord {
+    use legaia_render_kernels::battle_intro_tiles::TileRecord;
     let mut rec = TileRecord::default();
     for k in 0..4 {
         let (x, y) = [(-0xA0, -0xA0), (0xA0, -0xA0), (-0xA0, 0xA0), (0xA0, 0xA0)][k];
@@ -1213,8 +1213,8 @@ fn the_curtain_redraws_the_captured_field_frame_and_then_opens_it() {
 /// its own pages (`0x135` / `0x137`) are both inside the columns rect. The
 /// curtain does sample the rows rect, so it must keep both.
 mod capture_rects {
-    use legaia_engine_battle_vm::battle_intro_styles::IntroStyle;
     use legaia_render_kernels::battle_intro::{TILE_SHADE_PAGE, capture_rects_for};
+    use legaia_render_kernels::battle_intro_styles::IntroStyle;
     use legaia_render_kernels::vram_capture::{FIELD_CAPTURE_COLS, FIELD_CAPTURE_ROWS, VramRect};
 
     /// Halfword-rect overlap, the relation that makes the clobber a clobber.
@@ -1285,12 +1285,12 @@ mod capture_rects {
 /// wash arm at `0x801D1228..0x801D1230` of `..._801d11d0.txt`).
 mod curtain_accumulation {
     use super::*;
-    use legaia_engine_battle_vm::battle_intro_styles::{
-        CURTAIN_COL_OT_DEPTH, CURTAIN_ROW_OT_DEPTH, CURTAIN_WASH_RGB,
-    };
     use legaia_render_kernels::battle_intro::{
         CURTAIN_DISPLAY_DECAY_5, CURTAIN_MIDPASS_ABR, CURTAIN_MIDPASS_DECAY_5, CURTAIN_MIDPASS_OT,
         CURTAIN_MIDPASS_RGB, CURTAIN_TRAIL_OT, CURTAIN_TRAIL_RECT,
+    };
+    use legaia_render_kernels::battle_intro_styles::{
+        CURTAIN_COL_OT_DEPTH, CURTAIN_ROW_OT_DEPTH, CURTAIN_WASH_RGB,
     };
 
     #[test]

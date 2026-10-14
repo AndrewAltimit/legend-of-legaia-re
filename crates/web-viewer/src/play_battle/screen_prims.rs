@@ -191,7 +191,7 @@ impl LegaiaRuntime {
         let scale = crate::play_battle_render::BATTLE_WORLD_SCALE;
         let pose = self.battle_cam_pose();
         let vp = legaia_engine_camera::projection::battle_vp(&pose, scale, 4.0 / 3.0);
-        legaia_render_kernels::cast_theeder::theeder_prims(&packet, world.theeder_trail(), |p| {
+        legaia_engine_ui::cast_theeder::theeder_prims(&packet, world.theeder_trail(), |p| {
             legaia_render_kernels::battle_trail::project_stage_point_cols(
                 &vp,
                 [
@@ -204,8 +204,8 @@ impl LegaiaRuntime {
     }
 
     fn battle_fx_screen_prims(&self) -> Vec<legaia_render_kernels::screen_prim::ScreenPrim> {
-        use legaia_engine_battle_vm::battle_trail::TRAIL_POINTS;
         use legaia_render_kernels::battle_trail as bt;
+        use legaia_render_kernels::battle_trail::TRAIL_POINTS;
         use legaia_render_kernels::streak_pass::{
             MOVE_FX_STREAK_OT, StreakSource, clip_ribbon_quads, streak_quads_scheduled,
         };

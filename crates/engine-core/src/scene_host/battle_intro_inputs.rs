@@ -1,7 +1,7 @@
 //! The three selector inputs the battle-intro style picker reads, resolved
 //! from the live scene host.
 //!
-//! [`legaia_engine_battle_vm::battle_intro_styles::select_intro_style`] takes
+//! [`legaia_render_kernels::battle_intro_styles::select_intro_style`] takes
 //! `IntroStyleInputs { battle_flags, formation_slot0, scene_index }` - the
 //! retail globals `DAT_8007BD60`, `DAT_8007BD0C` and `DAT_80084540`. None of
 //! the three is a host choice: all three are properties of the rolled
@@ -18,7 +18,7 @@
 //! Swirl or one of the three ScatterParticles arms.
 
 use super::SceneHost;
-use legaia_engine_battle_vm::battle_intro_styles::IntroStyleInputs;
+use legaia_render_kernels::battle_intro_styles::IntroStyleInputs;
 
 impl SceneHost {
     /// The battle's **first monster id** - retail's `DAT_8007BD0C`, slot 0 of

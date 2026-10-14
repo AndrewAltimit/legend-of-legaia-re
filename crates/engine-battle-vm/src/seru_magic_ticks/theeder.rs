@@ -359,7 +359,7 @@ impl TheederFx {
 
 /// One tick's PROT 0904 packets, in retail battle space (Y down). The hosts
 /// project the points and build the primitives with
-/// `legaia_render_kernels::cast_theeder`.
+/// `legaia_engine_ui::cast_theeder`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TheederPacket {
     /// Arm 9: two `FUN_801F815C` lightning prongs from the root to `tips`.

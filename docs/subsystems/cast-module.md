@@ -1404,8 +1404,8 @@ The packet arms are drawn:
 | 13 | `FUN_801F8B84` | the same fan without the core, dropping the count by one a pass until empty |
 
 Port: `seru_magic_ticks::theeder_tick` with `TheederFx`, sampled once per
-retail pass; both hosts build the primitives with `render-kernels::cast_theeder`
-(`crates/render-kernels/src/cast_theeder.rs`) from `World::theeder_draw`. The
+retail pass; both hosts build the primitives with `engine-ui::cast_theeder`
+(`crates/engine-ui/src/cast_theeder.rs`) from `World::theeder_draw`. The
 prong cells come from a per-cast counter rather than the battle RNG. The
 module's camera arms are not ported: its director passes every arm and case 6
 keeps the caster.

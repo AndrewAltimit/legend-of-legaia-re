@@ -232,9 +232,9 @@ pub fn compose_screen_prims(
         screen_prim::PSX_DISPLAY_H,
     ));
     over.extend(value_readout);
-    over.extend(legaia_render_kernels::battle_numerals::arts_banner_prims(
+    over.extend(legaia_engine_ui::battle_numerals::arts_banner_prims(
         &world.battle_arts_banner_quads(),
-        legaia_render_kernels::battle_numerals::VALUE_READOUT_OT,
+        legaia_engine_ui::battle_numerals::VALUE_READOUT_OT,
     ));
     over.extend(dance_countin);
     over.extend(dance_hud);

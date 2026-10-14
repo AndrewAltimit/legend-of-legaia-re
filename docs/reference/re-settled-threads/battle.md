@@ -718,7 +718,7 @@ Owning page (full spec + engine wiring):
   records held until `delay < elapsed * 0x3C` with `delay = rand() % 5000`): the grid needs ~84 frames
   merely to finish starting, and a shorter window leaves part of it at its seeded pose throughout.
 
-Port: `engine-battle-vm::battle_intro_styles::intro_duration_frames`. Owning page:
+Port: `render-kernels::battle_intro_styles::intro_duration_frames`. Owning page:
 [`cutscene.md`](../../subsystems/cutscene.md#how-long-a-transition-runs-dat_801d2458).
 
 ### Battle ground grid depth cue - the far colour

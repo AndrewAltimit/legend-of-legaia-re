@@ -825,7 +825,7 @@ fn a_zero_header_scripted_row_is_an_escapable_fight() {
 #[test]
 fn the_battle_intro_sm_runs_through_the_transition_phase() {
     use legaia_engine_battle::encounter::{EncounterPhase, EncounterRoll};
-    use legaia_engine_battle_vm::battle_intro_transition::TransitionEffect;
+    use legaia_render_kernels::battle_intro_transition::TransitionEffect;
 
     let mut world = World::new();
     let mut session = legaia_engine_battle::encounter::EncounterSession::new(
@@ -884,7 +884,7 @@ fn the_battle_intro_sm_runs_through_the_transition_phase() {
 #[test]
 fn the_battle_intro_phase_zero_enqueues_the_battle_start_cue() {
     use legaia_engine_battle::encounter::EncounterRoll;
-    use legaia_engine_battle_vm::battle_intro_transition::{AUDIO_CUE_FLAGGED, AUDIO_CUE_PLAIN};
+    use legaia_render_kernels::battle_intro_transition::{AUDIO_CUE_FLAGGED, AUDIO_CUE_PLAIN};
 
     // Plain row: retail's phase-0 pre-arm writes ring cue 0x1F, once, on the
     // first transition frame - the queue both hosts drain every tick.

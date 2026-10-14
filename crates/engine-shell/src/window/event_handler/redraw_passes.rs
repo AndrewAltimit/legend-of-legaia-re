@@ -897,7 +897,7 @@ impl PlayWindowApp {
     // `legaia_render_kernels::battle_trail`; this is the per-host projection)
     /// PROT 0904's (Theeder) beam packets this frame
     /// ([`legaia_engine_core::world::World::theeder_draw`] through
-    /// `legaia_render_kernels::cast_theeder::theeder_prims`, the kernel the browser
+    /// `legaia_engine_ui::cast_theeder::theeder_prims`, the kernel the browser
     /// play page draws them with), projected with the battle camera at the
     /// stage's 4:3 - the weapon trail's projection. Retail points are Y-down;
     /// this host's battle space is Y-up, so Y is negated on the way in.
@@ -910,7 +910,7 @@ impl PlayWindowApp {
             return Vec::new();
         };
         let mvp = self.battle_scene_mvp(STAGE_ASPECT);
-        legaia_render_kernels::cast_theeder::theeder_prims(&packet, world.theeder_trail(), |p| {
+        legaia_engine_ui::cast_theeder::theeder_prims(&packet, world.theeder_trail(), |p| {
             bt::project_stage_point(&mvp, [f32::from(p[0]), -f32::from(p[1]), f32::from(p[2])])
         })
     }
@@ -1033,8 +1033,8 @@ impl PlayWindowApp {
     pub(super) fn weapon_trail_screen_prims(
         &self,
     ) -> Vec<legaia_render_kernels::screen_prim::ScreenPrim> {
-        use legaia_engine_battle_vm::battle_trail::TRAIL_POINTS;
         use legaia_render_kernels::battle_trail as bt;
+        use legaia_render_kernels::battle_trail::TRAIL_POINTS;
         let world = &self.session.host.world;
         if world.mode != SceneMode::Battle {
             return Vec::new();

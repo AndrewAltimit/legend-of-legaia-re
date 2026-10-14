@@ -35,7 +35,7 @@
 
 use legaia_engine_battle_vm::battle_value_readout as vr;
 
-use crate::screen_prim::{ScreenPrim, ScreenQuad};
+use legaia_render_kernels::screen_prim::{ScreenPrim, ScreenQuad};
 
 use vr::{GLYPH_CLUT, GLYPH_TPAGE};
 
@@ -45,7 +45,7 @@ use vr::{GLYPH_CLUT, GLYPH_TPAGE};
 /// Every readout packet in the captured display lists carries the OT tag
 /// [`vr::OT_TAG`] = `0x09000000`, whose high byte is the bucket, so the
 /// numerals sit at `9`: behind the cinematic bars
-/// ([`crate::screen_prim::CINEMATIC_BAR_OT`] = `8`, which retail links one
+/// ([`legaia_render_kernels::screen_prim::CINEMATIC_BAR_OT`] = `8`, which retail links one
 /// bucket in front of everything) and ahead of the weapon trails (`0x20`) and
 /// the move-FX streak (`0x18`). Picking `0` instead would put a damage figure
 /// over a full-screen fade the summon band raises, which retail never does.
@@ -361,9 +361,9 @@ mod tests {
         assert_eq!(VALUE_READOUT_OT, vr::OT_TAG >> 24);
         // Larger bucket = farther = drawn earlier, so the bars sit in front.
         const {
-            assert!(VALUE_READOUT_OT > crate::screen_prim::CINEMATIC_BAR_OT);
-            assert!(VALUE_READOUT_OT < crate::battle_trail::WEAPON_TRAIL_OT);
-            assert!(VALUE_READOUT_OT < crate::streak_pass::MOVE_FX_STREAK_OT);
+            assert!(VALUE_READOUT_OT > legaia_render_kernels::screen_prim::CINEMATIC_BAR_OT);
+            assert!(VALUE_READOUT_OT < legaia_render_kernels::battle_trail::WEAPON_TRAIL_OT);
+            assert!(VALUE_READOUT_OT < legaia_render_kernels::streak_pass::MOVE_FX_STREAK_OT);
         }
     }
 

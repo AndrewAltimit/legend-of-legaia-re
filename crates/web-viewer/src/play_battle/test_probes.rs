@@ -66,7 +66,7 @@ impl LegaiaRuntime {
 
     /// Whether the live cast drew a Theeder beam packet this tick
     /// (`World::theeder_draw`) - the packet the page's screen-FX pass hands
-    /// to `legaia_render_kernels::cast_theeder::theeder_prims`.
+    /// to `legaia_engine_ui::cast_theeder::theeder_prims`.
     pub fn debug_battle_theeder_packet_live(&self) -> bool {
         self.scene_host
             .host()

@@ -16,8 +16,9 @@ or cpal, so it builds for native and `wasm32` alike.
 - `afterimage` / `streak_pass` / `battle_trail` / `billboard` - the move-FX
   draw kernels: one jittered semi-transparent quad, the per-frame pass that
   turns a battle context's projection block into those quads, the swept
-  weapon trail's projected `POLY_G4` band, and the shared screen-space
-  corner projector (`FUN_800195a8`) all four ride on.
+  weapon trail's projected `POLY_G4` band (with its trigger and sweep / band
+  schedule in `battle_trail::schedule`), and the shared screen-space corner
+  projector (`FUN_800195a8`) all four ride on.
 - `scene_lighting` - enhanced lighting's source of truth, shared by the
   native renderer and the browser play page: emissive tagging (TSB / blend
   bit 13; the blend rule + the curated `EMISSIVE_MESHES` table), emitter
@@ -46,16 +47,13 @@ or cpal, so it builds for native and `wasm32` alike.
   composition, and the `land_capture_rgba` / `refresh_captured_page` seam a
   host feeds its own frame readback through (native: `capture_rgba`; browser:
   `gl.readPixels`).
-- `battle_numerals` - the battle value readout's quads: retail's 24x24 numeral
-  cells and the `N HIT` / `TOTAL` / `DAMAGE` word cells as `ScreenPrim`s on
-  the effect atlas's glyph page. The layout is `engine-vm`'s; this is the draw
-  both hosts had written separately, one sampling VRAM and one restyling the
-  digits in the dialog font.
+- `battle_intro_transition` (+ `battle_intro_styles` / `battle_intro_tiles` /
+  `battle_intro_swirl` / `battle_intro_particles`) - the model half of that
+  transition: the field-to-battle overlay's state machine and per-style
+  kernels, beside the emitter that draws them.
 - `move_strip` - the draw half of the move-VM extension's scanline strip
   emitter (sub-op `0x2C`, `FUN_801D31B0`): project, run
   `legaia_engine_vm::move_ext_strip::emit_strip`, return screen prims.
-- `cast_theeder` - PROT 0904's (Theeder, spell `0x82`) beam packets: the
-  four packet builders its tick body calls, as screen primitives.
 
 ## Draw-prep kernels
 
@@ -69,9 +67,11 @@ or cpal, so it builds for native and `wasm32` alike.
 - `display_mirror` - the PSX display environment's screen-X mirror
   (`FUN_800597C8`, replaced by the single-orientation surface).
 
-This crate depends on `legaia-engine-battle-vm` (battle camera and HUD
-kernels) and `legaia-engine-vm` (`move_ext_strip`, `field_actor_billboard`
-and the move-VM `ActorState`), and on nothing above them.
+This crate depends on `legaia-engine-camera` (the GTE camera and projection
+constants) and `legaia-engine-vm` (`move_ext_strip`, `field_actor_billboard`
+and the move-VM `ActorState`), and on nothing above them. The battle-side
+draws that project battle-VM records (the numeral readout, the Theeder
+beams) are one crate up, in `legaia-engine-ui`.
 
 ## See also
 

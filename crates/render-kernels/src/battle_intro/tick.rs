@@ -1,10 +1,11 @@
 //! The per-frame advance of a [`BattleIntro`].
 
 use super::*;
+use crate::battle_intro_styles as styles;
+use crate::battle_intro_styles::IntroStyle;
+use crate::battle_intro_swirl as swirl;
+use crate::battle_intro_tiles as tiles;
 use crate::screen_prim::ScreenPrim;
-use legaia_engine_battle_vm::battle_intro_styles::{self as styles, IntroStyle};
-use legaia_engine_battle_vm::battle_intro_swirl::{self as swirl};
-use legaia_engine_battle_vm::battle_intro_tiles::{self as tiles};
 
 impl BattleIntro {
     /// Bring the working set up to the live transition clock and emit its

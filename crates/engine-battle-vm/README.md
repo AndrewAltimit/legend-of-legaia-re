@@ -188,13 +188,9 @@ consumption-site mirrors remain where they are used - liveness/kind gating in
 
 The crate's remaining modules are leaf kernels; by family:
 
-- **Battle transition** - `battle_intro_transition` (+ `battle_intro_styles`
-  / `battle_intro_tiles` / `battle_intro_swirl` / `battle_intro_particles`):
-  the field-to-battle overlay's state machine and per-style kernels;
-  `render-kernels::battle_intro` is its draw half.
 - **Battle presentation** - `battle_actor_draw` (`FUN_80048A08`'s per-object decisions),
   `battle_pose_blend`, `battle_anim_rate` (arts slow-motion),
-  `battle_impact_fx`, `battle_trail` (the weapon trail's schedule),
+  `battle_impact_fx`,
   `battle_hp_bar` / `battle_gauge` (bar ramp, gauge colour),
   `battle_gauge_rearm`, `battle_commit_log`, `battle_cursor_pose`,
   `battle_record_writer`, `battle_cue_group`, `move_no_effect_guard` (the

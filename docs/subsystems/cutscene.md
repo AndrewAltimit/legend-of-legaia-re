@@ -2191,9 +2191,9 @@ the `FUN_801CF5BC` row of [`functions.md`](../reference/functions.md).
 `see ghidra/scripts/funcs/overlay_field_battle_intro_801cf5bc.txt`.
 
 **Port.** This state machine is the encounter session's `Transition` phase:
-`legaia_engine_battle_vm::battle_intro_transition::tick_transition`, driven once per frame by
+`legaia_render_kernels::battle_intro_transition::tick_transition`, driven once per frame by
 `legaia_engine_core::World::tick_encounter`. The style and fade switches are
-`engine-battle-vm::battle_intro_styles::{IntroStyle, intro_fade}`.
+`render-kernels::battle_intro_styles::{IntroStyle, intro_fade}`.
 
 | Effect | Engine handling |
 |---|---|
@@ -2240,7 +2240,7 @@ the current map/scene index `DAT_80084540`.
 The default is style 2, so an ordinary random encounter shatters; style 3 is reached by three
 formations and style 4 by one. Two of the eleven stores are delay-slot stores that land on both
 arms of their branch, which is why the flags-set path defaults to style 1 rather than the
-initial style 2. Port: `engine-battle-vm::battle_intro_styles::select_intro_style`, whose doc comment
+initial style 2. Port: `render-kernels::battle_intro_styles::select_intro_style`, whose doc comment
 carries the full override table in retail's evaluation order.
 
 `FUN_801D1CD4` is an inert stub - it writes a 12-byte local (`0, 0, 0x7D0, 0, 0, 0`) that never
@@ -2254,7 +2254,7 @@ The same init block seeds the duration two instructions before the style switch:
 whose jump-table arm (slot `4` of the table at `0x801CE840`, body `0x801CEFEC`) re-stores `0xFC`
 at `0x801CEFF4` / `0x801CEFFC` - **252 frames**. Both stores are read off the overlay image's
 instruction words (the decompiler's rendering of the init reaches past the dumped window). Port:
-`engine-battle-vm::battle_intro_styles::intro_duration_frames`.
+`render-kernels::battle_intro_styles::intro_duration_frames`.
 
 That number is the denominator of everything time-shaped in the transition: each
 `INTRO_FADE_RAMPS` entry is a *lead* before it (the longest is the curtain's `0x40`, so `0x84`
@@ -2274,7 +2274,7 @@ dozen frames and its primitive count decays as records retire. `engine-render`'s
 A degenerate seeder RNG parks the grid the same way: the delays come from 256 consecutive draws,
 so a generator that converges hands every record the same delay (an LCG with an even multiplier
 walks its state to a fixed point within a handful of draws). The port's stand-in,
-`engine-battle-vm::battle_intro_particles::IntroRng`, is shared by every host.
+`render-kernels::battle_intro_particles::IntroRng`, is shared by every host.
 
 #### The transition owns the whole frame
 

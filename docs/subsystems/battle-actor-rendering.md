@@ -42,7 +42,7 @@ All retail routines here are resident in `SCUS_942.54` unless marked as battle-o
 | Per-fight form install | `engine-core::battle_party_form` |
 | Staged clip commit, ladder, rate arms | `engine-core` `world/actors/battle_anim.rs`, `world/battle/clip_ladder.rs`; `engine-battle-vm::battle_anim_rate` |
 | Tint pass, draw tick, ghost pass | `engine-battle-vm::{battle_actor_tint, battle_actor_tick, battle_action::camera_ghost}`, `engine-battle::battle_body_blend` |
-| Trails, streaks, after-images | `engine-battle-vm::battle_trail`, `engine-battle::battle_afterimage`, `render-kernels::{battle_trail, streak_pass, afterimage}` |
+| Trails, streaks, after-images | `render-kernels::battle_trail`, `engine-battle::battle_afterimage`, `render-kernels::{battle_trail, streak_pass, afterimage}` |
 | Hosts | `crates/engine-shell/src/window/battle.rs`; `crates/web-viewer/src/play_battle_render.rs`, `play_battle.rs`, `play_battle_fx.rs` |
 
 ## Draw pipeline
@@ -415,7 +415,7 @@ The swept `POLY_G4` streak an ordinary arts swing leaves behind a party characte
 3. Projects each vertex through `FUN_800195A8`.
 4. Drops `0x3B808080` packets into the OT - a `POLY_G4`: four-point gouraud, semi-transparent, untextured. `0x808080` is a placeholder the per-vertex fill overwrites; `v0/v2` are the leading step's pair carrying the band's lead colour, `v1/v3` trailing. The OT slot is the average of the four corner depths with the same rounding fixup.
 
-**Port.** Trigger table and sweep / band schedule: `engine-battle-vm::battle_trail`. Projected band packets: `render-kernels::battle_trail` (a gouraud `FlatQuad` through the shared screen-prim pass, ABR 1). `World::battle_weapon_trail_draws` samples the sweep off the pose-history ring (step `k` = the pose `2k` frames ago, the retail rewind under a constant rate), bounded by the ring's per-frame clip key. Both hosts project with their own battle camera and composite the bands over the scene; retail's OT interleave with scene depth is not reproduced.
+**Port.** Trigger table and sweep / band schedule: `render-kernels::battle_trail`. Projected band packets: `render-kernels::battle_trail` (a gouraud `FlatQuad` through the shared screen-prim pass, ABR 1). `World::battle_weapon_trail_draws` samples the sweep off the pose-history ring (step `k` = the pose `2k` frames ago, the retail rewind under a constant rate), bounded by the ring's per-frame clip key. Both hosts project with their own battle camera and composite the bands over the scene; retail's OT interleave with scene depth is not reproduced.
 
 <a id="weapon-trail-afterimage-streak"></a>
 
@@ -504,6 +504,6 @@ The browser play page runs the same `Field → Battle` edge through `legaia_web_
 - **Actors.** Each actor's idle / action / swing / art-bank clips are installed on the world so the shared battle SM poses them. Meshes are exported object-local, and the page poses them per frame from `play_battle_actor_pose` (the engine's live `pose_frame`). Actor draws compose the same live-facing yaw and retail 4× world scale as the native window.
 - **Per-tick VRAM re-stamps.** Facial animation, the Stone CLUT recolour and the effect CLUT stage run the same three drains against the battle VRAM copy; the page re-uploads on `play_battle_vram_take_dirty`.
 
-Shared with the native window from one kernel: the phase-scripted camera (`battle_cam_script`), the ground grid's per-draw depth cue, the battle-intro screen-prim emitter (`tick_battle_intro`), the mid-battle summon-creature spawn (`spawn_summon_creature_web`), the tint / ghost / blend plan (`play_battle_body_blend`), the weapon trail, the move-FX streak and clip ribbon, the after-image ghosts, and the floating damage numerals and `N HIT` / `TOTAL` counter (`render-kernels::battle_numerals`, sampling retail's 24x24 cells off the resident battle effect atlas; the page falls back to font-atlas text only on frames before the battle VRAM exists).
+Shared with the native window from one kernel: the phase-scripted camera (`battle_cam_script`), the ground grid's per-draw depth cue, the battle-intro screen-prim emitter (`tick_battle_intro`), the mid-battle summon-creature spawn (`spawn_summon_creature_web`), the tint / ghost / blend plan (`play_battle_body_blend`), the weapon trail, the move-FX streak and clip ribbon, the after-image ghosts, and the floating damage numerals and `N HIT` / `TOTAL` counter (`engine-ui::battle_numerals`, sampling retail's 24x24 cells off the resident battle effect atlas; the page falls back to font-atlas text only on frames before the battle VRAM exists).
 
 Remaining host difference: the field move-VM stager parts resolve against the scene TMD pack, which the page does not upload while a battle is on screen, so they are drawn on field frames (`build_field_fx`) and not during a battle.

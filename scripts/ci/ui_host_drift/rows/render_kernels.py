@@ -157,7 +157,7 @@ RENDER_KERNEL_RULES: list[dict[str, object]] = [
         "the same digits in the dialog font - one model, two letterforms, "
         "and every tier green because both hosts named the kernel. A surface "
         "that resolves the layout must emit through the shared quad builder "
-        "(`render-kernels::battle_numerals`), leaving a font path as an explicit "
+        "(`engine-ui::battle_numerals`), leaving a font path as an explicit "
         "before-the-atlas fallback rather than as the draw",
         "trigger": r"\bbattle_value_readout\b",
         "requires": [

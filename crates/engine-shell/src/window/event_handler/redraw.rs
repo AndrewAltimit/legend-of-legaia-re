@@ -403,7 +403,7 @@ impl PlayWindowApp {
     /// (`actor_stage_point`) and laid out by
     /// `legaia_engine_battle_vm::battle_value_readout::value_cells`, plus the combo
     /// counter cluster. The quads themselves come from the shared
-    /// `legaia_render_kernels::battle_numerals` builder the browser play page also
+    /// `legaia_engine_ui::battle_numerals` builder the browser play page also
     /// emits through - this host only supplies the camera-dependent seat.
     ///
     /// Empty outside battle, with no popups, or before the battle VRAM (which
@@ -413,7 +413,7 @@ impl PlayWindowApp {
         &self,
         cam: Mat4,
     ) -> Vec<legaia_render_kernels::screen_prim::ScreenPrim> {
-        use legaia_render_kernels::battle_numerals as bn;
+        use legaia_engine_ui::battle_numerals as bn;
         // The retail-art half: only while the sheet the quads sample is
         // resident. Before that the frame takes the font fallback instead
         // ([`Self::battle_value_readout_draws`]); the two are mutually
@@ -569,7 +569,7 @@ impl PlayWindowApp {
                 continue;
             };
             let age = p.frames_total.saturating_sub(p.frames_remaining);
-            let cells = legaia_render_kernels::battle_numerals::popup_value_cells(
+            let cells = legaia_engine_ui::battle_numerals::popup_value_cells(
                 &vp,
                 world_scale,
                 trio,

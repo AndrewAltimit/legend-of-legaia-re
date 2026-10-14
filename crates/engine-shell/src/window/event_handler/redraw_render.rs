@@ -207,7 +207,7 @@ impl PlayWindowApp {
         fx.push_draws(&mut draws);
         // The floating value readout is a screen-space primitive run, not
         // a scene mesh: see `screen_prims` below, where both hosts build
-        // it from `legaia_render_kernels::battle_numerals`.
+        // it from `legaia_engine_ui::battle_numerals`.
         // The scripted screen fade (op 0x4C 0x12) is NOT drawn as a wash
         // mesh here: it is a multiply tint staged into the colour grade +
         // depth-cue far colour (see the grade staging above), matching

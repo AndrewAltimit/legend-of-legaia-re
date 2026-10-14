@@ -28,7 +28,7 @@ oracle that already drives it is promoted into the union.
 
 The current worklist is short. `801d31b0`, `801d553c`, `801dd4c4` and
 `801f1a00` are bucket (d). The four Theeder beam-packet builders in
-`render-kernels::cast_theeder` (`801f815c`, `801f83a4`, `801f8634`, `801f8b84`)
+`engine-ui::cast_theeder` (`801f815c`, `801f83a4`, `801f8634`, `801f8b84`)
 were bucket (a) - both drawing hosts call them and no ladder cast the spell -
 and read entered through `battle_render_ladder`'s seated Theeder rung.
 `8004629c`, `801f2134`,

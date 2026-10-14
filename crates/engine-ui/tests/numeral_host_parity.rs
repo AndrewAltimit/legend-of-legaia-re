@@ -17,7 +17,7 @@
 //! without a GPU on either side.
 
 use legaia_engine_battle_vm::battle_value_readout as vr;
-use legaia_render_kernels::battle_numerals as bn;
+use legaia_engine_ui::battle_numerals as bn;
 use legaia_render_kernels::screen_prim::{
     BlendClass, FLAG_TEXTURED, PSX_DISPLAY_H, PSX_DISPLAY_W, SCREEN_VERTEX_OFF_CBA_TSB,
     SCREEN_VERTEX_OFF_FLAGS, SCREEN_VERTEX_STRIDE, build_geometry,

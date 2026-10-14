@@ -145,11 +145,8 @@ pub(super) fn project_intro_corner(rot: &GteMat3, tr: GteVec3, c: (i16, i16, i16
 /// [`crate::screen_prim::order_primitives`]'s tie-break (later-submitted
 /// draws first) then reproduces `AddPrim`'s prepend, which is what lands the
 /// shade set on top of its opaque siblings within a bucket.
-pub fn emit_tile(
-    rec: &legaia_engine_battle_vm::battle_intro_tiles::TileRecord,
-    prims: &mut Vec<ScreenPrim>,
-) {
-    use legaia_engine_battle_vm::battle_intro_tiles::tile_face_quads;
+pub fn emit_tile(rec: &crate::battle_intro_tiles::TileRecord, prims: &mut Vec<ScreenPrim>) {
+    use crate::battle_intro_tiles::tile_face_quads;
     let Some(quads) = tile_face_quads(rec) else {
         return;
     };

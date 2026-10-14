@@ -4,7 +4,7 @@
 //! # What was missing, and what this is
 //!
 //! Everything either side of this module was already built. On the simulation
-//! side `legaia_engine_battle_vm::battle_intro_transition::tick_transition` is live -
+//! side `crate::battle_intro_transition::tick_transition` is live -
 //! `legaia_engine_core::World::tick_encounter` runs it every frame the
 //! encounter session sits in its `Transition` phase - and all five style
 //! kernels are ported. On the render side [`crate::screen_prim`] is the
@@ -45,7 +45,7 @@
 //! and hand it to the generic per-prim dispatcher; the two particle styles
 //! write `POLY_FT4` packets straight into the ordering-table cursor and
 //! project through `FUN_8005BAC8` (RotTransPers4; its return is `SZ3 >> 2`,
-//! which is the depth [`legaia_engine_battle_vm::battle_intro_styles::particle_quad_accepted`]
+//! which is the depth [`crate::battle_intro_styles::particle_quad_accepted`]
 //! bounds).
 //!
 //! Two retail nuances are *not* carried, both stated rather than hidden. The
@@ -96,7 +96,7 @@
 //! frame. The port rasterises the column pass on the CPU
 //! ([`compose_curtain_intermediate`]) because a screen-space quad list has no
 //! render-to-VRAM target; the arithmetic is the same quad
-//! `legaia_engine_battle_vm::battle_intro_transition::build_intro_quad` produced.
+//! `crate::battle_intro_transition::build_intro_quad` produced.
 //!
 //! The mid-pass emitter is established now. `FUN_801D1D9C` is dumped from the
 //! `overlay_field_battle_intro` image itself
@@ -132,8 +132,8 @@
 //! settling that needs a retail frame capture of a curtain formation
 //! (hypothesis, graded inference).
 
+use crate::battle_intro_styles::IntroStyle;
 use crate::vram_capture::{FIELD_CAPTURE_COLS, VramRect};
-use legaia_engine_battle_vm::battle_intro_styles::IntroStyle;
 
 mod curtain;
 mod particles;

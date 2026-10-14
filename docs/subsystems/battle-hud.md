@@ -1473,7 +1473,7 @@ The cue bank is documented in `legaia_art::hyper_fanfare`.
 see [Arts presentation](battle-actor-rendering.md#arts-presentation-slow-motion-and-after-image-ghosts)).
 `World::tick_arts_banner` steps the clock once per battle frame and
 `World::battle_arts_banner_quads` is the read both hosts draw through
-(`legaia_render_kernels::battle_numerals::arts_banner_prims`).
+(`legaia_engine_ui::battle_numerals::arts_banner_prims`).
 
 <a id="battle-hud-model"></a>
 ## Engine port: the battle HUD model
