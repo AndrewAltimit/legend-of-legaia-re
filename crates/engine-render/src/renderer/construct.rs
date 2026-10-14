@@ -239,6 +239,7 @@ impl Renderer {
             palette_grade: std::cell::Cell::new([0.0, 0.0, 0.0, 0.0]),
             backface_cull: std::cell::Cell::new(0.0),
             overworld_curve: std::cell::Cell::new(0.0),
+            overworld_curve_bias: std::cell::Cell::new(0.0),
             prim_near: std::cell::Cell::new([0.0; 4]),
             // Semi-transparency (ABE) blending on by default: retail's GPU
             // always blends ABE prims, so field water / glass / effects should

@@ -89,7 +89,8 @@ impl Renderer {
                     0,
                     bytemuck::cast_slice(&[MeshUniforms {
                         // Reversed-Z applied centrally (see `reverse_z`).
-                        mvp: reverse_z(*mvp).to_cols_array_2d(),
+                        mvp: reverse_z(fold_screen_rows(*mvp, self.overworld_curve_bias.get()))
+                            .to_cols_array_2d(),
                         // Light coming from upper-back-left in world space.
                         depth_cue: self.depth_cue.get(),
                         psx_params: [

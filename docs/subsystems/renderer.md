@@ -1245,17 +1245,25 @@ lit kinds and every overworld mesh the disc ships bends. See
 
 **The table carries the `OFY` of the frame that built it.** The builder sets
 `H` and the matrix but not the screen offset, and stores `SY - 0x78`, so
-every entry is offset by whatever `OFY` the GTE held when the installer ran,
-less `120`. The frame-begin pass `FUN_8001698C` sets `OFY` to half the draw
-height (`0x1F80038E >> 1`, `0x80016A3C..0x80016A50`), which is `114` on the
-field's `228`-row area. Every overworld state in the retail comparison corpus
-holds an unbiased table (entry `0` is `0`: built at `OFY = 120`) except
-`sebucus_overworld_resident`, whose entry `0` is `-6` (built at `OFY = 114`):
-it lifts every overworld vertex six rows over the port's closed form, and
-that state's engine frame lands about seven rows low with a camera identical
-to retail's. Which transition installs the overworld under the field's draw
-area is not pinned (that state's party is level 99, so a debug warp is a
-candidate). The port builds the common, unbiased table.
+every entry is offset by whatever `OFY` the GTE held at the call, less `120`.
+Two routines set `OFY` (`SetGeomOffset`, `FUN_8005B7F8`, has two callers
+disc-wide): the frame-begin pass `FUN_8001698C` sets half the draw height
+(`0x1F80038E >> 1`, `0x80016A3C..0x80016A50`), `114` on the field's
+`228`-row area, and the display-env setup `FUN_8001DAF8` ends on
+`(160, 0x78)` (`0x8001DCD0`). Three calls build the table disc-wide:
+
+| Call | Site | `OFY` | Entry `0` |
+|---|---|---|---|
+| MAN installer `FUN_8003AEB0` | `0x8003AF98`; its one caller, the field init `FUN_801D6704` (`0x801D6DA8`), runs `FUN_8001DAF8(0x140)` first (`0x801D6954`) | `120` | `0` |
+| map display mode `1`, flat `(0, 0)` | PROT 0981 `0x801CE958` | `114` | `-6` |
+| map display mode `3`, saved coefficients | PROT 0981 `0x801CEB88` | `114` | `-6` |
+
+The map display runs inside a mode-`0x0D` frame, after the frame-begin pass,
+so opening it lifts every bent overworld draw six rows: the display's own
+frame, and the walk frame after it until the next scene load rebuilds the
+table. Every overworld state in the retail comparison corpus holds an
+unbiased table except `sebucus_overworld_resident`, whose entry `0` is `-6`:
+its player had opened the map since the kingdom loaded.
 
 **Port.** `render-kernels::overworld_curvature`, pinned entry for entry against
 the `keikoku_chest_preload` capture. The fog sheets and the drop shadow add
@@ -1265,7 +1273,12 @@ in closed form (`OVERWORLD_CURVE_WGSL`, the page's `overworldCurve`, both
 pinned by `curvature_closed_form`) with a per-frame scale
 (`frame_curve_scale`): `1` under the walk camera, whose matrix carries the 6x
 world scale; `6` under a `1x` scripted shot; `0` under the top-view debug
-camera.
+camera. The build offset is `World::overworld_curve_bias` - `0` from the
+scene load, `REBUILD_BIAS` from the display's mode `1` - and every consumer
+adds it at any scale: the fog sheets and the drop shadow beside the entry,
+the native renderer as a constant row offset folded into each scene draw's
+clip matrix (`Renderer::set_overworld_curve_bias`), the play page as the
+GLSL `u_curve_bias`.
 
 ### `FUN_8003DAA8` is a CD driver, not a present driver
 

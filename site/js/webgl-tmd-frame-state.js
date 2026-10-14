@@ -101,9 +101,12 @@ window.LegaiaUtil.installMethods(TmdRenderer, class {
   /* The kingdom overworld's per-vertex screen-Y curvature for the assembled
    * scene pass: `scale` is the frame's clip.w-to-SZ factor from the shared
    * `overworld_curvature::frame_curve_scale` kernel (the native renderer's
-   * `set_overworld_curvature` word). 0 - every other page - is flat. */
-  setOverworldCurve(scale) {
+   * `set_overworld_curvature` word). 0 - every other page - is flat.
+   * `bias` is the table's build offset in screen rows (the native
+   * `set_overworld_curve_bias` word), added at any scale; 0 when omitted. */
+  setOverworldCurve(scale, bias) {
     this.overworldCurve = scale > 0 ? +scale : 0;
+    this.overworldCurveBias = Number.isFinite(bias) ? +bias : 0;
   }
 
   /* Retail's per-primitive near reject for the assembled scene pass: the

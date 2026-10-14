@@ -204,9 +204,11 @@ pub fn marker_segments(world: &World, draw_player: bool) -> Vec<MarkerSegment> {
 /// Project raw Y-down world points through a Y-up `vp` onto the display,
 /// bent down by the overworld curvature at `curve` (the frame's
 /// `clip.w`-to-`SZ` factor, [`crate::camera_view::frame_curve_scale`];
-/// `0` is flat) - the bend the hosts' mesh shaders give the continent the
-/// marker stands on. `None` behind the lens or absurdly far off-screen.
-fn project(vp: &[f32; 16], p: [f32; 3], curve: f32) -> Option<[f32; 2]> {
+/// `0` is flat) plus the table's build offset `bias`
+/// ([`crate::world::World::overworld_curve_bias`]) - the bend the hosts'
+/// mesh shaders give the continent the marker stands on. `None` behind the
+/// lens or absurdly far off-screen.
+fn project(vp: &[f32; 16], p: [f32; 3], curve: (f32, i16)) -> Option<[f32; 2]> {
     // WORLD_FLIP: the raw retail Y-down point in the matrix's Y-up frame.
     let v = [p[0], -p[1], p[2], 1.0];
     let row = |r: usize| (0..4).map(|c| vp[c * 4 + r] * v[c]).sum::<f32>();
@@ -216,7 +218,7 @@ fn project(vp: &[f32; 16], p: [f32; 3], curve: f32) -> Option<[f32; 2]> {
     }
     let sx = (cx / cw + 1.0) * 0.5 * DISPLAY_W;
     let sy = (1.0 - cy / cw) * 0.5 * DISPLAY_H
-        + legaia_render_kernels::overworld_curvature::clip_bend_rows(cw, curve);
+        + legaia_render_kernels::overworld_curvature::clip_bend_rows(cw, curve.0, curve.1);
     (sx.abs() < OFFSCREEN_LIMIT && sy.abs() < OFFSCREEN_LIMIT).then_some([sx, sy])
 }
 
@@ -241,7 +243,7 @@ fn depth_toward(vp: &[f32; 16], p: [f32; 3], eye: [f32; 3]) -> Option<f32> {
 /// than that on screen still gets a square of that width, so a post seen
 /// end-on stays visible. No depth - see [`segment_quad_depth`].
 pub fn segment_quad(vp: &[f32; 16], s: &MarkerSegment) -> Option<MarkerQuad> {
-    segment_quad_depth(vp, s, None, 0.0)
+    segment_quad_depth(vp, s, None, (0.0, 0))
 }
 
 /// [`segment_quad`] with the corners' scene depth, sampled toward `eye` (the
@@ -252,7 +254,7 @@ pub fn segment_quad_depth(
     vp: &[f32; 16],
     s: &MarkerSegment,
     eye: Option<[f32; 3]>,
-    curve: f32,
+    curve: (f32, i16),
 ) -> Option<MarkerQuad> {
     let a = project(vp, s.a, curve)?;
     let mut b = project(vp, s.b, curve)?;
@@ -309,7 +311,10 @@ pub fn marker_quads(
         return Vec::new();
     };
     let eye = camera_view::frame_eye(frame);
-    let curve = crate::camera_view::frame_curve_scale(world.overworld_bit(), frame);
+    let curve = (
+        crate::camera_view::frame_curve_scale(world.overworld_bit(), frame),
+        world.overworld_curve_bias().unwrap_or(0),
+    );
     marker_segments(world, draw_player)
         .iter()
         .filter_map(|s| segment_quad_depth(&vp, s, eye, curve))

@@ -442,6 +442,16 @@ engine verdict:
   seed's settle window ran the loop before the resume, the engine cleared
   brown, and the semi-transparent sea (`(B + F) / 2`) blended into it.
 
+  So is the overworld curvature table's build offset. Opening the map
+  display rebuilds the table under the running frame's `OFY`, which lifts
+  every bent overworld draw six rows until the next scene load
+  ([renderer](../subsystems/renderer.md#the-overworld-curvature-table-fun_800271a8)),
+  and that is pad history: `sebucus_overworld_resident`'s player had opened
+  the map, its table's entry `0` reads `-6`, and a seat drawn from the
+  fresh load sat six rows under retail's frame. The entry goes to the child
+  as `LEGAIA_SEAT_CURVE_BIAS` (`retail_curve_bias`) and is written over
+  the engine's offset on the frame it captures.
+
   So is the dialogue page mark, the two-frame "press" icon at a waiting
   box's rim (`FUN_8002B994` kind 1). Which frame is up is vsyncs since the
   box first waited, sixteen a frame; the state's frame index and timer

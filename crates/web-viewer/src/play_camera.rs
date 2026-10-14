@@ -271,6 +271,20 @@ impl LegaiaRuntime {
         legaia_engine_core::camera_view::frame_curve_scale(true, &frame)
     }
 
+    /// The overworld curvature table's build offset for the scene pass, in
+    /// PSX stage rows - the word the page hands `TmdRenderer.setOverworldCurve`
+    /// beside the scale (the GLSL `u_curve_bias`), from the shared
+    /// `World::overworld_curve_bias` the native window's
+    /// `Renderer::set_overworld_curve_bias` call also reads. `0` off the
+    /// kingdom overworld and after a scene load; `-6` from the map display's
+    /// first rebuild until the next load.
+    pub fn play_render_curve_bias(&self) -> f32 {
+        self.scene_host
+            .host()
+            .and_then(|h| h.world.overworld_curve_bias())
+            .map_or(0.0, f32::from)
+    }
+
     /// The camera-occlusion fade's focus point for this frame, in the page's
     /// **Y-up draw frame**, or empty when the engine side of the arming gate
     /// says no ([`legaia_engine_core::field_occlusion::fade_armed`] + a live

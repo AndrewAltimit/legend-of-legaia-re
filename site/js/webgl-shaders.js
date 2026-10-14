@@ -271,8 +271,14 @@ uniform int u_fog_enable;    /* 0 = no fog; mirrors gp-0x2D1 & 0x10 gate */
  * saturated at SY = 1023 (legaia_engine_core::overworld_curvature::
  * curvature_closed_form, pinned against the table). u_curve is the frame's
  * clip.w-to-SZ factor (play_render_curve_scale -> setOverworldCurve);
- * 0.0 - every page but the play page on an overworld - is the identity. */
+ * 0.0 - every page but the play page on an overworld - is the identity.
+ * u_curve_bias is the table's build offset in screen rows
+ * (play_render_curve_bias): the table carries the OFY it was built under
+ * less 120 on every entry, 0 from a scene load and -6 once the map display
+ * has rebuilt it, and a flat table (u_curve 0) still carries it. Native
+ * folds the same constant into its clip matrix (fold_screen_rows). */
 uniform float u_curve;
+uniform float u_curve_bias;
 
 /* Retail's per-primitive near reject - the GLSL twin of engine-render's
  * PRIM_NEAR_WGSL (legaia_render_kernels::prim_near_reject). Every TMD prim
@@ -360,9 +366,12 @@ int overworldCurveEntry(int i) {
 }
 
 vec4 overworldCurve(vec4 clip) {
-  if (u_curve <= 0.0 || clip.w <= 0.0) return clip;
-  int sz = clamp(int(floor(clip.w * u_curve + 0.5)), 0, 0xFFFF);
-  float t = float(overworldCurveEntry((sz >> 5) + 1));
+  float t = u_curve_bias;
+  if (u_curve > 0.0 && clip.w > 0.0) {
+    int sz = clamp(int(floor(clip.w * u_curve + 0.5)), 0, 0xFFFF);
+    t += float(overworldCurveEntry((sz >> 5) + 1));
+  }
+  if (t == 0.0) return clip;
   return vec4(clip.x, clip.y - t * (2.0 / 240.0) * clip.w, clip.z, clip.w);
 }
 

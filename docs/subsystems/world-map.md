@@ -366,7 +366,12 @@ display on the ramp's hand-off, and while it is up `World::tick` runs
 `tick_map_display` in place of the whole overworld arm. The camera is a
 `FieldCameraFrame::WorldMapDisplay` (`camera_view::map_display_frame`):
 the walk frame's composition under the survey pose, with the curvature bend
-off. The scene load installs the table
+off. Both curvature rebuilds run under the frame's `OFY = 114`, so from mode
+`1` on the overworld draws six rows higher, through the display and on the
+walk frame after it until the next scene load
+(`World::overworld_curve_bias`;
+[renderer](renderer.md#the-overworld-curvature-table-fun_800271a8)). The
+scene load installs the table
 (`World::install_world_map_locations`). `engine-core::world_map_labels`
 gates and projects the labels and builds the panel's primitives, which ride
 the shared screen-primitive list (`engine-screens::screen_layers`); the names,

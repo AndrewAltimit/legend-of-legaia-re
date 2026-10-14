@@ -402,6 +402,16 @@ impl PlayWindowApp {
         // this frame's camera - the same kernel the browser play page
         // stages `u_curve` from.
         r.set_overworld_curvature(self.overworld_curve_scale(cutscene_cam));
+        // The table's build offset rides beside it: six rows up once the map
+        // display has rebuilt the table, whatever the scale (the display's
+        // own flat table is the offset alone).
+        r.set_overworld_curve_bias(
+            self.session
+                .host
+                .world
+                .overworld_curve_bias()
+                .map_or(0.0, f32::from),
+        );
         // Retail's per-primitive near reject (`camera_view::prim_near_cut`):
         // a primitive whose mean corner depth sits near or behind the eye
         // is not drawn, where a per-pixel clip would paint it across the

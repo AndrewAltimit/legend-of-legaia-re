@@ -249,4 +249,34 @@ mod tests {
         w.world_map.map_display = None;
         assert!(map_display_labels_now(&w).is_empty());
     }
+
+    /// The map display rebuilds the curvature table inside a running frame
+    /// (`OFY = 114` against the builder's `120`), so from its mode `1` on
+    /// every bent overworld draw sits six rows higher - through the display,
+    /// on the walk frame after it, and until the next scene load rebuilds
+    /// the table under the field init's `OFY`.
+    #[test]
+    fn the_map_display_leaves_the_curvature_table_six_rows_up() {
+        use legaia_render_kernels::overworld_curvature::REBUILD_BIAS;
+        let mut w = World::new();
+        w.enter_world_map();
+        w.active_scene_label = "map01".into();
+        assert_eq!(w.overworld_curve_bias(), Some(0));
+        w.world_map.map_display = Some(MapDisplay::enter());
+        // Mode `0` only seeds the fade timer; mode `1` flattens the table.
+        w.tick_map_display();
+        assert_eq!(w.overworld_curve_bias(), Some(0));
+        w.tick_map_display();
+        assert_eq!(w.overworld_curve_bias(), Some(REBUILD_BIAS));
+        // Closing the display does not put it back.
+        w.world_map.map_display = None;
+        assert_eq!(w.overworld_curve_bias(), Some(-6));
+        // The next scene load's own build does.
+        w.install_world_map_locations(None);
+        assert_eq!(w.overworld_curve_bias(), Some(0));
+        // Off the overworld no consumer reads the table.
+        w.world_map.curve_bias = REBUILD_BIAS;
+        w.mode = legaia_engine_mode::mode::SceneMode::Field;
+        assert_eq!(w.overworld_curve_bias(), None);
+    }
 }

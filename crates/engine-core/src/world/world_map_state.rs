@@ -79,6 +79,13 @@ pub struct WorldMapState {
     /// the frame the L1 fade-up completes until its exit hands the frame back
     /// to the walk. While it is up it owns the whole overworld frame.
     pub map_display: Option<legaia_engine_field::map_display::MapDisplay>,
+    /// What every entry of the overworld curvature table is offset by, in
+    /// screen rows: `0` from the scene load's build, and
+    /// [`legaia_render_kernels::overworld_curvature::REBUILD_BIAS`] once the
+    /// map display has rebuilt the table inside a running frame. The lift
+    /// outlasts the display and holds until the next scene load
+    /// ([`crate::world::World::overworld_curve_bias`]).
+    pub curve_bias: i16,
 }
 
 impl WorldMapState {
@@ -97,6 +104,7 @@ impl WorldMapState {
             walk_carry: 0,
             locations: Vec::new(),
             map_display: None,
+            curve_bias: 0,
         }
     }
 }
