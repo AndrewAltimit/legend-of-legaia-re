@@ -17,6 +17,37 @@
     <div class="notice-title">The button combos live in two places</div>
     <p>The <strong>matcher</strong> - what fires an art - reads the player-file record's command bytes. The <strong>menu</strong> draws its arrows from the SCUS name table. Editing one without the other makes the menu lie: the art still fires on the old combo. The arts randomizer edits both.</p>
   </div>
+  <figure class="diagram">
+    <svg viewBox="0 0 860 410" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Two paths into the arts data. What fires an art: the player file record0 (extraction 0863 to 0865) holds the art block at a 0xD0 stride; its +0 combo feeds the matcher and tokenizer FUN_801EED1C, which writes the action queue at actor+0x1DF; the anim commit FUN_8004AD80 materializes the art record at actor+0x4C; its +0x24 power run feeds the damage kernel FUN_801EC3E4 and its hit run feeds the cue playout FUN_801DEA50. What the menu draws: the SCUS arts-name table DAT_80075EC4 supplies glyphs at +8, AP at +2 and the name at +0xC to the Arts menu display.">
+      <defs><marker id="ad-arrow" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <text class="dg-sub dg-start" x="20" y="24">what fires the art - player file</text>
+      <rect class="dg-node" x="20" y="40" width="150" height="50" rx="4"/><text class="dg-label" x="95" y="62">player file record0</text><text class="dg-sub" x="95" y="78">extraction 0863..0865</text>
+      <rect class="dg-node" x="240" y="40" width="150" height="50" rx="4"/><text class="dg-label" x="315" y="62">art block</text><text class="dg-sub" x="315" y="78">0xD0 stride</text>
+      <rect class="dg-node-accent" x="460" y="40" width="150" height="50" rx="4"/><text class="dg-label" x="535" y="62">matcher / tokenizer</text><text class="dg-sub" x="535" y="78">FUN_801EED1C</text>
+      <rect class="dg-node" x="680" y="40" width="150" height="50" rx="4"/><text class="dg-label" x="755" y="62">action queue</text><text class="dg-sub" x="755" y="78">actor+0x1DF</text>
+      <path class="dg-edge" d="M170 65 L238 65" marker-end="url(#ad-arrow)"/>
+      <path class="dg-edge" d="M390 65 L458 65" marker-end="url(#ad-arrow)"/>
+      <text class="dg-edge-label" x="425" y="57" text-anchor="middle">+0 combo</text>
+      <path class="dg-edge" d="M610 65 L678 65" marker-end="url(#ad-arrow)"/>
+      <path class="dg-edge" d="M755 90 L755 138" marker-end="url(#ad-arrow)"/>
+      <rect class="dg-node" x="680" y="140" width="150" height="50" rx="4"/><text class="dg-label" x="755" y="162">anim commit</text><text class="dg-sub" x="755" y="178">FUN_8004AD80</text>
+      <rect class="dg-node-accent" x="460" y="140" width="150" height="50" rx="4"/><text class="dg-label" x="535" y="162">materialized record</text><text class="dg-sub" x="535" y="178">actor+0x4C</text>
+      <rect class="dg-node" x="210" y="140" width="150" height="50" rx="4"/><text class="dg-label" x="285" y="162">damage kernel</text><text class="dg-sub" x="285" y="178">FUN_801EC3E4</text>
+      <rect class="dg-node" x="460" y="240" width="150" height="50" rx="4"/><text class="dg-label" x="535" y="262">cue playout</text><text class="dg-sub" x="535" y="278">FUN_801DEA50</text>
+      <path class="dg-edge" d="M680 165 L612 165" marker-end="url(#ad-arrow)"/>
+      <path class="dg-edge" d="M460 165 L362 165" marker-end="url(#ad-arrow)"/>
+      <text class="dg-edge-label" x="411" y="157" text-anchor="middle">+0x24 power</text>
+      <path class="dg-edge" d="M535 190 L535 238" marker-end="url(#ad-arrow)"/>
+      <text class="dg-edge-label" x="543" y="219">hit run</text>
+      <path class="dg-edge-dim" d="M20 312 L840 312"/>
+      <text class="dg-sub dg-start" x="20" y="336">what the menu draws - SCUS</text>
+      <rect class="dg-node" x="20" y="350" width="150" height="50" rx="4"/><text class="dg-label" x="95" y="372">arts-name table</text><text class="dg-sub" x="95" y="388">SCUS DAT_80075EC4</text>
+      <rect class="dg-node" x="460" y="350" width="150" height="50" rx="4"/><text class="dg-label" x="535" y="372">Arts menu display</text>
+      <path class="dg-edge" d="M170 375 L458 375" marker-end="url(#ad-arrow)"/>
+      <text class="dg-edge-label" x="314" y="367" text-anchor="middle">+8 glyphs, +2 AP, +0xC name</text>
+    </svg>
+    <figcaption>The two places an art lives. The matcher fires off the player-file record and the damage and cues come from the record it materializes; the menu's arrows, AP and name come from the separate SCUS table - which is why editing one without the other makes the menu lie.</figcaption>
+  </figure>
 </section>
 
 <section class="doc-section" id="art-record-layout">

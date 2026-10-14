@@ -154,6 +154,29 @@
     <li><b>Draw - <code>FUN_8001B964</code></b><span>The animated-actor renderer works out the frame, checks the part count, and walks the model&#39;s pieces.</span></li>
     <li><b>Pose - <code>FUN_8001BE80</code></b><span>Decodes one entry into a GTE translation and rotation; the piece is then drawn by the primitive dispatcher.</span></li>
   </ol>
+  <figure class="diagram">
+    <svg viewBox="0 0 880 260" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="FUN_8001F05C case 5 installs the slot-4 bank at _DAT_8007B888. FUN_800204F8 selects a clip and ticks the cursor, storing the clip at actor[+0x4C]. FUN_8001B964, the animated draw, takes that clip plus the mesh chain at actor[+0x44] from the DAT_8007C018 TMD pool; per part it calls FUN_8001BE80 to decode the entry, and it hands a TMD group pointer to the primitive dispatcher FUN_80043390.">
+      <defs><marker id="wm-arrow" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <rect class="dg-node" x="20" y="100" width="150" height="50" rx="4"/><text class="dg-label" x="95" y="122">FUN_8001F05C</text><text class="dg-sub" x="95" y="138">case 5 - install</text>
+      <rect class="dg-node" x="280" y="100" width="170" height="50" rx="4"/><text class="dg-label" x="365" y="122">FUN_800204F8</text><text class="dg-sub" x="365" y="138">select clip, tick cursor</text>
+      <rect class="dg-node-accent" x="550" y="100" width="150" height="50" rx="4"/><text class="dg-label" x="625" y="122">FUN_8001B964</text><text class="dg-sub" x="625" y="138">animated draw</text>
+      <rect class="dg-node" x="750" y="30" width="125" height="50" rx="4"/><text class="dg-label" x="812.5" y="52">FUN_8001BE80</text><text class="dg-sub" x="812.5" y="68">decode entry</text>
+      <rect class="dg-node" x="750" y="200" width="125" height="50" rx="4"/><text class="dg-label" x="812.5" y="222">FUN_80043390</text><text class="dg-sub" x="812.5" y="238">prim dispatcher</text>
+      <rect class="dg-node" x="280" y="190" width="170" height="50" rx="4"/><text class="dg-label" x="365" y="212">DAT_8007C018</text><text class="dg-sub" x="365" y="228">pool TMD</text>
+      <path class="dg-edge" d="M170 125 L278 125" marker-end="url(#wm-arrow)"/>
+      <text class="dg-edge-label" x="225" y="117" text-anchor="middle">_DAT_8007B888</text>
+      <path class="dg-edge" d="M450 125 L548 125" marker-end="url(#wm-arrow)"/>
+      <text class="dg-edge-label" x="500" y="104" text-anchor="middle">actor[+0x4C]</text>
+      <text class="dg-edge-label" x="500" y="117" text-anchor="middle">= clip</text>
+      <path class="dg-edge" d="M625 100 L625 55 L748 55" marker-end="url(#wm-arrow)"/>
+      <text class="dg-edge-label" x="633" y="49">per part</text>
+      <path class="dg-edge" d="M450 215 L580 215 L580 152" marker-end="url(#wm-arrow)"/>
+      <text class="dg-edge-label" x="456" y="232">actor[+0x44] mesh chain</text>
+      <path class="dg-edge" d="M670 150 L670 225 L748 225" marker-end="url(#wm-arrow)"/>
+      <text class="dg-edge-label" x="676" y="190">TMD group pointer</text>
+    </svg>
+    <figcaption>Slot 4 reaches the screen only through the animated draw: the clip poses each piece, but the vertices come from an ordinary model in the global TMD table, and the primitive dispatcher never receives the slot-4 buffer.</figcaption>
+  </figure>
   <p>The clip lookup is <strong>one-based</strong>: the actor&#39;s clip number indexes the offset table with no <code>+4</code>, so number 1 reads the first offset. An actor with the party flag set draws from the party bank instead, and numbers above <code>0x3FF</code> from the &ldquo;MOVE2&rdquo; bank - neither of which the overworld uses.</p>
   <ul class="bullets">
     <li><strong>In place.</strong> A read-watchpoint tiled across the Drake window catches only reads (363 of 365 captures); nothing copies the bank anywhere.</li>

@@ -67,6 +67,36 @@
     <li>records <code>0x01..=0x0f</code> (move ids <code>0x04..=0x1f</code>) - the spell table's unnamed <strong>internal enemy-attack tiers</strong> (escalating-power triplets);</li>
     <li>record 0 - an all-zero unused slot.</li>
   </ul>
+  <figure class="diagram">
+    <svg viewBox="0 0 880 370" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="The move id at actor+0x1DF indexes the 128-byte map at 0x801F4E63; the map byte is the record index into the 26-byte records at 0x801F4F5C. The record's +0x00 power feeds the damage kernel FUN_801DD0AC, +0x0d the sound cue FUN_8004FCC8, +0x0a the impact-config table 0x801F53D4, and the +0x12 and +0x16 effect-id lists bit 7 picks the space: clear spawns the 3D prototype from 0x801F6324 through FUN_80021B04, set spawns an efect.dat pack1 billboard.">
+      <defs><marker id="mp-arrow" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <rect class="dg-node" x="20" y="120" width="130" height="50" rx="4"/><text class="dg-label" x="85" y="142">move id</text><text class="dg-sub" x="85" y="158">actor+0x1DF</text>
+      <rect class="dg-node" x="190" y="120" width="140" height="50" rx="4"/><text class="dg-label" x="260" y="142">id &#8594; index map</text><text class="dg-sub" x="260" y="158">0x801F4E63</text>
+      <rect class="dg-node-accent" x="420" y="120" width="150" height="50" rx="4"/><text class="dg-label" x="495" y="142">record, 26 bytes</text><text class="dg-sub" x="495" y="158">table 0x801F4F5C</text>
+      <path class="dg-edge" d="M150 145 L188 145" marker-end="url(#mp-arrow)"/>
+      <path class="dg-edge" d="M330 145 L418 145" marker-end="url(#mp-arrow)"/>
+      <text class="dg-edge-label" x="375" y="137" text-anchor="middle">record index</text>
+      <rect class="dg-node" x="700" y="20" width="170" height="50" rx="4"/><text class="dg-label" x="785" y="42">damage kernel</text><text class="dg-sub" x="785" y="58">FUN_801DD0AC</text>
+      <rect class="dg-node" x="700" y="85" width="170" height="50" rx="4"/><text class="dg-label" x="785" y="107">sound cue</text><text class="dg-sub" x="785" y="123">FUN_8004FCC8</text>
+      <rect class="dg-node" x="700" y="150" width="170" height="50" rx="4"/><text class="dg-label" x="785" y="172">impact config</text><text class="dg-sub" x="785" y="188">0x801F53D4</text>
+      <rect class="dg-node" x="700" y="215" width="170" height="50" rx="4"/><text class="dg-label" x="785" y="237">effect-id lists</text><text class="dg-sub" x="785" y="253">bit 7 picks the space</text>
+      <path class="dg-edge" d="M570 135 L585 135 L585 45 L698 45" marker-end="url(#mp-arrow)"/>
+      <text class="dg-edge-label" x="592" y="39">+0x00 power</text>
+      <path class="dg-edge" d="M585 110 L698 110" marker-end="url(#mp-arrow)"/>
+      <text class="dg-edge-label" x="592" y="104">+0x0d cue</text>
+      <path class="dg-edge" d="M570 155 L585 155 L585 175 L698 175" marker-end="url(#mp-arrow)"/>
+      <text class="dg-edge-label" x="592" y="169">+0x0a</text>
+      <path class="dg-edge" d="M585 175 L585 240 L698 240" marker-end="url(#mp-arrow)"/>
+      <text class="dg-edge-label" x="592" y="234">+0x12 / +0x16</text>
+      <rect class="dg-node" x="460" y="310" width="210" height="50" rx="4"/><text class="dg-label" x="565" y="332">3D prototype</text><text class="dg-sub" x="565" y="348">0x801F6324 &#8594; FUN_80021B04</text>
+      <rect class="dg-node" x="700" y="310" width="170" height="50" rx="4"/><text class="dg-label" x="785" y="332">efect.dat billboard</text><text class="dg-sub" x="785" y="348">pack1 pool</text>
+      <path class="dg-edge" d="M740 265 L740 288 L565 288 L565 308" marker-end="url(#mp-arrow)"/>
+      <text class="dg-edge-label" x="590" y="282">bit 7 clear</text>
+      <path class="dg-edge" d="M800 265 L800 308" marker-end="url(#mp-arrow)"/>
+      <text class="dg-edge-label" x="808" y="292">bit 7 set</text>
+    </svg>
+    <figcaption><code>table[map[move_id]]</code> and what each field feeds. Only the damage kernel reads the power halfword; the per-frame tick reads the rest off the record pointer the setup caches.</figcaption>
+  </figure>
   <h3 id="special-attack-only">Special-attack-only</h3>
   <p>The map covers exactly 44 ids. The basic-attack and Tactical-Art bands (<code>0x08..=0x11</code>, <code>0x16..=0x18</code>) are unmapped - a queued Somersault or a Gobu Gobu basic attack both resolve to record 0. Damage sources split cleanly:</p>
   <table>
