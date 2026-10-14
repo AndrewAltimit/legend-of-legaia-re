@@ -171,6 +171,11 @@ pub(super) fn magic_cast_begin<H: BattleActionHost + ?Sized>(
     let capture = host.is_capture_spell(spell_id);
     if capture {
         host.load_capture_archive(spell_id);
+        // The capture path raises the action-in-progress marker on its way
+        // into the debit (`li v0,0x1; sb v0,0x243(v1)` at `0x801E44F8`), so
+        // the stage dims through the whole capture band - the ambient ramp
+        // `FUN_80050120` reads it - until the `0x71` exit clears it.
+        ctx.gauge_rearm_latch = 1;
     }
 
     // Compute MP cost with the character ability-bit modifier (Half 0x20 takes

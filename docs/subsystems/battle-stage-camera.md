@@ -181,7 +181,13 @@ cast pulls the near colour from `0xC0` toward `0x60`. The far colour
 
 **Who drives the latch.** The summon close-up (`FUN_801DC0A0` case `0x12`,
 `sb v0,0x243(v1)` at `0x801DCCFC`) sets `ctx+0x243 = 1` on every `0x33` /
-`0x34` pass. The summon band's `0x37` exit (`0x801E4E8C..0x801E4EA4`) and the
+`0x34` pass. Two action-SM arms raise it once on the way into their band:
+the cast begin's capture route (`0x801E44FC`, behind the `ctx[7] = 0x6E`
+store), so the stage dims through a capture-class cast, and the Spirit /
+Item pre-arm `0x3C` (`0x801E3B6C`). The anim commit `FUN_8004E13C` stores a
+committed clip's non-zero header byte there too (`0x8004E2C0`).
+`nivora_duel_mid_blazing_slash`, parked in `0x6E`, reads the latch up and the
+base ten steps down. The summon band's `0x37` exit (`0x801E4E8C..0x801E4EA4`) and the
 capture band's `0x71` exit (`0x801E5214..0x801E5248`) clear it together with
 `ctx+0x278` and re-seed the base at `0x08421084` (`0x21` a channel), so the
 floor climbs back from dark after the creature leaves.

@@ -47,6 +47,11 @@ pub(super) fn spirit_pre_arm<H: BattleActionHost + ?Sized>(
     if let Some(actor) = host.actor_mut(slot) {
         actor.queued_anim = actor.queued_anim_b;
     }
+    // The action-in-progress marker, raised on every pre-arm whatever the
+    // category (`li v0,0x1; sb v0,0x243(v1)` at `0x801E3B68`, behind the
+    // `ctx[7] = 0x3D` store). The stage ambient dims under it until the
+    // Done arm's rate restore clears it.
+    ctx.gauge_rearm_latch = 1;
     let category = host
         .actor(slot)
         .map(|a| ActionCategory::from_byte(a.action_category))
