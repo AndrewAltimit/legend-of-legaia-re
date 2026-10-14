@@ -214,20 +214,14 @@ impl LegaiaRuntime {
             &host.world.object_render_scales(),
             &|r, x, z| host.world.object_floor_follow_y(&follow, r, x, z),
         ));
-        // Pose sources, through the one resolver the native window's
-        // `find_scene_anm_bundle` calls too (`npc_catalog::scene_anm_bundle`).
-        // The scene bundle poses the MAN NPCs and the bound placed props; the
-        // locomotion bundle poses the global-pool specials.
-        self.scene_anm = legaia_engine_scene::npc_catalog::scene_anm_bundle(scene);
-        self.locomotion_anm = host
-            .index
-            .entry_bytes(legaia_actor_formats::character_pack::PROT_ENTRY_INDEX)
-            .ok()
-            .and_then(|b| legaia_actor_formats::character_pack::field_locomotion_anm(&b).ok());
-        // The actor layer resolves against the same TMD pool + VRAM, plus the
-        // world's global pool for the `model >= 0xF0` specials - everything
-        // the native play-window draws.
-        self.build_npc_clips();
+        // The scene's actors, bound to the world by the step the native
+        // window runs too (`scene_actors::bind_scene_actors`): the lead's
+        // locomotion clips, the NPC clip cursors, the floor snap. It hands
+        // back the pose sources (the scene bundle poses the MAN NPCs and the
+        // bound placed props; the locomotion bundle the global-pool
+        // specials), the NPC catalog and the clip players the actor layer
+        // draws from; the lead's mesh is this page's own.
+        self.bind_scene_actors();
         self.build_player_rig();
         // CLUT-walk shimmer (water / waterfall scenes): parse the bundle's
         // type-6 walker table and park its source strips into the host's
@@ -272,18 +266,19 @@ impl LegaiaRuntime {
         Ok(())
     }
 
-    /// Rebuild the actor layer over the entered scene
-    /// ([`crate::field_actors::FieldActors::rebuild`]).
-    fn build_npc_clips(&mut self) {
+    /// Bind the entered scene's actors
+    /// ([`legaia_engine_session::scene_actors::bind_scene_actors`]) and
+    /// adopt what it resolved into the actor layer
+    /// ([`crate::field_actors::FieldActors::adopt`]).
+    fn bind_scene_actors(&mut self) {
         let Some(host) = self.scene_host.host_mut() else {
             self.actors.clear();
             return;
         };
-        let banks = crate::field_actors::ActorBanks {
-            scene_anm: self.scene_anm.as_ref(),
-            locomotion_anm: self.locomotion_anm.as_ref(),
-        };
-        self.actors.rebuild(host, banks);
+        let mut b = legaia_engine_session::scene_actors::bind_scene_actors(host);
+        self.scene_anm = b.scene_anm.take();
+        self.locomotion_anm = b.locomotion_anm.take();
+        self.actors.adopt(b);
     }
 
     /// Put the player somewhere they can actually stand.
@@ -404,8 +399,9 @@ impl LegaiaRuntime {
     }
 
     /// Resolve the lead's field-form mesh out of the global TMD pool (PROT 0874
-    /// §0, seeded by `enter_field_scene`) and install the idle / walk clip pair
-    /// the world ticks into the player actor's `pose_frame`.
+    /// §0, seeded by `enter_field_scene`). The clips the world ticks into the
+    /// player actor's `pose_frame` are the world's, bound by
+    /// `scene_actors::bind_lead_rig`.
     ///
     /// Mirrors the native play-window's player bind: the disc TMD's object table
     /// is truncated to the clip's bone count (retail caps the live object count
@@ -469,18 +465,5 @@ impl LegaiaRuntime {
             flat,
             posed,
         });
-        // Live locomotion playback: the leader's whole bank, from which the
-        // world's settle tail picks idle / walk / run / hop each field tick
-        // and folds the pose into the player actor.
-        let anim = locomotion_bank
-            .as_ref()
-            .filter(|_| roster_lead <= 2)
-            .and_then(|bundle| {
-                legaia_engine_field::field_anim::FieldPlayerAnim::from_locomotion_bank(
-                    bundle,
-                    roster_lead,
-                )
-            });
-        host.world.set_field_player_anim(anim);
     }
 }

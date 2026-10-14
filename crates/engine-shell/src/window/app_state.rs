@@ -464,6 +464,11 @@ pub(super) struct PlayWindowApp {
         Option<legaia_actor_formats::player_anm::PlayerAnmBundle>,
     ),
     pub(super) npc_bundle_special: std::collections::HashMap<u8, bool>,
+    /// The entered scene's actors are still to be bound to the world
+    /// (`scene_actors::bind_scene_actors`): raised with each new scene's
+    /// resources, lowered by the first `upload_assets` after it, renderer or
+    /// not. A mid-scene re-upload (a model re-bind) does not bind again.
+    pub(super) scene_actors_pending: bool,
     /// World-map continent terrain draws: `(uploaded-mesh index, world model)`
     /// per visible tile of the kingdom's `.MAP` object grid
     /// (`Scene::field_terrain_tiles`, the dense `FUN_801F69D8` continent layer).

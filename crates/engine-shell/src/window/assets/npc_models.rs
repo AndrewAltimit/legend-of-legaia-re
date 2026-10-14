@@ -50,10 +50,19 @@ impl PlayWindowApp {
     ///
     /// The player's rig rides the same re-upload: a `CC F8 50` that re-staged
     /// the player's model raises the world's rig-change signal
-    /// (`World::take_player_rig_change`), and the upload binds the rig from
-    /// `SceneHost::player_rig_mesh`.
+    /// (`World::take_player_rig_change`): `scene_actors::bind_lead_rig`
+    /// rebinds the lead's clips, and the upload re-points its slot at the
+    /// mesh of `SceneHost::player_rig_mesh`.
     pub(in crate::window) fn rebind_live_npc_models(&mut self) {
         let player_changed = self.session.host.world.take_player_rig_change();
+        if player_changed {
+            // The world half first, renderer or not: the lead's clips follow
+            // the new rig (the page's twin runs the same step).
+            legaia_engine_session::scene_actors::bind_lead_rig(
+                &mut self.session.host,
+                self.npc_anim_bundles.1.as_ref(),
+            );
+        }
         let changed = player_changed || {
             let world = &self.session.host.world;
             self.field_npc_draws.iter().any(|d| {

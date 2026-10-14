@@ -1854,7 +1854,6 @@ dependencies = [
  "env_logger",
  "glam",
  "legaia-actor-formats",
- "legaia-anm",
  "legaia-art",
  "legaia-container-formats",
  "legaia-engine-audio",

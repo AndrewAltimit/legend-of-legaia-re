@@ -95,6 +95,12 @@ pub struct HostTraceFrame {
     /// The naming prompt (`PartyState::name_entry`), as its debug form:
     /// cursor, entered glyphs and confirm state.
     pub naming: Option<u64>,
+    /// What the scene's actors are bound to: which slots carry a model, the
+    /// idle clip each plays and the pose it holds, the lead's locomotion
+    /// clip (its slot, frame and walking flag), and every placed NPC's clip
+    /// cursor. A host that binds these from its mesh upload rather than
+    /// from the scene parts here (`scene_actors::bind_scene_actors`).
+    pub bindings: u64,
 }
 
 /// The host-held menu-overlay screen's state ([`HostTraceFrame::overlay`]).
@@ -207,7 +213,37 @@ pub fn sample<S: AudioSink>(session: &BootSession<S>) -> HostTraceFrame {
             world.shops.pending_shop.is_some(),
         ),
         naming: world.party.name_entry.as_ref().map(debug_digest),
+        bindings: bindings_digest(world),
     }
+}
+
+fn bindings_digest(world: &legaia_engine_core::world::World) -> u64 {
+    let slots: Vec<String> = world
+        .actors
+        .iter()
+        .enumerate()
+        .filter(|(_, a)| a.tmd_binding.is_some() || a.active_animation.is_some())
+        .map(|(i, a)| {
+            format!(
+                "{i}:{}:{}:{:?}",
+                a.tmd_binding.is_some(),
+                a.active_animation.is_some(),
+                a.pose_frame
+            )
+        })
+        .collect();
+    let lead = world.locomotion.player_anim.as_ref().map(|p| {
+        (
+            p.walking,
+            p.leader,
+            p.retail_slot(),
+            p.scene_record(),
+            p.active_frame_count(),
+            p.idle.cursor(),
+            p.walk.cursor(),
+        )
+    });
+    debug_digest(&(slots, lead, &world.npcs.clip_cursors))
 }
 
 /// The channel names [`first_divergences`] reports, in field order.
@@ -232,6 +268,7 @@ pub const CHANNELS: &[&str] = &[
     "overlay",
     "shop",
     "naming",
+    "bindings",
 ];
 
 fn channel_equal(a: &HostTraceFrame, b: &HostTraceFrame, ch: &str) -> bool {
@@ -256,6 +293,7 @@ fn channel_equal(a: &HostTraceFrame, b: &HostTraceFrame, ch: &str) -> bool {
         "overlay" => a.overlay == b.overlay,
         "shop" => a.shop == b.shop,
         "naming" => a.naming == b.naming,
+        "bindings" => a.bindings == b.bindings,
         _ => true,
     }
 }

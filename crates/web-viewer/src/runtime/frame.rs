@@ -178,11 +178,10 @@ impl LegaiaRuntime {
         // A `CC F8 50` re-staged the player's model this tick: rebuild the
         // rig from the new mesh, the native window's twin
         // (`rebind_live_npc_models` there drains the same signal).
-        if self
-            .scene_host
-            .host_mut()
-            .is_some_and(|h| h.world.take_player_rig_change())
+        if let Some(h) = self.scene_host.host_mut()
+            && h.world.take_player_rig_change()
         {
+            legaia_engine_session::scene_actors::bind_lead_rig(h, self.locomotion_anm.as_ref());
             self.build_player_rig();
         }
         self.drive_npc_clips();

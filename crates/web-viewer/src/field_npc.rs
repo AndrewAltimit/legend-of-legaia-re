@@ -148,6 +148,21 @@ fn build_npc_catalog_impl(
     })
 }
 
+impl FieldNpcPack {
+    /// Wrap an already-built catalog (the play page's, which
+    /// `scene_actors::bind_scene_actors` builds).
+    pub(crate) fn from_catalog(cat: legaia_engine_scene::npc_catalog::NpcCatalog) -> Self {
+        Self {
+            scene: cat.scene,
+            entries: cat.entries,
+            anm_prot: cat.anm_prot,
+            special_count: cat.special_count,
+            unposable_count: cat.unposable_count,
+            cur: None,
+        }
+    }
+}
+
 #[wasm_bindgen]
 impl LegaiaViewer {
     /// Load a CDNAME scene and catalog every NPC / actor its MAN places.

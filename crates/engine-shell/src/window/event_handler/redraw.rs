@@ -104,15 +104,15 @@ impl PlayWindowApp {
     /// indices, so the outgoing clip's pose-cache entries for the slot would
     /// alias it; they are dropped.
     pub(super) fn drain_anim_cues(&mut self) {
-        let srcs = &self.npc_anim_srcs;
+        // The clip targets are the scene binding's catalogued placements
+        // (`scene_actors::bind_scene_actors`), the set the browser page
+        // drains against: which placements this window uploaded a mesh for
+        // is a draw fact, not one a cue may branch on.
         let special = &self.npc_bundle_special;
         let retargets = self.session.host.world.drain_field_anim_cues(
             self.npc_anim_bundles.0.as_ref(),
             self.npc_anim_bundles.1.as_ref(),
-            |slot| {
-                srcs.contains_key(&slot)
-                    .then(|| special.get(&slot).copied().unwrap_or(false))
-            },
+            |slot| special.get(&slot).copied(),
         );
         for r in retargets {
             self.npc_clip_players.insert(r.slot, r.player);

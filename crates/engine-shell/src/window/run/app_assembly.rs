@@ -185,6 +185,7 @@ impl PlayWindowApp {
             npc_pose_verify: std::collections::HashMap::new(),
             npc_anim_bundles: (None, None),
             npc_bundle_special: std::collections::HashMap::new(),
+            scene_actors_pending: true,
             boot_ui: initial_boot_ui,
             save_dir: save_dir.to_path_buf(),
             card: mounted_card,

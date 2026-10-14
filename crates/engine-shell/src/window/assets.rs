@@ -99,6 +99,14 @@ impl PlayWindowApp {
         let Some(res) = self.scene_res.take() else {
             return;
         };
+        // The entered scene's actors, bound to the world once per scene by
+        // the step both hosts run (`scene_actors::bind_scene_actors`): the
+        // lead's locomotion clips, the NPC clip cursors, the floor snap.
+        // Ahead of the renderer gate, so a window with no renderer binds the
+        // same world; the draw half below only reads the result.
+        if std::mem::take(&mut self.scene_actors_pending) {
+            self.adopt_scene_actor_binding();
+        }
         // Pose source for the scene's animated actors + placed static objects.
         let scene_bundle = self.find_scene_anm_bundle();
         let Some(r) = self.win.renderer.as_ref() else {
@@ -114,7 +122,6 @@ impl PlayWindowApp {
             if let Some(b) = self.scene_world_aabb(&res) {
                 self.scene_aabb = b;
             }
-            self.snap_actors_to_floor();
             self.scene_res = Some(res);
             return;
         };
@@ -164,16 +171,19 @@ impl PlayWindowApp {
         self.upload_ui_atlases();
         self.commit_scene_geometry(&res, geo, draws, world_map, world_map_slot4_lines);
 
-        // Actors. The live mesh overrides and the player's rig mesh (the
-        // lead's field form, or the model a `CC F8 50` re-staged the player
-        // onto - `SceneHost::player_rig_mesh`) are resolved first.
+        // Actors' meshes. The live mesh overrides and the player's rig mesh
+        // (the lead's field form, or the model a `CC F8 50` re-staged the
+        // player onto - `SceneHost::player_rig_mesh`) are resolved first.
+        // What each actor is bound to is the world's, settled above.
         let live_npc_meshes = self.live_npc_mesh_overrides();
         let player_rig = self.session.host.player_rig_mesh();
-        self.bind_scene_actor_animations(&res);
-        self.bind_player_rig(player_rig);
+        self.upload_player_rig(player_rig);
         let prop_light_sets = self.upload_field_npcs(&res, scene_bundle, &live_npc_meshes);
         self.install_scene_lights(&light_samples, prop_light_sets);
-        self.snap_actors_to_floor();
+        // Kept for the next upload: a mid-scene model re-bind
+        // (`rebind_live_npc_models`) and a renderer that re-opens re-upload
+        // from it.
+        self.scene_res = Some(res);
         log::info!(
             "play-window: {} meshes uploaded, VRAM {}",
             self.meshes.len(),
