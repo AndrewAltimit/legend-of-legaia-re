@@ -496,8 +496,17 @@ pub(super) fn pad_walk(
                 eprintln!(
                     "    [battle] {} ({}) at start: {}",
                     scene_name(session),
+                    // The label names how the hand plays it. A fight that
+                    // forbids running is fought whatever installed it (the
+                    // Cort fight is entered from a band the staged-fight
+                    // census does not list), and the continuous hand fights
+                    // the random encounters it prices as winnable.
                     if scripted_next {
                         "scripted, fought"
+                    } else if session.host.world.battle.no_escape {
+                        "no escape, fought"
+                    } else if continuous::PLAYS_ON.with(std::cell::Cell::get) {
+                        "random, fought if winnable"
                     } else {
                         "random, fled"
                     },
