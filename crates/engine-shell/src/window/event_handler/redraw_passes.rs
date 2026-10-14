@@ -865,7 +865,11 @@ impl PlayWindowApp {
         // The retail emitter schedule keys on the counter word and on the
         // acting side: party = afterimage shrinking toward the ribbon,
         // monster = ribbon throughout (`FUN_801E09F8`).
-        let party = world.battle_ctx.active_actor < 3;
+        // `ctx[+0x13] < 3` is a pool-slot test (`0x801E0C78`): a small
+        // party's first monster sits below engine slot `3`.
+        let party = world
+            .battle_seat_map()
+            .is_party(world.battle_ctx.active_actor);
         // The schedule's own clock is the world's display-frame counter, the
         // same one the browser play page feeds it. It used to be this
         // window's redraw counter, which advances on frames the simulation

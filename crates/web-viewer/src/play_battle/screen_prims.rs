@@ -261,7 +261,10 @@ impl LegaiaRuntime {
             {
                 let mvp = glam::Mat4::from_cols_array(&vp)
                     * glam::Mat4::from_scale(glam::Vec3::splat(scale));
-                let party = world.battle_ctx.active_actor < 3;
+                // `ctx[+0x13] < 3` is a pool-slot test (`0x801E0C78`).
+                let party = world
+                    .battle_seat_map()
+                    .is_party(world.battle_ctx.active_actor);
                 let frame = world.clock.display_frames as u32;
                 for q in streak_quads_scheduled(&src, &mvp, frame, block.counter_word, party) {
                     out.push(q.to_screen_prim(MOVE_FX_STREAK_OT));

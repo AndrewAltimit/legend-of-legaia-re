@@ -821,6 +821,7 @@ impl World {
         } else {
             pose_id
         };
+        let seats = self.battle_seat_map();
         let Some(actor) = self.actors.get_mut(slot) else {
             return;
         };
@@ -848,8 +849,11 @@ impl World {
         // Monster clip vectors are archive-order (retail resolves monster
         // actions by first-byte search, not by pose id), so only the idle
         // request maps for monster slots; party tables are identity-ordered
-        // and accept the full pose set.
-        if slot >= 3 && pose_id != legaia_engine_battle_vm::battle_action::Pose::Idle as u8 {
+        // and accept the full pose set. The side is the engine's seating: a
+        // small party's first monster sits below slot `3`.
+        if !seats.is_party(u8::try_from(slot).unwrap_or(u8::MAX))
+            && pose_id != legaia_engine_battle_vm::battle_action::Pose::Idle as u8
+        {
             return;
         }
         if actor.battle_pose == Some(pose_id) {

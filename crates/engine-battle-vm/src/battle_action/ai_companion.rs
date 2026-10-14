@@ -112,7 +112,10 @@ pub struct AiCompanionWatch {
 ///
 /// `monster_count` is `ctx[+1]`, the divisor of the target roll.
 /// `seat_alive` answers `actor_table[seat][+0x14C] != 0` for a rolled seat and
-/// `guard_byte` answers that seat's monster-record `+0x1E`.
+/// `guard_byte` answers that seat's monster-record `+0x1E`. Every seat here -
+/// both closures' argument and the returned target - is a **retail pool
+/// slot** (`3 + k` for monster `k`); a host with compact seating maps them
+/// through [`crate::battle_slot::SeatMap`].
 ///
 /// The RNG order is retail's, which matters because the whole battle shares
 /// one cursor: the coin flip first, then one draw per target attempt, then
