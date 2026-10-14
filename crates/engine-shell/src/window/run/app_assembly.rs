@@ -222,6 +222,7 @@ impl PlayWindowApp {
             dynamic_lighting: false,
             dyn_shadows,
             occlusion_fade,
+            psx_render: std::env::var_os("LEGAIA_PSX_RENDER").is_some(),
             field_occluders: Default::default(),
             occl_fade_strength: std::cell::Cell::new(Default::default()),
             scene_point_lights: Vec::new(),
@@ -262,6 +263,7 @@ impl PlayWindowApp {
         if fidelity.retail {
             self.options_state.pin_retail();
         }
+        self.psx_render |= fidelity.psx_render;
         if let Some(info) = self.session.equip_restrictions.clone() {
             self.menu_runtime.install_equip_info(info);
             self.menu_runtime.retail_equipment_buy = true;

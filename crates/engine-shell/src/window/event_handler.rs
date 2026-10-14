@@ -35,8 +35,9 @@ impl ApplicationHandler for PlayWindowApp {
         // Opt-in PSX-faithful rendering: affine (perspective-incorrect) UV
         // warp + sub-pixel vertex jitter + 15-bit BGR555 ordered dithering on
         // the 3D mesh pipelines. Off by default (clean modern output); enable
-        // with `LEGAIA_PSX_RENDER=1`.
-        if std::env::var_os("LEGAIA_PSX_RENDER").is_some()
+        // with `--psx-render` or `LEGAIA_PSX_RENDER=1` (the play page's
+        // "PSX look" box is the runtime twin).
+        if self.psx_render
             && let Some(r) = self.win.renderer.as_ref()
         {
             r.set_psx_mode(true);

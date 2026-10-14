@@ -24,6 +24,11 @@ pub struct LaunchFidelity {
     /// session (`OptionsState::pin_retail`): the framing, the movement
     /// decode, the photosensitivity slew, the tile windows.
     pub retail: bool,
+    /// PSX-faithful rasterisation (vertex jitter + 15-bit dither,
+    /// `Renderer::set_psx_mode`), `--psx-render`. Opt-in on both settings:
+    /// rasterisation defaults to clean, and retail-faithful *shading* does
+    /// not imply it.
+    pub psx_render: bool,
 }
 
 impl LaunchFidelity {
@@ -37,6 +42,7 @@ impl LaunchFidelity {
             occlusion_fade: true,
             volumetric_fog: true,
             retail: false,
+            psx_render: false,
         }
     }
 
@@ -50,6 +56,7 @@ impl LaunchFidelity {
             occlusion_fade: false,
             volumetric_fog: false,
             retail: true,
+            psx_render: false,
         }
     }
 }

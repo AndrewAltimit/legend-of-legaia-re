@@ -881,6 +881,9 @@ pub(super) struct PlayWindowApp {
     /// per-frame focus is staged by the redraw pass in field free-roam
     /// only, so cutscene / battle / world-map framing is untouched.
     pub(super) occlusion_fade: bool,
+    /// Start in PSX-faithful rasterisation (`--psx-render` or
+    /// `LEGAIA_PSX_RENDER=1`), applied to the renderer once it opens.
+    pub(super) psx_render: bool,
     /// The occlusion fade's **visibility gate**: the static scene's
     /// world-space triangles (retail Y-down frame), rebuilt per scene load
     /// by `upload_assets` from the same resolved env draw list the render

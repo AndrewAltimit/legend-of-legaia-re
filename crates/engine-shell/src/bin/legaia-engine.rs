@@ -351,6 +351,7 @@ fn main() -> Result<()> {
             no_entry_pulse,
             no_occlusion_fade,
             no_volumetric_fog,
+            psx_render,
             retail,
             learn_spell,
             set_flag,
@@ -399,7 +400,10 @@ fn main() -> Result<()> {
             seed_party,
             battle.as_deref(),
             if retail {
-                window::LaunchFidelity::retail()
+                window::LaunchFidelity {
+                    psx_render,
+                    ..window::LaunchFidelity::retail()
+                }
             } else {
                 window::LaunchFidelity {
                     dynamic_lighting: if no_dynamic_lighting {
@@ -414,6 +418,7 @@ fn main() -> Result<()> {
                     occlusion_fade: !no_occlusion_fade,
                     volumetric_fog: !no_volumetric_fog,
                     retail: false,
+                    psx_render,
                 }
             },
             window::DebugSeeds::from_args(&learn_spell, &set_flag, resume_save)?.with_cheats(

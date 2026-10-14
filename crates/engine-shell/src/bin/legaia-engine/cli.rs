@@ -1200,6 +1200,12 @@ pub(crate) enum Cmd {
         /// at runtime with the `F9` key.
         #[arg(long, default_value_t = false)]
         no_volumetric_fog: bool,
+        /// Start in PSX-faithful rasterisation: sub-pixel vertex jitter and
+        /// 15-bit ordered dithering on the 3D mesh pipelines (the play page's
+        /// "PSX rasterisation" box; the `LEGAIA_PSX_RENDER=1` environment switch does
+        /// the same). Off by default - clean modern output.
+        #[arg(long, default_value_t = false)]
+        psx_render: bool,
         /// Run retail-faithful: every enhancement off (enhanced lighting and
         /// its shadows, the volumetric fog, the occlusion fade, the entry
         /// pulse) and every persisted engine-only option pinned to its retail
