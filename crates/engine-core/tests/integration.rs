@@ -266,6 +266,7 @@ mod save_gate_scene_man;
 mod save_point_menu_press_disc;
 mod scene_bgm_transition_ladder;
 mod scene_chain_e2e;
+mod scene_change_drops_prop_run_disc;
 mod scene_clut_row_packing_disc;
 mod scene_destinations_disc;
 mod scene_encounter_formations_disc;
