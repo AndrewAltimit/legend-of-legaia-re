@@ -64,6 +64,35 @@ impl<S: AudioSink> BootSession<S> {
         Some(fx)
     }
 
+    /// Capture alignment for the retail comparison's frame, never a game
+    /// path: install a retail state's live fog records over the pool
+    /// (`FogPool::install_snapshot`) and re-run the frame's render step over
+    /// them with the `dt` the tick's step used (`World::restep_fog_render`),
+    /// so the frame draws retail's sheets aged and drifted by its own step.
+    /// The tick has already stepped the engine's own records; the snapshot
+    /// replaces them, so the frame's quads are the installed pool's alone.
+    /// Same camera and guards as [`Self::step_field_fog`].
+    pub fn seat_field_fog(
+        &mut self,
+        particles: &[legaia_engine_field::fog_particles::FogParticle],
+        centre: [f32; 2],
+    ) {
+        let world = &mut self.host.world;
+        world.fog.install_snapshot(particles);
+        if !legaia_engine_core::world::World::fog_mode(world.mode) || !world.fog.gate {
+            return;
+        }
+        let frame = legaia_engine_core::camera_view::resolve_field_camera(
+            world,
+            &self.camera,
+            None,
+            centre,
+        );
+        if let Some(view) = frame.field_view() {
+            let _ = world.restep_fog_render(&view);
+        }
+    }
+
     /// The scripted field VRAM effects the play hosts drain once per sim tick
     /// (`World::step_field_vram_effects`: the native window's
     /// `apply_world_clut_fx`, the page's `step_field_vram_fx`), for a

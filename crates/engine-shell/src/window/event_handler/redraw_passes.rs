@@ -926,11 +926,24 @@ impl PlayWindowApp {
     ///
     /// A read, not a step: the step is per sim tick
     /// (`tick_frame_tail_effects`), so a redraw that ran two ticks or none
-    /// draws what the last tick left, as the page does.
+    /// draws what the last tick left, as the page does. The one exception is
+    /// the capture harness's frame: with `LEGAIA_SEAT_FOG` due it installs
+    /// the retail state's records and re-runs the frame's step over them
+    /// (`BootSession::seat_field_fog`), through the camera this frame draws.
     pub(super) fn take_field_fog_prims(
         &mut self,
     ) -> Vec<legaia_render_kernels::screen_prim::ScreenPrim> {
         use legaia_render_kernels::screen_prim::fog_puff_prim;
+        if let Some(sc) = self.screenshot.as_ref()
+            && sc.seat_fog_due.take()
+            && let Some(fog) = sc.seat_fog.take()
+        {
+            let centre = [
+                (self.scene_aabb.0[0] + self.scene_aabb.1[0]) * 0.5,
+                (self.scene_aabb.0[2] + self.scene_aabb.1[2]) * 0.5,
+            ];
+            self.session.seat_field_fog(&fog, centre);
+        }
         let world = &self.session.host.world;
         if !legaia_engine_core::world::World::fog_mode(world.mode) || !world.fog.gate {
             return Vec::new();

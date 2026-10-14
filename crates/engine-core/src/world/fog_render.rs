@@ -105,6 +105,7 @@ impl World {
     pub fn fog_render_step(&mut self, view: &FieldCameraView) -> &[FogQuad] {
         let dt = self.fog.pending_dt.min(u32::from(u8::MAX)) as u8;
         self.fog.pending_dt = 0;
+        self.fog.last_dt = dt;
         self.fog.depth_view = Some(*view);
         // The overworld map display stops the pass: its field caller
         // `FUN_801D0D38` is reached from the walk frame `FUN_801D1344`, which
@@ -135,6 +136,19 @@ impl World {
         };
         let proj = self.field_fx_view(view);
         self.fog.render_step(&proj, &env)
+    }
+
+    /// Re-run the frame's render step over a pool whose records were just
+    /// replaced (`FogPool::install_snapshot`), with the `dt` the frame's own
+    /// step used - capture alignment for the retail comparison's frame,
+    /// never a game path. The tick's step already aged and drew the
+    /// engine's own records; the snapshot replaces them, and the frame
+    /// draws the retail records aged, drifted and lit by this frame's step,
+    /// as retail's render pass drew them. The step runs once per tick
+    /// everywhere else, so this is the one place a frame steps twice.
+    pub fn restep_fog_render(&mut self, view: &FieldCameraView) -> &[FogQuad] {
+        self.fog.pending_dt = u32::from(self.fog.last_dt);
+        self.fog_render_step(view)
     }
 
     /// The projection the field screen-space effects (fog sheets, drop

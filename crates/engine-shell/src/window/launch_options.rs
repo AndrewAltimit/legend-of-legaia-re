@@ -202,6 +202,11 @@ pub struct ScreenshotConfig {
     /// over the pool on the frame the capture is taken
     /// (`FogPool::install_snapshot`); taken once.
     pub seat_fog: std::cell::Cell<Option<Vec<legaia_engine_field::fog_particles::FogParticle>>>,
+    /// Raised on the capture frame by the seating pass and taken by the
+    /// frame's fog draw, which installs `seat_fog` and re-runs the frame's
+    /// render step over it (`BootSession::seat_field_fog`) where the draw
+    /// prep resolves the camera.
+    pub seat_fog_due: std::cell::Cell<bool>,
     /// `LEGAIA_SEAT_SPRITE_ARMS`: a retail state's live sprite-arm sheets,
     /// installed over the ambient pool's on the frame the capture is taken
     /// (`World::install_sprite_arm_snapshot`); taken once.
@@ -511,6 +516,7 @@ impl ScreenshotConfig {
                     .ok()
                     .map(|v| legaia_engine_capture::field_seeds::fog_from_env(&v)),
             ),
+            seat_fog_due: std::cell::Cell::new(false),
             seat_sprite_arms: std::cell::Cell::new(
                 std::env::var("LEGAIA_SEAT_SPRITE_ARMS")
                     .ok()

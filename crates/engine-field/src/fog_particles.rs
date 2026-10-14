@@ -467,6 +467,10 @@ pub struct FogPool {
     pub gate: bool,
     /// Frame ticks accumulated since the last render step.
     pub pending_dt: u32,
+    /// The `dt` the last render step ran with - what the capture harness
+    /// gives an installed snapshot when it re-runs the frame's step
+    /// (`World::restep_fog_render`).
+    pub last_dt: u8,
     /// The quads the last render step produced.
     pub quads: Vec<FogQuad>,
     /// `_DAT_1F800394 & 1` - the overworld bit. Set on every non-battle
@@ -511,6 +515,7 @@ impl FogPool {
             regions: Vec::new(),
             gate: false,
             pending_dt: 0,
+            last_dt: 0,
             quads: Vec::new(),
             overworld: false,
             curve_bias: 0,
@@ -540,6 +545,7 @@ impl FogPool {
         }
         self.live = 0;
         self.pending_dt = 0;
+        self.last_dt = 0;
         self.quads.clear();
     }
 

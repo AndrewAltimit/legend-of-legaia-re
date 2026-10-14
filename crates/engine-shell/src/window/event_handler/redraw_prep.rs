@@ -38,8 +38,10 @@ impl PlayWindowApp {
     /// and the battle idle orbit's phase alignment.
     pub(super) fn seat_capture_frame(&mut self) {
         // Capture harness: on the frame the capture is taken, the fog pool
-        // shows the retail state's own sheets (`LEGAIA_SEAT_FOG`), installed
-        // before this frame's draw pass runs the pool's render step.
+        // shows the retail state's own sheets (`LEGAIA_SEAT_FOG`). The tick
+        // has already stepped the engine's own pool, so the frame's fog draw
+        // installs the records and re-runs the frame's step over them
+        // (`take_field_fog_prims`, `BootSession::seat_field_fog`).
         if let Some(sc) = self.screenshot.as_ref() {
             let gated =
                 sc.phase_gate.is_some() || sc.script_gate.is_some() || sc.battle_drive.is_some();
@@ -48,8 +50,8 @@ impl PlayWindowApp {
             } else {
                 self.tick_no >= sc.capture_tick
             };
-            if due && let Some(fog) = sc.seat_fog.take() {
-                self.session.host.world.fog.install_snapshot(&fog);
+            if due {
+                sc.seat_fog_due.set(true);
             }
             // ... and the ambient tree's sprite-arm sheets where retail's
             // emitters had put them (`LEGAIA_SEAT_SPRITE_ARMS`).
