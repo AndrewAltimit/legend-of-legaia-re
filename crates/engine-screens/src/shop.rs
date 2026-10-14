@@ -514,7 +514,7 @@ pub fn gold_shop_screen(
     };
 
     // Window 42 - the picker, with the hand only while it has the pad.
-    let picker_rows = legaia_engine_core::menu_runtime::shop_root_labels(
+    let picker_rows = legaia_engine_menus::shop_cues::shop_root_labels(
         world.seru_trade_enabled(),
         !bag.is_empty(),
     );

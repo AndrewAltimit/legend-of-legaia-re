@@ -45,7 +45,9 @@ link into a dependent crate.
   `pause_screens` (the Items / Magic / Equip screen sessions and view
   models, the root route table, the kind-4 list kernel) and `shop` /
   `shop_catalog` (the buy / sell / quantity / recipient sessions, the shop
-  window set and the disc gold-shop catalog); see
+  window set and the disc gold-shop catalog), and `shop_cues` (the root
+  picker's rows and labels, the list page lengths, and the UI cue each shop
+  input raises); see
   [`docs/subsystems/shop.md`](../../docs/subsystems/shop.md).
 - **Battle command input** - `battle_input` (`BattleCommandSession`, the
   player-driven command picker the live battle loop opens per party turn,

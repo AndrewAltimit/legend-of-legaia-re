@@ -56,6 +56,7 @@ pub mod save_select;
 pub mod save_subscreen;
 pub mod shop;
 pub mod shop_catalog;
+pub mod shop_cues;
 pub mod shop_state;
 pub mod spell_menu;
 pub mod spell_party_broadcast;
