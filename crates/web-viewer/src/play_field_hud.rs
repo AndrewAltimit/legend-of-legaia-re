@@ -27,6 +27,12 @@
 //! while the native window keeps it at the top. The tick declares the common
 //! case instead (the player is below the dodge line), which is what the
 //! projection answers on all but a handful of framings.
+//!
+//! Once the page **has** reported, a lead that does not project (no live
+//! player actor, or behind the camera) reaches the kernel as `None`, exactly
+//! as the native window's `field_hud_projected_player_y` hands it over. The
+//! two cases used to share the stand-in, so on those framings the page kept
+//! the readout on the top row while the window dropped it to the low one.
 
 use crate::runtime::LegaiaRuntime;
 use legaia_engine_ui::{self as ui, SpriteDraw, TextDraw};
@@ -90,14 +96,14 @@ impl LegaiaRuntime {
         // The page reports the lead's projected stage-Y off its own
         // view-projection each frame (`set_field_player_screen_y`); until it
         // has, the stand-in keeps the kernel's `None` meaning "staged load
-        // pending" rather than "unknown".
+        // pending" rather than "unknown". A reported "not projectable" is
+        // handed over as `None`, as the native window hands it.
         let projected_y = if suppressed {
             None
+        } else if self.field_hud_projection_reported {
+            self.field_hud_projected_y
         } else {
-            Some(
-                self.field_hud_projected_y
-                    .unwrap_or(ui::field_party_hud::NO_PROJECTION_STAND_IN),
-            )
+            Some(ui::field_party_hud::NO_PROJECTION_STAND_IN)
         };
         self.field_party_hud
             .tick(suppressed, view_mode, pad, player_pos, 1, projected_y);

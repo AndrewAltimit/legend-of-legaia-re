@@ -164,6 +164,12 @@ pub struct LegaiaRuntime {
     /// the twin of the native window's `field_hud_projected_player_y`. `None`
     /// until the page reports one.
     pub(crate) field_hud_projected_y: Option<i16>,
+    /// Whether the page has reported a projection at all
+    /// ([`Self::set_field_player_screen_y`]). Until it has, the HUD kernel
+    /// is handed the stand-in; once it has, a `None` above is the lead
+    /// genuinely not projecting, which the kernel reads as the native
+    /// window's does.
+    pub(crate) field_hud_projection_reported: bool,
     /// Actor slots a field-VM `0x4C 0xD8` spawn (`FieldEvent::ActorSpawned`)
     /// gave a TMD reference this session - the native window's
     /// `pending_dynamic_mesh_slots`. The page drains them through
@@ -429,6 +435,7 @@ impl LegaiaRuntime {
             field_party_hud_scene: None,
             passive_hud_icons: Vec::new(),
             field_hud_projected_y: None,
+            field_hud_projection_reported: false,
             pending_dynamic_mesh_slots: Vec::new(),
             dynamic_mesh_slots: Vec::new(),
             dynamic_mesh_cur: None,
