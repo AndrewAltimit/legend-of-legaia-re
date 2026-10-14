@@ -1,0 +1,125 @@
+<header class="page-header">
+  <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">subsystems</a> &middot; battle stage and camera</div>
+  <h1>Battle stage and camera</h1>
+  <p class="lede">A battle has no arena file of its own. It is fought on a <strong>stage</strong> built from three things: a procedural flat ground grid, a half-bowl backdrop shell drawn twice, and the combatants. Over that stage runs a <strong>phase-scripted camera</strong>: one dispatcher picks one of ten framings per frame, and a tween builder eases the live pose toward it. This page covers both, plus the field-to-battle transition that precedes them.</p>
+</header>
+
+<section class="doc-section" id="at-a-glance">
+  <h2>At a glance</h2>
+  <dl class="kv">
+    <dt>Ground</dt><dd>Procedural grid emitter <code>func_0x801d02c0</code> (battle overlay), the sole draw call of the battle-mode render; no geometry file</dd>
+    <dt>Backdrop</dt><dd>The scene's own backdrop mesh stream, selected by scene data into <code>_DAT_8007B864</code>; registered once, drawn by two actors</dd>
+    <dt>Stage colour</dt><dd>Depth-cue pass <code>FUN_80050120</code> (ambient <code>0x8007B7B0</code>, far colour <code>0x8007BB48</code>)</dd>
+    <dt>Camera pose</dt><dd>Rotation trio <code>0x8007B790</code> (pitch / yaw / roll, 4096 = one turn), translation trio <code>0x800840B8</code>, projection distance <code>H = 256</code></dd>
+    <dt>Framing</dt><dd>Dispatcher <code>FUN_801D5854(actor, case)</code>, ten-entry jump table at <code>0x801CEA00</code> (PROT 0898)</dd>
+    <dt>Tween</dt><dd>Builder <code>FUN_801D829C</code>, walker <code>FUN_8002149C</code></dd>
+    <dt>Intro</dt><dd>Transition overlay PROT 0979, tick <code>FUN_801CF5BC</code>, five visual styles</dd>
+    <dt>Port</dt><dd><code>scene-formats::battle_backdrop</code>, <code>engine-battle-vm::battle_cam_script</code> / <code>battle_camera</code> / <code>battle_attack_camera</code>; both hosts only read the pose</dd>
+  </dl>
+</section>
+
+<section class="doc-section" id="stage">
+  <h2>The stage</h2>
+  <figure class="diagram">
+    <svg viewBox="0 0 880 420" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Top-down view of the battle stage: a square ground grid of 28 by 28 cells centred on the origin, the party seated on one side and the monsters on the other, surrounded by a circular backdrop shell made of an authored half bowl and a second mirrored copy of the same mesh. The camera sits outside the combatants looking at the formation centre and orbits it while idle.">
+      <defs><marker id="bsc-arrow" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <path class="dg-node" d="M300 210 A180 180 0 0 1 660 210" />
+      <path class="dg-node-accent" d="M660 210 A180 180 0 0 1 300 210" />
+      <text class="dg-label" x="480" y="52">authored half</text><text class="dg-sub" x="480" y="68">backdrop mesh, copy A</text>
+      <text class="dg-label" x="480" y="372">second copy</text><text class="dg-sub" x="480" y="388">same mesh, mirrored or rotated, copy B</text>
+      <rect class="dg-group" x="380" y="110" width="200" height="200"/>
+      <path class="dg-edge-dim" d="M380 160 L580 160 M380 210 L580 210 M380 260 L580 260 M430 110 L430 310 M480 110 L480 310 M530 110 L530 310"/>
+      <text class="dg-sub" x="480" y="104">ground grid: 28 &#215; 28 cells, pitch 0x200</text>
+      <circle class="dg-node-ok" cx="440" cy="235" r="9"/><circle class="dg-node-ok" cx="480" cy="250" r="9"/><circle class="dg-node-ok" cx="520" cy="235" r="9"/>
+      <text class="dg-sub" x="480" y="282">party seats</text>
+      <circle class="dg-node-warn" cx="450" cy="170" r="9"/><circle class="dg-node-warn" cx="510" cy="170" r="9"/>
+      <text class="dg-sub" x="480" y="148">monster seats</text>
+      <rect class="dg-node" x="60" y="180" width="150" height="60" rx="4"/>
+      <text class="dg-label" x="135" y="204">Camera</text><text class="dg-sub" x="135" y="222">far framing: TR (0, 1280, 7680)</text>
+      <path class="dg-edge" d="M210 210 L374 210" marker-end="url(#bsc-arrow)"/>
+      <path class="dg-edge-dim" d="M135 180 A345 345 0 0 1 300 60" marker-end="url(#bsc-arrow)"/>
+      <text class="dg-edge-label" x="120" y="110">idle orbit: yaw is a clock</text>
+      <rect class="dg-node" x="700" y="180" width="160" height="60" rx="4"/>
+      <text class="dg-label" x="780" y="204">Field scenery</text><text class="dg-sub" x="780" y="222">stays resident behind</text>
+    </svg>
+    <figcaption>Not to scale. The grid is a full plane centred on the actors, so it fills the ground at every orbit angle; the shell is half a bowl whose second draw closes the circle.</figcaption>
+  </figure>
+  <h3>Ground grid</h3>
+  <p>The floor is not geometry from a file. A GTE rasteriser emits a flat tiled grid each frame in two passes: the first transforms each grid point and writes a per-cell visibility byte, the second emits four gouraud-textured quads per visible cell. One 64&times;64 texel window is stretched over each cell. The routine contains no RNG and mirrors no corner - the tiling is deterministic. The grid has one extra cell of bias on the depth axis, so it is not quite centred.</p>
+  <h3>Which backdrop a fight uses</h3>
+  <p>A scene bundle carries one backdrop mesh stream per sub-area, and the battle uses whichever one the chunk walker last recorded. The choice is scene data, not a code table, and it is not uniformly the block's first stream: Rim Elm carries four sub-area backdrops and the sparring match is fought in the second.</p>
+  <h3>Two copies of one mesh</h3>
+  <p>The shell is authored as <strong>half</strong> a bowl - across every stage entry the mesh barely crosses its own centre plane, and that is the real shape, not a truncated parse. The mesh is registered once and drawn by two actors; a per-stage mirror table and an outdoor table decide how the second copy is placed. One orbit-angle capture separates the models: with one copy, 90 screen columns are empty where the retail framebuffer has a mountain band in all 90.</p>
+</section>
+
+<section class="doc-section" id="camera">
+  <h2>The camera</h2>
+  <p>The view is a plain Euler pose: <code>screen = H &times; (R&middot;v + TR) / depth</code> with <code>R = Rx(pitch) &times; Ry(yaw)</code>. The projection distance and base matrix hold through every phase; only the pose moves. The reference pose is the far framing of the round prompt - pitch 32 (about 2.8&deg; of down-tilt), no roll, <code>TR = (0, 1280, 7680)</code>, looking at the world origin, with yaw the free orbit azimuth.</p>
+  <h3>Who owns the camera this frame</h3>
+  <p>Three owners hand it on in order, each calling the same dispatcher:</p>
+  <ol class="steps">
+    <li><b>Entry sweep</b><span>the SCUS frame driver: the camera rises and pulls in from battle init's pose, then closes with case 2</span></li>
+    <li><b>Menu driver</b><span>the <a href="battle-command-flow.html">command flow</a>: far framing on the prompt, a member close-up in the ring, a target shot on the cursor</span></li>
+    <li><b>Action SM</b><span>the <a href="battle-action.html">action state machine</a>: per-action framing, a post-strike two-shot, then the target</span></li>
+  </ol>
+  <h3>The ten framings</h3>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Case</th><th>Shot</th><th>Pitch</th><th>Translation</th><th>Looks at</th></tr></thead>
+    <tbody>
+      <tr><td><code>0</code></td><td>member close-up (ring, arts input, pickers)</td><td>32</td><td><code>(-512, height[char], 2457)</code></td><td>the member</td></tr>
+      <tr><td><code>1</code></td><td>target cursor on one enemy</td><td><code>0x100</code></td><td><code>(0, 0x600, &hellip;)</code></td><td>the commanding member</td></tr>
+      <tr><td><code>2</code></td><td>the entry sweep's close-in</td><td>0</td><td><code>(0, 0x600, 0x700)</code></td><td>acting actor, or the origin</td></tr>
+      <tr><td><code>3</code></td><td>target cursor on one ally</td><td>32</td><td><code>(0, height, 2457)</code></td><td>the ally</td></tr>
+      <tr><td><code>4</code> / <code>5</code></td><td>none - whole-side cursors go straight to the shared tail</td><td>-</td><td>-</td><td>-</td></tr>
+      <tr><td><code>6</code></td><td>per-action framing</td><td>0</td><td><code>(0, 0x500, ctx[+0x6D0])</code></td><td>acting actor, live position</td></tr>
+      <tr><td><code>7</code></td><td>post-strike two-shot</td><td>0</td><td>as case 6</td><td>attacker-target midpoint</td></tr>
+      <tr><td><code>8</code></td><td>end of action</td><td>by target state</td><td>by target state</td><td>the target</td></tr>
+      <tr><td><code>9</code></td><td>far framing (round prompt)</td><td>32</td><td><code>(0, 1280, max(span &times; 3, 0x800))</code></td><td>formation centre</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>The end-of-action gate arms nothing; the far framing takes over there.</p>
+  <h3>The tween is an ease-out</h3>
+  <p>Every framing is <strong>re-armed each pass</strong>: the target vectors are rebuilt from the live actor record every display frame and the step table re-emitted. The target is never frozen at the state change. Each rebuild divides the remaining gap by the duration again, so a pass covers about a sixth of what remains, and the camera is still closing in long after its nominal twelve frames. Captured step tables match that law exactly.</p>
+  <h3>Idle orbit</h3>
+  <p>Battle init zeroes the yaw; from there it is a clock. Two writers decrement it by twice the frame step - the battle tick while the flow byte sits on a prompt, and the action SM in its setup states. This sweep never consults the state machines, which is why a <a href="battle-action-exit-gates.html">parked battle</a> shows as an endless orbit.</p>
+  <h3>The per-art attack camera</h3>
+  <p><code>FUN_801D71B8</code> is an override, called from the dispatcher's shared tail after whichever case has armed its tween. It therefore overrides cases 7 and 8 as well as 6 - which matters, because the strike loop where most art swings are filmed is case 7. It seeds a fresh, tighter pose from the actor, runs a per-character, per-art arm, and re-arms a much shorter tween. An art with no arm returns without arming anything and the case's framing stands. Its first test is the target's live HP, so a death re-frame is never overridden. The arm offsets come from the <a href="../formats/battle-attack-camera-table.html">attack-camera table</a>.</p>
+  <h3>The Battle Camera option is not a distance</h3>
+  <p>The options row (Close / Normal / Far) is read in four places, each making the action shots calmer as it rises: Far skips the yaw drift, the setup-band orbit and the per-art override; Normal and Far skip case 8's dead-target and live-target arms.</p>
+</section>
+
+<section class="doc-section" id="intro">
+  <h2>The field-to-battle transition</h2>
+  <p>The transition between leaving the field and the battle coming up is its own overlay. It sequences the handoff and drives one of five visual styles over a one-shot capture of the field frame:</p>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Style</th><th>Retail tick</th></tr></thead>
+    <tbody>
+      <tr><td>Scatter particles</td><td><code>FUN_801CFDA0</code></td></tr>
+      <tr><td>Scatter with spin-up (boss entry)</td><td><code>FUN_801D0370</code></td></tr>
+      <tr><td>Tile shatter</td><td><code>FUN_801D0D24</code></td></tr>
+      <tr><td>Swirl fan</td><td><code>FUN_801D1888</code> / <code>FUN_801D1A20</code></td></tr>
+      <tr><td>Screen-strip curtain</td><td><code>FUN_801D11D0</code></td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>The transition runs 132 display frames, 252 for the swirl. Every battle entry rides it: the field step roll, a scripted fight, and a world-map contact. The scripted-fight bit of the per-battle flags selects the spin-up style. The curtain is a render-to-texture whose row pass is the only part that reaches the screen.</p>
+</section>
+
+<section class="doc-section" id="see-also">
+  <h2>See also</h2>
+  <p>The full write-up - grid emitter constants, the two culls, the depth-cue colours, the mirror and outdoor tables, each framing case arm by arm, the frame step, screen shake and the transition's per-style packets - is in <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/battle-stage-camera.md" target="_blank" rel="noopener"><code>docs/subsystems/battle-stage-camera.md</code></a>.</p>
+  <div class="see-also">
+    <span class="see-also-label">Reference</span>
+    <a href="battle.html">Battle</a>
+    <a href="battle-action.html">Action state machine</a>
+    <a href="battle-command-flow.html">Command flow</a>
+    <a href="battle-hud.html">Battle HUD</a>
+    <a href="cutscene.html">Cutscene and transitions</a>
+    <a href="renderer.html">Renderer</a>
+    <a href="../formats/battle-attack-camera-table.html">Attack-camera table</a>
+    <a href="../formats/scene-bundles.html">Scene bundles</a>
+  </div>
+</section>

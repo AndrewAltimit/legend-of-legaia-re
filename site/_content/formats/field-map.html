@@ -1,0 +1,91 @@
+<header class="page-header">
+  <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">formats</a> &middot; field map</div>
+  <h1>Per-scene field map <span class="tag tag-done">Confirmed</span></h1>
+  <p class="lede">Every walkable scene has one file that says where the walls are, how high the floor is, which object stands on which tile and which tiles are doors. It is the first entry of the scene's block on the disc, it is <strong>exactly <code>0x12000</code> bytes</strong>, and the scene loader streams it verbatim into the field buffer - so an offset in the file and an offset at runtime are the same number.</p>
+</header>
+
+<section class="doc-section" id="at-a-glance">
+  <h2>At a glance</h2>
+  <dl class="kv">
+    <dt>Where</dt><dd>Slot 0 of each scene's block in <a href="prot.html">PROT.DAT</a> (<code>DATA\FIELD\&lt;scene&gt;.MAP</code>); 101 entries</dd>
+    <dt>Size</dt><dd><code>0x12000</code> bytes (36 sectors), four regions that sum to it with nothing left over</dd>
+    <dt>Runtime home</dt><dd>The per-scene field buffer, pointer at scratchpad <code>0x1F8003EC</code></dd>
+    <dt>Grid</dt><dd>128 &times; 128 tiles of 128 world units</dd>
+    <dt>Detection</dt><dd>Fixed footprint <em>and</em> a trigger-block header that chains; class <code>field_map</code></dd>
+    <dt>Parser</dt><dd><code>legaia_scene_formats::field_map</code></dd>
+    <dt>Used by</dt><dd><a href="../subsystems/field-locomotion.html">field locomotion</a> (collision, floor height, triggers), the environment draw resolver</dd>
+  </dl>
+</section>
+
+<section class="doc-section" id="layout">
+  <h2>Four regions</h2>
+  <div class="byte-map" role="img" aria-label="Field map regions: object descriptor table 0x4000 bytes at offset 0, collision and floor grid 0x4000 bytes at 0x4000, per-tile object-index map 0x8000 bytes at 0x8000, per-tile trigger block 0x2000 bytes at 0x10000">
+    <div class="bm-cell" style="--w:4"><span class="bm-off">+0x00000</span><span class="bm-name">object descriptors</span><span class="bm-size">0x4000</span></div>
+    <div class="bm-cell bm-accent" style="--w:4"><span class="bm-off">+0x04000</span><span class="bm-name">collision + floor grid</span><span class="bm-size">0x4000</span></div>
+    <div class="bm-cell" style="--w:8"><span class="bm-off">+0x08000</span><span class="bm-name">object-index map</span><span class="bm-size">0x8000</span></div>
+    <div class="bm-cell bm-accent" style="--w:2"><span class="bm-off">+0x10000</span><span class="bm-name">trigger block</span><span class="bm-size">0x2000</span></div>
+  </div>
+  <p class="dg-note">Widths to scale. Total <code>0x12000</code>.</p>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Region</th><th>Shape</th><th>Consumer that pins the offset</th></tr></thead>
+    <tbody>
+      <tr><td>object descriptors</td><td><code>0x20</code>-byte records, 512 slots</td><td><code>FUN_8003A55C</code>: a cell's low 9 bits scaled by <code>0x20</code></td></tr>
+      <tr><td>collision + floor grid</td><td>1 byte per tile, <code>0x80</code>-byte rows</td><td><code>FUN_80019278</code>, <code>FUN_8003A55C</code></td></tr>
+      <tr><td>object-index map</td><td>one <code>u16</code> per tile, <code>0x100</code>-byte rows</td><td><code>FUN_80019278</code></td></tr>
+      <tr><td>trigger block</td><td>18-byte header + four sub-tables</td><td><code>FUN_801D5630</code></td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>Both grids cover the same tiles; they differ in size only because one is a byte per tile and the other a halfword. In a collision byte the high nibble is four sub-cell wall bits and the low nibble a floor-elevation tier - the <a href="../subsystems/field-locomotion.html#collision-tile">field locomotion</a> page has the per-field meaning of every region.</p>
+  <p><strong>The whole image stays resident.</strong> Retail reads every region for as long as the scene runs, not only at load. The descriptor table is the one that is easy to assume dead after the init sweep: the sub-area window sweep indexes it again on every camera re-centre.</p>
+</section>
+
+<section class="doc-section" id="trigger-block">
+  <h2>The trigger block</h2>
+  <p>The block opens with an 18-byte header naming four sub-tables, then the four bodies laid back to back, each followed by a 2-byte gap.</p>
+  <div class="byte-map" role="img" aria-label="Trigger block header, 18 bytes: end offset, then four pairs of body offset and record count">
+    <div class="bm-cell bm-accent" style="--w:2"><span class="bm-off">+0x00</span><span class="bm-name">end offset</span><span class="bm-size">u16</span></div>
+    <div class="bm-cell" style="--w:4"><span class="bm-off">+0x02</span><span class="bm-name">offset, count [0]</span><span class="bm-size">2 &times; s16</span></div>
+    <div class="bm-cell" style="--w:4"><span class="bm-off">+0x06</span><span class="bm-name">offset, count [1]</span><span class="bm-size">2 &times; s16</span></div>
+    <div class="bm-cell" style="--w:4"><span class="bm-off">+0x0A</span><span class="bm-name">offset, count [2]</span><span class="bm-size">2 &times; s16</span></div>
+    <div class="bm-cell" style="--w:4"><span class="bm-off">+0x0E</span><span class="bm-name">offset, count [3]</span><span class="bm-size">2 &times; s16</span></div>
+  </div>
+  <p>A record matches when its first two bytes equal the player's tile column and row. The record strides are not in the file: they come from a separate four-byte table in the executable, and retail's are <code>4, 4, 4, 8</code>.</p>
+  <p><strong>The fallback window is a property of the read, not of the file.</strong> The loader requests <code>0x2000</code> bytes more than the map, and those trailing sectors are the <em>next</em> PROT entry's leading bytes - in practice the scene's own <a href="scene-v12-table.html">walk-on trigger sidecar</a>. The trigger lookup searches them with the same header shape when the primary block misses, and a sidecar-only exit row is confirmed to fire in a running game.</p>
+</section>
+
+<section class="doc-section" id="detection">
+  <h2>Detecting one from bytes alone</h2>
+  <p><code>size == 0x12000</code> <strong>and</strong> a trigger-block header that chains: the first body offset equals the end of the header, each following offset equals the previous body's end plus the gap, and the leading word equals the end of the last body plus two. Across the whole disc that chain holds with zero false positives.</p>
+  <ul>
+    <li><strong>The footprint is necessary, not sufficient.</strong> <code>0x12000</code> is a size, not a signature: 111 entries carry it and only 101 are field maps. The other ten are mesh streams, a data stream and sound streams that happen to be that long. A reader that resolves &ldquo;the field map&rdquo; by footprint alone picks up ten strangers; resolve by slot.</li>
+    <li><strong>One zeroed header is real.</strong> A cutscene-only scene ships its trigger header all zeros. The detector accepts it only when the object table and collision grid are entirely zero as well - ungated, an all-zero 18-byte window matches mesh-stream entries by accident.</li>
+    <li><strong>Byte statistics do not identify it.</strong> The regions are sparse by construction, so a statistical classifier scatters these files across &ldquo;mostly zeros&rdquo; and &ldquo;low entropy&rdquo; - the wrong answer for the file that carries every scene's collision data.</li>
+  </ul>
+</section>
+
+<section class="doc-section" id="numbering">
+  <h2>Finding a scene's map</h2>
+  <p>The map is slot 0 of the scene's block in extraction space, i.e. extraction index <code>define - 2</code> under the <a href="cdname.html">CDNAME numbering correction</a>. Resolving it as &ldquo;the first <code>0x12000</code> entry at or after the scene's label&rdquo; instead picks the <em>next</em> scene's map, and so the wrong collision grid.</p>
+</section>
+
+<section class="doc-section" id="floor">
+  <h2>The map alone does not draw a floor</h2>
+  <p>The grid holds only a 4-bit <em>tier</em> per tile. The elevation it stands for lives in a 16-entry floor-height table installed at scene entry from the scene's MAN header, so the visible ground is the product of two separately resolved assets. When the second link breaks, both consumers fail quietly: there is no ground surface at all, and every placed object falls back to height zero. The result is a scene that still draws its walls and props, flattened onto the origin plane, over nothing. A floorless field scene is therefore a symptom of MAN resolution, not of this file.</p>
+</section>
+
+<section class="doc-section" id="see-also">
+  <h2>See also</h2>
+  <p>Source of record: <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/formats/field-map.md" target="_blank" rel="noopener"><code>docs/formats/field-map.md</code></a>.</p>
+  <div class="see-also">
+    <span class="see-also-label">Reference</span>
+    <a href="../subsystems/field-locomotion.html">Field locomotion</a>
+    <a href="scene-v12-table.html">Scene V12 table (.PCH)</a>
+    <a href="scene-bundles.html">Scene bundles</a>
+    <a href="field-pack.html">Field-pack</a>
+    <a href="cdname.html">CDNAME numbering</a>
+    <a href="prot.html">PROT.DAT TOC</a>
+    <a href="../subsystems/script-vm-menuctrl.html#nibble-7">Script wall paint</a>
+  </div>
+</section>

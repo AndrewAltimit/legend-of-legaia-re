@@ -104,7 +104,7 @@
   <tbody>
     <tr><td><code>0x32</code></td><td>Player summon</td><td>Summon band; pages a per-summon overlay (PROT 903..) that spawns the Ra-Seru body and applies damage</td></tr>
     <tr><td><code>0x14</code></td><td>Plain cast</td><td>Ordinary magic band with the caster's animation (Tail Fire, Astral Wave, &hellip;)</td></tr>
-    <tr><td><code>0x63</code></td><td>Capture-class</td><td>Pages the per-spell <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/cast-module.md" target="_blank" rel="noopener">cast module</a> PROT <code>935 + sub</code> and starts its voice cue. Covers Seru capture, the Amulet, and the boss cinematic casts; the module carries its own baked damage constants</td></tr>
+    <tr><td><code>0x63</code></td><td>Capture-class</td><td>Pages the per-spell <a href="../subsystems/cast-module.html">cast module</a> PROT <code>935 + sub</code> and starts its voice cue. Covers Seru capture, the Amulet, and the boss cinematic casts; the module carries its own baked damage constants</td></tr>
   </tbody>
   </table>
   <p>Because the sub-index is static table data, the identity of every capture-class module is readable from the executable alone (<code>spell_names::capture_class_records</code>). The 32 modules (PROT 935..966) are shared: a multi-spell module dispatches per spell id at its head.</p>
@@ -196,7 +196,7 @@
     <li><strong>Damage summons</strong> (PROT 0903 / 0904 / 0906 / 0908 / 0909 / 0910 / 0912 / 0913, plus 0914 and one arm of 0915) roll <code>rand % (summon AGL + 1) + summon HP + caster AGL &times; 2</code> against a defender roll, then apply element affinity, status weakening and the 9999 cap - the kernels on the <a href="../subsystems/battle-formulas.html">battle-formulas</a> page, ported in <code>engine-battle-vm::battle_formulas</code>.</li>
     <li><strong>Heal summons</strong> are just <strong>two</strong> of the eleven, and their formulas differ: Vera (PROT 0905) restores <code>level &times; 0x20 + 0xE0</code> on one ally, Orb (PROT 0911) restores <code>(level &lt;&lt; 6) + 0x1C0</code> across the party and cleanses status from level 3. Both read the caster's per-magic <em>level</em> byte out of the character record, not a power byte.</li>
     <li><strong>Neither</strong>: Nighto (PROT 0907) computes no amount at all - a kill roll zeroes the target's HP outright, otherwise it sets the confuse bits.</li>
-    <li><strong>Capture-class casts</strong> carry baked constants in their <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/cast-module.md" target="_blank" rel="noopener">cast module</a>.</li>
+    <li><strong>Capture-class casts</strong> carry baked constants in their <a href="../subsystems/cast-module.html">cast module</a>.</li>
     <li>The per-move power scalar that <em>does</em> exist - the <a href="move-power.html">move-power table</a> - feeds the arts / physical branch and shares this id space (<code>0x25..=0x74</code> are the named monster attacks).</li>
   </ul>
 </section>
@@ -232,7 +232,7 @@
     <a href="steal-table.html">Steal table</a>
     <a href="../subsystems/battle-formulas.html">Battle formulas</a>
     <a href="../subsystems/battle-action.html">Battle-action SM</a>
-    <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/cast-module.md" target="_blank" rel="noopener">Cast modules</a>
+    <a href="../subsystems/cast-module.html">Cast modules</a>
     <a href="../subsystems/field-menu.html">Field menu</a>
     <a href="../reference/gamedata.html">Game-data tables</a>
     <a href="../reference/re-do-not-re-walk.html">Do not re-walk</a>

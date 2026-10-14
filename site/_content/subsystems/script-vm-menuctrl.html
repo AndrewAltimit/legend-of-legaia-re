@@ -1,0 +1,186 @@
+<header class="page-header">
+  <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">subsystems</a> &middot; <a href="script-vm.html">field / event VM</a> &middot; op 0x4C</div>
+  <h1>Field VM op <code>0x4C</code>: sixteen dispatchers in one opcode</h1>
+  <p class="lede"><code>0x4C</code> is the field script's grab-bag opcode. It carries the name MENU_CTRL and is not a menu: the byte after it picks one of sixteen small sub-dispatchers, and between them they paint walls into the walkability grid, steer the camera, tint and clone actors, wobble the floor, take items from the bag, spend casino coins, start movies and schedule escape timers. This is the reference for all sixteen; the rest of the VM is on the <a href="script-vm.html">field / event VM</a> page.</p>
+</header>
+
+<section class="doc-section" id="at-a-glance">
+  <h2>At a glance</h2>
+  <dl class="kv">
+    <dt>Form</dt><dd><code>[4C, op0, operands&hellip;]</code>; the <strong>high nibble</strong> of <code>op0</code> selects the dispatcher</dd>
+    <dt>Outer table</dt><dd>Sixteen entries at <code>0x801CEE60</code>, inside the field VM <code>FUN_801DE840</code> (field overlay, PROT 0897)</dd>
+    <dt>Inner tables</dt><dd>Most arms index a second table on the low nibble; every sub-op has its own byte width</dd>
+    <dt>Disassembler</dt><dd><code>legaia_scene_formats::field_disasm</code> carries the widths for all sixteen nibbles</dd>
+    <dt>Confidence</dt><dd>Confirmed - arm addresses and widths read from the disassembly; shipped usage checked by the disc-wide opcode census</dd>
+  </dl>
+</section>
+
+<section class="doc-section" id="map">
+  <h2>The sixteen nibbles</h2>
+  <figure class="diagram">
+    <svg viewBox="0 0 880 390" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="The sixteen outer nibbles of field opcode 0x4C laid out as a four by four grid: 0 party leader change; 1 globals, screen tint, clear colour and actor clone; 2 pad rotation octant; 3 ambient particle gate and camera-zone arms; 4 write or ramp a slot; 5 model set, move to tile, take item, dialog polls; 6 VRAM moves and CLUT cell write; 7 wall paint; 8 heal, tint, shake, face-turn, reflection; 9 floor-height ladder; A jump on a flag bit; B error printer; C camera focus, glide wait, counters, teleport; D sound effect, morph spawn, timed flags, STP bits; E text balloon, movie, box branch, coins; F error printer except 4C FF.">
+      <rect class="dg-node" x="290" y="10" width="300" height="40" rx="4"/>
+      <text class="dg-label" x="440" y="35">4C op0 &#8230;  &#8594;  op0 &gt;&gt; 4</text>
+      <rect class="dg-node" x="20" y="70" width="200" height="64" rx="4"/>
+      <text class="dg-label" x="120" y="94">0: Party leader</text><text class="dg-sub" x="120" y="114">leader change</text>
+      <rect class="dg-node" x="232" y="70" width="200" height="64" rx="4"/>
+      <text class="dg-label" x="332" y="94">1: Globals + tint</text><text class="dg-sub" x="332" y="114">clear colour, actor clone</text>
+      <rect class="dg-node" x="444" y="70" width="200" height="64" rx="4"/>
+      <text class="dg-label" x="544" y="94">2: Pad rotation</text><text class="dg-sub" x="544" y="114">camera octant</text>
+      <rect class="dg-node-accent" x="656" y="70" width="200" height="64" rx="4"/>
+      <text class="dg-label" x="756" y="94">3: Ambient gate</text><text class="dg-sub" x="756" y="114">camera-zone arms</text>
+      <rect class="dg-node" x="20" y="148" width="200" height="64" rx="4"/>
+      <text class="dg-label" x="120" y="172">4: Write or ramp</text><text class="dg-sub" x="120" y="192">ctx slots, globals</text>
+      <rect class="dg-node" x="232" y="148" width="200" height="64" rx="4"/>
+      <text class="dg-label" x="332" y="172">5: Five sub-ops</text><text class="dg-sub" x="332" y="192">model, move, TAKE_ITEM</text>
+      <rect class="dg-node" x="444" y="148" width="200" height="64" rx="4"/>
+      <text class="dg-label" x="544" y="172">6: VRAM moves</text><text class="dg-sub" x="544" y="192">CLUT-cell write</text>
+      <rect class="dg-node-accent" x="656" y="148" width="200" height="64" rx="4"/>
+      <text class="dg-label" x="756" y="172">7: Wall paint</text><text class="dg-sub" x="756" y="192">collision grid rects</text>
+      <rect class="dg-node-accent" x="20" y="226" width="200" height="64" rx="4"/>
+      <text class="dg-label" x="120" y="250">8: Multi-purpose</text><text class="dg-sub" x="120" y="270">heal, tint, shake, face-turn</text>
+      <rect class="dg-node-accent" x="232" y="226" width="200" height="64" rx="4"/>
+      <text class="dg-label" x="332" y="250">9: Floor ladder</text><text class="dg-sub" x="332" y="270">height rungs, oscillators</text>
+      <rect class="dg-node" x="444" y="226" width="200" height="64" rx="4"/>
+      <text class="dg-label" x="544" y="250">A: Flag jump</text><text class="dg-sub" x="544" y="270">jump on a flag bit</text>
+      <rect class="dg-node-warn" x="656" y="226" width="200" height="64" rx="4"/>
+      <text class="dg-label" x="756" y="250">B: Error printer</text><text class="dg-sub" x="756" y="270">no valid sub-op</text>
+      <rect class="dg-node" x="20" y="304" width="200" height="64" rx="4"/>
+      <text class="dg-label" x="120" y="328">C: Small writes</text><text class="dg-sub" x="120" y="348">camera focus, counters</text>
+      <rect class="dg-node-accent" x="232" y="304" width="200" height="64" rx="4"/>
+      <text class="dg-label" x="332" y="328">D: Party + spawn</text><text class="dg-sub" x="332" y="348">timed flags, STP bits</text>
+      <rect class="dg-node" x="444" y="304" width="200" height="64" rx="4"/>
+      <text class="dg-label" x="544" y="328">E: Scene misc</text><text class="dg-sub" x="544" y="348">balloon, FMV, coins</text>
+      <rect class="dg-node-warn" x="656" y="304" width="200" height="64" rx="4"/>
+      <text class="dg-label" x="756" y="328">F: Error printer</text><text class="dg-sub" x="756" y="348">only 4C FF passes</text>
+    </svg>
+    <figcaption>Highlighted nibbles are the ones a port or a scene editor meets first. Nibbles B and F are not handlers at all.</figcaption>
+  </figure>
+  <p>Three exits recur across the arms:</p>
+  <ul>
+    <li><strong>Advance</strong> - the arm adds its width to the script cursor and returns. The add is often in a branch delay slot, which the decompiled C hides.</li>
+    <li><strong>Halt at PC</strong> - the arm returns the cursor unchanged, so the op re-runs next frame. This is how a sub-op <em>waits</em>.</li>
+    <li><strong>Halt-acquire</strong> - the idiom for taking over another actor: the arm writes the target's payload pointer, sets its halt bit <code>0x400</code>, then advances the caller; if the target is already held, the caller halts at PC instead.</li>
+  </ul>
+</section>
+
+<section class="doc-section" id="nibble-3">
+  <h2>Nibble 3: the ambient gate and the camera-zone arms</h2>
+  <p><code>4C 30</code> and <code>4C 31</code> raise and clear one word, <code>_DAT_8007B854</code>. It is the <strong>ambient-particle master gate, not an input lock</strong>. Its six references disc-wide are two clears in the executable, the field render pass that stages the particle table, the ambient particle emitter, and these two stores - none of them is pad state. A field script decides, per scene, whether ambience emits at all.</p>
+  <p>Four arms are the script's only grip on the field camera's parameter block:</p>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Op</th><th>What it does</th></tr></thead>
+    <tbody>
+      <tr><td><code>4C 38</code></td><td>camera-zone query and load at the player's tile</td></tr>
+      <tr><td><code>4C 39</code></td><td>the same query, a floor-height sample, then falls into the snap below</td></tr>
+      <tr><td><code>4C 3A</code></td><td>the player's heading takes the <em>arrival facing</em> a door set; every scene's entry script issues it once</td></tr>
+      <tr><td><code>4C 3D</code></td><td>walk-region attribute refresh at the player's tile - not a camera load</td></tr>
+      <tr><td><code>4C 3E</code></td><td>camera snap and focus clamp; its table entry points <em>inside</em> <code>4C 39</code>'s arm</td></tr>
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<section class="doc-section" id="nibble-7">
+  <h2>Nibble 7: wall paint</h2>
+  <p><code>[4C, 0x7s, col0, row0, col1, row1 (, mask)]</code> edits the walkability grid the <a href="field-locomotion.html#collision-tile">locomotion collision check</a> reads - one byte per 128-unit tile, whose high nibble is four sub-cell wall bits.</p>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Sub</th><th>Effect</th><th>Width</th></tr></thead>
+    <tbody>
+      <tr><td><code>0</code></td><td>clear walls (<code>&amp;= 0x0F</code>)</td><td>6</td></tr>
+      <tr><td><code>1</code></td><td>block all (<code>|= 0xF0</code>)</td><td>6</td></tr>
+      <tr><td><code>2</code></td><td>clear the mask's wall bits</td><td>7</td></tr>
+      <tr><td><code>3</code></td><td>set the mask's wall bits</td><td>7</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p><strong>The row bounds carry an extra <code>+1</code> the column bounds do not.</strong> The painted rectangle is columns <code>[col0, col1 + 1)</code> and rows <code>[row0 + 1, row1 + 2)</code>. These edits layer over the disc-streamed base grid and are commonly gated behind story-flag tests: story-conditional terrain, such as a gate that opens after a boss.</p>
+</section>
+
+<section class="doc-section" id="nibble-8">
+  <h2>Nibble 8: the multi-purpose dispatcher</h2>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Op</th><th>What it does</th></tr></thead>
+    <tbody>
+      <tr><td><code>4C 80</code></td><td>child-actor allocator</td></tr>
+      <tr><td><code>4C 81</code></td><td>actor draw tint, with a blend target and a tick count</td></tr>
+      <tr><td><code>4C 82 slot</code></td><td><strong>full HP / MP restore of one party slot</strong></td></tr>
+      <tr><td><code>4C 83</code></td><td>rectangular tile fill</td></tr>
+      <tr><td><code>4C 84</code></td><td>screen-shake amplitude</td></tr>
+      <tr><td><code>4C 85</code> / <code>8E</code> / <code>8F</code></td><td>halt-acquire on a target, which turns it to face someone</td></tr>
+      <tr><td><code>4C 86</code> / <code>87</code></td><td>install / retire the reflection controller</td></tr>
+      <tr><td><code>4C 89</code></td><td>the dialog pager's automatic press</td></tr>
+      <tr><td><code>4C 8B</code> / <code>8D</code></td><td>jumps on an actor search</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p><strong>There is no inn opcode.</strong> <code>4C 82</code> takes a literal slot, not &ldquo;every active member&rdquo;, and it is the primitive every <a href="inn.html">inn</a>, rest and infirmary script is built on; the charge is a separate gold gate and debit, so the price is per-scene script data.</p>
+  <p><strong>The halt-acquire is not a freeze.</strong> The bytes it hands the target are a face-target leg of the <a href="motion-vm.html">walk kernel</a>: the target turns toward a named actor over a frame budget, and the leg's last frame releases it. Cutscene records issue over a thousand of these - &ldquo;one character turns to another&rdquo; is exactly this op. Aimed at the player, the arm also holds the caller, so a cutscene waits on the player's turn.</p>
+</section>
+
+<section class="doc-section" id="nibble-9">
+  <h2>Nibble 9: the floor-height ladder, not a fade</h2>
+  <p>The scene keeps a 16-entry ladder of floor elevations: the one ground height is interpolated from, and the one added to every placed object's height. Nibble 9 writes it.</p>
+  <ul>
+    <li><code>4C 9E</code> installs all sixteen rungs, and also the copy the follow camera samples - so an installed ladder moves the camera.</li>
+    <li><code>4C 90</code> sets one rung oscillating (live rungs only, so the camera does not follow).</li>
+    <li><code>4C 9F</code> retires every oscillator.</li>
+  </ul>
+  <p>The organic Seru interior's undulating floor is the clean example: its entry script installs a linear ramp, then issues <code>4C 90</code> over consecutive rungs with a rising phase - a travelling wave across the ladder. Two of the three oscillator sub-ops are dead code: <code>4C 91</code> and <code>4C 92</code> land on phases whose loop never terminates, and no shipped scene uses them.</p>
+</section>
+
+<section class="doc-section" id="nibble-cd">
+  <h2>Nibbles C and D: camera, counters, timers</h2>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Op</th><th>What it does</th></tr></thead>
+    <tbody>
+      <tr><td><code>4C C1</code></td><td>fog-region enable reset</td></tr>
+      <tr><td><code>4C C3</code></td><td>script-table teleport and spawn-section re-run</td></tr>
+      <tr><td><code>4C C4 x z</code></td><td>camera-zone query at an explicit tile: frames a shot from a region the player is not standing in</td></tr>
+      <tr><td><code>4C CA</code> / <code>CB</code> / <code>CC</code></td><td>script counter set / add / subtract</td></tr>
+      <tr><td><code>4C CD</code></td><td>wait for the camera glide</td></tr>
+      <tr><td><code>4C CE</code></td><td>player clip override: re-points walk, idle and run at other scene-bank records</td></tr>
+      <tr><td><code>4C CF x z</code></td><td>script camera-focus override</td></tr>
+      <tr><td><code>4C D0</code></td><td>field sound-effect trigger</td></tr>
+      <tr><td><code>4C D3</code></td><td>timed-flag scheduler (14 bytes)</td></tr>
+      <tr><td><code>4C D4</code> / <code>D5</code></td><td>set / clear the VRAM semi-transparency bit over a rectangle</td></tr>
+      <tr><td><code>4C D8</code></td><td>synchronous morph-actor spawn (9 bytes)</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p><strong>The timed-flag scheduler</strong> <code>4C D3 expiry:u16 below:u16 duration:u32 threshold:u32</code> arms a countdown that lives in the save block. A per-tick consumer sets the expiry flag at zero and the below flag while under the threshold. Retail uses it for the two escape sequences: a collapsing dungeon and the Floating Castle. Stopping the clock does not clear the below flag, which is the root of a traced <a href="../writeups/glitches/field-oddities.html">missing-encounters oddity</a>.</p>
+  <p><code>4C D2</code>, <code>D6</code> and <code>D7</code> all <em>advance</em> in retail. A VM that halts on them holds a cross-context record forever.</p>
+</section>
+
+<section class="doc-section" id="others">
+  <h2>The rest, briefly</h2>
+  <ul>
+    <li><strong>Nibble 1</strong> - global write, screen tint, the field clear colour, and an actor clone.</li>
+    <li><strong>Nibble 2</strong> - one arm: the camera-octant setter that rotates what the D-pad means.</li>
+    <li><strong>Nibble 4</strong> - write a context slot or a global at once, or ramp it over frames.</li>
+    <li><strong>Nibble 5</strong> - model select (which re-stages the actor), move-to-tile, <strong>TAKE_ITEM</strong> (sub-2 removes an item from the bag; it is not a menu poll), and two dialog polls.</li>
+    <li><strong>Nibble 6</strong> - VRAM image moves and a CLUT-cell write.</li>
+    <li><strong>Nibble A</strong> - conditional jump on a flag bit.</li>
+    <li><strong>Nibble E</strong> - text balloon, movie trigger, a position-copy teleport, a box-test branch, camera animate and zoom, and the casino coin delta.</li>
+    <li><strong>Nibbles B and F</strong> - the error printer. They form a message string and call the message routine, returning the PC unchanged. Only <code>4C FF</code> passes through. The disc-wide opcode census finds no coherent use of either in any scene.</li>
+  </ul>
+</section>
+
+<section class="doc-section" id="see-also">
+  <h2>See also</h2>
+  <p>Every sub-op's body, arm address and width is in <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/script-vm-menuctrl.md" target="_blank" rel="noopener"><code>docs/subsystems/script-vm-menuctrl.md</code></a>.</p>
+  <div class="see-also">
+    <span class="see-also-label">Reference</span>
+    <a href="script-vm.html">Field / event VM</a>
+    <a href="script-vm-internals.html">Script VM: internals</a>
+    <a href="field-locomotion.html">Field locomotion</a>
+    <a href="motion-vm.html">Motion VM</a>
+    <a href="inn.html">Inn</a>
+    <a href="../formats/encounter.html">Encounter and camera regions</a>
+    <a href="../formats/man-relocation.html">MAN relocation</a>
+  </div>
+</section>

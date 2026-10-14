@@ -13,7 +13,9 @@
 /formats/art-data.html
 /formats/asset-descriptor.html
 /formats/asset-type.html
+/formats/battle-attack-camera-table.html
 /formats/battle-data-pack.html
+/formats/bse-dat.html
 /formats/cdname.html
 /formats/character-mesh.html
 /formats/data-field.html
@@ -23,6 +25,7 @@
 /formats/effect.html
 /formats/encounter.html
 /formats/equipment-table.html
+/formats/field-map.html
 /formats/field-pack.html
 /formats/index.html
 /formats/item-effect-table.html
@@ -43,6 +46,7 @@
 /formats/pochi.html
 /formats/prot.html
 /formats/ringside-still.html
+/formats/save-icon.html
 /formats/save-record.html
 /formats/scene-bundles.html
 /formats/scene-v12-table.html
@@ -97,12 +101,19 @@
 /subsystems/asset-loader.html
 /subsystems/audio-internals.html
 /subsystems/audio.html
+/subsystems/battle-action-exit-gates.html
+/subsystems/battle-action-queue.html
 /subsystems/battle-action.html
+/subsystems/battle-command-flow.html
 /subsystems/battle-formulas.html
+/subsystems/battle-hud.html
 /subsystems/battle-internals.html
+/subsystems/battle-round-loop.html
+/subsystems/battle-stage-camera.html
 /subsystems/battle.html
 /subsystems/boot-internals.html
 /subsystems/boot.html
+/subsystems/cast-module.html
 /subsystems/cutscene-internals.html
 /subsystems/cutscene.html
 /subsystems/effect-vm.html
@@ -121,6 +132,7 @@
 /subsystems/renderer.html
 /subsystems/save-screen.html
 /subsystems/script-vm-internals.html
+/subsystems/script-vm-menuctrl.html
 /subsystems/script-vm.html
 /subsystems/shading.html
 /subsystems/shop.html

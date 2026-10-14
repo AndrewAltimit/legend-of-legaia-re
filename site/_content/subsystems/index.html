@@ -174,6 +174,10 @@
       <div class="card-title">Field / event script VM</div>
       <div class="card-body">The interpreter behind every NPC line, cutscene beat, door and story flag: 43 opcodes, plus the sub-dispatchers that open shops and menus.</div>
     </a>
+    <a class="card" href="script-vm-menuctrl.html">
+      <div class="card-title">Field VM op 0x4C</div>
+      <div class="card-body">The grab-bag opcode: sixteen sub-dispatchers that paint walls, steer the camera, heal the party, wobble the floor and schedule escape timers.</div>
+    </a>
     <a class="card" href="field-locomotion.html">
       <div class="card-title">Field locomotion</div>
       <div class="card-body">From "push the stick" to "Vahn moves": camera-relative direction, per-frame speed, 2-unit steps and per-axis collision against the scene's walkability grid.</div>
@@ -208,6 +212,34 @@
     <a class="card" href="battle-action.html">
       <div class="card-title">Battle action FSM</div>
       <div class="card-body">The state machine between &ldquo;picked Attack&rdquo; and &ldquo;HP deducted&rdquo; - swing timing, Arts chains, Magic, Summons, Spirit, Run and capture.</div>
+    </a>
+    <a class="card" href="battle-round-loop.html">
+      <div class="card-title">Battle round loop</div>
+      <div class="card-body">One fight from the outside in: encounter roll or scripted entry, the two bands of a round, initiative, monster AI, the results sequence and what a wipe really does.</div>
+    </a>
+    <a class="card" href="battle-command-flow.html">
+      <div class="card-title">Battle command flow</div>
+      <div class="card-body">The menu half of a battle: Begin / Run, the D-pad command ring, the commit log and confirm, plus the tutorial and Cort stage overlays that hook it.</div>
+    </a>
+    <a class="card" href="battle-action-queue.html">
+      <div class="card-title">Battle action queue</div>
+      <div class="card-body">The byte string every action is: swing bytes, art starters and art constants, how the builder rewrites combos, and how hit events turn it into damage.</div>
+    </a>
+    <a class="card" href="battle-action-exit-gates.html">
+      <div class="card-title">Exit gates and softlocks</div>
+      <div class="card-body">The two states that wait with no timeout - the HP-readout settle and the attack approach - and exactly how each one parks.</div>
+    </a>
+    <a class="card" href="cast-module.html">
+      <div class="card-title">Cast modules</div>
+      <div class="card-body">The 64 small overlay programs behind every summon and capture-class special: how an action reaches one, its phase machine, damage shapes and camera.</div>
+    </a>
+    <a class="card" href="battle-stage-camera.html">
+      <div class="card-title">Battle stage and camera</div>
+      <div class="card-body">A procedural ground grid, a half-bowl backdrop drawn twice, ten camera framings and the field-to-battle transition.</div>
+    </a>
+    <a class="card" href="battle-hud.html">
+      <div class="card-title">Battle HUD</div>
+      <div class="card-body">Plaques, panels, chips and banners: two static tables and a per-phase script derive every seat, plate and palette on the battle screen.</div>
     </a>
     <a class="card" href="battle-formulas.html">
       <div class="card-title">Battle formulas</div>

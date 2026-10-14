@@ -1,0 +1,181 @@
+<header class="page-header">
+  <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">subsystems</a> &middot; battle command flow</div>
+  <h1>Battle command flow</h1>
+  <p class="lede">Before any action runs, the player has to be asked what to do. This is that half of a battle: one state byte that walks the intro, the <strong>Begin / Run</strong> prompt, the D-pad command ring and its sub-screens, and hands a fully committed round to the <a href="battle-action.html">action state machine</a>. Three stage overlays hook the same byte: the sparring tutorial and the two Cort boss-stage modules.</p>
+</header>
+
+<section class="doc-section" id="at-a-glance">
+  <h2>At a glance</h2>
+  <dl class="kv">
+    <dt>Driver</dt><dd><code>FUN_801D0748</code> in the battle overlay (PROT 0898, base <code>0x801CE818</code>)</dd>
+    <dt>State</dt><dd>One byte, <code>ctx[+0x06]</code>. Dispatch is a comparison tree at <code>0x801D0C84..0x801D0DC8</code>, not a jump table; 22 live cases, everything else falls to a default</dd>
+    <dt>Hand-off</dt><dd>State <code>0xFE</code> stores <code>ctx[+0x06] = 0xFF</code> and <code>ctx[+0x07] = 0</code>: the action SM takes the frame</dd>
+    <dt>Hand-back</dt><dd>The action SM's round end stores <code>ctx[+0x06] = 0x14</code> and bumps the round index <code>ctx[+0x28A]</code></dd>
+    <dt>Input</dt><dd>The <em>packed</em> pad word: Left <code>0x8000</code>, Right <code>0x2000</code>, Down <code>0x4000</code>, Up <code>0x1000</code>; confirm and cancel masks at <code>0x800846D0</code> / <code>0x800846D4</code></dd>
+    <dt>Stage overlays</dt><dd>PROT 967 (tutorial hook <code>FUN_801F6B70</code>), 968 (Cort arrival), 969 (Cort form change), all ticked by the SCUS side-band <code>FUN_80056208</code></dd>
+    <dt>Port</dt><dd><code>engine-menus::battle_input</code>, <code>battle_flow</code>, <code>battle_tutorial</code>, <code>battle_stage_module</code>; draw side <code>engine-ui::battle_command_ui</code></dd>
+    <dt>Confidence</dt><dd>Confirmed - every edge is a constant store read from the disassembly; the D-pad map is capture-checked</dd>
+  </dl>
+</section>
+
+<section class="doc-section" id="flow">
+  <h2>The flow</h2>
+  <figure class="diagram">
+    <svg viewBox="0 0 880 560" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Battle command flow: init and intro timer lead to round start 0x14, then the Begin or Run prompt 0x1E. Begin opens the command ring 0x28, whose four D-pad arms open the item window, the magic window, the attack-mode prompt or commit Spirit. Attack leads through the arts entry screen and the target cursor. Each member returns to the ring until the last, which raises the commit-confirm screen 0x6E; Begin there arms the round at 0xFE and the action state machine runs it, returning to 0x14.">
+      <defs><marker id="bcf-arrow" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <rect class="dg-node" x="20" y="20" width="150" height="50" rx="4"/>
+      <text class="dg-label" x="95" y="41">Init 0x00</text><text class="dg-sub" x="95" y="58">FUN_801D84C0</text>
+      <rect class="dg-node" x="210" y="20" width="170" height="50" rx="4"/>
+      <text class="dg-label" x="295" y="41">Intro timer 0x0A / 0x0B</text><text class="dg-sub" x="295" y="58">plates + formation banner</text>
+      <rect class="dg-node-warn" x="430" y="20" width="190" height="50" rx="4"/>
+      <text class="dg-label" x="525" y="41">Stage module 0x0C</text><text class="dg-sub" x="525" y="58">Cort arrival owns the frame</text>
+      <path class="dg-edge" d="M170 45 L208 45" marker-end="url(#bcf-arrow)"/>
+      <path class="dg-edge-dim" d="M380 36 L428 36" marker-end="url(#bcf-arrow)"/>
+      <path class="dg-edge-dim" d="M430 56 L382 56" marker-end="url(#bcf-arrow)"/>
+      <rect class="dg-node-accent" x="210" y="110" width="170" height="50" rx="4"/>
+      <text class="dg-label" x="295" y="131">Round start 0x14</text><text class="dg-sub" x="295" y="148">one frame; only writer of 0x1E</text>
+      <path class="dg-edge" d="M295 70 L295 108" marker-end="url(#bcf-arrow)"/>
+      <rect class="dg-node-accent" x="210" y="200" width="170" height="50" rx="4"/>
+      <text class="dg-label" x="295" y="221">Begin / Run 0x1E</text><text class="dg-sub" x="295" y="238">once per round</text>
+      <path class="dg-edge" d="M295 160 L295 198" marker-end="url(#bcf-arrow)"/>
+      <rect class="dg-node" x="20" y="200" width="150" height="50" rx="4"/>
+      <text class="dg-label" x="95" y="221">Run confirm 0x32</text><text class="dg-sub" x="95" y="238">cancel returns</text>
+      <path class="dg-edge" d="M210 225 L172 225" marker-end="url(#bcf-arrow)"/>
+      <text class="dg-edge-label" x="178" y="216">Right</text>
+      <rect class="dg-node-accent" x="210" y="300" width="170" height="56" rx="4"/>
+      <text class="dg-label" x="295" y="322">Command ring 0x28</text><text class="dg-sub" x="295" y="340">four D-pad arms, per member</text>
+      <path class="dg-edge" d="M295 250 L295 298" marker-end="url(#bcf-arrow)"/>
+      <text class="dg-edge-label" x="302" y="278">Left / confirm</text>
+      <rect class="dg-node" x="20" y="300" width="150" height="56" rx="4"/>
+      <text class="dg-label" x="95" y="322">Auto / Command 0x78</text><text class="dg-sub" x="95" y="340">attack-mode prompt</text>
+      <path class="dg-edge" d="M210 328 L172 328" marker-end="url(#bcf-arrow)"/>
+      <text class="dg-edge-label" x="176" y="320">Left</text>
+      <rect class="dg-node" x="430" y="270" width="190" height="46" rx="4"/>
+      <text class="dg-label" x="525" y="290">Item window 0x3C</text><text class="dg-sub" x="525" y="306">sub-cursors 0x5B, 0x5D, 0x64</text>
+      <rect class="dg-node" x="430" y="336" width="190" height="46" rx="4"/>
+      <text class="dg-label" x="525" y="356">Magic window 0x46</text><text class="dg-sub" x="525" y="372">sub-cursors 0x5C, 0x5E, 0x65, 0x67</text>
+      <path class="dg-edge" d="M380 314 L428 296" marker-end="url(#bcf-arrow)"/>
+      <path class="dg-edge" d="M380 340 L428 356" marker-end="url(#bcf-arrow)"/>
+      <text class="dg-edge-label" x="386" y="296">Up</text>
+      <text class="dg-edge-label" x="384" y="366">Right</text>
+      <rect class="dg-node" x="20" y="400" width="150" height="50" rx="4"/>
+      <text class="dg-label" x="95" y="421">Arts entry 0x50</text><text class="dg-sub" x="95" y="438">directional input</text>
+      <path class="dg-edge" d="M95 356 L95 398" marker-end="url(#bcf-arrow)"/>
+      <text class="dg-edge-label" x="102" y="382">Command</text>
+      <rect class="dg-node" x="210" y="400" width="170" height="50" rx="4"/>
+      <text class="dg-label" x="295" y="421">Target cursor 0x5A</text><text class="dg-sub" x="295" y="438">angular enemy ring</text>
+      <path class="dg-edge" d="M170 425 L208 425" marker-end="url(#bcf-arrow)"/>
+      <path class="dg-edge-dim" d="M330 400 L330 358" marker-end="url(#bcf-arrow)"/>
+      <text class="dg-edge-label" x="336" y="384">next member</text>
+      <rect class="dg-node-accent" x="430" y="430" width="190" height="56" rx="4"/>
+      <text class="dg-label" x="525" y="452">Commit confirm 0x6E</text><text class="dg-sub" x="525" y="470">after the last member commits</text>
+      <path class="dg-edge" d="M380 436 L428 448" marker-end="url(#bcf-arrow)"/>
+      <path class="dg-edge-dim" d="M300 356 L300 380 L410 380 L410 468 L428 468" marker-end="url(#bcf-arrow)"/>
+      <text class="dg-edge-label" x="306" y="496">Down = Spirit, last member</text>
+      <rect class="dg-node-ok" x="680" y="430" width="180" height="56" rx="4"/>
+      <text class="dg-label" x="770" y="452">Round armed 0xFE</text><text class="dg-sub" x="770" y="470">ctx[6]=0xFF, ctx[7]=0</text>
+      <path class="dg-edge" d="M620 458 L678 458" marker-end="url(#bcf-arrow)"/>
+      <text class="dg-edge-label" x="632" y="450">Begin</text>
+      <rect class="dg-node" x="680" y="200" width="180" height="56" rx="4"/>
+      <text class="dg-label" x="770" y="222">Action SM</text><text class="dg-sub" x="770" y="240">runs every queued action</text>
+      <path class="dg-edge" d="M770 430 L770 258" marker-end="url(#bcf-arrow)"/>
+      <path class="dg-edge" d="M770 200 L770 135 L382 135" marker-end="url(#bcf-arrow)"/>
+      <text class="dg-edge-label" x="560" y="127">round over: 0x14, round index +1</text>
+      <path class="dg-edge-dim" d="M130 200 L130 180 L660 180 L660 440 L678 440" marker-end="url(#bcf-arrow)"/>
+      <text class="dg-edge-label" x="420" y="174">run confirmed</text>
+    </svg>
+    <figcaption>The prompt at <code>0x1E</code> belongs to the <em>round</em>, not the turn: <code>0x14</code> is its only way in, so every round opens with Begin / Run and each member then picks from the ring in turn. The item and magic windows commit through their own target sub-cursors and return to the ring for the next member, or raise <code>0x6E</code> after the last. A back attack skips the prompt and arms the round straight from the intro timer.</figcaption>
+  </figure>
+</section>
+
+<section class="doc-section" id="states">
+  <h2>State table</h2>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th><code>ctx[+0x06]</code></th><th>Arm</th><th>On screen</th><th>Leaves to</th></tr></thead>
+    <tbody>
+      <tr><td><code>0x00</code></td><td><code>0x801D0DD0</code></td><td>init</td><td><code>0x0A</code></td></tr>
+      <tr><td><code>0x0A</code> / <code>0x0B</code></td><td><code>0x801D0DE0</code> / <code>0x801D0E3C</code></td><td>party plates, formation banner, intro timer <code>ctx[+0x6D6]</code></td><td><code>0x14</code>, or <code>0xFE</code> on a back attack</td></tr>
+      <tr><td><code>0x14</code></td><td><code>0x801D0EC4</code></td><td>one-frame round setup</td><td><code>0x1E</code>, unconditionally</td></tr>
+      <tr><td><code>0x1E</code></td><td><code>0x801D102C</code></td><td>Begin / Run prompt</td><td><code>0x28</code>, <code>0x32</code>, <code>0x6E</code></td></tr>
+      <tr><td><code>0x28</code></td><td><code>0x801D1188</code></td><td>command ring</td><td><code>0x1E</code>, <code>0x3C</code>, <code>0x46</code>, <code>0x50</code>, <code>0x5A</code>, <code>0x6E</code>, <code>0x78</code></td></tr>
+      <tr><td><code>0x32</code></td><td><code>0x801D10F8</code></td><td>run confirm</td><td><code>0x1E</code>, <code>0xFE</code></td></tr>
+      <tr><td><code>0x3C</code></td><td><code>0x801D17DC</code></td><td>item window</td><td><code>0x28</code>, <code>0x5B</code>, <code>0x5D</code>, <code>0x64</code></td></tr>
+      <tr><td><code>0x46</code></td><td><code>0x801D19F8</code></td><td>magic window</td><td><code>0x28</code>, <code>0x5C</code>, <code>0x5E</code>, <code>0x65</code>, <code>0x67</code></td></tr>
+      <tr><td><code>0x50</code></td><td><code>0x801D1D84</code></td><td>arts command entry</td><td><code>0x28</code>, <code>0x5A</code>, <code>0x78</code></td></tr>
+      <tr><td><code>0x5A</code></td><td><code>0x801D21CC</code></td><td>target cursor</td><td><code>0x28</code>, <code>0x50</code>, <code>0x6E</code>, <code>0x78</code></td></tr>
+      <tr><td><code>0x64</code></td><td><code>0x801D2A00</code></td><td>item window's target confirm</td><td><code>0x28</code>, <code>0x3C</code>, <code>0x6E</code></td></tr>
+      <tr><td><code>0x6E</code></td><td><code>0x801D3024</code></td><td>all members committed - Begin / Reselect</td><td><code>0x1E</code>, <code>0x28</code>, <code>0xFE</code></td></tr>
+      <tr><td><code>0x78</code></td><td><code>0x801D16E8</code></td><td>Auto / Command prompt</td><td><code>0x28</code>, <code>0x50</code>, <code>0x5A</code></td></tr>
+      <tr><td><code>0xFE</code></td><td><code>0x801D31E8</code></td><td>round armed</td><td><code>0xFF</code> (idle while the action SM runs)</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>The &ldquo;leaves to&rdquo; column is the exhaustive set of byte stores to <code>ctx+6</code> inside each handler's address range, resolved by constant propagation. Two things in it are easy to get wrong:</p>
+  <ul>
+    <li><strong>The target sub-cursors are two disjoint runs</strong>, <code>0x5B..0x5E</code> and <code>0x64..0x67</code>. Nothing handles <code>0x5F..0x63</code>.</li>
+    <li><strong><code>0xFF</code> is not a case.</strong> Nothing tests for it; idle is reached by falling through to the default like any unlisted value. <code>0xFE</code> is the real &ldquo;round armed&rdquo; case.</li>
+  </ul>
+  <p>This byte and the action SM's <code>ctx[+0x07]</code> are cursors over the same struct and their value spaces collide: <code>ctx[7] == 0x64</code> is the start of a party run, <code>ctx[6] == 0x64</code> is a target confirm. Say which byte a state number belongs to.</p>
+</section>
+
+<section class="doc-section" id="dpad">
+  <h2>Every surface is a D-pad map</h2>
+  <p>The command UI is not one menu and not a scrolling list. It is three small clusters of plate chips, each around a D-pad glyph, and <strong>there is no face-button map</strong>: each chip sits on a D-pad arm and its handler tests the packed direction mask for that arm. Read against the raw BIOS pad word the masks look like face buttons, which is how the surface was once misread. A capture settles it: in the ring, one Up press opens the item window within three frames, while repeated Triangle presses do nothing.</p>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>State</th><th>Arm</th><th>Chip</th><th>Goes to</th></tr></thead>
+    <tbody>
+      <tr><td><code>0x1E</code></td><td>Left, or confirm</td><td>Begin</td><td>the ring (<code>0x28</code>); <code>0x6E</code> when nobody can act</td></tr>
+      <tr><td><code>0x1E</code></td><td>Right</td><td>Run</td><td><code>0x32</code></td></tr>
+      <tr><td><code>0x28</code></td><td>Up</td><td>Item</td><td><code>0x3C</code></td></tr>
+      <tr><td><code>0x28</code></td><td>Left</td><td>Attack</td><td><code>0x78</code>, <code>0x5A</code> or <code>0x50</code>, by the option word <code>0x800846C4</code></td></tr>
+      <tr><td><code>0x28</code></td><td>Right</td><td>Ra-Seru magic</td><td><code>0x46</code></td></tr>
+      <tr><td><code>0x28</code></td><td>Down</td><td>Spirit</td><td>commits; <code>0x6E</code> on the last member</td></tr>
+      <tr><td><code>0x28</code></td><td>cancel</td><td>-</td><td><code>0x1E</code> on the round's first member, else the previous member's ring</td></tr>
+      <tr><td><code>0x78</code></td><td>Left, or confirm</td><td>Auto</td><td>target cursor <code>0x5A</code></td></tr>
+      <tr><td><code>0x78</code></td><td>Right</td><td>Command</td><td>arts entry <code>0x50</code></td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p><strong>Attack is a door, not a strike.</strong> It opens the Auto / Command prompt, and the option word decides whether that prompt is shown (<code>0</code>), skipped to auto-target (<code>1</code>) or skipped to directional entry (<code>2</code>). With the Battle Command setting's highlight widget up, the same table reads as highlight-then-confirm: a pre-dispatch block walks the highlight and rewrites the input word to the highlighted arm's mask on confirm, so each handler's direction test doubles as &ldquo;take the highlighted chip&rdquo;.</p>
+  <p>The ring's cancel is its first test and forks on the step counter <code>ctx[+0x1F]</code> - how many members the cursor has walked past this round. On the first member it returns to Begin / Run; otherwise it steps back to the previous member's ring and discards that member's commit.</p>
+</section>
+
+<section class="doc-section" id="commit">
+  <h2>Commit log and confirm</h2>
+  <p>Each committed member gets a row of three screen elements - name, command, target - from placement records <code>0x2B + 3n</code>, where <code>n</code> is the step counter. The commit arms of the window-choreography helper <code>FUN_801D388C</code> land them, seat them off the measured width of the name (<code>x = 16</code>, <code>name_w + 0x20</code>, <code>name_w + 0x60</code>) and scroll earlier rows up as the party commits. An all-target commit logs a dedicated &ldquo;all&rdquo; record in the target column.</p>
+  <p>The commit-confirm screen (<code>0x6E</code>) is raised after the <strong>last member that can act</strong> has committed, for every party size - a solo party reaches it off its only member. No option gates it. Begin arms the round (<code>0xFE</code>); Reselect reopens the ring.</p>
+  <p>A sweep target reaches the action SM as a target-group code, not a sentinel: the flow writes actor <code>+0x1DD = 8</code> for the party row and <code>9</code> for the enemy row, and a self-target writes the caster's own slot. The single-enemy cursor is not a slot-order walk either: <code>FUN_801D8A88</code> builds a ring of the seated monsters and <code>FUN_801D8D00</code> steps it, so Left and Right move to the <em>angularly</em> nearest live monster.</p>
+</section>
+
+<section class="doc-section" id="tutorial">
+  <h2>The sparring tutorial (overlay 967)</h2>
+  <p>The &ldquo;how to fight&rdquo; boxes of the Tetsu sparring fight come from one stage overlay. Its hook <code>FUN_801F6B70</code> is indexed by <code>ctx[+0x06]</code>, and its nine live table slots are exactly the command-flow states above <strong>minus the magic window</strong> - the spar teaches attacks, items, Spirit and Hyper Arts, never magic. The hook table and every prompt string are resident in the overlay; the battle script, the MES text and the battle overlay carry none of them. The machine exists in exactly one place on the disc.</p>
+  <p>Retail has no party override for the spar: it is Vahn against Tetsu only because the story's party is Vahn alone at that point. The port makes that a rule and seats Vahn alone whenever the fight is the spar, whatever the field party holds. The fight ends on a countdown the hook arms in <code>ctx[+0x6B4]</code>, not on a wipe.</p>
+</section>
+
+<section class="doc-section" id="boss-stage">
+  <h2>The Cort stage modules (overlays 968 / 969)</h2>
+  <p>Both modules are one function over the whole of their own code, and each is a phase machine on <code>ctx[+0x289]</code> driving the <strong>first monster seat</strong>. Neither is a <a href="cast-module.html">cast module</a>: none of the three cast entry tables names them, and only the stage pager brings them in.</p>
+  <ul>
+    <li><strong>968 - arrival.</strong> Seven phases behind a jump table at the image base, run on a countdown word in the image's own data. It re-dresses the arena for the fight.</li>
+    <li><strong>969 - form change.</strong> The mid-fight transition to the evolved form.</li>
+  </ul>
+  <p>The evolved-Cort fight is the one battle whose intro leaves the flow byte on <code>0x0C</code>, a value the comparison tree has no arm for. The battle overlay never moves it off: the stage module does, from outside, handing back <code>0x0B</code> when its arrival sequence is done. A port that does not run the module parks there forever.</p>
+</section>
+
+<section class="doc-section" id="see-also">
+  <h2>See also</h2>
+  <p>The full write-up - the pad-word construction, each commit arm's addresses, the string pools, the tutorial's prompt table and both boss modules phase by phase - is in <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/battle-command-flow.md" target="_blank" rel="noopener"><code>docs/subsystems/battle-command-flow.md</code></a>.</p>
+  <div class="see-also">
+    <span class="see-also-label">Reference</span>
+    <a href="battle.html">Battle</a>
+    <a href="battle-round-loop.html">Round loop</a>
+    <a href="battle-action.html">Action state machine</a>
+    <a href="battle-action-queue.html">Action queue</a>
+    <a href="battle-hud.html">Battle HUD</a>
+    <a href="cast-module.html">Cast modules</a>
+    <a href="arts-command-gauge.html">Arts command gauge</a>
+  </div>
+</section>
