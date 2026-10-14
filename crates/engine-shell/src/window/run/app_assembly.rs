@@ -296,12 +296,16 @@ impl PlayWindowApp {
         self.session.camera.distance = self.options_state.camera_distance;
         self.session.camera.render_yaw_bias =
             legaia_engine_core::camera_view::retail_field_render_yaw_bias();
-        self.session.host.world.locomotion.precise_movement = self.options_state.precise_movement;
-        // Field Move (pause menu Walk / Run, retail config word 0x800846CC). The
-        // run BUTTON inverts this per frame - see `World::field_run_active` - and
-        // is fed from the pad each tick in the event handler.
-        self.session.host.world.locomotion.run_default =
-            self.options_state.field_move == legaia_engine_menus::option_values::FieldMoveOpt::Run;
+        // The options' simulation knobs (precise movement, Field Move - pause
+        // menu Walk / Run, retail config word 0x800846CC, which the run BUTTON
+        // inverts per frame, see `World::field_run_active` - reduce flashing,
+        // the battle options, the tile windows, the ground fog) through the
+        // one push the page makes at disc load, so the world holds them from
+        // the launch on rather than from the first tick's re-assert.
+        legaia_engine_core::options::apply_to_world(
+            &self.options_state,
+            &mut self.session.host.world,
+        );
         log::info!(
             "camera: distance = {} (T cycles); precise movement {} (R toggles); drag to orbit",
             self.options_state.camera_distance.label(),

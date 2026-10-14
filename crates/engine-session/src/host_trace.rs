@@ -113,6 +113,13 @@ pub struct HostTraceFrame {
     /// host's routing has issued and their digest. `None` with no director
     /// attached.
     pub audio: Option<(u64, u64)>,
+    /// The switches a launch sets on the world - the native window's
+    /// command-line switches, the page's settings: the behaviour toggles,
+    /// the locomotion rules (terrain follow, leading-edge walls, precise
+    /// movement, run default), solid and live NPCs, the frame grab and the
+    /// camera distance. Two hosts at their defaults must agree here; a
+    /// switch one host sets and the other ignores parts this channel.
+    pub switches: u64,
 }
 
 /// The host-held menu-overlay screen's state ([`HostTraceFrame::overlay`]).
@@ -226,6 +233,33 @@ pub fn sample<S: AudioSink>(session: &BootSession<S>) -> HostTraceFrame {
         ),
         naming: world.party.name_entry.as_ref().map(debug_digest),
         bindings: bindings_digest(world),
+        switches: {
+            let t = &world.toggles;
+            let l = &world.locomotion;
+            debug_digest(&(
+                (
+                    t.entry_pulse_enabled,
+                    t.volumetric_fog,
+                    t.live_gameplay_loop,
+                    t.smarter_monster_targeting,
+                    t.use_vm_dialogue,
+                    t.use_damage_finish,
+                    t.battle_command,
+                    t.battle_camera,
+                    t.overworld_marker_overlay,
+                    t.battle_pass_rand_draw,
+                ),
+                (
+                    l.follow_terrain_height,
+                    l.leading_edge_wall_probes,
+                    l.precise_movement,
+                    l.run_default,
+                ),
+                (world.npcs.solid, world.npcs.animate),
+                world.ambient.frame_grab.enabled,
+                session.camera.distance,
+            ))
+        },
         audio: session
             .bgm
             .as_ref()
@@ -301,6 +335,7 @@ pub const CHANNELS: &[&str] = &[
     "bindings",
     "battle_stage",
     "audio",
+    "switches",
 ];
 
 fn channel_equal(a: &HostTraceFrame, b: &HostTraceFrame, ch: &str) -> bool {
@@ -328,6 +363,7 @@ fn channel_equal(a: &HostTraceFrame, b: &HostTraceFrame, ch: &str) -> bool {
         "bindings" => a.bindings == b.bindings,
         "battle_stage" => a.battle_stage == b.battle_stage,
         "audio" => a.audio == b.audio,
+        "switches" => a.switches == b.switches,
         _ => true,
     }
 }
