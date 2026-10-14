@@ -1030,6 +1030,60 @@ thread_local! {
     /// did not lift the party is not walked again on the next hop.
     pub(super) static RESTED: std::cell::RefCell<BTreeSet<String>> =
         const { std::cell::RefCell::new(BTreeSet::new()) };
+    /// Rests taken with the party under the line that lifted nobody, keyed
+    /// by scene, kind (`0` a bed's band, `1` a keeper), record and the flags
+    /// that record reads ([`rest_flags_key`]). A keeper's record
+    /// carries the restore on one branch of its story: `cave01`'s Terra
+    /// (P1[2]) restores on the `0x15C` stage and, once `0x15E` is up, only
+    /// sends the party on to Mt. Rikuroa. Talking to her again under the
+    /// same flags restores nothing, so she is not a rest until one moves.
+    pub(super) static DRY_RESTS: std::cell::RefCell<BTreeSet<(String, u8, u8, u64)>> =
+        const { std::cell::RefCell::new(BTreeSet::new()) };
+}
+
+/// What a rest's record branches on, as a [`DRY_RESTS`] key: the live state
+/// of every system flag the record tests. A keeper that stopped restoring
+/// may restore again once one of those moves; a room marker or a latch the
+/// record never reads does not change its answer.
+pub(super) fn rest_flags_key(
+    session: &NativeSession,
+    mf: &legaia_scene_formats::man_section::ManFile,
+    man: &[u8],
+    part: usize,
+    rec: usize,
+) -> u64 {
+    use legaia_engine_field::man_field_scripts::{FlagBank, walk_partition_gflag_sites};
+    use legaia_scene_formats::field_disasm::FlagKind;
+    use std::hash::{Hash, Hasher};
+    let w = &session.host.world;
+    let tested: BTreeSet<u16> = walk_partition_gflag_sites(mf, man, part)
+        .into_iter()
+        .filter(|s| {
+            s.clean && s.bank == FlagBank::System && s.kind == FlagKind::Test && s.record == rec
+        })
+        .map(|s| s.flag)
+        .collect();
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    for f in tested {
+        (f, w.system_flag_test(f)).hash(&mut h);
+    }
+    h.finish()
+}
+
+/// Has the rest `(kind, rec)` of the loaded scene lifted nobody under the
+/// flags its record reads ([`DRY_RESTS`])? `kind` `0` is a bed's
+/// partition-2 band, `1` a partition-1 keeper.
+fn rest_is_dry(
+    session: &NativeSession,
+    mf: &legaia_scene_formats::man_section::ManFile,
+    man: &[u8],
+    kind: u8,
+    rec: u8,
+) -> bool {
+    let name = scene_name(session);
+    let part = if kind == 0 { 2 } else { 1 };
+    let key = rest_flags_key(session, mf, man, part, usize::from(rec));
+    DRY_RESTS.with(|d| d.borrow().contains(&(name, kind, rec, key)))
 }
 
 /// Does the record body carry the restore - op `4C 82 <slot>`, the
@@ -1109,8 +1163,22 @@ const REST_REACH: i32 = 32;
 
 /// The rests the loaded scene offers under the live flags: the first tile
 /// of each walk-on band whose partition-2 record runs the restore, and the
-/// talk NPCs whose record (or a record it spawns) does.
+/// talk NPCs whose record (or a record it spawns) does. A rest already
+/// found to lift nobody under the flags its record reads ([`DRY_RESTS`]) is
+/// still listed: it is where the scene's rest is, and whether it works is
+/// [`rest_works_here`]'s question.
 pub(super) fn rest_sites(session: &NativeSession) -> (BTreeMap<u8, (u8, u8)>, Vec<u8>) {
+    rest_sites_live(session, false)
+}
+
+/// Does one of the loaded scene's rests still lift the party under the
+/// flags its record reads - one not in [`DRY_RESTS`]?
+pub(super) fn rest_works_here(session: &NativeSession) -> bool {
+    let (beds, keepers) = rest_sites_live(session, true);
+    !beds.is_empty() || !keepers.is_empty()
+}
+
+fn rest_sites_live(session: &NativeSession, live: bool) -> (BTreeMap<u8, (u8, u8)>, Vec<u8>) {
     use legaia_engine_field::man_field_scripts::partition2_record_gates;
     let Some((mf, man, triggers)) = scene_man_and_triggers(session) else {
         return (BTreeMap::new(), Vec::new());
@@ -1130,7 +1198,10 @@ pub(super) fn rest_sites(session: &NativeSession) -> (BTreeMap<u8, (u8, u8)>, Ve
         let rec = usize::from(t.record);
         let open = partition2_record_gates(&mf, &man, rec)
             .is_some_and(|(c1, c2)| session.host.world.p2_record_gates_pass(&c1, &c2));
-        if open && record_restores(&mf, &man, 2, rec) {
+        if open
+            && record_restores(&mf, &man, 2, rec)
+            && !(live && rest_is_dry(session, &mf, &man, 0, t.record))
+        {
             beds.entry(t.record).or_insert((t.tile_x, t.tile_z));
         }
     }
@@ -1143,6 +1214,7 @@ pub(super) fn rest_sites(session: &NativeSession) -> (BTreeMap<u8, (u8, u8)>, Ve
         .keys()
         .copied()
         .filter(|s| w.npcs.dialog.contains_key(s) || w.npcs.dialog_prologue.contains_key(s))
+        .filter(|&s| !(live && rest_is_dry(session, &mf, &man, 1, s)))
         // A record that stages a fight restores the party after it
         // (`cave01` P1[3..7], Terra's sparring monsters): not a rest.
         .filter(|&s| !record_stages_fight(&mf, &man, 1, usize::from(s)))
@@ -1206,7 +1278,10 @@ pub(super) fn pad_rest_to(
         let rec = usize::from(t.record);
         let open = partition2_record_gates(&mf, &man, rec)
             .is_some_and(|(c1, c2)| session.host.world.p2_record_gates_pass(&c1, &c2));
-        if open && record_restores(&mf, &man, 2, rec) {
+        if open
+            && record_restores(&mf, &man, 2, rec)
+            && !rest_is_dry(session, &mf, &man, 0, t.record)
+        {
             beds.entry(t.record).or_insert((t.tile_x, t.tile_z));
         }
     }
@@ -1221,6 +1296,7 @@ pub(super) fn pad_rest_to(
         .keys()
         .copied()
         .filter(|s| w.npcs.dialog.contains_key(s) || w.npcs.dialog_prologue.contains_key(s))
+        .filter(|&s| !rest_is_dry(session, &mf, &man, 1, s))
         .filter(|&s| !anywhere || !record_stages_fight(&mf, &man, 1, usize::from(s)))
         .filter(|&s| {
             record_restores(&mf, &man, 1, usize::from(s))
@@ -1239,7 +1315,18 @@ pub(super) fn pad_rest_to(
             party_hp_permille(session)
         );
     }
+    let dry = |session: &NativeSession, kind: u8, rec: u8, key: u64, before: u32| {
+        // Under the line and lifted nobody: not a rest under these flags.
+        if session.host.world.mode == SceneMode::Field
+            && scene_name(session) == name
+            && party_hp_permille(session) <= before
+        {
+            DRY_RESTS.with(|d| d.borrow_mut().insert((name.clone(), kind, rec, key)));
+        }
+    };
     for (rec, tile) in beds {
+        let before = party_hp_permille(session);
+        let key = rest_flags_key(session, &mf, &man, 2, usize::from(rec));
         let r = match pad_step_onto(session, tile) {
             Ok(Walk::Entered(s)) => Run::Entered(s),
             Ok(Walk::Arrived) => run_while_moving(session, DEEP_EXIT_TICKS),
@@ -1265,8 +1352,11 @@ pub(super) fn pad_rest_to(
             RESTED.with(|r| r.borrow_mut().remove(&name));
             return Ok(None);
         }
+        dry(session, 0, rec, key, before);
     }
     for slot in keepers {
+        let before = party_hp_permille(session);
+        let key = rest_flags_key(session, &mf, &man, 1, usize::from(slot));
         RESTING.with(|r| r.set(anywhere));
         let r = talk_to(session, slot);
         RESTING.with(|r| r.set(false));
@@ -1287,6 +1377,7 @@ pub(super) fn pad_rest_to(
             RESTED.with(|r| r.borrow_mut().remove(&name));
             return Ok(None);
         }
+        dry(session, 1, slot, key, before);
     }
     Ok(None)
 }
