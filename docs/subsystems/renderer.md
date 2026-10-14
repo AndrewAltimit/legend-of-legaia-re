@@ -1808,8 +1808,9 @@ The records come from the ambient emitter's spawner `FUN_801D629C`
 ([`field-ambient-fx.md`](field-ambient-fx.md#the-fog-pool-spawner-records-render-pass)).
 
 Port: `engine-field::fog_particles` is the pool and the pass's arithmetic,
-`World::fog_render_step` is the draw-path call each host makes with its
-follow camera, and the quads join this pass through
+`World::fog_render_step` is the render pass's step, which both hosts run once
+per sim tick through `BootSession::step_field_fog` with the follow camera (one
+`World::tick` is one retail frame), and the quads join this pass through
 `screen_prim::fog_puff_prim`. Each quad carries a scene depth and is
 depth-tested, so nearer geometry covers a sheet as retail's shared ordering
 table does: the particle's own `SZ` on the field, the bucket depth on the

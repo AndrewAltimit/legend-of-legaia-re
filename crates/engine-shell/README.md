@@ -31,6 +31,11 @@ holds the glue around it:
   runner (boot a scenario headlessly, assert the SHA-256 of its `SaveFile`).
 - [`xa_clip`](src/xa_clip.rs) - XA voice-clip dispatch arithmetic behind the
   `xa-cue` census.
+- [`window`](src/window.rs) - the `play-window` app and the `play-str`
+  player. `window::HeadlessPlayWindow` is the same app with no window or
+  renderer, stepped one display frame at a time with a given pad word and
+  tick count: what `tests/host_frame_parity.rs` drives against the browser
+  play page.
 
 ### Parity oracles
 

@@ -21,12 +21,13 @@ flowchart TD
     Q1 -->|"tiers 1, 8, 9, 10, 13"| Q2{"Do both feed it the same thing?"}
     Q2 -->|"tiers 2, 3, 4, 5, 12"| Q3{"Does each host run and draw it every frame?"}
     Q3 -->|"tiers 6, 7, 11, 14"| Q4{"Do the two frames match?"}
-    Q4 -->|"no gate: screenshot pair"| OK["Parity"]
+    Q4 -->|"world state: frame-body trace; pixels: screenshot pair"| OK["Parity"]
     Q1 -.->|"absent on BOTH hosts"| R["no drift gate fails: reach export"]
 ```
 
 Every tier is a source scan. Each answers exactly one question and is silent
-about the rest, so a green suite is a floor, not host parity.
+about the rest, so a green suite is a floor, not host parity. The one check
+that runs both hosts is the [frame-body trace](#output-level-the-frame-body-trace).
 
 | Tier | Question | Declared in | Blind to |
 |---|---|---|---|
@@ -1068,6 +1069,41 @@ Three rules that follow from rows that went wrong:
   minigames page that is usually "this kernel hangs off `World`, which the page
   does not hold".
 
+## Output level: the frame-body trace
+
+Every tier reads source. What a source scan cannot see is the same calls
+producing different world state: a step one host runs per redraw and the other
+per tick, a loop that ends early on one side, a screen stepped once per display
+frame on one side and once per tick on the other. The disc-gated
+[`engine-shell/tests/host_frame_parity.rs`](../../crates/engine-shell/tests/host_frame_parity.rs)
+runs both hosts and compares what they leave.
+
+| Piece | What it is |
+|---|---|
+| native side | `window::HeadlessPlayWindow`: the app `play-window` assembles (`assemble_play_window`, the launch stages after the intro movie) with no renderer, driven one display frame at a time - the redraw's sim ticks (`run_sim_ticks`), then the draw path's world-moving steps (`headless_frame_prep`) |
+| page side | the real `LegaiaRuntime`, driven the way `site/js/play-view-frame.js` drives it: the per-tick owners, the prologue skip, the cutscene pad lock, the persistent tap set |
+| sample | `engine-session::host_trace`: scene, mode, seat word and edges, `World::frame`, the world `rand()` state, field-VM pc, actor slots, field NPC positions, the retail camera globals, flag / roster / bag digests, dialogue, battle and field-VM contexts, the pause menu and its wipe, the merchant gate, the naming prompt, and the host-held overlay screen (`sample_with_overlay`) |
+| verdict | per channel, the first display frame the two traces part on |
+
+Each scenario runs at three cadences - one tick per display frame, two (a
+30 Hz display) and one every other frame (120 Hz) - because a clock split
+between the redraw and the tick is invisible at 60 Hz. Each also asserts what
+it exercised (the lead moved, a menu opened and closed, a battle opened, the
+naming prompt came up, a dialogue opened), so agreement on a world that never
+moved fails. A pad that steers off the world comes from the native run and is
+replayed to the page.
+
+With no renderer, the window's `upload_assets` runs its world-side half (the
+CPU VRAM base, the scene box, the floor snap) at once and keeps the GPU half
+for when one opens: the scripted VRAM effects step against that base and are
+not presentation-only.
+
+What it does not see: anything a renderer owns, the audio director (the
+headless window runs with audio off), and the page's JavaScript beyond the
+arms its driver replays - a change to those arms in `play-view-frame.js` /
+`play-view-input.js` has to be mirrored in the driver, which is the one
+place this check trusts a transcription.
+
 ## Pairing frames: what a screenshot adds
 
 A row closed by a tier is a claim about code, not pixels. Two hosts can be
@@ -1161,6 +1197,9 @@ decidable per instance, not from a source pattern.
 | **A read on the wrong side of the tick.** | The page read `play_cutscene_state_json` before its ticks and staged the grade from it, one frame late. | Re-read after each tick. |
 | **A cue fired before the filter that swallows its edge.** | The page blipped off the raw press before `play_menu_input` ran the save screen's refusal filters. | Fire on the filtered edge. |
 | **A session choice the next entry re-arms.** | Native `F7` cleared the encounter toggle; the live-loop arming raised it again. | Write the session flag every entry reads. |
+| **A simulation step on the draw path.** One host steps it per redraw, the other per tick. | The fog pool's render step ages the pool the next tick's spawner reads, and a spawn draws the world `rand()` stream. The window ran it per redraw, the page per tick, so at 30 Hz or 120 Hz the window's stream parted. | `BootSession::step_field_fog`, per tick on both; the draw only wraps the quads. |
+| **A screen stepped per display frame against one stepped per tick.** | The page opened the pause menu, routed the naming prompt's edge and stepped a shop at display-frame level. At 120 Hz a press landed on a frame with no tick; on the closing frame the menu stepped `n` times and the field ticked `n` more. | Per-tick owners in the native `sim_tick` order (`play_menu_tick`, `play_name_entry_tick`, `play_shop_tick` / `play_shop_after_tick`), asked by the page's tick loop. |
+| **A loop that ends on the tick it changed hands.** | After the prologue skip and on the tick a merchant opened a shop, the page broke out of its tick loop and dropped the frame's remaining ticks. The native arms return from one tick, not from the frame. | Continue the loop; the next tick goes to whoever owns it now. |
 
 ### A draw, queue or resource one side lacks
 
@@ -1220,7 +1259,7 @@ reverse-engineering questions, so they are not on
 | shading law | One law in WGSL and GLSL; nothing pairs the shader bodies. See [shading](#the-two-hosts-do-not-share-a-shading-law). |
 | battle body blend | Native keys the posed override by TMD index (two bodies sharing a TMD share one); the page orders blend passes per mesh, not per prim. |
 | save rack port 1 | Native mounts its `.lgsf` directory as port 1 and `--card` as port 2; the page mounts two card images and resumes `.lgsf` through the save bar. Closing it is storage work. |
-| per-tick screen owners | Both hosts hand a frame to the pause menu, then name entry, then a menu-overlay screen, each spelling that order itself; no gate reads the JS side. |
+| per-tick screen owners | Each sim tick goes to the pause menu, then the naming prompt, then a menu-overlay screen, then the field, on both hosts: the window's `sim_tick` arms, the page's tick loop asking `play_menu_tick` / `play_name_entry_tick` / `play_shop_tick`. The order is still spelt once per host, and the JS half is checked only by the [frame-body trace](#output-level-the-frame-body-trace)'s replay of it. |
 | lit rows under the palette collapse | Not drift: both hosts run a lit row's shaded colour through the prologue's packet sepia, which the light kernel's output never meets in retail. See [light-source rows](#light-source-rows-in-a-graded-scene). |
 | STR decoders | The page counts assembled frames and assumes 4-bit XA; native counts decoded frames and reads the bit depth. |
 | shop panel rows, inn prompt text | Written once per host over shared leaves; they agree today. |
@@ -1278,6 +1317,8 @@ The frame model is in [`engine.md`](../subsystems/engine.md#the-frame-model).
 | camera around the world tick | `camera_before_world_tick` / `camera_after_world_tick` |
 | cutscene glide clock | `CutsceneGlide`, reset on every entry (retail's `FUN_80025C24` kills the mover) |
 | move-VM strips | `MoveVmGlobals::strip_frame` |
+| fog pool render step | `BootSession::step_field_fog`, once per sim tick (window: `tick_frame_tail_effects`; page: inside `tick_frame`); the draws read `World::fog_quads` |
+| who owns the tick | window: the `sim_tick` arms; page: `play_menu_tick`, `play_name_entry_tick`, `play_shop_tick` / `play_shop_after_tick` |
 | field frame tail | `BootSession::step_effect_scene_graphs`, `World::step_field_vram_effects`, `drain_field_anim_cues`; headless: `World::step_world_frame_tail` ([`reach-triage.md`](reach-triage.md#what-a-pad-only-ladder-structurally-cannot-execute)) |
 | party-wipe probe | `BootSession::take_party_wipe` |
 | scheduler under a frozen field | `BootSession::step_overlay_sfx` |
@@ -1342,7 +1383,8 @@ side, so they pair by call rather than by step name:
 | `BootSession::route_battle_audio` | `drain_and_log_battle_events` | `drain_battle_audio_cues`, inside `tick_battle_presentation` |
 | `BootSession::step_overlay_sfx` | `tick_menu_sfx`, in the arms that freeze the field | the export `play_tick_overlay_sfx`, from the page's frame loop |
 | `session::step_npc_clip_players` | `drain_anim_cues`, after the tick's re-targets | `drive_npc_clips` (`FieldActors::drive`), after the same |
-| `BootSession::pass_name_entry_frames` / `step_name_entry_frame` | the per-tick naming-prompt arm (`step_name_entry_frame`) | the export `name_entry_advance_frames`, with the frame's sim steps |
+| `BootSession::step_name_entry_frame` | the per-tick naming-prompt arm | the export `play_name_entry_tick`, per tick from the page's tick loop (`name_entry_advance_frames` / `pass_name_entry_frames` remain for a bundle without it) |
+| `BootSession::step_field_fog` | `tick_frame_tail_effects` | `tick_field_fog_prims`, inside `tick_frame` |
 
 `step_audio_frame` is the tick's **audio frame**: the duck ramp toward the
 world's configured level, the delay scheduler, and the cues that matured
@@ -1583,7 +1625,7 @@ the dialogue, the party readout and the menu at full brightness.
 |---|---|---|
 | append order, under / over the HUD | `engine-screens::screen_layers::compose_screen_prims` over `HostScreenPrims` | A tie inside a bucket breaks by append order. Both hosts draw `under` (fog, move strips, light pools) before the text layer, so the HUD stays bright under a subtractive light mask, as retail's does, and `over` after it. |
 | battle transition (confetti, shatter, curtain, swirl, ring, backdrop, fade) | `render-kernels::battle_intro` | Per host: turning the drawn frame into RGBA (`Renderer::capture_rgba`; `gl.readPixels` into `play_intro_land_capture`). The page has one VRAM texture, so `field_vram_bytes` returns the captured clone while one is live. |
-| field fog sheets | `World::fog_render_step(&view)` + `screen_prim::fog_puff_prim` | Retail's `FUN_8003F348` ages and emits in the render pass. Both resolve the camera without the cutscene view; gate `World::fog.gate`. Depth through `World::field_fx_view` ([`field-ambient-fx.md`](../subsystems/field-ambient-fx.md#the-fog-pool-spawner-records-render-pass)). |
+| field fog sheets | `BootSession::step_field_fog` (per sim tick, over `World::fog_render_step`) + `screen_prim::fog_puff_prim` | Retail's `FUN_8003F348` ages and emits in the render pass, once per frame. Both resolve the camera without the cutscene view; gate `World::fog.gate`. Depth through `World::field_fx_view` ([`field-ambient-fx.md`](../subsystems/field-ambient-fx.md#the-fog-pool-spawner-records-render-pass)). |
 | screen-effect wash (op `0x34` sub-0) | `screen_prim::screen_effect_push_prims`, `_split` | `FUN_80024EE4(a0, a1, packed)`: `a0` is an OT bucket, `a1` an ABR equation, `packed` a GP0 colour word with red in the low byte. Glyphs sit at bucket `1`; a push at bucket `0` draws over them ([`cutscene.md`](../subsystems/cutscene.md#a-push-in-front-of-the-text-or-behind-it)). |
 | drop shadow | `render-kernels::drop_shadow`, `World::field_drop_shadows`, `screen_prim::drop_shadow_prim` | `FUN_8001C394`, called from `FUN_8001B964`; matched to retail on three captured frames (`drop_shadow_retail_capture_disc.rs`). |
 | world-map markers | `marker_quads` + `world_map_marker_prim` | A port marker, not a retail draw; `MarkerQuad::depth` restores occlusion. |
@@ -1987,7 +2029,11 @@ kernel carries that term (`field_battle_transition_active`) for both hosts.
   `BRANCH_OWNED` with its reason;
 - a boot install joins tier 13 by being a `world.install_*` / `world.set_*`
   call in the native boot - fold a new table into an engine install both boots
-  call rather than a field assignment the tier cannot see.
+  call rather than a field assignment the tier cannot see;
+- a situation joins the frame-body trace as a `Scenario` in
+  `host_frame_parity.rs`, run at all three cadences, with an `exercised` check
+  that fails when the run never reached it; state the hosts keep outside the
+  session joins `host_trace` as a channel.
 
 Each script self-tests its own detectors on every run and refuses to report a
 pass when a control fails - a "0 orphans" verdict from a classifier that

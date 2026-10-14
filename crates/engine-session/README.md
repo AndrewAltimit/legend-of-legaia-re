@@ -40,6 +40,12 @@ through `xa_banks`.
 session's dispatch state: what a replay file's expected frames and the
 mode-trace oracle's retail samples are compared against.
 
+[`host_trace`](src/host_trace.rs) holds `HostTraceFrame`, one host-agnostic
+sample of a session's simulation (plus, through `sample_with_overlay`, the
+menu-overlay screen a host holds beside it), and `first_divergences`, the
+per-channel compare. The frame-body comparison of the two play hosts
+(`engine-shell/tests/host_frame_parity.rs`) is built on it.
+
 Both play hosts run it. The browser play page holds a `BootSession` over its
 WebAudio output (`crates/web-viewer/src/host_slot.rs`), built with
 `from_host` over the scene host it assembles in memory, and its `tick_frame`
