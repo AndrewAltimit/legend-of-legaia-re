@@ -16,13 +16,20 @@ impl PlayWindowApp {
         // than carried - the browser page drains through the same kernel.
         let ticks = self.sim_stepper.drain(dt.as_secs_f64());
         // A `--screenshot` capture is tick-locked: one tick per redraw,
-        // whatever the wall clock did. The draw pass is not inert - the fog
-        // pool's render step ages the pool the next tick's spawns read, and
-        // those spawns draw the world `rand()` stream - so a wall-paced
-        // capture ran a fogged scene on a stream that moved with machine
-        // load, and the retail comparison's frame landed on a different
-        // fight from its headless seed (`NativeSession::fog_render_tick`).
+        // whatever the wall clock did, so the redraw it samples lands on the
+        // tick its headless seed counts to. (The fog pool's render step,
+        // which ages the pool the next tick's spawns read and so moves the
+        // world `rand()` stream, used to run here per redraw as well; it is a
+        // per-tick session step now - `BootSession::step_field_fog`.)
         let ticks = if self.screenshot.is_some() { 1 } else { ticks };
+        self.run_sim_ticks(ticks);
+    }
+
+    /// Run `ticks` sim ticks as one redraw's drain: end a finished windowed
+    /// movie, hand a key tapped since the last redraw to the first tick, and
+    /// step [`Self::sim_tick`] per tick. The redraw computes `ticks` off the
+    /// wall clock; the headless driver (`window::headless`) passes its own.
+    pub(in crate::window) fn run_sim_ticks(&mut self, ticks: u32) {
         // In-flow windowed cutscene: when the field VM's FMV-trigger
         // op flips the world into SceneMode::Cutscene and the STR has
         // decoded, suspend world ticks and play the video in-window.
@@ -601,6 +608,14 @@ impl PlayWindowApp {
         // cross-fades): drain the world's banked game ticks against the
         // CPU VRAM (self-gates when none are live).
         self.apply_world_clut_fx();
+        // The fog pool's render step, once per sim tick through the session
+        // step the browser page runs too (`BootSession::step_field_fog`); the
+        // draw prep only wraps the quads it left (`take_field_fog_prims`).
+        let centre = [
+            (self.scene_aabb.0[0] + self.scene_aabb.1[0]) * 0.5,
+            (self.scene_aabb.0[2] + self.scene_aabb.1[2]) * 0.5,
+        ];
+        let _ = self.session.step_field_fog(centre);
         // Catch any path that re-uploaded VRAM over the battle
         // texture this frame (and restore it).
         self.check_battle_vram_residency();

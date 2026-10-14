@@ -373,10 +373,10 @@ impl PlayWindowApp {
         // rebuilds above. Both are empty whenever no transition is running,
         // and the emitter is put back after the render. See `window::battle`.
         let (battle_intro, battle_intro_prims) = self.take_battle_intro_frame();
-        // Field fog sheets: the pool's render step runs here, in the same
-        // borrow window, through the camera this frame draws the field with
-        // (`FUN_8003F348` runs inside retail's field render pass, so it is a
-        // draw-path step on both hosts). Empty outside a gated field scene.
+        // Field fog sheets: the quads the last sim tick's render step left
+        // (`FUN_8003F348` runs once per retail frame, inside the field render
+        // pass, so both hosts step it per tick - `BootSession::step_field_fog`
+        // - and the draw only wraps them). Empty outside a gated field scene.
         let field_fog_prims = self.take_field_fog_prims();
         // Move-VM strip spans (`FUN_801D31B0`), through the same camera.
         let move_strip_prims = self.take_move_strip_prims();

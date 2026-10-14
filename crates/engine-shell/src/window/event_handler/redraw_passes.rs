@@ -916,41 +916,27 @@ impl PlayWindowApp {
     }
 
     /// This frame's field fog sheets (`legaia_engine_field::fog_particles`):
-    /// the pool's render step (`FUN_8003F348` / `FUN_8003F3FC`, run from
-    /// retail's field render pass) through the follow camera this frame
-    /// draws the field with, wrapped by the shared `fog_puff_prim` so the
-    /// blend class and vertex order are the browser play page's too. Empty
-    /// outside game mode 3 (a field scene or the kingdom overworld) or while
-    /// the script gate (`_DAT_8007B854`) is clear - the same two tests the
-    /// pass makes at `0x80026EA4..0x80026EC4`.
+    /// the quads the last sim tick's render step left
+    /// (`BootSession::step_field_fog`, `FUN_8003F348` / `FUN_8003F3FC`, run
+    /// from retail's field render pass once per frame), wrapped by the shared
+    /// `fog_puff_prim` so the blend class and vertex order are the browser
+    /// play page's too. Empty outside game mode 3 (a field scene or the
+    /// kingdom overworld) or while the script gate (`_DAT_8007B854`) is clear -
+    /// the same two tests the pass makes at `0x80026EA4..0x80026EC4`.
     ///
-    /// The camera resolves with no cutscene view, on both hosts alike, so a
-    /// scripted camera beat projects the fog through the follow pose: a
-    /// shared simplification, not a per-host one.
+    /// A read, not a step: the step is per sim tick
+    /// (`tick_frame_tail_effects`), so a redraw that ran two ticks or none
+    /// draws what the last tick left, as the page does.
     pub(super) fn take_field_fog_prims(
         &mut self,
     ) -> Vec<legaia_render_kernels::screen_prim::ScreenPrim> {
-        use legaia_engine_core::camera_view::resolve_field_camera;
         use legaia_render_kernels::screen_prim::fog_puff_prim;
         let world = &self.session.host.world;
         if !legaia_engine_core::world::World::fog_mode(world.mode) || !world.fog.gate {
             return Vec::new();
         }
-        let center = [
-            (self.scene_aabb.0[0] + self.scene_aabb.1[0]) * 0.5,
-            (self.scene_aabb.0[2] + self.scene_aabb.1[2]) * 0.5,
-        ];
-        let frame = resolve_field_camera(world, &self.session.camera, None, center);
-        // The field follow pose, or the overworld walk pose in the field
-        // frame - retail's overworld is a game-mode-3 scene and draws the
-        // same pool through the same pass.
-        let Some(view) = frame.field_view() else {
-            return Vec::new();
-        };
-        self.session
-            .host
-            .world
-            .fog_render_step(&view)
+        world
+            .fog_quads()
             .iter()
             .map(|q| fog_puff_prim(q.xy, q.uv, q.clut, q.tpage, q.rgb, q.ot_index, q.depth))
             .collect()

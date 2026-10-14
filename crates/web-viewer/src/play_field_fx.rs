@@ -6,8 +6,10 @@
 //! `_DAT_8007B854`), two textured semi-transparent quads per live particle
 //! through `FUN_8003F86C`. The simulation of that pass is
 //! `legaia_engine_field::fog_particles` and its `World::fog_render_step`
-//! seam; this file is the page's draw-path call into it, the twin of the
-//! native window's `take_field_fog_prims`. Both wrap the quads through
+//! seam. The step runs once per sim tick on both hosts, through the session's
+//! `BootSession::step_field_fog` (here from `tick_frame`, natively from the
+//! window's tick tail); this file wraps its quads for the page's screen-prim
+//! pass, the twin of the native window's `take_field_fog_prims`. Both wrap the quads through
 //! `legaia_render_kernels::screen_prim::fog_puff_prim`, and both resolve the
 //! camera with `resolve_field_camera(.., None, centre)` - the follow pose, with
 //! the scene-AABB centre as the fallback focus on both hosts - so a
@@ -50,34 +52,29 @@ impl LegaiaRuntime {
     /// kingdom overworld) or while the script gate is clear.
     pub(crate) fn tick_field_fog_prims(&mut self) -> Vec<ScreenPrim> {
         let centre = self.field_camera_centre();
-        let Some((host, camera)) = self.scene_host.host_cam_mut() else {
+        let Some(session) = self.scene_host.session_mut() else {
             return Vec::new();
         };
-        let world = &mut host.world;
-        if !legaia_engine_core::world::World::fog_mode(world.mode) {
-            return Vec::new();
-        }
-        let frame = resolve_field_camera(world, camera, None, centre);
-        // The field follow pose, or the overworld walk pose in the field
-        // frame - retail's overworld is a game-mode-3 scene and draws the
-        // same pool through the same pass.
-        let Some(view) = frame.field_view() else {
+        // The session's per-tick step (`BootSession::step_field_fog`), the
+        // one the native window runs at the same point of its tick: the
+        // field follow pose, or the overworld walk pose in the field frame -
+        // retail's overworld is a game-mode-3 scene and draws the same pool
+        // through the same pass.
+        let Some(fx) = session.step_field_fog(centre) else {
             return Vec::new();
         };
-        // Recorded ahead of the fog gate: the drop shadows project through
-        // the same field-FX view whether or not any fog draws.
-        let depth_affine = world.field_fx_view(&view).depth_affine();
+        // Recorded whether or not the gate let the step run: the drop
+        // shadows project through the same field-FX view either way.
+        self.fx_depth_affine = Some(fx.depth_affine());
+        let world = &session.host.world;
         if !world.fog.gate {
-            self.fx_depth_affine = Some(depth_affine);
             return Vec::new();
         }
-        let prims = world
-            .fog_render_step(&view)
+        world
+            .fog_quads()
             .iter()
             .map(|q| fog_puff_prim(q.xy, q.uv, q.clut, q.tpage, q.rgb, q.ot_index, q.depth))
-            .collect();
-        self.fx_depth_affine = Some(depth_affine);
-        prims
+            .collect()
     }
 }
 

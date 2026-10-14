@@ -19,19 +19,49 @@ impl<S: AudioSink> BootSession<S> {
     /// runs outside game mode 3 or while the script gate is clear. The
     /// centre is only the frame resolver's no-camera fallback.
     pub fn fog_render_tick(&mut self) {
+        let _ = self.step_field_fog([0.0, 0.0]);
+    }
+
+    /// The fog pool's render step, once per **sim tick**, on both play hosts
+    /// (the window's `tick_frame_tail_effects`, the page's `tick_frame`) and
+    /// every headless driver. The quads land on `World::fog_quads`, which
+    /// the draw passes read; nothing else steps the pool.
+    ///
+    /// Per tick, not per redraw: one `World::tick` is one retail display
+    /// frame and `FUN_8003F348` runs once in each frame's field render pass.
+    /// The native window used to step it from its draw prep, once per
+    /// redraw - so a redraw carrying two ticks aged the pool by `dt = 2` in
+    /// one step, a redraw carrying none ran an extra `dt = 0` step, and since
+    /// the step writes the live count and depth view the next tick's spawner
+    /// reads (and a spawn draws the world `rand()` stream), the window's
+    /// simulation depended on the monitor's refresh rate.
+    ///
+    /// The camera is the follow frame with no cutscene view (the shared
+    /// simplification both hosts make); `centre` is the host's scene centre,
+    /// the frame resolver's fallback with no lead actor. Returns the field-FX
+    /// projection the frame resolved to - `Some` in game mode 3 whenever the
+    /// frame has a field view, whether or not the script gate let the step
+    /// run - for the page's depth-affine readback.
+    pub fn step_field_fog(
+        &mut self,
+        centre: [f32; 2],
+    ) -> Option<legaia_engine_field::fog_particles::FogView> {
         let world = &mut self.host.world;
-        if !legaia_engine_core::world::World::fog_mode(world.mode) || !world.fog.gate {
-            return;
+        if !legaia_engine_core::world::World::fog_mode(world.mode) {
+            return None;
         }
         let frame = legaia_engine_core::camera_view::resolve_field_camera(
             world,
             &self.camera,
             None,
-            [0.0, 0.0],
+            centre,
         );
-        if let Some(view) = frame.field_view() {
+        let view = frame.field_view()?;
+        let fx = world.field_fx_view(&view);
+        if world.fog.gate {
             let _ = world.fog_render_step(&view);
         }
+        Some(fx)
     }
 
     /// The scripted field VRAM effects the play hosts drain once per sim tick
