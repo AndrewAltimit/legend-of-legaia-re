@@ -77,6 +77,20 @@ impl PlayWindowApp {
         legaia_engine_render::profile::end_frame();
         self.win.request_redraw();
     }
+
+    /// The redraw's steps after its ticks that move world state, for the
+    /// headless driver (`window::headless`): the battle frame edge, the
+    /// cutscene camera glide and the frame prep (the fog pool's render
+    /// step), in [`Self::handle_redraw`]'s order. The renderer-bound steps
+    /// gate themselves on the renderer being absent.
+    pub(in crate::window) fn headless_frame_prep(&mut self) {
+        self.apply_floor_wave();
+        let _ = self.sync_field_view();
+        self.sync_battle_frame();
+        let _ = self.resolve_cutscene_camera();
+        let mut prep = self.take_frame_prep();
+        self.battle_intro = prep.battle_intro.take();
+    }
 }
 
 impl PlayWindowApp {

@@ -21,6 +21,7 @@ mod dome_cast_band_ladder;
 mod field_walk_host_parity;
 mod full_game_ladder;
 mod gte_sin_lut_real;
+mod host_frame_parity;
 mod menu_replay;
 mod menu_window_dispatch_real;
 mod minigame_replay;

@@ -1,0 +1,405 @@
+//! Disc-gated: the native play window's **own frame body** and the browser
+//! play page's, driven by one pad script, leave the same world state.
+//!
+//! `field_walk_host_parity` and `mode_seat_host_parity` drive the native
+//! side through `NativeSession`, which is the session both hosts already
+//! share. What a host wraps around the session tick - its per-tick modal
+//! arms, the steps before and after the tick, the draw path's world-moving
+//! steps - is where the two drift. So this drives the window itself
+//! (`window::HeadlessPlayWindow`: the app `play-window` assembles, minus the
+//! renderer) against the page's `LegaiaRuntime` the way
+//! `site/js/play-view-frame.js` and `play-view-input.js` drive it (the pause
+//! menu, naming prompt and shop arms, the prologue skip, the cutscene pad
+//! lock, the modal break), and compares a host-agnostic sample of the session
+//! (`legaia_engine_session::host_trace`) after every display frame, channel
+//! by channel.
+//!
+//! Each scenario runs at more than one display rate. A display frame that
+//! runs two sim ticks (a 30 Hz display) or none (a redraw between two ticks
+//! on a fast display) is where a step one host runs per redraw and the other
+//! per tick parts them; a 60 Hz run cannot see it.
+//!
+//! What the comparison cannot see: anything a renderer owns (both drivers
+//! draw nothing), the audio director (the headless window runs with audio
+//! off), and the page's JavaScript beyond the arms replayed in
+//! [`PageDriver::frame`] - a change to those JS arms has to be mirrored
+//! there.
+//!
+//! Skips + passes when `LEGAIA_DISC_BIN` is unset.
+
+use legaia_engine_session::host_trace::{self, HostTraceFrame};
+use legaia_engine_shell::window::HeadlessPlayWindow;
+use legaia_engine_system::input::PadButton;
+use legaia_web_viewer::runtime::LegaiaRuntime;
+
+/// How many sim ticks each display frame runs, cycled.
+#[derive(Clone, Copy, Debug)]
+enum Cadence {
+    /// One tick per frame: a 60 Hz display.
+    Hz60,
+    /// Two ticks per frame: a 30 Hz display.
+    Hz30,
+    /// One tick every other frame: a 120 Hz display.
+    Hz120,
+}
+
+impl Cadence {
+    fn ticks(self, frame: u32) -> u32 {
+        match self {
+            Cadence::Hz60 => 1,
+            Cadence::Hz30 => 2,
+            Cadence::Hz120 => frame % 2,
+        }
+    }
+}
+
+struct Scenario {
+    scene: &'static str,
+    /// Pad word held over sim tick `t` (1-based).
+    pad: fn(u32) -> u16,
+    ticks: u32,
+    /// What the run must have exercised, so a green run is not a vacuous
+    /// one (the hosts agreeing on a world that never moved).
+    exercised: fn(&[HostTraceFrame]) -> Result<(), String>,
+}
+
+const UP: u16 = 0x0010;
+const RIGHT: u16 = 0x0020;
+const DOWN: u16 = 0x0040;
+const LEFT: u16 = 0x0080;
+const CROSS: u16 = 0x4000;
+const CIRCLE: u16 = 0x2000;
+const START: u16 = 0x0008;
+
+/// A press held over `[at, at + 4)`.
+fn tap(t: u32, at: u32, mask: u16) -> u16 {
+    if (at..at + 4).contains(&t) { mask } else { 0 }
+}
+
+fn walk_pad(t: u32) -> u16 {
+    if (20..160).contains(&t) {
+        PadButton::Up.mask()
+    } else if (160..285).contains(&t) {
+        PadButton::Right.mask()
+    } else {
+        0
+    }
+}
+
+/// Walk, open the pause menu, step its root list, enter one sub-screen and
+/// back out of it, close the menu (Circle on the root list), walk again.
+fn menu_pad(t: u32) -> u16 {
+    let walk = if (10..40).contains(&t) || (330..380).contains(&t) {
+        UP
+    } else {
+        0
+    };
+    walk | tap(t, 50, START)
+        | tap(t, 110, DOWN)
+        | tap(t, 130, DOWN)
+        | tap(t, 150, UP)
+        | tap(t, 170, CROSS)
+        | tap(t, 230, CIRCLE)
+        | tap(t, 270, CIRCLE)
+}
+
+/// Walk a box on an encounter field, confirming every so often: the walk
+/// rolls encounters, the confirms drive whatever battle opens.
+fn encounter_pad(t: u32) -> u16 {
+    let dir = match (t / 90) % 4 {
+        0 => UP,
+        1 => RIGHT,
+        2 => DOWN,
+        _ => LEFT,
+    };
+    let confirm = if t % 24 < 3 { CROSS } else { 0 };
+    dir | confirm
+}
+
+fn moved(tr: &[HostTraceFrame]) -> Result<(), String> {
+    let first = tr
+        .first()
+        .and_then(|f| f.actors.first())
+        .map(|a| (a.x, a.z));
+    let last = tr.last().and_then(|f| f.actors.first()).map(|a| (a.x, a.z));
+    match (first, last) {
+        (Some(a), Some(b)) if (a.0 - b.0).abs() + (a.1 - b.1).abs() > 128 => Ok(()),
+        _ => Err(format!("the player did not move ({first:?} -> {last:?})")),
+    }
+}
+
+fn visited_menu(tr: &[HostTraceFrame]) -> Result<(), String> {
+    if !tr.iter().any(|f| f.mode == "Menu") {
+        return Err("the pause menu never opened".into());
+    }
+    if tr.last().is_some_and(|f| f.mode == "Menu") {
+        return Err("the pause menu never closed".into());
+    }
+    moved(tr)
+}
+
+fn visited_battle(tr: &[HostTraceFrame]) -> Result<(), String> {
+    if tr.iter().any(|f| f.mode == "Battle") {
+        Ok(())
+    } else {
+        Err("no encounter opened a battle".into())
+    }
+}
+
+fn native_trace(disc: &str, sc: &Scenario, cadence: Cadence) -> Vec<HostTraceFrame> {
+    let mut w = HeadlessPlayWindow::open(std::path::Path::new(disc), sc.scene).expect("open");
+    let mut out = vec![host_trace::sample(w.session())];
+    let (mut t, mut f) = (0u32, 0u32);
+    while t < sc.ticks {
+        let n = cadence.ticks(f).min(sc.ticks - t);
+        w.display_frame((sc.pad)(t + 1), n);
+        t += n;
+        f += 1;
+        out.push(host_trace::sample(w.session()));
+    }
+    out
+}
+
+/// The play page's frame, replayed from `site/js/play-view-frame.js::_frame`
+/// and the modal steps in `play-view-input.js`, with the JS pad bookkeeping
+/// reduced to a held word and this frame's just-pressed edges.
+struct PageDriver {
+    rt: LegaiaRuntime,
+    prev: u16,
+    /// `this.pulse`: keys pressed since the last consumer cleared them. A
+    /// frame that drains no sim tick keeps them for the next one.
+    pulse: u16,
+    /// `this._cut`: the post-tick re-read of `play_cutscene_state_json`.
+    cut_locked: bool,
+    cut_chain: bool,
+    shop_holds_pad: bool,
+}
+
+impl PageDriver {
+    fn read_cut(&mut self) {
+        let v: serde_json::Value =
+            serde_json::from_str(&self.rt.play_cutscene_state_json()).unwrap_or_default();
+        self.cut_locked = v["locked"].as_bool().unwrap_or(false);
+        self.cut_chain = v["chain"].as_bool().unwrap_or(false);
+    }
+
+    /// `_updateFieldMenu`: with `play_menu_tick` the frame-level step only
+    /// answers whether a menu is up; the menu's ticks run in the loop.
+    fn field_menu(&mut self) -> bool {
+        self.rt.play_menu_is_open()
+    }
+
+    /// `_updateNameEntry`.
+    fn name_entry(&mut self, pulse: &mut u16, steps: u32) -> bool {
+        let rt = &mut self.rt;
+        if !rt.name_entry_is_active() {
+            return false;
+        }
+        let _ = rt.name_entry_input(*pulse);
+        rt.name_entry_advance_frames(steps);
+        *pulse = 0;
+        rt.name_entry_is_active()
+    }
+
+    /// `_updateFieldShop`.
+    fn field_shop(&mut self, pulse: &mut u16, steps: u32) -> bool {
+        self.shop_holds_pad = false;
+        if !self.rt.play_shop_is_open() {
+            return false;
+        }
+        if steps > 0 {
+            let edge = *pulse;
+            for s in 0..steps {
+                self.rt.play_shop_input(if s == 0 { edge } else { 0 });
+            }
+            *pulse = 0;
+        }
+        if !self.rt.play_shop_is_open() {
+            return false;
+        }
+        self.shop_holds_pad = true;
+        self.rt.play_shop_suspends_field()
+    }
+
+    /// `_modalOpenedThisTick`.
+    fn modal_opened_this_tick(&self) -> bool {
+        !self.shop_holds_pad && self.rt.play_shop_is_open()
+    }
+
+    fn frame(&mut self, pad: u16, steps: u32) {
+        self.pulse |= pad & !self.prev;
+        self.prev = pad;
+        let mut pulse = self.pulse;
+        let menu_open = self.field_menu();
+        let naming_open = !menu_open && self.name_entry(&mut pulse, steps);
+        let shop_open = !menu_open && !naming_open && self.field_shop(&mut pulse, steps);
+        if shop_open {
+            for _ in 0..steps {
+                self.rt.play_tick_overlay_sfx();
+            }
+        }
+        if !shop_open && !naming_open {
+            let mut menu_ticked = false;
+            for _ in 0..steps {
+                // `play_menu_tick`: the pause menu's per-tick arms.
+                if self.rt.play_menu_tick(pulse) != 0 {
+                    menu_ticked = true;
+                    pulse = 0;
+                    self.rt.play_tick_overlay_sfx();
+                    continue;
+                }
+                if self.cut_chain && pulse & CROSS != 0 {
+                    let target = self.rt.play_take_prologue_handoff(true);
+                    if !target.is_empty() {
+                        self.rt.enter_field(&target).expect("prologue hand-off");
+                        break;
+                    }
+                }
+                if self.rt.is_game_over() {
+                    let _ = self.rt.game_over_input(pulse);
+                    break;
+                }
+                let word = if self.cut_locked || self.shop_holds_pad {
+                    0
+                } else {
+                    pad
+                };
+                self.rt.set_pad(word);
+                pulse = 0;
+                self.rt.tick_frame().expect("tick_frame");
+                self.read_cut();
+                if self.modal_opened_this_tick() {
+                    break;
+                }
+            }
+            // `_afterMenuTicks`.
+            if menu_ticked {
+                let _ = self.rt.play_menu_take_load();
+            }
+        }
+        self.pulse = pulse;
+        // The draw: the engine camera the page draws through, which advances
+        // the cutscene glide.
+        let _ = self.rt.play_camera_vp(320.0, 240.0);
+    }
+}
+
+fn page_trace(disc: Vec<u8>, sc: &Scenario, cadence: Cadence) -> Vec<HostTraceFrame> {
+    let mut rt = LegaiaRuntime::new();
+    rt.load_disc(disc, String::new()).expect("load_disc");
+    rt.enter_field(sc.scene).expect("enter_field");
+    let mut d = PageDriver {
+        rt,
+        prev: 0,
+        pulse: 0,
+        cut_locked: false,
+        cut_chain: false,
+        shop_holds_pad: false,
+    };
+    d.read_cut();
+    let mut out = vec![host_trace::sample(d.rt.debug_session().expect("session"))];
+    let (mut t, mut f) = (0u32, 0u32);
+    while t < sc.ticks {
+        let n = cadence.ticks(f).min(sc.ticks - t);
+        d.frame((sc.pad)(t + 1), n);
+        t += n;
+        f += 1;
+        out.push(host_trace::sample(d.rt.debug_session().expect("session")));
+    }
+    out
+}
+
+/// Run `sc` at each cadence on both hosts; the lines name every channel that
+/// parted, with the frame it parted on.
+fn run(sc: &Scenario, cadences: &[Cadence]) -> Vec<String> {
+    let Ok(disc) = std::env::var("LEGAIA_DISC_BIN") else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
+        return Vec::new();
+    };
+    let bytes = std::fs::read(&disc).expect("read disc");
+    let mut all = Vec::new();
+    for &c in cadences {
+        let n = native_trace(&disc, sc, c);
+        let p = page_trace(bytes.clone(), sc, c);
+        assert_eq!(n.len(), p.len());
+        let label = format!("{} {:?}", sc.scene, c);
+        if let Err(e) = (sc.exercised)(&n) {
+            all.push(format!("{label}: native run is vacuous: {e}"));
+        }
+        let divs = host_trace::first_divergences(&n, &p);
+        for (ch, at) in &divs {
+            if let Some(i) = at {
+                all.push(format!("{label}: `{ch}` parts at frame {i}"));
+            }
+        }
+        match divs.iter().filter_map(|(_, at)| *at).min() {
+            None => eprintln!(
+                "[host-frame] {label}: {} frames, every channel equal",
+                n.len()
+            ),
+            Some(i) => {
+                eprintln!("[host-frame] {label}: first divergence at frame {i}");
+                for (ch, at) in &divs {
+                    if let Some(j) = at {
+                        eprintln!("  `{ch}` from frame {j}");
+                    }
+                }
+                let lo = i.saturating_sub(1);
+                for k in lo..=(i + 1).min(n.len() - 1) {
+                    eprintln!("  native[{k}] = {:?}\n  page[{k}]   = {:?}", n[k], p[k]);
+                }
+            }
+        }
+    }
+    all
+}
+
+const ALL: &[Cadence] = &[Cadence::Hz60, Cadence::Hz30, Cadence::Hz120];
+
+#[test]
+fn town01_walk_frames_match_across_hosts() {
+    let sc = Scenario {
+        scene: "town01",
+        pad: walk_pad,
+        ticks: 300,
+        exercised: moved,
+    };
+    let parted = run(&sc, ALL);
+    assert!(parted.is_empty(), "hosts diverge: {parted:#?}");
+}
+
+#[test]
+fn town01_pause_menu_frames_match_across_hosts() {
+    let sc = Scenario {
+        scene: "town01",
+        pad: menu_pad,
+        ticks: 420,
+        exercised: visited_menu,
+    };
+    let parted = run(&sc, ALL);
+    assert!(parted.is_empty(), "hosts diverge: {parted:#?}");
+}
+
+#[test]
+fn fogged_field_frames_match_across_hosts() {
+    let sc = Scenario {
+        scene: "vell",
+        pad: walk_pad,
+        ticks: 300,
+        exercised: moved,
+    };
+    let parted = run(&sc, ALL);
+    assert!(parted.is_empty(), "hosts diverge: {parted:#?}");
+}
+
+#[test]
+fn encounter_and_battle_frames_match_across_hosts() {
+    let sc = Scenario {
+        scene: "map03",
+        pad: encounter_pad,
+        ticks: 1800,
+        exercised: visited_battle,
+    };
+    let parted = run(&sc, &[Cadence::Hz60, Cadence::Hz30]);
+    assert!(parted.is_empty(), "hosts diverge: {parted:#?}");
+}

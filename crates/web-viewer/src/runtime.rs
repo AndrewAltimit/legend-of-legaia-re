@@ -582,3 +582,15 @@ impl Default for LegaiaRuntime {
         Self::new()
     }
 }
+
+#[cfg(not(target_arch = "wasm32"))]
+impl LegaiaRuntime {
+    /// The engine session this page runs, once a disc is loaded - read-only,
+    /// for native tests that sample it beside another host's
+    /// (`legaia_engine_session::host_trace`). Not a wasm export.
+    pub fn debug_session(
+        &self,
+    ) -> Option<&legaia_engine_session::BootSession<legaia_engine_audio::TestAudioSink>> {
+        self.scene_host.session()
+    }
+}

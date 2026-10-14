@@ -344,6 +344,121 @@ pub(super) fn cmd_play_window_with_record(
         screenshot.is_some(),
     )?;
 
+    let mut app = assemble_play_window(PlayWindowLaunch {
+        scene,
+        extracted_root,
+        disc,
+        enable_audio,
+        world_map,
+        boot_ui,
+        save_dir,
+        card,
+        cheat_file,
+        cheat_strict,
+        live_loop,
+        player_battle,
+        party,
+        vm_dialogue,
+        terrain_y,
+        edge_collision,
+        solid_npcs,
+        live_npcs,
+        damage_finish,
+        battle_bgm,
+        screenshot,
+        seed_party,
+        battle,
+        fidelity,
+        debug_seeds,
+        record_to,
+    })?;
+
+    // On demand, not `run_app`: only `run_app_on_demand` clears the exit
+    // request a phase-1 movie left on this loop. Through `run_app` the game
+    // would see that stale exit and quit on its first iteration.
+    {
+        use winit::platform::run_on_demand::EventLoopExtRunOnDemand;
+        event_loop
+            .run_app_on_demand(&mut app)
+            .context("event loop")?;
+    }
+    // After the event loop returns, flush any pending record log. The
+    // Escape / CloseRequested handlers also flush proactively so a
+    // mid-run crash still produces a partial replay file - the trailing
+    // flush is the safety net.
+    if let Some(log) = app.record_log.as_mut()
+        && let Err(e) = log.flush()
+    {
+        log::error!("record: flush on exit failed: {e:#}");
+    }
+    Ok(())
+}
+
+/// Everything a launch decides before the window exists: the `play-window`
+/// command-line surface minus the intro movie, which needs the event loop.
+/// [`assemble_play_window`] turns it into the app the loop runs; the
+/// headless driver (`window::headless`) builds one with the CLI defaults.
+pub(super) struct PlayWindowLaunch<'a> {
+    pub(super) scene: &'a str,
+    pub(super) extracted_root: &'a Path,
+    pub(super) disc: Option<&'a Path>,
+    pub(super) enable_audio: bool,
+    pub(super) world_map: bool,
+    pub(super) boot_ui: bool,
+    pub(super) save_dir: &'a Path,
+    pub(super) card: Option<&'a Path>,
+    pub(super) cheat_file: Option<&'a Path>,
+    pub(super) cheat_strict: bool,
+    pub(super) live_loop: bool,
+    pub(super) player_battle: bool,
+    pub(super) party: Option<&'a str>,
+    pub(super) vm_dialogue: bool,
+    pub(super) terrain_y: bool,
+    pub(super) edge_collision: bool,
+    pub(super) solid_npcs: bool,
+    pub(super) live_npcs: bool,
+    pub(super) damage_finish: bool,
+    pub(super) battle_bgm: Option<u16>,
+    pub(super) screenshot: Option<super::ScreenshotConfig>,
+    pub(super) seed_party: bool,
+    pub(super) battle: Option<&'a str>,
+    pub(super) fidelity: super::LaunchFidelity,
+    pub(super) debug_seeds: super::DebugSeeds,
+    pub(super) record_to: Option<RecordTarget>,
+}
+
+/// The launch stages after the intro movie: the session, its launch switches
+/// and its scene, the debug seeds, the UI asset decode and the window state.
+/// Creates no window and no renderer.
+pub(super) fn assemble_play_window(launch: PlayWindowLaunch<'_>) -> Result<PlayWindowApp> {
+    let PlayWindowLaunch {
+        scene,
+        extracted_root,
+        disc,
+        enable_audio,
+        world_map,
+        boot_ui,
+        save_dir,
+        card,
+        cheat_file,
+        cheat_strict,
+        live_loop,
+        player_battle,
+        party,
+        vm_dialogue,
+        terrain_y,
+        edge_collision,
+        solid_npcs,
+        live_npcs,
+        damage_finish,
+        battle_bgm,
+        screenshot,
+        seed_party,
+        battle,
+        fidelity,
+        debug_seeds,
+        record_to,
+    } = launch;
     // The session, its launch switches and its scene.
     let mut session =
         crate::host_setup::open_boot_session(scene, enable_audio, extracted_root, disc)?;
@@ -474,24 +589,5 @@ pub(super) fn cmd_play_window_with_record(
     // The spell / seru display names off the boot SCUS, for the shop's Trade
     // row: read once here, as the browser play page reads them at disc load.
     app.ensure_seru_names();
-
-    // On demand, not `run_app`: only `run_app_on_demand` clears the exit
-    // request a phase-1 movie left on this loop. Through `run_app` the game
-    // would see that stale exit and quit on its first iteration.
-    {
-        use winit::platform::run_on_demand::EventLoopExtRunOnDemand;
-        event_loop
-            .run_app_on_demand(&mut app)
-            .context("event loop")?;
-    }
-    // After the event loop returns, flush any pending record log. The
-    // Escape / CloseRequested handlers also flush proactively so a
-    // mid-run crash still produces a partial replay file - the trailing
-    // flush is the safety net.
-    if let Some(log) = app.record_log.as_mut()
-        && let Err(e) = log.flush()
-    {
-        log::error!("record: flush on exit failed: {e:#}");
-    }
-    Ok(())
+    Ok(app)
 }

@@ -55,6 +55,8 @@ mod field_render;
 mod fog_texture_tests;
 #[path = "window/geometry.rs"]
 mod geometry;
+#[path = "window/headless.rs"]
+mod headless;
 #[path = "window/hud.rs"]
 mod hud;
 #[path = "window/menu_draws.rs"]
@@ -90,8 +92,10 @@ pub(crate) use geometry::{
 // The procedural battle ground grid lives in `legaia-scene-formats` so all three
 // hosts share one implementation (the native window, the asset-viewer and
 // the browser play page) rather than forking the kernel per host.
+pub use headless::HeadlessPlayWindow;
 pub(crate) use legaia_scene_formats::battle_backdrop::build_ground_grid_rgbc as build_battle_ground_grid;
 pub use run::cmd_play_window;
+use run::{PlayWindowLaunch, assemble_play_window};
 // These two stay window-tree-private (their signatures reference the
 // `pub(super)` record types); re-exported only so the sibling submodules
 // that `use super::*` still resolve them unqualified.

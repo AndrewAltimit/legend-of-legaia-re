@@ -9,6 +9,8 @@
 //! - [`audio_director`] - the BGM / SFX / CD-XA director over an `AudioSink`.
 //! - [`session`] - [`BootSession`], the scene host plus the per-frame order
 //!   (mode seat, menus, camera halves, audio routing) around its tick.
+//! - [`host_trace`] - one host-agnostic sample of the simulation, for
+//!   comparing two hosts tick by tick.
 //! - [`mode_trace`] - one sample of a session's dispatch state.
 //! - [`xa_banks`] - the CD-XA voice banks' staging, shared by both hosts.
 //! - [`native`] - native targets only: the session over the cpal output,
@@ -16,6 +18,7 @@
 
 pub mod audio_director;
 pub mod battle_fx;
+pub mod host_trace;
 pub mod mode_trace;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod native;

@@ -102,6 +102,19 @@ impl PlayWindowApp {
         // Pose source for the scene's animated actors + placed static objects.
         let scene_bundle = self.find_scene_anm_bundle();
         let Some(r) = self.win.renderer.as_ref() else {
+            // No renderer yet (the window opens later, or the headless
+            // driver never opens one): keep the resources for the upload,
+            // but run the half of it that is world state rather than GPU
+            // state now. The scripted VRAM effects step against
+            // `cpu_vram_base` and are not presentation-only (a CLUT-cell
+            // fade releases a halted context, the ambient move-VM tree draws
+            // the world `rand()` stream), so a window with no base image ran
+            // a different simulation from one with a renderer.
+            self.cpu_vram_base = Some(res.vram.clone());
+            if let Some(b) = self.scene_world_aabb(&res) {
+                self.scene_aabb = b;
+            }
+            self.snap_actors_to_floor();
             self.scene_res = Some(res);
             return;
         };
