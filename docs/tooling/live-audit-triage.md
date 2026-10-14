@@ -596,7 +596,7 @@ Reasons that named an existing symbol as missing:
 | `motion_pause_kick` (`8003c9ac`) | both gates and the default-move table are projectable from the per-slot maps |
 | `state_pick` (`801f1f4c`) | `Actor::state_50` / `Actor::state_54`; wired as the subsystem actor's default handler id `7`, run by `World::field_menu_button_state` as the menu-open gate |
 | `field_audio_release_steps` (`801d8450`) | `SustainedSfx::stop_voice` and `SeqResourceTable::release` (the `0x80091508` table) |
-| `submode_panel_rows` (`801e6984`) | `open_submode` seeds `World::field_vm.submode_context`; the installer `FUN_801EF014` is hosted on the field path (slot `0x23`, `engine-core::field_submode_flag_window`), installs record 14 and draws these rows on both hosts |
+| `submode_panel_rows` (`801e6984`) | `open_submode` seeds `World::field_vm.submode_context`; the installer `FUN_801EF014` is hosted on the field path (slot `0x23`, `engine-field::field_submode_flag_window`), installs record 14 and draws these rows on both hosts |
 | `field_actor_plan` (`8003bc08`) | `move_vm::ActorState::flags` is the `+0x10` flag word |
 | `tick_reflection` (`801e5154`) | `ActorState` carries all the fields but `+0x64`, at retail offsets |
 | `refresh_object_grid_marks` (`80017bec`) | three of four `.MAP` regions are resident, and the collision grid is mutated live |

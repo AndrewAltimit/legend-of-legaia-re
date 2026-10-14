@@ -175,13 +175,10 @@ impl crate::scene_host::SceneHost {
             .entry_bytes(crate::incense_notice::FIELD_OVERLAY_PROT_INDEX)
             .ok();
         coin_counter_lines(screen, |va| {
-            let Some(b) = bytes.as_deref() else {
-                return Vec::new();
-            };
-            let off =
-                va.wrapping_sub(crate::field_submode_flag_window::FIELD_OVERLAY_BASE) as usize;
-            b.get(off..)
-                .and_then(|r| r.iter().position(|&c| c == 0).map(|e| r[..e].to_vec()))
+            bytes
+                .as_deref()
+                .and_then(|b| legaia_engine_field::field_overlay::field_overlay_cstr(b, va))
+                .map(<[u8]>::to_vec)
                 .unwrap_or_default()
         })
     }

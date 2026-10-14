@@ -115,6 +115,14 @@ a dependent crate.
   fixed-template spawn (`FUN_801DE478`), the list-panel row layout
   (`FUN_801E6984`). The CARD mode-request leaf (`FUN_801D84B4`) is
   `legaia_engine_mode::card_request`.
+- `field_submode_flag_window` / `field_submode_code_lock` - two of that
+  dispatcher's slots on the field path: the floor-plate flag picker
+  (`FUN_801EF014`, slot `0x23`) and the code lock (`FUN_801EED58`, slot
+  `0x21`), each the slot's arm on the driver actor plus its window's lines.
+  The `World` seams that apply their flag writes stay in `legaia-engine-core`.
+- `field_overlay` - the field overlay image (PROT 0897) as data: its load
+  base and `field_overlay_cstr`, the one reader for the NUL-terminated
+  strings its data segment holds.
 - `scene_transition_sweep` - the scene-transition **teardown sweep**
   (`FUN_801D7518`, which the field initialiser runs once per actor list on a
   warp entry); `actor_colour_tween` - the per-actor **colour tween**

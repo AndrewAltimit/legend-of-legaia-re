@@ -151,7 +151,7 @@ impl CodeLockActor {
     /// PORT: FUN_801eed58
     ///
     /// Hosted on the submode driver actor as handler slot `0x21` by
-    /// `legaia_engine_core::field_submode_code_lock::code_lock_slot`, which
+    /// `crate::field_submode_code_lock::code_lock_slot`, which
     /// `World::tick_submode_screen` dispatches when a field script's `49 02`
     /// opens the slot.
     pub fn tick(

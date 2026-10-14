@@ -13,10 +13,10 @@
 //! the header string is non-empty, never the code or the text.
 //! Skips and passes without `LEGAIA_DISC_BIN` or `extracted/`.
 
-use legaia_engine_core::field_submode_code_lock::{
+use legaia_engine_core::scene_host::SceneHost;
+use legaia_engine_field::field_submode_code_lock::{
     CODE_LOCK_RECORD, CODE_LOCK_RESULT_FLAG, CODE_LOCK_SLOT,
 };
-use legaia_engine_core::scene_host::SceneHost;
 use legaia_scene_formats::field_disasm::{self as fd, InsnInfo};
 use std::path::PathBuf;
 

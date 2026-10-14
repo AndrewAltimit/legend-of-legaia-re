@@ -2396,7 +2396,7 @@ at `(0x40, 0x90)`, whose painter `FUN_801F17D8` prints the prompt string
 apart, `0x10` below and right of the window origin.
 
 Port: `legaia_engine_field::code_lock_actor` (the state machine),
-`legaia_engine_core::field_submode_code_lock` (the slot on the submode
+`legaia_engine_field::field_submode_code_lock` (the slot on the submode
 driver, the flag write, the window's lines), drawn on both play hosts through
 `SceneHost::code_lock_lines`; the disc-gated `code_lock_doman_disc` runs
 `doman`'s own bytes through the field VM with the right code and a wrong one.

@@ -183,7 +183,7 @@ impl World {
 
         let frame = hub::hub_dispatch(actor, &env, cursor, |a, g| {
             let mut f = if a.state == crate::field_submode_flag_window::FLAG_WINDOW_SLOT {
-                crate::field_submode_flag_window::flag_window_slot(
+                legaia_engine_field::field_submode_flag_window::flag_window_slot(
                     a,
                     g,
                     flag_window,
@@ -192,8 +192,8 @@ impl World {
                     flag_test,
                     &mut flag_writes,
                 )
-            } else if a.state == crate::field_submode_code_lock::CODE_LOCK_SLOT {
-                crate::field_submode_code_lock::code_lock_slot(
+            } else if a.state == legaia_engine_field::field_submode_code_lock::CODE_LOCK_SLOT {
+                legaia_engine_field::field_submode_code_lock::code_lock_slot(
                     a,
                     g,
                     code_lock,
@@ -232,7 +232,7 @@ impl World {
                 HubAction::InstallPanel(va) => Some(*va),
                 _ => None,
             }) {
-                let named = crate::field_submode_flag_window::installed_windows(desc);
+                let named = legaia_engine_field::field_submode_flag_window::installed_windows(desc);
                 if descriptor_closes_all(desc) {
                     installed = named;
                 } else {

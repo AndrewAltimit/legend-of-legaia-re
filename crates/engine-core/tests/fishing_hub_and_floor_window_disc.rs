@@ -12,9 +12,10 @@
 //! Only structural facts are asserted - counts and non-emptiness, never text.
 //! Skips and passes without `LEGAIA_DISC_BIN`.
 
-use legaia_engine_core::field_submode_flag_window::{FLAG_WINDOW_RECORD, FLAG_WINDOW_SLOT};
+use legaia_engine_core::field_submode_flag_window::FLAG_WINDOW_SLOT;
 use legaia_engine_core::scene_host::SceneHost;
 use legaia_engine_core::world::World;
+use legaia_engine_field::field_submode_flag_window::FLAG_WINDOW_RECORD;
 use legaia_engine_fishing::fishing_hub::HubScreen;
 use legaia_engine_mode::mode::SceneMode;
 use legaia_engine_system::input::PadButton;

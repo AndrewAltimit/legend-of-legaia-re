@@ -998,7 +998,7 @@ overlay data region `0x801F28F0..0x801F2Fxx` and the context `_DAT_801C6EA4`.
   (`asset field-op-census --only "49 04"`). Port:
   `legaia_engine_field::field_submode::submode_panel_rows` (layout) and
   `flag_window_tick` (handler), hosted on the field path by
-  `engine-core::field_submode_flag_window` and drawn on both hosts.
+  `engine-field::field_submode_flag_window` and drawn on both hosts.
 - **`FUN_801E6B34`** (1084 bytes) - the **name-entry renderer**: the `6 x 17`
   glyph grid from the string at `0x801F29F0` (cells laid out with
   `idx % 0x66`), the cursor (when `_DAT_8007BB94 != 4`) and three label lines
