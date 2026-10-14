@@ -122,7 +122,11 @@ placements first, then the solid interact-gated props that carry a record (a
 spring, a cupboard, a switch). The seat is where the engine's own probe
 answers with that target (`World::field_interact_probe_slot`, then
 `World::field_interact_prop_anchor`) and is taken only on the authored
-walk-visible floor, so an actor parked in the off-map hide box is skipped.
+walk-visible floor, so an actor parked in the off-map hide box is skipped,
+and only where the locomotion's own wall and body probes let the player walk
+a whole tile away: `son`'s camp has a wall nook at (74..75, 68) shut by two
+NPCs who never move, a seat no walk reaches, and seating there read as
+`confined`.
 The press is recorded in the pad stream; the seat is a function of the frame
 and the world, so a replay takes the same seats. Random walking reaches a
 handful of a scene's conversations and almost none of its props, and a
