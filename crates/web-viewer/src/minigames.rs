@@ -286,6 +286,12 @@ pub struct LegaiaMinigames {
     /// How many tally steps this screen has already keyed, so a replay to
     /// `round` keys only the steps it has not.
     muscle_tally_voiced_steps: i32,
+    /// The INTERVAL screen tick the tally's fast-forward latch was raised
+    /// on - retail's `DAT_801D1AB4`, which the hub's tally arm sets on a
+    /// press and nothing lowers until the hub is entered again. This page
+    /// replays the roll from a tick count, so the latch is kept as the tick
+    /// it rose on: every replayed step at or past it runs boosted.
+    muscle_tally_boost_from: Option<i32>,
     /// The shared wall-clock to sim-tick rule
     /// ([`legaia_engine_core::frame_step::SimStepper`]) the native window and
     /// the play page drain through: the page's animation loop asks it how
@@ -440,6 +446,7 @@ impl LegaiaMinigames {
             #[cfg(target_arch = "wasm32")]
             muscle_tally_cue_counter: 0,
             muscle_tally_voiced_steps: 0,
+            muscle_tally_boost_from: None,
         }
     }
 

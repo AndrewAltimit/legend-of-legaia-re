@@ -532,6 +532,59 @@ impl LegaiaMinigames {
 
 #[wasm_bindgen]
 impl LegaiaMinigames {
+    /// A pad press on the INTERVAL screen, `tick` ticks into it: raise the
+    /// tally's fast-forward latch, as retail's hub arm `0x0B` does.
+    ///
+    /// That arm tests the press mask against `0xF4` ahead of the roll and
+    /// stores `1` to `DAT_801D1AB4` (`0x801CFD60..0x801CFD7C`), the step
+    /// scaler's bypass: while it is up each lane moves its whole remainder in
+    /// one step, so one press rolls the rest of the tally out. The heading's
+    /// fade-in arm (`0x0A`) carries no pad test. The play hosts hold the
+    /// latch on `HubTimers::tally_boost`; this page replays the roll from a
+    /// tick count, so it holds the tick the latch rose on and every replay
+    /// ([`Self::muscle_hub_quads_json`] screen 4,
+    /// [`Self::muscle_interval_still_json`], `muscle_tally_voice`) boosts the
+    /// steps at or past it.
+    ///
+    /// Returns whether the press was **taken by the roll**: the latch rose on
+    /// this call while lanes were still counting. `false` during the
+    /// fade-in, once the latch is already up, or once the roll has drained -
+    /// the page then gives the press to its own "next round" key.
+    // REF: FUN_801CF870 (arm 0x0B), FUN_801D14B0
+    pub fn muscle_tally_press(&mut self, tick: i32) -> bool {
+        use legaia_engine_minigames::muscle_dome::HubScreenStage;
+        if self.muscle_tally_boost_from.is_some() {
+            return false;
+        }
+        let Some(run) = self.muscle_run.as_ref() else {
+            return false;
+        };
+        let tick = tick.max(0);
+        let volume_word = legaia_engine_core::new_game::GAME_STATE_COLD_RESET.voice_volume as u32;
+        let mut interval = interval_screen();
+        let (mut ramp, _) = run.tally_roll();
+        let mut rolling = true;
+        // The play hosts tick the envelope, test the pad, then step the roll;
+        // replay through the press's own frame and read the stage there.
+        for _ in 0..=tick {
+            interval.tick(1, 0);
+            if interval.done() {
+                return false;
+            }
+        }
+        for _ in 0..tick {
+            if !ramp.tick(1, false, volume_word).rolling {
+                rolling = false;
+                break;
+            }
+        }
+        if interval.stage() == HubScreenStage::FadeIn || !rolling {
+            return false;
+        }
+        self.muscle_tally_boost_from = Some(tick);
+        true
+    }
+
     /// The re-entered hub's **ringside still** under the INTERVAL screen,
     /// `tick` ticks into that screen: `{ ok, quads: [...] }` with two rows on
     /// sheet `7` (`pal` = the still variant, `0` = extraction 1221 / `int.tim`,
@@ -562,17 +615,11 @@ impl LegaiaMinigames {
         );
         let variant =
             still.saturating_sub(legaia_minigame_formats::ringside_still::PROT_INDEX_DEFAULT);
-        let roll = legaia_engine_minigames::muscle_dome::HUB_TALLY_ROLL_LEAD_TICKS
-            + *legaia_engine_minigames::muscle_dome::HUB_TALLY_CUE_STAGGER
-                .last()
-                .unwrap_or(&0) as i32;
-        let mut interval = Some(legaia_engine_minigames::muscle_dome::HubScreen::interval(
-            roll,
-        ));
+        let mut interval = Some(interval_screen());
         let (mut ramp, _) = run.tally_roll();
         let mut backdrop = HubBackdrop::reentry(still);
         let volume_word = legaia_engine_core::new_game::GAME_STATE_COLD_RESET.voice_volume as u32;
-        for _ in 0..tick.max(0) {
+        for step_idx in 0..tick.max(0) {
             if backdrop.stage() == BackdropStage::Card {
                 break;
             }
@@ -581,7 +628,7 @@ impl LegaiaMinigames {
             backdrop.tick(1, 0, interval.map(|i| i.stage()), lane0_full);
             if let Some(i) = interval.as_mut() {
                 i.tick(1, 0);
-                ramp.tick(1, false, volume_word);
+                ramp.tick(1, self.muscle_tally_boost_at(step_idx), volume_word);
                 if i.done() {
                     interval = None;
                 }
@@ -649,8 +696,8 @@ impl LegaiaMinigames {
                 let volume_word =
                     legaia_engine_core::new_game::GAME_STATE_COLD_RESET.voice_volume as u32;
                 let (mut ramp, mut tally) = run.tally_roll();
-                for _ in 0..round.max(0) {
-                    let step = ramp.tick(1, false, volume_word);
+                for step_idx in 0..round.max(0) {
+                    let step = ramp.tick(1, self.muscle_tally_boost_at(step_idx), volume_word);
                     tally += step.tally_gain;
                     if !step.rolling {
                         break;
@@ -849,5 +896,24 @@ impl LegaiaMinigames {
             "advance": self.hud_font_advances(),
         })
         .to_string()
+    }
+}
+
+/// The INTERVAL screen's envelope as the hub arms it: held for the tally's
+/// roll lead plus its last lane's stagger.
+fn interval_screen() -> legaia_engine_minigames::muscle_dome::HubScreen {
+    let roll = legaia_engine_minigames::muscle_dome::HUB_TALLY_ROLL_LEAD_TICKS
+        + *legaia_engine_minigames::muscle_dome::HUB_TALLY_CUE_STAGGER
+            .last()
+            .unwrap_or(&0) as i32;
+    legaia_engine_minigames::muscle_dome::HubScreen::interval(roll)
+}
+
+impl LegaiaMinigames {
+    /// Whether the tally step at INTERVAL-screen tick `step` runs with the
+    /// fast-forward latch up ([`Self::muscle_tally_press`]).
+    pub(crate) fn muscle_tally_boost_at(&self, step: i32) -> bool {
+        self.muscle_tally_boost_from
+            .is_some_and(|from| step >= from)
     }
 }

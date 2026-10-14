@@ -648,3 +648,63 @@ fn the_interval_screen_draws_the_ringside_still() {
     let late = at(&mg, 400, 1000)["level"].as_i64().unwrap();
     assert!((0x40..=0x80).contains(&late), "{late}");
 }
+
+/// Retail's hub arm `0x0B` latches the tally's fast-forward on a press
+/// (`DAT_801D1AB4`, `0x801CFD60..0x801CFD7C`); the heading's fade-in arm
+/// carries no pad test. The page holds the latch as the screen tick it rose
+/// on, and its replayed rows roll out from that tick.
+#[test]
+fn a_press_on_the_interval_screen_fast_forwards_the_tally() {
+    let Some((mut mg, _)) = loaded() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
+        return;
+    };
+    assert!(mg.muscle_contest_start(0, 0));
+    assert!(mg.muscle_report_leg(true, 0, 3, 1000, 0, 0) >= 0);
+    // The rows' cells (glyph, position), without the lanes' fade colour.
+    let rows = |mg: &LegaiaMinigames, t: i32| -> Vec<(i64, i64, i64)> {
+        let v: serde_json::Value =
+            serde_json::from_str(&mg.muscle_hub_quads_json(4, t, 0x80)).unwrap();
+        v["quads"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|q| {
+                (
+                    q["u"].as_i64().unwrap(),
+                    q["x"].as_i64().unwrap(),
+                    q["y"].as_i64().unwrap(),
+                )
+            })
+            .collect()
+    };
+    // The first tick from `from` whose cells hold for the next 60 ticks.
+    let settled = |mg: &LegaiaMinigames, from: i32| -> i32 {
+        (from..4000)
+            .step_by(5)
+            .find(|&t| rows(mg, t) == rows(mg, t + 60))
+            .expect("the tally settles")
+    };
+    // The fade-in arm does not read the pad.
+    assert!(!mg.muscle_tally_press(0), "no latch during the fade-in");
+    let slow = settled(&mg, 60);
+    assert!(slow > 60, "the lanes are still rolling at tick 60");
+    let before = rows(&mg, 60);
+    // A press there is taken by the roll...
+    assert!(mg.muscle_tally_press(60), "the press latches the fast roll");
+    // ...and is not taken twice.
+    assert!(!mg.muscle_tally_press(61));
+    // Up to the latch tick the replay is unchanged; past it the lanes roll
+    // out at once, so the cells settle sooner, on the same totals.
+    assert_eq!(rows(&mg, 60), before);
+    let fast = settled(&mg, 60);
+    assert!(
+        fast < slow,
+        "one press rolls the rest out: {fast} vs {slow}"
+    );
+    assert_eq!(rows(&mg, slow + 60), rows(&mg, fast + 60), "same totals");
+    eprintln!("[ran] interval tally: settles at {fast} latched, {slow} unlatched");
+    // A fresh INTERVAL screen lowers the latch.
+    mg.muscle_tally_voice_reset();
+    assert_eq!(settled(&mg, 60), slow);
+}
