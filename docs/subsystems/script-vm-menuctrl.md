@@ -65,7 +65,7 @@ Three exits recur on this page:
 | 7 | 0x70..0x7F | [Collision-grid rectangular wall paint](#0x4c-nibble-0x700x7f---collision-grid-rectangular-wall-paint). |
 | 8 | 0x80..0x8F | [Multi-purpose dispatcher](#0x4c-nibble-0x800x8f---large-multi-purpose-dispatcher): party heal, tint, shake, reflection controller, actor-search jumps. |
 | 9 | 0x90..0x9F | [Floor-height ladder](#nibble-9-is-the-floor-height-ladder-not-a-fade). |
-| A | 0xA0..0xAF | [Conditional jump on a flag bit](#0x4c-nibble-a---jump-on-a-flag-bit). |
+| A | 0xA0..0xAF | [Conditional skip on a flag bit](#0x4c-nibble-a---skip-on-a-flag-bit). |
 | B | 0xB0..0xBF | [Error printer](#two-outer-nibbles-are-the-error-printer) - no valid sub-op. |
 | C | 0xC0..0xCF | [Small per-actor / per-scene writes](#0x4c-nibble-0xc00xcf---small-per-actor--per-scene-writes): camera focus and glide wait, slot-table timers, script teleport. |
 | D | 0xD0..0xDF | [Party state + inverted-Y mirror cluster](#0x4c-nibble-0xd00xdf---party-state--inverted-y-mirror-cluster): SE trigger, morph-actor spawn, timed flags, [VRAM STP bits](#0x4c-nibble-d-sub-4--sub-5---vram-stp-bit-setclear). |
@@ -479,7 +479,7 @@ Jump table at `0x801CEFC8`.
 | 7 | `[4C D7]` | Retire every cutscene camera mover `FUN_801DC0BC` on actor list 0 via `FUN_8003CF40`; PC += 2 (arm `0x801E2DB4`). |
 | 8 | 9 bytes | Synchronous morph-actor spawn - [below](#what-the-0x4c-0xd8-spawner-builds). |
 | B | 13 bytes | Calls `FUN_801E57F0(operand)`, then PC += 13 (`LAB_801E2EA0`). |
-| C / E | `[4C DC|DE needle ...]` (5 bytes) | [`small_table_search`](script-vm.md#helper-functions) on a 1-byte needle, then a scan of the active party records (stride `0x414`, byte `+0x196`); a hit takes the `LAB_801E360C` jump (sub-C also writes the matching slot), a miss advances 5. |
+| C / E | `[4C DC|DE needle skip:i16]` (5 bytes) | "Does the party hold `needle`?" Sub-C searches the bag's active window (`FUN_80042EE0`), then the eight equipment bytes (`+0x196..+0x19D`) of each present member's record; sub-E reads the equipment alone. A hit takes the [relative skip](#the-relative-skip-exit) `pc + 5 + skip - 2`, a miss advances 5. |
 
 #### `4C D2` / `4C D6` / `4C D7` advance in retail
 
@@ -1044,12 +1044,33 @@ not an absolute jump: `opurud`'s entry script reaches its op-`0x44` at `+0x7A`
 with bit 24 set, unreachable under a jump arm. A VM that parks on a sub-9 ramp
 stalls `conc3` `P2[10]` on its `4C 49` and never sets `0x3E5`.
 
-### 0x4C nibble A - jump on a flag bit
+### 0x4C nibble A - skip on a flag bit
 
-Sub-0 reads `ctx.flags`, sub-1 `ctx.local_flags`, sub-2 the global story flag
-word. Bit SET -> absolute jump to operand `[2..4]`; bit CLEAR, or sub-3..`0xF`,
--> skip 5 bytes. The asm dispatches on the sub-op first (`0x801e2568`), so
-sub-3..`0xF` skip both the bank check and the jump.
+Sub-0 reads `ctx.flags`, sub-1 `ctx.local_flags`, sub-2 the scratchpad word
+`0x1F800394`. Bit SET -> the [relative skip exit](#the-relative-skip-exit)
+over operand `[2..4]`; bit CLEAR, or sub-3..`0xF`, -> advance 5 bytes. The
+asm dispatches on the sub-op first (`0x801e2568`), so sub-3..`0xF` skip both
+the bank check and the skip. The shipped uses pair it with the op it steps
+over: `town01` P0[35]'s `CC 00 A0 00 05 00` skips the 3-byte `JmpRel` after
+it, and `jouinc`'s camera bands (`CC <ch> A1 0A 1D 00`) skip 27 bytes of
+animation set-up.
+
+### The relative skip exit
+
+`LAB_801E360C` is the exit every conditional-skip arm of `0x4C` shares
+(nibble A, `4C DC` / `4C DE`, `4C EB`, `4C 8B`):
+
+```text
+801e360c  jal  0x8003ce9c        ; v0 = signed halfword at a0 (the arm's operand + 2)
+801e3614  addiu v0,v0,-0x2
+801e3618  j    0x801e3624
+801e361c  _addu s8,s8,v0         ; s8 += skip - 2
+```
+
+Each arm has already advanced `s8` past its own bytes (`s8 += 5`, plus the
+one the extended header adds at `0x801DE94C`), so the skip lands at
+`end_of_instruction + skip - 2`. It is not an absolute target: read as one,
+`CC 00 A0 00 05 00` would jump to offset 5 of its record.
 
 ## Nibble 9 is the floor-height ladder, not a fade
 

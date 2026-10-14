@@ -176,10 +176,10 @@ struct TestHost {
     n_d_sub_2_channel_calls: Vec<u8>,
     n_d_sub_7_list_walk_regs: u32,
     n_d_sub_b_e57f0_calls: Vec<Vec<u8>>,
-    n_d_sub_c_jump_target: Option<usize>,
-    n_d_sub_c_calls: Vec<u8>,
-    n_d_sub_e_jump_target: Option<usize>,
-    n_d_sub_e_calls: Vec<u8>,
+    n_d_sub_c_hit: bool,
+    n_d_sub_c_calls: std::cell::RefCell<Vec<u8>>,
+    n_d_sub_e_hit: bool,
+    n_d_sub_e_calls: std::cell::RefCell<Vec<u8>>,
     n_e_sub_1_text_calls: Vec<(Vec<u8>, u16)>,
     // Five 0x4C nC sub-ops + two 0x4C nE sub-ops.
     n_c_sub_0_move_cancels: u32,
@@ -669,14 +669,14 @@ impl FieldPartyInventoryHost for TestHost {
         self.op4e_char_levels.get(&page).copied().unwrap_or(0)
     }
 
-    fn op4c_nd_subc_party_search_set(&mut self, needle: u8) -> Option<usize> {
-        self.n_d_sub_c_calls.push(needle);
-        self.n_d_sub_c_jump_target
+    fn op4c_nd_subc_item_held(&self, needle: u8) -> bool {
+        self.n_d_sub_c_calls.borrow_mut().push(needle);
+        self.n_d_sub_c_hit
     }
 
-    fn op4c_nd_sube_party_search_query(&mut self, needle: u8) -> Option<usize> {
-        self.n_d_sub_e_calls.push(needle);
-        self.n_d_sub_e_jump_target
+    fn op4c_nd_sube_item_worn(&self, needle: u8) -> bool {
+        self.n_d_sub_e_calls.borrow_mut().push(needle);
+        self.n_d_sub_e_hit
     }
 
     fn add_coins(&mut self, coin_delta: i32) {

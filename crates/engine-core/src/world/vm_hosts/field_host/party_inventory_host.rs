@@ -108,6 +108,34 @@ impl<'a> FieldPartyInventoryHost for FieldHostImpl<'a> {
     /// Op `0x4C 0xE5` - the casino coin bank's script delta (a cabinet's
     /// fee, the dome's entry fee, a prize price). The arm and its missing
     /// lower clamp are documented on [`crate::casino_coin_bank`].
+    /// Op `4C DC`: the bag's active window first (`FUN_80042EE0` matches the
+    /// slot's id byte alone), then the eight equipment bytes of each
+    /// present member's record.
+    // PORT: FUN_801DE840 (op 0x4C nibble-D sub-C arm, 0x801E2EA8..0x801E2F68)
+    // PORT: FUN_80042EE0
+    fn op4c_nd_subc_item_held(&self, needle: u8) -> bool {
+        let inv = &self.world.party.inventory;
+        let (start, end) = inv.window_bounds();
+        let slots = inv.slots();
+        slots[start.min(slots.len())..end.min(slots.len())]
+            .iter()
+            .any(|&(id, _)| id == needle)
+            || self.op4c_nd_sube_item_worn(needle)
+    }
+
+    /// Op `4C DE`: the equipment scan of `4C DC` alone.
+    // PORT: FUN_801DE840 (op 0x4C nibble-D sub-E arm, 0x801E2F7C..0x801E3024)
+    fn op4c_nd_sube_item_worn(&self, needle: u8) -> bool {
+        self.world.present_party_list().iter().any(|&ch| {
+            self.world
+                .party
+                .roster
+                .members
+                .get(usize::from(ch))
+                .is_some_and(|m| m.equipment().slots.contains(&needle))
+        })
+    }
+
     fn add_coins(&mut self, coin_delta: i32) {
         self.world.add_script_coins(coin_delta);
     }

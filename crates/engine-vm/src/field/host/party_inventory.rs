@@ -184,40 +184,30 @@ pub trait FieldPartyInventoryHost {
         let _ = slot;
     }
 
-    /// Op 0x4C outer-nibble-D sub-C - small-table lookup, then conditional
-    /// per-party-record write.
+    /// Op 0x4C outer-nibble-D sub-C - "does the party hold item `needle`?".
     ///
-    /// 5-byte instruction `[4C, 0xDC, b1, ?, ?]` (the trailing operand
-    /// bytes are consumed by the LAB_801E360C tail's `func_0x8003CE9C` read).
+    /// 5-byte instruction `[4C, 0xDC, needle, skip_lo, skip_hi]`. The arm at
+    /// `0x801E2EA8` first searches the bag's active window for the id
+    /// (`FUN_80042EE0`: slots `gp[+0x2D2]..gp[+0x2D4]` of the id/count pairs
+    /// at `0x80085958`, a hit returns the slot, a miss `0x100`), and on a
+    /// miss scans the eight equipment bytes (`+0x196..+0x19D`) of every
+    /// present member's record (`0x80084594` count, `0x80084598` roster,
+    /// `0x80084708 + char * 0x414`). Either hit takes the shared skip exit
+    /// `LAB_801E360C`; the dispatcher computes its target. `koin2`'s Sage's
+    /// Treasure Chests (P1[8..15]) ask for the Soru Bread through it.
     ///
-    /// The original at line 7087:
-    /// 1. Calls [`field_helpers::small_table_search`] (`FUN_80042EE0(b1)`)
-    ///    to look up `b1` in the gp-relative short-table at `0x80085958`.
-    /// 2. If the table lookup hits AND a party-record search across
-    ///    `DAT_80084594` slots (party-record stride `0x414`, byte at `+0x196`)
-    ///    matches `b1`, the slot is updated.
-    /// 3. If neither hits, returns `param_2 + 5` (PC += 5).
-    /// 4. On hit, falls through to `LAB_801E360C` which reads `ce9c(p+2)`
-    ///    and returns it as the new PC.
-    ///
-    /// The host hook returns `Some(new_pc)` for the ce9c-jump path, or `None`
-    /// to take the PC += 5 path. Default impl returns `None` (safe fallback).
-    ///
-    /// [`field_helpers::small_table_search`]: crate::field::dispatch_leaves::small_table_search
-    fn op4c_nd_subc_party_search_set(&mut self, needle: u8) -> Option<usize> {
+    /// Default impl answers no (a host with no party).
+    fn op4c_nd_subc_item_held(&self, needle: u8) -> bool {
         let _ = needle;
-        None
+        false
     }
 
-    /// Op 0x4C outer-nibble-D sub-E - small-table lookup query (sister of
-    /// sub-C without the per-party-record write side-effect).
-    ///
-    /// 5-byte instruction `[4C, 0xDE, b1, ?, ?]`. Same control flow as
-    /// sub-C but the party-record loop only **tests** for a match - no slot
-    /// update. PC is `param_2 + 5` on miss, ce9c-jump on hit.
-    fn op4c_nd_sube_party_search_query(&mut self, needle: u8) -> Option<usize> {
+    /// Op 0x4C outer-nibble-D sub-E - "does a present member wear item
+    /// `needle`?". Sister of sub-C (arm `0x801E2F7C`) with the equipment
+    /// scan alone: no bag search.
+    fn op4c_nd_sube_item_worn(&self, needle: u8) -> bool {
         let _ = needle;
-        None
+        false
     }
 
     /// Op 0x4C outer-nibble-E sub-5 - add to the casino coin bank.

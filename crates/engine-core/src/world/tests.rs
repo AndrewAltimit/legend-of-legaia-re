@@ -335,6 +335,7 @@ mod fog_region_reset;
 mod game_over_hold;
 mod inline_dialogue;
 mod item_bag_steal;
+mod item_held_query;
 mod live_battle;
 mod locomotion;
 mod minigames;

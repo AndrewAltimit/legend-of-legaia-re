@@ -217,53 +217,62 @@ fn op_4c_n_d_sub_b_truncated_buffer_returns_unknown() {
 }
 
 #[test]
-fn op_4c_n_d_sub_c_no_jump_advances_5_bytes() {
-    let bytecode = [0x4Cu8, 0xDC, 0x42, 0, 0];
+fn op_4c_n_d_sub_c_miss_advances_5_bytes() {
+    let bytecode = [0x4Cu8, 0xDC, 0x42, 0x05, 0x00];
+    let mut host = TestHost::default();
+    let mut ctx = FieldCtx::default();
+    let r = step(&mut host, &mut ctx, &bytecode, 0);
+    assert_eq!(r, StepResult::Advance { next_pc: 5 });
+    assert_eq!(*host.n_d_sub_c_calls.borrow(), vec![0x42u8]);
+}
+
+#[test]
+fn op_4c_n_d_sub_c_hit_skips_relative_to_the_instruction_end() {
+    // `koin2` P1[8] at `+0xCE`: `4C DC B2 27 00`, then the "(Silence)"
+    // line. A hit lands on the Soru Bread branch at `+0xF8`: the exit
+    // `LAB_801E360C` adds the halfword less two to `s8`, already past the
+    // instruction (`pc + 5 + 0x27 - 2`).
+    let mut bytecode = vec![0u8; 0x100];
+    bytecode[0xCE..0xD3].copy_from_slice(&[0x4C, 0xDC, 0xB2, 0x27, 0x00]);
     let mut host = TestHost {
-        n_d_sub_c_jump_target: None,
+        n_d_sub_c_hit: true,
+        ..TestHost::default()
+    };
+    let mut ctx = FieldCtx::default();
+    let r = step(&mut host, &mut ctx, &bytecode, 0xCE);
+    assert_eq!(r, StepResult::Advance { next_pc: 0xF8 });
+    assert_eq!(*host.n_d_sub_c_calls.borrow(), vec![0xB2u8]);
+}
+
+#[test]
+fn op_4c_n_d_sub_c_hit_skips_the_following_jump() {
+    // `town0b` P1[39]: `4C DC 43 05 00` then a 3-byte `JmpRel`; a hit
+    // steps over the jump (`pc + 5 + 5 - 2`).
+    let bytecode = [0x4Cu8, 0xDC, 0x43, 0x05, 0x00, 0x26, 0x10, 0x00, 0x21];
+    let mut host = TestHost {
+        n_d_sub_c_hit: true,
+        ..TestHost::default()
+    };
+    let mut ctx = FieldCtx::default();
+    let r = step(&mut host, &mut ctx, &bytecode, 0);
+    assert_eq!(r, StepResult::Advance { next_pc: 8 });
+}
+
+#[test]
+fn op_4c_n_d_sub_e_asks_the_worn_question_only() {
+    let bytecode = [0x4Cu8, 0xDE, 0x99, 0x05, 0x00];
+    let mut host = TestHost {
+        n_d_sub_c_hit: true,
         ..TestHost::default()
     };
     let mut ctx = FieldCtx::default();
     let r = step(&mut host, &mut ctx, &bytecode, 0);
     assert_eq!(r, StepResult::Advance { next_pc: 5 });
-    assert_eq!(host.n_d_sub_c_calls, vec![0x42u8]);
-}
-
-#[test]
-fn op_4c_n_d_sub_c_jump_target_takes_ce9c_path() {
-    let bytecode = [0x4Cu8, 0xDC, 0x42, 0, 0];
-    let mut host = TestHost {
-        n_d_sub_c_jump_target: Some(0x100),
-        ..TestHost::default()
-    };
-    let mut ctx = FieldCtx::default();
+    assert_eq!(*host.n_d_sub_e_calls.borrow(), vec![0x99u8]);
+    assert!(host.n_d_sub_c_calls.borrow().is_empty());
+    host.n_d_sub_e_hit = true;
     let r = step(&mut host, &mut ctx, &bytecode, 0);
-    assert_eq!(r, StepResult::Advance { next_pc: 0x100 });
-}
-
-#[test]
-fn op_4c_n_d_sub_e_query_no_jump_advances_5_bytes() {
-    let bytecode = [0x4Cu8, 0xDE, 0x99, 0, 0];
-    let mut host = TestHost {
-        n_d_sub_e_jump_target: None,
-        ..TestHost::default()
-    };
-    let mut ctx = FieldCtx::default();
-    let r = step(&mut host, &mut ctx, &bytecode, 0);
-    assert_eq!(r, StepResult::Advance { next_pc: 5 });
-    assert_eq!(host.n_d_sub_e_calls, vec![0x99u8]);
-}
-
-#[test]
-fn op_4c_n_d_sub_e_query_jump_target_takes_ce9c_path() {
-    let bytecode = [0x4Cu8, 0xDE, 0x99, 0, 0];
-    let mut host = TestHost {
-        n_d_sub_e_jump_target: Some(0x40),
-        ..TestHost::default()
-    };
-    let mut ctx = FieldCtx::default();
-    let r = step(&mut host, &mut ctx, &bytecode, 0);
-    assert_eq!(r, StepResult::Advance { next_pc: 0x40 });
+    assert_eq!(r, StepResult::Advance { next_pc: 8 });
 }
 
 #[test]

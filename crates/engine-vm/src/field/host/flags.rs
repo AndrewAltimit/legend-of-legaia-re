@@ -125,9 +125,11 @@ pub trait FieldFlagsHost {
     ///   line 6702 of `overlay_0897_801de840.txt` falls through every check
     ///   and skips 5 bytes (`return param_2 + 5`).
     ///
-    /// When the bit is **set**, the original takes the absolute jump
-    /// (`func_0x8003CE9C(operand + 2)` - signed 16-bit absolute PC). When
-    /// clear, PC advances by 5.
+    /// When the bit is **set**, the original takes the shared skip exit
+    /// `LAB_801E360C`: `FUN_8003CE9C(operand + 2)` reads a signed halfword
+    /// and the exit adds it less two to a PC already advanced by 5 - a skip
+    /// relative to the end of the instruction (the dispatcher computes it).
+    /// When clear, PC advances by 5.
     ///
     /// (The take/skip direction is the disassembly's, not the decompiled C's:
     /// Ghidra's C output for case 10 hides the `bne a1, zero, 0x801e258c`

@@ -18,7 +18,7 @@
 <section class="doc-section" id="map">
   <h2>The sixteen nibbles</h2>
   <figure class="diagram">
-    <svg viewBox="0 0 880 390" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="The sixteen outer nibbles of field opcode 0x4C laid out as a four by four grid: 0 party leader change; 1 globals, screen tint, clear colour and actor clone; 2 pad rotation octant; 3 ambient particle gate and camera-zone arms; 4 write or ramp a slot; 5 model set, move to tile, take item, dialog polls; 6 VRAM moves and CLUT cell write; 7 wall paint; 8 heal, tint, shake, face-turn, reflection; 9 floor-height ladder; A jump on a flag bit; B error printer; C camera focus, glide wait, counters, teleport; D sound effect, morph spawn, timed flags, STP bits; E text balloon, movie, box branch, coins; F error printer except 4C FF.">
+    <svg viewBox="0 0 880 390" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="The sixteen outer nibbles of field opcode 0x4C laid out as a four by four grid: 0 party leader change; 1 globals, screen tint, clear colour and actor clone; 2 pad rotation octant; 3 ambient particle gate and camera-zone arms; 4 write or ramp a slot; 5 model set, move to tile, take item, dialog polls; 6 VRAM moves and CLUT cell write; 7 wall paint; 8 heal, tint, shake, face-turn, reflection; 9 floor-height ladder; A skip on a flag bit; B error printer; C camera focus, glide wait, counters, teleport; D sound effect, morph spawn, timed flags, STP bits; E text balloon, movie, box branch, coins; F error printer except 4C FF.">
       <rect class="dg-node" x="290" y="10" width="300" height="40" rx="4"/>
       <text class="dg-label" x="440" y="35">4C op0 &#8230;  &#8594;  op0 &gt;&gt; 4</text>
       <rect class="dg-node" x="20" y="70" width="200" height="64" rx="4"/>
@@ -42,7 +42,7 @@
       <rect class="dg-node-accent" x="232" y="226" width="200" height="64" rx="4"/>
       <text class="dg-label" x="332" y="250">9: Floor ladder</text><text class="dg-sub" x="332" y="270">height rungs, oscillators</text>
       <rect class="dg-node" x="444" y="226" width="200" height="64" rx="4"/>
-      <text class="dg-label" x="544" y="250">A: Flag jump</text><text class="dg-sub" x="544" y="270">jump on a flag bit</text>
+      <text class="dg-label" x="544" y="250">A: Flag skip</text><text class="dg-sub" x="544" y="270">skip on a flag bit</text>
       <rect class="dg-node-warn" x="656" y="226" width="200" height="64" rx="4"/>
       <text class="dg-label" x="756" y="250">B: Error printer</text><text class="dg-sub" x="756" y="270">no valid sub-op</text>
       <rect class="dg-node" x="20" y="304" width="200" height="64" rx="4"/>
@@ -164,7 +164,7 @@
     <li><strong>Nibble 4</strong> - write a context slot or a global at once, or ramp it over frames.</li>
     <li><strong>Nibble 5</strong> - model select (which re-stages the actor), move-to-tile, <strong>TAKE_ITEM</strong> (sub-2 removes an item from the bag; it is not a menu poll), and two dialog polls.</li>
     <li><strong>Nibble 6</strong> - VRAM image moves and a CLUT-cell write.</li>
-    <li><strong>Nibble A</strong> - conditional jump on a flag bit.</li>
+    <li><strong>Nibble A</strong> - conditional skip on a flag bit: a set bit steps over the bytes its halfword names, counted from the end of the instruction (the shared exit <code>LAB_801E360C</code> adds the halfword less two), not an absolute target. <code>4C DC</code> / <code>4C DE</code> skip the same way when the party holds or wears an item.</li>
     <li><strong>Nibble E</strong> - text balloon, movie trigger, a position-copy teleport, a box-test branch, camera animate and zoom, and the casino coin delta.</li>
     <li><strong>Nibbles B and F</strong> - the error printer. They form a message string and call the message routine, returning the PC unchanged. Only <code>4C FF</code> passes through. The disc-wide opcode census finds no coherent use of either in any scene.</li>
   </ul>
