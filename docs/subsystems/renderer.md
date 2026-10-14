@@ -1194,6 +1194,14 @@ forest trees (`0x180`), the `0x380` billboards of `deene` and `retona`.
   placed at `(x, -y, z)` on both the plain and the skip arm. Placed at `p`,
   an off-floor effect draws mirrored through the floor
   (`vera_summon_mid_cast`'s glows over the target's raised hand).
+- *Rotation.* The dispatcher builds a node's rotation from its trio
+  `+0x24 / +0x26 / +0x28` with `FUN_80026988` (`0x8001B2A4..0x8001B2CC` in
+  `FUN_8001ADA4`), `Rx * Ry * Rz` in retail's frame. Both hosts take it from
+  `gte::part_rotation`, which conjugates it by the battle frame's flip
+  (`Rx(-x) * Ry(y) * Rz(-z)`) and hands the field frame the product as is.
+  A part turned about two axes (Gimard's fire tunnel in
+  `gimard_burning_attack`) drew at another angle under the yaw-first,
+  unflipped product the hosts used before.
 - *No prefix.* A part with no `0x780` bit gets none, and neither does any
   part drawn through a host's own vantage (the debug orbits, the stage-less
   battle orbit, the overworld top view), where there is no retail rotation

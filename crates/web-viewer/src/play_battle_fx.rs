@@ -501,33 +501,6 @@ impl LegaiaRuntime {
                 p[0], p[1], p[2], 1.0,
             ]
         };
-        let fx_rot_x = |a: f32| -> [f32; 16] {
-            let (sa, ca) = a.sin_cos();
-            [
-                1.0, 0.0, 0.0, 0.0, //
-                0.0, ca, sa, 0.0, //
-                0.0, -sa, ca, 0.0, //
-                0.0, 0.0, 0.0, 1.0,
-            ]
-        };
-        let fx_rot_y = |a: f32| -> [f32; 16] {
-            let (sa, ca) = a.sin_cos();
-            [
-                ca, 0.0, -sa, 0.0, //
-                0.0, 1.0, 0.0, 0.0, //
-                sa, 0.0, ca, 0.0, //
-                0.0, 0.0, 0.0, 1.0,
-            ]
-        };
-        let fx_rot_z = |a: f32| -> [f32; 16] {
-            let (sa, ca) = a.sin_cos();
-            [
-                ca, sa, 0.0, 0.0, //
-                -sa, ca, 0.0, 0.0, //
-                0.0, 0.0, 1.0, 0.0, //
-                0.0, 0.0, 0.0, 1.0,
-            ]
-        };
         // The native battle pass's placement kernel: the frame flip on the
         // translation as well as on the camera-relative prefix.
         let place = |flags: u16, pos: [f32; 3]| -> [f32; 16] {
@@ -552,7 +525,7 @@ impl LegaiaRuntime {
             if world.global_tmd(sp.model_index as i16).is_none() {
                 continue;
             }
-            // `T * Ry * Rx * Rz * flip`, the native part composition, with
+            // `T * R * flip` (`gte::part_rotation`), the native part composition, with
             // the FX camera's 4x world scale folded in front of it (the page
             // multiplies its unscaled battle VP by this).
             let model = mat_mul(
@@ -560,8 +533,8 @@ impl LegaiaRuntime {
                 &mat_mul(
                     &place(sp.flags_52, sp.world_pos),
                     &mat_mul(
-                        &fx_rot_y(sp.rot[1]),
-                        &mat_mul(&fx_rot_x(sp.rot[0]), &mat_mul(&fx_rot_z(sp.rot[2]), &flip)),
+                        &legaia_render_kernels::gte::part_rotation(sp.rot, true),
+                        &flip,
                     ),
                 ),
             );
@@ -612,8 +585,8 @@ impl LegaiaRuntime {
                 &mat_mul(
                     &place(rb.flags_52, rb.world_pos),
                     &mat_mul(
-                        &fx_rot_y(rb.rot[1]),
-                        &mat_mul(&fx_rot_x(rb.rot[0]), &mat_mul(&fx_rot_z(rb.rot[2]), &flip)),
+                        &legaia_render_kernels::gte::part_rotation(rb.rot, true),
+                        &flip,
                     ),
                 ),
             );
@@ -752,33 +725,6 @@ impl LegaiaRuntime {
                 p[0], p[1], p[2], 1.0,
             ]
         };
-        let fx_rot_x = |a: f32| -> [f32; 16] {
-            let (sa, ca) = a.sin_cos();
-            [
-                1.0, 0.0, 0.0, 0.0, //
-                0.0, ca, sa, 0.0, //
-                0.0, -sa, ca, 0.0, //
-                0.0, 0.0, 0.0, 1.0,
-            ]
-        };
-        let fx_rot_y = |a: f32| -> [f32; 16] {
-            let (sa, ca) = a.sin_cos();
-            [
-                ca, 0.0, -sa, 0.0, //
-                0.0, 1.0, 0.0, 0.0, //
-                sa, 0.0, ca, 0.0, //
-                0.0, 0.0, 0.0, 1.0,
-            ]
-        };
-        let fx_rot_z = |a: f32| -> [f32; 16] {
-            let (sa, ca) = a.sin_cos();
-            [
-                ca, sa, 0.0, 0.0, //
-                -sa, ca, 0.0, 0.0, //
-                0.0, 0.0, 1.0, 0.0, //
-                0.0, 0.0, 0.0, 1.0,
-            ]
-        };
         // The engine camera the page draws through this frame (the same
         // `resolve_field_camera` frame [`Self::play_camera_vp`] built `vp`
         // from), for the parts' `+0x52` camera-relative bits. `None` when the
@@ -788,7 +734,7 @@ impl LegaiaRuntime {
             .filter(|(m, _)| *m == vp)
             .and_then(|(_, frame)| frame.field_view())
             .map(|v| legaia_render_kernels::gte::PartCameraPose::from_field_view(&v));
-        // Native field composition is `T * Ry * Rx * Rz` with an identity
+        // Native field composition is `T * R` (`gte::part_rotation`) with an identity
         // `fx_model_flip`; the page-space flip goes on the outside. A
         // camera-relative part (`+0x52 & 0x780`) takes the `FUN_8001CF50`
         // prefix in place of `T`, on the raw retail frame (no flip).
@@ -804,10 +750,7 @@ impl LegaiaRuntime {
                 &flip_m,
                 &mat_mul(
                     &place,
-                    &mat_mul(
-                        &fx_rot_y(rot[1]),
-                        &mat_mul(&fx_rot_x(rot[0]), &fx_rot_z(rot[2])),
-                    ),
+                    &legaia_render_kernels::gte::part_rotation(rot, false),
                 ),
             )
         };

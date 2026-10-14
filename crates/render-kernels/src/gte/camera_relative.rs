@@ -314,11 +314,63 @@ pub fn part_model_place(
     })
 }
 
+/// A move-VM node's model rotation, the matrix both play hosts compose
+/// between [`part_model_place`] and the per-model flip.
+///
+/// The per-actor dispatcher builds the node's rotation from its angle trio
+/// `+0x24 / +0x26 / +0x28` with `FUN_80026988` (`0x8001B2A4..0x8001B2CC`
+/// in `FUN_8001ADA4`), which is `Rx * Ry * Rz` in retail's frame
+/// ([`crate::battle_intro::placement_rotation`] pins the order). `rot` is
+/// that trio in radians, X / Y / Z.
+///
+/// In the battle frame (`frame_flip`) a model `T * R * F` reaches the retail
+/// camera as `F * R * F` applied to the retail-frame vertex, so `R` is the
+/// retail rotation conjugated by the flip: `Rx(-x) * Ry(y) * Rz(-z)`. The
+/// field frame composes on the raw retail frame and takes it as is. The
+/// hosts' earlier `Ry * Rx * Rz` with unflipped angles agreed with retail
+/// only while at most the yaw was non-zero; a node turned about two axes
+/// (`vera_summon_mid_cast`'s flash rays) drew at another angle.
+pub fn part_rotation(rot: [f32; 3], frame_flip: bool) -> [f32; 16] {
+    let (x, z) = if frame_flip {
+        (-rot[0], -rot[2])
+    } else {
+        (rot[0], rot[2])
+    };
+    (glam::Mat4::from_rotation_x(x)
+        * glam::Mat4::from_rotation_y(rot[1])
+        * glam::Mat4::from_rotation_z(z))
+    .to_cols_array()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     const EPS: f32 = 2e-3;
+
+    /// The battle rotation, applied after the per-model flip, is the retail
+    /// `Rx * Ry * Rz` applied before it: `R * F == F * R_psx` for a node
+    /// turned about all three axes.
+    #[test]
+    fn the_battle_part_rotation_is_retails_under_the_flip() {
+        let rot = [0.7f32, -1.3, 2.1];
+        let f = glam::Mat4::from_scale(glam::Vec3::new(1.0, -1.0, 1.0));
+        let retail = glam::Mat4::from_cols_array(&part_rotation(rot, false));
+        let battle = glam::Mat4::from_cols_array(&part_rotation(rot, true));
+        let lhs = (battle * f).to_cols_array();
+        let rhs = (f * retail).to_cols_array();
+        for (a, b) in lhs.iter().zip(rhs.iter()) {
+            assert!((a - b).abs() < 1e-5, "{lhs:?} vs {rhs:?}");
+        }
+        // The field frame is retail's own builder.
+        let psx = crate::battle_intro::placement_rotation(
+            (0.7f32 * 4096.0 / std::f32::consts::TAU).round() as u16,
+            0,
+            0,
+        );
+        let mine = glam::Mat4::from_cols_array(&part_rotation([0.7, 0.0, 0.0], false));
+        assert!(psx.abs_diff_eq(mine, 2e-3));
+    }
 
     /// A battle part's placement is the retail point under the frame flip,
     /// whether it is a plain node or a skip-bit billboard; a field part keeps

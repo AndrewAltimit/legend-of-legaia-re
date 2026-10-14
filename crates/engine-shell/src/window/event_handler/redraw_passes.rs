@@ -690,9 +690,9 @@ impl PlayWindowApp {
                 ) {
                     Ok(m) => {
                         let model = place(sp.flags_52, sp.world_pos)
-                            * Mat4::from_rotation_y(sp.rot[1])
-                            * Mat4::from_rotation_x(sp.rot[0])
-                            * Mat4::from_rotation_z(sp.rot[2])
+                            * Mat4::from_cols_array(&legaia_render_kernels::gte::part_rotation(
+                                sp.rot, frame_flip,
+                            ))
                             * fx_model_flip;
                         summon_part_draws.push((m, model));
                     }
@@ -722,9 +722,9 @@ impl PlayWindowApp {
                 ) {
                     Ok(m) => {
                         let model = place(rb.flags_52, rb.world_pos)
-                            * Mat4::from_rotation_y(rb.rot[1])
-                            * Mat4::from_rotation_x(rb.rot[0])
-                            * Mat4::from_rotation_z(rb.rot[2])
+                            * Mat4::from_cols_array(&legaia_render_kernels::gte::part_rotation(
+                                rb.rot, frame_flip,
+                            ))
                             * fx_model_flip;
                         summon_part_draws.push((m, model));
                     }
@@ -803,9 +803,9 @@ impl PlayWindowApp {
                         .map(|m| Mat4::from_cols_array(&m))
                         .unwrap_or_else(|| Mat4::from_translation(Vec3::from(fp.world_pos)));
                         let model = place
-                            * Mat4::from_rotation_y(fp.rot[1])
-                            * Mat4::from_rotation_x(fp.rot[0])
-                            * Mat4::from_rotation_z(fp.rot[2])
+                            * Mat4::from_cols_array(&legaia_render_kernels::gte::part_rotation(
+                                fp.rot, false,
+                            ))
                             * fx_model_flip;
                         field_fx_draws.push((m, model));
                     }
