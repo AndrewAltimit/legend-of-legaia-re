@@ -218,6 +218,18 @@ pub fn camera_eye_from_vp(vp: &[f32; 16]) -> Option<[f32; 3]> {
     Some([col(0), col(1), col(2)])
 }
 
+/// A battle body's (or its ghost's) retail position `(x, y, z)` (Y-down,
+/// height `+0x36` positive into the floor) as the translation the hosts'
+/// battle placement composes: the frame flip `F = diag(1, -1, 1)` on it.
+/// The battle camera ends in `F` and the placement model flips only the
+/// mesh, so `T(F pos)` is what puts the body back at its retail height; a
+/// bare `T(pos)` draws any non-zero height upside down. The eye a host reads
+/// off its camera (`camera_eye_from_vp`) is in this same frame, so the ghost
+/// push takes positions from here too.
+pub fn placement_pos(pos: [f32; 3]) -> [f32; 3] {
+    [pos[0], -pos[1], pos[2]]
+}
+
 /// The uniform scale-about-the-eye factor that parks a ghost **behind** the
 /// live body along its own camera rays (`>= 1`; `1.0` = no push needed).
 ///
@@ -254,6 +266,16 @@ pub const GHOST_EYE_PUSH_MARGIN: f32 = 400.0;
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A body sunk into the floor (`+0x36 > 0`, retail Y-down) is placed
+    /// below the battle camera's floor plane, a raised one above; the
+    /// ground plane and X / Z pass through.
+    #[test]
+    fn placement_flips_only_the_height() {
+        assert_eq!(placement_pos([675.0, 183.0, 623.0]), [675.0, -183.0, 623.0]);
+        assert_eq!(placement_pos([-40.0, -300.0, 12.0]), [-40.0, 300.0, 12.0]);
+        assert_eq!(placement_pos([5.0, 0.0, -5.0])[1], 0.0);
+    }
 
     /// A synthetic perspective vp (translate-then-project) hands its eye
     /// back through the row solve.

@@ -161,7 +161,9 @@ impl LegaiaRuntime {
     /// browser seat of the retail walk `FUN_80049348`
     /// (`legaia_engine_battle::battle_afterimage`; the plan comes from the
     /// shared `World::battle_ghost_draws`). Seven `f32` per ghost:
-    /// `[world_x, world_y, world_z, r, g, b, k]` with RGB normalized `0..1`
+    /// `[world_x, world_y, world_z, r, g, b, k]` - the position in the
+    /// placement frame (`battle_afterimage::placement_pos`, height negated),
+    /// which the page places as it stands - with RGB normalized `0..1`
     /// (the page draws each ghost flat-coloured additive via its cue
     /// override) and `k` the eye-push scale factor: the position is already
     /// pushed to `eye + k * (pos - eye)` and the page multiplies its draw
@@ -191,19 +193,22 @@ impl LegaiaRuntime {
             4.0 / 3.0,
         );
         let eye_raw = ai::camera_eye_from_vp(&vp).map(|e| e.map(|c| c / BATTLE_WORLD_SCALE));
+        // Positions in the placement frame (`T(F pos)`,
+        // `battle_afterimage::placement_pos`) - the frame the eye comes
+        // back in and the page places them in.
         let body = host.world.actors.get(a.actor_idx).map(|w| {
-            [
+            ai::placement_pos([
                 f32::from(w.move_state.world_x),
                 f32::from(w.move_state.world_y),
                 f32::from(w.move_state.world_z),
-            ]
+            ])
         });
         let mut out = Vec::new();
         for g in host.world.battle_ghost_draws() {
             if g.actor_slot as usize != a.actor_idx {
                 continue;
             }
-            let gpos = [g.pos[0] as f32, g.pos[1] as f32, g.pos[2] as f32];
+            let gpos = ai::placement_pos([g.pos[0] as f32, g.pos[1] as f32, g.pos[2] as f32]);
             let (pos, k) = match (eye_raw, body) {
                 (Some(e), Some(b)) => {
                     let k = ai::ghost_eye_push_scale(e, gpos, b, ai::GHOST_EYE_PUSH_MARGIN);

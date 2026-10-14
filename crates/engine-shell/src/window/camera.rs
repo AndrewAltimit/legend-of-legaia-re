@@ -561,7 +561,9 @@ impl PlayWindowApp {
             // retail's Y-down frame but would draw a body's height `+0x36`
             // upside down - a killed monster the defeat fade sinks
             // (`+0x36 += size * step / 4`) rose out of the floor instead.
-            let pos = Vec3::new(pos.x, -pos.y, pos.z);
+            let pos = Vec3::from(legaia_engine_battle::battle_afterimage::placement_pos(
+                pos.to_array(),
+            ));
             Mat4::from_translation(pos) * rot * Mat4::from_scale(Vec3::new(1.0, -1.0, 1.0))
         } else {
             let yaw = std::f32::consts::PI

@@ -1188,17 +1188,24 @@ impl PlayWindowApp {
                     } else {
                         Mat4::IDENTITY
                     };
-                    let gpos = [g.pos[0] as f32, g.pos[1] as f32, g.pos[2] as f32];
+                    // In the placement frame (`T(F pos)`, the live body's
+                    // law): the eye the draw pushes about is read off the
+                    // camera in that frame too.
+                    let gpos = legaia_engine_battle::battle_afterimage::placement_pos([
+                        g.pos[0] as f32,
+                        g.pos[1] as f32,
+                        g.pos[2] as f32,
+                    ]);
                     let model = Mat4::from_translation(Vec3::from(gpos))
                         * rot
                         * Mat4::from_scale(Vec3::new(1.0, -1.0, 1.0));
                     // The live body's current position, for the render-side
                     // eye push that parks the ghost behind it.
-                    let bpos = [
+                    let bpos = legaia_engine_battle::battle_afterimage::placement_pos([
                         f32::from(actor.move_state.world_x),
                         f32::from(actor.move_state.world_y),
                         f32::from(actor.move_state.world_z),
-                    ];
+                    ]);
                     log::debug!(
                         "arts ghost: actor {} at {:?} colour {:?}",
                         g.actor_slot,
