@@ -28,6 +28,7 @@ omissions. The harness does what the hosts do:
 
 | host duty | what the harness does |
 |---|---|
+| faithful-play arming | sets what both hosts set on a bare `BootSession`: talk through the inline field-VM runner, the leading-edge wall footprint, solid NPCs, terrain follow and the NPC ambient walk (`environment::arm_host_play_defaults`) |
 | presentation queues | drains the field-event, battle-event, hit, SFX, shout, XA, CLUT-stage and minigame-cue queues and routes battle effect spawns after every tick |
 | FMV playback | skips the movie (`finish_cutscene`) and runs the shared post-play hand-off, as the headless `play` subcommand does |
 | name entry | while the overlay is up, routes the pad edge into `step_name_entry` and skips the field tick, as both hosts' modal arms do |
@@ -253,7 +254,10 @@ conversation too.
 The replay format carries no scene field, so the start scene and seed ride in
 header comments (`# soak-scene`, `# soak-seed`, `# soak-signature`) that
 TOML ignores. A replay recorded under a non-default starve window carries it
-too (`# soak-starve-frames`), and is judged by it.
+too (`# soak-starve-frames`), and is judged by it. Every replay names the
+session configuration it ran under (`# soak-arming = "host"` or `"bare"`);
+one without the tag predates the hosts' arming and replays bare, so a fixed
+finding recorded before it still replays the input that once raised it.
 
 ## Running
 
@@ -283,6 +287,7 @@ LEGAIA_SOAK_SEEDS=30 LEGAIA_SOAK_FRAMES=18000 LEGAIA_SOAK_JOBS=8 LEGAIA_SOAK_TAG
 | `LEGAIA_SOAK_MINIMIZE` / `LEGAIA_SOAK_CONFIRM_MAX` / `LEGAIA_SOAK_NO_CONFIRM` | reduction budget per signature / signatures confirmed / skip confirmation |
 | `LEGAIA_SOAK_SAVE` / `LEGAIA_SOAK_CARD` | play every run from that card save / read saves from that library card |
 | `LEGAIA_SOAK_NO_ENCOUNTERS` | disarm the random-encounter roll (a triage control: a battle that still starts is scripted) |
+| `LEGAIA_SOAK_BARE` | skip the hosts' faithful-play arming and soak a bare `BootSession` (simplified talk, candidate-centre walls, walk-through NPCs) |
 | `LEGAIA_SOAK_REDUCE` / `LEGAIA_SOAK_REDUCE_SIG` / `LEGAIA_SOAK_REDUCE_OUT` | `soak_reduce`: reduce a saved replay again, towards that signature (default: its recorded one), into that file |
 
 Runs are cheap - the headless engine ticks far faster than real time - so a

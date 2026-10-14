@@ -182,7 +182,10 @@ pub(super) fn write_report(
         let file = out
             .join("replays")
             .join(format!("{}.replay.toml", slug(sig)));
-        let _ = std::fs::write(&file, replay_text(&o.spec, &pads, Some(f), relaxed));
+        let _ = std::fs::write(
+            &file,
+            replay_text(&o.spec, &pads, Some(f), relaxed, o.host_arming),
+        );
         let detail: String = f.detail.chars().take(220).collect();
         let _ = writeln!(
             md,
