@@ -136,7 +136,6 @@
             let own = 0;
             try { own = rt.play_menu_tick(padMaskOf(this.pulse)); } catch (e) { own = 0; }
             if (own !== 0) {
-              if (own === 2) this.sfxEvent('menu_confirm');
               if (own >= 2) this._ensureMenuBlitters();
               menuTicked = true;
               this.pulse.clear();

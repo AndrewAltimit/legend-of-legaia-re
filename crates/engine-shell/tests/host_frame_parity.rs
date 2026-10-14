@@ -157,6 +157,8 @@ fn visited_battle(tr: &[HostTraceFrame]) -> Result<(), String> {
 /// display frame, and the frame the shop was staged ahead of.
 struct NativeRun {
     trace: Vec<HostTraceFrame>,
+    /// The director's last commands, for a divergence report.
+    audio_recent: Vec<String>,
     pads: Vec<u16>,
     arm_frame: Option<u32>,
 }
@@ -193,6 +195,7 @@ fn native_trace(disc: &str, sc: &Scenario, cadence: Cadence) -> NativeRun {
         ));
     }
     NativeRun {
+        audio_recent: audio_recent(w.session()),
         trace: out,
         pads,
         arm_frame,
@@ -284,14 +287,26 @@ impl PageDriver {
     }
 }
 
+fn audio_recent<S: legaia_engine_audio::AudioSink>(
+    s: &legaia_engine_session::BootSession<S>,
+) -> Vec<String> {
+    s.bgm
+        .as_ref()
+        .map(|d| d.commands().recent().map(|c| format!("{c:?}")).collect())
+        .unwrap_or_default()
+}
+
 fn page_trace(
     disc: Vec<u8>,
     sc: &Scenario,
     cadence: Cadence,
     run: &NativeRun,
-) -> Vec<HostTraceFrame> {
+) -> (Vec<HostTraceFrame>, Vec<String>) {
     let mut rt = LegaiaRuntime::new();
     rt.load_disc(disc, String::new()).expect("load_disc");
+    // Audio up from the start, as the native window's director is: the page
+    // drops every command until its director exists.
+    assert!(rt.debug_attach_audio(), "page audio director");
     rt.enter_field(sc.scene).expect("enter_field");
     let mut d = PageDriver {
         rt,
@@ -323,7 +338,8 @@ fn page_trace(
             d.rt.debug_menu_runtime(),
         ));
     }
-    out
+    let recent = audio_recent(d.rt.debug_session().expect("session"));
+    (out, recent)
 }
 
 /// Run `sc` at each cadence on both hosts; the lines name every channel that
@@ -340,7 +356,7 @@ fn run(sc: &Scenario, cadences: &[Cadence]) -> Vec<String> {
     let mut all = Vec::new();
     for &c in cadences {
         let run = native_trace(&disc, sc, c);
-        let p = page_trace(bytes.clone(), sc, c, &run);
+        let (p, page_audio) = page_trace(bytes.clone(), sc, c, &run);
         let n = run.trace;
         assert_eq!(n.len(), p.len());
         let label = format!("{} {:?}", sc.scene, c);
@@ -368,6 +384,10 @@ fn run(sc: &Scenario, cadences: &[Cadence]) -> Vec<String> {
                     if let Some(j) = at {
                         eprintln!("  `{ch}` from frame {j}");
                     }
+                }
+                if divs.iter().any(|(ch, at)| *ch == "audio" && at.is_some()) {
+                    eprintln!("  native audio (last): {:?}", run.audio_recent);
+                    eprintln!("  page audio (last):   {page_audio:?}");
                 }
                 let lo = i.saturating_sub(1);
                 for k in lo..=(i + 1).min(n.len() - 1) {

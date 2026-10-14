@@ -605,4 +605,12 @@ impl LegaiaRuntime {
     pub fn debug_menu_runtime(&self) -> &legaia_engine_core::menu_runtime::MenuRuntime {
         &self.menu
     }
+
+    /// Build the page's audio director now, as a browser's `audio_init`
+    /// after the first user gesture does (off wasm it runs over a
+    /// device-free sink), so a native test compares a page whose audio is
+    /// up from the first frame. Not a wasm export.
+    pub fn debug_attach_audio(&mut self) -> bool {
+        self.audio_director().is_some()
+    }
 }

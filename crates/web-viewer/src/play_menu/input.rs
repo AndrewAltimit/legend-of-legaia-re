@@ -8,7 +8,7 @@ pub const MENU_TICK_FIELD: u8 = 0;
 /// [`LegaiaRuntime::play_menu_tick`]: the pause menu took this tick.
 pub const MENU_TICK_MENU: u8 = 1;
 /// [`LegaiaRuntime::play_menu_tick`]: a Start edge opened the menu on this
-/// tick, which it takes; the page plays the confirm blip.
+/// tick, which it takes, and queued the confirm blip.
 pub const MENU_TICK_OPENED: u8 = 2;
 /// [`LegaiaRuntime::play_menu_tick`]: a script's save point / ready check
 /// opened the menu on this tick, which it takes; no blip.
@@ -64,6 +64,10 @@ impl LegaiaRuntime {
         if scripted {
             MENU_TICK_OPENED_SCRIPTED
         } else {
+            // The open blips as a confirm, as on the native window; a
+            // scripted press blips nothing - retail's cue `0x20` belongs to
+            // the pad controller, not to the actor it spawns.
+            let _ = self.play_sfx_event("menu_confirm");
             MENU_TICK_OPENED
         }
     }

@@ -437,6 +437,20 @@ impl LegaiaRuntime {
 
 #[wasm_bindgen]
 impl LegaiaRuntime {
+    /// Queue a screen's blip through the one UI-blip routing the native
+    /// window uses too (`AudioDirector::queue_ui_cue`): it sounds at this
+    /// tick's scheduler step. Returns whether a director took it.
+    pub(crate) fn queue_ui_cue(&mut self, cue: u16) -> bool {
+        self.sfx.queued += 1;
+        match self.audio_director() {
+            Some(d) => {
+                d.queue_ui_cue(cue);
+                true
+            }
+            None => false,
+        }
+    }
+
     /// Fire one sound cue by descriptor id, this frame. Returns `true` when the
     /// cue keyed an SPU voice - i.e. the id is in the disc's descriptor table
     /// *and* its program / tone resolved in the resident bank *and* a voice was
@@ -645,7 +659,7 @@ impl LegaiaRuntime {
         let Some(cue) = row.fires else {
             return false;
         };
-        self.play_sfx(cue as u32)
+        self.queue_ui_cue(u16::from(cue))
     }
 
     /// Fire the pause menu's blip for this frame's just-pressed `edge` (the

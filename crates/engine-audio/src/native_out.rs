@@ -30,7 +30,9 @@ impl Sample for u16 {
 
 /// Audio output handle. Owns the cpal stream + a thread-shared SPU model.
 pub struct AudioOut {
-    _stream: cpal::Stream,
+    /// `None` for a [`Self::detached`] output: the mix core with no device
+    /// pulling frames from it.
+    _stream: Option<cpal::Stream>,
     /// Shared SPU + resampler state. Locked once per cpal callback.
     pub(crate) state: Arc<Mutex<StreamResampler>>,
     pub device_rate: u32,
@@ -72,11 +74,24 @@ impl AudioOut {
             channels
         );
         Ok(Self {
-            _stream: stream,
+            _stream: Some(stream),
             state,
             device_rate,
             channels,
         })
+    }
+
+    /// The same output with no device: the mix core every control method
+    /// drives, and nothing pulling frames from it. For a native host that
+    /// runs headless (a parity driver comparing the commands its routing
+    /// issues) and must not open the machine's audio device.
+    pub fn detached(device_rate: u32) -> Self {
+        Self {
+            _stream: None,
+            state: Arc::new(Mutex::new(StreamResampler::new(device_rate))),
+            device_rate,
+            channels: 2,
+        }
     }
 
     fn build_stream<S>(

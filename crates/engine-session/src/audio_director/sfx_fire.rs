@@ -38,8 +38,21 @@ impl<S: AudioSink> AudioDirector<S> {
     /// directly (the art-record `HitCue::kind`), played without
     /// `classify_cue`. `actor` / `target` ride along for HUD context.
     pub fn enqueue_sfx(&mut self, id: u16, frames: u16, actor: u8, target: u8) {
+        self.commands
+            .push(super::AudioCommand::SfxEnqueue(id, frames));
         self.sfx_sched
             .enqueue(PendingCue::new(id, frames).with_actors(actor, target));
+    }
+
+    /// Queue a screen's blip - a pause-menu cursor / confirm / cancel, a
+    /// shop's, the inn prompt's - the one routing both hosts use: on the
+    /// delay scheduler at zero delay, as retail writes the cue into its ring
+    /// and the frame's drainer keys it. It sounds at the tick's scheduler
+    /// step ([`Self::tick_sfx_frame`]: the overlay step under a screen that
+    /// freezes the field, the audio frame otherwise), with every other cue
+    /// due that tick, and ages nothing already queued.
+    pub fn queue_ui_cue(&mut self, cue: u16) {
+        self.enqueue_sfx(cue, 0, 0, 0);
     }
 
     /// Advance the SFX scheduler one frame and fire any matured cue through
@@ -47,6 +60,12 @@ impl<S: AudioSink> AudioDirector<S> {
     /// delayed cues advance even when none are enqueued that frame.
     pub fn tick_sfx_frame(&mut self) -> SfxFrameReport {
         let batch = self.sfx_sched.tick_frame();
+        for cue in &batch.fired {
+            self.commands.push(super::AudioCommand::SfxDue(cue.id));
+        }
+        for &id in &batch.ring {
+            self.commands.push(super::AudioCommand::RingDue(id));
+        }
         self.fire_batch(&batch)
     }
 
@@ -54,6 +73,7 @@ impl<S: AudioSink> AudioDirector<S> {
     /// on the frame of the press must not age every other queued cue a frame
     /// per blip ([`SfxFireBatch::immediate`]).
     pub fn fire_now(&mut self, id: u16) -> SfxFrameReport {
+        self.commands.push(super::AudioCommand::SfxNow(id));
         self.fire_batch(&SfxFireBatch::immediate(id))
     }
 

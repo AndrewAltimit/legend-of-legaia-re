@@ -314,10 +314,11 @@ impl PlayWindowApp {
         }
     }
 
-    /// Queue one menu cue on the director (no-op with audio off).
+    /// Queue one menu cue on the director (no-op with audio off), through
+    /// the one UI-blip routing the page uses too (`AudioDirector::queue_ui_cue`).
     pub(super) fn fire_menu_cue(&mut self, cue: u16) {
         if let Some(bgm) = self.session.bgm.as_mut() {
-            bgm.enqueue_sfx(cue, 0, 0, 0);
+            bgm.queue_ui_cue(cue);
         }
     }
 

@@ -24,8 +24,10 @@ pub struct HeadlessPlayWindow {
 
 impl HeadlessPlayWindow {
     /// Assemble the window `play-window --disc <disc> --scene <scene>` would
-    /// run, with every command-line switch at its default, audio off and the
-    /// persisted options file ignored (the options start at their defaults,
+    /// run, with every command-line switch at its default, the audio director
+    /// over a device-less output (`AudioOut::detached`: it stages and routes
+    /// every command, and nothing is heard) and the persisted options file
+    /// ignored (the options start at their defaults,
     /// as a fresh browser profile's do).
     pub fn open(disc: &Path, scene: &str) -> Result<Self> {
         let save_dir = std::env::temp_dir().join("legaia-headless-window-saves");
@@ -33,7 +35,8 @@ impl HeadlessPlayWindow {
             scene,
             extracted_root: Path::new("extracted"),
             disc: Some(disc),
-            enable_audio: false,
+            enable_audio: true,
+            audio_detached: true,
             world_map: false,
             boot_ui: false,
             save_dir: &save_dir,

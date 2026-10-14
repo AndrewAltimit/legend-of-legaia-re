@@ -347,7 +347,7 @@ impl LegaiaRuntime {
             return;
         };
         if let Some(cue) = menu.step_field_session(&mut host.world, edge) {
-            self.play_sfx(u32::from(cue));
+            self.queue_ui_cue(u16::from(cue));
         }
         // The opening fade steps with the shop, so its quad is re-placed
         // into the frame's screen geometry here rather than on a field tick

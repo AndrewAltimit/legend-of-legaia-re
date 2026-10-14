@@ -349,6 +349,7 @@ pub(super) fn cmd_play_window_with_record(
         extracted_root,
         disc,
         enable_audio,
+        audio_detached: false,
         world_map,
         boot_ui,
         save_dir,
@@ -403,6 +404,10 @@ pub(super) struct PlayWindowLaunch<'a> {
     pub(super) extracted_root: &'a Path,
     pub(super) disc: Option<&'a Path>,
     pub(super) enable_audio: bool,
+    /// Open the audio director over a device-less output
+    /// (`AudioOut::detached`) rather than the machine's device: the headless
+    /// driver's audio, which routes every command and sounds nothing.
+    pub(super) audio_detached: bool,
     pub(super) world_map: bool,
     pub(super) boot_ui: bool,
     pub(super) save_dir: &'a Path,
@@ -436,6 +441,7 @@ pub(super) fn assemble_play_window(launch: PlayWindowLaunch<'_>) -> Result<PlayW
         extracted_root,
         disc,
         enable_audio,
+        audio_detached,
         world_map,
         boot_ui,
         save_dir,
@@ -460,8 +466,16 @@ pub(super) fn assemble_play_window(launch: PlayWindowLaunch<'_>) -> Result<PlayW
         record_to,
     } = launch;
     // The session, its launch switches and its scene.
-    let mut session =
-        crate::host_setup::open_boot_session(scene, enable_audio, extracted_root, disc)?;
+    let mut session = match disc {
+        Some(disc) if audio_detached => NativeSession::open_disc_detached_audio(
+            disc,
+            &legaia_engine_session::BootConfig {
+                scene: scene.to_string(),
+                enable_audio,
+            },
+        )?,
+        _ => crate::host_setup::open_boot_session(scene, enable_audio, extracted_root, disc)?,
+    };
     apply_launch_toggles(
         &mut session,
         LaunchToggles {

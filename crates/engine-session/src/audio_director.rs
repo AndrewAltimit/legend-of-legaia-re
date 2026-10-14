@@ -34,10 +34,12 @@ use legaia_game_tables::sfx_table::FALLBACK_VAB_SLOT;
 use legaia_seq::Seq;
 
 mod bgm_playback;
+mod command_log;
 mod sfx_banks;
 mod sfx_fire;
 mod xa_clips;
 
+pub use command_log::{AudioCommand, AudioCommandLog};
 #[cfg(test)]
 use sfx_banks::resolve_sfx_slot;
 pub use xa_clips::{XA_GAIN_UNITY, XaChannelSource, XaLaneStats, XaStageRequest};
@@ -173,6 +175,8 @@ pub struct AudioDirector<S: AudioSink> {
     /// silent; the next track that fits the BGM region clears it and
     /// re-stages the resident banks.
     sfx_evicted: bool,
+    /// The command record ([`Self::commands`]).
+    commands: AudioCommandLog,
 }
 
 /// `_DAT_8007B910`'s reference value (`0xD7`, `FUN_8001FFA4`): the un-ducked
@@ -235,7 +239,14 @@ impl<S: AudioSink> AudioDirector<S> {
             shared_region_base: legaia_engine_audio::spu_layout::SFX_REGION_BASE,
             resident_slot0: None,
             sfx_evicted: false,
+            commands: AudioCommandLog::default(),
         }
+    }
+
+    /// Every command a host's routing handed this director, as issued
+    /// ([`AudioCommandLog`]).
+    pub fn commands(&self) -> &AudioCommandLog {
+        &self.commands
     }
 
     /// The audio output the director keys into.

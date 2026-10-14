@@ -16,10 +16,12 @@
 //! roster, the bag) are folded to a 64-bit digest, where only "equal or not"
 //! is meaningful.
 //!
+//! The audio channel is the director's command record - what the host's
+//! routing asked for, not what an output sounded - so it compares across
+//! two different outputs; a session with no director reports `None`.
+//!
 //! Not sampled, on purpose: the play clock (each host advances it off its
-//! own wall clock), anything a renderer owns, and the audio director (a
-//! headless native session runs with audio off; the page builds a director
-//! off wasm on first use).
+//! own wall clock) and anything a renderer owns.
 
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
@@ -106,6 +108,11 @@ pub struct HostTraceFrame {
     /// fog's stage luminance cap and each actor's battle texture slot. A
     /// host that writes these from its battle mesh build parts here.
     pub battle_stage: u64,
+    /// The audio director's command record
+    /// ([`crate::audio_director::AudioCommandLog`]): how many commands the
+    /// host's routing has issued and their digest. `None` with no director
+    /// attached.
+    pub audio: Option<(u64, u64)>,
 }
 
 /// The host-held menu-overlay screen's state ([`HostTraceFrame::overlay`]).
@@ -219,6 +226,10 @@ pub fn sample<S: AudioSink>(session: &BootSession<S>) -> HostTraceFrame {
         ),
         naming: world.party.name_entry.as_ref().map(debug_digest),
         bindings: bindings_digest(world),
+        audio: session
+            .bgm
+            .as_ref()
+            .map(|d| (d.commands().count(), d.commands().digest())),
         battle_stage: {
             let tex: Vec<(usize, u8)> = world
                 .actors
@@ -289,6 +300,7 @@ pub const CHANNELS: &[&str] = &[
     "naming",
     "bindings",
     "battle_stage",
+    "audio",
 ];
 
 fn channel_equal(a: &HostTraceFrame, b: &HostTraceFrame, ch: &str) -> bool {
@@ -315,6 +327,7 @@ fn channel_equal(a: &HostTraceFrame, b: &HostTraceFrame, ch: &str) -> bool {
         "naming" => a.naming == b.naming,
         "bindings" => a.bindings == b.bindings,
         "battle_stage" => a.battle_stage == b.battle_stage,
+        "audio" => a.audio == b.audio,
         _ => true,
     }
 }
