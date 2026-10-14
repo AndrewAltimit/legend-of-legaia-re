@@ -271,6 +271,10 @@ one upkeep pass, in this order:
    shops and rests once more and moves on. A walk that stalls ends the
    training, not the stretch, and an outing leg that does not arrive sends
    the next one somewhere else.
+   A bed that stops working leaves the bag in its place
+   ([below](#a-rest-that-stops-resting)): a party short of the levels the
+   next boss is beaten with does better with them than with the
+   restoratives it would otherwise carry in.
 
 A talk or a stay that carries the party out of the scene (`dolk2`'s inn
 plays Noa's dream and brings it back) leaves the rest of the pass for the
@@ -323,6 +327,30 @@ script's `0x4C8` hand-off tests, and no record on the disc sets it.
 
 What it still does not do: sell, use magic outside battle, or leave the
 cheapest route for a chest that sets no flag an anchor carries.
+
+### A rest that stops resting
+
+A keeper's record carries the `4C 82` restore on one branch of its story,
+and the hand finds rests by the op, not the branch. `cave01`'s Terra (P1[2])
+restores on the `0x15C` stage; once `0x15D` / `0x15E` are up her talk sends
+the party on toward Mt. Rikuroa and restores nothing, and the overworld
+past the cave's mouth does not reach a town in that stretch. A rest the hand
+takes under its line that lifts nobody is remembered as dry, keyed by the
+state of the system flags its own record tests, so the hand stops walking
+to it until one of those flags moves; a room marker or latch the record
+never reads does not reset it.
+
+Training from a home whose every rest is dry heals from the bag instead
+(the field menu, to nine tenths) and goes on while the bag lasts. Before
+this, Noa's training ended at the first outing that left her under three
+fifths, and how far she got was the rand stream's: on eight dealt streams
+from the run's own `snowdrift_cave` save she reached Caruban at level 5 or 6
+on six and at 8 (the target) on two, and only those two cleared him. With
+the bag standing in, all eight reach level 8, and seven clear him (six on
+the first try); the eighth stalls on the mountain's `P2[45]` / `P2[60]`
+band pair before the fight. Caruban (1024 HP, about 150 a round on one member) outlasts a
+level-6 Noa and level-5 Vahn by one or two rounds; a level-8 Noa ends the
+fight first.
 
 ### A counter the story has closed
 
@@ -416,11 +444,12 @@ cargo test -p legaia-engine-shell --profile release-test \
 |---|---|
 | `LEGAIA_FGL_ONLY=<id>,...` | Runs only the segments ending at those milestones, and does not assert the baseline. |
 | `LEGAIA_FGL_NO_PAD=1` | Skips the pad tier. |
-| `LEGAIA_FGL_RNG_SEED=<u32>` | Re-seeds the world rand stream once a pad segment is seeded, dealing it another hand. |
+| `LEGAIA_FGL_RNG_SEED=<u32>` | Re-seeds the world rand stream once a pad segment is seeded, dealing it another hand. Part C takes it at its New Game (or the checkpoint it resumes) and mixes it into each wipe reload. |
 | `LEGAIA_FGL_SEATED_RNG_SEED=<u32>` | The same for the seated pass - how a seated boss fight is checked across streams. |
 | `LEGAIA_FGL_CONTINUOUS_FROM=<id>` | Starts part C at that milestone, seeded once from its retail anchor and never again, and does not assert the baseline. A probe for a later stretch's carried state; the party it sets out with is retail's, so it is not the continuous score. |
 | `LEGAIA_FGL_CHECKPOINT_DIR=<dir>` | Part C keeps the engine's own save at each milestone it reaches in that directory (`<id>.lgsf`, with the scene, rand stream and learned exchange rate beside it). The saves hold disc-derived state: keep the directory under `target/`. |
 | `LEGAIA_FGL_CONTINUOUS_RESUME=<id>` | Starts part C at that milestone from the save an earlier run kept there, and does not assert the baseline. The party is the run's own; the picker rotation and the shopping memory start fresh, so a stall it shows is confirmed on the full run. |
+| `LEGAIA_FGL_CONTINUOUS_UNTIL=<id>` | Ends part C once it reaches that milestone, and does not assert the baseline: with `LEGAIA_FGL_CONTINUOUS_RESUME` and a spread of `LEGAIA_FGL_RNG_SEED` values, how often one stretch clears. |
 
 The ratchet asserts every per-segment tier, both headline counts and the tier sum `>=` the baseline. Raise the baseline in a reviewed edit from the block the run prints; never lower it to make a red run green. The trace and debug switches are under [Diagnostics](#diagnostics).
 
@@ -666,6 +695,14 @@ while a round still gains flags, since each unlocks the other:
   setting `0x470` waits on. A touch-class one (a door, bit `4`) is walked
   into from a tile beside it - `town0d` P0[1], the house door, sets `0x3B9`
   and spawns the P2[28] night scene.
+  A prop whose touch moves its flags and still leaves the next anchor's
+  wanted flag clear is a **dial**: it is touched again, after a short
+  settle, until every flag its touches have moved agrees with the next
+  anchor, up to six touches. `stone`'s four statues each step through four
+  facings (`0x1D8..0x1DB`, `0x1DC..0x1DF`, `0x1E0..0x1E3`,
+  `0x1E4..0x1E7`), and the way to `tunnela` opens on one combination;
+  touched once a round, all four turned in step and the pass ran out of
+  fresh flags short of it on half the dealt streams.
 
 ### Beats the ladder skips: latches
 
@@ -800,7 +837,7 @@ map as its street:
 - **A script that fires and changes no flag** more than a couple of dozen times on one walk makes that walk a stall. `retock` P2[26], the Mt. Letona checkpoint, turns the party back every time it is crossed without Lord Saryu's key. The count is per record as well as per park site: `jouinc`'s camera bands P2[3..57], one every three tiles of the way to `jouind`, all park at the same `pc` and op, and are distinct records, not one script firing repeatedly.
 - **A script that carries the walker to a landing it has carried it to before**, leaving the same flags, is a loop after the third time, even when the flags it toggles keep the first count from building. `chitei2`'s transport rides between (98, 102) and (94, 22), each ride flipping the car's flags (met on a walk to P2[9]).
 - **Teleports and notches.** The follower presses a teleport waypoint until the jump lands, and backs out of a diagonal-wall notch where all four lattice steps read blocked. The lattice cannot say which neighbouring cell the free movement reaches, so each second the walk stays wedged it heads for the next open cell in turn: on `retona`'s stair landing at (16, 99) the nearest one lies west, and the slide toward it carries the player straight back.
-- **The action button.** Held against something for a second, the follower tries the action button. In a field the tap waits for a frame the player did not move: the stall counter also counts a run step that stays inside one cell, and a tap there would stand the player still one frame in every few.
+- **The action button.** Held against something for a second, the follower tries the action button. In a field the tap waits for a frame the player did not move: the stall counter also counts a run step that stays inside one cell, and a tap there would stand the player still one frame in every few. A tap that opens the same talk twice on one walk without changing a flag ends the tapping for that walk: `jiji`'s inn counter (P0[8..10], the witch's "Want to stay?") opened on every tap of the walk past it, two thousand frames each, and spent a stretch's budget on the walk to P1[19]'s pickup.
 - **A script that runs on the way and changes nothing** - no flag, no cell, no scene (an examined prop with nothing to say) - leaves the route as it was rather than re-planning the walk component.
 - **Walk-on bands.** Walks avoid the live walk-on bands unless one is the only way through. A band whose record's story gates shut it is walkable, and so is an inert band that only sets the camera or the view, such as `retona` P2[0] across the summit's passes. A band that turns the party back (`retona` P2[24], until `0x367`) stays avoided.
 
