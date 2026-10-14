@@ -166,9 +166,95 @@
   </details>
 </section>
 
+<section class="doc-section" id="scene-entry">
+  <h2>What a cold scene entry owes</h2>
+  <p>Music does not start because a scene loads. It starts because the scene's entry script reaches op <code>0x35</code>, and the id it names reaches a director that knows the track carries its own instruments. Anything that drops the engine into a scene from cold - both play hosts and every headless driver - owes the same three steps in this order, and each one is separately load-bearing.</p>
+  <figure class="diagram">
+    <svg viewBox="0 0 860 300" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Sequence across five lanes: host, world and field VM, scene router, BGM director, mixer. Step 1, the host seeds the free-roam story baseline on the world. Step 2, the host enters the field live, which installs the field record. The entry script then runs op 0x35 sub-op 1 with a global id, the world raises a BGM event to the router, and step 3, the router calls the director's owned-VAB start with the music bank entry's bytes. The director uploads that entry's VAB and attaches its sequencer on the mixer.">
+      <defs><marker id="au-seq-arrow" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <rect class="dg-node" x="20" y="14" width="130" height="38" rx="5"/><text class="dg-label" x="85" y="38">host / driver</text>
+      <rect class="dg-node" x="192" y="14" width="140" height="38" rx="5"/><text class="dg-label" x="262" y="38">world + field VM</text>
+      <rect class="dg-node" x="374" y="14" width="130" height="38" rx="5"/><text class="dg-label" x="439" y="38">scene router</text>
+      <rect class="dg-node" x="546" y="14" width="130" height="38" rx="5"/><text class="dg-label" x="611" y="38">BGM director</text>
+      <rect class="dg-node-accent" x="718" y="14" width="122" height="38" rx="5"/><text class="dg-label" x="779" y="38">mixer</text>
+      <path class="dg-edge-dim" d="M85 52 L85 288"/>
+      <path class="dg-edge-dim" d="M262 52 L262 288"/>
+      <path class="dg-edge-dim" d="M439 52 L439 288"/>
+      <path class="dg-edge-dim" d="M611 52 L611 288"/>
+      <path class="dg-edge-dim" d="M779 52 L779 288"/>
+
+      <path class="dg-edge" d="M85 88 L258 88" marker-end="url(#au-seq-arrow)"/>
+      <text class="dg-edge-label" x="96" y="80">1. story baseline</text>
+      <path class="dg-edge" d="M85 128 L258 128" marker-end="url(#au-seq-arrow)"/>
+      <text class="dg-edge-label" x="96" y="120">2. enter field live</text>
+      <path class="dg-edge" d="M262 156 C306 156 306 180 268 180" marker-end="url(#au-seq-arrow)"/>
+      <text class="dg-edge-label" x="312" y="164">entry script runs</text>
+      <text class="dg-edge-label" x="312" y="178">op 0x35, global id</text>
+      <path class="dg-edge" d="M262 208 L435 208" marker-end="url(#au-seq-arrow)"/>
+      <text class="dg-edge-label" x="274" y="200">BGM event</text>
+      <path class="dg-edge" d="M439 240 L607 240" marker-end="url(#au-seq-arrow)"/>
+      <text class="dg-edge-label" x="450" y="232">3. owned-VAB start</text>
+      <path class="dg-edge" d="M611 272 L775 272" marker-end="url(#au-seq-arrow)"/>
+      <text class="dg-edge-label" x="622" y="264">upload VAB + sequencer</text>
+    </svg>
+    <figcaption>The three numbered calls are the host's debt. Everything between them is the engine doing what the disc's script says.</figcaption>
+  </figure>
+  <div class="table-wrap">
+  <table class="data-table">
+    <thead><tr><th>Step</th><th>Kernel</th><th>What skipping it sounds like</th></tr></thead>
+    <tbody>
+      <tr><td>1. Free-roam story staging</td><td><code>World::seed_free_roam_story_baseline</code></td><td>The entry script's authored pause parks the track: a sequencer attaches on the first frame and its playhead never leaves tick 0</td></tr>
+      <tr><td>2. Live field entry</td><td><code>BootSession::enter_field_live</code></td><td>Loading the scene alone installs no field record, so the field VM steps nothing and op <code>0x35</code> never executes</td></tr>
+      <tr><td>3. Global-pool start hook</td><td><code>BgmDirector::start_owned_vab</code></td><td>Every real music cue is a global id, so a director that leaves this hook on its no-op default plays nothing while looking fully wired</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>All three failures read identically from outside - silence - which is why a driver missing any one of them reports as &ldquo;the engine starts no music on scene entry&rdquo;.</p>
+  <ul class="bullets">
+    <li><strong>Why step 1 exists.</strong> A scene-picker entry runs the entry script with none of the story choreography behind it. Rim Elm's script starts its theme and pauses it for the opening's silent dawn; without the cutscene that later restarts it, the pause would hold forever. The staging drops a pause issued inside the entry window on picker entries only - a new game keeps the authored pause.</li>
+    <li><strong>A story twin's flags pick its track too.</strong> Rim Elm under attack opens on the town theme and then, on one flag pair, switches to the attack theme over a night grade. A picker entry with neither flag staged would play the wrong tune, so the staging seeds the flag.</li>
+    <li><strong>Battle reuses the same road.</strong> An encounter queues an ordinary track start for the battle theme and the fight's end resumes the stashed field track - one dispatch path, no battle-only audio code.</li>
+  </ul>
+  <h3 id="battle-sound-set">The field script picks the fight's music</h3>
+  <p>Which track a fight plays is the field script's choice, not the formation's. Op <code>0x35</code> sub-op 7 stores a <em>battle sound set</em> number, and the scene's map init zeroes it on every entry. The battle intro reads it: set <code>N &ge; 0</code> loads battle bundle <code>0x36F + N</code> and starts its score; set <code>-1</code> loads nothing and leaves whatever the event was already playing. That is how a boss fight keeps the boss theme its cutscene started one line earlier. Each bundle of the battle bank carries a byte-identical copy of one <code>music_01</code> score.</p>
+</section>
+
+<section class="doc-section" id="pitch-law">
+  <h2>What pitch a note keys at</h2>
+  <p>Both key-on paths - a sequencer note and a one-shot cue - converge on one arithmetic, and its result is written straight into the SPU voice's pitch register. Nothing rescales it afterwards.</p>
+  <pre><code>n     = note + 60 - center + carry
+pitch = PITCH[(n % 12) * 16 + fine]  shifted by  (n / 12 - 5)</code></pre>
+  <p><code>PITCH</code> is a 192-entry table at <code>DAT_8007A940</code> holding one octave at 1/16-semitone resolution; every entry is exactly <code>floor(0x1000 &times; 2^(k/192))</code>, so the port computes it instead of carrying it.</p>
+  <ul class="bullets">
+    <li><strong>A tone plays at unity on its own centre note.</strong> <code>note == center</code> selects <code>0x1000</code>, which is 44.1&nbsp;kHz. There is no separate sample-rate factor: a 22.05&nbsp;kHz sample is authored with its centre an octave above the key it should sound at, and the same law lands on <code>0x800</code>. Folding a rate ratio in as well puts every voice an octave low.</li>
+    <li><strong>The tone's shift byte raises the pitch</strong> by <code>shift/128</code> of a semitone, quantised to 1/16. It is a positive fine-tune, not a downward correction.</li>
+    <li><strong>A cue keys half a semitone above a note.</strong> The sequencer path forms its fine index as <code>min(shift &gt;&gt; 3, 15)</code> and never carries. The cue path uses <code>(0x40 + shift) &gt;&gt; 3</code>, where <code>0x40</code> is a literal at every traced call site, and carries a whole semitone at 16.</li>
+  </ul>
+  <p>The law is measured as well as read: across the catalogued save states, 126 of 128 sounding voices hold exactly the pitch it computes from their staged note against the live bank. The two misses are voices whose bank was swapped after the key-on. Port: <code>compute_pitch</code> in <code>engine-audio::vab_bind</code>.</p>
+</section>
+
+<section class="doc-section" id="format-traps">
+  <h2>Three format traps that silence or speed up music</h2>
+  <ul class="bullets">
+    <li><strong>A SEQ meta event has no length byte.</strong> Legaia's tempo meta is <code>0xFF 0x51</code> plus three tempo bytes, and end-of-track is <code>0xFF 0x2F</code> with nothing after it. Reading the MIDI length byte that is not there drops the first tempo and pins playback about three times too fast against the header's 240&nbsp;BPM placeholder (<a href="../formats/seq.html">seq</a>).</li>
+    <li><strong>A meta is a running status.</strong> Retail latches <code>0xFF</code>, so a data byte after a meta is the next meta's kind. One track's closing tempo depends on it.</li>
+    <li><strong>A VAB arrives as two chunks.</strong> Its header and its sample bodies are separate chunks of one stream, and some entries put the score chunk first. Probing fixed offsets finds the wrong bytes; the body origin has to be resolved off the stream (<a href="../formats/vab.html">vab</a>).</li>
+  </ul>
+</section>
+
+<section class="doc-section" id="field-cues">
+  <h2>Scripted field cues ride a four-slot ring</h2>
+  <p>A door creak or a switch click placed by a scene script does not go through the per-actor helper. The field VM's op <code>0x36</code> and the motion VM's op <code>0x09</code> push the cue id onto a four-slot ring, with an optional countdown, and a drainer keys each one when its countdown ends.</p>
+  <ul class="bullets">
+    <li><strong>Two id ranges, two banks.</strong> A ring id below <code>0x200</code> goes through the static table and the bank its category names. An id at or above <code>0x200</code> indexes the scene's own descriptor record and the side-band bank that record names - slot 3 in a town.</li>
+    <li><strong>The field bank is only there in the field.</strong> Most static field cues are category 6, the field bank, which shares its SPU region with the battle bank in slot 2. A category-6 cue therefore keys in the field and is silent in battle, where retail's slot 6 is closed. The port refills that region per mode the same way.</li>
+    <li><strong>Every scripted id on the disc resolves</strong> to a row of its own scene's bank, bar one that points one row past its table and keys nothing in retail either.</li>
+  </ul>
+</section>
+
 <section class="doc-section" id="port">
   <h2>In the port</h2>
-  <p><code>crates/engine-audio</code> rebuilds the stack from this page, the libspu API surface and the public SPU register layout - no Sony bytes. It models the 24 voices with Gaussian resampling, the envelope, the ADPCM decoder, the reverb network (set to Studio C on every voice, as retail runs it) and a sequencer clocked once per output sample, so playback is locked to the audio clock and bit-deterministic for replays. Both play hosts drive it through the same BGM director (<code>engine-session</code>). Module map, the sequencer details and how the port's sound is measured against retail: <a href="audio-internals.html#engine-spu">internals</a>.</p>
+  <p><code>crates/engine-audio</code> rebuilds the stack from this page, the libspu API surface and the public SPU register layout - no Sony bytes. It models the 24 voices with Gaussian resampling, the envelope, the ADPCM decoder, the reverb network (set to Studio C on every voice, as retail runs it) and a sequencer counted in whole output samples that spends retail's tick budget once per vsync period, so playback is locked to the audio clock, lands its key-ons where retail's do, and is bit-deterministic for replays. Both play hosts drive it through the same BGM director (<code>engine-session</code>). Module map, the sequencer details and how the port's sound is measured against retail: <a href="audio-internals.html#engine-spu">internals</a>.</p>
 </section>
 
 <section class="doc-section" id="see-also">

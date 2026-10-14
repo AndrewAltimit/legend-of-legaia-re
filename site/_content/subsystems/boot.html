@@ -90,6 +90,49 @@
   </ul>
 </section>
 
+<section class="doc-section" id="overlay-slots">
+  <h2>Code that pages in: two slots and one index rule</h2>
+  <p>The executable holds the engine - loaders, the renderer core, the sound libraries, the mode table. Most game logic is not in it. Field scripts, battle, the menu, movies and each minigame are separate code images in <code>PROT.DAT</code>, streamed into one of two fixed windows of RAM when a mode needs them. That is why a function with no caller in the executable is not dead: its caller is usually in an image that is not loaded yet.</p>
+  <figure class="diagram">
+    <svg viewBox="0 0 860 260" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Memory layout of code. The executable is always resident and holds the two overlay loaders. Slot A, at 0x801CE818, holds exactly one of: the field overlay 0897, battle 0898, the menu and title 0899, the movie player 0970, the battle intro 0979, a minigame 0972 to 0977 or 0980, or the boot logos 0895. Slot B, at 0x801F69D8, holds a render library, 0900 or 0901, or a battle cast module, 0903 to 0966. A mode's init handler calls a loader with a small parameter, and the extraction index of the entry it loads is the parameter plus 0x37F.">
+      <defs><marker id="bt-ov-arrow" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <rect class="dg-node" x="20" y="30" width="230" height="200" rx="6"/>
+      <text class="dg-label" x="135" y="58">executable</text>
+      <text class="dg-sub" x="135" y="78">always resident</text>
+      <text class="dg-sub" x="135" y="112">mode table and handlers</text>
+      <text class="dg-sub" x="135" y="130">two overlay loaders</text>
+      <text class="dg-sub" x="135" y="148">archive directory at 0x801C70F0</text>
+      <text class="dg-sub" x="135" y="166">renderer core, sound libraries</text>
+      <text class="dg-sub" x="135" y="200">loader(param) reads entry</text>
+      <text class="dg-sub" x="135" y="216">param + 0x37F</text>
+
+      <rect class="dg-node-accent" x="350" y="30" width="490" height="96" rx="6"/>
+      <text class="dg-label dg-start" x="366" y="56">slot A at 0x801CE818 - one image at a time</text>
+      <text class="dg-sub dg-start" x="366" y="80">field 0897 &#183; battle 0898 &#183; menu and title 0899 &#183; movies 0970</text>
+      <text class="dg-sub dg-start" x="366" y="98">battle intro 0979 &#183; minigames 0972..0977, 0980 &#183; boot logos 0895</text>
+      <text class="dg-sub dg-start" x="366" y="116">map display 0981 swaps over the field image's head and back</text>
+
+      <rect class="dg-node-ok" x="350" y="150" width="490" height="80" rx="6"/>
+      <text class="dg-label dg-start" x="366" y="176">slot B at 0x801F69D8 - a helper beside slot A</text>
+      <text class="dg-sub dg-start" x="366" y="200">field and world-map render libraries 0900 / 0901</text>
+      <text class="dg-sub dg-start" x="366" y="218">battle cast and summon modules 0903..0966, one per spell</text>
+
+      <path class="dg-edge" d="M250 78 L348 78" marker-end="url(#bt-ov-arrow)"/>
+      <path class="dg-edge" d="M250 190 L348 190" marker-end="url(#bt-ov-arrow)"/>
+    </svg>
+    <figcaption>Entry numbers are extraction indices. Both slots are fixed addresses, so two images that would overlap can never be resident together - and the same address means different code in different modes.</figcaption>
+  </figure>
+  <ul class="bullets">
+    <li><strong>One index rule.</strong> Both loaders add <code>0x381</code> to their parameter and index the in-RAM directory, which counts two words ahead of the extraction numbering - so the entry loaded is <code>parameter + 0x37F</code>. Parameter 2 is the field overlay 0897, 3 is battle 0898, 4 is the menu 0899.</li>
+    <li><strong>The census is closed.</strong> A scan of the whole executable for both loaders finds sixteen call sites, with constant parameters for the fixed images and computed ones for the bands: a minigame's warp sub-id, a spell's cast module, a battle stage.</li>
+    <li><strong>Parameter 0 has one producer: <code>main()</code> itself,</strong> loading the boot logo image before the mode loop starts. Parameter 1 has none, so entry 0896 is unreachable from any loader call.</li>
+    <li><strong>Three init handlers load nothing.</strong> The battle mode's setup lives in the executable; the logo mode calls straight into the image <code>main()</code> already loaded; and one dev mode writes mode 0 and bounces back to the debug menu it came from.</li>
+    <li><strong>A wipe is not the game-over image.</strong> A party wipe routes to the title's CONTINUE flow. The game-over overlay 0902 has an init handler and no retail path that stores its mode.</li>
+    <li><strong>Swaps save what they cover.</strong> The minigame and map-display modes back up the scene name or the field image's first <code>0x4000</code> bytes before loading over them, and restore on the way out - which is how a minigame returns you to the room you left.</li>
+  </ul>
+  <p>The practical consequence for tracing: an address in the overlay window names a routine only together with the image that is resident. Per-mode handler addresses and what each loads: <a href="boot-internals.html#mode-table">internals</a>; how an image is identified and extracted from the disc: <a href="../tooling/static-overlay-pipeline.html">static overlay pipeline</a>.</p>
+</section>
+
 <section class="doc-section" id="title-overlay-state">
   <h2>The title screen</h2>
   <p>The title screen is a small program of its own: an attract countdown that eventually plays the opening movie, a Press-Start wait, a two-row NEW GAME / CONTINUE menu, the memory-card manager, and the launch. It runs as a spawned actor under the <code>CARD</code> pair, whose INIT loads PROT 0899 - which is also why the title shares code with the save screen. The tick (<code>FUN_801DD35C</code>) is a 25-way sub-mode switch.</p>

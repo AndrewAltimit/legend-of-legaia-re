@@ -226,9 +226,66 @@
   <p>The same type-6 table drives ambient walks in twelve carriers, not only kingdoms. Format and cadence arithmetic: <a href="world-map-internals.html#clut-walk">internals</a>.</p>
 </section>
 
+<section class="doc-section" id="map-display">
+  <h2>The map on L1</h2>
+  <p>Press L1 on a kingdom map and the view lifts into a top-down survey with the names of the places you have found. That is not a camera trick inside the walk frame: it is a separate game mode with its own small code image (PROT 0981, a <code>0x1000</code>-byte module of one function and three leaves) swapped in over the head of the field overlay. While it is up the walk frame does not run - the player, the field VM and the encounter roll all stand still.</p>
+  <figure class="diagram">
+    <svg viewBox="0 0 860 250" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="State machine of the map display. The walk frame, on an L1 press, starts a fade ramp that draws a grey quad until it reaches full; game mode 12 then swaps the map module in. Inside the module: mode 0 seeds a timer, mode 1 stages the survey camera, mode 2 fades in and seats the camera over the player, the interactive mode pans and steps the place cursor, and on L2 or Circle modes 3, 4 and 5 fade out, restore the walk camera and hand game mode 12 back, which restores the field overlay's head and returns to the walk frame.">
+      <defs><marker id="wm-md-arrow" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <rect class="dg-node" x="20" y="20" width="140" height="56" rx="5"/><text class="dg-label" x="90" y="44">walk frame</text><text class="dg-sub" x="90" y="62">game mode 3</text>
+      <rect class="dg-node" x="200" y="20" width="150" height="56" rx="5"/><text class="dg-label" x="275" y="44">fade ramp</text><text class="dg-sub" x="275" y="62">grey quad to full</text>
+      <rect class="dg-node" x="390" y="20" width="170" height="56" rx="5"/><text class="dg-label" x="475" y="44">game mode 12</text><text class="dg-sub" x="475" y="62">swap module in / out</text>
+      <rect class="dg-node-accent" x="600" y="20" width="240" height="56" rx="5"/><text class="dg-label" x="720" y="44">modes 0, 1, 2</text><text class="dg-sub" x="720" y="62">timer, survey camera, fade in</text>
+      <rect class="dg-node-ok" x="600" y="170" width="240" height="60" rx="5"/><text class="dg-label" x="720" y="195">interactive</text><text class="dg-sub" x="720" y="214">pan, place cursor, overlay mode</text>
+      <rect class="dg-node-accent" x="250" y="170" width="260" height="60" rx="5"/><text class="dg-label" x="380" y="195">modes 3, 4, 5</text><text class="dg-sub" x="380" y="214">fade out, restore camera, hand back</text>
+
+      <path class="dg-edge" d="M160 48 L198 48" marker-end="url(#wm-md-arrow)"/>
+      <text class="dg-edge-label" x="180" y="38" text-anchor="middle">L1</text>
+      <path class="dg-edge" d="M350 48 L388 48" marker-end="url(#wm-md-arrow)"/>
+      <path class="dg-edge" d="M560 48 L598 48" marker-end="url(#wm-md-arrow)"/>
+      <path class="dg-edge" d="M720 76 L720 168" marker-end="url(#wm-md-arrow)"/>
+      <path class="dg-edge" d="M600 200 L512 200" marker-end="url(#wm-md-arrow)"/>
+      <text class="dg-edge-label" x="556" y="190" text-anchor="middle">L2 / Circle</text>
+      <path class="dg-edge" d="M440 170 L510 78" marker-end="url(#wm-md-arrow)"/>
+      <path class="dg-edge-dim" d="M410 76 L410 124 L90 124 L90 78" marker-end="url(#wm-md-arrow)"/>
+      <text class="dg-edge-label" x="104" y="142">field overlay head restored</text>
+    </svg>
+    <figcaption>Game mode 12 is the hinge in both directions: it pages the map module in over the field overlay's first <code>0x4000</code> bytes, and puts them back on the way out. The two never coexist.</figcaption>
+  </figure>
+  <ul class="bullets">
+    <li><strong>Arming it.</strong> The locomotion controller tests the newly-pressed L1 bit only on scenes whose per-scene flag marks them as a kingdom map; it cues a blip and starts the ramp. The ramp suppresses movement, brightens a full-screen grey quad, and at full stores game mode 12.</li>
+    <li><strong>The survey camera</strong> is a fixed pose: a steep pitch, a long pull-back, its own projection distance, and the curvature table flattened so the continent lies flat. The d-pad pans it one tile a frame inside a clamped rectangle.</li>
+    <li><strong>The place cursor snaps.</strong> Square steps the cursor back through this kingdom's places and the camera jumps to each. The forward step on Circle is unreachable, because the leave test consumes the same button first. The stepper does not read the discovery flag, so the cursor visits a place whose label is still hidden.</li>
+    <li><strong>Triangle or Select</strong> cycles three overlay modes: mini-map with labels, labels only, bare map.</li>
+  </ul>
+  <h3 id="map-display-panel">The mini-map panel and the labels</h3>
+  <p>The corner panel is five pieces at fixed screen seats: a subtractive grey backing, the kingdom's own 96&times;96 mini-map drawn additively, a 48&times;48 view box that follows the camera, a 3&times;3 player dot, and four compass letters each on a small plate. The mini-map texture belongs to the kingdom's scene pack and is resident for the whole overworld.</p>
+  <p>The labels come from one table: 29 fixed-size records trailing every kingdom's scene file, each holding a name, a map cell, a kingdom number and a discovery flag (<a href="../formats/place-names.html">place names</a>). All three kingdoms carry the whole table and filter it by kingdom. A visible record is projected from its cell, half a tile-height above the plane, and its name is drawn in an ordinary dialog-style window as wide as the text. A marker's label, position and visibility are therefore one record - renaming a place is a same-size overwrite, which the randomizer does in all three kingdoms at once.</p>
+  <p>Both play hosts open the display on L1 with its labels and panel through one shared module (<code>legaia_engine_field::map_display</code>). Not ported: the player's map pointer, a move-VM effect the module spawns; and the port draws the kingdom whole instead of applying the survey's visible tile window.</p>
+</section>
+
+<section class="doc-section" id="compass-ring">
+  <h2>Which way is up</h2>
+  <p>Retail's pad remap is not a trigonometric rotation. It looks the held direction up in an eight-entry compass ring, adds a whole number of 45-degree steps for the camera, and writes the ring entry back over the pad's direction bits. With a step count of zero it is the identity: Up walks world <code>Z+</code>, Right walks world <code>X+</code>.</p>
+  <div class="table-wrap">
+  <table class="data-table">
+    <thead><tr><th>Ring index</th><th>0</th><th>1</th><th>2</th><th>3</th><th>4</th><th>5</th><th>6</th><th>7</th></tr></thead>
+    <tbody>
+      <tr><td>World direction</td><td>Z+</td><td>Z+ X+</td><td>X+</td><td>X+ Z&minus;</td><td>Z&minus;</td><td>Z&minus; X&minus;</td><td>X&minus;</td><td>X&minus; Z+</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <ul class="bullets">
+    <li><strong>One axis per bit.</strong> The integrator then steps each held axis by 2 units, each step gated on its own collision probe - so a diagonal slides along a wall instead of stopping.</li>
+    <li><strong>Facing is offset by half a turn.</strong> The facing angle is written from the ring index plus four, so retail's heading 0 is world <code>Z&minus;</code>; the port's is <code>Z+</code>, compensated where the animation sector is looked up.</li>
+    <li><strong>The overworld figure is three quarters size.</strong> Each kingdom's entry script sets the player's scale word to <code>0xC00</code> where a town holds <code>0x1000</code>; the same word is the speed multiplier the pad step folds in.</li>
+  </ul>
+  <p>Two tests pin the convention, one of which fails on a single-axis sign flip because a reflection and a rotation project differently.</p>
+</section>
+
 <section class="doc-section" id="controller">
   <h2>The developers' tooling: top view and debug menu</h2>
-  <p>The shipped game carries the tooling the designers used to fly over the map: a top-down camera behind a pad combo, and a scrolling dev menu with entries such as <code>MAP CHANGE</code>, <code>ENCOUNT</code> and <code>BGM CALL</code>. Both need a debug flag retail leaves clear, so no player reaches them, but the code is all there. The top-view image on the disc is PROT 0981.</p>
+  <p>The shipped game carries the tooling the designers used to fly over the map: a top-down camera behind a pad combo, and a scrolling dev menu with entries such as <code>MAP CHANGE</code>, <code>ENCOUNT</code> and <code>BGM CALL</code>. Both need a debug flag retail leaves clear, so no player reaches them, but the code is all there. The top-down view a player <em>does</em> reach is a different thing - the <a href="#map-display">map display</a> on L1, whose image is PROT 0981.</p>
   <ul class="bullets">
     <li><strong>Only a camera.</strong> With the view flag clear the top-view controller returns immediately; the overworld's real per-frame update is the ordinary field chain, the same one a town runs.</li>
     <li><strong>Toggle and controls.</strong> Debug flag + pad combo flips the view flag and snapshots the camera; the d-pad scrolls X/Z by 8 a frame, Circle/Square turn the azimuth, R1/L1 zoom.</li>

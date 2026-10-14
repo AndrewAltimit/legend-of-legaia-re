@@ -118,7 +118,7 @@
   <ul class="bullets">
     <li><strong>Every engaged script runs every frame.</strong> The frame driver walks five actor lists; a field actor with the engaged bit runs its slice. Scripts are not time-sliced against each other.</li>
     <li><strong>A script is a series of interactions.</strong> Each one runs from where the last <code>0x21</code> left the PC to the next executed <code>0x21</code>. An NPC that says one thing on the first talk and another afterwards is one record whose branches all jump back to a shared flag selector.</li>
-    <li><strong>Three things engage a script.</strong> The touch post (contact or the action button), the record spawner (a new partition-2 context) and the system script's own driver. No opcode engages a placement: a cutscene that walks a villager runs on its own slice against the villager's actor, and never runs the villager's talk body.</li>
+    <li><strong>Four things engage a script.</strong> The touch post (contact or the action button), the record spawner (a new partition-2 context), the system script's own driver, and another script raising the engaged bit on an actor with a cross-context flag set. A cutscene that merely <em>walks</em> a villager runs on its own slice against the villager's actor and never runs the villager's talk body (<a href="#engagement">engagement</a>).</li>
     <li><strong>The system script sits out other scenes.</strong> It starts a new pass only while no other script holds the player, and not at all while a battle is committed, so a town's per-frame loop pauses during an NPC talk or a cutscene.</li>
     <li><strong>Waits are display frames.</strong> <code>WAIT_FRAMES</code> adds the frame-skip factor per visit, so "wait 30" is 30 display frames whatever the logic rate. A port has to pace the VM from a display-frame clock.</li>
   </ul>
@@ -148,6 +148,53 @@
     </tbody>
   </table>
   <p>The header tile is not always where the actor stands. The spawn section runs at load, and a flag-chosen arm that moves the actor (op <code>4C 51</code>, or a bare <code>0x23</code>) relocates it before the first frame draws - Rim Elm stages its two running kids on the standing kids' exact tiles and dispatches them across town that way.</p>
+</section>
+
+<section class="doc-section" id="record-anatomy">
+  <h2>One record, two scripts, one cursor</h2>
+  <p>A placement record is a single byte stream carrying two scripts back to back, and where the second begins is the thing ports get wrong.</p>
+  <figure class="diagram dg-fit">
+    <svg viewBox="0 0 860 190" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="A placement record drawn as a strip of bytes. First the header: a count, the locals, and the four-byte placement header. Then the spawn section, which runs once at scene load and stops at the first raw 0x21. Then the interaction section, which begins one byte past that 0x21 and holds ops, text segments led by 0x1F, picker tables, and ends at its own 0x21 before jumping back. The cursor is one stored program counter: scene load leaves it just past the first 0x21, and each talk resumes from where the previous 0x21 left it.">
+      <defs><marker id="sv-rec-arrow" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <rect class="dg-node" x="20" y="50" width="150" height="56" rx="4"/>
+      <text class="dg-label" x="95" y="74">header</text><text class="dg-sub" x="95" y="92">locals, model, seat</text>
+      <rect class="dg-node-accent" x="170" y="50" width="210" height="56" rx="4"/>
+      <text class="dg-label" x="275" y="74">spawn section</text><text class="dg-sub" x="275" y="92">runs once at scene load</text>
+      <rect class="dg-node-warn" x="380" y="50" width="50" height="56" rx="4"/>
+      <text class="dg-label" x="405" y="84">21</text>
+      <rect class="dg-node-ok" x="430" y="50" width="360" height="56" rx="4"/>
+      <text class="dg-label" x="610" y="74">interaction section</text><text class="dg-sub" x="610" y="92">ops, 0x1F text, picker tables, branches</text>
+      <rect class="dg-node-warn" x="790" y="50" width="50" height="56" rx="4"/>
+      <text class="dg-label" x="815" y="84">21</text>
+      <text class="dg-edge-label" x="170" y="40">first opcode</text>
+      <path class="dg-edge" d="M434 150 L434 110" marker-end="url(#sv-rec-arrow)"/>
+      <text class="dg-edge-label" x="424" y="146" text-anchor="end">the cursor after scene load: a talk starts here</text>
+      <path class="dg-edge-dim" d="M815 110 L815 168 L500 168 L500 110" marker-end="url(#sv-rec-arrow)"/>
+      <text class="dg-edge-label" x="560" y="182">branches jump back to a shared selector</text>
+    </svg>
+    <figcaption>The runner stores the forwarded PC before it tests for <code>0x21</code>, so the cursor it leaves behind already points past the byte. An interaction therefore begins one instruction past the spawn terminator, never at the record's first opcode.</figcaption>
+  </figure>
+  <ul class="bullets">
+    <li><strong>Entering at the first opcode is the classic mistake.</strong> It re-runs the spawn section on every talk - its seat pokes and any story flag it writes - then trips the terminator and falls through to the first text line, skipping the record's own prologue. For a minigame door, whose first text line is the refusal the failed coin check jumps to, that goes straight to &ldquo;no tokens&rdquo;.</li>
+    <li><strong>Nothing gates on the record containing text.</strong> A record whose interaction is camera work, an affordability check and a door warp runs exactly as a talk does. A minigame door is an ordinary member of the pipeline, not a special case.</li>
+    <li><strong>Each partition has a different header.</strong> Reading a door record with the placement formula starts three bytes late, mid-instruction; the walk resyncs somewhere arbitrary and silently drops ops. That is the difference between a door that works and one that does not.</li>
+    <li><strong>The record <em>index</em> is flat.</strong> Walk-on triggers and script-table teleports number records across all three partitions concatenated. Op <code>0x44</code> takes the same flat number and re-bases it into partition 2 itself.</li>
+    <li><strong>Text and pickers are strides of the stream.</strong> A walk that treats <code>0x1F</code> as an unknown opcode ends at the first line of every record, and everything behind it - picker jump tables, branch handlers, the shop - is never reached. The same boundary tells dialogue from coincidence: the bytes <code>1F 50 4B 00</code> inside an instruction's operands are not a text segment.</li>
+  </ul>
+</section>
+
+<section class="doc-section" id="engagement">
+  <h2>Engagement: who is allowed to run</h2>
+  <p>A script context runs only while its <em>engaged</em> bit is up. The runner steps it, and the runner is also what ends it: when the instruction it just executed is a raw <code>0x21</code>, it clears the bit and drops a count of running scripts; when that count reaches zero the player's own held bit clears. On every frame it steps anything, it raises that player bit - which is what stops the pad while a script runs.</p>
+  <ul class="bullets">
+    <li><strong>A script can wake another actor.</strong> A cross-context flag set lands the engaged bit on the target, and the target's record resumes from its own cursor on the next frame. One boss's record stages its fight and parks; after the battle the scene's system script tests a flag and wakes him, and his record resumes at the scene that follows the fight.</li>
+    <li><strong>The system script reaches props the same way.</strong> Once a wall is opened, one town's system script freezes two gate leaves on the first frame of their clips and parks the stone block the opening leaves behind - writes that land on the objects' actors, whose animation and draw read them the next frame.</li>
+    <li><strong>A glide parks the talker.</strong> A mid-talk walk on the talking actor itself halts the record until the walk kernel's last frame releases it.</li>
+    <li><strong>A spawned placement starts disengaged.</strong> The spawn pre-run clears the bit before it runs the spawn section, and the talk body after the terminator waits for a touch.</li>
+  </ul>
+  <h3 id="position-predicates">A story flag can be a position test</h3>
+  <p>A flag that is set in one place and tested in another is usually a progress latch. But the same ops build a <strong>continuously re-evaluated predicate</strong> when the scene's per-frame body owns them. One plaza's system script clears a flag twice during the load, then every other frame tests whether the player stands outside a box of tiles and sets it if so. Forcing the player inside stops the set on the next pass and nothing writes the flag again: its value is a property of where the party is standing. It is the gate on that scene's door records, so what it encodes is &ldquo;the party is not in the plaza&rdquo;.</p>
+  <p>Two consequences. A save state cannot be read as evidence of what an entry script <em>ran</em>, because the entry both clears and re-arms such a flag. And a port must re-seat the script's player anchor from the live player before every frame slice; seeding it once at scene load leaves it at the origin, outside every authored box, and every box test in every scene then answers &ldquo;outside&rdquo; for the whole visit.</p>
 </section>
 
 <section class="doc-section" id="dispatch">
