@@ -992,8 +992,9 @@ mod tests {
     /// Retail's grid cursor cannot address `SLOT_INFO_RETURN_CELL`, so the
     /// port's must not either.
     ///
-    /// The two clamps in the tick's shared stepper bound the cursor words
-    /// to `col in 0..=4` (`slti v0,v0,0x5`, `0x801E017C`) and
+    /// The two wraps in the tick's shared stepper (`col < 0 -> 4`,
+    /// `col >= 5 -> 0`, and the same for `row` over three) keep the cursor
+    /// words in `col in 0..=4` (`slti v0,v0,0x5`, `0x801E017C`) and
     /// `row in 0..=2` (`slti v0,v0,0x3`, `0x801E01B0`), and the wrapper
     /// forms the cell as `col + row*5` (`0x801E06D0`), so `14` is the
     /// ceiling. Sweeping every cursor against every direction combination

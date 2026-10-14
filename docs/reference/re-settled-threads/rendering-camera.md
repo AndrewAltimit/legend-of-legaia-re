@@ -107,13 +107,15 @@ coincident shells to order.
 `disassembly` for the factor.
 
 Slot `2` of the op-`0x45` CONFIGURE mask is the roll angle `_DAT_8007B794`, the third factor of the
-camera build `FUN_80026988`'s `Rx * Ry * Rz`, and eight scenes stage a reachable, executing non-zero
-value.
+camera build `FUN_80026988`'s `Rx * Ry * Rz` (it reads three angles off its argument, `+0` / `+2` /
+`+4`, at `0x800269F8`, `0x80026998`, `0x800269A4`), and eight scenes stage a reachable, executing
+non-zero value.
 
-- **Factor:** `0x8001CFD0..0x8001CFE8` loads `_DAT_8007B794` (`lui a0,0x8008; lh a0,-0x486c(a0)`)
-  and calls `0x8004638C` unless the render node's `+0x52` bit `0x200` is set.
+- **Factor:** the per-node variant `FUN_8001CF50` loads `_DAT_8007B794` at `0x8001CFD0..0x8001CFE8`
+  (`lui a0,0x8008; lh a0,-0x486c(a0)`) and calls `0x8004638C` unless the render node's `+0x52` bit
+  `0x200` is set. That site is not inside `FUN_80026988`.
 - **Writers:** none of `FUN_801DAB90`, `FUN_801DB8EC` or `FUN_801DBE9C` writes `_DAT_8007B794`; the
-  only zeroing is the scene-entry reset `FUN_80025C24`.
+  only zeroing is the scene-entry reset `FUN_80025C24` (`sh zero,-0x486c` at `0x80025C5C`).
 - **Beat shape:** every rolling beat carries the full nine-slot mask - pitch, yaw, roll, the eye
   trio, focus X and Z, `H`, and no focus Y (the `opdeene` reading on
   [`cutscene.md`](../../subsystems/cutscene.md)). Every operand is an in-range 12-bit angle, and the

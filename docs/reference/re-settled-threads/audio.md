@@ -114,9 +114,9 @@ Owning pages: [`audio.md`](../../subsystems/audio.md#the-track-swap-handshake-fu
 
 A Hyper art fires **no pool shout**: its action constant sits below the shout table's `lo` bound. Instead:
 
-- The staged-animation materialiser `FUN_8004AD80`, on the Hyper class byte `0x1A` at `actor+0x1DA`, reads the queued art constant and fires the jingle queue (`FUN_8004FCC8` -> `FUN_8003D53C`) with `jingle_id = rand()%2*3 + base`.
+- The staged-animation materialiser `FUN_8004AD80`, on the Hyper class byte `0x1A` at `actor+0x1DA`, reads the queued art constant and fires the jingle queue (`FUN_8004FCC8` -> `FUN_8003D53C`) with `jingle_id = rand()%2*3 + base` (class test `li v0,0x1a` at `0x8004B71C`; one arm's draw at `0x8004B91C..0x8004B944`, joining the `jal` at `0x8004BB34`).
 - That is a per-(character, art) coin flip between the fixed channel pair `{base, base+3}` of the character's stereo fanfare bank (the even clip slots: Vahn `XA1.XA`, Noa `XA3.XA`, Gala `XA5.XA`). There is no avoid-repeat memory, unlike the shout pool.
-- Super and Miracle expansions take a sibling branch to fixed ids `0x101` / `0x111` / `0x121`, the same bank's generic channel 1. A Miracle's finisher additionally fires its anim cue track (`FUN_800508DC`, ids `0xC8..0xFF` rebased `+0x38`).
+- Super and Miracle expansions take a sibling branch to fixed ids `0x101` / `0x111` / `0x121` (`0x8004B7AC..0x8004B7D0`), the same bank's generic channel 1. A Miracle's finisher additionally fires its anim cue track (`FUN_800508DC`, ids `0xC8..0xFF` rebased `+0x38`).
 
 All nine per-art Hyper rows are capture-witnessed off the `FUN_8003D53C` staging globals, and every witnessed duration reproduces the `0x800788B8` table arithmetic against the real SCUS. Unwitnessed: the second pair member for seven of nine arts is rule-derived, as are the Vahn / Noa Miracle finisher cue-track ids and `XA1` channel 0.
 
@@ -139,7 +139,7 @@ Owning pages: [`audio.md`](../../subsystems/audio.md) (full one-shot + streamed 
 *Status:* resolved - a cue names its own bank, and both hosts stage two banks and route by category. Which PROT entry fills each slot is [the next entry](#which-prot-entries-fill-sfx-vab-slots-1--3--6--11).
 
 - A descriptor's `+4` byte is a **category**. It selects the 12-byte mixer record at `0x80091508 + category*12`.
-- That record's `+8` is a **VAB slot id**, not a level: `FUN_80065034` hands it to `FUN_80068b98`, which rejects it unless the per-bank open-state byte `_DAT_801CE368[id] == 1` and then repoints the current-bank globals at that slot before the program / tone lookup.
+- That record's `+8` is a **VAB slot id**, not a level: `FUN_80065034` hands it to `FUN_80068b98`, which rejects it unless the per-bank open-state byte `_DAT_801CE368[id] == 1` (`lbu` / `bne` at `0x80068BBC..0x80068BC8`) and then repoints the current-bank globals at that slot (`0x80068C34..0x80068C48`) before the program / tone lookup.
 - Across the catalogued save states record `N` holds `+8 == N` and `+0` == slot `N`'s live `VabHdr`, in every record of every state: category `N` selects slot `N`.
 - Slot 0 is **PROT 0868** (a live field state's 512-byte slot-0 `VagAtr` program-0 page occurs verbatim in that entry at VAB offset `+4`, `ps = 5` agreeing). Slot 2 is the class-2 bank **PROT 0869**, which the battle scene loader `FUN_800520F0` loads with `a1 = 2`.
 - Histogram over the 100 descriptors: category `0`: 16, `2`: 53, `6`: 30, `11`: 1.
@@ -195,10 +195,10 @@ Owning page: [`functions/runtime-libs.md`](../functions/runtime-libs.md#the-bios
 
 *Status:* resolved - the cell is a **volume** and `_DAT_8008457C` is its persistent reference. Evidence: `disassembly`.
 
-- `FUN_80062004(a, b, c)` tail-calls `FUN_80061EDC(a, 0, b, c)` = `SsSeqSetVol(slot, channel 0, vol, ...)`, so the halved cell (`(v << 15) >> 16`) that `FUN_800267A8` passes lands in the volume argument.
+- `FUN_80062004(a, b, c)` tail-calls `FUN_80061EDC(a, 0, b, c)` (the argument shuffle at `0x8006200C..0x80062024`) = `SsSeqSetVol(slot, channel 0, vol, ...)`, so the halved cell (`(v << 15) >> 16`) that `FUN_800267A8` passes lands in the volume argument.
 - `FUN_80026478` hands `v >> 1` to `FUN_8002657C`, which writes it as both channels of `FUN_80064890(slot, vol_l, vol_r)`: a symmetric level, not a directional pan.
 - The dumped corpus holds **26 read sites** of the cell: `SsSeqSetVol` (six), `SpuSetCommonAttr` (`FUN_8006BCB4`, four, each building an `SpuCommonAttr` on the stack with the cell in the CD-volume pair), the audio-context volume re-apply `FUN_8002614C`, `FUN_8002657C`, and arithmetic / tween plumbing. None reaches a draw primitive.
-- The cold reset `FUN_8001FFA4` seeds `0xD7` into both `_DAT_8008457C` and `_DAT_8007B910`, then calls `FUN_8002614C(0)`. A `0..255` cell halved is libsnd's `0..0x7F`.
+- The cold reset `FUN_8001FFA4` seeds `0xD7` (`li a0,0xd7` at `0x8001FFE0`) into both `_DAT_8008457C` and `_DAT_8007B910`, then calls `FUN_8002614C(0)` (`0x80020020`). A `0..255` cell halved is libsnd's `0..0x7F`.
 
 What the ramps are:
 
@@ -221,6 +221,7 @@ n     = note + 60 - center + carry        (MIPS div: truncates toward zero)
 pitch = PITCH[(n % 12) * 16 + fine] << (n / 12 - 5)
 ```
 
+- Checked against the listing of `FUN_80066E50`: `note + 0x3C - center + carry` at `0x80066EB4..0x80066EC0`, the divide by 12 at `0x80066ECC..0x80066EDC`, the table index at `0x80066EEC..0x80066F04`, the load at `0x80066F1C`, the `- 5` at `0x80066F08` and the two shifts at `0x80066F2C` / `0x80066F40`. `FUN_80067550` stores the pitch at `0x800678AC`.
 - `PITCH` is the 192-entry table at `DAT_8007A940` (SCUS file `0x6B140`). Every entry is exactly `floor(0x1000 * 2^(k/192))` (192 of 192 verified against the disc; first entry `0x1000`, last `0x1fe2`): a one-octave table at 1/16-semitone resolution starting at unity, with the octave applied by the shift. The closed form is exact, so no disc bytes are needed to reproduce it.
 - The retail cue arm passes `fine = 0x40` at every traced `FUN_80065034` call site, so a cue keys half a semitone above the sequencer for the same tone. The two paths also differ in whether the fine index saturates or carries a whole semitone.
 - A 22.05 kHz VAG body is authored with `center` twelve semitones high: the sample rate is already encoded in `center`. Applying a `22050/44100` factor on top keys every voice one octave low.
@@ -256,7 +257,7 @@ See `ghidra/scripts/funcs/8006e2b4.txt`, `8006ce30.txt`, `8006d7b4.txt`, `8006ca
 
 *Status:* resolved - both halves are statically decompiled from PROT 0970 at its base plus the SCUS St library.
 
-- **No XA channel selector exists in the STR overlay.** FMV playback reads with Setmode `0xE0` (`Speed|RT|Size1`, sector filter off): the drive hardware-plays every ADPCM sector, and each `MOV/MV*.STR` interleaves exactly one XA track at `(file 1, chan 0)` (raw-subheader-verified across all six movies). The per-cue channel selector is the SCUS XA-clip sequencer `FUN_8003D764` (`CdlSetfilter {file 1, chan}`, mode `0xC8`), used for the `XA1..XA34` voice / music files, not for movies. Not the `\DATA\MOV.STR` container: that is a dev path in slots 11..=22 of the dispatch table, absent from the disc. See [cutscene.md § XA channel selection](../../subsystems/cutscene.md#xa-channel-selection).
+- **No XA channel selector exists in the STR overlay.** FMV playback reads with Setmode `0xE0` (`Speed|RT|Size1`, sector filter off): the drive hardware-plays every ADPCM sector, and each `MOV/MV*.STR` interleaves exactly one XA track at `(file 1, chan 0)` (raw-subheader-verified across all six movies). The per-cue channel selector is the SCUS XA-clip sequencer `FUN_8003D764` (`CdlSetfilter {file 1, chan}`, mode `0xC8` at `0x8003D80C`), used for the `XA1..XA34` voice / music files, not for movies. Not the `\DATA\MOV.STR` container: that is a dev path in slots 11..=22 of the dispatch table, absent from the disc. See [cutscene.md § XA channel selection](../../subsystems/cutscene.md#xa-channel-selection).
 - **The FMV dispatch table stride is 32 bytes** (`sll v0,v0,0x5` at `0x801CEC9C`), not 64. All nine retail slots `0..=8` resolve, every movie on the disc plays, and `MV3.STR` carries four abutting segments. The master dispatch `FUN_801CEA3C` hands each mid-game FMV off to a **return scene** (the seven-label table at `0x801CE8AC` plus a spawn word). Parser `legaia_game_tables::fmv_dispatch` (disc-gated `fmv_dispatch_real`); the engine resolver `legaia_engine_system::movie::cutscene::fmv_index_to_str_filename` mirrors the nine-slot map and the return scenes. See [str-fmv-table.md](../../formats/str-fmv-table.md#authoritative-runtime-mapping).
 - **The 24-byte records at `0x801CAE08` are libcd's directory cache**: `CdlFILE` structs (`[loc][size][name[16]]`). A name-first parse pairs each name with the next record's location, which is what produces an apparent "MV1 points at disc MV2 / MV6 points at XA15" shift. See [str-fmv-table.md](../../formats/str-fmv-table.md#directory-record-cache-0x801cae08-24-b-cdlfile-records).
 

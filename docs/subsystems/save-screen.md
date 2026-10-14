@@ -1346,7 +1346,7 @@ directory, all sixteen on completion); `0x801F2A48` is the **class byte**.
 **The mode-`4` arm is dead code.** There is no sixteenth cell. The selector's
 only caller is `FUN_801E06C0`, called as
 `FUN_801E06C0(state[+0x1F4], state[+0x1F8])` (`0x801DFD88`) and forming the
-cell as `col + row*5` (`0x801E06D0`). The tick's stepper clamps `col` to
+cell as `col + row*5` (`0x801E06D0`). The tick's stepper wraps `col` into
 `0..=4` (`slti v0,v0,0x5` at `0x801E017C` / `0x801E0190`) and `row` to `0..=2`
 (`slti v0,v0,0x3` at `0x801E01B0` / `0x801E01C0`), so the cell tops out at 14.
 The linear seed both are re-derived from on entry (`_DAT_8007B7CC`, divided by

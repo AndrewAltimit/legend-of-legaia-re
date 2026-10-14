@@ -217,7 +217,9 @@ by the `0x3F` named scene-change. The
 
 ## Line width and wrapping
 
-Byte room is not screen room. A translated line can fit its byte slot and still run past the box it is drawn in, because **no retail text surface wraps**: every line break is an authored `0x7C` or a new `0x1F` dialog line, and an over-long line is drawn in full, over the box frame and off it. `FUN_80036888` has no clip and no width test - its only bound is an optional row cap in `a2`, counted on `0x7C` breaks (`0x80036908..0x80036910`), which callers pass as zero - and none of its callers measure a line before drawing it.
+Byte room is not screen room. A translated line can fit its byte slot and still run past the box it is drawn in, because **no retail text surface wraps**: every line break is an authored `0x7C` or a new `0x1F` dialog line, and an over-long line is drawn in full, over the box frame and off it. `FUN_80036888` has no clip and no width test, and none of its callers measure a line before drawing it.
+
+Its only bound is `a2`, an optional cap on **units drawn** - the counter steps once per glyph (`0x80036B9C`), per numeric escape (`0x80036B20`) and per `0x7C` break (`0x80036938`), and the loop leaves when it reaches `a2` (`0x80036908..0x80036910`). That cap is the typewriter: the pager passes its reveal counter `_DAT_801F2748` for the row being typed (`lw a2` at `0x801D9720`) and `0` - no cap - for finished rows and every other surface.
 
 ### What a line measures
 

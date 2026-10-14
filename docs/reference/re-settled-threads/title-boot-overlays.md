@@ -758,7 +758,10 @@ is the closed form `delta(n) = ⌊n²/4⌋ + 1`.
 - **Reader:** the level-up applier `FUN_801E9504` (overlay-resident, called from the reward
   resolver `FUN_8004E568` at `0x8004F34C`). The running sum to the current level is scaled
   `(sum × 9999999) / 0x140FE` for `level < 0x11` (else `sum × 0x79`) and compared
-  `≤ record cumulative XP` in a multi-level `do...while` loop.
+  `≤ record cumulative XP` in a multi-level `do...while` loop. Checked against the listing: the
+  level test is `sltiu 0x11` at `0x801E95D0`, the `x 9999999` shift chain and the `0xCC2ABE13`
+  reciprocal (`>> 48`, a divide by `0x140FE`) run `0x801E95D8..0x801E9614`, and the `x 0x79` arm
+  is `0x801E9618..0x801E9624`.
 - **Not `0x8007123C` / `0x80070A3C`:** those are an off-by-`0x800` file/virtual confusion and a
   sin-LUT slice. A New Game Status capture shows "Next Level 121", the real L2 threshold, not 50.
 - **Port:** `legaia_save::RETAIL_XP_CUMULATIVE` / `retail_xp_table()` ship the derived base curve
@@ -1088,7 +1091,10 @@ Port: `legaia_engine_field::dev_equip_commit::commit_equip`.
 
 `FUN_801E3F74`'s mode `4` ("Return", `0x801CF384`) is real and unreachable.
 
-- Its only caller forms the cell as `col + row*5` (`0x801E06D0`).
-- The shared stepper clamps `col` to `0..=4` and `row` to `0..=2`.
+- The selector returns `4` only for cell `0xF` (`li v0,0xf` / `bne` at `0x801E3F74..0x801E3F84`).
+- Its only caller forms the cell as `col + row*5` (`0x801E06D0..0x801E06E0`).
+- The shared stepper **wraps** rather than clamps, and the range is the same: `col < 0` becomes `4`
+  and `col >= 5` becomes `0` (`0x801E0170..0x801E019C`), `row < 0` becomes `2` and `row >= 3`
+  becomes `0` (`0x801E01A4..0x801E01CC`). The cell tops out at `14`.
 - The linear seed `_DAT_8007B7CC` has three references on the disc, all in PROT 0899; its single
   writer (`0x801DED2C`) stores the same `col + row*5`.
