@@ -929,7 +929,9 @@ watch on the byte catches the clear at `0x8003B568`.
 **Status:** explained
 
 **Reported as:** escaping a battle in Bio Castle with the Spikefish Flute freezes the game, first
-noticed while testing the Rogue's Tower water flags (community report, first-hand, ZetaPhoenix).
+noticed while testing the Rogue's Tower water flags. Narrowed down further: escaping a fight with
+three Gillium Lv3 with the flute always freezes, right after the escape sequence (community
+report, first-hand, ZetaPhoenix). The captured fight below is exactly that formation.
 
 The freeze is **captured on a poked state** (pokes listed below). It reproduces in Bio Castle with
 every value of the water byte tried, so the water flags play no part. The cause is the flute's own
@@ -949,7 +951,7 @@ State: a cold boot of the retail disc plus a memory-card load of the Bio Castle 
 (`playthrough-endgame-7saves.mcr` block 6, scene `jouind`), checkpointed in the field by
 `autorun_boot_continue.lua`. **Poked** once the field runs: bits `0x0E` of byte `0x8008575B` set
 to the value below (bit `0x01` kept), bag slot 0 set to the Spikefish Flute (`0x99`) x9, and the
-step counter `0x8007B5FC` set to 1. The walk, the battle (three of monster `0xA1`), the commands
+step counter `0x8007B5FC` set to 1. The walk, the battle (three Gillium Lv3, monster id 161 = `0xA1`, `Gilium $3` in the archive), the commands
 and the return are the game's own code, driven by the pad. Probe
 `scripts/pcsx-redux/autorun_spikefish_flee_return.lua` on the fast core.
 
@@ -1004,7 +1006,10 @@ Two things decide whether the stale caption hangs or only draws a frame of garba
 - where the heap put the caption's text, which follows from the size of the fight's enemy data;
 - what the field-back read writes over it.
 
-A first zero byte before any bad substitution code ends the copy harmlessly. In Rogue's Tower,
+Both follow from the formation, so the outcome is fixed per fight: the captured three-Gillium-Lv3
+fight froze on every run, and ZetaPhoenix reports that this formation always freezes, while other
+fights escape cleanly. A first zero byte before any bad substitution code ends the copy
+harmlessly. In Rogue's Tower,
 with the same save and pokes, the flute escape returns to the field (capture). The exact
 condition there was not traced (inference).
 
@@ -1026,6 +1031,7 @@ from the escape-wait checkpoint, logging the renderer calls and the runaway loop
 ### Scope
 
 Any Spikefish Flute escape can leave the caption behind; whether it hangs depends on the fight.
+The three-Gillium-Lv3 formation in Bio Castle always freezes (captured, and reported first-hand).
 Every captured Bio Castle (`jouind`) flute escape froze, and the same escape in Rogue's Tower did
 not. A plain Run escape never shows the caption and is safe everywhere.
 
