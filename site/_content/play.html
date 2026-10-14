@@ -441,6 +441,16 @@
               Party <input type="text" id="play-party" size="14" placeholder="vahn,noa,gala">
             </label>
             <button id="play-party-apply" type="button">Apply party</button>
+            <label title="Walk straight into a minigame from this scene, through the same door warp a casino or arena door arms (the native O / B / M / K keys). Start leaves it.">
+              Minigame
+              <select id="play-mg-warp">
+                <option value="">enter...</option>
+                <option value="3">Slot machine</option>
+                <option value="4">Baka Fighter</option>
+                <option value="5">Muscle Dome</option>
+                <option value="6">Dance</option>
+              </select>
+            </label>
             <button id="play-force-battle" type="button"
                     title="Arm a fight from this scene's own encounter table right now (the native --battle first).">Start a battle here</button>
             <label title="Battle BGM id: 0 keeps the field track playing through the fight, blank restores the shipped default (2026). The native --battle-bgm flag.">
@@ -507,6 +517,9 @@
           <div class="play-btn-row">
             <label title="GameShark lines (AAAAAAAA VVVV) or a Mednafen .cht file's text. Codes write through the engine's map of retail RAM cells, the same applier as the native window's --cheat-file; codes with no engine cell are counted as unmapped.">
               Codes <textarea id="play-cheat-codes" rows="2" cols="24" spellcheck="false" placeholder="80084E28 FFFF"></textarea>
+            </label>
+            <label title="Skip every write that follows a D0 / E0 conditional gate (the engine does not emulate the gate) instead of treating the gate as always true - the native --cheat-strict flag.">
+              <input type="checkbox" id="play-cheat-codes-strict"> Strict
             </label>
             <button id="play-cheat-codes-apply" type="button">Apply codes</button>
           </div>
@@ -2193,6 +2206,20 @@
     saveMsg(ok ? 'Battle armed.' : 'This scene registers no encounter formation to start.', !ok);
     canvas.focus();
   });
+  /* Minigame entry: arm the mode-24 door warp for the picked game, the
+   * request a walked door makes (`World::request_minigame_warp`), so the
+   * session that opens is the one the door installs. */
+  const mgWarpEl = document.getElementById('play-mg-warp');
+  mgWarpEl.addEventListener('change', () => {
+    const sub = parseInt(mgWarpEl.value, 10);
+    mgWarpEl.value = '';
+    const rt = window.__playRuntime;
+    if (!rt || isNaN(sub) || typeof rt.play_mg_debug_warp !== 'function') return;
+    let ok = false;
+    try { ok = !!rt.play_mg_debug_warp(sub); } catch (e) { ok = false; }
+    saveMsg(ok ? 'Minigame door armed.' : 'Load a scene before entering a minigame.', !ok);
+    canvas.focus();
+  });
   window.__playApplyBattleTools = applyBattleTools;
 
   /* Cheats - every control is a row of the engine's one cheat list
@@ -2292,7 +2319,8 @@
   document.getElementById('play-cheat-codes-apply').addEventListener('click', () => {
     const text = document.getElementById('play-cheat-codes').value;
     if (!text.trim()) return;
-    runCheat((rt) => rt.cheat_apply_codes(text, false));
+    const strict = !!document.getElementById('play-cheat-codes-strict').checked;
+    runCheat((rt) => rt.cheat_apply_codes(text, strict));
   });
   window.__playSyncCheats = syncCheats;
 
