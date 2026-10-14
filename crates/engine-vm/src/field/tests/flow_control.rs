@@ -148,18 +148,19 @@ fn gflag_clr_preserves_other_bits() {
 }
 
 #[test]
-fn gflag_tst_branches_on_global() {
+fn gflag_tst_waits_while_the_global_bit_is_set() {
+    // `0x801DEE14` joins `0x33`'s test: a set bit restores the entry PC.
     let mut host = TestHost {
         globals: 1u32 << 12,
         ..Default::default()
     };
     let mut ctx = FieldCtx::default();
     let r = step(&mut host, &mut ctx, &[0x30, 12], 0);
-    assert_eq!(r, StepResult::Advance { next_pc: 2 });
-
-    // bit 13 is clear -> halt
-    let r = step(&mut host, &mut ctx, &[0x30, 13], 0);
     assert_eq!(r, StepResult::Halt { final_pc: 0 });
+
+    // bit 13 is clear -> advance
+    let r = step(&mut host, &mut ctx, &[0x30, 13], 0);
+    assert_eq!(r, StepResult::Advance { next_pc: 2 });
 }
 
 // -- Context flag triplet 0x31 / 0x32 / 0x33 -------------------------
