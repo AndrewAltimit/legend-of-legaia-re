@@ -647,7 +647,7 @@ Read once at `ctx[7] == 0x0C`, the byte `actor[+0x1DE]` selects the action categ
 | `2` | **Magic** | `0x28` (default), overridden to `0x3C` for a low-class, low-id record | The arm stores `0x28` first and overrides only when **both** class byte `< 0x14` **and** spell id `< 0x65` hold - see [the class-byte discriminator](#the-magic-arms-class-byte-discriminator). |
 | `3` | **Attack** | `0x14` | Sets `ctx[+0x6DA/+0x6DB] = (0, 2)` (combo timer). For party_id < 3, sets `actor[+0x20] = +0x1DE` and fires `FUN_801D8DE8(7, 0)` + `actor[+0x18] = 7` (UI weapon-slash element). |
 | `4` | **Spirit (Originals)** | `0x46` | Sets `_DAT_80076D7E = actor[+0x154] - 6` (or `((actor[+0x156] * 7) / 5) + 8` capped at 0x120 if `actor[+0x1F9] != 0`). Fires `FUN_801D8DE8(0xF, 0)` + `0x52` (damage popup), bumps `actor[+0x19]++`. |
-| `5` | **Run / Defend** | `0x64` (party) or `0x68` (monster) | Party run: rotates screen `_DAT_8007B792 += DAT_1F800393 * -2`, fires `FUN_801D5854(0, 9)` (defeat pose). Monster run hits the capture path at `0x68`. Either path resets `_DAT_801F69D0 = 0` (counter-attack flag). |
+| `5` | **Run / Defend** | `0x64` (party) or `0x68` (monster) | Party run: rotates screen `_DAT_8007B792 += DAT_1F800393 * -2`, fires `FUN_801D5854(0, 9)` (defeat pose). Monster run hits the capture path at `0x68`. Either path clears `_DAT_801F69D0` (`0x801E2E08`) - the turns-begun counter the seed arm increments at `0x801E2C38`, not a counter-attack flag. |
 
 ### The Magic arm's class-byte discriminator
 

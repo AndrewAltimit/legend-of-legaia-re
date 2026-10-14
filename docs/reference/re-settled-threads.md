@@ -49,6 +49,15 @@ of that risk - evidence citing a `FUN_x(a, b)` call signature or a
 predicate uses. The artifact catalogue is
 [`ghidra.md` § decompiler artifacts](../tooling/ghidra.md#decompiler-artifacts-that-have-produced-false-claims).
 
+**A `disassembly` grade is only as good as the addresses in its cell.** A row
+that names a `FUN_x` and a behaviour but no instruction address reads the same
+as one that was checked, and is the same bucket in practice: re-audits of such
+rows have found a "nothing increments it" beside an `addiu 1`, a "neither
+subtracts HP" beside two `sh 0x14c` stores, and a pad test sitting in a hole in
+a function dump. A row that has been checked carries the addresses that settle
+it; one that has not is a claim to re-read against the listing before work
+depends on it.
+
 `inference` is not weaker than `decompiled-C` so much as differently exposed:
 an inference row usually says so out loud ("the structural rule supersedes the
 snapshot", "no image claims them as functions"), and its failure mode is a

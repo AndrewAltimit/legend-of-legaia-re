@@ -217,7 +217,7 @@ by the `0x3F` named scene-change. The
 
 ## Line width and wrapping
 
-Byte room is not screen room. A translated line can fit its byte slot and still run past the box it is drawn in, because **no retail text surface wraps**: every line break is an authored `0x7C` or a new `0x1F` dialog line, and an over-long line is drawn in full, over the box frame and off it. `FUN_80036888` has no clip and no length test, and none of its callers measure a line before drawing it.
+Byte room is not screen room. A translated line can fit its byte slot and still run past the box it is drawn in, because **no retail text surface wraps**: every line break is an authored `0x7C` or a new `0x1F` dialog line, and an over-long line is drawn in full, over the box frame and off it. `FUN_80036888` has no clip and no width test - its only bound is an optional row cap in `a2`, counted on `0x7C` breaks (`0x80036908..0x80036910`), which callers pass as zero - and none of its callers measure a line before drawing it.
 
 ### What a line measures
 
