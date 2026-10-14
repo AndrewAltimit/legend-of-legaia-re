@@ -215,8 +215,8 @@ pub(super) fn open_landing(w: &legaia_engine_core::world::World, land: Cell) -> 
 /// player under the live flags: the run is followed from its first opcode
 /// (a `SysFlag.Test` jumps when its flag is set - the same reading
 /// [`legaia_engine_field::man_field_scripts::placement_spawn_relocation`]
-/// makes), and the last player walk leg (`C7 F8 x z`) or arc on it is the
-/// landing. `deroa`'s transporter hub P2[11] sends its platform to one of
+/// makes), and the last player walk leg (`C7 F8 x z`), snap (`A3 F8 x z`)
+/// or arc on it is the landing. `deroa`'s transporter hub P2[11] sends its platform to one of
 /// three shaft rooms by the switch flags `0x4EF` / `0x4F0`.
 pub(super) fn flag_path_landing(
     w: &legaia_engine_core::world::World,
@@ -234,9 +234,14 @@ pub(super) fn flag_path_landing(
             break;
         }
         let insn = decode(body, pc).ok()?;
-        if insn.opcode == 0x47
+        // A walk leg (`C7 F8 x z`) or a snap (`A3 F8 x z`, op `0x23` on the
+        // player): the snap is a warp pad's landing. Rogue Tower's upper
+        // pads (`rugi` P2[40..61]) walk the player onto the pad and then
+        // snap it to the partner pad or, under `0x462`, back to the hub.
+        if matches!(insn.opcode, 0x47 | 0x23)
             && insn.extended == Some(0xF8)
             && let (Some(&x), Some(&z)) = (body.get(pc + 2), body.get(pc + 3))
+            && (x & 0x7F, z & 0x7F) != (0x7F, 0x7F)
         {
             last = Some(cell_of(at(x), at(z)));
         }
