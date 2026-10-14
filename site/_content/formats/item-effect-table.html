@@ -56,7 +56,7 @@
   <thead><tr><th>Bit</th><th>Meaning</th></tr></thead>
   <tbody>
     <tr><td><code>0x80</code></td><td>populated - set on every descriptor that has an effect</td></tr>
-    <tr><td><code>0x40</code></td><td>target <strong>side</strong> is the enemy party (clear = the ally party); paired with <code>0x20</code> it selects one of four target modes - set on exactly five subtypes, the Point Card and the two summon-flute pairs (see <a href="../subsystems/shop.html">shop</a>)</td></tr>
+    <tr><td><code>0x40</code></td><td>target <strong>side</strong> is the enemy party (clear = the ally party); paired with <code>0x20</code> it selects one of four target modes - set on exactly five subtypes, the Point Card and two pairs for the summon flutes. Three consumables select them - the Point Card, the Lippian Flute (subtype <code>0x27</code>, <code>0xC4</code>) and the Spikefish Flute (subtype <code>0x28</code>, <code>0xE4</code>); the <code>0xC6</code> / <code>0xE6</code> rows (subtypes <code>0x23</code>, <code>0x24</code>) are selected by no consumable (see <a href="../subsystems/shop.html">shop</a>)</td></tr>
     <tr><td><code>0x20</code></td><td><strong>all</strong> targets on the selected side (clear = one)</td></tr>
     <tr><td><code>0x04</code></td><td>usable from the <strong>battle</strong> item menu</td></tr>
     <tr><td><code>0x02</code></td><td>usable from the <strong>field</strong> item menu</td></tr>
@@ -81,7 +81,7 @@
     <tr><td><code>7</code></td><td>temporary stat buff (one battle, &times;6/5)</td><td>Power Elixir</td></tr>
     <tr><td><code>11</code>/<code>12</code>/<code>13</code></td><td>arts book (Fire/Wind/Thunder; tier = the art id granted)</td><td>Fire Book I</td></tr>
     <tr><td><code>14</code></td><td>Point Card strike - reached by item <code>0xFE</code> through an id test in the battle action state machine, not through a descriptor</td><td>Point Card</td></tr>
-    <tr><td><code>126</code>/<code>127</code></td><td>summon flute</td><td>Lippian Flute</td></tr>
+    <tr><td><code>126</code>/<code>127</code></td><td>summon flute</td><td>Lippian Flute, Spikefish Flute</td></tr>
     <tr><td><code>128</code> / <code>129</code></td><td>field escape (dungeon) / field warp (city)</td><td>Door of Light / Door of Wind</td></tr>
     <tr><td><code>130</code></td><td>reduce encounter rate</td><td>Incense</td></tr>
   </tbody>
@@ -133,6 +133,8 @@
         <tr><td>6</td><td>all (AGL/HP/ATK/SPD/INT/MP/DEF)</td><td>-</td><td>+4 each</td><td>AGL 280, HP 9999, else 999</td><td>Honey (<code>0x65</code>), Miracle Water (<code>0x6D</code>)</td></tr>
       </tbody>
       </table>
+      <p id="stat-up-base-window">The handler writes the <strong>base</strong> window (<code>+0x11C..+0x12C</code>) and nothing else. The live window follows because the menu's use routine (<code>FUN_801D8308</code>) calls the stat aggregator straight after it. The aggregator copies each base value over its live one, adds the equipment's percent boosts off the base (ability bit 0 a tenth of base Max HP, bit 1 a quarter, bits 2 and 3 the same two for Max MP), clamps to <code>9999</code> / <code>999</code>, and lowers a current value that now exceeds its maximum. So a raised maximum is the base plus whatever boost is worn, and the gain is not refilled: current HP / MP stay where they were.</p>
+      <p>Port: <code>World::apply_stat_up_item</code> raises the base window and <code>World::rebuild_record_live_hp_mp</code> rebuilds the two maxima from it - the same rebuild <code>World::refresh_party_ability_bits</code> runs for every party member, so an equipment change moves the maxima with the accessory. The combat stats take the base raise and the same increment on the live value, which the battle seed re-derives from the base.</p>
       <h4>Class 7 - one-battle buff (battle-use, flag <code>0x84</code>)</h4>
       <p>Multiplies the <strong>battle-actor</strong> stat halfwords by <code>6/5</code> (the handler's <code>uVar + uVar/5</code>), clamped to <code>0xFFFF</code>, for the rest of the battle:</p>
       <table>

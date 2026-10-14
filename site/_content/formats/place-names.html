@@ -77,7 +77,7 @@
     <tr><td>name</td><td>24 bytes including the terminating NUL, so at most 23 characters - the shared rename cap</td></tr>
   </tbody>
   </table>
-  <p>The world-map band's per-frame label pass draws each record whose region matches the current kingdom and whose discovery flag is set (or the show-all debug flag is on): project the map position to the screen, draw the name, measure it, underline it. So the name is drawn <strong>at the place's own map position</strong>, gated on having discovered it (<a href="#how-we-know">how we know</a>).</p>
+  <p>The per-frame label pass in the map display module (PROT 0981, game mode <code>0x0D</code> - the screen L1 opens on a kingdom map) draws each record whose region matches the current kingdom and whose discovery flag is set (or the show-all debug flag is on): project the map position to the screen, draw the name, measure it, and draw a dialog-skin window as wide as the name around it. So the name is drawn <strong>at the place's own map position</strong>, gated on having discovered it, inside a box of its own width (the screen around the loop is on <a href="../subsystems/world-map.html#map-display">world map</a>) (<a href="#how-we-know">how we know</a>).</p>
 </section>
 
 <section class="doc-section" id="site-3">
@@ -108,7 +108,7 @@
     <thead><tr><th>Function</th><th>Address</th><th>What it proves</th><th>Dump / probe</th></tr></thead>
     <tbody>
       <tr><td>MAN walker</td><td><code>FUN_8003AEB0</code></td><td>Installs the site-2 table pointer (<code>DAT_80073EE0</code>) and the site-3 body pointer (<code>_DAT_801C6EA0</code>)</td><td><code>funcs/8003aeb0.txt</code></td></tr>
-      <tr><td>World-map label pass</td><td><code>0x801CEBB6..0x801CEC30</code>; discovery query <code>FUN_8003CE64</code>, projection <code>FUN_8003D368</code>, glyph draw <code>FUN_80036888</code>, measure <code>FUN_80035F04</code></td><td>Per-record region filter, discovery gate (debug show-all <code>_DAT_8007B868</code>), draw-at-map-position</td><td><code>funcs/overlay_world_map_top_801ce9c4.txt</code></td></tr>
+      <tr><td>Map-display label pass</td><td><code>0x801CF368..0x801CF438</code> (PROT 0981); discovery query <code>FUN_8003CE64</code>, projection <code>FUN_8003D368</code>, glyph draw <code>FUN_80036888</code>, measure <code>FUN_80035F04</code></td><td>Per-record region filter, discovery gate (dev show-all <code>_DAT_8007B868</code>), draw-at-map-position</td><td><code>funcs/overlay_monster_test_0981_801ce850.txt</code></td></tr>
       <tr><td>Banner spawn</td><td><code>FUN_8003AEB0</code> <code>0x8003BB40..0x8003BBDC</code></td><td>Name + system flag 2 gate a text-balloon spawn (template <code>0x8007431C</code>); the flag is cleared on every path</td><td><code>funcs/8003aeb0.txt</code>; live probe <code>autorun_location_banner_source.lua</code></td></tr>
       <tr><td>Save-screen latch</td><td>fade state machines, stores at <code>0x801EE638</code> / <code>0x801EAC7C</code> / <code>0x801EEAE4</code></td><td>The section-2 pointer copied into <code>_DAT_8007B44C</code>; their panel script <code>0x801F32B4</code> only closes every panel</td><td>PROT 0897 image</td></tr>
       <tr><td>Save-screen readers</td><td><code>0x801E1D9C</code> (row draw), <code>0x801E1A28</code> (copy to SC block <code>+0x200</code>)</td><td>The latch's two menu-overlay consumers - both save-screen, neither per-frame</td><td>menu-overlay dumps</td></tr>

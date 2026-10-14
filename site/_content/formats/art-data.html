@@ -57,7 +57,7 @@
           <tr><td>Hit effect cues (&times;4)</td><td>One word each: high half = frame, low half = cue code.</td></tr>
           <tr><td>Identifier</td><td>Byte; some values trigger special animations (<code>0x67</code> in Heaven's Drop = Thunderbolt).</td></tr>
           <tr><td>Anim speed</td><td>Byte; lower = slower.</td></tr>
-          <tr><td>Effect on enemy</td><td><code>1</code> Toxic, <code>2</code> Numb, <code>3</code> Venom, <code>4</code> Sleep, <code>5</code> Confuse, <code>6</code> Curse, <code>7</code> Stone, <code>8</code> Faint.</td></tr>
+          <tr><td>Effect on enemy</td><td>Status byte, the entry <code>+0x7A</code> selector: <code>1</code> / <code>2</code> tint only, <code>3</code> sets status bit <code>0x1</code>, <code>4</code> bit <code>0x2</code>, <code>5</code> one of bits <code>0x08</code> / <code>0x10</code> / <code>0x20</code> on a party target, <code>6</code> bit <code>0x1000</code>; <code>7</code> and up write nothing (<code>FUN_801EC3E4</code>). No party art carries a value above <code>2</code>; Tough Love and Love You carry <code>0</code> and get their status from the clip-key arm of <code>FUN_8004CE2C</code> instead.</td></tr>
           <tr><td>Repeat frames</td><td>3 bytes: count, start, end. Replays a frame range and any hits inside it (Super Tempest: 4 power bytes, 8 hits).</td></tr>
           <tr><td>Background</td><td><code>0</code> regular, <code>2</code> black (Super Arts, Tornado Flame).</td></tr>
           <tr><td>Runtime address</td><td>Word written after first use; always zero on disc.</td></tr>

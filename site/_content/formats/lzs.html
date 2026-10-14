@@ -11,22 +11,22 @@
     <dt>Magic / marker</dt><dd>None - a bare LZSS bitstream. The <em>decoded</em> bytes carry the magic (TIM, TMD, MES, ...), which is why you must check them.</dd>
     <dt>Lives in</dt><dd>Wrapped around most <a href="prot.html">PROT.DAT</a> entries; selected by the <a href="asset-type.html">asset-type dispatcher</a> when its <code>copy_only</code> flag is zero.</dd>
     <dt>Retail reader</dt><dd><code>FUN_8001A55C</code> (decoder only - Sony's packer never shipped)</dd>
-    <dt>Parser</dt><dd><code>crates/lzs</code> - <code>decompress</code>, <code>tracked</code> decode, <code>parse_container</code>, <code>compress</code>; CLI <code>lzs-decode</code></dd>
+    <dt>Parser</dt><dd><code>crates/lzs</code> - <code>decompress</code>, <code>decompress_tracked</code>, <code>parse_container</code> / <code>decompress_container_strict</code>, <code>compress</code> / <code>compress_optimal</code>; CLI <code>lzs-decode</code></dd>
     <dt>Confidence</dt><dd>Confirmed - traced from the decoder's disassembly and round-tripped over the whole PROT corpus.</dd>
   </dl>
 </section>
 
 <aside class="notice warn">
   <div class="notice-title">"Decompresses without error" is not a validity signal</div>
-  The decoder's 4096-byte ring buffer initialises to zeros, so most <em>random</em> inputs also decode without error - to plausible-looking zero-padded output. Feeding arbitrary bytes through the decoder proves nothing. Always magic-check the <em>decoded</em> bytes before treating an LZS-decode result as a hit. The decoder's <code>tracked</code> mode returns end-of-stream offsets and overrun bits so callers can apply strict gates.
+  The decoder's 4096-byte ring buffer initialises to zeros, so most <em>random</em> inputs also decode without error - to plausible-looking zero-padded output. Feeding arbitrary bytes through the decoder proves nothing. Always magic-check the <em>decoded</em> bytes before treating an LZS-decode result as a hit. For multi-section containers, <code>decompress_container_strict</code> adds a consumed-bytes gate (see <a href="#container-format">container format</a>).
 </aside>
 
 <section class="doc-section" id="overview">
   <h2>How it works</h2>
-  <p>LZSS keeps a window of the most recent output. Each item in the stream is either a <strong>literal</strong> (one byte, copied straight through) or a <strong>back-reference</strong> ("copy <em>n</em> bytes from position <em>p</em> of the window"). A control byte ahead of every eight items says which is which. Legaia's variant makes three specific choices:</p>
+  <p>LZSS keeps a window of the most recent output. Each item in the stream is either a <strong>literal</strong> (one byte, copied straight through) or a <strong>back-reference</strong> ("copy <em>n</em> bytes from position <em>p</em> of the window"). A flag byte ahead of every eight items says which is which. The stream carries no length and no end marker, so the caller always supplies the decompressed size. Legaia's variant makes three specific choices:</p>
   <ul class="bullets">
     <li><strong>4096-byte sliding ring buffer</strong> (the dictionary of recent output that back-references copy from), initialised to zero.</li>
-    <li><strong>Initial write position 0xFEE</strong> (3054) - so the first back-references can only reach the zero-filled tail of the buffer.</li>
+    <li><strong>Initial write position 0xFEE</strong> (4078).</li>
     <li><strong>Control byte: 8 bits, LSB-first</strong> - bit set = literal, bit clear = back-reference.</li>
   </ul>
 
@@ -92,7 +92,7 @@
 let mut window_pos = 0xFEE;
 let mut control = 0u32;
 
-while !done {
+while out.len() &lt; expected_output_size {
     if (control &amp; 0x100) == 0 {
         control = (input[src] as u32) | 0xFF00;
         src += 1;
@@ -119,28 +119,39 @@ while !done {
     }
     control &gt;&gt;= 1;
 }</code></pre>
-  <p>The <code>0xFF00</code> mask above is the trick that lets the control register tell the decoder when to refill: every shift right pulls a <code>1</code> bit into bit 8, and after 8 shifts bit 8 reaches the test position and triggers a refill from <code>input[src]</code>.</p>
+  <p>The <code>0xFF00</code> mask is how the control register knows when to refill. Each shift right moves one of the eight set high bits down; after eight shifts bit 8 is clear, and the test at the top of the loop reads the next flag byte.</p>
+  <p>A back-reference copies byte by byte and writes each byte to the ring as it goes, so a reference may overlap its own output (the run-length case). The copy stops early if it reaches the expected output size.</p>
 </section>
 
 <section class="doc-section" id="container-format">
   <h2>Container format</h2>
-  <p>Some PROT entries are not one stream but several: a length-prefixed array of independently-compressed sections concatenated together (the <code>player.lzs</code>-style wrapper the <a href="battle-data-pack.html">player battle files</a> use). <code>crates/lzs::parse_container</code> walks that wrapper; the standalone-shaped containers described in <a href="asset-descriptor.html">asset descriptor</a> are recognised by the same crate.</p>
+  <p>Some PROT entries hold several independently compressed sections behind a small header. The header is the <a href="asset-descriptor.html">asset descriptor</a> layout: two <code>u32</code> header words, then 8-byte <code>(size, byte_offset)</code> pairs, where the size's low 24 bits are the section's decompressed length and its high byte is the asset type.</p>
+  <table>
+    <thead><tr><th>Function</th><th>Behaviour</th></tr></thead>
+    <tbody>
+      <tr><td><code>parse_container</code></td><td>Scans the pair table heuristically; stops at a zero size or offset, an offset past the file, or a non-ascending offset.</td></tr>
+      <tr><td><code>decompress_container</code></td><td>Decodes every section it finds.</td></tr>
+      <tr><td><code>decompress_container_strict</code></td><td>Also rejects a section whose input consumption runs past the next section's offset. Use this one for detection.</td></tr>
+      <tr><td><code>decompress_tracked</code></td><td>Decodes one stream and returns the input bytes consumed, which is what the strict gate compares.</td></tr>
+    </tbody>
+  </table>
 </section>
 
 <section class="doc-section" id="encoding-re-packing">
   <h2>Encoding (re-packing)</h2>
-  <p>The retail game ships only the <em>decoder</em>; there is no Sony encoder to reverse. <code>crates/lzs::compress</code> is an encoder written fresh for re-packing edited assets - it is what lets the <a href="../tooling/randomizer.html">randomizer / disc patcher</a> put a modified monster, script or texture back into the same slot on the disc:</p>
+  <p>The retail game ships only the <em>decoder</em>; there is no Sony encoder to reverse. <code>legaia_lzs::compress</code> is an encoder written fresh for re-packing edited assets - it is what lets the <a href="../tooling/randomizer.html">randomizer / disc patcher</a> put a modified monster, script or texture back into the same slot on the disc:</p>
   <ul class="bullets">
     <li>An LZSS matcher with one-step lazy matching (defer a match by a byte when the next position yields a strictly longer one) whose output the retail decoder accepts byte-for-byte - <strong>not</strong> a bit-exact clone of Sony's packer.</li>
     <li>Correctness criterion: <code>decompress(compress(x)) == x</code>, checked by round-tripping every compressed entry on the disc.</li>
-    <li>The lazy step matters for in-place editing: it packs tightly enough that a re-packed asset fits its original footprint even where that footprint has no compressed slack (every scene MAN but one fits its exact original span; a purely greedy parse overshot each by a handful of bytes).</li>
+    <li>The lazy step matters for in-place editing. A purely greedy parse overshoots a scene MAN's original footprint by a handful of bytes, and those footprints have no compressed slack; with the lazy step every scene MAN but one fits its exact original span.</li>
+    <li><code>compress_optimal</code> is a slower shortest-encoding parse (a dynamic program over the token graph). Its output is never longer than <code>compress</code>'s, and it closes the last couple of bytes on the few retail streams whose footprint has zero slack.</li>
   </ul>
-  <p>A linear-history match at distance <code>d</code> maps onto the ring-buffer back-reference base <code>(0xFEE + i - d) &amp; 0xFFF</code>; capping the emitted distance at <code>4096 - MAX_MATCH</code> keeps every in-copy read (including the self-overlapping RLE case where <code>d &lt; len</code>) unambiguous. It does real compression (not literal-only), so re-packed streams fit the slack in fixed-size slots like the monster archive's <code>0x14000</code>-byte records - the story told in <a href="../writeups/disc-patching/b-lzs-slots.html">the disc-patching write-up on LZS slots</a>.</p>
+  <p>A linear-history match at distance <code>d</code> maps onto the ring-buffer back-reference position <code>(0xFEE + i - d) &amp; 0xFFF</code>, where <code>i</code> is the output position; capping the emitted distance at <code>4096 - 18</code> keeps every in-copy read (including the self-overlapping run-length case where <code>d &lt; len</code>) unambiguous. It does real compression (not literal-only), so re-packed streams fit the slack in fixed-size slots like the monster archive's <code>0x14000</code>-byte records - the story told in <a href="../writeups/disc-patching/b-lzs-slots.html">the disc-patching write-up on LZS slots</a>.</p>
 </section>
 
 <section class="doc-section" id="where-lzs-is-consumed">
   <h2>Where LZS is consumed</h2>
-  <p>The asset-type dispatcher - the routine that routes each loaded asset to its format handler - calls the LZS path when its <code>copy_only</code> flag is zero. See <a href="asset-type.html">asset type dispatcher</a>. Standalone-shaped LZS containers (with the descriptor-pair walker in <a href="asset-descriptor.html">asset descriptor</a>) are also recognised by <code>crates/lzs</code>.</p>
+  <p>The asset-type dispatcher - the routine that routes each loaded asset to its format handler - calls the LZS path when its <code>copy_only</code> flag is zero. See <a href="asset-type.html">asset type dispatcher</a>. The descriptor-pair containers above are walked by <code>FUN_80020224</code> (<a href="asset-descriptor.html">asset descriptor</a>).</p>
 </section>
 
 <section class="doc-section" id="how-we-know">
