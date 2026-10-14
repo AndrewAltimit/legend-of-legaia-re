@@ -17,6 +17,13 @@ impl<'a> FieldFlagsHost for FieldHostImpl<'a> {
         self.world.clock.script_frame_delta()
     }
 
+    /// Op `0x4E` loader 4 (`0x801E0AFC`): one BIOS `rand()` draw, masked to
+    /// a byte by the VM - the random-chance branch. Draws on the world's one
+    /// `rand()` stream, as retail's every caller shares the kernel seed.
+    fn bios_rand(&mut self) -> i32 {
+        self.world.next_rand() as i32
+    }
+
     /// `4C C5` / `4C C6`: NOT WIRED - released at once. Retail holds the
     /// script until a system flag is set / cleared, and the shipped waits'
     /// raisers are native code the engine does not run (`town01` P2[25]
