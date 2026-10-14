@@ -39,6 +39,25 @@ thread_local! {
     pub(super) static PLAYED_AHEAD: std::cell::RefCell<Option<(String, BTreeSet<u16>)>> =
         const { std::cell::RefCell::new(None) };
     pub(super) static EXCHANGE: std::cell::Cell<(u64, u64)> = const { std::cell::Cell::new((110, 100)) };
+    /// Set while the beats pass plays a scene whose story waits behind a
+    /// staged fight on a walk-on band: [`worth_fighting`] then takes no
+    /// random encounter.
+    pub(super) static SAVING_FOR_BOSS: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Holds [`SAVING_FOR_BOSS`] for a scope and puts back what was there.
+pub(super) struct SavingForBoss(bool);
+
+impl SavingForBoss {
+    pub(super) fn arm(on: bool) -> Self {
+        Self(SAVING_FOR_BOSS.with(|s| s.replace(on)))
+    }
+}
+
+impl Drop for SavingForBoss {
+    fn drop(&mut self) {
+        SAVING_FOR_BOSS.with(|s| s.set(self.0));
+    }
 }
 
 /// Is the random encounter on the table one the continuous hand takes? A
@@ -54,6 +73,12 @@ thread_local! {
 /// asked again every round - a fight going badly turns back into a run.
 pub(super) fn worth_fighting(w: &legaia_engine_core::world::World) -> bool {
     if !PLAYS_ON.with(std::cell::Cell::get) {
+        return false;
+    }
+    // On the way to a boss the party's HP and the bag are the boss's: a
+    // walk there runs from what it meets. Training is the exception - its
+    // outings are for the fights.
+    if SAVING_FOR_BOSS.with(std::cell::Cell::get) && !TRAINING.with(std::cell::Cell::get) {
         return false;
     }
     let n = w.party.party_count.clamp(1, 3) as usize;

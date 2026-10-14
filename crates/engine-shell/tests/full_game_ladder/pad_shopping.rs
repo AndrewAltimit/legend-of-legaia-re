@@ -44,6 +44,10 @@ pub(super) fn take_shop_visited() -> bool {
 /// merchant sells them: the road between two counters is a dungeon or two.
 const HEAL_STOCK: u8 = 15;
 
+/// Healing items for each present member the hand buys before any
+/// equipment ([`next_want`]).
+const HEAL_RESERVE: u32 = 3;
+
 /// What the hand wants from the open buy list next.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Want {
@@ -124,7 +128,12 @@ fn next_want(menu: &MenuRuntime, w: &legaia_engine_core::world::World) -> Option
             qty: qty as u8,
         })
     };
-    if let Some(want) = heal_want(3) {
+    // Three heals for each present member come before any equipment: the
+    // next boss is fought out of the bag the road leaves, and a party of
+    // three that bought its armour first met Dohati (`dohaty` P2[10]) with
+    // one Healing Flower.
+    let members = w.present_party_list().len().clamp(1, 3) as u32;
+    if let Some(want) = heal_want(HEAL_RESERVE * members) {
         return Some(want);
     }
     // Equipment. At a counter with no healing row, a bag short of its
@@ -395,17 +404,34 @@ pub(super) fn merchants(session: &NativeSession) -> Vec<u8> {
         return Vec::new();
     };
     let mask = data.sellable_mask();
-    let stock: Vec<usize> = legaia_scene_formats::shop_stock::scan(&man, Some(&mask))
+    // Each stock list's offset, and whether it sells a healing item.
+    let stock: Vec<(usize, bool)> = legaia_scene_formats::shop_stock::scan(&man, Some(&mask))
         .iter()
-        .map(|r| r.count_off)
+        .map(|r| {
+            let heals = r.id_offsets.iter().any(|&o| {
+                man.get(o).is_some_and(|&id| {
+                    w.tables.item_catalog.get(id).is_some_and(|e| {
+                        matches!(
+                            e.effect,
+                            legaia_engine_menus::items::ItemEffect::Heal { .. }
+                        )
+                    })
+                })
+            });
+            (r.count_off, heals)
+        })
         .collect();
     if stock.is_empty() {
         return Vec::new();
     }
-    let holds = |part: usize, rec: usize| {
-        partition_record_span(&mf, &man, part, rec)
-            .is_some_and(|(start, _, len)| stock.iter().any(|&o| o >= start && o < start + len))
+    let span_has = |part: usize, rec: usize, heals_only: bool| {
+        partition_record_span(&mf, &man, part, rec).is_some_and(|(start, _, len)| {
+            stock
+                .iter()
+                .any(|&(o, h)| o >= start && o < start + len && (h || !heals_only))
+        })
     };
+    let holds = |part: usize, rec: usize| span_has(part, rec, false);
     let n0 = mf.partitions.first().map_or(0, Vec::len);
     let n1 = mf.partitions.get(1).map_or(0, Vec::len);
     let mut out: Vec<u8> = w
@@ -428,7 +454,17 @@ pub(super) fn merchants(session: &NativeSession) -> Vec<u8> {
                     .any(|&r| holds(2, r))
         })
         .collect();
-    out.sort_unstable();
+    // The counter that sells healing items first: what the next boss is
+    // fought with is bought before the armour (`retock`'s arms dealer
+    // P1[34] took 46800 of 49991 gold, and its item counter P1[36] then
+    // sold seven Healing Flowers).
+    let sells_heals = |s: u8| {
+        span_has(1, usize::from(s), true)
+            || spawned_p2(&mf, &man, 1, usize::from(s), n0 + n1, 3)
+                .iter()
+                .any(|&r| span_has(2, r, true))
+    };
+    out.sort_unstable_by_key(|&s| (!sells_heals(s), s));
     out
 }
 

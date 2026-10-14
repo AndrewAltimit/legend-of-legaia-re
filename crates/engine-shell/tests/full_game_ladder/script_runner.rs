@@ -936,6 +936,9 @@ thread_local! {
     pub(super) static NO_ITEM: std::cell::RefCell<HashSet<(u8, u32)>> = Default::default();
     /// Actors whose Magic window held no affordable damage spell this battle.
     pub(super) static NO_MAGIC: std::cell::RefCell<HashSet<u8>> = Default::default();
+    /// Magic picks from the command ring that opened no spell window, per
+    /// actor this battle ([`fight_pad`]).
+    pub(super) static MAGIC_REFUSED: std::cell::RefCell<HashMap<u8, u32>> = Default::default();
     /// The foe round a solo duel last chose Spirit in
     /// ([`duel_wants_spirit`]): the round after it swings the gauge it built.
     pub(super) static DUEL_SPIRIT_ROUND: std::cell::Cell<Option<usize>> = const { std::cell::Cell::new(None) };

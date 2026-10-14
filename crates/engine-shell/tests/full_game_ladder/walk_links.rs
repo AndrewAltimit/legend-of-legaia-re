@@ -217,7 +217,14 @@ pub(super) fn ledge_hops(session: &NativeSession) -> WarpMap {
                     {
                         let (c1, c2) = partition2_record_gates(&mf, &man, rec).unwrap_or_default();
                         hops.push(((i32::from(tr.tile_x), i32::from(tr.tile_z)), land, c1, c2));
-                    } else if land.is_none() && forks && !branches && !leaves && !walks.is_empty() {
+                    } else if !leaves
+                        && ((land.is_none() && forks && !branches && !walks.is_empty())
+                            || (branches && !lands.is_empty()))
+                    {
+                        // A record that tests where the player stands
+                        // (`rikuroa` P2[60]: a box per landing, the arc out
+                        // of the one the band tile sits in) is followed from
+                        // the band tile it is stepped on.
                         let (c1, c2) = partition2_record_gates(&mf, &man, rec).unwrap_or_default();
                         forked.push((
                             (i32::from(tr.tile_x), i32::from(tr.tile_z)),
@@ -240,7 +247,7 @@ pub(super) fn ledge_hops(session: &NativeSession) -> WarpMap {
         }
         for (tile, body, pc0, c1, c2) in &t.2 {
             if w.p2_record_gates_pass(c1, c2)
-                && let Some(land) = flag_path_landing(w, body, *pc0)
+                && let Some(land) = flag_path_landing(w, body, *pc0, Some(*tile))
             {
                 map.entry(*tile).or_insert(open_landing(w, land));
             }
@@ -277,16 +284,37 @@ pub(super) fn open_landing(w: &legaia_engine_core::world::World, land: Cell) -> 
 /// makes), and the last player walk leg (`C7 F8 x z`), snap (`A3 F8 x z`)
 /// or arc on it is the landing. `deroa`'s transporter hub P2[11] sends its platform to one of
 /// three shaft rooms by the switch flags `0x4EF` / `0x4F0`.
+///
+/// Given the band `tile` the walker steps on, a box test on the player
+/// (`CD F8 x0 z0 x1 z1`, `FUN_801DE840` case `0x4D`: inside falls through,
+/// outside skips) is answered from that tile, and a random-chance branch
+/// (`4E .. 04`, `Rand() & 0xFF` against the operand) is followed both ways
+/// and lands only where both arms agree. `rikuroa` P2[60], the climb back
+/// up the terrace P2[45] hops down, arcs the player out of whichever box the
+/// band tile sits in, and on a die roll plays a stumble first, to the same
+/// row.
 pub(super) fn flag_path_landing(
     w: &legaia_engine_core::world::World,
     body: &[u8],
     pc0: usize,
+    tile: Option<(i32, i32)>,
 ) -> Option<Cell> {
-    use legaia_scene_formats::field_disasm::{ActorCtrlKind, FlagKind, InsnInfo, decode};
+    flag_path_from(w, body, pc0, tile, &mut HashSet::new(), None)
+}
+
+fn flag_path_from(
+    w: &legaia_engine_core::world::World,
+    body: &[u8],
+    pc0: usize,
+    tile: Option<(i32, i32)>,
+    seen: &mut HashSet<usize>,
+    mut last: Option<Cell>,
+) -> Option<Cell> {
+    use legaia_scene_formats::field_disasm::{
+        ActorCtrlKind, FlagKind, InsnInfo, InventoryCmpKind, decode,
+    };
     let at = |b: u8| i16::from(b & 0x7F) * 128 + 0x40 + if b & 0x80 != 0 { 0x40 } else { 0 };
     let mut pc = pc0;
-    let mut seen = HashSet::new();
-    let mut last = None;
     while seen.insert(pc) {
         let &op = body.get(pc)?;
         if op == 0x21 {
@@ -325,6 +353,36 @@ pub(super) fn flag_path_landing(
                 ..
             } if insn.extended == Some(0xF8) && (tile_x, tile_z) != (0, 0) => {
                 last = Some(cell_of(at(tile_x), at(tile_z)));
+            }
+            InsnInfo::BBoxTest {
+                x_min,
+                z_min,
+                x_max,
+                z_max,
+                skip_target,
+                ..
+            } if insn.extended == Some(0xF8) && tile.is_some() => {
+                let (tx, tz) = tile?;
+                let inside = (i32::from(x_min)..=i32::from(x_max)).contains(&tx)
+                    && (i32::from(z_min)..=i32::from(z_max)).contains(&tz);
+                if !inside {
+                    pc = skip_target & 0xFFFF;
+                    continue;
+                }
+            }
+            InsnInfo::InventoryCmp {
+                kind:
+                    InventoryCmpKind::Compare {
+                        sub_op: 4,
+                        skip_target,
+                        ..
+                    },
+                ..
+            } => {
+                let mut other = seen.clone();
+                let skip = flag_path_from(w, body, skip_target & 0xFFFF, tile, &mut other, last);
+                let on = flag_path_from(w, body, pc + insn.size.max(1), tile, seen, last);
+                return (skip == on).then_some(on).flatten();
             }
             InsnInfo::BBoxTest { .. } | InsnInfo::CondJmp { .. } | InsnInfo::Picker { .. } => {
                 return None;

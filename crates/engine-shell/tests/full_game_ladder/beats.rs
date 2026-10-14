@@ -59,6 +59,19 @@ pub(super) fn play_beats(
             band.entry(t.record).or_default().push((t.tile_x, t.tile_z));
         }
     }
+    // A scene whose story waits behind a staged fight on a walk-on band
+    // (`dohaty` P2[10], Dohati) is crossed for that fight: the continuous
+    // hand runs from the scene's random encounters on the way, as a player
+    // does who means to meet the boss with what the party has
+    // ([`continuous::SAVING_FOR_BOSS`]).
+    let _saving = continuous::SavingForBoss::arm(
+        pad_hand()
+            && first_tile.keys().any(|&rec| {
+                record_stages_fight(&mf, &man, 2, usize::from(rec))
+                    && partition2_record_gates(&mf, &man, usize::from(rec))
+                        .is_some_and(|(c1, c2)| session.host.world.p2_record_gates_pass(&c1, &c2))
+            }),
+    );
     // Talk and walk-on beats unlock each other (a conversation sets the flag
     // a walk-on record's C2 gate needs, and a walk-on cutscene sets the flag
     // a conversation branches on), so both passes repeat while a round still
@@ -347,6 +360,18 @@ pub(super) fn play_beats(
                         "    [beat-skip] {name} P2[{rec}] gates {:?}",
                         partition2_record_gates(&mf, &man, usize::from(rec))
                     );
+                }
+                continue;
+            }
+            // A band the planner already walks through as a link (a ledge
+            // hop, a lift) whose record raises nothing the world lacks is a
+            // way across, not a beat: `rikuroa` P2[45] hops the terrace down
+            // once its `0x282` is up and P2[60] hops it back up, and a hand
+            // that stepped onto one as a beat came back across the other,
+            // ending the walk on whichever side the last hop left it.
+            if pad_hand() && band_is_bare_link(session, &mf, &man, rec, &band) {
+                if std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
+                    eprintln!("    [beat-skip] {name} P2[{rec}] is a way across");
                 }
                 continue;
             }
@@ -949,4 +974,69 @@ pub(super) fn talk_beats(
         });
     }
     slots
+}
+
+/// Is walk-on record `rec` only a way across under the live flags? It arcs
+/// the player (a ledge hop), every tile of its band is a link the planner
+/// walks through ([`ledge_hops`]), and no system flag it or a record it
+/// spawns raises is still clear, outside the ones it lowers again itself (a
+/// hop's hold).
+pub(super) fn band_is_bare_link(
+    session: &NativeSession,
+    mf: &legaia_scene_formats::man_section::ManFile,
+    man: &[u8],
+    rec: u8,
+    band: &BTreeMap<u8, Vec<(u8, u8)>>,
+) -> bool {
+    use legaia_engine_field::man_field_scripts::{FlagBank, walk_partition_gflag_sites};
+    let Some(tiles) = band.get(&rec).filter(|t| !t.is_empty()) else {
+        return false;
+    };
+    let links = ledge_hops(session);
+    if !tiles
+        .iter()
+        .all(|&(x, z)| links.contains_key(&(i32::from(x), i32::from(z))))
+    {
+        return false;
+    }
+    // Only a hop: a lift or a pad the lattice cannot step onto is still
+    // walked as a beat, since the walk onto it is how the hand reaches the
+    // far side (`station` P2[17], the lift from (119..120, 117) up to the
+    // hall whose teleport leads to the ticket counter).
+    let hops =
+        legaia_engine_field::man_field_scripts::partition_record_span(mf, man, 2, usize::from(rec))
+            .is_some_and(|(start, pc0, len)| {
+                legaia_scene_formats::field_disasm::LinearWalker::new(&man[start..start + len], pc0)
+            .flatten()
+            .any(|i| {
+                i.extended == Some(0xF8)
+                    && matches!(
+                        i.info,
+                        legaia_scene_formats::field_disasm::InsnInfo::ActorCtrl {
+                            kind: legaia_scene_formats::field_disasm::ActorCtrlKind::ArcJump { .. },
+                            ..
+                        }
+                    )
+            })
+            });
+    if !hops {
+        return false;
+    }
+    let n0 = mf.partitions.first().map_or(0, Vec::len);
+    let n1 = mf.partitions.get(1).map_or(0, Vec::len);
+    let mut recs = spawned_p2(mf, man, 2, usize::from(rec), n0 + n1, 3);
+    recs.insert(usize::from(rec));
+    let w = &session.host.world;
+    let sites: Vec<_> = walk_partition_gflag_sites(mf, man, 2)
+        .into_iter()
+        .filter(|s| recs.contains(&s.record) && s.bank == FlagBank::System)
+        .collect();
+    let lowered: BTreeSet<u16> = sites
+        .iter()
+        .filter(|s| s.kind == FlagKind::Clear)
+        .map(|s| s.flag)
+        .collect();
+    !sites.iter().any(|s| {
+        s.kind == FlagKind::Set && !w.system_flag_test(s.flag) && !lowered.contains(&s.flag)
+    })
 }

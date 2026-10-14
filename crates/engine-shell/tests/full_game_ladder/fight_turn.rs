@@ -21,6 +21,12 @@ use super::*;
 /// Items lesson, the down arm for Spirit, `Auto` for the attack lesson and
 /// `Command` with the Somersault for the hyper-arts drill (an Auto attack is
 /// that lesson's wrong-lesson rewind).
+/// Ticks the fighter asks the command ring for Magic without a spell window
+/// opening before it stops asking for this battle (two seconds of presses,
+/// well past the ring's own turn). A pick that opens the window resets the
+/// count, so this only ever stops a ring that refuses.
+const MAGIC_RING_TRIES: u32 = 120;
+
 pub(super) fn fight_pad(session: &NativeSession) -> u16 {
     use legaia_engine_battle::arts_command_input::ArtsInputPhase;
     use legaia_engine_battle::battle_magic::SpellPhase;
@@ -109,6 +115,7 @@ pub(super) fn fight_pad(session: &NativeSession) -> u16 {
         };
     }
     if let Some(m) = w.battle.spell_menu.as_ref() {
+        MAGIC_REFUSED.with(|r| r.borrow_mut().remove(&m.actor));
         return match &m.phase {
             SpellPhase::Select { cursor } => match wanted_spell(w, m) {
                 Some(i) if i == usize::from(*cursor) => PadButton::Cross.mask(),
@@ -223,8 +230,24 @@ pub(super) fn fight_pad(session: &NativeSession) -> u16 {
             }
             // A duel's damage is its Arts; a summon spends the turn and the
             // MP for less.
+            // A ring that answers Magic by reopening itself (a fight whose
+            // special word forbids the Ra-Seru chip, `battle_raseru_forbidden`,
+            // or a caster with no spell session) is asked a few times and
+            // then not again this battle: pressing it for good left Gala on
+            // the ring with a dead foe and a live one for the whole budget.
             CommandPhase::Menu { .. } if lesson.is_none() && magic() && !solo_duel(w) => {
-                PadButton::Right.mask()
+                let tries = MAGIC_REFUSED.with(|r| {
+                    let mut r = r.borrow_mut();
+                    let n = r.entry(cmd.actor).or_insert(0);
+                    *n += 1;
+                    *n
+                });
+                if tries > MAGIC_RING_TRIES {
+                    NO_MAGIC.with(|n| n.borrow_mut().insert(cmd.actor));
+                    PadButton::Left.mask()
+                } else {
+                    PadButton::Right.mask()
+                }
             }
             CommandPhase::AttackMode { .. }
                 if lesson.is_none() || lesson == Some(TutorialLesson::HyperArts) =>
@@ -402,6 +425,7 @@ pub(super) fn drain_battle(session: &mut NativeSession) -> Option<Run> {
 pub(super) fn fight_battle(session: &mut NativeSession) -> Option<Run> {
     NO_ITEM.with(|n| n.borrow_mut().clear());
     NO_MAGIC.with(|n| n.borrow_mut().clear());
+    MAGIC_REFUSED.with(|n| n.borrow_mut().clear());
     DUEL_SPIRIT_ROUND.with(|d| d.set(None));
     BIGGEST_HIT.with(|b| b.set(0));
     ROUND_LOSS.with(|r| r.set([0; 3]));
@@ -467,6 +491,29 @@ pub(super) fn fight_battle(session: &mut NativeSession) -> Option<Run> {
         }
         // A press is an edge: alternate the wanted mask with neutral.
         let want = fight_pad(session);
+        if std::env::var_os("LEGAIA_FGL_PAD_DEBUG").is_some()
+            && t - foe_dropped_at > 6000
+            && t % 97 == 0
+        {
+            let w = &session.host.world;
+            eprintln!(
+                "      [pad-debug] t={t} want {want:#06x} cmd {:?} spell {:?} items {:?} flow {:?} ctx7 {:#04x}",
+                w.battle
+                    .command
+                    .as_ref()
+                    .map(|c| (c.actor, format!("{:?}", c.phase))),
+                w.battle
+                    .spell_menu
+                    .as_ref()
+                    .map(|m| format!("{:?}", m.phase)),
+                w.battle
+                    .item_menu
+                    .as_ref()
+                    .map(|m| format!("{:?}", m.state)),
+                w.battle.round_flow.phase,
+                w.battle_ctx.action_state,
+            );
+        }
         let pad = if prev == 0 { want } else { 0 };
         prev = pad;
         session.host.world.set_pad(pad);

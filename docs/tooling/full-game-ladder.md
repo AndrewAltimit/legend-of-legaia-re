@@ -229,15 +229,21 @@ one upkeep pass, in this order:
    a menu runtime of its own (`MenuRuntime::open_field_overlay_requests`),
    steps it on pad edges with the field frozen
    (`MenuRuntime::step_field_session`), and lets the merchant's record
-   resume once the screen has closed. It buys three healing items first,
-   then the affordable piece of equipment that improves a present member's
-   slot the most (through the recipient picker, which equips it on the
-   spot), then healing items up to fifteen for each present member. At a
-   counter that sells no healing item, a bag short of its three keeps 300
-   gold back for the counter that does. A merchant is visited again only
-   with a different purse or bag, or once a counter the story had closed
-   has opened ([below](#a-counter-the-story-has-closed)).
+   resume once the screen has closed. It buys three healing items for each
+   present member first, then the affordable piece of equipment that
+   improves a present member's slot the most (through the recipient
+   picker, which equips it on the spot), then healing items up to fifteen
+   for each present member. A counter whose stock list sells a healing
+   item is visited ahead of the others: `retock`'s arms dealer (P1[34])
+   took 46800 of 49991 gold before its item counter (P1[36]) was reached,
+   and the party met Dohati with one Healing Flower. At a counter that
+   sells no healing item, a bag short of its three keeps 300 gold back for
+   the counter that does. A merchant is visited again only with a
+   different purse or bag, or once a counter the story had closed has
+   opened ([below](#a-counter-the-story-has-closed)).
 2. **Equipment.** Start, Equip, each member, the Best Equipment row. That row ranks only the four armament slots, so the hand then fills each member's empty Goods slots from the bag, best passive first (HP, attack and arts boosts ahead of guards), never two of one passive on a member and never Rage, Zero Defense, Last Attack or No Escape.
+
+   Best Equipment (`FUN_801CF760`) ranks a weapon by its stats alone, and a weapon outside the wearer's class raises the arm command's AP cost ([`arts-command-gauge.md`](../subsystems/arts-command-gauge.md)): the Astral Sword costs Vahn 54 a swing, his nine-command art no longer fits a turn, and Koru (`nilboa` P2[20]) outlasts him. So after the row the hand reads each member's arm cost off its player battle file, the way the battle loader does (`swing_command_costs`), and where a weapon in the bag swings cheaper than the one worn it puts that one on (Start, Equip, the member, the weapon row, the weapon, Yes), the best attack among equally cheap ones.
 3. **Rest.** Under four fifths of its HP in a scene that rolls no
    encounters, it takes the scene's rest: a bed's walk-on band, or a
    keeper whose record runs the `4C 82` restore. A keeper's offer is a
@@ -278,7 +284,11 @@ one upkeep pass, in this order:
 
 A talk or a stay that carries the party out of the scene (`dolk2`'s inn
 plays Noa's dream and brings it back) leaves the rest of the pass for the
-return: the scene's story and its training still follow.
+return: the scene's story and its training still follow. A stay taken
+during the training itself (a keeper whose rest plays the same dream)
+brings the party back to the training alone, without the arrival pass
+again; a party whose training ended at that dream walked on to Voz levels
+short and wiped on the Genesis Tree's fight.
 
 The **level target** is the anchors' own curve: each character's level in
 the anchor five milestones ahead, read only as far as every later anchor
@@ -310,6 +320,14 @@ menu on an empty bag. Before a staged fight it wears what the last chest
 held, takes a rest that is close by, and opens the bag only under three
 fifths - for HP, and for MP when the member lowest on it is under three
 fifths, since the casts are half of what a boss is beaten with.
+
+**On the way to a boss it runs.** In a scene whose story waits behind a
+staged fight on a walk-on band, the beats pass takes no random encounter
+(training outings excepted): the party's HP and bag are the boss's.
+Dohati (`dohaty` P2[10], 17200 HP, a party-wide breath every third round)
+is met at the end of a castle the hand had been fighting its way through:
+it arrived at a third of its HP with the Healing Flowers spent on the
+road, and lost six times.
 
 **Its options survive a reload.** A wipe reloads the run's own save into a
 fresh session, and the engine keeps Field Move as a host option rather than
@@ -347,8 +365,9 @@ fifths, and how far she got was the rand stream's: on eight dealt streams
 from the run's own `snowdrift_cave` save she reached Caruban at level 5 or 6
 on six and at 8 (the target) on two, and only those two cleared him. With
 the bag standing in, all eight reach level 8, and seven clear him (six on
-the first try); the eighth stalls on the mountain's `P2[45]` / `P2[60]`
-band pair before the fight. Caruban (1024 HP, about 150 a round on one member) outlasts a
+the first try); the eighth stalled before the fight on the mountain's
+`P2[45]` / `P2[60]` terrace pair, which the planner reads as ledge hops
+([below](#how-the-pad-tier-walks)). Caruban (1024 HP, about 150 a round on one member) outlasts a
 level-6 Noa and level-5 Vahn by one or two rounds; a level-8 Noa ends the
 fight first.
 
@@ -799,8 +818,21 @@ map as its street:
   arc does: `nilboa`'s stepping stones (P2[8], P2[9], P2[12], P2[13], two or
   three arcs each) join the ledge pocket below Nivora's summit to the
   teleports on toward the `map03` door. A record that box-tests the player
-  first, or forks (a flag test, a picker) around more than one arc, is left
-  out: its landing is not one place.
+  is followed from the band tile it is stepped on: inside the box falls
+  through, outside skips, as the dispatcher's case `0x4D` does. A
+  random-chance branch (`4E 00 40`, `Rand() & 0xFF`) is followed both ways
+  and lands only where both arms agree. `rikuroa`'s terrace pair is the
+  case: once `0x282` is up P2[45] hops the party down from row 109 to 111
+  and P2[60] hops it back up to 108, each out of whichever box the tile
+  sits in, and on a die roll after a stumble to the same row. A record
+  that forks around more than one arc on a picker or a flag it cannot read
+  is left out: its landing is not one place.
+
+  The beats pass does not walk such a band as a beat when every tile of it
+  is a link and its record, with what it spawns, raises no flag the world
+  lacks outside the ones it lowers again. Stepped on as a beat, the pair
+  traded the party up and down until the walk gave up, on whichever side
+  the last hop left it: below the terrace, a stretch from Caruban.
 - a **warp pad** - the same kind of walk-on record with no arc, whose
   player-channel snaps (`0x23` MOVE_TO / `4C 51`, on every story-flag branch)
   all land on one tile and which leaves the scene by neither `0x3F` nor a
@@ -979,7 +1011,7 @@ For each member, in order of priority:
 
 1. **Revive.** A member who is down gets a revive.
 2. **Heal.** A member in danger gets a heal: a party heal when two or more are in danger, else the smallest single heal that lifts the worst-off member clear (in a solo duel, clear after the foe's next round too - see [Guards and boss reads](#guards-and-boss-reads)), aimed at that member. Heals the round's earlier members already committed count as landed, so two members never spend their turns on one wound.
-3. **Cast.** Otherwise a member with an affordable damaging Seru spell casts the strongest one.
+3. **Cast.** Otherwise a member with an affordable damaging Seru spell casts the strongest one. A command ring that answers Magic by reopening itself (a fight whose special word forbids the Ra-Seru chip, or a caster with no spell session) is asked for two seconds and then not again that battle.
 4. **Attack.** Otherwise it attacks through `Command`, entering the longest art its command pool pays for and spending the rest on plain directions. Whether a matched art fires is the queue builder's call, out of the Spirit gauge. The plan runs up to nine commands, the length of each character's Miracle Art.
 
 A member is **in danger** when it is standing and either:
@@ -1157,6 +1189,7 @@ clips and matches the same arts a windowed one does. Beyond that:
 | `LEGAIA_FGL_TRACE=1` | One line per played beat: what ran, how it ended and the flags it set. As `[hop]`, the hop failure that sent the pass to the beats, which the final stall would otherwise hide. A `[battle]` line at each fight's start and end (formation, both sides' HP, the action-SM state). Each pad segment's frames and planner cost. On success, the seated tier's trail, so a pad stall can be read against the route the seated tier took. |
 | `LEGAIA_FGL_TRACE_BATTLE=1` | A `[battle]` line every 1000 ticks. |
 | `LEGAIA_FGL_TRACE_HITS=1` | Each HP change with its actor and action state. |
+| `LEGAIA_FGL_PAD_DEBUG=1` | In a fight where no foe has lost HP for 6000 ticks, the fighter's pad and the command, spell and item windows' phases every 97 ticks: what a battle that will end `unresolved` was being asked. |
 | `LEGAIA_FGL_HEAL_DEBUG=1` | Each pad edge of the field heal with the Items screen's focus, list rows, usable rows and target rows. |
 | `LEGAIA_FGL_WALK_DEBUG` | A stalled walk's wall map, the scene's teleports, tile triggers and door colliders. |
 | `LEGAIA_FGL_PLAN_DEBUG` | Each object-door edge the planner adds. |

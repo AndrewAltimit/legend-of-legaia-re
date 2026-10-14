@@ -85,6 +85,11 @@ pub(super) fn traverse(
     trail: &mut Vec<String>,
 ) -> Result<(), String> {
     let mut beaten: BTreeSet<String> = BTreeSet::new();
+    // Scenes whose training a stay carried the party out of (`dolk2`'s inn
+    // plays Noa's dream mid-training and brings the party back): the
+    // training goes on when the party is back, without the rest of the
+    // arrival pass.
+    let mut retrain: BTreeSet<String> = BTreeSet::new();
     // The flags each scene's beats pass left behind (pad tier): a scene
     // the story came back to with new flags has new beats to play.
     // `retona`: the Songi fight, the P2[17] hop to `map02` and back, and
@@ -202,15 +207,19 @@ pub(super) fn traverse(
         if pad
             && continuous::PLAYS_ON.with(std::cell::Cell::get)
             && session.host.world.mode == SceneMode::Field
-            && beaten.insert(cur.clone())
+            && (retrain.contains(&cur) || beaten.insert(cur.clone()))
         {
             upkept += 1;
+            let train_only = retrain.remove(&cur);
             // Upkeep first, as a player arriving in a town: the shop, what
             // it sold, the bed.
             // A talk or a stay that carried the party off (`dolk2`'s inn
             // plays Noa's dream and brings it back) leaves the rest of the
             // scene for the return.
-            if let Some(s) = pad_shop(session).map_err(|e| format!("in {cur}, shopping: {e}"))? {
+            if !train_only
+                && let Some(s) =
+                    pad_shop(session).map_err(|e| format!("in {cur}, shopping: {e}"))?
+            {
                 trail.push(format!("{s}(shop talk)"));
                 beaten.remove(&cur);
                 continue;
@@ -235,7 +244,11 @@ pub(super) fn traverse(
             if cur != target.scene {
                 proactive_only.insert(cur.clone());
             }
-            let left = play_beats(session, &mut log);
+            let left = if train_only {
+                Ok(None)
+            } else {
+                play_beats(session, &mut log)
+            };
             PROACTIVE.with(|p| p.set(false));
             if let Some(near) = near {
                 NEXT_ANCHOR_FLAGS.with(|n| *n.borrow_mut() = near);
@@ -259,6 +272,9 @@ pub(super) fn traverse(
                     .map_err(|e| format!("in {cur}, training: {e}"))?
                 {
                     trail.push(format!("{s}(training)"));
+                    if s != cur {
+                        retrain.insert(cur.clone());
+                    }
                 } else if scene_name(session) == cur && walking(session) {
                     // What the fights paid goes over the counter, and the
                     // party sets out rested.
