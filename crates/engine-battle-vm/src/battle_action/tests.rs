@@ -12,6 +12,7 @@ mod magic;
 mod round_trips;
 mod run_capture;
 mod seed;
+mod small_party;
 mod spirit;
 mod target_cursor;
 
@@ -33,6 +34,8 @@ enum Event {
     LoadCapture(u8),
     Recompute,
     VictoryStage(u8),
+    Sfx(u16),
+    CueSpawn(u8),
 }
 
 #[derive(Default)]
@@ -81,6 +84,9 @@ struct RecHost {
     /// Status bits a typed tracker would pack into `+0x16E` on top of the
     /// actor view's `field_flags` (`status_word`).
     packed_status: std::collections::HashMap<u8, u16>,
+    /// `(groups, clut_map)` as `cue_tables` reports them (`None` = no
+    /// battle-action overlay, the trait default).
+    cue_tables: Option<(Vec<u8>, Vec<u8>)>,
 }
 
 impl RecHost {
@@ -199,6 +205,17 @@ impl BattleActionHost for RecHost {
     }
     fn apply_art_strike(&mut self, info: ArtStrikeInfo) {
         self.record(Event::ApplyArtStrike(info));
+    }
+    fn one_shot_sfx(&mut self, cue_id: u16) {
+        self.record(Event::Sfx(cue_id));
+    }
+    fn cue_tables(&self) -> Option<(&[u8], &[u8])> {
+        self.cue_tables
+            .as_ref()
+            .map(|(g, c)| (g.as_slice(), c.as_slice()))
+    }
+    fn spawn_cue(&mut self, actor_slot: u8, _spawn: crate::battle_cue_group::CueSpawn) {
+        self.record(Event::CueSpawn(actor_slot));
     }
     fn equip_attack_bonuses(&self, party_slot: u8) -> [u8; 5] {
         self.equip_atk.get(&party_slot).copied().unwrap_or([0; 5])
