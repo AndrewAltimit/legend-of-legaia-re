@@ -881,6 +881,26 @@ pub fn vram_mesh(d: &Decoded, scale: u16, colour: &ColourWord) -> legaia_tmd::me
             (p.tpage & !0x60) | (u16::from(colour.abr) << 5),
             colour.semi,
         );
+        if colour.split_quads {
+            // Handler bank 3's quad leaf (`FUN_80045BB4`): sixteen `GT3`s.
+            use legaia_render_kernels::sprite_arm::{SplitVertex, subdivide_quad};
+            let corners = std::array::from_fn(|c| SplitVertex {
+                pos: d.verts[p.verts[c]],
+                rgb: p.rgb[c],
+                uv: p.uvs[c],
+            });
+            for tri in subdivide_quad(corners) {
+                for v in tri {
+                    mesh.indices.push(mesh.positions.len() as u32);
+                    mesh.positions.push(v.pos.map(|c| f32::from(c) * k));
+                    mesh.uvs.push(v.uv);
+                    mesh.cba_tsb.push([p.clut, tsb]);
+                    mesh.normals.push([0.0; 3]);
+                    mesh.colors.push(colour.cue(v.rgb));
+                }
+            }
+            continue;
+        }
         for c in 0..4 {
             mesh.positions
                 .push(d.verts[p.verts[c]].map(|v| f32::from(v) * k));
@@ -1008,6 +1028,7 @@ pub fn ground_shadow_mesh(inner: u32, outer: u32, radius: i16) -> legaia_tmd::me
         abr: ((SHADOW_FLAG_WORD >> 24) & 3) as u8,
         far: [0; 3],
         ir0: 1,
+        split_quads: false,
     };
     vram_mesh(&decode(&b), 0x1000, &colour)
 }

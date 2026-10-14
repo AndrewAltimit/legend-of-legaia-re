@@ -338,9 +338,9 @@ Structural facts, read from the raw table:
   ([`world-map-overlay.md`](../formats/world-map-overlay.md) has the per-bank
   counts); PROT 0903's fire tunnel does (mode byte `0xE9`), and
   `gimard_burning_attack`'s ordering table holds its rings as `GT3`s only.
-  The port draws such a quad as one `GT4`; tessellating it scored the one
-  capture that shows it a little lower, because the tunnel's rotation and
-  scroll phase there are the engine's own, not retail's.
+  Port: `render_kernels::sprite_arm::subdivide_quad`, which the draw-kind-4
+  default emitter (`effect_default_arm::vram_mesh`) applies when the colour
+  word carries the bit; both hosts draw that emitter's mesh.
 - **`0x80044798` is not a table entry.** It sits between the lit set and the
   cued banks and is a transform-free `mfc2`-only read-back / packet-pack
   helper. The cued bodies for kinds 12..19 are full per-kind handlers past

@@ -30,3 +30,10 @@ reason = "The frame was never one value: the coplanar draw-lift pass ranked plan
 changes = [
   ["states/cort_evolved_pre_battle/image", 0.9, 0.899],
 ]
+
+[[loosening]]
+file = "scripts/ci/retail-compare-baseline.json"
+reason = "PROT 0903's fire tunnel rings carry colour-word mode bit 0x20, which selects prim handler bank 3, whose quad leaf FUN_80045BB4 draws each GT4 as sixteen POLY_GT3 (the state's ordering table holds the rings as GT3 packets only). The port now draws that split (render_kernels::sprite_arm::subdivide_quad), so the tunnel's affine texture map follows retail's. The residual is the tunnel's rotation and scroll phase, a clock the seed does not carry: A/B on one binary, split off 0.518, split on 0.512 (block-score approximation); the corpus reads 0.519 -> 0.514."
+changes = [
+  ["states/gimard_burning_attack/image", 0.519, 0.514],
+]

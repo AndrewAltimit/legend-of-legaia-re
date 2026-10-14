@@ -28,6 +28,12 @@ pub struct ColourWord {
     /// -0x2DC(t2)` in the bank handlers) - `+0x78`, with bit 0 forced when
     /// the mode byte is non-zero (`ori a2,a2,1` at `0x800433CC`).
     pub ir0: u16,
+    /// Mode bit `0x20` (`lui s1,0x2000` / `and` at `0x800434EC..0x800434F0`):
+    /// the dispatcher selects handler bank 3 (`ori s2,s2,0xF0`), whose
+    /// gouraud-textured quad leaf `FUN_80045BB4` (kind 19) draws each quad as
+    /// sixteen `POLY_GT3`s instead of one `GT4` ([`subdivide_quad`]). Bank 3
+    /// shares every other kind's leaf with bank 1.
+    pub split_quads: bool,
 }
 
 impl ColourWord {
@@ -44,6 +50,7 @@ impl ColourWord {
             abr: mode & 3,
             far: [w as u8, (w >> 8) as u8, (w >> 16) as u8],
             ir0: ir0.min(0x1000),
+            split_quads: mode & 0x20 != 0,
         }
     }
 
@@ -56,6 +63,64 @@ impl ColourWord {
             (c + (((f - c) * ir0) >> 12)).clamp(0, 255) as u8
         })
     }
+}
+
+/// One vertex of a quad the bank-3 leaf splits: position, colour, texel.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SplitVertex {
+    pub pos: [i16; 3],
+    pub rgb: [u8; 3],
+    pub uv: [u8; 2],
+}
+
+/// PORT: FUN_80045BB4 - the bank-3 `GT4` leaf's split of one quad (corners
+/// in packet order `0..3`, triangles `(0, 1, 2)` / `(2, 1, 3)`) into sixteen
+/// triangles, as vertex triples in emit order.
+///
+/// The leaf averages the four corners into a centre (`0x80045D04..
+/// 0x80045DDC`: positions `sra 2` of the summed halfwords, colour and UV
+/// bytes `srl 2` of their sums), then for each of the four rim edges forms
+/// the triangle centre / corner / next corner (`0x80045E0C..0x80045E6C`, the
+/// corner pointer wrapping back by `0x40` on the last edge) and splits it at
+/// its three edge midpoints (`0x80045E7C..0x80045F44`): colours as
+/// `((a & 0xFEFEFE) >> 1) + ((b & 0xFEFEFE) >> 1)`, texels as the `srl 1` of
+/// the byte sum and positions as the `sra 1` of the halfword sum. The packed
+/// byte table it stages at `-0x2B4(t2)` picks each sub-triangle's three of
+/// the six points: `(0, 3, 5)`, `(1, 3, 4)`, `(2, 4, 5)`, `(3, 4, 5)` - three
+/// corner triangles and the middle one. Each goes out as one `POLY_GT3`
+/// (code `0x34`, `0x80045DE4`); the depth cue then runs per vertex (`DPCT`
+/// at `0x80045F68`) exactly as on an unsplit packet, so a caller cues the
+/// returned colours itself. What the split changes on screen is the affine
+/// texture map: sixteen small triangles follow the perspective far more
+/// closely than one large quad.
+pub fn subdivide_quad(c: [SplitVertex; 4]) -> Vec<[SplitVertex; 3]> {
+    let centre = SplitVertex {
+        pos: std::array::from_fn(|k| {
+            (c.iter().map(|v| i32::from(v.pos[k])).sum::<i32>() >> 2) as i16
+        }),
+        rgb: std::array::from_fn(|k| {
+            (c.iter().map(|v| u32::from(v.rgb[k])).sum::<u32>() >> 2) as u8
+        }),
+        uv: std::array::from_fn(|k| (c.iter().map(|v| u32::from(v.uv[k])).sum::<u32>() >> 2) as u8),
+    };
+    let mid = |a: SplitVertex, b: SplitVertex| SplitVertex {
+        pos: std::array::from_fn(|k| ((i32::from(a.pos[k]) + i32::from(b.pos[k])) >> 1) as i16),
+        rgb: std::array::from_fn(|k| (a.rgb[k] >> 1) + (b.rgb[k] >> 1)),
+        uv: std::array::from_fn(|k| ((u32::from(a.uv[k]) + u32::from(b.uv[k])) >> 1) as u8),
+    };
+    // The quad's rim in winding order: packet corners 0, 1, 3, 2.
+    let rim = [c[0], c[1], c[3], c[2]];
+    let mut out = Vec::with_capacity(16);
+    for e in 0..4 {
+        // Points 0..2 the triangle's corners, 3..5 its edge midpoints.
+        let (p0, p1, p2) = (centre, rim[e], rim[(e + 1) % 4]);
+        let (p3, p4, p5) = (mid(p0, p1), mid(p1, p2), mid(p0, p2));
+        out.push([p0, p3, p5]);
+        out.push([p1, p3, p4]);
+        out.push([p2, p4, p5]);
+        out.push([p3, p4, p5]);
+    }
+    out
 }
 
 /// One quad the `0x4000` sprite arm builds, in the part's model space.
@@ -157,7 +222,58 @@ mod tests {
             abr: 1,
             far: [0, 0, 0],
             ir0: 0x800,
+            split_quads: false,
         };
         assert_eq!(c.cue([0x80, 0x40, 0xFF]), [0x40, 0x20, 0x7F]);
+    }
+
+    fn sv(x: i16, z: i16, g: u8, u: u8, v: u8) -> SplitVertex {
+        SplitVertex {
+            pos: [x, 0, z],
+            rgb: [g, g, g],
+            uv: [u, v],
+        }
+    }
+
+    /// One quad through the leaf's arithmetic: the centre is the `>> 2` of
+    /// the corner sums, each midpoint the `>> 1` of its pair (colours with
+    /// each half's low bit dropped first), sixteen triangles tiling the quad.
+    #[test]
+    fn a_bank_3_quad_splits_into_sixteen_interpolated_triangles() {
+        let q = [
+            sv(0, 0, 0x00, 0, 0),
+            sv(64, 0, 0x41, 63, 0),
+            sv(0, 65, 0x41, 0, 63),
+            sv(64, 65, 0x81, 63, 63),
+        ];
+        let t = subdivide_quad(q);
+        assert_eq!(t.len(), 16);
+        // Centre: positions and bytes `>> 2` of the corner sums.
+        let c = t[0][0];
+        assert_eq!(c.pos, [32, 0, 32]);
+        assert_eq!(c.rgb, [((0x41u32 + 0x41 + 0x81) >> 2) as u8; 3]);
+        assert_eq!(c.uv, [31, 31]);
+        // Edge 0 (centre, corner 0, corner 1): point 3 = mid(centre, corner 0).
+        assert_eq!(t[0][1].pos, [16, 0, 16]);
+        assert_eq!(t[0][1].uv, [15, 15]);
+        assert_eq!(t[0][1].rgb, [c.rgb[0] >> 1; 3]);
+        // Point 4 of edge 0: the rim midpoint of corners 0 and 1.
+        assert_eq!(t[1][2].pos, [32, 0, 0]);
+        assert_eq!(t[1][2].uv, [31, 0]);
+        assert_eq!(t[1][2].rgb, [0x41 >> 1; 3]);
+        // Edge 2 runs corner 3 -> corner 2: each half drops its low bit.
+        assert_eq!(t[9][2].rgb, [(0x81 >> 1) + (0x41 >> 1); 3]);
+        assert_eq!(t[9][2].pos, [32, 0, 65]);
+        // The sixteen triangles tile the quad (truncated centre aside).
+        let area: i32 = t
+            .iter()
+            .map(|[a, b, c]| {
+                let (ax, az) = (i32::from(a.pos[0]), i32::from(a.pos[2]));
+                ((i32::from(b.pos[0]) - ax) * (i32::from(c.pos[2]) - az)
+                    - (i32::from(c.pos[0]) - ax) * (i32::from(b.pos[2]) - az))
+                    .abs()
+            })
+            .sum();
+        assert!((area - 2 * 64 * 65).abs() <= 16, "{area}");
     }
 }
