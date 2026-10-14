@@ -70,7 +70,7 @@
 /// Zero-padded fixed-width decimal, ported from the digit kernel that
 /// `FUN_801EAD98` inlines ~15 times (one copy per numeric menu readout).
 ///
-/// Wired: `legaia_engine_core::dev_menu_host::DevMenuSession::row_value`
+/// Wired: `legaia_engine_menus::dev_menu_host::DevMenuSession::row_value`
 /// formats every numeric row through here, reached from
 /// `PlayWindowApp::tick_dev_menu`.
 /// PORT: FUN_801EAD98 (digit kernel)
@@ -115,7 +115,7 @@ pub fn format_fixed_decimal(value: i32, width: usize) -> String {
 /// `0..=0x17` in `FUN_801EAD98`). Rows the retail code labels only through a
 /// data pointer whose text is not decoded here carry a neutral name.
 ///
-/// Wired: `legaia_engine_core::dev_menu_host::DevMenuRow::retail_row` maps
+/// Wired: `legaia_engine_menus::dev_menu_host::DevMenuRow::retail_row` maps
 /// each engine row onto its retail index, and `DevMenuSession::row_label`
 /// asks the resulting row kind, once per row per frame, whether it draws its
 /// label or `CLOSED`. The chain to a host root is
@@ -156,7 +156,7 @@ impl DevMenuRow {
     /// Map a list index to its row kind. Indices `>= 0x18` are out of the
     /// retail bounds check (`0x17 < local_40` short-circuits the switch).
     ///
-    /// Wired through `legaia_engine_core::dev_menu_host::DevMenuRow::retail_row`,
+    /// Wired through `legaia_engine_menus::dev_menu_host::DevMenuRow::retail_row`,
     /// which the row list's label builder calls every frame - see
     /// [`DevMenuRow`] for the chain to the host root.
     /// PORT: FUN_801EAD98 (`switch(local_40)` + the default 0xC/0xD/0xE arm)
@@ -201,7 +201,7 @@ impl DevMenuRow {
     /// `MAP CHANGE` string and the fall-through loads `CLOSED`; case 1 repeats
     /// it at `0x801EB310` for `CARD OPTION`.
     ///
-    /// Wired: `legaia_engine_core::dev_menu_host::DevMenuSession::row_is_closed`
+    /// Wired: `legaia_engine_menus::dev_menu_host::DevMenuSession::row_is_closed`
     /// gates the `MAP CHANGE` row's label through here, and its own caller
     /// `DevMenuSession::row_label` is what the row list draws from every
     /// frame - see [`DevMenuRow`] for the chain to the host root.
@@ -231,12 +231,12 @@ impl DevMenuRow {
 /// Those six words have no other reference, so after the pass the box again
 /// holds what the region refresh latched.
 ///
-/// Wired: `legaia_engine_core::dev_menu_host::camera_row_readout` formats
+/// Wired: `legaia_engine_menus::dev_menu_host::camera_row_readout` formats
 /// the `CAMERA` row through here, from `DevMenuSession::row_value`, which both
 /// hosts' dev-menu list draw calls per row per frame (`PlayWindowApp::
 /// tick_dev_menu` -> `build_dev_menu_draws`, and the play page's
 /// `LegaiaRuntime::tick_dev_menu` -> its list draw). The box word is loaded
-/// by `DevMenuSession::tick_host` from `World::terrain.region_attributes`.
+/// by `DevMenuWorldExt::tick_host` from `World::terrain.region_attributes`.
 /// PORT: FUN_801EAD98 (case 3)
 pub fn decode_camera_readout(cam_word: u32) -> Option<(i32, i32)> {
     if cam_word == 0x7F7F_0000 {
@@ -267,7 +267,7 @@ pub struct PanelGeometry {
 /// Compute panel geometry from the inclusive row range `row_start..=row_end`.
 /// `rows = row_end - row_start + 1`; `height = rows*8`; `y = 0xD0 - rows*8`.
 ///
-/// Wired: `legaia_engine_core::dev_menu_host::DevMenuSession::tick` sizes the
+/// Wired: `legaia_engine_menus::dev_menu_host::DevMenuSession::tick` sizes the
 /// row list's panel from its own row span every frame.
 /// PORT: FUN_801ECA08
 pub fn panel_geometry(row_start: i32, row_end: i32) -> PanelGeometry {
@@ -299,7 +299,7 @@ pub const SFX_CANCEL: u32 = 0x36;
 /// that name, so every call to *that* one used to read as a call to this one.
 /// Keep the names distinct.
 ///
-/// Wired: [`legaia_engine_core::dev_menu_host::DevMenuSession::step_row`]
+/// Wired: [`legaia_engine_menus::dev_menu_host::DevMenuSession::step_row`]
 /// steps the dev-menu row list through here, reached from
 /// `PlayWindowApp::tick_dev_menu`.
 ///
@@ -333,7 +333,7 @@ pub fn dev_menu_cursor_step(
 
 /// The list-picker phase (`ctx[+0x54]`), 5-way.
 ///
-/// Wired: `legaia_engine_core::dev_menu_host::DevMenuSession::list_phase`
+/// Wired: `legaia_engine_menus::dev_menu_host::DevMenuSession::list_phase`
 /// tracks the engine dev menu's page in this phase space, which is what the
 /// retail draw gate below is asked against.
 /// PORT: FUN_801ECA08 (`switch(ctx[+0x54])`)
@@ -382,7 +382,7 @@ impl ListPickerPhase {
 /// stays because the phase-1 leg's gate is the caller's own input-allowed
 /// flag, which does vary.
 ///
-/// Wired: `legaia_engine_core::dev_menu_host::DevMenuSession::list_visible`
+/// Wired: `legaia_engine_menus::dev_menu_host::DevMenuSession::list_visible`
 /// is this gate's output, recomputed every frame.
 /// PORT: FUN_801ECA08 (`mult s2,s3` draw gate)
 pub fn list_body_draws(phase: i16, gate: i32) -> bool {
@@ -603,7 +603,7 @@ pub fn can_equip(mask: u8, char_idx: u32) -> bool {
 /// through here, which is retail's own use; and
 /// [`crate::dev_equip_commit::commit_equip`] resolves a real commit through it,
 /// with the caller chain
-/// `legaia_engine_core::dev_menu_host::DevMenuSession::commit_equip_row` ->
+/// `legaia_engine_menus::dev_menu_host::DevMenuSession::commit_equip_row` ->
 /// `PlayWindowApp::tick_dev_menu` -> `handle_redraw`.
 ///
 /// PORT: FUN_801E5B4C (slot resolution)

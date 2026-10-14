@@ -280,7 +280,7 @@ pub struct ZoneFollow {
     /// `_DAT_8007B868 == 0` test, which is true on retail); its only other
     /// writers are the dev menu's CAMERA row (`0x801EAD38`, `0x801EA1C8`),
     /// which the port's dev menu carries as
-    /// `legaia_engine_core::dev_menu_host::DevMenuRow::Camera`.
+    /// `legaia_engine_menus::dev_menu_host::DevMenuRow::Camera`.
     pub follow_enabled: bool,
     /// A focus pair (stored form) the next snap lands instead of the
     /// player's - [`Self::seat_focus_after_snap`].

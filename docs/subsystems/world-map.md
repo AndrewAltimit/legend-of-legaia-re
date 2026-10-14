@@ -502,13 +502,14 @@ because `legaia_engine_minigames::baka_cabinet` has a free function of that name
 and the port catalog's reachability pass identifies free functions by name
 ([`stale-not-wired-triage.md`](../tooling/stale-not-wired-triage.md)).
 
-The host is `legaia_engine_core::dev_menu_host::DevMenuSession`, the engine's
+The host is `legaia_engine_menus::dev_menu_host::DevMenuSession`, the engine's
 opt-in developer screen. Its row list is the subset whose backing state the
 engine owns; each row carries retail's own list index
 (`DevMenuRow::retail_index`), so the CLOSED gate, row formatter, panel
 geometry, cursor step and draw gate are all retail's kernels. Rows of retail's
 list the engine keeps no state for have no consumer. Both hosts drive the
-screen through `DevMenuSession::tick_host(world, camera, edge, held)`, which
+screen through `tick_host(world, camera, edge, held)` (engine-core's
+`DevMenuWorldExt`, the `World` seam), which
 also carries the `CAMERA` row's state in and out.
 
 The **draw** half - retail's GPU-packet emitters `FUN_8001AA68` /

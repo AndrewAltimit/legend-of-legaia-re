@@ -75,7 +75,9 @@ link into a dependent crate.
   `menu_open_sequence` (`FUN_801DAD6C`), `menu_cues` (which blip a frame's pad
   edges fire), `menu_glyph_atlas`, `save_menu_atlas` (the shared 256x256
   save / pause / battle-badge sprite bake), `debug_char_editor` (the
-  developer character editor) and `key_rebind`.
+  developer character editor), `dev_menu_host` (the developer menu screen
+  it sits on; engine-core's `DevMenuWorldExt` runs it against a `World`) and
+  `key_rebind`.
 - **Title + boot** - `publisher_logos`, `title` (title state machine),
   `title_screen_atlas`, `name_entry` (the `town01` naming screen) and
   `game_over` (party wipe to the title).

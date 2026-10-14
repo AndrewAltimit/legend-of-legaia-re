@@ -30,7 +30,8 @@
 //! - the same page retail draws off a save that never incremented them.
 
 use super::*;
-use legaia_engine_core::dev_menu_host::{DevMenuRow, DevMenuSession, DevPage};
+use legaia_engine_core::dev_menu_host::DevMenuWorldExt;
+use legaia_engine_menus::dev_menu_host::{DevMenuRow, DevMenuSession, DevPage};
 use legaia_engine_system::pad::retail_packed;
 use legaia_engine_ui::RecordsLabels;
 

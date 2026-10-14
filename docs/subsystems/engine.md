@@ -210,7 +210,7 @@ Most rows follow from the crates' roles. The ones that do not are listed in the 
 - **`engine-battle -> render-kernels` is one constant,** the encounter session's default transition length `battle_intro_styles::INTRO_DURATION_FRAMES`: the battle-intro model sits with its draw half.
 - **`engine-minigames -> engine-battle-vm` is the ringside still.** The contest hub picks the still a battle end leaves resident through `panel_backread_loader`; `battle_formulas` is the Muscle Dome's by role.
 - **`engine-effects -> engine-battle` is one lookup,** the summon catalogue resolving a spell id to its name through `retail_magic`.
-- **`engine-menus -> engine-field` is the equip commit.** The applier is a field-overlay dev-menu body (`dev_equip_commit`) that the pause menu's equip session calls too.
+- **`engine-menus -> engine-field` is the field overlay's dev-menu bodies.** The equip applier (`dev_equip_commit`) that the pause menu's equip session calls too, and the row kernels (`dev_menu_leaves`, `dev_menu_adjust`, `dev_menu_flags`) the dev menu screen (`dev_menu_host`) steps.
 - **`engine-fishing -> engine-field` is `field_regions`.** A venue floor is a field `.MAP` walk grid with tile triggers.
 - **`engine-ui -> engine-battle-vm` is the battle HUD model** (`battle_party_panel`, `battle_commit_log`, the value readout, the Theeder packet): the draw-list builders project types defined beside the kernels that fill them.
 

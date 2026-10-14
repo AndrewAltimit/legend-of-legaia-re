@@ -98,7 +98,7 @@ pub trait EquipCommitHost {
 /// PORT: FUN_801e5a08
 /// REF: FUN_801E5B4C (the slot resolution reused from `world_map_overlay`)
 ///
-/// Wired: `legaia_engine_core::dev_menu_host::DevMenuSession`'s `EQUIP` row
+/// Wired: `legaia_engine_menus::dev_menu_host::DevMenuSession`'s `EQUIP` row
 /// confirm calls this against the engine's own bag (`WorldEquipHost`).
 pub fn commit_equip<H: EquipCommitHost>(
     host: &mut H,

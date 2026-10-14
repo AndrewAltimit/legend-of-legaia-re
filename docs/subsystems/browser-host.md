@@ -388,7 +388,7 @@ SCUS table.
 
 ## Developer menu (`play_dev_menu`)
 
-The retail developer menu - the same `engine-core`
+The retail developer menu - the same `engine-menus`
 `dev_menu_host::DevMenuSession` the native window mounts behind
 `LEGAIA_DEV_MENU` - behind the play page's session-only **Dev menu**
 checkbox: unchecked on every load, never persisted, never read from the URL,

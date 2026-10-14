@@ -352,7 +352,7 @@ pub struct LegaiaRuntime {
     /// has raised one ([`crate::play_dev_menu`]) - the browser twin of the
     /// native window's `LEGAIA_DEV_MENU` session. `None` while the opt-in is
     /// off, which is the shipped default.
-    pub(crate) dev_menu: Option<legaia_engine_core::dev_menu_host::DevMenuSession>,
+    pub(crate) dev_menu: Option<legaia_engine_menus::dev_menu_host::DevMenuSession>,
     /// Whether the dev menu's Records page (Square from the row list) is up.
     pub(crate) dev_menu_records: bool,
     /// The visitor's session-only dev-menu opt-in

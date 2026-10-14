@@ -171,8 +171,8 @@ reason = "the summon catalogue resolves a spell id to its name through the battl
 [[coupling]]
 from = "engine-menus"
 to = "engine-field"
-items = ["dev_equip_commit", "dev_menu_leaves::resolve_equip_slot", "incense_window::top_up_cooldown"]
-reason = "the equip commit is a field-overlay dev-menu body the pause menu's equip session shares"
+items = ["dev_equip_commit", "dev_menu_leaves", "dev_menu_adjust", "dev_menu_flags", "world_map_panel::{SFX_CURSOR_MOVE, dev_menu_action}", "incense_window::top_up_cooldown"]
+reason = "the equip commit and the dev menu's row kernels are field-overlay dev-menu bodies; the pause menu's equip session and the dev menu screen share them"
 
 [[coupling]]
 from = "engine-fishing"

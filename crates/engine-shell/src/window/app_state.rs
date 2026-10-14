@@ -623,7 +623,7 @@ pub(super) struct PlayWindowApp {
     /// The opt-in developer menu (`LEGAIA_DEV_MENU=1`), created on the first
     /// ticked frame. `None` on every default run, which is what keeps the
     /// dev screen out of a player build.
-    pub(super) dev_menu: Option<legaia_engine_core::dev_menu_host::DevMenuSession>,
+    pub(super) dev_menu: Option<legaia_engine_menus::dev_menu_host::DevMenuSession>,
     /// This frame's dev-menu row-list draws, rebuilt by `tick_dev_menu` and
     /// appended by the (immutable) HUD builder. Empty unless the menu is on.
     pub(super) dev_menu_draws: Vec<TextDraw>,

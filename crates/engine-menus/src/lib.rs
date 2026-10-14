@@ -24,6 +24,7 @@ pub mod battle_open;
 pub mod card_bu_io;
 pub mod card_flow;
 pub mod debug_char_editor;
+pub mod dev_menu_host;
 pub mod equip_session;
 pub mod equipment;
 pub mod field_menu;

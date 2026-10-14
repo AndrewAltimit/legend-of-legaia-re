@@ -95,10 +95,10 @@ fn dev_menu_equip_ladder() {
     // Walk to the last row (`EQUIP`): `rows - 1` Downs land on it from the
     // top whether the picker clamps or wraps; each press has to move the `>`
     // cursor, which is what makes this a walk and not a sequence of no-ops.
-    let rows = legaia_engine_core::dev_menu_host::DevMenuRow::ALL.len();
+    let rows = legaia_engine_menus::dev_menu_host::DevMenuRow::ALL.len();
     assert_eq!(
-        legaia_engine_core::dev_menu_host::DevMenuRow::ALL[rows - 1],
-        legaia_engine_core::dev_menu_host::DevMenuRow::Equip,
+        legaia_engine_menus::dev_menu_host::DevMenuRow::ALL[rows - 1],
+        legaia_engine_menus::dev_menu_host::DevMenuRow::Equip,
         "EQUIP is the list's last row"
     );
     let mut seen = vec![list.to_string()];
@@ -160,9 +160,9 @@ fn dev_menu_equip_ladder() {
 
     // EVENT FLAG page (`FUN_801DBD04` value editor, `FUN_801DB8F4` list
     // cursor). Two Ups from EQUIP land on the row; Cross opens the page.
-    let flag_row = legaia_engine_core::dev_menu_host::DevMenuRow::ALL
+    let flag_row = legaia_engine_menus::dev_menu_host::DevMenuRow::ALL
         .iter()
-        .position(|r| *r == legaia_engine_core::dev_menu_host::DevMenuRow::EventFlag)
+        .position(|r| *r == legaia_engine_menus::dev_menu_host::DevMenuRow::EventFlag)
         .expect("EVENT_FLAG row");
     for _ in flag_row..rows - 1 {
         tap(&mut rt, PadButton::Up.mask());
