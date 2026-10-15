@@ -221,9 +221,13 @@ pub(super) fn wanted_item(
     let worst = *hurt
         .iter()
         .min_by_key(|&&i| hp[i] * 1000 / u32::from(w.actors[i].battle.max_hp).max(1))?;
+    // For a lone member a party heal is a heal like any other: Gala's
+    // Che Delilas duel (`nilboa`, one member present) found five Healing
+    // Fruit in the bag and held the Spirit stance until it fell, because
+    // the Fruit's all-party flag kept it off this list.
     let singles: Vec<(u32, u8)> = ids
         .iter()
-        .filter(|&&id| !w.tables.item_catalog.is_all_party(id))
+        .filter(|&&id| n == 1 || !w.tables.item_catalog.is_all_party(id))
         .filter_map(|&id| Some((item_restore(w, id, worst, hp[worst])?, id)))
         .filter(|&(r, _)| r > 0)
         .collect();
@@ -280,8 +284,32 @@ pub(super) fn wanted_mp_item(
     actor: u8,
 ) -> Option<(u8, u8)> {
     use legaia_engine_menus::items::ItemEffect;
-    if !w.battle.no_escape || solo_duel(w) {
+    if !w.battle.no_escape {
         return None;
+    }
+    // A duellist with no restorative left and too little MP for its heal
+    // spell ([`duel_spell_heal`]) drinks the largest MP item: a Magic Fruit
+    // is four Spoons.
+    if solo_duel(w) {
+        let a = &w.actors.get(usize::from(actor))?.battle;
+        if bag_can_heal(w)
+            || a.hp == 0
+            || u32::from(a.hp) * 5 >= u32::from(a.max_hp) * 3
+            || duel_spell_heal(w, actor).is_some()
+            || !knows_heal_spell(w, actor)
+        {
+            return None;
+        }
+        return ids
+            .filter_map(|id| {
+                let e = w.tables.item_catalog.get(id)?;
+                match e.effect {
+                    ItemEffect::HealMp { amount } if e.usable_in_battle => Some((amount, id)),
+                    _ => None,
+                }
+            })
+            .max()
+            .map(|(_, id)| (id, actor));
     }
     // Only against a foe of twenty times the party's largest HP or more
     // (Songi, 48000 to ~1950): in a shorter fight the drinks cost turns the
@@ -332,7 +360,7 @@ pub(super) fn wanted_fury_item(
     actor: u8,
 ) -> Option<(u8, u8)> {
     use legaia_engine_menus::items::ItemEffect;
-    if !w.battle.no_escape || solo_duel(w) {
+    if !w.battle.no_escape {
         return None;
     }
     let n = w.party.party_count.clamp(1, 3) as usize;
@@ -345,10 +373,14 @@ pub(super) fn wanted_fury_item(
         .max()
         .unwrap_or(1)
         .max(1);
-    if !(n..w.actors.len()).any(|k| {
-        let a = &w.actors[k].battle;
-        a.hp > 0 && u32::from(a.max_hp) >= ours * 10
-    }) {
+    // A solo duel ([`solo_duel`]) is such a fight too: its member's Arts are
+    // all the damage the fight gets.
+    if !solo_duel(w)
+        && !(n..w.actors.len()).any(|k| {
+            let a = &w.actors[k].battle;
+            a.hp > 0 && u32::from(a.max_hp) >= ours * 10
+        })
+    {
         return None;
     }
     if !miracle_armed(w, actor) {
@@ -401,10 +433,42 @@ pub(super) fn wanted_power_item(
 ) -> Option<(u8, u8)> {
     use legaia_engine_battle::spells::BuffStat;
     use legaia_game_tables::item_effect::{StatItemEffect, StatTarget};
-    if !w.battle.no_escape || solo_duel(w) {
+    if !w.battle.no_escape {
         return None;
     }
     let n = w.party.party_count.clamp(1, 3) as usize;
+    let table = w.tables.item_effects.as_ref()?;
+    let attack_elixir = |ids: &mut dyn Iterator<Item = u8>| {
+        ids.filter(|&id| {
+            w.tables
+                .item_catalog
+                .get(id)
+                .is_some_and(|e| e.usable_in_battle)
+                && matches!(table.stat_effect(id),
+                    Some(StatItemEffect::BuffOneBattle(stats)) if stats.contains(&StatTarget::Attack))
+        })
+        // The single-stat Elixir before the four-stat one.
+        .min_by_key(|&id| match table.stat_effect(id) {
+            Some(StatItemEffect::BuffOneBattle(stats)) => stats.len(),
+            _ => usize::MAX,
+        })
+    };
+    // A solo duel's member drinks one itself, once, before its first Arts
+    // round: nobody else swings, and the ramp lasts the whole fight. Gala's
+    // Che Delilas duel (`nilboa`) is about thirty Arts rounds against a
+    // 12000-HP foe out of one bag that has to last two more duels.
+    if solo_duel(w) {
+        let mine = w
+            .battle
+            .buffs
+            .iter()
+            .any(|b| b.slot == actor && b.stat == BuffStat::Attack);
+        if mine || usize::from(actor) >= n || miracle_armed_fury(w, actor) {
+            return None;
+        }
+        let mut ids = ids;
+        return attack_elixir(&mut ids).map(|id| (id, actor));
+    }
     if usize::from(actor) >= n || miracle_ready(w, actor) || miracle_armed_fury(w, actor) {
         return None;
     }
@@ -436,21 +500,8 @@ pub(super) fn wanted_power_item(
                 .iter()
                 .any(|b| b.slot == m && b.stat == BuffStat::Attack)
     })?;
-    let table = w.tables.item_effects.as_ref()?;
-    ids.filter(|&id| {
-        w.tables
-            .item_catalog
-            .get(id)
-            .is_some_and(|e| e.usable_in_battle)
-            && matches!(table.stat_effect(id),
-                Some(StatItemEffect::BuffOneBattle(stats)) if stats.contains(&StatTarget::Attack))
-    })
-    // The single-stat Elixir before the four-stat one.
-    .min_by_key(|&id| match table.stat_effect(id) {
-        Some(StatItemEffect::BuffOneBattle(stats)) => stats.len(),
-        _ => usize::MAX,
-    })
-    .map(|id| (id, target))
+    let mut ids = ids;
+    attack_elixir(&mut ids).map(|id| (id, target))
 }
 
 /// Whether `actor` is (or is about to be) a Miracle typist through a Fury
@@ -521,6 +572,10 @@ pub(super) fn wanted_spell(
     m: &legaia_engine_battle::battle_magic::BattleSpellSession,
 ) -> Option<usize> {
     use legaia_engine_battle::spells::SpellEffect;
+    // A duellist out of restoratives casts its heal ([`duel_spell_heal`]).
+    if let Some(heal) = duel_spell_heal(w, m.actor) {
+        return m.spells.iter().position(|r| r.id == heal && r.affordable);
+    }
     // The continuous hand keeps half its MP for the fights it cannot run
     // from: a random encounter is cast at only out of the upper half.
     let floor = if continuous::PLAYS_ON.with(std::cell::Cell::get) && !w.battle.no_escape {

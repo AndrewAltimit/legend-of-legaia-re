@@ -409,7 +409,10 @@ pub(super) fn duel_wants_spirit(w: &legaia_engine_core::world::World, actor: u8)
     // within three twentieths again of the worst unguarded round seen, and
     // below five eighths of its HP (a 900-HP Gala at 62% swung into 903).
     // Half again starved the fight: Gala guarded and healed to the cap.
-    let low = u32::from(a.hp) * 8 < u32::from(a.max_hp) * 5 || u32::from(a.hp) * 20 <= threat * 23;
+    // Held only while the bag can still top the member up: with no
+    // restorative left the stance only waits for the foe to finish it.
+    let low = bag_can_heal(w)
+        && (u32::from(a.hp) * 8 < u32::from(a.max_hp) * 5 || u32::from(a.hp) * 20 <= threat * 23);
     // The choice is latched per foe round: the fighter re-reads the menu on
     // every pad poll until the press lands, and a choice that flipped under
     // it would press something else.
@@ -421,4 +424,75 @@ pub(super) fn duel_wants_spirit(w: &legaia_engine_core::world::World, actor: u8)
     }
     DUEL_SPIRIT_ROUND.with(|d| d.set(Some(round)));
     true
+}
+
+/// Does `actor` know a healing spell?
+pub(super) fn knows_heal_spell(w: &legaia_engine_core::world::World, actor: u8) -> bool {
+    use legaia_engine_battle::spells::SpellEffect;
+    let Some(m) = w
+        .party
+        .roster
+        .members
+        .get(w.party_roster_slot(usize::from(actor)))
+    else {
+        return false;
+    };
+    let list = m.spell_list();
+    list.ids[..(list.count as usize).min(list.ids.len())]
+        .iter()
+        .any(|&id| {
+            w.tables.spell_catalog.get(id).is_some_and(|d| {
+                matches!(
+                    d.effect,
+                    SpellEffect::Heal { .. } | SpellEffect::HealAll { .. }
+                )
+            })
+        })
+}
+
+/// Does the bag hold an HP restorative usable in battle?
+pub(super) fn bag_can_heal(w: &legaia_engine_core::world::World) -> bool {
+    use legaia_engine_menus::items::ItemEffect;
+    w.party.inventory.iter().any(|(&id, &c)| {
+        c > 0
+            && w.tables.item_catalog.get(id).is_some_and(|e| {
+                e.usable_in_battle
+                    && matches!(e.effect, ItemEffect::Heal { .. } | ItemEffect::HealAll)
+            })
+    })
+}
+
+/// A solo duel's heal once the bag has none: the healing spell `actor`
+/// knows and can pay for that restores the most, cast while the member is
+/// under the duel's heal line (three fifths of its HP). The three Nivora
+/// duels are fought out of one bag, and each duellist knows Spoon (270 HP,
+/// 45 MP): a member that ran the bag dry held the Spirit stance with a full
+/// MP pool until the foe finished it.
+pub(super) fn duel_spell_heal(w: &legaia_engine_core::world::World, actor: u8) -> Option<u8> {
+    use legaia_engine_battle::spells::SpellEffect;
+    if !solo_duel(w) || bag_can_heal(w) {
+        return None;
+    }
+    let a = &w.actors.get(usize::from(actor))?.battle;
+    if a.hp == 0 || u32::from(a.hp) * 5 >= u32::from(a.max_hp) * 3 {
+        return None;
+    }
+    let m = w
+        .party
+        .roster
+        .members
+        .get(w.party_roster_slot(usize::from(actor)))?;
+    let list = m.spell_list();
+    list.ids[..(list.count as usize).min(list.ids.len())]
+        .iter()
+        .filter_map(|&id| {
+            let d = w.tables.spell_catalog.get(id)?;
+            let amount = match d.effect {
+                SpellEffect::Heal { amount } | SpellEffect::HealAll { amount } => amount,
+                _ => return None,
+            };
+            (u32::from(d.mp_cost) <= u32::from(a.mp)).then_some((amount, id))
+        })
+        .max()
+        .map(|(_, id)| id)
 }

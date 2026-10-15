@@ -224,6 +224,14 @@ pub(super) fn fight_pad(session: &NativeSession) -> u16 {
             CommandPhase::Menu { .. } if lesson.is_none() && wants_aoe_guard(w, cmd.actor) => {
                 PadButton::Down.mask()
             }
+            // A duellist whose bag has run dry heals with a spell.
+            CommandPhase::Menu { .. }
+                if lesson.is_none()
+                    && !NO_MAGIC.with(|n| n.borrow().contains(&cmd.actor))
+                    && duel_spell_heal(w, cmd.actor).is_some() =>
+            {
+                PadButton::Right.mask()
+            }
             // A solo duel builds its gauge between Arts turns.
             CommandPhase::Menu { .. } if lesson.is_none() && duel_wants_spirit(w, cmd.actor) => {
                 PadButton::Down.mask()
