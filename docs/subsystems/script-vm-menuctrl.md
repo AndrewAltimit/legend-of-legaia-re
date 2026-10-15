@@ -664,7 +664,7 @@ stride, walking successive `vdf_idx` values.
 
 | Sub | Form | What it does |
 |---|---|---|
-| 0 | `[4C E0 b1]` | 3-way state write: `b1 == 0` sets `DAT_801F2744 = 1`, `b1 < 100` writes `DAT_801F2740 = b1`, `b1 >= 100` writes `picker[+0xE] = b1 - 100`. PC += 3 on every path (`0x801E306C` exits through the `0x801E00B8` `+3` entry). |
+| 0 | `[4C E0 b1]` | Reading-box format: `b1 == 0` raises the instant-page latch `DAT_801F2744` (the pager's next page load enters every line at once and waits, `0x801D8798..0x801D88C4`), `b1 < 100` sets the row capacity `DAT_801F2740` (the pager's resets store `3`), `b1 >= 100` writes `picker[+0xE] = b1 - 100`. PC += 3 on every path (`0x801E306C` exits through the `0x801E00B8` `+3` entry). `izumi`'s help pages issue `4C E0 00` / `4C E0 0C` before each page: twelve-row boxes, loaded whole. Port: `DialogState::window_rows` / `window_instant`, handed to the next box by `World::apply_dialog_window_format`. |
 | 1 | variable | **Text balloon spawn** - the field VM's most visible opcode, alongside [`crates/mes`](../formats/mes.md). PC = `pc + 3 + packet_length(operand+1)` ([`packet_length`](script-vm.md#helper-functions)). |
 | 2 | `[4C E2 lo hi _ _ _]` | **FMV trigger**: `(s16)bytecode[2..3]` -> `_DAT_8007BA78`, `_DAT_8007B83C = 0x1A` (next mode 26 `StrInit`); the trailing 3 bytes are reserved. See [`cutscene.md`](cutscene.md#field-vm-fmv-trigger-op). |
 | 3 | `[4C E3 actor]` | Position-copy teleport - [below](#4c-e3-position-copy-teleport). |

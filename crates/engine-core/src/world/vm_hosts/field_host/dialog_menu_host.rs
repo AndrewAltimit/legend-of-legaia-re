@@ -3,6 +3,19 @@
 use super::*;
 
 impl<'a> FieldDialogMenuHost for FieldHostImpl<'a> {
+    // Op `4C E0 <b1>` (arm `0x801E306C`): `0` raises the instant-page latch
+    // `_DAT_801F2744`, `1..100` sets the reading box's row capacity
+    // `_DAT_801F2740` - `izumi`'s help pages open twelve-row boxes that load
+    // whole. `>= 100` writes the picker word `*(_DAT_801C6EA4) + 0xE`, which
+    // nothing in the port reads.
+    fn op4c_ne_sub0_state_write(&mut self, b1: u8) {
+        if b1 == 0 {
+            self.world.dialog.window_instant = true;
+        } else if b1 < 100 {
+            self.world.dialog.window_rows = b1;
+        }
+    }
+
     /// Op `4C D0`: a confirm or cancel **new press** - the pad edge
     /// `_DAT_8007B874` against `_DAT_800846D0 | _DAT_800846D4`, both in the
     /// packed pad layout - releases the prompt. The cursor `FUN_8002B994`
@@ -96,5 +109,44 @@ impl<'a> FieldDialogMenuHost for FieldHostImpl<'a> {
     /// presses through ([`legaia_engine_dialog::dialog::OwnedDialogPanel::tick_at_auto`]).
     fn set_dialog_auto_press(&mut self, value: i16) {
         self.world.dialog.auto_press = value;
+    }
+}
+
+#[cfg(test)]
+mod window_format_tests {
+    use crate::world::World;
+    use crate::world::vm_hosts::{FieldHostImpl, field_step_routed};
+    use legaia_engine_vm::field::FieldCtx;
+
+    /// `izumi` P1[12]: `4C E0 00`, `4C E0 0C`, then the page. The box opens
+    /// twelve rows tall with the page loaded whole, and the format is spent:
+    /// the next box is the pager's three again.
+    #[test]
+    fn op_4c_e0_opens_one_twelve_row_instant_box() {
+        let mut w = World::new();
+        let mut ctx = FieldCtx::default();
+        let mut host = FieldHostImpl { world: &mut w };
+        field_step_routed(&mut host, &mut ctx, &[0x4C, 0xE0, 0x00], 0);
+        field_step_routed(&mut host, &mut ctx, &[0x4C, 0xE0, 0x0C], 0);
+        assert!(w.dialog.window_instant);
+        assert_eq!(w.dialog.window_rows, 12);
+        // Five one-glyph lines in one page.
+        let mut bytes = Vec::new();
+        for c in b"ABCDE" {
+            bytes.extend_from_slice(&[0x1F, *c, 0x00]);
+        }
+        bytes.push(0x21);
+        let bytes = std::sync::Arc::new(bytes);
+        let mut panel =
+            legaia_engine_dialog::dialog::OwnedDialogPanel::at_segment(bytes.clone(), 0);
+        w.apply_dialog_window_format(&mut panel);
+        assert_eq!(panel.box_rows(), Some(12));
+        let mut auto = 0i16;
+        panel.tick_at_auto(1, &mut auto);
+        assert_eq!(panel.window().map(|win| win.rows.len()), Some(5));
+        assert!(panel.window().is_some_and(|win| win.waiting()));
+        let mut next = legaia_engine_dialog::dialog::OwnedDialogPanel::at_segment(bytes, 0);
+        w.apply_dialog_window_format(&mut next);
+        assert_eq!(next.box_rows(), Some(3), "a format lasts one box");
     }
 }

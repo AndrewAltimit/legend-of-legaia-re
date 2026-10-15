@@ -448,6 +448,7 @@ impl World {
                             id.pc,
                         );
                         panel.substitutions = host.world.dialog_substitutions(&id.bytecode);
+                        host.world.apply_dialog_window_format(&mut panel);
                         id.panel = Some(panel);
                         break;
                     }
@@ -914,6 +915,23 @@ impl World {
     /// The counters are read when the box opens. Retail re-reads them each
     /// frame it draws, which differs only if a script rewrites a counter
     /// while its own box is still on screen.
+    /// Hand a reading box opening now the window format the field VM set
+    /// (op `4C E0`) and reset it, as the pager's reset stores `3` when the
+    /// box closes: a format lasts one box.
+    ///
+    /// REF: FUN_801D84D0 (`0x801D8798`, `0x801D90EC`)
+    pub(crate) fn apply_dialog_window_format(
+        &mut self,
+        panel: &mut legaia_engine_dialog::dialog::OwnedDialogPanel,
+    ) {
+        let rows = std::mem::replace(
+            &mut self.dialog.window_rows,
+            legaia_engine_dialog::dialog_window::WINDOW_ROWS as u8,
+        );
+        let instant = std::mem::take(&mut self.dialog.window_instant);
+        panel.set_window_format(usize::from(rows), instant);
+    }
+
     pub(crate) fn dialog_substitutions(
         &self,
         record: &[u8],

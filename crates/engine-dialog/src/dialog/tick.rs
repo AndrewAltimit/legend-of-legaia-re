@@ -292,14 +292,25 @@ impl OwnedDialogPanel {
             .collect()
     }
 
-    /// Rows the reading box is tall: the window's
-    /// [`crate::dialog_window::WINDOW_ROWS`] on the box path (the page buffer
-    /// can hold one more while a row scrolls in), `None` on the plain-MES
-    /// path, whose box grows with its page.
+    /// Rows the reading box is tall: the window's capacity
+    /// (`_DAT_801F2740`, [`crate::dialog_window::WINDOW_ROWS`] unless op
+    /// `4C E0` set it) on the box path (the page buffer can hold one more
+    /// while a row scrolls in), `None` on the plain-MES path, whose box
+    /// grows with its page.
     pub fn box_rows(&self) -> Option<usize> {
-        self.window
-            .as_ref()
-            .map(|_| crate::dialog_window::WINDOW_ROWS)
+        self.window.as_ref().map(|w| w.capacity)
+    }
+
+    /// Apply the field VM's window format to this panel's window: the row
+    /// capacity op `4C E0 <n>` set (`_DAT_801F2740`) and, when `instant`,
+    /// the `4C E0 00` latch (`_DAT_801F2744`) that loads the next page whole.
+    pub fn set_window_format(&mut self, rows: usize, instant: bool) {
+        self.window_rows = rows.max(1);
+        self.window_instant |= instant;
+        if let Some(w) = self.window.as_mut() {
+            w.capacity = self.window_rows;
+            w.instant |= std::mem::take(&mut self.window_instant);
+        }
     }
 
     /// Whole pixels every row of the page draws above its slot (the pager's
