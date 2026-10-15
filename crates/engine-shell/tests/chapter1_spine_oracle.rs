@@ -120,22 +120,6 @@ fn pcsx_save(fp: &str) -> Option<PathBuf> {
     p.exists().then_some(p)
 }
 
-fn scene_mode_name(m: SceneMode) -> &'static str {
-    match m {
-        SceneMode::Title => "Title",
-        SceneMode::Field => "Field",
-        SceneMode::Battle => "Battle",
-        SceneMode::Cutscene => "Cutscene",
-        SceneMode::WorldMap => "WorldMap",
-        SceneMode::Dance => "Dance",
-        SceneMode::Fishing => "Fishing",
-        SceneMode::SlotMachine => "SlotMachine",
-        SceneMode::BakaFighter => "BakaFighter",
-        SceneMode::MuscleDome => "MuscleDome",
-        SceneMode::Menu => "Menu",
-    }
-}
-
 // ---------------------------------------------------------------------
 // Part A: retail anchors
 // ---------------------------------------------------------------------
@@ -557,7 +541,7 @@ fn build_chain_trace() -> Option<Vec<ModeTraceFrame>> {
             frame: *fi,
             game_mode: None,
             game_mode_name: None,
-            scene_mode: scene_mode_name(host.world.mode).to_string(),
+            scene_mode: host.world.mode.name().to_string(),
             active_scene: host.scene.as_ref().map(|s| s.name.clone()),
         });
         *fi += 1;
@@ -643,7 +627,7 @@ fn replay_determinism_two_runs_byte_identical() {
             out.push_str(&format!(
                 "{}|{}|{}|{}\n",
                 world.frame,
-                scene_mode_name(world.mode),
+                world.mode.name(),
                 pad,
                 world.rng_state
             ));

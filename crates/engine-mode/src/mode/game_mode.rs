@@ -72,6 +72,26 @@ pub enum SceneMode {
     Menu,
 }
 
+impl SceneMode {
+    /// The variant's name (`"Field"`, `"SlotMachine"`, ...): the stable
+    /// spelling the mode-trace oracle and the replay state traces record.
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Title => "Title",
+            Self::Field => "Field",
+            Self::Battle => "Battle",
+            Self::Cutscene => "Cutscene",
+            Self::WorldMap => "WorldMap",
+            Self::Dance => "Dance",
+            Self::Fishing => "Fishing",
+            Self::SlotMachine => "SlotMachine",
+            Self::BakaFighter => "BakaFighter",
+            Self::MuscleDome => "MuscleDome",
+            Self::Menu => "Menu",
+        }
+    }
+}
+
 /// The slice of the game world the mode seat reads and writes each frame:
 /// the scene mode it installs, the frame-begin skip latch it consults and
 /// clears, the CONFIG INIT sound detach, the battle-intro hold on the mode
