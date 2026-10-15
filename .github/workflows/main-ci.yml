@@ -136,11 +136,12 @@ jobs:
       - name: Play page fragment depth space
         run: python3 scripts/ci/check-js-depth-space.py
 
-      # `_gen.py` never reads `docs/`, so a `site/_content/` mirror of a docs
-      # page drifts silently: it keeps building and keeps passing the link
-      # checker while whole areas of its source stop appearing on the public
-      # site. That is how the open-RE-threads page shipped with no battle
-      # section and a closed thread still described as open.
+      # A hand-written `site/_content/` mirror of a docs page drifts silently:
+      # it keeps building and keeps passing the link checker while whole areas
+      # of its source stop appearing on the public site. The three register
+      # pages are rendered from docs/ at build time instead (site/_registers.py);
+      # the gate checks their markers, their expanded coverage, and the
+      # freshness stamp of any local build.
       - name: Site mirrors cover their docs sources
         run: python3 scripts/ci/check-site-doc-mirrors.py
 
