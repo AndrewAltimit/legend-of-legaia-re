@@ -193,20 +193,6 @@ impl LegaiaRuntime {
         self.play_menu.is_some()
     }
 
-    /// Whether a script has pressed the menu button this frame - an op-`0x49`
-    /// save point or ready check
-    /// ([`legaia_engine_core::world::World::scripted_menu_open_pending`]). The
-    /// page opens the menu on it with no Start edge, through
-    /// [`Self::play_menu_open`], and plays no confirm blip: retail's cue
-    /// `0x20` is the pad controller's, not the subsystem actor's.
-    pub fn play_menu_scripted_open_pending(&self) -> bool {
-        self.play_menu.is_none()
-            && self
-                .scene_host
-                .host()
-                .is_some_and(|h| h.world.scripted_menu_open_pending())
-    }
-
     /// Whether a pause-menu **sub-screen** owns the pad (Items, Magic,
     /// Status, Equip, Options, Load / Save, the Arts editor), as opposed to
     /// the root row list.

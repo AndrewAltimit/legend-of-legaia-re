@@ -1,16 +1,13 @@
 //! One display frame's sim ticks, owner by owner: the page's twin of the
-//! native window's `run_sim_ticks` / `sim_tick` arms, in one export.
+//! native window's `run_sim_ticks` / `sim_tick`, in one export.
 //!
-//! Each tick goes to the first owner that takes it: the pause menu
-//! (`play_menu_tick`), the naming prompt (`play_name_entry_tick`), the
-//! opening chain's intro skip, the party-wipe hold, a menu-overlay screen
-//! (`play_shop_tick`), and otherwise the field (`tick_frame`, then the
-//! screen's after-tick step). The frame's just-pressed edges ride the first
-//! tick only. The page's JavaScript used to spell this order itself, which
-//! made it the one part of a frame a native test could check only through a
-//! hand transcription; the JS now calls [`LegaiaRuntime::play_frame_ticks`]
-//! and keeps only its own follow-up (blitters, geometry rebuilds, the quit
-//! hand-back), which the report names.
+//! Each tick goes to the owner `BootSession::claim_tick` names - the one
+//! order both play hosts share (a host screen, the naming prompt, the intro
+//! skip, the pause menu's spawn and press, a menu-overlay screen, the
+//! field) - and the page acts only on that answer. The frame's just-pressed
+//! edges ride the first tick only. The page's JavaScript calls
+//! [`LegaiaRuntime::play_frame_ticks`] and keeps only its own follow-up
+//! (blitters, geometry rebuilds, the quit hand-back), which the report names.
 
 use super::*;
 use legaia_engine_session::{TickClaims, TickOwner};

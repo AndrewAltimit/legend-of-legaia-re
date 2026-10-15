@@ -833,8 +833,8 @@ type unowned, no variant unanswered, no entry hotkey-only.
 
 The browser's frame path is **two** files, and the Rust half is the one
 without the interesting arm. `site/js/play-view-frame.js::_frame` calls
-`rt.tick_frame()` inside `if (advance && !menuOpen && !shopOpen &&
-!namingOpen)` and calls `this._drawOverlay()` outside it, so a guarded frame
+the frame's ticks inside `if (advance)` (the page's own pause control) and
+calls `this._drawOverlay()` outside it, so a guarded frame
 runs no kernel at all and still draws - every one of them at once. A Rust-only scan
 sees none of that, which is how "the browser page has no early-out" came to be
 written down while the page carried the same defect the native window did. The
@@ -1236,7 +1236,7 @@ decidable per instance, not from a source pattern.
 | **A session choice the next entry re-arms.** | Native `F7` cleared the encounter toggle; the live-loop arming raised it again. | Write the session flag every entry reads. |
 | **A simulation step on the draw path.** One host steps it per redraw, the other per tick. | The fog pool's render step ages the pool the next tick's spawner reads, and a spawn draws the world `rand()` stream. The window ran it per redraw, the page per tick, so at 30 Hz or 120 Hz the window's stream parted. | `BootSession::step_field_fog`, per tick on both; the draw only wraps the quads. |
 | **A seat left behind when its step moves.** A capture seat installed between a step and the draw it feeds. | Moving the fog step into the tick left the capture harness's `LEGAIA_SEAT_FOG` install in the draw prep, after the frame's step: the frame drew the engine's sheets, and the field image states fell (`field_walled_collision_pin` to 0.578). | `BootSession::seat_field_fog` installs and re-runs the frame's step over the seat. |
-| **A screen stepped per display frame against one stepped per tick.** | The page opened the pause menu, routed the naming prompt's edge and stepped a shop at display-frame level. At 120 Hz a press landed on a frame with no tick; on the closing frame the menu stepped `n` times and the field ticked `n` more. | Per-tick owners in the native `sim_tick` order (`play_menu_tick`, `play_name_entry_tick`, `play_shop_tick` / `play_shop_after_tick`), asked by the page's tick loop. |
+| **A screen stepped per display frame against one stepped per tick.** | The page opened the pause menu, routed the naming prompt's edge and stepped a shop at display-frame level. At 120 Hz a press landed on a frame with no tick; on the closing frame the menu stepped `n` times and the field ticked `n` more. | One tick order both hosts hand each tick through: `BootSession::claim_tick`. |
 | **A loop that ends on the tick it changed hands.** | After the prologue skip and on the tick a merchant opened a shop, the page broke out of its tick loop and dropped the frame's remaining ticks. The native arms return from one tick, not from the frame. | Continue the loop; the next tick goes to whoever owns it now. |
 
 ### A draw, queue or resource one side lacks
@@ -1297,7 +1297,6 @@ reverse-engineering questions, so they are not on
 | shading law | One law in WGSL and GLSL; nothing pairs the shader bodies. See [shading](#the-two-hosts-do-not-share-a-shading-law). |
 | battle body blend | Native keys the posed override by TMD index (two bodies sharing a TMD share one); the page orders blend passes per mesh, not per prim. |
 | save rack port 1 | Native mounts its `.lgsf` directory as port 1 and `--card` as port 2; the page mounts two card images and resumes `.lgsf` through the save bar. Closing it is storage work. |
-| per-tick screen owners | Each sim tick goes to the pause menu, then the naming prompt, then the intro skip, the wipe hold, a menu-overlay screen, then the field: the window's `sim_tick` arms, the page's `play_frame_ticks`. The order is spelt once per host, both in Rust; the [frame-body trace](#output-level-the-frame-body-trace) drives the page's through the export itself. |
 | lit rows under the palette collapse | Not drift: both hosts run a lit row's shaded colour through the prologue's packet sepia, which the light kernel's output never meets in retail. See [light-source rows](#light-source-rows-in-a-graded-scene). |
 | cheats | One `World::cheat_*` call each. Every listed cheat is a launch switch natively and a runtime control on the page (`F6` / `F7` are runtime on both, through the [hotkey table](#host-hotkeys)); a GameShark file is a launch switch natively and pasted text on the page (`cheat_apply_codes`). |
 | launch switches | See [launch switches](#launch-switches-against-page-settings). |
@@ -1354,7 +1353,7 @@ The frame model is in [`engine.md`](../subsystems/engine.md#the-frame-model).
 | cutscene glide clock | `CutsceneGlide`, reset on every entry (retail's `FUN_80025C24` kills the mover) |
 | move-VM strips | `MoveVmGlobals::strip_frame` |
 | fog pool render step | `BootSession::step_field_fog`, once per sim tick (window: `tick_frame_tail_effects`; page: inside `tick_frame`); the draws read `World::fog_quads` |
-| who owns the tick | window: the `sim_tick` arms; page: `play_menu_tick`, `play_name_entry_tick`, `play_shop_tick` / `play_shop_after_tick` |
+| who owns the tick | `BootSession::claim_tick` -> `TickOwner`: a host-held screen, the naming prompt, the prologue skip, the pause menu's spawn and press, a suspending overlay screen, the field (neutral pad or not). Each host matches on the answer (window: `sim_tick`; page: `frame_ticks`) and adds only what it holds; a `SIM_PAIRS` row pins both to the claim |
 | field frame tail | `BootSession::step_effect_scene_graphs`, `World::step_field_vram_effects`, `drain_field_anim_cues`; headless: `World::step_world_frame_tail` ([`reach-triage.md`](reach-triage.md#what-a-pad-only-ladder-structurally-cannot-execute)) |
 | party-wipe probe | `BootSession::take_party_wipe` |
 | scheduler under a frozen field | `BootSession::step_overlay_sfx` |
@@ -1419,7 +1418,7 @@ side, so they pair by call rather than by step name:
 | `BootSession::route_battle_audio` | `drain_and_log_battle_events` | `drain_battle_audio_cues`, inside `tick_battle_presentation` |
 | `BootSession::step_overlay_sfx` | `tick_menu_sfx`, in the arms that freeze the field | the export `play_tick_overlay_sfx`, from the page's frame loop |
 | `session::step_npc_clip_players` | `drain_anim_cues`, after the tick's re-targets | `drive_npc_clips` (`FieldActors::drive`), after the same |
-| `BootSession::step_name_entry_frame` | the per-tick naming-prompt arm | the export `play_name_entry_tick`, per tick from the page's tick loop (`name_entry_advance_frames` / `pass_name_entry_frames` remain for a bundle without it) |
+| `BootSession::step_name_entry_frame` | `BootSession::claim_tick`, from `sim_tick` | `BootSession::claim_tick`, from `frame_ticks` |
 | `BootSession::step_field_fog` | `tick_frame_tail_effects` | `tick_field_fog_prims`, inside `tick_frame` |
 
 `step_audio_frame` is the tick's **audio frame**: the duck ramp toward the

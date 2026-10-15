@@ -2,7 +2,7 @@
  *
  * Part of the PlayView class (play-app.js): the keyboard / gamepad listeners
  * and the held-key pad word, menu sound cues, the fishing toggle, and the
- * per-tick drivers of the pause menu, name entry and field shop.
+ * menu blitter staging (the screens tick inside `play_frame_ticks`).
  *
  * Classic script. Requires play-view-constants.js and play-app.js first. */
 (function () {
@@ -249,114 +249,8 @@
 
     /* ---------- retail pause menu (engine-driven) ---------- */
 
-    /* Drive the retail pause menu from this frame's just-pressed edges (the
-     * `pulse` set, read before the engine tick consumes it). The state machine
-     * + navigation live in the engine (`play_menu_input`); this only opens it on
-     * Start, closes it on Start, and forwards the remaining edges. Returns `true`
-     * while the menu is up, so `_frame` freezes the field - retail holds the
-     * world in SceneMode::Menu. */
-    _updateFieldMenu(simSteps) {
-      const rt = this.rt;
-      const p = this.pulse;
-      /* The per-tick owner (`play_menu_tick`, the native window's `sim_tick`
-       * arms): the press, the wipe and the menu steps all run inside the
-       * frame's tick loop, one owner per sim tick. This frame-level step
-       * only answers whether a menu is up - which keeps the naming prompt
-       * and the shop from stepping under it - and does the bookkeeping that
-       * follows a menu step, which `_afterMenuTicks` runs after the loop. */
-      if (typeof rt.play_menu_tick === 'function') {
-        try { return rt.play_menu_is_open(); } catch (e) { return false; }
-      }
-      /* Test the Start *bit*, not a key name: Start answers to Enter and
-       * Space, and a rebinding moves it again. Keying off the literal made
-       * this handler the one place the engine's table did not reach. */
-      const startEdge = (padMaskOf(p) & window.legaiaPadButton('Start')) !== 0;
-      let open;
-      try { open = rt.play_menu_is_open(); } catch (e) { return false; }
-      if (!open) {
-        /* A script's op-0x49 save point / ready check presses the menu
-         * button itself (`play_menu_scripted_open_pending`): no Start edge,
-         * no page-side gate, and no confirm blip. */
-        let scripted = false;
-        try { scripted = rt.play_menu_scripted_open_pending(); } catch (e) {}
-        if (scripted || startEdge) {
-          try { rt.play_menu_open(); } catch (e) { return false; }
-          /* The engine decides - `play_menu_open` asks
-           * `World::field_menu_open_allowed`, the rule the native window asks,
-           * and on a press the menu lock refuses it queues the deny buzz
-           * itself. Take none of the follow-up on a refusal: no confirm blip,
-           * no swallowed pad edge, no menu clock. */
-          let opened = false;
-          try { opened = rt.play_menu_is_open(); } catch (e) {}
-          if (!opened) return false;
-          if (!scripted) this.sfxEvent('menu_confirm');
-          this._ensureMenuBlitters();
-          p.clear();
-          this._repack();
-          return rt.play_menu_is_open();
-        }
-        return false;
-      }
-      /* Menu up: every edge, Start included, goes to the engine's menu step.
-       * What Start does is the shared picker's rule
-       * (`FieldMenuSession::tick`, via `tick_root_list`): on the root list it
-       * closes the menu, on the save point notice it does nothing, and under
-       * an op-0x49 kind-0x0D ready check it opens the Yes / No confirm
-       * instead of closing. Inside a sub-screen it is the sub-screen's own
-       * edge. The page used to close the menu itself on any root-level
-       * Start, which skipped all three rules and released a parked ready
-       * check as answered - the native window has always handed Start to
-       * the kernel. Guarded so a cached WASM without the export keeps a
-       * sensible blip rather than trapping. */
-      let inSubScreen = false;
-      try {
-        inSubScreen = typeof rt.play_menu_sub_is_open === 'function'
-          && rt.play_menu_sub_is_open();
-      } catch (e) {}
-      /* A frame that carries no sim tick steps nothing and keeps its edges
-       * for the next one that does (the shop's rule, `_updateFieldShop`). */
-      if (!(simSteps > 0)) return true;
-      {
-        let edge = 0;
-        edge |= padMaskOf(p);
-        /* Cue the engine's own blip off this frame's edges. Which edge fires
-         * which cue (a direction a cursor move, Cross a confirm, Circle a
-         * cancel; Start a cancel on the root list, nothing inside a
-         * sub-screen) is the engine's rule, and so are the ids - the page
-         * never spells either. `!inSubScreen` is the native window's
-         * `start_closes_menu = sub.is_none()`. The engine counts every request
-         * (`menu_cue_requests` in `play_sfx_state_json`), so the wiring stays
-         * measurable. See `play_sfx::CUE_MENU_CURSOR` for the one inexactness
-         * left, which is a bank choice rather than a pitch. */
-        /* `play_menu_input` fires it itself now, after the save screen's
-         * refusal box and block grid have filtered the edge (the native
-         * window's order); a cached WASM without `play_menu_blips_inline`
-         * still gets the page-side blip. */
-        let inlineBlip = false;
-        try { inlineBlip = typeof rt.play_menu_blips_inline === 'function' && rt.play_menu_blips_inline(); } catch (e) {}
-        if (edge && !inlineBlip) this.menuBlip(edge, !inSubScreen);
-        /* One menu step per sim tick, from the engine's frame stepper
-         * (`play_drain_sim_steps`, the `SimStepper` the native window's
-         * redraw drains): the save screen's "Now checking" beat and every
-         * slide-in are counted in retail frames. The page used to keep a
-         * menu clock of its own that ran at least one step every display
-         * frame - twice retail speed at 120 Hz - and caught up to eight. The
-         * edge is delivered on the first tick only, so one keypress can
-         * never register twice. */
-        for (let i = 0; i < simSteps; i++) {
-          try { rt.play_menu_input(i === 0 ? edge : 0); } catch (e) {}
-        }
-        this._afterMenuTicks();
-      }
-      /* The menu owns every edge while it is up - clear them so none leak into
-       * the frozen field on the next tick. */
-      p.clear();
-      this._repack();
-      try { return rt.play_menu_is_open(); } catch (e) { return false; }
-    }
-
-    /* What follows a frame's menu steps, on either path: a committed key
-     * rebind and an in-canvas card Load. */
+    /* What follows a frame's menu steps: a committed key rebind and an
+     * in-canvas card Load. */
     _afterMenuTicks() {
       const rt = this.rt;
     /* A rebind committed inside Options > Key Config. The page folded the
@@ -387,24 +281,6 @@
     }
     }
 
-    /* Drive the opening name-entry overlay from this frame's just-pressed edges.
-     *
-     * Like the field shop this has no open/close key of its own: the `town01`
-     * establishing timeline's pinned op-0x49 opens it and the SM's own Select ->
-     * "Is this name okay?" -> Yes closes it, at which point the engine writes the
-     * name into the party record and the suspended opening script resumes. So
-     * there is nothing to toggle - just forward edges while it is up.
-     *
-     * One INPUT step per frame is right: the overlay steps exactly one cell /
-     * glyph per press. The caret blink is not - it is frame-counted off
-     * `World::frame`, which the native window advances once per SIM tick
-     * while the field is frozen under the overlay. Driving it off the display
-     * refresh instead made the blink period a property of the monitor (half
-     * speed at 120 Hz, double on a throttled tab), so this host spends the
-     * frame's `simSteps` on the counter the same way.
-     *
-     * Returns `true` while the overlay is up, so `_frame` freezes the field -
-     * the naming prompt is modal, as it is natively. */
     /* The naming prompt committed: hand the entered name to the page. */
     _nameCommitted() {
       if (typeof this.opts.onNamed !== 'function') return;
@@ -413,138 +289,16 @@
       this.opts.onNamed(name);
     }
 
-    _updateNameEntry(simSteps) {
+    /* Stage the menu blitters for whichever screen the engine has up (the
+     * pause menu, the naming prompt, a menu-overlay screen). The screens
+     * themselves take their ticks inside `play_frame_ticks`. */
+    _stageScreenBlitters() {
       const rt = this.rt;
-      if (typeof rt.name_entry_is_active !== 'function') return false;
-      let open;
-      try { open = rt.name_entry_is_active(); } catch (e) { return false; }
-      if (!open) return false;
-      this._ensureMenuBlitters();
-      /* The per-tick owner (`play_name_entry_tick`, the native window's
-       * per-tick arm) steps the prompt inside the frame's tick loop, edge
-       * and caret clock together; the frame level only stages blitters. */
-      if (typeof rt.play_name_entry_tick === 'function') return false;
-      let edge = 0;
-      edge |= padMaskOf(this.pulse);
-      let committed = false;
-      /* One edge per display frame - that is the rate the page collects
-       * presses at - and the caret clock separately, on this frame's SIM
-       * step count, so the blink period is the retail one at any refresh
-       * rate. A cached bundle without the split keeps the old coupled call,
-       * which advanced both per frame. */
-      try { committed = rt.name_entry_input(edge); } catch (e) {}
-      if (typeof rt.name_entry_advance_frames === 'function') {
-        try { rt.name_entry_advance_frames(simSteps | 0); } catch (e) {}
-      }
-      if (committed) this._nameCommitted();
-      /* The overlay owns every edge while it is up - clear them so none leak
-       * into the frozen field on the next tick. */
-      this.pulse.clear();
-      this._repack();
-      try { return rt.name_entry_is_active(); } catch (e) { return false; }
-    }
-
-    /* Drive an open field shop from this frame's just-pressed edges.
-     *
-     * Unlike the pause menu this has no open/close key: the field VM opens it
-     * (a merchant's op-0x49 sub-0 record) and the player's **Exit** row closes
-     * it, at which point the engine resumes the suspended script. So there is
-     * nothing to toggle here - just forward edges while it is up.
-     *
-     * The shop steps on the SIM clock, one `play_shop_input` per drained sim
-     * step - the native window's cadence. Its open fade and window slides are
-     * tick-counted (`MenuRuntime::shop_fade_level`), so one call per display
-     * frame ran them at the monitor's rate: twice as fast on a 120 Hz panel.
-     * The frame's edges ride the first step; a frame that drains no step
-     * keeps them for the next one rather than dropping the press.
-     *
-     * Returns `true` while the shop is up, so `_frame` freezes the field. */
-    /* Steps the open menu-runtime screen and answers whether it FREEZES the
-     * field this frame. A shop or the prize exchange does
-     * (`play_shop_suspends_field`, the engine's `MenuRuntime::suspends_field`);
-     * the inn prompt does not - retail runs it as a field-VM dialogue - so
-     * under it the field ticks on a neutral pad (`_shopHoldsPad`), as the
-     * native window feeds it one while `MenuRuntime::is_open` holds. */
-    _updateFieldShop(simSteps) {
-      const rt = this.rt;
-      this._shopHoldsPad = false;
-      if (typeof rt.play_shop_is_open !== 'function') return false;
-      let open;
-      try { open = rt.play_shop_is_open(); } catch (e) { return false; }
-      if (!open) return false;
-      this._ensureMenuBlitters();
-      /* The per-tick owner (`play_shop_tick` / `play_shop_after_tick`, the
-       * native window's `sim_tick` arms) steps the screen inside the frame's
-       * tick loop, so the frame-level step only stages its blitters. */
-      if (typeof rt.play_shop_tick === 'function') return false;
-      const freezes = () => {
-        let open2 = false;
-        try { open2 = rt.play_shop_is_open(); } catch (e) { return false; }
-        if (!open2) return false;
-        this._shopHoldsPad = true;
-        if (typeof rt.play_shop_suspends_field !== 'function') return true;
-        try { return rt.play_shop_suspends_field(); } catch (e) { return true; }
-      };
-      if (!(simSteps > 0)) return freezes();
-      let edge = 0;
-      edge |= padMaskOf(this.pulse);
-      for (let s = 0; s < simSteps; s++) {
-        try { rt.play_shop_input(s === 0 ? edge : 0); } catch (e) { break; }
-      }
-      /* The shop owns every edge while it is up - clear them so none leak into
-       * the frozen field on the next tick. */
-      this.pulse.clear();
-      this._repack();
-      return freezes();
-    }
-
-    /* Did the tick just run open a screen that suspends the field? The
-     * shop / prize counter (`play_shop_is_open`, the engine's
-     * `MenuRuntime::is_open`) or a pending scripted menu press
-     * (`play_menu_scripted_open_pending`). Both are engine answers. A
-     * screen already up when the frame began (the inn prompt, which the
-     * field ticks under) is not a new one. */
-    _modalOpenedThisTick() {
-      const rt = this.rt;
-      /* A screen the tick opened takes the frame's next tick through
-       * `play_shop_tick`, inside the loop, as the native window's next
-       * `sim_tick` does; only a bundle without that export ends the frame. */
+      let up = false;
       try {
-        if (!this._shopHoldsPad && typeof rt.play_shop_tick !== 'function'
-            && typeof rt.play_shop_is_open === 'function'
-            && rt.play_shop_is_open()) return true;
-      } catch (e) { /* fall through */ }
-      /* A scripted menu press is picked up by the next tick's
-       * `play_menu_tick`, inside this frame's loop, as the native window's
-       * next `sim_tick` picks it up; only a bundle without that export ends
-       * the frame here for the frame-level open. */
-      try {
-        if (typeof rt.play_menu_tick !== 'function'
-            && typeof rt.play_menu_scripted_open_pending === 'function'
-            && rt.play_menu_scripted_open_pending()) return true;
-      } catch (e) { /* fall through */ }
-      return false;
-    }
-
-    /* Whether Start opens the menu right now.
-     *
-     * The engine owns the rule and answers it through `play_menu_can_open()`
-     * (`World::field_menu_open_allowed`): the scene mode plus retail's
-     * engaged-bit refusal. This used to be a page-side `scene_mode() !==
-     * 'Field'` test whose comment asserted Start was inert "on the world
-     * map" - false, since the overworld runs the same locomotion controller
-     * the field does, and a page-side copy of an engine rule is drift no gate
-     * can see because no Rust symbol is missing.
-     *
-     * Nothing page-side is added to it. The page used to refuse on two
-     * copies of its own - a dialog box in the last HUD state, and the
-     * opening chain / narration beat - and the native window asked neither.
-     * The first was the engine's `dialogue_owns_input` read back a frame
-     * later; the second is now the engine's (`opening_chain_active`, with
-     * the crawl and title card already in the rule), so both hosts answer
-     * the same press the same way. */
-    _canOpenFieldMenu() {
-      try { return !!this.rt.play_menu_can_open(); } catch (e) { return false; }
+        up = rt.play_menu_is_open() || rt.name_entry_is_active() || rt.play_shop_is_open();
+      } catch (e) { up = false; }
+      if (up) this._ensureMenuBlitters();
     }
   });
 })();

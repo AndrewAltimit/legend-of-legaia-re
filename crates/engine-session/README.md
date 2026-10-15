@@ -65,6 +65,12 @@ makes, which the native window's keyboard handler and the browser page's
 pushes the persisted options onto the world and the camera; both play hosts
 run it ahead of every session tick.
 
+`BootSession::claim_tick` (`session/tick_owner.rs`) is the one order both play
+hosts hand each sim tick through: a host-held screen, the naming prompt, the
+prologue skip, the pause menu's spawn and press, a menu-overlay screen that
+suspends the field, the field. It runs the parts the session can do itself
+and returns a `TickOwner` the host matches on.
+
 Both play hosts run it. The browser play page holds a `BootSession` over its
 WebAudio output (`crates/web-viewer/src/host_slot.rs`), built with
 `from_host` over the scene host it assembles in memory, and its `tick_frame`

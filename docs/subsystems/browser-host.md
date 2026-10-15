@@ -251,12 +251,12 @@ directions by design (see `docs/subsystems/save-screen.md`).
 
 The menu is **not purely input-driven**: its timers count 60 Hz frames, so it
 steps on the sim tick, not the animation frame. The page's frame hands its
-sim ticks to `play_frame_ticks` (`runtime/frame_ticks.rs`), which asks
-`play_menu_tick` first on each tick; it answers as the native window's per-tick
-arms do: a Start edge (or a script's save point) opens the menu and takes the
-tick (a Start open queues the confirm blip itself), the field keeps ticking under the wipe until the menu spawns, the
-hand-over takes one tick, and from then on each tick is one menu step
-(`play_menu_input`). A tick after the menu closes goes back to the field. Parity is asserted by the disc-gated `crates/web-viewer/tests/menu_parity.rs`
+sim ticks to `play_frame_ticks` (`runtime/frame_ticks.rs`), which hands each
+tick to the owner `BootSession::claim_tick` names - the order the native
+window's `sim_tick` uses too: a Start edge (or a script's save point) opens the
+menu and takes the tick (a Start open queues the confirm blip), the field keeps
+ticking under the wipe until the menu spawns, the hand-over takes one tick,
+and from then on each tick is one menu step (`play_menu_input`). A tick after the menu closes goes back to the field. Parity is asserted by the disc-gated `crates/web-viewer/tests/menu_parity.rs`
 oracle, which walks the whole card flow.
 
 ## Live battles (`play_battle`)
@@ -361,7 +361,7 @@ the one composition the native window calls,
 `legaia_engine_screens::shop_overlay_frame`, driven by the real
 `legaia_engine_core::menu_runtime::MenuRuntime`; `play_overlay_draws_json`
 serves the quads. The screen steps per sim tick, from the page's tick loop:
-`play_shop_tick` lets a shop or the prize exchange take the tick (one
+the shared tick claim lets a shop or the prize exchange take the tick (one
 `play_shop_input` step) and holds the pad neutral under an inn, and
 `play_shop_after_tick` steps an inn after the field's tick - except on the
 tick the field VM opened the screen, whose first step the poll already took.
@@ -608,9 +608,10 @@ the retail-traced geometry, through the shared `name_entry_draws_for` +
 `engine-menus::name_entry` - the page owns no name logic, only the pad-edge
 bridge and the draw-list JSON (`name_entry_draws_json`, the same two-layer
 chrome+font shape the pause menu uses). The bridge is per sim tick:
-`play_name_entry_tick` is the session's `step_name_entry_frame`, the call the
-native window's per-tick arm makes (the edge, then one frame of caret and
-camera); `name_entry_input` stays for drivers that step the entry directly.
+the shared tick claim (`BootSession::claim_tick`) steps the prompt through
+the session's `step_name_entry_frame`, as it does for the native window (the
+edge, then one frame of caret and camera); `name_entry_input` stays for
+drivers that step the entry directly.
 
 The screen lands **with its state**, which is the whole point: the
 establishing timeline's pinned op-`0x49` opens it and stays suspended while

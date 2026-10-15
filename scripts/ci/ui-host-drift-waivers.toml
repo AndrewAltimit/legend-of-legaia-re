@@ -538,30 +538,26 @@ skips = [
 
 [[frame_arm]]
 host = "page"
-arm = "advance && !menuFreezes && !shopOpen && !namingOpen"
+arm = "if (advance)"
 reason = """
 `site/js/play-view-frame.js::_frame` runs the frame's ticks
 (`this._frameTicks`, over the engine's `play_frame_ticks`) inside this guard
-and `this._drawOverlay()` outside it, so on a guarded frame the page draws
-with NO kernel having run - the whole `skips` list at once, from whatever
-answer each last held. `namingOpen` is the naming prompt, which suspends the
-field on the engine side as well; `advance` is the page's own pause /
-step-one-frame control. The pause menu and the menu-overlay screens (shop,
-prize exchange, inn) are not frame-level terms on the shipped bundle: they
-take their ticks one at a time inside `play_frame_ticks` (`play_menu_tick`,
-`play_shop_tick` / `play_shop_after_tick`, the native `sim_tick` arms), so
-the field ticks under the pause wipe, on a closing frame's remaining ticks and
-under an inn as it does natively. `menuFreezes` and `shopOpen` hold only for a
-cached bundle without those exports.
+and `this._drawOverlay()` outside it, so on a frame the guard holds back the
+page draws with NO kernel having run - the whole `skips` list at once, from
+whatever answer each last held. `advance` is the page's own pause /
+step-one-frame control, the only term left: every screen (the pause menu,
+the naming prompt, a shop, the prize exchange, an inn) takes its ticks one at
+a time inside `play_frame_ticks`, through the order both hosts share
+(`BootSession::claim_tick`). The frame-level freezes a cached bundle without
+those exports needed are gone with the copy of the order they guarded.
 
-This is disclosed rather than closed because the guard is the page's field
-freeze and moving the tick outside it would advance the world under a menu.
-What is closed instead is the consequence: the two kernels whose answers a
-guarded frame still DRAWS - the field party readout and the passive-ability
-badge column - now ask the suppress gate on the draw path as well as on the
-tick, so a stale decision cannot reach the screen. Any kernel added to
-`tick_frame` whose output the page draws on a guarded frame needs the same
-treatment, and this row is where that is recorded.
+The pause control has no native twin, and what it holds back is the whole
+simulation, which is its point. The two kernels whose answers a held frame
+still DRAWS - the field party readout and the passive-ability badge column -
+ask the suppress gate on the draw path as well as on the tick, so a stale
+decision cannot reach the screen. Any kernel added to `tick_frame` whose
+output the page draws on a held frame needs the same treatment, and this row
+is where that is recorded.
 """
 skips = [
     "audio_director",

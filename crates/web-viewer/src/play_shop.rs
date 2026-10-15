@@ -56,15 +56,6 @@ use legaia_engine_screens::{ScreenInputs, ShopOverlayFrame};
 use legaia_engine_ui::{self as ui, SpriteDraw, TextDraw};
 use wasm_bindgen::prelude::*;
 
-/// [`LegaiaRuntime::play_shop_tick`]: no menu-overlay screen is up.
-pub const SHOP_TICK_NONE: u8 = 0;
-/// [`LegaiaRuntime::play_shop_tick`]: the screen suspends the field and took
-/// this tick.
-pub const SHOP_TICK_TAKEN: u8 = 1;
-/// [`LegaiaRuntime::play_shop_tick`]: the field ticks under the screen, on a
-/// neutral pad.
-pub const SHOP_TICK_NEUTRAL_PAD: u8 = 2;
-
 impl LegaiaRuntime {
     /// Hand a field-VM-armed shop or prize counter to the menu runtime.
     /// Called once per [`LegaiaRuntime::tick_frame`]; the open, the screen's
@@ -265,44 +256,6 @@ impl LegaiaRuntime {
     /// agreed only while no other menu-runtime screen could be up.
     pub fn play_shop_is_open(&self) -> bool {
         self.menu.is_open()
-    }
-
-    /// `true` while the open screen also **freezes** the field tick
-    /// ([`legaia_engine_core::menu_runtime::MenuRuntime::suspends_field`]):
-    /// a shop or the prize exchange, whose menu overlay swaps the field code
-    /// out, but not the inn prompt, which retail runs as a field-VM dialogue.
-    /// Under an inn the page ticks the field with a neutral pad, as the
-    /// native window does; it used to freeze on [`Self::play_shop_is_open`].
-    pub fn play_shop_suspends_field(&self) -> bool {
-        self.menu.suspends_field()
-    }
-
-    /// The menu-overlay screen's claim on this **sim tick**, asked before the
-    /// field tick - the native window's per-tick arms in `sim_tick`:
-    ///
-    /// * [`SHOP_TICK_TAKEN`]: a shop or the prize exchange is up and
-    ///   suspends the field (`MenuRuntime::suspends_field`); the screen took
-    ///   one step on `edge` and the tick is spent - the window's
-    ///   `field_suspended` arm. The page runs the SFX scheduler step beside it.
-    /// * [`SHOP_TICK_NEUTRAL_PAD`]: a screen is up that the field ticks under
-    ///   (the inn prompt); the field runs this tick on a neutral pad, and
-    ///   [`Self::play_shop_after_tick`] steps the screen after it.
-    /// * [`SHOP_TICK_NONE`]: no screen.
-    ///
-    /// The page used to step the screen `n` times at display-frame level
-    /// ahead of the field's `n` ticks, and to end the frame's tick loop on the
-    /// tick a merchant opened one - which dropped the shop's steps for the
-    /// frame's remaining ticks, so its tick-counted fade ran a tick behind the
-    /// native window's on any frame that carried more than one.
-    pub fn play_shop_tick(&mut self, edge: u16) -> u8 {
-        if !self.menu.is_open() {
-            return SHOP_TICK_NONE;
-        }
-        if self.menu.suspends_field() {
-            self.play_shop_input(edge);
-            return SHOP_TICK_TAKEN;
-        }
-        SHOP_TICK_NEUTRAL_PAD
     }
 
     /// The screen's step after a field tick the screen did not take: an open
