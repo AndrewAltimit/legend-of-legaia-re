@@ -1633,15 +1633,17 @@ Scene-specific facts the route and the pad hand depend on. Each is a property of
   each). A Miracle costs nine presses at the arm's price (30), 270 from the
   action gauge, and a Fury Boost lifts the gauge to `base * 7 / 5 + 8`, so it
   fits from a base AGL of 188. The anchors' party holds that at level 25
-  (Vahn 202, Noa 189). A continuous run's party does not at level 31 (Vahn
-  157, Noa 177), and loses the race at about half Koru's HP. The run's AGL is
-  the SCUS growth table's (`DAT_80076918` / `DAT_800769CC`: Vahn `100..280`,
-  row 1, about 2 a level); the anchors' AGL runs about one a level above it
-  for all three characters from level 2 on, while ATK and SPD match the
-  table within the jitter. The level-up applier (`FUN_801E9504`, the AGL
-  gain at `0x801E9950..0x801E9980`) adds only the table's term and the
-  mean-zero spread, so the anchors' extra AGL has another writer; finding it
-  is the open question on this stretch.
+  (Vahn 202, Noa 189, the AGL Boost accessory's +20% included). AGL grows by
+  its own divisor in the level-up applier (`0x18C0` against every other
+  stat's `0x24C0`, [`level-up.md`](../subsystems/level-up.md)); an engine
+  that divided it by `0x24C0` grew it two a level where retail grows three,
+  and its level-31 party (Vahn 157, Noa 177) lost the race at about half
+  Koru's HP on every stream. With the divisor corrected the run's party
+  reaches `nivora_late` at AGL 191 / 211 / 173 and, carried past the ledge,
+  beats Koru on the first or second attempt. The walk onto the ledge band
+  P2[20] itself is still the follower's open stall (see [how the pad tier
+  walks](#how-the-pad-tier-walks)); past it the stretch's next stall is in
+  `koin1`, where the walk to P1[5] crosses into the casino's slot machine.
 
 ### Overworld and dungeon joins
 
