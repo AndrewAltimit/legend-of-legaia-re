@@ -129,7 +129,9 @@ A milestone may also name `via` scenes: story waypoints the anchors show the ret
 | Ratayu | `retona` (its own start scene) | A run that arrives at Mt. Letona's trailhead has reached the `mt_letona` milestone on its first step and would turn round; the anchor gained the summit chain (`0x354`..`0x357`, `0x367`). |
 | Dohati Castle | `retock` (its own start scene), then `jagaroom` twice | Ratayu's west gate (`retock` P2[27]) turns the party back until `0x33E` is set. `jagaroom`'s entry script raises it only once Eliza's scene (`retock` P2[33], `0x33C`), the talk `jagaroom` P1[8] (`0x351`), the door cutscene `jagaroom` P2[8] (`0x33B`) and the return `jagaroom` P2[9] (`0x34F`) have played in that order. |
 
-A milestone may instead name `continuous_via`: the waypoints part C plays in place of `via`, where a seeded segment starts past the story or its seated hand cannot play it. Dr. Usha's research and Nivora are its case, the chain the [Nivora route notes](#nivora) list: `korb3`, `map03`, `koin2` for the first (Sol's stone maze and Gaza's second fight, the Genesis Tree, Etora's password), and `doman`, Uru Mais and its three dreams, and `doman` again for the second. The run plays the chain to Nivora, but Gaza's second fight goes its way on about half the tries, and on the default stream not once in six, so the two lines stand commented out in the spine until it is won reliably.
+A milestone may instead name `continuous_via`: the waypoints part C plays in place of `via`, where a seeded segment starts past the story or its seated hand cannot play it. Dr. Usha's research and Nivora are its case, the chain the [Nivora route notes](#nivora) list: `korb3`, `map03`, `koin2` for the first (Sol's stone maze and Gaza's second fight, the Genesis Tree, Etora's password), and `doman`, Uru Mais and its three dreams, and `doman` again for the second; Gaza's second fight is that stretch's risk.
+
+Zora Castle is another case: its seeded segment starts from an anchor whose flags the save bridge carries forward, but a run of its own has to raise the chain that opens `deene`'s dock (`nilboa`, `bubu1`, `koin1b`, `bubu1`, `deene`, `son`; [route notes](#overworld-and-dungeon-joins)), and Conkram's Past takes `son` for the crossing to `concnow`.
 
 A waypoint whose own arrival script carries the party on counts as visited: `concend`'s P2[0] is its beat, and it ends in the hop to `town0d`. One that carries it straight back to the scene it came from was a stay, not a visit: `jiji`'s inn sleeps the party over in `ropeway`, whose arrival cutscene returns it to `jiji`. Part A checks every waypoint is a disc scene.
 
@@ -1052,6 +1054,7 @@ map as its street:
 - **A script that carries the walker to a landing it has carried it to before**, leaving the same flags, is a loop after the third time, even when the flags it toggles keep the first count from building. `chitei2`'s transport rides between (98, 102) and (94, 22), each ride flipping the car's flags (met on a walk to P2[9]).
 - **Teleports and notches.** The follower presses a teleport waypoint until the jump lands, and backs out of a diagonal-wall notch where all four lattice steps read blocked. The lattice cannot say which neighbouring cell the free movement reaches, so each second the walk stays wedged it heads for the next open cell in turn: on `retona`'s stair landing at (16, 99) the nearest one lies west, and the slide toward it carries the player straight back.
 - **The action button.** Held against something for a second, the follower tries the action button. In a field the tap waits for a frame the player did not move: the stall counter also counts a run step that stays inside one cell, and a tap there would stand the player still one frame in every few. A tap that opens the same talk twice on one walk without changing a flag ends the tapping for that walk: `jiji`'s inn counter (P0[8..10], the witch's "Want to stay?") opened on every tap of the walk past it, two thousand frames each, and spent a stretch's budget on the walk to P1[19]'s pickup.
+- **Minigame cabinets.** The tap is never pressed at a minigame cabinet, a talk record that runs the minigame door-warp (`3E` with `op0 >= 100`) itself or through a record it spawns. `koin1`'s slot machines (P1[51..56]) are props the interact probe reaches but no NPC slot carries; a tap beside one on the walk to the Prize Counter (P1[5]) asked to play, the scripted-sequence hand answered, and the session sat at the slot machine. A session that lands in a minigame anyway leaves it with Start, the engine's shared minigame exit, which also closes the door-warp's round trip back to the field.
 - **A script that runs on the way and changes nothing** - no flag, no cell, no scene (an examined prop with nothing to say) - leaves the route as it was rather than re-planning the walk component.
 - **Walk-on bands.** Walks avoid the live walk-on bands unless one is the only way through. A band whose record's story gates shut it is walkable, and so is an inert band that only sets the camera or the view, such as `retona` P2[0] across the summit's passes. A band that turns the party back (`retona` P2[24], until `0x367`) stays avoided.
 
@@ -1138,8 +1141,12 @@ the head on every frame cost two seeded segments their pad tier and
 stranded a continuous run in `ropeway`, and re-planning on the stall alone
 sent the Three Tunnels' walks down a costlier way that spent a dozen
 Healing Berries before the Delilas duels, which then lost on every stream.
-The follower keeps the plain rejoin; the P2[20] stall is open, behind the
-Koru race below.
+The follower keeps the plain rejoin, and the remedy sits in the beats pass
+instead, scoped to the one shape: when the walk onto a band whose record
+stages a fight stalls up to three tiles short (two for every other band),
+the continuous hand, outside a split party, tries the band's other tiles,
+and P2[20] is entered from its south side. The Three Tunnels' walks and
+the duels after them are left as they were.
 
 ### Overworld diagonals
 
@@ -1640,10 +1647,11 @@ Scene-specific facts the route and the pad hand depend on. Each is a property of
   and its level-31 party (Vahn 157, Noa 177) lost the race at about half
   Koru's HP on every stream. With the divisor corrected the run's party
   reaches `nivora_late` at AGL 191 / 211 / 173 and, carried past the ledge,
-  beats Koru on the first or second attempt. The walk onto the ledge band
-  P2[20] itself is still the follower's open stall (see [how the pad tier
-  walks](#how-the-pad-tier-walks)); past it the stretch's next stall is in
-  `koin1`, where the walk to P1[5] crosses into the casino's slot machine.
+  beats Koru on the first or second attempt. The ledge band P2[20] is
+  reached from its other tiles ([how the pad tier
+  walks](#how-the-pad-tier-walks)), and the stretch then plays the chain
+  that opens `deene`'s dock ([overworld and dungeon
+  joins](#overworld-and-dungeon-joins)) on its way to the `son` boat.
 
 ### Overworld and dungeon joins
 
@@ -1669,6 +1677,35 @@ Scene-specific facts the route and the pad hand depend on. Each is a property of
   The `son` portal `(45, 84)` is walled in: it is the landing of the boat
   ride `map03` P2[13], spawned on `0x575`, which `deene` P2[14] raises
   (the anchor carries that record's `0x37E`), hence the `deene` waypoint.
+  The party that walks into `deene` is boxed in the room it lands in, and
+  the way out opens on `0x6C6` (tested by the entry script P1[0] and the
+  objects P0[1] / P0[2]). Its one setter is the talk `deene` P1[4], and
+  only on its `0x3D7` branch, a cutscene that ends by rewriting the
+  collision round (15..19, 45..49) (`4C 71` / `4C 72` / `4C 73`); with
+  `0x3D7` clear the talk is only words. `0x3D7` is `bubu1` P2[3]'s, a walk-on whose C2 gate is
+  `0x3DA`; `0x3DA` is `koin1b` P2[6]'s, which the musician `koin1b` P1[4]
+  spawns once `0x3D5` is set ("bring me the music"); and `0x3D5` is `map03`
+  P2[12]'s, the cutscene the first arrival at `bubu1` plays. The
+  `nivora_late` anchor carries none of `0x3D5..0x3DA` and the `zora_castle`
+  anchor all of them, so the continuous run plays `nilboa`, `bubu1`,
+  `koin1b`, `bubu1`, `deene`, `son` (`koin1b` is `kor3` P2[3]'s door, a
+  walk-on the route reaches through `korout`, `kor` and `kor3`).
+- From `zora_castle`, the stretch is Zora (`taiku`, monster 169, 22422 HP,
+  whose Darkness Typhoon takes more than half of each member's HP) and then the
+  Floating Castle's escape against the clock
+  ([`field-oddities.md`](../reference/glitches/field-oddities.md#no-encounters-in-jettes-absolute-fortress)):
+  six minutes, of which every fight on the way out costs twenty seconds
+  besides its own length. The escape's success record raises `0x380` /
+  `0x382` (the `zora_castle` anchor's successor carries both); on expiry
+  `0x396` routes the party out through P2[20] (variant MAN), which raises
+  `0x501` and `0x616` and lands on `map03` at (90, 85), where the cruise
+  P2[9] tests `0x616` and ends in the scripted game over (`4C EA`) instead
+  of its scene change. The run beats Zora on most streams within its
+  reloads; the default stream's walk to the exit then crosses `taiku`'s
+  teleport maze slowly enough to run the clock out, which is the run's
+  stall past `zora_castle`. From the landing at (90, 85) no walk reaches
+  `concnow`'s portal (66, 101); `son` P1[4], on `0x380`, spawns the
+  crossing that lands beside it, hence `conkram_past`'s `son` waypoint.
 - From `zora_castle`, `concnow`'s way into Conkram's past is the walk-on
   P2[17], which spawns P2[18] (`0x3F` to `conc2`) once the visions P2[13]
   .. P2[16] have run; its other `conc2` bands lie behind walls. The gate
