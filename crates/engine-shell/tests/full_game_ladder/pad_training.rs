@@ -56,7 +56,7 @@ pub(super) fn wants_training(session: &NativeSession) -> bool {
 pub(super) fn errand_gold_short_after_sales(session: &NativeSession) -> bool {
     let w = &session.host.world;
     let cost = errand_cost(w);
-    cost > 0 && i64::from(w.party.money) + outgrown_value(session) < cost
+    cost > 0 && i64::from(w.party.money) + outgrown_value(session) < cost + errand_heal_budget(w)
 }
 
 fn party_xp(session: &NativeSession) -> u64 {

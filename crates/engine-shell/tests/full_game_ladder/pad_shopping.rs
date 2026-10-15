@@ -42,7 +42,7 @@ pub(super) fn take_shop_visited() -> bool {
 
 /// Healing items the hand keeps in the bag for each present member when a
 /// merchant sells them: the road between two counters is a dungeon or two.
-const HEAL_STOCK: u8 = 15;
+pub(super) const HEAL_STOCK: u8 = 15;
 
 /// Healing items for each present member the hand buys before any
 /// equipment ([`next_want`]).
@@ -71,7 +71,7 @@ pub(super) fn bag_short_of_heals(session: &NativeSession) -> bool {
 }
 
 /// The HP restoratives in the bag, an errand's item aside.
-fn heals_held(w: &legaia_engine_core::world::World) -> u32 {
+pub(super) fn heals_held(w: &legaia_engine_core::world::World) -> u32 {
     use legaia_engine_menus::items::ItemEffect;
     w.party
         .inventory
@@ -225,12 +225,15 @@ fn next_want(menu: &MenuRuntime, w: &legaia_engine_core::world::World) -> Option
         return Some(want);
     }
     // Equipment. At a counter with no healing row, a bag short of its
-    // three heals keeps their price back for the counter that has one.
+    // three heals keeps their price back for the counter that has one;
+    // while an errand is pending, so does the bag's heal stock
+    // ([`errand_heal_budget`]).
     let reserve: i64 = if heal_row.is_none() && heals_held < 3 {
         300
     } else {
         0
-    } + errand_cost(w);
+    } + errand_cost(w)
+        + errand_heal_budget(w);
     let info = menu.equip_info.as_ref()?;
     let party = w.present_party_list();
     let mut best: Option<(i32, u32, Want)> = None;
