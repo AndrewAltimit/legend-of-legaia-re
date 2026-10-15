@@ -599,6 +599,7 @@ pub(super) fn play_beats(
                 // Three Tunnels, `43 02`) each member stands in its own tunnel
                 // and Square hands control to the next ([`swap_leader`]).
                 let mut swaps = 0;
+                let fight_band = record_stages_fight(&mf, &man, 2, usize::from(rec));
                 let mut queue: VecDeque<(u8, u8)> = tiles.iter().copied().collect();
                 while let Some(t) = queue.pop_front() {
                     pad_budget(session)?;
@@ -616,9 +617,24 @@ pub(super) fn play_beats(
                             .next()
                             .and_then(|h| h.rsplit(' ').next().and_then(|n| n.parse::<u32>().ok()))
                     };
+                    // A boss's band outside a split party is tried from its
+                    // other tiles from a little further off: `nilboa`'s Koru
+                    // ledge (P2[20]) is walled on the side the route comes
+                    // from, and its walk stalls three tiles short at
+                    // (98, 107); the band is entered from the south.
+                    // The continuous hand alone: the segmented passes are
+                    // scored on the walks they were tuned on.
+                    let edge = if fight_band
+                        && session.host.world.dialog.three_actor_talk.is_none()
+                        && continuous::PLAYS_ON.with(std::cell::Cell::get)
+                    {
+                        3
+                    } else {
+                        2
+                    };
                     let unreached = matches!(&r, Run::Parked(e)
                         if e.contains("no walkable path")
-                            || (e.contains("pad walk stalled") && short(e).is_some_and(|n| n <= 2)));
+                            || (e.contains("pad walk stalled") && short(e).is_some_and(|n| n <= edge)));
                     // A room-marker band crossed on the way may raise a flag
                     // (`0x52A`); only the record's own run ends the search -
                     // which may have come from another band on the way
