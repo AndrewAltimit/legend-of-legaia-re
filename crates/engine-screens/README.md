@@ -19,7 +19,13 @@ nothing. This crate is the projection between them for:
   chrome, loose pens without);
 - the **fishing HUD banner step** (`fishing_banner_frame`): the pond session's
   events seed the one-shot timers and the tick's draws come back for a draw
-  pass that cannot advance them.
+  pass that cannot advance them;
+- smaller projections each host used to carry a copy of: the battle item
+  window's frame (`with_battle_item_frame`), the command-menu chip cluster
+  (`battle_command`), the inventory item-use screen
+  (`inventory_use_session_draws`), the developer menu's row list and Records
+  page with their pens and headings (`dev_menu`), and the dance / Baka Fighter
+  HUD primitives (`minigame_hud`).
 
 ## How a host uses it
 
