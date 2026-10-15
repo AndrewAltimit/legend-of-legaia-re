@@ -258,11 +258,10 @@ reach = "scene"
 # 0x403, and with 0x403 up koin2 P1[19], Emperor Etora, stands in the
 # throne room (20, 9) and gives the intercom password (0x36D). The seeded
 # segment's seated hand cannot walk the maze, so these are continuous-run
-# waypoints. Left out for now: the run plays the whole chain to Nivora, but
-# Gaza's second fight (15000 HP) goes its way on about half the tries and
-# the default stream loses all six, which would put the score below the
-# baseline. Restore together with the nivora line below:
-# continuous_via = ["korb3", "map03", "koin2"]
+# waypoints, played together with the nivora line below. Without them the
+# run reaches doman and nilboa on arrival and stalls inside the Three
+# Tunnels, whose nilboa P2[32] waits on Usha's 0x370.
+continuous_via = ["korb3", "map03", "koin2"]
 anchor = { kind = "card", card = "playthrough-ladder-pro00-14.mcr", save = "PRO-11" }
 
 [[milestone]]
@@ -274,9 +273,8 @@ reach = "scene"
 # and P1[3]'s quiz 0x4FF; uru P2[38] opens the three statues (0x3FC), each
 # a bed door into a dream (urudre1..3) whose waking raises 0x39A..0x39C;
 # uru P2[36] raises 0x36F, and Usha's 0x36F branch raises 0x370, the C2
-# gate of nilboa P2[32]. Continuous run only, and left out with the line
-# above:
-# continuous_via = ["doman", "uru", "urudre1", "uru", "urudre2", "uru", "urudre3", "doman"]
+# gate of nilboa P2[32]. Continuous run only:
+continuous_via = ["doman", "uru", "urudre1", "uru", "urudre2", "uru", "urudre3", "doman"]
 anchor = { kind = "card", card = "playthrough-ladder-pro00-14.mcr", save = "PRO-12" }
 
 [[milestone]]
