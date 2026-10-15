@@ -789,7 +789,25 @@ case aims at those positions - case 6 on a caster, case 0 on a member, case
   stores it every frame of a swing and nothing turns the actor back, so the
   member who struck last stands facing its target, and case 6's battle-over yaw
   is `0x800 - actor[+0x46]`. A capture of a running fight keeps the engine's
-  own headings, which its replayed rounds set.
+  own headings, which its replayed rounds set - except for a combatant whose
+  turn the capture holds spent ([below](#combatants-that-had-already-acted)).
+  It sits the replayed round out, so nothing restores the heading its earlier
+  turn left, and it takes the captured one. The action's target does so only
+  until the first strike commits, since the commit turns it onto the attacker
+  (`0x801EEC34..0x801EECBC`) and the replay makes that turn itself.
+
+  The heading moves the approach. The range law `FUN_8004E2F0` measures the
+  attacker's live pair against the target's body pair, which is the live pair
+  plus the facing-rotated pose centroid. `player_steal_skeleton_pre`'s target
+  skeleton stands at `0x900`, turned by its own swing at Vahn a turn earlier.
+  Faced at the default `0x800`, its centroid sat a few units nearer and Vahn
+  walked one root-motion step past retail's stop. The strike framing (case 7)
+  then aimed at a pair `30` units off, and the near-camera ghost pass, which
+  measures from the framing's point, left the skeleton solid where retail ghosts
+  it: `camera` `.852` to `.976`, `image` `.603` to `.786`. Seeding every
+  combatant's heading, the target included after the strike, moves the corpus
+  both ways: `rim_elm_gimard_victory`'s Gimard, struck twice, fell from `.909`
+  to `.792`.
 - **Defeat tint.** A body whose tint state `+0x21C` is the defeat fade takes its
   colour lanes `+0x04` (a `:d<hex>` field). A monster killed earlier has stepped
   them to black and is no longer drawn; without the field a `0`-HP body with

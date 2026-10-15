@@ -230,3 +230,52 @@ fn the_displayed_camera_stands_two_passes_short() {
     // No lag, no walk back.
     assert_eq!(camera_align::displayed_cam_live(&ram, ctx, 0, 2).yaw, 544.0);
 }
+
+/// A spent combatant takes its captured heading into a running fight, and
+/// the action's target does so only until the first strike commits (the
+/// commit turns it onto the attacker, which the replay does itself).
+#[test]
+fn spent_combatants_keep_their_heading_until_the_strike_commits() {
+    let mut ram = vec![0u8; 0x20_0000];
+    let ctx = 0x800E_B654;
+    put32(&mut ram, BATTLE_CTX, ctx);
+    put8(&mut ram, ctx, 1);
+    put8(&mut ram, ctx + 1, 2);
+    put8(&mut ram, ctx + 6, 0xFF);
+    put8(&mut ram, ctx + 7, 0x1E);
+    put8(&mut ram, FORMATION_CELL, 0x0D);
+    put8(&mut ram, FORMATION_CELL + 1, 0x0D);
+    for (slot, base) in [(0u32, 0x800E_C9E8u32), (3, 0x800E_D000), (4, 0x800E_D800)] {
+        put32(&mut ram, ACTOR_TABLE + slot * 4, base);
+        put16(&mut ram, base + 0x14C, 50);
+        put16(&mut ram, base + 0x14E, 50);
+    }
+    let mut b = RetailBattle::from_ram(&ram).expect("seedable");
+    b.active_actor = 0;
+    b.target_code = 3;
+    b.queued_category = 3;
+    b.ground = vec![
+        Some([-195, -214]),
+        None,
+        None,
+        Some([5, 5]),
+        Some([56, -622]),
+    ];
+    b.facing = vec![Some(484), None, None, Some(0x900), Some(2901)];
+    b.init_keys = vec![Some(7), None, None, Some(0), Some(0)];
+    // The first swing staged, not committed (`player_steal_skeleton_pre`).
+    b.caster_clip = 0;
+    b.strike_cursor = 1;
+    let f = b.seeded_facing();
+    assert_eq!(f[0], None, "the acting seat's heading is its own replay's");
+    assert_eq!(f[1], Some(0x900), "the target before the strike lands");
+    assert_eq!(f[2], Some(2901));
+    // A committed swing: the target's heading is the commit's output.
+    b.caster_clip = 0x0E;
+    let f = b.seeded_facing();
+    assert_eq!(f[1], None);
+    assert_eq!(f[2], Some(2901));
+    // A combatant whose turn is still to come keeps the engine's.
+    b.init_keys[4] = Some(3);
+    assert_eq!(b.seeded_facing()[2], None);
+}
