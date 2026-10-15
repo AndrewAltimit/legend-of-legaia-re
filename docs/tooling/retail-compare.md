@@ -2167,6 +2167,19 @@ step eases eye Y `1117 -> 1158 -> 1194 -> 1226`, each step about an eighth of
 a gap that closes near `1450`. The eye is ease history like the focus, not a
 compose the engine got wrong.
 
+The ease's stationary test (`0x801DB578..0x801DB5A4`) covers the whole
+compose-and-ease, not only the focus pin, so a player that stops walking
+leaves the eye wherever the last moving frame put it. `keikoku_chest_pre` and
+`_open` stand at the chest with eye Y `673` against the `732` the seat's snap
+composes. The image child therefore lands retail's eye translation after its
+snap too (`RetailObs::seat_eye`, `LEGAIA_SEAT_EYE`,
+`ZoneFollow::seat_eye_after_snap`), and the engine's ease carries on from it
+the next frame the player moves. The two chest frames read `.958` to `.994`
+and `.966` to `.998`. The headless `camera` channel keeps the snap's eye, so
+it goes on scoring the compose. `town01_npc16_dialogue_first_page` does not
+move: its talk record is resumed from its start, and the eye the seat landed
+does not survive to the gate.
+
 ### Arrival states are captured before the town runs
 
 `s2_rimelm_town01`, `doman_arrival_from_korb2` and `son_arrival_from_doman`

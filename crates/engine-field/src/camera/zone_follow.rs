@@ -287,6 +287,9 @@ impl Camera {
             g[6] = fx;
             g[8] = fz;
         }
+        if snapped && let Some(eye) = zone.seat_eye.take() {
+            g[3..6].copy_from_slice(&eye);
+        }
         zone.focus_held = Some([g[6], g[8]]);
         zone.active = true;
     }

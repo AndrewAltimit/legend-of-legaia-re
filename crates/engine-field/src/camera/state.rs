@@ -285,6 +285,9 @@ pub struct ZoneFollow {
     /// A focus pair (stored form) the next snap lands instead of the
     /// player's - [`Self::seat_focus_after_snap`].
     pub(super) seat_focus: Option<[i32; 2]>,
+    /// An eye translation the next snap lands instead of the composed one
+    /// - [`Self::seat_eye_after_snap`].
+    pub(super) seat_eye: Option<[i32; 3]>,
 }
 
 impl Default for ZoneFollow {
@@ -311,6 +314,7 @@ impl Default for ZoneFollow {
             focus_held: None,
             follow_enabled: true,
             seat_focus: None,
+            seat_eye: None,
         }
     }
 }
@@ -358,6 +362,18 @@ impl ZoneFollow {
     /// replace. The ease then leaves it until the player moves.
     pub fn seat_focus_after_snap(&mut self, focus: [i32; 2]) {
         self.seat_focus = Some(focus);
+    }
+
+    /// Land `eye` (the eye translation `0x800840B8/BC/C0`) as the eye of the
+    /// next snap. A debug-seat aid like [`Self::seat_focus_after_snap`]: the
+    /// follow ease steps the eye an eighth of its gap only on a frame the
+    /// player moved (`FUN_801DB510`'s stationary test) and not at all while
+    /// the player is movement-locked, so a retail state whose player stopped,
+    /// or was taken by a talk, before the ease closed holds an eye short of
+    /// the pose the seat's snap composes. The ease then carries on from it
+    /// as retail's would, the next frame the player moves.
+    pub fn seat_eye_after_snap(&mut self, eye: [i32; 3]) {
+        self.seat_eye = Some(eye);
     }
 
     /// Arm a scene-entry / arrival snap: re-query the tile and copy the

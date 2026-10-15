@@ -696,6 +696,39 @@ mod tests {
         assert_ne!([c.globals.0[6], c.globals.0[8]], [-0x1000, -0x2400]);
     }
 
+    /// The eye is eased on the same legs: a seat that lands a retail state's
+    /// half-eased eye keeps it while the player stands, and the ease carries
+    /// on from it - not from the composed pose - once the player moves.
+    #[test]
+    fn a_standing_player_keeps_a_seated_eye() {
+        let (mut w, mut c) = gated_zone_world();
+        c.zone.snap_pending = true;
+        w.tick();
+        c.tick(&w);
+        let composed = [c.globals.0[3], c.globals.0[4], c.globals.0[5]];
+        let seated = [composed[0], composed[1] - 300, composed[2] - 40];
+        c.zone.seat_eye_after_snap(seated);
+        c.zone.snap_pending = true;
+        w.tick();
+        c.tick(&w);
+        assert_eq!([c.globals.0[3], c.globals.0[4], c.globals.0[5]], seated);
+        w.tick();
+        c.tick(&w);
+        assert_eq!(
+            [c.globals.0[3], c.globals.0[4], c.globals.0[5]],
+            seated,
+            "standing: no ease"
+        );
+        w.actors[0].move_state.world_x += 2;
+        w.tick();
+        c.tick(&w);
+        let y = c.globals.0[4];
+        assert!(
+            y > seated[1] && y < composed[1],
+            "moved: eases from the seated eye, got {y}"
+        );
+    }
+
     /// The hold gates (`0x801DB550` / `0x801DB564`): with the follow switch
     /// off or scratchpad `0x1F800394 & 0x400` up, a moving player gets the
     /// pin leg - the focus on the player, no compose, no ease.
