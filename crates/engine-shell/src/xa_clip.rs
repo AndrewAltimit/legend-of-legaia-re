@@ -41,7 +41,7 @@
 //! sixty-four slot-B cast modules (PROT `0903..0966`) calls the dispatcher
 //! `FUN_8004FCC8` with its **own** cue id - a literal in 62 of them - so the
 //! voice belongs to the spell's module, not to the caster. Those ids resolve
-//! through [`voice_clip_slot`] into seventeen files (`XA7`, `XA9..XA15`,
+//! through [`voice_clip_slot`] into fifteen files (`XA7`, `XA9..XA15`,
 //! `XA18..XA20`, `XA22`, `XA23`, `XA25`, `XA34`), which is neither the four a
 //! `char_kind`-derived reading produced nor a per-character bank.
 //! `docs/tooling/host-drift.md` carries the table and the two module-side

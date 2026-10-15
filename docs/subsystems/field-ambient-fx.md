@@ -732,8 +732,9 @@ left half samples staged row 1 (`v 0x58..0x6F`), the right half row 0
 
 ### Where the fog texels come from
 
-The page halfword is the upper half of the second staged UV word
-(`0x0027403F` at `0x8007323C`), a GP0 texpage: bits `0..3` give X `7 * 64 =
+The page halfword is the upper half of word 1 of a staged UV row
+(`0x0027403F` at `0x80073230`, row 0 of the `0x8007322C` table; row 1's
+`0x0027583F` at `0x80073240` names the same page), a GP0 texpage: bits `0..3` give X `7 * 64 =
 448`, bit 4 - the Y-base bit - is clear, bits `5..6` are ABR `1`. So the
 sheets sample `(448, 0)`, not `(448, 256)`, and the cells they read are
 rows `0x40..0x6F` of the `(448, 0)` 64x256 page of the PROT 0874 section-2
