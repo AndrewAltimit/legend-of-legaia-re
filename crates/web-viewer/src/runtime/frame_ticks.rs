@@ -38,27 +38,7 @@ pub struct FrameTicksReport {
     pub quit: bool,
 }
 
-/// [`LegaiaRuntime::play_shop_tick`]: a suspending screen took the tick.
-const SHOP_TICK_TAKEN: u8 = 1;
-/// [`LegaiaRuntime::play_shop_tick`]: the field ticks on a neutral pad.
-const SHOP_TICK_NEUTRAL_PAD: u8 = 2;
-
 impl LegaiaRuntime {
-    /// The cutscene pad lock and the opening chain, read where the page's
-    /// `play_cutscene_state_json` reads them.
-    fn cutscene_gates(&self) -> (bool, bool) {
-        self.scene_host
-            .host()
-            .map(|h| &h.world)
-            .map(|w| {
-                (
-                    w.cutscene_narration_active() || w.cutscene.card.is_some(),
-                    w.cutscene.opening_chain_active,
-                )
-            })
-            .unwrap_or((false, false))
-    }
-
     /// Run `steps` sim ticks of one display frame (see the module docs).
     /// `edge` is the frame's just-pressed pad bits, `pad` the held word the
     /// field ticks on. Errors carry the failing step's message; the page
@@ -83,6 +63,24 @@ impl LegaiaRuntime {
                 self.play_tick_overlay_sfx();
                 continue;
             }
+            // The party-wipe hold: a host screen, like the native window's
+            // boot UI (which holds it). It steps once per remaining tick;
+            // the frame ends with it.
+            if self.is_game_over() {
+                for g in s..steps {
+                    let picked = self.game_over_input(if g == s { edge } else { 0 });
+                    if picked == "quit" {
+                        // The battle score must not outlive the battle: the
+                        // title card plays the title theme (the native
+                        // window's post-wipe hand-off).
+                        let _ = self.play_title_bgm();
+                        r.quit = true;
+                        break;
+                    }
+                }
+                r.ticks = steps;
+                break;
+            }
             // The tick's owner, in the order both play hosts share
             // (`BootSession::claim_tick`): the naming prompt, stepped on the
             // tick's edge by the session; retail's prologue intro skip
@@ -91,12 +89,13 @@ impl LegaiaRuntime {
             // spawn hand-over and its press.
             let claims = TickClaims {
                 overlay_open: self.menu.is_open(),
+                overlay_suspends: self.menu.is_open() && self.menu.suspends_field(),
                 pause_menu_ready: self.ensure_menu_assets(),
             };
             let owner = self
                 .scene_host
                 .session_mut()
-                .map_or(TickOwner::Field, |s| s.claim_tick(claims, edge));
+                .map_or(TickOwner::Field(false), |s| s.claim_tick(claims, edge));
             match owner {
                 TickOwner::NameEntry(committed) => {
                     r.name_committed |= committed;
@@ -124,38 +123,22 @@ impl LegaiaRuntime {
                     self.play_tick_overlay_sfx();
                     continue;
                 }
-                TickOwner::Field => {}
-            }
-            let (locked, _) = self.cutscene_gates();
-            // The party-wipe hold steps once per remaining tick; the frame
-            // ends with it.
-            if self.is_game_over() {
-                for g in s..steps {
-                    let picked = self.game_over_input(if g == s { edge } else { 0 });
-                    if picked == "quit" {
-                        // The battle score must not outlive the battle: the
-                        // title card plays the title theme (the native
-                        // window's post-wipe hand-off).
-                        let _ = self.play_title_bgm();
-                        r.quit = true;
-                        break;
-                    }
+                // A shop or the prize exchange suspends the field and takes
+                // the tick: its session steps on the tick's edge, and the SFX
+                // scheduler steps under it.
+                TickOwner::OverlayScreen => {
+                    self.play_shop_input(edge);
+                    edge = 0;
+                    self.play_tick_overlay_sfx();
+                    continue;
                 }
-                r.ticks = steps;
-                break;
+                TickOwner::Field(neutral) => {
+                    self.set_pad(if neutral { 0 } else { pad });
+                }
             }
-            // A menu-overlay screen's claim on the tick: a shop or the prize
-            // exchange suspends the field and takes it; the inn prompt lets
-            // the field tick on a neutral pad and steps after it.
+            // The field's tick; an open inn prompt (which does not suspend
+            // the field) then steps after it, on the tick's own edge.
             let tick_edge = edge;
-            let shop = self.play_shop_tick(tick_edge);
-            if shop == SHOP_TICK_TAKEN {
-                edge = 0;
-                self.play_tick_overlay_sfx();
-                continue;
-            }
-            let neutral = locked || shop == SHOP_TICK_NEUTRAL_PAD;
-            self.set_pad(if neutral { 0 } else { pad });
             edge = 0;
             let entered = self.tick_frame().map_err(js_text)?;
             self.play_shop_after_tick(tick_edge);

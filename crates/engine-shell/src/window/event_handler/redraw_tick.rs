@@ -141,9 +141,11 @@ impl PlayWindowApp {
         // tick that skips the tail.
         let claims = legaia_engine_session::TickClaims {
             overlay_open: self.menu_runtime.is_open(),
+            overlay_suspends: self.menu_runtime.suspends_field(),
             pause_menu_ready: true,
         };
-        match self.session.claim_tick(claims, pressed_edge) {
+        let owner = self.session.claim_tick(claims, pressed_edge);
+        match owner {
             TickOwner::NameEntry(_) => {
                 self.tick_field_party_hud();
                 self.prev_pad = self.pad;
@@ -191,31 +193,16 @@ impl PlayWindowApp {
                 self.prev_pad = self.pad;
                 return false;
             }
-            TickOwner::Field => {}
+            TickOwner::OverlayScreen | TickOwner::Field(_) => {}
         }
-        // While the opening narration crawl / title card is on screen the
-        // pad is frozen (the timeline owns the scene), but the frame is
-        // otherwise an ordinary one: the scene ticks and the whole tail
-        // below runs, as the prologue's 3D keeps playing under the crawl in
-        // retail.
-        let narration = self.session.host.world.cutscene_narration_active()
-            || self.session.host.world.cutscene.card.is_some();
-        // Route this frame's pad into the engine before the
-        // tick so World::tick's mode dispatch (world-map
-        // controller, field-VM dialog-advance poll) sees real
-        // input. Edge detection lives in World.input. While a
-        // menu-runtime overlay (shop / inn) is up the pad drives
-        // the menu, not the field, so feed the field a neutral pad
-        // (the player must not walk while shopping).
-        let field_pad = if narration || self.menu_runtime.is_open() {
-            0
-        } else {
-            self.pad
-        };
-        // A shop / prize exchange is a menu-overlay session in retail
-        // (the field overlay is swapped out under it), so the world does
-        // not tick at all while one is up - the browser page's freeze.
-        let field_suspended = self.menu_runtime.suspends_field();
+        // The field's pad: neutral while the narration crawl / title card
+        // owns it or an overlay screen is up (`TickOwner::Field(true)`; the
+        // prologue's 3D keeps playing under the crawl in retail, so the tick
+        // and its whole tail still run). Under a suspending screen the field
+        // is frozen below.
+        let neutral = !matches!(owner, TickOwner::Field(false));
+        let field_pad = if neutral { 0 } else { self.pad };
+        let field_suspended = owner == TickOwner::OverlayScreen;
         let field_pad = self.resolve_tick_pad(field_pad);
         self.session.host.world.set_pad(field_pad);
         if field_suspended {

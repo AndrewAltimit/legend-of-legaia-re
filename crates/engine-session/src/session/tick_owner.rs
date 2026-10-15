@@ -21,6 +21,10 @@ pub struct TickClaims {
     /// A menu-overlay screen (shop, prize exchange, inn) is open: it owns the
     /// pad, so no pause press reaches the field menu.
     pub overlay_open: bool,
+    /// The open overlay screen suspends the field (a shop, the prize
+    /// exchange): retail runs it at game mode `0x17` with the field overlay
+    /// swapped out, so it takes the whole tick. An inn prompt does not.
+    pub overlay_suspends: bool,
     /// The host can draw a pause menu now (the browser page builds its menu
     /// assets on first use). The native window always can.
     pub pause_menu_ready: bool,
@@ -46,8 +50,13 @@ pub enum TickOwner {
     /// script's op-`0x49` press, which plays no confirm blip. The field
     /// darkens under the wipe from the next tick.
     PauseMenuOpened(bool),
-    /// No modal owner: the host's overlay screen, then the field.
-    Field,
+    /// A menu-overlay screen that suspends the field (shop, prize exchange)
+    /// takes the tick: the host steps its session on the tick's edge.
+    OverlayScreen,
+    /// The field ticks. `true` = on a neutral pad: the opening narration
+    /// crawl or title card owns the pad, or an inn prompt is up over the
+    /// field (the player must not walk while it is).
+    Field(bool),
 }
 
 impl<S: AudioSink> BootSession<S> {
@@ -76,7 +85,7 @@ impl<S: AudioSink> BootSession<S> {
             if self.pause_wipe().menu_spawned() {
                 return TickOwner::PauseMenuSpawned;
             }
-            return TickOwner::Field;
+            return TickOwner::Field(self.field_pad_neutral(claims));
         }
         // The press: a script's op-`0x49` save point / ready check, a Start
         // edge, the deny buzz - the one rule `press_field_menu` holds. A
@@ -89,6 +98,17 @@ impl<S: AudioSink> BootSession<S> {
         {
             return TickOwner::PauseMenuOpened(scripted);
         }
-        TickOwner::Field
+        if claims.overlay_suspends {
+            return TickOwner::OverlayScreen;
+        }
+        TickOwner::Field(self.field_pad_neutral(claims))
+    }
+
+    /// Whether the field ticks on a neutral pad: the narration crawl or
+    /// title card owns the pad (the timeline drives the scene), or an
+    /// overlay screen is up.
+    fn field_pad_neutral(&self, claims: TickClaims) -> bool {
+        let world = &self.host.world;
+        claims.overlay_open || world.cutscene_narration_active() || world.cutscene.card.is_some()
     }
 }
