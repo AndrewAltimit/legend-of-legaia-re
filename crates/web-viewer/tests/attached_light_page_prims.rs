@@ -43,6 +43,10 @@ fn dolk_darkness_mask_stays_on_the_page_screen_prim_pass() {
         return;
     };
     rt.enter_field("dolk").expect("enter dolk");
+    // Outside the lit band `dolk`'s entry script turns the mask off in
+    // (`P1[0]` `0x02D2..0x0303`: tiles `[57, 67] .. [85, 100]`, which hold the
+    // default seat): the parity capture's spot.
+    assert!(rt.debug_seat_player(6336, 5872), "a field player to seat");
     let mut first = None;
     let mut missing_after_first = Vec::new();
     for tick in 0..1300u32 {

@@ -32,6 +32,21 @@ impl LegaiaRuntime {
         .to_string()
     }
 
+    /// Stand the field player at world `(x, z)`. Test support only, for a
+    /// native test that needs the player where a retail capture had it; the
+    /// page never calls it. `false` with no player.
+    pub fn debug_seat_player(&mut self, x: i16, z: i16) -> bool {
+        let Some(w) = self.scene_host.host_mut().map(|h| &mut h.world) else {
+            return false;
+        };
+        let Some(slot) = w.player_actor_slot else {
+            return false;
+        };
+        let m = &mut w.actors[usize::from(slot)].move_state;
+        (m.world_x, m.world_z) = (x, z);
+        true
+    }
+
     /// The engine camera's retail globals, the state
     /// a scene entry resets (`Camera::reset_globals_for_scene_entry`).
     pub fn debug_camera_globals(&self) -> Vec<i32> {
