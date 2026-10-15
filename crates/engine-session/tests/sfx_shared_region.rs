@@ -17,8 +17,9 @@ use std::path::PathBuf;
 
 use legaia_engine_audio::{Spu, SpuAllocator, VabBank, spu::ram::SPU_RAM_BYTES};
 use legaia_engine_core::scene_host::SceneHost;
-use legaia_engine_core::world::{SharedRegionBank, World};
+use legaia_engine_core::world::World;
 use legaia_engine_mode::mode::SceneMode;
+use legaia_engine_mode::sfx_residency::SharedRegionBank;
 use legaia_engine_session::session::SFX_BANK_SPU_BYTES;
 use legaia_game_tables::sfx_table::SfxTable;
 

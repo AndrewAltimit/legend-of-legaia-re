@@ -241,7 +241,7 @@ impl<S: AudioSink> BootSession<S> {
 /// Each entry is a scene-VAB-style stream (`[u32 chunk header][VAB]...`), so
 /// the VAB starts at `+4` (with a `+0` fallback for a bare bank).
 fn stage_sfx_vab<S: AudioSink>(director: &mut AudioDirector<S>, host: &SceneHost) -> Result<()> {
-    use legaia_engine_core::world::SharedRegionBank;
+    use legaia_engine_mode::sfx_residency::SharedRegionBank;
     use legaia_game_tables::sfx_table::SLOT0_SYSTEM_BANK_PROT_INDEX;
 
     let bytes = host

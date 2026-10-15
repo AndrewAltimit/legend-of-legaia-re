@@ -198,7 +198,7 @@ pub struct AudioState {
     /// Which bank the SPU region VAB slots `2` and `6` share holds, and the
     /// field-bank latch `0x8007BAFC` - see
     /// [`crate::world::World::sync_sfx_residency`].
-    pub(crate) residency: crate::world::SfxBankResidency,
+    pub(crate) residency: legaia_engine_mode::sfx_residency::SfxBankResidency,
     /// SPU voices a field-VM op asked the host to stop this tick (the
     /// side-band teardown's `FUN_800653C8(0x17)` / `(0x16)`), drained by
     /// [`crate::world::World::take_sfx_voice_stops`].
@@ -264,7 +264,7 @@ impl AudioState {
             sound_stream: legaia_engine_system::scus_leaf_kernels::SoundStreamRequest::IDLE_PAIR,
             dual_mode_gate: 0,
             sound_detach: legaia_engine_system::sound_state::SoundDetachLatch::default(),
-            residency: crate::world::SfxBankResidency::default(),
+            residency: legaia_engine_mode::sfx_residency::SfxBankResidency::default(),
             sfx_voice_stops: Vec::new(),
             sfx_voice_keys: Vec::new(),
         }

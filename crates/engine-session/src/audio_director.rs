@@ -28,7 +28,8 @@ use legaia_engine_audio::{
     SfxFireBatch, SfxScheduler, VabBank, XaClipBank,
 };
 use legaia_engine_core::scene_host::BgmDirector;
-use legaia_engine_core::world::{SharedRegionBank, SideBandBank};
+use legaia_engine_core::world::SideBandBank;
+use legaia_engine_mode::sfx_residency::SharedRegionBank;
 use legaia_engine_system::sound_state::SfxRingOp;
 use legaia_game_tables::sfx_table::FALLBACK_VAB_SLOT;
 use legaia_seq::Seq;

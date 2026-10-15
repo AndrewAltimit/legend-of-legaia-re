@@ -209,7 +209,7 @@ impl<S: AudioSink> AudioDirector<S> {
         }
         self.shared_region = want;
         self.shared_retry_gen = None;
-        let (a, b) = legaia_engine_core::world::SHARED_REGION_SLOTS;
+        let (a, b) = legaia_engine_mode::sfx_residency::SHARED_REGION_SLOTS;
         self.sfx_vabs.remove(&a);
         self.sfx_vabs.remove(&b);
         self.tail.drop_shared_spill();
