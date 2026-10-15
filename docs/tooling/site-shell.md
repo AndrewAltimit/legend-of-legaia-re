@@ -602,7 +602,7 @@ shoot.
 
 ### The play page's minigame status rows sit under the canvas
 
-The engine's minigame status rows (`engine-core::minigame_status`) are the
+The engine's minigame status rows (`engine-minigame-scenes::minigame_status`) are the
 port's own readout of the rules state plus the key hints - not retail chrome.
 They are data, not a draw list: `minigame_status::caption` returns the live
 game and its rows, and no builder emits them as glyph quads. The play page

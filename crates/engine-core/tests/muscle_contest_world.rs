@@ -313,7 +313,16 @@ fn a_won_leg_mid_ladder_stays_in_the_arena_and_stages_the_next_fight() {
     };
     won_leg(&mut w);
     // No text over the KO.
-    assert!(legaia_engine_core::minigame_status::muscle_status_rows(&w).is_empty());
+    assert!(
+        legaia_engine_minigame_scenes::minigame_status::muscle_status_rows(
+            &w.minigames,
+            &legaia_engine_minigame_scenes::minigame_status::MuscleWorld {
+                contest_flags: w.muscle_contest_flags(),
+                playback_tally: w.muscle_playback_tally(),
+            },
+        )
+        .is_empty()
+    );
     w.set_pad(0);
     let _ = w.tick();
     w.set_pad(PadButton::Cross.mask());

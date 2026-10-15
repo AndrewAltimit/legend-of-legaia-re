@@ -18,4 +18,5 @@ pub mod fishing_rod;
 pub mod fishing_scene;
 pub mod fishing_venue;
 pub mod minigame_state;
+pub mod minigame_status;
 pub mod muscle_dome_scene;

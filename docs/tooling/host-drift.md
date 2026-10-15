@@ -1946,7 +1946,7 @@ inside it. Tier 12 measures the inside, and the pair carries a
 | dance | `World::enter_dance` (arms `dance_countin`), `dance::CountIn`, `FinishCountdown`, `DanceTutorial`; `DanceGame::advance_body_clips`, `DanceCastSurface::frame`; `dance_venue::DanceVenue::build`, `sync_dance_venue` and `World::finish_dance_if_over` (both inside `BootSession::step_dance_tail`); `stage_dance_hud_vram`, with `World::minigames.dance_hud_art_staged` as the one residency predicate | Mesh build and instance transform. |
 | Muscle Dome | `MuscleDomeSession::select_input`; `muscle_dome_scene::MuscleDomeSurface` (`frame_at`, `sim_ticks`, `DomeCamera::vp_raw`); `muscle_ringside::HubTimers::tick`, `HubBackdrop`, `FirstVisitHub`; `ringside_backdrop::ringside_still_quads`, `first_visit_hub_draw`; `SceneHost::dome_lead_fighter`; `World::leave_muscle_dome` | The minigames page keeps its own dome panel (`minigame-muscle.js`). |
 | effect parts | `legaia_engine_minigames::minigame_fx::MinigameFxPool` on `World::minigames.fx`, drawn by `engine-ui::minigame_fx::fx_part_draws` | The minigames page keeps its own instance of the type. |
-| status rows | `engine-core::minigame_status::caption` (rows as data: kind + clauses, no stage position) | where the caption shows, and `StatusHost` |
+| status rows | `engine-minigame-scenes::minigame_status::caption` (rows as data: kind + clauses, no stage position) | where the caption shows, and `StatusHost` |
 
 **The status rows are a caption, not a draw.** They are the port's readout of
 the rules state plus the key hints, authored once per game in

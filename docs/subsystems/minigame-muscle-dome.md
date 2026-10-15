@@ -1062,7 +1062,7 @@ The HUD kernels read the hold as an action frame (`battle_hud::battle_hud_phase`
 - The opponent commits greedily in deal order out of the player's own direction deck. Only the monster's stats are real; its own action stream is not modelled.
 - **Auto** fills the string greedily in deal order rather than reloading the saved string and rebuilding it per round.
 - The ring's **Item** arm always refuses (the session carries no bag). **Spirit** commits an empty string.
-- The **Ra-Seru list** is a row of the status caption (`engine-core::minigame_status::muscle_status_rows`), shown outside the game picture - the native title bar, the play page's strip under the canvas; its window's pieces are not pinned.
+- The **Ra-Seru list** is a row of the status caption (`engine-minigame-scenes::minigame_status::muscle_status_rows`), shown outside the game picture - the native title bar, the play page's strip under the canvas; its window's pieces are not pinned.
 - **Run** ends the leg on the press; the escape roll is not modelled.
 - The approach length and per-swing cadence are the port's clock, not retail's root-motion arithmetic.
 - The **minigames page's** standalone panel installs no art catalog, so its turn resolves the raw direction string: its only art source is the SCUS arts-*name* table, which carries a display index rather than an action constant, and it does not decode the per-character art records (PROT `0x05C4`). Its arts banner is unaffected.

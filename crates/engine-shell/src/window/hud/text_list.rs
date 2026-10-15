@@ -1,6 +1,6 @@
 //! The HUD text list for one frame ([`PlayWindowApp::build_hud`]).
 //!
-//! The minigame status rows (`engine-core::minigame_status`) are **not** in
+//! The minigame status rows (`engine-minigame-scenes::minigame_status`) are **not** in
 //! this list: they are caption data, shown in the title bar
 //! (`PlayWindowApp::sync_minigame_caption_title`) where no game chrome can
 //! cover them.

@@ -29,8 +29,8 @@ one, [`legaia-engine-fishing`](../engine-fishing/README.md).
 The split line is `World` (and, for scene assembly, `engine-scene`):
 
 - **World glue** - `World::enter_dance` / `tick_fishing` / the hub and
-  exchange methods, `minigame_entry` (mode-24 door warps), `minigame_status`,
-  `casino_coin_bank`, `fishing_exchange_input`, `timed_fight`.
+  exchange methods, `minigame_entry` (mode-24 door warps),
+  `World::minigame_caption`, `casino_coin_bank`, `fishing_exchange_input`, `timed_fight`.
 - **Scene assembly and the minigame seat** - `dance_venue`,
   `dance_cast_scene`, `fishing_scene`, `fishing_venue` (meshes and cameras
   out of a loaded `Scene` / `SceneResources`), the duel and arena surfaces,

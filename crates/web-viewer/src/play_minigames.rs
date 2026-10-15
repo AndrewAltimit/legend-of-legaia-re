@@ -35,7 +35,7 @@
 //!    to the game picture - the retail-placed digit strips, chrome labels and
 //!    frame rows - stage-scaled onto the overlay canvas.
 //!    [`LegaiaRuntime::play_mg_caption_json`] carries the engine's **status
-//!    rows** (`legaia_engine_core::minigame_status`: the port's readout of
+//!    rows** (`legaia_engine_minigame_scenes::minigame_status`: the port's readout of
 //!    the rules state plus the key hints) as strings, which the page shows in
 //!    the caption strip under the canvas. They are never glyph quads in the
 //!    frame: the page draws a game's screen primitives over its text layer,
@@ -343,7 +343,7 @@ impl LegaiaRuntime {
         }
     }
 
-    /// The live minigame's status caption (`engine-core::minigame_status`),
+    /// The live minigame's status caption (`engine-minigame-scenes::minigame_status`),
     /// the one row model the native window shows in its title bar. `None`
     /// outside a minigame.
     ///
@@ -353,25 +353,22 @@ impl LegaiaRuntime {
     /// so a rebind shows) plus the prize-exchange button beside the frame.
     pub(crate) fn minigame_caption(
         &self,
-    ) -> Option<legaia_engine_core::minigame_status::MinigameCaption> {
-        use legaia_engine_core::minigame_status as ms;
+    ) -> Option<legaia_engine_minigame_scenes::minigame_status::MinigameCaption> {
+        use legaia_engine_minigame_scenes::minigame_status as ms;
         let host = self.scene_host.host()?;
         let mapping = crate::pad_bindings::live_mapping();
         let key = |button: &'static str| mapping.key_label_for_button(button).unwrap_or(button);
-        ms::caption(
-            &host.world,
-            &ms::StatusHost {
-                slot_machine_drawn: self.play_mg_slot_cabinet_ready(),
-                fishing_keys: ms::FishingKeys {
-                    cast: key("Circle"),
-                    reel_a: key("Cross"),
-                    reel_b: key("Square"),
-                    menu: key("Triangle"),
-                    quit: key("Start"),
-                    prizes: "Prize exchange button",
-                },
+        host.world.minigame_caption(&ms::StatusHost {
+            slot_machine_drawn: self.play_mg_slot_cabinet_ready(),
+            fishing_keys: ms::FishingKeys {
+                cast: key("Circle"),
+                reel_a: key("Cross"),
+                reel_b: key("Square"),
+                menu: key("Triangle"),
+                quit: key("Start"),
+                prizes: "Prize exchange button",
             },
-        )
+        })
     }
 
     /// Overlay quads (surface pixels) for the active in-world minigame,
@@ -607,7 +604,7 @@ impl LegaiaRuntime {
     /// jump. Rows are in reading order; `kind` is `readout` (the rules state)
     /// or `hint` (what to press); a clause is one statement, and the page
     /// picks the separator. The model is
-    /// `legaia_engine_core::minigame_status::caption`, the one the native
+    /// `legaia_engine_minigame_scenes::minigame_status::caption`, the one the native
     /// window writes into its title bar.
     pub fn play_mg_caption_json(&self) -> String {
         let caption = self.minigame_caption();

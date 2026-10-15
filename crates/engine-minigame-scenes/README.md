@@ -21,6 +21,7 @@ the other way round. Hosts and tests name the modules directly
 | `fishing_scene` | `FishingSurface`: the `other1` venue scene, the party bodies and the sky strip every host draws. |
 | `fishing_rod` | `rod_mesh_from_scene`: the three rods and the bend lifted out of a loaded venue `Scene`. |
 | `minigame_state` | `MinigameState` (every minigame session plus the casino coin / point-card wallet), `FishingCaptionText` and `pond_event_cues`. |
+| `minigame_status` | The status caption both hosts show outside the game picture: per-game rows as data (`StatusRow`), `caption` over the seat, and the host's answers (`StatusHost`). The hosts call it through `World::minigame_caption`. |
 
 ## The split line
 
