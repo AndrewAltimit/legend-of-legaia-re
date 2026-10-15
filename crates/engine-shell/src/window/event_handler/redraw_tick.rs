@@ -126,15 +126,24 @@ impl PlayWindowApp {
         // Start in field opens the pause menu. Edge-detect so a
         // held key doesn't auto-reopen.
         let pressed_edge = self.pad & !self.prev_pad;
-        // The modal owners, in the order both play hosts share
+        // The tick's owner, in the order both play hosts share
         // (`BootSession::claim_tick`): the naming prompt (stepped on this
-        // tick's edge by the session) and the prologue intro skip (retail
-        // `FUN_801D1344`; the session has taken the hand-off). Each arm adds
-        // only what the window holds: the scene re-entry and its render
-        // rebuild, and the party readout's decision kernel, whose
-        // suppression predicate names both states and so must be stepped on
-        // a tick that skips the tail.
-        match self.session.claim_tick(pressed_edge) {
+        // tick's edge by the session), the prologue intro skip (retail
+        // `FUN_801D1344`; the session has taken the hand-off), the pause
+        // menu's spawn hand-over and its press (`press_field_menu`: a
+        // script's op-`0x49` save point, a Start edge where
+        // `World::field_menu_open_allowed` says so, the deny buzz; a shop /
+        // prize overlay owns the pad, so no press reaches the menu while one
+        // is up). Each arm adds only what the window holds: the scene
+        // re-entry and its render rebuild, the boot-UI state, the open blip,
+        // and the party readout's decision kernel, whose suppression
+        // predicate names each of these states and so must be stepped on a
+        // tick that skips the tail.
+        let claims = legaia_engine_session::TickClaims {
+            overlay_open: self.menu_runtime.is_open(),
+            pause_menu_ready: true,
+        };
+        match self.session.claim_tick(claims, pressed_edge) {
             TickOwner::NameEntry(_) => {
                 self.tick_field_party_hud();
                 self.prev_pad = self.pad;
@@ -158,83 +167,39 @@ impl PlayWindowApp {
                 self.prev_pad = self.pad;
                 return false;
             }
+            TickOwner::PauseMenuSpawned => {
+                // The wipe has spawned the menu: the boot-UI arm takes the
+                // frame from the next tick. Retail's mode-`0x17` handler runs
+                // the cue drainer under the menu, so the SFX scheduler steps.
+                self.boot_ui = BootUiState::FieldMenu { sub: None };
+                self.tick_menu_sfx();
+                self.tick_field_party_hud();
+                self.prev_pad = self.pad;
+                return false;
+            }
+            TickOwner::PauseMenuOpened(scripted) => {
+                // The open blips as a confirm, as on the browser page; a
+                // scripted press blips nothing - retail's cue `0x20` belongs
+                // to the pad controller, not to the actor it spawns.
+                if !scripted {
+                    self.fire_menu_cue(
+                        legaia_engine_session::audio_director::RETAIL_MENU_CONFIRM_CUE,
+                    );
+                }
+                self.tick_menu_sfx();
+                self.tick_field_party_hud();
+                self.prev_pad = self.pad;
+                return false;
+            }
             TickOwner::Field => {}
         }
         // While the opening narration crawl / title card is on screen the
-        // pad is frozen (the timeline owns the scene) and Start opens
-        // nothing, but the frame is otherwise an ordinary one: the scene
-        // ticks and the whole tail below runs. This arm used to `continue`
-        // straight after the scene tick, so under the crawl the effect
-        // scene-graphs, the scripted CLUT / VRAM effects, the field-event
-        // drain, the NPC rebind, the balloon sync and the play clock all
-        // stood still while the browser page ran them - and the prologue's
-        // 3D keeps playing under the crawl in retail.
+        // pad is frozen (the timeline owns the scene), but the frame is
+        // otherwise an ordinary one: the scene ticks and the whole tail
+        // below runs, as the prologue's 3D keeps playing under the crawl in
+        // retail.
         let narration = self.session.host.world.cutscene_narration_active()
             || self.session.host.world.cutscene.card.is_some();
-        // Start opens the pause menu wherever retail's locomotion
-        // controller runs, which is the field **and the overworld**.
-        // The guard used to be `!menu_runtime.is_open()` alone, so Start
-        // mid-battle opened the menu and froze the fight - the boot-UI
-        // arm above skips the scene tick, so nothing advanced until the
-        // player backed out.
-        //
-        // It then spelled the mode test out locally as
-        // `mode == SceneMode::Field`, on the premise that "on the world
-        // map the controller has its own" Start handler. That premise is
-        // false: `FUN_801E76D4` is the top-view debug renderer, and the
-        // overworld runs the ordinary `FUN_801D01B0` chain. A local copy
-        // of the test is exactly how the overworld lost the pause menu,
-        // so this asks the engine instead
-        // ([`World::field_menu_open_allowed`]) and every host that opens
-        // the menu asks the same question.
-        // The press itself - a script's op-`0x49` save point / ready
-        // check, a Start edge, the deny buzz - is answered by the one
-        // engine rule every host asks (`NativeSession::press_field_menu`),
-        // which already holds the narration / title-card refusal this
-        // arm used to spell out locally. A shop / prize overlay owns the
-        // pad, so no press reaches the menu while one is up.
-        //
-        // The open can be REFUSED - a dialogue engagement owns the player,
-        // as retail's engaged-bit branch does - and then the boot-UI arm
-        // is not taken, or the window would route input and draws to a
-        // menu that is not there while the scene tick stayed skipped.
-        // The menu spawns partway through the field's wipe to black
-        // (`NativeSession::pause_wipe`): until then the field keeps drawing
-        // under the wipe and ticking (with the world in `Menu`, so the
-        // player stands still), and the boot-UI arm takes the frame from
-        // the tick the menu exists.
-        if !self.boot_ui.is_active()
-            && self.session.field_menu_is_open()
-            && self.session.pause_wipe().menu_spawned()
-        {
-            self.boot_ui = BootUiState::FieldMenu { sub: None };
-            self.tick_field_party_hud();
-            self.prev_pad = self.pad;
-            return false;
-        }
-        let press = if self.menu_runtime.is_open() || self.session.field_menu_is_open() {
-            legaia_engine_session::PauseMenuPress::None
-        } else {
-            self.session.press_field_menu(pressed_edge & 0x0008 != 0)
-        };
-        if let legaia_engine_session::PauseMenuPress::Opened { scripted } = press {
-            // Start: the NativeSession-hosted pause menu (the retail CARD
-            // pair, game_mode 0x17 - the world holds SceneMode::Menu
-            // while it is open), with the window's input + draws routed
-            // to it via the boot-UI arm. The open blips as a confirm, as
-            // on the browser page; a scripted press blips nothing -
-            // retail's cue `0x20` belongs to the pad controller, not to
-            // the actor it spawns.
-            if !scripted {
-                self.fire_menu_cue(legaia_engine_session::audio_director::RETAIL_MENU_CONFIRM_CUE);
-            }
-            self.tick_menu_sfx();
-            // The boot-UI arm waits for the wipe to spawn the menu
-            // (above); this frame the field holds still under it.
-            self.tick_field_party_hud();
-            self.prev_pad = self.pad;
-            return false;
-        }
         // Route this frame's pad into the engine before the
         // tick so World::tick's mode dispatch (world-map
         // controller, field-VM dialog-advance poll) sees real

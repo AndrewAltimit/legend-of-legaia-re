@@ -342,13 +342,46 @@ skips = [
 
 [[frame_arm]]
 host = "native"
-arm = "PauseMenuPress::Opened { scripted } = press"
+arm = "TickOwner::PauseMenuSpawned =>"
 reason = """
-The frame on which a Start edge opened the pause menu: the arm sets the
-boot-UI state and hands the next frame to the arm above, so it is that arm's
-first frame by another name and freezes the same things. It fires the open
-blip and drains it, and steps the party-HUD kernel against the boot-UI state
-it just set.
+The tick the pause wipe spawns the menu: the arm raises the boot-UI state and
+hands the next tick to the boot-UI arm, so it is that arm's first tick by
+another name and freezes the same things. It steps the SFX scheduler (retail's
+mode-`0x17` handler runs the cue drainer under the menu, and the page's twin
+steps it too) and the party-HUD kernel against the state it just set.
+"""
+skips = [
+    "advance_ocean_animation",
+    "apply_world_clut_fx",
+    "check_battle_vram_residency",
+    "drain_and_log_battle_events",
+    "drain_and_route_field_events",
+    "drain_anim_cues",
+    "maybe_install_demo_tile_board",
+    "poll_field_shop",
+    "rebind_live_npc_models",
+    "sync_battle_render",
+    "sync_dialog_panel",
+    "sync_text_balloon",
+    "tick_dev_menu",
+    "tick_fishing_banners",
+    "tick_minigame_extras",
+    "tick_muscle_time_meter",
+    "tick_play_clock",
+    "tick_sfx",
+    "tick_world_effects",
+]
+
+[[frame_arm]]
+host = "native"
+arm = "TickOwner::PauseMenuOpened(scripted) =>"
+reason = """
+The tick on which a press (Start, or a script's op-`0x49`) opened the pause
+menu (`BootSession::claim_tick` ran `press_field_menu`). The press takes the
+tick, as retail's locomotion controller spends the frame it accepts the open
+on; from the next tick the field darkens under the wipe and then the spawn arm
+hands the frame to the boot UI. It fires the open blip and drains it, and
+steps the party-HUD kernel against the menu state it just raised.
 """
 skips = [
     "advance_ocean_animation",

@@ -37,6 +37,9 @@ NATIVE_DYN_WINDOWS = "crates/render-kernels/src/scene_lighting/windows.rs"
 
 NATIVE_BOOT = "crates/engine-session/src/session.rs"
 NATIVE_BOOT_FRAME_TICK = "crates/engine-session/src/session/frame_tick.rs"
+# The one tick order both play hosts hand each sim tick through.
+SESSION_TICK_OWNER = "crates/engine-session/src/session/tick_owner.rs"
+WEB_RUNTIME_FRAME_TICKS = "crates/web-viewer/src/runtime/frame_ticks.rs"
 NATIVE_BOOT_SCENE_ENTRY = "crates/engine-session/src/session/scene_entry.rs"
 # The native host's CD-XA bank readers (a disc image on disk).
 NATIVE_XA_DISC = "crates/engine-session/src/native/xa_disc.rs"

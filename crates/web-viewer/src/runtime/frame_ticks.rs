@@ -13,7 +13,7 @@
 //! hand-back), which the report names.
 
 use super::*;
-use legaia_engine_session::TickOwner;
+use legaia_engine_session::{TickClaims, TickOwner};
 
 /// What one frame's ticks did ([`LegaiaRuntime::frame_ticks`]), for the
 /// page's follow-up.
@@ -38,8 +38,6 @@ pub struct FrameTicksReport {
     pub quit: bool,
 }
 
-/// [`LegaiaRuntime::play_menu_tick`]: the pause menu did not take the tick.
-const MENU_TICK_FIELD: u8 = 0;
 /// [`LegaiaRuntime::play_shop_tick`]: a suspending screen took the tick.
 const SHOP_TICK_TAKEN: u8 = 1;
 /// [`LegaiaRuntime::play_shop_tick`]: the field ticks on a neutral pad.
@@ -75,26 +73,30 @@ impl LegaiaRuntime {
         let mut edge = edge;
         for s in 0..steps {
             r.ticks = s + 1;
-            // The pause menu's per-tick arms. Each takes the whole tick; the
-            // SFX scheduler still steps, as retail's mode-0x17 handler runs
-            // the cue drainer.
-            let own = self.play_menu_tick(edge);
-            if own != MENU_TICK_FIELD {
+            // The pause menu once it owns the frame: one menu step per tick
+            // (the native window's boot-UI arm). The SFX scheduler still
+            // steps, as retail's mode-0x17 handler runs the cue drainer.
+            if self.play_menu_owns_frame() {
+                self.play_menu_input(edge);
                 r.menu_ticked = true;
-                r.menu_opened |= own >= 2;
                 edge = 0;
                 self.play_tick_overlay_sfx();
                 continue;
             }
-            // The modal owners, in the order both play hosts share
+            // The tick's owner, in the order both play hosts share
             // (`BootSession::claim_tick`): the naming prompt, stepped on the
-            // tick's edge by the session, and retail's prologue intro skip
+            // tick's edge by the session; retail's prologue intro skip
             // (`FUN_801D1344`), whose hand-off the session has taken - the
-            // frame's remaining ticks run on the new scene.
+            // frame's remaining ticks run on the new scene; the pause menu's
+            // spawn hand-over and its press.
+            let claims = TickClaims {
+                overlay_open: self.menu.is_open(),
+                pause_menu_ready: self.ensure_menu_assets(),
+            };
             let owner = self
                 .scene_host
                 .session_mut()
-                .map_or(TickOwner::Field, |s| s.claim_tick(edge));
+                .map_or(TickOwner::Field, |s| s.claim_tick(claims, edge));
             match owner {
                 TickOwner::NameEntry(committed) => {
                     r.name_committed |= committed;
@@ -105,6 +107,21 @@ impl LegaiaRuntime {
                     self.enter_field_core(target, false)?;
                     r.scenes.push(target.to_string());
                     edge = 0;
+                    continue;
+                }
+                TickOwner::PauseMenuSpawned => {
+                    self.play_menu_take_spawn();
+                    r.menu_ticked = true;
+                    edge = 0;
+                    self.play_tick_overlay_sfx();
+                    continue;
+                }
+                TickOwner::PauseMenuOpened(scripted) => {
+                    self.play_menu_attach_opened(scripted);
+                    r.menu_ticked = true;
+                    r.menu_opened = true;
+                    edge = 0;
+                    self.play_tick_overlay_sfx();
                     continue;
                 }
                 TickOwner::Field => {}

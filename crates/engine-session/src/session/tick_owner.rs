@@ -7,13 +7,24 @@
 //! page asked the pause menu first, the window the naming prompt). The order
 //! is [`BootSession::claim_tick`] now, and each host only acts on the
 //! [`TickOwner`] it hands back: the parts of an owner the session can do
-//! itself - step the naming prompt, take the prologue hand-off - are done
-//! by the time it returns.
+//! itself - step the naming prompt, take the prologue hand-off, open the
+//! pause menu - are done by the time it returns.
 
 use legaia_engine_audio::AudioSink;
 use legaia_engine_system::input::PadButton;
 
-use super::BootSession;
+use super::{BootSession, PauseMenuPress};
+
+/// What the host holds that the tick order asks about.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct TickClaims {
+    /// A menu-overlay screen (shop, prize exchange, inn) is open: it owns the
+    /// pad, so no pause press reaches the field menu.
+    pub overlay_open: bool,
+    /// The host can draw a pause menu now (the browser page builds its menu
+    /// assets on first use). The native window always can.
+    pub pause_menu_ready: bool,
+}
 
 /// Who owns one sim tick ([`BootSession::claim_tick`]).
 ///
@@ -28,15 +39,22 @@ pub enum TickOwner {
     /// the opening chain handed off to the named scene. The host enters it
     /// (and rebuilds whatever it draws the scene with); the tick is spent.
     PrologueSkip(&'static str),
-    /// No modal owner: the host's own screens, then the field.
+    /// The pause menu's wipe has spawned it: from this tick on the host's
+    /// menu screen owns the frame. This tick is the hand-over (no input).
+    PauseMenuSpawned,
+    /// A pause press opened the menu (`press_field_menu`). `true` = a
+    /// script's op-`0x49` press, which plays no confirm blip. The field
+    /// darkens under the wipe from the next tick.
+    PauseMenuOpened(bool),
+    /// No modal owner: the host's overlay screen, then the field.
     Field,
 }
 
 impl<S: AudioSink> BootSession<S> {
     /// Hand one sim tick to its owner, in the one order both play hosts
     /// share. `edge` is the tick's just-pressed pad bits.
-    // REF: FUN_801D1344
-    pub fn claim_tick(&mut self, edge: u16) -> TickOwner {
+    // REF: FUN_801D1344, FUN_801D01B0
+    pub fn claim_tick(&mut self, claims: TickClaims, edge: u16) -> TickOwner {
         // The naming prompt is modal: retail parks the opening's script on
         // it, so while it is up it takes the tick.
         if self.step_name_entry_frame(edge) {
@@ -50,6 +68,26 @@ impl<S: AudioSink> BootSession<S> {
             .take_prologue_handoff(edge & PadButton::Cross.mask() != 0)
         {
             return TickOwner::PrologueSkip(target);
+        }
+        // The pause menu spawns partway through the field's wipe to black
+        // (`pause_wipe`): until then the field keeps ticking under the wipe
+        // (with the world in `Menu`, so the player stands still).
+        if self.field_menu_is_open() {
+            if self.pause_wipe().menu_spawned() {
+                return TickOwner::PauseMenuSpawned;
+            }
+            return TickOwner::Field;
+        }
+        // The press: a script's op-`0x49` save point / ready check, a Start
+        // edge, the deny buzz - the one rule `press_field_menu` holds. A
+        // menu-overlay screen owns the pad, so no press reaches the menu
+        // while one is up.
+        if !claims.overlay_open
+            && claims.pause_menu_ready
+            && let PauseMenuPress::Opened { scripted } =
+                self.press_field_menu(edge & PadButton::Start.mask() != 0)
+        {
+            return TickOwner::PauseMenuOpened(scripted);
         }
         TickOwner::Field
     }

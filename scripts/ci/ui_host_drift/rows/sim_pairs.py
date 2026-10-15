@@ -8,6 +8,8 @@ from ui_host_drift.rows.host_files import (
     NATIVE_ASSETS_ACTORS,
     NATIVE_BOOT_CUTSCENE,
     NATIVE_BOOT_FRAME_TICK,
+    SESSION_TICK_OWNER,
+    WEB_RUNTIME_FRAME_TICKS,
     NATIVE_BOOT_SCENE_ENTRY,
     NATIVE_DEV_MENU,
     NATIVE_GEOMETRY,
@@ -1108,12 +1110,26 @@ SIM_PAIRS: list[dict[str, object]] = [
         "to assert is that every host routes the press through the kernel "
         "rather than around it",
         "sites": {
-            "native_window": (NATIVE_REDRAW, "handle_redraw"),
+            "play_hosts": (SESSION_TICK_OWNER, "claim_tick"),
             "native_boot": (NATIVE_BOOT_FRAME_TICK, "tick"),
             "web": (WEB_PLAY_MENU_OPEN_CLOSE, "play_menu_open"),
         },
         "mode": "symbols_all",
         "symbols": ["press_field_menu"],
+    },
+    {
+        "what": "tick order, native vs play page - which screen owns each "
+        "sim tick. The window's `sim_tick` and the page's `frame_ticks` each "
+        "spelt the order in their own words, and the two orders differed "
+        "(the page asked the pause menu before the naming prompt). Both hand "
+        "every tick through `BootSession::claim_tick` and act only on the "
+        "`TickOwner` it returns",
+        "sites": {
+            "native": (NATIVE_REDRAW_TICK, "sim_tick"),
+            "web": (WEB_RUNTIME_FRAME_TICKS, "frame_ticks"),
+        },
+        "mode": "symbols_all",
+        "symbols": ["claim_tick", "TickClaims"],
     },
     {
         "what": "pause-menu open with no press - the title's Continue / "
