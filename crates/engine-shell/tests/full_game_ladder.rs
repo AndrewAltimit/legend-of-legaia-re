@@ -207,6 +207,31 @@ fn plan_search_parent_links_stay_acyclic() {
     assert_eq!(walk_back(&cyclic, a, past), None);
 }
 
+/// `koin1`'s slot machines are the minigame cabinets the walk's idle tap
+/// keeps off ([`minigame_talks`]): P1[51..56] run the `3E 68` door-warp,
+/// the interact probe reaches them as props, and the Prize Counter
+/// (P1[5]) is not one. Disc-gated.
+#[test]
+fn koin1_slot_machines_are_minigame_cabinets() {
+    let Some(inp) = inputs() else { return };
+    let mut session = open_session(&inp.extracted);
+    session
+        .enter_scene_live("koin1", &live_opts(false))
+        .expect("enter koin1");
+    let cabinets = minigame_talks(&session);
+    for slot in 51..=56u8 {
+        assert!(cabinets.contains(&slot), "P1[{slot}] in {cabinets:?}");
+    }
+    assert!(!cabinets.contains(&5), "the Prize Counter is no cabinet");
+    let w = &session.host.world;
+    for slot in 51..=56u8 {
+        assert!(
+            w.props.walk_touch.contains_key(&slot),
+            "P1[{slot}] is a probe target"
+        );
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Part A: the spine is anchored, ordered and routed
 // ---------------------------------------------------------------------------

@@ -119,6 +119,30 @@ pub(super) fn unlatching_bands(session: &NativeSession, door: (i16, i16)) -> Vec
         .collect()
 }
 
+/// The loaded scene's minigame cabinets: the talk records (`P1`) that run
+/// the minigame door-warp (`3E` with `op0 >= 100`), themselves or through a
+/// record they spawn. `koin1`, Sol's casino, stands its slot machines
+/// (P1[51..56], `3E 68`) along the floor as props the interact probe hits
+/// but no NPC slot carries: the walk's idle tap beside one at (20, 43),
+/// on the way to the Prize Counter, asked to play and put the session in
+/// the slot machine.
+pub(super) fn minigame_talks(session: &NativeSession) -> HashSet<u8> {
+    let Some((mf, man, _)) = scene_man_and_triggers(session) else {
+        return HashSet::new();
+    };
+    let n0 = mf.partitions.first().map_or(0, Vec::len);
+    let n1 = mf.partitions.get(1).map_or(0, Vec::len);
+    (0..n1.min(256))
+        .filter(|&r| {
+            record_enters_minigame(&mf, &man, 1, r)
+                || spawned_p2(&mf, &man, 1, r, n0 + n1, 3)
+                    .iter()
+                    .any(|&s| record_enters_minigame(&mf, &man, 2, s))
+        })
+        .map(|r| r as u8)
+        .collect()
+}
+
 /// [`plan_path`] around `avoid`; when that cannot reach `goal`, around the
 /// door bands alone (a live walk-on band then gets crossed, as a player
 /// crosses one that stands in the only way through).
@@ -482,6 +506,13 @@ pub(super) fn pad_walk(
     let mut idle_talks: HashSet<String> = HashSet::new();
     let mut taps_off = false;
     let mut tapped_at: Option<usize> = None;
+    // The idle tap is never pressed at a minigame cabinet
+    // ([`minigame_talks`]): a walk that passes one does not sit down to play.
+    let cabinets = if session.host.world.mode == SceneMode::Field {
+        minigame_talks(session)
+    } else {
+        HashSet::new()
+    };
     for step in 0..PAD_LEG_FRAMES as usize {
         pad_budget(session)?;
         // Per overworld tile: the encounter step counter it left behind.
@@ -739,6 +770,11 @@ pub(super) fn pad_walk(
                 && !(moved && walking_mode == SceneMode::Field)
                 && !idle_taps.contains(&cell_of(wx, wz))
                 && !taps_off
+                && !session
+                    .host
+                    .world
+                    .field_interact_probe_slot()
+                    .is_some_and(|s| cabinets.contains(&s))
             {
                 pad = PadButton::Cross.mask();
                 tap_owed = false;
