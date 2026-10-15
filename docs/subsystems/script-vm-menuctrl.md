@@ -546,7 +546,8 @@ MAIN INIT takes `0x4B0` ticks off a running clock on every warp return to the
 field - from a battle, a minigame or an FMV resume, the `_DAT_8007B8B8 == 2`
 arm (`0x8003B62C..0x8003B648`); a cold entry through a door pays nothing - and
 a card load restores it to the full duration (`0x8003B96C..0x8003B98C`). Port:
-`EscapeTimer::field_return_penalty`, called on the battle and minigame returns.
+`EscapeTimer::field_return_penalty`, called on the battle and minigame returns
+and on the FMV resume arm (`SceneHost::apply_pending_fmv_handoff`).
 
 ### 0x4C nibble-D sub-4 / sub-5 - VRAM STP-bit set/clear
 

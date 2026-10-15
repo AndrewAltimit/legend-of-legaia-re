@@ -119,10 +119,58 @@ impl SceneHost {
                     error: format!("{e:#}"),
                 },
             },
+            FmvHandoff::ResumeField => {
+                // The resume arm (`0x801CEF18`) leaves the field-entry word
+                // at 2, so the field comes back through MAIN INIT's warp arm,
+                // which takes twenty seconds off a running escape clock
+                // (`0x8003B62C..0x8003B648`).
+                self.world.battle.escape_timer.field_return_penalty();
+                FmvHandoffOutcome::NotApplied { fmv_id, handoff }
+            }
             other => FmvHandoffOutcome::NotApplied {
                 fmv_id,
                 handoff: other,
             },
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use legaia_engine_field::escape_timer::{EscapeTimer, FIELD_RETURN_PENALTY};
+
+    /// The resume arm comes back through MAIN INIT's warp arm, which takes
+    /// twenty seconds off a running escape clock (`0x8003B62C..0x8003B648`).
+    /// Disc-gated: `SceneHost` needs the disc's index.
+    #[test]
+    fn the_fmv_resume_arm_costs_a_running_escape_clock_twenty_seconds() {
+        let Some(path) = std::env::var_os("LEGAIA_DISC_BIN").map(std::path::PathBuf::from) else {
+            eprintln!("[skip] LEGAIA_DISC_BIN unset");
+            return;
+        };
+        let mut host = SceneHost::open_disc(&path).expect("open disc");
+        assert_eq!(
+            legaia_engine_system::movie::cutscene::fmv_post_play_handoff(5),
+            FmvHandoff::ResumeField
+        );
+        host.world.battle.escape_timer = EscapeTimer {
+            remaining: 21600,
+            warn_threshold: 3600,
+            armed: true,
+        };
+        host.world.cutscene.finished_fmv = Some(5);
+        let out = host.apply_pending_fmv_handoff();
+        assert!(matches!(
+            out,
+            Some(FmvHandoffOutcome::NotApplied {
+                handoff: FmvHandoff::ResumeField,
+                ..
+            })
+        ));
+        assert_eq!(
+            host.world.battle.escape_timer.remaining,
+            21600 - FIELD_RETURN_PENALTY
+        );
     }
 }
