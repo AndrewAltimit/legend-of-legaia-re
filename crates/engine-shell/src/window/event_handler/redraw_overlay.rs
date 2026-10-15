@@ -438,8 +438,12 @@ impl PlayWindowApp {
             // The floating value readout needs the struck actor's projected
             // screen position, which only a host holding the camera has.
             value_readout: self.battle_value_readout_prims(fx_cam),
-            dance_countin: self.dance_countin_prims(),
-            dance_hud: self.dance_hud_prims(),
+            dance_countin: legaia_engine_screens::minigame_hud::dance_countin_prims(
+                &self.session.host.world.minigames,
+            ),
+            dance_hud: legaia_engine_screens::minigame_hud::dance_hud_prims(
+                &self.session.host.world.minigames,
+            ),
             baka_hud: self.baka_hud_prims(),
             slot_cabinet: slot_prims,
             slot_paylines: self.slot_payline_screen_prims(),

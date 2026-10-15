@@ -27,35 +27,16 @@ CONSTANT_PAIRS: list[dict[str, object]] = [
     # Two pause-menu rows used to sit at the head of this list - the pinned
     # window-descriptor rect table and the near-fullscreen sub-screen rect.
     # They are gone because the constants are: both live once in
-    # `legaia_engine_ui::pause_menu` (`MENU_WINDOW_FALLBACK` /
+    # The dev-menu pens (`DEV_MENU_PEN`, `DEV_RECORDS_PEN`) and the Records page
+# headings (`RECORDS_LABELS`) were pairs here too; they are one copy in
+# `legaia_engine_screens::dev_menu` now, which both hosts import.
+# `legaia_engine_ui::pause_menu` (`MENU_WINDOW_FALLBACK` /
     # `MENU_SUBWINDOW_CONTENT`), read by the shared composition both hosts
     # call. A pair proves two copies agree; one copy needs no proof. The
     # engine-ui rect table is exercised by `tests/pause_menu_compose.rs`; the
     # disc side is pinned separately by the disc-gated `menu_windows_real`
     # test, which asserts the same rects against its own literal list rather
     # than against this constant.
-    {
-        "what": "dev-menu list pen - the origin both hosts hand to "
-        "dev_menu_list_draws_for / dev_menu_cursor_xy for the developer row "
-        "list",
-        "native": (NATIVE_DEV_MENU, "DEV_MENU_PEN"),
-        "web": (WEB_PLAY_DEV_MENU, "DEV_MENU_PEN"),
-    },
-    {
-        "what": "dev-records pen - the origin both hosts hand to "
-        "records_screen_draws_for; the page's footprint only fits the 320x240 "
-        "stage from this exact origin",
-        "native": (NATIVE_DEV_MENU, "DEV_RECORDS_PEN"),
-        "web": (WEB_PLAY_DEV_MENU, "DEV_RECORDS_PEN"),
-    },
-    {
-        "what": "records-page heading strings - the `RecordsLabels` each host "
-        "hands to records_screen_draws_for (kept out of engine-ui so no game "
-        "text lives there, which is exactly what makes them a per-host "
-        "duplicate)",
-        "native": (NATIVE_DEV_MENU, "RECORDS_LABELS"),
-        "web": (WEB_PLAY_DEV_MENU, "RECORDS_LABELS"),
-    },
     # The camera-occlusion fade is not an engine-ui screen - the shared
     # kernel here is a pair of hand-written twin shaders, so these four
     # numbers are the whole model and nothing downstream would catch a

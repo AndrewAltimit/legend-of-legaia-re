@@ -393,22 +393,9 @@ impl LegaiaRuntime {
         let Some(f) = self.baka_session() else {
             return Vec::new();
         };
-        let views: Vec<legaia_engine_ui::dance::DanceHudQuadView> = self
-            .minigame_ui
-            .baka_surface
-            .hud_quads(f)
-            .iter()
-            .map(|q| legaia_engine_ui::dance::DanceHudQuadView {
-                poly_code: q.poly_code,
-                rect: (q.x0, q.y0, q.x1, q.y1),
-                uv: q.uv,
-                rgb_top: q.rgb_top,
-                rgb_bottom: q.rgb_bottom,
-                clut: q.clut,
-                tpage: q.tpage_attr,
-            })
-            .collect();
-        legaia_engine_ui::baka_strips::baka_hud_prims(&views)
+        legaia_engine_screens::minigame_hud::baka_hud_prims(
+            &self.minigame_ui.baka_surface.hud_quads(f),
+        )
     }
 
     /// The Baka Fighter frame's text: the retail number drawers and, while

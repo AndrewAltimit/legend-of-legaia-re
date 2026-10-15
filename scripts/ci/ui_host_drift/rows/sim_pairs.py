@@ -1175,18 +1175,20 @@ SIM_PAIRS: list[dict[str, object]] = [
         "symbols": ["retail_packed", "tick_host", "RECORDS_TOGGLE"],
     },
     {
-        "what": "dev-records model - both hosts assemble the records page "
-        "from the same two kernels: the record-relative counter reads "
-        "(`record_counters`, the save-block rebase) and the retail "
-        "clamp/decompose model (`records_screen`). A host that reads the "
+        "what": "dev-records model - both hosts draw the records page off "
+        "the one model in `legaia_engine_screens::dev_menu` "
+        "(`dev_records_model`: the record-relative counter reads, "
+        "`record_counters`, through the retail clamp / decompose model, "
+        "`records_screen`) and its one view projection (`records_view`). "
+        "Each host used to carry its own copy of both; a host that reads the "
         "record fields itself, or skips the clamp, shows different numbers "
         "for the same save",
         "sites": {
-            "native": (NATIVE_DEV_MENU, "dev_records_model"),
-            "web": (WEB_PLAY_DEV_MENU, "dev_records_model"),
+            "native": (NATIVE_DEV_MENU, "records_draws_at"),
+            "web": (WEB_PLAY_DEV_MENU, "records_draws_at"),
         },
         "mode": "symbols_all",
-        "symbols": ["record_counters", "records_screen"],
+        "symbols": ["dev_records_model", "records_view"],
     },
     {
         "what": "play clock - the H:MM:SS box the pause menu draws reads "

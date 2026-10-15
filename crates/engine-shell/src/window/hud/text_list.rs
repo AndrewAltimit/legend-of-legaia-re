@@ -814,11 +814,14 @@ impl PlayWindowApp {
                 // sprite layer (`battle_chrome_sprite_draws`).
                 if let Some(model) = self.battle_item_menu_model() {
                     let (origin, scale) = self.save_select_stage(w, h);
-                    out.extend(with_battle_item_frame(&model, |frame| {
-                        legaia_engine_ui::battle_item_ui::battle_item_window_text(
-                            &self.font, frame, origin, scale,
-                        )
-                    }));
+                    out.extend(legaia_engine_screens::with_battle_item_frame(
+                        &model,
+                        |frame| {
+                            legaia_engine_ui::battle_item_ui::battle_item_window_text(
+                                &self.font, frame, origin, scale,
+                            )
+                        },
+                    ));
                 }
             } else if let Some(cmd) = &bw.battle.command {
                 let menu_x = 8i32;

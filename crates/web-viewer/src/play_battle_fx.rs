@@ -39,6 +39,7 @@
 //! one.
 
 use crate::runtime::LegaiaRuntime;
+use legaia_engine_camera::psx_camera::{WORLD_FLIP, mat4_mul, mat4_scale, mat4_translation};
 use legaia_engine_mode::mode::SceneMode;
 use wasm_bindgen::prelude::*;
 
@@ -141,22 +142,6 @@ pub(crate) struct BattleFxFrame {
     /// outline strips (draw the flat colour).
     pub flat: Vec<u8>,
     pub models: Vec<FxModelDraw>,
-}
-
-/// Column-major 4x4 multiply, `out = a * b` (WebGL `mat4` layout - the same
-/// convention [`legaia_engine_camera::projection::battle_vp`] emits).
-fn mat_mul(a: &[f32; 16], b: &[f32; 16]) -> [f32; 16] {
-    let mut out = [0.0f32; 16];
-    for c in 0..4 {
-        for r in 0..4 {
-            let mut s = 0.0;
-            for k in 0..4 {
-                s += a[k * 4 + r] * b[c * 4 + k];
-            }
-            out[c * 4 + r] = s;
-        }
-    }
-    out
 }
 
 /// Full 4x4 inverse (cofactor expansion), column-major. Returns `None` for a
@@ -337,7 +322,7 @@ impl LegaiaRuntime {
             0.0,
             1.0,
         ];
-        Some(mat_mul(&m, &scale))
+        Some(mat4_mul(&m, &scale))
     }
 
     /// Rebuild [`Self::battle_fx`] for this frame at the page's viewport
@@ -481,26 +466,9 @@ impl LegaiaRuntime {
         // Y-flip, the frame flip the prefix conjugates by.
         let part_cam =
             legaia_render_kernels::gte::PartCameraPose::from_battle(&self.battle_cam_pose());
-        let flip: [f32; 16] = [
-            1.0, 0.0, 0.0, 0.0, //
-            0.0, -1.0, 0.0, 0.0, //
-            0.0, 0.0, 1.0, 0.0, //
-            0.0, 0.0, 0.0, 1.0,
-        ];
-        let world_scale: [f32; 16] = [
-            s, 0.0, 0.0, 0.0, //
-            0.0, s, 0.0, 0.0, //
-            0.0, 0.0, s, 0.0, //
-            0.0, 0.0, 0.0, 1.0,
-        ];
-        let fx_translate = |p: [f32; 3]| -> [f32; 16] {
-            [
-                1.0, 0.0, 0.0, 0.0, //
-                0.0, 1.0, 0.0, 0.0, //
-                0.0, 0.0, 1.0, 0.0, //
-                p[0], p[1], p[2], 1.0,
-            ]
-        };
+        let flip = WORLD_FLIP;
+        let world_scale = mat4_scale(s);
+        let fx_translate = mat4_translation;
         // The native battle pass's placement kernel: the frame flip on the
         // translation as well as on the camera-relative prefix.
         let place = |flags: u16, pos: [f32; 3]| -> [f32; 16] {
@@ -510,7 +478,7 @@ impl LegaiaRuntime {
             if world.global_tmd(em.tmd_index as i16).is_none() {
                 continue;
             }
-            let model = mat_mul(&world_scale, &mat_mul(&fx_translate(em.world_pos), &flip));
+            let model = mat4_mul(&world_scale, &mat4_mul(&fx_translate(em.world_pos), &flip));
             frame.models.push(FxModelDraw {
                 tmd_index: em.tmd_index,
                 source: FxModelSource::GlobalPool,
@@ -528,11 +496,11 @@ impl LegaiaRuntime {
             // `T * R * flip` (`gte::part_rotation`), the native part composition, with
             // the FX camera's 4x world scale folded in front of it (the page
             // multiplies its unscaled battle VP by this).
-            let model = mat_mul(
+            let model = mat4_mul(
                 &world_scale,
-                &mat_mul(
+                &mat4_mul(
                     &place(sp.flags_52, sp.world_pos),
-                    &mat_mul(
+                    &mat4_mul(
                         &legaia_render_kernels::gte::part_rotation(sp.rot, true),
                         &flip,
                     ),
@@ -580,11 +548,11 @@ impl LegaiaRuntime {
         // window's part pass draws the same list.
         let shadows = world.battle_ground_shadows(|i| self.battle_draw_plan(i));
         for rb in world.active_effect_kind4_draws().into_iter().chain(shadows) {
-            let model = mat_mul(
+            let model = mat4_mul(
                 &world_scale,
-                &mat_mul(
+                &mat4_mul(
                     &place(rb.flags_52, rb.world_pos),
-                    &mat_mul(
+                    &mat4_mul(
                         &legaia_render_kernels::gte::part_rotation(rb.rot, true),
                         &flip,
                     ),
@@ -711,20 +679,8 @@ impl LegaiaRuntime {
             ]);
         }
 
-        let flip_m: [f32; 16] = [
-            1.0, 0.0, 0.0, 0.0, //
-            0.0, -1.0, 0.0, 0.0, //
-            0.0, 0.0, 1.0, 0.0, //
-            0.0, 0.0, 0.0, 1.0,
-        ];
-        let fx_translate = |p: [f32; 3]| -> [f32; 16] {
-            [
-                1.0, 0.0, 0.0, 0.0, //
-                0.0, 1.0, 0.0, 0.0, //
-                0.0, 0.0, 1.0, 0.0, //
-                p[0], p[1], p[2], 1.0,
-            ]
-        };
+        let flip_m = WORLD_FLIP;
+        let fx_translate = mat4_translation;
         // The engine camera the page draws through this frame (the same
         // `resolve_field_camera` frame [`Self::play_camera_vp`] built `vp`
         // from), for the parts' `+0x52` camera-relative bits. `None` when the
@@ -746,9 +702,9 @@ impl LegaiaRuntime {
                 false,
             )
             .unwrap_or_else(|| fx_translate(pos));
-            mat_mul(
+            mat4_mul(
                 &flip_m,
-                &mat_mul(
+                &mat4_mul(
                     &place,
                     &legaia_render_kernels::gte::part_rotation(rot, false),
                 ),
@@ -765,7 +721,7 @@ impl LegaiaRuntime {
             frame.models.push(FxModelDraw {
                 tmd_index: em.tmd_index,
                 source: FxModelSource::GlobalPool,
-                model: mat_mul(&flip_m, &fx_translate(em.world_pos)),
+                model: mat4_mul(&flip_m, &fx_translate(em.world_pos)),
             });
         }
         let parts = world
@@ -1190,9 +1146,9 @@ mod tests {
             0.0, 0.0, 4.0, 0.0, //
             0.0, 0.0, 0.0, 1.0,
         ];
-        let cam = mat_mul(&vp, &scale);
+        let cam = mat4_mul(&vp, &scale);
         let inv = mat4_inverse(&cam).expect("invertible");
-        let id = mat_mul(&cam, &inv);
+        let id = mat4_mul(&cam, &inv);
         for (i, v) in id.iter().enumerate() {
             let want = if i % 5 == 0 { 1.0 } else { 0.0 };
             assert!(

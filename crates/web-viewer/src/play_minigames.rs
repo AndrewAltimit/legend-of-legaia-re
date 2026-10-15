@@ -53,48 +53,16 @@
 //! Per-game exports live in the sibling modules
 //! [`crate::play_minigame_slots`] and [`crate::play_minigame_arena`].
 
-use legaia_engine_mode::mode::SceneMode;
 use legaia_engine_scene::scene::ProtIndex;
 use legaia_engine_ui::{self as ui, SpriteDraw, TextDraw};
 
 use crate::minigames::LegaiaMinigames;
 use crate::runtime::LegaiaRuntime;
 
-/// Which of the four in-world minigames owns the screen.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum ActiveGame {
-    Slot,
-    Baka,
-    Muscle,
-    Dance,
-    /// The fishing pond (`legaia_engine_minigame_scenes::fishing_scene`); its HUD rides
-    /// `play_fishing`, so this screen only owns the 3D view.
-    Fishing,
-}
-
-impl ActiveGame {
-    pub(crate) fn of_mode(mode: SceneMode) -> Option<Self> {
-        match mode {
-            SceneMode::SlotMachine => Some(Self::Slot),
-            SceneMode::BakaFighter => Some(Self::Baka),
-            SceneMode::MuscleDome => Some(Self::Muscle),
-            SceneMode::Dance => Some(Self::Dance),
-            SceneMode::Fishing => Some(Self::Fishing),
-            _ => None,
-        }
-    }
-
-    /// The page-facing label.
-    pub(crate) fn label(self) -> &'static str {
-        match self {
-            Self::Slot => "slot",
-            Self::Baka => "baka",
-            Self::Muscle => "muscle",
-            Self::Dance => "dance",
-            Self::Fishing => "fishing",
-        }
-    }
-}
+/// Which in-world minigame owns the screen: the engine's
+/// [`StatusGame`](legaia_engine_minigame_scenes::minigame_status::StatusGame),
+/// whose `of_mode` / `label` the page used to carry a copy of.
+pub(crate) use legaia_engine_minigame_scenes::minigame_status::StatusGame as ActiveGame;
 
 /// Presentation state for the in-world minigame screens.
 #[derive(Default)]

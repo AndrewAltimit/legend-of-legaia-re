@@ -748,7 +748,7 @@ reason = "Native-only `tick` is `FieldPartyHud::tick`, which both hosts call; it
 native = "tick_minigame_extras"
 web = "tick_minigame_ui"
 native_only = ["build", "build_filtered_vram_mesh_lit", "chrome_frame", "entry_bytes", "frame", "frame0_bone_offsets", "from_venue", "glyph_u", "has_assets", "hud_vram_rects", "parse_sprite_table", "place_point", "rotate", "set_assets", "stage_dance_hud_vram", "still_sheet_rgba", "walk_heightfield"]
-web_only = ["apply", "course", "last_result", "opponent_roster", "phase", "prot_dat_raw_bytes", "round", "with_system_ui"]
+web_only = ["apply", "course", "last_result", "of_mode", "opponent_roster", "phase", "prot_dat_raw_bytes", "round", "with_system_ui"]
 reason = """
 Everything the step does to the world or the audio director is a session step
 both hosts call, so it lists on neither side: the minigame and Baka duel cue
@@ -783,7 +783,9 @@ consume the same chrome frame in their draw exports.
 Web-only, the page's own read-outs. `course` / `round` are its staged-opponent
 read for the dome mesh (`enter_muscle_ui`), `opponent_roster` the Baka one,
 and `phase` / `last_result` the slot payout-edge detector feeding its
-JavaScript marquee caption. `prot_dat_raw_bytes` / `with_system_ui` are the
+JavaScript marquee caption. `of_mode` is `StatusGame::of_mode`
+(engine-minigame-scenes), which the page reads to pick its minigame screen;
+the window's minigame dispatch keys on the world's mode directly. `prot_dat_raw_bytes` / `with_system_ui` are the
 page's minigame bundle taking the slot machine's resident system-UI sheet off
 the real PROT.DAT; the window uploads the same sheet through
 `SlotCabinetAssets::with_system_ui` when it first decodes the machine

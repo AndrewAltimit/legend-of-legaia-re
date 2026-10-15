@@ -120,7 +120,8 @@ pub fn format_fixed_decimal(value: i32, width: usize) -> String {
 /// asks the resulting row kind, once per row per frame, whether it draws its
 /// label or `CLOSED`. The chain to a host root is
 /// `PlayWindowApp::handle_redraw` -> `tick_dev_menu` ->
-/// `build_dev_menu_draws` -> `row_label` -> `row_is_closed` -> `retail_row`.
+/// `engine-screens::dev_menu::dev_menu_list_draws` -> `row_label` ->
+/// `row_is_closed` -> `retail_row`.
 /// The 18 rows the engine has no backing state for are modelled here and not
 /// listed there.
 /// PORT: FUN_801EAD98 (row dispatch)
@@ -234,7 +235,7 @@ impl DevMenuRow {
 /// Wired: `legaia_engine_menus::dev_menu_host::camera_row_readout` formats
 /// the `CAMERA` row through here, from `DevMenuSession::row_value`, which both
 /// hosts' dev-menu list draw calls per row per frame (`PlayWindowApp::
-/// tick_dev_menu` -> `build_dev_menu_draws`, and the play page's
+/// tick_dev_menu` -> `engine-screens`' `dev_menu_list_draws`, and the play page's
 /// `LegaiaRuntime::tick_dev_menu` -> its list draw). The box word is loaded
 /// by `DevMenuWorldExt::tick_host` from `World::terrain.region_attributes`.
 /// PORT: FUN_801EAD98 (case 3)

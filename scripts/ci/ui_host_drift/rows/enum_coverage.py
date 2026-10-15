@@ -43,6 +43,40 @@ ENUM_COVERAGE: list[dict[str, object]] = [
         # (variant, host) -> reason. The play page's fishing line pass
         # (`play_fishing.rs`) keys on `SceneMode::Fishing`.
         "waivers": {
+            ("SlotMachine", "web"): {
+                "reason": "the page answers its in-world minigame modes "
+                "through `legaia_engine_minigame_scenes::minigame_status::"
+                "StatusGame::of_mode`, the mapping its own copy used to spell; "
+                "every other arm of the page's minigame screen keys on the "
+                "`StatusGame` it returns"
+            },
+            ("BakaFighter", "web"): {
+                "reason": "as `SlotMachine`: answered through `StatusGame::"
+                "of_mode` (engine-minigame-scenes), not a page-side spelling"
+            },
+            ("Title", "native"): {
+                "reason": "the window's title is its boot-UI screen "
+                "(`BootUiState::Title`), opened by the launch and by the "
+                "party-wipe hold; the world's `Title` word is the engine's own "
+                "idle mode under it (`mode_tick`'s `Title` arm runs nothing), "
+                "so the window never needs to spell it. The only native "
+                "spelling was a mode-name table in the replay command, now "
+                "`SceneMode::name`"
+            },
+            ("Cutscene", "native"): {
+                "reason": "the window opens a movie off the world's FMV "
+                "request (`World::active_fmv`, `try_start_windowed_cutscene`), "
+                "which the engine raises together with the `Cutscene` word; "
+                "keying the movie on the request rather than the word is what "
+                "lets the window hold the whole frame for it"
+            },
+            ("Menu", "native"): {
+                "reason": "entered by one engine call, "
+                "`BootSession::open_field_menu`, and drawn off the session's "
+                "own `field_menu` through the shared tick claim "
+                "(`TickOwner::PauseMenuSpawned` raises the window's boot-UI "
+                "pause screen) - the page's waiver below, on the other host"
+            },
             ("Menu", "web"): {
                 "reason": "entered on both hosts by one engine call, "
                 "`BootSession::open_field_menu` (engine-session), and drawn on "
