@@ -453,6 +453,7 @@ pub(super) fn fight_battle(session: &mut NativeSession) -> Option<Run> {
     ROUND_HISTORY.with(|h| h.borrow_mut().clear());
     AOE_HIT.with(|a| a.set(0));
     CHARGE_SEEN.with(|c| c.set(false));
+    AOE_GUARDED.with(|g| g.set([None; 3]));
     let mut guarded = [false; 3];
     let mut was_window = false;
     ITEM_TARGET.with(|t| *t.borrow_mut() = [None; 3]);

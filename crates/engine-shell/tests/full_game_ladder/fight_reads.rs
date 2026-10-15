@@ -62,6 +62,10 @@ thread_local! {
     pub(super) static AOE_HIT: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
     /// Whether a foe has shown a charge latch this battle ([`foe_charged`]).
     pub(super) static CHARGE_SEEN: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    /// Per member, the round ([`ROUND_HISTORY`] length) in which
+    /// [`wants_aoe_guard`] last took the stance.
+    pub(super) static AOE_GUARDED: std::cell::Cell<[Option<usize>; 3]> =
+        const { std::cell::Cell::new([None; 3]) };
 }
 
 /// Whether the coming round is the foe's heavy one, read off its cadence the
@@ -262,12 +266,40 @@ pub(super) fn wants_aoe_guard(w: &legaia_engine_core::world::World, actor: u8) -
     // healthy member is the heal arm's to answer after it lands, and guarding
     // against it at full strength guards every round (`chitei2` P2[13]: all
     // three in the stance at ~1600/1700 HP until the battle cap).
-    aoe > 0
+    // Nor round after round against a foe whose party-wide hit is not every
+    // round: a stance the last round spent with no such hit landing is not
+    // taken again on the same read. Gaza (`korb3` P2[2]) lands its party-wide
+    // hit every third round or so, and all three members held the stance
+    // three rounds running at half their HP, healing nothing and dealing
+    // nothing, until its single hits had worn them under the band.
+    let round = ROUND_HISTORY.with(|h| h.borrow().len());
+    let last_loss = ROUND_HISTORY.with(|h| h.borrow().last().copied().unwrap_or(0));
+    let guarded_last = AOE_GUARDED.with(|g| {
+        g.get()
+            .get(usize::from(actor))
+            .copied()
+            .flatten()
+            .is_some_and(|r| r + 1 == round)
+    });
+    if guarded_last && last_loss < aoe {
+        return false;
+    }
+    let want = aoe > 0
         && !quiet_next
         && aoe * 5 >= max * 2
         && hp * 10 < max * 9
         && hp > aoe * 5 / 8
-        && hp <= aoe + aoe / 8
+        && hp <= aoe + aoe / 8;
+    if want {
+        AOE_GUARDED.with(|g| {
+            let mut v = g.get();
+            if let Some(s) = v.get_mut(usize::from(actor)) {
+                *s = Some(round);
+            }
+            g.set(v);
+        });
+    }
+    want
 }
 
 /// [`wants_aoe_guard`], taken ahead of a heal: the member is the one in
