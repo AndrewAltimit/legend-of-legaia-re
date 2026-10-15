@@ -18,6 +18,10 @@ use super::{BootSession, PauseMenuPress};
 /// What the host holds that the tick order asks about.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct TickClaims {
+    /// A screen the host holds owns the frame: the native window's boot UI
+    /// (title, save select, the pause menu once spawned, the party-wipe
+    /// hold), the page's spawned pause menu and party-wipe hold.
+    pub host_screen: bool,
     /// A menu-overlay screen (shop, prize exchange, inn) is open: it owns the
     /// pad, so no pause press reaches the field menu.
     pub overlay_open: bool,
@@ -36,6 +40,9 @@ pub struct TickClaims {
 /// host's arms by their header text, and a braced pattern would hide it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TickOwner {
+    /// A host-held screen owns the frame ([`TickClaims::host_screen`]): the
+    /// host steps it, and the world does not tick.
+    HostScreen,
     /// The naming prompt took the tick and has been stepped on its edge
     /// (`step_name_entry_frame`). `true` = the name committed this tick.
     NameEntry(bool),
@@ -64,6 +71,11 @@ impl<S: AudioSink> BootSession<S> {
     /// share. `edge` is the tick's just-pressed pad bits.
     // REF: FUN_801D1344, FUN_801D01B0
     pub fn claim_tick(&mut self, claims: TickClaims, edge: u16) -> TickOwner {
+        // A host-held screen first: the player has not entered the world, or
+        // has paused out of it.
+        if claims.host_screen {
+            return TickOwner::HostScreen;
+        }
         // The naming prompt is modal: retail parks the opening's script on
         // it, so while it is up it takes the tick.
         if self.step_name_entry_frame(edge) {

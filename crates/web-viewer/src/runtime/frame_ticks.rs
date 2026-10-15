@@ -53,41 +53,15 @@ impl LegaiaRuntime {
         let mut edge = edge;
         for s in 0..steps {
             r.ticks = s + 1;
-            // The pause menu once it owns the frame: one menu step per tick
-            // (the native window's boot-UI arm). The SFX scheduler still
-            // steps, as retail's mode-0x17 handler runs the cue drainer.
-            if self.play_menu_owns_frame() {
-                self.play_menu_input(edge);
-                r.menu_ticked = true;
-                edge = 0;
-                self.play_tick_overlay_sfx();
-                continue;
-            }
-            // The party-wipe hold: a host screen, like the native window's
-            // boot UI (which holds it). It steps once per remaining tick;
-            // the frame ends with it.
-            if self.is_game_over() {
-                for g in s..steps {
-                    let picked = self.game_over_input(if g == s { edge } else { 0 });
-                    if picked == "quit" {
-                        // The battle score must not outlive the battle: the
-                        // title card plays the title theme (the native
-                        // window's post-wipe hand-off).
-                        let _ = self.play_title_bgm();
-                        r.quit = true;
-                        break;
-                    }
-                }
-                r.ticks = steps;
-                break;
-            }
             // The tick's owner, in the order both play hosts share
-            // (`BootSession::claim_tick`): the naming prompt, stepped on the
-            // tick's edge by the session; retail's prologue intro skip
-            // (`FUN_801D1344`), whose hand-off the session has taken - the
-            // frame's remaining ticks run on the new scene; the pause menu's
-            // spawn hand-over and its press.
+            // (`BootSession::claim_tick`): a host-held screen; the naming
+            // prompt, stepped on the tick's edge by the session; retail's
+            // prologue intro skip (`FUN_801D1344`), whose hand-off the
+            // session has taken - the frame's remaining ticks run on the new
+            // scene; the pause menu's spawn hand-over and its press; a
+            // menu-overlay screen that suspends the field; the field.
             let claims = TickClaims {
+                host_screen: self.play_menu_owns_frame() || self.is_game_over(),
                 overlay_open: self.menu.is_open(),
                 overlay_suspends: self.menu.is_open() && self.menu.suspends_field(),
                 pause_menu_ready: self.ensure_menu_assets(),
@@ -97,6 +71,33 @@ impl LegaiaRuntime {
                 .session_mut()
                 .map_or(TickOwner::Field(false), |s| s.claim_tick(claims, edge));
             match owner {
+                // A host-held screen: the pause menu once it owns the frame
+                // (one menu step per tick, with the SFX scheduler stepping
+                // under it, as retail's mode-0x17 handler runs the cue
+                // drainer), or the party-wipe hold, which steps once per
+                // remaining tick and ends the frame.
+                TickOwner::HostScreen => {
+                    if self.play_menu_owns_frame() {
+                        self.play_menu_input(edge);
+                        r.menu_ticked = true;
+                        edge = 0;
+                        self.play_tick_overlay_sfx();
+                        continue;
+                    }
+                    for g in s..steps {
+                        let picked = self.game_over_input(if g == s { edge } else { 0 });
+                        if picked == "quit" {
+                            // The battle score must not outlive the battle: the
+                            // title card plays the title theme (the native
+                            // window's post-wipe hand-off).
+                            let _ = self.play_title_bgm();
+                            r.quit = true;
+                            break;
+                        }
+                    }
+                    r.ticks = steps;
+                    break;
+                }
                 TickOwner::NameEntry(committed) => {
                     r.name_committed |= committed;
                     edge = 0;

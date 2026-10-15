@@ -240,7 +240,7 @@ guard over a fill the port does not perform.
 
 [[frame_arm]]
 host = "native"
-arm = "self.boot_ui.is_active()"
+arm = "TickOwner::HostScreen =>"
 reason = """
 The boot UI (title, save select, options, pause menu, game over) owns the
 frame and the scene tick is deliberately skipped: the player has not entered

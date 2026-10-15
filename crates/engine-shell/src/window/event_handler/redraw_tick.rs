@@ -105,47 +105,44 @@ impl PlayWindowApp {
         // hold, which owns the frame from here (the arm below skips the
         // scene tick while any boot UI is active).
         self.poll_game_over();
-        // When the boot UI is active, route input there and skip
-        // the scene tick - the player hasn't entered the world
-        // yet (or has paused into save-select).
-        if self.boot_ui.is_active() {
-            let _ = self.tick_boot_ui();
-            // The scene tick (and its SFX drain) is skipped below, so
-            // the menu cues queued this frame fire here.
-            self.tick_menu_sfx();
-            // The field party HUD's decision kernel is stepped in the
-            // scene tick too, and its suppression predicate names this
-            // very state - so step it here as well, or the kernel keeps
-            // its last pre-menu `Draw` and the readout stays painted
-            // under the pause menu (the browser page has no early-out
-            // and never showed it).
-            self.tick_field_party_hud();
-            self.prev_pad = self.pad;
-            return false;
-        }
-        // Start in field opens the pause menu. Edge-detect so a
-        // held key doesn't auto-reopen.
         let pressed_edge = self.pad & !self.prev_pad;
         // The tick's owner, in the order both play hosts share
-        // (`BootSession::claim_tick`): the naming prompt (stepped on this
-        // tick's edge by the session), the prologue intro skip (retail
-        // `FUN_801D1344`; the session has taken the hand-off), the pause
-        // menu's spawn hand-over and its press (`press_field_menu`: a
-        // script's op-`0x49` save point, a Start edge where
-        // `World::field_menu_open_allowed` says so, the deny buzz; a shop /
-        // prize overlay owns the pad, so no press reaches the menu while one
-        // is up). Each arm adds only what the window holds: the scene
-        // re-entry and its render rebuild, the boot-UI state, the open blip,
-        // and the party readout's decision kernel, whose suppression
-        // predicate names each of these states and so must be stepped on a
-        // tick that skips the tail.
+        // (`BootSession::claim_tick`): the window's boot UI (title, save
+        // select, options, the spawned pause menu, the party-wipe hold); the
+        // naming prompt (stepped on this tick's edge by the session); the
+        // prologue intro skip (retail `FUN_801D1344`; the session has taken
+        // the hand-off); the pause menu's spawn hand-over and its press
+        // (`press_field_menu`: a script's op-`0x49` save point, a Start edge
+        // where `World::field_menu_open_allowed` says so, the deny buzz; a
+        // shop / prize overlay owns the pad, so no press reaches the menu
+        // while one is up); a menu-overlay screen that suspends the field;
+        // the field. Each arm adds only what the window holds: its screens,
+        // the scene re-entry and its render rebuild, the open blip, and the
+        // party readout's decision kernel, whose suppression predicate names
+        // each of these states and so must be stepped on a tick that skips
+        // the tail.
         let claims = legaia_engine_session::TickClaims {
+            host_screen: self.boot_ui.is_active(),
             overlay_open: self.menu_runtime.is_open(),
             overlay_suspends: self.menu_runtime.suspends_field(),
             pause_menu_ready: true,
         };
         let owner = self.session.claim_tick(claims, pressed_edge);
         match owner {
+            TickOwner::HostScreen => {
+                let _ = self.tick_boot_ui();
+                // The scene tick (and its SFX drain) is skipped, so the menu
+                // cues queued this frame fire here.
+                self.tick_menu_sfx();
+                // The field party HUD's decision kernel is stepped in the
+                // scene tick too, and its suppression predicate names this
+                // very state - so step it here as well, or the kernel keeps
+                // its last pre-menu `Draw` and the readout stays painted
+                // under the pause menu.
+                self.tick_field_party_hud();
+                self.prev_pad = self.pad;
+                return false;
+            }
             TickOwner::NameEntry(_) => {
                 self.tick_field_party_hud();
                 self.prev_pad = self.pad;
