@@ -46,7 +46,7 @@ pub(super) const HEAL_STOCK: u8 = 15;
 
 /// Healing items for each present member the hand buys before any
 /// equipment ([`next_want`]).
-const HEAL_RESERVE: u32 = 3;
+pub(super) const HEAL_RESERVE: u32 = 3;
 
 /// What the hand wants from the open buy list next.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -189,18 +189,25 @@ fn next_want(menu: &MenuRuntime, w: &legaia_engine_core::world::World) -> Option
             (it.price > 0).then_some((row, it.item_id, it.price, amount))
         })
         .max_by_key(|&(row, _, price, amount)| (amount * 1000 / price, std::cmp::Reverse(row)));
+    // The bag's heals in Healing Flowers' worth (800 HP each), not in items:
+    // counted by the item, 38 Healing Leaves read as a full stock, and a run
+    // that bought seven Flowers at `rayman2` met Van Saryu (`jagaroom`) with
+    // none.
     let heals_held: u32 = w
         .party
         .inventory
         .iter()
-        .filter(|&(&id, _)| {
-            !errand_item(w, id)
-                && w.tables.item_catalog.get(id).is_some_and(|e| {
-                    matches!(e.effect, ItemEffect::Heal { .. } | ItemEffect::HealAll)
-                })
+        .filter(|&(&id, _)| !errand_item(w, id))
+        .filter_map(|(&id, &n)| {
+            let restore = match w.tables.item_catalog.get(id)?.effect {
+                ItemEffect::Heal { amount } => u32::from(amount),
+                ItemEffect::HealAll => full_restore,
+                _ => return None,
+            };
+            Some(u32::from(n) * restore)
         })
-        .map(|(_, &n)| u32::from(n))
-        .sum();
+        .sum::<u32>()
+        / 800;
     let heal_want = |target: u32| -> Option<Want> {
         let (row, id, price, _) = heal_row?;
         let room = legaia_engine_menus::shop::SHOP_HELD_CAP.saturating_sub(held(id));
@@ -588,7 +595,22 @@ pub(super) fn service_shop(session: &mut NativeSession) {
             }
             if streak.2 > 120 {
                 match want {
-                    _ if sale.is_some() => break,
+                    // A sale that does not go through is struck off this
+                    // visit's list, not the visit: ending it there left a
+                    // purse of 20000 at `rayman2`'s item counter with two
+                    // Healing Flowers bought.
+                    _ if sale.is_some() => {
+                        let stuck = sale.and_then(|r| {
+                            MenuRuntime::sell_list_rows(w).get(r).map(|row| row.id)
+                        });
+                        match stuck {
+                            Some(id) if sell.remove(&id) => {
+                                streak = (None, None, 0);
+                                continue;
+                            }
+                            _ => break,
+                        }
+                    }
                     Some(Want::Gear { item, ch, .. }) => {
                         REFUSED_BUYS.with(|r| r.borrow_mut().insert((item, ch)));
                         streak = (None, None, 0);
@@ -598,6 +620,14 @@ pub(super) fn service_shop(session: &mut NativeSession) {
                 }
             }
             let edge = shop_edge(menu, w, &sell);
+            if std::env::var_os("LEGAIA_FGL_SHOP_DEBUG").is_some() {
+                eprintln!(
+                    "      [shop-debug] want {want:?} sale {sale:?} edge {edge:#06x} state {:?} gold {} heals {}",
+                    MenuState::from_byte(menu.ctx.state),
+                    w.party.money,
+                    heals_held(w)
+                );
+            }
             let _ = menu.step_field_session(w, edge);
             let _ = menu.step_field_session(w, 0);
         }
@@ -799,9 +829,41 @@ pub(super) fn pad_shop(session: &mut NativeSession) -> Result<Option<String>, St
             session.host.world.party.money
         );
     }
+    let errand_before = errand_cost(&session.host.world);
     let mut closed = visit_merchants(session, &name, &keepers)?;
     if let Some(left) = closed.1.take() {
         return Ok(Some(left));
+    }
+    // The counter that sells heals is visited first, while the purse is
+    // still the errand's; once a later counter has sold the errand its item,
+    // the change goes on heals. The Sol run bought its bread at `koin4`'s
+    // bakery after the item counter, left with 7000 gold, and met Gaza
+    // (`korb3`) with a handful of Healing Flowers.
+    let w = &session.host.world;
+    if errand_cost(w) < errand_before
+        && heals_held(w) < u32::from(HEAL_STOCK) * w.present_party_list().len().clamp(1, 3) as u32
+    {
+        let healers = merchants_selling(session, |id| {
+            session
+                .host
+                .world
+                .tables
+                .item_catalog
+                .get(id)
+                .is_some_and(|e| {
+                    matches!(
+                        e.effect,
+                        legaia_engine_menus::items::ItemEffect::Heal { .. }
+                            | legaia_engine_menus::items::ItemEffect::HealAll
+                    )
+                })
+        });
+        if !healers.is_empty() {
+            let again = visit_merchants(session, &name, &healers)?;
+            if let Some(left) = again.1 {
+                return Ok(Some(left));
+            }
+        }
     }
     // A counter that only talked is closed by the story (`dolk2`'s dealers
     // call out their sale and sell nothing while the festival flag `0x27D`

@@ -56,7 +56,16 @@ pub(super) fn wants_training(session: &NativeSession) -> bool {
 pub(super) fn errand_gold_short_after_sales(session: &NativeSession) -> bool {
     let w = &session.host.world;
     let cost = errand_cost(w);
-    cost > 0 && i64::from(w.party.money) + outgrown_value(session) < cost + errand_heal_budget(w)
+    let purse = i64::from(w.party.money) + outgrown_value(session);
+    // Once the errand itself is paid for and only the bag's heal refill
+    // ([`errand_heal_budget`]) is still owed, the fighting stops at the bag's
+    // three heals a member: training from the bag spends the heals it is
+    // fighting to buy back, and the Sol run met Gaza (`korb3`) with two.
+    let reserve = HEAL_RESERVE * w.present_party_list().len().clamp(1, 3) as u32;
+    if purse >= cost && heals_held(w) <= reserve {
+        return false;
+    }
+    cost > 0 && purse < cost + errand_heal_budget(w)
 }
 
 fn party_xp(session: &NativeSession) -> u64 {
