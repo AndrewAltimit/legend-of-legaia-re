@@ -19,6 +19,25 @@ fn magic_cast_begin_capture_spell_routes_to_capture_branch() {
     assert!(host.take().contains(&Event::LoadCapture(0x42)));
 }
 
+/// The capture route raises the action-in-progress marker `ctx[+0x243]`
+/// (`sb v0,0x243(v1)` at `0x801E44FC`) that dims the stage through the
+/// capture band; a plain cast leaves it alone.
+#[test]
+fn magic_cast_begin_capture_spell_raises_the_action_marker() {
+    let marker = |capture: bool| {
+        let (mut ctx, mut host) = fresh(ActionCategory::Magic, 1);
+        ctx.action_state = ActionState::MagicCastBegin.as_byte();
+        host.actors[1].params[0] = 0x42;
+        if capture {
+            host.capture_spells.insert(0x42);
+        }
+        step(&mut host, &mut ctx);
+        ctx.gauge_rearm_latch
+    };
+    assert_eq!(marker(true), 1);
+    assert_eq!(marker(false), 0);
+}
+
 /// Retail's capture route (`ctx[7] = 0x6E` at `0x801E4490`) falls through
 /// into the MP debit at `0x801E4500`: a capture-class cast pays its MP.
 #[test]

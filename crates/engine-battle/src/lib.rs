@@ -54,3 +54,4 @@ pub mod spells;
 pub mod tactical_arts;
 pub mod tactical_arts_editor;
 pub mod target_picker;
+pub mod victory;

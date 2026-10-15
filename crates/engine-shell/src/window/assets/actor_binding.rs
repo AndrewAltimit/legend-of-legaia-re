@@ -30,44 +30,35 @@ impl PlayWindowApp {
             .collect()
     }
 
-    /// Bind each uploaded mesh slot to the matching actor and wire up the
-    /// idle animation (record 0) when the scene carries an ANM pack for
-    /// that actor. Registration order: actor K → TMD slot K, mirroring
-    /// the retail `0x8007C018` table written by `FUN_8001E890`.
-    pub(super) fn bind_scene_actor_animations(&mut self, res: &SceneResources) {
-        let world = &mut self.session.host.world;
-        for i in 0..self.scene_tmd_data.len() {
-            world.set_actor_tmd_binding(i, i);
-            if let Some(pack) = res.anm_pack_for_actor(i)
-                && let Some(record_bytes) = pack.record_bytes(0)
-            {
-                let bone_count = self.scene_tmd_data[i].0.objects.len();
-                match AnimPlayer::new(record_bytes.to_vec(), bone_count) {
-                    Ok(player) => {
-                        world.set_actor_animation(i, player);
-                        log::info!("play-window: actor {i} animated ({bone_count} bones)");
-                    }
-                    Err(e) => log::warn!("play-window: actor {i} ANM init failed: {e:#}"),
-                }
-            }
-        }
+    /// Bind the entered scene's actors to the world through the step both
+    /// hosts run (`scene_actors::bind_scene_actors`) and keep what the draw
+    /// half reads: the two ANM banks, the clip players and the clip targets
+    /// the per-tick cue drain re-targets. The posed-mesh memo is keyed by
+    /// `(slot, clip frame)`; the new scene reuses both, so it goes too.
+    pub(super) fn adopt_scene_actor_binding(&mut self) {
+        let b = legaia_engine_session::scene_actors::bind_scene_actors(&mut self.session.host);
+        self.npc_anim_bundles = (b.scene_anm, b.locomotion_anm);
+        self.npc_clip_players = b.clip_players.into_iter().collect();
+        self.npc_bundle_special = b.clip_targets.into_iter().collect();
+        self.npc_pose_cache.clear();
+        self.npc_pose_verify.clear();
     }
 
-    /// Bind the PLAYER's real character mesh. Town scripts install the
+    /// Upload the PLAYER's real character mesh. Town scripts install the
     /// player engine-side (`install_field_player`), not via the field-VM
     /// `0x4C 0xD8` spawn, so no `tmd_ref` spawn event ever fires for it -
-    /// and the naive pre-bind above points actor 0 at whatever scene TMD
-    /// shares its slot index (usually an init_data UI mesh = invisible
-    /// player). Resolve the lead's field mesh from the global TMD pool
-    /// (PROT 0874 §0, retail `DAT_8007C018[0..4]`, seeded by
-    /// `enter_field_scene`) and override the placeholder binding.
-    pub(super) fn bind_player_rig(
+    /// and the scene pre-bind points actor 0 at whatever scene TMD shares
+    /// its slot index (usually an init_data UI mesh = invisible player).
+    /// Resolve the lead's field mesh from the global TMD pool (PROT 0874 §0,
+    /// retail `DAT_8007C018[0..4]`, seeded by `enter_field_scene`) and
+    /// re-point the lead's slot - bound by `scene_actors::bind_lead_rig`,
+    /// with its locomotion clips - at the uploaded mesh.
+    pub(super) fn upload_player_rig(
         &mut self,
         player_rig: Option<legaia_engine_core::scene_host::PlayerRigMesh>,
     ) {
         let world = &mut self.session.host.world;
         self.player_color_draw = None;
-        world.set_field_player_anim(None);
         // World-map mode binds the same lead mesh: `enter_world_map_scene`
         // runs `enter_field_scene` first, so the global TMD pool is seeded
         // identically, and retail draws the party leader's field figure on
@@ -160,7 +151,11 @@ impl PlayWindowApp {
                             self.meshes.push(m);
                             self.scene_tmd_data
                                 .push((player_tmd.clone(), g.raw.clone()));
-                            world.set_actor_tmd_binding(pslot as usize, new_idx);
+                            // Re-point, never bind: whether the slot is
+                            // bound is the world's (`bind_lead_rig`).
+                            if world.actors[pslot as usize].tmd_binding.is_some() {
+                                world.set_actor_tmd_binding(pslot as usize, new_idx);
+                            }
                             self.drained_spawn_slots.insert(pslot);
                             // The untextured half (pants / sleeves are F*/G*
                             // colour prims the VRAM mesh can't carry) rides
@@ -190,20 +185,7 @@ impl PlayWindowApp {
                                     }
                                 }
                             }
-                            // Live playback: the leader's whole locomotion
-                            // bank, ticked by the world's field step (the
-                            // settle tail picks the slot, the posed rebuild
-                            // consumes `pose_frame`).
-                            let anim = locomotion_bank
-                                .as_ref()
-                                .filter(|_| roster_lead <= 2)
-                                .and_then(|bundle| {
-                                    legaia_engine_field::field_anim::FieldPlayerAnim::from_locomotion_bank(
-                                        bundle, roster_lead,
-                                    )
-                                });
-                            let animated = anim.is_some();
-                            world.set_field_player_anim(anim);
+                            let animated = world.locomotion.player_anim.is_some();
                             log::info!(
                                 "play-window: player (roster {roster_lead}, model {:?}) -> pool \
                                  mesh slot {new_idx} ({}{}{})",
@@ -249,39 +231,24 @@ impl PlayWindowApp {
     ) -> Vec<legaia_render_kernels::scene_lighting::PropLights> {
         let mut prop_light_sets: Vec<legaia_render_kernels::scene_lighting::PropLights> =
             Vec::new();
+        // The clip players, the banks and the clip targets are the scene's
+        // binding (`adopt_scene_actor_binding`), not this upload's: a
+        // mid-scene re-upload keeps every playhead where it stands.
         self.field_npc_draws.clear();
-        self.npc_clip_players.clear();
         self.npc_anim_srcs.clear();
         self.npc_rest_srcs.clear();
         self.npc_morph_static.clear();
-        // The posed-mesh memo is keyed by `(slot, clip frame)`; the incoming
-        // scene reuses both, so it must not survive the clip-player rebuild.
+        // The posed-mesh memo is keyed by `(slot, clip frame)` over the
+        // uploaded meshes, which this upload replaces.
         self.npc_pose_cache.clear();
         self.npc_pose_verify.clear();
-        self.npc_anim_bundles = (None, None);
-        self.npc_bundle_special.clear();
-        // On a kingdom map the player's walk binds from the scene bank: the
-        // pad step stores the scene sentinel under `_DAT_8007B6A8` and the
-        // settle picks record `leader` of the kingdom's own ANM bundle
-        // (`World::field_base_step`). The world map places no field NPCs, so
-        // the bundle is retained for the player's pick alone - the browser
-        // page resolves its scene bundle the same way in every mode.
-        if self.session.host.world.mode == SceneMode::WorldMap {
-            self.npc_anim_bundles.0 = scene_bundle.clone();
-        }
         if self.session.host.world.mode == SceneMode::Field && self.win.renderer.is_some() {
             // The per-scene ANM bundle (see `find_scene_anm_bundle`): field
             // builds don't surface it through `res.anm_packs`, and the prologue
             // scenes' vignette actors need it or they render as a FROZEN tableau
             // under the narration crawl. Resolved once at the top of this fn -
             // the placed static objects pose from the same bundle.
-            let locomotion_bundle = self
-                .session
-                .host
-                .index
-                .entry_bytes(legaia_actor_formats::character_pack::PROT_ENTRY_INDEX)
-                .ok()
-                .and_then(|b| legaia_actor_formats::character_pack::field_locomotion_anm(&b).ok());
+            let locomotion_bundle = self.npc_anim_bundles.1.clone();
             let placements = self
                 .session
                 .host
@@ -305,9 +272,6 @@ impl PlayWindowApp {
             for (p, _kind) in &placements {
                 self.upload_field_npc(p, &sources, &mut prop_light_sets);
             }
-            // Retain the bundles for runtime clip re-targeting (`A2` ExecMove / `4C 51`
-            // clip cues from channel scripts).
-            self.npc_anim_bundles = (scene_bundle, locomotion_bundle);
             if !self.field_npc_draws.is_empty() {
                 log::info!(
                     "play-window: {} field NPC/prop draws ({} placements)",
@@ -336,7 +300,7 @@ impl PlayWindowApp {
         let Some(r) = self.win.renderer.as_ref() else {
             return;
         };
-        let world = &mut self.session.host.world;
+        let world = &self.session.host.world;
         // EVERY placement gets its mesh uploaded, including the ones
         // parked at the off-map hide box: the scene-entry
         // spawn-prologue pre-run can seat a parked placement INTO the
@@ -409,18 +373,10 @@ impl PlayWindowApp {
         let pose: Option<Vec<([i16; 3], [i16; 3])>> = match (anim_id, bundle) {
             (0, _) | (_, None) => None,
             (id, Some(b)) => {
+                // The live clip player over the same record (the scene
+                // binding's) poses this NPC per frame; the rest pose below
+                // stays the frame-0 fallback / first frame.
                 let rec_idx = (id - 1) as usize;
-                // Live playback: a looping clip player over the same
-                // record poses this NPC per frame (the rest pose
-                // below stays the frame-0 fallback / first frame).
-                if let Some(player) =
-                    legaia_engine_field::field_anim::FieldClipPlayer::from_record(b, rec_idx)
-                {
-                    // The playhead is the world's: the actor's
-                    // `+0x62` word may hold or one-shot the clip.
-                    world.bind_npc_clip_cursor(p.index as u8, id, &player);
-                    self.npc_clip_players.insert(p.index as u8, player);
-                }
                 b.record(rec_idx).ok().map(|rec| {
                     let bones = rec.bone_count as usize;
                     tmd.objects.truncate(bones);
@@ -503,8 +459,6 @@ impl PlayWindowApp {
         // clip's bone count, as the spawn binding does.
         self.npc_anim_srcs
             .insert(p.index as u8, (tmd.clone(), raw.clone()));
-        self.npc_bundle_special
-            .insert(p.index as u8, p.special_model);
         // A clip-less slot also keeps its rest source: an op-`0x4B`
         // morph change rebuilds its static mesh from it
         // (`take_npc_morph_rebuilds`).
@@ -611,30 +565,6 @@ impl PlayWindowApp {
                         l.color[2]
                     );
                 }
-            }
-        }
-    }
-
-    /// Initial floor snap: locomotion only re-samples the floor height on a
-    /// step, so an actor standing still since spawn keeps `world_y = 0`
-    /// while the town ground sits at a LUT-elevated tier - it renders
-    /// buried under (or floating over) the terrain until it first moves.
-    /// Snap every bound actor that still has the flat default.
-    pub(super) fn snap_actors_to_floor(&mut self) {
-        let world = &mut self.session.host.world;
-        if world.locomotion.follow_terrain_height
-            && matches!(world.mode, SceneMode::Field | SceneMode::WorldMap)
-        {
-            for i in 0..world.actors.len() {
-                if world.actors[i].tmd_binding.is_none() {
-                    continue;
-                }
-                let ms = &world.actors[i].move_state;
-                if ms.world_y != 0 {
-                    continue;
-                }
-                let y = world.sample_field_floor_height(ms.world_x as i32, ms.world_z as i32);
-                world.actors[i].move_state.world_y = y as i16;
             }
         }
     }

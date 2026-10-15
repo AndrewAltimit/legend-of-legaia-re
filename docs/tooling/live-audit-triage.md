@@ -269,8 +269,8 @@ crates; each row's site names the owning crate.
 | `8003c9ac` | `motion_pause_kick` + module | `crates/engine-field/src/motion_pause.rs` | WIRE (wired) |
 | `8003fb10` | `validate_action` | `crates/engine-battle-vm/src/battle_action/validator.rs` | WIRE (wired) |
 | `80046898` | `item_count_gate` | `crates/engine-battle-vm/src/battle_action/validator.rs` | WIRE (wired) |
-| `801d829c` | `build_camera_angle_tween` | `crates/engine-battle-vm/src/battle_camera.rs` | WIRE (wired) |
-| `801d9d30` | `apply_shake` | `crates/engine-battle-vm/src/battle_camera.rs` | DISCLOSE |
+| `801d829c` | `build_camera_angle_tween` | `crates/engine-camera/src/battle_camera.rs` | WIRE (wired) |
+| `801d9d30` | `apply_shake` | `crates/engine-camera/src/battle_camera.rs` | DISCLOSE |
 | `801e0088` | `child_billboards` / `pass2_brightness` | `crates/engine-vm/src/effect_vm/pool.rs` | FALSE INERT |
 | `801e36c4` | `exec_centered_bar` | `crates/engine-menus/src/title_prim.rs` | DISCLOSE |
 | `801e373c` | `init_card_state` / `exec_card_init` | `crates/engine-menus/src/title_prim.rs` | DISCLOSE |
@@ -596,7 +596,7 @@ Reasons that named an existing symbol as missing:
 | `motion_pause_kick` (`8003c9ac`) | both gates and the default-move table are projectable from the per-slot maps |
 | `state_pick` (`801f1f4c`) | `Actor::state_50` / `Actor::state_54`; wired as the subsystem actor's default handler id `7`, run by `World::field_menu_button_state` as the menu-open gate |
 | `field_audio_release_steps` (`801d8450`) | `SustainedSfx::stop_voice` and `SeqResourceTable::release` (the `0x80091508` table) |
-| `submode_panel_rows` (`801e6984`) | `open_submode` seeds `World::field_vm.submode_context`; the installer `FUN_801EF014` is hosted on the field path (slot `0x23`, `engine-core::field_submode_flag_window`), installs record 14 and draws these rows on both hosts |
+| `submode_panel_rows` (`801e6984`) | `open_submode` seeds `World::field_vm.submode_context`; the installer `FUN_801EF014` is hosted on the field path (slot `0x23`, `engine-field::field_submode_flag_window`), installs record 14 and draws these rows on both hosts |
 | `field_actor_plan` (`8003bc08`) | `move_vm::ActorState::flags` is the `+0x10` flag word |
 | `tick_reflection` (`801e5154`) | `ActorState` carries all the fields but `+0x64`, at retail offsets |
 | `refresh_object_grid_marks` (`80017bec`) | three of four `.MAP` regions are resident, and the collision grid is mutated live |
@@ -1680,7 +1680,7 @@ structure they blamed and are rewritten; every row stays held.
 | `801d25ec` `spawn_arc_with_emitter` | held | op `0x43` sub-`0`/`1`/`0xA`/`0xB` reaches it at `0x801DF5AC`; the engine's arc channel is the player's alone |
 | `801e4470` `sprite_rect` / `attached_sprite_tick` | held | no engine actor kind carries the `+0x90` back-link its one filler (`FUN_801D25EC`'s emitter) sets |
 | `80021248` `normalize_camera_relative_params` | held | the producer is ported; the actor family (`DAT_8007071C`, list `_DAT_8007C34C`) has no engine counterpart |
-| `801ead98` `decode_camera_readout` | wired | the "camera word" is the scratchpad region box `0x1F800384..87`, and the world map reads the same box the field publishes - PROT 0901's `0x801F8EE0..0x801F8EF4` is only a save / restore of it and the view-window bytes. Now wired: the dev menu carries the CAMERA row (`DevMenuRow::Camera`, retail row 3), and `DevMenuSession::tick_host` hands it the box word and the follow switch `0x8007B606` each tick on both hosts |
+| `801ead98` `decode_camera_readout` | wired | the "camera word" is the scratchpad region box `0x1F800384..87`, and the world map reads the same box the field publishes - PROT 0901's `0x801F8EE0..0x801F8EF4` is only a save / restore of it and the view-window bytes. Now wired: the dev menu carries the CAMERA row (`DevMenuRow::Camera`, retail row 3), and `DevMenuWorldExt::tick_host` hands it the box word and the follow switch `0x8007B606` each tick on both hosts |
 
 ## See also
 

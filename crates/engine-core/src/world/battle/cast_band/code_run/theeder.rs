@@ -77,7 +77,7 @@ impl World {
     /// tick drew (the arm-9 prongs, the arm-11 charge beam, the arm-11/12
     /// sweeping beam and its trail, the arm-13 retract) - while its cast is
     /// in the band. Both hosts project the points with their battle camera
-    /// and build the primitives with `legaia_render_kernels::cast_theeder`.
+    /// and build the primitives with `legaia_engine_ui::cast_theeder`.
     ///
     /// REF: FUN_801F815C, FUN_801F83A4, FUN_801F8634, FUN_801F8B84
     pub fn theeder_draw(&self) -> Option<legaia_engine_battle_vm::seru_magic_ticks::TheederPacket> {

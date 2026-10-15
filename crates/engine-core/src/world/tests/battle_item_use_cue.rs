@@ -23,7 +23,13 @@ fn the_cast_cue_band_reaches_the_xa_channel() {
     world.audio.xa_cue_durations = Some(vec![10; 0x200]);
 
     // Vahn (roster id 1), a class-0 item (the Healing Leaf's heal class).
-    let CastCueOutcome::Sfx(id) = cast_audio_cue(0, 1, 0, 0x77, 0) else {
+    let CastCueOutcome::Sfx(id) = cast_audio_cue(
+        legaia_engine_battle_vm::battle_slot::RetailSlot::new(0),
+        1,
+        0,
+        0x77,
+        0,
+    ) else {
         panic!("class 0 has a cue");
     };
     assert_eq!(id, 0x108);

@@ -157,6 +157,11 @@ pub struct PlayMenu {
     /// menu itself once it has it. Continue used to skip the flag for that
     /// reason alone, which put a backed-out Continue on the pause root.
     from_title: bool,
+    /// The menu owns the sim tick ([`LegaiaRuntime::play_menu_tick`]): set on
+    /// the tick after the pause wipe spawns it, or at the open when no wipe
+    /// runs (the boot title's rows). Until then the field ticks under the
+    /// wipe, as it does in the native window.
+    owns_frame: bool,
 }
 
 /// The open sub-screen. Every row runs the real [`FieldMenuSubsession`] the
@@ -175,6 +180,7 @@ impl PlayMenu {
             save_flow: SaveScreenFlow::new(),
             pending_load_scene: None,
             from_title: false,
+            owns_frame: false,
         }
     }
 }

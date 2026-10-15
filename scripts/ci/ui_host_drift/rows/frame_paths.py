@@ -108,12 +108,13 @@ FRAME_PATH_NON_KERNELS = {
 
 
 # The browser host has a SECOND frame path, and it is not Rust. The page's
-# `_frame` calls `rt.tick_frame()` inside a guard and calls the overlay draw
-# outside it, so a guarded frame runs no kernel at all and still paints -
+# `_frame` runs its ticks (`this._frameTicks`, over the engine's
+# `play_frame_ticks`, which calls `tick_frame`) inside a guard and calls the
+# overlay draw outside it, so a guarded frame runs no kernel at all and still paints -
 # every kernel in `tick_frame`, at once, from whatever answer it last held.
 # A Rust-only scan is blind to this: `tick_frame` has no such arm, which is
 # how "the browser page has no early-out" came to be written down.
 WEB_PAGE_FRAME = "site/js/play-view-frame.js"
 WEB_PAGE_FRAME_FN = "_frame(skipDraw)"
-WEB_PAGE_TICK_CALL = "rt.tick_frame()"
+WEB_PAGE_TICK_CALL = "this._frameTicks(rt, simSteps)"
 WEB_PAGE_DRAW_CALL = "this._drawOverlay()"

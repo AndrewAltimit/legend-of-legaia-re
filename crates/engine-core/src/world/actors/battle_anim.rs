@@ -151,9 +151,8 @@ impl World {
                         .flag_bits
                         .has(legaia_engine_battle_vm::battle_action::ActorFlags::FX_SUPPRESSED);
                     if step != 0 && !latched && (actor.battle.hp != 0 || seru_staged) {
-                        let (sin, cos) = legaia_engine_battle_vm::battle_action::motion::trig12(
-                            actor.battle.facing_angle,
-                        );
+                        let (sin, cos) =
+                            legaia_engine_system::trig::trig12(actor.battle.facing_angle);
                         let (dx, dz) =
                             legaia_engine_battle_vm::battle_action::motion::end_root_step(
                                 sin, cos, step,
@@ -611,9 +610,7 @@ impl World {
                 && self.battle_ctx.gauge_rearm_latch != 2
                 && self.battle_ctx.active_actor < self.party.party_count
             {
-                let coin =
-                    (legaia_engine_battle_vm::battle_formulas::world_rand(&mut self.rng_state) & 1)
-                        as u8;
+                let coin = (legaia_engine_system::rand::world_rand(&mut self.rng_state) & 1) as u8;
                 self.battle_ctx.swing_yaw_seeds = self.battle_ctx.swing_yaw_seeds.wrapping_add(1);
                 self.battle_ctx.swing_yaw_coin = coin;
                 self.battle_ctx.camera_variant = 0;
@@ -824,6 +821,7 @@ impl World {
         } else {
             pose_id
         };
+        let seats = self.battle_seat_map();
         let Some(actor) = self.actors.get_mut(slot) else {
             return;
         };
@@ -851,8 +849,11 @@ impl World {
         // Monster clip vectors are archive-order (retail resolves monster
         // actions by first-byte search, not by pose id), so only the idle
         // request maps for monster slots; party tables are identity-ordered
-        // and accept the full pose set.
-        if slot >= 3 && pose_id != legaia_engine_battle_vm::battle_action::Pose::Idle as u8 {
+        // and accept the full pose set. The side is the engine's seating: a
+        // small party's first monster sits below slot `3`.
+        if !seats.is_party(u8::try_from(slot).unwrap_or(u8::MAX))
+            && pose_id != legaia_engine_battle_vm::battle_action::Pose::Idle as u8
+        {
             return;
         }
         if actor.battle_pose == Some(pose_id) {

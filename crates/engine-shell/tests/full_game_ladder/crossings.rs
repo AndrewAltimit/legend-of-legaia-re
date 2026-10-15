@@ -618,3 +618,84 @@ pub(super) fn door_approachable(
         (lo_x..=hi_x).contains(&w.0) && (lo_z..=hi_z).contains(&w.1) && !ends.contains(&w)
     })
 }
+
+/// Round trips one scene visit takes toward story talks in another walk
+/// component ([`pad_far_talks`]).
+const MAX_FAR_TALKS: usize = 8;
+
+/// The tiles of the loaded scene's errand talks ([`errand_talk`], among its
+/// story talks, [`talk_beats`]) - or all its story talks, in a scene the
+/// stretch's `continuous_via` names - that the pad walk cannot reach from
+/// where the player stands and that have not run dry ([`talk_ran_dry`]).
+pub(super) fn far_talk_tiles(session: &NativeSession) -> Vec<(i16, i16)> {
+    let Some((mf, man, _)) = scene_man_and_triggers(session) else {
+        return Vec::new();
+    };
+    let w = &session.host.world;
+    let scene = scene_name(session);
+    // An errand's talks, and any story talk of a scene the stretch's
+    // `continuous_via` names: `koin2` P1[19], Emperor Etora, gives the
+    // password (`0x36D`) from the throne room at (20, 9), a room of its own
+    // off another `kor` door. Every waypoint's story talks was too wide:
+    // `balden`'s carried the party into `balden2` and no way back.
+    let story = continuous::STORY_WAYPOINTS.with(|w| w.borrow().contains(&scene));
+    talk_beats(session, &mf, &man)
+        .into_iter()
+        .filter(|&s| (story || errand_talk(&scene, s)) && !talk_ran_dry(session, s))
+        .filter_map(|s| {
+            w.npcs.positions.get(&s).map(|&(x, z)| {
+                let t = dispatch_tile(x, z);
+                (t.0 as i16, t.1 as i16)
+            })
+        })
+        .filter(|t| (1..126).contains(&t.0) && (1..126).contains(&t.1))
+        .filter(|t| !tiles_in_reach(session, &[*t]))
+        .collect()
+}
+
+/// The continuous hand's story talks in another walk component of the
+/// scene: `koin2`'s eight Sage's Treasure Chests (P1[8..15]) stand in five
+/// rooms, each entered by its own `kor` door (P2[1..5]). A round trip
+/// through a neighbouring scene that lands on a talk's side ([`cross_over`]),
+/// then the scene's beats again, while such talks remain. `Ok(Some(scene))`
+/// when it ended outside `cur`.
+pub(super) fn pad_far_talks(
+    session: &mut NativeSession,
+    graph: &DiscGraph,
+    cur: &str,
+    trail: &mut Vec<String>,
+) -> Result<Option<String>, String> {
+    let trace = std::env::var_os("LEGAIA_FGL_TRACE").is_some();
+    for _ in 0..MAX_FAR_TALKS {
+        if scene_name(session) != cur || !walking(session) {
+            break;
+        }
+        let tiles = far_talk_tiles(session);
+        if tiles.is_empty() {
+            break;
+        }
+        pad_budget(session)?;
+        match cross_over(session, graph, cur, "", &CrossTarget::Tiles(tiles.clone())) {
+            Ok(s) if s == cur => {
+                if trace {
+                    eprintln!("    [far-talk] {cur}: crossed toward {tiles:?}");
+                }
+                trail.push(format!("{s}(talk crossing)"));
+                let mut log = Vec::new();
+                let left = play_beats(session, &mut log)?;
+                trail.push(format!("[{}]", log.join("; ")));
+                if let Some(s) = left {
+                    return Ok(Some(s));
+                }
+            }
+            Ok(s) => return Ok(Some(s)),
+            Err(why) => {
+                if trace {
+                    eprintln!("    [far-talk] {cur}: no way to {tiles:?}: {why}");
+                }
+                break;
+            }
+        }
+    }
+    Ok(None)
+}

@@ -42,6 +42,7 @@
       <tr><td><code>--skip-font</code></td><td>The <code>font/</code> dialog-font artifacts.</td></tr>
     </tbody>
   </table>
+  <p><code>--verbose</code> prints one line per file written.</p>
   <h3>What lands in <code>extracted/</code></h3>
   <table class="layout">
     <thead><tr><th>Path</th><th>Contents</th></tr></thead>
@@ -100,7 +101,7 @@
       <div class="cli"><code>prot-extract retail-names extracted/CDNAME.TXT</code></div>
       <ul class="bullets">
         <li><code>extract</code> also writes <code>manifest.json</code> and an unpacked <code>tim/&lt;entry&gt;/</code> dir per TIM-pack entry.</li>
-        <li><code>list</code> prints each size next to <code>decl_span</code>, the superseded over-reading expression, flagging <code>ovr</code> where it overshoots; <code>locate</code> re-keys coordinates measured under it.</li>
+        <li><code>list</code> prints each size next to <code>decl_span</code>, the superseded over-reading expression, flagging <code>ovr</code> where it overshoots; <code>locate</code> re-keys coordinates measured under it - such a coordinate may name the wrong owning entry.</li>
         <li><code>retail-names</code> shows what the retail loader reads out of <code>CDNAME.TXT</code>. Its <code>#define</code> numbers are raw TOC indices, shifted +2 from the extraction filenames.</li>
         <li><code>--clamp-footprint</code> is a deprecated no-op.</li>
       </ul>
@@ -124,6 +125,7 @@ xa demux-disc-all &lt;disc.bin&gt; --out extracted/XA_WAV   # every .XA -&gt; pe
 xa demux-disc &lt;disc.bin&gt; --lba L --size S --out &lt;dir&gt;  # one .XA by LBA/size
 xa info    &lt;file.xa&gt; [--channels stereo] [--sample-rate 37800]
 xa convert &lt;file.xa&gt; [-o out.wav]                       # single Form-1 dump (guesses rate)</code></pre>
+      <p>Beyond these, <code>asset</code> carries the analysis subcommands documented on their own pages: <code>asset account</code> (<a href="byte-accounting.html">byte accounting</a>), <code>asset overlay</code> (<a href="static-overlay-pipeline.html">static overlay pipeline</a>) and <code>asset field-op-census</code> (<a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/field-op-census.md">field-op census, GitHub</a>).</p>
     </div>
   </details>
 </section>

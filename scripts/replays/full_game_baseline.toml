@@ -29,7 +29,7 @@ tier_sum = 140
 # pad input when it is never re-seeded from a retail save and reloads only
 # the engine's own saves. Asserted `>=` like the rest.
 [continuous]
-reached = 17
+reached = 24
 
 [segments]
 rim_elm = 4

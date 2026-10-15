@@ -93,8 +93,8 @@
 //! cells link into; [`crate::overworld_draw_order`] turns both keys into the
 //! flat depths the hosts draw with.
 
-use legaia_engine_battle_vm::psx_camera::FieldCameraView;
-use legaia_engine_battle_vm::rotation_lut::RotationLut;
+use legaia_engine_camera::psx_camera::FieldCameraView;
+use legaia_engine_system::rotation_lut::RotationLut;
 use legaia_render_kernels::fog_volume::FogRegion;
 
 /// Pool capacity - `pool[+2]`, `addiu a2,zero,0x50` at `0x801D7374`.
@@ -467,6 +467,10 @@ pub struct FogPool {
     pub gate: bool,
     /// Frame ticks accumulated since the last render step.
     pub pending_dt: u32,
+    /// The `dt` the last render step ran with - what the capture harness
+    /// gives an installed snapshot when it re-runs the frame's step
+    /// (`World::restep_fog_render`).
+    pub last_dt: u8,
     /// The quads the last render step produced.
     pub quads: Vec<FogQuad>,
     /// `_DAT_1F800394 & 1` - the overworld bit. Set on every non-battle
@@ -511,6 +515,7 @@ impl FogPool {
             regions: Vec::new(),
             gate: false,
             pending_dt: 0,
+            last_dt: 0,
             quads: Vec::new(),
             overworld: false,
             curve_bias: 0,
@@ -540,6 +545,7 @@ impl FogPool {
         }
         self.live = 0;
         self.pending_dt = 0;
+        self.last_dt = 0;
         self.quads.clear();
     }
 
@@ -928,8 +934,8 @@ mod tests {
         assert_eq!(fog_cap_for_man(&[0x05]), FOG_CAP_DEFAULT);
     }
 
-    fn lut() -> &'static legaia_engine_battle_vm::rotation_lut::RetailRotationLut {
-        legaia_engine_battle_vm::rotation_lut::retail_rotation_lut()
+    fn lut() -> &'static legaia_engine_system::rotation_lut::RetailRotationLut {
+        legaia_engine_system::rotation_lut::retail_rotation_lut()
     }
 
     /// A view that looks straight down -Z... expressed as the identity-ish

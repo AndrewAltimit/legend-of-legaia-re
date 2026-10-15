@@ -215,7 +215,7 @@
       <tr><td><code>0x80077998</code></td><td>u8[5] per character</td><td>Rot limb object ranges: which mesh objects the battle draw dims for each Rot bit.</td></tr>
       <tr><td><code>0x800788B8</code></td><td>u16[0x110]</td><td>Streamed-voice clip durations (arts shout, Seru cast voice); neither reader bounds the index.</td></tr>
       <tr><td><code>0x8007B450</code></td><td>ptr / u32</td><td><strong>Op-<code>0x49</code> submode cell</strong>: <code>0</code> idle, <code>1</code> done, otherwise the active submode descriptor's address. The cheat database's "menu-request register" - poking a record pointer opens a submode.</td></tr>
-      <tr><td><code>0x8007B5FC</code></td><td>u32</td><td>Encounter step counter, one word across doors.</td></tr>
+      <tr><td><code>0x8007B5FC</code></td><td>u32</td><td>Encounter step counter, one word across doors. Outside the saved window: it holds its <code>SCUS_942.54</code> file value <code>0x3CE</code> (974) after power-on and a card load, so the first battle after a cold load in a rate-18 region is rolled on step 55.</td></tr>
       <tr><td><code>0x8007B6A8</code></td><td>u8</td><td>Save-anywhere allow flag (scene header bit); the same bit raises the field-fog cap on every overworld.</td></tr>
       <tr><td><code>0x8007B6F4</code></td><td>u16</td><td>GTE <code>H</code> projection register (focal length / zoom). The cheat database's "small maps" / "camera mode" labels are this word.</td></tr>
       <tr><td><code>0x8007B790</code></td><td>u16[3]</td><td>Live camera rotation trio - pitch, yaw, roll (12-bit angles).</td></tr>
@@ -257,6 +257,7 @@
       <tr><td><code>0x8007B850</code></td><td>u32</td><td>Per-frame held button mask, packed (face/shoulder byte in bits 0-7, d-pad/system byte in bits 8-15).</td></tr>
       <tr><td><code>0x8007B868</code></td><td>u32</td><td>Dev/dual-mode gate (retail <code>0</code>); the developer screens it gates are unreachable on a retail disc.</td></tr>
       <tr><td><code>0x8007B874</code></td><td>u32</td><td>Newly-pressed edge mask, <code>held &amp; ~prev</code> - what most menus test.</td></tr>
+      <tr><td><code>0x8007B8A0</code></td><td>s16</td><td><strong>Failed actor-spawn counter</strong> behind <code>WORK ERR%d</code>: cleared by the per-stage init, incremented when the actor pool is empty, printed every frame it is non-zero (<a href="../writeups/glitches/field-oddities.html#work-err-rikuroa">WORK ERR on Mt. Rikuroa</a>).</td></tr>
       <tr><td><code>0x8007B8C2</code></td><td>u16</td><td>Dev/retail loader-path selector: 40 reads, written once at cold boot to <code>1</code>. <a href="#build-mode">Details.</a></td></tr>
       <tr><td><code>0x8007B98F</code></td><td>u8</td><td>In-game debug menu enable - byte 3 of the debug-mode word <code>0x8007B98C</code>. Poking it to <code>1</code> brings up the debug menu on SELECT+Triangle.</td></tr>
       <tr><td><code>0x8007BAC0</code></td><td>u32</td><td>Special-battle restriction word: bit <code>0x100</code> bars Item, <code>0x200</code> forbids Ra-Seru; any set bit suppresses the spoils.</td></tr>
@@ -312,6 +313,7 @@
       <tr><td><code>0x80084570</code></td><td>u32</td><td>Play-time counter - advances per frame (~60/s), <em>not</em> per second.</td></tr>
       <tr><td><code>0x80084594</code> / <code>0x80084598</code></td><td>u8 / u8[]</td><td>Party member count / member ids (sorted insertion, cap 4).</td></tr>
       <tr><td><code>0x8008459C</code> / <code>0x800845A4</code></td><td>u32</td><td>Party gold / casino coin bank.</td></tr>
+      <tr><td><code>0x800845A0</code></td><td>u32</td><td><code>4C D3</code> clock, <strong>remaining</strong> ticks; its duration (<code>0x800845B8</code>, non-zero = running), threshold (<code>0x800845BC</code>) and flag pair (<code>0x800845C0</code>: expiry flag high half, below-threshold flag low half) follow (<a href="../subsystems/script-vm-menuctrl.html">MENU_CTRL</a>).</td></tr>
       <tr><td><code>0x800845B4</code></td><td>u32</td><td><strong>Point Card counter</strong> (unmapped by every public cheat archive): the shop buy commit accrues <code>price/20 * qty</code> while the card is held, capped at 9,999,999.</td></tr>
       <tr><td><code>0x800846D0</code></td><td>u32[4]</td><td>Button-mask config words; <code>0x48</code> (Cross | R1) is the field run button.</td></tr>
       <tr><td><code>0x80084708 + n*0x414</code></td><td>u8[0x414]</td><td>Character records, four slots; display name at <code>+0x2A7</code>. Slot 3 (Terra) ends exactly where the flag bank begins (<a href="../formats/save-record.html">save record</a>).</td></tr>

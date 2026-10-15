@@ -28,6 +28,7 @@ depends on it. Hosts, tools and tests name its modules directly
 | `clut_walk_anim` | The CLUT-walk shimmer: installs a scene's walker table and steps it over a VRAM. |
 | `cutscene_caption` | The opening's baked caption TIM, decoded to RGBA. |
 | `cd_dma` / `overlay_loader` / `stream_file` | The CD streaming reader host traits, the `ProtIndex`-backed host, the overlay loaders and the dual-mode stream-file API. |
+| `battle_overlay_readers` | The battle overlay's disc readers: the battle screen's labels (both halves, one merge order for every host) and the cast trigger's per-spell anim-pair lists, read off PROT 0898 through `ProtIndex`. |
 
 ## The split line
 

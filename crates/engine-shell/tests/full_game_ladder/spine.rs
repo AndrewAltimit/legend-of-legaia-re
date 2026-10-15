@@ -97,6 +97,11 @@ pub(super) struct Milestone {
     /// path skips. Visited in order, each with its beats pass played.
     #[serde(default)]
     pub(super) via: Vec<String>,
+    /// The waypoints the continuous run (part C) plays instead of `via`:
+    /// story a seeded segment starts past, or plays in an order its seat
+    /// does not reach, but a run of its own has to play on the way.
+    #[serde(default)]
+    pub(super) continuous_via: Option<Vec<String>>,
     #[serde(default)]
     pub(super) anchor: Option<AnchorRef>,
     /// `false` for an anchor from outside the main playthrough (a debug

@@ -235,7 +235,8 @@ fn op_4c_n8_sub2_restore_party_slot_advances_three_bytes() {
 
 #[test]
 fn op_4c_n8_sub_c_branch_taken_when_field_68_zero() {
-    // [4C, 0x8C, 0x10, 0x00] - field_68 = 0 → branch to 0x0010.
+    // [4C, 0x8C, 0x10, 0x00] - field_68 = 0 → the relative skip exit:
+    // `pc + 4 + 0x10 - 2`.
     let bytecode = [0x4Cu8, 0x8C, 0x10, 0x00];
     let mut host = TestHost::default();
     let mut ctx = FieldCtx {
@@ -243,7 +244,23 @@ fn op_4c_n8_sub_c_branch_taken_when_field_68_zero() {
         ..FieldCtx::default()
     };
     let r = step(&mut host, &mut ctx, &bytecode, 0);
-    assert_eq!(r, StepResult::Advance { next_pc: 0x10 });
+    assert_eq!(r, StepResult::Advance { next_pc: 0x12 });
+}
+
+#[test]
+fn op_4c_n8_sub_c_extended_form_skips_relative_to_its_end() {
+    // `retock` P1[46] at `+0x49`: `CC 0D 8C 18 00` on a context whose
+    // `+0x68` is zero lands at `0x49 + 2 + 3 + 0x18 - 2 = 0x64`.
+    let mut bytecode = vec![0x21u8; 0x80];
+    bytecode[0x49..0x4E].copy_from_slice(&[0xCC, 0x0D, 0x8C, 0x18, 0x00]);
+    let mut host = TestHost::default();
+    let mut ctx = FieldCtx {
+        script_id: 0x0D,
+        field_68: 0,
+        ..FieldCtx::default()
+    };
+    let r = step(&mut host, &mut ctx, &bytecode, 0x49);
+    assert_eq!(r, StepResult::Advance { next_pc: 0x64 });
 }
 
 #[test]
@@ -540,7 +557,8 @@ fn op_4c_n_a_sub_0_advances_when_ctx_flag_clear() {
 
 #[test]
 fn op_4c_n_a_sub_0_branches_when_ctx_flag_set() {
-    // ctx.flags bit 4 SET → take the absolute jump (0x100).
+    // ctx.flags bit 4 SET → the relative skip exit `LAB_801E360C`:
+    // `pc + 5 + 0x100 - 2`.
     let bytecode = [0x4Cu8, 0xA0, 0x04, 0x00, 0x01];
     let mut host = TestHost::default();
     let mut ctx = FieldCtx {
@@ -548,7 +566,7 @@ fn op_4c_n_a_sub_0_branches_when_ctx_flag_set() {
         ..FieldCtx::default()
     };
     let r = step(&mut host, &mut ctx, &bytecode, 0);
-    assert_eq!(r, StepResult::Advance { next_pc: 0x100 });
+    assert_eq!(r, StepResult::Advance { next_pc: 0x103 });
 }
 
 #[test]
@@ -561,7 +579,26 @@ fn op_4c_n_a_sub_2_uses_global_flags() {
     };
     let mut ctx = FieldCtx::default();
     let r = step(&mut host, &mut ctx, &bytecode, 0);
-    assert_eq!(r, StepResult::Advance { next_pc: 0x20 });
+    assert_eq!(r, StepResult::Advance { next_pc: 0x23 });
+}
+
+#[test]
+fn op_4c_n_a_extended_form_skips_the_jump_that_follows() {
+    // `town01` P0[35] at `+0x61`: `CC 00 A0 00 05 00`, then the 3-byte
+    // `JmpRel` at `+0x67`. With the bit set the record steps over the jump
+    // to `+0x6A`: the extended header has already advanced `s8` by one
+    // (`0x801DE94C`), so the skip is `pc + 2 + 4 + 5 - 2`.
+    let mut bytecode = vec![0x21u8; 0x80];
+    bytecode[0x61..0x67].copy_from_slice(&[0xCC, 0x00, 0xA0, 0x00, 0x05, 0x00]);
+    bytecode[0x67..0x6A].copy_from_slice(&[0x26, 0x1D, 0x00]);
+    let mut host = TestHost::default();
+    let mut ctx = FieldCtx {
+        script_id: 0x00,
+        flags: 1,
+        ..FieldCtx::default()
+    };
+    let r = step(&mut host, &mut ctx, &bytecode, 0x61);
+    assert_eq!(r, StepResult::Advance { next_pc: 0x6A });
 }
 
 #[test]

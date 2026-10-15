@@ -155,7 +155,7 @@ impl PlayWindowApp {
             return self.camera_mvp(aspect) * FIELD_WORLD_FLIP;
         }
         let cutscene = cutscene_cam.map(|(focus, pitch, yaw, roll, h, tr_eye)| {
-            legaia_engine_battle_vm::psx_camera::FieldCameraView {
+            legaia_engine_camera::psx_camera::FieldCameraView {
                 focus,
                 pitch,
                 yaw,
@@ -210,7 +210,7 @@ impl PlayWindowApp {
             return None;
         }
         let cutscene = cutscene_cam.map(|(focus, pitch, yaw, roll, h, tr_eye)| {
-            legaia_engine_battle_vm::psx_camera::FieldCameraView {
+            legaia_engine_camera::psx_camera::FieldCameraView {
                 focus,
                 pitch,
                 yaw,
@@ -247,7 +247,7 @@ impl PlayWindowApp {
             return 0.0;
         }
         let cutscene = cutscene_cam.map(|(focus, pitch, yaw, roll, h, tr_eye)| {
-            legaia_engine_battle_vm::psx_camera::FieldCameraView {
+            legaia_engine_camera::psx_camera::FieldCameraView {
                 focus,
                 pitch,
                 yaw,
@@ -690,9 +690,9 @@ impl PlayWindowApp {
                 ) {
                     Ok(m) => {
                         let model = place(sp.flags_52, sp.world_pos)
-                            * Mat4::from_rotation_y(sp.rot[1])
-                            * Mat4::from_rotation_x(sp.rot[0])
-                            * Mat4::from_rotation_z(sp.rot[2])
+                            * Mat4::from_cols_array(&legaia_render_kernels::gte::part_rotation(
+                                sp.rot, frame_flip,
+                            ))
                             * fx_model_flip;
                         summon_part_draws.push((m, model));
                     }
@@ -722,9 +722,9 @@ impl PlayWindowApp {
                 ) {
                     Ok(m) => {
                         let model = place(rb.flags_52, rb.world_pos)
-                            * Mat4::from_rotation_y(rb.rot[1])
-                            * Mat4::from_rotation_x(rb.rot[0])
-                            * Mat4::from_rotation_z(rb.rot[2])
+                            * Mat4::from_cols_array(&legaia_render_kernels::gte::part_rotation(
+                                rb.rot, frame_flip,
+                            ))
                             * fx_model_flip;
                         summon_part_draws.push((m, model));
                     }
@@ -803,9 +803,9 @@ impl PlayWindowApp {
                         .map(|m| Mat4::from_cols_array(&m))
                         .unwrap_or_else(|| Mat4::from_translation(Vec3::from(fp.world_pos)));
                         let model = place
-                            * Mat4::from_rotation_y(fp.rot[1])
-                            * Mat4::from_rotation_x(fp.rot[0])
-                            * Mat4::from_rotation_z(fp.rot[2])
+                            * Mat4::from_cols_array(&legaia_render_kernels::gte::part_rotation(
+                                fp.rot, false,
+                            ))
                             * fx_model_flip;
                         field_fx_draws.push((m, model));
                     }
@@ -865,7 +865,11 @@ impl PlayWindowApp {
         // The retail emitter schedule keys on the counter word and on the
         // acting side: party = afterimage shrinking toward the ribbon,
         // monster = ribbon throughout (`FUN_801E09F8`).
-        let party = world.battle_ctx.active_actor < 3;
+        // `ctx[+0x13] < 3` is a pool-slot test (`0x801E0C78`): a small
+        // party's first monster sits below engine slot `3`.
+        let party = world
+            .battle_seat_map()
+            .is_party(world.battle_ctx.active_actor);
         // The schedule's own clock is the world's display-frame counter, the
         // same one the browser play page feeds it. It used to be this
         // window's redraw counter, which advances on frames the simulation
@@ -897,7 +901,7 @@ impl PlayWindowApp {
     // `legaia_render_kernels::battle_trail`; this is the per-host projection)
     /// PROT 0904's (Theeder) beam packets this frame
     /// ([`legaia_engine_core::world::World::theeder_draw`] through
-    /// `legaia_render_kernels::cast_theeder::theeder_prims`, the kernel the browser
+    /// `legaia_engine_ui::cast_theeder::theeder_prims`, the kernel the browser
     /// play page draws them with), projected with the battle camera at the
     /// stage's 4:3 - the weapon trail's projection. Retail points are Y-down;
     /// this host's battle space is Y-up, so Y is negated on the way in.
@@ -910,47 +914,46 @@ impl PlayWindowApp {
             return Vec::new();
         };
         let mvp = self.battle_scene_mvp(STAGE_ASPECT);
-        legaia_render_kernels::cast_theeder::theeder_prims(&packet, world.theeder_trail(), |p| {
+        legaia_engine_ui::cast_theeder::theeder_prims(&packet, world.theeder_trail(), |p| {
             bt::project_stage_point(&mvp, [f32::from(p[0]), -f32::from(p[1]), f32::from(p[2])])
         })
     }
 
     /// This frame's field fog sheets (`legaia_engine_field::fog_particles`):
-    /// the pool's render step (`FUN_8003F348` / `FUN_8003F3FC`, run from
-    /// retail's field render pass) through the follow camera this frame
-    /// draws the field with, wrapped by the shared `fog_puff_prim` so the
-    /// blend class and vertex order are the browser play page's too. Empty
-    /// outside game mode 3 (a field scene or the kingdom overworld) or while
-    /// the script gate (`_DAT_8007B854`) is clear - the same two tests the
-    /// pass makes at `0x80026EA4..0x80026EC4`.
+    /// the quads the last sim tick's render step left
+    /// (`BootSession::step_field_fog`, `FUN_8003F348` / `FUN_8003F3FC`, run
+    /// from retail's field render pass once per frame), wrapped by the shared
+    /// `fog_puff_prim` so the blend class and vertex order are the browser
+    /// play page's too. Empty outside game mode 3 (a field scene or the
+    /// kingdom overworld) or while the script gate (`_DAT_8007B854`) is clear -
+    /// the same two tests the pass makes at `0x80026EA4..0x80026EC4`.
     ///
-    /// The camera resolves with no cutscene view, on both hosts alike, so a
-    /// scripted camera beat projects the fog through the follow pose: a
-    /// shared simplification, not a per-host one.
+    /// A read, not a step: the step is per sim tick
+    /// (`tick_frame_tail_effects`), so a redraw that ran two ticks or none
+    /// draws what the last tick left, as the page does. The one exception is
+    /// the capture harness's frame: with `LEGAIA_SEAT_FOG` due it installs
+    /// the retail state's records and re-runs the frame's step over them
+    /// (`BootSession::seat_field_fog`), through the camera this frame draws.
     pub(super) fn take_field_fog_prims(
         &mut self,
     ) -> Vec<legaia_render_kernels::screen_prim::ScreenPrim> {
-        use legaia_engine_core::camera_view::resolve_field_camera;
         use legaia_render_kernels::screen_prim::fog_puff_prim;
+        if let Some(sc) = self.screenshot.as_ref()
+            && sc.seat_fog_due.take()
+            && let Some(fog) = sc.seat_fog.take()
+        {
+            let centre = [
+                (self.scene_aabb.0[0] + self.scene_aabb.1[0]) * 0.5,
+                (self.scene_aabb.0[2] + self.scene_aabb.1[2]) * 0.5,
+            ];
+            self.session.seat_field_fog(&fog, centre);
+        }
         let world = &self.session.host.world;
         if !legaia_engine_core::world::World::fog_mode(world.mode) || !world.fog.gate {
             return Vec::new();
         }
-        let center = [
-            (self.scene_aabb.0[0] + self.scene_aabb.1[0]) * 0.5,
-            (self.scene_aabb.0[2] + self.scene_aabb.1[2]) * 0.5,
-        ];
-        let frame = resolve_field_camera(world, &self.session.camera, None, center);
-        // The field follow pose, or the overworld walk pose in the field
-        // frame - retail's overworld is a game-mode-3 scene and draws the
-        // same pool through the same pass.
-        let Some(view) = frame.field_view() else {
-            return Vec::new();
-        };
-        self.session
-            .host
-            .world
-            .fog_render_step(&view)
+        world
+            .fog_quads()
             .iter()
             .map(|q| fog_puff_prim(q.xy, q.uv, q.clut, q.tpage, q.rgb, q.ot_index, q.depth))
             .collect()
@@ -1047,8 +1050,8 @@ impl PlayWindowApp {
     pub(super) fn weapon_trail_screen_prims(
         &self,
     ) -> Vec<legaia_render_kernels::screen_prim::ScreenPrim> {
-        use legaia_engine_battle_vm::battle_trail::TRAIL_POINTS;
         use legaia_render_kernels::battle_trail as bt;
+        use legaia_render_kernels::battle_trail::TRAIL_POINTS;
         let world = &self.session.host.world;
         if world.mode != SceneMode::Battle {
             return Vec::new();

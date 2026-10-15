@@ -314,10 +314,11 @@ impl PlayWindowApp {
         }
     }
 
-    /// Queue one menu cue on the director (no-op with audio off).
+    /// Queue one menu cue on the director (no-op with audio off), through
+    /// the one UI-blip routing the page uses too (`AudioDirector::queue_ui_cue`).
     pub(super) fn fire_menu_cue(&mut self, cue: u16) {
         if let Some(bgm) = self.session.bgm.as_mut() {
-            bgm.enqueue_sfx(cue, 0, 0, 0);
+            bgm.queue_ui_cue(cue);
         }
     }
 
@@ -692,6 +693,7 @@ impl PlayWindowApp {
                         // the options file are this host's.
                         let finished = sub.take().expect("sub was Some");
                         let mut done = finish_subsession(finished, &mut self.session.host.world);
+                        let close_menu = done.close_menu;
                         // Windows 7 / 8: the runtime holds the beat and this
                         // arm's pre-empts above hold the pad.
                         self.menu_runtime.arm_finished_notices(&mut done);
@@ -724,8 +726,10 @@ impl PlayWindowApp {
                         }
                         // A title-opened menu has no root screen to return
                         // to: the sub-screen's exit closes it entirely.
+                        // A Door use's exit code closes the whole menu
+                        // (`FinishedSubsession::close_menu`).
                         if let Some(menu) = self.session.field_menu.as_mut() {
-                            let _ = menu.resume(self.menu_from_title);
+                            let _ = menu.resume(self.menu_from_title || close_menu);
                         }
                     }
                     // Adopt + persist the rebind now that the `self.boot_ui`

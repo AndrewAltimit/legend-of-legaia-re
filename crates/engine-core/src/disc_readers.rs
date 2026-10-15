@@ -7,6 +7,5 @@
 //! readers (`dance_hud_art`, `fishing_rod`) are in `engine-minigame-scenes`,
 //! which does.
 
-pub mod battle_open;
 pub mod battle_tutorial;
 pub mod encounter_man;

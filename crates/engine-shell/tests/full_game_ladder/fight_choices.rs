@@ -17,6 +17,10 @@ pub(super) fn item_restore(
     hp: u32,
 ) -> Option<u32> {
     use legaia_engine_menus::items::ItemEffect;
+    // A story item the stretch's errand still owes is not a heal.
+    if errand_item(w, id) {
+        return None;
+    }
     let max = u32::from(w.actors[slot].battle.max_hp);
     let e = w.tables.item_catalog.get(id)?;
     Some(match e.effect {
@@ -710,4 +714,20 @@ pub(super) fn direction_mask(b: u8) -> u16 {
         Some(Command::Down) => PadButton::Down.mask(),
         _ => PadButton::Up.mask(),
     }
+}
+
+/// Does the command ring refuse this member's Attack arm? All three Rot
+/// limbs (`+0x16E & 0x38 == 0x38`) leave the arts entry no direction, and
+/// the ring answers the Left press with the refusal cue and stays up
+/// (`FUN_801D0748`, `0x801D1560..0x801D156C`; `ring_arm_refused` in the
+/// engine). Sol's monster 120 rots limbs.
+pub(super) fn attack_refused(w: &legaia_engine_core::world::World, actor: u8) -> bool {
+    let raw = w
+        .actors
+        .get(usize::from(actor))
+        .map_or(0, |a| a.battle.field_flags)
+        | legaia_engine_battle_vm::status_effects::pack_display_flags(
+            w.battle.status_effects.statuses(actor),
+        );
+    raw & 0x38 == 0x38
 }

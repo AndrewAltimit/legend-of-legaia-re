@@ -75,6 +75,12 @@
     </tbody>
   </table>
   <p>Read a town&rsquo;s stock off a disc with <code>asset shop-stock --prot PROT.DAT --scus SCUS_942.54 --cdname CDNAME.TXT --scene bylon</code>; it prints &ldquo;decodes 10 ids, sells 7&rdquo; rather than truncating. The casino prize counter is a different system: its table lives in the menu overlay and debits the coin bank, not gold.</p>
+  <details class="disclosure">
+    <summary>Details: the prize counter&rsquo;s sound cues</summary>
+    <div class="disclosure-body">
+      <p>The counter session (<code>FUN_801DC1CC</code>) never picks a cue for a plain step: the list kernel <code>FUN_801D688C</code> pushes step <code>0x21</code>, confirm <code>0x36</code> or cancel <code>0x37</code> itself, and the session overwrites it where it disagrees. A redeem the coin bank or the 99 cap refuses becomes the buzz <code>0x23</code> (<code>0x801DC3F8</code>). A confirm on the Yes / No prompt becomes cue <code>0</code>, which plays nothing, so No is silent and Yes is heard as the coin jingle <code>0x25</code> the commit state pushes on the next frame (<code>0x801DC4C0</code>). In the port, <code>PrizeEvent::cue</code> reaches both hosts on the same channel the shop&rsquo;s own screens use.</p>
+    </div>
+  </details>
 </section>
 
 <section class="doc-section" id="session">
@@ -84,7 +90,7 @@
     <li><strong>Sell price</strong> is half the item table's price times the quantity, rounded down. A zero-priced item shows &ldquo;Cannot sell&rdquo;.</li>
     <li><strong>Stack cap 99.</strong> A row greys once the held count reaches 99, and the quantity picker clamps to <code>99 &minus; held</code>.</li>
     <li><strong>Point Card</strong> (item <code>0xFE</code>) is a third purse, passive while held. Each purchase credits <code>price / 20</code> per unit - 5% - before the gold debit; sales never accrue. A one-line toast (window 31) shows the balance after each buy.</li>
-    <li><strong>Buying equipment</strong> first asks who it is for: a party row checks the equip mask and, on a match, equips immediately and returns the replaced piece to the bag.</li>
+    <li><strong>Buying equipment</strong> first asks who it is for: a party row checks the equip mask and, on a match, equips immediately and returns the replaced piece to the bag. The picker&rsquo;s rows are the <em>present party</em>, not the four character records: the cursor gets party-size rows (<code>0x801DB434</code>) and a confirmed row resolves to its character through the party list (<code>0x801DB554</code>), so a lone Noa is row 1 and a member who has not joined has no row.</li>
   </ul>
   <details class="disclosure">
     <summary>Details: what spends the Point Card</summary>
@@ -121,7 +127,9 @@
 
 <section class="doc-section" id="engine-port">
   <h2>In the port</h2>
-  <p>The stock scan is <code>legaia_scene_formats::shop_stock</code>; the session, quantity stepper, recipient picker, Point Card bank and row-ink rules live in <code>engine-menus::shop</code>; and the screens - every window above, the prize exchange and the coin counter - are composed once in <code>engine-screens</code> and drawn by both play hosts. The grant kernel refuses a buy past 99, as the retail clamp does. The literal restore amounts of consumables stay curated, because they live in overlay code rather than in the item-effect table.</p>
+  <p>The stock scan is <code>legaia_scene_formats::shop_stock</code>; the session, quantity stepper, recipient picker, Point Card bank and row-ink rules live in <code>engine-menus::shop</code>; and the screens - every window above, the prize exchange and the coin counter - are composed once in <code>engine-screens</code> and drawn by both play hosts. The grant kernel refuses a buy past 99, as the retail clamp does.</p>
+  <p>A merchant&rsquo;s record reaches op <code>0x49</code> through a <strong>talk</strong>, so what parks on the op is the inline dialogue runner, not the field script. The runner holds the conversation on the op while the shop is armed and takes the Done edge on the frame after the screen closes, which is what clears the arm; a talk that ended at the op instead would leave a stale Done edge, and the next shop talk would spend it and open nothing. The casino prize counter parks the same way: retail&rsquo;s op <code>0x49</code> ignores the sub-op while the park word <code>_DAT_8007B450</code> is up, taking the Done arm on <code>1</code> and otherwise returning the unchanged PC (<code>0x801E097C</code>), so every screen the op opens holds its record until it closes.</p>
+  <p>The literal restore amounts of consumables stay curated, because they live in overlay code rather than in the item-effect table.</p>
 </section>
 
 <section class="doc-section" id="how-we-know">

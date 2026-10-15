@@ -25,7 +25,7 @@
 //!    `0x801F3304`) that the engine never loads. [`PanelScripts::default`]
 //!    ships a minimal stand-in keyed by the same VAs, so the interpreter runs
 //!    on real records; a host with the overlay image can replace the table.
-//!    This is the same seam `legaia_engine_core::dev_menu_host::DevMenuSession::flag_tags`
+//!    This is the same seam `legaia_engine_menus::dev_menu_host::DevMenuSession::flag_tags`
 //!    has for the debug flag table.
 //! 2. **The handler-id table.** Retail retires an actor by writing a new
 //!    handler id into `ctx[+0x50]`, which `FUN_801F159C` turns back into a

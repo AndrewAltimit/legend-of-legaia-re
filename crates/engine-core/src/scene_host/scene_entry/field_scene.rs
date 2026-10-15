@@ -45,13 +45,34 @@ impl SceneHost {
             let r = b.record(anim.checked_sub(1)? as usize).ok()?;
             Some((r.frame_count, (r.a >> 8) & 1 != 0, (r.flag & 0xFF) as u8))
         };
-        self.world.props.bank = legaia_engine_scene::field_env::PropAnimBank::build(
+        // Each object's spawn pass runs against the live story flags, and its
+        // flag writes land (`FUN_8003A55C` hands the prologue to the field-VM
+        // dispatcher): `korb3`'s collection stones park on the `0x21` their
+        // touch resumes from, or set their `0x43E..` flags, by `0x403`.
+        let world = &mut self.world;
+        let mut flags = |idx: u16, kind: legaia_scene_formats::field_disasm::FlagKind| -> bool {
+            use legaia_scene_formats::field_disasm::FlagKind;
+            match kind {
+                FlagKind::Test => world.system_flag_test(idx),
+                FlagKind::Set => {
+                    world.system_flag_set(idx);
+                    false
+                }
+                FlagKind::Clear => {
+                    world.system_flag_clear(idx);
+                    false
+                }
+            }
+        };
+        let bank = legaia_engine_scene::field_env::PropAnimBank::build_with_flags(
             &placements,
             &binds,
             man_file,
             man_bytes,
             clip,
+            Some(&mut flags),
         );
+        self.world.props.bank = bank;
         self.world.props.object_shifts.clear();
         self.world.props.colliders = placements
             .iter()
@@ -119,6 +140,18 @@ impl SceneHost {
         // came from the previous scene's MAN.
         self.world.field_vm.helper_contexts.clear();
         self.world.field_vm.pending_record_spawns.clear();
+        // So is a conversation or prop record run: the talker or the touched
+        // object is an actor of the departing scene's list, which the load
+        // retires with the dialog SM context stepping its record. Carried
+        // across, the run parks for good on a wait no actor of the new scene
+        // answers (a cupboard's `2D 08` end-latch, a talker's actor op) and
+        // holds the pad (a Door of Light or Wind art that lands while a
+        // cupboard or a conversation is open). The player's engaged bit the
+        // touch raised drops with the hop lock below. Battle entry drops the
+        // same pair.
+        // REF: FUN_80039B7C, FUN_801D5B5C
+        self.world.dialog.inline = None;
+        self.world.dialog.current = None;
         self.world.cutscene.card = None;
         // Drop the previous scene's caption image (only `opdeene` re-decodes one
         // below); reset its fade + hold so a re-entry starts hidden.

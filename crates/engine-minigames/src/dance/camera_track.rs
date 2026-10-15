@@ -47,7 +47,7 @@ pub const DANCE_CAMERA_EASE_LEN: usize = 0x420;
 ///
 /// Both halvings truncate toward zero (`srl 31` / `addu` / `sra 1`).
 pub fn dance_camera_ease_table() -> Vec<i16> {
-    use legaia_engine_battle_vm::battle_action::motion::sin12;
+    use legaia_engine_system::trig::sin12;
     let half = |v: i32| ((v + ((v as u32 >> 31) as i32)) >> 1) as i16;
     let mut t = Vec::with_capacity(DANCE_CAMERA_EASE_LEN);
     for i in 0..0x200u16 {

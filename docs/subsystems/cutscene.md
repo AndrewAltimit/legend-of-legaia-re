@@ -1398,16 +1398,16 @@ camera (a `srav` lerp toward `_DAT_801F2798`-table targets), a different mode of
 globals.
 
 **Port and validation.**
-[`legaia_engine_battle_vm::camera_mover`](../../crates/engine-battle-vm/src/camera_mover.rs) is the
+[`legaia_engine_camera::camera_mover`](../../crates/engine-camera/src/camera_mover.rs) is the
 integer law verbatim, plus `curve_unit` as the normalized `f32` shape the renderer-side
-[`CutsceneCameraInterp`](../../crates/engine-battle-vm/src/psx_camera.rs) evaluates.
+[`CutsceneCameraInterp`](../../crates/engine-camera/src/psx_camera.rs) evaluates.
 
 - Against a live headless capture of the retail mover, 2471 of 2480 sampled
   `(axis, start, end, t, d, curve) -> global` tuples reproduce exactly; the rest resolve under a
   1-6 display-frame read skew, except the two frames on which a new beat re-armed the block
   mid-read.
 - The env-gated oracle
-  [`camera_mover_recomp_oracle`](../../crates/engine-battle-vm/tests/camera_mover_recomp_oracle.rs)
+  [`camera_mover_recomp_oracle`](../../crates/engine-camera/tests/camera_mover_recomp_oracle.rs)
   (`LEGAIA_RECOMP_TRACE_DIR`; see [recomp differential](../tooling/recomp-differential.md))
   replays whole staged beats against per-display-frame captures of the opening chain and
   reproduces the snap, mode-1, mode-2 and mode-4 beats **bit-exact** per frame within the
@@ -2191,9 +2191,9 @@ the `FUN_801CF5BC` row of [`functions.md`](../reference/functions.md).
 `see ghidra/scripts/funcs/overlay_field_battle_intro_801cf5bc.txt`.
 
 **Port.** This state machine is the encounter session's `Transition` phase:
-`legaia_engine_battle_vm::battle_intro_transition::tick_transition`, driven once per frame by
+`legaia_render_kernels::battle_intro_transition::tick_transition`, driven once per frame by
 `legaia_engine_core::World::tick_encounter`. The style and fade switches are
-`engine-battle-vm::battle_intro_styles::{IntroStyle, intro_fade}`.
+`render-kernels::battle_intro_styles::{IntroStyle, intro_fade}`.
 
 | Effect | Engine handling |
 |---|---|
@@ -2240,7 +2240,7 @@ the current map/scene index `DAT_80084540`.
 The default is style 2, so an ordinary random encounter shatters; style 3 is reached by three
 formations and style 4 by one. Two of the eleven stores are delay-slot stores that land on both
 arms of their branch, which is why the flags-set path defaults to style 1 rather than the
-initial style 2. Port: `engine-battle-vm::battle_intro_styles::select_intro_style`, whose doc comment
+initial style 2. Port: `render-kernels::battle_intro_styles::select_intro_style`, whose doc comment
 carries the full override table in retail's evaluation order.
 
 `FUN_801D1CD4` is an inert stub - it writes a 12-byte local (`0, 0, 0x7D0, 0, 0, 0`) that never
@@ -2254,7 +2254,7 @@ The same init block seeds the duration two instructions before the style switch:
 whose jump-table arm (slot `4` of the table at `0x801CE840`, body `0x801CEFEC`) re-stores `0xFC`
 at `0x801CEFF4` / `0x801CEFFC` - **252 frames**. Both stores are read off the overlay image's
 instruction words (the decompiler's rendering of the init reaches past the dumped window). Port:
-`engine-battle-vm::battle_intro_styles::intro_duration_frames`.
+`render-kernels::battle_intro_styles::intro_duration_frames`.
 
 That number is the denominator of everything time-shaped in the transition: each
 `INTRO_FADE_RAMPS` entry is a *lead* before it (the longest is the curtain's `0x40`, so `0x84`
@@ -2274,7 +2274,7 @@ dozen frames and its primitive count decays as records retire. `engine-render`'s
 A degenerate seeder RNG parks the grid the same way: the delays come from 256 consecutive draws,
 so a generator that converges hands every record the same delay (an LCG with an even multiplier
 walks its state to a fixed point within a handful of draws). The port's stand-in,
-`engine-battle-vm::battle_intro_particles::IntroRng`, is shared by every host.
+`render-kernels::battle_intro_particles::IntroRng`, is shared by every host.
 
 #### The transition owns the whole frame
 
@@ -2612,7 +2612,11 @@ stateDiagram-v2
 - State `0` caches the three party actors' `x/y/z/facing` into the `0x800845E4` table and runs
   the arm gate. The gate refuses when all three presence flags are set - a full party has
   nothing to swap to - and when only two are set it additionally requires the leader's own flag.
-- State `2` performs the swap and re-anchors the camera and field grid on the incoming leader.
+- State `2` performs the swap and re-anchors the camera and field grid on the incoming leader,
+  then spawns the talk's own record: `FUN_8003BDE0(x, z, +0x72, 1)` at `801d2c58..801d2c78`.
+  `+0x72` is the `43 02` instruction's record byte less the MAN header's first two partition
+  counts (`FUN_801D2D38`, `801d2da8..801d2dd0`), and the spawner's index mode adds those counts
+  back, so the record is the byte as a global index - the op-`0x44` space.
 - State `4` clears the camera's busy bit `0x80000`.
 - Both fades are kind `2`, `0x20` frames, black-to-white then white-to-black, so the swap
   happens behind a white flash.
@@ -2627,9 +2631,17 @@ inside `World::tick_three_actor_talk`, not in a host key handler: every host dri
 `World::set_pad`, so one read reaches all three. `World::request_talk_leader_switch` remains for
 callers with no pad word - scripted timelines, replay fixtures, tests.
 
-Why it matters: in `nilboa` the `43 02` that arms the talk spawns a partition-2 record that
-branches on the leader flags `0x10` / `0x11` / `0x12` and installs *that leader's* destination
-banner and tile walls. The leader is the player's choice of where to go.
+Why it matters: in `nilboa` the `43 02` that arms the talk names `0x5F`, P2[17], which branches
+on the leader flags `0x10` / `0x11` / `0x12` and installs *that leader's* ravine banner and tile
+walls. The entry script spawns it once when the scene opens with the talk up; every swap spawns
+it again. Its Fire Ravine arm re-seats the Three Tunnels boulders (`4C C3` on placements 13 / 14),
+its Wind Ravine arm parks them at `(0x7F, 0x7F)`, so the boulders stand - and can be pushed - only
+while the Fire Ravine member leads. The leader is the player's choice of where to go.
+
+Port: the `SpawnFadeIn` arm of `World::tick_three_actor_talk` queues the byte as an op-`0x44`
+spawn. Before it did, the dressing stayed whatever the entry spawn chose, and a scene entered under
+the Wind Ravine leader kept the boulders off the map for good. Regression:
+`a_leader_swap_redresses_the_three_tunnels_for_the_incoming_ravine` (`engine-core`, disc-gated).
 
 The port's field **run** mask defaults to retail's `Cross | R1`
 ([`field-locomotion.md`](field-locomotion.md#base-step-selection-walk--run)), which does not

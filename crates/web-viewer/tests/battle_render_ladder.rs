@@ -54,17 +54,17 @@
 //!
 //! Skips + passes when `LEGAIA_DISC_BIN` is unset. CI runs without disc data.
 //!
-//! [`IntroStyle::TileShatter`]: legaia_engine_battle_vm::battle_intro_styles::IntroStyle::TileShatter
+//! [`IntroStyle::TileShatter`]: legaia_render_kernels::battle_intro_styles::IntroStyle::TileShatter
 
 #![cfg(not(target_arch = "wasm32"))]
 
-use legaia_engine_battle_vm::battle_intro_particles::IntroEnv;
-use legaia_engine_battle_vm::battle_intro_styles::{
-    INTRO_FADE_RAMPS, IntroStyle, IntroStyleInputs, intro_duration_frames, select_intro_style,
-};
 use legaia_engine_scene::scene::ProtIndex;
 use legaia_engine_system::input::PadButton;
 use legaia_render_kernels::battle_intro::{BattleIntro, IntroQuadTable, parse_tile_corner_table};
+use legaia_render_kernels::battle_intro_particles::IntroEnv;
+use legaia_render_kernels::battle_intro_styles::{
+    INTRO_FADE_RAMPS, IntroStyle, IntroStyleInputs, intro_duration_frames, select_intro_style,
+};
 use legaia_web_viewer::runtime::LegaiaRuntime;
 
 const W: u32 = 960;

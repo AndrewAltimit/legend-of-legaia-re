@@ -77,6 +77,20 @@ impl PlayWindowApp {
         legaia_engine_render::profile::end_frame();
         self.win.request_redraw();
     }
+
+    /// The redraw's steps after its ticks that move world state, for the
+    /// headless driver (`window::headless`): the battle frame edge, the
+    /// cutscene camera glide and the frame prep (the fog pool's render
+    /// step), in [`Self::handle_redraw`]'s order. The renderer-bound steps
+    /// gate themselves on the renderer being absent.
+    pub(in crate::window) fn headless_frame_prep(&mut self) {
+        self.apply_floor_wave();
+        let _ = self.sync_field_view();
+        self.sync_battle_frame();
+        let _ = self.resolve_cutscene_camera();
+        let mut prep = self.take_frame_prep();
+        self.battle_intro = prep.battle_intro.take();
+    }
 }
 
 impl PlayWindowApp {
@@ -90,15 +104,15 @@ impl PlayWindowApp {
     /// indices, so the outgoing clip's pose-cache entries for the slot would
     /// alias it; they are dropped.
     pub(super) fn drain_anim_cues(&mut self) {
-        let srcs = &self.npc_anim_srcs;
+        // The clip targets are the scene binding's catalogued placements
+        // (`scene_actors::bind_scene_actors`), the set the browser page
+        // drains against: which placements this window uploaded a mesh for
+        // is a draw fact, not one a cue may branch on.
         let special = &self.npc_bundle_special;
         let retargets = self.session.host.world.drain_field_anim_cues(
             self.npc_anim_bundles.0.as_ref(),
             self.npc_anim_bundles.1.as_ref(),
-            |slot| {
-                srcs.contains_key(&slot)
-                    .then(|| special.get(&slot).copied().unwrap_or(false))
-            },
+            |slot| special.get(&slot).copied(),
         );
         for r in retargets {
             self.npc_clip_players.insert(r.slot, r.player);
@@ -135,6 +149,56 @@ impl PlayWindowApp {
         ))
     }
 
+    /// `LEGAIA_DIAG_CAPTURE_STATE=1` instrument: on the screenshot frame,
+    /// print the battle state a retail-compare residual is read against -
+    /// the action state, the `ctx[+0x243]` marker, the stage ambient and
+    /// backdrop cue, each roster member's equipment, each actor's seat,
+    /// heading, mode word and tint, and every live effect sprite.
+    /// `LEGAIA_DIAG_CAPTURE_VRAM=<path>` beside it writes the battle VRAM
+    /// (1 MiB, BGR555) for a byte comparison with `mednafen-state vram-dump
+    /// --out-bin`.
+    pub(super) fn diag_capture_state(&self) {
+        if std::env::var_os("LEGAIA_DIAG_CAPTURE_STATE").is_none() {
+            return;
+        }
+        let w = &self.session.host.world;
+        eprintln!(
+            "capture state: action 0x{:02X} ctx243 {} ambient {:?} backdrop_cue {:?} sprites {}",
+            w.battle_ctx.action_state,
+            w.battle_ctx.gauge_rearm_latch,
+            w.battle_ambient_base(),
+            w.battle_backdrop_cue(),
+            w.active_effect_sprites().len(),
+        );
+        if let (Some(path), Some(v)) = (
+            std::env::var_os("LEGAIA_DIAG_CAPTURE_VRAM"),
+            self.battle_vram.as_ref(),
+        ) {
+            let _ = std::fs::write(path, v.as_bytes());
+        }
+        for (i, m) in w.party.roster.members.iter().enumerate() {
+            eprintln!("capture roster {i}: equip {:?}", m.equipment().slots);
+        }
+        for (i, a) in w.actors.iter().enumerate().take(8) {
+            eprintln!(
+                "capture actor {i}: xz ({},{}) y {} facing {} flag {:#010x} colour {:#010x} blend {:#x}",
+                a.move_state.world_x,
+                a.move_state.world_z,
+                a.move_state.world_y,
+                a.battle.facing_angle,
+                a.battle.flag_word,
+                a.battle.render_color,
+                a.battle.render_blend,
+            );
+        }
+        for s in w.active_effect_sprites() {
+            eprintln!(
+                "capture sprite: pos {:?} size {:?} page {:#04x} clut {:#06x} uv {:?}+{:?} bright {:#04x}",
+                s.world_pos, s.size, s.page, s.clut, s.uv, s.uv_size, s.brightness
+            );
+        }
+    }
+
     /// `LEGAIA_DIAG_FX=1` instrument: report where each live effect billboard
     /// actually lands, in the frame's own FX camera.
     ///
@@ -145,6 +209,28 @@ impl PlayWindowApp {
     /// uploaded (the quad draws, but every texel discards). Off by default -
     /// the log is per-frame per-sprite.
     pub(super) fn diag_effect_billboards(&self, cam: Mat4) {
+        if std::env::var_os("LEGAIA_DIAG_FX_ALL").is_some() {
+            let battle = self.session.host.world.mode == SceneMode::Battle;
+            for s in self.session.host.world.active_effect_sprites() {
+                let c = if battle {
+                    legaia_render_kernels::effect_billboard::battle_billboard_centre(s.world_pos)
+                } else {
+                    s.world_pos
+                };
+                let p = cam * glam::Vec4::new(c[0], c[1], c[2], 1.0);
+                if p.w > 0.01 {
+                    eprintln!(
+                        "DIAG fx-all: tick {} page {:#04x} centre ({:.0},{:.0}) w {:.0} size {:?}",
+                        self.tick_no,
+                        s.page,
+                        (p.x / p.w * 0.5 + 0.5) * 320.0,
+                        (0.5 - p.y / p.w * 0.5) * 240.0,
+                        p.w,
+                        s.size
+                    );
+                }
+            }
+        }
         if std::env::var_os("LEGAIA_DIAG_FX").is_none() {
             return;
         }
@@ -317,7 +403,7 @@ impl PlayWindowApp {
     /// (`actor_stage_point`) and laid out by
     /// `legaia_engine_battle_vm::battle_value_readout::value_cells`, plus the combo
     /// counter cluster. The quads themselves come from the shared
-    /// `legaia_render_kernels::battle_numerals` builder the browser play page also
+    /// `legaia_engine_ui::battle_numerals` builder the browser play page also
     /// emits through - this host only supplies the camera-dependent seat.
     ///
     /// Empty outside battle, with no popups, or before the battle VRAM (which
@@ -327,7 +413,7 @@ impl PlayWindowApp {
         &self,
         cam: Mat4,
     ) -> Vec<legaia_render_kernels::screen_prim::ScreenPrim> {
-        use legaia_render_kernels::battle_numerals as bn;
+        use legaia_engine_ui::battle_numerals as bn;
         // The retail-art half: only while the sheet the quads sample is
         // resident. Before that the frame takes the font fallback instead
         // ([`Self::battle_value_readout_draws`]); the two are mutually
@@ -483,7 +569,7 @@ impl PlayWindowApp {
                 continue;
             };
             let age = p.frames_total.saturating_sub(p.frames_remaining);
-            let cells = legaia_render_kernels::battle_numerals::popup_value_cells(
+            let cells = legaia_engine_ui::battle_numerals::popup_value_cells(
                 &vp,
                 world_scale,
                 trio,

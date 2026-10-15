@@ -188,7 +188,7 @@
 //!
 //! ## Screen shake
 //!
-//! `FUN_801D9D30` ([`crate::battle_camera::apply_shake`]) jitters the same
+//! `FUN_801D9D30` ([`legaia_engine_camera::battle_camera::apply_shake`]) jitters the same
 //! translation pair this pose carries (`0x800840B8/BC`) by an LCG offset
 //! whose amplitude is the global `_DAT_8007B630`. The engine holds the
 //! offset beside the pose rather than inside it - see
@@ -207,7 +207,7 @@
 //! ## The glides step on retail's own increments
 //!
 //! `FUN_801D829C` is the tween builder retail's framing cases arm, and its
-//! port is [`crate::battle_camera::build_camera_angle_tween`]. `Glide::linear`
+//! port is [`legaia_engine_camera::battle_camera::build_camera_angle_tween`]. `Glide::linear`
 //! calls it: the arrive-together glides take their per-component rates, their
 //! 12-bit shortest-arc yaw and their TR.z projection prescale straight out of
 //! it, so there is one implementation of the stepping arithmetic rather than
@@ -229,8 +229,10 @@ mod module_shot;
 mod phase;
 mod pose;
 mod post_action;
-mod projection;
 mod spell_cam;
+
+// The submodules reach the shared projection and pose type through `super::*`.
+use legaia_engine_camera::projection::*;
 
 pub use action::*;
 pub use camera::*;
@@ -239,7 +241,6 @@ pub use module_shot::*;
 pub use phase::*;
 pub use pose::*;
 pub use post_action::*;
-pub use projection::*;
 pub use spell_cam::*;
 
 #[cfg(test)]

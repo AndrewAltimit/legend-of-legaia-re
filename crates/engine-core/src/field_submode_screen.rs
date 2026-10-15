@@ -204,7 +204,7 @@ pub struct SubmodeScreen {
     /// `0x23` reads its base flag at `+4..+6`).
     pub op49_operand: [u8; 7],
     /// Slot `0x23`'s picker state ([`crate::field_submode_flag_window`]).
-    pub flag_window: crate::field_submode_flag_window::FlagWindowState,
+    pub flag_window: legaia_engine_field::field_submode_flag_window::FlagWindowState,
     /// Slot `0x21`'s lock state ([`crate::field_submode_code_lock`]).
     pub code_lock: legaia_engine_field::code_lock_actor::CodeLockActor,
     /// The coin counter's entry panel this frame - the painter of record

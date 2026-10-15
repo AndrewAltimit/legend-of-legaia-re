@@ -17,6 +17,19 @@ impl<'a> FieldFlagsHost for FieldHostImpl<'a> {
         self.world.clock.script_frame_delta()
     }
 
+    /// Op `0x4E` loader 4 (`0x801E0AFC`): one BIOS `rand()` draw, masked to
+    /// a byte by the VM - the random-chance branch. Draws on the world's one
+    /// `rand()` stream, as retail's every caller shares the kernel seed.
+    fn bios_rand(&mut self) -> i32 {
+        self.world.next_rand() as i32
+    }
+
+    // `4C C5` / `4C C6` take the trait's default, retail's `FUN_8003CE64`
+    // test over the world's flag bank: the shipped waits' raisers are the
+    // move-VM parts the waiting record spawns (ext `0x1C` / `0x1D`, on the
+    // world through `MoveHost::ext_set_flag_bank`), the scripted-scene actor
+    // and the travel arts, all of which the engine runs.
+
     fn extra_flags(&self) -> u32 {
         self.world.flags.extra_flags
     }

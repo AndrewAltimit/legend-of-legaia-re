@@ -30,6 +30,35 @@
 <section class="doc-section" id="slot-math">
   <h2>Action id to slot</h2>
   <p>The cast sequence computes a base slot byte from the actor's action id. Bit 7 selects the file (set = <code>summon.dat</code>, clear = <code>readef.DAT</code>); <code>base &amp; 0x7F</code> is the first slot of the group.</p>
+  <figure class="diagram">
+    <svg viewBox="0 0 880 366" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="The action id at actor +0x1DF, or a turn group, gives the base byte at ctx+0x277. Bit 7 set selects summon.dat (extraction 893), bit 7 clear readef.DAT (extraction 894). The slot is base and 0x7F, 0x10800 bytes each, read into the stream buffer at *0x8007BD74. From there a texture slot goes to a VRAM CLUT row and page, an actor record goes through FUN_801F19EC to the slot-7 actor, a big-summon raw slot goes to VRAM and the part pool, and an ME archive becomes an art entry's +0x88 stream.">
+      <defs><marker id="sr-arrow" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <rect class="dg-node" x="20" y="50" width="220" height="46" rx="4"/><text class="dg-label" x="130" y="70">action id (actor +0x1DF)</text><text class="dg-sub" x="130" y="86">or turn group</text>
+      <rect class="dg-node-accent" x="310" y="50" width="160" height="46" rx="4"/><text class="dg-label" x="390" y="70">base byte</text><text class="dg-sub" x="390" y="86">ctx+0x277</text>
+      <path class="dg-edge" d="M240 73 L308 73" marker-end="url(#sr-arrow)"/>
+      <rect class="dg-node" x="620" y="10" width="220" height="46" rx="4"/><text class="dg-label" x="730" y="30">summon.dat</text><text class="dg-sub" x="730" y="46">extraction 893</text>
+      <rect class="dg-node" x="620" y="90" width="220" height="46" rx="4"/><text class="dg-label" x="730" y="110">readef.DAT</text><text class="dg-sub" x="730" y="126">extraction 894</text>
+      <path class="dg-edge" d="M470 64 L530 64 L530 33 L618 33" marker-end="url(#sr-arrow)"/>
+      <text class="dg-edge-label" x="538" y="27">bit 7 set</text>
+      <path class="dg-edge" d="M470 82 L530 82 L530 113 L618 113" marker-end="url(#sr-arrow)"/>
+      <text class="dg-edge-label" x="538" y="107">bit 7 clear</text>
+      <rect class="dg-node" x="620" y="190" width="220" height="46" rx="4"/><text class="dg-label" x="730" y="210">slot = base &amp; 0x7F</text><text class="dg-sub" x="730" y="226">0x10800 bytes each</text>
+      <path class="dg-edge" d="M840 33 L862 33 L862 213 L842 213" marker-end="url(#sr-arrow)"/>
+      <path class="dg-edge" d="M730 136 L730 188" marker-end="url(#sr-arrow)"/>
+      <rect class="dg-node-accent" x="310" y="190" width="230" height="46" rx="4"/><text class="dg-label" x="425" y="210">stream buffer</text><text class="dg-sub" x="425" y="226">*0x8007BD74</text>
+      <path class="dg-edge" d="M620 213 L542 213" marker-end="url(#sr-arrow)"/>
+      <rect class="dg-node" x="20" y="300" width="200" height="46" rx="4"/><text class="dg-label" x="120" y="320">texture slot</text><text class="dg-sub" x="120" y="336">VRAM CLUT row + page</text>
+      <rect class="dg-node" x="230" y="300" width="210" height="46" rx="4"/><text class="dg-label" x="335" y="320">actor record</text><text class="dg-sub" x="335" y="336">FUN_801F19EC &#8594; slot-7 actor</text>
+      <rect class="dg-node" x="450" y="300" width="200" height="46" rx="4"/><text class="dg-label" x="550" y="320">big-summon raw slot</text><text class="dg-sub" x="550" y="336">VRAM + part pool</text>
+      <rect class="dg-node" x="660" y="300" width="200" height="46" rx="4"/><text class="dg-label" x="760" y="320">ME archive</text><text class="dg-sub" x="760" y="336">art entry +0x88 stream</text>
+      <path class="dg-edge" d="M425 236 L425 268 M120 268 L760 268"/>
+      <path class="dg-edge" d="M120 268 L120 298" marker-end="url(#sr-arrow)"/>
+      <path class="dg-edge" d="M335 268 L335 298" marker-end="url(#sr-arrow)"/>
+      <path class="dg-edge" d="M550 268 L550 298" marker-end="url(#sr-arrow)"/>
+      <path class="dg-edge" d="M760 268 L760 298" marker-end="url(#sr-arrow)"/>
+    </svg>
+    <figcaption>One byte picks both the file and the slot; whatever the slot holds, it lands in the same stream buffer, and its kind decides where it goes next.</figcaption>
+  </figure>
   <div class="table-wrap"><table class="layout">
     <thead><tr><th>Action id</th><th>Base slot byte (mod 256)</th></tr></thead>
     <tbody>

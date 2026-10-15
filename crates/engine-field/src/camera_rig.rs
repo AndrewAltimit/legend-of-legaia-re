@@ -21,7 +21,7 @@ pub struct CameraRig {
     /// tail (`0x801DB864..0x801DB8D4`) draws the same two masked `rand()`
     /// samples with the same centring and adds them straight onto the eye
     /// `0x800840B8` / `0x800840BC`, so one port
-    /// ([`legaia_engine_battle_vm::battle_camera::apply_shake`]) covers both. In
+    /// ([`legaia_engine_camera::battle_camera::apply_shake`]) covers both. In
     /// both, `0` is the resting state and `1..=0x15` widens the jitter
     /// window.
     ///

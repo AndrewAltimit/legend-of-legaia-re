@@ -5,7 +5,6 @@
 use crate::replay::{PadEvent, ReplayFile, ReplayMeta};
 use anyhow::{Context, Result};
 use glam::{Mat4, Vec3, Vec4};
-use legaia_anm::AnimPlayer;
 use legaia_engine_audio::AudioSink;
 use legaia_engine_core::menu_runtime::MenuRuntime;
 use legaia_engine_mode::mode::SceneMode;
@@ -15,9 +14,7 @@ use legaia_engine_render::{
     window::{EngineWindow, orbit_camera_mvp},
 };
 use legaia_engine_scene::scene::Scene;
-use legaia_engine_scene::scene_resources::{
-    BuildOptions, FIELD_SHARED_BLOCKS, SceneLoadKind, SceneResources,
-};
+use legaia_engine_scene::scene_resources::{BuildOptions, SceneLoadKind, SceneResources};
 use legaia_engine_session::native::NativeSession;
 use legaia_engine_ui::{
     HudPopupView, HudSlotMeta, HudSlotView, TextDraw, battle_hud_draws_for,
@@ -55,6 +52,8 @@ mod field_render;
 mod fog_texture_tests;
 #[path = "window/geometry.rs"]
 mod geometry;
+#[path = "window/headless.rs"]
+mod headless;
 #[path = "window/hud.rs"]
 mod hud;
 #[path = "window/menu_draws.rs"]
@@ -90,8 +89,10 @@ pub(crate) use geometry::{
 // The procedural battle ground grid lives in `legaia-scene-formats` so all three
 // hosts share one implementation (the native window, the asset-viewer and
 // the browser play page) rather than forking the kernel per host.
+pub use headless::HeadlessPlayWindow;
 pub(crate) use legaia_scene_formats::battle_backdrop::build_ground_grid_rgbc as build_battle_ground_grid;
 pub use run::cmd_play_window;
+use run::{PlayWindowLaunch, assemble_play_window};
 // These two stay window-tree-private (their signatures reference the
 // `pub(super)` record types); re-exported only so the sibling submodules
 // that `use super::*` still resolve them unqualified.
@@ -255,8 +256,8 @@ mod battle_camera_tests {
                 return None;
             }
             Some((
-                256.0 * e[0] / ez + legaia_engine_battle_vm::battle_cam_script::GTE_OFX,
-                256.0 * (e[1] + 1280.0) / ez + legaia_engine_battle_vm::battle_cam_script::GTE_OFY,
+                256.0 * e[0] / ez + legaia_engine_camera::projection::GTE_OFX,
+                256.0 * (e[1] + 1280.0) / ez + legaia_engine_camera::projection::GTE_OFY,
             ))
         }
         // Sample several world points and orbit angles (4:3 so aspect_fix == 1).

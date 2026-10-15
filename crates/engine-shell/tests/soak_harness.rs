@@ -271,6 +271,7 @@ fn soak_reduce() {
         .or(lr.signature.clone())
         .expect("a signature to reduce towards");
     let t = lr.tunables();
+    let host_arming = t.host_arming;
     let (spec, pads) = (lr.spec, lr.pads);
     let outcome = {
         let (src, known) = (src.clone(), known.clone());
@@ -302,7 +303,11 @@ fn soak_reduce() {
         frames: reduced.len() as u64,
         ..outcome.spec.clone()
     };
-    std::fs::write(&out, replay_text(&spec, &reduced, Some(f), relaxed)).expect("write replay");
+    std::fs::write(
+        &out,
+        replay_text(&spec, &reduced, Some(f), relaxed, host_arming),
+    )
+    .expect("write replay");
     eprintln!(
         "[soak-reduce] `{want}`: {} frames, {} pad changes -> {}",
         reduced.len(),
@@ -468,7 +473,7 @@ fn replay_header_round_trips() {
         location: "dialogue".into(),
         detail: "x".into(),
     };
-    let text = replay_text(&spec, &pads, Some(&f), Some(1));
+    let text = replay_text(&spec, &pads, Some(&f), Some(1), true);
     let dir = tempfile::tempdir().unwrap();
     let p = dir.path().join("a.replay.toml");
     std::fs::write(&p, text).unwrap();
@@ -478,6 +483,7 @@ fn replay_header_round_trips() {
     assert_eq!(lr.pads, pads);
     assert_eq!(lr.signature.as_deref(), Some("softlock|town01|dialogue"));
     assert_eq!(lr.min_distinct, Some(1));
+    assert!(lr.host_arming, "a replay records the arming it ran under");
 }
 
 #[test]

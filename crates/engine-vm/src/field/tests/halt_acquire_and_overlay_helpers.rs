@@ -107,10 +107,10 @@ fn op_4c_n_c_sub_1_flag_loop_reset_advances_2_bytes() {
 }
 
 #[test]
-fn op_4c_n_d_sub_1_no_jump_advances_4_bytes() {
-    let bytecode = [0x4Cu8, 0xD1, 0, 0];
+fn op_4c_n_d_sub_1_advances_4_bytes_without_a_live_glide() {
+    let bytecode = [0x4Cu8, 0xD1, 0x10, 0x00];
     let mut host = TestHost {
-        n_d_sub_1_jump_target: None,
+        n_c_sub_d_mover_idle: true,
         ..TestHost::default()
     };
     let mut ctx = FieldCtx::default();
@@ -119,15 +119,19 @@ fn op_4c_n_d_sub_1_no_jump_advances_4_bytes() {
 }
 
 #[test]
-fn op_4c_n_d_sub_1_jump_target_takes_ce9c_path() {
-    let bytecode = [0x4Cu8, 0xD1, 0, 0];
+fn op_4c_n_d_sub_1_skips_relative_while_a_glide_is_live() {
+    // `0x801E2B74`: the live-mover leg reaches `LAB_801E360C`, which adds
+    // the operand halfword less two to the PC already past the op.
+    let mut bytecode = vec![0x4Cu8, 0xD1, 0x05, 0x00];
+    bytecode.extend([0x4A, 0x01, 0x00, 0x21]);
     let mut host = TestHost {
-        n_d_sub_1_jump_target: Some(0xABCD),
+        n_c_sub_d_mover_idle: false,
         ..TestHost::default()
     };
     let mut ctx = FieldCtx::default();
     let r = step(&mut host, &mut ctx, &bytecode, 0);
-    assert_eq!(r, StepResult::Advance { next_pc: 0xABCD });
+    assert_eq!(r, StepResult::Advance { next_pc: 7 });
+    assert_eq!(bytecode[7], 0x21, "steps over the 3-byte wait");
 }
 
 // The three arms below advance in retail: the nibble-D jump table at
@@ -217,53 +221,62 @@ fn op_4c_n_d_sub_b_truncated_buffer_returns_unknown() {
 }
 
 #[test]
-fn op_4c_n_d_sub_c_no_jump_advances_5_bytes() {
-    let bytecode = [0x4Cu8, 0xDC, 0x42, 0, 0];
+fn op_4c_n_d_sub_c_miss_advances_5_bytes() {
+    let bytecode = [0x4Cu8, 0xDC, 0x42, 0x05, 0x00];
+    let mut host = TestHost::default();
+    let mut ctx = FieldCtx::default();
+    let r = step(&mut host, &mut ctx, &bytecode, 0);
+    assert_eq!(r, StepResult::Advance { next_pc: 5 });
+    assert_eq!(*host.n_d_sub_c_calls.borrow(), vec![0x42u8]);
+}
+
+#[test]
+fn op_4c_n_d_sub_c_hit_skips_relative_to_the_instruction_end() {
+    // `koin2` P1[8] at `+0xCE`: `4C DC B2 27 00`, then the "(Silence)"
+    // line. A hit lands on the Soru Bread branch at `+0xF8`: the exit
+    // `LAB_801E360C` adds the halfword less two to `s8`, already past the
+    // instruction (`pc + 5 + 0x27 - 2`).
+    let mut bytecode = vec![0u8; 0x100];
+    bytecode[0xCE..0xD3].copy_from_slice(&[0x4C, 0xDC, 0xB2, 0x27, 0x00]);
     let mut host = TestHost {
-        n_d_sub_c_jump_target: None,
+        n_d_sub_c_hit: true,
+        ..TestHost::default()
+    };
+    let mut ctx = FieldCtx::default();
+    let r = step(&mut host, &mut ctx, &bytecode, 0xCE);
+    assert_eq!(r, StepResult::Advance { next_pc: 0xF8 });
+    assert_eq!(*host.n_d_sub_c_calls.borrow(), vec![0xB2u8]);
+}
+
+#[test]
+fn op_4c_n_d_sub_c_hit_skips_the_following_jump() {
+    // `town0b` P1[39]: `4C DC 43 05 00` then a 3-byte `JmpRel`; a hit
+    // steps over the jump (`pc + 5 + 5 - 2`).
+    let bytecode = [0x4Cu8, 0xDC, 0x43, 0x05, 0x00, 0x26, 0x10, 0x00, 0x21];
+    let mut host = TestHost {
+        n_d_sub_c_hit: true,
+        ..TestHost::default()
+    };
+    let mut ctx = FieldCtx::default();
+    let r = step(&mut host, &mut ctx, &bytecode, 0);
+    assert_eq!(r, StepResult::Advance { next_pc: 8 });
+}
+
+#[test]
+fn op_4c_n_d_sub_e_asks_the_worn_question_only() {
+    let bytecode = [0x4Cu8, 0xDE, 0x99, 0x05, 0x00];
+    let mut host = TestHost {
+        n_d_sub_c_hit: true,
         ..TestHost::default()
     };
     let mut ctx = FieldCtx::default();
     let r = step(&mut host, &mut ctx, &bytecode, 0);
     assert_eq!(r, StepResult::Advance { next_pc: 5 });
-    assert_eq!(host.n_d_sub_c_calls, vec![0x42u8]);
-}
-
-#[test]
-fn op_4c_n_d_sub_c_jump_target_takes_ce9c_path() {
-    let bytecode = [0x4Cu8, 0xDC, 0x42, 0, 0];
-    let mut host = TestHost {
-        n_d_sub_c_jump_target: Some(0x100),
-        ..TestHost::default()
-    };
-    let mut ctx = FieldCtx::default();
+    assert_eq!(*host.n_d_sub_e_calls.borrow(), vec![0x99u8]);
+    assert!(host.n_d_sub_c_calls.borrow().is_empty());
+    host.n_d_sub_e_hit = true;
     let r = step(&mut host, &mut ctx, &bytecode, 0);
-    assert_eq!(r, StepResult::Advance { next_pc: 0x100 });
-}
-
-#[test]
-fn op_4c_n_d_sub_e_query_no_jump_advances_5_bytes() {
-    let bytecode = [0x4Cu8, 0xDE, 0x99, 0, 0];
-    let mut host = TestHost {
-        n_d_sub_e_jump_target: None,
-        ..TestHost::default()
-    };
-    let mut ctx = FieldCtx::default();
-    let r = step(&mut host, &mut ctx, &bytecode, 0);
-    assert_eq!(r, StepResult::Advance { next_pc: 5 });
-    assert_eq!(host.n_d_sub_e_calls, vec![0x99u8]);
-}
-
-#[test]
-fn op_4c_n_d_sub_e_query_jump_target_takes_ce9c_path() {
-    let bytecode = [0x4Cu8, 0xDE, 0x99, 0, 0];
-    let mut host = TestHost {
-        n_d_sub_e_jump_target: Some(0x40),
-        ..TestHost::default()
-    };
-    let mut ctx = FieldCtx::default();
-    let r = step(&mut host, &mut ctx, &bytecode, 0);
-    assert_eq!(r, StepResult::Advance { next_pc: 0x40 });
+    assert_eq!(r, StepResult::Advance { next_pc: 8 });
 }
 
 #[test]
@@ -363,54 +376,46 @@ fn op_4c_n_c_sub_3_script_teleport_advances_2_bytes() {
     assert_eq!(host.n_c_sub_3_teleports, 1);
 }
 
+/// Raise system flag `idx` in the test host's MSB-first bank.
+fn raise_system_flag(host: &mut TestHost, idx: u16) {
+    host.ensure_sys_flag_capacity();
+    host.system_flags[usize::from(idx >> 3)] |= 0x80 >> (idx & 7);
+}
+
 #[test]
-fn op_4c_n_c_sub_5_party_flag_jz_advances_4_bytes() {
-    // [4C, 0xC5, 0x05, 0x00] - flag idx 5. Bit 5 in the host's bank is
-    // unset, so the original "jump-if-zero" path fires; both branches
-    // advance PC by 4.
-    let bytecode = [0x4Cu8, 0xC5, 0x05, 0x00];
+fn op_4c_n_c_sub_5_waits_until_the_system_flag_is_set() {
+    // `0x801E2894`: `FUN_8003CE64(idx)` then `0x801E2A10` - a clear flag
+    // restores the entry PC, a set one advances four.
+    let bytecode = [0x4Cu8, 0xC5, 0x0B, 0x00];
     let mut host = TestHost::default();
-    host.n_c_party_flag_bits.insert(5, false);
+    let mut ctx = FieldCtx::default();
+    let r = step(&mut host, &mut ctx, &bytecode, 0);
+    assert_eq!(r, StepResult::Halt { final_pc: 0 });
+    raise_system_flag(&mut host, 0x0B);
+    let r = step(&mut host, &mut ctx, &bytecode, 0);
+    assert_eq!(r, StepResult::Advance { next_pc: 4 });
+}
+
+#[test]
+fn op_4c_n_c_sub_5_reads_a_16_bit_little_endian_index() {
+    let bytecode = [0x4Cu8, 0xC5, 0x34, 0x01]; // 0x0134
+    let mut host = TestHost::default();
+    raise_system_flag(&mut host, 0x0134);
     let mut ctx = FieldCtx::default();
     let r = step(&mut host, &mut ctx, &bytecode, 0);
     assert_eq!(r, StepResult::Advance { next_pc: 4 });
 }
 
 #[test]
-fn op_4c_n_c_sub_5_party_flag_jz_advances_4_bytes_when_set() {
-    // Bit set → original's "jump-if-zero" doesn't fire; PC still += 4.
-    let bytecode = [0x4Cu8, 0xC5, 0x07, 0x00];
-    let mut host = TestHost::default();
-    host.n_c_party_flag_bits.insert(7, true);
-    let mut ctx = FieldCtx::default();
-    let r = step(&mut host, &mut ctx, &bytecode, 0);
-    assert_eq!(r, StepResult::Advance { next_pc: 4 });
-}
-
-#[test]
-fn op_4c_n_c_sub_5_reads_16_bit_index_via_helper() {
-    // Verify the dispatcher reads the index through load_u16_le by
-    // setting two distinct flag bits and checking which one was queried.
-    let bytecode = [0x4Cu8, 0xC5, 0x34, 0x12]; // 0x1234
-    let mut host = TestHost::default();
-    host.n_c_party_flag_bits.insert(0x1234, true);
-    host.n_c_party_flag_bits.insert(0x3412, false);
-    let mut ctx = FieldCtx::default();
-    let r = step(&mut host, &mut ctx, &bytecode, 0);
-    assert_eq!(r, StepResult::Advance { next_pc: 4 });
-    // The 0x1234 bit is set in the bank - the dispatcher's load_u16_le
-    // must produce 0x1234 (LE), not 0x3412 (BE).
-    assert!(*host.n_c_party_flag_bits.get(&0x1234).unwrap());
-}
-
-#[test]
-fn op_4c_n_c_sub_6_party_flag_jnz_advances_4_bytes() {
-    // Same shape as sub-5 but opposite polarity. Both polarities share
-    // PC += 4 either way.
+fn op_4c_n_c_sub_6_waits_until_the_system_flag_is_clear() {
+    // `0x801E28B0` / `0x801E28C4`: the opposite polarity.
     let bytecode = [0x4Cu8, 0xC6, 0x09, 0x00];
     let mut host = TestHost::default();
-    host.n_c_party_flag_bits.insert(9, false);
+    raise_system_flag(&mut host, 0x09);
     let mut ctx = FieldCtx::default();
+    let r = step(&mut host, &mut ctx, &bytecode, 0);
+    assert_eq!(r, StepResult::Halt { final_pc: 0 });
+    host.system_flags.iter_mut().for_each(|b| *b = 0);
     let r = step(&mut host, &mut ctx, &bytecode, 0);
     assert_eq!(r, StepResult::Advance { next_pc: 4 });
 }

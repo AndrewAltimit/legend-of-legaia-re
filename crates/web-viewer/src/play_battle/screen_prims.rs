@@ -190,8 +190,8 @@ impl LegaiaRuntime {
         // trailing flip carries the Y-down axis.
         let scale = crate::play_battle_render::BATTLE_WORLD_SCALE;
         let pose = self.battle_cam_pose();
-        let vp = legaia_engine_battle_vm::battle_cam_script::battle_vp(&pose, scale, 4.0 / 3.0);
-        legaia_render_kernels::cast_theeder::theeder_prims(&packet, world.theeder_trail(), |p| {
+        let vp = legaia_engine_camera::projection::battle_vp(&pose, scale, 4.0 / 3.0);
+        legaia_engine_ui::cast_theeder::theeder_prims(&packet, world.theeder_trail(), |p| {
             legaia_render_kernels::battle_trail::project_stage_point_cols(
                 &vp,
                 [
@@ -204,8 +204,8 @@ impl LegaiaRuntime {
     }
 
     fn battle_fx_screen_prims(&self) -> Vec<legaia_render_kernels::screen_prim::ScreenPrim> {
-        use legaia_engine_battle_vm::battle_trail::TRAIL_POINTS;
         use legaia_render_kernels::battle_trail as bt;
+        use legaia_render_kernels::battle_trail::TRAIL_POINTS;
         use legaia_render_kernels::streak_pass::{
             MOVE_FX_STREAK_OT, StreakSource, clip_ribbon_quads, streak_quads_scheduled,
         };
@@ -219,7 +219,7 @@ impl LegaiaRuntime {
         }
         let scale = crate::play_battle_render::BATTLE_WORLD_SCALE;
         let pose = self.battle_cam_pose();
-        let vp = legaia_engine_battle_vm::battle_cam_script::battle_vp(&pose, scale, 4.0 / 3.0);
+        let vp = legaia_engine_camera::projection::battle_vp(&pose, scale, 4.0 / 3.0);
         let mut out = Vec::new();
         for d in world.battle_weapon_trail_draws() {
             let Some(actor) = world.actors.get(d.actor_slot as usize) else {
@@ -261,7 +261,10 @@ impl LegaiaRuntime {
             {
                 let mvp = glam::Mat4::from_cols_array(&vp)
                     * glam::Mat4::from_scale(glam::Vec3::splat(scale));
-                let party = world.battle_ctx.active_actor < 3;
+                // `ctx[+0x13] < 3` is a pool-slot test (`0x801E0C78`).
+                let party = world
+                    .battle_seat_map()
+                    .is_party(world.battle_ctx.active_actor);
                 let frame = world.clock.display_frames as u32;
                 for q in streak_quads_scheduled(&src, &mvp, frame, block.counter_word, party) {
                     out.push(q.to_screen_prim(MOVE_FX_STREAK_OT));

@@ -9,6 +9,191 @@ pub(super) fn next_anchor_has(flag: u16) -> bool {
     NEXT_ANCHOR_FLAGS.with(|a| a.borrow().as_ref().is_none_or(|f| f.contains(&flag)))
 }
 
+/// The partition-1 records of the loaded scene that **poll a box** of the
+/// player's tiles (a player-channel `BBoxTest` among their first few
+/// instructions, `CD F8 x0 z0 x1 z1`) and so run while the player stands
+/// in it, with the box's tiles - those worth standing in: the record
+/// cleanly raises a still-clear system flag the next anchor carries or a
+/// partition-2 record of the scene tests. `doman` P1[18], Dr. Usha's
+/// intercom on (40..41, 81), asks for the password (`0x36E`) and calls the
+/// lift (`0x371`), which the lift band P2[7] waits on.
+pub(super) fn box_poll_beats(
+    session: &NativeSession,
+    mf: &legaia_scene_formats::man_section::ManFile,
+    man: &[u8],
+) -> Vec<(u8, Vec<(u8, u8)>)> {
+    use legaia_engine_field::man_field_scripts::{
+        FlagBank, partition_record_span, walk_partition_gflag_sites,
+    };
+    use legaia_scene_formats::field_disasm::{InsnInfo, LinearWalker};
+    let w = &session.host.world;
+    let tested2: BTreeSet<u16> = walk_partition_gflag_sites(mf, man, 2)
+        .iter()
+        .filter(|s| s.bank == FlagBank::System && s.kind == FlagKind::Test && s.clean)
+        .map(|s| s.flag)
+        .collect();
+    let sets1 = walk_partition_gflag_sites(mf, man, 1);
+    // A flag the scene lowers again is a ride's, not the story's: `doman`'s
+    // intercom raises `0x371` to call the lift, P2[3] sends it back up. The
+    // box is stood in for one only while a story talk waits in a walk
+    // component the ride reaches - Dr. Usha's lab, once `0x36F` has given
+    // her talk something to say.
+    let lowered: BTreeSet<u16> = (0..3)
+        .flat_map(|p| walk_partition_gflag_sites(mf, man, p))
+        .filter(|s| s.bank == FlagBank::System && s.kind == FlagKind::Clear && s.clean)
+        .map(|s| s.flag)
+        .collect();
+    let n1 = mf.partitions.get(1).map_or(0, Vec::len);
+    let mut out = Vec::new();
+    for rec in 1..n1 {
+        let Some((start, pc0, len)) = partition_record_span(mf, man, 1, rec) else {
+            continue;
+        };
+        let bx = LinearWalker::new(&man[start..start + len], pc0)
+            .take(4)
+            .map_while(Result::ok)
+            .find_map(|i| match i.info {
+                InsnInfo::BBoxTest {
+                    x_min,
+                    z_min,
+                    x_max,
+                    z_max,
+                    ..
+                } if i.extended == Some(0xF8) => Some((x_min, z_min, x_max, z_max)),
+                _ => None,
+            });
+        let Some((x0, z0, x1, z1)) = bx else { continue };
+        let worth = sets1.iter().any(|s| {
+            s.record == rec
+                && s.bank == FlagBank::System
+                && s.kind == FlagKind::Set
+                && s.clean
+                && !s.text_alias
+                && !s.debug_menu
+                && !w.system_flag_test(s.flag)
+                && (next_anchor_has(s.flag)
+                    || (tested2.contains(&s.flag)
+                        && (!lowered.contains(&s.flag) || !far_talk_tiles(session).is_empty())))
+        });
+        if !worth || x1 < x0 || z1 < z0 || usize::from(x1 - x0) * usize::from(z1 - z0) > 16 {
+            continue;
+        }
+        let tiles = (z0..=z1)
+            .flat_map(|z| (x0..=x1).map(move |x| (x, z)))
+            .collect();
+        out.push((rec as u8, tiles));
+    }
+    out
+}
+
+/// [`talk_box_gate`]'s answer: the flag, the box's tiles and the member
+/// whose own box test sits beside the leader's.
+pub(super) type TalkBox = (u16, Vec<(i16, i16)>, Option<u8>);
+
+/// A talk whose story branch waits on a flag the scene's entry script
+/// (P1[0]) raises for a party member standing in a box: the flag, and the
+/// tiles of the last player-channel `BBoxTest` ahead of the raise, and the
+/// party member (`0x30 + n` channel) the script tests on the same box, if
+/// any. `nilboa` P1[13] / P1[14], the Three Tunnels' boulders, push
+/// (`0x457`) only while `0x4F2` is up, which the entry script raises while
+/// the leader or member `0x31` stands in (53..55, 62..64) - not where the
+/// boulders are talked to from. `None` when the talk tests no such flag, or
+/// it is up.
+pub(super) fn talk_box_gate(
+    session: &NativeSession,
+    mf: &legaia_scene_formats::man_section::ManFile,
+    man: &[u8],
+    slot: u8,
+) -> Option<TalkBox> {
+    use legaia_engine_field::man_field_scripts::{
+        FlagBank, partition_record_span, walk_partition_gflag_sites,
+    };
+    use legaia_scene_formats::field_disasm::{InsnInfo, LinearWalker};
+    let w = &session.host.world;
+    let sites = walk_partition_gflag_sites(mf, man, 1);
+    let raised: Vec<&legaia_engine_field::man_field_scripts::GFlagSite> = sites
+        .iter()
+        .filter(|s| {
+            s.record == 0 && s.bank == FlagBank::System && s.kind == FlagKind::Set && s.clean
+        })
+        .collect();
+    let (start, pc0, len) = partition_record_span(mf, man, 1, 0)?;
+    let entry: Vec<_> = LinearWalker::new(&man[start..start + len], pc0)
+        .map_while(Result::ok)
+        .collect();
+    sites
+        .iter()
+        .filter(|s| {
+            s.record == usize::from(slot)
+                && s.bank == FlagBank::System
+                && s.kind == FlagKind::Test
+                && s.clean
+                && !w.system_flag_test(s.flag)
+        })
+        .find_map(|t| {
+            let set = raised.iter().find(|r| r.flag == t.flag)?;
+            let at = set.abs_pc.checked_sub(start)?;
+            let bx = entry
+                .iter()
+                .rev()
+                .filter(|i| i.pc < at && i.extended == Some(0xF8))
+                .find_map(|i| match i.info {
+                    InsnInfo::BBoxTest {
+                        x_min,
+                        z_min,
+                        x_max,
+                        z_max,
+                        ..
+                    } => Some((x_min, z_min, x_max, z_max)),
+                    _ => None,
+                })?;
+            let (x0, z0, x1, z1) = bx;
+            if x1 < x0 || z1 < z0 || usize::from(x1 - x0) * usize::from(z1 - z0) > 16 {
+                return None;
+            }
+            let tiles = (z0..=z1)
+                .flat_map(|z| (x0..=x1).map(move |x| (i16::from(x), i16::from(z))))
+                .collect();
+            // The member whose own box test sits beside the leader's: the
+            // one that holds the flag up once control has moved on.
+            let holder = entry.iter().find_map(|i| match (i.extended, &i.info) {
+                (
+                    Some(ch @ 0x30..=0x32),
+                    InsnInfo::BBoxTest {
+                        x_min,
+                        z_min,
+                        x_max,
+                        z_max,
+                        ..
+                    },
+                ) if (*x_min, *z_min, *x_max, *z_max) == bx => Some(ch - 0x30),
+                _ => None,
+            });
+            Some((t.flag, tiles, holder))
+        })
+}
+
+/// The partition-2 records of the scene whose bodies test (cleanly) one of
+/// `flags`: the bands a just-raised flag arms (`doman` P2[7], the lift,
+/// loops on `0x371` until the intercom raises it).
+pub(super) fn bands_testing(
+    mf: &legaia_scene_formats::man_section::ManFile,
+    man: &[u8],
+    flags: &BTreeSet<u16>,
+) -> BTreeSet<u8> {
+    use legaia_engine_field::man_field_scripts::{FlagBank, walk_partition_gflag_sites};
+    walk_partition_gflag_sites(mf, man, 2)
+        .iter()
+        .filter(|s| {
+            s.bank == FlagBank::System
+                && s.kind == FlagKind::Test
+                && s.clean
+                && flags.contains(&s.flag)
+        })
+        .filter_map(|s| u8::try_from(s.record).ok())
+        .collect()
+}
+
 /// The records of `partition` that SET (cleanly, outside a debug picker) a
 /// **latch** the next anchor does not carry - a flag some partition-2
 /// record of this scene lists in its C1 gate, so setting it shuts that

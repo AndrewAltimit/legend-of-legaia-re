@@ -17,7 +17,7 @@
 //! the native window's field frame - post-multiplies one more `scale(1,-1,1)`
 //! (`FIELD_WORLD_FLIP`) and lands on the same net transform. That one rule
 //! covers the field follow camera, the op-`0x45` cutscene shots, the overworld
-//! walk view and [`battle_vp`](crate::battle_cam_script::battle_vp) alike.
+//! walk view and [`battle_vp`](crate::projection::battle_vp) alike.
 //!
 //! [`CutsceneCameraInterp`] is the glide between op-`0x45` Configure beats.
 //! It lives here rather than in the renderer so both the native window and the
@@ -27,7 +27,7 @@
 //! REF: FUN_80026988 (the camera's Euler kernel), FUN_800172C0 (the view
 //! composition), FUN_801DE084 (the op-`0x45` Configure apply handler).
 
-use crate::battle_cam_script::{GTE_OFY_NDC_BIAS, PSX_NEAR, SCENE_FAR};
+use crate::projection::{GTE_OFY_NDC_BIAS, PSX_NEAR, SCENE_FAR};
 
 /// Column-major 4x4 multiply: `out = a * b` (the layout WebGL `mat4`,
 /// `glam::Mat4::to_cols_array` and this crate's own camera kernels all use).
@@ -756,7 +756,7 @@ mod tests {
     /// `screen = H*(R*(v - focus) + tr)/Ez + (OFX, OFY)` computed by hand.
     #[test]
     fn psx_camera_vp_matches_the_handrolled_retail_projection() {
-        use crate::battle_cam_script::{GTE_OFX, GTE_OFY};
+        use crate::projection::{GTE_OFX, GTE_OFY};
         let (pitch, yaw, roll) = (0.69f32, -0.245f32, 0.0f32);
         let tr = [0.0f32, 0.0, 1200.0];
         let focus = [820.0f32, -160.0, 2400.0];

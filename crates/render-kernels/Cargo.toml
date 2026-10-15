@@ -9,7 +9,7 @@ name = "legaia_render_kernels"
 path = "src/lib.rs"
 
 [dependencies]
-legaia-engine-battle-vm.workspace = true
+legaia-engine-camera.workspace = true
 bytemuck.workspace = true
 glam.workspace = true
 legaia-engine-vm.workspace = true

@@ -495,11 +495,15 @@ pub fn decode(bytecode: &[u8], pc: usize) -> Result<Insn, DisasmError> {
         // System-flag bank: 0x5x SET, 0x6x CLEAR, 0x7x TEST. The VM routes the
         // whole `0x50..=0x7F` range by `opcode & 0x70` (and masks the flag index
         // with `0x8F`), so high-index flags reach TEST opcodes `0x78..=0x7F` -
-        // covered here too, not just `0x70..=0x77`.
+        // covered here too, not just `0x70..=0x77`. The arm reads its bytes
+        // off the opcode pointer, which the cross-context prelude does not
+        // move, so on the extended form the index byte is the target-id byte
+        // and the jump delta sits right after it (`0x801E3580..0x801E3604`);
+        // the widths and the jump base still count the prelude's step.
         0x50..=0x7F => {
             need(1)?;
             let route = opcode & 0x70;
-            let idx = (u16::from(lead & 0x8F) << 8) | u16::from(bytecode[operand]);
+            let idx = (u16::from(lead & 0x8F) << 8) | u16::from(bytecode[pc + 1]);
             let kind = match route {
                 0x50 => FlagKind::Set,
                 0x60 => FlagKind::Clear,
@@ -508,7 +512,7 @@ pub fn decode(bytecode: &[u8], pc: usize) -> Result<Insn, DisasmError> {
             };
             if route == 0x70 {
                 need(3)?;
-                let delta = u16::from_le_bytes([bytecode[operand + 1], bytecode[operand + 2]]);
+                let delta = u16::from_le_bytes([bytecode[pc + 2], bytecode[pc + 3]]);
                 let target = rel_target(pc + header_size + 1, delta);
                 mk(
                     header_size + 3,

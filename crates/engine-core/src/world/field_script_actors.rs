@@ -15,7 +15,7 @@
 //! `0x801DFEFC..0x801E0018`), FUN_8003CF04, FUN_80019278
 
 use super::*;
-use legaia_engine_battle_vm::psx_camera::FieldCameraView;
+use legaia_engine_camera::psx_camera::FieldCameraView;
 use legaia_engine_mode::mode::SceneMode;
 use legaia_engine_vm::field_actor_billboard as billboard;
 use legaia_engine_vm::field_ledge_hop_arc as hop_arc;

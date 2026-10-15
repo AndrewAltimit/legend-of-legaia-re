@@ -48,7 +48,7 @@ impl LegaiaRuntime {
         if world.mode != legaia_engine_mode::mode::SceneMode::Battle {
             return None;
         }
-        let vp = legaia_engine_battle_vm::battle_cam_script::battle_vp(
+        let vp = legaia_engine_camera::projection::battle_vp(
             &self.battle_cam_pose(),
             BATTLE_WORLD_SCALE_LOCAL,
             4.0 / 3.0,
@@ -79,7 +79,7 @@ impl LegaiaRuntime {
                 continue;
             };
             let age = p.frames_total.saturating_sub(p.frames_remaining);
-            cells.extend(legaia_render_kernels::battle_numerals::popup_value_cells(
+            cells.extend(legaia_engine_ui::battle_numerals::popup_value_cells(
                 &vp,
                 BATTLE_WORLD_SCALE_LOCAL,
                 trio,
@@ -106,7 +106,7 @@ impl LegaiaRuntime {
     /// The frame's value readout as screen-space PSX primitives - retail's
     /// own 24x24 numeral cells off the resident battle effect atlas.
     ///
-    /// The quads come out of `legaia_render_kernels::battle_numerals`, the same
+    /// The quads come out of `legaia_engine_ui::battle_numerals`, the same
     /// builder the native window emits through, so both hosts sample the same
     /// texels off the same page through the same ordering-table pass. Empty
     /// outside battle and before the battle VRAM exists, which is what leaves
@@ -114,7 +114,7 @@ impl LegaiaRuntime {
     pub(crate) fn battle_value_readout_prims(
         &self,
     ) -> Vec<legaia_render_kernels::screen_prim::ScreenPrim> {
-        use legaia_render_kernels::battle_numerals as bn;
+        use legaia_engine_ui::battle_numerals as bn;
         if !self.battle_value_readout_has_atlas() {
             return Vec::new();
         }

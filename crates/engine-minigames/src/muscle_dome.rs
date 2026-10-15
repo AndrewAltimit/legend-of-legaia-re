@@ -21,8 +21,9 @@
 
 use legaia_engine_battle_vm::battle_formulas::{
     DamageFinish, DefenderResist, SummonRollActor, arts_physical_predamage_lazy,
-    damage_finish_lazy, spirit_gauge_fill, world_rand,
+    damage_finish_lazy, spirit_gauge_fill,
 };
+use legaia_engine_system::rand::world_rand;
 use legaia_game_tables::element_affinity::ElementAffinity;
 use legaia_game_tables::move_power::{self, MoveRecord};
 

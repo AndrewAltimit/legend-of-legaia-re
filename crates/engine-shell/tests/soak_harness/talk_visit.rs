@@ -41,6 +41,59 @@ const FACING_PROBES: [(i16, i16); 8] = [
 /// gap between props rather than ground a player walks on.
 const MIN_SEAT_COMPONENT: usize = 48;
 
+/// How far a seat's walk-out flood must get: one tile. The `confined`
+/// detector's own 48 units is too short a yardstick here, because a seat the
+/// harness picks can stand inside an NPC's body standoff: `son`'s nook seat
+/// faces slot 29 from 64 units, the walk can leave it 82 units westward, and
+/// from there the standoff never lets the player back - the pocket the
+/// detector then measures is 44 units across.
+const SEAT_WALK_OUT: i32 = 128;
+
+/// Whether a player seated at `(x, z)` could walk out of the spot under the
+/// locomotion's own per-axis probes (walls through `field_dir_blocked`, NPC
+/// and prop bodies through `field_actor_dir_blocked`): a flood over 2-unit
+/// steps, in 8-unit strides, that gets a whole tile ([`SEAT_WALK_OUT`]) from
+/// the seat.
+///
+/// A seat the walk could never reach is a harness artifact, not a place a
+/// player stands: `son`'s camp has a wall nook at (74..75, 68) closed on its
+/// open sides by two NPCs who never move (slots 25 and 29), and seating there
+/// to face either of them left the player `confined` with no input able to
+/// walk the 48 units out. The wall-only floor component cannot see it - the
+/// nook is ordinary floor until the bodies are counted.
+fn seat_walks_out(w: &legaia_engine_core::world::World, x: i16, z: i16) -> bool {
+    const STRIDE: i16 = 8;
+    // `(dx, dz)` per probe direction: 0 = Z-, 1 = X-, 2 = Z+, 3 = X+.
+    const DIRS: [(i16, i16); 4] = [(0, -1), (-1, 0), (0, 1), (1, 0)];
+    let mut seen = BTreeSet::new();
+    let mut queue = std::collections::VecDeque::from([(x, z)]);
+    seen.insert((x, z));
+    while let Some((cx, cz)) = queue.pop_front() {
+        let span = SEAT_WALK_OUT;
+        if (i32::from(cx) - i32::from(x)).abs() >= span
+            || (i32::from(cz) - i32::from(z)).abs() >= span
+        {
+            return true;
+        }
+        for (dir, &(dx, dz)) in DIRS.iter().enumerate() {
+            let (mut px, mut pz) = (cx, cz);
+            let mut open = true;
+            for _ in 0..STRIDE / 2 {
+                if w.field_dir_blocked(px, pz, dir) || w.field_actor_dir_blocked(px, pz, dir) {
+                    open = false;
+                    break;
+                }
+                px = px.saturating_add(dx * 2);
+                pz = pz.saturating_add(dz * 2);
+            }
+            if open && seen.insert((px, pz)) {
+                queue.push_back((px, pz));
+            }
+        }
+    }
+    false
+}
+
 /// What the action button opens.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub(super) enum TalkTarget {
@@ -127,7 +180,7 @@ pub(super) fn seat_at_talk_target(session: &mut NativeSession, n: usize) -> Opti
             Some(slot) => Some(TalkTarget::Actor(slot)),
             None => w.field_interact_prop_anchor().map(TalkTarget::Prop),
         };
-        if hit == Some(target) {
+        if hit == Some(target) && seat_walks_out(w, sx, sz) {
             return Some(target);
         }
         // Something else answers from this side: put the player back.

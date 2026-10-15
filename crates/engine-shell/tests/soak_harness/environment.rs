@@ -56,16 +56,46 @@ pub(super) fn source() -> Option<Source> {
 }
 
 pub(super) fn open_session(src: &Source) -> NativeSession {
+    open_session_armed(src, true)
+}
+
+/// [`open_session`], with the hosts' faithful-play arming applied only when
+/// `arm` is set.
+pub(super) fn open_session_armed(src: &Source, arm: bool) -> NativeSession {
     let cfg = BootConfig {
         scene: legaia_engine_session::session::DEFAULT_BOOT_SCENE.to_string(),
         enable_audio: false,
     };
-    match src {
+    let mut session = match src {
         Source::Extracted(d) => {
             NativeSession::open(d, &cfg).expect("open NativeSession (extracted)")
         }
         Source::Disc(p) => NativeSession::open_disc(p, &cfg).expect("open NativeSession (disc)"),
+    };
+    if arm {
+        arm_host_play_defaults(&mut session);
     }
+    session
+}
+
+/// The faithful-play arming both play hosts apply on top of a bare
+/// `BootSession` (`play-window`'s defaults in `window/run.rs`, the browser
+/// page's `enter_field_core`): field talk through the inline field-VM runner,
+/// retail's leading-edge wall footprint, solid NPC bodies and per-step
+/// terrain follow. `BootSession` already sets the NPCs' ambient walk.
+///
+/// Without it the soak played a configuration no host ships: a conversation
+/// typed only its first segment and never ran its record, and the
+/// candidate-centre wall test let a diagonal press wedge the player between
+/// sub-cells the retail footprint never reaches (`town0d`'s cupboard nook at
+/// (94, 17), reported `confined`).
+pub(super) fn arm_host_play_defaults(session: &mut NativeSession) {
+    let w = &mut session.host.world;
+    w.toggles.use_vm_dialogue = true;
+    w.locomotion.leading_edge_wall_probes = true;
+    w.locomotion.follow_terrain_height = true;
+    w.npcs.solid = true;
+    w.npcs.animate = true;
 }
 
 pub(super) fn out_dir(tag: &str) -> PathBuf {

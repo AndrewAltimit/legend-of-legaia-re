@@ -105,6 +105,8 @@ impl<S: AudioSink> AudioDirector<S> {
     /// [`AudioSink::play_xa_shout`]). Returns the fired channel, or `None`
     /// when the bank is absent or the art is unvoiced.
     pub fn play_art_shout(&mut self, cslot: u8, action: u8) -> Option<u8> {
+        self.commands
+            .push(super::AudioCommand::Shout(cslot, action));
         let picked = self
             .shout_bank
             .as_mut()
@@ -238,6 +240,11 @@ impl<S: AudioSink> AudioDirector<S> {
         channel: u32,
         duration_sectors: u32,
     ) -> Option<u32> {
+        self.commands.push(super::AudioCommand::XaClip(
+            clip_slot,
+            channel,
+            duration_sectors,
+        ));
         let (Ok(slot), Ok(ch)) = (u8::try_from(clip_slot), u8::try_from(channel)) else {
             self.xa_stats.clips_unstaged += 1;
             return None;

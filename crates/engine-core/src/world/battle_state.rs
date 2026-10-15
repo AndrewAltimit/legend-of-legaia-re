@@ -194,7 +194,7 @@ pub struct BattleState {
     /// not step, and [`crate::world::World::tick_battle_end_sequence`] walks the load /
     /// results / exit-fade phases before [`crate::world::World::finish_battle`] runs. See
     /// `world::battle::victory`.
-    pub victory: Option<crate::world::VictorySequence>,
+    pub victory: Option<legaia_engine_battle::victory::VictorySequence>,
     /// Set by the results frame once [`crate::world::World::apply_battle_loot`] has run for
     /// this battle, so the deferred [`crate::world::World::finish_battle`] does not credit
     /// the rewards a second time. Cleared by `finish_battle`.
@@ -315,7 +315,7 @@ pub struct BattleState {
     /// `None` outside that window.
     ///
     /// REF: FUN_801CF5BC
-    pub intro: Option<legaia_engine_battle_vm::battle_intro_transition::TransitionEntity>,
+    pub intro: Option<legaia_render_kernels::battle_intro_transition::TransitionEntity>,
     /// Effects the last [`crate::world::World::tick_encounter`] battle-intro tick asked for,
     /// in retail order. Hosts drain this to drive the loads the kernel cannot
     /// perform itself (mesh assembly, the battle bundle read). The world
@@ -323,8 +323,7 @@ pub struct BattleState {
     /// and `SetAudioCue` (the battle-start sound, pushed onto
     /// [`crate::world::AudioState::battle_sfx_cues`]) - see `World::tick_battle_intro` in
     /// `world/encounters.rs`.
-    pub(crate) intro_effects:
-        Vec<legaia_engine_battle_vm::battle_intro_transition::TransitionEffect>,
+    pub(crate) intro_effects: Vec<legaia_render_kernels::battle_intro_transition::TransitionEffect>,
     /// Latched when the battle-intro spin performed retail's master mode
     /// hand-off (`_DAT_8007B83C = 0x14`) - see
     /// [`crate::world::World::battle_mode_word_held`]. Cleared when the transition ends.

@@ -3,6 +3,19 @@
 use super::*;
 
 impl<'a> FieldDialogMenuHost for FieldHostImpl<'a> {
+    /// Op `4C D0`: a confirm or cancel **new press** - the pad edge
+    /// `_DAT_8007B874` against `_DAT_800846D0 | _DAT_800846D4`, both in the
+    /// packed pad layout - releases the prompt. The cursor `FUN_8002B994`
+    /// draws while it holds has no engine sprite.
+    fn press_prompt(&mut self, _x: u16, _y: u16) -> bool {
+        use legaia_engine_field::world_map_panel_host::{
+            PANEL_ACTION_A, PANEL_ACTION_B, packed_pad,
+        };
+        let pad = u32::from(packed_pad(self.world.input.pad()));
+        let prev = u32::from(packed_pad(self.world.input.pad_prev()));
+        (pad & !prev) & (PANEL_ACTION_A | PANEL_ACTION_B) != 0
+    }
+
     // Op-0x49 STATE_RESUME, scoped to the `town01` opening cutscene timeline.
     // The pinned name-entry handoff (P2[3] body `0x02c6`, `49 03 00`) suspends
     // the script here; the engine opens the name-entry overlay on the Idle->arm

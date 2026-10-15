@@ -54,7 +54,7 @@ impl WorldRng {
     /// The same LCG step [`World::next_rng`] runs. Named `step` rather than
     /// `next` so it cannot be mistaken for an iterator.
     pub fn step(&mut self) -> u32 {
-        self.0 = legaia_engine_battle_vm::battle_formulas::world_lcg_step(self.0);
+        self.0 = legaia_engine_system::rand::world_lcg_step(self.0);
         self.0
     }
 
@@ -278,7 +278,7 @@ impl World {
         fog.curve_bias = self.world_map.curve_bias;
         let window = self.terrain.region_attributes.box_bytes;
         let [player_x, _, player_z] = self.fog_player_world_pos();
-        let trig = legaia_engine_battle_vm::rotation_lut::retail_rotation_lut();
+        let trig = legaia_engine_system::rotation_lut::retail_rotation_lut();
         for el in live.iter_mut() {
             match &mut el.kind {
                 // The emitter's handler (`FUN_801D6058`) is field-overlay code

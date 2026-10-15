@@ -26,9 +26,9 @@
 //!   (`0x8004E5C0`) until it lands; it reads `0` on the results frame
 //!   (`noa_levelup_banner`). The engine streams nothing, so it takes the
 //!   measured span: raised for the first
-//!   [`crate::world::VICTORY_STREAM_FRAMES`] vsyncs of the load hold, idle
+//!   [`legaia_engine_battle::victory::VICTORY_STREAM_FRAMES`] vsyncs of the load hold, idle
 //!   for the rest of it (the phase walk's own CD waits) and from the results
-//!   frame on ([`crate::world::VictorySequence::side_band_request_up`]).
+//!   frame on ([`legaia_engine_battle::victory::VictorySequence::side_band_request_up`]).
 //!
 //! The driver's `gp[+0x330]` gate (`lb` at `0x800470EC`) is the battle-load
 //! stage byte `0x8007B648`: non-negative while `FUN_80052770` loads, negative
@@ -39,18 +39,20 @@
 use super::*;
 use legaia_engine_mode::mode::SceneMode;
 
-use legaia_engine_battle_vm::rotation_lut::RotationLut;
+use legaia_engine_system::rotation_lut::RotationLut;
 
 impl World {
+    /// This battle's map between engine slots and retail pool slots - the one
+    /// crossing every retail `slot < 3` test and every retail-numbered table
+    /// read goes through ([`legaia_engine_battle_vm::battle_slot`]).
+    pub fn battle_seat_map(&self) -> legaia_engine_battle_vm::battle_slot::SeatMap {
+        legaia_engine_battle_vm::battle_slot::SeatMap::new(self.party.party_count)
+    }
+
     /// The retail pool slot of engine actor `e`. Scope codes `8` / `9` pass
     /// through.
     pub(in crate::world) fn retail_pool_slot(&self, e: u8) -> u8 {
-        let pc = self.party.party_count.clamp(1, 3);
-        match e {
-            8.. => e,
-            e if e < pc => e,
-            e => e - pc + 3,
-        }
+        self.battle_seat_map().retail(e).get()
     }
 
     /// One frame of the ghost pass. No-op outside battle.
@@ -59,14 +61,8 @@ impl World {
         if self.mode != SceneMode::Battle {
             return;
         }
-        let pc = usize::from(self.party.party_count.clamp(1, 3));
-        let engine_of = |r: usize| -> Option<usize> {
-            if r < 3 {
-                (r < pc).then_some(r)
-            } else {
-                Some(pc + r - 3)
-            }
-        };
+        let seats = self.battle_seat_map();
+        let engine_of = |r: usize| seats.engine(r as u8).map(usize::from);
         let mut slots = [GhostSlot::default(); 7];
         for (r, s) in slots.iter_mut().enumerate() {
             let Some(a) = engine_of(r).and_then(|e| self.actors.get(e)) else {
@@ -120,7 +116,7 @@ impl World {
                     .is_some_and(|v| v.side_band_request_up()),
             ),
         };
-        let lut = legaia_engine_battle_vm::rotation_lut::retail_rotation_lut();
+        let lut = legaia_engine_system::rotation_lut::retail_rotation_lut();
         camera_ghost_pass(
             &inputs,
             &mut slots,

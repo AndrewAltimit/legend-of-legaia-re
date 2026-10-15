@@ -51,6 +51,15 @@ impl BootSession<AudioOut> {
     pub fn open_disc(disc_bin: &Path, cfg: &BootConfig) -> Result<Self> {
         Self::open_with_source(SceneSource::Disc(disc_bin), cfg, AudioOut::new)
     }
+
+    /// [`Self::open_disc`] over a device-less output
+    /// ([`AudioOut::detached`]) when `cfg.enable_audio` is set: the director
+    /// stages and routes as it does over a device, and nothing is heard.
+    pub fn open_disc_detached_audio(disc_bin: &Path, cfg: &BootConfig) -> Result<Self> {
+        Self::open_with_source(SceneSource::Disc(disc_bin), cfg, || {
+            Ok(AudioOut::detached(legaia_engine_audio::SPU_INTERNAL_RATE))
+        })
+    }
 }
 
 impl<S: AudioSink> BootSession<S> {

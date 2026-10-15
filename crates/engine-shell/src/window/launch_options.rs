@@ -134,8 +134,8 @@ pub struct ScreenshotConfig {
     /// ([`legaia_engine_battle_vm::battle_cam_script::BattleCamera::align_glide_origin`]).
     /// Set by the retail-compare image channel.
     pub battle_cam_align: Option<(
-        legaia_engine_battle_vm::battle_cam_script::BattleCamPose,
-        legaia_engine_battle_vm::battle_cam_script::BattleCamPose,
+        legaia_engine_camera::projection::BattleCamPose,
+        legaia_engine_camera::projection::BattleCamPose,
     )>,
     /// `LEGAIA_SEAT_HUD_GLIDES_LANDED=1`: the retail capture's HUD widget
     /// glides had all landed, so the captured frame lands the engine's too
@@ -202,6 +202,11 @@ pub struct ScreenshotConfig {
     /// over the pool on the frame the capture is taken
     /// (`FogPool::install_snapshot`); taken once.
     pub seat_fog: std::cell::Cell<Option<Vec<legaia_engine_field::fog_particles::FogParticle>>>,
+    /// Raised on the capture frame by the seating pass and taken by the
+    /// frame's fog draw, which installs `seat_fog` and re-runs the frame's
+    /// render step over it (`BootSession::seat_field_fog`) where the draw
+    /// prep resolves the camera.
+    pub seat_fog_due: std::cell::Cell<bool>,
     /// `LEGAIA_SEAT_SPRITE_ARMS`: a retail state's live sprite-arm sheets,
     /// installed over the ambient pool's on the frame the capture is taken
     /// (`World::install_sprite_arm_snapshot`); taken once.
@@ -222,6 +227,17 @@ pub struct ScreenshotConfig {
     /// [`legaia_engine_capture::battle_drive::BattleDrive::hold_ticks`]
     /// of them, as the headless seed does.
     pub battle_drive_held: std::cell::Cell<u32>,
+    /// `LEGAIA_CAPTURE_DISPLAY_LAG=<ticks>`: the frame a retail capture's
+    /// display shows is this many vsyncs older than its RAM (two game
+    /// frames). On a battle drive whose action state already held that
+    /// many ticks before the gate, the child writes the earlier tick beside
+    /// its frame (`<shot>.retake`) for the caller to take the frame on
+    /// (`LEGAIA_DIAG_CAPTURE_TICK`). The caller sets it only for the span
+    /// gates where the displayed frame measures closer
+    /// (`RetailBattle::display_retake` in `legaia-parity`).
+    pub display_lag: u64,
+    /// The first tick of the drive's current run in its action state.
+    pub state_since: std::cell::Cell<Option<u64>>,
     /// `LEGAIA_BATTLE_BARS=slot:hp:mp,...`: the capture's mid-fight HP / MP,
     /// seeded on the first battle tick as the headless seed seeds them
     /// ([`legaia_engine_capture::bar_seeds::apply_bar_seeds`]).
@@ -500,6 +516,7 @@ impl ScreenshotConfig {
                     .ok()
                     .map(|v| legaia_engine_capture::field_seeds::fog_from_env(&v)),
             ),
+            seat_fog_due: std::cell::Cell::new(false),
             seat_sprite_arms: std::cell::Cell::new(
                 std::env::var("LEGAIA_SEAT_SPRITE_ARMS")
                     .ok()
@@ -549,6 +566,11 @@ impl ScreenshotConfig {
                 .and_then(|v| legaia_engine_capture::battle_drive::BattleDrive::from_env(&v)),
             battle_drive_primed: std::cell::Cell::new(false),
             battle_drive_held: std::cell::Cell::new(0),
+            display_lag: std::env::var("LEGAIA_CAPTURE_DISPLAY_LAG")
+                .ok()
+                .and_then(|v| v.trim().parse().ok())
+                .unwrap_or(0),
+            state_since: std::cell::Cell::new(None),
             battle_bars: std::env::var("LEGAIA_BATTLE_BARS")
                 .map(|v| legaia_engine_capture::bar_seeds::bar_seeds_from_env(&v))
                 .unwrap_or_default(),

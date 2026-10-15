@@ -217,6 +217,7 @@ impl PlayWindowApp {
                 // the player's slot).
                 self.drained_spawn_slots.clear();
                 self.scene_res = Some(res);
+                self.scene_actors_pending = true;
                 self.upload_assets();
             }
             Err(e) => log::warn!("play-window: scene-resource rebuild failed: {e:#}"),

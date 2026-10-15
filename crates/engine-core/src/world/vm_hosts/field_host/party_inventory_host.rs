@@ -44,6 +44,35 @@ impl<'a> FieldPartyInventoryHost for FieldHostImpl<'a> {
         }
     }
 
+    /// Op `0x4E` loaders 0 / 1: character record `page`'s current HP / MP
+    /// against its maximum. The loaders at `0x801E0A40` / `0x801E0A70` read
+    /// `+0x106` / `+0x104` (HP) or `+0x10A` / `+0x108` (MP) of the record at
+    /// `0x80084708 + page * 0x414`; the VM scales the maximum by the operand
+    /// over 256, so `4E <page> 00 80 00 ..` asks "below half HP". An empty
+    /// record slot reads zero, as retail's zeroed record does.
+    fn char_hp_mp_pair(&self, page: u8, sub_op: u8) -> (i32, i32) {
+        let Some(member) = self.world.party.roster.members.get(usize::from(page)) else {
+            return (0, 0);
+        };
+        let hms = member.hp_mp_sp();
+        if sub_op == 0 {
+            (i32::from(hms.hp_cur), i32::from(hms.hp_max))
+        } else {
+            (i32::from(hms.mp_cur), i32::from(hms.mp_max))
+        }
+    }
+
+    /// Op `0x4E` loader 2 (`0x801E0AC0`): character record `page`'s level
+    /// byte `+0x130`, compared against the operand.
+    fn char_level(&self, page: u8) -> i32 {
+        self.world
+            .party
+            .roster
+            .members
+            .get(usize::from(page))
+            .map_or(0, |m| i32::from(m.level()))
+    }
+
     /// Op `0x3B` `SET_EQUIP_SLOT`: the store at `0x801E0814` writes record
     /// `selector >> 4`'s equipment byte `+0x196 + (selector & 0xF)`, and the
     /// `FUN_80042558` call it sits in the delay slot of re-derives that
@@ -108,6 +137,74 @@ impl<'a> FieldPartyInventoryHost for FieldHostImpl<'a> {
     /// Op `0x4C 0xE5` - the casino coin bank's script delta (a cabinet's
     /// fee, the dome's entry fee, a prize price). The arm and its missing
     /// lower clamp are documented on [`crate::casino_coin_bank`].
+    /// Op `4C DC`: the bag's active window first (`FUN_80042EE0` matches the
+    /// slot's id byte alone), then the eight equipment bytes of each
+    /// present member's record.
+    // PORT: FUN_801DE840 (op 0x4C nibble-D sub-C arm, 0x801E2EA8..0x801E2F68)
+    // PORT: FUN_80042EE0
+    fn op4c_nd_subc_item_held(&self, needle: u8) -> bool {
+        let inv = &self.world.party.inventory;
+        let (start, end) = inv.window_bounds();
+        let slots = inv.slots();
+        slots[start.min(slots.len())..end.min(slots.len())]
+            .iter()
+            .any(|&(id, _)| id == needle)
+            || self.op4c_nd_sube_item_worn(needle)
+    }
+
+    /// Op `4C DE`: the equipment scan of `4C DC` alone.
+    // PORT: FUN_801DE840 (op 0x4C nibble-D sub-E arm, 0x801E2F7C..0x801E3024)
+    fn op4c_nd_sube_item_worn(&self, needle: u8) -> bool {
+        self.world.present_party_list().iter().any(|&ch| {
+            self.world
+                .party
+                .roster
+                .members
+                .get(usize::from(ch))
+                .is_some_and(|m| m.equipment().slots.contains(&needle))
+        })
+    }
+
+    /// Op `4C 8B`: the learned-spell list (`+0x13C` count, `+0x13D..` ids)
+    /// of each present member below character 3.
+    // PORT: FUN_801DE840 (op 0x4C nibble-8 sub-B arm, 0x801E2320..0x801E23E4)
+    fn op4c_n8_subb_spell_known(&self, spell: u8) -> bool {
+        self.world.present_party_list().iter().any(|&ch| {
+            ch < 3
+                && self
+                    .world
+                    .party
+                    .roster
+                    .members
+                    .get(usize::from(ch))
+                    .is_some_and(|m| {
+                        let list = m.spell_list();
+                        list.ids
+                            .iter()
+                            .take(usize::from(list.count))
+                            .any(|&id| id == spell)
+                    })
+        })
+    }
+
+    /// Op `4C 8D`: the displayed-skill list (`+0x185` count, `+0x186..` ids)
+    /// of character `char_idx`'s record, present or not.
+    // PORT: FUN_801DE840 (op 0x4C nibble-8 sub-D arm, 0x801E2404..0x801E2474)
+    fn op4c_n8_subd_skill_known(&self, char_idx: u8, skill: u8) -> bool {
+        self.world
+            .party
+            .roster
+            .members
+            .get(usize::from(char_idx))
+            .is_some_and(|m| {
+                let list = m.displayed_skills();
+                list.ids
+                    .iter()
+                    .take(usize::from(list.count))
+                    .any(|&id| id == skill)
+            })
+    }
+
     fn add_coins(&mut self, coin_delta: i32) {
         self.world.add_script_coins(coin_delta);
     }

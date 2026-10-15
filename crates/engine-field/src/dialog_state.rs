@@ -102,10 +102,13 @@ pub struct ThreeActorTalk {
     pub actor_ids: [u8; 3],
     /// Controller script id (retail `+0x50` from the instruction's u16).
     pub script_id: u16,
-    /// Raw duration byte from the instruction. Retail stores
-    /// `arg - a - b` at controller `+0x72`, where `(a, b)` is the scene-MAN
-    /// header pair read via `FUN_8003D064(_DAT_8007B898 + 0x22)`; the engine
-    /// keeps the raw operand (its MAN header staging lives elsewhere).
+    /// The instruction's record byte: the **global** index of the record
+    /// every leader swap spawns (not a duration, whatever the field name).
+    /// Retail stores `arg - a - b` at controller `+0x72`, where `(a, b)` is
+    /// the scene-MAN header pair read via `FUN_8003D064(_DAT_8007B898 +
+    /// 0x22)` - the first two partition counts - and the swap's
+    /// `FUN_8003BDE0(x, z, +0x72, 1)` adds them back, so the engine keeps
+    /// the raw operand and queues it as an op-`0x44` spawn.
     pub duration: u8,
     /// Positions + headings of the three participants captured when the
     /// talk armed. Retail: the controller SM's state 0 (`FUN_801D27E0`)

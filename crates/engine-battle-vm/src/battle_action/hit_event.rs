@@ -269,7 +269,8 @@ pub fn fold_weapon_atk_on_hit<H: BattleActionHost + ?Sized>(
         hit.event_frame,
         hit.event_frame,
         cursor,
-        slot,
+        // The player-branch test is on the retail pool slot.
+        crate::battle_slot::SeatMap::new(host.party_count()).retail(slot),
     ) {
         return None;
     }

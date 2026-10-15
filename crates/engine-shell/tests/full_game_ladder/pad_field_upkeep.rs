@@ -173,6 +173,7 @@ pub(super) fn pad_field_restore(session: &mut NativeSession, threshold: u32, mp:
         let w = &session.host.world;
         let holds_heal = w.party.inventory.iter().any(|(&id, &n)| {
             n > 0
+                && !errand_item(w, id)
                 && w.tables
                     .item_catalog
                     .get(id)
@@ -216,10 +217,11 @@ pub(super) fn pad_field_restore(session: &mut NativeSession, threshold: u32, mp:
             },
             Some(FieldMenuSubsession::Items(p)) => {
                 let heals = |id: u8| {
-                    p.inner
-                        .catalog
-                        .get(id)
-                        .is_some_and(|e| e.usable_in_field && restores(&e.effect))
+                    !errand_item(&session.host.world, id)
+                        && p.inner
+                            .catalog
+                            .get(id)
+                            .is_some_and(|e| e.usable_in_field && restores(&e.effect))
                 };
                 // The hand walks every bag row, usable here or not
                 // (`PauseItemsSession::list_cursor`): a row the field cannot
@@ -609,9 +611,261 @@ pub(super) fn pad_equip_best(session: &mut NativeSession) -> usize {
         );
     }
     if continuous::PLAYS_ON.with(std::cell::Cell::get) {
+        pad_equip_specialty(session);
         pad_equip_goods(session);
     }
     changed
+}
+
+/// The record byte (`+0x196 + i`) that holds a member's weapon: the retail
+/// equip bytes put Noa's weapon where Vahn and Gala keep their Ra-Seru
+/// (`RETAIL_WEAPON_EQUIP_BYTE`).
+fn weapon_byte(member: u8) -> usize {
+    legaia_engine_menus::equip_session::record_byte_for_engine_slot(
+        legaia_engine_menus::equipment::EquipSlot::Weapon.as_index(),
+        member,
+    )
+}
+
+/// The weapon a member wears now.
+pub(super) fn worn_weapon(session: &NativeSession, member: u8) -> u8 {
+    session
+        .host
+        .world
+        .party
+        .roster
+        .members
+        .get(usize::from(member))
+        .map_or(0, |r| r.equipment().slots[weapon_byte(member)])
+}
+
+/// The dearest arts command a member pays wearing `weapon` with the rest of
+/// what it wears now, read off its player battle file (extraction
+/// `863 + member`) the way the battle loader does (`FUN_800557B8`,
+/// `docs/subsystems/arts-command-gauge.md`): `0x1E` for a favoured weapon,
+/// `0x2A` / `0x36` off class.
+pub(super) fn arm_cost(session: &NativeSession, member: u8, weapon: u8) -> Option<u8> {
+    if member > 2 {
+        return None;
+    }
+    let mut s = session
+        .host
+        .world
+        .party
+        .roster
+        .members
+        .get(usize::from(member))?
+        .equipment()
+        .slots;
+    s[weapon_byte(member)] = weapon;
+    let bytes = session
+        .host
+        .index
+        .entry_bytes(863 + u32::from(member))
+        .ok()?;
+    let pack = legaia_actor_formats::battle_data_pack::detect(&bytes)?;
+    let costs = legaia_actor_formats::battle_char_assembly::swing_command_costs(
+        &bytes,
+        &pack,
+        &[s[0], s[1], s[2], s[3], s[4]],
+    )
+    .ok()?;
+    costs.iter().flatten().copied().max()
+}
+
+thread_local! {
+    /// The static equipment table (`DAT_80074F68`), read once from the
+    /// executable the run is pointed at.
+    static EQUIP_STATS: Option<legaia_game_tables::equip_stats::EquipStatTable> =
+        std::env::var_os("LEGAIA_SCUS")
+            .and_then(|p| std::fs::read(p).ok())
+            .and_then(|b| legaia_game_tables::equip_stats::EquipStatTable::from_scus(&b));
+}
+
+/// The weapon in the bag a member swings cheapest, stats breaking ties, when
+/// it swings cheaper than the one worn.
+fn specialty_pick(session: &NativeSession, member: u8) -> Option<u8> {
+    use legaia_game_tables::equip_stats::EquipSlot as Cat;
+    let worn = worn_weapon(session, member);
+    if worn == 0 {
+        return None;
+    }
+    let worn_cost = arm_cost(session, member, worn)?;
+    if u16::from(worn_cost) <= legaia_engine_battle::arts_command_input::FAVORED_COST {
+        return None;
+    }
+    let w = &session.host.world;
+    EQUIP_STATS.with(|t| {
+        let t = t.as_ref()?;
+        w.party
+            .inventory
+            .iter()
+            .filter(|&(&id, &n)| {
+                n > 0
+                    && id != worn
+                    && t.bonus(id)
+                        .is_some_and(|b| b.slot() == Cat::Weapon && b.equips_party_slot(member))
+            })
+            .filter_map(|(&id, _)| {
+                let c = arm_cost(session, member, id)?;
+                let atk = t.bonus(id).map_or(0, |b| i32::from(b.attack()));
+                (c < worn_cost).then_some((c, -atk, id))
+            })
+            .min()
+            .map(|(_, _, id)| id)
+    })
+}
+
+/// Put a favoured weapon back on a member that Best Equipment armed off
+/// class. Retail's Best Equipment (`FUN_801CF760`) ranks a weapon by its
+/// stats alone, and a weapon outside the wearer's class raises the arm
+/// command's AP cost (`0x2A`, or `0x36` far off class): Vahn in the Astral
+/// Sword pays 54 for a swing, so his nine-command art never fits a turn
+/// and Koru (`F32`, monster 182) outlasts him. A player swaps the Beast
+/// Buster back in. Start, Equip, the member, the weapon row, the cheapest
+/// weapon to swing in the bag, best stats among equals, Yes. Returns how
+/// many members it re-armed.
+pub(super) fn pad_equip_specialty(session: &mut NativeSession) -> usize {
+    use legaia_engine_core::field_menu_dispatch::FieldMenuSubsession;
+    use legaia_engine_menus::equip_session::{EquipState, browse_row_for_slot};
+    use legaia_engine_menus::equipment::EquipSlot;
+    use legaia_engine_menus::field_menu::{FieldMenuPhase, FieldMenuRow};
+    if !walking(session) || !released(session) {
+        return 0;
+    }
+    let weapon_slot = EquipSlot::Weapon.as_index();
+    // Members with a cheaper swing in the bag, and the weapon each takes.
+    let picks: Vec<(u8, u8)> = session
+        .host
+        .world
+        .present_party_list()
+        .into_iter()
+        .filter_map(|m| specialty_pick(session, m).map(|id| (m, id)))
+        .collect();
+    if picks.is_empty() {
+        return 0;
+    }
+    let off_class: Vec<u8> = picks.iter().map(|&(m, _)| m).collect();
+    let before: Vec<u8> = off_class.iter().map(|&m| worn_weapon(session, m)).collect();
+    open_pause_menu(session);
+    if session.field_menu.is_none() {
+        return 0;
+    }
+    let equip_row = FieldMenuRow::Equip.index();
+    let list = session.host.world.present_party_list();
+    let pos = |s: u8| list.iter().position(|&x| x == s).unwrap_or(0);
+    let mut done: HashSet<u8> = HashSet::new();
+    let mut aim: Option<u8> = None;
+    for _ in 0..400 {
+        let Some(menu) = session.field_menu.as_ref() else {
+            break;
+        };
+        let target = off_class.iter().copied().find(|m| !done.contains(m));
+        let pad = match (session.field_menu_sub.as_ref(), target) {
+            (None, None) => PadButton::Circle.mask(),
+            (None, Some(_)) => match menu.phase() {
+                FieldMenuPhase::Browsing { cursor } if cursor < equip_row => PadButton::Down.mask(),
+                FieldMenuPhase::Browsing { cursor } if cursor > equip_row => PadButton::Up.mask(),
+                FieldMenuPhase::Browsing { .. } => PadButton::Cross.mask(),
+                _ => 0,
+            },
+            (
+                Some(FieldMenuSubsession::Equip {
+                    session: es,
+                    char_slot,
+                    picking,
+                }),
+                Some(t),
+            ) => {
+                if *picking {
+                    match pos(*char_slot).cmp(&pos(t)) {
+                        std::cmp::Ordering::Less => PadButton::Down.mask(),
+                        std::cmp::Ordering::Greater => PadButton::Up.mask(),
+                        std::cmp::Ordering::Equal => PadButton::Cross.mask(),
+                    }
+                } else if *char_slot != t {
+                    PadButton::Circle.mask()
+                } else {
+                    match es.state() {
+                        EquipState::SlotPicker { cursor } => {
+                            aim = None;
+                            if worn_weapon(session, t)
+                                != before[off_class.iter().position(|&m| m == t).unwrap_or(0)]
+                            {
+                                done.insert(t);
+                                PadButton::Circle.mask()
+                            } else {
+                                match cursor.cmp(&browse_row_for_slot(weapon_slot)) {
+                                    std::cmp::Ordering::Less => PadButton::Down.mask(),
+                                    std::cmp::Ordering::Greater => PadButton::Up.mask(),
+                                    std::cmp::Ordering::Equal => PadButton::Cross.mask(),
+                                }
+                            }
+                        }
+                        EquipState::ItemPicker { slot, cursor } if slot == weapon_slot => {
+                            let rows = es.items_for_slot(slot);
+                            let best = picks.iter().find(|&&(m, _)| m == t).map(|&(_, id)| id);
+                            aim = best;
+                            match best.and_then(|id| rows.iter().position(|r| r.id == id)) {
+                                Some(k) => match usize::from(cursor).cmp(&k) {
+                                    std::cmp::Ordering::Less => PadButton::Down.mask(),
+                                    std::cmp::Ordering::Greater => PadButton::Up.mask(),
+                                    std::cmp::Ordering::Equal => PadButton::Cross.mask(),
+                                },
+                                None => {
+                                    done.insert(t);
+                                    PadButton::Circle.mask()
+                                }
+                            }
+                        }
+                        EquipState::Confirm {
+                            item_id, cursor, ..
+                        } if Some(item_id) == aim => {
+                            if cursor == 0 {
+                                PadButton::Cross.mask()
+                            } else {
+                                PadButton::Left.mask()
+                            }
+                        }
+                        EquipState::Done(_) => 0,
+                        _ => {
+                            done.insert(t);
+                            PadButton::Circle.mask()
+                        }
+                    }
+                }
+            }
+            (Some(_), _) => PadButton::Circle.mask(),
+        };
+        if pad == 0 {
+            let _ = session.tick();
+            continue;
+        }
+        tap_pad(session, pad);
+    }
+    for _ in 0..16 {
+        if session.field_menu.is_none() {
+            break;
+        }
+        tap_pad(session, PadButton::Circle.mask());
+    }
+    let rearmed = off_class
+        .iter()
+        .zip(&before)
+        .filter(|&(&m, &b)| worn_weapon(session, m) != b)
+        .count();
+    if std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
+        let now: Vec<u8> = off_class.iter().map(|&m| worn_weapon(session, m)).collect();
+        eprintln!(
+            "    [equip] specialty: members {off_class:?} off class in {before:02X?}; now {now:02X?}; menu {}",
+            if session.field_menu.is_some() {
+                "STILL OPEN"
+            } else {
+                "closed"
+            }
+        );
+    }
+    rearmed
 }
 
 /// How much the continuous hand wants an accessory passive (the ability-bit

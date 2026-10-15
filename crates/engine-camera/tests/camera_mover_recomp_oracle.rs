@@ -1,5 +1,5 @@
 //! Frame-level oracle: the op-`0x45` camera-mover law
-//! ([`legaia_engine_battle_vm::camera_mover`]) replayed against per-frame captures of
+//! ([`legaia_engine_camera::camera_mover`]) replayed against per-frame captures of
 //! the retail camera globals (`0x8007B790` angle trio / `0x800840B8` eye trio
 //! / `0x80089118` focus trio / `0x8007B6F4` H) from a static-recomp run of the
 //! New Game opening chain.
@@ -37,7 +37,7 @@
 //!
 //! REF: FUN_801DC0BC
 
-use legaia_engine_battle_vm::camera_mover::axis_value;
+use legaia_engine_camera::camera_mover::axis_value;
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 

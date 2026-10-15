@@ -123,10 +123,13 @@ A milestone may also name `via` scenes: story waypoints the anchors show the ret
 | Zora Castle | `nilboa` (its own start scene), then `deene` and `son` | Koru's fight thaws the overworld's way south ([route notes](#route-notes)). |
 | Noaru Valley | `chitei2` (its own start scene), then `concend`, `jou` and `retockin` | `chitei2`'s chain ends on the `0x4C8` that opens the `map03` portal to `concend`; the way back from Drake was by land and cart, not the Uru Mais warp. |
 | Sol Tower | `dohaty` (its own start scene) | Its P2[13] sets the `0x1D4` every `station` placement, the ticket seller among them, waits on. |
+| Sol Tower B2 | `kor5` (its own start scene), then `koin2`, `koin4`, `koin2` | Gaza's first fight on Sol's roof ([route notes](#sol-tower)), then the [Sage's Gate errand](#an-errand-the-story-waits-on): the chests in `koin2`, the bread in `koin4`, then the chests again. |
 | Zeto's dungeon | `vozz` (its own start scene) | A run that walks in from Drake arrives at `vozz`'s east mouth and can walk straight back out to `map01`, on the side `garmel`'s door is not; the way on is the Genesis Tree beat (`vozz` P1[7]), whose flight lands by `bylon`. |
 | Sky Gardens | `garmel` (its own start scene) | `garmel`'s transport pads join the Songi band to the `map01` door, so the cheapest route leaves the dungeon; the story's way out is the Zeto fight (`garmel` P2[12], `0x198`). |
 | Ratayu | `retona` (its own start scene) | A run that arrives at Mt. Letona's trailhead has reached the `mt_letona` milestone on its first step and would turn round; the anchor gained the summit chain (`0x354`..`0x357`, `0x367`). |
 | Dohati Castle | `retock` (its own start scene), then `jagaroom` twice | Ratayu's west gate (`retock` P2[27]) turns the party back until `0x33E` is set. `jagaroom`'s entry script raises it only once Eliza's scene (`retock` P2[33], `0x33C`), the talk `jagaroom` P1[8] (`0x351`), the door cutscene `jagaroom` P2[8] (`0x33B`) and the return `jagaroom` P2[9] (`0x34F`) have played in that order. |
+
+A milestone may instead name `continuous_via`: the waypoints part C plays in place of `via`, where a seeded segment starts past the story or its seated hand cannot play it. Dr. Usha's research and Nivora are its case, the chain the [Nivora route notes](#nivora) list: `korb3`, `map03`, `koin2` for the first (Sol's stone maze and Gaza's second fight, the Genesis Tree, Etora's password), and `doman`, Uru Mais and its three dreams, and `doman` again for the second. The run plays the chain to Nivora, but Gaza's second fight goes its way on about half the tries, and on the default stream not once in six, so the two lines stand commented out in the spine until it is won reliably.
 
 A waypoint whose own arrival script carries the party on counts as visited: `concend`'s P2[0] is its beat, and it ends in the hop to `town0d`. One that carries it straight back to the scene it came from was a stay, not a visit: `jiji`'s inn sleeps the party over in `ropeway`, whose arrival cutscene returns it to `jiji`. Part A checks every waypoint is a disc scene.
 
@@ -229,15 +232,21 @@ one upkeep pass, in this order:
    a menu runtime of its own (`MenuRuntime::open_field_overlay_requests`),
    steps it on pad edges with the field frozen
    (`MenuRuntime::step_field_session`), and lets the merchant's record
-   resume once the screen has closed. It buys three healing items first,
-   then the affordable piece of equipment that improves a present member's
-   slot the most (through the recipient picker, which equips it on the
-   spot), then healing items up to fifteen for each present member. At a
-   counter that sells no healing item, a bag short of its three keeps 300
-   gold back for the counter that does. A merchant is visited again only
-   with a different purse or bag, or once a counter the story had closed
-   has opened ([below](#a-counter-the-story-has-closed)).
+   resume once the screen has closed. It buys three healing items for each
+   present member first, then the affordable piece of equipment that
+   improves a present member's slot the most (through the recipient
+   picker, which equips it on the spot), then healing items up to fifteen
+   for each present member. A counter whose stock list sells a healing
+   item is visited ahead of the others: `retock`'s arms dealer (P1[34])
+   took 46800 of 49991 gold before its item counter (P1[36]) was reached,
+   and the party met Dohati with one Healing Flower. At a counter that
+   sells no healing item, a bag short of its three keeps 300 gold back for
+   the counter that does. A merchant is visited again only with a
+   different purse or bag, or once a counter the story had closed has
+   opened ([below](#a-counter-the-story-has-closed)).
 2. **Equipment.** Start, Equip, each member, the Best Equipment row. That row ranks only the four armament slots, so the hand then fills each member's empty Goods slots from the bag, best passive first (HP, attack and arts boosts ahead of guards), never two of one passive on a member and never Rage, Zero Defense, Last Attack or No Escape.
+
+   Best Equipment (`FUN_801CF760`) ranks a weapon by its stats alone, and a weapon outside the wearer's class raises the arm command's AP cost ([`arts-command-gauge.md`](../subsystems/arts-command-gauge.md)): the Astral Sword costs Vahn 54 a swing, his nine-command art no longer fits a turn, and Koru (`nilboa` P2[20]) outlasts him. So after the row the hand reads each member's arm cost off its player battle file, the way the battle loader does (`swing_command_costs`), and where a weapon in the bag swings cheaper than the one worn it puts that one on (Start, Equip, the member, the weapon row, the weapon, Yes), the best attack among equally cheap ones.
 3. **Rest.** Under four fifths of its HP in a scene that rolls no
    encounters, it takes the scene's rest: a bed's walk-on band, or a
    keeper whose record runs the `4C 82` restore. A keeper's offer is a
@@ -276,9 +285,19 @@ one upkeep pass, in this order:
    next boss is beaten with does better with them than with the
    restoratives it would otherwise carry in.
 
+**At a waypoint** the hand plays the waypoint's story, not this upkeep -
+except that a party walking in with fewer heals than three a member stocks
+up and rests first. `retock`'s beats lead straight into the `jagaroom`
+fight (13245 HP); a party that arrived there with no heal, next to no MP
+and 36000 gold lost it six times.
+
 A talk or a stay that carries the party out of the scene (`dolk2`'s inn
 plays Noa's dream and brings it back) leaves the rest of the pass for the
-return: the scene's story and its training still follow.
+return: the scene's story and its training still follow. A stay taken
+during the training itself (a keeper whose rest plays the same dream)
+brings the party back to the training alone, without the arrival pass
+again; a party whose training ended at that dream walked on to Voz levels
+short and wiped on the Genesis Tree's fight.
 
 The **level target** is the anchors' own curve: each character's level in
 the anchor five milestones ahead, read only as far as every later anchor
@@ -311,6 +330,14 @@ held, takes a rest that is close by, and opens the bag only under three
 fifths - for HP, and for MP when the member lowest on it is under three
 fifths, since the casts are half of what a boss is beaten with.
 
+**On the way to a boss it runs.** In a scene whose story waits behind a
+staged fight on a walk-on band, the beats pass takes no random encounter
+(training outings excepted): the party's HP and bag are the boss's.
+Dohati (`dohaty` P2[10], 17200 HP, a party-wide breath every third round)
+is met at the end of a castle the hand had been fighting its way through:
+it arrived at a third of its HP with the Healing Flowers spent on the
+road, and lost six times.
+
 **Its options survive a reload.** A wipe reloads the run's own save into a
 fresh session, and the engine keeps Field Move as a host option rather than
 save data (retail keeps it in the block, SC `+0x58C`;
@@ -325,8 +352,124 @@ still until the countdown runs out, then looks at the scene again.
 `chitei2`'s collapse is the case: its expiry flag `0x4C7` is what the entry
 script's `0x4C8` hand-off tests, and no record on the disc sets it.
 
-What it still does not do: sell, use magic outside battle, or leave the
-cheapest route for a chest that sets no flag an anchor carries.
+### Talks the story reaches from elsewhere
+
+- **A dry talk is asked again.** A talk that ran and raised nothing is
+  remembered with the state of the system flags its record tests, and is
+  tried again in the same round once a later talk has moved one of them,
+  before the round's walk-ons can carry the party off. `doman`'s P1[3] has
+  nothing to say until Dr. Usha (P1[15]) has raised `0x379`, and the band
+  walked after her talk rides the lift up to the street.
+- **A record that polls a box is stood in.** A partition-1 record whose
+  first instructions box-test the player (`CD F8`) runs its story while the
+  player stands in the box once its talk has armed it. When its record
+  raises a still-clear flag the next anchor carries or a partition-2 record
+  of the scene tests, the hand talks to it, steps into the box, and then
+  straight onto the band that waits on what it raised. `doman` P1[18], Dr.
+  Usha's intercom at (40..41, 81), asks for the password and calls the lift
+  (`0x371`); the lift band P2[7] (41..43, 83) loops on `0x371` and rides the
+  party down to the lab. Walked in record order, P2[3] would send the lift
+  back up first; after the ride the round's other walk-ons wait for the next
+  round, whose talks come first.
+- **A talk gated on a member standing in a box** is played from a split
+  party (`43 02`): when the talk's record tests a clear flag the entry
+  script raises inside a player box test, the leader walks to the box's
+  middle (the entry script carves its edges out with half-tile `4C E4`
+  tests) and hands control on with Square, each member in turn, until the
+  flag stays up behind it.
+- **A dream is a visit.** A waypoint whose arrival script carries the party
+  straight back where it came from counts as visited when the stay moved a
+  system flag (`urudre3` P2[0] raises `0x3F4`, on which `uru`'s entry script
+  plays the waking).
+
+- **A story talk in another room is crossed to.** At a waypoint, a story
+  talk outside the player's walk component is reached by a round trip
+  through a neighbouring scene that lands on its side, errand talks first
+  ([below](#an-errand-the-story-waits-on)): `koin2` P1[19], Emperor Etora,
+  gives the password from the throne room at (20, 9), off another `kor` door.
+
+What it still does not do: sell outside an errand, use magic outside
+battle, or leave the cheapest route for a chest that sets no flag an anchor
+carries.
+
+### A maze of stones and closers
+
+`korb3`'s maze ([route notes](#sol-tower)) and the two box tests on the way
+to Nivora set four rules the continuous hand plays by:
+
+- **It opens a gate only from where it can walk.** A gate stone (a prop
+  whose touch clears walls, `4C 70`) is examined from a tile beside it that
+  the walk reaches from where the party stands, so the maze opens gate by
+  gate from the hall the party arrives in; a stone it cannot reach waits
+  for a round in which an opened gate leads to it. Other props are examined
+  from any side, as the segmented passes do. A seat beside the tile the
+  prop's centre lies on counts too, walked up to until the facing probe
+  reaches it (`korb3` P0[3] is examined from the corridor at (47, 31)). A
+  stone whose walls are all clear already is left alone: it would only arm
+  the band on the near side, which walls the gate up in front of a party
+  walking through. A walk that a prop's box holds a few units off the
+  corridor's centre line, where the tile's centre is clear, steps back onto
+  the line instead of pressing on (the follower's dead band otherwise
+  ignores so small an offset; P0[3] stops a walk 8 units west of it).
+- **A closer is no beat and no obstacle.** A walk-on record that raises no
+  system flag, lowers one the next anchor carries and walls tiles up
+  (`4C 71`; `korb3` P2[4..13]) is never walked as a beat, and a walk may
+  cross one: the bands one step past each gate stand on the only way
+  through it. A band that lowers a flag without walling anything keeps the
+  ordinary rules (`rikuroa`'s terrace hops).
+- **A box test reads the actor's own tile.** A script's `CD` box test
+  compares `(x - 0x40) >> 7`, half a tile off the dispatch tile a walk
+  arrives in, so the hand steps onto the box tile's middle. `doman` P1[18],
+  Dr. Usha's intercom, runs its password exchange (the code lock, then
+  `0x36E` and the lift's `0x371`) for a player standing in (40..41, 81). A
+  box record whose only raise is a flag the scene lowers again (the lift)
+  is stood in only while a story talk waits in another walk component.
+- **A box held by a member.** When the entry script tests a named member's
+  actor on the same box as the leader's (`nilboa`'s `CD 31`), that member
+  takes control and walks in, and control passes on until a leader stands
+  who can walk to the talk; the talk's actor is read again after every swap,
+  since the swap's own record moves it.
+
+### An errand the story waits on
+
+A stretch can wait on an item the party has to buy. `kor`'s guard dogs
+(P1[9] / P1[10]) stand in the `korb2` doorway until `0x40A`, which `kor`
+P2[10] raises; the Sage's Gate (`kor` P1[13]) spawns it once all eight of
+`koin2`'s Sage's Treasure Chests (P1[8..15]) have raised `0x40B..0x412`, and
+each chest raises its flag only when it is handed a Soru Bread: it asks the
+bag with `4C DC B2` and takes the loaf with `4C 52 B2`. The one gold counter
+that sells the bread is Soru's Bakery in `koin4`, at 6000 a loaf. The
+retail anchors carry the chests fed and a 99 999 999 purse; a run of its
+own arrives with a few thousand.
+
+The hand reads such **errands** off the disc: for every flag the next
+anchor carries, the records of the stretch's waypoints and milestone scene
+that set it, and of those, each one that takes an item from the bag. While
+the bag is short of an errand's copies:
+
+- **Its talks are played wherever they stand.** The chests stand in five
+  rooms of `koin2`, each entered by its own `kor` door (P2[1..5]), so a chest
+  outside the player's walk component is reached by a round trip through
+  `kor` that lands on its side ([crossing scenes](#crossing-scenes)). The
+  first contact hands over the chest's own item and raises its
+  `0x413..0x41A`; a talk that runs and raises nothing is not crossed to again
+  until the bag holds more of the errand's item.
+- **It sells what the party has outgrown.** At any counter, an armament
+  piece no present member is better off wearing - worth less, summed over
+  its stat bonuses, than what each member who can wear it wears in its slot,
+  and for a weapon no cheaper to swing ([`arts-command-gauge.md`](../subsystems/arts-command-gauge.md))
+  - is sold, the whole stack, before anything is bought.
+- **It fights for the rest.** While the purse plus what the outgrown pieces
+  sell for is short of the errands' price, it trains as it trains for
+  levels, from a bed or, with no bed in reach and heals in the bag, from the
+  bag; `kor` rolls the encounters the floors above it do not.
+- **It keeps the price back.** A counter sells it the errand's item first;
+  heals and equipment come out of what is left over the price, and the
+  item is never used as a heal (a Soru Bread restores HP).
+
+The waypoints put the stretch in order: `koin2` for the chests' first
+contact (and the gold), `koin4` for the bread, `koin2` again to feed them.
+`kor` P1[13]'s talk then raises `0x40A` and the doorway is clear.
 
 ### A rest that stops resting
 
@@ -347,8 +490,9 @@ fifths, and how far she got was the rand stream's: on eight dealt streams
 from the run's own `snowdrift_cave` save she reached Caruban at level 5 or 6
 on six and at 8 (the target) on two, and only those two cleared him. With
 the bag standing in, all eight reach level 8, and seven clear him (six on
-the first try); the eighth stalls on the mountain's `P2[45]` / `P2[60]`
-band pair before the fight. Caruban (1024 HP, about 150 a round on one member) outlasts a
+the first try); the eighth stalled before the fight on the mountain's
+`P2[45]` / `P2[60]` terrace pair, which the planner reads as ledge hops
+([below](#how-the-pad-tier-walks)). Caruban (1024 HP, about 150 a round on one member) outlasts a
 level-6 Noa and level-5 Vahn by one or two rounds; a level-8 Noa ends the
 fight first.
 
@@ -374,8 +518,9 @@ looks in again before it leaves the scene once one of them has come down.
 
 ### Budget
 
-A stretch has the pad segment's walking budget, and four times its battle
-allowance: this hand takes the fights it can win, so a stretch's battles
+A stretch has the pad segment's walking budget, a quarter of it again for
+each waypoint (the stretch to Nivora has eight: `doman` twice, Uru Mais
+three times and its three dreams), and four times its battle allowance: this hand takes the fights it can win, so a stretch's battles
 run long past the fleeing hand's. Its hop budget counts hops only: a
 scene's arrival pass and the scripted rides its rests and outings come back
 on (`retock`'s inn plays the dream and returns) are bounded by the frame
@@ -799,8 +944,21 @@ map as its street:
   arc does: `nilboa`'s stepping stones (P2[8], P2[9], P2[12], P2[13], two or
   three arcs each) join the ledge pocket below Nivora's summit to the
   teleports on toward the `map03` door. A record that box-tests the player
-  first, or forks (a flag test, a picker) around more than one arc, is left
-  out: its landing is not one place.
+  is followed from the band tile it is stepped on: inside the box falls
+  through, outside skips, as the dispatcher's case `0x4D` does. A
+  random-chance branch (`4E 00 40`, `Rand() & 0xFF`) is followed both ways
+  and lands only where both arms agree. `rikuroa`'s terrace pair is the
+  case: once `0x282` is up P2[45] hops the party down from row 109 to 111
+  and P2[60] hops it back up to 108, each out of whichever box the tile
+  sits in, and on a die roll after a stumble to the same row. A record
+  that forks around more than one arc on a picker or a flag it cannot read
+  is left out: its landing is not one place.
+
+  The beats pass does not walk such a band as a beat when every tile of it
+  is a link and its record, with what it spawns, raises no flag the world
+  lacks outside the ones it lowers again. Stepped on as a beat, the pair
+  traded the party up and down until the walk gave up, on whichever side
+  the last hop left it: below the terrace, a stretch from Caruban.
 - a **warp pad** - the same kind of walk-on record with no arc, whose
   player-channel snaps (`0x23` MOVE_TO / `4C 51`, on every story-flag branch)
   all land on one tile and which leaves the scene by neither `0x3F` nor a
@@ -830,6 +988,18 @@ map as its street:
   plan time and does not time its step onto a pad. A leg's encoded point can sit in the
   pillar beside where the platform parks the player (the hub's west leg,
   `0xB6`), so a landing in a wall cell is moved to the nearest open cell.
+- a **lift** - the same kind of record whose player moves are compass legs
+  (ops `0x37` / `0x41` on the `0xF8` channel, `B7 F8 d n` / `C1 F8 d n`), with
+  no fork, lowering every story flag it raises - is an edge to the band tile
+  plus the legs' summed displacement: each leg moves the player
+  `rate * (n & 0x3F)` units along compass `d` (rate `0x80` for `0x37`, `0x40`
+  for `0x41`; the axis signs are the table at `0x80073F14`, the walk kernel
+  `FUN_8003774C`'s arm). `dohaty`'s stairs (P2[3..8]) join the castle's
+  floors this way; without them a run that walks in from `map02` stands in
+  the entry hall, a component away from P2[9] / P2[10], and P2[10]'s `0x345`
+  is what the entry script spawns the closing beat P2[13] on (`0x1D4`, which
+  every `station` placement waits on). A run of legs that ends inside a tile
+  of where it began is a step back off a band, not a ride.
 
 ### The follower
 
@@ -967,8 +1137,8 @@ For each member, in order of priority:
 
 1. **Revive.** A member who is down gets a revive.
 2. **Heal.** A member in danger gets a heal: a party heal when two or more are in danger, else the smallest single heal that lifts the worst-off member clear (in a solo duel, clear after the foe's next round too - see [Guards and boss reads](#guards-and-boss-reads)), aimed at that member. Heals the round's earlier members already committed count as landed, so two members never spend their turns on one wound.
-3. **Cast.** Otherwise a member with an affordable damaging Seru spell casts the strongest one.
-4. **Attack.** Otherwise it attacks through `Command`, entering the longest art its command pool pays for and spending the rest on plain directions. Whether a matched art fires is the queue builder's call, out of the Spirit gauge. The plan runs up to nine commands, the length of each character's Miracle Art.
+3. **Cast.** Otherwise a member with an affordable damaging Seru spell casts the strongest one. A command ring that answers Magic by reopening itself (a fight whose special word forbids the Ra-Seru chip, or a caster with no spell session) is asked for two seconds and then not again that battle.
+4. **Attack.** Otherwise it attacks through `Command`, entering the longest art its command pool pays for and spending the rest on plain directions. Whether a matched art fires is the queue builder's call, out of the Spirit gauge. The plan runs up to nine commands, the length of each character's Miracle Art. A member with all three limbs rotted (`+0x16E & 0x38`) takes the Spirit stance instead: the ring refuses its Attack arm (`FUN_801D0748`, `0x801D1560`) and stays up, and a fighter that kept pressing it left Sol's fights against monster 120 unresolved.
 
 A member is **in danger** when it is standing and either:
 
@@ -1110,6 +1280,22 @@ clips and matches the same arts a windowed one does. Beyond that:
   flags, and only the four right answers spawn the P2[5] that opens the
   Stone Flower. A reopened picker goes back to the rotation, since a staged
   conversation can want another answer first (`tunnelc` P1[4], Xain).
+- A picker whose one option clears collision-grid wall bits (op `4C` nibble
+  7, sub 0 or 2) while another sets them (sub 1 or 3) is answered with the
+  option that opens the way, as a player who wants through answers it.
+  `balden` P2[6], the lower elevator car's call band, asks "Are you human?":
+  Yes clears the car door's wall bits (`4C 72`) and arms the car, No paints
+  them back (`4C 73`). The rotation's No on a later crossing shut the door,
+  and the upper car (P0[14]) then set the party down inside the shut car at
+  (11, 119), walled on every side, with the call band beyond the door.
+- An op-`49 02` code lock (slot `0x21`, `FUN_801EED58`) gets its code
+  from the parked operand, one face button per symbol (Cross `0`, Circle
+  `1`, Square `2`, Triangle `3`). A player was told the password; Cross on
+  every symbol is the wrong answer.
+- A quiz is answered: of a picker with four options, the one whose
+  branch goes somewhere of its own while every other option's goes to one
+  shared reply. `doman` P1[3] asks four such questions before it raises
+  `0x4FF`, and each wrong answer ends the talk.
 - The continuous hand does not walk to a talk side off the scene's
   walk-visible floor. Retail's locomotion reads only the wall bits, so the
   black between a town's interior cutaways is open ground: `geremi` P1[68]
@@ -1137,6 +1323,7 @@ clips and matches the same arts a windowed one does. Beyond that:
 | `LEGAIA_FGL_TRACE=1` | One line per played beat: what ran, how it ended and the flags it set. As `[hop]`, the hop failure that sent the pass to the beats, which the final stall would otherwise hide. A `[battle]` line at each fight's start and end (formation, both sides' HP, the action-SM state). Each pad segment's frames and planner cost. On success, the seated tier's trail, so a pad stall can be read against the route the seated tier took. |
 | `LEGAIA_FGL_TRACE_BATTLE=1` | A `[battle]` line every 1000 ticks. |
 | `LEGAIA_FGL_TRACE_HITS=1` | Each HP change with its actor and action state. |
+| `LEGAIA_FGL_PAD_DEBUG=1` | In a fight where no foe has lost HP for 6000 ticks, the fighter's pad and the command, spell and item windows' phases every 97 ticks: what a battle that will end `unresolved` was being asked. |
 | `LEGAIA_FGL_HEAL_DEBUG=1` | Each pad edge of the field heal with the Items screen's focus, list rows, usable rows and target rows. |
 | `LEGAIA_FGL_WALK_DEBUG` | A stalled walk's wall map, the scene's teleports, tile triggers and door colliders. |
 | `LEGAIA_FGL_PLAN_DEBUG` | Each object-door edge the planner adds. |
@@ -1218,8 +1405,9 @@ Scene-specific facts the route and the pad hand depend on. Each is a property of
   somewhere else counts as played: the split cutscene `P2[0]` runs from the
   entrance band `P2[29]` (`44 4E`), and walking its own band afterwards
   sent every member across the map, the Fire Ravine member re-dressing the
-  boulder room (`P2[26]`, gated on nothing) across the way another member
-  needs, which only `P2[27]` (dead while `0x00D` is up) re-opens. A band no member can walk to stays on the beat list: a later
+  boulder room (`P2[26]`) across the way another member needs, which only
+  `P2[27]` re-opens. Both have C1 `0x00D` and C2 `0x457`: live once the
+  boulders are pushed and the party is whole again. A band no member can walk to stays on the beat list: a later
   beat may open the way, as the warp at the end of a tunnel (`P2[39]`)
   drops its member into the `P2[2]` pocket. The boulders `P1[13]` /
   `P1[14]` stay pushed (`0x457`) across `P2[27]`'s `4C C3` re-seats
@@ -1271,6 +1459,69 @@ Scene-specific facts the route and the pad hand depend on. Each is a property of
   whose C1 gate is `0x426`: once that is set the band is floor. A hop's
   hazard set holds only the doors whose records the live flags let spawn,
   so a spent beat's band does not wall off the corridor it lies in.
+- Gaza's first fight is on `kor5`, after the `sol_tower` anchor and before
+  `sol_tower_b2`'s: P2[3] at (32, 43) raises `0x43A`, P2[4] at (32, 41)
+  raises `0x464` and stages monster 165, the scene's reload hands `0x464` to
+  P2[5], which raises `0x436`, and P2[8] at (32, 86) raises `0x6C4`. `korb3`'s
+  second fight waits on `0x436`, so `kor5` is the stretch's first waypoint.
+- `korb3`, under Sol, is a stone maze. Its entry script walls up seven
+  gates while `0x403` is clear (`4C 71`); each of the stones P0[3..9],
+  P0[23], P0[24] holds itself shut at spawn and, examined, raises its flag
+  (`0x43E..0x444`, `0x45C`, `0x459`) and clears one gate (`4C 70`), two
+  stones per gate where the gate is on the way in. A band one step past each
+  gate (P2[5..13]) walls it up again behind the party and clears the
+  stone's flag; P2[4] at the hall's door resets them all. The two switches
+  P0[18] (37, 37) and P0[21] (37, 18) raise `0x41C` / `0x41B`, on which the
+  entry script clears the centre (34..40, 24..30), and P2[2] at (36, 21) -
+  C2 `0x41B`, `0x41C` and `kor5`'s `0x436` - stages Gaza's second fight
+  (formation 15, monster 166). Its hand-off P2[3] raises `0x511`, on which
+  `map03`'s entry script plays P2[11] (the Genesis Tree, `0x403`).
+  The hand plays the maze from where the party stands
+  ([below](#a-maze-of-stones-and-closers)); with `0x403` up every stone's
+  spawn pass raises its flag at once, the arrival burst the retail captures
+  show.
+
+### Nivora
+
+- The `nivora` anchor is a save taken inside the Three Tunnels: the split
+  cutscene (`0x47C`) has played, both boulders are pushed (`0x457`) and
+  `P2[32]` (`0x47E`) is behind it. A run of its own meets the boulders
+  unpushed. `P1[13]` / `P1[14]` push only while `0x4F2` is up, and
+  `nilboa`'s entry script raises it each pass that the leader or member
+  `0x31` stands in the box `(53..55, 62..64)` clear of the sub-boxes its
+  `4C E4` tests exclude, and lowers it otherwise. Each leader swap ends in
+  P2[17], which re-dresses the boulder room by the incoming leader's ravine:
+  Fire Ravine (`0x010`) seats the boulders at (49, 65) / (51, 65), Wind
+  Ravine (`0x011`) parks them at (127, 127), Thunder Ravine (`0x012`) leaves
+  them. So member 1 walks into the box, control passes on to member 0
+  (through member 2), and the Fire Ravine leader pushes while member 1's
+  actor holds the flag up ([below](#a-maze-of-stones-and-closers)).
+- `P2[32]`'s C2 gate is `0x370`, which Dr. Usha (`doman` P1[15]; P1[2]
+  is a developer flag menu) raises in the lab, a walk component below the
+  street the `map03` door lands on. The `usha_research` and `nivora`
+  milestones are both reached on arrival, so the story between them is all
+  waypoint play, and the retail anchors carry it as one chain:
+  1. `korb3`, Sol's lower floors ([Sol Tower](#sol-tower)): Gaza's second
+     fight P2[2] hands off to P2[3], which raises `0x511`, on which `map03`'s
+     entry script spawns P2[11], which raises `0x403`.
+  2. `koin2` P1[19], Emperor Etora, stands at (127, 127) until `0x403` is
+     up; his talk raises `0x36D`, the password.
+  3. `doman` P1[18], the intercom, asks for it (`49 02`, then `0x36E`) and
+     calls the lift (`0x371`); the lift band P2[7] rides down to the lab.
+     Usha's first talk raises `0x379`; P1[3]'s quiz then raises `0x4FF`.
+  4. `uru`: P2[38] (C2 `0x379`, `0x4FF`) raises `0x3FC`, on which the entry
+     script clears the walls in front of the three statues; each statue
+     (P0[18..20]) carries the party to a corridor ending in a bed door
+     (P2[29] / P2[33] / P2[31]) into `urudre1` / `urudre2` / `urudre3`. The
+     entry script plays each waking (P2[30] / P2[32] / P2[34]) on the
+     dream's return flag, and the wakings raise `0x39A..0x39C` in turn;
+     P1[7] then spawns P2[36], which raises `0x36F` (and `map03`'s portal
+     to `uru` becomes `uru2`).
+  5. `doman` again: Usha's `0x36F` branch raises `0x370`.
+
+  The continuous run plays the chain as the two milestones' `continuous_via`
+  ([the spine](#the-spine)), with those lines commented out while Gaza's
+  second fight is a coin toss for it.
 
 ### Overworld and dungeon joins
 

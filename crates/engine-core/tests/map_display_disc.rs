@@ -138,24 +138,42 @@ fn l1_opens_the_map_display_and_labels_the_discovered_places() {
         assert_eq!(map_display_prims(&host.world).len(), 8, "{scene}");
         assert_eq!(map_display_compass_marks(&host.world).len(), 4, "{scene}");
 
-        // Step the cursor to a place (Square): the survey snaps onto it and
-        // its label lands at the display's centre column.
+        // Step the cursor to a place (Square): from the player (`-1`) the
+        // location stepper `FUN_801CF5E8` wraps backward to this kingdom's
+        // last record (`0x801CEE8C..0x801CEEC4`), the survey seats on its
+        // cell, and its label lands at the display's centre column.
         frame(&mut host, PadButton::Square as u16);
         frame(&mut host, 0);
         frame(&mut host, 0);
         let d = host.world.world_map.map_display.as_ref().expect("display");
-        if d.cursor >= 0 {
-            let rec = d.cursor as usize;
-            let labels = map_display_labels_now(&host.world);
-            let l = labels.iter().find(|l| l.record == rec).expect("its label");
-            let want_x = -(i32::from(locations[rec].map_x) << 7);
-            if d.cam_x == want_x {
-                assert!(
-                    (l.sx - 160).abs() <= 2,
-                    "{scene}: record {rec} under the camera projects to the centre column, got {l:?}"
-                );
-            }
+        assert_eq!(
+            d.cursor,
+            *mine.last().expect("kingdom places") as i32,
+            "{scene}: Square steps from the player to the kingdom's last place"
+        );
+        let rec = d.cursor as usize;
+        let want = (
+            -(i32::from(locations[rec].map_x) << 7),
+            -(i32::from(locations[rec].map_y) << 7),
+        );
+        // The survey camera is clamped to the kingdom interior
+        // (`FUN_801CF678`), so a place near the edge seats short of its cell.
+        let (mut cx, mut cz) = want;
+        legaia_engine_field::map_display::clamp_camera(&mut cx, &mut cz);
+        assert_eq!(
+            (d.cam_x, d.cam_z),
+            (cx, cz),
+            "{scene}: the survey seats on record {rec}'s cell"
+        );
+        let labels = map_display_labels_now(&host.world);
+        let l = labels.iter().find(|l| l.record == rec).expect("its label");
+        if (cx, cz) == want {
+            assert!(
+                (l.sx - 160).abs() <= 2,
+                "{scene}: record {rec} under the camera projects to the centre column, got {l:?}"
+            );
         }
+        eprintln!("[ok] {scene}: Square stepped to record {rec}");
 
         // Circle leaves, and the walk frame comes back.
         frame(&mut host, PadButton::Circle as u16);

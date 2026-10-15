@@ -32,13 +32,13 @@ impl LegaiaRuntime {
             pose.focus[0],
             pose.focus[1],
             pose.focus[2],
-            legaia_engine_battle_vm::battle_cam_script::GTE_H,
+            legaia_engine_camera::projection::GTE_H,
         )
     }
 
     /// The battle view-projection matrix for this frame: 16 column-major
     /// floats (WebGL `mat4` layout), or empty outside battle. The shared
-    /// [`legaia_engine_battle_vm::battle_cam_script::battle_vp`] - the native
+    /// [`legaia_engine_camera::projection::battle_vp`] - the native
     /// window's `psx_camera_mvp` composition - over the live phase-scripted
     /// pose, with the retail 4x battle world scale folded into the focus
     /// exactly like the native `battle_dome_camera_mvp`. The page hands
@@ -49,8 +49,7 @@ impl LegaiaRuntime {
             return Vec::new();
         }
         let pose = self.battle_cam_pose();
-        legaia_engine_battle_vm::battle_cam_script::battle_vp(&pose, BATTLE_WORLD_SCALE, aspect)
-            .to_vec()
+        legaia_engine_camera::projection::battle_vp(&pose, BATTLE_WORLD_SCALE, aspect).to_vec()
     }
 }
 
@@ -97,9 +96,7 @@ impl LegaiaRuntime {
     /// The engine's battle-camera pose (`World::battle_cam_pose` - the state
     /// `World::tick` steps for every host), or the shared boot pose off a
     /// scene host.
-    pub(crate) fn battle_cam_pose(
-        &self,
-    ) -> legaia_engine_battle_vm::battle_cam_script::BattleCamPose {
+    pub(crate) fn battle_cam_pose(&self) -> legaia_engine_camera::projection::BattleCamPose {
         self.scene_host
             .host()
             .map(|h| h.world.battle_cam_pose())

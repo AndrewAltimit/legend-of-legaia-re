@@ -896,7 +896,7 @@ impl World {
 
     /// This frame's banner quads, in retail emit order - the shared read both
     /// hosts build their screen primitives from
-    /// (`legaia_render_kernels::battle_numerals::arts_banner_prims`).
+    /// (`legaia_engine_ui::battle_numerals::arts_banner_prims`).
     ///
     /// Retail re-reads `ctx[+0x28C]` per layer *inside* the emitter, so a
     /// layer emitted later in the frame still sees the pre-walk value; the

@@ -21,7 +21,7 @@
 //! No float easing is involved in retail.
 //!
 //! Both are live. [`build_camera_angle_tween`] builds every arrive-together
-//! glide's rate table in [`crate::battle_cam_script`]; [`apply_shake`] is
+//! glide's rate table in `legaia_engine_battle_vm::battle_cam_script`; [`apply_shake`] is
 //! stepped by that same camera once per camera step, with its amplitude
 //! sourced from the field VM.
 //!
@@ -33,7 +33,7 @@
 //! `0x801E2134` (jump-table slot `0x801CEF58`) stores the operand byte and
 //! advances the PC by three
 //! (`overlay_0897_801de840.txt` `0x801E2134..0x801E2144`). The port models
-//! that opcode - [`crate::field::FieldCameraMotionHost::set_shake_amplitude`] - and the
+//! that opcode - `legaia_engine_vm::field::FieldCameraMotionHost::set_shake_amplitude` - and the
 //! engine host keeps the value on the world for the camera to read.
 //!
 //! Retail's own callers of `FUN_801D9D30` are all in the **field-family**
@@ -43,7 +43,7 @@
 //! no shake caller is resident during a retail fight. The engine drives the
 //! kernel from its one camera anyway, because the accumulators
 //! `0x800840B8`/`0x800840BC` are that camera's translation pair either way -
-//! see [`crate::battle_cam_script::BattleCamera::set_shake_amplitude`].
+//! see `legaia_engine_battle_vm::battle_cam_script::BattleCamera::set_shake_amplitude`.
 //!
 //! ## The magic-exit camera snap is not this routine's caller
 //!
@@ -71,7 +71,7 @@
 
 // REF: FUN_80021248 (the arming routine that signs this builder's records
 // and hands them to the per-frame walker)
-use crate::battle_formulas::world_rand;
+use legaia_engine_system::rand::world_rand;
 
 /// The camera rotation/shake/focus trios `FUN_801D829C` tweens. Mirrors the
 /// nine 16-bit globals paired against the caller-provided targets:
@@ -210,7 +210,7 @@ pub fn build_camera_angle_tween(
 /// `dump-extent-attribution.csv` `unique field(897)`); the battle overlay
 /// 0898 carries no copy, and the context it shakes is the field camera's
 /// (`0x801C6EA4`). Stepping it from the battle camera script
-/// ([`crate::battle_cam_script`]) is a port choice; whether the battle
+/// (`legaia_engine_battle_vm::battle_cam_script`) is a port choice; whether the battle
 /// overlay shakes its own camera by another routine is not settled here.
 ///
 /// Retail state: `accum` is the shake accumulator pair at
@@ -242,7 +242,7 @@ pub fn build_camera_angle_tween(
 /// REF: this routine is also duplicated verbatim as the tail of
 /// `FUN_801DB510` (the camera follow-ease) - one port covers both sites.
 ///
-/// Stepped by [`crate::battle_cam_script::BattleCamera`] once per camera
+/// Stepped by `legaia_engine_battle_vm::battle_cam_script::BattleCamera` once per camera
 /// step; the amplitude reaches it from the field VM's `0x4C`/`8`/`4` opcode
 /// through the engine host. The action SM's magic-exit camera snap is **not**
 /// a caller of this routine; see the module note for why.

@@ -12,9 +12,9 @@ use super::*;
 // sub-8 (`FUN_801D77F4` 4-arg call, 9-byte), sub-9
 // (inverted-Y mirror set, 4-byte), sub-0xA (clear mirror +
 // collision-Y refresh, 2-byte), sub-0xB (FUN_801E57F0 CLUT-fade spawn,
-// 13-byte), sub-0xC (party search-and-set, 5-byte), sub-0xD
-// (field_58 write, 3-byte), sub-0xE (party search query,
-// 5-byte), sub-0xF (scene byte write, 3-byte).
+// 13-byte), sub-0xC (item held: bag or worn, 5-byte), sub-0xD
+// (field_58 write, 3-byte), sub-0xE (item worn, 5-byte),
+// sub-0xF (scene byte write, 3-byte).
 pub(super) fn op_4c_nd<H: FieldHost>(
     host: &mut H,
     ctx: &mut FieldCtx,
@@ -26,32 +26,48 @@ pub(super) fn op_4c_nd<H: FieldHost>(
     op0: u8,
 ) -> StepResult {
     match op0 & 0x0F {
-        // Sub-0: 6-byte `[4C, 0xD0, a_lo, a_hi, b_lo, b_hi]`.
-        // Field SE trigger with conditional u16 pair. The
-        // original at lines 6936-6944 of the dispatcher dump
-        // gates the call on three flag globals; PC advances by
-        // 6 in both branches. Host owns the gate state and the
-        // SE pipeline.
+        // Sub-0: 6-byte `[4C, 0xD0, x_lo, x_hi, y_lo, y_hi]` - hold on a
+        // blinking cursor until confirm or cancel is pressed
+        // (`0x801E2AE4..0x801E2B38`, see `FieldDialogMenuHost::press_prompt`).
         0 => {
             if operand + 5 > bytecode.len() {
                 return StepResult::Unknown { opcode, pc };
             }
-            let a = crate::field::dispatch_leaves::load_u16_le(&bytecode[operand + 1..]);
-            let b = crate::field::dispatch_leaves::load_u16_le(&bytecode[operand + 3..]);
-            host.op4c_nd_sub0_gated_call(a, b);
-            StepResult::Advance {
-                next_pc: pc + header_size + 5,
+            let x = crate::field::dispatch_leaves::load_u16_le(&bytecode[operand + 1..]);
+            let y = crate::field::dispatch_leaves::load_u16_le(&bytecode[operand + 3..]);
+            if host.press_prompt(x, y) {
+                StepResult::Advance {
+                    next_pc: pc + header_size + 5,
+                }
+            } else {
+                StepResult::Halt { final_pc: pc }
             }
         }
-        // Sub-1: 1-byte. Linked-list lookup via `FUN_8003CF04`.
-        // Host returns `Some(new_pc)` for the ce9c-jump path,
-        // `None` for PC += 4 on miss. Default host returns None.
-        1 => match host.jump_if_camera_glide_live(ctx) {
-            Some(new_pc) => StepResult::Advance { next_pc: new_pc },
-            None => StepResult::Advance {
-                next_pc: pc + header_size + 3,
-            },
-        },
+        // Sub-1: 4-byte `[4C, 0xD1, skip_lo, skip_hi]` - skip while a
+        // cutscene camera glide is in flight. The arm at `0x801E2B3C`
+        // advances `s8 += 4`, then looks up the camera mover
+        // (`FUN_8003CF04(_DAT_8007C34C, 0x801DC0BC)`, the lookup `4C CD`
+        // waits on): no mover, or a mover with its dead bit `+0x10 & 8` up,
+        // returns the advanced PC; a live one takes the shared exit
+        // `LAB_801E360C` with `a0 = operand + 1`, the **relative** skip
+        // `pc + 4 + skip - 2`. No shipped script issues it.
+        1 => {
+            if operand + 3 > bytecode.len() {
+                return StepResult::Unknown { opcode, pc };
+            }
+            let next_pc = pc + header_size + 3;
+            if !host.camera_glide_live() {
+                return StepResult::Advance { next_pc };
+            }
+            let skip = crate::field::dispatch_leaves::load_u16_le(&bytecode[operand + 1..]) as i16;
+            let target = next_pc as isize + isize::from(skip) - 2;
+            if target < 0 {
+                return StepResult::Unknown { opcode, pc };
+            }
+            StepResult::Advance {
+                next_pc: target as usize,
+            }
+        }
         // Sub-2: 3-byte `[4C, 0xD2, b1]`. Calls the channel resolver
         // (and spawns the placement when no context answers), then
         // advances: both arms of `0x801E2B7C` leave through `0x801E00B8`,
@@ -192,31 +208,36 @@ pub(super) fn op_4c_nd<H: FieldHost>(
                 next_pc: pc + header_size + 12,
             }
         }
-        // Sub-C: 5-byte `[4C, 0xDC, b1, ?, ?]`. Small-table search
-        // + party-record write. Host returns `Some(new_pc)` for
-        // the ce9c-jump path or `None` for the PC += 5 miss path.
-        0xC => {
-            let Some(&b1) = bytecode.get(operand + 1) else {
+        // Sub-C / sub-E: 5-byte `[4C, 0xDC|0xDE, needle, skip_lo, skip_hi]`.
+        // Sub-C asks whether the party holds the item (bag, then what the
+        // present members wear), sub-E whether a member wears it. Both
+        // advance `s8 += 5` first (`0x801E2EB0` / `0x801E2F7C`); a hit takes
+        // the shared exit `LAB_801E360C` - `FUN_8003CE9C` reads the signed
+        // halfword at `operand + 2` and the exit adds it less two
+        // (`addiu v0,v0,-0x2; addu s8,s8,v0`), a **relative** skip from the
+        // end of the instruction. `koin2`'s chests: `4C DC B2 27 00` at
+        // `+0xCE` lands on the "I smell Soru Bread" branch at `+0xF8`.
+        0xC | 0xE => {
+            if operand + 4 > bytecode.len() {
                 return StepResult::Unknown { opcode, pc };
-            };
-            match host.op4c_nd_subc_party_search_set(b1) {
-                Some(new_pc) => StepResult::Advance { next_pc: new_pc },
-                None => StepResult::Advance {
-                    next_pc: pc + header_size + 4,
-                },
             }
-        }
-        // Sub-E: 5-byte. Sister of sub-C without the per-record
-        // write - same control flow.
-        0xE => {
-            let Some(&b1) = bytecode.get(operand + 1) else {
-                return StepResult::Unknown { opcode, pc };
+            let needle = bytecode[operand + 1];
+            let next_pc = pc + header_size + 4;
+            let hit = if op0 & 0x0F == 0xC {
+                host.op4c_nd_subc_item_held(needle)
+            } else {
+                host.op4c_nd_sube_item_worn(needle)
             };
-            match host.op4c_nd_sube_party_search_query(b1) {
-                Some(new_pc) => StepResult::Advance { next_pc: new_pc },
-                None => StepResult::Advance {
-                    next_pc: pc + header_size + 4,
-                },
+            if !hit {
+                return StepResult::Advance { next_pc };
+            }
+            let skip = crate::field::dispatch_leaves::load_u16_le(&bytecode[operand + 2..]) as i16;
+            let target = next_pc as isize + isize::from(skip) - 2;
+            if target < 0 {
+                return StepResult::Unknown { opcode, pc };
+            }
+            StepResult::Advance {
+                next_pc: target as usize,
             }
         }
         // Sub-4: 6-byte `[4C, 0xD4, x_lo, x_hi, y_lo, y_hi]`.

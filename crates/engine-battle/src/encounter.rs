@@ -24,7 +24,6 @@
 //! [`EncounterTracker::on_step`] from the field-step path and feed the
 //! resulting [`EncounterRoll`] into their battle-load routine.
 
-use legaia_engine_battle_vm as vm;
 use std::collections::HashMap;
 
 /// One row in an encounter table.
@@ -330,14 +329,14 @@ pub struct EncounterSession {
     /// This *is* the intro overlay's `DAT_801D2458` - the transition entity's
     /// `+0x1A` clock counts up to it while the session counts down from it -
     /// so the default is retail's own
-    /// [`INTRO_DURATION_FRAMES`](vm::battle_intro_styles::INTRO_DURATION_FRAMES),
+    /// [`INTRO_DURATION_FRAMES`](legaia_render_kernels::battle_intro_styles::INTRO_DURATION_FRAMES),
     /// 132 display frames. The earlier `32` was a stand-in from before the
     /// styles were ported, and it is shorter than the tile shatter's own spawn
     /// window (`rand() % 5000` at `elapsed * 60` starts the last records around
     /// frame 83), which left most of that style's grid parked at its rest pose
     /// for the whole transition.
     ///
-    /// [`IntroStyle::Swirl`](vm::battle_intro_styles::IntroStyle::Swirl) runs
+    /// [`IntroStyle::Swirl`](legaia_render_kernels::battle_intro_styles::IntroStyle::Swirl) runs
     /// longer still (252); the session picks its length before the style is
     /// resolved, so that override is not carried here.
     pub transition_frames: u16,
@@ -352,7 +351,8 @@ impl EncounterSession {
         Self {
             tracker,
             phase: EncounterPhase::Idle,
-            transition_frames: vm::battle_intro_styles::INTRO_DURATION_FRAMES as u16,
+            transition_frames: legaia_render_kernels::battle_intro_styles::INTRO_DURATION_FRAMES
+                as u16,
             grace_frames: 30,
         }
     }

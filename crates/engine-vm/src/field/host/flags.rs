@@ -114,6 +114,22 @@ pub trait FieldFlagsHost {
         false
     }
 
+    /// Op `0x4C` outer-nibble-C sub-5 / sub-6 - is the system-flag wait
+    /// released? `until_set` is sub-5's polarity (hold until the flag is
+    /// set), `!until_set` sub-6's (hold until it is clear). Retail tests the
+    /// flag with `FUN_8003CE64` each frame (`0x801E2894` / `0x801E28B0`) and
+    /// restores the entry PC while the answer is "not yet"; the default is
+    /// exactly that test over [`Self::system_flag_test`].
+    ///
+    /// The shipped waits are on flags `0x0A` / `0x0B` / `0x556` / `0x557`,
+    /// flipped by a move-VM part the waiting record spawned (ext sub-op
+    /// `0x1C` / `0x1D`), or for `0x0B` by the scripted-scene actor
+    /// `FUN_801D4A60` and the travel-art actors. A host that runs none of
+    /// those may answer `true` to keep the scripts moving.
+    fn system_flag_wait_released(&self, idx: u16, until_set: bool) -> bool {
+        self.system_flag_test(idx) == until_set
+    }
+
     /// Op 0x4C outer-nibble-A - conditional jump on a flag bit.
     ///
     /// 5-byte instruction `[4C, 0xAN, bit, lo, hi]` where `N` selects the
@@ -125,9 +141,11 @@ pub trait FieldFlagsHost {
     ///   line 6702 of `overlay_0897_801de840.txt` falls through every check
     ///   and skips 5 bytes (`return param_2 + 5`).
     ///
-    /// When the bit is **set**, the original takes the absolute jump
-    /// (`func_0x8003CE9C(operand + 2)` - signed 16-bit absolute PC). When
-    /// clear, PC advances by 5.
+    /// When the bit is **set**, the original takes the shared skip exit
+    /// `LAB_801E360C`: `FUN_8003CE9C(operand + 2)` reads a signed halfword
+    /// and the exit adds it less two to a PC already advanced by 5 - a skip
+    /// relative to the end of the instruction (the dispatcher computes it).
+    /// When clear, PC advances by 5.
     ///
     /// (The take/skip direction is the disassembly's, not the decompiled C's:
     /// Ghidra's C output for case 10 hides the `bne a1, zero, 0x801e258c`
@@ -201,25 +219,4 @@ pub trait FieldFlagsHost {
     /// `_DAT_800845DC = _DAT_80084570`: the game-time play counter copied
     /// into the word the Records screen prints as play time. PC += 2.
     fn snapshot_play_clock(&mut self) {}
-
-    /// Op 0x4C outer-nibble-C sub-5 / sub-6 flag test - the operand-stream
-    /// equivalent of `func_0x8003CE9C` followed by [`party_flag_test`] over
-    /// the trigger-flag bank.
-    ///
-    /// Both sub-5 (jump-if-zero) and sub-6 (jump-if-nonzero) read a 16-bit
-    /// value from `bytecode[operand+1..=operand+2]` and test whether the
-    /// corresponding bit is set in the trigger-flag array. The dispatcher
-    /// computes the index via [`field_helpers::load_u16_le`] and asks the
-    /// host whether that bit is set.
-    ///
-    /// Returns `true` when the bit is set (= the original's `0xFF` saturation
-    /// from `FUN_8003CE64`), `false` otherwise. Default impl returns `false`
-    /// - engines without a flag bank treat all bits as clear.
-    ///
-    /// [`field_helpers::load_u16_le`]: crate::field::dispatch_leaves::load_u16_le
-    /// [`party_flag_test`]: crate::field::dispatch_leaves::party_flag_test
-    fn op4c_nc_sub56_flag_test(&self, flag_idx: u16) -> bool {
-        let _ = flag_idx;
-        false
-    }
 }

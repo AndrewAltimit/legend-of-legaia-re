@@ -69,6 +69,7 @@ pub use spirit::{
 };
 
 mod done;
+pub use crate::battle_slot::retail_pool_slot;
 use done::*;
 pub use done::{hp_bar_drain_pending, tick_cast_census, tick_hp_bars};
 

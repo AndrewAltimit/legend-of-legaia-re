@@ -100,6 +100,7 @@ mod tests {
     use super::*;
     use legaia_actor_formats::monster_archive::MonsterAnimation;
     use legaia_engine_battle_vm::battle_cam_script as cam;
+    use legaia_engine_camera::projection;
     use legaia_engine_minigames::muscle_dome::DomePlay;
 
     fn clip(frames: usize, rate: u32) -> DomeClip {
@@ -151,7 +152,7 @@ mod tests {
     #[test]
     fn the_camera_looks_at_its_focus() {
         let cam = DomeCamera {
-            pose: cam::BattleCamPose {
+            pose: projection::BattleCamPose {
                 pitch: 32.0,
                 yaw: 700.0,
                 tr: [0.0, 0.0, 5000.0],

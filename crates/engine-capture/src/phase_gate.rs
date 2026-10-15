@@ -7,6 +7,8 @@ use legaia_engine_mode::mode::SceneMode;
 /// The caster's invoke clip through the summon band (`0x32` stages
 /// `actor[+0x1DA] = 9`).
 pub const SUMMON_INVOKE_CLIP: u8 = 9;
+/// The summon band's head, `FUN_801E295C` state `0x32`.
+pub const SUMMON_INVOKE_STATE: u8 = 0x32;
 /// PROT 0903 (Gimard) and its walk-in arm, the one module arm that hands
 /// the camera to case 6 (`FUN_801D5854(7, 6)`).
 pub const GIMARD_MODULE: u32 = 903;
@@ -59,6 +61,12 @@ pub struct PhaseGate {
     /// but the value the engine's accumulator is aligned to once the gate
     /// holds ([`Self::align_camera`]).
     pub accum_align: Option<u32>,
+    /// Whether the frame is the state after a whole pass of its camera: set
+    /// for a `0x32` capture's RAM phase ([`Self::steer`], [`Self::met`]).
+    /// The displayed frame is two game frames older than the RAM, which on a
+    /// `0x32` capture is the pass that entered the state, so the display
+    /// gate leaves it clear.
+    pub camera_pass: bool,
 }
 
 /// How far a walk-arm yaw base has swung from its seat (`0x200`), in
@@ -89,6 +97,9 @@ impl PhaseGate {
         if let Some(k) = self.accum_align {
             s.push_str(&format!(",k{k}"));
         }
+        if self.camera_pass {
+            s.push_str(",p");
+        }
         s
     }
 
@@ -106,6 +117,10 @@ impl PhaseGate {
 
     pub fn from_env(s: &str) -> Option<Self> {
         let mut parts: Vec<&str> = s.split(',').map(str::trim).collect();
+        let camera_pass = parts.last() == Some(&"p");
+        if camera_pass {
+            parts.pop();
+        }
         let accum_align = match parts.last() {
             Some(t) if t.starts_with('k') => {
                 let k = t[1..].parse().ok()?;
@@ -172,6 +187,7 @@ impl PhaseGate {
             done_hold,
             module_countdown,
             accum_align,
+            camera_pass,
         })
     }
 
@@ -187,11 +203,49 @@ impl PhaseGate {
         }
     }
 
+    /// Per-tick world steering for a `0x32` capture, run before each tick of
+    /// the replay. `0x32` waits on the CD-ready poll (`FUN_8003DE7C(1)` at
+    /// `0x801E498C`) for the summon archive read `0x29`'s route arm queued
+    /// (`jal 0x8003EC70` at `0x801E463C`), so retail spends at least one pass
+    /// in it - the read cannot land on the pass that queued it - while the
+    /// engine's poll is always ready and leaves on the entry tick. Hold the
+    /// engine's poll busy until its camera has run a pass in the state
+    /// ([`Self::met`]); every other gate leaves the poll alone.
+    pub fn steer(&self, world: &mut legaia_engine_core::world::World) {
+        if !self.camera_pass || self.action_state != SUMMON_INVOKE_STATE {
+            return;
+        }
+        let holding = world.mode == SceneMode::Battle
+            && world.battle_ctx.action_state == SUMMON_INVOKE_STATE
+            && world
+                .battle
+                .camera
+                .as_ref()
+                .is_some_and(|c| c.steps_in_state() == 0);
+        world.audio.sound_bank_ready = !holding;
+    }
+
     /// Whether `world` is at this phase: the action SM on the same state
     /// and, when the capture had a flash up, the same flash at least as far
     /// in.
     pub fn met(&self, world: &legaia_engine_core::world::World) -> bool {
         if world.mode != SceneMode::Battle || world.battle_ctx.action_state != self.action_state {
+            return false;
+        }
+        // A retail capture's RAM is the state after a whole pass, and the
+        // pass that enters `0x32` has already framed it: `0x29`'s summon-route arm
+        // stores the `0x600` depth (`0x801E4604`) and falls through to the
+        // state's case-6 call (`0x801E4748`), so the step table a `0x32`
+        // capture holds targets the summon close-up. The engine enters the
+        // state on a tick its camera may not step on, and its pose is then
+        // still the `0x29` chase's.
+        if self.camera_pass
+            && world
+                .battle
+                .camera
+                .as_ref()
+                .is_some_and(|c| c.steps_in_state() == 0)
+        {
             return false;
         }
         if let Some(p) = self.module_phase

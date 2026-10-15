@@ -8,7 +8,7 @@
 //! MAN partition-1 placement's field-VM channel.
 
 use super::*;
-use legaia_engine_battle_vm::psx_camera::FieldCameraView;
+use legaia_engine_camera::psx_camera::FieldCameraView;
 use legaia_engine_mode::mode::SceneMode;
 use legaia_render_kernels::drop_shadow::{
     DropShadowQuad, SHADOW_NEAR_BIT, ShadowVertex, casts_shadow, drop_shadow,

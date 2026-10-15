@@ -43,6 +43,7 @@ members = [
     "crates/gamedata",
     "crates/engine-battle",
     "crates/engine-battle-vm",
+    "crates/engine-camera",
     "crates/engine-system",
     "crates/engine-dialog",
     "crates/engine-menus",
@@ -125,6 +126,7 @@ legaia-cheats = { path = "crates/cheats", default-features = false }
 legaia-engine-audio = { path = "crates/engine-audio", default-features = false }
 legaia-engine-battle = { path = "crates/engine-battle" }
 legaia-engine-battle-vm = { path = "crates/engine-battle-vm" }
+legaia-engine-camera = { path = "crates/engine-camera" }
 legaia-engine-capture = { path = "crates/engine-capture" }
 legaia-engine-core = { path = "crates/engine-core" }
 legaia-engine-effects = { path = "crates/engine-effects" }

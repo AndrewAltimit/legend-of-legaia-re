@@ -803,8 +803,8 @@ fn world_map_render_ladder() {
 /// picker phase nor the draw gate the dispatcher's return feeds.
 #[test]
 fn dev_menu_cancel_runs_the_row_action_dispatcher() {
-    use legaia_engine_core::dev_menu_host::{DevMenuSession, DevPage};
     use legaia_engine_field::dev_menu_leaves::ListPickerPhase;
+    use legaia_engine_menus::dev_menu_host::{DevMenuSession, DevPage};
     use legaia_engine_system::pad::{PACK_CIRCLE, PACK_DOWN};
 
     let mut s = DevMenuSession::new();
@@ -841,7 +841,7 @@ fn dev_menu_cancel_runs_the_row_action_dispatcher() {
 /// sweep over the rows rather than a magic count.
 struct DevMenuRowCount;
 impl DevMenuRowCount {
-    const ALL: usize = legaia_engine_core::dev_menu_host::DevMenuRow::ALL.len();
+    const ALL: usize = legaia_engine_menus::dev_menu_host::DevMenuRow::ALL.len();
 }
 
 /// `FUN_801E5A08` - the dev-menu EQUIP commit, and `FUN_801E5B4C`'s slot
@@ -855,7 +855,7 @@ impl DevMenuRowCount {
 /// the destination slot, and a bag miss must leave both untouched.
 #[test]
 fn dev_menu_equip_commit_swaps_bag_and_slot() {
-    use legaia_engine_core::dev_menu_host::{DevMenuSession, WorldEquipHost};
+    use legaia_engine_menus::dev_menu_host::{DevMenuSession, WorldEquipHost};
 
     // Slot bits `0x00` -> destination slot 0 (`(bits & 0x60) >> 5 == 0`).
     let mut s = DevMenuSession::new();

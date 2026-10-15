@@ -29,7 +29,14 @@ code spans, since rustdoc cannot resolve a link into a dependent crate.
   packed Legaia pad words, `FUN_8001822C`) and `menu_input` (the shared menu
   cursor navigation `FUN_801D688C`).
 - **Random numbers** - `rand` (`BiosRand`, `psyq_rand_step` and
-  `bios_rand_shape`: the BIOS `rand()` LCG every kernel rolls through).
+  `bios_rand_shape`: the BIOS `rand()` LCG every kernel rolls through;
+  `world_lcg_step` / `world_rand`, the world stream lent to code without
+  `&mut World`).
+- **12-bit trig** - `trig` (`sin12` / `trig12`) and `rotation_lut`
+  (`RotationLut`, the sine / cosine pair every 12-bit rotation indexes, and
+  `RetailRotationLut`, the byte-exact `SCUS_942.54` table `FUN_80026BE0`
+  installs), so the battle, effect, field and minigame kernels all name one
+  table.
 - **Streaming** - `chunk_install` (the `[type, size, data]` stream chunk
   walker that routes sound-stream chunks).
 - **Movies** - `movie::cutscene` (FMV index to `MV*.STR` mapping),
@@ -37,7 +44,8 @@ code spans, since rustdoc cannot resolve a link into a dependent crate.
   `movie::movie_audio` (what a movie does to the score, one policy both hosts
   consult) and `movie::cutscene_trigger` (every retail FMV trigger site).
 - **Sound + music** - `sound_state` (the global sound-system state the
-  frame-begin driver services) and `music_labels` (a global BGM id /
+  frame-begin driver services), `sustained_sfx` (the held sustained-SFX
+  voices and their `FUN_80017910` teardown) and `music_labels` (a global BGM id /
   `music_01` bank slot resolved to its curated sound-test label; see
   [`docs/reference/music-tracks.md`](../../docs/reference/music-tracks.md)).
 - **Screen fades** - `fade` (the retail fade-state primitive), `fade_ramp`

@@ -746,11 +746,13 @@ impl BattleActor {
         }
     }
 
-    /// One frame of HP-bar ramp for this actor in `slot`
+    /// One frame of HP-bar ramp for this actor in retail pool slot `slot`
     /// ([`crate::battle_hp_bar::bar_step_for_slot`], retail `FUN_80047430`).
+    /// The arm select is on the pool slot, so an engine slot goes through
+    /// [`crate::battle_slot::SeatMap::retail`] first.
     ///
     /// REF: FUN_80047430 (kernel + `// PORT:` tags in `battle_hp_bar`)
-    pub fn tick_hp_bar(&mut self, slot: u8) {
+    pub fn tick_hp_bar(&mut self, slot: crate::battle_slot::RetailSlot) {
         let Some(display) = self.hp_display else {
             return;
         };
@@ -1073,10 +1075,14 @@ pub struct BattleActionCtx {
     /// port choice; retail tests a pointer), which never meets a staged Seru
     /// because an escape leaves the battle.
     pub absorbed_seru: u8,
-    /// `[+0x243]` - the byte the gauge re-arm clears once it has run
-    /// (`FUN_801E93C8`'s tail store at `0x801E94F8`, reached only on the arm
-    /// whose gate passed). Cleared by [`crate::battle_action::done_cleanup`]
-    /// via [`crate::battle_gauge_rearm::restore_anim_rates`].
+    /// `[+0x243]` - the action-in-progress marker. Raised by the summon
+    /// close-up, the cast begin's capture route (`0x801E44FC`), the Spirit /
+    /// Item pre-arm (`0x801E3B6C`) and a committed clip's non-zero header
+    /// byte; cleared by the gauge re-arm once it has run (`FUN_801E93C8`'s
+    /// tail store at `0x801E94F8`, reached only on the arm whose gate passed),
+    /// via [`crate::battle_action::done_cleanup`] /
+    /// [`crate::battle_gauge_rearm::restore_anim_rates`], and by the summon /
+    /// capture band exits.
     pub gauge_rearm_latch: u8,
     /// `[+0x890]` - the battle **ambient base**, a packed `10:10:10` colour
     /// that `FUN_80050120` ramps every frame on [`Self::gauge_rearm_latch`]

@@ -366,7 +366,7 @@ fn the_far_camera_poses_leave_the_curtain_to_the_gpu_limit() {
 
     // A triangle reaches the frame when its screen box overlaps 320 x 240
     // (a near panel covers the screen with every corner off it).
-    let on_screen = |v: &legaia_engine_battle_vm::psx_camera::FieldCameraView, t: &[u32]| {
+    let on_screen = |v: &legaia_engine_camera::psx_camera::FieldCameraView, t: &[u32]| {
         let s: Vec<[i64; 2]> = t
             .iter()
             .map(|&i| psx_screen_xy(v, positions[i as usize]))

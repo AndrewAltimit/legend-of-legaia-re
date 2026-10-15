@@ -225,9 +225,9 @@ pub struct PanelRow {
 /// `FUN_801EF014` installs at `0x801EF17C` - handler slot `0x23`, the
 /// op-`0x49` sub-op-4 screen (`OP49_SUBOP_SLOTS[4] = 0x23`), which the disc
 /// issues only at the Uru Mais warp pads (`kor` / `kor3` / `kor4`). The field path's slot
-/// `0x23` runs through `legaia_engine_core::field_submode_flag_window::flag_window_slot`
+/// `0x23` runs through `crate::field_submode_flag_window::flag_window_slot`
 /// (from `legaia_engine_core::world::World::tick_submode_screen`), and
-/// `legaia_engine_core::field_submode_flag_window::flag_window_lines` calls this for the
+/// `crate::field_submode_flag_window::flag_window_lines` calls this for the
 /// row pass; the native window's stage pass and the browser play page's shop
 /// window pass draw it off `SceneHost::flag_window_lines`. The glyph runs are
 /// floor plates in the system-UI sheet (record `0x4F` the basement, `0x50..`

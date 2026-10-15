@@ -150,6 +150,53 @@ fn monster_bar_settles_in_one_frame() {
 }
 
 #[test]
+fn a_small_partys_first_monster_never_holds_the_settle_gate() {
+    // Retail's `FUN_801E7250` tests `+0x1DD < 3` on the **retail** pool slot,
+    // where monster `k` always sits at `3 + k`. The engine seats it at
+    // `party_count + k`, so in a two-member party the first monster is engine
+    // slot 2. The shape that parked unseeded full-game runs in `vell`: a
+    // monster hit earlier (bar armed) is killed by Nighto's instant-death arm,
+    // which writes live HP with no readout seed - a monster-side desync retail
+    // never consults.
+    let (mut ctx, mut host) = fresh(ActionCategory::Magic, 0);
+    host.party_count = 2;
+    ctx.action_state = ActionState::DoneFadeDown.as_byte();
+    ctx.frame_timer = 0;
+    host.actors[0].active_target = 2;
+    host.actors[2].hp = 175;
+    host.actors[2].arm_hp_bar();
+    host.actors[2].hp = 0;
+    host.actors[2].hp_bar_pending = 0;
+
+    assert!(!crate::battle_action::hp_bar_drain_pending(&host, &ctx));
+    let out = step(&mut host, &mut ctx);
+    assert!(matches!(
+        out,
+        StepOutcome::Transition { to, .. } if to == ActionState::EndOfAction.as_byte()
+    ));
+
+    // The same seat ramps on the monster arm: the whole delta in one frame.
+    host.actors[2].hp = 100;
+    host.actors[2].hp_display = Some(100);
+    host.actors[2].hp -= 60;
+    host.actors[2].accumulate_hp_bar(60);
+    crate::battle_action::tick_hp_bars(&mut host);
+    assert_eq!(host.actors[2].hp_display, Some(40));
+    assert_eq!(host.actors[2].hp_bar_pending, 0);
+
+    // Party seats still hold it, and the all-party code still scans only
+    // the two seated members.
+    host.actors[0].active_target = 1;
+    host.actors[1].hp = 50;
+    host.actors[1].hp_display = Some(80);
+    assert!(crate::battle_action::hp_bar_drain_pending(&host, &ctx));
+    host.actors[1].hp_display = Some(50);
+    host.actors[0].active_target = 8;
+    host.actors[2].hp_display = Some(99);
+    assert!(!crate::battle_action::hp_bar_drain_pending(&host, &ctx));
+}
+
+#[test]
 fn state_51_park_from_the_clamp_asymmetry() {
     // The softlock, reproduced end to end from the two appliers disagreeing
     // about what to clamp against (`FUN_801EC3E4`'s readout-side clamp at

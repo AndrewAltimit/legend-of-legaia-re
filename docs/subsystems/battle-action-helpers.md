@@ -713,13 +713,13 @@ Draws a scaling decimal number sprite for one actor's accumulated damage `ctx[+0
 - The rect is widened to at least `clamp(timer >> 5, 1, 12)` and cut to 24 px, clamped to `y >= 32`, `x <= 280` and `x >= 8 + 32 * extra digits`.
 - The value is zeroed once the timer passes `0x240` (37 frames).
 
-Port: `engine-battle-vm::battle_value_readout::popup_cells` (layout) and `render-kernels::battle_numerals::popup_value_cells` (anchor + projection), which both hosts seat their numerals through.
+Port: `engine-battle-vm::battle_value_readout::popup_cells` (layout) and `engine-ui::battle_numerals::popup_value_cells` (anchor + projection), which both hosts seat their numerals through.
 
 #### `FUN_8005112C` - per-character signature effect trigger
 
 SCUS-resident (`8005112c.txt`), gated on `actor[+0x68] != 0 && actor[+0x5A] < 3` (a party slot). It reads the roster id `DAT_8007BD10[actor[+0x5A]]`. When the actor's current anim id (`*(actor[+0x4C]) + 0x77`) hits that character's hard-coded frame value (`0x29` / `0x1E` / `0x2A` / `0x64`), it fires `FUN_80048310(actor, effect_id, 3, rgb)` with a per-character effect id and RGB tint. The accent is the weapon trail.
 
-Port: `engine-battle-vm::battle_trail` carries the trigger's per-character identity-byte table together with `FUN_80048310`'s sweep schedule and band colour ladder. The projected quad emission is render-track (`render-kernels::battle_trail`).
+Port: `render-kernels::battle_trail` carries the trigger's per-character identity-byte table together with `FUN_80048310`'s sweep schedule and band colour ladder. The projected quad emission is render-track (`render-kernels::battle_trail`).
 
 #### `FUN_801F17F8` - summon / readef side-band streamer
 
@@ -821,7 +821,7 @@ It rewrites **slot 5 only**, `TR.z`, as `(z << 8) / 0xA0`. That converts a world
 
 The fourth argument is a **frame count**, not a speed. The stored word is the per-frame increment and the tween lasts that many vsyncs. The submenu call passes `0xC`; the action-camera sites pass `1` (instant cut) and `0x30`.
 
-Port: the framing rules are `legaia_engine_battle_vm::battle_cam_script` (`BattleCamActor::submenu_pose` for case `0`, `menu_framing` for case `9`), which the native window (`crates/engine-shell/src/window/battle_cam.rs`) and the browser play page both consume. The fixed-point tween kernel is `legaia_engine_battle_vm::battle_camera`. The port tweens the focus trio on the same clock as the rotation and translation trios and uses it as the look-at target, so a non-Vahn seat frames on the acting member.
+Port: the framing rules are `legaia_engine_battle_vm::battle_cam_script` (`BattleCamActor::submenu_pose` for case `0`, `menu_framing` for case `9`), which the native window (`crates/engine-shell/src/window/battle_cam.rs`) and the browser play page both consume. The fixed-point tween kernel is `legaia_engine_camera::battle_camera`. The port tweens the focus trio on the same clock as the rotation and translation trios and uses it as the look-at target, so a non-Vahn seat frames on the acting member.
 
 ### `0x801F0348` - target-size camera framing
 

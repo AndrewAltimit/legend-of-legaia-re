@@ -5,7 +5,7 @@
 //! word the engine does not own", and the two shapes a "the page is missing
 //! it" reading gets backwards.
 
-use legaia_engine_battle_vm::psx_camera::CutsceneCameraInterp;
+use legaia_engine_camera::psx_camera::CutsceneCameraInterp;
 use legaia_engine_core::camera_view;
 use legaia_engine_core::field_occlusion;
 use legaia_engine_core::world::World;

@@ -128,7 +128,8 @@ pub fn arms_weapon_atk_fold(command: u8, atk_bonuses: &[u8; EQUIP_SLOTS]) -> Opt
 /// 4. `step_count != 0`.
 /// 5. `input_cursor < 4` - the actor's `+0x1F4` cursor.
 /// 6. `slot < 3` - the player branch; higher slots take the enemy path, which
-///    skips the equipment fold entirely.
+///    skips the equipment fold entirely. The test is on the retail pool slot
+///    ([`crate::battle_slot::RetailSlot`]).
 ///
 /// PORT: FUN_801EC3E4 (head guard chain)
 pub fn arms_resolver_admits(
@@ -137,7 +138,7 @@ pub fn arms_resolver_admits(
     step_index: u8,
     step_count: u8,
     input_cursor: u8,
-    slot: u8,
+    slot: crate::battle_slot::RetailSlot,
 ) -> bool {
     if action_state == ARMS_BLOCKED_ACTION_STATE {
         return false;
@@ -154,12 +155,13 @@ pub fn arms_resolver_admits(
     if input_cursor >= ARMS_CURSOR_LIMIT {
         return false;
     }
-    slot < ARMS_PLAYER_SLOT_LIMIT
+    slot.get() < ARMS_PLAYER_SLOT_LIMIT
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::battle_slot::RetailSlot;
 
     #[test]
     fn dispatch_table_matches_the_six_retail_arms() {
@@ -211,28 +213,112 @@ mod tests {
 
     #[test]
     fn head_guards_admit_the_nominal_call() {
-        assert!(arms_resolver_admits(0x00, 0x0C, 0, 1, 0, 0));
+        assert!(arms_resolver_admits(
+            0x00,
+            0x0C,
+            0,
+            1,
+            0,
+            RetailSlot::new(0)
+        ));
     }
 
     #[test]
     fn head_guards_reject_each_failing_condition() {
         // 1. action-state gate
-        assert!(!arms_resolver_admits(0x5A, 0x0C, 0, 1, 0, 0));
+        assert!(!arms_resolver_admits(
+            0x5A,
+            0x0C,
+            0,
+            1,
+            0,
+            RetailSlot::new(0)
+        ));
         // 2. admission band is 0x0C..=0x1F on the record byte
-        assert!(!arms_resolver_admits(0x00, 0x0B, 0, 1, 0, 0));
-        assert!(!arms_resolver_admits(0x00, 0x20, 0, 1, 0, 0));
-        assert!(arms_resolver_admits(0x00, 0x1F, 0, 1, 0, 0));
+        assert!(!arms_resolver_admits(
+            0x00,
+            0x0B,
+            0,
+            1,
+            0,
+            RetailSlot::new(0)
+        ));
+        assert!(!arms_resolver_admits(
+            0x00,
+            0x20,
+            0,
+            1,
+            0,
+            RetailSlot::new(0)
+        ));
+        assert!(arms_resolver_admits(
+            0x00,
+            0x1F,
+            0,
+            1,
+            0,
+            RetailSlot::new(0)
+        ));
         // 3. step must be the record's last
-        assert!(!arms_resolver_admits(0x00, 0x0C, 0, 3, 0, 0));
-        assert!(arms_resolver_admits(0x00, 0x0C, 2, 3, 0, 0));
+        assert!(!arms_resolver_admits(
+            0x00,
+            0x0C,
+            0,
+            3,
+            0,
+            RetailSlot::new(0)
+        ));
+        assert!(arms_resolver_admits(
+            0x00,
+            0x0C,
+            2,
+            3,
+            0,
+            RetailSlot::new(0)
+        ));
         // 4. zero-step records bail
-        assert!(!arms_resolver_admits(0x00, 0x0C, 0, 0, 0, 0));
+        assert!(!arms_resolver_admits(
+            0x00,
+            0x0C,
+            0,
+            0,
+            0,
+            RetailSlot::new(0)
+        ));
         // 5. cursor bound
-        assert!(!arms_resolver_admits(0x00, 0x0C, 0, 1, 4, 0));
-        assert!(arms_resolver_admits(0x00, 0x0C, 0, 1, 3, 0));
+        assert!(!arms_resolver_admits(
+            0x00,
+            0x0C,
+            0,
+            1,
+            4,
+            RetailSlot::new(0)
+        ));
+        assert!(arms_resolver_admits(
+            0x00,
+            0x0C,
+            0,
+            1,
+            3,
+            RetailSlot::new(0)
+        ));
         // 6. player slots only
-        assert!(!arms_resolver_admits(0x00, 0x0C, 0, 1, 0, 3));
-        assert!(arms_resolver_admits(0x00, 0x0C, 0, 1, 0, 2));
+        assert!(!arms_resolver_admits(
+            0x00,
+            0x0C,
+            0,
+            1,
+            0,
+            RetailSlot::new(3)
+        ));
+        assert!(arms_resolver_admits(
+            0x00,
+            0x0C,
+            0,
+            1,
+            0,
+            RetailSlot::new(2)
+        ));
     }
 
     #[test]
@@ -240,7 +326,7 @@ mod tests {
         // A command in 0x12..=0x1F is admitted by the head gate but folds
         // nothing, because dispatch bounds at 6 arms rather than 0x14.
         for cmd in 0x12u8..=0x1F {
-            assert!(arms_resolver_admits(0x00, cmd, 0, 1, 0, 0));
+            assert!(arms_resolver_admits(0x00, cmd, 0, 1, 0, RetailSlot::new(0)));
             assert_eq!(arms_command_equip_slots(cmd), None);
         }
     }

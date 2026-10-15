@@ -192,7 +192,11 @@ fn a_committed_items_cue_group_reaches_the_world_spawn_and_sfx_sinks() {
     // queue stays empty.
     let char_kind = world.party_roster_slot(1) as u8 + 1;
     let cast = legaia_engine_battle_vm::battle_cast_cue::cast_audio_cue(
-        1, char_kind, eff.class, item_id, eff.tier,
+        legaia_engine_battle_vm::battle_slot::RetailSlot::new(1),
+        char_kind,
+        eff.class,
+        item_id,
+        eff.tier,
     );
     let mut want: Vec<u16> = Vec::new();
     let mut want_xa: Vec<(u32, u32)> = Vec::new();

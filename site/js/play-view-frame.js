@@ -20,6 +20,60 @@
 
   window.LegaiaUtil.installMethods(window.PlayView, class {
 
+    /* One display frame's sim ticks through the engine's `play_frame_ticks`,
+     * then the page's follow-up its report names. Returns `false` after an
+     * engine trap (the loop is already stopped). */
+    _frameTicks(rt, steps) {
+      /* The page speaks over the engine camera's compass azimuth only where
+       * it has something the engine cannot know: the VR gaze, and its own
+       * orbit vantage (`F3`, or a frame the engine handed no matrix). */
+      let pad = this.pad;
+      if (this._vrDrive) {
+        rt.set_camera_azimuth(this._vrDrive.azimuth);
+        pad = this.pad | this._vrDrive.pad;
+      } else if (this.debugCamera || !this.cam.vp) {
+        rt.set_camera_azimuth(azimuthUnits(this.cam.yaw));
+      }
+      let r;
+      try { r = JSON.parse(rt.play_frame_ticks(steps, padMaskOf(this.pulse), pad)); } catch (e) {
+        this._onEngineTrap('engine tick', e);
+        return false;
+      }
+      /* A frame that ran a tick spent its edges; one that ran none keeps
+       * them for the next. */
+      if (r.ticks > 0) {
+        this.pulse.clear();
+        this._repack();
+      }
+      if (r.menu_opened) this._ensureMenuBlitters();
+      if (r.name_committed) this._nameCommitted();
+      this._serveXaStage(rt);
+      /* The post-tick presentation state: the grade, tint and depth cue
+       * this frame stages are the ones the ticks left. */
+      if (typeof rt.play_cutscene_state_json === 'function') {
+        try { this._cut = JSON.parse(rt.play_cutscene_state_json()); }
+        catch (e) { /* keep the pre-tick read */ }
+      }
+      /* The engine entered a scene (the intro skip's hand-off, a door): its
+       * geometry swapped under the page. */
+      if (r.scenes && r.scenes.length) {
+        try {
+          this.scene = r.scenes[r.scenes.length - 1];
+          this._rebuild();
+          if (this.vr) this.vr.respawn();
+          if (this.opts.onScene) for (const sc of r.scenes) this.opts.onScene(sc);
+        } catch (e) {
+          this._onEngineTrap('scene rebuild', e);
+          return false;
+        }
+      }
+      /* The party wipe returned to the title (the engine started the title
+       * theme): hand back to the page, which re-runs the boot title. */
+      if (r.quit && this.opts.onQuit) this.opts.onQuit();
+      if (r.menu_ticked) this._afterMenuTicks();
+      return true;
+    }
+
     _frame(skipDraw) {
       const rt = this.rt;
       /* Gamepad buttons enter the same held / pulse sets the keyboard
@@ -108,15 +162,67 @@
        * scheduler does: retail's mode-0x17 frame handler still runs the cue
        * drainer, so a cue already delayed when the screen opened keeps
        * ageing (the native window's `tick_menu_sfx`). */
-      if (advance && (menuOpen || shopOpen)
+      /* The pause menu takes its sim ticks one at a time inside the loop
+       * below (`play_menu_tick`), so it does not freeze the whole frame;
+       * a bundle without the export keeps the frame-level freeze. */
+      const perTickMenu = typeof rt.play_menu_tick === 'function';
+      const perTickShop = typeof rt.play_shop_tick === 'function';
+      const perTickNaming = typeof rt.play_name_entry_tick === 'function';
+      const menuFreezes = menuOpen && !perTickMenu;
+      if (advance && (menuFreezes || shopOpen)
           && typeof rt.play_tick_overlay_sfx === 'function') {
         for (let s = 0; s < simSteps; s++) {
           try { rt.play_tick_overlay_sfx(); } catch (e) { break; }
         }
       }
-      if (advance && !menuOpen && !shopOpen && !namingOpen) {
+      if (advance && !menuFreezes && !shopOpen && !namingOpen
+          && typeof rt.play_frame_ticks === 'function') {
+        /* The frame's ticks, owner by owner, in the engine
+         * (`play_frame_ticks`, the native window's `sim_tick` order): the
+         * pause menu, the naming prompt, the intro skip, the party-wipe hold,
+         * a menu-overlay screen, then the field. What follows here is the
+         * page's own part. */
+        if (!this._frameTicks(rt, simSteps)) return;
+      } else if (advance && !menuFreezes && !shopOpen && !namingOpen) {
+        /* A cached bundle without `play_frame_ticks`: the same order, spelt
+         * here. */
         const steps = simSteps;
+        let menuTicked = false;
         for (let s = 0; s < steps; s++) {
+          /* The pause menu's per-tick arms, in the native window's
+           * `sim_tick` order: the menu once the wipe has spawned it, the
+           * hand-over tick, the press that opens it (Start on this frame's
+           * first tick, or a script's save point / ready check). Each takes
+           * the whole tick; the SFX scheduler still steps, as retail's
+           * mode-0x17 handler runs the cue drainer. While the field darkens
+           * under the wipe it answers 0 and the field ticks. */
+          if (perTickMenu) {
+            let own = 0;
+            try { own = rt.play_menu_tick(padMaskOf(this.pulse)); } catch (e) { own = 0; }
+            if (own !== 0) {
+              if (own >= 2) this._ensureMenuBlitters();
+              menuTicked = true;
+              this.pulse.clear();
+              this._repack();
+              if (typeof rt.play_tick_overlay_sfx === 'function') {
+                try { rt.play_tick_overlay_sfx(); } catch (e) {}
+              }
+              continue;
+            }
+          }
+          /* The naming prompt (`play_name_entry_tick`, the native window's
+           * next arm): modal, so while it is up it takes the tick - the edge
+           * into the entry SM and one frame of its caret and camera. */
+          if (perTickNaming) {
+            let own = 0;
+            try { own = rt.play_name_entry_tick(padMaskOf(this.pulse)); } catch (e) { own = 0; }
+            if (own !== 0) {
+              this.pulse.clear();
+              this._repack();
+              if (own === 2) this._nameCommitted();
+              continue;
+            }
+          }
           /* Retail prologue intro-skip (FUN_801D1344): while the opening
            * chain plays, a Cross press skips the whole remaining opening to
            * town01 - available mid-narration too. The engine returns the
@@ -139,7 +245,18 @@
               }
               this.pulse.clear();
               this._repack();
-              break;
+              /* The hand-off took this tick; the frame's remaining ticks
+               * run on the new scene, as they do after a door and in the
+               * native window's loop (its prologue arm returns from one
+               * `sim_tick`, not from the frame). Breaking here dropped up to
+               * three ticks on a frame that carried several. They read the
+               * new scene's cutscene state: the opening's pad lock does not
+               * outlive the opening. */
+              if (typeof rt.play_cutscene_state_json === 'function') {
+                try { this._cut = JSON.parse(rt.play_cutscene_state_json()); }
+                catch (e) { /* keep the previous read */ }
+              }
+              continue;
             }
           }
           /* Party wipe: the engine raises game over and the overlay draws the
@@ -191,15 +308,36 @@
            * to set the azimuth unconditionally from its own orbit yaw, which
            * is why the engine's own camera state and the controls it drove
            * could not agree. */
+          /* A menu-overlay screen's claim on the tick (`play_shop_tick`):
+           * a shop or the prize exchange suspends the field and takes the
+           * tick (the native `field_suspended` arm, with the SFX scheduler
+           * step); the inn prompt lets the field tick on a neutral pad and
+           * steps after it (`play_shop_after_tick`). */
+          const tickEdge = padMaskOf(this.pulse);
+          let shopPad = false;
+          if (perTickShop) {
+            let own = 0;
+            try { own = rt.play_shop_tick(tickEdge); } catch (e) { own = 0; }
+            if (own === 1) {
+              this.pulse.clear();
+              this._repack();
+              if (typeof rt.play_tick_overlay_sfx === 'function') {
+                try { rt.play_tick_overlay_sfx(); } catch (e) {}
+              }
+              continue;
+            }
+            shopPad = own === 2;
+          }
           const lockedPad = this._cut && this._cut.locked;
+          const neutral = lockedPad || this._shopHoldsPad || shopPad;
           if (this._vrDrive) {
             rt.set_camera_azimuth(this._vrDrive.azimuth);
-            rt.set_pad((lockedPad || this._shopHoldsPad) ? 0 : (this.pad | this._vrDrive.pad));
+            rt.set_pad(neutral ? 0 : (this.pad | this._vrDrive.pad));
           } else {
             if (this.debugCamera || !this.cam.vp) {
               rt.set_camera_azimuth(azimuthUnits(this.cam.yaw));
             }
-            rt.set_pad((lockedPad || this._shopHoldsPad) ? 0 : this.pad);
+            rt.set_pad(neutral ? 0 : this.pad);
           }
           /* A tap's just-pressed edge fires on the first tick of this frame
            * only; later catch-up ticks see the held set, so a one-frame tap
@@ -210,6 +348,9 @@
           try { entered = rt.tick_frame(); } catch (e) {
             this._onEngineTrap('engine tick', e);
             return;
+          }
+          if (perTickShop) {
+            try { rt.play_shop_after_tick(tickEdge); } catch (e) {}
           }
           /* The CD-XA lane's lazy tier: a cast names a clip the bank does
            * not hold and the engine asks for that file's read span. The
@@ -259,6 +400,7 @@
            * them up next frame. */
           if (this._modalOpenedThisTick()) break;
         }
+        if (menuTicked) this._afterMenuTicks();
       } else {
         /* Keep the sim clock current while paused so unpausing doesn't dump the
          * accumulated wall-clock gap as a burst of catch-up ticks. */

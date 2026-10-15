@@ -26,11 +26,10 @@ impl World {
         record: Option<usize>,
         launch: (i32, i32, i32),
     ) {
-        let pc = usize::from(self.party.party_count);
+        let seats = self.battle_seat_map();
         let seat_of = |retail: u8| -> Option<usize> {
             match (band.first, band.last) {
-                (3, 6) => Some(pc + usize::from(retail - 3)),
-                (0, 2) => (usize::from(retail) < pc).then_some(usize::from(retail)),
+                (3, 6) | (0, 2) => seats.engine(retail).map(usize::from),
                 _ => Some(usize::from(retail)),
             }
         };

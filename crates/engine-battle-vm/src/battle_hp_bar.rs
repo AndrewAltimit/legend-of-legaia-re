@@ -80,6 +80,8 @@
 //! does carry is the readout-side clamp itself, which is the half that
 //! produces the desync.
 
+use crate::battle_slot::RetailSlot;
+
 /// One quarter-step of the ramp: `acc / 4`, biased **away from zero** so a
 /// non-zero accumulator always produces a non-zero step and the sequence
 /// terminates for either sign.
@@ -148,11 +150,13 @@ pub fn monster_bar_step(display: u16, pending: i32) -> BarStep {
 /// are party slots and ramp a quarter at a time, everything else settles in
 /// one frame.
 ///
-/// The slot test is retail's `sltiu v0,s1,0x3` at `0x800474F4`.
+/// The slot test is retail's `sltiu v0,s1,0x3` at `0x800474F4`, on the
+/// **pool** slot - hence [`RetailSlot`]: a small party's first monster sits
+/// below engine slot `3` and must not take the party arm.
 ///
 /// PORT: FUN_80047430 (the `slot < 3` arm select)
-pub fn bar_step_for_slot(slot: u8, display: u16, pending: i32) -> BarStep {
-    if slot < 3 {
+pub fn bar_step_for_slot(slot: RetailSlot, display: u16, pending: i32) -> BarStep {
+    if slot.is_party() {
         party_bar_step(display, pending)
     } else {
         monster_bar_step(display, pending)
@@ -376,14 +380,14 @@ mod tests {
         assert_eq!(st.display, 180);
         assert_eq!(st.pending, 0);
         // The arm select: slot 3 is the first monster slot.
-        assert_eq!(bar_step_for_slot(3, 300, 120), st);
-        assert_ne!(bar_step_for_slot(2, 300, 120), st);
+        assert_eq!(bar_step_for_slot(RetailSlot::new(3), 300, 120), st);
+        assert_ne!(bar_step_for_slot(RetailSlot::new(2), 300, 120), st);
     }
 
     #[test]
     fn zero_accumulator_does_not_touch_the_bar() {
         // The `0x800474E8` guard: this is the absorbing state.
-        let st = bar_step_for_slot(0, 123, 0);
+        let st = bar_step_for_slot(RetailSlot::new(0), 123, 0);
         assert_eq!(st.display, 123);
         assert_eq!(st.pending, 0);
     }

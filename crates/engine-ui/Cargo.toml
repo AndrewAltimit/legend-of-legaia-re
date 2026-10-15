@@ -24,6 +24,7 @@ serde.workspace = true
 serde_json.workspace = true
 
 [dev-dependencies]
+legaia-engine-camera.workspace = true
 legaia-engine-field.workspace = true
 # `tests/camera_relative_retail_oracle.rs` reads retail save states (skips
 # and passes without the library).

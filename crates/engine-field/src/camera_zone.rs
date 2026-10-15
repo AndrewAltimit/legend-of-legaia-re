@@ -82,7 +82,7 @@
 //! `crates/parity/tests/field_camera_zone_oracle.rs`.
 
 use crate::field_regions::ZONE_RECORD_STRIDE;
-use legaia_engine_battle_vm::battle_action::motion::trig12;
+use legaia_engine_system::trig::trig12;
 
 /// `*(_DAT_8007B81C)[angle]` - the SCUS sine table (q3.12).
 fn sin12(angle: u16) -> i32 {

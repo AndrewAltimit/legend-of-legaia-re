@@ -35,7 +35,7 @@
 
 use legaia_engine_battle_vm::battle_value_readout as vr;
 
-use crate::screen_prim::{ScreenPrim, ScreenQuad};
+use legaia_render_kernels::screen_prim::{ScreenPrim, ScreenQuad};
 
 use vr::{GLYPH_CLUT, GLYPH_TPAGE};
 
@@ -45,7 +45,7 @@ use vr::{GLYPH_CLUT, GLYPH_TPAGE};
 /// Every readout packet in the captured display lists carries the OT tag
 /// [`vr::OT_TAG`] = `0x09000000`, whose high byte is the bucket, so the
 /// numerals sit at `9`: behind the cinematic bars
-/// ([`crate::screen_prim::CINEMATIC_BAR_OT`] = `8`, which retail links one
+/// ([`legaia_render_kernels::screen_prim::CINEMATIC_BAR_OT`] = `8`, which retail links one
 /// bucket in front of everything) and ahead of the weapon trails (`0x20`) and
 /// the move-FX streak (`0x18`). Picking `0` instead would put a damage figure
 /// over a full-screen fade the summon band raises, which retail never does.
@@ -182,7 +182,7 @@ pub fn arts_banner_prims(
 
 /// Project `FUN_801DF6B8`'s view-space square through a host camera:
 /// `vp` is the column-major view-projection matrix of the battle camera
-/// alone (`legaia_engine_battle_vm::battle_cam_script::battle_vp`, with no model
+/// alone (`legaia_engine_camera::projection::battle_vp`, with no model
 /// scale composed), `world_scale` what the host multiplies a PSX world
 /// coordinate by before it. The square's half-extent is laid along the
 /// camera's own right axis (row 0 of `vp`, normalised), which is how a
@@ -200,7 +200,7 @@ pub fn arts_banner_prims(
 /// `anchor` is a raw PSX point, `+Y` down, and `vp` is a draw matrix: every
 /// host view-projection ends in the `scale(1, -1, 1)` that cancels the
 /// per-model Y flip its draws carry
-/// (`legaia_engine_battle_vm::battle_cam_script::battle_vp`), so a raw point goes
+/// (`legaia_engine_camera::projection::battle_vp`), so a raw point goes
 /// through it with its Y negated. Fed unflipped, a numeral's rise
 /// (`popup_anchor` lifts it `3/2` of the ring timer, toward `-Y`) read as a
 /// fall: the run sank through the floor and off the bottom of the stage.
@@ -296,7 +296,7 @@ mod tests {
     /// capture's display list seats the run.
     #[test]
     fn a_popup_rises_under_a_battle_draw_matrix() {
-        use legaia_engine_battle_vm::battle_cam_script::{BattleCamPose, battle_vp};
+        use legaia_engine_camera::projection::{BattleCamPose, battle_vp};
         let pose = BattleCamPose {
             pitch: 64.0,
             yaw: 2620.0,
@@ -324,7 +324,7 @@ mod tests {
     /// ring timers `224` and `288` with the half-extent unscaled.
     #[test]
     fn a_popup_grows_at_the_ring_timers_view_space_rate() {
-        use legaia_engine_battle_vm::battle_cam_script::{BattleCamPose, battle_vp};
+        use legaia_engine_camera::projection::{BattleCamPose, battle_vp};
         let pose = BattleCamPose {
             pitch: 0.0,
             yaw: 2925.0,
@@ -361,9 +361,9 @@ mod tests {
         assert_eq!(VALUE_READOUT_OT, vr::OT_TAG >> 24);
         // Larger bucket = farther = drawn earlier, so the bars sit in front.
         const {
-            assert!(VALUE_READOUT_OT > crate::screen_prim::CINEMATIC_BAR_OT);
-            assert!(VALUE_READOUT_OT < crate::battle_trail::WEAPON_TRAIL_OT);
-            assert!(VALUE_READOUT_OT < crate::streak_pass::MOVE_FX_STREAK_OT);
+            assert!(VALUE_READOUT_OT > legaia_render_kernels::screen_prim::CINEMATIC_BAR_OT);
+            assert!(VALUE_READOUT_OT < legaia_render_kernels::battle_trail::WEAPON_TRAIL_OT);
+            assert!(VALUE_READOUT_OT < legaia_render_kernels::streak_pass::MOVE_FX_STREAK_OT);
         }
     }
 

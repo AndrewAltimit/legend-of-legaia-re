@@ -1458,7 +1458,7 @@ stats `999`, level `99`. These are the game's own stat caps stated in code.
 
 Port: the input and clamp halves are `engine-menus::debug_char_editor`
 (`0x801D6EC0..0x801D7240` and the clamp pass), driven by the `PLAYER_PARAM`
-page of `engine-core::dev_menu_host`, which the native window opens only with
+page of `engine-menus::dev_menu_host`, which the native window opens only with
 `LEGAIA_DEV_MENU` set. Retail's own renderer half (`0x801D7524` onward,
 roughly two thirds of the function's 890 instructions) is not ported; the dev
 menu draws its own list.

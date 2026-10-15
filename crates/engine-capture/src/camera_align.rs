@@ -6,8 +6,8 @@
 /// `pitch, yaw, tr.x, tr.y, tr.z, focus.x, focus.y, focus.z`.
 pub fn cam_align_to_env(
     tween: &(
-        legaia_engine_battle_vm::battle_cam_script::BattleCamPose,
-        legaia_engine_battle_vm::battle_cam_script::BattleCamPose,
+        legaia_engine_camera::projection::BattleCamPose,
+        legaia_engine_camera::projection::BattleCamPose,
     ),
 ) -> String {
     [tween.0, tween.1]
@@ -28,10 +28,10 @@ pub fn cam_align_to_env(
 pub fn cam_align_from_env(
     v: &str,
 ) -> Option<(
-    legaia_engine_battle_vm::battle_cam_script::BattleCamPose,
-    legaia_engine_battle_vm::battle_cam_script::BattleCamPose,
+    legaia_engine_camera::projection::BattleCamPose,
+    legaia_engine_camera::projection::BattleCamPose,
 )> {
-    use legaia_engine_battle_vm::battle_cam_script::BattleCamPose;
+    use legaia_engine_camera::projection::BattleCamPose;
     let n: Vec<f32> = v
         .split(',')
         .map(|f| f.trim().parse().ok())

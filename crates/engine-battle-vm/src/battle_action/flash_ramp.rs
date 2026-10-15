@@ -339,7 +339,7 @@ fn vertical_half(extent: i16) -> i16 {
 /// [`step_flash_ramp`] only ever produces `0..=3`.
 ///
 /// Both hosts emit these through
-/// `legaia_render_kernels::battle_numerals::arts_banner_prims`, fed from
+/// `legaia_engine_ui::battle_numerals::arts_banner_prims`, fed from
 /// `World::battle_arts_banner_quads`.
 pub fn flash_quads(layer: &FlashLayer, level: u8) -> Option<[FlashQuad; 2]> {
     let (left_travel, seam, right_travel, u_left, u_right, v_top, v_bottom) =

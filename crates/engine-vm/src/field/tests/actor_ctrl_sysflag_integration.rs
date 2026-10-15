@@ -474,9 +474,10 @@ fn sysflag_set_extended_prefix_sets_high_bit_of_index() {
     // (0x80) lands at bit 15 of `idx`.
     let mut host = TestHost::default();
     let mut ctx = FieldCtx::default();
-    // The extended prefix consumes one extra byte. peek_extended would
-    // tell the caller to fetch the script ID (here 0x00).
-    let r = step(&mut host, &mut ctx, &[0xD0, 0x00, 0x05], 0);
+    // The arm reads the index off the opcode pointer, so the byte after
+    // the opcode is both the prelude's script id and the index's low byte;
+    // `s8 += 2` on a PC the prelude already moved one on is pc + 3.
+    let r = step(&mut host, &mut ctx, &[0xD0, 0x05, 0x00], 0);
     assert_eq!(r, StepResult::Advance { next_pc: 3 });
     // idx = (0xD0 & 0x8F) << 8 | 0x05 = 0x80 << 8 | 0x05 = 0x8005.
     // Byte 0x1000, mask 0x04 (bit 5 in big-endian per-byte order).
@@ -524,17 +525,35 @@ fn sysflag_test_bit_set_takes_relative_jump() {
 
 #[test]
 fn sysflag_test_extended_prefix_sets_high_bit_of_index() {
-    // 0xF0 = 0x80 | 0x70. Extended TEST.
+    // 0xF0 = 0x80 | 0x70. Extended TEST. The arm reads off the opcode
+    // pointer, so the byte after the opcode is both the prelude's target id
+    // and the index's low byte (`0x801E35D0..0x801E35F4`).
     let mut host = TestHost::default();
     host.ensure_sys_flag_capacity();
     // idx = (0xF0 & 0x8F) << 8 | 0x05 = 0x8005.
     // Byte 0x1000, mask 0x04. Pre-set it.
     host.system_flags[0x1000] = 0x04;
     let mut ctx = FieldCtx::default();
-    // Layout: [prefix=0xF0, target_id, idx_lo, off_lo, off_hi]
-    // pc=0; on bit-set, next_pc = 0 + 2 (header) + 1 + LE_u16(0x05, 0x00) = 8.
-    let r = step(&mut host, &mut ctx, &[0xF0, 0x00, 0x05, 0x05, 0x00], 0);
+    // Layout: [prefix=0xF0, idx_lo / target_id, off_lo, off_hi, ..]
+    // pc=0; on bit-set, next_pc = (pc + 1) + 2 + LE_u16(0x05, 0x00) = 8.
+    let r = step(&mut host, &mut ctx, &[0xF0, 0x05, 0x05, 0x00, 0x00], 0);
     assert_eq!(r, StepResult::Advance { next_pc: 8 });
+    // A clear bit falls through `s8 + 4` = pc + 5.
+    host.system_flags[0x1000] = 0;
+    let r = step(&mut host, &mut ctx, &[0xF0, 0x05, 0x05, 0x00, 0x00], 0);
+    assert_eq!(r, StepResult::Advance { next_pc: 5 });
+}
+
+#[test]
+fn sysflag_test_high_nibble_8_to_f_is_a_test() {
+    // `0x78..=0x7F` route through `opcode & 0x70 == 0x70` like `0x70..=0x77`;
+    // the index carries the low nibble: `0x7F` -> `0x0F00 | idx_lo`.
+    let mut host = TestHost::default();
+    host.ensure_sys_flag_capacity();
+    host.system_flags[0x0F00 >> 3] = 0x80;
+    let mut ctx = FieldCtx::default();
+    let r = step(&mut host, &mut ctx, &[0x7F, 0x00, 0x04, 0x00], 0);
+    assert_eq!(r, StepResult::Advance { next_pc: 6 });
 }
 
 #[test]

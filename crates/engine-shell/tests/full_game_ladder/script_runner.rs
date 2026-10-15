@@ -66,6 +66,9 @@ pub(super) fn script_pad(session: &NativeSession, f: usize) -> u16 {
     if let Some(pad) = flag_window_pad(session) {
         return pad;
     }
+    if let Some(pad) = code_lock_pad(session) {
+        return pad;
+    }
     if let Some(ne) = session.host.world.party.name_entry.as_ref()
         && ne.state == NameEntryState::Confirm
         && !ne.confirm_yes
@@ -229,6 +232,8 @@ pub(super) fn picker_pad(session: &NativeSession) -> Option<u16> {
     let want = split_stay_option(session)
         .or_else(|| beat_progress_option(session))
         .or_else(|| (visit == 1).then(|| wanted_flag_option(session)).flatten())
+        .or_else(|| open_way_option(session))
+        .or_else(|| quiz_option(session))
         .or_else(|| rest_option(session))
         .unwrap_or((visit - 1) % n);
     Some(if cursor < want {
@@ -367,34 +372,8 @@ pub(super) fn beat_progress_option(session: &NativeSession) -> Option<usize> {
 /// second opening), and a reopened picker goes back to the rotation.
 pub(super) fn wanted_flag_option(session: &NativeSession) -> Option<usize> {
     use legaia_scene_formats::field_disasm::{FlagKind, InsnInfo, decode};
-    let w = &session.host.world;
-    let (bc, mut pc): (&[u8], usize) = if let Some(id) = w.dialog.inline.as_ref() {
-        (id.bytecode.as_slice(), id.pc)
-    } else {
-        let tl = w
-            .cutscene
-            .timeline
-            .iter()
-            .filter(|t| t.dialog.is_some())
-            .chain(
-                w.field_vm
-                    .helper_contexts
-                    .iter()
-                    .filter(|t| t.dialog.is_some()),
-            )
-            .next()?;
-        (tl.bytecode.as_slice(), tl.pc)
-    };
-    let mut picker = None;
-    for _ in 0..16 {
-        let Ok(i) = decode(bc, pc) else { break };
-        if let InsnInfo::Picker { count, targets, .. } = i.info {
-            picker = Some((usize::from(count), targets));
-            break;
-        }
-        pc += i.size.max(1);
-    }
-    let (count, targets) = picker?;
+    let (bc, pc, count, targets) = talk_or_script_picker(session)?;
+    let bc = bc.as_slice();
     let wanted = NEXT_ANCHOR_FLAGS.with(|a| a.borrow().clone())?;
     let have = flags_of_world(session);
     let raises = |mut at: usize| {
@@ -430,6 +409,118 @@ pub(super) fn wanted_flag_option(session: &NativeSession) -> Option<usize> {
         );
     }
     (hits.len() == 1).then(|| hits[0])
+}
+
+/// The picker open in a talk (the inline runner's record) or, failing
+/// that, in a script's box (the modal timeline's, else the first spawned
+/// record holding one): the record's bytes, the picker's pc, its option
+/// count and branch targets.
+fn talk_or_script_picker(session: &NativeSession) -> Option<(Vec<u8>, usize, usize, [usize; 4])> {
+    use legaia_scene_formats::field_disasm::{InsnInfo, decode};
+    let w = &session.host.world;
+    let (bc, mut pc): (&[u8], usize) = if let Some(id) = w.dialog.inline.as_ref() {
+        (id.bytecode.as_slice(), id.pc)
+    } else {
+        let tl = w
+            .cutscene
+            .timeline
+            .iter()
+            .filter(|t| t.dialog.is_some())
+            .chain(
+                w.field_vm
+                    .helper_contexts
+                    .iter()
+                    .filter(|t| t.dialog.is_some()),
+            )
+            .next()?;
+        (tl.bytecode.as_slice(), tl.pc)
+    };
+    for _ in 0..16 {
+        let Ok(i) = decode(bc, pc) else { break };
+        if let InsnInfo::Picker { count, targets, .. } = i.info {
+            return Some((bc.to_vec(), pc, usize::from(count), targets));
+        }
+        pc += i.size.max(1);
+    }
+    None
+}
+
+/// The answer to a quiz: of a picker with four options, the one
+/// whose branch goes somewhere of its own while every other option's goes
+/// to one shared place (the wrong-answer speech). `doman` P1[3] puts four
+/// such questions to the party before it raises `0x4FF` and `0x375`; every
+/// wrong answer branches to the one "that's not it" reply and ends the
+/// talk, so a rotation that walks the options in turn needs a talk per
+/// wrong answer and starts the quiz over each time.
+pub(super) fn quiz_option(session: &NativeSession) -> Option<usize> {
+    let (_, pc, count, targets) = talk_or_script_picker(session)?;
+    let n = count.min(4);
+    if n < 4 {
+        return None;
+    }
+    let t = &targets[..n];
+    let odd: Vec<usize> = (0..n)
+        .filter(|&k| t.iter().filter(|&&o| o == t[k]).count() == 1)
+        .collect();
+    let shared = (0..n)
+        .filter(|&k| t[k] != t[odd.first().copied().unwrap_or(0)])
+        .count();
+    let pick = (odd.len() == 1 && shared == n - 1).then(|| odd[0]);
+    if let Some(k) = pick
+        && std::env::var_os("LEGAIA_FGL_TRACE").is_some()
+    {
+        eprintln!(
+            "      [pick] {} picker at 0x{pc:04X}: option {k} is the quiz's answer",
+            scene_name(session)
+        );
+    }
+    pick
+}
+
+/// The option of the open picker that opens the way when another option
+/// shuts it: the one branch that clears collision-grid wall bits (op `4C`
+/// nibble 7, sub 0 or 2) while another sets them (sub 1 or 3), each
+/// followed through its jumps to its first `0x21` or scene change. A
+/// player answers the question that lets them through. `balden` P2[6], the
+/// lower elevator car's call band, asks "Are you human?": Yes clears the
+/// car door's wall bits (`4C 72`) and starts the car, No paints them back
+/// (`4C 73`). The rotation's No on a later crossing shut the door, and the
+/// upper car (P0[14]) then set the party down inside the shut car, whose
+/// touch its own ride turns off until the call band - beyond the shut
+/// door - turns it back on.
+pub(super) fn open_way_option(session: &NativeSession) -> Option<usize> {
+    let (count, targets, bc) = open_picker(session)?;
+    // `Some(true)` opens, `Some(false)` shuts, `None` paints nothing.
+    let paints = |mut at: usize| -> Option<bool> {
+        for _ in 0..256 {
+            let i = legaia_scene_formats::field_disasm::decode(&bc, at).ok()?;
+            if bc[at] == 0x4C && bc.get(at + 1).is_some_and(|b| b & 0xF0 == 0x70) {
+                return Some(bc[at + 1] & 1 == 0);
+            }
+            if matches!(bc[at] & 0x7F, 0x21 | 0x3F) {
+                return None;
+            }
+            at = match i.info {
+                legaia_scene_formats::field_disasm::InsnInfo::JmpRel { target, .. } => target,
+                _ => at + i.size.max(1),
+            };
+        }
+        None
+    };
+    let painted: Vec<Option<bool>> = (0..count.min(4)).map(|k| paints(targets[k])).collect();
+    let opens: Vec<usize> = (0..painted.len())
+        .filter(|&k| painted[k] == Some(true))
+        .collect();
+    let pick = (opens.len() == 1 && painted.contains(&Some(false))).then(|| opens[0]);
+    if let Some(k) = pick
+        && std::env::var_os("LEGAIA_FGL_TRACE").is_some()
+    {
+        eprintln!(
+            "      [pick] {} picker: option {k} opens the way",
+            scene_name(session)
+        );
+    }
+    pick
 }
 
 /// The picker the modal timeline (or the first spawned record with a box)
@@ -593,6 +684,32 @@ pub(super) fn flag_window_pad(session: &NativeSession) -> Option<u16> {
     } else {
         PadButton::Cross.mask()
     })
+}
+
+/// The face button for the next symbol of an open op-`49 02` code lock
+/// (slot `0x21`, `FUN_801EED58`). The code is the parked operand's five
+/// bytes; a player who was told the password types it. Symbols are Cross
+/// `0`, Circle `1`, Square `2`, Triangle `3` (the packed edge bits `0x40` /
+/// `0x20` / `0x80` / `0x10`). `doman` P1[18], Dr. Usha's intercom, asks for
+/// it once Sol's `koin2` P1[19] has raised `0x36D`; Cross on every symbol
+/// is the wrong answer, `0x37D`. `None` when no lock is taking symbols.
+pub(super) fn code_lock_pad(session: &NativeSession) -> Option<u16> {
+    use legaia_engine_field::field_submode_code_lock::{CODE_LOCK_SLOT, code_from_operand};
+    let screen = &session.host.world.field_vm.submode_screen;
+    if !screen.is_open() || screen.actor.state != CODE_LOCK_SLOT || screen.code_lock.phase != 1 {
+        return None;
+    }
+    let code = code_from_operand(&screen.op49_operand);
+    let sym = *code.get(screen.code_lock.index)?;
+    Some(
+        match sym {
+            0 => PadButton::Cross,
+            1 => PadButton::Circle,
+            2 => PadButton::Square,
+            _ => PadButton::Triangle,
+        }
+        .mask(),
+    )
 }
 
 /// The scenes a partition-2 record reaches through an op-`49 04` floor list
@@ -889,6 +1006,9 @@ thread_local! {
     pub(super) static NO_ITEM: std::cell::RefCell<HashSet<(u8, u32)>> = Default::default();
     /// Actors whose Magic window held no affordable damage spell this battle.
     pub(super) static NO_MAGIC: std::cell::RefCell<HashSet<u8>> = Default::default();
+    /// Magic picks from the command ring that opened no spell window, per
+    /// actor this battle ([`fight_pad`]).
+    pub(super) static MAGIC_REFUSED: std::cell::RefCell<HashMap<u8, u32>> = Default::default();
     /// The foe round a solo duel last chose Spirit in
     /// ([`duel_wants_spirit`]): the round after it swings the gauge it built.
     pub(super) static DUEL_SPIRIT_ROUND: std::cell::Cell<Option<usize>> = const { std::cell::Cell::new(None) };

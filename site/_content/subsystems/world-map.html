@@ -132,7 +132,7 @@
       <text class="dg-edge-label" x="20" y="148">world scale 6x</text>
       <text class="dg-edge-label" x="20" y="166">(battle uses 4x)</text>
     </svg>
-    <figcaption>The walk camera on the three kingdoms, from live RAM: pitch 370 / 360 / 476 (of 4096 per turn) on <code>map01</code> / <code>map02</code> / <code>map03</code>, the eye pulled back along the view axis and its height compensated for the terrain under the player.</figcaption>
+    <figcaption>The walk camera on the three kingdoms, from live RAM: pitch 370 / 360 / 476 (of 4096 per turn) on <code>map01</code> / <code>map02</code> / <code>map03</code>, the eye pulled back along the view axis and its height compensated for the terrain under the player. The 6x scale rides the rotation, so the world scales about the focus; that is the player on a plain walk, and a script that moves the focus off the player (the credits' walk away from Rim Elm) scales about the focus it set.</figcaption>
   </figure>
   <ul class="bullets">
     <li><strong>Camera-relative d-pad.</strong> The remap is not trigonometry: the held direction is looked up in an eight-entry compass ring and rotated by a whole number of 45-degree octants, so "screen up" always walks toward the top of the screen.</li>

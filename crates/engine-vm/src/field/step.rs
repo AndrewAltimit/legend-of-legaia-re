@@ -168,18 +168,24 @@ pub fn step<H: FieldHost>(
             }
         }
 
-        // 0x30 - GFLAG_TST.
+        // 0x30 - GFLAG_TST: a busy-wait on a `_DAT_1F800394` bit **clearing**,
+        // the polarity of `0x33`, not of `0x2D`. The arm (`0x801DEE14`)
+        // advances `s8` by 2, loads the word and joins `0x33`'s test at
+        // `0x801DEE3C`: a clear bit returns the advanced PC (`0x801DEE44`), a
+        // set one restores the entry PC (`0x801DEE4C`). No shipped script
+        // issues it.
+        // REF: FUN_801DE840 (0x801DEE14..0x801DEE54)
         0x30 => {
             let Some(&b) = bytecode.get(operand) else {
                 return StepResult::Unknown { opcode, pc };
             };
             let set = host.global_flags() & (1u32 << (b & 0x1F)) != 0;
             if set {
+                StepResult::Halt { final_pc: pc }
+            } else {
                 StepResult::Advance {
                     next_pc: pc + header_size + 1,
                 }
-            } else {
-                StepResult::Halt { final_pc: pc }
             }
         }
 
@@ -894,21 +900,25 @@ pub fn step<H: FieldHost>(
         // of three SCUS helpers - SET / CLEAR / TEST against the 256-bit
         // bitfield at DAT_80085758 (the **fourth flag bank**).
         //
-        // The masked opcode here is `opcode_byte & 0x7F`, so `0x5x`/`0x6x`/
-        // `0x7x` ranges fall through to this arm. The flag index is built
-        // from the low nibble of the raw opcode byte plus the extended-bit:
-        //   idx = ((opcode_byte & 0x8F) << 8) | operand[0]
+        // The masked opcode here is `opcode_byte & 0x7F`, so the whole
+        // `0x50..=0x7F` range falls through to this arm (the TEST range
+        // includes `0x78..=0x7F`: the route is `opcode & 0x70`). The arm reads
+        // its bytes off the **opcode pointer** `s0`, which the cross-context
+        // prelude does not move - only `s6` / `s8` step past the target byte:
+        //   idx = ((opcode_byte & 0x8F) << 8) | byte[pc + 1]
+        // so on the extended form the index byte and the target id are the
+        // same byte (`0x801E3580..0x801E35F0`).
         //
-        // - 0x5_ SET   : PC += 1 idx byte. host.system_flag_set(idx).
-        // - 0x6_ CLEAR : PC += 1 idx byte. host.system_flag_clear(idx).
-        // - 0x7_ TEST  : 4-byte instruction (idx byte + 2 target bytes).
-        //                When the bit IS set, jump to
-        //                `pc + header_size + 1 + LE_u16(operand[1..3])`
-        //                (relative offset from after the idx byte).
-        //                When clear, fall through past the 4 bytes.
-        0x50..=0x77 => {
+        // - 0x5_ SET   : `s8 += 2`. host.system_flag_set(idx).
+        // - 0x6_ CLEAR : `s8 += 2`. host.system_flag_clear(idx).
+        // - 0x7_ TEST  : a set bit takes `s8 + 2 + LE_u16(byte[pc + 2..])`
+        //                (`0x801E35EC..0x801E3604`), a clear one `s8 + 4`.
+        //   `s8` is `pc + header_size - 1` here, which gives the targets
+        //   below; on the plain form that is a jump relative to the end of
+        //   the index byte.
+        0x50..=0x7F => {
             let route = opcode & 0x70;
-            let Some(&idx_lo) = bytecode.get(operand) else {
+            let Some(&idx_lo) = bytecode.get(pc + 1) else {
                 return StepResult::Unknown { opcode, pc };
             };
             let idx = (u16::from(opcode_byte & 0x8F) << 8) | u16::from(idx_lo);
@@ -926,10 +936,10 @@ pub fn step<H: FieldHost>(
                     }
                 }
                 0x70 => {
-                    let Some(&off_lo) = bytecode.get(operand + 1) else {
+                    let Some(&off_lo) = bytecode.get(pc + 2) else {
                         return StepResult::Unknown { opcode, pc };
                     };
-                    let Some(&off_hi) = bytecode.get(operand + 2) else {
+                    let Some(&off_hi) = bytecode.get(pc + 3) else {
                         return StepResult::Unknown { opcode, pc };
                     };
                     if host.system_flag_test(idx) {
@@ -941,7 +951,7 @@ pub fn step<H: FieldHost>(
                         }
                     }
                 }
-                // For opcode in 0x50..=0x77, `opcode & 0x70` can only be
+                // For opcode in 0x50..=0x7F, `opcode & 0x70` can only be
                 // 0x50, 0x60, or 0x70 - every value handled above.
                 _ => unreachable!("opcode 0x{:02X} & 0x70 must be 0x50/0x60/0x70", opcode),
             }

@@ -18,6 +18,7 @@
 use crate::world::World;
 use legaia_engine_battle_vm::battle_cam_script as script;
 use legaia_engine_battle_vm::battle_formulas as vm_formulas;
+use legaia_engine_camera::projection;
 
 /// Derive the shared battle-camera drive inputs from the live world state -
 /// phase, acting actor, formation box.
@@ -305,7 +306,7 @@ fn battle_end_cam_inputs(
     mut inputs: script::BattleCamInputs,
     actor_at: impl Fn(u8, Option<u8>) -> Option<script::BattleCamActor>,
 ) -> script::BattleCamInputs {
-    use crate::world::VictoryPhase;
+    use legaia_engine_battle::victory::VictoryPhase;
     use legaia_engine_battle_vm::battle_action::BattleEndCause;
     let Some(seq) = world.battle.victory else {
         return inputs;
@@ -436,7 +437,11 @@ pub fn battle_post_action_target(
                     .tables
                     .battle_camera_heights
                     .as_ref()
-                    .and_then(|h| h.height_for_char_id(slot + 1))
+                    // `0x801F4D2C[char - 1]`, `char` the seat's roster id
+                    // `DAT_8007BD10[slot]` - not the seat plus one.
+                    .and_then(|h| {
+                        h.height_for_char_id(world.party_roster_slot(usize::from(slot)) as u8 + 1)
+                    })
                     .map(|h| h as f32)
             })
             .flatten(),
@@ -531,7 +536,10 @@ pub fn battle_attack_channels(world: &World, acting_slot: u8) -> Option<script::
     {
         return None;
     }
-    let character = cam::character_arm(acting_slot + 1)?;
+    // The arm keys on the participant id `DAT_8007BD10[slot]`, the seat's
+    // roster id - a party without Noa seats Gala on seat 1.
+    let character =
+        cam::character_arm(world.party_roster_slot(usize::from(acting_slot)) as u8 + 1)?;
     Some(script::AttackCamChannels {
         character,
         art_id: a.battle.latched_anim,
@@ -559,7 +567,7 @@ pub fn spell_cam_inputs(world: &World, slot: u8, case: u8) -> script::SpellCamIn
     use legaia_engine_battle_vm::battle_target_group::{
         GroupSlot, RENDER_FLAG_HIDDEN, target_group_aim,
     };
-    let pc = world.party.party_count;
+    let seats = world.battle_seat_map();
     let Some(a) = world.actors.get(usize::from(slot)) else {
         return script::SpellCamInputs {
             case,
@@ -600,18 +608,13 @@ pub fn spell_cam_inputs(world: &World, slot: u8, case: u8) -> script::SpellCamIn
         }; 8];
         for (retail, out) in slots.iter_mut().enumerate() {
             let retail = retail as u8;
-            let engine = if retail < 3 {
-                if retail >= pc {
-                    continue;
-                }
-                retail
-            } else {
-                pc + (retail - 3)
+            let Some(engine) = seats.engine(retail) else {
+                continue;
             };
             let Some(t) = world.actors.get(usize::from(engine)) else {
                 continue;
             };
-            let live = retail < 3
+            let live = seats.is_party(engine)
                 || (t.battle_monster_id.is_some() && t.battle.render_flag != RENDER_FLAG_HIDDEN);
             *out = GroupSlot {
                 live,
@@ -638,7 +641,7 @@ pub fn spell_cam_inputs(world: &World, slot: u8, case: u8) -> script::SpellCamIn
         .map_or([actor.world[0], actor.world[2]], |(x, _, z)| {
             [x as f32, z as f32]
         });
-    let monster = slot >= pc;
+    let monster = !seats.is_party(slot);
     let first_magic_3a = monster
         && a.battle_monster_id
             .and_then(|id| world.tables.monster_catalog.get(id))
@@ -692,7 +695,11 @@ pub fn battle_action_framing(world: &World, acting_slot: u8) -> script::ActionFr
         depth_raw: world.battle.camera_frame_height as i32,
         yaw_base: 0,
         style: world.battle_ctx.camera_variant,
-        char_id: if party { acting_slot + 1 } else { 0 },
+        char_id: if party {
+            world.party_roster_slot(usize::from(acting_slot)) as u8 + 1
+        } else {
+            0
+        },
         // Read only by the battle-over arm ([`battle_end_cam_inputs`]); the
         // counters are the camera's own.
         anim_id: 0,
@@ -734,9 +741,9 @@ impl World {
     /// globals (the Cort arrival / form transition,
     /// [`legaia_engine_battle::battle_stage_module`]) this is the module's camera instead,
     /// so both hosts draw what it frames.
-    pub fn battle_cam_pose(&self) -> script::BattleCamPose {
+    pub fn battle_cam_pose(&self) -> projection::BattleCamPose {
         if let Some(c) = self.battle.stage_camera.as_ref() {
-            return script::BattleCamPose {
+            return projection::BattleCamPose {
                 pitch: c.pitch as f32,
                 yaw: c.yaw as f32,
                 tr: c.tr.map(|v| v as f32),

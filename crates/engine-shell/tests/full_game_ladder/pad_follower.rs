@@ -49,10 +49,17 @@ pub(super) fn pad_avoid(session: &NativeSession, keep: Option<(i16, i16)>) -> Ha
         && let Some((mf, man, triggers)) = scene_man_and_triggers(session)
     {
         let w = &session.host.world;
+        // The continuous hand crosses a closer ([`band_is_closer`]), as a
+        // player does: `korb3`'s collection bands wall a gate up behind the
+        // party and stand on the only way through it.
+        let continuous = continuous::PLAYS_ON.with(std::cell::Cell::get);
         for t in triggers.iter().filter(|t| t.gate == 1) {
             let live = partition2_record_gates(&mf, &man, usize::from(t.record))
                 .is_none_or(|(c1, c2)| w.p2_record_gates_pass(&c1, &c2));
-            if live && !inert_band(&mf, &man, usize::from(t.record)) {
+            if live
+                && !inert_band(&mf, &man, usize::from(t.record))
+                && !(continuous && band_is_closer(&mf, &man, usize::from(t.record)))
+            {
                 out.insert((i32::from(t.tile_x), i32::from(t.tile_z)));
             }
         }
@@ -634,8 +641,32 @@ pub(super) fn pad_walk(
         // (`tunnela`'s corridor at (89, 79) hops the party down to (89, 80),
         // a one-way drop the walk then cannot climb back).
         let (dx, dz) = (tx - wx, tz - wz);
+        // Unless that overshoot is what holds the walk: a body box the cell
+        // centre clears and the player's own spot does not (`korb3` P0[3],
+        // the gate stone, stops a walk eight units west of the corridor's
+        // centre line). The continuous hand steps back onto the line.
+        let squeezed = continuous::PLAYS_ON.with(std::cell::Cell::get) && {
+            let dir = if dz.abs() >= dx.abs() {
+                if dz < 0 { 0 } else { 2 }
+            } else if dx < 0 {
+                1
+            } else {
+                3
+            };
+            let w = &session.host.world;
+            // A prop's box, not a person: an NPC walks off on its own, and
+            // stepping round one changed the walk past `suimon`'s gate
+            // keeper by a few units.
+            let npc_near = w.npcs.positions.values().any(|&(x, z)| {
+                (i32::from(x) - i32::from(wx)).abs() < 256
+                    && (i32::from(z) - i32::from(wz)).abs() < 256
+            });
+            !npc_near
+                && w.field_actor_dir_blocked(wx, wz, dir)
+                && !w.field_actor_dir_blocked(tx, tz, dir)
+        };
         let lean = |d: i16, other: i16| {
-            if d.abs() <= WALK_DEADBAND && other.abs() > WALK_DEADBAND {
+            if d.abs() <= WALK_DEADBAND && other.abs() > WALK_DEADBAND && !squeezed {
                 0
             } else {
                 d.signum()

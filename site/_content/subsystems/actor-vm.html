@@ -12,7 +12,7 @@
     <dt>Instruction</dt><dd>Fixed 4 bytes: <code>[opcode u8][window id u8][operand u16 LE]</code>; opcode <code>0x00</code> ends the program</dd>
     <dt>Programs</dt><dd>Data in the same overlay image - see <a href="../formats/window-script.html">window widget scripts</a></dd>
     <dt>Targets</dt><dd>Windows from the menu overlay's 52-record descriptor table (<a href="field-menu.html">field menu</a>)</dd>
-    <dt>In the port</dt><dd><code>engine-vm</code> (<code>run</code> over a <code>Host</code> trait - the first VM ported, and the pattern the others follow)</dd>
+    <dt>In the port</dt><dd><code>engine-vm</code> (<code>run</code> over a <code>Host</code> trait), hosted by <code>engine-menus::menu_widget::MenuWidgetState</code>; live on both play hosts</dd>
     <dt>Confidence</dt><dd>Confirmed - disassembly + live shop-transition captures (<a href="#how-we-know">how we know</a>)</dd>
   </dl>
   <div class="notice">
@@ -125,7 +125,8 @@
 
 <section class="doc-section" id="spawn-record-overload">
   <h2>One pointer, several meanings (actor+0x4C)</h2>
-  <p>The field at <code>+0x4C</code> is a multi-purpose pointer whose meaning depends on the spawn path that created the actor. A morph actor spawned from a VDF record keeps its spawn bytes there (read once, at spawn, to size and fill the vertex pool); a keyframe-animated actor keeps its pose-output buffer there, read by the renderer's per-bone interpolator. Retail relies on the actor classes never colliding. The window VM above <em>never</em> reads <code>+0x4C</code>.</p>
+  <p>The field at <code>+0x4C</code> is a multi-purpose pointer whose meaning depends on the spawn path that created the actor. A morph actor spawned from a VDF record keeps its spawn bytes there (read once, at spawn, to size and fill the vertex pool); a keyframe-animated actor keeps its pose-output buffer there, read by the renderer's per-bone interpolator. Retail relies on the actor classes never colliding. The window VM above <em>never</em> reads <code>+0x4C</code>, and nothing ticks a VDF body's bytes as opcodes.</p>
+  <p>A VDF body is <code>[u32 record_count]</code> followed by 12-byte records, each beginning <code>[u32 group_idx]</code> - there is no 16-byte header, only the 4-byte count. The port keeps the bytes in a retention slot (<code>Actor::spawn_record</code>); what consumes them is the per-actor vertex-pool allocator. One detail of that allocator is open: its first pass advances a 12-byte cursor while the second advances <code>vertex_count * 8</code>.</p>
   <details class="disclosure">
     <summary>Writers and readers of actor+0x4C</summary>
     <div class="disclosure-body">
@@ -142,6 +143,16 @@
       </table>
     </div>
   </details>
+</section>
+
+<section class="doc-section" id="field-actor-families">
+  <h2>Field-overlay actor families</h2>
+  <p>Two field-overlay (PROT 0897) pool-actor families hang off a parent actor's <code>+0x90</code> back-link on the shared actor list the <a href="script-vm.html">field VM</a> walks. Neither is an opcode of the window VM.</p>
+  <ul class="bullets">
+    <li><strong>Scripted arc</strong> (<code>FUN_801D25EC</code>, reached only from field-VM op <code>0x43</code>; its standalone spawn half is <code>FUN_801D5780</code>). Given a source actor, a landing point, an arc height and a frame count, it spawns an actor that hops along a quadratic B&eacute;zier: the X and Z midpoints are plain, but the Y control point is <code>2*apex - mid</code>, which puts the curve through <code>apex</code> at its halfway point. The arc height is how far above the higher endpoint the hop peaks - a lob, not a straight tween. The per-frame step is <code>0x1000 / duration</code>.</li>
+    <li><strong>Attached light</strong> (tick <code>FUN_801E4470</code>, field-VM op <code>0x34</code> sub-1). Each frame it adds the parent's world position to its own offset, screen-projects it, and draws an untextured semi-transparent light pool. Ported in <code>engine-vm::field_actor_billboard</code> and drawn on both play hosts.</li>
+  </ul>
+  <p>At scene load, the re-hydration pass <code>FUN_801D7518</code> walks each of the seven actor lists and allocates the runtime side-buffers a freshly loaded actor record does not carry - retiring three handler classes, rebuilding object tables, a VRAM staging buffer for anim-tick actors on dispatch byte <code>3</code>, and a two-key interpolation table for those on byte <code>6</code>. The field overlay's MAN-load reset hook <code>FUN_801D9C3C</code> reseeds its globals and find-or-spawns one actor.</p>
 </section>
 
 <section class="doc-section" id="how-we-know">

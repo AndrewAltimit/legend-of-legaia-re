@@ -225,7 +225,7 @@ palette-space collapse, not a depth cue.
 
 Port: a non-blocking crawl in the field timeline, paced off the 60 Hz sub-clock
 (`opening_chain_wall_time`: within ~4 % of retail wall time, each leg short by the unmodelled
-scene-load window, so its bands are asymmetric); `legaia_engine_battle_vm::camera_mover` (2471 of 2480
+scene-load window, so its bands are asymmetric); `legaia_engine_camera::camera_mover` (2471 of 2480
 sampled axis values against a live capture, the rest inside the probe's read skew;
 `camera_mover_recomp_oracle` under `LEGAIA_RECOMP_TRACE_DIR` replays the snap / mode-1 / mode-2 /
 mode-4 beats bit-exact); `Renderer::set_palette_grade` (`palette_law_word` /

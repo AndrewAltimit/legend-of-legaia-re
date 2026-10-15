@@ -100,13 +100,14 @@ fn op_4c_n_8_sub_6_signed_decode_round_trip() {
 
 #[test]
 fn op_4c_n_8_sub_b_jumps_when_actor_type_present() {
-    // [4C, 0x8B, type=0x12, target_lo=0x34, target_hi=0x12] → jump 0x1234
+    // [4C, 0x8B, type=0x12, skip=0x1234] → the relative skip exit:
+    // `pc + 5 + 0x1234 - 2`.
     let bytecode = [0x4Cu8, 0x8B, 0x12, 0x34, 0x12];
     let mut host = TestHost::default();
     host.n_8_sub_b_present_types.insert(0x12);
     let mut ctx = FieldCtx::default();
     let r = step(&mut host, &mut ctx, &bytecode, 0);
-    assert_eq!(r, StepResult::Advance { next_pc: 0x1234 });
+    assert_eq!(r, StepResult::Advance { next_pc: 0x1237 });
 }
 
 #[test]
@@ -134,13 +135,9 @@ fn op_4c_n_8_sub_b_truncated_buffer_returns_unknown() {
 }
 
 #[test]
-fn op_4c_n_8_sub_d_empty_slot_advances_6() {
+fn op_4c_n_8_sub_d_unknown_skill_advances_6() {
     let bytecode = [0x4Cu8, 0x8D, 0x05, 0xAB, 0x34, 0x12];
-    let host_state = ActorSearchResult::EmptySlot;
-    let mut host = TestHost {
-        n_8_sub_d_search_result: host_state,
-        ..Default::default()
-    };
+    let mut host = TestHost::default();
     let mut ctx = FieldCtx::default();
     let r = step(&mut host, &mut ctx, &bytecode, 0);
     assert_eq!(r, StepResult::Advance { next_pc: 6 });
@@ -149,27 +146,18 @@ fn op_4c_n_8_sub_d_empty_slot_advances_6() {
 }
 
 #[test]
-fn op_4c_n_8_sub_d_found_jumps_to_le_target() {
-    let bytecode = [0x4Cu8, 0x8D, 0x05, 0xAB, 0x78, 0x56];
+fn op_4c_n_8_sub_d_known_skill_takes_the_relative_skip() {
+    // `town0c` P1[4] at `+0x57F`: `4C 8D 01 0F 49 00` - a Noa who knows art
+    // `0x0F` lands at `0x57F + 6 + 0x49 - 2`.
+    let mut bytecode = vec![0x21u8; 0x600];
+    bytecode[0x57F..0x585].copy_from_slice(&[0x4C, 0x8D, 0x01, 0x0F, 0x49, 0x00]);
     let mut host = TestHost {
-        n_8_sub_d_search_result: ActorSearchResult::Found,
+        n_8_sub_d_known: true,
         ..Default::default()
     };
     let mut ctx = FieldCtx::default();
-    let r = step(&mut host, &mut ctx, &bytecode, 0);
-    assert_eq!(r, StepResult::Advance { next_pc: 0x5678 });
-}
-
-#[test]
-fn op_4c_n_8_sub_d_no_match_halts_at_pc() {
-    let bytecode = [0x4Cu8, 0x8D, 0x05, 0xAB, 0x34, 0x12];
-    let mut host = TestHost {
-        n_8_sub_d_search_result: ActorSearchResult::NoMatch,
-        ..Default::default()
-    };
-    let mut ctx = FieldCtx::default();
-    let r = step(&mut host, &mut ctx, &bytecode, 0);
-    assert_eq!(r, StepResult::Halt { final_pc: 0 });
+    let r = step(&mut host, &mut ctx, &bytecode, 0x57F);
+    assert_eq!(r, StepResult::Advance { next_pc: 0x5CC });
 }
 
 #[test]
@@ -285,14 +273,24 @@ fn op_4c_n_e_sub_8_truncated_buffer_returns_unknown() {
 }
 
 #[test]
-fn op_4c_n_d_sub_0_field_se_trigger_advances_6() {
-    // [4C, 0xD0, 0x34, 0x12, 0x78, 0x56] → a = 0x1234, b = 0x5678.
-    let bytecode = [0x4Cu8, 0xD0, 0x34, 0x12, 0x78, 0x56];
+fn op_4c_n_d_sub_0_holds_on_the_cursor_until_a_press() {
+    // [4C, 0xD0, 0x1B, 0x01, 0x0F, 0x00] - town0c's lesson prompt at
+    // (0x11B, 0x0F). No press: draw the cursor, restore the entry PC.
+    let bytecode = [0x4Cu8, 0xD0, 0x1B, 0x01, 0x0F, 0x00];
     let mut host = TestHost::default();
     let mut ctx = FieldCtx::default();
     let r = step(&mut host, &mut ctx, &bytecode, 0);
+    assert_eq!(r, StepResult::Halt { final_pc: 0 });
+    assert_eq!(host.n_d_sub_0_prompts, vec![(0x11B, 0x0F)]);
+    // A confirm / cancel press advances past the six bytes.
+    host.n_d_sub_0_pressed = true;
+    let r = step(&mut host, &mut ctx, &bytecode, 0);
     assert_eq!(r, StepResult::Advance { next_pc: 6 });
-    assert_eq!(host.n_d_sub_0_se_triggers, vec![(0x1234, 0x5678)]);
+    assert_eq!(
+        host.n_d_sub_0_prompts.len(),
+        1,
+        "no cursor on the press frame"
+    );
 }
 
 #[test]

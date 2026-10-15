@@ -203,7 +203,7 @@ fn drive_on_stream_draws_the_shake_off_the_lent_stream() {
     // Live: one camera step (two display frames) = two draws.
     drive_on_stream(&mut slot, true, at(4), 10, None, &mut rng);
     let mut check = rest;
-    crate::battle_formulas::world_rand(&mut check);
-    crate::battle_formulas::world_rand(&mut check);
+    legaia_engine_system::rand::world_rand(&mut check);
+    legaia_engine_system::rand::world_rand(&mut check);
     assert_eq!(rng, check, "one live step = two world draws");
 }

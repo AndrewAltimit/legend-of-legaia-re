@@ -200,7 +200,7 @@ pub fn boss_transition_stage_id(
 /// The camera globals the modules own while they run: the angle pair
 /// `0x8007B790` / `0x8007B792`, the translation trio `0x800840B8..C0` and the
 /// focus trio `0x80089118..20` (held un-negated, the way
-/// `legaia_engine_battle_vm::battle_cam_script::BattleCamPose` holds it).
+/// `legaia_engine_camera::projection::BattleCamPose` holds it).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct StageCamera {
     pub pitch: i32,

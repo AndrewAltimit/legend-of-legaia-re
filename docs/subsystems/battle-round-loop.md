@@ -35,7 +35,7 @@ It is the most port-facing page of the battle set. The per-state detail of the a
 
 `ctx` is the battle context `*0x8007BD24`; `actor` is an entry of the pointer table at `0x801C9370` (slots `0..2` party, `3..` monsters).
 
-Port entry points: `World::tick` → `live_field_tick` / `live_battle_tick` (`crates/engine-core/src/world/`), round bands in `world/battle/loop_driver/round.rs`, battle end in `world/battle/victory.rs` + `teardown.rs`, encounters in `world/encounters.rs`. The pure kernels sit in `crates/engine-battle` and `crates/engine-battle-vm`; both hosts arm the loop through `World::arm_live_loop` (`crates/engine-core/src/live_loop.rs`).
+Port entry points: `World::tick` → `live_field_tick` / `live_battle_tick` (`crates/engine-core/src/world/`), round bands in `world/battle/loop_driver/round.rs`, battle end in `world/battle/victory.rs` + `teardown.rs` (its phase constants and pose kernels in `engine-battle::victory`), encounters in `world/encounters.rs`. The pure kernels sit in `crates/engine-battle` and `crates/engine-battle-vm`; both hosts arm the loop through `World::arm_live_loop` (`crates/engine-core/src/live_loop.rs`).
 
 ## The loop in one picture
 
@@ -283,7 +283,7 @@ Victory timeline, measured on `rim_elm_gimard_victory` under PCSX-Redux (`script
 | `+336` | exit-fade template (kind 2, `0x40` frames, black -> white), phase halfword from 2 | `screen_fade` = the escape template, drawn by both hosts |
 | `+402` | `ctx[+0x6CE] >= 0x43`: `game_mode = 2` | `finish_battle`, windows come down |
 
-**The pose actor** is `ctx[+0x13]`, and the party leader poses: no store in the battle overlay writes a seat there (every store is a round-boundary zero or the magic menu's MP-cost scratch), and the three-member `noa_levelup_banner` capture reads `ctx[+0x13] == 0` with seat 0 carrying the staged pose while Noa is the one who levelled. The pose id comes from the SCUS table at `0x800788A0` through the HP-quarter tier, aged by the round count and forced weak by the `0x107B` status mask (`victory_pose_tier` / `victory_pose_column`). The clip is one of the eight base-archive records the art-bank ladder resolves for ids `0x11..=0x18`.
+**The pose actor** is `ctx[+0x13]`, and the party leader poses: no store in the battle overlay writes a seat there (every store is a round-boundary zero or the magic menu's MP-cost scratch), and the three-member `noa_levelup_banner` capture reads `ctx[+0x13] == 0` with seat 0 carrying the staged pose while Noa is the one who levelled. The pose id comes from the SCUS table at `0x800788A0` through the HP-quarter tier, aged by the round count and forced weak by the `0x107B` status mask (`engine-battle::victory::victory_pose_tier` / `victory_pose_column`). The clip is one of the eight base-archive records the art-bank ladder resolves for ids `0x11..=0x18`.
 
 Port divergences in the pose:
 

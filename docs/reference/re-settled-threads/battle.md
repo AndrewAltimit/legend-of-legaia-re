@@ -718,7 +718,7 @@ Owning page (full spec + engine wiring):
   records held until `delay < elapsed * 0x3C` with `delay = rand() % 5000`): the grid needs ~84 frames
   merely to finish starting, and a shorter window leaves part of it at its seeded pose throughout.
 
-Port: `engine-battle-vm::battle_intro_styles::intro_duration_frames`. Owning page:
+Port: `render-kernels::battle_intro_styles::intro_duration_frames`. Owning page:
 [`cutscene.md`](../../subsystems/cutscene.md#how-long-a-transition-runs-dat_801d2458).
 
 ### Battle ground grid depth cue - the far colour
@@ -1276,7 +1276,7 @@ Each flag is one destination row of the Uru Mais dream-shrine **teleport-pad pic
   yellow. The legend is the Cross / Circle icons (`0x37` / `0x38`) and the field-overlay strings at
   `0x801CF0B8` / `0x801CF0C4` (records checked against a mednafen state's VRAM).
 
-Port: `engine-core::field_submode_flag_window` hosts slot `0x23` on the field path, drawn on both
+Port: `engine-field::field_submode_flag_window` hosts slot `0x23` on the field path, drawn on both
 hosts.
 
 ### Encounter MAN sub-section layout

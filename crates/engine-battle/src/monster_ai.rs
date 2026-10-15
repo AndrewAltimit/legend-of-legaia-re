@@ -543,11 +543,25 @@ pub fn decide(
 }
 
 /// Post-switch recent-target anti-repeat ring (`DAT_8007BDBC[0..4]`). When the
-/// chosen target is a party slot (`< party_count`), the party has more than one
-/// member, and the spell is not the special id `0x70`, a target that appears in
-/// the last-4 ring is re-rolled to a different living-ish slot (the retail logic
-/// nudges off recently-hit members); then the ring is shifted and the final
-/// target recorded at the head. Returns the (possibly adjusted) target.
+/// chosen target is a party slot, the party has more than one member, and the
+/// spell is not the special id `0x70`, a target found at ring index `idx` is
+/// moved off with probability `1 - 1 / (4 - idx)`; then the ring is shifted and
+/// the final target recorded at the head. Returns the (possibly adjusted)
+/// target.
+///
+/// The move has two arms (`0x801EBF54..0x801EC054`): a target equal to the
+/// ring head, or any target in a party of two, steps one seat (`rand() & 1`
+/// picks `+1`, else `-1`) and wraps `% party_count`; a party of three whose
+/// target is not the head re-rolls `rand() % 3` until it differs from both the
+/// old target and the head.
+///
+/// `target_class` is an engine slot or a target code. Retail's party test is
+/// `sltiu v0,a0,0x3` on `+0x1DD` (`0x801EBE8C`), a **pool**-slot test, so the
+/// engine slot goes through [`legaia_engine_battle_vm::battle_slot::SeatMap`]:
+/// read raw, a two-member party's first monster (engine slot `2`, the target
+/// of a monster's heal on its own row) was nudged onto the party.
+///
+/// PORT: FUN_801E9FD4 (the recent-target ring, `0x801EBE84..0x801EC090`)
 pub fn apply_recent_target_ring(
     target_class: u8,
     spell_id: u8,
@@ -555,21 +569,34 @@ pub fn apply_recent_target_ring(
     state: &mut MonsterAiState,
     rng: &mut dyn FnMut() -> u32,
 ) -> u8 {
+    let seats = legaia_engine_battle_vm::battle_slot::SeatMap::new(party_count);
     let pc = party_count.max(1);
     let mut target = target_class;
-    if target_class < 3 && pc > 1 && spell_id != 0x70 {
+    if seats.retail(target_class).is_party() && pc > 1 && spell_id != 0x70 {
         // Find the target in the recent ring.
         let idx = state.recent_targets.iter().position(|&t| t == target_class);
         if let Some(idx) = idx {
             let span = (4 - idx) as u32;
-            if span != 0 && rng() % span != 0 {
-                // Nudge to an adjacent slot (retail: +/-1 then wrap), or re-roll.
-                let bump = if rng() & 1 == 0 {
-                    target.wrapping_sub(1)
+            if rng() % span != 0 {
+                let head = state.recent_targets[0];
+                if target == head || pc != 3 {
+                    // Step one seat (`rand() & 1`: `+1`, else `-1`) and wrap.
+                    let bump = if rng() & 1 == 0 {
+                        target.wrapping_sub(1)
+                    } else {
+                        target.wrapping_add(1)
+                    };
+                    target = bump % pc;
                 } else {
-                    target.wrapping_add(1)
-                };
-                target = bump % pc;
+                    // Re-roll off both the old target and the ring head.
+                    let old = target;
+                    loop {
+                        target = (rng() % u32::from(pc)) as u8;
+                        if target != old && target != head {
+                            break;
+                        }
+                    }
+                }
             }
         }
     }
@@ -782,6 +809,51 @@ mod tests {
         let t = apply_recent_target_ring(0, 0x51, 3, &mut state, &mut rng);
         assert!(t < 3);
         assert_eq!(state.recent_targets[0], t, "head records the target");
+    }
+
+    /// A small party's first monster sits below engine slot `3`; a monster
+    /// heal aimed at it stays on it however often the ring has seen it.
+    #[test]
+    fn a_small_partys_monster_target_is_not_ring_filtered() {
+        for pc in 1..=3u8 {
+            for monster in pc..pc + 3 {
+                let mut state = MonsterAiState::new();
+                state.recent_targets = [monster; 4];
+                let mut rng = || 1u32;
+                let t = apply_recent_target_ring(monster, 0x51, pc, &mut state, &mut rng);
+                assert_eq!(t, monster, "pc {pc} monster slot {monster}");
+            }
+        }
+    }
+
+    /// The ring's two move arms (`0x801EBF54..0x801EC054`): the head, or any
+    /// target of a two-member party, steps one seat; a three-member party's
+    /// non-head target re-rolls off both the old target and the head.
+    #[test]
+    fn the_ring_steps_a_pair_and_rerolls_a_trio() {
+        // Party of two, target 0 found at the head: `rand % 4 = 1` moves it,
+        // `rand & 1 = 1` steps `+1`.
+        let mut state = MonsterAiState::new();
+        state.recent_targets = [0, 0xFF, 0xFF, 0xFF];
+        let mut draws = [1u32, 1].into_iter();
+        let mut rng = || draws.next().unwrap();
+        assert_eq!(
+            apply_recent_target_ring(0, 0x51, 2, &mut state, &mut rng),
+            1
+        );
+
+        // Party of three, target 1 at index 1 (head is 2): `rand % 3 = 1`
+        // moves it, then rolls `1` (old target) and `2` (head) are refused
+        // and `0` lands.
+        let mut state = MonsterAiState::new();
+        state.recent_targets = [2, 1, 0xFF, 0xFF];
+        let mut draws = [1u32, 1, 2, 0].into_iter();
+        let mut rng = || draws.next().unwrap();
+        assert_eq!(
+            apply_recent_target_ring(1, 0x51, 3, &mut state, &mut rng),
+            0
+        );
+        assert_eq!(draws.next(), None, "four draws, retail's order");
     }
 
     #[test]

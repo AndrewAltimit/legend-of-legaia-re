@@ -67,7 +67,7 @@
 //!    mismatches, truncation toward zero; the final 1024 entries repeat the
 //!    first 1024 so the `+0x400`-entry cos read never wraps). So `b()` = sin
 //!    and `a()` = cos of the 12-bit angle -
-//!    [`legaia_engine_battle_vm::rotation_lut::RetailRotationLut`] generates
+//!    [`legaia_engine_system::rotation_lut::RetailRotationLut`] generates
 //!    the same table from the formula.
 //!
 //! Engine wiring: `World::tick_battle_animations` steps each battle actor's
@@ -125,7 +125,7 @@
 //! battle-action overlay image.
 //! REF: FUN_80019B28 - the bearing helper.
 
-use legaia_engine_battle_vm::rotation_lut::RotationLut;
+use legaia_engine_system::rotation_lut::RotationLut;
 
 /// Bytes per effect-script record.
 pub const RECORD_STRIDE: usize = 8;
@@ -315,7 +315,7 @@ impl EffectRecord {
 ///
 /// The retail LUT pair behind `_DAT_8007B7F8` / `_DAT_8007B81C` is pinned as
 /// one SCUS sine table (see
-/// [`legaia_engine_battle_vm::rotation_lut::RetailRotationLut`]), which is what the live
+/// [`legaia_engine_system::rotation_lut::RetailRotationLut`]), which is what the live
 /// battle tick supplies.
 pub fn rotate_offset<L: RotationLut>(
     lut: &L,
@@ -705,8 +705,7 @@ impl HomingSlots {
             match s.phase {
                 2 => {
                     s.heading = heading_to(s.pos, t);
-                    let (sin, cos) =
-                        legaia_engine_battle_vm::battle_action::motion::trig12(s.heading);
+                    let (sin, cos) = legaia_engine_system::trig::trig12(s.heading);
                     // `(lut * speed * delta) << 3 >> 15`, delta one vsync.
                     s.pos[2] += (i32::from(cos) * speed * 8) >> 15;
                     s.pos[0] += (i32::from(sin) * speed * 8) >> 15;
@@ -929,7 +928,7 @@ pub fn step_effect_script<L: RotationLut>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use legaia_engine_battle_vm::rotation_lut::retail_rotation_lut;
+    use legaia_engine_system::rotation_lut::retail_rotation_lut;
 
     /// A rotation LUT in the retail fixed point. Generated, not lifted.
     struct Lut {

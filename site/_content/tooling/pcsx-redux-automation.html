@@ -352,6 +352,7 @@ name_fmt = "xp+0x%03X"</code></pre>
         <tbody>
       <tr><td>Stale global read as a flag</td><td>An overlay timer holds garbage until its screen first runs, so "is this UI up?" polls compare against noise</td><td>Exec-break on the code that draws the thing</td></tr>
       <tr><td>Sign-extended registers</td><td><code>gp</code> prints as <code>0xFFFFFFFF8007B318</code>; a <code>~=</code> against <code>0x80000000</code> is true even when equal</td><td><code>bit.band(v, 0xFFFFFFFF)</code>; use the library's in-RAM predicate, not a fresh one</td></tr>
+      <tr><td>Position poke across regions</td><td>The player walks through NPCs: a poke that skips the map door leaves the region box (<code>0x1F800384..87</code>) stale, actors outside it keep the visibility-cull bit, and the collision and interact tests skip culled actors</td><td>Poke the player onto a kind-0 map-door tile and let the game's own warp re-latch the box</td></tr>
       <tr><td>Overlay entry points move</td><td>A hex breakpoint from an older dump arms at nothing</td><td>Symbolic names; <code>gp</code>-relative targets computed after the load</td></tr>
         </tbody>
       </table>

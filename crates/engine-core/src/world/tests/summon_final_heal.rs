@@ -315,7 +315,9 @@ fn final_heal_mid_drain_settles_on_max_hp() {
     assert_eq!(world.actors[0].battle.hp, 0);
     world.apply_final_heal_revives();
     for _ in 0..200 {
-        world.actors[0].battle.tick_hp_bar(0);
+        world.actors[0]
+            .battle
+            .tick_hp_bar(legaia_engine_battle_vm::battle_slot::RetailSlot::new(0));
     }
     let a = &world.actors[0].battle;
     assert_eq!(a.hp, 2368);

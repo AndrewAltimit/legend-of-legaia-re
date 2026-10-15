@@ -1,6 +1,22 @@
-//! Projection: the retail GTE battle camera as one view-projection matrix.
+//! Projection: the retail GTE battle camera as one view-projection matrix,
+//! and the [`BattleCamPose`] it is built from.
 
-use super::*;
+/// One camera pose: 12-bit angle units (`4096` = full turn) + the eye-space
+/// translation trio, exactly the retail globals' value space.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct BattleCamPose {
+    /// Pitch, 12-bit units (`0x8007B790`).
+    pub pitch: f32,
+    /// Yaw, 12-bit units (`0x8007B792`). May run outside `[0, 4096)`
+    /// mid-glide (shortest-arc unwrap); normalized when the orbit owns it.
+    pub yaw: f32,
+    /// Eye-space translation `(x, y, z)` (`0x800840B8/BC/C0`).
+    pub tr: [f32; 3],
+    /// The world point the camera orbits (`0x80089118/1C/20`, stored negated
+    /// in retail; held un-negated here). `FUN_801D829C` tweens it on the same
+    /// clock as the rotation and translation trios.
+    pub focus: [f32; 3],
+}
 
 // ---------------------------------------------------------------------------
 // Projection: the retail GTE battle camera as one view-projection matrix.
@@ -97,7 +113,7 @@ pub fn battle_vp(pose: &BattleCamPose, world_scale: f32, aspect: f32) -> [f32; 1
 
 /// View-space depth of a raw battle-world point under `pose` - the `MAC3`
 /// an `MVMVA` of the point leaves, which the battle tint pass
-/// (`crate::battle_actor_tint`) reads back as the node's `+0x34`.
+/// (`legaia_engine_battle_vm::battle_actor_tint`) reads back as the node's `+0x34`.
 ///
 /// `raw_pos` is in raw retail battle units (Y down, the actor's `+0x14`
 /// trio); both it and the focus are lifted by `world_scale` exactly as

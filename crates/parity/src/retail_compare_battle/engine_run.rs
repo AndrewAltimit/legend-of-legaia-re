@@ -531,6 +531,7 @@ pub fn run_engine_battle(
                     phase_tick = Some(t);
                     break;
                 }
+                gate.steer(&mut session.host.world);
                 session.tick()?;
                 session.fog_render_tick();
                 session.host.route_bgm_events(&mut director)?;
@@ -573,7 +574,7 @@ pub fn run_engine_battle(
     if matches!(driven, Some(Some(_)))
         && let Some(snap) = pre_drive.as_mut()
     {
-        let latch = legaia_engine_core::world::VICTORY_STORY_FLAG;
+        let latch = legaia_engine_battle::victory::VICTORY_STORY_FLAG;
         crate::retail_compare::set_system_flag(
             &mut snap.save,
             latch,
@@ -611,7 +612,7 @@ pub fn run_engine_battle(
     if std::env::var_os("LEGAIA_RC_CAM_TRACE").is_some()
         && let Some(cam) = session.host.world.battle.camera.as_ref()
     {
-        let p = |p: legaia_engine_battle_vm::battle_cam_script::BattleCamPose| {
+        let p = |p: legaia_engine_camera::projection::BattleCamPose| {
             format!(
                 "{}/{} tr={:?} focus={:?}",
                 p.pitch,

@@ -45,7 +45,9 @@ link into a dependent crate.
   `pause_screens` (the Items / Magic / Equip screen sessions and view
   models, the root route table, the kind-4 list kernel) and `shop` /
   `shop_catalog` (the buy / sell / quantity / recipient sessions, the shop
-  window set and the disc gold-shop catalog); see
+  window set and the disc gold-shop catalog), and `shop_cues` (the root
+  picker's rows and labels, the list page lengths, and the UI cue each shop
+  input raises); see
   [`docs/subsystems/shop.md`](../../docs/subsystems/shop.md).
 - **Battle command input** - `battle_input` (`BattleCommandSession`, the
   player-driven command picker the live battle loop opens per party turn,
@@ -73,7 +75,9 @@ link into a dependent crate.
   `menu_open_sequence` (`FUN_801DAD6C`), `menu_cues` (which blip a frame's pad
   edges fire), `menu_glyph_atlas`, `save_menu_atlas` (the shared 256x256
   save / pause / battle-badge sprite bake), `debug_char_editor` (the
-  developer character editor) and `key_rebind`.
+  developer character editor), `dev_menu_host` (the developer menu screen
+  it sits on; engine-core's `DevMenuWorldExt` runs it against a `World`) and
+  `key_rebind`.
 - **Title + boot** - `publisher_logos`, `title` (title state machine),
   `title_screen_atlas`, `name_entry` (the `town01` naming screen) and
   `game_over` (party wipe to the title).

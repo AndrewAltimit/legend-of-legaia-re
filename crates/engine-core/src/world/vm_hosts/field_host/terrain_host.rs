@@ -3,6 +3,13 @@
 use super::*;
 
 impl<'a> FieldTerrainHost for FieldHostImpl<'a> {
+    /// Op `0x4D`'s tile derivation (`0x801DFADC`): scratchpad flag bit
+    /// `0x20000` of `_DAT_1F800394` selects the `(world << 16) >> 23` form
+    /// over `(world - 0x40) >> 7`.
+    fn world_to_tile_use_alt(&self) -> bool {
+        self.world.flags.story_flags & 0x0002_0000 != 0
+    }
+
     /// Field-VM op `0x4C` outer-nibble-7 - rectangular collision-grid wall
     /// paint. Writes the high-nibble wall bits of the per-scene collision
     /// grid (`*(_DAT_1F8003EC) + 0x4000`), the same grid

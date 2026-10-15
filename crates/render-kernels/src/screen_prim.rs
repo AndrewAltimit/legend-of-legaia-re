@@ -184,7 +184,7 @@ impl ScreenQuad {
 /// Per-corner depth of a depth-tested screen quad, in the **shared
 /// view-projection's** normalised depth: `clip.z / clip.w` of the corner's
 /// world point through the same matrix the scene meshes draw with
-/// (`legaia_engine_battle_vm::psx_camera::psx_projection` maps the near plane to
+/// (`legaia_engine_camera::psx_camera::psx_projection` maps the near plane to
 /// `0` and the far plane to `1`). Each host maps it exactly the way its 3D
 /// pass maps that matrix's output - the native renderer through its
 /// reversed-Z remap (`1 - z`), the play page straight into `gl_Position.z` -

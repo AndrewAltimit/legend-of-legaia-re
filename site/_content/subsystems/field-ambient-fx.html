@@ -132,6 +132,7 @@
     <li><strong>The gate is script-driven, not per-scene data.</strong> <code>_DAT_8007B854</code> is raised by op <code>4C 30</code> and cleared by <code>4C 31</code> (see <a href="script-vm-menuctrl.html">op 0x4C</a>). It is the ambient-particle master gate; it is not an input lock.</li>
     <li>The emitter names tiles and draws nothing. Each burst goes to the spawner, which checks the walk box, the region enable and the cap, and fills the pool at <code>_DAT_8007B7E0</code> - eighty records.</li>
     <li>Each record draws as two additive half-sheets, and a sheet is a <strong>view-space billboard</strong>, not a world-space quad.</li>
+    <li><strong>The pool ages once per game frame, by the frame step.</strong> The field render pass walks it once a frame and ages each record by its rate times the VSyncs that frame took (<code>0x1F800393</code>), so a 30&nbsp;Hz frame ages it by two VSyncs at once. The walk draws no random numbers; only the spawner does. The port steps it once per sim tick on both hosts.</li>
     <li>A warp entry - a return from battle, a minigame or a movie - skips the spawn, so the emitter exists only after a real field entry.</li>
   </ul>
 </section>

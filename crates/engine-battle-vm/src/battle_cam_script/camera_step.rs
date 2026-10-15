@@ -89,6 +89,7 @@ impl BattleCamera {
             last_active_commits: None,
             last_active_installs: None,
             clip_age: 0,
+            steps_in_state: 0,
             last_swing_seeds: None,
             option: CAMERA_OPTION_CLOSE,
             shake: ShakeState::default(),
@@ -208,6 +209,7 @@ impl BattleCamera {
             return;
         }
         self.last_action_state = state;
+        self.steps_in_state = 0;
         self.release_module_shot(state);
         // The magic exit's camera write, on the pass that leaves `0x2E` for
         // `0x50` (`0x801E4958..0x801E497C`): a pitch at or above `0x191`
@@ -333,7 +335,7 @@ impl BattleCamera {
     /// otherwise leave it stranded.
     ///
     /// REF: FUN_801D9D30 (the kernel is
-    /// [`crate::battle_camera::apply_shake`])
+    /// [`legaia_engine_camera::battle_camera::apply_shake`])
     pub fn set_shake_amplitude(&mut self, amplitude: u8) {
         self.shake.amplitude = u32::from(amplitude);
     }
@@ -725,6 +727,16 @@ impl BattleCamera {
         self.clip_age
     }
 
+    /// Camera steps taken since the action-SM state last changed
+    /// ([`Self::observe_action_state`]). Port-only: retail's framing call and
+    /// its walker run inside one pass, so a capture of a state is always at
+    /// least one pass in; the engine changes state on a tick and steps its
+    /// camera on every [`Self::frame_step`]-th, so the tick that enters a
+    /// state may not have stepped in it yet.
+    pub fn steps_in_state(&self) -> u32 {
+        self.steps_in_state
+    }
+
     /// Current camera pose (12-bit angle units + eye-space TR), **with** the
     /// live screen-shake offset folded into the translation pair - which is
     /// where retail's `FUN_801D9D30` puts it.
@@ -806,7 +818,7 @@ impl BattleCamera {
                 // track column (`ctx[+0x26D] = rand() % 2`) and the ramps
                 // restart from zero, so the swing frames from one of the
                 // table's two columns.
-                let coin = crate::battle_formulas::world_rand(&mut self.rand_state) & 1 != 0;
+                let coin = legaia_engine_system::rand::world_rand(&mut self.rand_state) & 1 != 0;
                 self.attack.ctx.begin_action(coin);
                 self.clip_age = 0;
                 // Retail re-arms case 6 on the state change and tweens over
@@ -1179,11 +1191,12 @@ impl BattleCamera {
     }
 
     pub(super) fn step_once(&mut self) {
+        self.steps_in_state = self.steps_in_state.saturating_add(1);
         // Re-roll the jitter first, on retail's own kernel. `amplitude == 0`
         // is the resting state and backs the previous offset straight out, so
         // an un-shaken camera returns to its framing pose on the next step
         // rather than holding the last kick.
-        crate::battle_camera::apply_shake(
+        legaia_engine_camera::battle_camera::apply_shake(
             &mut self.shake.accum,
             &mut self.shake.offset,
             self.shake.amplitude,

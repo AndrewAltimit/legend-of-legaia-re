@@ -26,7 +26,7 @@
 //! See `docs/subsystems/minigame-dance.md` § Entering and leaving the hall.
 
 use legaia_actor_formats::player_anm::PlayerAnmBundle;
-use legaia_engine_battle_vm::psx_camera::FieldCameraView;
+use legaia_engine_camera::psx_camera::FieldCameraView;
 use legaia_engine_minigames::dance::{
     DanceMode, DanceSceneEntry, dance_face_rig, dance_scene_entry,
 };
@@ -149,7 +149,7 @@ pub fn psx_gpu_visible_indices(
     origin: [f32; 3],
     indices: &[u32],
 ) -> Vec<u32> {
-    let r = legaia_engine_battle_vm::psx_camera::camera_rotation(view.pitch, view.yaw, view.roll);
+    let r = legaia_engine_camera::psx_camera::camera_rotation(view.pitch, view.yaw, view.roll);
     let sxy: Vec<[i64; 2]> = positions
         .iter()
         .map(|p| {

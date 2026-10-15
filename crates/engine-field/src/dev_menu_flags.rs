@@ -44,7 +44,7 @@
 //! [`PACK_*`](PACK_UP) constants below are that layout; do not substitute
 //! `PadButton::*.mask()` here.
 //!
-//! Wired: `legaia_engine_core::dev_menu_host::DevMenuSession`'s `EVENT_FLAG` page
+//! Wired: `legaia_engine_menus::dev_menu_host::DevMenuSession`'s `EVENT_FLAG` page
 //! drives all three kernels. The **flag-list table** is the field overlay's
 //! own data (`DAT_801f2e94` in extraction entry `0897`, stride `0xA`: a
 //! `u16` flag id then an 8-byte NUL-padded name, ended by a record whose name

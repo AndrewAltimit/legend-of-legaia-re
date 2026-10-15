@@ -926,6 +926,9 @@ fn three_actor_talk_switch_cycles_leader_and_returns_to_poll() {
     assert_eq!(ms.render_26, 0x600);
     // The incoming participant parked at the 0x3F80 sentinel.
     assert_eq!(world.npcs.positions.get(&6), Some(&(0x3F80, 0x3F80)));
+    // State 2's `FUN_8003BDE0(x, z, +0x72, 1)`: the instruction's record
+    // byte, queued once as a global-index spawn.
+    assert_eq!(world.field_vm.pending_record_spawns, vec![10]);
 }
 
 /// All three presence flags set = nobody left to switch to: the arm gate

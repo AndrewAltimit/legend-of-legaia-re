@@ -78,7 +78,7 @@ impl World {
             .and_then(|cat| cat.id_index_map_bytes().get(1..))
             .unwrap_or(&[]);
         let step = fx::step_effect_script(
-            legaia_engine_battle_vm::rotation_lut::retail_rotation_lut(),
+            legaia_engine_system::rotation_lut::retail_rotation_lut(),
             script,
             script_actor,
             frame,
@@ -599,7 +599,7 @@ impl World {
     /// PORT: FUN_8004998C (`0x8004A5FC..0x8004A8D8`, the selector emit loop)
     pub(in crate::world) fn emit_battle_burn_sprites(&mut self) {
         use legaia_engine_battle_vm::battle_impact_fx as ifx;
-        use legaia_engine_battle_vm::rotation_lut::RotationLut;
+        use legaia_engine_system::rotation_lut::RotationLut;
         let acc = (self.battle.burn_emit_accum & 0xF) + 8;
         self.battle.burn_emit_accum = acc;
         let emits = acc / ifx::BURN_EMIT_QUANTUM;
@@ -631,7 +631,7 @@ impl World {
             ];
             let facing = a.battle.facing_angle;
             let red = plan.tint.colour as u8;
-            let lut = legaia_engine_battle_vm::rotation_lut::retail_rotation_lut();
+            let lut = legaia_engine_system::rotation_lut::retail_rotation_lut();
             for _ in 0..emits {
                 let idx = self.next_rand() as usize % objects.len();
                 let rands = [
@@ -830,7 +830,7 @@ impl World {
 
     /// Plan this frame's weapon-trail sweeps - the engine seat of the
     /// retail trigger `FUN_8005112C` + sweep driver `FUN_80048310`
-    /// (kernels in `legaia_engine_battle_vm::battle_trail`; geometry emission in
+    /// (kernels in `legaia_render_kernels::battle_trail`; geometry emission in
     /// `legaia_render_kernels::battle_trail`).
     ///
     /// For each party battle actor whose committed clip's `+0x77`
@@ -845,7 +845,7 @@ impl World {
     // REF: FUN_80048310 (sweep capture - the ring sampling here replaces
     // the rewound re-decode; see `engine-battle-vm::battle_trail` module docs)
     pub fn battle_weapon_trail_draws(&self) -> Vec<BattleWeaponTrailDraw> {
-        use legaia_engine_battle_vm::battle_trail as wt;
+        use legaia_render_kernels::battle_trail as wt;
         let mut out = Vec::new();
         for (i, actor) in self.actors.iter().enumerate() {
             // Party-only: retail's trigger gates on seat < 3; the engine

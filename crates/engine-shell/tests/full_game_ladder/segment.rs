@@ -85,6 +85,11 @@ pub(super) fn traverse(
     trail: &mut Vec<String>,
 ) -> Result<(), String> {
     let mut beaten: BTreeSet<String> = BTreeSet::new();
+    // Scenes whose training a stay carried the party out of (`dolk2`'s inn
+    // plays Noa's dream mid-training and brings the party back): the
+    // training goes on when the party is back, without the rest of the
+    // arrival pass.
+    let mut retrain: BTreeSet<String> = BTreeSet::new();
     // The flags each scene's beats pass left behind (pad tier): a scene
     // the story came back to with new flags has new beats to play.
     // `retona`: the Songi fight, the P2[17] hop to `map02` and back, and
@@ -141,6 +146,7 @@ pub(super) fn traverse(
         if here != last_here {
             came_from = std::mem::replace(&mut last_here, here.clone());
         }
+        let f_arrival = flags_of_world(session);
         match run_while_moving(session, SCRIPT_CEILING) {
             Run::Entered(s) => {
                 if upkeep {
@@ -152,8 +158,14 @@ pub(super) fn traverse(
                 // straight back where it came from was a stay, not a visit:
                 // `jiji`'s inn (P2[9]) sleeps the party over in `ropeway`
                 // and its arrival cutscene returns it to `jiji` before the
-                // station's own beats can play.
-                if vias.get(via).is_some_and(|w| *w == here) && s != came_from {
+                // station's own beats can play. A dream that plays and
+                // wakes the party where it fell asleep is a visit all the
+                // same: its arrival script is the beat, and it raises the
+                // flag the waking reads (`urudre3` P2[0] raises `0x3F4`,
+                // on which `uru`'s entry script spawns the waking P2[34]).
+                if vias.get(via).is_some_and(|w| *w == here)
+                    && (s != came_from || flags_of_world(session) != f_arrival)
+                {
                     via += 1;
                     trail.push(format!("[via {here}: arrival script]"));
                 }
@@ -184,6 +196,28 @@ pub(super) fn traverse(
         if let Some(w) = vias.get(via)
             && *w == cur
         {
+            // A continuous hand that walks into a waypoint with next to
+            // nothing in the bag stocks up before the waypoint's story, as
+            // a player does: `retock`'s beats lead straight into the
+            // `jagaroom` fight (13245 HP), and a party that arrived with no
+            // heal and 36000 gold lost it six times.
+            if upkeep && session.host.world.mode == SceneMode::Field && bag_short_of_heals(session)
+            {
+                upkept += 1;
+                if let Some(s) =
+                    pad_shop(session).map_err(|e| format!("in {cur} (via), shopping: {e}"))?
+                {
+                    trail.push(format!("{s}(shop talk)"));
+                    continue;
+                }
+                pad_equip_best(session);
+                if let Some(s) =
+                    pad_rest(session).map_err(|e| format!("in {cur} (via), resting: {e}"))?
+                {
+                    trail.push(format!("{s}(rest)"));
+                    continue;
+                }
+            }
             via += 1;
             let mut log = Vec::new();
             let left = play_beats(session, &mut log)
@@ -191,6 +225,28 @@ pub(super) fn traverse(
             trail.push(format!("[via {}]", log.join("; ")));
             if let Some(s) = left {
                 trail.push(format!("{s}(beat)"));
+                continue;
+            }
+            // The continuous hand finishes the waypoint's story before it
+            // moves on: its talks in the scene's other walk components, and
+            // the stretch's errand (an item to earn and buy).
+            if upkeep {
+                upkept += 1;
+                if let Some(s) = pad_far_talks(session, graph, &cur, trail)
+                    .map_err(|b| format!("in {cur} (via), crossing to a talk: {b}"))?
+                {
+                    trail.push(format!("{s}(talk crossing)"));
+                    continue;
+                }
+                if scene_name(session) == cur && walking(session) {
+                    let goal = vias.get(via).unwrap_or(&target.scene).clone();
+                    let out = graph
+                        .route_avoiding(&cur, &goal, &dead)
+                        .and_then(|r| r.get(1).cloned());
+                    if let Some(s) = pad_errand(session, graph, &cur, out.as_deref(), trail)? {
+                        trail.push(format!("{s}(errand)"));
+                    }
+                }
             }
             continue;
         }
@@ -202,15 +258,19 @@ pub(super) fn traverse(
         if pad
             && continuous::PLAYS_ON.with(std::cell::Cell::get)
             && session.host.world.mode == SceneMode::Field
-            && beaten.insert(cur.clone())
+            && (retrain.contains(&cur) || beaten.insert(cur.clone()))
         {
             upkept += 1;
+            let train_only = retrain.remove(&cur);
             // Upkeep first, as a player arriving in a town: the shop, what
             // it sold, the bed.
             // A talk or a stay that carried the party off (`dolk2`'s inn
             // plays Noa's dream and brings it back) leaves the rest of the
             // scene for the return.
-            if let Some(s) = pad_shop(session).map_err(|e| format!("in {cur}, shopping: {e}"))? {
+            if !train_only
+                && let Some(s) =
+                    pad_shop(session).map_err(|e| format!("in {cur}, shopping: {e}"))?
+            {
                 trail.push(format!("{s}(shop talk)"));
                 beaten.remove(&cur);
                 continue;
@@ -235,7 +295,11 @@ pub(super) fn traverse(
             if cur != target.scene {
                 proactive_only.insert(cur.clone());
             }
-            let left = play_beats(session, &mut log);
+            let left = if train_only {
+                Ok(None)
+            } else {
+                play_beats(session, &mut log)
+            };
             PROACTIVE.with(|p| p.set(false));
             if let Some(near) = near {
                 NEXT_ANCHOR_FLAGS.with(|n| *n.borrow_mut() = near);
@@ -259,6 +323,9 @@ pub(super) fn traverse(
                     .map_err(|e| format!("in {cur}, training: {e}"))?
                 {
                     trail.push(format!("{s}(training)"));
+                    if s != cur {
+                        retrain.insert(cur.clone());
+                    }
                 } else if scene_name(session) == cur && walking(session) {
                     // What the fights paid goes over the counter, and the
                     // party sets out rested.

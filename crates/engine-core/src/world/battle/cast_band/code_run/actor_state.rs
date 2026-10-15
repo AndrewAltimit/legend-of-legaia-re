@@ -17,13 +17,7 @@ impl World {
     /// an engine-side seat expression built on that base goes through this
     /// map. `None` for a party seat a small party leaves empty.
     pub(in crate::world) fn engine_slot_for_retail_pool(&self, retail: u8) -> Option<u8> {
-        let pc = self.party.party_count.clamp(1, 3);
-        let fm = legaia_engine_battle_vm::cast_module_ticks::FIRST_MONSTER_SEAT;
-        if retail < fm {
-            (retail < pc).then_some(retail)
-        } else {
-            Some(pc + (retail - fm))
-        }
+        self.battle_seat_map().engine(retail)
     }
 
     /// Lift one actor slot into the state view the slot-B kernels take.

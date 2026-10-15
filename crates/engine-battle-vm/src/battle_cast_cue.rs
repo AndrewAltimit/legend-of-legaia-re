@@ -47,6 +47,8 @@
 //! id (`>= 0xF8`, and `0x20C..=0x20E` on the enemy leg), which the host
 //! classifies before it reaches a bank.
 
+use crate::battle_slot::RetailSlot;
+
 /// Outcome of the cast audio-cue dispatch.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CastCueOutcome {
@@ -68,7 +70,8 @@ pub enum CastCueOutcome {
 ///
 /// Laws (capture-resident disassembly, jump tables reconstructed by the
 /// decompiler from the resident image):
-/// - enemy-side leg (`char_kind == 4` **or** `slot >= 3`): cast class
+/// - enemy-side leg (`char_kind == 4` **or** `slot >= 3`, on the retail
+///   pool slot - [`RetailSlot`]): cast class
 ///   `0..=2` -> SFX `0x20C`, `3 | 8` -> `0x20D`, `4` -> `0x20E`, all
 ///   other classes silent;
 /// - player leg, queue head `0xFE`: the item-give special (no class cue);
@@ -77,13 +80,13 @@ pub enum CastCueOutcome {
 ///   `7` -> `+0xFC` only when the sub-class byte `actor[+0x1E9]` is in
 ///   `1..=4`, classes `6` and `> 8` silent.
 pub fn cast_audio_cue(
-    slot: u8,
+    slot: RetailSlot,
     char_kind: u8,
     cast_class: u8,
     queue_head: u8,
     sub_class: u8,
 ) -> CastCueOutcome {
-    if char_kind == 4 || slot >= 3 {
+    if char_kind == 4 || !slot.is_party() {
         return match cast_class {
             0..=2 => CastCueOutcome::Sfx(0x20C),
             3 | 8 => CastCueOutcome::Sfx(0x20D),
@@ -392,48 +395,99 @@ mod tests {
     fn enemy_leg_band() {
         for class in 0..=2 {
             assert_eq!(
-                cast_audio_cue(3, 0, class, 0, 0),
+                cast_audio_cue(RetailSlot::new(3), 0, class, 0, 0),
                 CastCueOutcome::Sfx(0x20C)
             );
         }
-        assert_eq!(cast_audio_cue(3, 0, 3, 0, 0), CastCueOutcome::Sfx(0x20D));
-        assert_eq!(cast_audio_cue(3, 0, 8, 0, 0), CastCueOutcome::Sfx(0x20D));
-        assert_eq!(cast_audio_cue(3, 0, 4, 0, 0), CastCueOutcome::Sfx(0x20E));
-        assert_eq!(cast_audio_cue(3, 0, 5, 0, 0), CastCueOutcome::None);
+        assert_eq!(
+            cast_audio_cue(RetailSlot::new(3), 0, 3, 0, 0),
+            CastCueOutcome::Sfx(0x20D)
+        );
+        assert_eq!(
+            cast_audio_cue(RetailSlot::new(3), 0, 8, 0, 0),
+            CastCueOutcome::Sfx(0x20D)
+        );
+        assert_eq!(
+            cast_audio_cue(RetailSlot::new(3), 0, 4, 0, 0),
+            CastCueOutcome::Sfx(0x20E)
+        );
+        assert_eq!(
+            cast_audio_cue(RetailSlot::new(3), 0, 5, 0, 0),
+            CastCueOutcome::None
+        );
         // char-kind 4 routes to the enemy leg even on a player slot.
-        assert_eq!(cast_audio_cue(0, 4, 0, 0, 0), CastCueOutcome::Sfx(0x20C));
+        assert_eq!(
+            cast_audio_cue(RetailSlot::new(0), 4, 0, 0, 0),
+            CastCueOutcome::Sfx(0x20C)
+        );
     }
 
     #[test]
     fn player_leg_per_character_band() {
         // char_kind 2 (Noa in the 0x8007BD10 kind space): base 0x20.
-        assert_eq!(cast_audio_cue(0, 2, 0, 0, 0), CastCueOutcome::Sfx(0x118));
-        assert_eq!(cast_audio_cue(0, 2, 1, 0, 0), CastCueOutcome::Sfx(0x118));
-        assert_eq!(cast_audio_cue(0, 2, 2, 0, 0), CastCueOutcome::Sfx(0x119));
-        assert_eq!(cast_audio_cue(0, 2, 3, 0, 0), CastCueOutcome::Sfx(0x11A));
-        assert_eq!(cast_audio_cue(0, 2, 8, 0, 0), CastCueOutcome::Sfx(0x11A));
-        assert_eq!(cast_audio_cue(0, 2, 4, 0, 0), CastCueOutcome::Sfx(0x11B));
-        assert_eq!(cast_audio_cue(0, 2, 5, 0, 0), CastCueOutcome::Sfx(0x11C));
-        assert_eq!(cast_audio_cue(0, 2, 6, 0, 0), CastCueOutcome::None);
+        assert_eq!(
+            cast_audio_cue(RetailSlot::new(0), 2, 0, 0, 0),
+            CastCueOutcome::Sfx(0x118)
+        );
+        assert_eq!(
+            cast_audio_cue(RetailSlot::new(0), 2, 1, 0, 0),
+            CastCueOutcome::Sfx(0x118)
+        );
+        assert_eq!(
+            cast_audio_cue(RetailSlot::new(0), 2, 2, 0, 0),
+            CastCueOutcome::Sfx(0x119)
+        );
+        assert_eq!(
+            cast_audio_cue(RetailSlot::new(0), 2, 3, 0, 0),
+            CastCueOutcome::Sfx(0x11A)
+        );
+        assert_eq!(
+            cast_audio_cue(RetailSlot::new(0), 2, 8, 0, 0),
+            CastCueOutcome::Sfx(0x11A)
+        );
+        assert_eq!(
+            cast_audio_cue(RetailSlot::new(0), 2, 4, 0, 0),
+            CastCueOutcome::Sfx(0x11B)
+        );
+        assert_eq!(
+            cast_audio_cue(RetailSlot::new(0), 2, 5, 0, 0),
+            CastCueOutcome::Sfx(0x11C)
+        );
+        assert_eq!(
+            cast_audio_cue(RetailSlot::new(0), 2, 6, 0, 0),
+            CastCueOutcome::None
+        );
     }
 
     #[test]
     fn class_7_gates_on_sub_class() {
         for sub in 1..=4u8 {
-            assert_eq!(cast_audio_cue(0, 1, 7, 0, sub), CastCueOutcome::Sfx(0x10C));
+            assert_eq!(
+                cast_audio_cue(RetailSlot::new(0), 1, 7, 0, sub),
+                CastCueOutcome::Sfx(0x10C)
+            );
         }
-        assert_eq!(cast_audio_cue(0, 1, 7, 0, 0), CastCueOutcome::None);
-        assert_eq!(cast_audio_cue(0, 1, 7, 0, 5), CastCueOutcome::None);
+        assert_eq!(
+            cast_audio_cue(RetailSlot::new(0), 1, 7, 0, 0),
+            CastCueOutcome::None
+        );
+        assert_eq!(
+            cast_audio_cue(RetailSlot::new(0), 1, 7, 0, 5),
+            CastCueOutcome::None
+        );
     }
 
     #[test]
     fn item_give_special_precedes_class_dispatch() {
         assert_eq!(
-            cast_audio_cue(0, 2, 0, 0xFE, 0),
+            cast_audio_cue(RetailSlot::new(0), 2, 0, 0xFE, 0),
             CastCueOutcome::ItemGive { voice_arg: 0x1B }
         );
         // But not on the enemy leg.
-        assert_eq!(cast_audio_cue(3, 0, 0, 0xFE, 0), CastCueOutcome::Sfx(0x20C));
+        assert_eq!(
+            cast_audio_cue(RetailSlot::new(3), 0, 0, 0xFE, 0),
+            CastCueOutcome::Sfx(0x20C)
+        );
     }
 
     // --- the module head cue ------------------------------------------------

@@ -217,3 +217,46 @@ fn field_vm_system_flag_test_takes_jump_when_bit_set() {
     // pc was 0; header_size = 1; +1 (idx byte) + delta(10) = 12.
     assert_eq!(world.field_pc, 12);
 }
+
+/// `4C C5` / `4C C6` hold on the world's flag bank (retail's
+/// `FUN_8003CE64` test), and a move-VM ext `0x1C` / `0x1D` - the raiser
+/// every shipped wait relies on - is what releases them.
+#[test]
+fn field_system_flag_waits_hold_until_move_vm_flips_the_flag() {
+    let mut world = World::new();
+    world.actors[0].active = true;
+    world.actors[1].active = true;
+    let set_wait = [0x4Cu8, 0xC5, 0x0A, 0x00];
+    let clear_wait = [0x4Cu8, 0xC6, 0x0A, 0x00];
+    let mut ctx = FieldCtx::default();
+    let step = |world: &mut World, ctx: &mut FieldCtx, op: &[u8]| {
+        let mut host = FieldHostImpl { world };
+        vm::field::step(&mut host, ctx, op, 0)
+    };
+    assert!(matches!(
+        step(&mut world, &mut ctx, &set_wait),
+        FieldStepResult::Halt { final_pc: 0 }
+    ));
+    // `2F 1C 0A` - the part's raise.
+    let bc = vec![0x002F, 0x001C, 0x000A, 0x0008];
+    world.set_move_bytecode(0, Some(bc.clone()));
+    let _ = world.step_move_vm(0, &bc);
+    assert!(world.system_flag_test(0x0A));
+    assert!(matches!(
+        step(&mut world, &mut ctx, &set_wait),
+        FieldStepResult::Advance { next_pc: 4 }
+    ));
+    assert!(matches!(
+        step(&mut world, &mut ctx, &clear_wait),
+        FieldStepResult::Halt { final_pc: 0 }
+    ));
+    // `2F 1D 0A` - the clear, on a second part.
+    let bc = vec![0x002F, 0x001D, 0x000A, 0x0008];
+    world.set_move_bytecode(1, Some(bc.clone()));
+    let _ = world.step_move_vm(1, &bc);
+    assert!(!world.system_flag_test(0x0A));
+    assert!(matches!(
+        step(&mut world, &mut ctx, &clear_wait),
+        FieldStepResult::Advance { next_pc: 4 }
+    ));
+}

@@ -502,13 +502,14 @@ because `legaia_engine_minigames::baka_cabinet` has a free function of that name
 and the port catalog's reachability pass identifies free functions by name
 ([`stale-not-wired-triage.md`](../tooling/stale-not-wired-triage.md)).
 
-The host is `legaia_engine_core::dev_menu_host::DevMenuSession`, the engine's
+The host is `legaia_engine_menus::dev_menu_host::DevMenuSession`, the engine's
 opt-in developer screen. Its row list is the subset whose backing state the
 engine owns; each row carries retail's own list index
 (`DevMenuRow::retail_index`), so the CLOSED gate, row formatter, panel
 geometry, cursor step and draw gate are all retail's kernels. Rows of retail's
 list the engine keeps no state for have no consumer. Both hosts drive the
-screen through `DevMenuSession::tick_host(world, camera, edge, held)`, which
+screen through `tick_host(world, camera, edge, held)` (engine-core's
+`DevMenuWorldExt`, the `World` seam), which
 also carries the `CAMERA` row's state in and out.
 
 The **draw** half - retail's GPU-packet emitters `FUN_8001AA68` /
@@ -961,7 +962,12 @@ The menu's close adds `3`, so `7` selects phase 6 and handler `0x29`
 (Riremito) and `8` selects phase 7 and handler `0x2B` (Rula). See
 [field-locomotion.md](field-locomotion.md) for the arts. The engine's
 `World::tick_pause_session` runs this hand-off for the two items on both play
-hosts. The panel host mirrors the counter in
+hosts. The seed also ends the menu: `FUN_801DC6B4` dispatches its screens only
+from state `2` (jump table `0x801CEEB0`), and the `3..5` arm at
+`0x801DC9A4..0x801DC9E4` waits for the brightness, adds `3` and returns done.
+So a Door pick closes the whole menu rather than returning to the root list
+(`FinishedSubsession::close_menu`, which every host passes to the root's
+`resume`); the art never runs under an open menu. The panel host mirrors the counter in
 `PanelActorHost::release_flash_with`, which refuses to write it unless a
 hand-off is outstanding, as only the menu writes it in retail.
 
@@ -993,7 +999,7 @@ overlay data region `0x801F28F0..0x801F2Fxx` and the context `_DAT_801C6EA4`.
   (`asset field-op-census --only "49 04"`). Port:
   `legaia_engine_field::field_submode::submode_panel_rows` (layout) and
   `flag_window_tick` (handler), hosted on the field path by
-  `engine-core::field_submode_flag_window` and drawn on both hosts.
+  `engine-field::field_submode_flag_window` and drawn on both hosts.
 - **`FUN_801E6B34`** (1084 bytes) - the **name-entry renderer**: the `6 x 17`
   glyph grid from the string at `0x801F29F0` (cells laid out with
   `idx % 0x66`), the cursor (when `_DAT_8007BB94 != 4`) and three label lines
@@ -1633,7 +1639,11 @@ are two region records' compositions.
 [`camera_view::resolve_field_camera`](../../crates/engine-core/src/camera_view.rs)'s
 world-map arm hands both hosts the pose as `FieldCameraFrame::WorldMapWalk`
 (the eye trio in retail GTE units, the 6x scale applied as a world transform
-about the player). `camera_view::world_map_walk_view` is the fallback pose for
+about the focus globals `0x80089118/20`). The scale rides retail's rotation
+matrix, so the view builder's MVMVA of `-focus` scales the world about the
+focus, not the player: the two coincide on a plain walk and part where a
+record moves the focus off the player, as the credits' `map01` walk-away
+does. `camera_view::world_map_walk_view` is the fallback pose for
 a world with no field terrain loaded. Oracle:
 `crates/parity/tests/world_map_zone_camera_oracle.rs` enters each
 library overworld state's scene, seats the player on the state's position and

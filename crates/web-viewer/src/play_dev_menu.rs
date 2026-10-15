@@ -32,7 +32,8 @@
 //! host can drift on the packed-pad conversion, the equip commit or the
 //! record-counter reads without the gate failing.
 
-use legaia_engine_core::dev_menu_host::{DevMenuRow, DevMenuSession, DevPage};
+use legaia_engine_core::dev_menu_host::DevMenuWorldExt;
+use legaia_engine_menus::dev_menu_host::{DevMenuRow, DevMenuSession, DevPage};
 use legaia_engine_system::pad::retail_packed;
 use legaia_engine_ui::{self as ui, RecordsLabels, TextDraw};
 use wasm_bindgen::prelude::*;

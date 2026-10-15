@@ -1,6 +1,7 @@
 //! Action-teardown ("done") band of the battle-action state machine (recoil reset, exit pose, fade-down timer).
 
 use super::*;
+use crate::battle_slot::SeatMap;
 
 // --- done band --------------------------------------------------------------
 
@@ -121,7 +122,9 @@ pub(super) fn restore_action_anim_rates<H: BattleActionHost + ?Sized>(
 
     let slot = ctx.active_actor;
     let staged_id = host.actor(slot).map(|a| a.current_anim).unwrap_or(0);
-    let staged = if slot < 3 {
+    // A party seat in retail's numbering - a small party's first monster
+    // sits at engine slot `party_count`, not at `3`.
+    let staged = if SeatMap::new(host.party_count()).retail(slot).is_party() {
         StagedAction::Party {
             action_id: staged_id,
         }
@@ -172,6 +175,14 @@ pub(super) fn restore_action_anim_rates<H: BattleActionHost + ?Sized>(
 /// [`BattleActor::hp`] vs [`BattleActor::hp_display`] (`None` = settled), and
 /// the third field the pair converges through as
 /// [`BattleActor::hp_bar_pending`] - see [`tick_hp_bars`].
+///
+/// The `0..=2` test is on the **retail pool slot**. Retail seats party member
+/// `i` at pool slot `i` and monster `k` at `3 + k` whatever the party size
+/// (`FUN_800513F0`, `addiu s0,s2,0x3` at `0x8005185C`); the engine compacts
+/// the monster row to `party_count + k`, and `+0x1DD` holds an engine slot.
+/// Read raw, a two-member party's first monster (engine slot 2) took the
+/// party arm, and a monster whose live HP had been written without a readout
+/// seed (Nighto's instant death, `FUN_801F69E8`) held the gate forever.
 pub fn hp_bar_drain_pending<H: BattleActionHost + ?Sized>(host: &H, ctx: &BattleActionCtx) -> bool {
     let pending = |slot: u8| -> bool {
         host.actor(slot)
@@ -183,8 +194,8 @@ pub fn hp_bar_drain_pending<H: BattleActionHost + ?Sized>(host: &H, ctx: &Battle
         .map(|a| a.active_target)
         .unwrap_or(8);
     match target {
-        0..=2 => pending(target),
         8 => (0..host.party_count()).any(pending),
+        t if SeatMap::new(host.party_count()).retail(t).is_party() => pending(t),
         _ => false,
     }
 }
@@ -201,9 +212,14 @@ pub fn hp_bar_drain_pending<H: BattleActionHost + ?Sized>(host: &H, ctx: &Battle
 ///
 /// REF: FUN_80047430 (the HP-bar ramp arm; kernel in `battle_hp_bar`)
 pub fn tick_hp_bars<H: BattleActionHost + ?Sized>(host: &mut H) {
+    // The ramp's arm select (`sltiu v0,s1,0x3` at `0x800474F4`) is on the
+    // retail pool slot, so the engine slot goes through the same map the
+    // settle check uses: a small party's first monster ramps in one frame,
+    // as retail's does.
+    let seats = SeatMap::new(host.party_count());
     for slot in 0..host.slot_count() {
         if let Some(actor) = host.actor_mut(slot) {
-            actor.tick_hp_bar(slot);
+            actor.tick_hp_bar(seats.retail(slot));
         }
     }
 }
@@ -231,15 +247,8 @@ pub fn tick_cast_census<H: BattleActionHost + ?Sized>(host: &H, ctx: &mut Battle
     // (`magic::face_cast_target`); read in engine order, a solo party's
     // first monster counted as a second party member and the sole-party
     // latch never held.
-    let party_count = host.party_count();
-    let engine_slot = |retail: u8| -> Option<u8> {
-        use crate::battle_cue_group::MONSTER_SLOT_FIRST;
-        if retail < MONSTER_SLOT_FIRST {
-            (retail < party_count).then_some(retail)
-        } else {
-            Some(party_count + (retail - MONSTER_SLOT_FIRST))
-        }
-    };
+    let seats = SeatMap::new(host.party_count());
+    let engine_slot = |retail: u8| seats.engine(retail);
     let mut slots = [CensusSlot::default(); CENSUS_SLOTS];
     for (i, s) in slots.iter_mut().enumerate() {
         if let Some(a) = engine_slot(i as u8).and_then(|e| host.actor(e)) {

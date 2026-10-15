@@ -340,7 +340,9 @@ engine verdict:
   replays; the image child installs the state's own live records (pool
   `_DAT_8007B7E0`, `retail_fog`, `LEGAIA_SEAT_FOG`) on the frame it
   captures (`FogPool::install_snapshot`), and the frame's render step ages,
-  drifts and draws them as retail's did. With the records installed, the
+  drifts and draws them as retail's did. The tick has stepped the engine's
+  own pool by then, so the frame's fog draw installs the records and re-runs
+  that step over them (`BootSession::seat_field_fog`). With the records installed, the
   overworld mist of `field_walled_collision_pin` matches retail's frame to
   within the metric's noise - the sheet renderer is exact, and the spread
   was only where the pool had put its sheets. The headless seed keeps its
@@ -1724,6 +1726,17 @@ it, the child also writes that family's triangles one per line
 (`<path>.tris`: draw index, screen corners, clip `w`, mesh-space corners), the per-packet level
 to match against the display list's corners when a family's count parts.
 
+A battle frame's residual is read against the state the child captured, not
+the one the headless seed scored. `LEGAIA_DIAG_CAPTURE_STATE=1` in a kept
+`cmd.sh` prints it on the screenshot frame: the action state, the
+`ctx[+0x243]` marker, the stage ambient and backdrop cue, each roster
+member's equipment, each actor's seat, heading, mode word and tint, and every
+live effect sprite. `LEGAIA_DIAG_CAPTURE_VRAM=<path>` beside it writes the
+battle VRAM for a byte comparison against `mednafen-state vram-dump
+--out-bin`, and `LEGAIA_DIAG_FX_ALL=1` prints every effect sprite's projected
+screen centre each frame, the engine side of the display list's effect
+packets.
+
 ### The frames either side of a gated capture
 
 A gated child captures one frame, and a draw the retail frame shows may be
@@ -1734,6 +1747,46 @@ every seed and drive still running. A strip of such frames around `N` is what
 showed Tail Fire's hit rays forty ticks ahead of the gate - the fold on the
 wrong edge, not a missing effect
 ([battle-action](../subsystems/battle-action.md#a-monsters-cast-lands-from-its-homing-flight)).
+
+### A drive's frame is the one the display showed
+
+A battle drive stops on the first engine tick that holds the RAM's phase,
+but the frame on retail's screen is two game frames older than the RAM
+([above](#replayed-casts)): `2 * step` vsyncs, the step rebuilt from the
+frame-duration history (`display_lag_vsyncs`). Two things are taken back by
+that lag, each where the corpus measures it better
+(`RetailBattle::display_retake`, `RetailBattle::displayed_camera`).
+
+**The frame.** The parent hands the child the lag
+(`LEGAIA_CAPTURE_DISPLAY_LAG`). The child notes the first tick of its current
+run in the drive's state; when the gate holds and that run already held `lag`
+ticks back, it names the earlier tick beside its frame (`<shot>.retake`), and
+the parent runs the child again with `LEGAIA_DIAG_CAPTURE_TICK` set to it.
+The child is tick-locked, so the re-run walks the same frames. A party seat's
+clip-age gate and every capture-band hold take it; the rest keep the gate's
+own frame:
+
+| Gate | Why it keeps the RAM's frame |
+|---|---|
+| under `lag` ticks into its state | the displayed frame belongs to the state before, which the drive reaches on its own clock; taken back across the entry the `super_queue_*` captures fell from `0.654` to `0.327` |
+| `Landed` | retail sat on the CD wait with its glide long landed, and the engine's gate is the tick its own glide lands: the frames before it are mid-glide (`evil_medallion_rage_battle` `0.913` to `0.395`) |
+| a monster's clip age | Tail Fire's hit rays run on the engine's own clock ([above](#the-frames-either-side-of-a-gated-capture)); both `battle_gimard_tail_fire_*` frames fell |
+| `DoneHold` | the Done band's captures part on where the replay left the bodies (`noa_levelup_fight_pre` fell) |
+
+**The camera.** A camera still closing on its framing draws the displayed
+frame well short of the RAM's pose, and the ease is fastest at its start.
+The walker `FUN_8002149C` steps each component by `increment * frame_step`
+a pass and the re-arm sets `ceil((gap + frame_step * increment) / 0xC)`
+([battle-stage-camera](../subsystems/battle-stage-camera.md#the-tween-is-an-ease-out)),
+so the pass before stood one step back and each earlier one
+`gap / (0xC - frame_step)` further again (`displayed_cam_live`, the divisor
+read off the table's largest increment). The child aligns its glide to that
+pose rather than the RAM's. On `nivora_duel_mid_blazing_slash` the case-6
+yaw still has `589` to go: two passes back the camera stands some `250`
+units round, the far ice crystals swing across the screen while the two
+duellists hold still, and the frame read `0.611` against retail's with the
+crystals `70` to `90` px off. Every action drive but a `DoneHold` takes the
+displayed pose, also where its frame stays at the RAM's instant.
 
 ## Divergence shapes
 
@@ -2157,6 +2210,14 @@ lands within a few dozen units of retail's player; what remains is about a
 dozen frames between the walk and the glide (retail's glide is 123 frames
 in after 111 walked units, the engine's after 123).
 
+The frame matches once the overworld scales about the right point. The
+credits walk holds the focus `(12091, 3449)` about a hundred units off the
+player `(12194, 3550)`, and retail's 6x overworld scale, carried by the
+rotation matrix, scales the world about the focus; the port scaled it about
+the player, which slid the whole frame about 25 px sideways at that depth
+with every camera word on retail's
+([world-map](../subsystems/world-map.md#walk-view-camera-retail-model-ram-pinned)).
+
 The same record re-skins Rim Elm's landmark: `CC 08 50 20 00` puts record 8
 on model `32`, the village the frame's foreground shows. The engine had run
 the op without drawing it - the swap landed on no table a host read, and the
@@ -2444,7 +2505,10 @@ every pass, so it moves with the phase of both clips):
   step table's increments put retail's start near `1720`, a shortest arc
   *down* through the wrap to `4051`, while the drive hands `0x6E` the engine's
   `0x0C` framing at `2620`, a shortest arc up. No word in the state records
-  the camera before the cast, so the start is a seeding limit.
+  the camera before the cast, so the start is a seeding limit. The frame is
+  another matter: the display shows the pose two passes short of the RAM's,
+  which the image child is aligned to
+  ([below](#a-drives-frame-is-the-one-the-display-showed)).
 - **A yaw base the settle arm zeroes.** `shiny_refactor_gimard_levelup` is
   held in the Done band's `0x51` after Gimard's breath killed its victim; the
   step table's endpoints are case 6 on the caster (yaw `ctx[+0x6DA] + 0x800 -
@@ -2539,14 +2603,27 @@ every pass, so it moves with the phase of both clips):
   which the focus and the heading are read off.
 - **A wait lasts as long as the stream took.** `flute_lippian_midcast` and
   `flute_spikefish_midcast` are captured in `0x32`, which runs case 6 on the
-  caster every pass and holds until the sound bank is resident
-  (`FUN_8003DE7C(1)`, `0x801E498C`). Retail's camera is part-way through
-  that ease when the capture lands - the step table's TR z endpoint is
-  `2457`, the live word `4279`, the accumulator `ctx[+0x87C]` at `96` - but
-  the engine's bank is resident at once, so its `0x32` is one tick long and
-  its frame is the ease's first. The accumulator says how long retail had
-  waited; the engine's state does not last long enough to be gated on it,
-  since the wait is CD timing.
+  caster every pass (`0x801E4984`) and holds until the summon archive read
+  `0x29`'s route arm queued (`jal 0x8003EC70` at `0x801E463C`) is done
+  (`FUN_8003DE7C(1)`, `0x801E498C`). That route arm stores the summon
+  close-up's depth `ctx[+0x6D0] = 0x600` (`0x801E4604`) and falls through to
+  `0x29`'s own case-6 call (`0x801E4748`), so the step table a `0x32`
+  capture holds already targets it: TR z `2457` = `prescale(0x600)`, the
+  live word `4279` one pass into that ease. The engine's poll is ready at
+  once, so its `0x32` lasted the entry tick, a tick its camera did not step
+  on - its frame was still the `0x29` chase toward `prescale(0xC00)`. The
+  gate (`PhaseGate::camera_pass`) holds the engine's poll busy until its
+  camera has run one pass in the state (`PhaseGate::steer`), which lands
+  both step-table endpoints on retail's. Neither the accumulator nor the
+  yaw counter places the capture further: the accumulator (`96`, the
+  engine `184` on entering the state) counts from the caster's last idle
+  wrap, and the yaw counter (`0x818`, 24 frames since the seed) is the value
+  the engine's reads on entering the state. What the channel still reads
+  is the ease's start - retail's pitch `10` and TR y `1250` climb onto the
+  target from below, where the engine's come down to it - the camera
+  history before the item command, which the capture does not record. The
+  image gate takes the displayed frame two game frames older, the pass
+  that entered the state, so it leaves the hold off.
 - **An opening sampled after the sweep.** `v0_1_battle_start_tetsu` (flow
   `0x14`, past the intro timer) is taken once the engine's entry sweep and
   then its intro-name hold are over - the order retail runs them in, since
@@ -2600,6 +2677,25 @@ every pass, so it moves with the phase of both clips):
   engine clip loops where retail's held another clip - the parked Gaza of
   `battle_gaza2_park_0x19_target_vahn` sits on its 45-frame idle (wrapped
   69 vsyncs before the save, `552` exactly) while the engine's still walks.
+- **A drive's stream is a search result, not a measurement.** The phase of
+  `battle_gaza2_park_0x19_target_vahn` is Gaza's swing on Vahn, and the
+  monster's pick of Vahn is a draw: the seed search keeps the first
+  `BATTLE_RNG_SEEDS` stream whose drive reaches it inside the
+  `4000`-tick budget (`LEGAIA_RC_SEED_TRACE` lists them). Its `camera` once
+  read `0.967` because six streams ran out of budget and the seventh
+  (`0x6A09E667`) reached the swing in round one, at `+660`, with Gaza
+  `436` units out of its seat at retail's clip age. Since the change that
+  gave the round prompt its open-glide pad hold, which the drive releases
+  under it, the drive's presses land on other ticks and the first stream
+  reaches the swing at `+3803`, after rounds of party swings that pushed Gaza back;
+  its approach lands at clip age `352`, short of retail's (the age-short
+  re-run), framing a Gaza `800` units along a walk retail's never took -
+  retail's is parked on its seat at `(0, 1490)` by the dead Move clip.
+  Neither stream frames retail's pose, so the drop to `0.899` (image
+  `0.608` to `0.503`) is which stream won, not a camera defect. A seed that
+  re-aimed the monster's first swing (the strike twin of the replayed
+  cast's target) brought it to `0.924` but cost `battle_gaza2_park_0x19`
+  its image, and was not kept.
 
 ## See also
 

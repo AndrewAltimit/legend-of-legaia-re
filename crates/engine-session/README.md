@@ -15,7 +15,17 @@ over its `AudioOut`); a `wasm32` build never links cpal.
 - [`AudioDirector`](src/audio_director.rs) - the `legaia_engine_core::scene_host::BgmDirector`
   that turns field-VM BGM events into sequencers and fires SFX cues, VAB
   slot residency and the battle duck, generic over the audio output
-  (`legaia_engine_audio::AudioSink`).
+  (`legaia_engine_audio::AudioSink`). It keeps a record of every command a
+  host's routing hands it (`AudioCommandLog`), and `queue_ui_cue` is the one
+  routing for a screen's blip.
+- [`scene_actors`](src/scene_actors.rs) - the scene-entry step both hosts run
+  before building meshes: the lead's locomotion clips (`bind_lead_rig`, again
+  on a rig change), the placed NPCs' clip players and world cursors, the floor
+  snap. A host's mesh upload only reads what it returns.
+- [`battle_stage`](src/battle_stage.rs) - the battle edge's stage resolve
+  and the world state it leaves (stage class, fog stage cap, monster texture
+  slots), and the summon creature's seat; both hosts' battle builds read the
+  result.
 - [`xa_banks`](src/xa_banks.rs) - the CD-XA voice banks' staging: which
   files the arts shouts and the battle one-shot clips come from, and how a
   file's demuxed channels become bank entries. The native boot reads the
@@ -24,7 +34,9 @@ over its `AudioOut`); a `wasm32` build never links cpal.
 
 Both types are generic over the audio output. The native instantiations
 are named once, in [`native`](src/native.rs): `NativeSession` =
-`BootSession<AudioOut>` and `NativeAudioDirector` = `AudioDirector<AudioOut>`.
+`BootSession<AudioOut>` and `NativeAudioDirector` = `AudioDirector<AudioOut>`;
+`open_disc_detached_audio` opens one over a device-less `AudioOut::detached`,
+for a headless driver that compares audio routing.
 
 ## Host-neutral session, native policy
 
@@ -39,6 +51,12 @@ through `xa_banks`.
 [`mode_trace`](src/mode_trace.rs) holds `ModeTraceFrame`, one sample of a
 session's dispatch state: what a replay file's expected frames and the
 mode-trace oracle's retail samples are compared against.
+
+[`host_trace`](src/host_trace.rs) holds `HostTraceFrame`, one host-agnostic
+sample of a session's simulation (plus, through `sample_with_overlay`, the
+menu-overlay screen a host holds beside it), and `first_divergences`, the
+per-channel compare. The frame-body comparison of the two play hosts
+(`engine-shell/tests/host_frame_parity.rs`) is built on it.
 
 Both play hosts run it. The browser play page holds a `BootSession` over its
 WebAudio output (`crates/web-viewer/src/host_slot.rs`), built with

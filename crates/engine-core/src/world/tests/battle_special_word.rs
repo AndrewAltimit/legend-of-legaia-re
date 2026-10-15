@@ -5,6 +5,7 @@
 
 use super::*;
 use crate::battle_round::{PendingPartyAction, RoundPhase};
+use legaia_engine_battle::victory::VictoryPhase;
 use legaia_engine_battle_vm::status_effects::StatusKind;
 use legaia_engine_mode::mode::SceneMode;
 

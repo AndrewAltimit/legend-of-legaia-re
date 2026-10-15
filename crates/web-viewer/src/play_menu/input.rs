@@ -3,8 +3,75 @@
 
 use super::*;
 
+/// [`LegaiaRuntime::play_menu_tick`]: the field runs this tick.
+pub const MENU_TICK_FIELD: u8 = 0;
+/// [`LegaiaRuntime::play_menu_tick`]: the pause menu took this tick.
+pub const MENU_TICK_MENU: u8 = 1;
+/// [`LegaiaRuntime::play_menu_tick`]: a Start edge opened the menu on this
+/// tick, which it takes, and queued the confirm blip.
+pub const MENU_TICK_OPENED: u8 = 2;
+/// [`LegaiaRuntime::play_menu_tick`]: a script's save point / ready check
+/// opened the menu on this tick, which it takes; no blip.
+pub const MENU_TICK_OPENED_SCRIPTED: u8 = 3;
+
 #[wasm_bindgen]
 impl LegaiaRuntime {
+    /// Who owns this **sim tick** as far as the pause menu goes - the native
+    /// window's per-tick arms in `sim_tick`, in their order, so the two hosts
+    /// hand each tick to the same owner at any display rate:
+    ///
+    /// 1. the menu exists (the wipe has spawned it) and owns the frame: one
+    ///    menu step on `edge` ([`Self::play_menu_input`]); returns
+    ///    [`MENU_TICK_MENU`]. A step that closes the menu still took its tick.
+    /// 2. the wipe spawned the menu since the last tick: the tick goes to the
+    ///    hand-over, as the native arm that raises its boot-UI state takes
+    ///    one; [`MENU_TICK_MENU`].
+    /// 3. the menu is open and the field is still darkening under the wipe:
+    ///    [`MENU_TICK_FIELD`] - the field ticks (the world in `Menu`, so the
+    ///    player stands still) and the session's tick steps the wipe.
+    /// 4. no menu: a scripted press or a Start bit in `edge` opens it through
+    ///    [`Self::play_menu_open`], and the press takes the tick
+    ///    ([`MENU_TICK_OPENED`] / [`MENU_TICK_OPENED_SCRIPTED`]); a refused
+    ///    press is [`MENU_TICK_FIELD`].
+    ///
+    /// The page used to open the menu at display-frame level, freeze the
+    /// field from the open (not from the spawn), and step the menu `n` times
+    /// then tick the field `n` more on the frame it closed - three ways its
+    /// `World::frame` fell behind the native window's.
+    pub fn play_menu_tick(&mut self, edge: u16) -> u8 {
+        if self.play_menu.is_some() {
+            let owns = self.play_menu.as_ref().is_some_and(|m| m.owns_frame);
+            if owns {
+                self.play_menu_input(edge);
+                return MENU_TICK_MENU;
+            }
+            if self.pause_menu_spawned() {
+                if let Some(m) = self.play_menu.as_mut() {
+                    m.owns_frame = true;
+                }
+                return MENU_TICK_MENU;
+            }
+            return MENU_TICK_FIELD;
+        }
+        let scripted = self.play_menu_scripted_open_pending();
+        if !scripted && edge & PadButton::Start.mask() == 0 {
+            return MENU_TICK_FIELD;
+        }
+        self.play_menu_open();
+        if self.play_menu.is_none() {
+            return MENU_TICK_FIELD;
+        }
+        if scripted {
+            MENU_TICK_OPENED_SCRIPTED
+        } else {
+            // The open blips as a confirm, as on the native window; a
+            // scripted press blips nothing - retail's cue `0x20` belongs to
+            // the pad controller, not to the actor it spawns.
+            let _ = self.play_sfx_event("menu_confirm");
+            MENU_TICK_OPENED
+        }
+    }
+
     /// Drive the menu one frame from an edge-triggered PSX pad word (same bit
     /// layout as [`Self::set_pad`]). Navigation:
     /// - top-level: Up/Down move the cursor, Cross opens the row, Circle closes.
@@ -154,7 +221,7 @@ impl LegaiaRuntime {
                     // router every host shares (equip swap / item use /
                     // spell cast / arts / reorder); only the card rack and
                     // the options store are this host's.
-                    let handoff = match self.scene_host.host_mut() {
+                    let (handoff, close_menu) = match self.scene_host.host_mut() {
                         Some(host) => {
                             let mut done =
                                 field_menu_dispatch::finish_subsession(*session, &mut host.world);
@@ -162,9 +229,12 @@ impl LegaiaRuntime {
                             // and the pre-empts at the top of this method hold
                             // the pad.
                             self.menu.arm_finished_notices(&mut done);
-                            done.handoff
+                            (done.handoff, done.close_menu)
                         }
-                        None => field_menu_dispatch::SubsessionHandoff::without_world(*session),
+                        None => (
+                            field_menu_dispatch::SubsessionHandoff::without_world(*session),
+                            false,
+                        ),
                     };
                     match handoff {
                         field_menu_dispatch::SubsessionHandoff::Applied => {}
@@ -184,15 +254,17 @@ impl LegaiaRuntime {
                     // A title-opened menu has no root screen to return to:
                     // `resume(true)` finishes the session and the menu
                     // closes on this same tick.
+                    // A Door use's exit code closes the whole menu
+                    // (`FinishedSubsession::close_menu`), as it does natively.
                     let close = if let Some(m) = self.play_menu.as_mut() {
                         let from_title = m.from_title;
-                        let close = from_title && m.pending_load_scene.is_none();
+                        let close = (from_title && m.pending_load_scene.is_none()) || close_menu;
                         if let Some(root) = self
                             .scene_host
                             .session_mut()
                             .and_then(|s| s.field_menu.as_mut())
                         {
-                            let _ = root.resume(from_title);
+                            let _ = root.resume(from_title || close_menu);
                         }
                         // A parked Load label must outlive this tick: the
                         // page collects it and closes the menu itself.

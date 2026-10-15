@@ -8,6 +8,7 @@
 //! rustdoc cannot resolve a link into a dependent crate. See the crate
 //! README for the module map.
 
+pub mod battle_overlay_readers;
 pub mod cd_dma;
 pub mod clut_walk_anim;
 pub mod coplanar_draws;

@@ -144,7 +144,7 @@ pub(crate) struct BattleFxFrame {
 }
 
 /// Column-major 4x4 multiply, `out = a * b` (WebGL `mat4` layout - the same
-/// convention [`legaia_engine_battle_vm::battle_cam_script::battle_vp`] emits).
+/// convention [`legaia_engine_camera::projection::battle_vp`] emits).
 fn mat_mul(a: &[f32; 16], b: &[f32; 16]) -> [f32; 16] {
     let mut out = [0.0f32; 16];
     for c in 0..4 {
@@ -501,33 +501,6 @@ impl LegaiaRuntime {
                 p[0], p[1], p[2], 1.0,
             ]
         };
-        let fx_rot_x = |a: f32| -> [f32; 16] {
-            let (sa, ca) = a.sin_cos();
-            [
-                1.0, 0.0, 0.0, 0.0, //
-                0.0, ca, sa, 0.0, //
-                0.0, -sa, ca, 0.0, //
-                0.0, 0.0, 0.0, 1.0,
-            ]
-        };
-        let fx_rot_y = |a: f32| -> [f32; 16] {
-            let (sa, ca) = a.sin_cos();
-            [
-                ca, 0.0, -sa, 0.0, //
-                0.0, 1.0, 0.0, 0.0, //
-                sa, 0.0, ca, 0.0, //
-                0.0, 0.0, 0.0, 1.0,
-            ]
-        };
-        let fx_rot_z = |a: f32| -> [f32; 16] {
-            let (sa, ca) = a.sin_cos();
-            [
-                ca, sa, 0.0, 0.0, //
-                -sa, ca, 0.0, 0.0, //
-                0.0, 0.0, 1.0, 0.0, //
-                0.0, 0.0, 0.0, 1.0,
-            ]
-        };
         // The native battle pass's placement kernel: the frame flip on the
         // translation as well as on the camera-relative prefix.
         let place = |flags: u16, pos: [f32; 3]| -> [f32; 16] {
@@ -552,7 +525,7 @@ impl LegaiaRuntime {
             if world.global_tmd(sp.model_index as i16).is_none() {
                 continue;
             }
-            // `T * Ry * Rx * Rz * flip`, the native part composition, with
+            // `T * R * flip` (`gte::part_rotation`), the native part composition, with
             // the FX camera's 4x world scale folded in front of it (the page
             // multiplies its unscaled battle VP by this).
             let model = mat_mul(
@@ -560,8 +533,8 @@ impl LegaiaRuntime {
                 &mat_mul(
                     &place(sp.flags_52, sp.world_pos),
                     &mat_mul(
-                        &fx_rot_y(sp.rot[1]),
-                        &mat_mul(&fx_rot_x(sp.rot[0]), &mat_mul(&fx_rot_z(sp.rot[2]), &flip)),
+                        &legaia_render_kernels::gte::part_rotation(sp.rot, true),
+                        &flip,
                     ),
                 ),
             );
@@ -612,8 +585,8 @@ impl LegaiaRuntime {
                 &mat_mul(
                     &place(rb.flags_52, rb.world_pos),
                     &mat_mul(
-                        &fx_rot_y(rb.rot[1]),
-                        &mat_mul(&fx_rot_x(rb.rot[0]), &mat_mul(&fx_rot_z(rb.rot[2]), &flip)),
+                        &legaia_render_kernels::gte::part_rotation(rb.rot, true),
+                        &flip,
                     ),
                 ),
             );
@@ -752,33 +725,6 @@ impl LegaiaRuntime {
                 p[0], p[1], p[2], 1.0,
             ]
         };
-        let fx_rot_x = |a: f32| -> [f32; 16] {
-            let (sa, ca) = a.sin_cos();
-            [
-                1.0, 0.0, 0.0, 0.0, //
-                0.0, ca, sa, 0.0, //
-                0.0, -sa, ca, 0.0, //
-                0.0, 0.0, 0.0, 1.0,
-            ]
-        };
-        let fx_rot_y = |a: f32| -> [f32; 16] {
-            let (sa, ca) = a.sin_cos();
-            [
-                ca, 0.0, -sa, 0.0, //
-                0.0, 1.0, 0.0, 0.0, //
-                sa, 0.0, ca, 0.0, //
-                0.0, 0.0, 0.0, 1.0,
-            ]
-        };
-        let fx_rot_z = |a: f32| -> [f32; 16] {
-            let (sa, ca) = a.sin_cos();
-            [
-                ca, sa, 0.0, 0.0, //
-                -sa, ca, 0.0, 0.0, //
-                0.0, 0.0, 1.0, 0.0, //
-                0.0, 0.0, 0.0, 1.0,
-            ]
-        };
         // The engine camera the page draws through this frame (the same
         // `resolve_field_camera` frame [`Self::play_camera_vp`] built `vp`
         // from), for the parts' `+0x52` camera-relative bits. `None` when the
@@ -788,7 +734,7 @@ impl LegaiaRuntime {
             .filter(|(m, _)| *m == vp)
             .and_then(|(_, frame)| frame.field_view())
             .map(|v| legaia_render_kernels::gte::PartCameraPose::from_field_view(&v));
-        // Native field composition is `T * Ry * Rx * Rz` with an identity
+        // Native field composition is `T * R` (`gte::part_rotation`) with an identity
         // `fx_model_flip`; the page-space flip goes on the outside. A
         // camera-relative part (`+0x52 & 0x780`) takes the `FUN_8001CF50`
         // prefix in place of `T`, on the raw retail frame (no flip).
@@ -804,10 +750,7 @@ impl LegaiaRuntime {
                 &flip_m,
                 &mat_mul(
                     &place,
-                    &mat_mul(
-                        &fx_rot_y(rot[1]),
-                        &mat_mul(&fx_rot_x(rot[0]), &fx_rot_z(rot[2])),
-                    ),
+                    &legaia_render_kernels::gte::part_rotation(rot, false),
                 ),
             )
         };
@@ -903,42 +846,40 @@ impl LegaiaRuntime {
 
     /// Spawn a player Seru-magic cast's namesake `battle_data` creature into
     /// the live battle - the browser twin of the native window's
-    /// `spawn_summon_creature`. Same resolution chain (`summon_creature_id` ->
-    /// PROT 867 mesh -> `battle_render_mesh` texture injection -> a high actor
-    /// slot on the party side with its idle clip installed); the one host
-    /// difference is that the page re-uploads the whole battle scene on the
-    /// bumped generation instead of appending a single GPU mesh.
+    /// `spawn_summon_creature`. The world half (the seat, its texture slot,
+    /// idle and clip set) is the session step both hosts run
+    /// (`battle_stage::seat_summon_creature`), whether or not this page holds
+    /// a battle render; the render half injects the texture into the seat's
+    /// slot (`battle_render_mesh`) and re-uploads the whole battle scene on
+    /// the bumped generation instead of appending a single GPU mesh.
     pub(crate) fn spawn_summon_creature_web(&mut self, spell_id: u8) {
-        let Some(host) = self.scene_host.host() else {
+        let Some(host) = self.scene_host.host_mut() else {
             return;
         };
-        if host.world.mode != SceneMode::Battle {
-            return;
-        }
-        let Ok(archive) = host.index.entry_bytes_extended(867) else {
-            return;
-        };
-        // The cast's own body: the archive twin for 0x81..=0x95, the cast's
-        // `summon.dat` record (PROT 893) for the high block - the native
-        // window's resolution, through the same kernel.
-        let summon_dat = host
+        let Ok(archive) = host
             .index
-            .entry_bytes(u32::from(
-                legaia_actor_formats::summon_readef::SUMMON_PROT_INDEX,
-            ))
-            .ok();
-        let Some(asset) = legaia_engine_effects::summon::summon_spawn_asset(
+            .entry_bytes_extended(legaia_engine_session::battle_stage::MONSTER_ARCHIVE_PROT_INDEX)
+        else {
+            return;
+        };
+        let Some(seat) = legaia_engine_session::battle_stage::seat_summon_creature(
+            host,
             spell_id,
             &archive,
-            summon_dat.as_ref().map(|b| b.as_slice()),
+            self.summon_actor_slot,
         ) else {
             return;
         };
+        self.summon_actor_slot = Some(seat.slot);
+        let legaia_engine_session::battle_stage::SummonSeat {
+            slot,
+            tex_slot,
+            asset,
+        } = seat;
         let Some(br) = self.battle_render.as_ref() else {
             return;
         };
         let mut vram = br.vram.clone();
-        let tex_slot = br.tex_slots_used.min(4);
         let mesh = &asset.mesh;
         let Ok(tmd) = legaia_tmd::parse(mesh.tmd_bytes()) else {
             return;
@@ -970,41 +911,6 @@ impl LegaiaRuntime {
                     .collect::<Vec<i32>>()
             })
             .unwrap_or_default();
-
-        // Seat the summon in a free high actor slot (>= 8) so it never
-        // collides with the party / monster battle slots, on the party side
-        // in front of the party - the native seating law.
-        let party_count = host.world.party.party_count as usize;
-        let slot = self.summon_actor_slot.unwrap_or(8 + party_count);
-        self.summon_actor_slot = Some(slot);
-
-        let Some(host) = self.scene_host.host_mut() else {
-            return;
-        };
-        if let Some(a) = host.world.actors.get_mut(slot) {
-            a.active = true;
-            a.battle_tex_slot = Some(tex_slot);
-            a.move_state.world_x = 0;
-            a.move_state.world_y = 0;
-            a.move_state.world_z = -350;
-        }
-        if let Some(idle) = idle.as_ref()
-            && let Some(player) = legaia_engine_battle::battle_anim::MonsterAnimPlayer::new(idle)
-        {
-            host.world.set_actor_battle_animation(slot, player);
-        }
-        // The creature's archive-order clip set, so the stager's staged ids
-        // (the walk, clip 1) resolve through the same commit as a monster's
-        // - the native window's seat, leg for leg.
-        if !asset.clips.is_empty() {
-            let clips: Vec<_> = asset.clips.iter().cloned().map(Some).collect();
-            host.world
-                .set_actor_battle_action_clips(slot, std::sync::Arc::new(clips));
-        }
-        // Hand the seat to the world: a cast in its summon band places the
-        // creature at the stager's spawn point and retires it when the
-        // choreography ends; a debug spawn keeps the placement above.
-        host.world.seat_summon_actor(slot);
 
         let Some(br) = self.battle_render.as_mut() else {
             return;
@@ -1277,11 +1183,7 @@ mod tests {
     #[test]
     fn fx_camera_inverse_round_trips() {
         let pose = legaia_engine_battle_vm::battle_cam_script::BOOT_POSE;
-        let vp = legaia_engine_battle_vm::battle_cam_script::battle_vp(
-            &pose,
-            BATTLE_WORLD_SCALE,
-            4.0 / 3.0,
-        );
+        let vp = legaia_engine_camera::projection::battle_vp(&pose, BATTLE_WORLD_SCALE, 4.0 / 3.0);
         let scale: [f32; 16] = [
             4.0, 0.0, 0.0, 0.0, //
             0.0, 4.0, 0.0, 0.0, //

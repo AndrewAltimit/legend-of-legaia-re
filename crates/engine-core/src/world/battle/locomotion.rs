@@ -109,8 +109,8 @@ pub(crate) fn body_offset(facing: u16, cx: i16, cz: i16, scale: i32) -> (i16, i1
     let f = facing & 0xFFF;
     let m = 0xFFF - f;
     let (cx, cz) = (i32::from(cx), i32::from(cz));
-    let sin = |a: u16| i32::from(motion::sin12(a));
-    let cos = |a: u16| i32::from(motion::trig12(a).1);
+    let sin = |a: u16| i32::from(legaia_engine_system::trig::sin12(a));
+    let cos = |a: u16| i32::from(legaia_engine_system::trig::trig12(a).1);
     let x = ((((sin(f) * cz) >> 12) + ((cos(m) * cx) >> 12)) * scale) >> 12;
     let z = ((((sin(m) * cx) >> 12) + ((cos(f) * cz) >> 12)) * scale) >> 12;
     (x as i16, z as i16)
@@ -243,7 +243,7 @@ impl World {
             attacker_pos.0,
         );
         let angle = legaia_engine_battle_vm::battle_approach::approach_angle(bearing) as u16;
-        let (sin, cos) = motion::trig12(angle);
+        let (sin, cos) = legaia_engine_system::trig::trig12(angle);
         motion::range_metric(&inputs, sin, cos)
     }
 
@@ -292,7 +292,7 @@ impl World {
             creature_pos.0,
         );
         let angle = legaia_engine_battle_vm::battle_approach::approach_angle(bearing) as u16;
-        let (sin, cos) = motion::trig12(angle);
+        let (sin, cos) = legaia_engine_system::trig::trig12(angle);
         motion::range_metric(&inputs, sin, cos)
     }
 
@@ -501,7 +501,7 @@ impl World {
         if speed > 0 && self.battle_range_metric(slot as u8, target) == 0 {
             return;
         }
-        let (sin, cos) = motion::trig12(facing);
+        let (sin, cos) = legaia_engine_system::trig::trig12(facing);
         let raw = motion::root_motion_raw(sin, cos, speed, 1, scale);
         let frame = self.battle_frame_id();
         let (dx, dz) = self.actors[slot]
@@ -536,7 +536,7 @@ impl World {
             return;
         }
         let (speed, scale) = self.battle_root_motion_of(slot);
-        let (sin, cos) = motion::trig12(facing);
+        let (sin, cos) = legaia_engine_system::trig::trig12(facing);
         let raw = motion::root_motion_raw(sin, cos, speed.abs(), 1, scale);
         let frame = self.battle_frame_id();
         let (dx, dz) = self.actors[slot]
@@ -608,7 +608,7 @@ impl World {
             let bearing =
                 legaia_engine_battle_vm::battle_action::bearing_12bit_approx(b.z, b.x, a.z, a.x);
             let angle = bearing.wrapping_add(0x800) & 0xFFF;
-            let (sin, cos) = motion::trig12(angle);
+            let (sin, cos) = legaia_engine_system::trig::trig12(angle);
             let (lo, hi) = if i < j { (i, j) } else { (j, i) };
             let (left, right) = seps.split_at_mut(hi);
             let (ai, aj) = if i < j {

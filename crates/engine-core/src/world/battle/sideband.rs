@@ -114,7 +114,7 @@ impl World {
     /// REF: FUN_80046A20
     fn sparring_exit_gate(&mut self) {
         if self.battle.sideband.phase < 3
-            || self.battle.sideband.phase3_accum < super::victory::VICTORY_EXIT_PHASE
+            || self.battle.sideband.phase3_accum < legaia_engine_battle::victory::VICTORY_EXIT_PHASE
         {
             return;
         }
@@ -303,12 +303,7 @@ impl World {
     /// Engine actor index of retail actor-table slot `slot` (`0..=2` party,
     /// `3..` monsters), when the engine seats one there.
     fn retail_table_actor(&self, slot: usize) -> Option<usize> {
-        let pc = usize::from(self.party.party_count.clamp(1, 3));
-        let idx = if slot < 3 {
-            (slot < pc).then_some(slot)?
-        } else {
-            pc + slot - 3
-        };
+        let idx = usize::from(self.battle_seat_map().engine(u8::try_from(slot).ok()?)?);
         (idx < self.actors.len()).then_some(idx)
     }
 
@@ -568,8 +563,8 @@ impl World {
 }
 
 /// A stage camera as the phase-scripted camera's pose type.
-fn stage_camera_pose(c: &StageCamera) -> legaia_engine_battle_vm::battle_cam_script::BattleCamPose {
-    legaia_engine_battle_vm::battle_cam_script::BattleCamPose {
+fn stage_camera_pose(c: &StageCamera) -> legaia_engine_camera::projection::BattleCamPose {
+    legaia_engine_camera::projection::BattleCamPose {
         pitch: c.pitch as f32,
         yaw: c.yaw as f32,
         tr: c.tr.map(|v| v as f32),

@@ -5,7 +5,7 @@ use super::*;
 /// The image child's glide-origin pair survives its env round trip.
 #[test]
 fn cam_align_env_round_trips() {
-    use legaia_engine_battle_vm::battle_cam_script::BattleCamPose;
+    use legaia_engine_camera::projection::BattleCamPose;
     let live = BattleCamPose {
         pitch: 128.0,
         yaw: 3205.0,

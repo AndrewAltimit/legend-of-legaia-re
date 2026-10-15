@@ -199,7 +199,7 @@ fn fog_sheet_colours_match_the_retail_frame_record_for_record() {
 /// capture's `*_DAT_8007BB04`.
 #[test]
 fn fog_sheet_geometry_matches_the_retail_frame() {
-    use legaia_engine_battle_vm::psx_camera::FieldCameraView;
+    use legaia_engine_camera::psx_camera::FieldCameraView;
     use legaia_engine_field::fog_particles::{FogFrameEnv, FogPool, FogView};
     let (Some(manifest_path), Some(library)) =
         (find("scripts/scenarios.toml"), find("saves/library"))

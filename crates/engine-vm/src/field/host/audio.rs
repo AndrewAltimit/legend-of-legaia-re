@@ -31,20 +31,4 @@ pub trait FieldAudioHost {
     fn apply_item_effect(&mut self, b1: u8, b2: u8) {
         let _ = (b1, b2);
     }
-
-    /// Gated two-word call (op 0x4C nD sub-0, 6 bytes). The callee
-    /// `func_0x8002B994` is the menu selection-cursor emitter
-    /// (`docs/reference/functions/menus.md`), not a sound trigger; what the
-    /// three gate words are is not established.
-    ///
-    /// `[4C, 0xD0, a_lo, a_hi, b_lo, b_hi]`. The original at lines 6936-6944
-    /// reads the two 16-bit LE values; if any of three flag globals
-    /// (`_DAT_8007B874`, `_DAT_800846D0`, `_DAT_800846D4`) is non-zero,
-    /// calls `func_0x8002B994(a, b)` (the SE trigger). Otherwise no-op.
-    ///
-    /// PC advances by 6 in both branches. The hook returns nothing - the
-    /// host decides whether the SE fires based on its own gate state.
-    fn op4c_nd_sub0_gated_call(&mut self, a: u16, b: u16) {
-        let _ = (a, b);
-    }
 }

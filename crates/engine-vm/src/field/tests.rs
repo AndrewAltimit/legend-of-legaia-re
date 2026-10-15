@@ -172,14 +172,13 @@ struct TestHost {
     n_e_snapshot_84570_calls: u32,
     // Overlay-helper hooks.
     n_c_sub_1_flag_loops: u32,
-    n_d_sub_1_jump_target: Option<usize>,
     n_d_sub_2_channel_calls: Vec<u8>,
     n_d_sub_7_list_walk_regs: u32,
     n_d_sub_b_e57f0_calls: Vec<Vec<u8>>,
-    n_d_sub_c_jump_target: Option<usize>,
-    n_d_sub_c_calls: Vec<u8>,
-    n_d_sub_e_jump_target: Option<usize>,
-    n_d_sub_e_calls: Vec<u8>,
+    n_d_sub_c_hit: bool,
+    n_d_sub_c_calls: std::cell::RefCell<Vec<u8>>,
+    n_d_sub_e_hit: bool,
+    n_d_sub_e_calls: std::cell::RefCell<Vec<u8>>,
     n_e_sub_1_text_calls: Vec<(Vec<u8>, u16)>,
     // Five 0x4C nC sub-ops + two 0x4C nE sub-ops.
     n_c_sub_0_move_cancels: u32,
@@ -187,7 +186,6 @@ struct TestHost {
     n_c_sub_3_teleports: u32,
     n_c_sub_d_queries: u32,
     n_c_sub_d_mover_idle: bool,
-    n_c_party_flag_bits: std::collections::HashMap<u16, bool>,
     n_e_sub_4_outside: bool,
     n_e_sub_4_bboxes: std::cell::RefCell<Vec<[i16; 4]>>,
     n_e_sub_5_coin_deltas: Vec<i32>,
@@ -202,12 +200,13 @@ struct TestHost {
     n8_sub6_reflection_installs: Vec<(u8, [i16; 6])>,
     n8_sub6_source_present: bool,
     n_8_sub_b_present_types: std::collections::HashSet<u8>,
-    n_8_sub_d_search_result: ActorSearchResult,
+    n_8_sub_d_known: bool,
     n_8_sub_d_queries: std::cell::RefCell<Vec<(u8, u8)>>,
     n_e_sub_3_camera_syncs: Vec<u8>,            // actor_id values
     n_e_sub_7_camera_animates: Vec<(u32, u16)>, // (target, duration)
     n_e_sub_8_camera_zooms: Vec<(i16, i16, i16, i16)>, // (zoom_x, zoom_y, zoom_z, mode)
-    n_d_sub_0_se_triggers: Vec<(u16, u16)>,
+    n_d_sub_0_prompts: Vec<(u16, u16)>,
+    n_d_sub_0_pressed: bool,
     n_5_sub_3_dialog_waits: u32,
     n_5_sub_4_dialog_active: bool,
     n_5_sub_4_polls: u32,
@@ -298,10 +297,6 @@ impl FieldFlagsHost for TestHost {
 
     fn snapshot_play_clock(&mut self) {
         self.n_e_snapshot_84570_calls += 1;
-    }
-
-    fn op4c_nc_sub56_flag_test(&self, flag_idx: u16) -> bool {
-        *self.n_c_party_flag_bits.get(&flag_idx).unwrap_or(&false)
     }
 }
 
@@ -488,10 +483,6 @@ impl FieldCameraMotionHost for TestHost {
         self.n8_b630_writes.push(value);
     }
 
-    fn jump_if_camera_glide_live(&mut self, _ctx: &FieldCtx) -> Option<usize> {
-        self.n_d_sub_1_jump_target
-    }
-
     fn retire_camera_movers(&mut self) {
         self.n_d_sub_7_list_walk_regs += 1;
     }
@@ -602,10 +593,6 @@ impl FieldAudioHost for TestHost {
     fn apply_item_effect(&mut self, b1: u8, b2: u8) {
         self.n_c_sound_triggers.push((b1, b2));
     }
-
-    fn op4c_nd_sub0_gated_call(&mut self, a: u16, b: u16) {
-        self.n_d_sub_0_se_triggers.push((a, b));
-    }
 }
 
 impl FieldPartyInventoryHost for TestHost {
@@ -669,27 +656,27 @@ impl FieldPartyInventoryHost for TestHost {
         self.op4e_char_levels.get(&page).copied().unwrap_or(0)
     }
 
-    fn op4c_nd_subc_party_search_set(&mut self, needle: u8) -> Option<usize> {
-        self.n_d_sub_c_calls.push(needle);
-        self.n_d_sub_c_jump_target
+    fn op4c_nd_subc_item_held(&self, needle: u8) -> bool {
+        self.n_d_sub_c_calls.borrow_mut().push(needle);
+        self.n_d_sub_c_hit
     }
 
-    fn op4c_nd_sube_party_search_query(&mut self, needle: u8) -> Option<usize> {
-        self.n_d_sub_e_calls.push(needle);
-        self.n_d_sub_e_jump_target
+    fn op4c_nd_sube_item_worn(&self, needle: u8) -> bool {
+        self.n_d_sub_e_calls.borrow_mut().push(needle);
+        self.n_d_sub_e_hit
     }
 
     fn add_coins(&mut self, coin_delta: i32) {
         self.n_e_sub_5_coin_deltas.push(coin_delta);
     }
 
-    fn op4c_n8_subb_actor_type_present(&self, type_byte: u8) -> bool {
+    fn op4c_n8_subb_spell_known(&self, type_byte: u8) -> bool {
         self.n_8_sub_b_present_types.contains(&type_byte)
     }
 
-    fn op4c_n8_subd_actor_search(&self, char_idx: u8, marker: u8) -> ActorSearchResult {
-        self.n_8_sub_d_queries.borrow_mut().push((char_idx, marker));
-        self.n_8_sub_d_search_result
+    fn op4c_n8_subd_skill_known(&self, char_idx: u8, skill: u8) -> bool {
+        self.n_8_sub_d_queries.borrow_mut().push((char_idx, skill));
+        self.n_8_sub_d_known
     }
 
     fn take_item(&mut self, item_id: u8) {
@@ -698,6 +685,13 @@ impl FieldPartyInventoryHost for TestHost {
 }
 
 impl FieldDialogMenuHost for TestHost {
+    fn press_prompt(&mut self, x: u16, y: u16) -> bool {
+        if !self.n_d_sub_0_pressed {
+            self.n_d_sub_0_prompts.push((x, y));
+        }
+        self.n_d_sub_0_pressed
+    }
+
     fn open_dialog(
         &mut self,
         text_id: u16,

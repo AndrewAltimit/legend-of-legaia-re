@@ -17,6 +17,7 @@ name = "legaia-launch"
 path = "src/bin/legaia-launch.rs"
 
 [dependencies]
+legaia-engine-camera.workspace = true
 legaia-engine-menus.workspace = true
 legaia-engine-field.workspace = true
 legaia-render-kernels.workspace = true
@@ -47,7 +48,6 @@ legaia-mednafen.workspace = true
 legaia-iso.workspace = true
 legaia-xa.workspace = true
 legaia-actor-formats.workspace = true
-legaia-anm.workspace = true
 legaia-container-formats.workspace = true
 legaia-engine-battle.workspace = true
 legaia-engine-dialog.workspace = true

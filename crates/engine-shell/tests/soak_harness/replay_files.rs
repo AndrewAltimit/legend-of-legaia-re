@@ -18,12 +18,17 @@ pub(super) const MIN_DISTINCT_TAG: &str = "# soak-min-distinct = ";
 /// the default (`LEGAIA_SOAK_STARVE_FRAMES`): a shorter window is a shorter
 /// replay, and the replay must be judged by the window that made it.
 pub(super) const STARVE_TAG: &str = "# soak-starve-frames = ";
+/// The session configuration a replay was recorded under: `"host"` (the play
+/// hosts' arming, [`Tunables::host_arming`]) or `"bare"`. A replay without
+/// the tag predates the arming and replays bare.
+pub(super) const ARMING_TAG: &str = "# soak-arming = ";
 
 pub(super) fn replay_text(
     spec: &RunSpec,
     pads: &[u16],
     finding: Option<&Finding>,
     min_distinct: Option<usize>,
+    host_arming: bool,
 ) -> String {
     let mut rf = ReplayFile::new(
         ReplayMeta::new(pads.len() as u64)
@@ -55,6 +60,8 @@ pub(super) fn replay_text(
     if let Some(n) = env_u64("LEGAIA_SOAK_STARVE_FRAMES") {
         let _ = writeln!(out, "{STARVE_TAG}{n}");
     }
+    let arming = if host_arming { "host" } else { "bare" };
+    let _ = writeln!(out, "{ARMING_TAG}{arming:?}");
     let _ = writeln!(
         out,
         "# reproduce: LEGAIA_SOAK_REPLAY=<this file> cargo test -p legaia-engine-shell \
@@ -70,6 +77,7 @@ pub(super) struct LoadedReplay {
     pub(super) signature: Option<String>,
     pub(super) min_distinct: Option<usize>,
     pub(super) starve_frames: Option<u64>,
+    pub(super) host_arming: bool,
 }
 
 impl LoadedReplay {
@@ -82,6 +90,7 @@ impl LoadedReplay {
         if let Some(n) = self.starve_frames {
             t.starve_frames = n;
         }
+        t.host_arming = self.host_arming;
         t
     }
 }
@@ -112,6 +121,7 @@ pub(super) fn load_replay(path: &Path) -> LoadedReplay {
         signature: parse_tag(&text, SIG_TAG),
         min_distinct: parse_tag(&text, MIN_DISTINCT_TAG).and_then(|s| s.parse().ok()),
         starve_frames: parse_tag(&text, STARVE_TAG).and_then(|s| s.parse().ok()),
+        host_arming: parse_tag(&text, ARMING_TAG).as_deref() == Some("host"),
     }
 }
 

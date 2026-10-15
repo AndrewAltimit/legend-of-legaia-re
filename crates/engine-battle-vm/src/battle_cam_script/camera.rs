@@ -77,7 +77,7 @@ impl Glide {
         steps: u32,
         yaw: bool,
     ) -> Self {
-        use crate::battle_camera::{CameraAngles, build_camera_angle_tween};
+        use legaia_engine_camera::battle_camera::{CameraAngles, build_camera_angle_tween};
 
         let trio = |v: [f32; 3]| [v[0] as i16, v[1] as i16, v[2] as i16];
         let mut cur = CameraAngles {
@@ -255,6 +255,8 @@ pub struct BattleCamera {
     pub(super) last_active_installs: Option<u32>,
     /// [`BattleCamera::clip_age`]'s counter.
     pub(super) clip_age: u32,
+    /// [`BattleCamera::steps_in_state`]'s counter.
+    pub(super) steps_in_state: u32,
     /// The camera's copy of the `rand()` stream. Retail draws the shake pair
     /// (`FUN_801D9D30`), the strike-loop yaw coin (`FUN_8004E13C`'s party arm)
     /// and the per-art track column (`ctx[+0x26D] = rand() % 2`) from the one
@@ -493,7 +495,7 @@ pub fn drive(
 
 /// [`drive`] on a lent `rand()` stream: `rng` is copied into the camera before
 /// it steps and the advanced state is written back, so every camera draw is
-/// one draw on the caller's stream ([`crate::battle_formulas::world_rand`]).
+/// one draw on the caller's stream ([`legaia_engine_system::rand::world_rand`]).
 /// The world's battle tick passes `World::rng_state` here - retail has one
 /// `rand()` seed, and a private camera stream would interleave the battle's
 /// own draws differently from retail.

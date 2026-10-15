@@ -32,13 +32,12 @@ mod host;
 mod notices;
 mod save_slots;
 mod sessions;
-mod shop_cues;
 mod shop_flow;
 mod tick;
 mod views;
 
+use legaia_engine_menus::shop_cues::*;
 pub use save_slots::*;
-pub use shop_cues::*;
 
 /// File extension the runtime uses for save slots. PSX memory-card `.mcr`
 /// support is layered on top of [`legaia_save::card`]; this runtime uses a

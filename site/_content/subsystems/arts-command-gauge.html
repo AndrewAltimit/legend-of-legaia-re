@@ -10,7 +10,9 @@
     <dt>Turn pool</dt><dd>The acting actor's <strong>AGL</strong> (<code>actor+0x154</code>), copied into <code>ctx+0x6DC</code>; input ends when the next command would not fit</dd>
     <dt>Command cost</dt><dd>Runtime command record <code>DAT_801C9360[char][cmd] + 0x74</code> - one byte is both the AP price and the pennant width</dd>
     <dt>Tiers</dt><dd>30 favored / 42 off-class / 54 far tier - authored data, no class comparison in code</dd>
-    <dt>Disc source</dt><dd>The equipped weapon's section in the character's <a href="../formats/battle-data-pack.html">player battle file</a> (extraction 863..866), copied verbatim at battle load</dd>
+    <dt>Disc source</dt><dd>The equipped weapon's section in the character's <a href="../formats/battle-data-pack.html">player battle file</a> (extraction 863..865), copied verbatim at battle load</dd>
+    <dt>Input state</dt><dd><code>FUN_801D0748</code> state <code>0x50</code>; it ends on auto-end, the confirm mask, or a cancel with nothing typed (<a href="#leaving-state-0x50">leaving the entry</a>)</dd>
+    <dt>Auto string</dt><dd>One remembered command string per character, preseeded into the entry and replayed on a bare confirm (<a href="#auto-command-string">the auto command string</a>)</dd>
     <dt>Art cost</dt><dd>A second gauge: the Spirit gauge <code>actor+0x170</code> (0..100), which carries between fights</dd>
     <dt>Editor</dt><dd>The <a href="../tooling/rom-patcher.html">ROM patcher</a>'s equipment editor and the randomizer's <code>--weapon-specialty</code> rewrite the cost bytes in place</dd>
     <dt>Confidence</dt><dd>Confirmed - live-pinned and byte-validated against the disc; "command <code>0x0C</code> = the arm" is Inferred (<a href="#how-we-know">how we know</a>)</dd>
@@ -65,9 +67,13 @@
   <ol class="steps">
     <li><b>Seed</b><span>pool <code>ctx+0x6DC</code> = the acting actor's AGL <code>+0x154</code></span></li>
     <li><b>Build</b><span>each chip reads its command's <code>+0x74</code> cost; the pennant is drawn <code>cost &minus; 6</code> pixels wide</span></li>
-    <li><b>Press</b><span>if the pool is below the cost, input ends; otherwise <code>pool &minus;= cost</code></span></li>
+    <li><b>Press</b><span>if the pool is below the cost the press is refused; otherwise <code>pool &minus;= cost</code> and the committed count <code>ctx+0x19</code> goes up by one</span></li>
+    <li><b>Auto-end</b><span>once none of the four costs fits the pool, the entry ends by itself</span></li>
   </ol>
-  <p>One byte is both price and width - a larger button and a more expensive command are the same value. The pennant is a text window and its label has to fit: 30 is retail's floor, 24 is still legible, below that the label smears (the patcher refuses costs below 24). Two neighbours share the machinery:</p>
+  <p>One byte is both price and width - a larger button and a more expensive command are the same value. The pennant is a text window and its label has to fit: 30 is retail's floor, 24 is still legible, below that the label smears (the patcher refuses costs below 24). The re-centre term only moves the pennant; the AP fill bar is unaffected at any cost.</p>
+  <p><strong>The chips do not read Left / Right.</strong> Each chip's label is an icon id into the label-strip words <code>RaSeru</code>, <code>Arms</code>, <code>Right</code>, <code>Left</code>, <code>High</code>, <code>Low</code>. The entry opener stamps them so the Left chip reads <code>Arms</code> and the Right chip <code>RaSeru</code>; Noa's two arm seats are swapped, because her record holds the Ra-Seru in equipment index 2 and the weapon in index 3. An arm whose equipment byte is empty takes the plain direction word instead, and a committed pennant copies its chip's word, so the bar reads <code>RaSeru</code> / <code>Arms</code> too.</p>
+  <p>The Low chip's cost byte (<code>ctx+0x16</code>) is also the byte the battle action state machine uses as the War God Icon's Attack x2 pass counter, so every manual command entry leaves that counter non-zero. The Auto path does not build the gauge and leaves the byte alone.</p>
+  <p>Three neighbours share the machinery:</p>
   <ul class="bullets">
     <li>The <strong>Muscle Dome hand</strong> deals and spends the same records: a dome card is a direction command, its cost is the same byte, the commit debits the same pool (<a href="../minigames.html">minigames</a>).</li>
     <li>The <strong>enemy analogue</strong> is not an analogue at all - it is the same mechanic. A monster fills its per-turn action queue by paying each move's <code>+0x74</code> cost out of the same AGL gauge, so a turn admits <code>AGL / cost</code> actions on either side (<a href="battle-action.html">battle action</a>).</li>
@@ -77,6 +83,56 @@
     <p class="notice-title">Two budgets, not one</p>
     <p>The AP pool bounds a turn by <em>cost</em>; the committed command buffer (<code>actor+0x1DF..+0x1EE</code>) bounds it by <em>count</em> - sixteen bytes. A plain press is one byte; a matched art replaces its last arrow with a two-byte starter pair, so an N-arrow art occupies N+1 bytes. At retail costs the pool binds long before sixteen tokens do; a mod that prices commands low enough hits the buffer instead.</p>
   </div>
+</section>
+
+<section class="doc-section" id="leaving-state-0x50">
+  <h2>Leaving the entry</h2>
+  <p>The Arts input is state <code>0x50</code> of the command-menu state machine <code>FUN_801D0748</code>. It has three exits, two of them pad-driven, and all three consult the committed count <code>ctx+0x19</code>:</p>
+  <figure class="diagram">
+    <svg viewBox="0 0 760 210" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="State 0x78, the attack-mode prompt, enters state 0x50 Arts input on Command. Presses stay in 0x50 and debit the pool; a cancel with a typed buffer restarts 0x50; auto-end or confirm go to 0x5A review and target, then 0x6E Begin or Reselect; a cancel with an empty buffer returns to 0x78.">
+      <defs><marker id="acg-arrow" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <rect class="dg-node" x="20" y="80" width="140" height="50" rx="4"/><text class="dg-label" x="90" y="102">0x78</text><text class="dg-sub" x="90" y="119">attack-mode prompt</text>
+      <rect class="dg-node-accent" x="230" y="80" width="140" height="50" rx="4"/><text class="dg-label" x="300" y="102">0x50</text><text class="dg-sub" x="300" y="119">Arts input</text>
+      <rect class="dg-node" x="440" y="80" width="140" height="50" rx="4"/><text class="dg-label" x="510" y="102">0x5A</text><text class="dg-sub" x="510" y="119">review + target</text>
+      <rect class="dg-node" x="620" y="80" width="120" height="50" rx="4"/><text class="dg-label" x="680" y="102">0x6E</text><text class="dg-sub" x="680" y="119">Begin / Reselect</text>
+      <path class="dg-edge" d="M160 95 L228 95" marker-end="url(#acg-arrow)"/>
+      <text class="dg-edge-label" x="194" y="86" text-anchor="middle">Command</text>
+      <path class="dg-edge-dim" d="M230 120 L162 120" marker-end="url(#acg-arrow)"/>
+      <text class="dg-edge-label" x="196" y="148" text-anchor="middle">cancel, empty</text>
+      <path class="dg-edge" d="M370 105 L438 105" marker-end="url(#acg-arrow)"/>
+      <text class="dg-edge-label" x="404" y="70" text-anchor="middle">auto-end</text><text class="dg-edge-label" x="404" y="84" text-anchor="middle">or confirm</text>
+      <path class="dg-edge" d="M580 105 L618 105" marker-end="url(#acg-arrow)"/>
+      <text class="dg-edge-label" x="600" y="148" text-anchor="middle">last member</text>
+      <path class="dg-edge-dim" d="M270 80 C270 30, 330 30, 330 78" marker-end="url(#acg-arrow)"/>
+      <text class="dg-edge-label" x="300" y="24" text-anchor="middle">press: pool &minus;= cost</text>
+      <path class="dg-edge-dim" d="M270 130 C270 185, 330 185, 330 132" marker-end="url(#acg-arrow)"/>
+      <text class="dg-edge-label" x="300" y="202" text-anchor="middle">cancel, typed: restart</text>
+    </svg>
+    <figcaption>The Arts entry and its exits. A cancel with a typed buffer is a restart inside <code>0x50</code>, not an exit; Begin / Reselect opens once, after the last member that can act has committed.</figcaption>
+  </figure>
+  <ul class="bullets">
+    <li><strong>Auto-end.</strong> The arm walks the four costs at <code>ctx+0x14</code> against the pool; when none is affordable it writes <code>0x5A</code>.</li>
+    <li><strong>Confirm</strong> uses the configurable confirm mask <code>_DAT_800846D0</code> - the same one the round prompt and every menu read - and is only tested once something is committed.</li>
+    <li><strong>Cancel</strong> uses the sibling mask <code>_DAT_800846D4</code> and forks on the count. With nothing typed it leaves to the attack-mode prompt <code>0x78</code> (<code>0x28</code> instead when <code>_DAT_800846C4</code> is set). With a typed buffer it restarts the entry: the gauge handler's case <code>0x26</code> wipes all sixteen queue bytes, re-seeds the pool from AGL and zeros the count, and the flow byte stays at <code>0x50</code>.</li>
+  </ul>
+  <p>The four direction tests read the <em>packed</em> pad word (<code>_DAT_8007B874 | _DAT_8007B938</code>), whose byte halves are swapped against the raw BIOS word - so the masks <code>0x8000 / 0x1000 / 0x4000 / 0x2000</code> are Left / Up / Down / Right, not Square / Triangle / Cross / Circle.</p>
+</section>
+
+<section class="doc-section" id="auto-command-string">
+  <h2>The auto command string</h2>
+  <p>Retail has no "pick a saved art" list. It remembers <strong>one command string per character</strong>, opens the entry with it already laid out, and replays it on a bare confirm.</p>
+  <ol class="steps">
+    <li><b>Save</b><span>at the target confirm, <code>FUN_801DA59C</code> copies the actor's sixteen-byte window <code>actor+0x1DF..</code> into one of two bands of the character record (<code>+0x1A7</code> / <code>+0x1B7</code>, picked by whether the live AGL gauge exceeds its base). This runs before the queue builder tokenizes anything, so the string holds raw arrows, one swing byte per press.</span></li>
+    <li><b>Preseed</b><span><code>FUN_801DA34C</code> copies it back when the attack-mode prompt takes Command, and the gauge build draws it: each command is tested against a scratch pool seeded from AGL, drawn as an ordinary pennant and debited; at the first command the pool cannot pay, the string is cut. The pool is then reset to full, so the entry opens with the string's pennants over a full bar and a committed count of 0.</span></li>
+    <li><b>First press wipes it</b><span>a direction press with the count at 0 zeroes the window and retires the preseeded pennants before storing the press - the pad replaces the preseed, it does not edit it.</span></li>
+    <li><b>Bare confirm replays it</b><span>with no direction pressed, a zero count, a non-empty window and the confirm mask, the arm measures the string, stores its length as the count and enters <code>0x5A</code> as a typed confirm does.</span></li>
+  </ol>
+  <div class="notice">
+    <p class="notice-title">A replay costs no pool AP, but its arts still cost Spirit</p>
+    <p>The replay never runs the press case, so the turn pool is not debited; the gauge build only measured the string against one full pool. The two-band save keeps a string recorded under a raised gauge from replaying under the base one. The <em>Spirit</em> cost of the arts the string spells is charged again, because the queue builder re-tokenizes the raw arrows at the dispatch.</p>
+  </div>
+  <p>Captured example: Gala's off-class entry with a saved six-press string, a 197 pool and a 42-AP arm opens as five pennants - the window is cut to the prefix one full pool affords.</p>
+  <p>The port runs the same preseed, cut and replay in its Arts input session and draws the preseeded pennants through the shared bar on both hosts. Its named chain library (the chain editor's list) is separate data that nothing preseeds from. Because a turn performs however many arts the pool paid for, the shout cue and the learn-on-use check are per art, not per turn.</p>
 </section>
 
 <section class="doc-section" id="art-cost">
@@ -126,6 +182,7 @@ multiplier = 11 for the character's first art row, 10 for rows 1-3, 6 from row 4
     </tbody>
   </table>
   <p>With all three limb bits set the whole Arm command is skipped and Attack is unusable. Rot rolls exactly one of the three limb bits per application.</p>
+  <p>The stamp is sized off the chip's AP cost and keeps the edge nearest the D-pad fixed, exactly as the cost-widened chip does; the High / Low stamps stay at the favoured width whatever those chips cost. The command ring marks the same states every frame, before the pad is read: all three limbs stamp Rot over the Attack chip, and Curse lays its plate over the Magic chip. Both play hosts of the port draw these marks.</p>
 </section>
 
 <section class="doc-section" id="every-weapon">
@@ -179,12 +236,13 @@ multiplier = 11 for the character's first art row, 10 for rows 1-3, 6 from row 4
     <thead><tr><th>Function / data</th><th>Address</th><th>What it proves</th></tr></thead>
     <tbody>
       <tr><td>Gauge build + press</td><td><code>FUN_801D388C</code> (overlay 0898)</td><td>Case 9 / <code>0x2C</code> reads <code>+0x74</code> (store at <code>0x801D3B3C</code>); case <code>0xB</code> debits <code>ctx+0x6DC</code>; one byte is width and price.</td></tr>
-      <tr><td>Command menu SM</td><td><code>FUN_801D0748</code></td><td>State <code>0x50</code> Arts input; limb-bit gray and gate agree bit-for-bit.</td></tr>
+      <tr><td>Command menu SM</td><td><code>FUN_801D0748</code></td><td>State <code>0x50</code> Arts input: direction tests, auto-end, confirm / cancel masks; limb-bit stamp and gate agree bit-for-bit.</td></tr>
+      <tr><td>Auto string preseed / save</td><td><code>FUN_801DA34C</code> / <code>FUN_801DA59C</code></td><td>Copy between <code>actor+0x1DF..</code> and record <code>+0x1A7</code> / <code>+0x1B7</code>; the gauge build's cut at the first unaffordable command.</td></tr>
       <tr><td>Load-time writer</td><td><code>FUN_800557B8</code> (SCUS)</td><td>Verbatim 43-word copy; the single cost write fires at <code>0x80055810</code> under a live write-watch.</td></tr>
       <tr><td>Character assembly</td><td><code>FUN_80052770</code> / <code>FUN_80052FA0</code></td><td>Section selection from the record's equip bytes; swing-record splice; id-0 default fallback.</td></tr>
       <tr><td>Execution resolver</td><td><code>FUN_801EC3E4</code></td><td>Per-command fold into working ATK; called from SCUS <code>0x800478A0</code>.</td></tr>
       <tr><td>Enemy budget</td><td><code>FUN_801E9FD4</code></td><td>The AI pays the same <code>+0x74</code> costs from its AGL gauge.</td></tr>
-      <tr><td>Disc bytes</td><td>PROT 863..866</td><td><code>asset battle-data-pack</code> decode of every weapon section's <code>swing_rec + 0x74</code> - the tier tables above.</td></tr>
+      <tr><td>Disc bytes</td><td>PROT 863..865</td><td><code>asset battle-data-pack</code> decode of every weapon section's <code>swing_rec + 0x74</code> - the tier tables above.</td></tr>
       <tr><td>Live RAM</td><td><code>DAT_801C9360[char][cmd]+0x74</code></td><td>Gala + Nail Glove = 42, + Ra-Seru Club = 30, matching the file bytes.</td></tr>
     </tbody>
   </table>
@@ -198,7 +256,8 @@ multiplier = 11 for the character's first art row, 10 for rows 1-3, 6 from row 4
           <tr><td><code>0x8007BD24</code></td><td>Pointer to the battle context struct</td></tr>
           <tr><td><code>0x801C9360</code></td><td>Per-party-member pointer to the command-record pointer array; <code>[char][cmd] + 0x74</code> is the cost byte</td></tr>
           <tr><td><code>0x801F4B8C</code> / <code>0x801F4B94</code></td><td>Displayed command codes <code>0C 0F 0E 0D</code> / icon bases <code>0D 10 11 0C</code>; <code>0x0C</code> is the arm whose cost tracks the weapon</td></tr>
-          <tr><td><code>ctx+0x06</code> / <code>+0x13</code> / <code>+0x14..17</code> / <code>+0x19</code></td><td>Menu flow byte; active slot; per-command AP costs; commands committed</td></tr>
+          <tr><td><code>ctx+0x06</code> / <code>+0x13</code> / <code>+0x14..17</code> / <code>+0x19</code> / <code>+0x1B</code></td><td>Menu flow byte; active slot; per-command AP costs; commands committed; raised when the gauge build drew a preseeded string</td></tr>
+          <tr><td><code>0x800846D0</code> / <code>0x800846D4</code></td><td>Configurable confirm / cancel pad masks the input state tests</td></tr>
           <tr><td><code>ctx+0x6DC</code></td><td>Turn pool, seeded from actor AGL (<code>+0x154</code>)</td></tr>
           <tr><td><code>actor+0x158</code> / <code>+0x16E</code> / <code>+0x170</code></td><td>Working ATK; status word (limb bits); Spirit gauge (where a named art's cost lands, via the accumulator at <code>+0x224</code>)</td></tr>
           <tr><td><code>0x80074368</code> (12-byte stride)</td><td>Item property records; <code>+1</code> equipment-row index, <code>+8</code> shared per-class description pointer</td></tr>
@@ -209,7 +268,7 @@ multiplier = 11 for the character's first art row, 10 for rows 1-3, 6 from row 4
       <p>An emulator sweep of injected <code>+0x74</code> values established the pennant legibility floor (24). A separate <code>+2</code> in the build case is an empty-slot icon tweak, not the class penalty.</p>
     </div>
   </details>
-  <p class="hint">The full doc adds the chip label words, the animation-rate restore after an action, the arts-AP override hook and register-level detail: <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/arts-command-gauge.md" target="_blank" rel="noopener"><code>docs/subsystems/arts-command-gauge.md</code></a>.</p>
+  <p class="hint">The full doc adds the gauge formulas, the animation-rate restore after an action, the arts-AP override hook and register-level detail: <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/arts-command-gauge.md" target="_blank" rel="noopener"><code>docs/subsystems/arts-command-gauge.md</code></a>.</p>
 </section>
 
 <section class="doc-section" id="see-also">

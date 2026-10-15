@@ -1090,7 +1090,7 @@ including frames where the staging trio differs from the live one;
 `FUN_80026988` forms the camera rotation in q3.12 from the truncating sin
 LUT, with every product shifted down on its own; the port's retail-exact
 rendition is `render-kernels::battle_intro::euler_rot_psx`. Both play hosts build
-the camera from the shared `engine-battle-vm::psx_camera::camera_rotation` instead -
+the camera from the shared `engine-camera::psx_camera::camera_rotation` instead -
 the same `Rx * Ry * Rz` product in `f32`. The two differ by at most about
 2.4/4096 in any element over the camera angle trios of the 98 catalogued
 mednafen states.
@@ -1194,6 +1194,14 @@ forest trees (`0x180`), the `0x380` billboards of `deene` and `retona`.
   placed at `(x, -y, z)` on both the plain and the skip arm. Placed at `p`,
   an off-floor effect draws mirrored through the floor
   (`vera_summon_mid_cast`'s glows over the target's raised hand).
+- *Rotation.* The dispatcher builds a node's rotation from its trio
+  `+0x24 / +0x26 / +0x28` with `FUN_80026988` (`0x8001B2A4..0x8001B2CC` in
+  `FUN_8001ADA4`), `Rx * Ry * Rz` in retail's frame. Both hosts take it from
+  `gte::part_rotation`, which conjugates it by the battle frame's flip
+  (`Rx(-x) * Ry(y) * Rz(-z)`) and hands the field frame the product as is.
+  A part turned about two axes (Gimard's fire tunnel in
+  `gimard_burning_attack`) drew at another angle under the yaw-first,
+  unflipped product the hosts used before.
 - *No prefix.* A part with no `0x780` bit gets none, and neither does any
   part drawn through a host's own vantage (the debug orbits, the stage-less
   battle orbit, the overworld top view), where there is no retail rotation
@@ -1371,7 +1379,7 @@ dialog boxes, menu windows), authored in the space `OFY = 114` lives in. The
 projection puts the GTE origin on row 114 of the port's frame as well, as a
 constant `w`-scaled term on clip `y`, `GTE_OFY_NDC_BIAS = (120 - OFY) / 120`,
 which survives the perspective divide:
-`legaia_engine_battle_vm::battle_cam_script::battle_vp` (shared by the play page)
+`legaia_engine_camera::projection::battle_vp` (shared by the play page)
 and `psx_camera_mvp` (native window). Guard:
 `the_projected_origin_lands_on_the_retail_screen_centre`, which reads the
 expected row from `GTE_OFY`, so a projection rebuilt on `240 / 2` fails it.
@@ -1807,10 +1815,30 @@ particle's depth, not a world-space quad
 The records come from the ambient emitter's spawner `FUN_801D629C`
 ([`field-ambient-fx.md`](field-ambient-fx.md#the-fog-pool-spawner-records-render-pass)).
 
+The pass runs once per **game frame**, not once per VSync, and its `dt` is
+the frame step (grade: disassembly). The per-frame mode handler
+`FUN_80025EEC` runs `FUN_8001698C`, then the frame body `FUN_80016444(1)`,
+then the pacer `FUN_80016B6C`. The frame body reaches `FUN_8001D058` at
+exactly one of two sites (`0x80016688` when the game mode word `gp+0x524` is
+`0x15`, `0x80016784` otherwise), which calls `FUN_80026CE4` when
+`0x1F800394` bit 3 is set, and its fog stage calls `FUN_8003F348` once
+(`0x80026F24`). The pacer measures the VSyncs the frame took and stores
+them at `0x1F800393` (`0x80017068`, `0x80017164`), and each record's age
+advances by `rate * [0x1F800393]` (`0x8003F628..0x8003F648`), so a 30 Hz
+field frame ages the pool by two VSyncs' worth in one step. The pass draws
+no `rand()`: its only PRNG is `FUN_8003F838` over scratchpad `0x1F8002A8`,
+whose contribution the half-width keeps is always zero. The draws on the
+world `rand()` stream are the spawner's, in the emitter on the actor pass.
+
 Port: `engine-field::fog_particles` is the pool and the pass's arithmetic,
-`World::fog_render_step` is the draw-path call each host makes with its
-follow camera, and the quads join this pass through
-`screen_prim::fog_puff_prim`. Each quad carries a scene depth and is
+`World::fog_render_step` is the render pass's step, which both hosts run once
+per sim tick through `BootSession::step_field_fog` with the follow camera (one
+`World::tick` is one game frame, and the tick's display frame step is banked
+as the step's `dt`), and the quads join this pass through
+`screen_prim::fog_puff_prim`. The retail comparison's capture frame is the
+one frame that steps twice: it installs the retail state's records and
+re-runs the frame's step over them (`BootSession::seat_field_fog`), since a
+seat installed after the tick's step never reaches a quad. Each quad carries a scene depth and is
 depth-tested, so nearer geometry covers a sheet as retail's shared ordering
 table does: the particle's own `SZ` on the field, the bucket depth on the
 overworld, where ridges stand in front of the fog behind them.
@@ -2762,8 +2790,9 @@ L`, with `L` the scene's measured luminance (`fog_volume::scene_luminance`):
 every textured triangle's texel at its UV centroid, through its CLUT, times
 its baked colour word over `128`, averaged by world area. The field
 measurement is `SceneHost`'s, once per scene label. The battle one is taken
-by each host at battle entry over the stage shell it built
-(`fog_volume::stage_luminance`, pinned by a `SIM_PAIRS` row) and scaled by
+on the battle edge over the stage shell, by the session step both hosts run
+(`engine-session::battle_stage::stage_battle_world` over
+`fog_volume::stage_luminance`, pinned by a `SIM_PAIRS` row), and scaled by
 the live battle ambient, so a summon close-up dims the bank with the stage.
 The floor keeps a night bank readable as a moonlit haze.
 

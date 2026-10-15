@@ -167,7 +167,7 @@ pub(super) fn attack_advance<H: BattleActionHost + ?Sized>(
     // safety bound the retail loop doesn't need (its trig steps always
     // terminate); it never binds on real geometry.
     let facing = host.actor(slot).map(|a| a.facing_angle).unwrap_or(0);
-    let (sin, cos) = motion::trig12(facing);
+    let (sin, cos) = legaia_engine_system::trig::trig12(facing);
     let (dx, dz) = motion::arrival_shove_step(sin, cos);
     if (dx, dz) != (0, 0) {
         let mut guard = 0u32;
@@ -497,7 +497,7 @@ fn swing_drift<H: BattleActionHost + ?Sized>(host: &mut H, ctx: &BattleActionCtx
         let Some((x, z)) = host.actor_position(who) else {
             return;
         };
-        let (sin, cos) = motion::trig12(angle);
+        let (sin, cos) = legaia_engine_system::trig::trig12(angle);
         // Retail truncates once a battle frame; the carry spreads that
         // frame's total over the engine's ticks (`RootMotionCarry`).
         let raw = motion::root_motion_raw(sin, cos, speed, dt, rate);

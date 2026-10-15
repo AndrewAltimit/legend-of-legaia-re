@@ -1,7 +1,7 @@
 //! The [`FieldCameraMotionHost`] supertrait of the field-VM host surface.
 
 use super::FieldFlagsHost;
-use crate::field::{FieldCtx, Sub9State};
+use crate::field::Sub9State;
 
 /// Camera motion over time: the cutscene glide, the vertical-offset ease, zoom and shake.
 ///
@@ -108,7 +108,7 @@ pub trait FieldCameraMotionHost: FieldFlagsHost {
     /// value space is `0..=0xFF` and only the operand byte can set it.
     ///
     /// `_DAT_8007B630` is the amplitude `FUN_801D9D30`
-    /// (`legaia_engine_battle_vm::battle_camera::apply_shake`) turns into an LCG jitter on
+    /// (`legaia_engine_camera::battle_camera::apply_shake`) turns into an LCG jitter on
     /// the camera translation pair `0x800840B8/BC`: `0` is "no shake" and
     /// `1..=0x15` widens the sample window. This opcode is that global's
     /// only writer, which is what makes the field script the sole source of
@@ -117,26 +117,6 @@ pub trait FieldCameraMotionHost: FieldFlagsHost {
     /// REF: FUN_801D9D30
     fn set_shake_amplitude(&mut self, value: u8) {
         let _ = value;
-    }
-
-    /// Op 0x4C outer-nibble-D sub-1 - jump while a camera glide is live.
-    ///
-    /// 2-byte instruction `[4C, 0xD1]`. The original walks the global
-    /// list-head at `_DAT_8007C34C` via `FUN_8003CF04(head, FUN_801DC0BC)`
-    /// (first live node whose handler word `+0xC` equals the key) and:
-    /// - if the search returns null OR the matched entry's `[+0x10] & 8 != 0`
-    ///   (the "deleted" bit) → `return param_2 + 4` (PC += 4),
-    /// - else → `pbVar43 = pbVar47 + 1; goto LAB_801E360C` which calls
-    ///   `func_0x8003CE9C(pbVar43)` (the variable-length signed-int reader)
-    ///   and returns its result as the new PC.
-    ///
-    /// The host hook returns `Some(new_pc)` for the LAB path or `None` to
-    /// take the PC += 4 path. The default impl returns `None` - engines
-    /// without a list-walking model fall through to the safe "no jump"
-    /// branch.
-    fn jump_if_camera_glide_live(&mut self, ctx: &FieldCtx) -> Option<usize> {
-        let _ = ctx;
-        None
     }
 
     /// Op 0x4C outer-nibble-D sub-7 - retire every cutscene camera mover
@@ -162,6 +142,9 @@ pub trait FieldCameraMotionHost: FieldFlagsHost {
     /// progress `+0x9C` reaches the duration `+0x9E` (`0x801DD238..0x801DD260`),
     /// so a script that arms an op-`0x45` glide and then issues `4C CD` holds
     /// until the shot has landed.
+    ///
+    /// `4C D1` (`0x801E2B3C`) asks the same lookup and takes its relative
+    /// skip when the answer is a live mover.
     ///
     /// Returns `true` while a glide is in flight. The default reports one
     /// always, which parks the op - the behaviour of a host that does not

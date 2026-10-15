@@ -18,9 +18,9 @@
 #[cfg(test)]
 mod tests {
     use legaia_engine_battle_vm::battle_cam_script::{
-        BattleCamActor, BattleCamPose, FormationBox, SUBMENU_HEIGHT_FALLBACK, menu_framing,
-        prescale_tr_z,
+        BattleCamActor, FormationBox, SUBMENU_HEIGHT_FALLBACK, menu_framing, prescale_tr_z,
     };
+    use legaia_engine_camera::projection::BattleCamPose;
 
     /// The formation behind the traced Tetsu fight (span 1600 - see the
     /// shared module's `traced_formation`).

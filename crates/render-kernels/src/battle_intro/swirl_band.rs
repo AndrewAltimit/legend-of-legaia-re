@@ -1,9 +1,10 @@
 //! The swirl's band submit and its trig tables.
 
 use super::*;
+use crate::battle_intro_swirl as swirl;
+use crate::battle_intro_swirl::{SwirlBandDraw, SwirlMesh};
 use crate::gte::{GteMat3, GteVec3, psx_cos, psx_sin};
 use crate::screen_prim::ScreenPrim;
-use legaia_engine_battle_vm::battle_intro_swirl::{self as swirl, SwirlBandDraw, SwirlMesh};
 
 // ---------------------------------------------------------------------------
 // The swirl's band submit (FUN_801D1A20)

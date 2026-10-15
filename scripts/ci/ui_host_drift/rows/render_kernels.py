@@ -138,6 +138,17 @@ RENDER_KERNEL_RULES: list[dict[str, object]] = [
         },
     },
     {
+        "kernel": "move-VM part rotation through gte::part_rotation",
+        "why": "the per-actor dispatcher turns a move-VM node by its angle "
+        "trio with `FUN_80026988` (`Rx * Ry * Rz`), and the battle frame's "
+        "per-model flip conjugates it. Both hosts once composed "
+        "`Ry * Rx * Rz` on unflipped angles, which agrees with retail only "
+        "while at most the yaw is non-zero: Gimard's fire tunnel turned "
+        "about two axes drew at another angle on both",
+        "trigger": r"\b(?:active_summon_part_draws|active_effect_kind4_draws)\b",
+        "requires": [r"\bpart_rotation\b"],
+    },
+    {
         "kernel": "shared value layout -> shared quad emitter",
         "why": "a shared LAYOUT is not a shared DRAW. The battle damage "
         "numerals and the `N HIT` / `TOTAL` counter resolved through one "
@@ -146,7 +157,7 @@ RENDER_KERNEL_RULES: list[dict[str, object]] = [
         "the same digits in the dialog font - one model, two letterforms, "
         "and every tier green because both hosts named the kernel. A surface "
         "that resolves the layout must emit through the shared quad builder "
-        "(`render-kernels::battle_numerals`), leaving a font path as an explicit "
+        "(`engine-ui::battle_numerals`), leaving a font path as an explicit "
         "before-the-atlas fallback rather than as the draw",
         "trigger": r"\bbattle_value_readout\b",
         "requires": [

@@ -2,6 +2,19 @@
 
 use super::*;
 
+/// The `0x3C` pre-arm raises the action-in-progress marker `ctx[+0x243]`
+/// on every category (`sb v0,0x243(v1)` at `0x801E3B6C`), Item included.
+#[test]
+fn the_pre_arm_raises_the_action_marker() {
+    for category in [ActionCategory::Spirit, ActionCategory::Item] {
+        let (mut ctx, mut host) = fresh(category, 0);
+        ctx.action_state = ActionState::SpiritPreArm.as_byte();
+        step(&mut host, &mut ctx);
+        assert_eq!(ctx.action_state, ActionState::SpiritWait.as_byte());
+        assert_eq!(ctx.gauge_rearm_latch, 1, "{category:?}");
+    }
+}
+
 // ---------------------------------------------------------------------------
 // The Spirit seed arm - `0x801E2FF0..0x801E3024`
 // ---------------------------------------------------------------------------

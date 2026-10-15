@@ -13,11 +13,14 @@
 
 pub mod afterimage;
 pub mod battle_intro;
-pub mod battle_numerals;
+pub mod battle_intro_particles;
+pub mod battle_intro_styles;
+pub mod battle_intro_swirl;
+pub mod battle_intro_tiles;
+pub mod battle_intro_transition;
 pub mod battle_trail;
 pub mod billboard;
 pub mod cast_beam;
-pub mod cast_theeder;
 pub mod display_mirror;
 pub mod drop_shadow;
 pub mod effect_billboard;

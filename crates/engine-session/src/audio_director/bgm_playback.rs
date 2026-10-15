@@ -167,6 +167,7 @@ impl<S: AudioSink> AudioDirector<S> {
 
 impl<S: AudioSink> BgmDirector for AudioDirector<S> {
     fn start(&mut self, bgm_id: u16, seq_bytes: &[u8]) {
+        self.commands.push(super::AudioCommand::BgmStart(bgm_id));
         // Suppress duplicate starts for the same BGM id - the field VM's
         // op 0x35 occasionally re-emits without a state change (we'd lose
         // the playhead by re-attaching).
@@ -182,6 +183,8 @@ impl<S: AudioSink> BgmDirector for AudioDirector<S> {
     }
 
     fn start_owned_vab(&mut self, bgm_id: u16, entry_bytes: &[u8]) {
+        self.commands
+            .push(super::AudioCommand::BgmStartOwned(bgm_id));
         // Suppress a redundant re-emit of the same global track (the field VM
         // occasionally re-fires op 0x35): re-uploading the VAB + restarting
         // would drop the playhead.
@@ -205,6 +208,7 @@ impl<S: AudioSink> BgmDirector for AudioDirector<S> {
     /// director (a movie ducking the score, `legaia_engine_system::movie::movie_audio`)
     /// cannot leave a second latch disagreeing with it.
     fn pause(&mut self) {
+        self.commands.push(super::AudioCommand::BgmPause);
         self.audio.set_sequencer_paused(true);
     }
 
@@ -212,6 +216,7 @@ impl<S: AudioSink> BgmDirector for AudioDirector<S> {
     /// start (`FUN_800628F0` resets the read cursor before it plays), so the
     /// track rewinds, then the gate opens.
     fn resume(&mut self) {
+        self.commands.push(super::AudioCommand::BgmResume);
         self.audio.rewind_sequencer();
         self.audio.set_sequencer_paused(false);
     }
@@ -220,6 +225,7 @@ impl<S: AudioSink> BgmDirector for AudioDirector<S> {
     /// paused leaves nothing closed behind it (the browser play page's `stop`
     /// does the same).
     fn stop(&mut self) {
+        self.commands.push(super::AudioCommand::BgmStop);
         self.audio.detach_sequencer();
         self.audio.set_sequencer_paused(false);
         self.last_started = None;
@@ -237,6 +243,7 @@ impl<S: AudioSink> BgmDirector for AudioDirector<S> {
     /// while paused attaches its sequencer behind a still-closed gate and
     /// the score stays silent after the cutscene.
     fn unhalt_pause(&mut self) {
+        self.commands.push(super::AudioCommand::BgmUnhaltPause);
         if self.audio.sequencer_paused() {
             self.audio.detach_sequencer();
             self.last_started = None;

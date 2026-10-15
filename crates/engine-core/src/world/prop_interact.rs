@@ -587,12 +587,34 @@ impl World {
                     }
                     continue;
                 }
+                // An op aimed at another actor (`C7 <id> ..` walk, `B8 <id>`
+                // turn, `CC <id> 85` acquire) runs on the record's own context,
+                // which stands in for the target, so the target's park
+                // (`+0x10 |= 0x400`) lands on it. In retail the target's
+                // walk kernel clears that bit on the leg's terminal frame
+                // (`FUN_8003774C`); the runner plays no leg for another actor,
+                // so it keeps the record's own halt state across the op, as
+                // the talk runner does. Left up, the bit held the record's
+                // next op on any actor at the dispatcher's halted-target
+                // early-out (`0x801DE90C..0x801DE944`) until the park
+                // timeout, and the prop's flag word carried it into every
+                // later touch: `jiji`'s counters (P0[5], P0[7], P0[8]) walk
+                // and turn their keeper before the greeting, and each touch
+                // froze the player for the timeout and greeted no one.
+                // REF: FUN_8003774C, FUN_801DE840 (0x801DE90C..0x801DE944)
+                let other_target = b & 0x80 != 0 && !player_target;
+                let own_halt = (id.ctx.flags & 0x400, id.ctx.saved_pc, id.ctx.wait_accum);
                 let ctx = if player_target {
                     &mut player_ctx
                 } else {
                     &mut id.ctx
                 };
                 let step = field_step_routed(&mut host, ctx, &id.bytecode, id.pc);
+                if other_target && own_halt.0 == 0 && id.ctx.flags & 0x400 != 0 {
+                    id.ctx.flags &= !0x400;
+                    id.ctx.saved_pc = own_halt.1;
+                    id.ctx.wait_accum = own_halt.2;
+                }
                 // The record's own MOVE_TO seats the prop actor itself
                 // (`0x801DECAC`, the non-player arm: the tile goes into the
                 // executing actor's `+0x14` / `+0x18`). `vozz` P0[1], a

@@ -93,6 +93,31 @@ impl LegaiaRuntime {
             .is_some_and(|h| h.world.name_entry_active())
     }
 
+    /// The naming prompt's claim on this **sim tick** - the native window's
+    /// per-tick arm, through the same session step
+    /// (`BootSession::step_name_entry_frame`: the edge into the entry SM,
+    /// then one frame under the prompt with the camera's half). `0` = no
+    /// prompt, the field runs; `1` = the prompt took the tick; `2` = it took
+    /// the tick and the name committed (the page reports the name).
+    ///
+    /// The page used to route one edge per **display** frame and pass the
+    /// frame's sim steps separately, so on a display faster than 60 Hz an
+    /// edge landed on a frame that ran no tick and stepped the prompt a frame
+    /// ahead of the window.
+    pub fn play_name_entry_tick(&mut self, edge: u16) -> u8 {
+        let Some(session) = self.scene_host.session_mut() else {
+            return 0;
+        };
+        if !session.step_name_entry_frame(edge) {
+            return 0;
+        }
+        if session.host.world.name_entry_active() {
+            1
+        } else {
+            2
+        }
+    }
+
     /// Step the overlay one frame from an edge-triggered PSX pad word (same
     /// bit layout as [`Self::set_pad`]). Cross confirms the cell under the
     /// cursor (or the Yes/No row); Triangle is the backspace shortcut while

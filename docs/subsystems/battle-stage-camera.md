@@ -181,7 +181,13 @@ cast pulls the near colour from `0xC0` toward `0x60`. The far colour
 
 **Who drives the latch.** The summon close-up (`FUN_801DC0A0` case `0x12`,
 `sb v0,0x243(v1)` at `0x801DCCFC`) sets `ctx+0x243 = 1` on every `0x33` /
-`0x34` pass. The summon band's `0x37` exit (`0x801E4E8C..0x801E4EA4`) and the
+`0x34` pass. Two action-SM arms raise it once on the way into their band:
+the cast begin's capture route (`0x801E44FC`, behind the `ctx[7] = 0x6E`
+store), so the stage dims through a capture-class cast, and the Spirit /
+Item pre-arm `0x3C` (`0x801E3B6C`). The anim commit `FUN_8004E13C` stores a
+committed clip's non-zero header byte there too (`0x8004E2C0`).
+`nivora_duel_mid_blazing_slash`, parked in `0x6E`, reads the latch up and the
+base ten steps down. The summon band's `0x37` exit (`0x801E4E8C..0x801E4EA4`) and the
 capture band's `0x71` exit (`0x801E5214..0x801E5248`) clear it together with
 `ctx+0x278` and re-seed the base at `0x08421084` (`0x21` a channel), so the
 floor climbs back from dark after the creature leaves.
@@ -274,8 +280,9 @@ also contains the Rim Elm dome, at offset `0x16038`, past entry 6's own
 `0x14000`. Entries 7 and 8 share a vertex count, so only the bytes separate
 them.
 
-Port: `ProtIndex::battle_stage_entry_for_scene`, consumed by each host's
-`build_battle_stage`. Tests
+Port: `ProtIndex::battle_stage_entry_for_scene`, consumed by the one stage
+resolver both hosts run on the battle edge
+(`engine-session::battle_stage::resolve_battle_stage`). Tests
 `crates/engine-core/tests/battle_stage_entries_real.rs` (disc) and
 `crates/parity/tests/battle_stage_live.rs` (save library).
 
@@ -342,7 +349,7 @@ holding the address. `town01`'s semi-transparent cloud band (`(768, 0)` at `v`
 191..254, palette `1` of row 473, a greyscale + STP ramp) would then draw
 through a sibling's rainbow CLUT-cycling ramp as flat green rectangles.
 `engine-scene::scene::upload_battle_stage_tims_into_vram` re-uploads the
-selected entry's own TIMs last; both hosts call it from `build_battle_stage`.
+selected entry's own TIMs last, from the shared `resolve_battle_stage`.
 Sweeps: `rim_elms_four_stage_streams_all_claim_the_same_vram` and
 `the_selected_stage_entry_owns_its_vram_after_the_reupload`.
 
@@ -1257,7 +1264,7 @@ and the two nuances the port leaves un-carried - is on
 [`cutscene.md`](cutscene.md#per-style-emitters-render-track-gtegpu).
 `crates/engine-render/src/tests/battle_intro_emitter.rs` pins per-style packet
 counts, geometry and OT linkage, and
-`crates/engine-battle-vm/tests/battle_intro_chain.rs` the working-set arithmetic.
+`crates/render-kernels/tests/battle_intro_chain.rs` the working-set arithmetic.
 
 <a id="the-curtain-is-a-render-to-texture-and-only-its-row-pass-is-on-screen"></a>
 

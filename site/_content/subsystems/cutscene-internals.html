@@ -10,7 +10,7 @@
     <dt>Movie overlay</dt><dd>PROT 0970 at <code>0x801CE818</code>; play loop 1236 bytes; ring = 32 sectors at asset buffer <code>+0x10000</code></dd>
     <dt>Frame decoder</dt><dd>Iki: 10-byte header, LZSS qscale/DC table, AC VLC stream; port <code>legaia_mdec::MdecDecoder</code></dd>
     <dt>Opening timeline</dt><dd>Partition-2 named records in each scene MAN, run by the field VM <code>FUN_801DE840</code> as a spawned context</dd>
-    <dt>Camera</dt><dd>Op <code>0x45</code>: 10 params into globals; mover actor <code>FUN_801DD310</code>; port <code>engine-battle-vm::camera_mover</code></dd>
+    <dt>Camera</dt><dd>Op <code>0x45</code>: 10 params into globals; mover actor <code>FUN_801DD310</code>; port <code>engine-camera::camera_mover</code></dd>
     <dt>Roller</dt><dd>Handler <code>FUN_80037174</code>; geometry at <code>_DAT_801C6EA4 + 0x4C..0x52</code>; port <code>CutsceneNarration</code></dd>
     <dt>Grade</dt><dd>Palette law <code>(L, L&minus;1, L&gt;&gt;1)</code> on every CLUT entry; port <code>Renderer::set_palette_grade</code></dd>
     <dt>Confidence</dt><dd>Confirmed; the gold-grade CLUT rewrite is capture-observed with no statically visible writer loop</dd>
@@ -144,7 +144,7 @@
       <tr><td>4</td><td>Ease-in-out</td><td>Curve 3 to the midpoint over <code>d &gt;&gt; 1</code>, then curve 2</td></tr>
     </tbody>
   </table>
-  <p>Port: <code>legaia_engine_battle_vm::camera_mover</code>, and <code>play-window</code> eases the rendered pose through <code>CutsceneCameraInterp</code> in display-frame time. Because retail scales the world 6&times; and the engine renders at 1&times;, <code>tr_eye</code> is divided by 6 - the perspective divide makes both project identically. Reference frame: focus <code>(8640, 0, 10304)</code>, pitch 180, yaw &minus;2967, <code>H</code> 792, <code>tr_eye (260, 1293, 17145)</code> projects the party to <code>(172, 180)</code>, matching the capture.</p>
+  <p>Port: <code>legaia_engine_camera::camera_mover</code>, and <code>play-window</code> eases the rendered pose through <code>CutsceneCameraInterp</code> in display-frame time. Because retail scales the world 6&times; and the engine renders at 1&times;, <code>tr_eye</code> is divided by 6 - the perspective divide makes both project identically. Reference frame: focus <code>(8640, 0, 10304)</code>, pitch 180, yaw &minus;2967, <code>H</code> 792, <code>tr_eye (260, 1293, 17145)</code> projects the party to <code>(172, 180)</code>, matching the capture.</p>
 
   <h3 id="roller">The narration roller</h3>
   <p>Spawn op <code>CC F8 80 N</code> allocates a child actor from template <code>DAT_801F28A0</code> with handler <code>FUN_80037174</code>, points its script pointer at the page-count byte, and the parent measures the pages to skip past the block. Config op <code>CC F8 E8 w0 w1 w2 w3</code> (four signed-16 words) is mode-selected by <code>w3</code>:</p>
@@ -239,7 +239,7 @@
       <tr><td>Style select</td><td><code>FUN_801CE8CC</code> (PROT 0979)</td><td>Reads battle flags <code>DAT_8007BD60</code> bit <code>0x80</code>, first monster id <code>DAT_8007BD0C</code>, scene index <code>DAT_80084540</code>; default style 2, style 3 for three formations, 4 for one; two delay-slot stores land on both branch arms, which is why the flags-set path defaults to 1</td></tr>
       <tr><td>Transition tick</td><td><code>FUN_801CF5BC</code></td><td>Owns the whole frame for <code>DAT_801D2458</code> frames, then hands off to the battle scene</td></tr>
       <tr><td>Emitters</td><td>render track</td><td>The fade's second argument is a blend mode, not a depth; style 2's emitter is not a GTE emitter. Port <code>render-kernels::battle_intro</code></td></tr>
-      <tr><td><code>FUN_801D27E0</code></td><td>dialogue overlay</td><td>Party-leader swap state machine (6 states on actor <code>+0x54</code>); writes <code>DAT_80084597</code></td></tr>
+      <tr><td><code>FUN_801D27E0</code></td><td>dialogue overlay</td><td>Party-leader swap state machine (6 states on actor <code>+0x54</code>); writes <code>DAT_80084597</code> and spawns the talk's own record on every swap</td></tr>
       <tr><td><code>FUN_801D5C08</code></td><td>dialogue overlay</td><td>Position tween: <code>+0x9C += (+0x9E) &times; frame-skip</code>, lerp <code>+0x14</code> to <code>+0x24</code>, done bit 8 at <code>t &ge; 0x1000</code></td></tr>
       <tr><td><code>FUN_801D5D60</code></td><td>dialogue overlay</td><td>Scripted-element teardown: restore the camera, clear enable flags once done</td></tr>
       <tr><td><code>FUN_801D6058</code></td><td>dialogue overlay</td><td>Ambient particle emitter gated on <code>_DAT_8007B854</code>: single jittered spawns or 24 random bursts</td></tr>

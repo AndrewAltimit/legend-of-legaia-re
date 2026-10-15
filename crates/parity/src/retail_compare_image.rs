@@ -360,7 +360,21 @@ pub fn engine_frame_with(
             );
         }
     }
-    let out = cmd.output().context("spawn play-window")?;
+    let retake = shot.with_extension("retake");
+    let _ = std::fs::remove_file(&retake);
+    let mut out = cmd.output().context("spawn play-window")?;
+    // A child that names an earlier tick (`LEGAIA_CAPTURE_DISPLAY_LAG`: the
+    // frame retail's display shows) is run again and takes its frame there;
+    // the child is tick-locked, so the re-run walks the same frames.
+    if let Some(t) = std::fs::read_to_string(&retake)
+        .ok()
+        .and_then(|t| t.trim().parse::<u64>().ok())
+    {
+        let _ = std::fs::remove_file(&retake);
+        let _ = std::fs::remove_file(&shot);
+        cmd.env("LEGAIA_DIAG_CAPTURE_TICK", t.to_string());
+        out = cmd.output().context("spawn play-window")?;
+    }
     let retries = String::from_utf8_lossy(&out.stderr)
         .lines()
         .filter(|l| l.contains("screenshot readback"))

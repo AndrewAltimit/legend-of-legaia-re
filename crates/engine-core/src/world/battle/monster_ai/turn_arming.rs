@@ -133,6 +133,12 @@ impl World {
     /// * retail's target redraw loop is unbounded, so a row with no living
     ///   monster spins; the port bounds it and stands by.
     ///
+    /// The target roll (`rand() % ctx[+1] + 3`) names a retail pool slot, and
+    /// its liveness and guard-record reads are on that slot, so all three go
+    /// through [`World::battle_seat_map`]. The companion sits in a two-member
+    /// party, where the engine's first monster is slot `2`: read raw, the
+    /// roll tested and aimed at the seat one past the monster it drew.
+    ///
     /// The watched seat is retail's own: battle seat `0`, the party leader,
     /// **not** the companion itself.
     fn arm_ai_companion(&mut self, slot: u8) -> bool {
@@ -176,11 +182,17 @@ impl World {
             rolls.push(self.next_rand());
         }
         let mut cursor = rolls.into_iter();
+        let seats = self.battle_seat_map();
+        let engine = |r: u8| seats.engine(r).map(usize::from);
         let pick = ai_companion_pick(
             watch,
             monster_count,
-            |s| alive.get(s as usize).copied().unwrap_or(false),
-            |s| guard.get(s as usize).copied().unwrap_or(0),
+            |r| {
+                engine(r)
+                    .and_then(|e| alive.get(e).copied())
+                    .unwrap_or(false)
+            },
+            |r| engine(r).and_then(|e| guard.get(e).copied()).unwrap_or(0),
             || cursor.next().unwrap_or(0),
         );
 
@@ -200,6 +212,8 @@ impl World {
                 }
             }
             AiCompanionPick::Attack { target, commands } => {
+                // The pick is a retail pool slot; `+0x1DD` holds an engine slot.
+                let target = seats.engine(target).unwrap_or(target);
                 self.battle_ctx.queued_action = 3;
                 if let Some(a) = self.actors.get_mut(slot as usize) {
                     a.battle.action_category = 3;

@@ -39,6 +39,30 @@ thread_local! {
     pub(super) static PLAYED_AHEAD: std::cell::RefCell<Option<(String, BTreeSet<u16>)>> =
         const { std::cell::RefCell::new(None) };
     pub(super) static EXCHANGE: std::cell::Cell<(u64, u64)> = const { std::cell::Cell::new((110, 100)) };
+    /// Set while the beats pass plays a scene whose story waits behind a
+    /// staged fight on a walk-on band: [`worth_fighting`] then takes no
+    /// random encounter.
+    pub(super) static SAVING_FOR_BOSS: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    /// The scenes the current stretch's `continuous_via` names: story the
+    /// spine asks the run to finish there, so a story talk in another room
+    /// of one is crossed to ([`pad_far_talks`]), not only an errand's.
+    pub(super) static STORY_WAYPOINTS: std::cell::RefCell<BTreeSet<String>> =
+        const { std::cell::RefCell::new(BTreeSet::new()) };
+}
+
+/// Holds [`SAVING_FOR_BOSS`] for a scope and puts back what was there.
+pub(super) struct SavingForBoss(bool);
+
+impl SavingForBoss {
+    pub(super) fn arm(on: bool) -> Self {
+        Self(SAVING_FOR_BOSS.with(|s| s.replace(on)))
+    }
+}
+
+impl Drop for SavingForBoss {
+    fn drop(&mut self) {
+        SAVING_FOR_BOSS.with(|s| s.set(self.0));
+    }
 }
 
 /// Is the random encounter on the table one the continuous hand takes? A
@@ -54,6 +78,12 @@ thread_local! {
 /// asked again every round - a fight going badly turns back into a run.
 pub(super) fn worth_fighting(w: &legaia_engine_core::world::World) -> bool {
     if !PLAYS_ON.with(std::cell::Cell::get) {
+        return false;
+    }
+    // On the way to a boss the party's HP and the bag are the boss's: a
+    // walk there runs from what it meets. Training is the exception - its
+    // outings are for the fights.
+    if SAVING_FOR_BOSS.with(std::cell::Cell::get) && !TRAINING.with(std::cell::Cell::get) {
         return false;
     }
     let n = w.party.party_count.clamp(1, 3) as usize;
@@ -228,6 +258,7 @@ fn part_c_continuous_run() {
     let spine = load_spine();
     let index = ProtIndex::open_extracted(&inp.extracted).expect("open ProtIndex");
     let graph = DiscGraph::build(&index);
+    let census = system_flag_census(&index, index.cdname_scene_names());
     // The next anchor's flags tell the beats pass which story beats the
     // retail run played before the milestone. They are route knowledge, not
     // state: nothing of the anchor's party or bag reaches the session.
@@ -342,7 +373,14 @@ fn part_c_continuous_run() {
     let mut reloads = 0u32;
     let mut stall: Option<String> = None;
     'spine: for i in start..spine.len() - 1 {
-        let to = &spine[i + 1];
+        // The continuous run's own waypoints, where the spine gives them.
+        let mut to_run = spine[i + 1].clone();
+        STORY_WAYPOINTS.with(|w| w.borrow_mut().clear());
+        if let Some(v) = &to_run.continuous_via {
+            to_run.via = v.clone();
+            STORY_WAYPOINTS.with(|w| w.borrow_mut().extend(v.iter().cloned()));
+        }
+        let to = &to_run;
         // What the retail run had played by the next milestone and the one
         // after it: chapter 1's anchors come from several sessions, and a
         // stretch whose own anchor is another session's (the `ravine` state)
@@ -356,6 +394,34 @@ fn part_c_continuous_run() {
         });
         PLAYED_AHEAD.with(|a| *a.borrow_mut() = played);
         NEXT_ANCHOR_FLAGS.with(|a| *a.borrow_mut() = anchor_flags[i + 1].clone());
+        // The story items the stretch consumes ([`stretch_errands`]): what
+        // its waypoints' and milestone scene's records take from the bag on
+        // the way to a flag the next anchor carries.
+        reset_errands();
+        let errands = anchor_flags[i + 1]
+            .as_ref()
+            .map(|wanted| {
+                let scenes: BTreeSet<&str> = to
+                    .via
+                    .iter()
+                    .map(String::as_str)
+                    .chain([to.scene.as_str()])
+                    .collect();
+                stretch_errands(&index, &census, wanted, &scenes)
+            })
+            .unwrap_or_default();
+        if !errands.is_empty() && std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
+            eprintln!(
+                "    [errand] {}: {}",
+                to.id,
+                errands
+                    .iter()
+                    .map(|e| format!("item 0x{:02X} x{}", e.item, e.sites.len()))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            );
+        }
+        ERRANDS.with(|e| *e.borrow_mut() = errands);
         LEARNED_CADENCE.with(|l| l.set(None));
         let ahead = (i + LEVEL_LOOKAHEAD).min(spine.len() - 1);
         TARGET_LEVELS.with(|t| {
@@ -371,7 +437,9 @@ fn part_c_continuous_run() {
             attempt += 1;
             LOST_TO_ELEMENT.with(|l| l.set(None));
             let played = catch_unwind(AssertUnwindSafe(|| {
-                PAD_DEADLINE.with(|d| d.set(session.frames + PAD_SEGMENT_FRAMES));
+                let budget = PAD_SEGMENT_FRAMES + to.via.len() as u64 * PAD_SEGMENT_FRAMES / 4;
+                STRETCH_FRAMES.with(|f| f.set(budget));
+                PAD_DEADLINE.with(|d| d.set(session.frames + budget));
                 // This hand takes the fights it can win, so a stretch's
                 // battles run long past the fleeing hand's allowance.
                 PAD_BATTLE_LEFT.with(|l| l.set(4 * PAD_BATTLE_ALLOWANCE));
@@ -463,8 +531,11 @@ fn part_c_continuous_run() {
     }
 
     PLAYS_ON.with(|p| p.set(false));
+    STORY_WAYPOINTS.with(|w| w.borrow_mut().clear());
+    STRETCH_FRAMES.with(|f| f.set(PAD_SEGMENT_FRAMES));
     TARGET_LEVELS.with(|t| t.borrow_mut().clear());
     PLAYED_AHEAD.with(|a| *a.borrow_mut() = None);
+    reset_errands();
     let denom = spine.len() - 1 - start;
     eprintln!();
     eprintln!(

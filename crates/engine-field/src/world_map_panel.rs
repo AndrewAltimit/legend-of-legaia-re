@@ -448,7 +448,7 @@ pub const DEV_MENU_ACTION_RESULT: i32 = 1;
 ///
 /// PORT: FUN_801ea9b0 (dispatch head + shared epilogue)
 ///
-/// Wired: `legaia_engine_core::dev_menu_host::DevMenuSession::tick` runs this
+/// Wired: `legaia_engine_menus::dev_menu_host::DevMenuSession::tick` runs this
 /// on its cancel leg and uses both halves of the result - the park phase and
 /// the factor [`crate::dev_menu_leaves::list_body_draws`] multiplies.
 pub fn dev_menu_action(row: i16) -> (Option<i16>, i32) {

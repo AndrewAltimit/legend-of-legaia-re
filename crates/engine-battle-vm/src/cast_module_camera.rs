@@ -13,7 +13,7 @@
 //! ## The shot kernel
 //!
 //! Each camera arm fills three stack trios and hands them to the tween builder
-//! `FUN_801D829C` ([`crate::battle_camera::build_camera_angle_tween`]):
+//! `FUN_801D829C` ([`legaia_engine_camera::battle_camera::build_camera_angle_tween`]):
 //!
 //! ```text
 //! sp+0x20  pitch, yaw, roll          ; roll is zeroed in the prologue
@@ -48,8 +48,10 @@
 //!
 //! REF: FUN_801D829C (the tween every shot arms), FUN_80019B28 (the headings)
 
-use crate::battle_action::{bearing_12bit_approx, motion::trig12};
-use crate::battle_cam_script::{BattleCamPose, prescale_tr_z};
+use crate::battle_action::bearing_12bit_approx;
+use crate::battle_cam_script::prescale_tr_z;
+use legaia_engine_camera::projection::BattleCamPose;
+use legaia_engine_system::trig::trig12;
 
 /// `*(0x1F80037D)` in battle - the speed scalar the battle seating seeds
 /// ([`crate::battle_anim_rate::RATE_NORMAL`]).
@@ -278,7 +280,13 @@ pub enum SpawnAnchor {
     /// `sp+0x30` / `sp+0x34` negated again (`subu v0,zero,v0`) - at the
     /// literal height `y` stored over `sp+0x32`, with the shot's yaw zeroed
     /// (`sh zero,0x22(sp)`). PROT 0905 arm 0 (`0x801F6BF4..0x801F6C1C`).
-    ShotPoint { y: i16 },
+    /// `roll` is a literal the arm stored over the angle trio's `z`
+    /// (`sp+0x24`) before the call, kept by every later call off the same
+    /// stack: PROT 0905's fourth glow is seated a quarter of a right angle
+    /// round (`li v0,0x200` / `sh v0,0x24(sp)` in the delay slot of the
+    /// `jal` at `0x801F6C7C`), so its four-point star crosses the third's
+    /// and the two read as one eight-point star.
+    ShotPoint { y: i16, roll: Option<i16> },
     /// The cast's victim seat `actor_table[caster + 0x1DD]`:
     /// `a0 = victim + 0x34`, `a1 = victim + 0x44`.
     Victim,
@@ -316,11 +324,11 @@ pub fn spawn_anchor_point(
             let s = shot?;
             (s.focus, s.angles)
         }
-        SpawnAnchor::ShotPoint { y } => {
+        SpawnAnchor::ShotPoint { y, roll } => {
             let s = shot?;
             (
                 [s.focus[0].wrapping_neg(), y, s.focus[2].wrapping_neg()],
-                [s.angles[0], 0, s.angles[2]],
+                [s.angles[0], 0, roll.unwrap_or(s.angles[2])],
             )
         }
         SpawnAnchor::AlongVictimHeading { base, div, y } => {

@@ -557,7 +557,7 @@ The floor is `FUN_801CEB84`, the battle ground grid's emitter (`FUN_801D02C0` in
 
 `engine-minigame-scenes::baka_duel_scene` is the whole 3D surface, and every duel host draws through it:
 
-- `DuelCamera` (`engine-minigames::baka_duel`) holds the ten globals and runs the round setup's snap, the spin, the glides (through `engine-battle-vm::camera_rel_actor` and `engine-battle-vm::camera_rel_glide`) and the tally-exit close-up. It hands a host one view-projection (`vp_raw`) for raw Y-down world vertices - the same unmirrored projection as retail. `BakaFight` owns it and steps it every tick; `parse_special_cameras` reads the player's table.
+- `DuelCamera` (`engine-minigames::baka_duel`) holds the ten globals and runs the round setup's snap, the spin, the glides (through `engine-camera::camera_rel_actor` and `engine-camera::camera_rel_glide`) and the tally-exit close-up. It hands a host one view-projection (`vp_raw`) for raw Y-down world vertices - the same unmirrored projection as retail. `BakaFight` owns it and steps it every tick; `parse_special_cameras` reads the player's table.
 - `BakaDuelScene` builds one buffer set - both fighters, two darkened ghost copies of each, the four walls, the floor (`legaia_scene_formats::battle_backdrop::build_ground_grid_sized`) - and poses it each frame from the display clips, the afterimage passes, the wall cull and the round-start [cameo](#the-round-start-cameo). The impact parts draw into reserved ranges of the same buffers.
 - `BakaDuelSurface` is the per-host cache: it decodes the assets once (PROT 1203 / 1204 / 1205 and the ladder packs), rebuilds the buffers when a rung seats a new opponent, and poses them.
 

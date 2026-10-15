@@ -4,14 +4,14 @@ Pure, renderer-agnostic UI draw-list builders for the Legaia engine port. The
 wgpu-free draw layer that both the native renderer (`legaia-engine-render`)
 and the browser play page (`legaia-web-viewer`) share. Inside the engine it
 depends on `legaia-render-kernels` and, for the battle HUD model its builders
-project (`battle_party_panel`, `battle_commit_log`), on
-`legaia-engine-battle-vm`; it links no other kernel crate and not
-`legaia-engine-core`.
+project (`battle_party_panel`, `battle_commit_log`, the value readout, the
+Theeder packet), on `legaia-engine-battle-vm`; it links no other kernel crate
+and not `legaia-engine-core`.
 
 ## Scope
 
 The shared render kernels (GTE math, screen primitives, the VRAM capture,
-the effect emitters, the battle numerals and the enhanced scene lighting)
+the effect emitters and the enhanced scene lighting)
 live in [`legaia-render-kernels`](../render-kernels/README.md), the crate
 below this one.
 
@@ -27,6 +27,13 @@ navigation logic depends on the GPU backend.
   readout's font fallback (`battle_value_readout_draws_for` - retail's own
   cells and pitch, for hosts with no screen-space VRAM sink to draw the real
   24x24 sheet through).
+- `battle_numerals` - the battle value readout's quads: retail's 24x24 numeral
+  cells and the `N HIT` / `TOTAL` / `DAMAGE` word cells as `ScreenPrim`s on
+  the effect atlas's glyph page. The layout is `engine-battle-vm`'s; this is the draw
+  both hosts had written separately, one sampling VRAM and one restyling the
+  digits in the dialog font.
+- `cast_theeder` - PROT 0904's (Theeder, spell `0x82`) beam packets: the
+  four packet builders its tick body calls, as screen primitives.
 - `menu::screens` - pause-menu field / status / spell / inventory / equipment panels,
   options + key-rebind, name entry, game-over, the post-battle spoils panel
   (`battle_spoils_draws_for`), tactical-arts editor, the

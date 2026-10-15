@@ -464,6 +464,11 @@ pub(super) struct PlayWindowApp {
         Option<legaia_actor_formats::player_anm::PlayerAnmBundle>,
     ),
     pub(super) npc_bundle_special: std::collections::HashMap<u8, bool>,
+    /// The entered scene's actors are still to be bound to the world
+    /// (`scene_actors::bind_scene_actors`): raised with each new scene's
+    /// resources, lowered by the first `upload_assets` after it, renderer or
+    /// not. A mid-scene re-upload (a model re-bind) does not bind again.
+    pub(super) scene_actors_pending: bool,
     /// World-map continent terrain draws: `(uploaded-mesh index, world model)`
     /// per visible tile of the kingdom's `.MAP` object grid
     /// (`Scene::field_terrain_tiles`, the dense `FUN_801F69D8` continent layer).
@@ -599,9 +604,6 @@ pub(super) struct PlayWindowApp {
     /// white-speckle class of bug), caught + self-healed by
     /// `check_battle_vram_residency`.
     pub(super) battle_vram_generation: Option<u64>,
-    /// Number of monster texture slots in use this battle (0..=4). A player
-    /// summon reuses the next free slot for its creature texture.
-    pub(super) battle_tex_slots_used: u8,
     /// Per-member battle facial-animation state (face tracks + last stamp
     /// set), populated by `enter_battle_render` for each assembled party
     /// member whose band pixels are the real texture-pool uploads. Driven
@@ -623,7 +625,7 @@ pub(super) struct PlayWindowApp {
     /// The opt-in developer menu (`LEGAIA_DEV_MENU=1`), created on the first
     /// ticked frame. `None` on every default run, which is what keeps the
     /// dev screen out of a player build.
-    pub(super) dev_menu: Option<legaia_engine_core::dev_menu_host::DevMenuSession>,
+    pub(super) dev_menu: Option<legaia_engine_menus::dev_menu_host::DevMenuSession>,
     /// This frame's dev-menu row-list draws, rebuilt by `tick_dev_menu` and
     /// appended by the (immutable) HUD builder. Empty unless the menu is on.
     pub(super) dev_menu_draws: Vec<TextDraw>,
@@ -737,7 +739,7 @@ pub(super) struct PlayWindowApp {
     /// battle backdrop far colour retail stages at `0x8007BB48` and the grid
     /// emitter's four `DPCS` sites consume (capture-pinned: `(0x40,0x40,0x40)`
     /// on ordinary stages, `(0xFE,0xFE,0xFE)` on the `DAT_80078C1C` outdoor
-    /// stages). Resolved per battle in `build_battle_stage`;
+    /// stages). Resolved per battle in `battle_stage::resolve_battle_stage`;
     /// `None` outside a stage-dome battle.
     pub(super) battle_ground_cue_far: Option<[f32; 3]>,
     /// The pre-cue vertex colour the uploaded ground grid was built with -
@@ -746,7 +748,7 @@ pub(super) struct PlayWindowApp {
     /// Whether the current battle stage is on the `DAT_80078C1C` outdoor
     /// table - the tint pass's `DAT_8007BDA8` input
     /// (`World::battle_actor_draw_plan`). Resolved per battle in
-    /// `build_battle_stage`; `false` outside a stage-dome battle.
+    /// `battle_stage::resolve_battle_stage`; `false` outside a stage-dome battle.
     pub(super) battle_stage_outdoor: bool,
     pub(super) scene_aabb: ([f32; 3], [f32; 3]),
     /// Current held-button bitmask (PSX pad encoding). Updated per key event.

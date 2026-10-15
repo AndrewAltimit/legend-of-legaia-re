@@ -1404,8 +1404,8 @@ The packet arms are drawn:
 | 13 | `FUN_801F8B84` | the same fan without the core, dropping the count by one a pass until empty |
 
 Port: `seru_magic_ticks::theeder_tick` with `TheederFx`, sampled once per
-retail pass; both hosts build the primitives with `render-kernels::cast_theeder`
-(`crates/render-kernels/src/cast_theeder.rs`) from `World::theeder_draw`. The
+retail pass; both hosts build the primitives with `engine-ui::cast_theeder`
+(`crates/engine-ui/src/cast_theeder.rs`) from `World::theeder_draw`. The
 prong cells come from a per-cast counter rather than the battle RNG. The
 module's camera arms are not ported: its director passes every arm and case 6
 keeps the caster.
@@ -2106,7 +2106,7 @@ PROT 0905 (Vera) anchors on points the arm builds on its stack
 
 | Arm | Calls | Anchor |
 |---:|---|---|
-| 0 | `0x801F81E4`, `0x801F823C`, `0x801F8294`, `0x801F82FC` | the framed point (the shot focus negated back) at `y = -0x280`, angles zeroed (`0x801F6BF4..0x801F6C7C`) |
+| 0 | `0x801F81E4`, `0x801F823C`, `0x801F8294`, `0x801F82FC` | the framed point (the shot focus negated back) at `y = -0x280`, yaw zeroed (`0x801F6BF4..0x801F6C7C`); the fourth rolled `0x200` |
 | 4 | `0x801F8364`, `0x801F83CC`, `0x801F8434` | the target plus `trunc(sin / 32)` / `trunc(cos / 32)` of its heading, `y = -0x1C2` (`0x801F707C..0x801F7144`) |
 | 5 | `0x801F8494`, `0x801F8500` | the creature it has just seated plus `trunc(sin / 24)` / `trunc(cos / 24)` of the target's heading, `y = -0x1C2` (`0x801F7340..0x801F7420`) |
 | 8 | `0x801F85D4`, `0x801F862C` | the creature (`0x801F7A48` / `7A60`) |
@@ -2114,7 +2114,14 @@ PROT 0905 (Vera) anchors on points the arm builds on its stack
 
 `vera_summon_mid_cast` holds arm 0's four records and nothing else, at
 `(-365, -418, -810)`: dropped `+0x3E = 3 << 3` a step by the part tick's
-motion block from `y = -0x280` over the target's raised hand. A part seated
+motion block from `y = -0x280` over the target's raised hand. The first two
+are the glow discs (shape `0`, 28 columns), the last two one four-point star
+(shape `2`, four columns, op `0x13` mode `0x10`) at two brightnesses. The
+four calls share one angle trio on the stack, and the fourth call's delay
+slot stores `0x200` over its `z` (`li v0,0x200` / `sh v0,0x24(sp)` at
+`0x801F6C78..0x801F6C80`): the dim star is rolled an eighth of a turn, its
+rays fall between the bright one's, and the flash reads as an eight-point
+star (`SpawnAnchor::ShotPoint`'s `roll`). A part seated
 this way holds a real `+0x14..+0x18`, so it moves by the motion block's
 velocity integration. One record is outside the per-arm form: `0x801F8568`,
 which the module's stager `0x801F8078` seats eight at a time with random

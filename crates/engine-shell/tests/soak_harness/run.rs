@@ -47,6 +47,9 @@ pub(super) struct RunOutcome {
     pub(super) pads: Vec<u16>,
     pub(super) stats: RunStats,
     pub(super) enter_ok: bool,
+    /// The run's [`Tunables::host_arming`]: a confirmation or reduction
+    /// replays in the same configuration.
+    pub(super) host_arming: bool,
 }
 
 pub(super) struct Tunables {
@@ -63,6 +66,12 @@ pub(super) struct Tunables {
     pub(super) min_distinct: usize,
     /// Field frames without one free-roam frame before `control_starved`.
     pub(super) starve_frames: u64,
+    /// Arm what both play hosts arm on a bare session
+    /// ([`environment::arm_host_play_defaults`]). Off under
+    /// `LEGAIA_SOAK_BARE=1`, and for a replay recorded before the soak armed
+    /// it (no `# soak-arming` header): such a replay is judged in the
+    /// configuration that recorded it.
+    pub(super) host_arming: bool,
 }
 
 /// Confirm presses a `control_starved` window must contain.
@@ -83,6 +92,7 @@ impl Tunables {
             trace_every: env_u64("LEGAIA_SOAK_TRACE").unwrap_or(0),
             min_distinct: env_u64("LEGAIA_SOAK_MIN_DISTINCT").unwrap_or(3) as usize,
             starve_frames: env_u64("LEGAIA_SOAK_STARVE_FRAMES").unwrap_or(5400),
+            host_arming: std::env::var_os("LEGAIA_SOAK_BARE").is_none(),
         }
     }
 }
@@ -318,7 +328,7 @@ pub(super) fn run_one(
     t: &Tunables,
     status: Option<(&StatusBoard, usize)>,
 ) -> RunOutcome {
-    let mut session = open_session(src);
+    let mut session = open_session_armed(src, t.host_arming);
     session.begin_new_game();
     // `<label>@<save>`: the run plays the scene with a library card save's
     // party, bag and story flags instead of the New Game party's.
@@ -341,6 +351,7 @@ pub(super) fn run_one(
                     pads: Vec::new(),
                     stats: RunStats::default(),
                     enter_ok: false,
+                    host_arming: t.host_arming,
                 };
             }
         }
@@ -431,6 +442,7 @@ pub(super) fn run_one(
             pads,
             stats,
             enter_ok,
+            host_arming: t.host_arming,
         };
     }
 
@@ -1189,5 +1201,6 @@ pub(super) fn run_one(
         pads,
         stats,
         enter_ok,
+        host_arming: t.host_arming,
     }
 }

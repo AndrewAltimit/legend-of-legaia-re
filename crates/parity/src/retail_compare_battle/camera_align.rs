@@ -41,10 +41,10 @@ pub(super) fn retail_cam_tween(
     ram: &[u8],
     ctx: u32,
 ) -> (
-    legaia_engine_battle_vm::battle_cam_script::BattleCamPose,
-    legaia_engine_battle_vm::battle_cam_script::BattleCamPose,
+    legaia_engine_camera::projection::BattleCamPose,
+    legaia_engine_camera::projection::BattleCamPose,
 ) {
-    use legaia_engine_battle_vm::battle_cam_script::BattleCamPose;
+    use legaia_engine_camera::projection::BattleCamPose;
     let word = |va: u32| game_anchors::u32_at(ram, va) as i32 as f32;
     let live = BattleCamPose {
         pitch: f32::from(game_anchors::u16_at(ram, 0x8007_B790) & 0xFFF),
@@ -60,4 +60,98 @@ pub(super) fn retail_cam_tween(
         focus: [6, 7, 8].map(|k| -f32::from(end_at(k))),
     };
     (live, end)
+}
+
+/// The live pose the **displayed** frame was drawn at: retail's live camera
+/// walked back `passes` passes along its tween table.
+///
+/// The walker `FUN_8002149C` steps each component's low halfword toward its
+/// endpoint by `increment * frame_step` a pass, and every pass re-arms the
+/// table with `ceil((gap + frame_step * increment) / d)` (`d = 0xC` for the
+/// action shots: `nivora_duel_mid_blazing_slash` reads yaw `59` with `589`
+/// to go, `(589 + 2 * 59) / 59 = 12`). So the pass before stood
+/// `frame_step * increment` further back, and each earlier pass a step of
+/// `gap / (d - frame_step)` further again. The display shows the frame two
+/// passes older than the RAM ([`display_lag_vsyncs`]), so a camera still
+/// closing on its framing - the ease is fast at its start - draws that frame
+/// well short of the RAM's pose: a far backdrop object swings across the
+/// screen while the framed bodies hold still.
+///
+/// `d` is read off the table's largest increment, `0xC` when every
+/// component has landed.
+pub(super) fn displayed_cam_live(
+    ram: &[u8],
+    ctx: u32,
+    passes: u16,
+    frame_step: u8,
+) -> legaia_engine_camera::projection::BattleCamPose {
+    let (live, _) = retail_cam_tween(ram, ctx);
+    let fs = i32::from(frame_step.max(1));
+    // The raw words the walker steps: pitch / yaw (12-bit), the eye
+    // translation, the focus (stored negated).
+    let raw_live: [i32; 9] = [
+        i32::from(game_anchors::u16_at(ram, 0x8007_B790) as i16),
+        i32::from(game_anchors::u16_at(ram, 0x8007_B792) as i16),
+        0,
+        game_anchors::u32_at(ram, 0x8008_40B8) as i32,
+        game_anchors::u32_at(ram, 0x8008_40BC) as i32,
+        game_anchors::u32_at(ram, 0x8008_40C0) as i32,
+        game_anchors::u32_at(ram, 0x8008_9118) as i32,
+        game_anchors::u32_at(ram, 0x8008_911C) as i32,
+        game_anchors::u32_at(ram, 0x8008_9120) as i32,
+    ];
+    let rec = |k: u32| {
+        let at = ctx + TWEEN_TABLE + k * 4;
+        (
+            i32::from(game_anchors::u16_at(ram, at) as i16),
+            i32::from(game_anchors::u16_at(ram, at + 2) as i16),
+        )
+    };
+    // The gap to the endpoint in the walker's halfword space.
+    let gap = |k: u32| {
+        let (_, end) = rec(k);
+        i32::from((end as i16).wrapping_sub(raw_live[k as usize] as i16))
+    };
+    let d = (0..9u32)
+        .filter(|&k| k != 2)
+        .map(|k| (rec(k).0.abs(), gap(k).abs()))
+        .max()
+        .filter(|&(inc, _)| inc > 0)
+        .map_or(0xC, |(inc, g)| {
+            ((g + fs * inc + inc / 2) / inc).clamp(fs + 1, 0x40)
+        });
+    let mut back = [0i32; 9];
+    for k in (0..9u32).filter(|&k| k != 2) {
+        let (inc, _) = rec(k);
+        let g = gap(k);
+        if passes == 0 || inc == 0 || g == 0 {
+            continue;
+        }
+        let dir = g.signum();
+        // One pass back is the table's own increment...
+        let mut moved = fs * inc.abs();
+        // ...and each pass before it the re-arm's share of the wider gap.
+        for _ in 1..passes {
+            let wide = g.abs() + moved;
+            let step = (wide + (d - fs) - 1) / (d - fs);
+            moved += fs * step;
+        }
+        back[k as usize] = dir * moved;
+    }
+    let ang = |v: f32, k: usize| (v - back[k] as f32).rem_euclid(4096.0);
+    legaia_engine_camera::projection::BattleCamPose {
+        pitch: ang(live.pitch, 0),
+        yaw: ang(live.yaw, 1),
+        tr: [
+            live.tr[0] - back[3] as f32,
+            live.tr[1] - back[4] as f32,
+            live.tr[2] - back[5] as f32,
+        ],
+        // Engine focus is the stored word negated.
+        focus: [
+            live.focus[0] + back[6] as f32,
+            live.focus[1] + back[7] as f32,
+            live.focus[2] + back[8] as f32,
+        ],
+    }
 }

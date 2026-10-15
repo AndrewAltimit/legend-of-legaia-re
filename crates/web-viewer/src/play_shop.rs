@@ -56,6 +56,15 @@ use legaia_engine_screens::{ScreenInputs, ShopOverlayFrame};
 use legaia_engine_ui::{self as ui, SpriteDraw, TextDraw};
 use wasm_bindgen::prelude::*;
 
+/// [`LegaiaRuntime::play_shop_tick`]: no menu-overlay screen is up.
+pub const SHOP_TICK_NONE: u8 = 0;
+/// [`LegaiaRuntime::play_shop_tick`]: the screen suspends the field and took
+/// this tick.
+pub const SHOP_TICK_TAKEN: u8 = 1;
+/// [`LegaiaRuntime::play_shop_tick`]: the field ticks under the screen, on a
+/// neutral pad.
+pub const SHOP_TICK_NEUTRAL_PAD: u8 = 2;
+
 impl LegaiaRuntime {
     /// Hand a field-VM-armed shop or prize counter to the menu runtime.
     /// Called once per [`LegaiaRuntime::tick_frame`]; the open, the screen's
@@ -69,11 +78,13 @@ impl LegaiaRuntime {
     /// (`tick_battle_intro`) follows it, so the opening fade is in this
     /// frame's geometry.
     pub(crate) fn poll_field_shop(&mut self) {
+        self.shop_opened_this_tick = false;
         let Some(session) = self.scene_host.session_mut() else {
             return;
         };
         if session.poll_field_overlay(&mut self.menu) {
             self.sfx.queued += 1;
+            self.shop_opened_this_tick = true;
         }
     }
 
@@ -266,6 +277,54 @@ impl LegaiaRuntime {
         self.menu.suspends_field()
     }
 
+    /// The menu-overlay screen's claim on this **sim tick**, asked before the
+    /// field tick - the native window's per-tick arms in `sim_tick`:
+    ///
+    /// * [`SHOP_TICK_TAKEN`]: a shop or the prize exchange is up and
+    ///   suspends the field (`MenuRuntime::suspends_field`); the screen took
+    ///   one step on `edge` and the tick is spent - the window's
+    ///   `field_suspended` arm. The page runs the SFX scheduler step beside it.
+    /// * [`SHOP_TICK_NEUTRAL_PAD`]: a screen is up that the field ticks under
+    ///   (the inn prompt); the field runs this tick on a neutral pad, and
+    ///   [`Self::play_shop_after_tick`] steps the screen after it.
+    /// * [`SHOP_TICK_NONE`]: no screen.
+    ///
+    /// The page used to step the screen `n` times at display-frame level
+    /// ahead of the field's `n` ticks, and to end the frame's tick loop on the
+    /// tick a merchant opened one - which dropped the shop's steps for the
+    /// frame's remaining ticks, so its tick-counted fade ran a tick behind the
+    /// native window's on any frame that carried more than one.
+    pub fn play_shop_tick(&mut self, edge: u16) -> u8 {
+        if !self.menu.is_open() {
+            return SHOP_TICK_NONE;
+        }
+        if self.menu.suspends_field() {
+            self.play_shop_input(edge);
+            return SHOP_TICK_TAKEN;
+        }
+        SHOP_TICK_NEUTRAL_PAD
+    }
+
+    /// The screen's step after a field tick the screen did not take: an open
+    /// inn prompt steps on the tick's own `edge`, and a screen that closed
+    /// unparks its script - the native window's call after its frame tail.
+    /// Skipped on the tick the field VM opened the screen, whose first step
+    /// the poll inside [`Self::tick_frame`] already took on no edge.
+    pub fn play_shop_after_tick(&mut self, edge: u16) {
+        if std::mem::take(&mut self.shop_opened_this_tick) {
+            return;
+        }
+        // Nothing open and nothing to unpark is a no-op step; skip the
+        // screen-geometry rebuild it would cost.
+        let unpark = self
+            .scene_host
+            .host()
+            .is_some_and(|h| h.world.shops.shop_open || h.world.shops.prize_exchange_open);
+        if self.menu.is_open() || unpark {
+            self.play_shop_input(edge);
+        }
+    }
+
     /// Drive the open shop **one sim tick** from an edge-triggered PSX pad
     /// word (same bit layout as [`Self::set_pad`]). The page calls it once per
     /// sim step it drains, with the frame's edges on the first step and `0`
@@ -288,7 +347,7 @@ impl LegaiaRuntime {
             return;
         };
         if let Some(cue) = menu.step_field_session(&mut host.world, edge) {
-            self.play_sfx(u32::from(cue));
+            self.queue_ui_cue(u16::from(cue));
         }
         // The opening fade steps with the shop, so its quad is re-placed
         // into the frame's screen geometry here rather than on a field tick

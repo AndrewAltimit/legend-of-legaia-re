@@ -17,7 +17,7 @@
 //! camera, and that the op-`0x45` cutscene shots were re-mapped onto - while
 //! the native window consumed the retail model directly.
 //!
-//! The projection itself is [`legaia_engine_battle_vm::psx_camera`], whose frame
+//! The projection itself is [`legaia_engine_camera::psx_camera`], whose frame
 //! convention (every matrix is for the **Y-up** render frame; a host keeping
 //! raw retail Y-down world state post-multiplies one `scale(1,-1,1)`) is the
 //! one rule both hosts follow.
@@ -26,7 +26,8 @@
 //! (the field follow camera), FUN_801E76D4 (the world-map controller).
 
 use crate::world::World;
-use legaia_engine_battle_vm::psx_camera::{self, FieldCameraView};
+use legaia_engine_camera::psx_camera;
+use legaia_engine_camera::psx_camera::FieldCameraView;
 use legaia_engine_field::camera::{CUTSCENE_WORLD_SCALE, Camera};
 use legaia_engine_mode::mode::SceneMode;
 
@@ -61,7 +62,7 @@ pub const FIELD_FOLLOW_YAW_UNITS: f32 = -160.0;
 /// battle - written per phase, unlike `OFX` / `OFY`.
 ///
 /// [`field_follow_view`] prefers the live
-/// [`legaia_engine_battle_vm::retail_cam::RetailCamGlobals::h`] whenever the camera carries one -
+/// [`legaia_engine_camera::retail_cam::RetailCamGlobals::h`] whenever the camera carries one -
 /// the zone camera's composed `B618`, or an op-`0x45` slot-`9` beat. Retail's
 /// scene-entry reset leaves `H` at `0` ("as the scene establishes it"), which
 /// is what makes this the fallback rather than dead code.
@@ -260,9 +261,17 @@ fn follow_view_with_knobs(
         // focus slots from a record that is **not** the modal timeline (a
         // spawned helper such as `jouine`'s evolved-Cort arrival stages every
         // shot through them). Framing on the actor there aims the lens at a
-        // point the retail frame is not looking at. The overworld keeps the
-        // actor: its walk arm scales the world about this point.
-        focus: if cam.zone.active && world.mode != SceneMode::WorldMap {
+        // point the retail frame is not looking at.
+        //
+        // The overworld is no exception. Its 6x world scale rides the
+        // rotation matrix, so the same MVMVA of `-focus` scales the world
+        // about the focus, not the player: `R6 (v - focus) + TR`. The two
+        // coincide in a plain walk, and part where a record moves the
+        // focus off the player - the credits' `map01` walk-away
+        // (`ending_vignette_rimelm_walkaway`: focus `(12091, 3449)`, player
+        // `(12194, 3550)`), whose frame the actor-anchored scale slid about
+        // 25 px sideways at that depth.
+        focus: if cam.zone.active {
             cam.globals.focus_world().map(|v| v as f32)
         } else {
             [wx, if cam.zone.active { 0.0 } else { floor_y }, wz]
@@ -486,7 +495,7 @@ pub fn map_display_frame(world: &World) -> Option<FieldCameraFrame> {
 
 /// Which camera owns this frame. One arm per camera retail runs in a walkable
 /// scene; battle has its own kernel
-/// ([`legaia_engine_battle_vm::battle_cam_script::battle_vp`]) and is not resolved
+/// ([`legaia_engine_camera::projection::battle_vp`]) and is not resolved
 /// here.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum FieldCameraFrame {
@@ -661,7 +670,7 @@ pub fn prim_near_cut(mode: SceneMode, retail_camera: bool) -> Option<(f32, u32)>
 /// Resolve this frame's camera from the live world.
 ///
 /// `cutscene` is the host's already-glided cutscene view (see
-/// [`legaia_engine_battle_vm::psx_camera::CutsceneCameraInterp`]) or `None` when no
+/// [`legaia_engine_camera::psx_camera::CutsceneCameraInterp`]) or `None` when no
 /// timeline owns the frame; `scene_center_xz` is the host's fallback focus.
 ///
 /// The world-map gate is the one place a reading is easy to get wrong: a
@@ -1129,6 +1138,9 @@ mod tests {
         cam.globals.0[4] = 776;
         cam.globals.0[5] = 8875;
         cam.globals.0[9] = 368;
+        // The follow writeback's focus, on the player (stored negated).
+        cam.globals.0[6] = -8266;
+        cam.globals.0[8] = -8700;
         let frame = resolve_field_camera(&w, &cam, None, [0.0, 0.0]);
         let FieldCameraFrame::WorldMapWalk { view, player } = frame else {
             panic!("expected the walk frame, got {frame:?}");
@@ -1164,6 +1176,17 @@ mod tests {
                 "{p:?}: {pa:?} vs {pb:?}"
             );
         }
+
+        // A focus a record moved off the player is the point the world
+        // scales about (`ending_vignette_rimelm_walkaway`'s credits walk).
+        cam.globals.0[6] = -8166;
+        cam.globals.0[8] = -8600;
+        let FieldCameraFrame::WorldMapWalk { player, .. } =
+            resolve_field_camera(&w, &cam, None, [0.0, 0.0])
+        else {
+            panic!("expected the walk frame");
+        };
+        assert_eq!(player, [8166.0, 0.0, 8600.0]);
 
         // Without a zone pose the terrain-less fallback still frames it.
         cam.zone.active = false;

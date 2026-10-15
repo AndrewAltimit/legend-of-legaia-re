@@ -566,24 +566,12 @@ impl World {
         category: u8,
         param0: u8,
     ) -> u8 {
-        const RETAIL_FIRST_MONSTER: u8 = 3;
         let party_count = self.party.party_count.max(1);
+        let seats = self.battle_seat_map();
         let seated = self.actors.len().min(BATTLE_SLOTS) as u8;
         let monster_count = seated.saturating_sub(party_count);
-        let to_retail = |s: u8| {
-            if s < party_count {
-                s
-            } else {
-                s - party_count + RETAIL_FIRST_MONSTER
-            }
-        };
-        let to_engine = |s: u8| {
-            if s < RETAIL_FIRST_MONSTER {
-                s
-            } else {
-                s - RETAIL_FIRST_MONSTER + party_count
-            }
-        };
+        let to_retail = |s: u8| seats.retail(s).get();
+        let to_engine = |s: u8| seats.engine(s).unwrap_or(s);
         if target >= seated || monster_count == 0 {
             return target;
         }
@@ -601,11 +589,13 @@ impl World {
             return target;
         }
         let is_alive = |retail: u8| {
-            let s = to_engine(retail);
             // A retail slot past the seated band (party slots `party_count..3`
-            // when fewer than three are seated) is never alive.
-            (retail >= RETAIL_FIRST_MONSTER || retail < party_count)
-                && alive.get(usize::from(s)).copied().unwrap_or(false)
+            // when fewer than three are seated) has no engine slot and is
+            // never alive.
+            seats
+                .engine(retail)
+                .and_then(|s| alive.get(usize::from(s)).copied())
+                .unwrap_or(false)
         };
         // The Magic arm keys on the cast's spell-table class byte `+0`
         // (`0x800754C8[param0 * 12]`, `sltiu v0,v0,0xa` at `0x801DB1C8`).

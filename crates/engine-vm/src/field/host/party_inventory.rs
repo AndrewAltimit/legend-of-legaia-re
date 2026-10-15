@@ -1,7 +1,5 @@
 //! The [`FieldPartyInventoryHost`] supertrait of the field-VM host surface.
 
-use crate::field::ActorSearchResult;
-
 /// The party roster, the character records, the bag, gold and coins.
 ///
 /// One of the supertraits of [`FieldHost`](super::FieldHost), the surface the
@@ -184,40 +182,30 @@ pub trait FieldPartyInventoryHost {
         let _ = slot;
     }
 
-    /// Op 0x4C outer-nibble-D sub-C - small-table lookup, then conditional
-    /// per-party-record write.
+    /// Op 0x4C outer-nibble-D sub-C - "does the party hold item `needle`?".
     ///
-    /// 5-byte instruction `[4C, 0xDC, b1, ?, ?]` (the trailing operand
-    /// bytes are consumed by the LAB_801E360C tail's `func_0x8003CE9C` read).
+    /// 5-byte instruction `[4C, 0xDC, needle, skip_lo, skip_hi]`. The arm at
+    /// `0x801E2EA8` first searches the bag's active window for the id
+    /// (`FUN_80042EE0`: slots `gp[+0x2D2]..gp[+0x2D4]` of the id/count pairs
+    /// at `0x80085958`, a hit returns the slot, a miss `0x100`), and on a
+    /// miss scans the eight equipment bytes (`+0x196..+0x19D`) of every
+    /// present member's record (`0x80084594` count, `0x80084598` roster,
+    /// `0x80084708 + char * 0x414`). Either hit takes the shared skip exit
+    /// `LAB_801E360C`; the dispatcher computes its target. `koin2`'s Sage's
+    /// Treasure Chests (P1[8..15]) ask for the Soru Bread through it.
     ///
-    /// The original at line 7087:
-    /// 1. Calls [`field_helpers::small_table_search`] (`FUN_80042EE0(b1)`)
-    ///    to look up `b1` in the gp-relative short-table at `0x80085958`.
-    /// 2. If the table lookup hits AND a party-record search across
-    ///    `DAT_80084594` slots (party-record stride `0x414`, byte at `+0x196`)
-    ///    matches `b1`, the slot is updated.
-    /// 3. If neither hits, returns `param_2 + 5` (PC += 5).
-    /// 4. On hit, falls through to `LAB_801E360C` which reads `ce9c(p+2)`
-    ///    and returns it as the new PC.
-    ///
-    /// The host hook returns `Some(new_pc)` for the ce9c-jump path, or `None`
-    /// to take the PC += 5 path. Default impl returns `None` (safe fallback).
-    ///
-    /// [`field_helpers::small_table_search`]: crate::field::dispatch_leaves::small_table_search
-    fn op4c_nd_subc_party_search_set(&mut self, needle: u8) -> Option<usize> {
+    /// Default impl answers no (a host with no party).
+    fn op4c_nd_subc_item_held(&self, needle: u8) -> bool {
         let _ = needle;
-        None
+        false
     }
 
-    /// Op 0x4C outer-nibble-D sub-E - small-table lookup query (sister of
-    /// sub-C without the per-party-record write side-effect).
-    ///
-    /// 5-byte instruction `[4C, 0xDE, b1, ?, ?]`. Same control flow as
-    /// sub-C but the party-record loop only **tests** for a match - no slot
-    /// update. PC is `param_2 + 5` on miss, ce9c-jump on hit.
-    fn op4c_nd_sube_party_search_query(&mut self, needle: u8) -> Option<usize> {
+    /// Op 0x4C outer-nibble-D sub-E - "does a present member wear item
+    /// `needle`?". Sister of sub-C (arm `0x801E2F7C`) with the equipment
+    /// scan alone: no bag search.
+    fn op4c_nd_sube_item_worn(&self, needle: u8) -> bool {
         let _ = needle;
-        None
+        false
     }
 
     /// Op 0x4C outer-nibble-E sub-5 - add to the casino coin bank.
@@ -242,47 +230,32 @@ pub trait FieldPartyInventoryHost {
         let _ = coin_delta;
     }
 
-    /// Count active actors of a given type (op 0x4C n8 sub-B, 5 bytes).
+    /// Op 0x4C nibble-8 sub-B - "does a present member know spell `spell`?".
     ///
-    /// `[4C, 0x8B, type_byte, target_lo, target_hi]`. The original at lines
-    /// 6621-6644 walks the active actor pool (`DAT_80084594` = pool count;
-    /// each slot is 0x414 bytes wide, indexed by the per-slot type byte at
-    /// `+0x458`) and increments a count for every entry whose stored type
-    /// matches `type_byte`.
-    ///
-    /// If any match: jump to absolute `LE_u16(operand+2..=operand+3)`.
-    /// If no match: advance PC by 5.
-    ///
-    /// The host decides the pool layout - this hook just answers
-    /// "is there at least one actor of `type_byte` active?". Default impl
-    /// returns `false` (no actor pool).
-    fn op4c_n8_subb_actor_type_present(&self, type_byte: u8) -> bool {
-        let _ = type_byte;
+    /// 5-byte instruction `[4C, 0x8B, spell, skip_lo, skip_hi]`. The arm at
+    /// `0x801E2320` walks the present members (`0x80084594` count,
+    /// `0x80084598` roster), and for each one below character 3 counts the
+    /// hits of `spell` in the learned-spell list of its record (`+0x13C`
+    /// count, `+0x13D..` ids). A non-zero count takes the shared relative
+    /// skip; the dispatcher computes it. Default impl answers no.
+    fn op4c_n8_subb_spell_known(&self, spell: u8) -> bool {
+        let _ = spell;
         false
     }
 
-    /// Search a per-character actor sub-table for a matching marker
-    /// (op 0x4C n8 sub-D, 6 bytes).
+    /// Op 0x4C nibble-8 sub-D - "has character `char_idx` learned art
+    /// `skill`?".
     ///
-    /// `[4C, 0x8D, char_idx, marker, target_lo, target_hi]`. The original at
-    /// lines 6652-6667 indexes `DAT_8008488D[char_idx * 0x414]` for the
-    /// per-character sub-table size and walks the table comparing each entry
-    /// against `marker`.
-    ///
-    /// Three outcomes:
-    /// - [`ActorSearchResult::EmptySlot`]: per-character sub-table is empty
-    ///   (size byte is 0). Advance PC by 6.
-    /// - [`ActorSearchResult::Found`]: found a matching entry. Jump to
-    ///   absolute `LE_u16(operand+3..=operand+4)`.
-    /// - [`ActorSearchResult::NoMatch`]: sub-table is non-empty but no entry
-    ///   matched. Halt at PC.
-    ///
-    /// The default impl returns [`ActorSearchResult::EmptySlot`] (advance,
-    /// no match) which is the safest fallback for engines without an actor
-    /// pool.
-    fn op4c_n8_subd_actor_search(&self, char_idx: u8, marker: u8) -> ActorSearchResult {
-        let _ = (char_idx, marker);
-        ActorSearchResult::EmptySlot
+    /// 6-byte instruction `[4C, 0x8D, char_idx, skill, skip_lo, skip_hi]`.
+    /// The arm at `0x801E2404` advances `s8 += 6`, reads the displayed-skill
+    /// count at record `+0x185` of character `char_idx`
+    /// (`0x8008488D + char * 0x414`) and walks the ids at `+0x186..`; a match
+    /// takes the shared relative skip (`0x801E3608`, `a0 = operand + 3`), an
+    /// empty list or no match leaves the advance. `town0c`'s Tetsu (P1[4])
+    /// asks it before teaching an art. Default impl answers no.
+    fn op4c_n8_subd_skill_known(&self, char_idx: u8, skill: u8) -> bool {
+        let _ = (char_idx, skill);
+        false
     }
 
     /// Op 0x4C n5 sub-2 - **TAKE_ITEM**: remove one `item_id` from the party.

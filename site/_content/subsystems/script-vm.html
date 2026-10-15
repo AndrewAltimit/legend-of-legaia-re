@@ -223,7 +223,7 @@
     <thead><tr><th>Group</th><th>Opcodes</th><th>What scenes use them for</th></tr></thead>
     <tbody>
       <tr><td>Flow</td><td><code>21</code> <code>26</code> <code>40</code> <code>42</code> <code>4D</code> <code>4E</code></td><td>End of pass (<code>21</code>), relative jumps, inline data skips, branches on the held pad, on the player standing in a box, or on HP / gold / level / a random roll / a script counter</td></tr>
-      <tr><td>Timing</td><td><code>4A</code> <code>2D</code> <code>33</code></td><td>Wait N display frames; spin until a local or context bit flips - the "play this clip and wait for it" idiom</td></tr>
+      <tr><td>Timing</td><td><code>4A</code> <code>2D</code> <code>30</code> <code>33</code></td><td>Wait N display frames; spin until a local, global or context bit flips - the "play this clip and wait for it" idiom</td></tr>
       <tr><td>Flags</td><td><code>2B</code>-<code>33</code>, <code>5x</code> <code>6x</code> <code>7x</code></td><td>Three small banks (per-script local, a transient global word, the actor's own flag word) and the persistent 4096-bit story-flag bank in the save block</td></tr>
       <tr><td>Actors</td><td><code>22</code> <code>23</code> <code>37</code> <code>38</code> <code>41</code> <code>43</code> <code>47</code> <code>4B</code></td><td>Play a move clip, teleport to a tile, glide or walk to a tile, set facing, actor control (arc jumps, position tweens, shutter blackout, ending widgets), morph lanes</td></tr>
       <tr><td>Camera</td><td><code>45</code> <code>46</code></td><td>Stage, save, load and release camera shots; set the visible tile window</td></tr>
@@ -246,7 +246,7 @@
     <tbody>
       <tr><td><code>0x5x</code></td><td>Set flag</td><td>2</td></tr>
       <tr><td><code>0x6x</code></td><td>Clear flag</td><td>2</td></tr>
-      <tr><td><code>0x7x</code></td><td>Test flag; when set, jump by the following 16-bit offset, else fall through</td><td>4</td></tr>
+      <tr><td><code>0x7x</code></td><td>Test flag; when set, jump by the following 16-bit offset (counted from the end of the index byte), else fall through</td><td>4</td></tr>
     </tbody>
   </table>
   <p>Partition-2 records gate on the same bank, so a flag set by one script is visible to the next record immediately. A beat that should play once <strong>self-latches</strong>: its script sets the very flag its gate tests. Some story-numbered flags are mechanism, not progress: the <code>0x527..0x531</code> scene-transition scratch band every entry script rewrites, the <code>0x00F</code> door busy-mutex in Drake Castle, per-visit lift state. Read those as traffic. The disc-wide "who sets flag F" question is answered by <code>legaia-engine man-scripts --system-flag-census</code>; its caveats are on <a href="script-vm-internals.html#flag-census">internals</a>.</p>

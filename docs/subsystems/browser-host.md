@@ -29,7 +29,11 @@ The split is deliberate:
   (`MAIN INIT` at field entry, `CARD INIT` on the pause-menu open). `mode_state_json()` reports the word, its table name,
   the front-end entry word and the seat's edge count; the cross-host oracle is
   `engine-shell/tests/mode_seat_host_parity.rs`, which drives **both** hosts
-  over one ladder and compares the chains and the edge counts.
+  over one ladder and compares the chains and the edge counts. The whole
+  frame body - this page's ticks (`play_frame_ticks`) against the native
+  window's - is
+  compared state by state in `engine-shell/tests/host_frame_parity.rs`
+  ([`host-drift.md`](../tooling/host-drift.md#output-level-the-frame-body-trace)).
 - **`play`** - what the page draws, resolved against the **same**
   `SceneResources` the host already built at scene entry (nothing is decoded
   twice): the assembled map (`field_*` accessors), the lead's field mesh posed
@@ -245,9 +249,14 @@ overwrite prompt and writes the session into the card image. The block-grid
 cursor is this crate's, not the session's - `SelectPhase::SlotPreview` ignores
 directions by design (see `docs/subsystems/save-screen.md`).
 
-The menu is **not purely input-driven**: its timers count 60 Hz frames, so the
-page clocks `play_menu_input` on its own fixed step rather than once per
-animation frame. Parity is asserted by the disc-gated `crates/web-viewer/tests/menu_parity.rs`
+The menu is **not purely input-driven**: its timers count 60 Hz frames, so it
+steps on the sim tick, not the animation frame. The page's frame hands its
+sim ticks to `play_frame_ticks` (`runtime/frame_ticks.rs`), which asks
+`play_menu_tick` first on each tick; it answers as the native window's per-tick
+arms do: a Start edge (or a script's save point) opens the menu and takes the
+tick (a Start open queues the confirm blip itself), the field keeps ticking under the wipe until the menu spawns, the
+hand-over takes one tick, and from then on each tick is one menu step
+(`play_menu_input`). A tick after the menu closes goes back to the field. Parity is asserted by the disc-gated `crates/web-viewer/tests/menu_parity.rs`
 oracle, which walks the whole card flow.
 
 ## Live battles (`play_battle`)
@@ -291,7 +300,11 @@ native window alone. Driver recipe:
 ## Battle 3D scene (`play_battle_render`)
 
 The battle's 3D layer under that overlay - the browser twin of the native
-window's `enter_battle_render` / `build_battle_stage` (`window/battle.rs`).
+window's `enter_battle_render` (`window/battle/scene_entry.rs`). Both read
+the stage the session's battle-edge step resolved
+(`engine-session::battle_stage::stage_battle_world`), which has already
+written what the stage leaves on the world (its class, the fog's stage cap,
+each monster's texture slot).
 On the `Field -> Battle` edge it builds a **battle VRAM** (the scene rebuilt
 with `SceneLoadKind::Battle` so the stage dome + its textures are resident,
 plus the PROT 870 flame atlas, per-slot monster texture injection and the
@@ -322,7 +335,7 @@ three drains the native window runs - and the page re-uploads the texture on
 guard). Battle exit drops the state and the page restores the untouched
 field VRAM. The damage numerals, the `N HIT` / `TOTAL` combo cluster and the
 `<word> ARTS!!` banner draw in retail's 24x24 cells off the resident battle
-effect atlas through the shared `legaia_render_kernels::battle_numerals` builder the
+effect atlas through the shared `legaia_engine_ui::battle_numerals` builder the
 native window emits through; the font-atlas layout is only the fallback for
 frames before the battle VRAM exists.
 
@@ -346,8 +359,12 @@ A field-VM op-`0x49` sub-0 merchant record opens the retail gold shop, and the
 post-battle level-up / Seru-capture banners draw over the live field. Both are
 the one composition the native window calls,
 `legaia_engine_screens::shop_overlay_frame`, driven by the real
-`legaia_engine_core::menu_runtime::MenuRuntime`; `play_shop_input` forwards pad
-edges and `play_overlay_draws_json` serves the quads.
+`legaia_engine_core::menu_runtime::MenuRuntime`; `play_overlay_draws_json`
+serves the quads. The screen steps per sim tick, from the page's tick loop:
+`play_shop_tick` lets a shop or the prize exchange take the tick (one
+`play_shop_input` step) and holds the pad neutral under an inn, and
+`play_shop_after_tick` steps an inn after the field's tick - except on the
+tick the field VM opened the screen, whose first step the poll already took.
 
 Retail's shop is a set of descriptor windows rather than one panel, so the
 composition paints them - vendor plate, purse, item info, buy / sell
@@ -377,7 +394,7 @@ SCUS table.
 
 ## Developer menu (`play_dev_menu`)
 
-The retail developer menu - the same `engine-core`
+The retail developer menu - the same `engine-menus`
 `dev_menu_host::DevMenuSession` the native window mounts behind
 `LEGAIA_DEV_MENU` - behind the play page's session-only **Dev menu**
 checkbox: unchecked on every load, never persisted, never read from the URL,
@@ -589,8 +606,11 @@ The last screen of the New Game flow: the opening `town01` naming prompt, at
 the retail-traced geometry, through the shared `name_entry_draws_for` +
 `name_entry_chrome_sprite_draws_for` builders. The state machine is
 `engine-menus::name_entry` - the page owns no name logic, only the pad-edge
-bridge (`name_entry_input`) and the draw-list JSON (`name_entry_draws_json`,
-the same two-layer chrome+font shape the pause menu uses).
+bridge and the draw-list JSON (`name_entry_draws_json`, the same two-layer
+chrome+font shape the pause menu uses). The bridge is per sim tick:
+`play_name_entry_tick` is the session's `step_name_entry_frame`, the call the
+native window's per-tick arm makes (the edge, then one frame of caret and
+camera); `name_entry_input` stays for drivers that step the entry directly.
 
 The screen lands **with its state**, which is the whole point: the
 establishing timeline's pinned op-`0x49` opens it and stays suspended while

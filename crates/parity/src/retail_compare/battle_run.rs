@@ -396,7 +396,11 @@ pub(super) fn battle_image(
     ) {
         env.push((
             "LEGAIA_BATTLE_CAM_ALIGN",
-            legaia_engine_capture::camera_align::cam_align_to_env(&battle.cam_tween),
+            legaia_engine_capture::camera_align::cam_align_to_env(&if battle.displayed_camera() {
+                (battle.displayed_cam_live, battle.cam_tween.1)
+            } else {
+                battle.cam_tween
+            }),
         ));
     }
     env.push((
@@ -465,6 +469,12 @@ pub(super) fn battle_image(
             return None;
         }
         env.push(("LEGAIA_BATTLE_DRIVE", drive.to_env()));
+        // The display shows the frame two game frames older than the RAM;
+        // where it measures better the child re-runs to it
+        // (`RetailBattle::display_retake`).
+        if battle.display_retake() {
+            env.push(("LEGAIA_CAPTURE_DISPLAY_LAG", battle.display_lag.to_string()));
+        }
         tick += legaia_engine_capture::battle_drive::DRIVE_DEADLINE;
     }
     match crate::retail_compare_image::engine_frame_with(

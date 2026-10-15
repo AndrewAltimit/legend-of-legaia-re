@@ -169,7 +169,7 @@ Action-state values seen in the save-state library, for orientation: `0x20` spec
 
 ## Battle actor record
 
-One record per combatant, reached through `DAT_801C9370[slot]`. **Pool slots are fixed**: party member `i` takes slot `i` and monster `k` takes slot `3 + k` whatever the party size (`addiu s0,s2,0x3` at `0x8005185C`), so a party of one leaves slots 1 and 2 empty. The port compacts monsters down to `party_count + k`; where a routine reads a fixed slot it converts through `World::retail_battle_pool_slot`.
+One record per combatant, reached through `DAT_801C9370[slot]`. **Pool slots are fixed**: party member `i` takes slot `i` and monster `k` takes slot `3 + k` whatever the party size (`addiu s0,s2,0x3` at `0x8005185C`), so a party of one leaves slots 1 and 2 empty. The port compacts monsters down to `party_count + k`; where a routine reads a fixed slot it converts ([below](#slot-numbering-in-the-port)).
 
 | Offset | Type | Meaning |
 |---|---|---|
@@ -207,6 +207,38 @@ One record per combatant, reached through `DAT_801C9370[slot]`. **Pool slots are
 | `+0x220..+0x223` | u8 x 4 | Status-marker latches (Stone at `+0x220`; `+0x221..+0x223` for status bits `0x08` / `0x10` / `0x20`). |
 | `+0x22C` | ptr | Body sub-struct (`+0x58` = body radius); a null pointer skips the presentation tick. |
 | `+0x230` | ptr | Battle-model TMD (monster record `+0x04`, or the party entry in `DAT_8007C018[0..=2]`). `FUN_800495C8` walks it as a `0x1C`-stride object table. |
+
+<a id="slot-numbering-in-the-port"></a>
+### Slot numbering in the port
+
+Two numberings meet in the port. Retail's **pool slot** is the fixed one above: party `0..3`, monster `k` at `3 + k`, so every overlay test of the form `slot < 3` means "a party seat". The engine's **engine slot** is an index into `World::actors`, with monster `k` at `party_count + k`; `active_actor`, a stored target byte `+0x1DD` and every loop over the actor table are engine slots. The two agree only for a party of three. Read raw against a retail test, a party of one or two has its first monsters read as party seats.
+
+Every crossing goes through `legaia_engine_battle_vm::battle_slot`. `SeatMap` (one per battle, `World::battle_seat_map`) maps an engine slot to its pool slot and back; an empty party seat has no engine slot, and the target codes `8` / `9` pass through both ways. A kernel whose test is on the pool slot takes a `RetailSlot`, which an engine slot only becomes through the map. The slot-B cast row keeps its own `CastSeatMap` (`engine-core`), which carries the same rule over the kernels' retail-shaped seat array.
+
+Each retail test below is on the pool slot, and the port reaches it through the map.
+
+| Retail test | Routine | Port |
+|---|---|---|
+| `+0x1DD < 3` settle check | `FUN_801E7250` | `battle_action::hp_bar_drain_pending` |
+| HP ramp arm select `slot < 3` | `FUN_80047430` | `battle_hp_bar::bar_step_for_slot` (`RetailSlot`) |
+| Anim-rate restore, party vs monster arm | `FUN_801E93C8` | `battle_action::done` |
+| Cast cue enemy leg `slot >= 3` | `FUN_801F3990` | `battle_cast_cue::cast_audio_cue` (`RetailSlot`) |
+| Arms fold player branch `slot < 3` | `FUN_801EC3E4` | `battle_formulas::arms_resolver_admits` (`RetailSlot`) |
+| Group cue walk, rows `3..7` / `0..3` | `FUN_800402F4` | `battle_action::spirit::place_cue_group` |
+| Recent-target ring `+0x1DD < 3` | `FUN_801E9FD4` | `engine-battle::monster_ai::apply_recent_target_ring` |
+| AI companion roll `rand % n + 3` | `FUN_801EED1C` | `World::arm_ai_companion` |
+| Move-FX streak side `ctx[+0x13] < 3` | `FUN_801E09F8` | both hosts' streak pass |
+| Dead-target redirect | `FUN_801DB124` | `World::redirect_dead_battle_target`, the auto-fill arm |
+| Cast census `i < 3` | `FUN_801E09F8` (head) | `battle_action::tick_cast_census` |
+| Target banner rows | `FUN_801E6D84` | `battle_action::dispatch::raise_target_banner` |
+| Group aim over the pool | `FUN_801DCEAC` | cast-begin facing, `spell_cam_inputs` |
+| Formation recentre `0..7` | `FUN_801DB318` | `World::normalize_battle_formation` |
+| Camera ghost rows | `FUN_8004DC68` | `World::tick_battle_camera_ghost` |
+| Draw seat `+0x5A` (tint, grey gate, shadow) | `FUN_8004A908`, `FUN_80048A08` | `World::battle_actor_draw_plan` |
+
+The AI companion row is the one a retail party reaches: the companion sits in the Noa + Terra party of two, whose first monster is engine slot `2`. Unmapped, its roll aimed one seat past the monster it drew, and against a lone monster it stood by every turn.
+
+A sibling split is the **roster id**. Retail's per-character tables key on `DAT_8007BD10[slot]`, the character seated on a party seat, not on the seat plus one; a party without Noa seats Gala on seat 1. The attack camera's character arm, the action framing's character id, the post-action camera height, the element tables and the summon power table all read it through `World::party_roster_slot` (`World::battle_party_char_id`).
 
 ## Stage seats (`FUN_800513F0` placement tables)
 

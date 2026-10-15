@@ -4,7 +4,7 @@
 //! Every consumer that rotates by a 12-bit angle reads this pair - the action
 //! effect-script stepper, the ribbon and part-motion emitters, the battle
 //! camera ghost, the field fog particles - so it sits beside the other 12-bit
-//! trig ([`crate::battle_action::motion::sin12`]) where all of them can name
+//! trig ([`crate::trig::sin12`]) where all of them can name
 //! it. [`RotationLut`] is the pair as the steppers index it;
 //! [`RetailRotationLut`] is the byte-exact table.
 

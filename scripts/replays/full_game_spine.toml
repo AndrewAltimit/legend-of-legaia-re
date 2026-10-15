@@ -236,18 +236,47 @@ anchor = { kind = "card", card = "playthrough-ladder-pro00-14.mcr", save = "PRO-
 id = "sol_tower_b2"
 scene = "korb2"
 reach = "scene"
+# kor's guard dogs P1[9] / P1[10] stand in the korb2 doorway until 0x40A,
+# which kor P2[10] raises; the Sage's Gate (kor P1[13]) spawns it once all
+# eight of koin2's Sage's Treasure Chests (P1[8..15], 0x413..0x41A on first
+# contact) have each taken a Soru Bread (4C 52 B2) and raised 0x40B..0x412.
+# The bread is sold only at Soru's Bakery in koin4 (the sol_tower anchor
+# gained koin4's 0x5D6). The anchors' purse is 99999999; a run of its own
+# opens the chests, earns and buys the bread, and comes back to feed them.
+via = ["kor5", "koin2", "koin4", "koin2"]
 anchor = { kind = "card", card = "playthrough-ladder-pro00-14.mcr", save = "PRO-10" }
 
 [[milestone]]
 id = "usha_research"
 scene = "doman"
 reach = "scene"
+# The anchor gained the Genesis Tree chain under Sol. korb3's stone maze
+# (P0[3..9] / P0[23] / P0[24] each clear one gate; P2[5..13] wall a gate up
+# behind the party) leads to P2[2] at (36, 21): Gaza's second fight (0x41D;
+# C2 0x41B / 0x41C, the two switches, and kor5's 0x436), whose hand-off
+# P2[3] raises 0x511. map03's entry script plays P2[11] on it and raises
+# 0x403, and with 0x403 up koin2 P1[19], Emperor Etora, stands in the
+# throne room (20, 9) and gives the intercom password (0x36D). The seeded
+# segment's seated hand cannot walk the maze, so these are continuous-run
+# waypoints. Left out for now: the run plays the whole chain to Nivora, but
+# Gaza's second fight (15000 HP) goes its way on about half the tries and
+# the default stream loses all six, which would put the score below the
+# baseline. Restore together with the nivora line below:
+# continuous_via = ["korb3", "map03", "koin2"]
 anchor = { kind = "card", card = "playthrough-ladder-pro00-14.mcr", save = "PRO-11" }
 
 [[milestone]]
 id = "nivora"
 scene = "nilboa"
 reach = "scene"
+# The anchor carries Dr. Usha's chain: doman's intercom P1[18] takes the
+# password (0x36E) and calls the lift (0x371); Usha (P1[15]) raises 0x379
+# and P1[3]'s quiz 0x4FF; uru P2[38] opens the three statues (0x3FC), each
+# a bed door into a dream (urudre1..3) whose waking raises 0x39A..0x39C;
+# uru P2[36] raises 0x36F, and Usha's 0x36F branch raises 0x370, the C2
+# gate of nilboa P2[32]. Continuous run only, and left out with the line
+# above:
+# continuous_via = ["doman", "uru", "urudre1", "uru", "urudre2", "uru", "urudre3", "doman"]
 anchor = { kind = "card", card = "playthrough-ladder-pro00-14.mcr", save = "PRO-12" }
 
 [[milestone]]

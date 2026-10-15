@@ -65,10 +65,10 @@ Three exits recur on this page:
 | 7 | 0x70..0x7F | [Collision-grid rectangular wall paint](#0x4c-nibble-0x700x7f---collision-grid-rectangular-wall-paint). |
 | 8 | 0x80..0x8F | [Multi-purpose dispatcher](#0x4c-nibble-0x800x8f---large-multi-purpose-dispatcher): party heal, tint, shake, reflection controller, actor-search jumps. |
 | 9 | 0x90..0x9F | [Floor-height ladder](#nibble-9-is-the-floor-height-ladder-not-a-fade). |
-| A | 0xA0..0xAF | [Conditional jump on a flag bit](#0x4c-nibble-a---jump-on-a-flag-bit). |
+| A | 0xA0..0xAF | [Conditional skip on a flag bit](#0x4c-nibble-a---skip-on-a-flag-bit). |
 | B | 0xB0..0xBF | [Error printer](#two-outer-nibbles-are-the-error-printer) - no valid sub-op. |
 | C | 0xC0..0xCF | [Small per-actor / per-scene writes](#0x4c-nibble-0xc00xcf---small-per-actor--per-scene-writes): camera focus and glide wait, slot-table timers, script teleport. |
-| D | 0xD0..0xDF | [Party state + inverted-Y mirror cluster](#0x4c-nibble-0xd00xdf---party-state--inverted-y-mirror-cluster): SE trigger, morph-actor spawn, timed flags, [VRAM STP bits](#0x4c-nibble-d-sub-4--sub-5---vram-stp-bit-setclear). |
+| D | 0xD0..0xDF | [Party state + inverted-Y mirror cluster](#0x4c-nibble-0xd00xdf---party-state--inverted-y-mirror-cluster): press-a-button prompt, morph-actor spawn, timed flags, [VRAM STP bits](#0x4c-nibble-d-sub-4--sub-5---vram-stp-bit-setclear). |
 | E | 0xE0..0xEF | [Misc scene writes + emitter helpers](#0x4c-nibble-0xe00xef---misc-scene-writes--emitter-helpers): text balloon, FMV trigger, AABB branch, camera animate/zoom, casino coin delta. |
 | F | 0xF0..0xFF | [Error printer](#two-outer-nibbles-are-the-error-printer); only `4C FF` passes through. |
 
@@ -205,8 +205,9 @@ Sub-table at `0x801CEF48`, indexed by `op0 & 0xF` under a `sltiu` bound of
 | 6 | `[4C 86 w0..w5 actor]` (15 bytes) | Installs the [reflection controller](#4c-86--4c-87-are-the-reflection-controllers-install-and-teardown). |
 | 7 | `[4C 87]` | Retires every reflection controller. |
 | 9 | `[4C 89 lo hi]` | `_DAT_80073F00 = i16`, the dialog pager's **automatic press** - [below](#4c-89-the-dialog-auto-press). |
-| B | `[4C 8B type lo hi]` | Jump to absolute u16 if any actor of `type` is active, else PC += 5. |
-| D | `[4C 8D char marker lo hi]` | Tristate per-character actor search: empty slot -> advance 6, found -> jump to the u16, no match -> halt. |
+| B | `[4C 8B spell skip:i16]` | "Does a present member know `spell`?": for each present member below character 3, the learned-spell list at record `+0x13C` (count) / `+0x13D` (ids) (`0x801E2320..0x801E23E4`). A hit takes the [relative skip](#the-relative-skip-exit), else PC += 5. |
+| C | `[4C 8C skip:i16]` | `ctx[+0x68]` zero takes the [relative skip](#the-relative-skip-exit) (`pc + 4 + skip - 2`), non-zero advances 4 (`0x801E23EC`). |
+| D | `[4C 8D char skill skip:i16]` | "Has character `char` learned art `skill`?": the displayed-skill list at record `+0x185` (count) / `+0x186` (ids) (`0x801E2404..0x801E2474`). A match takes the [relative skip](#the-relative-skip-exit) (`pc + 6 + skip - 2`); an empty list or no match advances 6 - there is no halt. `town0c`'s Tetsu (P1[4]) asks it before teaching an art. |
 
 The slot in sub-2 is a literal operand, not "every active member". It is the
 primitive every inn / rest / infirmary script is built on; there is no inn
@@ -361,7 +362,7 @@ On the disc:
 | 1 | `[4C C1]` | **Fog-region enable reset** - [below](#4c-c1-fog-region-enable-reset). PC += 2. |
 | 3 | `[4C C3]` | Script-table teleport + spawn-section re-run - [below](#4c-c3-script-table-teleport). |
 | 4 | `[4C C4 x z]` | Camera-zone query at an explicit tile: arm `0x801E2878`, `FUN_801DE3E0(x & 0x7F, z & 0x7F)`. Frames a shot from a region record the player is not standing in. |
-| 5 / 6 | `[4C C5|C6 lo hi]` | Jump-if-zero / jump-if-nonzero on a 16-bit trigger-flag index; both branches advance 4 (the joined tail at `LAB_801E28C4`). |
+| 5 / 6 | `[4C C5\|C6 lo hi]` | Wait on system flag `lo hi` (`FUN_8003CE64`, the `0x7x` test): sub-5 holds until it is set (`0x801E2894` -> `0x801E2A10`), sub-6 until it is clear (`0x801E28B0` / `0x801E28C4`); then PC += 4. The shipped waits are on `0x0A`, `0x0B`, `0x556` and `0x557`, each flipped by a move-VM part the scene's stager table carries (`2F 1C` / `2F 1D`) - see [below](#the-system-flag-waits). |
 | 9 | `[4C C9]` | PC += 2 unless `_DAT_8007BAB8 != _DAT_8007BA9C`, then halts. |
 | A / B / C | `[4C CN slot lo hi]` | Slot-table set / add / subtract - [below](#4c-ca--cb--cc-script-counters). |
 | D | `[4C CD]` | [Camera-glide wait](#4c-cd-waits-for-the-camera-glide). |
@@ -470,8 +471,8 @@ Jump table at `0x801CEFC8`.
 
 | Sub | Form | What it does |
 |---|---|---|
-| 0 | `[4C D0 a_lo a_hi b_lo b_hi]` | Field SE trigger: `func_0x8002B994(a, b)` gated on `_DAT_8007B874`, `_DAT_800846D0`, `_DAT_800846D4`; PC += 6. |
-| 1 | `[4C D1]` | Gate on `FUN_8003CF04(_DAT_8007C34C, FUN_801DC0BC)`: a live camera mover takes the `LAB_801E360C` relative-jump exit, a miss advances. |
+| 0 | `[4C D0 x_lo x_hi y_lo y_hi]` | Press-a-button prompt (`0x801E2AE4`): a new press (`_DAT_8007B874`) of confirm or cancel (`_DAT_800846D0 \| _DAT_800846D4`) advances 6; otherwise `FUN_8002B994(1, 1, x, y)` draws the selection cursor and the entry PC is restored. `town0c`'s lessons, `balden`, `jou`. |
+| 1 | `[4C D1 skip:i16]` | Gate on `FUN_8003CF04(_DAT_8007C34C, FUN_801DC0BC)` (`0x801E2B3C`): a live camera mover takes the [relative skip](#the-relative-skip-exit) `pc + 4 + skip - 2`; no mover, or a dead one, advances 4. No shipped script issues it. |
 | 2 | `[4C D2 channel]` | Resolve the channel via `FUN_8003C83C`; when nothing answers, spawn the placement through `FUN_8003A1E4` inside the `*(_DAT_801C6EA4) + 8` bracket. PC += 3 (arm `0x801E2B7C`). |
 | 3 | 14 bytes | `SCHEDULE_TIMED_FLAGS` - [below](#4c-d3-the-timed-flag-scheduler). |
 | 4 / 5 | `[4C D4|D5 x_lo x_hi y_lo y_hi]` | [VRAM STP-bit set / clear](#0x4c-nibble-d-sub-4--sub-5---vram-stp-bit-setclear). |
@@ -479,7 +480,7 @@ Jump table at `0x801CEFC8`.
 | 7 | `[4C D7]` | Retire every cutscene camera mover `FUN_801DC0BC` on actor list 0 via `FUN_8003CF40`; PC += 2 (arm `0x801E2DB4`). |
 | 8 | 9 bytes | Synchronous morph-actor spawn - [below](#what-the-0x4c-0xd8-spawner-builds). |
 | B | 13 bytes | Calls `FUN_801E57F0(operand)`, then PC += 13 (`LAB_801E2EA0`). |
-| C / E | `[4C DC|DE needle ...]` (5 bytes) | [`small_table_search`](script-vm.md#helper-functions) on a 1-byte needle, then a scan of the active party records (stride `0x414`, byte `+0x196`); a hit takes the `LAB_801E360C` jump (sub-C also writes the matching slot), a miss advances 5. |
+| C / E | `[4C DC|DE needle skip:i16]` (5 bytes) | "Does the party hold `needle`?" Sub-C searches the bag's active window (`FUN_80042EE0`), then the eight equipment bytes (`+0x196..+0x19D`) of each present member's record; sub-E reads the equipment alone. A hit takes the [relative skip](#the-relative-skip-exit) `pc + 5 + skip - 2`, a miss advances 5. |
 
 #### `4C D2` / `4C D6` / `4C D7` advance in retail
 
@@ -1044,12 +1045,83 @@ not an absolute jump: `opurud`'s entry script reaches its op-`0x44` at `+0x7A`
 with bit 24 set, unreachable under a jump arm. A VM that parks on a sub-9 ramp
 stalls `conc3` `P2[10]` on its `4C 49` and never sets `0x3E5`.
 
-### 0x4C nibble A - jump on a flag bit
+### 0x4C nibble A - skip on a flag bit
 
-Sub-0 reads `ctx.flags`, sub-1 `ctx.local_flags`, sub-2 the global story flag
-word. Bit SET -> absolute jump to operand `[2..4]`; bit CLEAR, or sub-3..`0xF`,
--> skip 5 bytes. The asm dispatches on the sub-op first (`0x801e2568`), so
-sub-3..`0xF` skip both the bank check and the jump.
+Sub-0 reads `ctx.flags`, sub-1 `ctx.local_flags`, sub-2 the scratchpad word
+`0x1F800394`. Bit SET -> the [relative skip exit](#the-relative-skip-exit)
+over operand `[2..4]`; bit CLEAR, or sub-3..`0xF`, -> advance 5 bytes. The
+asm dispatches on the sub-op first (`0x801e2568`), so sub-3..`0xF` skip both
+the bank check and the skip. The shipped uses pair it with the op it steps
+over: `town01` P0[35]'s `CC 00 A0 00 05 00` skips the 3-byte `JmpRel` after
+it, and `jouinc`'s camera bands (`CC <ch> A1 0A 1D 00`) skip 27 bytes of
+animation set-up.
+
+### The system-flag waits
+
+`4C C5` / `4C C6` hold the script until system flag `idx` is set / clear. The
+VM asks `FieldFlagsHost::system_flag_wait_released`, whose default - and the
+world host's answer - is retail's `FUN_8003CE64` test.
+
+The shipped waits are on `0x0A`, `0x0B`, `0x556` and `0x557`, and no field
+script raises most of them: the record clears (or sets) the flag, stages a
+prescript record with op `0x34` sub-3, and waits for that record's **move-VM
+program** to flip it with ext sub-op `0x1C` / `0x1D` (`2F 1C <idx>` /
+`2F 1D <idx>`, the `FUN_801D362C` arms at `0x801D3DF4` / `0x801D3E08`). Every
+bundle-MAN wait's scene carries that raiser in its stager table. `town01`
+P2[25] is the shape: `60 0A`, `B4 29 30 09` (stage record 10), `4C C5 0A 00`;
+record 10 waits `0x1E`, runs `2F 1C 0A`, then spins on `2F 13 0A` until the
+script's own `60 0A` lets it spawn its tail.
+
+The native writers of the same flags, all in the field overlay (PROT 0897):
+
+| Writer | Flag | Sites | Port |
+|---|---|---|---|
+| Move-VM ext `0x1C` / `0x1D` | operand | `0x801D3DF4` / `0x801D3E08` | `MoveHost::ext_set_flag_bank` / `ext_clear_flag_bank` on the world |
+| Scripted-scene actor `FUN_801D4A60` | `0x0B` | set `0x801D4F50`, `0x801D52C0`; clear `0x801D4C6C`, `0x801D4EB0`, `0x801D51F4`, `0x801D5514` | `engine-field::field_actor_program` (`FLAG_PLAYER_BUSY`) |
+| Travel arts `FUN_801EE094` / `FUN_801EE328` | `0x0B` | set `0x801EE108` / `0x801EE39C` | `engine-field::travel_art_actor` |
+
+The remaining `FUN_8003CE08` / `FUN_8003CE34` callers take a computed index
+(a script operand, an actor word, a table entry) or a fixed one other than
+these four; no `jal` to either helper outside the field, menu, dance and arena
+overlays and `SCUS_942.54` exists.
+
+The wait is a timed park in every runner, as `4C CD` is: the field loop and
+the channel runners resume at the op, the inline-dialogue runner parks the talk
+on it, and the cutscene timeline holds it (counted against its anti-hang cap,
+which completes a record whose raiser never runs). The raising parts tick in
+the frame tail's VRAM step (`World::step_field_vram_effects`, which runs
+`World::step_ambient_fx`), not in `SceneHost::tick`: every play host and
+`BootSession` run it, and any other headless driver owes
+`SceneHost::step_headless_frame_tail` after each tick. Without it the
+timeline holds on the wait until the cap completes the record, and the
+record's tail never runs - `garmel` P2[12] stages record 2 with
+`B4 1D 30 01`, parks on `4C C6 0A 00`, and lost its `3E FF 09` Zeto fight
+that way. The disc-gated test
+`crates/engine-core/tests/system_flag_wait_raisers_disc.rs` pins the raiser
+census, `town01` record 10's raise, and that every partition-2 wait a
+cold-entered timeline reaches is passed under the tail.
+
+### The relative skip exit
+
+`LAB_801E360C` is the exit every conditional-skip arm of `0x4C` shares
+(nibble A, `4C 8B` / `4C 8C` / `4C 8D`, `4C D1`, `4C DC` / `4C DE`, `4C EB`;
+`4C 8D` enters one instruction early at `0x801E3608` to point `a0` at its
+operand, and `4C E4` enters at `0x801E3614` with the halfword already in
+`v0`, as op `0x4D` does):
+
+```text
+801e360c  jal  0x8003ce9c        ; v0 = signed halfword at a0 (the arm's operand + 2)
+801e3614  addiu v0,v0,-0x2
+801e3618  j    0x801e3624
+801e361c  _addu s8,s8,v0         ; s8 += skip - 2
+```
+
+Each arm has already advanced `s8` past its own bytes (`s8 += 5`, plus the
+one the extended header adds at `0x801DE94C`), so the skip lands at
+`end_of_instruction + skip - 2`. It is not an absolute target: read as one,
+`CC 00 A0 00 05 00` would jump to offset 5 of its record. The whole table of
+the dispatcher's branch encodings, and the disc-wide test that holds the
+port to it, are in [`script-vm.md`](script-vm.md#branch-encodings).
 
 ## Nibble 9 is the floor-height ladder, not a fade
 

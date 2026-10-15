@@ -44,6 +44,10 @@ pub(super) fn take_shop_visited() -> bool {
 /// merchant sells them: the road between two counters is a dungeon or two.
 const HEAL_STOCK: u8 = 15;
 
+/// Healing items for each present member the hand buys before any
+/// equipment ([`next_want`]).
+const HEAL_RESERVE: u32 = 3;
+
 /// What the hand wants from the open buy list next.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Want {
@@ -57,6 +61,26 @@ enum Want {
     },
     /// Row `row`: `qty` copies of a stackable item.
     Stack { row: usize, qty: u8 },
+}
+
+/// Does the bag hold fewer HP restoratives than the [`HEAL_RESERVE`] the
+/// hand keeps for each present member (an errand's item aside)?
+pub(super) fn bag_short_of_heals(session: &NativeSession) -> bool {
+    use legaia_engine_menus::items::ItemEffect;
+    let w = &session.host.world;
+    let held: u32 = w
+        .party
+        .inventory
+        .iter()
+        .filter(|&(&id, _)| {
+            !errand_item(w, id)
+                && w.tables.item_catalog.get(id).is_some_and(|e| {
+                    matches!(e.effect, ItemEffect::Heal { .. } | ItemEffect::HealAll)
+                })
+        })
+        .map(|(_, &n)| u32::from(n))
+        .sum();
+    held < HEAL_RESERVE * w.present_party_list().len().clamp(1, 3) as u32
 }
 
 /// The worth of a piece of equipment to the hand: the sum of its stat
@@ -86,12 +110,42 @@ fn next_want(menu: &MenuRuntime, w: &legaia_engine_core::world::World) -> Option
     let session = menu.shop_session.as_ref()?;
     let gold = w.party.money;
     let held = |id: u8| w.party.inventory.get(&id).copied().unwrap_or(0);
-    // Healing: the stock row that restores the most HP per gold.
+    let errands = errands_short(w);
+    // The stretch's errand items first, as many as the purse pays for: the
+    // story waits on them, and a loaf bought as a heal is the same loaf.
+    for &(item, short, price) in &errands {
+        let Some(row) = session
+            .inventory
+            .items
+            .iter()
+            .position(|it| it.item_id == item && it.price > 0)
+        else {
+            continue;
+        };
+        let room = legaia_engine_menus::shop::SHOP_HELD_CAP.saturating_sub(held(item));
+        let qty = short
+            .min(u32::try_from(gold).unwrap_or(0) / price)
+            .min(u32::from(room));
+        if qty > 0 {
+            return Some(Want::Stack {
+                row,
+                qty: qty as u8,
+            });
+        }
+    }
+    // While an errand is short of gold, the purse is the errand's: nothing
+    // else is bought until the items are paid for.
+    if errand_gold_short(w) {
+        return None;
+    }
+    // Healing: the stock row that restores the most HP per gold. An errand
+    // item is not a heal to buy: it is bought above, for the story.
     let heal_row = session
         .inventory
         .items
         .iter()
         .enumerate()
+        .filter(|(_, it)| !errands.iter().any(|e| e.0 == it.item_id))
         .filter_map(|(row, it)| {
             let e = w.tables.item_catalog.get(it.item_id)?;
             let ItemEffect::Heal { amount } = e.effect else {
@@ -100,21 +154,24 @@ fn next_want(menu: &MenuRuntime, w: &legaia_engine_core::world::World) -> Option
             (it.price > 0).then_some((row, it.item_id, it.price, u32::from(amount)))
         })
         .max_by_key(|&(row, _, price, amount)| (amount * 1000 / price, std::cmp::Reverse(row)));
-    let heals_held: u32 =
-        w.party
-            .inventory
-            .iter()
-            .filter(|&(&id, _)| {
-                w.tables.item_catalog.get(id).is_some_and(|e| {
+    let heals_held: u32 = w
+        .party
+        .inventory
+        .iter()
+        .filter(|&(&id, _)| {
+            !errand_item(w, id)
+                && w.tables.item_catalog.get(id).is_some_and(|e| {
                     matches!(e.effect, ItemEffect::Heal { .. } | ItemEffect::HealAll)
                 })
-            })
-            .map(|(_, &n)| u32::from(n))
-            .sum();
+        })
+        .map(|(_, &n)| u32::from(n))
+        .sum();
     let heal_want = |target: u32| -> Option<Want> {
         let (row, id, price, _) = heal_row?;
         let room = legaia_engine_menus::shop::SHOP_HELD_CAP.saturating_sub(held(id));
-        let afford = u32::try_from(gold).unwrap_or(0) / price;
+        // The errands' price is kept back: the counter that sells their
+        // item may be the next one.
+        let afford = u32::try_from((i64::from(gold) - errand_cost(w)).max(0)).unwrap_or(0) / price;
         let qty = target
             .saturating_sub(heals_held)
             .min(afford)
@@ -124,16 +181,21 @@ fn next_want(menu: &MenuRuntime, w: &legaia_engine_core::world::World) -> Option
             qty: qty as u8,
         })
     };
-    if let Some(want) = heal_want(3) {
+    // Three heals for each present member come before any equipment: the
+    // next boss is fought out of the bag the road leaves, and a party of
+    // three that bought its armour first met Dohati (`dohaty` P2[10]) with
+    // one Healing Flower.
+    let members = w.present_party_list().len().clamp(1, 3) as u32;
+    if let Some(want) = heal_want(HEAL_RESERVE * members) {
         return Some(want);
     }
     // Equipment. At a counter with no healing row, a bag short of its
     // three heals keeps their price back for the counter that has one.
-    let reserve: i32 = if heal_row.is_none() && heals_held < 3 {
+    let reserve: i64 = if heal_row.is_none() && heals_held < 3 {
         300
     } else {
         0
-    };
+    } + errand_cost(w);
     let info = menu.equip_info.as_ref()?;
     let party = w.present_party_list();
     let mut best: Option<(i32, u32, Want)> = None;
@@ -141,7 +203,7 @@ fn next_want(menu: &MenuRuntime, w: &legaia_engine_core::world::World) -> Option
         let Some(entry) = info.entry(it.item_id) else {
             continue;
         };
-        if entry.is_ra_seru || i64::from(it.price) + i64::from(reserve) > i64::from(gold) {
+        if entry.is_ra_seru || i64::from(it.price) + reserve > i64::from(gold) {
             continue;
         }
         let slot = match entry.category {
@@ -188,6 +250,93 @@ fn next_want(menu: &MenuRuntime, w: &legaia_engine_core::world::World) -> Option
     heal_want(u32::from(HEAL_STOCK) * (w.present_party_list().len().clamp(1, 3) as u32))
 }
 
+/// The armament pieces in the bag the hand sells while an errand is short
+/// of gold ([`errand_gold_short`]): those no present member is better off
+/// wearing. A piece is kept when it is worth more (summed stat bonuses) to a
+/// member who can wear it than what that member wears in its slot, and a
+/// weapon also when it swings cheaper for that member than the worn one
+/// (`arm_cost`, the specialty swap's measure). A player who walks into a
+/// counter with a stack of outgrown armour sells it.
+pub(super) fn surplus_gear(session: &NativeSession) -> BTreeSet<u8> {
+    let w = &session.host.world;
+    if !continuous::PLAYS_ON.with(std::cell::Cell::get) || !errand_gold_short(w) {
+        return BTreeSet::new();
+    }
+    outgrown_gear(session)
+}
+
+/// What the bag's outgrown armament ([`surplus_gear`]'s pieces, whatever the
+/// purse holds) sells for: half the item table's price, a copy.
+pub(super) fn outgrown_value(session: &NativeSession) -> i64 {
+    let w = &session.host.world;
+    let Some(prices) = w.shops.item_shop_data.as_ref() else {
+        return 0;
+    };
+    outgrown_gear(session)
+        .iter()
+        .map(|&id| {
+            i64::from(prices.price(id)) / 2
+                * i64::from(w.party.inventory.get(&id).copied().unwrap_or(0))
+        })
+        .sum()
+}
+
+/// The armament pieces in the bag no present member is better off wearing
+/// ([`surplus_gear`] without its errand gate).
+fn outgrown_gear(session: &NativeSession) -> BTreeSet<u8> {
+    use legaia_engine_menus::equipment::EquipSlot;
+    use legaia_game_tables::equip_stats::EquipSlot as Disc;
+    let w = &session.host.world;
+    let mut out = BTreeSet::new();
+    let (Some(info), Some(prices)) = (
+        session.equip_restrictions.as_ref(),
+        w.shops.item_shop_data.as_ref(),
+    ) else {
+        return out;
+    };
+    let party = w.present_party_list();
+    for (&id, &n) in w.party.inventory.iter() {
+        let Some(entry) = info.entry(id) else {
+            continue;
+        };
+        if n == 0 || entry.is_ra_seru || prices.price(id) == 0 {
+            continue;
+        }
+        let slot = match entry.category {
+            Disc::Weapon => EquipSlot::Weapon,
+            Disc::Body => EquipSlot::BodyArmor,
+            Disc::Head => EquipSlot::Helmet,
+            Disc::Footwear => EquipSlot::Boot,
+        };
+        let wanted = party.iter().take(3).any(|&ch| {
+            if !info.can_equip(id, ch) {
+                return false;
+            }
+            let Some(rec) = w.party.roster.members.get(usize::from(ch)) else {
+                return false;
+            };
+            let worn = if slot == EquipSlot::Weapon {
+                worn_weapon(session, ch)
+            } else {
+                rec.equipment().slots[slot.as_index() as usize]
+            };
+            if gear_worth(w, id) > gear_worth(w, worn) {
+                return true;
+            }
+            slot == EquipSlot::Weapon
+                && match (arm_cost(session, ch, id), arm_cost(session, ch, worn)) {
+                    (Some(c), Some(cw)) => c < cw,
+                    // A cost the battle file cannot price is kept.
+                    _ => true,
+                }
+        });
+        if !wanted {
+            out.insert(id);
+        }
+    }
+    out
+}
+
 /// The pad edge that moves a kind-4 list cursor (seven rows a page, Left /
 /// Right flip the page, Up / Down wrap inside it) from `cursor` toward
 /// `row`, or Cross on it.
@@ -209,11 +358,51 @@ fn list_edge(cursor: usize, row: usize) -> u16 {
 /// The shop screens' cancel: the menu VM backs a screen out on Triangle.
 const CANCEL: u16 = PadButton::Triangle as u16;
 
-/// One pad edge for the open shop screen.
-fn shop_edge(menu: &MenuRuntime, w: &legaia_engine_core::world::World) -> u16 {
+/// The sell list row of the first bag stack in `sell`, if one is left.
+fn sale_row(w: &legaia_engine_core::world::World, sell: &BTreeSet<u8>) -> Option<usize> {
+    MenuRuntime::sell_list_rows(w)
+        .iter()
+        .position(|r| !r.dim && r.count > 0 && sell.contains(&r.id))
+}
+
+/// One pad edge for the open shop screen. `sell` holds the bag items the
+/// hand sells first ([`surplus_gear`]): Sell, the row, the whole stack.
+fn shop_edge(menu: &MenuRuntime, w: &legaia_engine_core::world::World, sell: &BTreeSet<u8>) -> u16 {
     // The casino prize counter: the hand looks and leaves.
     if menu.prize_session.is_some() {
         return CANCEL;
+    }
+    let sale = sale_row(w, sell);
+    if let Some(q) = menu.quantity_view()
+        && !q.buying
+    {
+        // The whole stack: Down adds ten, Right one.
+        return if !sell.contains(&q.item_id) {
+            CANCEL
+        } else if q.max.saturating_sub(q.quantity) >= 10 {
+            PadButton::Down.mask()
+        } else if q.quantity < q.max {
+            PadButton::Right.mask()
+        } else {
+            PadButton::Cross.mask()
+        };
+    }
+    match MenuState::from_byte(menu.ctx.state) {
+        // Sell is the picker's second row.
+        Some(MenuState::ShopMenu) if sale.is_some() && menu.quantity_view().is_none() => {
+            return match menu.ctx.cursor {
+                1 => PadButton::Cross.mask(),
+                0 => PadButton::Down.mask(),
+                _ => PadButton::Up.mask(),
+            };
+        }
+        Some(MenuState::ShopSell) if menu.quantity_view().is_none() => {
+            return match sale {
+                Some(row) => list_edge(usize::from(menu.ctx.cursor), row),
+                None => CANCEL,
+            };
+        }
+        _ => {}
     }
     let want = next_want(menu, w);
     if let Some(q) = menu.quantity_view() {
@@ -283,6 +472,7 @@ pub(super) fn service_shop(session: &mut NativeSession) {
     }
     let trace = std::env::var_os("LEGAIA_FGL_TRACE").is_some();
     let restrictions = session.equip_restrictions.clone();
+    let sell = surplus_gear(session);
     SHOP_MENU.with(|m| {
         let mut slot = m.borrow_mut();
         let menu = slot.get_or_insert_with(|| {
@@ -320,28 +510,32 @@ pub(super) fn service_shop(session: &mut NativeSession) {
         // A want that stays the same for many edges is one the screen will
         // not grant (a refused row): a piece is struck off for this visit,
         // a stack ends it.
-        let mut streak: (Option<Want>, u32) = (None, 0);
+        let mut streak: (Option<Want>, Option<usize>, u32) = (None, None, 0);
         for _ in 0..4000 {
             if !menu.is_open() {
                 break;
             }
             let want = next_want(menu, w);
-            if want == streak.0 {
-                streak.1 += 1;
+            // A sale in hand is its own progress: the stack's row moves or
+            // goes as each one is sold.
+            let sale = sale_row(w, &sell);
+            if (want, sale) == (streak.0, streak.1) {
+                streak.2 += 1;
             } else {
-                streak = (want, 0);
+                streak = (want, sale, 0);
             }
-            if streak.1 > 120 {
+            if streak.2 > 120 {
                 match want {
+                    _ if sale.is_some() => break,
                     Some(Want::Gear { item, ch, .. }) => {
                         REFUSED_BUYS.with(|r| r.borrow_mut().insert((item, ch)));
-                        streak = (None, 0);
+                        streak = (None, None, 0);
                         continue;
                     }
                     _ => break,
                 }
             }
-            let edge = shop_edge(menu, w);
+            let edge = shop_edge(menu, w, &sell);
             let _ = menu.step_field_session(w, edge);
             let _ = menu.step_field_session(w, 0);
         }
@@ -350,7 +544,11 @@ pub(super) fn service_shop(session: &mut NativeSession) {
             if !menu.is_open() {
                 break;
             }
-            let edge = if k % 8 == 0 { shop_edge(menu, w) } else { 0 };
+            let edge = if k % 8 == 0 {
+                shop_edge(menu, w, &BTreeSet::new())
+            } else {
+                0
+            };
             let _ = menu.step_field_session(w, edge);
         }
         let _ = menu.step_field_session(w, 0);
@@ -371,11 +569,17 @@ pub(super) fn service_shop(session: &mut NativeSession) {
                 .iter()
                 .map(|m| m.equipment().slots)
                 .collect();
+            let sold: Vec<String> = bag0
+                .iter()
+                .filter(|&(id, &n)| n > w.party.inventory.get(id).copied().unwrap_or(0))
+                .map(|(id, &n)| format!("{id:02X}x{}", n - w.party.inventory.get(id).copied().unwrap_or(0)))
+                .collect();
             eprintln!(
-                "    [shop] stock [{}]; gold {gold0} -> {}; bag +[{}]; {} member(s) re-equipped; screen {}",
+                "    [shop] stock [{}]; gold {gold0} -> {}; bag +[{}] -[{}]; {} member(s) re-equipped; screen {}",
                 stock.join(" "),
                 w.party.money,
                 bought.join(" "),
+                sold.join(" "),
                 worn.iter().zip(&worn0).filter(|(a, b)| a != b).count(),
                 if menu.is_open() { "STILL OPEN" } else { "closed" }
             );
@@ -386,6 +590,11 @@ pub(super) fn service_shop(session: &mut NativeSession) {
 /// The talk NPCs of the loaded scene whose record, or a record it spawns,
 /// carries a priced shop stock list (op `0x49` sub-0).
 pub(super) fn merchants(session: &NativeSession) -> Vec<u8> {
+    merchants_selling(session, |_| true)
+}
+
+/// [`merchants`] whose stock list carries an item `sells` picks.
+fn merchants_selling(session: &NativeSession, sells: impl Fn(u8) -> bool) -> Vec<u8> {
     use legaia_engine_field::man_field_scripts::partition_record_span;
     let w = &session.host.world;
     let Some(data) = w.shops.item_shop_data.as_ref() else {
@@ -395,17 +604,39 @@ pub(super) fn merchants(session: &NativeSession) -> Vec<u8> {
         return Vec::new();
     };
     let mask = data.sellable_mask();
-    let stock: Vec<usize> = legaia_scene_formats::shop_stock::scan(&man, Some(&mask))
+    // Each stock list's offset, and whether it sells a healing item.
+    let stock: Vec<(usize, bool)> = legaia_scene_formats::shop_stock::scan(&man, Some(&mask))
         .iter()
-        .map(|r| r.count_off)
+        .filter(|r| {
+            r.id_offsets
+                .iter()
+                .any(|&o| man.get(o).is_some_and(|&id| sells(id)))
+        })
+        .map(|r| {
+            let heals = r.id_offsets.iter().any(|&o| {
+                man.get(o).is_some_and(|&id| {
+                    w.tables.item_catalog.get(id).is_some_and(|e| {
+                        matches!(
+                            e.effect,
+                            legaia_engine_menus::items::ItemEffect::Heal { .. }
+                        )
+                    })
+                })
+            });
+            (r.count_off, heals)
+        })
         .collect();
     if stock.is_empty() {
         return Vec::new();
     }
-    let holds = |part: usize, rec: usize| {
-        partition_record_span(&mf, &man, part, rec)
-            .is_some_and(|(start, _, len)| stock.iter().any(|&o| o >= start && o < start + len))
+    let span_has = |part: usize, rec: usize, heals_only: bool| {
+        partition_record_span(&mf, &man, part, rec).is_some_and(|(start, _, len)| {
+            stock
+                .iter()
+                .any(|&(o, h)| o >= start && o < start + len && (h || !heals_only))
+        })
     };
+    let holds = |part: usize, rec: usize| span_has(part, rec, false);
     let n0 = mf.partitions.first().map_or(0, Vec::len);
     let n1 = mf.partitions.get(1).map_or(0, Vec::len);
     let mut out: Vec<u8> = w
@@ -428,8 +659,49 @@ pub(super) fn merchants(session: &NativeSession) -> Vec<u8> {
                     .any(|&r| holds(2, r))
         })
         .collect();
-    out.sort_unstable();
+    // The counter that sells healing items first: what the next boss is
+    // fought with is bought before the armour (`retock`'s arms dealer
+    // P1[34] took 46800 of 49991 gold, and its item counter P1[36] then
+    // sold seven Healing Flowers).
+    let sells_heals = |s: u8| {
+        span_has(1, usize::from(s), true)
+            || spawned_p2(&mf, &man, 1, usize::from(s), n0 + n1, 3)
+                .iter()
+                .any(|&r| span_has(2, r, true))
+    };
+    out.sort_unstable_by_key(|&s| (!sells_heals(s), s));
     out
+}
+
+/// The tiles of the loaded scene's merchants who sell an item an errand is
+/// still short of ([`errands_short`]).
+pub(super) fn errand_merchant_tiles(session: &NativeSession) -> Vec<(i16, i16)> {
+    let short: Vec<u8> = errands_short(&session.host.world)
+        .iter()
+        .map(|&(item, _, _)| item)
+        .collect();
+    if short.is_empty() {
+        return Vec::new();
+    }
+    let w = &session.host.world;
+    merchants_selling(session, |id| short.contains(&id))
+        .iter()
+        .filter_map(|s| w.npcs.positions.get(s))
+        .map(|&(x, z)| {
+            let t = dispatch_tile(x, z);
+            (t.0 as i16, t.1 as i16)
+        })
+        .collect()
+}
+
+/// Does a merchant of the loaded scene sell an errand item the bag is short
+/// of, and does the purse pay for a copy?
+pub(super) fn errand_buyable_here(session: &NativeSession) -> bool {
+    let w = &session.host.world;
+    errands_short(w)
+        .iter()
+        .any(|&(_, _, price)| i64::from(w.party.money) >= i64::from(price))
+        && !errand_merchant_tiles(session).is_empty()
 }
 
 /// Visit the scene's merchants with the pad, as a player passing a shop
@@ -446,7 +718,12 @@ pub(super) fn pad_shop(session: &mut NativeSession) -> Result<Option<String>, St
     // A scene shopped in with this purse and bag is passed by, unless its
     // counters were closed on story flags that have since come down.
     let reopened = counters_reopened(session);
-    if w.party.money <= 0 || (!reopened && SHOPPED.with(|s| s.borrow().get(&name) == Some(&key))) {
+    // An errand short of gold sells what the bag has outgrown at any
+    // counter, and buys its item wherever a counter sells it.
+    let errand = !surplus_gear(session).is_empty() || errand_buyable_here(session);
+    if (w.party.money <= 0 && !errand)
+        || (!reopened && !errand && SHOPPED.with(|s| s.borrow().get(&name) == Some(&key)))
+    {
         return Ok(None);
     }
     let keepers = merchants(session);

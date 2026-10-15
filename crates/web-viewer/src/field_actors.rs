@@ -82,6 +82,32 @@ impl FieldActors {
         self.bound_model = None;
     }
 
+    /// Adopt the play page's scene binding
+    /// (`legaia_engine_session::scene_actors::bind_scene_actors`, the step the
+    /// native window runs too): its catalog and the clip players whose world
+    /// cursors it bound. The play page's twin of [`Self::rebuild`], which the
+    /// map viewer's headless scene still runs.
+    pub fn adopt(&mut self, b: legaia_engine_session::scene_actors::SceneActorBinding) {
+        self.clear();
+        match b.catalog {
+            Ok(cat) => {
+                self.npcs = Some(NpcRender {
+                    pack: crate::field_npc::FieldNpcPack::from_catalog(cat),
+                });
+            }
+            Err(e) => crate::console_log(&format!("field actors: {e}")),
+        }
+        for (slot, player) in b.clip_players {
+            self.clips.insert(
+                slot,
+                NpcClip {
+                    player,
+                    generation: 0,
+                },
+            );
+        }
+    }
+
     /// Build the scene's catalog against `host`'s resources and bind one clip
     /// player per placement that names a clip - the native window's
     /// `npc_clip_players` rebuild. The live clip id (actor `+0x5C` after the

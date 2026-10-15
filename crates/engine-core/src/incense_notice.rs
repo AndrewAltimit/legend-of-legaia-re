@@ -50,6 +50,7 @@
 //!
 //! REF: FUN_801D0B90, FUN_801F1278, FUN_801F1E48, FUN_801F1B64
 
+use legaia_engine_field::field_overlay::field_overlay_cstr;
 use legaia_engine_field::submode_hub_actors::{self as hub, HubAction, HubActor, HubEnv, HubGrid};
 
 use crate::world::World;
@@ -60,8 +61,6 @@ pub const NOTICE_KIND: u8 = 0x0B;
 pub const NOTICE_RECORD_VA: u32 = 0x801F_2278;
 /// VA of the notice string window record `16`'s painter draws.
 pub const NOTICE_STRING_VA: u32 = hub::STR_SINGLE;
-/// The field overlay's load base (PROT 0897, slot A).
-const FIELD_OVERLAY_BASE: u32 = 0x801C_E818;
 /// PROT entry (extraction index) of the field overlay.
 pub const FIELD_OVERLAY_PROT_INDEX: u32 = 897;
 
@@ -99,10 +98,7 @@ pub fn notice_text_pen() -> (i32, i32) {
 /// Read the notice string's raw bytes (to its `NUL`) out of the field
 /// overlay image (PROT entry `0897` as the disc holds it).
 pub fn notice_string(field_overlay: &[u8]) -> Option<Vec<u8>> {
-    let off = NOTICE_STRING_VA.checked_sub(FIELD_OVERLAY_BASE)? as usize;
-    let tail = field_overlay.get(off..)?;
-    let end = tail.iter().position(|&b| b == 0)?;
-    Some(tail[..end].to_vec())
+    field_overlay_cstr(field_overlay, NOTICE_STRING_VA).map(<[u8]>::to_vec)
 }
 
 /// Expand the item-name escapes (`0xC2 X` / `0xC4 X`, the item table's name
@@ -257,7 +253,8 @@ mod tests {
 
     #[test]
     fn the_string_is_read_to_its_nul_at_the_overlay_offset() {
-        let off = (NOTICE_STRING_VA - FIELD_OVERLAY_BASE) as usize;
+        let off =
+            (NOTICE_STRING_VA - legaia_engine_field::field_overlay::FIELD_OVERLAY_BASE) as usize;
         let mut img = vec![0xEEu8; off + 8];
         img[off..off + 4].copy_from_slice(&[0xC2, 0x8A, b'a', 0]);
         assert_eq!(notice_string(&img), Some(vec![0xC2, 0x8A, b'a']));

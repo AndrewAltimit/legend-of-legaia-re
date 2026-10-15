@@ -561,7 +561,7 @@ pub fn damp_wander(w: i32) -> i32 {
 }
 
 /// The retail sin / cos LUT pair behind `_DAT_8007B7F8` / `_DAT_8007B81C`,
-/// generated from its definition ([`legaia_engine_battle_vm::rotation_lut::retail_rotation_lut`]).
+/// generated from its definition ([`legaia_engine_system::rotation_lut::retail_rotation_lut`]).
 ///
 /// The emitter reads the `_DAT_8007B7F8` pointer (`lw v1,-0x4808(t8)` at
 /// `0x801CFD0C`, `t8 = 0x80080000`) into walk X and the `_DAT_8007B81C` one
@@ -574,12 +574,12 @@ pub struct RetailTrig;
 
 impl TrigTable for RetailTrig {
     fn sin(&self, angle: i32) -> i32 {
-        use legaia_engine_battle_vm::rotation_lut::RotationLut;
-        legaia_engine_battle_vm::rotation_lut::retail_rotation_lut().a(angle)
+        use legaia_engine_system::rotation_lut::RotationLut;
+        legaia_engine_system::rotation_lut::retail_rotation_lut().a(angle)
     }
     fn cos(&self, angle: i32) -> i32 {
-        use legaia_engine_battle_vm::rotation_lut::RotationLut;
-        legaia_engine_battle_vm::rotation_lut::retail_rotation_lut().b(angle)
+        use legaia_engine_system::rotation_lut::RotationLut;
+        legaia_engine_system::rotation_lut::retail_rotation_lut().b(angle)
     }
 }
 

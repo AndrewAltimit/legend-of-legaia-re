@@ -4,12 +4,10 @@
 //! [`legaia_engine_menus::shop`]. This module holds the one entry point
 //! that reads the world: the
 //! window-41 party compare, which takes the roster and the equipment stat
-//! table off a [`World`], and the page-length helper keyed on the menu
-//! runtime's state.
+//! table off a [`World`]. The page-length helper keyed on the menu state is
+//! `legaia_engine_menus::shop_cues::shop_list_page_rows`.
 
 use legaia_engine_menus::shop::*;
-
-pub use crate::menu_runtime::shop_list_page_rows;
 
 use crate::world::World;
 

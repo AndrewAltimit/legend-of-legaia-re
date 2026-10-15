@@ -30,7 +30,7 @@
 //!
 //! ## Wiring
 //!
-//! `legaia_engine_core::dev_menu_host::DevMenuSession` is the host screen:
+//! `legaia_engine_menus::dev_menu_host::DevMenuSession` is the host screen:
 //! its `MAP CHANGE` row steps [`wrap12_step`] and its `ENCOUNT` row
 //! [`clamp1_255_step`], both off the frame's newly-pressed pad word. The
 //! sibling [`crate::dev_menu_leaves`] still carries the menu's retail row

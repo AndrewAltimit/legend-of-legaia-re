@@ -292,8 +292,8 @@ fn a_victory_arms_the_spoils_panel() {
         // While the phase halfword counts (`ctx[+0x6CE] >= 2`) the kind-2
         // fade template is live: `B - F`, black -> white, i.e. the scene
         // darkening to black, result windows included.
-        if let Some(legaia_engine_core::world::VictorySequence {
-            phase: legaia_engine_core::world::VictoryPhase::Exit { .. },
+        if let Some(legaia_engine_battle::victory::VictorySequence {
+            phase: legaia_engine_battle::victory::VictoryPhase::Exit { .. },
             ..
         }) = w.battle.victory
         {

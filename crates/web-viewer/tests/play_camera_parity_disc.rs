@@ -12,7 +12,7 @@
 //! `site/js/play-app.js` constructs) into a real scene and asserts that what
 //! its camera exports hand back is the retail model the native window frames
 //! with: the pinned follow angles, the player anchor, the GTE `H`, and a
-//! view-projection that *is* [`legaia_engine_battle_vm::psx_camera::psx_camera_vp`]
+//! view-projection that *is* [`legaia_engine_camera::psx_camera::psx_camera_vp`]
 //! of those inputs.
 //!
 //! Non-vacuity is the point of the last rung: a test that only asserted "the
@@ -26,7 +26,7 @@
 
 #![cfg(not(target_arch = "wasm32"))]
 
-use legaia_engine_battle_vm::psx_camera;
+use legaia_engine_camera::psx_camera;
 use legaia_engine_core::camera_view::FIELD_H;
 use legaia_web_viewer::runtime::LegaiaRuntime;
 use std::env;

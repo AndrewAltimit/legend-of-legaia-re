@@ -49,8 +49,8 @@
 //!   through the software OT; the fixed entries keep their relative order and
 //!   the depth-averaged ones sit at [`THEEDER_DEPTH_OT`].
 
-use crate::screen_prim::{FlatQuad, ScreenPrim, ScreenQuad};
 use legaia_engine_battle_vm::seru_magic_ticks::TheederPacket;
+use legaia_render_kernels::screen_prim::{FlatQuad, ScreenPrim, ScreenQuad};
 
 /// Projected screen point.
 pub type Xy = (i16, i16);

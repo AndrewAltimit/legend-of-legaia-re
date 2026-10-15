@@ -1,21 +1,22 @@
 //! The [`BattleIntro`] session: construction, arming, capture landing and accessors.
 
 use super::*;
+use crate::battle_intro_styles as styles;
+use crate::battle_intro_styles::{IntroFade, IntroStyle, PARTICLE_TICK_A, PARTICLE_TICK_B};
+use crate::battle_intro_swirl as swirl;
+use crate::battle_intro_swirl::SwirlMesh;
+use crate::battle_intro_tiles as tiles;
+use crate::battle_intro_tiles::TileGrid;
+use crate::battle_intro_transition::IntroQuad;
 use crate::screen_prim::ScreenPrim;
 use crate::vram_capture::CaptureOpts;
-use legaia_engine_battle_vm::battle_intro_styles::{
-    self as styles, IntroFade, IntroStyle, PARTICLE_TICK_A, PARTICLE_TICK_B,
-};
-use legaia_engine_battle_vm::battle_intro_swirl::{self as swirl, SwirlMesh};
-use legaia_engine_battle_vm::battle_intro_tiles::{self as tiles, TileGrid};
-use legaia_engine_battle_vm::battle_intro_transition::IntroQuad;
 use legaia_tim::Vram;
 
 /// The per-style working set, one variant per [`IntroStyle`].
 #[derive(Debug, Clone)]
 pub(super) enum WorkingSet {
     Particles {
-        grid: Vec<legaia_engine_battle_vm::battle_intro_particles::IntroParticle>,
+        grid: Vec<crate::battle_intro_particles::IntroParticle>,
         style: &'static styles::ParticleTickStyle,
     },
     Tiles(Box<TileGrid>),
@@ -119,11 +120,11 @@ impl BattleIntro {
         sub_style: i32,
         total_duration: i32,
         table: IntroQuadTable,
-        env: &mut dyn legaia_engine_battle_vm::battle_intro_particles::ParticleEnv,
+        env: &mut dyn crate::battle_intro_particles::ParticleEnv,
         _trig: &mut dyn swirl::SwirlTrig,
         tile_corners: [i32; 4],
     ) -> Self {
-        use legaia_engine_battle_vm::battle_intro_particles as particles;
+        use crate::battle_intro_particles as particles;
         let set = match style {
             IntroStyle::ScatterParticles | IntroStyle::SpinUpParticles => {
                 let (seed, tick) = if style == IntroStyle::ScatterParticles {
@@ -217,14 +218,14 @@ impl BattleIntro {
     /// particle env and the (unused) trig seam both seed from `rng_seed`, the
     /// world's RNG word.
     pub fn arm_for_battle(
-        inputs: &legaia_engine_battle_vm::battle_intro_styles::IntroStyleInputs,
+        inputs: &crate::battle_intro_styles::IntroStyleInputs,
         total_duration: i32,
         overlay_0979: Option<&[u8]>,
         field_char_textures: Option<&[u8]>,
         rng_seed: u32,
     ) -> Self {
-        use legaia_engine_battle_vm::battle_intro_particles::IntroEnv;
-        let choice = legaia_engine_battle_vm::battle_intro_styles::select_intro_style(inputs);
+        use crate::battle_intro_particles::IntroEnv;
+        let choice = crate::battle_intro_styles::select_intro_style(inputs);
         let overlay = overlay_0979.and_then(intro_overlay_as_loaded);
         let table = overlay
             .as_ref()
@@ -412,7 +413,7 @@ impl BattleIntro {
 #[cfg(test)]
 mod capture_landing_tests {
     use super::*;
-    use legaia_engine_battle_vm::battle_intro_particles::IntroEnv;
+    use crate::battle_intro_particles::IntroEnv;
 
     fn bare_intro(style: IntroStyle) -> BattleIntro {
         let mut env = IntroEnv::new(1);
@@ -486,7 +487,7 @@ mod capture_landing_tests {
 #[cfg(test)]
 mod arm_for_battle_tests {
     use super::*;
-    use legaia_engine_battle_vm::battle_intro_styles::{IntroStyleInputs, select_intro_style};
+    use crate::battle_intro_styles::{IntroStyleInputs, select_intro_style};
 
     /// Disc-free, the arming lands on the selector's style with the
     /// documented fallbacks, and the same seed arms the same emitter.

@@ -28,6 +28,7 @@ omissions. The harness does what the hosts do:
 
 | host duty | what the harness does |
 |---|---|
+| faithful-play arming | sets what both hosts set on a bare `BootSession`: talk through the inline field-VM runner, the leading-edge wall footprint, solid NPCs, terrain follow and the NPC ambient walk (`environment::arm_host_play_defaults`) |
 | presentation queues | drains the field-event, battle-event, hit, SFX, shout, XA, CLUT-stage and minigame-cue queues and routes battle effect spawns after every tick |
 | FMV playback | skips the movie (`finish_cutscene`) and runs the shared post-play hand-off, as the headless `play` subcommand does |
 | name entry | while the overlay is up, routes the pad edge into `step_name_entry` and skips the field tick, as both hosts' modal arms do |
@@ -121,7 +122,11 @@ placements first, then the solid interact-gated props that carry a record (a
 spring, a cupboard, a switch). The seat is where the engine's own probe
 answers with that target (`World::field_interact_probe_slot`, then
 `World::field_interact_prop_anchor`) and is taken only on the authored
-walk-visible floor, so an actor parked in the off-map hide box is skipped.
+walk-visible floor, so an actor parked in the off-map hide box is skipped,
+and only where the locomotion's own wall and body probes let the player walk
+a whole tile away: `son`'s camp has a wall nook at (74..75, 68) shut by two
+NPCs who never move, a seat no walk reaches, and seating there read as
+`confined`.
 The press is recorded in the pad stream; the seat is a function of the frame
 and the world, so a replay takes the same seats. Random walking reaches a
 handful of a scene's conversations and almost none of its props, and a
@@ -253,7 +258,10 @@ conversation too.
 The replay format carries no scene field, so the start scene and seed ride in
 header comments (`# soak-scene`, `# soak-seed`, `# soak-signature`) that
 TOML ignores. A replay recorded under a non-default starve window carries it
-too (`# soak-starve-frames`), and is judged by it.
+too (`# soak-starve-frames`), and is judged by it. Every replay names the
+session configuration it ran under (`# soak-arming = "host"` or `"bare"`);
+one without the tag predates the hosts' arming and replays bare, so a fixed
+finding recorded before it still replays the input that once raised it.
 
 ## Running
 
@@ -283,6 +291,7 @@ LEGAIA_SOAK_SEEDS=30 LEGAIA_SOAK_FRAMES=18000 LEGAIA_SOAK_JOBS=8 LEGAIA_SOAK_TAG
 | `LEGAIA_SOAK_MINIMIZE` / `LEGAIA_SOAK_CONFIRM_MAX` / `LEGAIA_SOAK_NO_CONFIRM` | reduction budget per signature / signatures confirmed / skip confirmation |
 | `LEGAIA_SOAK_SAVE` / `LEGAIA_SOAK_CARD` | play every run from that card save / read saves from that library card |
 | `LEGAIA_SOAK_NO_ENCOUNTERS` | disarm the random-encounter roll (a triage control: a battle that still starts is scripted) |
+| `LEGAIA_SOAK_BARE` | skip the hosts' faithful-play arming and soak a bare `BootSession` (simplified talk, candidate-centre walls, walk-through NPCs) |
 | `LEGAIA_SOAK_REDUCE` / `LEGAIA_SOAK_REDUCE_SIG` / `LEGAIA_SOAK_REDUCE_OUT` | `soak_reduce`: reduce a saved replay again, towards that signature (default: its recorded one), into that file |
 
 Runs are cheap - the headless engine ticks far faster than real time - so a
@@ -386,6 +395,7 @@ regression.
 | `izumi_spring_question_never_ends` | `izumi`: the spring asked "Do you wish to drink this water?" again after either answer, for good | a prop record ends at the parking byte after a dismissed box too |
 | `map01_life_water_live_max_stale` | `map01@...:PRO-01`: a Life Water under a Max HP +10% accessory left the live maximum one short of the base's rebuild, and the next battle healed past it | a stat-up item raises the base window and the live maxima are rebuilt from it |
 | `edlast_ending_unequip_live_max_stale` | `edbalden+rt@...:PRO-00`: the ending's scripted unequip left a Max HP +10% on a record whose accessory was gone | the aggregator pass every equipment change runs rebuilds the live maxima with the ability bits |
+| `map01_door_of_wind_carries_cupboard_run` / `map02_door_of_light_carries_conversation` | `chitei2+talk@PRO-03` / `ropeway2+talk@...:PRO-02`: a cupboard or a conversation opened while a Door's travel art ran, and its record parked in the overworld for good | a scene load drops the departing scene's conversation and prop runs with its actor list |
 
 The field-side fixes are described with their retail evidence in
 [`script-vm.md`](../subsystems/script-vm.md#engagement-and-the-system-script);

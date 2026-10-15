@@ -31,7 +31,7 @@
 //! other.
 
 use legaia_engine_core::field_menu_dispatch::{
-    apply_pause_items_outcome, build_pause_items_session,
+    FieldMenuSubsession, build_pause_items_session, finish_subsession,
 };
 use legaia_engine_core::world::World;
 use legaia_engine_menus::items::ItemCatalog;
@@ -303,7 +303,15 @@ fn door_of_wind_opens_the_destination_list_and_stages_the_warp() {
     assert_ne!(MENU_EXIT_CODE_WORLD_MAP_WARP, MENU_EXIT_CODE_FIELD_ESCAPE);
 
     // The bag is the measurable output: exactly one Door of Wind leaves it.
-    apply_pause_items_outcome(&s, &mut world);
+    // The hosts fold the finished screen through the shared router, which
+    // reports the exit code as a whole-menu close: retail's menu SM
+    // (`FUN_801DC6B4`) leaves its screen-dispatch state on the Use screen's
+    // `5` and returns done, so the root list is never resumed under the art.
+    let done = finish_subsession(FieldMenuSubsession::Items(s), &mut world);
+    assert!(
+        done.close_menu,
+        "a Door of Wind pick closes the menu, not the Items screen alone"
+    );
     assert_eq!(world.party.inventory.get(&DOOR_OF_WIND_ITEM_ID), None);
     assert_eq!(
         world.menu.pending_warp,

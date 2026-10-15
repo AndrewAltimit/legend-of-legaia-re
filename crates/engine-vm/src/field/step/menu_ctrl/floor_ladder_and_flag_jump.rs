@@ -72,15 +72,18 @@ pub(super) fn op_4c_n9<H: FieldHost>(
     }
 }
 
-// Outer nibble 0xA - conditional jump on flag bit. The 5-byte
-// instruction `[4C, 0xAN, bit, lo, hi]` dispatches first on
-// sub-op (`bne a1, zero, 0x801e258c` at 0x801e2568 of the
-// overlay disassembly), then per-sub-op checks one bit:
-// sub-0 → ctx.flags, sub-1 → ctx.local_flags, sub-2 → global
-// story flag word. When the bit is **set** the original
-// branches to the absolute-jump label (`bne v1, zero,
-// 0x801e360c`); clear (or sub-op 3..=0xF) falls through to
-// `s8 += 5` (PC += 5).
+// Outer nibble 0xA - conditional skip on a flag bit. The 5-byte
+// instruction `[4C, 0xAN, bit, skip_lo, skip_hi]` advances `s8 += 5`
+// in the delay slot of the sub-op dispatch (`0x801e256c`), then per
+// sub-op checks one bit: sub-0 → ctx.flags, sub-1 → ctx.local_flags,
+// sub-2 → the scratchpad word `0x1F800394`. A **set** bit takes the
+// shared exit `LAB_801E360C` with `a0 = operand + 2`: `FUN_8003CE9C`
+// reads the signed halfword and the exit adds it less two to `s8`
+// (`addiu v0,v0,-0x2; addu s8,s8,v0`) - a skip **relative** to the end
+// of the instruction, not an absolute target. Clear (or sub-op
+// 3..=0xF) leaves `s8` advanced by 5. The shipped uses pair it with
+// the op it skips: `town01` P0[35]'s `CC 00 A0 00 05 00` steps over the
+// 3-byte `JmpRel` that follows it.
 pub(super) fn op_4c_na<H: FieldHost>(
     host: &mut H,
     ctx: &mut FieldCtx,
@@ -97,15 +100,17 @@ pub(super) fn op_4c_na<H: FieldHost>(
         }
         let sub = op0 & 0x0F;
         let bit = bytecode[operand + 1];
-        let target = i16::from_le_bytes([bytecode[operand + 2], bytecode[operand + 3]]);
-        if host.flag_bit_is_set(ctx, sub, bit) {
-            StepResult::Advance {
-                next_pc: target as i32 as usize,
-            }
-        } else {
-            StepResult::Advance {
-                next_pc: pc + header_size + 4,
-            }
+        let skip = i16::from_le_bytes([bytecode[operand + 2], bytecode[operand + 3]]);
+        let next_pc = pc + header_size + 4;
+        if !host.flag_bit_is_set(ctx, sub, bit) {
+            return StepResult::Advance { next_pc };
+        }
+        let target = next_pc as isize + isize::from(skip) - 2;
+        if target < 0 {
+            return StepResult::Unknown { opcode, pc };
+        }
+        StepResult::Advance {
+            next_pc: target as usize,
         }
     }
 }

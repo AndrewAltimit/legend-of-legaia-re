@@ -168,11 +168,11 @@ impl DanceEnv {
 /// the Y column negates, which is the single flip the page's own orbit
 /// framing applies.
 pub(crate) fn dance_venue_vp_in_frame(
-    camera: &legaia_engine_battle_vm::psx_camera::FieldCameraView,
+    camera: &legaia_engine_camera::psx_camera::FieldCameraView,
     origin: (f32, f32, f32),
     aspect: f32,
 ) -> [f32; 16] {
-    let v = legaia_engine_battle_vm::psx_camera::FieldCameraView {
+    let v = legaia_engine_camera::psx_camera::FieldCameraView {
         focus: [
             camera.focus[0] - origin.0,
             camera.focus[1] - origin.1,
@@ -299,7 +299,7 @@ pub(crate) struct DanceBodies {
     origin: (f32, f32, f32),
     /// The dance entry's camera ([`dance_venue::venue_camera`]), in world
     /// coordinates.
-    camera: legaia_engine_battle_vm::psx_camera::FieldCameraView,
+    camera: legaia_engine_camera::psx_camera::FieldCameraView,
     /// The floor's body meshes + choreography bank for the engine's cast
     /// surface ([`legaia_engine_minigame_scenes::dance_cast_scene`]), which the play page
     /// poses the run's own cast through - whatever mode it is.
@@ -404,7 +404,7 @@ impl LegaiaMinigames {
     /// track ([`Self::dance_venue_vp`]). Empty when the cast did not decode.
     pub(crate) fn dance_venue_vp_with(
         &self,
-        camera: &legaia_engine_battle_vm::psx_camera::FieldCameraView,
+        camera: &legaia_engine_camera::psx_camera::FieldCameraView,
         aspect: f32,
     ) -> Vec<f32> {
         let Some(b) = self.dance_bodies.as_ref() else {
@@ -419,7 +419,7 @@ impl LegaiaMinigames {
     /// triangle whose screen span the GPU refuses. Empty with no hall.
     pub(crate) fn dance_env_visible_indices_with(
         &self,
-        camera: &legaia_engine_battle_vm::psx_camera::FieldCameraView,
+        camera: &legaia_engine_camera::psx_camera::FieldCameraView,
     ) -> Vec<u32> {
         let Some(b) = self.dance_bodies.as_ref().filter(|b| !b.env.is_empty()) else {
             return Vec::new();

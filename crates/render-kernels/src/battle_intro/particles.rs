@@ -1,9 +1,10 @@
 //! The particle fields, the subtractive wash and the backdrop prim.
 
 use super::*;
+use crate::battle_intro_styles as styles;
+use crate::battle_intro_styles::ParticleTickStyle;
 use crate::gte::GteVec3;
 use crate::screen_prim::{ScreenPrim, ScreenQuad, display_rect_flat_quad};
-use legaia_engine_battle_vm::battle_intro_styles::{self as styles, ParticleTickStyle};
 
 // ---------------------------------------------------------------------------
 // The particle fields (FUN_801CFDA0 / FUN_801D0370)
@@ -160,7 +161,7 @@ fn gp0_rgb(word: u32) -> u32 {
 /// Projection is `FUN_8005BAC8` (RotTransPers4): corners `(0,0)`, `(s,0)`,
 /// `(0,s)`, `(s,s)` at the style's quad size, depth = `SZ3 >> 2`, then the
 /// screen-window accept
-/// ([`legaia_engine_battle_vm::battle_intro_styles::particle_quad_accepted`]) and a
+/// ([`crate::battle_intro_styles::particle_quad_accepted`]) and a
 /// fixed OT bucket ([`PARTICLE_OT`]). `emit` is the first-frame gate the
 /// caller derives from the transition clock - see the tile arm's
 /// stale-view-matrix note.
@@ -169,7 +170,7 @@ fn gp0_rgb(word: u32) -> u32 {
 /// PORT: FUN_801D0370
 /// REF: FUN_8005BAC8 (RotTransPers4; returns `SZ3 >> 2`)
 pub fn emit_particle_field(
-    grid: &mut [legaia_engine_battle_vm::battle_intro_particles::IntroParticle],
+    grid: &mut [crate::battle_intro_particles::IntroParticle],
     style: &ParticleTickStyle,
     elapsed: &mut i16,
     frame_step: u8,

@@ -1,21 +1,6 @@
 //! Camera poses: dialogue, boot and menu framings, plus the actor / formation inputs they read.
 
-/// One camera pose: 12-bit angle units (`4096` = full turn) + the eye-space
-/// translation trio, exactly the retail globals' value space.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct BattleCamPose {
-    /// Pitch, 12-bit units (`0x8007B790`).
-    pub pitch: f32,
-    /// Yaw, 12-bit units (`0x8007B792`). May run outside `[0, 4096)`
-    /// mid-glide (shortest-arc unwrap); normalized when the orbit owns it.
-    pub yaw: f32,
-    /// Eye-space translation `(x, y, z)` (`0x800840B8/BC/C0`).
-    pub tr: [f32; 3],
-    /// The world point the camera orbits (`0x80089118/1C/20`, stored negated
-    /// in retail; held un-negated here). `FUN_801D829C` tweens it on the same
-    /// clock as the rotation and translation trios.
-    pub focus: [f32; 3],
-}
+use legaia_engine_camera::projection::BattleCamPose;
 
 /// Tutorial-dialogue close-up (trace frames 1..45: 240+ frames static),
 /// before its focus is filled in by [`dialogue_pose`].

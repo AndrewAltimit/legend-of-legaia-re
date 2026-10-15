@@ -47,6 +47,11 @@ pub(super) fn spirit_pre_arm<H: BattleActionHost + ?Sized>(
     if let Some(actor) = host.actor_mut(slot) {
         actor.queued_anim = actor.queued_anim_b;
     }
+    // The action-in-progress marker, raised on every pre-arm whatever the
+    // category (`li v0,0x1; sb v0,0x243(v1)` at `0x801E3B68`, behind the
+    // `ctx[7] = 0x3D` store). The stage ambient dims under it until the
+    // Done arm's rate restore clears it.
+    ctx.gauge_rearm_latch = 1;
     let category = host
         .actor(slot)
         .map(|a| ActionCategory::from_byte(a.action_category))
@@ -97,7 +102,10 @@ pub(super) fn spirit_wait<H: BattleActionHost + ?Sized>(
         .map(|a| (a.cast_class, a.cast_sub_class, a.params[0]))
         .unwrap_or((0, 0, 0));
     let char_kind = host.roster_character_id(slot);
-    match cast_audio_cue(slot, char_kind, cast_class, queue_head, sub_class) {
+    // The enemy leg's `slot >= 3` is on the retail pool slot: a small
+    // party's first monster sits below engine slot `3`.
+    let pool_slot = crate::battle_slot::SeatMap::new(host.party_count()).retail(slot);
+    match cast_audio_cue(pool_slot, char_kind, cast_class, queue_head, sub_class) {
         CastCueOutcome::None => {}
         CastCueOutcome::Sfx(id) => host.one_shot_sfx(id),
         CastCueOutcome::ItemGive { voice_arg } => host.cast_item_give(voice_arg),
@@ -280,21 +288,36 @@ pub(super) fn spirit_fire_damage<H: BattleActionHost + ?Sized>(
 /// (`DAT_8007BD10[slot]` below 3, `DAT_8007BD09[slot]` above), i.e. "is this
 /// seat filled" - not liveness, so a downed member still gets the cue.
 ///
+/// Both walks are over retail pool slots, mapped onto the engine's seating
+/// through [`crate::battle_slot::SeatMap`]. Walked raw, a small party's
+/// enemy-wide cue skipped its first monsters (engine slots below `3`).
+///
 /// REF: FUN_800402F4 (the eleven branch sites), FUN_801E22C8 (the expander)
 fn place_cue_group<H: BattleActionHost + ?Sized>(host: &mut H, class: u8, tier: u8, target: u8) {
     let Some(site) = cue_group_for(class, tier) else {
         return;
     };
     let slots: Vec<u8> = if site.per_target {
+        let seats = crate::battle_slot::SeatMap::new(host.party_count());
         let range = if target == crate::battle_cue_group::TARGET_ALL_ENEMIES {
             crate::battle_cue_group::MONSTER_SLOT_FIRST..crate::battle_cue_group::MONSTER_SLOT_END
         } else {
-            0..host.party_count()
+            0..crate::battle_slot::RETAIL_PARTY_SEATS
         };
         // `actor(slot).is_some()` is the engine's reading of the roster-byte
         // occupancy gate - the actor table holds exactly the seated
-        // combatants (see `BattleActionHost::actor_position`).
-        range.filter(|&s| host.actor(s).is_some()).collect()
+        // combatants (see `BattleActionHost::actor_position`); an empty
+        // party seat has no engine slot at all.
+        // On the monster row the seat must also hold a combatant (a fallen
+        // monster keeps its max HP), so a summon body the engine parks past
+        // a short monster row is not mistaken for a seat retail fills.
+        range
+            .filter_map(|r| seats.engine(r))
+            .filter(|&s| {
+                host.actor(s)
+                    .is_some_and(|a| seats.is_party(s) || a.max_hp != 0 || a.liveness != 0)
+            })
+            .collect()
     } else {
         vec![target]
     };

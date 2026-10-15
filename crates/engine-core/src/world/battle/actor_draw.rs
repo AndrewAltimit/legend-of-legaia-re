@@ -13,7 +13,7 @@ use legaia_engine_mode::mode::SceneMode;
 use legaia_engine_battle_vm::battle_actor_draw::LimbDimPlan;
 use legaia_engine_battle_vm::battle_actor_tick as tick;
 use legaia_engine_battle_vm::battle_actor_tint as tint;
-use legaia_engine_battle_vm::battle_cam_script::BattleCamPose;
+use legaia_engine_camera::projection::BattleCamPose;
 
 /// The body radius a party seat carries at `*(actor[+0x22C]) + 0x58`:
 /// `640` on 212 of the 213 party seats read across the catalogued battle
@@ -50,6 +50,9 @@ pub struct BattleActorDrawPlan {
     /// read - [`PARTY_BODY_RADIUS`] for a party seat, the record size class
     /// `<< 5` for a monster.
     pub radius: i16,
+    /// The body's retail pool slot `+0x5A`: the party seat, `3 + k` for
+    /// monster `k`, `7` for the summon creature.
+    pub seat: i16,
 }
 
 impl BattleActorDrawPlan {
@@ -258,7 +261,7 @@ impl World {
         };
         let b = &actor.battle;
         let view_z = match pose {
-            Some(p) => legaia_engine_battle_vm::battle_cam_script::battle_view_depth(
+            Some(p) => legaia_engine_camera::projection::battle_view_depth(
                 p,
                 world_scale,
                 [
@@ -313,6 +316,7 @@ impl World {
             draw_colour: verdict.colour,
             view_z,
             radius,
+            seat,
         })
     }
 
@@ -342,15 +346,10 @@ impl World {
         let actor = self.actors.get(actor_idx)?;
         let m = &actor.move_state;
         // The main draw's `+0x6A`: the retail pool slot is the body's
-        // `+0x5A`, and the after-image ghosts (`battle_afterimage`) cast none.
-        let pc = usize::from(self.party.party_count.clamp(1, 3));
-        let pool_slot = if actor_idx < pc {
-            actor_idx
-        } else {
-            actor_idx - pc + 3
-        };
-        let skip =
-            legaia_engine_battle_vm::battle_actor_draw::body_shadow_skip(pool_slot as i16, false);
+        // `+0x5A` (the plan's seat, which hands the summon creature retail's
+        // slot `7`), and the after-image ghosts (`battle_afterimage`) cast
+        // none.
+        let skip = legaia_engine_battle_vm::battle_actor_draw::body_shadow_skip(plan.seat, false);
         let shadow = legaia_engine_battle_vm::battle_actor_draw::shadow_plan(
             skip,
             plan.draw_colour,

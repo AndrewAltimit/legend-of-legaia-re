@@ -31,7 +31,7 @@ use super::*;
 ///
 /// REF: FUN_801E295C (`0x801E4334..0x801E43A4`)
 fn face_cast_target<H: BattleActionHost + ?Sized>(host: &mut H, ctx: &BattleActionCtx) {
-    use crate::battle_cue_group::MONSTER_SLOT_FIRST;
+    use crate::battle_slot::{RetailSlot, SeatMap};
     use crate::battle_target_group::{GroupSlot, RENDER_FLAG_HIDDEN, target_group_aim};
 
     let slot = ctx.active_actor;
@@ -39,7 +39,7 @@ fn face_cast_target<H: BattleActionHost + ?Sized>(host: &mut H, ctx: &BattleActi
         return;
     };
     let code = host.actor(slot).map_or(0, |a| a.active_target);
-    let party_count = host.party_count();
+    let seats = SeatMap::new(host.party_count());
 
     let (aim_z, aim_x) = if (code as usize) < ACTOR_SLOTS {
         if code == slot {
@@ -58,13 +58,8 @@ fn face_cast_target<H: BattleActionHost + ?Sized>(host: &mut H, ctx: &BattleActi
         for (retail_slot, out) in slots.iter_mut().enumerate() {
             let retail_slot = retail_slot as u8;
             // Retail numbering -> the engine's compact seating.
-            let engine_slot = if retail_slot < MONSTER_SLOT_FIRST {
-                if retail_slot >= party_count {
-                    continue;
-                }
-                retail_slot
-            } else {
-                party_count + (retail_slot - MONSTER_SLOT_FIRST)
+            let Some(engine_slot) = seats.engine(retail_slot) else {
+                continue;
             };
             let Some((x, z)) = host.actor_position(engine_slot) else {
                 continue;
@@ -78,7 +73,7 @@ fn face_cast_target<H: BattleActionHost + ?Sized>(host: &mut H, ctx: &BattleActi
                 // quarter of the way to the origin: Noa's group cast on three
                 // monsters faced `3828` where retail's faces `3859`
                 // (`gizam_summon_mid_cast`, `terra_summon_mid_cast`).
-                retail_slot < MONSTER_SLOT_FIRST
+                RetailSlot::new(retail_slot).is_party()
                     || (a.max_hp != 0 && a.render_flag != RENDER_FLAG_HIDDEN)
             });
             *out = GroupSlot { live, x, z };
@@ -171,6 +166,11 @@ pub(super) fn magic_cast_begin<H: BattleActionHost + ?Sized>(
     let capture = host.is_capture_spell(spell_id);
     if capture {
         host.load_capture_archive(spell_id);
+        // The capture path raises the action-in-progress marker on its way
+        // into the debit (`li v0,0x1; sb v0,0x243(v1)` at `0x801E44F8`), so
+        // the stage dims through the whole capture band - the ambient ramp
+        // `FUN_80050120` reads it - until the `0x71` exit clears it.
+        ctx.gauge_rearm_latch = 1;
     }
 
     // Compute MP cost with the character ability-bit modifier (Half 0x20 takes

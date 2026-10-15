@@ -125,6 +125,19 @@ pub struct FinishedSubsession {
     /// Window 8: a Hyper-Art book taught an art, for
     /// [`crate::menu_runtime::MenuRuntime::arm_art_learned_notice`].
     pub art_learned_notice: Option<legaia_engine_menus::pause_screens::ArtLearnedNotice>,
+    /// The sub-session left the menu an exit code (a Door of Light or Door of
+    /// Wind use): the whole menu closes rather than resuming its root list,
+    /// so the host passes `close` to `FieldMenuSession::resume`.
+    ///
+    /// Retail's menu SM (`FUN_801DC6B4`, jump table `0x801CEEB0` on
+    /// `_DAT_8007B43C`) dispatches the screens only from state `2`; the Use
+    /// screens store `4` / `5`, whose arm (`0x801DC9A4..0x801DC9E4`) waits
+    /// for the brightness to reach `0xF2`, adds `3` and returns
+    /// `counter >= 6` - the menu is over, and the field's session runs the
+    /// travel art. Resumed instead, the menu stayed up while the art ran
+    /// under it, and the party could walk off and open a cupboard before the
+    /// lift.
+    pub close_menu: bool,
 }
 
 /// Fold a finished pause-menu sub-session into the world - the one outcome
@@ -144,10 +157,11 @@ pub fn finish_subsession(finished: FieldMenuSubsession, world: &mut World) -> Fi
         handoff: SubsessionHandoff::Applied,
         spell_level_notice: None,
         art_learned_notice: None,
+        close_menu: false,
     };
     match finished {
         FieldMenuSubsession::Items(s) => {
-            let _ = apply_pause_items_outcome(&s, world);
+            out.close_menu = apply_pause_items_outcome(&s, world).is_some();
             out.art_learned_notice = world.menu.pending_art_notice.take();
         }
         FieldMenuSubsession::Equip {

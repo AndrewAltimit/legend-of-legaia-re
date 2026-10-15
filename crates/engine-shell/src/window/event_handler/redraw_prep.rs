@@ -38,8 +38,10 @@ impl PlayWindowApp {
     /// and the battle idle orbit's phase alignment.
     pub(super) fn seat_capture_frame(&mut self) {
         // Capture harness: on the frame the capture is taken, the fog pool
-        // shows the retail state's own sheets (`LEGAIA_SEAT_FOG`), installed
-        // before this frame's draw pass runs the pool's render step.
+        // shows the retail state's own sheets (`LEGAIA_SEAT_FOG`). The tick
+        // has already stepped the engine's own pool, so the frame's fog draw
+        // installs the records and re-runs the frame's step over them
+        // (`take_field_fog_prims`, `BootSession::seat_field_fog`).
         if let Some(sc) = self.screenshot.as_ref() {
             let gated =
                 sc.phase_gate.is_some() || sc.script_gate.is_some() || sc.battle_drive.is_some();
@@ -48,8 +50,8 @@ impl PlayWindowApp {
             } else {
                 self.tick_no >= sc.capture_tick
             };
-            if due && let Some(fog) = sc.seat_fog.take() {
-                self.session.host.world.fog.install_snapshot(&fog);
+            if due {
+                sc.seat_fog_due.set(true);
             }
             // ... and the ambient tree's sprite-arm sheets where retail's
             // emitters had put them (`LEGAIA_SEAT_SPRITE_ARMS`).
@@ -323,7 +325,7 @@ impl PlayWindowApp {
             // beats first (retail order: the mover snaps to an `apply 0` beat,
             // then glides from there when a same-tick follow-up beat
             // re-stages - the map01 fly-in pair).
-            let target = legaia_engine_battle_vm::psx_camera::FieldCameraView {
+            let target = legaia_engine_camera::psx_camera::FieldCameraView {
                 focus,
                 pitch,
                 yaw,
@@ -373,10 +375,10 @@ impl PlayWindowApp {
         // rebuilds above. Both are empty whenever no transition is running,
         // and the emitter is put back after the render. See `window::battle`.
         let (battle_intro, battle_intro_prims) = self.take_battle_intro_frame();
-        // Field fog sheets: the pool's render step runs here, in the same
-        // borrow window, through the camera this frame draws the field with
-        // (`FUN_8003F348` runs inside retail's field render pass, so it is a
-        // draw-path step on both hosts). Empty outside a gated field scene.
+        // Field fog sheets: the quads the last sim tick's render step left
+        // (`FUN_8003F348` runs once per retail frame, inside the field render
+        // pass, so both hosts step it per tick - `BootSession::step_field_fog`
+        // - and the draw only wraps them). Empty outside a gated field scene.
         let field_fog_prims = self.take_field_fog_prims();
         // Move-VM strip spans (`FUN_801D31B0`), through the same camera.
         let move_strip_prims = self.take_move_strip_prims();

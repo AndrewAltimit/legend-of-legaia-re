@@ -51,7 +51,7 @@
       <tr><td><code>23</code></td><td>MOVE_TO</td><td>3</td><td>Teleport to tile <code>(x, z)</code>; the player path also snaps the camera, the NPC path re-runs the visibility cull</td></tr>
       <tr><td><code>26</code></td><td>JMP_REL</td><td>3</td><td>Unconditional relative jump, <code>pc + 1 + u16</code>, 16-bit wrap</td></tr>
       <tr><td><code>2B 2C 2D</code></td><td>LFLAG set / clr / test</td><td>2</td><td>Local bank <code>ctx+0x62</code>. The test <em>spins</em> (holds the PC) while the bit is clear</td></tr>
-      <tr><td><code>2E 2F 30</code></td><td>GFLAG set / clr / test</td><td>2</td><td>The 32-bit scratchpad word <code>0x1F800394</code>: transient, not saved, partly engine state (bit 22 enables per-frame camera-zone re-query)</td></tr>
+      <tr><td><code>2E 2F 30</code></td><td>GFLAG set / clr / test</td><td>2</td><td>The 32-bit scratchpad word <code>0x1F800394</code>: transient, not saved, partly engine state (bit 22 enables per-frame camera-zone re-query). The test spins while the bit is <em>set</em>, like <code>33</code></td></tr>
       <tr><td><code>31 32 33</code></td><td>CFLAG set / clr / test</td><td>2</td><td>The context flag word. <code>31 08</code> copies <code>+0x26</code> to <code>+0x5A</code> instead of setting; <code>32 0x400</code> (un-halt) is the one op allowed through a halted target; <code>33</code> spins while the bit is set</td></tr>
       <tr><td><code>34</code></td><td>EFFECT</td><td>var</td><td>Sub-ops on <code>op0 &gt;&gt; 4</code> (<a href="#op-34">below</a>)</td></tr>
       <tr><td><code>35</code></td><td>BGM</td><td>4</td><td>Eleven sub-ops (<a href="#op-35">below</a>)</td></tr>
@@ -75,13 +75,14 @@
       <tr><td><code>4A</code></td><td>WAIT_FRAMES</td><td>2</td><td>Add the frame-skip factor to <code>ctx+0x54</code>; halt at PC until it reaches the operand</td></tr>
       <tr><td><code>4B</code></td><td>ANIMATE</td><td>3 + 4n</td><td>Arm <code>n</code> VDF morph lanes (sub-entry, up / down ramp rates) and set the animating bit - the field sibling of move-VM op <code>0x0A</code>, not a clip select</td></tr>
       <tr><td><code>4C</code></td><td>MENU_CTRL</td><td>var</td><td>Sixteen sub-dispatchers on the high nibble of <code>op0</code> (<a href="#menu-ctrl">below</a>)</td></tr>
-      <tr><td><code>4D</code></td><td>BBOX_TEST</td><td>7</td><td>Player inside the tile box: advance 7; outside: jump by the trailing <code>u16</code></td></tr>
+      <tr><td><code>4D</code></td><td>BBOX_TEST</td><td>7</td><td>Player inside the tile box: advance 7; outside: skip the trailing <code>u16</code> less two, counted from the end of the instruction</td></tr>
       <tr><td><code>4E</code></td><td>INVENTORY_CMP</td><td>7 / 9</td><td>Compare-and-skip on party state (<a href="#op-4e">below</a>)</td></tr>
       <tr><td><code>4F</code></td><td>SCENE_REGISTER_WRITE</td><td>7</td><td>Three <code>u16</code> writes into the scene record at <code>+0x10/+0x12/+0x14</code></td></tr>
-      <tr><td><code>5x 6x 7x</code></td><td>SYSFLAG set / clr / test</td><td>2 / 2 / 4</td><td>The persistent story-flag bank (<a href="script-vm.html#default-route">tour</a>); the test jumps when the flag is set</td></tr>
+      <tr><td><code>5x 6x 7x</code></td><td>SYSFLAG set / clr / test</td><td>2 / 2 / 4</td><td>The persistent story-flag bank (<a href="script-vm.html#default-route">tour</a>); the test jumps <code>pc + 2 + u16</code> when the flag is set. <code>78</code>..<code>7F</code> are tests too</td></tr>
     </tbody>
   </table>
   </div>
+  <p id="branch-encodings"><strong>No branch is absolute.</strong> Every conditional jump measures its operand from the instruction: <code>26</code> from after the opcode, <code>42</code> from three bytes in, the flag test from after its index byte, <code>4E</code> from five bytes in at both its widths, and <code>4D</code> and the <code>4C</code> skip arms (<code>A0</code>..<code>A2</code>, <code>8B</code>..<code>8D</code>, <code>D1</code>, <code>DC</code> / <code>DE</code>, <code>E4</code>, <code>EB</code>) through one shared exit that adds the halfword less two to a PC already past the op. A disc-wide test runs the port's interpreter over every shipped script and fails on any computed PC that lands between two instructions; the full table is in <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/script-vm.md#branch-encodings" target="_blank" rel="noopener"><code>script-vm.md</code></a>.</p>
   <p>Any other masked opcode halts at PC. A <code>?</code> (<code>0x3F</code>) inside message text is what makes a naive linear walk "see" scene changes in dialogue.</p>
 </section>
 
@@ -222,8 +223,8 @@
       <tr><td><code>9</code></td><td>Floor-height ladder: <code>9E</code> installs all sixteen elevation rungs, <code>90</code>..<code>92</code> set one oscillating, <code>9F</code> retires the oscillators. Not a fade</td></tr>
       <tr><td><code>A</code></td><td>Jump on a context / local / global flag bit</td></tr>
       <tr><td><code>B</code></td><td>Error printer - no valid sub-op</td></tr>
-      <tr><td><code>C</code></td><td>Move cancel, fog-region reset, script teleport, camera-zone query at a tile, camera focus override and glide wait, script counters (<code>CA</code> set, <code>CB</code> add, <code>CC</code> subtract)</td></tr>
-      <tr><td><code>D</code></td><td>Field SE, camera-mover gate, synchronous spawn, timed flags (<code>D3</code>), VRAM STP bits (<code>D4</code> / <code>D5</code>), retire camera movers, morph-actor spawn (<code>D8</code>), party search</td></tr>
+      <tr><td><code>C</code></td><td>Move cancel, fog-region reset, script teleport, camera-zone query at a tile, story-flag waits (<code>C5</code> until set, <code>C6</code> until clear), camera focus override and glide wait, script counters (<code>CA</code> set, <code>CB</code> add, <code>CC</code> subtract)</td></tr>
+      <tr><td><code>D</code></td><td>Press-a-button prompt (<code>D0</code>), skip while a camera glide runs (<code>D1</code>), synchronous spawn, timed flags (<code>D3</code>), VRAM STP bits (<code>D4</code> / <code>D5</code>), retire camera movers, morph-actor spawn (<code>D8</code>), party search</td></tr>
       <tr><td><code>E</code></td><td>Text balloon, <strong>FMV trigger</strong> (<code>4C E2 lo hi</code>), AABB branch, camera animate / zoom, casino coin delta</td></tr>
       <tr><td><code>F</code></td><td>Error printer; only <code>4C FF</code> passes through</td></tr>
     </tbody>

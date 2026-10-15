@@ -246,6 +246,15 @@
     _updateFieldMenu(simSteps) {
       const rt = this.rt;
       const p = this.pulse;
+      /* The per-tick owner (`play_menu_tick`, the native window's `sim_tick`
+       * arms): the press, the wipe and the menu steps all run inside the
+       * frame's tick loop, one owner per sim tick. This frame-level step
+       * only answers whether a menu is up - which keeps the naming prompt
+       * and the shop from stepping under it - and does the bookkeeping that
+       * follows a menu step, which `_afterMenuTicks` runs after the loop. */
+      if (typeof rt.play_menu_tick === 'function') {
+        try { return rt.play_menu_is_open(); } catch (e) { return false; }
+      }
       /* Test the Start *bit*, not a key name: Start answers to Enter and
        * Space, and a rebinding moves it again. Keying off the literal made
        * this handler the one place the engine's table did not reach. */
@@ -325,38 +334,45 @@
         for (let i = 0; i < simSteps; i++) {
           try { rt.play_menu_input(i === 0 ? edge : 0); } catch (e) {}
         }
-        /* A rebind committed inside Options > Key Config. The page folded the
-         * engine's table into one JS object at load, so without this the new
-         * binding would be live in the engine and invisible here. One integer
-         * compare per menu frame. */
-        if (window.legaiaSyncPadBindings && window.legaiaSyncPadBindings(rt)) {
-          this.held.clear();
-          this._repack();
-        }
-        /* An in-canvas Load off a memory card parks the save in the engine;
-         * the page lands it through the engine's resume entry
-         * (`play_resume_save`, via `onCardLoad`) the frame it appears. A
-         * save naming no scene counts too - it lands on the running scene. */
-        let loaded = false;
-        try { loaded = rt.play_menu_take_load(); } catch (e) {}
-        if (loaded) {
-          /* Hand the score from whatever was playing (the title theme, on a
-           * load out of the boot chooser) to the save's own op-0x35 track -
-           * the native window's `bgm.stop(); restore_field_bgm();` pair. The
-           * field VM does not re-emit a start for music that was already
-           * playing when the save was written, so without this the title
-           * theme simply keeps going under the loaded scene. */
-          try { rt.play_bgm_title_handoff(); } catch (e) { /* audio down */ }
-        }
-        if (loaded && typeof this.opts.onCardLoad === 'function') {
-          this.opts.onCardLoad();
-        }
+        this._afterMenuTicks();
       }
       /* The menu owns every edge while it is up - clear them so none leak into
        * the frozen field on the next tick. */
       p.clear();
       this._repack();
       try { return rt.play_menu_is_open(); } catch (e) { return false; }
+    }
+
+    /* What follows a frame's menu steps, on either path: a committed key
+     * rebind and an in-canvas card Load. */
+    _afterMenuTicks() {
+      const rt = this.rt;
+    /* A rebind committed inside Options > Key Config. The page folded the
+     * engine's table into one JS object at load, so without this the new
+     * binding would be live in the engine and invisible here. One integer
+     * compare per menu frame. */
+    if (window.legaiaSyncPadBindings && window.legaiaSyncPadBindings(rt)) {
+      this.held.clear();
+      this._repack();
+    }
+    /* An in-canvas Load off a memory card parks the save in the engine;
+     * the page lands it through the engine's resume entry
+     * (`play_resume_save`, via `onCardLoad`) the frame it appears. A
+     * save naming no scene counts too - it lands on the running scene. */
+    let loaded = false;
+    try { loaded = rt.play_menu_take_load(); } catch (e) {}
+    if (loaded) {
+      /* Hand the score from whatever was playing (the title theme, on a
+       * load out of the boot chooser) to the save's own op-0x35 track -
+       * the native window's `bgm.stop(); restore_field_bgm();` pair. The
+       * field VM does not re-emit a start for music that was already
+       * playing when the save was written, so without this the title
+       * theme simply keeps going under the loaded scene. */
+      try { rt.play_bgm_title_handoff(); } catch (e) { /* audio down */ }
+    }
+    if (loaded && typeof this.opts.onCardLoad === 'function') {
+      this.opts.onCardLoad();
+    }
     }
 
     /* Drive the opening name-entry overlay from this frame's just-pressed edges.
@@ -377,6 +393,14 @@
      *
      * Returns `true` while the overlay is up, so `_frame` freezes the field -
      * the naming prompt is modal, as it is natively. */
+    /* The naming prompt committed: hand the entered name to the page. */
+    _nameCommitted() {
+      if (typeof this.opts.onNamed !== 'function') return;
+      let name = '';
+      try { name = this.rt.party_display_name(0); } catch (e) {}
+      this.opts.onNamed(name);
+    }
+
     _updateNameEntry(simSteps) {
       const rt = this.rt;
       if (typeof rt.name_entry_is_active !== 'function') return false;
@@ -384,6 +408,10 @@
       try { open = rt.name_entry_is_active(); } catch (e) { return false; }
       if (!open) return false;
       this._ensureMenuBlitters();
+      /* The per-tick owner (`play_name_entry_tick`, the native window's
+       * per-tick arm) steps the prompt inside the frame's tick loop, edge
+       * and caret clock together; the frame level only stages blitters. */
+      if (typeof rt.play_name_entry_tick === 'function') return false;
       let edge = 0;
       edge |= padMaskOf(this.pulse);
       let committed = false;
@@ -396,11 +424,7 @@
       if (typeof rt.name_entry_advance_frames === 'function') {
         try { rt.name_entry_advance_frames(simSteps | 0); } catch (e) {}
       }
-      if (committed && typeof this.opts.onNamed === 'function') {
-        let name = '';
-        try { name = rt.party_display_name(0); } catch (e) {}
-        this.opts.onNamed(name);
-      }
+      if (committed) this._nameCommitted();
       /* The overlay owns every edge while it is up - clear them so none leak
        * into the frozen field on the next tick. */
       this.pulse.clear();
@@ -437,6 +461,10 @@
       try { open = rt.play_shop_is_open(); } catch (e) { return false; }
       if (!open) return false;
       this._ensureMenuBlitters();
+      /* The per-tick owner (`play_shop_tick` / `play_shop_after_tick`, the
+       * native window's `sim_tick` arms) steps the screen inside the frame's
+       * tick loop, so the frame-level step only stages its blitters. */
+      if (typeof rt.play_shop_tick === 'function') return false;
       const freezes = () => {
         let open2 = false;
         try { open2 = rt.play_shop_is_open(); } catch (e) { return false; }
@@ -466,12 +494,21 @@
      * field ticks under) is not a new one. */
     _modalOpenedThisTick() {
       const rt = this.rt;
+      /* A screen the tick opened takes the frame's next tick through
+       * `play_shop_tick`, inside the loop, as the native window's next
+       * `sim_tick` does; only a bundle without that export ends the frame. */
       try {
-        if (!this._shopHoldsPad && typeof rt.play_shop_is_open === 'function'
+        if (!this._shopHoldsPad && typeof rt.play_shop_tick !== 'function'
+            && typeof rt.play_shop_is_open === 'function'
             && rt.play_shop_is_open()) return true;
       } catch (e) { /* fall through */ }
+      /* A scripted menu press is picked up by the next tick's
+       * `play_menu_tick`, inside this frame's loop, as the native window's
+       * next `sim_tick` picks it up; only a bundle without that export ends
+       * the frame here for the frame-level open. */
       try {
-        if (typeof rt.play_menu_scripted_open_pending === 'function'
+        if (typeof rt.play_menu_tick !== 'function'
+            && typeof rt.play_menu_scripted_open_pending === 'function'
             && rt.play_menu_scripted_open_pending()) return true;
       } catch (e) { /* fall through */ }
       return false;

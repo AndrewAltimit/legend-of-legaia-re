@@ -2,17 +2,18 @@
 
 use super::*;
 use legaia_engine_battle_vm::battle_cam_script as cam;
+use legaia_engine_camera::projection;
 use legaia_engine_menus::muscle_dome_session::{MuscleDomeSession, MusclePhase};
 use legaia_engine_minigames::muscle_dome::{DomeContest, DomePlay};
 use std::sync::Arc;
 
 /// The dome's camera: one pose of the battle camera script, projected the
-/// way the battle hosts project a stage draw - [`cam::battle_vp`] at the
+/// way the battle hosts project a stage draw - [`projection::battle_vp`] at the
 /// battle world scale over the stage model `diag(4, -4, 4)` - so both hosts
 /// take the one matrix for raw Y-down world vertices, depth `[0, 1]`.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct DomeCamera {
-    pub pose: cam::BattleCamPose,
+    pub pose: projection::BattleCamPose,
 }
 
 impl DomeCamera {
@@ -26,7 +27,7 @@ impl DomeCamera {
             0.0, 0.0, k, 0.0, //
             0.0, 0.0, 0.0, 1.0,
         ];
-        cam::mat_mul(&cam::battle_vp(&self.pose, k, aspect), &stage)
+        projection::mat_mul(&projection::battle_vp(&self.pose, k, aspect), &stage)
     }
 }
 

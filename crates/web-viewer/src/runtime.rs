@@ -36,10 +36,12 @@ use crate::play::{FieldRender, PlayerRig};
 mod audio_exports;
 mod disc_load;
 mod frame;
+mod frame_ticks;
 mod input_exports;
 mod options;
 mod scene_setup;
 mod state_json;
+pub use frame_ticks::FrameTicksReport;
 pub use options::OPTIONS_STORAGE_KEY;
 pub(crate) use options::load_persisted_options;
 
@@ -318,6 +320,11 @@ pub struct LegaiaRuntime {
     /// cue table (`DAT_80078C1C`). `None` on a PROT.DAT-only load - the
     /// battle render then takes the half-turn / indoor-grey fallbacks.
     pub(crate) scus: Option<Vec<u8>>,
+    /// The field VM opened a menu-overlay screen on this tick (the poll in
+    /// [`Self::tick_frame`] took its first step), so
+    /// [`Self::play_shop_after_tick`] skips its step - the native window's
+    /// `shop_opened_this_tick`.
+    pub(crate) shop_opened_this_tick: bool,
     /// The page's sound-effect channel: disc descriptor bank, delay scheduler,
     /// footstep cadence ([`crate::play_sfx`]).
     pub(crate) sfx: crate::play_sfx::PlaySfx,
@@ -347,7 +354,7 @@ pub struct LegaiaRuntime {
     /// has raised one ([`crate::play_dev_menu`]) - the browser twin of the
     /// native window's `LEGAIA_DEV_MENU` session. `None` while the opt-in is
     /// off, which is the shipped default.
-    pub(crate) dev_menu: Option<legaia_engine_core::dev_menu_host::DevMenuSession>,
+    pub(crate) dev_menu: Option<legaia_engine_menus::dev_menu_host::DevMenuSession>,
     /// Whether the dev menu's Records page (Square from the row list) is up.
     pub(crate) dev_menu_records: bool,
     /// The visitor's session-only dev-menu opt-in
@@ -476,6 +483,7 @@ impl LegaiaRuntime {
             summon_actor_slot: None,
             precise_movement_override: None,
             scus: None,
+            shop_opened_this_tick: false,
             sfx: Default::default(),
             game_over: None,
             #[cfg(target_arch = "wasm32")]
@@ -580,5 +588,31 @@ impl LegaiaRuntime {
 impl Default for LegaiaRuntime {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+impl LegaiaRuntime {
+    /// The engine session this page runs, once a disc is loaded - read-only,
+    /// for native tests that sample it beside another host's
+    /// (`legaia_engine_session::host_trace`). Not a wasm export.
+    pub fn debug_session(
+        &self,
+    ) -> Option<&legaia_engine_session::BootSession<legaia_engine_audio::TestAudioSink>> {
+        self.scene_host.session()
+    }
+
+    /// The page's menu-overlay screen (shop, prize exchange, inn) - read-only,
+    /// for the same native tests. Not a wasm export.
+    pub fn debug_menu_runtime(&self) -> &legaia_engine_core::menu_runtime::MenuRuntime {
+        &self.menu
+    }
+
+    /// Build the page's audio director now, as a browser's `audio_init`
+    /// after the first user gesture does (off wasm it runs over a
+    /// device-free sink), so a native test compares a page whose audio is
+    /// up from the first frame. Not a wasm export.
+    pub fn debug_attach_audio(&mut self) -> bool {
+        self.audio_director().is_some()
     }
 }

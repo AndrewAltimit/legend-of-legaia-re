@@ -388,12 +388,12 @@ impl World {
         // enemy (no party-resist stage); kernel slot convention is retail's
         // (party 0..2, enemies 3+). The summon power-percent comes from the
         // per-caster 0x801F5468 table when the affinity tables are installed
-        // (char id = slot + 1, same model as the element lookups), else 100.
+        // (the caster seat's roster id, as the element lookups), else 100.
         let summon_power_pct = self
             .tables
             .element_affinity
             .as_ref()
-            .and_then(|aff| aff.summon_power_pct(caster + 1, summon_element))
+            .and_then(|aff| aff.summon_power_pct(self.battle_party_char_id(caster), summon_element))
             .unwrap_or(100);
         let predamage = atk.saturating_sub(def);
         let finish = DamageFinish {
