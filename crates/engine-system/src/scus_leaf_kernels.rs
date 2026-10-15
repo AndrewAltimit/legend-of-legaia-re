@@ -420,7 +420,7 @@ pub const BOOT_ENABLE_FLAG_ADDRS: [u32; 3] = [0x8007_0520, 0x8007_0580, 0x8007_0
 /// changing the verdict. The claim was "the engine's audio host asks
 /// `spu_base_for_slot` directly". It does not: grep the workspace and that
 /// helper's only references outside its own module are in the guard test
-/// `crates/engine-core/tests/infra_boot_offset_table.rs`. Nothing in
+/// `crates/engine-system/tests/infra_boot_offset_table.rs`. Nothing in
 /// `engine-audio`, `engine-shell` or `web-viewer` consults a per-slot SPU
 /// base at all - the mixer owns one flat `SpuRam` and places a bank at the
 /// transfer address it is handed, so retail's twelve-word slot map has no

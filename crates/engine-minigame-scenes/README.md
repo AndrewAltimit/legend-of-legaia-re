@@ -37,4 +37,6 @@ What stays in `engine-core` is everything that reads the world: the `World`
 entry points that seat a rung and tick a surface, the two venue halves that
 take the world or the scene host (`dance_venue::sync_dance_venue`,
 `fishing_venue::tick_fishing_venue_on_host` / `venue_floor_bytes`), and the
-disc-gated tests that drive a surface through a live `World`.
+disc-gated tests that drive a surface through a live `World`. A disc-gated
+test that needs only a venue and a `ProtIndex` (the dance cast surface, the
+dance HUD page staging) lives in this crate's own `tests/`.

@@ -732,7 +732,7 @@ shaders - `field_far_bucket_depth` in `engine-render`, `fieldFarBucket` in
   tpage `0x5F`), a tenth of a unit above the sunk ground at view depth near
   1700, lose every pixel.
 
-Disc-gated pin: `crates/engine-core/tests/field_ground_far_bucket_disc.rs`.
+Disc-gated pin: `crates/engine-scene/tests/field_ground_far_bucket_disc.rs`.
 
 ### No draw channel is gated on object-grid bit `0x0800`
 
