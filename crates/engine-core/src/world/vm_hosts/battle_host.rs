@@ -369,7 +369,7 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
     /// `jal 0x801f2160` at `0x801E50C8`, whose non-zero return holds the
     /// phase. See [`World::capture_stager_tick`].
     fn capture_stager_tick(&mut self) -> bool {
-        self.world.capture_stager_tick()
+        self.world.module_pass(World::capture_stager_tick)
     }
     /// The party cast trigger the pre-cast wait runs on its timer's expiry.
     ///
@@ -465,7 +465,7 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
         );
     }
     fn summon_stager_tick(&mut self) -> bool {
-        self.world.summon_stager_tick()
+        self.world.module_pass(World::summon_stager_tick)
     }
     /// The homing slots the move's effect-script terminator seeded.
     ///

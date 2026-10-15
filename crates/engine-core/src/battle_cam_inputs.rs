@@ -724,10 +724,7 @@ impl World {
         let frames = self.clock.display_frames;
         // On retail's cadence the camera steps on the tick the action SM's
         // pass runs on (`BattleCamera::sync_step_phase`).
-        // Not while a summon module owns the camera (`0x35` / `0x36`): its
-        // shots arm on the module's per-vsync ticks, not on the pass.
         if self.toggles.battle_sm_frame_cadence
-            && !matches!(self.battle_ctx.action_state, 0x35 | 0x36)
             && let Some(cam) = self.battle.camera.as_mut()
         {
             cam.sync_step_phase(self.battle.frame_clock.ticks_into_frame(frames));

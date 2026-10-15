@@ -227,13 +227,50 @@ impl World {
     /// rung and only then stores `0x14` and `0x200` (`0x801E2D50`,
     /// `0x801E2F20`). On retail's cadence the camera therefore follows the
     /// state the last pass ran; on the per-vsync cadence the live state.
+    ///
+    /// The summon band `0x32..=0x37` is framed by the pass that enters it:
+    /// `0x29`'s summon-route arm stores the `0x600` depth and falls through
+    /// into the entered state's case-6 call (`0x801E4604`, `0x801E4748`), and
+    /// the band's own states hand the camera to the close-up and the module.
+    /// Framed one pass late there, every summon capture lost its shot
+    /// (`camera` `.3` to `.8` across the corpus).
     pub fn battle_camera_state(&self) -> u8 {
         let live = self.battle_ctx.action_state;
-        if self.toggles.battle_sm_frame_cadence && !matches!(live, 0x32..=0x37 | 0x6E..=0x71) {
+        if self.toggles.battle_sm_frame_cadence && !matches!(live, 0x32..=0x37) {
             self.battle.sm_ran_state.unwrap_or(live)
         } else {
             live
         }
+    }
+
+    /// One SM pass's call into a paged cast module (`FUN_801F1ED4` /
+    /// `FUN_801F2160`), at retail's frame delta.
+    ///
+    /// Retail enters the module once a pass and every counted arm drains its
+    /// countdown by `scalar * delta`, drifts its pose by `k * delta` and
+    /// re-tests its threshold once (`cast_module_camera`, the countdown
+    /// kernel); an arm that finishes stores the next phase `ctx[+0x279]` and
+    /// returns, so the next arm runs on the next pass. The port's module ticks
+    /// are written in one-vsync units (`MODULE_DRAIN_PER_TICK`, a drift of
+    /// `k`), so a pass runs `delta` of them - the same drain, drift and spin
+    /// as one `delta`-scaled call - and stops on the tick an arm hands over,
+    /// so the next arm starts on the next pass as retail's does. On the
+    /// per-vsync cadence the pass is one tick.
+    pub(in crate::world) fn module_pass(&mut self, tick: fn(&mut World) -> bool) -> bool {
+        let delta = if self.toggles.battle_sm_frame_cadence {
+            self.battle_frame_step().max(1)
+        } else {
+            1
+        };
+        let mut live = false;
+        for _ in 0..delta {
+            let phase = self.casting.module_phase;
+            live = tick(self);
+            if !live || self.casting.module_phase != phase {
+                break;
+            }
+        }
+        live
     }
 
     /// The SM's `frame_dt` (`DAT_1F800393`): the frame step when the SM runs
@@ -295,6 +332,37 @@ mod tests {
         assert_eq!(w.battle_camera_state(), 0x0C);
         w.battle_ctx.action_state = 0x35;
         assert_eq!(w.battle_camera_state(), 0x35);
+    }
+
+    /// A module pass runs one module tick per vsync of the frame on retail's
+    /// cadence, stops on the tick an arm hands over, and is one tick on the
+    /// per-vsync cadence.
+    #[test]
+    fn a_module_pass_runs_the_frame_delta_and_stops_at_a_handover() {
+        fn count(w: &mut World) -> bool {
+            w.battle.backdrop_slot_1_yaw += 1;
+            true
+        }
+        fn hand_over(w: &mut World) -> bool {
+            w.battle.backdrop_slot_1_yaw += 1;
+            w.casting.module_phase = w.casting.module_phase.wrapping_add(1);
+            true
+        }
+        let mut w = World::new();
+        w.toggles.battle_sm_frame_cadence = true;
+        w.set_battle_frame_step(3);
+        assert!(w.module_pass(count));
+        assert_eq!(w.battle.backdrop_slot_1_yaw, 3);
+        w.battle.backdrop_slot_1_yaw = 0;
+        w.module_pass(hand_over);
+        assert_eq!(
+            w.battle.backdrop_slot_1_yaw, 1,
+            "the next arm runs next pass"
+        );
+        w.toggles.battle_sm_frame_cadence = false;
+        w.battle.backdrop_slot_1_yaw = 0;
+        w.module_pass(count);
+        assert_eq!(w.battle.backdrop_slot_1_yaw, 1);
     }
 
     #[test]

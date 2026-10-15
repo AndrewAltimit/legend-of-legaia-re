@@ -492,21 +492,6 @@ impl World {
             && self.battle_ctx.action_state == ActionState::DoneCleanup.as_byte()
             && self.run_boss_transition_arm();
 
-        // The paged cast modules keep their per-vsync passes
-        // (battle-stage-camera.md, the frame step): between SM passes the
-        // module states' own tick runs on every vsync, as it did when the SM
-        // ran every vsync, and the SM's pass reads where it stands.
-        if !sm_pass {
-            match ActionState::from_byte(self.battle_ctx.action_state) {
-                Some(ActionState::SummonSustain | ActionState::SummonReturn) => {
-                    let _ = self.summon_stager_tick();
-                }
-                Some(ActionState::MagicCapturePhase2) => {
-                    let _ = self.capture_stager_tick();
-                }
-                _ => {}
-            }
-        }
         let outcome = if sm_pass {
             // A shot the last pass handed the camera and no camera step
             // took is that pass's; this pass re-arms its own.
