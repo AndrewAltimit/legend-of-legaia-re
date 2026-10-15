@@ -502,11 +502,23 @@ pub(super) fn bag_can_heal(w: &legaia_engine_core::world::World) -> bool {
 /// MP pool until the foe finished it.
 pub(super) fn duel_spell_heal(w: &legaia_engine_core::world::World, actor: u8) -> Option<u8> {
     use legaia_engine_battle::spells::SpellEffect;
-    if !solo_duel(w) || bag_can_heal(w) {
+    if !w.battle.no_escape || bag_can_heal(w) {
         return None;
     }
+    let duel = solo_duel(w);
     let a = &w.actors.get(usize::from(actor))?.battle;
-    if a.hp == 0 || u32::from(a.hp) * 5 >= u32::from(a.max_hp) * 3 {
+    if a.hp == 0 {
+        return None;
+    }
+    let low = |i: usize| {
+        let b = &w.actors[i].battle;
+        b.hp > 0 && u32::from(b.hp) * 5 < u32::from(b.max_hp) * 3
+    };
+    // In a party fight that forbids running the same holds for the group
+    // heal, cast for any member under the line: Gaza's second fight
+    // (`korb3`) ran the bag dry with every member's Spoon unspent.
+    let n = w.party.party_count.clamp(1, 3) as usize;
+    if duel && !low(usize::from(actor)) || !duel && !(0..n).any(low) {
         return None;
     }
     let m = w
@@ -520,7 +532,9 @@ pub(super) fn duel_spell_heal(w: &legaia_engine_core::world::World, actor: u8) -
         .filter_map(|&id| {
             let d = w.tables.spell_catalog.get(id)?;
             let amount = match d.effect {
-                SpellEffect::Heal { amount } | SpellEffect::HealAll { amount } => amount,
+                SpellEffect::HealAll { amount } => amount,
+                // A single heal's target is the duellist itself.
+                SpellEffect::Heal { amount } if duel => amount,
                 _ => return None,
             };
             (u32::from(d.mp_cost) <= u32::from(a.mp)).then_some((amount, id))
