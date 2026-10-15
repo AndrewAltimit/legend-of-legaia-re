@@ -1702,6 +1702,15 @@ every authored box, and every `CD F8` gate in every scene's per-frame body -
 `0x6DE` here, the camera-parameter gates elsewhere - then answers "outside" for
 the whole visit.
 
+A box test aimed at any other actor resolves that actor the same way
+(`FUN_8003C83C`), and the `0x4D` arm reads **its** `+0x14` / `+0x18`. The
+engine steps such an op on the target's channel, with a placed NPC's live
+field position (`World::step_field_cross_context_bbox`): stepped on the
+player-seated system context, `nilboa`'s `CD 31` (the leader **or member
+`0x31`** in `(53..55, 62..64)` raises `0x4F2`, the boulders' push gate) read
+the player, and the flag fell the moment the leader swapped away from the
+box. Pinned by `world::tests::system_bbox_target`.
+
 ### What arriving in a spoke writes
 
 The region story-flag families are C1/C2 gates on partition-2 records, and a

@@ -774,6 +774,9 @@ impl World {
         if let Some(res) = self.step_field_cross_context_actor_op() {
             return Some(res);
         }
+        if let Some(res) = self.step_field_cross_context_bbox() {
+            return Some(res);
+        }
         // A facing op aimed at a placement (`B8 <id> ..`, `CC <id> 85 ..`)
         // turns that placement, not the system context.
         let pc = self.field_pc;
@@ -962,6 +965,61 @@ impl World {
         };
         self.field_pc = next_pc;
         Some(FieldStepResult::Advance { next_pc })
+    }
+
+    /// A system-script `BBOX_TEST` aimed at an actor other than the player
+    /// (`CD <id> x0 z0 x1 z1 lo hi`): the box is tested against **that**
+    /// actor's position. The dispatcher resolves the id through
+    /// `FUN_8003C83C` and the `0x4D` arm reads the resolved actor's
+    /// `+0x14` / `+0x18`; stepped on the system context, every such test read
+    /// the player instead (the context [`Self::sync_field_ctx_player_anchor`]
+    /// seats on the player for the `CD F8` tests).
+    ///
+    /// `nilboa`'s entry script is the case: it raises `0x4F2`, which lets the
+    /// Three Tunnels' boulders `P1[13]` / `P1[14]` be pushed, while the leader
+    /// **or member `0x31`** stands in `(53..55, 62..64)` (`+0x4D4` / `+0x4DF`).
+    /// The Fire Ravine leader pushes them while the member left behind in
+    /// the box holds the flag up; read off the player, the flag dropped the
+    /// moment the leader swapped away.
+    ///
+    /// A placed NPC answers with its live field position (the outgoing
+    /// leader's actor takes the player's pose there on a swap); an id no
+    /// channel carries takes the ordinary step.
+    ///
+    /// REF: FUN_801DE840 (case 0x4D), FUN_8003C83C
+    fn step_field_cross_context_bbox(&mut self) -> Option<FieldStepResult> {
+        let pc = self.field_pc;
+        if *self.field_bytecode.get(pc)? != 0xCD {
+            return None;
+        }
+        let target = *self.field_bytecode.get(pc + 1)?;
+        if target == legaia_engine_scene::field_env::PLAYER_ANCHOR_TARGET || target == 0xFB {
+            return None;
+        }
+        let ci =
+            legaia_engine_field::field_channels::resolve_target(&self.field_vm.channels, target)?;
+        let c = &self.field_vm.channels[ci];
+        let mut ctx = c.ctx.clone();
+        if !c.object_bind
+            && let Ok(slot) = u8::try_from(c.placement_index)
+            && let Some(&(x, z)) = self.npcs.positions.get(&slot)
+        {
+            ctx.world_x = x as u16;
+            ctx.world_z = z as u16;
+        }
+        let bc = std::mem::take(&mut self.field_bytecode);
+        let res = {
+            let mut host = FieldHostImpl { world: self };
+            vm::field::step(&mut host, &mut ctx, &bc, pc)
+        };
+        self.field_bytecode = bc;
+        match res {
+            FieldStepResult::Advance { next_pc } => {
+                self.field_pc = next_pc;
+                Some(FieldStepResult::Advance { next_pc })
+            }
+            other => Some(other),
+        }
     }
 
     /// A system-script `MOVE_TO` aimed at the player (`A3 F8 <x> <z>`):
