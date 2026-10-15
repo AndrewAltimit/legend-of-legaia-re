@@ -62,6 +62,28 @@ pub(super) fn retail_cam_tween(
     (live, end)
 }
 
+/// How many passes back along the live tween table the displayed frame
+/// stands: the display lag's `passes`, but never past the pass that armed
+/// the table. Before that the camera was walking the previous framing's
+/// table, which the RAM no longer holds.
+///
+/// The action seed `0x0C` arms case 6 on the yaw counter's `0x800` rung
+/// (`0x801E2CF8`, `jal 0x801D5854` at `0x801E2D50`) and then, on the Attack
+/// arm, stores state `0x14` and the `0x200` rung (`0x801E2F20`); every SM pass
+/// after it drifts the counter in the prologue (`0x801E29E4..0x801E2A24`)
+/// before `0x14` re-arms. A capture reading `0x14` with the counter still on
+/// `0x200` is the walker pass right after the seed's arm
+/// (`super_queue_replace_*`: yaw `3205` walking to `4062`, the `0x800`-rung
+/// endpoint, not the `0x200` one `0x14` aims at), so the frame two passes
+/// back was the commit's framing, one pass behind the arm.
+pub(super) fn tween_passes_back(action_state: u8, yaw_counter: u16, passes: u16) -> u16 {
+    if action_state == 0x14 && yaw_counter == 0x200 {
+        passes.min(1)
+    } else {
+        passes
+    }
+}
+
 /// The live pose the **displayed** frame was drawn at: retail's live camera
 /// walked back `passes` passes along its tween table.
 ///

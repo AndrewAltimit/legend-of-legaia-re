@@ -279,3 +279,15 @@ fn spent_combatants_keep_their_heading_until_the_strike_commits() {
     b.init_keys[4] = Some(3);
     assert_eq!(b.seeded_facing()[2], None);
 }
+
+/// The walk back to the displayed frame stops at the pass that armed the
+/// live tween: a capture on `0x14` with the yaw counter still on the seed's
+/// `0x200` rung is the walker pass right after the seed's own arm.
+#[test]
+fn the_displayed_camera_walks_back_no_further_than_the_seed_arm() {
+    assert_eq!(tween_passes_back(0x14, 0x200, 2), 1);
+    assert_eq!(tween_passes_back(0x14, 0x200, 0), 0);
+    // A pass of `0x14` has drifted the counter: its own re-arms span the lag.
+    assert_eq!(tween_passes_back(0x14, 0x202, 2), 2);
+    assert_eq!(tween_passes_back(0x1E, 0x200, 2), 2);
+}

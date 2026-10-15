@@ -1806,6 +1806,19 @@ duellists hold still, and the frame read `0.611` against retail's with the
 crystals `70` to `90` px off. Every action drive but a `DoneHold` takes the
 displayed pose, also where its frame stays at the RAM's instant.
 
+The walk back stops at the pass that armed the table: before it the camera
+walked the previous framing's table, which the RAM no longer holds
+(`tween_passes_back`). The action seed `0x0C` arms case 6 on the yaw
+counter's `0x800` rung (`jal 0x801D5854` at `0x801E2D50`), then stores state
+`0x14` and the `0x200` rung (`0x801E2F20`). Every later pass drifts the
+counter in the prologue before `0x14` re-arms, so a capture reading `0x14`
+with the counter still on `0x200` is the walker pass right after the seed's
+arm. The `super_queue_replace_*` captures are that pass: yaw `3205` walking to
+`4062`, the `0x800` rung's endpoint. Walked back both passes along the seed's
+table the eye stood at depth `1965`, closer than any pose the seed's ease
+passed through; one pass back it stands at `2457`, and the frames read `.656`
+to `.744`.
+
 ## Divergence shapes
 
 Shapes the corpus separates, each with what it indicates:

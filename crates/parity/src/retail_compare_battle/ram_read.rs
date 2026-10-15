@@ -100,7 +100,11 @@ impl RetailBattle {
             displayed_cam_live: displayed_cam_live(
                 ram,
                 ctx,
-                display_lag_vsyncs(ram) / u16::from(frame_step(ram).max(1)),
+                tween_passes_back(
+                    action_state,
+                    game_anchors::u16_at(ram, ctx + 0x6DA),
+                    display_lag_vsyncs(ram) / u16::from(frame_step(ram).max(1)),
+                ),
                 frame_step(ram),
             ),
             camera_option: game_anchors::u8_at(ram, BATTLE_CAMERA_OPTION),
