@@ -398,6 +398,14 @@ pub(super) fn party_dump(session: &NativeSession) {
             .collect();
         arts.sort();
         eprintln!("    [arts] #{i} {ch:?}: {}", arts.join("; "));
+        let roster = w.party_roster_slot(i);
+        eprintln!(
+            "    [pool] #{i} miracle armed {} pool {} base {} press costs {:?}",
+            miracle_armed(w, i as u8),
+            w.actors[i].battle.agl,
+            w.actors[i].battle.agl_base,
+            w.battle.swing_costs.get(roster)
+        );
     }
     let bag: Vec<String> = w
         .party

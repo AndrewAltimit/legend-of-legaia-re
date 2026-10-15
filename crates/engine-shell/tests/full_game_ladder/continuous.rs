@@ -189,14 +189,22 @@ fn carried(sf: &legaia_save::SaveFile) -> String {
         if v.hp_max == 0 {
             continue;
         }
+        let s = m.live_stats();
+        let r = m.record_stats();
         out.push_str(&format!(
-            "      member {i}: lv {} xp {} hp {}/{} mp {}/{} equip {:02X?}\n",
+            "      member {i}: lv {} xp {} hp {}/{} mp {}/{} agl {}/{} atk {}/{} spd {}/{} equip {:02X?}\n",
             m.level(),
             m.cumulative_xp(),
             v.hp_cur,
             v.hp_max,
             v.mp_cur,
             v.mp_max,
+            s.agl,
+            r.agl,
+            s.atk,
+            r.atk,
+            s.spd,
+            r.spd,
             m.equipment().slots
         ));
     }
