@@ -925,7 +925,14 @@ pub(super) fn run_one(
                     // the glide countdown rides along for every op.
                     let mut h = HashWriter(std::collections::hash_map::DefaultHasher::new());
                     let _ = write!(h, "{}|{}|", c.frames, w.camera.state.glide_frames);
-                    if op == 0xC7 {
+                    // A walk-on record that raised the re-poll bit (op
+                    // `2E 13`) is re-run from its top every tick the player
+                    // stays on its tile - Rim Elm's "stand here and press"
+                    // polls - and the player walks freely meanwhile, so the
+                    // player's own motion rides along for it too.
+                    let repoll =
+                        w.flags.story_flags & legaia_engine_core::world::WALK_ON_REPOLL_FLAG != 0;
+                    if op == 0xC7 || repoll {
                         if let Some(a) = w.actors.get(player_slot(&session)) {
                             let m = &a.move_state;
                             let _ = write!(h, "p{},{}|", m.world_x, m.world_z);

@@ -350,22 +350,60 @@ impl Policy {
 /// The battle fighter's wanted press this frame (see `critical_path_replay`'s
 /// `FightPolicy`): Begin, Attack, Auto, confirm the target, Cross any message
 /// box. `0` when nothing obvious is wanted.
+///
+/// The sparring tutorial (overlay 967) only moves on when the player commits
+/// the command its lesson teaches; any other pick rewinds the lesson with its
+/// reminder, so a fighter that only ever attacks spars forever - as a retail
+/// player who never follows Tetsu would. The fighter follows the lesson the
+/// way `full_game_ladder::fight_turn` does: Item for the items lesson, Spirit
+/// for the spirit lesson, and the `Up Down Up` drill in Command mode for the
+/// hyper-arts lesson.
 pub(super) fn fight_pad(s: &NativeSession) -> u16 {
+    use legaia_engine_battle::arts_command_input::ArtsInputPhase;
+    use legaia_engine_battle::battle_tutorial::TutorialLesson;
     use legaia_engine_menus::battle_input::CommandPhase;
     use legaia_engine_menus::inventory_use::InventoryUseState;
     let w = &s.host.world;
     if !w.battle.tutorial_boxes.is_empty() {
         return b(PadButton::Cross);
     }
+    let lesson = w.battle.tutorial.as_ref().map(|t| t.lesson());
     if let Some(menu) = w.battle.item_menu.as_ref() {
         return match menu.state {
+            InventoryUseState::Browsing { .. }
+                if lesson == Some(TutorialLesson::Items) && !menu.filtered_items.is_empty() =>
+            {
+                b(PadButton::Cross)
+            }
             InventoryUseState::Browsing { .. } => b(PadButton::Circle),
             InventoryUseState::TargetSelect { .. } => b(PadButton::Cross),
             _ => 0,
         };
     }
+    if lesson == Some(TutorialLesson::HyperArts)
+        && let Some(arts) = w.battle.arts_input.as_ref()
+    {
+        if let ArtsInputPhase::Entering = arts.phase {
+            use legaia_art::queue::Command;
+            let plan = [Command::Up, Command::Down, Command::Up].map(Command::as_byte);
+            if arts.buffer.len() < plan.len() && plan.starts_with(&arts.buffer) {
+                return match Command::from_byte(plan[arts.buffer.len()]) {
+                    Some(Command::Down) => b(PadButton::Down),
+                    _ => b(PadButton::Up),
+                };
+            }
+        }
+        return b(PadButton::Cross);
+    }
     if let Some(session) = w.battle.command.as_ref() {
         return match &session.phase {
+            CommandPhase::Menu { .. } if lesson == Some(TutorialLesson::Items) => b(PadButton::Up),
+            CommandPhase::Menu { .. } if lesson == Some(TutorialLesson::Spirit) => {
+                b(PadButton::Down)
+            }
+            CommandPhase::AttackMode { .. } if lesson == Some(TutorialLesson::HyperArts) => {
+                b(PadButton::Right)
+            }
             CommandPhase::RoundPrompt { .. } => LEFT,
             CommandPhase::Menu { .. } => LEFT,
             CommandPhase::AttackMode { .. } => LEFT,

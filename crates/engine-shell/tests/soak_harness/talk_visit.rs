@@ -94,6 +94,54 @@ fn seat_walks_out(w: &legaia_engine_core::world::World, x: i16, z: i16) -> bool 
     false
 }
 
+/// Whether a player could have walked **into** a seat at `(x, z)` from a
+/// tile away: the backward flood of [`seat_walks_out`], whose step from `q`
+/// to `q + stride * dir` is taken only when the forward probes at `q` let
+/// the player make it.
+///
+/// The body probes look one way: they test points 64 ahead of the player,
+/// so a pocket can let the player out and never back in. `dolk`'s monk
+/// formation stands its rows 128 apart, and a seat in a gap between two of
+/// them (facing one from 64) walks out along the row while every approach
+/// is shut by the probe reaching the next monk; one diagonal step from the
+/// seat then left the player boxed on all four sides, a spot no walk enters.
+fn seat_walks_in(w: &legaia_engine_core::world::World, x: i16, z: i16) -> bool {
+    const STRIDE: i16 = 8;
+    const DIRS: [(i16, i16); 4] = [(0, -1), (-1, 0), (0, 1), (1, 0)];
+    let mut seen = BTreeSet::new();
+    let mut queue = std::collections::VecDeque::from([(x, z)]);
+    seen.insert((x, z));
+    while let Some((cx, cz)) = queue.pop_front() {
+        if (i32::from(cx) - i32::from(x)).abs() >= SEAT_WALK_OUT
+            || (i32::from(cz) - i32::from(z)).abs() >= SEAT_WALK_OUT
+        {
+            return true;
+        }
+        for (dir, &(dx, dz)) in DIRS.iter().enumerate() {
+            // The predecessor one stride back along `dir`, and whether its
+            // forward walk in `dir` reaches this point.
+            let (qx, qz) = (
+                cx.saturating_sub(dx * STRIDE),
+                cz.saturating_sub(dz * STRIDE),
+            );
+            let (mut px, mut pz) = (qx, qz);
+            let mut open = true;
+            for _ in 0..STRIDE / 2 {
+                if w.field_dir_blocked(px, pz, dir) || w.field_actor_dir_blocked(px, pz, dir) {
+                    open = false;
+                    break;
+                }
+                px = px.saturating_add(dx * 2);
+                pz = pz.saturating_add(dz * 2);
+            }
+            if open && seen.insert((qx, qz)) {
+                queue.push_back((qx, qz));
+            }
+        }
+    }
+    false
+}
+
 /// What the action button opens.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub(super) enum TalkTarget {
@@ -136,14 +184,19 @@ fn talk_targets(w: &legaia_engine_core::world::World) -> Vec<(TalkTarget, (i16, 
 
 /// Stand the player where the action button opens target `n` (modulo the
 /// target count) and face it. Only a seat on the authored walk-visible
-/// floor is taken, so a target parked in the off-map hide box or standing
-/// outside the walls is skipped rather than reached by a seat no play
-/// produces. Returns the target seated at.
+/// floor that a walk could both leave and enter is taken, so a target parked
+/// in the off-map hide box, in a staging pen or outside the walls is skipped
+/// rather than reached by a seat no play produces. Returns the target seated
+/// at.
 ///
-/// An actor is faced from 64 units, where the probe point lands on its
-/// anchor. A prop's contact box is wider than the reach (±80 against 64),
-/// so it is faced from 128: the probe point is then 64 inside the box and
-/// the player stands outside it.
+/// An actor is faced from 112 units where it can be, else 96, else 64. The
+/// walk stops a face-on approach 104 short of a standing NPC (its body
+/// probe reaches 64 ahead into a ±40 box), so a 64-unit seat - where the
+/// probe point lands on the anchor - is mostly one no walk reaches; from 112
+/// the probe point is 48 short of the anchor, well inside the ±72 the
+/// action button tests. A prop's contact box is wider than the reach (±80
+/// against 64), so it is faced from 128: the probe point is then 64 inside
+/// the box and the player stands outside it.
 pub(super) fn seat_at_talk_target(session: &mut NativeSession, n: usize) -> Option<TalkTarget> {
     let w = &mut session.host.world;
     if w.mode != SceneMode::Field || w.script_context_engages_player() {
@@ -154,16 +207,20 @@ pub(super) fn seat_at_talk_target(session: &mut NativeSession, n: usize) -> Opti
         return None;
     }
     let (target, (ax, az)) = targets[n % targets.len()];
-    let reach: i16 = match target {
-        TalkTarget::Actor(_) => 1,
-        TalkTarget::Prop(_) => 2,
+    // Seat distances in quarters of the 64-unit probe reach, farthest first.
+    let reaches: &[i16] = match target {
+        TalkTarget::Actor(_) => &[7, 6, 4],
+        TalkTarget::Prop(_) => &[8],
     };
     let player = w.player_actor_slot? as usize;
     w.actors.get(player)?;
     // Cardinal sides first: a player talks face on far more than diagonally.
-    for sector in [4usize, 0, 2, 6, 1, 3, 5, 7] {
+    let seats = reaches
+        .iter()
+        .flat_map(|&q| [4usize, 0, 2, 6, 1, 3, 5, 7].map(|sector| (q, sector)));
+    for (q, sector) in seats {
         let (dx, dz) = FACING_PROBES[sector];
-        let (sx, sz) = (ax.saturating_sub(dx * reach), az.saturating_add(dz * reach));
+        let (sx, sz) = (ax.saturating_sub(dx * q / 4), az.saturating_add(dz * q / 4));
         if w.field_walk_component_size(sx, sz) < MIN_SEAT_COMPONENT {
             continue;
         }
@@ -180,7 +237,7 @@ pub(super) fn seat_at_talk_target(session: &mut NativeSession, n: usize) -> Opti
             Some(slot) => Some(TalkTarget::Actor(slot)),
             None => w.field_interact_prop_anchor().map(TalkTarget::Prop),
         };
-        if hit == Some(target) && seat_walks_out(w, sx, sz) {
+        if hit == Some(target) && seat_walks_out(w, sx, sz) && seat_walks_in(w, sx, sz) {
             return Some(target);
         }
         // Something else answers from this side: put the player back.
