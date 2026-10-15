@@ -192,7 +192,7 @@ One record per combatant, reached through `DAT_801C9370[slot]`. **Pool slots are
 | `+0x164` / `+0x166` | u16 | SPD. |
 | `+0x168` / `+0x16A` | u16 | INT. |
 | `+0x16E` | u16 | Status halfword ([bit map](battle-round-loop.md#the-0x16e-status-halfword---retail-writer-inventory)). |
-| `+0x1BA` | u16 | Death-tilt angle: copied to the draw node's `+0x7A`, where non-zero routes the mesh through `FUN_80029888` (tilt `* 16` about X and Z). Written by the boss hooks and Zenoir. |
+| `+0x1BA` | u16 | Mesh-effect amount: copied to the draw node's `+0x7A`, where non-zero routes the mesh through `FUN_80029888` (rotation `* 16` about X and Z, or a scale-down under a per-model flag). Written by the boss hooks and several summon modules (Gimard, Zenoir, Jedo). |
 | `+0x1BC..+0x1BE` | u8 x 3 | Damage-display bytes (monster init also stores the name length at `+0x1BC`). |
 | `+0x1DA` | u8 | Staged-animation channel ([`battle-actor-rendering.md`](battle-actor-rendering.md#one-staged-anim-channel-actor0x1da)). |
 | `+0x1DD` | u8 | Target slot of the committed action. |
@@ -399,7 +399,7 @@ Three slot-B summon ticks share one gate. Nighto and Aluru use it ahead of a rol
 | Summon | PROT | Sites | Extra |
 |---|---|---|---|
 | Nighto | 0907 | `0x801F6BF0` / `0x801F6C18` | The resist arm sets module word `0x801F853C`; the arm-13 fork reads it to abandon both the instant-death and the confuse outcome. |
-| Zenoir | 0908 | `0x801F81F0` / `0x801F8208` | Not a kill roll: the site runs only for an actor already at zero HP (`lhu v0,0x14c(a0)` / `bnez` at `0x801F81D0`) and gates an addition to its `+0x1BA`, the death tilt. It also tests the formation cell `_DAT_8007BD0C` against `0x4D` / `0xAD` / `0xAE` and excludes them (`0x801F8218..0x801F8230`) - monster ids 77, 173 and 174, the three Berserkers, which the `+0x20` byte does not cover. |
+| Zenoir | 0908 | `0x801F81F0` / `0x801F8208` | Not a kill roll: the site runs only for an actor already at zero HP (`lhu v0,0x14c(a0)` / `bnez` at `0x801F81D0`) and gates an addition to its `+0x1BA`, the mesh-effect amount. It also tests the formation cell `_DAT_8007BD0C` against `0x4D` / `0xAD` / `0xAE` and excludes them (`0x801F8218..0x801F8230`) - monster ids 77, 173 and 174, the three Berserkers, which the `+0x20` byte does not cover. |
 | Aluru | 0916 | `0x801F6D44` / `0x801F6D70` | - |
 
 Over 84 images with 113 materialisations of `0x801C9348`, exactly three loads at `+0x20` follow one, plus the model-upload site in PROT 0898 (the controls `+0x1F` and `+0x3E` return 12 and 1 at their known sites).

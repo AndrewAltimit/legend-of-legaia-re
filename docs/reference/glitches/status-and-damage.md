@@ -545,7 +545,7 @@ the test fails, and the summon rolls its ordinary kill chance.
 
 All three Berserker records are the same in this respect, and among the story bosses they are the
 only ones. A third summon shows the byte's blind spot was noticed somewhere: Zenoir uses the same
-test to keep its death presentation off bosses, and adds the three Berserker ids by hand. Nighto
+test to keep a visual effect off bosses, and adds the three Berserker ids by hand. Nighto
 and Aluru never received that list. Zenoir's list is about how a dead monster is drawn, not about
 damage, and nothing in the code says its author knew the kill rolls shared the gap.
 
@@ -575,13 +575,16 @@ damage, and nothing in the code says its author knew the kill rolls shared the g
    level 9. A landed Aluru always kills (`sh zero,0x14c(s3)` at `0x801F7E14`).
 4. **Zenoir's hand-written list.** PROT entry 0908 applies the same gate and then compares the
    first formation monster id with `0x4D`, `0xAD` and `0xAE` (`0x801F8218..0x801F8230`). Those are
-   77, 173 and 174: the three Berserkers. The loop (`0x801F81C8..0x801F8264`) visits only monster
-   seats already at zero HP and, past the gate and the list, adds a per-frame step to the actor's
-   `+0x1BA`. The battle anim tick `FUN_80047430` copies that word to the draw node's `+0x7A`
-   (`0x800480A4`), and a non-zero `+0x7A` sends the mesh through `FUN_80029888` (`0x80048FB8`),
-   which tilts the model by `+0x7A * 16` about X and Z. A monster Zenoir kills is tipped over as it
-   dies; a boss, whose fight ends in a scripted scene with its model still standing, is skipped. It
-   is a presentation exclusion and changes no damage.
+   77, 173 and 174: the three Berserkers. The loop (`0x801F81C8..0x801F8264`) is a later phase
+   than the damage (`FUN_801DD0AC` at `0x801F76CC`). It visits only monster seats already at zero
+   HP and, past the gate and the list, adds a per-frame step to the actor's `+0x1BA`. The battle
+   anim tick `FUN_80047430` copies that word to the draw node's `+0x7A` (`0x800480A4`), and a
+   non-zero `+0x7A` sends the mesh through `FUN_80029888` (`0x80048FB8`), which builds a rotation of
+   `+0x7A * 16` about X and Z and, under a per-model flag, a scale-down from the same value. Gimard
+   (`0x801F76B4`) and Jedo (`0x801F8730`) raise the same word on monsters they hit that are still
+   alive, so it is a summon hit effect, not a death animation. Why Zenoir leaves bosses and the
+   Berserkers out is not established, and the effect has not been watched in a running game. It
+   changes no damage.
 
 ### Addresses
 
@@ -596,7 +599,7 @@ damage, and nothing in the code says its author knew the kill rolls shared the g
 | `0x801F6D44`, `0x801F6D70` | PROT 0916 | Aluru's gate | disassembly |
 | `0x801F6DE4..0x801F6E1C` | PROT 0916 | Aluru's roll; resist word `0x80209010` | disassembly |
 | `0x801F7E14` | PROT 0916 | Aluru's kill store | disassembly |
-| `0x801F81F0..0x801F8230` | PROT 0908 | Zenoir's gate and Berserker id list (death tilt only) | disassembly |
+| `0x801F81F0..0x801F8230` | PROT 0908 | Zenoir's gate and Berserker id list (visual effect only) | disassembly |
 | `0x801F87DC`, `0x801F8814`, `0x801F8438` | PROT 0931 | Jedo: flag test, kill store (flag clear), rolled damage (flag set) | disassembly; capture on a forced Lapis formation with an injected cast |
 | `ctx[+0x287]` | RAM | Scripted-fight flag | disassembly |
 
