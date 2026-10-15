@@ -90,6 +90,7 @@ pub mod world_map_dim;
 pub mod world_map_entity;
 pub mod world_map_entity_config;
 pub mod world_map_horizon;
+pub mod world_map_markers;
 pub mod world_map_panel;
 pub mod world_map_panel_actors;
 pub mod world_map_panel_host;

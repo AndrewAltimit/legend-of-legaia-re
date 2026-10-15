@@ -102,8 +102,9 @@ a dependent crate.
   machines), `dev_menu_leaves`, `dev_menu_adjust`, `dev_menu_flags` (the
   EVENT FLAG editor kernels) and `dev_equip_commit`.
 - **World map** - `world_map_entity` (the entity state machine
-  `FUN_801DA51C`), `world_map_dim`, `world_map_horizon` and
-  `travel_art_actor` (Riremito and Rula).
+  `FUN_801DA51C`), `world_map_dim`, `world_map_horizon`,
+  `travel_art_actor` (Riremito and Rula) and `world_map_markers` (the port's
+  kind-coded entity / player markers and their screen quads; not retail).
 - **Script contexts** - `inline_dialogue` (the resumable state of an actor's
   inline interaction script) and `cutscene_timeline` (the spawned
   partition-2 record context); both hold a `legaia-engine-dialog` panel.
