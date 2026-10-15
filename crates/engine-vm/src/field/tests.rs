@@ -181,7 +181,7 @@ struct TestHost {
     n_d_sub_e_calls: std::cell::RefCell<Vec<u8>>,
     n_e_sub_1_text_calls: Vec<(Vec<u8>, u16)>,
     // Five 0x4C nC sub-ops + two 0x4C nE sub-ops.
-    n_c_sub_0_move_cancels: u32,
+    n_c_sub_0_phase_draws: u32,
     n_c_sub_0_active: bool,
     n_c_sub_3_teleports: u32,
     n_c_sub_d_queries: u32,
@@ -814,8 +814,8 @@ impl FieldActorHost for TestHost {
         self.n_d_sub6_acks += 1;
     }
 
-    fn cancel_active_move(&mut self, _ctx: &mut FieldCtx) -> bool {
-        self.n_c_sub_0_move_cancels += 1;
+    fn randomize_clip_phase(&mut self, _ctx: &mut FieldCtx) -> bool {
+        self.n_c_sub_0_phase_draws += 1;
         self.n_c_sub_0_active
     }
 

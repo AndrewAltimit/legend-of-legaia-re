@@ -3,6 +3,15 @@
 use super::*;
 
 impl<'a> FieldActorHost for FieldHostImpl<'a> {
+    // Op `4C C0` (arm `0x801E260C`): seat a placement's clip at a random
+    // phase - see [`World::randomize_npc_clip_phase`].
+    fn randomize_clip_phase(&mut self, ctx: &mut FieldCtx) -> bool {
+        match self.world.heading_owner(ctx) {
+            Some(HeadingOwner::Placement(slot)) => self.world.randomize_npc_clip_phase(slot),
+            _ => false,
+        }
+    }
+
     fn face_compass(&mut self, ctx: &mut FieldCtx, index: u8, player: bool) {
         Self::face_compass(self, ctx, index, player)
     }

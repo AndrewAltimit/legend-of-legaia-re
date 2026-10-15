@@ -294,20 +294,21 @@ pub trait FieldActorHost {
     /// (the dump exits via `goto LAB_801e00bc`).
     fn op4c_nd_sub6_field_74_ack(&mut self) {}
 
-    /// Op 0x4C outer-nibble-C sub-0 - cancel the active move-table animation.
+    /// Op 0x4C outer-nibble-C sub-0 - **randomise the clip phase**.
     ///
-    /// 2-byte instruction `[4C, 0xC0]`. The dispatcher dump (lines 6726-6732)
-    /// gates on `ctx.move_id > 0` (the actor's currently-playing move); if a
-    /// move is active, the original calls `func_0x800204F8(ctx)` (the move
-    /// VM's "cancel" entry - see [`docs/subsystems/move-vm.md`]).
+    /// 2-byte instruction `[4C, 0xC0]` (3 as the cross-context `CC <t> C0`).
+    /// The arm at `0x801E260C` reads the actor's move id `+0x5C`; when it is
+    /// positive it runs the move-table consumer `FUN_800204F8` (which binds
+    /// the clip a preceding `4C 51` / `A2` named, `+0x5E = +0x5C`,
+    /// `+0x68 = 0`), then draws one BIOS `rand()` (`FUN_80056798`) and seats
+    /// the frame cursor at `+0x68 = (rand() % frames) << 4`, `frames` being
+    /// the bound clip's halfword `+2` (`0x801E2624..0x801E2670`). `town0d`'s
+    /// festival crowd runs `CC <t> 51 .. <move>` then `CC <t> C0` per
+    /// villager, so the dancers do not move in lockstep.
     ///
-    /// `is_active` is the gate; the host should return `true` when the actor
-    /// has a move-table animation that should be cancelled. Default impl
-    /// returns `false`, so the cancel side-effect is skipped (safe fallback -
-    /// engines without a move VM never trigger the cancel).
-    ///
-    /// PC always advances by 2 (whether the move was cancelled or not).
-    fn cancel_active_move(&mut self, ctx: &mut FieldCtx) -> bool {
+    /// The return value says whether the arm drew. Default: no draw. PC
+    /// always advances by 2.
+    fn randomize_clip_phase(&mut self, ctx: &mut FieldCtx) -> bool {
         let _ = ctx;
         false
     }

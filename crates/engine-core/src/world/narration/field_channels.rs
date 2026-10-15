@@ -590,6 +590,7 @@ impl World {
         self.npcs.anim_cues.clear();
         self.npcs.clip_current.clear();
         self.npcs.clip_cursors.clear();
+        self.npcs.phase_draws.clear();
         self.npcs.clip_rate_live.clear();
         self.npcs.clip_bones.clear();
     }
