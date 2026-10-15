@@ -66,10 +66,14 @@ enum Want {
 /// Does the bag hold fewer HP restoratives than the [`HEAL_RESERVE`] the
 /// hand keeps for each present member (an errand's item aside)?
 pub(super) fn bag_short_of_heals(session: &NativeSession) -> bool {
-    use legaia_engine_menus::items::ItemEffect;
     let w = &session.host.world;
-    let held: u32 = w
-        .party
+    heals_held(w) < HEAL_RESERVE * w.present_party_list().len().clamp(1, 3) as u32
+}
+
+/// The HP restoratives in the bag, an errand's item aside.
+fn heals_held(w: &legaia_engine_core::world::World) -> u32 {
+    use legaia_engine_menus::items::ItemEffect;
+    w.party
         .inventory
         .iter()
         .filter(|&(&id, _)| {
@@ -79,8 +83,25 @@ pub(super) fn bag_short_of_heals(session: &NativeSession) -> bool {
                 })
         })
         .map(|(_, &n)| u32::from(n))
-        .sum();
-    held < HEAL_RESERVE * w.present_party_list().len().clamp(1, 3) as u32
+        .sum()
+}
+
+/// What the continuous hand sells at a counter whose stock sells a heal
+/// while the bag holds fewer than its [`HEAL_STOCK`]: the armament no member
+/// who has joined is better off wearing. A purse that cannot pay for the
+/// heals the next stretch is fought out of is what a stack of outgrown
+/// armour is for: the run reached Nivora's three solo duels with 26 000
+/// gold and a bag of old gear, and the only counter left (`doman`, Healing
+/// Berries at 3000) bought seven.
+fn heal_sale_gear(session: &NativeSession, sells_heal: bool) -> BTreeSet<u8> {
+    let w = &session.host.world;
+    if !continuous::PLAYS_ON.with(std::cell::Cell::get)
+        || !sells_heal
+        || heals_held(w) >= u32::from(HEAL_STOCK) * w.present_party_list().len().clamp(1, 3) as u32
+    {
+        return BTreeSet::new();
+    }
+    outgrown_gear(session, true)
 }
 
 /// The worth of a piece of equipment to the hand: the sum of its stat
@@ -139,7 +160,19 @@ fn next_want(menu: &MenuRuntime, w: &legaia_engine_core::world::World) -> Option
         return None;
     }
     // Healing: the stock row that restores the most HP per gold. An errand
-    // item is not a heal to buy: it is bought above, for the story.
+    // item is not a heal to buy: it is bought above, for the story. A full
+    // restore (`HealAll`: the Healing Berry, "Restores maximum HP") is worth
+    // a present member's maximum HP; `doman`'s counter, the last before
+    // Nivora's three solo duels, sells no other.
+    let full_restore: u32 = {
+        let party = w.present_party_list();
+        let maxes: Vec<u32> = party
+            .iter()
+            .filter_map(|&ch| w.party.roster.members.get(usize::from(ch)))
+            .map(|m| u32::from(m.hp_mp_sp().hp_max))
+            .collect();
+        (maxes.iter().sum::<u32>() / (maxes.len().max(1) as u32)).max(1)
+    };
     let heal_row = session
         .inventory
         .items
@@ -148,10 +181,12 @@ fn next_want(menu: &MenuRuntime, w: &legaia_engine_core::world::World) -> Option
         .filter(|(_, it)| !errands.iter().any(|e| e.0 == it.item_id))
         .filter_map(|(row, it)| {
             let e = w.tables.item_catalog.get(it.item_id)?;
-            let ItemEffect::Heal { amount } = e.effect else {
-                return None;
+            let amount = match e.effect {
+                ItemEffect::Heal { amount } => u32::from(amount),
+                ItemEffect::HealAll => full_restore,
+                _ => return None,
             };
-            (it.price > 0).then_some((row, it.item_id, it.price, u32::from(amount)))
+            (it.price > 0).then_some((row, it.item_id, it.price, amount))
         })
         .max_by_key(|&(row, _, price, amount)| (amount * 1000 / price, std::cmp::Reverse(row)));
     let heals_held: u32 = w
@@ -262,7 +297,7 @@ pub(super) fn surplus_gear(session: &NativeSession) -> BTreeSet<u8> {
     if !continuous::PLAYS_ON.with(std::cell::Cell::get) || !errand_gold_short(w) {
         return BTreeSet::new();
     }
-    outgrown_gear(session)
+    outgrown_gear(session, false)
 }
 
 /// What the bag's outgrown armament ([`surplus_gear`]'s pieces, whatever the
@@ -272,7 +307,7 @@ pub(super) fn outgrown_value(session: &NativeSession) -> i64 {
     let Some(prices) = w.shops.item_shop_data.as_ref() else {
         return 0;
     };
-    outgrown_gear(session)
+    outgrown_gear(session, false)
         .iter()
         .map(|&id| {
             i64::from(prices.price(id)) / 2
@@ -282,8 +317,10 @@ pub(super) fn outgrown_value(session: &NativeSession) -> i64 {
 }
 
 /// The armament pieces in the bag no present member is better off wearing
-/// ([`surplus_gear`] without its errand gate).
-fn outgrown_gear(session: &NativeSession) -> BTreeSet<u8> {
+/// ([`surplus_gear`] without its errand gate). With `joined`, no member who
+/// has joined the party either, present or not: what a heal sale may part
+/// with ([`heal_sale_gear`]).
+fn outgrown_gear(session: &NativeSession, joined: bool) -> BTreeSet<u8> {
     use legaia_engine_menus::equipment::EquipSlot;
     use legaia_game_tables::equip_stats::EquipSlot as Disc;
     let w = &session.host.world;
@@ -294,7 +331,14 @@ fn outgrown_gear(session: &NativeSession) -> BTreeSet<u8> {
     ) else {
         return out;
     };
-    let party = w.present_party_list();
+    let party: Vec<u8> = if joined {
+        (0..w.party.roster.members.len())
+            .filter(|&i| w.party.roster.members[i].hp_mp_sp().hp_max > 0)
+            .map(|i| i as u8)
+            .collect()
+    } else {
+        w.present_party_list()
+    };
     for (&id, &n) in w.party.inventory.iter() {
         let Some(entry) = info.entry(id) else {
             continue;
@@ -308,7 +352,7 @@ fn outgrown_gear(session: &NativeSession) -> BTreeSet<u8> {
             Disc::Head => EquipSlot::Helmet,
             Disc::Footwear => EquipSlot::Boot,
         };
-        let wanted = party.iter().take(3).any(|&ch| {
+        let wanted = party.iter().any(|&ch| {
             if !info.can_equip(id, ch) {
                 return false;
             }
@@ -472,7 +516,8 @@ pub(super) fn service_shop(session: &mut NativeSession) {
     }
     let trace = std::env::var_os("LEGAIA_FGL_TRACE").is_some();
     let restrictions = session.equip_restrictions.clone();
-    let sell = surplus_gear(session);
+    let mut sell = surplus_gear(session);
+    let heal_sale = heal_sale_gear(session, true);
     SHOP_MENU.with(|m| {
         let mut slot = m.borrow_mut();
         let menu = slot.get_or_insert_with(|| {
@@ -496,6 +541,20 @@ pub(super) fn service_shop(session: &mut NativeSession) {
         // The opening tick steps the screen on no edge, as both hosts do.
         let opened = menu.open_field_overlay_requests(w);
         let _ = menu.step_field_session(w, MenuRuntime::session_edge(opened, 0));
+        // A counter that sells a heal takes the outgrown armour of a bag
+        // short of its heal stock ([`heal_sale_gear`]).
+        let sells_heal = menu.shop_session.as_ref().is_some_and(|s| {
+            use legaia_engine_menus::items::ItemEffect;
+            s.inventory.items.iter().any(|it| {
+                it.price > 0
+                    && w.tables.item_catalog.get(it.item_id).is_some_and(|e| {
+                        matches!(e.effect, ItemEffect::Heal { .. } | ItemEffect::HealAll)
+                    })
+            })
+        });
+        if sells_heal {
+            sell.extend(heal_sale.iter().copied());
+        }
         let stock: Vec<String> = menu
             .shop_session
             .as_ref()
