@@ -43,6 +43,11 @@ thread_local! {
     /// staged fight on a walk-on band: [`worth_fighting`] then takes no
     /// random encounter.
     pub(super) static SAVING_FOR_BOSS: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    /// The scenes the current stretch's `continuous_via` names: story the
+    /// spine asks the run to finish there, so a story talk in another room
+    /// of one is crossed to ([`pad_far_talks`]), not only an errand's.
+    pub(super) static STORY_WAYPOINTS: std::cell::RefCell<BTreeSet<String>> =
+        const { std::cell::RefCell::new(BTreeSet::new()) };
 }
 
 /// Holds [`SAVING_FOR_BOSS`] for a scope and puts back what was there.
@@ -368,7 +373,14 @@ fn part_c_continuous_run() {
     let mut reloads = 0u32;
     let mut stall: Option<String> = None;
     'spine: for i in start..spine.len() - 1 {
-        let to = &spine[i + 1];
+        // The continuous run's own waypoints, where the spine gives them.
+        let mut to_run = spine[i + 1].clone();
+        STORY_WAYPOINTS.with(|w| w.borrow_mut().clear());
+        if let Some(v) = &to_run.continuous_via {
+            to_run.via = v.clone();
+            STORY_WAYPOINTS.with(|w| w.borrow_mut().extend(v.iter().cloned()));
+        }
+        let to = &to_run;
         // What the retail run had played by the next milestone and the one
         // after it: chapter 1's anchors come from several sessions, and a
         // stretch whose own anchor is another session's (the `ravine` state)
@@ -425,7 +437,9 @@ fn part_c_continuous_run() {
             attempt += 1;
             LOST_TO_ELEMENT.with(|l| l.set(None));
             let played = catch_unwind(AssertUnwindSafe(|| {
-                PAD_DEADLINE.with(|d| d.set(session.frames + PAD_SEGMENT_FRAMES));
+                let budget = PAD_SEGMENT_FRAMES + to.via.len() as u64 * PAD_SEGMENT_FRAMES / 4;
+                STRETCH_FRAMES.with(|f| f.set(budget));
+                PAD_DEADLINE.with(|d| d.set(session.frames + budget));
                 // This hand takes the fights it can win, so a stretch's
                 // battles run long past the fleeing hand's allowance.
                 PAD_BATTLE_LEFT.with(|l| l.set(4 * PAD_BATTLE_ALLOWANCE));
@@ -517,6 +531,8 @@ fn part_c_continuous_run() {
     }
 
     PLAYS_ON.with(|p| p.set(false));
+    STORY_WAYPOINTS.with(|w| w.borrow_mut().clear());
+    STRETCH_FRAMES.with(|f| f.set(PAD_SEGMENT_FRAMES));
     TARGET_LEVELS.with(|t| t.borrow_mut().clear());
     PLAYED_AHEAD.with(|a| *a.borrow_mut() = None);
     reset_errands();

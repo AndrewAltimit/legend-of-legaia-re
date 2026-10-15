@@ -123,11 +123,13 @@ A milestone may also name `via` scenes: story waypoints the anchors show the ret
 | Zora Castle | `nilboa` (its own start scene), then `deene` and `son` | Koru's fight thaws the overworld's way south ([route notes](#route-notes)). |
 | Noaru Valley | `chitei2` (its own start scene), then `concend`, `jou` and `retockin` | `chitei2`'s chain ends on the `0x4C8` that opens the `map03` portal to `concend`; the way back from Drake was by land and cart, not the Uru Mais warp. |
 | Sol Tower | `dohaty` (its own start scene) | Its P2[13] sets the `0x1D4` every `station` placement, the ticket seller among them, waits on. |
-| Sol Tower B2 | `koin2`, `koin4`, `koin2` | The [Sage's Gate errand](#an-errand-the-story-waits-on): the chests in `koin2`, the bread in `koin4`, then the chests again. |
+| Sol Tower B2 | `kor5` (its own start scene), then `koin2`, `koin4`, `koin2` | Gaza's first fight on Sol's roof ([route notes](#sol-tower)), then the [Sage's Gate errand](#an-errand-the-story-waits-on): the chests in `koin2`, the bread in `koin4`, then the chests again. |
 | Zeto's dungeon | `vozz` (its own start scene) | A run that walks in from Drake arrives at `vozz`'s east mouth and can walk straight back out to `map01`, on the side `garmel`'s door is not; the way on is the Genesis Tree beat (`vozz` P1[7]), whose flight lands by `bylon`. |
 | Sky Gardens | `garmel` (its own start scene) | `garmel`'s transport pads join the Songi band to the `map01` door, so the cheapest route leaves the dungeon; the story's way out is the Zeto fight (`garmel` P2[12], `0x198`). |
 | Ratayu | `retona` (its own start scene) | A run that arrives at Mt. Letona's trailhead has reached the `mt_letona` milestone on its first step and would turn round; the anchor gained the summit chain (`0x354`..`0x357`, `0x367`). |
 | Dohati Castle | `retock` (its own start scene), then `jagaroom` twice | Ratayu's west gate (`retock` P2[27]) turns the party back until `0x33E` is set. `jagaroom`'s entry script raises it only once Eliza's scene (`retock` P2[33], `0x33C`), the talk `jagaroom` P1[8] (`0x351`), the door cutscene `jagaroom` P2[8] (`0x33B`) and the return `jagaroom` P2[9] (`0x34F`) have played in that order. |
+
+A milestone may instead name `continuous_via`: the waypoints part C plays in place of `via`, where a seeded segment starts past the story or its seated hand cannot play it. Dr. Usha's research and Nivora are its case, the chain the [Nivora route notes](#nivora) list: `korb3`, `map03`, `koin2` for the first (Sol's stone maze and Gaza's second fight, the Genesis Tree, Etora's password), and `doman`, Uru Mais and its three dreams, and `doman` again for the second. The run plays the chain to Nivora, but Gaza's second fight goes its way on about half the tries, and on the default stream not once in six, so the two lines stand commented out in the spine until it is won reliably.
 
 A waypoint whose own arrival script carries the party on counts as visited: `concend`'s P2[0] is its beat, and it ends in the hop to `town0d`. One that carries it straight back to the scene it came from was a stay, not a visit: `jiji`'s inn sleeps the party over in `ropeway`, whose arrival cutscene returns it to `jiji`. Part A checks every waypoint is a disc scene.
 
@@ -380,9 +382,53 @@ script's `0x4C8` hand-off tests, and no record on the disc sets it.
   system flag (`urudre3` P2[0] raises `0x3F4`, on which `uru`'s entry script
   plays the waking).
 
+- **A story talk in another room is crossed to.** At a waypoint, a story
+  talk outside the player's walk component is reached by a round trip
+  through a neighbouring scene that lands on its side, errand talks first
+  ([below](#an-errand-the-story-waits-on)): `koin2` P1[19], Emperor Etora,
+  gives the password from the throne room at (20, 9), off another `kor` door.
+
 What it still does not do: sell outside an errand, use magic outside
 battle, or leave the cheapest route for a chest that sets no flag an anchor
 carries.
+
+### A maze of stones and closers
+
+`korb3`'s maze ([route notes](#sol-tower)) and the two box tests on the way
+to Nivora set four rules the continuous hand plays by:
+
+- **It opens a gate only from where it can walk.** A gate stone (a prop
+  whose touch clears walls, `4C 70`) is examined from a tile beside it that
+  the walk reaches from where the party stands, so the maze opens gate by
+  gate from the hall the party arrives in; a stone it cannot reach waits
+  for a round in which an opened gate leads to it. Other props are examined
+  from any side, as the segmented passes do. A seat beside the tile the
+  prop's centre lies on counts too, walked up to until the facing probe
+  reaches it (`korb3` P0[3] is examined from the corridor at (47, 31)). A
+  stone whose walls are all clear already is left alone: it would only arm
+  the band on the near side, which walls the gate up in front of a party
+  walking through. A walk that a prop's box holds a few units off the
+  corridor's centre line, where the tile's centre is clear, steps back onto
+  the line instead of pressing on (the follower's dead band otherwise
+  ignores so small an offset; P0[3] stops a walk 8 units west of it).
+- **A closer is no beat and no obstacle.** A walk-on record that raises no
+  system flag, lowers one the next anchor carries and walls tiles up
+  (`4C 71`; `korb3` P2[4..13]) is never walked as a beat, and a walk may
+  cross one: the bands one step past each gate stand on the only way
+  through it. A band that lowers a flag without walling anything keeps the
+  ordinary rules (`rikuroa`'s terrace hops).
+- **A box test reads the actor's own tile.** A script's `CD` box test
+  compares `(x - 0x40) >> 7`, half a tile off the dispatch tile a walk
+  arrives in, so the hand steps onto the box tile's middle. `doman` P1[18],
+  Dr. Usha's intercom, runs its password exchange (the code lock, then
+  `0x36E` and the lift's `0x371`) for a player standing in (40..41, 81). A
+  box record whose only raise is a flag the scene lowers again (the lift)
+  is stood in only while a story talk waits in another walk component.
+- **A box held by a member.** When the entry script tests a named member's
+  actor on the same box as the leader's (`nilboa`'s `CD 31`), that member
+  takes control and walks in, and control passes on until a leader stands
+  who can walk to the talk; the talk's actor is read again after every swap,
+  since the swap's own record moves it.
 
 ### An errand the story waits on
 
@@ -472,8 +518,9 @@ looks in again before it leaves the scene once one of them has come down.
 
 ### Budget
 
-A stretch has the pad segment's walking budget, and four times its battle
-allowance: this hand takes the fights it can win, so a stretch's battles
+A stretch has the pad segment's walking budget, a quarter of it again for
+each waypoint (the stretch to Nivora has eight: `doman` twice, Uru Mais
+three times and its three dreams), and four times its battle allowance: this hand takes the fights it can win, so a stretch's battles
 run long past the fleeing hand's. Its hop budget counts hops only: a
 scene's arrival pass and the scripted rides its rests and outings come back
 on (`retock`'s inn plays the dream and returns) are bounded by the frame
@@ -1358,8 +1405,9 @@ Scene-specific facts the route and the pad hand depend on. Each is a property of
   somewhere else counts as played: the split cutscene `P2[0]` runs from the
   entrance band `P2[29]` (`44 4E`), and walking its own band afterwards
   sent every member across the map, the Fire Ravine member re-dressing the
-  boulder room (`P2[26]`, gated on nothing) across the way another member
-  needs, which only `P2[27]` (dead while `0x00D` is up) re-opens. A band no member can walk to stays on the beat list: a later
+  boulder room (`P2[26]`) across the way another member needs, which only
+  `P2[27]` re-opens. Both have C1 `0x00D` and C2 `0x457`: live once the
+  boulders are pushed and the party is whole again. A band no member can walk to stays on the beat list: a later
   beat may open the way, as the warp at the end of a tunnel (`P2[39]`)
   drops its member into the `P2[2]` pocket. The boulders `P1[13]` /
   `P1[14]` stay pushed (`0x457`) across `P2[27]`'s `4C C3` re-seats
@@ -1411,6 +1459,27 @@ Scene-specific facts the route and the pad hand depend on. Each is a property of
   whose C1 gate is `0x426`: once that is set the band is floor. A hop's
   hazard set holds only the doors whose records the live flags let spawn,
   so a spent beat's band does not wall off the corridor it lies in.
+- Gaza's first fight is on `kor5`, after the `sol_tower` anchor and before
+  `sol_tower_b2`'s: P2[3] at (32, 43) raises `0x43A`, P2[4] at (32, 41)
+  raises `0x464` and stages monster 165, the scene's reload hands `0x464` to
+  P2[5], which raises `0x436`, and P2[8] at (32, 86) raises `0x6C4`. `korb3`'s
+  second fight waits on `0x436`, so `kor5` is the stretch's first waypoint.
+- `korb3`, under Sol, is a stone maze. Its entry script walls up seven
+  gates while `0x403` is clear (`4C 71`); each of the stones P0[3..9],
+  P0[23], P0[24] holds itself shut at spawn and, examined, raises its flag
+  (`0x43E..0x444`, `0x45C`, `0x459`) and clears one gate (`4C 70`), two
+  stones per gate where the gate is on the way in. A band one step past each
+  gate (P2[5..13]) walls it up again behind the party and clears the
+  stone's flag; P2[4] at the hall's door resets them all. The two switches
+  P0[18] (37, 37) and P0[21] (37, 18) raise `0x41C` / `0x41B`, on which the
+  entry script clears the centre (34..40, 24..30), and P2[2] at (36, 21) -
+  C2 `0x41B`, `0x41C` and `kor5`'s `0x436` - stages Gaza's second fight
+  (formation 15, monster 166). Its hand-off P2[3] raises `0x511`, on which
+  `map03`'s entry script plays P2[11] (the Genesis Tree, `0x403`).
+  The hand plays the maze from where the party stands
+  ([below](#a-maze-of-stones-and-closers)); with `0x403` up every stone's
+  spawn pass raises its flag at once, the arrival burst the retail captures
+  show.
 
 ### Nivora
 
@@ -1420,16 +1489,21 @@ Scene-specific facts the route and the pad hand depend on. Each is a property of
   unpushed. `P1[13]` / `P1[14]` push only while `0x4F2` is up, and
   `nilboa`'s entry script raises it each pass that the leader or member
   `0x31` stands in the box `(53..55, 62..64)` clear of the sub-boxes its
-  `4C E4` tests exclude, and lowers it otherwise.
+  `4C E4` tests exclude, and lowers it otherwise. Each leader swap ends in
+  P2[17], which re-dresses the boulder room by the incoming leader's ravine:
+  Fire Ravine (`0x010`) seats the boulders at (49, 65) / (51, 65), Wind
+  Ravine (`0x011`) parks them at (127, 127), Thunder Ravine (`0x012`) leaves
+  them. So member 1 walks into the box, control passes on to member 0
+  (through member 2), and the Fire Ravine leader pushes while member 1's
+  actor holds the flag up ([below](#a-maze-of-stones-and-closers)).
 - `P2[32]`'s C2 gate is `0x370`, which Dr. Usha (`doman` P1[15]; P1[2]
   is a developer flag menu) raises in the lab, a walk component below the
   street the `map03` door lands on. The `usha_research` and `nivora`
   milestones are both reached on arrival, so the story between them is all
   waypoint play, and the retail anchors carry it as one chain:
-  1. `korb3`, Sol's lower floors: its P2[3] raises `0x511`, on which
-     `map03`'s entry script spawns P2[11], which raises `0x403` and returns
-     the party to `korb3`. `korb3`'s own story is a switch puzzle (P0[3..9]
-     raise `0x43E..0x444`; P2[2] waits on `0x41B`, `0x41C` and `0x436`).
+  1. `korb3`, Sol's lower floors ([Sol Tower](#sol-tower)): Gaza's second
+     fight P2[2] hands off to P2[3], which raises `0x511`, on which `map03`'s
+     entry script spawns P2[11], which raises `0x403`.
   2. `koin2` P1[19], Emperor Etora, stands at (127, 127) until `0x403` is
      up; his talk raises `0x36D`, the password.
   3. `doman` P1[18], the intercom, asks for it (`49 02`, then `0x36E`) and
@@ -1445,9 +1519,9 @@ Scene-specific facts the route and the pad hand depend on. Each is a property of
      to `uru` becomes `uru2`).
   5. `doman` again: Usha's `0x36F` branch raises `0x370`.
 
-  The hand plays steps 3 to 5 from the `usha_research` anchor (spine vias
-  `doman`, `uru`, `urudre1`, `uru`, `urudre2`, `uru`, `urudre3`, `doman`);
-  a run of its own stops at step 1, so those vias are not in the spine yet.
+  The continuous run plays the chain as the two milestones' `continuous_via`
+  ([the spine](#the-spine)), with those lines commented out while Gaza's
+  second fight is a coin toss for it.
 
 ### Overworld and dungeon joins
 

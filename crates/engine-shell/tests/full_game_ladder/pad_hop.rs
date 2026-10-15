@@ -403,6 +403,12 @@ thread_local! {
     /// `NativeSession::frames` at which the current pad segment's budget runs
     /// out.
     pub(super) static PAD_DEADLINE: std::cell::Cell<u64> = const { std::cell::Cell::new(u64::MAX) };
+    /// The current stretch's walking budget: [`PAD_SEGMENT_FRAMES`], and a
+    /// quarter of it again for each of a continuous stretch's waypoints.
+    /// The stretch from Dr. Usha's research to Nivora has eight - `doman`
+    /// twice, Uru Mais three times and its three dreams - and spent the
+    /// plain budget in the third dream.
+    pub(super) static STRETCH_FRAMES: std::cell::Cell<u64> = const { std::cell::Cell::new(PAD_SEGMENT_FRAMES) };
 }
 
 /// Frames of battle a pad segment may spend beyond [`PAD_SEGMENT_FRAMES`].
@@ -421,7 +427,10 @@ thread_local! {
 /// `Err` once the pad segment's frame budget is spent.
 pub(super) fn pad_budget(session: &NativeSession) -> Result<(), String> {
     if pad_hand() && session.frames >= PAD_DEADLINE.with(std::cell::Cell::get) {
-        Err(format!("pad frame budget ({PAD_SEGMENT_FRAMES}) spent"))
+        Err(format!(
+            "pad frame budget ({}) spent",
+            STRETCH_FRAMES.with(std::cell::Cell::get)
+        ))
     } else {
         Ok(())
     }

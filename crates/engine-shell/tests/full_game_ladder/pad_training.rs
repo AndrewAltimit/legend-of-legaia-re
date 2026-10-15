@@ -236,7 +236,7 @@ pub(super) fn pad_train(
         }
         other => other,
     };
-    PAD_DEADLINE.with(|d| d.set(session.frames + PAD_SEGMENT_FRAMES));
+    PAD_DEADLINE.with(|d| d.set(session.frames + STRETCH_FRAMES.with(std::cell::Cell::get)));
     PAD_BATTLE_LEFT.with(|l| l.set(PAD_BATTLE_ALLOWANCE));
     r
 }

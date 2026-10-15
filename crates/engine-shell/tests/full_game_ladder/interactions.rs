@@ -20,6 +20,7 @@ pub(super) fn talk_to(session: &mut NativeSession, slot: u8) -> Run {
         session,
         (nx, nz),
         &|w: &legaia_engine_core::world::World| w.field_interact_probe_slot() == Some(slot),
+        false,
     )
 }
 
@@ -27,11 +28,25 @@ pub(super) fn talk_to(session: &mut NativeSession, slot: u8) -> Run {
 /// retail `FUN_801CFC40` result bit `1`): the same stand-beside, face and
 /// press-Cross approach as a talk, aimed so the prop arm of the facing probe
 /// (`FUN_801CF9F4`) lands on its contact box.
-pub(super) fn examine_prop(session: &mut NativeSession, anchor: (u8, u8), at: (i32, i32)) -> Run {
+///
+/// `walked`: stand only on seats the walk reaches from where the player
+/// stands ([`interact_seats`]) - the continuous hand's gate stones.
+pub(super) fn examine_prop(
+    session: &mut NativeSession,
+    anchor: (u8, u8),
+    at: (i32, i32),
+    walked: bool,
+) -> Run {
     let pos = (at.0 as i16, at.1 as i16);
-    interact_at(session, pos, &|w: &legaia_engine_core::world::World| {
-        w.field_interact_probe_slot().is_none() && w.field_interact_prop_anchor() == Some(anchor)
-    })
+    interact_at(
+        session,
+        pos,
+        &|w: &legaia_engine_core::world::World| {
+            w.field_interact_probe_slot().is_none()
+                && w.field_interact_prop_anchor() == Some(anchor)
+        },
+        walked,
+    )
 }
 
 /// The approach [`talk_to`] and [`examine_prop`] share: from each tile
@@ -41,26 +56,42 @@ pub(super) fn interact_at(
     session: &mut NativeSession,
     (nx, nz): (i16, i16),
     hits: &dyn Fn(&legaia_engine_core::world::World) -> bool,
+    walked: bool,
 ) -> Run {
     let (bx, bz) = player_xz(session);
-    let (tx, tz) = tile_of(nx, nz);
-    let claimed = claimed_tiles(session);
     let mut last = Run::Released;
-    for (dx, dz) in [(-1i16, 0i16), (1, 0), (0, -1), (0, 1)] {
-        let (sx, sz) = (tx + dx, tz + dz);
-        if !(0..128).contains(&sx)
-            || !(0..128).contains(&sz)
-            || claimed.contains(&(sx as u8, sz as u8))
-        {
-            continue;
-        }
+    for (sx, sz, extra) in interact_seats(session, (nx, nz), walked) {
         session.host.world.set_pad(0);
         session.host.world.seat_player_at_tile(sx as u8, sz as u8);
         // The one compass sector whose probe point lands in the NPC's box.
-        let facing = (0..8u8).find(|&d| {
+        let mut facing = (0..8u8).find(|&d| {
             session.host.world.face_player_sector(d);
             hits(&session.host.world)
         });
+        // Out of the probe's reach from a seat beside the target's own tile,
+        // the continuous hand walks up against it first, as a player does:
+        // the `korb3` gate stones' boxes end exactly where the probe from
+        // the corridor's centre line reaches.
+        if facing.is_none() && extra {
+            let (px, pz) = player_xz(session);
+            let pad = pad_for_step(session, (nx - px).signum(), (nz - pz).signum());
+            for _ in 0..24 {
+                let at = player_xz(session);
+                session.host.world.set_pad(pad);
+                if session.tick().is_err() {
+                    break;
+                }
+                if player_xz(session) == at {
+                    break;
+                }
+            }
+            session.host.world.set_pad(0);
+            let _ = session.tick();
+            facing = (0..8u8).find(|&d| {
+                session.host.world.face_player_sector(d);
+                hits(&session.host.world)
+            });
+        }
         let Some(_) = facing else {
             continue;
         };
@@ -128,6 +159,62 @@ pub(super) fn interact_at(
         restore_player_xz(session, (bx, bz));
     }
     last
+}
+
+/// The tiles [`interact_at`] stands on to reach the target at `(nx, nz)`:
+/// each side of the seat grid's tile for it, then (continuous hand) each
+/// side of the tile its centre lies on, when that differs - `korb3` P0[3],
+/// the gate stone at (46, 31), is examined from the corridor at (47, 31),
+/// and two sides of (45, 30) are walls whose seat faces the stone and posts
+/// no examine. A tile another body claims is left out.
+///
+/// With `walked`, only the seats the walk can reach from where the player
+/// stands. `korb3`'s stones each open a gate across the maze; a stone
+/// examined from a seat the party cannot walk to opened gates in an order no
+/// player could, and the band behind the first gate shut it again in the
+/// party's face.
+pub(super) fn interact_seats(
+    session: &NativeSession,
+    (nx, nz): (i16, i16),
+    walked: bool,
+) -> Vec<(i16, i16, bool)> {
+    let (tx, tz) = tile_of(nx, nz);
+    let claimed = claimed_tiles(session);
+    let sides = [(-1i16, 0i16), (1, 0), (0, -1), (0, 1)];
+    let mut seats: Vec<(i16, i16, bool)> = sides
+        .iter()
+        .map(|&(dx, dz)| (tx + dx, tz + dz, false))
+        .collect();
+    let continuous = continuous::PLAYS_ON.with(std::cell::Cell::get);
+    if continuous {
+        let (cx, cz) = dispatch_tile(nx, nz);
+        for (dx, dz) in sides {
+            let s = (cx as i16 + dx, cz as i16 + dz, true);
+            if !seats.iter().any(|t| (t.0, t.1) == (s.0, s.1)) {
+                seats.push(s);
+            }
+        }
+    }
+    seats.retain(|&(sx, sz, _)| {
+        (0..128).contains(&sx) && (0..128).contains(&sz) && !claimed.contains(&(sx as u8, sz as u8))
+    });
+    if walked && session.host.world.mode == SceneMode::Field {
+        let (px, pz) = player_xz(session);
+        let here = dispatch_tile(px, pz);
+        let avoid = pad_avoid(session, None);
+        seats.retain(|&(sx, sz, _)| {
+            let seat = (sx, sz);
+            let end = plan_path(session, cell_of(px, pz), seat, &avoid)
+                .and_then(|p| p.last().copied())
+                .map(|c| {
+                    let (x, z) = cell_center(c);
+                    dispatch_tile(x, z)
+                });
+            (i32::from(seat.0), i32::from(seat.1)) == here
+                || end == Some((i32::from(seat.0), i32::from(seat.1)))
+        });
+    }
+    seats
 }
 
 /// Put the player back on the exact spot it stood before an interaction.

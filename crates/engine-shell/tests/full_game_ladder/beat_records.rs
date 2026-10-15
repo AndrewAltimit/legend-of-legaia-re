@@ -33,6 +33,16 @@ pub(super) fn box_poll_beats(
         .map(|s| s.flag)
         .collect();
     let sets1 = walk_partition_gflag_sites(mf, man, 1);
+    // A flag the scene lowers again is a ride's, not the story's: `doman`'s
+    // intercom raises `0x371` to call the lift, P2[3] sends it back up. The
+    // box is stood in for one only while a story talk waits in a walk
+    // component the ride reaches - Dr. Usha's lab, once `0x36F` has given
+    // her talk something to say.
+    let lowered: BTreeSet<u16> = (0..3)
+        .flat_map(|p| walk_partition_gflag_sites(mf, man, p))
+        .filter(|s| s.bank == FlagBank::System && s.kind == FlagKind::Clear && s.clean)
+        .map(|s| s.flag)
+        .collect();
     let n1 = mf.partitions.get(1).map_or(0, Vec::len);
     let mut out = Vec::new();
     for rec in 1..n1 {
@@ -61,7 +71,9 @@ pub(super) fn box_poll_beats(
                 && !s.text_alias
                 && !s.debug_menu
                 && !w.system_flag_test(s.flag)
-                && (next_anchor_has(s.flag) || tested2.contains(&s.flag))
+                && (next_anchor_has(s.flag)
+                    || (tested2.contains(&s.flag)
+                        && (!lowered.contains(&s.flag) || !far_talk_tiles(session).is_empty())))
         });
         if !worth || x1 < x0 || z1 < z0 || usize::from(x1 - x0) * usize::from(z1 - z0) > 16 {
             continue;
@@ -74,19 +86,25 @@ pub(super) fn box_poll_beats(
     out
 }
 
+/// [`talk_box_gate`]'s answer: the flag, the box's tiles and the member
+/// whose own box test sits beside the leader's.
+pub(super) type TalkBox = (u16, Vec<(i16, i16)>, Option<u8>);
+
 /// A talk whose story branch waits on a flag the scene's entry script
 /// (P1[0]) raises for a party member standing in a box: the flag, and the
-/// tiles of the last player-channel `BBoxTest` ahead of the raise. `nilboa`
-/// P1[13] / P1[14], the Three Tunnels' boulders, push (`0x457`) only while
-/// `0x4F2` is up, which the entry script raises while the leader or member
-/// `0x31` stands in (53..55, 62..64) - not where the boulders are talked
-/// to from. `None` when the talk tests no such flag, or it is up.
+/// tiles of the last player-channel `BBoxTest` ahead of the raise, and the
+/// party member (`0x30 + n` channel) the script tests on the same box, if
+/// any. `nilboa` P1[13] / P1[14], the Three Tunnels' boulders, push
+/// (`0x457`) only while `0x4F2` is up, which the entry script raises while
+/// the leader or member `0x31` stands in (53..55, 62..64) - not where the
+/// boulders are talked to from. `None` when the talk tests no such flag, or
+/// it is up.
 pub(super) fn talk_box_gate(
     session: &NativeSession,
     mf: &legaia_scene_formats::man_section::ManFile,
     man: &[u8],
     slot: u8,
-) -> Option<(u16, Vec<(i16, i16)>)> {
+) -> Option<TalkBox> {
     use legaia_engine_field::man_field_scripts::{
         FlagBank, partition_record_span, walk_partition_gflag_sites,
     };
@@ -136,7 +154,22 @@ pub(super) fn talk_box_gate(
             let tiles = (z0..=z1)
                 .flat_map(|z| (x0..=x1).map(move |x| (i16::from(x), i16::from(z))))
                 .collect();
-            Some((t.flag, tiles))
+            // The member whose own box test sits beside the leader's: the
+            // one that holds the flag up once control has moved on.
+            let holder = entry.iter().find_map(|i| match (i.extended, &i.info) {
+                (
+                    Some(ch @ 0x30..=0x32),
+                    InsnInfo::BBoxTest {
+                        x_min,
+                        z_min,
+                        x_max,
+                        z_max,
+                        ..
+                    },
+                ) if (*x_min, *z_min, *x_max, *z_max) == bx => Some(ch - 0x30),
+                _ => None,
+            });
+            Some((t.flag, tiles, holder))
         })
 }
 
