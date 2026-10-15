@@ -511,6 +511,7 @@ impl World {
             // A shot the last pass handed the camera and no camera step
             // took is that pass's; this pass re-arms its own.
             self.battle.spell_cam = None;
+            self.battle.sm_ran_state = Some(self.battle_ctx.action_state);
             self.step_battle()
         } else {
             StepOutcome::Stay

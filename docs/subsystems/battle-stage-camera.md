@@ -1153,14 +1153,44 @@ their measured per-vsync clock. Three couplings had to follow the cadence:
   rung is no coin;
 - the module ticks above.
 
-On those terms the headless corpus mostly rises (`camera`: the
-`super_queue_replace_*` captures `.968` to `.986`, `rim_elm_gimard_victory`
-`.992` to `1.0`, `cort_mystic_shield_mid_cast` `.976` to `.992`). The frames
-fall on many battle captures (`noa_levelup_fight_pre` `.817` to `.494`,
-`super_queue_replace_*` `.744` to `.618`, `nighto_summon_mid_cast` `.984` to
-`.910`): the drives, phase gates and displayed-frame retakes count engine
-ticks and were tuned against the per-vsync SM. The toggle stays off until
-they are re-tuned.
+Two more follow from where retail's framing calls sit, and are in place on
+that cadence:
+
+- **The camera frames the state the pass ran.** `FUN_801D5854` and the
+  cast-effect driver are called from inside the state body, so a pass arms the
+  shot of the state it ran and the state it stores is framed by the next pass.
+  The engine's camera observes the action state at its edges
+  (`BattleCamera::observe_action_state`), so on retail's cadence it is fed the
+  state the last pass entered with (`World::battle_camera_state`). Outside the
+  summon and capture bands (`0x32..=0x37`, `0x6E..=0x71`), whose shots the
+  per-vsync modules arm, this holds.
+- **The camera steps on the pass.** The walker and the arms run in the same
+  frame, so the camera's step is put on the tick that opens a battle frame
+  (`BattleCamera::sync_step_phase`). The summon module band `0x35` / `0x36`
+  is the exception again.
+
+The retail-compare seed also stands the acting seat on its captured heading
+for a capture before the attack band's first face store, on that cadence
+only. On the per-vsync cadence the seed's arm is never walked.
+
+Measured with `LEGAIA_BATTLE_FRAME_CADENCE=1`, the corpus rises where the
+seed's arm and the swing's strike loop are filmed. `super_queue_replace_*`
+reads `camera` `1.0` and `image` `.927` (from `.968` / `.744`), and
+`rim_elm_gimard_seru_capture_after` `image` `.857` (from `.805`). Rows still
+fall, each for a cause the drives cannot re-tune away:
+
+| Capture | Falls | Cause |
+|---|---|---|
+| `noa_levelup_fight_pre` | `camera` `.981` to `.943`, `image` `.817` to `.492` | the replayed round draws its rolls at the pass cadence, and on the drive's stream the struck Gobu Gobu takes a knockdown (clips `4` / `5`) where it reeled before; the stream is the seed search's, not retail's |
+| `gimard_burning_attack`, `theeder` / `nighto` / `swordie` / `freed` summon casts, `flute_spikefish_midcast` | `camera` `.989` to `.960`; frames by `.02` to `.13` | the summon modules still tick once a vsync (their countdowns drain a per-vsync constant, `MODULE_DRAIN_PER_TICK`), so their shot arms and effect spins land between passes; retail runs them inside the pass with `scalar * delta` drains |
+| `cort_evolved_final_crisis_mid_cast`, `zeto_call_wave_mid_cast` | `camera` `.999` to `.992`, `.995` to `.994` | the same, for the capture module's per-vsync tick |
+| `rim_elm_gimard_victory`, `battle_melee_hit_spark` | `image` `.909` to `.798`, `.691` to `.652` | the strike's hit-spark rays are timed against the swing's clip, which the pass cadence moves by a vsync |
+
+Gating every drive on the tick that closes a battle frame (the only instant a
+retail RAM can hold) was tried and lost several phases outright. Gates such as
+a clip age or a hold window are met for a single tick, and that tick need not
+close a frame. So the gates keep their per-tick predicates. The toggle stays
+off until the modules take the frame delta.
 
 The cast modules keep their per-vsync passes. Run once a battle frame with
 every drain, drift and ramp scaled by the step (retail's own shape), they

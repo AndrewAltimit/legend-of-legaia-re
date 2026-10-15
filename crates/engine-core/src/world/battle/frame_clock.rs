@@ -75,6 +75,13 @@ impl BattleFrameClock {
     }
 }
 
+impl BattleFrameClock {
+    /// How many display ticks into its battle frame `tick` falls.
+    pub fn ticks_into_frame(&self, tick: u64) -> u64 {
+        tick.saturating_sub(self.origin_tick) % u64::from(self.step.max(1))
+    }
+}
+
 impl World {
     /// The battle frame the current tick falls in
     /// ([`BattleFrameClock::frame_of`] at `display_frames`).
@@ -213,6 +220,22 @@ impl World {
         true
     }
 
+    /// The action state the battle camera frames. Retail's framing calls
+    /// (`FUN_801D5854`, the cast-effect driver) sit inside the state body, so
+    /// a pass arms the shot of the state it **ran** and the state it stores
+    /// is framed by the next pass: the seed `0x0C` arms case 6 on the `0x800`
+    /// rung and only then stores `0x14` and `0x200` (`0x801E2D50`,
+    /// `0x801E2F20`). On retail's cadence the camera therefore follows the
+    /// state the last pass ran; on the per-vsync cadence the live state.
+    pub fn battle_camera_state(&self) -> u8 {
+        let live = self.battle_ctx.action_state;
+        if self.toggles.battle_sm_frame_cadence && !matches!(live, 0x32..=0x37 | 0x6E..=0x71) {
+            self.battle.sm_ran_state.unwrap_or(live)
+        } else {
+            live
+        }
+    }
+
     /// The SM's `frame_dt` (`DAT_1F800393`): the frame step when the SM runs
     /// once a battle frame, one vsync when it runs every tick.
     pub(in crate::world) fn battle_sm_frame_dt(&self) -> i16 {
@@ -256,6 +279,36 @@ mod tests {
         w.toggles.battle_sm_frame_cadence = false;
         assert!(w.battle_sm_pass_due() && w.battle_sm_pass_due());
         assert_eq!(w.battle_sm_frame_dt(), 1);
+    }
+
+    /// On retail's cadence the camera frames the state the last pass ran -
+    /// the seed `0x0C` arms its own shot before it stores `0x14` - except
+    /// in the module bands, whose shots the modules arm; on the per-vsync
+    /// cadence it frames the live state.
+    #[test]
+    fn the_camera_frames_the_state_the_last_pass_ran() {
+        let mut w = World::new();
+        w.battle.sm_ran_state = Some(0x0C);
+        w.battle_ctx.action_state = 0x14;
+        assert_eq!(w.battle_camera_state(), 0x14);
+        w.toggles.battle_sm_frame_cadence = true;
+        assert_eq!(w.battle_camera_state(), 0x0C);
+        w.battle_ctx.action_state = 0x35;
+        assert_eq!(w.battle_camera_state(), 0x35);
+    }
+
+    #[test]
+    fn ticks_into_frame_counts_from_the_step_origin() {
+        let mut c = BattleFrameClock::default();
+        assert_eq!(
+            (10..14).map(|t| c.ticks_into_frame(t)).collect::<Vec<_>>(),
+            [0, 1, 0, 1]
+        );
+        c.set_step(7, 3);
+        assert_eq!(
+            (7..11).map(|t| c.ticks_into_frame(t)).collect::<Vec<_>>(),
+            [0, 1, 2, 0]
+        );
     }
 
     #[test]

@@ -290,6 +290,24 @@ impl RetailBattle {
         {
             *t = false;
         }
+        // The acting seat itself, on a capture taken before the attack band's
+        // first face store (state `0x14` recomputes `+0x46` from the target
+        // bearing, `0x801E3078..0x801E3088`): its heading is the one its
+        // last turn left, which the replayed prompt does not restore, and the
+        // seed's case-6 arm subtracts it (`super_queue_replace_*`: `34`).
+        // Only on the SM's retail cadence: on the per-vsync cadence the
+        // seed's arm is never walked, so the heading it subtracts reaches no
+        // frame and the seat keeps the engine's.
+        if legaia_engine_core::world::WorldToggles::new().battle_sm_frame_cadence
+            && matches!(self.seed_plan(), SeedPlan::Action { .. })
+            && self.action_state <= 0x14
+            && let Some(a) = spent.get_mut(usize::from(engine_seat(
+                self.active_actor,
+                self.party_count,
+            )))
+        {
+            *a = true;
+        }
         let ground = self.seeded_ground();
         let pc = usize::from(self.party_count);
         for (s, o) in out.iter_mut().enumerate() {
