@@ -19,7 +19,8 @@
 //!
 //! Skips (and passes) when `LEGAIA_DISC_BIN` / `extracted/` are missing.
 
-use legaia_engine_core::camera_view::{FieldCameraFrame, resolve_field_camera};
+use legaia_engine_core::camera_view::resolve_field_camera;
+use legaia_engine_field::camera_frame::FieldCameraFrame;
 use legaia_engine_field::fog_particles::{FOG_CAP_RAISED, FOG_CLUT, FOG_OVERWORLD_LIFT, FOG_TPAGE};
 use legaia_engine_mode::mode::SceneMode;
 use legaia_engine_session::native::NativeSession;

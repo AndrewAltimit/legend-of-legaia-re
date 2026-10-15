@@ -249,7 +249,7 @@ fn rung2b_map_display(w: &mut World) -> Result<(), String> {
     }
     if !matches!(
         legaia_engine_core::camera_view::map_display_frame(w),
-        Some(legaia_engine_core::camera_view::FieldCameraFrame::WorldMapDisplay { .. })
+        Some(legaia_engine_field::camera_frame::FieldCameraFrame::WorldMapDisplay { .. })
     ) {
         return Err("the display did not take the camera".into());
     }

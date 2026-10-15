@@ -6,10 +6,10 @@
 //! it" reading gets backwards.
 
 use legaia_engine_camera::psx_camera::CutsceneCameraInterp;
-use legaia_engine_core::camera_view;
 use legaia_engine_core::field_occlusion;
 use legaia_engine_core::world::World;
 use legaia_engine_field::camera::Camera;
+use legaia_engine_field::camera_frame;
 use legaia_engine_field::field_events::FieldEvent;
 use legaia_engine_menus::save_select::{SelectPhase, phase_layout};
 use legaia_engine_mode::mode::SceneMode;
@@ -104,13 +104,13 @@ fn snap_component_decode_matches_the_cutscene_view_slot_map() {
 #[test]
 fn nclip_cull_mode_arms_for_the_field_pass_and_non_overworld_cutscenes() {
     use SceneMode::*;
-    assert_eq!(camera_view::nclip_cull_mode(false, Field), 2);
-    assert_eq!(camera_view::nclip_cull_mode(true, Field), 2);
-    assert_eq!(camera_view::nclip_cull_mode(true, Cutscene), 2);
-    assert_eq!(camera_view::nclip_cull_mode(true, WorldMap), 0);
-    assert_eq!(camera_view::nclip_cull_mode(false, WorldMap), 0);
-    assert_eq!(camera_view::nclip_cull_mode(false, Battle), 0);
-    assert_eq!(camera_view::nclip_cull_mode(false, Dance), 2);
+    assert_eq!(camera_frame::nclip_cull_mode(false, Field), 2);
+    assert_eq!(camera_frame::nclip_cull_mode(true, Field), 2);
+    assert_eq!(camera_frame::nclip_cull_mode(true, Cutscene), 2);
+    assert_eq!(camera_frame::nclip_cull_mode(true, WorldMap), 0);
+    assert_eq!(camera_frame::nclip_cull_mode(false, WorldMap), 0);
+    assert_eq!(camera_frame::nclip_cull_mode(false, Battle), 0);
+    assert_eq!(camera_frame::nclip_cull_mode(false, Dance), 2);
 }
 
 /// The debug orbit steers the SAME field the follow camera reads, is not

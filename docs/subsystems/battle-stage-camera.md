@@ -397,7 +397,7 @@ leaf `FUN_80043DD4`). So copy A, and copy B under the half turn, are back-face
 culled; the mirrored copy B draws both sides. The two backdrop nodes of
 `nivora_duel_pre_megaton_press` read `+0x74 = 0`, one with `+0x5A = 2`.
 
-The port draws every battle mesh both-sided (`camera_view::nclip_cull_mode` is
+The port draws every battle mesh both-sided (`camera_frame::nclip_cull_mode` is
 `0` in battle). On that capture the difference is invisible: the shell's
 `0x7640` additive group, which no retail packet of the frame carries, covers no
 pixel of the port's frame either.

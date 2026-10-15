@@ -499,7 +499,7 @@ mod tests {
         w.load_field_region_tables(&[], &zone_table);
 
         let mut c = Camera::default();
-        c.render_yaw_bias = crate::camera_view::retail_field_render_yaw_bias();
+        c.render_yaw_bias = legaia_engine_field::camera_frame::retail_field_render_yaw_bias();
         c.reset_globals_for_scene_entry();
         w.tick();
         c.tick(&w);

@@ -68,7 +68,7 @@ fn native_path(disc: &str) -> Vec<(i32, i32)> {
     .expect("enter field live");
     let options = legaia_engine_menus::options::OptionsState::default();
     s.camera.distance = options.camera_distance;
-    s.camera.render_yaw_bias = legaia_engine_core::camera_view::retail_field_render_yaw_bias();
+    s.camera.render_yaw_bias = legaia_engine_field::camera_frame::retail_field_render_yaw_bias();
     let mut path = Vec::new();
     for t in 1..=TICKS {
         s.host.world.set_pad(pad_at(t));

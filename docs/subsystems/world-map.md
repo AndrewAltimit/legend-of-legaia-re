@@ -1643,7 +1643,7 @@ about the focus globals `0x80089118/20`). The scale rides retail's rotation
 matrix, so the view builder's MVMVA of `-focus` scales the world about the
 focus, not the player: the two coincide on a plain walk and part where a
 record moves the focus off the player, as the credits' `map01` walk-away
-does. `camera_view::world_map_walk_view` is the fallback pose for
+does. `camera_frame::world_map_walk_view` is the fallback pose for
 a world with no field terrain loaded. Oracle:
 `crates/parity/tests/world_map_zone_camera_oracle.rs` enters each
 library overworld state's scene, seats the player on the state's position and
@@ -2676,7 +2676,7 @@ Each entity is a kind-coded upright post plus a base cross (portals cyan,
 NPCs green, encounter zones red); the player is a taller white-yellow post
 with a facing tick, drawn only while the party leader's mesh is missing. The
 kernel projects every segment through the resolved frame's
-`camera_view::frame_vp` and emits one-pixel-wide quads on the 320x240 display
+`camera_frame::frame_vp` and emits one-pixel-wide quads on the 320x240 display
 for the shared screen-primitive pass (`screen_prim::world_map_marker_prim`).
 
 The entity markers are off by default

@@ -14,7 +14,8 @@
 //!
 //! Skips (and passes) when `LEGAIA_DISC_BIN` / `extracted/` are missing.
 
-use legaia_engine_core::camera_view::{FieldCameraFrame, resolve_field_camera};
+use legaia_engine_core::camera_view::resolve_field_camera;
+use legaia_engine_field::camera_frame::FieldCameraFrame;
 use legaia_engine_field::fog_particles::{
     FOG_CAP_DEFAULT, FOG_CLUT, FOG_LEFT_UV_ROW, FOG_RIGHT_UV_ROW, FOG_TPAGE, FOG_UV_ROWS,
 };

@@ -15,9 +15,9 @@
 
 use legaia_render_kernels::world_map_sky::{SKY_DIM_FLAG, SkySprite, sky_band_sprites};
 
-use crate::camera_view::FieldCameraFrame;
 use crate::world::World;
 use legaia_engine_field::camera::Camera;
+use legaia_engine_field::camera_frame::FieldCameraFrame;
 use legaia_engine_mode::mode::SceneMode;
 
 /// This frame's sky sprites, or none outside the overworld walk / timeline

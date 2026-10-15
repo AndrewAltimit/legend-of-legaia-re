@@ -22,7 +22,7 @@
 //! set through the same pass, and the native window's line pipeline is no
 //! longer needed for it.
 //!
-//! The projection is the frame's own: [`camera_view::frame_vp`] at the
+//! The projection is the frame's own: [`camera_frame::frame_vp`] at the
 //! display's 4:3 aspect, composed with the one world flip that takes the raw
 //! retail Y-down marker position into that matrix's Y-up render frame.
 //!
@@ -39,8 +39,9 @@
 //! lies on. The top-view debug camera has no retail eye and keeps drawing
 //! the markers over everything.
 
-use crate::camera_view::{self, FieldCameraFrame};
 use crate::world::{World, WorldMapEntityKind, WorldMapEntityMarker, WorldMapPlayerMarker};
+use legaia_engine_field::camera_frame;
+use legaia_engine_field::camera_frame::FieldCameraFrame;
 
 /// PSX display width the quads are authored in.
 pub const DISPLAY_W: f32 = 320.0;
@@ -203,7 +204,7 @@ pub fn marker_segments(world: &World, draw_player: bool) -> Vec<MarkerSegment> {
 
 /// Project raw Y-down world points through a Y-up `vp` onto the display,
 /// bent down by the overworld curvature at `curve` (the frame's
-/// `clip.w`-to-`SZ` factor, [`crate::camera_view::frame_curve_scale`];
+/// `clip.w`-to-`SZ` factor, [`legaia_engine_field::camera_frame::frame_curve_scale`];
 /// `0` is flat) plus the table's build offset `bias`
 /// ([`crate::world::World::overworld_curve_bias`]) - the bend the hosts'
 /// mesh shaders give the continent the marker stands on. `None` behind the
@@ -247,7 +248,7 @@ pub fn segment_quad(vp: &[f32; 16], s: &MarkerSegment) -> Option<MarkerQuad> {
 }
 
 /// [`segment_quad`] with the corners' scene depth, sampled toward `eye` (the
-/// frame's raw Y-down world eye, [`camera_view::frame_eye`]); `eye = None`
+/// frame's raw Y-down world eye, [`camera_frame::frame_eye`]); `eye = None`
 /// leaves the quad depth-free. `curve` is the overworld bend's scale (see
 /// [`project`]).
 pub fn segment_quad_depth(
@@ -307,12 +308,12 @@ pub fn marker_quads(
     if matches!(frame, FieldCameraFrame::Cutscene(_)) {
         return Vec::new();
     }
-    let Some(vp) = camera_view::frame_vp(frame, aabb, DISPLAY_W / DISPLAY_H) else {
+    let Some(vp) = camera_frame::frame_vp(frame, aabb, DISPLAY_W / DISPLAY_H) else {
         return Vec::new();
     };
-    let eye = camera_view::frame_eye(frame);
+    let eye = camera_frame::frame_eye(frame);
     let curve = (
-        crate::camera_view::frame_curve_scale(world.overworld_bit(), frame),
+        legaia_engine_field::camera_frame::frame_curve_scale(world.overworld_bit(), frame),
         world.overworld_curve_bias().unwrap_or(0),
     );
     marker_segments(world, draw_player)
@@ -344,7 +345,7 @@ mod tests {
     #[test]
     fn player_marker_projects_on_screen_under_the_walk_camera() {
         let w = world_map_world();
-        let frame = camera_view::resolve_field_camera(
+        let frame = crate::camera_view::resolve_field_camera(
             &w,
             &legaia_engine_field::camera::Camera::default(),
             None,
@@ -367,7 +368,7 @@ mod tests {
     #[test]
     fn no_player_marker_when_the_host_draws_the_mesh() {
         let w = world_map_world();
-        let frame = camera_view::resolve_field_camera(
+        let frame = crate::camera_view::resolve_field_camera(
             &w,
             &legaia_engine_field::camera::Camera::default(),
             None,
@@ -425,7 +426,7 @@ mod tests {
     #[test]
     fn walk_camera_quads_carry_scene_depth() {
         let w = world_map_world();
-        let frame = camera_view::resolve_field_camera(
+        let frame = crate::camera_view::resolve_field_camera(
             &w,
             &legaia_engine_field::camera::Camera::default(),
             None,
@@ -433,8 +434,8 @@ mod tests {
         );
         let quads = marker_quads(&w, &frame, AABB, true);
         assert!(!quads.is_empty());
-        let vp = camera_view::frame_vp(&frame, AABB, DISPLAY_W / DISPLAY_H).unwrap();
-        let eye = camera_view::frame_eye(&frame).unwrap();
+        let vp = camera_frame::frame_vp(&frame, AABB, DISPLAY_W / DISPLAY_H).unwrap();
+        let eye = camera_frame::frame_eye(&frame).unwrap();
         for q in &quads {
             let d = q.depth.expect("walk frame quads are depth-tested");
             assert!(d.iter().all(|z| (0.0..=1.0).contains(z)), "{d:?}");

@@ -23,7 +23,7 @@ fn loaded_runtime() -> Option<LegaiaRuntime> {
 
 /// Free-roam field arms retail's NCLIP rejection (mode `2`): retail culls the
 /// back faces of every field mesh (`FUN_80043390`'s mask - see
-/// `camera_view::nclip_cull_mode`). This used to assert `0`, the port's old
+/// `camera_frame::nclip_cull_mode`). This used to assert `0`, the port's old
 /// both-sided free roam, which let korout's and retona's sky domes paint
 /// their outer shells over the scene. The opening prologue's scripted shot
 /// arms it too.

@@ -20,7 +20,8 @@
 //! where the effect atlas page `0x27` the fog cells live on is resident from
 //! field entry (`upload_effect_textures_into_vram`).
 
-use legaia_engine_core::camera_view::{FieldCameraFrame, resolve_field_camera};
+use legaia_engine_core::camera_view::resolve_field_camera;
+use legaia_engine_field::camera_frame::FieldCameraFrame;
 use legaia_engine_mode::mode::SceneMode;
 use legaia_render_kernels::screen_prim::{ScreenPrim, fog_puff_prim};
 use wasm_bindgen::prelude::wasm_bindgen;

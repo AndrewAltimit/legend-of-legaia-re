@@ -143,7 +143,7 @@ pub const CURVATURE_REACHABLE: usize = (0xFFFF >> 5) + 1;
 
 /// The screen-Y bend, in PSX stage rows, the curvature adds to a vertex whose
 /// clip-space `w` is `clip_w` under a frame with `scale` from
-/// `legaia_engine_core::camera_view::frame_curve_scale` - the CPU twin of the shaders' per-vertex term, for
+/// `legaia_engine_field::camera_frame::frame_curve_scale` - the CPU twin of the shaders' per-vertex term, for
 /// the screen-space draws that must land on the bent ground (the overworld
 /// markers). `bias` is the table's build offset ([`REBUILD_BIAS`] once the
 /// map display has rebuilt it, else `0`), which a flat table (`scale` `0`)

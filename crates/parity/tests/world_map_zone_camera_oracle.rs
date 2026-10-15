@@ -23,9 +23,10 @@
 
 use std::path::PathBuf;
 
-use legaia_engine_core::camera_view::{FieldCameraFrame, resolve_field_camera};
+use legaia_engine_core::camera_view::resolve_field_camera;
 use legaia_engine_core::scene_host::SceneHost;
 use legaia_engine_field::camera::Camera;
+use legaia_engine_field::camera_frame::FieldCameraFrame;
 use legaia_mednafen::SaveState;
 use legaia_ram_image::ScenarioManifest;
 use legaia_ram_image::game_anchors;

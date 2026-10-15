@@ -229,10 +229,10 @@ fn overworld_fog_and_continent_draw_in_retail_bucket_order() {
     };
     // The hosts draw the overworld through the walk frame, which composes
     // the 6x world scale about the player into its matrix
-    // (`camera_view::world_map_walk_vp`); the fog projects through the `1x`
+    // (`camera_frame::world_map_walk_vp`); the fog projects through the `1x`
     // field view of the same pose and scales its depths onto that frame
     // (`World::field_fx_view`).
-    let scale = legaia_engine_core::camera_view::WORLD_MAP_WORLD_SCALE;
+    let scale = legaia_engine_field::camera_frame::WORLD_MAP_WORLD_SCALE;
     let walk_view = FieldCameraView {
         focus: [0.0; 3],
         tr_eye: view.tr_eye.map(|c| c * scale),

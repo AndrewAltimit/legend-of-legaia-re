@@ -295,7 +295,7 @@ impl PlayWindowApp {
         // on-screen view exactly - including after a left-mouse drag-orbit.
         self.session.camera.distance = self.options_state.camera_distance;
         self.session.camera.render_yaw_bias =
-            legaia_engine_core::camera_view::retail_field_render_yaw_bias();
+            legaia_engine_field::camera_frame::retail_field_render_yaw_bias();
         // The options' simulation knobs (precise movement, Field Move - pause
         // menu Walk / Run, retail config word 0x800846CC, which the run BUTTON
         // inverts per frame, see `World::field_run_active` - reduce flashing,

@@ -746,7 +746,7 @@ impl Renderer {
     /// overworld prim leaves add the depth-indexed entry to each vertex's
     /// `SY`, so the continent falls away over the horizon. `sz_scale` is the
     /// frame's `clip.w`-to-`SZ` factor
-    /// (`legaia_engine_core::camera_view::frame_curve_scale`); `0.0`
+    /// (`legaia_engine_field::camera_frame::frame_curve_scale`); `0.0`
     /// (the default) is the identity, which every scene but the kingdom
     /// overworld (retail's overworld bit `_DAT_1F800394 & 1`) keeps.
     pub fn set_overworld_curvature(&self, sz_scale: f32) {

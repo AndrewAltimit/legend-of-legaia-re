@@ -359,7 +359,7 @@ Retail never draws a field scene's whole map: the render library walks only the 
 
 So the knob defaults on and the policy lifts it off retail framing: every frame at the retail vantage (including every `retail-compare` capture) is cropped as retail crops it, and every enhanced frame draws the map whole.
 
-`CameraDistance::Far` is the interactive `play-window` default (1.35x retail's eye-back distance); `CameraDistance::Retail` is the pinned retail framing and the type's own `Default`. The wheel zoom and drag tilt pivot the pose about the **character's body** (`camera_view::FOLLOW_PIVOT_LIFT` above the feet), not about retail's floor-level focus - which sits a tier under the feet in `town01` and would walk the character out of frame. The tilt clamp is widened to include the scene's own pitch, and both knobs at identity return the retail pose bit for bit.
+`CameraDistance::Far` is the interactive `play-window` default (1.35x retail's eye-back distance); `CameraDistance::Retail` is the pinned retail framing and the type's own `Default`. The wheel zoom and drag tilt pivot the pose about the **character's body** (`camera_frame::FOLLOW_PIVOT_LIFT` above the feet), not about retail's floor-level focus - which sits a tier under the feet in `town01` and would walk the character out of frame. The tilt clamp is widened to include the scene's own pitch, and both knobs at identity return the retail pose bit for bit.
 
 ### Every minigame must be leavable
 

@@ -19,7 +19,9 @@
 //! (the field follow camera).
 
 use crate::runtime::LegaiaRuntime;
-use legaia_engine_core::camera_view::{self, FieldCameraFrame};
+use legaia_engine_core::camera_view;
+use legaia_engine_field::camera_frame;
+use legaia_engine_field::camera_frame::FieldCameraFrame;
 use legaia_engine_mode::mode::SceneMode;
 use wasm_bindgen::prelude::*;
 
@@ -131,7 +133,7 @@ impl LegaiaRuntime {
             FieldCameraFrame::WorldMapTopView { .. } => self.scene_aabb(),
             _ => ([0.0; 3], [0.0; 3]),
         };
-        let vp = camera_view::frame_vp(&frame, aabb, aspect);
+        let vp = camera_frame::frame_vp(&frame, aabb, aspect);
         self.engine_camera = vp.map(|m| (m, frame));
         vp.map(|m| m.to_vec()).unwrap_or_default()
     }
@@ -143,7 +145,7 @@ impl LegaiaRuntime {
     /// vantage).
     pub fn play_camera_eye(&mut self) -> Vec<f32> {
         let frame = self.resolve_camera_frame();
-        camera_view::frame_eye(&frame)
+        camera_frame::frame_eye(&frame)
             .map(|e| e.to_vec())
             .unwrap_or_default()
     }
@@ -191,7 +193,7 @@ impl LegaiaRuntime {
 
     /// This frame's retail GTE **NCLIP** winding-rejection mode for the
     /// scene pass - the word the page hands `TmdRenderer.setNclipCull`, from
-    /// the shared [`camera_view::nclip_cull_mode`] the native window's
+    /// the shared [`camera_frame::nclip_cull_mode`] the native window's
     /// `Renderer::set_backface_cull` call also reads. `2` for the field pass
     /// and for a cutscene camera on any other non-overworld mode; `0`
     /// otherwise, which is both-sided drawing.
@@ -200,13 +202,13 @@ impl LegaiaRuntime {
             .scene_host
             .host()
             .map_or(SceneMode::Title, |h| h.world.mode);
-        camera_view::nclip_cull_mode(self.cutscene_owns_frame(), mode)
+        camera_frame::nclip_cull_mode(self.cutscene_owns_frame(), mode)
     }
 
     /// This frame's retail per-primitive near reject for the scene pass -
     /// the `[enable, sz_per_w, ot_shift, near_otz]` word the page hands
     /// `TmdRenderer.setPrimNear` (the GLSL `u_prim_near`), from the shared
-    /// [`camera_view::prim_near_cut`] the native window's
+    /// [`camera_frame::prim_near_cut`] the native window's
     /// `Renderer::set_prim_near_reject` call also reads. `retail_camera` is
     /// `false` under the page's debug camera, which retail never had.
     pub fn play_render_prim_near(&self, retail_camera: bool) -> Vec<f32> {
@@ -215,8 +217,8 @@ impl LegaiaRuntime {
             .host()
             .map_or(SceneMode::Title, |h| h.world.mode);
         legaia_render_kernels::prim_near_reject::shader_params(
-            camera_view::prim_near_cut(mode, retail_camera),
-            camera_view::prim_gpu_span_h(
+            camera_frame::prim_near_cut(mode, retail_camera),
+            camera_frame::prim_gpu_span_h(
                 mode,
                 retail_camera,
                 self.scene_host.camera().globals.0[9] as f32,
@@ -245,7 +247,7 @@ impl LegaiaRuntime {
     /// This frame's overworld-curvature scale for the scene pass - the
     /// `clip.w`-to-`SZ` factor the page hands `TmdRenderer.setOverworldCurve`
     /// (the GLSL `u_curve`), from the shared
-    /// `legaia_engine_core::camera_view::frame_curve_scale` the
+    /// `legaia_engine_field::camera_frame::frame_curve_scale` the
     /// native window's `Renderer::set_overworld_curvature` call also reads.
     /// `0` (flat) off the kingdom overworld and under the top-view debug
     /// camera. A query, not a step: it resolves the frame's **arm** without
@@ -268,7 +270,7 @@ impl LegaiaRuntime {
             .then(|| camera_view::cutscene_view(world, centre));
         let frame =
             camera_view::resolve_field_camera(world, self.scene_host.camera(), cutscene, centre);
-        legaia_engine_core::camera_view::frame_curve_scale(true, &frame)
+        legaia_engine_field::camera_frame::frame_curve_scale(true, &frame)
     }
 
     /// The overworld curvature table's build offset for the scene pass, in
@@ -401,7 +403,7 @@ impl LegaiaRuntime {
             });
         let frame =
             camera_view::resolve_field_camera(world, self.scene_host.camera(), None, centre);
-        let out = match (pos, camera_view::frame_vp(&frame, aabb, aspect)) {
+        let out = match (pos, camera_frame::frame_vp(&frame, aabb, aspect)) {
             (Some(p), Some(m)) => {
                 // Column-major 4x4: row 1 is the Y row, row 3 the W row.
                 let cy = m[1] * p[0] + m[5] * p[1] + m[9] * p[2] + m[13];
@@ -425,7 +427,7 @@ impl LegaiaRuntime {
     /// `9` (town01's names `500`), so the value is a per-frame output.
     pub fn play_camera_gte_h(&self) -> f32 {
         match self.scene_host.camera().globals.h() {
-            0 => camera_view::FIELD_H,
+            0 => camera_frame::FIELD_H,
             v => v as f32,
         }
     }

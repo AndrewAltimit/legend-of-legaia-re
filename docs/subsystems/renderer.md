@@ -2029,7 +2029,7 @@ is double-sided. A retail `first_town_interactive` capture agrees: no drawn
 actor carries the bit.
 
 The port arms the rejection through one kernel both hosts read,
-`camera_view::nclip_cull_mode`:
+`camera_frame::nclip_cull_mode`:
 
 | Pass | Cull |
 |---|---|
@@ -2093,7 +2093,7 @@ Both hosts reproduce the cut in their mesh vertex stage through one kernel,
 corners (a split quad's two triangles share one record; a vertex two
 primitives weld is never rejected); the stage computes the same integer
 `OTZ` from the draw's matrix and parks a rejected primitive's corners outside
-the clip volume. `camera_view::prim_near_cut` picks the shift per pass -
+the clip volume. `camera_frame::prim_near_cut` picks the shift per pass -
 field and battle only, never under the debug orbit. The native renderer
 stages it with `Renderer::set_prim_near_reject`, the play page with
 `TmdRenderer.setPrimNear`.
@@ -2111,7 +2111,7 @@ between the eye and the caster.
 
 Both hosts run the span test in the same vertex stage as the near reject
 (`prim_near_reject::gpu_span_rejected`, the WGSL `prim_sxy` and the GLSL
-`primSxy`), armed in battle and on the field (`camera_view::prim_gpu_span_h`:
+`primSxy`), armed in battle and on the field (`camera_frame::prim_gpu_span_h`:
 the battle camera's `H = 256`, the field camera's own `_DAT_8007B6F4`, riding
 the parameters' enable lane). A split quad is dropped only when both halves
 exceed the limit. On the field it keeps `rim_elm_queen_bee_battle`'s frame

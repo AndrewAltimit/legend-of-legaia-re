@@ -25,6 +25,7 @@ pub mod actor_look;
 pub mod ambient_emitter;
 pub mod camera;
 pub mod camera_ease;
+pub mod camera_frame;
 pub mod camera_rig;
 pub mod camera_zone;
 pub mod clut_cell_fx;

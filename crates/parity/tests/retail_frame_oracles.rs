@@ -410,7 +410,7 @@ fn retail_field_camera_is_not_three_constants() {
     for m in &maps {
         assert_eq!(
             f32::from(m.1),
-            legaia_engine_core::camera_view::WORLD_MAP_H,
+            legaia_engine_field::camera_frame::WORLD_MAP_H,
             "{}: the overworld GTE H is the pinned one",
             m.0
         );
@@ -436,7 +436,7 @@ fn retail_field_camera_is_not_three_constants() {
     let hits = |want: f32, f: fn(&&(String, i16, i16, i16, i16)) -> i16| {
         fields.iter().filter(|r| f32::from(f(r)) == want).count()
     };
-    use legaia_engine_core::camera_view as cv;
+    use legaia_engine_field::camera_frame as cv;
     eprintln!(
         "[ok] {n} non-overworld walkable states: FIELD_H={} holds {}/{n}, \
          FIELD_PITCH_UNITS={} holds {}/{n}, FIELD_FOLLOW_YAW_UNITS={} holds {}/{n}; \

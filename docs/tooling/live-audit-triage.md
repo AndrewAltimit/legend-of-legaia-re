@@ -1650,7 +1650,7 @@ reach the address; the verdict is what the call site supports.
 | `80050e74` `halt_part_actor` / `flush_part_actor_pool` | `REPLACE` | 89 `jal`s, all in the stager overlays PROT 0911..0969; `World::tick_summon` drops the whole `SummonScene` once it finishes, so no seat outlives the cast |
 | `801d0748` `timed_fight_turns_left` | held | the gate and the draw are one `FUN_8003541C` registration (key `1`, `288 x 12` at `(16, 14)`) plus two digit records; the actor's teardown and its precedence over the plaque on the same seat are not pinned, and no capture holds the Koru fight |
 | `8003bc08` `rotate_toward_clamped` | wired | every placement carries `0x20000`, so `FUN_8003BC08`'s height arm rewrites each visible placement's Y every tick; `World::tick_field_npc_heights` runs the glide arm through it, behind the visibility cull `world::field_npc_cull` (`FUN_801D79E8`) |
-| `8001cf50` / `800461a4` / `8004638c` | `REPLACE` | the hosts compose the same `Rx·Ry·Rz` in `glam` f32 (`camera_view::frame_vp`, the native `psx_camera_mvp`); the q3.12 product differs only by retail's `1/4096` quantisation and no parity oracle shows it on a frame, so the finer product stays the default and these owe no host |
+| `8001cf50` / `800461a4` / `8004638c` | `REPLACE` | the hosts compose the same `Rx·Ry·Rz` in `glam` f32 (`camera_frame::frame_vp`, the native `psx_camera_mvp`); the q3.12 product differs only by retail's `1/4096` quantisation and no parity oracle shows it on a frame, so the finer product stays the default and these owe no host |
 
 ### The minigame and field-actor remainder, re-read
 
