@@ -169,6 +169,18 @@ pub(super) fn pad_field_restore(session: &mut NativeSession, threshold: u32, mp:
     if !walking(session) || !released(session) || gauge(session) >= threshold {
         return 0;
     }
+    // The continuous hand heals with spells first, out of the MP above half
+    // of each caster's pool (the rest is for the fights), and with all of it
+    // once the bag holds no restorative: the run met Koru (`nilboa`, a
+    // 20000-HP race) with an empty bag, two members near death and a full
+    // set of Spoons unspent.
+    let mut spells = 0;
+    if plays_on && !mp {
+        spells = pad_field_spell_heal(session, threshold, true);
+        if gauge(session) >= threshold {
+            return spells;
+        }
+    }
     if plays_on {
         let w = &session.host.world;
         let holds_heal = w.party.inventory.iter().any(|(&id, &n)| {
@@ -180,7 +192,12 @@ pub(super) fn pad_field_restore(session: &mut NativeSession, threshold: u32, mp:
                     .is_some_and(|e| e.usable_in_field && restores(&e.effect))
         });
         if !holds_heal {
-            return 0;
+            return spells
+                + if mp {
+                    0
+                } else {
+                    pad_field_spell_heal(session, threshold, false)
+                };
         }
     }
     open_pause_menu(session);
@@ -316,7 +333,181 @@ pub(super) fn pad_field_restore(session: &mut NativeSession, threshold: u32, mp:
             }
         );
     }
-    used
+    used + spells
+}
+
+/// The heal cast worth making from the field Magic screen, as
+/// `(caster row, spell id)`: among the present casters' field-usable healing
+/// spells they can pay for (keeping half their MP when `keep_half`), the one
+/// that restores the most HP across the party's actual deficits - a group
+/// heal counts every member's, a single heal the worst-off member's.
+fn field_heal_cast(
+    s: &legaia_engine_menus::spell_menu::SpellMenuSession,
+    keep_half: bool,
+) -> Option<(usize, u8)> {
+    use legaia_engine_battle::spells::SpellEffect;
+    let deficits: Vec<u32> = s
+        .targets()
+        .iter()
+        .filter(|t| t.alive())
+        .map(|t| u32::from(t.hp_max.saturating_sub(t.hp)))
+        .collect();
+    let worst = deficits.iter().copied().max().unwrap_or(0);
+    let mut best: Option<(u32, usize, u8)> = None;
+    for (row, c) in s.party().iter().enumerate() {
+        if !c.alive() || c.ra_seru_missing {
+            continue;
+        }
+        for &id in &c.spells {
+            let Some(def) = s.catalog().get(id) else {
+                continue;
+            };
+            let cost = c.mp_cost(def);
+            if c.mp < cost || (keep_half && (c.mp - cost) * 2 < c.mp_max) {
+                continue;
+            }
+            let gain = match def.effect {
+                SpellEffect::HealAll { amount } => deficits
+                    .iter()
+                    .map(|&d| d.min(u32::from(amount)))
+                    .sum::<u32>(),
+                SpellEffect::Heal { amount } => worst.min(u32::from(amount)),
+                _ => continue,
+            };
+            if gain > 0 && best.is_none_or(|(g, _, _)| gain > g) {
+                best = Some((gain, row, id));
+            }
+        }
+    }
+    best.map(|(_, row, id)| (row, id))
+}
+
+/// Heal the party with spells from the field Magic screen while its weakest
+/// member is under `threshold` per-mille: Start, Magic, the caster, the
+/// spell, the weakest member (or the group confirm). Each cast goes through
+/// the engine's own field cast (`apply_spell_outcome`: the discounted MP
+/// debit and the heal). With `keep_half`, a caster keeps half its MP for
+/// the fights. Returns the casts made.
+pub(super) fn pad_field_spell_heal(
+    session: &mut NativeSession,
+    threshold: u32,
+    keep_half: bool,
+) -> usize {
+    use legaia_engine_core::field_menu_dispatch::FieldMenuSubsession;
+    use legaia_engine_menus::field_menu::{FieldMenuPhase, FieldMenuRow};
+    use legaia_engine_menus::spell_menu::SpellMenuPhase;
+    if !walking(session) || !released(session) || party_hp_permille(session) >= threshold {
+        return 0;
+    }
+    open_pause_menu(session);
+    if session.field_menu.is_none() {
+        return 0;
+    }
+    let magic_row = FieldMenuRow::Magic.index();
+    let mut cast = 0usize;
+    // Set once a visit to the Magic screen finds nothing to cast.
+    let mut dry = false;
+    let mut plan: Option<(usize, u8)> = None;
+    for _ in 0..240 {
+        let Some(menu) = session.field_menu.as_ref() else {
+            break;
+        };
+        let done = party_hp_permille(session) >= threshold || dry || cast >= 8;
+        let pad = match session.field_menu_sub.as_ref() {
+            None => match menu.phase() {
+                FieldMenuPhase::Browsing { cursor } => {
+                    if done {
+                        PadButton::Circle.mask()
+                    } else if cursor != magic_row {
+                        list_step_toward(usize::from(cursor), usize::from(magic_row))
+                    } else {
+                        plan = None;
+                        PadButton::Cross.mask()
+                    }
+                }
+                _ => 0,
+            },
+            Some(FieldMenuSubsession::Spells(s)) => {
+                if plan.is_none() && !done {
+                    plan = field_heal_cast(s, keep_half);
+                    dry = plan.is_none();
+                }
+                match (plan, s.phase()) {
+                    _ if done && plan.is_none() => PadButton::Circle.mask(),
+                    (None, _) => PadButton::Circle.mask(),
+                    (Some((row, _)), SpellMenuPhase::CharSelect { cursor }) => {
+                        list_step_toward(usize::from(*cursor), row)
+                    }
+                    (Some((row, _)), SpellMenuPhase::SpellSelect { caster, .. })
+                        if usize::from(*caster) != row =>
+                    {
+                        PadButton::Circle.mask()
+                    }
+                    (Some((_, id)), SpellMenuPhase::SpellSelect { cursor, .. }) => {
+                        match s.current_spell_rows().iter().position(|r| r.spell_id == id) {
+                            Some(want) if want != usize::from(*cursor) => {
+                                if want < usize::from(*cursor) {
+                                    PadButton::Up.mask()
+                                } else {
+                                    PadButton::Down.mask()
+                                }
+                            }
+                            Some(_) => PadButton::Cross.mask(),
+                            None => PadButton::Circle.mask(),
+                        }
+                    }
+                    (Some(_), SpellMenuPhase::TargetSelect { cursor, .. }) => {
+                        let weakest = s
+                            .targets()
+                            .iter()
+                            .enumerate()
+                            .filter(|(_, t)| t.alive() && t.hp_max > 0)
+                            .min_by_key(|(_, t)| u32::from(t.hp) * 1000 / u32::from(t.hp_max))
+                            .map_or(0, |(k, _)| k);
+                        if usize::from(*cursor) == weakest {
+                            cast += 1;
+                            plan = None;
+                            PadButton::Cross.mask()
+                        } else if usize::from(*cursor) < weakest {
+                            PadButton::Down.mask()
+                        } else {
+                            PadButton::Up.mask()
+                        }
+                    }
+                    (Some(_), SpellMenuPhase::GroupConfirm { .. }) => {
+                        cast += 1;
+                        plan = None;
+                        PadButton::Cross.mask()
+                    }
+                    _ => 0,
+                }
+            }
+            Some(_) => PadButton::Circle.mask(),
+        };
+        if pad == 0 {
+            let _ = session.tick();
+            continue;
+        }
+        tap_pad(session, pad);
+    }
+    for _ in 0..16 {
+        if session.field_menu.is_none() {
+            break;
+        }
+        tap_pad(session, PadButton::Circle.mask());
+    }
+    if std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
+        eprintln!(
+            "    [heal] cast {cast} field spell(s); weakest now {} per-mille; menu {}",
+            party_hp_permille(session),
+            if session.field_menu.is_some() {
+                "STILL OPEN"
+            } else {
+                "closed"
+            }
+        );
+    }
+    cast
 }
 
 thread_local! {
