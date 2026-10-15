@@ -371,12 +371,7 @@ It never fails on a fixture that stopped reproducing: that is the signal a fix
 landed, and the fixture then moves to `fixed/`.
 
 An open finding's replay stays here until its fix moves it
-to `fixed/`. `jouind_ledge_hop_walled_landing` is one: a run of chaos masks
-(Left and Right held together among them) strings ledge hops across
-`jouind` and the last lands the player at (2880, 2886) with every
-direction walled - the "one frame that passes both gates in error" the
-hop classifier's own notes warn of, since the arc runs no collision
-([`field-locomotion.md`](../subsystems/field-locomotion.md#vertical-settle--ledge-hop---fun_801d1ba0--fun_801d1878)).
+to `fixed/`.
 
 [`scripts/replays/soak/fixed/`](../../scripts/replays/soak/fixed/) holds the
 closed findings as regressions. `soak_fixed_fixtures` replays each and fails
@@ -420,6 +415,7 @@ regression.
 | `map01_life_water_live_max_stale` | `map01@...:PRO-01`: a Life Water under a Max HP +10% accessory left the live maximum one short of the base's rebuild, and the next battle healed past it | a stat-up item raises the base window and the live maxima are rebuilt from it |
 | `edlast_ending_unequip_live_max_stale` | `edbalden+rt@...:PRO-00`: the ending's scripted unequip left a Max HP +10% on a record whose accessory was gone | the aggregator pass every equipment change runs rebuilds the live maxima with the ability bits |
 | `map01_door_of_wind_carries_cupboard_run` / `map02_door_of_light_carries_conversation` | `chitei2+talk@PRO-03` / `ropeway2+talk@...:PRO-02`: a cupboard or a conversation opened while a Door's travel art ran, and its record parked in the overworld for good | a scene load drops the departing scene's conversation and prop runs with its actor list |
+| `jouind_ledge_hop_walled_landing` | a diagonal step-up hop under Right+Down set the player in the corner of a raised pocket at (2880, 2886), every direction walled and no step left to hop out | retail tests no landing (`FUN_801d1878` checks only `2s` / `3s`, the arc runs no collision); the port's landing guard (`WorldToggles::hop_landing_guard`, an enhancement, off under `pin_retail`) refuses a hop no step could leave |
 
 The field-side fixes are described with their retail evidence in
 [`script-vm.md`](../subsystems/script-vm.md#engagement-and-the-system-script);

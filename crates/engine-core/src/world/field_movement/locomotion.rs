@@ -542,12 +542,31 @@ impl World {
         } else {
             return false; // flat ground - nothing to hop
         };
-        self.start_field_ledge_hop(
-            slot,
-            (clamp(x + 3 * sx), clamp(probe_y), clamp(z + 3 * sz)),
-            kind,
-        );
+        let (lx, lz) = (clamp(x + 3 * sx), clamp(z + 3 * sz));
+        if self.toggles.hop_landing_guard && self.field_landing_is_boxed(lx, lz) {
+            return false;
+        }
+        self.start_field_ledge_hop(slot, (lx, clamp(probe_y), lz), kind);
         true
+    }
+
+    /// Whether a player set down at `(x, z)` could take no step at all: the
+    /// walk's own wall test refuses every one of the four directions there
+    /// (the leading-edge footprint when the host arms it, else the
+    /// candidate-centre test). The enhancement-side check behind
+    /// [`crate::world::WorldToggles::hop_landing_guard`]; retail tests no
+    /// landing.
+    fn field_landing_is_boxed(&self, x: i16, z: i16) -> bool {
+        const STEP: [(i16, i16); 4] = [(0, -2), (-2, 0), (0, 2), (2, 0)];
+        let edge = self.locomotion.leading_edge_wall_probes;
+        (0..4).all(|dir| {
+            if edge {
+                self.field_dir_blocked(x, z, dir)
+            } else {
+                let (dx, dz) = STEP[dir];
+                self.field_tile_is_wall(x.saturating_add(dx), z.saturating_add(dz))
+            }
+        })
     }
 
     /// Arc setup: retail `FUN_801d2404` (field overlay `overlay_0897`, 122
