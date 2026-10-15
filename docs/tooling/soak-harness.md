@@ -138,10 +138,7 @@ the player:
   points 64 ahead of the player, so a pocket can let the player out and never
   back in: `dolk`'s monk formation stands its rows 128 apart, and a seat in the
   gap between two of them, one diagonal step later, left the player boxed on
-  all four sides. `bylon` keeps Zopu and Kin in a staging pen at (117, 120)
-  between beats; a seat beside Kin there played Zopu's record for an actor the
-  story had taken off, walking him in from the pen. Neither seat is one a walk
-  enters.
+  all four sides.
 
 An actor is faced from 112 units where it can be, else 96, else 64: a face-on
 walk stops 104 short of a standing NPC (its body probe reaches 64 ahead into a
@@ -190,7 +187,7 @@ on one frame and neutral on the next.
 | `tick_error` | `tick()` returns an error |
 | `hang` | one tick runs past `LEGAIA_SOAK_HANG_SECS` of wall time; the watchdog writes `HANG.txt` and exits, since a hung tick cannot be interrupted |
 | `softlock` | the progress digest is unchanged for a whole window while the pad took at least three distinct masks |
-| `script_stall` | the modal timeline (or first helper context) sits at one PC for a whole window of field frames, even while something else moves - except that a `0xC7` walk whose walked bodies are still stepping is the op progressing, and so is a walk-on record under the re-poll bit (`2E 13`), re-run from its top every tick while the player, free to walk off, stands on its tile |
+| `script_stall` | the modal timeline (or first helper context) sits at one PC for a whole window of field frames, even while something else moves - except that a record whose scripted walkers are still stepping is progressing (a `0xC7` walk, or the `B3 <id> 0A` wait on one: `bylon`'s Zopu walks some 2400 frames), and so is a walk-on record under the re-poll bit (`2E 13`), re-run from its top every tick while the player, free to walk off, stands on its tile |
 | `battle_loop` | three battles open from one parked timeline PC |
 | `menu_stuck` | the pause menu stays open through the Circle back-out |
 | `battle_endless` | one battle outlasts `LEGAIA_SOAK_BATTLE_FRAMES` |
@@ -374,7 +371,12 @@ It never fails on a fixture that stopped reproducing: that is the signal a fix
 landed, and the fixture then moves to `fixed/`.
 
 An open finding's replay stays here until its fix moves it
-to `fixed/`.
+to `fixed/`. `jouind_ledge_hop_walled_landing` is one: a run of chaos masks
+(Left and Right held together among them) strings ledge hops across
+`jouind` and the last lands the player at (2880, 2886) with every
+direction walled - the "one frame that passes both gates in error" the
+hop classifier's own notes warn of, since the arc runs no collision
+([`field-locomotion.md`](../subsystems/field-locomotion.md#vertical-settle--ledge-hop---fun_801d1ba0--fun_801d1878)).
 
 [`scripts/replays/soak/fixed/`](../../scripts/replays/soak/fixed/) holds the
 closed findings as regressions. `soak_fixed_fixtures` replays each and fails

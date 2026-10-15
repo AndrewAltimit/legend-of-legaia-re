@@ -185,7 +185,7 @@ fn talk_targets(w: &legaia_engine_core::world::World) -> Vec<(TalkTarget, (i16, 
 /// Stand the player where the action button opens target `n` (modulo the
 /// target count) and face it. Only a seat on the authored walk-visible
 /// floor that a walk could both leave and enter is taken, so a target parked
-/// in the off-map hide box, in a staging pen or outside the walls is skipped
+/// in the off-map hide box, in a pocket or outside the walls is skipped
 /// rather than reached by a seat no play produces. Returns the target seated
 /// at.
 ///

@@ -939,14 +939,18 @@ pub(super) fn run_one(
                     // player's own motion rides along for it too.
                     let repoll =
                         w.flags.story_flags & legaia_engine_core::world::WALK_ON_REPOLL_FLAG != 0;
-                    if op == 0xC7 || repoll {
-                        if let Some(a) = w.actors.get(player_slot(&session)) {
-                            let m = &a.move_state;
-                            let _ = write!(h, "p{},{}|", m.world_x, m.world_z);
-                        }
-                        for slot in w.npcs.motions.keys() {
-                            let _ = write!(h, "{slot}{:?}|", w.npcs.positions.get(slot));
-                        }
+                    if (op == 0xC7 || repoll)
+                        && let Some(a) = w.actors.get(player_slot(&session))
+                    {
+                        let m = &a.move_state;
+                        let _ = write!(h, "p{},{}|", m.world_x, m.world_z);
+                    }
+                    // A record parked on the walk it started - `bylon`'s
+                    // Zopu talk issues `C7 47 ..` and waits on `B3 47 0A`
+                    // across a walk of some 2400 frames - progresses for as
+                    // long as the walker steps, whatever op it waits on.
+                    for slot in w.npcs.motions.keys() {
+                        let _ = write!(h, "{slot}{:?}|", w.npcs.positions.get(slot));
                     }
                     (format!("{k}@{:#06x}:op{op:02x}", c.pc), h.0.finish())
                 });
