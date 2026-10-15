@@ -485,10 +485,36 @@ impl World {
         // the rest of the `0x50` body runs, the advance does not, and the
         // end-of-action gate `0x5A` whose survivor count would end the fight
         // is never reached.
-        let boss_transition = self.battle_ctx.action_state == ActionState::DoneCleanup.as_byte()
+        // One SM pass a battle frame (`World::battle_sm_pass_due`); the
+        // ticks between passes run the per-vsync passes above and below.
+        let sm_pass = self.battle_sm_pass_due();
+        let boss_transition = sm_pass
+            && self.battle_ctx.action_state == ActionState::DoneCleanup.as_byte()
             && self.run_boss_transition_arm();
 
-        let outcome = self.step_battle();
+        // The paged cast modules keep their per-vsync passes
+        // (battle-stage-camera.md, the frame step): between SM passes the
+        // module states' own tick runs on every vsync, as it did when the SM
+        // ran every vsync, and the SM's pass reads where it stands.
+        if !sm_pass {
+            match ActionState::from_byte(self.battle_ctx.action_state) {
+                Some(ActionState::SummonSustain | ActionState::SummonReturn) => {
+                    let _ = self.summon_stager_tick();
+                }
+                Some(ActionState::MagicCapturePhase2) => {
+                    let _ = self.capture_stager_tick();
+                }
+                _ => {}
+            }
+        }
+        let outcome = if sm_pass {
+            // A shot the last pass handed the camera and no camera step
+            // took is that pass's; this pass re-arms its own.
+            self.battle.spell_cam = None;
+            self.step_battle()
+        } else {
+            StepOutcome::Stay
+        };
         if boss_transition {
             self.battle_ctx.action_state = ActionState::IdleHold.as_byte();
         }
@@ -503,7 +529,9 @@ impl World {
         // REF: FUN_80051078, FUN_80050BB8 (kernels in
         // `legaia_engine_battle_vm::battle_separation`; driver
         // `World::tick_battle_separation`)
-        self.tick_battle_separation();
+        if sm_pass {
+            self.tick_battle_separation();
+        }
 
         // Apply this step's damage events (art strikes carry a damage value;
         // the loop owns folding while live, so events are consumed here).

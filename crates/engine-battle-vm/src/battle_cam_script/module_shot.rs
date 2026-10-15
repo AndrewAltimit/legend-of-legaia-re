@@ -127,6 +127,14 @@ impl BattleCamera {
         self.pose.yaw = g.target.yaw.rem_euclid(4096.0);
     }
 
+    /// Whether the cast-effect driver's shot handed in by the last tick is
+    /// still waiting for a camera step to arm it. The action SM runs one
+    /// pass a battle frame and the camera steps once a frame on its own
+    /// clock, so the hand-off holds until a step takes it.
+    pub fn spell_cam_pending(&self) -> bool {
+        self.spell_cam.is_some()
+    }
+
     /// Whether a module shot is armed (tweening or landed and holding).
     pub fn module_shot_armed(&self) -> bool {
         self.module_glide.is_some()

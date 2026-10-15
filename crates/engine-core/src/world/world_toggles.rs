@@ -126,6 +126,15 @@ pub struct WorldToggles {
     /// position in the stream depends on it. Clearing it is a tooling knob
     /// (an A/B over the stream), not an enhancement.
     pub battle_pass_rand_draw: bool,
+    /// Run the battle action SM `FUN_801E295C` once a battle frame, retail's
+    /// cadence ([`crate::world::World::battle_sm_pass_due`]), instead of once
+    /// a vsync. The faithful model, staged off: the retail-compare drives,
+    /// phase gates and displayed-frame retakes were tuned against the
+    /// per-vsync SM and measure worse until they are re-tuned (see
+    /// `docs/subsystems/battle-stage-camera.md`, the frame step). Raised by
+    /// `LEGAIA_BATTLE_FRAME_CADENCE=1` in the environment, which child
+    /// processes inherit, so a whole corpus run can measure it.
+    pub battle_sm_frame_cadence: bool,
 }
 
 impl WorldToggles {
@@ -145,6 +154,8 @@ impl WorldToggles {
             field_hp_display: legaia_engine_menus::option_values::HpDisplayOpt::Immediate,
             overworld_marker_overlay: false,
             battle_pass_rand_draw: true,
+            battle_sm_frame_cadence: std::env::var_os("LEGAIA_BATTLE_FRAME_CADENCE")
+                .is_some_and(|v| v != "0"),
         }
     }
 }

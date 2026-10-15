@@ -1126,6 +1126,42 @@ retail-compare drive does so for a replayed cast caught in the summon close-up
 step `3` the walker lands it every pass, at `2` it trails
 ([retail-compare](../tooling/retail-compare.md#an-ease-out-camera-carries-its-history)).
 
+**The action SM's cadence.** Retail runs `FUN_801E295C` once a battle frame.
+The battle frame driver `FUN_80046A20` calls it (`jal 0x801E295C` at
+`0x80047048`, then the separation pass `jal 0x80051078`), and that driver is an
+actor node the master frame driver's `FUN_8002519C` passes tick once per
+main-loop pass. The frame-end pass `FUN_80016B6C` paces the loop: it stores
+the step to `0x1F800392` and calls libetc `VSync(step)` (`jal 0x8005FB84` at
+`0x800171C0`, `VSync(0)` for a step below `2`). So one SM pass spans `step`
+vsyncs, and every timer the SM drains by `DAT_1F800393` drains a whole frame's
+worth per pass. A one-pass state such as the action seed `0x0C` therefore
+lives for a frame. Its case-6 arm on the `0x800` rung walks one camera step
+before `0x14` re-arms on `0x200`, which is the pass the `super_queue_replace_*`
+captures hold.
+
+The engine runs the SM every vsync by default, with timers draining by one.
+Retail's cadence is in place behind `WorldToggles::battle_sm_frame_cadence`
+(`World::battle_sm_pass_due`, `LEGAIA_BATTLE_FRAME_CADENCE=1`). It runs the
+pass and the separation pass on the first tick of each `BattleFrameClock`
+frame with `frame_dt` the step, and ticks the summon and capture module states
+(`0x35`, `0x36`, `0x70`) on the vsyncs between passes, so the modules keep
+their measured per-vsync clock. Three couplings had to follow the cadence:
+
+- the cast-effect driver's shot (`FUN_801DC0A0`) is handed to the camera once
+  a pass, so it now holds until a camera step arms it;
+- the retail-compare yaw-coin steer starts at `0x14`, since the seed's `0x800`
+  rung is no coin;
+- the module ticks above.
+
+On those terms the headless corpus mostly rises (`camera`: the
+`super_queue_replace_*` captures `.968` to `.986`, `rim_elm_gimard_victory`
+`.992` to `1.0`, `cort_mystic_shield_mid_cast` `.976` to `.992`). The frames
+fall on many battle captures (`noa_levelup_fight_pre` `.817` to `.494`,
+`super_queue_replace_*` `.744` to `.618`, `nighto_summon_mid_cast` `.984` to
+`.910`): the drives, phase gates and displayed-frame retakes count engine
+ticks and were tuned against the per-vsync SM. The toggle stays off until
+they are re-tuned.
+
 The cast modules keep their per-vsync passes. Run once a battle frame with
 every drain, drift and ramp scaled by the step (retail's own shape), they
 measured worse on the step-`3` captures: `nova_summon_mid_cast` `image` `.963`

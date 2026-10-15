@@ -733,7 +733,16 @@ impl World {
             tracks.as_ref(),
             &mut self.rng_state,
         );
-        self.battle.spell_cam = None;
+        // The SM's pass hands the shot in once a battle frame; it holds
+        // until the camera's step for that frame arms it.
+        if !self
+            .battle
+            .camera
+            .as_ref()
+            .is_some_and(|c| c.spell_cam_pending())
+        {
+            self.battle.spell_cam = None;
+        }
     }
 
     /// The battle camera's current pose, or the shared boot pose before the

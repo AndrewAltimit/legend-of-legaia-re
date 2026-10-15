@@ -447,7 +447,7 @@ fn battle_arts_synthetic_chain_runs_through_art_power_path_and_cycles_turn() {
             break;
         }
         world.set_pad(0);
-        world.live_battle_tick();
+        live_tick(&mut world);
         let _ = world.drain_battle_events();
     }
     assert!(ended, "the armed action ran to its end");
@@ -607,7 +607,7 @@ fn battle_arts_uses_staged_art_record_power_tiers_and_status() {
             break;
         }
         world.set_pad(0);
-        world.live_battle_tick();
+        live_tick(&mut world);
         // Both play hosts drain once per simulation tick; the loop folds and
         // then re-publishes, so a driver that never drains re-folds the same
         // strikes on the next tick.

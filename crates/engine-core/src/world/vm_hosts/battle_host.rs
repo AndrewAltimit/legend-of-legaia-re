@@ -17,6 +17,13 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
         self.world.battle_frame_id()
     }
 
+    /// `DAT_1F800393`: with the SM on retail's cadence it runs one pass a
+    /// battle frame ([`World::battle_sm_pass_due`]) and its timers drain by
+    /// the frame step; on the per-vsync cadence by one.
+    fn frame_dt(&self) -> i16 {
+        self.world.battle_sm_frame_dt()
+    }
+
     fn actor(&self, slot: u8) -> Option<&BattleActor> {
         self.world.actors.get(slot as usize).map(|a| &a.battle)
     }

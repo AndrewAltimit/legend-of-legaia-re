@@ -191,6 +191,38 @@ impl World {
         self.battle.backdrop_slot_1_yaw = yaw;
     }
 
+    /// Whether this tick opens a battle frame the action SM has not yet run
+    /// its pass on, and if so claim it. Retail runs `FUN_801E295C` once a
+    /// battle frame: the frame driver `FUN_80046A20` (`jal 0x801E295C` at
+    /// `0x80047048`, then the separation pass `jal 0x80051078`) is an actor
+    /// node the master frame driver ticks once a main-loop pass, and the
+    /// frame-end pass `FUN_80016B6C` paces that loop with `VSync(step)`
+    /// (`jal 0x8005FB84` at `0x800171C0`, `a0` the frame step byte
+    /// `0x1F800392`). The engine ticks once a vsync, so the pass runs on the
+    /// first tick of each [`BattleFrameClock`] frame and its timers drain by
+    /// the step ([`Self::battle_frame_step`], the SM's `frame_dt`).
+    pub(in crate::world) fn battle_sm_pass_due(&mut self) -> bool {
+        if !self.toggles.battle_sm_frame_cadence {
+            return true;
+        }
+        let frame = self.battle_frame_id();
+        if self.battle.sm_pass_frame == Some(frame) {
+            return false;
+        }
+        self.battle.sm_pass_frame = Some(frame);
+        true
+    }
+
+    /// The SM's `frame_dt` (`DAT_1F800393`): the frame step when the SM runs
+    /// once a battle frame, one vsync when it runs every tick.
+    pub(in crate::world) fn battle_sm_frame_dt(&self) -> i16 {
+        if self.toggles.battle_sm_frame_cadence {
+            i16::from(self.battle_frame_step())
+        } else {
+            1
+        }
+    }
+
     /// The battle frame step in vsyncs ([`Self::set_battle_frame_step`]).
     pub fn battle_frame_step(&self) -> u8 {
         self.battle.frame_clock.step
@@ -200,6 +232,31 @@ impl World {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// On retail's cadence the action SM takes one pass a battle frame and
+    /// drains its timers by the step; on the staged-off per-vsync cadence
+    /// it takes every tick and drains by one.
+    #[test]
+    fn the_sm_pass_runs_once_a_battle_frame_on_retail_cadence() {
+        let mut w = World::new();
+        w.toggles.battle_sm_frame_cadence = true;
+        let mut passes = Vec::new();
+        for t in 10..20u64 {
+            w.clock.display_frames = t;
+            if w.battle_sm_pass_due() {
+                passes.push(t);
+            }
+            // A second ask inside the same tick is the same frame.
+            assert!(!w.battle_sm_pass_due());
+        }
+        assert_eq!(passes, [10, 12, 14, 16, 18]);
+        assert_eq!(w.battle_sm_frame_dt(), 2);
+        w.set_battle_frame_step(3);
+        assert_eq!(w.battle_sm_frame_dt(), 3);
+        w.toggles.battle_sm_frame_cadence = false;
+        assert!(w.battle_sm_pass_due() && w.battle_sm_pass_due());
+        assert_eq!(w.battle_sm_frame_dt(), 1);
+    }
 
     #[test]
     fn the_default_clock_is_two_vsync_frames() {
