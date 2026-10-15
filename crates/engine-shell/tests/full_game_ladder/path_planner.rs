@@ -90,14 +90,10 @@ pub(super) fn pad_for_step(session: &NativeSession, dwx: i16, dwz: i16) -> u16 {
         }
         best.map_or((0, 0), |(_, (sx, sy))| (sx as i16, sy as i16))
     } else {
-        let az = session.host.world.locomotion.camera_azimuth;
-        let quadrant = (u32::from(az).wrapping_add(512) / 1024) & 3;
-        match quadrant {
-            0 => (dwx, dwz),
-            1 => (-dwz, dwx),
-            2 => (-dwx, -dwz),
-            _ => (dwz, -dwx),
+        if dwx == 0 && dwz == 0 {
+            return 0;
         }
+        field_step_press(session.host.world.locomotion.camera_azimuth, dwx, dwz)
     };
     if sy > 0 {
         pad |= PadButton::Up.mask();
@@ -110,6 +106,57 @@ pub(super) fn pad_for_step(session: &NativeSession, dwx: i16, dwz: i16) -> u16 {
         pad |= PadButton::Left.mask();
     }
     pad
+}
+
+/// The d-pad press, as `(right, up)` signs, whose field remap at camera
+/// `azimuth` walks the world step `(dwx, dwz)` best.
+pub(super) fn field_step_press(azimuth: u16, dwx: i16, dwz: i16) -> (i16, i16) {
+    // Invert the field remap the engine applies: the held d-pad is
+    // rotated by the camera azimuth in eighth turns around the
+    // eight-direction ring (`World::remap_pad_direction`, rotation index
+    // `((az + 0x100) >> 9) & 7`). Rounding to quarter turns agrees with
+    // it only on an axis-aligned camera; on a diagonal one a diagonal
+    // press came out a cardinal - `nilboa`'s way down to the Koru ledge
+    // pressed into the wall at (98, 107) east of the walk.
+    let az = u32::from(azimuth);
+    let rot = (az.wrapping_add(0x100) >> 9) & 7;
+    let target = (dwx.signum(), dwz.signum());
+    let mut best: Option<(i32, (i16, i16))> = None;
+    for sx in -1..=1i16 {
+        for sy in -1..=1i16 {
+            if sx == 0 && sy == 0 {
+                continue;
+            }
+            let mut held = 0u16;
+            if sy > 0 {
+                held |= 0x1000;
+            } else if sy < 0 {
+                held |= 0x4000;
+            }
+            if sx > 0 {
+                held |= 0x2000;
+            } else if sx < 0 {
+                held |= 0x8000;
+            }
+            let r = legaia_engine_core::world::World::remap_pad_direction(held, rot);
+            let has = |b: u16| i16::from(r & b != 0);
+            let (wx, wz) = (has(0x2000) - has(0x8000), has(0x1000) - has(0x4000));
+            let axis = |w: i16, t: i16| -> i32 {
+                if w == t {
+                    2
+                } else if w == 0 || t == 0 {
+                    0
+                } else {
+                    -4
+                }
+            };
+            let score = axis(wx, target.0) + axis(wz, target.1);
+            if best.is_none_or(|(b, _)| score > b) {
+                best = Some((score, (sx, sy)));
+            }
+        }
+    }
+    best.map_or((0, 0), |(_, s)| s)
 }
 
 /// The actor-collision boxes one plan tests against, bucketed by the
