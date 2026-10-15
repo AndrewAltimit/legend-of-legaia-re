@@ -768,6 +768,9 @@ pub(super) struct PlayWindowApp {
     /// bound to a button, and the whole point of the screen is to bind ones
     /// that are not.
     pub(super) keys_down: std::collections::HashSet<KeyCode>,
+    /// Never write the options or bindings files: set by the headless
+    /// window, whose key presses are a test's, not a player's.
+    pub(super) persist_disabled: bool,
     /// The most recent fresh key-down's engine key **name**
     /// (`keycode_to_name`), consumed once by the pause menu's Key Config
     /// screen. `None` when nothing new was pressed since the last tick.

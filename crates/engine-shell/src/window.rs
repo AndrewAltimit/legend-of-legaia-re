@@ -183,7 +183,7 @@ impl PlayWindowApp {
     /// browser play page's equivalent, a fresh headless context, has no
     /// stored state to leak into.
     pub(super) fn scripted_run(&self) -> bool {
-        self.screenshot.is_some()
+        self.screenshot.is_some() || self.persist_disabled
     }
 
     /// Push the current options into their live consumers without touching

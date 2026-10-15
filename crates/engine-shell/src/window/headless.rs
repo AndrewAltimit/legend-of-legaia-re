@@ -63,6 +63,7 @@ impl HeadlessPlayWindow {
         // The persisted options file in the working directory is this
         // machine's, not the launch's: start from the defaults, then push
         // them into their consumers the way the launch did.
+        app.persist_disabled = true;
         app.options_state = legaia_engine_menus::options::OptionsState::default();
         app.session.apply_option_knobs(&app.options_state, None);
         // The window's `resumed` upload, which with no renderer runs only its
@@ -88,6 +89,22 @@ impl HeadlessPlayWindow {
     /// world state.
     pub fn prep(&mut self) {
         self.app.headless_frame_prep();
+    }
+
+    /// One physical key press and release, delivered as the window's
+    /// keyboard handler receives it (`handle_key`: the hotkeys, the minigame
+    /// and debug keys, then the pad mapping). `code` is the
+    /// `KeyboardEvent.code` spelling (`F8`, `KeyI`); `false` when no key of
+    /// that name exists. Nothing it toggles is persisted.
+    pub fn press_key(&mut self, code: &str) -> bool {
+        let Some(key) =
+            super::launch_options::key_from_name(code.strip_prefix("Key").unwrap_or(code))
+        else {
+            return false;
+        };
+        self.app.handle_key(key, ElementState::Pressed);
+        self.app.handle_key(key, ElementState::Released);
+        true
     }
 
     /// The session the window runs.
