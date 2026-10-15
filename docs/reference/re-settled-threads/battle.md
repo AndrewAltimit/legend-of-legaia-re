@@ -1776,9 +1776,10 @@ The per-character stat-grant source is static `SCUS_942.54` tables read by the l
   `{u16 start, u16 max, u8 jitter, u8 row}`. `start` = base stat (Gala matches the new-game template
   on all 8); `row` selects one of 3 curves at `DAT_800769CC`.
 - Per-level gain =
-  `max(1, (max-start) * curve[row][level-1] / 0x24C0 + rand() % (2*jitter+1) - jitter)`, then caps.
-  `0x24C0` is the curve normalizer: each curve sums to `0x24C0`, so growth accumulates to exactly
-  `max-start` by L99.
+  `max(1, (max-start) * curve[row][level-1] / D + rand() % (2*jitter+1) - jitter)`, then caps.
+  `D = 0x24C0`, the curve normalizer (each curve sums to `0x24C0`, so growth accumulates to exactly
+  `max-start` by L99), for every stat but AGL, whose block divides by `0x18C0` (its own `0xA57EB503`
+  magic at `0x801E993C`); AGL meets its `0x118` cap well before L99.
 - Capture: a single-level step (Noa L2 → L3, the `noa_levelup_*` saves) has all 8 deltas within the
   core +/- jitter band. Multi-level corpus observations (`noa/gala_4_level_jump`) are unreliable for
   this check. Not the "Seru struct `+0x74`".
