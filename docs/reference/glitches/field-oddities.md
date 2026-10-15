@@ -474,11 +474,13 @@ tile `(66, 113)`. Neither scene has a second MAN variant, and both carry 14 form
    which is gone with the castle, and `deroa` and `chitei2`. The flag does nothing anywhere else,
    which is why the fault stays hidden from the end of the castle until the Fortress.
 
-The clock is not gentle. The scene loader takes 1200 ticks (20 seconds) off a running clock on
-every scene entry (`0x8003B62C..0x8003B648`: `lw a0,0x478(a1)` / `beqz` / `addiu v0,v0,-0x4b0` /
-`sw v0,0x460(a1)`). The castle is two scenes, so each crossing between them costs 20 seconds on
-top of the walking. Loading a save while a clock is running restores it to its full duration
-(`0x8003B96C..0x8003B98C`).
+The clock is not gentle. MAIN INIT `FUN_8003AEB0` takes 1200 ticks (20 seconds) off a running
+clock on every return to the field from a battle (`0x8003B62C..0x8003B648`: `lw a0,0x478(a1)` /
+`beqz` / `addiu v0,v0,-0x4b0` / `sw v0,0x460(a1)`). The block sits in the arm the field-entry word
+`_DAT_8007B8B8 == 2` selects (`bne v1,2` at `0x8003B510` skips to `0x8003B658` past it), the warp
+entry a battle, a minigame or an FMV resume returns through; a door or a scene change enters cold
+and pays nothing. Every fight on the way out costs 20 seconds on top of its own length. Loading a
+save while a clock is running restores it to its full duration (`0x8003B96C..0x8003B98C`).
 
 #### What the report describes
 
@@ -650,7 +652,7 @@ while a menu or submode is open.
 | `0x801F1360`, `0x801F1684` | PROT entry 0897 | set and clear of bit `0x8000` of `0x1F800394` by the menu / submode installer `FUN_801F1278` | disassembly |
 | `0x8003CE08` | `SCUS_942.54` | system-flag set | disassembly |
 | `0x8003CE64` | `SCUS_942.54` | system-flag test: byte `0x80085758 + (id >> 3)`, mask `0x80 >> (id & 7)` | disassembly |
-| `0x8003B62C..0x8003B648` | `SCUS_942.54` | scene loader: 1200 ticks off a running clock per scene entry | disassembly |
+| `0x8003B62C..0x8003B648` | `SCUS_942.54` | MAIN INIT's warp-return arm: 1200 ticks off a running clock per return from battle | disassembly |
 | `0x8003B96C..0x8003B98C` | `SCUS_942.54` | card load restores a running clock to its full duration | disassembly; capture (edited save) |
 | `0x8003AC7C..0x8003AC90` | `SCUS_942.54` | scene-entry counter top-up in `FUN_8003AB2C` | disassembly |
 | `0x800845A0`, `0x800845B8`, `0x800845BC`, `0x800845C0` | RAM | clock: remaining, duration, threshold, flag pair; save-block `+0x460`, `+0x478`, `+0x47C`, `+0x480` | disassembly; capture (played saves) |
@@ -699,7 +701,6 @@ breakpoint at `0x801D2F84`, reach the exit, and read byte `0x8008575A` on the ov
   itself, `0x04` at save-block `+0x161A` in such a file, has not been read.
 - A native clear of flag `0x15` through a computed id is not excluded by the constant-id sweep;
   none of the computed clear sites reads as touching it.
-- Whether returning from a battle charges the clock the same 20 seconds as a scene change.
 - The locked early visit is read from the scripts, not walked.
 - Whether the entrance scene is walked again once the collapse flag is set: after the closing
   cutscene, or on a later visit from the overworld.

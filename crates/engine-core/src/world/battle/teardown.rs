@@ -376,6 +376,9 @@ impl World {
         if wipe_to_title {
             self.game_over = true;
         }
+        // The same arm takes twenty seconds off a running escape clock
+        // (`0x8003B62C..0x8003B648`), on every arm of it.
+        self.battle.escape_timer.field_return_penalty();
         self.battle.active_formation = None;
         self.battle.end = None;
         // Drop the battle seat anchors - the next battle's setup re-seats

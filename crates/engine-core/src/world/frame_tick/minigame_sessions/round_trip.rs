@@ -171,5 +171,8 @@ impl World {
         // the two slots that never displaced it.
         self.restore_minigame_bgm();
         self.mode = SceneMode::Field;
+        // The field entry it lands in is MAIN INIT's warp arm, which takes
+        // twenty seconds off a running escape clock (`0x8003B62C`).
+        self.battle.escape_timer.field_return_penalty();
     }
 }
