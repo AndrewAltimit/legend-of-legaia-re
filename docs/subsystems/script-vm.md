@@ -725,9 +725,9 @@ poke), and no `FUN_801E4470` actor sat in the lists.
 | Sub | Effect |
 |---|---|
 | 1 | Start field BGM - sets `_DAT_8007BAC8 = signed16(operand0, operand1)` and clears flag bit 1 (`0x801E0104`), then debug-prints `"Field BGM %d"`. The BGM-id-to-PROT mapping is asynchronous in `FUN_800243F0` (see [BGM lookup](#bgm-lookup-table)). |
-| 2 | Pause - sets flag bit 1, detaches the BGM slot (`func_0x800266E0(0x8007052C)`, arm `0x801E0150`). |
-| 3 | Sets flag bit 1 and stops the bound voice (`func_0x80026740`, arm `0x801E0174`) - by callee behaviour a harder pause, not the "Resume" its legacy label claims. |
-| 4 | Clears flag bit 1 and re-attaches the slot (`func_0x80026478`, arm `0x801E019C`) - by callee behaviour a resume, not the "Stop" its legacy label claims. |
+| 2 | **Stop** - sets flag bit 1 and hands slot `0x8007052C` to `FUN_800266E0` (arm `0x801E0138`, `jal` at `0x801E014C`): the notes are killed and the read cursor goes back to the sequence start. |
+| 3 | **Pause** - sets flag bit 1 and calls `FUN_80026740` (arm `0x801E015C`, `jal` at `0x801E0170`): the next calc keys the notes off and the cursor is left where it is. |
+| 4 | **Replay** - clears flag bit 1 (`li v1,-0x3; and` at `0x801E0190`) and calls `FUN_80026478` (arm `0x801E0180`, `jal` at `0x801E0198`), whose libsnd leaf resets the read cursor to the sequence start before raising the play flag. Not a mid-phrase resume: see [`audio.md` § the control words](audio.md#the-control-words-stop-pause-replay). |
 | 5 | **Arm the timed sound-source auto-release** for `signed16(operand0, operand1)` vsyncs: `func_0x800267A8(0, operand)` at `0x801E01B4`, whose tick half `FUN_800267FC` runs from the frame-begin driver. Not a volume set - the volume the arm applies is a *side effect* of the libsnd wrapper it tail-calls, and the operand is a deadline. Port: `engine-core::World::arm_sound_release`. |
 | 6 | Flag set. |
 | 7 | Target-sound-set (`_DAT_8007B880`). |
@@ -1330,7 +1330,7 @@ bounds-checks the sub-op (`< 0x16`) and jumps through the 22-entry JT at
 |---|---|---|---|
 | 0x10 | `[43, 0x10][x][y][w][h][tex_x][tex_y][clut_x][clut_y]` i16s + `rgb` u24 | `FUN_801F8004(operand+1)` - **sprite-widget spawn** (inline 19-byte record; the widget script at record `+0x13` is the `0x40` run *after* this op, which the VM steps over as data) | +21 |
 | 0x11 | `[43, 0x11][l][t][r][b][dur]` u16s | `FUN_801F8D4C(l,t,r,b,dur)` - **screen-mask (iris) rect tween** | +12 |
-| 0x12 | `[43, 0x12][src_x][src_y][w][h][dst_x][dst_y]` s16s | `FUN_800468A4(6, …)` (SCUS) - **GP0 `0x80` VRAM→VRAM rect copy** into OT slot 6 (packet builder `FUN_80057914`; `src_y += 0xF0` under the back-buffer flag `DAT_8007B74C`); **dual call** when `w > 0xFF` with offset shifts `(+0xF0, _, -0xE0, _, +0x100, _)` and a 0x100 clamp - the same >256-wide two-page split as the panel widget. No on-disc scene script uses it. | +14 |
+| 0x12 | `[43, 0x12][src_x][src_y][w][h][dst_x][dst_y]` s16s | `FUN_800468A4(6, …)` (SCUS) - **GP0 `0x80` VRAM→VRAM rect copy** into OT slot 6 (packet builder `FUN_80057914`; `src_y += 0xF0` under the back-buffer flag `DAT_8007B74C`); **dual call** when `w > 0xFF` with offset shifts `(+0xF0, _, -0xE0, _, +0x100, _)` and a 0x100 clamp - the same >256-wide two-page split as the panel widget. Nine ending scenes issue it, once before each `0x13` panel (below). | +14 |
 | 0x13 | `[43, 0x13][x][y][w][h][tex_x][tex_y]` i16s | `FUN_801F88FC(operand)` - **image-panel spawn** (record read from operand+1) | +14 |
 | 0x14 | `[43, 0x14][x][y][scale][dur]` s16s | `FUN_801F8E6C(x, y, scale, dur)` - **panel move/scale** (`scale` 4.12 fixed) | +10 |
 | 0x15 | `[43, 0x15][x_left][x_right][y0][y1][y2][y3]` i16s | `FUN_801F8F28(operand+1)` - **letterbox config** | +14 |
@@ -1353,9 +1353,11 @@ fullscreen photo panel (`0x13`, every retail record `[0,0,0x140,0xE0,
 0x200,0]` - the >0x100-wide two-page split is exercised by every use) →
 shrink-to-corner (`0x14`, scale `0x700`) → credit-name sprite strips
 (`0x10`, all 218 records CLUT row 475); `edlast` is the credits crawl and
-the only letterbox consumer. Sub-0x12 never appears in on-disc scene
-bytecode (which leaves its natural reading - staging the panel's source
-image - an inference).
+the only letterbox consumer. Sub-0x12 is not a widget op, so the 311 above
+leave it out; `asset field-op-census --only "43 12"` finds twelve clean
+sites over eleven MAN carriers - every ending vignette but `edlast` - each
+directly before a `0x13` panel with the same payload, so it is what stages
+the panel's source image (the grab described at the end of this section).
 
 Sub-0x12 detail (the only one with non-trivial logic):
 
@@ -1414,8 +1416,8 @@ Engine port: `legaia_engine_vm::vram_rect_copy` (`build_packet` /
 `enqueue` / `op43_sub12_calls`). The VM arm resolves the split and hands
 the host the one or two calls in emission order.
 
-The ten ending-vignette scenes (`edteien`, `edbylon`, `edbalden`,
-`edretoin`, `edkorout`, `edbubu`, ...) each issue
+Nine of the ten ending-vignette scenes (`edteien`, `edbylon`, `edbalden`,
+`edretoin`, `edkorout`, `edbubu`, ... - all but the `edlast` credits crawl) each issue
 `43 12 00 00 00 00 40 01 E0 00 00 02 00 00` just before the image panel
 `43 13` with the same payload: copy the frame the GPU has drawn (`(0, 0)`,
 `320 x 224`) to `(512, 0)`, which the panel then shows as the vignette's
@@ -1806,6 +1808,11 @@ the beat-state editor for that dungeon. Those three records are **not** the
 Caruban-beat writer, which is the post-victory record P2[50]: one `51 42`
 followed by the staged-marker clear `62 89` and ordinary choreography, no
 jump and no second arm.
+
+The named scenes are a floor, not a count. They are the menus whose labels
+name them; `dolk2`'s streaming carrier (`P1[1]`) and `dolk` `P1[26]` carry
+the same toggle, and over every carrier the classifier marks 2,500 flag sites
+in 74 scenes - many of them `P1[0]` entry records whose labels nobody has read.
 
 This is the second debug affordance in the flag bank - the first is the
 pad-driven flag editor resident in the field overlay

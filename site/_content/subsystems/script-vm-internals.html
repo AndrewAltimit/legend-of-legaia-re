@@ -106,8 +106,8 @@
     <thead><tr><th>Sub</th><th>Effect</th></tr></thead>
     <tbody>
       <tr><td><code>1</code></td><td>Start field BGM <code>id</code> (the loader resolves it asynchronously, <a href="#bgm-table">ids</a>)</td></tr>
-      <tr><td><code>2</code> / <code>3</code></td><td>Pause (detach the slot) / harder pause (stop the bound voice)</td></tr>
-      <tr><td><code>4</code></td><td>Resume (re-attach the slot)</td></tr>
+      <tr><td><code>2</code> / <code>3</code></td><td>Stop (notes killed, cursor back to the start) / pause (notes keyed off, cursor kept)</td></tr>
+      <tr><td><code>4</code></td><td>Replay: re-attach the slot and play the track again from its first event - no script word resumes mid-phrase (<a href="audio.html">audio</a>)</td></tr>
       <tr><td><code>5</code></td><td>Arm a timed sound-source auto-release after <code>id</code> vsyncs</td></tr>
       <tr><td><code>6</code> / <code>7</code></td><td>Flag set / target-sound-set</td></tr>
       <tr><td><code>8</code></td><td>Re-attach and re-apply the field volume</td></tr>

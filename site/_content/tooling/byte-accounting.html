@@ -30,6 +30,41 @@
   </table>
   </div>
   <p>The method is four steps. Classify the buffer with <code>asset categorize</code> and pick a walker; run the walker, which emits <strong>claims</strong> - half-open <code>[start, end)</code> ranges each tagged with an owner; merge the claims and take the complement, so every maximal uncovered run is one <strong>residue</strong>; and where a claim covers a compressed span, decode it and account the payload in a nested pass. Two walker selections are keyed on the extraction index rather than on the class, because no detector fires on their heads: the monster archive, and any entry with a row in the <a href="static-overlay-pipeline.html">static overlay map</a>.</p>
+  <figure class="diagram">
+    <svg viewBox="0 0 860 250" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="One PROT entry as a byte strip. Row one: the walker's claims, half-open ranges tagged with an owner, overlapping and out of order; one claim comes from a scan sweep rather than the container's own layout. Row two: the merged claims and their complement; each uncovered run is one residue, classified by shape. Row three: a claim over an LZS span is decoded and its payload accounted in a nested pass. accounted counts every claim; structural leaves out the scan claim.">
+      <defs><marker id="ba-ah" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <text x="16" y="24" class="dg-sub dg-start">1. walker claims</text>
+      <rect x="150" y="10" width="690" height="28" rx="2" class="dg-group"/>
+      <rect x="150" y="10" width="120" height="28" rx="2" class="dg-node-accent"/><text x="210" y="28" class="dg-sub">header</text>
+      <rect x="250" y="10" width="190" height="28" rx="2" class="dg-node-accent"/><text x="345" y="28" class="dg-sub">table (overlaps)</text>
+      <rect x="520" y="10" width="170" height="28" rx="2" class="dg-node-accent"/><text x="605" y="28" class="dg-sub">LZS stream</text>
+      <rect x="740" y="10" width="60" height="28" rx="2" class="dg-node-warn"/><text x="770" y="28" class="dg-sub">scan</text>
+
+      <path d="M495 44 L495 70" class="dg-edge" marker-end="url(#ba-ah)"/>
+      <text x="505" y="62" class="dg-edge-label">merge, take the complement</text>
+
+      <text x="16" y="96" class="dg-sub dg-start">2. merged + residue</text>
+      <rect x="150" y="82" width="290" height="28" rx="2" class="dg-node-accent"/><text x="295" y="100" class="dg-sub">claimed</text>
+      <rect x="440" y="82" width="80" height="28" rx="2" class="dg-node"/><text x="480" y="100" class="dg-label">residue</text>
+      <rect x="520" y="82" width="170" height="28" rx="2" class="dg-node-accent"/><text x="605" y="100" class="dg-sub">claimed</text>
+      <rect x="690" y="82" width="50" height="28" rx="2" class="dg-node"/><text x="715" y="100" class="dg-label">res.</text>
+      <rect x="740" y="82" width="60" height="28" rx="2" class="dg-node-warn"/><text x="770" y="100" class="dg-sub">scan</text>
+      <rect x="800" y="82" width="40" height="28" rx="2" class="dg-node"/><text x="820" y="100" class="dg-label">res.</text>
+      <text x="480" y="128" class="dg-sub">each maximal uncovered run: one residue, classed by shape</text>
+
+      <path d="M605 136 L605 162" class="dg-edge" marker-end="url(#ba-ah)"/>
+      <text x="595" y="154" class="dg-edge-label" text-anchor="end">decode, account the payload (nested pass)</text>
+
+      <text x="16" y="188" class="dg-sub dg-start">3. nested pass</text>
+      <rect x="430" y="174" width="410" height="28" rx="2" class="dg-group"/>
+      <rect x="430" y="174" width="250" height="28" rx="2" class="dg-node-accent"/><text x="555" y="192" class="dg-sub">decoded bytes a parser walks</text>
+      <rect x="680" y="174" width="160" height="28" rx="2" class="dg-node"/><text x="760" y="192" class="dg-label">decoded residue</text>
+
+      <rect x="150" y="218" width="14" height="12" class="dg-node-accent"/><text x="170" y="228" class="dg-sub dg-start">structural claim (counts in both figures)</text>
+      <rect x="470" y="218" width="14" height="12" class="dg-node-warn"/><text x="490" y="228" class="dg-sub dg-start">scan claim (accounted only, not structural)</text>
+    </svg>
+    <figcaption>The account of one entry. An LZS stream is 100% accounted on the outer pass by construction; the figure worth reading is what its decoded side accounts to. Widths are illustrative.</figcaption>
+  </figure>
   <h3>What the number means</h3>
   <p><code>accounted</code> is the share of an entry's bytes some parser consumes. It is <strong>not</strong> the share whose meaning is understood: a fixed-region file accounts to 100% the moment its region constants are written down, while the semantics of those regions can be only partly pinned. Read it as an upper bound on understanding and a lower bound on structure.</p>
   <p>Claims are tiered so the figure cannot be inflated by guessing. An owner of <code>scan</code> means a magic sweep found the sub-asset in the residue - evidence that it is <em>there</em>, not that anything walked to it. That is why the report prints <code>structural</code> beside <code>accounted</code>, and why a large gap between them is a warning rather than a result.</p>
