@@ -28,6 +28,8 @@ pub trait FieldAudioHost {
     /// `func_0x800402F4(b1 + 0x0B, b2, 0, 0)` - the item / restore applier
     /// (`docs/subsystems/inventory.md`), which dispatches on an effect
     /// class (`b1 + 0x0B`) and tier (`b2`). Not a sound cue. PC += 4.
+    /// Every shipped carrier passes `b1` 0..2: the arts-book arm, which
+    /// inserts art `b2` into roster slot `b1`'s displayed-skill list.
     fn apply_item_effect(&mut self, b1: u8, b2: u8) {
         let _ = (b1, b2);
     }

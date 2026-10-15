@@ -371,6 +371,7 @@ On the disc:
 | 3 | `[4C C3]` | Script-table teleport + spawn-section re-run - [below](#4c-c3-script-table-teleport). |
 | 4 | `[4C C4 x z]` | Camera-zone query at an explicit tile: arm `0x801E2878`, `FUN_801DE3E0(x & 0x7F, z & 0x7F)`. Frames a shot from a region record the player is not standing in. |
 | 5 / 6 | `[4C C5\|C6 lo hi]` | Wait on system flag `lo hi` (`FUN_8003CE64`, the `0x7x` test): sub-5 holds until it is set (`0x801E2894` -> `0x801E2A10`), sub-6 until it is clear (`0x801E28B0` / `0x801E28C4`); then PC += 4. The shipped waits are on `0x0A`, `0x0B`, `0x556` and `0x557`, each flipped by a move-VM part the scene's stager table carries (`2F 1C` / `2F 1D`) - see [below](#the-system-flag-waits). |
+| 7 | `[4C C7 char art]` | **Teach a Hyper Art** (arm `0x801E28D4`): `FUN_800402F4(char + 0x0B, art, 0, 0)`, the applier's arts-book arm, inserting `art` into roster slot `char`'s displayed-skill list. PC += 4. Every carrier passes `char` 0..2 - the masters (`town0c`'s Tetsu behind a `4C 8D` test, `geremi`, `son`, `kor5`, ...). Port: `World::teach_hyper_art`. |
 | 9 | `[4C C9]` | PC += 2 unless `_DAT_8007BAB8 != _DAT_8007BA9C`, then halts. |
 | A / B / C | `[4C CN slot lo hi]` | Slot-table set / add / subtract - [below](#4c-ca--cb--cc-script-counters). |
 | D | `[4C CD]` | [Camera-glide wait](#4c-cd-waits-for-the-camera-glide). |
