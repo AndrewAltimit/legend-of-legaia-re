@@ -11,7 +11,6 @@
 //!
 //! Skips (passes vacuously) with no GPU adapter, like its sibling.
 
-use super::*;
 use crate::tests::screen_overlay_gpu::{TARGET, build_harness, headless_device, render_frame_rgba};
 use legaia_render_kernels::screen_prim::{FlatQuad, ScreenPrim, ScreenQuad};
 use legaia_render_kernels::vram_capture::{

@@ -4,8 +4,8 @@
 use crate::loaders::{decode_vab_sample, load_tim};
 use crate::stage_view::LinesPayload;
 use crate::tmd_view::VramMeshPayload;
+use glam::{Mat4, Vec3};
 use legaia_engine_audio::DEFAULT_INPUT_RATE;
-use legaia_engine_render::glam::{Mat4, Vec3};
 use std::time::Instant;
 
 /// One screen of content the viewer can display.

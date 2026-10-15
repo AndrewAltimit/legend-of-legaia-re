@@ -1296,6 +1296,7 @@ dependencies = [
  "anyhow",
  "clap",
  "env_logger",
+ "glam",
  "legaia-container-formats",
  "legaia-disc-audit",
  "legaia-engine-audio",

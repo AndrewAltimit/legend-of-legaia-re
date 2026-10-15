@@ -10,6 +10,7 @@ path = "src/main.rs"
 
 [dependencies]
 anyhow.workspace = true
+glam.workspace = true
 clap.workspace = true
 env_logger.workspace = true
 legaia-engine-audio.workspace = true

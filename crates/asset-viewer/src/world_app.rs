@@ -12,7 +12,7 @@
 use crate::mesh_bounds::{WorldActorMesh, mesh_aabb};
 use crate::scene_files::{collect_scene_tim_dirs, collect_scene_tmds};
 use anyhow::{Context, Result};
-use legaia_engine_render::glam::{Mat4, Vec3};
+use glam::{Mat4, Vec3};
 use legaia_engine_render::{
     RenderTarget, Scene as RenderScene, SceneDraw, UploadedVram,
     window::{EngineWindow, orbit_camera_mvp},
