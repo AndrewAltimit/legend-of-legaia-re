@@ -13,6 +13,7 @@
 //! hand-back), which the report names.
 
 use super::*;
+use legaia_engine_session::TickOwner;
 
 /// What one frame's ticks did ([`LegaiaRuntime::frame_ticks`]), for the
 /// page's follow-up.
@@ -85,27 +86,30 @@ impl LegaiaRuntime {
                 self.play_tick_overlay_sfx();
                 continue;
             }
-            // The naming prompt: modal, so while it is up it takes the tick.
-            let own = self.play_name_entry_tick(edge);
-            if own != 0 {
-                r.name_committed |= own == 2;
-                edge = 0;
-                continue;
-            }
-            // Retail's prologue intro skip (`FUN_801D1344`): while the
-            // opening chain plays, a Cross press skips the rest of the
-            // opening; the hand-off takes this tick and the frame's remaining
-            // ticks run on the new scene.
-            let (locked, chain) = self.cutscene_gates();
-            if chain && edge & legaia_engine_system::input::PadButton::Cross.mask() != 0 {
-                let target = self.play_take_prologue_handoff(true);
-                if !target.is_empty() {
-                    self.enter_field_core(&target, false)?;
-                    r.scenes.push(target);
+            // The modal owners, in the order both play hosts share
+            // (`BootSession::claim_tick`): the naming prompt, stepped on the
+            // tick's edge by the session, and retail's prologue intro skip
+            // (`FUN_801D1344`), whose hand-off the session has taken - the
+            // frame's remaining ticks run on the new scene.
+            let owner = self
+                .scene_host
+                .session_mut()
+                .map_or(TickOwner::Field, |s| s.claim_tick(edge));
+            match owner {
+                TickOwner::NameEntry(committed) => {
+                    r.name_committed |= committed;
                     edge = 0;
                     continue;
                 }
+                TickOwner::PrologueSkip(target) => {
+                    self.enter_field_core(target, false)?;
+                    r.scenes.push(target.to_string());
+                    edge = 0;
+                    continue;
+                }
+                TickOwner::Field => {}
             }
+            let (locked, _) = self.cutscene_gates();
             // The party-wipe hold steps once per remaining tick; the frame
             // ends with it.
             if self.is_game_over() {

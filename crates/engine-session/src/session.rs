@@ -41,10 +41,12 @@ mod field_menu;
 mod frame_steps;
 mod frame_tick;
 mod scene_entry;
+mod tick_owner;
 
 use disc_tables::*;
 pub use disc_tables::{BATTLE_XA_CLIP_SLOTS, attach_escape_icons};
 pub use frame_steps::{CUE_FOOTSTEP, step_npc_clip_players};
+pub use tick_owner::TickOwner;
 
 /// What one menu-button press did ([`BootSession::press_field_menu`]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

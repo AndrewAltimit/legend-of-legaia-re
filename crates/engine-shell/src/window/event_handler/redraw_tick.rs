@@ -4,6 +4,7 @@
 
 use super::super::*;
 use super::redraw::tick_menu_runtime_session;
+use legaia_engine_session::TickOwner;
 
 impl PlayWindowApp {
     /// Drain this redraw's sim ticks (the shared `frame_step::SimStepper`
@@ -125,61 +126,39 @@ impl PlayWindowApp {
         // Start in field opens the pause menu. Edge-detect so a
         // held key doesn't auto-reopen.
         let pressed_edge = self.pad & !self.prev_pad;
-        // Name-entry overlay is modal: while it's open the field is
-        // frozen and every pad edge routes into the entry SM (one
-        // cell / glyph per press). Mirrors the opening `town01`
-        // naming prompt, which suspends the field VM.
-        // The routing is the engine's (`World::step_name_entry_frame`, the
-        // kernel `NativeSession::tick` runs for every other driver): the
-        // edge drives the entry SM and the frame counter advances so the
-        // caret blinks. This arm adds only the window's frame-tail skip.
-        if self.session.step_name_entry_frame(pressed_edge) {
-            // Same reason as the boot-UI arm above: the party readout's
-            // decision kernel is stepped in the fall-through path and its
-            // suppression predicate names this state, so an arm that
-            // skips the step paints the readout under the overlay from
-            // the kernel's last pre-overlay answer.
-            self.tick_field_party_hud();
-            self.prev_pad = self.pad;
-            return false;
-        }
-        // Prologue intro-skip (retail FUN_801D1344): while the opening
-        // chain plays with the trigger bit armed, a confirm press
-        // (Cross) skips the WHOLE remaining opening to `town01` -
-        // available mid-narration too (the crawl is timer-driven; retail
-        // has no per-line skip).
-        if let Some(target) = self
-            .session
-            .host
-            .world
-            .take_prologue_handoff(pressed_edge & 0x4000 != 0)
-        {
-            match self.session.enter_field_live(target, &self.field_live_opts) {
-                Ok(mode) => {
-                    log::info!("prologue handoff: entered '{target}' (mode={mode:?})");
-                    // `enter_field_scene` installs `town01`'s opening
-                    // cutscene timeline (gated on the prologue hand-off):
-                    // the establishing camera + Vahn's scripted walk-out
-                    // play, and the name-entry overlay opens when the
-                    // timeline reaches its pinned op-`0x49` STATE_RESUME
-                    // (P2[3] body `0x02c6`) - the faithful in-script
-                    // trigger, not a blind host call at the hand-off.
-                    //
-                    // The host swapped scenes (opdeene -> town01):
-                    // rebuild the render-side scene state so Rim Elm's
-                    // geometry replaces the prologue's.
-                    self.rebuild_scene_render_state();
-                }
-                Err(e) => {
-                    log::warn!("prologue handoff: enter '{target}' failed ({e:#})")
-                }
+        // The modal owners, in the order both play hosts share
+        // (`BootSession::claim_tick`): the naming prompt (stepped on this
+        // tick's edge by the session) and the prologue intro skip (retail
+        // `FUN_801D1344`; the session has taken the hand-off). Each arm adds
+        // only what the window holds: the scene re-entry and its render
+        // rebuild, and the party readout's decision kernel, whose
+        // suppression predicate names both states and so must be stepped on
+        // a tick that skips the tail.
+        match self.session.claim_tick(pressed_edge) {
+            TickOwner::NameEntry(_) => {
+                self.tick_field_party_hud();
+                self.prev_pad = self.pad;
+                return false;
             }
-            // The hand-off swapped the scene under the window, which is
-            // the kernel's own rearm condition - step it here so the
-            // readout rearms on this frame rather than one frame late.
-            self.tick_field_party_hud();
-            self.prev_pad = self.pad;
-            return false;
+            TickOwner::PrologueSkip(target) => {
+                match self.session.enter_field_live(target, &self.field_live_opts) {
+                    Ok(mode) => {
+                        log::info!("prologue handoff: entered '{target}' (mode={mode:?})");
+                        // `enter_field_scene` installs `town01`'s opening
+                        // timeline (the name-entry overlay opens at its pinned
+                        // op-`0x49`); the scene swapped under the window, so
+                        // rebuild the render-side scene state.
+                        self.rebuild_scene_render_state();
+                    }
+                    Err(e) => {
+                        log::warn!("prologue handoff: enter '{target}' failed ({e:#})")
+                    }
+                }
+                self.tick_field_party_hud();
+                self.prev_pad = self.pad;
+                return false;
+            }
+            TickOwner::Field => {}
         }
         // While the opening narration crawl / title card is on screen the
         // pad is frozen (the timeline owns the scene) and Start opens

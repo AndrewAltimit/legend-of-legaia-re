@@ -36,4 +36,4 @@ pub mod session;
 pub mod xa_banks;
 
 pub use audio_director::AudioDirector;
-pub use session::{BootConfig, BootSession, PauseMenuPress};
+pub use session::{BootConfig, BootSession, PauseMenuPress, TickOwner};

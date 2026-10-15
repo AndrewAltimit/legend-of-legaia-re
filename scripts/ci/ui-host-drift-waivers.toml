@@ -274,7 +274,7 @@ skips = [
 
 [[frame_arm]]
 host = "native"
-arm = "session.step_name_entry_frame(pressed_edge)"
+arm = "TickOwner::NameEntry(_) =>"
 reason = """
 The naming prompt is modal: retail parks the opening's script on it, so the
 world must not advance under it. The arm's kernel
@@ -309,7 +309,7 @@ skips = [
 
 [[frame_arm]]
 host = "native"
-arm = "take_prologue_handoff"
+arm = "TickOwner::PrologueSkip(target) =>"
 reason = """
 One frame, and the scene under the window has just been replaced: the arm
 re-enters a field scene and rebuilds the render state. Stepping the skipped
