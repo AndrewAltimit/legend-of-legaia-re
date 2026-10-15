@@ -16,7 +16,7 @@ The dump count column reflects committed function dumps under `ghidra/scripts/fu
 
 | Overlay | Captured? | Named program | Subsystems |
 |---|---|---|---|
-| Title screen | ✓ | `overlay_title.bin` | Actor / sprite VM (`FUN_801D6628`); title-overlay tick `FUN_801DD35C` (pinned via watchpoint on the title-attract countdown at `0x801EF16C` - decrement instruction at `0x801DDCCC`, see [`subsystems/boot.md` § Tick function](../subsystems/boot.md#tick-function)). Captured live via [`scripts/pcsx-redux/autorun_countdown_trigger.lua`](../../scripts/pcsx-redux/autorun_countdown_trigger.lua) against a save state at the title screen; sidecar `.screen` blob is a PNG-decodable framebuffer of the live title (`scripts/pcsx-redux/decode_pcsx_screen.py`). |
+| Title screen (`0899`) | ✓ | `overlay_title.bin` | Actor / sprite VM (`FUN_801D6628`); title-overlay tick `FUN_801DD35C` (pinned via watchpoint on the title-attract countdown at `0x801EF16C` - decrement instruction at `0x801DDCCC`, see [`subsystems/boot.md` § Tick function](../subsystems/boot.md#tick-function)). Captured live via [`scripts/pcsx-redux/autorun_countdown_trigger.lua`](../../scripts/pcsx-redux/autorun_countdown_trigger.lua) against a save state at the title screen; sidecar `.screen` blob is a PNG-decodable framebuffer of the live title (`scripts/pcsx-redux/decode_pcsx_screen.py`). |
 | Town / field / dialog / inventory (`0897`) | ✓ | `overlay_dialog_mc4.bin` (= walk) / `overlay_dialog_typing.bin` | Field/event VM (`FUN_801DE840`), MES renderer (`FUN_801ED710`), inventory hub (`FUN_801F5748`), MAIN INIT (`FUN_801D6704`); top-20 dumped per program |
 | Field overlay - battle-start transition | ✓ | `overlay_field_battle_intro.bin` | Partial 0897 image captured mid-camera-spin; 29 functions dumped including 13 unique to this capture (`FUN_801D081C`, `FUN_801D0370`, `FUN_801CFDA0`, `FUN_801D11D0`, and 9 more) |
 | Battle / battle-action (`0898`) | ✓ | `overlay_battle_action.bin` / `overlay_magic_capture.bin` | Per-actor state machine (`FUN_801E295C`), battle main dispatcher (`FUN_801D0748`), effect VM cluster (`FUN_801DE914 / 801DFDF8 / 801E0088`); all 78 functions dumped |
@@ -118,7 +118,30 @@ A captured 256 KiB slice of an overlay buffer at `0x801C0000` is **not equivalen
 - Multi-pak loads where different ranges of the buffer come from different PROT entries.
 - Runtime-initialised BSS/state that has no on-disc counterpart.
 
-Concrete example: at title-screen showing, `captures/boot_walk/overlay_title.bin` contains PROT 1053 (`music_01`) SEQ data at `0x00000..~0x03000`, PROT 0899 options-menu data at `0x0E818..0x15818`, PROT 0897 trailing shared menu helpers at `0x0EFE8..0x10818`, and the title-overlay code proper at `0x0F000..0x25000`. Byte-search for a fingerprint from one region will only find the corresponding source PROT entry, not a single "title overlay" file. To pin a region's source: identify the region boundaries first (look for transitions in content type), pick a fingerprint UNIQUE to that region, then sweep PROT.
+Concrete example: at title-screen showing, `captures/boot_walk/overlay_title.bin`
+(based `0x801C0000`) holds three disc sources, and only one of them is an
+overlay. Attributing every 256-byte block to the PROT entry whose bytes it
+equals gives:
+
+- `0x00000..0x00D88` - the tail of PROT 1053 (`music_01`), entry bytes
+  `0x24880..0x25608`: the end of a stream loaded below the window, past the
+  entry's `pQES` at `0x242DC`.
+- `0x08980..0x09180` - the first `0x800` bytes of PROT 0891.
+- `0x0E818..0x33818` - PROT 0899, the menu overlay that carries the title code
+  (`FUN_801DD35C`, the countdown at `0x801EF16C`), at its base `0x801CE818`.
+  It is byte-identical over the entry's whole `0x25000` bytes except 33
+  runtime-written bytes in its data segment, the countdown word among them.
+- Everything else - zero fill and runtime state with no disc counterpart.
+
+Byte-search for a fingerprint from one region will only find the corresponding
+source PROT entry, not a single "title overlay" file. To pin a region's source:
+identify the region boundaries first (look for transitions in content type),
+pick a fingerprint UNIQUE to that region, then sweep PROT. An earlier reading
+of this capture as four overlapping ranges - one of them "PROT 0897 trailing
+menu helpers" inside the 0899 span - placed regions by address and short
+fingerprints. 0897 and 0899 share slot A's base, so an address range cannot
+tell them apart, and a whole-block comparison finds no 0897 bytes in the
+capture at all.
 
 ## Extracting TIMs from a RAM snapshot
 
