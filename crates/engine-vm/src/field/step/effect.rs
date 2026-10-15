@@ -66,17 +66,19 @@ pub(super) fn op_34<H: FieldHost>(
             // the matched actor's `+0x94` (a forwarded-PC pointer) and
             // returns via `caseD_4()` (STATE_RESUME → `Yield`).
             // Otherwise it falls through `code_r0x801df098` for PC += 2.
-            let Some(&b1) = bytecode.get(operand + 1) else {
-                return StepResult::Unknown { opcode, pc };
+            let after = pc + header_size + 1;
+            let block = match bytecode.get(after) {
+                Some(0x40) => bytecode.get(after + 2..),
+                _ => None,
             };
-            let captured_pc_offset = pc + header_size + 2;
-            let captured = host.op34_sub2_capture_pc(ctx, b1, captured_pc_offset);
-            if captured {
-                StepResult::Yield { resume_pc: pc }
-            } else {
+            let len = usize::from(bytecode.get(after + 1).copied().unwrap_or(0));
+            let ext = crate::field::peek_extended(bytecode, pc);
+            if block.is_some() && host.op34_sub2_capture_pc(ctx, ext, block) {
                 StepResult::Advance {
-                    next_pc: pc + header_size + 1,
+                    next_pc: after + 2 + len,
                 }
+            } else {
+                StepResult::Advance { next_pc: after }
             }
         }
         3 => {

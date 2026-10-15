@@ -16,6 +16,20 @@ impl<'a> FieldActorSpawnHost for FieldHostImpl<'a> {
             });
     }
 
+    // Op `34 2x` (`0x801E001C`): hand the context's attached light a new
+    // keyframe script - see [`World::rescript_field_attached_light`].
+    fn op34_sub2_capture_pc(
+        &mut self,
+        _ctx: &FieldCtx,
+        ext: Option<u8>,
+        block: Option<&[u8]>,
+    ) -> bool {
+        match block {
+            Some(b) => self.world.rescript_field_attached_light(ext, b),
+            None => false,
+        }
+    }
+
     // Op `43 0E`: retire the first live screen frame.
     fn op43_sube_mark_actor_flag_8(&mut self, _ctx: &mut FieldCtx) {
         if !self.world.presentation.screen_frames.is_empty() {

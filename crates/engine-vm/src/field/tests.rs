@@ -858,11 +858,18 @@ impl FieldActorSpawnHost for TestHost {
         self.mark_flag_8_calls.push(ctx.script_id);
     }
 
-    fn op34_sub2_capture_pc(&mut self, _ctx: &FieldCtx, b1: u8, captured_pc_offset: usize) -> bool {
-        // Match the original's gates: only capture when b1 == 0x40 AND
-        // the simulated lookup hits. Hosts model the lookup themselves.
-        if self.op34_sub2_capture_match && b1 == 0x40 {
-            self.op34_sub2_captures.push((b1, captured_pc_offset));
+    fn op34_sub2_capture_pc(
+        &mut self,
+        _ctx: &FieldCtx,
+        _ext: Option<u8>,
+        block: Option<&[u8]>,
+    ) -> bool {
+        // The VM offers a block only when a `0x40` header follows; the
+        // simulated lookup decides whether a light takes it.
+        if self.op34_sub2_capture_match
+            && let Some(b) = block
+        {
+            self.op34_sub2_captures.push((0x40, b.len()));
             true
         } else {
             false

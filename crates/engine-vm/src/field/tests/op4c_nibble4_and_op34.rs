@@ -630,17 +630,23 @@ fn op_34_sub_2_no_match_advances_two() {
     assert!(host.op34_sub2_captures.is_empty());
 }
 
+/// A light takes the block: the arm steps past it (`s8 += 2 + len`, then
+/// the `0x801DF098` exit's `+2`) and does not yield.
 #[test]
-fn op_34_sub_2_match_with_b1_40_yields_and_captures() {
+fn op_34_sub_2_match_with_a_block_takes_it_and_steps_past() {
     let mut host = TestHost {
         op34_sub2_capture_match: true,
         ..TestHost::default()
     };
     let mut ctx = FieldCtx::default();
-    let r = step(&mut host, &mut ctx, &[0x34, 0x20, 0x40, 0x00, 0x00], 0);
-    assert_eq!(r, StepResult::Yield { resume_pc: 0 });
-    // Captured PC offset should be `pc + header_size + 2` = 3.
-    assert_eq!(host.op34_sub2_captures, vec![(0x40u8, 3usize)]);
+    let r = step(
+        &mut host,
+        &mut ctx,
+        &[0x34, 0x20, 0x40, 0x03, 1, 2, 3, 0x21],
+        0,
+    );
+    assert_eq!(r, StepResult::Advance { next_pc: 7 });
+    assert_eq!(host.op34_sub2_captures, vec![(0x40u8, 4usize)]);
 }
 
 #[test]

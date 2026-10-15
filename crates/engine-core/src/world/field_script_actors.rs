@@ -345,6 +345,31 @@ impl World {
         true
     }
 
+    /// Op `34 2x` (`0x801E001C..0x801E0098`): the first live attached light
+    /// on the context's actor takes `script` as its keyframe script
+    /// (`+0x94`), restarted (`+0x9E = +0x9C = 0`). `false` when the actor
+    /// carries no light. `cave01`'s darkness mask and the night lamp pools
+    /// change shape this way, the player's light most of all (`B4 F8 20`).
+    ///
+    /// REF: FUN_801E4470 (the handler the lookup keys on), FUN_801E3E00
+    pub fn rescript_field_attached_light(&mut self, ext: Option<u8>, script: &[u8]) -> bool {
+        let Some(parent) = self.resolve_script_actor(ext) else {
+            return false;
+        };
+        let Some(light) = self
+            .script_actors
+            .lights
+            .iter_mut()
+            .find(|l| l.parent == parent && !l.sprite.torn_down)
+        else {
+            return false;
+        };
+        light.sprite.script = script[..billboard::attached_script_extent(script)].to_vec();
+        light.sprite.cursor = 0;
+        light.sprite.frame = 0;
+        true
+    }
+
     /// A light's parent flags as `FUN_801E4470` tests them: `8` when the
     /// parent is gone (the tear-down the light follows), `2` when it is
     /// parked off-map or collapsed to a point (hidden - the light skips its
@@ -551,6 +576,39 @@ impl NpcDrawPose {
 #[cfg(test)]
 mod npc_draw_pose_tests {
     use super::*;
+
+    /// `B4 F8 20 40 <len> ..` re-scripts the player's light (`cave01`'s
+    /// darkness mask): the block becomes `+0x94` from its first record and
+    /// the op steps past it; with no light the op only advances 2.
+    #[test]
+    fn op_34_2x_rescripts_the_attached_light() {
+        use crate::world::vm_hosts::{FieldHostImpl, field_step_routed};
+        use legaia_engine_vm::field::{FieldCtx, StepResult};
+        let mut w = World::new();
+        w.mode = legaia_engine_mode::mode::SceneMode::Field;
+        w.install_field_player(0);
+        // 34 2x, 0x40 block of one keyframe record + retire.
+        let mut op = vec![0xB4, 0xF8, 0x20, 0x40, 16, 0x02];
+        op.extend_from_slice(&[0u8; 14]);
+        op.push(0x00);
+        let mut ctx = FieldCtx::default();
+        let mut host = FieldHostImpl { world: &mut w };
+        let r = field_step_routed(&mut host, &mut ctx, &op, 0);
+        assert_eq!(r, StepResult::Advance { next_pc: 3 }, "no light: +2");
+        let spawn = billboard::AttachedSpriteSpawn {
+            op0: 0x11,
+            packed_rgb: 0x808080,
+            half_extent: (32, 32),
+            height: 0,
+        };
+        assert!(w.spawn_field_attached_light(Some(0xF8), &spawn, None));
+        let mut host = FieldHostImpl { world: &mut w };
+        let r = field_step_routed(&mut host, &mut ctx, &op, 0);
+        assert_eq!(r, StepResult::Advance { next_pc: 3 + 2 + 16 });
+        let light = &w.script_actors.lights[0];
+        assert_eq!(light.sprite.script.len(), 16, "the record and the retire");
+        assert_eq!((light.sprite.cursor, light.sprite.frame), (0, 0));
+    }
 
     /// Op `43 07` with flag `0x40000` (the `04 00 00 00` operand every
     /// shrinking carrier passes): halfway up the ramp the body is half size
