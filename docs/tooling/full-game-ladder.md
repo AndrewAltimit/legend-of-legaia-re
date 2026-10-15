@@ -236,7 +236,10 @@ one upkeep pass, in this order:
    present member first, then the affordable piece of equipment that
    improves a present member's slot the most (through the recipient
    picker, which equips it on the spot), then healing items up to fifteen
-   for each present member. A counter whose stock list sells a healing
+   for each present member. The stock is counted in Healing Flowers' worth
+   (800 HP each), not in items: counted by the item, 38 Healing Leaves read
+   as a full stock, and a run that bought seven Flowers at `rayman2` met Van
+   Saryu (`jagaroom`) with none. A counter whose stock list sells a healing
    item is visited ahead of the others: `retock`'s arms dealer (P1[34])
    took 46800 of 49991 gold before its item counter (P1[36]) was reached,
    and the party met Dohati with one Healing Flower. At a counter that
@@ -250,7 +253,10 @@ one upkeep pass, in this order:
    duels, sells no other restorative. At a counter that sells a heal, a bag
    under its fifteen a member first sells the armament no member who has
    joined (present or not) is better off wearing, whole stacks, as the
-   errand rule below does for gold.
+   errand rule below does for gold. A sale the screen does not complete is
+   struck off that visit's list rather than ending the visit: ending it
+   there left `rayman2`'s item counter with a purse of 20000 and two
+   Healing Flowers bought.
 2. **Equipment.** Start, Equip, each member, the Best Equipment row. That row ranks only the four armament slots, so the hand then fills each member's empty Goods slots from the bag, best passive first (HP, attack and arts boosts ahead of guards), never two of one passive on a member and never Rage, Zero Defense, Last Attack or No Escape.
 
    Best Equipment (`FUN_801CF760`) ranks a weapon by its stats alone, and a weapon outside the wearer's class raises the arm command's AP cost ([`arts-command-gauge.md`](../subsystems/arts-command-gauge.md)): the Astral Sword costs Vahn 54 a swing, his nine-command art no longer fits a turn, and Koru (`nilboa` P2[20]) outlasts him. So after the row the hand reads each member's arm cost off its player battle file, the way the battle loader does (`swing_command_costs`), and where a weapon in the bag swings cheaper than the one worn it puts that one on (Start, Equip, the member, the weapon row, the weapon, Yes), the best attack among equally cheap ones.
@@ -332,7 +338,18 @@ running is cast at freely.
 
 **Its bag is for the fights.** On the road a party of two or more spends a
 restorative only under 45%, a lone member under 65%; it does not open the
-menu on an empty bag. Before a staged fight it wears what the last chest
+menu on an empty bag. It heals with spells first: Start, Magic, the caster,
+the spell, the weakest member or the group confirm, through the engine's own
+field cast (`apply_spell_outcome`, the discounted MP debit and the heal),
+picking the cast that restores the most across the party's deficits. A
+caster spends only the MP above three fifths of its pool there - the line
+the bag tops MP up to before a staged fight, so a cast on the road is never
+paid for with a Magic Fruit at the boss's door - and all of it once the bag
+holds no restorative: the run met Koru (`nilboa`) with an empty bag, two
+members near death and every Spoon unspent. A rest is taken for low MP as
+well as low HP (the lower of the two gauges reads against the line): a run
+that reached Nivora's duels with Gala at 54 of 346 MP lost Che's on every
+stream. Before a staged fight it wears what the last chest
 held, takes a rest that is close by, and opens the bag only under three
 fifths - for HP, and for MP when the member lowest on it is under three
 fifths, since the casts are half of what a boss is beaten with.
@@ -488,7 +505,11 @@ the bag is short of an errand's copies:
 - **It keeps the price back.** A counter sells it the errand's item first;
   heals and equipment come out of what is left over the price, and the
   item is never used as a heal (a Soru Bread restores HP). Equipment also
-  leaves the heal refill's price in the purse.
+  leaves the heal refill's price in the purse, and once a counter has sold
+  the errand its item the counters that sell heals are visited again with
+  the change. Once only the refill is still owed, the fighting stops at the
+  bag's three heals a member: training from the bag spends the heals it is
+  fighting to buy back.
 
 The waypoints put the stretch in order: `koin2` for the chests' first
 contact (and the gold), `koin4` for the bread, `koin2` again to feed them.
@@ -1097,6 +1118,28 @@ avoid set and story flags - and a start inside it plans straight to that
 cell. On the overworld the follower inverts the camera remap exactly (of the
 eight pad directions, the one whose world bits are the step's): a rounded
 rotation turns a cardinal step diagonal whenever the camera sits off an axis.
+In the field it inverts the engine's own remap the same way: the held
+direction nibble is rotated by the camera azimuth in eighth turns around the
+eight-direction ring (`World::remap_pad_direction`, index
+`((azimuth + 0x100) >> 9) & 7`), and the press is the one whose remapped bits
+are the step's. On an axis-aligned camera that is the quarter-turn mapping;
+on a diagonal one a quarter-turn rounding pressed a cardinal for a diagonal.
+
+The follower walks the planned cells in order, and a slide that leaves the
+player a cell or two off the route rejoins it at the nearest route cell
+rather than re-planning. That rejoin can leave a route head the follower
+cannot press toward: the player's own cell (aimed at its own centre, nothing
+is left past the dead band) or a cell one diagonal step away (a diagonal
+pressed into a wall corner pins the player). The walk onto `nilboa`'s Koru
+ledge (P2[20]) stalls that way at (12634, 13762) aiming at (12608, 13792),
+and a re-plan from the stall reaches the band. Every form of that remedy
+tried moved measured stretches: inserting the open corner cell or dropping
+the head on every frame cost two seeded segments their pad tier and
+stranded a continuous run in `ropeway`, and re-planning on the stall alone
+sent the Three Tunnels' walks down a costlier way that spent a dozen
+Healing Berries before the Delilas duels, which then lost on every stream.
+The follower keeps the plain rejoin; the P2[20] stall is open, behind the
+Koru race below.
 
 ### Overworld diagonals
 
@@ -1196,8 +1239,13 @@ round parity). A foe on any other cycle gets no guard on cadence, but once a
 party-wide hit has taken two fifths of a member or more (Van Saryu's
 Earthquake), a member that hit would drop and the guard would not takes
 Spirit, ahead of healing itself when no ally is worse off; not on the round
-after a heavy one from a foe that has never hit hard twice running, and never
-against a foe that telegraphs its hit with a charge latch.
+after a heavy one from a foe that has never hit hard twice running, never
+against a foe that telegraphs its hit with a charge latch, and not again on
+the round after a stance that met no party-wide hit. Gaza's second fight
+(`korb3` P2[2]) lands its party-wide hit about every third round, and all
+three members held the stance three rounds running at half their HP, healing
+nothing and dealing nothing, until its single hits had worn them under the
+band.
 
 The cadence read needs four rounds, and Rogue (`rugi` P2[38], 28200 HP) does
 not always leave them: its first party-wide hit, on the second stretch, takes
@@ -1284,6 +1332,12 @@ the bag and its own spell list give it:
   most and that it can pay for (Spoon, 270 HP for 45 MP, for all three
   duellists), and drinks the bag's largest MP item when it cannot pay.
 
+The spell heal is not only a duel's. In any fight that forbids running, a
+bag with no restorative left and a member under three fifths of its HP has
+a caster with an affordable group heal cast it (Spoon heals all three):
+Gaza's second fight (`korb3` P2[2]) ran the bag dry with every member's
+Spoon unspent.
+
 The heals follow the bag. A second member backs up a committed heal while
 someone stands within one party-wide hit of death (turn order is drawn per
 round, so the first may act after the foe), but never with the same item
@@ -1366,8 +1420,9 @@ clips and matches the same arts a windowed one does. Beyond that:
 | `LEGAIA_FGL_TRACE_BATTLE=1` | A `[battle]` line every 1000 ticks. |
 | `LEGAIA_FGL_TRACE_HITS=1` | Each HP change with its actor and action state. |
 | `LEGAIA_FGL_PAD_DEBUG=1` | In a fight where no foe has lost HP for 6000 ticks, the fighter's pad and the command, spell and item windows' phases every 97 ticks: what a battle that will end `unresolved` was being asked. |
+| `LEGAIA_FGL_SHOP_DEBUG=1` | Each pad edge of a shop screen with the hand's next buy and sale, the screen state, the purse and the bag's heals in Healing Flowers' worth. |
 | `LEGAIA_FGL_HEAL_DEBUG=1` | Each pad edge of the field heal with the Items screen's focus, list rows, usable rows and target rows. |
-| `LEGAIA_FGL_WALK_DEBUG` | A stalled walk's wall map, the scene's teleports, tile triggers and door colliders. |
+| `LEGAIA_FGL_WALK_DEBUG` | A stalled walk's wall map, the scene's teleports, tile triggers and door colliders. With `LEGAIA_FGL_STALL_PRESSES=1` as well, it holds each of the eight presses for 20 ticks from the stall and prints where each leaves the player (the walk is disturbed from then on: a diagnosis, not a run). |
 | `LEGAIA_FGL_PLAN_DEBUG` | Each object-door edge the planner adds. |
 | `LEGAIA_FGL_COMP_DEBUG` | The tile map of every walk component a plan failed inside (`o` reached, `A` avoided door tile, `b` actor box, `G` the goal), with the overworld's installed entities, the live NPCs, the solid props with their bind records, and the self-opening doors. Beside it, a sub-cell flood of the wall bits alone. |
 | `LEGAIA_FGL_JUMP_DEBUG` | Every pad-walk frame that moves the player more than 64 units (a door or lift ride), with the live arrival bracket. |
@@ -1571,6 +1626,22 @@ Scene-specific facts the route and the pad hand depend on. Each is a property of
   ends are reached: Che against Gala, Lu against Noa, Gi against Vahn) are
   fought one member at a time out of the party's one bag
   ([guards and boss reads](#guards-and-boss-reads)).
+- Koru (P2[20]'s challenge, F32, 20000 HP) is a race against its round-4
+  finisher ([`KORU_MONSTER_ID`](#guards-and-boss-reads)), and the retail
+  party wins it on Miracle Arts: Vahn and Noa drink a Fury Boost in the first
+  round and type their nine-command Miracle every round after (about 2500
+  each). A Miracle costs nine presses at the arm's price (30), 270 from the
+  action gauge, and a Fury Boost lifts the gauge to `base * 7 / 5 + 8`, so it
+  fits from a base AGL of 188. The anchors' party holds that at level 25
+  (Vahn 202, Noa 189). A continuous run's party does not at level 31 (Vahn
+  157, Noa 177), and loses the race at about half Koru's HP. The run's AGL is
+  the SCUS growth table's (`DAT_80076918` / `DAT_800769CC`: Vahn `100..280`,
+  row 1, about 2 a level); the anchors' AGL runs about one a level above it
+  for all three characters from level 2 on, while ATK and SPD match the
+  table within the jitter. The level-up applier (`FUN_801E9504`, the AGL
+  gain at `0x801E9950..0x801E9980`) adds only the table's term and the
+  mean-zero spread, so the anchors' extra AGL has another writer; finding it
+  is the open question on this stretch.
 
 ### Overworld and dungeon joins
 
