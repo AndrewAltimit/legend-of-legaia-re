@@ -17,6 +17,7 @@ legaia-engine-scene.workspace = true
 legaia-render-kernels.workspace = true
 legaia-engine-battle-vm.workspace = true
 anyhow.workspace = true
+glam.workspace = true
 log.workspace = true
 legaia-engine-effects.workspace = true
 legaia-engine-field.workspace = true

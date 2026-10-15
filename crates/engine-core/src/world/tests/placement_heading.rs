@@ -63,3 +63,39 @@ fn a_ramped_heading_write_tweens_from_the_live_heading() {
     assert_eq!(w.npcs.headings.get(&4), Some(&(0x1000 + 0x800)));
     assert_eq!(w.npcs.heading_ramps.active(), 0);
 }
+
+/// Op `43 07` on a placement (`rugi`'s `C3 <id> 07 01 07 ..` shape, here with
+/// the shrink flag and an 8-frame ramp): the row is written, `+0x7A` ramps
+/// `0 -> 0x1000`, and the draw pose shrinks with it; `43 08` puts the body
+/// back.
+#[test]
+fn op_43_07_ramps_the_face_deformation_into_the_draw_pose() {
+    let mut w = world_with_placement();
+    w.npcs.positions.insert(4, (1000, 2000));
+    let mut ctx = FieldCtx {
+        script_id: 0x1E,
+        ..Default::default()
+    };
+    let mut host = FieldHostImpl { world: &mut w };
+    field_step_routed(
+        &mut host,
+        &mut ctx,
+        &[
+            0x43, 0x07, 0x01, 0x04, 0x00, 0x00, 0x00, 0x00, 0x00, 0xE0, 0xFF, 0x40, 0x00, 0x00,
+            0x00, 0x08, 0x00,
+        ],
+        0,
+    );
+    assert_eq!(w.npcs.face_rows[&1].offset, [0, -32, 64, 0]);
+    assert_eq!(w.npcs.face_rows[&1].flags, 4);
+    w.move_vm.ramp_ratio = 1;
+    for _ in 0..4 {
+        w.tick_npc_heading_ramps();
+    }
+    assert_eq!(w.npcs.faces[&4], (1, 0x800));
+    let pose = w.field_npc_draw_pose(4, (0, 0)).expect("drawn");
+    assert!((pose.scale - 0.5).abs() < 1e-6, "half way: half size");
+    let mut host = FieldHostImpl { world: &mut w };
+    field_step_routed(&mut host, &mut ctx, &[0x43, 0x08], 0);
+    assert_eq!(w.npcs.faces[&4], (0, 0));
+}

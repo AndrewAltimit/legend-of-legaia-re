@@ -1274,13 +1274,39 @@ height, not the extremum.
 |---|---|---|
 | 2 | `[43, 2, a1, a2, a3, lo, hi, b6]` (8 bytes) | 3-actor talk via `FUN_801D2D38`. |
 | 3..6 | 10 bytes (`[43, sub, x_lo, z_lo, x_hi, z_hi, start:i16, end:i16]`) | **Camera-register zone ramp** into `_DAT_8007B610` (sub-6) / `B614` (sub-4) / `B60C` (sub-5) / `B618` (sub-3) - see below. |
-| 7 | 17 bytes | Face / body rotation setup. Writes a 12-byte struct at `&DAT_80087E68 + face_id * 12`, schedules a `func_0x8003C5F0` ramp. |
-| 8 | 2 bytes | Face / rotation reset: clears `+0x6D` and `+0x7A`. |
+| 7 | 17 bytes | Spin-and-shrink deformation - [below](#0x43-sub-7--8---the-spin-and-shrink-deformation). |
+| 8 | 2 bytes | Deformation reset: clears `+0x6D` and `+0x7A`. |
 | 9 | 10 bytes (`[43, 9, x, y, z, ticks]`) | Explicit position. `ticks == 0` writes immediately (skipping the `0xFFFF` sentinel); otherwise `FUN_801DE698` spawns a `0x801F2840` actor whose tick `FUN_801DD4C4` eases the target from its **live** position by `t^2/d^2`. Port `legaia_engine_field::field_actor_timers::EasedMove`. |
 | 0xC | 5 bytes `[43, 0C, close, hold, open]` | **Shutter blackout.** `FUN_801DE754` → `FUN_80020DE0(&DAT_801F2858, _DAT_8007C34C)`, whose tick `FUN_801DD784` emits two black quads whose height envelope closes / holds / opens over the three operands. At full envelope the two bars cover the whole 320x224 screen, so the beat is a shutter blackout rather than a letterbox crop. 31 sites land at real opcode boundaries disc-wide, in two flavours - see [`runtime-libs.md`](../reference/functions/runtime-libs.md#fun_801dd784---the-shutter-blackout). Port `legaia_engine_field::field_actor_timers::ShutterBars`. |
 | 0xD / 0xF | 6 bytes | Allocate actor via `FUN_801DE7BC` with mode (3 for 0xD, 0 for 0xF). |
 | 0xE | 2 bytes | Mark currently-iterating actor with flag bit 0x8 (`*(int *)(actor + 0x10) \|= 0x8`). |
 | 0x16+ | - | No `case` arm in the original `case 0x43` inner switch; falls through with `iVar45 = param_2` (the dispatcher-default initialiser at line 4511 of the dump) - halts at PC. |
+
+#### 0x43 sub-7 / 8 - the spin-and-shrink deformation
+
+`[43 07 id flags:u32 h0 h1 h2 h3 frames:s16]` (arm `0x801DF6F8`) writes row
+`id` of the table at `DAT_8007BE60` (12-byte stride: the four halfwords at
+`+0..+6`, `flags` at `+8`), stores `id` into the actor's `+0x6D`, and ramps
+`+0x7A` through `FUN_8003C5F0(+0x7A, 2, ..)`: `0 -> 0x1000` over `frames`, or
+`0x1000 -> 0` over `-frames` (`0x801DF75C..0x801DF79C`). `43 08`
+(`0x801DF7AC`) zeroes `+0x6D` and `+0x7A`.
+
+While `+0x7A` is non-zero the object draw (`FUN_8001B964` on the field,
+`FUN_80048A08` in battle) hands each object to `FUN_80029888` with
+`+0x7A | row[+8] << 16` instead of the plain dispatcher. That kernel offsets
+every vertex by the row's first three halfwords, rotates it by
+`RotMatrix(a, 0, a)` with `a = +0x7A << 4` (none under flag `0x10000`),
+scales it by `0x1000 - +0x7A` under flag `0x40000`, and moves the
+translation by `-M * off` - a spin about the point `-off` that shrinks to
+nothing as the ramp completes, the angle wrapping sixteen turns back to zero.
+`town0b`, `uru`, `rugi`, `noaru`, `nilboa` and a dozen more scenes run it; the
+shipped flag words are `1`, `4`, `5`, `6`, `7` and `0xC`.
+
+Port: `World::npcs.face_rows` / `faces` / `face_ramps`, folded into the one
+draw pose both hosts build an NPC's model from
+(`NpcDrawPose::with_face`: `M * F` as `X, Y, Z` Euler angles, the pivot in the
+position, the shrink in the scale). Placements only; a player target writes
+the row and draws undeformed.
 
 #### 0x43 sub-3..6 - the camera-register zone ramp
 

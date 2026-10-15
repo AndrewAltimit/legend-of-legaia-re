@@ -105,7 +105,7 @@ pub use config::*;
 pub use cutscene_state::CutsceneState;
 pub use disc_tables::DiscTables;
 pub use field_locomotion::FieldLocomotion;
-pub use field_npc_state::{FieldNpcState, SPAWN_HEADING};
+pub use field_npc_state::{FieldFaceRow, FieldNpcState, SPAWN_HEADING};
 pub use field_prop_state::FieldPropState;
 pub use field_terrain::{FieldTerrain, step_floor_ladder};
 pub use field_vm_state::FieldVmState;

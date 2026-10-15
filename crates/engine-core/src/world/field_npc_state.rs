@@ -5,6 +5,16 @@
 
 use super::*;
 
+/// One face / body deformation row (`DAT_8007BE60 + id * 12`), as op `43 07`
+/// writes it (`0x801DF6F8..0x801DF758`): four halfwords (`+0`..`+6`, the
+/// first three the object-space offset `FUN_80029888` adds to every vertex
+/// before its rotation) and the flag word `+8`.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct FieldFaceRow {
+    pub offset: [i16; 4],
+    pub flags: u32,
+}
+
 /// Field NPC state: positions, headings, motions, ambient anims, dialog bindings and the solid / animate toggles.
 pub struct FieldNpcState {
     /// When set, pad locomotion also blocks a direction when any of retail's
@@ -121,6 +131,17 @@ pub struct FieldNpcState {
     /// field VM's nibble-4 sub-8 ramp on `+0x26`, `FUN_8003C5F0`), owner =
     /// placement slot. Ticked by `World::tick_npc_heading_ramps`.
     pub heading_ramps: legaia_engine_motion_vm::ambient_motion::RampScheduler,
+    /// The face / body deformation rows `DAT_8007BE60 + id * 12` op `43 07`
+    /// writes, keyed by row id ([`FieldFaceRow`]). Global in retail, so a row
+    /// outlives the actor that wrote it.
+    pub face_rows: std::collections::BTreeMap<u8, FieldFaceRow>,
+    /// Per placement slot: the row id `+0x6D` and the ramped value `+0x7A`
+    /// the field object draw (`FUN_8001B964` -> `FUN_80029888`) deforms the
+    /// actor by while it is non-zero. Ticked by
+    /// [`crate::world::World::tick_npc_heading_ramps`] off [`Self::face_ramps`].
+    pub faces: std::collections::BTreeMap<u8, (u8, i16)>,
+    /// The `+0x7A` ramps op `43 07` installs (`FUN_8003C5F0`, kind 2).
+    pub face_ramps: legaia_engine_motion_vm::ambient_motion::RampScheduler,
     /// Per-NPC glide speed, keyed by the same placement `slot` as
     /// [`crate::world::FieldNpcState::dialog`]: the per-frame world-unit step
     /// `Self::start_field_npc_motion` writes into a leg's motion-VM
@@ -307,6 +328,9 @@ impl FieldNpcState {
             tilts: std::collections::HashMap::new(),
             facing_save: None,
             heading_ramps: legaia_engine_motion_vm::ambient_motion::RampScheduler::new(),
+            face_rows: std::collections::BTreeMap::new(),
+            faces: std::collections::BTreeMap::new(),
+            face_ramps: legaia_engine_motion_vm::ambient_motion::RampScheduler::new(),
             glide_speeds: std::collections::BTreeMap::new(),
             default_moves: std::collections::BTreeMap::new(),
             motions: std::collections::BTreeMap::new(),

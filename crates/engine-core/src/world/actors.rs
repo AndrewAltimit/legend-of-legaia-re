@@ -383,10 +383,20 @@ impl World {
     /// retail-space value in the placement's heading (engine space,
     /// `+ 0x800`), raw, as the scheduler's `sh` does.
     pub(crate) fn tick_npc_heading_ramps(&mut self) {
+        let speed = self.move_vm.ramp_ratio.max(1);
+        if self.npcs.face_ramps.active() != 0 {
+            for w in self.npcs.face_ramps.tick(speed) {
+                if let Ok(slot) = u8::try_from(w.owner)
+                    && let Some(face) = self.npcs.faces.get_mut(&slot)
+                {
+                    // `kind 2`: an `sh` of the low half.
+                    face.1 = w.value as i16;
+                }
+            }
+        }
         if self.npcs.heading_ramps.active() == 0 {
             return;
         }
-        let speed = self.move_vm.ramp_ratio.max(1);
         for w in self.npcs.heading_ramps.tick(speed) {
             if let Ok(slot) = u8::try_from(w.owner) {
                 self.npcs
