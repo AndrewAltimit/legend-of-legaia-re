@@ -3,6 +3,26 @@
 use super::*;
 
 impl<'a> FieldActorSpawnHost for FieldHostImpl<'a> {
+    // Op `43 0D` / `43 0F` (`FUN_801DE7BC`): spawn a screen-frame actor -
+    // see [`crate::world::ScreenFrame`].
+    fn op43_subdf_alloc_actor(&mut self, _sub_op: u8, mode: u8, args: [u8; 4]) {
+        self.world
+            .presentation
+            .screen_frames
+            .push(crate::world::ScreenFrame {
+                width: args[0],
+                rgb: [args[1], args[2], args[3]],
+                ot: mode,
+            });
+    }
+
+    // Op `43 0E`: retire the first live screen frame.
+    fn op43_sube_mark_actor_flag_8(&mut self, _ctx: &mut FieldCtx) {
+        if !self.world.presentation.screen_frames.is_empty() {
+            self.world.presentation.screen_frames.remove(0);
+        }
+    }
+
     // Field-VM op `4C EB`: "run the next op only if this actor exists".
     // Retail resolves the id through `FUN_8003C83C`, the actor-list walk:
     // `0xF8` short-circuits to the player object, any other id matches a

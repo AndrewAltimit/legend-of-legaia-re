@@ -696,6 +696,52 @@ pub fn cinematic_bar_prims(bar: i16, screen_h: i16) -> Vec<ScreenPrim> {
         .collect()
 }
 
+/// The screen frame field-VM op `43 0D` / `43 0F` spawns (template
+/// `0x801F2870`, tick `FUN_801DD9D4`): eight opaque `POLY_F4` packets
+/// (`GP0 0x28`, colour bytes from the actor's `+0xB8` / `+0xBA` / `+0xBC`)
+/// built off the width `w = +0x72` - the top band `y -4 .. w-4`, the bottom
+/// band from `0xE0 - w`, the side bands between them `w` wide, and an 8-unit
+/// bevel at each inner corner (`0x801DDA90..0x801DDBC4`, one jump-table case
+/// per packet) - each into OT entry `+0x50` (`FUN_8003D2C4` at
+/// `0x801DDBE0`). Retail's `0x140` / `0xE0` literals are the stage `w` / `h`
+/// here.
+///
+/// **Both hosts call this** through `engine-screens`' screen layers.
+pub fn screen_frame_prims(
+    width: i16,
+    rgb: [u8; 3],
+    ot_index: u32,
+    stage_w: i16,
+    stage_h: i16,
+) -> Vec<ScreenPrim> {
+    let w = width;
+    let (s1, s3, s0, s5) = (w - 4, stage_w - w, stage_h - w, stage_w);
+    let quads: [[(i16, i16); 4]; 8] = [
+        [(0, -4), (s5, -4), (0, s1), (s5, s1)],
+        [(0, s0), (s5, s0), (0, stage_h), (s5, stage_h)],
+        [(0, s1), (w, s1), (0, s0), (w, s0)],
+        [(s3, s1), (s5, s1), (s3, s0), (s5, s0)],
+        [(w, s1), (w, s1), (w, s1 + 8), (w + 8, s1)],
+        [(s3, s1), (s3, s1), (s3 - 8, s1), (s3, s1 + 8)],
+        [(w, s0 - 8), (w + 8, s0), (w, s0), (w, s0)],
+        [(s3 - 8, s0), (s3, s0 - 8), (s3, s0), (s3, s0)],
+    ];
+    quads
+        .into_iter()
+        .map(|xy| {
+            ScreenPrim::Flat(FlatQuad {
+                xy,
+                color: [rgb[0], rgb[1], rgb[2], 0xFF],
+                gouraud: None,
+                semi_transparent: false,
+                abr_mode: 0,
+                ot_index,
+                depth: None,
+            })
+        })
+        .collect()
+}
+
 /// The full-screen quad the **fade actor** draws for a live screen fade -
 /// `FUN_80025000`'s per-frame `FUN_80024EE4(layer, kind, rgb)` call, the
 /// same emitter the intro styles go through ([`fade_prim`]). The template's

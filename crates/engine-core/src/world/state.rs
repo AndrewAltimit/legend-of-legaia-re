@@ -641,6 +641,7 @@ impl World {
         // would keep writing into the new scene's ladder.
         self.presentation.cinematic_bars = None;
         self.presentation.cinematic_bar = 0;
+        self.presentation.screen_frames.clear();
         self.field_vm.eased_moves.clear();
         self.terrain.floor_tier_bobs.clear();
         self.cutscene.prologue_naming_pending = false;

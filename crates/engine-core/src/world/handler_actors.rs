@@ -513,6 +513,7 @@ impl World {
         self.terrain.floor_tier_bobs.clear();
         self.presentation.cinematic_bars = None;
         self.presentation.cinematic_bar = 0;
+        self.presentation.screen_frames.clear();
         self.field_vm.eased_moves.clear();
         let present = self
             .find_actor_by_handler(ActorHandler::SubmodeDriver)

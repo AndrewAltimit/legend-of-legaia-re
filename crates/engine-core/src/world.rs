@@ -128,7 +128,7 @@ use legaia_engine_system::sound_state::SfxRingOp;
 use legaia_engine_system::story_flag_state::StoryFlagState;
 use legaia_engine_vm::frame_clock::FrameClock;
 pub use menu_state::MenuState;
-pub use screen_fx_state::{ClearColourRamp, ScreenFxState};
+pub use screen_fx_state::{ClearColourRamp, ScreenFrame, ScreenFxState};
 pub use state::*;
 pub use types::*;
 pub use world_map_state::WorldMapState;

@@ -70,6 +70,12 @@ pub struct ScreenFxState {
     /// This frame's bar height in scanlines, republished every tick so a
     /// renderer reads a value rather than re-stepping the envelope.
     pub cinematic_bar: i16,
+    /// The live screen frames field-VM op `43 0D` / `43 0F` spawned
+    /// (template `0x801F2870`, tick `FUN_801DD9D4`), oldest first; op `43 0E`
+    /// retires the first (`FUN_8003CF04` keyed on the handler, then `+0x10
+    /// |= 8`), and a scene load's pool reset drops them all. Drawn by
+    /// `legaia_render_kernels::screen_prim::screen_frame_prims`.
+    pub screen_frames: Vec<ScreenFrame>,
     /// The field frame's **clear colour**: the `r0 / g0 / b0` bytes of both
     /// draw environments (`0x8007BF5D..5F` and the `+0x74` mirror), which
     /// `PutDrawEnv` fills the frame with wherever no primitive lands. The MAN
@@ -135,6 +141,7 @@ impl ScreenFxState {
             fx: Default::default(),
             fx_frame: Default::default(),
             cinematic_bars: None,
+            screen_frames: Vec::new(),
             cinematic_bar: 0,
             clear_rgb: [0; 3],
             field_light: legaia_render_kernels::field_light::FieldLight::SCENE_LOAD,
@@ -167,4 +174,14 @@ mod tests {
         r.elapsed = 4;
         assert_eq!(r.value(), [20, 48, 108]);
     }
+}
+
+/// One screen frame actor (`FUN_801DE7BC`'s writes, `0x801DE7BC..`): the band
+/// width `+0x72`, the colour `+0xB8 / +0xBA / +0xBC`, and the OT entry
+/// `+0x50` (`3` for `43 0D`, `0` for `43 0F`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ScreenFrame {
+    pub width: u8,
+    pub rgb: [u8; 3],
+    pub ot: u8,
 }

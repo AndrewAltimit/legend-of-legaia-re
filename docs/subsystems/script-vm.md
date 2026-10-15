@@ -1278,8 +1278,8 @@ height, not the extremum.
 | 8 | 2 bytes | Deformation reset: clears `+0x6D` and `+0x7A`. |
 | 9 | 10 bytes (`[43, 9, x, y, z, ticks]`) | Explicit position. `ticks == 0` writes immediately (skipping the `0xFFFF` sentinel); otherwise `FUN_801DE698` spawns a `0x801F2840` actor whose tick `FUN_801DD4C4` eases the target from its **live** position by `t^2/d^2`. Port `legaia_engine_field::field_actor_timers::EasedMove`. |
 | 0xC | 5 bytes `[43, 0C, close, hold, open]` | **Shutter blackout.** `FUN_801DE754` → `FUN_80020DE0(&DAT_801F2858, _DAT_8007C34C)`, whose tick `FUN_801DD784` emits two black quads whose height envelope closes / holds / opens over the three operands. At full envelope the two bars cover the whole 320x224 screen, so the beat is a shutter blackout rather than a letterbox crop. 31 sites land at real opcode boundaries disc-wide, in two flavours - see [`runtime-libs.md`](../reference/functions/runtime-libs.md#fun_801dd784---the-shutter-blackout). Port `legaia_engine_field::field_actor_timers::ShutterBars`. |
-| 0xD / 0xF | 6 bytes | Allocate actor via `FUN_801DE7BC` with mode (3 for 0xD, 0 for 0xF). |
-| 0xE | 2 bytes | Mark currently-iterating actor with flag bit 0x8 (`*(int *)(actor + 0x10) \|= 0x8`). |
+| 0xD / 0xF | 6 bytes `[43, 0D\|0F, w, r, g, b]` | **Screen frame.** `FUN_801DE7BC` spawns template `0x801F2870` (`+0x72 = w`, `+0xB8/BA/BC = r g b`, `+0x50` = OT entry `3` for 0xD, `0` for 0xF), whose tick `FUN_801DD9D4` draws eight opaque `POLY_F4`: a `w`-wide band round the screen with an 8-unit bevel at each inner corner. `town0c` frames its lesson beats in grey (`43 0D 11 64 64 64`). Port `ScreenFxState::screen_frames`, drawn by `screen_prim::screen_frame_prims` on both hosts. |
+| 0xE | 2 bytes | Retire the first live screen frame: `FUN_8003CF04(_DAT_8007C34C, FUN_801DD9D4)` finds it by handler and `+0x10 \|= 8` kills it. |
 | 0x16+ | - | No `case` arm in the original `case 0x43` inner switch; falls through with `iVar45 = param_2` (the dispatcher-default initialiser at line 4511 of the dump) - halts at PC. |
 
 #### 0x43 sub-7 / 8 - the spin-and-shrink deformation

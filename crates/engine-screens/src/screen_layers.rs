@@ -231,6 +231,16 @@ pub fn compose_screen_prims(
         world.presentation.cinematic_bar,
         screen_prim::PSX_DISPLAY_H,
     ));
+    // The screen frames (`0x43 0D` / `0F` -> `FUN_801DD9D4`).
+    for f in &world.presentation.screen_frames {
+        over.extend(screen_prim::screen_frame_prims(
+            i16::from(f.width),
+            f.rgb,
+            u32::from(f.ot),
+            screen_prim::PSX_DISPLAY_W,
+            screen_prim::PSX_DISPLAY_H,
+        ));
+    }
     over.extend(value_readout);
     over.extend(legaia_engine_ui::battle_numerals::arts_banner_prims(
         &world.battle_arts_banner_quads(),
