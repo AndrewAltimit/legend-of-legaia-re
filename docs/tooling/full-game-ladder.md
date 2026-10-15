@@ -244,6 +244,13 @@ one upkeep pass, in this order:
    the counter that does. A merchant is visited again only with a
    different purse or bag, or once a counter the story had closed has
    opened ([below](#a-counter-the-story-has-closed)).
+   A heal is ranked by HP restored per gold, and a full restore (the
+   Healing Berry, "Restores maximum HP") counts as a present member's
+   maximum HP: `doman`'s counter, the last before Nivora's three solo
+   duels, sells no other restorative. At a counter that sells a heal, a bag
+   under its fifteen a member first sells the armament no member who has
+   joined (present or not) is better off wearing, whole stacks, as the
+   errand rule below does for gold.
 2. **Equipment.** Start, Equip, each member, the Best Equipment row. That row ranks only the four armament slots, so the hand then fills each member's empty Goods slots from the bag, best passive first (HP, attack and arts boosts ahead of guards), never two of one passive on a member and never Rage, Zero Defense, Last Attack or No Escape.
 
    Best Equipment (`FUN_801CF760`) ranks a weapon by its stats alone, and a weapon outside the wearer's class raises the arm command's AP cost ([`arts-command-gauge.md`](../subsystems/arts-command-gauge.md)): the Astral Sword costs Vahn 54 a swing, his nine-command art no longer fits a turn, and Koru (`nilboa` P2[20]) outlasts him. So after the row the hand reads each member's arm cost off its player battle file, the way the battle loader does (`swing_command_costs`), and where a weapon in the bag swings cheaper than the one worn it puts that one on (Start, Equip, the member, the weapon row, the weapon, Yes), the best attack among equally cheap ones.
@@ -429,6 +436,16 @@ to Nivora set four rules the continuous hand plays by:
   takes control and walks in, and control passes on until a leader stands
   who can walk to the talk; the talk's actor is read again after every swap,
   since the swap's own record moves it.
+- **A split party's stones come first.** Inside an armed three-actor talk a
+  gate stone may stand in another member's part of the map, and the band at
+  the end of a member's tunnel ends that member's part: the swap passes it
+  by from then on. So each round plays the gate stones before its walk-on
+  bands, handing control on with Square until a member can walk to the
+  stone. `nilboa`'s Shield Control Panel (P0[6], `0x458`) and the snowball
+  over the gap (P0[10], `0x475`) stand in the Wind Ravine member's tunnel and
+  clear the walls in the other two; walked after that member's tunnel end
+  P2[2], neither was reached again and P2[1] / P2[3] lay outside every
+  member's walk component.
 
 ### An errand the story waits on
 
@@ -462,10 +479,16 @@ the bag is short of an errand's copies:
 - **It fights for the rest.** While the purse plus what the outgrown pieces
   sell for is short of the errands' price, it trains as it trains for
   levels, from a bed or, with no bed in reach and heals in the bag, from the
-  bag; `kor` rolls the encounters the floors above it do not.
+  bag; `kor` rolls the encounters the floors above it do not. The price it
+  fights for includes refilling the bag to its fifteen heals a member, at
+  the price of the heal that restores the most per gold: training from the
+  bag spends the heals the next boss is fought with, and a run that stopped
+  the moment the bread was paid for, then bought armour with the rest,
+  met Gaza's second fight (`korb3`) with one Healing Flower.
 - **It keeps the price back.** A counter sells it the errand's item first;
   heals and equipment come out of what is left over the price, and the
-  item is never used as a heal (a Soru Bread restores HP).
+  item is never used as a heal (a Soru Bread restores HP). Equipment also
+  leaves the heal refill's price in the purse.
 
 The waypoints put the stretch in order: `koin2` for the chests' first
 contact (and the gold), `koin4` for the bread, `koin2` again to feed them.
@@ -1242,6 +1265,25 @@ capped at full HP, and when no item does that it is the largest in the bag
 of the dealt stream, which is how a change to anything that draws before
 the fight turned this one from a win into a stall.
 
+The three duels are won by attrition out of one bag: the retail-seeded pass
+spends about 25 Healing Flowers on Che alone. So a duellist uses everything
+the bag and its own spell list give it:
+
+- **Every heal is a single heal.** For a lone member a party heal (a
+  Healing Fruit, all-party) restores the same as a single one, and it is on
+  the heal arm's list.
+- **The stance waits on a heal that can come.** The hold below five eighths
+  lasts only while the bag holds a restorative; with none left the member
+  goes on alternating Spirit and Arts rounds.
+- **An attack Elixir first.** The member drinks a Power Elixir on itself
+  before its first Arts round (the `x6/5` attack ramp lasts the battle), or a
+  Fury Boost when its Miracle string is armed and the boosted pool pays for
+  it. Outside a duel these wait for a foe of ten times the party's HP.
+- **Spells once the bag is dry.** Under three fifths of its HP with no
+  restorative left, it casts the healing spell it knows that restores the
+  most and that it can pay for (Spoon, 270 HP for 45 MP, for all three
+  duellists), and drinks the bag's largest MP item when it cannot pay.
+
 The heals follow the bag. A second member backs up a committed heal while
 someone stands within one party-wide hit of death (turn order is drawn per
 round, so the first may act after the foe), but never with the same item
@@ -1520,8 +1562,15 @@ Scene-specific facts the route and the pad hand depend on. Each is a property of
   5. `doman` again: Usha's `0x36F` branch raises `0x370`.
 
   The continuous run plays the chain as the two milestones' `continuous_via`
-  ([the spine](#the-spine)), with those lines commented out while Gaza's
-  second fight is a coin toss for it.
+  ([the spine](#the-spine)). Without it the run reaches `doman` and `nilboa`
+  on arrival and stalls inside the tunnels on P2[32]'s `0x370`. Gaza's second
+  fight is the stretch's risk: it is won out of what the Sol errand leaves
+  in the bag ([above](#an-errand-the-story-waits-on)), and a party that
+  meets it with one Healing Flower loses it.
+- Past the tunnels, the Delilas duels (P2[3]'s branch once all three tunnel
+  ends are reached: Che against Gala, Lu against Noa, Gi against Vahn) are
+  fought one member at a time out of the party's one bag
+  ([guards and boss reads](#guards-and-boss-reads)).
 
 ### Overworld and dungeon joins
 
