@@ -467,6 +467,21 @@ pub(super) fn play_beats(
                 }
             }
         }
+        // A split party's gate stones come before its walk-on bands: the
+        // band at the end of a member's tunnel ends that member's part, and
+        // the swap passes it by from then on. `nilboa`'s Shield Control
+        // Panel (P0[6], `0x458`) and the snowball over the gap (P0[10],
+        // `0x475`) stand in the Wind Ravine member's tunnel and each clear
+        // the walls in another member's; walked after P2[2], that member's
+        // tunnel end, neither is reached again.
+        if continuous::PLAYS_ON.with(std::cell::Cell::get)
+            && session.host.world.dialog.three_actor_talk.is_some()
+            && let Some(s) =
+                play_prop_beats(session, &mf, &man, &name, &mut examined, &mut ran, true)?
+        {
+            finish(session, log, ran);
+            return Ok(Some(s));
+        }
         let boss_band_live = first_tile.keys().any(|&rec| {
             record_stages_fight(&mf, &man, 2, usize::from(rec))
                 && partition2_record_gates(&mf, &man, usize::from(rec))
@@ -777,88 +792,10 @@ pub(super) fn play_beats(
         // one (a switch) is examined with Cross, never by contact (`chitei2`
         // P0[33] raises the `0x4F0` that opens the P2[11] walk-on setting
         // `0x470`); a touch-class one (a door) is walked into.
-        for (anchor, at, gated) in prop_beats(session, &mf, &man) {
-            // The continuous hand examines only what it can walk to, and
-            // leaves the rest for a round that stands somewhere else.
-            // A gate stone (its touch clears walls) is examined only from
-            // where the party can walk, and not at all once its gate stands
-            // open: the continuous hand plays `korb3`'s maze in order.
-            let walked = gated
-                && continuous::PLAYS_ON.with(std::cell::Cell::get)
-                && prop_wall_clears(session, anchor).is_some();
-            if walked
-                && (interact_seats(session, (at.0 as i16, at.1 as i16), true).is_empty()
-                    || prop_wall_clears(session, anchor) == Some(true))
-            {
-                continue;
-            }
-            if !examined.insert(anchor) || ran >= MAX_BEATS {
-                continue;
-            }
-            ran += 1;
-            // A prop whose touch moves its flags and still leaves the one
-            // the next anchor holds clear is a dial: it is turned again
-            // until it stands where the retail run left it. `stone`'s four
-            // statues each step through four facings (`0x1D8..0x1DB`,
-            // `0x1DC..0x1DF`, `0x1E0..0x1E3`, `0x1E4..0x1E7`) and the way on
-            // opens on one combination; turned once a round, all four moved
-            // in step and the pass ran out of fresh flags short of it.
-            let mut dial: BTreeSet<u16> = BTreeSet::new();
-            let mut stuck = false;
-            for turn in 0..DIAL_TURNS {
-                if turn > 0 {
-                    // A statue still turning from the last touch takes no
-                    // new one: let it settle first.
-                    session.host.world.set_pad(0);
-                    for _ in 0..DIAL_SETTLE_TICKS {
-                        if session.tick().is_err() {
-                            break;
-                        }
-                    }
-                }
-                let f0 = flags_of_world(session);
-                let r = if gated {
-                    examine_prop(session, anchor, at, walked)
-                } else {
-                    touch_prop(session, anchor, at)
-                };
-                let r = fight_committed(session, r);
-                trace_beat(session, &f0, || format!("{name} prop {anchor:?} -> {r:?}"));
-                match r {
-                    Run::Entered(s) => {
-                        finish(session, log, ran);
-                        return Ok(Some(s));
-                    }
-                    Run::Battle(b) => return Err(format!("prop {anchor:?}: {b}")),
-                    Run::Error(e) => return Err(e),
-                    Run::Parked(_) => break,
-                    Run::Released => {}
-                }
-                // The dial is the flags its turns have moved; it stands
-                // right when each of them agrees with the next anchor.
-                let f1 = flags_of_world(session);
-                dial.extend(f0.symmetric_difference(&f1).copied());
-                let anchored = NEXT_ANCHOR_FLAGS.with(|a| a.borrow().is_some());
-                // One touch that turned nothing may be the statue still
-                // settling; two in a row and it is not a dial.
-                if f1 == f0 {
-                    if stuck || turn == 0 {
-                        break;
-                    }
-                    stuck = true;
-                    continue;
-                }
-                stuck = false;
-                if turn + 1 >= DIAL_TURNS
-                    || !anchored
-                    || dial.iter().all(|&f| f1.contains(&f) == next_anchor_has(f))
-                    || !prop_beats(session, &mf, &man)
-                        .iter()
-                        .any(|(a, _, _)| *a == anchor)
-                {
-                    break;
-                }
-            }
+        if let Some(s) = play_prop_beats(session, &mf, &man, &name, &mut examined, &mut ran, false)?
+        {
+            finish(session, log, ran);
+            return Ok(Some(s));
         }
         let now = flags_of_world(session);
         let fresh = now.difference(&seen).next().is_some();
@@ -868,6 +805,122 @@ pub(super) fn play_beats(
         }
     }
     finish(session, log, ran);
+    Ok(None)
+}
+
+/// One pass over the scene's prop beats ([`prop_beats`]). With
+/// `stones_only` it plays only the gate stones (props whose touch clears
+/// walls, `4C 70`) the continuous hand walks to: the pass a split party
+/// takes ahead of its walk-on bands ([`play_beats`]). Returns the scene a
+/// prop carried the party into.
+fn play_prop_beats(
+    session: &mut NativeSession,
+    mf: &legaia_scene_formats::man_section::ManFile,
+    man: &[u8],
+    name: &str,
+    examined: &mut BTreeSet<(u8, u8)>,
+    ran: &mut usize,
+    stones_only: bool,
+) -> Result<Option<String>, String> {
+    for (anchor, at, gated) in prop_beats(session, mf, man) {
+        // The continuous hand examines only what it can walk to, and
+        // leaves the rest for a round that stands somewhere else.
+        // A gate stone (its touch clears walls) is examined only from
+        // where the party can walk, and not at all once its gate stands
+        // open: the continuous hand plays `korb3`'s maze in order.
+        let walked = gated
+            && continuous::PLAYS_ON.with(std::cell::Cell::get)
+            && prop_wall_clears(session, anchor).is_some();
+        if stones_only && !walked {
+            continue;
+        }
+        // Inside an armed three-actor talk the stone may stand in another
+        // member's part of the map: Square hands control on until a member
+        // can walk to it, as for a walk-on band.
+        if walked
+            && prop_wall_clears(session, anchor) == Some(false)
+            && session.host.world.dialog.three_actor_talk.is_some()
+        {
+            let seat = (at.0 as i16, at.1 as i16);
+            let mut swaps = 0;
+            while interact_seats(session, seat, true).is_empty()
+                && swaps < 2
+                && swap_leader(session)
+            {
+                swaps += 1;
+            }
+        }
+        if walked
+            && (interact_seats(session, (at.0 as i16, at.1 as i16), true).is_empty()
+                || prop_wall_clears(session, anchor) == Some(true))
+        {
+            continue;
+        }
+        if *ran >= MAX_BEATS || !examined.insert(anchor) {
+            continue;
+        }
+        *ran += 1;
+        // A prop whose touch moves its flags and still leaves the one
+        // the next anchor holds clear is a dial: it is turned again
+        // until it stands where the retail run left it. `stone`'s four
+        // statues each step through four facings (`0x1D8..0x1DB`,
+        // `0x1DC..0x1DF`, `0x1E0..0x1E3`, `0x1E4..0x1E7`) and the way on
+        // opens on one combination; turned once a round, all four moved
+        // in step and the pass ran out of fresh flags short of it.
+        let mut dial: BTreeSet<u16> = BTreeSet::new();
+        let mut stuck = false;
+        for turn in 0..DIAL_TURNS {
+            if turn > 0 {
+                // A statue still turning from the last touch takes no
+                // new one: let it settle first.
+                session.host.world.set_pad(0);
+                for _ in 0..DIAL_SETTLE_TICKS {
+                    if session.tick().is_err() {
+                        break;
+                    }
+                }
+            }
+            let f0 = flags_of_world(session);
+            let r = if gated {
+                examine_prop(session, anchor, at, walked)
+            } else {
+                touch_prop(session, anchor, at)
+            };
+            let r = fight_committed(session, r);
+            trace_beat(session, &f0, || format!("{name} prop {anchor:?} -> {r:?}"));
+            match r {
+                Run::Entered(s) => return Ok(Some(s)),
+                Run::Battle(b) => return Err(format!("prop {anchor:?}: {b}")),
+                Run::Error(e) => return Err(e),
+                Run::Parked(_) => break,
+                Run::Released => {}
+            }
+            // The dial is the flags its turns have moved; it stands
+            // right when each of them agrees with the next anchor.
+            let f1 = flags_of_world(session);
+            dial.extend(f0.symmetric_difference(&f1).copied());
+            let anchored = NEXT_ANCHOR_FLAGS.with(|a| a.borrow().is_some());
+            // One touch that turned nothing may be the statue still
+            // settling; two in a row and it is not a dial.
+            if f1 == f0 {
+                if stuck || turn == 0 {
+                    break;
+                }
+                stuck = true;
+                continue;
+            }
+            stuck = false;
+            if turn + 1 >= DIAL_TURNS
+                || !anchored
+                || dial.iter().all(|&f| f1.contains(&f) == next_anchor_has(f))
+                || !prop_beats(session, mf, man)
+                    .iter()
+                    .any(|(a, _, _)| *a == anchor)
+            {
+                break;
+            }
+        }
+    }
     Ok(None)
 }
 
