@@ -55,21 +55,24 @@ authoritative list; the broad groups are:
 | Launch | *(no subcommand)* | First-run launcher: asks for the disc image once (native picker, drag-and-drop, typed path), remembers it, boots `play-window --boot-ui`. |
 | Run | `play`, `play-window`, `play-str`, `record` | Boot a scene headless (`play`) or in a wgpu window (`play-window`); play an MDEC movie (`play-str`); capture pad input to a replay (`record`). |
 | Asset export | `export-glb` | Bake a scene (or `--all-scenes`) into textured world / NPC / animated-prop `.glb`s + a placement manifest for Unity/VRChat or Blender; `--items` exports every equipment item as animated item-alone / with-limb `.glb`s, `--party` the party's field forms as villager-shaped `.glb`s ([`docs/tooling/vrchat-world-export.md`](../../docs/tooling/vrchat-world-export.md)). |
-| Save / config | `save`, `load`, `config` | Disk-save smoke round-trip + the keyboard→pad input mapping. The window's own Save writes `saves/slot_NN.bin` with the loaded scene as its resume point (LGSF `LGX5`), and Continue / Load re-enter that scene before hydrating the world, as retail does; a file without one loads onto the current scene. `load --card <image>` reads a block out of a real PSX memory-card image instead ([below](#memory-card-images)). |
+| Save / config | `save`, `load`, `config` | Disk-save smoke round-trip + the keyboard→pad input mapping. The window's own Save writes a block of `saves/memcard1.mcr` with the loaded scene as its resume point, and Continue / Load re-enter that scene before hydrating the world, as retail does; `save` / `load` / `--resume-save` still read and write LGSF slot files. `load --card <image>` reads a block out of a real PSX memory-card image instead ([below](#memory-card-images)). |
 | Parity oracles | `vram-oracle`, `mode-trace`, `audio-trace`, `pcm-trace`, `sim-trace`, `replay`, `scenarios`, `retail-compare` | The harnesses above, plus the recomp differential's engine-side emitter, deterministic replay, the scenario-hash suite and the [retail comparison corpus](../../docs/tooling/retail-compare.md). |
 | Synthetic sessions | `inventory`, `equip`, `title`, `save-select`, `encounter`, `target-pick`, `chain-editor`, `seru-capture`, `gte-replay` | Drive one engine subsystem's state machine headless from a scripted input string - no disc required. |
 
 ### Memory-card images
 
-The save screen's rack is retail's **two card ports**. Port 1 is the engine's
-own save directory; port 2 is empty until `--card <image>` mounts a real PSX
-memory-card image in it (`.mcr` / `.mcd` / `.gme` / `.mcs`, whatever
-`legaia_save::emu::detect` recognises). Its fifteen blocks fill that port's
-preview grid off the same `SaveFile::from_retail_sc_block` lift the browser
-play page's card rack uses, and Load reads the block's save - resuming into
-its own scene when it carries one. Writing *into* a mounted image is not
-supported: claiming blocks means spending the card's own free-block budget,
-which this host has no writer for.
+The save screen's rack is retail's **two card ports**, each a memory-card
+image. Port 1 is the window's own card, `memcard1.mcr` in the save directory
+(the twin of the card the browser play page keeps in its storage), formatted
+on first use - with every LGSF `slot_NN` file an older build left in the
+directory written into it once, slot `N` into grid cell `N`. Port 2 is empty
+until `--card <image>` mounts a real PSX memory-card image in it (`.mcr` /
+`.mcd` / `.gme` / `.mcs`, whatever `legaia_save::emu::detect` recognises).
+Both ports' fifteen blocks fill the preview grid off the same
+`SaveFile::from_retail_sc_block` lift the browser rack uses; Load reads the
+block's save, resuming into its own scene when it carries one, and Save
+writes through `engine-core::card_write::write_save_into_card` and writes the
+image back to its file.
 
 `legaia-engine load --card <image> [--block N]` is the headless half: it
 prints the same world summary the slot path prints, off a card block instead

@@ -570,11 +570,11 @@ pub(super) fn assemble_play_window(launch: PlayWindowLaunch<'_>) -> Result<PlayW
     let save_menu_atlas_data = build_save_menu_atlas(&session, &menu_glyph_tim_bytes);
     let menu_window_table = read_menu_window_table(&mut session);
     let mounted_card = mount_card(card);
+    let port1_card = Some(open_port_one_card(save_dir, Some(&session.host.index)));
     let initial_boot_ui = initial_boot_ui(
         boot_ui,
         publisher_logos_atlas_data.is_some(),
-        save_dir,
-        mounted_card.as_ref(),
+        [port1_card.as_ref(), mounted_card.as_ref()],
     );
 
     // The window, then the loop.
@@ -590,6 +590,7 @@ pub(super) fn assemble_play_window(launch: PlayWindowLaunch<'_>) -> Result<PlayW
         mapping,
         initial_boot_ui,
         mounted_card,
+        port1_card,
         screenshot,
         record_to,
         field_live_opts,

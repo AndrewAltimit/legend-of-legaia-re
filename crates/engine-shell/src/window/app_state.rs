@@ -839,19 +839,19 @@ pub(super) struct PlayWindowApp {
     /// player input through the boot sessions until the player picks
     /// New Game / Continue and the scene becomes interactive.
     pub(super) boot_ui: BootUiState,
-    /// Save directory the save-select session reads / writes against - the
-    /// card mounted in port 1 of the shell's rack (`disk_save_rack`).
-    pub(super) save_dir: std::path::PathBuf,
     /// A real PSX memory-card image mounted in **port 2** (`--card`), or
     /// `None` for the empty port.
     ///
     /// Owned here because the rack and the block grid are rebuilt from it
     /// every time the save screen asks, and because a Load off that port
     /// reads the block out of these bytes. The browser play page's rack is
-    /// the same model with two mountable ports (`web-viewer`'s `cards.rs`);
-    /// this host mounts the engine's own save directory in port 1 and an
-    /// image in port 2.
+    /// the same model (`web-viewer`'s `cards.rs`): a host-kept card in port 1
+    /// and a player's image in port 2.
     pub(super) card: Option<MountedCard>,
+    /// The card in **port 1**: the window's own `memcard1.mcr` in the save
+    /// directory ([`open_port_one_card`]), the twin of the card the browser
+    /// page keeps in its storage. `None` only in a harness that mounts none.
+    pub(super) port1_card: Option<MountedCard>,
     /// The save screen's shared driver: block-grid cursor + the card read
     /// behind it. Lives in `engine-core` so this window and the browser play
     /// page step the same cursor and gate the same confirms.

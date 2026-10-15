@@ -1053,11 +1053,9 @@ SIM_PAIRS: list[dict[str, object]] = [
         "rack kind each host builds, which is the one thing left that a host "
         "still chooses",
         "sites": {
-            # The rack builder takes an optional mounted card image now
-            # (`play-window --card`, port 2); `disk_save_rack` is the
-            # test-only unmounted wrapper over it, so the row follows the
-            # body that still declares the kind.
-            "native": (NATIVE_SAVE_HELPERS, "disk_save_rack_with_card"),
+            # The rack builder over the window's two cards (port 1 its own
+            # `memcard1.mcr`, port 2 `--card`'s image).
+            "native": (NATIVE_SAVE_HELPERS, "card_save_rack"),
             "web": (WEB_PLAY_MENU_INPUT, None),
         },
         "mode": "pattern_same",

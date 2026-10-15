@@ -754,9 +754,13 @@ host supplies only the bytes:
   images (`.mcr` / `.mcd` / `.gme` / `.mcs`). Grid cell `i` is card block
   `i + 1` (block 0 is the directory). Engine-format `.lgsf` sessions live in
   the page's save bar and reach the world through an import, not a rack port.
-- **Native shell**: port 1 is the save directory (`disk_save_rack_with_card`),
-  cell `i` = `slot_{i}`. Port 2 is the card image `--card` mounted (cell `i` =
-  block `i + 1`), or empty.
+- **Native shell**: port 1 is the window's own card, `memcard1.mcr` in the
+  save directory (`open_port_one_card`), the twin of the browser card - the
+  same raw 128 KiB image, read and written through the same kernels. Port 2
+  is the card image `--card` mounted, or empty. When the directory holds no
+  card yet, the window formats one and writes every LGSF `slot_NN` file an
+  older build left there into it, slot `N` into cell `N`, once; the slot
+  files stay, and `--resume-save` / `load --save-dir` still read them.
 
 Both read a card block through `MountedCard::save_at`, which refuses a block
 that does not open a save chain.

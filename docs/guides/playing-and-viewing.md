@@ -387,7 +387,10 @@ is the retail cadence - a faster walk steps more often, standing still is silent
 The engine resolves its files against the **current directory**: key bindings
 in `legaia-input.toml`, options (camera preset, movement mode, the
 `bgm_volume` / `sfx_volume` music and sound-effect levels, `0..=10` with `8`
-the retail mix) in `legaia-options.toml`, and save slots under `saves/`. Run from the same
+the retail mix) in `legaia-options.toml`, and the save screen's port-1 memory
+card at `saves/memcard1.mcr` - the same raw card image the browser play page
+keeps, which any PSX emulator reads. The first launch that finds no card
+there writes any `slot_NN` save files an older build left into it. Run from the same
 directory each time - or pass explicit paths where supported
 (`--save-dir`, `config set --config-file`).
 
