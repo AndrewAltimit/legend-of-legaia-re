@@ -220,6 +220,13 @@ impl World {
         std::mem::take(&mut self.battle.hit_events)
     }
 
+    /// Take the field script's pending audio duck (op `4C 4D`), a percentage
+    /// of the configured level. The session's audio frame hands it to the
+    /// director's duck, the one both play hosts run.
+    pub fn take_field_audio_duck(&mut self) -> Option<u8> {
+        self.audio.field_duck_pct.take()
+    }
+
     pub fn drain_battle_sfx_cues(&mut self) -> Vec<BattleSfxCue> {
         std::mem::take(&mut self.audio.battle_sfx_cues)
     }

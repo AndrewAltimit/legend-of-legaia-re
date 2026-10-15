@@ -558,7 +558,14 @@ impl<S: AudioSink> BootSession<S> {
     /// `None` with no director attached.
     pub fn step_audio_frame(&mut self) -> Option<SfxFrameReport> {
         let configured = self.host.world.audio.levels.configured_level;
-        let report = self.bgm.as_mut()?.tick_audio_frame(configured);
+        // A field script's duck (op `4C 4D`) re-targets the same ramp the
+        // battle's summon / capture arms drive.
+        let duck = self.host.world.take_field_audio_duck();
+        let bgm = self.bgm.as_mut()?;
+        if let Some(pct) = duck {
+            bgm.set_duck_pct(pct);
+        }
+        let report = bgm.tick_audio_frame(configured);
         for (id, voice) in &report.fired {
             log::debug!("SFX cue {id:#04x} fired on voice {voice}");
         }

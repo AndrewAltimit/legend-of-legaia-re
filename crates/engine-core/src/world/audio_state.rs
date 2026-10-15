@@ -215,6 +215,11 @@ pub struct AudioState {
     /// `(0xD7, 200)`; [`crate::world::World::load_full`] installs a save's
     /// pair and [`crate::world::World::save_full`] writes it back.
     pub levels: legaia_save::card::RetailAudioLevels,
+    /// A field script's audio duck (op `4C 4D`, `_DAT_8007B910 =
+    /// (value * _DAT_8008457C) >> 12`) as a percentage of the configured
+    /// level, waiting for the session's audio frame
+    /// ([`crate::world::World::take_field_audio_duck`]).
+    pub(crate) field_duck_pct: Option<u8>,
 }
 
 impl AudioState {
@@ -250,6 +255,7 @@ impl AudioState {
             bgm_script_paused: false,
             sound_arm: None,
             levels: legaia_save::card::RetailAudioLevels::COLD_RESET,
+            field_duck_pct: None,
             sfx_cue_delays: legaia_engine_system::scus_leaf_kernels::SfxCueDelays::new(
                 legaia_engine_system::scus_leaf_kernels::SFX_CUE_SLOTS,
             ),

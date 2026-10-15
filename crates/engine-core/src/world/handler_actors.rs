@@ -515,6 +515,9 @@ impl World {
         self.presentation.cinematic_bar = 0;
         self.presentation.screen_frames.clear();
         self.field_vm.eased_moves.clear();
+        // The MAN loader resets the live audio level `_DAT_8007B910` to the
+        // configured one, so a field script's duck (`4C 4D`) ends at the door.
+        self.audio.field_duck_pct = Some(100);
         let present = self
             .find_actor_by_handler(ActorHandler::SubmodeDriver)
             .is_some();

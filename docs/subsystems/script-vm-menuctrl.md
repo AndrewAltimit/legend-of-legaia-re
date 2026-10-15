@@ -672,7 +672,7 @@ stride, walking successive `vdf_idx` values.
 | 5 | `[4C E5 lo mid hi]` | **Casino coin delta** - [below](#4c-e5-casino-coin-delta). |
 | 6 | 8 bytes | `FUN_801D8280`. |
 | 7 | 7 bytes | Camera animate: 24-bit LE target + 16-bit LE duration; `func_0x8003C5F0` tween, or an instant write when the duration is 0. |
-| 8 | 10 bytes | Camera zoom: four LE16 `zoom_x` / `zoom_y` / `zoom_z` / `mode`; `mode = 0` writes the camera struct's default zoom triplet `+0x4C/+0x4E/+0x50`, `mode = 1/2/3` per-mode actor flag writes. |
+| 8 | 10 bytes | The crawl roller's control op ([cutscene.md](cutscene.md#narration-playback---the-crawl-roller-fun_80037174)): `w3 = 0` seeds the geometry words `+0x4C/+0x4E/+0x50`, `1` pauses the live roller or writes its release count `+0x52`, `2` resumes it, `3` kills it. Port `FieldHostImpl::configure_crawl_roller`. |
 | 9 | `[4C E9]` | Clear `_DAT_8007B9C4`; PC += 2. |
 | A | `[4C EA]` | Call `func_0x8003C7EC`, then halt. |
 | B | `[4C EB actor lo hi]` | Guard - [below](#4c-eb-actor-guard). |
@@ -997,14 +997,14 @@ scheduled actor; **the script never waits on it**.
 | 3 | `ctx[+0x24]` | Plain s16 write or ramp (`0x801E1234`). No jump. |
 | 4 | `ctx[+0x28]` | Plain s16 write or ramp (`0x801E126C`). No jump. |
 | 5 | `actor[+0x44].{0x9A,0x94,0x96,0x98}` | 11-byte instruction - [below](#4c-45-the-11-byte-form). |
-| 6 | `_DAT_8007B92C` | Gated by `_DAT_800845A8 == 0`; when set, the gate clears both 6 and 7. |
+| 6 | `_DAT_8007B92C` | Gated by `_DAT_800845A8 == 0`; when set, the gate clears both 6 and 7. Pad vibration: neither play host drives a controller motor, so the port takes no write. |
 | 7 | `_DAT_8007B930` | Sister of sub-6. |
 | 8 | `ctx[+0x26]` | Plain s16 write or ramp. The actor's drawn heading: nilboa's Delilas pair (`P1[4]` / `P1[5]`) stand at `0x300` from their spawn prologue's `4C 48 00 03 00 00`. Port: `FieldActorHost::set_actor_heading` and the sub-8 ramp into `World::npcs.heading_ramps`. |
 | 9 | `_DAT_801C6EA4 + 0x4A` *or* player-relative *or* delta-bank | Branched on two bits of `_DAT_1F800394` - see below. |
 | A | `_DAT_8007BCD0` | Plain global write or ramp. |
 | B | `_DAT_8007BCD4` | Sister of A. |
 | C | `_DAT_8007BCD8` | Sister of A. |
-| D | `_DAT_8007B910` | Value `(input * _DAT_8008457C) >> 12` - a fixed-point fraction of the configured **audio** level, so `0x1000` means 100% ([battle-action.md](battle-action.md#the-_dat_8007b910-ramps-are-an-audio-duck)). |
+| D | `_DAT_8007B910` | Value `(input * _DAT_8008457C) >> 12` - a fixed-point fraction of the configured **audio** level, so `0x1000` means 100% ([battle-action.md](battle-action.md#the-_dat_8007b910-ramps-are-an-audio-duck)). Port: the session's BGM duck (`World::take_field_audio_duck`, as a percentage), ramped one unit a frame rather than over `ticks`; the MAN load's reset restores it. |
 | E / F | - | No `case` arm: the inner `default:` prints `"SUB_40_ERROR"` and halts at PC. |
 
 **Sub-3 and sub-4 do not jump.** Each arm either calls `FUN_8003CE9C` and

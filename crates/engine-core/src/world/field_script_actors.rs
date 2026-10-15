@@ -604,7 +604,12 @@ mod npc_draw_pose_tests {
         assert!(w.spawn_field_attached_light(Some(0xF8), &spawn, None));
         let mut host = FieldHostImpl { world: &mut w };
         let r = field_step_routed(&mut host, &mut ctx, &op, 0);
-        assert_eq!(r, StepResult::Advance { next_pc: 3 + 2 + 16 });
+        assert_eq!(
+            r,
+            StepResult::Advance {
+                next_pc: 3 + 2 + 16
+            }
+        );
         let light = &w.script_actors.lights[0];
         assert_eq!(light.sprite.script.len(), 16, "the record and the retire");
         assert_eq!((light.sprite.cursor, light.sprite.frame), (0, 0));
