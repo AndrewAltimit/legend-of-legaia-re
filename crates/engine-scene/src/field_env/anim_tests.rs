@@ -151,6 +151,63 @@ fn a_house_door_record_decodes_to_open_and_wait() {
     assert_eq!(a.frame(), 29, "the door ends fully open");
 }
 
+/// `korb3` P0[3]'s shape: the spawn pass clears the stone's flag, tests
+/// `0x403` and either holds the stone shut and parks on the `0x21` the
+/// touch resumes from, or sets the flag and parks in an idle loop. The pass
+/// is a run of the VM: the live flags pick the arm and the writes land; a
+/// linear walk takes the second arm's `0x21` whatever the flags say.
+#[test]
+fn a_spawn_prologue_branches_on_the_live_flags() {
+    use legaia_scene_formats::field_disasm::FlagKind;
+    let rec: &[u8] = &[
+        0x00, 0x01, // header: no name, anim 1
+        0x25, // prologue marker (2)
+        0x64, 0x3E, // clear 0x43E (3)
+        0x74, 0x03, 0x11, 0x00, // test 0x403 -> 24 (5)
+        0x31, 0x1E, 0x31, 0x1F, // class bits 30 / 31 (9)
+        0x4C, 0x41, 0x40, 0x00, 0x00, 0x00, // rate <- 0x40 (13)
+        0x4C, 0x35, // reset + hold (19)
+        0x26, 0x0E, 0x00, // jump -> 36 (21)
+        0x31, 0x1E, 0x31, 0x1F, // (24)
+        0x4C, 0x36, // end + hold (28)
+        0x54, 0x3E, // set 0x43E (30)
+        0x21, // park (32)
+        0x26, 0xFE, 0xFF, // idle loop (33)
+        0x21, // park: the touch resumes past here (36)
+        0x54, 0x3E, // set 0x43E (37)
+        0x4C, 0x70, 0x2F, 0x1D, 0x30, 0x1D, // clear the gate's walls (39)
+        0x21, 0x26, 0xFE, 0xFF,
+    ];
+    // Linear: the first `0x21` in byte order.
+    assert_eq!(run_spawn_prologue(rec, 2, None).1, 33);
+
+    // The clip words and class bits stay the linear walk's (both arms).
+    let spawn = vec![AnimCmd::Rate(0x40), AnimCmd::ResetHold, AnimCmd::EndHold];
+    for (up, parked) in [(false, 37), (true, 33)] {
+        let mut writes = Vec::new();
+        let mut flags = |idx: u16, kind: FlagKind| match kind {
+            FlagKind::Test => {
+                assert_eq!(idx, 0x403);
+                up
+            }
+            _ => {
+                writes.push((idx, kind));
+                false
+            }
+        };
+        let (p, at) = decode_prop_program_with(rec, 2, Some(&mut flags));
+        assert_eq!(at, parked, "0x403 up {up}");
+        assert_eq!(p.spawn, spawn);
+        assert_eq!(p.spawn_cflags, 0xC000_0000);
+        let want = if up {
+            vec![(0x43E, FlagKind::Clear), (0x43E, FlagKind::Set)]
+        } else {
+            vec![(0x43E, FlagKind::Clear)]
+        };
+        assert_eq!(writes, want);
+    }
+}
+
 /// A record with no animation commands past its park (the locked drawer,
 /// the clock) decodes to a program that never moves the clip.
 #[test]

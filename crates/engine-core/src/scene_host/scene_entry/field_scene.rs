@@ -45,13 +45,34 @@ impl SceneHost {
             let r = b.record(anim.checked_sub(1)? as usize).ok()?;
             Some((r.frame_count, (r.a >> 8) & 1 != 0, (r.flag & 0xFF) as u8))
         };
-        self.world.props.bank = legaia_engine_scene::field_env::PropAnimBank::build(
+        // Each object's spawn pass runs against the live story flags, and its
+        // flag writes land (`FUN_8003A55C` hands the prologue to the field-VM
+        // dispatcher): `korb3`'s collection stones park on the `0x21` their
+        // touch resumes from, or set their `0x43E..` flags, by `0x403`.
+        let world = &mut self.world;
+        let mut flags = |idx: u16, kind: legaia_scene_formats::field_disasm::FlagKind| -> bool {
+            use legaia_scene_formats::field_disasm::FlagKind;
+            match kind {
+                FlagKind::Test => world.system_flag_test(idx),
+                FlagKind::Set => {
+                    world.system_flag_set(idx);
+                    false
+                }
+                FlagKind::Clear => {
+                    world.system_flag_clear(idx);
+                    false
+                }
+            }
+        };
+        let bank = legaia_engine_scene::field_env::PropAnimBank::build_with_flags(
             &placements,
             &binds,
             man_file,
             man_bytes,
             clip,
+            Some(&mut flags),
         );
+        self.world.props.bank = bank;
         self.world.props.object_shifts.clear();
         self.world.props.colliders = placements
             .iter()

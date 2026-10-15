@@ -118,7 +118,21 @@ impl PropAnimBank {
         binds: &HashMap<(u8, u8), ObjectBind>,
         man_file: &ManFile,
         man: &[u8],
+        clip: impl FnMut(u8) -> Option<(u16, bool, u8)>,
+    ) -> Self {
+        Self::build_with_flags(placements, binds, man_file, man, clip, None)
+    }
+
+    /// [`Self::build`] with each prop's spawn pass run against the live
+    /// story flags ([`run_spawn_prologue`]): the prologue's flag tests pick
+    /// its arm, and its flag writes land through `flags`.
+    pub fn build_with_flags(
+        placements: &[Placement],
+        binds: &HashMap<(u8, u8), ObjectBind>,
+        man_file: &ManFile,
+        man: &[u8],
         mut clip: impl FnMut(u8) -> Option<(u16, bool, u8)>,
+        mut flags: Option<&mut SpawnFlags<'_>>,
     ) -> Self {
         let mut bank = PropAnimBank {
             // Capture the whole id space up front: a prop resolves its clip
@@ -141,7 +155,7 @@ impl PropAnimBank {
             let Some((record, pc0)) = partition0_record(man_file, man, bind.record as usize) else {
                 continue;
             };
-            let program = decode_prop_program(record, pc0);
+            let (program, parked_pc) = decode_prop_program_with(record, pc0, flags.as_deref_mut());
             // An unposed bind whose record moves the player (a door marker)
             // is the walk-touch dispatch's, which resolves its record against
             // the live flags. Any other clip-less bind still owns its touch:
@@ -169,7 +183,6 @@ impl PropAnimBank {
             // The spawn pass is run by `FUN_8003A55C` before the first actor
             // tick, and the tick then consumes the restart request it left.
             anim.tick();
-            let parked_pc = parked_pc_after_prologue(record, pc0);
             let cflags = program.spawn_cflags;
             bank.props.insert(
                 anchor,

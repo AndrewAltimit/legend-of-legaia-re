@@ -163,6 +163,17 @@ const ANIM_BITS: &[u8] = &[1, 3, 7, 8, 9];
 /// (`0x2B` / `0x2C` / `0x2D` on `actor+0x62`, `0x4C` nibble-3 sub-5/6, `0x4C`
 /// nibble-4 sub-1)
 pub fn decode_prop_program(record: &[u8], pc0: usize) -> PropProgram {
+    decode_prop_program_with(record, pc0, None).0
+}
+
+/// [`decode_prop_program`] over the spawn pass [`run_spawn_prologue`] runs
+/// against the live story flags (`flags`), plus the parked cursor that pass
+/// leaves. `None` walks the prologue linearly (both arms of every branch).
+pub fn decode_prop_program_with(
+    record: &[u8],
+    pc0: usize,
+    flags: Option<&mut SpawnFlags<'_>>,
+) -> (PropProgram, usize) {
     use legaia_scene_formats::field_disasm::{FlagKind, InsnInfo, LinearWalker, MenuCtrlKind};
 
     let anim_cmd = |insn: &legaia_scene_formats::field_disasm::Insn| -> Option<AnimCmd> {
@@ -210,32 +221,33 @@ pub fn decode_prop_program(record: &[u8], pc0: usize) -> PropProgram {
     };
 
     let mut prog = PropProgram::default();
-    // Retail's spawn-prologue loop only enters when the record's first opcode
-    // is the `0x24`/`0x25` marker (`FUN_8003A55C`, `uVar15 - 0x24 < 2`); a
-    // record without it parks at `pc0` untouched and its leading ops run on
-    // the first touch instead.
-    let has_prologue = matches!(record.get(pc0), Some(0x24) | Some(0x25));
-    let mut spawned = !has_prologue; // past the prologue's terminating `0x21`?
+    // The cursor the first touch resumes from, and the pass's flag writes,
+    // are the flagged run's. The clip words and class bits are still read
+    // off the linear walk, both arms of a branch together: a door whose
+    // "already opened" arm sets `31 00` and `4C 36` therefore spawns
+    // exempt and drawn open whatever its flag says, as it always has here.
+    // Retail spawns a locked door solid (`dolk` P0[15..18], the Sunrise
+    // and sister gates, test `0x270..0x273`), and the ladder's routes still
+    // pass through those doors unopened, so that half stays as it was.
+    let (_, parked) = run_spawn_prologue(record, pc0, flags);
+    let (prologue, _) = run_spawn_prologue(record, pc0, None);
+    for insn in &prologue {
+        if let Some(c) = anim_cmd(insn) {
+            prog.spawn.push(c);
+        } else if insn.extended.is_none()
+            && insn.opcode == 0x31
+            && let InsnInfo::CFlag {
+                kind: FlagKind::Set,
+                bit,
+            } = insn.info
+        {
+            // Actor `+0x10` class bits (see [`PropProgram::spawn_cflags`]).
+            prog.spawn_cflags |= 1u32 << (bit & 0x1F);
+        }
+    }
     let mut seg = AnimSegment::default();
     let mut body: Vec<AnimSegment> = Vec::new();
-    for insn in LinearWalker::new(record, pc0).flatten() {
-        if !spawned {
-            if insn.opcode == OP_PARK && insn.extended.is_none() {
-                spawned = true;
-            } else if let Some(c) = anim_cmd(&insn) {
-                prog.spawn.push(c);
-            } else if insn.extended.is_none()
-                && insn.opcode == 0x31
-                && let InsnInfo::CFlag {
-                    kind: FlagKind::Set,
-                    bit,
-                } = insn.info
-            {
-                // Actor `+0x10` class bits (see [`PropProgram::spawn_cflags`]).
-                prog.spawn_cflags |= 1u32 << (bit & 0x1F);
-            }
-            continue;
-        }
+    for insn in LinearWalker::new(record, parked).flatten() {
         // The end-latch spin closes the current segment.
         if insn.opcode == OP_FLAG_TEST
             && insn.extended.is_none()
@@ -263,7 +275,7 @@ pub fn decode_prop_program(record: &[u8], pc0: usize) -> PropProgram {
         .into_iter()
         .filter(|s| s.cmds.contains(&PLAY))
         .collect();
-    prog
+    (prog, parked)
 }
 
 /// Does this bind record's spawn pass leave the clip **free-running** - i.e.
@@ -292,19 +304,91 @@ pub fn prop_spawn_free_runs(man_file: &ManFile, man: &[u8], record: usize) -> bo
     anim.flags & (ANIM_HOLD | ANIM_CLAMP) == 0
 }
 
-/// The parked script cursor `FUN_8003A55C` leaves on a freshly spawned prop:
-/// just past the spawn prologue's terminating own-context `0x21`, or `pc0`
-/// itself when the record carries no `0x24`/`0x25` prologue marker (retail
-/// skips the prologue run entirely then).
-pub(super) fn parked_pc_after_prologue(record: &[u8], pc0: usize) -> usize {
-    use legaia_scene_formats::field_disasm::LinearWalker;
+/// What `FUN_8003A55C`'s spawn pass asks of the story flags: test, set or
+/// clear system flag `idx` (the bitfield at `DAT_80085758`). The answer is the
+/// test's; a write's is ignored.
+pub type SpawnFlags<'a> = dyn FnMut(u16, legaia_scene_formats::field_disasm::FlagKind) -> bool + 'a;
+
+/// The spawn pass `FUN_8003A55C` runs on a freshly placed object: the
+/// instructions it executes, in order, and the cursor it parks at
+/// (`actor+0x9E`, where the first touch resumes).
+///
+/// Retail enters only when the record's first opcode is the `0x24` / `0x25`
+/// marker, then hands one instruction at a time to the field-VM dispatcher
+/// `FUN_801DE840` (`0x8003A914..0x8003A95C`) and stops after it has executed
+/// a `0x21`, when the dispatcher returns the cursor unchanged (a wait), or
+/// when the next opcode byte is below `0x20` (`& 0x7F`). The pass is a real
+/// run of the VM, so a story-flag test branches on the live flags and a flag
+/// write lands: `korb3` P0[3], the gate stone in front of the east corridor,
+/// clears `0x43E`, tests `0x403` and either holds itself shut and parks on
+/// the `0x21` at `+0x2A` (the touch then opens the gate) or, with `0x403` up,
+/// sets `0x43E` and parks in its idle loop. A linear walk took the second
+/// arm's `0x21` on every visit, so the stone's touch resumed in the idle loop
+/// and the gate never opened.
+///
+/// With `flags` the pass follows `0x26` jumps and the system-flag tests and
+/// performs the system-flag writes; every other op is stepped over in place
+/// (the prologues carry class bits, clip words and rates, which the caller
+/// reads off the returned instructions). Without it, the prologue is walked
+/// linearly to its first own-context `0x21`.
+///
+/// PORT: FUN_8003A55C (the spawn-prologue loop)
+pub fn run_spawn_prologue(
+    record: &[u8],
+    pc0: usize,
+    flags: Option<&mut SpawnFlags<'_>>,
+) -> (Vec<legaia_scene_formats::field_disasm::Insn>, usize) {
+    use legaia_scene_formats::field_disasm::{FlagKind, InsnInfo, LinearWalker, decode};
     if !matches!(record.get(pc0), Some(0x24) | Some(0x25)) {
-        return pc0;
+        return (Vec::new(), pc0);
     }
-    for insn in LinearWalker::new(record, pc0).flatten() {
-        if insn.opcode == OP_PARK && insn.extended.is_none() {
-            return insn.pc + insn.size;
+    let mut ran = Vec::new();
+    let Some(flags) = flags else {
+        for insn in LinearWalker::new(record, pc0).flatten() {
+            let park = insn.opcode == OP_PARK && insn.extended.is_none();
+            let next = insn.pc + insn.size;
+            ran.push(insn);
+            if park {
+                return (ran, next);
+            }
+        }
+        return (ran, pc0);
+    };
+    let mut pc = pc0;
+    // A prologue is a handful of ops; the bound only stops a jump cycle.
+    for _ in 0..512 {
+        let Ok(insn) = decode(record, pc) else {
+            return (ran, pc);
+        };
+        let raw = record[pc];
+        let mut next = pc + insn.size.max(1);
+        if insn.extended.is_none() {
+            match insn.info {
+                InsnInfo::JmpRel { target, .. } => next = target,
+                InsnInfo::SystemFlag {
+                    kind: FlagKind::Test,
+                    idx,
+                    target: Some(target),
+                    ..
+                } => {
+                    if flags(idx, FlagKind::Test) {
+                        next = target;
+                    }
+                }
+                InsnInfo::SystemFlag { kind, idx, .. } => {
+                    flags(idx, kind);
+                }
+                _ => {}
+            }
+        }
+        ran.push(insn);
+        if raw == OP_PARK || next == pc {
+            return (ran, next);
+        }
+        match record.get(next) {
+            Some(&b) if b & 0x7F >= 0x20 => pc = next,
+            _ => return (ran, next),
         }
     }
-    pc0
+    (ran, pc)
 }
