@@ -1141,6 +1141,15 @@ the head on every frame cost two seeded segments their pad tier and
 stranded a continuous run in `ropeway`, and re-planning on the stall alone
 sent the Three Tunnels' walks down a costlier way that spent a dozen
 Healing Berries before the Delilas duels, which then lost on every stream.
+A walk across a teleport maze has the opposite failure: a fresh plan from
+every cell the walker is carried to chooses between routes of nearly equal
+cost from wherever it stands, and the walk can alternate between them for
+good (`taiku`'s escape, [route notes](#overworld-and-dungeon-joins)). The
+continuous hand commits to a plan that crosses two or more jumps: off the
+route it plans only to the route's next jump and rides the rest as planned,
+and a jump aimed at three times without landing on the route drops the
+commitment.
+
 The follower keeps the plain rejoin, and the remedy sits in the beats pass
 instead, scoped to the one shape: when the walk onto a band whose record
 stages a fight stalls up to three tiles short (two for every other band),
@@ -1700,10 +1709,20 @@ Scene-specific facts the route and the pad hand depend on. Each is a property of
   `0x396` routes the party out through P2[20] (variant MAN), which raises
   `0x501` and `0x616` and lands on `map03` at (90, 85), where the cruise
   P2[9] tests `0x616` and ends in the scripted game over (`4C EA`) instead
-  of its scene change. The run beats Zora on most streams within its
-  reloads; the default stream's walk to the exit then crosses `taiku`'s
-  teleport maze slowly enough to run the clock out, which is the run's
-  stall past `zora_castle`. From the landing at (90, 85) no walk reaches
+  of its scene change. The exit is the walk-on P2[15] at (16, 28), whose
+  `0x393` has the entry script spawn the success record P2[16], and the
+  way to it from the Mist Generator crosses five teleports of `taiku`'s
+  maze, the last at (84, 59). Re-planned from every cell the walker was
+  carried off its route to, the walk switched between that route and one
+  through the door P0[6] at (109, 78), which carries the walker across in
+  both directions and re-walls its tiles on each crossing, and spent the
+  clock going back and forth; the continuous hand now commits to a route
+  that crosses two or more jumps, re-planning only to its next jump
+  ([how the pad tier walks](#how-the-pad-tier-walks)). While the clock runs
+  it also flees every random fight. Zora itself (Glare petrifies, and a
+  petrified member counts as down for the whole battle) is the remaining
+  risk: the hand buys no Stone Amulet (Sol's bakery), and a stream can lose
+  it on every reload. From the landing at (90, 85) no walk reaches
   `concnow`'s portal (66, 101); `son` P1[4], on `0x380`, spawns the
   crossing that lands beside it, hence `conkram_past`'s `son` waypoint.
 - From `zora_castle`, `concnow`'s way into Conkram's past is the walk-on

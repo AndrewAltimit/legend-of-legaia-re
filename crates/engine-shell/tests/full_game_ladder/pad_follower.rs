@@ -143,6 +143,53 @@ pub(super) fn minigame_talks(session: &NativeSession) -> HashSet<u8> {
         .collect()
 }
 
+/// The continuous hand's way through a teleport maze: once a plan crosses
+/// two or more jumps, a walk that leaves the route re-plans only to the
+/// route's next jump, then rides the rest of the route as planned. A fresh
+/// plan from every cell off the route chose between routes of nearly equal
+/// cost from wherever the walker stood: `taiku`'s escape (the Floating
+/// Castle, against its clock) set out west for the jump at (97, 101), was
+/// carried a tile off it at (97, 100), re-planned east through the door at
+/// (109, 78) - which carries the walker across both ways and re-walls its
+/// tiles on each crossing - and spent the clock going back and forth. A
+/// jump aimed at three times without landing on the route drops the
+/// commitment, and the walk plans afresh.
+#[allow(clippy::too_many_arguments)]
+pub(super) fn committed_leg(
+    session: &NativeSession,
+    from: Cell,
+    committed: &[Cell],
+    pos: usize,
+    tries: &mut HashMap<usize, u32>,
+    avoid: &HashSet<(i32, i32)>,
+    doors: &HashSet<(i32, i32)>,
+) -> Option<Vec<Cell>> {
+    if committed.is_empty() {
+        return None;
+    }
+    if let Some(k) = committed.iter().skip(pos).position(|&c| c == from) {
+        return Some(committed[pos + k + 1..].to_vec());
+    }
+    let entry = (pos..committed.len().saturating_sub(1))
+        .find(|&i| !adjacent(committed[i], committed[i + 1]))?;
+    let n = tries.entry(entry).or_insert(0);
+    *n += 1;
+    if *n > 3 {
+        return None;
+    }
+    let (ex, ez) = cell_center(committed[entry]);
+    let et = dispatch_tile(ex, ez);
+    let sub = plan_around(session, from, (et.0 as i16, et.1 as i16), avoid, doors);
+    let end = *sub.last()?;
+    let (sx, sz) = cell_center(end);
+    if dispatch_tile(sx, sz) != et {
+        return None;
+    }
+    let mut out = sub;
+    out.extend_from_slice(&committed[entry..]);
+    Some(out)
+}
+
 /// [`plan_path`] around `avoid`; when that cannot reach `goal`, around the
 /// door bands alone (a live walk-on band then gets crossed, as a player
 /// crosses one that stands in the only way through).
@@ -481,6 +528,10 @@ pub(super) fn pad_walk(
     let mut unwedged = 0usize;
     let mut scripted_next = session.host.world.encounters.scripted_formation_pending;
     let mut path = Vec::new();
+    // A route through a teleport maze, committed to ([`committed_leg`]).
+    let mut committed: Vec<Cell> = Vec::new();
+    let mut committed_pos = 0usize;
+    let mut committed_tries: HashMap<usize, u32> = HashMap::new();
     // The overworld's corner-crossing walk ([`overworld_tile_route`]).
     let mut corner_route: Vec<(i32, i32)> = Vec::new();
     let (mut corner_planned, mut corner_failed, mut corner_tapped) = (false, false, false);
@@ -599,6 +650,13 @@ pub(super) fn pad_walk(
         if planned_from != Some(cell) {
             // Follow the planned route while the player stays on it; plan
             // again only off it (a slide, a teleport, a script's move).
+            if let Some(k) = committed
+                .iter()
+                .skip(committed_pos)
+                .position(|&c| c == cell)
+            {
+                committed_pos += k;
+            }
             if let Some(i) = path.iter().position(|&c| c == cell) {
                 // On a teleport waypoint the landing is next: keep pressing
                 // from the waypoint until the jump happens.
@@ -612,8 +670,50 @@ pub(super) fn pad_walk(
                 // A slide a cell or two off the route rejoins it rather than
                 // re-planning the whole map.
                 path.drain(..i);
+            } else if let Some(leg) = committed_leg(
+                session,
+                cell,
+                &committed,
+                committed_pos,
+                &mut committed_tries,
+                avoid,
+                &doors,
+            ) {
+                path = leg;
             } else {
                 path = plan_around(session, cell, goal, avoid, &doors);
+                // The continuous hand commits to a route that crosses a
+                // teleport maze ([`committed_leg`]).
+                committed.clear();
+                committed_pos = 0;
+                committed_tries.clear();
+                if continuous::PLAYS_ON.with(std::cell::Cell::get)
+                    && path.windows(2).filter(|w| !adjacent(w[0], w[1])).count() >= 2
+                {
+                    committed = path.clone();
+                }
+                if std::env::var_os("LEGAIA_FGL_ROUTE_DEBUG").is_some() {
+                    // The route's tiles, one per change of tile, and each
+                    // jump (a teleport or a ride) marked.
+                    let mut tiles: Vec<String> = Vec::new();
+                    let mut last: Option<Cell> = None;
+                    for &c in &path {
+                        let (x, z) = cell_center(c);
+                        let t = dispatch_tile(x, z);
+                        let jump = last.is_some_and(|l| !adjacent(l, c));
+                        let s = format!("{}{t:?}", if jump { "=>" } else { "" });
+                        if jump || tiles.last().is_none_or(|p| !p.ends_with(&format!("{t:?}"))) {
+                            tiles.push(s);
+                        }
+                        last = Some(c);
+                    }
+                    eprintln!(
+                        "      [route] {} {:?} -> {goal:?}: {}",
+                        scene_name(session),
+                        here(session),
+                        tiles.join(" ")
+                    );
+                }
                 if path.is_empty() {
                     path = unwedge(session, cell, unwedged);
                     unwedged += usize::from(!path.is_empty());
