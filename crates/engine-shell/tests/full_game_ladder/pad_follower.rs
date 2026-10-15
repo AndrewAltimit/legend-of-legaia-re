@@ -455,6 +455,8 @@ pub(super) fn pad_walk(
     let mut planned_from = None;
     // Wedge exits this walk has headed for ([`unwedge`]).
     let mut unwedged = 0usize;
+    // Stall-time re-plans taken (see the stall check below).
+    let mut restalls = 0u32;
     let mut scripted_next = session.host.world.encounters.scripted_formation_pending;
     let mut path = Vec::new();
     // The overworld's corner-crossing walk ([`overworld_tile_route`]).
@@ -929,6 +931,31 @@ pub(super) fn pad_walk(
             since = 0;
         } else {
             since += 1;
+            // A stall whose route head is the player's own cell or one
+            // diagonal step away is the follower's, not the map's: a head
+            // aimed at the player's own cell centre leaves nothing past the
+            // dead band to press, and a diagonal into a wall corner pins the
+            // player. Plan again from where it stands (twice at most) before
+            // calling the walk stalled: the walk onto `nilboa`'s Koru ledge
+            // sat at (12634, 13762) aiming at (12608, 13792).
+            if since >= PAD_STALL_FRAMES
+                && restalls < 2
+                && path.first().is_some_and(|&h| {
+                    let c = cell_of(px, pz);
+                    h == c || ((h.0 - c.0).abs() == 1 && (h.1 - c.1).abs() == 1)
+                })
+            {
+                restalls += 1;
+                since = 0;
+                path = plan_around(session, cell_of(px, pz), goal, avoid, &doors);
+                planned_from = Some(cell_of(px, pz));
+                if let Some(&h) = path.first()
+                    && h == cell_of(px, pz)
+                {
+                    path.remove(0);
+                }
+                continue;
+            }
             if since >= PAD_STALL_FRAMES {
                 session.host.world.set_pad(0);
                 let (px, pz) = player_xz(session);
@@ -951,6 +978,49 @@ pub(super) fn pad_walk(
                             .map(|d| w.field_actor_dir_blocked(px, pz, d))
                             .collect::<Vec<_>>()
                     );
+                    if std::env::var_os("LEGAIA_FGL_STALL_PRESSES").is_some() {
+                        // Debug only: hold each press for 20 ticks from here
+                        // and print where it leaves the player.
+                        let presses = [
+                            ("U", PadButton::Up.mask()),
+                            ("D", PadButton::Down.mask()),
+                            ("L", PadButton::Left.mask()),
+                            ("R", PadButton::Right.mask()),
+                            ("UL", PadButton::Up.mask() | PadButton::Left.mask()),
+                            ("UR", PadButton::Up.mask() | PadButton::Right.mask()),
+                            ("DL", PadButton::Down.mask() | PadButton::Left.mask()),
+                            ("DR", PadButton::Down.mask() | PadButton::Right.mask()),
+                        ];
+                        for (name, p) in presses {
+                            let start = player_xz(session);
+                            for _ in 0..20 {
+                                session.host.world.set_pad(p);
+                                let _ = session.tick();
+                            }
+                            session.host.world.set_pad(0);
+                            let end = player_xz(session);
+                            eprintln!(
+                                "      [press] {name}: {start:?} -> {end:?} az {}",
+                                session.host.world.locomotion.camera_azimuth
+                            );
+                            // Back to where the stall stood.
+                            for _ in 0..20 {
+                                let (x, z) = player_xz(session);
+                                if (x, z) == start {
+                                    break;
+                                }
+                                let back = pad_for_step(
+                                    session,
+                                    (start.0 - x).signum(),
+                                    (start.1 - z).signum(),
+                                );
+                                session.host.world.set_pad(back);
+                                let _ = session.tick();
+                            }
+                            session.host.world.set_pad(0);
+                        }
+                    }
+                    let w = &session.host.world;
                     // 64-unit wall sub-cells around the player, Z rows. The
                     // goal tile reads `G` where it is wall, `g` where open.
                     for dz in -24i16..=24 {
@@ -973,6 +1043,7 @@ pub(super) fn pad_walk(
                         eprintln!("      [grid] {row}");
                     }
                 }
+                let w = &session.host.world;
                 let (cx, cz) = cell_center(cell_of(px, pz));
                 let block: String = (0..4)
                     .map(|dir| {
