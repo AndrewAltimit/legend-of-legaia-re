@@ -66,6 +66,8 @@ NATIVE_REDRAW_PASSES = (
 )
 NATIVE_CAMERA_MOD = "crates/engine-shell/src/window/camera.rs"
 WEB_PLAY_CAMERA = "crates/web-viewer/src/play_camera.rs"
+WEB_PLAY_HOTKEYS = "crates/web-viewer/src/play_hotkeys.rs"
+NATIVE_REDRAW_TICK = "crates/engine-shell/src/window/event_handler/redraw_tick.rs"
 NATIVE_KEYBOARD = "crates/engine-shell/src/window/event_handler/keyboard.rs"
 # `handle_key`'s arms, one method per key, by family.
 NATIVE_KEYBOARD_DEBUG_SPAWN = (

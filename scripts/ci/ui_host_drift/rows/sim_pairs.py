@@ -16,6 +16,7 @@ from ui_host_drift.rows.host_files import (
     NATIVE_MINIGAME_SESSIONS,
     NATIVE_REDRAW,
     NATIVE_REDRAW_PASSES,
+    NATIVE_REDRAW_TICK,
     NATIVE_SAVE_HELPERS,
     NATIVE_TITLE_SAVE,
     NATIVE_XA_DISC,
@@ -30,6 +31,8 @@ from ui_host_drift.rows.host_files import (
     WEB_PLAY_BATTLE_SCREEN_PRIMS,
     WEB_PLAY_BATTLE_SESSION_EXPORTS,
     WEB_PLAY_CAMERA,
+    WEB_PLAY_HOTKEYS,
+    WEB_RUNTIME_FRAME,
     WEB_PLAY_DEV_MENU,
     WEB_PLAY_FISHING,
     WEB_PLAY_MENU,
@@ -535,11 +538,45 @@ SIM_PAIRS: list[dict[str, object]] = [
         "apply and never persisted. The page's export did exactly that (and "
         "had no caller). Both sites must step the option",
         "sites": {
-            "native": (NATIVE_KEYBOARD_OPTION, "key_camera_distance"),
+            "native": (NATIVE_KEYBOARD_OPTION, "option_key"),
             "web": (WEB_PLAY_CAMERA, "play_camera_cycle_distance"),
         },
         "mode": "symbols_all",
-        "symbols": ["cycle_camera_distance", "persist_and_apply_options"],
+        "symbols": ["apply_options_hotkey", "persist_and_apply_options"],
+    },
+    {
+        "what": "host hotkeys, native vs play page - the option / cheat / "
+        "camera keys (`F1`..`F9`, `I`, `Y`, `T`, `R`). The native window "
+        "bound twelve in its keyboard arms and the page bound `F3` alone, in "
+        "JavaScript, so the enhancement toggles the docs name had no key in "
+        "the browser. Both resolve the key through the shared table "
+        "(`HostHotkey::from_dom_code`), refuse the field-only keys under a "
+        "front-end screen (`needs_field`), and make the options edit through "
+        "`apply_options_hotkey` before persisting",
+        "sites": {
+            "native": (NATIVE_KEYBOARD_OPTION, "option_key"),
+            "web": (WEB_PLAY_HOTKEYS, "play_host_hotkey"),
+        },
+        "mode": "symbols_all",
+        "symbols": [
+            "from_dom_code",
+            "needs_field",
+            "apply_options_hotkey",
+            "persist_and_apply_options",
+        ],
+    },
+    {
+        "what": "options simulation knobs per tick, native vs play page - "
+        "the native window re-asserted the persisted options onto the world "
+        "on every tick while the page pushed them only at disc load and on a "
+        "change, so a knob a transition reseeded stayed reseeded on one host. "
+        "Both run the one session step ahead of the session tick",
+        "sites": {
+            "native": (NATIVE_REDRAW_TICK, "resolve_tick_pad"),
+            "web": (WEB_RUNTIME_FRAME, "tick_frame"),
+        },
+        "mode": "symbols_all",
+        "symbols": ["apply_option_knobs"],
     },
     {
         "what": "field screen-effect washes, native vs play page - the field "

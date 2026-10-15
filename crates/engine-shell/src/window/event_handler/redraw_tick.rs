@@ -404,12 +404,9 @@ impl PlayWindowApp {
         // movement, the Field Move default, the reduce-flashing guard,
         // battle Select Attack): scene / New Game transitions can reseed
         // world state, and the knobs are host policy (options file + `R`
-        // key), not world state. The browser page pushes the same set
-        // through the same call.
-        legaia_engine_core::options::apply_to_world(
-            &self.options_state,
-            &mut self.session.host.world,
-        );
+        // key), not world state. The browser page runs the same session
+        // step on each of its ticks.
+        self.session.apply_option_knobs(&self.options_state, None);
         // `set_pad` also latches the run button off the same word, so
         // there is nothing host-side to keep in sync.
         // A `LEGAIA_BATTLE_DRIVE` capture walks the fight's pad path

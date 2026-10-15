@@ -64,11 +64,7 @@ impl HeadlessPlayWindow {
         // machine's, not the launch's: start from the defaults, then push
         // them into their consumers the way the launch did.
         app.options_state = legaia_engine_menus::options::OptionsState::default();
-        app.session.camera.distance = app.options_state.camera_distance;
-        legaia_engine_core::options::apply_to_world(
-            &app.options_state,
-            &mut app.session.host.world,
-        );
+        app.session.apply_option_knobs(&app.options_state, None);
         // The window's `resumed` upload, which with no renderer runs only its
         // world-side half (`upload_assets`).
         app.upload_assets();

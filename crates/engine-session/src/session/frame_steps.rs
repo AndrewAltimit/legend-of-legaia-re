@@ -114,6 +114,34 @@ pub fn step_npc_clip_players<'a>(
 }
 
 impl<S: AudioSink> BootSession<S> {
+    /// Push the persisted options' simulation knobs into the world and the
+    /// follow camera: precise movement, the Field Move default, reduce
+    /// flashing, the battle options, the tile windows and the ground fog
+    /// (`legaia_engine_core::options::apply_to_world`), then the camera
+    /// distance preset.
+    ///
+    /// Both play hosts call it on every sim tick ahead of the session tick,
+    /// and again whenever an option changes. A scene or New Game transition
+    /// may reseed world state, and the knobs are host policy (an options file,
+    /// `localStorage`, a hotkey) rather than world state, so the re-assert is
+    /// what keeps the two hosts' worlds from parting on a knob one of them
+    /// pushed only at disc load.
+    ///
+    /// `precise_override` is a session-only state laid over the persisted
+    /// option (the page's VR first-person drive); the native window passes
+    /// `None`.
+    pub fn apply_option_knobs(
+        &mut self,
+        opts: &legaia_engine_menus::options::OptionsState,
+        precise_override: Option<bool>,
+    ) {
+        legaia_engine_core::options::apply_to_world(opts, &mut self.host.world);
+        if let Some(on) = precise_override {
+            self.host.world.locomotion.precise_movement = on;
+        }
+        self.camera.distance = opts.camera_distance;
+    }
+
     /// The party-wipe probe: consume the world's `game_over` flag and hand
     /// back the return-to-title hold the host runs from here.
     ///

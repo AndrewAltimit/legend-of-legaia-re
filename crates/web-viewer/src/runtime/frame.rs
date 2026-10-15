@@ -52,6 +52,10 @@ impl LegaiaRuntime {
             // adopted. The page owns the pause menu and the per-tick queue
             // drains, which the session was told at install.
             session.camera_azimuth_override = self.camera_azimuth_override.take();
+            // The options' simulation knobs and the camera distance,
+            // re-asserted ahead of the tick as the native window does in its
+            // `resolve_tick_pad`: one session step on both hosts.
+            session.apply_option_knobs(&self.options_state, self.precise_movement_override);
             session
                 .tick()
                 .map_err(|e| JsValue::from_str(&format!("tick: {e:#}")))?

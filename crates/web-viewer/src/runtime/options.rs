@@ -74,17 +74,22 @@ impl LegaiaRuntime {
             audio.set_muted(self.options_state.muted);
             audio.set_bus_volumes(self.options_state.bgm_volume, self.options_state.sfx_volume);
         }
-        if let Some(host) = self.scene_host.host_mut() {
-            // The simulation knobs (precise movement, Field Move default,
-            // reduce flashing, battle Select Attack) through the one push the
-            // native window re-asserts each tick.
-            legaia_engine_core::options::apply_to_world(&self.options_state, &mut host.world);
-            if let Some(on) = self.precise_movement_override {
-                host.world.locomotion.precise_movement = on;
+        // The simulation knobs (precise movement, Field Move default, reduce
+        // flashing, the battle options, the tile windows, the ground fog) and
+        // the follow-camera distance preset, through the session step both
+        // hosts also re-assert on every tick (`BootSession::apply_option_knobs`).
+        self.apply_option_knobs();
+    }
+
+    /// [`legaia_engine_session::BootSession::apply_option_knobs`] over the
+    /// page's options and its VR precise-movement override; before a disc is
+    /// loaded only the slot's camera exists to take the distance preset.
+    pub(crate) fn apply_option_knobs(&mut self) {
+        match self.scene_host.session_mut() {
+            Some(session) => {
+                session.apply_option_knobs(&self.options_state, self.precise_movement_override)
             }
+            None => self.scene_host.camera_mut().distance = self.options_state.camera_distance,
         }
-        // The follow-camera distance preset, the same host knob the native
-        // window re-asserts each tick (`window/event_handler/redraw.rs`).
-        self.scene_host.camera_mut().distance = self.options_state.camera_distance;
     }
 }

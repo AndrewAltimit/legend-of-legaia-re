@@ -293,19 +293,16 @@ impl PlayWindowApp {
         // window's follow camera renders at (compass sense = the negated PSX
         // render yaw), so `NativeSession::tick`'s d-pad remap feed tracks the
         // on-screen view exactly - including after a left-mouse drag-orbit.
-        self.session.camera.distance = self.options_state.camera_distance;
         self.session.camera.render_yaw_bias =
             legaia_engine_field::camera_frame::retail_field_render_yaw_bias();
         // The options' simulation knobs (precise movement, Field Move - pause
         // menu Walk / Run, retail config word 0x800846CC, which the run BUTTON
         // inverts per frame, see `World::field_run_active` - reduce flashing,
-        // the battle options, the tile windows, the ground fog) through the
-        // one push the page makes at disc load, so the world holds them from
-        // the launch on rather than from the first tick's re-assert.
-        legaia_engine_core::options::apply_to_world(
-            &self.options_state,
-            &mut self.session.host.world,
-        );
+        // the battle options, the tile windows, the ground fog) and the
+        // distance preset, through the session step the page also runs at
+        // disc load, so the world holds them from the launch on rather than
+        // from the first tick's re-assert.
+        self.session.apply_option_knobs(&self.options_state, None);
         log::info!(
             "camera: distance = {} (T cycles); precise movement {} (R toggles); drag to orbit",
             self.options_state.camera_distance.label(),

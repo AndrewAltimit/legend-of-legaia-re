@@ -553,11 +553,17 @@ impl LegaiaRuntime {
     /// the kernel the native key calls) rather than the camera alone: the
     /// options apply re-asserts the stored preset onto the camera, so a
     /// camera-only write was undone by the next apply and never saved.
+    ///
+    /// The edit is the shared hotkey's (`apply_options_hotkey` over
+    /// `HostHotkey::CameraDistance`), so the page's button and its `T` key
+    /// are the native `T` key.
     pub fn play_camera_cycle_distance(&mut self) -> String {
-        let next = self.options_state.cycle_camera_distance();
-        self.scene_host.camera_mut().distance = next;
+        legaia_engine_session::hotkeys::apply_options_hotkey(
+            &mut self.options_state,
+            legaia_engine_session::hotkeys::HostHotkey::CameraDistance,
+        );
         self.persist_and_apply_options();
-        next.label().to_string()
+        self.options_state.camera_distance.label().to_string()
     }
 
     /// The follow-camera distance preset's label (`retail` / `far` /

@@ -14,6 +14,8 @@
 //!   snap).
 //! - [`session`] - [`BootSession`], the scene host plus the per-frame order
 //!   (mode seat, menus, camera halves, audio routing) around its tick.
+//! - [`hotkeys`] - the option / cheat / camera keys both play hosts bind
+//!   outside the pad vocabulary, and the options edit each one makes.
 //! - [`host_trace`] - one host-agnostic sample of the simulation, for
 //!   comparing two hosts tick by tick.
 //! - [`mode_trace`] - one sample of a session's dispatch state.
@@ -25,6 +27,7 @@ pub mod audio_director;
 pub mod battle_fx;
 pub mod battle_stage;
 pub mod host_trace;
+pub mod hotkeys;
 pub mod mode_trace;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod native;

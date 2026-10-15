@@ -48,25 +48,37 @@
       this._onUp = (e) => onKey(e, false);
       window.addEventListener('keydown', this._onDown);
       window.addEventListener('keyup', this._onUp);
-      /* `F3` toggles the debug orbit vantage, the native window's own key for
-       * the same knob (`PlayWindowApp::field_debug_camera`). Off is the
-       * default on both hosts, which is the ENGINE camera - the retail follow
-       * view and the scripted shots. A function key is not a PSX pad button,
-       * so this cannot contradict a rebindable binding. */
-      this._onDebugCam = (e) => {
-        if (e.code !== 'F3') return;
+      /* The host hotkeys (`F1`..`F9`, `I`, `Y`, `T`, `R`): the native
+       * window's option / cheat / camera keys, resolved by the engine's one
+       * table (`legaia_engine_session::hotkeys`) through `play_host_hotkey`,
+       * which also runs the options edit those keys make. What comes back is
+       * the hotkey's id; the page's own half (a checkbox to mirror, the HUD
+       * bar) is `window.__playHotkeyActions[id]`, registered by play.html.
+       * None of these keys is a pad button, so none can contradict a
+       * rebindable binding. */
+      this._onHotkey = (e) => {
+        if (e.repeat) return;
         if (!this.canvas.matches(':focus-within') && document.activeElement !== this.canvas) return;
+        if (typeof this.rt.play_host_hotkey !== 'function') return;
+        let id = '';
+        try { id = this.rt.play_host_hotkey(e.code); } catch (_) { return; }
+        if (!id) return;
         e.preventDefault();
-        this.debugCamera = !this.debugCamera;
-        /* No hand-off on the way out. Both hosts compose the debug vantage
-         * as `fixed diagonal + Camera::manual_orbit`, and the drag below
-         * steers that one field in either mode - so the two vantages never
-         * drift apart and there is nothing to reconcile. What used to be
-         * here wrote the page-local yaw's NEGATION into `manual_orbit`, and
-         * since the two track together with the toggle off, cycling `F3`
-         * flipped the orbit by twice its value. */
+        if (id === 'debug_camera') {
+          /* `F3`: the debug orbit vantage (`PlayWindowApp::field_debug_camera`
+           * natively). Off is the default on both hosts, which is the ENGINE
+           * camera - the retail follow view and the scripted shots. No
+           * hand-off on the way out: both hosts compose the debug vantage as
+           * `fixed diagonal + Camera::manual_orbit`, and the drag below
+           * steers that one field in either mode, so the two vantages never
+           * drift apart. */
+          this.debugCamera = !this.debugCamera;
+          return;
+        }
+        const act = window.__playHotkeyActions && window.__playHotkeyActions[id];
+        if (typeof act === 'function') act();
       };
-      window.addEventListener('keydown', this._onDebugCam);
+      window.addEventListener('keydown', this._onHotkey);
       /* Blur drops every held key - otherwise tabbing away mid-walk leaves the
        * player marching into a wall forever. */
       this._onBlur = () => {
