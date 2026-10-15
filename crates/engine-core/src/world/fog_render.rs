@@ -93,7 +93,7 @@ impl World {
     /// (`keikoku_chest_preload`) the gate is up and all `0x48` records of the
     /// raised cap are live, every one at the overworld spawner's lifted
     /// height. `view` is the frame's field-frame pose
-    /// ([`crate::camera_view::FieldCameraFrame::field_view`]); it is also
+    /// ([`legaia_engine_field::camera_frame::FieldCameraFrame::field_view`]); it is also
     /// kept as the camera the next spawn's overworld depth test reads.
     ///
     /// Returns the quads to composite this frame, also kept in
@@ -159,13 +159,13 @@ impl World {
     /// Both hosts hand these effects `FieldCameraFrame::field_view` of a
     /// frame resolved with no cutscene view, so in [`SceneMode::WorldMap`]
     /// that frame is the overworld walk frame, whose matrix composes the 6x
-    /// world scale (`camera_view::world_map_walk_vp`): its `clip.w` is six
+    /// world scale (`camera_frame::world_map_walk_vp`): its `clip.w` is six
     /// times the field view's. Screen positions agree either way; a depth
     /// taken at the field view's `w` would sit six times nearer than the
     /// continent under it in the depth buffer, and pass every test.
     pub fn field_fx_view(&self, view: &FieldCameraView) -> FogView {
         let scale = if self.mode == SceneMode::WorldMap {
-            crate::camera_view::WORLD_MAP_WORLD_SCALE
+            legaia_engine_field::camera_frame::WORLD_MAP_WORLD_SCALE
         } else {
             1.0
         };

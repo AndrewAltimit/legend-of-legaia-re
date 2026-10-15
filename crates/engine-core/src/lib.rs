@@ -27,7 +27,6 @@ pub mod frame_step;
 pub mod live_loop;
 pub mod menu_runtime;
 pub mod menu_validator;
-pub mod minigame_status;
 pub mod move_buffer_host;
 pub mod new_game;
 pub mod options;

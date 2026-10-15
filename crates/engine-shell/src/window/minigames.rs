@@ -163,7 +163,7 @@ impl PlayWindowApp {
 pub(super) const WINDOW_TITLE: &str = "legaia-engine";
 
 impl PlayWindowApp {
-    /// The live minigame's status caption (`engine-core::minigame_status`),
+    /// The live minigame's status caption (`engine-minigame-scenes::minigame_status`),
     /// the one row model the browser play page exports as
     /// `play_mg_caption_json`. `None` outside a minigame.
     ///
@@ -172,22 +172,19 @@ impl PlayWindowApp {
     /// map is fixed) plus `P`, the key that opens the point exchange.
     pub(super) fn minigame_caption(
         &self,
-    ) -> Option<legaia_engine_core::minigame_status::MinigameCaption> {
-        use legaia_engine_core::minigame_status as ms;
-        ms::caption(
-            &self.session.host.world,
-            &ms::StatusHost {
-                slot_machine_drawn: self.slot_gpu.is_some(),
-                fishing_keys: ms::FishingKeys {
-                    cast: "Circle",
-                    reel_a: "Cross",
-                    reel_b: "Square",
-                    menu: "Triangle",
-                    quit: "Start",
-                    prizes: "P",
-                },
+    ) -> Option<legaia_engine_minigame_scenes::minigame_status::MinigameCaption> {
+        use legaia_engine_minigame_scenes::minigame_status as ms;
+        self.session.host.world.minigame_caption(&ms::StatusHost {
+            slot_machine_drawn: self.slot_gpu.is_some(),
+            fishing_keys: ms::FishingKeys {
+                cast: "Circle",
+                reel_a: "Cross",
+                reel_b: "Square",
+                menu: "Triangle",
+                quit: "Start",
+                prizes: "P",
             },
-        )
+        })
     }
 
     /// The title bar text for this frame: the window's name, then the

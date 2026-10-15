@@ -181,7 +181,7 @@ struct TestHost {
     n_d_sub_e_calls: std::cell::RefCell<Vec<u8>>,
     n_e_sub_1_text_calls: Vec<(Vec<u8>, u16)>,
     // Five 0x4C nC sub-ops + two 0x4C nE sub-ops.
-    n_c_sub_0_move_cancels: u32,
+    n_c_sub_0_phase_draws: u32,
     n_c_sub_0_active: bool,
     n_c_sub_3_teleports: u32,
     n_c_sub_d_queries: u32,
@@ -814,8 +814,8 @@ impl FieldActorHost for TestHost {
         self.n_d_sub6_acks += 1;
     }
 
-    fn cancel_active_move(&mut self, _ctx: &mut FieldCtx) -> bool {
-        self.n_c_sub_0_move_cancels += 1;
+    fn randomize_clip_phase(&mut self, _ctx: &mut FieldCtx) -> bool {
+        self.n_c_sub_0_phase_draws += 1;
         self.n_c_sub_0_active
     }
 
@@ -858,11 +858,18 @@ impl FieldActorSpawnHost for TestHost {
         self.mark_flag_8_calls.push(ctx.script_id);
     }
 
-    fn op34_sub2_capture_pc(&mut self, _ctx: &FieldCtx, b1: u8, captured_pc_offset: usize) -> bool {
-        // Match the original's gates: only capture when b1 == 0x40 AND
-        // the simulated lookup hits. Hosts model the lookup themselves.
-        if self.op34_sub2_capture_match && b1 == 0x40 {
-            self.op34_sub2_captures.push((b1, captured_pc_offset));
+    fn op34_sub2_capture_pc(
+        &mut self,
+        _ctx: &FieldCtx,
+        _ext: Option<u8>,
+        block: Option<&[u8]>,
+    ) -> bool {
+        // The VM offers a block only when a `0x40` header follows; the
+        // simulated lookup decides whether a light takes it.
+        if self.op34_sub2_capture_match
+            && let Some(b) = block
+        {
+            self.op34_sub2_captures.push((0x40, b.len()));
             true
         } else {
             false

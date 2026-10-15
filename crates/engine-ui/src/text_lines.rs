@@ -50,7 +50,7 @@ pub fn pen_line_draws_for<'a>(
 /// The dim ink of the hosts' own stand-in text inside a minigame frame (the
 /// Baka Fighter digit strips while their sprite page is not uploaded). The
 /// minigame status rows are not drawn in the frame at all: they are caption
-/// data (`engine-core`'s `minigame_status`).
+/// data (`engine-minigame-scenes`'s `minigame_status`).
 pub const STATUS_ROW_DIM_INK: [f32; 4] = [0.7, 0.85, 1.0, 1.0];
 
 /// The field floor window's marked ink (the plate set `0x58..=0x60`, the

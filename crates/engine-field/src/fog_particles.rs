@@ -306,9 +306,9 @@ pub struct FogView {
     h: f32,
     /// The mesh frame's `clip.w` per unit of this view's `w`: `1` where the
     /// hosts draw the meshes through this very matrix (the field follow and
-    /// cutscene poses), `legaia_engine_core::camera_view::WORLD_MAP_WORLD_SCALE` on the
+    /// cutscene poses), `legaia_engine_field::camera_frame::WORLD_MAP_WORLD_SCALE` on the
     /// overworld walk frame, which composes the 6x world scale into its
-    /// matrix (`camera_view::world_map_walk_vp`) while the fog projects
+    /// matrix (`camera_frame::world_map_walk_vp`) while the fog projects
     /// through the `1x` field view of the same pose. Screen positions are
     /// the same either way; a depth handed to the meshes' depth buffer is
     /// not.

@@ -32,6 +32,9 @@ import tomllib
 from html.parser import HTMLParser
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import _registers  # noqa: E402
+
 ROOT = Path(__file__).resolve().parent
 CONTENT = ROOT / "_content"
 REPO_ROOT = ROOT.parent
@@ -1738,6 +1741,7 @@ def main() -> int:
     disc_patching_table = build_disc_patching_table()
     progress_meter = build_progress_meter()
     image_port_status = build_image_port_status()
+    site_pages = {p[0] for p in PAGES}
 
     for out_path, title, active, body_file in PAGES:
         depth = out_path.count("/")
@@ -1753,6 +1757,9 @@ def main() -> int:
             extra_head = body[len("<!--HEAD:"):end].strip()
             body = body[end + 3:].lstrip()
 
+        # Register pages: rows, areas and write-ups render from docs/ here, so
+        # the published page cannot drift from its source (site/_registers.py).
+        body = _registers.expand(body, site_pages)
         body = autolink_md_refs(body, md_paths, md_by_basename)
         if "<!--DISC_PATCHING_TABLE-->" in body:
             body = body.replace("<!--DISC_PATCHING_TABLE-->", disc_patching_table)

@@ -157,7 +157,7 @@ pub const DOUBLE_SIDED_BIT: u32 = 0x0800_0000;
 /// The NCLIP word (`Renderer::set_backface_cull` encoding) that keeps a
 /// battle body's retail front faces: both hosts draw the battle bodies under
 /// the same reflection parity as the field pass, so it is the field's `2`
-/// ([`crate::camera_view::nclip_cull_mode`]).
+/// ([`legaia_engine_field::camera_frame::nclip_cull_mode`]).
 pub const BATTLE_BODY_NCLIP: u32 = 2;
 
 impl World {

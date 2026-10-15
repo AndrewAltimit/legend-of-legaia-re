@@ -292,3 +292,32 @@ fn op_43_09_mirror_flag_holds_the_eased_y_against_the_terrain_follow() {
         "the latch retired too"
     );
 }
+
+/// `town0c`'s `43 0D 11 64 64 64`: a 17-unit grey screen frame (template
+/// `0x801F2870`, tick `FUN_801DD9D4`) on OT entry 3, retired by `43 0E`.
+#[test]
+fn op_43_0d_spawns_a_screen_frame_and_43_0e_retires_it() {
+    use crate::world::vm_hosts::{FieldHostImpl, field_step_routed};
+    let mut world = World::new();
+    let mut ctx = legaia_engine_vm::field::FieldCtx::default();
+    let mut host = FieldHostImpl { world: &mut world };
+    field_step_routed(
+        &mut host,
+        &mut ctx,
+        &[0x43, 0x0D, 0x11, 0x64, 0x64, 0x64],
+        0,
+    );
+    assert_eq!(
+        world.presentation.screen_frames,
+        vec![crate::world::ScreenFrame {
+            width: 0x11,
+            rgb: [0x64; 3],
+            ot: 3
+        }]
+    );
+    let prims = legaia_render_kernels::screen_prim::screen_frame_prims(17, [0x64; 3], 3, 320, 224);
+    assert_eq!(prims.len(), 8);
+    let mut host = FieldHostImpl { world: &mut world };
+    field_step_routed(&mut host, &mut ctx, &[0x43, 0x0E], 0);
+    assert!(world.presentation.screen_frames.is_empty());
+}

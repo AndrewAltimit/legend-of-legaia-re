@@ -31,6 +31,31 @@
     <li><b>Sub-assets</b><span>DATA_FIELD chunks split out. <code>asset extract</code></span></li>
     <li><b>Exports</b><span>PNG, OBJ, WAV, TIM catalogs, dialog font. <code>tim tmd vab xa</code></span></li>
   </ol>
+  <figure class="diagram">
+    <svg viewBox="0 0 966 212" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="The extraction pipeline. The disc image is verified, walked as ISO 9660, PROT.DAT is split into its 1233 entries, each entry is categorized, DATA_FIELD streaming sub-assets are extracted and their TIMs converted to PNG. Two branches leave the main line: CD-XA audio is demuxed from the raw disc sectors into per-channel WAVs, and the split PROT entries feed the two TIM catalogs and the dialog-font artifacts.">
+      <defs><marker id="ex-ah" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <rect x="10" y="20" width="146" height="44" rx="4" class="dg-node-accent"/><text x="83" y="39" class="dg-label">disc .bin</text><text x="83" y="55" class="dg-sub">verify SHA-256</text>
+      <rect x="170" y="20" width="146" height="44" rx="4" class="dg-node"/><text x="243" y="39" class="dg-label">ISO 9660 walk</text><text x="243" y="55" class="dg-sub">copy every file</text>
+      <rect x="330" y="20" width="146" height="44" rx="4" class="dg-node"/><text x="403" y="39" class="dg-label">split PROT.DAT</text><text x="403" y="55" class="dg-sub">1233 entries</text>
+      <rect x="490" y="20" width="146" height="44" rx="4" class="dg-node"/><text x="563" y="39" class="dg-label">categorize</text><text x="563" y="55" class="dg-sub">class per entry</text>
+      <rect x="650" y="20" width="146" height="44" rx="4" class="dg-node"/><text x="723" y="39" class="dg-label">streaming</text><text x="723" y="55" class="dg-sub">DATA_FIELD chunks</text>
+      <rect x="810" y="20" width="146" height="44" rx="4" class="dg-node-ok"/><text x="883" y="39" class="dg-label">TIM to PNG</text><text x="883" y="55" class="dg-sub">--skip-png</text>
+      <path d="M156 42 L168 42" class="dg-edge" marker-end="url(#ex-ah)"/>
+      <path d="M316 42 L328 42" class="dg-edge" marker-end="url(#ex-ah)"/>
+      <path d="M476 42 L488 42" class="dg-edge" marker-end="url(#ex-ah)"/>
+      <path d="M636 42 L648 42" class="dg-edge" marker-end="url(#ex-ah)"/>
+      <path d="M796 42 L808 42" class="dg-edge" marker-end="url(#ex-ah)"/>
+      <path d="M83 64 L83 122 L168 122" class="dg-edge" marker-end="url(#ex-ah)"/>
+      <rect x="170" y="100" width="146" height="44" rx="4" class="dg-node"/><text x="243" y="119" class="dg-label">CD-XA demux</text><text x="243" y="135" class="dg-sub">raw 2352-byte sectors</text>
+      <path d="M243 144 L243 154" class="dg-edge" marker-end="url(#ex-ah)"/>
+      <rect x="170" y="156" width="146" height="44" rx="4" class="dg-node-ok"/><text x="243" y="175" class="dg-label">XA_WAV/</text><text x="243" y="191" class="dg-sub">per (file, channel)</text>
+      <path d="M413 64 L413 122 L488 122" class="dg-edge" marker-end="url(#ex-ah)"/>
+      <rect x="490" y="100" width="146" height="44" rx="4" class="dg-node-ok"/><text x="563" y="119" class="dg-label">TIM catalogs</text><text x="563" y="135" class="dg-sub">two .tsv inventories</text>
+      <path d="M393 64 L393 178 L488 178" class="dg-edge" marker-end="url(#ex-ah)"/>
+      <rect x="490" y="156" width="146" height="44" rx="4" class="dg-node-ok"/><text x="563" y="175" class="dg-label">dialog font</text><text x="563" y="191" class="dg-sub">atlas + width table</text>
+    </svg>
+    <figcaption>What <code>legaia-extract</code> runs. Each later stage reads what an earlier one wrote; the CD-XA branch reads the raw image, because the ISO walk's Form-1 copy truncates every audio sector. Green nodes are outputs, each behind its own <code>--skip-*</code> flag.</figcaption>
+  </figure>
   <p class="hint">Each stage is a standalone binary; <code>legaia-extract</code> chains them. CD-XA audio skips the walk entirely and is demuxed straight from the raw disc (see below).</p>
   <table>
     <thead><tr><th>Flag</th><th>Skips</th></tr></thead>

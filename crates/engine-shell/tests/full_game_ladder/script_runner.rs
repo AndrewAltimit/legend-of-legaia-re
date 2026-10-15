@@ -846,9 +846,22 @@ pub(super) fn run(session: &mut NativeSession, budget: usize, stop_on_release: b
         // A save point or a ready check presses the menu button itself
         // (`World::scripted_menu_open_pending`), and `NativeSession::tick` opens
         // the menu; answer it the way a player who is not saving does.
-        let pad = match scripted_menu_pad(session, f) {
-            Some(p) => p,
-            None => script_pad(session, f),
+        // A minigame the hand did not choose (a venue cabinet's talk, asked
+        // and answered on the walk past it: `koin1`'s slot machines,
+        // P1[51..56]) is left the way a player walks away from it: Start,
+        // the engine's shared minigame exit (`World::poll_minigame_escape`),
+        // which also closes the door-warp round trip back to the field.
+        let pad = if session.host.world.in_minigame() {
+            if f % 4 == 0 {
+                PadButton::Start.mask()
+            } else {
+                0
+            }
+        } else {
+            match scripted_menu_pad(session, f) {
+                Some(p) => p,
+                None => script_pad(session, f),
+            }
         };
         // The naming prompt (the opening's op-0x49) takes this pad's edge
         // inside `NativeSession::tick`, as it does in both play hosts.

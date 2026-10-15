@@ -86,29 +86,29 @@ pub trait FieldActorSpawnHost {
         let _ = ctx;
     }
 
-    /// Op 0x34 sub-2 (actor-pool capture-and-yield).
+    /// Op 0x34 sub-2 - **re-script an attached light**.
     ///
-    /// 3-byte instruction `[34, 0x2N, b1]`. The original walks the actor
-    /// linked list at `_DAT_8007C354` looking for an entry whose `+0x90`
-    /// slot equals the active ctx. **If found AND `b1 == 0x40`**, it
-    /// captures `pbVar47 + 3` into the matched actor's `+0x94` slot (a
-    /// forwarded-PC pointer the host re-enters later) and exits via
-    /// `caseD_4()` (STATE_RESUME, surfaced as `Yield` here).
+    /// `[34, 2N]`, then the stream's next byte peeked. The arm
+    /// (`0x801E001C..0x801E0098`) walks the actor list `_DAT_8007C354` for a
+    /// light actor (handler `FUN_801E4470`, the op-`34 1x` spawn) whose
+    /// `+0x90` is this context's actor; when one is found **and** the next
+    /// byte is a `0x40` block header, it points the light's keyframe script
+    /// `+0x94` at the block body, zeroes the script cursor `+0x9E` and frame
+    /// `+0x9C`, and steps past the block. It does not yield: both arms leave
+    /// through `0x801DF098` (`s8 += 2`, return), so a capture returns
+    /// `pc + 4 + len` and a miss `pc + 2` - the block then runs as op `0x40`,
+    /// which skips itself.
     ///
-    /// `captured_pc_offset` is the byte offset within the bytecode buffer
-    /// at `pc + header_size + 2` - the byte just past the 3-byte
-    /// instruction. The host stores this on the matched actor; on the
-    /// next state-resume tick the host re-enters the dispatcher at that
-    /// offset.
-    ///
-    /// Returns `true` if an actor was found AND `b1 == 0x40` AND the host
-    /// actually performed the capture; `false` otherwise. The VM
-    /// `Yield`s when `true`, advances PC by 2 when `false`.
-    ///
-    /// The default impl returns `false` so hosts without an actor pool
-    /// just fall through to the `Advance` path.
-    fn op34_sub2_capture_pc(&mut self, ctx: &FieldCtx, b1: u8, captured_pc_offset: usize) -> bool {
-        let _ = (ctx, b1, captured_pc_offset);
+    /// `ext` is the extended channel byte (`0xF8` = the player); `block` is
+    /// the bytes after the `0x40` header, `None` when no block follows.
+    /// Returns `true` when a light took the script. Default: no light.
+    fn op34_sub2_capture_pc(
+        &mut self,
+        ctx: &FieldCtx,
+        ext: Option<u8>,
+        block: Option<&[u8]>,
+    ) -> bool {
+        let _ = (ctx, ext, block);
         false
     }
 

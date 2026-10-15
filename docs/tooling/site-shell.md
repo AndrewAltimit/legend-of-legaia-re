@@ -439,8 +439,10 @@ touch `site/`.
 Several `site/_content/` fragments are *mirrors*: a page under `docs/` is the
 source of record and the fragment restates it for the public site. Nothing
 relates the two. The generator's page table maps `_content/<x>.html` to
-`<x>.html` and never opens `docs/` at all, so the only thing keeping a mirror
-current is somebody remembering it exists.
+`<x>.html` and, for an ordinary page, never opens `docs/` at all, so the only
+thing keeping a mirror current is somebody remembering it exists. (The register
+pages are the exception, rendered from `docs/` at build time; see
+[below](#the-registers-are-rendered-not-mirrored).)
 
 The failure mode is not a broken page. A stale mirror builds, renders, passes
 `check-site-links.py`, and reads as finished - it has simply stopped mentioning
@@ -499,11 +501,49 @@ The mirror is also where a second copy of the list becomes a liability. A
 closed thread can keep looking open, and the gate cannot tell a digest row from
 an area row - both are claims. One place per row; the digest is jump links.
 
-What the gate deliberately does not check: prose, wording, or whether the
-mirror says the same thing about an area or a row it claims. Either can be
-present and wrong. It answers exactly two questions - is a whole area, or a
-live hunt, missing from the public page - because those are the failures that
-survived review.
+What the gate deliberately does not check, on a hand-written mirror: prose,
+wording, or whether the mirror says the same thing about an area or a row it
+claims. Either can be present and wrong. It answers exactly two questions - is
+a whole area, or a live hunt, missing from the public page - because those are
+the failures that survived review.
+
+### The registers are rendered, not mirrored
+
+The settled and falsified registers showed that "present and wrong" is not
+hypothetical. Both hand mirrors claimed every area and still stated verdicts
+their docs had overturned: a routine with six `jal` callers listed as
+link-time dead code, a census floor listed as a total. A page whose content is
+hundreds of rows that change on every correction cannot be kept in step by
+hand, so the three register pages are no longer copied.
+
+Each register fragment keeps its framing - header, lede, the page's own intro
+sections, the filter box and its script - and marks where the register goes:
+
+```html
+<!--REGISTER-NAV:settled-->   the "Jump to" area list
+<!--REGISTER:settled-->       every area, row and write-up
+```
+
+`site/_gen.py` expands the markers through `site/_registers.py` on every build,
+from the current `docs/` (the settled register reads its index page and the
+nine area pages under `re-settled-threads/`). A settled row renders its
+verdict from the status parenthetical, the answer under *Why*, and the evidence
+cell as grade tags; a falsified row renders the same way from `Thread | Verdict
+| Why`; each `###` write-up becomes a collapsed entry under *Long write-ups in
+this area*, and a `[details ↓]` link points at it on the same page. The
+renderer counts the thread rows of every table it was handed and fails the
+build when the page it produced carries a different number, so a row shape it
+does not know is an error, not a silent drop. Links into a register doc
+resolve to the rendered anchor on the site; other relative links go to the
+site page when one exists and to the file on GitHub otherwise.
+
+`check-site-doc-mirrors.py` covers the generated pages three ways: the marker
+must be present (a fragment without it is a hand copy coming back), the
+section and row checks run over the *expanded* fragment, and each expansion
+opens with a `<!--register:<kind> sha=...-->` stamp of the source bytes it was
+rendered from, which must match the current docs whenever a local build of the
+page exists. CI builds on deploy, so there the stamp check has nothing to read;
+locally it is what tells a stale preview from a fresh one.
 
 ## Verifying a shell change
 
@@ -562,7 +602,7 @@ shoot.
 
 ### The play page's minigame status rows sit under the canvas
 
-The engine's minigame status rows (`engine-core::minigame_status`) are the
+The engine's minigame status rows (`engine-minigame-scenes::minigame_status`) are the
 port's own readout of the rules state plus the key hints - not retail chrome.
 They are data, not a draw list: `minigame_status::caption` returns the live
 game and its rows, and no builder emits them as glyph quads. The play page

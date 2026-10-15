@@ -672,8 +672,8 @@ mod follow_compass_tests {
     // `_DAT_8007B792 = -160` on the town01 anchor). One constant, in the
     // shared camera resolver, because the browser play page frames the same
     // shot from it; the movement-compass bias is its negation
-    // (`camera_view::retail_field_render_yaw_bias`).
-    use legaia_engine_core::camera_view::FIELD_FOLLOW_YAW_UNITS;
+    // (`camera_frame::retail_field_render_yaw_bias`).
+    use legaia_engine_field::camera_frame::FIELD_FOLLOW_YAW_UNITS;
     use std::f32::consts::TAU;
 
     /// The movement compass must agree with the rendered follow camera at

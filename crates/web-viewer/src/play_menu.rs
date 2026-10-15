@@ -78,7 +78,6 @@ use legaia_engine_core::field_menu_dispatch::{
 };
 use legaia_engine_menus::equip_session::EquipSession;
 use legaia_engine_menus::field_menu::{FieldMenuOutcome, FieldMenuRow, FieldMenuSession};
-use legaia_engine_menus::inventory_use::{InventoryUseSession, InventoryUseState};
 use legaia_engine_menus::options::OptionsSession;
 use legaia_engine_menus::save_menu_atlas::{SaveMenuAtlas, build_atlas};
 use legaia_engine_menus::save_screen::{SaveCommitKind, SaveRefusal, SaveScreenFlow};

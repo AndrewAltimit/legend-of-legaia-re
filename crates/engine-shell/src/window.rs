@@ -98,8 +98,7 @@ use run::{PlayWindowLaunch, assemble_play_window};
 // that `use super::*` still resolve them unqualified.
 pub(in crate::window) use run::{build_window_scene_resources, cmd_play_window_with_record};
 pub(crate) use save_rack_disk::{
-    MountedCard, disk_port_blocks_with_card, disk_save_rack_with_card, read_slot_save,
-    scan_save_dir, write_slot_save,
+    MountedCard, card_port_blocks, card_save_rack, open_port_one_card, rack_has_save,
 };
 pub use str_player::cmd_play_str;
 pub(crate) use str_player::{play_str_in, resolve_iso_file};
@@ -183,7 +182,7 @@ impl PlayWindowApp {
     /// browser play page's equivalent, a fresh headless context, has no
     /// stored state to leak into.
     pub(super) fn scripted_run(&self) -> bool {
-        self.screenshot.is_some()
+        self.screenshot.is_some() || self.persist_disabled
     }
 
     /// Push the current options into their live consumers without touching

@@ -102,8 +102,9 @@ a dependent crate.
   machines), `dev_menu_leaves`, `dev_menu_adjust`, `dev_menu_flags` (the
   EVENT FLAG editor kernels) and `dev_equip_commit`.
 - **World map** - `world_map_entity` (the entity state machine
-  `FUN_801DA51C`), `world_map_dim`, `world_map_horizon` and
-  `travel_art_actor` (Riremito and Rula).
+  `FUN_801DA51C`), `world_map_dim`, `world_map_horizon`,
+  `travel_art_actor` (Riremito and Rula) and `world_map_markers` (the port's
+  kind-coded entity / player markers and their screen quads; not retail).
 - **Script contexts** - `inline_dialogue` (the resumable state of an actor's
   inline interaction script) and `cutscene_timeline` (the spawned
   partition-2 record context); both hold a `legaia-engine-dialog` panel.
@@ -135,8 +136,15 @@ a dependent crate.
   pitch coupling) and the per-frame ease / snap that walk the ten camera
   globals toward it (`FUN_801DB510` / `FUN_801DB8EC`), with the bearing and
   square-root LUT helpers they lean on. engine-core's `Camera::zone` runs it; the pinned
-  constants in `camera_view` are only the terrain-less fallback. Format +
+  constants in `camera_frame` are only the terrain-less fallback. Format +
   arithmetic: [`docs/formats/encounter.md`](../../docs/formats/encounter.md#man-section-3-the-camera-region-table).
+- `camera_frame` - the World-free half of the per-frame camera:
+  `FieldCameraFrame` (one arm per camera retail runs in a walkable scene),
+  its matrix / eye / curvature factor (`frame_vp`, `frame_eye`,
+  `frame_curve_scale`), the overworld walk poses, the per-pass NCLIP and
+  near-reject words both hosts arm, and the pinned fallback poses.
+  engine-core's `camera_view::resolve_field_camera` picks the arm from the
+  live world.
 - `camera_ease` - the field camera's smoothed **vertical-offset** step
   (`FUN_801DA390`; `player[+0x16]` is the middle slot of the `+0x14/+0x16/+0x18`
   position triple, and the eased result lands in the Y halfword of a vector):

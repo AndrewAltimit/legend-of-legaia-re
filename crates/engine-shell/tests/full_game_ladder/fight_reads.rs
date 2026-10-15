@@ -62,6 +62,10 @@ thread_local! {
     pub(super) static AOE_HIT: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
     /// Whether a foe has shown a charge latch this battle ([`foe_charged`]).
     pub(super) static CHARGE_SEEN: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    /// Per member, the round ([`ROUND_HISTORY`] length) in which
+    /// [`wants_aoe_guard`] last took the stance.
+    pub(super) static AOE_GUARDED: std::cell::Cell<[Option<usize>; 3]> =
+        const { std::cell::Cell::new([None; 3]) };
 }
 
 /// Whether the coming round is the foe's heavy one, read off its cadence the
@@ -262,12 +266,40 @@ pub(super) fn wants_aoe_guard(w: &legaia_engine_core::world::World, actor: u8) -
     // healthy member is the heal arm's to answer after it lands, and guarding
     // against it at full strength guards every round (`chitei2` P2[13]: all
     // three in the stance at ~1600/1700 HP until the battle cap).
-    aoe > 0
+    // Nor round after round against a foe whose party-wide hit is not every
+    // round: a stance the last round spent with no such hit landing is not
+    // taken again on the same read. Gaza (`korb3` P2[2]) lands its party-wide
+    // hit every third round or so, and all three members held the stance
+    // three rounds running at half their HP, healing nothing and dealing
+    // nothing, until its single hits had worn them under the band.
+    let round = ROUND_HISTORY.with(|h| h.borrow().len());
+    let last_loss = ROUND_HISTORY.with(|h| h.borrow().last().copied().unwrap_or(0));
+    let guarded_last = AOE_GUARDED.with(|g| {
+        g.get()
+            .get(usize::from(actor))
+            .copied()
+            .flatten()
+            .is_some_and(|r| r + 1 == round)
+    });
+    if guarded_last && last_loss < aoe {
+        return false;
+    }
+    let want = aoe > 0
         && !quiet_next
         && aoe * 5 >= max * 2
         && hp * 10 < max * 9
         && hp > aoe * 5 / 8
-        && hp <= aoe + aoe / 8
+        && hp <= aoe + aoe / 8;
+    if want {
+        AOE_GUARDED.with(|g| {
+            let mut v = g.get();
+            if let Some(s) = v.get_mut(usize::from(actor)) {
+                *s = Some(round);
+            }
+            g.set(v);
+        });
+    }
+    want
 }
 
 /// [`wants_aoe_guard`], taken ahead of a heal: the member is the one in
@@ -409,7 +441,10 @@ pub(super) fn duel_wants_spirit(w: &legaia_engine_core::world::World, actor: u8)
     // within three twentieths again of the worst unguarded round seen, and
     // below five eighths of its HP (a 900-HP Gala at 62% swung into 903).
     // Half again starved the fight: Gala guarded and healed to the cap.
-    let low = u32::from(a.hp) * 8 < u32::from(a.max_hp) * 5 || u32::from(a.hp) * 20 <= threat * 23;
+    // Held only while the bag can still top the member up: with no
+    // restorative left the stance only waits for the foe to finish it.
+    let low = bag_can_heal(w)
+        && (u32::from(a.hp) * 8 < u32::from(a.max_hp) * 5 || u32::from(a.hp) * 20 <= threat * 23);
     // The choice is latched per foe round: the fighter re-reads the menu on
     // every pad poll until the press lands, and a choice that flipped under
     // it would press something else.
@@ -421,4 +456,89 @@ pub(super) fn duel_wants_spirit(w: &legaia_engine_core::world::World, actor: u8)
     }
     DUEL_SPIRIT_ROUND.with(|d| d.set(Some(round)));
     true
+}
+
+/// Does `actor` know a healing spell?
+pub(super) fn knows_heal_spell(w: &legaia_engine_core::world::World, actor: u8) -> bool {
+    use legaia_engine_battle::spells::SpellEffect;
+    let Some(m) = w
+        .party
+        .roster
+        .members
+        .get(w.party_roster_slot(usize::from(actor)))
+    else {
+        return false;
+    };
+    let list = m.spell_list();
+    list.ids[..(list.count as usize).min(list.ids.len())]
+        .iter()
+        .any(|&id| {
+            w.tables.spell_catalog.get(id).is_some_and(|d| {
+                matches!(
+                    d.effect,
+                    SpellEffect::Heal { .. } | SpellEffect::HealAll { .. }
+                )
+            })
+        })
+}
+
+/// Does the bag hold an HP restorative usable in battle?
+pub(super) fn bag_can_heal(w: &legaia_engine_core::world::World) -> bool {
+    use legaia_engine_menus::items::ItemEffect;
+    w.party.inventory.iter().any(|(&id, &c)| {
+        c > 0
+            && w.tables.item_catalog.get(id).is_some_and(|e| {
+                e.usable_in_battle
+                    && matches!(e.effect, ItemEffect::Heal { .. } | ItemEffect::HealAll)
+            })
+    })
+}
+
+/// A solo duel's heal once the bag has none: the healing spell `actor`
+/// knows and can pay for that restores the most, cast while the member is
+/// under the duel's heal line (three fifths of its HP). The three Nivora
+/// duels are fought out of one bag, and each duellist knows Spoon (270 HP,
+/// 45 MP): a member that ran the bag dry held the Spirit stance with a full
+/// MP pool until the foe finished it.
+pub(super) fn duel_spell_heal(w: &legaia_engine_core::world::World, actor: u8) -> Option<u8> {
+    use legaia_engine_battle::spells::SpellEffect;
+    if !w.battle.no_escape || bag_can_heal(w) {
+        return None;
+    }
+    let duel = solo_duel(w);
+    let a = &w.actors.get(usize::from(actor))?.battle;
+    if a.hp == 0 {
+        return None;
+    }
+    let low = |i: usize| {
+        let b = &w.actors[i].battle;
+        b.hp > 0 && u32::from(b.hp) * 5 < u32::from(b.max_hp) * 3
+    };
+    // In a party fight that forbids running the same holds for the group
+    // heal, cast for any member under the line: Gaza's second fight
+    // (`korb3`) ran the bag dry with every member's Spoon unspent.
+    let n = w.party.party_count.clamp(1, 3) as usize;
+    if duel && !low(usize::from(actor)) || !duel && !(0..n).any(low) {
+        return None;
+    }
+    let m = w
+        .party
+        .roster
+        .members
+        .get(w.party_roster_slot(usize::from(actor)))?;
+    let list = m.spell_list();
+    list.ids[..(list.count as usize).min(list.ids.len())]
+        .iter()
+        .filter_map(|&id| {
+            let d = w.tables.spell_catalog.get(id)?;
+            let amount = match d.effect {
+                SpellEffect::HealAll { amount } => amount,
+                // A single heal's target is the duellist itself.
+                SpellEffect::Heal { amount } if duel => amount,
+                _ => return None,
+            };
+            (u32::from(d.mp_cost) <= u32::from(a.mp)).then_some((amount, id))
+        })
+        .max()
+        .map(|(_, id)| id)
 }

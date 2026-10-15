@@ -277,6 +277,7 @@ impl World {
             && c.anim_id == anim_id
             && c.frames == frames
         {
+            self.seat_npc_phase_draw(slot);
             return;
         }
         // The step is the player's own (`clip_step` of the record header);
@@ -288,6 +289,50 @@ impl World {
         }
         self.npcs.clip_cursors.insert(slot, cursor);
         self.npcs.clip_rate_live.remove(&slot);
+        self.seat_npc_phase_draw(slot);
+    }
+
+    /// Op `4C C0` on NPC `slot` (arm `0x801E260C`): when the actor has a
+    /// move (`+0x5C > 0`), draw one `rand()` and seat the clip cursor at
+    /// `(rand() % frames) << 4` (`0x801E2624..0x801E2670`). Retail binds the
+    /// clip a preceding `4C 51` / `A2` named inside the same op
+    /// (`FUN_800204F8`); here that clip is still a queued cue until the
+    /// hosts drain it, so the draw waits in [`FieldNpcState::phase_draws`]
+    /// for the bind that lands it. `false` when no move is active (retail
+    /// draws nothing then).
+    ///
+    /// PORT: FUN_801DE840 (`4C C0`, the clip-phase randomiser)
+    pub(crate) fn randomize_npc_clip_phase(&mut self, slot: u8) -> bool {
+        let pending = self.npcs.anim_cues.get(&slot).map(|&(_, id, _)| id);
+        let move_id = pending
+            .or_else(|| self.npcs.clip_current.get(&slot).copied())
+            .or_else(|| self.npcs.clip_cursors.get(&slot).map(|c| c.anim_id));
+        if move_id.is_none_or(|id| id == 0) {
+            return false;
+        }
+        let draw = self.next_rand();
+        self.npcs.phase_draws.insert(slot, draw);
+        let bound = self
+            .npcs
+            .clip_cursors
+            .get(&slot)
+            .is_some_and(|c| pending.is_none_or(|id| c.anim_id == id));
+        if bound {
+            self.seat_npc_phase_draw(slot);
+        }
+        true
+    }
+
+    /// Seat a waiting op-`4C C0` draw on NPC `slot`'s bound cursor.
+    fn seat_npc_phase_draw(&mut self, slot: u8) {
+        let Some(c) = self.npcs.clip_cursors.get_mut(&slot) else {
+            return;
+        };
+        let Some(draw) = self.npcs.phase_draws.remove(&slot) else {
+            return;
+        };
+        let frames = u32::from(c.frames.max(1));
+        c.cursor = ((draw % frames) << 4) as i16;
     }
 
     /// Bind NPC `slot`'s world-owned clip cursor to scene-bank clip `anim_id`
@@ -334,6 +379,7 @@ impl World {
         if let Some(c) = self.npcs.clip_cursors.get(&slot)
             && c.anim_id == anim_id
         {
+            self.seat_npc_phase_draw(slot);
             return;
         }
         let mut cursor = PropAnim::cross_context(anim_id, frames);
@@ -345,6 +391,7 @@ impl World {
         cursor.flags = flags;
         self.npcs.clip_cursors.insert(slot, cursor);
         self.npcs.clip_rate_live.insert(slot);
+        self.seat_npc_phase_draw(slot);
     }
 
     /// Whether NPC `slot`'s actor carries the party-bank bit `0x01000000` -
@@ -554,6 +601,30 @@ mod tests {
         let mut vram = legaia_tim::Vram::new();
         assert!(!w.step_field_vram_effects(&mut vram, false));
         assert_eq!(w.ambient.clut_pending_game_ticks, 9);
+    }
+
+    /// Op `4C C0` after a `4C 51` re-target: the draw is taken at the op and
+    /// seated as `(rand() % frames) << 4` when the cue's clip binds - retail
+    /// binds and seats inside the op (`0x801E260C..0x801E2670`). Without a
+    /// move the op draws nothing.
+    #[test]
+    fn a_phase_draw_seats_on_the_clip_the_cue_binds() {
+        let scene = legaia_engine_field::field_anim::synth_anm_bundle(&[(10, 2), (10, 2), (10, 7)]);
+        let player = FieldClipPlayer::from_record(&scene, 2).unwrap();
+        let mut w = World::new();
+        w.mode = SceneMode::Field;
+        assert!(!w.randomize_npc_clip_phase(3), "no move: no draw");
+        assert!(w.npcs.phase_draws.is_empty());
+        let draw = World::new().next_rand();
+        w.npcs.anim_cues.insert(3, (1, 3, Vec::new()));
+        assert!(w.randomize_npc_clip_phase(3));
+        assert!(!w.npcs.clip_cursors.contains_key(&3), "bound by the drain");
+        w.bind_npc_clip_cursor(3, 3, &player);
+        let c = w.npcs.clip_cursors[&3];
+        let frames = u32::from(c.frames);
+        assert!(frames > 1);
+        assert_eq!(c.cursor, ((draw % frames) << 4) as i16);
+        assert!(w.npcs.phase_draws.is_empty());
     }
 
     fn party_channel(slot: usize, flags: u32) -> legaia_engine_field::field_channels::FieldChannel {

@@ -77,6 +77,11 @@ pub enum FieldEvent {
     /// and commit it - a snap for a zero `apply_trigger`, else a glide over
     /// that many frames with `mode` as the curve (`FUN_801DE084`).
     CameraApply { apply_trigger: i16, mode: u8 },
+    /// Field-VM op `4C D7`: retire every cutscene camera mover - the
+    /// `FUN_8003CF40` sweep that raises the dead bit on each actor whose
+    /// handler is `FUN_801DC0BC` (`0x801E2DB4..0x801E2DC4`). A glide in
+    /// flight stops where it stands.
+    CameraRetireMovers,
     /// Field-VM op 0x4B (multi-keyframe animation setup).
     SetupAnimation {
         count: u8,
@@ -254,6 +259,7 @@ impl FieldEvent {
             }
             FieldEvent::CameraSave => "CameraSave".into(),
             FieldEvent::CameraApply { .. } => "CameraApply".into(),
+            FieldEvent::CameraRetireMovers => "CameraRetireMovers".into(),
             FieldEvent::SetupAnimation {
                 count,
                 base_id,
@@ -367,6 +373,7 @@ mod tests {
                 apply_trigger: 0,
                 mode: 0,
             },
+            FieldEvent::CameraRetireMovers,
             FieldEvent::SetupAnimation {
                 count: 0,
                 base_id: 0,

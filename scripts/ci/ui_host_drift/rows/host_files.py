@@ -37,6 +37,9 @@ NATIVE_DYN_WINDOWS = "crates/render-kernels/src/scene_lighting/windows.rs"
 
 NATIVE_BOOT = "crates/engine-session/src/session.rs"
 NATIVE_BOOT_FRAME_TICK = "crates/engine-session/src/session/frame_tick.rs"
+# The one tick order both play hosts hand each sim tick through.
+SESSION_TICK_OWNER = "crates/engine-session/src/session/tick_owner.rs"
+WEB_RUNTIME_FRAME_TICKS = "crates/web-viewer/src/runtime/frame_ticks.rs"
 NATIVE_BOOT_SCENE_ENTRY = "crates/engine-session/src/session/scene_entry.rs"
 # The native host's CD-XA bank readers (a disc image on disk).
 NATIVE_XA_DISC = "crates/engine-session/src/native/xa_disc.rs"
@@ -66,6 +69,8 @@ NATIVE_REDRAW_PASSES = (
 )
 NATIVE_CAMERA_MOD = "crates/engine-shell/src/window/camera.rs"
 WEB_PLAY_CAMERA = "crates/web-viewer/src/play_camera.rs"
+WEB_PLAY_HOTKEYS = "crates/web-viewer/src/play_hotkeys.rs"
+NATIVE_REDRAW_TICK = "crates/engine-shell/src/window/event_handler/redraw_tick.rs"
 NATIVE_KEYBOARD = "crates/engine-shell/src/window/event_handler/keyboard.rs"
 # `handle_key`'s arms, one method per key, by family.
 NATIVE_KEYBOARD_DEBUG_SPAWN = (

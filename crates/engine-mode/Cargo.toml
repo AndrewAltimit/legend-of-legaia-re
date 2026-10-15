@@ -13,10 +13,10 @@ path = "src/lib.rs"
 [dependencies]
 legaia-bytes.workspace = true
 legaia-engine-system.workspace = true
+legaia-game-tables.workspace = true
 
 [dev-dependencies]
 legaia-minigame-formats.workspace = true
-legaia-game-tables.workspace = true
 
 [[test]]
 name = "integration"

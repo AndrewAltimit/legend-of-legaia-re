@@ -7,7 +7,7 @@ use crate::mesh_bounds::{WorldActorMesh, mesh_aabb};
 use crate::pad_keymap::{keymap_pad, pad_button_label};
 use crate::scene_files::{collect_scene_tim_dirs, collect_scene_tmds};
 use anyhow::{Context, Result};
-use legaia_engine_render::glam::{Mat4, Vec3};
+use glam::{Mat4, Vec3};
 use legaia_engine_render::{
     RenderTarget, Scene as RenderScene, SceneDraw, TextOverlay, UploadedFontAtlas, UploadedVram,
     window::{EngineWindow, orbit_camera_mvp},
@@ -246,6 +246,7 @@ fn field_event_tag(e: &legaia_engine_field::field_events::FieldEvent) -> &'stati
         E::CameraConfigure { .. } => "CameraConfigure",
         E::CameraLoad { .. } => "CameraLoad",
         E::CameraSave => "CameraSave",
+        E::CameraRetireMovers => "CameraRetireMovers",
         E::CameraApply { .. } => "CameraApply",
         E::SetupAnimation { .. } => "SetupAnimation",
         E::ViewWindowLong { .. } => "ViewWindowLong",

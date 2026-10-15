@@ -25,10 +25,10 @@ pub(super) fn op_4c_nc<H: FieldHost>(
     op0: u8,
 ) -> StepResult {
     match op0 & 0x0F {
-        // Sub-0: 2-byte. Cancel move-table animation if active
-        // (`func_0x800204F8`). Always advances PC += 2.
+        // Sub-0: 2-byte. Randomise the bound clip's phase when a move is
+        // active (`FUN_800204F8`, then `rand() % frames`). PC += 2.
         0 => {
-            host.cancel_active_move(ctx);
+            host.randomize_clip_phase(ctx);
             StepResult::Advance {
                 next_pc: pc + header_size + 1,
             }

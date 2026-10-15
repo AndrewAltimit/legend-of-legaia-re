@@ -215,7 +215,7 @@ fn successful_run_escapes_the_battle_without_loot() {
     let mut completed = false;
     for _ in 0..0x100 {
         if matches!(
-            world.live_battle_tick(),
+            live_tick(&mut world),
             Some(legaia_engine_battle_vm::battle_action::StepOutcome::BattleComplete)
         ) {
             completed = true;
@@ -247,7 +247,7 @@ fn round_boundary_state_is_not_a_spurious_victory() {
     // with loot granted after one round.
     world.battle_ctx.action_state = ActionState::RoundEnd.as_byte();
     for _ in 0..0x40 {
-        let out = world.live_battle_tick();
+        let out = live_tick(&mut world);
         assert!(
             !matches!(out, Some(StepOutcome::BattleComplete)),
             "both sides alive: the round boundary must not complete the battle"
@@ -272,7 +272,7 @@ fn failed_run_consumes_the_turn_and_the_battle_continues() {
     world.battle_ctx.action_state = ActionState::Begin.as_byte();
     for _ in 0..0x100 {
         if matches!(
-            world.live_battle_tick(),
+            live_tick(&mut world),
             Some(legaia_engine_battle_vm::battle_action::StepOutcome::BattleComplete)
         ) {
             panic!("a failed run must not end the battle");
@@ -429,7 +429,7 @@ fn run_in_a_no_escape_fight_rolls_and_fails() {
             run_band |= world.battle_ctx.action_state
                 == legaia_engine_battle_vm::battle_action::ActionState::RunWait.as_byte();
             if matches!(
-                world.live_battle_tick(),
+                live_tick(&mut world),
                 Some(legaia_engine_battle_vm::battle_action::StepOutcome::BattleComplete)
             ) {
                 escaped = true;

@@ -119,7 +119,7 @@ impl PlayWindowApp {
     /// world-map mode when the running timeline actually staged camera
     /// params), then the two world-map vantages, then the field follow
     /// camera, and `HostDebugOrbit` when there is no player to follow. The
-    /// matrix is `camera_view::frame_vp` for every one of those arms.
+    /// matrix is `camera_frame::frame_vp` for every one of those arms.
     ///
     /// Two arms stay host-side, and neither is a second answer to the
     /// resolver's question:
@@ -173,7 +173,7 @@ impl PlayWindowApp {
                 (self.scene_aabb.0[2] + self.scene_aabb.1[2]) * 0.5,
             ],
         );
-        let vp = legaia_engine_core::camera_view::frame_vp(
+        let vp = legaia_engine_field::camera_frame::frame_vp(
             &frame,
             (self.scene_aabb.0, self.scene_aabb.1),
             aspect,
@@ -265,7 +265,7 @@ impl PlayWindowApp {
                 (self.scene_aabb.0[2] + self.scene_aabb.1[2]) * 0.5,
             ],
         );
-        legaia_engine_core::camera_view::frame_curve_scale(true, &frame)
+        legaia_engine_field::camera_frame::frame_curve_scale(true, &frame)
     }
 
     /// Battle body `ai`'s draw plan under the camera the battle actor pass
@@ -1000,7 +1000,8 @@ impl PlayWindowApp {
     pub(super) fn take_move_strip_prims(
         &mut self,
     ) -> Vec<legaia_render_kernels::screen_prim::ScreenPrim> {
-        use legaia_engine_core::camera_view::{FieldCameraFrame, resolve_field_camera};
+        use legaia_engine_core::camera_view::resolve_field_camera;
+        use legaia_engine_field::camera_frame::FieldCameraFrame;
         let world = &self.session.host.world;
         // The latest tick's set, not drained: an idle redraw draws it again
         // (`MoveVmGlobals::strip_frame`).
@@ -1027,7 +1028,8 @@ impl PlayWindowApp {
     pub(super) fn field_light_screen_prims(
         &self,
     ) -> Vec<legaia_render_kernels::screen_prim::ScreenPrim> {
-        use legaia_engine_core::camera_view::{FieldCameraFrame, resolve_field_camera};
+        use legaia_engine_core::camera_view::resolve_field_camera;
+        use legaia_engine_field::camera_frame::FieldCameraFrame;
         let world = &self.session.host.world;
         if world.mode != SceneMode::Field || world.script_actors.lights.is_empty() {
             return Vec::new();

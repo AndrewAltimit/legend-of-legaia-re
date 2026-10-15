@@ -108,6 +108,31 @@ impl EscapeTimer {
         events
     }
 
+    /// Take [`FIELD_RETURN_PENALTY`] off a running clock: MAIN INIT's warp
+    /// arm, the field entry a battle, a minigame or an FMV resume returns
+    /// through (field-entry word `_DAT_8007B8B8 == 2`), tests the armed
+    /// duration word and subtracts `0x4B0` from the live counter:
+    ///
+    /// ```text
+    /// 8003b62c  lw    a0,0x478(a1)    ; _DAT_800845B8, the armed duration
+    /// 8003b634  beq   a0,zero,...     ; disarmed: skip
+    /// 8003b63c  lw    v0,0x460(a1)    ; _DAT_800845A0, the live counter
+    /// 8003b644  addiu v0,v0,-0x4b0
+    /// 8003b648  sw    v0,0x460(a1)
+    /// ```
+    ///
+    /// No flag fires here and nothing clamps: a counter taken to zero or
+    /// below expires on the drain's next tick ([`Self::tick`]). The cold
+    /// field entry (a door or a scene change, word `0`) skips the block, so
+    /// what the escape costs is the fights on the way, twenty seconds each.
+    ///
+    /// PORT: FUN_8003AEB0 (`0x8003B62C..0x8003B648`)
+    pub fn field_return_penalty(&mut self) {
+        if self.armed {
+            self.remaining -= FIELD_RETURN_PENALTY;
+        }
+    }
+
     /// Decompose the remaining count into the MM:SS.ff fields the HUD draws.
     /// `frames = remaining % 60`, `seconds = (remaining/60) % 60`,
     /// `minutes = (remaining/60) / 60`.
@@ -122,6 +147,11 @@ impl EscapeTimer {
         (minutes, seconds, hundredths)
     }
 }
+
+/// Ticks MAIN INIT's warp arm takes off a running clock on every return to
+/// the field from a battle, a minigame or an FMV resume (`addiu v0,v0,-0x4b0`
+/// at `0x8003B644`): twenty seconds.
+pub const FIELD_RETURN_PENALTY: i32 = 0x4B0;
 
 /// Frames the expired readout holds `00:00.00` before the HUD actor kills
 /// itself: `+0x68 >= 0x79` (`slti v0,v0,0x79` at `0x801D3098`).
@@ -217,6 +247,38 @@ mod tests {
         assert_eq!(timer_ink(0x708), TimerInk::Safe);
         assert_eq!(timer_ink(0x707), TimerInk::Warning);
         assert_eq!(timer_ink(1), TimerInk::Warning);
+    }
+
+    #[test]
+    fn a_field_return_takes_twenty_seconds_off_a_running_clock() {
+        let mut t = EscapeTimer {
+            remaining: 21600,
+            warn_threshold: 3600,
+            armed: true,
+        };
+        t.field_return_penalty();
+        assert_eq!(t.remaining, 21600 - 0x4B0);
+        // Disarmed (`_DAT_800845B8 == 0`): the block is skipped.
+        let mut idle = EscapeTimer {
+            remaining: 500,
+            warn_threshold: 0,
+            armed: false,
+        };
+        idle.field_return_penalty();
+        assert_eq!(idle.remaining, 500);
+        // No clamp and no flag at the return: the drain's next tick expires
+        // a counter the penalty took below one.
+        let mut short = EscapeTimer {
+            remaining: 600,
+            warn_threshold: 0,
+            armed: true,
+        };
+        short.field_return_penalty();
+        assert_eq!(short.remaining, 600 - 0x4B0);
+        assert!(short.armed);
+        let ev = short.tick(1, 0x0396_0015, false);
+        assert_eq!(ev.expiry_flag, Some(0x396));
+        assert!(!short.armed);
     }
 
     #[test]

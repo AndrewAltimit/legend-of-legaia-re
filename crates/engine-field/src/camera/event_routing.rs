@@ -145,6 +145,12 @@ impl Camera {
                     self.apply_follow_shot(world, apply_trigger, mode);
                     applied += 1;
                 }
+                // Op `4C D7`: the mover's dead bit. The globals keep the
+                // pose its last tick wrote, so the shot freezes mid-glide.
+                FieldEvent::CameraRetireMovers => {
+                    self.mover = None;
+                    applied += 1;
+                }
                 // Op-`0x46` `VIEW_WINDOW`, both forms. Retail writes the same
                 // four scratchpad bytes `0x1F8003E8..EB` from either arm
                 // (`0x801DF2AC..0x801DF350` in the field overlay), and they

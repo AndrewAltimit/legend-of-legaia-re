@@ -524,7 +524,9 @@ impl PlayWindowApp {
             }
             return pause_screen_draws(
                 ctx,
-                PauseScreen::Generic(GenericContent::Prebuilt(self.items_session_draws(&s.inner))),
+                PauseScreen::Generic(GenericContent::Prebuilt(
+                    legaia_engine_screens::inventory_use_session_draws(&self.font, &s.inner),
+                )),
             );
         }
         let rows: Vec<legaia_engine_ui::PauseItemsRow<'_>> = model
@@ -658,87 +660,6 @@ impl PlayWindowApp {
             &self.session.host.world,
         )
         .filter(|m| !m.members.is_empty())
-    }
-
-    /// Build draws for the inventory item-use overlay. Resolves item
-    /// names through `ItemCatalog`, party / monster targets through the
-    /// session's `targets` field. Drives both browsing and target-select
-    /// phases via `inventory_use_draws_for`.
-    ///
-    /// Returned unscaled: the shared composition frames it and applies the
-    /// stage transform ([`GenericContent::Prebuilt`]).
-    pub(super) fn items_session_draws(
-        &self,
-        s: &legaia_engine_menus::inventory_use::InventoryUseSession,
-    ) -> Vec<TextDraw> {
-        use legaia_engine_menus::inventory_use::InventoryUseState;
-        // Each visible item row needs its name + count + admissibility.
-        // The session's `filtered_items` already lists indices into
-        // `items` that pass the context filter; we render every owned
-        // item but dim the ones outside the filter.
-        let filter_set: std::collections::HashSet<usize> =
-            s.filtered_items.iter().copied().collect();
-        // Count duplicate item-ids so the overlay shows one row per
-        // unique id rather than one row per stack slot.
-        let mut counts: std::collections::HashMap<u8, u8> = std::collections::HashMap::new();
-        for id in &s.items {
-            *counts.entry(*id).or_insert(0) =
-                counts.get(id).copied().unwrap_or(0).saturating_add(1);
-        }
-        // Stable order from first-seen.
-        let mut seen: std::collections::HashSet<u8> = std::collections::HashSet::new();
-        let mut row_data: Vec<(String, u8, bool)> = Vec::new();
-        for (i, id) in s.items.iter().enumerate() {
-            if !seen.insert(*id) {
-                continue;
-            }
-            let entry = s.catalog.get(*id);
-            let name = entry
-                .map(|e| e.name.to_string())
-                .unwrap_or_else(|| format!("Item {id:02X}"));
-            let count = counts.get(id).copied().unwrap_or(1);
-            let admissible = filter_set.contains(&i);
-            row_data.push((name, count, admissible));
-        }
-        let item_rows: Vec<legaia_engine_ui::InventoryItemRow<'_>> = row_data
-            .iter()
-            .map(|(n, c, a)| legaia_engine_ui::InventoryItemRow {
-                name: n,
-                count: *c,
-                admissible: *a,
-            })
-            .collect();
-        let target_rows: Vec<legaia_engine_ui::InventoryTargetRow<'_>> = s
-            .targets
-            .iter()
-            .map(|t| legaia_engine_ui::InventoryTargetRow {
-                name: &t.name,
-                hp: t.hp,
-                hp_max: t.hp_max,
-                mp: t.mp,
-                mp_max: t.mp_max,
-                alive: t.alive,
-            })
-            .collect();
-        let (phase, cursor) = match s.state {
-            InventoryUseState::Browsing { cursor } => (0u8, cursor as u8),
-            InventoryUseState::TargetSelect { cursor, .. } => (1u8, cursor as u8),
-            _ => (0u8, 0),
-        };
-        let selected_item_name = s.current_item().map(|e| e.name);
-        let in_battle = matches!(
-            s.context,
-            legaia_engine_menus::inventory_use::InventoryContext::Battle
-        );
-        let args = legaia_engine_ui::InventoryUseDrawArgs {
-            items: &item_rows,
-            targets: &target_rows,
-            in_battle,
-            cursor,
-            phase,
-            selected_item_name,
-        };
-        legaia_engine_ui::inventory_use_draws_for(&self.font, args, (16, 32))
     }
 
     /// Build draws for the equip screen in the retail multi-window layout:

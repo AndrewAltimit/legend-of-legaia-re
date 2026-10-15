@@ -11,7 +11,7 @@
 //! - **Winding**: the heightfield is engine-synthesised geometry with no
 //!   retail winding to preserve, and its builder winds opposite to the scene
 //!   TMDs. Nothing notices under the both-sided passes, but the field
-//!   pass's NCLIP cull (`camera_view::nclip_cull_mode` = 2) discards one
+//!   pass's NCLIP cull (`camera_frame::nclip_cull_mode` = 2) discards one
 //!   facing, and a ground wound against the disc meshes is the half it
 //!   discards. Every triangle is reversed here so the ground carries the
 //!   disc meshes' parity.

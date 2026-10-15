@@ -3,6 +3,67 @@
 use super::*;
 
 impl<'a> FieldActorHost for FieldHostImpl<'a> {
+    // Op `43 07` (arm `0x801DF6F8`): write row `face_id` of `DAT_8007BE60`
+    // (`+8` = the u32 at operand `+1`, `+0..+6` the four halfwords at
+    // `+5..+0xC`), store the id in `+0x6D`, and ramp `+0x7A` with
+    // `FUN_8003C5F0(+0x7A, 2, ..)`: `0 -> 0x1000` over `target` frames, or
+    // `0x1000 -> 0` over `-target` (`0x801DF75C..0x801DF79C`).
+    fn actor_face_rotation_setup(
+        &mut self,
+        ctx: &mut FieldCtx,
+        face_id: u8,
+        payload_4: u32,
+        params: [u16; 4],
+        target: i16,
+    ) {
+        self.world.npcs.face_rows.insert(
+            face_id,
+            crate::world::FieldFaceRow {
+                offset: params.map(|v| v as i16),
+                flags: payload_4,
+            },
+        );
+        let Some(HeadingOwner::Placement(slot)) = self.world.heading_owner(ctx) else {
+            return;
+        };
+        let (start, end, frames) = if target > 0 {
+            (0, 0x1000, i32::from(target))
+        } else {
+            (0x1000, 0, -i32::from(target))
+        };
+        let face = self.world.npcs.faces.entry(slot).or_insert((face_id, 0));
+        face.0 = face_id;
+        use legaia_engine_motion_vm::ambient_motion::{Ramp, RampKind};
+        self.world.npcs.face_ramps.install(Ramp {
+            dest: 0x7A,
+            owner: u32::from(slot),
+            start,
+            end,
+            total: frames,
+            remaining: frames,
+            kind: RampKind::U16,
+        });
+    }
+
+    // Op `43 08` (`0x801DF7AC`): `+0x6D = 0`, `+0x7A = 0` - the actor draws
+    // undeformed again. A ramp still live keeps writing `+0x7A`, as retail's.
+    fn actor_face_reset(&mut self, ctx: &mut FieldCtx) {
+        if let Some(HeadingOwner::Placement(slot)) = self.world.heading_owner(ctx)
+            && let Some(face) = self.world.npcs.faces.get_mut(&slot)
+        {
+            *face = (0, 0);
+        }
+    }
+
+    // Op `4C C0` (arm `0x801E260C`): seat a placement's clip at a random
+    // phase - see [`World::randomize_npc_clip_phase`].
+    fn randomize_clip_phase(&mut self, ctx: &mut FieldCtx) -> bool {
+        match self.world.heading_owner(ctx) {
+            Some(HeadingOwner::Placement(slot)) => self.world.randomize_npc_clip_phase(slot),
+            _ => false,
+        }
+    }
+
     fn face_compass(&mut self, ctx: &mut FieldCtx, index: u8, player: bool) {
         Self::face_compass(self, ctx, index, player)
     }

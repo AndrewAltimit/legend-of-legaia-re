@@ -3,9 +3,10 @@
   <h1>Scene-prefixed asset bundles <span class="tag tag-done">Confirmed</span></h1>
   <p class="lede">When the game loads a town, dungeon or battle it pulls that scene's assets - 3D geometry, textures,
   sound banks, scripts - out of PROT.DAT, the disc's single big archive. This page catalogues the container shapes
-  those per-scene entries use. They all lead with the same 4-byte <code>(type &lt;&lt; 24) | size</code> chunk word,
-  so they look alike; what tells them apart is the content magic at offset 4, and handing one to the wrong walker
-  crashes.</p>
+  those per-scene entries use. Two of them (<code>scene_tmd_stream</code>, <code>scene_vab_stream</code>) open with
+  the same 4-byte <code>(type &lt;&lt; 24) | size</code> chunk header a DATA_FIELD stream uses, with <code>type = 0</code>;
+  the standard streaming walker reads that as its TIM slot and produces confident nonsense. Retail's loaders key on
+  the content magic at offset 4 instead, so identify the shape before picking a walker.</p>
 </header>
 
 <section class="doc-section" id="at-a-glance">
@@ -21,10 +22,10 @@
     <thead><tr><th>Shape</th><th>What it carries in the game</th><th>Told apart by</th><th>Entries</th></tr></thead>
     <tbody>
       <tr><td><a href="#scene-tmd-stream-bare-tmd-prefix"><code>scene_tmd_stream</code></a></td><td>A battle-stage backdrop mesh plus its textures and NPC palettes</td><td>Legaia TMD magic at <code>+4</code></td><td>182</td></tr>
-      <tr><td><a href="#scene-vab-stream-vab-prefix"><code>scene_vab_stream</code></a></td><td>A music track: instrument bank, then the sequence</td><td><code>VABp</code> at <code>+4</code></td><td>most BGM</td></tr>
+      <tr><td><a href="#scene-vab-stream-vab-prefix"><code>scene_vab_stream</code></a></td><td>A music track: instrument bank, then the sequence</td><td><code>VABp</code> at <code>+4</code></td><td>218</td></tr>
       <tr><td><a href="#scene-v12-table-scene-header-event-script-bundle"><code>scene_v12_table</code></a></td><td>The scene's walk-on trigger tiles (dev name <code>.PCH</code>)</td><td>Three algebraically tied header words; exactly one sector</td><td>97</td></tr>
       <tr><td><a href="#scene-event-scripts-prescript-only"><code>scene_event_scripts</code></a></td><td>Move-VM stager records for the scene's ambient props</td><td><code>[u16 count][u16 offsets]</code> at 0</td><td>101</td></tr>
-      <tr><td><a href="#scene-asset-table-count-prefixed-asset-bundle"><code>scene_asset_table</code></a></td><td>The town / dungeon bundle: MAN script, meshes, textures</td><td><code>u32 count</code> of 6 or 7 descriptors</td><td>one per scene</td></tr>
+      <tr><td><a href="#scene-asset-table-count-prefixed-asset-bundle"><code>scene_asset_table</code></a></td><td>The town / dungeon bundle: MAN script, meshes, textures</td><td><code>u32 count</code>, descriptor 0 at <code>8 + count*8</code></td><td>88 (+17 classed <code>lzs_container</code>)</td></tr>
       <tr><td><a href="#scene-scripted-asset-table-scripted-prefix-canonical-bundle"><code>scene_scripted_asset_table</code></a></td><td>Nothing - a composite retail does not ship</td><td>Prescript + table at the next sector</td><td>0</td></tr>
       <tr><td><a href="#tmd-size-prefix-truncated-tmd-prefix"><code>tmd_size_prefix</code></a></td><td>A truncated mesh prefix</td><td>Claimed size larger than the entry</td><td>34</td></tr>
     </tbody>

@@ -365,23 +365,12 @@ impl LegaiaRuntime {
         }
     }
 
+    /// The command menu's chips this frame (the shared projection,
+    /// `legaia_engine_screens::battle_command`).
     pub(crate) fn battle_command_menu_chips(&self) -> Option<CommandChips> {
-        use legaia_engine_core::battle_hud::battle_command_chips;
-        use legaia_engine_menus::battle_input::CommandChipPhase;
-        use legaia_engine_ui::battle_command_ui::ChipPhase;
-        let world = self.scene_host.host().map(|h| &h.world)?;
-        let chips = battle_command_chips(world)?;
-        // The two enums are separate types because `engine-ui` is a leaf
-        // that does not link `engine-core`; the native window carries the
-        // same four-line map.
-        let phase = match chips.phase {
-            CommandChipPhase::RoundPrompt => ChipPhase::RoundPrompt,
-            CommandChipPhase::CommandRing => ChipPhase::CommandRing,
-            CommandChipPhase::AttackMode => ChipPhase::AttackMode,
-            CommandChipPhase::CommitConfirm => ChipPhase::CommitConfirm,
-        };
-        let highlight = legaia_engine_core::battle_hud::battle_chip_highlight(world, chips.cursor);
-        Some((chips.chips, highlight, phase))
+        legaia_engine_screens::battle_command::battle_command_menu_chips(
+            &self.scene_host.host()?.world,
+        )
     }
 
     /// The battle HUD's chrome sprites (strip + plaque lozenges, gold `HP` /
@@ -444,15 +433,18 @@ impl LegaiaRuntime {
         ) {
             let (origin, scale) =
                 crate::play_menu::stage_transform(surface_w.max(1), surface_h.max(1));
-            out.extend(with_battle_item_frame(&model, |frame| {
-                legaia_engine_ui::battle_item_ui::battle_item_window_sprites(
-                    assets.font_ref(),
-                    rects,
-                    frame,
-                    origin,
-                    scale,
-                )
-            }));
+            out.extend(legaia_engine_screens::with_battle_item_frame(
+                &model,
+                |frame| {
+                    legaia_engine_ui::battle_item_ui::battle_item_window_sprites(
+                        assets.font_ref(),
+                        rects,
+                        frame,
+                        origin,
+                        scale,
+                    )
+                },
+            ));
         }
         // The command chips sample the same blue plate 3-slice the party
         // bar does, so they ride this array rather than a second one.
@@ -735,11 +727,14 @@ impl LegaiaRuntime {
             if let Some(model) = bw.battle_item_menu_model() {
                 let (origin, scale) =
                     crate::play_menu::stage_transform(surface_w.max(1), surface_h.max(1));
-                out.extend(with_battle_item_frame(&model, |frame| {
-                    legaia_engine_ui::battle_item_ui::battle_item_window_text(
-                        font, frame, origin, scale,
-                    )
-                }));
+                out.extend(legaia_engine_screens::with_battle_item_frame(
+                    &model,
+                    |frame| {
+                        legaia_engine_ui::battle_item_ui::battle_item_window_text(
+                            font, frame, origin, scale,
+                        )
+                    },
+                ));
             }
         } else if let Some(cmd) = &bw.battle.command {
             let mut my = MENU_Y;

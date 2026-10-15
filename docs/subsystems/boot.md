@@ -1216,9 +1216,9 @@ Two functions carry the screen:
   commits. Disc-gated `town01_opening_name_entry_wiring.rs` +
   `opening_full_chain_e2e.rs`.
 - **The prompt frame keeps the camera running**, matching retail:
-  `World::step_name_entry_frame`, `BootSession::step_name_entry_frame` and the
-  play page's `name_entry_advance_frames` pass the display frame and run the
-  camera half.
+  `World::step_name_entry_frame` and `BootSession::step_name_entry_frame`
+  (which both play hosts reach through the shared tick claim) pass the frame
+  and run the camera half.
 - **Both hosts reach it.** The browser play page runs the same state machine
   and the same shared [`legaia_engine_ui`](../../crates/engine-ui/README.md)
   builders (`name_entry_draws_for` + `name_entry_chrome_sprite_draws_for`)

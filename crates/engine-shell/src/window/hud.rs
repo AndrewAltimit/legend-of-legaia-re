@@ -35,17 +35,7 @@ fn arts_input_screen(
     }
 }
 
-/// The chip cluster a host projects for one frame: the owned `(label,
-/// enabled)` chips in seat order, the cursor index, and the cluster's phase
-/// (`engine-menus::battle_input::BattleCommandChips`, with the phase mapped
-/// onto the leaf crate's own enum).
-pub(super) type CommandChips = (
-    Vec<(String, bool)>,
-    // The highlighted chip (`battle_hud::battle_chip_highlight`): `None`
-    // under the directional-buttons command entry.
-    Option<usize>,
-    legaia_engine_ui::battle_command_ui::ChipPhase,
-);
+pub(super) use legaia_engine_screens::battle_command::CommandChips;
 
 impl PlayWindowApp {
     /// The field overlay's own stage windows that ride the shop-family
@@ -150,53 +140,6 @@ impl PlayWindowApp {
 /// constant: nothing ties the battle HUD's anchor to the post-battle banner's,
 /// and collapsing them would invent a coupling neither host has.
 pub(super) const BATTLE_HUD_PEN: (i32, i32) = (8, 60);
-
-/// Borrow an engine-core battle-item-window model as the shared builder's
-/// frame, handing it to `f` (the frame borrows row views built here, so
-/// this is CPS-shaped).
-pub(super) fn with_battle_item_frame<R>(
-    model: &legaia_engine_menus::inventory_use::BattleItemMenuModel,
-    f: impl FnOnce(&legaia_engine_ui::battle_item_ui::BattleItemMenuFrame<'_>) -> R,
-) -> R {
-    use legaia_engine_ui::battle_item_ui as bii;
-    let rows: Vec<bii::BattleItemRowView<'_>> = model
-        .view
-        .rows
-        .iter()
-        .map(|r| bii::BattleItemRowView {
-            name: &r.name,
-            count: r.count,
-            admissible: r.admissible,
-        })
-        .collect();
-    let target_rows: Vec<bii::BattleItemTargetView<'_>> = model
-        .targets
-        .as_ref()
-        .map(|(rows, _)| {
-            rows.iter()
-                .map(|t| bii::BattleItemTargetView {
-                    name: &t.name,
-                    hp: t.hp,
-                    hp_max: t.hp_max,
-                    mp: t.mp,
-                    mp_max: t.mp_max,
-                    alive: t.alive,
-                })
-                .collect()
-        })
-        .unwrap_or_default();
-    let frame = bii::BattleItemMenuFrame {
-        rows: &rows,
-        cursor: model.view.cursor_row,
-        description: model.description.as_deref(),
-        actor_name: &model.actor_name,
-        targets: model
-            .targets
-            .as_ref()
-            .map(|(_, cursor)| (target_rows.as_slice(), *cursor)),
-    };
-    f(&frame)
-}
 
 /// Project the HUD model's slot array into the shared builder's view type.
 ///

@@ -341,7 +341,7 @@ fn op_4c_n_e_sub_1_text_actor_truncated_returns_unknown() {
 // -----------------------------------------------------------------
 
 #[test]
-fn op_4c_n_c_sub_0_move_cancel_advances_2_bytes() {
+fn op_4c_n_c_sub_0_phase_draw_advances_2_bytes() {
     let bytecode = [0x4Cu8, 0xC0];
     let mut host = TestHost {
         n_c_sub_0_active: true,
@@ -350,20 +350,20 @@ fn op_4c_n_c_sub_0_move_cancel_advances_2_bytes() {
     let mut ctx = FieldCtx::default();
     let r = step(&mut host, &mut ctx, &bytecode, 0);
     assert_eq!(r, StepResult::Advance { next_pc: 2 });
-    assert_eq!(host.n_c_sub_0_move_cancels, 1);
+    assert_eq!(host.n_c_sub_0_phase_draws, 1);
 }
 
 #[test]
-fn op_4c_n_c_sub_0_move_cancel_advances_2_bytes_when_inactive() {
+fn op_4c_n_c_sub_0_phase_draw_advances_2_bytes_when_inactive() {
     // Even when the host returns false (no active move), PC still
-    // advances by 2 - the cancel side-effect is conditional but the
+    // advances by 2 - the phase draw is conditional but the
     // dispatcher's PC delta is constant.
     let bytecode = [0x4Cu8, 0xC0];
     let mut host = TestHost::default();
     let mut ctx = FieldCtx::default();
     let r = step(&mut host, &mut ctx, &bytecode, 0);
     assert_eq!(r, StepResult::Advance { next_pc: 2 });
-    assert_eq!(host.n_c_sub_0_move_cancels, 1);
+    assert_eq!(host.n_c_sub_0_phase_draws, 1);
 }
 
 #[test]

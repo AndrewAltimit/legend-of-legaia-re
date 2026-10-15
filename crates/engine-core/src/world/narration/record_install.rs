@@ -293,6 +293,8 @@ impl World {
             self.field_vm.object_channel_binds = binds;
             self.field_vm.channels_man = Some(std::sync::Arc::new(man.to_vec()));
             self.npcs.clip_cursors.clear();
+            self.npcs.phase_draws.clear();
+            self.npcs.phase_draws.clear();
             self.npcs.clip_rate_live.clear();
             self.npcs.clip_bones.clear();
         }

@@ -265,9 +265,8 @@ impl Camera {
         //    caller of the ease and the snap runs immediately after them.
         //    Keeps the focus inside the latched walk region widened by the
         //    camera's visible-tile window, so the lens never pans past a
-        //    room's edge. The script focus override (`_DAT_8007B628` /
-        //    `_DAT_8007B62A`) has no port-side writer yet, so it is passed
-        //    as "unset".
+        //    room's edge. A non-zero script focus override (`_DAT_8007B628`
+        //    / `_DAT_8007B62A`, op `4C CF`) then replaces its axis.
         if gated {
             zone.focus_held = Some([g[6], g[8]]);
             return;
@@ -279,13 +278,16 @@ impl Camera {
             zone.attrs.box_bytes,
             zone.view_window,
             world.scene_save_allowed(),
-            [0, 0],
+            world.script_focus_override(),
         );
         g[6] = clamped[0];
         g[8] = clamped[1];
         if snapped && let Some([fx, fz]) = zone.seat_focus.take() {
             g[6] = fx;
             g[8] = fz;
+        }
+        if snapped && let Some(eye) = zone.seat_eye.take() {
+            g[3..6].copy_from_slice(&eye);
         }
         zone.focus_held = Some([g[6], g[8]]);
         zone.active = true;
@@ -390,7 +392,7 @@ impl Camera {
             zone.attrs.box_bytes,
             zone.view_window,
             world.scene_save_allowed(),
-            [0, 0],
+            world.script_focus_override(),
         );
         g[6] = clamped[0];
         g[7] = 0;

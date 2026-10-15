@@ -286,64 +286,6 @@ pub struct EffectModel {
     pub age01: f32,
 }
 
-/// Coarse role of a placed overworld entity, carried on
-/// [`WorldMapEntityMarker`] so a host can colour-code its render marker
-/// without inspecting the full [`WorldMapEntityConfig`] (which carries
-/// per-kind payload the renderer doesn't need).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum WorldMapEntityKind {
-    /// A roaming-encounter zone ([`WorldMapEntityConfig::EncounterZone`]).
-    EncounterZone,
-    /// A walk-onto destination marker: either a town / dungeon entrance
-    /// ([`WorldMapEntityConfig::OverworldPortal`]) or a minigame door
-    /// ([`WorldMapEntityConfig::MinigameDoor`]). The two differ in where they
-    /// lead, not in how the marker draws, so they share one render kind.
-    Portal,
-    /// A plain interactable NPC / signpost ([`WorldMapEntityConfig::Npc`]),
-    /// also the fallback for an entity with no config row.
-    Npc,
-}
-
-/// Render-agnostic snapshot of one placed overworld entity, produced by
-/// [`World::world_map_entity_markers`]. The disc-sourced placement seeding
-/// ([`crate::scene_host::SceneHost::enter_world_map_scene`]) installs each entity
-/// with a world position and a [`WorldMapEntityConfig`]; this pairs the
-/// position with its coarse [`WorldMapEntityKind`] so a host can draw a marker
-/// at each on-map portal / NPC / encounter zone.
-///
-/// This is the seam for the still-open per-entity mesh-resolution thread: the
-/// retail engine binds each placement to its own actor model, which is not yet
-/// decoded, so the host draws a kind-coded marker at the position rather than
-/// the entity's real mesh. The position shares the player's coordinate frame
-/// (both come from the scene MAN), so a marker reads correctly relative to the
-/// player even while the kingdom terrain mesh renders at its own pack-local
-/// coordinates.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct WorldMapEntityMarker {
-    /// Entity world position in world units. `x` / `z` are the MAN placement
-    /// coordinates; `y` is the player actor's current plane (the entities are
-    /// 2D placements, so they sit on the player's walking plane).
-    pub world_pos: [f32; 3],
-    /// Coarse role, for colour-coding the marker.
-    pub kind: WorldMapEntityKind,
-}
-
-/// Render-agnostic snapshot of the player's overworld position, produced by
-/// [`World::world_map_player_marker`]. In `SceneMode::WorldMap` the kingdom
-/// terrain mesh renders at its pack-local coordinates and the player actor's
-/// own mesh is not drawn, so a host draws a marker at this position to show the
-/// player on the map. `facing` is the player's heading (`render_26`), so the
-/// host can draw a direction tick.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct WorldMapPlayerMarker {
-    /// Player world position in world units (the player actor's
-    /// `move_state.world_x / y / z`).
-    pub world_pos: [f32; 3],
-    /// Player heading as a PSX 12-bit angle (`4096` = full turn), measured the
-    /// same way the field path stores it (`render_26`). `0` faces `+Z`.
-    pub facing: i16,
-}
-
 /// One sprite frame on a sprite sheet. Equivalent in shape to
 /// `legaia_engine_ui::SpriteRequest` but lives in engine-core (which
 /// can't depend on the wgpu-bound render crate). Engine binaries

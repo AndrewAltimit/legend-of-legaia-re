@@ -258,11 +258,10 @@ reach = "scene"
 # 0x403, and with 0x403 up koin2 P1[19], Emperor Etora, stands in the
 # throne room (20, 9) and gives the intercom password (0x36D). The seeded
 # segment's seated hand cannot walk the maze, so these are continuous-run
-# waypoints. Left out for now: the run plays the whole chain to Nivora, but
-# Gaza's second fight (15000 HP) goes its way on about half the tries and
-# the default stream loses all six, which would put the score below the
-# baseline. Restore together with the nivora line below:
-# continuous_via = ["korb3", "map03", "koin2"]
+# waypoints, played together with the nivora line below. Without them the
+# run reaches doman and nilboa on arrival and stalls inside the Three
+# Tunnels, whose nilboa P2[32] waits on Usha's 0x370.
+continuous_via = ["korb3", "map03", "koin2"]
 anchor = { kind = "card", card = "playthrough-ladder-pro00-14.mcr", save = "PRO-11" }
 
 [[milestone]]
@@ -274,9 +273,8 @@ reach = "scene"
 # and P1[3]'s quiz 0x4FF; uru P2[38] opens the three statues (0x3FC), each
 # a bed door into a dream (urudre1..3) whose waking raises 0x39A..0x39C;
 # uru P2[36] raises 0x36F, and Usha's 0x36F branch raises 0x370, the C2
-# gate of nilboa P2[32]. Continuous run only, and left out with the line
-# above:
-# continuous_via = ["doman", "uru", "urudre1", "uru", "urudre2", "uru", "urudre3", "doman"]
+# gate of nilboa P2[32]. Continuous run only:
+continuous_via = ["doman", "uru", "urudre1", "uru", "urudre2", "uru", "urudre3", "doman"]
 anchor = { kind = "card", card = "playthrough-ladder-pro00-14.mcr", save = "PRO-12" }
 
 [[milestone]]
@@ -301,12 +299,25 @@ reach = "scene"
 # and son's beat flags; only son and the map03 P2[9] cruise (gated on
 # 0x501, set later in taiku) name taiku.
 via = ["nilboa", "deene", "son"]
+# The way to the boat runs through a chain of other scenes' beats: deene
+# P1[4] opens the walls round the dock only while 0x3D7 is set (its 0x6C6
+# branch); 0x3D7 is bubu1 P2[3]'s, whose C2 gate is 0x3DA; 0x3DA is koin1b
+# P2[6]'s, which koin1b P1[4] (the "bring me the music" musician) spawns
+# once 0x3D5 is set; and 0x3D5 is map03 P2[12]'s, the cutscene the first
+# arrival at bubu1 plays. The anchor carries 0x3D5..0x3DA and 0x6C6, the
+# nivora_late anchor none of them. Continuous run only:
+continuous_via = ["nilboa", "bubu1", "koin1b", "bubu1", "deene", "son"]
 anchor = { kind = "card", card = "playthrough-ladder-pro00-14.mcr", save = "PRO-14" }
 
 [[milestone]]
 id = "conkram_past"
 scene = "conc"
 reach = "scene"
+# taiku's way out (P2[19] / P2[15]) lands the party at map03 (90, 85),
+# from which no walk reaches concnow's portal (66, 101); son P1[4], on
+# taiku's 0x380, spawns the crossing whose scene change lands at (65, 99),
+# beside it. Continuous run only:
+continuous_via = ["son"]
 anchor = { kind = "card", card = "playthrough-endgame-7saves.mcr", save = "PRO-00" }
 
 [[milestone]]

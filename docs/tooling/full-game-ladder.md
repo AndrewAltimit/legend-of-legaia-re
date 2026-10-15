@@ -129,7 +129,9 @@ A milestone may also name `via` scenes: story waypoints the anchors show the ret
 | Ratayu | `retona` (its own start scene) | A run that arrives at Mt. Letona's trailhead has reached the `mt_letona` milestone on its first step and would turn round; the anchor gained the summit chain (`0x354`..`0x357`, `0x367`). |
 | Dohati Castle | `retock` (its own start scene), then `jagaroom` twice | Ratayu's west gate (`retock` P2[27]) turns the party back until `0x33E` is set. `jagaroom`'s entry script raises it only once Eliza's scene (`retock` P2[33], `0x33C`), the talk `jagaroom` P1[8] (`0x351`), the door cutscene `jagaroom` P2[8] (`0x33B`) and the return `jagaroom` P2[9] (`0x34F`) have played in that order. |
 
-A milestone may instead name `continuous_via`: the waypoints part C plays in place of `via`, where a seeded segment starts past the story or its seated hand cannot play it. Dr. Usha's research and Nivora are its case, the chain the [Nivora route notes](#nivora) list: `korb3`, `map03`, `koin2` for the first (Sol's stone maze and Gaza's second fight, the Genesis Tree, Etora's password), and `doman`, Uru Mais and its three dreams, and `doman` again for the second. The run plays the chain to Nivora, but Gaza's second fight goes its way on about half the tries, and on the default stream not once in six, so the two lines stand commented out in the spine until it is won reliably.
+A milestone may instead name `continuous_via`: the waypoints part C plays in place of `via`, where a seeded segment starts past the story or its seated hand cannot play it. Dr. Usha's research and Nivora are its case, the chain the [Nivora route notes](#nivora) list: `korb3`, `map03`, `koin2` for the first (Sol's stone maze and Gaza's second fight, the Genesis Tree, Etora's password), and `doman`, Uru Mais and its three dreams, and `doman` again for the second; Gaza's second fight is that stretch's risk.
+
+Zora Castle is another case: its seeded segment starts from an anchor whose flags the save bridge carries forward, but a run of its own has to raise the chain that opens `deene`'s dock (`nilboa`, `bubu1`, `koin1b`, `bubu1`, `deene`, `son`; [route notes](#overworld-and-dungeon-joins)), and Conkram's Past takes `son` for the crossing to `concnow`.
 
 A waypoint whose own arrival script carries the party on counts as visited: `concend`'s P2[0] is its beat, and it ends in the hop to `town0d`. One that carries it straight back to the scene it came from was a stay, not a visit: `jiji`'s inn sleeps the party over in `ropeway`, whose arrival cutscene returns it to `jiji`. Part A checks every waypoint is a disc scene.
 
@@ -236,7 +238,10 @@ one upkeep pass, in this order:
    present member first, then the affordable piece of equipment that
    improves a present member's slot the most (through the recipient
    picker, which equips it on the spot), then healing items up to fifteen
-   for each present member. A counter whose stock list sells a healing
+   for each present member. The stock is counted in Healing Flowers' worth
+   (800 HP each), not in items: counted by the item, 38 Healing Leaves read
+   as a full stock, and a run that bought seven Flowers at `rayman2` met Van
+   Saryu (`jagaroom`) with none. A counter whose stock list sells a healing
    item is visited ahead of the others: `retock`'s arms dealer (P1[34])
    took 46800 of 49991 gold before its item counter (P1[36]) was reached,
    and the party met Dohati with one Healing Flower. At a counter that
@@ -244,6 +249,16 @@ one upkeep pass, in this order:
    the counter that does. A merchant is visited again only with a
    different purse or bag, or once a counter the story had closed has
    opened ([below](#a-counter-the-story-has-closed)).
+   A heal is ranked by HP restored per gold, and a full restore (the
+   Healing Berry, "Restores maximum HP") counts as a present member's
+   maximum HP: `doman`'s counter, the last before Nivora's three solo
+   duels, sells no other restorative. At a counter that sells a heal, a bag
+   under its fifteen a member first sells the armament no member who has
+   joined (present or not) is better off wearing, whole stacks, as the
+   errand rule below does for gold. A sale the screen does not complete is
+   struck off that visit's list rather than ending the visit: ending it
+   there left `rayman2`'s item counter with a purse of 20000 and two
+   Healing Flowers bought.
 2. **Equipment.** Start, Equip, each member, the Best Equipment row. That row ranks only the four armament slots, so the hand then fills each member's empty Goods slots from the bag, best passive first (HP, attack and arts boosts ahead of guards), never two of one passive on a member and never Rage, Zero Defense, Last Attack or No Escape.
 
    Best Equipment (`FUN_801CF760`) ranks a weapon by its stats alone, and a weapon outside the wearer's class raises the arm command's AP cost ([`arts-command-gauge.md`](../subsystems/arts-command-gauge.md)): the Astral Sword costs Vahn 54 a swing, his nine-command art no longer fits a turn, and Koru (`nilboa` P2[20]) outlasts him. So after the row the hand reads each member's arm cost off its player battle file, the way the battle loader does (`swing_command_costs`), and where a weapon in the bag swings cheaper than the one worn it puts that one on (Start, Equip, the member, the weapon row, the weapon, Yes), the best attack among equally cheap ones.
@@ -325,7 +340,18 @@ running is cast at freely.
 
 **Its bag is for the fights.** On the road a party of two or more spends a
 restorative only under 45%, a lone member under 65%; it does not open the
-menu on an empty bag. Before a staged fight it wears what the last chest
+menu on an empty bag. It heals with spells first: Start, Magic, the caster,
+the spell, the weakest member or the group confirm, through the engine's own
+field cast (`apply_spell_outcome`, the discounted MP debit and the heal),
+picking the cast that restores the most across the party's deficits. A
+caster spends only the MP above three fifths of its pool there - the line
+the bag tops MP up to before a staged fight, so a cast on the road is never
+paid for with a Magic Fruit at the boss's door - and all of it once the bag
+holds no restorative: the run met Koru (`nilboa`) with an empty bag, two
+members near death and every Spoon unspent. A rest is taken for low MP as
+well as low HP (the lower of the two gauges reads against the line): a run
+that reached Nivora's duels with Gala at 54 of 346 MP lost Che's on every
+stream. Before a staged fight it wears what the last chest
 held, takes a rest that is close by, and opens the bag only under three
 fifths - for HP, and for MP when the member lowest on it is under three
 fifths, since the casts are half of what a boss is beaten with.
@@ -429,6 +455,16 @@ to Nivora set four rules the continuous hand plays by:
   takes control and walks in, and control passes on until a leader stands
   who can walk to the talk; the talk's actor is read again after every swap,
   since the swap's own record moves it.
+- **A split party's stones come first.** Inside an armed three-actor talk a
+  gate stone may stand in another member's part of the map, and the band at
+  the end of a member's tunnel ends that member's part: the swap passes it
+  by from then on. So each round plays the gate stones before its walk-on
+  bands, handing control on with Square until a member can walk to the
+  stone. `nilboa`'s Shield Control Panel (P0[6], `0x458`) and the snowball
+  over the gap (P0[10], `0x475`) stand in the Wind Ravine member's tunnel and
+  clear the walls in the other two; walked after that member's tunnel end
+  P2[2], neither was reached again and P2[1] / P2[3] lay outside every
+  member's walk component.
 
 ### An errand the story waits on
 
@@ -462,10 +498,20 @@ the bag is short of an errand's copies:
 - **It fights for the rest.** While the purse plus what the outgrown pieces
   sell for is short of the errands' price, it trains as it trains for
   levels, from a bed or, with no bed in reach and heals in the bag, from the
-  bag; `kor` rolls the encounters the floors above it do not.
+  bag; `kor` rolls the encounters the floors above it do not. The price it
+  fights for includes refilling the bag to its fifteen heals a member, at
+  the price of the heal that restores the most per gold: training from the
+  bag spends the heals the next boss is fought with, and a run that stopped
+  the moment the bread was paid for, then bought armour with the rest,
+  met Gaza's second fight (`korb3`) with one Healing Flower.
 - **It keeps the price back.** A counter sells it the errand's item first;
   heals and equipment come out of what is left over the price, and the
-  item is never used as a heal (a Soru Bread restores HP).
+  item is never used as a heal (a Soru Bread restores HP). Equipment also
+  leaves the heal refill's price in the purse, and once a counter has sold
+  the errand its item the counters that sell heals are visited again with
+  the change. Once only the refill is still owed, the fighting stops at the
+  bag's three heals a member: training from the bag spends the heals it is
+  fighting to buy back.
 
 The waypoints put the stretch in order: `koin2` for the chests' first
 contact (and the gold), `koin4` for the bread, `koin2` again to feed them.
@@ -1008,6 +1054,7 @@ map as its street:
 - **A script that carries the walker to a landing it has carried it to before**, leaving the same flags, is a loop after the third time, even when the flags it toggles keep the first count from building. `chitei2`'s transport rides between (98, 102) and (94, 22), each ride flipping the car's flags (met on a walk to P2[9]).
 - **Teleports and notches.** The follower presses a teleport waypoint until the jump lands, and backs out of a diagonal-wall notch where all four lattice steps read blocked. The lattice cannot say which neighbouring cell the free movement reaches, so each second the walk stays wedged it heads for the next open cell in turn: on `retona`'s stair landing at (16, 99) the nearest one lies west, and the slide toward it carries the player straight back.
 - **The action button.** Held against something for a second, the follower tries the action button. In a field the tap waits for a frame the player did not move: the stall counter also counts a run step that stays inside one cell, and a tap there would stand the player still one frame in every few. A tap that opens the same talk twice on one walk without changing a flag ends the tapping for that walk: `jiji`'s inn counter (P0[8..10], the witch's "Want to stay?") opened on every tap of the walk past it, two thousand frames each, and spent a stretch's budget on the walk to P1[19]'s pickup.
+- **Minigame cabinets.** The tap is never pressed at a minigame cabinet, a talk record that runs the minigame door-warp (`3E` with `op0 >= 100`) itself or through a record it spawns. `koin1`'s slot machines (P1[51..56]) are props the interact probe reaches but no NPC slot carries; a tap beside one on the walk to the Prize Counter (P1[5]) asked to play, the scripted-sequence hand answered, and the session sat at the slot machine. A session that lands in a minigame anyway leaves it with Start, the engine's shared minigame exit, which also closes the door-warp's round trip back to the field.
 - **A script that runs on the way and changes nothing** - no flag, no cell, no scene (an examined prop with nothing to say) - leaves the route as it was rather than re-planning the walk component.
 - **Walk-on bands.** Walks avoid the live walk-on bands unless one is the only way through. A band whose record's story gates shut it is walkable, and so is an inert band that only sets the camera or the view, such as `retona` P2[0] across the summit's passes. A band that turns the party back (`retona` P2[24], until `0x367`) stays avoided.
 
@@ -1074,6 +1121,41 @@ avoid set and story flags - and a start inside it plans straight to that
 cell. On the overworld the follower inverts the camera remap exactly (of the
 eight pad directions, the one whose world bits are the step's): a rounded
 rotation turns a cardinal step diagonal whenever the camera sits off an axis.
+In the field it inverts the engine's own remap the same way: the held
+direction nibble is rotated by the camera azimuth in eighth turns around the
+eight-direction ring (`World::remap_pad_direction`, index
+`((azimuth + 0x100) >> 9) & 7`), and the press is the one whose remapped bits
+are the step's. On an axis-aligned camera that is the quarter-turn mapping;
+on a diagonal one a quarter-turn rounding pressed a cardinal for a diagonal.
+
+The follower walks the planned cells in order, and a slide that leaves the
+player a cell or two off the route rejoins it at the nearest route cell
+rather than re-planning. That rejoin can leave a route head the follower
+cannot press toward: the player's own cell (aimed at its own centre, nothing
+is left past the dead band) or a cell one diagonal step away (a diagonal
+pressed into a wall corner pins the player). The walk onto `nilboa`'s Koru
+ledge (P2[20]) stalls that way at (12634, 13762) aiming at (12608, 13792),
+and a re-plan from the stall reaches the band. Every form of that remedy
+tried moved measured stretches: inserting the open corner cell or dropping
+the head on every frame cost two seeded segments their pad tier and
+stranded a continuous run in `ropeway`, and re-planning on the stall alone
+sent the Three Tunnels' walks down a costlier way that spent a dozen
+Healing Berries before the Delilas duels, which then lost on every stream.
+A walk across a teleport maze has the opposite failure: a fresh plan from
+every cell the walker is carried to chooses between routes of nearly equal
+cost from wherever it stands, and the walk can alternate between them for
+good (`taiku`'s escape, [route notes](#overworld-and-dungeon-joins)). The
+continuous hand commits to a plan that crosses two or more jumps: off the
+route it plans only to the route's next jump and rides the rest as planned,
+and a jump aimed at three times without landing on the route drops the
+commitment.
+
+The follower keeps the plain rejoin, and the remedy sits in the beats pass
+instead, scoped to the one shape: when the walk onto a band whose record
+stages a fight stalls up to three tiles short (two for every other band),
+the continuous hand, outside a split party, tries the band's other tiles,
+and P2[20] is entered from its south side. The Three Tunnels' walks and
+the duels after them are left as they were.
 
 ### Overworld diagonals
 
@@ -1173,8 +1255,13 @@ round parity). A foe on any other cycle gets no guard on cadence, but once a
 party-wide hit has taken two fifths of a member or more (Van Saryu's
 Earthquake), a member that hit would drop and the guard would not takes
 Spirit, ahead of healing itself when no ally is worse off; not on the round
-after a heavy one from a foe that has never hit hard twice running, and never
-against a foe that telegraphs its hit with a charge latch.
+after a heavy one from a foe that has never hit hard twice running, never
+against a foe that telegraphs its hit with a charge latch, and not again on
+the round after a stance that met no party-wide hit. Gaza's second fight
+(`korb3` P2[2]) lands its party-wide hit about every third round, and all
+three members held the stance three rounds running at half their HP, healing
+nothing and dealing nothing, until its single hits had worn them under the
+band.
 
 The cadence read needs four rounds, and Rogue (`rugi` P2[38], 28200 HP) does
 not always leave them: its first party-wide hit, on the second stretch, takes
@@ -1241,6 +1328,31 @@ capped at full HP, and when no item does that it is the largest in the bag
 (the Healing Flower's 800). Whether the smaller-heal hand wins is a matter
 of the dealt stream, which is how a change to anything that draws before
 the fight turned this one from a win into a stall.
+
+The three duels are won by attrition out of one bag: the retail-seeded pass
+spends about 25 Healing Flowers on Che alone. So a duellist uses everything
+the bag and its own spell list give it:
+
+- **Every heal is a single heal.** For a lone member a party heal (a
+  Healing Fruit, all-party) restores the same as a single one, and it is on
+  the heal arm's list.
+- **The stance waits on a heal that can come.** The hold below five eighths
+  lasts only while the bag holds a restorative; with none left the member
+  goes on alternating Spirit and Arts rounds.
+- **An attack Elixir first.** The member drinks a Power Elixir on itself
+  before its first Arts round (the `x6/5` attack ramp lasts the battle), or a
+  Fury Boost when its Miracle string is armed and the boosted pool pays for
+  it. Outside a duel these wait for a foe of ten times the party's HP.
+- **Spells once the bag is dry.** Under three fifths of its HP with no
+  restorative left, it casts the healing spell it knows that restores the
+  most and that it can pay for (Spoon, 270 HP for 45 MP, for all three
+  duellists), and drinks the bag's largest MP item when it cannot pay.
+
+The spell heal is not only a duel's. In any fight that forbids running, a
+bag with no restorative left and a member under three fifths of its HP has
+a caster with an affordable group heal cast it (Spoon heals all three):
+Gaza's second fight (`korb3` P2[2]) ran the bag dry with every member's
+Spoon unspent.
 
 The heals follow the bag. A second member backs up a committed heal while
 someone stands within one party-wide hit of death (turn order is drawn per
@@ -1324,8 +1436,9 @@ clips and matches the same arts a windowed one does. Beyond that:
 | `LEGAIA_FGL_TRACE_BATTLE=1` | A `[battle]` line every 1000 ticks. |
 | `LEGAIA_FGL_TRACE_HITS=1` | Each HP change with its actor and action state. |
 | `LEGAIA_FGL_PAD_DEBUG=1` | In a fight where no foe has lost HP for 6000 ticks, the fighter's pad and the command, spell and item windows' phases every 97 ticks: what a battle that will end `unresolved` was being asked. |
+| `LEGAIA_FGL_SHOP_DEBUG=1` | Each pad edge of a shop screen with the hand's next buy and sale, the screen state, the purse and the bag's heals in Healing Flowers' worth. |
 | `LEGAIA_FGL_HEAL_DEBUG=1` | Each pad edge of the field heal with the Items screen's focus, list rows, usable rows and target rows. |
-| `LEGAIA_FGL_WALK_DEBUG` | A stalled walk's wall map, the scene's teleports, tile triggers and door colliders. |
+| `LEGAIA_FGL_WALK_DEBUG` | A stalled walk's wall map, the scene's teleports, tile triggers and door colliders. With `LEGAIA_FGL_STALL_PRESSES=1` as well, it holds each of the eight presses for 20 ticks from the stall and prints where each leaves the player (the walk is disturbed from then on: a diagnosis, not a run). |
 | `LEGAIA_FGL_PLAN_DEBUG` | Each object-door edge the planner adds. |
 | `LEGAIA_FGL_COMP_DEBUG` | The tile map of every walk component a plan failed inside (`o` reached, `A` avoided door tile, `b` actor box, `G` the goal), with the overworld's installed entities, the live NPCs, the solid props with their bind records, and the self-opening doors. Beside it, a sub-cell flood of the wall bits alone. |
 | `LEGAIA_FGL_JUMP_DEBUG` | Every pad-walk frame that moves the player more than 64 units (a door or lift ride), with the live arrival bracket. |
@@ -1520,8 +1633,34 @@ Scene-specific facts the route and the pad hand depend on. Each is a property of
   5. `doman` again: Usha's `0x36F` branch raises `0x370`.
 
   The continuous run plays the chain as the two milestones' `continuous_via`
-  ([the spine](#the-spine)), with those lines commented out while Gaza's
-  second fight is a coin toss for it.
+  ([the spine](#the-spine)). Without it the run reaches `doman` and `nilboa`
+  on arrival and stalls inside the tunnels on P2[32]'s `0x370`. Gaza's second
+  fight is the stretch's risk: it is won out of what the Sol errand leaves
+  in the bag ([above](#an-errand-the-story-waits-on)), and a party that
+  meets it with one Healing Flower loses it.
+- Past the tunnels, the Delilas duels (P2[3]'s branch once all three tunnel
+  ends are reached: Che against Gala, Lu against Noa, Gi against Vahn) are
+  fought one member at a time out of the party's one bag
+  ([guards and boss reads](#guards-and-boss-reads)).
+- Koru (P2[20]'s challenge, F32, 20000 HP) is a race against its round-4
+  finisher ([`KORU_MONSTER_ID`](#guards-and-boss-reads)), and the retail
+  party wins it on Miracle Arts: Vahn and Noa drink a Fury Boost in the first
+  round and type their nine-command Miracle every round after (about 2500
+  each). A Miracle costs nine presses at the arm's price (30), 270 from the
+  action gauge, and a Fury Boost lifts the gauge to `base * 7 / 5 + 8`, so it
+  fits from a base AGL of 188. The anchors' party holds that at level 25
+  (Vahn 202, Noa 189, the AGL Boost accessory's +20% included). AGL grows by
+  its own divisor in the level-up applier (`0x18C0` against every other
+  stat's `0x24C0`, [`level-up.md`](../subsystems/level-up.md)); an engine
+  that divided it by `0x24C0` grew it two a level where retail grows three,
+  and its level-31 party (Vahn 157, Noa 177) lost the race at about half
+  Koru's HP on every stream. With the divisor corrected the run's party
+  reaches `nivora_late` at AGL 191 / 211 / 173 and, carried past the ledge,
+  beats Koru on the first or second attempt. The ledge band P2[20] is
+  reached from its other tiles ([how the pad tier
+  walks](#how-the-pad-tier-walks)), and the stretch then plays the chain
+  that opens `deene`'s dock ([overworld and dungeon
+  joins](#overworld-and-dungeon-joins)) on its way to the `son` boat.
 
 ### Overworld and dungeon joins
 
@@ -1547,6 +1686,45 @@ Scene-specific facts the route and the pad hand depend on. Each is a property of
   The `son` portal `(45, 84)` is walled in: it is the landing of the boat
   ride `map03` P2[13], spawned on `0x575`, which `deene` P2[14] raises
   (the anchor carries that record's `0x37E`), hence the `deene` waypoint.
+  The party that walks into `deene` is boxed in the room it lands in, and
+  the way out opens on `0x6C6` (tested by the entry script P1[0] and the
+  objects P0[1] / P0[2]). Its one setter is the talk `deene` P1[4], and
+  only on its `0x3D7` branch, a cutscene that ends by rewriting the
+  collision round (15..19, 45..49) (`4C 71` / `4C 72` / `4C 73`); with
+  `0x3D7` clear the talk is only words. `0x3D7` is `bubu1` P2[3]'s, a walk-on whose C2 gate is
+  `0x3DA`; `0x3DA` is `koin1b` P2[6]'s, which the musician `koin1b` P1[4]
+  spawns once `0x3D5` is set ("bring me the music"); and `0x3D5` is `map03`
+  P2[12]'s, the cutscene the first arrival at `bubu1` plays. The
+  `nivora_late` anchor carries none of `0x3D5..0x3DA` and the `zora_castle`
+  anchor all of them, so the continuous run plays `nilboa`, `bubu1`,
+  `koin1b`, `bubu1`, `deene`, `son` (`koin1b` is `kor3` P2[3]'s door, a
+  walk-on the route reaches through `korout`, `kor` and `kor3`).
+- From `zora_castle`, the stretch is Zora (`taiku`, monster 169, 22422 HP,
+  whose Darkness Typhoon takes more than half of each member's HP) and then the
+  Floating Castle's escape against the clock
+  ([`field-oddities.md`](../reference/glitches/field-oddities.md#no-encounters-in-jettes-absolute-fortress)):
+  six minutes, of which every fight on the way out costs twenty seconds
+  besides its own length. The escape's success record raises `0x380` /
+  `0x382` (the `zora_castle` anchor's successor carries both); on expiry
+  `0x396` routes the party out through P2[20] (variant MAN), which raises
+  `0x501` and `0x616` and lands on `map03` at (90, 85), where the cruise
+  P2[9] tests `0x616` and ends in the scripted game over (`4C EA`) instead
+  of its scene change. The exit is the walk-on P2[15] at (16, 28), whose
+  `0x393` has the entry script spawn the success record P2[16], and the
+  way to it from the Mist Generator crosses five teleports of `taiku`'s
+  maze, the last at (84, 59). Re-planned from every cell the walker was
+  carried off its route to, the walk switched between that route and one
+  through the door P0[6] at (109, 78), which carries the walker across in
+  both directions and re-walls its tiles on each crossing, and spent the
+  clock going back and forth; the continuous hand now commits to a route
+  that crosses two or more jumps, re-planning only to its next jump
+  ([how the pad tier walks](#how-the-pad-tier-walks)). While the clock runs
+  it also flees every random fight. Zora itself (Glare petrifies, and a
+  petrified member counts as down for the whole battle) is the remaining
+  risk: the hand buys no Stone Amulet (Sol's bakery), and a stream can lose
+  it on every reload. From the landing at (90, 85) no walk reaches
+  `concnow`'s portal (66, 101); `son` P1[4], on `0x380`, spawns the
+  crossing that lands beside it, hence `conkram_past`'s `son` waypoint.
 - From `zora_castle`, `concnow`'s way into Conkram's past is the walk-on
   P2[17], which spawns P2[18] (`0x3F` to `conc2`) once the visions P2[13]
   .. P2[16] have run; its other `conc2` bands lie behind walls. The gate

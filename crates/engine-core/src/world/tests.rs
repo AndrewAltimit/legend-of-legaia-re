@@ -7,6 +7,15 @@ use vm::Insn;
 
 /// Take `Begin` on the party's commit-confirm screen (`0x6E`) when the last
 /// commit raised it, so the round plays out. Returns whether it was up.
+/// One vsync of the live battle loop with the display clock advanced, as
+/// `World::tick` advances it: the action SM runs one pass a battle frame
+/// (`World::battle_sm_pass_due`), so a loop that never moves the clock
+/// would run it once.
+fn live_tick(w: &mut World) -> Option<legaia_engine_battle_vm::battle_action::StepOutcome> {
+    w.clock.display_frames += 1;
+    w.live_battle_tick()
+}
+
 fn take_commit_begin(w: &mut World) -> bool {
     use legaia_engine_menus::battle_input::CommandPhase;
     let Some(cmd) = w.battle.command.as_mut() else {

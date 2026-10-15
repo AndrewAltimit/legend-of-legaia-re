@@ -28,7 +28,8 @@ use legaia_engine_audio::{
     SfxFireBatch, SfxScheduler, VabBank, XaClipBank,
 };
 use legaia_engine_core::scene_host::BgmDirector;
-use legaia_engine_core::world::{SharedRegionBank, SideBandBank};
+use legaia_engine_core::world::SideBandBank;
+use legaia_engine_mode::sfx_residency::SharedRegionBank;
 use legaia_engine_system::sound_state::SfxRingOp;
 use legaia_game_tables::sfx_table::FALLBACK_VAB_SLOT;
 use legaia_seq::Seq;
@@ -115,7 +116,7 @@ pub struct AudioDirector<S: AudioSink> {
     /// Where a clip the bank does not hold is staged **from at cast time**:
     /// the disc image and the `XA<n>.XA` files' `(lba, sectors)`, resolved
     /// once at boot ([`Self::set_xa_lazy_source`]). The cast band names
-    /// seventeen files (`docs/subsystems/cast-module.md`); none is decoded
+    /// fifteen files (`docs/subsystems/cast-module.md`); none is decoded
     /// until a cast names its channel, and then only the read span the
     /// starter would have covered. `None` on a disc-free boot.
     xa_lazy: Option<Box<dyn XaChannelSource + Send + Sync>>,

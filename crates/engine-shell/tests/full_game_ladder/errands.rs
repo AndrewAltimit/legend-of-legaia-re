@@ -149,6 +149,35 @@ pub(super) fn errand_cost(w: &legaia_engine_core::world::World) -> i64 {
         .sum()
 }
 
+/// What refilling the bag to its heal stock costs while an errand is
+/// pending: the shortfall to [`HEAL_STOCK`] a present member, at the price
+/// of the heal that restores the most per gold (the largest on a tie).
+/// The errand's training fights for it and the armour counters keep it
+/// back: the Sol errand's training is played from the bag, and a run that
+/// stopped fighting the moment the bread was paid for, then bought armour,
+/// walked into Gaza's second fight (`korb3`) with no restorative left.
+pub(super) fn errand_heal_budget(w: &legaia_engine_core::world::World) -> i64 {
+    use legaia_engine_menus::items::ItemEffect;
+    if errand_cost(w) == 0 {
+        return 0;
+    }
+    let Some(prices) = w.shops.item_shop_data.as_ref() else {
+        return 0;
+    };
+    let price = (0u8..=255)
+        .filter_map(|id| {
+            let ItemEffect::Heal { amount } = w.tables.item_catalog.get(id)?.effect else {
+                return None;
+            };
+            let p = u32::from(prices.price(id));
+            (p > 0).then_some((u32::from(amount) * 1000 / p, amount, p))
+        })
+        .max()
+        .map_or(0, |(_, _, p)| i64::from(p));
+    let want = u32::from(HEAL_STOCK) * w.present_party_list().len().clamp(1, 3) as u32;
+    i64::from(want.saturating_sub(heals_held(w))) * price
+}
+
 /// Is the purse short of what the errands cost?
 pub(super) fn errand_gold_short(w: &legaia_engine_core::world::World) -> bool {
     let cost = errand_cost(w);

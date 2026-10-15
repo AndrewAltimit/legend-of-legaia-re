@@ -2462,6 +2462,27 @@
   });
   window.__playSyncCheats = syncCheats;
 
+  /* The host hotkeys' page half, keyed by the engine's hotkey id. The key
+   * itself is resolved engine-side (`play_host_hotkey`, the native window's
+   * table), which has already applied an options hotkey and persisted it by
+   * the time an action here runs - so those actions only mirror the stored
+   * value into the controls. The rest drive the control the key stands for,
+   * so a key and a click are one path. `debug_camera` is PlayView's own. */
+  const hudEl = document.querySelector('.play-hud');
+  window.__playHotkeyActions = {
+    diag_rows: () => { if (hudEl) hudEl.style.display = hudEl.style.display === 'none' ? '' : 'none'; },
+    audio_mute: () => {},
+    occlusion_fade: () => { seeThroughEl.checked = !seeThroughEl.checked; applySeeThrough(); },
+    cheat_max_ap: () => document.getElementById('play-cheat-max-ap').click(),
+    cheat_encounters: () => cheatNoEncEl.click(),
+    time_of_day: () => { syncRenderToggles(); applyRenderToggles(); },
+    volumetric_fog: () => syncGroundFog(),
+    enhanced_lighting: () => { syncRenderToggles(); applyRenderToggles(); },
+    light_shadows: () => { dynShadowsEl.checked = !dynShadowsEl.checked; applyRenderToggles(); },
+    camera_distance: () => syncCameraDistance(),
+    precise_movement: () => syncPreciseMove(),
+  };
+
   /* Fishing minigame. The engine suspends whatever mode the scene is in and
      restores it on exit, so this works from any staged scene - the disc's own
      species table (the fishing overlay) decides what bites. The HUD is the

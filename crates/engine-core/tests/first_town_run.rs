@@ -179,6 +179,7 @@ fn first_town_drives_scene_to_field_event_emission() {
             FieldEvent::CameraLoad { .. } => "CameraLoad",
             FieldEvent::CameraSave => "CameraSave",
             FieldEvent::CameraApply { .. } => "CameraApply",
+            FieldEvent::CameraRetireMovers => "CameraRetireMovers",
             FieldEvent::SetupAnimation { .. } => "SetupAnimation",
             FieldEvent::ViewWindowLong { .. } => "ViewWindowLong",
             FieldEvent::ViewWindowShort { .. } => "ViewWindowShort",

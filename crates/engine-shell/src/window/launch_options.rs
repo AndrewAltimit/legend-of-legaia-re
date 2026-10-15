@@ -817,6 +817,12 @@ mod key_script_tests {
                 .unwrap_or(tail.len());
             handled.insert(tail[..end].to_string());
         }
+        // The option keys are not spelt as `KeyCode::*` any more: the window
+        // resolves them through the shared hotkey table, whose codes are the
+        // `KeyCode` variant names.
+        for (_, code) in legaia_engine_session::hotkeys::HOST_HOTKEYS {
+            handled.insert(code.to_string());
+        }
         // `Escape` quits through the event loop (`handle_keyboard`), which a
         // script deliberately never reaches; `--screenshot-last-tick` ends a
         // scripted run instead.

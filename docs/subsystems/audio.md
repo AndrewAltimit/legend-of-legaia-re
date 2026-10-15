@@ -155,7 +155,7 @@ The seeder and the reader are ported at opposite ends and never meet:
 `legaia_engine_system::scus_leaf_kernels::seed_boot_offset_table` writes the
 twelve-word image and `legaia_game_tables::sfx_table::spu_base_for_slot` answers the
 query the engine's audio host actually makes, returning the same values as
-literals. `crates/engine-core/tests/infra_boot_offset_table.rs` asserts the two
+literals. `crates/engine-system/tests/infra_boot_offset_table.rs` asserts the two
 agree slot by slot, including the one slot the seeder skips and the four
 aliased pairs, so the duplication is guarded rather than silent.
 

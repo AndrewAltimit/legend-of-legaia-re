@@ -11,6 +11,11 @@ use legaia_game_tables::new_game::{StartingChar, StartingParty};
 use std::path::PathBuf;
 
 fn scus_path() -> Option<PathBuf> {
+    // `LEGAIA_SCUS` names the executable directly (a worktree has no
+    // `extracted/` of its own).
+    if let Some(p) = std::env::var_os("LEGAIA_SCUS").map(PathBuf::from) {
+        return p.is_file().then_some(p);
+    }
     let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let workspace = manifest.parent()?.parent()?;
     let p = workspace.join("extracted").join("SCUS_942.54");
@@ -150,6 +155,38 @@ fn decodes_the_growth_tables_or_skips() {
             (lo..=hi).contains(&obs),
             "Noa stat {s} L2->L3: observed +{obs} outside core band [{lo},{hi}] (core {core}, jitter {})",
             p.jitter
+        );
+    }
+}
+
+/// AGL grows by its own divisor (`0x18C0`, the `0xA57EB503` magic divide in
+/// `FUN_801E9504`'s AGL block): the jitter-free core lands on the retail
+/// playthrough's AGL record (`+0x122`) at three anchor saves - Vahn at levels
+/// 6, 11 and 16 (the `drake_castle_revisited`, `zeto_dungeon` and `fire_path`
+/// anchors of the full-game ladder) read 115, 130 and 145. Divided by the
+/// shared `0x24C0` the same core reads 110, 120 and 130. These are observed
+/// stat values, not Sony bytes.
+#[test]
+fn agl_core_matches_the_retail_anchors_or_skips() {
+    let Some(path) = scus_path() else {
+        eprintln!("extracted/SCUS_942.54 not present - skipping");
+        return;
+    };
+    let scus = std::fs::read(&path).expect("read SCUS");
+    let g = growth_tables_from_scus(&scus).expect("growth tables");
+    let vahn = g.char_params(0).unwrap();
+    let agl = &vahn.stats[legaia_game_tables::level_up_tables::GROWTH_AGL_INDEX];
+    let mut v = u32::from(agl.start);
+    let mut at = std::collections::BTreeMap::new();
+    for prev in 1..16usize {
+        v += g.level_gain_core(agl, prev).expect("gain core");
+        at.insert(prev + 1, v);
+    }
+    for (level, retail) in [(6usize, 115u32), (11, 130), (16, 145)] {
+        let core = at[&level];
+        assert!(
+            core.abs_diff(retail) <= 1,
+            "Vahn AGL at level {level}: core {core}, retail anchor {retail}"
         );
     }
 }

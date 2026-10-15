@@ -50,10 +50,25 @@ with `data-doc`, a `data-row` naming no live row is an error - that is exactly
 what a closed thread still advertised as open looks like, and it is the half of
 the drift that "did you cover everything" cannot see.
 
-What it deliberately does NOT check: prose, wording, or whether the mirror says
-the same thing about a row it claims. A row can be present and wrong. This gate
-answers exactly two questions - is a whole area, or a live hunt, missing from
-the public page - because those are the failures that survived review.
+What it deliberately does NOT check, for a hand-written mirror: prose,
+wording, or whether the mirror says the same thing about a row it claims. A row
+can be present and wrong - and on the two big registers it was: the settled and
+falsified mirrors carried every area and still stated verdicts their docs had
+overturned (a "link-time dead code" routine with six callers, a flag-menu count
+that was a lower bound). So the three register pages are no longer hand-written.
+Their fragments carry `<!--REGISTER:<kind>-->` markers that `site/_gen.py`
+expands from `docs/` at build time (`site/_registers.py`), and this gate checks
+them three ways:
+
+  - **The marker is there.** A register fragment without its marker is a hand
+    copy coming back; that fails.
+  - **The expansion covers the doc.** The section and row checks above run over
+    the expanded fragment, so a renderer that drops an area or a live row fails
+    exactly as a hand mirror would.
+  - **The built page is fresh.** Every expansion opens with a stamp of the
+    source bytes it was rendered from. When `site/<page>` exists (a local build;
+    CI builds on deploy), its stamp must equal the one the current docs give,
+    or the page is a stale build of an older register.
 
 Usage:
     python3 scripts/ci/check-site-doc-mirrors.py             # gate
@@ -88,6 +103,55 @@ MIRRORS = [
     ("docs/reference/builds.md",
      "site/_content/reference/builds.html"),
 ]
+
+# Register mirrors: fragments whose rows are rendered from docs/ at build time.
+GENERATED = {
+    "site/_content/reference/open-rev-eng-threads.html": "open",
+    "site/_content/reference/re-settled-threads.html": "settled",
+    "site/_content/reference/re-do-not-re-walk.html": "falsified",
+}
+
+
+def _registers():
+    """site/_registers.py, the renderer _gen.py expands the markers with."""
+    sys.path.insert(0, str(REPO / "site"))
+    try:
+        import _registers  # noqa: PLC0415
+    finally:
+        sys.path.pop(0)
+    return _registers
+
+
+def mirror_html(site_rel: str) -> str:
+    """The mirror as published: a register fragment with its markers expanded."""
+    html = (REPO / site_rel).read_text(encoding="utf-8")
+    if site_rel in GENERATED:
+        html = _registers().expand(html, set())
+    return html
+
+
+STAMP_RE = re.compile(r"<!--register:(\w+) sha=([0-9a-f]+)-->")
+
+
+def check_generated(site_rel: str, kind: str, built_html: str | None, want_stamp: str,
+                    fragment: str) -> list[str]:
+    """Marker present, and the local build (if any) rendered from these docs."""
+    problems = []
+    if f"<!--REGISTER:{kind}-->" not in fragment:
+        problems.append(
+            f"{site_rel}: no <!--REGISTER:{kind}--> marker. The register's rows are "
+            f"rendered from docs/ by site/_registers.py; a hand-written copy of them "
+            f"drifts. Put the marker back where the areas go."
+        )
+    if built_html is not None and want_stamp not in built_html:
+        got = STAMP_RE.search(built_html)
+        problems.append(
+            f"{site_rel}: the built page carries "
+            f"{got.group(0) if got else 'no register stamp'}, the docs now give "
+            f"{want_stamp} - a stale build. Run python3 site/_gen.py."
+        )
+    return problems
+
 
 # Headings a mirror is allowed not to carry, with the reason. Keep this list
 # short and argued: every entry is an area of a doc that the public page does
@@ -219,7 +283,8 @@ def check_pair(doc_rel: str, site_rel: str) -> list[str]:
         return [f"{site_rel}: mirror is missing"]
 
     headings = doc_sections(doc_path.read_text(encoding="utf-8"))
-    claims = mirror_claims(site_path.read_text(encoding="utf-8"))
+    site_html = mirror_html(site_rel)
+    claims = mirror_claims(site_html)
     claimed = {c for c in claims if c != "-"}
     known = {s for s, _ in headings}
 
@@ -250,9 +315,19 @@ def check_pair(doc_rel: str, site_rel: str) -> list[str]:
             doc_rel,
             site_rel,
             doc_path.read_text(encoding="utf-8"),
-            site_path.read_text(encoding="utf-8"),
+            site_html,
         )
     )
+    if site_rel in GENERATED:
+        kind = GENERATED[site_rel]
+        regs = _registers()
+        built = REPO / "site" / regs.PAGE[kind][0]
+        problems.extend(check_generated(
+            site_rel, kind,
+            built.read_text(encoding="utf-8") if built.exists() else None,
+            regs.stamp(kind),
+            site_path.read_text(encoding="utf-8"),
+        ))
     return problems
 
 
@@ -335,6 +410,16 @@ def selftest() -> int:
                        '<tr data-row="old-hunt">')
     if not any("old-hunt" in p for p in stale):
         fails.append(f"check_rows() admits a closed thread as live: {stale}")
+    # Generated registers: a missing marker and a stale stamp both fire; a
+    # fresh build with its marker passes.
+    stamp = "<!--register:open sha=0123456789abcdef-->"
+    if check_generated("s", "open", stamp, stamp, "<!--REGISTER:open-->"):
+        fails.append("check_generated() rejects a fresh build")
+    if not check_generated("s", "open", None, stamp, "<table><tr>hand</tr></table>"):
+        fails.append("check_generated() admits a fragment with no marker")
+    stale = "<!--register:open sha=fedcba9876543210-->"
+    if not check_generated("s", "open", stale, stamp, "<!--REGISTER:open-->"):
+        fails.append("check_generated() admits a stale build")
     for f in fails:
         print(f"SELFTEST FAIL: {f}")
     if fails:
@@ -357,7 +442,7 @@ def main() -> int:
 
     if args.list:
         for doc_rel, site_rel in MIRRORS:
-            html = (REPO / site_rel).read_text(encoding="utf-8")
+            html = mirror_html(site_rel)
             md = (REPO / doc_rel).read_text(encoding="utf-8")
             claims = set(mirror_claims(html))
             rows = set(mirror_row_claims(html))

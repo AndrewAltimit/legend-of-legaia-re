@@ -378,6 +378,51 @@ fn sample_field_floor_height_uses_the_kind2_elevation_override() {
     assert_eq!(world.sample_field_floor_height(2 * 128 + 10, z0 + 10), 0);
 }
 
+/// Op `4C 83` rewrites the kind-2 record of every tile in its rectangle that
+/// has one (`rec[2] = value`, `rec[3] = 0`, arm `0x801E20A8`) and leaves the
+/// rest alone, so the floor the walk samples moves with the script.
+#[test]
+fn op_4c_83_rewrites_the_elevation_records_in_its_rectangle() {
+    use crate::world::vm_hosts::{FieldHostImpl, field_step_routed};
+    const STRIDE: usize = 0x80;
+    let mut world = World::new();
+    world.reset_field_collision_grid();
+    world.terrain.floor_height_lut[0] = 0;
+    let mut cells = vec![0u8; STRIDE * STRIDE * 2];
+    let cell = |c: usize, r: usize| (r * STRIDE + c) * 2;
+    cells[cell(1, 1)..cell(1, 1) + 2].copy_from_slice(&CELL_ELEVATION_OVERRIDE.to_le_bytes());
+    world.load_field_object_cells(&cells);
+    let mut block = vec![0u8; 0x20];
+    block[0xA..0xC].copy_from_slice(&16i16.to_le_bytes());
+    block[0xC..0xE].copy_from_slice(&2i16.to_le_bytes());
+    block[16..20].copy_from_slice(&[1, 1, 2, 0x2a]);
+    block[20..24].copy_from_slice(&[5, 5, 1, 0x3f]);
+    world.load_field_elevation_overrides(&block, &[]);
+    let (x0, z0) = (128, 128);
+    assert_eq!(world.sample_field_floor_height(x0 + 10, z0 + 10), -96);
+    let mut ctx = FieldCtx::default();
+    let mut host = FieldHostImpl { world: &mut world };
+    // Rectangle (0,0)..(2,2), value 0xF6 = -10: the whole-tile step becomes
+    // +0x140 and the sub-cell steps clear.
+    field_step_routed(
+        &mut host,
+        &mut ctx,
+        &[0x4C, 0x83, 0x00, 0x00, 0x02, 0x02, 0xF6],
+        0,
+    );
+    assert_eq!(world.sample_field_floor_height(x0 + 10, z0 + 10), 0x140);
+    assert_eq!(world.sample_field_floor_height(x0 + 70, z0 + 70), 0x140);
+    // The record outside the rectangle is untouched.
+    let far = world
+        .terrain
+        .elevation_overrides
+        .iter()
+        .find(|r| r.tile_x == 5)
+        .copied()
+        .unwrap();
+    assert_eq!((far.coarse, far.quads), (1, 0x3f));
+}
+
 /// The override bit without a matching kind-2 record still switches the model:
 /// the tile flattens to the mean of its corner tiers instead of interpolating.
 #[test]

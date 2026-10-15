@@ -36,22 +36,6 @@ pub(super) fn title_session(
     legaia_engine_menus::title::TitleSession::for_front_end_at(continue_enabled, row)
 }
 
-/// Does any port of this host's save rack hold a save? Port 1 is the save
-/// directory, port 2 the mounted `--card` image. Scanning the directory
-/// alone greys Continue out for a player whose only save is on the card they
-/// mounted, which is the one thing `--card` exists for.
-pub(super) fn rack_has_save(
-    save_dir: &std::path::Path,
-    card: Option<&legaia_save::emu::MountedCard>,
-) -> bool {
-    scan_save_dir(save_dir).iter().any(|s| s.present)
-        || card.is_some_and(|c| {
-            legaia_engine_menus::save_select::card_block_snapshots(c)
-                .iter()
-                .any(|s| s.present)
-        })
-}
-
 impl PlayWindowApp {
     /// Drive [`legaia_engine_menus::save_screen::SaveScreenFlow`] for whichever
     /// save screen is open this frame, and return the edge the session should
@@ -73,10 +57,9 @@ impl PlayWindowApp {
         };
         let Some(session) = session else { return edge };
         let pending = self.save_flow.pending_read(session);
-        let blocks = pending
-            .map(|port| disk_port_blocks_with_card(&self.save_dir, self.card.as_ref(), port));
-        // Re-borrow: `disk_port_blocks` needed `&self.save_dir` while the
-        // session above borrowed `self.boot_ui`.
+        let blocks = pending.map(|port| card_port_blocks(self.card_ports(), port));
+        // Re-borrow: the port read needed the cards while the session above
+        // borrowed `self.boot_ui`.
         let session = match &mut self.boot_ui {
             BootUiState::SaveSelect(s) => s,
             BootUiState::FieldMenu {
@@ -108,68 +91,69 @@ impl PlayWindowApp {
         edge
     }
 
+    /// The two ports' cards: port 1 the window's own, port 2 `--card`'s.
+    pub(super) fn card_ports(&self) -> [Option<&MountedCard>; 2] {
+        [self.port1_card.as_ref(), self.card.as_ref()]
+    }
+
     /// Write the live session into the rack cell a Save's commit beat asked
-    /// for: port 1 is the save directory (`slot_NN`), port 2 the `--card`
-    /// image (block `cell + 1`, written back to its file). `true` when the
-    /// bytes are down.
+    /// for: grid cell `cell` of the card in `port` (block `cell + 1`),
+    /// through the kernel the browser rack writes with, then the card back to
+    /// its file. `true` when the bytes are down.
     fn write_save_commit(&mut self, commit: legaia_engine_menus::save_screen::SaveCommit) -> bool {
         let resume = self.session.current_resume();
         let sf = self.session.host.world.save_full();
-        match commit.port {
-            0 => match write_slot_save(&self.save_dir, commit.cell, &sf, &resume) {
-                Ok(p) => {
-                    log::info!(
-                        "save screen: saved slot {} to {} (scene '{}', '{}')",
-                        commit.cell,
-                        p.display(),
-                        resume.scene,
-                        resume.location
-                    );
-                    true
-                }
-                Err(e) => {
-                    log::warn!("save screen: save slot {} failed: {e:#}", commit.cell);
-                    false
-                }
-            },
-            1 => {
-                let index = self.session.host.index.clone();
-                let Some(card) = self.card.as_mut() else {
-                    log::warn!("save screen: port 2 holds no card; nothing written");
-                    return false;
-                };
-                let block = commit.cell + 1;
-                let wrote = legaia_engine_core::card_write::write_save_into_card(
-                    card,
-                    block,
-                    &sf,
-                    &resume,
-                    Some(&index),
-                )
-                .map_err(anyhow::Error::msg)
-                .and_then(|w| card.persist().map(|_| w));
-                match wrote {
-                    Ok(w) => {
-                        log::info!(
-                            "save screen: saved card block {block} as save {} (scene '{}'{})",
-                            w.save_slot,
-                            resume.scene,
-                            if w.ext_written {
-                                ""
-                            } else {
-                                ", engine ext withheld"
-                            }
-                        );
-                        true
-                    }
-                    Err(e) => {
-                        log::warn!("save screen: card save into block {block} failed: {e:#}");
-                        false
-                    }
-                }
+        let index = self.session.host.index.clone();
+        let card = match commit.port {
+            0 => self.port1_card.as_mut(),
+            1 => self.card.as_mut(),
+            _ => None,
+        };
+        let Some(card) = card else {
+            log::warn!(
+                "save screen: port {} holds no card; nothing written",
+                commit.port + 1
+            );
+            return false;
+        };
+        let block = commit.cell + 1;
+        let wrote = legaia_engine_core::card_write::write_save_into_card(
+            card,
+            block,
+            &sf,
+            &resume,
+            Some(&index),
+        )
+        .map_err(anyhow::Error::msg)
+        .and_then(|w| {
+            // A card mounted from no file (a blank one standing in for a
+            // port-1 image that did not mount) has nowhere to go; a harness
+            // run writes nothing to the player's directory.
+            if !self.persist_disabled {
+                card.persist()?;
             }
-            p => {
-                log::warn!("save screen: port {} holds no card; nothing written", p + 1);
+            Ok(w)
+        });
+        match wrote {
+            Ok(w) => {
+                log::info!(
+                    "save screen: saved port {} block {block} as save {} (scene '{}'{})",
+                    commit.port + 1,
+                    w.save_slot,
+                    resume.scene,
+                    if w.ext_written {
+                        ""
+                    } else {
+                        ", engine ext withheld"
+                    }
+                );
+                true
+            }
+            Err(e) => {
+                log::warn!(
+                    "save screen: save into port {} block {block} failed: {e:#}",
+                    commit.port + 1
+                );
                 false
             }
         }
@@ -196,67 +180,18 @@ impl PlayWindowApp {
     /// `true` when a scene was entered (the caller's screen state is stale
     /// then).
     fn apply_save_commit(&mut self, commit: legaia_engine_menus::save_screen::SaveCommit) -> bool {
-        use legaia_engine_menus::save_screen::SaveCommitKind;
-        // Port 2 is a mounted memory-card image: its Load reads the block's
-        // SC bytes and its Save writes them through the shared card kernel.
-        if commit.port == 1 {
-            return self.apply_card_save_commit(commit);
-        }
-        if commit.port != 0 {
-            log::warn!(
-                "save screen: port {} holds no card; nothing written",
-                commit.port + 1
-            );
-            return false;
-        }
-        let slot = commit.cell;
-        match commit.kind {
-            SaveCommitKind::Load => match read_slot_save(&self.save_dir, slot) {
-                Ok((sf, resume)) => {
-                    let landing =
-                        self.session
-                            .resume_save(sf, &resume.scene, &self.field_live_opts);
-                    log::info!(
-                        "save screen: loaded slot {slot}, landed {} ({:?})",
-                        landing.kind(),
-                        landing.scene()
-                    );
-                    if landing.entered_scene() {
-                        // The host swapped scenes under the renderer: rebuild
-                        // the render-side scene state so the landed scene's
-                        // geometry replaces the old one.
-                        self.rebuild_scene_render_state();
-                        return true;
-                    }
-                }
-                Err(e) => {
-                    // A log line is not an answer to the player: raise the
-                    // shared refusal notice the card path and the browser
-                    // rack raise for the same failure.
-                    log::warn!("save screen: load slot {slot} failed: {e:#}");
-                    self.save_flow
-                        .refuse(legaia_engine_menus::save_screen::SaveRefusal::CardReadFailed);
-                }
-            },
-            SaveCommitKind::Save => {
-                if !self.write_save_commit(commit) {
-                    self.save_flow
-                        .refuse(legaia_engine_menus::save_screen::SaveRefusal::CardWriteFailed);
-                }
-            }
-        }
-        false
+        self.apply_card_save_commit(commit)
     }
 
-    /// The port-2 half of [`Self::apply_save_commit`]: a Load out of the
-    /// mounted memory-card image, resumed into the save's own scene the same
-    /// way a port-1 Load is, or a Save into it.
+    /// [`Self::apply_save_commit`] for either port: a Load out of the port's
+    /// memory-card image, resumed into the save's own scene, or a Save into
+    /// it.
     ///
     /// A Save goes through the kernel the browser rack writes with
     /// ([`legaia_engine_core::card_write::write_save_into_card`]) - the block's
     /// save number, payload, engine ext tail, resume point, identity and
     /// directory claim are decided there - and the card is then written back
-    /// to the image file `--card` mounted. Either step failing raises the
+    /// to the image file it was mounted from. Either step failing raises the
     /// shared refusal notice rather than closing on a log line.
     fn apply_card_save_commit(
         &mut self,
@@ -265,8 +200,17 @@ impl PlayWindowApp {
         use legaia_engine_menus::save_screen::SaveCommitKind;
         let cell = commit.cell;
         use legaia_engine_menus::save_screen::SaveRefusal;
-        if self.card.is_none() {
-            log::warn!("save screen: port 2 holds no card; nothing read");
+        if self
+            .card_ports()
+            .get(commit.port as usize)
+            .copied()
+            .flatten()
+            .is_none()
+        {
+            log::warn!(
+                "save screen: port {} holds no card; nothing read",
+                commit.port + 1
+            );
             self.save_flow.refuse(SaveRefusal::CardReadFailed);
             return false;
         }
@@ -276,11 +220,15 @@ impl PlayWindowApp {
             }
             return false;
         }
-        let Some(card) = self.card.as_ref() else {
+        let Some(card) = self.card_ports()[commit.port as usize] else {
             return false;
         };
         let Some((sf, resume)) = card.save_at(cell) else {
-            log::warn!("save screen: card block {} holds no save", cell + 1);
+            log::warn!(
+                "save screen: port {} block {} holds no save",
+                commit.port + 1,
+                cell + 1
+            );
             self.save_flow.refuse(SaveRefusal::CardReadFailed);
             return false;
         };
@@ -288,7 +236,8 @@ impl PlayWindowApp {
             .session
             .resume_save(sf, &resume.scene, &self.field_live_opts);
         log::info!(
-            "save screen: loaded card block {}, landed {} ({:?})",
+            "save screen: loaded port {} block {}, landed {} ({:?})",
+            commit.port + 1,
             cell + 1,
             landing.kind(),
             landing.scene()
@@ -431,7 +380,7 @@ impl PlayWindowApp {
                     let next = self.session.mode_seat.boot_handoff();
                     match next {
                         GameMode::CardInit => {
-                            let any_present = rack_has_save(&self.save_dir, self.card.as_ref());
+                            let any_present = rack_has_save(self.card_ports());
                             self.boot_ui = BootUiState::Title(title_session(
                                 any_present,
                                 self.session.mode_seat.title_row(),
@@ -560,15 +509,15 @@ impl PlayWindowApp {
                         }
                         TitleOutcome::Continue => {
                             // Open the save-select panel against the shell's
-                            // rack: retail's two card ports, port 1 mounted
-                            // with `save_dir`. The rack kind is what puts the
+                            // rack: retail's two card ports, each a mounted
+                            // card image. The rack kind is what puts the
                             // session in the two-stage flow - no host flips
                             // that flag by hand.
                             self.save_flow.reset();
                             self.boot_ui = BootUiState::SaveSelect(
                                 legaia_engine_menus::save_select::SaveSelectSession::for_rack(
                                     legaia_engine_menus::save_select::SaveSelectMode::Load,
-                                    &disk_save_rack_with_card(&self.save_dir, self.card.as_ref()),
+                                    &card_save_rack(self.card_ports()),
                                 ),
                             );
                         }
@@ -583,7 +532,7 @@ impl PlayWindowApp {
                                 legaia_engine_menus::field_menu::FieldMenuRow::Options,
                             ) {
                                 self.boot_ui = BootUiState::Title(title_session(
-                                    rack_has_save(&self.save_dir, self.card.as_ref()),
+                                    rack_has_save(self.card_ports()),
                                     self.session.mode_seat.title_row(),
                                 ));
                                 self.start_title_bgm();
@@ -615,7 +564,7 @@ impl PlayWindowApp {
                             // Back to title (the theme is already up; the
                             // director suppresses the same-id restart).
                             self.boot_ui = BootUiState::Title(title_session(
-                                rack_has_save(&self.save_dir, self.card.as_ref()),
+                                rack_has_save(self.card_ports()),
                                 self.session.mode_seat.title_row(),
                             ));
                             self.start_title_bgm();
@@ -750,10 +699,10 @@ impl PlayWindowApp {
                     .as_mut()
                     .and_then(|menu| tick_root_list(menu, pressed));
                 if let Some(row) = suspended_row {
-                    // The shell's save rack: retail's two card ports, port 1
-                    // mounted with `save_dir`. Its kind is what puts a Load /
+                    // The shell's save rack: retail's two card ports, each
+                    // a mounted card image. Its kind is what puts a Load /
                     // Save sub-session in the two-stage flow.
-                    let rack = disk_save_rack_with_card(&self.save_dir, self.card.as_ref());
+                    let rack = card_save_rack([self.port1_card.as_ref(), self.card.as_ref()]);
                     self.save_flow.reset();
                     // Build sub-sessions from the DISC tables the boot path
                     // already installed on the world (spell table, equipment
@@ -789,7 +738,7 @@ impl PlayWindowApp {
                             self.boot_ui = BootUiState::Inactive;
                             if std::mem::take(&mut self.menu_from_title) {
                                 self.boot_ui = BootUiState::Title(title_session(
-                                    rack_has_save(&self.save_dir, self.card.as_ref()),
+                                    rack_has_save(self.card_ports()),
                                     self.session.mode_seat.title_row(),
                                 ));
                                 self.start_title_bgm();
@@ -822,7 +771,7 @@ impl PlayWindowApp {
                         bgm.stop();
                     }
                     self.boot_ui = BootUiState::Title(title_session(
-                        rack_has_save(&self.save_dir, self.card.as_ref()),
+                        rack_has_save(self.card_ports()),
                         self.session.mode_seat.title_row(),
                     ));
                     self.start_title_bgm();
@@ -959,7 +908,7 @@ impl PlayWindowApp {
             self.session.close_field_menu();
             return false;
         }
-        let rack = disk_save_rack_with_card(&self.save_dir, self.card.as_ref());
+        let rack = card_save_rack(self.card_ports());
         self.save_flow.reset();
         let world = &self.session.host.world;
         let chain_library = world.chain_library();

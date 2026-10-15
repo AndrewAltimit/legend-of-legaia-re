@@ -8,6 +8,8 @@ from ui_host_drift.rows.host_files import (
     NATIVE_ASSETS_ACTORS,
     NATIVE_BOOT_CUTSCENE,
     NATIVE_BOOT_FRAME_TICK,
+    SESSION_TICK_OWNER,
+    WEB_RUNTIME_FRAME_TICKS,
     NATIVE_BOOT_SCENE_ENTRY,
     NATIVE_DEV_MENU,
     NATIVE_GEOMETRY,
@@ -16,6 +18,7 @@ from ui_host_drift.rows.host_files import (
     NATIVE_MINIGAME_SESSIONS,
     NATIVE_REDRAW,
     NATIVE_REDRAW_PASSES,
+    NATIVE_REDRAW_TICK,
     NATIVE_SAVE_HELPERS,
     NATIVE_TITLE_SAVE,
     NATIVE_XA_DISC,
@@ -30,6 +33,8 @@ from ui_host_drift.rows.host_files import (
     WEB_PLAY_BATTLE_SCREEN_PRIMS,
     WEB_PLAY_BATTLE_SESSION_EXPORTS,
     WEB_PLAY_CAMERA,
+    WEB_PLAY_HOTKEYS,
+    WEB_RUNTIME_FRAME,
     WEB_PLAY_DEV_MENU,
     WEB_PLAY_FISHING,
     WEB_PLAY_MENU,
@@ -535,11 +540,45 @@ SIM_PAIRS: list[dict[str, object]] = [
         "apply and never persisted. The page's export did exactly that (and "
         "had no caller). Both sites must step the option",
         "sites": {
-            "native": (NATIVE_KEYBOARD_OPTION, "key_camera_distance"),
+            "native": (NATIVE_KEYBOARD_OPTION, "option_key"),
             "web": (WEB_PLAY_CAMERA, "play_camera_cycle_distance"),
         },
         "mode": "symbols_all",
-        "symbols": ["cycle_camera_distance", "persist_and_apply_options"],
+        "symbols": ["apply_options_hotkey", "persist_and_apply_options"],
+    },
+    {
+        "what": "host hotkeys, native vs play page - the option / cheat / "
+        "camera keys (`F1`..`F9`, `I`, `Y`, `T`, `R`). The native window "
+        "bound twelve in its keyboard arms and the page bound `F3` alone, in "
+        "JavaScript, so the enhancement toggles the docs name had no key in "
+        "the browser. Both resolve the key through the shared table "
+        "(`HostHotkey::from_dom_code`), refuse the field-only keys under a "
+        "front-end screen (`needs_field`), and make the options edit through "
+        "`apply_options_hotkey` before persisting",
+        "sites": {
+            "native": (NATIVE_KEYBOARD_OPTION, "option_key"),
+            "web": (WEB_PLAY_HOTKEYS, "play_host_hotkey"),
+        },
+        "mode": "symbols_all",
+        "symbols": [
+            "from_dom_code",
+            "needs_field",
+            "apply_options_hotkey",
+            "persist_and_apply_options",
+        ],
+    },
+    {
+        "what": "options simulation knobs per tick, native vs play page - "
+        "the native window re-asserted the persisted options onto the world "
+        "on every tick while the page pushed them only at disc load and on a "
+        "change, so a knob a transition reseeded stayed reseeded on one host. "
+        "Both run the one session step ahead of the session tick",
+        "sites": {
+            "native": (NATIVE_REDRAW_TICK, "resolve_tick_pad"),
+            "web": (WEB_RUNTIME_FRAME, "tick_frame"),
+        },
+        "mode": "symbols_all",
+        "symbols": ["apply_option_knobs"],
     },
     {
         "what": "field screen-effect washes, native vs play page - the field "
@@ -1014,11 +1053,9 @@ SIM_PAIRS: list[dict[str, object]] = [
         "rack kind each host builds, which is the one thing left that a host "
         "still chooses",
         "sites": {
-            # The rack builder takes an optional mounted card image now
-            # (`play-window --card`, port 2); `disk_save_rack` is the
-            # test-only unmounted wrapper over it, so the row follows the
-            # body that still declares the kind.
-            "native": (NATIVE_SAVE_HELPERS, "disk_save_rack_with_card"),
+            # The rack builder over the window's two cards (port 1 its own
+            # `memcard1.mcr`, port 2 `--card`'s image).
+            "native": (NATIVE_SAVE_HELPERS, "card_save_rack"),
             "web": (WEB_PLAY_MENU_INPUT, None),
         },
         "mode": "pattern_same",
@@ -1071,12 +1108,26 @@ SIM_PAIRS: list[dict[str, object]] = [
         "to assert is that every host routes the press through the kernel "
         "rather than around it",
         "sites": {
-            "native_window": (NATIVE_REDRAW, "handle_redraw"),
+            "play_hosts": (SESSION_TICK_OWNER, "claim_tick"),
             "native_boot": (NATIVE_BOOT_FRAME_TICK, "tick"),
             "web": (WEB_PLAY_MENU_OPEN_CLOSE, "play_menu_open"),
         },
         "mode": "symbols_all",
         "symbols": ["press_field_menu"],
+    },
+    {
+        "what": "tick order, native vs play page - which screen owns each "
+        "sim tick. The window's `sim_tick` and the page's `frame_ticks` each "
+        "spelt the order in their own words, and the two orders differed "
+        "(the page asked the pause menu before the naming prompt). Both hand "
+        "every tick through `BootSession::claim_tick` and act only on the "
+        "`TickOwner` it returns",
+        "sites": {
+            "native": (NATIVE_REDRAW_TICK, "sim_tick"),
+            "web": (WEB_RUNTIME_FRAME_TICKS, "frame_ticks"),
+        },
+        "mode": "symbols_all",
+        "symbols": ["claim_tick", "TickClaims"],
     },
     {
         "what": "pause-menu open with no press - the title's Continue / "
@@ -1124,18 +1175,20 @@ SIM_PAIRS: list[dict[str, object]] = [
         "symbols": ["retail_packed", "tick_host", "RECORDS_TOGGLE"],
     },
     {
-        "what": "dev-records model - both hosts assemble the records page "
-        "from the same two kernels: the record-relative counter reads "
-        "(`record_counters`, the save-block rebase) and the retail "
-        "clamp/decompose model (`records_screen`). A host that reads the "
+        "what": "dev-records model - both hosts draw the records page off "
+        "the one model in `legaia_engine_screens::dev_menu` "
+        "(`dev_records_model`: the record-relative counter reads, "
+        "`record_counters`, through the retail clamp / decompose model, "
+        "`records_screen`) and its one view projection (`records_view`). "
+        "Each host used to carry its own copy of both; a host that reads the "
         "record fields itself, or skips the clamp, shows different numbers "
         "for the same save",
         "sites": {
-            "native": (NATIVE_DEV_MENU, "dev_records_model"),
-            "web": (WEB_PLAY_DEV_MENU, "dev_records_model"),
+            "native": (NATIVE_DEV_MENU, "records_draws_at"),
+            "web": (WEB_PLAY_DEV_MENU, "records_draws_at"),
         },
         "mode": "symbols_all",
-        "symbols": ["record_counters", "records_screen"],
+        "symbols": ["dev_records_model", "records_view"],
     },
     {
         "what": "play clock - the H:MM:SS box the pause menu draws reads "

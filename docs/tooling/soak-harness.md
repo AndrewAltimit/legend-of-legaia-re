@@ -86,7 +86,11 @@ leads there sets. Entered by name no branch matches, the record ends on its
 sets the flag still ends there. All three are listed in the harness's
 `SAVE_ENTRY_ARTIFACTS`: when every hit of such a signature comes from an
 `@<save>` run, the report names it on a "known entry artifact" line instead
-of the findings table.
+of the findings table. `dream` is also listed in `HAND_OFF_ONLY_SCENES`: the
+story never enters it by name, and its vignette trigger fires for the New
+Game party too (the `0x35B..0x35E` flag tests fall through to the default
+record), so a plain run that starts there ends on the same hidden party and
+counts as the artifact as well.
 
 `opurud+rt` once failed its save / load round trip on the party records
 (records 1 and 2 read zero at their first byte after the resume). That one
@@ -121,12 +125,27 @@ frames that follow: the NPC anchors and the interaction-carrying walk-touch
 placements first, then the solid interact-gated props that carry a record (a
 spring, a cupboard, a switch). The seat is where the engine's own probe
 answers with that target (`World::field_interact_probe_slot`, then
-`World::field_interact_prop_anchor`) and is taken only on the authored
-walk-visible floor, so an actor parked in the off-map hide box is skipped,
-and only where the locomotion's own wall and body probes let the player walk
-a whole tile away: `son`'s camp has a wall nook at (74..75, 68) shut by two
-NPCs who never move, a seat no walk reaches, and seating there read as
-`confined`.
+`World::field_interact_prop_anchor`) and is taken only where play could put
+the player:
+
+- on the authored walk-visible floor, in an open-floor component of at least
+  48 sub-cells (a scene's interiors share its grid, so the component need not
+  be the one the player stands in).
+- where the locomotion's own wall and body probes let the player walk a whole
+  tile away. `son`'s camp has a wall nook at (74..75, 68) shut by two NPCs who
+  never move, and a seat there read as `confined`.
+- where a walk could also come back in from a tile away. The body probes test
+  points 64 ahead of the player, so a pocket can let the player out and never
+  back in: `dolk`'s monk formation stands its rows 128 apart, and a seat in the
+  gap between two of them, one diagonal step later, left the player boxed on
+  all four sides.
+
+An actor is faced from 112 units where it can be, else 96, else 64: a face-on
+walk stops 104 short of a standing NPC (its body probe reaches 64 ahead into a
+±40 box), so the 64-unit seat where the probe point lands on the anchor is
+mostly one no walk reaches, while from 112 the probe point is still well
+inside the action button's ±72. A prop is faced from 128.
+
 The press is recorded in the pad stream; the seat is a function of the frame
 and the world, so a replay takes the same seats. Random walking reaches a
 handful of a scene's conversations and almost none of its props, and a
@@ -154,7 +173,7 @@ what holds the frame:
 | dialogue owns input, or a script holds the player | mostly Cross, some directions, some Circle - a cutscene timeline pages its own text boxes, and the ending's last record waits on a held confirm |
 | a picker is up | a random number of Down taps, then Cross - mashing confirm only ever takes a picker's first rows, and a conversation whose way out is its last option then reads as one that cannot be left |
 | pause menu | random taps for a random budget, then Circle until it closes |
-| battle | mostly the route ladder's fighter (Begin, Attack, Auto, confirm the target, Cross any message box), otherwise random taps |
+| battle | mostly the route ladder's fighter (Begin, Attack, Auto, confirm the target, Cross any message box), otherwise random taps. In the sparring tutorial it follows the lesson - Item, Spirit, then the `Up Down Up` drill in Command mode - since any other pick rewinds the lesson for as long as the player keeps making it, in retail as in the port |
 | minigame / other | random face buttons and held directions, and rarely Start - the minigames' escape |
 
 Every UI surface reads `just_pressed`, so a press is a tap: the wanted mask
@@ -168,12 +187,12 @@ on one frame and neutral on the next.
 | `tick_error` | `tick()` returns an error |
 | `hang` | one tick runs past `LEGAIA_SOAK_HANG_SECS` of wall time; the watchdog writes `HANG.txt` and exits, since a hung tick cannot be interrupted |
 | `softlock` | the progress digest is unchanged for a whole window while the pad took at least three distinct masks |
-| `script_stall` | the modal timeline (or first helper context) sits at one PC for a whole window of field frames, even while something else moves - except that a `0xC7` walk whose walked bodies are still stepping is the op progressing |
+| `script_stall` | the modal timeline (or first helper context) sits at one PC for a whole window of field frames, even while something else moves - except that a record whose scripted walkers are still stepping is progressing (a `0xC7` walk, or the `B3 <id> 0A` wait on one: `bylon`'s Zopu walks some 2400 frames), and so is a walk-on record under the re-poll bit (`2E 13`), re-run from its top every tick while the player, free to walk off, stands on its tile |
 | `battle_loop` | three battles open from one parked timeline PC |
 | `menu_stuck` | the pause menu stays open through the Circle back-out |
 | `battle_endless` | one battle outlasts `LEGAIA_SOAK_BATTLE_FRAMES` |
 | `control_starved` | the field refuses the pad for `LEGAIA_SOAK_STARVE_FRAMES` with no free-roam frame, the script reaches no PC it has not already been at, and the window holds the confirm presses that would page a conversation through |
-| `confined` | from the frame the field hands the player back, 900 direction-held frames never carry them 48 units |
+| `confined` | from the frame the field hands the player back, 900 direction-held frames, each of the four directions among them, never carry them 48 units |
 | `door_loop` | six scene changes inside 600 frames with no direction pressed between them |
 | `dropped_to_title` | the world mode becomes `Title` without a game over |
 | `unknown_scene` | a transition names a map id with no scene, or a label outside the scene set |
@@ -323,7 +342,9 @@ display / accumulator - plus each distinct script body a timeline or helper
 runs, once, as hex (the first `LEGAIA_SOAK_TRACE_BYTES` bytes, `0x400` by
 default). `LEGAIA_SOAK_TRACE_NPC=<slot>` adds that placement's position to
 every line, walking or not, which is how to find where an actor stood before a
-walk started. The inline runner's record (an NPC talk, a prop record) is
+walk started. `LEGAIA_SOAK_TRACE_WALLS=1` adds the wall bits of the 9 x 9 sub-cells
+around the player (`#` wall, `@` the player) - what a walled-in landing is
+walled by. The inline runner's record (an NPC talk, a prop record) is
 dumped with the script bodies, and a roster line prints whenever a member's
 level, base maxima or live maxima move - the frame a level-up or a stat item
 landed on. The trace goes to the terminal only; it is never written into a
@@ -396,6 +417,7 @@ regression.
 | `map01_life_water_live_max_stale` | `map01@...:PRO-01`: a Life Water under a Max HP +10% accessory left the live maximum one short of the base's rebuild, and the next battle healed past it | a stat-up item raises the base window and the live maxima are rebuilt from it |
 | `edlast_ending_unequip_live_max_stale` | `edbalden+rt@...:PRO-00`: the ending's scripted unequip left a Max HP +10% on a record whose accessory was gone | the aggregator pass every equipment change runs rebuilds the live maxima with the ability bits |
 | `map01_door_of_wind_carries_cupboard_run` / `map02_door_of_light_carries_conversation` | `chitei2+talk@PRO-03` / `ropeway2+talk@...:PRO-02`: a cupboard or a conversation opened while a Door's travel art ran, and its record parked in the overworld for good | a scene load drops the departing scene's conversation and prop runs with its actor list |
+| `jouind_ledge_hop_walled_landing` | a diagonal step-up hop under Right+Down set the player in the corner of a raised pocket at (2880, 2886), every direction walled and no step left to hop out | retail tests no landing (`FUN_801d1878` checks only `2s` / `3s`, the arc runs no collision); the port's landing guard (`WorldToggles::hop_landing_guard`, an enhancement, off under `pin_retail`) refuses a hop no step could leave |
 
 The field-side fixes are described with their retail evidence in
 [`script-vm.md`](../subsystems/script-vm.md#engagement-and-the-system-script);

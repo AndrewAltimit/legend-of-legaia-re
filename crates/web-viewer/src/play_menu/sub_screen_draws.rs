@@ -241,7 +241,7 @@ impl LegaiaRuntime {
             let out = pause_screen_draws(
                 &ctx,
                 PauseScreen::Generic(GenericContent::Prebuilt(
-                    self.items_session_draws(assets, &s.inner),
+                    legaia_engine_screens::inventory_use_session_draws(&assets.font, &s.inner),
                 )),
             );
             sprites.extend(out.sprites);
@@ -503,78 +503,6 @@ impl LegaiaRuntime {
         let out = equip_screen_compose(&ctx, &equip_compose_input(&m, assets.chrome.is_none()));
         sprites.extend(out.sprites);
         texts.extend(out.texts);
-    }
-
-    /// Build the inventory item-use overlay text draws. Ported verbatim from
-    /// the native shell's `items_session_draws` so the site emits the identical
-    /// draw list. Crate-visible: the battle overlay draws the in-battle Item
-    /// submenu through the same projection ([`crate::play_battle`]).
-    pub(crate) fn items_session_draws(
-        &self,
-        assets: &PlayMenuAssets,
-        s: &InventoryUseSession,
-    ) -> Vec<TextDraw> {
-        let font = &assets.font;
-        let filter_set: std::collections::HashSet<usize> =
-            s.filtered_items.iter().copied().collect();
-        let mut counts: std::collections::HashMap<u8, u8> = std::collections::HashMap::new();
-        for id in &s.items {
-            *counts.entry(*id).or_insert(0) =
-                counts.get(id).copied().unwrap_or(0).saturating_add(1);
-        }
-        let mut seen: std::collections::HashSet<u8> = std::collections::HashSet::new();
-        let mut row_data: Vec<(String, u8, bool)> = Vec::new();
-        for (i, id) in s.items.iter().enumerate() {
-            if !seen.insert(*id) {
-                continue;
-            }
-            let entry = s.catalog.get(*id);
-            let name = entry
-                .map(|e| e.name.to_string())
-                .unwrap_or_else(|| format!("Item {id:02X}"));
-            let count = counts.get(id).copied().unwrap_or(1);
-            let admissible = filter_set.contains(&i);
-            row_data.push((name, count, admissible));
-        }
-        let item_rows: Vec<ui::InventoryItemRow<'_>> = row_data
-            .iter()
-            .map(|(n, c, a)| ui::InventoryItemRow {
-                name: n,
-                count: *c,
-                admissible: *a,
-            })
-            .collect();
-        let target_rows: Vec<ui::InventoryTargetRow<'_>> = s
-            .targets
-            .iter()
-            .map(|t| ui::InventoryTargetRow {
-                name: &t.name,
-                hp: t.hp,
-                hp_max: t.hp_max,
-                mp: t.mp,
-                mp_max: t.mp_max,
-                alive: t.alive,
-            })
-            .collect();
-        let (phase, cursor) = match s.state {
-            InventoryUseState::Browsing { cursor } => (0u8, cursor as u8),
-            InventoryUseState::TargetSelect { cursor, .. } => (1u8, cursor as u8),
-            _ => (0u8, 0),
-        };
-        let selected_item_name = s.current_item().map(|e| e.name);
-        let in_battle = matches!(
-            s.context,
-            legaia_engine_menus::inventory_use::InventoryContext::Battle
-        );
-        let args = ui::InventoryUseDrawArgs {
-            items: &item_rows,
-            targets: &target_rows,
-            in_battle,
-            cursor,
-            phase,
-            selected_item_name,
-        };
-        ui::inventory_use_draws_for(font, args, (16, 32))
     }
 
     /// The options value popup's per-open content rect (its y/h are stamped

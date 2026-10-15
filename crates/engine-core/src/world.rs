@@ -95,10 +95,6 @@ mod world_map_state;
 mod world_toggles;
 
 pub use ambient_fx_state::{AmbientFxState, FrameGrab, SeededVramRect};
-pub use audio_residency::{
-    DANCE_SLOT2_PROT_INDEX, FISHING_SLOT2_PROT_INDEX, SHARED_REGION_SLOTS,
-    SLOT_MACHINE_SLOT2_PROT_INDEX, SfxBankResidency, SharedRegionBank, minigame_slot2_bank,
-};
 pub use audio_state::{
     ARENA_SIDE_BAND_REQUEST, AudioState, FIELD_INIT_SIDE_BAND_REQUEST, SIDE_BAND_PARK,
     SideBandBank, VAB_01_RAW_BASE, runtime_sfx_descriptor_in, side_band_bank_for_request,
@@ -109,7 +105,7 @@ pub use config::*;
 pub use cutscene_state::CutsceneState;
 pub use disc_tables::DiscTables;
 pub use field_locomotion::FieldLocomotion;
-pub use field_npc_state::{FieldNpcState, SPAWN_HEADING};
+pub use field_npc_state::{FieldFaceRow, FieldNpcState, SPAWN_HEADING};
 pub use field_prop_state::FieldPropState;
 pub use field_terrain::{FieldTerrain, step_floor_ladder};
 pub use field_vm_state::FieldVmState;
@@ -132,7 +128,7 @@ use legaia_engine_system::sound_state::SfxRingOp;
 use legaia_engine_system::story_flag_state::StoryFlagState;
 use legaia_engine_vm::frame_clock::FrameClock;
 pub use menu_state::MenuState;
-pub use screen_fx_state::{ClearColourRamp, ScreenFxState};
+pub use screen_fx_state::{ClearColourRamp, ScreenFrame, ScreenFxState};
 pub use state::*;
 pub use types::*;
 pub use world_map_state::WorldMapState;

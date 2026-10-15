@@ -67,6 +67,12 @@ struct Scenario {
     /// record would (`World::debug_arm_scene_shop`) ahead of the display
     /// frame that reaches `tick`, on both hosts at the same frame.
     arm_shop: Option<(u32, usize)>,
+    /// `(tick, code)`: press host hotkey `code` (a `KeyboardEvent.code`,
+    /// `legaia_engine_session::hotkeys`) ahead of the display frame that
+    /// reaches `tick` - natively through the window's keyboard handler, on
+    /// the page through `play_host_hotkey` plus the page action that key
+    /// runs.
+    hotkeys: &'static [(u32, &'static str)],
 }
 
 const UP: u16 = 0x0010;
@@ -160,6 +166,8 @@ struct NativeRun {
     audio_recent: Vec<String>,
     pads: Vec<u16>,
     arm_frame: Option<u32>,
+    /// `(display frame, code)` for every hotkey pressed.
+    key_frames: Vec<(u32, &'static str)>,
 }
 
 fn native_trace(disc: &str, sc: &Scenario, cadence: Cadence) -> NativeRun {
@@ -170,9 +178,18 @@ fn native_trace(disc: &str, sc: &Scenario, cadence: Cadence) -> NativeRun {
     )];
     let mut pads = Vec::new();
     let mut arm_frame = None;
+    let mut key_frames = Vec::new();
+    let mut next_key = 0usize;
     let (mut t, mut f) = (0u32, 0u32);
     while t < sc.ticks {
         let n = cadence.ticks(f).min(sc.ticks - t);
+        while let Some(&(at, code)) = sc.hotkeys.get(next_key)
+            && t + 1 >= at
+        {
+            assert!(w.press_key(code), "native key {code}");
+            key_frames.push((f, code));
+            next_key += 1;
+        }
         if let Some((at, idx)) = sc.arm_shop
             && arm_frame.is_none()
             && t + 1 >= at
@@ -198,6 +215,7 @@ fn native_trace(disc: &str, sc: &Scenario, cadence: Cadence) -> NativeRun {
         trace: out,
         pads,
         arm_frame,
+        key_frames,
     }
 }
 
@@ -214,9 +232,26 @@ struct PageDriver {
     /// `this.pulse`: keys pressed since the last consumer cleared them. A
     /// frame that drains no sim tick keeps them for the next one.
     pulse: u16,
+    /// The page's "No encounters" checkbox.
+    no_encounters: bool,
 }
 
 impl PageDriver {
+    /// A hotkey press: the engine half (`play_host_hotkey`, which applies an
+    /// options key itself) and the page action `site/_content/play.html`
+    /// runs for the id that comes back, where that action reaches the
+    /// engine.
+    fn hotkey(&mut self, code: &str) {
+        let id = self.rt.play_host_hotkey(code);
+        assert!(!id.is_empty(), "page hotkey {code}");
+        if id == "cheat_encounters" {
+            // `cheatNoEncEl.click()` -> the Battle tools' `applyBattleTools`.
+            self.no_encounters = !self.no_encounters;
+            self.rt.set_live_battles(!self.no_encounters);
+            self.rt.set_player_driven_battles(true);
+        }
+    }
+
     fn frame(&mut self, pad: u16, steps: u32) {
         self.pulse |= pad & !self.prev;
         self.prev = pad;
@@ -263,6 +298,7 @@ fn page_trace(
         rt,
         prev: 0,
         pulse: 0,
+        no_encounters: false,
     };
     let mut out = vec![host_trace::sample_with_overlay(
         d.rt.debug_session().expect("session"),
@@ -277,6 +313,9 @@ fn page_trace(
                 d.rt.debug_arm_scene_shop(idx as u32),
                 "page stages shop {idx}"
             );
+        }
+        for &(_, code) in run.key_frames.iter().filter(|(kf, _)| *kf == f) {
+            d.hotkey(code);
         }
         d.frame(run.pads[f as usize], n);
         t += n;
@@ -357,6 +396,7 @@ fn town01_walk_frames_match_across_hosts() {
         ticks: 300,
         exercised: moved,
         arm_shop: None,
+        hotkeys: &[],
     };
     let parted = run(&sc, ALL);
     assert!(parted.is_empty(), "hosts diverge: {parted:#?}");
@@ -370,6 +410,7 @@ fn town01_pause_menu_frames_match_across_hosts() {
         ticks: 420,
         exercised: visited_menu,
         arm_shop: None,
+        hotkeys: &[],
     };
     let parted = run(&sc, ALL);
     assert!(parted.is_empty(), "hosts diverge: {parted:#?}");
@@ -383,6 +424,7 @@ fn fogged_field_frames_match_across_hosts() {
         ticks: 300,
         exercised: moved,
         arm_shop: None,
+        hotkeys: &[],
     };
     let parted = run(&sc, ALL);
     assert!(parted.is_empty(), "hosts diverge: {parted:#?}");
@@ -396,6 +438,7 @@ fn encounter_and_battle_frames_match_across_hosts() {
         ticks: 1800,
         exercised: visited_battle,
         arm_shop: None,
+        hotkeys: &[],
     };
     let parted = run(&sc, &[Cadence::Hz60, Cadence::Hz30]);
     assert!(parted.is_empty(), "hosts diverge: {parted:#?}");
@@ -473,6 +516,7 @@ fn prologue_skip_and_naming_frames_match_across_hosts() {
         ticks: 2400,
         exercised: left_the_prologue,
         arm_shop: None,
+        hotkeys: &[],
     };
     let parted = run(&sc, ALL);
     assert!(parted.is_empty(), "hosts diverge: {parted:#?}");
@@ -486,6 +530,7 @@ fn village_dialogue_frames_match_across_hosts() {
         ticks: 900,
         exercised: opened_a_dialogue,
         arm_shop: None,
+        hotkeys: &[],
     };
     let parted = run(&sc, ALL);
     assert!(parted.is_empty(), "hosts diverge: {parted:#?}");
@@ -523,6 +568,53 @@ fn shop_frames_match_across_hosts() {
         ticks: 480,
         exercised: opened_the_shop,
         arm_shop: Some((30, 0)),
+        hotkeys: &[],
+    };
+    let parted = run(&sc, ALL);
+    assert!(parted.is_empty(), "hosts diverge: {parted:#?}");
+}
+
+/// The options hotkeys between walk steps: ground fog, time of day, camera
+/// distance, precise movement, enhanced lighting, mute and the encounter
+/// cheat, then fog and distance again. Each is one shared edit
+/// (`legaia_engine_session::hotkeys`) and the per-tick knob step on both
+/// hosts, so the `switches` channel must move on the same frame.
+const OPTION_HOTKEYS: &[(u32, &str)] = &[
+    (30, "F9"),
+    (50, "F8"),
+    (70, "KeyT"),
+    (90, "KeyR"),
+    (110, "KeyI"),
+    (130, "F2"),
+    (150, "F7"),
+    (170, "F9"),
+    (190, "KeyT"),
+];
+
+fn switches_moved(tr: &[HostTraceFrame]) -> Result<(), String> {
+    let first = tr.first().map(|f| f.switches);
+    let changes = tr
+        .windows(2)
+        .filter(|w| w[0].switches != w[1].switches)
+        .count();
+    if changes >= 6 {
+        Ok(())
+    } else {
+        Err(format!(
+            "the hotkeys moved the switches {changes} times (from {first:?})"
+        ))
+    }
+}
+
+#[test]
+fn option_hotkey_frames_match_across_hosts() {
+    let sc = Scenario {
+        scene: "town01",
+        pad: walk_pad,
+        ticks: 240,
+        exercised: switches_moved,
+        arm_shop: None,
+        hotkeys: OPTION_HOTKEYS,
     };
     let parted = run(&sc, ALL);
     assert!(parted.is_empty(), "hosts diverge: {parted:#?}");

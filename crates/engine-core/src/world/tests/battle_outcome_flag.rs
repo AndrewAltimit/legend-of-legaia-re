@@ -117,3 +117,42 @@ fn a_direct_finish_after_a_win_sets_story_flag_1() {
     world.finish_battle();
     assert!(world.system_flag_test(1));
 }
+
+/// The same arm takes twenty seconds off a running escape clock
+/// (`0x8003B62C..0x8003B648`: the armed duration word `+0x478` tested, `0x4B0`
+/// taken off the live counter `+0x460`), on a win and a scripted loss alike;
+/// a disarmed clock is left alone.
+#[test]
+fn a_return_from_battle_costs_a_running_escape_clock_twenty_seconds() {
+    use legaia_engine_field::escape_timer::{EscapeTimer, FIELD_RETURN_PENALTY};
+    let armed = EscapeTimer {
+        remaining: 21600,
+        warn_threshold: 3600,
+        armed: true,
+    };
+    let mut world = battle_world();
+    world.battle.escape_timer = armed;
+    end_battle(&mut world, BattleEndCause::MonsterWipe);
+    assert_eq!(
+        world.battle.escape_timer.remaining,
+        21600 - FIELD_RETURN_PENALTY
+    );
+
+    let mut lost = battle_world();
+    lost.system_flag_set(0);
+    lost.battle.escape_timer = armed;
+    end_battle(&mut lost, BattleEndCause::PartyWipe);
+    assert_eq!(
+        lost.battle.escape_timer.remaining,
+        21600 - FIELD_RETURN_PENALTY
+    );
+
+    let mut idle = battle_world();
+    idle.battle.escape_timer = EscapeTimer {
+        remaining: 900,
+        warn_threshold: 0,
+        armed: false,
+    };
+    end_battle(&mut idle, BattleEndCause::Escaped);
+    assert_eq!(idle.battle.escape_timer.remaining, 900);
+}

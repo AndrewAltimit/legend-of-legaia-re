@@ -44,8 +44,18 @@ impl LegaiaRuntime {
             field_lights: self.field_light_prims(),
             theeder: self.theeder_prims(),
             value_readout: self.battle_value_readout_prims(),
-            dance_countin: self.dance_countin_prims(),
-            dance_hud: self.dance_hud_prims(),
+            dance_countin: self
+                .scene_host
+                .host()
+                .map(|h| {
+                    legaia_engine_screens::minigame_hud::dance_countin_prims(&h.world.minigames)
+                })
+                .unwrap_or_default(),
+            dance_hud: self
+                .scene_host
+                .host()
+                .map(|h| legaia_engine_screens::minigame_hud::dance_hud_prims(&h.world.minigames))
+                .unwrap_or_default(),
             baka_hud: self.baka_hud_prims(),
             slot_cabinet: self.slot_cabinet_prims(),
             // The page strokes the paylines in JS, over the canvas.

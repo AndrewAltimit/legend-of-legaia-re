@@ -198,7 +198,7 @@ pub struct AudioState {
     /// Which bank the SPU region VAB slots `2` and `6` share holds, and the
     /// field-bank latch `0x8007BAFC` - see
     /// [`crate::world::World::sync_sfx_residency`].
-    pub(crate) residency: crate::world::SfxBankResidency,
+    pub(crate) residency: legaia_engine_mode::sfx_residency::SfxBankResidency,
     /// SPU voices a field-VM op asked the host to stop this tick (the
     /// side-band teardown's `FUN_800653C8(0x17)` / `(0x16)`), drained by
     /// [`crate::world::World::take_sfx_voice_stops`].
@@ -215,6 +215,11 @@ pub struct AudioState {
     /// `(0xD7, 200)`; [`crate::world::World::load_full`] installs a save's
     /// pair and [`crate::world::World::save_full`] writes it back.
     pub levels: legaia_save::card::RetailAudioLevels,
+    /// A field script's audio duck (op `4C 4D`, `_DAT_8007B910 =
+    /// (value * _DAT_8008457C) >> 12`) as a percentage of the configured
+    /// level, waiting for the session's audio frame
+    /// ([`crate::world::World::take_field_audio_duck`]).
+    pub(crate) field_duck_pct: Option<u8>,
 }
 
 impl AudioState {
@@ -250,6 +255,7 @@ impl AudioState {
             bgm_script_paused: false,
             sound_arm: None,
             levels: legaia_save::card::RetailAudioLevels::COLD_RESET,
+            field_duck_pct: None,
             sfx_cue_delays: legaia_engine_system::scus_leaf_kernels::SfxCueDelays::new(
                 legaia_engine_system::scus_leaf_kernels::SFX_CUE_SLOTS,
             ),
@@ -264,7 +270,7 @@ impl AudioState {
             sound_stream: legaia_engine_system::scus_leaf_kernels::SoundStreamRequest::IDLE_PAIR,
             dual_mode_gate: 0,
             sound_detach: legaia_engine_system::sound_state::SoundDetachLatch::default(),
-            residency: crate::world::SfxBankResidency::default(),
+            residency: legaia_engine_mode::sfx_residency::SfxBankResidency::default(),
             sfx_voice_stops: Vec::new(),
             sfx_voice_keys: Vec::new(),
         }

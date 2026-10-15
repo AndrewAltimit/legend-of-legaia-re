@@ -3,75 +3,39 @@
 
 use super::*;
 
-/// [`LegaiaRuntime::play_menu_tick`]: the field runs this tick.
-pub const MENU_TICK_FIELD: u8 = 0;
-/// [`LegaiaRuntime::play_menu_tick`]: the pause menu took this tick.
-pub const MENU_TICK_MENU: u8 = 1;
-/// [`LegaiaRuntime::play_menu_tick`]: a Start edge opened the menu on this
-/// tick, which it takes, and queued the confirm blip.
-pub const MENU_TICK_OPENED: u8 = 2;
-/// [`LegaiaRuntime::play_menu_tick`]: a script's save point / ready check
-/// opened the menu on this tick, which it takes; no blip.
-pub const MENU_TICK_OPENED_SCRIPTED: u8 = 3;
-
-#[wasm_bindgen]
 impl LegaiaRuntime {
-    /// Who owns this **sim tick** as far as the pause menu goes - the native
-    /// window's per-tick arms in `sim_tick`, in their order, so the two hosts
-    /// hand each tick to the same owner at any display rate:
-    ///
-    /// 1. the menu exists (the wipe has spawned it) and owns the frame: one
-    ///    menu step on `edge` ([`Self::play_menu_input`]); returns
-    ///    [`MENU_TICK_MENU`]. A step that closes the menu still took its tick.
-    /// 2. the wipe spawned the menu since the last tick: the tick goes to the
-    ///    hand-over, as the native arm that raises its boot-UI state takes
-    ///    one; [`MENU_TICK_MENU`].
-    /// 3. the menu is open and the field is still darkening under the wipe:
-    ///    [`MENU_TICK_FIELD`] - the field ticks (the world in `Menu`, so the
-    ///    player stands still) and the session's tick steps the wipe.
-    /// 4. no menu: a scripted press or a Start bit in `edge` opens it through
-    ///    [`Self::play_menu_open`], and the press takes the tick
-    ///    ([`MENU_TICK_OPENED`] / [`MENU_TICK_OPENED_SCRIPTED`]); a refused
-    ///    press is [`MENU_TICK_FIELD`].
-    ///
-    /// The page used to open the menu at display-frame level, freeze the
-    /// field from the open (not from the spawn), and step the menu `n` times
-    /// then tick the field `n` more on the frame it closed - three ways its
-    /// `World::frame` fell behind the native window's.
-    pub fn play_menu_tick(&mut self, edge: u16) -> u8 {
-        if self.play_menu.is_some() {
-            let owns = self.play_menu.as_ref().is_some_and(|m| m.owns_frame);
-            if owns {
-                self.play_menu_input(edge);
-                return MENU_TICK_MENU;
-            }
-            if self.pause_menu_spawned() {
-                if let Some(m) = self.play_menu.as_mut() {
-                    m.owns_frame = true;
-                }
-                return MENU_TICK_MENU;
-            }
-            return MENU_TICK_FIELD;
-        }
-        let scripted = self.play_menu_scripted_open_pending();
-        if !scripted && edge & PadButton::Start.mask() == 0 {
-            return MENU_TICK_FIELD;
-        }
-        self.play_menu_open();
-        if self.play_menu.is_none() {
-            return MENU_TICK_FIELD;
-        }
-        if scripted {
-            MENU_TICK_OPENED_SCRIPTED
-        } else {
-            // The open blips as a confirm, as on the native window; a
-            // scripted press blips nothing - retail's cue `0x20` belongs to
-            // the pad controller, not to the actor it spawns.
-            let _ = self.play_sfx_event("menu_confirm");
-            MENU_TICK_OPENED
+    /// Whether the pause menu owns the frame: the wipe has spawned it (or a
+    /// title row opened it with no wipe), so every sim tick is one menu step
+    /// ([`Self::play_menu_input`]) - the native window's boot-UI arm.
+    pub(crate) fn play_menu_owns_frame(&self) -> bool {
+        self.play_menu.as_ref().is_some_and(|m| m.owns_frame)
+    }
+
+    /// The tick the wipe spawned the menu (`TickOwner::PauseMenuSpawned`):
+    /// the menu owns the frame from the next tick, as the native arm that
+    /// raises its boot-UI state does.
+    pub(crate) fn play_menu_take_spawn(&mut self) {
+        if let Some(m) = self.play_menu.as_mut() {
+            m.owns_frame = true;
         }
     }
 
+    /// A press opened the session's field menu (`TickOwner::PauseMenuOpened`):
+    /// stand up the page's menu over it, and blip the open as a confirm - as
+    /// on the native window; a scripted press blips nothing, retail's cue
+    /// `0x20` belonging to the pad controller, not to the actor it spawns.
+    pub(crate) fn play_menu_attach_opened(&mut self, scripted: bool) {
+        if self.play_menu.is_none() {
+            self.play_menu = Some(PlayMenu::new());
+        }
+        if !scripted {
+            let _ = self.play_sfx_event("menu_confirm");
+        }
+    }
+}
+
+#[wasm_bindgen]
+impl LegaiaRuntime {
     /// Drive the menu one frame from an edge-triggered PSX pad word (same bit
     /// layout as [`Self::set_pad`]). Navigation:
     /// - top-level: Up/Down move the cursor, Cross opens the row, Circle closes.

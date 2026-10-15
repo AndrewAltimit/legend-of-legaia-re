@@ -50,7 +50,7 @@
 <table>
 <thead><tr><th>Overlay</th><th>Named program</th><th>Disc source</th><th>Key functions</th></tr></thead>
 <tbody>
-<tr><td>Title screen</td><td><code>overlay_title.bin</code></td><td>-</td><td>Actor / sprite VM <code>FUN_801D6628</code>; title tick <code>FUN_801DD35C</code> (see <a href="../subsystems/boot.html#title-overlay-state">boot</a>)</td></tr>
+<tr><td>Title screen</td><td><code>overlay_title.bin</code></td><td>PROT 0899 @ <code>0x801CE818</code></td><td>Actor / sprite VM <code>FUN_801D6628</code>; title tick <code>FUN_801DD35C</code> (see <a href="../subsystems/boot.html#title-overlay-state">boot</a>)</td></tr>
 <tr><td>Town / field / dialog / inventory</td><td><code>overlay_dialog_mc4.bin</code> / <code>overlay_dialog_typing.bin</code></td><td>PROT 0897 @ <code>0x801CE818</code></td><td>Field/event VM <code>FUN_801DE840</code>, MES renderer <code>FUN_801ED710</code>, inventory hub <code>FUN_801F5748</code></td></tr>
 <tr><td>Field - battle-start transition</td><td><code>overlay_field_battle_intro.bin</code></td><td>PROT 0897</td><td>Partial image captured mid-camera-spin; functions unique to this capture</td></tr>
 <tr><td>Battle / battle-action</td><td><code>overlay_battle_action.bin</code> / <code>overlay_magic_capture.bin</code></td><td>PROT 0898 @ <code>0x801CE818</code></td><td>Per-actor SM <code>FUN_801E295C</code>, battle dispatcher <code>FUN_801D0748</code>, effect-VM cluster</td></tr>

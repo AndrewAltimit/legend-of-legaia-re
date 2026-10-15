@@ -561,6 +561,14 @@ pub struct BattleState {
     /// on ([`crate::world::World::tick_battle_pass_draw`]) - one draw a
     /// battle frame, however many vsyncs it spans.
     pub pass_draw_frame: Option<u64>,
+    /// The battle frame the action SM last ran its pass on
+    /// ([`crate::world::World::battle_sm_pass_due`]) - one pass a battle
+    /// frame, however many vsyncs it spans.
+    pub sm_pass_frame: Option<u64>,
+    /// The action state the SM's last pass ran (its state on entry), which
+    /// the camera frames on retail's cadence
+    /// ([`crate::world::World::battle_camera_state`]).
+    pub sm_ran_state: Option<u8>,
     /// The battle frame the defeat fade's sink last lowered its bodies on
     /// (`World::tick_battle_defeat_sink`) - one
     /// `(size * step) >> 2` step a battle frame, as retail's pass takes it.
@@ -882,6 +890,8 @@ impl BattleState {
             vram_scrolls: Vec::new(),
             frame_clock: Default::default(),
             pass_draw_frame: None,
+            sm_pass_frame: None,
+            sm_ran_state: None,
             defeat_sink_frame: None,
             vram_loads: Default::default(),
             form_transition: Default::default(),

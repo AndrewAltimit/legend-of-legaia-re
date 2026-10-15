@@ -119,6 +119,77 @@ pub(super) fn unlatching_bands(session: &NativeSession, door: (i16, i16)) -> Vec
         .collect()
 }
 
+/// The loaded scene's minigame cabinets: the talk records (`P1`) that run
+/// the minigame door-warp (`3E` with `op0 >= 100`), themselves or through a
+/// record they spawn. `koin1`, Sol's casino, stands its slot machines
+/// (P1[51..56], `3E 68`) along the floor as props the interact probe hits
+/// but no NPC slot carries: the walk's idle tap beside one at (20, 43),
+/// on the way to the Prize Counter, asked to play and put the session in
+/// the slot machine.
+pub(super) fn minigame_talks(session: &NativeSession) -> HashSet<u8> {
+    let Some((mf, man, _)) = scene_man_and_triggers(session) else {
+        return HashSet::new();
+    };
+    let n0 = mf.partitions.first().map_or(0, Vec::len);
+    let n1 = mf.partitions.get(1).map_or(0, Vec::len);
+    (0..n1.min(256))
+        .filter(|&r| {
+            record_enters_minigame(&mf, &man, 1, r)
+                || spawned_p2(&mf, &man, 1, r, n0 + n1, 3)
+                    .iter()
+                    .any(|&s| record_enters_minigame(&mf, &man, 2, s))
+        })
+        .map(|r| r as u8)
+        .collect()
+}
+
+/// The continuous hand's way through a teleport maze: once a plan crosses
+/// two or more jumps, a walk that leaves the route re-plans only to the
+/// route's next jump, then rides the rest of the route as planned. A fresh
+/// plan from every cell off the route chose between routes of nearly equal
+/// cost from wherever the walker stood: `taiku`'s escape (the Floating
+/// Castle, against its clock) set out west for the jump at (97, 101), was
+/// carried a tile off it at (97, 100), re-planned east through the door at
+/// (109, 78) - which carries the walker across both ways and re-walls its
+/// tiles on each crossing - and spent the clock going back and forth. A
+/// jump aimed at three times without landing on the route drops the
+/// commitment, and the walk plans afresh.
+#[allow(clippy::too_many_arguments)]
+pub(super) fn committed_leg(
+    session: &NativeSession,
+    from: Cell,
+    committed: &[Cell],
+    pos: usize,
+    tries: &mut HashMap<usize, u32>,
+    avoid: &HashSet<(i32, i32)>,
+    doors: &HashSet<(i32, i32)>,
+) -> Option<Vec<Cell>> {
+    if committed.is_empty() {
+        return None;
+    }
+    if let Some(k) = committed.iter().skip(pos).position(|&c| c == from) {
+        return Some(committed[pos + k + 1..].to_vec());
+    }
+    let entry = (pos..committed.len().saturating_sub(1))
+        .find(|&i| !adjacent(committed[i], committed[i + 1]))?;
+    let n = tries.entry(entry).or_insert(0);
+    *n += 1;
+    if *n > 3 {
+        return None;
+    }
+    let (ex, ez) = cell_center(committed[entry]);
+    let et = dispatch_tile(ex, ez);
+    let sub = plan_around(session, from, (et.0 as i16, et.1 as i16), avoid, doors);
+    let end = *sub.last()?;
+    let (sx, sz) = cell_center(end);
+    if dispatch_tile(sx, sz) != et {
+        return None;
+    }
+    let mut out = sub;
+    out.extend_from_slice(&committed[entry..]);
+    Some(out)
+}
+
 /// [`plan_path`] around `avoid`; when that cannot reach `goal`, around the
 /// door bands alone (a live walk-on band then gets crossed, as a player
 /// crosses one that stands in the only way through).
@@ -457,6 +528,10 @@ pub(super) fn pad_walk(
     let mut unwedged = 0usize;
     let mut scripted_next = session.host.world.encounters.scripted_formation_pending;
     let mut path = Vec::new();
+    // A route through a teleport maze, committed to ([`committed_leg`]).
+    let mut committed: Vec<Cell> = Vec::new();
+    let mut committed_pos = 0usize;
+    let mut committed_tries: HashMap<usize, u32> = HashMap::new();
     // The overworld's corner-crossing walk ([`overworld_tile_route`]).
     let mut corner_route: Vec<(i32, i32)> = Vec::new();
     let (mut corner_planned, mut corner_failed, mut corner_tapped) = (false, false, false);
@@ -482,6 +557,13 @@ pub(super) fn pad_walk(
     let mut idle_talks: HashSet<String> = HashSet::new();
     let mut taps_off = false;
     let mut tapped_at: Option<usize> = None;
+    // The idle tap is never pressed at a minigame cabinet
+    // ([`minigame_talks`]): a walk that passes one does not sit down to play.
+    let cabinets = if session.host.world.mode == SceneMode::Field {
+        minigame_talks(session)
+    } else {
+        HashSet::new()
+    };
     for step in 0..PAD_LEG_FRAMES as usize {
         pad_budget(session)?;
         // Per overworld tile: the encounter step counter it left behind.
@@ -568,6 +650,13 @@ pub(super) fn pad_walk(
         if planned_from != Some(cell) {
             // Follow the planned route while the player stays on it; plan
             // again only off it (a slide, a teleport, a script's move).
+            if let Some(k) = committed
+                .iter()
+                .skip(committed_pos)
+                .position(|&c| c == cell)
+            {
+                committed_pos += k;
+            }
             if let Some(i) = path.iter().position(|&c| c == cell) {
                 // On a teleport waypoint the landing is next: keep pressing
                 // from the waypoint until the jump happens.
@@ -581,8 +670,50 @@ pub(super) fn pad_walk(
                 // A slide a cell or two off the route rejoins it rather than
                 // re-planning the whole map.
                 path.drain(..i);
+            } else if let Some(leg) = committed_leg(
+                session,
+                cell,
+                &committed,
+                committed_pos,
+                &mut committed_tries,
+                avoid,
+                &doors,
+            ) {
+                path = leg;
             } else {
                 path = plan_around(session, cell, goal, avoid, &doors);
+                // The continuous hand commits to a route that crosses a
+                // teleport maze ([`committed_leg`]).
+                committed.clear();
+                committed_pos = 0;
+                committed_tries.clear();
+                if continuous::PLAYS_ON.with(std::cell::Cell::get)
+                    && path.windows(2).filter(|w| !adjacent(w[0], w[1])).count() >= 2
+                {
+                    committed = path.clone();
+                }
+                if std::env::var_os("LEGAIA_FGL_ROUTE_DEBUG").is_some() {
+                    // The route's tiles, one per change of tile, and each
+                    // jump (a teleport or a ride) marked.
+                    let mut tiles: Vec<String> = Vec::new();
+                    let mut last: Option<Cell> = None;
+                    for &c in &path {
+                        let (x, z) = cell_center(c);
+                        let t = dispatch_tile(x, z);
+                        let jump = last.is_some_and(|l| !adjacent(l, c));
+                        let s = format!("{}{t:?}", if jump { "=>" } else { "" });
+                        if jump || tiles.last().is_none_or(|p| !p.ends_with(&format!("{t:?}"))) {
+                            tiles.push(s);
+                        }
+                        last = Some(c);
+                    }
+                    eprintln!(
+                        "      [route] {} {:?} -> {goal:?}: {}",
+                        scene_name(session),
+                        here(session),
+                        tiles.join(" ")
+                    );
+                }
                 if path.is_empty() {
                     path = unwedge(session, cell, unwedged);
                     unwedged += usize::from(!path.is_empty());
@@ -739,6 +870,11 @@ pub(super) fn pad_walk(
                 && !(moved && walking_mode == SceneMode::Field)
                 && !idle_taps.contains(&cell_of(wx, wz))
                 && !taps_off
+                && !session
+                    .host
+                    .world
+                    .field_interact_probe_slot()
+                    .is_some_and(|s| cabinets.contains(&s))
             {
                 pad = PadButton::Cross.mask();
                 tap_owed = false;
@@ -951,6 +1087,49 @@ pub(super) fn pad_walk(
                             .map(|d| w.field_actor_dir_blocked(px, pz, d))
                             .collect::<Vec<_>>()
                     );
+                    if std::env::var_os("LEGAIA_FGL_STALL_PRESSES").is_some() {
+                        // Debug only: hold each press for 20 ticks from here
+                        // and print where it leaves the player.
+                        let presses = [
+                            ("U", PadButton::Up.mask()),
+                            ("D", PadButton::Down.mask()),
+                            ("L", PadButton::Left.mask()),
+                            ("R", PadButton::Right.mask()),
+                            ("UL", PadButton::Up.mask() | PadButton::Left.mask()),
+                            ("UR", PadButton::Up.mask() | PadButton::Right.mask()),
+                            ("DL", PadButton::Down.mask() | PadButton::Left.mask()),
+                            ("DR", PadButton::Down.mask() | PadButton::Right.mask()),
+                        ];
+                        for (name, p) in presses {
+                            let start = player_xz(session);
+                            for _ in 0..20 {
+                                session.host.world.set_pad(p);
+                                let _ = session.tick();
+                            }
+                            session.host.world.set_pad(0);
+                            let end = player_xz(session);
+                            eprintln!(
+                                "      [press] {name}: {start:?} -> {end:?} az {}",
+                                session.host.world.locomotion.camera_azimuth
+                            );
+                            // Back to where the stall stood.
+                            for _ in 0..20 {
+                                let (x, z) = player_xz(session);
+                                if (x, z) == start {
+                                    break;
+                                }
+                                let back = pad_for_step(
+                                    session,
+                                    (start.0 - x).signum(),
+                                    (start.1 - z).signum(),
+                                );
+                                session.host.world.set_pad(back);
+                                let _ = session.tick();
+                            }
+                            session.host.world.set_pad(0);
+                        }
+                    }
+                    let w = &session.host.world;
                     // 64-unit wall sub-cells around the player, Z rows. The
                     // goal tile reads `G` where it is wall, `g` where open.
                     for dz in -24i16..=24 {
@@ -973,6 +1152,7 @@ pub(super) fn pad_walk(
                         eprintln!("      [grid] {row}");
                     }
                 }
+                let w = &session.host.world;
                 let (cx, cz) = cell_center(cell_of(px, pz));
                 let block: String = (0..4)
                     .map(|dir| {

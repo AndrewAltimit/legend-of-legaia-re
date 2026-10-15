@@ -64,6 +64,14 @@ pub struct DialogState {
     /// (`World::seat_page_mark_frame`); `None` outside the
     /// retail comparison's capture frame.
     pub page_mark_seat: Option<u8>,
+    /// The next reading box's row capacity `_DAT_801F2740`, as field-VM op
+    /// `4C E0 <n>` (`n` in `1..100`) set it; `3` otherwise. A box takes it
+    /// when it opens and the pager's reset stores `3` again, so it lasts one
+    /// box ([`legaia_engine_dialog::dialog::OwnedDialogPanel::set_window_format`]).
+    pub window_rows: u8,
+    /// The instant-page latch `_DAT_801F2744` (op `4C E0 00`): the next box
+    /// loads its page whole.
+    pub window_instant: bool,
 }
 
 impl DialogState {
@@ -81,6 +89,8 @@ impl DialogState {
             auto_press: 0,
             cursor_sprites: Default::default(),
             page_mark_seat: None,
+            window_rows: legaia_engine_dialog::dialog_window::WINDOW_ROWS as u8,
+            window_instant: false,
         }
     }
 }

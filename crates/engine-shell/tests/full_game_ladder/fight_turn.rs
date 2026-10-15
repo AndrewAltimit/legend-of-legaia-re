@@ -224,6 +224,14 @@ pub(super) fn fight_pad(session: &NativeSession) -> u16 {
             CommandPhase::Menu { .. } if lesson.is_none() && wants_aoe_guard(w, cmd.actor) => {
                 PadButton::Down.mask()
             }
+            // A bag run dry in a fight that forbids running: a spell heal.
+            CommandPhase::Menu { .. }
+                if lesson.is_none()
+                    && !NO_MAGIC.with(|n| n.borrow().contains(&cmd.actor))
+                    && duel_spell_heal(w, cmd.actor).is_some() =>
+            {
+                PadButton::Right.mask()
+            }
             // A solo duel builds its gauge between Arts turns.
             CommandPhase::Menu { .. } if lesson.is_none() && duel_wants_spirit(w, cmd.actor) => {
                 PadButton::Down.mask()
@@ -390,6 +398,14 @@ pub(super) fn party_dump(session: &NativeSession) {
             .collect();
         arts.sort();
         eprintln!("    [arts] #{i} {ch:?}: {}", arts.join("; "));
+        let roster = w.party_roster_slot(i);
+        eprintln!(
+            "    [pool] #{i} miracle armed {} pool {} base {} press costs {:?}",
+            miracle_armed(w, i as u8),
+            w.actors[i].battle.agl,
+            w.actors[i].battle.agl_base,
+            w.battle.swing_costs.get(roster)
+        );
     }
     let bag: Vec<String> = w
         .party
@@ -437,6 +453,7 @@ pub(super) fn fight_battle(session: &mut NativeSession) -> Option<Run> {
     ROUND_HISTORY.with(|h| h.borrow_mut().clear());
     AOE_HIT.with(|a| a.set(0));
     CHARGE_SEEN.with(|c| c.set(false));
+    AOE_GUARDED.with(|g| g.set([None; 3]));
     let mut guarded = [false; 3];
     let mut was_window = false;
     ITEM_TARGET.with(|t| *t.borrow_mut() = [None; 3]);

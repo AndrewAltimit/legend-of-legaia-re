@@ -19,13 +19,15 @@
 //!
 //! This module is the gate and the projection; the two draws are
 //! `legaia_engine_ui::map_label_*`. The projection is the frame's own matrix
-//! ([`camera_view::frame_vp`]) at the display's 4:3 aspect, the same route
+//! ([`camera_frame::frame_vp`]) at the display's 4:3 aspect, the same route
 //! [`crate::world_map_markers`] takes.
 //!
 //! REF: FUN_801CE850, FUN_8003D368, FUN_8003CE64
 
-use crate::camera_view::{self, FieldCameraFrame};
+use crate::camera_view;
 use crate::world::World;
+use legaia_engine_field::camera_frame;
+use legaia_engine_field::camera_frame::FieldCameraFrame;
 use legaia_engine_field::map_display::LABEL_WORLD_Y;
 use legaia_render_kernels::screen_prim;
 
@@ -82,7 +84,8 @@ pub fn map_display_labels(world: &World, frame: &FieldCameraFrame) -> Vec<MapLab
     if !matches!(frame, FieldCameraFrame::WorldMapDisplay { .. }) {
         return Vec::new();
     }
-    let Some(vp) = camera_view::frame_vp(frame, ([0.0; 3], [0.0; 3]), DISPLAY_W / DISPLAY_H) else {
+    let Some(vp) = camera_frame::frame_vp(frame, ([0.0; 3], [0.0; 3]), DISPLAY_W / DISPLAY_H)
+    else {
         return Vec::new();
     };
     let kingdom = world.world_map_kingdom_index().map_or(u32::MAX, u32::from);

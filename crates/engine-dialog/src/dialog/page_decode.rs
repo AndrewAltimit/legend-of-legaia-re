@@ -49,6 +49,10 @@ impl OwnedDialogPanel {
                 self.window = Some(crate::dialog_window::RowWindow::open(n));
             }
         }
+        if let Some(w) = self.window.as_mut() {
+            w.capacity = self.window_rows;
+            w.instant |= std::mem::take(&mut self.window_instant);
+        }
         let serial = self.window.as_ref().map_or(0, |w| w.page());
         self.page_rows.retain(|(s, _)| s + 1 >= serial);
         self.page_rows.push((serial, rows));

@@ -26,10 +26,12 @@
 //! [`GROWTH_ROW_COUNT`] progression curves.
 //!
 //! The applier's exact per-level gain arithmetic is decoded + **validated**
-//! ([`GrowthTables::level_gain_core`]): each curve sums to `0x24C0`, so the
-//! divisor normalizes the per-level term to reach `max` at level 99, and the
-//! core matches a single-level capture (Noa L2→L3) within the jitter band on
-//! all 8 stats. The engine does not yet drive level-up from it (wiring the
+//! ([`GrowthTables::level_gain_core`]): each curve sums to `0x24C0`, and seven
+//! of the eight stats divide by it, so their per-level term reaches `max` at
+//! level 99. AGL alone divides by [`GROWTH_AGL_GAIN_DIVISOR`] (`0x18C0`), so it
+//! grows about one and a half times as fast and meets the applier's `0x118` cap
+//! well before level 99. The core matches a single-level capture (Noa L2→L3)
+//! within the jitter band on all 8 stats. The engine does not yet drive level-up from it (wiring the
 //! retail `rand()` jitter needs the RNG stream for determinism) - see
 //! `docs/subsystems/level-up.md` § Stat gains.
 //!
@@ -102,8 +104,21 @@ pub const GROWTH_STAT_COUNT: usize = 8;
 /// Size of one per-stat growth-param sub-record (`{u16 start, u16 max, u8 jitter, u8 row}`).
 pub const GROWTH_SUBRECORD_SIZE: usize = 6;
 /// Divisor in `FUN_801E9504`'s per-level gain term: the `0x6F74AE27 >> (32+12)`
-/// signed-magic divide reduces to integer division by `0x24C0` (= 9408).
+/// signed-magic divide reduces to integer division by `0x24C0` (= 9408). HP and
+/// every stat but AGL use it (the constant is loaded once into `s3` at
+/// `0x801E97CC` and multiplied by for each of them).
 pub const GROWTH_GAIN_DIVISOR: u32 = 0x24C0;
+/// The AGL term's divisor: its block (`0x801E993C..0x801E9958`) loads its own
+/// magic `0xA57EB503`, adds the dividend back to the high word and shifts by
+/// 12, which is integer division by `0x18C0` (= 6336) for every product the
+/// curve and span produce. An engine that divided AGL by `0x24C0` grew it about
+/// two a level where retail grows it three (Vahn: 145 against retail's 145 at
+/// level 16 only once the right divisor is used), and a run's party never
+/// reached the action gauge a Fury-boosted Miracle Art needs.
+pub const GROWTH_AGL_GAIN_DIVISOR: u32 = 0x18C0;
+/// Index of AGL in the growth-param record order (HP, MP, AGL, ATK, UDF, LDF,
+/// SPD, INT).
+pub const GROWTH_AGL_INDEX: usize = 2;
 
 /// PSX-EXE `t_addr` -> file-offset resolver. `SCUS_942.54` loads its data
 /// segment at `t_addr` from file offset `0x800`. (Kept local, matching the
@@ -251,6 +266,11 @@ pub struct StatGrowthParam {
     pub jitter: u8,
     /// Curve-row selector (`0..`[`GROWTH_ROW_COUNT`]) into [`GROWTH_CURVES_VA`].
     pub row: u8,
+    /// The gain term's divisor for this stat: [`GROWTH_AGL_GAIN_DIVISOR`] for
+    /// AGL, [`GROWTH_GAIN_DIVISOR`] for the rest (set by
+    /// [`GrowthTables::char_params`] from the stat's position, not read from
+    /// the record). `0` reads as [`GROWTH_GAIN_DIVISOR`].
+    pub divisor: u16,
 }
 
 /// The [`GROWTH_STAT_COUNT`]-stat growth-param record for one character.
@@ -277,6 +297,11 @@ impl GrowthTables {
                 max: u16::from_le_bytes([b[2], b[3]]),
                 jitter: b[4],
                 row: b[5],
+                divisor: if s == GROWTH_AGL_INDEX {
+                    GROWTH_AGL_GAIN_DIVISOR as u16
+                } else {
+                    GROWTH_GAIN_DIVISOR as u16
+                },
             };
         }
         Some(CharGrowthParams { stats })
@@ -322,7 +347,11 @@ impl GrowthTables {
         }
         let byte = *self.curves.get(p.row as usize)?.get(level - 1)? as u32;
         let span = p.max.saturating_sub(p.start) as u32;
-        Some(span * byte / GROWTH_GAIN_DIVISOR)
+        let divisor = match p.divisor {
+            0 => GROWTH_GAIN_DIVISOR,
+            d => u32::from(d),
+        };
+        Some(span * byte / divisor)
     }
 }
 
@@ -396,7 +425,8 @@ mod tests {
                 start: 180,
                 max: 5000,
                 jitter: 4,
-                row: 0
+                row: 0,
+                divisor: GROWTH_GAIN_DIVISOR as u16,
             }
         );
         assert_eq!(
@@ -405,7 +435,8 @@ mod tests {
                 start: 20,
                 max: 900,
                 jitter: 1,
-                row: 2
+                row: 2,
+                divisor: GROWTH_GAIN_DIVISOR as u16,
             }
         );
         // Out-of-range slot rejected.
@@ -425,6 +456,7 @@ mod tests {
             max: 4500,
             jitter: 4,
             row: 0,
+            divisor: 0,
         };
         // (4500-150) * 82 / 0x24C0 = 356700 / 9408 = 37.
         assert_eq!(g.level_gain_core(&p, 2), Some(37));
@@ -434,9 +466,51 @@ mod tests {
             max: 100,
             jitter: 0,
             row: 0,
+            divisor: 0,
         };
         assert_eq!(g.level_gain_core(&z, 2), Some(1));
         // No growth past the level cap.
         assert_eq!(g.level_gain_core(&p, MAX_LEVEL), None);
+    }
+
+    /// The two signed-magic divides of `FUN_801E9504` reduce to the two
+    /// divisors over every product a span (`<= 0xFFFF`) and a curve byte can
+    /// make: `0x6F74AE27`, shifted right 44 (`mfhi`, `sra 0xC`), is `/ 0x24C0`;
+    /// `0xA57EB503` with the dividend added back to the high word
+    /// (`addu v0,t0,v1` at `0x801E994C`) and shifted 12 is `/ 0x18C0`.
+    #[test]
+    fn magic_divides_reduce_to_the_two_divisors() {
+        let hp = |x: i64| (x * 0x6F74_AE27) >> 44;
+        let agl = |x: i64| (((x * (0xA57E_B503_i64 - (1 << 32))) >> 32) + x) >> 12;
+        for x in (0..0xFFFF * 0xFF).step_by(7) {
+            assert_eq!(hp(x), x / i64::from(GROWTH_GAIN_DIVISOR), "x {x}");
+            assert_eq!(agl(x), x / i64::from(GROWTH_AGL_GAIN_DIVISOR), "x {x}");
+        }
+    }
+
+    /// `char_params` gives AGL (record position 2) its own divisor and every
+    /// other stat the shared one, and the gain core divides by it.
+    #[test]
+    fn agl_takes_its_own_divisor() {
+        let mut curves = vec![vec![0u8; GROWTH_ROW_STRIDE]; GROWTH_ROW_COUNT];
+        curves[1][0] = 109;
+        let mut param = vec![0u8; GROWTH_PARAM_LEN];
+        for s in 0..GROWTH_STAT_COUNT {
+            // start 100, max 280, jitter 1, row 1 for every stat.
+            param[s * 6..s * 6 + 6].copy_from_slice(&[100, 0, 0x18, 0x01, 1, 1]);
+        }
+        let g = GrowthTables { curves, param };
+        let cp = g.char_params(0).unwrap();
+        for (s, p) in cp.stats.iter().enumerate() {
+            let want = if s == GROWTH_AGL_INDEX {
+                0x18C0
+            } else {
+                0x24C0
+            };
+            assert_eq!(u32::from(p.divisor), want, "stat {s}");
+        }
+        // 180 * 109 = 19620: / 6336 = 3 for AGL, / 9408 = 2 for the others.
+        assert_eq!(g.level_gain_core(&cp.stats[GROWTH_AGL_INDEX], 1), Some(3));
+        assert_eq!(g.level_gain_core(&cp.stats[3], 1), Some(2));
     }
 }

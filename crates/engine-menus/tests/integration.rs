@@ -6,6 +6,7 @@
 //! `cargo test -p legaia-engine-menus --test integration <name>::`.
 
 mod equip_applier;
+mod menu_suite_e2e;
 mod muscle_intermission_cadence;
 mod pause_menu_kernel_wiring;
 mod save_subscreen_ladder;

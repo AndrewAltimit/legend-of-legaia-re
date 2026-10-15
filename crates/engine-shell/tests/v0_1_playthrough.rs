@@ -172,26 +172,10 @@ struct StateSample {
     dialog_active: bool,
 }
 
-fn scene_mode_name(m: SceneMode) -> &'static str {
-    match m {
-        SceneMode::Title => "Title",
-        SceneMode::Field => "Field",
-        SceneMode::Battle => "Battle",
-        SceneMode::Cutscene => "Cutscene",
-        SceneMode::WorldMap => "WorldMap",
-        SceneMode::Dance => "Dance",
-        SceneMode::Fishing => "Fishing",
-        SceneMode::SlotMachine => "SlotMachine",
-        SceneMode::BakaFighter => "BakaFighter",
-        SceneMode::MuscleDome => "MuscleDome",
-        SceneMode::Menu => "Menu",
-    }
-}
-
 fn sample_world(world: &World, pad: u16) -> StateSample {
     StateSample {
         frame: world.frame,
-        scene_mode: scene_mode_name(world.mode).to_string(),
+        scene_mode: world.mode.name().to_string(),
         pad,
         rng_state: world.rng_state,
         money: world.party.money,

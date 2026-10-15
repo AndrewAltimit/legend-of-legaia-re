@@ -302,6 +302,29 @@ pub(super) fn trace_line(s: &NativeSession, pad: u16) -> String {
                 }
             })
             .collect();
+        // `LEGAIA_SOAK_TRACE_WALLS=1`: the wall bits of the 9x9 sub-cells
+        // around the player (`#` wall, `.` open, `@` the player's own),
+        // rows Z- to Z+ - what a walled-in landing is walled by.
+        if std::env::var_os("LEGAIA_SOAK_TRACE_WALLS").is_some() {
+            let (sx, sz) = (i32::from(m.world_x) >> 6, i32::from(m.world_z) >> 6);
+            let rows: Vec<String> = (-4..=4)
+                .map(|dz| {
+                    (-4..=4)
+                        .map(|dx| {
+                            if dx == 0 && dz == 0 {
+                                return '@';
+                            }
+                            let (x, z) = ((sx + dx) * 64 + 32, (sz + dz) * 64 + 32);
+                            match (i16::try_from(x), i16::try_from(z)) {
+                                (Ok(x), Ok(z)) if w.field_tile_is_wall(x, z) => '#',
+                                _ => '.',
+                            }
+                        })
+                        .collect()
+                })
+                .collect();
+            let _ = write!(out, " walls[{}]", rows.join("/"));
+        }
         let _ = write!(
             out,
             " gates(lock80000 {} engaged {} battle {} warp {} scale {:#x}) dirs[Z-,X-,Z+,X+]={walls}",

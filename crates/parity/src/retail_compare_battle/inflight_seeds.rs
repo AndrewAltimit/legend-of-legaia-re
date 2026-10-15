@@ -228,6 +228,21 @@ impl RetailBattle {
         out
     }
 
+    /// Whether the acting seat has committed a strike onto its target this
+    /// action: past the approach states, and inside the strike loop `0x1E`
+    /// past the first staged swing - a committed swing clip, or a strike
+    /// cursor `ctx[+0x15]` beyond the first queue byte. The loop stages one
+    /// byte per swing and the swing clip commits at the idle cycle's end
+    /// (`player_steal_skeleton_pre`: cursor `1`, clip `0`, the first swing
+    /// `0x0F` staged).
+    fn strike_committed(&self) -> bool {
+        match self.action_state {
+            0x14..=0x19 => false,
+            0x1E => self.caster_clip != 0 || self.strike_cursor > 1,
+            _ => true,
+        }
+    }
+
     /// [`Self::defeat_lanes`] re-keyed to engine battle slots.
     pub fn engine_defeat_lanes(
         &self,
@@ -242,21 +257,61 @@ impl RetailBattle {
     }
 
     /// [`Self::facing`] re-keyed to engine battle slots, placed where
-    /// [`Self::seeded_ground`] places a ground pair - on a capture past the
-    /// end signal only. There the sequencer has stopped the action SM, so
-    /// nothing recomputes a heading before the results framing reads it. A
-    /// capture of a running fight replays its rounds, whose own swings set
-    /// the headings; seeding the captured ones there moved the corpus both
-    /// ways (camera up on most, frames down on more than rose).
+    /// [`Self::seeded_ground`] places a ground pair.
+    ///
+    /// - **Past the end signal**, every placed combatant: the sequencer has
+    ///   stopped the action SM, so nothing recomputes a heading before the
+    ///   results framing reads it.
+    /// - **In a running fight**, only a combatant whose turn the capture holds
+    ///   spent ([`Self::engine_spent_keys`]). The drive replays the round, and
+    ///   the replayed turns set the headings of everyone who acts in it; a
+    ///   spent combatant sits that round out, so the heading its own earlier
+    ///   action left it on is one nothing in the replay restores. Seeding
+    ///   every combatant's heading moved the corpus both ways (camera up on
+    ///   most, frames down on more than rose).
+    /// - **The action's target** only before the attacker's first strike has
+    ///   committed. The strike commit turns its defender onto the attacker
+    ///   (`0x801EEC34..0x801EECBC`), so after it the captured heading is the
+    ///   action's own output, which the replay produces itself
+    ///   (`rim_elm_gimard_victory`'s Gimard, struck twice). Before it, the
+    ///   target's heading is what its own earlier turn left, and it moves the
+    ///   approach: the body pair the range law `FUN_8004E2F0` measures is the
+    ///   live pair plus the facing-rotated pose centroid, so the attacker
+    ///   stops a walk step sooner or later, and the post-strike framing aims
+    ///   at the pair (`player_steal_skeleton_pre`: the skeleton at `0x900`).
     pub fn seeded_facing(&self) -> [Option<u16>; legaia_engine_core::world::INFLIGHT_GROUND_SLOTS] {
         let mut out = [None; legaia_engine_core::world::INFLIGHT_GROUND_SLOTS];
-        if !self.span_gate.is_end() {
-            return out;
+        let end = self.span_gate.is_end();
+        let mut spent = self.engine_spent_keys();
+        if self.target_code < 8
+            && self.strike_committed()
+            && let Some(t) =
+                spent.get_mut(usize::from(engine_seat(self.target_code, self.party_count)))
+        {
+            *t = false;
+        }
+        // The acting seat itself, on a capture taken before the attack band's
+        // first face store (state `0x14` recomputes `+0x46` from the target
+        // bearing, `0x801E3078..0x801E3088`): its heading is the one its
+        // last turn left, which the replayed prompt does not restore, and the
+        // seed's case-6 arm subtracts it (`super_queue_replace_*`: `34`).
+        // Only on the SM's retail cadence: on the per-vsync cadence the
+        // seed's arm is never walked, so the heading it subtracts reaches no
+        // frame and the seat keeps the engine's.
+        if legaia_engine_core::world::WorldToggles::new().battle_sm_frame_cadence
+            && matches!(self.seed_plan(), SeedPlan::Action { .. })
+            && self.action_state <= 0x14
+            && let Some(a) = spent.get_mut(usize::from(engine_seat(
+                self.active_actor,
+                self.party_count,
+            )))
+        {
+            *a = true;
         }
         let ground = self.seeded_ground();
         let pc = usize::from(self.party_count);
         for (s, o) in out.iter_mut().enumerate() {
-            if ground[s].is_none() {
+            if ground[s].is_none() || !(end || spent[s]) {
                 continue;
             }
             let pool = if s < pc { s } else { 3 + (s - pc) };

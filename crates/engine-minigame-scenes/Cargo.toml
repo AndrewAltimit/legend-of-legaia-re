@@ -3,6 +3,8 @@ name = "legaia-engine-minigame-scenes"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+# tests/integration.rs gathers every tests/*.rs into one binary.
+autotests = false
 
 [lib]
 name = "legaia_engine_minigame_scenes"
@@ -30,3 +32,7 @@ legaia-game-tables.workspace = true
 legaia-minigame-formats.workspace = true
 legaia-overlay-images.workspace = true
 legaia-scene-formats.workspace = true
+
+[[test]]
+name = "integration"
+path = "tests/integration.rs"

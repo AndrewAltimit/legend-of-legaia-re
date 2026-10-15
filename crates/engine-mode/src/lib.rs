@@ -8,7 +8,9 @@
 //! `legaia-engine-field`, whose camera only reads [`mode::SceneMode`].
 //!
 //! [`minigame_entry`] is the mode-entry side of the minigame modes and
-//! [`card_request`] the leaf that asks the seat for the card / menu mode.
+//! [`card_request`] the leaf that asks the seat for the card / menu mode;
+//! [`sfx_residency`] is what each mode's initialiser does to the SPU region
+//! VAB slots `2` and `6` share.
 //! See the crate README for the layering.
 
 #![forbid(unsafe_code)]
@@ -16,3 +18,4 @@
 pub mod card_request;
 pub mod minigame_entry;
 pub mod mode;
+pub mod sfx_residency;

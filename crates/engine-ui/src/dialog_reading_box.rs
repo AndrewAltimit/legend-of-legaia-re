@@ -71,12 +71,15 @@ pub fn dialog_page_bytes(line: &str) -> Vec<u8> {
 }
 
 /// Rows the reading box is tall for a snapshot: the pager window's height
-/// when the panel has one (`box_rows`, three), else the page's own row count
-/// (the plain-MES panel's box grows with its page), clamped to `3..=4`.
+/// when the panel has one (`box_rows`: `_DAT_801F2740`, three unless op
+/// `4C E0` set another - the frame and the clip band are `rows * 0xF`,
+/// `0x801D98D8..0x801D9904`), else the page's own row count (the plain-MES
+/// panel's box grows with its page), clamped to `3..=4`.
 pub fn dialog_reading_box_lines(page: &str, box_rows: Option<usize>) -> i32 {
-    box_rows
-        .unwrap_or_else(|| page.split('|').count())
-        .clamp(3, 4) as i32
+    match box_rows {
+        Some(n) => n.clamp(1, 16) as i32,
+        None => page.split('|').count().clamp(3, 4) as i32,
+    }
 }
 
 /// Text draws for the reading box's rows: row `i` of the `|`-joined `page`
@@ -248,5 +251,6 @@ mod tests {
         assert_eq!(dialog_reading_box_lines("a", Some(3)), 3);
         assert_eq!(dialog_reading_box_lines("a|b|c|d", None), 4);
         assert_eq!(dialog_reading_box_lines("a", None), 3);
+        assert_eq!(dialog_reading_box_lines("a", Some(12)), 12, "4C E0 0C");
     }
 }

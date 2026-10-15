@@ -251,12 +251,12 @@ directions by design (see `docs/subsystems/save-screen.md`).
 
 The menu is **not purely input-driven**: its timers count 60 Hz frames, so it
 steps on the sim tick, not the animation frame. The page's frame hands its
-sim ticks to `play_frame_ticks` (`runtime/frame_ticks.rs`), which asks
-`play_menu_tick` first on each tick; it answers as the native window's per-tick
-arms do: a Start edge (or a script's save point) opens the menu and takes the
-tick (a Start open queues the confirm blip itself), the field keeps ticking under the wipe until the menu spawns, the
-hand-over takes one tick, and from then on each tick is one menu step
-(`play_menu_input`). A tick after the menu closes goes back to the field. Parity is asserted by the disc-gated `crates/web-viewer/tests/menu_parity.rs`
+sim ticks to `play_frame_ticks` (`runtime/frame_ticks.rs`), which hands each
+tick to the owner `BootSession::claim_tick` names - the order the native
+window's `sim_tick` uses too: a Start edge (or a script's save point) opens the
+menu and takes the tick (a Start open queues the confirm blip), the field keeps
+ticking under the wipe until the menu spawns, the hand-over takes one tick,
+and from then on each tick is one menu step (`play_menu_input`). A tick after the menu closes goes back to the field. Parity is asserted by the disc-gated `crates/web-viewer/tests/menu_parity.rs`
 oracle, which walks the whole card flow.
 
 ## Live battles (`play_battle`)
@@ -361,7 +361,7 @@ the one composition the native window calls,
 `legaia_engine_screens::shop_overlay_frame`, driven by the real
 `legaia_engine_core::menu_runtime::MenuRuntime`; `play_overlay_draws_json`
 serves the quads. The screen steps per sim tick, from the page's tick loop:
-`play_shop_tick` lets a shop or the prize exchange take the tick (one
+the shared tick claim lets a shop or the prize exchange take the tick (one
 `play_shop_input` step) and holds the pad neutral under an inn, and
 `play_shop_after_tick` steps an inn after the field's tick - except on the
 tick the field VM opened the screen, whose first step the poll already took.
@@ -572,7 +572,7 @@ text rides `minigame_overlay_draws`, input is the pad word through the engine's
 own tick, and Start exits back to the field with coins and prizes settled.
 The engine's status rows - the port's readout of the rules state plus the key
 hints, fishing's included - are not in that draw list: `play_mg_caption_json`
-exports them as strings (`engine-core::minigame_status::caption`) and the page
+exports them as strings (`engine-minigame-scenes::minigame_status::caption`) and the page
 shows them in the strip under the canvas
 ([site-shell](../tooling/site-shell.md#the-play-pages-minigame-status-rows-sit-under-the-canvas)).
 `site/js/play-minigames.js` also carries the fishing prize-exchange panel
@@ -608,9 +608,10 @@ the retail-traced geometry, through the shared `name_entry_draws_for` +
 `engine-menus::name_entry` - the page owns no name logic, only the pad-edge
 bridge and the draw-list JSON (`name_entry_draws_json`, the same two-layer
 chrome+font shape the pause menu uses). The bridge is per sim tick:
-`play_name_entry_tick` is the session's `step_name_entry_frame`, the call the
-native window's per-tick arm makes (the edge, then one frame of caret and
-camera); `name_entry_input` stays for drivers that step the entry directly.
+the shared tick claim (`BootSession::claim_tick`) steps the prompt through
+the session's `step_name_entry_frame`, as it does for the native window (the
+edge, then one frame of caret and camera); `name_entry_input` stays for
+drivers that step the entry directly.
 
 The screen lands **with its state**, which is the whole point: the
 establishing timeline's pinned op-`0x49` opens it and stays suspended while
@@ -1214,6 +1215,7 @@ reference TIMs sitting in other PROT entries.
 | [`play_world_map_markers`](../../crates/web-viewer/src/play_world_map_markers.rs) | The overworld's kind-coded entity and player markers (a port marker, not a retail draw). |
 | [`play_frame_step`](../../crates/web-viewer/src/play_frame_step.rs) | The shared wall-clock to sim-tick rule (`engine-core::frame_step::SimStepper`). |
 | [`host_slot`](../../crates/web-viewer/src/host_slot.rs) | The page's slot for its `BootSession` over `play_sfx::PageSink`; every page module reaches the scene host through it. |
+| [`play_hotkeys`](../../crates/web-viewer/src/play_hotkeys.rs) | `play_host_hotkey`: the native window's option / cheat / camera keys, resolved through the shared `engine-session::hotkeys` table; the page half is `window.__playHotkeyActions` in `play.html`. |
 | [`play_lighting`](../../crates/web-viewer/src/play_lighting.rs) / [`play_fog_volume`](../../crates/web-viewer/src/play_fog_volume.rs) | The enhanced-lighting and volumetric-fog enhancements (twins of the native `I` / `F8` and `F9`), from the shared engine-side sources. |
 | [`play_cheats`](../../crates/web-viewer/src/play_cheats.rs) | The play page's Cheats panel, thin bindings over `engine-core::cheats`. |
 | [`play_toggles`](../../crates/web-viewer/src/play_toggles.rs) | Runtime twins of native launch switches: `--retail` (session-only `OptionsState::pin_retail`; the store is not written while it holds), `--set-flag`, `LEGAIA_SMART_MONSTERS`, `LEGAIA_WORLD_MAP_MARKERS`. |

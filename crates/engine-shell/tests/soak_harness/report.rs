@@ -32,6 +32,27 @@ pub(super) const SAVE_ENTRY_ARTIFACTS: &[(&str, &str)] = &[
     ),
 ];
 
+/// Scenes the story only ever enters through another scene's hand-off, never
+/// by name: an entry artifact of one of these is an artifact on **every** run
+/// that starts there, `@<save>` or not. `dream` is reached from a sleep that
+/// sets the return flag its closing record branches on; its vignette trigger
+/// fires for the New Game party too (the `0x35B..0x35E` tests fall through to
+/// the default record), and that run's closing record ends on the hidden
+/// party just as a save's does.
+const HAND_OFF_ONLY_SCENES: &[&str] = &["dream"];
+
+/// Whether a hit from the run labelled `label` counts towards an entry
+/// artifact on `sig`: an `@<save>` run, or any run that starts in a
+/// hand-off-only scene the signature names.
+fn artifact_run(sig: &str, label: &str) -> bool {
+    if label.contains('@') {
+        return true;
+    }
+    let start = label.split(['+', '@']).next().unwrap_or(label);
+    let sig_scene = sig.split('|').nth(1).unwrap_or("");
+    HAND_OFF_ONLY_SCENES.contains(&start) && start == sig_scene
+}
+
 /// The reason `sig` is a known save-entry artifact, if it is one.
 fn entry_artifact(sig: &str) -> Option<&'static str> {
     SAVE_ENTRY_ARTIFACTS
@@ -74,7 +95,7 @@ pub(super) fn write_report(
             entry_artifact(sig).is_some()
                 && hits
                     .iter()
-                    .all(|&(oi, _)| r.outcomes[oi].spec.scene.contains('@'))
+                    .all(|&(oi, _)| artifact_run(sig, &r.outcomes[oi].spec.scene))
         });
 
     let frames_total: u64 = r.outcomes.iter().map(|o| o.stats.frames_run).sum();
@@ -150,7 +171,7 @@ pub(super) fn write_report(
         let why = entry_artifact(sig).unwrap_or("");
         let _ = writeln!(
             md,
-            "- known `@<save>` entry artifact (not a finding): `{}` x{} - {why}",
+            "- known entry artifact (not a finding): `{}` x{} - {why}",
             sig.replace('|', "/"),
             hits.len()
         );

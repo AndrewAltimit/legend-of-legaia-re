@@ -948,14 +948,18 @@ impl BattleDrive {
             return;
         };
         // The yaw counter's half-turn coin ([`ActionSteer::yaw`]): from the
-        // seat's seed pass to the capture's state.
+        // seed's Attack arm (`0x14`) to the capture's state. The seed pass
+        // `0x0C` itself stands the counter on the fixed `0x800` rung
+        // (`0x801E2CF8`), which is no coin; with the SM running one pass a
+        // battle frame that rung is live for a whole frame, and flipping it
+        // swung the seed's framing half a turn.
         {
             let pc = world.party.party_count.clamp(1, 3);
             let state = world.battle_ctx.action_state;
             if let Some(yaw) = steer.yaw
                 && world.mode == SceneMode::Battle
                 && world.battle_ctx.active_actor == engine_seat(seat, pc)
-                && (0x0C..=want).contains(&state)
+                && (0x14.min(want)..=want).contains(&state)
                 && let Some(cam) = world.battle.camera.as_mut()
             {
                 cam.align_action_yaw_half(i32::from(yaw));

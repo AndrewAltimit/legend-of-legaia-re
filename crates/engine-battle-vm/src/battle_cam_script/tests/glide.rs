@@ -352,3 +352,18 @@ fn the_far_framing_follows_the_formation_after_it_reopens() {
         "bbox centre of the re-opened pair"
     );
 }
+
+/// `sync_step_phase`: a tick that opens a battle frame steps the camera, the
+/// tick inside the frame does not.
+#[test]
+fn a_synced_camera_steps_on_the_tick_that_opens_a_battle_frame() {
+    let mut cam = BattleCamera::new(BattleCamPhase::Dialogue, 0);
+    cam.start_entry_sweep();
+    let c0 = cam.entry_sweep_counter();
+    cam.sync_step_phase(1);
+    cam.advance_to(1);
+    assert_eq!(cam.entry_sweep_counter(), c0, "mid-frame: no step");
+    cam.sync_step_phase(0);
+    cam.advance_to(2);
+    assert_ne!(cam.entry_sweep_counter(), c0, "frame opens: one step");
+}

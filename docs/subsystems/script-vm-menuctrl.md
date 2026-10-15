@@ -254,11 +254,19 @@ Typical uses:
 
 #### `4C 83`: rectangular tile fill
 
-Walks the inclusive rectangle `[col_start..=col_end] × [row_start..=row_end]`,
-calling `FUN_801D5630(col, row, ...)` per tile to resolve a tile-record
-pointer; on a hit it writes `tile[+0x3] = 0; tile[+0x2] = value`. The loop
-exits on `j 0x801e3624` with `addiu s8,s8,7` in its delay slot (`0x801E212C`)
-and writes nothing else.
+Walks the inclusive rectangle `[col_start..=col_end] × [row_start..=row_end]`
+(X inner, Z outer), calling `FUN_801D5630(2, col, row)` per tile - `li a0,0x2`
+in the delay slots at `0x801E20CC` / `0x801E2110`, so the lookup is the
+**kind-2 elevation-override** table, primary block then fallback. On a hit it
+writes `rec[+0x3] = 0; rec[+0x2] = value`: the record's whole-tile step becomes
+`value` and every sub-cell step clears
+([floor height](field-locomotion.md#floor-height-two-models)). A tile without a
+record is left alone. The loop exits on `j 0x801e3624` with `addiu s8,s8,7` in
+its delay slot (`0x801E212C`) and writes nothing else.
+
+The op is a moving floor. `vozz` and `rikuroa` pair it with a `4C 7x` wall
+paint over the same span, raising or dropping a stretch of floor and re-walling
+it in one beat. Port: `World::fill_elevation_rect`.
 
 #### `4C 84`: screen shake
 
@@ -358,11 +366,12 @@ On the disc:
 
 | Sub | Form | What it does |
 |---|---|---|
-| 0 | `[4C C0]` | Move-table cancel via `func_0x800204F8` (gated on whether a move is active). |
+| 0 | `[4C C0]` | [Clip-phase randomiser](#4c-c0-seats-the-clip-at-a-random-phase): with a move on `+0x5C`, bind it (`FUN_800204F8`) and seat the cursor at a random frame. |
 | 1 | `[4C C1]` | **Fog-region enable reset** - [below](#4c-c1-fog-region-enable-reset). PC += 2. |
 | 3 | `[4C C3]` | Script-table teleport + spawn-section re-run - [below](#4c-c3-script-table-teleport). |
 | 4 | `[4C C4 x z]` | Camera-zone query at an explicit tile: arm `0x801E2878`, `FUN_801DE3E0(x & 0x7F, z & 0x7F)`. Frames a shot from a region record the player is not standing in. |
 | 5 / 6 | `[4C C5\|C6 lo hi]` | Wait on system flag `lo hi` (`FUN_8003CE64`, the `0x7x` test): sub-5 holds until it is set (`0x801E2894` -> `0x801E2A10`), sub-6 until it is clear (`0x801E28B0` / `0x801E28C4`); then PC += 4. The shipped waits are on `0x0A`, `0x0B`, `0x556` and `0x557`, each flipped by a move-VM part the scene's stager table carries (`2F 1C` / `2F 1D`) - see [below](#the-system-flag-waits). |
+| 7 | `[4C C7 char art]` | **Teach a Hyper Art** (arm `0x801E28D4`): `FUN_800402F4(char + 0x0B, art, 0, 0)`, the applier's arts-book arm, inserting `art` into roster slot `char`'s displayed-skill list. PC += 4. Every carrier passes `char` 0..2 - the masters (`town0c`'s Tetsu behind a `4C 8D` test, `geremi`, `son`, `kor5`, ...). Port: `World::teach_hyper_art`. |
 | 9 | `[4C C9]` | PC += 2 unless `_DAT_8007BAB8 != _DAT_8007BA9C`, then halts. |
 | A / B / C | `[4C CN slot lo hi]` | Slot-table set / add / subtract - [below](#4c-ca--cb--cc-script-counters). |
 | D | `[4C CD]` | [Camera-glide wait](#4c-cd-waits-for-the-camera-glide). |
@@ -463,7 +472,29 @@ cleared first. All eight references to the pair are in the field overlay: the
 two `lh` reads in the clamp and the six stores of this arm.
 
 Only `uru` (PROT 0435) uses it: 46 coherent occurrences beside `0x45 C0`
-camera applies and `CamCfg` writes - one scene's hand-framed shots.
+camera applies and `CamCfg` writes - one scene's hand-framed shots. Its entry
+record `P1[0]` opens with `4C CF 00 00`, and the bridge regions of the same
+record's per-frame bounding-box chain pin the X focus on one tile column
+(`4C CF 6F 00`, `0B`, `51`) or release it; the cutscene records use the
+cross-context `CC F8 CF` form, whose `0xFF` byte snapshots the player's
+coordinate once. Nothing clears the pair on a scene change. The port keeps it
+on `CameraRig::script_focus`, which both `clamp_focus` callers read.
+
+#### `4C C0` seats the clip at a random phase
+
+The arm at `0x801E260C` is not a cancel. It reads the actor's move id
+`+0x5C`; when it is positive it calls the move-table consumer `FUN_800204F8`
+(which binds the clip that id names when it differs from the playing `+0x5E`,
+zeroing `+0x68`), draws one BIOS `rand()` (`FUN_80056798`), and stores
+`(rand() % frames) << 4` into the frame cursor `+0x68`, `frames` being the
+bound clip's halfword `+2` (`0x801E2624..0x801E2670`). PC += 2.
+
+Its shape on the disc is a `CC <t> 51 .. <move>` seat followed by
+`CC <t> C0`: `town0d`'s festival crowd issues the pair for 43 villagers, so
+each dancer starts its loop at its own frame rather than in lockstep. The port
+takes the draw at the op and seats it when the cue's clip binds
+(`World::randomize_npc_clip_phase`), since its clip binds when the cue drains
+rather than inside the op.
 
 ### 0x4C nibble 0xD0..0xDF - party state + inverted-Y mirror cluster
 
@@ -511,9 +542,12 @@ armed by `taiku` `P2[29]` at `+0x1533` with expiry flag `0x396`, below flag
 a zero duration. The stop does not clear the below flag, and flag `0x15` heads
 the encounter condition lists of `deroa` and `chitei2`
 ([`field-oddities.md`](../reference/glitches/field-oddities.md#no-encounters-in-jettes-absolute-fortress)).
-The scene loader takes `0x4B0` ticks off a running clock on every scene entry
-(`0x8003B62C..0x8003B648`), and a card load restores it to the full duration
-(`0x8003B96C..0x8003B98C`).
+MAIN INIT takes `0x4B0` ticks off a running clock on every warp return to the
+field - from a battle, a minigame or an FMV resume, the `_DAT_8007B8B8 == 2`
+arm (`0x8003B62C..0x8003B648`); a cold entry through a door pays nothing - and
+a card load restores it to the full duration (`0x8003B96C..0x8003B98C`). Port:
+`EscapeTimer::field_return_penalty`, called on the battle and minigame returns
+and on the FMV resume arm (`SceneHost::apply_pending_fmv_handoff`).
 
 ### 0x4C nibble-D sub-4 / sub-5 - VRAM STP-bit set/clear
 
@@ -633,7 +667,7 @@ stride, walking successive `vdf_idx` values.
 
 | Sub | Form | What it does |
 |---|---|---|
-| 0 | `[4C E0 b1]` | 3-way state write: `b1 == 0` sets `DAT_801F2744 = 1`, `b1 < 100` writes `DAT_801F2740 = b1`, `b1 >= 100` writes `picker[+0xE] = b1 - 100`. PC += 3 on every path (`0x801E306C` exits through the `0x801E00B8` `+3` entry). |
+| 0 | `[4C E0 b1]` | Reading-box format: `b1 == 0` raises the instant-page latch `DAT_801F2744` (the pager's next page load enters every line at once and waits, `0x801D8798..0x801D88C4`), `b1 < 100` sets the row capacity `DAT_801F2740` (the pager's resets store `3`), `b1 >= 100` writes `picker[+0xE] = b1 - 100`. PC += 3 on every path (`0x801E306C` exits through the `0x801E00B8` `+3` entry). `izumi`'s help pages issue `4C E0 00` / `4C E0 0C` before each page: twelve-row boxes, loaded whole. Port: `DialogState::window_rows` / `window_instant`, handed to the next box by `World::apply_dialog_window_format`. |
 | 1 | variable | **Text balloon spawn** - the field VM's most visible opcode, alongside [`crates/mes`](../formats/mes.md). PC = `pc + 3 + packet_length(operand+1)` ([`packet_length`](script-vm.md#helper-functions)). |
 | 2 | `[4C E2 lo hi _ _ _]` | **FMV trigger**: `(s16)bytecode[2..3]` -> `_DAT_8007BA78`, `_DAT_8007B83C = 0x1A` (next mode 26 `StrInit`); the trailing 3 bytes are reserved. See [`cutscene.md`](cutscene.md#field-vm-fmv-trigger-op). |
 | 3 | `[4C E3 actor]` | Position-copy teleport - [below](#4c-e3-position-copy-teleport). |
@@ -641,7 +675,7 @@ stride, walking successive `vdf_idx` values.
 | 5 | `[4C E5 lo mid hi]` | **Casino coin delta** - [below](#4c-e5-casino-coin-delta). |
 | 6 | 8 bytes | `FUN_801D8280`. |
 | 7 | 7 bytes | Camera animate: 24-bit LE target + 16-bit LE duration; `func_0x8003C5F0` tween, or an instant write when the duration is 0. |
-| 8 | 10 bytes | Camera zoom: four LE16 `zoom_x` / `zoom_y` / `zoom_z` / `mode`; `mode = 0` writes the camera struct's default zoom triplet `+0x4C/+0x4E/+0x50`, `mode = 1/2/3` per-mode actor flag writes. |
+| 8 | 10 bytes | The crawl roller's control op ([cutscene.md](cutscene.md#narration-playback---the-crawl-roller-fun_80037174)): `w3 = 0` seeds the geometry words `+0x4C/+0x4E/+0x50`, `1` pauses the live roller or writes its release count `+0x52`, `2` resumes it, `3` kills it. Port `FieldHostImpl::configure_crawl_roller`. |
 | 9 | `[4C E9]` | Clear `_DAT_8007B9C4`; PC += 2. |
 | A | `[4C EA]` | Call `func_0x8003C7EC`, then halt. |
 | B | `[4C EB actor lo hi]` | Guard - [below](#4c-eb-actor-guard). |
@@ -966,14 +1000,14 @@ scheduled actor; **the script never waits on it**.
 | 3 | `ctx[+0x24]` | Plain s16 write or ramp (`0x801E1234`). No jump. |
 | 4 | `ctx[+0x28]` | Plain s16 write or ramp (`0x801E126C`). No jump. |
 | 5 | `actor[+0x44].{0x9A,0x94,0x96,0x98}` | 11-byte instruction - [below](#4c-45-the-11-byte-form). |
-| 6 | `_DAT_8007B92C` | Gated by `_DAT_800845A8 == 0`; when set, the gate clears both 6 and 7. |
+| 6 | `_DAT_8007B92C` | Gated by `_DAT_800845A8 == 0`; when set, the gate clears both 6 and 7. Pad vibration: neither play host drives a controller motor, so the port takes no write. |
 | 7 | `_DAT_8007B930` | Sister of sub-6. |
 | 8 | `ctx[+0x26]` | Plain s16 write or ramp. The actor's drawn heading: nilboa's Delilas pair (`P1[4]` / `P1[5]`) stand at `0x300` from their spawn prologue's `4C 48 00 03 00 00`. Port: `FieldActorHost::set_actor_heading` and the sub-8 ramp into `World::npcs.heading_ramps`. |
 | 9 | `_DAT_801C6EA4 + 0x4A` *or* player-relative *or* delta-bank | Branched on two bits of `_DAT_1F800394` - see below. |
 | A | `_DAT_8007BCD0` | Plain global write or ramp. |
 | B | `_DAT_8007BCD4` | Sister of A. |
 | C | `_DAT_8007BCD8` | Sister of A. |
-| D | `_DAT_8007B910` | Value `(input * _DAT_8008457C) >> 12` - a fixed-point fraction of the configured **audio** level, so `0x1000` means 100% ([battle-action.md](battle-action.md#the-_dat_8007b910-ramps-are-an-audio-duck)). |
+| D | `_DAT_8007B910` | Value `(input * _DAT_8008457C) >> 12` - a fixed-point fraction of the configured **audio** level, so `0x1000` means 100% ([battle-action.md](battle-action.md#the-_dat_8007b910-ramps-are-an-audio-duck)). Port: the session's BGM duck (`World::take_field_audio_duck`, as a percentage), ramped one unit a frame rather than over `ticks`; the MAN load's reset restores it. |
 | E / F | - | No `case` arm: the inner `default:` prints `"SUB_40_ERROR"` and halts at PC. |
 
 **Sub-3 and sub-4 do not jump.** Each arm either calls `FUN_8003CE9C` and

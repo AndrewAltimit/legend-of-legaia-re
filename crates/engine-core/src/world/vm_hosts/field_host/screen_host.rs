@@ -5,6 +5,15 @@ use super::*;
 impl<'a> FieldScreenHost for FieldHostImpl<'a> {
     fn write_or_ramp_global_slot(&mut self, sub: u8, target: i32, ticks: u16) {
         let _ = ticks;
+        // Sub-D: the audio duck `_DAT_8007B910 = (value * _DAT_8008457C) >>
+        // 12`, a fraction of the configured level in `1/0x1000` - handed to
+        // the session's duck as a percentage. The director ramps it its own
+        // way (one retail unit a frame), not over the op's `ticks`.
+        if sub == 0xD {
+            let pct = (i64::from(target) * 100 / 0x1000).clamp(0, 255) as u8;
+            self.world.audio.field_duck_pct = Some(pct);
+            return;
+        }
         let Some(ctrl) = self.world.world_map.ctrl.as_mut() else {
             return;
         };
@@ -132,5 +141,32 @@ impl<'a> FieldScreenHost for FieldHostImpl<'a> {
     fn set_field_light(&mut self, slots: [i16; 3], packed: u32) {
         self.world.presentation.field_light =
             legaia_render_kernels::field_light::FieldLight::from_op_4c_8a(slots, packed);
+    }
+}
+
+#[cfg(test)]
+mod audio_duck_tests {
+    use crate::world::World;
+    use crate::world::vm_hosts::{FieldHostImpl, field_step_routed};
+    use legaia_engine_vm::field::FieldCtx;
+
+    /// `4C 4D 00 0C 00 00`: `_DAT_8007B910 = (0xC00 * level) >> 12`, three
+    /// quarters of the configured level, handed to the session as `75`%;
+    /// the MAN loader's reset brings it back to `100`.
+    #[test]
+    fn op_4c_4d_ducks_the_audio_and_a_scene_load_restores_it() {
+        let mut w = World::new();
+        let mut ctx = FieldCtx::default();
+        let mut host = FieldHostImpl { world: &mut w };
+        field_step_routed(
+            &mut host,
+            &mut ctx,
+            &[0x4C, 0x4D, 0x00, 0x0C, 0x00, 0x00],
+            0,
+        );
+        assert_eq!(w.take_field_audio_duck(), Some(75));
+        assert_eq!(w.take_field_audio_duck(), None);
+        w.man_load_actor_reset();
+        assert_eq!(w.take_field_audio_duck(), Some(100));
     }
 }

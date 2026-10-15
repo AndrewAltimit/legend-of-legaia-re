@@ -206,3 +206,45 @@ fn the_hop_record_outlives_the_frame_that_started_it() {
     );
     assert!(second.arc.cursor > first.arc.cursor, "and it advanced");
 }
+
+/// Set or clear the wall bit of the biased sub-cell `(xc, zc)` - the
+/// `FUN_801cfe4c` addressing `field_tile_is_wall` reads: tile
+/// `(xc / 2, zc / 2)`, quadrant bit `(zc & 1) << 1 | (xc & 1)` of the high
+/// nibble.
+fn set_wall(world: &mut World, xc: usize, zc: usize) {
+    let idx = (zc / 2) * GRID_STRIDE + xc / 2;
+    let quad = ((zc & 1) << 1) | (xc & 1);
+    world.terrain.collision_grid[idx] |= 0x10 << quad;
+}
+
+/// Retail tests no landing: `FUN_801d1878` checks the wall bits at `2s` and
+/// `3s` and the actor sweep there, and the arc writes its Bezier into the
+/// player with no collision. So a ledge whose landing sub-cell is open but
+/// walled in on every side still starts the hop, and the player is set down
+/// where no step is possible (`jouind`, `(2880, 2886)`). The landing guard
+/// (an enhancement, on by default) refuses that hop; pinned to retail, the
+/// hop flies.
+#[test]
+fn the_landing_guard_refuses_a_hop_into_a_walled_pocket() {
+    let boxed = |guard: bool| {
+        let mut world = ledge_world(-200);
+        world.locomotion.leading_edge_wall_probes = true;
+        world.toggles.hop_landing_guard = guard;
+        // From x = 300 the landing (300, 416) is biased sub-cell (4, 8) and
+        // each leading-edge probe reaches a neighbour; wall the ring around
+        // it, leaving the landing itself open.
+        world.actors[0].move_state.world_x = 300;
+        for zc in 6..=10 {
+            for xc in 2..=6 {
+                if (xc, zc) != (4, 8) {
+                    set_wall(&mut world, xc, zc);
+                }
+            }
+        }
+        assert!(!world.field_tile_is_wall(300, 416), "the landing is open");
+        world.locomotion.step_delta = (0, 8);
+        world.try_field_ledge_hop(0)
+    };
+    assert!(!boxed(true), "the guard refuses a landing no step leaves");
+    assert!(boxed(false), "retail hops regardless");
+}

@@ -632,7 +632,7 @@ These are sub-dispatchers - the operand byte selects a sub-command.
 |---|---|---|
 | 0 | `[34, op0, r, g, b, intensity_lo, intensity_hi]` (7 bytes) | Effect-global colour + intensity setup. Rewrites `_DAT_8007BCCC..BCE0` colour-mode globals. Fade pipeline gated on `_DAT_1F800394 & 0x800000`. |
 | 1 | `[34, 1x, r, g, b, ext_w: s16, ext_h: s16, lift: s16, 2 unread]` (13 bytes, 14 extended); a spawn also consumes a following `0x40` block | **Attached light** spawn - see [below](#0x34-sub-1-is-an-attached-light). |
-| 2 | 2 bytes (`[34, 2N]`); the byte after is peeked, not consumed | Actor-pool capture-and-yield. Walks list looking for entry whose `+0x90 == ctx`; if found AND the next byte is `0x40`, captures the forward PC and emits `caseD_4` (STATE_RESUME → Yield). That `0x40` is the `DATA_BLOCK` op carrying the captured payload, which the dispatcher skips on its own once the capture has yielded; the fall-through advance is `PC += 2` (`code_r0x801df098`). A decoder that consumed it as an operand landed inside the data block. |
+| 2 | 2 bytes (`[34, 2N]`); the byte after is peeked, not consumed | **Re-script the attached light** (`0x801E001C..0x801E0098`). Walks `_DAT_8007C354` for a light (handler `FUN_801E4470`) whose `+0x90` is the context's actor; when one is found and the next byte is a `0x40` block header, `+0x94` = the block body, `+0x9E` = `+0x9C` = `0`, and the PC steps past the block (`pc + 4 + len`). No yield: both arms leave through `0x801DF098` (`s8 += 2`); on a miss the block runs as op `0x40`, which skips itself. 465 clean sites in 43 scenes (`B4 F8 20` on the player's light most of all). Port `World::rescript_field_attached_light`. |
 | 3 | 4 bytes | Play 3D animation via `func_0x800252EC(operand1+1, ctx+0x14, ctx+0x24)`. Looks up an offset in the buffer at `_DAT_8007B8D0` (in the field that is the scene's `efect.dat` prescript window, `*(0x1F8003EC) + 0x12800`; the `bse.dat` battle bank is the *other* occupant of the same pointer - see [`bse-dat.md`](../formats/bse-dat.md)) using `*(u16*)(buf + 2 + idx*2)`, then spawns an actor via `FUN_80021B04(pos, ?, buf+ofs, 0x1000)`. Buffer layout matches the [ANM container shape](../formats/anm.md). |
 | 4..=15 | - | No `case` arm in `FUN_801de840`; falls through `if (bVar35 != 2) { if (bVar35 != 3) { return param_2; } }` - halts at PC. |
 
@@ -725,9 +725,9 @@ poke), and no `FUN_801E4470` actor sat in the lists.
 | Sub | Effect |
 |---|---|
 | 1 | Start field BGM - sets `_DAT_8007BAC8 = signed16(operand0, operand1)` and clears flag bit 1 (`0x801E0104`), then debug-prints `"Field BGM %d"`. The BGM-id-to-PROT mapping is asynchronous in `FUN_800243F0` (see [BGM lookup](#bgm-lookup-table)). |
-| 2 | Pause - sets flag bit 1, detaches the BGM slot (`func_0x800266E0(0x8007052C)`, arm `0x801E0150`). |
-| 3 | Sets flag bit 1 and stops the bound voice (`func_0x80026740`, arm `0x801E0174`) - by callee behaviour a harder pause, not the "Resume" its legacy label claims. |
-| 4 | Clears flag bit 1 and re-attaches the slot (`func_0x80026478`, arm `0x801E019C`) - by callee behaviour a resume, not the "Stop" its legacy label claims. |
+| 2 | **Stop** - sets flag bit 1 and hands slot `0x8007052C` to `FUN_800266E0` (arm `0x801E0138`, `jal` at `0x801E014C`): the notes are killed and the read cursor goes back to the sequence start. |
+| 3 | **Pause** - sets flag bit 1 and calls `FUN_80026740` (arm `0x801E015C`, `jal` at `0x801E0170`): the next calc keys the notes off and the cursor is left where it is. |
+| 4 | **Replay** - clears flag bit 1 (`li v1,-0x3; and` at `0x801E0190`) and calls `FUN_80026478` (arm `0x801E0180`, `jal` at `0x801E0198`), whose libsnd leaf resets the read cursor to the sequence start before raising the play flag. Not a mid-phrase resume: see [`audio.md` § the control words](audio.md#the-control-words-stop-pause-replay). |
 | 5 | **Arm the timed sound-source auto-release** for `signed16(operand0, operand1)` vsyncs: `func_0x800267A8(0, operand)` at `0x801E01B4`, whose tick half `FUN_800267FC` runs from the frame-begin driver. Not a volume set - the volume the arm applies is a *side effect* of the libsnd wrapper it tail-calls, and the operand is a deadline. Port: `engine-core::World::arm_sound_release`. |
 | 6 | Flag set. |
 | 7 | Target-sound-set (`_DAT_8007B880`). |
@@ -1274,13 +1274,39 @@ height, not the extremum.
 |---|---|---|
 | 2 | `[43, 2, a1, a2, a3, lo, hi, b6]` (8 bytes) | 3-actor talk via `FUN_801D2D38`. |
 | 3..6 | 10 bytes (`[43, sub, x_lo, z_lo, x_hi, z_hi, start:i16, end:i16]`) | **Camera-register zone ramp** into `_DAT_8007B610` (sub-6) / `B614` (sub-4) / `B60C` (sub-5) / `B618` (sub-3) - see below. |
-| 7 | 17 bytes | Face / body rotation setup. Writes a 12-byte struct at `&DAT_80087E68 + face_id * 12`, schedules a `func_0x8003C5F0` ramp. |
-| 8 | 2 bytes | Face / rotation reset: clears `+0x6D` and `+0x7A`. |
+| 7 | 17 bytes | Spin-and-shrink deformation - [below](#0x43-sub-7--8---the-spin-and-shrink-deformation). |
+| 8 | 2 bytes | Deformation reset: clears `+0x6D` and `+0x7A`. |
 | 9 | 10 bytes (`[43, 9, x, y, z, ticks]`) | Explicit position. `ticks == 0` writes immediately (skipping the `0xFFFF` sentinel); otherwise `FUN_801DE698` spawns a `0x801F2840` actor whose tick `FUN_801DD4C4` eases the target from its **live** position by `t^2/d^2`. Port `legaia_engine_field::field_actor_timers::EasedMove`. |
 | 0xC | 5 bytes `[43, 0C, close, hold, open]` | **Shutter blackout.** `FUN_801DE754` → `FUN_80020DE0(&DAT_801F2858, _DAT_8007C34C)`, whose tick `FUN_801DD784` emits two black quads whose height envelope closes / holds / opens over the three operands. At full envelope the two bars cover the whole 320x224 screen, so the beat is a shutter blackout rather than a letterbox crop. 31 sites land at real opcode boundaries disc-wide, in two flavours - see [`runtime-libs.md`](../reference/functions/runtime-libs.md#fun_801dd784---the-shutter-blackout). Port `legaia_engine_field::field_actor_timers::ShutterBars`. |
-| 0xD / 0xF | 6 bytes | Allocate actor via `FUN_801DE7BC` with mode (3 for 0xD, 0 for 0xF). |
-| 0xE | 2 bytes | Mark currently-iterating actor with flag bit 0x8 (`*(int *)(actor + 0x10) \|= 0x8`). |
+| 0xD / 0xF | 6 bytes `[43, 0D\|0F, w, r, g, b]` | **Screen frame.** `FUN_801DE7BC` spawns template `0x801F2870` (`+0x72 = w`, `+0xB8/BA/BC = r g b`, `+0x50` = OT entry `3` for 0xD, `0` for 0xF), whose tick `FUN_801DD9D4` draws eight opaque `POLY_F4`: a `w`-wide band round the screen with an 8-unit bevel at each inner corner. `town0c` issues `43 0D 11 64 64 64`, a 17-unit grey frame, behind a scene fade. Port `ScreenFxState::screen_frames`, drawn by `screen_prim::screen_frame_prims` on both hosts. |
+| 0xE | 2 bytes | Retire the first live screen frame: `FUN_8003CF04(_DAT_8007C34C, FUN_801DD9D4)` finds it by handler and `+0x10 \|= 8` kills it. |
 | 0x16+ | - | No `case` arm in the original `case 0x43` inner switch; falls through with `iVar45 = param_2` (the dispatcher-default initialiser at line 4511 of the dump) - halts at PC. |
+
+#### 0x43 sub-7 / 8 - the spin-and-shrink deformation
+
+`[43 07 id flags:u32 h0 h1 h2 h3 frames:s16]` (arm `0x801DF6F8`) writes row
+`id` of the table at `DAT_8007BE60` (12-byte stride: the four halfwords at
+`+0..+6`, `flags` at `+8`), stores `id` into the actor's `+0x6D`, and ramps
+`+0x7A` through `FUN_8003C5F0(+0x7A, 2, ..)`: `0 -> 0x1000` over `frames`, or
+`0x1000 -> 0` over `-frames` (`0x801DF75C..0x801DF79C`). `43 08`
+(`0x801DF7AC`) zeroes `+0x6D` and `+0x7A`.
+
+While `+0x7A` is non-zero the object draw (`FUN_8001B964` on the field,
+`FUN_80048A08` in battle) hands each object to `FUN_80029888` with
+`+0x7A | row[+8] << 16` instead of the plain dispatcher. That kernel offsets
+every vertex by the row's first three halfwords, rotates it by
+`RotMatrix(a, 0, a)` with `a = +0x7A << 4` (none under flag `0x10000`),
+scales it by `0x1000 - +0x7A` under flag `0x40000`, and moves the
+translation by `-M * off` - a spin about the point `-off` that shrinks to
+nothing as the ramp completes, the angle wrapping sixteen turns back to zero.
+`town0b`, `uru`, `rugi`, `noaru`, `nilboa` and a dozen more scenes run it; the
+shipped flag words are `1`, `4`, `5`, `6`, `7` and `0xC`.
+
+Port: `World::npcs.face_rows` / `faces` / `face_ramps`, folded into the one
+draw pose both hosts build an NPC's model from
+(`NpcDrawPose::with_face`: `M * F` as `X, Y, Z` Euler angles, the pivot in the
+position, the shrink in the scale). Placements only; a player target writes
+the row and draws undeformed.
 
 #### 0x43 sub-3..6 - the camera-register zone ramp
 
@@ -1330,7 +1356,7 @@ bounds-checks the sub-op (`< 0x16`) and jumps through the 22-entry JT at
 |---|---|---|---|
 | 0x10 | `[43, 0x10][x][y][w][h][tex_x][tex_y][clut_x][clut_y]` i16s + `rgb` u24 | `FUN_801F8004(operand+1)` - **sprite-widget spawn** (inline 19-byte record; the widget script at record `+0x13` is the `0x40` run *after* this op, which the VM steps over as data) | +21 |
 | 0x11 | `[43, 0x11][l][t][r][b][dur]` u16s | `FUN_801F8D4C(l,t,r,b,dur)` - **screen-mask (iris) rect tween** | +12 |
-| 0x12 | `[43, 0x12][src_x][src_y][w][h][dst_x][dst_y]` s16s | `FUN_800468A4(6, …)` (SCUS) - **GP0 `0x80` VRAM→VRAM rect copy** into OT slot 6 (packet builder `FUN_80057914`; `src_y += 0xF0` under the back-buffer flag `DAT_8007B74C`); **dual call** when `w > 0xFF` with offset shifts `(+0xF0, _, -0xE0, _, +0x100, _)` and a 0x100 clamp - the same >256-wide two-page split as the panel widget. No on-disc scene script uses it. | +14 |
+| 0x12 | `[43, 0x12][src_x][src_y][w][h][dst_x][dst_y]` s16s | `FUN_800468A4(6, …)` (SCUS) - **GP0 `0x80` VRAM→VRAM rect copy** into OT slot 6 (packet builder `FUN_80057914`; `src_y += 0xF0` under the back-buffer flag `DAT_8007B74C`); **dual call** when `w > 0xFF` with offset shifts `(+0xF0, _, -0xE0, _, +0x100, _)` and a 0x100 clamp - the same >256-wide two-page split as the panel widget. Nine ending scenes issue it, once before each `0x13` panel (below). | +14 |
 | 0x13 | `[43, 0x13][x][y][w][h][tex_x][tex_y]` i16s | `FUN_801F88FC(operand)` - **image-panel spawn** (record read from operand+1) | +14 |
 | 0x14 | `[43, 0x14][x][y][scale][dur]` s16s | `FUN_801F8E6C(x, y, scale, dur)` - **panel move/scale** (`scale` 4.12 fixed) | +10 |
 | 0x15 | `[43, 0x15][x_left][x_right][y0][y1][y2][y3]` i16s | `FUN_801F8F28(operand+1)` - **letterbox config** | +14 |
@@ -1353,9 +1379,11 @@ fullscreen photo panel (`0x13`, every retail record `[0,0,0x140,0xE0,
 0x200,0]` - the >0x100-wide two-page split is exercised by every use) →
 shrink-to-corner (`0x14`, scale `0x700`) → credit-name sprite strips
 (`0x10`, all 218 records CLUT row 475); `edlast` is the credits crawl and
-the only letterbox consumer. Sub-0x12 never appears in on-disc scene
-bytecode (which leaves its natural reading - staging the panel's source
-image - an inference).
+the only letterbox consumer. Sub-0x12 is not a widget op, so the 311 above
+leave it out; `asset field-op-census --only "43 12"` finds twelve clean
+sites over eleven MAN carriers - every ending vignette but `edlast` - each
+directly before a `0x13` panel with the same payload, so it is what stages
+the panel's source image (the grab described at the end of this section).
 
 Sub-0x12 detail (the only one with non-trivial logic):
 
@@ -1414,8 +1442,8 @@ Engine port: `legaia_engine_vm::vram_rect_copy` (`build_packet` /
 `enqueue` / `op43_sub12_calls`). The VM arm resolves the split and hands
 the host the one or two calls in emission order.
 
-The ten ending-vignette scenes (`edteien`, `edbylon`, `edbalden`,
-`edretoin`, `edkorout`, `edbubu`, ...) each issue
+Nine of the ten ending-vignette scenes (`edteien`, `edbylon`, `edbalden`,
+`edretoin`, `edkorout`, `edbubu`, ... - all but the `edlast` credits crawl) each issue
 `43 12 00 00 00 00 40 01 E0 00 00 02 00 00` just before the image panel
 `43 13` with the same payload: copy the frame the GPU has drawn (`(0, 0)`,
 `320 x 224`) to `(512, 0)`, which the panel then shows as the vignette's
@@ -1806,6 +1834,11 @@ the beat-state editor for that dungeon. Those three records are **not** the
 Caruban-beat writer, which is the post-victory record P2[50]: one `51 42`
 followed by the staged-marker clear `62 89` and ordinary choreography, no
 jump and no second arm.
+
+The named scenes are a floor, not a count. They are the menus whose labels
+name them; `dolk2`'s streaming carrier (`P1[1]`) and `dolk` `P1[26]` carry
+the same toggle, and over every carrier the classifier marks 2,500 flag sites
+in 74 scenes - many of them `P1[0]` entry records whose labels nobody has read.
 
 This is the second debug affordance in the flag bank - the first is the
 pad-driven flag editor resident in the field overlay

@@ -126,6 +126,26 @@ pub struct WorldToggles {
     /// position in the stream depends on it. Clearing it is a tooling knob
     /// (an A/B over the stream), not an enhancement.
     pub battle_pass_rand_draw: bool,
+    /// Run the battle action SM `FUN_801E295C` once a battle frame, retail's
+    /// cadence ([`crate::world::World::battle_sm_pass_due`]), instead of once
+    /// a vsync. The faithful model, staged off: the retail-compare drives,
+    /// phase gates and displayed-frame retakes were tuned against the
+    /// per-vsync SM and measure worse until they are re-tuned (see
+    /// `docs/subsystems/battle-stage-camera.md`, the frame step). Raised by
+    /// `LEGAIA_BATTLE_FRAME_CADENCE=1` in the environment, which child
+    /// processes inherit, so a whole corpus run can measure it.
+    pub battle_sm_frame_cadence: bool,
+    /// Ledge-hop landing guard (enhancement, **on** by default): refuse a
+    /// field ledge hop whose landing point the walk could not leave in any
+    /// direction. Retail does not test the landing - the classifier
+    /// `FUN_801d1878` checks only the wall bits at `2s` and `3s` and the
+    /// actor sweep there, and the arc (`FUN_801d2404` / `FUN_801d5c08`)
+    /// writes the Bezier into the player with no collision - so a diagonal
+    /// step-up hop can set the player in the corner of a raised pocket whose
+    /// walls the leading-edge probes then refuse on all four sides (`jouind`
+    /// at `(2880, 2886)`), with no step left to start another hop. Off is
+    /// retail's unguarded hop.
+    pub hop_landing_guard: bool,
 }
 
 impl WorldToggles {
@@ -145,6 +165,9 @@ impl WorldToggles {
             field_hp_display: legaia_engine_menus::option_values::HpDisplayOpt::Immediate,
             overworld_marker_overlay: false,
             battle_pass_rand_draw: true,
+            battle_sm_frame_cadence: std::env::var_os("LEGAIA_BATTLE_FRAME_CADENCE")
+                .is_some_and(|v| v != "0"),
+            hop_landing_guard: true,
         }
     }
 }
@@ -169,6 +192,7 @@ impl WorldToggles {
         self.use_damage_finish = true;
         self.overworld_marker_overlay = false;
         self.battle_pass_rand_draw = true;
+        self.hop_landing_guard = false;
     }
 
     /// The fidelity toggles currently off their retail value, by field name.
@@ -199,6 +223,9 @@ impl WorldToggles {
         if !self.battle_pass_rand_draw {
             out.push("battle_pass_rand_draw");
         }
+        if self.hop_landing_guard {
+            out.push("hop_landing_guard");
+        }
         out
     }
 }
@@ -216,10 +243,14 @@ mod fidelity_tests {
     #[test]
     fn pinned_toggles_report_no_deviation() {
         let mut t = WorldToggles::new();
-        // The bare default keeps two safety / enhancement toggles on.
+        // The bare default keeps three safety / enhancement toggles on.
         assert_eq!(
             t.retail_deviations(),
-            ["entry_pulse_enabled", "reduce_flashing"]
+            [
+                "entry_pulse_enabled",
+                "reduce_flashing",
+                "hop_landing_guard"
+            ]
         );
         t.pin_retail();
         assert!(t.retail_deviations().is_empty());
@@ -234,7 +265,7 @@ mod fidelity_tests {
         t.use_damage_finish = false;
         t.overworld_marker_overlay = true;
         t.battle_pass_rand_draw = false;
-        assert_eq!(t.retail_deviations().len(), 8);
+        assert_eq!(t.retail_deviations().len(), 9);
         t.pin_retail();
         assert!(t.retail_deviations().is_empty());
     }

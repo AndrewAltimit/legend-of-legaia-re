@@ -2,8 +2,6 @@
 //! reversed-Z projection fold and clear value, and the shadow-map
 //! resolution and compare bias.
 
-use super::*;
-
 pub(super) const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
 
 /// Shadow-map resolution per light (square). One layer of the depth array

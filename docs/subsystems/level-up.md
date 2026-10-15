@@ -132,13 +132,15 @@ Per stat per level (disassembly `0x801E9758..0x801E97F8`):
 ```
 jitter_val = rand() % (2*jitter + 1)                  ; BIOS A(0x2F) rand, 0..2*jitter
 byte       = curve[row][level - 1]                    ; 0x62-stride row index
-gain       = (max - start) * byte / 0x24C0            ; the 0x6F74AE27 >> (32+12) magic divide
+gain       = (max - start) * byte / D                 ; D = 0x24C0, or 0x18C0 for AGL (below)
 gain       = gain + jitter_val - jitter               ; recenter jitter to [-jitter, +jitter]
 gain       = max(1, gain)                             ; +1 floor
 record[stat] += gain                                  ; then caps: HP ≤ 9999, MP ≤ 999, SP ≤ 0x118, others ≤ 999
 ```
 
-The divisor `0x24C0` is the curve normalizer. Because each curve sums to exactly `0x24C0`, the term `(max − start) × byte / Σcurve` accumulates to `(max − start)` across all 98 levels, so a stat lands on its `max` at level 99 (before jitter).
+The divisor `0x24C0` is the curve normalizer. Because each curve sums to exactly `0x24C0`, the term `(max − start) × byte / Σcurve` accumulates to `(max − start)` across all 98 levels, so a stat lands on its `max` at level 99 (before jitter). HP, MP and five of the six battle stats divide by it: the `0x6F74AE27` magic is loaded once into `s3` (`0x801E97CC`) and each of them multiplies by `s3` and shifts the high word right 12.
+
+**AGL divides by `0x18C0`.** Its block (`0x801E98C8..0x801E9980`) loads its own magic, `0xA57EB503` at `0x801E993C`, adds the dividend back to the high word (`addu v0,t0,v1` at `0x801E994C`) and shifts right 12: integer division by `0x18C0` (= 6336) for every product the span and a curve byte make. So AGL accumulates about one and a half times its `(max − start)` span by level 99 and is held at the `0x118` cap long before. Three retail anchors of one playthrough read Vahn's AGL record (`+0x122`) at 115 / 130 / 145 at levels 6 / 11 / 16, which the `0x18C0` core reproduces exactly and the `0x24C0` one misses by 5 / 10 / 15. `GrowthTables::char_params` gives each stat its divisor (`StatGrowthParam::divisor`).
 
 **Validation.** The `noa_levelup_field_pre` / `noa_levelup_field_post` library saves (Noa, growth slot 1, L2 → L3; the `noa_levelup_*` scenarios in `scripts/scenarios.toml`) give byte-exact single-level deltas: HP +39, MP +5, and the six record stats +2 / +4 / +4 / +3 / +4 / +3. Leveling from L2 reads `curve[row][1]`, and all 8 deltas land within `[core − jitter, core + jitter]` (for example HP core `(4500 − 150) × 82 / 9408 = 37`, observed +39, jitter half-range 4). Decoded and checked in `legaia_game_tables::level_up_tables` (`GrowthTables::char_params` / `level_gain_core`) by the disc-gated `crates/game-tables/tests/level_up_tables_real.rs`, which also pins the first correction divisors.
 

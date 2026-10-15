@@ -249,25 +249,8 @@ fn sample_engine_frame(session: &NativeSession) -> ModeTraceFrame {
         frame: session.frames,
         game_mode: game_mode.map(|gm| gm.as_index() as u8),
         game_mode_name: game_mode.map(|gm| game_mode_label(gm).to_string()),
-        scene_mode: scene_mode_name(session.host.world.mode).to_string(),
+        scene_mode: session.host.world.mode.name().to_string(),
         active_scene: session.host.scene.as_ref().map(|s| s.name.clone()),
-    }
-}
-
-fn scene_mode_name(m: legaia_engine_mode::mode::SceneMode) -> &'static str {
-    use legaia_engine_mode::mode::SceneMode;
-    match m {
-        SceneMode::Title => "Title",
-        SceneMode::Field => "Field",
-        SceneMode::Battle => "Battle",
-        SceneMode::Cutscene => "Cutscene",
-        SceneMode::WorldMap => "WorldMap",
-        SceneMode::Dance => "Dance",
-        SceneMode::Fishing => "Fishing",
-        SceneMode::SlotMachine => "SlotMachine",
-        SceneMode::BakaFighter => "BakaFighter",
-        SceneMode::MuscleDome => "MuscleDome",
-        SceneMode::Menu => "Menu",
     }
 }
 
@@ -315,7 +298,7 @@ pub fn mode_trace_frame_from_ram(ram: &[u8]) -> ModeTraceFrame {
     let resolved = game_mode.and_then(|b| GameMode::from_index(b as usize));
     let game_mode_name = resolved.map(|gm| game_mode_label(gm).to_string());
     let scene_mode = resolved
-        .map(|gm| scene_mode_name(gm.scene_mode_with_warp(warp_sub_id)).to_string())
+        .map(|gm| gm.scene_mode_with_warp(warp_sub_id).name().to_string())
         .unwrap_or_else(|| "Unknown".to_string());
     let active_scene = read_pool_slot_name(ram, 0);
     ModeTraceFrame {

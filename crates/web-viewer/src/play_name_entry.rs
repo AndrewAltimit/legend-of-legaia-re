@@ -93,31 +93,6 @@ impl LegaiaRuntime {
             .is_some_and(|h| h.world.name_entry_active())
     }
 
-    /// The naming prompt's claim on this **sim tick** - the native window's
-    /// per-tick arm, through the same session step
-    /// (`BootSession::step_name_entry_frame`: the edge into the entry SM,
-    /// then one frame under the prompt with the camera's half). `0` = no
-    /// prompt, the field runs; `1` = the prompt took the tick; `2` = it took
-    /// the tick and the name committed (the page reports the name).
-    ///
-    /// The page used to route one edge per **display** frame and pass the
-    /// frame's sim steps separately, so on a display faster than 60 Hz an
-    /// edge landed on a frame that ran no tick and stepped the prompt a frame
-    /// ahead of the window.
-    pub fn play_name_entry_tick(&mut self, edge: u16) -> u8 {
-        let Some(session) = self.scene_host.session_mut() else {
-            return 0;
-        };
-        if !session.step_name_entry_frame(edge) {
-            return 0;
-        }
-        if session.host.world.name_entry_active() {
-            1
-        } else {
-            2
-        }
-    }
-
     /// Step the overlay one frame from an edge-triggered PSX pad word (same
     /// bit layout as [`Self::set_pad`]). Cross confirms the cell under the
     /// cursor (or the Yes/No row); Triangle is the backspace shortcut while
@@ -141,21 +116,6 @@ impl LegaiaRuntime {
             return false;
         }
         h.world.step_name_entry(NameEntryInput::from_pad_edge(edge))
-    }
-
-    /// Advance the world frame counter `steps` sim ticks while the overlay is
-    /// up - the caret blink's clock, and the only thing running under a
-    /// modal overlay that freezes the field tick. The page hands it this
-    /// display frame's fixed-timestep step count, which is exactly what the
-    /// native window's catch-up ticks spend on the same counter.
-    pub fn name_entry_advance_frames(&mut self, steps: u32) {
-        // The display frames pass under the prompt too (retail's frame loop
-        // keeps stepping the camera mover around it), and the camera's half
-        // runs once per step - the session's kernel, the one the native
-        // window's per-tick arm runs through `step_name_entry_frame`.
-        if let Some(session) = self.scene_host.session_mut() {
-            session.pass_name_entry_frames(steps.min(64));
-        }
     }
 
     /// Live overlay state for the page's status line (and headless checks):

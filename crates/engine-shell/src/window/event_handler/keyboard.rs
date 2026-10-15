@@ -45,7 +45,7 @@ impl PlayWindowApp {
     /// dispatch: an arm returns before the pad lookup, so a window arm
     /// sitting on a bound key deletes that button from the keyboard (see
     /// `keycode_to_name`).
-    pub(super) fn handle_key(&mut self, code: KeyCode, state: ElementState) {
+    pub(in crate::window) fn handle_key(&mut self, code: KeyCode, state: ElementState) {
         self.latch_key_name(code, state);
         if self.debug_spawn_key(code, state)
             || self.minigame_key(code, state)

@@ -1,0 +1,370 @@
+//! The overworld's entity and player **markers**, as screen-space quads.
+//!
+//! Not retail. Retail binds each world-map placement to its own actor model;
+//! that per-entity mesh resolution is still open (see
+//! `docs/subsystems/world-map.md`, "Rendering the placed entities"), so the
+//! port can draw a kind-coded upright marker at each placement instead - a
+//! post, a base cross, and for the player a facing tick. This module is the
+//! whole marker: which segments exist, their colours and sizes, and where
+//! each one lands on the 320x240 display.
+//!
+//! It emits **quads** rather than lines because the browser play page has no
+//! line primitive - its screen-space surface is the shared `screen_prim`
+//! pass, which both hosts already run. Each segment becomes one quad (two
+//! triangles) one display pixel wide, so the two hosts draw the same marker
+//! set through the same pass, and the native window's line pipeline is no
+//! longer needed for it.
+//!
+//! The projection is the frame's own: [`crate::camera_frame::frame_vp`] at the
+//! display's 4:3 aspect, composed with the one world flip that takes the raw
+//! retail Y-down marker position into that matrix's Y-up render frame.
+//!
+//! # Occlusion
+//!
+//! Retail's placements are actor models, sorted into the ordering table with
+//! the terrain, so a portal behind a mountain is hidden by it. A screen-space
+//! quad has no such order, so under the walk camera each quad carries its
+//! corners' **scene depth** through the same matrix
+//! ([`MarkerQuad::depth`]), and both hosts depth-test it against the terrain
+//! they already drew (`legaia_render_kernels::screen_prim::FLAG_DEPTH_TESTED`).
+//! The depth is taken [`DEPTH_PULL`] units nearer the eye than the segment
+//! itself, so a base cross lying on the ground does not z-fight the ground it
+//! lies on. The top-view debug camera has no retail eye and keeps drawing
+//! the markers over everything.
+
+use crate::world_map_entity_config::WorldMapEntityConfig;
+
+/// Coarse role of a placed overworld entity, carried on
+/// [`WorldMapEntityMarker`] so a host can colour-code its render marker
+/// without inspecting the full [`WorldMapEntityConfig`] (which carries
+/// per-kind payload the renderer doesn't need).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WorldMapEntityKind {
+    /// A roaming-encounter zone ([`WorldMapEntityConfig::EncounterZone`]).
+    EncounterZone,
+    /// A walk-onto destination marker: either a town / dungeon entrance
+    /// ([`WorldMapEntityConfig::OverworldPortal`]) or a minigame door
+    /// ([`WorldMapEntityConfig::MinigameDoor`]). The two differ in where they
+    /// lead, not in how the marker draws, so they share one render kind.
+    Portal,
+    /// A plain interactable NPC / signpost ([`WorldMapEntityConfig::Npc`]),
+    /// also the fallback for an entity with no config row.
+    Npc,
+}
+
+impl WorldMapEntityKind {
+    /// The render kind of an entity with config `cfg`. Both walk-onto
+    /// shapes draw the same marker; where they lead differs (a CDNAME scene
+    /// vs a mode-24 overlay), and that is a drain-side distinction, not a
+    /// render one. An NPC config or no config at all (a plain interaction)
+    /// both render as the NPC marker.
+    pub fn of_config(cfg: Option<&WorldMapEntityConfig>) -> Self {
+        match cfg {
+            Some(WorldMapEntityConfig::EncounterZone { .. }) => Self::EncounterZone,
+            Some(WorldMapEntityConfig::MinigameDoor { .. })
+            | Some(WorldMapEntityConfig::OverworldPortal { .. }) => Self::Portal,
+            Some(WorldMapEntityConfig::Npc { .. }) | None => Self::Npc,
+        }
+    }
+}
+
+/// Render-agnostic snapshot of one placed overworld entity, produced by
+/// `World::world_map_entity_markers`. The disc-sourced placement seeding
+/// (`SceneHost::enter_world_map_scene`) installs each entity
+/// with a world position and a [`WorldMapEntityConfig`]; this pairs the
+/// position with its coarse [`WorldMapEntityKind`] so a host can draw a marker
+/// at each on-map portal / NPC / encounter zone.
+///
+/// This is the seam for the still-open per-entity mesh-resolution thread: the
+/// retail engine binds each placement to its own actor model, which is not yet
+/// decoded, so the host draws a kind-coded marker at the position rather than
+/// the entity's real mesh. The position shares the player's coordinate frame
+/// (both come from the scene MAN), so a marker reads correctly relative to the
+/// player even while the kingdom terrain mesh renders at its own pack-local
+/// coordinates.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct WorldMapEntityMarker {
+    /// Entity world position in world units. `x` / `z` are the MAN placement
+    /// coordinates; `y` is the player actor's current plane (the entities are
+    /// 2D placements, so they sit on the player's walking plane).
+    pub world_pos: [f32; 3],
+    /// Coarse role, for colour-coding the marker.
+    pub kind: WorldMapEntityKind,
+}
+
+/// Render-agnostic snapshot of the player's overworld position, produced by
+/// `World::world_map_player_marker`. In `SceneMode::WorldMap` the kingdom
+/// terrain mesh renders at its pack-local coordinates and the player actor's
+/// own mesh is not drawn, so a host draws a marker at this position to show the
+/// player on the map. `facing` is the player's heading (`render_26`), so the
+/// host can draw a direction tick.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct WorldMapPlayerMarker {
+    /// Player world position in world units (the player actor's
+    /// `move_state.world_x / y / z`).
+    pub world_pos: [f32; 3],
+    /// Player heading as a PSX 12-bit angle (`4096` = full turn), measured the
+    /// same way the field path stores it (`render_26`). `0` faces `+Z`.
+    pub facing: i16,
+}
+
+/// PSX display width the quads are authored in.
+pub const DISPLAY_W: f32 = 320.0;
+
+/// PSX display height the quads are authored in.
+pub const DISPLAY_H: f32 = 240.0;
+
+/// A segment's on-screen width, in display pixels.
+pub const SEGMENT_WIDTH: f32 = 1.0;
+
+/// Clip-space `w` below which an endpoint counts as behind the lens; a
+/// segment with such an endpoint is dropped rather than wrapped through the
+/// projection's pole.
+pub const MIN_CLIP_W: f32 = 1.0;
+
+/// Endpoints further than this from the display (in display pixels) are
+/// off-screen for any purpose, and are dropped before the `i16` store.
+pub const OFFSCREEN_LIMIT: f32 = 4096.0;
+
+/// How far toward the eye (world units) a marker's depth is sampled, so the
+/// base cross on the ground wins the depth test against that ground while a
+/// ridge any real distance in front still hides the marker. A tenth of a
+/// 128-unit map tile.
+pub const DEPTH_PULL: f32 = 12.0;
+
+/// One marker segment in raw retail Y-down world coordinates.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct MarkerSegment {
+    pub a: [f32; 3],
+    pub b: [f32; 3],
+    pub rgba: [u8; 4],
+}
+
+/// One projected segment: four display-pixel corners in the `v0..v3` order
+/// every `screen_prim` quad uses (`a+n`, `b+n`, `a-n`, `b-n`).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct MarkerQuad {
+    pub xy: [(i16, i16); 4],
+    pub rgba: [u8; 4],
+    /// Per-corner scene depth in the frame matrix's normalised depth
+    /// (`clip.z / clip.w`), same corner order as [`Self::xy`]; `None` when
+    /// the frame has no eye to depth-test from (the top-view debug camera).
+    pub depth: Option<[f32; 4]>,
+}
+
+/// Colour key per entity kind: portals cyan, NPCs green, encounter zones red.
+pub fn entity_color(kind: WorldMapEntityKind) -> [u8; 4] {
+    match kind {
+        WorldMapEntityKind::Portal => [0, 200, 255, 255],
+        WorldMapEntityKind::Npc => [80, 220, 80, 255],
+        WorldMapEntityKind::EncounterZone => [230, 80, 40, 255],
+    }
+}
+
+/// The player marker's colour (white-yellow, so it reads above the kinds).
+pub const PLAYER_COLOR: [u8; 4] = [255, 230, 60, 255];
+
+/// Marker sizes in world units. Fixed rather than scaled off the scene box:
+/// a kingdom's box spans tens of thousands of units and the walk camera
+/// composes a 6x world scale, so a box-relative post towered over the frame.
+/// Half a 128-unit map tile reads at the walk view; under the top view a
+/// marker shrinks to the one-pixel floor [`segment_quad`] keeps.
+pub const ENTITY_POST_H: f32 = 64.0;
+
+/// Half-length of an entity marker's base cross arms.
+pub const ENTITY_ARM: f32 = 24.0;
+
+/// The player's post (taller, so it reads above the entity kinds).
+pub const PLAYER_POST_H: f32 = 96.0;
+
+/// Half-length of the player marker's base cross arms.
+pub const PLAYER_ARM: f32 = 28.0;
+
+/// Length of the player's facing tick.
+pub const PLAYER_TICK: f32 = 56.0;
+
+/// An entity marker's three segments: a vertical post (up = world `-Y`) and a
+/// base cross along X and Z.
+pub fn entity_segments(m: &WorldMapEntityMarker) -> [MarkerSegment; 3] {
+    let (post_h, arm) = (ENTITY_POST_H, ENTITY_ARM);
+    let [x, y, z] = m.world_pos;
+    let rgba = entity_color(m.kind);
+    [
+        MarkerSegment {
+            a: [x, y, z],
+            b: [x, y - post_h, z],
+            rgba,
+        },
+        MarkerSegment {
+            a: [x - arm, y, z],
+            b: [x + arm, y, z],
+            rgba,
+        },
+        MarkerSegment {
+            a: [x, y, z - arm],
+            b: [x, y, z + arm],
+            rgba,
+        },
+    ]
+}
+
+/// The player marker's four segments: a taller post, the base cross, and a
+/// facing tick along the heading (PSX 12-bit angle, `0` = `+Z`, a quarter
+/// turn = `+X`).
+pub fn player_segments(p: &WorldMapPlayerMarker) -> [MarkerSegment; 4] {
+    let (post_h, arm, tick) = (PLAYER_POST_H, PLAYER_ARM, PLAYER_TICK);
+    let [x, y, z] = p.world_pos;
+    let angle = (p.facing as f32) / 4096.0 * std::f32::consts::TAU;
+    let (sin, cos) = angle.sin_cos();
+    let rgba = PLAYER_COLOR;
+    [
+        MarkerSegment {
+            a: [x, y, z],
+            b: [x, y - post_h, z],
+            rgba,
+        },
+        MarkerSegment {
+            a: [x - arm, y, z],
+            b: [x + arm, y, z],
+            rgba,
+        },
+        MarkerSegment {
+            a: [x, y, z - arm],
+            b: [x, y, z + arm],
+            rgba,
+        },
+        MarkerSegment {
+            a: [x, y, z],
+            b: [x + sin * tick, y, z + cos * tick],
+            rgba,
+        },
+    ]
+}
+
+/// Project raw Y-down world points through a Y-up `vp` onto the display,
+/// bent down by the overworld curvature at `curve` (the frame's
+/// `clip.w`-to-`SZ` factor, [`legaia_engine_field::camera_frame::frame_curve_scale`];
+/// `0` is flat) plus the table's build offset `bias`
+/// ([`crate::world::World::overworld_curve_bias`]) - the bend the hosts'
+/// mesh shaders give the continent the marker stands on. `None` behind the
+/// lens or absurdly far off-screen.
+fn project(vp: &[f32; 16], p: [f32; 3], curve: (f32, i16)) -> Option<[f32; 2]> {
+    // WORLD_FLIP: the raw retail Y-down point in the matrix's Y-up frame.
+    let v = [p[0], -p[1], p[2], 1.0];
+    let row = |r: usize| (0..4).map(|c| vp[c * 4 + r] * v[c]).sum::<f32>();
+    let (cx, cy, cw) = (row(0), row(1), row(3));
+    if cw < MIN_CLIP_W {
+        return None;
+    }
+    let sx = (cx / cw + 1.0) * 0.5 * DISPLAY_W;
+    let sy = (1.0 - cy / cw) * 0.5 * DISPLAY_H
+        + legaia_render_kernels::overworld_curvature::clip_bend_rows(cw, curve.0, curve.1);
+    (sx.abs() < OFFSCREEN_LIMIT && sy.abs() < OFFSCREEN_LIMIT).then_some([sx, sy])
+}
+
+/// A raw Y-down world point's normalised depth through `vp`, sampled
+/// [`DEPTH_PULL`] units toward `eye`.
+pub fn depth_toward(vp: &[f32; 16], p: [f32; 3], eye: [f32; 3]) -> Option<f32> {
+    let d = [eye[0] - p[0], eye[1] - p[1], eye[2] - p[2]];
+    let len = (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt();
+    let t = if len > DEPTH_PULL {
+        DEPTH_PULL / len
+    } else {
+        0.0
+    };
+    let q = [p[0] + d[0] * t, p[1] + d[1] * t, p[2] + d[2] * t];
+    let v = [q[0], -q[1], q[2], 1.0];
+    let row = |r: usize| (0..4).map(|c| vp[c * 4 + r] * v[c]).sum::<f32>();
+    let w = row(3);
+    (w >= MIN_CLIP_W).then(|| row(2) / w)
+}
+
+/// One segment as a display quad [`SEGMENT_WIDTH`] wide. A segment shorter
+/// than that on screen still gets a square of that width, so a post seen
+/// end-on stays visible. No depth - see [`segment_quad_depth`].
+pub fn segment_quad(vp: &[f32; 16], s: &MarkerSegment) -> Option<MarkerQuad> {
+    segment_quad_depth(vp, s, None, (0.0, 0))
+}
+
+/// [`segment_quad`] with the corners' scene depth, sampled toward `eye` (the
+/// frame's raw Y-down world eye, [`camera_frame::frame_eye`]); `eye = None`
+/// leaves the quad depth-free. `curve` is the overworld bend's scale (see
+/// [`project`]).
+pub fn segment_quad_depth(
+    vp: &[f32; 16],
+    s: &MarkerSegment,
+    eye: Option<[f32; 3]>,
+    curve: (f32, i16),
+) -> Option<MarkerQuad> {
+    let a = project(vp, s.a, curve)?;
+    let mut b = project(vp, s.b, curve)?;
+    let depth = match eye {
+        Some(e) => {
+            let (da, db) = (depth_toward(vp, s.a, e)?, depth_toward(vp, s.b, e)?);
+            Some([da, db, da, db])
+        }
+        None => None,
+    };
+    let half = SEGMENT_WIDTH * 0.5;
+    let (mut dx, mut dy) = (b[0] - a[0], b[1] - a[1]);
+    let mut len = (dx * dx + dy * dy).sqrt();
+    if len < SEGMENT_WIDTH {
+        // End-on (a post under the top view): a square the segment's width.
+        b = [a[0] + SEGMENT_WIDTH, a[1]];
+        (dx, dy, len) = (SEGMENT_WIDTH, 0.0, SEGMENT_WIDTH);
+    }
+    let (nx, ny) = (-dy / len * half, dx / len * half);
+    let pt = |x: f32, y: f32| (x.round() as i16, y.round() as i16);
+    Some(MarkerQuad {
+        xy: [
+            pt(a[0] + nx, a[1] + ny),
+            pt(b[0] + nx, b[1] + ny),
+            pt(a[0] - nx, a[1] - ny),
+            pt(b[0] - nx, b[1] - ny),
+        ],
+        rgba: s.rgba,
+        depth,
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn segment_quad_is_one_pixel_wide_across_the_segment() {
+        // Identity-ish vp: clip = (x, -y, z, 1) after the flip, so display
+        // x = (x + 1) * 160 and y = (1 - (-y)) * 120 ... use a unit matrix.
+        let mut vp = [0.0f32; 16];
+        vp[0] = 1.0;
+        vp[5] = 1.0;
+        vp[10] = 1.0;
+        vp[15] = 1.0;
+        let s = MarkerSegment {
+            a: [-0.5, 0.0, 0.0],
+            b: [0.5, 0.0, 0.0],
+            rgba: [1, 2, 3, 4],
+        };
+        let q = segment_quad(&vp, &s).unwrap();
+        // Horizontal segment from x=80 to x=240 at y=120; half-width 0.5.
+        assert_eq!(q.xy[0].0, 80);
+        assert_eq!(q.xy[1].0, 240);
+        assert!((q.xy[0].1 - q.xy[2].1).abs() <= 1);
+    }
+
+    #[test]
+    fn behind_the_lens_is_dropped() {
+        let mut vp = [0.0f32; 16];
+        vp[0] = 1.0;
+        vp[5] = 1.0;
+        vp[10] = 1.0;
+        // w = z
+        vp[11] = 1.0;
+        let s = MarkerSegment {
+            a: [0.0, 0.0, -5.0],
+            b: [0.0, 0.0, 5.0],
+            rgba: [0; 4],
+        };
+        assert!(segment_quad(&vp, &s).is_none());
+    }
+}

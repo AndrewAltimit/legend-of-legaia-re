@@ -147,7 +147,7 @@ impl PlayWindowApp {
     /// The engine-core battle-item-window projection (shared with the
     /// browser play page - `World::battle_item_menu_model` owns the gating
     /// and text resolution; this window only borrows it into the builder's
-    /// frame via [`with_battle_item_frame`]).
+    /// frame via [`legaia_engine_screens::with_battle_item_frame`]).
     pub(in crate::window) fn battle_item_menu_model(
         &self,
     ) -> Option<legaia_engine_menus::inventory_use::BattleItemMenuModel> {
@@ -172,25 +172,10 @@ impl PlayWindowApp {
             && !self.session.host.world.minigames.muscle_hub.covers_leg()
     }
 
+    /// The command menu's chips this frame (the shared projection,
+    /// `legaia_engine_screens::battle_command`).
     pub(in crate::window) fn battle_command_menu_chips(&self) -> Option<CommandChips> {
-        use legaia_engine_core::battle_hud::battle_command_chips;
-        use legaia_engine_menus::battle_input::CommandChipPhase;
-        use legaia_engine_ui::battle_command_ui::ChipPhase;
-        let chips = battle_command_chips(&self.session.host.world)?;
-        // The two enums are separate types because `engine-ui` is a leaf
-        // that does not link `engine-core`; the browser page carries the
-        // same four-line map.
-        let phase = match chips.phase {
-            CommandChipPhase::RoundPrompt => ChipPhase::RoundPrompt,
-            CommandChipPhase::CommandRing => ChipPhase::CommandRing,
-            CommandChipPhase::AttackMode => ChipPhase::AttackMode,
-            CommandChipPhase::CommitConfirm => ChipPhase::CommitConfirm,
-        };
-        let highlight = legaia_engine_core::battle_hud::battle_chip_highlight(
-            &self.session.host.world,
-            chips.cursor,
-        );
-        Some((chips.chips, highlight, phase))
+        legaia_engine_screens::battle_command::battle_command_menu_chips(&self.session.host.world)
     }
 
     /// The battle HUD's chrome sprites (strip + plaque lozenges, gold `HP` /
@@ -241,15 +226,18 @@ impl PlayWindowApp {
         // atlas slot as the rest of the menu chrome.
         if let Some(model) = self.battle_item_menu_model() {
             let (origin, scale) = self.save_select_stage(surface_w, surface_h);
-            out.extend(with_battle_item_frame(&model, |frame| {
-                legaia_engine_ui::battle_item_ui::battle_item_window_sprites(
-                    &self.font,
-                    &assets.rects,
-                    frame,
-                    origin,
-                    scale,
-                )
-            }));
+            out.extend(legaia_engine_screens::with_battle_item_frame(
+                &model,
+                |frame| {
+                    legaia_engine_ui::battle_item_ui::battle_item_window_sprites(
+                        &self.font,
+                        &assets.rects,
+                        frame,
+                        origin,
+                        scale,
+                    )
+                },
+            ));
         }
         // The command chips sample the same blue plate 3-slice the party
         // bar does, so they ride this list rather than a second slot.

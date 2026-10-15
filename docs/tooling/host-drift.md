@@ -833,8 +833,8 @@ type unowned, no variant unanswered, no entry hotkey-only.
 
 The browser's frame path is **two** files, and the Rust half is the one
 without the interesting arm. `site/js/play-view-frame.js::_frame` calls
-`rt.tick_frame()` inside `if (advance && !menuOpen && !shopOpen &&
-!namingOpen)` and calls `this._drawOverlay()` outside it, so a guarded frame
+the frame's ticks inside `if (advance)` (the page's own pause control) and
+calls `this._drawOverlay()` outside it, so a guarded frame
 runs no kernel at all and still draws - every one of them at once. A Rust-only scan
 sees none of that, which is how "the browser page has no early-out" came to be
 written down while the page carried the same defect the native window did. The
@@ -1115,7 +1115,11 @@ with no device.
 What it does not see: anything a renderer owns, what an audio output
 sounds, and the page's JavaScript beyond `_frameTicks`' bookkeeping (the
 tap set, the menu's card-load take), which is all its driver replays.
-A summon cast and a native-only launch switch are not in any scenario.
+A summon cast and a native-only launch switch are not in any scenario. The
+host hotkeys are: `option_hotkey_frames_match_across_hosts` presses them
+between walk steps through `HeadlessPlayWindow::press_key` (the window's own
+keyboard handler, persistence off) and the page's `play_host_hotkey` plus the
+page action the key runs.
 
 ### Launch switches against page settings
 
@@ -1232,7 +1236,7 @@ decidable per instance, not from a source pattern.
 | **A session choice the next entry re-arms.** | Native `F7` cleared the encounter toggle; the live-loop arming raised it again. | Write the session flag every entry reads. |
 | **A simulation step on the draw path.** One host steps it per redraw, the other per tick. | The fog pool's render step ages the pool the next tick's spawner reads, and a spawn draws the world `rand()` stream. The window ran it per redraw, the page per tick, so at 30 Hz or 120 Hz the window's stream parted. | `BootSession::step_field_fog`, per tick on both; the draw only wraps the quads. |
 | **A seat left behind when its step moves.** A capture seat installed between a step and the draw it feeds. | Moving the fog step into the tick left the capture harness's `LEGAIA_SEAT_FOG` install in the draw prep, after the frame's step: the frame drew the engine's sheets, and the field image states fell (`field_walled_collision_pin` to 0.578). | `BootSession::seat_field_fog` installs and re-runs the frame's step over the seat. |
-| **A screen stepped per display frame against one stepped per tick.** | The page opened the pause menu, routed the naming prompt's edge and stepped a shop at display-frame level. At 120 Hz a press landed on a frame with no tick; on the closing frame the menu stepped `n` times and the field ticked `n` more. | Per-tick owners in the native `sim_tick` order (`play_menu_tick`, `play_name_entry_tick`, `play_shop_tick` / `play_shop_after_tick`), asked by the page's tick loop. |
+| **A screen stepped per display frame against one stepped per tick.** | The page opened the pause menu, routed the naming prompt's edge and stepped a shop at display-frame level. At 120 Hz a press landed on a frame with no tick; on the closing frame the menu stepped `n` times and the field ticked `n` more. | One tick order both hosts hand each tick through: `BootSession::claim_tick`. |
 | **A loop that ends on the tick it changed hands.** | After the prologue skip and on the tick a merchant opened a shop, the page broke out of its tick loop and dropped the frame's remaining ticks. The native arms return from one tick, not from the frame. | Continue the loop; the next tick goes to whoever owns it now. |
 
 ### A draw, queue or resource one side lacks
@@ -1245,7 +1249,7 @@ decidable per instance, not from a source pattern.
 | **A retained pass no draw list shows.** | The WebGL ground pass (`uploadGround`) drew the field heightfield through the battle camera. | Tier-7 rule `setGroundEnable(false)`. |
 | **A texture upload one resource builder skips.** Reads as "the draw is broken": the quads exist, the texels do not. | Native field VRAM lacked the PROT 0874 section-2 effect pool, so fog quads (page `0x0027` = `(448, 0)`, CLUT `(0, 473)`) sampled zero. | Layer the pool under the scene build. |
 | **A draw one host carries on a side channel.** | Fishing gauge fills came from a page-only `bars` payload. | Hand the shared consumer the solid texel. |
-| <a id="a-gl-state-word-the-engine-does-not-own"></a>**A GL state word the engine does not own.** | NCLIP cull, clear colour and the palette-collapse half of the prologue grade were JS decisions or had no uniform to land on. | `camera_view::nclip_cull_mode`, `battle_stage_clear::scene_clear`, `World::frame_grade`; the GL call only applies the answer. |
+| <a id="a-gl-state-word-the-engine-does-not-own"></a>**A GL state word the engine does not own.** | NCLIP cull, clear colour and the palette-collapse half of the prologue grade were JS decisions or had no uniform to land on. | `camera_frame::nclip_cull_mode`, `battle_stage_clear::scene_clear`, `World::frame_grade`; the GL call only applies the answer. |
 | **A host-side handle the world does not hold.** | The browser's summon actor seat survived `World::finish_battle` and was handed out twice. | - |
 | **A write durable on one host only.** | A native Save persists in the commit (`card.persist()`); the page stored the card only on Export. | The runtime raises `card_take_written` and the page stores on it. |
 | **A refusal the player cannot see.** | A save commit a host could not honour only logged. | `SaveScreenFlow::refuse` raises a shared notice. |
@@ -1292,13 +1296,8 @@ reverse-engineering questions, so they are not on
 |---|---|
 | shading law | One law in WGSL and GLSL; nothing pairs the shader bodies. See [shading](#the-two-hosts-do-not-share-a-shading-law). |
 | battle body blend | Native keys the posed override by TMD index (two bodies sharing a TMD share one); the page orders blend passes per mesh, not per prim. |
-| save rack port 1 | Native mounts its `.lgsf` directory as port 1 and `--card` as port 2; the page mounts two card images and resumes `.lgsf` through the save bar. Closing it is storage work. |
-| per-tick screen owners | Each sim tick goes to the pause menu, then the naming prompt, then the intro skip, the wipe hold, a menu-overlay screen, then the field: the window's `sim_tick` arms, the page's `play_frame_ticks`. The order is spelt once per host, both in Rust; the [frame-body trace](#output-level-the-frame-body-trace) drives the page's through the export itself. |
 | lit rows under the palette collapse | Not drift: both hosts run a lit row's shaded colour through the prologue's packet sepia, which the light kernel's output never meets in retail. See [light-source rows](#light-source-rows-in-a-graded-scene). |
-| STR decoders | The page counts assembled frames and assumes 4-bit XA; native counts decoded frames and reads the bit depth. |
-| shop panel rows, inn prompt text | Written once per host over shared leaves; they agree today. |
-| level-up banner without menu chrome | Raw surface pixels natively, stage-scaled on the page; only a run with no system-UI atlas takes that path. |
-| cheats | One `World::cheat_*` call each; restore HP / MP is page-only; a GameShark file is a launch switch natively and pasted text on the page (`cheat_apply_codes`); native applies once at boot. |
+| cheats | One `World::cheat_*` call each. Every listed cheat is a launch switch natively and a runtime control on the page (`F6` / `F7` are runtime on both, through the [hotkey table](#host-hotkeys)); a GameShark file is a launch switch natively and pasted text on the page (`cheat_apply_codes`). |
 | launch switches | See [launch switches](#launch-switches-against-page-settings). |
 | fishing wander readout | Native dev-menu aid for `FUN_801d2050`'s tracked points; no page twin by choice. |
 | fishing exchange panel pen | Native adds the venue overlay's idle sway (`FUN_801d03b0`). |
@@ -1348,11 +1347,12 @@ The frame model is in [`engine.md`](../subsystems/engine.md#the-frame-model).
 | Decision | Kernel |
 |---|---|
 | ticks per display frame | `frame_step::SimStepper` (page: `play_drain_sim_steps`) |
+| options knobs on the world and camera | `BootSession::apply_option_knobs`, every tick ahead of the session tick and on every options change (window: `resolve_tick_pad`; page: `tick_frame`) |
 | camera around the world tick | `camera_before_world_tick` / `camera_after_world_tick` |
 | cutscene glide clock | `CutsceneGlide`, reset on every entry (retail's `FUN_80025C24` kills the mover) |
 | move-VM strips | `MoveVmGlobals::strip_frame` |
 | fog pool render step | `BootSession::step_field_fog`, once per sim tick (window: `tick_frame_tail_effects`; page: inside `tick_frame`); the draws read `World::fog_quads` |
-| who owns the tick | window: the `sim_tick` arms; page: `play_menu_tick`, `play_name_entry_tick`, `play_shop_tick` / `play_shop_after_tick` |
+| who owns the tick | `BootSession::claim_tick` -> `TickOwner`: a host-held screen, the naming prompt, the prologue skip, the pause menu's spawn and press, a suspending overlay screen, the field (neutral pad or not). Each host matches on the answer (window: `sim_tick`; page: `frame_ticks`) and adds only what it holds; a `SIM_PAIRS` row pins both to the claim |
 | field frame tail | `BootSession::step_effect_scene_graphs`, `World::step_field_vram_effects`, `drain_field_anim_cues`; headless: `World::step_world_frame_tail` ([`reach-triage.md`](reach-triage.md#what-a-pad-only-ladder-structurally-cannot-execute)) |
 | party-wipe probe | `BootSession::take_party_wipe` |
 | scheduler under a frozen field | `BootSession::step_overlay_sfx` |
@@ -1417,7 +1417,7 @@ side, so they pair by call rather than by step name:
 | `BootSession::route_battle_audio` | `drain_and_log_battle_events` | `drain_battle_audio_cues`, inside `tick_battle_presentation` |
 | `BootSession::step_overlay_sfx` | `tick_menu_sfx`, in the arms that freeze the field | the export `play_tick_overlay_sfx`, from the page's frame loop |
 | `session::step_npc_clip_players` | `drain_anim_cues`, after the tick's re-targets | `drive_npc_clips` (`FieldActors::drive`), after the same |
-| `BootSession::step_name_entry_frame` | the per-tick naming-prompt arm | the export `play_name_entry_tick`, per tick from the page's tick loop (`name_entry_advance_frames` / `pass_name_entry_frames` remain for a bundle without it) |
+| `BootSession::step_name_entry_frame` | `BootSession::claim_tick`, from `sim_tick` | `BootSession::claim_tick`, from `frame_ticks` |
 | `BootSession::step_field_fog` | `tick_frame_tail_effects` | `tick_field_fog_prims`, inside `tick_frame` |
 
 `step_audio_frame` is the tick's **audio frame**: the duck ramp toward the
@@ -1449,6 +1449,26 @@ field frame around the prompt steps the camera mover once per vsync. The page
 used to pass the frame's steps in one call and run the camera half once per
 display frame - never on a 30 Hz frame's second step, and once too many on a
 redraw that owed no step - which also moved its draws of the shake stream.
+
+<a id="host-hotkeys"></a>
+
+### Host hotkeys
+
+The option, cheat and camera keys a play host binds outside the pad
+vocabulary (`F1`..`F9` except `F5`, `I`, `Y`, `T`, `R`) are one table,
+[`legaia_engine_session::hotkeys`](../../crates/engine-session/src/hotkeys.rs).
+The native window's `option_key` resolves winit's `KeyCode` through it (the
+variant's `Debug` name is the `KeyboardEvent.code` string); the page's
+keydown asks `play_host_hotkey(event.code)`. Both refuse the field-only keys
+(`F3`, `T`, `R`) under a front-end screen (`HostHotkey::needs_field`), and
+both make an options key's edit through `apply_options_hotkey` before
+persisting, so `I`, `F8`, `F9`, `T`, `R` and `F2` are one code path. What a
+host adds is only what it holds alone: the window's renderer toggles, its
+diagnostic text rows and debug vantage; the page's checkboxes (mirrored from
+the stored option, or clicked for the keys that stand for a page control) and
+its HUD bar for `F1`, through `window.__playHotkeyActions`. The table's test
+holds every key off the bindable set, and a `SIM_PAIRS` row pins both sites
+to the shared calls.
 
 ### Camera
 
@@ -1946,7 +1966,7 @@ inside it. Tier 12 measures the inside, and the pair carries a
 | dance | `World::enter_dance` (arms `dance_countin`), `dance::CountIn`, `FinishCountdown`, `DanceTutorial`; `DanceGame::advance_body_clips`, `DanceCastSurface::frame`; `dance_venue::DanceVenue::build`, `sync_dance_venue` and `World::finish_dance_if_over` (both inside `BootSession::step_dance_tail`); `stage_dance_hud_vram`, with `World::minigames.dance_hud_art_staged` as the one residency predicate | Mesh build and instance transform. |
 | Muscle Dome | `MuscleDomeSession::select_input`; `muscle_dome_scene::MuscleDomeSurface` (`frame_at`, `sim_ticks`, `DomeCamera::vp_raw`); `muscle_ringside::HubTimers::tick`, `HubBackdrop`, `FirstVisitHub`; `ringside_backdrop::ringside_still_quads`, `first_visit_hub_draw`; `SceneHost::dome_lead_fighter`; `World::leave_muscle_dome` | The minigames page keeps its own dome panel (`minigame-muscle.js`). |
 | effect parts | `legaia_engine_minigames::minigame_fx::MinigameFxPool` on `World::minigames.fx`, drawn by `engine-ui::minigame_fx::fx_part_draws` | The minigames page keeps its own instance of the type. |
-| status rows | `engine-core::minigame_status::caption` (rows as data: kind + clauses, no stage position) | where the caption shows, and `StatusHost` |
+| status rows | `engine-minigame-scenes::minigame_status::caption` (rows as data: kind + clauses, no stage position) | where the caption shows, and `StatusHost` |
 
 **The status rows are a caption, not a draw.** They are the port's readout of
 the rules state plus the key hints, authored once per game in

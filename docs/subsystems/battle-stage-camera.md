@@ -397,7 +397,7 @@ leaf `FUN_80043DD4`). So copy A, and copy B under the half turn, are back-face
 culled; the mirrored copy B draws both sides. The two backdrop nodes of
 `nivora_duel_pre_megaton_press` read `+0x74 = 0`, one with `+0x5A = 2`.
 
-The port draws every battle mesh both-sided (`camera_view::nclip_cull_mode` is
+The port draws every battle mesh both-sided (`camera_frame::nclip_cull_mode` is
 `0` in battle). On that capture the difference is invisible: the shell's
 `0x7640` additive group, which no retail packet of the frame carries, covers no
 pixel of the port's frame either.
@@ -1126,9 +1126,76 @@ retail-compare drive does so for a replayed cast caught in the summon close-up
 step `3` the walker lands it every pass, at `2` it trails
 ([retail-compare](../tooling/retail-compare.md#an-ease-out-camera-carries-its-history)).
 
-The cast modules keep their per-vsync passes. Run once a battle frame with
-every drain, drift and ramp scaled by the step (retail's own shape), they
-measured worse on the step-`3` captures: `nova_summon_mid_cast` `image` `.963`
+**The action SM's cadence.** Retail runs `FUN_801E295C` once a battle frame.
+The battle frame driver `FUN_80046A20` calls it (`jal 0x801E295C` at
+`0x80047048`, then the separation pass `jal 0x80051078`), and that driver is an
+actor node the master frame driver's `FUN_8002519C` passes tick once per
+main-loop pass. The frame-end pass `FUN_80016B6C` paces the loop: it stores
+the step to `0x1F800392` and calls libetc `VSync(step)` (`jal 0x8005FB84` at
+`0x800171C0`, `VSync(0)` for a step below `2`). So one SM pass spans `step`
+vsyncs, and every timer the SM drains by `DAT_1F800393` drains a whole frame's
+worth per pass. A one-pass state such as the action seed `0x0C` therefore
+lives for a frame. Its case-6 arm on the `0x800` rung walks one camera step
+before `0x14` re-arms on `0x200`, which is the pass the `super_queue_replace_*`
+captures hold.
+
+The engine runs the SM every vsync by default, with timers draining by one.
+Retail's cadence is in place behind `WorldToggles::battle_sm_frame_cadence`
+(`World::battle_sm_pass_due`, `LEGAIA_BATTLE_FRAME_CADENCE=1`). It runs the
+pass and the separation pass on the first tick of each `BattleFrameClock`
+frame with `frame_dt` the step, and these follow it:
+
+- **The paged modules run inside the pass** (`World::module_pass`). Retail
+  enters the summon stager `FUN_801F1ED4` and the capture tick `FUN_801F2160`
+  once a pass, and each counted arm drains `scalar * delta`, drifts `k * delta`
+  and tests its gate once. An arm that passes runs its writes, re-arms the word
+  and advances `ctx[+0x279]` before returning
+  ([cast-module](cast-module.md)), so the next arm starts on the next pass. The
+  module ports are written in one-vsync units, so the pass runs `delta` of them
+  and stops on the one that hands over. The drain, drift and spin match one
+  `delta`-scaled call. Ticking the modules between passes instead, or not
+  stopping at a hand-over, left `gimard_burning_attack` and the summon casts
+  `zenoir`, `gola_gola`, `jedo` and `vera` one shot apart.
+- **The cast-effect driver's shot** (`FUN_801DC0A0`) holds until a camera step
+  arms it, since the pass hands it in once a frame.
+- **The camera frames the state the pass ran.** `FUN_801D5854` and the
+  cast-effect driver are called from inside the state body, so a pass arms the
+  shot of the state it ran (`World::battle_camera_state`). The summon band
+  `0x32..=0x37` keeps the live state: `0x29`'s summon-route arm falls through
+  into the entered state's case-6 call (`0x801E4604`, `0x801E4748`).
+- **The camera steps on the pass** (`BattleCamera::sync_step_phase`).
+- **The retail-compare seed** starts the yaw-coin steer at `0x14`, since the
+  seed's `0x800` value is no coin. It also stands the acting seat on its
+  captured heading for a capture before the attack band's first face store.
+
+Measured with `LEGAIA_BATTLE_FRAME_CADENCE=1`, the corpus rises where the
+seed's arm, the strike loop and the summon modules are filmed:
+
+- `super_queue_replace_*`: `camera` `1.0`, `image` `.927` (from `.968` /
+  `.744`);
+- `gimard_burning_attack`: `camera` `1.0` (from `.989`);
+- `vera_summon_mid_cast`: `image` `.974` (from `.834`).
+
+Rows still fall:
+
+| Capture | Falls | Cause |
+|---|---|---|
+| `noa_levelup_fight_pre` | `camera` `.981` to `.943`, `image` `.817` to `.492` | the replayed round draws its rolls at the pass cadence, and on the drive's stream the struck Gobu Gobu takes a knockdown (clips `4` / `5`) where it reeled before; the stream is the seed search's, not retail's |
+| `nova`, `theeder`, `nighto`, `swordie`, `freed` summon casts, `flute_spikefish_midcast`, `gimard_summon_start` | `image` by `.01` to `.24` (`nova` `.963` to `.719`); `camera` `theeder` `1.0` to `.997` | the summon's flash fade and invoke effects (ray bursts) now spawn on the pass, up to a frame later than the per-vsync SM spawned them, while the cast-replay gates still place the frame on the first tick that holds the phase (flash age in vsyncs); `nova` fell the same way when only its module ran once a frame |
+| `cort_evolved_final_crisis_mid_cast`, `cort_guilty_cross_mid_cast`, `cort_evolved_ultra_charge_mid_cast`, `zeto_call_wave_mid_cast` | `camera` `.999` to `.992`, then `.001` each | the capture-module drifts land a few vsyncs off retail's at the gate's countdown |
+| `rim_elm_gimard_victory`, `battle_melee_hit_spark` | `image` `.909` to `.798`, `.691` to `.652` | the strike's hit-spark rays are timed against the swing's clip, which the pass cadence moves by a vsync |
+
+Gating every drive on the tick that closes a battle frame (the only instant a
+retail RAM can hold) was tried and lost several phases outright. Gates such as
+a clip age or a hold window are met for a single tick, and that tick need not
+close a frame. So the gates keep their per-tick predicates. Seeding retail's
+measured frame step into the capture-band states measured worse
+(`zeto_call_wave_mid_cast` `.994` to `.985`). The toggle stays off.
+
+On the per-vsync cadence the cast modules keep their per-vsync passes. Run once
+a battle frame with every drain, drift and ramp scaled by the step (retail's
+own shape) while the SM still ran every vsync, they measured worse on the
+step-`3` captures: `nova_summon_mid_cast` `image` `.963`
 to `.717` (its flash fade spawned up to two vsyncs later),
 `gimard_burning_attack` `camera` `.965` to `.932`. The captures these modules
 reach are placed by the module's own arm and countdown

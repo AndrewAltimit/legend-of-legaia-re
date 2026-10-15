@@ -590,6 +590,9 @@ impl World {
         self.npcs.anim_cues.clear();
         self.npcs.clip_current.clear();
         self.npcs.clip_cursors.clear();
+        self.npcs.phase_draws.clear();
+        self.npcs.faces.clear();
+        self.npcs.face_ramps = legaia_engine_motion_vm::ambient_motion::RampScheduler::new();
         self.npcs.clip_rate_live.clear();
         self.npcs.clip_bones.clear();
     }

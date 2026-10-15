@@ -207,6 +207,31 @@ fn plan_search_parent_links_stay_acyclic() {
     assert_eq!(walk_back(&cyclic, a, past), None);
 }
 
+/// `koin1`'s slot machines are the minigame cabinets the walk's idle tap
+/// keeps off ([`minigame_talks`]): P1[51..56] run the `3E 68` door-warp,
+/// the interact probe reaches them as props, and the Prize Counter
+/// (P1[5]) is not one. Disc-gated.
+#[test]
+fn koin1_slot_machines_are_minigame_cabinets() {
+    let Some(inp) = inputs() else { return };
+    let mut session = open_session(&inp.extracted);
+    session
+        .enter_scene_live("koin1", &live_opts(false))
+        .expect("enter koin1");
+    let cabinets = minigame_talks(&session);
+    for slot in 51..=56u8 {
+        assert!(cabinets.contains(&slot), "P1[{slot}] in {cabinets:?}");
+    }
+    assert!(!cabinets.contains(&5), "the Prize Counter is no cabinet");
+    let w = &session.host.world;
+    for slot in 51..=56u8 {
+        assert!(
+            w.props.walk_touch.contains_key(&slot),
+            "P1[{slot}] is a probe target"
+        );
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Part A: the spine is anchored, ordered and routed
 // ---------------------------------------------------------------------------
@@ -214,6 +239,51 @@ fn plan_search_parent_links_stay_acyclic() {
 /// Every anchor loads, sits in the scene the spine names, and the anchors
 /// fall in story order; prints the disc route for each segment and how many
 /// of each anchor's flags lie past the save bridge's story window.
+/// The pad hand's field press inverts the engine's eighth-turn remap
+/// (`World::remap_pad_direction`): on the four axis-aligned cameras it is
+/// the quarter-turn mapping the hand used before, and on every camera the
+/// press it picks walks the asked step once the engine has remapped it.
+#[test]
+fn field_step_press_inverts_the_engine_remap() {
+    use legaia_engine_core::world::World;
+    let quarter = |az: u16, dx: i16, dz: i16| match (u32::from(az).wrapping_add(512) / 1024) & 3 {
+        0 => (dx, dz),
+        1 => (-dz, dx),
+        2 => (-dx, -dz),
+        _ => (dz, -dx),
+    };
+    let world_step = |az: u16, (sx, sy): (i16, i16)| {
+        let mut held = 0u16;
+        if sy > 0 {
+            held |= 0x1000;
+        } else if sy < 0 {
+            held |= 0x4000;
+        }
+        if sx > 0 {
+            held |= 0x2000;
+        } else if sx < 0 {
+            held |= 0x8000;
+        }
+        let r = World::remap_pad_direction(held, (u32::from(az).wrapping_add(0x100) >> 9) & 7);
+        let has = |b: u16| i16::from(r & b != 0);
+        (has(0x2000) - has(0x8000), has(0x1000) - has(0x4000))
+    };
+    for az in (0u16..4096).step_by(64) {
+        for dx in -1..=1i16 {
+            for dz in -1..=1i16 {
+                if dx == 0 && dz == 0 {
+                    continue;
+                }
+                let press = field_step_press(az, dx, dz);
+                assert_eq!(world_step(az, press), (dx, dz), "az {az} step ({dx}, {dz})");
+                if az % 1024 == 0 {
+                    assert_eq!(press, quarter(az, dx, dz), "az {az} step ({dx}, {dz})");
+                }
+            }
+        }
+    }
+}
+
 #[test]
 fn part_a_spine_is_anchored_ordered_and_routed() {
     let Some(inp) = inputs() else { return };

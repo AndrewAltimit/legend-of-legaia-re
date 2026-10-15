@@ -31,9 +31,6 @@ pub mod gte_trace;
 pub mod mode_transition;
 pub mod window;
 
-pub use glam;
-pub use wgpu;
-
 // The pure, wgpu-free UI draw-list layer lives in `legaia-engine-ui`; its
 // items are named as `legaia_engine_ui::<item>`.
 use legaia_engine_ui::TextDraw;

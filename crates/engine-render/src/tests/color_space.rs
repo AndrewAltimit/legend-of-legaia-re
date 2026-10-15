@@ -20,7 +20,6 @@
 //! so it fails loudly if the policy ever regresses rather than passing
 //! vacuously.
 
-use super::*;
 use crate::renderer::choose_surface_format;
 use legaia_render_kernels::screen_prim::{ScreenPrim, ScreenQuad};
 use wgpu::TextureFormat as Tf;

@@ -80,24 +80,7 @@ fn synthetic_replay_sample(world: &legaia_engine_core::world::World) -> ModeTrac
         frame: world.frame,
         game_mode: None,
         game_mode_name: None,
-        scene_mode: synthetic_replay_scene_mode_name(world.mode).to_string(),
+        scene_mode: world.mode.name().to_string(),
         active_scene: None,
-    }
-}
-
-fn synthetic_replay_scene_mode_name(m: legaia_engine_mode::mode::SceneMode) -> &'static str {
-    use legaia_engine_mode::mode::SceneMode;
-    match m {
-        SceneMode::Title => "Title",
-        SceneMode::Field => "Field",
-        SceneMode::Battle => "Battle",
-        SceneMode::Cutscene => "Cutscene",
-        SceneMode::WorldMap => "WorldMap",
-        SceneMode::Dance => "Dance",
-        SceneMode::Fishing => "Fishing",
-        SceneMode::SlotMachine => "SlotMachine",
-        SceneMode::BakaFighter => "BakaFighter",
-        SceneMode::MuscleDome => "MuscleDome",
-        SceneMode::Menu => "Menu",
     }
 }

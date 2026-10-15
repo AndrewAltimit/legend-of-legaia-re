@@ -167,7 +167,7 @@
 
 <section class="doc-section" id="off-by-one">
   <h2>The add helper&rsquo;s off-by-one</h2>
-  <p>The add helper stores the item id <em>before</em> it bound-checks. On a completely full window the scan exits at <code>i == end</code> and the id byte lands one slot past the window; only the count store is guarded. This is the core of the arbitrary-code-execution reachability thread, which is <strong>settled</strong>: the write primitive is real and normal play cannot reach it (<a href="../reference/re-settled-threads.html#d-item-add-oob">settled threads</a>).</p>
+  <p>The add helper stores the item id <em>before</em> it bound-checks. On a completely full window the scan exits at <code>i == end</code> and the id byte lands one slot past the window; only the count store is guarded. This is the core of the arbitrary-code-execution reachability thread, which is <strong>settled</strong>: the write primitive is real and normal play cannot reach it (<a href="../reference/re-settled-threads.html#w-full-window-item-add-oob-reachability">settled threads</a>).</p>
   <details class="disclosure">
     <summary>Details: reaching the leak, and the probe trap</summary>
     <div class="disclosure-body">
@@ -232,7 +232,7 @@
     <a href="../formats/item-table.html">Item table</a>
     <a href="../formats/item-effect-table.html">Item effects</a>
     <a href="../reference/cheats.html">Cheat database</a>
-    <a href="../reference/re-settled-threads.html#d-item-add-oob">Item-add OOB (settled)</a>
+    <a href="../reference/re-settled-threads.html#w-full-window-item-add-oob-reachability">Item-add OOB (settled)</a>
     <a href="level-up.html">Level-up</a>
   </div>
 </section>

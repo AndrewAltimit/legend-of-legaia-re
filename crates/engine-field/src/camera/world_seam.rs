@@ -87,6 +87,9 @@ pub trait CameraWorld {
     fn camera_registers(&self) -> &crate::register_ramp::CameraRegisterFile;
     /// The camera shake amplitude.
     fn camera_shake_amplitude(&self) -> u8;
+    /// The script camera-focus override `[X, Z]` op `4C CF` stages
+    /// (`_DAT_8007B628` / `_DAT_8007B62A`); a zero axis is unset.
+    fn script_focus_override(&self) -> [i16; 2];
     /// Whether the scene allows saving - the composer's half-eye term.
     fn scene_save_allowed(&self) -> bool;
     /// Displayed frames so far.

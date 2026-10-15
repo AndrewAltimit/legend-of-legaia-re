@@ -984,6 +984,17 @@ impl BattleCamera {
         }
     }
 
+    /// Put the camera's next step on the tick `ticks_into_frame` display
+    /// frames into the current battle frame says opens the next frame: a
+    /// step then fires on every tick that opens a battle frame, the tick the
+    /// action SM's pass runs on. Retail's walker and the framing arms run in
+    /// the same frame as the pass, so a camera stepping half a frame out of
+    /// phase framed every pass's arm one step late.
+    pub fn sync_step_phase(&mut self, ticks_into_frame: u64) {
+        let step = u64::from(self.frame_step.max(1));
+        self.frame_accum = (ticks_into_frame + step - 1) % step;
+    }
+
     /// Run the camera on a frame step of `vsyncs` from here on: a step every
     /// `vsyncs` display frames, each walker increment scaled by it, as
     /// retail's walker scales by `DAT_1F800393`. Retail measures that step

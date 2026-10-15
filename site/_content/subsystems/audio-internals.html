@@ -26,6 +26,38 @@
 <section class="doc-section" id="swap-handshake">
   <h2>The track-swap handshake</h2>
   <p>The BGM poller <code>FUN_800243F0</code> runs a stage counter through a seven-entry jump table while a track change is in flight: wait for CD idle and arm a 30-frame settle; tear down and close the BGM slot unless bit 0 below is set, then kick the async load; count the settle down; install the score; re-attach the slot unless bit 1 is set; latch. The sound-flag word <code>_DAT_8007B750</code> coordinates it with the script:</p>
+  <figure class="diagram">
+    <svg viewBox="0 0 860 428" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="A script-owned track swap. The script's sub-op 9 stores the new track id and sets flag bit 0. The poller waits for the CD to go idle, arms a 30-frame settle and, because bit 0 is set, leaves the old track on the slot; it kicks the load, counts the settle down and sets bit 3, then stalls while bit 0 is set and bit 4 is clear. The script's sub-op 0xA sees bit 3, detaches and closes the old track, sets bit 4 and clears bit 1. The poller installs the score, re-attaches the slot, clears bits 0, 3 and 4 and latches the loaded index.">
+      <defs><marker id="ah-hs" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <rect x="40" y="6" width="180" height="40" rx="4" class="dg-node"/><text x="130" y="23" class="dg-label">Script</text><text x="130" y="38" class="dg-sub">op 0x35</text>
+      <path d="M130 46 L130 424" class="dg-edge-dim"/>
+      <rect x="340" y="6" width="180" height="40" rx="4" class="dg-node-accent"/><text x="430" y="23" class="dg-label">Flag word</text><text x="430" y="38" class="dg-sub">0x8007B750</text>
+      <path d="M430 46 L430 424" class="dg-edge-dim"/>
+      <rect x="640" y="6" width="180" height="40" rx="4" class="dg-node"/><text x="730" y="23" class="dg-label">Poller</text><text x="730" y="38" class="dg-sub">FUN_800243F0</text>
+      <path d="M730 46 L730 424" class="dg-edge-dim"/>
+      <path d="M130 70 L427 70" class="dg-edge" marker-end="url(#ah-hs)"/>
+      <text x="280" y="64" class="dg-edge-label" text-anchor="middle">sub-op 9: store the new id, set bit 0</text>
+      <path d="M730 94 L754 94 L754 108 L733 108" class="dg-edge" marker-end="url(#ah-hs)"/>
+      <text x="720" y="104" class="dg-edge-label" text-anchor="end">wait for CD idle, arm a 30-frame settle</text>
+      <rect x="452" y="120" width="396" height="22" rx="3" class="dg-node-warn"/><text x="650" y="135" class="dg-sub">bit 0 set: the old track keeps the slot</text>
+      <path d="M730 158 L754 158 L754 172 L733 172" class="dg-edge" marker-end="url(#ah-hs)"/>
+      <text x="720" y="168" class="dg-edge-label" text-anchor="end">kick the payload load, count the settle down</text>
+      <path d="M730 198 L433 198" class="dg-edge" marker-end="url(#ah-hs)"/>
+      <text x="580" y="192" class="dg-edge-label" text-anchor="middle">set bit 3 - load settled</text>
+      <rect x="452" y="216" width="396" height="22" rx="3" class="dg-node-warn"/><text x="650" y="231" class="dg-sub">stall while bit 0 is set and bit 4 is clear</text>
+      <path d="M430 262 L133 262" class="dg-edge" marker-end="url(#ah-hs)"/>
+      <text x="280" y="256" class="dg-edge-label" text-anchor="middle">sub-op 0xA sees bit 3</text>
+      <path d="M130 286 L154 286 L154 300 L133 300" class="dg-edge" marker-end="url(#ah-hs)"/>
+      <text x="162" y="296" class="dg-edge-label" text-anchor="start">detach and close the old track</text>
+      <path d="M130 326 L427 326" class="dg-edge" marker-end="url(#ah-hs)"/>
+      <text x="280" y="320" class="dg-edge-label" text-anchor="middle">set bit 4, clear bit 1</text>
+      <path d="M730 350 L754 350 L754 364 L733 364" class="dg-edge" marker-end="url(#ah-hs)"/>
+      <text x="720" y="360" class="dg-edge-label" text-anchor="end">install the score, re-attach the slot</text>
+      <path d="M730 390 L433 390" class="dg-edge" marker-end="url(#ah-hs)"/>
+      <text x="580" y="384" class="dg-edge-label" text-anchor="middle">clear bits 0, 3, 4; latch the loaded index</text>
+    </svg>
+    <figcaption>A swap started by sub-op 9 and committed by sub-op <code>0xA</code>: the old score holds its slot until the script releases it, so a cutscene picks the exact beat the outgoing music dies on.</figcaption>
+  </figure>
   <div class="table-wrap">
   <table class="data-table">
     <thead><tr><th>Bit</th><th>Meaning</th><th>Set by</th><th>Cleared by</th></tr></thead>

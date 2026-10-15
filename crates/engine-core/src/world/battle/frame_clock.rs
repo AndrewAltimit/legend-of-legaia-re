@@ -75,6 +75,13 @@ impl BattleFrameClock {
     }
 }
 
+impl BattleFrameClock {
+    /// How many display ticks into its battle frame `tick` falls.
+    pub fn ticks_into_frame(&self, tick: u64) -> u64 {
+        tick.saturating_sub(self.origin_tick) % u64::from(self.step.max(1))
+    }
+}
+
 impl World {
     /// The battle frame the current tick falls in
     /// ([`BattleFrameClock::frame_of`] at `display_frames`).
@@ -191,6 +198,91 @@ impl World {
         self.battle.backdrop_slot_1_yaw = yaw;
     }
 
+    /// Whether this tick opens a battle frame the action SM has not yet run
+    /// its pass on, and if so claim it. Retail runs `FUN_801E295C` once a
+    /// battle frame: the frame driver `FUN_80046A20` (`jal 0x801E295C` at
+    /// `0x80047048`, then the separation pass `jal 0x80051078`) is an actor
+    /// node the master frame driver ticks once a main-loop pass, and the
+    /// frame-end pass `FUN_80016B6C` paces that loop with `VSync(step)`
+    /// (`jal 0x8005FB84` at `0x800171C0`, `a0` the frame step byte
+    /// `0x1F800392`). The engine ticks once a vsync, so the pass runs on the
+    /// first tick of each [`BattleFrameClock`] frame and its timers drain by
+    /// the step ([`Self::battle_frame_step`], the SM's `frame_dt`).
+    pub(in crate::world) fn battle_sm_pass_due(&mut self) -> bool {
+        if !self.toggles.battle_sm_frame_cadence {
+            return true;
+        }
+        let frame = self.battle_frame_id();
+        if self.battle.sm_pass_frame == Some(frame) {
+            return false;
+        }
+        self.battle.sm_pass_frame = Some(frame);
+        true
+    }
+
+    /// The action state the battle camera frames. Retail's framing calls
+    /// (`FUN_801D5854`, the cast-effect driver) sit inside the state body, so
+    /// a pass arms the shot of the state it **ran** and the state it stores
+    /// is framed by the next pass: the seed `0x0C` arms case 6 on the `0x800`
+    /// rung and only then stores `0x14` and `0x200` (`0x801E2D50`,
+    /// `0x801E2F20`). On retail's cadence the camera therefore follows the
+    /// state the last pass ran; on the per-vsync cadence the live state.
+    ///
+    /// The summon band `0x32..=0x37` is framed by the pass that enters it:
+    /// `0x29`'s summon-route arm stores the `0x600` depth and falls through
+    /// into the entered state's case-6 call (`0x801E4604`, `0x801E4748`), and
+    /// the band's own states hand the camera to the close-up and the module.
+    /// Framed one pass late there, every summon capture lost its shot
+    /// (`camera` `.3` to `.8` across the corpus).
+    pub fn battle_camera_state(&self) -> u8 {
+        let live = self.battle_ctx.action_state;
+        if self.toggles.battle_sm_frame_cadence && !matches!(live, 0x32..=0x37) {
+            self.battle.sm_ran_state.unwrap_or(live)
+        } else {
+            live
+        }
+    }
+
+    /// One SM pass's call into a paged cast module (`FUN_801F1ED4` /
+    /// `FUN_801F2160`), at retail's frame delta.
+    ///
+    /// Retail enters the module once a pass and every counted arm drains its
+    /// countdown by `scalar * delta`, drifts its pose by `k * delta` and
+    /// re-tests its threshold once (`cast_module_camera`, the countdown
+    /// kernel); an arm that finishes stores the next phase `ctx[+0x279]` and
+    /// returns, so the next arm runs on the next pass. The port's module ticks
+    /// are written in one-vsync units (`MODULE_DRAIN_PER_TICK`, a drift of
+    /// `k`), so a pass runs `delta` of them - the same drain, drift and spin
+    /// as one `delta`-scaled call - and stops on the tick an arm hands over,
+    /// so the next arm starts on the next pass as retail's does. On the
+    /// per-vsync cadence the pass is one tick.
+    pub(in crate::world) fn module_pass(&mut self, tick: fn(&mut World) -> bool) -> bool {
+        let delta = if self.toggles.battle_sm_frame_cadence {
+            self.battle_frame_step().max(1)
+        } else {
+            1
+        };
+        let mut live = false;
+        for _ in 0..delta {
+            let phase = self.casting.module_phase;
+            live = tick(self);
+            if !live || self.casting.module_phase != phase {
+                break;
+            }
+        }
+        live
+    }
+
+    /// The SM's `frame_dt` (`DAT_1F800393`): the frame step when the SM runs
+    /// once a battle frame, one vsync when it runs every tick.
+    pub(in crate::world) fn battle_sm_frame_dt(&self) -> i16 {
+        if self.toggles.battle_sm_frame_cadence {
+            i16::from(self.battle_frame_step())
+        } else {
+            1
+        }
+    }
+
     /// The battle frame step in vsyncs ([`Self::set_battle_frame_step`]).
     pub fn battle_frame_step(&self) -> u8 {
         self.battle.frame_clock.step
@@ -200,6 +292,92 @@ impl World {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// On retail's cadence the action SM takes one pass a battle frame and
+    /// drains its timers by the step; on the staged-off per-vsync cadence
+    /// it takes every tick and drains by one.
+    #[test]
+    fn the_sm_pass_runs_once_a_battle_frame_on_retail_cadence() {
+        let mut w = World::new();
+        w.toggles.battle_sm_frame_cadence = true;
+        let mut passes = Vec::new();
+        for t in 10..20u64 {
+            w.clock.display_frames = t;
+            if w.battle_sm_pass_due() {
+                passes.push(t);
+            }
+            // A second ask inside the same tick is the same frame.
+            assert!(!w.battle_sm_pass_due());
+        }
+        assert_eq!(passes, [10, 12, 14, 16, 18]);
+        assert_eq!(w.battle_sm_frame_dt(), 2);
+        w.set_battle_frame_step(3);
+        assert_eq!(w.battle_sm_frame_dt(), 3);
+        w.toggles.battle_sm_frame_cadence = false;
+        assert!(w.battle_sm_pass_due() && w.battle_sm_pass_due());
+        assert_eq!(w.battle_sm_frame_dt(), 1);
+    }
+
+    /// On retail's cadence the camera frames the state the last pass ran -
+    /// the seed `0x0C` arms its own shot before it stores `0x14` - except
+    /// in the module bands, whose shots the modules arm; on the per-vsync
+    /// cadence it frames the live state.
+    #[test]
+    fn the_camera_frames_the_state_the_last_pass_ran() {
+        let mut w = World::new();
+        w.battle.sm_ran_state = Some(0x0C);
+        w.battle_ctx.action_state = 0x14;
+        assert_eq!(w.battle_camera_state(), 0x14);
+        w.toggles.battle_sm_frame_cadence = true;
+        assert_eq!(w.battle_camera_state(), 0x0C);
+        w.battle_ctx.action_state = 0x35;
+        assert_eq!(w.battle_camera_state(), 0x35);
+    }
+
+    /// A module pass runs one module tick per vsync of the frame on retail's
+    /// cadence, stops on the tick an arm hands over, and is one tick on the
+    /// per-vsync cadence.
+    #[test]
+    fn a_module_pass_runs_the_frame_delta_and_stops_at_a_handover() {
+        fn count(w: &mut World) -> bool {
+            w.battle.backdrop_slot_1_yaw += 1;
+            true
+        }
+        fn hand_over(w: &mut World) -> bool {
+            w.battle.backdrop_slot_1_yaw += 1;
+            w.casting.module_phase = w.casting.module_phase.wrapping_add(1);
+            true
+        }
+        let mut w = World::new();
+        w.toggles.battle_sm_frame_cadence = true;
+        w.set_battle_frame_step(3);
+        assert!(w.module_pass(count));
+        assert_eq!(w.battle.backdrop_slot_1_yaw, 3);
+        w.battle.backdrop_slot_1_yaw = 0;
+        w.module_pass(hand_over);
+        assert_eq!(
+            w.battle.backdrop_slot_1_yaw, 1,
+            "the next arm runs next pass"
+        );
+        w.toggles.battle_sm_frame_cadence = false;
+        w.battle.backdrop_slot_1_yaw = 0;
+        w.module_pass(count);
+        assert_eq!(w.battle.backdrop_slot_1_yaw, 1);
+    }
+
+    #[test]
+    fn ticks_into_frame_counts_from_the_step_origin() {
+        let mut c = BattleFrameClock::default();
+        assert_eq!(
+            (10..14).map(|t| c.ticks_into_frame(t)).collect::<Vec<_>>(),
+            [0, 1, 0, 1]
+        );
+        c.set_step(7, 3);
+        assert_eq!(
+            (7..11).map(|t| c.ticks_into_frame(t)).collect::<Vec<_>>(),
+            [0, 1, 2, 0]
+        );
+    }
 
     #[test]
     fn the_default_clock_is_two_vsync_frames() {

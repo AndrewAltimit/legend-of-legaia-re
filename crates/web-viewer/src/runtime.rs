@@ -113,8 +113,10 @@ pub struct LegaiaRuntime {
     /// frame back only when the page draws through that exact matrix, so the
     /// parts' `+0x52` camera-relative bits resolve against the camera on
     /// screen and never against one the page replaced with its own orbit.
-    pub(crate) engine_camera:
-        Option<([f32; 16], legaia_engine_core::camera_view::FieldCameraFrame)>,
+    pub(crate) engine_camera: Option<(
+        [f32; 16],
+        legaia_engine_field::camera_frame::FieldCameraFrame,
+    )>,
     /// Wall-clock to sim-tick accumulator (`frame_step::SimStepper`), the
     /// native window's frame-step rule. The page's animation loop asks it
     /// how many ticks each display frame runs ([`Self::play_drain_sim_steps`]).
@@ -406,7 +408,8 @@ impl LegaiaRuntime {
             menu,
             scene_host: crate::host_slot::HostSlot::new({
                 let mut c = legaia_engine_field::camera::Camera::new();
-                c.render_yaw_bias = legaia_engine_core::camera_view::retail_field_render_yaw_bias();
+                c.render_yaw_bias =
+                    legaia_engine_field::camera_frame::retail_field_render_yaw_bias();
                 // The follow distance is an OPTION, and the window applies it
                 // at startup (`window/run.rs`). `Camera::new()`'s own default
                 // is `Retail`, so a page that never read the option framed

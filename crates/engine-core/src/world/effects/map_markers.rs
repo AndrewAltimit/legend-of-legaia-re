@@ -1,6 +1,9 @@
 //! World-map entity and player marker projections.
 
 use super::*;
+use legaia_engine_field::world_map_markers::{
+    WorldMapEntityKind, WorldMapEntityMarker, WorldMapPlayerMarker,
+};
 
 impl World {
     /// Snapshot every placed overworld entity for the renderer: one
@@ -28,21 +31,7 @@ impl World {
             .iter()
             .enumerate()
             .map(|(i, &(x, z))| {
-                let kind = match self.world_map.entity_configs.get(i) {
-                    Some(WorldMapEntityConfig::EncounterZone { .. }) => {
-                        WorldMapEntityKind::EncounterZone
-                    }
-                    // Both walk-onto shapes draw the same marker; where they
-                    // lead differs (a CDNAME scene vs a mode-24 overlay), and
-                    // that is a drain-side distinction, not a render one.
-                    Some(WorldMapEntityConfig::MinigameDoor { .. })
-                    | Some(WorldMapEntityConfig::OverworldPortal { .. }) => {
-                        WorldMapEntityKind::Portal
-                    }
-                    // An NPC config or no config at all (a plain interaction)
-                    // both render as the NPC marker.
-                    Some(WorldMapEntityConfig::Npc { .. }) | None => WorldMapEntityKind::Npc,
-                };
+                let kind = WorldMapEntityKind::of_config(self.world_map.entity_configs.get(i));
                 WorldMapEntityMarker {
                     world_pos: [x as f32, base_y, z as f32],
                     kind,

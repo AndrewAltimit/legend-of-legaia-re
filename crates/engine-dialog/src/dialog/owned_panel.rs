@@ -99,6 +99,11 @@ pub struct OwnedDialogPanel {
     /// ([`Self::tick_at_auto_drawn`]); until then the mark is the static
     /// frame 0 of a panel nobody animates.
     pub(super) cursor_driven: bool,
+    /// Row capacity every window this panel opens takes
+    /// ([`Self::set_window_format`]).
+    pub(super) window_rows: usize,
+    /// The instant-page latch waiting for the next window load.
+    pub(super) window_instant: bool,
 }
 
 /// One line of a pager page, decoded once: each glyph with the reveal units
@@ -142,6 +147,8 @@ impl OwnedDialogPanel {
             menu_opens_at_wait: false,
             auto_pressed: false,
             decoded_subs: None,
+            window_rows: crate::dialog_window::WINDOW_ROWS,
+            window_instant: false,
             advance_icon: None,
             hand_bob: 0,
             cursor_driven: false,

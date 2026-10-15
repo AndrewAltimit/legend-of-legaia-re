@@ -240,7 +240,7 @@ guard over a fill the port does not perform.
 
 [[frame_arm]]
 host = "native"
-arm = "self.boot_ui.is_active()"
+arm = "TickOwner::HostScreen =>"
 reason = """
 The boot UI (title, save select, options, pause menu, game over) owns the
 frame and the scene tick is deliberately skipped: the player has not entered
@@ -274,7 +274,7 @@ skips = [
 
 [[frame_arm]]
 host = "native"
-arm = "session.step_name_entry_frame(pressed_edge)"
+arm = "TickOwner::NameEntry(_) =>"
 reason = """
 The naming prompt is modal: retail parks the opening's script on it, so the
 world must not advance under it. The arm's kernel
@@ -309,7 +309,7 @@ skips = [
 
 [[frame_arm]]
 host = "native"
-arm = "take_prologue_handoff"
+arm = "TickOwner::PrologueSkip(target) =>"
 reason = """
 One frame, and the scene under the window has just been replaced: the arm
 re-enters a field scene and rebuilds the render state. Stepping the skipped
@@ -342,13 +342,46 @@ skips = [
 
 [[frame_arm]]
 host = "native"
-arm = "PauseMenuPress::Opened { scripted } = press"
+arm = "TickOwner::PauseMenuSpawned =>"
 reason = """
-The frame on which a Start edge opened the pause menu: the arm sets the
-boot-UI state and hands the next frame to the arm above, so it is that arm's
-first frame by another name and freezes the same things. It fires the open
-blip and drains it, and steps the party-HUD kernel against the boot-UI state
-it just set.
+The tick the pause wipe spawns the menu: the arm raises the boot-UI state and
+hands the next tick to the boot-UI arm, so it is that arm's first tick by
+another name and freezes the same things. It steps the SFX scheduler (retail's
+mode-`0x17` handler runs the cue drainer under the menu, and the page's twin
+steps it too) and the party-HUD kernel against the state it just set.
+"""
+skips = [
+    "advance_ocean_animation",
+    "apply_world_clut_fx",
+    "check_battle_vram_residency",
+    "drain_and_log_battle_events",
+    "drain_and_route_field_events",
+    "drain_anim_cues",
+    "maybe_install_demo_tile_board",
+    "poll_field_shop",
+    "rebind_live_npc_models",
+    "sync_battle_render",
+    "sync_dialog_panel",
+    "sync_text_balloon",
+    "tick_dev_menu",
+    "tick_fishing_banners",
+    "tick_minigame_extras",
+    "tick_muscle_time_meter",
+    "tick_play_clock",
+    "tick_sfx",
+    "tick_world_effects",
+]
+
+[[frame_arm]]
+host = "native"
+arm = "TickOwner::PauseMenuOpened(scripted) =>"
+reason = """
+The tick on which a press (Start, or a script's op-`0x49`) opened the pause
+menu (`BootSession::claim_tick` ran `press_field_menu`). The press takes the
+tick, as retail's locomotion controller spends the frame it accepts the open
+on; from the next tick the field darkens under the wipe and then the spawn arm
+hands the frame to the boot UI. It fires the open blip and drains it, and
+steps the party-HUD kernel against the menu state it just raised.
 """
 skips = [
     "advance_ocean_animation",
@@ -505,30 +538,26 @@ skips = [
 
 [[frame_arm]]
 host = "page"
-arm = "advance && !menuFreezes && !shopOpen && !namingOpen"
+arm = "if (advance)"
 reason = """
 `site/js/play-view-frame.js::_frame` runs the frame's ticks
 (`this._frameTicks`, over the engine's `play_frame_ticks`) inside this guard
-and `this._drawOverlay()` outside it, so on a guarded frame the page draws
-with NO kernel having run - the whole `skips` list at once, from whatever
-answer each last held. `namingOpen` is the naming prompt, which suspends the
-field on the engine side as well; `advance` is the page's own pause /
-step-one-frame control. The pause menu and the menu-overlay screens (shop,
-prize exchange, inn) are not frame-level terms on the shipped bundle: they
-take their ticks one at a time inside `play_frame_ticks` (`play_menu_tick`,
-`play_shop_tick` / `play_shop_after_tick`, the native `sim_tick` arms), so
-the field ticks under the pause wipe, on a closing frame's remaining ticks and
-under an inn as it does natively. `menuFreezes` and `shopOpen` hold only for a
-cached bundle without those exports.
+and `this._drawOverlay()` outside it, so on a frame the guard holds back the
+page draws with NO kernel having run - the whole `skips` list at once, from
+whatever answer each last held. `advance` is the page's own pause /
+step-one-frame control, the only term left: every screen (the pause menu,
+the naming prompt, a shop, the prize exchange, an inn) takes its ticks one at
+a time inside `play_frame_ticks`, through the order both hosts share
+(`BootSession::claim_tick`). The frame-level freezes a cached bundle without
+those exports needed are gone with the copy of the order they guarded.
 
-This is disclosed rather than closed because the guard is the page's field
-freeze and moving the tick outside it would advance the world under a menu.
-What is closed instead is the consequence: the two kernels whose answers a
-guarded frame still DRAWS - the field party readout and the passive-ability
-badge column - now ask the suppress gate on the draw path as well as on the
-tick, so a stale decision cannot reach the screen. Any kernel added to
-`tick_frame` whose output the page draws on a guarded frame needs the same
-treatment, and this row is where that is recorded.
+The pause control has no native twin, and what it holds back is the whole
+simulation, which is its point. The two kernels whose answers a held frame
+still DRAWS - the field party readout and the passive-ability badge column -
+ask the suppress gate on the draw path as well as on the tick, so a stale
+decision cannot reach the screen. Any kernel added to `tick_frame` whose
+output the page draws on a held frame needs the same treatment, and this row
+is where that is recorded.
 """
 skips = [
     "audio_director",
@@ -719,7 +748,7 @@ reason = "Native-only `tick` is `FieldPartyHud::tick`, which both hosts call; it
 native = "tick_minigame_extras"
 web = "tick_minigame_ui"
 native_only = ["build", "build_filtered_vram_mesh_lit", "chrome_frame", "entry_bytes", "frame", "frame0_bone_offsets", "from_venue", "glyph_u", "has_assets", "hud_vram_rects", "parse_sprite_table", "place_point", "rotate", "set_assets", "stage_dance_hud_vram", "still_sheet_rgba", "walk_heightfield"]
-web_only = ["apply", "course", "last_result", "opponent_roster", "phase", "prot_dat_raw_bytes", "round", "with_system_ui"]
+web_only = ["apply", "course", "last_result", "of_mode", "opponent_roster", "phase", "prot_dat_raw_bytes", "round", "with_system_ui"]
 reason = """
 Everything the step does to the world or the audio director is a session step
 both hosts call, so it lists on neither side: the minigame and Baka duel cue
@@ -754,7 +783,9 @@ consume the same chrome frame in their draw exports.
 Web-only, the page's own read-outs. `course` / `round` are its staged-opponent
 read for the dome mesh (`enter_muscle_ui`), `opponent_roster` the Baka one,
 and `phase` / `last_result` the slot payout-edge detector feeding its
-JavaScript marquee caption. `prot_dat_raw_bytes` / `with_system_ui` are the
+JavaScript marquee caption. `of_mode` is `StatusGame::of_mode`
+(engine-minigame-scenes), which the page reads to pick its minigame screen;
+the window's minigame dispatch keys on the world's mode directly. `prot_dat_raw_bytes` / `with_system_ui` are the
 page's minigame bundle taking the slot machine's resident system-UI sheet off
 the real PROT.DAT; the window uploads the same sheet through
 `SlotCabinetAssets::with_system_ui` when it first decodes the machine

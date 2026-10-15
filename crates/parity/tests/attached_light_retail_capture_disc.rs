@@ -164,6 +164,15 @@ fn dolk_darkness_mask_matches_the_retail_capture() {
 
     let mut host = SceneHost::open_extracted(&extracted).expect("open SceneHost");
     host.enter_field_scene("dolk", 0).expect("enter dolk");
+    // Stand where the capture's player stands. `dolk`'s entry script
+    // (`P1[0]`, `0x02D2..0x0303`) turns the mask off while the player is in
+    // the lit band `[57, 67] .. [85, 100]` (`B4 F8 20 40 01 00` - a keyframe
+    // script of the lone retire byte) and back on outside it; the default
+    // entry seat (70, 70) is inside that band, the capture (49, 45) is not.
+    if let (Some(slot), Some((x, z))) = (host.world.player_actor_slot, st.player_pos()) {
+        let m = &mut host.world.actors[slot as usize].move_state;
+        (m.world_x, m.world_z) = (x, z);
+    }
     for _ in 0..30 {
         let _ = host.world.tick();
     }

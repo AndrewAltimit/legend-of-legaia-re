@@ -17,7 +17,7 @@
 /// play page's GLSL (`site/js/webgl-shaders.js`) carries the same law.
 ///
 /// `SZ` is `clip.w` times the frame's scale
-/// (`legaia_engine_core::camera_view::frame_curve_scale`: `1` under
+/// (`legaia_engine_field::camera_frame::frame_curve_scale`: `1` under
 /// the overworld walk camera, whose matrix carries the 6x world scale, `6`
 /// under a `1x` scripted shot), and the bend moves `SY` in PSX stage rows,
 /// `240` to the NDC span of `2`. A scale of `0` is the identity.

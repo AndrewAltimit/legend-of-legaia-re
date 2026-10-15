@@ -27,7 +27,7 @@
 #![cfg(not(target_arch = "wasm32"))]
 
 use legaia_engine_camera::psx_camera;
-use legaia_engine_core::camera_view::FIELD_H;
+use legaia_engine_field::camera_frame::FIELD_H;
 use legaia_web_viewer::runtime::LegaiaRuntime;
 use std::env;
 

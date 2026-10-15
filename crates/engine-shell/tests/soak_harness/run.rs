@@ -110,6 +110,10 @@ pub(super) struct WorkerStatus {
 /// free-roam frames the player is given to leave it.
 const CONFINE_SPAN: i16 = 48;
 const CONFINE_WALK_FRAMES: u32 = 900;
+
+/// Frames each d-pad direction must have been held before a `confined`
+/// window may fire.
+const CONFINE_DIR_MIN_FRAMES: u32 = 16;
 /// The four d-pad bits.
 const DIR_MASK: u16 = DIRS[0] | DIRS[1] | DIRS[2] | DIRS[3];
 
@@ -484,6 +488,9 @@ pub(super) fn run_one(
     // Starts `true`: the cold entry seat is the harness's, not a door's.
     let mut was_free = true;
     let mut confine: Option<(i16, i16, i16, i16, u32)> = None;
+    // Frames each d-pad direction (Up, Right, Down, Left) was held inside
+    // the current confine window.
+    let mut confine_dirs = [0u32; 4];
     let mut door_frames: std::collections::VecDeque<u64> = std::collections::VecDeque::new();
     let mut door_prev = String::new();
     let mut door_dir_held = false;
@@ -925,14 +932,25 @@ pub(super) fn run_one(
                     // the glide countdown rides along for every op.
                     let mut h = HashWriter(std::collections::hash_map::DefaultHasher::new());
                     let _ = write!(h, "{}|{}|", c.frames, w.camera.state.glide_frames);
-                    if op == 0xC7 {
-                        if let Some(a) = w.actors.get(player_slot(&session)) {
-                            let m = &a.move_state;
-                            let _ = write!(h, "p{},{}|", m.world_x, m.world_z);
-                        }
-                        for slot in w.npcs.motions.keys() {
-                            let _ = write!(h, "{slot}{:?}|", w.npcs.positions.get(slot));
-                        }
+                    // A walk-on record that raised the re-poll bit (op
+                    // `2E 13`) is re-run from its top every tick the player
+                    // stays on its tile - Rim Elm's "stand here and press"
+                    // polls - and the player walks freely meanwhile, so the
+                    // player's own motion rides along for it too.
+                    let repoll =
+                        w.flags.story_flags & legaia_engine_core::world::WALK_ON_REPOLL_FLAG != 0;
+                    if (op == 0xC7 || repoll)
+                        && let Some(a) = w.actors.get(player_slot(&session))
+                    {
+                        let m = &a.move_state;
+                        let _ = write!(h, "p{},{}|", m.world_x, m.world_z);
+                    }
+                    // A record parked on the walk it started - `bylon`'s
+                    // Zopu talk issues `C7 47 ..` and waits on `B3 47 0A`
+                    // across a walk of some 2400 frames - progresses for as
+                    // long as the walker steps, whatever op it waits on.
+                    for slot in w.npcs.motions.keys() {
+                        let _ = write!(h, "{slot}{:?}|", w.npcs.positions.get(slot));
                     }
                     (format!("{k}@{:#06x}:op{op:02x}", c.pc), h.0.finish())
                 });
@@ -1039,6 +1057,7 @@ pub(super) fn run_one(
                 let (x, z) = (a.move_state.world_x, a.move_state.world_z);
                 if !was_free {
                     confine = Some((x, x, z, z, 0));
+                    confine_dirs = [0; 4];
                 }
                 if let Some((x0, x1, z0, z1, walked)) = confine.as_mut() {
                     *x0 = (*x0).min(x);
@@ -1048,9 +1067,20 @@ pub(super) fn run_one(
                     if pad & DIR_MASK != 0 {
                         *walked += 1;
                     }
+                    for (i, bit) in [0x10u16, 0x20, 0x40, 0x80].into_iter().enumerate() {
+                        if pad & bit != 0 {
+                            confine_dirs[i] += 1;
+                        }
+                    }
+                    // Every direction has to have been tried: a corridor
+                    // walled on three sides confines a stream that never
+                    // holds the fourth (`uru2+talk`, a seat at (36, 64)
+                    // walked Up, Down and Left for a thousand frames and
+                    // left at the first Right).
+                    let tried_all = confine_dirs.iter().all(|&n| n >= CONFINE_DIR_MIN_FRAMES);
                     if *x1 - *x0 >= CONFINE_SPAN || *z1 - *z0 >= CONFINE_SPAN {
                         confine = None;
-                    } else if *walked >= CONFINE_WALK_FRAMES {
+                    } else if *walked >= CONFINE_WALK_FRAMES && tried_all {
                         confine = None;
                         if reported.insert(format!("confined|{}", w.active_scene_label)) {
                             findings.push(mk(

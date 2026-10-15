@@ -46,7 +46,10 @@
 
 use crate::dialog_pacing::{PagerCall, TypewriterPacer};
 
-/// Rows the window shows (`_DAT_801F2740`).
+/// Rows the window shows (`_DAT_801F2740`) unless a script sets another
+/// count: the pager's resets (`0x801D90EC`, `0x801D91A4`, `0x801D923C`)
+/// store `3`, and field-VM op `4C E0 <n>` (`n` in `1..100`) stores `n` -
+/// `izumi`'s help pages run twelve.
 pub const WINDOW_ROWS: usize = 3;
 /// One row of scroll, in the pager's 1/16-px units (`0xF0` = 15 px).
 pub const ROW_SCROLL: i32 = 0xF0;
@@ -128,6 +131,11 @@ pub struct RowWindow {
     next: usize,
     /// The pending page turn keeps the window (`0x24`) rather than clearing it.
     keep_rows: bool,
+    /// Row capacity (`_DAT_801F2740`), [`WINDOW_ROWS`] unless a script set it.
+    pub capacity: usize,
+    /// The instant-page latch `_DAT_801F2744` (op `4C E0 00`): the next page
+    /// loads whole, no typing, and waits (`0x801D8798..0x801D88C4`).
+    pub instant: bool,
 }
 
 impl RowWindow {
@@ -145,6 +153,8 @@ impl RowWindow {
             page_len,
             next: 0,
             keep_rows: false,
+            capacity: WINDOW_ROWS,
+            instant: false,
         };
         // State 2's load: the first row in slot 0, `_DAT_801F3534 = 1`.
         if w.push_next_line() {
@@ -215,10 +225,33 @@ impl RowWindow {
         }
     }
 
+    /// The instant page (`0x801D8798..0x801D88C4`): clear the table, enter
+    /// every line of the page - into the next free slot while one is left,
+    /// else shifting the table up a slot and taking the last - count each
+    /// into `_DAT_801F3534`, drop the latch and wait (state `0x19`).
+    fn fill_instant(&mut self) {
+        self.rows.clear();
+        self.rows_on_page = 0;
+        self.next = 0;
+        while self.has_next_line() {
+            if self.rows.len() >= self.capacity.max(1) {
+                self.shift_up();
+            }
+            self.push_next_line();
+            self.rows_on_page += 1;
+        }
+        self.scroll = 0;
+        self.speed = SPEED_TYPE;
+        self.pacer.counter = 0;
+        self.pacer.acc = 0;
+        self.instant = false;
+        self.phase = WindowPhase::Wait;
+    }
+
     /// The page's last line has shown: `rows_on_page - 1 + (3 - last)`, then
     /// scroll the carried rows away or wait.
     fn end_page(&mut self) {
-        let max = WINDOW_ROWS as i32;
+        let max = self.capacity as i32;
         self.rows_on_page = self.rows_on_page - 1 + (max - self.last_index());
         self.phase = if self.rows_on_page < max {
             WindowPhase::ScrollAway
@@ -251,7 +284,13 @@ impl RowWindow {
             }
             return false;
         }
-        let max = WINDOW_ROWS as i32;
+        let max = self.capacity as i32;
+        // A page load under the instant latch: a fresh box's opening call
+        // (state 2) or a page turn's load (state 5) - not its press call.
+        if self.instant && !matches!(self.phase, WindowPhase::Wait | WindowPhase::PressTurn) {
+            self.fill_instant();
+            return !was_waiting;
+        }
         match self.phase {
             WindowPhase::Wait => {}
             WindowPhase::PressTurn => {
@@ -365,7 +404,7 @@ impl RowWindow {
             if self.push_next_line() {
                 self.rows_on_page += 1;
                 self.scroll += ROW_SCROLL;
-            } else if self.rows_on_page < WINDOW_ROWS as i32 {
+            } else if self.rows_on_page < self.capacity as i32 {
                 self.phase = WindowPhase::ScrollAway;
                 self.scroll += ROW_SCROLL;
             } else {
@@ -403,6 +442,31 @@ mod tests {
             }
         }
         panic!("window never waited");
+    }
+
+    /// `4C E0 0C` then `4C E0 00`: a twelve-row window, and the page loads
+    /// whole on the opening call and waits - no typing, no scroll.
+    #[test]
+    fn an_instant_twelve_row_page_loads_whole_and_waits() {
+        let mut w = RowWindow::open(10);
+        w.capacity = 12;
+        w.instant = true;
+        assert!(
+            w.call(2, false, |_| 30),
+            "the opening call reaches the wait"
+        );
+        assert_eq!(w.phase, WindowPhase::Wait);
+        assert_eq!(w.rows.len(), 10);
+        assert_eq!(w.rows_on_page, 10);
+        assert!(!w.instant, "the latch is spent");
+        // A three-row window keeps the last three of a longer page.
+        let mut w = RowWindow::open(5);
+        w.instant = true;
+        w.call(2, false, |_| 30);
+        assert_eq!(
+            w.rows.iter().map(|r| r.line).collect::<Vec<_>>(),
+            vec![2, 3, 4]
+        );
     }
 
     #[test]

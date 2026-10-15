@@ -6,7 +6,7 @@ use crate::cli::Bundle;
 use crate::mesh_bounds::{WorldActorMesh, mesh_aabb};
 use crate::pad_keymap::keymap_pad;
 use anyhow::{Context, Result};
-use legaia_engine_render::glam::{Mat4, Vec3};
+use glam::{Mat4, Vec3};
 use legaia_engine_render::{
     RenderTarget, Scene as RenderScene, SceneDraw, TextOverlay, UploadedFontAtlas, UploadedVram,
     window::{EngineWindow, orbit_camera_mvp},

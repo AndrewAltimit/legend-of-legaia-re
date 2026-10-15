@@ -94,7 +94,7 @@ impl<S: AudioSink> BootSession<S> {
                 Some(bank) => director.set_xa_clip_bank(bank),
                 None => log::warn!("battle CD-XA clip bank not staged"),
             }
-            // The cast voices (seventeen files) are not decoded here: the
+            // The cast voices (fifteen files) are not decoded here: the
             // director stages one channel span from the disc the first time
             // a cast names it.
             let n = director.set_xa_lazy_source(path);

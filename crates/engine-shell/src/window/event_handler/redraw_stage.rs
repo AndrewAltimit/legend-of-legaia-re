@@ -383,7 +383,7 @@ impl PlayWindowApp {
             None => r.clear_depth_cue_ramp(),
         }
         // Retail GTE NCLIP winding rejection over the whole field pass
-        // (`camera_view::nclip_cull_mode`): retail culls the back faces
+        // (`camera_frame::nclip_cull_mode`): retail culls the back faces
         // of every field mesh, which is what hides a sky dome's outer
         // shell (korout, retona) and the opdeene prologue shot's near
         // cave wall. The field frame draws raw retail vertices under a
@@ -392,7 +392,7 @@ impl PlayWindowApp {
         // = discard CCW under the pipelines' default Ccw front-face)
         // keeps them. The world map, battle and the minigame venues keep
         // both-sided draws (their per-pass winding parities differ).
-        let nclip_mode = legaia_engine_core::camera_view::nclip_cull_mode(
+        let nclip_mode = legaia_engine_field::camera_frame::nclip_cull_mode(
             cutscene_cam.is_some(),
             self.session.host.world.mode,
         );
@@ -412,7 +412,7 @@ impl PlayWindowApp {
                 .overworld_curve_bias()
                 .map_or(0.0, f32::from),
         );
-        // Retail's per-primitive near reject (`camera_view::prim_near_cut`):
+        // Retail's per-primitive near reject (`camera_frame::prim_near_cut`):
         // a primitive whose mean corner depth sits near or behind the eye
         // is not drawn, where a per-pixel clip would paint it across the
         // frame. Only under a retail camera - the field debug orbit and
@@ -422,11 +422,11 @@ impl PlayWindowApp {
             _ => !self.field_debug_camera,
         } && std::env::var_os("LEGAIA_DIAG_NO_PRIM_NEAR").is_none();
         r.set_prim_near_reject(
-            legaia_engine_core::camera_view::prim_near_cut(
+            legaia_engine_field::camera_frame::prim_near_cut(
                 self.session.host.world.mode,
                 retail_camera,
             ),
-            legaia_engine_core::camera_view::prim_gpu_span_h(
+            legaia_engine_field::camera_frame::prim_gpu_span_h(
                 self.session.host.world.mode,
                 retail_camera,
                 self.session.camera.globals.0[9] as f32,

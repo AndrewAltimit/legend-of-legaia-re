@@ -1,14 +1,11 @@
-//! The disk-backed save rack behind the save-select / load screens: the
-//! two card ports, the save-directory scanner, slot file read / write, the
-//! per-slot snapshot, and a mounted memory-card image in port two.
+//! The save rack behind the save-select / load screens: the two card ports,
+//! each a mounted memory-card image - port 1 the window's own card in the
+//! save directory, port 2 whatever `--card` names - plus the reader for the
+//! LGSF slot files an older build wrote into that directory, which the
+//! port-1 card imports the first time it is created.
 
 use super::*;
 
-/// Walk `save_dir` and build per-slot `SlotSnapshot` entries from any
-/// LGSF v1 / v2 files found there. Empty slots produce
-/// `SlotSnapshot::empty(slot)`. Up to 8 slots are scanned (the retail
-/// PSX memory card supports 15 blocks; engines wishing to scan more can
-/// drive their own scanner and feed the result into `SaveSelectSession`).
 /// Memory-card ports the console has, and so the pill rows this shell draws.
 /// Retail's save screen is `SLOT 1` / `SLOT 2` and nothing else; the sprite
 /// chrome has always clamped to two, which is what made a 15-entry pill row
@@ -17,80 +14,144 @@ pub(crate) const CARD_PORTS: u8 = 2;
 
 /// The mounted-card type, shared with the browser rack.
 ///
-/// Both hosts hold the same struct now: it caches the detected
+/// Both hosts hold the same struct: it caches the detected
 /// [`legaia_save::emu::CardView`], carries the dirty bit a host that writes
 /// needs, and answers `save_at` / `block_is_save_start` / `dir_frame` off its
-/// own bytes. The two hosts used to carry near-identical copies that drifted.
+/// own bytes.
 pub(crate) use legaia_save::emu::MountedCard;
 
-/// The native shell's save rack: retail's two console ports, with the
-/// engine's own save directory standing in for the card in **port 1**.
+/// The port-1 card's file inside the save directory: a raw 128 KiB `.mcr`,
+/// the same container the browser play page keeps in its storage for port 1
+/// and the one any PSX emulator or memory-card tool reads.
+pub(crate) const PORT_ONE_CARD_FILE: &str = "memcard1.mcr";
+
+/// Mount the window's own card for **port 1**.
 ///
-/// The shell's saves are LGSF files rather than SC blocks on a real card, but
-/// the screen around them is retail's: two pills, a card-read beat, then the
-/// 5x3 block grid of `slot_00 … slot_14`. Modelling the directory as the
-/// mounted card is what lets that screen be the same screen the browser
-/// draws - one [`SaveRack`] kind, one
-/// [`legaia_engine_menus::save_screen::SaveScreenFlow`], no per-host flag.
-/// Port 2 is empty here; [`disk_save_rack_with_card`] is the same rack with a
-/// real card image in it.
-/// The windowed host mounts a card in port 2 whenever `--card` names one, so
-/// this unmounted form is what the unit tests below stand on.
-#[cfg(test)]
-pub(crate) fn disk_save_rack(save_dir: &Path) -> legaia_engine_menus::save_select::SaveRack {
-    disk_save_rack_with_card(save_dir, None)
+/// Port 1 used to be the save directory itself, read as fifteen LGSF files
+/// (`slot_NN`), while the browser page mounted a card image there - so the
+/// two hosts kept the same save in two formats, and a save made in one could
+/// not be put in the other's port. Both mount a memory-card image now, and
+/// every Save / Load goes through the one card kernel
+/// ([`legaia_engine_core::card_write::write_save_into_card`], `save_at`).
+///
+/// When `save_dir` holds no card yet, a freshly formatted one is mounted and
+/// every LGSF slot an older build left there is written into it, slot `N`
+/// into grid cell `N` (block `N + 1`), and the card is written to disk at
+/// once so the import happens one time. The LGSF files are left in place:
+/// `--resume-save` still loads any of them directly.
+pub(crate) fn open_port_one_card(
+    save_dir: &Path,
+    index: Option<&legaia_engine_scene::scene::ProtIndex>,
+) -> MountedCard {
+    let path = save_dir.join(PORT_ONE_CARD_FILE);
+    if path.is_file() {
+        match MountedCard::open(&path) {
+            Ok(card) => return card,
+            Err(e) => log::warn!(
+                "save rack: port-1 card {} does not mount ({e:#}); using a blank card",
+                path.display()
+            ),
+        }
+        // A file that does not mount is kept, not overwritten: the blank
+        // card below has no path, so nothing this session saves can clobber
+        // it.
+        return blank_card(None);
+    }
+    let mut card = blank_card(Some(path));
+    let imported = import_legacy_slots(save_dir, &mut card, index);
+    if imported > 0 {
+        match std::fs::create_dir_all(save_dir)
+            .map_err(anyhow::Error::from)
+            .and_then(|_| card.persist())
+        {
+            Ok(_) => log::info!(
+                "save rack: imported {imported} LGSF save(s) from {} into {}",
+                save_dir.display(),
+                PORT_ONE_CARD_FILE
+            ),
+            Err(e) => log::warn!("save rack: port-1 card not written: {e:#}"),
+        }
+    }
+    card
 }
 
-/// [`disk_save_rack`] with a [`MountedCard`] in **port 2**.
-///
-/// Both pills are built through
-/// [`legaia_engine_menus::save_screen::card_port_snapshot`], the one place a
-/// port's pill fields are decided, so a mounted card carries its own name
-/// into the row exactly as the browser's imported `.mcr` does.
-pub(crate) fn disk_save_rack_with_card(
+/// A freshly formatted card, to be written to `path` on its first save.
+fn blank_card(path: Option<std::path::PathBuf>) -> MountedCard {
+    let mut card = MountedCard::from_bytes(
+        legaia_save::card::formatted_card_image(),
+        PORT_ONE_CARD_FILE,
+    )
+    .expect("a formatted card image mounts");
+    card.path = path;
+    card
+}
+
+/// Write every readable LGSF slot under `save_dir` into `card`, slot `N` into
+/// grid cell `N`. Returns how many were written.
+pub(crate) fn import_legacy_slots(
     save_dir: &Path,
-    card: Option<&MountedCard>,
+    card: &mut MountedCard,
+    index: Option<&legaia_engine_scene::scene::ProtIndex>,
+) -> usize {
+    let mut imported = 0;
+    for (slot, snap) in scan_save_dir(save_dir).iter().enumerate() {
+        if !snap.present {
+            continue;
+        }
+        let Ok((sf, resume)) = read_slot_save(save_dir, slot as u8) else {
+            continue;
+        };
+        match legaia_engine_core::card_write::write_save_into_card(
+            card,
+            slot as u8 + 1,
+            &sf,
+            &resume,
+            index,
+        ) {
+            Ok(_) => imported += 1,
+            Err(e) => log::warn!("save rack: LGSF slot {slot} not imported: {e}"),
+        }
+    }
+    imported
+}
+
+/// The window's save rack: retail's two console ports, each pill built
+/// through [`legaia_engine_menus::save_screen::card_port_snapshot`], the one
+/// place a port's pill fields are decided (the browser rack's too).
+pub(crate) fn card_save_rack(
+    cards: [Option<&MountedCard>; 2],
 ) -> legaia_engine_menus::save_select::SaveRack {
     use legaia_engine_menus::save_screen::card_port_snapshot;
-    let dir_label = save_dir
-        .file_name()
-        .and_then(|n| n.to_str())
-        .unwrap_or("SAVE DATA");
-    let mounted = [Some(dir_label), card.map(|c| c.label.as_str())];
     legaia_engine_menus::save_select::SaveRack::CardPorts(
         (0..CARD_PORTS)
-            .map(|port| card_port_snapshot(port, mounted.get(port as usize).copied().flatten()))
+            .map(|port| card_port_snapshot(port, cards[port as usize].map(|c| c.label.as_str())))
             .collect(),
     )
 }
 
-/// The fifteen blocks behind a port of [`disk_save_rack`] - the answer to
-/// [`legaia_engine_menus::save_screen::SaveScreenFlow::pending_read`]. Port 1
-/// is the save directory; every other port is unmounted and reads empty.
-#[cfg(test)]
-pub(crate) fn disk_port_blocks(
-    save_dir: &Path,
-    port: u8,
-) -> Vec<legaia_engine_menus::save_select::SlotSnapshot> {
-    disk_port_blocks_with_card(save_dir, None, port)
-}
-
-/// [`disk_port_blocks`] for a rack built by [`disk_save_rack_with_card`]:
-/// port 1 is the save directory, port 2 the mounted card's own fifteen
-/// blocks. A port with nothing in it still reads fifteen free cells rather
-/// than the other port's - the grid previews the port the player picked.
-pub(crate) fn disk_port_blocks_with_card(
-    save_dir: &Path,
-    card: Option<&MountedCard>,
+/// The fifteen blocks behind `port` - the answer to
+/// [`legaia_engine_menus::save_screen::SaveScreenFlow::pending_read`]. A port
+/// with nothing in it still reads fifteen free cells rather than the other
+/// port's - the grid previews the port the player picked.
+pub(crate) fn card_port_blocks(
+    cards: [Option<&MountedCard>; 2],
     port: u8,
 ) -> Vec<legaia_engine_menus::save_select::SlotSnapshot> {
     use legaia_engine_menus::save_screen::SLOT_GRID_CELLS;
     use legaia_engine_menus::save_select::SlotSnapshot;
-    match (port, card) {
-        (0, _) => scan_save_dir(save_dir),
-        (1, Some(card)) => legaia_engine_menus::save_select::card_block_snapshots(card),
-        _ => (0..SLOT_GRID_CELLS).map(SlotSnapshot::empty).collect(),
+    match cards.get(port as usize).copied().flatten() {
+        Some(card) => legaia_engine_menus::save_select::card_block_snapshots(card),
+        None => (0..SLOT_GRID_CELLS).map(SlotSnapshot::empty).collect(),
     }
+}
+
+/// Does any port hold a save? Continue on the title is live exactly then.
+pub(crate) fn rack_has_save(cards: [Option<&MountedCard>; 2]) -> bool {
+    cards.iter().flatten().any(|c| {
+        legaia_engine_menus::save_select::card_block_snapshots(c)
+            .iter()
+            .any(|s| s.present)
+    })
 }
 
 /// Path of `slot`'s LGSF file under `save_dir` - the shape
@@ -114,7 +175,9 @@ pub(crate) fn read_slot_save(
         .with_context(|| format!("parse save slot {slot} ({} bytes)", bytes.len()))
 }
 
-/// Write `sf` + its resume point to `slot`'s LGSF file, creating `save_dir`.
+/// Write `sf` + its resume point to `slot`'s LGSF file, creating `save_dir` -
+/// the files an older build wrote, which the tests seed.
+#[cfg(test)]
 /// The counterpart of [`read_slot_save`]; the same file shape
 /// `MenuRuntime::save_to_slot` writes, plus the trailer that runtime has no
 /// scene to fill.
@@ -316,7 +379,10 @@ mod save_scan_tests {
 
 #[cfg(test)]
 mod save_rack_tests {
-    use super::{CARD_PORTS, disk_port_blocks, disk_save_rack, scan_save_dir};
+    use super::{
+        CARD_PORTS, MountedCard, PORT_ONE_CARD_FILE, card_port_blocks, card_save_rack,
+        open_port_one_card, scan_save_dir,
+    };
     use legaia_engine_core::menu_runtime::SAVE_EXT;
     use legaia_engine_menus::save_screen::{
         SLOT_GRID_CELLS, SaveCommit, SaveCommitKind, SaveScreenFlow,
@@ -328,9 +394,22 @@ mod save_rack_tests {
 
     fn seeded_dir(slots: &[u8]) -> tempfile::TempDir {
         let dir = tempfile::tempdir().unwrap();
+        // A lead with a name and HP: a zeroed record reads as a save in an
+        // LGSF file but as no party at all in a card block, which is the
+        // carrier the import writes.
+        let mut lead = CharacterRecord::zeroed();
+        lead.set_name("Vahn");
+        lead.set_hp_mp_sp(legaia_save::HpMpSp {
+            hp_cur: 40,
+            hp_max: 40,
+            mp_cur: 2,
+            mp_max: 2,
+            sp_cur: 0,
+            sp_max: 0,
+        });
         let bytes = SaveFile {
             party: Party {
-                members: vec![CharacterRecord::zeroed()],
+                members: vec![lead],
             },
             ..SaveFile::default()
         }
@@ -349,30 +428,84 @@ mod save_rack_tests {
     /// slots drew fifteen text rows under two pill sprites - the sprite
     /// chrome has always clamped to `min(2)`, so the mismatch was invisible
     /// in the sprite pass and glaring in the text pass.
+    /// Port 1 of a save directory an older build wrote LGSF slots into.
+    fn port_one(dir: &tempfile::TempDir) -> MountedCard {
+        open_port_one_card(dir.path(), None)
+    }
+
     #[test]
-    fn the_rack_is_two_ports_with_the_save_dir_in_port_one() {
+    fn the_rack_is_two_ports_with_the_window_card_in_port_one() {
         let dir = seeded_dir(&[0]);
-        let rack = disk_save_rack(dir.path());
+        let card = port_one(&dir);
+        let rack = card_save_rack([Some(&card), None]);
         assert!(
             rack.is_card_ports(),
             "the shell runs retail's two-stage flow"
         );
         assert_eq!(rack.slots().len(), CARD_PORTS as usize);
-        assert!(rack.slots()[0].present, "port 1 is the save directory");
+        assert!(rack.slots()[0].present, "port 1 is the window's card");
+        assert_eq!(rack.slots()[0].label, PORT_ONE_CARD_FILE);
         assert!(!rack.slots()[1].present, "port 2 holds no card");
     }
 
-    /// The grid behind port 1 is the save directory; every other port is
-    /// unmounted and previews as fifteen free cells rather than as port 1's.
+    /// The LGSF slots an older build wrote land in the port-1 card on the
+    /// cell they had (slot `N` -> cell `N`); every other port is unmounted
+    /// and previews as fifteen free cells rather than as port 1's.
     #[test]
-    fn port_one_reads_the_save_dir_and_port_two_reads_empty() {
+    fn port_one_imports_the_legacy_slots_cell_for_cell() {
         let dir = seeded_dir(&[2]);
-        let blocks = disk_port_blocks(dir.path(), 0);
-        assert_eq!(blocks, scan_save_dir(dir.path()));
+        let card = port_one(&dir);
+        let blocks = card_port_blocks([Some(&card), None], 0);
+        let legacy = scan_save_dir(dir.path());
+        for (i, (b, l)) in blocks.iter().zip(&legacy).enumerate() {
+            assert_eq!(b.present, l.present, "cell {i}");
+        }
         assert!(blocks[2].present);
-        let empty = disk_port_blocks(dir.path(), 1);
+        let empty = card_port_blocks([Some(&card), None], 1);
         assert_eq!(empty.len(), SLOT_GRID_CELLS as usize);
         assert!(empty.iter().all(|b| !b.present));
+    }
+
+    /// The import happens once: the card is written to the directory the
+    /// first time, and from then on the card file is port 1 - a slot file
+    /// left beside it is not imported again, and is not deleted either
+    /// (`--resume-save` still loads it).
+    #[test]
+    fn the_import_writes_the_card_once_and_keeps_the_slot_files() {
+        let dir = seeded_dir(&[0]);
+        let _ = port_one(&dir);
+        let card_path = dir.path().join(PORT_ONE_CARD_FILE);
+        assert!(card_path.is_file(), "the imported card is on disk");
+        assert!(scan_save_dir(dir.path())[0].present, "the slot file stays");
+        let before = std::fs::read(&card_path).unwrap();
+        // A slot file written after the import is not pulled in.
+        let later = seeded_dir(&[4]);
+        std::fs::copy(
+            later.path().join(format!("slot_04.{SAVE_EXT}")),
+            dir.path().join(format!("slot_04.{SAVE_EXT}")),
+        )
+        .unwrap();
+        let again = port_one(&dir);
+        assert_eq!(again.bytes, before);
+        assert!(!card_port_blocks([Some(&again), None], 0)[4].present);
+    }
+
+    /// A directory with no slot files mounts a blank card and writes nothing
+    /// until the first Save.
+    #[test]
+    fn an_empty_directory_mounts_a_blank_card_and_writes_nothing() {
+        let dir = tempfile::tempdir().unwrap();
+        let card = open_port_one_card(dir.path(), None);
+        assert!(!dir.path().join(PORT_ONE_CARD_FILE).exists());
+        assert!(
+            card_port_blocks([Some(&card), None], 0)
+                .iter()
+                .all(|b| !b.present)
+        );
+        assert_eq!(
+            card.path.as_deref(),
+            Some(dir.path().join(PORT_ONE_CARD_FILE).as_path())
+        );
     }
 
     /// The whole two-stage walk, end to end: pick the port off the pills,
@@ -383,12 +516,13 @@ mod save_rack_tests {
     #[test]
     fn picking_a_grid_cell_commits_that_slot_not_the_port() {
         let dir = seeded_dir(&[0, 3]);
-        let mut session =
-            SaveSelectSession::for_rack(SaveSelectMode::Load, &disk_save_rack(dir.path()));
+        let card = port_one(&dir);
+        let cards = [Some(&card), None];
+        let mut session = SaveSelectSession::for_rack(SaveSelectMode::Load, &card_save_rack(cards));
         let mut flow = SaveScreenFlow::new();
         let step = |session: &mut SaveSelectSession, flow: &mut SaveScreenFlow, edge: u16| {
             if let Some(port) = flow.pending_read(session) {
-                flow.install_blocks(port, disk_port_blocks(dir.path(), port));
+                flow.install_blocks(port, card_port_blocks(cards, port));
             }
             let edge = flow.before_tick(session, edge);
             session.tick(SelectInput::from_pad_edge(edge));
@@ -462,7 +596,11 @@ mod save_rack_tests {
         let flat = SaveRack::Blocks(scan_save_dir(dir.path()));
         assert!(!flat.is_card_ports());
         assert_eq!(flat.slots().len(), SLOT_GRID_CELLS as usize);
-        assert_ne!(disk_save_rack(dir.path()).slots().len(), flat.slots().len());
+        let card = port_one(&dir);
+        assert_ne!(
+            card_save_rack([Some(&card), None]).slots().len(),
+            flat.slots().len()
+        );
     }
 }
 
@@ -551,7 +689,7 @@ mod slot_model_tests {
 
 #[cfg(test)]
 mod mounted_card_tests {
-    use super::{CARD_PORTS, MountedCard, disk_port_blocks_with_card, disk_save_rack_with_card};
+    use super::{CARD_PORTS, MountedCard, card_port_blocks, card_save_rack};
     use legaia_engine_menus::save_screen::SLOT_GRID_CELLS;
     use legaia_engine_menus::save_select::SlotContent;
     use legaia_save::{CharacterRecord, HpMpSp, Party, SaveFile, SaveResume};
@@ -622,8 +760,8 @@ mod mounted_card_tests {
     /// browser's does.
     #[test]
     fn a_mounted_card_fills_port_two_with_its_own_name() {
-        let (dir, card) = mount("player.mcr", 3);
-        let rack = disk_save_rack_with_card(dir.path(), Some(&card));
+        let (_dir, card) = mount("player.mcr", 3);
+        let rack = card_save_rack([None, Some(&card)]);
         assert!(rack.is_card_ports());
         assert_eq!(rack.slots().len(), CARD_PORTS as usize);
         assert!(rack.slots()[1].present, "port 2 holds the mounted card");
@@ -636,8 +774,8 @@ mod mounted_card_tests {
     fn down_on_the_pill_row_picks_the_mounted_card() {
         use legaia_engine_menus::save_screen::SaveScreenFlow;
         use legaia_engine_menus::save_select::{SaveSelectMode, SaveSelectSession, SelectInput};
-        let (dir, card) = mount("player.mcr", 3);
-        let rack = disk_save_rack_with_card(dir.path(), Some(&card));
+        let (_dir, card) = mount("player.mcr", 3);
+        let rack = card_save_rack([None, Some(&card)]);
         let mut session = SaveSelectSession::for_rack(SaveSelectMode::Load, &rack);
         let mut flow = SaveScreenFlow::new();
         for edge in [0x0040u16, 0] {
@@ -651,8 +789,8 @@ mod mounted_card_tests {
     /// is card block `i + 1`, and only the claimed block reads as a save.
     #[test]
     fn the_card_grid_reads_the_claimed_block_and_nothing_else() {
-        let (dir, card) = mount("player.mcr", 3);
-        let blocks = disk_port_blocks_with_card(dir.path(), Some(&card), 1);
+        let (_dir, card) = mount("player.mcr", 3);
+        let blocks = card_port_blocks([None, Some(&card)], 1);
         assert_eq!(blocks.len(), SLOT_GRID_CELLS as usize);
         // Block 3 is grid cell 2 - the off-by-one that makes the directory
         // block addressable would put this on cell 3.
@@ -696,10 +834,9 @@ mod mounted_card_tests {
     /// existed - an empty port previewing fifteen free cells, never port 1's.
     #[test]
     fn port_two_reads_empty_with_no_card_mounted() {
-        let dir = tempfile::tempdir().unwrap();
-        let rack = disk_save_rack_with_card(dir.path(), None);
+        let rack = card_save_rack([None, None]);
         assert!(!rack.slots()[1].present);
-        let blocks = disk_port_blocks_with_card(dir.path(), None, 1);
+        let blocks = card_port_blocks([None, None], 1);
         assert_eq!(blocks.len(), SLOT_GRID_CELLS as usize);
         assert!(blocks.iter().all(|b| !b.present));
     }

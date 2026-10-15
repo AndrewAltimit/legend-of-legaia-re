@@ -41,10 +41,12 @@ mod field_menu;
 mod frame_steps;
 mod frame_tick;
 mod scene_entry;
+mod tick_owner;
 
 use disc_tables::*;
 pub use disc_tables::{BATTLE_XA_CLIP_SLOTS, attach_escape_icons};
 pub use frame_steps::{CUE_FOOTSTEP, step_npc_clip_players};
+pub use tick_owner::{TickClaims, TickOwner};
 
 /// What one menu-button press did ([`BootSession::press_field_menu`]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -471,6 +473,70 @@ mod tests {
         s.camera_azimuth_override = Some(0x400);
         s.tick().expect("tick");
         assert_eq!(s.camera_azimuth_override, None);
+    }
+
+    /// The one tick order both play hosts share: a host screen first, the
+    /// naming prompt before any pause press, a press refused while an
+    /// overlay screen owns the pad, a suspending overlay taking the tick and
+    /// the field's pad neutral under any overlay.
+    #[test]
+    fn the_tick_claim_hands_each_tick_to_one_owner_in_order() {
+        let start = PadButton::Start.mask();
+        let ready = TickClaims {
+            pause_menu_ready: true,
+            ..TickClaims::default()
+        };
+        let mut s = headless_session();
+        s.host.world.mode = SceneMode::Field;
+        // A host screen wins over a Start edge: nothing opens.
+        let host = TickClaims {
+            host_screen: true,
+            ..ready
+        };
+        assert_eq!(s.claim_tick(host, start), TickOwner::HostScreen);
+        assert!(!s.field_menu_is_open());
+        // An overlay screen owns the pad: the press is not answered, and the
+        // field ticks on a neutral pad (an inn) or not at all (a shop).
+        let inn = TickClaims {
+            overlay_open: true,
+            ..ready
+        };
+        assert_eq!(s.claim_tick(inn, start), TickOwner::Field(true));
+        let shop = TickClaims {
+            overlay_suspends: true,
+            ..inn
+        };
+        assert_eq!(s.claim_tick(shop, start), TickOwner::OverlayScreen);
+        assert!(!s.field_menu_is_open());
+        // A host that cannot draw the menu yet does not open it.
+        assert_eq!(
+            s.claim_tick(TickClaims::default(), start),
+            TickOwner::Field(false)
+        );
+        // No owner and no press: the field, on the player's pad.
+        assert_eq!(s.claim_tick(ready, 0), TickOwner::Field(false));
+        // The press opens the menu and takes the tick; while the wipe runs
+        // the field ticks under it (the world in `Menu`).
+        assert_eq!(
+            s.claim_tick(ready, start),
+            TickOwner::PauseMenuOpened(false)
+        );
+        assert!(s.field_menu_is_open());
+        assert!(!s.pause_wipe().menu_spawned());
+        assert!(matches!(s.claim_tick(ready, 0), TickOwner::Field(_)));
+        while !s.pause_wipe().menu_spawned() {
+            s.step_pause_wipe();
+        }
+        assert_eq!(s.claim_tick(ready, 0), TickOwner::PauseMenuSpawned);
+        s.close_field_menu();
+        // The naming prompt is asked before the pause press.
+        s.host.world.open_name_entry(0);
+        assert!(s.host.world.name_entry_active());
+        assert!(matches!(
+            s.claim_tick(ready, start),
+            TickOwner::NameEntry(_)
+        ));
+        assert!(!s.field_menu_is_open());
     }
 
     /// The session's tick drains the field CD-XA queues for every host: a

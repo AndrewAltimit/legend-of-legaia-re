@@ -87,6 +87,15 @@ pub struct RetailObs {
     /// `LEGAIA_SEAT_FOCUS` so it frames what retail framed; the headless
     /// `camera` channel does not, so it keeps reporting the focus miss.
     pub seat_focus: Option<[i32; 2]>,
+    /// The eye translation (`0x800840B8/BC/C0`) on a walkable state, which
+    /// the image child lands after its seat's snap (`LEGAIA_SEAT_EYE`). The
+    /// follow ease steps the eye only on a frame the player moved and not at
+    /// all while the player is movement-locked, so the eye of a state whose
+    /// player stopped short of the ease's close is walk history the snap
+    /// cannot replay (`town01_npc16_dialogue_first_page`: eye Y `1117`, the
+    /// pose the snap composes `1444`). The headless `camera` channel keeps
+    /// the snap's eye, so it goes on scoring the compose.
+    pub seat_eye: Option<[i32; 3]>,
     /// The displayed frame, when the state carries VRAM + display registers.
     pub frame: Option<Frame>,
     /// Battle observables for a battle-class state; `Err` names why the
@@ -267,6 +276,9 @@ impl RetailObs {
                 }
                 _ => None,
             },
+            seat_eye: (matches!(class, StateClass::Field | StateClass::WorldMap)
+                && player.is_some())
+            .then_some(camera.eye),
             frame,
             battle,
             menu,
@@ -447,6 +459,9 @@ impl RetailObs {
         if let Some([r, g, b]) = self.clear_rgb {
             env.push(("LEGAIA_SEAT_CLEAR", format!("{r},{g},{b}")));
         }
+        if let Some([x, y, z]) = self.seat_eye {
+            env.push(("LEGAIA_SEAT_EYE", format!("{x},{y},{z}")));
+        }
         if let Some(bias) = self.curve_bias.filter(|&b| b != 0) {
             env.push(("LEGAIA_SEAT_CURVE_BIAS", bias.to_string()));
         }
@@ -536,6 +551,7 @@ impl RetailObs {
             self.hud_countdown = None;
             self.camera_block = None;
             self.seat_focus = None;
+            self.seat_eye = None;
         }
     }
 }

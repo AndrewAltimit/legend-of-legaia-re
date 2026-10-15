@@ -94,28 +94,12 @@ fn sample_world(world: &World, pad: u16) -> StateSample {
     let party_hp_total: u32 = world.actors.iter().map(|a| a.battle.hp as u32).sum();
     StateSample {
         frame: world.frame,
-        scene_mode: scene_mode_name(world.mode).to_string(),
+        scene_mode: world.mode.name().to_string(),
         pad,
         rng_state: world.rng_state,
         money: world.party.money,
         party_hp_total,
         dialog_active: world.dialog.current.is_some(),
-    }
-}
-
-fn scene_mode_name(m: SceneMode) -> &'static str {
-    match m {
-        SceneMode::Title => "Title",
-        SceneMode::Field => "Field",
-        SceneMode::Battle => "Battle",
-        SceneMode::Cutscene => "Cutscene",
-        SceneMode::WorldMap => "WorldMap",
-        SceneMode::Dance => "Dance",
-        SceneMode::Fishing => "Fishing",
-        SceneMode::SlotMachine => "SlotMachine",
-        SceneMode::BakaFighter => "BakaFighter",
-        SceneMode::MuscleDome => "MuscleDome",
-        SceneMode::Menu => "Menu",
     }
 }
 
@@ -149,7 +133,7 @@ fn build_mode_trace(replay: &ReplayFile) -> Vec<ModeTraceFrame> {
         frame: 0,
         game_mode: None,
         game_mode_name: None,
-        scene_mode: scene_mode_name(world.mode).to_string(),
+        scene_mode: world.mode.name().to_string(),
         active_scene: None,
     });
     for _ in pad_stream.iter().skip(1) {
@@ -158,7 +142,7 @@ fn build_mode_trace(replay: &ReplayFile) -> Vec<ModeTraceFrame> {
             frame: world.frame,
             game_mode: None,
             game_mode_name: None,
-            scene_mode: scene_mode_name(world.mode).to_string(),
+            scene_mode: world.mode.name().to_string(),
             active_scene: None,
         });
     }

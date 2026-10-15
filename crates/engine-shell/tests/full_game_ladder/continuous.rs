@@ -86,6 +86,12 @@ pub(super) fn worth_fighting(w: &legaia_engine_core::world::World) -> bool {
     if SAVING_FOR_BOSS.with(std::cell::Cell::get) && !TRAINING.with(std::cell::Cell::get) {
         return false;
     }
+    // Against a running escape clock (`4C D3`: the Floating Castle's six
+    // minutes) a fight's length comes off the clock, and its return to the
+    // field another twenty seconds (MAIN INIT `0x8003B62C`): a player runs.
+    if w.battle.escape_timer.armed {
+        return false;
+    }
     let n = w.party.party_count.clamp(1, 3) as usize;
     let party: u64 = (0..n).map(|i| u64::from(w.actors[i].battle.hp)).sum();
     let foes: Vec<u64> = w
@@ -189,14 +195,22 @@ fn carried(sf: &legaia_save::SaveFile) -> String {
         if v.hp_max == 0 {
             continue;
         }
+        let s = m.live_stats();
+        let r = m.record_stats();
         out.push_str(&format!(
-            "      member {i}: lv {} xp {} hp {}/{} mp {}/{} equip {:02X?}\n",
+            "      member {i}: lv {} xp {} hp {}/{} mp {}/{} agl {}/{} atk {}/{} spd {}/{} equip {:02X?}\n",
             m.level(),
             m.cumulative_xp(),
             v.hp_cur,
             v.hp_max,
             v.mp_cur,
             v.mp_max,
+            s.agl,
+            r.agl,
+            s.atk,
+            r.atk,
+            s.spd,
+            r.spd,
             m.equipment().slots
         ));
     }

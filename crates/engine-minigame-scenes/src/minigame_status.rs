@@ -16,14 +16,16 @@
 //! entry point, and each host shows what it returns **outside the game
 //! picture**: the browser play page in the strip under its canvas (the
 //! `play_mg_caption_json` export), the native window in its title bar
-//! ([`MinigameCaption::title_line`]).
+//! ([`MinigameCaption::title_line`]). The hosts reach it through
+//! `World::minigame_caption` in engine-core, which supplies the two Muscle
+//! Dome answers that read the world ([`MuscleWorld`]).
 
-use crate::world::World;
+use crate::minigame_state::MinigameState;
 use legaia_engine_fishing::fishing::PondSession;
 use legaia_engine_menus::muscle_dome_session::MusclePhase;
 use legaia_engine_minigames::baka_fighter::{BakaFight, MatchPhase};
 use legaia_engine_minigames::dance::{DanceGame, Judge, dance_number_digits};
-use legaia_engine_minigames::muscle_dome::TIME_METER_MAX;
+use legaia_engine_minigames::muscle_dome::{ContestFlags, TIME_METER_MAX};
 use legaia_engine_minigames::slot_machine::{SlotMachine, SlotPhase};
 use legaia_engine_mode::mode::SceneMode;
 
@@ -170,13 +172,26 @@ impl MinigameCaption {
     }
 }
 
-/// The status caption for the minigame that owns the world this frame, or
-/// `None` outside one. The one entry point every play host reads: which game
-/// is live is the world's mode, and each game's rows come from its builder
-/// below.
-pub fn caption(world: &World, host: &StatusHost<'_>) -> Option<MinigameCaption> {
-    let game = StatusGame::of_mode(world.mode)?;
-    let mg = &world.minigames;
+/// What the Muscle Dome rows read off the world rather than the minigame
+/// seat: the contest's story-flag gates (`World::muscle_contest_flags`) and
+/// the running turn play-out tally (`World::muscle_playback_tally`).
+#[derive(Debug, Clone, Copy, Default)]
+pub struct MuscleWorld {
+    pub contest_flags: ContestFlags,
+    pub playback_tally: Option<(usize, i32)>,
+}
+
+/// The status caption for the minigame that owns `mode` this frame, or
+/// `None` outside one. The one entry point every play host reads (through
+/// `World::minigame_caption`): which game is live is the world's mode, and
+/// each game's rows come from its builder below.
+pub fn caption(
+    mode: SceneMode,
+    mg: &MinigameState,
+    muscle: &MuscleWorld,
+    host: &StatusHost<'_>,
+) -> Option<MinigameCaption> {
+    let game = StatusGame::of_mode(mode)?;
     let rows = match game {
         StatusGame::Slot if host.slot_machine_drawn => Vec::new(),
         StatusGame::Slot => mg
@@ -189,7 +204,7 @@ pub fn caption(world: &World, host: &StatusHost<'_>) -> Option<MinigameCaption> 
             .as_ref()
             .map(baka_status_rows)
             .unwrap_or_default(),
-        StatusGame::Muscle => muscle_status_rows(world),
+        StatusGame::Muscle => muscle_status_rows(mg, muscle),
         // Withheld while the pre-song count-in banner is up: the rule lives
         // with the phase (`dance_status_visible`), not with a host.
         StatusGame::Dance if !mg.dance_status_visible() => Vec::new(),
@@ -335,8 +350,8 @@ pub fn baka_status_rows(f: &BakaFight) -> Vec<StatusRow> {
 /// shared battle HUD builders off the session's command flow - so the only
 /// text left is the Ra-Seru list, whose retail window (`ctx+6 = 0x46`) is not
 /// piece-pinned and stays a text stand-in.
-pub fn muscle_status_rows(world: &World) -> Vec<StatusRow> {
-    let Some(s) = world.minigames.muscle_dome.as_ref() else {
+pub fn muscle_status_rows(mg: &MinigameState, muscle: &MuscleWorld) -> Vec<StatusRow> {
+    let Some(s) = mg.muscle_dome.as_ref() else {
         return Vec::new();
     };
     if s.phase() == MusclePhase::Select && !s.magic_open() {
@@ -350,11 +365,14 @@ pub fn muscle_status_rows(world: &World) -> Vec<StatusRow> {
         return Vec::new();
     }
     let mut out = Vec::new();
-    if let Some(c) = world.minigames.muscle_contest.as_ref() {
-        let flags = world.muscle_contest_flags();
+    if let Some(c) = mg.muscle_contest.as_ref() {
         out.push(StatusRow::readout([
             format!("Course {}", c.course() + 1),
-            format!("Round {}/{}", c.round() + 1, c.staged_course_length(&flags)),
+            format!(
+                "Round {}/{}",
+                c.round() + 1,
+                c.staged_course_length(&muscle.contest_flags)
+            ),
             format!("Coins banked: {}", c.tally()),
         ]));
     }
@@ -395,7 +413,7 @@ pub fn muscle_status_rows(world: &World) -> Vec<StatusRow> {
         // with no press), so this row names no button.
         // The turn's play-out: the acting side and its running damage tally,
         // held for as long as the surface replays the plays.
-        MusclePhase::TurnOver => vec![match world.muscle_playback_tally() {
+        MusclePhase::TurnOver => vec![match muscle.playback_tally {
             Some((attacker, total)) => format!(
                 "{} attack  TOTAL {total}",
                 if attacker == 0 { "Your" } else { "Foe's" }
@@ -492,12 +510,16 @@ mod tests {
 
     #[test]
     fn no_dome_session_has_no_rows() {
-        assert!(muscle_status_rows(&World::new()).is_empty());
+        assert!(muscle_status_rows(&MinigameState::default(), &MuscleWorld::default()).is_empty());
     }
 
     #[test]
     fn no_minigame_mode_has_no_caption() {
-        assert_eq!(caption(&World::new(), &host(false)), None);
+        let mg = MinigameState::default();
+        assert_eq!(
+            caption(SceneMode::Field, &mg, &MuscleWorld::default(), &host(false)),
+            None
+        );
     }
 
     #[test]
@@ -513,14 +535,17 @@ mod tests {
 
     #[test]
     fn a_slot_machine_that_draws_itself_keeps_the_caption_live_and_empty() {
-        let mut w = World::new();
-        w.mode = SceneMode::SlotMachine;
-        w.minigames.slot_machine = Some(slot_machine());
-        let fallback = caption(&w, &host(false)).expect("slot mode is a minigame");
+        let mg = MinigameState {
+            slot_machine: Some(slot_machine()),
+            ..MinigameState::default()
+        };
+        let muscle = MuscleWorld::default();
+        let fallback = caption(SceneMode::SlotMachine, &mg, &muscle, &host(false))
+            .expect("slot mode is a minigame");
         assert_eq!(fallback.game, StatusGame::Slot);
         assert_eq!(fallback.rows.len(), 2);
         assert!(fallback.title_line().contains(" | "));
-        let drawn = caption(&w, &host(true)).expect("still live");
+        let drawn = caption(SceneMode::SlotMachine, &mg, &muscle, &host(true)).expect("still live");
         assert!(drawn.rows.is_empty());
         assert_eq!(drawn.title_line(), "");
     }

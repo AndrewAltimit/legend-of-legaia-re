@@ -378,7 +378,26 @@ impl World {
         if !legaia_engine_menus::items::ARTS_BOOK_CLASSES.contains(&eff.class) {
             return legaia_engine_menus::items::ItemOutcome::NoEffect;
         }
-        let rslot = usize::from(eff.class - legaia_engine_menus::items::ARTS_BOOK_CLASS_BASE);
+        self.teach_hyper_art(eff.class, eff.tier)
+    }
+
+    /// Applier selectors `0x0B`..`0x0D` (`FUN_800402F4`, arm `0x80041FB4`)
+    /// with an explicit `(class, tier)`: insert art `tier` into roster slot
+    /// `class - 11`'s displayed-skill list. The arts books reach it through
+    /// their descriptor; the field VM's `4C C7 <char> <art>` (arm
+    /// `0x801E28D4`, `FUN_800402F4(char + 0x0B, art, 0, 0)`) reaches it
+    /// directly - the masters who teach a Hyper Art in conversation.
+    ///
+    /// PORT: FUN_800402F4 (selectors `0x0B`..`0x0D`)
+    pub(crate) fn teach_hyper_art(
+        &mut self,
+        class: u8,
+        tier: u8,
+    ) -> legaia_engine_menus::items::ItemOutcome {
+        if !legaia_engine_menus::items::ARTS_BOOK_CLASSES.contains(&class) {
+            return legaia_engine_menus::items::ItemOutcome::NoEffect;
+        }
+        let rslot = usize::from(class - legaia_engine_menus::items::ARTS_BOOK_CLASS_BASE);
         let Some(rec) = self.party.roster.members.get_mut(rslot) else {
             return legaia_engine_menus::items::ItemOutcome::NoEffect;
         };
@@ -388,7 +407,7 @@ impl World {
             legaia_engine_battle_vm::battle_action::selector_insert_displayed_skill(
                 &mut list.ids,
                 &mut count,
-                eff.tier,
+                tier,
             )
         else {
             return legaia_engine_menus::items::ItemOutcome::NoEffect;
@@ -397,7 +416,7 @@ impl World {
         rec.set_displayed_skills(list);
         legaia_engine_menus::items::ItemOutcome::ArtLearned {
             character: rslot as u8,
-            art_id: eff.tier,
+            art_id: tier,
             position: position as u8,
         }
     }

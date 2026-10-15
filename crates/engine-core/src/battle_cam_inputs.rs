@@ -50,7 +50,7 @@ pub fn battle_cam_inputs(world: &World) -> script::BattleCamInputs {
     let phase = script::phase_for_state(
         world.dialog.current.is_some() || world.dialog.inline.is_some() || caption_up,
         member_surface_open(world),
-        world.battle_ctx.action_state,
+        world.battle_camera_state(),
         battle_done_band(world, acting_slot),
     );
     let actor_at = |slot: u8, party_slot: Option<u8>| {
@@ -144,7 +144,7 @@ pub fn battle_cam_inputs(world: &World) -> script::BattleCamInputs {
         attack: battle_attack_channels(world, world.battle_ctx.active_actor),
         // The yaw counter `ctx[+0x6DA]` is re-seeded on the action SM's
         // state edges (`BattleCamera::observe_action_state`).
-        action_state: world.battle_ctx.action_state,
+        action_state: world.battle_camera_state(),
         active_commits: world.battle_ctx.active_clip_commits,
         active_installs: world.battle_ctx.active_clip_installs,
         camera_option: world.toggles.battle_camera as u8,
@@ -722,6 +722,13 @@ impl World {
         let inputs = battle_cam_inputs(self);
         let tracks = battle_attack_tracks(self);
         let frames = self.clock.display_frames;
+        // On retail's cadence the camera steps on the tick the action SM's
+        // pass runs on (`BattleCamera::sync_step_phase`).
+        if self.toggles.battle_sm_frame_cadence
+            && let Some(cam) = self.battle.camera.as_mut()
+        {
+            cam.sync_step_phase(self.battle.frame_clock.ticks_into_frame(frames));
+        }
         // The camera's draws (shake pair, strike-loop yaw coin, per-art
         // track column) are retail `rand()` calls on the one process-wide
         // seed, so they draw on the world stream in tick order.
@@ -733,7 +740,16 @@ impl World {
             tracks.as_ref(),
             &mut self.rng_state,
         );
-        self.battle.spell_cam = None;
+        // The SM's pass hands the shot in once a battle frame; it holds
+        // until the camera's step for that frame arms it.
+        if !self
+            .battle
+            .camera
+            .as_ref()
+            .is_some_and(|c| c.spell_cam_pending())
+        {
+            self.battle.spell_cam = None;
+        }
     }
 
     /// The battle camera's current pose, or the shared boot pose before the

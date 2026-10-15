@@ -789,7 +789,25 @@ case aims at those positions - case 6 on a caster, case 0 on a member, case
   stores it every frame of a swing and nothing turns the actor back, so the
   member who struck last stands facing its target, and case 6's battle-over yaw
   is `0x800 - actor[+0x46]`. A capture of a running fight keeps the engine's
-  own headings, which its replayed rounds set.
+  own headings, which its replayed rounds set - except for a combatant whose
+  turn the capture holds spent ([below](#combatants-that-had-already-acted)).
+  It sits the replayed round out, so nothing restores the heading its earlier
+  turn left, and it takes the captured one. The action's target does so only
+  until the first strike commits, since the commit turns it onto the attacker
+  (`0x801EEC34..0x801EECBC`) and the replay makes that turn itself.
+
+  The heading moves the approach. The range law `FUN_8004E2F0` measures the
+  attacker's live pair against the target's body pair, which is the live pair
+  plus the facing-rotated pose centroid. `player_steal_skeleton_pre`'s target
+  skeleton stands at `0x900`, turned by its own swing at Vahn a turn earlier.
+  Faced at the default `0x800`, its centroid sat a few units nearer and Vahn
+  walked one root-motion step past retail's stop. The strike framing (case 7)
+  then aimed at a pair `30` units off, and the near-camera ghost pass, which
+  measures from the framing's point, left the skeleton solid where retail ghosts
+  it: `camera` `.852` to `.976`, `image` `.603` to `.786`. Seeding every
+  combatant's heading, the target included after the strike, moves the corpus
+  both ways: `rim_elm_gimard_victory`'s Gimard, struck twice, fell from `.909`
+  to `.792`.
 - **Defeat tint.** A body whose tint state `+0x21C` is the defeat fade takes its
   colour lanes `+0x04` (a `:d<hex>` field). A monster killed earlier has stepped
   them to black and is no longer drawn; without the field a `0`-HP body with
@@ -1788,6 +1806,19 @@ duellists hold still, and the frame read `0.611` against retail's with the
 crystals `70` to `90` px off. Every action drive but a `DoneHold` takes the
 displayed pose, also where its frame stays at the RAM's instant.
 
+The walk back stops at the pass that armed the table: before it the camera
+walked the previous framing's table, which the RAM no longer holds
+(`tween_passes_back`). The action seed `0x0C` arms case 6 on the yaw
+counter's `0x800` rung (`jal 0x801D5854` at `0x801E2D50`), then stores state
+`0x14` and the `0x200` rung (`0x801E2F20`). Every later pass drifts the
+counter in the prologue before `0x14` re-arms, so a capture reading `0x14`
+with the counter still on `0x200` is the walker pass right after the seed's
+arm. The `super_queue_replace_*` captures are that pass: yaw `3205` walking to
+`4062`, the `0x800` rung's endpoint. Walked back both passes along the seed's
+table the eye stood at depth `1965`, closer than any pose the seed's ease
+passed through; one pass back it stands at `2457`, and the frames read `.656`
+to `.744`.
+
 ## Divergence shapes
 
 Shapes the corpus separates, each with what it indicates:
@@ -2135,6 +2166,19 @@ talk open the globals never move (the lock), and once it closes a three-frame
 step eases eye Y `1117 -> 1158 -> 1194 -> 1226`, each step about an eighth of
 a gap that closes near `1450`. The eye is ease history like the focus, not a
 compose the engine got wrong.
+
+The ease's stationary test (`0x801DB578..0x801DB5A4`) covers the whole
+compose-and-ease, not only the focus pin, so a player that stops walking
+leaves the eye wherever the last moving frame put it. `keikoku_chest_pre` and
+`_open` stand at the chest with eye Y `673` against the `732` the seat's snap
+composes. The image child therefore lands retail's eye translation after its
+snap too (`RetailObs::seat_eye`, `LEGAIA_SEAT_EYE`,
+`ZoneFollow::seat_eye_after_snap`), and the engine's ease carries on from it
+the next frame the player moves. The two chest frames read `.958` to `.994`
+and `.966` to `.998`. The headless `camera` channel keeps the snap's eye, so
+it goes on scoring the compose. `town01_npc16_dialogue_first_page` does not
+move: its talk record is resumed from its start, and the eye the seat landed
+does not survive to the gate.
 
 ### Arrival states are captured before the town runs
 
