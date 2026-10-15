@@ -455,8 +455,6 @@ pub(super) fn pad_walk(
     let mut planned_from = None;
     // Wedge exits this walk has headed for ([`unwedge`]).
     let mut unwedged = 0usize;
-    // Stall-time re-plans taken (see the stall check below).
-    let mut restalls = 0u32;
     let mut scripted_next = session.host.world.encounters.scripted_formation_pending;
     let mut path = Vec::new();
     // The overworld's corner-crossing walk ([`overworld_tile_route`]).
@@ -931,31 +929,6 @@ pub(super) fn pad_walk(
             since = 0;
         } else {
             since += 1;
-            // A stall whose route head is the player's own cell or one
-            // diagonal step away is the follower's, not the map's: a head
-            // aimed at the player's own cell centre leaves nothing past the
-            // dead band to press, and a diagonal into a wall corner pins the
-            // player. Plan again from where it stands (twice at most) before
-            // calling the walk stalled: the walk onto `nilboa`'s Koru ledge
-            // sat at (12634, 13762) aiming at (12608, 13792).
-            if since >= PAD_STALL_FRAMES
-                && restalls < 2
-                && path.first().is_some_and(|&h| {
-                    let c = cell_of(px, pz);
-                    h == c || ((h.0 - c.0).abs() == 1 && (h.1 - c.1).abs() == 1)
-                })
-            {
-                restalls += 1;
-                since = 0;
-                path = plan_around(session, cell_of(px, pz), goal, avoid, &doors);
-                planned_from = Some(cell_of(px, pz));
-                if let Some(&h) = path.first()
-                    && h == cell_of(px, pz)
-                {
-                    path.remove(0);
-                }
-                continue;
-            }
             if since >= PAD_STALL_FRAMES {
                 session.host.world.set_pad(0);
                 let (px, pz) = player_xz(session);
