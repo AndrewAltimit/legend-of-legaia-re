@@ -1129,7 +1129,8 @@ actor whose handler is `FUN_80037174` (SCUS-static):
 **Geometry and speed come from the scene.** The roller reads a config block through
 `*0x801C6EA4` (`+0x4C` window top, `+0x4E` line slots, `+0x50` scroll divisor, `+0x52` release
 count). The scene reset `FUN_8003A024` stores `0x40 / 8 / 4 / 0` and a `CC F8 E8` seed op
-overwrites the first three. Every crawl block on the disc runs on a seed op placed immediately
+overwrites the first three. A `4C E8` release count is block state too, so it dies with the scene:
+`map01`'s closing release of 5 must not reach a later scene's crawl. Every crawl block on the disc runs on a seed op placed immediately
 before it, or on the one an earlier block of the same scene left:
 
 | Scene | Seeds (`top / slots / divisor`), in script order |

@@ -161,6 +161,14 @@ impl SceneHost {
         // the rest: a record's terminal SceneChange does not wait for it, so
         // `opdeene`'s Seru-history crawl is still up when the scene ends.
         self.world.cutscene.narration = None;
+        // The roller's config block (`*0x801C6EA4 +0x4C..+0x52`) is scene
+        // state too: the scene reset stores `0x40 / 8 / 4 / 0`
+        // (`0x8003A0BC..0x8003A0DC`), so neither a `4C E8` seed nor a release
+        // count a record left behind (`map01`'s closing `w0 = 5`) carries into
+        // the next scene's crawls.
+        // REF: FUN_8003A024
+        self.world.cutscene.narration_seed =
+            legaia_engine_field::cutscene_narration::RollerSeed::SCENE_RESET;
         let scene = Scene::load(&self.index, name)?;
         // `_DAT_80084540`: the scene's raw CDNAME define (the `block_range`
         // start, before the extraction-frame shift `Scene::start` carries).
