@@ -1214,6 +1214,7 @@ reference TIMs sitting in other PROT entries.
 | [`play_world_map_markers`](../../crates/web-viewer/src/play_world_map_markers.rs) | The overworld's kind-coded entity and player markers (a port marker, not a retail draw). |
 | [`play_frame_step`](../../crates/web-viewer/src/play_frame_step.rs) | The shared wall-clock to sim-tick rule (`engine-core::frame_step::SimStepper`). |
 | [`host_slot`](../../crates/web-viewer/src/host_slot.rs) | The page's slot for its `BootSession` over `play_sfx::PageSink`; every page module reaches the scene host through it. |
+| [`play_hotkeys`](../../crates/web-viewer/src/play_hotkeys.rs) | `play_host_hotkey`: the native window's option / cheat / camera keys, resolved through the shared `engine-session::hotkeys` table; the page half is `window.__playHotkeyActions` in `play.html`. |
 | [`play_lighting`](../../crates/web-viewer/src/play_lighting.rs) / [`play_fog_volume`](../../crates/web-viewer/src/play_fog_volume.rs) | The enhanced-lighting and volumetric-fog enhancements (twins of the native `I` / `F8` and `F9`), from the shared engine-side sources. |
 | [`play_cheats`](../../crates/web-viewer/src/play_cheats.rs) | The play page's Cheats panel, thin bindings over `engine-core::cheats`. |
 | [`play_toggles`](../../crates/web-viewer/src/play_toggles.rs) | Runtime twins of native launch switches: `--retail` (session-only `OptionsState::pin_retail`; the store is not written while it holds), `--set-flag`, `LEGAIA_SMART_MONSTERS`, `LEGAIA_WORLD_MAP_MARKERS`. |

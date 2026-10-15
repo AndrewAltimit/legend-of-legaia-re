@@ -140,6 +140,10 @@ enhancement has a retail-faithful off position
 | `F2` | Mute audio | off | `--no-audio` |
 | `F1` | The engine's diagnostic text rows | off | - |
 
+The browser play page answers the same keys from the same table, with the
+canvas focused: each moves the matching checkbox or button under the canvas,
+and `F1` hides the readout bar above it.
+
 A handful of keys are development hand-triggers rather than player controls:
 `N` opens the name-entry screen for the lead character, and `F5`, `F`, `G`,
 `H` and `J` spawn a debug effect, effect model, summon, battle move effect or
@@ -290,7 +294,7 @@ so the state they leave is one a playthrough could reach:
 | Cheat | Native | Effect |
 |---|---|---|
 | Level | `--cheat-level N` | Raising grants each present member the XP that reaches level `N`, so the stat gains are their own retail growth. Lowering rebuilds the character from its New Game stats plus the growth for the levels it keeps; stat-up items used along the way are lost. |
-| Restore | (page only) | Refills HP / MP and revives, mid-battle included. |
+| Restore | `--cheat-restore` | Refills HP / MP and revives, mid-battle included. |
 | Max AP | `--cheat-max-ap`, `F6` | Fills the AP (Spirit) gauge to 100; in battle the Spirit / Super Art command opens at once. |
 | Grant Seru | `--cheat-seru N` | Teaches the 21 Seru and the member's own Ra-Seru (Vahn also the Sim-Seru and Evil Seru summons, as retail carries them), every spell at level `N` (1-9). |
 | Learn all arts | `--cheat-arts` | Every art in the member's list, Hyper and Miracle Arts included. |

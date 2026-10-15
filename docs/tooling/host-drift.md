@@ -1115,7 +1115,11 @@ with no device.
 What it does not see: anything a renderer owns, what an audio output
 sounds, and the page's JavaScript beyond `_frameTicks`' bookkeeping (the
 tap set, the menu's card-load take), which is all its driver replays.
-A summon cast and a native-only launch switch are not in any scenario.
+A summon cast and a native-only launch switch are not in any scenario. The
+host hotkeys are: `option_hotkey_frames_match_across_hosts` presses them
+between walk steps through `HeadlessPlayWindow::press_key` (the window's own
+keyboard handler, persistence off) and the page's `play_host_hotkey` plus the
+page action the key runs.
 
 ### Launch switches against page settings
 
@@ -1295,10 +1299,7 @@ reverse-engineering questions, so they are not on
 | save rack port 1 | Native mounts its `.lgsf` directory as port 1 and `--card` as port 2; the page mounts two card images and resumes `.lgsf` through the save bar. Closing it is storage work. |
 | per-tick screen owners | Each sim tick goes to the pause menu, then the naming prompt, then the intro skip, the wipe hold, a menu-overlay screen, then the field: the window's `sim_tick` arms, the page's `play_frame_ticks`. The order is spelt once per host, both in Rust; the [frame-body trace](#output-level-the-frame-body-trace) drives the page's through the export itself. |
 | lit rows under the palette collapse | Not drift: both hosts run a lit row's shaded colour through the prologue's packet sepia, which the light kernel's output never meets in retail. See [light-source rows](#light-source-rows-in-a-graded-scene). |
-| STR decoders | The page counts assembled frames and assumes 4-bit XA; native counts decoded frames and reads the bit depth. |
-| shop panel rows, inn prompt text | Written once per host over shared leaves; they agree today. |
-| level-up banner without menu chrome | Raw surface pixels natively, stage-scaled on the page; only a run with no system-UI atlas takes that path. |
-| cheats | One `World::cheat_*` call each; restore HP / MP is page-only; a GameShark file is a launch switch natively and pasted text on the page (`cheat_apply_codes`); native applies once at boot. |
+| cheats | One `World::cheat_*` call each. Every listed cheat is a launch switch natively and a runtime control on the page (`F6` / `F7` are runtime on both, through the [hotkey table](#host-hotkeys)); a GameShark file is a launch switch natively and pasted text on the page (`cheat_apply_codes`). |
 | launch switches | See [launch switches](#launch-switches-against-page-settings). |
 | fishing wander readout | Native dev-menu aid for `FUN_801d2050`'s tracked points; no page twin by choice. |
 | fishing exchange panel pen | Native adds the venue overlay's idle sway (`FUN_801d03b0`). |
@@ -1348,6 +1349,7 @@ The frame model is in [`engine.md`](../subsystems/engine.md#the-frame-model).
 | Decision | Kernel |
 |---|---|
 | ticks per display frame | `frame_step::SimStepper` (page: `play_drain_sim_steps`) |
+| options knobs on the world and camera | `BootSession::apply_option_knobs`, every tick ahead of the session tick and on every options change (window: `resolve_tick_pad`; page: `tick_frame`) |
 | camera around the world tick | `camera_before_world_tick` / `camera_after_world_tick` |
 | cutscene glide clock | `CutsceneGlide`, reset on every entry (retail's `FUN_80025C24` kills the mover) |
 | move-VM strips | `MoveVmGlobals::strip_frame` |
@@ -1449,6 +1451,26 @@ field frame around the prompt steps the camera mover once per vsync. The page
 used to pass the frame's steps in one call and run the camera half once per
 display frame - never on a 30 Hz frame's second step, and once too many on a
 redraw that owed no step - which also moved its draws of the shake stream.
+
+<a id="host-hotkeys"></a>
+
+### Host hotkeys
+
+The option, cheat and camera keys a play host binds outside the pad
+vocabulary (`F1`..`F9` except `F5`, `I`, `Y`, `T`, `R`) are one table,
+[`legaia_engine_session::hotkeys`](../../crates/engine-session/src/hotkeys.rs).
+The native window's `option_key` resolves winit's `KeyCode` through it (the
+variant's `Debug` name is the `KeyboardEvent.code` string); the page's
+keydown asks `play_host_hotkey(event.code)`. Both refuse the field-only keys
+(`F3`, `T`, `R`) under a front-end screen (`HostHotkey::needs_field`), and
+both make an options key's edit through `apply_options_hotkey` before
+persisting, so `I`, `F8`, `F9`, `T`, `R` and `F2` are one code path. What a
+host adds is only what it holds alone: the window's renderer toggles, its
+diagnostic text rows and debug vantage; the page's checkboxes (mirrored from
+the stored option, or clicked for the keys that stand for a page control) and
+its HUD bar for `F1`, through `window.__playHotkeyActions`. The table's test
+holds every key off the bindable set, and a `SIM_PAIRS` row pins both sites
+to the shared calls.
 
 ### Camera
 
