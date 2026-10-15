@@ -342,7 +342,9 @@ display / accumulator - plus each distinct script body a timeline or helper
 runs, once, as hex (the first `LEGAIA_SOAK_TRACE_BYTES` bytes, `0x400` by
 default). `LEGAIA_SOAK_TRACE_NPC=<slot>` adds that placement's position to
 every line, walking or not, which is how to find where an actor stood before a
-walk started. The inline runner's record (an NPC talk, a prop record) is
+walk started. `LEGAIA_SOAK_TRACE_WALLS=1` adds the wall bits of the 9 x 9 sub-cells
+around the player (`#` wall, `@` the player) - what a walled-in landing is
+walled by. The inline runner's record (an NPC talk, a prop record) is
 dumped with the script bodies, and a roster line prints whenever a member's
 level, base maxima or live maxima move - the frame a level-up or a stat item
 landed on. The trace goes to the terminal only; it is never written into a
