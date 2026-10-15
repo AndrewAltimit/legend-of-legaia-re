@@ -65,6 +65,10 @@ impl CameraWorld for World {
         self.camera.shake_amplitude
     }
 
+    fn script_focus_override(&self) -> [i16; 2] {
+        self.camera.script_focus
+    }
+
     fn scene_save_allowed(&self) -> bool {
         self.party.scene_save_allowed
     }
@@ -428,6 +432,43 @@ mod tests {
         assert!(c.mover.is_none(), "the mover is one-shot");
     }
 
+    /// Op `4C D7` kills the mover mid-glide (`FUN_8003CF40` raising the
+    /// dead bit on every `FUN_801DC0BC` actor): the shot holds the pose the
+    /// last tick wrote, and the script-side glide clock a `4C CD` waits on
+    /// reads settled at once.
+    #[test]
+    fn retiring_the_movers_freezes_a_glide_where_it_stands() {
+        use crate::world::vm_hosts::{FieldHostImpl, field_step_routed};
+        use legaia_engine_vm::field::{CameraParam, FieldCtx};
+        let mut w = World {
+            pending_field_events: vec![FieldEvent::CameraConfigure {
+                params: vec![CameraParam {
+                    slot: 5,
+                    value: 17420,
+                }],
+                apply_trigger: 100,
+                mode: 1,
+            }],
+            ..World::default()
+        };
+        w.camera.state.glide_frames = 100;
+        let mut c = Camera::default();
+        c.route_camera_events(&mut w);
+        w.clock.display_frames = 50;
+        c.tick(&w);
+        let mid = c.globals.tr_eye()[2];
+        assert!((16420..17420).contains(&mid));
+        let mut ctx = FieldCtx::default();
+        let mut host = FieldHostImpl { world: &mut w };
+        field_step_routed(&mut host, &mut ctx, &[0x4C, 0xD7], 0);
+        assert_eq!(w.camera.state.glide_frames, 0);
+        c.route_camera_events(&mut w);
+        assert!(c.mover.is_none(), "the mover is dead");
+        w.clock.display_frames = 100;
+        c.tick(&w);
+        assert_eq!(c.globals.tr_eye()[2], mid, "the shot holds mid-glide");
+    }
+
     /// Op-`0x45` LOAD carries one 18-byte camera-region record, and the
     /// router hands it to the camera-config loader (`FUN_801DBC20`): the
     /// parameter block takes the record's split, the follow camera keeps
@@ -629,6 +670,36 @@ mod tests {
         c.tick(&w);
         assert_eq!(c.globals.angles()[0], 450, "snapped");
         (w, c)
+    }
+
+    /// Op `4C CF` (arm `0x801E2A34`) stages the script focus override the
+    /// edge clamp `FUN_801DAA50` reads: a tile byte pins that focus axis on
+    /// the tile centre (stored negated, as the clamp's `0x801DAB68` /
+    /// `0x801DAB84` writes it), a zero byte leaves the axis to the clamp, and
+    /// `4C CF 00 00` hands the whole focus back. `uru`'s bridge regions run
+    /// it from their per-frame bounding-box record.
+    #[test]
+    fn script_focus_override_pins_the_clamped_focus() {
+        use crate::world::vm_hosts::{FieldHostImpl, field_step_routed};
+        use legaia_engine_vm::field::FieldCtx;
+        let (mut w, mut c) = gated_zone_world();
+        let free = [c.globals.0[6], c.globals.0[8]];
+        let mut ctx = FieldCtx::default();
+        let mut host = FieldHostImpl { world: &mut w };
+        field_step_routed(&mut host, &mut ctx, &[0x4C, 0xCF, 0x0B, 0x00], 0);
+        assert_eq!(w.camera.script_focus, [0x05C0, 0]);
+        w.actors[0].move_state.world_x += 2;
+        w.tick();
+        c.tick(&w);
+        assert_eq!(c.globals.0[6], -0x05C0, "X pinned on tile 0x0B's centre");
+        let mut host = FieldHostImpl { world: &mut w };
+        field_step_routed(&mut host, &mut ctx, &[0x4C, 0xCF, 0x00, 0x00], 0);
+        assert_eq!(w.camera.script_focus, [0, 0]);
+        w.actors[0].move_state.world_x -= 2;
+        w.tick();
+        c.tick(&w);
+        assert_ne!(c.globals.0[6], -0x05C0, "override released");
+        assert_eq!([c.globals.0[6], c.globals.0[8]], free);
     }
 
     /// `FUN_801DB510`'s stationary test: a standing player leaves the camera

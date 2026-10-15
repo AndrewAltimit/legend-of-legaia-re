@@ -54,6 +54,12 @@ impl<'a> FieldCameraHost for FieldHostImpl<'a> {
         self.world.pending_field_events.push(FieldEvent::CameraSave);
     }
 
+    // Op `4C CF` (arm `0x801E2A34`): stage the script camera-focus
+    // override the focus edge clamp `FUN_801DAA50` reads every frame.
+    fn set_camera_focus_override(&mut self, x_global: i16, z_global: i16) {
+        self.world.camera.script_focus = [x_global, z_global];
+    }
+
     fn camera_apply(&mut self, apply_trigger: i16, mode: u8) {
         // APPLY composes the follow pose and glides to it over the trigger's
         // frames, or snaps (killing the mover) on a zero trigger.

@@ -127,7 +127,9 @@ pub trait FieldCameraMotionHost: FieldFlagsHost {
     /// `LAB_801E2DC4`, which calls `func_0x8003CF40(_DAT_8007C34C, pcVar33)`
     /// (a list-walk that invokes `pcVar33` per entry) and returns via the
     /// standard halt-acquire dispatcher. The script resumes when the walk
-    /// finishes and re-arms the field VM.
+    /// finishes and re-arms the field VM. The sweep (`FUN_8003CF40`) raises
+    /// bit `8` (dead) in `+0x10` of every actor whose `+0x0C` handler is
+    /// `FUN_801DC0BC`, so a glide in flight stops where it stands.
     fn retire_camera_movers(&mut self) {}
 
     /// Op 0x4C outer-nibble-C sub-D - **wait for the camera glide**.

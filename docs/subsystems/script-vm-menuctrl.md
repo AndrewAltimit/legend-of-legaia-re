@@ -358,7 +358,7 @@ On the disc:
 
 | Sub | Form | What it does |
 |---|---|---|
-| 0 | `[4C C0]` | Move-table cancel via `func_0x800204F8` (gated on whether a move is active). |
+| 0 | `[4C C0]` | [Clip-phase randomiser](#4c-c0-seats-the-clip-at-a-random-phase): with a move on `+0x5C`, bind it (`FUN_800204F8`) and seat the cursor at a random frame. |
 | 1 | `[4C C1]` | **Fog-region enable reset** - [below](#4c-c1-fog-region-enable-reset). PC += 2. |
 | 3 | `[4C C3]` | Script-table teleport + spawn-section re-run - [below](#4c-c3-script-table-teleport). |
 | 4 | `[4C C4 x z]` | Camera-zone query at an explicit tile: arm `0x801E2878`, `FUN_801DE3E0(x & 0x7F, z & 0x7F)`. Frames a shot from a region record the player is not standing in. |
@@ -463,7 +463,29 @@ cleared first. All eight references to the pair are in the field overlay: the
 two `lh` reads in the clamp and the six stores of this arm.
 
 Only `uru` (PROT 0435) uses it: 46 coherent occurrences beside `0x45 C0`
-camera applies and `CamCfg` writes - one scene's hand-framed shots.
+camera applies and `CamCfg` writes - one scene's hand-framed shots. Its entry
+record `P1[0]` opens with `4C CF 00 00`, and the bridge regions of the same
+record's per-frame bounding-box chain pin the X focus on one tile column
+(`4C CF 6F 00`, `0B`, `51`) or release it; the cutscene records use the
+cross-context `CC F8 CF` form, whose `0xFF` byte snapshots the player's
+coordinate once. Nothing clears the pair on a scene change. The port keeps it
+on `CameraRig::script_focus`, which both `clamp_focus` callers read.
+
+#### `4C C0` seats the clip at a random phase
+
+The arm at `0x801E260C` is not a cancel. It reads the actor's move id
+`+0x5C`; when it is positive it calls the move-table consumer `FUN_800204F8`
+(which binds the clip that id names when it differs from the playing `+0x5E`,
+zeroing `+0x68`), draws one BIOS `rand()` (`FUN_80056798`), and stores
+`(rand() % frames) << 4` into the frame cursor `+0x68`, `frames` being the
+bound clip's halfword `+2` (`0x801E2624..0x801E2670`). PC += 2.
+
+Its shape on the disc is a `CC <t> 51 .. <move>` seat followed by
+`CC <t> C0`: `town0d`'s festival crowd issues the pair for 43 villagers, so
+each dancer starts its loop at its own frame rather than in lockstep. The port
+takes the draw at the op and seats it when the cue's clip binds
+(`World::randomize_npc_clip_phase`), since its clip binds when the cue drains
+rather than inside the op.
 
 ### 0x4C nibble 0xD0..0xDF - party state + inverted-Y mirror cluster
 

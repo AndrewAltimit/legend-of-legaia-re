@@ -3,6 +3,16 @@
 use super::*;
 
 impl<'a> FieldCameraMotionHost for FieldHostImpl<'a> {
+    // Op `4C D7` (arm `0x801E2DB4`): kill every camera mover. The
+    // script-side glide clock a `4C CD` waits on stops with it, and the
+    // host camera drops its glide when it drains the event.
+    fn retire_camera_movers(&mut self) {
+        self.world.camera.state.glide_frames = 0;
+        self.world
+            .pending_field_events
+            .push(FieldEvent::CameraRetireMovers);
+    }
+
     // Op `0x4C` outer-nibble-4 sub-9 - the writer of the two globals
     // `legaia_engine_field::camera_ease` eases between, read off the three arms at
     // `0x801E1480..0x801E162C` in `overlay_world_map_801de840.txt`:

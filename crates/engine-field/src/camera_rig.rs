@@ -68,6 +68,14 @@ pub struct CameraRig {
     /// here instead of writing the globals directly - see
     /// `camera_hooks`.
     pub zone_requests: Vec<crate::camera::CameraZoneRequest>,
+    /// The script camera-focus override `_DAT_8007B628` (X) /
+    /// `_DAT_8007B62A` (Z), written only by op `4C CF` (arm `0x801E2A34`) and
+    /// read only by the focus edge clamp `FUN_801DAA50`, which replaces the
+    /// clamped focus axis with the negated override when it is non-zero. A
+    /// zero axis means "no override". Nothing else writes the pair - no scene
+    /// reset clears it - so it lives as long as the script leaves it; `uru`,
+    /// the one scene that sets it, clears both in its entry record.
+    pub script_focus: [i16; 2],
 }
 
 impl CameraRig {
@@ -81,6 +89,7 @@ impl CameraRig {
             register_ramps: Vec::new(),
             registers: Default::default(),
             zone_requests: Vec::new(),
+            script_focus: [0, 0],
         }
     }
 }
