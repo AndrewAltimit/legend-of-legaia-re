@@ -195,7 +195,7 @@ on one frame and neutral on the next.
 | `menu_stuck` | the pause menu stays open through the Circle back-out |
 | `battle_endless` | one battle outlasts `LEGAIA_SOAK_BATTLE_FRAMES` |
 | `control_starved` | the field refuses the pad for `LEGAIA_SOAK_STARVE_FRAMES` with no free-roam frame, the script reaches no PC it has not already been at, and the window holds the confirm presses that would page a conversation through |
-| `confined` | from the frame the field hands the player back, 900 direction-held frames never carry them 48 units |
+| `confined` | from the frame the field hands the player back, 900 direction-held frames, each of the four directions among them, never carry them 48 units |
 | `door_loop` | six scene changes inside 600 frames with no direction pressed between them |
 | `dropped_to_title` | the world mode becomes `Title` without a game over |
 | `unknown_scene` | a transition names a map id with no scene, or a label outside the scene set |
