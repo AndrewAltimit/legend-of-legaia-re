@@ -169,8 +169,8 @@ pub(super) fn pad_field_restore(session: &mut NativeSession, threshold: u32, mp:
     if !walking(session) || !released(session) || gauge(session) >= threshold {
         return 0;
     }
-    // The continuous hand heals with spells first, out of the MP above half
-    // of each caster's pool (the rest is for the fights), and with all of it
+    // The continuous hand heals with spells first, out of the MP above three
+    // fifths of each caster's pool (the rest is for the fights), and with all of it
     // once the bag holds no restorative: the run met Koru (`nilboa`, a
     // 20000-HP race) with an empty bag, two members near death and a full
     // set of Spoons unspent.
@@ -340,7 +340,8 @@ pub(super) fn pad_field_restore(session: &mut NativeSession, threshold: u32, mp:
 /// `(caster row, spell id)`: among the present casters' field-usable healing
 /// spells they can pay for (keeping half their MP when `keep_half`), the one
 /// that restores the most HP across the party's actual deficits - a group
-/// heal counts every member's, a single heal the worst-off member's.
+/// heal counts every member's, a single heal the worst-off member's. The
+/// kept share is three fifths of the pool.
 fn field_heal_cast(
     s: &legaia_engine_menus::spell_menu::SpellMenuSession,
     keep_half: bool,
@@ -363,7 +364,10 @@ fn field_heal_cast(
                 continue;
             };
             let cost = c.mp_cost(def);
-            if c.mp < cost || (keep_half && (c.mp - cost) * 2 < c.mp_max) {
+            // The kept share is the line [`pad_ready`] tops MP up to before a
+            // staged fight (three fifths): casting below it on the road only
+            // turns the cast into a Magic Fruit drunk at the boss's door.
+            if c.mp < cost || (keep_half && u32::from(c.mp - cost) * 5 < u32::from(c.mp_max) * 3) {
                 continue;
             }
             let gain = match def.effect {
@@ -386,8 +390,8 @@ fn field_heal_cast(
 /// member is under `threshold` per-mille: Start, Magic, the caster, the
 /// spell, the weakest member (or the group confirm). Each cast goes through
 /// the engine's own field cast (`apply_spell_outcome`: the discounted MP
-/// debit and the heal). With `keep_half`, a caster keeps half its MP for
-/// the fights. Returns the casts made.
+/// debit and the heal). With `keep_half`, a caster keeps three fifths of
+/// its MP for the fights. Returns the casts made.
 pub(super) fn pad_field_spell_heal(
     session: &mut NativeSession,
     threshold: u32,
@@ -1675,6 +1679,20 @@ fn rest_sites_live(session: &NativeSession, live: bool) -> (BTreeMap<u8, (u8, u8
     (beds, keepers)
 }
 
+/// What a rest restores, read as the continuous hand reads it: the lower
+/// of the party's HP and MP per-mille. Its spells are half of what the
+/// fights are healed with (a run that reached Nivora's duels with Gala at
+/// 54 of 346 MP lost Che's on every stream), so a rest that brings the MP
+/// back is a rest. The segmented passes read HP alone.
+fn rest_gauge(session: &NativeSession) -> u32 {
+    let hp = party_hp_permille(session);
+    if continuous::PLAYS_ON.with(std::cell::Cell::get) {
+        hp.min(party_mp_permille(session))
+    } else {
+        hp
+    }
+}
+
 /// [`pad_rest`] with its line: rest when the weakest member is below `line`
 /// per-mille. `anywhere` takes the rest of a scene that rolls encounters
 /// too, and leaves the bag alone.
@@ -1688,13 +1706,13 @@ pub(super) fn pad_rest_to(
         || (!anywhere && session.host.world.scene_can_roll_encounters())
         || !walking(session)
         || !released(session)
-        || party_hp_permille(session) >= line
+        || rest_gauge(session) >= line
     {
         return Ok(None);
     }
     if !anywhere {
         pad_field_heal(session, 500);
-        if party_hp_permille(session) >= 500 {
+        if rest_gauge(session) >= 500 {
             return Ok(None);
         }
     }
@@ -1757,20 +1775,20 @@ pub(super) fn pad_rest_to(
     if trace {
         eprintln!(
             "    [rest] {name}: weakest {} per-mille; beds {beds:?}; keepers {keepers:?}",
-            party_hp_permille(session)
+            rest_gauge(session)
         );
     }
     let dry = |session: &NativeSession, kind: u8, rec: u8, key: u64, before: u32| {
         // Under the line and lifted nobody: not a rest under these flags.
         if session.host.world.mode == SceneMode::Field
             && scene_name(session) == name
-            && party_hp_permille(session) <= before
+            && rest_gauge(session) <= before
         {
             DRY_RESTS.with(|d| d.borrow_mut().insert((name.clone(), kind, rec, key)));
         }
     };
     for (rec, tile) in beds {
-        let before = party_hp_permille(session);
+        let before = rest_gauge(session);
         let key = rest_flags_key(session, &mf, &man, 2, usize::from(rec));
         let r = match pad_step_onto(session, tile) {
             Ok(Walk::Entered(s)) => Run::Entered(s),
@@ -1783,7 +1801,7 @@ pub(super) fn pad_rest_to(
         if trace {
             eprintln!(
                 "    [rest] {name} bed P2[{rec}] at {tile:?} -> {r:?}; weakest now {} per-mille",
-                party_hp_permille(session)
+                rest_gauge(session)
             );
         }
         match r {
@@ -1792,7 +1810,7 @@ pub(super) fn pad_rest_to(
             Run::Error(e) => return Err(e),
             Run::Released | Run::Parked(_) => {}
         }
-        if party_hp_permille(session) >= line {
+        if rest_gauge(session) >= line {
             // A rest that worked may be taken again after the next fights.
             RESTED.with(|r| r.borrow_mut().remove(&name));
             return Ok(None);
@@ -1800,7 +1818,7 @@ pub(super) fn pad_rest_to(
         dry(session, 0, rec, key, before);
     }
     for slot in keepers {
-        let before = party_hp_permille(session);
+        let before = rest_gauge(session);
         let key = rest_flags_key(session, &mf, &man, 1, usize::from(slot));
         RESTING.with(|r| r.set(anywhere));
         let r = talk_to(session, slot);
@@ -1808,7 +1826,7 @@ pub(super) fn pad_rest_to(
         if trace {
             eprintln!(
                 "    [rest] {name} talk P1[{slot}] -> {r:?}; weakest now {} per-mille",
-                party_hp_permille(session)
+                rest_gauge(session)
             );
         }
         match r {
@@ -1817,7 +1835,7 @@ pub(super) fn pad_rest_to(
             Run::Error(e) => return Err(e),
             Run::Released | Run::Parked(_) => {}
         }
-        if party_hp_permille(session) >= line {
+        if rest_gauge(session) >= line {
             // A rest that worked may be taken again after the next fights.
             RESTED.with(|r| r.borrow_mut().remove(&name));
             return Ok(None);
