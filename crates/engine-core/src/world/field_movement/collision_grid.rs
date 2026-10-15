@@ -101,6 +101,40 @@ impl World {
                 .collect();
     }
 
+    /// Field-VM op `4C 83` - rewrite the **elevation override** of every
+    /// tile in the inclusive rectangle `[col_start..=col_end] x
+    /// [row_start..=row_end]` that has one. The arm (`0x801E20A8..0x801E2130`)
+    /// walks X inner, Z outer, resolves each tile through `FUN_801D5630(2, x,
+    /// z)` - the kind-2 lookup, primary block then fallback - and on a hit
+    /// stores `rec[2] = value` (the whole-tile step) and `rec[3] = 0` (every
+    /// sub-cell step); a tile without a record is left alone. `vozz` and
+    /// `rikuroa` pair it with a `4C 7x` wall paint, raising or dropping a
+    /// span of floor and re-walling it in one beat.
+    ///
+    /// PORT: FUN_801DE840 (`4C 83`)
+    pub fn fill_elevation_rect(
+        &mut self,
+        col_start: u8,
+        row_start: u8,
+        col_end: u8,
+        row_end: u8,
+        value: u8,
+    ) {
+        for z in row_start..=row_end {
+            for x in col_start..=col_end {
+                if let Some(rec) = self
+                    .terrain
+                    .elevation_overrides
+                    .iter_mut()
+                    .find(|r| r.tile_x == x && r.tile_z == z)
+                {
+                    rec.coarse = value as i8;
+                    rec.quads = 0;
+                }
+            }
+        }
+    }
+
     /// Install the per-scene region / zone tables (the `.MAP` `+0x10000`
     /// block + the MAN section-3 camera-region table) and run the initial
     /// per-tile refresh. Pass empty slices for scenes without the data -

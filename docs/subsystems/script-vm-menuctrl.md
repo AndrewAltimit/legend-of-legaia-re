@@ -254,11 +254,19 @@ Typical uses:
 
 #### `4C 83`: rectangular tile fill
 
-Walks the inclusive rectangle `[col_start..=col_end] × [row_start..=row_end]`,
-calling `FUN_801D5630(col, row, ...)` per tile to resolve a tile-record
-pointer; on a hit it writes `tile[+0x3] = 0; tile[+0x2] = value`. The loop
-exits on `j 0x801e3624` with `addiu s8,s8,7` in its delay slot (`0x801E212C`)
-and writes nothing else.
+Walks the inclusive rectangle `[col_start..=col_end] × [row_start..=row_end]`
+(X inner, Z outer), calling `FUN_801D5630(2, col, row)` per tile - `li a0,0x2`
+in the delay slots at `0x801E20CC` / `0x801E2110`, so the lookup is the
+**kind-2 elevation-override** table, primary block then fallback. On a hit it
+writes `rec[+0x3] = 0; rec[+0x2] = value`: the record's whole-tile step becomes
+`value` and every sub-cell step clears
+([floor height](field-locomotion.md#floor-height-two-models)). A tile without a
+record is left alone. The loop exits on `j 0x801e3624` with `addiu s8,s8,7` in
+its delay slot (`0x801E212C`) and writes nothing else.
+
+The op is a moving floor. `vozz` and `rikuroa` pair it with a `4C 7x` wall
+paint over the same span, raising or dropping a stretch of floor and re-walling
+it in one beat. Port: `World::fill_elevation_rect`.
 
 #### `4C 84`: screen shake
 

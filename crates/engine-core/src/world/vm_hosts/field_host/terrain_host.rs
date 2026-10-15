@@ -21,6 +21,20 @@ impl<'a> FieldTerrainHost for FieldHostImpl<'a> {
             .paint_field_collision(sub, x_range, z_range, mask);
     }
 
+    /// Op `4C 83` (arm `0x801E20A8`): rewrite the kind-2 elevation records
+    /// of a tile rectangle. See [`World::fill_elevation_rect`].
+    fn rect_tile_fill(
+        &mut self,
+        col_start: u8,
+        row_start: u8,
+        col_end: u8,
+        row_end: u8,
+        value: u8,
+    ) {
+        self.world
+            .fill_elevation_rect(col_start, row_start, col_end, row_end, value);
+    }
+
     fn retire_floor_ladder_oscillators(&mut self) {
         // `4C 9F` is `FUN_8003CF40(_DAT_8007C34C, LAB_801DA930)`, a **retire
         // sweep** over the `0x801F27EC` handler - so it cancels every live
