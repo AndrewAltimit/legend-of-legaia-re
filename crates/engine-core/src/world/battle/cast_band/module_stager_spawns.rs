@@ -1,19 +1,21 @@
 //! The op-`0x20` calls a module's own parts make into its stager, for the
-//! modules whose stager arms only seat more records: PROT 0906 (Gizam), 0907
-//! (Nighto), 0908 (Zenoir) and 0912 (Freed). PROT 0909's stager also steps the module's phase and
-//! runs through [`World::run_viguro_stager_calls`].
+//! modules whose stager arms only seat more records: PROT 0905 (Vera), 0906
+//! (Gizam), 0907 (Nighto), 0908 (Zenoir), 0910 (Swordie), 0911 (Orb), 0912
+//! (Freed) and 0913 (Nova). PROT 0909's stager also steps the module's
+//! phase and runs through [`World::run_viguro_stager_calls`].
 
 use super::*;
 use legaia_engine_battle_vm::cast_module_ticks::{
     FREED_STAGER_FADE, StagerSpawn, freed_stager_spawns, gizam_stager_spawns, nighto_stager_spawns,
-    nova_stager_spawns, orb_stager_spawns, swordie_stager_spawns, zenoir_stager_spawns,
+    nova_stager_spawns, orb_stager_spawns, swordie_stager_spawns, vera_stager_spawns,
+    zenoir_stager_spawns,
 };
 
 impl World {
     /// Whether module `entry`'s stager arms are run off its parts' op-`0x20`
     /// calls by [`Self::run_part_stager_calls`].
     pub(in crate::world::battle::cast_band) fn runs_part_stager_calls(entry: u32) -> bool {
-        matches!(entry, 906 | 907 | 908 | 910 | 911 | 912 | 913)
+        matches!(entry, 905 | 906 | 907 | 908 | 910 | 911 | 912 | 913)
     }
 
     /// Run the op-`0x20` calls module `entry`'s parts made since its last
@@ -64,11 +66,24 @@ impl World {
                 self.presentation.module_fades.extend(fade);
                 continue;
             }
+            // PROT 0905's arm 0 first lifts its caller, arm 5's first glow,
+            // to the sparks' height (`sh v0,0x16(s3)` at `0x801F80B0`).
+            if entry == 905
+                && arm == 0
+                && let Some(glow) = self.casting.active_summon.as_mut().and_then(|s| {
+                    s.parts.iter_mut().find(|p| {
+                        p.tag == Some(legaia_engine_battle_vm::cast_module_ticks::VERA_SPARK_CALLER)
+                    })
+                })
+            {
+                glow.state.world_y = legaia_engine_battle_vm::cast_module_ticks::VERA_SPARK_HEIGHT;
+            }
             let mut rand = || self.next_rand();
             let spawns = match entry {
                 906 => gizam_stager_spawns(arm, caller, body, &mut rand),
                 907 => nighto_stager_spawns(arm, caller, &mut rand),
                 908 => zenoir_stager_spawns(arm, caller, body, &mut rand),
+                905 => vera_stager_spawns(arm, caller, &mut rand),
                 910 => swordie_stager_spawns(arm, caller),
                 911 => orb_stager_spawns(arm, caller),
                 913 => nova_stager_spawns(arm, caller),
