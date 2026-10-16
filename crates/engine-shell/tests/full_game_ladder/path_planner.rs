@@ -24,6 +24,10 @@ pub(super) const MAX_PLAN_NODES: usize = 120_000;
 /// Tiles short of a door the lattice may end before a pad hop is called
 /// unwalkable rather than attempted.
 pub(super) const DOOR_APPROACH_SLACK: i32 = 6;
+/// What a route pays, in lattice steps, to wait on a clock-flag pad's edge
+/// for the phase the flag is not in ([`phased_pads`]): a walk around is
+/// taken when it is shorter than the wait.
+pub(super) const PHASE_WAIT_COST: i32 = 40;
 pub(super) type Cell = (i16, i16);
 
 pub(super) fn cell_of(x: i16, z: i16) -> Cell {
@@ -514,6 +518,7 @@ pub(super) fn plan_search(
     });
     let goal_tile = (i32::from(goal.0), i32::from(goal.1));
     let warps = teleports(session);
+    let phased = phased_pads(session);
     let doors = object_doors(session);
     // The platforms under the engine's live arrival bracket: a plan that
     // starts on one (a re-plan just after a ride) may walk off it.
@@ -714,19 +719,67 @@ pub(super) fn plan_search(
             // from every side: the prop is solid until the touch its body
             // posts runs the door's bind record (`31 00`), so pressing into
             // it opens the way. Only a static wall refuses the step.
-            if nt != ct
+            // A pad that forks on a clock flag lands in either phase's
+            // place: both are edges, the phase the flag is not in now dearer
+            // by the wait for it ([`phased_pads`]; the follower times the
+            // step, [`phase_ready`]).
+            let pad_tile = nt != ct
                 && nt != goal_tile
-                && let Some(&land) = warps.get(&nt)
-            {
+                && (phased.contains_key(&nt) || warps.contains_key(&nt));
+            let lands: Vec<(Cell, i32)> = if !pad_tile {
+                Vec::new()
+            } else if let Some(lands) = phased.get(&nt) {
+                lands
+                    .iter()
+                    .filter(|&&(_, flag, on)| phase_usable(session, flag, on))
+                    .map(|&(land, flag, on)| {
+                        let wait = if w.system_flag_test(flag) == on {
+                            0
+                        } else {
+                            PHASE_WAIT_COST
+                        };
+                        (land, wait)
+                    })
+                    .collect()
+            } else if let Some(&land) = warps.get(&nt) {
+                vec![(land, 0)]
+            } else {
+                Vec::new()
+            };
+            if pad_tile {
                 // Entering the teleport tile lands the player elsewhere; the
                 // tile itself is a waypoint the follower steps into, never a
                 // cell the walk continues from.
-                if land != next && !s.parent.contains_key(&next) {
-                    s.step(Some(next), cur, land, gcur + 2);
-                    PRESS_AT.with(|m| {
-                        m.borrow_mut()
-                            .insert(next, tile_center((nt.0 as i16, nt.1 as i16)))
-                    });
+                let press = tile_center((nt.0 as i16, nt.1 as i16));
+                if !s.parent.contains_key(&next) {
+                    for (land, wait) in lands {
+                        if land != next {
+                            s.step(Some(next), cur, land, gcur + 2 + wait);
+                        }
+                    }
+                    PRESS_AT.with(|m| m.borrow_mut().insert(next, press));
+                } else if phased.contains_key(&nt) && s.parent.get(&cur) != Some(&next) {
+                    // The tile's cells are already reached - the walker
+                    // landed on the tile, as on a pad its partner pad sends
+                    // it to (`rugi` P2[40] / P2[41]): crossing into it again
+                    // still fires it. The jump then runs from this cell, the
+                    // follower pressing toward the tile from here. Clock pads
+                    // only: a plain teleport keeps its one waypoint, and a
+                    // re-entry from a cell the follower cannot leave cleanly
+                    // (`rugi`'s lower pad P2[16] at (92, 102), its south side
+                    // walled) stalls a walk the waypoint route makes.
+                    let mut any = false;
+                    for (land, wait) in lands {
+                        if land != next && land != cur {
+                            s.step(None, cur, land, gcur + 2 + wait);
+                            any = true;
+                        }
+                    }
+                    if any {
+                        PRESS_AT.with(|m| {
+                            m.borrow_mut().insert(cur, press);
+                        });
+                    }
                 }
                 continue;
             }

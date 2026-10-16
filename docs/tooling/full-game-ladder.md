@@ -1056,8 +1056,7 @@ map as its street:
   set. `0x462` / `0x463` are not story state: no field script writes them,
   and the scene's ambient move-VM effect flips them as time passes (ext
   sub-ops `0x1C` / `0x1D`, [`move-vm-overlay-ext.md`](../subsystems/move-vm-overlay-ext.md)),
-  so the pads change partner on a clock. The planner reads the landing at
-  plan time and does not time its step onto a pad. A leg's encoded point can sit in the
+  so the pads change partner on a clock. A leg's encoded point can sit in the
   pillar beside where the platform parks the player (the hub's west leg,
   `0xB6`), so a landing in a wall cell is moved to the nearest open cell.
 - a **lift** - the same kind of record whose player moves are compass legs
@@ -1072,6 +1071,28 @@ map as its street:
   is what the entry script spawns the closing beat P2[13] on (`0x1D4`, which
   every `station` placement waits on). A run of legs that ends inside a tile
   of where it began is a step back off a band, not a ride.
+- a **clock pad** - a pad of the kinds above whose landing forks on a flag
+  the scene's own ambient move-VM stagers write (`2F 1C flag` / `2F 1D flag`
+  in the prescript records) rather than on story state - is an edge to each
+  phase's landing, the phase the flag is not in now dearer by the wait.
+  `rugi`'s prescript cycler idles until `0x594` (raised by the entry cutscene
+  P2[72]), then each lap holds `0x463` for a moment and `0x462` for a
+  stretch; in the engine `0x462` is up 92 frames of every 442. The upper pads
+  P2[40..61] land on their partner pad while it is down and on the hub
+  (86, 59) while it is up, and the hub's own pad P2[62] lands on (86, 53),
+  which is P2[40]'s tile. A plan that read only the live landing saw the hub
+  as a dead end whenever it was made while `0x462` was up, and a pad tile the
+  walker landed on was never entered again; the jump onto such a tile is now
+  planned from the cell beside it.
+
+  The follower times the step. It watches each clock flag's flips, keeps the
+  shortest run of each phase it has seen, and steps onto the pad only while
+  the wanted phase will still hold when the pad tests it (`PHASE_TEST_LEAD`:
+  the walk leg onto the pad, its fade and the 80 wait frames before P2[40]'s
+  `74 62 69 00`). A phase shorter than that is not planned through, so the
+  hub landing is not used once `0x462`'s run is known. Rogue's fight P2[38]
+  raises `0x46A`, on which the cycler parks; a clock that has not flipped for
+  4000 frames is not waited on.
 
 ### The follower
 
@@ -1482,6 +1503,7 @@ clips and matches the same arts a windowed one does. Beyond that:
 | `LEGAIA_FGL_PLAN_DEBUG` | Each object-door edge the planner adds. |
 | `LEGAIA_FGL_COMP_DEBUG` | The tile map of every walk component a plan failed inside (`o` reached, `A` avoided door tile, `b` actor box, `G` the goal), with the overworld's installed entities, the live NPCs, the solid props with their bind records, and the self-opening doors. Beside it, a sub-cell flood of the wall bits alone. |
 | `LEGAIA_FGL_JUMP_DEBUG` | Every pad-walk frame that moves the player more than 64 units (a door or lift ride), with the live arrival bracket. |
+| `LEGAIA_FGL_CLOCK_DEBUG` | Each flip of a clock flag the follower watches (frame, whether it was timed, the shortest run of each phase), and each frame a walk steps toward a clock pad in the phase it wants. |
 | `LEGAIA_FGL_POS_TRACE` | Every tick of a scripted run that moves the player or changes the pad holder's park site. |
 | `LEGAIA_FGL_PROBE_AT=<scene>:<x>,<z>;U;R;...` | Seats the player at the start of the first pad hop in that scene and holds each listed direction for 40 frames, printing where it went. |
 | `LEGAIA_FGL_EDGES=<scene>,...` | Part A: each named scene's out- and in-edges (`*` marks a scripted one). |
