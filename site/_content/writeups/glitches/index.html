@@ -39,7 +39,7 @@
     </tbody>
   </table></div>
   <h3><a href="status-and-damage.html">Status rolls, jewels and boss immunities</a></h3>
-  <p>Per-frame status rolls, the physical kernel that skips jewels, and what makes a boss a boss.</p>
+  <p>Per-frame status rolls, the physical kernel that skips jewels, what makes a boss a boss, and Zenoir's shatter.</p>
   <div class="table-wrap"><table>
     <thead><tr><th>Case</th><th>Status</th><th>Cause</th></tr></thead>
     <tbody>
@@ -47,6 +47,8 @@
       <tr><td><a href="status-and-damage.html#jewel-bypass">Seven boss attacks ignore the defensive jewels</a></td><td><span class="tag tag-done">explained</span></td><td>These attacks use a physical (ATK-based) damage wrapper that tells the shared finisher to skip its jewel block; it reads as intended.</td></tr>
       <tr><td><a href="status-and-damage.html#usa-boss-debuffs">USA bosses cannot have ATK, INT or DEF lowered</a></td><td><span class="tag tag-done">explained</span></td><td>The debuff only lands if the boss&#x27;s base stat still equals its disc record, and the USA difficulty boost changes the base before the fight starts.</td></tr>
       <tr><td><a href="status-and-damage.html#berserker-instant-death">Every Berserker can be killed outright</a></td><td><span class="tag tag-done">explained</span></td><td>Instant-death summons treat a monster as a boss by a texture-size byte in its record, and that byte is 0 on all three Berserkers.</td></tr>
+      <tr><td><a href="status-and-damage.html#zenoir-shatter">Zenoir leaves a lone Golem in pieces</a></td><td><span class="tag tag-done">explained</span></td><td>Zenoir shatters the monsters it kills; a lone scripted boss is never faded away, so Zenoir skips bosses by the texture byte plus a hand list of Berserkers, which misses the Golem and the lone Puera.</td></tr>
+      <tr><td><a href="status-and-damage.html#boss-byte-random">Evil Fly and other boss-byte monsters can be killed outright</a></td><td><span class="tag tag-done">explained</span></td><td>The texture byte is only read in scripted fights; eleven monsters that have it, Lapis among them, are never met in one.</td></tr>
     </tbody>
   </table></div>
   <h3><a href="lapis-and-cort.html">Lapis and Mystic Shield Cort</a></h3>

@@ -192,7 +192,7 @@ One record per combatant, reached through `DAT_801C9370[slot]`. **Pool slots are
 | `+0x164` / `+0x166` | u16 | SPD. |
 | `+0x168` / `+0x16A` | u16 | INT. |
 | `+0x16E` | u16 | Status halfword ([bit map](battle-round-loop.md#the-0x16e-status-halfword---retail-writer-inventory)). |
-| `+0x1BA` | u16 | Mesh-effect amount: copied to the draw node's `+0x7A`, where non-zero routes the mesh through `FUN_80029888` (rotation `* 16` about X and Z, or a scale-down under a per-model flag). Written by the boss hooks and several summon modules (Gimard, Zenoir, Jedo). |
+| `+0x1BA` | u16 | Shatter amount: copied to the draw node's `+0x7A`, where non-zero draws the body as flying triangles ([shatter renderer](renderer.md#the-shatter-renderer-fun_80029888--fun_80029dd8)). Written by the Jette hook and the cast modules ([`cast-module.md`](cast-module.md#the-shatter-effect-on-monsters)). |
 | `+0x1BC..+0x1BE` | u8 x 3 | Damage-display bytes (monster init also stores the name length at `+0x1BC`). |
 | `+0x1DA` | u8 | Staged-animation channel ([`battle-actor-rendering.md`](battle-actor-rendering.md#one-staged-anim-channel-actor0x1da)). |
 | `+0x1DD` | u8 | Target slot of the committed action. |
@@ -399,7 +399,7 @@ Three slot-B summon ticks share one gate. Nighto and Aluru use it ahead of a rol
 | Summon | PROT | Sites | Extra |
 |---|---|---|---|
 | Nighto | 0907 | `0x801F6BF0` / `0x801F6C18` | The resist arm sets module word `0x801F853C`; the arm-13 fork reads it to abandon both the instant-death and the confuse outcome. |
-| Zenoir | 0908 | `0x801F81F0` / `0x801F8208` | Not a kill roll: the site runs only for an actor already at zero HP (`lhu v0,0x14c(a0)` / `bnez` at `0x801F81D0`) and gates an addition to its `+0x1BA`, the mesh-effect amount. It also tests the formation cell `_DAT_8007BD0C` against `0x4D` / `0xAD` / `0xAE` and excludes them (`0x801F8218..0x801F8230`) - monster ids 77, 173 and 174, the three Berserkers, which the `+0x20` byte does not cover. |
+| Zenoir | 0908 | `0x801F81F0` / `0x801F8208` | Not a kill roll: the site runs only for an actor already at zero HP (`lhu v0,0x14c(a0)` / `bnez` at `0x801F81D0`) and gates an addition to its `+0x1BA`, the shatter amount. It also tests the formation cell `_DAT_8007BD0C` against `0x4D` / `0xAD` / `0xAE` and excludes them (`0x801F8218..0x801F8230`) - monster ids 77, 173 and 174, the three Berserkers, which the `+0x20` byte does not cover. |
 | Aluru | 0916 | `0x801F6D44` / `0x801F6D70` | - |
 
 Over 84 images with 113 materialisations of `0x801C9348`, exactly three loads at `+0x20` follow one, plus the model-upload site in PROT 0898 (the controls `+0x1F` and `+0x3E` return 12 and 1 at their known sites).
@@ -585,7 +585,7 @@ flowchart TD
 
 The same tint triple is what a landing hit stamps on the struck actor. The melee / arts routine `FUN_801EC3E4` reads the acting record's `+0x7A` status / impact selector (`0x801EE3D4..0x801EE43C`; the tint is gated `0 < sel < 6` because selector 6 is the tint-less Curse arm at `0x801EE690`). The monster special-attack tick `FUN_801E09F8` reads the move-power record's `+0x0A` at each arm's impact phase (`0x801E15AC..0x801E15EC`, unguarded; that ladder ends at 5). The tint decays through the presentation SM `FUN_80050120` arm 0. Pixel path: [`battle-actor-rendering.md`](battle-actor-rendering.md#how-the-tint-words-reach-the-pixel).
 
-**3. Per-encounter boss hooks.** Gated on the formation cell `DAT_8007BD0C` for boss ids `0x8A` / `0xA7` / `0xAA` / `0xB4` (138 / 167 / 170 / 180). Each arm applies hand-written camera, pose and scale overrides to the first monster actor. The `0x51EB851F` multiply is a fixed-point divide by 50 (the Spirit value is clamped to 50 first), and `0x1F80 - frame*0x12` is a triangular angle ramp written to `+0x1BA`.
+**3. Per-encounter boss hooks.** Gated on the formation cell `DAT_8007BD0C` for boss ids `0x8A` / `0xA7` / `0xAA` / `0xB4` (138 / 167 / 170 / 180). Each arm applies hand-written camera, pose and scale overrides to the first monster actor. The `0x51EB851F` multiply is a fixed-point divide by 50 (the Spirit value is clamped to 50 first), and `0x1F80 - frame*0x12` is a triangular ramp written to `+0x1BA` with row 2 of `0x8007BE60` set to flags `6` (spin and shrink in place) for Jette's arm.
 
 **4. CLUT status recolour.** For actors with status bit `0x04` (Stone, latched through `+0x220`) or bits `0x08` / `0x10` / `0x20` (latched through `+0x221..+0x223`), it recolours the actor's **240-entry palette row**, not its texels. It stages through `ctx[+0xE34]` and uploads a 1-pixel-tall rect; each party actor owns VRAM CLUT row `481 + slot` (rows `481..=483`; monster rows start at `484`). Stone averages the three BGR555 channels into a grey (`l = (r+g+b) >> 2`, clamped to 31). The other three build the same luminance plus `b = (l*3) >> 1` and set the STP bit, giving a blue tint over a per-character index window from the 3-pair table at `DAT_80078630` (stride 6). The recolour is latched once per affliction; it is not a per-frame flash.
 

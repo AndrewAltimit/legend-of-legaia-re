@@ -519,15 +519,17 @@ impl NpcDrawPose {
     /// builds `F = RotMatrix(a, 0, a)` with `a = (+0x7A << 4)` truncated to
     /// a halfword (zero under flag `0x10000`), scales it by
     /// `0x1000 - (+0x7A & 0xFFFF)` under flag `0x40000` (`ScaleMatrix` at
-    /// `0x8002998C`), and draws every vertex as `F * (v + off)`. So a vertex
-    /// lands at `T + M * (F * (v + off) - off)`: a spin about the point
-    /// `-off`, shrinking to nothing as `+0x7A` ramps to `0x1000` - the
-    /// vanish / appear effect `town0b`, `uru`, `rugi` and the rest run.
+    /// `0x8002998C`). Its per-primitive half `FUN_80029DD8` then applies `F`
+    /// to each triangle about that triangle's own centroid `c` and pushes it
+    /// out to `c * (1 + v / 128)`, so retail breaks the body into flying
+    /// triangles - the vanish / appear effect `town0b`, `uru`, `rugi` and the
+    /// rest run (`docs/subsystems/renderer.md`, the shatter renderer).
     ///
-    /// The result is the same pose shape both hosts already compose
-    /// (`T * (Rx * Ry * Rz) * S`): `M * F` re-read as its `X, Y, Z` Euler
+    /// This fold is a whole-model approximation of that: one rigid spin and
+    /// shrink about `-off`, in the pose shape both hosts already compose
+    /// (`T * (Rx * Ry * Rz) * S`) - `M * F` re-read as its `X, Y, Z` Euler
     /// angles, the pivot term folded into the position and the shrink into
-    /// the scale.
+    /// the scale. The per-triangle push is not reproduced.
     // REF: FUN_80029888, FUN_8001B964, FUN_80026988
     pub fn with_face(self, row: FieldFaceRow, value: i16) -> Self {
         use legaia_render_kernels::battle_intro::placement_rotation;

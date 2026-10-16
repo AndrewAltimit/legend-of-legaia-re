@@ -29,7 +29,7 @@ A status of *explained* means the cause is located in the code and accounts for 
 
 ## Status rolls, jewels and boss immunities
 
-[`glitches/status-and-damage.md`](glitches/status-and-damage.md) - Per-frame status rolls, the physical kernel that skips jewels, and what makes a boss a boss.
+[`glitches/status-and-damage.md`](glitches/status-and-damage.md) - Per-frame status rolls, the physical kernel that skips jewels, what makes a boss a boss, and Zenoir's shatter.
 
 | Case | Status | Cause |
 |---|---|---|
@@ -37,6 +37,8 @@ A status of *explained* means the cause is located in the code and accounts for 
 | Seven boss attacks ignore the defensive jewels | explained | These attacks use a physical (ATK-based) damage wrapper that tells the shared finisher to skip its jewel block; it reads as intended. |
 | USA bosses cannot have ATK, INT or DEF lowered | explained | The debuff only lands if the boss's base stat still equals its disc record, and the USA difficulty boost changes the base before the fight starts. |
 | Every Berserker can be killed outright | explained | Instant-death summons treat a monster as a boss by a texture-size byte in its record, and that byte is 0 on all three Berserkers. |
+| Zenoir leaves a lone Golem in pieces | explained | Zenoir shatters the monsters it kills; a lone scripted boss is never faded away, so Zenoir skips bosses by the texture byte plus a hand list of Berserkers, which misses the Golem and the lone Puera. |
+| Evil Fly and other boss-byte monsters can be killed outright | explained | The texture byte is only read in scripted fights; eleven monsters that have it, Lapis among them, are never met in one. |
 
 ## Lapis and Mystic Shield Cort
 

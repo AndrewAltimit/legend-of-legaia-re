@@ -1,14 +1,15 @@
 # Status rolls, jewels and boss immunities
 
-Four battle oversights that share one theme: a rule the player assumes is general turns out to be
+Six battle oversights that share one theme: a rule the player assumes is general turns out to be
 a special case in the code. Each section states the cause in plain words, then the instructions
 and disc bytes that carry it.
 
 Most of the page is read statically from the USA disc (`SCUS_942.54`). Two things go further. The
 Tough Love section is also measured in a running game, on a poked state that the section
 describes. The boss-debuff section also reads the Japanese (`SCPS_100.59`) and French
-(`SCES_019.44`) builds. The jewel and Berserker sections are static analysis only; each says which
-parts are proven from the code and which are predicted from it.
+(`SCES_019.44`) builds. The Zenoir shatter section is captured in a running game on forced
+formations with an injected cast. The jewel, Berserker and Evil Fly sections are static analysis
+only; each says which parts are proven from the code and which are predicted from it.
 
 Address conventions used on this page:
 
@@ -545,9 +546,10 @@ the test fails, and the summon rolls its ordinary kill chance.
 
 All three Berserker records are the same in this respect, and among the story bosses they are the
 only ones. A third summon shows the byte's blind spot was noticed somewhere: Zenoir uses the same
-test to keep a visual effect off bosses, and adds the three Berserker ids by hand. Nighto
-and Aluru never received that list. Zenoir's list is about how a dead monster is drawn, not about
-damage, and nothing in the code says its author knew the kill rolls shared the gap.
+test to keep its shatter effect off bosses, and adds the three Berserker ids by hand. Nighto and
+Aluru never received that list. Zenoir's list is about how a dead monster is drawn, not about
+damage, and nothing in the code says its author knew the kill rolls shared the gap
+([below](#zenoir-leaves-a-lone-golem-in-pieces)).
 
 ### Mechanism
 
@@ -575,16 +577,8 @@ damage, and nothing in the code says its author knew the kill rolls shared the g
    level 9. A landed Aluru always kills (`sh zero,0x14c(s3)` at `0x801F7E14`).
 4. **Zenoir's hand-written list.** PROT entry 0908 applies the same gate and then compares the
    first formation monster id with `0x4D`, `0xAD` and `0xAE` (`0x801F8218..0x801F8230`). Those are
-   77, 173 and 174: the three Berserkers. The loop (`0x801F81C8..0x801F8264`) is a later phase
-   than the damage (`FUN_801DD0AC` at `0x801F76CC`). It visits only monster seats already at zero
-   HP and, past the gate and the list, adds a per-frame step to the actor's `+0x1BA`. The battle
-   anim tick `FUN_80047430` copies that word to the draw node's `+0x7A` (`0x800480A4`), and a
-   non-zero `+0x7A` sends the mesh through `FUN_80029888` (`0x80048FB8`), which builds a rotation of
-   `+0x7A * 16` about X and Z and, under a per-model flag, a scale-down from the same value. Gimard
-   (`0x801F76B4`) and Jedo (`0x801F8730`) raise the same word on monsters they hit that are still
-   alive, so it is a summon hit effect, not a death animation. Why Zenoir leaves bosses and the
-   Berserkers out is not established, and the effect has not been watched in a running game. It
-   changes no damage.
+   77, 173 and 174: the three Berserkers. The test guards a visual effect, not damage; the next
+   section explains it.
 
 ### Addresses
 
@@ -599,7 +593,7 @@ damage, and nothing in the code says its author knew the kill rolls shared the g
 | `0x801F6D44`, `0x801F6D70` | PROT 0916 | Aluru's gate | disassembly |
 | `0x801F6DE4..0x801F6E1C` | PROT 0916 | Aluru's roll; resist word `0x80209010` | disassembly |
 | `0x801F7E14` | PROT 0916 | Aluru's kill store | disassembly |
-| `0x801F81F0..0x801F8230` | PROT 0908 | Zenoir's gate and Berserker id list (visual effect only) | disassembly |
+| `0x801F81F0..0x801F8230` | PROT 0908 | Zenoir's gate and Berserker id list (shatter effect only) | disassembly, capture |
 | `0x801F87DC`, `0x801F8814`, `0x801F8438` | PROT 0931 | Jedo: flag test, kill store (flag clear), rolled damage (flag set) | disassembly; capture on a forced Lapis formation with an injected cast |
 | `ctx[+0x287]` | RAM | Scripted-fight flag | disassembly |
 
@@ -669,3 +663,167 @@ reads 1 and the resist arm is taken. A level-9 Aluru should kill a Berserker on 
 - Nighto and Aluru have not been cast on a Berserker in a running game; the result above is read
   from the gate and the three records.
 - Instant-death sources outside these two summons and Jedo are not surveyed.
+
+## Zenoir leaves a lone Golem in pieces
+
+**Status:** explained
+**Reported as:** What is special about Zenoir against Berserker? (community question, following
+the Berserker write-up above).
+
+When Zenoir kills a monster, the monster does not just fade. Its model breaks into its own
+triangles, which fly outward and spin while the body fades to black. Most of the time the fire
+covers it and the shards are gone with the fade.
+
+A boss is different. When the last monster of a scripted fight dies, the game does not fade it
+away: it keeps drawing the body at full colour so it stays on stage until the victory scene. A
+shattered boss would leave a lit cloud of shards hanging over the stage. Zenoir therefore skips
+bosses, using the same makeshift test as Nighto and Aluru (scripted fight, and record byte `+0x20`
+set). That byte is `0` on Berserker, so the three Berserker ids are listed by hand, and the
+Berserker's body stays whole.
+
+The list stops there. Two other lone scripted monsters have the byte at `0`: the Golem (id 128,
+the `rikuroa` scenes) and the lone Puera (id 156, the `taiku` scenes). Zenoir shatters them, and
+the shards stay lit on stage until the battle ends.
+
+### Mechanism
+
+1. **The effect.** Every frame of Zenoir's phase `0xC` (`0x801F8108`, after the damage of phase 8),
+   the loop at `0x801F81C8..0x801F8264` adds `[0x1F800393] * [0x1F80037D]` (32 per tick in the
+   capture) to `+0x1BA` of each monster seat with `+0x14C == 0`. The battle anim tick copies the word to the draw node's `+0x7A`
+   (`0x800480A4`), and a non-zero `+0x7A` sends the body through the shatter renderer
+   `FUN_80029888` / `FUN_80029DD8`: each triangle spins about its own centre and is pushed out by
+   `+0x7A / 128` of its distance from the body's centre
+   ([renderer.md](../../subsystems/renderer.md#the-shatter-renderer-fun_80029888--fun_80029dd8)).
+   The ramp stops when the actor's `+0x04` counter, which falls by the same step, reaches zero:
+   `+0x1BA` ends near 1000, about 8.8 times the starting distance. Nothing resets it.
+2. **The fade.** A killed monster enters arm 2 of the tint state machine (`+0x21C = 2`), which
+   walks its colour to black; a body at black is no longer drawn.
+3. **The exception.** The draw tick `FUN_800480D8` overrides the colour with `0x00808080` and
+   keeps drawing when the fight is scripted (`ctx[+0x287]`), the formation has one monster
+   (`0x8007BD0D == 0`) and the seat is in arm 2 (`0x800481D4..0x8004823C`,
+   `0x80048278..0x800482DC`).
+4. **Zenoir's gate.** The loop skips a seat when the fight is scripted and record `+0x20` is set
+   (`0x801F81F0..0x801F8210`), or when the first formation id is `0x4D`, `0xAD` or `0xAE`
+   (`0x801F8218..0x801F8230`).
+5. **Jedo** (PROT entry 0931) shatters every monster it kills in a random fight
+   (`0x801F86E0..0x801F874C`) and skips the effect in every scripted fight, so it never meets the
+   problem.
+
+### How it was measured
+
+Captured under PCSX-Redux on the USA disc from a Rim Elm battle state with Vahn alone. The
+formation row was rewritten as the battle loaded, Zenoir (`0x86`) was injected into Vahn's queued
+action, and the target's HP was set to 1. Every fight here is forced and every cast injected.
+
+| Forced row | Scripted | Result |
+|---|---|---|
+| Queen Bee + Killer Bee | no | Both bodies shatter; the shards fade to black with the bodies and vanish |
+| Golem alone | no | Shatters and fades to black |
+| Golem alone | yes | Shatters; the colour word reads `0x00808080` from the first shattered frame and the shards stay lit over the stage until the victory camera |
+| Berserker (`0x4D`) alone | yes | The list test runs every frame and the store never does; `+0x1BA` stays `0` and the body stays whole |
+| Berserker alone, id cell poked to `0x4E` during the list test | yes | Shatters into a lit cloud of green and purple shards |
+
+The `0x8007BE60` rows the battle uses read zero, so the shatter takes its default form: spin and
+outward push, no shrink.
+
+### Addresses
+
+| Address | Image | What | Evidence |
+|---|---|---|---|
+| `0x801F8108` | PROT 0908 | Phase `0xC` arm | disassembly |
+| `0x801F81C8..0x801F8264` | PROT 0908 | Shatter loop: dead seats, gate, list, `+0x1BA` add | disassembly, capture |
+| `0x801F76CC` | PROT 0908 | Phase-8 damage call (`FUN_801DD0AC`) | disassembly |
+| `0x800480A4` | SCUS_942.54 | `+0x1BA` copied to the node's `+0x7A` | disassembly |
+| `0x80048EAC..0x80048FC0` | SCUS_942.54 | Non-zero `+0x7A` routes the body to `FUN_80029888` | disassembly, capture |
+| `0x80029DD8` | SCUS_942.54 | Per-triangle centroid spin and push | disassembly |
+| `0x800481D4..0x800482DC` | SCUS_942.54 | Grey stamp for a lone scripted monster in arm 2 | disassembly, capture |
+| `0x801F86E0..0x801F874C` | PROT 0931 | Jedo's shatter loop, skipped in scripted fights | disassembly |
+
+### Scope
+
+Every lone scripted fight, with record `+0x20` and what a Zenoir kill does to the body:
+
+| Id | Monster | Scenes | `+0x20` | Body after a Zenoir kill |
+|---|---|---|---|---|
+| 19, 20 | Red / Black Piura | `cave01` (tutorial) | 0 | would shatter and stay; Zenoir cannot be cast there |
+| 77, 173, 174 | Berserker | `teien`, `rugi`, the `ed*` scenes | 0 | whole (the hand list) |
+| **128** | **Golem** | `rikuroa`, `rikuroa2` | 0 | **shattered, shards stay lit** |
+| **156** | **Puera** (lone row) | `taiku`, `taiku2` | 0 | **shattered, shards stay lit** (predicted, not run) |
+| all other lone scripted bosses | Zeto, Xain, Cort, Songi and the rest | - | 1 | whole |
+
+The scripted rows with two monsters (Viguro, Kemaro, the paired Puera) fade normally, because the
+grey stamp needs a lone monster.
+
+### Verifying it
+
+Kill the Rikuroa Golem with Zenoir: the shards should still be on screen, lit, after the fire has
+cleared. Break on `0x801F8254` to watch the store, and read `+0x74` of the Golem's draw node for
+`0x00808080`. In a Berserker fight the same breakpoint never fires.
+
+### Open questions
+
+- The lone Puera is predicted from the same code and record; it was not run.
+- The Golem capture is a forced formation in Rim Elm with an injected cast, not the real Rikuroa
+  fight.
+
+## Evil Fly and other boss-byte monsters can be killed outright
+
+**Status:** explained
+**Reported as:** Evil Fly has the non-insta-killable flag set, but you can still kill it outright
+because it is not a scripted fight (old forum note).
+
+The report is right. Nighto and Aluru only read record byte `+0x20` after they have checked that
+the fight is scripted. In any other fight they roll the kill chance without looking at the
+monster. The game has no "boss" field. Immunity needs both halves:
+
+| | Record `+0x20 = 1` | Record `+0x20 = 0` |
+|---|---|---|
+| **Scripted fight** | resists (Zeto, Xain, Cort, ...) | rolls: Berserker, Golem, Puera, Viguro, Kemaro, the tutorial Piuras |
+| **Any other fight** | rolls - the byte is never read (Evil Fly, Gizam, Gilium, Lapis, ...) | rolls (every ordinary monster) |
+
+The two cells of the bottom row behave identically; the split only shows that the byte makes no
+difference there.
+
+**What the byte is.** Record `+0x20` is a graphics setting: the model upload
+(`0x801F1D0C` -> `FUN_80055468`) doubles the monster's texture rectangle in video memory when it is
+`1`. Large detailed models need the wide page, which is why most big bosses carry it, but so do a
+few ordinary monsters with wide textures. It is set on 37 of 186 records. Apart from the upload,
+exactly three places on the disc read it, all borrowing it as a "big boss" test: Nighto's and
+Aluru's resist gates and Zenoir's shatter gate ([battle.md](../../subsystems/battle.md)). No stat,
+AI or reward code reads it.
+
+The byte is set on eleven monsters that never stand on a scripted formation row, so it protects
+none of them:
+
+| Id | Monster | HP | Where it is met |
+|---|---|---|---|
+| 1, 2, 3 | Evil Fly, Death Wings, Demon Fly | 82, 209, 324 | random encounters |
+| 55, 56, 57 | Gizam (three versions) | 266, 567, 2192 | random encounters; the strongest also on unflagged event rows |
+| 79 | Tetsu | 999 | unflagged event rows only |
+| 159, 160, 161 | Gilium (three versions) | 2880, 3280, 3542 | random encounters and unflagged event rows |
+| 167 | Lapis | 64800 | one event row with a zero header byte ([lapis-and-cort.md](lapis-and-cort.md)) |
+
+Lapis is the striking one: a story boss with the byte set, met on a row whose header byte is zero,
+so the fight is not flagged as scripted and Nighto, Aluru and Jedo treat it as a random encounter.
+
+### Mechanism
+
+The gate is the one quoted in the Berserker section: `lbu v0,0x287(a1)` / `beqz` at
+`0x801F6BF0..0x801F6BF8` (Nighto) and `0x801F6D44` (Aluru) branch straight to the roll when the
+fight is not scripted, before record `+0x20` is loaded. The scripted-fight flag comes only from the
+formation row's first header byte (`FUN_801DA51C`, `0x801DA5F8..0x801DA61C`).
+
+### How it was counted
+
+The table joins each monster record's `+0x20` (PROT 0867) with a census of every formation row in
+every scene MAN, split by the row's header byte (`asset formation-census`).
+
+### Verifying it
+
+Cast a level-9 Aluru on an Evil Fly in a random encounter: it lands every time (`rand % 8 < 8`) and
+the fly dies. Breaking on `0x801F6D44` shows `ctx[+0x287] = 0`, and execution never reaches the
+record load at `0x801F6D70`.
+
+### Open questions
+
+- Not yet cast on an Evil Fly in a running game; the outcome is read from the gate.

@@ -1433,7 +1433,53 @@ scripted boost profile live: record ATK 288 / UDF 222 / INT 220 install as
 360 / 444 / 247 (`x5/4`, `x2`, `x9/8`), against the random encounter's
 17 / 15 / 10 installing as 17 / 25 / 12.
 
+### The shatter effect on monsters
+
+The actor word `+0x1BA` reaches the draw as the node's `+0x7A`, where a
+non-zero value breaks the body into flying triangles
+([`renderer.md`](renderer.md#the-shatter-renderer-fun_80029888--fun_80029dd8)).
+Eight cast modules write it. Six (Gimard `0x801F76C4`, Aluru `0x801F7138`,
+Gola Gola `0x801F792C`, Spikefish `0x801F7358`, Swordie `0x801F6E28`, Freed
+`0x801F74EC`) write their own creature in seat 7 (`0x801C9370 + 0x1C`). Two
+write monsters:
+
+| Module | Loop | Which monsters | Gate |
+|---|---|---|---|
+| 0908 Zenoir | phase `0xC`, `0x801F81C8..0x801F8264`, after the damage of phase 8 (`FUN_801DD0AC` at `0x801F76CC`) | seats 3..6 with `+0x14C == 0` and `+0x04 != 0`: the ones the blast killed | skipped when `ctx[+0x287]` and record `+0x20` are both set, or when the formation's first id is `0x4D`, `0xAD` or `0xAE` (the Berserkers) |
+| 0931 Jedo | `0x801F86E0..0x801F874C`, ahead of the kill store at `0x801F8814` | seats 3..6 with `+0x14C != 0`: every living monster, which the module then kills | the whole loop is skipped when `ctx[+0x287]` is set |
+
+Each frame adds a step (`[0x1F800393] * [0x1F80037D]` for Zenoir, 32 per tick
+in the capture; `[0x1F80037D] << 2` for Jedo). Zenoir's ramp ends when the
+actor's `+0x04` counter, which falls by the same step, reaches zero, near
+`+0x1BA = 1000`. Nothing in either module clears the word. The battle rows of
+`0x8007BE60` read zero, so the default shatter (spin and outward push) is what
+shows.
+
+**Why scripted bosses are left out.** A monster killed in a random fight fades
+to black and stops being drawn (the tint SM's arm 2, `+0x21C = 2`), so its
+shatter plays out during the fade. A lone monster in a scripted fight does not
+fade away: the draw tick `FUN_800480D8` stamps its colour word to `0x808080`
+and keeps drawing it when `ctx[+0x287] != 0`, `0x8007BD0D == 0` and
+`+0x21C == 2` (`0x800481D4..0x8004823C`, `0x80048278..0x800482DC`). A
+shattered boss would stay on stage in pieces until the battle ends. Jedo
+avoids that by skipping every scripted fight; Zenoir uses record `+0x20` as a
+stand-in for "boss" and adds the three Berserker ids, which are lone scripted
+monsters whose byte is `0`.
+
+The stand-in leaves two lone scripted fights uncovered: the Golem (id 128,
+`rikuroa` / `rikuroa2`) and the lone Puera (id 156, `taiku` row 8). Both have
+record `+0x20 = 0` and are not on the list. (The tutorial Piuras, ids 19 and
+20, also qualify but Zenoir cannot be cast there.)
+
+`capture`: on forced formations with an injected cast, a scripted lone Golem
+shatters and its node colour reads `0x00808080` from the first shattered frame
+until the victory camera, while an unscripted one fades to black with its
+shards; a scripted Berserker reaches the list test every tick and is never
+written. The write-up is
+[`glitches/status-and-damage.md`](../reference/glitches/status-and-damage.md#zenoir-leaves-a-lone-golem-in-pieces).
+
 ### PROT 0925 (the Spikefish flute)
+
 
 <a id="prot-0925-the-spikefish-flute-flees-or-skips-the-round"></a>
 

@@ -384,6 +384,63 @@ fragment discard ([below](#what-a-raised-0x42-draws)).
   at `+0x14..0x16`, bit `0x800` selects the trailing endpoint. It carries a
   `[render_pipeline]` scope row in `scripts/ci/port-catalog-ignore.toml`. See
   `ghidra/scripts/funcs/80029724.txt`.
+
+## The shatter renderer (`FUN_80029888` + `FUN_80029DD8`)
+
+A body whose `+0x7A` word is non-zero leaves the per-prim dispatcher and is
+drawn by `FUN_80029888` (field: `FUN_8001ADA4` case 5 and `FUN_8001B964`;
+battle: `FUN_80048A08`, which copies the actor's `+0x1BA` into the node's
+`+0x7A` through `FUN_80047430` at `0x800480A4`). It breaks the mesh into its
+own triangles and moves each one separately. It is not a whole-model spin.
+
+The caller passes `a3 = (row[+8] << 16) | +0x7A`, where `row` is the 12-byte
+record at `0x8007BE60 + node[+0x6D] * 12`: three halfwords `off`, a fourth
+halfword `h3`, and the flag word. Call the low half `v`.
+
+`FUN_80029888` prepares the shared state once per object:
+
+- it moves every vertex by `off` (`0x80029B3C..0x80029B88`) and moves the
+  object's translation by `-M * off` (`FUN_8003D344` at `0x800298E4`), so
+  `-off` is the burst centre;
+- it builds `F = RotMatrix(v << 4, 0, v << 4)` into the scratchpad matrix
+  `0x1F800314` (`FUN_80026988` at `0x80029958`; skipped under flag `0x10000`)
+  and scales it by `0x1000 - v` under flag `0x40000` (`FUN_8005B4E8` at
+  `0x8002998C`);
+- it stores `a3` at `0x1F8003FC` for the emitter, and resets that word to
+  `0x00FFFFFF` on exit.
+
+`FUN_80029DD8` then handles one primitive at a time. It averages the
+primitive's vertices into a centroid `c` (`x * 0x555 >> 12` is `/ 3`), loads a
+per-primitive matrix, and transforms each vertex about `c` with `MVMVA`
+(`cop2 0x480012`) before the ordinary `RTPT` through the restored object
+matrix:
+
+```text
+vertex' = F * (vertex + off - c) + c + c * v / 128      (flags & 0x3A0000 == 0)
+```
+
+So every triangle spins about its own centre and the triangles fly apart,
+`v / 128` of their distance from the burst centre per unit. At `v = 0x1000`
+a triangle sits 33 times as far out as it started.
+
+| Flag (in `row[+8] << 16`) | Effect |
+|---|---|
+| `0x10000` | No spin (`F` is the identity) |
+| `0x40000` | Each triangle shrinks with `0x1000 - v` |
+| `0x20000` | No outward push: triangles spin and shrink in place (`0x80029FD4`) |
+| `0x100000` / `0x80000` / `0x200000` | Sweep along X / Y / Z: a front at `h3 - v` (or `h3 + v` when `h3 <= 0`) moves across the body; only triangles past it come apart, each by its own distance past the front (spin `(d << 4, d << 2, d << 4)`, push `d / 128`, shrink `0x1000 - d * 8`). The rest draw intact (`0x8002A030..0x8002A1B8`). |
+
+The field's `43 07` script op writes the row and ramps `+0x7A` from `0` to
+`0x1000` ([`script-vm.md`](script-vm.md#0x43-sub-7--8---the-spin-and-shrink-deformation)).
+In battle the writers are the cast modules: six summons raise their own
+creature's `+0x1BA` (seat 7) to break it up or assemble it, and Zenoir and
+Jedo raise it on monsters
+([`cast-module.md`](cast-module.md#the-shatter-effect-on-monsters)).
+
+**Port.** Not reproduced. The field NPC path folds the row into one rigid pose
+(`NpcDrawPose::with_face`: `F` as Euler angles, the shrink as a scale), which
+is right only for a body with a single triangle; the battle path draws the
+body intact. A faithful port needs the per-primitive transform above.
 ## Lighting
 
 **Retail has no general light source.** Nearly every primitive is shaded by a
@@ -620,7 +677,7 @@ and carried as a scope row in `scripts/ci/port-catalog-ignore.toml`:
 | `FUN_80019D50` | CLUT-cell HSV cycler ([`field-ambient-fx.md`](field-ambient-fx.md)) | **Ported** - `legaia_engine_field::clut_cell_fx`, live through `world::ambient` |
 | `FUN_800351C0` | Full-screen `320x224` backdrop quad (tag `0x08000000`) | Scope row (`render_pipeline`) |
 | `FUN_8001B73C` | On-screen visibility test, not an emitter ([probes](#on-screen-probes-two-tests-that-are-not-the-same-test)) | Scope row (`libgte`) |
-| `FUN_80029DD8` | 39-`cop2`-op 3D primitive emitter, sibling of `FUN_8002735C` / `FUN_80029888` | Scope row (`render_pipeline`) |
+| `FUN_80029DD8` | Per-primitive half of the [shatter renderer](#the-shatter-renderer-fun_80029888--fun_80029dd8) | Not reproduced; scope row (`render_pipeline`) |
 
 `FUN_80028158` / `FUN_8002A5A4` / `FUN_801CFA48` are the three emitters the
 per-actor render dispatcher `FUN_8001ADA4` case 4 picks on `actor[+0x9e]`;
