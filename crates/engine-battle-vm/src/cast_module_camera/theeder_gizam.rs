@@ -277,6 +277,42 @@ pub const GIZAM_SWEEP_WAIT: i32 = 0x100;
 /// (`0x801F75FC`), which arm 14 drains before it polls the row.
 pub const GIZAM_SETTLE_WAIT: i32 = 0x80;
 
+const fn gizam_spawn(va: u32, anchor: SpawnAnchor) -> ModuleSpawn {
+    ModuleSpawn {
+        record: SpawnRecord::Module(va),
+        anchor,
+    }
+}
+
+/// PROT 0906 arm 4's three spawns (`0x801F6D48..0x801F6D78`), right behind
+/// the seat installer: the creature's `+0x34` / `+0x38` copied into a stack
+/// trio whose height stays the prologue's zero, on the zeroed angle trio.
+/// Records `0x801F79E4` and `0x801F7AB8` are the ground disc and the water
+/// pillar (op `0x13` default-arm meshes); `0x801F7B80` is the timing record
+/// whose `op 0x20` calls release the phase-5 hole
+/// ([`GIZAM_STAGER_RELEASE_TICK`]).
+pub const GIZAM_POOL_SPAWNS: [ModuleSpawn; 3] = [
+    gizam_spawn(0x801F_79E4, SpawnAnchor::CreatureGround { y: 0 }),
+    gizam_spawn(0x801F_7AB8, SpawnAnchor::CreatureGround { y: 0 }),
+    gizam_spawn(0x801F_7B80, SpawnAnchor::CreatureGround { y: 0 }),
+];
+
+/// PROT 0906 arm 7's spawn on its pass (`0x801F6F28..0x801F6F38`): record
+/// `0x801F7EBC` on the creature's `+0x3C` / `+0x44`, whose program calls
+/// stager arm `5` twelve times and arm `6` once
+/// ([`crate::cast_module_ticks::gizam_stager_spawns`]).
+pub const GIZAM_SPRAY_SPAWNS: [ModuleSpawn; 1] = [gizam_spawn(0x801F_7EBC, SpawnAnchor::Creature)];
+
+/// PROT 0906 arm 12's two spawns on its pass (`0x801F7230..0x801F7264`):
+/// record `0x801F7C44` on the arm's own shot trios (`sp+0x30` / `sp+0x20`),
+/// whose program calls stager arm `3` with each of the six bubble points in
+/// turn, eight times over; and record `0x801F7DB4` on the creature's
+/// `+0x34` / `+0x44`.
+pub const GIZAM_BUBBLE_SPAWNS: [ModuleSpawn; 2] = [
+    gizam_spawn(0x801F_7C44, SpawnAnchor::ShotFocus),
+    gizam_spawn(0x801F_7DB4, SpawnAnchor::Creature),
+];
+
 /// PROT 0906's arm-13 exit shot (`0x801F7514..0x801F75CC`), snapped (`a3 =
 /// 1`), yaw `-facing` of the creature either way. On a group target
 /// (`caster[+0x1DD] >= 8`) the arm calls `FUN_801DCEAC(code, sp+0x30,
@@ -328,22 +364,22 @@ pub fn gizam_sweep_exit_shot(
 /// | 0 | - | snap: pitch `0x100`, yaw `0x710 - facing`, TR `(0, 0x400, 0x400)`, focus the caster (`0x801F6BE0`) |
 /// | 1 | - | pitch `0x80`, yaw `0x878 - facing`, TR `(0, 0x298, 0x900)`, focus the caster, over `0x168` frames |
 /// | 3 | hold while the band timer `ctx[+0x6D8]` is non-zero (`0x801F6CE0`) | - |
-/// | 4 | - | the creature seated and hidden; the stager record clock starts |
+/// | 4 | - | the creature seated and hidden; spawns [`GIZAM_POOL_SPAWNS`]; the stager record clock starts |
 /// | 5 | hold until the record's `op 0x20` stager arm `2` ([`GIZAM_STAGER_RELEASE_TICK`]) | - |
-/// | 6 | - | `ctx[+0x6D8] = scalar * 180` |
-/// | 7 | drain, hold while non-negative (`0x801F6E70`) | snap: pitch `-0x40`, yaw `0x788 - facing`, TR `(0, 0x400, 0x400)`, focus the creature (`0x801F6F20`) |
+/// | 6 | - | `ctx[+0x6D8] = scalar * 180`; the spell name |
+/// | 7 | drain, hold while non-negative (`0x801F6E70`) | the attack name; snap: pitch `-0x40`, yaw `0x788 - facing`, TR `(0, 0x400, 0x400)`, focus the creature (`0x801F6F20`); spawns [`GIZAM_SPRAY_SPAWNS`] |
 /// | 8 | - | pitch `0x40`, yaw `0x9E0 - facing`, TR `(0, 0x338, 0x800)`, focus the creature, over `0xAA` frames; `ctx[+0x6D8] = scalar * 170` |
 /// | 9 | drain, hold while non-negative (`0x801F7038`) | snap: pitch `-0x40`, yaw `0x900 - facing`, TR `(0, 0x700, 0x300)`, focus the creature (`0x801F709C`); `ctx[+0x6D8] = scalar * 20` |
 /// | 10 | drain, hold while non-negative (`0x801F70E4`) | snap: pitch `0`, yaw `0x800 - facing`, TR `(0, 0x600, 0x200)`, focus the creature |
 /// | 11 | - | pitch `0xB4`, yaw `0x800 - facing`, TR `(0, 0x280, 0x800)`, focus the creature, over `0x28` frames; `ctx[+0x6D8] = scalar * 40` |
-/// | 12 | drain, hold while non-negative (`0x801F71D4`) | pitch `0xC0`, yaw `0x800 - facing`, TR `(0, 0, 0x2800)`, focus the creature, over `0x100` frames (`0x801F7228`); `ctx[+0x6D8] = scalar << 8` |
+/// | 12 | drain, hold while non-negative (`0x801F71D4`) | pitch `0xC0`, yaw `0x800 - facing`, TR `(0, 0, 0x2800)`, focus the creature, over `0x100` frames (`0x801F7228`); `ctx[+0x6D8] = scalar << 8`; spawns [`GIZAM_BUBBLE_SPAWNS`] |
 /// | 13 | drain, hold while non-negative (`0x801F7330`) | the sweep; snap: [`gizam_sweep_exit_shot`] - the enemy row's centroid, or the victim (`0x801F75CC`); the settle word `= scalar << 7` |
 /// | 14 | drain the settle word while positive, hold while it is (`0x801F7610..0x801F7640`) | the body's row poll follows |
 ///
 /// Arm 9 frames the creature's `+0x3C` / `+0x40` pair rather than its
 /// `+0x34` / `+0x38` seat; the port frames the seat.
 ///
-/// PORT: FUN_801F69F4 (PROT 0906; the camera arms 0/1/7..13, the countdown gates of arms 3/5/7/9/10/12/13/14 and the phase-5 stager record clock)
+/// PORT: FUN_801F69F4 (PROT 0906; the camera arms 0/1/7..13, the countdown gates of arms 3/5/7/9/10/12/13/14, the phase-5 stager record clock, the arm 6/7 captions and the arm 4/7/12 spawn calls)
 pub fn gizam_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) -> ArmDirection {
     let c = seats.caster;
     let creature = st.creature_live.or(st.creature).unwrap_or(seats.victim);
@@ -359,7 +395,16 @@ pub fn gizam_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) -
         3 => gate(seats.band_timer != 0),
         4 => {
             st.countdown.0 = SPEED_SCALAR * GIZAM_STAGER_RELEASE_TICK;
-            ArmDirection::PASS
+            // The installer `FUN_801F19EC` the arm calls first seats the
+            // creature on the caster, wearing its facing; the arm's spawns
+            // read that seat before the host has bound the creature's mesh.
+            if st.creature_live.is_none() && st.creature.is_none() {
+                st.creature = Some(c);
+            }
+            ArmDirection {
+                spawns: &GIZAM_POOL_SPAWNS,
+                ..ArmDirection::PASS
+            }
         }
         5 => {
             st.countdown.drain();
@@ -367,13 +412,23 @@ pub fn gizam_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) -
         }
         6 => {
             st.countdown.0 = SPEED_SCALAR * GIZAM_ATTACK_WAIT;
-            ArmDirection::PASS
+            // The spell name (`FUN_8003541C` at `0x801F6E34`).
+            ArmDirection {
+                caption: Some(ModuleCaption::SpellName),
+                ..ArmDirection::PASS
+            }
         }
         7 => {
             if drain_halfword(st) {
                 return ArmDirection::HOLD;
             }
-            ArmDirection::shot(on(creature, -0x40, 0x788, [0, 0x400, 0x400], 1))
+            // `FUN_800319A8(0)` clears the spell name and the attack name
+            // goes up (`0x801F6E78..0x801F6EC8`) before the shot.
+            ArmDirection {
+                spawns: &GIZAM_SPRAY_SPAWNS,
+                caption: Some(ModuleCaption::AttackName),
+                ..ArmDirection::shot(on(creature, -0x40, 0x788, [0, 0x400, 0x400], 1))
+            }
         }
         8 => {
             st.countdown.0 = SPEED_SCALAR * GIZAM_CLOSE_WAIT;
@@ -401,7 +456,10 @@ pub fn gizam_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) -
                 return ArmDirection::HOLD;
             }
             st.countdown.0 = SPEED_SCALAR * GIZAM_SWEEP_WAIT;
-            ArmDirection::shot(on(creature, 0xC0, 0x800, [0, 0, 0x2800], 0x100))
+            ArmDirection {
+                spawns: &GIZAM_BUBBLE_SPAWNS,
+                ..ArmDirection::shot(on(creature, 0xC0, 0x800, [0, 0, 0x2800], 0x100))
+            }
         }
         13 => {
             if drain_halfword(st) {
@@ -523,6 +581,39 @@ mod tests {
         }
         assert_eq!(n, 256);
         assert_eq!(due, vec![(191, 0), (192, 1)]);
+    }
+
+    /// Arms 4, 7 and 12 report their spawn calls on their passes, and arm
+    /// 4 seats the creature on the caster when no seat is live yet, so the
+    /// pool lands where the installer puts it.
+    #[test]
+    fn gizam_reports_its_spawn_calls_on_the_seat_spray_and_bubble_arms() {
+        let mut st = ModuleCamState::default();
+        let s = seats(0);
+        let d = gizam_direct(&mut st, 4, s);
+        assert_eq!(d.spawns, &GIZAM_POOL_SPAWNS[..]);
+        assert_eq!(st.creature, Some(s.caster));
+        let at = spawn_anchor_point(d.spawns[0].anchor, st.creature, None, None);
+        assert_eq!(at, Some(([63, 0, -591], [0; 3])));
+        // Arm 7 holds on its countdown first and spawns only on the pass,
+        // beside the attack name.
+        st.countdown.0 = SPEED_SCALAR;
+        let held = gizam_direct(&mut st, 7, s);
+        assert!(held.hold && held.spawns.is_empty() && held.caption.is_none());
+        let d = gizam_direct(&mut st, 7, s);
+        assert_eq!(d.spawns, &GIZAM_SPRAY_SPAWNS[..]);
+        assert_eq!(d.caption, Some(ModuleCaption::AttackName));
+        assert_eq!(
+            gizam_direct(&mut st, 6, s).caption,
+            Some(ModuleCaption::SpellName)
+        );
+        st.countdown.0 = 0;
+        let d = gizam_direct(&mut st, 12, s);
+        assert_eq!(d.spawns, &GIZAM_BUBBLE_SPAWNS[..]);
+        // The bubble timer sits on the arm's own shot: the negated focus.
+        let shot = d.shot.expect("arm 12 arms a shot");
+        let at = spawn_anchor_point(d.spawns[0].anchor, st.creature, None, Some(shot));
+        assert_eq!(at.map(|a| a.0), Some([-63, 0, 591]));
     }
 
     /// Arm 13's exit snaps onto the victim at two thirds of the band depth

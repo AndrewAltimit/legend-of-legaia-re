@@ -79,6 +79,7 @@ pub use presentation::ModulePresentation;
 mod arm_and_fold;
 mod caster_stages;
 mod module_creature;
+mod module_effects;
 mod module_rain;
 mod module_seat_arm;
 mod module_spawn;

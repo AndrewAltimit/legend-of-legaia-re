@@ -220,3 +220,60 @@ fn arming_the_stager_zeroes_the_module_phase() {
         "the stager tick re-entered PROT 0909's module code"
     );
 }
+
+/// PROT 0912's arm 4 turns the four crystal triples arm 2 seated in round
+/// the creature on its held passes - the first handle of each corner takes
+/// the new spot and the other two copy its trio - and kills all twelve on
+/// its pass (`0x801F7184..0x801F730C`, `0x801F7158..0x801F7174`).
+#[test]
+fn freed_arm_4_turns_then_kills_the_crystals() {
+    use legaia_engine_battle_vm::cast_module_camera as cam;
+    let mut world = module_code_world();
+    world.casting.summon_actor_slot = Some(9);
+    world.actors[9].active = true;
+    world.actors[9].move_state.world_x = 100;
+    world.actors[9].move_state.world_z = -800;
+    let mut scene = legaia_engine_effects::summon::SummonScene::spawn_parts(&[], &[], 0, [0; 3]);
+    for _corner in 0..4 {
+        for record in cam::FREED_CRYSTAL_RECORDS {
+            scene
+                .parts
+                .push(legaia_engine_effects::summon::SummonPartRuntime {
+                    model_sel: -1,
+                    reserved: 0,
+                    buf: vec![0x08],
+                    state: Default::default(),
+                    finished: false,
+                    origin: Some([0; 3]),
+                    tag: Some(record),
+                    seat_pokes: Vec::new(),
+                    seat_halve_speed: false,
+                });
+        }
+    }
+    world.casting.active_summon = Some(scene);
+    // Arm 3's pass zeroes the turn word; arm 4's first held pass steps it.
+    world.casting.module_freed_turn = 99;
+    world.freed_body_effects(3, 4, 0);
+    assert_eq!(world.casting.module_freed_turn, 0);
+    world.casting.module_settle_countdown = (8 << 6) - 8;
+    world.freed_body_effects(4, 4, 0);
+    assert_eq!(
+        world.casting.module_freed_turn,
+        -cam::FREED_CRYSTAL_TURN_STEP
+    );
+    let corners = cam::freed_crystal_corners(-cam::FREED_CRYSTAL_TURN_STEP, (8 << 6) - 8);
+    let parts = &world.casting.active_summon.as_ref().unwrap().parts;
+    for (k, &(dx, dz)) in corners.iter().enumerate() {
+        for j in 0..3 {
+            let s = &parts[3 * k + j].state;
+            assert_eq!((s.world_x, s.world_z), (100 + dx, -800 + dz), "corner {k}");
+        }
+    }
+    world.freed_body_effects(4, 5, 0);
+    let scene = world.casting.active_summon.as_ref().unwrap();
+    assert!(scene.parts[..12].iter().all(|p| p.finished));
+    // The pass also seats arm 4's fifteen-part burst; with no pool installed
+    // there is nothing to seat.
+    assert_eq!(scene.parts.len(), 12);
+}

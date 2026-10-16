@@ -527,6 +527,19 @@ fn a_live_cast_stages_its_module_records() {
         // seating one record where the calling part stands - are called by
         // no part this band seats. Arm 11's three spawns on the camera's own
         // focus (`0x801F7FE0`, `0x801F8094`, `0x801F8158`) are not ported.
+        //
+        // PROT 0906 makes three calls in arm 4, one in arm 7 and two in arm
+        // 12 (`gizam_direct`), and its stager `0x801F7740` runs off its
+        // parts' op-`0x20` calls (`run_part_stager_calls`): arm 7's
+        // `0x801F7EBC` calls stager arm 5 twelve times and arm 6 once,
+        // arm 12's `0x801F7C44` calls arm 3 forty-eight times (eight passes
+        // over the six bubble points), each seating one record.
+        //
+        // PROT 0912's body passes seat sixteen records in arm 2, fifteen in
+        // arm 4, eight in arm 12 and ten in arm 14 (`freed_arm_spawns`); its
+        // stager `0x801F835C` seats eight shards for arm 4's `0x801F8960`
+        // (stager arm 3) and one record each for the five passes of arm
+        // 12's `0x801F8D50` over stager arms 4 and 5.
         let (arms, hook_only, unseated): (Vec<&[cmc::ModuleSpawn]>, &[u32], &[u32]) = match entry {
             903 => (
                 vec![
@@ -567,6 +580,26 @@ fn a_live_cast_stages_its_module_records() {
                 &[0x801F_869C, 0x801F_8828, 0x801F_8880, 0x801F_8ABC],
                 &[0x801F_90B0],
             ),
+            906 => (
+                vec![
+                    &cmc::GIZAM_POOL_SPAWNS,
+                    &cmc::GIZAM_SPRAY_SPAWNS,
+                    &cmc::GIZAM_BUBBLE_SPAWNS,
+                ],
+                &[0x801F_7C8C, 0x801F_7E68, 0x801F_7F44],
+                // Stager arm 4's record: no part this band seats calls arm 4.
+                &[0x801F_7E1C],
+            ),
+            912 => (
+                vec![
+                    &cmc::FREED_CRYSTAL_SPAWNS,
+                    &cmc::FREED_BURST_SPAWNS,
+                    &cmc::FREED_FROST_SPAWNS,
+                    &cmc::FREED_FIELD_SPAWNS,
+                ],
+                &[0x801F_88FC, 0x801F_8CF4, 0x801F_8DC8],
+                &[],
+            ),
             909 => (
                 vec![&cmc::VIGURO_OPEN_SPAWNS, &cmc::VIGURO_CREATURE_SPAWNS],
                 &[0x801F_81F4, 0x801F_8288, 0x801F_82CC, 0x801F_8310],
@@ -583,7 +616,7 @@ fn a_live_cast_stages_its_module_records() {
         // PROT 0907's and 0908's parts call their stager (op `0x20`), whose
         // arms seat more records off the calling part; every one of those
         // records is seated over the band, on top of the arms' own calls.
-        let stager_run = matches!(entry, 907 | 908);
+        let stager_run = matches!(entry, 906 | 907 | 908 | 912);
         if stager_run {
             assert!(
                 *seated > calls,
@@ -598,6 +631,23 @@ fn a_live_cast_stages_its_module_records() {
                 missing.is_empty(),
                 "spell {id:#04x}: PROT {entry}'s stager seated none of {missing:?}"
             );
+            // PROT 0906 and 0912's stager seatings are counted exactly: 0906's
+            // arm-7 timer calls stager arm 5 twelve times and arm 6 once and
+            // its arm-12 timer calls arm 3 forty-eight times; 0912's
+            // `0x801F8960` calls arm 3 once (eight shards) and `0x801F8D50`
+            // calls arms 4 and 5 five times each.
+            let hooked = match entry {
+                906 => Some(13 + 48),
+                912 => Some(8 + 10),
+                _ => None,
+            };
+            if let Some(h) = hooked {
+                assert_eq!(
+                    *seated,
+                    calls + h,
+                    "spell {id:#04x}: PROT {entry} seats its arms' calls and its stager's"
+                );
+            }
         } else {
             assert_eq!(
                 *seated, calls,

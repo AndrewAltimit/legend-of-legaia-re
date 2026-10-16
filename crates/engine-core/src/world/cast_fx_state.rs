@@ -92,6 +92,10 @@ pub struct CastFxState {
     /// tick drew ([`crate::world::World::theeder_draw`]). Reset when a cast
     /// is armed.
     pub module_theeder: legaia_engine_battle_vm::seru_magic_ticks::TheederFx,
+    /// PROT 0912's crystal turn word `0x801F92AC`: zeroed on arm 3's pass,
+    /// stepped down on each held pass of arm 4
+    /// ([`legaia_engine_battle_vm::cast_module_camera::freed_crystal_corners`]).
+    pub(crate) module_freed_turn: i32,
     /// The phase-chain arm whose damage site has landed this pass through
     /// it: the band folds a chain body's hit on the tick its arm first runs
     /// (`World::run_cast_module_code`), so a settle wait after it sees the
@@ -293,6 +297,7 @@ impl CastFxState {
             module_beam_live: false,
             module_flee: false,
             module_theeder: Default::default(),
+            module_freed_turn: 0,
             module_hit_arm: None,
             module_settle_ticks: 0,
             module_nighto_outcome: None,

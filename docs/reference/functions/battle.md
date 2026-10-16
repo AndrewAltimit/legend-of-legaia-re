@@ -226,13 +226,13 @@ this band is on
 | 903 | `801F69D8` (3396 B) | `801F771C` (8 B) | Action id `0x81` (Gimard). 1 framed function. Spawns: `FUN_80021B04` x7. Stager row is a bare `jr ra; nop` stub. Tick also drives the pose camera `FUN_801D5854`. |
 | 904 | `801F69D8` (6020 B) | `801F8EAC` (56 B) | Action id `0x82` (Theeder). 7 framed functions. Spawns: `FUN_80021B04` x4. 6 internal `jal`. |
 | 905 | `801F69D8` (5792 B) | `801F8078` (364 B) | Action id `0x83` (Vera). 2 framed functions. Spawns: `FUN_80021B04` x22. |
-| 906 | `801F69F4` (3404 B) | `801F7740` (676 B, 7 arms) | Action id `0x84` (Gizam). 3 framed functions. Head table (7 words) is the stager's. Spawns: `FUN_80021B04` x7. |
+| 906 | `801F69F4` (3404 B) | `801F7740` (676 B, 7 arms) | Action id `0x84` (Gizam). 3 framed functions. Head table (7 words) is the stager's, run off its parts' op `0x20` (spawn arms 3..6: `gizam_stager_spawns`). Spawns: `FUN_80021B04` x7. |
 | 907 | `801F69E8` (5568 B) | `801F7FA8` (552 B) | Action id `0x85` (Nighto). 2 framed functions. Spawns: `FUN_80021B04` x7. Head ASCII `Hell's Music`. Tick leans on `FUN_80019B28` (x13) rather than a spawn wrapper. Stager reached only through its parts' op `0x20`; ported as `nighto_stager_spawns`. |
 | 908 | `801F69D8` (6456 B) | `801F8310` (532 B) | Action id `0x86` (Zenoir). 3 framed functions. Spawns: `FUN_80021B04` x21. Stager reached only through its parts' op `0x20`; ported as `zenoir_stager_spawns`. |
 | 909 | `801F69F4` (3924 B) | `801F7AF4` (468 B, 7 arms) | Action id `0x87` (Viguro). 5 framed functions. Head table (7 words) is the stager's, reached only through its parts' move-VM op `0x20`; arms `0` / `1` step the tick's rendezvous phases 3 / 8. Spawns: `FUN_80021B04` x7. |
 | 910 | `801F69EC` (4652 B) | `801F89D4` (172 B, 5 arms) | Action id `0x88` (Swordie). 6 framed functions. Head table (5 words) is the stager's. Spawns: `FUN_80021B04` x9. 9 internal `jal`. |
 | 911 | `801F69D8` (5648 B) | `801F7FE8` (100 B) | Action id `0x89` (Orb). 3 framed functions. Spawns: `FUN_80021B04` x4, `FUN_80050ED4` x12. |
-| 912 | `801F69D8` (6532 B) | `801F835C` (464 B) | Action id `0x8A` (Freed). 3 framed functions. Spawns: `FUN_80021B04` x42. |
+| 912 | `801F69D8` (6532 B) | `801F835C` (464 B) | Action id `0x8A` (Freed). 3 framed functions. Spawns: `FUN_80021B04` x42, seated on the body's passes (`cast_module_camera::freed_arm_spawns`); the stager runs off its parts' op `0x20` (`freed_stager_spawns`). |
 | 913 | `801F69F0` (7260 B) | `801F864C` (324 B, 6 arms) | Action id `0x8B` (Nova). 2 framed functions. Head table (6 words) is the stager's. Spawns: `FUN_80021B04` x26. |
 | 914 | `801F69F0` (4240 B) | `801F7A80` (296 B, 6 arms) | Action id `0x8C` (Gola Gola). 2 framed functions. Head table (6 words) is the stager's. Spawns: `FUN_80021B04` x4. |
 | 915 | `801F69D8` (5468 B) | `801F7F34` (100 B) | Action id `0x8D` (Mushura). 2 framed functions. Spawns: `FUN_80021B04` x5. |

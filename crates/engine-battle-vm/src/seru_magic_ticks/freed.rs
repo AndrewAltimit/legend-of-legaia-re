@@ -43,6 +43,16 @@ pub const FREED_HOLD_PHASE: u8 = 0x12;
 /// `ctx[+0x278]` arm `0x0E` writes (`0x801F7D5C`).
 pub const FREED_ARM14_CTX_278: u8 = 2;
 
+/// The colour word `+0x04` arm 7 stores on the creature as it breaks it up
+/// (`lui v0,0x3fff; ori v0,v0,0xffff` at `0x801F74C4`).
+pub const FREED_SHARD_COLOUR: u32 = 0x3FFF_FFFF;
+/// The neutral colour word arm `0x0F` restores on every living monster
+/// (`lui a1,0x2008; ori a1,a1,0x200` at `0x801F7E0C`).
+pub const FREED_ROW_NEUTRAL_COLOUR: u32 = 0x2008_0200;
+/// The colour word arm `0x10` freezes every living monster in
+/// (`lui a3,0x3ff0` at `0x801F7ED8`).
+pub const FREED_FROZEN_COLOUR: u32 = 0x3FF0_0000;
+
 /// The `+0x0C` root speed arm `0x10` and arm `7` write (`0x801F7F0C`,
 /// `0x801F74D4`).
 pub const FREED_ROOT_SPEED: i32 = 0x1000;
@@ -180,6 +190,8 @@ pub fn freed_tick(
             2 => {
                 if let Some(s) = seats.get_mut(summon_seat as usize) {
                     s.render_flag = 0xFF;
+                    // `sw zero,0x4(s2)` at `0x801F6CA0`.
+                    s.present_04 = 0;
                 }
                 *settle = SETTLE_SCALAR << 7;
                 CastArmStep::Advance
@@ -189,6 +201,9 @@ pub fn freed_tick(
                     s.root_speed = FREED_ROOT_SPEED;
                     s.render_flag = 0xFF;
                     s.shatter = FREED_SHATTER_START;
+                    // `+0x04 = 0x3FFFFFFF` (`0x801F74C4..0x801F74CC`): the
+                    // shards draw lit.
+                    s.present_04 = FREED_SHARD_COLOUR;
                 }
                 CastArmStep::Advance
             }
@@ -224,6 +239,8 @@ pub fn freed_tick(
             0x0E => {
                 if let Some(s) = seats.get_mut(summon_seat as usize) {
                     s.render_flag = 0xFF;
+                    // `sw zero,0x4(s2)` at `0x801F7D58`.
+                    s.present_04 = 0;
                 }
                 c.ctx_278 = FREED_ARM14_CTX_278;
                 CastArmStep::Advance
@@ -233,6 +250,9 @@ pub fn freed_tick(
                     if let Some(s) = seats.get_mut(seat as usize)
                         && s.hp != 0
                     {
+                        // `+0x04 = 0x20080200` (`sw a1,0x4(v1)` at
+                        // `0x801F7E50`), the neutral word.
+                        s.present_04 = FREED_ROW_NEUTRAL_COLOUR;
                         s.render_flag = 0;
                     }
                 }
@@ -246,6 +266,9 @@ pub fn freed_tick(
                         s.root_speed = FREED_ROOT_SPEED;
                         s.render_flag = 0xFF;
                         s.anim_rate = 0;
+                        // `+0x04 = 0x3FF00000` (`sw a3,0x4(v1)` at
+                        // `0x801F7F00`): the frozen row draws blue-white.
+                        s.present_04 = FREED_FROZEN_COLOUR;
                     }
                 }
                 CastArmStep::Advance

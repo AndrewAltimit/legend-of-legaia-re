@@ -374,6 +374,17 @@ pub enum SpawnAnchor {
     /// pair) into a zeroed stack trio and stored `y` over its middle
     /// halfword. PROT 0908 arms 4, 6 and 11.
     CreatureGround { y: i16 },
+    /// The creature seat's plane pair moved by `(dx, dz)`, at the literal
+    /// height `y`, on the literal angle trio `rot`: the arm copied the seat's
+    /// `+0x34..+0x3B` into its stack trio (`lwl` / `lwr`), stored `y` over
+    /// the middle halfword and stepped the plane pair between calls, with the
+    /// angle trio its own. PROT 0912 arms 2, 4 and 12.
+    CreatureOffset {
+        dx: i16,
+        y: i16,
+        dz: i16,
+        rot: [i16; 3],
+    },
     /// A literal point and rotation the arm built on its stack: PROT 0909
     /// arm 2's two parts at `(0, -0x100, 0x600)` (`0x801F6C40..0x801F6C70`).
     Literal { pos: [i16; 3], rot: [i16; 3] },
@@ -419,6 +430,10 @@ pub fn spawn_anchor_point(
         SpawnAnchor::CreatureGround { y } => {
             let c = creature?;
             ([c.x, y, c.z], [0; 3])
+        }
+        SpawnAnchor::CreatureOffset { dx, y, dz, rot } => {
+            let c = creature?;
+            ([c.x.wrapping_add(dx), y, c.z.wrapping_add(dz)], rot)
         }
         SpawnAnchor::Literal { pos, rot } => (pos, rot),
         // The host resolves it from the arm's own direction.
@@ -683,13 +698,14 @@ pub fn module_profile(prot_entry: u32) -> Option<ModuleProfile> {
         }),
         // PROT 0906's director gates every counted arm beside the ported
         // tick body; its phase-5 clock stands in for the spawned record's
-        // stager call that releases the phase hole.
+        // stager call that releases the phase hole. It reports arms 4, 7
+        // and 12's spawn calls.
         906 => Some(ModuleProfile {
             direct: gizam_direct,
             hit_arm: Some(crate::seru_magic_ticks::GIZAM_SWEEP_ARM),
             walk_arm: None,
             owns_phase: false,
-            stages_spawns: false,
+            stages_spawns: true,
             seat_arm: module_seat_arm(906),
             director_body: false,
         }),
@@ -772,10 +788,13 @@ pub fn module_profile(prot_entry: u32) -> Option<ModuleProfile> {
             ModuleProfile::body_paced(orb_direct, crate::seru_magic_ticks::ORB_HEAL_ARM)
                 .seated_at(911),
         ),
-        912 => Some(
-            ModuleProfile::body_paced(freed_direct, crate::seru_magic_ticks::FREED_DAMAGE_PHASE)
-                .seated_at(912),
-        ),
+        // PROT 0912's spawn calls are seated on the body's own passes
+        // ([`freed_arm_spawns`]), not off the director.
+        912 => Some(ModuleProfile {
+            stages_spawns: true,
+            ..ModuleProfile::body_paced(freed_direct, crate::seru_magic_ticks::FREED_DAMAGE_PHASE)
+                .seated_at(912)
+        }),
         913 => Some(
             ModuleProfile::body_paced(nova_direct, crate::seru_magic_ticks::NOVA_DAMAGE_PHASE)
                 .seated_at(913),

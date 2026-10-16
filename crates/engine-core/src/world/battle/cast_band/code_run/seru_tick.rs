@@ -150,9 +150,11 @@ impl World {
                     .filter(|a| a.active)
                     .and_then(|a| a.battle_animation.as_ref())
                     .map(|p| p.cursor_sixteenths());
+                let phase_in = ctx.phase;
                 let (step, hits) =
                     seru::freed_tick(ctx, seats, r_summon, &mut settle, cursor, |_| 0);
                 self.casting.module_settle_countdown = settle;
+                self.freed_body_effects(phase_in, ctx.phase, caster_slot);
                 (step, lift(&hits))
             }
             _ => {

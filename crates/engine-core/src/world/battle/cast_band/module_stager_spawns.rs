@@ -1,34 +1,40 @@
 //! The op-`0x20` calls a module's own parts make into its stager, for the
-//! modules whose stager arms only seat more records: PROT 0907 (Nighto) and
-//! PROT 0908 (Zenoir). PROT 0909's stager also steps the module's phase and
+//! modules whose stager arms only seat more records: PROT 0906 (Gizam), 0907
+//! (Nighto), 0908 (Zenoir) and 0912 (Freed). PROT 0909's stager also steps the module's phase and
 //! runs through [`World::run_viguro_stager_calls`].
 
 use super::*;
 use legaia_engine_battle_vm::cast_module_ticks::{
-    StagerSpawn, nighto_stager_spawns, zenoir_stager_spawns,
+    FREED_STAGER_FADE, StagerSpawn, freed_stager_spawns, gizam_stager_spawns, nighto_stager_spawns,
+    zenoir_stager_spawns,
 };
 
 impl World {
     /// Whether module `entry`'s stager arms are run off its parts' op-`0x20`
     /// calls by [`Self::run_part_stager_calls`].
     pub(in crate::world::battle::cast_band) fn runs_part_stager_calls(entry: u32) -> bool {
-        matches!(entry, 907 | 908)
+        matches!(entry, 906 | 907 | 908 | 912)
     }
 
     /// Run the op-`0x20` calls module `entry`'s parts made since its last
     /// tick through the module's stager, in call order, seating what each
-    /// arm seats ([`nighto_stager_spawns`], [`zenoir_stager_spawns`]).
+    /// arm seats ([`gizam_stager_spawns`], [`nighto_stager_spawns`],
+    /// [`zenoir_stager_spawns`], [`freed_stager_spawns`]). PROT 0906's
+    /// arms 0..2 (the flash pair, the creature shown, the phase release)
+    /// stay on its director's phase-5 clock; PROT 0912's arm 6 is a fade.
     ///
     /// Retail runs the call inside the part's own move-VM step, so its
     /// records are seated on that frame; the engine queues the call
     /// (`MoveVmHostImpl::ext_20`) and seats them on the module's next tick,
     /// as it does PROT 0909's.
     ///
-    /// REF: FUN_801F7FA8 (PROT 0907's stager), FUN_801F8310 (PROT 0908's),
-    /// both reached through `gp[+0x714]`
+    /// REF: FUN_801F7740 (PROT 0906's stager), FUN_801F7FA8 (PROT 0907's),
+    /// FUN_801F8310 (PROT 0908's), FUN_801F835C (PROT 0912's), each reached
+    /// through `gp[+0x714]`
     pub(in crate::world::battle::cast_band) fn run_part_stager_calls(&mut self, entry: u32) {
         let calls = std::mem::take(&mut self.casting.module_stager_calls);
-        // PROT 0908's arm 1 reads the creature's body point `+0x3C..+0x40`.
+        // PROT 0908's arm 1 and PROT 0906's arms 4 / 5 read the creature's
+        // body point `+0x3C..+0x40`.
         let body = self
             .casting
             .module_cam
@@ -46,10 +52,24 @@ impl World {
             })
             .unwrap_or([0; 3]);
         for (arm, caller) in calls {
+            if entry == 912 && arm == 6 {
+                let mut fade = None;
+                legaia_engine_system::fade::spawn_fade(
+                    &mut fade,
+                    &legaia_engine_battle_vm::battle_action::summon_fade_template(
+                        &FREED_STAGER_FADE,
+                    ),
+                    1,
+                );
+                self.presentation.module_fades.extend(fade);
+                continue;
+            }
             let mut rand = || self.next_rand();
             let spawns = match entry {
+                906 => gizam_stager_spawns(arm, caller, body, &mut rand),
                 907 => nighto_stager_spawns(arm, caller, &mut rand),
                 908 => zenoir_stager_spawns(arm, caller, body, &mut rand),
+                912 => freed_stager_spawns(arm, caller, &mut rand),
                 _ => Vec::new(),
             };
             for s in &spawns {

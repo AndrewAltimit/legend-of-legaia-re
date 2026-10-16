@@ -199,6 +199,114 @@ pub fn zenoir_stager_spawns(
     }
 }
 
+/// The eye-space points PROT 0906's stager arm `3` seats a bubble around
+/// (`0x801F7FA4`, 8-byte stride, indexed by op `0x20`'s second operand).
+pub const GIZAM_BUBBLE_POINTS: [[i16; 3]; 6] = [
+    [0, 50, 300],
+    [-150, -50, 300],
+    [150, -50, 300],
+    [-150, 50, 300],
+    [150, 50, 300],
+    [0, -50, 300],
+];
+
+/// PROT 0906 (Gizam) - the stager `0x801F7740`, its four spawn arms.
+/// `creature` is the summon seat's `+0x3C` trio.
+///
+/// | arm | caller | seats |
+/// |---:|---|---|
+/// | 3 | the bubble timer `0x801F7C44` | the camera-locked bubble `0x801F7C8C` at `GIZAM_BUBBLE_POINTS[arg]`, `x += rand() % 129 - 0x40`, then `y += rand() % 65 - 0x20` (`0x801F785C..0x801F791C`) |
+/// | 4 | - | `0x801F7E1C` on the creature (`0x801F7920`) |
+/// | 5 | the splash timer `0x801F7EBC` | `0x801F7E68` on the creature (`0x801F7964`) |
+/// | 6 | the splash timer | `0x801F7F44` on the caller (`0x801F79A8`) |
+///
+/// Every record takes the caller's rotation. Arms `0..=2` (the flash pair,
+/// the creature shown, the phase release) seat nothing: the director places
+/// them on its phase-5 clock.
+///
+/// PORT: FUN_801F7740 (PROT 0906 stager; spawn arms 3..6)
+pub fn gizam_stager_spawns(
+    arm: u8,
+    caller: StagerCaller,
+    creature: [i16; 3],
+    rand: &mut dyn FnMut() -> u32,
+) -> Vec<StagerSpawn> {
+    let (record, pos) = match arm {
+        3 => {
+            let Some(p) = usize::try_from(caller.arg)
+                .ok()
+                .and_then(|i| GIZAM_BUBBLE_POINTS.get(i))
+            else {
+                return Vec::new();
+            };
+            let dx = (rand() % 129) as i16 - 0x40;
+            let dy = (rand() % 65) as i16 - 0x20;
+            (
+                0x801F_7C8C,
+                [p[0].wrapping_add(dx), p[1].wrapping_add(dy), p[2]],
+            )
+        }
+        4 => (0x801F_7E1C, creature),
+        5 => (0x801F_7E68, creature),
+        6 => (0x801F_7F44, caller.pos),
+        _ => return Vec::new(),
+    };
+    vec![StagerSpawn::at(record, pos, caller.rot)]
+}
+
+/// PROT 0912's stager arm `6` fade (`0x801F84CC..0x801F850C`): additive,
+/// `(0x80, 0x80, 0xFF)` to black over `0x40` frames, id `1`.
+pub const FREED_STAGER_FADE: crate::battle_action::SummonFadeTemplate =
+    crate::battle_action::SummonFadeTemplate {
+        kind: 1,
+        duration: 0x40,
+        start_rgb: [0x80, 0x80, 0xFF],
+        end_rgb: [0, 0, 0],
+        delay: 0,
+        hold: 0,
+    };
+
+/// PROT 0912 (Freed) - the stager `0x801F835C`, its three spawn arms. Every
+/// record sits on the caller's `+0x14` / `+0x24`.
+///
+/// | arm | caller | seats |
+/// |---:|---|---|
+/// | 3 | the burst flash `0x801F8960` | eight shards `0x801F88FC`; shard `k` then stored `+0x54 = k`, `+0x84 = trunc(((rand & 0xFF) - 0x80) / 4)`, `+0xBA = -0x80`, `+0xB4 = rand % 31 + 0x20`, `+0xB6 = rand % 255 + 0x300`, `+0x28 = 0x200 k + (rand & 0x7F)`, in that order (`0x801F83B8..0x801F848C`) |
+/// | 4 / 5 | the frost timer `0x801F8D50` | `0x801F8CF4` / `0x801F8DC8` (`0x801F8498` / `0x801F84AC`) |
+///
+/// Arm 6 spawns nothing: it is the fade [`FREED_STAGER_FADE`].
+///
+/// PORT: FUN_801F835C (PROT 0912 stager; spawn arms 3..5)
+pub fn freed_stager_spawns(
+    arm: u8,
+    caller: StagerCaller,
+    rand: &mut dyn FnMut() -> u32,
+) -> Vec<StagerSpawn> {
+    match arm {
+        3 => (0..8u16)
+            .map(|k| {
+                let mut s = StagerSpawn::at(0x801F_88FC, caller.pos, caller.rot);
+                let lean = ((rand() & 0xFF) as i32 - 0x80) / 4;
+                let b4 = rand() % 31 + 0x20;
+                let b6 = rand() % 255 + 0x300;
+                let roll = u32::from(k << 9) + (rand() & 0x7F);
+                s.pokes = vec![
+                    (0x54, k),
+                    (0x84, lean as u16),
+                    (0xBA, (-0x80i16) as u16),
+                    (0xB4, b4 as u16),
+                    (0xB6, b6 as u16),
+                    (0x28, roll as u16),
+                ];
+                s
+            })
+            .collect(),
+        4 => vec![StagerSpawn::at(0x801F_8CF4, caller.pos, caller.rot)],
+        5 => vec![StagerSpawn::at(0x801F_8DC8, caller.pos, caller.rot)],
+        _ => Vec::new(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -287,5 +395,93 @@ mod tests {
         assert!(s[1].halve_speed);
         let s = zenoir_stager_spawns(0, caller, body, &mut counter());
         assert_eq!(s[0].record, 0x801F_869C);
+    }
+
+    /// Gizam's arm 3 seats a bubble on the indexed eye-space point,
+    /// jittered by two `rand` draws in `x` then `y`; arms 4 and 5 seat on
+    /// the creature, arm 6 on the caller, arms 0..2 seat nothing.
+    #[test]
+    fn gizam_stager_seats_bubbles_splashes_and_the_burst() {
+        let caller = StagerCaller {
+            pos: [9; 3],
+            rot: [1, 2, 3],
+            radius_b4: 0,
+            arg: 2,
+        };
+        let mut draws = [129 + 0x40, 65 + 0x20].into_iter();
+        let b = gizam_stager_spawns(3, caller, [7; 3], &mut || draws.next().unwrap());
+        assert_eq!(b.len(), 1);
+        assert_eq!(b[0].record, 0x801F_7C8C);
+        assert_eq!(b[0].pos, [150, -50, 300]);
+        assert_eq!(b[0].rot, [1, 2, 3]);
+        let mut zero = || 0u32;
+        let low = StagerCaller { arg: 0, ..caller };
+        let b = gizam_stager_spawns(3, low, [0; 3], &mut zero);
+        assert_eq!(b[0].pos, [-0x40, 50 - 0x20, 300]);
+        let mut never = || -> u32 { panic!("no rand outside arm 3") };
+        let c = [5, 6, 7];
+        let one = |arm: u8, never: &mut dyn FnMut() -> u32| {
+            gizam_stager_spawns(arm, caller, c, never)
+                .into_iter()
+                .map(|s| (s.record, s.pos))
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(one(4, &mut never), vec![(0x801F_7E1C, c)]);
+        assert_eq!(one(5, &mut never), vec![(0x801F_7E68, c)]);
+        assert_eq!(one(6, &mut never), vec![(0x801F_7F44, [9; 3])]);
+        for arm in 0..=2 {
+            assert!(one(arm, &mut never).is_empty());
+        }
+        let past = StagerCaller { arg: 6, ..caller };
+        assert!(gizam_stager_spawns(3, past, c, &mut never).is_empty());
+    }
+
+    /// Freed's arm 3 seats eight shards, each with its wait, lean, radii and
+    /// roll stored after the seat, drawing `rand` four times a shard.
+    #[test]
+    fn freed_stager_shards_store_their_randomised_fields() {
+        let caller = StagerCaller {
+            pos: [1, 2, 3],
+            rot: [4, 5, 6],
+            radius_b4: 0,
+            arg: 0,
+        };
+        let mut n = 0u32;
+        let shards = freed_stager_spawns(3, caller, &mut || {
+            n += 1;
+            0
+        });
+        assert_eq!(n, 32);
+        assert_eq!(shards.len(), 8);
+        let s = &shards[5];
+        assert_eq!(
+            (s.record, s.pos, s.rot),
+            (0x801F_88FC, [1, 2, 3], [4, 5, 6])
+        );
+        assert_eq!(
+            s.pokes,
+            vec![
+                (0x54, 5),
+                (0x84, (-0x20i16) as u16),
+                (0xBA, (-0x80i16) as u16),
+                (0xB4, 0x20),
+                (0xB6, 0x300),
+                (0x28, 5 << 9),
+            ]
+        );
+        // A low byte under 0x80 rounds the lean toward zero.
+        let mut d = [0x7F_u32, 0, 0, 0].into_iter();
+        let s = freed_stager_spawns(3, caller, &mut || d.next().unwrap_or(0));
+        assert_eq!(s[0].pokes[1], (0x84, 0));
+        let mut zero = || 0u32;
+        assert_eq!(
+            freed_stager_spawns(4, caller, &mut zero)[0].record,
+            0x801F_8CF4
+        );
+        assert_eq!(
+            freed_stager_spawns(5, caller, &mut zero)[0].record,
+            0x801F_8DC8
+        );
+        assert!(freed_stager_spawns(6, caller, &mut zero).is_empty());
     }
 }

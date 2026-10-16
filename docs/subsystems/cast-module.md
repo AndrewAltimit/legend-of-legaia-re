@@ -1050,7 +1050,7 @@ Verdicts:
 | `801F75BC` | 949 (`cast_water_crystals`) | frameless stager, `sltiu a1, 8`, 0 spawn calls; writes the **victim**'s `+0x0C` and anim rate `+0x21D` | PORT |
 | `801F769C` | 943 (`cast_curse`) | spawn stager, 3 spawn calls | DATA |
 | `801F76C4` | 946 (`cast_call_wave`) | spawn stager, 5 spawn calls | DATA |
-| `801F7740` | 906 (`summon_gizam`) | spawn stager, `sltiu a1, 7`, 3 spawn calls; writes `+0x0C`, `ctx+0x279` | PORT |
+| `801F7740` | 906 (`summon_gizam`) | spawn stager, `sltiu a1, 7`, 4 spawn arms; writes `+0x0C`, `ctx+0x279` | PORT |
 | `801F776C` | 945 (`cast_water_column`) | spawn stager, 2 spawn calls | DATA |
 | `801F7820` | 924 (`stager_ultimate_rave`) | spawn stager, 1 spawn call | DATA |
 | `801F7850` | 937 (`cast_hyper_lightning`) | spawn stager, 5 spawn calls | DATA |
@@ -1079,7 +1079,7 @@ Verdicts:
 | `801F82CC` | 940 (`cast_glare_divide`) | null stager | SCOPE-IGNORE |
 | `801F82D8` | 917 (`summon_barra`) | spawn stager, `sltiu a1, 5`, 3 spawn calls | DATA |
 | `801F8310` | 908 (`summon_zenoir`) | spawn stager, 5 spawn calls, called by its own parts; writes into the parts it seats | PORT |
-| `801F835C` | 912 (`summon_freed`) | spawn stager, 3 spawn calls | DATA |
+| `801F835C` | 912 (`summon_freed`) | spawn stager, 3 spawn arms and a fade, called by its own parts; writes into the parts it seats | PORT |
 | `801F84A4` | 932 (`summon_meta`) | spawn stager, 1 spawn call | DATA |
 | `801F85A8` | 927 (`summon_juggernaut`) | spawn stager, `sltiu a1, 9`, 7 spawn calls; damage roll (shared); writes HP `+0x14C` | PORT |
 | `801F85D4` | 954 (`cast_fatal_decision`) | null stager | SCOPE-IGNORE |
@@ -1457,8 +1457,10 @@ arm 2 (`ctx[+0x279] += 1`) moves it on. The stager is reached through move-VM
 op `0x20`, from record `0x801F7B80`, one of the three parts arm 4 spawns. Its
 program runs `WAIT 95, WAIT 63, WAIT 30, op20(0), WAIT 0, op20(1), WAIT 63,
 op20(2)`: the white and blue flash pair, the creature shown (`+0x21C = 0`,
-`+0x0C = 0x1000`), then the release. The engine runs no op-`0x20` hook, so
-`cast_module_camera::gizam_direct` holds phase 5 on that program's clock
+`+0x0C = 0x1000`), then the release. The engine runs the stager's spawn
+arms off the parts' calls ([spawn reports](#a-module-that-reports-its-spawns))
+but keeps these three on `cast_module_camera::gizam_direct`, which holds
+phase 5 on that program's clock
 (256 ticks, a wait `v` lasting `v + 1` frames) and the host fires stager arms
 0 and 1 on ticks 191 and 192. Retail's hole lasts 309 vsyncs and its flash
 lands about 60 vsyncs later than the clock puts it; the difference is not
@@ -2904,7 +2906,8 @@ everywhere it is close to invisible in retail too.
 **Not fired.** The 17 fade sites the decoder does not place sit in spawn
 stagers, routines the move VM's op `0x20` calls with an arm of its own rather
 than off `ctx[+0x279]` (PROT 0906, 0909, 0912, 0916, 0923, 0927, 0929, 0948,
-0959, 0963, 0966). The streak ribbon's anchor is a trio the arm builds from a
+0959, 0963, 0966). PROT 0906's flash pair rides its director's phase-5 clock
+and PROT 0912's blue fade its stager port ([spawn reports](#a-module-that-reports-its-spawns)). The streak ribbon's anchor is a trio the arm builds from a
 seat or the camera plus a random spread, which the constant tracker does not
 fold. The party CLUT reload on a status cure (`LoadImage` of a 240x1 row at
 `y = 0x1E1 + seat` out of a RAM copy) has no source the data names. A
@@ -3023,6 +3026,58 @@ this way holds a real `+0x14..+0x18`, so it moves by the motion block's
 velocity integration. One record is outside the per-arm form: `0x801F8568`,
 which the module's stager `0x801F8078` seats eight at a time with random
 spreads, and which no host runs.
+
+PROT 0906 (Gizam) reports its calls from its director (`gizam_direct`), on
+the pass of the arm that makes them:
+
+| Arm | Calls | What |
+|---:|---|---|
+| 4 | `0x801F79E4`, `0x801F7AB8`, `0x801F7B80` on the creature's plane pair at `y = 0` | the ground disc, the water pillar, the phase-5 timing record |
+| 7 | `0x801F7EBC` on the creature | the splash timer |
+| 12 | `0x801F7C44` on the arm's shot trios, `0x801F7DB4` on the creature | the bubble timer, the light at its centre |
+
+The arm-4 seat reads the creature where the installer leaves it, on the
+caster, before the host has bound its mesh. Three of the records drive the
+module's stager `0x801F7740` through op `0x20` (`World::run_part_stager_calls`, `gizam_stager_spawns`):
+`0x801F7C44` calls stager arm 3 with each of the six eye-space points of
+`0x801F7FA4` in turn, eight passes over, and the arm seats a camera-locked
+bubble sprite `0x801F7C8C` on the point with `x += rand() % 129 - 0x40`,
+`y += rand() % 65 - 0x20`; `0x801F7EBC` calls arm 5 twelve times
+(`0x801F7E68` on the creature's `+0x3C`) and arm 6 once (`0x801F7F44` on
+the calling part). Record `0x801F7B80`'s calls with arms 0..2 are left to the
+director's phase-5 clock, which also releases the phase hole where no record
+runs. Retail's pillar program runs about a third slower than its wait words
+in the capture (the flash 259 vsyncs into the hole against the program's
+191 frames), the frame step held while heavy frames run long, which the port
+does not model.
+
+PROT 0912 (Freed) seats its records on its tick body's own passes
+(`World::freed_body_effects`, `cast_module_camera::freed_arm_spawns`):
+
+| Arm | Calls | What |
+|---:|---|---|
+| 2 | three glows at `y = -0x200` and a ring at `y = 0x200` on the creature, then the crystal triple `0x801F852C` / `85A4` / `861C` at each corner `(±0x200, 0x200, ±0x200)` off it | the four ice crystals |
+| 4 | `0x801F8960`, six `0x801F883C` and eight `0x801F889C` at `y = -0x200` on the creature, each on its own pitch / roll | the star the crystals burst into |
+| 12 | eight records at `(x + 0x50, -0x200, z - 0x20)` off the creature | the strike's frost |
+| 14 | ten records on the stage origin, yaw `0x800`, three at the origin and seven `0x800` above it | the ice field and its shatter |
+
+Arm 2's twelve crystal handles go to `0x801F92B0`. On each held pass arm 4
+steps the turn word `0x801F92AC` by `-(rate * speed << 3)` and moves corner
+`k` to angle `turn + 0x200 + 0x400 k` at radius `((181 * countdown) >> 4) /
+scalar` off the creature (`0x801F7184..0x801F730C`), the first handle's
+`+0x14` / `+0x18` written and its trio copied over the other two; on its pass
+it kills all twelve (`ori 0x8`, `0x801F7158..0x801F7174`). Arm 7 hands the
+creature deformation row 1 (`+0x6D = 1`, row `(0, 0, 0, -0x400)`, flags
+`0xC`, `0x801F7500..0x801F7528`) beside its `+0x1BA`, and lights it
+`+0x04 = 0x3FFFFFFF`; arm `0x0F` restores the living row's `0x20080200`
+and arm `0x10` freezes it at `0x3FF00000`. The stager `0x801F835C`
+(`World::run_part_stager_calls`, `freed_stager_spawns`) seats eight `0x801F88FC` shards on its arm
+3, shard `k` then stored `+0x54 = k`, `+0x84 = trunc(((rand & 0xFF) -
+0x80) / 4)`, `+0xBA = -0x80`, `+0xB4 = rand % 31 + 0x20`, `+0xB6 = rand %
+255 + 0x300`, `+0x28 = 0x200 k + (rand & 0x7F)` after the seater's own VM
+run (`SummonPartRuntime::seat_pokes`); arms 4 and 5 seat `0x801F8CF4` /
+`0x801F8DC8` on the calling part and arm 6 spawns the `(0x80, 0x80, 0xFF)`
+fade over `0x40` frames.
 
 ### Staged records end with their action
 

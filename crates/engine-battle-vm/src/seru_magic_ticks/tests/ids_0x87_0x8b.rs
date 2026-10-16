@@ -656,6 +656,36 @@ fn freed_walks_twenty_arms_then_settles() {
     assert_eq!(s[7].shatter, 0, "arm 9 leaves it whole");
 }
 
+/// PROT 0912's colour-word stores: arm 2 hides the creature (`+0x04 = 0`),
+/// arm 7 lights its shards, arm `0x0E` hides it again, arm `0x0F` restores
+/// the living row's neutral word and arm `0x10` freezes it blue-white.
+#[test]
+fn freed_writes_the_creature_and_row_colour_words() {
+    let mut s = seats(8);
+    s[7].present_04 = 0x0080_2008;
+    // Each arm on a spent countdown, so a gated arm passes.
+    let run = |arm: u8, s: &mut Vec<CastActorState>| {
+        let mut ctx = ctx_at(arm);
+        freed_tick(&mut ctx, s, 7, &mut 0, None, |_| 0);
+        assert_eq!(ctx.phase, arm + 1, "arm {arm:#x} passes");
+    };
+    run(2, &mut s);
+    assert_eq!(s[7].present_04, 0);
+    run(7, &mut s);
+    assert_eq!(s[7].present_04, FREED_SHARD_COLOUR);
+    run(0x0E, &mut s);
+    assert_eq!(s[7].present_04, 0);
+    s[5].hp = 0;
+    s[5].present_04 = 7;
+    run(0x0F, &mut s);
+    assert_eq!(s[3].present_04, FREED_ROW_NEUTRAL_COLOUR);
+    assert_eq!(s[5].present_04, 7, "a dead seat keeps its word");
+    run(0x10, &mut s);
+    assert_eq!(s[4].present_04, FREED_FROZEN_COLOUR);
+    assert_eq!(s[4].render_flag, 0xFF);
+    assert_eq!(s[0].present_04, 0, "the party row is untouched");
+}
+
 /// PROT 0912's arm `0x0B` waits on the creature's strike clip reaching
 /// cursor `0x49`.
 #[test]
