@@ -425,6 +425,13 @@ states sees no other `pc` and measures the computed windows: Gilium id 161
 (`t=326..342`), its tag-3 flinch `f10/2` 22 against a computed 20; Vahn
 (`f3/1`) 12 ticks three times.
 
+**Port.** `World::next_juggle` rewrites `BattleState::juggle` on every hit
+`land_melee_hit` resolves, from the defender's block entry and its
+`battle_juggle_window` (the anim tick's `+0x1F7`), and hands it to
+`physical_predamage` as `combo_scale`. The same call passes the element pass
+(`World::melee_affinity_pct`), War Soul (`+0xF8 & 0x1000`, party attackers)
+and both sides' `+0x16E` words (`World::raw_status_word`).
+
 ### Angle and distance terms
 
 <a id="the-angle-term-is-bounded-at-atk--32"></a>
@@ -567,8 +574,10 @@ Wiring, in `engine-core::world::battle::casting`:
   move id resolves to a power record, `cast_spell_on_slots` takes its damage
   from `World::enemy_move_predamage`, which reads INT from `battle.accuracy`, HP
   from `battle.hp` and the two defence terms from `battle.defense_split`, and
-  draws attacker x2 + defender x1 up front and the bonus pair lazily. Status and
-  guard inputs to the scale are defaulted on this path.
+  draws attacker x2 + defender x1 up front and the bonus pair lazily. The scale
+  stage reads both seats' `+0x16E` words (`World::raw_status_word`) and the
+  defender's Spirit stance; so do the two capture-class wrappers, whose own
+  `jal 0x801DD864` passes the attacker and defender seats too.
 - **Player Seru-magic casts.** `World::player_summon_predamage` seeds
   `summon_predamage_lazy` from the namesake creature's `battle_data` record
   (read from `DiscTables::summon_creatures`, filled at scene entry from the

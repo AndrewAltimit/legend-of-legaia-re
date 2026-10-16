@@ -379,3 +379,32 @@ fn the_bonus_arm_floor_makes_a_bypass_hit_defence_insensitive() {
         "defence must actually mitigate a respecting hit: {respect:?}"
     );
 }
+
+/// Damage `move_id` lands with `+0x16E` words `caster` / `victim` on the two
+/// seats and the party defender's resist bit cleared.
+fn damage_with_status(move_id: u8, caster: u16, victim: u16) -> u16 {
+    let mut world = world_with_resisting_party();
+    if let Some(m) = world.party.roster.members.get_mut(0) {
+        let mut bits = m.ability_bits();
+        bits[3] &= !0x20;
+        m.set_ability_bits(bits);
+    }
+    world.actors[1].battle.field_flags = caster;
+    world.actors[0].battle.field_flags = victim;
+    let before = world.actors[0].battle.hp;
+    world.cast_spell_on_slots(1, &spell(move_id), &[0]);
+    before - world.actors[0].battle.hp
+}
+
+/// `FUN_801DD864` (`0x801DD974..0x801DDA74`) scales the attacker roll by
+/// the caster's `+0x16E` Venom (`x9/10`) / Toxic (`x7/10`) bits and the
+/// defender roll by the target's: a Toxic caster's special lands for less,
+/// a Toxic target's thinner defence lets more through.
+#[test]
+fn venom_and_toxic_scale_a_special_attack_on_both_sides() {
+    let plain = damage_with_status(RESPECT_MOVE_ID, 0, 0);
+    let weak_caster = damage_with_status(RESPECT_MOVE_ID, 0x2, 0);
+    let soft_target = damage_with_status(RESPECT_MOVE_ID, 0, 0x2);
+    assert!(weak_caster < plain, "toxic caster {weak_caster} vs {plain}");
+    assert!(soft_target > plain, "toxic target {soft_target} vs {plain}");
+}

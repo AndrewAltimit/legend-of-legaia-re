@@ -86,6 +86,9 @@ impl World {
                 .get(attacker as usize)
                 .copied()
                 .unwrap_or(0),
+            // `FUN_801DD864` scales the attacker roll by its `+0x16E` Venom /
+            // Toxic bits (`0x801DD974..0x801DD9DC`).
+            status: self.raw_status_word(attacker),
             ..Default::default()
         };
         let target_roll = self.summon_roll_defender(target)?;
@@ -191,15 +194,18 @@ impl World {
                 .get(attacker as usize)
                 .copied()
                 .unwrap_or(0),
-            status: 0,
+            status: self.raw_status_word(attacker),
         };
+        // The bypass wrapper scales through `FUN_801DD864` too (`jal` at
+        // `0x801DD7C4`, `a0` = attacker, `a1` = defender): the defender's
+        // Spirit double and both sides' Venom / Toxic scales apply.
         let d = WrapperDefender {
             hp: defender.hp,
             agl: 0,
             stat_a: defender.stat_a,
             stat_b: defender.stat_b,
-            status: 0,
-            guard: 0,
+            status: defender.status,
+            guard: defender.guard,
         };
         let power = power.max(0) as u32;
         let rng2 = [self.next_rand() as u16, self.next_rand() as u16];
@@ -265,7 +271,7 @@ impl World {
                 .unwrap_or(0),
             // `+0x158` is not read on this path at all.
             spell_power: 0,
-            status: 0,
+            status: self.raw_status_word(attacker),
         };
         let d = WrapperDefender {
             hp: defender.hp,

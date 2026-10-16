@@ -989,6 +989,9 @@ mod power_byte_tests {
 mod melee_cue_tests;
 
 #[cfg(test)]
+mod melee_inputs_tests;
+
+#[cfg(test)]
 mod impact_tint_arm_tests;
 
 #[cfg(test)]

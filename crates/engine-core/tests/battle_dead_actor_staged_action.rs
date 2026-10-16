@@ -84,6 +84,10 @@ fn a_monster_killed_before_its_staged_action_fires_never_attacks() {
         w.set_battle_attack(i as u8, 0);
     }
     w.set_battle_attack(monster_slot as u8, 50);
+    // A melee hit never deals nothing (the chip floor plus the juggle
+    // counter), so "harmless" also needs a monster that outlasts the round.
+    w.actors[monster_slot].battle.hp = 9999;
+    w.actors[monster_slot].battle.max_hp = 9999;
 
     // Tick until the monster's turn is ARMED but not yet dispatched: the SM
     // holds its staged action in the pre-seed band with the monster as the

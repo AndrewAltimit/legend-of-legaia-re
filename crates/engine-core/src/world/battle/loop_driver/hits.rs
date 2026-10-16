@@ -4,6 +4,11 @@
 
 use super::*;
 
+/// Character-record `+0xF8` bit `0x1000`: accessory passive `0x2C` Arts
+/// Power (War Soul), which lifts an Art hit's `13/10` to `14/10`
+/// (`0x801ED0F8..0x801ED104`).
+pub(in crate::world) const ABILITY_F8_ARTS_POWER: u32 = 0x1000;
+
 impl World {
     /// The engine seat of retail's per-frame damage-kernel call. For every
     /// actor whose committed one-shot clip is in flight, ask the kernel's
@@ -561,6 +566,10 @@ impl World {
         // The block roll runs ahead of the damage rolls (`0x801EC5A8..
         // 0x801EC878` before the `0x801ECB84` fold), and a blocked hit skips
         // the whole damage body: `bne s7,zero,0x801EE6D4` at `0x801ECB60`.
+        // The juggle counter is rewritten on every resolved hit, blocked or
+        // not (`0x801ECA20..0x801ECA80`, after the block roll and ahead of
+        // the `0x801ECB60` skip). It draws nothing.
+        self.battle.juggle = self.next_juggle(target);
         let blocked = self.roll_block(attacker, target, power_byte);
         // The damage roll below reads the same two terms (`lh 0x6d2` at
         // `0x801ECED8`, `lh 0x6d4` at `0x801ED1E0`): the hit path zeroes them
@@ -602,10 +611,17 @@ impl World {
                 power_byte,
             ),
             staged_anim: committed,
+            // `0x801ED0F8..0x801ED104`: War Soul (record `+0xF8 & 0x1000`)
+            // is read for a party attacker only.
+            art_power_bit: attacker < self.party.party_count
+                && self.party_ability_word_f8(attacker_i) & ABILITY_F8_ARTS_POWER != 0,
+            affinity_pct: self.melee_affinity_pct(attacker, target),
+            attacker_status: self.raw_status_word(attacker),
+            defender_status: self.raw_status_word(target),
             defender_guarding: target_guarding,
+            combo_scale: self.battle.juggle,
             attack_ramp,
             guard_ramp,
-            ..Default::default()
         };
         let mut raw =
             legaia_engine_battle_vm::battle_formulas::physical_predamage(&hit_inputs, &mut || {
@@ -976,6 +992,59 @@ impl World {
             let step = i16::from(super::commit_log_launch::BATTLE_PASS_STEP_PER_TICK);
             self.battle.guard_ramp = self.battle.guard_ramp.wrapping_add(step);
         }
+    }
+
+    /// The melee kernel's juggle counter for a hit on `target`
+    /// (`FUN_801EC3E4` `0x801ECA20..0x801ECA80`): `1` when the defender is
+    /// playing its block entry (`+0x1D9 == +0x1F3`), one more than the last
+    /// hit's while its `+0x1F7` juggle window is up, else `1`.
+    ///
+    /// PORT: FUN_801EC3E4 (`0x801ECA20..0x801ECA80`, the `ctx[+0x0A]` store)
+    pub(in crate::world) fn next_juggle(&self, target: u8) -> u8 {
+        let ti = usize::from(target);
+        let Some(t) = self.actors.get(ti) else {
+            return 1;
+        };
+        let block_entry = self.battle_reaction_map(ti).map_or(0, |m| m[4]);
+        let in_block = block_entry != 0 && t.battle_reaction_entry == Some(block_entry);
+        if !in_block && t.battle_juggle_window {
+            self.battle.juggle.wrapping_add(1)
+        } else {
+            1
+        }
+    }
+
+    /// `matrix[attacker element][defender element]` for a melee hit, as a
+    /// percent (`FUN_801EC3E4` `0x801ECF1C..0x801ED07C` resolve the two
+    /// elements the way `FUN_801DD864` does: a party seat from the
+    /// per-character table, any other seat from its monster record `+0x1D`).
+    /// `100` when the affinity tables are not installed or an element does
+    /// not resolve.
+    pub(in crate::world) fn melee_affinity_pct(&self, attacker: u8, target: u8) -> u8 {
+        let Some(aff) = self.tables.element_affinity.as_ref() else {
+            return 100;
+        };
+        match (
+            self.battle_slot_element(attacker),
+            self.battle_slot_element(target),
+        ) {
+            (Some(a), Some(d)) => aff.affinity_pct(a, d).unwrap_or(100),
+            _ => 100,
+        }
+    }
+
+    /// A party member's second ability word - the character record's
+    /// `+0xF8` u32 (`0x80084140 + id*0x414 + 0x6C0`).
+    pub(in crate::world) fn party_ability_word_f8(&self, member: usize) -> u32 {
+        self.party
+            .roster
+            .members
+            .get(self.party_roster_slot(member))
+            .map(|r| {
+                let b = r.ability_bits();
+                u32::from_le_bytes([b[4], b[5], b[6], b[7]])
+            })
+            .unwrap_or(0)
     }
 
     /// A party member's ability word - the character record's `+0xF4` u32,

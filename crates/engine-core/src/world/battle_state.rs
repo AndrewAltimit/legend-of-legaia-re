@@ -287,6 +287,13 @@ pub struct BattleState {
     /// long walk-in hardens the opening hit. Zeroed with
     /// [`Self::attack_ramp`].
     pub(crate) guard_ramp: i16,
+    /// `ctx[+0x0A]` - the melee kernel's **juggle** counter. Every hit
+    /// `FUN_801EC3E4` resolves rewrites it (`0x801ECA20..0x801ECA80`): `1`
+    /// when the defender holds its block entry (`+0x1D9 == +0x1F3`), the
+    /// previous value plus one while the defender's `+0x1F7` juggle window
+    /// is up, `1` otherwise. The damage roll adds `(juggle * ATK) >> 6` to the
+    /// offense and `(juggle * raw) >> 6 + juggle` to the underdog rewrite.
+    pub(crate) juggle: u8,
     /// Per-party-slot Fury Boost state for the current battle: `Some(delta)` is
     /// the AP added to that slot's gauge by the class-5 Fury Boost item (retail
     /// actor `+0x1F9` flag). Reverted wholesale at battle end (`finish_battle`),
@@ -857,6 +864,7 @@ impl BattleState {
             guarding: [false; 3],
             attack_ramp: 0,
             guard_ramp: 0,
+            juggle: 0,
             fury_boost: [None; 3],
             buffs: Vec::new(),
             escaped: false,
