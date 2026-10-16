@@ -72,6 +72,22 @@ def read_kv(path: Path) -> dict:
     return out
 
 
+def engine_ground(retail: str) -> str:
+    """Re-key the recorded ground list from retail pool slots to engine slots.
+
+    The probe writes one `x:z` (or `-`) per retail pool slot: the party at
+    0..2, the monsters at 3 + m whatever the party size. The engine packs the
+    monsters behind the party, so monster m is engine slot party_count + m
+    (the re-key `RetailBattle::engine_ground` does for the corpus seeds).
+    """
+    if not retail:
+        return ""
+    toks = retail.split(",")
+    party = [t for t in toks[:3] if t not in ("", "-")]
+    monsters = toks[3:]
+    return ",".join(party + monsters)
+
+
 def run_retail(a, out: Path) -> bool:
     rdir = out / "retail"
     done = read_kv(rdir / "done.txt")
@@ -182,7 +198,7 @@ def run_engine(a, out: Path) -> bool:
         # state): keep the caster the state's own replay seeds.
         caster = int(child_inflight.split(",")[0])
     if caster < 3:
-        ground = done.get("ground", "") if not a.no_ground else ""
+        ground = engine_ground(done.get("ground", "")) if not a.no_ground else ""
         env["LEGAIA_BATTLE_INFLIGHT"] = f"{caster},{a.spell},{a.target}" + (f";{ground}" if ground else "")
     else:
         # The seam takes the engine's actor index, and the engine packs the

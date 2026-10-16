@@ -73,7 +73,7 @@ seeded, and the recorder on:
 
 | Variable | Value |
 |---|---|
-| `LEGAIA_BATTLE_INFLIGHT` | `caster,spell,target;ground` - dispatched at the first prompt, every combatant seated on retail's ground pair at cast begin |
+| `LEGAIA_BATTLE_INFLIGHT` | `caster,spell,target;ground` - dispatched at the first prompt, every combatant seated on retail's ground pair at cast begin; the ground list is re-keyed from pool slots to engine slots (monster `m` at `party_count + m`) |
 | `LEGAIA_BATTLE_MONSTER_CAST` | `seat,spell` instead, for a monster caster |
 | `LEGAIA_DIAG_CAST_SEQ` | the recording directory |
 | `LEGAIA_DIAG_CAST_SEQ_SEAT` | only a cast by this seat (retail numbering) starts the recording |
