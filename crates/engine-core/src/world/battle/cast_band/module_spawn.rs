@@ -1,26 +1,48 @@
 //! Seating a cast module's actors and effects: the summon actor seat, the cast
 //! effect pool, module lookup, and the module FX and arm spawns.
 
+use super::module_seat_arm;
 use super::*;
 use legaia_engine_mode::mode::SceneMode;
 
 impl World {
     /// A host seated the summon creature at actor `slot`: adopt the seat,
-    /// place it at the stager's spawn point wearing the caster's facing (the
-    /// capture's slot-7 record), and mark it active. Hosts call this right
-    /// after binding the creature's mesh, idle player and clip set.
+    /// place it where the seat installer `FUN_801F19EC` leaves it, and mark
+    /// it active. Hosts call this right after binding the creature's mesh,
+    /// idle player and clip set.
+    ///
+    /// The installer is one battle-overlay routine every creature-seating
+    /// module calls (`jal 0x801F19EC`), so what it writes holds band-wide:
+    /// the creature stands **on the caster** - the node is built off the
+    /// caster's `+0x34` triple (`FUN_80024C88(caster + 0x34, ..)` at
+    /// `0x801F1D4C`) and copied into the seat's `+0x3C` / `+0x40` and
+    /// `+0x34` / `+0x38` (`0x801F1E04..0x801F1E40`) - wearing the caster's
+    /// facing (`+0x26 = caster[+0x46]` at `0x801F1D94`), at animation rate
+    /// `2` (`0x801F1DFC`). A module that moves its creature does so in its
+    /// own arms afterwards ([`crate::world::battle::cast_band`]'s
+    /// `module_cam.creature`). A module the engine paces with its own walk
+    /// stand-in (no band-pacing director) keeps the stand-in's spawn point,
+    /// which its walk is measured from.
     pub fn seat_summon_actor(&mut self, slot: usize) {
         let staged = self.casting.summon_stager.as_ref().map(|st| {
-            (
-                st.spawn,
-                self.actors
-                    .get(st.caster as usize)
-                    .map(|a| a.battle.facing_angle)
-                    .unwrap_or(0),
-            )
+            let caster = self.actors.get(st.caster as usize);
+            let spawn = match caster.filter(|_| self.module_seats_on_caster(st.spell_id)) {
+                Some(c) => [
+                    c.move_state.world_x,
+                    c.move_state.world_y,
+                    c.move_state.world_z,
+                ],
+                None => st.spawn,
+            };
+            (spawn, caster.map(|a| a.battle.facing_angle).unwrap_or(0))
         });
         self.casting.summon_actor_slot = Some(slot as u8);
-        let installer_rate = self.summon_seat_waits_for_cycle(slot);
+        let placed = self.casting.module_cam.creature;
+        let entry = self
+            .casting
+            .summon_stager
+            .as_ref()
+            .and_then(|st| self.cast_module_for(st.spell_id));
         let Some(a) = self.actors.get_mut(slot) else {
             return;
         };
@@ -35,11 +57,53 @@ impl World {
         a.battle.facing_angle = facing;
         a.battle.queued_anim = 0;
         a.battle.current_anim = 0;
-        if installer_rate {
-            a.battle.anim_rate = legaia_engine_battle_vm::battle_anim_rate::AnimRate(
-                super::module_creature::SUMMON_SEAT_ANIM_RATE,
-            );
+        a.battle.anim_rate = legaia_engine_battle_vm::battle_anim_rate::AnimRate(
+            super::module_creature::SUMMON_SEAT_ANIM_RATE,
+        );
+        // The seat arm's own stores, which run after the installer on the
+        // same pass (`module_seat_arm`).
+        if let Some(e) = entry {
+            self.apply_seat_arm_write(e, slot);
         }
+        // A seat arm that computes its seat lives in its director (PROT
+        // 0907's arm 6 seats Nighto on its grid point at
+        // `0x801F76C8..0x801F77A4`, right behind `jal 0x801F19EC`). The host
+        // seats the mesh a tick after the director has run that arm, so a
+        // placement the director already made wins over the installer's.
+        if let Some(c) = placed
+            && let Some(a) = self.actors.get_mut(slot)
+        {
+            a.move_state.world_x = c.x;
+            a.move_state.world_z = c.z;
+            a.battle.facing_angle = c.facing;
+        }
+        // An engine walk stand-in ends where the module seated the creature:
+        // a module that seats it never walks it there.
+        if entry.is_some_and(|e| module_seat_arm::seat_arm_write(e).is_some())
+            && let Some(a) = self.actors.get(slot)
+        {
+            let at = [
+                a.move_state.world_x,
+                a.move_state.world_y,
+                a.move_state.world_z,
+            ];
+            if let Some(st) = self.casting.summon_stager.as_mut() {
+                st.goal = at;
+            }
+        }
+    }
+
+    /// Whether a cast of `spell_id` seats its creature where the installer
+    /// does (on the caster), and its seat arm's own stores after it: every
+    /// module whose band a director paces, so that no engine walk stand-in
+    /// moves the creature from its seat, and every module with a seat-arm
+    /// row (`module_seat_arm::seat_arm_write`).
+    pub(in crate::world) fn module_seats_on_caster(&self, spell_id: u8) -> bool {
+        self.cast_module_for(spell_id).is_some_and(|e| {
+            module_seat_arm::seat_arm_write(e).is_some()
+                || legaia_engine_battle_vm::cast_module_camera::module_profile(e)
+                    .is_some_and(|p| p.paces_band())
+        })
     }
 
     /// The seat half of a summon spawn request for a host that draws

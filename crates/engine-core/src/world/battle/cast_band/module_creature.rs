@@ -28,10 +28,13 @@ const ZENOIR_OVER_VICTIM_ARM: u8 = 10;
 const CLIP_GATED_MODULES: [u32; 3] = [907, 908, 909];
 
 /// The animation rate `+0x21D` the creature seat installer `FUN_801F19EC`
-/// gives the creature it seats (`addiu s3,zero,2` at `0x801F1CFC`, stored at
+/// gives the creature it seats (`li s3,0x2` at `0x801F1CFC`, stored at
 /// `0x801F1DFC`): a quarter of the battle's normal `8`. The first commit
-/// lifts it to half (`battle_anim_rate::commit_rate_decay`), so a creature
-/// plays its clips at a half or a quarter of a party member's speed.
+/// lifts it to half (`battle_anim_rate::commit_rate_decay`, `0x8004B080`), so
+/// a creature plays its clips - and walks its root motion - at a quarter of a
+/// party member's speed until its first commit and at half after. The
+/// installer is the battle overlay's, shared by every creature-seating module
+/// in the band, so every seated creature gets it.
 pub(in crate::world) const SUMMON_SEAT_ANIM_RATE: u8 = 2;
 
 impl World {

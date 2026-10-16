@@ -47,13 +47,17 @@ fn a_seru_cast_runs_the_summon_band_and_the_stager_folds_once_at_its_strike() {
         if let Some((id, origin)) = world.take_pending_summon_spawn() {
             spawn_requests += 1;
             assert_eq!(id, 0x81);
-            // Seated behind the caster on the party side, the capture's law.
+            // PROT 0903's band is director-paced, so the creature is seated
+            // where `FUN_801F19EC` puts it: on the caster. (Its arm 3 then
+            // moves it behind the party, the capture's seat.)
             assert_eq!(origin[0], 82);
-            assert_eq!(origin[2], -542 - crate::world::battle::SUMMON_SPAWN_BEHIND);
+            assert_eq!(origin[2], -542);
             // A host seats it; the world adopts the seat.
             world.seat_summon_actor(9);
             assert_eq!(world.casting.summon_actor_slot, Some(9));
             assert_eq!(world.actors[9].move_state.world_z, origin[2]);
+            // The installer's quarter rate (`+0x21D = 2`).
+            assert_eq!(world.actors[9].battle.anim_rate.get(), 2);
             // The band's 0x28 re-faced the caster at its target; the seat
             // wears that live facing (the capture's slot-7 `0xFD9` = slot 0's).
             assert_eq!(

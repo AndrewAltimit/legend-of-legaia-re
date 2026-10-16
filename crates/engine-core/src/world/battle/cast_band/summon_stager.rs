@@ -51,12 +51,20 @@ impl World {
         self.casting.module_settle_countdown = 0;
         self.casting.module_cam = Default::default();
         self.casting.module_pres = Default::default();
+        // A module a director paces seats its creature on the caster
+        // (`FUN_801F19EC`, [`Self::seat_summon_actor`]); only the engine's
+        // own walk stand-in starts it behind the party.
+        let spawn_z = if self.module_seats_on_caster(spell_id) {
+            cz
+        } else {
+            cz.saturating_sub(SUMMON_SPAWN_BEHIND)
+        };
         self.casting.summon_stager = Some(SummonStager {
             caster,
             spell_id,
             phase: SummonPhase::Armed,
             frames: 0,
-            spawn: [cx, cy, cz.saturating_sub(SUMMON_SPAWN_BEHIND)],
+            spawn: [cx, cy, spawn_z],
             goal: [cx, cy, cz.saturating_sub(SUMMON_STRIKE_BEHIND)],
             walked: false,
         });
@@ -102,6 +110,7 @@ impl World {
         self.step_module_rain();
         if let Some(r) = run.as_ref() {
             self.apply_module_creature_writes(r.prot_entry, r.phase, r.capture_drift);
+            self.apply_module_seat_motion(r.prot_entry, r.phase);
         }
         // The module seats its creature itself (Gimard's arm 3); put the
         // engine's creature where it did.
@@ -204,8 +213,9 @@ impl World {
             .as_ref()
             .and_then(|r| legaia_engine_battle_vm::cast_module_camera::module_profile(r.prot_entry))
             .and_then(|p| p.seat_arm);
+        let seat_entry = run.as_ref().map(|r| r.prot_entry);
         if let Some((arm, spell, at)) = self.casting.summon_seat_owed
-            && (module_phase >= arm || run.is_none())
+            && (super::module_seat_arm::seat_due(seat_entry, arm, module_phase) || run.is_none())
         {
             self.casting.summon_seat_owed = None;
             self.casting.pending_summon_spawn = Some((spell, at));
@@ -215,7 +225,9 @@ impl World {
                 // Phase 0: seat the creature (retail: the stager's
                 // `FUN_801F19EC` installs the streamed record as slot 7) -
                 // here, unless the module seats it in a later arm.
-                match seat_arm.filter(|&a| module_phase < a) {
+                match seat_arm
+                    .filter(|&a| !super::module_seat_arm::seat_due(seat_entry, a, module_phase))
+                {
                     Some(arm) => {
                         self.casting.summon_seat_owed = Some((arm, st.spell_id, st.spawn));
                     }
@@ -306,6 +318,11 @@ impl World {
         let Some(a) = self.actors.get_mut(slot) else {
             return true;
         };
+        let ms = &a.move_state;
+        if (ms.world_x, ms.world_z) == (goal[0], goal[2]) {
+            // Already there (a module seated it on its goal): no walk clip.
+            return true;
+        }
         if a.battle.queued_anim != 1 {
             a.battle.queued_anim = 1;
         }

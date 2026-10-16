@@ -68,6 +68,7 @@ DIAG_GATES: list[dict[str, object]] = [
     {"env": "LEGAIA_DIAG_MESHTEX", "additive": False, "note": "mesh/texture bind log"},
     {"env": "LEGAIA_DIAG_PLACE", "additive": False, "note": "placement-resolve log"},
     {"env": "LEGAIA_DIAG_POSE", "additive": False, "note": "per-actor pose/AABB log"},
+    {"env": "LEGAIA_DIAG_CREATURE_ANIM", "additive": False, "note": "per-tick summon creature clip / rate / keyframe log; draws nothing"},
     {"env": "LEGAIA_DIAG_CAMERA", "additive": False, "note": "camera-solve log"},
     {"env": "LEGAIA_DIAG_CUTCAM", "additive": False, "note": "cutscene-camera log"},
     {"env": "LEGAIA_DIAG_BATCAM", "additive": False, "note": "battle-camera log"},

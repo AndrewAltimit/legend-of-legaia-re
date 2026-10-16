@@ -112,6 +112,11 @@ impl World {
             // follows the tick in retail.
             let tween = self.battle_tween_target(i);
             let seru_staged = self.battle_ctx.absorbed_seru != 0;
+            static CREATURE_DIAG: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+            let creature_diag = *CREATURE_DIAG
+                .get_or_init(|| std::env::var_os("LEGAIA_DIAG_CREATURE_ANIM").is_some())
+                && self.casting.summon_actor_slot == Some(i as u8);
+            let module_phase = self.casting.module_phase;
             // The `>> 2` branch of the cursor advance is taken only by a
             // **Slowed** actor on idle: `andi v0,v0,0x1000` on `+0x16E` at
             // `0x800476E0`, then `+0x1D9 == 0` at `0x800476EC`. Every other
@@ -135,6 +140,17 @@ impl World {
                     slowed && actor.battle.current_anim == 0 && actor.battle_reaction.is_none();
                 let pose = player.tick_rated(rate, slowed_idle);
                 let after = player.current_frame();
+                // `LEGAIA_DIAG_CREATURE_ANIM=1`: one line per tick for the
+                // summon creature's clip, rate and frame.
+                if creature_diag {
+                    eprintln!(
+                        "[creature-anim] slot={i} phase={} cur={} queued={} rate={} frame={after}",
+                        module_phase,
+                        actor.battle.current_anim,
+                        actor.battle.queued_anim,
+                        rate.get(),
+                    );
+                }
                 // The natural end's displacement: the actor steps along its
                 // facing by the committed entry's `+0x0E` - the distance the
                 // last frame's tween carried the body in model Z - unless the
