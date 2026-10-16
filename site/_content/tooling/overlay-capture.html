@@ -35,7 +35,7 @@
   <p>It reports the format, the slice size, the label it detected with the anchor votes behind it (e.g. <code>world_map=4, field=3</code>), and the two files it wrote: <code>/tmp/overlay_&lt;label&gt;.bin</code> and <code>ghidra/scripts/dump/dump_&lt;label&gt;_overlay.py</code>.</p>
   <p>Then import the slice (slice path first, label second - both required) and run the stub:</p>
   <div class="cli"><code>scripts/ghidra-analysis/import-overlay-named.sh /tmp/overlay_&lt;label&gt;.bin &lt;label&gt;</code></div>
-  <div class="cli"><code>docker compose exec ghidra /ghidra/support/analyzeHeadless /projects legaia -process overlay_&lt;label&gt;.bin -noanalysis -postScript /scripts/dump_&lt;label&gt;_overlay.py</code></div>
+  <div class="cli"><code>docker compose exec ghidra /ghidra/support/analyzeHeadless /projects legaia -process overlay_&lt;label&gt;.bin -noanalysis -postScript /scripts/dump/dump_&lt;label&gt;_overlay.py</code></div>
   <p>When the auto-detection picks the wrong label (the anchor table has no function exclusive to the shop, cutscene or level-up subset), pass <code>--label name</code>; an existing stub is preserved (<code>--force</code> overwrites). To grow the anchor table, add any function you confirm exclusive to one overlay to <code>ANCHOR_FUNCTIONS</code> in the same script.</p>
 </section>
 
