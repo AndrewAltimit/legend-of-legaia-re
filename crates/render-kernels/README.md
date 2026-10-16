@@ -54,6 +54,11 @@ or cpal, so it builds for native and `wasm32` alike.
 - `move_strip` - the draw half of the move-VM extension's scanline strip
   emitter (sub-op `0x2C`, `FUN_801D31B0`): project, run
   `legaia_engine_vm::move_ext_strip::emit_strip`, return screen prims.
+- `shatter` - the shatter renderer (`FUN_80029888` per object,
+  `FUN_80029DD8` per primitive): each triangle spins about its own centroid
+  and flies from the burst centre, with the flag rows' shrink, hold and sweep
+  fronts. Both play hosts draw battle bodies and field NPCs through it
+  ([renderer.md](../../docs/subsystems/renderer.md#the-shatter-renderer-fun_80029888--fun_80029dd8)).
 
 ## Draw-prep kernels
 
