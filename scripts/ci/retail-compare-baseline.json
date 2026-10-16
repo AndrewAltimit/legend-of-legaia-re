@@ -1572,11 +1572,11 @@
     "nova_summon_mid_cast": {
       "battle_party": 1.0,
       "bgm": 1.0,
-      "camera": 0.646,
+      "camera": 0.996,
       "enemies": 1.0,
       "enemy_hp": 1.0,
       "flags": 1.0,
-      "image": 0.806,
+      "image": 1.0,
       "inventory": 1.0,
       "mode": 1.0,
       "phase": 1.0,
