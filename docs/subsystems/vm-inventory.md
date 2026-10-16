@@ -210,8 +210,10 @@ faithful and tested, and nothing outside its own crate calls it.
 
 Still inert:
 
-- **`title_prim`** - the SCUS sprite-emit primitives (`FUN_80058298`,
-  `FUN_80058490`, `FUN_800198E0`). No caller outside `crates/engine-vm`.
+- **`title_prim`** (`engine-menus::title_prim`) - the SCUS sprite-emit
+  primitives (`FUN_80058298`, `FUN_80058490`, `FUN_800198E0`). No caller
+  outside its own module; tagged `REPLACED-BY:` the `engine-ui` title / save
+  draw-list builders, so no host is owed it.
 - **`move_vm_overlay_ext::step` / `walk`** - a standalone walker over
   `FUN_801D362C`, and **no host is owed it**: a disc-wide five-form reference
   scan for `0x801D362C` finds exactly one caller, the SCUS move-VM arm at
