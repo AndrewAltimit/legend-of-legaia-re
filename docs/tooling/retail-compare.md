@@ -1429,6 +1429,11 @@ countdowns drain by the frame step a pass, so one a tick), and the headless
 side's opening window runs long enough to wait it out. A fight with no MAN row
 to name is not imaged; its reason is in the report.
 
+A replayed cast is one frame of a cast that runs for hundreds of vsyncs, and
+on most summons that frame is the white flash. The
+[cast-sequence oracle](cast-sequence-oracle.md) scores the whole cast frame by
+frame instead.
+
 ### The track word in battle
 
 Retail's track-select word `0x8007BAC8` keeps the **field** track through a
@@ -2743,6 +2748,9 @@ every pass, so it moves with the phase of both clips):
 
 ## See also
 
+- [cast-sequence-oracle](cast-sequence-oracle.md) - one cast recorded on both
+  sides and scored frame by frame, paired on the action-SM clock; the answer
+  to a cast whose only state is a white-flash frame.
 - [recomp-differential](recomp-differential.md) - the frame-tagged
   differential against the static recomp.
 - [host-drift](host-drift.md) - the three-host parity gates.

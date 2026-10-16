@@ -190,6 +190,7 @@ impl PlayWindowApp {
         light_prims: &[legaia_render_kernels::screen_prim::ScreenPrim],
     ) {
         let target = |scene| present_target(scene, screen_prims, light_prims);
+        self.capture_cast_sequence_frame(r, &|| target(scene));
         // Screenshot harness: at the target tick, read the frame back
         // offscreen and exit instead of presenting to the window.
         let gated = self.screenshot.as_ref().is_some_and(|sc| {
@@ -280,7 +281,192 @@ impl PlayWindowApp {
     }
 }
 
+/// The `LEGAIA_DIAG_CAST_SEQ` recorder's run state
+/// ([`PlayWindowApp::capture_cast_sequence_frame`]).
+struct CastSeqRecorder {
+    dir: std::path::PathBuf,
+    every: u64,
+    tail: u64,
+    max: u64,
+    meta: std::io::BufWriter<std::fs::File>,
+    /// Only a cast by this acting seat starts the recording
+    /// (`LEGAIA_DIAG_CAST_SEQ_SEAT`); any seat when unset.
+    seat: Option<u8>,
+    start: Option<u64>,
+    done: Option<u64>,
+    shots: u64,
+}
+
+/// Action state `0x28`, cast begin: the state every Magic action - a party
+/// summon, a monster spell, a capture-class cast - passes through first.
+const CAST_BEGIN_STATE: u8 = 0x28;
+
 impl PlayWindowApp {
+    /// `LEGAIA_DIAG_CAST_SEQ=<dir>` instrument: the engine side of the
+    /// per-cast frame-sequence oracle (`docs/tooling/cast-sequence-oracle.md`).
+    ///
+    /// From the first tick the action SM holds cast begin (`0x28`), for the
+    /// acting seat `LEGAIA_DIAG_CAST_SEQ_SEAT` when set, it writes one `meta.csv` row per tick - the action
+    /// state, the module phase, the countdown and camera clocks the capture
+    /// gates read, every seat's HP - and every
+    /// `LEGAIA_DIAG_CAST_SEQ_EVERY` (default `1`) ticks the frame, already
+    /// cropped and box-filtered to the compared `320 x 224`
+    /// (`e_<tick>.png`). It exits `LEGAIA_DIAG_CAST_SEQ_TAIL` (default `60`)
+    /// ticks past the Done band (`0x50` / `0x51` / `0x5A`), or after
+    /// `LEGAIA_DIAG_CAST_SEQ_MAX` (default `2000`) frames. The run must be a
+    /// `--screenshot` child, which is what makes it one tick per redraw.
+    fn capture_cast_sequence_frame<'a>(
+        &self,
+        r: &legaia_engine_render::Renderer,
+        target: &dyn Fn() -> RenderTarget<'a>,
+    ) {
+        static REC: std::sync::OnceLock<Option<std::sync::Mutex<CastSeqRecorder>>> =
+            std::sync::OnceLock::new();
+        let Some(rec) = REC.get_or_init(|| {
+            let dir = std::path::PathBuf::from(std::env::var_os("LEGAIA_DIAG_CAST_SEQ")?);
+            std::fs::create_dir_all(&dir).ok()?;
+            let num = |k: &str, d: u64| {
+                std::env::var(k)
+                    .ok()
+                    .and_then(|v| v.parse().ok())
+                    .unwrap_or(d)
+            };
+            let mut meta = std::io::BufWriter::new(std::fs::File::create(dir.join("meta.csv")).ok()?);
+            use std::io::Write as _;
+            let _ = writeln!(
+                meta,
+                "tick,st7,phase,acting,frames,c6d8,cd,yaw,c87c,fade_white,fade_age,hp0,hp1,hp2,hp3,hp4,hp5,hp6,hp7,shot"
+            );
+            Some(std::sync::Mutex::new(CastSeqRecorder {
+                every: num("LEGAIA_DIAG_CAST_SEQ_EVERY", 1).max(1),
+                tail: num("LEGAIA_DIAG_CAST_SEQ_TAIL", 60),
+                max: num("LEGAIA_DIAG_CAST_SEQ_MAX", 2000),
+                seat: std::env::var("LEGAIA_DIAG_CAST_SEQ_SEAT")
+                    .ok()
+                    .and_then(|v| v.parse().ok()),
+                dir,
+                meta,
+                start: None,
+                done: None,
+                shots: 0,
+            }))
+        }) else {
+            return;
+        };
+        let Ok(mut rec) = rec.lock() else {
+            return;
+        };
+        let w = &self.session.host.world;
+        if w.mode != SceneMode::Battle {
+            return;
+        }
+        let st = w.battle_ctx.action_state;
+        // The engine packs the party ahead of the monsters; retail seats the
+        // party on `0..=2` and the monsters from `3`. The recorder speaks
+        // retail's seats, the numbering the retail side writes.
+        let pc = w.party.party_count.clamp(1, 3) as usize;
+        let seat_of = |i: usize| if i < pc { i } else { 3 + i - pc };
+        let acting = seat_of(usize::from(w.battle_ctx.active_actor)) as u8;
+        let tick = self.tick_no;
+        let start = match rec.start {
+            Some(s) => s,
+            None if st == CAST_BEGIN_STATE && rec.seat.is_none_or(|s| s == acting) => {
+                eprintln!("cast sequence: cast begin at tick {tick} (seat {acting})");
+                rec.start = Some(tick);
+                tick
+            }
+            None => return,
+        };
+        if rec.done.is_none() && matches!(st, 0x50 | 0x51 | 0x5A) {
+            eprintln!("cast sequence: done band at tick {tick} (state 0x{st:02X})");
+            rec.done = Some(tick);
+        }
+        let mut shot = String::new();
+        if (tick - start).is_multiple_of(rec.every) && rec.shots < rec.max {
+            let mut capture = r.capture_rgba(target());
+            for _ in 0..3 {
+                let Ok(prev) = &capture else { break };
+                match r.capture_rgba(target()) {
+                    Ok(next) if next.rgba == prev.rgba => break,
+                    next => capture = next,
+                }
+            }
+            match capture.and_then(|img| {
+                legaia_parity::retail_compare_image::Frame::from_engine_capture(
+                    &img.rgba,
+                    img.width as usize,
+                    img.height as usize,
+                )
+            }) {
+                Ok(f) => {
+                    let name = format!("e_{tick:05}.png");
+                    let rgba: Vec<u8> = f
+                        .rgb
+                        .as_chunks::<3>()
+                        .0
+                        .iter()
+                        .flat_map(|p| [p[0], p[1], p[2], 255])
+                        .collect();
+                    let img = CaptureImage {
+                        rgba,
+                        width: legaia_parity::retail_compare_image::FRAME_W as u32,
+                        height: legaia_parity::retail_compare_image::FRAME_H as u32,
+                    };
+                    match write_capture_png(&rec.dir.join(&name), &img) {
+                        Ok(()) => {
+                            rec.shots += 1;
+                            shot = name;
+                        }
+                        Err(e) => eprintln!("cast sequence: write {name}: {e:#}"),
+                    }
+                }
+                Err(e) => eprintln!("cast sequence: capture at tick {tick}: {e:#}"),
+            }
+        }
+        let mut hp = vec!["-1".to_string(); 8];
+        for (i, a) in w.actors.iter().enumerate().take(pc + 5) {
+            if let Some(slot) = hp.get_mut(seat_of(i)) {
+                *slot = a.battle.hp.to_string();
+            }
+        }
+        let (fade_white, fade_age) =
+            w.presentation
+                .fade
+                .as_ref()
+                .filter(|f| f.kind == 1)
+                .map_or((-1, -1), |f| {
+                    (
+                        i32::from(f.target_rgb()[0] == 0xFF),
+                        i32::from(f.age_vsyncs()),
+                    )
+                });
+        let accum = w
+            .battle
+            .camera
+            .as_ref()
+            .map_or(-1, |c| i64::from(c.close_up_accum()));
+        use std::io::Write as _;
+        let _ = writeln!(
+            rec.meta,
+            "{tick},{st},{},{acting},{},{},{},{},{accum},{fade_white},{fade_age},{},{shot}",
+            w.casting.module_phase,
+            w.clock.display_frames,
+            w.battle_ctx.frame_timer,
+            w.casting.module_cam.countdown.0,
+            w.casting.module_cam.yaw_base,
+            hp.join(","),
+        );
+        if rec.done.is_some_and(|d| tick >= d + rec.tail) || rec.shots >= rec.max {
+            let _ = rec.meta.flush();
+            println!(
+                "[ok] cast sequence: {} frames in {} (ticks {start}..={tick})",
+                rec.shots,
+                rec.dir.display()
+            );
+            std::process::exit(0);
+        }
+    }
+
     /// A lagged battle drive's gate ([`ScreenshotConfig::display_lag`]):
     /// when the drive's action state already held `lag` ticks back, name that
     /// tick beside the frame (`<shot>.retake`) - the frame retail's display

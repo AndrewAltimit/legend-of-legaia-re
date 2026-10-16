@@ -30,7 +30,7 @@ use std::path::PathBuf;
         Diagnostics (engine development; not needed to play):\n    \
         scene / script analysis:  play, clut-trace, man-scripts, xa-cue\n    \
         parity oracles:           vram-oracle, mode-trace, audio-trace, pcm-trace, gte-replay, scenarios,\n                              \
-        sim-trace, retail-compare\n    \
+        sim-trace, retail-compare, cast-sequence-score\n    \
         synthetic state drivers:  inventory, equip, title, save-select, encounter,\n                              \
         target-pick, chain-editor, seru-capture"
 )]
@@ -1425,6 +1425,10 @@ pub(crate) enum Cmd {
     /// Retail comparison corpus (`docs/tooling/retail-compare.md`).
     #[command(display_order = 29)]
     RetailCompare(legaia_parity::retail_compare_cli::RetailCompareArgs),
+    /// Score one cast against retail frame by frame
+    /// (`docs/tooling/cast-sequence-oracle.md`).
+    #[command(display_order = 30)]
+    CastSequenceScore(legaia_parity::cast_sequence::CastSequenceArgs),
 }
 
 #[derive(Subcommand, Debug)]
