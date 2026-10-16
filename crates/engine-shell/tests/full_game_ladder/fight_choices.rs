@@ -583,6 +583,23 @@ pub(super) fn wanted_spell(
     m: &legaia_engine_battle::battle_magic::BattleSpellSession,
 ) -> Option<usize> {
     use legaia_engine_battle::spells::SpellEffect;
+    // The finishing blow ([`going_for_the_kill`]): the strongest damage
+    // spell the member can pay for, no heal and no MP kept back.
+    if going_for_the_kill(w, m.actor) {
+        return m
+            .spells
+            .iter()
+            .enumerate()
+            .filter(|(_, r)| r.affordable)
+            .filter_map(|(i, r)| match w.tables.spell_catalog.get(r.id)?.effect {
+                SpellEffect::Damage { base_power, .. } => {
+                    Some((i, u32::from(base_power) * spell_affinity_pct(w, r.id)))
+                }
+                _ => None,
+            })
+            .max_by_key(|&(_, p)| p)
+            .map(|(i, _)| i);
+    }
     // A heal spell worth casting ([`spell_heal`]) comes before any damage.
     if let Some(heal) = spell_heal(w, m.actor) {
         return m.spells.iter().position(|r| r.id == heal && r.affordable);

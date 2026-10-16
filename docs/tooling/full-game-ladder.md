@@ -777,6 +777,32 @@ anchor itself points the same way: the playthrough's play-time counter
 advances about five hours between `PRO-04` (`noaru`) and `PRO-10`
 (`jouind`), over which the party's HP nearly doubles.
 
+Three reads keep the cannon phase from being lost on the turn order. Once
+the party-wide hit has landed two rounds running, the hit is the foe's every
+turn, and one group heal is queued each round while some member could not
+take two more of it, full HP or not: the hand that healed only once members
+read low healed one round, swung with all three the next, and the cannon
+that opened the round after dropped two members at once. The second group
+heal a round (the backup against a caster drawn behind the foe) is cast only
+with three members standing: with one member down, Noa and Gala cast Spoon
+side by side round after round and dealt nothing until the battle stalled
+out unresolved, which ends an attempt without the reload a wipe gets. And in
+a fight down to one foe, a member whose next attack takes off at least what
+the foe still holds swings ahead of every heal, revive, item and stance,
+reckoned from the least each of its attack kinds (a spell it can still pay
+for, or Arts) dealt this battle: a lone Gala at full HP revived Vahn into
+Songi's next strike round after round with Songi at 366 HP. Together they
+take the guarded hand from about two Songi wins in five to about three in
+five.
+
+Which hand the default stream deals moves with any change to how long a cast
+runs: seating Gilium's creature on the pass that drains PROT 0923's arm-3
+countdown (`bgtz` at `0x801F6D9C` ahead of `jal 0x801F19EC`) lands its
+damage `0x200 / 8` = 64 ticks later and shifts every later draw, with each
+cast's damage unchanged. A Songi stall that comes and goes with such a change
+is the hand, not the port: measure it across `LEGAIA_FGL_RNG_SEED` streams
+before reading it as a regression.
+
 The pad heal outside battle re-enters the Items screen while the party is
 still below its line: a use's result closes the screen back to the root
 menu, and a hand that stopped there walked on with one member healed and

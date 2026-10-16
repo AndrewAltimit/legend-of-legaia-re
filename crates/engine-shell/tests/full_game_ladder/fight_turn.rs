@@ -61,11 +61,12 @@ pub(super) fn fight_pad(session: &NativeSession) -> u16 {
             .map_or(w.battle_ctx.active_actor, |c| c.actor);
         // A race against a timed finisher spends no turn on a heal, here as
         // at the command menu.
-        let heal_want = if racing_a_finisher(w) && !race_heal(w, actor) {
-            None
-        } else {
-            wanted_item(w, (0..menu.filtered_items.len()).filter_map(listed))
-        };
+        let heal_want =
+            if going_for_the_kill(w, actor) || racing_a_finisher(w) && !race_heal(w, actor) {
+                None
+            } else {
+                wanted_item(w, (0..menu.filtered_items.len()).filter_map(listed))
+            };
         let want = heal_want
             .or_else(|| wanted_mp_item(w, (0..menu.filtered_items.len()).filter_map(listed), actor))
             .or_else(|| {
@@ -234,6 +235,16 @@ pub(super) fn fight_pad(session: &NativeSession) -> u16 {
             }
             CommandPhase::Menu { .. } if lesson == Some(TutorialLesson::Spirit) => {
                 PadButton::Down.mask()
+            }
+            // The finishing blow: damage ahead of every heal, item and
+            // stance - a spell when that is what the count rests on.
+            CommandPhase::Menu { .. } if lesson.is_none() && going_for_the_kill(w, cmd.actor) => {
+                let spell = finishing_damage(w, cmd.actor).is_some_and(|(_, s)| s);
+                if spell && !NO_MAGIC.with(|n| n.borrow().contains(&cmd.actor)) && !refused() {
+                    ask_magic()
+                } else {
+                    PadButton::Left.mask()
+                }
             }
             // The foe's heavy round is due: the Spirit stance halves it.
             CommandPhase::Menu { .. } if lesson.is_none() && wants_guard(w, cmd.actor) => {
@@ -481,6 +492,21 @@ pub(super) fn fight_battle(session: &mut NativeSession) -> Option<Run> {
     AOE_HIT.with(|a| a.set(0));
     CHARGE_SEEN.with(|c| c.set(false));
     AOE_GUARDED.with(|g| g.set([None; 3]));
+    DEALT.with(|d| d.borrow_mut().clear());
+    AOE_STREAK.with(|r| r.set(0));
+    // What each member's latest commit deals damage as ([`dealt_kind`]), and
+    // the action whose damage is being summed (member, kind, total).
+    let mut act_kind: [Option<u16>; 3] = [None; 3];
+    let mut acting: Option<(u8, u16, u32)> = None;
+    let flush = |acting: &mut Option<(u8, u16, u32)>| {
+        if let Some((a, k, d)) = acting.take() {
+            DEALT.with(|m| {
+                let mut m = m.borrow_mut();
+                let e = m.entry((a, k)).or_insert(d);
+                *e = (*e).min(d);
+            });
+        }
+    };
     let mut guarded = [false; 3];
     let mut was_window = false;
     ITEM_TARGET.with(|t| *t.borrow_mut() = [None; 3]);
@@ -572,7 +598,32 @@ pub(super) fn fight_battle(session: &mut NativeSession) -> Option<Run> {
         if foe_charged(&session.host.world) {
             CHARGE_SEEN.with(|c| c.set(true));
         }
+        {
+            let w = &session.host.world;
+            for (i, p) in w.battle.round_flow.pending.iter().enumerate().take(3) {
+                if let Some(p) = p {
+                    act_kind[i] = dealt_kind(p);
+                }
+            }
+        }
         let foe_now = foe_hp(session);
+        // A foe's HP drop is the acting member's, summed over the action's
+        // hits; a change of actor closes the sum.
+        let who = session.host.world.battle_ctx.active_actor;
+        if acting.is_some_and(|(a, _, _)| a != who) {
+            flush(&mut acting);
+        }
+        if foe_now < foe_prev
+            && let Some(kind) = act_kind.get(usize::from(who)).copied().flatten()
+        {
+            match &mut acting {
+                Some((_, k, d)) if *k == kind => *d += foe_prev - foe_now,
+                _ => {
+                    flush(&mut acting);
+                    acting = Some((who, kind, foe_prev - foe_now));
+                }
+            }
+        }
         if foe_now < foe_prev {
             foe_dropped_at = t;
             EXCHANGE.with(|e| {
@@ -608,6 +659,14 @@ pub(super) fn fight_battle(session: &mut NativeSession) -> Option<Run> {
             }
         }
         if window && !was_window {
+            flush(&mut acting);
+            AOE_STREAK.with(|s| {
+                s.set(if run.iter().filter(|&&l| l > 0).count() >= 2 {
+                    s.get() + 1
+                } else {
+                    0
+                })
+            });
             ROUND_HISTORY.with(|h| h.borrow_mut().push(run.iter().sum()));
             if run.iter().filter(|&&l| l > 0).count() >= 2 {
                 // A member that took the hit in the Spirit stance took half
