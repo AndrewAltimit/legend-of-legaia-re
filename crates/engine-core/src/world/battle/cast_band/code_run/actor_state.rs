@@ -22,10 +22,10 @@ impl World {
 
     /// Lift one actor slot into the state view the slot-B kernels take.
     ///
-    /// The engine carries every field these routines touch except two: the
-    /// `+0x0C` root-speed word and the `+0x1DC` restage counter, which live
-    /// in the run's own scratch because the engine's `flag_bits` byte at that
-    /// offset is a flag set, not a counter (`docs/subsystems/battle-action.md`
+    /// The engine carries every field these routines touch except the
+    /// `+0x1DC` restage counter, which lives in the run's own scratch because
+    /// the engine's `flag_bits` byte at that offset is a flag set, not a
+    /// counter (`docs/subsystems/battle-action.md`
     /// and `docs/subsystems/cast-module.md` read `+0x1DC` differently, and the
     /// bytes here only ever increment it).
     pub(in crate::world::battle::cast_band) fn cast_actor_state(
@@ -40,7 +40,11 @@ impl World {
             };
         };
         CastActorState {
-            root_speed: 0,
+            // `+0x0C` is the tint blend the tint pass `FUN_8004A908` weights
+            // the colour word by (`render_blend`): a module's `0x1000` there
+            // (Freed's arms 7 and `0x10`, every Seru hit) pushes the body
+            // fully onto its `+0x04` lanes.
+            root_speed: a.battle.render_blend as i32,
             hp_bar_delta: a.battle.hp_bar_pending,
             hp: a.battle.hp,
             flags: a.battle.field_flags,
@@ -215,6 +219,9 @@ impl World {
         a.battle.active_target = st.target_code;
         a.battle.render_flag = st.render_flag;
         a.battle.render_color = st.present_04;
+        if st.root_speed != a.battle.render_blend as i32 {
+            a.battle.render_blend = st.root_speed as u32;
+        }
         a.battle.impact_state = st.render_21f;
         a.battle.capture_state = st.render_225;
         a.battle.anim_rate = AnimRate(st.anim_rate);

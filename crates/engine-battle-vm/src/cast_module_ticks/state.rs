@@ -11,7 +11,8 @@
 /// global pool, so every routine here is directly testable.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct CastActorState {
-    /// `+0x0C` - the root-speed / magnitude word the stagers ramp.
+    /// `+0x0C` - the tint blend the tint pass `FUN_8004A908` weights the
+    /// `+0x04` lanes by (`0x1000` = fully onto them); the stagers ramp it.
     pub root_speed: i32,
     /// `+0x10` - pending HP-bar delta, accumulated by every apply site.
     pub hp_bar_delta: i32,

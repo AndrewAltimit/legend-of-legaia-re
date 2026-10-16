@@ -354,6 +354,25 @@ impl World {
         legaia_render_kernels::shatter::ShatterInput::new(b.shatter as i16, row)
     }
 
+    /// Whether battle body `actor_idx` is off screen under a hide: its
+    /// `+0x21C` raised to `0xFF` **and** its colour word `+0x04` zero.
+    /// Retail's hide is the colour word - the summon band writes
+    /// `sw zero,0x4` beside `sb 0xFF,0x21C` (`0x801E4B30..0x801E4B6C`), and
+    /// a zero word sends the tint pass `FUN_8004A908` down its no-lanes arm,
+    /// whose zero colour the draw tick `FUN_800480D8` skips. The `0xFF` byte
+    /// alone hides nothing: PROT 0912's arm 7 raises it with `+0x04 =
+    /// 0x3FFFFFFF` on the creature whose shards re-form, and its arm `0x10`
+    /// with `+0x04 = 0x3FF00000` on the monsters frozen inside the ice, and
+    /// retail draws both. The engine's zero word reads as neutral only while
+    /// the flag is down, so a zero word under a raised flag is retail's zero.
+    // REF: FUN_8004A908, FUN_800480D8
+    pub fn battle_body_hidden(&self, actor_idx: usize) -> bool {
+        self.actors.get(actor_idx).is_some_and(|a| {
+            a.battle.render_flag == legaia_engine_battle_vm::battle_target_group::RENDER_FLAG_HIDDEN
+                && a.battle.render_color == 0
+        })
+    }
+
     /// Battle body `actor_idx`'s **ground shadow** this frame, as a mesh
     /// composed like an effect part - `None` when the body is not drawn
     /// (`plan.drawn`), or the shadow gate or its pitch / roll test drops it.
@@ -597,6 +616,22 @@ mod tests {
             .expect("the +0x1BA word reaches the plan");
         assert_eq!(s.word, 0x100, "battle rows read zero: default spin + push");
         assert_eq!(shattering.nclip_mode(), 0);
+    }
+
+    /// The hide is the zero colour word under the raised `0xFF`, not the
+    /// byte alone: Freed's re-forming creature and frozen monsters keep a
+    /// lit word and draw.
+    #[test]
+    fn a_raised_hide_byte_with_a_lit_word_still_draws() {
+        let mut world = battle_world();
+        world.actors[0].battle.render_flag = 0xFF;
+        world.actors[0].battle.render_color = 0;
+        assert!(world.battle_body_hidden(0));
+        world.actors[0].battle.render_color = 0x3FF0_0000;
+        assert!(!world.battle_body_hidden(0));
+        world.actors[0].battle.render_flag = 0;
+        world.actors[0].battle.render_color = 0;
+        assert!(!world.battle_body_hidden(0), "a zero word reads neutral");
     }
 
     /// A drawn party body casts the 24-column subtractive disc of radius

@@ -909,8 +909,9 @@ behind the caster. The walk speed is the engine's. The per-summon effect parts (
 staged; the frame counts are the engine's, chosen to land the strike inside
 the band's `0x78`-frame sustain. The two flashes ride `World::presentation.fade`
 (`FadeState`, which honours the templates' start delay and `-1` hold) and both
-hosts composite it through `fade_prim`; the band's hide (`RENDER_FLAG_HIDDEN`)
-is honoured by both hosts' draw gates.
+hosts composite it through `fade_prim`; the band's hide is honoured by both
+hosts' draw gates (`World::battle_body_hidden`: `+0x21C = 0xFF` over a zero
+`+0x04`).
 
 The retail player-summon frames carry **no** spell-name label (consistent
 with the `0x4C` block being monster-only at `0x28`), and the party readout
@@ -1110,8 +1111,12 @@ So the summon sweep's `+0x4 = 0` / `+0x21C = 0xFF` pair at `0x801E4B50` is a
 32 frames. The `+0x8 = 0x81000000` write beside it fires precisely because
 `+0x4` is still black at that moment.
 
-**Port.** The engine carries `+0x21C` and leaves `+0x4` at zero, so the target-
-group walk reads the twin. The two are **not** interchangeable - an empty seat
+**Port.** The engine carries `+0x21C` and clears its `render_color` with it,
+but reads a zero word as neutral once the flag is down, so the hide releases
+at once rather than tweening back; the draw gate is the pair
+(`World::battle_body_hidden`), since a module that raises `0xFF` over a lit
+word keeps the body drawn (PROT 0912's re-forming creature and frozen
+monsters). The target-group walk reads the `+0x21C` twin. The two are **not** interchangeable - an empty seat
 reads `+0x21C == 0` where retail rejects it on `+0x4`, and a monster that dies
 mid-fade keeps `0xFF` forever because the `0x36` clear is gated on liveness.
 The cast's re-face therefore rejects an empty seat on its own test (a monster

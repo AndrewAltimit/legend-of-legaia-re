@@ -316,11 +316,9 @@ impl<'m> DrawCtx<'_, 'm> {
             // The summon band's hide (`+0x21C = 0xFF` with the prim
             // word zeroed, `0x801E4B30..0x801E4B6C`): every party
             // seat and living monster is off screen while the
-            // creature performs, restored at `0x36`.
-            if in_battle
-                && actor.battle.render_flag
-                    == legaia_engine_battle_vm::battle_target_group::RENDER_FLAG_HIDDEN
-            {
+            // creature performs, restored at `0x36`. The zero word is
+            // the hide, not the byte (`World::battle_body_hidden`).
+            if in_battle && app.session.host.world.battle_body_hidden(i) {
                 continue;
             }
             // Retail's per-body battle draw (`FUN_800480D8` over the

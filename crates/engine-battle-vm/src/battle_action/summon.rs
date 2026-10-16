@@ -238,7 +238,10 @@ pub(super) fn summon_actor_freeze<H: BattleActionHost + ?Sized>(
         };
         if summon_hide_applies(s, party_count, a.liveness) {
             // `sw zero,0x4(a0)` + `sb 0xFF,0x21c` - the prim word cleared and
-            // the hidden marker set together. The port keeps the marker.
+            // the hidden marker set together. The zero word is what hides
+            // the body; a module that raises the marker over a lit word
+            // (PROT 0912's arms 7 and `0x10`) keeps it drawn.
+            a.render_color = 0;
             a.render_flag = RENDER_FLAG_HIDDEN;
         }
     }
