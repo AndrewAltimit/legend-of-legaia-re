@@ -434,6 +434,12 @@ fn a_live_cast_stages_its_module_records() {
         let mut prev = 0usize;
         // Every record a part was seated from over the band, by its tag.
         let mut tags = std::collections::BTreeSet::new();
+        // PROT 0908's slam record (seated on the fold's own pass) makes its
+        // stager calls on the module's following ticks, after the outcome has
+        // folded; a module whose parts call their stager is watched a few
+        // frames past the fold.
+        let stager_tail = seru_module_prot(picked).is_some_and(|e| matches!(e, 907 | 908));
+        let mut tail = if stager_tail { 8 } else { 0 };
         for _ in 0..BAND_FRAMES {
             let now = w.casting.active_summon.as_ref().map(|s| s.parts.len());
             if seen.is_none() {
@@ -449,7 +455,10 @@ fn a_live_cast_stages_its_module_records() {
                 tags.extend(scene.parts.iter().filter_map(|p| p.tag));
             }
             if w.casting.pending_cast.is_none() {
-                break;
+                if tail == 0 {
+                    break;
+                }
+                tail -= 1;
             }
             let _ = w.take_pending_summon_spawn();
             w.set_pad(0);
