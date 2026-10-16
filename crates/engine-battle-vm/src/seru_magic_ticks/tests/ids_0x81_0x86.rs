@@ -645,7 +645,7 @@ fn nighto_kill_branch_zeroes_hp_and_clears_status() {
         phase: NIGHTO_FORK_ARM,
         ..Default::default()
     };
-    nighto_tick(&mut ctx, &mut seats, WHO, NightoOutcome::Kill);
+    nighto_tick(&mut ctx, &mut seats, WHO, NightoOutcome::Kill, true);
     assert_eq!(seats[3].hp, 0);
     assert_eq!(seats[3].flags, 0);
     assert_eq!(seats[3].render_flag, NIGHTO_KILL_RENDER_FLAG);
@@ -659,13 +659,13 @@ fn nighto_confuse_branch_jumps_the_settle_arm() {
         phase: NIGHTO_FORK_ARM,
         ..Default::default()
     };
-    nighto_tick(&mut ctx, &mut seats, WHO, NightoOutcome::Confuse);
+    nighto_tick(&mut ctx, &mut seats, WHO, NightoOutcome::Confuse, true);
     assert_eq!(ctx.phase, NIGHTO_CONFUSE_ARM);
     assert_eq!(seats[3].hp, 200);
-    nighto_tick(&mut ctx, &mut seats, WHO, NightoOutcome::Confuse);
+    nighto_tick(&mut ctx, &mut seats, WHO, NightoOutcome::Confuse, true);
     assert_eq!(seats[3].flags & NIGHTO_CONFUSE_BITS, NIGHTO_CONFUSE_BITS);
     assert_eq!(ctx.phase, CHOREOGRAPHY_DONE_PHASE);
-    let step = nighto_tick(&mut ctx, &mut seats, WHO, NightoOutcome::Confuse);
+    let step = nighto_tick(&mut ctx, &mut seats, WHO, NightoOutcome::Confuse, true);
     assert_eq!(step, CastTickStep::Done);
     assert_eq!(seats[3].anim_rate, NIGHTO_EXIT_ANIM_RATE);
 }
@@ -750,7 +750,7 @@ fn nighto_resisted_writes_neither_outcome() {
             phase: NIGHTO_FORK_ARM,
             ..Default::default()
         };
-        nighto_tick(&mut ctx, &mut seats, WHO, outcome);
+        nighto_tick(&mut ctx, &mut seats, WHO, outcome, true);
         assert_eq!(seats[3].hp, 200, "{outcome:?} wrote HP");
         assert_eq!(seats[3].flags, 0, "{outcome:?} wrote +0x16E");
         assert_eq!(seats[3].render_flag, 0, "{outcome:?} wrote +0x21C");
@@ -768,9 +768,21 @@ fn retail_a_resisted_nighto_still_forks_on_the_kill_word() {
         phase: NIGHTO_FORK_ARM,
         ..Default::default()
     };
-    nighto_tick(&mut ctx, &mut seats, WHO, NightoOutcome::ConfuseResisted);
+    nighto_tick(
+        &mut ctx,
+        &mut seats,
+        WHO,
+        NightoOutcome::ConfuseResisted,
+        true,
+    );
     assert_eq!(ctx.phase, NIGHTO_CONFUSE_ARM, "13 -> 15");
-    nighto_tick(&mut ctx, &mut seats, WHO, NightoOutcome::ConfuseResisted);
+    nighto_tick(
+        &mut ctx,
+        &mut seats,
+        WHO,
+        NightoOutcome::ConfuseResisted,
+        true,
+    );
     assert_eq!(ctx.phase, CHOREOGRAPHY_DONE_PHASE);
     assert_eq!(
         seats[3].flags & NIGHTO_CONFUSE_BITS,
@@ -783,7 +795,7 @@ fn retail_a_resisted_nighto_still_forks_on_the_kill_word() {
         phase: NIGHTO_FORK_ARM,
         ..Default::default()
     };
-    nighto_tick(&mut ctx, &mut seats, WHO, NightoOutcome::KillResisted);
+    nighto_tick(&mut ctx, &mut seats, WHO, NightoOutcome::KillResisted, true);
     assert_eq!(ctx.phase, NIGHTO_KILL_SETTLE_ARM, "13 -> 14");
     assert_eq!(seats[3].hp, 200);
 }
@@ -847,7 +859,7 @@ fn every_body_reaches_done_from_phase_zero() {
             }
             905 => vera_tick(ctx, &mut seats, WHO, None).0,
             906 => gizam_tick(ctx, &mut seats, WHO, |_| None).0,
-            907 => nighto_tick(ctx, &mut seats, WHO, NightoOutcome::ConfuseResisted),
+            907 => nighto_tick(ctx, &mut seats, WHO, NightoOutcome::ConfuseResisted, true),
             _ => zenoir_tick(ctx, &mut seats, WHO, |_| None).0,
         });
         // Every chain walks its whole arm run before the terminal, and
@@ -887,7 +899,13 @@ fn a_phase_past_the_chain_is_done_rather_than_busy_forever() {
             }
             905 => vera_tick(&mut ctx, &mut seats, WHO, None).0,
             906 => gizam_tick(&mut ctx, &mut seats, WHO, |_| None).0,
-            907 => nighto_tick(&mut ctx, &mut seats, WHO, NightoOutcome::ConfuseResisted),
+            907 => nighto_tick(
+                &mut ctx,
+                &mut seats,
+                WHO,
+                NightoOutcome::ConfuseResisted,
+                true,
+            ),
             _ => zenoir_tick(&mut ctx, &mut seats, WHO, |_| None).0,
         };
         assert_eq!(step, CastTickStep::Done, "PROT {entry}");

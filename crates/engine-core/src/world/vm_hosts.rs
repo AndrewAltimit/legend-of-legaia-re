@@ -171,6 +171,22 @@ impl<'a> MoveHost for MoveVmHostImpl<'a> {
             });
     }
 
+    /// Op `0x20` - `(*gp[0x714])(actor, op[1], op[2])`: the resident cast
+    /// module's stager row (`0x801F6734`, copied to `gp[+0x714]` as the band
+    /// pages the module in). Queued with the calling part's position and
+    /// rotation (`a0 + 0x14` / `+ 0x24` in the stager's spawn arms) for the
+    /// band to run on the module's next tick. Battle-only.
+    fn ext_20(&mut self, state: &mut vm::move_vm::ActorState, arg0: i16, _arg1: i16) {
+        if self.world.mode != SceneMode::Battle {
+            return;
+        }
+        self.world.casting.module_stager_calls.push((
+            arg0 as u8,
+            [state.world_x, state.world_y, state.world_z],
+            [state.render_24, state.render_26, state.render_28],
+        ));
+    }
+
     /// Op `0x1D` - `sh op[1], DAT_8007B6DE`: a store straight into SFX ring
     /// slot 3 with no cursor pair and no countdown (`0x80023680..0x8002368C`
     /// in `FUN_80023070`). The drainer plays it on its next pass. This is how

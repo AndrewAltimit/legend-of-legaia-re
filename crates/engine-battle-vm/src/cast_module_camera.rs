@@ -172,6 +172,18 @@ pub struct ModuleCamState {
     /// a dead one faded out - fed in by the host each tick for a settle
     /// gate ([`summon_holds::Gate::Settle`]).
     pub row_settled: bool,
+    /// The creature seat's playing clip `+0x1D9`, as the host last saw it
+    /// (fed each tick, like [`Self::creature_live`]). `None` before the seat
+    /// exists or where the host plays no clip on it: a clip gate then
+    /// passes rather than park.
+    pub creature_clip: Option<u8>,
+    /// The host's answer to `FUN_8004E2F0(7, victim) == 0` - the creature in
+    /// reach of the cast's victim. `None` where the host cannot answer.
+    pub creature_in_range: Option<bool>,
+    /// `FUN_801DCEAC(9, ..)` over the live enemy row, as the host last
+    /// measured it: the negated centroid (a focus trio's `x` / `z`) and the
+    /// extent. `None` with no live monster.
+    pub row_aim: Option<crate::battle_target_group::GroupAim>,
 }
 
 /// `FUN_801D5854(7, 6)` out of a module arm: the action SM's own case-6
@@ -259,6 +271,10 @@ pub struct ArmDirection {
     /// The phase a passing arm stores instead of `phase + 1` (a `sb` of a
     /// literal into `ctx+0x279`), for a director that owns the phase.
     pub jump: Option<u8>,
+    /// The arm's direct writes into the camera globals, yaw `0x8007B792`
+    /// included, folded into a shot in flight like a capture arm's
+    /// ([`CaptureDrift`]): added every pass, held or not.
+    pub drift: Option<CaptureDrift>,
 }
 
 /// A line of text a module arm prints through `FUN_8003541C(0, 0, str, x,
@@ -308,6 +324,14 @@ pub enum SpawnAnchor {
     /// PROT 0905 arms 4 (`/ 32`, `0x801F707C..0x801F710C`) and 5 (`/ 24` on
     /// the creature, `0x801F7340..0x801F7404`).
     AlongVictimHeading { base: HeadingBase, div: i16, y: i16 },
+    /// The creature seat's plane pair at the literal height `y`, with no
+    /// rotation: the arm copied the creature's `+0x34` / `+0x38` (or its body
+    /// pair) into a zeroed stack trio and stored `y` over its middle
+    /// halfword. PROT 0908 arms 4, 6 and 11.
+    CreatureGround { y: i16 },
+    /// A literal point and rotation the arm built on its stack: PROT 0909
+    /// arm 2's two parts at `(0, -0x100, 0x600)` (`0x801F6C40..0x801F6C70`).
+    Literal { pos: [i16; 3], rot: [i16; 3] },
 }
 
 /// The seat a [`SpawnAnchor::AlongVictimHeading`] point starts from.
@@ -342,6 +366,11 @@ pub fn spawn_anchor_point(
                 [s.angles[0], 0, roll.unwrap_or(s.angles[2])],
             )
         }
+        SpawnAnchor::CreatureGround { y } => {
+            let c = creature?;
+            ([c.x, y, c.z], [0; 3])
+        }
+        SpawnAnchor::Literal { pos, rot } => (pos, rot),
         SpawnAnchor::AlongVictimHeading { base, div, y } => {
             let v = victim?;
             let from = match base {
@@ -416,6 +445,7 @@ impl ArmDirection {
         fades: &[],
         kills_fades: false,
         jump: None,
+        drift: None,
     };
     pub(super) const PASS: Self = Self {
         hold: false,
@@ -430,6 +460,7 @@ impl ArmDirection {
         fades: &[],
         kills_fades: false,
         jump: None,
+        drift: None,
     };
     pub(super) const PARK: Self = Self {
         hold: true,
@@ -444,11 +475,18 @@ impl ArmDirection {
         fades: &[],
         kills_fades: false,
         jump: None,
+        drift: None,
     };
     pub(super) fn shot(shot: ModuleShot) -> Self {
         Self {
             shot: Some(shot),
             ..Self::PASS
+        }
+    }
+    pub(super) fn drifted(self, drift: CaptureDrift) -> Self {
+        Self {
+            drift: Some(drift),
+            ..self
         }
     }
     pub(super) fn nudged(self, nudge: ModuleNudge) -> Self {
@@ -484,17 +522,21 @@ pub mod capture;
 pub mod capture_countdown;
 pub mod creature;
 mod evil_seru_magic;
+mod nighto;
 mod seru;
 pub mod summon_holds;
 mod swordie;
 mod theeder_gizam;
+mod viguro;
 pub use capture::*;
 pub use capture_countdown::{ArmCountdown, CountdownWrite, arm_countdown, capture_arm_countdowns};
 pub use creature::*;
 pub use evil_seru_magic::*;
+pub use nighto::*;
 pub use seru::*;
 pub use swordie::*;
 pub use theeder_gizam::*;
+pub use viguro::*;
 
 pub(super) fn gate(hold: bool) -> ArmDirection {
     if hold {
@@ -598,13 +640,36 @@ pub fn module_profile(prot_entry: u32) -> Option<ModuleProfile> {
             seat_arm: module_seat_arm(905),
             director_body: false,
         }),
+        // PROT 0907's countdowns, clip gate and camera, beside its ported
+        // tick body; the outcome lands once the fork arm has passed.
+        907 => Some(ModuleProfile {
+            direct: nighto_direct,
+            hit_arm: Some(crate::seru_magic_ticks::NIGHTO_FORK_ARM),
+            walk_arm: None,
+            owns_phase: true,
+            stages_spawns: false,
+            seat_arm: module_seat_arm(907),
+            director_body: false,
+        }),
         908 => Some(ModuleProfile {
             direct: zenoir_direct,
             hit_arm: Some(ZENOIR_FINISH_ARM),
             walk_arm: None,
             owns_phase: true,
-            stages_spawns: false,
+            stages_spawns: true,
             seat_arm: module_seat_arm(908),
+            director_body: false,
+        }),
+        // PROT 0909's countdowns and camera ride beside its ported tick body;
+        // its two rendezvous arms are released by the stager its own parts
+        // call, so the parts are seated on the arms that spawn them.
+        909 => Some(ModuleProfile {
+            direct: viguro_direct,
+            hit_arm: Some(crate::seru_magic_ticks::VIGURO_DAMAGE_PHASE),
+            walk_arm: None,
+            owns_phase: true,
+            stages_spawns: true,
+            seat_arm: None,
             director_body: false,
         }),
         // A camera-only director seats on its module's seat arm only where

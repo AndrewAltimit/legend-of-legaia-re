@@ -4,8 +4,9 @@
 use super::*;
 
 /// PROT 0909 (Viguro) is spell id `0x87` through the action-id dispatcher's
-/// own arithmetic (`903 + (id - 0x81)`), so this resolves with no disc: the
-/// stager's arm 0 poses the summon seat and advances the module phase.
+/// own arithmetic (`903 + (id - 0x81)`), so this resolves with no disc: a
+/// queued op-`0x20` call to the stager's arm 0 poses the summon seat and
+/// advances the module phase.
 #[test]
 fn the_viguro_stager_runs_from_the_cast_band_seam() {
     let mut world = module_code_world();
@@ -13,6 +14,9 @@ fn the_viguro_stager_runs_from_the_cast_band_seam() {
     world.casting.summon_actor_slot = Some(7);
     world.actors[7].battle.active_target = 2;
     world.actors[7].battle.render_flag = 0xFF;
+    // The stager is reached through a part's op `0x20`, queued for the
+    // module's next tick.
+    world.casting.module_stager_calls.push((0, [0; 3], [0; 3]));
 
     let run = world
         .run_cast_module_code(0x87, 0)

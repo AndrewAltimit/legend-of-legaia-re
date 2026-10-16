@@ -229,7 +229,7 @@ this band is on
 | 906 | `801F69F4` (3404 B) | `801F7740` (676 B, 7 arms) | Action id `0x84` (Gizam). 3 framed functions. Head table (7 words) is the stager's. Spawns: `FUN_80021B04` x7. |
 | 907 | `801F69E8` (5568 B) | `801F7FA8` (552 B) | Action id `0x85` (Nighto). 2 framed functions. Spawns: `FUN_80021B04` x7. Head ASCII `Hell's Music`. Tick leans on `FUN_80019B28` (x13) rather than a spawn wrapper. |
 | 908 | `801F69D8` (6456 B) | `801F8310` (532 B) | Action id `0x86` (Zenoir). 3 framed functions. Spawns: `FUN_80021B04` x21. |
-| 909 | `801F69F4` (3924 B) | `801F7AF4` (468 B, 7 arms) | Action id `0x87` (Viguro). 5 framed functions. Head table (7 words) is the stager's. Spawns: `FUN_80021B04` x7. |
+| 909 | `801F69F4` (3924 B) | `801F7AF4` (468 B, 7 arms) | Action id `0x87` (Viguro). 5 framed functions. Head table (7 words) is the stager's, reached only through its parts' move-VM op `0x20`; arms `0` / `1` step the tick's rendezvous phases 3 / 8. Spawns: `FUN_80021B04` x7. |
 | 910 | `801F69EC` (4652 B) | `801F89D4` (172 B, 5 arms) | Action id `0x88` (Swordie). 6 framed functions. Head table (5 words) is the stager's. Spawns: `FUN_80021B04` x9. 9 internal `jal`. |
 | 911 | `801F69D8` (5648 B) | `801F7FE8` (100 B) | Action id `0x89` (Orb). 3 framed functions. Spawns: `FUN_80021B04` x4, `FUN_80050ED4` x12. |
 | 912 | `801F69D8` (6532 B) | `801F835C` (464 B) | Action id `0x8A` (Freed). 3 framed functions. Spawns: `FUN_80021B04` x42. |
@@ -312,6 +312,11 @@ contiguous phase run the `beq`/`slti` chain or head table names, plus the
 | `801F69D8` | 911 `summon_orb` (`0x89`) | 5648 B | `0..=5`, `9`, `0x0A`, `0xFF` | none - a party-row heal plus a cleanse |
 | `801F69D8` | 912 `summon_freed` (`0x8A`) | 6532 B | `0..=0x13`, `0xFF` | `0x801F8024`, baked `0x10`, monster-row sweep at `0x11` |
 | `801F69F0` | 913 `summon_nova` (`0x8B`) | 7260 B | `0..=0x14`, `0xFF` | `0x801F8444`, baked `0x12`, single victim |
+
+PROT 0907, 0908 and 0909's arm gates (countdowns, the creature's clip,
+reach and height, PROT 0909's op-`0x20` rendezvous) are ported as directors
+beside the bodies, `cast_module_camera::{nighto,zenoir,viguro}_direct`; see
+[`cast-module.md`](../../subsystems/cast-module.md#prot-0907-nighto).
 
 PROT 0906's arm run has a hole at phase `5` that no arm names, and PROT 0911's
 arm `5` writes phase `9` directly, so its arms `6..8` are unreachable. PROT

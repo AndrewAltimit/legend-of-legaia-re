@@ -113,6 +113,13 @@ pub struct CastFxState {
     /// `None` while no Nighto cast is resident.
     pub(crate) module_nighto_outcome:
         Option<legaia_engine_battle_vm::seru_magic_ticks::NightoOutcome>,
+    /// The move VM's op-`0x20` calls a resident module's parts made since
+    /// the module's last tick - `(*gp[0x714])(actor, op[1], op[2])`, the
+    /// module's own `0x801F6734` stager row - as `(arm, part position, part
+    /// rotation)`. The band drains them into the module's stager
+    /// (`World::run_cast_module_code`); PROT 0909's phase rendezvous are two
+    /// of them.
+    pub(crate) module_stager_calls: Vec<(u8, [i16; 3], [i16; 3])>,
     // --- the fourteen trampoline arms ---
     /// The `+0x1DD` value PROT 0940's split arm displaced off the caster,
     /// which the module keeps in its own image word `0x801F8658` until the
@@ -282,6 +289,7 @@ impl CastFxState {
             module_hit_arm: None,
             module_settle_ticks: 0,
             module_nighto_outcome: None,
+            module_stager_calls: Vec::new(),
             module_split_saved_target: None,
             module_swordie: Default::default(),
             module_rain: Default::default(),

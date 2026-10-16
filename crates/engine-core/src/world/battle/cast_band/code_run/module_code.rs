@@ -54,13 +54,18 @@ impl World {
         // not off the phase: its arms are placed below on the director's
         // phase-5 record clock.
         match entry {
-            909 => {
-                ticks::viguro_stager(&mut ctx, &mut seat, arm);
-            }
+            // PROT 0909's stager is reached only through its parts' op-`0x20`
+            // calls - two of them are the tick body's phase rendezvous.
+            909 => self.run_viguro_stager_calls(&mut ctx, &mut seat),
             922 => ticks::puera_stager(&mut ctx, arm),
             923 => ticks::gilium_stager(&mut ctx, arm),
             949 => ticks::water_crystals_stager(&mut victim, arm),
             _ => {}
+        }
+        // Only PROT 0909's stager calls are run; any other module's are
+        // dropped rather than left to pile up.
+        if entry != 909 {
+            self.casting.module_stager_calls.clear();
         }
 
         // The tick bodies, by owning entry. `hit` is `None` because the fold
@@ -168,6 +173,7 @@ impl World {
                 }
             }
         }
+        run.capture_drift = direction.and_then(|d| d.drift);
         let mut capture_held = false;
         let mut capture_arm = None;
         let phase_in = ctx.phase;
@@ -908,7 +914,13 @@ impl World {
                         }
                         906 => ticks_a::gizam_tick(&mut ctx, &mut seats, who, |_| None),
                         907 => (
-                            ticks_a::nighto_tick(&mut ctx, &mut seats, who, nighto_outcome),
+                            ticks_a::nighto_tick(
+                                &mut ctx,
+                                &mut seats,
+                                who,
+                                nighto_outcome,
+                                self.casting.module_cam.countdown.0 < 0,
+                            ),
                             Vec::new(),
                         ),
                         _ => ticks_a::zenoir_tick(&mut ctx, &mut seats, who, |_| None),
@@ -953,8 +965,10 @@ impl World {
                     let stager_stepped = ctx.phase != self.casting.module_phase;
                     let mut seats: Vec<ticks::CastActorState> = self.cast_seat_row();
                     let summon = seat_slot;
+                    // A frame the stager stepped the phase is still a busy
+                    // one: the tick returns `1` from every arm but `0xFF`.
                     let step = if entry == 909 && stager_stepped {
-                        None
+                        Some(ticks::CastTickStep::Busy)
                     } else {
                         let (step, hits) = self.run_seru_b_tick(
                             entry,
@@ -968,7 +982,7 @@ impl World {
                         run.aoe_hits.extend(hits);
                         Some(step)
                     };
-                    if step.is_some() {
+                    if !(entry == 909 && stager_stepped) {
                         self.write_cast_seat_row(&seats);
                         // The three locals are written back below; take them
                         // from the table so this arm's writes survive.

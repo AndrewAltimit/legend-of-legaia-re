@@ -243,6 +243,14 @@ impl World {
             if looped_recommit {
                 self.actors[i].battle.input_cursor = 0;
                 self.note_active_clip_commit(i);
+                // The natural-end commit installs whatever `+0x1DA` holds:
+                // a byte staged over the summon creature's loop waits here
+                // ([`Self::summon_seat_waits_for_cycle`]).
+                if self.summon_seat_waits_for_cycle(i)
+                    && self.actors[i].battle.queued_anim != self.actors[i].battle.current_anim
+                {
+                    self.commit_staged_battle_anim_at_boundary(i);
+                }
             }
             // `+0x1F7`, written for every node right after its cursor
             // advance (`0x80047E28..0x80047E54`).
@@ -326,6 +334,14 @@ impl World {
         // case keeps committing at once.
         // PORT: FUN_80047430 (`0x800478EC..0x80047948`, the looping-clip half)
         let bits = actor.battle.flag_bits;
+        if self.summon_seat_waits_for_cycle(i)
+            && actor
+                .battle_animation
+                .as_ref()
+                .is_some_and(|p| p.is_looping())
+        {
+            return;
+        }
         if !bits.has(legaia_engine_battle_vm::battle_action::ActorFlags::WINDUP_DONE)
             && bits.has(legaia_engine_battle_vm::battle_action::ActorFlags::ADVANCE_DONE)
             && let Some(p) = actor.battle_animation.as_ref()

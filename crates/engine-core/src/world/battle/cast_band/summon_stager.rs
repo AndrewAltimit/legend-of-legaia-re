@@ -42,6 +42,7 @@ impl World {
         // tick of the module, the way retail's arm 0 draws it. The ring sweep
         // starts from zero for the same reason.
         self.casting.module_nighto_outcome = None;
+        self.casting.module_stager_calls.clear();
         self.casting.module_ring_angle = 0;
         self.casting.module_theeder = Default::default();
         self.casting.module_swordie = Default::default();
@@ -92,11 +93,15 @@ impl World {
             );
         self.casting.module_cam.creature_live = seat_live;
         self.casting.module_cam.creature_arrived = st.walked;
+        self.feed_module_creature(st.caster);
         let placed_before = self.casting.module_cam.creature.is_some();
         let run = self.run_cast_module_code(st.spell_id, module_arm);
         // PROT 0920's rain routine, which the draw tick calls after the
         // module's pass while the module's budget word is set.
         self.step_module_rain();
+        if let Some(r) = run.as_ref() {
+            self.apply_module_creature_writes(r.prot_entry, r.phase, r.capture_drift);
+        }
         // The module seats its creature itself (Gimard's arm 3); put the
         // engine's creature where it did.
         if !placed_before

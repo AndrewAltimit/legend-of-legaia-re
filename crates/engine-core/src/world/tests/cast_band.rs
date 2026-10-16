@@ -138,11 +138,18 @@ fn drive_module_through(world: &mut World, spell_id: u8, last: u8) {
 // PROT 0907 (Nighto): the kill / confuse fork, driven at the band
 // ---------------------------------------------------------------------------
 
-/// Run PROT 0907's phase chain far enough that the fork arm has executed.
+/// Run PROT 0907's phase chain far enough that the fork arm has executed
+/// and the leg it took has run: the director holds each counted arm for its
+/// countdown, so this runs until the kill leg's settle (arm 14, which holds
+/// on the victim's fade) or the end of the cast.
 fn run_nighto_to_the_fork(world: &mut World) {
-    use legaia_engine_battle_vm::seru_magic_ticks::NIGHTO_CONFUSE_ARM;
-    for _ in 0..=usize::from(NIGHTO_CONFUSE_ARM) + 2 {
+    use legaia_engine_battle_vm::seru_magic_ticks::NIGHTO_KILL_SETTLE_ARM;
+    for _ in 0..8192 {
         if world.run_cast_module_code(0x85, 0).is_none() {
+            break;
+        }
+        let phase = world.casting.module_phase;
+        if phase == NIGHTO_KILL_SETTLE_ARM || phase == 0xFF {
             break;
         }
     }

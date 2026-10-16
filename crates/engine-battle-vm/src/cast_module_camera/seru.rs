@@ -612,14 +612,73 @@ pub const ZENOIR_FINISH_ARM: u8 = 11;
 
 /// PROT 0908's grid point: half a unit from the victim along `h`, snapped to
 /// the `0x200` grid and centred in its cell (`and -0x200; addiu 0x100`).
-fn zenoir_grid(v: i16, trig: i16) -> i16 {
+pub(super) fn zenoir_grid(v: i16, trig: i16) -> i16 {
     (((i32::from(v) - half(trig)) & -0x200) + 0x100) as i16
 }
 
+/// PROT 0908 arm 4's seven spawns, on the grid point it seats the creature
+/// on, at `y = 0` with zeroed angles (`jal 0x80021B04` at `0x801F6F08..
+/// 0x801F6F98`).
+pub const ZENOIR_SEAT_SPAWNS: [ModuleSpawn; 7] = module_spawns(
+    [
+        0x801F_8524,
+        0x801F_8584,
+        0x801F_85D4,
+        0x801F_8638,
+        0x801F_86E8,
+        0x801F_8748,
+        0x801F_87AC,
+    ],
+    SpawnAnchor::CreatureGround { y: 0 },
+);
+
+/// PROT 0908 arm 6's spawn, under the creature at `y = -0x190`
+/// (`0x801F746C`).
+pub const ZENOIR_STRIKE_SPAWNS: [ModuleSpawn; 1] =
+    module_spawns([0x801F_880C], SpawnAnchor::CreatureGround { y: -0x190 });
+
+/// PROT 0908 arm 11's seven spawns, on the creature's plane pair as it lands
+/// on the victim (`0x801F8014..0x801F80AC`): six at `y = 0`, the last at
+/// `y = -0x64` (`sh v0,0x32(sp)` in its delay slot).
+pub const ZENOIR_SLAM_SPAWNS: [ModuleSpawn; 7] = {
+    let six = module_spawns(
+        [
+            0x801F_88D0,
+            0x801F_8914,
+            0x801F_896C,
+            0x801F_89B0,
+            0x801F_89F4,
+            0x801F_8A4C,
+        ],
+        SpawnAnchor::CreatureGround { y: 0 },
+    );
+    let last = module_spawns([0x801F_8AA0], SpawnAnchor::CreatureGround { y: -0x64 });
+    [six[0], six[1], six[2], six[3], six[4], six[5], last[0]]
+};
+
+/// The height PROT 0908's arm 11 lowers the creature to before the finisher
+/// lands (`slti v0,v0,-0x12b` at `0x801F7BA8`): the arm holds while the
+/// creature's `+0x36` reads above it.
+pub const ZENOIR_SLAM_FLOOR_Y: i32 = -0x12B;
+
+/// The `+0x36` step PROT 0908's arms 9..12 move the creature by each pass,
+/// in units of the frame product (`sll v1,v1,0x3` on `scalar * delta`).
+const ZENOIR_LIFT_PER_PRODUCT: i32 = 8;
+
+/// Drain the module countdown and read it back as the halfword retail
+/// stores it (`sh` into `ctx[+0x6D8]`, then `bgez` on the sign-extended
+/// value): `true` while the arm holds.
+fn zenoir_drain_holds(st: &mut ModuleCamState) -> bool {
+    st.countdown.drain();
+    st.countdown.0 = i32::from(st.countdown.0 as i16);
+    st.countdown.0 >= 0
+}
+
 /// PROT 0908 (Zenoir) - the camera and countdown half of the tick
-/// `0x801F69D8`, for the arms that frame the summoning (`0..=5`). `h` is the
-/// heading from the caster to the victim, and the framed point is the
-/// victim's grid cell half a unit back along it ([`zenoir_grid`]):
+/// `0x801F69D8`, every arm. `h` is the heading from the caster to the victim,
+/// and the framed point of the summoning is the victim's grid cell half a
+/// unit back along it ([`zenoir_grid`]). `P` below is the per-tick frame
+/// product (`scalar * delta` a battle pass, [`MODULE_DRAIN_PER_TICK`] a tick).
 ///
 /// | arm | gate | camera / state |
 /// |---:|---|---|
@@ -627,20 +686,29 @@ fn zenoir_grid(v: i16, trig: i16) -> i16 {
 /// | 1 | - | TR `(0, 0x280, 0x600)`, the same focus, over `0x78` frames (`0x801F6D98`) |
 /// | 2 | - | the creature stream load; skips arm 3 when the band timer `ctx[+0x6D8]` is already spent |
 /// | 3 | hold until the band timer `ctx[+0x6D8]` reads `0` | - |
-/// | 4 | - | seats the creature on the grid point facing `0x800`; pitch `0x3C`, TR `(0, 0x400, 0xA00)`, the same focus, over `0x78` frames (`0x801F719C`); `ctx[+0x6D8] = scalar * 140` |
-/// | 5 | drain `ctx[+0x6D8]`, hold while non-negative | the spell caption |
-/// | 11 | - | `ctx[+0x6D8] = scalar * 192` on the way out |
-/// | 12 | drain `ctx[+0x6D8]`, hold while non-negative | the shatter loop runs on every pass |
+/// | 4 | - | seats the creature on the grid point facing `0x800`; pitch `0x3C`, TR `(0, 0x400, 0xA00)`, the same focus, over `0x78` frames (`0x801F719C`); spawns [`ZENOIR_SEAT_SPAWNS`]; `ctx[+0x6D8] = scalar * 140` |
+/// | 5 | drain, hold while non-negative | the spell caption; `ctx[+0x6D8] = scalar * 180` (`0x801F72EC` / `0x801F78C0`) |
+/// | 6 | drain untested; hold while the creature's clip `+0x1D9` is `0` (`0x801F7328`) | turns the creature to the victim; snap: pitch `-0x80`, yaw `0x600 - facing`, TR `(0, 0x400, 0x600)`, focus the creature; the attack caption; spawns [`ZENOIR_STRIKE_SPAWNS`]; `ctx[+0x6D8] = 0` |
+/// | 7 | hold until the creature's clip `+0x1D9` reads `2` (`0x801F754C`) | the word **climbs** by `P` a pass and every pass snaps a pull-back off it: yaw `w + 0x600 - facing`, pitch `w / 8 - 0x80`, TR y `0x400 - w / 16`, TR z `w / 4 + 0x600`; the pass re-aims yaw at `w + 0x900 - facing` over `0xC` frames |
+/// | 8 | hold while `FUN_8004E2F0(7, victim)` is non-zero (`0x801F7628`) | snap: yaw `0x200 - facing`, TR `(0, 0x400, 0x800)`, focus the creature; the opening hit |
+/// | 9 | - | creature rises `8P`; pitch `0`, yaw `0x800 - victim facing`, TR `(0, 0x400, 0x800)`, focus the victim, over `0x3C` frames; `ctx[+0x6D8] = scalar * 60` |
+/// | 10 | creature rises `8P`; drain, hold while non-negative | snap: yaw `0x400 - victim facing`, TR `(0, 0x600, ctx[+0x6D0])`, focus the victim; the creature moves over the victim |
+/// | 11 | drift pitch `+P/2`, yaw `+P`, TR y `-2P`, TR z `+8P`; creature falls `8P`; hold while its `+0x36` is above [`ZENOIR_SLAM_FLOOR_Y`] | the finisher; spawns [`ZENOIR_SLAM_SPAWNS`]; `ctx[+0x6D8] = scalar * 192` |
+/// | 12 | drift TR z `+2P`, TR y `-P/2`, yaw `+P`; creature falls `8P`; drain, hold while non-negative | the shatter loop runs on every pass; then `0xFF` |
 ///
 /// Arm 3's wait is on the **band's** timer: the `0x78` frames the actor
 /// freeze `0x34` armed and the sustain `0x35` counts down. So the module
 /// frames its opening pan for exactly the band's sustain, and from arm 4 on
 /// it reuses the same word as its own countdown.
 ///
-/// Arms 6..10 - the creature's clip-paced strike and its hit framings - are
-/// not directed; they run on the phase chain alone.
+/// The strike and the shatter have no shot of their own: arm 10 cuts to the
+/// victim at the band's depth, and arms 11 and 12 then pull the camera back
+/// and round by writing the camera globals directly every pass - the wide
+/// shot the shards fly in. The creature's height is the module's own
+/// (`+0x36` written straight, not a clip's), carried on
+/// [`ModuleCamState::creature`].
 ///
-/// PORT: FUN_801F69D8 (PROT 0908; the camera arms 0/1/4, arm 3's band-timer wait, arm 4's creature placement, arm 5's gate and arm 12's countdown)
+/// PORT: FUN_801F69D8 (PROT 0908; every arm's camera, countdown and clip / range / height gate)
 pub fn zenoir_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) -> ArmDirection {
     let v = seats.victim;
     let h = heading(v, seats.caster).wrapping_add(0x800) & 0xFFF;
@@ -650,6 +718,25 @@ pub fn zenoir_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) 
         y: 0,
         z: zenoir_grid(v.z, cos),
         facing: 0x800,
+    };
+    let p = MODULE_DRAIN_PER_TICK;
+    // The creature's body pair `+0x3C` / `+0x40` as the arms read it: the
+    // live seat where the host has one, the module's placement otherwise.
+    let creature = {
+        let placed = st.creature.unwrap_or(point);
+        match st.creature_live {
+            Some(l) => ModuleSeat {
+                x: l.x,
+                z: l.z,
+                ..placed
+            },
+            None => placed,
+        }
+    };
+    let lift = |st: &mut ModuleCamState, dir: i32| {
+        if let Some(c) = st.creature.as_mut() {
+            c.y = (i32::from(c.y) + dir * ZENOIR_LIFT_PER_PRODUCT * p) as i16;
+        }
     };
     match phase {
         0 => ArmDirection::shot(ModuleShot {
@@ -668,34 +755,148 @@ pub fn zenoir_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) 
         4 => {
             st.creature = Some(point);
             st.countdown.0 = SPEED_SCALAR * 140;
-            ArmDirection::shot(ModuleShot {
-                angles: [0x3C, 0, 0],
-                tr: [0, 0x400, 0xA00],
-                focus: focus_on(point),
-                frames: 0x78,
-            })
+            ArmDirection {
+                spawns: &ZENOIR_SEAT_SPAWNS,
+                ..ArmDirection::shot(ModuleShot {
+                    angles: [0x3C, 0, 0],
+                    tr: [0, 0x400, 0xA00],
+                    focus: focus_on(point),
+                    frames: 0x78,
+                })
+            }
         }
         5 => {
-            // `sh` into the halfword `ctx[+0x6D8]`, then `bgez` on it
-            // sign-extended.
-            st.countdown.drain();
-            st.countdown.0 = i32::from(st.countdown.0 as i16);
-            gate(st.countdown.0 >= 0)
+            if zenoir_drain_holds(st) {
+                return ArmDirection::HOLD;
+            }
+            st.countdown.0 = SPEED_SCALAR * 180;
+            // `FUN_8003541C(0, 0, name, 0xA0 - w / 2, 0x96, ..)` at
+            // `0x801F72E4`.
+            ArmDirection {
+                caption: Some(ModuleCaption::SpellName),
+                ..ArmDirection::PASS
+            }
         }
-        // The finisher arm leaves through `ctx[+0x6D8] = scalar * 192`
-        // (`0x801F7BBC..0x801F7BD0`), the shatter arm's countdown.
+        6 => {
+            st.countdown.drain();
+            if st.creature_clip == Some(0) {
+                return ArmDirection::HOLD;
+            }
+            // `FUN_80019B28(victim, creature) + 0x800` onto the creature's
+            // `+0x46` (`0x801F7360`): it turns to face the victim.
+            let facing = heading(v, creature).wrapping_add(0x800) & 0xFFF;
+            if let Some(c) = st.creature.as_mut() {
+                c.facing = facing;
+            }
+            st.countdown.0 = 0;
+            // `FUN_800319A8(0)` clears the spell name, then the attack name
+            // (`0x801F73C0..0x801F7418`).
+            ArmDirection {
+                spawns: &ZENOIR_STRIKE_SPAWNS,
+                caption: Some(ModuleCaption::AttackName),
+                ..ArmDirection::shot(ModuleShot {
+                    angles: [-0x80, yaw_from(0x600, facing), 0],
+                    tr: [0, 0x400, 0x600],
+                    focus: focus_on(creature),
+                    frames: 1,
+                })
+            }
+        }
+        7 => {
+            st.countdown.0 += p;
+            let w = i32::from(st.countdown.0 as i16);
+            let yaw = |k: i32| ((w + k - i32::from(creature.facing)) & 0xFFF) as i16;
+            let mut shot = ModuleShot {
+                angles: [(w / 8 - 0x80) as i16, yaw(0x600), 0],
+                tr: [0, (0x400 - w / 16) as i16, (w / 4 + 0x600) as i16],
+                focus: focus_on(creature),
+                frames: 1,
+            };
+            if st.creature_clip.is_some_and(|c| c != 2) {
+                return ArmDirection {
+                    hold: true,
+                    ..ArmDirection::shot(shot)
+                };
+            }
+            shot.angles[1] = yaw(0x900);
+            shot.frames = 0xC;
+            ArmDirection::shot(shot)
+        }
+        8 => {
+            if st.creature_in_range == Some(false) {
+                return ArmDirection::HOLD;
+            }
+            ArmDirection::shot(ModuleShot {
+                angles: [0, yaw_from(0x200, creature.facing), 0],
+                tr: [0, 0x400, 0x800],
+                focus: focus_on(creature),
+                frames: 1,
+            })
+        }
+        9 => {
+            lift(st, -1);
+            st.countdown.0 = SPEED_SCALAR * 60;
+            ArmDirection::shot(ModuleShot {
+                angles: [0, yaw_from(0x800, v.facing), 0],
+                tr: [0, 0x400, 0x800],
+                focus: focus_on(v),
+                frames: 0x3C,
+            })
+        }
+        10 => {
+            lift(st, -1);
+            if zenoir_drain_holds(st) {
+                return ArmDirection::HOLD;
+            }
+            // `+0x34` / `+0x38` = the victim's body pair (`0x801F79E8..
+            // 0x801F7A18`): the creature hangs over the victim.
+            if let Some(c) = st.creature.as_mut() {
+                c.x = v.x;
+                c.z = v.z;
+            }
+            ArmDirection::shot(ModuleShot {
+                angles: [0, yaw_from(0x400, v.facing), 0],
+                tr: [0, 0x600, seats.depth_raw as i16],
+                focus: focus_on(v),
+                frames: 1,
+            })
+        }
         ZENOIR_FINISH_ARM => {
+            let drift = CaptureDrift {
+                pitch: (p / 2) as i16,
+                yaw: p as i16,
+                tr_y: (-2 * p) as i16,
+                tr_z: (8 * p) as i16,
+                tr_x: 0,
+            };
+            lift(st, 1);
+            let y = st.creature.map_or(0, |c| i32::from(c.y));
+            if y < ZENOIR_SLAM_FLOOR_Y {
+                return ArmDirection::HOLD.drifted(drift);
+            }
+            // The finisher arm leaves through `ctx[+0x6D8] = scalar * 192`
+            // (`0x801F7BBC..0x801F7BD0`), the shatter arm's countdown.
             st.countdown.0 =
                 SPEED_SCALAR * crate::seru_magic_ticks::ZENOIR_SHATTER_COUNTDOWN_PER_SCALAR;
-            ArmDirection::PASS
+            ArmDirection {
+                spawns: &ZENOIR_SLAM_SPAWNS,
+                ..ArmDirection::PASS
+            }
+            .drifted(drift)
         }
         // The shatter arm drains it and holds while it reads non-negative as
         // a halfword (`0x801F8268..0x801F829C`); the shatter loop itself runs
         // on every pass, held or not (`zenoir_shatter_pass`, the host's).
         crate::seru_magic_ticks::ZENOIR_SHATTER_ARM => {
-            st.countdown.drain();
-            st.countdown.0 = i32::from(st.countdown.0 as i16);
-            gate(st.countdown.0 >= 0)
+            let drift = CaptureDrift {
+                pitch: 0,
+                yaw: p as i16,
+                tr_y: (-p / 2) as i16,
+                tr_z: (2 * p) as i16,
+                tr_x: 0,
+            };
+            lift(st, 1);
+            gate(zenoir_drain_holds(st)).drifted(drift)
         }
         _ => ArmDirection::PASS,
     }

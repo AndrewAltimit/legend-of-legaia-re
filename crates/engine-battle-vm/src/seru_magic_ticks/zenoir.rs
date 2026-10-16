@@ -16,8 +16,23 @@ pub const ZENOIR_LATCH_ARM: u8 = 0;
 /// The arm PROT 0908 shows the summon seat in (`0x801F7098`).
 pub const ZENOIR_SHOW_ARM: u8 = 4;
 
-/// The arm PROT 0908 poses the summon seat in (`0x801F723C`, `0x801F743C`).
-pub const ZENOIR_POSE_ARM: u8 = 5;
+/// The arm PROT 0908 stages the summon seat's first clip in (`0x801F723C`).
+pub const ZENOIR_STAGE_ARM: u8 = 5;
+
+/// The arm PROT 0908 stages the strike clip and poses the summon seat in,
+/// once the first clip plays (`0x801F73C8`, `0x801F743C`).
+pub const ZENOIR_POSE_ARM: u8 = 6;
+
+/// The arm PROT 0908 shows the victim in as the strike clip commits
+/// (`0x801F75E0`).
+pub const ZENOIR_STRIKE_ARM: u8 = 7;
+
+/// The neutral colour word `0x20080200` PROT 0908 writes to show a seat.
+pub const ZENOIR_NEUTRAL_COLOUR: u32 = 0x2008_0200;
+
+/// The arm PROT 0908 lifts the creature in and drops its clip back to `0`
+/// (`0x801F787C`).
+pub const ZENOIR_RISE_ARM: u8 = 9;
 
 /// The arm PROT 0908's quarter-strength opening hit fires in.
 pub const ZENOIR_OPENER_ARM: u8 = 8;
@@ -78,17 +93,21 @@ pub const ZENOIR_FINISH_CTX_278: u8 = 2;
 /// mirrored.
 ///
 /// Other simulation state: `ctx+0x278 = 0` in arm 0 and `= 2` in arm 11, the
-/// summon seat shown in arm 4, posed at render flag `7` with a `+0x1DA` bump
-/// in arm 5, both the caster's and the summon seat's `+0x1DD =`
+/// summon seat shown in arm 4, its first clip staged in arm 5, posed at
+/// render flag `7` with a second `+0x1DA` bump in arm 6, its clip zeroed in
+/// arm 9, both the caster's and the summon seat's `+0x1DD =`
 /// [`TARGET_CODE_ENEMY_ROW`] in arm 8, and the clip pair bumped again in arm
 /// 10.
 ///
-/// Not ported: the packet and camera arms, the countdowns, the damage-number
-/// accumulators, and `+0x21B` / `+0x21F` / `+0x225` / `+0x176`.
+/// The arm gates (countdowns, the creature's clip and reach, its height) and
+/// the camera are the director's (`cast_module_camera::zenoir_direct`),
+/// which the host runs first; this body runs on the pass it lets through.
+/// Not ported: the packet arms, the damage-number accumulators, and
+/// `+0x21B` / `+0x21F` / `+0x225` / `+0x176`.
 ///
 /// Wired: `World::run_cast_module_code`.
 ///
-/// PORT: FUN_801F69D8 (PROT 0908; phase chain + the three scaled damage sites; packet and camera arms unported)
+/// PORT: FUN_801F69D8 (PROT 0908; phase chain + the three scaled damage sites; packet arms unported, gates and camera in zenoir_direct)
 pub fn zenoir_tick(
     ctx: &mut CastModuleCtx,
     seats: &mut [CastActorState],
@@ -110,10 +129,37 @@ pub fn zenoir_tick(
             }
             CastArmStep::Advance
         }
+        // Arm 5 stages the creature's first clip (`+0x1DA += 1` at
+        // `0x801F723C`); arm 6 - once that clip is playing - stages the
+        // strike behind it and poses the seat (`0x801F73C8`, `0x801F743C`).
+        ZENOIR_STAGE_ARM => {
+            if let Some(s) = seats.get_mut(who.summon as usize) {
+                s.staged_anim = s.staged_anim.wrapping_add(1);
+            }
+            CastArmStep::Advance
+        }
         ZENOIR_POSE_ARM => {
             if let Some(s) = seats.get_mut(who.summon as usize) {
                 s.staged_anim = s.staged_anim.wrapping_add(1);
                 s.render_flag = ZENOIR_POSE_RENDER_FLAG;
+            }
+            CastArmStep::Advance
+        }
+        // Arm 7's pass shows the victim for the strike - `+0x04 =
+        // 0x20080200`, `+0x21C = 0` (`0x801F75E0..0x801F7610`) - and sets
+        // the creature's `+0x21F = 1`, which the mirror does not carry.
+        ZENOIR_STRIKE_ARM => {
+            if let Some(v) = seats.get_mut(who.victim as usize) {
+                v.present_04 = ZENOIR_NEUTRAL_COLOUR;
+                v.render_flag = 0;
+            }
+            CastArmStep::Advance
+        }
+        // `sb zero,0x1da(s6)` at `0x801F787C`: the creature drops back to
+        // its first entry as it rises over the victim.
+        ZENOIR_RISE_ARM => {
+            if let Some(s) = seats.get_mut(who.summon as usize) {
+                s.staged_anim = 0;
             }
             CastArmStep::Advance
         }
@@ -142,6 +188,17 @@ pub fn zenoir_tick(
             if let Some(s) = seats.get_mut(who.summon as usize) {
                 s.restage = s.restage.wrapping_add(1);
                 s.staged_anim = s.staged_anim.wrapping_add(1);
+            }
+            // The arm then shows every live monster within `0x400` of the
+            // creature it has just moved over the victim
+            // (`0x801F7A2C..0x801F7A9C`); the victim is always one of them.
+            // The distance test needs seat positions the mirror does not
+            // carry, so only the victim is shown here.
+            if let Some(v) = seats.get_mut(who.victim as usize)
+                && v.hp != 0
+            {
+                v.present_04 = ZENOIR_NEUTRAL_COLOUR;
+                v.render_flag = 0;
             }
             CastArmStep::Advance
         }
@@ -186,6 +243,12 @@ pub fn zenoir_tick(
                 hits.push(SweepHit { seat, applied });
             }
             CastArmStep::Advance
+        }
+        // Arm 12 leaves straight for `0xFF` (`sb v0,0x0(s5)` with `v0 =
+        // 0xFF` at `0x801F829C`), not through `phase + 1`.
+        ZENOIR_LAST_ARM => {
+            c.phase = CHOREOGRAPHY_DONE_PHASE;
+            CastArmStep::Hold
         }
         CHOREOGRAPHY_DONE_PHASE => {
             if let Some(c) = seats.get_mut(who.caster as usize) {

@@ -20,6 +20,7 @@ impl World {
             )
         });
         self.casting.summon_actor_slot = Some(slot as u8);
+        let installer_rate = self.summon_seat_waits_for_cycle(slot);
         let Some(a) = self.actors.get_mut(slot) else {
             return;
         };
@@ -34,6 +35,11 @@ impl World {
         a.battle.facing_angle = facing;
         a.battle.queued_anim = 0;
         a.battle.current_anim = 0;
+        if installer_rate {
+            a.battle.anim_rate = legaia_engine_battle_vm::battle_anim_rate::AnimRate(
+                super::module_creature::SUMMON_SEAT_ANIM_RATE,
+            );
+        }
     }
 
     /// The seat half of a summon spawn request for a host that draws

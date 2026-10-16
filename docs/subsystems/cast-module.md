@@ -1489,6 +1489,63 @@ scripted boost profile live: record ATK 288 / UDF 222 / INT 220 install as
 360 / 444 / 247 (`x5/4`, `x2`, `x9/8`), against the random encounter's
 17 / 15 / 10 installing as 17 / 25 / 12.
 
+**Arm gates.** Every counted arm drains the halfword `ctx[+0x6D8]` by the
+frame product and holds while it reads non-negative; the director
+`cast_module_camera::nighto_direct` carries them and the body runs on the pass.
+
+| Arm | Gate | Countdown it leaves |
+|---|---|---|
+| 3 | the band timer reads `0` | - |
+| 4 | the stream poll | `scalar * 129` |
+| 5, 6, 7, 8 | the countdown | `scalar * 96`, `scalar << 6`, `scalar * 180`, - |
+| 10 | the creature's loop counter `+0x21B` stops reading `0xFF` (`0x801F7AC0`) | `scalar << 7` |
+| 11, 13, 15 | the countdown | -, the leg's (`scalar * 120` kill, `scalar * 70` confuse) |
+| 14 | the victim's colour word `+0x04` reaching `0`; a resisted kill also lets go once the countdown is spent | - |
+
+Arm 10's `+0x21B` is the clip's loop counter (`+0x176 >> 4`), which the
+commit of the clip arm 8 staged reseeds, so the port reads it as "clip `2`
+is playing". Arm 12 writes the victim's colour word `0x20080200` before arm
+14 polls it.
+
+### PROT 0908 (Zenoir)
+
+The director `cast_module_camera::zenoir_direct` carries every arm's gate:
+
+| Arm | Gate (address) | Then |
+|---|---|---|
+| 5 | countdown (`0x801F7234`) | `scalar * 180` |
+| 6 | the creature's clip `+0x1D9` leaves `0` (`0x801F7328`); the countdown drains untested | turns the creature onto the victim, `ctx[+0x6D8] = 0` |
+| 7 | the creature's clip reads `2` (`0x801F754C`) | the word climbs a frame product a pass and every pass snaps a pull-back framing off it |
+| 8 | `FUN_8004E2F0(7, victim) == 0` (`0x801F7628`) | the opening hit |
+| 10 | countdown (`0x801F797C`) | the creature moves over the victim |
+| 11 | the creature's `+0x36` falls to `-0x12B` (`0x801F7BA8`) | the finisher; `scalar * 192` |
+| 12 | countdown (`0x801F8294`) | `0xFF` directly |
+
+Arms 9..12 move the creature's height themselves (`8 * scalar * delta` a
+pass, up in 9 and 10, down in 11 and 12). The strike and the shatter have no
+shot of their own: arm 10 cuts to the victim at the band's depth
+`ctx[+0x6D0]`, and arms 11 and 12 add to pitch, yaw, TR y and TR z every
+pass (`0x801F7B40..0x801F7B88`, `0x801F8184..0x801F81B0`), the pull-back the
+shards fly in. Arms 4, 6 and 11 spawn their records on the creature's plane
+pair (`ZENOIR_SEAT_SPAWNS`, `ZENOIR_STRIKE_SPAWNS`, `ZENOIR_SLAM_SPAWNS`).
+
+### PROT 0909 (Viguro)
+
+The two phases the tick does not name (`3`, `8`) are released by the module's
+stager `FUN_801F7AF4`, which only the move VM's op `0x20` reaches. Arm 2
+spawns record `0x801F7E18`, whose script is `WAIT 0x7F` then op `0x20` arm
+`0`: the stager seats the creature at `(0, 0xC00)` facing `0x800` and steps
+phase 3. Arm 7 spawns record `0x801F7F20`, which waits `0x13`, loops a
+20-vsync body six times and calls arm `1`, stepping phase 8. The port queues
+every op-`0x20` call a module's parts make (`CastFxState::module_stager_calls`)
+and runs PROT 0909's through its stager on the module's next tick, so both
+rendezvous fall where the parts' own waits put them.
+
+The director `cast_module_camera::viguro_direct` carries the rest: arm 4 holds
+while the creature's `+0x38` is at or past `0x200`; arms 5, 7, 9 and 11 drain
+the countdown; arm 12 **climbs** it by a quarter of the frame product until
+it reaches `0x201`; arms 11..14 add to the yaw global every pass.
+
 ### PROT 0910 (Swordie)
 
 <a id="prot-0910-swordie"></a>
@@ -2001,7 +2058,9 @@ Directors, each read off its own tick's disassembly:
 | 0904 Theeder | camera-beside, gating | the countdown gates of arms 2..6 and 14 and the camera arms beside the ported tick body, which paces arms 7..13 ([module notes](#prot-0904-theeder)) |
 | 0906 Gizam | camera-beside, gating | every countdown gate, the phase-5 stager record clock and the camera arms 0, 1 and 7..12 ([module notes](#prot-0906-gizam)) |
 | 0905 Vera | full | the whole choreography, plus a third kernel: arms 8..10 write the camera globals directly every pass (pitch `0x8007B790`, TR y / z), a drift on top of arm 8's cut. Its gate is the `bgez` form (hold while the word is non-negative). Arm 5 advances the phase by 3, so arms 6 and 7 are unreachable |
-| 0908 Zenoir | summoning only (arms `0..=5`) | the framed point is the victim's `0x200` grid cell half a unit back toward the caster; arm 3 waits on the **band's** timer `ctx[+0x6D8]` (the sustain `0x35`'s own `0x78` frames) before arm 4 seats the creature and reuses that word as the module's countdown. The clip-paced strike (arms 6..10) is not directed |
+| 0907 Nighto | full, beside the ported body | the summoning on the victim's grid cell (the same arithmetic as Zenoir's), the TR z drift of arms 5..7, the creature framings of arms 8..12 and every countdown gate; arm 10's clip gate. [Notes](#prot-0907-nighto) |
+| 0908 Zenoir | full, beside the ported body | the framed point is the victim's `0x200` grid cell half a unit back toward the caster; arm 3 waits on the **band's** timer `ctx[+0x6D8]` (the sustain `0x35`'s own `0x78` frames) before arm 4 seats the creature and reuses that word as the module's countdown. Arms 6..12 gate on the creature's clip, its reach and its height, and arms 11 and 12 write the camera globals. [Notes](#prot-0908-zenoir) |
+| 0909 Viguro | full, beside the ported body | the countdown gates, arm 4's arrival gate, the creature and enemy-row framings and the yaw drift of arms 11..14; its two rendezvous are released by its own parts. [Notes](#prot-0909-viguro) |
 | 0910 Swordie | body-paced | arm 0's cut on the point half a unit from the victim, arm 2's creature placement there, and the creature framings of arms 5..9 ([PROT 0910](#prot-0910-swordie)), each landing on the next arm's first tick; arm 10's sway is not directed |
 | 0911 Orb, 0912 Freed | body-paced | no camera arm; the ported holds pace the band ([arm holds](#prot-0911-0913-arm-holds)) |
 | 0913 Nova | body-paced | the tick body is ported, so the director reads the phase and never holds it: arm 0's cut behind the caster (pitch `0x400`, yaw `0x900 - caster[+0x46]`, TR `(0, 0, 0x400)`) and the `(scalar * delta) / 4` TR z drift of the stream-request and CD-poll arms 1 and 2 |
@@ -2403,14 +2462,30 @@ on its first pass with the stream resident; in the rest an earlier arm polls
 and exits (PROT 0905 polls in arm 3 and seats in arm 5).
 `zenoir_summon_mid_cast` holds phase 3 with slot 7 still empty (`+0x14C` zero,
 the seat at the origin), one arm short of its seat in arm 4. The arms are
-`cast_module_camera::module_seat_arm`. Viguro's seat sits in a routine
-(`FUN_801F7AF4`) nothing in its image references, so it has none. The engine's
+`cast_module_camera::module_seat_arm`. Viguro's seat sits in its stager
+(`FUN_801F7AF4`), which no `jal` in its image reaches: its part calls it
+through op `0x20` ([PROT 0909](#prot-0909-viguro)), so it has no seat arm. The engine's
 stream is resident at once, so a module with a seat arm has its creature
 requested as its phase reaches the arm. Four camera-only directors (PROT 0917,
 0928, 0929, 0931) park short of their seat arm and keep the first-tick seat.
 The engine seats the creature in a high slot, and
 `World::battle_actor_draw_plan` hands that slot seat 7 so the tint pass
 reaches it on both hosts.
+
+The installer seats the creature at animation rate `+0x21D = 2`
+(`addiu s3,zero,2` at `0x801F1CFC`, stored at `0x801F1DFC`), a quarter of a
+party member's; the first commit lifts it to half. A byte staged over its
+looping clip commits only at the cycle's natural end (`FUN_80047430`'s
+natural-end path), which is what PROT 0907, 0908 and 0909's clip gates wait
+on. The port applies both to those three modules' creatures
+(`World::summon_seat_waits_for_cycle`); other creatures still seat at the
+battle's normal rate and commit at once.
+
+Two creature moves have engine stand-ins, because the clip that makes them
+in retail does not carry the creature far enough in the port: PROT 0908's
+arm 8 closes the creature on the victim at 30 units a tick until the reach
+poll clears, and PROT 0909's arm 4 walks it along its facing at the same
+rate until it crosses `z = 0x200` (`World::apply_module_creature_writes`).
 
 ### Module fades
 
