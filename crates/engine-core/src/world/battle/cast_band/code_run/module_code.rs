@@ -50,8 +50,10 @@ impl World {
         };
 
         // The seven state-touching spawn stagers, by owning entry.
+        // PROT 0906's stager is called from its spawned record's program,
+        // not off the phase: its arms are placed below on the director's
+        // phase-5 record clock.
         match entry {
-            906 => ticks::gizam_stager(&mut ctx, &mut seat, arm),
             909 => {
                 ticks::viguro_stager(&mut ctx, &mut seat, arm);
             }
@@ -119,6 +121,45 @@ impl World {
             );
         }
         run.camera_shot = direction.and_then(|d| d.shot);
+        // PROT 0906: record `0x801F7B80`'s `op 0x20` calls into the stager,
+        // on the clock the director runs through the phase-5 hole. Arm 0 is
+        // the flash pair, arm 1 shows the creature; arm 2 is the director's
+        // pass out of phase 5.
+        if entry == 906 {
+            use legaia_engine_battle_vm::cast_module_camera as cam;
+            match cam::gizam_stager_arm_due(ctx.phase, self.casting.module_cam.countdown.0) {
+                Some(0) => {
+                    for (t, id) in &cam::GIZAM_STAGER_FLASHES {
+                        let mut fade = None;
+                        legaia_engine_system::fade::spawn_fade(
+                            &mut fade,
+                            &legaia_engine_battle_vm::battle_action::summon_fade_template(t),
+                            *id,
+                        );
+                        self.presentation.module_fades.extend(fade);
+                    }
+                }
+                Some(a) => ticks::gizam_stager(&mut ctx, &mut seat, a),
+                None => {}
+            }
+        }
+        // PROT 0905's arms 4 and 5 kill the effect parts the arm before them
+        // spawned, by the handles kept at `0x801F8828` (`ori 0x8` into each
+        // actor's flag word, `0x801F6ECC..0x801F6F2C` and
+        // `0x801F71A0..0x801F71E8`): arm 0's four glows and arm 4's three
+        // cut parts. Arm 5's two parts run until they halt.
+        if entry == 905
+            && direction.is_some_and(|d| !d.hold)
+            && let Some(killed) =
+                legaia_engine_battle_vm::cast_module_camera::vera_arm_kills(ctx.phase)
+            && let Some(scene) = self.casting.active_summon.as_mut()
+        {
+            for part in &mut scene.parts {
+                if part.tag.is_some_and(|t| killed.contains(&t)) {
+                    part.finished = true;
+                }
+            }
+        }
         let mut capture_held = false;
         let mut capture_arm = None;
         let phase_in = ctx.phase;
@@ -830,7 +871,8 @@ impl World {
                             }
                             let geom = self.theeder_geom(seat_slot);
                             let mut fx = self.casting.module_theeder;
-                            let run = ticks_a::theeder_tick(
+                            let attack_in = ctx.phase == ticks_a::THEEDER_ATTACK_ARM;
+                            let tick = ticks_a::theeder_tick(
                                 &mut ctx,
                                 &mut seats,
                                 who,
@@ -839,7 +881,17 @@ impl World {
                                 |seat| in_cone.contains(&seat).then_some(0),
                             );
                             self.casting.module_theeder = fx;
-                            run
+                            // Arm 7's shot is armed on the pass its clip wait
+                            // lets through (`0x801F7274`).
+                            if attack_in
+                                && ctx.phase != ticks_a::THEEDER_ATTACK_ARM
+                                && let Some(c) = self.casting.module_cam.creature
+                            {
+                                run.camera_shot = Some(
+                                    legaia_engine_battle_vm::cast_module_camera::theeder_attack_shot(c),
+                                );
+                            }
+                            tick
                         }
                         905 => {
                             let restore = self.vera_restore(caster_slot, victim_slot, spell_id);

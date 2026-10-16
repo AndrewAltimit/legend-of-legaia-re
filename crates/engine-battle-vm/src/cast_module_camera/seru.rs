@@ -364,6 +364,26 @@ pub const VERA_RESTORE_SPAWNS: [ModuleSpawn; 5] = module_spawns(
 /// The phase arm PROT 0905 restores its target in.
 pub const VERA_RESTORE_ARM: u8 = 9;
 
+/// The spawn records whose parts PROT 0905's arm `phase` kills on its pass,
+/// through the handles kept at `0x801F8828..` (`ori 0x8` into each actor's
+/// flag word): arm 4 kills arm 0's four glows (`0x801F6ECC..0x801F6F2C`),
+/// arm 5 arm 4's three cut parts (`0x801F71A0..0x801F71E8`), and arm 8 all
+/// ten handles (`0x801F78FC..0x801F7924`) - arm 5's two glows, whose
+/// programs loop forever (`0x18 0x4000` / `WAIT 4095` / `0x19`), and the
+/// eight sparks the stager's arm 0 (`FUN_801F8078`, record `0x801F8568`)
+/// seats into handles 2..9.
+pub fn vera_arm_kills(phase: u8) -> Option<&'static [u32]> {
+    const OPEN: [u32; 4] = [0x801F_81E4, 0x801F_823C, 0x801F_8294, 0x801F_82FC];
+    const CUT: [u32; 3] = [0x801F_8364, 0x801F_83CC, 0x801F_8434];
+    const SEAT_AND_SPARKS: [u32; 3] = [0x801F_8494, 0x801F_8500, 0x801F_8568];
+    match phase {
+        4 => Some(&OPEN),
+        5 => Some(&CUT),
+        8 => Some(&SEAT_AND_SPARKS),
+        _ => None,
+    }
+}
+
 /// PROT 0905's arm-2 fade (`0x801F6DF4..0x801F6E5C`): once the countdown
 /// has run out the arm requests the creature stream and spawns an additive
 /// ramp black -> white over `0x20` vsyncs, held until killed, id `1`, and

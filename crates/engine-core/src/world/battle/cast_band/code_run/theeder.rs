@@ -69,6 +69,12 @@ impl World {
                 x: a.move_state.world_x,
                 z: a.move_state.world_z,
                 facing: a.battle.facing_angle & 0x0FFF,
+                // `+0x21B` mirrors the playing clip's remaining loop-window
+                // cycles; a seat with no clip player has none.
+                clip_loops: a
+                    .battle_animation
+                    .as_ref()
+                    .map_or(0, |p| p.loop_cycles_remaining()),
             })
             .unwrap_or_default()
     }

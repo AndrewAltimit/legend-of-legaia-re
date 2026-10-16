@@ -268,6 +268,7 @@ fn theeder_packet_arms_draw_charge_sweep_and_retract() {
         x: 0,
         z: 0,
         facing: 0,
+        clip_loops: 0,
     };
     let mut fx = TheederFx::default();
     // Arm 8 seeds arm 9's countdown; arm 9 draws prongs while it drains.
@@ -830,6 +831,10 @@ fn every_body_reaches_done_from_phase_zero() {
         let (frames, phase) = walk(|ctx| match entry {
             903 => gimard_tick(ctx, &mut seats, WHO, None).0,
             904 => {
+                // The host's anim tick commits the clip arm 6 stages
+                // before arm 7 polls it.
+                let s = &mut seats[WHO.summon as usize];
+                s.playing_anim = s.staged_anim;
                 theeder_tick(
                     ctx,
                     &mut seats,
@@ -846,8 +851,13 @@ fn every_body_reaches_done_from_phase_zero() {
             _ => zenoir_tick(ctx, &mut seats, WHO, |_| None).0,
         });
         // Every chain walks its whole arm run before the terminal, and
-        // none of them wraps.
-        assert!(frames >= u32::from(last), "{entry} finished in {frames}");
+        // none of them wraps. PROT 0905's arm 5 steps the phase by three,
+        // so its run skips arms 6 and 7.
+        let skipped = if entry == 905 { 2 } else { 0 };
+        assert!(
+            frames + skipped >= u32::from(last),
+            "{entry} finished in {frames}"
+        );
         assert!(phase >= last, "{entry} ended at phase {phase}");
     }
 }

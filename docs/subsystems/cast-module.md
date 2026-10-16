@@ -1407,9 +1407,64 @@ The packet arms are drawn:
 Port: `seru_magic_ticks::theeder_tick` with `TheederFx`, sampled once per
 retail pass; both hosts build the primitives with `engine-ui::cast_theeder`
 (`crates/engine-ui/src/cast_theeder.rs`) from `World::theeder_draw`. The
-prong cells come from a per-cast counter rather than the battle RNG. The
-module's camera arms are not ported: its director passes every arm and case 6
-keeps the caster.
+prong cells come from a per-cast counter rather than the battle RNG.
+
+The arms ahead of the packets hold on `ctx[+0x6D8]` too. Arm 1 requests the
+creature stream and steps to arm 2 while the band timer is still running,
+which then holds until the sustain `0x35` has drained it (`0x801F6C80`).
+Arm 3 arms `scalar * 10`; arms 4, 5 and 6 each drain the word and hold while
+it reads non-negative, re-arming `scalar * 60` and `scalar * 180` on the way
+out. Arm 7 holds while the creature's `+0x21B` reads `0xFF`
+(`0x801F71C4`): the clip arm 6 staged has to commit and take its loop count
+off the sentinel. Arm 13 arms a settle word `0x801F9204 = scalar * 96` once
+the trail is empty, and arm 14 drains it and then polls the monster row
+(alive and on idle, or dead with the node's `+0x74` colour gone) before it
+stores `0xFF`. Port: `cast_module_camera::theeder_direct` (the countdown
+gates, the settle word and the camera arms 0, 3, 6, 8, 9, 11, 12 and `0xFF`'s
+case 8) beside the tick body (arm 7's wait and arm 14's poll). The engine's
+creature clip carries no loop window, so arm 7 passes once the clip commits;
+retail holds it about 140 vsyncs.
+
+### PROT 0905 (Vera)
+
+Arms 4, 5 and 8 kill the effect parts earlier arms spawned, through the
+handle block `0x801F8828`: arm 4 the four arm-0 glows
+(`0x801F6ECC..0x801F6F2C`), arm 5 the three arm-4 parts
+(`0x801F71A0..0x801F71E8`), arm 8 all ten handles (`0x801F78FC..0x801F7924`).
+The last set holds arm 5's two glows, whose programs never halt
+(`0x18 0x4000` / `WAIT 4095` / `0x19`), and the eight sparks the stager's arm 0
+(`FUN_801F8078`, record `0x801F8568`) seats into handles 2..9. Without the
+kills the two glows stayed on screen past the cast. Port:
+`cast_module_camera::vera_arm_kills`; the host tags each part a module arm
+seats with its record and marks the named ones done on the arm's pass. Arm 5
+steps the phase by three (`0x801F7434`), which the tick body now does.
+
+### PROT 0906 (Gizam)
+
+Gizam's tick parks in a phase hole: no arm answers phase 5, and only stager
+arm 2 (`ctx[+0x279] += 1`) moves it on. The stager is reached through move-VM
+op `0x20`, from record `0x801F7B80`, one of the three parts arm 4 spawns. Its
+program runs `WAIT 95, WAIT 63, WAIT 30, op20(0), WAIT 0, op20(1), WAIT 63,
+op20(2)`: the white and blue flash pair, the creature shown (`+0x21C = 0`,
+`+0x0C = 0x1000`), then the release. The engine runs no op-`0x20` hook, so
+`cast_module_camera::gizam_direct` holds phase 5 on that program's clock
+(256 ticks, a wait `v` lasting `v + 1` frames) and the host fires stager arms
+0 and 1 on ticks 191 and 192. Retail's hole lasts 309 vsyncs and its flash
+lands about 60 vsyncs later than the clock puts it; the difference is not
+traced.
+
+The other arms are countdowns on `ctx[+0x6D8]`: arm 3 waits on the band
+timer, arms 6, 8, 11 and 12 arm `scalar * 180`, `170`, `40` and `<< 8`, arm 9
+re-arms `scalar * 20`, and arms 7, 9, 10, 12 and 13 drain and hold while the
+word is non-negative. Arm 13 arms the settle word `0x801F7FD4 = scalar << 7`,
+and arm 14 drains it and polls the row before `0xFF`. The clip bump sits in
+arm 7 (`0x801F6F4C`), which also clears every monster seat's render flag and
+lights the living ones (`+0x04 = 0x20080200`). The director frames arms 0
+and 1 on the caster and arms 7..12 on the creature; arm 9 frames the
+creature's `+0x3C` / `+0x40` pair, which the port reads as its seat, and arm
+13's centroid shot is not ported. The engine seats the creature behind the
+caster, not where `FUN_801F19EC` leaves it, so those framings sit off
+retail's.
 
 ### PROT 0907 (Nighto)
 
@@ -1838,7 +1893,8 @@ Directors, each read off its own tick's disassembly:
 | PROT | Kind | Covers |
 |---|---|---|
 | 0903 Gimard | full | the whole choreography ([phase table](#worked-example-prot-0903-gimard)), its spawn calls and its two caption arms; the caption shows through `battle_hud::battle_move_name` until the band's `0x37` exit |
-| 0904 Theeder | pass-through | no camera arm; the ported ramps pace the band |
+| 0904 Theeder | camera-beside, gating | the countdown gates of arms 2..6 and 14 and the camera arms beside the ported tick body, which paces arms 7..13 ([module notes](#prot-0904-theeder)) |
+| 0906 Gizam | camera-beside, gating | every countdown gate, the phase-5 stager record clock and the camera arms 0, 1 and 7..12 ([module notes](#prot-0906-gizam)) |
 | 0905 Vera | full | the whole choreography, plus a third kernel: arms 8..10 write the camera globals directly every pass (pitch `0x8007B790`, TR y / z), a drift on top of arm 8's cut. Its gate is the `bgez` form (hold while the word is non-negative). Arm 5 advances the phase by 3, so arms 6 and 7 are unreachable |
 | 0908 Zenoir | summoning only (arms `0..=5`) | the framed point is the victim's `0x200` grid cell half a unit back toward the caster; arm 3 waits on the **band's** timer `ctx[+0x6D8]` (the sustain `0x35`'s own `0x78` frames) before arm 4 seats the creature and reuses that word as the module's countdown. The clip-paced strike (arms 6..10) is not directed |
 | 0913 Nova | camera-beside | the tick body is ported, so the director reads the phase and never holds it: arm 0's cut behind the caster (pitch `0x400`, yaw `0x900 - caster[+0x46]`, TR `(0, 0, 0x400)`) and the `(scalar * delta) / 4` TR z drift of the stream-request and CD-poll arms 1 and 2 |

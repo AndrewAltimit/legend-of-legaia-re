@@ -477,11 +477,13 @@ pub mod capture_countdown;
 pub mod creature;
 mod evil_seru_magic;
 mod seru;
+mod theeder_gizam;
 pub use capture::*;
 pub use capture_countdown::{ArmCountdown, CountdownWrite, arm_countdown, capture_arm_countdowns};
 pub use creature::*;
 pub use evil_seru_magic::*;
 pub use seru::*;
+pub use theeder_gizam::*;
 
 pub(super) fn gate(hold: bool) -> ArmDirection {
     if hold {
@@ -551,10 +553,10 @@ pub fn module_profile(prot_entry: u32) -> Option<ModuleProfile> {
             seat_arm: module_seat_arm(903),
             director_body: false,
         }),
-        // PROT 0904's tick body paces the band through its ported ramps
-        // (arms 10..12, `crate::seru_magic_ticks::theeder_tick`); its camera
-        // arms are not ported, so the director only passes and case 6 keeps
-        // the caster. The outcome lands once the sweep has turned.
+        // PROT 0904's director gates arms 2..6 and 14 and arms the camera
+        // beside the ported tick body, which paces arms 7..13 itself
+        // (`crate::seru_magic_ticks::theeder_tick`). The outcome lands once
+        // the sweep has turned.
         904 => Some(ModuleProfile {
             direct: theeder_direct,
             hit_arm: Some(crate::seru_magic_ticks::THEEDER_SWEEP_ARM),
@@ -562,6 +564,18 @@ pub fn module_profile(prot_entry: u32) -> Option<ModuleProfile> {
             owns_phase: false,
             stages_spawns: false,
             seat_arm: module_seat_arm(904),
+            director_body: false,
+        }),
+        // PROT 0906's director gates every counted arm beside the ported
+        // tick body; its phase-5 clock stands in for the spawned record's
+        // stager call that releases the phase hole.
+        906 => Some(ModuleProfile {
+            direct: gizam_direct,
+            hit_arm: Some(crate::seru_magic_ticks::GIZAM_SWEEP_ARM),
+            walk_arm: None,
+            owns_phase: false,
+            stages_spawns: false,
+            seat_arm: module_seat_arm(906),
             director_body: false,
         }),
         905 => Some(ModuleProfile {
@@ -608,12 +622,6 @@ pub fn module_profile(prot_entry: u32) -> Option<ModuleProfile> {
         913 => Some(ModuleProfile::camera_beside(nova_direct).seated_at(913)),
         _ => None,
     }
-}
-
-/// PROT 0904's director: no camera arm is ported, so every arm passes and
-/// the ported tick body alone paces the band.
-fn theeder_direct(_: &mut ModuleCamState, _: u8, _: ModuleCamSeats) -> ArmDirection {
-    ArmDirection::PASS
 }
 
 impl ModuleProfile {

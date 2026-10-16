@@ -111,12 +111,16 @@ pub const THEEDER_RISE_RENDER_FLAG: u8 = 4;
 /// until it is gone. What each tick drew is left in [`TheederFx::packet`]
 /// for the hosts ([`TheederPacket`]).
 ///
-/// Not ported: the camera arms, the cone membership (the host supplies which
-/// seats are in it), and the arm-14 settle poll.
+/// Arm 7 holds until the clip arm 6 staged has committed and taken its
+/// loop count off the `0xFF` sentinel ([`THEEDER_ATTACK_ARM`]); arm 14 polls
+/// the monster row once the director's settle word has run out and stores
+/// `0xFF`. The countdown gates of arms 2..6 and the camera arms are the
+/// director's (`cast_module_camera::theeder_direct`); the cone membership is
+/// the host's (it supplies which seats are in it).
 ///
 /// Wired: `World::run_cast_module_code`.
 ///
-/// PORT: FUN_801F69D8 (PROT 0904; phase chain, the swinging-ray sweep and the packet arms; camera arms unported)
+/// PORT: FUN_801F69D8 (PROT 0904; phase chain, arm 7's clip wait, the swinging-ray sweep, the packet arms and arm 14's row poll; countdown and camera arms in theeder_direct)
 pub fn theeder_tick(
     ctx: &mut CastModuleCtx,
     seats: &mut [CastActorState],
@@ -150,6 +154,23 @@ pub fn theeder_tick(
             if let Some(s) = seats.get_mut(who.summon as usize) {
                 s.staged_anim = s.staged_anim.wrapping_add(1);
                 s.restage = s.restage.wrapping_add(1);
+            }
+            CastArmStep::Advance
+        }
+        // `lbu v1,0x21b(s4); li v0,0xff; beq v1,v0,<epilogue>` at
+        // `0x801F71C4`: the arm waits for the clip arm 6 staged to commit
+        // and run its loop window once - the commit copies the clip's loop
+        // count into `+0x21B`, and its first rewind takes the `0xFF`
+        // sentinel down (`FUN_80047430`).
+        //
+        // The engine's creature clip carries no loop window (`+0x21B` reads
+        // `0` once committed), so the wait ends on the commit there.
+        THEEDER_ATTACK_ARM => {
+            let committed = seats
+                .get(who.summon as usize)
+                .is_none_or(|s| s.playing_anim == s.staged_anim);
+            if !committed || geom.clip_loops == THEEDER_LOOP_SENTINEL {
+                return CastArmStep::Hold;
             }
             CastArmStep::Advance
         }
@@ -250,6 +271,29 @@ pub fn theeder_tick(
                 CastArmStep::Advance
             }
         }
+        // The row poll at `0x801F8030..0x801F80DC`, behind the settle
+        // word's drain (the director's, `theeder_direct`): every monster
+        // seat `3 .. 3 + ctx[+0x01]` alive and back on idle (`+0x1D9 == 0`)
+        // or dead with its node's `+0x74` colour faded out, then `0xFF`.
+        THEEDER_SETTLE_ARM => {
+            let end = (FIRST_MONSTER_SEAT as usize + c.monster_count as usize)
+                .min(MONSTER_ROW_END as usize);
+            let settled = seats
+                .get(FIRST_MONSTER_SEAT as usize..end.min(seats.len()))
+                .unwrap_or(&[])
+                .iter()
+                .all(|v| {
+                    if v.hp != 0 {
+                        v.playing_anim == 0
+                    } else {
+                        v.present_04 & 0x00FF_FFFF == 0
+                    }
+                });
+            if settled {
+                c.phase = CHOREOGRAPHY_DONE_PHASE;
+            }
+            CastArmStep::Hold
+        }
         CHOREOGRAPHY_DONE_PHASE => CastArmStep::Finish,
         p if p <= THEEDER_SETTLE_ARM => CastArmStep::Advance,
         _ => CastArmStep::Finish,
@@ -264,7 +308,17 @@ pub struct TheederGeom {
     pub x: i16,
     pub z: i16,
     pub facing: u16,
+    /// The summon seat's clip loop count `+0x21B` (the playing clip's
+    /// remaining loop-window cycles) - what arm 7 waits on.
+    pub clip_loops: u8,
 }
+
+/// The arm PROT 0904 waits in for the creature's attack clip
+/// (`0x801F71C4`).
+pub const THEEDER_ATTACK_ARM: u8 = 7;
+
+/// The `+0x21B` value arm 7 holds on.
+pub const THEEDER_LOOP_SENTINEL: u8 = 0xFF;
 
 /// The engine ticks a module once a vsync, and retail runs it once a battle
 /// frame of `step` vsyncs; the trail samples (and retracts) once per retail

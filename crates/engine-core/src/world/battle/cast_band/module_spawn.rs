@@ -276,17 +276,21 @@ impl World {
             if picked.is_empty() {
                 continue;
             }
-            match self.casting.active_summon.as_mut() {
-                Some(scene) => scene.push_parts(&picked, &bytes, pos, rot),
-                None => {
-                    let mut scene = legaia_engine_effects::summon::SummonScene::spawn_parts(
-                        &[],
-                        &bytes,
-                        crate::scene_host::EFFECT_MODEL_LIBRARY_BASE,
-                        pos,
-                    );
-                    scene.push_parts(&picked, &bytes, pos, rot);
-                    self.casting.active_summon = Some(scene);
+            let scene = self.casting.active_summon.get_or_insert_with(|| {
+                legaia_engine_effects::summon::SummonScene::spawn_parts(
+                    &[],
+                    &bytes,
+                    crate::scene_host::EFFECT_MODEL_LIBRARY_BASE,
+                    pos,
+                )
+            });
+            let first = scene.parts.len();
+            scene.push_parts(&picked, &bytes, pos, rot);
+            // Each part keeps the record it was spawned from, the handle a
+            // later arm kills it by (`ori 0x8` into the actor's flag word).
+            if let SpawnRecord::Module(va) = spawn.record {
+                for part in &mut scene.parts[first..] {
+                    part.tag.get_or_insert(va);
                 }
             }
         }

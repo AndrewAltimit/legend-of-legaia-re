@@ -212,6 +212,9 @@ pub fn vera_tick(
                 s.staged_anim = s.staged_anim.wrapping_add(1);
                 s.restage = s.restage.wrapping_add(1);
             }
+            // `addiu v0,v0,0x3; sb v0,0x279(s2)` at `0x801F7434`: the arm
+            // steps the phase by three, so arms 6 and 7 are never run.
+            c.phase = c.phase.wrapping_add(2);
             CastArmStep::Advance
         }
         VERA_CAST_ARM => {
