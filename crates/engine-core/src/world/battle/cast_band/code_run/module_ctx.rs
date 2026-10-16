@@ -54,7 +54,14 @@ impl World {
         legaia_engine_battle_vm::cast_module_camera::ModuleCamSeats {
             caster: seat(caster_slot),
             victim: seat(victim_slot),
-            band_timer: i32::from(self.battle_ctx.frame_timer),
+            // The SM's post-drain word while it is calling the stager from
+            // `0x34` / `0x35` (`World::summon_band_word_in`); the
+            // context's copy is the pre-step value there.
+            band_timer: i32::from(
+                self.casting
+                    .band_word_live
+                    .unwrap_or(self.battle_ctx.frame_timer),
+            ),
             first_monster: self.battle_first_monster_byte(),
             caster_monster: self
                 .actors

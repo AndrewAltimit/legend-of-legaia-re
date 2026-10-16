@@ -75,6 +75,11 @@ pub struct CastFxState {
     /// arm advances once it has passed `0x1000`, a full 12-bit turn. Reset
     /// when a cast is armed.
     pub(crate) module_ring_angle: u16,
+    /// The band word `ctx[+0x6D8]` the action SM handed the stager call now
+    /// running (`World::summon_band_word_in`), after its own drain; `None`
+    /// outside a `0x34` / `0x35` stager call. A director's band-timer gate
+    /// reads this rather than the context's pre-step copy.
+    pub(crate) band_word_live: Option<i16>,
     /// PROT 0948's beam counter, retail's module word `0x801F8858`: arm 2
     /// zeroes it as it passes and the beam builder `FUN_801F726C` adds
     /// `step * 2` on every call.
@@ -293,6 +298,7 @@ impl CastFxState {
             fatal_decision: None,
             fatal_banner: None,
             module_ring_angle: 0,
+            band_word_live: None,
             module_beam_counter: 0,
             module_beam_live: false,
             module_flee: false,

@@ -135,7 +135,7 @@ One line per handled state; the full per-state behaviour is under [State detail]
 | `0x32` | Summon - invoke | Waits for the drive, computes the streaming slot, stages clip `9` | `0x33` |
 | `0x33` | Summon - fade in | Close-up camera; on the clip's first effect record, white flash-in and cue `0x63` | `0x34` |
 | `0x34` | Summon - actor freeze | Hides party and living monsters, seats the creature, starts the flash-out | `0x35` |
-| `0x35` | Summon - sustain | Timer plus audio duck | `0x36` |
+| `0x35` | Summon - sustain | Band word drain, audio duck, stager tick; holds while the stager keeps the word non-negative | `0x36` |
 | `0x36` | Summon - return | Holds while the summon stager is busy, un-hides actors, spell level-up check | `0x37` |
 | `0x37` | Summon - verify | Waits for every actor to settle, writes the fade sentinel | `0x38` |
 | `0x38` | Summon - done | Kills the fade primitive | `0x50` |
@@ -380,9 +380,11 @@ Gated on `ctx[+0x249] == 0`. A cast camera left pitched past `400` (`_DAT_8007B7
 
 #### State `0x35` - Summon - sustain
 
-Decrements `ctx[+0x6D8]`; ducks the live **audio level** `_DAT_8007B910` down by `DAT_1F800393` per frame, clamped at `(_DAT_8008457C * 0x4B) / 100` (75% of the configured level) for spells < 0x99 or 50% for higher. If `+0x6D8 < 0` and `ctx[+0x276] != 0`, force-clamp `+0x6D8 = 1`.
+Decrements `ctx[+0x6D8]` by the frame step (`0x801E4BCC..0x801E4BDC`; `s7 = ctx + 0x6D6`, set at `0x801E29B4`); ducks the live **audio level** `_DAT_8007B910` down by `DAT_1F800393` per frame, clamped at `(_DAT_8008457C * 0x4B) / 100` (75% of the configured level) for spells < 0x99 or 50% for higher. If `+0x6D8 < 0` and `ctx[+0x276] != 0`, force-clamp `+0x6D8 = 1`. Then it calls the stager `FUN_801F1ED4` (`0x801E4C7C`) and **re-reads** `+0x6D8` after the call (`lh v0,0x2(s7); bgez` at `0x801E4C84`).
 
-**Next:** `0x36` when timer expires.
+**Next:** `0x36` once the word reads negative after the stager call; the exit zeroes it (`sh zero,0x2(s7)`, `0x801E4C9C`).
+
+The re-read is what holds the band. PROT 0904 (Theeder), 0907 (Nighto) and 0908 (Zenoir) keep their arm countdown in `ctx[+0x6D8]` itself, so each re-seed from inside the stager call keeps the SM in `0x35`, and the SM's step drain adds to the module's own while it does. Retail's casts leave `0x35` on Theeder's arm 7, Nighto's arm 9 and Zenoir's arm 11, not after the `0x78` frames. Port: `summon_sustain` with the host seam `summon_band_word_in` / `_out`; `World` shares the word with the director's countdown for those three modules (`cast_band/code_run/band_word.rs`).
 
 #### State `0x36` - Summon - return-from-fade
 
