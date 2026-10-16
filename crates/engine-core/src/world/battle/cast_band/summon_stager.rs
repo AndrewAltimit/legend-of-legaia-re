@@ -45,6 +45,7 @@ impl World {
         self.casting.module_ring_angle = 0;
         self.casting.module_theeder = Default::default();
         self.casting.module_swordie = Default::default();
+        self.casting.module_rain = Default::default();
         self.casting.module_settle_countdown = 0;
         self.casting.module_cam = Default::default();
         self.casting.module_pres = Default::default();
@@ -93,6 +94,9 @@ impl World {
         self.casting.module_cam.creature_arrived = st.walked;
         let placed_before = self.casting.module_cam.creature.is_some();
         let run = self.run_cast_module_code(st.spell_id, module_arm);
+        // PROT 0920's rain routine, which the draw tick calls after the
+        // module's pass while the module's budget word is set.
+        self.step_module_rain();
         // The module seats its creature itself (Gimard's arm 3); put the
         // engine's creature where it did.
         if !placed_before
@@ -163,6 +167,9 @@ impl World {
             && let Some(cam) = self.battle.camera.as_mut()
         {
             cam.nudge_module(n.pitch, n.tr_y, n.tr_z);
+            if n.tr_x != 0 {
+                cam.nudge_module_tr_x(n.tr_x);
+            }
         }
         if let Some(f) = run.as_ref().and_then(|r| r.camera_follow)
             && let Some(cam) = self.battle.camera.as_mut()

@@ -474,8 +474,9 @@ Measurements (`capture`):
   of 8192 bytes) and the sixteen bytes at `0x801F7B88` equal the image's
   `+0x11B0`.
 
-So the routine is a per-frame tick of the module while its effect drains. Its
-purpose beyond that is `inference`.
+So the routine is a per-frame tick of the module while its effect drains:
+it is the rain itself, spawning, moving, projecting and drawing up to
+`0x400` streaks a call ([PROT 0920 below](#prot-0920-slippery)).
 
 ## The module phase machine (`ctx + 0x279`)
 
@@ -1433,6 +1434,36 @@ scripted boost profile live: record ATK 288 / UDF 222 / INT 220 install as
 360 / 444 / 247 (`x5/4`, `x2`, `x9/8`), against the random encounter's
 17 / 15 / 10 installing as 17 / 25 / 12.
 
+### PROT 0910 (Swordie)
+
+<a id="prot-0910-swordie"></a>
+
+The cast opens on two **opaque** panels that cover the whole frame and fall
+away along a diagonal cut. Both are drawn by the module's own builders, which
+read only module words:
+
+| Routine | Called from | What it draws |
+|---|---|---|
+| `FUN_801F7C18` | arms `0..=4`, every pass, held or not (`0x801F6C80`, `0x801F6C90`, `0x801F6CD4`, `0x801F6F44`, `0x801F7030`) | two `0x38` `POLY_G4` from the vertex tables `0x801F8D6C` / `0x801F8D7C` in grey ramps (`0xC0` / `0xB0` over `0x80` / `0x70`, and `0xB0` / `0xA0` over `0x70` / `0x60`), linked at entry `3` |
+| `FUN_801F7DD0` | arm `3`, every pass, before the panels (`0x801F6F3C`) | the slash: below a split counter of `0xE` two `0x32` `POLY_G3` heads riding the cut at row `16 c` with two `0x3A` `POLY_G4` trailing to the top of the frame; from `0xE` two quads along the whole cut that widen with the counter. Red `(0x80, 0x40, 0x40)` on the cut, `(0x40, 8, 8)` outside, entry `2` |
+
+Arm `0` seeds the tables with the frame's two halves cut along
+`(0x80, 0)..(0xC0, 0xE0)`. The split counter `0x801F8D8C` grows by
+`(rate * speed) / 4` a pass in arms `3`, `4` and `5`: arm `3` holds below
+`0x40` (the streak runs down the cut), arm `4` rewrites the tables from it
+(the left panel by `(-4c, 8c) .. (-2c, 2c)`, the right by `(6c, 3c) .. (4c,
+2c)` per corner) and holds while it is at most `0x80`, arm `5` holds below
+`0x169`. At a step of `32` that is 8, 17 and 46 passes, the measured dwell.
+The streak's packets set no draw mode; retail frames show it brightening the
+grey panels to near-white pink, which only `B + F` does.
+
+Port: `seru_magic_ticks::swordie_tick` carries the counter, the tables and
+the arm gates and records which builder ran on the pass
+(`SwordieDraw`); `legaia_render_kernels::cast_swordie` builds the packets and
+`engine-screens::screen_layers` draws them for both hosts from
+`World::swordie_draw`. Arm `2`'s white flash (`FUN_80024E80`) is not
+carried, so the engine shows the panels the flash covers in retail.
+
 ### The shatter effect on monsters
 
 The actor word `+0x1BA` reaches the draw as the node's `+0x7A`, where a
@@ -1477,6 +1508,81 @@ until the victory camera, while an unscripted one fades to black with its
 shards; a scripted Berserker reaches the list test every tick and is never
 written. The write-up is
 [`glitches/status-and-damage.md`](../reference/glitches/status-and-damage.md#zenoir-leaves-a-lone-golem-in-pieces).
+
+### PROT 0916 (Aluru)
+
+<a id="prot-0916-aluru"></a>
+
+The blast lands as a horizontal beam of light: four full-width `0x3B`
+`POLY_G4` drawn inline by the tick (`0x801F7E74..0x801F8548`), a white core
+line at `y = 0x70` with a green-tinted band above and below it and a yellow
+one either side, all four under ABR 1 (a `SetDrawMode` of tpage `0x3F`
+linked after them at the same entry, the framing depth `ctx[+0x6D0] >> 3`).
+Arm `0x11` draws them once at rest on the pass its `ctx[+0x6D8]` drain runs
+out; arms `0x12` and `0x13` grow that word by `rate * speed` a pass and draw
+them every pass spread by `(i16)ctx[+0x6D8] / 24` rows, until it passes
+`192 * speed` (`capture`: arm `0x12` 35 vsyncs, `0x13` 160).
+
+`legaia_render_kernels::cast_aluru` builds the bands for a spread, but nothing
+calls it: the port's director (`aluru_direct`) covers arms `0..=4` and parks,
+and the engine's stager decides the band's length, so no engine state reaches
+arm `0x11`. Drawing the bands needs the body's arms `5..=0x14` first - their
+`ctx[+0x6D8]` and creature `+0x1BA` timers and camera cuts, and arm `0`'s kill
+roll (`rand() % (0x11 - level) < 8` kills; a scripted fight against a
+record with `+0x20` set skips it and never kills, unless the victim carries
+`+0x16E` bit `4`), which picks the
+instant-kill path through arm `0x11` or the damage path through `0x12` and
+decides whether arm `0x13` ends the cast or hands it to `0x14`.
+
+### PROT 0920 (Slippery)
+
+<a id="prot-0920-slippery"></a>
+
+Deadly Rain is the module's per-frame routine `0x801F7B88`
+([above](#scus-calls-into-slot-b-at-one-va-prot-0920)) plus the tick that
+sets its words. The tick's arms are countdown gates on `0x801F8440` (drained
+`rate * speed` a pass) with camera writes; arm `0` sets the colour word
+`0x801F8444 = 0x808080` and frees the `0x400` records, arm `5`'s exit seeds
+the budget `_DAT_8007BDC0 = 0x204`, arm `6` drains it by `2 * rate` a pass
+(`0x801F70CC`) and pins it at `4` on its exit, arm `9` steps the colour
+towards red once a vsync and pins `0xFF4040` on its exit, where the damage
+lands on every living monster, and the `0xFF` arm clears the budget.
+
+On each call the routine:
+
+1. gives every free record a `rand()` whose remainder by the budget must be
+   zero to seed it - `x`, `z` in `0x600 - rand() % 0xC00`, `y` in
+   `-0x400 - rand() % 0x400`, length `0x100 + rand() % 0x80` - so the budget
+   is the spawn odds, `1` in `0x204` falling to `1` in `4`;
+2. drifts every live record against the creature's facing by
+   `(trig * 4 rate) >> 12` and drops it `rate << 6`;
+3. frees a record whose `y` turns positive and, while fewer than `16` have
+   this call, projects it on the ground and spawns a splash from the module
+   record `0x801F81F0` where `IR3 > 0x100` and its `SX` or `SY` is on screen;
+4. draws every other record as an additive `0x53` `LINE_G2` from its
+   projection to the projection of the point `2 len / 3` higher and upwind,
+   the head in the colour word scaled by `0x100 - min(IR3 + IR3', 0x8000) /
+   128`, the tail black, linked at its depth with a `SetDrawMode` of ABR 1.
+
+The `RTPS` calls run on the GTE state the battle draw tick leaves: the
+camera rotation scaled by the battle world scale `4` and
+`TR = tr + (R * stored_focus) >> 12` (`capture`: the control registers at
+the routine's entry reproduce exactly).
+
+Port: `cast_module_camera::slippery_direct` carries the whole phase chain
+(`ModuleProfile::director_body`), so the band lasts as long as retail's and
+the outcome lands at arm `9`'s exit; `World::slippery_rain_words` writes the
+budget and colour words around it; `World::step_module_rain` makes the call
+once a tick through `legaia_render_kernels::cast_rain` on the world's
+`rand()` stream; both hosts draw `World::module_rain_lines` through
+`engine-screens`. Not carried: the arms' captions, breath parts and fades,
+arm `10`'s wait for every monster to be idle, and the group-target framing
+of arm `8`. The splashes are seated into the cast's scene, but the record is
+a model-less node and nothing of it draws in the port yet. The streaks
+draw over the scene rather than sorted into it, and the creature is seated
+where the engine's stager puts every creature (behind the caster), not where
+retail's `FUN_801F19EC` leaves Slippery's, so the framings anchored on it
+sit further back than retail's.
 
 ### PROT 0925 (the Spikefish flute)
 
@@ -1589,6 +1695,31 @@ Skeleton fight (group `7` too) holds that page at `(640, 0)` with its CLUT on
 row 490. The engine streams nothing per turn;
 `engine-core::battle_sideband_textures` writes every formation group's pages
 into the battle-entry VRAM log both hosts replay.
+
+### PROT 0957 (Death Game)
+
+<a id="prot-0957-death-game"></a>
+
+Body B (`0x801F798C`, the `0x76` arm) runs a roulette the player steers. Its
+four packets are screen-space `0x2C` `POLY_FT4` (textured, opaque, colour
+`0x808080`), tag `9`, linked at entry `1`:
+
+| Sprite | Arms | Geometry and texture |
+|---|---|---|
+| Countdown digit | `5` (`0x801F8818..0x801F88DC`), `6` (`0x801F8BEC..0x801F8CBC`) | `(0x94, 8)..(0xAB, 0x1F)`; texture page `0x29`, CLUT `0x7A40`; `u = 24 q .. 24 q + 0x17`, `v = 0 .. 0x17`, with `q = (t + 0x1DF) / 480` the seconds left on the timer `0x801FA278` (arm 6 freezes it at the value it had on the pick, `0x801FA27C`) |
+| Pointer | `5` (`0x801F89FC..0x801F8B1C`), `6` (`0x801F8D40..0x801F8E4C`) | `(x - 10, 0x8A)..(x + 0x19, 0xB1)` with `x` the cursor `0x801FA2AC`; texture page `0x28`, CLUT `0x7A08`; two frames `0x24` texels apart (`u = 0xB0` or `0xD4`) flipping every 16 vsyncs of the counter `0x801FA280`, `v = 0x88 .. 0xAF` |
+
+Arm `0` arms the timer at `0x700`; arm `5` drains it by `8 * rate` a pass
+and reads the pad word `0x8007B874`: bits `0x2000` / `0x8000` move the
+target `0x801FA2AE` by `+0x4C` / `-0x4C` with sound `0x22` (a step past
+`0x158` lands on `0x10C`, one below `-0x23` on `0x28`), and the cursor eases a
+third of the way to it each pass. A confirm press (`0x800846D0`) or the timer
+running out spawns four parts, re-arms the timer at `0x200` and advances;
+arm `6` keeps both sprites up while that drains, then picks the slot whose
+spawned part's `+0x14` matches the target. The port's body B
+(`summon_effect_tick_b`) walks the phase without these arms, so neither the
+input, the timer nor the pick exists in the engine yet, and the two sprites
+are not drawn; the arms are what a port of them needs first.
 
 ### PROT 0966 (Evil Seru Magic)
 
@@ -1996,9 +2127,12 @@ through one `World` seam, so a live cast reaches every routine below.
 | Caster clips | `CAPTURE_CASTER_STAGES`, `World::capture_stager_tick` | below |
 | Presentation calls | `cast_presentation`, `World::fire_cast_presentation` | fades, the colour and armed washes and CLUT copies, decoded per arm off the image and fired after the tick ([below](#presentation-calls)) |
 
-Left out, per function: the GPU-packet arms (except Theeder's and Cross
-Beam's, which are drawn), the camera arms of modules with no director, and
-the per-arm frame gating of bodies with no director or countdown table.
+Left out, per function: the GPU-packet arms (except Theeder's, Swordie's,
+Slippery's rain and Cross Beam's, which are drawn), the camera arms of
+modules with no director, and the per-arm frame gating of bodies with no
+director or countdown table. PROT 0916's light bands and PROT 0957's
+roulette sprites are the packet arms still owed; what each needs first is in
+[their notes](#prot-0916-aluru).
 
 **Caster clips.** Most capture-class body ports carry the phase walk, the
 damage and the victim's reaction but not the body's

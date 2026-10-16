@@ -131,7 +131,7 @@ fn gimard_creature_shots_frame_the_placed_creature() {
 
 #[test]
 fn camera_only_directors_park_past_their_arms() {
-    for entry in [914, 915, 917, 920, 923, 928, 930, 931] {
+    for entry in [914, 915, 917, 923, 928, 930, 931] {
         let p = module_profile(entry).expect("directed");
         assert!(!p.paces_band(), "PROT {entry} is camera-only");
         let mut st = ModuleCamState::default();
@@ -151,6 +151,59 @@ fn camera_only_directors_park_past_their_arms() {
         }
         assert!((1..8).contains(&phase), "PROT {entry} parked at {phase}");
     }
+}
+
+/// PROT 0920's director carries the whole chain: it paces the band, every
+/// arm is a countdown gate, arm 10 stores `0xFF`, and at the engine's step
+/// the arms dwell `scalar << n` drained `scalar` a tick - 64, 128, 128, 256,
+/// 256, 32, 128 and 128 ticks for arms 3..10.
+#[test]
+fn slippery_director_walks_the_whole_chain_to_0xff() {
+    let p = module_profile(920).expect("directed");
+    assert!(p.paces_band() && p.director_body && p.owns_phase);
+    assert_eq!(p.hit_arm, Some(SLIPPERY_DAMAGE_ARM));
+    let mut st = ModuleCamState::default();
+    let mut phase = 0u8;
+    let mut dwell = std::collections::BTreeMap::<u8, u32>::new();
+    for _ in 0..10_000 {
+        if phase == crate::seru_magic_ticks::SERU_B_DONE_PHASE {
+            break;
+        }
+        let d = slippery_direct(&mut st, phase, seats());
+        assert!(!d.park, "arm {phase} parks");
+        *dwell.entry(phase).or_default() += 1;
+        if !d.hold {
+            phase = d.jump.unwrap_or(phase + 1);
+        }
+    }
+    assert_eq!(phase, crate::seru_magic_ticks::SERU_B_DONE_PHASE);
+    let got: Vec<u32> = (3..=10).map(|a| dwell[&a]).collect();
+    assert_eq!(got, [64, 128, 128, 256, 256, 32, 128, 128]);
+    // Arm 0xFF holds: the director never walks past the done phase.
+    assert!(slippery_direct(&mut st, 0xFF, seats()).hold);
+}
+
+/// PROT 0920's arm 7 pans TR x by the scalar a pass and its exit cuts back
+/// onto the creature.
+#[test]
+fn slippery_arm_seven_pans_then_cuts_on_the_creature() {
+    let mut st = ModuleCamState::default();
+    let creature = ModuleSeat {
+        x: 63,
+        y: 0,
+        z: -591,
+        facing: 13,
+    };
+    st.creature_live = Some(creature);
+    st.countdown.0 = 2 * MODULE_DRAIN_PER_TICK;
+    let d = slippery_direct(&mut st, 7, seats());
+    assert!(d.hold);
+    assert_eq!(d.nudge.unwrap().tr_x, -(MODULE_DRAIN_PER_TICK as i16));
+    let d = slippery_direct(&mut st, 7, seats());
+    let shot = d.shot.expect("arm 7 cuts");
+    assert_eq!(shot.angles, [0, 0x800 - 13, 0]);
+    assert_eq!(shot.tr, [0, 0x400, 0x600]);
+    assert_eq!(shot.focus, [-63, 0, 591]);
 }
 
 #[test]

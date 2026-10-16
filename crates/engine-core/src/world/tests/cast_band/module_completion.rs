@@ -365,3 +365,82 @@ fn the_theeder_band_holds_through_its_ramp_and_sweep() {
         "nothing draws past the band"
     );
 }
+
+/// PROT 0920 (Slippery, `0x92`) paces its band through its director: the
+/// stager holds until the chain reaches `0xFF`, the rain budget is set from
+/// arm 5's exit to the done arm, the routine draws streaks while it is set,
+/// the colour has turned red by the time the rain ends, and nothing draws
+/// once the band lets go.
+#[test]
+fn the_slippery_band_rains_from_arm_five_to_the_done_arm() {
+    let mut world = module_code_world();
+    world.party.party_count = 3;
+    assert_eq!(world.cast_module_for(0x92), Some(920));
+    world.actors[0].battle.active_target = 3;
+    for i in 0..8 {
+        world.actors[i].battle.hp = 9000;
+        world.actors[i].battle.max_hp = 9000;
+    }
+    world.arm_summon_stager(0, 0x92);
+    let (mut rain_ticks, mut drawn_ticks, mut first_rain_phase) = (0u32, 0u32, None);
+    let mut red = false;
+    let mut done = false;
+    for _ in 0..20_000 {
+        if !world.summon_stager_tick() {
+            done = true;
+            break;
+        }
+        if world.casting.module_rain.budget != 0 {
+            rain_ticks += 1;
+            first_rain_phase.get_or_insert(world.casting.module_phase);
+            red |= world.casting.module_rain.colour == 0x00FF_4040;
+        }
+        if !world.module_rain_lines().is_empty() {
+            drawn_ticks += 1;
+        }
+        if world.take_pending_summon_spawn().is_some() {
+            world.seat_summon_actor(7);
+        }
+    }
+    assert!(done, "the stager let go");
+    assert_eq!(
+        first_rain_phase,
+        Some(6),
+        "the budget is seeded on arm 5's exit"
+    );
+    // Arms 6..10 at the engine's step: 256 + 256 + 32 + 128 + 128 ticks.
+    assert!(rain_ticks >= 800, "rain lasted {rain_ticks} ticks");
+    assert!(drawn_ticks > 0, "the routine drew streaks");
+    assert!(red, "arm 9 pinned the colour red");
+    assert!(world.module_rain_lines().is_empty());
+}
+
+/// PROT 0910 (Swordie, `0x88`) draws its split panels from arm 0 and its
+/// streak in arm 3, and nothing once the band has let go.
+#[test]
+fn the_swordie_band_draws_its_split_and_streak() {
+    let mut world = module_code_world();
+    world.party.party_count = 3;
+    world.actors[0].battle.active_target = 3;
+    world.arm_summon_stager(0, 0x88);
+    let (mut split, mut streak) = (0u32, 0u32);
+    for _ in 0..20_000 {
+        if !world.summon_stager_tick() {
+            break;
+        }
+        if let Some(d) = world.swordie_draw() {
+            split += u32::from(d.split.is_some());
+            streak += u32::from(d.streak.is_some());
+        }
+        if world.take_pending_summon_spawn().is_some() {
+            world.seat_summon_actor(7);
+        }
+        for a in world.actors.iter_mut() {
+            a.battle.current_anim = a.battle.queued_anim;
+        }
+    }
+    // Arm 3: 0x40 / 2 a tick = 32 ticks; arm 4: 65 ticks; arms 0..2 one each.
+    assert_eq!(streak, 32);
+    assert_eq!(split, 3 + 32 + 65);
+    assert!(world.swordie_draw().is_none());
+}

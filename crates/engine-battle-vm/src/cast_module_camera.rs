@@ -248,6 +248,9 @@ pub struct ArmDirection {
     /// The arm killed the module's earlier fades (`ori 0x8` into each fade
     /// actor's flag word) before it spawned its own.
     pub kills_fades: bool,
+    /// The phase a passing arm stores instead of `phase + 1` (a `sb` of a
+    /// literal into `ctx+0x279`), for a director that owns the phase.
+    pub jump: Option<u8>,
 }
 
 /// A line of text a module arm prints through `FUN_8003541C(0, 0, str, x,
@@ -380,12 +383,13 @@ pub struct ModuleVramMove {
 }
 
 /// A module arm's direct writes into the live camera globals - pitch
-/// `0x8007B790`, TR y `0x800840BC`, TR z `0x800840C0` - added every pass,
-/// held or not, on top of whatever the last shot landed. The TR z delta is in
-/// the global's own (prescaled) units.
+/// `0x8007B790`, TR x `0x800840B8`, TR y `0x800840BC`, TR z `0x800840C0` -
+/// added every pass, held or not, on top of whatever the last shot landed.
+/// The TR z delta is in the global's own (prescaled) units.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct ModuleNudge {
     pub pitch: i16,
+    pub tr_x: i16,
     pub tr_y: i16,
     pub tr_z: i16,
 }
@@ -403,6 +407,7 @@ impl ArmDirection {
         caption: None,
         fades: &[],
         kills_fades: false,
+        jump: None,
     };
     pub(super) const PASS: Self = Self {
         hold: false,
@@ -416,6 +421,7 @@ impl ArmDirection {
         caption: None,
         fades: &[],
         kills_fades: false,
+        jump: None,
     };
     pub(super) const PARK: Self = Self {
         hold: true,
@@ -429,6 +435,7 @@ impl ArmDirection {
         caption: None,
         fades: &[],
         kills_fades: false,
+        jump: None,
     };
     pub(super) fn shot(shot: ModuleShot) -> Self {
         Self {
@@ -521,6 +528,13 @@ pub struct ModuleProfile {
     /// the module seats it at once, or where a camera-only director parks
     /// before the arm.
     pub seat_arm: Option<u8>,
+    /// Whether the director **is** the module's phase chain: a module whose
+    /// arms are countdown gates and camera writes, with no tick body ported
+    /// beside it. The director then owns the phase (a pass advances it, or
+    /// stores [`ArmDirection::jump`]), its holds hold `0x36` like a ported
+    /// body's ([`Self::hit_arm`] is set), and the band runs until the phase
+    /// reaches `0xFF`.
+    pub director_body: bool,
 }
 
 /// The directed profile of a player-Seru module, by owning PROT entry.
@@ -535,6 +549,7 @@ pub fn module_profile(prot_entry: u32) -> Option<ModuleProfile> {
             owns_phase: true,
             stages_spawns: true,
             seat_arm: module_seat_arm(903),
+            director_body: false,
         }),
         // PROT 0904's tick body paces the band through its ported ramps
         // (arms 10..12, `crate::seru_magic_ticks::theeder_tick`); its camera
@@ -547,6 +562,7 @@ pub fn module_profile(prot_entry: u32) -> Option<ModuleProfile> {
             owns_phase: false,
             stages_spawns: false,
             seat_arm: module_seat_arm(904),
+            director_body: false,
         }),
         905 => Some(ModuleProfile {
             direct: vera_direct,
@@ -555,6 +571,7 @@ pub fn module_profile(prot_entry: u32) -> Option<ModuleProfile> {
             owns_phase: true,
             stages_spawns: true,
             seat_arm: module_seat_arm(905),
+            director_body: false,
         }),
         908 => Some(ModuleProfile {
             direct: zenoir_direct,
@@ -563,6 +580,7 @@ pub fn module_profile(prot_entry: u32) -> Option<ModuleProfile> {
             owns_phase: true,
             stages_spawns: false,
             seat_arm: module_seat_arm(908),
+            director_body: false,
         }),
         // A camera-only director seats on its module's seat arm only where
         // it reaches it: PROT 0917, 0928, 0929 and 0931's park short of
@@ -570,7 +588,13 @@ pub fn module_profile(prot_entry: u32) -> Option<ModuleProfile> {
         914 => Some(ModuleProfile::camera_only(gola_gola_direct).seated_at(914)),
         915 => Some(ModuleProfile::camera_only(mushura_direct).seated_at(915)),
         917 => Some(ModuleProfile::camera_only(barra_direct)),
-        920 => Some(ModuleProfile::camera_only(slippery_direct).seated_at(920)),
+        // PROT 0920's arms are countdown gates and camera writes end to end,
+        // so its director carries the whole phase chain and paces the band:
+        // the rain the draw tick runs between arms 5 and `0xFF` needs the
+        // band to last that long.
+        920 => {
+            Some(ModuleProfile::director_body(slippery_direct, SLIPPERY_DAMAGE_ARM).seated_at(920))
+        }
         923 => Some(ModuleProfile::camera_only(gilium_direct).seated_at(923)),
         928 => Some(ModuleProfile::camera_only(palma_direct)),
         930 => Some(ModuleProfile::camera_only(horn_direct).seated_at(930)),
@@ -601,6 +625,19 @@ impl ModuleProfile {
             owns_phase: true,
             stages_spawns: false,
             seat_arm: None,
+            director_body: false,
+        }
+    }
+
+    const fn director_body(direct: ModuleDirector, hit_arm: u8) -> Self {
+        Self {
+            direct,
+            hit_arm: Some(hit_arm),
+            walk_arm: None,
+            owns_phase: true,
+            stages_spawns: false,
+            seat_arm: None,
+            director_body: true,
         }
     }
 
@@ -617,6 +654,7 @@ impl ModuleProfile {
             owns_phase: false,
             stages_spawns: false,
             seat_arm: None,
+            director_body: false,
         }
     }
 

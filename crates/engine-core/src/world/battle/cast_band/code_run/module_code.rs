@@ -282,9 +282,15 @@ impl World {
         let held = direction.is_some_and(|d| d.hold) || capture_held;
         // A camera-only director owns the phase of a module whose tick body
         // is unported: its pass advances it, and it claims no tick.
-        let camera_only = profile.is_some_and(|p| !p.paces_band() && p.owns_phase);
+        // A director that carries a whole unported body's phase chain
+        // (`ModuleProfile::director_body`) owns the phase the same way.
+        let director_body = profile.is_some_and(|p| p.director_body);
+        let camera_only =
+            profile.is_some_and(|p| (!p.paces_band() || p.director_body) && p.owns_phase);
         if camera_only && !held {
-            ctx.phase = ctx.phase.wrapping_add(1);
+            ctx.phase = direction
+                .and_then(|d| d.jump)
+                .unwrap_or(ctx.phase.wrapping_add(1));
         }
         let step = if held && !camera_only {
             Some(ticks::CastTickStep::Busy)
@@ -966,6 +972,10 @@ impl World {
         if let Some(step) = step {
             run.busy = step == ticks::CastTickStep::Busy;
             run.tick_ported = true;
+        } else if director_body {
+            // The director is the body: busy until it reaches `0xFF`.
+            run.tick_ported = true;
+            run.busy = ctx.phase != ticks_a::SERU_B_DONE_PHASE;
         } else if let Some(arm) = capture_arm {
             // A capture director over a body with no port (a ported body, or
             // a holding arm, has already produced a step) owns its phase.
@@ -1020,6 +1030,14 @@ impl World {
                     legaia_engine_battle_vm::cast_module_ticks::CROSS_BEAM_COUNTER_PER_TICK;
                 self.casting.module_beam_live = true;
             }
+        }
+        // PROT 0920's rain words, written by its arms around the director's
+        // gates: arm 0 frees the records and sets the grey colour, arm 5's
+        // exit seeds the budget, arm 6 drains it `2 * delta` a pass and pins
+        // it at `4` on its exit, arm 9 ramps the colour towards red a step
+        // a vsync and pins it on its exit, and `0xFF` clears the budget.
+        if entry == legaia_engine_battle_vm::cast_module_camera::SLIPPERY_ENTRY {
+            self.slippery_rain_words(phase_in, ctx.phase != phase_in);
         }
         // The arm passed: its re-arm of the countdown word.
         if let Some(a) = arm_countdown

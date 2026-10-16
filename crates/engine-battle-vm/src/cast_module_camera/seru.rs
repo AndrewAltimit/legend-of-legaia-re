@@ -530,6 +530,7 @@ pub fn vera_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) ->
         8 => {
             let drift = ModuleNudge {
                 pitch: 0,
+                tr_x: 0,
                 tr_y: (p >> 3) as i16,
                 tr_z: -p as i16,
             };
@@ -551,6 +552,7 @@ pub fn vera_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) ->
         9 => {
             let drift = ModuleNudge {
                 pitch: (p >> 3) as i16,
+                tr_x: 0,
                 tr_y: -((3 * p) >> 1) as i16,
                 tr_z: (3 * p) as i16,
             };
@@ -567,6 +569,7 @@ pub fn vera_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) ->
         10 => {
             let drift = ModuleNudge {
                 pitch: -(p >> 3) as i16,
+                tr_x: 0,
                 tr_y: -(p >> 3) as i16,
                 tr_z: (4 * p) as i16,
             };

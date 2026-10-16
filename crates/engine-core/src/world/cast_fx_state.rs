@@ -125,6 +125,9 @@ pub struct CastFxState {
     /// ([`legaia_engine_battle_vm::seru_magic_ticks::SwordieSlashes`]) - the module
     /// image's own words in retail, so a fresh cast starts them at zero.
     pub module_swordie: legaia_engine_battle_vm::seru_magic_ticks::SwordieSlashes,
+    /// PROT 0920 (Slippery)'s Deadly Rain: its records, budget and colour
+    /// words and the streaks its last call drew ([`ModuleRain`]).
+    pub module_rain: ModuleRain,
     /// The settle countdown word PROT 0909 / 0911 / 0912 / 0913 arm after
     /// their hit and drain before they write `0xFF`
     /// (`legaia_engine_battle_vm::seru_magic_ticks::SETTLE_DRAIN_PER_TICK`).
@@ -233,6 +236,21 @@ pub struct CastFxState {
 }
 
 /// One queued move-VM op-`0x17` call ([`CastFxState::pending_bursts`]).
+/// PROT 0920's (Slippery) **Deadly Rain** state: the module's own words in
+/// retail, so a fresh cast starts them at zero.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ModuleRain {
+    /// The `0x400` rain records at `*(0x801F8448)`.
+    pub drops: legaia_render_kernels::cast_rain::DeadlyRain,
+    /// `_DAT_8007BDC0` - the spawn odds, and the draw tick's gate on the rain
+    /// routine (`0` = not called).
+    pub budget: i32,
+    /// `0x801F8444` - the streak colour.
+    pub colour: u32,
+    /// What the routine's last call drew and spawned.
+    pub frame: legaia_render_kernels::cast_rain::RainFrame,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PendingBurst {
     pub mode: u32,
@@ -266,6 +284,7 @@ impl CastFxState {
             module_nighto_outcome: None,
             module_split_saved_target: None,
             module_swordie: Default::default(),
+            module_rain: Default::default(),
             module_settle_countdown: 0,
             module_cam: Default::default(),
             module_pres: Default::default(),

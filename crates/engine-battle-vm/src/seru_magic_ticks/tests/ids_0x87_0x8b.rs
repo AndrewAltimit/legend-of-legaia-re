@@ -254,6 +254,45 @@ fn swordie_timers_reproduce_the_measured_dwell_and_land_four_hits() {
     assert_eq!(st.hits, 4);
 }
 
+/// Arms 3..5 ramp the split counter by `(rate * speed) / 4` a pass; at the
+/// retail cadence (step `32`) they take the measured 8, 17 and 46 passes.
+/// The panels draw on every pass of arms 0..4 and the streak on every pass
+/// of arm 3; arm 4 slides the panels off their rest tables.
+#[test]
+fn swordie_split_arms_reproduce_the_measured_dwell_and_draw_their_packets() {
+    let clock = SwordieClock { rate: 4, speed: 8 };
+    let mut ctx = ctx_at(0);
+    let mut s = seats(8);
+    let mut st = SwordieSlashes::default();
+    let mut dwell = std::collections::BTreeMap::<u8, u32>::new();
+    while ctx.phase < 6 {
+        let phase = ctx.phase;
+        swordie_tick(&mut ctx, &mut s, 7, 3, &mut st, clock, |_| 0);
+        *dwell.entry(phase).or_default() += 1;
+        assert_eq!(
+            st.draw.split.is_some(),
+            phase <= SWORDIE_SPLIT_ARM,
+            "arm {phase}"
+        );
+        assert_eq!(
+            st.draw.streak.is_some(),
+            phase == SWORDIE_STREAK_ARM,
+            "arm {phase}"
+        );
+        if phase == SWORDIE_STREAK_ARM {
+            assert!(st.draw.streak.unwrap() < SWORDIE_STREAK_END);
+            assert_eq!(st.draw.split, Some(SWORDIE_PANELS_AT_REST));
+        }
+        assert!(dwell[&phase] < 1000);
+    }
+    assert_eq!(dwell[&3], 8);
+    assert_eq!(dwell[&4], 17);
+    assert_eq!(dwell[&5], 46);
+    // Arm 4's last pass drew the panels at counter 17 * 8.
+    assert_eq!(st.panels, swordie_split_panels(17 * 8));
+    assert_eq!(st.panels[0][0], -4 * 17 * 8);
+}
+
 /// A finished slash is inert: the settle arm keeps calling it every frame.
 #[test]
 fn swordie_slash_step_lands_once() {
