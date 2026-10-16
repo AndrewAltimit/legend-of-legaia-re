@@ -471,9 +471,11 @@ part's first move-VM run, and the pool wrapper `FUN_80050ED4` forwards its own
 the slot-B band (`0903..0966`) and PROT 0898's effect-prototype spawns load
 `li a3,0x1000`, as do the two ambient seaters. A few calls pass another
 immediate (`0x400`, `0x800`, `0x2000`) or forward a parent's `+0x72`. The
-engine seats every staged part at `0x1000` (`summon::SPAWN_RENDER_SCALE`, the
-ambient install likewise); its part set is keyed by record rather than by
-call, so those per-call scales are not carried.
+engine seats a staged part at `0x1000` (`summon::SPAWN_RENDER_SCALE`, the
+ambient install likewise) unless a cast module reports the call with its own
+scale (`SummonScene::push_parts_scaled`: PROT 0911's group-extent calls,
+PROT 0913's depth-scaled ones and the stager arms that forward a caller's
+`+0x72`).
 
 Port: `engine-effects::effect_sprite_arm` turns every live sprite-arm node
 into a one-quad mesh. The quad geometry is

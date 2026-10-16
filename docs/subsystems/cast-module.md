@@ -1740,9 +1740,10 @@ Port: `seru_magic_ticks::{orb_tick, freed_tick, nova_tick}`. Each of 0910..0913
 has a `ModuleProfile::body_paced` profile, so `0x36` holds on the body and the
 creature walks nowhere the module does not move it (the stager's generic walk
 otherwise drove Swordie's root-motion clip off the stage and parked the band
-in phase `0xFF`). Not ported: Nova's victim lift and spin (`+0x36 = -sin(W) *
-ctx[+0x6D0] >> 14` / `>> 12`, `+0x46 -= sin(W) / 2`) and the effect-handle
-jitter loops. The camera arms are the [body-paced directors](#body-paced-directors).
+in phase `0xFF`). Nova's victim lift, spin and landing and its handle writes
+are ported beside the tick
+([module stagers and spawn reports](#module-stagers-and-spawn-reports)). The
+camera arms are the [body-paced directors](#body-paced-directors).
 
 ### Body-paced directors
 
@@ -2931,13 +2932,24 @@ PROT 0903 (Gimard):
 
 | Arm | Calls | What |
 |---:|---|---|
-| 3 | `0x801F7820`, `0x801F7870`, `0x801F78C4` on the creature | the creature's arrival |
+| 3 | `0x801F7820`, `0x801F7870`, `0x801F78C4` on the creature's plane pair at the floor | the arrival's fire rings |
 | 6 | `0x801F7724`, `0x801F7794`, `0x801F7804` on the shot | the camera-relative fire tunnel |
 | 8 | `*(0x801F63A8)` (PROT 0898 record `0x801F5B28`, library mesh `0x18`) on the creature, after a 16x1 `MoveImage` of the CLUT at `(0xD0, 0x1DC)` onto `(0xE0, 0x1DC)` | the breath |
 
 Arm 3's `0x801F7820` is not recovered by the static spawn scan (its `lui` /
 `addiu` pair is split across the arm), which is why the director names the
 records. Further 0903 facts:
+
+- Arm 3 makes its three calls after storing the creature's plane pair and
+  facing and **before** `sh 0x200,0x36(s3)` (`0x801F6E48`), so the rings sit
+  at the height the installer gave the seat, the caster's: the floor
+  (`SpawnAnchor::CreatureBeforeHeight`). Seated under the floor with the
+  creature they were hidden. They open flat (`0x801F7820`), rise into a wall
+  (`0x801F7870`, height rate `-0x20`) and flare (`0x801F78C4`); the walls,
+  seen from inside by the low arm-4 and arm-6 shots, are the orange tunnel
+  of phases 5 and 6. The tunnel records of arm 6 are not yet alive then: a
+  retail capture of the cast at 18 and 58 vsyncs into arm 6 holds only the
+  rings.
 
 - Nothing kills the tunnel; its three programs halt on their own (`0x09`
   waits, a `0x0D` depth-cue fade-out, then `0x08`). Arm 12 keeps the cast off
@@ -3024,8 +3036,61 @@ rays fall between the bright one's, and the flash reads as an eight-point
 star (`SpawnAnchor::ShotPoint`'s `roll`). A part seated
 this way holds a real `+0x14..+0x18`, so it moves by the motion block's
 velocity integration. One record is outside the per-arm form: `0x801F8568`,
-which the module's stager `0x801F8078` seats eight at a time with random
-spreads, and which no host runs.
+the spark the module's stager seats eight at a time
+([below](#module-stagers-and-spawn-reports)).
+
+Arm 5's two glows (`0x801F8494`, `0x801F8500`) arm op `0x11` with `0x10`,
+so their `+0x7A` grows from the seat and they draw through the shatter
+renderer: the yellow shards of arm 8, not a growing disc
+([`renderer.md`](renderer.md#the-shatter-renderer-fun_80029888--fun_80029dd8)).
+
+### Module stagers and spawn reports
+
+<a id="module-stagers-and-spawn-reports"></a>
+
+PROT 0905, 0910, 0911 and 0913 report their spawn calls per arm
+(`ModuleProfile::stages_spawns`; the body-paced directors hand a pass's calls
+over on the next arm's first tick), and the op-`0x20` calls their parts make
+reach each module's stager through `gp[+0x714]`: the kernels are
+`cast_module_ticks::{vera,swordie,orb,nova}_stager_spawns`, run with the
+other part-called stagers by `World::run_part_stager_calls`. Anchors are `SpawnAnchor` variants; a call's own scale
+(`a3`) lands at `+0x72` through `SummonScene::push_parts_scaled`, and a
+stager's stores into a part it has just seated wait for the seater's first
+move-VM run (`SummonPartRuntime::seat_pokes`).
+
+| Module | Arm | Calls | Anchor |
+|---|---:|---|---|
+| 0910 | 5 | `0x801F8A80`; `0x801F8B44` + `0x801F8B8C` per hand | the creature's frame: `/ 64` back; hands `/ 12` back, `/ 40` across, at `y = -0xE0`, the ray emitter `/ 32` further at `-0x118`, turned `0x400` (`0x801F71FC..0x801F7628`) |
+| 0910 | 8 | `0x801F8CB8` | the creature (`0x801F7898`) |
+| 0911 | 2 | `0x801F804C`, `0x801F8098`, `0x801F80E4`, `0x801F8130` | the caster at `y = -0x3E8` (`0x801F6C14..0x801F6CB8`) |
+| 0911 | 5 | `0x801F81DC`, `0x801F823C`, `0x801F8288`, `0x801F82D4` | the creature lifted `0x140` (`0x801F76B4..0x801F774C`) |
+| 0911 | 9 | `0x801F8380`, `0x801F83E4`, `0x801F8430`, `0x801F847C`; `0x801F84E4` per live member | the healed group's centre at the extent's scale, turned to the creature plus `0x800`; each party seat (`0x801F795C..0x801F7A40`) |
+| 0913 | 2 | `0x801F889C`, `0x801F89AC` | the caster, unturned (`0x801F6D2C..0x801F6D54`) |
+| 0913 | 10 | `0x801F87F0`, `0x801F8790` | the creature, turned `0x400` / not (`0x801F7824..0x801F787C`) |
+| 0913 | 13 | `0x801F8E28`; sixteen `0x801F8DC0` | the victim at the depth `ctx[+0x6D0]`; ring `i` at `y = -0x40 i`, a random yaw, scale `(\|cos(0x380 + 16 i)\| + 0x800) * d >> 12` (`0x801F7B74..0x801F7C5C`) |
+| 0913 | 18 | `0x801F8EDC`, `0x801F8F34`, `0x801F8F80` | the victim at depth scale (`0x801F81FC..0x801F8264`) |
+| 0913 | `0x13` | `0x801F9020`, `0x801F90DC` | the landed victim at depth scale (`0x801F8390..0x801F83D4`) |
+
+The stagers:
+
+| Stager | Arm: what it seats on the calling part |
+|---|---|
+| 0905 `FUN_801F8078` | 0: lifts the caller (arm 5's first glow) to `y = -0x1F4`, then eight sparks `0x801F8568`, each given a roll rate, radii and roll off four `rand()` draws; 1: `0x801F862C` |
+| 0910 `FUN_801F89D4` | 0..4: `0x801F8A9C`, `0x801F8AF0` (the ground ring), `0x801F8BEC`, `0x801F8C34` (the hand rays), `0x801F8D0C` |
+| 0911 `FUN_801F7FE8` | 0: `0x801F832C`; 1: `0x801F8498` at the caller's `+0x72` |
+| 0913 `FUN_801F864C` | 0: six `0x801F8850` rays fanned `0x2AA` apart with radii, heights and wait stored after the seat; 1: `0x801F8914` + `0x801F8960` (the vortex); 3 / 4 / 5: `0x801F8E88` / `0x801F8FCC` / `0x801F9088` at the caller's scale |
+
+Module writes into the parts it keeps handles on, and into the victim:
+
+- PROT 0911 arm 9's pass flushes the part pool (`jal 0x80050E74` at `0x801F77D0`): every part seated through `FUN_80050ED4` - arm 5's four and the stager's arm-`0` records - gets its halt bit before arm 9's own calls. A retail capture of the cast holds them halted at the start of arm 10. Port: `World::orb_pool_flush`, by record tag. Arm 3's flush (`0x801F70A8`) reaches only the opening's star swarm (`0x801F8190`, sixteen spread by `rand()` in arm 2 and moved by arm 3), which is not seated.
+- PROT 0913 arm `0x0D`'s pass carries the two cloud banks onto the victim's plane pair and turns them by the victim's heading less the creature's. Arm `0x10` lifts the victim to `-sin(W) * d >> 14`, turns it by `sin(W) / 2` a frame, jitters each whirlwind ring `rand() % 63 - 0x20` round it, and on its pass halts the rings. Arm `0x13` brings it down along `-sin(W) * d >> 12`, turning `0x600` a frame with arm 18's parts riding on it, and stands it on the floor facing the creature. Port: `World::nova_victim_motion`; the director reads the victim's live heading.
+
+Each module ends its line with `FUN_800319A8(0)` (`ModuleCaption::Cleared`):
+0903 as arm 11's hit lands (`0x801F74C8`), 0905 on arm 10's pass
+(`0x801F802C`), 0910 on its settle arm's (`0x801F7BC4`), 0911 on arm 9's
+(`0x801F7ED0`), 0913 as arm `0x13`'s hit lands (`0x801F8460`). PROT 0905 also
+puts up the spell name in arm 5 (`0x801F727C`) and the attack name in arm 8
+(`0x801F79EC`).
 
 PROT 0906 (Gizam) reports its calls from its director (`gizam_direct`), on
 the pass of the arm that makes them:
