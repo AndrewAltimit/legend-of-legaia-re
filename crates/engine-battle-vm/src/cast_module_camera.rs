@@ -1068,6 +1068,21 @@ impl ModuleProfile {
     }
 }
 
+/// The arm of a summon module's tick body that holds on the creature
+/// stream's CD read, `FUN_8003F2B8(1)` non-zero branching to the busy
+/// return: PROT 0910's and 0913's arm 2 (`jal 0x8003F2B8` at `0x801F6CDC` /
+/// `0x801F6D0C`, then `bne v0,zero`), behind arm 1's seek
+/// `FUN_8003EAE4(0, 0xC)`. Retail spends as many vsyncs there as the drive
+/// takes; the engine's stream is resident, so the arm passes at once. A
+/// capture taken on the arm is placed by the arm alone
+/// (`legaia_engine_capture`'s phase gate).
+pub const fn stream_poll_arm(prot_entry: u32) -> Option<u8> {
+    match prot_entry {
+        910 | 913 => Some(2),
+        _ => None,
+    }
+}
+
 /// The phase arm of a summon module's tick body that seats its creature:
 /// the arm holding `jal 0x801F19EC` (which installs the streamed creature
 /// as actor slot 7), read off each image's own phase dispatch at slot-B base
