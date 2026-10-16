@@ -328,6 +328,7 @@ impl World {
                     .then(|| seat_of(n))
                     .flatten()
             }),
+            depth: self.battle.camera_frame_height,
         };
         for spawn in spawns {
             let point = match spawn.anchor {
@@ -402,8 +403,11 @@ impl World {
                 )
             });
             let first = scene.parts.len();
-            let scale =
-                legaia_engine_battle_vm::cast_module_camera::spawn_anchor_scale(spawn.anchor, shot);
+            let scale = legaia_engine_battle_vm::cast_module_camera::spawn_anchor_scale(
+                spawn.anchor,
+                shot,
+                anchor_seats,
+            );
             scene.push_parts_scaled(&picked, &bytes, pos, rot, scale);
             // Each part keeps the record it was spawned from, the handle a
             // later arm kills it by (`ori 0x8` into the actor's flag word).

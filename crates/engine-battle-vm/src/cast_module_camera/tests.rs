@@ -812,6 +812,7 @@ fn orb_anchors_resolve_like_the_arms_build_them() {
     let seats = AnchorSeats {
         caster: Some(caster),
         party: [Some(caster), None, None],
+        depth: 0xC00,
     };
     let at = |a| spawn_anchor_point_with(a, Some(creature), None, None, seats);
     assert_eq!(
@@ -839,9 +840,9 @@ fn orb_anchors_resolve_like_the_arms_build_them() {
         spawn_anchor_point_with(anchor, Some(creature), None, Some(shot), seats),
         Some(([63, 0, -591], [0, 0x810, 0]))
     );
-    assert_eq!(spawn_anchor_scale(anchor, Some(shot)), 0x666);
+    assert_eq!(spawn_anchor_scale(anchor, Some(shot), seats), 0x666);
     assert_eq!(
-        spawn_anchor_scale(SpawnAnchor::Caster { y: 0 }, Some(shot)),
+        spawn_anchor_scale(SpawnAnchor::Caster { y: 0 }, Some(shot), seats),
         0x1000
     );
 }

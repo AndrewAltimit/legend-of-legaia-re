@@ -159,8 +159,10 @@ impl World {
             }
             _ => {
                 let mut settle = self.casting.module_settle_countdown;
+                let phase_in = ctx.phase;
                 let (step, hit) = seru::nova_tick(ctx, seats, r_summon, r_victim, 0, &mut settle);
                 self.casting.module_settle_countdown = settle;
+                self.nova_victim_motion(phase_in, ctx.phase, settle, victim_slot);
                 let hits: Vec<SweepHit> = hit.into_iter().collect();
                 (step, lift(&hits))
             }

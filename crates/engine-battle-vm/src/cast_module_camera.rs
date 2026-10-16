@@ -424,6 +424,40 @@ pub enum SpawnAnchor {
         rot: [i16; 3],
         scale: u16,
     },
+    /// The caster seat's position at the literal height `y`, with the zeroed
+    /// angle trio the arm's prologue left on its stack: PROT 0913 arm 2 seats
+    /// its two vortex records on the creature the installer `FUN_801F19EC`
+    /// has just stood on the caster (`a0 = creature + 0x34`, `a1 = sp+0x20`,
+    /// `0x801F6D2C..0x801F6D54`).
+    CasterUnturned { y: i16 },
+    /// The creature seat turned to its facing plus `yaw` (`sh v1,0x22(sp)`
+    /// of `creature[+0x46] + yaw`): PROT 0913 arm 10's cloud banks
+    /// (`0x801F7824..0x801F787C`).
+    CreatureYaw { yaw: i16 },
+    /// A point in the creature's own frame: its plane pair less
+    /// `trunc(sin(h) / div)` / `trunc(cos(h) / div)` along its heading `h`,
+    /// moved `trunc(cos(h) / side)` / `-trunc(sin(h) / side)` across it
+    /// (`side == 0`: not), then `trunc(sin(h) / extra)` / `trunc(cos(h) /
+    /// extra)` further back (`extra == 0`: not), at the literal height `y`,
+    /// on the creature's angle trio turned by `yaw`. PROT 0910 arm 5 builds
+    /// its five points this way (`0x801F71FC..0x801F7628`: `/ 64` for the
+    /// ring's emitter, `/ 12` and `/ 40` for the hands, `/ 32` past them).
+    CreatureFrame {
+        div: i16,
+        side: i16,
+        extra: i16,
+        y: i16,
+        yaw: i16,
+    },
+    /// The victim seat at the framing depth `ctx[+0x6D0]` as the scale
+    /// (`lh a3,0x6D0(v0)`): PROT 0913 arms 13, 18 and 19.
+    VictimDepthScaled,
+    /// Ring `index` of PROT 0913 arm 13's sixteen-ring whirlwind
+    /// (`0x801F7B90..0x801F7C5C`): the victim's plane pair at
+    /// `y = -0x40 * index`, a random yaw (`rand() % 0xFFF`), and the scale
+    /// `(|cos(0x380 + 16 index)| + 0x800) * ctx[+0x6D0] >> 12` off the SCUS
+    /// table `*0x8007B7F8` (`lh v0,0x700(v0)` over `index << 5`).
+    VictimColumn { index: u8 },
     /// Party seat `n` (`actor_table[n]`, `a0 = seat + 0x34`, `a1 = seat +
     /// 0x44`), resolved only while the seat holds a live member
     /// (`+0x14C != 0`). PROT 0911 arm 9's loop over the party
@@ -452,6 +486,8 @@ pub enum HeadingBase {
 pub struct AnchorSeats {
     pub caster: Option<ModuleSeat>,
     pub party: [Option<ModuleSeat>; 3],
+    /// The framing depth `ctx[+0x6D0]`, the scale PROT 0913 passes.
+    pub depth: i16,
 }
 
 /// Resolve one spawn call's `(a0, a1)` - the position trio and the angle
@@ -495,6 +531,40 @@ pub fn spawn_anchor_point_with(
         }
         SpawnAnchor::PartySeat(n) => seat_at((*seats.party.get(usize::from(n))?)?),
         SpawnAnchor::LiteralScaled { pos, rot, .. } => (pos, rot),
+        SpawnAnchor::CasterUnturned { y } => {
+            let c = seats.caster?;
+            ([c.x, y, c.z], [0; 3])
+        }
+        SpawnAnchor::CreatureYaw { yaw } => {
+            let c = creature?;
+            ([c.x, c.y, c.z], [0, (c.facing as i16).wrapping_add(yaw), 0])
+        }
+        SpawnAnchor::VictimDepthScaled => seat_at(victim?),
+        SpawnAnchor::CreatureFrame {
+            div,
+            side,
+            extra,
+            y,
+            yaw,
+        } => {
+            let c = creature?;
+            let (sin, cos) = trig12(c.facing & 0xFFF);
+            let (sin, cos) = (i32::from(sin), i32::from(cos));
+            let q = |v: i32, d: i16| if d == 0 { 0 } else { v / i32::from(d) };
+            let x = i32::from(c.x) - q(sin, div) - q(cos, side) - q(sin, extra);
+            let z = i32::from(c.z) - q(cos, div) + q(sin, side) - q(cos, extra);
+            (
+                [x as i16, y, z as i16],
+                [0, (c.facing as i16).wrapping_add(yaw), 0],
+            )
+        }
+        SpawnAnchor::VictimColumn { index } => {
+            let v = victim?;
+            (
+                [v.x, -0x40 * i16::from(index), v.z],
+                [0, nova_column_yaw(index), 0],
+            )
+        }
         SpawnAnchor::Creature => seat_at(creature?),
         SpawnAnchor::Victim => seat_at(victim?),
         SpawnAnchor::ShotFocus => {
@@ -547,8 +617,18 @@ pub fn spawn_anchor_point_with(
 /// `FUN_80021B04` at `0x80021DAC`): `0x1000` at nearly every call; PROT
 /// 0911 arm 9 passes the healed group's extent (`lh a3,0x2C(sp)`, the TR z
 /// of the shot it armed), and a [`SpawnAnchor::LiteralScaled`] call its own.
-pub fn spawn_anchor_scale(anchor: SpawnAnchor, shot: Option<ModuleShot>) -> u16 {
+pub fn spawn_anchor_scale(
+    anchor: SpawnAnchor,
+    shot: Option<ModuleShot>,
+    seats: AnchorSeats,
+) -> u16 {
     match anchor {
+        SpawnAnchor::VictimDepthScaled => seats.depth as u16,
+        SpawnAnchor::VictimColumn { index } => {
+            let (_, cos) = trig12(0x380 + 16 * u16::from(index));
+            let k = i32::from(cos).abs() + 0x800;
+            ((k * i32::from(seats.depth)) >> 12) as u16
+        }
         SpawnAnchor::ShotPointFacing { .. } => shot
             .map(|s| s.tr[2])
             .filter(|&z| z > 0)
@@ -556,6 +636,15 @@ pub fn spawn_anchor_scale(anchor: SpawnAnchor, shot: Option<ModuleShot>) -> u16 
         SpawnAnchor::LiteralScaled { scale, .. } => scale,
         _ => 0x1000,
     }
+}
+
+/// The yaw PROT 0913 arm 13 gives whirlwind ring `index`: retail draws
+/// `rand() % 0xFFF` per ring (`0x801F7BBC..0x801F7BF4`); the port runs the
+/// BIOS `rand` shape from a fixed seed so the stack's spread is stable.
+pub fn nova_column_yaw(index: u8) -> i16 {
+    let mut state = 0x3039u32.wrapping_add(u32::from(index).wrapping_mul(0x9E37));
+    let r = legaia_engine_system::rand::psyq_rand_step(&mut state);
+    (u32::from(r) % 0xFFF) as i16
 }
 
 /// Which record one module spawn call hands `FUN_80021B04` as `a2`.
@@ -882,6 +971,7 @@ pub fn module_profile(prot_entry: u32) -> Option<ModuleProfile> {
         // beside its body on the arm clock of `body_paced`.
         910 => Some(
             ModuleProfile::body_paced(swordie_direct, crate::seru_magic_ticks::SWORDIE_SLASH_ARM)
+                .with_staged_spawns()
                 .seated_at(910),
         ),
         911 => Some(
@@ -898,6 +988,7 @@ pub fn module_profile(prot_entry: u32) -> Option<ModuleProfile> {
         }),
         913 => Some(
             ModuleProfile::body_paced(nova_direct, crate::seru_magic_ticks::NOVA_DAMAGE_PHASE)
+                .with_staged_spawns()
                 .seated_at(913),
         ),
         // Ported tick bodies paced by their countdown holds alone.

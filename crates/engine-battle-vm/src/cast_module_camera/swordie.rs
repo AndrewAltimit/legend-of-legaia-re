@@ -4,6 +4,54 @@
 use super::body_paced::*;
 use super::*;
 
+const fn swordie_spawn(va: u32, anchor: SpawnAnchor) -> ModuleSpawn {
+    ModuleSpawn {
+        record: SpawnRecord::Module(va),
+        anchor,
+    }
+}
+
+const fn hand(side: i16, extra: i16, y: i16) -> SpawnAnchor {
+    SpawnAnchor::CreatureFrame {
+        div: 12,
+        side,
+        extra,
+        y,
+        yaw: 0x400,
+    }
+}
+
+/// PROT 0910 arm 5's five spawns on its pass (`jal 0x80021B04` at
+/// `0x801F7298`, `73F4`, `7478`, `75A0`, `7624`): the ring emitter
+/// `0x801F8A80` a sixty-fourth of a unit behind the creature, whose
+/// op-`0x20` loop calls stager arms `0` and `1` fifteen times, then for
+/// each hand a glow `0x801F8B44` at `y = -0xE0` and the ray emitter
+/// `0x801F8B8C` (stager arms `2` / `3`, eleven times) at `y = -0x118`.
+/// The retail capture of the cast holds the rings at `(29, 0, -2370)` and
+/// the hands at `x = -78` / `126`, `z = -2646` round the creature's
+/// `(30, 0, -2307)`.
+pub const SWORDIE_RING_SPAWNS: [ModuleSpawn; 5] = [
+    swordie_spawn(
+        0x801F_8A80,
+        SpawnAnchor::CreatureFrame {
+            div: 64,
+            side: 0,
+            extra: 0,
+            y: 0,
+            yaw: 0,
+        },
+    ),
+    swordie_spawn(0x801F_8B44, hand(40, 0, -0xE0)),
+    swordie_spawn(0x801F_8B8C, hand(40, 32, -0x118)),
+    swordie_spawn(0x801F_8B44, hand(-40, 0, -0xE0)),
+    swordie_spawn(0x801F_8B8C, hand(-40, 32, -0x118)),
+];
+
+/// PROT 0910 arm 8's spawn on its pass, on the creature (`0x801F7898`): the
+/// glow whose op-`0x20` loop calls stager arm `4` three times.
+pub const SWORDIE_GLOW_SPAWNS: [ModuleSpawn; 1] =
+    [swordie_spawn(0x801F_8CB8, SpawnAnchor::Creature)];
+
 /// The yaw offsets PROT 0910's arm 10 adds to `-f` per landed slash, read
 /// at `0x801F8D60 + hits * 2` (`0x801F7B00..0x801F7B1C`): the sway that
 /// swings the camera a different way on each of the four hits.
@@ -54,7 +102,7 @@ fn on_creature(c: ModuleSeat, pitch: i16, k: i32, tr: [i16; 3], frames: u16) -> 
 /// ([`SWORDIE_SWAY_LANDED`]). The host feeds the two module words through
 /// [`ModuleCamState::module_words`] (`[hits, fourth slash progress]`).
 ///
-/// PORT: overlay_summon_swordie_0910_801f69ec (PROT 0910; camera arms 0, 5..10, the arm 2 creature placement and the arm 4/5 captions)
+/// PORT: overlay_summon_swordie_0910_801f69ec (PROT 0910; camera arms 0, 5..10, the arm 2 creature placement, the arm 4/5 captions, the settle arm's caption clear and the spawn calls of arms 5 and 8)
 pub fn swordie_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) -> ArmDirection {
     let v = seats.victim;
     let h = heading(v, seats.caster).wrapping_add(0x800) & 0xFFF;
@@ -82,13 +130,19 @@ pub fn swordie_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats)
                 let c = st.creature_live.or(st.creature).unwrap_or(point);
                 match arm {
                     4 => captioned(ArmDirection::PASS, ModuleCaption::SpellName),
-                    5 => captioned(
-                        on_creature(c, 0, 0x900, [0, 0x300, 0x400], 1),
-                        ModuleCaption::AttackName,
-                    ),
+                    5 => ArmDirection {
+                        spawns: &SWORDIE_RING_SPAWNS,
+                        ..captioned(
+                            on_creature(c, 0, 0x900, [0, 0x300, 0x400], 1),
+                            ModuleCaption::AttackName,
+                        )
+                    },
                     6 => on_creature(c, -0x40, 0xC00, [-0x300, 0x300, 0x800], 0x100),
                     7 => on_creature(c, 0x80, 0x700, [0, 0x400, 0x400], 1),
-                    8 => on_creature(c, 0x60, 0x820, [0, 0x300, 0x2400], 0x80),
+                    8 => ArmDirection {
+                        spawns: &SWORDIE_GLOW_SPAWNS,
+                        ..on_creature(c, 0x60, 0x820, [0, 0x300, 0x2400], 0x80)
+                    },
                     9 => shot(
                         [0x40, yaw_from(0, c.facing)],
                         [0, 0x500, d / 2],
@@ -179,5 +233,29 @@ mod tests {
         st.module_words = [4, SWORDIE_SWAY_LANDED];
         let s = swordie_direct(&mut st, 10, seats).shot.expect("sway");
         assert_eq!((s.angles, s.tr), ([0x100, 0xE00, 0], [0, 0x300, 0x800]));
+    }
+
+    /// Arm 5's points land where the retail capture holds them round the
+    /// creature at `(30, 0, -2307)` facing `13`: the ring at
+    /// `(29, 0, -2370)`, the first hand's glow at `(-78, -224, -2646)` and
+    /// its ray emitter `(-80, -280, -2773)`, the second hand mirrored.
+    #[test]
+    fn swordie_arm5_points_match_the_capture() {
+        let c = ModuleSeat {
+            x: 30,
+            y: 0,
+            z: -2307,
+            facing: 13,
+        };
+        let at = |i: usize| {
+            spawn_anchor_point(SWORDIE_RING_SPAWNS[i].anchor, Some(c), None, None)
+                .unwrap()
+                .0
+        };
+        assert_eq!(at(0), [29, 0, -2370]);
+        assert_eq!(at(1), [-78, -0xE0, -2646]);
+        assert_eq!(at(2), [-80, -0x118, -2773]);
+        assert_eq!(at(3)[1], -0xE0);
+        assert!((at(3)[0] - 126).abs() <= 1 && (at(3)[2] + 2650).abs() <= 1);
     }
 }
