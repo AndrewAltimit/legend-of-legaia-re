@@ -13,8 +13,15 @@
 //! ([`legaia_render_kernels::shatter`]). Move-VM op `0x11` sets the per-tick
 //! rate of `+0x7A` and the part tick's motion block ramps it, so a record
 //! breaks its own model apart over time: Zenoir's summoning mound
-//! (PROT 0908 records `0x801F85D4` / `0x801F8638`) and Nighto's crystal
-//! (PROT 0907 record `0x801F82C0`).
+//! (PROT 0908 records `0x801F85D4` / `0x801F8638`), Nighto's crystal
+//! (PROT 0907 record `0x801F82C0`) and Vera's two arm-5 glows (PROT 0905
+//! `0x801F8494` / `0x801F8500`, op `0x11 0x10`), which retail holds alive
+//! through arm 8 with `+0x7A` climbing (`0xC0` fourteen vsyncs after their
+//! seat, `0x840` at 164): the burst of yellow shards, where a whole disc
+//! would grow over the screen. The gate covers the default arm, the sprite
+//! arm, the ribbon and library meshes alike; a shattered default-arm node is
+//! built without the bank-3 quad split, which only the prim dispatcher
+//! applies.
 //!
 //! The row is taken as zero: the battle rows read zero in every capture
 //! ([`legaia_render_kernels::shatter::ShatterRow`]), so a battle part's

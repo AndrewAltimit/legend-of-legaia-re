@@ -329,7 +329,13 @@ impl SummonScene {
             .filter(|p| !p.finished)
             .filter_map(|p| {
                 let s = &p.state;
-                let mesh = crate::effect_ribbon::ribbon_mesh_for_actor(s)?;
+                let mut mesh = crate::effect_ribbon::ribbon_mesh_for_actor(s)?;
+                // The ribbon is the node's model too: the model draw's
+                // `+0x7A` gate ([`crate::part_shatter`]).
+                crate::part_shatter::apply_part_shatter(
+                    &mut mesh,
+                    crate::part_shatter::part_shatter_word(s),
+                );
                 (!mesh.indices.is_empty()).then(|| crate::effect_ribbon::RibbonDraw {
                     mesh,
                     world_pos: [s.world_x as f32, s.world_y as f32, s.world_z as f32],

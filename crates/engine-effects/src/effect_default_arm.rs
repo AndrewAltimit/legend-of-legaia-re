@@ -968,7 +968,15 @@ pub fn default_arm_vram_mesh(s: &ActorState) -> Option<legaia_tmd::mesh::VramMes
         bios_rand(0),
         0,
     )?;
-    let mesh = vram_mesh(&decode(&b), s.field_72, &ColourWord::of(s));
+    // A node the model draw sends to the shatter renderer (`+0x7A` up,
+    // `0x8001B45C`) never reaches the prim dispatcher, so its quads are not
+    // handler bank 3's sixteen-way split: `FUN_80029DD8` takes each packet
+    // as two triangles.
+    let mut colour = ColourWord::of(s);
+    if crate::part_shatter::part_shatter_word(s) != 0 {
+        colour.split_quads = false;
+    }
+    let mesh = vram_mesh(&decode(&b), s.field_72, &colour);
     (!mesh.indices.is_empty()).then_some(mesh)
 }
 
