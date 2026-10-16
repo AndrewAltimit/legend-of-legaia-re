@@ -150,8 +150,17 @@ impl World {
         // Pacing: a holdable arm fires only once the engine has held it.
         let holds = pres.arm_holds(body, phase_in);
         let held = self.casting.module_pres.arm_held;
-        let paced = !holds || held > 0;
+        // A module whose countdown gates the engine ports
+        // (`cast_module_camera::summon_holds`) holds exactly as long as
+        // retail, so an arm it passes on its first tick is one retail runs
+        // in a single pass too (PROT 0918's ungated arm 17, whose kill of
+        // arm 15's held white fade would otherwise never fire).
+        let engine_paced =
+            legaia_engine_battle_vm::cast_module_camera::summon_holds::summon_holds(entry)
+                .is_some();
+        let paced = !holds || held > 0 || engine_paced;
         let first_hold = holds && !passed && held == 0;
+        let first_pass = engine_paced && first && passed;
         if holds && passed && held == 0 {
             self.casting.module_pres.unpaced_arms += 1;
         }
@@ -172,10 +181,18 @@ impl World {
                 sites.len()
             );
         }
+        // The fade sites that spawned on this tick: a `FadeStore` parks the
+        // fade its own call just made, whatever timing the decoder gave the
+        // store. A store in the delay slot of the arm's exit jump (PROT 0922
+        // arm 11, `0x801F746C`) reads as `Every`, which on a held arm fires on
+        // the first hold - before the pass that spawns its fade - and left
+        // that held fade unkillable.
+        let mut spawned_now: Vec<u32> = Vec::new();
         for s in &sites {
             let once = match s.timing {
                 SiteTiming::Pass => passed && paced,
-                SiteTiming::Hold | SiteTiming::Every if holds => first_hold,
+                SiteTiming::Every if holds => first_hold || first_pass,
+                SiteTiming::Hold if holds => first_hold,
                 SiteTiming::Hold | SiteTiming::Every => first,
             };
             let each = match s.timing {
@@ -196,6 +213,7 @@ impl World {
                         let mut seat = None;
                         legaia_engine_system::fade::spawn_fade(&mut seat, &t, r.id);
                         if let Some(state) = seat {
+                            spawned_now.push(s.va);
                             self.casting.module_pres.fades.push(HookFade {
                                 site: s.va,
                                 slot: None,
@@ -205,7 +223,9 @@ impl World {
                     }
                 }
                 // The arm parks the fade it just spawned (`sw v0, slot`).
-                PresentationCall::FadeStore { fade, slot } if once => {
+                PresentationCall::FadeStore { fade, slot }
+                    if once || spawned_now.contains(&fade) =>
+                {
                     let fades = &mut self.casting.module_pres.fades;
                     for f in fades.iter_mut().filter(|f| f.slot == Some(slot)) {
                         f.slot = None;

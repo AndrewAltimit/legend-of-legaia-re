@@ -164,6 +164,14 @@ pub struct ModuleCamState {
     /// A module-side mirror of the TR y global, for an arm that gates on the
     /// camera it is climbing (PROT 0917's arm 1).
     pub tr_y: i32,
+    /// A model word an arm counts up or down as its wait
+    /// ([`summon_holds::Gate::RampUp`] / [`summon_holds::Gate::RampDown`]):
+    /// PROT 0918's creature record `+0x72`, PROT 0922's clip frame `+0x68`.
+    pub ramp: i32,
+    /// Whether every monster seat has settled - a living one back on idle,
+    /// a dead one faded out - fed in by the host each tick for a settle
+    /// gate ([`summon_holds::Gate::Settle`]).
+    pub row_settled: bool,
 }
 
 /// `FUN_801D5854(7, 6)` out of a module arm: the action SM's own case-6
@@ -477,6 +485,7 @@ pub mod capture_countdown;
 pub mod creature;
 mod evil_seru_magic;
 mod seru;
+pub mod summon_holds;
 mod theeder_gizam;
 pub use capture::*;
 pub use capture_countdown::{ArmCountdown, CountdownWrite, arm_countdown, capture_arm_countdowns};
@@ -620,6 +629,8 @@ pub fn module_profile(prot_entry: u32) -> Option<ModuleProfile> {
         933 => Some(ModuleProfile::camera_only(terra_direct).seated_at(933)),
         934 => Some(ModuleProfile::camera_only(ozma_direct).seated_at(934)),
         913 => Some(ModuleProfile::camera_beside(nova_direct).seated_at(913)),
+        // Ported tick bodies paced by their countdown holds alone.
+        918 | 919 | 922 | 924 | 925 | 927 => summon_holds::summon_hold_profile(prot_entry),
         _ => None,
     }
 }

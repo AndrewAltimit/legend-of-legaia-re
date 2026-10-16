@@ -100,6 +100,14 @@ impl World {
                     .get_or_insert(victim_slot);
                 let seats = self.module_cam_seats(caster_slot, latched);
                 let mut st = self.module_cam_with_yaw_base();
+                // A settle gate's row (`summon_holds::Gate::Settle`): every
+                // monster seat idle, or faded out once dead.
+                let pc = usize::from(self.party.party_count);
+                st.row_settled =
+                    (pc..pc + usize::from(ctx.monster_count)).all(|s| match self.actors.get(s) {
+                        Some(a) if a.battle.hp == 0 => a.battle.render_color == 0 || !a.active,
+                        _ => self.chain_seat_settled(s, false),
+                    });
                 let d = direct(&mut st, ctx.phase, seats);
                 self.store_module_cam(st);
                 d

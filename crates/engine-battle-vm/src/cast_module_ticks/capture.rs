@@ -325,6 +325,12 @@ pub fn capture_tick_body(prot_entry: u32, action_id: u8) -> Option<u32> {
 ///
 /// PORT: FUN_801F6A00 (phase machine + staging; packet arms unported)
 pub fn spikefish_tick(ctx: &mut CastModuleCtx, caster: &mut CastActorState) -> CastTickStep {
+    // Arm 9 is terminal: it clears `ctx+0x278` and the busy register
+    // (`0x801F7AA0..0x801F7AB0`) without advancing.
+    if ctx.phase == SPIKEFISH_TERMINAL_ARM {
+        ctx.ctx_278 = 0;
+        return CastTickStep::Done;
+    }
     run_tick(ctx, 10, |c| {
         if c.phase == 0 {
             c.ctx_278 = 0;
@@ -335,6 +341,10 @@ pub fn spikefish_tick(ctx: &mut CastModuleCtx, caster: &mut CastActorState) -> C
         false
     })
 }
+
+/// PROT 0925's terminal arm (`0x801F7AA0`), which ends the module on its
+/// first tick.
+pub const SPIKEFISH_TERMINAL_ARM: u8 = 9;
 
 /// The arm PROT 0925 stages its clip from (`sb t0, 0x1da(v0)` at
 /// `0x801F7448`, inside the arm the head table's word 5 reaches).
@@ -412,6 +422,12 @@ pub fn ultimate_rave_tick(
     caster: &mut CastActorState,
     victim: &mut CastActorState,
 ) -> CastTickStep {
+    // Arm 11 ends the module once its countdown has run out (`move fp,zero`
+    // at `0x801F77D0`, past the `bgtz` the hold director carries).
+    if ctx.phase == ULTIMATE_RAVE_TERMINAL_ARM {
+        ctx.ctx_278 = 0;
+        return CastTickStep::Done;
+    }
     run_tick(ctx, 12, |c| {
         if c.phase == ULTIMATE_RAVE_FINALE_ARM {
             victim.hp = 0;
@@ -425,6 +441,9 @@ pub fn ultimate_rave_tick(
         false
     })
 }
+
+/// PROT 0924's terminal arm (`0x801F7764`).
+pub const ULTIMATE_RAVE_TERMINAL_ARM: u8 = 11;
 
 /// The arm PROT 0924 zeroes the victim's HP in (`sh zero, 0x14c(s3)` at
 /// `0x801F76A0`).
@@ -452,6 +471,18 @@ pub fn puera_tick(
     victim: &mut CastActorState,
     hit: Option<i32>,
 ) -> CastTickStep {
+    // Arm 24 ends the module once the monster row has settled (`move fp,
+    // zero` at `0x801F90AC`); arm 20 stores `phase + 2` (`0x801F87D8`), so
+    // arm 21 - the dispatch's out-of-range landing `0x801F90B0` - is never
+    // reached.
+    match ctx.phase {
+        PUERA_TERMINAL_ARM => return CastTickStep::Done,
+        PUERA_SKIP_ARM => {
+            ctx.phase = PUERA_SKIP_ARM + 2;
+            return CastTickStep::Busy;
+        }
+        _ => {}
+    }
     run_tick(ctx, 25, |_| {
         if let Some(roll) = hit
             && aoe_seat_is_hittable(victim)
@@ -461,6 +492,11 @@ pub fn puera_tick(
         false
     })
 }
+
+/// PROT 0922's terminal arm (`0x801F8F18`).
+pub const PUERA_TERMINAL_ARM: u8 = 24;
+/// The PROT 0922 arm that steps the phase by two (`0x801F87D0..0x801F87E0`).
+pub const PUERA_SKIP_ARM: u8 = 20;
 
 /// PROT 0927 (Juggernaut) tick body - the sibling of the AoE stager
 /// [`juggernaut_stager`] and a **second, differently clamped** damage site in
@@ -484,6 +520,22 @@ pub fn juggernaut_tick(
     victim: &mut CastActorState,
     hit: Option<i32>,
 ) -> CastTickStep {
+    // Arm 2 stores the phase `0x0B` (`0x801F6F6C`) - arms 3..10 and 22 are
+    // the dispatch's out-of-range landing `0x801F82D4` - and arm 21 steps it
+    // by two (`0x801F77B8..0x801F77C4`, then the shared `+1`). Arm 28 ends
+    // the module (`clear s8` at `0x801F82D0`) once its countdown runs out.
+    match ctx.phase {
+        JUGGERNAUT_TERMINAL_ARM => return CastTickStep::Done,
+        2 => {
+            ctx.phase = JUGGERNAUT_AFTER_SEAT_ARM;
+            return CastTickStep::Busy;
+        }
+        21 => {
+            ctx.phase = 23;
+            return CastTickStep::Busy;
+        }
+        _ => {}
+    }
     run_tick(ctx, 29, |_| {
         if let Some(roll) = hit
             && aoe_seat_is_hittable(victim)
@@ -493,6 +545,11 @@ pub fn juggernaut_tick(
         false
     })
 }
+
+/// PROT 0927's terminal arm (`0x801F81D8`).
+pub const JUGGERNAUT_TERMINAL_ARM: u8 = 28;
+/// The phase PROT 0927's seat arm 2 stores (`li v0,0xb` at `0x801F6F68`).
+pub const JUGGERNAUT_AFTER_SEAT_ARM: u8 = 0x0B;
 
 /// PROT 0918 (Kemaro) tick body.
 ///
@@ -530,6 +587,13 @@ pub fn kemaro_tick(
     {
         apply_hit_floor_zero(victim, roll);
     }
+    // Arms `0x12` and `0x13` share one body (`slti 0x12` / `slti 0x14` at
+    // `0x801F6DF0..0x801F6DFC`); the non-damage branch is the finish, which
+    // restores the victim and stores `0xFF` (`0x801F8A54..0x801F8A5C`).
+    if ctx.phase == KEMARO_FINISH_PHASE {
+        ctx.phase = KEMARO_DONE_PHASE;
+        return Some(CastTickStep::Busy);
+    }
     advance_phase(ctx);
     Some(CastTickStep::Busy)
 }
@@ -541,6 +605,8 @@ pub const KEMARO_DAMAGE_PHASE: u8 = 0x12;
 pub const KEMARO_LAST_PHASE: u8 = 0x14;
 /// The band's "choreography done" phase marker.
 pub const KEMARO_DONE_PHASE: u8 = 0xFF;
+/// PROT 0918's finishing arm, which stores [`KEMARO_DONE_PHASE`].
+pub const KEMARO_FINISH_PHASE: u8 = 0x13;
 
 /// PROT 0949 (Water Crystals) tick body - the sibling of the freeze-ramp
 /// stager [`water_crystals_stager`].

@@ -1697,6 +1697,43 @@ is retail behaviour and the port reproduces it:
 the action SM's write-back carries the module's cursor and flee stores over
 its own context (`World::step_battle`).
 
+### Summon countdown holds
+
+<a id="summon-countdown-holds"></a>
+
+PROT 0918 (Kemaro), 0919 (Spoon), 0922 (Puera), 0924 (Ultimate Rave), 0925
+(the Spikefish flute) and 0927 (Juggernaut) each keep one countdown word in
+their own image and open most arms on it: drain, store, return busy while it
+is positive, and on the tick it is not run the arm's writes, re-arm the word
+and advance. Their tick bodies are ported; the holds are
+`cast_module_camera::summon_holds`, one table per module, run as a director
+ahead of the body (it arms no camera, so the band keeps its framing). Each
+module's profile paces the band, so `0x36` lasts as long as the module.
+
+| PROT | word | drain | gate shapes beyond the plain countdown |
+|---|---|---|---|
+| 0918 | `0x801F92E4` | `scalar * step` | arm 6 counts the creature record's `+0x72` up `4 * scalar` a frame to `0x1000`; arm 17 has no gate |
+| 0919 | `0x801F8E5C` | `scalar * step` | arm 1 drains with no gate |
+| 0922 | `0x801FA0B8` | `scalar * step`, positive words only | arm 8 walks the creature's clip frame `+0x68` back from `0x1D0` while it drains; arm 24 waits for every monster seat to settle |
+| 0924 | `0x801F7C48` | `step` | arm 1 drains with no gate |
+| 0925 | `0x801F800C` | `step` | none |
+| 0927 | `0x801F9C8C` | `step` | none |
+
+The arms that store a literal phase are the tick bodies': PROT 0927's arm 2
+stores `0x0B` and its arm 21 steps by two (arms 3..10 and 22 are never
+reached), PROT 0922's arm 20 steps by two, PROT 0918's arm `0x13` stores
+`0xFF`, and the terminal arms (0922's 24, 0924's 11, 0925's 9, 0927's 28) end
+the module without advancing. The stream waits every module opens with
+(`ctx[+0x276]`, `FUN_8003F2B8(1)`) pass at once: the engine's creature is
+resident.
+
+Measured against the cast-sequence oracle's retail captures (`0x90`, `0x94`,
+`0x99` on seat 3), every arm retail runs at a frame step of `1` to `3`
+matches the table within a battle frame. Arms retail runs at step `4` read
+up to twice their countdown in vsyncs: a frame that takes longer than four
+vsyncs still drains four vsyncs' worth, so those arms carry the lag of a
+scene the hardware cannot draw at speed, and the port keeps the countdown.
+
 ### PROT 0948 (Cross Beam)
 
 The image's other routine, `0x801F726C`, is the beam's packet builder, called
@@ -2386,9 +2423,21 @@ holding tick, its `Pass` calls on the pass after a hold. An arm the engine
 passes on its first tick is counted (`ModulePresentation::unpaced_arms`) and
 fires nothing. An arm that cannot hold fires as it runs. Driving every band
 module through `World::run_cast_module_code` alone, the unpaced arms carry
-every site of PROT 0906, 0912, 0913, 0918, 0922, 0945, 0949, 0951, 0957, 0958
-and 0965 and some of 0903, 0904, 0908, 0910, 0911, 0917, 0924, 0925, 0928,
-0929, 0940 and 0962; those wait on their bodies' arm pacing.
+every site of PROT 0906, 0912, 0913, 0945, 0949, 0951, 0957, 0958 and 0965
+and some of 0903, 0904, 0908, 0910, 0911, 0917, 0928, 0929, 0940 and 0962;
+those wait on their bodies' arm pacing. The six modules whose countdowns are
+ported ([Summon countdown holds](#summon-countdown-holds)) are paced like
+retail, so the hook fires every arm of theirs, including the ones that pass
+on their first tick (PROT 0918's ungated arm 17, whose kill of arm 15's held
+white fade is what clears the screen).
+
+**A fade's park follows its fade.** A `FadeStore` is the `sw v0` after the
+spawn, so the hook parks a fade whenever the call it names spawned on the
+tick, whatever timing the decoder gave the store. A store in the delay slot
+of an arm's exit jump reads as running on every pass (PROT 0922 arm 11's
+`0x801F746C`, PROT 0918 arm 15's `0x801F8120`); on a held arm that put it on
+the first hold, before the pass that spawns the fade, and left the held fade
+unkillable - a solid yellow or white screen for the rest of the band.
 
 **The colour wash.** Both cast dispatchers end by calling `FUN_801F2410` when
 `ctx[+0x27A]` (the alpha) is non-zero, so the wash draws on every frame the
