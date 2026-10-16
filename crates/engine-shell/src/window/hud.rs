@@ -14,26 +14,7 @@ mod field_party;
 mod text_list;
 
 /// One on-screen sparring-tutorial box with its stage rect `(x, y, w, h)`.
-pub(super) type TutorialStageBox<'a> = (
-    (i32, i32, i32, i32),
-    &'a legaia_engine_menus::battle_flow::ActiveTutorialBox,
-);
-
-/// Project the simulation's arts-input phase onto the presentation
-/// crate's. The two enums are deliberately separate types -
-/// `legaia-engine-ui` is a leaf that does not link `engine-core` - so
-/// every host that draws the input screen carries this three-line map.
-fn arts_input_screen(
-    p: legaia_engine_battle::arts_command_input::ArtsInputScreen,
-) -> legaia_engine_ui::arts_input::ArtsInputScreen {
-    use legaia_engine_battle::arts_command_input::ArtsInputScreen as Sim;
-    use legaia_engine_ui::arts_input::ArtsInputScreen as Ui;
-    match p {
-        Sim::Entering => Ui::Entering,
-        Sim::Review => Ui::Review,
-        Sim::Targeting => Ui::Targeting,
-    }
-}
+pub(super) use legaia_engine_screens::battle_screens::TutorialStageBox;
 
 pub(super) use legaia_engine_screens::battle_command::CommandChips;
 
@@ -134,66 +115,12 @@ impl PlayWindowApp {
     }
 }
 
-/// Top-left anchor of the battle HUD's slot-row block, in surface pixels.
-///
-/// Numerically equal to `legaia_engine_screens::LEVEL_UP_PEN` and deliberately a separate
-/// constant: nothing ties the battle HUD's anchor to the post-battle banner's,
-/// and collapsing them would invent a coupling neither host has.
-pub(super) const BATTLE_HUD_PEN: (i32, i32) = (8, 60);
-
-/// Project the HUD model's slot array into the shared builder's view type.
-///
-/// Every slot is emitted, **including inactive ones** (as empty-name rows the
-/// builder skips). That is deliberate: `battle_hud_draws_for` derives both a
-/// row's Y and a popup's anchor from the slice index, so the index has to stay
-/// the absolute actor-table slot. Compacting to active slots only would shift
-/// every monster row up and anchor damage numbers to the wrong actor.
-pub(super) fn battle_hud_slot_views(
-    hud: &legaia_engine_battle::battle_hud_state::BattleHud,
-) -> Vec<HudSlotView<'_>> {
-    hud.slots
-        .iter()
-        .map(|s| {
-            let (hp_fill, mp_fill) = s.gauge_fill_indices();
-            let meta = HudSlotMeta {
-                is_party: s.is_party,
-                alive: s.alive,
-                hp: s.hp,
-                hp_max: s.hp_max,
-                mp: s.mp,
-                mp_max: s.mp_max,
-                ap_filled: s.ap_filled,
-                ap_max: s.ap_max,
-                hp_fill,
-                mp_fill,
-                // The single retail-selected status element
-                // (`FUN_8002C2E4`'s ladder over the packed `+0x16E` word)
-                // plus the level its no-ailment arm draws.
-                status_sprite: s.status_sprite(),
-                level: s.level,
-            };
-            let name = if s.active { s.name.as_str() } else { "" };
-            HudSlotView::from_plain(meta, name)
-        })
-        .collect()
-}
-
-/// Project the HUD model's popup queue into the shared builder's view type.
-pub(super) fn battle_hud_popup_views(
-    hud: &legaia_engine_battle::battle_hud_state::BattleHud,
-) -> Vec<HudPopupView> {
-    hud.popup_views()
-        .into_iter()
-        .map(|p| HudPopupView {
-            slot: p.slot,
-            amount: p.amount,
-            is_heal: p.is_heal,
-            is_crit: p.is_crit,
-            status_letter: p.status_letter,
-            alpha: p.alpha,
-        })
-        .collect()
-}
+// The battle HUD's slot / popup projections and its pen are shared with the
+// browser play page (`legaia_engine_screens::battle_screens`).
+#[cfg(test)]
+use legaia_engine_screens::battle_screens::{
+    BATTLE_HUD_PEN, battle_hud_popup_views, battle_hud_slot_views,
+};
 
 #[cfg(test)]
 #[path = "hud/battle_hud_wiring_tests.rs"]

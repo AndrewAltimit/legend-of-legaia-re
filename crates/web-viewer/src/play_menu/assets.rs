@@ -65,10 +65,6 @@ impl PlayMenuAssets {
         MenuRects::new(self.windows.as_ref())
     }
 
-    pub(super) fn window_rect(&self, id: usize) -> (i32, i32, i32, i32) {
-        self.rects().rect(id)
-    }
-
     /// The chrome atlas' band rects, when the gold chrome resolved.
     fn chrome_rects_opt(&self) -> Option<&SaveMenuAtlasRects> {
         self.chrome.as_ref().map(|(_, r)| r)

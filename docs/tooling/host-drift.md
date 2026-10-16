@@ -208,7 +208,9 @@ host call site at all: the shop-family screens' only caller is
 [`crates/engine-screens`](../../crates/engine-screens/README.md), the
 projection both hosts share. The gate's `SHARED_COMPOSERS` table names each
 such crate with its entry points, and a builder named in the crate's source is
-credited to exactly the hosts that **call** an entry (`shop_overlay_frame`).
+credited to exactly the hosts that **call** an entry (`shop_overlay_frame`,
+the battle screens' `battle_hud_frame_draws` / `battle_chrome_sprite_draws`,
+the pause menu's `field_menu_root_draws` / `field_menu_sub_draws`).
 The credit is per host, not per crate: a host that stops calling the entry
 loses every builder behind it, so a one-host composition still reads as
 `DRIFT`.
@@ -1497,7 +1499,7 @@ screens.
 |---|---|
 | pause-menu press and open | `BootSession::press_field_menu`, `World::field_menu_open_allowed` (dialogue engagement, narration, title card, locks, shop), `open_field_menu`, `close_field_menu` |
 | pause-menu stack | `field_menu_dispatch::tick_root_list`, `tick_open_subsession`, `finish_subsession`; per host: rack I/O, key table, options store (`SubsessionHandoff`) |
-| pause-menu draw assembly | `engine-ui::pause_menu` (`engine-ui/tests/pause_menu_compose.rs`) |
+| pause-menu draw assembly | `engine-ui::pause_menu` (`engine-ui/tests/pause_menu_compose.rs`); the session-to-view projection `engine-screens::pause_screens` |
 | boot Options | The title row opens the pause menu on the Options sub-screen (`open_menu_row_from_title`, `play_menu_open_row`); a `menu_from_title` / `PlayMenu::from_title` flag returns to the title. |
 | Options rows | `OptionsSession::screen_model`; simulation knobs `engine-core::options::apply_to_world` |
 | shop / prize / inn step | `MenuRuntime::poll_field_overlay` (the open plus the opening tick's no-edge step), `step_field_session` (every later tick; returns the cue), `suspends_field` (an inn is a field dialogue and is not suspended) |
@@ -1773,7 +1775,8 @@ Three more surfaces sit outside every tier:
 | body blend | `engine-battle::battle_body_blend` behind `BattleActorDrawPlan::apply_body_blend`; cue precedence `body_cue`, `tint_cue_applies` |
 | target cursor cue | `battle_action::cursor_cue` |
 | monster action-tag clips | `SceneHost::install_battle_monster_action_clips` |
-| HUD frame | `battle_hud::battle_intro_names`, `battle_commit_log`, `battle_banner_message` (elements `0x59` / `0x65` share the string at `ctx + 0x1F9`; [`battle-action.md`](../subsystems/battle-action.md#the-battle-message-banner-elements-0x59-and-0x65)) |
+| HUD frame and chrome, tutorial boxes, arts-input chrome | `engine-screens::battle_screens` (`battle_hud_frame_draws`, `battle_chrome_sprite_draws`, `battle_tutorial_chrome_draws`, `arts_input_chrome_draws`) |
+| HUD frame rows | `battle_hud::battle_intro_names`, `battle_commit_log`, `battle_banner_message` (elements `0x59` / `0x65` share the string at `ctx + 0x1F9`; [`battle-action.md`](../subsystems/battle-action.md#the-battle-message-banner-elements-0x59-and-0x65)) |
 | effect spawns | `World::route_battle_effect_spawns`; a `ui_element` raise is a placement index for the HUD spawner `FUN_801D8DE8`, not an effect |
 | effect ribbon (move-VM op `0x42`, `FUN_801CFA48`) | `World::active_effect_ribbons` (`effect_ribbon`); in play the carrier is Gilium's summon (PROT 0923) |
 | ground shadow, default draw-kind-4 arm | `engine-effects::effect_default_arm` (`FUN_80028158`), `World::active_effect_kind4_draws`, `World::battle_ground_shadows` ([`effect-vm.md`](../subsystems/effect-vm.md#the-default-arms-draw)) |

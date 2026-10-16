@@ -1,6 +1,7 @@
 # legaia-engine-screens
 
-The shop-family screens both play hosts draw, composed once. Free of wgpu,
+The screens both play hosts draw - the shop family, the battle HUD, the pause
+menu - composed once. Free of wgpu,
 winit and cpal, so it builds for native and `wasm32` alike.
 
 `engine-ui` holds the renderer-agnostic builders and does not link
@@ -25,7 +26,16 @@ nothing. This crate is the projection between them for:
   (`battle_command`), the inventory item-use screen
   (`inventory_use_session_draws`), the developer menu's row list and Records
   page with their pens and headings (`dev_menu`), and the dance / Baka Fighter
-  HUD primitives (`minigame_hud`).
+  HUD primitives (`minigame_hud`);
+- the **battle screens** (`battle_screens`): the HUD frame off the host's
+  `BattleHud` model, its chrome sprites (strip, item window, command chips,
+  the field-side banner frame), the sparring tutorial's boxes, the arts
+  command-input chrome and the Muscle Dome chrome gate, from one
+  `BattleScreenInputs`;
+- the **pause menu's screens** (`pause_screens`): the context-locked pair,
+  the root list with its save-refusal notice, and every sub-screen but Load /
+  Save, projected from the live sessions into `engine-ui::pause_menu`'s views
+  for a host's `PauseMenuCtx`.
 
 ## How a host uses it
 
@@ -52,4 +62,7 @@ The individual pieces (`gold_shop_screen`, `shop_window_draws`,
 tooling. The shared pens, window ids, renderer VAs and window-39 labels are
 the crate's constants; no host keeps a copy, which is why the UI host-drift
 gate (`scripts/ci/check-ui-host-drift.py`) credits a builder called here to
-each host that calls `shop_overlay_frame` ([`host-drift.md`](../../docs/tooling/host-drift.md)).
+each host that calls one of the crate's entries (`shop_overlay_frame`,
+`battle_hud_frame_draws`, `battle_chrome_sprite_draws`,
+`field_menu_root_draws`, `field_menu_sub_draws`;
+[`host-drift.md`](../../docs/tooling/host-drift.md)).

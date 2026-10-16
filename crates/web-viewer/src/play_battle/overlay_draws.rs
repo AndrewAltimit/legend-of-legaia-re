@@ -114,20 +114,12 @@ impl LegaiaRuntime {
     }
 
     /// The **arts command-input** chrome for the browser play page:
-    /// `(sprites, texts)`, both already in surface pixels. Empty unless a
-    /// party member owns the pad in the retail-model entry session.
-    ///
-    /// Sibling of the native window's `arts_input_chrome_sprite_draws` -
-    /// same shared builders, same baked atlas, same stage transform, so
-    /// the two hosts cannot drift.
-    ///
-    /// An in-battle dialogue box owns the screen while it is up, and the
-    /// native window drops the whole entry chrome under one. The suppression
-    /// lives **inside this builder** rather than at the call site because it
-    /// was at the call site on one host only: the plain-text `arts_menu` list
-    /// below carried the gate and this retail-model chrome did not, so a
-    /// browser fight drew the command buffer, the AP gauge and the chip row
-    /// straight through the narration box.
+    /// `(sprites, texts)`. The sprites are the shared composition
+    /// (`legaia_engine_screens::battle_screens::arts_input_chrome_draws`, the
+    /// native window's call too), placed by the stage `origin` / `scale`; the
+    /// screen is baked art, so the text half is always empty - the Begin |
+    /// Reselect pick is the party's commit confirm, drawn by the command-chip
+    /// cluster.
     pub(crate) fn arts_input_stage_draws(
         &self,
         _font: &legaia_font::Font,
@@ -135,84 +127,38 @@ impl LegaiaRuntime {
         origin: (i32, i32),
         scale: u32,
     ) -> (Vec<ui::SpriteDraw>, Vec<TextDraw>) {
-        use legaia_engine_battle::arts_command_input::ArtsInputScreen as Sim;
-        use legaia_engine_ui::arts_input as ai;
-        let empty = (Vec::new(), Vec::new());
-        let Some(bw) = self.scene_host.host().map(|h| &h.world) else {
-            return empty;
+        let Some(world) = self.scene_host.host().map(|h| &h.world) else {
+            return (Vec::new(), Vec::new());
         };
-        if bw.dialogue_owns_input() {
-            return empty;
-        }
-        if bw.mode == SceneMode::MuscleDome && !self.dome_battle_chrome_up() {
-            return empty;
-        }
-        // A Spirit turn raises the same bar + plate pair (no chips, no
-        // pennants) and grows them - `World::spirit_gauge_view`; the native
-        // window takes the same fallback.
-        let Some(view) = bw.arts_input_view().or_else(|| bw.spirit_gauge_view()) else {
-            return empty;
-        };
-        let frame = ai::ArtsInputFrame {
-            buffer: view.pennants,
-            spent: view.pennant_spent,
-            chip_costs: view.costs,
-            chip_icons: view.chip_icons,
-            pool: view.pool,
-            pool_max: view.pool_max,
-            plate_value: view.plate_value,
-            list_page: view.list_page,
-            // The two enums are separate types because `engine-ui` is a
-            // leaf that does not link `engine-core`; the native window
-            // carries the same three-line map.
-            phase: match view.phase {
-                Sim::Entering => ai::ArtsInputScreen::Entering,
-                Sim::Review => ai::ArtsInputScreen::Review,
-                Sim::Targeting => ai::ArtsInputScreen::Targeting,
-            },
-        };
-        let mut sprites =
-            ai::arts_input_chrome_draws(&ai::ArtsInputAtlasRects::BAKED, &frame, origin, scale);
-        // The Rot stamp over each direction the caster's rotted limbs refuse,
-        // on top of the chips - the same call the native window makes.
-        if let Some(rot) = chrome.and_then(|r| r.battle).and_then(|b| b.rot_stamp) {
-            sprites.extend(ai::arts_input_rot_stamp_draws(
-                rot,
-                &frame,
-                view.status,
-                origin,
-                scale,
-            ));
-        }
-        // The AP plate reuses the status screen's own AP-gauge pieces, so
-        // it only draws when the page has the system-UI chrome loaded.
-        if let Some(r) = chrome {
-            sprites.extend(ai::arts_input_ap_plate_draws(
-                &ai::ApPlateRects {
-                    cap: r.gauge_cap,
-                    trough: r.gauge_trough,
-                    fill: r.gauge_fill,
-                    box_: r.gauge_box,
-                    digits: r.gauge_digits,
-                    tip: r.gauge_tip,
-                    full_mark: r.gauge_100,
-                },
-                &frame,
-                origin,
-                scale,
-            ));
-        }
-        // The screen is baked art: no text. The Begin | Reselect pick is the
-        // party's commit confirm, drawn by the command-chip cluster.
-        (sprites, Vec::new())
+        (
+            legaia_engine_screens::battle_screens::arts_input_chrome_draws(
+                world, chrome, origin, scale,
+            ),
+            Vec::new(),
+        )
     }
 
-    /// Battle overlay text draws in **surface pixels**: HUD rows, the
-    /// encounter banner, and the player-driven submenus. Empty outside
-    /// [`SceneMode::Battle`]. Mirrors the native window's battle HUD block
-    /// leg for leg (`window/hud.rs`).
-    /// One battle-HUD frame from the shared builder: the party strip, the
-    /// top-left plaque and the popups.
+    /// The shared battle screens' inputs, borrowed from this page's holders;
+    /// `None` while no scene is up.
+    pub(crate) fn battle_screen_inputs<'a>(
+        &'a self,
+        assets: &'a crate::play_menu::PlayMenuAssets,
+    ) -> Option<legaia_engine_screens::battle_screens::BattleScreenInputs<'a>> {
+        let font = assets.font_ref();
+        Some(legaia_engine_screens::battle_screens::BattleScreenInputs {
+            world: &self.scene_host.host()?.world,
+            hud: &self.battle_hud,
+            font,
+            chrome: assets.chrome_rects(),
+            badges: assets.battle_badges(),
+            solid_src: ui::font_solid_src(font),
+        })
+    }
+
+    /// One battle-HUD frame from the shared builder
+    /// (`legaia_engine_screens::battle_screens::battle_hud_frame_draws`, the
+    /// native window's call too): the party strip, the top-left plaque and
+    /// the popups. Empty while no scene is up.
     ///
     /// Both halves come from one call so the page's two draw arrays cannot
     /// drift - the text half joins the surface-space battle text, the sprite
@@ -223,123 +169,15 @@ impl LegaiaRuntime {
         surface_w: u32,
         surface_h: u32,
     ) -> ui::BattleHudDraws {
-        // The result screen draws neither the party card nor the pill
-        // (retail `noa_levelup_banner`) - same gate as the native window.
-        if self
-            .scene_host
-            .host()
-            .is_some_and(|h| h.world.battle_result_screen_active())
-        {
-            return ui::BattleHudDraws {
+        match self.battle_screen_inputs(assets) {
+            Some(inputs) => legaia_engine_screens::battle_screens::battle_hud_frame_draws(
+                &inputs, surface_w, surface_h,
+            ),
+            None => ui::BattleHudDraws {
                 text: Vec::new(),
                 sprites: Vec::new(),
-            };
-        }
-        let font = assets.font_ref();
-        // The badge cells the HUD blits, projected out of the baked atlas. A
-        // `None` CELL inside it means that badge's palette source was outside
-        // the slice the atlas was built from, and the HUD keeps its tag.
-        let badges = assets.battle_badges();
-        use legaia_engine_core::battle_hud as bh;
-        let banner = self.battle_banner_message(assets);
-        let world = self.scene_host.host().map(|h| &h.world);
-        // Every per-phase decision is the engine's (`battle_hud`'s
-        // predicates carry retail's sub-draw script + action-SM rule), so
-        // this page and the native window cannot disagree about which
-        // surface is up.
-        let plaque = world.and_then(battle_active_actor);
-        let third_tab = world.and_then(bh::battle_breadcrumb_third_tab);
-        let target_plaque = world.and_then(bh::battle_target_plaque);
-        let target_select = world.and_then(bh::battle_target_select_plaque);
-        let move_name = world.and_then(bh::battle_move_name);
-        let message_bar = world.and_then(bh::battle_message_bar);
-        let commit_log = world.map(bh::battle_commit_log).unwrap_or_default();
-        // The battle-intro enemy-name banner (retail flow `0x0A`), laid out
-        // with this page's font - the same builder the native window calls.
-        let intro_names = world
-            .map(|w| bh::battle_intro_names(w, font))
-            .unwrap_or_default();
-        // A battle-stage module's boss-name banner (the Cort arrival), the
-        // same builder the native window calls.
-        let stage_banner = world.and_then(|w| bh::battle_stage_banner(w, font));
-        ui::battle_hud_draws_for(
-            font,
-            &ui::BattleHudFrame {
-                slots: &battle_hud_slot_views(&self.battle_hud),
-                popups: &battle_hud_popup_views(&self.battle_hud),
-                log: &[],
-                solid_src: ui::font_solid_src(font),
-                surface: (surface_w, surface_h),
-                chrome: assets.chrome_rects(),
-                // The plaque shares its top-left seat with the item window's
-                // breadcrumb trail; retail parks it while that window is up
-                // (battle_item_window capture), so one or the other draws.
-                plaque: plaque
-                    .as_ref()
-                    .filter(|_| world.is_none_or(|w| w.battle.item_menu.is_none()))
-                    .map(|(_, n)| n.as_str()),
-                // The element badge the plaque wears in front of the name;
-                // `None` draws the bare name.
-                plaque_badge: world.and_then(battle_plaque_element_badge),
-                banner: banner.as_deref(),
-                // The sparring-tutorial prompt is a box this page draws
-                // itself, and its rect starts on the plaque's own content
-                // pen - so while it is up the plaque must not draw, or two
-                // text runs land on the same pixels. Same three conditions
-                // the native window suppresses on.
-                plaque_seat_taken: self.battle_tutorial_stage_rect(font).is_some()
-                    || world
-                        .is_some_and(|w| w.dialog.current.is_some() || w.dialog.inline.is_some())
-                    // Koru's timed-fight strip draws over the plaque in
-                    // retail (the native window parks it for the same
-                    // reason: a text run cannot go under the strip's frame
-                    // in either host's layer order).
-                    || world
-                        .is_some_and(|w| legaia_engine_core::world_views::timed_fight::timed_fight_strip(w).is_some()),
-                badges: badges.as_ref(),
-                // The same tutorial box that takes the plaque's seat also
-                // sits on a party surface's row; naming its rect is what
-                // parks the covered surface instead of letting two text
-                // runs share the pixels.
-                host_box: self.battle_tutorial_stage_rect(font),
-                active_slot: world.and_then(bh::battle_readout_bar_slot),
-                panels_parked: !world.is_some_and(bh::battle_panels_visible),
-                begin_tab: world.is_some_and(bh::battle_begin_tab_visible),
-                begin_tab_offset: world.map(bh::battle_begin_tab_offset).unwrap_or((0, 0)),
-                third_tab: third_tab.as_deref(),
-                move_name: move_name.as_deref(),
-                target_plaque: target_plaque.as_ref().map(|(n, b)| (n.as_str(), *b)),
-                plaque_dy: world.map(bh::battle_action_plaque_dy).unwrap_or(0),
-                target_plaque_dy: world.map(bh::battle_target_plaque_dy).unwrap_or(0),
-                bar_dy: world.map(bh::battle_readout_bar_dy).unwrap_or(0),
-                panels_dy: world.map(bh::battle_round_prompt_panels_dy).unwrap_or(0),
-                target_select: target_select.as_ref().map(|(n, b)| (n.as_str(), *b)),
-                message_bar: message_bar.as_deref(),
-                ap_plate_value: world.and_then(bh::battle_ring_ap_plate_value),
-                ap_plate_dx: world.map(bh::battle_ring_ap_plate_dx).unwrap_or(0),
-                commit_log: &commit_log,
-                intro_names: &intro_names,
-                stage_banner: stage_banner.as_ref().map(|(l, x, y)| (l.as_str(), *x, *y)),
-                diag: ui::diag_hud_enabled(),
             },
-            BATTLE_HUD_PEN,
-        )
-    }
-
-    /// The message holding retail's top-of-screen banner this frame, if any:
-    /// the engine's shared read
-    /// (`legaia_engine_core::battle_hud::battle_banner_message` - the absorb /
-    /// magic-level element line, then level-up, then Seru capture), the same
-    /// one the native window draws.
-    ///
-    /// `None` without the system-UI atlas - there is no frame to put a
-    /// message in, so a chrome-less host keeps the loose pens instead.
-    pub(crate) fn battle_banner_message(
-        &self,
-        assets: &crate::play_menu::PlayMenuAssets,
-    ) -> Option<String> {
-        assets.chrome_rects()?;
-        legaia_engine_core::battle_hud::battle_banner_message(&self.scene_host.host()?.world)
+        }
     }
 
     /// The live battle command surface projected into the shared chip-cluster
@@ -373,116 +211,26 @@ impl LegaiaRuntime {
         )
     }
 
-    /// The battle HUD's chrome sprites (strip + plaque lozenges, gold `HP` /
-    /// green `MP` label cells) for the page's system-UI atlas array, plus
-    /// the command menu's chip plates + D-pad glyph when a menu is up.
-    ///
-    /// Outside battle this narrows to one surface: the FRAME of the message
-    /// banner carrying a level-up / Seru-capture line, which the port raises
-    /// after the fight has already handed the frame back to the field. Its
-    /// text half rides the glyph array in
-    /// `legaia_engine_screens::banner_stage_draws`. The native window has
-    /// drawn that frame all along; this page returned empty here and dropped
-    /// the banner's text in the same breath, so a field-side level-up showed
-    /// nothing at all.
+    /// The battle HUD's chrome sprites, the item window's frames and the
+    /// command chips, or outside battle the field-side message banner's frame,
+    /// for the page's system-UI atlas array. The composition is
+    /// `legaia_engine_screens::battle_screens::battle_chrome_sprite_draws`,
+    /// the native window's call too.
     pub(crate) fn battle_chrome_sprite_draws(
         &self,
         assets: &crate::play_menu::PlayMenuAssets,
         surface_w: u32,
         surface_h: u32,
     ) -> Vec<ui::SpriteDraw> {
-        let in_dome = self
-            .scene_host
-            .host()
-            .is_some_and(|h| h.world.mode == SceneMode::MuscleDome);
-        if in_dome && !self.dome_battle_chrome_up() {
-            return Vec::new();
-        }
-        let in_battle = in_dome
-            || self
-                .scene_host
-                .host()
-                .is_some_and(|h| h.world.mode == SceneMode::Battle);
-        if !in_battle {
-            let (Some(rects), Some(message)) =
-                (assets.chrome_rects(), self.battle_banner_message(assets))
-            else {
-                return Vec::new();
-            };
-            let (origin, scale) =
-                crate::play_menu::stage_transform(surface_w.max(1), surface_h.max(1));
-            use legaia_engine_ui::battle_hud_chrome as bhc;
-            return bhc::message_banner_chrome_draws_for(
-                rects,
-                bhc::message_banner_content(assets.font_ref(), &message),
-                origin,
-                scale,
-            );
-        }
-        let mut out = self
-            .battle_hud_frame_draws(assets, surface_w, surface_h)
-            .sprites;
-        // The battle item window's chrome (both packet-pinned 9-slice
-        // windows, the breadcrumb tabs and the hand cursor) rides the same
-        // atlas array as the rest of the menu chrome.
-        if let (Some(rects), Some(model)) = (
-            assets.chrome_rects(),
-            self.scene_host
-                .host()
-                .and_then(|h| h.world.battle_item_menu_model()),
-        ) {
-            let (origin, scale) =
-                crate::play_menu::stage_transform(surface_w.max(1), surface_h.max(1));
-            out.extend(legaia_engine_screens::with_battle_item_frame(
-                &model,
-                |frame| {
-                    legaia_engine_ui::battle_item_ui::battle_item_window_sprites(
-                        assets.font_ref(),
-                        rects,
-                        frame,
-                        origin,
-                        scale,
-                    )
-                },
-            ));
-        }
-        // The command chips sample the same blue plate 3-slice the party
-        // bar does, so they ride this array rather than a second one.
-        if let (Some(rects), Some((chips, cursor, phase))) = (
-            assets.chrome_rects().and_then(|r| r.battle),
-            self.battle_command_menu_chips(),
-        ) {
-            use legaia_engine_ui::battle_command_ui as bcu;
-            let (origin, scale) =
-                crate::play_menu::stage_transform(surface_w.max(1), surface_h.max(1));
-            let views = bcu::command_chip_views(&chips);
-            // The plates, and on top of them every mark the ring wears -
-            // the red cross-outs the special word raises (the Rim Elm
-            // ambush / monster `0xAF`) and the Rot / Curse marks over the
-            // arms the acting member's status refuses: one builder, one
-            // engine read, the same call the native window makes.
-            out.extend(bcu::battle_command_menu_sprites(
-                &rects,
-                // Widget record 2's gold run, the highlighted arm's plate.
-                assets
-                    .chrome_rects()
-                    .map(|r| [r.tab_cap_l, r.tab_body, r.tab_cap_r]),
-                &bcu::BattleCommandMenuFrame {
-                    chips: &views,
-                    cursor,
-                    phase,
-                    offsets: self.battle_chip_glide().0,
-                    dpad: self.battle_chip_glide().1,
-                },
-                self.scene_host
-                    .host()
-                    .map(|h| legaia_engine_core::battle_hud::battle_ring_marks(&h.world))
-                    .unwrap_or_default(),
-                origin,
-                scale,
-            ));
-        }
-        out
+        self.battle_screen_inputs(assets)
+            .map(|inputs| {
+                legaia_engine_screens::battle_screens::battle_chrome_sprite_draws(
+                    &inputs,
+                    surface_w.max(1),
+                    surface_h.max(1),
+                )
+            })
+            .unwrap_or_default()
     }
 
     pub(crate) fn battle_overlay_draws(
@@ -626,7 +374,7 @@ impl LegaiaRuntime {
                     // (FUN_801D9D3C rows + layout). Ally / sweep states keep
                     // the text line.
                     if let Some(strip) =
-                        self.enemy_target_strip_draws(font, picker, surface_w, surface_h)
+                        legaia_engine_screens::battle_screens::enemy_target_strip_draws(picker)
                     {
                         out.extend(strip);
                     } else {
@@ -692,7 +440,7 @@ impl LegaiaRuntime {
                 }
                 SpellPhase::Targeting { picker, .. } => {
                     if let Some(strip) =
-                        self.enemy_target_strip_draws(font, picker, surface_w, surface_h)
+                        legaia_engine_screens::battle_screens::enemy_target_strip_draws(picker)
                     {
                         out.extend(strip);
                     } else {
@@ -771,7 +519,7 @@ impl LegaiaRuntime {
                 }
                 CommandPhase::Targeting { command, picker } => {
                     if let Some(strip) =
-                        self.enemy_target_strip_draws(font, picker, surface_w, surface_h)
+                        legaia_engine_screens::battle_screens::enemy_target_strip_draws(picker)
                     {
                         out.extend(strip);
                     } else {

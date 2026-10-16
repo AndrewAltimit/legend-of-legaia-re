@@ -503,21 +503,11 @@ SIM_PAIRS: list[dict[str, object]] = [
         "mode": "symbols_all",
         "symbols": ["arm_for_battle"],
     },
-    {
-        "what": "Options screen model, native vs play page - the rows, the "
-        "hand's row offset and the Key Config rows were derived once per "
-        "host from the session. Both Options builders must read "
-        "`OptionsSession::screen_model`",
-        "sites": {
-            "native": (
-                "crates/engine-shell/src/window/menu_draws.rs",
-                "field_menu_sub_draws",
-            ),
-            "web": ("crates/web-viewer/src/play_menu/panel_draws.rs", "build_config"),
-        },
-        "mode": "symbols_all",
-        "symbols": ["screen_model"],
-    },
+    # The "Options screen model" row (both Options builders must read
+    # `OptionsSession::screen_model`) is gone because the second builder is:
+    # both hosts draw the Options screen through
+    # `legaia_engine_screens::pause_screens::options_draws`, so the model is
+    # read once. A re-duplicated Options projection needs the row back.
     {
         "what": "camera-occlusion fade gate, native vs play page - the gate "
         "ray-casts the player's body cross from the eye, and the cross is "

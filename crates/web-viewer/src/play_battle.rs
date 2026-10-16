@@ -37,13 +37,12 @@
 //! [`crate::play_battle_fx`].
 
 use crate::runtime::LegaiaRuntime;
-use legaia_engine_battle::battle_hud_state::{BattleHud, DamagePopup};
+use legaia_engine_battle::battle_hud_state::DamagePopup;
 use legaia_engine_core::battle_hud::{
-    battle_active_actor, battle_plaque_element_badge, encounter_banner_enabled,
-    encounter_banner_label, sync_battle_hud_rows,
+    encounter_banner_enabled, encounter_banner_label, sync_battle_hud_rows,
 };
 use legaia_engine_mode::mode::SceneMode;
-use legaia_engine_ui::{self as ui, HudPopupView, HudSlotMeta, HudSlotView, SpriteDraw, TextDraw};
+use legaia_engine_ui::{self as ui, SpriteDraw, TextDraw};
 use legaia_render_kernels::battle_intro::BattleIntro;
 use wasm_bindgen::prelude::*;
 
@@ -56,14 +55,8 @@ mod tutorial;
 mod value_readout;
 
 /// One on-screen sparring-tutorial box with its stage rect `(x, y, w, h)`.
-pub(crate) type TutorialStageBox<'a> = (
-    (i32, i32, i32, i32),
-    &'a legaia_engine_menus::battle_flow::ActiveTutorialBox,
-);
+pub(crate) use legaia_engine_screens::battle_screens::TutorialStageBox;
 
-/// Top-left anchor of the battle HUD's slot-row block, in surface pixels
-/// (the native window's `BATTLE_HUD_PEN`).
-const BATTLE_HUD_PEN: (i32, i32) = (8, 60);
 /// Frames the encounter-transition banner stays on screen after a
 /// `Field -> Battle` mode change (~1.5 s at the 60 Hz sim tick; the native
 /// window's `ENCOUNTER_BANNER_FRAMES`).
@@ -78,88 +71,9 @@ const MENU_X: i32 = 8;
 /// First row Y of the battle command / arts / magic submenus.
 const MENU_Y: i32 = 210;
 
-/// Project the HUD model's slot array into the shared builder's view type.
-///
-/// Every slot is emitted, **including inactive ones** (as empty-name rows the
-/// builder skips): `battle_hud_draws_for` derives both a row's Y and a
-/// popup's anchor from the slice index, so the index has to stay the absolute
-/// actor-table slot. Same projection as the native window's
-/// `battle_hud_slot_views`.
-fn battle_hud_slot_views(hud: &BattleHud) -> Vec<HudSlotView<'_>> {
-    hud.slots
-        .iter()
-        .map(|s| {
-            let (hp_fill, mp_fill) = s.gauge_fill_indices();
-            let meta = HudSlotMeta {
-                is_party: s.is_party,
-                alive: s.alive,
-                hp: s.hp,
-                hp_max: s.hp_max,
-                mp: s.mp,
-                mp_max: s.mp_max,
-                ap_filled: s.ap_filled,
-                ap_max: s.ap_max,
-                hp_fill,
-                mp_fill,
-                // The single retail-selected status element
-                // (`FUN_8002C2E4`'s ladder over the packed `+0x16E` word)
-                // plus the level its no-ailment arm draws.
-                status_sprite: s.status_sprite(),
-                level: s.level,
-            };
-            let name = if s.active { s.name.as_str() } else { "" };
-            HudSlotView::from_plain(meta, name)
-        })
-        .collect()
-}
-
-/// Project the HUD model's popup queue into the shared builder's view type.
-fn battle_hud_popup_views(hud: &BattleHud) -> Vec<HudPopupView> {
-    hud.popup_views()
-        .into_iter()
-        .map(|p| HudPopupView {
-            slot: p.slot,
-            amount: p.amount,
-            is_heal: p.is_heal,
-            is_crit: p.is_crit,
-            status_letter: p.status_letter,
-            alpha: p.alpha,
-        })
-        .collect()
-}
-
 pub(crate) use legaia_engine_screens::battle_command::CommandChips;
 
 impl LegaiaRuntime {
-    /// The enemy-row half of a target picker's on-screen text - the browser
-    /// twin of the native window's `enemy_target_strip_draws`.
-    ///
-    /// Retail draws one plaque for the target cursor (placement record
-    /// `0x29`, `FUN_801D5854`'s target arm, content box centred on `0xE8`,
-    /// row `162`); it rides the shared battle-HUD builder
-    /// (`BattleHudFrame::target_select`) on both hosts. This returns an empty
-    /// list while the cursor sits on the enemy row so the caller skips its
-    /// text fallback, and `None` on the ally / sweep states. The dedup-name
-    /// strip it used to draw (the `FUN_801D9D3C` intro-banner layout, stage
-    /// row 166) overprinted the commit log's target column and is retired.
-    fn enemy_target_strip_draws(
-        &self,
-        _font: &legaia_font::Font,
-        picker: &legaia_engine_battle::target_picker::TargetPickerSession,
-        _surface_w: u32,
-        _surface_h: u32,
-    ) -> Option<Vec<TextDraw>> {
-        use legaia_engine_battle::target_picker::{CursorRow, PickerState};
-        matches!(
-            picker.state(),
-            PickerState::Cursor {
-                row: CursorRow::Enemy,
-                ..
-            }
-        )
-        .then(Vec::new)
-    }
-
     /// Arm the live gameplay loop on the freshly-entered scene, the browser
     /// twin of `BootSession::enter_field_live`'s live-loop block:
     /// `enter_field_scene` already installed the scene MAN's own encounter

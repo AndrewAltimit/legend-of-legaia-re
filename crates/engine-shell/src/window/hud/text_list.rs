@@ -713,7 +713,9 @@ impl PlayWindowApp {
                         // Enemy cursor: the retail dedup name strip
                         // (FUN_801D9D3C rows + layout). Ally / sweep states
                         // keep the text line.
-                        if let Some(strip) = self.enemy_target_strip_draws(picker, w, h) {
+                        if let Some(strip) =
+                            legaia_engine_screens::battle_screens::enemy_target_strip_draws(picker)
+                        {
                             out.extend(strip);
                         } else {
                             let line = match picker.state() {
@@ -780,7 +782,9 @@ impl PlayWindowApp {
                         }
                     }
                     SpellPhase::Targeting { picker, .. } => {
-                        if let Some(strip) = self.enemy_target_strip_draws(picker, w, h) {
+                        if let Some(strip) =
+                            legaia_engine_screens::battle_screens::enemy_target_strip_draws(picker)
+                        {
                             out.extend(strip);
                         } else {
                             let line = match picker.state() {
@@ -865,7 +869,9 @@ impl PlayWindowApp {
                         }
                     }
                     CommandPhase::Targeting { command, picker } => {
-                        if let Some(strip) = self.enemy_target_strip_draws(picker, w, h) {
+                        if let Some(strip) =
+                            legaia_engine_screens::battle_screens::enemy_target_strip_draws(picker)
+                        {
                             out.extend(strip);
                         } else {
                             let line = match picker.state() {
