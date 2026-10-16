@@ -486,12 +486,14 @@ pub mod creature;
 mod evil_seru_magic;
 mod seru;
 pub mod summon_holds;
+mod swordie;
 mod theeder_gizam;
 pub use capture::*;
 pub use capture_countdown::{ArmCountdown, CountdownWrite, arm_countdown, capture_arm_countdowns};
 pub use creature::*;
 pub use evil_seru_magic::*;
 pub use seru::*;
+pub use swordie::*;
 pub use theeder_gizam::*;
 
 pub(super) fn gate(hold: bool) -> ArmDirection {
@@ -525,7 +527,7 @@ pub struct ModuleProfile {
     pub walk_arm: Option<u8>,
     /// Whether a camera-only director owns the module phase. `false` for a
     /// director that runs **beside** a ported tick body
-    /// ([`ModuleProfile::camera_beside`]): it reads the phase the body is
+    /// ([`ModuleProfile::body_paced`]): it reads the phase the body is
     /// about to run, never holds it, and only arms the camera.
     pub owns_phase: bool,
     /// Whether the director reports the module's own spawn calls per arm
@@ -628,11 +630,40 @@ pub fn module_profile(prot_entry: u32) -> Option<ModuleProfile> {
         932 => Some(ModuleProfile::camera_only(meta_direct).seated_at(932)),
         933 => Some(ModuleProfile::camera_only(terra_direct).seated_at(933)),
         934 => Some(ModuleProfile::camera_only(ozma_direct).seated_at(934)),
-        913 => Some(ModuleProfile::camera_beside(nova_direct).seated_at(913)),
+        // PROT 0910..0913's tick bodies hold their own arms (countdowns,
+        // ramps and seat polls, `crate::seru_magic_ticks`), so each paces the
+        // band like PROT 0904's: `0x36` holds on the body, the creature walks
+        // nowhere the module does not move it, and the outcome lands once the
+        // phase has passed the body's hit arm.
+        910 => Some(
+            ModuleProfile::body_paced(swordie_direct, crate::seru_magic_ticks::SWORDIE_SLASH_ARM)
+                .seated_at(910),
+        ),
+        911 => Some(
+            ModuleProfile::body_paced(seru_body_direct, crate::seru_magic_ticks::ORB_HEAL_ARM)
+                .seated_at(911),
+        ),
+        912 => Some(
+            ModuleProfile::body_paced(
+                seru_body_direct,
+                crate::seru_magic_ticks::FREED_DAMAGE_PHASE,
+            )
+            .seated_at(912),
+        ),
+        913 => Some(
+            ModuleProfile::body_paced(nova_direct, crate::seru_magic_ticks::NOVA_DAMAGE_PHASE)
+                .seated_at(913),
+        ),
         // Ported tick bodies paced by their countdown holds alone.
         918 | 919 | 922 | 924 | 925 | 927 => summon_holds::summon_hold_profile(prot_entry),
         _ => None,
     }
+}
+
+/// The director beside PROT 0911 and 0912's ported tick bodies: no camera arm
+/// is ported, so every arm passes and the body's own holds pace the band.
+fn seru_body_direct(_: &mut ModuleCamState, _: u8, _: ModuleCamSeats) -> ArmDirection {
+    ArmDirection::PASS
 }
 
 impl ModuleProfile {
@@ -660,21 +691,24 @@ impl ModuleProfile {
         }
     }
 
-    const fn seated_at(mut self, prot_entry: u32) -> Self {
-        self.seat_arm = module_seat_arm(prot_entry);
-        self
-    }
-
-    const fn camera_beside(direct: ModuleDirector) -> Self {
+    /// A director beside a ported tick body whose own holds pace the band
+    /// (PROT 0904's shape): the body owns the phase, the director only arms
+    /// the camera, and the outcome lands once the phase passes `hit_arm`.
+    const fn body_paced(direct: ModuleDirector, hit_arm: u8) -> Self {
         Self {
             direct,
-            hit_arm: None,
+            hit_arm: Some(hit_arm),
             walk_arm: None,
             owns_phase: false,
             stages_spawns: false,
             seat_arm: None,
             director_body: false,
         }
+    }
+
+    const fn seated_at(mut self, prot_entry: u32) -> Self {
+        self.seat_arm = module_seat_arm(prot_entry);
+        self
     }
 
     /// Whether this director paces the band (the module's own tick body is

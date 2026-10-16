@@ -1516,8 +1516,76 @@ Port: `seru_magic_ticks::swordie_tick` carries the counter, the tables and
 the arm gates and records which builder ran on the pass
 (`SwordieDraw`); `legaia_render_kernels::cast_swordie` builds the packets and
 `engine-screens::screen_layers` draws them for both hosts from
-`World::swordie_draw`. Arm `2`'s white flash (`FUN_80024E80`) is not
-carried, so the engine shows the panels the flash covers in retail.
+`World::swordie_draw`.
+
+Arm `2` ends the band's flash-out before the panels open: past its CD poll it
+sets the done bit on the fade parked at `ctx[+0x102C]` (`0x801F6CFC..
+0x801F6D14`), which is the band's own `0x34` flash-out (`sw v0,0x102C(v1)` at
+`0x801E4BC0`), and spawns a short additive flash of its own, `(0xC0, 0xC0,
+0xE0)` down to black over `0x10` frames (`0x801F6DD8..0x801F6E08`). The
+panels therefore show grey a few frames into arm `3`, not white. Arm `2` also
+seats the creature half a unit from the victim toward the caster, facing that
+way (`+0x46 = h`, `+0x34 = victim.x - sin(h) / 2`, `+0x38 = victim.z -
+cos(h) / 2` at `0x801F6D40..0x801F6DD4`, `h` the heading from victim to
+caster turned half round).
+
+Port: the arm gates are the ones above plus the arm-`6..0x0A` timers
+(`swordie_tick`); `cast_module_camera::swordie_direct` carries arm 0's cut,
+arm 2's placement and the creature framings of arms `5..9`; the presentation
+hook fires arm 2's kill and flash.
+
+### PROT 0911..0913 arm holds
+
+<a id="prot-0911-0913-arm-holds"></a>
+
+Orb, Freed and Nova hold almost every arm on **one module countdown** (Orb
+`0x801F8558`, Freed `0x801F92A8`, Nova `0x801F9124`): the arm subtracts
+`rate * speed` (`lbu 0x7F` times `lbu 0x69` off `0x1F800314`), holds while
+the word stays positive (`bgtz` to the busy return, the `sw` in the delay
+slot), and on its pass stores or adds the next arm's span as a multiple of the
+scalar. Because the drain scales with the frame step, an arm's length in
+vsyncs does not depend on the cadence, so the engine, which runs the body
+once a vsync, drains the scalar alone. With the scalar at `8`:
+
+| Module | Arm: ticks |
+|---|---|
+| 0911 Orb | 3: 128, 4: 100, 5: 180, 9: 256, `0x0A`: 256 |
+| 0912 Freed | 3: 128, 4: 64, 5: 64, 6: 64, 7: 32, 8: 32, 9: 32, `0x0A`: 148, `0x0B`: clip, `0x0C`: 16, `0x0D`: 128, `0x0E`: 64, `0x0F`: 128, `0x10`: 64, `0x11`: 64, `0x12`: 128, `0x13`: 32 + row |
+| 0913 Nova | 3: 64, 4: 160, 5: 64, 6: 32, 7: 240, 9: 128, `0x0A`: 128, `0x0B`: 64, `0x0C`: 64, `0x0D`: 48, `0x0F`: 64, `0x10`: 257, `0x13`: 129, `0x14`: 128 + victim |
+
+The holds that are not the countdown:
+
+- **Orb arm 4** holds on the creature's own height: arm 3 seats it at
+  `+0x36 = -0x320` (`0x801F70EC`), arm 4 adds `rate * speed` a pass and holds
+  while it reads negative (`bltz` at `0x801F7408`), so the creature drops to
+  the ground. Arm 5's pass steps it an eighth of a unit along its facing and
+  lifts it to `-0x400`, then jumps to arm 9.
+- **Freed arm 9** holds on the shatter word `+0x1BA`, which arm 8 already
+  drained beside its countdown: `scalar << 7` less `2 * rate * speed` a pass
+  over arms 8 and 9.
+- **Freed arm `0x0B`** holds until the creature's clip cursor (the anim
+  node's `+0x68`, a 12.4 keyframe cursor) reaches `0x49` (`slti v0,v0,0x49`
+  at `0x801F785C`), then stores `scalar << 4`.
+- **Nova arm `0x10`** raises the word by `(rate * speed) / 2` and holds while
+  it is at most `0x400` (`slti a2,0x401` at `0x801F80A8`), lifting and
+  spinning the victim on the way; arm `0x13` drains it again and holds until
+  it is spent (`blez` at `0x801F82A0`) before rolling the damage.
+- The settle arms (Freed `0x13`, Nova `0x14`) add the row or victim poll to
+  the gated drain.
+
+Retail's measured dwell runs longer than these on the arms that draw the
+heavy effects (Swordie's wind-up 347 vsyncs for 64 passes, Freed's shatter
+arms three times their pass count): the frame step stays at `4` while a frame
+takes longer, so the drain per pass undercounts the vsyncs. The port matches
+the pass count.
+
+Port: `seru_magic_ticks::{orb_tick, freed_tick, nova_tick}`. Each of 0910..0913
+has a `ModuleProfile::body_paced` profile, so `0x36` holds on the body and the
+creature walks nowhere the module does not move it (the stager's generic walk
+otherwise drove Swordie's root-motion clip off the stage and parked the band
+in phase `0xFF`). Not ported: Nova's victim lift (`+0x36 = -sin(W) *
+ctx[+0x6D0] >> 14` / `>> 12`), the effect-handle jitter loops and the camera
+arms past Nova's arm 2 and Orb's and Freed's.
 
 ### The shatter effect on monsters
 
@@ -1934,7 +2002,9 @@ Directors, each read off its own tick's disassembly:
 | 0906 Gizam | camera-beside, gating | every countdown gate, the phase-5 stager record clock and the camera arms 0, 1 and 7..12 ([module notes](#prot-0906-gizam)) |
 | 0905 Vera | full | the whole choreography, plus a third kernel: arms 8..10 write the camera globals directly every pass (pitch `0x8007B790`, TR y / z), a drift on top of arm 8's cut. Its gate is the `bgez` form (hold while the word is non-negative). Arm 5 advances the phase by 3, so arms 6 and 7 are unreachable |
 | 0908 Zenoir | summoning only (arms `0..=5`) | the framed point is the victim's `0x200` grid cell half a unit back toward the caster; arm 3 waits on the **band's** timer `ctx[+0x6D8]` (the sustain `0x35`'s own `0x78` frames) before arm 4 seats the creature and reuses that word as the module's countdown. The clip-paced strike (arms 6..10) is not directed |
-| 0913 Nova | camera-beside | the tick body is ported, so the director reads the phase and never holds it: arm 0's cut behind the caster (pitch `0x400`, yaw `0x900 - caster[+0x46]`, TR `(0, 0, 0x400)`) and the `(scalar * delta) / 4` TR z drift of the stream-request and CD-poll arms 1 and 2 |
+| 0910 Swordie | body-paced | arm 0's cut on the point half a unit from the victim, arm 2's creature placement there, and the creature framings of arms 5..9 ([PROT 0910](#prot-0910-swordie)), each landing on the next arm's first tick; arm 10's sway is not directed |
+| 0911 Orb, 0912 Freed | body-paced | no camera arm; the ported holds pace the band ([arm holds](#prot-0911-0913-arm-holds)) |
+| 0913 Nova | body-paced | the tick body is ported, so the director reads the phase and never holds it: arm 0's cut behind the caster (pitch `0x400`, yaw `0x900 - caster[+0x46]`, TR `(0, 0, 0x400)`) and the `(scalar * delta) / 4` TR z drift of the stream-request and CD-poll arms 1 and 2 |
 | 0914, 0915, 0917, 0920, 0923, 0928, 0930, 0931 | camera-only | the opening arms the sustain `0x35` runs (the arm-0 cut, an arm-1 cut or pan, and any drift written while the load runs); owns the module phase over those arms and **parks** on the first arm it does not cover |
 | 0916, 0921, 0929, 0932, 0933, 0934 (Aluru, Iota, Mule, Meta, Terra, Ozma) | camera-only | the same, plus the arms that frame the arrived creature, gated on the module's own countdown |
 
@@ -2264,7 +2334,7 @@ Ported writers, one engine tick standing for one vsync of the frame product:
 | Zenoir arm 12 | `zenoir_shatter_pass`, run by `World::zenoir_shatter` on every pass of the arm; `zenoir_direct` seeds and drains the arm's countdown | the scalar a tick; an empty engine seat counts as a zero colour word |
 | Gimard settle | `World::run_cast_module_code`, `GIMARD_SHATTER_STEP_PER_TICK` on seat 7 | on every pass, held or not |
 | Swordie arms 2 / 3 | `swordie_tick` | the zero stores |
-| Freed arms 7 / 9 | `freed_tick` (`FREED_SHATTER_START`, `FREED_ASSEMBLE_PHASE`) | arm 8's drain rides an unmodelled countdown, so the creature re-forms from the full `scalar << 7` in arm 9 |
+| Freed arms 7..9 | `freed_tick` (`FREED_SHATTER_START`, `FREED_SHATTER_DRAIN_PHASE`, `FREED_ASSEMBLE_PHASE`) | arm 8 drains the word beside its countdown, arm 9 until it is spent |
 | Jette hook | `jette_shatter_hook`, `World::tick_jette_shatter_hook` | |
 
 Not wired: Jedo's loop (the port's PROT 0931 parks at arm 2 under its
@@ -2421,7 +2491,21 @@ path, a return without one on another), and on such an arm the hook fires only
 once the engine has held it a tick: its `Every` / `Hold` calls on the first
 holding tick, its `Pass` calls on the pass after a hold. An arm the engine
 passes on its first tick is counted (`ModulePresentation::unpaced_arms`) and
-fires nothing. An arm that cannot hold fires as it runs. Driving every band
+fires nothing. An arm that cannot hold fires as it runs. PROT 0910..0913 are
+exempt: their bodies hold every arm retail holds, so an arm they pass at once
+is a stream or CD poll the resident stream answers, and its calls fire.
+
+Two decode details matter for these modules. PROT 0911 spills
+`ctx + 0x279` to `0x3C(sp)` and its advance tail bumps the phase through the
+reloaded pointer (`lw t6,0x3C(sp)` / `sb v0,0(t6)`), so a register reloaded
+from a spilled alias's slot is an alias too. And a site in a `j`'s delay slot
+(PROT 0912 parks its arm-13 fade as `j <advance>; sw v0,0x102C(v1)`) is timed
+from the jump's target, not from the next arm's code below it.
+
+**The band's flash-out lives in the same slot.** State `0x34` parks its
+flash-out at `ctx[+0x102C]` (`0x801E4BC0`), so a module arm that kills the
+slot before parking a fade of its own ends the band's flash; the hook clears
+the world's fade seat then. Driving every band
 module through `World::run_cast_module_code` alone, the unpaced arms carry
 every site of PROT 0906, 0912, 0913, 0945, 0949, 0951, 0957, 0958 and 0965
 and some of 0903, 0904, 0908, 0910, 0911, 0917, 0928, 0929, 0940 and 0962;

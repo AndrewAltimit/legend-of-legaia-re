@@ -655,16 +655,45 @@ fn walk_switch(
 }
 
 /// Registers that hold `ctx + 0x279` (`addiu r, x, 0x279`) anywhere in the
-/// function - PROT 0925 keeps one in `$s3`.
+/// function - PROT 0925 keeps one in `$s3`. A pointer spilled to the stack
+/// and reloaded counts too: PROT 0911 stores `t7 = ctx + 0x279` at
+/// `0x3C(sp)` in its prologue and its shared advance tail bumps the phase
+/// through `lw t6, 0x3C(sp)` / `sb v0, 0(t6)` (`0x801F7ED8..0x801F7EF0`).
 fn phase_alias_regs(img: &Image, f: &FramedFn) -> BTreeSet<usize> {
     let mut out = BTreeSet::new();
-    let mut va = img.base + f.start as u32;
+    let start = img.base + f.start as u32;
     let end = img.base + f.end as u32;
+    let mut va = start;
     while va < end {
         if let Some(i) = img.ins(va)
             && i.op() == 0x09
             && i.imm() == PHASE_OFFSET
             && i.rt() != i.rs()
+        {
+            out.insert(i.rt());
+        }
+        va += 4;
+    }
+    // Stack slots an alias is spilled to (`sw alias, off(sp)`), then the
+    // registers reloaded from them (`lw r, off(sp)`).
+    let mut slots = BTreeSet::new();
+    let mut va = start;
+    while va < end {
+        if let Some(i) = img.ins(va)
+            && i.op() == 0x2B
+            && i.rs() == 29
+            && out.contains(&i.rt())
+        {
+            slots.insert(i.imm());
+        }
+        va += 4;
+    }
+    let mut va = start;
+    while va < end {
+        if let Some(i) = img.ins(va)
+            && i.op() == 0x23
+            && i.rs() == 29
+            && slots.contains(&i.imm())
         {
             out.insert(i.rt());
         }
@@ -1377,7 +1406,14 @@ pub fn decode(bytes: &[u8], own_end: usize) -> CastPresentation {
                 if !hold_reach.contains(&site) {
                     return SiteTiming::Pass;
                 }
-                let (_, bump, exit) = reach_from(&img, site + 4, &reach, &alias, lo, hi);
+                // A site in a `j`'s delay slot runs on into the jump's
+                // target, not the next arm's code below it (PROT 0912 parks
+                // its arm-13 fade as `j <advance>; sw v0, 0x102C(v1)`).
+                let next = match site.checked_sub(4).and_then(|v| img.ins(v)) {
+                    Some(j) if j.is_j() => j.jump_target(),
+                    _ => site + 4,
+                };
+                let (_, bump, exit) = reach_from(&img, next, &reach, &alias, lo, hi);
                 // The delay slot of a call site is part of it.
                 match (bump, exit) {
                     (true, false) => SiteTiming::Pass,

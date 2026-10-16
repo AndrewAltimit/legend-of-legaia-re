@@ -105,16 +105,53 @@ impl World {
                 let cleanse =
                     self.cure_selector(caster_slot, spell_id, seru::ORB_CLEANSE_MIN_LEVEL);
                 let mut settle = self.casting.module_settle_countdown;
-                let (step, _healed) =
-                    seru::orb_tick(ctx, seats, r_summon, 0, cleanse, &mut settle, |s| {
-                        maxes.get(s as usize).copied().unwrap_or(0)
+                // The arms move the creature's own seat (`+0x34..+0x38`):
+                // arm 3 lifts it, arm 4 drops it to the ground, arm 5 steps
+                // it forward and up.
+                let mut pos = self
+                    .actors
+                    .get(usize::from(summon_slot))
+                    .filter(|a| a.active)
+                    .map(|a| seru::OrbSeatPos {
+                        x: a.move_state.world_x,
+                        y: a.move_state.world_y,
+                        z: a.move_state.world_z,
+                        facing: a.battle.facing_angle & 0xFFF,
                     });
+                let mut scratch = pos.unwrap_or_default();
+                let (step, _healed) = seru::orb_tick(
+                    ctx,
+                    seats,
+                    r_summon,
+                    0,
+                    cleanse,
+                    &mut settle,
+                    &mut scratch,
+                    |s| maxes.get(s as usize).copied().unwrap_or(0),
+                );
                 self.casting.module_settle_countdown = settle;
+                if let Some(before) = pos.as_mut()
+                    && *before != scratch
+                    && let Some(a) = self.actors.get_mut(usize::from(summon_slot))
+                {
+                    a.move_state.world_x = scratch.x;
+                    a.move_state.world_y = scratch.y;
+                    a.move_state.world_z = scratch.z;
+                }
                 (step, Vec::new())
             }
             912 => {
                 let mut settle = self.casting.module_settle_countdown;
-                let (step, hits) = seru::freed_tick(ctx, seats, r_summon, &mut settle, |_| 0);
+                // Arm 0x0B waits on the creature's clip cursor (its anim
+                // node's `+0x68`).
+                let cursor = self
+                    .actors
+                    .get(usize::from(summon_slot))
+                    .filter(|a| a.active)
+                    .and_then(|a| a.battle_animation.as_ref())
+                    .map(|p| p.cursor_sixteenths());
+                let (step, hits) =
+                    seru::freed_tick(ctx, seats, r_summon, &mut settle, cursor, |_| 0);
                 self.casting.module_settle_countdown = settle;
                 (step, lift(&hits))
             }

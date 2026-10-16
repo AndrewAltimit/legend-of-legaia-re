@@ -63,6 +63,17 @@ use legaia_overlay_images::cast_presentation::{
     HandleSlot, PresentationCall, PresentationSite, SiteTiming, WashStore,
 };
 
+/// The context word the summon band and the modules park a fade actor in
+/// (`ctx[+0x102C]`).
+const BAND_FADE_SLOT: HandleSlot = HandleSlot::Ctx(0x102C);
+
+/// Modules whose tick ports hold every arm retail holds, so an arm the
+/// engine passes on its first tick is one retail passes too - in practice
+/// the stream request and CD poll arms, which wait on a read the engine's
+/// resident stream answers at once. Their calls fire although the arm never
+/// held (PROT 0910's arm 2 kills the band's flash-out behind its CD poll).
+const BODY_PACED: [u32; 4] = [910, 911, 912, 913];
+
 /// Modules whose fades a hand port already spawns.
 const FADES_PORTED_BY_HAND: [u32; 3] = [905, 954, 966];
 /// Modules whose CLUT copy a hand port already issues.
@@ -93,6 +104,9 @@ pub struct ModulePresentation {
     pub fades: Vec<HookFade>,
     /// Ticks the current arm has held (run without moving the phase).
     pub(crate) arm_held: u32,
+    /// The band's flash-out no longer sits in `ctx[+0x102C]`: a module arm
+    /// killed it there or parked a fade of its own over it.
+    pub(crate) band_fade_unparked: bool,
     /// Arms passed on their first tick although they can hold, this cast -
     /// calls the hook skipped because the port does not pace them.
     pub unpaced_arms: u32,
@@ -158,7 +172,7 @@ impl World {
         let engine_paced =
             legaia_engine_battle_vm::cast_module_camera::summon_holds::summon_holds(entry)
                 .is_some();
-        let paced = !holds || held > 0 || engine_paced;
+        let paced = !holds || held > 0 || engine_paced || BODY_PACED.contains(&entry);
         let first_hold = holds && !passed && held == 0;
         let first_pass = engine_paced && first && passed;
         if holds && passed && held == 0 {
@@ -234,6 +248,9 @@ impl World {
                 PresentationCall::FadeStore { fade, slot }
                     if once || spawned_now.contains(&fade) =>
                 {
+                    if slot == BAND_FADE_SLOT {
+                        self.casting.module_pres.band_fade_unparked = true;
+                    }
                     let fades = &mut self.casting.module_pres.fades;
                     for f in fades.iter_mut().filter(|f| f.slot == Some(slot)) {
                         f.slot = None;
@@ -245,6 +262,24 @@ impl World {
                 // `ori 0x8` into the parked actor's flag word: the actor list
                 // drops it.
                 PresentationCall::ActorKill { slot } if once => {
+                    // The summon band parks its flash-out in the same slot
+                    // (`sw v0,0x102C(v1)` at `0x801E4BC0`), so a module that
+                    // kills the slot before parking a fade of its own ends
+                    // the band's flash: PROT 0910's arm 2 cuts it short
+                    // (`0x801F6D14`) and fades its own `0x10`-frame flash.
+                    let parked_here = self
+                        .casting
+                        .module_pres
+                        .fades
+                        .iter()
+                        .any(|f| f.slot == Some(slot));
+                    if slot == BAND_FADE_SLOT
+                        && !parked_here
+                        && !self.casting.module_pres.band_fade_unparked
+                    {
+                        self.presentation.fade = None;
+                        self.casting.module_pres.band_fade_unparked = true;
+                    }
                     self.casting
                         .module_pres
                         .fades

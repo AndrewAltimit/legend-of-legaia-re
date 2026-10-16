@@ -17,6 +17,11 @@ pub const SWORDIE_SLASH: u32 = 0x801F_81DC;
 // PROT 0910 - Swordie
 // ---------------------------------------------------------------------------
 
+/// PROT 0910's slash arm: the timer gates that start the four slashes and
+/// the first landings run here (`0x801F78D8..0x801F7938`), so the cast's
+/// outcome is owed once the phase has passed it.
+pub const SWORDIE_SLASH_ARM: u8 = 9;
+
 /// PROT 0910's settle arm.
 pub const SWORDIE_SETTLE_PHASE: u8 = 0x0A;
 
