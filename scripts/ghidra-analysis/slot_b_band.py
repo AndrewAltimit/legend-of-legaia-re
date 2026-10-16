@@ -7,7 +7,7 @@ named by instructions rather than by a statistic:
 
 * **Frame matching** - a body opens at `addiu sp, sp, -F` and closes at the
   first `jr ra` whose delay slot restores the same `F`. Mirrors
-  `ghidra/scripts/dump_static_overlay.py`, whose committed `RANGES` rows it
+  `ghidra/scripts/dump/dump_static_overlay.py`, whose committed `RANGES` rows it
   reproduces.
 * **Spawn records** - the module forms each record's address with a
   `lui`/`addiu` pair and hands it to `FUN_80021B04` / `FUN_80050ED4` in `$a2`,
@@ -157,7 +157,7 @@ def framed_functions(image):
     """Frame-matched function partition: `addiu sp, sp, -F` through the first
     `jr ra` whose delay slot restores the same `F`.
 
-    Mirrors `ghidra/scripts/dump_static_overlay.py`, whose committed `RANGES`
+    Mirrors `ghidra/scripts/dump/dump_static_overlay.py`, whose committed `RANGES`
     rows this reproduces. Unlike a count-and-interleave rule it survives a
     frameless leaf, an early `jr ra` inside a body, and a `jr ra` word that is
     data in the image's tail.

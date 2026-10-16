@@ -119,7 +119,7 @@ image it was found in. Read them at the owner.
 `disc-coverage.py`'s classifier is a heuristic over bytes and cannot see any of
 the above, so it re-reports these runs on every regeneration. The record that
 keeps a reader from re-walking them is the `NOT_CODE` block in
-[`ghidra/scripts/dump_static_overlay.py`](../../../ghidra/scripts/dump_static_overlay.py),
+[`ghidra/scripts/dump/dump_static_overlay.py`](../../../ghidra/scripts/dump/dump_static_overlay.py),
 which now carries the band; the worklist row itself is not a defect. See
 [`disc-coverage.md`](../../tooling/disc-coverage.md) for what the worklist is
 and is not.

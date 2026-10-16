@@ -60,7 +60,7 @@ echo
 
 # Get the existing-program list so we can skip already-imported ones.
 EXISTING=$(docker compose exec -T ghidra /ghidra/support/analyzeHeadless \
-    /projects legaia -noanalysis -preScript /scripts/list_programs.py 2>&1 \
+    /projects legaia -noanalysis -preScript /scripts/inventory/list_programs.py 2>&1 \
     | grep -E "^[0-9a-zA-Z_.]+\s+\[Program\]" | awk '{print $1}')
 
 for CANDIDATE in "${CANDIDATES[@]}"; do
@@ -96,7 +96,7 @@ for CANDIDATE in "${CANDIDATES[@]}"; do
     echo "[inventory] $PROG_NAME"
     docker compose exec -T ghidra /ghidra/support/analyzeHeadless \
         /projects legaia -process "$PROG_NAME" -noanalysis \
-        -postScript /scripts/inventory_overlay.py 2>&1 | grep -E "(wrote|ERROR)"
+        -postScript /scripts/inventory/inventory_overlay.py 2>&1 | grep -E "(wrote|ERROR)"
 
     echo
 done

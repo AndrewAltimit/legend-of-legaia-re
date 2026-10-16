@@ -743,7 +743,7 @@ mid-load snapshot shows stale pointers there, which are not table content.
 
 Ghidra's reference database shows neither store, because the `addu`
 between the `lui` + `addiu` and the `sw` defeats its constant propagation.
-[`ghidra/scripts/find_addr_materializer_dat_8007c018.py`](../../ghidra/scripts/find_addr_materializer_dat_8007c018.py)
+[`ghidra/scripts/find/find_addr_materializer_dat_8007c018.py`](../../ghidra/scripts/find/find_addr_materializer_dat_8007c018.py)
 walks every `lui` + `addiu` pair producing `0x8007C018` across SCUS and
 the world-map overlay programs; `0x80026BA8` is the only store.
 

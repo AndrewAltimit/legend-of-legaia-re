@@ -19,7 +19,7 @@ What it does:
      (curated from docs/tooling/overlay-capture.md) to pick a label.
   5. Emits:
         <out-dir>/overlay_<label>.bin                  (raw slice)
-        ghidra/scripts/dump_<label>_overlay.py         (stub; preserved
+        ghidra/scripts/dump/dump_<label>_overlay.py         (stub; preserved
                                                         if it already
                                                         exists unless
                                                         --force)
@@ -340,7 +340,7 @@ STUB_TEMPLATE = '''# @category Legaia
 # Run:
 #   docker compose exec ghidra /ghidra/support/analyzeHeadless \\
 #       /projects legaia -process overlay_{label}.bin -noanalysis \\
-#       -postScript /scripts/dump_{label}_overlay.py
+#       -postScript /scripts/dump/dump_{label}_overlay.py
 #
 # Output filenames: ghidra/scripts/funcs/overlay_{label}_<addr>.txt
 
@@ -454,9 +454,9 @@ def main() -> int:
     ap.add_argument("--out-dir", default="/tmp",
                     help="where to write overlay_<label>.bin (default: /tmp)")
     ap.add_argument("--ghidra-scripts",
-                    default=os.path.join(repo_root, "ghidra", "scripts"),
+                    default=os.path.join(repo_root, "ghidra", "scripts", "dump"),
                     help="where to write dump_<label>_overlay.py "
-                         "(default: ghidra/scripts/)")
+                         "(default: ghidra/scripts/dump/)")
     ap.add_argument("--start", type=parse_addr, default=OVERLAY_START)
     ap.add_argument("--end", type=parse_addr, default=OVERLAY_END)
     ap.add_argument("--top-n", type=int, default=20,
@@ -541,7 +541,7 @@ def main() -> int:
     print(f"  docker compose exec ghidra /ghidra/support/analyzeHeadless "
           f"/projects legaia \\")
     print(f"      -process overlay_{label}.bin -noanalysis "
-          f"-postScript /scripts/dump_{label}_overlay.py")
+          f"-postScript /scripts/dump/dump_{label}_overlay.py")
     return 0
 
 

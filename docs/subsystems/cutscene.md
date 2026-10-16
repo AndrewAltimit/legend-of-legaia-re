@@ -102,7 +102,7 @@ The handlers live in a dedicated overlay, **PROT 0970** (`cutscene_str`, slot-A 
 the MDEC strings (`MDEC_in_sync` / `MDEC_out_sync` / `MDEC_rest:bad option`), and is
 Ghidra-importable straight from the disc (`asset overlay ghidra`; see
 [`static-overlay-pipeline.md`](../tooling/static-overlay-pipeline.md)). Dump script:
-`ghidra/scripts/dump_str_fmv_overlay.py`.
+`ghidra/scripts/dump/dump_str_fmv_overlay.py`.
 
 The two script-cutscene captures in the Ghidra project (`overlay_cutscene_dialogue.bin`,
 `overlay_cutscene_mapview.bin`) are a different overlay: they cover the actor-scripted `op*` /

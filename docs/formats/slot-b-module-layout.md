@@ -66,7 +66,7 @@ residue, not a second code region of the image's own.
 
 A body opens at `addiu sp, sp, -F` and closes at the first `jr ra` whose delay
 slot is `addiu sp, sp, +F` for the same `F`. This is the partition
-`ghidra/scripts/dump_static_overlay.py` drives its dumps from, and
+`ghidra/scripts/dump/dump_static_overlay.py` drives its dumps from, and
 `legaia_overlay_images::slot_b_module::framed_functions` reproduces its committed
 `RANGES` rows. It survives the three shapes that break a count-and-interleave
 rule: a frameless leaf, an early `jr ra` inside a body, and a `jr ra` word that

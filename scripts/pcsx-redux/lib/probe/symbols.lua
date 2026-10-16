@@ -1,6 +1,6 @@
 -- probe/symbols.lua  -- Ghidra-resolved function-name -> address map.
 --
--- The actual table is auto-generated at ghidra/scripts/symbols.lua
+-- The actual table is auto-generated at ghidra/scripts/symbols/symbols.lua
 -- (committed; regenerate via scripts/pcsx-redux/build-symbols.py).
 -- This wrapper provides:
 --   * a default search path that picks up the ghidra/scripts/ table from
@@ -24,8 +24,8 @@ local M = {}
 -- run_probe.sh harness from the repo root. The fallback paths
 -- cover working-directory variations.
 local DEFAULTS = {
-    "ghidra/scripts/symbols.lua",
-    "../../ghidra/scripts/symbols.lua",
+    "ghidra/scripts/symbols/symbols.lua",
+    "../../ghidra/scripts/symbols/symbols.lua",
 }
 
 local function try_load(path)

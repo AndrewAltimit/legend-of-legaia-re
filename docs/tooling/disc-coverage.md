@@ -540,7 +540,7 @@ Adding the prologue leg is what removes the need for the floor. A short run with
 no `jr ra` is routinely the head of a routine whose exit is past the window, and
 that head is real work - but it holds a prologue, so it stays `code` at any
 length. The same two words are what
-`ghidra/scripts/dump_static_overlay.py`'s frame-matched partition is built out
+`ghidra/scripts/dump/dump_static_overlay.py`'s frame-matched partition is built out
 of, so this shape and that partition draw the code/data boundary with the same
 test.
 
@@ -588,7 +588,7 @@ transform block is the worked example - it carries no `lui` of its own at all.
 
 An independent check that the floor lands where a function partition does: the
 thirteen slot-B modules whose extents were recovered by FRAME MATCHING in
-`ghidra/scripts/dump_static_overlay.py` all have their last recorded range end at
+`ghidra/scripts/dump/dump_static_overlay.py` all have their last recorded range end at
 exactly `data_floor`. Two instruments that share no test put the code/data
 boundary in the same place.
 

@@ -69,7 +69,7 @@ Vahn-vs-Gobu-Gobu battle paused on the Begin/Run menu while the camera orbits).
 
 The floor is not geometry from a file. `func_0x801d02c0` is a GTE rasteriser
 that emits a flat tiled grid each frame
-(`ghidra/scripts/dump_battle_backdrop_draw.py`; see also
+(`ghidra/scripts/dump/dump_battle_backdrop_draw.py`; see also
 [`functions/battle.md`](../reference/functions/battle.md#801d02c0)).
 
 | Property | Value |

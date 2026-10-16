@@ -172,7 +172,7 @@ The per-spell code overlays paged into the slot-B buffer at base `0x801F69D8`
 names its own entry points - both live in **PROT 0898**, so the two rows below
 are the way into the whole band. Dumps are one Ghidra program per PROT entry
 (`overlay_<label>_<entry>_<addr>.txt`), taken with
-`ghidra/scripts/dump_static_overlay.py`.
+`ghidra/scripts/dump/dump_static_overlay.py`.
 
 | Address | Role |
 |---|---|

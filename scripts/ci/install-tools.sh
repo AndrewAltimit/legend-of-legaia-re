@@ -126,10 +126,10 @@ Next steps:
   5. Once booted past the title screen, open the Lua console:
        File -> Show Lua Console
      Then 'Lua -> Run Lua File' and pick:
-       ghidra/scripts/dump_overlay.lua
+       ghidra/scripts/import/dump_overlay.lua
      This dumps 0x801C0000-0x801EFFFF to /tmp/.
   6. Import the dump into Ghidra:
-       ghidra/scripts/import_overlay.sh /tmp/legaia_overlay_<TS>.bin
+       ghidra/scripts/import/import_overlay.sh /tmp/legaia_overlay_<TS>.bin
 
 Full protocol: docs/tooling/overlay-capture.md
 ============================================================

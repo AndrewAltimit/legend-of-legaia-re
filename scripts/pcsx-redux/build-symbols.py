@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Generate ghidra/scripts/symbols.json (and a parallel symbols.lua) from the
+Generate ghidra/scripts/symbols/symbols.json (and a parallel symbols.lua) from the
 per-function decompilation dumps under ghidra/scripts/funcs/.
 
 Each dump's first line has the canonical name + entry address, e.g.
@@ -12,8 +12,8 @@ is just a slot, and a single function can appear under multiple slots
 dump script). Names dedupe by (name -> address) with a warning on conflict.
 
 Output:
-    ghidra/scripts/symbols.json   {"FUN_801de840": "0x801de840", ...}
-    ghidra/scripts/symbols.lua    -- return { ... } table for direct dofile()
+    ghidra/scripts/symbols/symbols.json   {"FUN_801de840": "0x801de840", ...}
+    ghidra/scripts/symbols/symbols.lua    -- return { ... } table for direct dofile()
                                   -- from the PCSX-Redux Lua side without
                                   -- needing a JSON parser.
 
@@ -239,7 +239,7 @@ def emit_json(symbols: Dict[str, int], path: str) -> None:
 
 def emit_lua(symbols: Dict[str, int], path: str) -> None:
     # Plain `return { ... }` table so the PCSX-Redux Lua side can do
-    #   local symbols = dofile("ghidra/scripts/symbols.lua")
+    #   local symbols = dofile("ghidra/scripts/symbols/symbols.lua")
     # without bundling a JSON parser. LuaJIT handles 32-bit unsigned
     # literals natively; emit as 0x prefixed lowercase for readability.
     lines = [
@@ -264,8 +264,8 @@ def emit_lua(symbols: Dict[str, int], path: str) -> None:
 def main() -> int:
     repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
     default_funcs = os.path.join(repo_root, "ghidra", "scripts", "funcs")
-    default_json = os.path.join(repo_root, "ghidra", "scripts", "symbols.json")
-    default_lua = os.path.join(repo_root, "ghidra", "scripts", "symbols.lua")
+    default_json = os.path.join(repo_root, "ghidra", "scripts", "symbols", "symbols.json")
+    default_lua = os.path.join(repo_root, "ghidra", "scripts", "symbols", "symbols.lua")
 
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)

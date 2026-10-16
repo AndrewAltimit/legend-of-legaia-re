@@ -3,7 +3,7 @@
 that land in a given address range, by pairing lui+addiu and lui+(load/store
 with offset) within the same function.
 
-Mirrors the in-Ghidra scan in `ghidra/scripts/find_xp_table_readers.py`, but
+Mirrors the in-Ghidra scan in `ghidra/scripts/find/find_xp_table_readers.py`, but
 runs against the on-disc dump corpus so it doesn't need the Ghidra container.
 Useful for sweeping "does ANY captured function reach this address range
 statically" questions across 3000+ overlay dumps in seconds.

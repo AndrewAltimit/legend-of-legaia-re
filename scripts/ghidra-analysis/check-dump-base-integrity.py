@@ -45,7 +45,7 @@ not the whole routine. `--shape` classifies that axis:
                (usually a second `FUN_` entry minted inside the routine cut
                it). INTERNALLY CONSISTENT, so neither the base check nor
                disc-coverage.py can see it. Repair with
-               ghidra/scripts/repair_truncated_dumps.py.
+               ghidra/scripts/repair/repair_truncated_dumps.py.
   TAIL_J       ends in `j <target>` rather than `jr`. Ambiguous: either a
                real tail call or a label-call slice of a larger function.
                Bodies under SHORT_BODY_INSNS instructions are almost always
@@ -780,9 +780,16 @@ _C_MARKER_RE = re.compile(r"\.write\([^\n]*---\s*DECOMPILED C\s*---")
 
 
 def audit_dumpers(scripts_dir):
-    """Which dump scripts still carry each defect. Reads source, not dumps."""
+    """Which dump scripts still carry each defect. Reads source, not dumps.
+
+    Walks the bucket subdirectories (`dump/`, `repair/`, ...) but not
+    `archive/` (one-off scripts that are not re-run) or `funcs/` (output)."""
     found = []
-    for path in sorted(glob.glob(os.path.join(scripts_dir, "*.py"))):
+    paths = glob.glob(os.path.join(scripts_dir, "**", "*.py"), recursive=True)
+    for path in sorted(paths):
+        rel = os.path.relpath(path, scripts_dir)
+        if rel.split(os.sep)[0] in ("archive", "funcs"):
+            continue
         try:
             text = open(path, "r", errors="replace").read()
         except OSError:
@@ -797,7 +804,7 @@ def audit_dumpers(scripts_dir):
         if _C_MARKER_RE.search(text):
             flags.append("C_MARKER")
         if flags:
-            found.append((os.path.basename(path), flags))
+            found.append((rel, flags))
     return found
 
 
@@ -859,7 +866,7 @@ def main():
                          "+ image to CSV - what a re-dump pass needs to pick a "
                          "program from the bytes rather than the filename")
     ap.add_argument("--audit-dumpers", action="store_true",
-                    help="report which ghidra/scripts/*.py still carry each "
+                    help="report which ghidra/scripts/**/*.py still carry each "
                          "source-level dumper defect; needs neither dumps nor "
                          "extracted/")
     ap.add_argument("--scripts-dir", default=GHIDRA_SCRIPTS)

@@ -37,7 +37,7 @@ from typing import Any
 PROBE_DIR = Path(__file__).resolve().parent
 REPO_ROOT = PROBE_DIR.parents[2]
 LIB_DIR = REPO_ROOT / "scripts" / "pcsx-redux" / "lib"
-SYMBOLS_JSON = REPO_ROOT / "ghidra" / "scripts" / "symbols.json"
+SYMBOLS_JSON = REPO_ROOT / "ghidra" / "scripts" / "symbols" / "symbols.json"
 
 # Built-in capture-columns vocab. Must match COLUMN_BUILDERS in
 # scripts/pcsx-redux/lib/probe/spec.lua.
@@ -58,7 +58,7 @@ _symbols_cache: dict[str, int] | None = None
 
 
 def load_symbols() -> dict[str, int]:
-    """Load ghidra/scripts/symbols.json once. Empty dict if missing."""
+    """Load ghidra/scripts/symbols/symbols.json once. Empty dict if missing."""
     global _symbols_cache
     if _symbols_cache is not None:
         return _symbols_cache

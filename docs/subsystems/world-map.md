@@ -2126,7 +2126,7 @@ both.
 
 #### Which PROT entry is the walk `.MAP`
 
-The field-file loader `FUN_8001F7C0` (`ghidra/scripts/trace_field_loader.py`)
+The field-file loader `FUN_8001F7C0` (`ghidra/scripts/find/trace_field_loader.py`)
 is dual-mode:
 
 ```c
@@ -2210,7 +2210,7 @@ The port's `legaia_scene_formats::field_objects::pack_mesh_index` plus
 0x80139530`) matches 14 of 14 actors: records `414 / 430 / 349 / 411 / 474`
 carry `+0x10 = 31 / 29 / 6 / 14 / 16` and `+0x64 = 36 / 34 / 11 / 19 / 21`
 (also `409 -> 7`). The chain writer was located with
-`ghidra/scripts/find_mesh_chain_writer.py`.
+`ghidra/scripts/find/find_mesh_chain_writer.py`.
 
 **Each placed spawn is gated on a MAN interaction record** for the cell. The
 placer calls the overlay lookup `FUN_801D5630(1, col + rec[+6], row +

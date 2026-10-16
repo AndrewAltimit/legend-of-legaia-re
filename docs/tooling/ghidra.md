@@ -8,7 +8,7 @@ Ghidra runs headlessly in Docker and is driven by scripts, not by a GUI. You ask
 flowchart LR
     disc["disc image"] -->|"extraction pipeline"| ext["extracted/"]
     ext -->|"mounted read-only as /data"| ghidra["ghidra container"]
-    scripts["ghidra/scripts/*.py"] -->|"-postScript"| ghidra
+    scripts["ghidra/scripts/<bucket>/*.py"] -->|"-postScript"| ghidra
     ghidra -->|"project DB"| proj["ghidra/projects/"]
     ghidra -->|"per-function dumps"| funcs["ghidra/scripts/funcs/*.txt"]
     funcs --> docs["docs + port catalog"]
@@ -36,10 +36,10 @@ docker compose up -d ghidra          # once - leave it running
 
 docker compose exec ghidra /ghidra/support/analyzeHeadless \
     /projects legaia -process SCUS_942.54 -noanalysis \
-    -postScript /scripts/dump_funcs.py
+    -postScript /scripts/dump/dump_funcs.py
 ```
 
-Bring the service up **once** and issue one `exec` per query - don't restart it per command. The invocation shape is always the same: project directory `/projects`, project name `legaia`, `-process <program>` to pick the imported program, `-noanalysis` to skip re-analysis, and `-postScript /scripts/<script>.py` for the query. Dumps land in `ghidra/scripts/funcs/<addr>.txt` on the host.
+Bring the service up **once** and issue one `exec` per query - don't restart it per command. The invocation shape is always the same: project directory `/projects`, project name `legaia`, `-process <program>` to pick the imported program, `-noanalysis` to skip re-analysis, and `-postScript /scripts/<bucket>/<script>.py` - an absolute container path - for the query. Dumps land in `ghidra/scripts/funcs/<addr>.txt` on the host. How a script is found and how it imports a shared module is in [script layout and invocation](#script-layout-and-invocation).
 
 Settings travel into the container with `exec -e NAME=value` (for example `DUMP_ONLY`, `GHIDRA_FIND_ADDRS`). Exporting a variable in the host shell has no effect, because the script reads it inside the container.
 
@@ -108,12 +108,12 @@ addiu r1, r1, 0x70F0   ; r1 = 0x801C70F0
 
 **Ghidra's reference manager does NOT auto-resolve this combination across instructions.** A direct query "give me xrefs to `0x801C70F0`" returns zero results, even when the address is heavily used.
 
-Workaround: `ghidra/scripts/find_lui_writers.py` walks instructions, tracks per-register LUI immediates, and flags `addiu` / load / store offsets that combine with a tracked LUI to land in a target range. Use it any time you suspect a static address is being missed.
+Workaround: `ghidra/scripts/find/find_lui_writers.py` walks instructions, tracks per-register LUI immediates, and flags `addiu` / load / store offsets that combine with a tracked LUI to land in a target range. Use it any time you suspect a static address is being missed.
 
 ```bash
 docker compose exec ghidra /ghidra/support/analyzeHeadless \
     /projects legaia -process SCUS_942.54 -noanalysis \
-    -postScript /scripts/find_lui_writers.py
+    -postScript /scripts/find/find_lui_writers.py
 ```
 
 Modify `LO` / `HI` constants in the script to scan a different range.
@@ -143,7 +143,7 @@ Use `find_addr_materializers.py` to walk every instruction in a program, track p
 ```bash
 docker compose exec ghidra /ghidra/support/analyzeHeadless \
     /projects legaia -process SCUS_942.54 -noanalysis \
-    -postScript /scripts/find_addr_materializers.py \
+    -postScript /scripts/find/find_addr_materializers.py \
     0x8007C018 0x8007BB38 0x8007B7DC
 ```
 
@@ -176,12 +176,12 @@ Empirical workflow:
 
 ## Adding a new function dump
 
-1. Edit `ghidra/scripts/dump_funcs.py`'s `TARGETS` list to add the entry-point address. **SCUS-resident addresses only.** The script writes `funcs/<addr>.txt` with no overlay prefix, so an overlay-resident address (VA `>= 0x801C0000`) would collide with any other overlay's function at the same VA. Those belong in a per-overlay `dump_<label>_overlay.py`, whose `out_path_for()` prefixes the output as `overlay_<label>_<addr>.txt`.
+1. Edit `ghidra/scripts/dump/dump_funcs.py`'s `TARGETS` list to add the entry-point address. **SCUS-resident addresses only.** The script writes `funcs/<addr>.txt` with no overlay prefix, so an overlay-resident address (VA `>= 0x801C0000`) would collide with any other overlay's function at the same VA. Those belong in a per-overlay `dump_<label>_overlay.py`, whose `out_path_for()` prefixes the output as `overlay_<label>_<addr>.txt`.
 2. Run the dump:
    ```bash
    docker compose exec -e DUMP_ONLY=8002735c ghidra /ghidra/support/analyzeHeadless \
        /projects legaia -process SCUS_942.54 -noanalysis \
-       -postScript /scripts/dump_funcs.py
+       -postScript /scripts/dump/dump_funcs.py
    ```
    `DUMP_ONLY=<addr>[,<addr>...]` dumps just those; without it the whole
    `TARGETS` catalogue is re-dumped, which is the slow path. It is read inside
@@ -197,14 +197,34 @@ Each imported overlay is its own Ghidra program, and overlays that share a load 
 ```bash
 docker compose exec ghidra /ghidra/support/analyzeHeadless \
     /projects legaia -process overlay_shop_save.bin -noanalysis \
-    -postScript /scripts/dump_shop_overlay.py
+    -postScript /scripts/dump/dump_shop_overlay.py
 ```
 
-A per-overlay script is a header, a `TARGETS` list and one `dump_targets(currentProgram, TARGETS)` call into the shared `lib_dump.py`. That helper skips addresses the current program does not hold and names the output `overlay_<label>_<addr>.txt`. To add a function, add its address to the matching script's `TARGETS`; to cover a new overlay, copy an existing script and change the label. `list_programs.py` shows which program names exist for `-process`, and `report_program_bases.py` shows where each one is based - check that before trusting a dump's printed addresses ([`dump-corpus-integrity.md`](dump-corpus-integrity.md)).
+A per-overlay script is a header, a `TARGETS` list and one `dump_targets(currentProgram, TARGETS)` call into the shared `lib/lib_dump.py`. That helper skips addresses the current program does not hold and names the output `overlay_<label>_<addr>.txt`. To add a function, add its address to the matching script's `TARGETS`; to cover a new overlay, copy an existing script and change the label. `inventory/list_programs.py` shows which program names exist for `-process`, and `inventory/report_program_bases.py` shows where each one is based - check that before trusting a dump's printed addresses ([`dump-corpus-integrity.md`](dump-corpus-integrity.md)).
+
+## Script layout and invocation
+
+The compose service mounts `./ghidra/scripts` at `/scripts`, and the scripts sit in bucket subdirectories mapped in [`ghidra/scripts/README.md`](../../ghidra/scripts/README.md): `dump/`, `find/`, `inventory/`, `repair/`, `symbols/`, `import/`, the shared modules in `lib/`, and the one-offs in `archive/`. The `funcs/` dump corpus stays at the top level, and so does every other output (`inventory_*.csv`, `explore.json`, the `redump_*.txt` worklists): scripts write absolute `/scripts/...` paths, never paths relative to their own file.
+
+Headless Ghidra resolves a bare `-postScript <name>.py` only against the `-scriptPath` directories, does not search them recursively, and puts on the Jython `sys.path` only those directories - **not** the running script's own directory. Two consequences:
+
+- **Name scripts by absolute container path** - `-postScript /scripts/dump/dump_funcs.py`, `-preScript /scripts/inventory/report_program_bases.py`. That needs no `-scriptPath` at all, and it is the form every recipe and wrapper in this repo uses.
+- **A script that imports a shared module adds `/scripts/lib` to `sys.path` itself** before the import, so it runs under the plain absolute-path form. Every `lib_dump` importer and `symbols/apply_known_symbols.py` (which imports `lib/known_symbols.py`) carries that short guard; a new importer copies it.
+
+To run scripts by bare name instead, list each bucket explicitly, semicolon-separated:
+
+```bash
+docker compose exec ghidra /ghidra/support/analyzeHeadless \
+    /projects legaia -process overlay_title.bin -noanalysis -readOnly \
+    -scriptPath '/scripts/dump;/scripts/find;/scripts/inventory;/scripts/repair;/scripts/symbols;/scripts/lib' \
+    -postScript dump_title_overlay.py
+```
+
+`-readOnly` opens the program without saving changes back to the project - the right flag for a query that should not touch the database. The `lib_dump` dumpers write into `LEGAIA_DUMP_OUT_DIR` (set via `exec -e`) instead of `/scripts/funcs` when that variable is set, which is how to compare a fresh dump against the corpus without overwriting it.
 
 ## Script catalogue
 
-The Ghidra-side scripts (Jython, run inside the container) live in `ghidra/scripts/`; one-off investigation scripts are kept in `ghidra/scripts/archive/`. Edit the `TARGETS` / `LO` / `HI` constants at the top of a script to point it at the addresses you want to trace.
+The Ghidra-side scripts (Jython, run inside the container) live in bucket subdirectories of `ghidra/scripts/` ([layout](#script-layout-and-invocation)); one-off investigation scripts are kept in `ghidra/scripts/archive/`. The tables below group them by purpose and name each by its path under `ghidra/scripts/`. Edit the `TARGETS` / `LO` / `HI` constants at the top of a script to point it at the addresses you want to trace.
 
 | Group | Use it for |
 |---|---|
@@ -223,36 +243,36 @@ Every script needs the `# @runtime Jython` header line (with `# @category Legaia
 
 | Script | Purpose |
 |---|---|
-| `apply_known_symbols.py` | Re-applies this project's pinned function names to a fresh import of `SCUS_942.54`, from the curated `(address, name, role-comment)` table in `known_symbols.py`: names each function and sets a one-line plate comment. Replays the project's own labels, no external SDK database. SCUS-resident (`0x80010000..0x8007C000`) only - overlays alias by address, so naming them blind would mislabel. |
+| `symbols/apply_known_symbols.py` | Re-applies this project's pinned function names to a fresh import of `SCUS_942.54`, from the curated `(address, name, role-comment)` table in `known_symbols.py`: names each function and sets a one-line plate comment. Replays the project's own labels, no external SDK database. SCUS-resident (`0x80010000..0x8007C000`) only - overlays alias by address, so naming them blind would mislabel. |
 
 ### Per-function dumps
 
 | Script | Purpose |
 |---|---|
-| `dump_funcs.py` | Dump disassembly + decompiled C for a list of function entry points. Output goes to `ghidra/scripts/funcs/<addr>.txt`. SCUS-resident targets only - see [adding a new function dump](#adding-a-new-function-dump). |
-| `dump_<label>_overlay.py` | The per-overlay dumper family (title, shop / menu, dialog, cutscene, level-up, magic capture, summon, STR FMV, world map and its top / walk views, save UI, debug menu, state resume, field battle intro, and the fishing / slot machine / dance / Baka Fighter / Muscle Dome minigames). Each names its `-process` program in its header - see [dumping an overlay function](#dumping-an-overlay-function). |
-| `lib_dump.py` | The shared body of the per-overlay dumpers: `dump_targets(currentProgram, TARGETS, scus_bare=False)` decompiles each target the current program holds into `/scripts/funcs` (or `LEGAIA_DUMP_OUT_DIR`). A `dump_<label>_overlay.py` is a header, a `TARGETS` list and that call; the module takes the program as an argument because an imported Jython module cannot see a script's `currentProgram`. |
-| `dump_pending_helpers.py` | An overlay-aware dumper with a rotating `TARGETS` list, an `in_program()` guard that silently skips addresses the current program doesn't hold, and `out_path_for()` naming output `<addr>.txt` under SCUS but `<prog_label>_<addr>.txt` under an overlay. One target list, run once per program, no per-program lists to maintain. |
-| `dump_wave_closeout.py` | Works the `--missing-dumps` worklist of [`port-catalog.py`](port-catalog.md): addresses some dump cites that have no dump of their own. Separates real function entries (dumped normally) from citation artifacts such as interior addresses, instead of dumping blindly. |
-| `dump_globals.py` | Dumps the program's defined data-symbol table to `funcs/globals_<program>.txt`, one `== <name> <addr> (len=N) ==` line per symbol - the format `scripts/pcsx-redux/build-symbols.py` parses. |
-| `dump_scus_gaps.py` | Dumper for the disc-denominated **code gap** worklist [`disc-coverage.py`](disc-coverage.md) emits. Takes address `RANGES` rather than entry points, because a gap is bounded by dumped functions rather than named by one: it walks the listing per range, dumps every function entry inside, and reports the bytes no function covers. Those go in `FORCE_RANGES`, which force-disassembles the run and creates one function per `jr ra` + delay-slot unit - the shape a sequence of separately-emitted library leaves has, where `force_disasm_dump.py`'s one-entry-per-address model needs the entries known in advance. `in_program()`-guarded. |
-| `dump_slot_a_gaps.py` | The same worklist for the **slot-A overlay images** (the statically extracted `overlay_<label>_<entry>.bin` programs). `RANGES` and `FORCE_RANGES` are keyed by PROGRAM LABEL, not by address: nineteen of those images load at `0x801CE818` and hold different bytes at the same VA, so a bare address list would force-disassemble one image's gap inside another's and print convincing garbage. Its `jr ra` walk also stops at the range end rather than running off the image, because PROT 0902 and PROT 0977 both end mid-routine at their sector boundary. |
-| `dump_static_overlay.py` | Dumper for the statically extracted overlay images, one Ghidra program per PROT entry. Takes `RANGES` (function extents recovered from the bytes - the prologue / `jr ra` partition) rather than entry points, because the slot-B modules have no internal `jal` for analysis to follow; also `WALK_RANGES` for ordinary overlays and `JUMPTABLES` to teach the decompiler a computed jump. Keyed by **program label**, since every slot-B image loads at one base. The container's `/data` bind can be stale - images travel by `docker compose cp`. |
-| `repair_truncated_dumps.py` | Repairs dumps whose function **body ends before the routine does** - the defect class on [`dump-corpus-integrity.md`](dump-corpus-integrity.md) that no header or base check can see, because such a dump is internally consistent. Ignores Ghidra's boundary, walks the routine's real extent, deletes the interior `FUN_` entries that cut the body, and rebuilds over the whole span. → [detail](#repair_truncated_dumpspy-detail) |
-| `force_disasm_dump.py` | Force-disassemble + create-function at addresses Ghidra didn't auto-detect (JALR-only entry points), then dump. Targets are one hex address per line in `force_disasm_targets.txt` beside the script (gitignored - populate it per run), not a `TARGETS` constant. The walk must reach a `jr $ra` and produce at least two instructions before the function is committed; the floor is low on purpose, so `jr ra; nop` PsyQ thunks survive it. |
-| `resolve_render_tail.py` | Companion to the [trace-driven coverage](playthrough-coverage.md) program: for the hardcoded `HITS` list of overlay trace-hit addresses (the S5 battle render-tail, with hit counts), reports each hit's `getFunctionContaining` result in the currently-open overlay program plus whether a dump for that entry already exists on disk, then rolls the hits up per enclosing function. A hit with no containing function is undefined code in this program - a create+dump target, or a sign the address belongs to a co-resident overlay. Run against `overlay_battle_action.bin`. |
-| `dump_battle_rendertail.py` | Disassemble + create-function + dump the in-`0898` battle render-tail functions the trace found un-analyzed (e.g. `FUN_801E0080`). Output naming matches the overlay dumps (`overlay_battle_action_<addr>.txt`). Run against `overlay_battle_action.bin`. |
-| `dump_battle_rendertail_0x801f.py` | Dump the `0x801F` render tail, which the windowed `overlay_battle_action.bin` import stops short of. Run against a **full-length** re-import of the `0898` blob at base `0x801CE818` (`-import /data/overlays/overlay_battle_action_0898.bin -loader BinaryLoader -loader-baseAddr 0x801CE818`, span `0x801CE818..0x801F8018`); resolves the `0x801F0xxx` hits cleanly (`FUN_801F0450`). The `0x801F6xxx`/`0x801F7xxx` sub-cluster is *not* `0898` (the resident bytes differ from the `0898` image) - it is the co-resident sparring-tutorial overlay PROT 0967 (next row). |
-| `dump_effect_overlay_0967.py` | Dump the battle **sparring-tutorial overlay PROT 0967**, co-resident at base `0x801F69D8` during the Tetsu tutorial fight (overlapping `0898`'s rodata tail). Run against a fresh import of `/data/PROT/0967_xxx_dat.BIN` at `-loader-baseAddr 0x801F69D8`; create+dumps the S5 `0x801F6xxx`/`0x801F7xxx` hit functions (message-pacing driver `FUN_801F71E0` + the step text emitters) as `overlay_effect_0967_<addr>.txt`. |
-| `dump_menu_inventory_refs.py` | Content-grep dumper: decompiles every function in the current program and dumps the C for any whose body mentions a configurable needle list (default: the inventory array `0x80085958` + the SCUS accessor family + the `gp+0x2D2/0x2D4/0x2D6` window registers). Robust against the LUI+ADDIU xref gap (matches decompiled text, not the reference manager). Its standing result on `overlay_menu.bin`: no raw-index inventory write exists - every mutation goes through the bounds-checked helpers. |
-| `dump_arts_input.py` | Decompiles the battle-overlay (0898) arts-combo execution cluster: the Arms resolver `FUN_801EC3E4` (with its caller list from the reference manager) plus every function referencing the move-power tables (`0x801F4F5C` per-move power, `0x801F64E4` power-byte, `0x801F4E63` 128-byte action map). The resolver is dispatched by a runtime function pointer (no static caller), and the move-power referrers are damage / action-step builders, not the arts-input bar builder. |
-| `dump_terrain_trigger.py` | Per-overlay-aware dumper for the world-map render-pipeline chain around the continent-terrain emitter `FUN_801D7EA0`: its gate writer `FUN_801D8258`, the outer callers `FUN_801D1344` / `FUN_80016444` + their SCUS callers, and the 0897 relocation copy. Uses `prog.getMemory().contains(addr)` to skip any TARGET that isn't mapped in the current program, so the same script can be run against SCUS plus each overlay and only emits files for the addresses that exist there. Output naming: `<program_label>_<addr>.txt`. |
-| `dump_battle_backdrop_draw.py` | Dumps the battle-overlay backdrop draw `func_0x801d02c0` (called by the static `FUN_80026f50` for game mode `0x15`) plus its callees one level deep. Run against the battle-action program. |
-| `dump_world_map_top_prim_leaves.py` | Dumps the eight overlay-resident high-mode primitive renderers the world-map top view swaps in through `FUN_80043390`'s overlay path. Addresses come from `mednafen-state prim-dispatch-table --overlay-targets-only` on a state with the world-map overlay loaded. |
-| `dump_save_ui_handlers.py` / `dump_save_ui_handler_0x15.py` | Dump every sub-state handler of the save-screen dispatch table `PTR_FUN_801e4f40` (the second covers sub-state `0x15` at `0x801DA2A0`). Run against the menu overlay. |
-| `dump_levelup_data_section.py` | Dumps the data section of `overlay_magic_level_up.bin` (small lookup tables in the `0x801f4b80..0x801f4cff` band and above). |
-| `trace_field_loader.py` | Targeted trace of the per-scene field-file loader `FUN_8001f7c0`; pins the loader's **dual-mode** dispatch. → [detail](#trace_field_loaderpy-detail) |
-| `find_mesh_chain_writer.py` | Finds the writer of the field/world-map actor's mesh-chain pointer `actor+0x44` (the chain `FUN_8001ADA4` case 5 draws). Scans for non-stack `sw/sh …,0x44(reg)`, scores each containing function by pool-table (`DAT_8007C018`) refs / TMD object-stride (`0x1c`) math / actor-field reads, dumps the top candidates. The resolver chain it pins for the walk view: `FUN_80024d78` builds `actor+0x44` from `DAT_8007C018[*(u16*)(actor+0x64)]`, and `FUN_80020f88` sets `actor+0x64 = .MAP_record[+0x10] + DAT_8007b6f8 (prefix)` → so the per-object pool index is `record[+0x10] + prefix`. |
+| `dump/dump_funcs.py` | Dump disassembly + decompiled C for a list of function entry points. Output goes to `ghidra/scripts/funcs/<addr>.txt`. SCUS-resident targets only - see [adding a new function dump](#adding-a-new-function-dump). |
+| `dump/dump_<label>_overlay.py` | The per-overlay dumper family (title, shop / menu, dialog, cutscene, level-up, magic capture, summon, STR FMV, world map and its top / walk views, save UI, debug menu, state resume, field battle intro, and the fishing / slot machine / dance / Baka Fighter / Muscle Dome minigames). Each names its `-process` program in its header - see [dumping an overlay function](#dumping-an-overlay-function). |
+| `lib/lib_dump.py` | The shared body of the per-overlay dumpers: `dump_targets(currentProgram, TARGETS, scus_bare=False)` decompiles each target the current program holds into `/scripts/funcs` (or `LEGAIA_DUMP_OUT_DIR`). A `dump_<label>_overlay.py` is a header, a `TARGETS` list and that call; the module takes the program as an argument because an imported Jython module cannot see a script's `currentProgram`. |
+| `dump/dump_pending_helpers.py` | An overlay-aware dumper with a rotating `TARGETS` list, an `in_program()` guard that silently skips addresses the current program doesn't hold, and `out_path_for()` naming output `<addr>.txt` under SCUS but `<prog_label>_<addr>.txt` under an overlay. One target list, run once per program, no per-program lists to maintain. |
+| `dump/dump_wave_closeout.py` | Works the `--missing-dumps` worklist of [`port-catalog.py`](port-catalog.md): addresses some dump cites that have no dump of their own. Separates real function entries (dumped normally) from citation artifacts such as interior addresses, instead of dumping blindly. |
+| `dump/dump_globals.py` | Dumps the program's defined data-symbol table to `funcs/globals_<program>.txt`, one `== <name> <addr> (len=N) ==` line per symbol - the format `scripts/pcsx-redux/build-symbols.py` parses. |
+| `dump/dump_scus_gaps.py` | Dumper for the disc-denominated **code gap** worklist [`disc-coverage.py`](disc-coverage.md) emits. Takes address `RANGES` rather than entry points, because a gap is bounded by dumped functions rather than named by one: it walks the listing per range, dumps every function entry inside, and reports the bytes no function covers. Those go in `FORCE_RANGES`, which force-disassembles the run and creates one function per `jr ra` + delay-slot unit - the shape a sequence of separately-emitted library leaves has, where `force_disasm_dump.py`'s one-entry-per-address model needs the entries known in advance. `in_program()`-guarded. |
+| `dump/dump_slot_a_gaps.py` | The same worklist for the **slot-A overlay images** (the statically extracted `overlay_<label>_<entry>.bin` programs). `RANGES` and `FORCE_RANGES` are keyed by PROGRAM LABEL, not by address: nineteen of those images load at `0x801CE818` and hold different bytes at the same VA, so a bare address list would force-disassemble one image's gap inside another's and print convincing garbage. Its `jr ra` walk also stops at the range end rather than running off the image, because PROT 0902 and PROT 0977 both end mid-routine at their sector boundary. |
+| `dump/dump_static_overlay.py` | Dumper for the statically extracted overlay images, one Ghidra program per PROT entry. Takes `RANGES` (function extents recovered from the bytes - the prologue / `jr ra` partition) rather than entry points, because the slot-B modules have no internal `jal` for analysis to follow; also `WALK_RANGES` for ordinary overlays and `JUMPTABLES` to teach the decompiler a computed jump. Keyed by **program label**, since every slot-B image loads at one base. The container's `/data` bind can be stale - images travel by `docker compose cp`. |
+| `repair/repair_truncated_dumps.py` | Repairs dumps whose function **body ends before the routine does** - the defect class on [`dump-corpus-integrity.md`](dump-corpus-integrity.md) that no header or base check can see, because such a dump is internally consistent. Ignores Ghidra's boundary, walks the routine's real extent, deletes the interior `FUN_` entries that cut the body, and rebuilds over the whole span. → [detail](#repair_truncated_dumpspy-detail) |
+| `repair/force_disasm_dump.py` | Force-disassemble + create-function at addresses Ghidra didn't auto-detect (JALR-only entry points), then dump. Targets are one hex address per line in `ghidra/scripts/force_disasm_targets.txt` (gitignored - populate it per run), not a `TARGETS` constant. The walk must reach a `jr $ra` and produce at least two instructions before the function is committed; the floor is low on purpose, so `jr ra; nop` PsyQ thunks survive it. |
+| `find/resolve_render_tail.py` | Companion to the [trace-driven coverage](playthrough-coverage.md) program: for the hardcoded `HITS` list of overlay trace-hit addresses (the S5 battle render-tail, with hit counts), reports each hit's `getFunctionContaining` result in the currently-open overlay program plus whether a dump for that entry already exists on disk, then rolls the hits up per enclosing function. A hit with no containing function is undefined code in this program - a create+dump target, or a sign the address belongs to a co-resident overlay. Run against `overlay_battle_action.bin`. |
+| `dump/dump_battle_rendertail.py` | Disassemble + create-function + dump the in-`0898` battle render-tail functions the trace found un-analyzed (e.g. `FUN_801E0080`). Output naming matches the overlay dumps (`overlay_battle_action_<addr>.txt`). Run against `overlay_battle_action.bin`. |
+| `dump/dump_battle_rendertail_0x801f.py` | Dump the `0x801F` render tail, which the windowed `overlay_battle_action.bin` import stops short of. Run against a **full-length** re-import of the `0898` blob at base `0x801CE818` (`-import /data/overlays/overlay_battle_action_0898.bin -loader BinaryLoader -loader-baseAddr 0x801CE818`, span `0x801CE818..0x801F8018`); resolves the `0x801F0xxx` hits cleanly (`FUN_801F0450`). The `0x801F6xxx`/`0x801F7xxx` sub-cluster is *not* `0898` (the resident bytes differ from the `0898` image) - it is the co-resident sparring-tutorial overlay PROT 0967 (next row). |
+| `dump/dump_effect_overlay_0967.py` | Dump the battle **sparring-tutorial overlay PROT 0967**, co-resident at base `0x801F69D8` during the Tetsu tutorial fight (overlapping `0898`'s rodata tail). Run against a fresh import of `/data/PROT/0967_xxx_dat.BIN` at `-loader-baseAddr 0x801F69D8`; create+dumps the S5 `0x801F6xxx`/`0x801F7xxx` hit functions (message-pacing driver `FUN_801F71E0` + the step text emitters) as `overlay_effect_0967_<addr>.txt`. |
+| `dump/dump_menu_inventory_refs.py` | Content-grep dumper: decompiles every function in the current program and dumps the C for any whose body mentions a configurable needle list (default: the inventory array `0x80085958` + the SCUS accessor family + the `gp+0x2D2/0x2D4/0x2D6` window registers). Robust against the LUI+ADDIU xref gap (matches decompiled text, not the reference manager). Its standing result on `overlay_menu.bin`: no raw-index inventory write exists - every mutation goes through the bounds-checked helpers. |
+| `dump/dump_arts_input.py` | Decompiles the battle-overlay (0898) arts-combo execution cluster: the Arms resolver `FUN_801EC3E4` (with its caller list from the reference manager) plus every function referencing the move-power tables (`0x801F4F5C` per-move power, `0x801F64E4` power-byte, `0x801F4E63` 128-byte action map). The resolver is dispatched by a runtime function pointer (no static caller), and the move-power referrers are damage / action-step builders, not the arts-input bar builder. |
+| `dump/dump_terrain_trigger.py` | Per-overlay-aware dumper for the world-map render-pipeline chain around the continent-terrain emitter `FUN_801D7EA0`: its gate writer `FUN_801D8258`, the outer callers `FUN_801D1344` / `FUN_80016444` + their SCUS callers, and the 0897 relocation copy. Uses `prog.getMemory().contains(addr)` to skip any TARGET that isn't mapped in the current program, so the same script can be run against SCUS plus each overlay and only emits files for the addresses that exist there. Output naming: `<program_label>_<addr>.txt`. |
+| `dump/dump_battle_backdrop_draw.py` | Dumps the battle-overlay backdrop draw `func_0x801d02c0` (called by the static `FUN_80026f50` for game mode `0x15`) plus its callees one level deep. Run against the battle-action program. |
+| `dump/dump_world_map_top_prim_leaves.py` | Dumps the eight overlay-resident high-mode primitive renderers the world-map top view swaps in through `FUN_80043390`'s overlay path. Addresses come from `mednafen-state prim-dispatch-table --overlay-targets-only` on a state with the world-map overlay loaded. |
+| `dump/dump_save_ui_handlers.py` / `dump/dump_save_ui_handler_0x15.py` | Dump every sub-state handler of the save-screen dispatch table `PTR_FUN_801e4f40` (the second covers sub-state `0x15` at `0x801DA2A0`). Run against the menu overlay. |
+| `dump/dump_levelup_data_section.py` | Dumps the data section of `overlay_magic_level_up.bin` (small lookup tables in the `0x801f4b80..0x801f4cff` band and above). |
+| `find/trace_field_loader.py` | Targeted trace of the per-scene field-file loader `FUN_8001f7c0`; pins the loader's **dual-mode** dispatch. → [detail](#trace_field_loaderpy-detail) |
+| `find/find_mesh_chain_writer.py` | Finds the writer of the field/world-map actor's mesh-chain pointer `actor+0x44` (the chain `FUN_8001ADA4` case 5 draws). Scans for non-stack `sw/sh …,0x44(reg)`, scores each containing function by pool-table (`DAT_8007C018`) refs / TMD object-stride (`0x1c`) math / actor-field reads, dumps the top candidates. The resolver chain it pins for the walk view: `FUN_80024d78` builds `actor+0x44` from `DAT_8007C018[*(u16*)(actor+0x64)]`, and `FUN_80020f88` sets `actor+0x64 = .MAP_record[+0x10] + DAT_8007b6f8 (prefix)` → so the per-object pool index is `record[+0x10] + prefix`. |
 
 ###### `trace_field_loader.py` detail
 
@@ -292,81 +312,81 @@ as `INTERIOR` here and never rebuilt.
 
 | Script | Purpose |
 |---|---|
-| `find_lui_writers.py` | Generic LUI+ADDIU resolver. Walks instructions, tracks per-register LUI immediates, reports any combined access landing in `[LO, HI]`. Critical for finding references the ref manager misses. Edit `LO`/`HI` per run. |
-| `find_addr_materializers.py` | Per-address LUI+ADDIU materializer finder. Reports every `addiu` whose combined value lands on one of the targets, plus the next 6 instructions for use-classification. Takes addresses as script arguments or the `GHIDRA_FIND_ADDRS` env var - no source edit per run. See [the materializer pattern](#ghidra-says-nothing-writes--reads-this-global-but-i-know-something-does). `find_addr_materializer_dat_8007c018.py` is a shim that keeps the original fixed-target invocation working. |
-| `find_addr_data_xref.py` | One address as a data word **or** as the combined target of a `lui`+`addiu` / `lui`+`ori` pair, in one pass. |
-| `find_addr_const_allprogs.py` | The same two forms swept across **every** program in the project from one invocation. |
-| `find_addr_data.py` | Search the program memory for any 4-byte LE word equal to a target address - catches function-pointer tables. |
-| `find_data_word.py` | Generic u32-LE-literal scanner across every initialized memory block, with surrounding-dword context. Useful when you suspect a function pointer is stuffed in a dispatch table somewhere; reports the containing function (if any) plus 8 dwords of surrounding data so the table structure is visible. |
-| `find_terrain_emitter_caller.py` | Combined ref-manager + LUI+ADDIU + ori + `jal` / `j` direct-target sweep against a configurable target-address set. Reports every overlay where each target is loaded as an immediate, stored / loaded via `base+offset`, or called directly. Reusable for any "who calls function X across the overlay set?" question: edit `TARGET_ADDRS` and `TARGETS_HEX`, run against each `-process <overlay>` in turn. Ghidra's reference manager only sees references internal to one program, so the cross-program `jal` sweep is what finds overlay callers. |
-| `find_string_xrefs.py` | Resolve dev-path string literals (`h:\\prot\\...`) to RAM addresses and dump every code site that references them. |
+| `find/find_lui_writers.py` | Generic LUI+ADDIU resolver. Walks instructions, tracks per-register LUI immediates, reports any combined access landing in `[LO, HI]`. Critical for finding references the ref manager misses. Edit `LO`/`HI` per run. |
+| `find/find_addr_materializers.py` | Per-address LUI+ADDIU materializer finder. Reports every `addiu` whose combined value lands on one of the targets, plus the next 6 instructions for use-classification. Takes addresses as script arguments or the `GHIDRA_FIND_ADDRS` env var - no source edit per run. See [the materializer pattern](#ghidra-says-nothing-writes--reads-this-global-but-i-know-something-does). `find_addr_materializer_dat_8007c018.py` is a shim that keeps the original fixed-target invocation working. |
+| `find/find_addr_data_xref.py` | One address as a data word **or** as the combined target of a `lui`+`addiu` / `lui`+`ori` pair, in one pass. |
+| `find/find_addr_const_allprogs.py` | The same two forms swept across **every** program in the project from one invocation. |
+| `find/find_addr_data.py` | Search the program memory for any 4-byte LE word equal to a target address - catches function-pointer tables. |
+| `find/find_data_word.py` | Generic u32-LE-literal scanner across every initialized memory block, with surrounding-dword context. Useful when you suspect a function pointer is stuffed in a dispatch table somewhere; reports the containing function (if any) plus 8 dwords of surrounding data so the table structure is visible. |
+| `find/find_terrain_emitter_caller.py` | Combined ref-manager + LUI+ADDIU + ori + `jal` / `j` direct-target sweep against a configurable target-address set. Reports every overlay where each target is loaded as an immediate, stored / loaded via `base+offset`, or called directly. Reusable for any "who calls function X across the overlay set?" question: edit `TARGET_ADDRS` and `TARGETS_HEX`, run against each `-process <overlay>` in turn. Ghidra's reference manager only sees references internal to one program, so the cross-program `jal` sweep is what finds overlay callers. |
+| `find/find_string_xrefs.py` | Resolve dev-path string literals (`h:\\prot\\...`) to RAM addresses and dump every code site that references them. |
 
 ### Caller / xref helpers
 
 | Script | Purpose |
 |---|---|
-| `find_callers_of.py` | Generic "callers of these target functions" tool. Edit `TARGETS_HEX`. |
-| `find_jal_target.py` | Every `jal` whose target equals `TARGET` in the current program - a standalone sweep independent of the reference manager. |
-| `find_jal_allprogs.py` | The same for `jal` / jump / branch across every program in the project, opened read-only from one invocation. |
-| `find_jal_rawbytes_allprogs.py` | Raw-byte sweep of every program's initialized memory for the `jal TARGET` encoding - catches call sites in regions Ghidra never disassembled. |
-| `find_refs_allprogs.py` | Asks the reference manager for all references to each target in every program, and whether a function or symbol is defined there. |
-| `dispatcher_callers.py` | Callers of `FUN_8001f05c` (asset dispatcher) and `FUN_8001a55c` (LZS). |
-| `find_jalr_handlers.py` | Locate dispatch-table indirect calls (`lw R, +0x10(...)` followed by `jalr R`). |
+| `find/find_callers_of.py` | Generic "callers of these target functions" tool. Edit `TARGETS_HEX`. |
+| `find/find_jal_target.py` | Every `jal` whose target equals `TARGET` in the current program - a standalone sweep independent of the reference manager. |
+| `find/find_jal_allprogs.py` | The same for `jal` / jump / branch across every program in the project, opened read-only from one invocation. |
+| `find/find_jal_rawbytes_allprogs.py` | Raw-byte sweep of every program's initialized memory for the `jal TARGET` encoding - catches call sites in regions Ghidra never disassembled. |
+| `find/find_refs_allprogs.py` | Asks the reference manager for all references to each target in every program, and whether a function or symbol is defined there. |
+| `find/dispatcher_callers.py` | Callers of `FUN_8001f05c` (asset dispatcher) and `FUN_8001a55c` (LZS). |
+| `find/find_jalr_handlers.py` | Locate dispatch-table indirect calls (`lw R, +0x10(...)` followed by `jalr R`). |
 
 ### Subsystem-targeted scanners
 
 | Script | Purpose |
 |---|---|
-| `find_sound_path_builders.py` | LUI+ADDIU pairs landing in the sound-driver string cluster `0x8007B380..0x8007B3D0` (see [`docs/formats/sound-driver.md`](../formats/sound-driver.md)). |
-| `find_debug_flag_writers.py` | Two-pass scan for writers/readers of the documented debug-flag RAM band `0x8007B400..0x8007BCFF`. |
-| `find_move_table_consumers.py` | Readers of the MOVE / MOVE2 buffers (`0x8007B888` / `0x8007B840`). |
-| `find_anm_buffer_users.py` | Readers/writers of the ANM buffer pointer (`_DAT_8007b7c8`). |
-| `find_mes_buffer_users.py` | Readers/writers of the MES dialog buffer pointer (`_DAT_8007b8a8`). |
-| `find_tmd_renderer.py` | Readers of the TMD pointer table at `0x8007C018 + idx*4`. |
-| `find_gte_users.py` | Count COP2 / GTE instructions per function - surfaces renderer + transform candidates. |
-| `find_streaming_consumers.py` | DATA_FIELD streaming buffer trail: callers of `FUN_8002541c` plus direct readers of `0x8007b85c`. |
-| `find_xp_table_readers.py` / `find_xp_table_all_overlays.py` | LUI+ADDIU resolvers (one program / every program) aimed at `0x8007123C..0x80071300`, which is **not** the XP table: the XP curve is `DAT_80076AF4`, read by the overlay applier `FUN_801E9504` ([`level-up.md`](../subsystems/level-up.md#xp-table)); `0x8007123C` is that reading `0x800` high, and `0x80070A3C` is a sin-LUT slice. Retarget before running. |
-| `find_addprim_emitters.py` | Sweeps the current program for `POLY_FT4` / `POLY_GT4` emitter sites by the primitive code byte (`0x2C..0x2F` for textured quads) stored at packet `+7`. |
-| `find_prot_consumers.py` | Static map of every call site that passes a constant PROT index to the LBA resolver chain. |
-| `find_scene_name_writers.py` | Writers of the scene-name buffer at `0x80084548`. |
-| `find_field_loader_callers.py` | Callers of the field/town asset loaders (`FUN_8001f7c0` / `FUN_800255b8`) with arg-prep context. |
-| `asset_table_xrefs.py` | Xrefs to and around `0x801C70F0` (the in-RAM PROT TOC). |
-| `find_effect_bundle_consumers.py` | Effect-bundle init / spawn / walker (run on an imported battle overlay). |
-| `dump_field_locomotion_cluster.py` | Re-decompile the 0897 field camera / region cluster (`TARGETS` leads with `801db81c` / `801dbec4`) + raw-disassemble the surrounding windows in `RAW_WINDOWS`. Read-only; surfaces the data holes that corrupt the decompiles. |
-| `fix_field_locomotion_flow.py` | DB-modifying repair for the same cluster: force-disassemble the `jal 0x8003ce9c` (non-returning operand reader) data holes, drop mid-block fake `FUN_` entries, re-create functions at real `addiu sp,sp,-N` prologues, then re-decompile. General pattern for any overlay region split into bogus mid-block functions by a non-returning-call hole. |
-| `dump_player_locomotion_integrator.py` | Dumps the field free-movement cluster the `scripts/pcsx-redux/autorun_player_pos_watch.lua` write-watchpoint pinned: collision `FUN_801cfe4c` / `FUN_801cf9f4` and pad-remap `func_0x800467e8` / `FUN_80046494`, alongside the position-writing callers in `TARGETS`. `in_program` guards run it across SCUS + overlay_0897. See [`subsystems/field-locomotion.md`](../subsystems/field-locomotion.md). |
-| `dump_4c_jumptables.py` | Dumps the field-VM main dispatcher JT (`0x801E00F4`) + the `0x4C` outer-nibble JT (`0x801CEE60`, 16 entries) with each target's containing function. Use to pin a `0x4C` sub-opcode's exact nibble when the decompiler's reconstructed `case` numbering is ambiguous: the collision-grid paint is nibble 7 (`0x801e1c64`), where the decompile prints "case 5". |
+| `find/find_sound_path_builders.py` | LUI+ADDIU pairs landing in the sound-driver string cluster `0x8007B380..0x8007B3D0` (see [`docs/formats/sound-driver.md`](../formats/sound-driver.md)). |
+| `find/find_debug_flag_writers.py` | Two-pass scan for writers/readers of the documented debug-flag RAM band `0x8007B400..0x8007BCFF`. |
+| `find/find_move_table_consumers.py` | Readers of the MOVE / MOVE2 buffers (`0x8007B888` / `0x8007B840`). |
+| `find/find_anm_buffer_users.py` | Readers/writers of the ANM buffer pointer (`_DAT_8007b7c8`). |
+| `find/find_mes_buffer_users.py` | Readers/writers of the MES dialog buffer pointer (`_DAT_8007b8a8`). |
+| `find/find_tmd_renderer.py` | Readers of the TMD pointer table at `0x8007C018 + idx*4`. |
+| `find/find_gte_users.py` | Count COP2 / GTE instructions per function - surfaces renderer + transform candidates. |
+| `find/find_streaming_consumers.py` | DATA_FIELD streaming buffer trail: callers of `FUN_8002541c` plus direct readers of `0x8007b85c`. |
+| `find/find_xp_table_readers.py` / `find/find_xp_table_all_overlays.py` | LUI+ADDIU resolvers (one program / every program) aimed at `0x8007123C..0x80071300`, which is **not** the XP table: the XP curve is `DAT_80076AF4`, read by the overlay applier `FUN_801E9504` ([`level-up.md`](../subsystems/level-up.md#xp-table)); `0x8007123C` is that reading `0x800` high, and `0x80070A3C` is a sin-LUT slice. Retarget before running. |
+| `find/find_addprim_emitters.py` | Sweeps the current program for `POLY_FT4` / `POLY_GT4` emitter sites by the primitive code byte (`0x2C..0x2F` for textured quads) stored at packet `+7`. |
+| `find/find_prot_consumers.py` | Static map of every call site that passes a constant PROT index to the LBA resolver chain. |
+| `find/find_scene_name_writers.py` | Writers of the scene-name buffer at `0x80084548`. |
+| `find/find_field_loader_callers.py` | Callers of the field/town asset loaders (`FUN_8001f7c0` / `FUN_800255b8`) with arg-prep context. |
+| `find/asset_table_xrefs.py` | Xrefs to and around `0x801C70F0` (the in-RAM PROT TOC). |
+| `find/find_effect_bundle_consumers.py` | Effect-bundle init / spawn / walker (run on an imported battle overlay). |
+| `dump/dump_field_locomotion_cluster.py` | Re-decompile the 0897 field camera / region cluster (`TARGETS` leads with `801db81c` / `801dbec4`) + raw-disassemble the surrounding windows in `RAW_WINDOWS`. Read-only; surfaces the data holes that corrupt the decompiles. |
+| `repair/fix_field_locomotion_flow.py` | DB-modifying repair for the same cluster: force-disassemble the `jal 0x8003ce9c` (non-returning operand reader) data holes, drop mid-block fake `FUN_` entries, re-create functions at real `addiu sp,sp,-N` prologues, then re-decompile. General pattern for any overlay region split into bogus mid-block functions by a non-returning-call hole. |
+| `dump/dump_player_locomotion_integrator.py` | Dumps the field free-movement cluster the `scripts/pcsx-redux/autorun_player_pos_watch.lua` write-watchpoint pinned: collision `FUN_801cfe4c` / `FUN_801cf9f4` and pad-remap `func_0x800467e8` / `FUN_80046494`, alongside the position-writing callers in `TARGETS`. `in_program` guards run it across SCUS + overlay_0897. See [`subsystems/field-locomotion.md`](../subsystems/field-locomotion.md). |
+| `dump/dump_4c_jumptables.py` | Dumps the field-VM main dispatcher JT (`0x801E00F4`) + the `0x4C` outer-nibble JT (`0x801CEE60`, 16 entries) with each target's containing function. Use to pin a `0x4C` sub-opcode's exact nibble when the decompiler's reconstructed `case` numbering is ambiguous: the collision-grid paint is nibble 7 (`0x801e1c64`), where the decompile prints "case 5". |
 
 ### Game-mode state-machine recon
 
 | Script | Purpose |
 |---|---|
-| `find_field_program_xrefs.py` | Resolve the field-program / mode-name string literals and dump xrefs. |
-| `find_game_mode_dispatcher.py` | Hunt for the game-mode dispatcher via the documented mode strings. |
-| `find_game_mode_writers.py` | Writers of the game-mode register at `gp[0x524]` / `gp[0x494]`. |
-| `find_gp_init_and_mode_table.py` | Locate `$gp` initialization and readers of the 28-entry mode table at `0x8007078C`. |
-| `find_per_mode_callers.py` | Direct or indirect callers of any handler in the mode table. |
+| `find/find_field_program_xrefs.py` | Resolve the field-program / mode-name string literals and dump xrefs. |
+| `find/find_game_mode_dispatcher.py` | Hunt for the game-mode dispatcher via the documented mode strings. |
+| `find/find_game_mode_writers.py` | Writers of the game-mode register at `gp[0x524]` / `gp[0x494]`. |
+| `find/find_gp_init_and_mode_table.py` | Locate `$gp` initialization and readers of the 28-entry mode table at `0x8007078C`. |
+| `find/find_per_mode_callers.py` | Direct or indirect callers of any handler in the mode table. |
 
 ### Overlay capture and analysis
 
 | Script | Purpose |
 |---|---|
-| `find_overlay_candidates.py` | Stand-alone Python (no Ghidra) - scans extracted PROT entries for MIPS-code-likelihood and ranks candidates. |
-| `dump_overlay.lua` | PCSX-Redux Lua: dump the runtime overlay code window `0x801C0000..0x801EFFFF` to `/tmp/`. |
-| `import_overlay.sh` | Bash wrapper that imports + analyzes a captured overlay dump as Raw Binary at base `0x801C0000`. |
-| `find_overlay_calls.py` | Every call (jal or resolved jalr) into the RAM-resident overlay region `0x801C0000..0x801FFFFF`. |
-| `find_overlay_asset_loads.py` | Run on an imported overlay program: const-track every `jal` to a known SCUS asset loader and emit a CSV of `loader,prot_index_or_string,caller_func,call_site`. |
-| `inventory_overlay.py` | Per-program function inventory. Emits `inventory_<programname>.csv` with one row per function (entry / size / outgoing / incoming / top callees). |
-| `list_overlay_functions.py` | List functions in the active overlay program sorted by size, with outgoing-call counts. |
-| `list_programs.py` | List every program currently in the Ghidra project. `list_all_programs.py` (recursive walk) and `list_programs_quiet.py` (`name [size]` lines) are variants. |
-| `list_overlay_memory.py` | List the memory blocks of the current program. |
-| `report_program_bases.py` | Per-program memory-block VA span + analyzed function count, for every program in the project. `list_programs.py` names the imports; this says where each one thinks it lives - the fact that decides whether a dump taken from it is usable at all. Run as a `-preScript`. |
+| `find/find_overlay_candidates.py` | Stand-alone Python (no Ghidra) - scans extracted PROT entries for MIPS-code-likelihood and ranks candidates. |
+| `import/dump_overlay.lua` | PCSX-Redux Lua: dump the runtime overlay code window `0x801C0000..0x801EFFFF` to `/tmp/`. |
+| `import/import_overlay.sh` | Bash wrapper that imports + analyzes a captured overlay dump as Raw Binary at base `0x801C0000`. |
+| `find/find_overlay_calls.py` | Every call (jal or resolved jalr) into the RAM-resident overlay region `0x801C0000..0x801FFFFF`. |
+| `find/find_overlay_asset_loads.py` | Run on an imported overlay program: const-track every `jal` to a known SCUS asset loader and emit a CSV of `loader,prot_index_or_string,caller_func,call_site`. |
+| `inventory/inventory_overlay.py` | Per-program function inventory. Emits `inventory_<programname>.csv` with one row per function (entry / size / outgoing / incoming / top callees). |
+| `inventory/list_overlay_functions.py` | List functions in the active overlay program sorted by size, with outgoing-call counts. |
+| `inventory/list_programs.py` | List every program currently in the Ghidra project. `list_all_programs.py` (recursive walk) and `list_programs_quiet.py` (`name [size]` lines) are variants. |
+| `inventory/list_overlay_memory.py` | List the memory blocks of the current program. |
+| `inventory/report_program_bases.py` | Per-program memory-block VA span + analyzed function count, for every program in the project. `list_programs.py` names the imports; this says where each one thinks it lives - the fact that decides whether a dump taken from it is usable at all. Run as a `-preScript`. |
 
 ### Static-analysis utilities
 
 | Script | Purpose |
 |---|---|
-| `explore.py` | Dump a JSON report of `SCUS_942.54`: every function with an LZSS-decoder fingerprint score, plus every defined string and its inbound xrefs. |
+| `inventory/explore.py` | Dump a JSON report of `SCUS_942.54`: every function with an LZSS-decoder fingerprint score, plus every defined string and its inbound xrefs. |
 
 ### Host-side helpers
 

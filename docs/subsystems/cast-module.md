@@ -358,7 +358,7 @@ partition (`0x801F8078`, `0x801F816C`, `0x801F88EC`, `0x801F89D4`,
 `0x801F9458`), each inside an inherited tail and a function head of the donor
 image. The run-by-run boundaries are on
 [`functions/cast-modules.md`](../reference/functions/cast-modules.md), and
-`ghidra/scripts/dump_static_overlay.py`'s `NOT_CODE` record carries the band.
+`ghidra/scripts/dump/dump_static_overlay.py`'s `NOT_CODE` record carries the band.
 
 ### The slot-B base cross-check
 
@@ -3408,7 +3408,7 @@ step of 32).
 - The entry tables and image partition: disassembly of the 0898 image
   (`FUN_801F1ED4` at file `+0x236BC`, the tables at `0x801CF4EC`, `0x801CF56C`
   and `0x801F6734`) plus per-image dumps of the slot-B modules taken with
-  `ghidra/scripts/dump_static_overlay.py` against one Ghidra program per PROT
+  `ghidra/scripts/dump/dump_static_overlay.py` against one Ghidra program per PROT
   entry (`see ghidra/scripts/funcs/overlay_summon_ozma_0934_801f6a40.txt` and
   its siblings), and `see ghidra/scripts/funcs/80023070.txt` for the
   opcode-`0x20` call site.

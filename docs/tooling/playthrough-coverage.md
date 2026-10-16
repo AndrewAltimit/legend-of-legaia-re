@@ -179,7 +179,7 @@ The hand-off mechanism: `STATE_RESUME` is a tristate on `_DAT_8007B450` (`FUN_80
 
 So op `49 03` suspends the opening script and hands off to name entry. Name entry holds the player engaged with no dialog box until a name is entered and confirmed; it then drives `scene+0x3E -> 0`, the effect actor sets `_DAT_8007B450 = 1`, and the field VM unparks. Mashing CROSS only appends grid glyphs and never selects the accept option.
 
-**Reproduce the disassembly.** `town01`'s MAN is `PROT[4]`, partition counts `[36, 53, 39]`; the hand-off is in partition-2 record 3: `legaia-engine man-scripts --scene town01 --disc <bin> --disasm-partition 2 --disasm-record 3`. The 0897 handler chain (`FUN_801F159C`, `FUN_801F1278`, dispatch table `PTR_FUN_801F33B4`, sub-handler `FUN_801F03F0`) is dumped by `ghidra/scripts/dump_state_resume_overlay.py` against `overlay_0897.bin.0`.
+**Reproduce the disassembly.** `town01`'s MAN is `PROT[4]`, partition counts `[36, 53, 39]`; the hand-off is in partition-2 record 3: `legaia-engine man-scripts --scene town01 --disc <bin> --disasm-partition 2 --disasm-record 3`. The 0897 handler chain (`FUN_801F159C`, `FUN_801F1278`, dispatch table `PTR_FUN_801F33B4`, sub-handler `FUN_801F03F0`) is dumped by `ghidra/scripts/dump/dump_state_resume_overlay.py` against `overlay_0897.bin.0`.
 
 **The pad timeline that captures S3** ([`autorun_s3_capture.lua`](../../scripts/pcsx-redux/autorun_s3_capture.lua)):
 

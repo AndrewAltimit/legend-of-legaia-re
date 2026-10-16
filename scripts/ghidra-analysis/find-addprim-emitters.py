@@ -29,7 +29,7 @@ have function boundaries), but a heuristic clustering by 256-byte windows
 catches the typical case where one function houses several emitter sites
 within ~1 KB.
 
-This is the equivalent of `ghidra/scripts/find_addprim_emitters.py` for
+This is the equivalent of `ghidra/scripts/find/find_addprim_emitters.py` for
 captured overlay blobs that haven't been imported into a Ghidra project.
 The Ghidra version stays authoritative when functions are recognised; this
 script unblocks first-pass investigation of newly-captured overlay regions

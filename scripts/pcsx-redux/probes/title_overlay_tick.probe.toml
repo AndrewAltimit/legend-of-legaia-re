@@ -7,7 +7,7 @@
 # under us and we want to confirm the tick is still being called.
 #
 # Address resolution: both `FUN_801DD35C` and `_DAT_801EF16C` resolve
-# at spec-load time via ghidra/scripts/symbols.lua. A typo'd symbol
+# at spec-load time via ghidra/scripts/symbols/symbols.lua. A typo'd symbol
 # raises loudly rather than silently arming a breakpoint at nil.
 # Regenerate symbols.lua via:
 #     python3 scripts/pcsx-redux/build-symbols.py
