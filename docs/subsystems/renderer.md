@@ -453,6 +453,12 @@ In battle the writers are the cast modules: six summons raise their own
 creature's `+0x1BA` (seat 7) to break it up or assemble it, and Zenoir and
 Jedo raise it on monsters
 ([`cast-module.md`](cast-module.md#the-shatter-effect-on-monsters)).
+Effect parts reach the same gate: `FUN_8001ADA4`'s model loop tests a
+part's `+0x7A` while its `+0x42` is down (`0x8001B454..0x8001B464`), for a
+library mesh and for the draw-kind-4 emitters' scratch model alike, and
+move-VM op `0x11` sets the per-tick rate the part tick ramps it by. Zenoir's
+summoning mound and Nighto's crystal burst this way
+(`engine-effects::part_shatter`).
 
 **Port.** `legaia_render_kernels::shatter` (`crates/render-kernels/src/shatter.rs`):
 `ShatterObject::new` is the prologue, `ShatterObject::triangle` the

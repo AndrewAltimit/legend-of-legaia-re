@@ -302,6 +302,7 @@ impl SummonScene {
                     morph: PartMorph::of(s),
                     scale: s.field_72,
                     colour: legaia_render_kernels::sprite_arm::ColourWord::of(s),
+                    shatter: crate::part_shatter::part_shatter_word(s),
                 }
             })
             .collect()

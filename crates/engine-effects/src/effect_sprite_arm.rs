@@ -82,7 +82,9 @@ pub fn sprite_arm_vram_mesh(s: &ActorState) -> Option<legaia_tmd::mesh::VramMesh
 /// ([`sprite_arm_draws`]).
 pub fn sprite_arm_draw(s: &ActorState) -> Option<crate::effect_ribbon::RibbonDraw> {
     const A: f32 = std::f32::consts::TAU / 4096.0;
-    let mesh = sprite_arm_vram_mesh(s)?;
+    let mut mesh = sprite_arm_vram_mesh(s)?;
+    // The model draw's `+0x7A` gate ([`crate::part_shatter`]).
+    crate::part_shatter::apply_part_shatter(&mut mesh, crate::part_shatter::part_shatter_word(s));
     Some(crate::effect_ribbon::RibbonDraw {
         mesh,
         world_pos: [s.world_x as f32, s.world_y as f32, s.world_z as f32],

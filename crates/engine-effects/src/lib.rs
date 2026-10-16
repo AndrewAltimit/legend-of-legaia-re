@@ -17,5 +17,6 @@ pub mod effect_ribbon;
 pub mod effect_sprite_arm;
 pub mod object_effect;
 pub mod part_motion;
+pub mod part_shatter;
 pub mod screen_fx;
 pub mod summon;

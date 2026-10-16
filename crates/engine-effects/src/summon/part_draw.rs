@@ -142,6 +142,9 @@ pub struct SummonPartDraw {
     /// the Spirit aura's op `0x0D` ramps the level from `0x1000` (black) to
     /// `0` and back.
     pub colour: legaia_render_kernels::sprite_arm::ColourWord,
+    /// The part's shatter word `+0x7A`: non-zero breaks its mesh apart
+    /// through the shatter renderer ([`crate::part_shatter`]).
+    pub shatter: i16,
 }
 
 impl SummonPartDraw {
@@ -155,13 +158,18 @@ impl SummonPartDraw {
             && !self.colour.semi
             && self.colour.abr == 0
             && self.colour.ir0 == 0
+            && self.shatter == 0
     }
 
     /// Apply the model draw's per-part render state to a local-space mesh:
-    /// the render scale, then each packet's colour through the colour word's
-    /// depth cue with its ABE / ABR ORed into the TSB (the dispatcher ORs
-    /// both into the packets it writes, `0x80043504..0x80043510`).
+    /// the shatter word, the render scale, then each packet's colour
+    /// through the colour word's depth cue with its ABE / ABR ORed into the
+    /// TSB (the dispatcher ORs both into the packets it writes,
+    /// `0x80043504..0x80043510`).
     pub fn apply_render_state(&self, mesh: &mut legaia_tmd::mesh::VramMesh) {
+        // The shatter works on the object-local vertices, ahead of the
+        // object matrix that carries the scale.
+        crate::part_shatter::apply_part_shatter(mesh, self.shatter);
         if self.scale != SPAWN_RENDER_SCALE {
             let k = f32::from(self.scale) / 4096.0;
             for p in &mut mesh.positions {
