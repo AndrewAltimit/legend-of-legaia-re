@@ -220,6 +220,11 @@ pub struct ModuleCamState {
     /// `0x801F8DAC` and fourth-slash progress `0x801F8DA8`, which pick its
     /// arm-10 sway framing.
     pub module_words: [i32; 2],
+    /// The victim's `+0x16E & 4` (non-targetable) as the host last read it.
+    /// PROT 0908's arm 11 raises its creature's floor clip only inside the
+    /// branch a targetable victim takes (`bne v0,zero,0x801F7D9C` at
+    /// `0x801F7C04`).
+    pub victim_untargetable: bool,
 }
 
 /// `FUN_801D5854(7, 6)` out of a module arm: the action SM's own case-6
@@ -293,6 +298,10 @@ pub struct ArmDirection {
     pub park: bool,
     /// The `FUN_80021B04` calls the arm made on this pass, in call order.
     pub spawns: &'static [ModuleSpawn],
+    /// The point and angle trio the arm built on its stack for a spawn whose
+    /// anchor is [`SpawnAnchor::ArmPoint`] - an arm whose `a0` / `a1` are
+    /// arithmetic over several seats and the band's own words.
+    pub arm_point: Option<([i16; 3], [i16; 3])>,
     /// The `MoveImage` (`FUN_80058490`) the arm issued on this pass, if any.
     pub vram_move: Option<ModuleVramMove>,
     /// The text the arm put up on this pass (`FUN_8003541C`), if any.
@@ -368,6 +377,11 @@ pub enum SpawnAnchor {
     /// A literal point and rotation the arm built on its stack: PROT 0909
     /// arm 2's two parts at `(0, -0x100, 0x600)` (`0x801F6C40..0x801F6C70`).
     Literal { pos: [i16; 3], rot: [i16; 3] },
+    /// The point and angle trio the director computed for this pass
+    /// ([`ArmDirection::arm_point`]): PROT 0907's arms, whose spawn points
+    /// are the grid cell off the victim, a point ahead of the creature, or a
+    /// point back from the victim by the band's depth.
+    ArmPoint,
 }
 
 /// The seat a [`SpawnAnchor::AlongVictimHeading`] point starts from.
@@ -407,6 +421,8 @@ pub fn spawn_anchor_point(
             ([c.x, y, c.z], [0; 3])
         }
         SpawnAnchor::Literal { pos, rot } => (pos, rot),
+        // The host resolves it from the arm's own direction.
+        SpawnAnchor::ArmPoint => return None,
         SpawnAnchor::AlongVictimHeading { base, div, y } => {
             let v = victim?;
             let from = match base {
@@ -476,6 +492,7 @@ impl ArmDirection {
         nudge: None,
         park: false,
         spawns: &[],
+        arm_point: None,
         vram_move: None,
         caption: None,
         fades: &[],
@@ -491,6 +508,7 @@ impl ArmDirection {
         nudge: None,
         park: false,
         spawns: &[],
+        arm_point: None,
         vram_move: None,
         caption: None,
         fades: &[],
@@ -506,6 +524,7 @@ impl ArmDirection {
         nudge: None,
         park: true,
         spawns: &[],
+        arm_point: None,
         vram_move: None,
         caption: None,
         fades: &[],
@@ -683,14 +702,15 @@ pub fn module_profile(prot_entry: u32) -> Option<ModuleProfile> {
             seat_arm: module_seat_arm(905),
             director_body: false,
         }),
-        // PROT 0907's countdowns, clip gate and camera, beside its ported
-        // tick body; the outcome lands once the fork arm has passed.
+        // PROT 0907's countdowns, clip gate, camera and spawn calls, beside
+        // its ported tick body; the outcome lands once the fork arm has
+        // passed.
         907 => Some(ModuleProfile {
             direct: nighto_direct,
             hit_arm: Some(crate::seru_magic_ticks::NIGHTO_FORK_ARM),
             walk_arm: None,
             owns_phase: true,
-            stages_spawns: false,
+            stages_spawns: true,
             seat_arm: module_seat_arm(907),
             director_body: false,
         }),

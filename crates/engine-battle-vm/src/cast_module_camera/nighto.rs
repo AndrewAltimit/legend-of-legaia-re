@@ -29,6 +29,67 @@ pub const NIGHTO_SUMMON_CLIP: u8 = 2;
 /// `0x801F7AC0..0x801F7AC8`).
 pub const NIGHTO_LOOP_SENTINEL: u8 = 0xFF;
 
+/// PROT 0907 arm 4's two spawns on the grid point at the floor
+/// (`jal 0x80021B04` at `0x801F72C4` / `0x801F72DC`): the summoning disc
+/// `0x801F81D0`, whose program calls the stager's arm `1` five times (the
+/// rings it sends out), and the flash `0x801F8280`. The arm writes the
+/// point's `x` / `z` and the yaw `0` into the stack trios and leaves the
+/// height and the pitch / roll slots as the earlier arms left them; the
+/// port seats them flat on the floor, which is where the capture shows the
+/// disc.
+pub const NIGHTO_OPEN_SPAWNS: [ModuleSpawn; 2] = [
+    ModuleSpawn {
+        record: SpawnRecord::Module(0x801F_81D0),
+        anchor: SpawnAnchor::ArmPoint,
+    },
+    ModuleSpawn {
+        record: SpawnRecord::Module(0x801F_8280),
+        anchor: SpawnAnchor::ArmPoint,
+    },
+];
+
+/// PROT 0907 arm 5's spawn (`0x801F7398`): the crystal `0x801F82C0`
+/// (library mesh `18`), seated on the grid point `0x200` under the floor
+/// facing the heading from the victim to the point, raised through the
+/// floor clip by its own program; it calls the stager's arm `0` (the eight
+/// rays) and then breaks apart on its `+0x7A` ramp.
+pub const NIGHTO_CRYSTAL_SPAWNS: [ModuleSpawn; 1] = [ModuleSpawn {
+    record: SpawnRecord::Module(0x801F_82C0),
+    anchor: SpawnAnchor::ArmPoint,
+}];
+
+/// PROT 0907 arm 10's spawn (`0x801F7B6C`): `0x801F83BC`, `0xA0` ahead of
+/// the creature along its heading at `y = -0x1A4`, at the creature's angle
+/// trio `+0x44`. Its program calls the stager's arm `2` eight times, a
+/// ring `0x801F8414` a call.
+pub const NIGHTO_SONG_SPAWNS: [ModuleSpawn; 1] = [ModuleSpawn {
+    record: SpawnRecord::Module(0x801F_83BC),
+    anchor: SpawnAnchor::ArmPoint,
+}];
+
+/// PROT 0907 arm 11's spawn (`0x801F7CE0`): `0x801F845C`, back from the
+/// victim toward the creature by a sixth of the band's depth
+/// (`sin(f) * ctx[+0x6D0] / 0x6000` off its `x`, the same with `cos` off its
+/// `z`) at `y = -0x140`, at the creature's angle trio. Its program calls the
+/// stager's arm `3` seven times - the red rings that close over the victim.
+pub const NIGHTO_RING_SPAWNS: [ModuleSpawn; 1] = [ModuleSpawn {
+    record: SpawnRecord::Module(0x801F_845C),
+    anchor: SpawnAnchor::ArmPoint,
+}];
+
+/// `n / 0x6000` the way arm 11 divides: `mult` by `0x2AAAAAAB`, `mfhi`,
+/// `sra 0xC`, minus the sign (`0x801F7C50..0x801F7C78`).
+fn div_0x6000(n: i32) -> i32 {
+    let hi = ((i64::from(n) * 0x2AAA_AAAB) >> 32) as i32;
+    (hi >> 12) - (n >> 31)
+}
+
+/// `trunc(v * 0xA0 / 0x1000)` (`sll 2; addu; sll 5`, then `bgez; addiu
+/// 0xFFF; sra 0xC`).
+fn ahead_0xa0(v: i16) -> i32 {
+    (i32::from(v) * 0xA0) / 0x1000
+}
+
 /// Seed the countdown of the leg arm 13 forked to, on the leg's first pass.
 fn nighto_leg_countdown(st: &mut ModuleCamState, per_scalar: i32) {
     if st.countdown.0 == NIGHTO_FORK_PENDING {
@@ -57,20 +118,20 @@ fn nighto_drain_holds(st: &mut ModuleCamState) -> bool {
 /// | 0 | - | snap: pitch `0x40`, yaw `-y`, TR `(0, -0x1000, 0x3000)`, focus the grid point |
 /// | 1 | - | pitch `0x400`, yaw `-y`, TR `(0, 0, 0x600)`, the same focus, over `0x78` frames |
 /// | 3 | hold until the band timer `ctx[+0x6D8]` reads `0` | - |
-/// | 4 | the stream poll | pitch `0x200`, yaw `-y`, TR `(0, 0, 0x600)`, over `0x80` frames; `ctx[+0x6D8] = scalar * 129` |
-/// | 5 | drift TR z `+P`; drain, hold while non-negative | snap... over `0x10` frames: pitch `0`, TR `(0, 0x500, 0xA00)`; `ctx[+0x6D8] = scalar * 96` |
+/// | 4 | the stream poll | pitch `0x200`, yaw `-y`, TR `(0, 0, 0x600)`, over `0x80` frames; spawns [`NIGHTO_OPEN_SPAWNS`]; `ctx[+0x6D8] = scalar * 129` |
+/// | 5 | drift TR z `+P`; drain, hold while non-negative | snap... over `0x10` frames: pitch `0`, TR `(0, 0x500, 0xA00)`; spawns [`NIGHTO_CRYSTAL_SPAWNS`]; `ctx[+0x6D8] = scalar * 96` |
 /// | 6 | drift TR z `+2P`; drain, hold while non-negative | seats the creature on the grid point facing the victim; `ctx[+0x6D8] = scalar << 6` |
 /// | 7 | drift TR z `-4P`; drain, hold while non-negative | the spell name (`FUN_8003541C` at `0x801F78F8`); `ctx[+0x6D8] = scalar * 180` |
 /// | 8 | drain, hold while non-negative | the attack name (`0x801F79E8`); snap: pitch `-0x100`, yaw `0x800 - f`, TR `(0, 0x500, 0x400)`, focus the creature |
 /// | 9 | - | pitch `0x40`, yaw `0x800 - f`, TR `(0, 0x700, 0x800)`, over `0xC0` frames |
-/// | 10 | hold while the creature's `+0x21B` reads `0xFF` ([`NIGHTO_LOOP_SENTINEL`]), clip `2` committed ([`NIGHTO_SUMMON_CLIP`]) | pitch `0`, yaw `0x800 - f`, TR `(0, 0x700, 0x480)`, over `0x80` frames; `ctx[+0x6D8] = scalar << 7` |
-/// | 11 | drain, hold while non-negative | - |
+/// | 10 | hold while the creature's `+0x21B` reads `0xFF` ([`NIGHTO_LOOP_SENTINEL`]), clip `2` committed ([`NIGHTO_SUMMON_CLIP`]) | pitch `0`, yaw `0x800 - f`, TR `(0, 0x700, 0x480)`, over `0x80` frames; spawns [`NIGHTO_SONG_SPAWNS`]; `ctx[+0x6D8] = scalar << 7` |
+/// | 11 | drain, hold while non-negative | spawns [`NIGHTO_RING_SPAWNS`] |
 /// | 12 | - | snap: yaw `-f`, TR `(0, 0x500, 2 * ctx[+0x6D0] / 3)`, focus the victim; `ctx[+0x6D8] = scalar * 160` |
 /// | 13 | drain, hold while non-negative | the fork (the body's) |
 /// | 14 | drain | the kill leg's settle: the body holds on the victim's fade |
 /// | 15 | drain, hold while non-negative | the confuse leg |
 ///
-/// PORT: FUN_801F69E8 (PROT 0907; the camera arms 0/1/4/5/8/9/10/12, the arm 7/8 captions, the countdown gates of arms 3/5/6/7/8/11/13/15, arm 10's `+0x21B` loop-counter gate, arm 6's creature placement and the TR z drift of arms 5..7)
+/// PORT: FUN_801F69E8 (PROT 0907; the camera arms 0/1/4/5/8/9/10/12, the arm 7/8 captions, the countdown gates of arms 3/5/6/7/8/11/13/15, arm 10's `+0x21B` loop-counter gate, arm 6's creature placement, the TR z drift of arms 5..7 and the spawn calls of arms 4/5/10/11)
 pub fn nighto_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) -> ArmDirection {
     let v = seats.victim;
     let h = heading(v, seats.caster).wrapping_add(0x800) & 0xFFF;
@@ -123,24 +184,36 @@ pub fn nighto_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) 
         3 => gate(seats.band_timer != 0),
         4 => {
             st.countdown.0 = SPEED_SCALAR * 129;
-            ArmDirection::shot(ModuleShot {
-                angles: [0x200, aim, 0],
-                tr: [0, 0, 0x600],
-                focus: focus_on(point),
-                frames: 0x80,
-            })
+            ArmDirection {
+                spawns: &NIGHTO_OPEN_SPAWNS,
+                arm_point: Some(([point.x, 0, point.z], [0; 3])),
+                ..ArmDirection::shot(ModuleShot {
+                    angles: [0x200, aim, 0],
+                    tr: [0, 0, 0x600],
+                    focus: focus_on(point),
+                    frames: 0x80,
+                })
+            }
         }
         5 => {
             if nighto_drain_holds(st) {
                 return ArmDirection::HOLD.drifted(tr_z(1));
             }
             st.countdown.0 = SPEED_SCALAR * 96;
-            ArmDirection::shot(ModuleShot {
-                angles: [0, aim, 0],
-                tr: [0, 0x500, 0xA00],
-                focus: focus_on(point),
-                frames: 0x10,
-            })
+            // `+0x200` under the floor, yawed by `FUN_80019B28(victim,
+            // point)` (`0x801F7350..0x801F7394`); the pitch / roll slots are
+            // not written on this path and are seated level.
+            let yaw = heading(v, point) as i16;
+            ArmDirection {
+                spawns: &NIGHTO_CRYSTAL_SPAWNS,
+                arm_point: Some(([point.x, 0x200, point.z], [0, yaw, 0])),
+                ..ArmDirection::shot(ModuleShot {
+                    angles: [0, aim, 0],
+                    tr: [0, 0x500, 0xA00],
+                    focus: focus_on(point),
+                    frames: 0x10,
+                })
+            }
             .drifted(tr_z(1))
         }
         6 => {
@@ -189,9 +262,35 @@ pub fn nighto_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) 
                 return ArmDirection::HOLD;
             }
             st.countdown.0 = SPEED_SCALAR << 7;
-            on_creature(0, 0x800, [0, 0x700, 0x480], 0x80)
+            let (fs, fc) = trig12(creature.facing & 0xFFF);
+            let ahead = [
+                (i32::from(creature.x) + ahead_0xa0(fs)) as i16,
+                -0x1A4,
+                (i32::from(creature.z) + ahead_0xa0(fc)) as i16,
+            ];
+            ArmDirection {
+                spawns: &NIGHTO_SONG_SPAWNS,
+                arm_point: Some((ahead, [0, creature.facing as i16, 0])),
+                ..on_creature(0, 0x800, [0, 0x700, 0x480], 0x80)
+            }
         }
-        11 => gate(nighto_drain_holds(st)),
+        11 => {
+            if nighto_drain_holds(st) {
+                return ArmDirection::HOLD;
+            }
+            let (fs, fc) = trig12(creature.facing & 0xFFF);
+            let d = seats.depth_raw;
+            let back = [
+                (i32::from(v.x) - div_0x6000(i32::from(fs) * d)) as i16,
+                -0x140,
+                (i32::from(v.z) - div_0x6000(i32::from(fc) * d)) as i16,
+            ];
+            ArmDirection {
+                spawns: &NIGHTO_RING_SPAWNS,
+                arm_point: Some((back, [0, creature.facing as i16, 0])),
+                ..ArmDirection::PASS
+            }
+        }
         12 => {
             st.countdown.0 = SPEED_SCALAR * 160;
             // `2 * ctx[+0x6D0] / 3` by the `0x55555556` reciprocal.

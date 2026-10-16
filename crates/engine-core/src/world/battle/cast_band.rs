@@ -82,6 +82,7 @@ mod module_creature;
 mod module_rain;
 mod module_seat_arm;
 mod module_spawn;
+mod module_stager_spawns;
 mod presentation;
 mod screen_fade;
 mod summon_stager;
@@ -356,6 +357,9 @@ pub struct CastModuleCodeRun {
     /// The spawn calls the module's arm made this frame, for a director that
     /// reports them ([`vm::cast_module_camera::ModuleProfile::stages_spawns`]).
     pub spawns: &'static [legaia_engine_battle_vm::cast_module_camera::ModuleSpawn],
+    /// The point the arm built for its [`vm::cast_module_camera::SpawnAnchor::ArmPoint`]
+    /// spawns this frame.
+    pub arm_point: Option<([i16; 3], [i16; 3])>,
     /// The `MoveImage` the module's arm issued this frame.
     pub vram_move: Option<legaia_engine_battle_vm::cast_module_camera::ModuleVramMove>,
     /// The text the module's arm put up this frame.

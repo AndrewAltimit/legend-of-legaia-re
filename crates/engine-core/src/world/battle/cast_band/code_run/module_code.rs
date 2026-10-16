@@ -63,14 +63,18 @@ impl World {
             // PROT 0909's stager is reached only through its parts' op-`0x20`
             // calls - two of them are the tick body's phase rendezvous.
             909 => self.run_viguro_stager_calls(&mut ctx, &mut seat),
+            // PROT 0907's and 0908's stagers only seat more records off the
+            // calling parts (Nighto's rays and rings, Zenoir's floor rings,
+            // rays and final blasts).
+            e if Self::runs_part_stager_calls(e) => self.run_part_stager_calls(e),
             922 => ticks::puera_stager(&mut ctx, arm),
             923 => ticks::gilium_stager(&mut ctx, arm),
             949 => ticks::water_crystals_stager(&mut victim, arm),
             _ => {}
         }
-        // Only PROT 0909's stager calls are run; any other module's are
+        // Only these modules' stager calls are run; any other module's are
         // dropped rather than left to pile up.
-        if entry != 909 {
+        if entry != 909 && !Self::runs_part_stager_calls(entry) {
             self.casting.module_stager_calls.clear();
         }
 
@@ -358,6 +362,7 @@ impl World {
         run.camera_end_frame = direction.is_some_and(|d| d.end_frame);
         run.camera_nudge = direction.and_then(|d| d.nudge);
         run.spawns = direction.map_or(&[], |d| d.spawns);
+        run.arm_point = direction.and_then(|d| d.arm_point);
         run.vram_move = direction.and_then(|d| d.vram_move);
         run.caption = direction.and_then(|d| d.caption);
         run.fades = direction.map_or(&[], |d| d.fades);

@@ -1067,7 +1067,7 @@ Verdicts:
 | `801F7DB0` | 941 (`cast_steal`) | spawn stager, `sltiu a1, 5`, 2 spawn calls | DATA |
 | `801F7EA4` | 930 (`summon_horn`) | spawn stager, `sltiu a1, 7`, 8 spawn calls | DATA |
 | `801F7EC4` | 956 (`cast_water_hazard`) | spawn stager, 5 spawn calls | DATA |
-| `801F7FA8` | 907 (`summon_nighto`) | spawn stager, 2 spawn calls | DATA |
+| `801F7FA8` | 907 (`summon_nighto`) | spawn stager, 2 spawn calls, called by its own parts; writes into the parts it seats and into a record's bytes | PORT |
 | `801F7FE8` | 911 (`summon_orb`) | spawn stager, 1 spawn call | DATA |
 | `801F800C` | 921 (`summon_iota`) | spawn stager, 2 spawn calls | DATA |
 | `801F8078` | 905 (`summon_stager_x83`) | spawn stager, 2 spawn calls | DATA |
@@ -1078,7 +1078,7 @@ Verdicts:
 | `801F8250` | 959 (`cast_megaton_press`) | spawn stager, `sltiu a1, 6`, 11 spawn calls | DATA |
 | `801F82CC` | 940 (`cast_glare_divide`) | null stager | SCOPE-IGNORE |
 | `801F82D8` | 917 (`summon_barra`) | spawn stager, `sltiu a1, 5`, 3 spawn calls | DATA |
-| `801F8310` | 908 (`summon_zenoir`) | spawn stager, 5 spawn calls | DATA |
+| `801F8310` | 908 (`summon_zenoir`) | spawn stager, 5 spawn calls, called by its own parts; writes into the parts it seats | PORT |
 | `801F835C` | 912 (`summon_freed`) | spawn stager, 3 spawn calls | DATA |
 | `801F84A4` | 932 (`summon_meta`) | spawn stager, 1 spawn call | DATA |
 | `801F85A8` | 927 (`summon_juggernaut`) | spawn stager, `sltiu a1, 9`, 7 spawn calls; damage roll (shared); writes HP `+0x14C` | PORT |
@@ -1532,6 +1532,42 @@ also waits for clip 2's commit, so its own pass order cannot let clip 1's
 count through. Arm 12 writes the victim's colour word `0x20080200` before arm
 14 polls it.
 
+**What it puts on screen.** Four arms call `FUN_80021B04`, and every record
+they seat calls back into the module's stager `0x801F7FA8` through move-VM
+op `0x20`; the director reports the arm calls (`nighto_direct`) and the band
+runs the stager calls (`World::run_part_stager_calls`).
+
+| Arm | Seats | Where | Its stager calls |
+|---:|---|---|---|
+| 4 | `0x801F81D0` (the black summoning disc), `0x801F8280` (its flash) | the grid point on the floor | the disc calls arm `1` in a loop of count `5`, `0x12` frames apart: a yellow ring `0x801F8370` each, sized off the disc's live inner radius |
+| 5 | `0x801F82C0` (the crystal, library mesh `18`) | the grid point `0x200` under the floor, yawed by the heading from the victim to the point | arm `0` once: eight rays `0x801F8314` fanned round the crystal |
+| 10 | `0x801F83BC` | `0xA0` ahead of the creature, `y = -0x1A4` | arm `2` in a loop of count `8`: the yellow rings `0x801F8414` of the song |
+| 11 | `0x801F845C` | back from the victim by `sin(f) * ctx[+0x6D0] / 0x6000`, `y = -0x140` | arm `3` in a loop of count `7`: the red rings `0x801F84B8` that close over the victim |
+
+Arm 4 writes only the point's `x` / `z` and a zero yaw into its stack trios
+(`0x801F7228..0x801F72C8`); the height and the pitch / roll slots keep what
+earlier code left there, and the port seats the disc flat on the floor, as
+the capture shows it. Arm 5 likewise leaves the pitch / roll slots unwritten
+and the port seats the crystal level. The crystal rises through the floor
+clip its program raises (op `0x10`), and once its rays are out it drops the
+clip and ramps `+0x7A` (op `0x11`): the model draw's shatter gate breaks it
+into shards that fly off and reveal the creature
+([renderer.md](renderer.md#the-shatter-renderer-fun_80029888--fun_80029dd8)).
+The red wash of arms 11..13 is the rings' own colour: `0x801F845C` and
+`0x801F83BC` are `0xC8`-red discs of radius `0x200`, and each ring they call
+for expands over the frame.
+
+The stager's arms `1..3` seat their record on the calling part's position and
+rotation (`a0 = part + 0x14`, `a1 = part + 0x24`). Arm `1` first stores the
+caller's `+0xB4 - 0x20` over the ring record's two radius words
+(`0x801F8388` / `0x801F838A`, op `0x13`'s `v10` / `v11`), so each ring starts
+where the disc's edge stands. Arm `0` seats its eight rays at
+`trunc(sin / 32)` / `trunc(cos / 32)` back along the crystal's `+0x26`, at
+`y = -0x15E`, and writes into each ray it seated: `+0x54 = i`,
+`+0x84 = ((rand & 0xFF) - 0x80) / 2`, `+0xBA = -0x160`,
+`+0xB4 = rand % 0x3F + 0x40`, `+0xB6 = rand % 0xFF + 0x200`,
+`+0x28 = i * 0x200 + (rand & 0x1FF)` (`0x801F8080..0x801F8154`).
+
 ### PROT 0908 (Zenoir)
 
 The director `cast_module_camera::zenoir_direct` carries every arm's gate:
@@ -1561,8 +1597,28 @@ of it shows while the beams stand. Arm 11's hit raises it again
 (`0x801F7D7C`, inside the targetable-victim branch), and the creature sinks
 through the floor in arm 12. The director carries the byte
 (`ModuleCamState::creature_floor_clip`); the host puts it on the seat's draw
-every pass. Arms 4, 6 and 11 spawn their records on the creature's plane
-pair (`ZENOIR_SEAT_SPAWNS`, `ZENOIR_STRIKE_SPAWNS`, `ZENOIR_SLAM_SPAWNS`).
+every pass. The branch test is the victim's `+0x16E & 4`
+(`lhu v0,0x16e(s6); andi v0,v0,0x4; bne v0,zero,0x801F7D9C` at
+`0x801F7BF8..0x801F7C04`): a non-targetable victim takes neither the hit nor
+the clip, and the director reads the bit off
+`ModuleCamState::victim_untargetable`. Arms 4, 6 and 11 spawn their records
+on the creature's plane pair (`ZENOIR_SEAT_SPAWNS`, `ZENOIR_STRIKE_SPAWNS`,
+`ZENOIR_SLAM_SPAWNS`).
+
+The green mound that rises inside the summoning beams is two of arm 4's
+records, `0x801F85D4` and `0x801F8638`: textured cones (op `0x1F`'s texture
+mode `4` over tpage `0x0D`) whose inner height climbs for nine frames, after
+which op `0x11` ramps their `+0x7A` and the model draw's shatter gate throws
+them apart in shards.
+
+Its records call the stager `0x801F8310` (op `0x20`), which the band runs
+off the calling parts (`World::run_part_stager_calls`):
+
+| Stager arm | Caller | Seats |
+|---:|---|---|
+| 0 | the flash `0x801F8584`: a loop of count `0xC` calling it `9` frames apart, then once more | the red floor ring `0x801F869C` on the caller |
+| 1 | `0x801F880C` (arm 6): a loop of count `5`, `0x13` frames apart | the flash `0x801F8880` on the creature's body point `+0x3C..+0x40`, then eight rays `0x801F8828` on the same point, each written as Nighto's are but with spin `(rand & 0xFF) - 0x80`, length `-0x80` and radius `rand % 0x1F + 0x20` (`0x801F83D4..0x801F84A0`) |
+| 2 | the slam `0x801F8AA0` (arm 11): a loop of count `0xF` with no wait, turning `+0x26` by `0x100` between calls | two blasts `0x801F8ABC` on the caller, the second's speed `+0x98` halved (`0x801F84E0..0x801F8500`): the final explosion's fireballs |
 
 ### PROT 0909 (Viguro)
 
@@ -2916,6 +2972,25 @@ records. Further 0903 facts:
 - The same capture holds the creature (pool slot 7) red: `+0x21C = 3`,
   `+0x04 = 0x3FC`, `+0x0C = 0x1000`. The Gimard record's disc palette is grey;
   the red is the tint pass.
+
+PROT 0907 reports its arms' calls too (`nighto_direct`, the table under
+[PROT 0907](#prot-0907-nighto)): arms 4, 5, 10 and 11 build their points
+from several seats and the band depth, so each pass hands the host the point
+it built (`ArmDirection::arm_point`, `SpawnAnchor::ArmPoint`).
+
+**Part-called stager arms.** A record's op `0x20` calls its module's stager
+row, and the stager seats more records off the calling part
+(`a0 = part + 0x14`, `a1 = part + 0x24`). The band queues each call with what
+the stager reads off the part - position, rotation, `+0xB4` and op `0x20`'s
+second operand (`cast_module_ticks::StagerCaller`) - and runs it on the
+module's next tick. PROT 0907's and 0908's stagers only seat records
+(`nighto_stager_spawns`, `zenoir_stager_spawns`, returning
+`StagerSpawn`s); PROT 0909's also steps the phase
+(`run_viguro_stager_calls`). An arm that writes into the part it seated
+(`FUN_80021B04` returns it) writes after that part's seat run, so the record's
+own first step cannot overwrite it (`SummonPartRuntime::seat_pokes`); one
+that writes into a record's bytes before seating it writes into the seated
+copy.
 
 PROT 0909, 0911, 0912 and 0913 close like 0903: each hit arm re-arms its
 countdown (`scalar << 7`, `scalar << 8` for Orb, plus a `scalar << 5` second

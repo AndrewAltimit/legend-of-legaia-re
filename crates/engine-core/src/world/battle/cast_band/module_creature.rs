@@ -256,7 +256,7 @@ impl World {
                 record: SpawnRecord::Module(record),
                 anchor: SpawnAnchor::Literal { pos, rot },
             }];
-            self.stage_module_arm_spawns(909, &spawn, None);
+            self.stage_module_arm_spawns(909, &spawn, None, None);
         }
     }
 

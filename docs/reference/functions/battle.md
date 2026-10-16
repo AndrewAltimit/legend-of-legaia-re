@@ -227,8 +227,8 @@ this band is on
 | 904 | `801F69D8` (6020 B) | `801F8EAC` (56 B) | Action id `0x82` (Theeder). 7 framed functions. Spawns: `FUN_80021B04` x4. 6 internal `jal`. |
 | 905 | `801F69D8` (5792 B) | `801F8078` (364 B) | Action id `0x83` (Vera). 2 framed functions. Spawns: `FUN_80021B04` x22. |
 | 906 | `801F69F4` (3404 B) | `801F7740` (676 B, 7 arms) | Action id `0x84` (Gizam). 3 framed functions. Head table (7 words) is the stager's. Spawns: `FUN_80021B04` x7. |
-| 907 | `801F69E8` (5568 B) | `801F7FA8` (552 B) | Action id `0x85` (Nighto). 2 framed functions. Spawns: `FUN_80021B04` x7. Head ASCII `Hell's Music`. Tick leans on `FUN_80019B28` (x13) rather than a spawn wrapper. |
-| 908 | `801F69D8` (6456 B) | `801F8310` (532 B) | Action id `0x86` (Zenoir). 3 framed functions. Spawns: `FUN_80021B04` x21. |
+| 907 | `801F69E8` (5568 B) | `801F7FA8` (552 B) | Action id `0x85` (Nighto). 2 framed functions. Spawns: `FUN_80021B04` x7. Head ASCII `Hell's Music`. Tick leans on `FUN_80019B28` (x13) rather than a spawn wrapper. Stager reached only through its parts' op `0x20`; ported as `nighto_stager_spawns`. |
+| 908 | `801F69D8` (6456 B) | `801F8310` (532 B) | Action id `0x86` (Zenoir). 3 framed functions. Spawns: `FUN_80021B04` x21. Stager reached only through its parts' op `0x20`; ported as `zenoir_stager_spawns`. |
 | 909 | `801F69F4` (3924 B) | `801F7AF4` (468 B, 7 arms) | Action id `0x87` (Viguro). 5 framed functions. Head table (7 words) is the stager's, reached only through its parts' move-VM op `0x20`; arms `0` / `1` step the tick's rendezvous phases 3 / 8. Spawns: `FUN_80021B04` x7. |
 | 910 | `801F69EC` (4652 B) | `801F89D4` (172 B, 5 arms) | Action id `0x88` (Swordie). 6 framed functions. Head table (5 words) is the stager's. Spawns: `FUN_80021B04` x9. 9 internal `jal`. |
 | 911 | `801F69D8` (5648 B) | `801F7FE8` (100 B) | Action id `0x89` (Orb). 3 framed functions. Spawns: `FUN_80021B04` x4, `FUN_80050ED4` x12. |

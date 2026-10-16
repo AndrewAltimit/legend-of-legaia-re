@@ -93,6 +93,12 @@ impl World {
                 },
             );
         self.casting.module_cam.creature_live = seat_live;
+        self.casting.module_cam.victim_untargetable =
+            self.casting.module_cam.victim_slot.is_some_and(|v| {
+                self.cast_view(v).flags
+                    & legaia_engine_battle_vm::cast_module_ticks::FLAG_NON_TARGETABLE
+                    != 0
+            });
         self.casting.module_cam.creature_arrived = st.walked;
         self.feed_module_creature(st.caster);
         let placed_before = self.casting.module_cam.creature.is_some();
@@ -140,7 +146,7 @@ impl World {
                 });
             }
             if !r.spawns.is_empty() {
-                self.stage_module_arm_spawns(r.prot_entry, r.spawns, r.camera_shot);
+                self.stage_module_arm_spawns(r.prot_entry, r.spawns, r.camera_shot, r.arm_point);
             }
             // The arm's own fades run beside the band's flash: retail's
             // spawner takes a fresh pool actor per call.

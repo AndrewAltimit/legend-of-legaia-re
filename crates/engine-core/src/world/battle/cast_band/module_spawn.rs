@@ -287,6 +287,7 @@ impl World {
         prot_entry: u32,
         spawns: &[legaia_engine_battle_vm::cast_module_camera::ModuleSpawn],
         shot: Option<legaia_engine_battle_vm::cast_module_camera::ModuleShot>,
+        arm_point: Option<([i16; 3], [i16; 3])>,
     ) {
         use legaia_engine_battle_vm::cast_module_camera::SpawnRecord;
         use legaia_game_tables::move_power::{self, BATTLE_OVERLAY_BASE};
@@ -310,12 +311,13 @@ impl World {
                 },
             );
         for spawn in spawns {
-            let Some((pos, rot)) = legaia_engine_battle_vm::cast_module_camera::spawn_anchor_point(
-                spawn.anchor,
-                creature,
-                victim,
-                shot,
-            ) else {
+            let point = match spawn.anchor {
+                legaia_engine_battle_vm::cast_module_camera::SpawnAnchor::ArmPoint => arm_point,
+                anchor => legaia_engine_battle_vm::cast_module_camera::spawn_anchor_point(
+                    anchor, creature, victim, shot,
+                ),
+            };
+            let Some((pos, rot)) = point else {
                 continue;
             };
             let (bytes, parts, off): (std::sync::Arc<[u8]>, Vec<_>, usize) = match spawn.record {

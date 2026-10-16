@@ -899,9 +899,13 @@ pub fn zenoir_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) 
             st.countdown.0 =
                 SPEED_SCALAR * crate::seru_magic_ticks::ZENOIR_SHATTER_COUNTDOWN_PER_SCALAR;
             // The hit raises the floor clip again (`sh v0,0x42(v1)` with
-            // `v0 = 1` at `0x801F7D7C`, inside the targetable-victim branch
-            // `0x801F7C04`): the creature sinks through the floor in arm 12.
-            st.creature_floor_clip = true;
+            // `v0 = 1` at `0x801F7D7C`), inside the targetable-victim branch:
+            // `lhu v0,0x16e(s6); andi v0,v0,0x4; bne v0,zero,0x801F7D9C` at
+            // `0x801F7BF8..0x801F7C04` jumps a non-targetable victim past the
+            // hit and the store, so the creature then sinks unclipped.
+            if !st.victim_untargetable {
+                st.creature_floor_clip = true;
+            }
             ArmDirection {
                 spawns: &ZENOIR_SLAM_SPAWNS,
                 ..ArmDirection::PASS
@@ -991,6 +995,72 @@ mod tests {
         }
         assert!(!zenoir_direct(&mut st, ZENOIR_FINISH_ARM, s).hold);
         assert!(st.creature_floor_clip);
+    }
+
+    /// PROT 0908's arm 11 raises the floor clip inside the targetable-victim
+    /// branch only (`0x801F7C04`): a non-targetable victim leaves it down.
+    #[test]
+    fn zenoir_finisher_on_an_untargetable_victim_leaves_the_clip_down() {
+        let mut st = ModuleCamState {
+            victim_untargetable: true,
+            ..ModuleCamState::default()
+        };
+        let s = seats();
+        zenoir_direct(&mut st, 4, s);
+        while zenoir_direct(&mut st, 5, s).hold {}
+        if let Some(c) = st.creature.as_mut() {
+            c.y = ZENOIR_SLAM_FLOOR_Y as i16;
+        }
+        assert!(!zenoir_direct(&mut st, ZENOIR_FINISH_ARM, s).hold);
+        assert!(!st.creature_floor_clip);
+    }
+
+    /// PROT 0907 reports its arms' spawn calls on the passes that make them,
+    /// each on the point the arm built.
+    #[test]
+    fn nighto_arms_report_their_spawns() {
+        let mut st = ModuleCamState::default();
+        let s = seats();
+        let d = nighto_direct(&mut st, 4, s);
+        assert_eq!(d.spawns, &NIGHTO_OPEN_SPAWNS);
+        let (p4, r4) = d.arm_point.expect("arm 4's point");
+        assert_eq!((p4[1], r4), (0, [0; 3]));
+        // Arm 5 seats the crystal under the floor on the same grid point,
+        // on its pass only.
+        let mut d5 = nighto_direct(&mut st, 5, s);
+        while d5.hold {
+            assert!(d5.spawns.is_empty());
+            d5 = nighto_direct(&mut st, 5, s);
+        }
+        assert_eq!(d5.spawns, &NIGHTO_CRYSTAL_SPAWNS);
+        let (p5, _) = d5.arm_point.unwrap();
+        assert_eq!(p5, [p4[0], 0x200, p4[2]]);
+        // Arm 10: `0xA0` ahead of the creature at `y = -0x1A4`.
+        st.creature = Some(ModuleSeat {
+            x: 100,
+            y: 0,
+            z: 200,
+            facing: 0,
+        });
+        st.creature_clip = Some(NIGHTO_SUMMON_CLIP);
+        let d10 = nighto_direct(&mut st, 10, s);
+        assert_eq!(d10.spawns, &NIGHTO_SONG_SPAWNS);
+        assert_eq!(d10.arm_point.unwrap().0, [100, -0x1A4, 200 + 0xA0]);
+        // Arm 11 on its pass: back from the victim by a sixth of the depth.
+        let s11 = ModuleCamSeats {
+            depth_raw: 0x1200,
+            ..s
+        };
+        let mut d11 = nighto_direct(&mut st, 11, s11);
+        while d11.hold {
+            d11 = nighto_direct(&mut st, 11, s11);
+        }
+        assert_eq!(d11.spawns, &NIGHTO_RING_SPAWNS);
+        let v = s.victim;
+        assert_eq!(
+            d11.arm_point.unwrap().0,
+            [v.x, -0x140, v.z - (0x1000 * 0x1200 / 0x6000) as i16]
+        );
     }
 
     /// PROT 0905's arm 8 stages hover clip 2 on every held pass and leaves
