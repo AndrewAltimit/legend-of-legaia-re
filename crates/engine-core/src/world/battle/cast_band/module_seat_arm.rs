@@ -100,6 +100,14 @@ pub(in crate::world) fn seat_arm_write(prot_entry: u32) -> Option<SeatArmWrite> 
         917 => seat(Lit(0), Lit(0), 0),
         // `0x801F71EC..0x801F7200`.
         918 => seat(Lit(0), Lit(-0xC00), 0).y(-0x7F0),
+        // `0x801F6D18..0x801F6D28`: the height only, `-(scalar << 8)`.
+        920 => SeatArmWrite {
+            x: Keep,
+            y: Lit(-((legaia_engine_battle_vm::cast_module_camera::SPEED_SCALAR << 8) as i16)),
+            z: Keep,
+            facing: None,
+            rate: None,
+        },
         // `0x801F6FC0..0x801F6FC8`.
         921 => seat(Lit(0), Lit(0), 0),
         // `0x801F6E04..0x801F6E14`: frozen (`+0x21D = 0`) until arm 5.
@@ -220,12 +228,14 @@ impl World {
 /// The modules whose seat arm drains a countdown and calls the installer
 /// only on the pass that finds it spent (`bgez` / `bgtz` straight ahead of
 /// `jal 0x801F19EC`), so the creature appears as the arm **leaves**, not as
-/// it is entered: PROT 0907 (`0x801F76B8`), 0911 (`0x801F70A0`), 0915
-/// (`0x801F6E54`), 0923 (`0x801F6D9C`), 0932 (`0x801F6EA4`) and 0934
-/// (`0x801F7028`). Their seat arm is
+/// it is entered: PROT 0907 (`0x801F76B8`), 0911 (`0x801F70A0`), 0923
+/// (`0x801F6D9C`) and 0932 (`0x801F6EA4`). Their seat arm is
 /// [`legaia_engine_battle_vm::cast_module_camera::module_seat_arm`]; the
-/// summon-hold modules already name the arm after theirs.
-const SEATS_ON_PASS: [u32; 6] = [907, 911, 915, 923, 932, 934];
+/// summon-hold modules already name the arm after theirs. PROT 0915
+/// (`0x801F6E54`) and 0934 (`0x801F7028`) seat on the pass too, but their
+/// camera-only directors park on that arm, so the port seats them as it is
+/// entered.
+const SEATS_ON_PASS: [u32; 4] = [907, 911, 923, 932];
 
 /// Whether PROT `prot_entry`'s owed seat is due at module phase `phase`,
 /// given its seat arm `arm`.

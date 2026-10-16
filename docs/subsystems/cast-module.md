@@ -1484,9 +1484,9 @@ creature's `+0x3C` / `+0x40` pair, which the port reads as its seat. Arm
 negated centroid `FUN_801DCEAC` returns, pitch `0x80`, TR y `0x500` and TR z
 three times the group's extent; on a single target the victim, pitch `0x40`,
 TR y `0x600` and TR z two thirds of `ctx[+0x6D0]`
-(`cast_module_camera::gizam_sweep_exit_shot`). The engine seats the creature behind the
-caster, not where `FUN_801F19EC` leaves it, so those framings sit off
-retail's.
+(`cast_module_camera::gizam_sweep_exit_shot`). No arm moves the creature: it
+stays where `FUN_801F19EC` leaves it, on the caster
+([the creature seat](#the-creature-seat)).
 
 ### PROT 0907 (Nighto)
 
@@ -1898,10 +1898,9 @@ once a tick through `legaia_render_kernels::cast_rain` on the world's
 arm `10`'s wait for every monster to be idle, and the group-target framing
 of arm `8`. The splashes are seated into the cast's scene, but the record is
 a model-less node and nothing of it draws in the port yet. The streaks
-draw over the scene rather than sorted into it, and the creature is seated
-where the engine's stager puts every creature (behind the caster), not where
-retail's `FUN_801F19EC` leaves Slippery's, so the framings anchored on it
-sit further back than retail's.
+draw over the scene rather than sorted into it. Slippery's seat arm stores
+only a height (`+0x36 = -(scalar << 8)`, `0x801F6D18..0x801F6D28`) and a clip
+bump, so the creature hangs over the caster where `FUN_801F19EC` leaves it.
 
 ### PROT 0925 (the Spikefish flute)
 
@@ -2183,9 +2182,8 @@ keeps deciding the band's length. Per-module details:
 - **0903 walk-in.** It is the creature clip's root motion: arm 11 turns the
   creature onto the victim, whose seat is its target `+0x1DD`, and the anim
   tick's positive-speed term steps it while the range poll fails. The
-  capture's creature runs at `+0x21D = 4`, half rate, about 30 units a frame
-  against the 670 units in 20.5 frames `gimard_burning_attack`'s yaw base
-  implies. The port sets the facing and target and lets that term move the
+  capture's creature runs at `+0x21D = 4`, half rate, on its record's walk
+  clip, whose root speed is `56`: about 28 units a vsync. The port sets the facing and target and lets that term move the
   body; a 32-unit step remains for a creature whose clip carries no speed.
 - **0923** counts its drift on the frame delta alone (`8 * delta` off the
   word, `4 * delta` off TR z). **0917**'s arm 1 gates on the camera itself,
@@ -2582,20 +2580,61 @@ The engine seats the creature in a high slot, and
 `World::battle_actor_draw_plan` hands that slot seat 7 so the tint pass
 reaches it on both hosts.
 
-The installer seats the creature at animation rate `+0x21D = 2`
-(`addiu s3,zero,2` at `0x801F1CFC`, stored at `0x801F1DFC`), a quarter of a
-party member's; the first commit lifts it to half. A byte staged over its
-looping clip commits only at the cycle's natural end (`FUN_80047430`'s
-natural-end path), which is what PROT 0907, 0908 and 0909's clip gates wait
-on. The port applies both to those three modules' creatures
-(`World::summon_seat_waits_for_cycle`); other creatures still seat at the
-battle's normal rate and commit at once.
+The installer is one battle-overlay routine, shared by every module that
+seats a creature, and what it writes holds band-wide
+(`overlay_muscle_dome_801f19ec.txt`, whose dump is the PROT 0898 image):
 
-Two creature moves have engine stand-ins, because the clip that makes them
-in retail does not carry the creature far enough in the port: PROT 0908's
-arm 8 closes the creature on the victim at 30 units a tick until the reach
-poll clears, and PROT 0909's arm 4 walks it along its facing at the same
-rate until it crosses `z = 0x200` (`World::apply_module_creature_writes`).
+| Store | Where | Value |
+|---|---|---|
+| ground pair `+0x34` / `+0x38` (and `+0x3C` / `+0x40`) | `0x801F1E04..0x801F1E40` | the caster's: the node is built by `FUN_80024C88(caster + 0x34, ..)` at `0x801F1D4C` and its `+0x14` / `+0x18` copied back |
+| facing (node `+0x26`) | `0x801F1D94` | the caster's `+0x46` |
+| target `+0x1DD` | `0x801F1DB8` | the caster's |
+| anim rate `+0x21D` | `li s3,0x2` at `0x801F1CFC`, `0x801F1DFC` | `2`, a quarter of normal |
+| playing clip `+0x1D9` | `0x801F1DD8` | `0` |
+
+So a creature first stands on its caster, wearing the caster's facing. The
+library states agree: `vera_summon_mid_cast` still holds the previous cast's
+Gizam on that cast's caster seat and facing (`(600, -775)`, `0xF13`), and
+`gimard_summon_visible` reads `+0x21D = 2` before the first commit and
+`gimard_burning_attack` `4` after it (the commit's decay, `0x8004B080`).
+
+Most seat arms then overwrite the seat on the same pass, straight after the
+`jal`. Where the stores are literals (a ground pair on the battle's own axes,
+a facing, a height, a rate) the port carries them in
+`engine-core`'s `cast_band/module_seat_arm.rs`; where the arm computes the
+seat from a heading (PROT 0903, 0904, 0905, 0907, 0908, 0910, 0916) the
+director carries it. Several arms also set their own rate: PROT 0922, 0927 and
+0966 freeze the creature (`0`), 0931, 0933 and 0934 seat it at `4`, 0924 and
+0925 at `8`, 0932 at `0x10`. PROT 0929 stores `-(0x80089120)`, the world
+anchor's Z, which the port keeps no twin of. Where the arm drains a countdown
+ahead of the call (PROT 0907, 0911, 0915, 0923, 0932, 0934), the creature is
+seated on the arm's pass rather than as it is entered; the port does so for
+all but 0915 and 0934, whose camera-only directors park on that arm.
+
+The creature's clips are the cast record's own, not its archive twin's: the
+installer hands the record's part table to the node (`0x801F1DCC`) and scans
+its tags (`FUN_80054CB0(record, 4)`, `0x801F1D1C`). Only the TMD and texture
+pool match the archive; the clip sets differ in count, length, rate byte and
+root speed (Gimard's walk carries `56` in its record and `28` in the
+archive). The port binds the record's clips
+(`engine-effects::summon::summon_spawn_asset`). Every creature clip loops:
+the natural-end path commits `+0x1DA` unconditionally (`0x80047B54`), and
+nothing stages a creature back to idle.
+
+A byte staged over a looping clip with no `+0x1DC` stage bit commits only at
+the cycle's natural end; a `+0x1DC` bump sets bit 0, which cuts the clip at
+once (`0x800478F4`) unless the playing entry carries the `+0x76` lock. PROT
+0907, 0908 and 0909's clip gates read those commits
+(`World::summon_seat_waits_for_cycle`); the port carries the creature's bump
+back from the tick body as the bit.
+
+Two creature moves are root motion on the record's clips: PROT 0908's arm 8
+holds until the creature reaches the victim, and PROT 0909's arm 4 until it
+crosses `z = 0x200` (Viguro's clip 0 carries root speed `120`: at the seat's
+rate `2`, 30 units a vsync, the 87 vsyncs the `viguro` capture takes over
+`0xA00`). The anim tick's root-motion term moves both. A creature with no
+root speed to play (a headless seat, or a body with no record clips) is
+glided at 30 units a tick instead (`World::apply_module_creature_writes`).
 
 ### Module fades
 

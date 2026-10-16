@@ -17,8 +17,9 @@ const ZENOIR_RISE_ARM: u8 = 8;
 /// PROT 0908's arm that holds on the creature reaching the victim
 /// (`FUN_8004E2F0(7, victim)` at `0x801F7628`).
 const ZENOIR_REACH_ARM: u8 = 8;
-/// The creature's closing speed while a reach arm holds, world units a
-/// tick: the `gimard_burning_attack` capture's walk rate (~30 a vsync).
+/// The closing speed of a creature with no root speed to play while a reach
+/// arm holds, world units a tick: the `gimard_burning_attack` capture's walk
+/// rate (~30 a vsync).
 const CREATURE_CLOSE_STEP: i32 = 30;
 /// PROT 0908's arm that moves the creature over the victim (`0x801F79F4`).
 const ZENOIR_OVER_VICTIM_ARM: u8 = 10;
@@ -150,15 +151,19 @@ impl World {
     }
 
     /// Close the creature on the victim one step, facing it, while a reach
-    /// arm holds and the range poll still fails. Retail's creature arrives
-    /// on its strike clip's root motion; the engine's clip set carries it
-    /// short of the victim (it plays the walk cycle at a different length),
-    /// so the arm's poll would never clear. This glide stands in for the
-    /// distance the clip leaves, and stops the tick the poll reads `0`.
+    /// arm holds and the range poll still fails - for a creature whose
+    /// playing clip carries no root speed (a headless seat, or a body with
+    /// no record clips). Retail's creature arrives on its record clip's root
+    /// motion, which the anim tick's positive-speed term already runs
+    /// (`World::drive_playing_root_motion`); stepping it here as well walked
+    /// it in at twice retail's rate.
     fn close_creature_on_victim(&mut self) {
         let Some(slot) = self.casting.summon_actor_slot else {
             return;
         };
+        if self.creature_root_driven(slot) {
+            return;
+        }
         let Some(victim) = self.casting.module_cam.victim_slot else {
             return;
         };
@@ -249,16 +254,19 @@ impl World {
     }
 
     /// Walk PROT 0909's creature in along its facing while arm 4 waits for
-    /// it to cross `z = 0x200`. Retail's creature covers the `0xA00` from its
-    /// seat at `0xC00` in 87 vsyncs of the `viguro` capture - about 30 units
-    /// a vsync, its walk entry's root speed - on a clip the engine does not
-    /// install on the seated creature (it plays the idle entry, speed `0`),
-    /// so the arm would never clear. This stands in for that walk at the
-    /// same rate.
+    /// it to cross `z = 0x200`, for a creature whose playing clip carries no
+    /// root speed. Retail's creature covers the `0xA00` from its seat at
+    /// `0xC00` in 87 vsyncs of the `viguro` capture - about 30 units a vsync:
+    /// its record's clip 0 carries root speed `120`, which at the seat's
+    /// rate `2` is `120 * 2 * 2 >> 3 = 30` a vsync, and which the anim
+    /// tick's root-motion term runs once the record clips are bound.
     fn walk_viguro_in(&mut self) {
         let Some(slot) = self.casting.summon_actor_slot else {
             return;
         };
+        if self.creature_root_driven(slot) {
+            return;
+        }
         if let Some(a) = self.actors.get_mut(usize::from(slot)) {
             let (sin, cos) = legaia_engine_system::trig::trig12(a.battle.facing_angle & 0xFFF);
             let ms = &mut a.move_state;
@@ -267,5 +275,12 @@ impl World {
             ms.world_z =
                 (i32::from(ms.world_z) + i32::from(cos) * CREATURE_CLOSE_STEP / 4096) as i16;
         }
+    }
+
+    /// Whether the creature at `slot` is playing a clip whose root speed the
+    /// anim tick's root-motion term moves it by.
+    fn creature_root_driven(&self, slot: u8) -> bool {
+        self.battle_playing_root_motion(usize::from(slot))
+            .is_some_and(|(speed, _)| speed > 0)
     }
 }

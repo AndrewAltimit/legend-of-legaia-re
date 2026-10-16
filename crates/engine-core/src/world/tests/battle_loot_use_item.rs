@@ -406,9 +406,7 @@ fn spell_anim_trigger_stages_the_summon_route_and_the_stager_requests_the_spawn(
         req,
         Some((
             0x81,
-            // On the caster: `FUN_801F19EC` seats a director-paced
-            // module's creature there.
-            [11, 22, 33]
+            [11, 22, 33 - crate::world::battle::SUMMON_SPAWN_BEHIND]
         ))
     );
     // Taken once.

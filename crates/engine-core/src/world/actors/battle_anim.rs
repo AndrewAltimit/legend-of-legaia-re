@@ -350,7 +350,19 @@ impl World {
         // case keeps committing at once.
         // PORT: FUN_80047430 (`0x800478EC..0x80047948`, the looping-clip half)
         let bits = actor.battle.flag_bits;
+        // A creature byte staged with the `+0x1DC` bump (PROT 0907's arm 8,
+        // `0x801F7A44..0x801F7A5C`) takes bit 0, which cuts the playing clip
+        // at once (`0x800478F4`) - unless that clip's entry carries the
+        // `+0x76` lock (`0x80047940..0x80047948`), which leaves the byte to
+        // the natural end like a bare `+0x1DA` store.
+        let cut_now = bits.has(legaia_engine_battle_vm::battle_action::ActorFlags::WINDUP_DONE)
+            && actor
+                .battle_animation
+                .as_ref()
+                .and_then(|p| p.hit_source())
+                .is_none_or(|s| s.event_lock == 0);
         if self.summon_seat_waits_for_cycle(i)
+            && !cut_now
             && actor
                 .battle_animation
                 .as_ref()
@@ -677,8 +689,17 @@ impl World {
         // stages that index (`monster_action_by_tag`). Engine assumption -
         // the loop-vs-once bit retail derives from the record kind isn't
         // modelled on MonsterAnimation.
+        //
+        // The summon creature is the exception that shows the rule: retail's
+        // natural-end path calls the commit unconditionally
+        // (`0x80047B30..0x80047B58`), so with `+0x1DA == +0x1D9` the clip
+        // replays, and nothing stages the creature back to idle - a cast
+        // module bumps `+0x1DA` from the clip still playing (PROT 0907's arm
+        // 8 moves `1` to `2`). Every creature clip therefore loops.
+        let creature = self.casting.summon_actor_slot == Some(i as u8);
+        let a = &mut self.actors[i];
         let player = clip.as_ref().and_then(|c| {
-            if c.action_id == legaia_engine_battle_vm::battle_action::WALK_TAG {
+            if creature || c.action_id == legaia_engine_battle_vm::battle_action::WALK_TAG {
                 legaia_engine_battle::battle_anim::MonsterAnimPlayer::new(c)
             } else {
                 legaia_engine_battle::battle_anim::MonsterAnimPlayer::new_one_shot(c)

@@ -194,9 +194,18 @@ impl World {
         st: &legaia_engine_battle_vm::cast_module_ticks::CastActorState,
     ) {
         use legaia_engine_battle_vm::battle_anim_rate::AnimRate;
+        let creature = self.casting.summon_actor_slot == Some(slot);
         let Some(a) = self.actors.get_mut(slot as usize) else {
             return;
         };
+        // The summon creature's `+0x1DC` bump (read in as `0`): bit 0 is the
+        // stage bit that commits its `+0x1DA` at once rather than at the
+        // looping clip's natural end (`World::summon_seat_waits_for_cycle`).
+        if creature && st.restage & 1 != 0 {
+            a.battle
+                .flag_bits
+                .set(legaia_engine_battle_vm::battle_action::ActorFlags::WINDUP_DONE);
+        }
         a.battle.hp_bar_pending = st.hp_bar_delta;
         a.battle.hp = st.hp;
         a.battle.field_flags = st.flags;

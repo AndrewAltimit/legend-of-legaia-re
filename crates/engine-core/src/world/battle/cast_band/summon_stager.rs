@@ -51,20 +51,12 @@ impl World {
         self.casting.module_settle_countdown = 0;
         self.casting.module_cam = Default::default();
         self.casting.module_pres = Default::default();
-        // A module a director paces seats its creature on the caster
-        // (`FUN_801F19EC`, [`Self::seat_summon_actor`]); only the engine's
-        // own walk stand-in starts it behind the party.
-        let spawn_z = if self.module_seats_on_caster(spell_id) {
-            cz
-        } else {
-            cz.saturating_sub(SUMMON_SPAWN_BEHIND)
-        };
         self.casting.summon_stager = Some(SummonStager {
             caster,
             spell_id,
             phase: SummonPhase::Armed,
             frames: 0,
-            spawn: [cx, cy, spawn_z],
+            spawn: [cx, cy, cz.saturating_sub(SUMMON_SPAWN_BEHIND)],
             goal: [cx, cy, cz.saturating_sub(SUMMON_STRIKE_BEHIND)],
             walked: false,
         });

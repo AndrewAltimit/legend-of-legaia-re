@@ -23,6 +23,8 @@ impl World {
     /// `module_cam.creature`). A module the engine paces with its own walk
     /// stand-in (no band-pacing director) keeps the stand-in's spawn point,
     /// which its walk is measured from.
+    ///
+    /// PORT: FUN_801F19EC (the seat, facing, target and rate stores)
     pub fn seat_summon_actor(&mut self, slot: usize) {
         let staged = self.casting.summon_stager.as_ref().map(|st| {
             let caster = self.actors.get(st.caster as usize);
@@ -34,7 +36,11 @@ impl World {
                 ],
                 None => st.spawn,
             };
-            (spawn, caster.map(|a| a.battle.facing_angle).unwrap_or(0))
+            (
+                spawn,
+                caster.map(|a| a.battle.facing_angle).unwrap_or(0),
+                caster.map(|a| a.battle.active_target),
+            )
         });
         self.casting.summon_actor_slot = Some(slot as u8);
         let placed = self.casting.module_cam.creature;
@@ -48,13 +54,18 @@ impl World {
         };
         a.active = true;
         // A debug spawn outside a cast keeps the host's own placement.
-        let Some((spawn, facing)) = staged else {
+        let Some((spawn, facing, target)) = staged else {
             return;
         };
         a.move_state.world_x = spawn[0];
         a.move_state.world_y = spawn[1];
         a.move_state.world_z = spawn[2];
         a.battle.facing_angle = facing;
+        // `+0x1DD = caster[+0x1DD]` (`0x801F1DB8`): the target the root-motion
+        // term's range poll stops a positive-speed clip at.
+        if let Some(t) = target {
+            a.battle.active_target = t;
+        }
         a.battle.queued_anim = 0;
         a.battle.current_anim = 0;
         a.battle.anim_rate = legaia_engine_battle_vm::battle_anim_rate::AnimRate(
