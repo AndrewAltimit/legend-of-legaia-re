@@ -76,7 +76,7 @@ pub const GIZAM_STATUS_BIT: u16 = 0x0001;
 ///
 /// Other simulation state: `ctx+0x278 = 0` in arm 0 (`0x801F6BF0`), the
 /// summon seat's render flag `= 0xFF` in arm 4, its clip pair `+= 1` in arm 7
-/// with every monster seat's render flag cleared and the living ones lit
+/// with every living monster seat's render flag cleared and the seat lit
 /// ([`GIZAM_ROW_LIT_WORD`]), the summon seat's `+0x04 = 0` on arm 13's exit,
 /// arm 14's row poll ahead of `0xFF`, and in arm `0xFF` its `+0x1DA = 0`
 /// plus a render-flag clear over the three party seats.
@@ -112,15 +112,18 @@ pub fn gizam_tick(
                 s.staged_anim = s.staged_anim.wrapping_add(1);
                 s.restage = s.restage.wrapping_add(1);
             }
-            // `0x801F6F64..0x801F6F94`: every seat `3..=6` back to render
-            // flag `0` (the store sits in the `beq` delay slot), a living
-            // one lit with the cursor's bright tint word.
+            // `0x801F6F64..0x801F6F94`: every living seat `3..=6` back to
+            // render flag `0` and lit with the cursor's bright tint word.
+            // Both stores sit past the `beq` on the seat's HP at
+            // `0x801F6F74` (its delay slot is a `nop`), so a dead seat keeps
+            // its defeat-fade state and its spent colour word - the `+0x04 ==
+            // 0` arm 14's row poll waits on.
             for seat in FIRST_MONSTER_SEAT..MONSTER_ROW_END {
-                if let Some(v) = seats.get_mut(seat as usize) {
+                if let Some(v) = seats.get_mut(seat as usize)
+                    && v.hp != 0
+                {
                     v.render_flag = 0;
-                    if v.hp != 0 {
-                        v.present_04 = GIZAM_ROW_LIT_WORD;
-                    }
+                    v.present_04 = GIZAM_ROW_LIT_WORD;
                 }
             }
             CastArmStep::Advance

@@ -758,6 +758,22 @@ pub(super) fn fight_battle(session: &mut NativeSession) -> Option<Run> {
             target.and_then(|t| w.actors.get(usize::from(t)).map(|a| a.battle.liveness)),
             w.actors.get(caster).map(|a| a.battle.params),
         );
+        for (s, a) in w.actors.iter().enumerate().take(12) {
+            eprintln!(
+                "    [battle]   seat {s}: active {} hp {} mon {:?} anim {} queued {} reaction {:?}/{:?} pose {:?} color {:#x} rflag {:#x} flags {:#x}",
+                a.active,
+                a.battle.hp,
+                a.battle_monster_id,
+                a.battle.current_anim,
+                a.battle.queued_anim,
+                a.battle_reaction,
+                a.battle_reaction_entry,
+                a.battle_pose,
+                a.battle.render_color,
+                a.battle.render_flag,
+                a.battle.field_flags,
+            );
+        }
     }
     Some(Run::Battle(format!(
         "battle unresolved after {spent} ticks: {}",

@@ -598,6 +598,28 @@ fn gizam_walks_through_the_phase_five_hole() {
     assert_eq!(ctx.phase, GIZAM_MISSING_ARM + 1);
 }
 
+/// Arm 7's row relight skips a dead seat: both stores sit past the `beq`
+/// on its HP (`0x801F6F74`, delay slot `nop`), so a faded-out foe keeps its
+/// defeat-fade state and the zero colour word arm 14's poll waits on.
+#[test]
+fn gizam_relight_leaves_a_dead_seat_faded() {
+    let mut seats = row();
+    seats[3].hp = 0;
+    seats[3].render_flag = 2;
+    seats[3].present_04 = 0;
+    seats[4].render_flag = 1;
+    let mut ctx = CastModuleCtx {
+        phase: GIZAM_STAGE_ARM,
+        ..Default::default()
+    };
+    gizam_tick(&mut ctx, &mut seats, WHO, |_| None);
+    assert_eq!((seats[3].render_flag, seats[3].present_04), (2, 0));
+    assert_eq!(
+        (seats[4].render_flag, seats[4].present_04),
+        (0, GIZAM_ROW_LIT_WORD)
+    );
+}
+
 #[test]
 fn gizam_sweep_marks_every_seat_it_hits() {
     let mut seats = row();

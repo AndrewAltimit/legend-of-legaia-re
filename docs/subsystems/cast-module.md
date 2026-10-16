@@ -1457,9 +1457,15 @@ The other arms are countdowns on `ctx[+0x6D8]`: arm 3 waits on the band
 timer, arms 6, 8, 11 and 12 arm `scalar * 180`, `170`, `40` and `<< 8`, arm 9
 re-arms `scalar * 20`, and arms 7, 9, 10, 12 and 13 drain and hold while the
 word is non-negative. Arm 13 arms the settle word `0x801F7FD4 = scalar << 7`,
-and arm 14 drains it and polls the row before `0xFF`. The clip bump sits in
-arm 7 (`0x801F6F4C`), which also clears every monster seat's render flag and
-lights the living ones (`+0x04 = 0x20080200`). The director frames arms 0
+and arm 14 drains it and polls the row before `0xFF`: every monster seat
+`3 .. 3 + ctx[+0x01]` alive with `+0x1D9 == 0`, or dead with `+0x04 == 0`
+(`0x801F7644..0x801F76DC`). The clip bump sits in arm 7 (`0x801F6F4C`), which
+also clears the render flag of each living monster seat and lights it
+(`+0x04 = 0x20080200`). Both stores sit past the `beq` on the seat's HP at
+`0x801F6F74`, whose delay slot is a `nop`, so a foe that died before the cast
+keeps its defeat-fade state and its spent colour word. Clearing the dead
+seat's flag as well hands it to the tint pass's decay arm, which never brings
+`+0x04` back to zero, and the poll then holds for good. The director frames arms 0
 and 1 on the caster and arms 7..12 on the creature; arm 9 frames the
 creature's `+0x3C` / `+0x40` pair, which the port reads as its seat, and arm
 13's centroid shot is not ported. The engine seats the creature behind the

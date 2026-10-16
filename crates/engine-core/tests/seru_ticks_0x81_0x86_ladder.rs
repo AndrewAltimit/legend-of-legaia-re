@@ -91,6 +91,26 @@ fn battle_world() -> World {
     world
 }
 
+/// Every resident cast-band module image, read off `PROT.DAT`.
+fn cast_pool(
+    dir: &std::path::Path,
+) -> std::sync::Arc<legaia_overlay_images::cast_effect_pool::CastEffectPool> {
+    let mut archive =
+        legaia_prot::archive::Archive::open(&dir.join("PROT.DAT")).expect("open PROT.DAT");
+    let mut pool = legaia_overlay_images::cast_effect_pool::CastEffectPool::new();
+    for idx in CAST_MODULE_PROT_FIRST..=CAST_MODULE_PROT_LAST {
+        let Some(entry) = archive.entries.get(idx as usize).cloned() else {
+            continue;
+        };
+        let mut bytes = Vec::new();
+        if archive.read_entry(&entry, &mut bytes).is_err() {
+            continue;
+        }
+        pool.insert(idx, &bytes);
+    }
+    std::sync::Arc::new(pool)
+}
+
 /// The fields these bodies write that survive `write_cast_actor_state`, for
 /// the seats they write them on.
 fn choreography_probe(w: &World) -> Vec<(u8, u8, u8, u8)> {
@@ -114,21 +134,7 @@ fn every_player_seru_tick_walks_its_phase_chain_and_writes_state() {
         return;
     };
     let scus = std::fs::read(dir.join("SCUS_942.54")).expect("read SCUS_942.54");
-
-    let mut archive =
-        legaia_prot::archive::Archive::open(&dir.join("PROT.DAT")).expect("open PROT.DAT");
-    let mut pool = legaia_overlay_images::cast_effect_pool::CastEffectPool::new();
-    for idx in CAST_MODULE_PROT_FIRST..=CAST_MODULE_PROT_LAST {
-        let Some(entry) = archive.entries.get(idx as usize).cloned() else {
-            continue;
-        };
-        let mut bytes = Vec::new();
-        if archive.read_entry(&entry, &mut bytes).is_err() {
-            continue;
-        }
-        pool.insert(idx, &bytes);
-    }
-    let pool = std::sync::Arc::new(pool);
+    let pool = cast_pool(&dir);
 
     let mut walked = 0usize;
     let mut total_frames = 0usize;
@@ -212,4 +218,66 @@ fn every_player_seru_tick_walks_its_phase_chain_and_writes_state() {
          in {total_frames} frames, all {bodies_that_wrote} wrote battle state",
         IDS.len()
     );
+}
+
+/// Gizam (`0x84`, PROT 0906) cast into a row that already holds a dead foe.
+///
+/// Arm 7 relights the row (`0x801F6F64..0x801F6F94`): the render-flag clear
+/// `sb zero,0x21c(v1)` at `0x801F6F7C` sits **past** the `beq` on the seat's
+/// HP (its delay slot is a `nop`), so only a living seat is reset. A dead
+/// seat keeps its defeat-fade state `2` and its spent colour word
+/// `+0x04 = 0`, which is what arm 14's row poll (`0x801F7644..0x801F76DC`)
+/// waits on for a dead seat. Clearing the dead seat's state too put it back on the tint
+/// pass's decay arm, which walks the colour word up to neutral and never
+/// back to zero, so the poll held forever: the two-foe softlock where the
+/// first foe died earlier in the round and Gizam fell on the survivor.
+#[test]
+fn gizam_settles_over_a_row_with_a_dead_foe() {
+    let Some(dir) = extracted_dir() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset or extracted/ incomplete");
+        return;
+    };
+    let scus = std::fs::read(dir.join("SCUS_942.54")).expect("read SCUS_942.54");
+    let mut w = battle_world();
+    w.install_menu_text(&scus);
+    w.casting.effect_pool = Some(cast_pool(&dir));
+    // Engine slot 1 (retail seat 3): a foe killed earlier in the round,
+    // its defeat fade already run out. The survivors stay at full HP.
+    let dead = 1usize;
+    w.actors[dead].battle.hp = 0;
+    w.actors[dead].battle.render_flag = legaia_engine_battle_vm::battle_formulas::STATE_DEFEAT_FADE;
+    w.actors[dead].battle.render_color = 0;
+    w.actors[0].battle.active_target = 2;
+
+    let mut phases = Vec::new();
+    let mut finished = false;
+    for _ in 0..MAX_FRAMES {
+        let run = w.run_cast_module_code(0x84, 0).expect("PROT 0906 resident");
+        assert_eq!(run.prot_entry, 906);
+        w.tick_battle_animations();
+        if phases.last() != Some(&run.phase) {
+            phases.push(run.phase);
+        }
+        if !run.busy {
+            finished = true;
+            break;
+        }
+    }
+    assert!(
+        phases.contains(&14),
+        "the walk never reached arm 14 (phases {phases:?})"
+    );
+    assert!(
+        finished,
+        "Gizam never left its row poll with a dead foe in the row (phases {phases:?}; \
+         dead seat state {:#x} colour {:#x})",
+        w.actors[dead].battle.render_flag, w.actors[dead].battle.render_color,
+    );
+    assert_eq!(
+        w.actors[dead].battle.render_flag,
+        legaia_engine_battle_vm::battle_formulas::STATE_DEFEAT_FADE,
+        "arm 7 reset the dead seat's defeat-fade state"
+    );
+    assert_eq!(w.actors[dead].battle.render_color, 0);
+    eprintln!("[ok] Gizam over a dead foe: phases {phases:?}");
 }
