@@ -68,6 +68,7 @@ impl World {
             // rays and final blasts).
             e if Self::runs_part_stager_calls(e) => self.run_part_stager_calls(e),
             922 => ticks::puera_stager(&mut ctx, arm),
+            927 => self.run_juggernaut_stager_calls(),
             923 => ticks::gilium_stager(&mut ctx, arm),
             949 => ticks::water_crystals_stager(&mut victim, arm),
             _ => {}
@@ -146,6 +147,11 @@ impl World {
         }
         if direction.is_some() {
             self.apply_seru_seat_writes(entry, ctx.phase);
+        }
+        if entry == 927
+            && let Some(d) = direction
+        {
+            self.apply_juggernaut_writes(ctx.phase, !d.hold, ctx.monster_count);
         }
         run.camera_shot = direction.and_then(|d| d.shot);
         // PROT 0909: the pass whose arm spawns a stager-calling record starts

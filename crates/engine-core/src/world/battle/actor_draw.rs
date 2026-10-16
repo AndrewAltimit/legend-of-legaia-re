@@ -508,9 +508,15 @@ impl World {
         if !actor.battle.floor_clip {
             return None;
         }
+        // The summon creature's node may name another row (PROT 0927 raises
+        // `+0x42 = 2`); every other clipped body is on the floor row.
+        let kind = match self.casting.module_creature_clip_kind {
+            k if k > 1 && self.casting.summon_actor_slot == Some(actor_idx as u8) => k,
+            _ => 1,
+        };
         let clip = self
             .object_effect
-            .clip_for(1, &self.sin_lut, &self.cos_lut)?;
+            .clip_for(kind, &self.sin_lut, &self.cos_lut)?;
         let m = &actor.move_state;
         let yaw = f32::from(actor.battle.facing_angle & 0xFFF) / 4096.0 * std::f32::consts::TAU;
         let (s, c) = yaw.sin_cos();

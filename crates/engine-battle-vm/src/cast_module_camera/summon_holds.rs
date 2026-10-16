@@ -411,11 +411,6 @@ pub fn spikefish_direct(st: &mut ModuleCamState, phase: u8, _: ModuleCamSeats) -
     direct(SPIKEFISH, st, phase)
 }
 
-/// PROT 0927's director: [`JUGGERNAUT`].
-pub fn juggernaut_direct(st: &mut ModuleCamState, phase: u8, _: ModuleCamSeats) -> ArmDirection {
-    direct(JUGGERNAUT, st, phase)
-}
-
 /// The directed profile of a module this file covers: its holds pace the
 /// band (`0x36` waits on the module's return), the director runs beside the
 /// ported tick body and never owns the phase, and the outcome lands once the
@@ -449,7 +444,7 @@ pub fn summon_hold_profile(prot_entry: u32) -> Option<ModuleProfile> {
             2,
         ),
         // The damage arm 26 (`0x801F7E0C`); arm 2 seats on its stream poll.
-        927 => (juggernaut_direct, JUGGERNAUT_DAMAGE_ARM, 2),
+        927 => (super::juggernaut_direct, JUGGERNAUT_DAMAGE_ARM, 2),
         _ => return None,
     };
     Some(ModuleProfile {
@@ -457,7 +452,9 @@ pub fn summon_hold_profile(prot_entry: u32) -> Option<ModuleProfile> {
         hit_arm: Some(hit_arm),
         walk_arm: None,
         owns_phase: false,
-        stages_spawns: false,
+        // A director that reports its arms' spawn calls (PROT 0927's) seats
+        // them per arm; the others leave the stager to seat the record set.
+        stages_spawns: prot_entry == 927,
         seat_arm: Some(seat_arm),
         director_body: false,
     })

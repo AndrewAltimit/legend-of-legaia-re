@@ -340,6 +340,11 @@ pub enum ModuleCaption {
     /// `0x801F74C8`, 0905 `0x801F802C`, 0906 `0x801F75D4`, 0910
     /// `0x801F7BC4`, 0911 `0x801F7ED0`, 0913 `0x801F8460`).
     Cleared,
+    /// A string in the module's own image, by slot-B VA: PROT 0927 arm 21
+    /// prints `0x801F69D8`, the bytes ahead of its arm table
+    /// (`lui a2,0x801F; addiu a2,a2,0x69D8` at `0x801F7708`). The host reads
+    /// it off the resident image.
+    ModuleString(u32),
 }
 
 /// Where one module spawn call seats its record (`a0` / `a1` of
@@ -783,6 +788,7 @@ pub mod capture_countdown;
 pub mod creature;
 mod evil_seru_magic;
 mod freed;
+mod juggernaut;
 mod nighto;
 mod nova;
 mod orb;
@@ -796,6 +802,7 @@ pub use capture_countdown::{ArmCountdown, CountdownWrite, arm_countdown, capture
 pub use creature::*;
 pub use evil_seru_magic::*;
 pub use freed::*;
+pub use juggernaut::*;
 pub use nighto::*;
 pub use nova::*;
 pub use orb::*;

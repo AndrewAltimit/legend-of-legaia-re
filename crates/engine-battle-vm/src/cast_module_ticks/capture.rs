@@ -536,7 +536,15 @@ pub fn juggernaut_tick(
         }
         _ => {}
     }
-    run_tick(ctx, 29, |_| {
+    run_tick(ctx, 29, |c| {
+        // Arm 0 raises `ctx[+0x278] = 3` (`0x801F6CEC`), which drops the
+        // backdrop pair and freezes the stage ambient for the cast; arm 27
+        // clears it (`0x801F8160`).
+        match c.phase {
+            0 => c.ctx_278 = 3,
+            27 => c.ctx_278 = 0,
+            _ => {}
+        }
         if let Some(roll) = hit
             && aoe_seat_is_hittable(victim)
         {

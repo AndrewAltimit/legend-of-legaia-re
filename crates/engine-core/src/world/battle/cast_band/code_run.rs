@@ -2,6 +2,7 @@ use super::*;
 
 mod actor_state;
 mod band_word;
+mod juggernaut_writes;
 mod module_code;
 mod module_ctx;
 mod module_hits;

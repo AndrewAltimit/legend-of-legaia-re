@@ -100,7 +100,11 @@ impl World {
     /// scene: the record parsed against its image's whole record set, with
     /// the arm's bytecode stores applied to the copy it is seated from, and
     /// its stores into the seated part queued behind the part's seat run.
-    fn seat_stager_spawn(&mut self, entry: u32, spawn: &StagerSpawn) {
+    pub(in crate::world::battle::cast_band) fn seat_stager_spawn(
+        &mut self,
+        entry: u32,
+        spawn: &StagerSpawn,
+    ) {
         const LINK_BASE: u32 = legaia_overlay_images::summon_overlay::SUMMON_OVERLAY_LINK_BASE;
         let Some(module) = self
             .casting

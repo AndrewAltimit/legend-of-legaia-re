@@ -101,6 +101,16 @@ pub struct CastFxState {
     /// stepped down on each held pass of arm 4
     /// ([`legaia_engine_battle_vm::cast_module_camera::freed_crystal_corners`]).
     pub(crate) module_freed_turn: i32,
+    /// The monster poses PROT 0927's arm 0 saves (`0x801F9C9C` / `0x801F9CBC`)
+    /// and arms 27 / 28 restore: `(engine slot, position, facing)`.
+    pub(crate) module_saved_poses: Vec<(usize, [i16; 3], u16)>,
+    /// The `+0x42` the summon creature's render node carries while it draws
+    /// clipped (`0` = the floor row, `+0x42 = 1`): PROT 0927 raises `2`, so
+    /// its creature is clipped by object-effect row 1.
+    pub(crate) module_creature_clip_kind: u16,
+    /// PROT 0927's camera-shake word `0x801F9C90`: raised by its stager
+    /// arms 3 / 4, counted down by the tick's epilogue.
+    pub(crate) module_shake: i32,
     /// The phase-chain arm whose damage site has landed this pass through
     /// it: the band folds a chain body's hit on the tick its arm first runs
     /// (`World::run_cast_module_code`), so a settle wait after it sees the
@@ -321,6 +331,9 @@ impl CastFxState {
             module_flee: false,
             module_theeder: Default::default(),
             module_freed_turn: 0,
+            module_saved_poses: Vec::new(),
+            module_creature_clip_kind: 0,
+            module_shake: 0,
             module_hit_arm: None,
             module_settle_ticks: 0,
             module_nighto_outcome: None,
