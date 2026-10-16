@@ -23,7 +23,8 @@
 //! What a host still builds itself is what needs its own camera or VRAM
 //! residency ([`HostScreenPrims`]); everything the world decides alone -
 //! the fades, the pushes, the cinematic bars, the widgets, the Arts banner,
-//! the Cross Beam, the shop and pause fades - is read here.
+//! the Cross Beam, the Swordie split, the Deadly Rain, the shop and pause
+//! fades - is read here.
 
 use legaia_engine_core::menu_runtime::MenuRuntime;
 use legaia_engine_core::world::World;
@@ -201,6 +202,23 @@ pub fn compose_screen_prims(
         under.extend(legaia_render_kernels::cast_beam::cross_beam_prims(c));
     }
     under.extend(theeder);
+    // The cast modules' full-screen washes: PROT 0898's colour wash behind
+    // the scene and the armed subtractive wash, both in the farthest bucket.
+    under.extend(world.cast_wash_prims());
+    // PROT 0920's Deadly Rain streaks (additive, depth-sorted in retail).
+    under.extend(legaia_render_kernels::cast_rain::rain_line_prims(
+        world.module_rain_lines(),
+    ));
+    // PROT 0910's Swordie packets: the opaque split panels (entry `3`) and
+    // the slash streak over them (entry `2`), both under the HUD text.
+    if let Some(d) = world.swordie_draw() {
+        if let Some(c) = d.streak {
+            under.extend(legaia_render_kernels::cast_swordie::swordie_streak_prims(c));
+        }
+        if let Some(p) = d.split {
+            under.extend(legaia_render_kernels::cast_swordie::swordie_split_prims(&p));
+        }
+    }
     // The world's one live full-screen fade, split at the text layer by its
     // ordering-table id: the summon band's flashes (id `1`) under the HUD,
     // a field warp's fade (id `0`) over it.

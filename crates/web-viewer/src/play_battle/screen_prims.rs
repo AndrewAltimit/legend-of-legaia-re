@@ -88,7 +88,7 @@ impl LegaiaRuntime {
     /// both hosts.
     pub(crate) fn rebuild_screen_geom(&mut self) {
         use legaia_render_kernels::screen_prim::{
-            DrawRun, PSX_DISPLAY_H, PSX_DISPLAY_W, build_geometry,
+            DrawRun, PSX_DISPLAY_H, PSX_DISPLAY_W, build_geometry, split_backdrop,
         };
         let pause_wipe = self
             .scene_host
@@ -107,20 +107,35 @@ impl LegaiaRuntime {
         if count == 0 {
             self.battle_intro_geom = None;
             self.screen_over_run_start = 0;
+            self.screen_backdrop_run_end = 0;
             return;
         }
         let (w, h) = (PSX_DISPLAY_W as u32, PSX_DISPLAY_H as u32);
-        let mut geom = build_geometry(&under, w, h);
-        let top = build_geometry(&over, w, h);
+        // `under`'s backdrops lead the buffer as their own list: the page
+        // draws them before the 3D scene, as the native renderer does.
+        let (backdrop, under) = split_backdrop(&under);
+        let mut geom = build_geometry(&backdrop, w, h);
+        self.screen_backdrop_run_end = geom.runs.len() as u32;
+        let append =
+            |geom: &mut legaia_render_kernels::screen_prim::OverlayGeometry,
+             list: &[legaia_render_kernels::screen_prim::ScreenPrim]| {
+                if list.is_empty() {
+                    return;
+                }
+                let top = build_geometry(list, w, h);
+                let (vertex_base, index_base) =
+                    (geom.vertices.len() as u32, geom.indices.len() as u32);
+                geom.vertices.extend(top.vertices);
+                geom.indices
+                    .extend(top.indices.into_iter().map(|i| i + vertex_base));
+                geom.runs.extend(top.runs.into_iter().map(|r| DrawRun {
+                    index_start: r.index_start + index_base,
+                    ..r
+                }));
+            };
+        append(&mut geom, &under);
         self.screen_over_run_start = geom.runs.len() as u32;
-        let (vertex_base, index_base) = (geom.vertices.len() as u32, geom.indices.len() as u32);
-        geom.vertices.extend(top.vertices);
-        geom.indices
-            .extend(top.indices.into_iter().map(|i| i + vertex_base));
-        geom.runs.extend(top.runs.into_iter().map(|r| DrawRun {
-            index_start: r.index_start + index_base,
-            ..r
-        }));
+        append(&mut geom, &over);
         self.battle_intro_geom = Some((count as u32, geom));
     }
 
@@ -525,9 +540,21 @@ impl LegaiaRuntime {
             .unwrap_or_default()
     }
 
+    /// How many of [`Self::play_screen_prim_runs`]' runs - the first ones -
+    /// are the **backdrops** (`screen_prim::split_backdrop`): primitives at
+    /// the far plane, retail's farthest ordering-table bucket, which the page
+    /// draws after its clear and before the 3D scene so a blended scene
+    /// primitive lands over them. Runs `[n, over_run_start)` are the rest of
+    /// the under list.
+    pub fn play_screen_prim_backdrop_run_end(&self) -> u32 {
+        self.screen_backdrop_run_end
+    }
+
     /// How many of [`Self::play_screen_prim_runs`]' runs belong to the
-    /// **under** list: the page draws runs `[0, n)` after the 3D scene, its
-    /// text layer next, and runs `[n, ..)` - the `over` list - last. The
+    /// **under** list: the page draws its backdrops
+    /// ([`Self::play_screen_prim_backdrop_run_end`]) before the 3D scene, the
+    /// rest of runs `[0, n)` after it, its text layer next, and runs
+    /// `[n, ..)` - the `over` list - last. The
     /// split is `screen_layers::compose_screen_prims`' own, which follows
     /// retail's text bucket (`screen_prim::TEXT_OT_BUCKET`).
     pub fn play_screen_prim_over_run_start(&self) -> u32 {

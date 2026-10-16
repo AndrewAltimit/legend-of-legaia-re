@@ -251,6 +251,15 @@ fn enter_battle(w: &mut World) {
     panic!("no encounter triggered in 6000 field ticks");
 }
 
+/// One frame the way a headless driver runs it (`BootSession::tick`): the
+/// scene tick, then the world's frame tail, whose effect scene-graph step
+/// runs the cast module's parts - PROT 0909's two phase rendezvous are their
+/// op-`0x20` calls.
+fn frame(w: &mut World) {
+    let _ = w.tick();
+    let _ = w.step_world_frame_tail(None, None, |_| None);
+}
+
 fn press(w: &mut World, b: PadButton) {
     // The menu SM reads no pad while the prompt's glide is in flight
     // (`World::battle_command_pad_held`): wait it out, as a player does.
@@ -259,10 +268,10 @@ fn press(w: &mut World, b: PadButton) {
             break;
         }
         w.set_pad(0);
-        let _ = w.tick();
+        frame(w);
     }
     w.set_pad(InputState::mask_of([b]));
-    let _ = w.tick();
+    frame(w);
     w.set_pad(0);
     let _ = w.tick();
 }
@@ -274,7 +283,7 @@ fn wait_for_prompt(w: &mut World) -> bool {
             return true;
         }
         w.set_pad(0);
-        let _ = w.tick();
+        frame(w);
     }
     false
 }
@@ -296,6 +305,10 @@ fn refill(w: &mut World) {
     w.actors[ms].battle.max_hp = 9000;
     w.actors[ms].battle.set_hp_synced(9000);
 }
+
+/// Frames one cast's band is given to fold. The module directors hold each
+/// arm as long as retail does: PROT 0906 (Gizam) runs past a thousand.
+const BAND_FRAMES: usize = 0x1000;
 
 #[test]
 fn a_live_cast_stages_its_module_records() {
@@ -337,7 +350,7 @@ fn a_live_cast_stages_its_module_records() {
 
     let mut cast = 0usize;
     // (spell id, parts on the first staged frame, parts seated over the band)
-    let mut staged: Vec<(u8, usize, usize)> = Vec::new();
+    let mut staged: Vec<(u8, usize, usize, std::collections::BTreeSet<u32>)> = Vec::new();
     for _ in 0..80 {
         if staged.len() == SERU_IDS.len() {
             break;
@@ -419,7 +432,15 @@ fn a_live_cast_stages_its_module_records() {
         let mut seen: Option<usize> = None;
         let mut seated = 0usize;
         let mut prev = 0usize;
-        for _ in 0..0x400 {
+        // Every record a part was seated from over the band, by its tag.
+        let mut tags = std::collections::BTreeSet::new();
+        // PROT 0908's slam record (seated on the fold's own pass) makes its
+        // stager calls on the module's following ticks, after the outcome has
+        // folded; a module whose parts call their stager is watched a few
+        // frames past the fold.
+        let stager_tail = seru_module_prot(picked).is_some_and(|e| matches!(e, 907 | 908));
+        let mut tail = if stager_tail { 8 } else { 0 };
+        for _ in 0..BAND_FRAMES {
             let now = w.casting.active_summon.as_ref().map(|s| s.parts.len());
             if seen.is_none() {
                 seen = now;
@@ -430,12 +451,18 @@ fn a_live_cast_stages_its_module_records() {
             }
             seated += len - prev;
             prev = len;
+            if let Some(scene) = w.casting.active_summon.as_ref() {
+                tags.extend(scene.parts.iter().filter_map(|p| p.tag));
+            }
             if w.casting.pending_cast.is_none() {
-                break;
+                if tail == 0 {
+                    break;
+                }
+                tail -= 1;
             }
             let _ = w.take_pending_summon_spawn();
             w.set_pad(0);
-            let _ = w.tick();
+            frame(&mut w);
         }
         assert!(w.casting.pending_cast.is_none(), "cast {cast} never folded");
         // The id the menu actually committed, not the row we aimed at.
@@ -443,7 +470,7 @@ fn a_live_cast_stages_its_module_records() {
         assert_eq!(id, SERU_IDS[row], "row {row} is this cast's spell");
         let parts = seen
             .unwrap_or_else(|| panic!("cast {cast} (spell {id:#04x}) staged no cast-module scene"));
-        staged.push((id, parts, seated));
+        staged.push((id, parts, seated, tags));
         // Clear the scene so the next cast's staging is its own.
         w.casting.active_summon = None;
     }
@@ -453,7 +480,7 @@ fn a_live_cast_stages_its_module_records() {
         SERU_IDS.len(),
         "every player Seru spell cast and staged"
     );
-    for (id, parts, seated) in &staged {
+    for (id, parts, seated, tags) in &staged {
         let entry = seru_module_prot(*id).unwrap();
         let module = pool.module(entry).unwrap();
         let stages_spawns = cmc::module_profile(entry).is_some_and(|p| p.stages_spawns);
@@ -477,16 +504,53 @@ fn a_live_cast_stages_its_module_records() {
         // PROT 0905 makes four calls in arm 0, three in arm 4, two in arm 5,
         // two in arm 8 and five in arm 9 (`vera_direct`); its first staged
         // frame is arm 0's four. Its spawn stager `0x801F8078` - the move-VM
-        // op-`0x20` hook a record calls - seats `0x801F8568` eight at a time;
-        // no host runs that hook, so per-arm seating stages that record
-        // nowhere.
-        let (arms, hook_only): (Vec<&[cmc::ModuleSpawn]>, &[u32]) = match entry {
+        // op-`0x20` hook arm 5's first glow calls - seats `0x801F8568` eight
+        // at a time (`run_part_stager_calls`).
+        //
+        // PROT 0910, 0911 and 0913 report their arms' calls the same way
+        // (`swordie_direct`, `orb_direct`, `nova_direct`) and their stagers
+        // run off their parts' op-`0x20` calls too.
+        //
+        // PROT 0907's arms call `FUN_80021B04` (`nighto_direct`): two in arm
+        // 4, one each in arms 5, 10 and 11. Its stager `0x801F7FA8` seats the
+        // eight rays `0x801F8314` (arm 0) and the rings `0x801F8370`,
+        // `0x801F8414`, `0x801F84B8` (arms 1..3), each off the part that
+        // calls it (`run_part_stager_calls`).
+        //
+        // PROT 0908's arms call `FUN_80021B04` (`zenoir_direct`): seven in
+        // arm 4, one in arm 6 and seven in arm 11. Its stager `0x801F8310`
+        // seats `0x801F869C` (arm 0), `0x801F8880` and eight `0x801F8828`
+        // (arm 1) and two `0x801F8ABC` (arm 2), off the calling parts too.
+        // The static scan also recovers `0x801F90B0`, the one spawn of
+        // `0x801F8EAC`: PROT 0904's stager, inherited residue in this image.
+        //
+        // PROT 0909 makes two calls in arm 2 and one in arm 7
+        // (`viguro_direct`). Its stager `0x801F7AF4` is the one hook the band
+        // runs (`run_viguro_stager_calls`), but its arms 2, 3, 4 and 6 - each
+        // seating one record where the calling part stands - are called by
+        // no part this band seats. Arm 11's three spawns on the camera's own
+        // focus (`0x801F7FE0`, `0x801F8094`, `0x801F8158`) are not ported.
+        //
+        // PROT 0906 makes three calls in arm 4, one in arm 7 and two in arm
+        // 12 (`gizam_direct`), and its stager `0x801F7740` runs off its
+        // parts' op-`0x20` calls (`run_part_stager_calls`): arm 7's
+        // `0x801F7EBC` calls stager arm 5 twelve times and arm 6 once,
+        // arm 12's `0x801F7C44` calls arm 3 forty-eight times (eight passes
+        // over the six bubble points), each seating one record.
+        //
+        // PROT 0912's body passes seat sixteen records in arm 2, fifteen in
+        // arm 4, eight in arm 12 and ten in arm 14 (`freed_arm_spawns`); its
+        // stager `0x801F835C` seats eight shards for arm 4's `0x801F8960`
+        // (stager arm 3) and one record each for the five passes of arm
+        // 12's `0x801F8D50` over stager arms 4 and 5.
+        let (arms, hook_only, unseated): (Vec<&[cmc::ModuleSpawn]>, &[u32], &[u32]) = match entry {
             903 => (
                 vec![
                     &cmc::GIMARD_SEAT_SPAWNS,
                     &cmc::GIMARD_TUNNEL_SPAWNS,
                     &cmc::GIMARD_BREATH_SPAWNS,
                 ],
+                &[],
                 &[],
             ),
             905 => (
@@ -498,19 +562,148 @@ fn a_live_cast_stages_its_module_records() {
                     &cmc::VERA_RESTORE_SPAWNS,
                 ],
                 &[0x801F_8568],
+                &[],
+            ),
+            907 => (
+                vec![
+                    &cmc::NIGHTO_OPEN_SPAWNS,
+                    &cmc::NIGHTO_CRYSTAL_SPAWNS,
+                    &cmc::NIGHTO_SONG_SPAWNS,
+                    &cmc::NIGHTO_RING_SPAWNS,
+                ],
+                &[0x801F_8314, 0x801F_8370, 0x801F_8414, 0x801F_84B8],
+                &[],
+            ),
+            908 => (
+                vec![
+                    &cmc::ZENOIR_SEAT_SPAWNS,
+                    &cmc::ZENOIR_STRIKE_SPAWNS,
+                    &cmc::ZENOIR_SLAM_SPAWNS,
+                ],
+                &[0x801F_869C, 0x801F_8828, 0x801F_8880, 0x801F_8ABC],
+                &[0x801F_90B0],
+            ),
+            906 => (
+                vec![
+                    &cmc::GIZAM_POOL_SPAWNS,
+                    &cmc::GIZAM_SPRAY_SPAWNS,
+                    &cmc::GIZAM_BUBBLE_SPAWNS,
+                ],
+                &[0x801F_7C8C, 0x801F_7E68, 0x801F_7F44],
+                // Stager arm 4's record: no part this band seats calls arm 4.
+                &[0x801F_7E1C],
+            ),
+            912 => (
+                vec![
+                    &cmc::FREED_CRYSTAL_SPAWNS,
+                    &cmc::FREED_BURST_SPAWNS,
+                    &cmc::FREED_FROST_SPAWNS,
+                    &cmc::FREED_FIELD_SPAWNS,
+                ],
+                &[0x801F_88FC, 0x801F_8CF4, 0x801F_8DC8],
+                &[],
+            ),
+            909 => (
+                vec![&cmc::VIGURO_OPEN_SPAWNS, &cmc::VIGURO_CREATURE_SPAWNS],
+                &[0x801F_81F4, 0x801F_8288, 0x801F_82CC, 0x801F_8310],
+                &[0x801F_7FE0, 0x801F_8094, 0x801F_8158],
+            ),
+            // `0x801F8D0C` is stager arm 4's (called by arm 8's glow);
+            // `0x801F8C7C` is the slash routine `FUN_801F81DC`'s hit spark
+            // (`0x801F883C`), not reported; `0x801F90B0` is the one spawn of
+            // `0x801F8EAC`, PROT 0904's stager, residue in this image.
+            910 => (
+                vec![&cmc::SWORDIE_RING_SPAWNS, &cmc::SWORDIE_GLOW_SPAWNS],
+                &[0x801F_8A9C, 0x801F_8AF0, 0x801F_8BEC, 0x801F_8C34],
+                &[0x801F_8C7C, 0x801F_8D0C, 0x801F_90B0],
+            ),
+            // `0x801F8190` is the opening's star swarm (arm 2's rand-spread
+            // `FUN_80050ED4` loop and arm 3's mover): seated by the engine's
+            // own port of that loop beside arm 2's calls, not reported by
+            // the director.
+            911 => (
+                vec![
+                    &cmc::ORB_FLASH_SPAWNS,
+                    &cmc::ORB_RAY_SPAWNS,
+                    &cmc::ORB_HEAL_SPAWNS,
+                ],
+                &[0x801F_832C, 0x801F_8498],
+                &[0x801F_8190],
+            ),
+            913 => (
+                vec![
+                    &cmc::NOVA_VORTEX_SPAWNS,
+                    &cmc::NOVA_ARM8_SPAWNS,
+                    &cmc::NOVA_CLOUD_SPAWNS,
+                    &cmc::NOVA_WHIRLWIND_SPAWNS,
+                    &cmc::NOVA_LIFT_SPAWNS,
+                    &cmc::NOVA_LANDING_SPAWNS,
+                ],
+                &[0x801F_8850, 0x801F_8914, 0x801F_8960],
+                // The stager's arms 3..5 (`0x801F8E88` / `0x801F8FCC` /
+                // `0x801F9088`) are called after the fold.
+                &[0x801F_8E88, 0x801F_8FCC, 0x801F_9088],
             ),
             _ => panic!("PROT {entry} seats per arm but the test names no arm list"),
         };
+        // PROT 0911's first staged frame also holds arm 2's sixteen stars.
+        let swarm = if entry == 911 { 16 } else { 0 };
         assert_eq!(
             *parts,
-            arms[0].len(),
+            arms[0].len() + swarm,
             "spell {id:#04x}: PROT {entry}'s first staged frame is its first arm's calls"
         );
         let calls: usize = arms.iter().map(|a| a.len()).sum();
-        assert_eq!(
-            *seated, calls,
-            "spell {id:#04x}: PROT {entry} seats every arm's spawn call over the band"
-        );
+        // PROT 0907's and 0908's parts call their stager (op `0x20`), whose
+        // arms seat more records off the calling part; every one of those
+        // records is seated over the band, on top of the arms' own calls.
+        let stager_run = matches!(entry, 905 | 906 | 907 | 908 | 910 | 912);
+        // PROT 0911 and 0913 fold on their hit arms (9 / `0x13`), and a
+        // body-paced director hands a pass's calls over on the next arm's
+        // first tick, so this window closes before the later arms seat: it
+        // holds at least the first arm's calls.
+        if matches!(entry, 911 | 913) {
+            assert!(
+                *seated >= arms[0].len() + swarm,
+                "spell {id:#04x}: PROT {entry} seats at least its first arm's calls ({seated})"
+            );
+        } else if stager_run {
+            assert!(
+                *seated > calls,
+                "spell {id:#04x}: PROT {entry} seats its arms' {calls} calls and its stager's"
+            );
+            let missing: Vec<String> = hook_only
+                .iter()
+                .filter(|va| !tags.contains(va))
+                .map(|va| format!("{va:#010x}"))
+                .collect();
+            assert!(
+                missing.is_empty(),
+                "spell {id:#04x}: PROT {entry}'s stager seated none of {missing:?}"
+            );
+            // PROT 0906 and 0912's stager seatings are counted exactly: 0906's
+            // arm-7 timer calls stager arm 5 twelve times and arm 6 once and
+            // its arm-12 timer calls arm 3 forty-eight times; 0912's
+            // `0x801F8960` calls arm 3 once (eight shards) and `0x801F8D50`
+            // calls arms 4 and 5 five times each.
+            let hooked = match entry {
+                906 => Some(13 + 48),
+                912 => Some(8 + 10),
+                _ => None,
+            };
+            if let Some(h) = hooked {
+                assert_eq!(
+                    *seated,
+                    calls + h,
+                    "spell {id:#04x}: PROT {entry} seats its arms' calls and its stager's"
+                );
+            }
+        } else {
+            assert_eq!(
+                *seated, calls,
+                "spell {id:#04x}: PROT {entry} seats every arm's spawn call over the band"
+            );
+        }
         // Per-arm seating drops none of the records the static spawn scan
         // recovers: each one is some arm's call.
         let called: Vec<u32> = arms
@@ -521,14 +714,20 @@ fn a_live_cast_stages_its_module_records() {
                 cmc::SpawnRecord::BattleProto(_) => None,
             })
             .collect();
-        for p in &module.parts {
-            let va = legaia_overlay_images::summon_overlay::SUMMON_OVERLAY_LINK_BASE
-                + p.record_off as u32;
-            assert!(
-                called.contains(&va) || hook_only.contains(&va),
-                "PROT {entry} record {va:#010x} is staged by one of its arms"
-            );
-        }
+        let unstaged: Vec<String> = module
+            .parts
+            .iter()
+            .map(|p| {
+                legaia_overlay_images::summon_overlay::SUMMON_OVERLAY_LINK_BASE
+                    + p.record_off as u32
+            })
+            .filter(|va| !called.contains(va) && !hook_only.contains(va) && !unseated.contains(va))
+            .map(|va| format!("{va:#010x}"))
+            .collect();
+        assert!(
+            unstaged.is_empty(),
+            "PROT {entry} records {unstaged:?} are staged by none of its arms"
+        );
         println!(
             "[ok] spell {id:#04x} -> PROT {entry}: {parts} records on the first arm, \
              {seated} seated over the band (static set {})",

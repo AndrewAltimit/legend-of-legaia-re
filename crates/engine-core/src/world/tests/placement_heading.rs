@@ -66,8 +66,8 @@ fn a_ramped_heading_write_tweens_from_the_live_heading() {
 
 /// Op `43 07` on a placement (`rugi`'s `C3 <id> 07 01 07 ..` shape, here with
 /// the shrink flag and an 8-frame ramp): the row is written, `+0x7A` ramps
-/// `0 -> 0x1000`, and the draw pose shrinks with it; `43 08` puts the body
-/// back.
+/// `0 -> 0x1000`, and the NPC's draw becomes a shatter over the row with it
+/// (the pose itself is untouched); `43 08` puts the body back.
 #[test]
 fn op_43_07_ramps_the_face_deformation_into_the_draw_pose() {
     let mut w = world_with_placement();
@@ -94,8 +94,12 @@ fn op_43_07_ramps_the_face_deformation_into_the_draw_pose() {
     }
     assert_eq!(w.npcs.faces[&4], (1, 0x800));
     let pose = w.field_npc_draw_pose(4, (0, 0)).expect("drawn");
-    assert!((pose.scale - 0.5).abs() < 1e-6, "half way: half size");
+    assert_eq!(pose.scale, 1.0, "the pose is not folded");
+    let s = w.field_npc_shatter(4).expect("half way: shattering");
+    assert_eq!(s.word, 0x0004_0800, "shrink flag over +0x7A");
+    assert_eq!(s.row.off, [0, -32, 64]);
     let mut host = FieldHostImpl { world: &mut w };
     field_step_routed(&mut host, &mut ctx, &[0x43, 0x08], 0);
     assert_eq!(w.npcs.faces[&4], (0, 0));
+    assert!(w.field_npc_shatter(4).is_none(), "43 08: whole again");
 }

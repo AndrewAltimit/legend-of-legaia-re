@@ -139,6 +139,10 @@ pub struct CastModuleRecords {
     pub spawn_sites: usize,
     /// The recovered records, sorted by file offset.
     pub parts: Vec<SummonPart>,
+    /// The tick arms' calls into the shared presentation helpers (fades,
+    /// the armed and colour washes, the streak ribbon, CLUT copies), placed
+    /// on the arm that makes each ([`crate::cast_presentation`]).
+    pub presentation: Arc<crate::cast_presentation::CastPresentation>,
 }
 
 impl CastModuleRecords {
@@ -148,11 +152,13 @@ impl CastModuleRecords {
     /// the shared link base.
     pub fn parse(prot_entry: u32, bytes: &[u8]) -> Self {
         let overlay = crate::summon_overlay::parse(bytes, SUMMON_OVERLAY_LINK_BASE);
+        let own_end = crate::slot_b_module::content_end(bytes, SUMMON_OVERLAY_LINK_BASE);
         Self {
             prot_entry,
             bytes: Arc::from(bytes),
             spawn_sites: overlay.spawn_sites,
             parts: overlay.parts,
+            presentation: Arc::new(crate::cast_presentation::decode(bytes, own_end)),
         }
     }
 

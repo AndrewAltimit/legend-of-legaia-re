@@ -135,7 +135,7 @@ One line per handled state; the full per-state behaviour is under [State detail]
 | `0x32` | Summon - invoke | Waits for the drive, computes the streaming slot, stages clip `9` | `0x33` |
 | `0x33` | Summon - fade in | Close-up camera; on the clip's first effect record, white flash-in and cue `0x63` | `0x34` |
 | `0x34` | Summon - actor freeze | Hides party and living monsters, seats the creature, starts the flash-out | `0x35` |
-| `0x35` | Summon - sustain | Timer plus audio duck | `0x36` |
+| `0x35` | Summon - sustain | Band word drain, audio duck, stager tick; holds while the stager keeps the word non-negative | `0x36` |
 | `0x36` | Summon - return | Holds while the summon stager is busy, un-hides actors, spell level-up check | `0x37` |
 | `0x37` | Summon - verify | Waits for every actor to settle, writes the fade sentinel | `0x38` |
 | `0x38` | Summon - done | Kills the fade primitive | `0x50` |
@@ -380,9 +380,11 @@ Gated on `ctx[+0x249] == 0`. A cast camera left pitched past `400` (`_DAT_8007B7
 
 #### State `0x35` - Summon - sustain
 
-Decrements `ctx[+0x6D8]`; ducks the live **audio level** `_DAT_8007B910` down by `DAT_1F800393` per frame, clamped at `(_DAT_8008457C * 0x4B) / 100` (75% of the configured level) for spells < 0x99 or 50% for higher. If `+0x6D8 < 0` and `ctx[+0x276] != 0`, force-clamp `+0x6D8 = 1`.
+Decrements `ctx[+0x6D8]` by the frame step (`0x801E4BCC..0x801E4BDC`; `s7 = ctx + 0x6D6`, set at `0x801E29B4`); ducks the live **audio level** `_DAT_8007B910` down by `DAT_1F800393` per frame, clamped at `(_DAT_8008457C * 0x4B) / 100` (75% of the configured level) for spells < 0x99 or 50% for higher. If `+0x6D8 < 0` and `ctx[+0x276] != 0`, force-clamp `+0x6D8 = 1`. Then it calls the stager `FUN_801F1ED4` (`0x801E4C7C`) and **re-reads** `+0x6D8` after the call (`lh v0,0x2(s7); bgez` at `0x801E4C84`).
 
-**Next:** `0x36` when timer expires.
+**Next:** `0x36` once the word reads negative after the stager call; the exit zeroes it (`sh zero,0x2(s7)`, `0x801E4C9C`).
+
+The re-read is what holds the band. PROT 0904 (Theeder), 0907 (Nighto) and 0908 (Zenoir) keep their arm countdown in `ctx[+0x6D8]` itself, so each re-seed from inside the stager call keeps the SM in `0x35`, and the SM's step drain adds to the module's own while it does. Retail's casts leave `0x35` on Theeder's arm 7, Nighto's arm 9 and Zenoir's arm 11, not after the `0x78` frames. Port: `summon_sustain` with the host seam `summon_band_word_in` / `_out`; `World` shares the word with the director's countdown for those three modules (`cast_band/code_run/band_word.rs`).
 
 #### State `0x36` - Summon - return-from-fade
 
@@ -907,8 +909,9 @@ behind the caster. The walk speed is the engine's. The per-summon effect parts (
 staged; the frame counts are the engine's, chosen to land the strike inside
 the band's `0x78`-frame sustain. The two flashes ride `World::presentation.fade`
 (`FadeState`, which honours the templates' start delay and `-1` hold) and both
-hosts composite it through `fade_prim`; the band's hide (`RENDER_FLAG_HIDDEN`)
-is honoured by both hosts' draw gates.
+hosts composite it through `fade_prim`; the band's hide is honoured by both
+hosts' draw gates (`World::battle_body_hidden`: `+0x21C = 0xFF` over a zero
+`+0x04`).
 
 The retail player-summon frames carry **no** spell-name label (consistent
 with the `0x4C` block being monster-only at `0x28`), and the party readout
@@ -1108,8 +1111,12 @@ So the summon sweep's `+0x4 = 0` / `+0x21C = 0xFF` pair at `0x801E4B50` is a
 32 frames. The `+0x8 = 0x81000000` write beside it fires precisely because
 `+0x4` is still black at that moment.
 
-**Port.** The engine carries `+0x21C` and leaves `+0x4` at zero, so the target-
-group walk reads the twin. The two are **not** interchangeable - an empty seat
+**Port.** The engine carries `+0x21C` and clears its `render_color` with it,
+but reads a zero word as neutral once the flag is down, so the hide releases
+at once rather than tweening back; the draw gate is the pair
+(`World::battle_body_hidden`), since a module that raises `0xFF` over a lit
+word keeps the body drawn (PROT 0912's re-forming creature and frozen
+monsters). The target-group walk reads the `+0x21C` twin. The two are **not** interchangeable - an empty seat
 reads `+0x21C == 0` where retail rejects it on `+0x4`, and a monster that dies
 mid-fade keeps `0xFF` forever because the `0x36` clear is gated on liveness.
 The cast's re-face therefore rejects an empty seat on its own test (a monster
@@ -1463,9 +1470,14 @@ The two arms carry per-code behaviour worth pinning:
   `FUN_801DF570` before the rotation (`0x801DEDC0..0x801DEDD0`), clamping it
   into `[3d/4, d]` of the attacker-to-target-seat separation `d` (engine:
   `action_effect_script::step_effect_script`); `0xFF` terminates;
-  codes `0x81..=0x83` follow the digit spawn with a secondary part from
-  prototype `0x801F5EB0` seated at the actor's `+0x3C..+0x43` position plus
-  a screen-shake global write when the `+0x45C8` context word is clear.
+  codes `0x81..=0x83` follow the pool spawn with a secondary part: the
+  floor ring `0x801F5EB0` through `FUN_80050ED4`, on the actor's body pair
+  `+0x3C..+0x43` with the height zeroed, at scale `node[+0x58] << 1`
+  (`0x801DEEC0..0x801DEF08`), then a screen-shake global write when the
+  word `0x800845C8` is clear. Engine: `action_effect_script::seats_floor_part`
+  and `World::seat_effect_floor_part`; the shake is not carried. A seated
+  summon creature runs the walk too, on the clip `FUN_801F19EC` hung on its
+  node without a commit (PROT 0913's landing ring).
 
 #### `0x801F6418` is a CLUT-row map, not an SFX map
 

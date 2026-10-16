@@ -86,8 +86,17 @@ impl World {
                     speed: legaia_engine_battle_vm::battle_anim_rate::RATE_NORMAL,
                 };
                 let mut slashes = self.casting.module_swordie;
+                let phase_in = ctx.phase;
                 let (step, hits) =
                     seru::swordie_tick(ctx, seats, r_summon, r_victim, &mut slashes, clock, |_| 0);
+                self.swordie_blades(
+                    phase_in,
+                    ctx.phase,
+                    &mut slashes,
+                    clock.speed,
+                    summon_slot,
+                    victim_slot,
+                );
                 self.casting.module_swordie = slashes;
                 (step, lift(&hits))
             }
@@ -105,23 +114,72 @@ impl World {
                 let cleanse =
                     self.cure_selector(caster_slot, spell_id, seru::ORB_CLEANSE_MIN_LEVEL);
                 let mut settle = self.casting.module_settle_countdown;
-                let (step, _healed) =
-                    seru::orb_tick(ctx, seats, r_summon, 0, cleanse, &mut settle, |s| {
-                        maxes.get(s as usize).copied().unwrap_or(0)
+                // The arms move the creature's own seat (`+0x34..+0x38`):
+                // arm 3 lifts it, arm 4 drops it to the ground, arm 5 steps
+                // it forward and up.
+                let mut pos = self
+                    .actors
+                    .get(usize::from(summon_slot))
+                    .filter(|a| a.active)
+                    .map(|a| seru::OrbSeatPos {
+                        x: a.move_state.world_x,
+                        y: a.move_state.world_y,
+                        z: a.move_state.world_z,
+                        facing: a.battle.facing_angle & 0xFFF,
                     });
+                let mut scratch = pos.unwrap_or_default();
+                let phase_in = ctx.phase;
+                let (step, _healed) = seru::orb_tick(
+                    ctx,
+                    seats,
+                    r_summon,
+                    0,
+                    cleanse,
+                    &mut settle,
+                    &mut scratch,
+                    |s| maxes.get(s as usize).copied().unwrap_or(0),
+                );
                 self.casting.module_settle_countdown = settle;
+                // Arm 5's pass steps and lifts the creature in the pass that
+                // cuts to it, and the cut lands on the next tick here.
+                if pos.is_some_and(|b| b != scratch)
+                    && self.orb_defer_seat(phase_in, ctx.phase, &scratch)
+                {
+                    return (step, Vec::new());
+                }
+                if let Some(before) = pos.as_mut()
+                    && *before != scratch
+                    && let Some(a) = self.actors.get_mut(usize::from(summon_slot))
+                {
+                    a.move_state.world_x = scratch.x;
+                    a.move_state.world_y = scratch.y;
+                    a.move_state.world_z = scratch.z;
+                }
                 (step, Vec::new())
             }
             912 => {
                 let mut settle = self.casting.module_settle_countdown;
-                let (step, hits) = seru::freed_tick(ctx, seats, r_summon, &mut settle, |_| 0);
+                // Arm 0x0B waits on the creature's clip cursor (its anim
+                // node's `+0x68`).
+                let cursor = self
+                    .actors
+                    .get(usize::from(summon_slot))
+                    .filter(|a| a.active)
+                    .and_then(|a| a.battle_animation.as_ref())
+                    .map(|p| p.cursor_sixteenths());
+                let phase_in = ctx.phase;
+                let (step, hits) =
+                    seru::freed_tick(ctx, seats, r_summon, &mut settle, cursor, |_| 0);
                 self.casting.module_settle_countdown = settle;
+                self.freed_body_effects(phase_in, ctx.phase, caster_slot);
                 (step, lift(&hits))
             }
             _ => {
                 let mut settle = self.casting.module_settle_countdown;
+                let phase_in = ctx.phase;
                 let (step, hit) = seru::nova_tick(ctx, seats, r_summon, r_victim, 0, &mut settle);
                 self.casting.module_settle_countdown = settle;
+                self.nova_victim_motion(phase_in, ctx.phase, settle, victim_slot);
                 let hits: Vec<SweepHit> = hit.into_iter().collect();
                 (step, lift(&hits))
             }

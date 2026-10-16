@@ -22,10 +22,10 @@ impl World {
 
     /// Lift one actor slot into the state view the slot-B kernels take.
     ///
-    /// The engine carries every field these routines touch except two: the
-    /// `+0x0C` root-speed word and the `+0x1DC` restage counter, which live
-    /// in the run's own scratch because the engine's `flag_bits` byte at that
-    /// offset is a flag set, not a counter (`docs/subsystems/battle-action.md`
+    /// The engine carries every field these routines touch except the
+    /// `+0x1DC` restage counter, which lives in the run's own scratch because
+    /// the engine's `flag_bits` byte at that offset is a flag set, not a
+    /// counter (`docs/subsystems/battle-action.md`
     /// and `docs/subsystems/cast-module.md` read `+0x1DC` differently, and the
     /// bytes here only ever increment it).
     pub(in crate::world::battle::cast_band) fn cast_actor_state(
@@ -39,8 +39,24 @@ impl World {
                 ..Default::default()
             };
         };
+        // The reaction slots `+0x1EF..+0x1F2`, as the monster init builds them
+        // off the entry tags (`World::battle_reaction_map`, the party's fixed
+        // map on a party seat); the action bytes stand in for a seat with no
+        // clips.
+        let param = |off: usize| a.battle.params.get(off - 0x1DF).copied().unwrap_or(0);
+        let map = self.battle_reaction_map(slot as usize).unwrap_or([
+            param(0x1EF),
+            param(0x1F0),
+            param(0x1F1),
+            param(0x1F2),
+            0,
+        ]);
         CastActorState {
-            root_speed: 0,
+            // `+0x0C` is the tint blend the tint pass `FUN_8004A908` weights
+            // the colour word by (`render_blend`): a module's `0x1000` there
+            // (Freed's arms 7 and `0x10`, every Seru hit) pushes the body
+            // fully onto its `+0x04` lanes.
+            root_speed: a.battle.render_blend as i32,
             hp_bar_delta: a.battle.hp_bar_pending,
             hp: a.battle.hp,
             flags: a.battle.field_flags,
@@ -50,7 +66,7 @@ impl World {
             target_code: a.battle.active_target,
             // `+0x1F1` sits inside the per-action parameter stream that starts
             // at `+0x1DF`.
-            knockdown_anim: a.battle.params.get(0x1F1 - 0x1DF).copied().unwrap_or(0),
+            knockdown_anim: map[2],
             render_flag: a.battle.render_flag,
             // The three mirrors the band's hit arms stamp beside the HP write
             // all have a home on the battle actor already, so they are seeded
@@ -99,10 +115,13 @@ impl World {
             init_key: a.battle.init_key,
             action_category: a.battle.action_category,
             queued_action: a.battle.params.first().copied().unwrap_or(0),
-            reaction_alt: a.battle.params.get(0x1EF - 0x1DF).copied().unwrap_or(0),
-            reaction_alt2: a.battle.params.get(0x1F0 - 0x1DF).copied().unwrap_or(0),
-            reaction_gate: a.battle.params.get(0x1F2 - 0x1DF).copied().unwrap_or(0),
+            reaction_alt: map[0],
+            reaction_alt2: map[1],
+            reaction_gate: map[3],
             combo_total: a.battle.damage_accum,
+            shatter: a.battle.shatter,
+            loop_count: a.battle.hit_count_bound,
+            loop_timer: a.battle_animation.as_ref().map_or(0, |p| p.loop_timer()),
             hits_pending: a.battle_staged_anim.is_some()
                 && a.battle_animation
                     .as_ref()
@@ -193,16 +212,43 @@ impl World {
         st: &legaia_engine_battle_vm::cast_module_ticks::CastActorState,
     ) {
         use legaia_engine_battle_vm::battle_anim_rate::AnimRate;
+        let creature = self.casting.summon_actor_slot == Some(slot);
+        let reaction_map = self.battle_reaction_map(slot as usize);
         let Some(a) = self.actors.get_mut(slot as usize) else {
             return;
         };
+        // The summon creature's `+0x1DC` bump (read in as `0`): bit 0 is the
+        // stage bit that commits its `+0x1DA` at once rather than at the
+        // looping clip's natural end (`World::summon_seat_waits_for_cycle`).
+        if creature && st.restage & 1 != 0 {
+            a.battle
+                .flag_bits
+                .set(legaia_engine_battle_vm::battle_action::ActorFlags::WINDUP_DONE);
+        }
         a.battle.hp_bar_pending = st.hp_bar_delta;
         a.battle.hp = st.hp;
         a.battle.field_flags = st.flags;
-        a.battle.queued_anim = st.staged_anim;
+        // A reaction a module stages on a combatant with the commit bit
+        // (`+0x1DC |= 1`) - one of its `+0x1EF..+0x1F2` entries - plays at
+        // once on the reaction channel, the engine's seat of retail's
+        // `FUN_8004AD80` for an entry a hit staged
+        // (`World::commit_battle_reaction_entry`): its tag ladder, its effect
+        // script (the hit spark) and the death arm at its natural end. A
+        // caster's own clip stays on the action channel.
+        let reaction = (!creature
+            && st.restage & 1 != 0
+            && st.staged_anim != 0
+            && reaction_map.is_some_and(|m| m[..4].contains(&st.staged_anim)))
+        .then_some(st.staged_anim);
+        if reaction.is_none() {
+            a.battle.queued_anim = st.staged_anim;
+        }
         a.battle.active_target = st.target_code;
         a.battle.render_flag = st.render_flag;
         a.battle.render_color = st.present_04;
+        if st.root_speed != a.battle.render_blend as i32 {
+            a.battle.render_blend = st.root_speed as u32;
+        }
         a.battle.impact_state = st.render_21f;
         a.battle.capture_state = st.render_225;
         a.battle.anim_rate = AnimRate(st.anim_rate);
@@ -218,6 +264,17 @@ impl World {
         a.battle.spirit_gauge = st.spirit_gauge;
         a.battle.action_category = st.action_category;
         a.battle.damage_accum = st.combo_total;
+        a.battle.shatter = st.shatter;
+        // `+0x21B` / `+0x176`: a module's stores land on the actor's counter
+        // and on the playing clip's hold budget. The budget is written only
+        // when the module moved it, so the view's whole-unit rounding never
+        // eats a park's fractional overshoot.
+        a.battle.hit_count_bound = st.loop_count;
+        if let Some(p) = a.battle_animation.as_mut()
+            && p.loop_timer() != st.loop_timer
+        {
+            p.set_loop_timer(st.loop_timer);
+        }
         // ...and back into the mirrors the rest of the engine reads, so a
         // five-stat debuff is visible to turn order and the accuracy seed
         // rather than only to the next module tick.
@@ -231,6 +288,9 @@ impl World {
             && s.is_some()
         {
             *s = Some((st.udf, st.ldf));
+        }
+        if let Some(entry) = reaction {
+            self.commit_battle_reaction_entry(slot as usize, entry);
         }
     }
 

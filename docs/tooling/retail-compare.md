@@ -1342,6 +1342,7 @@ vsync, so each kind of capture adds the clock that places it inside:
 | PROT 0903 countdown arms (`1..=10`) | module countdown word `0x801F7960`, draining `scalar` a vsync (`ModuleCamState::countdown`) | `c<count>` |
 | Done band `0x51` / `0x52` | hold countdown `ctx[+0x6D8]` (the pad-driven plan's `DoneHold`): `0x3C` frames, or `0x96` behind a magic level-up banner | `d<timer>` |
 | `0x35` / `0x36` under a ported pacing director | module phase byte `ctx[+0x279]` (`PhaseGate::module_phase`) | `m<phase>` |
+| On a module's stream-poll arm (`cast_module_camera::stream_poll_arm`: PROT 0910 / 0913 arm 2) | none: the engine's tick on the arm is the frame (`PhaseGate::stream_wait`) | `m<phase>,s` |
 
 Notes on the rows:
 
@@ -1359,6 +1360,12 @@ Notes on the rows:
   reads `8 * (frames since the commit + 1)`; counting frames instead is one
   vsync late, which on a capture taken on the band's last `0x33` frame is a gate
   never met.
+- **Stream poll.** The arm holds on `FUN_8003F2B8(1)` for as long as the drive
+  takes the creature stream's read - four vsyncs in one PCSX-Redux cast, more
+  than twenty in `nova_summon_mid_cast`'s Mednafen state - while the engine's
+  stream is resident and the arm passes on its first tick. The flash ages on
+  through the wait, so its age would place the frame past the arm: on the
+  following arm's spawns and camera instead of the wait's frame.
 - **Walk arm.** The phase byte only names the arm's entry. An engine walk that
   arrives sooner leaves the arm first, and its exit is then the frame taken.
 - **Countdown arms.** `shiny_refactor_gimard_plus35` is arm 9 at countdown
@@ -1428,6 +1435,11 @@ prompt back some two thousand vsync ticks longer than an ordinary opening (its
 countdowns drain by the frame step a pass, so one a tick), and the headless
 side's opening window runs long enough to wait it out. A fight with no MAN row
 to name is not imaged; its reason is in the report.
+
+A replayed cast is one frame of a cast that runs for hundreds of vsyncs, and
+on most summons that frame is the white flash. The
+[cast-sequence oracle](cast-sequence-oracle.md) scores the whole cast frame by
+frame instead.
 
 ### The track word in battle
 
@@ -2743,6 +2755,9 @@ every pass, so it moves with the phase of both clips):
 
 ## See also
 
+- [cast-sequence-oracle](cast-sequence-oracle.md) - one cast recorded on both
+  sides and scored frame by frame, paired on the action-SM clock; the answer
+  to a cast whose only state is a white-flash frame.
 - [recomp-differential](recomp-differential.md) - the frame-tagged
   differential against the static recomp.
 - [host-drift](host-drift.md) - the three-host parity gates.

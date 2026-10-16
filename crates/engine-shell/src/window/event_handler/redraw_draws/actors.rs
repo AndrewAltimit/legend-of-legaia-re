@@ -26,6 +26,7 @@ impl<'m> DrawCtx<'_, 'm> {
             color_draws,
             clip_marks,
             color_clip_marks,
+            nclip_marks,
             ..
         } = out;
         // The player's untextured mesh half (pants /
@@ -110,11 +111,16 @@ impl<'m> DrawCtx<'_, 'm> {
                 clip_marks.push((draws.len(), c));
                 color_clip_marks.push((color_draws.len(), c));
             }
-            // A clip-less NPC's op-`0x4B` morph re-stages
-            // its static mesh (`npc_morph_static`).
-            let posed = npc_posed
-                .get(&d.slot)
-                .copied()
+            // An NPC the op-`43 07` deformation is breaking up draws its
+            // shards (`PosedFrame::npc_shattered`), both sides: the shatter
+            // renderer issues no NCLIP. A clip-less NPC's op-`0x4B` morph
+            // re-stages its static mesh (`npc_morph_static`).
+            let shattered = store.posed.npc_shattered.get(&d.slot);
+            if shattered.is_some() {
+                nclip_marks.push((draws.len(), legaia_render_kernels::shatter::SHATTER_NCLIP));
+            }
+            let posed = shattered
+                .or_else(|| npc_posed.get(&d.slot).copied())
                 .or_else(|| store.npc_morph_static.get(&d.slot));
             match (posed.and_then(|p| p.0.as_ref()), d.mesh_idx) {
                 (Some(mesh), _) => draws.push(SceneDraw {
@@ -230,6 +236,7 @@ impl<'m> DrawCtx<'_, 'm> {
         // docs/subsystems/battle.md, the grid's near colour and cue
         // depth, for the capture that pins it).
         if in_battle
+            && app.session.host.world.battle_ground_grid_drawn()
             && let Some(gi) = app.battle_ground_mesh
             && let Some(gmesh) = store.meshes.get(gi)
         {
@@ -310,11 +317,9 @@ impl<'m> DrawCtx<'_, 'm> {
             // The summon band's hide (`+0x21C = 0xFF` with the prim
             // word zeroed, `0x801E4B30..0x801E4B6C`): every party
             // seat and living monster is off screen while the
-            // creature performs, restored at `0x36`.
-            if in_battle
-                && actor.battle.render_flag
-                    == legaia_engine_battle_vm::battle_target_group::RENDER_FLAG_HIDDEN
-            {
+            // creature performs, restored at `0x36`. The zero word is
+            // the hide, not the byte (`World::battle_body_hidden`).
+            if in_battle && app.session.host.world.battle_body_hidden(i) {
                 continue;
             }
             // Retail's per-body battle draw (`FUN_800480D8` over the

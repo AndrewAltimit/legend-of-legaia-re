@@ -1292,21 +1292,26 @@ height, not the extremum.
 (`0x801DF7AC`) zeroes `+0x6D` and `+0x7A`.
 
 While `+0x7A` is non-zero the object draw (`FUN_8001B964` on the field,
-`FUN_80048A08` in battle) hands each object to `FUN_80029888` with
-`+0x7A | row[+8] << 16` instead of the plain dispatcher. That kernel offsets
-every vertex by the row's first three halfwords, rotates it by
-`RotMatrix(a, 0, a)` with `a = +0x7A << 4` (none under flag `0x10000`),
-scales it by `0x1000 - +0x7A` under flag `0x40000`, and moves the
-translation by `-M * off` - a spin about the point `-off` that shrinks to
-nothing as the ramp completes, the angle wrapping sixteen turns back to zero.
+`FUN_80048A08` in battle) hands each object to the shatter renderer
+`FUN_80029888` with `+0x7A | row[+8] << 16` instead of the plain dispatcher.
+It breaks the model into its triangles: each one spins about its own centroid
+(`RotMatrix(a, 0, a)`, `a = +0x7A << 4`, none under flag `0x10000`), shrinks by
+`0x1000 - +0x7A` under flag `0x40000`, and is pushed away from the burst
+centre `-off` by `+0x7A / 128` of its distance, so as the ramp reaches
+`0x1000` the body flies apart and vanishes. Flag `0x20000` keeps the triangles
+in place, and the sweep flags break the body up behind a moving front. The
+per-triangle maths and the flag table are in
+[`renderer.md`](renderer.md#the-shatter-renderer-fun_80029888--fun_80029dd8).
 `town0b`, `uru`, `rugi`, `noaru`, `nilboa` and a dozen more scenes run it; the
 shipped flag words are `1`, `4`, `5`, `6`, `7` and `0xC`.
 
-Port: `World::npcs.face_rows` / `faces` / `face_ramps`, folded into the one
-draw pose both hosts build an NPC's model from
-(`NpcDrawPose::with_face`: `M * F` as `X, Y, Z` Euler angles, the pivot in the
-position, the shrink in the scale). Placements only; a player target writes
-the row and draws undeformed.
+Port: `World::npcs.face_rows` / `faces` / `face_ramps`, read back as
+`World::field_npc_shatter`, which both hosts hand to the shatter kernel
+(`legaia_render_kernels::shatter`) to break the NPC's mesh into its
+triangles; the draw pose is untouched. Placements only; a player target writes
+the row and draws undeformed. The sweep's view frame is not modelled
+([`renderer.md`](renderer.md#the-shatter-renderer-fun_80029888--fun_80029dd8)).
+The battle reads the same row table: the Jette hook stages its row `2` there.
 
 #### 0x43 sub-3..6 - the camera-register zone ramp
 

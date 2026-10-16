@@ -83,9 +83,16 @@ const ITEM_PANELS_CLOSE_STATE: u8 = 0x52;
 /// * the item band's `0x3E` arm (`0x801E404C`), reached from one branch at
 ///   `0x801E3E88` off its non-gauge-extend path, for any caster.
 ///
-/// A party member's magic cast on the whole party therefore raises none:
-/// `orb_summon_mid_cast` holds `ctx[+0x18] = 0` with Orb's `+0x1DD` at `8`,
-/// and its frame shows the scene where the panels would sit.
+/// A party member's magic cast on the whole party therefore raises none at
+/// the seed: `orb_summon_mid_cast` holds `ctx[+0x18] = 0` with Orb's
+/// `+0x1DD` at `8`, and its frame shows the scene where the panels would
+/// sit.
+///
+/// A cast module can raise them itself, the third opener: PROT 0911 (Orb)
+/// arm 9's pass (`FUN_801D8DE8(6, 0)` and `(0x4E + i, 0)`, then
+/// `ctx[+0x18] = 6`, `0x801F7E64..0x801F7ED4`) puts them up under the heal,
+/// and the Done hold closes them like the others
+/// ([`crate::world::BattleState::module_panels_glide`]).
 pub fn battle_panels_visible(world: &crate::world::World) -> bool {
     match battle_hud_phase(world) {
         BattleHudPhase::RoundPrompt => true,
@@ -114,7 +121,8 @@ pub fn battle_panels_visible(world: &crate::world::World) -> bool {
                     a >= party_count(world) as u8 && seed_plates_reach_the_target_arm(cat);
                 let item_band =
                     cat == ActionCategory::Item.as_byte() && s >= ActionState::SpiritFire as u8;
-                party_wide && open && (monster_seed || item_band)
+                let module_raise = world.battle.module_panels_glide.is_some();
+                open && (module_raise || (party_wide && (monster_seed || item_band)))
             })
         }
         BattleHudPhase::Idle => false,

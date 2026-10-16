@@ -6,6 +6,12 @@ use super::*;
 /// The Spikefish flute's band entry (spell `0x97`).
 const SPIKEFISH_ENTRY: u32 = 925;
 
+/// The player-Seru modules whose `0xFF` arm clears the creature's
+/// `+0x21B` / `+0x176` (Theeder, Gizam, Nighto, Zenoir, Swordie, Orb, Freed,
+/// Nova). PROT 0903 and 0905 have no such store, and 0909's clear sits in
+/// its stager instead.
+const SERU_EXIT_LOOP_CLEARS: [u32; 8] = [904, 906, 907, 908, 910, 911, 912, 913];
+
 impl World {
     pub fn run_cast_module_code(&mut self, spell_id: u8, arm: u8) -> Option<CastModuleCodeRun> {
         use legaia_engine_battle_vm::cast_arm_ticks as arms;
@@ -20,6 +26,9 @@ impl World {
             return Some(self.run_fatal_decision(entry));
         }
         let mut ctx = self.cast_module_ctx();
+        // The phase the tick enters on, before a state-touching stager below
+        // steps it (PROT 0909's arm 0 is its stager's).
+        let phase_entry = ctx.phase;
         let caster_slot = self.battle_ctx.active_actor;
         let victim_slot = self
             .actors
@@ -47,15 +56,27 @@ impl World {
         };
 
         // The seven state-touching spawn stagers, by owning entry.
+        // PROT 0906's stager is called from its spawned record's program,
+        // not off the phase: its arms are placed below on the director's
+        // phase-5 record clock.
         match entry {
-            906 => ticks::gizam_stager(&mut ctx, &mut seat, arm),
-            909 => {
-                ticks::viguro_stager(&mut ctx, &mut seat, arm);
-            }
-            922 => ticks::puera_stager(&mut ctx, arm),
+            // PROT 0909's stager is reached only through its parts' op-`0x20`
+            // calls - two of them are the tick body's phase rendezvous.
+            909 => self.run_viguro_stager_calls(&mut ctx, &mut seat),
+            // PROT 0907's and 0908's stagers only seat more records off the
+            // calling parts (Nighto's rays and rings, Zenoir's floor rings,
+            // rays and final blasts).
+            e if Self::runs_part_stager_calls(e) => self.run_part_stager_calls(e),
+            922 => self.run_puera_stager_calls(&mut ctx),
+            927 => self.run_juggernaut_stager_calls(),
             923 => ticks::gilium_stager(&mut ctx, arm),
             949 => ticks::water_crystals_stager(&mut victim, arm),
             _ => {}
+        }
+        // Only these modules' stager calls are run; any other module's are
+        // dropped rather than left to pile up.
+        if entry != 909 && !Self::runs_part_stager_calls(entry) {
+            self.casting.module_stager_calls.clear();
         }
 
         // The tick bodies, by owning entry. `hit` is `None` because the fold
@@ -84,6 +105,9 @@ impl World {
         } else {
             legaia_engine_battle_vm::cast_module_camera::module_profile(entry)
         };
+        // The module countdown this pass opens on (PROT 0922's seat writes
+        // read it).
+        let countdown_before = self.casting.module_cam.countdown.0;
         let direction = if has_trampoline {
             None
         } else {
@@ -95,6 +119,15 @@ impl World {
                     .get_or_insert(victim_slot);
                 let seats = self.module_cam_seats(caster_slot, latched);
                 let mut st = self.module_cam_with_yaw_base();
+                self.feed_seru_cam(entry, caster_slot, &mut st);
+                // A settle gate's row (`summon_holds::Gate::Settle`): every
+                // monster seat idle, or faded out once dead.
+                let pc = usize::from(self.party.party_count);
+                st.row_settled =
+                    (pc..pc + usize::from(ctx.monster_count)).all(|s| match self.actors.get(s) {
+                        Some(a) if a.battle.hp == 0 => a.battle.render_color == 0 || !a.active,
+                        _ => self.chain_seat_settled(s, false),
+                    });
                 let d = direct(&mut st, ctx.phase, seats);
                 self.store_module_cam(st);
                 d
@@ -115,7 +148,83 @@ impl World {
                 ticks_a::GIMARD_SETTLE_ANIM_RATE,
             );
         }
+        if direction.is_some() {
+            self.apply_seru_seat_writes(entry, ctx.phase);
+        }
+        if entry == 927
+            && let Some(d) = direction
+        {
+            self.apply_juggernaut_writes(ctx.phase, !d.hold, ctx.monster_count);
+        }
+        if entry == 918
+            && let Some(d) = direction
+        {
+            self.apply_kemaro_writes(ctx.phase, !d.hold, victim_slot);
+        }
+        if entry == 922
+            && let Some(d) = direction
+        {
+            self.apply_puera_writes(ctx.phase, !d.hold, countdown_before, ctx.monster_count);
+        }
         run.camera_shot = direction.and_then(|d| d.shot);
+        // PROT 0909: the pass whose arm spawns a stager-calling record starts
+        // that record's clock; the spawn's seating drops it again
+        // (`stage_module_arm_spawns`) when the record runs as a part.
+        if entry == 909
+            && let Some(d) = direction
+            && !d.hold
+        {
+            use legaia_engine_battle_vm::cast_module_camera::{SpawnRecord, VIGURO_STAGER_CALLERS};
+            for spawn in d.spawns {
+                if let SpawnRecord::Module(va) = spawn.record
+                    && let Some(&(record, arm, wait)) =
+                        VIGURO_STAGER_CALLERS.iter().find(|c| c.0 == va)
+                {
+                    self.casting.module_record_clocks.retain(|c| c.0 != record);
+                    self.casting.module_record_clocks.push((record, arm, wait));
+                }
+            }
+        }
+        // PROT 0906: record `0x801F7B80`'s `op 0x20` calls into the stager,
+        // on the clock the director runs through the phase-5 hole. Arm 0 is
+        // the flash pair, arm 1 shows the creature; arm 2 is the director's
+        // pass out of phase 5.
+        if entry == 906 {
+            use legaia_engine_battle_vm::cast_module_camera as cam;
+            match cam::gizam_stager_arm_due(ctx.phase, self.casting.module_cam.countdown.0) {
+                Some(0) => {
+                    for (t, id) in &cam::GIZAM_STAGER_FLASHES {
+                        let mut fade = None;
+                        legaia_engine_system::fade::spawn_fade(
+                            &mut fade,
+                            &legaia_engine_battle_vm::battle_action::summon_fade_template(t),
+                            *id,
+                        );
+                        self.presentation.module_fades.extend(fade);
+                    }
+                }
+                Some(a) => ticks::gizam_stager(&mut ctx, &mut seat, a),
+                None => {}
+            }
+        }
+        // PROT 0905's arms 4 and 5 kill the effect parts the arm before them
+        // spawned, by the handles kept at `0x801F8828` (`ori 0x8` into each
+        // actor's flag word, `0x801F6ECC..0x801F6F2C` and
+        // `0x801F71A0..0x801F71E8`): arm 0's four glows and arm 4's three
+        // cut parts. Arm 5's two parts run until they halt.
+        if entry == 905
+            && direction.is_some_and(|d| !d.hold)
+            && let Some(killed) =
+                legaia_engine_battle_vm::cast_module_camera::vera_arm_kills(ctx.phase)
+            && let Some(scene) = self.casting.active_summon.as_mut()
+        {
+            for part in &mut scene.parts {
+                if part.tag.is_some_and(|t| killed.contains(&t)) {
+                    part.finished = true;
+                }
+            }
+        }
+        run.capture_drift = direction.and_then(|d| d.drift);
         let mut capture_held = false;
         let mut capture_arm = None;
         let phase_in = ctx.phase;
@@ -272,6 +381,7 @@ impl World {
         run.camera_end_frame = direction.is_some_and(|d| d.end_frame);
         run.camera_nudge = direction.and_then(|d| d.nudge);
         run.spawns = direction.map_or(&[], |d| d.spawns);
+        run.arm_point = direction.and_then(|d| d.arm_point);
         run.vram_move = direction.and_then(|d| d.vram_move);
         run.caption = direction.and_then(|d| d.caption);
         run.fades = direction.map_or(&[], |d| d.fades);
@@ -279,9 +389,15 @@ impl World {
         let held = direction.is_some_and(|d| d.hold) || capture_held;
         // A camera-only director owns the phase of a module whose tick body
         // is unported: its pass advances it, and it claims no tick.
-        let camera_only = profile.is_some_and(|p| !p.paces_band() && p.owns_phase);
+        // A director that carries a whole unported body's phase chain
+        // (`ModuleProfile::director_body`) owns the phase the same way.
+        let director_body = profile.is_some_and(|p| p.director_body);
+        let camera_only =
+            profile.is_some_and(|p| (!p.paces_band() || p.director_body) && p.owns_phase);
         if camera_only && !held {
-            ctx.phase = ctx.phase.wrapping_add(1);
+            ctx.phase = direction
+                .and_then(|d| d.jump)
+                .unwrap_or(ctx.phase.wrapping_add(1));
         }
         let step = if held && !camera_only {
             Some(ticks::CastTickStep::Busy)
@@ -821,7 +937,8 @@ impl World {
                             }
                             let geom = self.theeder_geom(seat_slot);
                             let mut fx = self.casting.module_theeder;
-                            let run = ticks_a::theeder_tick(
+                            let attack_in = ctx.phase == ticks_a::THEEDER_ATTACK_ARM;
+                            let tick = ticks_a::theeder_tick(
                                 &mut ctx,
                                 &mut seats,
                                 who,
@@ -830,7 +947,17 @@ impl World {
                                 |seat| in_cone.contains(&seat).then_some(0),
                             );
                             self.casting.module_theeder = fx;
-                            run
+                            // Arm 7's shot is armed on the pass its clip wait
+                            // lets through (`0x801F7274`).
+                            if attack_in
+                                && ctx.phase != ticks_a::THEEDER_ATTACK_ARM
+                                && let Some(c) = self.casting.module_cam.creature
+                            {
+                                run.camera_shot = Some(
+                                    legaia_engine_battle_vm::cast_module_camera::theeder_attack_shot(c),
+                                );
+                            }
+                            tick
                         }
                         905 => {
                             let restore = self.vera_restore(caster_slot, victim_slot, spell_id);
@@ -839,7 +966,13 @@ impl World {
                         }
                         906 => ticks_a::gizam_tick(&mut ctx, &mut seats, who, |_| None),
                         907 => (
-                            ticks_a::nighto_tick(&mut ctx, &mut seats, who, nighto_outcome),
+                            ticks_a::nighto_tick(
+                                &mut ctx,
+                                &mut seats,
+                                who,
+                                nighto_outcome,
+                                self.casting.module_cam.countdown.0 < 0,
+                            ),
                             Vec::new(),
                         ),
                         _ => ticks_a::zenoir_tick(&mut ctx, &mut seats, who, |_| None),
@@ -884,8 +1017,10 @@ impl World {
                     let stager_stepped = ctx.phase != self.casting.module_phase;
                     let mut seats: Vec<ticks::CastActorState> = self.cast_seat_row();
                     let summon = seat_slot;
+                    // A frame the stager stepped the phase is still a busy
+                    // one: the tick returns `1` from every arm but `0xFF`.
                     let step = if entry == 909 && stager_stepped {
-                        None
+                        Some(ticks::CastTickStep::Busy)
                     } else {
                         let (step, hits) = self.run_seru_b_tick(
                             entry,
@@ -899,7 +1034,7 @@ impl World {
                         run.aoe_hits.extend(hits);
                         Some(step)
                     };
-                    if step.is_some() {
+                    if !(entry == 909 && stager_stepped) {
                         self.write_cast_seat_row(&seats);
                         // The three locals are written back below; take them
                         // from the table so this arm's writes survive.
@@ -963,6 +1098,10 @@ impl World {
         if let Some(step) = step {
             run.busy = step == ticks::CastTickStep::Busy;
             run.tick_ported = true;
+        } else if director_body {
+            // The director is the body: busy until it reaches `0xFF`.
+            run.tick_ported = true;
+            run.busy = ctx.phase != ticks_a::SERU_B_DONE_PHASE;
         } else if let Some(arm) = capture_arm {
             // A capture director over a body with no port (a ported body, or
             // a holding arm, has already produced a step) owns its phase.
@@ -1004,6 +1143,43 @@ impl World {
             live.fold_writes(orig, view);
             self.write_cast_view(slot, &live);
         }
+        // The `0xFF` arm of eight player-Seru modules leaves the creature
+        // seat's loop counter clear for the next cast's installer, which
+        // seeds none (`sb zero,0x21b` / `sh zero,0x176`; PROT 0904
+        // `0x801F80F0`, 0906 `0x801F76E8`, 0907 `0x801F7F68`, 0908
+        // `0x801F82A4`, 0910 `0x801F7BDC`, 0911 `0x801F7FAC`, 0912
+        // `0x801F831C`, 0913 `0x801F8608`).
+        if phase_entry == legaia_engine_battle_vm::cast_module_ticks::CHOREOGRAPHY_DONE_PHASE
+            && SERU_EXIT_LOOP_CLEARS.contains(&entry)
+            && let Some(a) = self.actors.get_mut(usize::from(seat_slot))
+        {
+            a.battle.hit_count_bound = 0;
+            if let Some(p) = a.battle_animation.as_mut() {
+                p.release_loop_window();
+            }
+        }
+        // PROT 0903's settle arm breaks the creature up on every pass: `+0x1BA += 2 *
+        // frame * scalar` on seat 7 (`0x801F76A4..0x801F76C4`, past the
+        // countdown's jump-in like the rate store), the dissolve the settle
+        // plays while the victim's knock-back runs out.
+        if entry == 903
+            && phase_in == ticks_a::GIMARD_SETTLE_ARM
+            && let Some(a) = self.actors.get_mut(usize::from(seat_slot))
+        {
+            a.battle.shatter = a
+                .battle
+                .shatter
+                .wrapping_add(ticks_a::GIMARD_SHATTER_STEP_PER_TICK);
+        }
+        // PROT 0908's arm 12 shatters the monsters the finisher killed, on
+        // every pass of the arm, held or not (the loop sits ahead of the
+        // countdown gate the director runs). Both writes land after the
+        // views' fold-back above, which would otherwise restore the word
+        // from a view read before them.
+        if entry == 908 && phase_in == ticks_a::ZENOIR_SHATTER_ARM {
+            let latched = self.casting.module_cam.victim_slot.unwrap_or(victim_slot);
+            self.zenoir_shatter(latched);
+        }
         // PROT 0948's beam: arm 2 zeroes the builder's counter as it passes,
         // and arm 3 calls the builder (`jal 0x801F726C` at `0x801F6EF4`)
         // ahead of its own gate, so it draws on every tick the arm runs.
@@ -1017,6 +1193,14 @@ impl World {
                     legaia_engine_battle_vm::cast_module_ticks::CROSS_BEAM_COUNTER_PER_TICK;
                 self.casting.module_beam_live = true;
             }
+        }
+        // PROT 0920's rain words, written by its arms around the director's
+        // gates: arm 0 frees the records and sets the grey colour, arm 5's
+        // exit seeds the budget, arm 6 drains it `2 * delta` a pass and pins
+        // it at `4` on its exit, arm 9 ramps the colour towards red a step
+        // a vsync and pins it on its exit, and `0xFF` clears the budget.
+        if entry == legaia_engine_battle_vm::cast_module_camera::SLIPPERY_ENTRY {
+            self.slippery_rain_words(phase_in, ctx.phase != phase_in);
         }
         // The arm passed: its re-arm of the countdown word.
         if let Some(a) = arm_countdown
@@ -1034,6 +1218,9 @@ impl World {
             && ctx.phase != phase_in
         {
             self.spikefish_outcome(&mut ctx);
+        }
+        if entry == 911 {
+            self.orb_arm_writes(phase_in, ctx.phase);
         }
         self.casting.module_ctx_278 = ctx.ctx_278;
         self.casting.module_ring_angle = ctx.ctx_6d8;
@@ -1064,6 +1251,16 @@ impl World {
             let _ = self.party.inventory.add(id, 1);
             self.refresh_party_ability_bits();
         }
+        // The arm's calls into the shared presentation helpers (fades,
+        // washes, CLUT copies), decoded off the module image.
+        self.fire_cast_presentation(
+            entry,
+            if has_trampoline { body } else { None },
+            (phase_entry != phase_in).then_some(phase_entry),
+            phase_in,
+            ctx.phase,
+            run.tick_ported && !run.busy,
+        );
         Some(run)
     }
 }

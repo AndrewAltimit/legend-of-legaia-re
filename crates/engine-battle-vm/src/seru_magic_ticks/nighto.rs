@@ -31,6 +31,10 @@ pub const NIGHTO_CONFUSE_ARM: u8 = 15;
 /// (`ori v0, v0, 0x380` at `0x801F7F50`).
 pub const NIGHTO_CONFUSE_BITS: u16 = 0x0380;
 
+/// The neutral colour word `0x20080200` PROT 0907's arm 12 shows the victim
+/// with.
+pub const NIGHTO_NEUTRAL_COLOUR: u32 = 0x2008_0200;
+
 /// The render flag / `+0x225` pair PROT 0907 writes on a killed victim
 /// (`li v0,0x2` at `0x801F7E54`).
 pub const NIGHTO_KILL_RENDER_FLAG: u8 = 2;
@@ -204,17 +208,21 @@ impl NightoOutcome {
 /// victim's render flag `= 0` and animation rate `= 1` in arm 12, and the
 /// victim's animation rate `=` [`NIGHTO_EXIT_ANIM_RATE`] in arm `0xFF`.
 ///
-/// Not ported: the packet and camera arms, the `ctx+0x6D8` countdowns each of
-/// arms 13..15 gate on, and the summon seat's `+0x21B` / `+0x176` clears.
+/// The arm gates (the `ctx+0x6D8` countdowns, the creature's clip) and the
+/// camera are the director's (`cast_module_camera::nighto_direct`), which
+/// the host runs first; `settle_spent` is that countdown read back for arm
+/// 14, whose own hold this body keeps. Not ported: the packet arms and the
+/// summon seat's `+0x21B` / `+0x176` clears.
 ///
 /// Wired: `World::run_cast_module_code`.
 ///
-/// PORT: FUN_801F69E8 (PROT 0907; phase chain + the instant-death / confuse fork; packet and camera arms unported)
+/// PORT: FUN_801F69E8 (PROT 0907; phase chain + the instant-death / confuse fork + arm 14's fade hold; packet arms unported, gates and camera in nighto_direct)
 pub fn nighto_tick(
     ctx: &mut CastModuleCtx,
     seats: &mut [CastActorState],
     who: SeruSeats,
     outcome: NightoOutcome,
+    settle_spent: bool,
 ) -> CastTickStep {
     run_chain(ctx, |c| match c.phase {
         0 => {
@@ -237,6 +245,9 @@ pub fn nighto_tick(
         NIGHTO_SHOW_ARM => {
             if let Some(v) = seats.get_mut(who.victim as usize) {
                 v.render_flag = 0;
+                // `sw v1,0x4(s4)` with `v1 = 0x20080200` at `0x801F7D00`:
+                // the colour word the kill leg's settle waits to see faded.
+                v.present_04 = NIGHTO_NEUTRAL_COLOUR;
                 v.anim_rate = 1;
             }
             CastArmStep::Advance
@@ -265,9 +276,17 @@ pub fn nighto_tick(
                 CastArmStep::Hold
             }
         }
+        // Arm 14 (`0x801F7E90..0x801F7EF0`): a victim whose colour word
+        // has faded to `0` ends the cast; one still showing holds - for
+        // good while the kill went through (the death fade owns the
+        // release), and until the leg's countdown runs out when resisted.
         NIGHTO_KILL_SETTLE_ARM => {
-            if let Some(v) = seats.get_mut(who.victim as usize) {
+            let showing = seats.get_mut(who.victim as usize).is_some_and(|v| {
                 v.anim_rate = 1;
+                v.present_04 != 0
+            });
+            if showing && (!outcome.resisted() || !settle_spent) {
+                return CastArmStep::Hold;
             }
             c.phase = CHOREOGRAPHY_DONE_PHASE;
             CastArmStep::Hold

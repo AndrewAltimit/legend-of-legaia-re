@@ -50,15 +50,7 @@ pub fn pack_tsb_semi(tsb: u16, abe: bool) -> u16 {
 /// visually-validated site animator (`monsters.html` `_assemble`). Shared by
 /// vertex and normal transforms.
 #[inline]
-pub(crate) fn rot_zyx(
-    v: [f32; 3],
-    cx: f32,
-    sx: f32,
-    cy: f32,
-    sy: f32,
-    cz: f32,
-    sz: f32,
-) -> [f32; 3] {
+pub fn rot_zyx(v: [f32; 3], cx: f32, sx: f32, cy: f32, sy: f32, cz: f32, sz: f32) -> [f32; 3] {
     let (mut x, mut y, mut z) = (v[0], v[1], v[2]);
     // Rx
     let ny = y * cx - z * sx;

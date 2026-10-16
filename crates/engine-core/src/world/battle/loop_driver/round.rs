@@ -344,6 +344,17 @@ impl World {
                 target_slot,
             },
         );
+        // The capture's `+0x1DD` is the byte the cast runs on. A party seat
+        // stays a party seat even for a spell whose catalog target is the
+        // whole row: the action seed opens the readout bar on it
+        // (`sltiu v0,t2,3` at `0x801E2F24..0x801E2F44`) and the module aims
+        // at it (`FUN_801DCEAC(caster[+0x1DD])`), where the row code `8`
+        // opens nothing and aims at the row.
+        if seed.target < MONSTER_SLOT_FIRST
+            && let Some(a) = self.actors.get_mut(usize::from(seed.caster))
+        {
+            a.battle.active_target = seed.target;
+        }
     }
 
     /// Commit `action` as `actor`'s command for this round and walk the ring

@@ -17,7 +17,9 @@
   const TILE_MESH_BASE = 920000;   /* one mesh per board-owned actor slot */
   /* Battle 3D layer: 930000 backdrop, +1 ground grid, +2 the effect-pool
    * billboard batch, +3 the backdrop's spun slot (the horizon mist ribbon),
-   * +16+i actor meshes, +256+tmd the 3D FX model cache
+   * +16+i actor meshes, +128+i an actor's shatter companion (the body
+   * broken into its triangles, LegaiaFieldActors.shardMesh), +256+tmd the
+   * 3D FX model cache
    * (keyed by the engine's global-TMD-pool index, so one upload per distinct
    * effect mesh per fight). */
   const BATTLE_MESH_BASE = 930000;

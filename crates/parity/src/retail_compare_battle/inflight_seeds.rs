@@ -393,6 +393,10 @@ impl RetailBattle {
         let accum_align = ((0x33..=0x34).contains(&self.action_state)
             && self.caster_clip == SUMMON_INVOKE_CLIP)
             .then_some(self.cam_accum);
+        // A frame inside the stream poll's arm is placed by the arm alone.
+        let stream_wait = module_phase.is_some_and(|p| {
+            legaia_engine_battle_vm::cast_module_camera::stream_poll_arm(entry) == Some(p)
+        });
         Some(PhaseGate {
             action_state: self.action_state,
             fade: self.summon_fade,
@@ -404,6 +408,7 @@ impl RetailBattle {
             accum_align,
             // The summon head's RAM is a pass in (`PhaseGate::steer`).
             camera_pass: self.action_state == SUMMON_INVOKE_STATE,
+            stream_wait,
         })
     }
 }

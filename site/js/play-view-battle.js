@@ -149,7 +149,14 @@
             b.groundAmbientKey = ambientKey;
           }
         }
-        draws.push({ meshId: b.ground, x: 0, y: 0, z: 0, rotY: 0, scale: 1.0, cue: b.groundCue });
+        /* A cast holding `ctx[+0x278]` bit 0 on the floor ambient takes the
+         * grid off the screen (`World::battle_ground_grid_drawn`). Guarded
+         * against a cached WASM without the export. */
+        const groundDrawn = (typeof rt.play_battle_ground_drawn !== 'function')
+          || rt.play_battle_ground_drawn();
+        if (groundDrawn) {
+          draws.push({ meshId: b.ground, x: 0, y: 0, z: 0, rotY: 0, scale: 1.0, cue: b.groundCue });
+        }
       }
       const S = b.scale;
       const tf = rt.play_battle_actor_transforms();
@@ -218,9 +225,44 @@
             a.blendKey = blendKey;
           }
         }
+        /* The shatter renderer (the body's `+0x1BA` word; FUN_80029888):
+         * the engine's shattered object-local corners, posed with the live
+         * pose into a de-indexed companion mesh drawn in the body's place.
+         * Its NCLIP word is already the both-sides one
+         * (`play_battle_actor_nclip`). Guarded against a cached WASM. */
+        let drawMeshId = a.meshId;
+        if (a.objectIds.length && typeof rt.play_battle_actor_shatter === 'function') {
+          const sp = rt.play_battle_actor_shatter(i);
+          if (sp.length) {
+            /* The companion carries the body's live colour and blend
+             * streams (the Rot limb dimming, the defeat fade's additive
+             * word), so it is rebuilt whenever either moves. */
+            const shardKey = (a.limbKey || 0) + ':' + (a.blendKey || 0);
+            if (!a.shard || a.shard.out.length !== sp.length || a.shard.key !== shardKey) {
+              const ct = (a.blendKey && typeof rt.play_battle_actor_blend_cba_tsb === 'function')
+                ? rt.play_battle_actor_blend_cba_tsb(i) : rt.play_battle_actor_cba_tsb(i);
+              const fl = (a.limbKey && typeof rt.play_battle_actor_limb_rgba === 'function')
+                ? rt.play_battle_actor_limb_rgba(i)
+                : ((typeof rt.play_battle_actor_flat_rgba === 'function')
+                  ? rt.play_battle_actor_flat_rgba(i) : null);
+              a.shard = window.LegaiaFieldActors.shardMesh(this.renderer,
+                BATTLE_MESH_BASE + 128 + i, rt.play_battle_actor_indices(i),
+                rt.play_battle_actor_uvs(i), ct, fl, a.objectIds);
+              a.shard.key = shardKey;
+            }
+            const pose = rt.play_battle_actor_pose(i);
+            if (pose.length) {
+              poseInto(a.shard.out, sp, a.shard.objectIds, pose, pose.length / 6, 0);
+              this.renderer.updateSceneMeshPositions(a.shard.meshId, a.shard.out);
+            } else {
+              this.renderer.updateSceneMeshPositions(a.shard.meshId, sp);
+            }
+            drawMeshId = a.shard.meshId;
+          }
+        }
         const c = (cursor && cursor.length >= (i + 1) * 6) ? i * 6 : -1;
         draws.push({
-          meshId: a.meshId,
+          meshId: drawMeshId,
           /* Retail translation with the frame flip on its Y (`T(F pos)`, like
            * the native actor_model): the battle VP ends in a Y-flip, and the
            * placement model's own flip only turns the mesh, so a body's

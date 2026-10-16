@@ -131,7 +131,7 @@ fn gimard_creature_shots_frame_the_placed_creature() {
 
 #[test]
 fn camera_only_directors_park_past_their_arms() {
-    for entry in [914, 915, 917, 920, 923, 928, 930, 931] {
+    for entry in [914, 915, 917, 923, 928, 930, 931] {
         let p = module_profile(entry).expect("directed");
         assert!(!p.paces_band(), "PROT {entry} is camera-only");
         let mut st = ModuleCamState::default();
@@ -151,6 +151,59 @@ fn camera_only_directors_park_past_their_arms() {
         }
         assert!((1..8).contains(&phase), "PROT {entry} parked at {phase}");
     }
+}
+
+/// PROT 0920's director carries the whole chain: it paces the band, every
+/// arm is a countdown gate, arm 10 stores `0xFF`, and at the engine's step
+/// the arms dwell `scalar << n` drained `scalar` a tick - 64, 128, 128, 256,
+/// 256, 32, 128 and 128 ticks for arms 3..10.
+#[test]
+fn slippery_director_walks_the_whole_chain_to_0xff() {
+    let p = module_profile(920).expect("directed");
+    assert!(p.paces_band() && p.director_body && p.owns_phase);
+    assert_eq!(p.hit_arm, Some(SLIPPERY_DAMAGE_ARM));
+    let mut st = ModuleCamState::default();
+    let mut phase = 0u8;
+    let mut dwell = std::collections::BTreeMap::<u8, u32>::new();
+    for _ in 0..10_000 {
+        if phase == crate::seru_magic_ticks::SERU_B_DONE_PHASE {
+            break;
+        }
+        let d = slippery_direct(&mut st, phase, seats());
+        assert!(!d.park, "arm {phase} parks");
+        *dwell.entry(phase).or_default() += 1;
+        if !d.hold {
+            phase = d.jump.unwrap_or(phase + 1);
+        }
+    }
+    assert_eq!(phase, crate::seru_magic_ticks::SERU_B_DONE_PHASE);
+    let got: Vec<u32> = (3..=10).map(|a| dwell[&a]).collect();
+    assert_eq!(got, [64, 128, 128, 256, 256, 32, 128, 128]);
+    // Arm 0xFF holds: the director never walks past the done phase.
+    assert!(slippery_direct(&mut st, 0xFF, seats()).hold);
+}
+
+/// PROT 0920's arm 7 pans TR x by the scalar a pass and its exit cuts back
+/// onto the creature.
+#[test]
+fn slippery_arm_seven_pans_then_cuts_on_the_creature() {
+    let mut st = ModuleCamState::default();
+    let creature = ModuleSeat {
+        x: 63,
+        y: 0,
+        z: -591,
+        facing: 13,
+    };
+    st.creature_live = Some(creature);
+    st.countdown.0 = 2 * MODULE_DRAIN_PER_TICK;
+    let d = slippery_direct(&mut st, 7, seats());
+    assert!(d.hold);
+    assert_eq!(d.nudge.unwrap().tr_x, -(MODULE_DRAIN_PER_TICK as i16));
+    let d = slippery_direct(&mut st, 7, seats());
+    let shot = d.shot.expect("arm 7 cuts");
+    assert_eq!(shot.angles, [0, 0x800 - 13, 0]);
+    assert_eq!(shot.tr, [0, 0x400, 0x600]);
+    assert_eq!(shot.focus, [-63, 0, 591]);
 }
 
 #[test]
@@ -620,4 +673,176 @@ fn capture_bodies_that_finish_on_the_0x780_yaw_counter() {
     assert_eq!(capture_exit_yaw_base(966, SINGLE_BODY), Some(0x780));
     assert_eq!(capture_exit_yaw_base(962, ULTRA_CHARGE_BODY), None);
     assert_eq!(capture_exit_yaw_base(959, 0x801F_69F0), None);
+}
+
+/// PROT 0907's arm 10 holds on the creature's loop counter `+0x21B`
+/// (`0x801F7AC0`): while clip 2's count `0xFF` is unspent, and while the
+/// seat still plays clip 1 (whose count, `0`, is stale until the commit).
+#[test]
+fn nighto_arm_ten_holds_on_the_loop_counter_sentinel() {
+    let mut st = ModuleCamState {
+        creature_clip: Some(1),
+        creature_loops: Some(0),
+        ..Default::default()
+    };
+    assert!(
+        nighto_direct(&mut st, 10, seats()).hold,
+        "clip 1 still playing"
+    );
+    st.creature_clip = Some(NIGHTO_SUMMON_CLIP);
+    st.creature_loops = Some(NIGHTO_LOOP_SENTINEL);
+    for _ in 0..4 {
+        assert!(nighto_direct(&mut st, 10, seats()).hold, "count unspent");
+    }
+    st.creature_loops = Some(0xFE);
+    let d = nighto_direct(&mut st, 10, seats());
+    assert!(!d.hold, "the park took the counter off 0xFF");
+    assert_eq!(st.countdown.0, SPEED_SCALAR << 7);
+}
+
+/// PROT 0903 arm 3's three calls read the creature seat before the arm
+/// stores `+0x36 = 0x200` (`0x801F6E48`): the rings open on the floor under
+/// the creature's plane pair, facing its way, while the seat itself drops
+/// under the floor.
+#[test]
+fn gimard_rings_open_on_the_floor_under_the_sunk_creature() {
+    let mut st = ModuleCamState::default();
+    let d = gimard_direct(&mut st, 3, seats());
+    let c = st.creature.expect("arm 3 seats the creature");
+    assert_eq!(c.y, 0x200);
+    assert_eq!(d.spawns.len(), 3);
+    for s in d.spawns {
+        let (pos, rot) = spawn_anchor_point(s.anchor, Some(c), Some(seats().victim), None)
+            .expect("creature anchor");
+        assert_eq!(pos, [c.x, GIMARD_SEAT_SPAWN_Y, c.z]);
+        assert_eq!(rot, [0, c.facing as i16, 0]);
+    }
+}
+
+/// Every player-Seru module ends its caption with `FUN_800319A8(0)`: Gimard
+/// as the hit lands (arm 11), Vera on the last arm's pass (arm 10), after
+/// putting up the spell name in arm 5 and the attack name in arm 8.
+#[test]
+fn seru_modules_take_their_caption_down() {
+    let mut st = ModuleCamState {
+        creature_arrived: true,
+        creature_live: Some(ModuleSeat::default()),
+        ..Default::default()
+    };
+    let d = gimard_direct(&mut st, 11, seats());
+    assert!(!d.hold);
+    assert_eq!(d.caption, Some(ModuleCaption::Cleared));
+
+    let mut st = ModuleCamState::default();
+    let mut phase = 0u8;
+    let mut seen = Vec::new();
+    for _ in 0..8000u32 {
+        let d = vera_direct(&mut st, phase, seats());
+        if let Some(c) = d.caption {
+            seen.push((phase, c));
+        }
+        if !d.hold {
+            phase += if phase == 5 { 3 } else { 1 };
+            if phase > 10 {
+                break;
+            }
+        }
+    }
+    assert_eq!(
+        seen,
+        vec![
+            (5, ModuleCaption::SpellName),
+            (8, ModuleCaption::AttackName),
+            (10, ModuleCaption::Cleared),
+        ]
+    );
+}
+
+/// A body-paced director's pass lands on the next arm's first tick, and it
+/// carries the pass's spawn calls with it: Orb's opening flash (arm 2), the
+/// light column (arm 5, which jumps to 9) and the heal's group parts and
+/// rings (arm 9), each on its own anchor.
+#[test]
+fn orb_reports_its_pass_spawns_on_the_next_arm() {
+    let mut st = ModuleCamState {
+        target_aim: Some(crate::battle_target_group::GroupAim {
+            centroid_x: -100,
+            centroid_z: 200,
+            extent: 0x666,
+        }),
+        ..Default::default()
+    };
+    let mut seen = Vec::new();
+    for phase in [0u8, 1, 2, 3, 4, 5, 9, 10] {
+        for _ in 0..2 {
+            let d = orb_direct(&mut st, phase, seats());
+            if !d.spawns.is_empty() {
+                seen.push((phase, d.spawns.len(), d.caption));
+            }
+        }
+    }
+    assert_eq!(
+        seen,
+        vec![
+            (3, ORB_FLASH_SPAWNS.len(), None),
+            (9, ORB_RAY_SPAWNS.len(), Some(ModuleCaption::AttackName)),
+            (10, ORB_HEAL_SPAWNS.len(), Some(ModuleCaption::Cleared)),
+        ]
+    );
+    assert!(module_profile(911).is_some_and(|p| p.stages_spawns));
+}
+
+/// The anchors Orb's calls name: `0x3E8` over the caster, `0x140` over the
+/// creature, the framed group's centre turned to the creature's facing
+/// plus `0x800` at the group extent's scale, and a live party seat.
+#[test]
+fn orb_anchors_resolve_like_the_arms_build_them() {
+    let caster = ModuleSeat {
+        x: 63,
+        y: 0,
+        z: -591,
+        facing: 34,
+    };
+    let creature = ModuleSeat {
+        x: 89,
+        y: -1024,
+        z: -80,
+        facing: 0x10,
+    };
+    let seats = AnchorSeats {
+        caster: Some(caster),
+        party: [Some(caster), None, None],
+        depth: 0xC00,
+    };
+    let at = |a| spawn_anchor_point_with(a, Some(creature), None, None, seats);
+    assert_eq!(
+        at(SpawnAnchor::Caster { y: -0x3E8 }),
+        Some(([63, -1000, -591], [0, 34, 0]))
+    );
+    // The capture holds arm 5's parts at `(89, -1344, -80)`.
+    assert_eq!(
+        at(SpawnAnchor::CreatureRaised { dy: -0x140 }).map(|p| p.0),
+        Some([89, -1344, -80])
+    );
+    assert_eq!(
+        at(SpawnAnchor::PartySeat(0)).map(|p| p.0),
+        Some([63, 0, -591])
+    );
+    assert_eq!(at(SpawnAnchor::PartySeat(1)), None);
+    let shot = ModuleShot {
+        angles: [0x80, 0, 0],
+        tr: [0, 0x300, 0x666],
+        focus: [-63, 0, 591],
+        frames: 1,
+    };
+    let anchor = SpawnAnchor::ShotPointFacing { y: 0, yaw: 0x800 };
+    assert_eq!(
+        spawn_anchor_point_with(anchor, Some(creature), None, Some(shot), seats),
+        Some(([63, 0, -591], [0, 0x810, 0]))
+    );
+    assert_eq!(spawn_anchor_scale(anchor, Some(shot), seats), 0x666);
+    assert_eq!(
+        spawn_anchor_scale(SpawnAnchor::Caster { y: 0 }, Some(shot), seats),
+        0x1000
+    );
 }

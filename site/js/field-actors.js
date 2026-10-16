@@ -21,6 +21,9 @@
   /* The wall-clock animator's rate, for a WASM build without the clip-state
    * exports (the engine's world-ticked clips replace it). */
   const NPC_CLIP_FPS = 15;
+  /* An actor's shatter companion mesh id is its mesh id plus this
+   * (`shardMesh`): 910000 + i lands in the free 960000 band. */
+  const SHARD_MESH_OFFSET = 50000;
   /* Floats per actor in a `draw_poses` export (FieldActors::DRAW_POSE_STRIDE). */
   const DRAW_POSE_STRIDE = 8;
   /* Ints per actor in a `clip_states` export (FieldActors::CLIP_STATE_STRIDE). */
@@ -78,6 +81,32 @@
     }
   }
 
+  /* The shatter renderer's draw (`FUN_80029888`; kernel
+   * `legaia_render_kernels::shatter`): a body breaking into its triangles no
+   * longer shares a vertex between two of them, so it draws from a
+   * de-indexed companion mesh. Upload that companion once - every corner `k`
+   * takes vertex `idx[k]`'s UV, CBA/TSB, flat colour and bone - and return
+   * the record the per-frame pose writes into. The engine's shatter export
+   * then hands one object-local position per index each frame. */
+  function shardMesh(renderer, meshId, idx, uvs, cba, flat, objectIds) {
+    const n = idx.length;
+    const uv2 = new Uint8Array(n * 2);
+    const ct2 = new Uint16Array(n * 2);
+    const fl2 = (flat && flat.length) ? new Uint8Array(n * 4) : null;
+    const oid = new Uint32Array(n);
+    const ind = new Uint32Array(n);
+    for (let k = 0; k < n; k++) {
+      const v = idx[k];
+      uv2[k * 2] = uvs[v * 2]; uv2[k * 2 + 1] = uvs[v * 2 + 1];
+      ct2[k * 2] = cba[v * 2]; ct2[k * 2 + 1] = cba[v * 2 + 1];
+      if (fl2) for (let c = 0; c < 4; c++) fl2[k * 4 + c] = flat[v * 4 + c];
+      oid[k] = objectIds.length ? objectIds[v] : 0;
+      ind[k] = k;
+    }
+    renderer.uploadSceneMesh(meshId, new Float32Array(n * 3), uv2, ct2, ind, fl2);
+    return { meshId, objectIds: oid, out: new Float32Array(n * 3) };
+  }
+
   /* Bind one export family by prefix. A missing export comes back as
    * `null`, so a stale cached WASM degrades the way the play page always
    * has (no clip states -> wall-clock animator, and so on). */
@@ -103,6 +132,8 @@
       live_bones: f('live_bones'),
       morph_states: f('morph_states'),
       morph_base: f('morph_base'),
+      shatter_states: f('shatter_states'),
+      shatter: f('shatter'),
     };
   }
 
@@ -202,6 +233,9 @@
      * deltas do; on a move the object-local base is swapped for the
      * engine's morphed one and re-posed. `-1` = never armed. */
     const morphStates = a.morph_states ? a.morph_states() : null;
+    /* Op `43 07`'s deformation, one byte per entry (empty while no actor is
+     * breaking up): a marked entry draws its shards instead of its mesh. */
+    const shatterStates = (a.shatter_states && a.shatter) ? a.shatter_states() : null;
     const clipFrame = Math.floor(performance.now() / 1000 * NPC_CLIP_FPS);
     for (let k = 0; k < recs.length; k++) {
       const n = recs[k];
@@ -260,9 +294,41 @@
           renderer.updateSceneMeshPositions(n.meshId, n.base);
         }
       }
+      /* The shatter renderer: the engine's shattered object-local corners,
+       * posed like the mesh (the live clip bones, else the spawn clip's
+       * frame 0, else as they stand) into the de-indexed companion, drawn
+       * both sides - `FUN_80029DD8` issues no NCLIP. */
+      let drawMeshId = n.meshId;
+      let shardNclip;
+      if (shatterStates && n.i < shatterStates.length && shatterStates[n.i]) {
+        const sp = a.shatter(n.i);
+        if (sp.length) {
+          if (!n.shard || n.shard.out.length !== sp.length) {
+            /* `shatter` left this entry's mesh selected. */
+            n.shard = shardMesh(renderer, n.meshId + SHARD_MESH_OFFSET, a.mesh_indices(),
+              a.mesh_uvs(), a.mesh_cba_tsb(), a.mesh_flat_rgba(), a.mesh_object_ids());
+          }
+          let bones = null, parts = 0, f0 = 0;
+          if (clipStates && a.live_bones) {
+            bones = a.live_bones(n.i);
+            parts = bones.length / 6;
+          }
+          if ((!bones || !bones.length) && n.frameCount > 0) {
+            bones = n.frames; parts = n.partCount;
+          }
+          if (bones && bones.length && parts > 0) {
+            poseInto(n.shard.out, sp, n.shard.objectIds, bones, parts, f0);
+            renderer.updateSceneMeshPositions(n.shard.meshId, n.shard.out);
+          } else {
+            renderer.updateSceneMeshPositions(n.shard.meshId, sp);
+          }
+          drawMeshId = n.shard.meshId;
+          shardNclip = 0;
+        }
+      }
       const yaw = np[base + 4], pitch = np[base + 5], roll = np[base + 6];
       const actorDraw = Object.assign({
-        meshId: n.meshId,
+        meshId: drawMeshId,
         x: np[base + 1], y: np[base + 2], z: np[base + 3],
         rotY: -yaw * A2R,
         scale: np[base + 7],
@@ -270,6 +336,7 @@
          * object-effect clip, `play_effect_clip`). */
         npcSlot: n.slot | 0,
       }, o.extra || {});
+      if (shardNclip !== undefined) actorDraw.nclip = shardNclip;
       const tk = n.i * 4;
       if (ntint && tk + 3 < ntint.length && ntint[tk + 3] > 0) {
         actorDraw.cue = { far: [ntint[tk], ntint[tk + 1], ntint[tk + 2]], nearZ: -1, farZ: 0, maxIr0: ntint[tk + 3] };
@@ -289,5 +356,5 @@
     }
   }
 
-  window.LegaiaFieldActors = { poseInto, api, upload, rebind, frame };
+  window.LegaiaFieldActors = { poseInto, shardMesh, api, upload, rebind, frame };
 })();

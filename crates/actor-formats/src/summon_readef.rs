@@ -482,8 +482,15 @@ pub const ACTOR_ELEMENT_OFFSET: usize = 0x1D;
 pub const PART_STREAM_OFFSET: usize = 0x8C;
 /// Offset of a per-part entry's playback-rate byte.
 pub const PART_RATE_OFFSET: usize = 0x78;
-/// Bytes of a per-part entry's head kept as the effect-script region.
-const PART_HEAD_BYTES: usize = 0x54;
+/// Bytes of a per-part entry's head kept on the clip: the whole head below
+/// the stream pointer (`+0x88`), as for a monster archive entry
+/// ([`crate::monster_archive::EFFECT_SCRIPT_HEAD_BYTES`]). The anim tick and
+/// the commit read the committed entry's head past the effect records - the
+/// event lock `+0x76`, and the loop window `+0x84..+0x86` the commit
+/// `FUN_8004AD80` seeds the creature's `+0x21B` / `+0x176` from
+/// (`0x8004BDEC..0x8004BE0C`) - so a head cut at the effect records' end
+/// (`+0x54`) left every creature clip without its window.
+const PART_HEAD_BYTES: usize = crate::monster_archive::EFFECT_SCRIPT_HEAD_BYTES;
 /// Bytes per packed part record (six 12-bit fields).
 const PART_POSE_STRIDE: usize = 9;
 

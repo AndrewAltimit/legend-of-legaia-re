@@ -195,7 +195,10 @@ floor climbs back from dark after the creature leaves.
 **The store can freeze.** Once the base sits on the floor value, the pass skips
 both colour stores when `ctx+0x278` bit 0 is set or `ctx+0x243 == 2`
 (`0x80050790..0x800507D4`). It also clears bit 3 of `0x1F800394`, the gate on
-`FUN_8001D058`'s call to `FUN_80026CE4`. The summon band sets `ctx+0x278 = 1`
+`FUN_8001D058`'s call to `FUN_80026CE4`, whose `FUN_80026F50` is the grid's
+only draw: a storing pass sets the bit again (`0x800507F4..0x80050808`), so
+the grid is on the screen exactly while the pass stores. A cast module that
+holds `ctx+0x278` bit 0 (PROT 0927's `3`) therefore plays on a black floor. The summon band sets `ctx+0x278 = 1`
 at `0x32 -> 0x33` (`0x801E49F8`) and clears it at the `0x34` exit
 (`0x801E4B14`), so through the close-up the grid holds its last pre-floor
 ambient. The catalogued summon states agree: the `0x34` captures hold
@@ -230,7 +233,8 @@ store-skip test over the band's and the slot-B module's copies of
 `ctx+0x278`. Run ahead of the SM, the ramp trailed the close-up accumulator
 the same pass advances by a frame: `theeder_summon_mid_cast` holds base
 `0x38` at accumulator `72`, the ramp's drop equal to the accumulator. `battle_ground_grid::backdrop_cue_step` is the
-pair's `+0x78` ramp, stepped in the same tick; `BattleState::stage_outdoor`
+pair's `+0x78` ramp, stepped in the same tick; the same pass carries the grid's draw gate out as
+`World::battle_ground_grid_drawn`, which both hosts gate their grid draw on; `BattleState::stage_outdoor`
 (set by the host that resolved the stage) picks its ceiling. Both hosts build
 the grid with `battle_backdrop::build_ground_grid_rgbc` over
 `World::battle_ambient_base` (`build_battle_ground_grid` in `play-window`) and

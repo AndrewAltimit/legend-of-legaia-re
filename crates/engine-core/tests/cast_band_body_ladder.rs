@@ -347,14 +347,12 @@ fn every_ported_cast_band_body_is_entered_once() {
         let mut saw_port = false;
         let mut saw_done = false;
         for _ in 0..MAX_FRAMES {
-            // Only the second player-Seru band takes a non-zero stager arm,
-            // and only off its rendezvous phases: PROT 0909 parks on two
-            // phases until its move-VM stager bumps them, and every other arm
-            // of that band's stagers only hands spawn records to the pool.
-            // The first band and the capture-class arms take `0` throughout.
-            let rendezvous = legaia_engine_battle_vm::seru_magic_ticks::VIGURO_RENDEZVOUS_PHASES
-                .contains(&w.casting.module_phase);
-            let arm = u8::from(module == "cast_seru_ticks_b" && !rendezvous) * 2;
+            // The second player-Seru band's stagers that take an arm only hand
+            // spawn records to the pool off a non-zero one; the first band and
+            // the capture-class arms take `0` throughout. PROT 0909's two
+            // rendezvous are released by its records' stager calls, whose
+            // clocks the band keeps here since this walk seats no parts.
+            let arm = u8::from(module == "cast_seru_ticks_b") * 2;
             let Some(run) = w.run_cast_module_code(id, arm) else {
                 break;
             };
@@ -363,6 +361,10 @@ fn every_ported_cast_band_body_is_entered_once() {
                 "{module} {body:#010X}: id {id:#04X} paged PROT {} instead",
                 run.prot_entry
             );
+            // The battle animation pass: it commits the clips the arms stage
+            // (PROT 0904's arm 7 waits on its creature's) and fades the dead
+            // (the settle polls wait on that).
+            w.tick_battle_animations();
             // A frame where the band runs a stager arm rather than the tick
             // reports `tick_ported == false` mid-chain; that is a step of the
             // walk, not its end, so only a ported frame that reports not-busy

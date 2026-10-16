@@ -465,6 +465,24 @@ pub struct BattleActor {
     /// at the floor instead of showing through it. Nothing lowers it; the
     /// node is rebuilt with the next fight.
     pub floor_clip: bool,
+    /// `+0x1BA` - the **shatter** word. `FUN_80047430` copies it into the
+    /// render node's `+0x7A` (`0x800480A4`), and a non-zero `+0x7A` sends the
+    /// body through the shatter renderer (`FUN_80029888`) instead of the
+    /// plain dispatcher: the mesh breaks into its own triangles, each spun
+    /// about its centroid and pushed out by `+0x1BA / 128` of its distance
+    /// (`docs/subsystems/renderer.md`, the shatter renderer). Its writers are
+    /// cast modules - Zenoir and Jedo on monsters, six summons on their own
+    /// creature seat - and the Jette clip hook in `FUN_8004CE2C`. Nothing
+    /// clears it inside a fight; the record is rebuilt with the next one.
+    pub shatter: u16,
+    /// The render node's `+0x6D`: the row of the deformation table
+    /// `0x8007BE60` the shatter reads (offset, sweep front, flags). `None`
+    /// is the byte battle setup leaves there - `0xFF` on every node the
+    /// Zenoir captures read, whose row (`0x8007C5F4`, past the table's
+    /// written rows) reads zero - so the default shatter takes the plain
+    /// spin and push. The Jette hook stages `Some(2)` and clears to
+    /// `Some(0)`.
+    pub shatter_row: Option<u8>,
     /// `+0x21B` - hit-count bound (script-defined; loop exits at
     /// `ctx.hit_counter >= hit_count_bound`).
     pub hit_count_bound: u8,

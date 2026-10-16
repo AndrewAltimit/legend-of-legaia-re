@@ -12,6 +12,15 @@ pub const VERA_TICK: u32 = 0x801F_69D8;
 /// The arm PROT 0905 clears the target's render flag in (`0x801F6D98`).
 pub const VERA_SHOW_ARM: u8 = 1;
 
+/// The arm PROT 0905 hides the target in, behind the cut's flash: render
+/// flag `0xFF` and `+0x04 = 0` (`li s2,0xff` / `sb s2,0x21c(s3)` /
+/// `sw zero,0x4(s3)` at `0x801F6F3C..0x801F6FD8`). The target stays hidden
+/// through the creature's hover until arm 8's exit shows it again.
+pub const VERA_HIDE_ARM: u8 = 4;
+
+/// The render flag [`VERA_HIDE_ARM`] stores on the target.
+pub const VERA_HIDDEN_RENDER_FLAG: u8 = 0xFF;
+
 /// The arm PROT 0905 poses the summon seat in (`0x801F7300..0x801F733C`).
 pub const VERA_POSE_ARM: u8 = 5;
 
@@ -175,7 +184,8 @@ pub fn vera_heal_amount(magic_level: u8, hp: u16, max_hp: u16) -> u16 {
 /// `+0x10` is **stored**, not accumulated, and it is stored negative - the
 /// one site in this set that does not `addu` into the pending HP-bar delta.
 ///
-/// Other simulation state: the target's render flag `= 0` in arm 1, the
+/// Other simulation state: the target's render flag `= 0` in arm 1 and
+/// `= 0xFF` with `+0x04 = 0` in arm 4 ([`VERA_HIDE_ARM`]), the
 /// summon seat's `+0x0C = 0x1000` / animation rate `= 8` / render flag `= 0`
 /// / clip pair `+= 1` in arm 5, `+0x1DA = 2` then `= 3` with a `+0x1DC` bump
 /// and render flag `= 9` in arm 8, and the fade countdown in arm 10 that
@@ -204,6 +214,13 @@ pub fn vera_tick(
             }
             CastArmStep::Advance
         }
+        VERA_HIDE_ARM => {
+            if let Some(t) = seats.get_mut(who.victim as usize) {
+                t.render_flag = VERA_HIDDEN_RENDER_FLAG;
+                t.present_04 = 0;
+            }
+            CastArmStep::Advance
+        }
         VERA_POSE_ARM => {
             if let Some(s) = seats.get_mut(who.summon as usize) {
                 s.root_speed = SERU_HIT_ROOT_SPEED;
@@ -212,6 +229,9 @@ pub fn vera_tick(
                 s.staged_anim = s.staged_anim.wrapping_add(1);
                 s.restage = s.restage.wrapping_add(1);
             }
+            // `addiu v0,v0,0x3; sb v0,0x279(s2)` at `0x801F7434`: the arm
+            // steps the phase by three, so arms 6 and 7 are never run.
+            c.phase = c.phase.wrapping_add(2);
             CastArmStep::Advance
         }
         VERA_CAST_ARM => {
@@ -221,8 +241,12 @@ pub fn vera_tick(
                 s.restage = s.restage.wrapping_add(1);
                 s.render_flag = 9;
             }
+            // `lui v1,0x2008; ori v1,0x200` / `sw v1,0x4(s3)` / `sb zero,
+            // 0x21c(s3)` (`0x801F79FC..0x801F7A24`): the target arm 4 hid is
+            // shown again.
             if let Some(t) = seats.get_mut(who.victim as usize) {
                 t.render_flag = 0;
+                t.present_04 = GIZAM_ROW_LIT_WORD;
             }
             CastArmStep::Advance
         }

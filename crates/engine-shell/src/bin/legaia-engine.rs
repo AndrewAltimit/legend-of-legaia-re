@@ -61,6 +61,7 @@ fn main() -> Result<()> {
     };
     match cmd {
         Cmd::RetailCompare(args) => legaia_parity::retail_compare_cli::run(args),
+        Cmd::CastSequenceScore(args) => legaia_parity::cast_sequence::run(args),
         Cmd::Info {
             scene,
             extracted_root,

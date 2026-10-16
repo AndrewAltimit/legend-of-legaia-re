@@ -141,7 +141,9 @@ impl Renderer {
     /// Stage two ordering-table lists into the one overlay buffer: `under`
     /// (drawn before the 2D sprite / text overlays) first, then `over`. Each
     /// list is ordered on its own by the shared builder; the split point is
-    /// the number of runs `under` produced.
+    /// the number of runs `under` produced. `under`'s backdrops
+    /// ([`legaia_render_kernels::screen_prim::split_backdrop`]) lead the
+    /// buffer as a list of their own, which the scene pass draws first.
     pub(super) fn stage_screen_overlay_split(
         &self,
         under: &[legaia_render_kernels::screen_prim::ScreenPrim],
@@ -151,18 +153,27 @@ impl Renderer {
             legaia_render_kernels::vram_capture::PSX_SCREEN_WIDTH as u32,
             legaia_render_kernels::vram_capture::PSX_SCREEN_HEIGHT as u32,
         );
-        let mut geo = legaia_render_kernels::screen_prim::build_geometry(under, w, h);
+        use legaia_render_kernels::screen_prim::{OverlayGeometry, build_geometry, split_backdrop};
+        let append =
+            |geo: &mut OverlayGeometry, list: &[legaia_render_kernels::screen_prim::ScreenPrim]| {
+                if list.is_empty() {
+                    return;
+                }
+                let tail = build_geometry(list, w, h);
+                let (vbase, ibase) = (geo.vertices.len() as u32, geo.indices.len() as u32);
+                geo.vertices.extend(tail.vertices);
+                geo.indices.extend(tail.indices.iter().map(|i| i + vbase));
+                geo.runs.extend(tail.runs.into_iter().map(|mut r| {
+                    r.index_start += ibase;
+                    r
+                }));
+            };
+        let (backdrop, under) = split_backdrop(under);
+        let mut geo = build_geometry(&backdrop, w, h);
+        self.screen_overlay_backdrop_runs.set(geo.runs.len());
+        append(&mut geo, &under);
         self.screen_overlay_under_runs.set(geo.runs.len());
-        if !over.is_empty() {
-            let tail = legaia_render_kernels::screen_prim::build_geometry(over, w, h);
-            let (vbase, ibase) = (geo.vertices.len() as u32, geo.indices.len() as u32);
-            geo.vertices.extend(tail.vertices);
-            geo.indices.extend(tail.indices.iter().map(|i| i + vbase));
-            geo.runs.extend(tail.runs.into_iter().map(|mut r| {
-                r.index_start += ibase;
-                r
-            }));
-        }
+        append(&mut geo, over);
         self.screen_overlay_runs.borrow_mut().clone_from(&geo.runs);
         if geo.is_empty() {
             return;
@@ -300,10 +311,38 @@ impl Renderer {
         vram: &UploadedVram,
         under: bool,
     ) {
-        use legaia_render_kernels::screen_prim::BlendClass;
         let all = self.screen_overlay_runs.borrow();
         let split = self.screen_overlay_under_runs.get().min(all.len());
-        let runs = if under { &all[..split] } else { &all[split..] };
+        let back = self.screen_overlay_backdrop_runs.get().min(split);
+        let runs = if under {
+            &all[back..split]
+        } else {
+            &all[split..]
+        };
+        self.draw_runs(rp, vram, runs);
+    }
+
+    /// Draw the staged backdrops - the screen primitives at the far plane,
+    /// retail's farthest ordering-table bucket - ahead of the scene's 3D
+    /// draws, so blended scene primitives (which write no depth) land over
+    /// them as they do over retail's first-drawn packets.
+    pub(super) fn draw_screen_overlay_backdrop_runs(
+        &self,
+        rp: &mut wgpu::RenderPass<'_>,
+        vram: &UploadedVram,
+    ) {
+        let all = self.screen_overlay_runs.borrow();
+        let back = self.screen_overlay_backdrop_runs.get().min(all.len());
+        self.draw_runs(rp, vram, &all[..back]);
+    }
+
+    fn draw_runs(
+        &self,
+        rp: &mut wgpu::RenderPass<'_>,
+        vram: &UploadedVram,
+        runs: &[legaia_render_kernels::screen_prim::DrawRun],
+    ) {
+        use legaia_render_kernels::screen_prim::BlendClass;
         if runs.is_empty() {
             return;
         }

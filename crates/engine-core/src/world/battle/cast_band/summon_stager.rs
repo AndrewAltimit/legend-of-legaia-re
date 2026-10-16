@@ -42,11 +42,19 @@ impl World {
         // tick of the module, the way retail's arm 0 draws it. The ring sweep
         // starts from zero for the same reason.
         self.casting.module_nighto_outcome = None;
+        self.casting.module_stager_calls.clear();
+        self.casting.module_record_clocks.clear();
         self.casting.module_ring_angle = 0;
         self.casting.module_theeder = Default::default();
         self.casting.module_swordie = Default::default();
+        self.casting.module_rain = Default::default();
+        self.casting.module_orb = Default::default();
         self.casting.module_settle_countdown = 0;
         self.casting.module_cam = Default::default();
+        self.casting.module_pres = Default::default();
+        self.casting.module_saved_poses.clear();
+        self.casting.module_creature_clip_kind = 0;
+        self.casting.module_shake = 0;
         self.casting.summon_stager = Some(SummonStager {
             caster,
             spell_id,
@@ -73,6 +81,7 @@ impl World {
         // Retail re-enters the paged module every frame from this seam; the
         // band's PORT rows are the code that runs there.
         let module_arm = self.casting.module_phase;
+        self.orb_land_deferred_seat();
         // The creature's live seat and walk state, as a directed module's
         // walk arm reads them.
         let seat_live = self
@@ -89,9 +98,23 @@ impl World {
                 },
             );
         self.casting.module_cam.creature_live = seat_live;
+        self.casting.module_cam.victim_untargetable =
+            self.casting.module_cam.victim_slot.is_some_and(|v| {
+                self.cast_view(v).flags
+                    & legaia_engine_battle_vm::cast_module_ticks::FLAG_NON_TARGETABLE
+                    != 0
+            });
         self.casting.module_cam.creature_arrived = st.walked;
+        self.feed_module_creature(st.caster);
         let placed_before = self.casting.module_cam.creature.is_some();
         let run = self.run_cast_module_code(st.spell_id, module_arm);
+        // PROT 0920's rain routine, which the draw tick calls after the
+        // module's pass while the module's budget word is set.
+        self.step_module_rain();
+        if let Some(r) = run.as_ref() {
+            self.apply_module_creature_writes(r.prot_entry, r.phase, r.capture_drift);
+            self.apply_module_seat_motion(r.prot_entry, r.phase);
+        }
         // The module seats its creature itself (Gimard's arm 3); put the
         // engine's creature where it did.
         if !placed_before
@@ -128,10 +151,7 @@ impl World {
                 });
             }
             if !r.spawns.is_empty() {
-                self.stage_module_arm_spawns(r.prot_entry, r.spawns, r.camera_shot);
-            }
-            if let Some(c) = r.caption {
-                self.casting.module_caption = Some(c);
+                self.stage_module_arm_spawns(r.prot_entry, r.spawns, r.camera_shot, r.arm_point);
             }
             // The arm's own fades run beside the band's flash: retail's
             // spawner takes a fresh pool actor per call.
@@ -148,6 +168,11 @@ impl World {
                 self.presentation.module_fades.extend(seat);
             }
         }
+        // A caption is the arm's own text actor, whichever way the module's
+        // spawns are seated.
+        if let Some(c) = run.as_ref().and_then(|r| r.caption) {
+            self.casting.module_caption = Some(c);
+        }
         let directed_hit = profile.and_then(|p| p.hit_arm);
         let module_busy =
             profile.is_some() && run.as_ref().is_some_and(|r| r.tick_ported && r.busy);
@@ -162,6 +187,9 @@ impl World {
             && let Some(cam) = self.battle.camera.as_mut()
         {
             cam.nudge_module(n.pitch, n.tr_y, n.tr_z);
+            if n.tr_x != 0 {
+                cam.nudge_module_tr_x(n.tr_x);
+            }
         }
         if let Some(f) = run.as_ref().and_then(|r| r.camera_follow)
             && let Some(cam) = self.battle.camera.as_mut()
@@ -188,8 +216,9 @@ impl World {
             .as_ref()
             .and_then(|r| legaia_engine_battle_vm::cast_module_camera::module_profile(r.prot_entry))
             .and_then(|p| p.seat_arm);
+        let seat_entry = run.as_ref().map(|r| r.prot_entry);
         if let Some((arm, spell, at)) = self.casting.summon_seat_owed
-            && (module_phase >= arm || run.is_none())
+            && (super::module_seat_arm::seat_due(seat_entry, arm, module_phase) || run.is_none())
         {
             self.casting.summon_seat_owed = None;
             self.casting.pending_summon_spawn = Some((spell, at));
@@ -199,7 +228,9 @@ impl World {
                 // Phase 0: seat the creature (retail: the stager's
                 // `FUN_801F19EC` installs the streamed record as slot 7) -
                 // here, unless the module seats it in a later arm.
-                match seat_arm.filter(|&a| module_phase < a) {
+                match seat_arm
+                    .filter(|&a| !super::module_seat_arm::seat_due(seat_entry, a, module_phase))
+                {
                     Some(arm) => {
                         self.casting.summon_seat_owed = Some((arm, st.spell_id, st.spawn));
                     }
@@ -290,6 +321,11 @@ impl World {
         let Some(a) = self.actors.get_mut(slot) else {
             return true;
         };
+        let ms = &a.move_state;
+        if (ms.world_x, ms.world_z) == (goal[0], goal[2]) {
+            // Already there (a module seated it on its goal): no walk clip.
+            return true;
+        }
         if a.battle.queued_anim != 1 {
             a.battle.queued_anim = 1;
         }

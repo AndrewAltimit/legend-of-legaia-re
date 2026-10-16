@@ -36,10 +36,11 @@ const IDS: [(u8, u32); 6] = [
 
 /// Hard stop on the walk. A body the engine runs ungated steps one arm a
 /// frame; one whose arms are paced on its own countdown
-/// (`legaia_engine_battle_vm::cast_module_camera`, PROT 0903) holds each counted arm
-/// for as long as retail does - about 500 frames for Gimard - so anything
-/// past this is a body that never reported done.
-const MAX_FRAMES: usize = 1024;
+/// (`legaia_engine_battle_vm::cast_module_camera`) holds each counted arm
+/// for as long as retail does - about 500 frames for Gimard (PROT 0903) and
+/// over 1000 for Gizam (PROT 0906) - so anything past this is a body that
+/// never reported done.
+const MAX_FRAMES: usize = 4096;
 
 /// The hosts seat the summon creature at `8 + party_count`.
 const LONE_SUMMON_SLOT: u8 = 9;
@@ -90,6 +91,26 @@ fn battle_world() -> World {
     world
 }
 
+/// Every resident cast-band module image, read off `PROT.DAT`.
+fn cast_pool(
+    dir: &std::path::Path,
+) -> std::sync::Arc<legaia_overlay_images::cast_effect_pool::CastEffectPool> {
+    let mut archive =
+        legaia_prot::archive::Archive::open(&dir.join("PROT.DAT")).expect("open PROT.DAT");
+    let mut pool = legaia_overlay_images::cast_effect_pool::CastEffectPool::new();
+    for idx in CAST_MODULE_PROT_FIRST..=CAST_MODULE_PROT_LAST {
+        let Some(entry) = archive.entries.get(idx as usize).cloned() else {
+            continue;
+        };
+        let mut bytes = Vec::new();
+        if archive.read_entry(&entry, &mut bytes).is_err() {
+            continue;
+        }
+        pool.insert(idx, &bytes);
+    }
+    std::sync::Arc::new(pool)
+}
+
 /// The fields these bodies write that survive `write_cast_actor_state`, for
 /// the seats they write them on.
 fn choreography_probe(w: &World) -> Vec<(u8, u8, u8, u8)> {
@@ -113,21 +134,7 @@ fn every_player_seru_tick_walks_its_phase_chain_and_writes_state() {
         return;
     };
     let scus = std::fs::read(dir.join("SCUS_942.54")).expect("read SCUS_942.54");
-
-    let mut archive =
-        legaia_prot::archive::Archive::open(&dir.join("PROT.DAT")).expect("open PROT.DAT");
-    let mut pool = legaia_overlay_images::cast_effect_pool::CastEffectPool::new();
-    for idx in CAST_MODULE_PROT_FIRST..=CAST_MODULE_PROT_LAST {
-        let Some(entry) = archive.entries.get(idx as usize).cloned() else {
-            continue;
-        };
-        let mut bytes = Vec::new();
-        if archive.read_entry(&entry, &mut bytes).is_err() {
-            continue;
-        }
-        pool.insert(idx, &bytes);
-    }
-    let pool = std::sync::Arc::new(pool);
+    let pool = cast_pool(&dir);
 
     let mut walked = 0usize;
     let mut total_frames = 0usize;
@@ -158,6 +165,10 @@ fn every_player_seru_tick_walks_its_phase_chain_and_writes_state() {
                 run.prot_entry, expect_entry,
                 "id {id:#04x} ran a different entry than the resolver named"
             );
+            // The battle animation pass: it commits the clips the arms stage
+            // (PROT 0904's arm 7 waits on its creature's) and fades the dead
+            // (the settle polls wait on that).
+            w.tick_battle_animations();
             entered |= run.tick_ported;
             phases.push(run.phase);
             frames += 1;
@@ -207,4 +218,142 @@ fn every_player_seru_tick_walks_its_phase_chain_and_writes_state() {
          in {total_frames} frames, all {bodies_that_wrote} wrote battle state",
         IDS.len()
     );
+}
+
+/// Gizam (`0x84`, PROT 0906) cast into a row that already holds a dead foe.
+///
+/// Arm 7 relights the row (`0x801F6F64..0x801F6F94`): the render-flag clear
+/// `sb zero,0x21c(v1)` at `0x801F6F7C` sits **past** the `beq` on the seat's
+/// HP (its delay slot is a `nop`), so only a living seat is reset. A dead
+/// seat keeps its defeat-fade state `2` and its spent colour word
+/// `+0x04 = 0`, which is what arm 14's row poll (`0x801F7644..0x801F76DC`)
+/// waits on for a dead seat. Clearing the dead seat's state too put it back on the tint
+/// pass's decay arm, which walks the colour word up to neutral and never
+/// back to zero, so the poll held forever: the two-foe softlock where the
+/// first foe died earlier in the round and Gizam fell on the survivor.
+#[test]
+fn gizam_settles_over_a_row_with_a_dead_foe() {
+    let Some(dir) = extracted_dir() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset or extracted/ incomplete");
+        return;
+    };
+    let scus = std::fs::read(dir.join("SCUS_942.54")).expect("read SCUS_942.54");
+    let mut w = battle_world();
+    w.install_menu_text(&scus);
+    w.casting.effect_pool = Some(cast_pool(&dir));
+    // Engine slot 1 (retail seat 3): a foe killed earlier in the round,
+    // its defeat fade already run out. The survivors stay at full HP.
+    let dead = 1usize;
+    w.actors[dead].battle.hp = 0;
+    w.actors[dead].battle.render_flag = legaia_engine_battle_vm::battle_formulas::STATE_DEFEAT_FADE;
+    w.actors[dead].battle.render_color = 0;
+    w.actors[0].battle.active_target = 2;
+
+    let mut phases = Vec::new();
+    let mut finished = false;
+    for _ in 0..MAX_FRAMES {
+        let run = w.run_cast_module_code(0x84, 0).expect("PROT 0906 resident");
+        assert_eq!(run.prot_entry, 906);
+        w.tick_battle_animations();
+        if phases.last() != Some(&run.phase) {
+            phases.push(run.phase);
+        }
+        if !run.busy {
+            finished = true;
+            break;
+        }
+    }
+    assert!(
+        phases.contains(&14),
+        "the walk never reached arm 14 (phases {phases:?})"
+    );
+    assert!(
+        finished,
+        "Gizam never left its row poll with a dead foe in the row (phases {phases:?}; \
+         dead seat state {:#x} colour {:#x})",
+        w.actors[dead].battle.render_flag, w.actors[dead].battle.render_color,
+    );
+    assert_eq!(
+        w.actors[dead].battle.render_flag,
+        legaia_engine_battle_vm::battle_formulas::STATE_DEFEAT_FADE,
+        "arm 7 reset the dead seat's defeat-fade state"
+    );
+    assert_eq!(w.actors[dead].battle.render_color, 0);
+    eprintln!("[ok] Gizam over a dead foe: phases {phases:?}");
+}
+
+/// Theeder (`0x82`, PROT 0904) with its real creature clips: arm 7 holds on
+/// the creature's loop counter `+0x21B` (`lbu v1,0x21b(s4)` / `beq` on `0xFF`
+/// at `0x801F71C4`) for as long as clip 1 - `summon.dat`'s Theeder record,
+/// entry window `(0xFF, 17, 17)` at rate `1` - takes to reach its park
+/// frame. At the creature's post-commit animation rate `4` that is 17
+/// keyframes at an eighth of a keyframe a tick: 136 ticks, against the ~141
+/// vsyncs the cast-sequence oracle measures on retail. Before the counter
+/// was kept the arm passed on the commit, one tick.
+#[test]
+fn theeder_arm_seven_holds_on_the_creature_loop_counter() {
+    use legaia_engine_battle_vm::seru_magic_ticks::THEEDER_ATTACK_ARM;
+    let Some(dir) = extracted_dir() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset or extracted/ incomplete");
+        return;
+    };
+    let scus = std::fs::read(dir.join("SCUS_942.54")).expect("read SCUS_942.54");
+    let mut archive =
+        legaia_prot::archive::Archive::open(&dir.join("PROT.DAT")).expect("open PROT.DAT");
+    let entry = archive
+        .entries
+        .get(usize::from(
+            legaia_actor_formats::summon_readef::SUMMON_PROT_INDEX,
+        ))
+        .cloned()
+        .expect("summon.dat entry");
+    let mut summon_dat = Vec::new();
+    archive
+        .read_entry(&entry, &mut summon_dat)
+        .expect("read summon.dat");
+    let cast = legaia_actor_formats::summon_readef::parse_cast(&summon_dat, 0x82)
+        .expect("Theeder's summon record");
+    assert_eq!(
+        cast.clips.get(1).and_then(|c| c.entry_loop_window()),
+        Some((0xFF, 17, 17)),
+        "Theeder's attack clip parks on frame 17 with the count 0xFF"
+    );
+
+    let mut w = battle_world();
+    w.install_menu_text(&scus);
+    w.casting.effect_pool = Some(cast_pool(&dir));
+    let seat = usize::from(LONE_SUMMON_SLOT);
+    let idle = legaia_engine_battle::battle_anim::MonsterAnimPlayer::new(&cast.clips[0])
+        .expect("idle clip");
+    w.set_actor_battle_animation(seat, idle);
+    w.set_actor_battle_action_clips(
+        seat,
+        std::sync::Arc::new(cast.clips.iter().cloned().map(Some).collect()),
+    );
+    // The seat installer leaves the clip unseeded and the creature at rate 2.
+    w.actors[seat].battle.anim_rate = legaia_engine_battle_vm::battle_anim_rate::AnimRate(2);
+
+    let mut held = 0usize;
+    let mut counters = Vec::new();
+    for _ in 0..MAX_FRAMES {
+        let run = w.run_cast_module_code(0x82, 0).expect("PROT 0904 runs");
+        w.tick_battle_animations();
+        if run.phase == THEEDER_ATTACK_ARM {
+            held += 1;
+            counters.push(w.actors[seat].battle.hit_count_bound);
+        }
+        if !run.busy {
+            break;
+        }
+    }
+    assert!(
+        counters.first() == Some(&0xFF),
+        "the attack clip's commit seeds the counter ({:?})",
+        &counters[..counters.len().min(4)]
+    );
+    assert!(
+        (130..=150).contains(&held),
+        "arm 7 held {held} ticks; retail holds ~141"
+    );
+    eprintln!("[ok] Theeder arm 7 held {held} ticks on the creature's loop counter");
 }

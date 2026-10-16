@@ -177,6 +177,44 @@ impl LegaiaRuntime {
     /// unreachable to a headless driver: `debug_start_test_battle` is
     /// `#[cfg(not(target_arch = "wasm32"))]` and never crossed into the
     /// bundle.
+    /// DEBUG affordance, not a player surface - the browser twin of the
+    /// native window's `LEGAIA_DEBUG_SHATTER` / `LEGAIA_DEBUG_SHATTER_FLAGS`:
+    /// stamp `value` onto every seated monster's `+0x1BA` shatter word and,
+    /// in the field, onto every catalogued NPC's `+0x7A` over a debug
+    /// deformation row carrying `flags`, so the shatter renderer can be
+    /// looked at headless. Nothing in a fight clears the stamp.
+    pub fn debug_shatter(&mut self, value: u16, flags: u32) {
+        let catalog: Vec<u8> = self.actors.npcs.as_ref().map_or_else(Vec::new, |n| {
+            n.pack
+                .entries
+                .iter()
+                .map(|e| e.placement.index as u8)
+                .collect()
+        });
+        let Some(host) = self.scene_host.host_mut() else {
+            return;
+        };
+        let w = &mut host.world;
+        for (slot, _, _) in w.battle_monster_slots() {
+            if let Some(a) = w.actors.get_mut(slot) {
+                a.battle.shatter = value;
+            }
+        }
+        if w.mode == legaia_engine_mode::mode::SceneMode::Field {
+            const DEBUG_ROW: u8 = 0xFE;
+            w.npcs.face_rows.insert(
+                DEBUG_ROW,
+                legaia_engine_core::world::FieldFaceRow {
+                    offset: [0; 4],
+                    flags,
+                },
+            );
+            for slot in catalog {
+                w.npcs.faces.insert(slot, (DEBUG_ROW, value as i16));
+            }
+        }
+    }
+
     pub fn debug_force_battle(&mut self, row: i32) -> bool {
         let Some(host) = self.scene_host.host_mut() else {
             return false;

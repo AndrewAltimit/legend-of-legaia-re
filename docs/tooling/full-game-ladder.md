@@ -777,6 +777,32 @@ anchor itself points the same way: the playthrough's play-time counter
 advances about five hours between `PRO-04` (`noaru`) and `PRO-10`
 (`jouind`), over which the party's HP nearly doubles.
 
+Three reads keep the cannon phase from being lost on the turn order. Once
+the party-wide hit has landed two rounds running, the hit is the foe's every
+turn, and one group heal is queued each round while some member could not
+take two more of it, full HP or not: the hand that healed only once members
+read low healed one round, swung with all three the next, and the cannon
+that opened the round after dropped two members at once. The second group
+heal a round (the backup against a caster drawn behind the foe) is cast only
+with three members standing: with one member down, Noa and Gala cast Spoon
+side by side round after round and dealt nothing until the battle stalled
+out unresolved, which ends an attempt without the reload a wipe gets. And in
+a fight down to one foe, a member whose next attack takes off at least what
+the foe still holds swings ahead of every heal, revive, item and stance,
+reckoned from the least each of its attack kinds (a spell it can still pay
+for, or Arts) dealt this battle: a lone Gala at full HP revived Vahn into
+Songi's next strike round after round with Songi at 366 HP. Together they
+take the guarded hand from about two Songi wins in five to about three in
+five.
+
+Which hand the default stream deals moves with any change to how long a cast
+runs: seating Gilium's creature on the pass that drains PROT 0923's arm-3
+countdown (`bgtz` at `0x801F6D9C` ahead of `jal 0x801F19EC`) lands its
+damage `0x200 / 8` = 64 ticks later and shifts every later draw, with each
+cast's damage unchanged. A Songi stall that comes and goes with such a change
+is the hand, not the port: measure it across `LEGAIA_FGL_RNG_SEED` streams
+before reading it as a regression.
+
 The pad heal outside battle re-enters the Items screen while the party is
 still below its line: a use's result closes the screen back to the root
 menu, and a hand that stopped there walked on with one member healed and
@@ -1348,11 +1374,25 @@ the bag and its own spell list give it:
   most and that it can pay for (Spoon, 270 HP for 45 MP, for all three
   duellists), and drinks the bag's largest MP item when it cannot pay.
 
-The spell heal is not only a duel's. In any fight that forbids running, a
-bag with no restorative left and a member under three fifths of its HP has
-a caster with an affordable group heal cast it (Spoon heals all three):
-Gaza's second fight (`korb3` P2[2]) ran the bag dry with every member's
-Spoon unspent.
+The spell heal is not only a duel's. In a party fight that forbids running,
+a caster with an affordable group heal casts it (Spoon restores ~1150 on
+each of three members, Orb ~700) for any member under the line once the bag
+holds no restorative - Gaza's second fight (`korb3` P2[2]) ran the bag dry
+with every member's Spoon unspent - and ahead of the bag and of the Spirit
+stance whenever two members are under it. The line there is three fifths of
+the member's HP or the foe's party-wide hit with a quarter's margin,
+whichever is higher: Zora (`taiku` P2[19]) hits all three for ~1150 a
+round, two thirds of Noa's HP. One group heal a round is counted as landed
+for the members after its caster, with the same backup rule as the items
+below. A member whose spell list holds no damage spell still opens the
+Magic window for its heal: the window's "nothing to cast" is remembered per
+battle for damage spells only.
+
+The MP for those heals is kept. Against a boss, a member that knows a group
+heal casts damage spells only out of the MP above two casts of it; and on
+the way to a boss a staged fight short of one is cast at only out of the
+upper half of the pool, like a random encounter (`taiku`'s P1[2] fight
+otherwise took Vahn from 197 MP to 24 two rooms before Zora).
 
 The heals follow the bag. A second member backs up a committed heal while
 someone stands within one party-wide hit of death (turn order is drawn per

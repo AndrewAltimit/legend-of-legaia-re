@@ -53,6 +53,11 @@ pub struct BattleActorDrawPlan {
     /// The body's retail pool slot `+0x5A`: the party seat, `3 + k` for
     /// monster `k`, `7` for the summon creature.
     pub seat: i16,
+    /// The shatter the body draws under this frame - its `+0x1BA` word over
+    /// the deformation row its node's `+0x6D` names - or `None` while the
+    /// word is zero and the body takes the plain dispatcher
+    /// ([`World::battle_actor_shatter`]).
+    pub shatter: Option<legaia_render_kernels::shatter::ShatterInput>,
 }
 
 impl BattleActorDrawPlan {
@@ -141,8 +146,14 @@ impl BattleActorDrawPlan {
     /// the far side, but a semi-transparent one adds both shells: the
     /// near-camera ghost (`B + F/4`, `theeder_summon_mid_cast`'s Gilium)
     /// drew about twice retail's brightness.
+    ///
+    /// A shattering body takes neither: the shatter renderer `FUN_80029DD8`
+    /// emits every triangle with no `NCLIP`, so both sides draw
+    /// ([`legaia_render_kernels::shatter::SHATTER_NCLIP`]).
     pub fn nclip_mode(&self) -> u32 {
-        if self.draw_colour & DOUBLE_SIDED_BIT != 0 {
+        if self.shatter.is_some() {
+            legaia_render_kernels::shatter::SHATTER_NCLIP
+        } else if self.draw_colour & DOUBLE_SIDED_BIT != 0 {
             0
         } else {
             BATTLE_BODY_NCLIP
@@ -317,6 +328,88 @@ impl World {
             view_z,
             radius,
             seat,
+            shatter: self.battle_actor_shatter(actor_idx),
+        })
+    }
+
+    /// Battle body `actor_idx`'s shatter this frame: its `+0x1BA` word,
+    /// which `FUN_80047430` copies into the render node's `+0x7A`
+    /// (`0x800480A4`), over the deformation-table row the node's `+0x6D`
+    /// names. `FUN_80048A08` routes every object of a body whose `+0x7A` is
+    /// non-zero to the shatter renderer `FUN_80029888` with
+    /// `+0x7A | row[+8] << 16` (`0x80048EE0..0x80048FC0`). `None` while the
+    /// word is zero. A battle node's `+0x6D` reads `0xFF` in every capture,
+    /// whose row reads zero, so a battle shatter takes the default spin and
+    /// push; a row the Jette hook stages comes out of the field's table
+    /// ([`World::shatter_row`]), global as retail's is.
+    // REF: FUN_80048A08, FUN_80047430
+    pub fn battle_actor_shatter(
+        &self,
+        actor_idx: usize,
+    ) -> Option<legaia_render_kernels::shatter::ShatterInput> {
+        let b = &self.actors.get(actor_idx)?.battle;
+        let row = b
+            .shatter_row
+            .map_or_else(Default::default, |id| self.shatter_row(id));
+        legaia_render_kernels::shatter::ShatterInput::new(b.shatter as i16, row)
+    }
+
+    /// The body-to-view map battle body `actor_idx`'s object matrices carry
+    /// above each object's pose - the battle world scale (the base matrix
+    /// `0x8007BF10 = 16384 * I`), the camera rotation `Rx(pitch) * Ry(yaw)`
+    /// and the body's facing `+0x46` - which the shatter renderer's sweep
+    /// arms measure a triangle's centroid through (`0x8002A000`), less the
+    /// node's view translation. Hand it to
+    /// [`legaia_render_kernels::shatter::bone_sweep_frame`]. Without a
+    /// camera pose the body is measured unturned by the camera.
+    // REF: FUN_80029DD8, FUN_80048A08
+    pub fn battle_shatter_view(
+        &self,
+        actor_idx: usize,
+        pose: Option<&BattleCamPose>,
+        world_scale: f32,
+    ) -> [[f32; 3]; 3] {
+        let to_rad = |units: f32| units / 4096.0 * std::f32::consts::TAU;
+        // `Ry(b)` in the camera kernel's convention: `+Z` turns onto
+        // `(sin b, 0, cos b)`, the same turn a body's facing makes.
+        let ry = |b: f32| {
+            let (s, c) = b.sin_cos();
+            [[c, 0.0, s], [0.0, 1.0, 0.0], [-s, 0.0, c]]
+        };
+        let mul = |a: [[f32; 3]; 3], b: [[f32; 3]; 3]| -> [[f32; 3]; 3] {
+            std::array::from_fn(|r| {
+                std::array::from_fn(|c| (0..3).map(|k| a[r][k] * b[k][c]).sum())
+            })
+        };
+        let facing = self
+            .actors
+            .get(actor_idx)
+            .map_or(0.0, |a| f32::from(a.battle.facing_angle & 0xFFF));
+        let mut m = ry(to_rad(facing));
+        if let Some(p) = pose {
+            let (sa, ca) = to_rad(p.pitch).sin_cos();
+            let rx = [[1.0, 0.0, 0.0], [0.0, ca, -sa], [0.0, sa, ca]];
+            m = mul(mul(rx, ry(to_rad(p.yaw))), m);
+        }
+        m.map(|row| row.map(|x| x * world_scale))
+    }
+
+    /// Whether battle body `actor_idx` is off screen under a hide: its
+    /// `+0x21C` raised to `0xFF` **and** its colour word `+0x04` zero.
+    /// Retail's hide is the colour word - the summon band writes
+    /// `sw zero,0x4` beside `sb 0xFF,0x21C` (`0x801E4B30..0x801E4B6C`), and
+    /// a zero word sends the tint pass `FUN_8004A908` down its no-lanes arm,
+    /// whose zero colour the draw tick `FUN_800480D8` skips. The `0xFF` byte
+    /// alone hides nothing: PROT 0912's arm 7 raises it with `+0x04 =
+    /// 0x3FFFFFFF` on the creature whose shards re-form, and its arm `0x10`
+    /// with `+0x04 = 0x3FF00000` on the monsters frozen inside the ice, and
+    /// retail draws both. The engine's zero word reads as neutral only while
+    /// the flag is down, so a zero word under a raised flag is retail's zero.
+    // REF: FUN_8004A908, FUN_800480D8
+    pub fn battle_body_hidden(&self, actor_idx: usize) -> bool {
+        self.actors.get(actor_idx).is_some_and(|a| {
+            a.battle.render_flag == legaia_engine_battle_vm::battle_target_group::RENDER_FLAG_HIDDEN
+                && a.battle.render_color == 0
         })
     }
 
@@ -415,9 +508,15 @@ impl World {
         if !actor.battle.floor_clip {
             return None;
         }
+        // The summon creature's node may name another row (PROT 0927 raises
+        // `+0x42 = 2`); every other clipped body is on the floor row.
+        let kind = match self.casting.module_creature_clip_kind {
+            k if k > 1 && self.casting.summon_actor_slot == Some(actor_idx as u8) => k,
+            _ => 1,
+        };
         let clip = self
             .object_effect
-            .clip_for(1, &self.sin_lut, &self.cos_lut)?;
+            .clip_for(kind, &self.sin_lut, &self.cos_lut)?;
         let m = &actor.move_state;
         let yaw = f32::from(actor.battle.facing_angle & 0xFFF) / 4096.0 * std::f32::consts::TAU;
         let (s, c) = yaw.sin_cos();
@@ -553,6 +652,32 @@ mod tests {
             ..plan
         };
         assert_eq!(both.nclip_mode(), 0);
+        // A shattering body draws both sides whatever its word.
+        world.actors[0].battle.shatter = 0x100;
+        let shattering = world
+            .battle_actor_draw_plan(0, Some(&pose(4000.0)), 4.0, false)
+            .expect("party seat");
+        let s = shattering
+            .shatter
+            .expect("the +0x1BA word reaches the plan");
+        assert_eq!(s.word, 0x100, "battle rows read zero: default spin + push");
+        assert_eq!(shattering.nclip_mode(), 0);
+    }
+
+    /// The hide is the zero colour word under the raised `0xFF`, not the
+    /// byte alone: Freed's re-forming creature and frozen monsters keep a
+    /// lit word and draw.
+    #[test]
+    fn a_raised_hide_byte_with_a_lit_word_still_draws() {
+        let mut world = battle_world();
+        world.actors[0].battle.render_flag = 0xFF;
+        world.actors[0].battle.render_color = 0;
+        assert!(world.battle_body_hidden(0));
+        world.actors[0].battle.render_color = 0x3FF0_0000;
+        assert!(!world.battle_body_hidden(0));
+        world.actors[0].battle.render_flag = 0;
+        world.actors[0].battle.render_color = 0;
+        assert!(!world.battle_body_hidden(0), "a zero word reads neutral");
     }
 
     /// A drawn party body casts the 24-column subtractive disc of radius

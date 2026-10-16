@@ -43,6 +43,12 @@ pub struct CastFxState {
     /// Actor slot a host seated the summon creature at
     /// ([`crate::world::World::seat_summon_actor`]); `None` while no creature is out.
     pub summon_actor_slot: Option<u8>,
+    /// The seated creature's render-node size `+0x58`: its `summon.dat`
+    /// actor record's byte `+0x1F << 5` (`lbu v1,0x1f(v1)` / `sll v1,v1,0x5`
+    /// / `sh v1,0x58(v0)` in the seat installer `FUN_801F19EC`,
+    /// `0x801F1DE4..0x801F1DF0`). Set by the host's seat; `None` while no
+    /// creature record is known.
+    pub summon_body_radius: Option<i16>,
     /// A cast the action SM is carrying whose outcome is still owed - folded
     /// once, at retail's seam ([`crate::world::World::settle_cast_band`] / the stager's
     /// strike).
@@ -75,6 +81,11 @@ pub struct CastFxState {
     /// arm advances once it has passed `0x1000`, a full 12-bit turn. Reset
     /// when a cast is armed.
     pub(crate) module_ring_angle: u16,
+    /// The band word `ctx[+0x6D8]` the action SM handed the stager call now
+    /// running (`World::summon_band_word_in`), after its own drain; `None`
+    /// outside a `0x34` / `0x35` stager call. A director's band-timer gate
+    /// reads this rather than the context's pre-step copy.
+    pub(crate) band_word_live: Option<i16>,
     /// PROT 0948's beam counter, retail's module word `0x801F8858`: arm 2
     /// zeroes it as it passes and the beam builder `FUN_801F726C` adds
     /// `step * 2` on every call.
@@ -92,6 +103,20 @@ pub struct CastFxState {
     /// tick drew ([`crate::world::World::theeder_draw`]). Reset when a cast
     /// is armed.
     pub module_theeder: legaia_engine_battle_vm::seru_magic_ticks::TheederFx,
+    /// PROT 0912's crystal turn word `0x801F92AC`: zeroed on arm 3's pass,
+    /// stepped down on each held pass of arm 4
+    /// ([`legaia_engine_battle_vm::cast_module_camera::freed_crystal_corners`]).
+    pub(crate) module_freed_turn: i32,
+    /// The monster poses PROT 0927's arm 0 saves (`0x801F9C9C` / `0x801F9CBC`)
+    /// and arms 27 / 28 restore: `(engine slot, position, facing)`.
+    pub(crate) module_saved_poses: Vec<(usize, [i16; 3], u16)>,
+    /// The `+0x42` the summon creature's render node carries while it draws
+    /// clipped (`0` = the floor row, `+0x42 = 1`): PROT 0927 raises `2`, so
+    /// its creature is clipped by object-effect row 1.
+    pub(crate) module_creature_clip_kind: u16,
+    /// PROT 0927's camera-shake word `0x801F9C90`: raised by its stager
+    /// arms 3 / 4, counted down by the tick's epilogue.
+    pub(crate) module_shake: i32,
     /// The phase-chain arm whose damage site has landed this pass through
     /// it: the band folds a chain body's hit on the tick its arm first runs
     /// (`World::run_cast_module_code`), so a settle wait after it sees the
@@ -113,6 +138,20 @@ pub struct CastFxState {
     /// `None` while no Nighto cast is resident.
     pub(crate) module_nighto_outcome:
         Option<legaia_engine_battle_vm::seru_magic_ticks::NightoOutcome>,
+    /// The move VM's op-`0x20` calls a resident module's parts made since
+    /// the module's last tick - `(*gp[0x714])(actor, op[1], op[2])`, the
+    /// module's own `0x801F6734` stager row - as `(arm, what the stager reads
+    /// off the calling part)`. The band drains them into the module's stager
+    /// (`World::run_cast_module_code`); PROT 0909's phase rendezvous are two
+    /// of them.
+    pub(crate) module_stager_calls:
+        Vec<(u8, legaia_engine_battle_vm::cast_module_ticks::StagerCaller)>,
+    /// The clocks of PROT 0909's stager-calling records the host did not
+    /// seat, as `(record, stager arm, frames left)`
+    /// ([`legaia_engine_battle_vm::cast_module_camera::VIGURO_STAGER_CALLERS`]).
+    /// Armed on the pass whose arm spawns the record and dropped when the
+    /// record is seated as a part, which then makes the call itself.
+    pub(crate) module_record_clocks: Vec<(u32, u8, u16)>,
     // --- the fourteen trampoline arms ---
     /// The `+0x1DD` value PROT 0940's split arm displaced off the caster,
     /// which the module keeps in its own image word `0x801F8658` until the
@@ -125,6 +164,11 @@ pub struct CastFxState {
     /// ([`legaia_engine_battle_vm::seru_magic_ticks::SwordieSlashes`]) - the module
     /// image's own words in retail, so a fresh cast starts them at zero.
     pub module_swordie: legaia_engine_battle_vm::seru_magic_ticks::SwordieSlashes,
+    /// PROT 0920 (Slippery)'s Deadly Rain: its records, budget and colour
+    /// words and the streaks its last call drew ([`ModuleRain`]).
+    pub module_rain: ModuleRain,
+    /// PROT 0911 (Orb)'s module words the port keeps ([`ModuleOrb`]).
+    pub module_orb: ModuleOrb,
     /// The settle countdown word PROT 0909 / 0911 / 0912 / 0913 arm after
     /// their hit and drain before they write `0xFF`
     /// (`legaia_engine_battle_vm::seru_magic_ticks::SETTLE_DRAIN_PER_TICK`).
@@ -134,6 +178,12 @@ pub struct CastFxState {
     /// ([`legaia_engine_battle_vm::cast_module_camera`]). Module-image words in
     /// retail, so a fresh cast starts them at zero.
     pub module_cam: legaia_engine_battle_vm::cast_module_camera::ModuleCamState,
+    /// The resident module's presentation-hook state: the colour-wash block
+    /// `ctx[+0x27A..]`, the armed wash its last tick armed, and which arm's
+    /// once-per-arm calls have fired
+    /// (`crate::world::battle::cast_band::presentation`). Reset when a cast
+    /// is armed.
+    pub module_pres: crate::world::battle::ModulePresentation,
     /// The action id whose **capture-band** module is resident, i.e. the one
     /// battle phase `0x70` re-enters every frame through `FUN_801F2160`.
     ///
@@ -227,6 +277,36 @@ pub struct CastFxState {
 }
 
 /// One queued move-VM op-`0x17` call ([`CastFxState::pending_bursts`]).
+/// PROT 0920's (Slippery) **Deadly Rain** state: the module's own words in
+/// retail, so a fresh cast starts them at zero.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ModuleRain {
+    /// The `0x400` rain records at `*(0x801F8448)`.
+    pub drops: legaia_render_kernels::cast_rain::DeadlyRain,
+    /// `_DAT_8007BDC0` - the spawn odds, and the draw tick's gate on the rain
+    /// routine (`0` = not called).
+    pub budget: i32,
+    /// `0x801F8444` - the streak colour.
+    pub colour: u32,
+    /// What the routine's last call drew and spawned.
+    pub frame: legaia_render_kernels::cast_rain::RainFrame,
+}
+
+/// PROT 0911 (Orb)'s words: the opening star swarm's per-star offsets
+/// (`0x801F8560`, eight bytes a star) and the creature seat arm 5's pass
+/// wrote, held for the tick its cut lands on. Module-image words in retail,
+/// so a fresh cast starts them empty.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ModuleOrb {
+    /// Star `i`'s `(x, y, z)` offset, in seating order.
+    pub star_offsets: Vec<[i16; 3]>,
+    /// The creature's `(x, y, z)` after arm 5's step and lift, not yet on
+    /// the actor.
+    pub deferred_seat: Option<[i16; 3]>,
+    /// Arm 2 passed and its stars are owed on the next tick.
+    pub stars_owed: bool,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PendingBurst {
     pub mode: u32,
@@ -244,6 +324,7 @@ impl CastFxState {
             effect_pool: None,
             summon_stager: None,
             summon_actor_slot: None,
+            summon_body_radius: None,
             pending_cast: None,
             module_phase: 0,
             module_ctx_278: 0,
@@ -251,17 +332,27 @@ impl CastFxState {
             fatal_decision: None,
             fatal_banner: None,
             module_ring_angle: 0,
+            band_word_live: None,
             module_beam_counter: 0,
             module_beam_live: false,
             module_flee: false,
             module_theeder: Default::default(),
+            module_freed_turn: 0,
+            module_saved_poses: Vec::new(),
+            module_creature_clip_kind: 0,
+            module_shake: 0,
             module_hit_arm: None,
             module_settle_ticks: 0,
             module_nighto_outcome: None,
+            module_stager_calls: Vec::new(),
+            module_record_clocks: Vec::new(),
             module_split_saved_target: None,
             module_swordie: Default::default(),
+            module_rain: Default::default(),
+            module_orb: Default::default(),
             module_settle_countdown: 0,
             module_cam: Default::default(),
+            module_pres: Default::default(),
             capture_spell: None,
             caster_stages: None,
             pending_move_fx_spawn: None,

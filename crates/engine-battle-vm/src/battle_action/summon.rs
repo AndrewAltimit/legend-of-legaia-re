@@ -218,12 +218,19 @@ pub(super) fn summon_actor_freeze<H: BattleActionHost + ?Sized>(
     }
     ctx.summon_staging_a = 0;
     ctx.summon_staging_b = 0;
+    // `li v0,0x78` / `sh v0,0x2(s7)` in the delay slot of the stager call
+    // (`0x801E4B10..0x801E4B20`): the word is armed before the module's
+    // first tick sees it.
     ctx.frame_timer = 0x78;
+    host.summon_band_word_in(ctx.frame_timer);
     // The stager's phase-0 tick: this is where the creature is staged
     // (retail: `FUN_801F1ED4` -> the per-summon stager -> `FUN_801F19EC`
     // installs the streamed actor record as slot 7). The return value is
     // not tested here - only the `0x36` arm gates on it.
     let _ = host.summon_stager_tick();
+    if let Some(word) = host.summon_band_word_out() {
+        ctx.frame_timer = word;
+    }
     let party_count = host.party_count();
     for s in 0..host.slot_count() {
         let Some(a) = host.actor_mut(s) else {
@@ -231,7 +238,10 @@ pub(super) fn summon_actor_freeze<H: BattleActionHost + ?Sized>(
         };
         if summon_hide_applies(s, party_count, a.liveness) {
             // `sw zero,0x4(a0)` + `sb 0xFF,0x21c` - the prim word cleared and
-            // the hidden marker set together. The port keeps the marker.
+            // the hidden marker set together. The zero word is what hides
+            // the body; a module that raises the marker over a lit word
+            // (PROT 0912's arms 7 and `0x10`) keeps it drawn.
+            a.render_color = 0;
             a.render_flag = RENDER_FLAG_HIDDEN;
         }
     }
@@ -239,31 +249,44 @@ pub(super) fn summon_actor_freeze<H: BattleActionHost + ?Sized>(
     transition(ctx, ActionState::SummonSustain)
 }
 
-/// State `0x35`: count the `0x78` timer down, duck the music, tick the
-/// stager every frame (`jal 0x801f1ed4` at `0x801E4C7C`), and leave for
-/// `0x36` when the timer expires (`0x801E4BC4..0x801E4CA4`).
+/// State `0x35`: count the band word `ctx[+0x6D8]` down, duck the music,
+/// tick the stager every frame (`jal 0x801f1ed4` at `0x801E4C7C`), and leave
+/// for `0x36` once the word reads negative **after** the stager call
+/// (`0x801E4BC4..0x801E4CA4`).
+///
+/// The order is the point. The drain (`lhu; subu; sh` at
+/// `0x801E4BCC..0x801E4BDC`) and the streaming clamp (`ctx[+0x276]` set:
+/// the word is pinned at `1`, `0x801E4C50..0x801E4C78`) come first, then
+/// the stager, then `lh v0,0x2(s7); bgez` re-reads the word. A module whose
+/// arm countdown is that word (PROT 0904 / 0907 / 0908) re-seeds it from
+/// inside the call, so the band stays in `0x35` across those arms, with the
+/// SM's own drain added to the module's.
 pub(super) fn summon_sustain<H: BattleActionHost + ?Sized>(
     host: &mut H,
     ctx: &mut BattleActionCtx,
 ) -> StepOutcome {
-    let expired = tick_frame_timer(host, ctx);
+    let dt = host.frame_dt();
+    ctx.frame_timer = ctx.frame_timer.wrapping_sub(dt);
     let slot = ctx.active_actor;
     let param0 = host.actor(slot).map(|a| a.params[0]).unwrap_or(0);
     // Ramp the live audio level - 75% for spells < 0x99, else 50%
     // (`sltiu v0,v0,0x99` at `0x801E4BFC`).
     let pct = if param0 < 0x99 { 75 } else { 50 };
     host.duck_audio_level(pct);
-    if expired && ctx.menu_open != 0 {
-        // `ctx[+0x276]` still streaming: clamp the timer at 1 and keep
+    if ctx.frame_timer < 0 && ctx.menu_open != 0 {
+        // `ctx[+0x276]` still streaming: clamp the word at 1 and keep
         // waiting (`0x801E4C60..0x801E4C78`).
         ctx.frame_timer = 1;
-        let _ = host.summon_stager_tick();
-        return stay(ctx);
     }
+    host.summon_band_word_in(ctx.frame_timer);
     let _ = host.summon_stager_tick();
-    if !expired {
+    if let Some(word) = host.summon_band_word_out() {
+        ctx.frame_timer = word;
+    }
+    if ctx.frame_timer >= 0 {
         return stay(ctx);
     }
+    // `sh zero,0x2(s7)` beside the `0x36` store (`0x801E4C9C`).
     ctx.frame_timer = 0;
     transition(ctx, ActionState::SummonReturn)
 }
@@ -367,6 +390,77 @@ mod tests {
         assert!(summon_hide_applies(3, 3, 1));
         assert!(!summon_hide_applies(3, 3, 0));
         assert!(!summon_hide_applies(6, 3, 0));
+    }
+
+    /// A module that keeps its countdown in the band word: it reads the
+    /// SM's value, and on the pass the word reaches zero it re-seeds it.
+    struct SharedWord {
+        word: i16,
+        reseed: Option<i16>,
+        shared: bool,
+    }
+    impl BattleActionHost for SharedWord {
+        fn actor(&self, _: u8) -> Option<&BattleActor> {
+            None
+        }
+        fn actor_mut(&mut self, _: u8) -> Option<&mut BattleActor> {
+            None
+        }
+        fn summon_band_word_in(&mut self, word: i16) {
+            self.word = word;
+        }
+        fn summon_stager_tick(&mut self) -> bool {
+            if self.word == 0
+                && let Some(n) = self.reseed.take()
+            {
+                self.word = n;
+            }
+            true
+        }
+        fn summon_band_word_out(&mut self) -> Option<i16> {
+            self.shared.then_some(self.word)
+        }
+    }
+
+    fn sustain_passes(host: &mut SharedWord) -> u32 {
+        let mut ctx = BattleActionCtx {
+            action_state: ActionState::SummonSustain.as_byte(),
+            frame_timer: 0x78,
+            ..Default::default()
+        };
+        let mut passes = 0;
+        while ctx.action_state == ActionState::SummonSustain.as_byte() {
+            summon_sustain(host, &mut ctx);
+            passes += 1;
+            assert!(passes < 1000, "0x35 never left");
+        }
+        assert_eq!(ctx.frame_timer, 0, "the exit zeroes the word");
+        passes
+    }
+
+    /// `0x35` leaves on the word read back after the stager call
+    /// (`0x801E4C84`): a module re-seeding the shared word holds the band,
+    /// and the SM's own drain keeps running beside the module's.
+    #[test]
+    fn sustain_exit_reads_the_word_after_the_stager_call() {
+        let own = sustain_passes(&mut SharedWord {
+            word: 0,
+            reseed: None,
+            shared: true,
+        });
+        assert_eq!(own, 0x79, "0x78 drains to -1 on the 0x79th pass");
+        let held = sustain_passes(&mut SharedWord {
+            word: 0,
+            reseed: Some(40),
+            shared: true,
+        });
+        assert_eq!(held, 0x78 + 41, "the re-seed of 40 adds 41 passes");
+        let apart = sustain_passes(&mut SharedWord {
+            word: 0,
+            reseed: Some(40),
+            shared: false,
+        });
+        assert_eq!(apart, 0x79, "a module with its own word does not hold");
     }
 
     #[test]

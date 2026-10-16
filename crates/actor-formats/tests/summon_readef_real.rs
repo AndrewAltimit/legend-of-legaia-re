@@ -197,3 +197,43 @@ fn summon_cast_elements_stay_inside_the_affinity_matrix() {
     assert!(parsed >= 11, "only {parsed} summon casts parsed");
     eprintln!("[ran] {parsed} summon cast elements inside 0..=7");
 }
+
+/// The summon creature clips keep their whole entry head, loop window
+/// included (`+0x84..+0x86`). The commit `FUN_8004AD80` seeds the creature's
+/// loop counter `+0x21B` from it, and two Seru modules hold on that counter:
+/// PROT 0904's arm 7 on Theeder's attack clip (park on frame 17) and PROT
+/// 0907's arm 10 on Nighto's clip 2 (park on frame 19). A head cut at the
+/// effect records' end (`+0x54`) left every window unread.
+#[test]
+fn summon_clips_carry_their_loop_windows() {
+    let Some(root) = extracted_root() else {
+        eprintln!("[skip] extracted/ or LEGAIA_DISC_BIN missing");
+        return;
+    };
+    let summon = entry_bytes(&root, &format!("{SUMMON_PROT_INDEX:04}_")).expect("entry 893");
+    let window = |id: u8, clip: usize| {
+        summon_readef::parse_cast(&summon, id)
+            .ok()
+            .and_then(|c| c.clips.get(clip).and_then(|a| a.entry_loop_window()))
+    };
+    assert_eq!(
+        window(0x82, 1),
+        Some((0xFF, 17, 17)),
+        "Theeder's attack clip"
+    );
+    assert_eq!(window(0x85, 2), Some((0xFF, 19, 19)), "Nighto's clip 2");
+    assert_eq!(window(0x81, 1), None, "Gimard's walk carries none");
+    let mut windowed = 0;
+    for id in summon_readef::PLAYER_CAST_IDS {
+        let Ok(cast) = summon_readef::parse_cast(&summon, id) else {
+            continue;
+        };
+        windowed += cast
+            .clips
+            .iter()
+            .filter(|c| c.entry_loop_window().is_some())
+            .count();
+    }
+    assert!(windowed >= 20, "only {windowed} windowed summon clips");
+    eprintln!("[ran] {windowed} summon clips carry a loop window");
+}

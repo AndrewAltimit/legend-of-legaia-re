@@ -342,6 +342,12 @@ impl Renderer {
                         );
                         rp.draw_indexed(0..6, 0, 0..1);
                     }
+                    // The composited backdrops (the colour wash, the
+                    // overworld sky band): retail's farthest bucket, drawn
+                    // before every 3D primitive of the frame.
+                    if composite_overlay {
+                        self.draw_screen_overlay_backdrop_runs(&mut rp, scene.vram);
+                    }
                     let bg_borrow = self.scene_uniforms_bg.borrow();
                     let bg: &wgpu::BindGroup = &bg_borrow;
                     rp.set_pipeline(&self.scene_vram_mesh_pipeline);

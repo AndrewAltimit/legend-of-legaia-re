@@ -104,6 +104,37 @@ pub struct SummonPartRuntime {
     /// places its wheel icons through their `+0x14` / `+0x16`). `None` for
     /// a part nobody addresses.
     pub tag: Option<u32>,
+    /// Halfword stores the code that seated the part makes into it right
+    /// after the seater's own move-VM run, as `(actor offset, value)`: a
+    /// stager arm writing into the part `FUN_80021B04` handed back
+    /// ([`SummonScene::seat_run`] applies them once, after that run).
+    pub seat_pokes: Vec<(u16, u16)>,
+    /// Halve the part's speed `+0x98` after the seat run (PROT 0908's
+    /// stager arm 2, `0x801F84E0..0x801F8500`).
+    pub seat_halve_speed: bool,
+}
+
+impl SummonPartRuntime {
+    /// Store halfword `value` at actor offset `off` - the offsets a stager
+    /// arm writes into a part it seated: `+0x28` (roll), `+0x54` (wait),
+    /// `+0x84`, `+0x98` (speed) and the `+0x9C..` block.
+    pub fn poke(&mut self, off: u16, value: u16) {
+        let s = &mut self.state;
+        match off {
+            0x24 => s.render_24 = value as i16,
+            0x26 => s.render_26 = value as i16,
+            0x28 => s.render_28 = value as i16,
+            0x54 => s.wait_timer = value as i16,
+            0x80 => s.anim_80 = value as i16,
+            0x82 => s.anim_82 = value as i16,
+            0x84 => s.anim_84 = value as i16,
+            0x96 => s.tween_scale_x = value as i16,
+            0x98 => s.tween_scale_y = value as i16,
+            0x9A => s.tween_scale_z = value as i16,
+            o if o >= 0x9C => s.set_actor_u16(usize::from(o), value),
+            _ => {}
+        }
+    }
 }
 
 /// `DAT_1F800393 * DAT_1F80037D` at one vsync per frame and the rate byte's
@@ -142,6 +173,9 @@ pub struct SummonPartDraw {
     /// the Spirit aura's op `0x0D` ramps the level from `0x1000` (black) to
     /// `0` and back.
     pub colour: legaia_render_kernels::sprite_arm::ColourWord,
+    /// The part's shatter word `+0x7A`: non-zero breaks its mesh apart
+    /// through the shatter renderer ([`crate::part_shatter`]).
+    pub shatter: i16,
 }
 
 impl SummonPartDraw {
@@ -155,13 +189,18 @@ impl SummonPartDraw {
             && !self.colour.semi
             && self.colour.abr == 0
             && self.colour.ir0 == 0
+            && self.shatter == 0
     }
 
     /// Apply the model draw's per-part render state to a local-space mesh:
-    /// the render scale, then each packet's colour through the colour word's
-    /// depth cue with its ABE / ABR ORed into the TSB (the dispatcher ORs
-    /// both into the packets it writes, `0x80043504..0x80043510`).
+    /// the shatter word, the render scale, then each packet's colour
+    /// through the colour word's depth cue with its ABE / ABR ORed into the
+    /// TSB (the dispatcher ORs both into the packets it writes,
+    /// `0x80043504..0x80043510`).
     pub fn apply_render_state(&self, mesh: &mut legaia_tmd::mesh::VramMesh) {
+        // The shatter works on the object-local vertices, ahead of the
+        // object matrix that carries the scale.
+        crate::part_shatter::apply_part_shatter(mesh, self.shatter);
         if self.scale != SPAWN_RENDER_SCALE {
             let k = f32::from(self.scale) / 4096.0;
             for p in &mut mesh.positions {

@@ -153,6 +153,20 @@ pub const HOMING_SLOT_COUNT: usize = 4;
 /// over the table form.
 pub const EFFECT_DIRECT_BIT: u8 = 0x80;
 
+/// The battle-overlay prototype the direct arm seats beside the pool spawn
+/// for codes `0x81..=0x83` (`lui a2,0x801f` / `addiu a2,a2,0x5eb0`, then
+/// `jal 0x80050ED4` at `0x801DEF08`): a floor ring on the actor's body pair.
+pub const FLOOR_PART_RECORD: u32 = 0x801F_5EB0;
+
+/// Whether a direct record's whole `+0x01` byte (bit 7 included) also seats
+/// [`FLOOR_PART_RECORD`]: `addiu v0,v0,0x7f` / `andi 0xff` / `sltiu v0,v0,3`
+/// at `0x801DEEAC..0x801DEEB4` holds for `0x81`, `0x82` and `0x83`.
+///
+/// PORT: FUN_801DEA50 (`0x801DEEA4..0x801DEEB8`, the floor-part test)
+pub const fn seats_floor_part(code: u8) -> bool {
+    code.wrapping_add(0x7F) < 3
+}
+
 /// The two direct-form effect bytes whose Z offset is clamped into the
 /// attacker-target separation before rotation (`0x801DEDAC..0x801DEDB8`:
 /// `li v0,0x93` / `li v0,0x84` compared against the **whole** `+0x01` byte).
@@ -1390,5 +1404,17 @@ mod tests {
         assert_eq!(h.slots[0].phase, 0);
         assert_eq!(h.children(), 0);
         assert_eq!(h.hits, [0; 4]);
+    }
+}
+
+#[cfg(test)]
+mod floor_part_tests {
+    use super::*;
+
+    /// Only the direct codes `0x81..=0x83` seat the floor part.
+    #[test]
+    fn the_floor_part_follows_codes_0x81_to_0x83() {
+        let hits: Vec<u8> = (0..=0xFFu8).filter(|&c| seats_floor_part(c)).collect();
+        assert_eq!(hits, vec![0x81, 0x82, 0x83]);
     }
 }

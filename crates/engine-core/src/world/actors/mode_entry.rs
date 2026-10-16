@@ -212,6 +212,7 @@ impl World {
         );
         // Battle init spawns the backdrop records fresh: `+0x78` starts at 0.
         self.battle.backdrop_cue = 0;
+        self.battle.ground_grid_drawn = true;
         self.battle.end = None;
         // Effect pool is reused across scenes - reset to a fresh instance
         // (per-battle the head/free-list rebuilds from scratch). This is

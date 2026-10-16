@@ -247,6 +247,76 @@ pub fn clip_impact_acting_selector(character_id: u8, attach_key: u8) -> Option<u
     (character_id == 3 && attach_key == IMPACT_CLIP_KEY).then_some(2)
 }
 
+/// The formation id the Jette hook keys on (`li v0,0xaa` against the first
+/// formation cell `gp[0x9F4] = 0x8007BD0C`, `0x8004D334`): Jette, id 170.
+pub const JETTE_MONSTER_ID: u8 = 0xAA;
+/// The deformation-table row the Jette hook stages (`sb v1,0x6d(v0)` with
+/// `v1 = 2` at `0x8004D390`).
+pub const JETTE_SHATTER_ROW: u8 = 2;
+/// The flag word it writes into that row (`li v1,0x6` / `sw v1,0x20(v0)` at
+/// `0x8004D39C..0x8004D3B0`): shrink (`0x40000`) with no outward push
+/// (`0x20000`), so the body's triangles turn and shrink where they are.
+pub const JETTE_SHATTER_FLAGS: u32 = 6;
+/// The action-SM states the hook raises the shatter in (`addiu v0,v1,-0x1e`
+/// / `sltiu v0,v0,0x3` at `0x8004D368`).
+pub const JETTE_SHATTER_STATES: core::ops::Range<u8> = 0x1E..0x21;
+/// The clip Jette has to be playing (`+0x1D9 == 2`, `0x8004D378`).
+pub const JETTE_SHATTER_CLIP: u8 = 2;
+/// The cursor (12.4, node `+0x68`) the triangular ramp peaks at
+/// (`slti v0,a0,0xe0` at `0x8004D3C4`).
+pub const JETTE_SHATTER_PEAK: i16 = 0xE0;
+
+/// What the Jette hook does to the target's shatter word this frame.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum JetteShatter {
+    /// Nothing - the hook's gates did not open.
+    Keep,
+    /// Stage row [`JETTE_SHATTER_ROW`] (offset zero, flags
+    /// [`JETTE_SHATTER_FLAGS`]) on the target's node and set its `+0x1BA`.
+    Set(u16),
+    /// Zero the node's `+0x6D` and the target's `+0x1BA`.
+    Clear,
+}
+
+/// The Jette hook at the tail of `FUN_8004CE2C`'s pass 2
+/// (`0x8004D330..0x8004D438`): in the Jette fight (first formation cell
+/// [`JETTE_MONSTER_ID`]), while the acting actor targets a monster seat
+/// (`+0x1DD` in `3..=6`), the target - Jette - breaks into shrinking
+/// triangles over its clip `2`: `+0x1BA` rides a triangular ramp on the
+/// target's own clip cursor (node `+0x68`, 12.4), `cursor * 18` up to
+/// [`JETTE_SHATTER_PEAK`] and `0x1F80 - cursor * 18` after, so the body
+/// shrinks to nothing and grows back. Outside the action states
+/// [`JETTE_SHATTER_STATES`] the word is cleared once the target's clip is
+/// back to `0`, unless the SM sits in `0x32..=0x3B`.
+///
+/// PORT: FUN_8004CE2C (the Jette shatter hook, `0x8004D330..0x8004D438`)
+pub fn jette_shatter_hook(
+    formation_first: u8,
+    target_is_monster: bool,
+    action_state: u8,
+    target_clip: u8,
+    target_cursor: i16,
+) -> JetteShatter {
+    if formation_first != JETTE_MONSTER_ID || !target_is_monster {
+        return JetteShatter::Keep;
+    }
+    if JETTE_SHATTER_STATES.contains(&action_state) {
+        if target_clip != JETTE_SHATTER_CLIP {
+            return JetteShatter::Clear;
+        }
+        let up = (i32::from(target_cursor) * 18) as u16;
+        return JetteShatter::Set(if target_cursor < JETTE_SHATTER_PEAK {
+            up
+        } else {
+            0x1F80u16.wrapping_sub(up)
+        });
+    }
+    if target_clip != 0 || action_state.wrapping_sub(0x32) < 10 {
+        return JetteShatter::Keep;
+    }
+    JetteShatter::Clear
+}
+
 /// Unpack a 10:10:10 actor colour-state word into RGB bytes - the
 /// `FUN_8004A908` lane decode (`lane >> 2`, `0x8004AA24..0x8004AA50`),
 /// saturating lanes above `0x3FC`.
@@ -462,5 +532,32 @@ mod tests {
             w,
             "neutral is a fixed point"
         );
+    }
+
+    /// The Jette hook's ramp and gates.
+    #[test]
+    fn jette_hook_ramps_on_clip_two_and_clears_after() {
+        use JetteShatter::*;
+        // Not the Jette fight / not aimed at a monster.
+        assert_eq!(jette_shatter_hook(0x10, true, 0x1E, 2, 0x40), Keep);
+        assert_eq!(jette_shatter_hook(0xAA, false, 0x1E, 2, 0x40), Keep);
+        // Up the ramp, the peak, and down.
+        assert_eq!(jette_shatter_hook(0xAA, true, 0x1E, 2, 0x10), Set(0x120));
+        assert_eq!(
+            jette_shatter_hook(0xAA, true, 0x20, 2, 0xDF),
+            Set(0xDF * 18)
+        );
+        assert_eq!(
+            jette_shatter_hook(0xAA, true, 0x1F, 2, 0xE0),
+            Set(0x1F80 - 0xE0 * 18)
+        );
+        assert_eq!(jette_shatter_hook(0xAA, true, 0x1F, 2, 0x1C0), Set(0));
+        // In the states but another clip: cleared.
+        assert_eq!(jette_shatter_hook(0xAA, true, 0x1E, 1, 0x10), Clear);
+        // Outside the states: cleared once the clip is back to 0, unless
+        // the SM sits in 0x32..=0x3B.
+        assert_eq!(jette_shatter_hook(0xAA, true, 0x10, 2, 0x10), Keep);
+        assert_eq!(jette_shatter_hook(0xAA, true, 0x10, 0, 0x10), Clear);
+        assert_eq!(jette_shatter_hook(0xAA, true, 0x35, 0, 0x10), Keep);
     }
 }

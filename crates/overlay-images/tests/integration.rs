@@ -7,6 +7,7 @@
 
 mod boot_overlay_disc;
 mod cast_module_data_rows_real;
+mod cast_presentation_real;
 mod enemy_stager_real;
 mod slot_b_record_bounds_real;
 mod static_overlay_extract;

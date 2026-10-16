@@ -15,6 +15,7 @@ fn the_phase_gate_round_trips_through_its_env_form() {
             module_countdown: None,
             accum_align: None,
             camera_pass: false,
+            stream_wait: false,
         },
         PhaseGate {
             action_state: 0x35,
@@ -29,6 +30,7 @@ fn the_phase_gate_round_trips_through_its_env_form() {
             module_countdown: None,
             accum_align: None,
             camera_pass: false,
+            stream_wait: false,
         },
         PhaseGate {
             action_state: 0x36,
@@ -40,6 +42,22 @@ fn the_phase_gate_round_trips_through_its_env_form() {
             module_countdown: Some(-16),
             accum_align: Some(640),
             camera_pass: false,
+            stream_wait: false,
+        },
+        PhaseGate {
+            action_state: 0x35,
+            fade: Some(RetailFade {
+                to_white: false,
+                age: 20,
+            }),
+            module_phase: Some(2),
+            cam_accum: None,
+            walk_yaw: None,
+            done_hold: None,
+            module_countdown: None,
+            accum_align: None,
+            camera_pass: false,
+            stream_wait: true,
         },
         PhaseGate {
             action_state: 0x51,
@@ -51,6 +69,7 @@ fn the_phase_gate_round_trips_through_its_env_form() {
             module_countdown: None,
             accum_align: None,
             camera_pass: false,
+            stream_wait: false,
         },
         PhaseGate {
             action_state: 0x32,
@@ -62,8 +81,19 @@ fn the_phase_gate_round_trips_through_its_env_form() {
             module_countdown: None,
             accum_align: None,
             camera_pass: true,
+            stream_wait: false,
         },
     ] {
         assert_eq!(PhaseGate::from_env(&g.to_env()), Some(g));
     }
+}
+
+/// A capture inside a module's stream poll takes the engine's frame on that
+/// arm whatever the flash's age: the engine's arm passes on its first tick.
+#[test]
+fn a_stream_wait_gate_is_met_on_the_arm_regardless_of_the_flash_age() {
+    let g = PhaseGate::from_env("53,black,20,m2,s").expect("parses");
+    assert!(g.stream_wait);
+    assert_eq!(g.module_phase, Some(2));
+    assert_eq!(g.fade.map(|f| f.age), Some(20));
 }

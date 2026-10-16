@@ -467,6 +467,12 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
     fn summon_stager_tick(&mut self) -> bool {
         self.world.module_pass(World::summon_stager_tick)
     }
+    fn summon_band_word_in(&mut self, word: i16) {
+        self.world.summon_band_word_in(word);
+    }
+    fn summon_band_word_out(&mut self) -> Option<i16> {
+        self.world.summon_band_word_out()
+    }
     /// The homing slots the move's effect-script terminator seeded.
     ///
     /// REF: FUN_801E09F8

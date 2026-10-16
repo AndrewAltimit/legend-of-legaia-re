@@ -24,6 +24,14 @@ pub const GIMARD_HIT_ARM: u8 = 11;
 /// `0x801F7698`).
 pub const GIMARD_SETTLE_ARM: u8 = 12;
 
+/// What PROT 0903's settle arm adds to the summon seat's `+0x1BA` shatter
+/// word per engine tick: retail adds `2 * [0x1F800393] * [0x1F80037D]` a
+/// pass (`mult` / `sll v1,t3,0x1` / `sh v0,0x1ba(s3)` at
+/// `0x801F76A4..0x801F76C4`), and an engine tick is one vsync of that frame
+/// product - twice the speed scalar.
+pub const GIMARD_SHATTER_STEP_PER_TICK: u16 =
+    2 * crate::cast_module_camera::MODULE_DRAIN_PER_TICK as u16;
+
 /// The `ctx+0x278` PROT 0903 stores as its arm 4 cut lands
 /// (`li v0,0x3; sb v0,0x278(v1)` at `0x801F6F24..0x801F6F2C`).
 pub const GIMARD_CUT_CTX_278: u8 = 3;

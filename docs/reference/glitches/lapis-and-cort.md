@@ -354,7 +354,8 @@ What the clear flag changes for Lapis, consumer by consumer:
 | Escape roll, `0x801E7B14` | The party can flee | disassembly |
 | Jedo kill arm, `0x801F87D4` | Certain kill | disassembly, capture |
 | Nighto resist gate, `0x801F6BF0` | The kill and confuse rolls run despite record `+0x20 = 1` | disassembly |
-| Zenoir and Aluru resist gates | Same gate as Nighto | repo doc |
+| Aluru resist gate, `0x801F6D44` | Same as Nighto: the kill roll runs | disassembly |
+| Zenoir shatter gate, `0x801F81F0` | A Lapis killed by Zenoir shatters like an ordinary monster and fades (Lapis is not lone-scripted, so no grey stamp); no damage change | disassembly |
 | Seru side-effect stager `FUN_801F3D3C` | Stat debuffs land on every hit, with no suppression roll | repo doc |
 | Stat boost `FUN_80054CB0` | The random-encounter profile is installed instead of the boss profile | disassembly, capture |
 | Spikefish Flute, PROT entry 0925 | The flee arm runs | repo doc |

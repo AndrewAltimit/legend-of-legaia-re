@@ -4,8 +4,9 @@
 use super::*;
 
 /// PROT 0909 (Viguro) is spell id `0x87` through the action-id dispatcher's
-/// own arithmetic (`903 + (id - 0x81)`), so this resolves with no disc: the
-/// stager's arm 0 poses the summon seat and advances the module phase.
+/// own arithmetic (`903 + (id - 0x81)`), so this resolves with no disc: a
+/// queued op-`0x20` call to the stager's arm 0 poses the summon seat and
+/// advances the module phase.
 #[test]
 fn the_viguro_stager_runs_from_the_cast_band_seam() {
     let mut world = module_code_world();
@@ -13,6 +14,12 @@ fn the_viguro_stager_runs_from_the_cast_band_seam() {
     world.casting.summon_actor_slot = Some(7);
     world.actors[7].battle.active_target = 2;
     world.actors[7].battle.render_flag = 0xFF;
+    // The stager is reached through a part's op `0x20`, queued for the
+    // module's next tick.
+    world
+        .casting
+        .module_stager_calls
+        .push((0, Default::default()));
 
     let run = world
         .run_cast_module_code(0x87, 0)
@@ -30,15 +37,27 @@ fn the_viguro_stager_runs_from_the_cast_band_seam() {
     assert_eq!(world.casting.module_phase, 1, "arm 0 advances ctx+0x279");
 }
 
-/// PROT 0922 (Puera, spell `0x94`) writes one byte and nothing else, and only
-/// on arm 0 - the `bnez a1` at the routine's head.
+/// PROT 0922 (Puera, spell `0x94`)'s stager writes one byte and nothing
+/// else, and only on arm 0 - the `bnez a1` at the routine's head. It is
+/// reached through a part's op-`0x20` call, not off the module phase.
 #[test]
 fn the_puera_stager_writes_ctx_278_only_on_arm_zero() {
     let mut world = module_code_world();
     assert_eq!(world.cast_module_for(0x94), Some(922));
-    world.run_cast_module_code(0x94, 1).unwrap();
+    // Arm 3 of the body writes no `ctx[+0x278]` of its own.
+    world.casting.module_phase = 3;
+    world
+        .casting
+        .module_stager_calls
+        .push((1, Default::default()));
+    world.run_cast_module_code(0x94, 3).unwrap();
     assert_eq!(world.casting.module_ctx_278, 0);
-    world.run_cast_module_code(0x94, 0).unwrap();
+    world.casting.module_phase = 3;
+    world
+        .casting
+        .module_stager_calls
+        .push((0, Default::default()));
+    world.run_cast_module_code(0x94, 3).unwrap();
     assert_eq!(world.casting.module_ctx_278, 3);
 }
 
@@ -212,4 +231,61 @@ fn arming_the_stager_zeroes_the_module_phase() {
         world.casting.module_phase, 1,
         "the stager tick re-entered PROT 0909's module code"
     );
+}
+
+/// PROT 0912's arm 4 turns the four crystal triples arm 2 seated in round
+/// the creature on its held passes - the first handle of each corner takes
+/// the new spot and the other two copy its trio - and kills all twelve on
+/// its pass (`0x801F7184..0x801F730C`, `0x801F7158..0x801F7174`).
+#[test]
+fn freed_arm_4_turns_then_kills_the_crystals() {
+    use legaia_engine_battle_vm::cast_module_camera as cam;
+    let mut world = module_code_world();
+    world.casting.summon_actor_slot = Some(9);
+    world.actors[9].active = true;
+    world.actors[9].move_state.world_x = 100;
+    world.actors[9].move_state.world_z = -800;
+    let mut scene = legaia_engine_effects::summon::SummonScene::spawn_parts(&[], &[], 0, [0; 3]);
+    for _corner in 0..4 {
+        for record in cam::FREED_CRYSTAL_RECORDS {
+            scene
+                .parts
+                .push(legaia_engine_effects::summon::SummonPartRuntime {
+                    model_sel: -1,
+                    reserved: 0,
+                    buf: vec![0x08],
+                    state: Default::default(),
+                    finished: false,
+                    origin: Some([0; 3]),
+                    tag: Some(record),
+                    seat_pokes: Vec::new(),
+                    seat_halve_speed: false,
+                });
+        }
+    }
+    world.casting.active_summon = Some(scene);
+    // Arm 3's pass zeroes the turn word; arm 4's first held pass steps it.
+    world.casting.module_freed_turn = 99;
+    world.freed_body_effects(3, 4, 0);
+    assert_eq!(world.casting.module_freed_turn, 0);
+    world.casting.module_settle_countdown = (8 << 6) - 8;
+    world.freed_body_effects(4, 4, 0);
+    assert_eq!(
+        world.casting.module_freed_turn,
+        -cam::FREED_CRYSTAL_TURN_STEP
+    );
+    let corners = cam::freed_crystal_corners(-cam::FREED_CRYSTAL_TURN_STEP, (8 << 6) - 8);
+    let parts = &world.casting.active_summon.as_ref().unwrap().parts;
+    for (k, &(dx, dz)) in corners.iter().enumerate() {
+        for j in 0..3 {
+            let s = &parts[3 * k + j].state;
+            assert_eq!((s.world_x, s.world_z), (100 + dx, -800 + dz), "corner {k}");
+        }
+    }
+    world.freed_body_effects(4, 5, 0);
+    let scene = world.casting.active_summon.as_ref().unwrap();
+    assert!(scene.parts[..12].iter().all(|p| p.finished));
+    // The pass also seats arm 4's fifteen-part burst; with no pool installed
+    // there is nothing to seat.
+    assert_eq!(scene.parts.len(), 12);
 }

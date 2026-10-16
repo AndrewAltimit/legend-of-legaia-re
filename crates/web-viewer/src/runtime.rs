@@ -196,6 +196,10 @@ pub struct LegaiaRuntime {
     /// **under** list (drawn before the page's text layer); the rest are
     /// `over`. See `rebuild_screen_geom`.
     pub(crate) screen_over_run_start: u32,
+    /// How many of the screen-prim runs - the first ones - are the `under`
+    /// list's backdrops, which the page draws before the 3D scene
+    /// ([`Self::play_screen_prim_backdrop_run_end`]).
+    pub(crate) screen_backdrop_run_end: u32,
     /// The last tick's host-projected screen layers, recomposed with the
     /// world's live layers and the shop / pause fades by
     /// [`crate::play_battle`]'s `rebuild_screen_geom`.
@@ -442,6 +446,7 @@ impl LegaiaRuntime {
             disc_files: Vec::new(),
             battle_intro_geom: None,
             screen_over_run_start: 0,
+            screen_backdrop_run_end: 0,
             screen_prims_base: Default::default(),
             occl_fade: Default::default(),
             field_party_hud: Default::default(),

@@ -13,12 +13,16 @@
 //!   and battle library state and score scene / mode / position / camera /
 //!   BGM / party / flags / bag / battle / frame against the state
 //!   (`docs/tooling/retail-compare.md`).
+//! - [`cast_sequence`] - one cast scored against retail frame by frame,
+//!   paired on the action-SM clock (`legaia-engine cast-sequence-score`,
+//!   `docs/tooling/cast-sequence-oracle.md`).
 //!
 //! Tool code, never shipped in a play host: it reads emulator states and links
 //! the wgpu renderer for frame captures.
 
 pub mod audio_trace_oracle;
 pub mod capture_observations;
+pub mod cast_sequence;
 pub mod mode_trace_oracle;
 pub mod pcm_oracle;
 pub mod retail_compare;

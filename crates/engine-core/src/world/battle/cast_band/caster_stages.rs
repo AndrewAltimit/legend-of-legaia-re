@@ -85,8 +85,10 @@ impl World {
         self.casting.fatal_decision = None;
         self.casting.fatal_banner = None;
         self.casting.module_swordie = Default::default();
+        self.casting.module_rain = Default::default();
         self.casting.module_settle_countdown = 0;
         self.casting.module_cam = Default::default();
+        self.casting.module_pres = Default::default();
         self.casting.module_beam_counter = 0;
         self.casting.module_beam_live = false;
         self.casting.module_hit_arm = None;

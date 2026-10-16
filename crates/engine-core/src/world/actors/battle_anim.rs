@@ -112,6 +112,12 @@ impl World {
             // follows the tick in retail.
             let tween = self.battle_tween_target(i);
             let seru_staged = self.battle_ctx.absorbed_seru != 0;
+            static CREATURE_DIAG: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+            let creature_diag = *CREATURE_DIAG
+                .get_or_init(|| std::env::var_os("LEGAIA_DIAG_CREATURE_ANIM").is_some())
+                && self.casting.summon_actor_slot == Some(i as u8);
+            let module_phase = self.casting.module_phase;
+            let mirrors_loop = self.mirrors_loop_counter(i);
             // The `>> 2` branch of the cursor advance is taken only by a
             // **Slowed** actor on idle: `andi v0,v0,0x1000` on `+0x16E` at
             // `0x800476E0`, then `+0x1D9 == 0` at `0x800476EC`. Every other
@@ -135,6 +141,24 @@ impl World {
                     slowed && actor.battle.current_anim == 0 && actor.battle_reaction.is_none();
                 let pose = player.tick_rated(rate, slowed_idle);
                 let after = player.current_frame();
+                // The window arm's counter store (`actor+0x21B = +0x176 >> 4`,
+                // `0x800477E8` / `0x8004783C`) - mirrored for the summon
+                // creature, whose `+0x21B` the cast modules read.
+                // PORT: FUN_80047430 (`0x80047768..0x8004783C`, the `+0x21B` store)
+                if player.take_loop_store() && mirrors_loop {
+                    actor.battle.hit_count_bound = player.loop_cycles_remaining();
+                }
+                // `LEGAIA_DIAG_CREATURE_ANIM=1`: one line per tick for the
+                // summon creature's clip, rate and frame.
+                if creature_diag {
+                    eprintln!(
+                        "[creature-anim] slot={i} phase={} cur={} queued={} rate={} frame={after}",
+                        module_phase,
+                        actor.battle.current_anim,
+                        actor.battle.queued_anim,
+                        rate.get(),
+                    );
+                }
                 // The natural end's displacement: the actor steps along its
                 // facing by the committed entry's `+0x0E` - the distance the
                 // last frame's tween carried the body in model Z - unless the
@@ -225,6 +249,14 @@ impl World {
                 if rearm_window || recommit {
                     actor.battle_effect_cursor = 0;
                 }
+                // The natural-end re-commit re-seeds the window
+                // (`0x8004BDEC..0x8004BE0C` sits on every commit's path).
+                if recommit {
+                    player.reseed_loop_window();
+                    if mirrors_loop {
+                        actor.battle.hit_count_bound = player.entry_loop_count();
+                    }
+                }
                 looped_recommit = recommit;
                 Some(after)
             } else {
@@ -243,6 +275,14 @@ impl World {
             if looped_recommit {
                 self.actors[i].battle.input_cursor = 0;
                 self.note_active_clip_commit(i);
+                // The natural-end commit installs whatever `+0x1DA` holds:
+                // a byte staged over the summon creature's loop waits here
+                // ([`Self::summon_seat_waits_for_cycle`]).
+                if self.summon_seat_waits_for_cycle(i)
+                    && self.actors[i].battle.queued_anim != self.actors[i].battle.current_anim
+                {
+                    self.commit_staged_battle_anim_at_boundary(i);
+                }
             }
             // `+0x1F7`, written for every node right after its cursor
             // advance (`0x80047E28..0x80047E54`).
@@ -326,6 +366,26 @@ impl World {
         // case keeps committing at once.
         // PORT: FUN_80047430 (`0x800478EC..0x80047948`, the looping-clip half)
         let bits = actor.battle.flag_bits;
+        // A creature byte staged with the `+0x1DC` bump (PROT 0907's arm 8,
+        // `0x801F7A44..0x801F7A5C`) takes bit 0, which cuts the playing clip
+        // at once (`0x800478F4`) - unless that clip's entry carries the
+        // `+0x76` lock (`0x80047940..0x80047948`), which leaves the byte to
+        // the natural end like a bare `+0x1DA` store.
+        let cut_now = bits.has(legaia_engine_battle_vm::battle_action::ActorFlags::WINDUP_DONE)
+            && actor
+                .battle_animation
+                .as_ref()
+                .and_then(|p| p.hit_source())
+                .is_none_or(|s| s.event_lock == 0);
+        if self.summon_seat_waits_for_cycle(i)
+            && !cut_now
+            && actor
+                .battle_animation
+                .as_ref()
+                .is_some_and(|p| p.is_looping())
+        {
+            return;
+        }
         if !bits.has(legaia_engine_battle_vm::battle_action::ActorFlags::WINDUP_DONE)
             && bits.has(legaia_engine_battle_vm::battle_action::ActorFlags::ADVANCE_DONE)
             && let Some(p) = actor.battle_animation.as_ref()
@@ -353,6 +413,16 @@ impl World {
     /// player in place. Either way the stage latch `+0x1DC` bit 1
     /// (`ADVANCE_DONE`) clears, which is what lets the strike loop read its
     /// next byte.
+    /// Whether actor `i`'s `+0x21B` follows its clip's loop counter: the
+    /// summon creature's, which the cast modules read (PROT 0904's arm 7,
+    /// PROT 0907's arm 10). The same byte on the other seats carries
+    /// readers of its own (the magic hit loop's bound, the battle camera's
+    /// arm selector) that the port still feeds separately, so the mirror
+    /// stays on the creature.
+    pub(in crate::world) fn mirrors_loop_counter(&self, i: usize) -> bool {
+        self.casting.summon_actor_slot == Some(i as u8)
+    }
+
     /// Retail's acting slot `ctx[+0x13]` as the port holds it. Through the
     /// end-of-battle sequence it is the pose actor - the one field the
     /// sequencer's framing, the camera-ghost pass and the commit's camera
@@ -429,10 +499,16 @@ impl World {
                 self.battle.move_label_closed = true;
             }
         }
+        let mirrors_loop = self.mirrors_loop_counter(i);
         let actor = &mut self.actors[i];
         if q == actor.battle.current_anim {
             if let Some(p) = actor.battle_animation.as_mut() {
                 p.rewind();
+                // The seed (`0x8004BDEC..0x8004BE0C`) runs on a re-commit too.
+                p.reseed_loop_window();
+                if mirrors_loop {
+                    actor.battle.hit_count_bound = p.entry_loop_count();
+                }
             }
             actor.battle_effect_cursor = 0;
             actor.battle_anim_cue_cursor = 0;
@@ -546,6 +622,12 @@ impl World {
             a.battle.current_anim = 0;
             a.battle_staged_anim = None;
             self.apply_battle_pose(i, legaia_engine_battle_vm::battle_action::Pose::Idle as u8);
+            if mirrors_loop && let Some(a) = self.actors.get_mut(i) {
+                a.battle.hit_count_bound = a
+                    .battle_animation
+                    .as_ref()
+                    .map_or(0, |p| p.entry_loop_count());
+            }
             return;
         }
         // The art-constant arm (`staged >= 0x1B`, `0x8004BB5C..0x8004BC40`)
@@ -645,8 +727,17 @@ impl World {
         // stages that index (`monster_action_by_tag`). Engine assumption -
         // the loop-vs-once bit retail derives from the record kind isn't
         // modelled on MonsterAnimation.
+        //
+        // The summon creature is the exception that shows the rule: retail's
+        // natural-end path calls the commit unconditionally
+        // (`0x80047B30..0x80047B58`), so with `+0x1DA == +0x1D9` the clip
+        // replays, and nothing stages the creature back to idle - a cast
+        // module bumps `+0x1DA` from the clip still playing (PROT 0907's arm
+        // 8 moves `1` to `2`). Every creature clip therefore loops.
+        let creature = self.casting.summon_actor_slot == Some(i as u8);
+        let a = &mut self.actors[i];
         let player = clip.as_ref().and_then(|c| {
-            if c.action_id == legaia_engine_battle_vm::battle_action::WALK_TAG {
+            if creature || c.action_id == legaia_engine_battle_vm::battle_action::WALK_TAG {
                 legaia_engine_battle::battle_anim::MonsterAnimPlayer::new(c)
             } else {
                 legaia_engine_battle::battle_anim::MonsterAnimPlayer::new_one_shot(c)
@@ -663,6 +754,11 @@ impl World {
                     clip.as_ref().and_then(|c| c.entry_event_commit_lock()),
                     p.root_speed()
                 );
+                // `+0x21B = entry[+0x84]` (`0x8004BDEC..0x8004BDF4`); the
+                // player seeds `+0x176` from the same byte.
+                if mirrors_loop {
+                    a.battle.hit_count_bound = p.entry_loop_count();
+                }
                 a.battle_animation = Some(p);
                 a.battle_pose = None;
                 // The marker keeps the SM's per-frame pose() requests from

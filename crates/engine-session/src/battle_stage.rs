@@ -167,6 +167,10 @@ pub fn stage_battle_world(
     stage
 }
 
+/// The `summon.dat` actor-record byte the seat installer `FUN_801F19EC`
+/// scales into the creature node's size `+0x58` (`lbu v1,0x1f(v1)`).
+const SUMMON_RECORD_SIZE_CLASS: usize = 0x1F;
+
 /// A cast's summon creature, seated on the world ([`seat_summon_creature`]).
 pub struct SummonSeat {
     /// The high actor slot the creature holds.
@@ -208,7 +212,15 @@ pub fn seat_summon_creature(
         summon_dat.as_ref().map(|b| b.as_slice()),
     )?;
     legaia_tmd::parse(asset.mesh.tmd_bytes()).ok()?;
+    // The creature node's size `+0x58`, which the seat installer takes from
+    // the cast's own actor record (`+0x1F << 5`, `0x801F1DE4..0x801F1DF0`).
+    let body_radius = summon_dat
+        .as_ref()
+        .and_then(|b| legaia_actor_formats::summon_readef::parse_cast(b, spell_id).ok())
+        .and_then(|c| c.mesh.block.get(SUMMON_RECORD_SIZE_CLASS).copied())
+        .map(|size| i16::from(size) << 5);
     let world = &mut host.world;
+    world.casting.summon_body_radius = body_radius;
     let monster_slots: Vec<u8> = world
         .battle_monster_slots()
         .into_iter()

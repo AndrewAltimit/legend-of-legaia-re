@@ -279,9 +279,16 @@ fn summon_flute_item_reroutes_to_the_summon_band_and_completes() {
 
     // The flute must traverse the summon band (item_seed_band's `0x98`
     // reroute: sub_route = 9, id -= 2) and come out the other side - the
-    // settle glue's job. SummonSustain alone holds 0x78 frames.
+    // settle glue's job. SummonSustain alone holds 0x78 frames, and the
+    // module's own countdown holds (PROT 0924, `summon_holds::ULTIMATE_RAVE`)
+    // keep `0x36` for about 0x680 more.
     let mut trace: Vec<u8> = Vec::new();
     idle_ticks(&mut w, 0x200, &mut trace);
+    assert_eq!(
+        w.actors[actor as usize].battle.params[0], 0x96,
+        "item_seed_band stages the flute as summon id (0x98 - 2)"
+    );
+    idle_ticks(&mut w, 0x800, &mut trace);
     for state in [
         ActionState::MagicCastBegin,
         ActionState::SummonInvoke,
@@ -294,10 +301,6 @@ fn summon_flute_item_reroutes_to_the_summon_band_and_completes() {
             "summon band never reached {state:?}; trace = {trace:02X?}"
         );
     }
-    assert_eq!(
-        w.actors[actor as usize].battle.params[0], 0x96,
-        "item_seed_band stages the flute as summon id (0x98 - 2)"
-    );
     // No park: the SM reached EndOfAction and the menu_open latch was
     // released, so the next combatant gets armed.
     assert!(

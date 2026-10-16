@@ -145,20 +145,43 @@ impl World {
             Some(s) if s != 0x1000 => f32::from(s) / 4096.0,
             _ => 1.0,
         };
-        let pose = NpcDrawPose {
+        // An op-`43 07` deformation does not move the pose: it breaks the
+        // mesh (`Self::field_npc_shatter`).
+        Some(NpcDrawPose {
             pos,
             yaw,
             pitch: u(i32::from(pitch)),
             roll: u(i32::from(roll)),
             scale,
-        };
-        Some(match self.npcs.faces.get(&slot) {
-            Some(&(id, value)) if value != 0 => {
-                let row = self.npcs.face_rows.get(&id).copied().unwrap_or_default();
-                pose.with_face(row, value)
-            }
-            _ => pose,
         })
+    }
+
+    /// Field NPC `slot`'s op-`43 07` deformation this frame, `None` while its
+    /// `+0x7A` is zero. Retail's object draw (`FUN_8001B964`) hands every
+    /// object of a body whose `+0x7A` is non-zero to the shatter renderer
+    /// `FUN_80029888` with `+0x7A | row[+8] << 16`, `row` the deformation
+    /// table row its `+0x6D` names; the pose ([`Self::field_npc_draw_pose`])
+    /// is unchanged. Both hosts break the NPC's mesh with
+    /// `legaia_render_kernels::shatter` from this.
+    // REF: FUN_8001B964, FUN_80029888
+    pub fn field_npc_shatter(
+        &self,
+        slot: u8,
+    ) -> Option<legaia_render_kernels::shatter::ShatterInput> {
+        let &(id, value) = self.npcs.faces.get(&slot)?;
+        legaia_render_kernels::shatter::ShatterInput::new(value, self.shatter_row(id))
+    }
+
+    /// Row `id` of the deformation table `0x8007BE60` (op `43 07`'s writes;
+    /// global in retail, so the battle reads the same rows). A row nothing
+    /// wrote reads zero.
+    pub fn shatter_row(&self, id: u8) -> legaia_render_kernels::shatter::ShatterRow {
+        let r = self.npcs.face_rows.get(&id).copied().unwrap_or_default();
+        legaia_render_kernels::shatter::ShatterRow {
+            off: [r.offset[0], r.offset[1], r.offset[2]],
+            h3: r.offset[3],
+            flags: r.flags,
+        }
     }
 
     /// Start a scripted arc on `actor`: the op `0x43` sub-0/1/A/B arm's call
@@ -509,63 +532,6 @@ pub struct NpcDrawPose {
 }
 
 impl NpcDrawPose {
-    /// Fold an op-`43 07` deformation into the pose: the object draw
-    /// `FUN_80029888`, entered with `+0x7A | row[+8] << 16` while `+0x7A` is
-    /// non-zero (`FUN_8001B964`, `FUN_80048A08` at `0x80048EAC..0x80048FB8`).
-    ///
-    /// Read off its prologue (`0x80029888..0x80029990`): it takes the
-    /// actor's matrix `M` and translation `T`, sets `T -= M * off` (`off` =
-    /// the row's first three halfwords, `FUN_8003D344` at `0x800298E4`),
-    /// builds `F = RotMatrix(a, 0, a)` with `a = (+0x7A << 4)` truncated to
-    /// a halfword (zero under flag `0x10000`), scales it by
-    /// `0x1000 - (+0x7A & 0xFFFF)` under flag `0x40000` (`ScaleMatrix` at
-    /// `0x8002998C`), and draws every vertex as `F * (v + off)`. So a vertex
-    /// lands at `T + M * (F * (v + off) - off)`: a spin about the point
-    /// `-off`, shrinking to nothing as `+0x7A` ramps to `0x1000` - the
-    /// vanish / appear effect `town0b`, `uru`, `rugi` and the rest run.
-    ///
-    /// The result is the same pose shape both hosts already compose
-    /// (`T * (Rx * Ry * Rz) * S`): `M * F` re-read as its `X, Y, Z` Euler
-    /// angles, the pivot term folded into the position and the shrink into
-    /// the scale.
-    // REF: FUN_80029888, FUN_8001B964, FUN_80026988
-    pub fn with_face(self, row: FieldFaceRow, value: i16) -> Self {
-        use legaia_render_kernels::battle_intro::placement_rotation;
-        let flags = row.flags << 16;
-        let angle = if flags & 0x0001_0000 != 0 {
-            0u16
-        } else {
-            (value as u16) << 4
-        };
-        let face_scale = if flags & 0x0004_0000 != 0 {
-            f32::from(0x1000i16.wrapping_sub(value)) / 4096.0
-        } else {
-            1.0
-        };
-        let rot_pose = glam::Mat3::from_mat4(placement_rotation(self.pitch, self.yaw, self.roll));
-        let rot_face = glam::Mat3::from_mat4(placement_rotation(angle, 0, angle));
-        let off = glam::Vec3::new(
-            f32::from(row.offset[0]),
-            f32::from(row.offset[1]),
-            f32::from(row.offset[2]),
-        );
-        let pivot = rot_pose * (self.scale * (face_scale * (rot_face * off) - off));
-        let (x, y, z) = (rot_pose * rot_face).to_euler(glam::EulerRot::XYZ);
-        let unit = |r: f32| (r * 4096.0 / std::f32::consts::TAU).round() as i32;
-        let u = |v: i32| v.rem_euclid(4096) as u16;
-        Self {
-            pos: [
-                self.pos[0] + pivot.x,
-                self.pos[1] + pivot.y,
-                self.pos[2] + pivot.z,
-            ],
-            yaw: u(unit(y)),
-            pitch: u(unit(x)),
-            roll: u(unit(z)),
-            scale: self.scale * face_scale,
-        }
-    }
-
     /// Whether the pose carries a pitch or roll, so a host needs the full
     /// `Rx * Ry * Rz` composer rather than its yaw-only model.
     pub fn tilted(&self) -> bool {
@@ -615,37 +581,27 @@ mod npc_draw_pose_tests {
         assert_eq!((light.sprite.cursor, light.sprite.frame), (0, 0));
     }
 
-    /// Op `43 07` with flag `0x40000` (the `04 00 00 00` operand every
-    /// shrinking carrier passes): halfway up the ramp the body is half size
-    /// and spun about `-off`; at `0x1000` it is gone (scale `0`) and the spin
-    /// angle has wrapped back to zero.
+    /// Op `43 07`'s row and ramp reach the draw as a shatter input: the pose
+    /// is untouched, the row's flags ride the word's high half.
     #[test]
-    fn a_face_row_spins_and_shrinks_the_body_about_its_pivot() {
-        let base = NpcDrawPose {
-            pos: [1000.0, -50.0, 2000.0],
-            yaw: 0,
-            pitch: 0,
-            roll: 0,
-            scale: 1.0,
-        };
-        let row = FieldFaceRow {
-            offset: [0, -32, 0, 0],
-            flags: 4,
-        };
-        let half = base.with_face(row, 0x800);
-        assert!((half.scale - 0.5).abs() < 1e-6);
-        let gone = base.with_face(row, 0x1000);
-        assert_eq!(gone.scale, 0.0);
-        assert_eq!((gone.pitch, gone.yaw, gone.roll), (0, 0, 0));
-        // No-rotate flag: only the shrink, toward the pivot `-off`.
-        let row = FieldFaceRow {
-            offset: [0, -32, 0, 0],
-            flags: 5,
-        };
-        let p = base.with_face(row, 0x800);
-        assert_eq!((p.pitch, p.yaw, p.roll), (0, 0, 0));
-        // `T + (0.5 * off - off)` = `T - 0.5 * off`.
-        assert!((p.pos[1] - (-50.0 + 16.0)).abs() < 1e-3);
+    fn a_face_ramp_becomes_a_shatter_input() {
+        let mut w = World::new();
+        assert!(w.field_npc_shatter(3).is_none());
+        w.npcs.face_rows.insert(
+            1,
+            crate::world::FieldFaceRow {
+                offset: [0, -32, 64, 0],
+                flags: 4,
+            },
+        );
+        w.npcs.faces.insert(3, (1, 0));
+        assert!(w.field_npc_shatter(3).is_none(), "+0x7A zero: plain draw");
+        w.npcs.faces.insert(3, (1, 0x800));
+        let s = w.field_npc_shatter(3).expect("shattering");
+        assert_eq!(s.word, 0x0004_0800);
+        assert_eq!(s.row.off, [0, -32, 64]);
+        let p = w.field_npc_draw_pose(3, (100, 200)).expect("drawn");
+        assert_eq!(p.scale, 1.0, "no whole-model fold");
     }
 
     /// The yaw rule both hosts used to spell differently: an NPC nothing has

@@ -257,6 +257,24 @@ pub trait BattleActionHost {
         false
     }
 
+    /// The band word `ctx[+0x6D8]` as the SM leaves it just before a
+    /// [`Self::summon_stager_tick`] call at `0x34` / `0x35`. Retail has one
+    /// word: the SM arms and drains it (`sh v0,0x2(s7)`, `s7 = ctx + 0x6D6`),
+    /// and a module whose countdown is that same word (PROT 0904, 0907,
+    /// 0908) reads and rewrites it inside the call. A host that keeps the
+    /// module's countdown apart takes the SM's value here. Default no-op.
+    fn summon_band_word_in(&mut self, _word: i16) {}
+
+    /// The band word after the stager call: `Some` when the resident
+    /// module's countdown is `ctx[+0x6D8]` (the value the module left in it),
+    /// `None` when the module keeps its countdown elsewhere and the SM's own
+    /// value stands. `0x35` re-reads the word after the call
+    /// (`lh v0,0x2(s7)` at `0x801E4C84`), so a module re-seeding it keeps
+    /// the band in `0x35`. Default `None`.
+    fn summon_band_word_out(&mut self) -> Option<i16> {
+        None
+    }
+
     /// Equivalent of `FUN_801F2160()` - one tick of the **capture band's**
     /// paged cast module, the twin of [`Self::summon_stager_tick`] for the
     /// other of PROT 0898's two cast dispatchers.

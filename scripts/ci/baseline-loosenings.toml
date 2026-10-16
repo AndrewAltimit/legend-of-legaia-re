@@ -45,3 +45,12 @@ changes = [
   ["states/battle_gaza2_park_0x19_target_vahn/camera", 0.967, 0.899],
   ["states/battle_gaza2_park_0x19_target_vahn/image", 0.608, 0.503],
 ]
+
+[[loosening]]
+file = "scripts/ci/retail-compare-baseline.json"
+reason = "The state is captured inside PROT 0913's arm 2, which waits on the creature stream's CD read: retail spends 4 vsyncs there in a full cast (cast-sequence oracle), and this frame is one of them, with slot 7 still empty under a white ground fade. The engine's stream read is instant, so the seeded engine leaves arm 2 at once and draws arm 3: the yaw spin the arm now ports (cast_module_camera::nova) and the creature the seat installer FUN_801F19EC now stands on the caster, a dark body in the fade. The old camera score came from the unported arm 3 leaving the shot put. Closing it needs the CD-read latency modelled, not a camera change. The capture phase gate now places a stream-poll arm by the arm alone, so the seeded engine stands on arm 2 as retail does: image 1.000 (above the old 0.963), camera 0.996, one thousandth under, inside the comparison's noise. The two Gimard image drops are the fire tunnel's rotation phase, a clock the seed does not carry, under the creature that now rises from the floor at retail's spot."
+changes = [
+  ["states/gimard_burning_attack/image", 0.54, 0.533],
+  ["states/nova_summon_mid_cast/camera", 0.997, 0.996],
+  ["states/shiny_refactor_gimard_levelup/image", 0.839, 0.835],
+]

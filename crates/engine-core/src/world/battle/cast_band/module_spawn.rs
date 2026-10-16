@@ -1,39 +1,145 @@
 //! Seating a cast module's actors and effects: the summon actor seat, the cast
 //! effect pool, module lookup, and the module FX and arm spawns.
 
+use super::module_seat_arm;
 use super::*;
 use legaia_engine_mode::mode::SceneMode;
 
 impl World {
     /// A host seated the summon creature at actor `slot`: adopt the seat,
-    /// place it at the stager's spawn point wearing the caster's facing (the
-    /// capture's slot-7 record), and mark it active. Hosts call this right
-    /// after binding the creature's mesh, idle player and clip set.
+    /// place it where the seat installer `FUN_801F19EC` leaves it, and mark
+    /// it active. Hosts call this right after binding the creature's mesh,
+    /// idle player and clip set.
+    ///
+    /// The installer is one battle-overlay routine every creature-seating
+    /// module calls (`jal 0x801F19EC`), so what it writes holds band-wide:
+    /// the creature stands **on the caster** - the node is built off the
+    /// caster's `+0x34` triple (`FUN_80024C88(caster + 0x34, ..)` at
+    /// `0x801F1D4C`) and copied into the seat's `+0x3C` / `+0x40` and
+    /// `+0x34` / `+0x38` (`0x801F1E04..0x801F1E40`) - wearing the caster's
+    /// facing (`+0x26 = caster[+0x46]` at `0x801F1D94`), at animation rate
+    /// `2` (`0x801F1DFC`). A module that moves its creature does so in its
+    /// own arms afterwards ([`crate::world::battle::cast_band`]'s
+    /// `module_cam.creature`). A module the engine paces with its own walk
+    /// stand-in (no band-pacing director) keeps the stand-in's spawn point,
+    /// which its walk is measured from.
+    ///
+    /// PORT: FUN_801F19EC (the seat, facing, target and rate stores)
     pub fn seat_summon_actor(&mut self, slot: usize) {
         let staged = self.casting.summon_stager.as_ref().map(|st| {
+            let caster = self.actors.get(st.caster as usize);
+            let spawn = match caster.filter(|_| self.module_seats_on_caster(st.spell_id)) {
+                Some(c) => [
+                    c.move_state.world_x,
+                    c.move_state.world_y,
+                    c.move_state.world_z,
+                ],
+                None => st.spawn,
+            };
             (
-                st.spawn,
-                self.actors
-                    .get(st.caster as usize)
-                    .map(|a| a.battle.facing_angle)
-                    .unwrap_or(0),
+                spawn,
+                caster.map(|a| a.battle.facing_angle).unwrap_or(0),
+                caster.map(|a| a.battle.active_target),
             )
         });
         self.casting.summon_actor_slot = Some(slot as u8);
+        let placed = self.casting.module_cam.creature;
+        let entry = self
+            .casting
+            .summon_stager
+            .as_ref()
+            .and_then(|st| self.cast_module_for(st.spell_id));
         let Some(a) = self.actors.get_mut(slot) else {
             return;
         };
         a.active = true;
         // A debug spawn outside a cast keeps the host's own placement.
-        let Some((spawn, facing)) = staged else {
+        let Some((spawn, facing, target)) = staged else {
             return;
         };
         a.move_state.world_x = spawn[0];
         a.move_state.world_y = spawn[1];
         a.move_state.world_z = spawn[2];
         a.battle.facing_angle = facing;
+        // `+0x1DD = caster[+0x1DD]` (`0x801F1DB8`): the target the root-motion
+        // term's range poll stops a positive-speed clip at.
+        if let Some(t) = target {
+            a.battle.active_target = t;
+        }
         a.battle.queued_anim = 0;
         a.battle.current_anim = 0;
+        a.battle.anim_rate = legaia_engine_battle_vm::battle_anim_rate::AnimRate(
+            super::module_creature::SUMMON_SEAT_ANIM_RATE,
+        );
+        // The installer hangs the record's first clip on the node directly
+        // (`sw v1,0x4c(v0)` / `sh zero,0x68(v0)` at `0x801F1DCC..0x801F1DE8`)
+        // without the commit `FUN_8004AD80`, so nothing seeds the clip's
+        // window: `+0x176` / `+0x21B` keep the zeros the previous cast's
+        // `0xFF` arm left on the seat (`sb zero,0x21b` / `sh zero,0x176`,
+        // e.g. PROT 0907 `0x801F7F68`). The window first applies at the
+        // clip's first commit.
+        a.battle.hit_count_bound = 0;
+        if let Some(p) = a.battle_animation.as_mut() {
+            p.release_loop_window();
+        }
+        // ...and the walker runs the clip it hung there all the same: the
+        // per-frame `FUN_80047430` -> `FUN_801DEA50` call reads the node's
+        // record, so clip 0's effect script fires on its frames (PROT 0913's
+        // emergence clip lands its dust and floor ring at frame `0x62`). The
+        // installer leaves the cursor `+0x1F5` alone; the seat it reuses
+        // holds `0` (retail RAM across PROT 0913's arms 3..7).
+        a.battle_effect_script = a
+            .battle_action_clips
+            .as_ref()
+            .and_then(|c| c.first().cloned().flatten())
+            .map(|c| c.effect_script)
+            .filter(|s| !s.is_empty());
+        a.battle_effect_cursor = 0;
+        a.battle_anim_cue_cursor = 0;
+        // The seat arm's own stores, which run after the installer on the
+        // same pass (`module_seat_arm`).
+        if let Some(e) = entry {
+            self.apply_seat_arm_write(e, slot);
+        }
+        // A seat arm that computes its seat lives in its director (PROT
+        // 0907's arm 6 seats Nighto on its grid point at
+        // `0x801F76C8..0x801F77A4`, right behind `jal 0x801F19EC`). The host
+        // seats the mesh a tick after the director has run that arm, so a
+        // placement the director already made wins over the installer's.
+        if let Some(c) = placed
+            && let Some(a) = self.actors.get_mut(slot)
+        {
+            a.move_state.world_x = c.x;
+            a.move_state.world_z = c.z;
+            a.battle.facing_angle = c.facing;
+        }
+        // An engine walk stand-in ends where the module seated the creature:
+        // a module that seats it never walks it there.
+        if entry.is_some_and(|e| module_seat_arm::seat_arm_write(e).is_some())
+            && let Some(a) = self.actors.get(slot)
+        {
+            let at = [
+                a.move_state.world_x,
+                a.move_state.world_y,
+                a.move_state.world_z,
+            ];
+            if let Some(st) = self.casting.summon_stager.as_mut() {
+                st.goal = at;
+            }
+        }
+    }
+
+    /// Whether a cast of `spell_id` seats its creature where the installer
+    /// does (on the caster), and its seat arm's own stores after it: every
+    /// module whose band a director paces, so that no engine walk stand-in
+    /// moves the creature from its seat, and every module with a seat-arm
+    /// row (`module_seat_arm::seat_arm_write`).
+    pub(in crate::world) fn module_seats_on_caster(&self, spell_id: u8) -> bool {
+        self.cast_module_for(spell_id).is_some_and(|e| {
+            module_seat_arm::seat_arm_write(e).is_some()
+                || legaia_engine_battle_vm::cast_module_camera::module_profile(e)
+                    .is_some_and(|p| p.paces_band())
+        })
     }
 
     /// The seat half of a summon spawn request for a host that draws
@@ -195,6 +301,7 @@ impl World {
         prot_entry: u32,
         spawns: &[legaia_engine_battle_vm::cast_module_camera::ModuleSpawn],
         shot: Option<legaia_engine_battle_vm::cast_module_camera::ModuleShot>,
+        arm_point: Option<([i16; 3], [i16; 3])>,
     ) {
         use legaia_engine_battle_vm::cast_module_camera::SpawnRecord;
         use legaia_game_tables::move_power::{self, BATTLE_OVERLAY_BASE};
@@ -217,13 +324,38 @@ impl World {
                     facing: a.battle.facing_angle & 0xFFF,
                 },
             );
+        let seat_of = |slot: usize| {
+            self.actors.get(slot).map(
+                |a| legaia_engine_battle_vm::cast_module_camera::ModuleSeat {
+                    x: a.move_state.world_x,
+                    y: a.move_state.world_y,
+                    z: a.move_state.world_z,
+                    facing: a.battle.facing_angle & 0xFFF,
+                },
+            )
+        };
+        let party_count = usize::from(self.party.party_count);
+        let anchor_seats = legaia_engine_battle_vm::cast_module_camera::AnchorSeats {
+            caster: seat_of(usize::from(self.battle_ctx.active_actor)),
+            party: std::array::from_fn(|n| {
+                (n < party_count && self.actors.get(n).is_some_and(|a| a.battle.hp != 0))
+                    .then(|| seat_of(n))
+                    .flatten()
+            }),
+            depth: self.battle.camera_frame_height,
+        };
         for spawn in spawns {
-            let Some((pos, rot)) = legaia_engine_battle_vm::cast_module_camera::spawn_anchor_point(
-                spawn.anchor,
-                creature,
-                victim,
-                shot,
-            ) else {
+            let point = match spawn.anchor {
+                legaia_engine_battle_vm::cast_module_camera::SpawnAnchor::ArmPoint => arm_point,
+                anchor => legaia_engine_battle_vm::cast_module_camera::spawn_anchor_point_with(
+                    anchor,
+                    creature,
+                    victim,
+                    shot,
+                    anchor_seats,
+                ),
+            };
+            let Some((pos, rot)) = point else {
                 continue;
             };
             let (bytes, parts, off): (std::sync::Arc<[u8]>, Vec<_>, usize) = match spawn.record {
@@ -276,18 +408,32 @@ impl World {
             if picked.is_empty() {
                 continue;
             }
-            match self.casting.active_summon.as_mut() {
-                Some(scene) => scene.push_parts(&picked, &bytes, pos, rot),
-                None => {
-                    let mut scene = legaia_engine_effects::summon::SummonScene::spawn_parts(
-                        &[],
-                        &bytes,
-                        crate::scene_host::EFFECT_MODEL_LIBRARY_BASE,
-                        pos,
-                    );
-                    scene.push_parts(&picked, &bytes, pos, rot);
-                    self.casting.active_summon = Some(scene);
+            let scene = self.casting.active_summon.get_or_insert_with(|| {
+                legaia_engine_effects::summon::SummonScene::spawn_parts(
+                    &[],
+                    &bytes,
+                    crate::scene_host::EFFECT_MODEL_LIBRARY_BASE,
+                    pos,
+                )
+            });
+            let first = scene.parts.len();
+            let scale = legaia_engine_battle_vm::cast_module_camera::spawn_anchor_scale(
+                spawn.anchor,
+                shot,
+                anchor_seats,
+            );
+            scene.push_parts_scaled(&picked, &bytes, pos, rot, scale);
+            // Each part keeps the record it was spawned from, the handle a
+            // later arm kills it by (`ori 0x8` into the actor's flag word).
+            if let SpawnRecord::Module(va) = spawn.record {
+                for part in &mut scene.parts[first..] {
+                    part.tag.get_or_insert(va);
                 }
+                // A seated stager-calling record makes its own call, so the
+                // clock kept in its place stops.
+                self.casting
+                    .module_record_clocks
+                    .retain(|c| !(prot_entry == 909 && c.0 == va));
             }
         }
     }

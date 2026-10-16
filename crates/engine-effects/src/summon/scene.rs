@@ -96,6 +96,20 @@ impl SummonScene {
         pos: [i16; 3],
         rot: [i16; 3],
     ) {
+        self.push_parts_scaled(parts, record_bytes, pos, rot, SPAWN_RENDER_SCALE);
+    }
+
+    /// [`Self::push_parts`] at a call's own scale - `FUN_80021B04`'s fourth
+    /// argument, stored at `+0x72` (`sh s4,0x72(s0)` at `0x80021DAC`) ahead
+    /// of the part's first move-VM run.
+    pub fn push_parts_scaled(
+        &mut self,
+        parts: &[SummonPart],
+        record_bytes: &[u8],
+        pos: [i16; 3],
+        rot: [i16; 3],
+        scale: u16,
+    ) {
         self.retail_wait_drain = true;
         self.parts.extend(parts.iter().filter_map(|p| {
             let mut part = seed_part(p, record_bytes, pos)?;
@@ -107,6 +121,7 @@ impl SummonScene {
             // seater also takes `rot[1]` as the part's heading `+0x96`, the
             // direction the motion block's `+0x98` speed runs along.
             part.state.tween_scale_x = rot[1] & 0xFFF;
+            part.state.field_72 = scale;
             Some(part)
         }));
     }
@@ -166,6 +181,14 @@ impl SummonScene {
                 part.finished = true;
             }
             _ => {}
+        }
+        // The seating code's own stores into the part `FUN_80021B04`
+        // returned, which follow the seater's run.
+        for (off, value) in std::mem::take(&mut part.seat_pokes) {
+            part.poke(off, value);
+        }
+        if std::mem::take(&mut part.seat_halve_speed) {
+            part.state.tween_scale_y /= 2;
         }
         true
     }
@@ -302,6 +325,7 @@ impl SummonScene {
                     morph: PartMorph::of(s),
                     scale: s.field_72,
                     colour: legaia_render_kernels::sprite_arm::ColourWord::of(s),
+                    shatter: crate::part_shatter::part_shatter_word(s),
                 }
             })
             .collect()
@@ -320,7 +344,13 @@ impl SummonScene {
             .filter(|p| !p.finished)
             .filter_map(|p| {
                 let s = &p.state;
-                let mesh = crate::effect_ribbon::ribbon_mesh_for_actor(s)?;
+                let mut mesh = crate::effect_ribbon::ribbon_mesh_for_actor(s)?;
+                // The ribbon is the node's model too: the model draw's
+                // `+0x7A` gate ([`crate::part_shatter`]).
+                crate::part_shatter::apply_part_shatter(
+                    &mut mesh,
+                    crate::part_shatter::part_shatter_word(s),
+                );
                 (!mesh.indices.is_empty()).then(|| crate::effect_ribbon::RibbonDraw {
                     mesh,
                     world_pos: [s.world_x as f32, s.world_y as f32, s.world_z as f32],
@@ -434,6 +464,8 @@ fn seed_part(p: &SummonPart, record_bytes: &[u8], origin: [i16; 3]) -> Option<Su
         finished: false,
         origin: None,
         tag: None,
+        seat_pokes: Vec::new(),
+        seat_halve_speed: false,
     })
 }
 

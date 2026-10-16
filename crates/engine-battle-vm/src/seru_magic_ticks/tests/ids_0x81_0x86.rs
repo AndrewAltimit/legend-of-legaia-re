@@ -268,6 +268,7 @@ fn theeder_packet_arms_draw_charge_sweep_and_retract() {
         x: 0,
         z: 0,
         facing: 0,
+        clip_loops: 0,
     };
     let mut fx = TheederFx::default();
     // Arm 8 seeds arm 9's countdown; arm 9 draws prongs while it drains.
@@ -597,6 +598,28 @@ fn gizam_walks_through_the_phase_five_hole() {
     assert_eq!(ctx.phase, GIZAM_MISSING_ARM + 1);
 }
 
+/// Arm 7's row relight skips a dead seat: both stores sit past the `beq`
+/// on its HP (`0x801F6F74`, delay slot `nop`), so a faded-out foe keeps its
+/// defeat-fade state and the zero colour word arm 14's poll waits on.
+#[test]
+fn gizam_relight_leaves_a_dead_seat_faded() {
+    let mut seats = row();
+    seats[3].hp = 0;
+    seats[3].render_flag = 2;
+    seats[3].present_04 = 0;
+    seats[4].render_flag = 1;
+    let mut ctx = CastModuleCtx {
+        phase: GIZAM_STAGE_ARM,
+        ..Default::default()
+    };
+    gizam_tick(&mut ctx, &mut seats, WHO, |_| None);
+    assert_eq!((seats[3].render_flag, seats[3].present_04), (2, 0));
+    assert_eq!(
+        (seats[4].render_flag, seats[4].present_04),
+        (0, GIZAM_ROW_LIT_WORD)
+    );
+}
+
 #[test]
 fn gizam_sweep_marks_every_seat_it_hits() {
     let mut seats = row();
@@ -617,6 +640,45 @@ fn gizam_sweep_marks_every_seat_it_hits() {
     }
     assert_eq!(seats[5].hp, 200);
     assert_eq!(seats[7].render_flag, GIZAM_HIDDEN_RENDER_FLAG);
+}
+
+/// Arm 12's pass turns the living row blue; a dead seat keeps its fade.
+#[test]
+fn gizam_bubbles_tint_the_living_row_blue() {
+    let mut seats = row();
+    seats[4].hp = 0;
+    seats[4].render_flag = 2;
+    let mut ctx = CastModuleCtx {
+        phase: GIZAM_BUBBLE_ARM,
+        ..Default::default()
+    };
+    gizam_tick(&mut ctx, &mut seats, WHO, |_| None);
+    assert_eq!(seats[3].render_flag, GIZAM_BUBBLE_RENDER_FLAG);
+    assert_eq!(seats[4].render_flag, 2);
+    assert_eq!(ctx.phase, GIZAM_BUBBLE_ARM + 1);
+}
+
+/// The sweep's presentation lands with the damage folded elsewhere: the
+/// row comes off the blue and takes the hit's colour word.
+#[test]
+fn gizam_sweep_presents_without_a_roll() {
+    let mut seats = row();
+    seats[5].flags = FLAG_NON_TARGETABLE;
+    for s in &mut seats[3..7] {
+        s.render_flag = GIZAM_BUBBLE_RENDER_FLAG;
+    }
+    let mut ctx = CastModuleCtx {
+        phase: GIZAM_SWEEP_ARM,
+        ..Default::default()
+    };
+    let (_, hits) = gizam_tick(&mut ctx, &mut seats, WHO, |_| None);
+    assert!(hits.is_empty());
+    assert_eq!(seats[3].hp, 200);
+    assert_eq!(
+        (seats[3].render_flag, seats[3].present_04),
+        (0, GIZAM_HIT_PRESENT_WORD)
+    );
+    assert_eq!(seats[5].render_flag, GIZAM_BUBBLE_RENDER_FLAG);
 }
 
 #[test]
@@ -644,7 +706,7 @@ fn nighto_kill_branch_zeroes_hp_and_clears_status() {
         phase: NIGHTO_FORK_ARM,
         ..Default::default()
     };
-    nighto_tick(&mut ctx, &mut seats, WHO, NightoOutcome::Kill);
+    nighto_tick(&mut ctx, &mut seats, WHO, NightoOutcome::Kill, true);
     assert_eq!(seats[3].hp, 0);
     assert_eq!(seats[3].flags, 0);
     assert_eq!(seats[3].render_flag, NIGHTO_KILL_RENDER_FLAG);
@@ -658,13 +720,13 @@ fn nighto_confuse_branch_jumps_the_settle_arm() {
         phase: NIGHTO_FORK_ARM,
         ..Default::default()
     };
-    nighto_tick(&mut ctx, &mut seats, WHO, NightoOutcome::Confuse);
+    nighto_tick(&mut ctx, &mut seats, WHO, NightoOutcome::Confuse, true);
     assert_eq!(ctx.phase, NIGHTO_CONFUSE_ARM);
     assert_eq!(seats[3].hp, 200);
-    nighto_tick(&mut ctx, &mut seats, WHO, NightoOutcome::Confuse);
+    nighto_tick(&mut ctx, &mut seats, WHO, NightoOutcome::Confuse, true);
     assert_eq!(seats[3].flags & NIGHTO_CONFUSE_BITS, NIGHTO_CONFUSE_BITS);
     assert_eq!(ctx.phase, CHOREOGRAPHY_DONE_PHASE);
-    let step = nighto_tick(&mut ctx, &mut seats, WHO, NightoOutcome::Confuse);
+    let step = nighto_tick(&mut ctx, &mut seats, WHO, NightoOutcome::Confuse, true);
     assert_eq!(step, CastTickStep::Done);
     assert_eq!(seats[3].anim_rate, NIGHTO_EXIT_ANIM_RATE);
 }
@@ -749,7 +811,7 @@ fn nighto_resisted_writes_neither_outcome() {
             phase: NIGHTO_FORK_ARM,
             ..Default::default()
         };
-        nighto_tick(&mut ctx, &mut seats, WHO, outcome);
+        nighto_tick(&mut ctx, &mut seats, WHO, outcome, true);
         assert_eq!(seats[3].hp, 200, "{outcome:?} wrote HP");
         assert_eq!(seats[3].flags, 0, "{outcome:?} wrote +0x16E");
         assert_eq!(seats[3].render_flag, 0, "{outcome:?} wrote +0x21C");
@@ -767,9 +829,21 @@ fn retail_a_resisted_nighto_still_forks_on_the_kill_word() {
         phase: NIGHTO_FORK_ARM,
         ..Default::default()
     };
-    nighto_tick(&mut ctx, &mut seats, WHO, NightoOutcome::ConfuseResisted);
+    nighto_tick(
+        &mut ctx,
+        &mut seats,
+        WHO,
+        NightoOutcome::ConfuseResisted,
+        true,
+    );
     assert_eq!(ctx.phase, NIGHTO_CONFUSE_ARM, "13 -> 15");
-    nighto_tick(&mut ctx, &mut seats, WHO, NightoOutcome::ConfuseResisted);
+    nighto_tick(
+        &mut ctx,
+        &mut seats,
+        WHO,
+        NightoOutcome::ConfuseResisted,
+        true,
+    );
     assert_eq!(ctx.phase, CHOREOGRAPHY_DONE_PHASE);
     assert_eq!(
         seats[3].flags & NIGHTO_CONFUSE_BITS,
@@ -782,7 +856,7 @@ fn retail_a_resisted_nighto_still_forks_on_the_kill_word() {
         phase: NIGHTO_FORK_ARM,
         ..Default::default()
     };
-    nighto_tick(&mut ctx, &mut seats, WHO, NightoOutcome::KillResisted);
+    nighto_tick(&mut ctx, &mut seats, WHO, NightoOutcome::KillResisted, true);
     assert_eq!(ctx.phase, NIGHTO_KILL_SETTLE_ARM, "13 -> 14");
     assert_eq!(seats[3].hp, 200);
 }
@@ -830,6 +904,10 @@ fn every_body_reaches_done_from_phase_zero() {
         let (frames, phase) = walk(|ctx| match entry {
             903 => gimard_tick(ctx, &mut seats, WHO, None).0,
             904 => {
+                // The host's anim tick commits the clip arm 6 stages
+                // before arm 7 polls it.
+                let s = &mut seats[WHO.summon as usize];
+                s.playing_anim = s.staged_anim;
                 theeder_tick(
                     ctx,
                     &mut seats,
@@ -842,12 +920,17 @@ fn every_body_reaches_done_from_phase_zero() {
             }
             905 => vera_tick(ctx, &mut seats, WHO, None).0,
             906 => gizam_tick(ctx, &mut seats, WHO, |_| None).0,
-            907 => nighto_tick(ctx, &mut seats, WHO, NightoOutcome::ConfuseResisted),
+            907 => nighto_tick(ctx, &mut seats, WHO, NightoOutcome::ConfuseResisted, true),
             _ => zenoir_tick(ctx, &mut seats, WHO, |_| None).0,
         });
         // Every chain walks its whole arm run before the terminal, and
-        // none of them wraps.
-        assert!(frames >= u32::from(last), "{entry} finished in {frames}");
+        // none of them wraps. PROT 0905's arm 5 steps the phase by three,
+        // so its run skips arms 6 and 7.
+        let skipped = if entry == 905 { 2 } else { 0 };
+        assert!(
+            frames + skipped >= u32::from(last),
+            "{entry} finished in {frames}"
+        );
         assert!(phase >= last, "{entry} ended at phase {phase}");
     }
 }
@@ -877,7 +960,13 @@ fn a_phase_past_the_chain_is_done_rather_than_busy_forever() {
             }
             905 => vera_tick(&mut ctx, &mut seats, WHO, None).0,
             906 => gizam_tick(&mut ctx, &mut seats, WHO, |_| None).0,
-            907 => nighto_tick(&mut ctx, &mut seats, WHO, NightoOutcome::ConfuseResisted),
+            907 => nighto_tick(
+                &mut ctx,
+                &mut seats,
+                WHO,
+                NightoOutcome::ConfuseResisted,
+                true,
+            ),
             _ => zenoir_tick(&mut ctx, &mut seats, WHO, |_| None).0,
         };
         assert_eq!(step, CastTickStep::Done, "PROT {entry}");

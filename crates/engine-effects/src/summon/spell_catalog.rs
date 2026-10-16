@@ -203,8 +203,9 @@ pub struct SummonSpawnAsset {
 /// installer `FUN_80055468`) for every id. For the base and evolved blocks
 /// (`0x81..=0x95`) that record's TMD and texture pool are byte-identical to
 /// the mapped `battle_data` creature's (the disc-gated
-/// `summon_creature_tmd_map_real` oracle pins both), so the archive record -
-/// with its archive-order clips - is the same body. Every other cast id
+/// `summon_creature_tmd_map_real` oracle pins both), so the archive record is
+/// the same body - but not the same clips: those come out of the cast's own
+/// record whenever `summon_dat` is given. Every other cast id
 /// (the high block `0x99..=0xA0` and the flutes) has no archive twin and
 /// resolves from `summon_dat` (extraction PROT 893) through
 /// [`legaia_actor_formats::summon_readef::parse_cast`], idling on the record's clip 0.
@@ -220,16 +221,40 @@ pub fn summon_spawn_asset(
     if let Some(creature) = summon_creature_id(spell_id, battle_data_entry)
         && let Ok(Some(mesh)) = ma::mesh(battle_data_entry, creature)
     {
+        let archive_clips = ma::animations(battle_data_entry, creature)
+            .ok()
+            .flatten()
+            .unwrap_or_default();
+        // The clips are the record's own, not the archive twin's: the
+        // installer hands the streamed record's part table (`+0x4C`) to the
+        // node (`sw v1,0x4c(v0)` at `0x801F1DCC`) and scans its tags
+        // (`FUN_80054CB0(record, 4)` at `0x801F1D1C`). Only the TMD and
+        // texture pool are byte-identical to the archive's; the clip set
+        // differs in count, length, rate byte and root speed (Gimard's walk
+        // carries `56` in its record against the archive's `28`). A record
+        // whose clips do not pose this mesh's parts keeps the archive's.
+        let part_count = archive_clips.first().map(|c| c.part_count);
+        let own = summon_dat
+            .and_then(|s| legaia_actor_formats::summon_readef::parse_cast(s, spell_id).ok())
+            .map(|c| c.clips)
+            .filter(|c| {
+                !c.is_empty() && part_count.is_none_or(|n| c.iter().all(|a| a.part_count == n))
+            });
+        if let Some(clips) = own {
+            return Some(SummonSpawnAsset {
+                creature_id: Some(creature),
+                mesh,
+                idle: clips.first().cloned(),
+                clips,
+            });
+        }
         return Some(SummonSpawnAsset {
             creature_id: Some(creature),
             mesh,
             idle: ma::idle_animation(battle_data_entry, creature)
                 .ok()
                 .flatten(),
-            clips: ma::animations(battle_data_entry, creature)
-                .ok()
-                .flatten()
-                .unwrap_or_default(),
+            clips: archive_clips,
         });
     }
     let cast = legaia_actor_formats::summon_readef::parse_cast(summon_dat?, spell_id).ok()?;

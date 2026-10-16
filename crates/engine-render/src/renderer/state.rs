@@ -305,8 +305,13 @@ pub struct Renderer {
     pub(super) screen_overlay_runs:
         std::cell::RefCell<Vec<legaia_render_kernels::screen_prim::DrawRun>>,
     /// How many of [`Self::screen_overlay_runs`] belong to the list drawn
-    /// under the 2D overlays (`SceneWithScreenPrims::under_overlay`).
+    /// under the 2D overlays (`SceneWithScreenPrims::under_overlay`),
+    /// backdrops included.
     pub(super) screen_overlay_under_runs: std::cell::Cell<usize>,
+    /// How many of [`Self::screen_overlay_runs`] - the first ones - are the
+    /// under list's backdrops (`ScreenPrim::is_backdrop`), which the scene
+    /// pass draws before any 3D draw.
+    pub(super) screen_overlay_backdrop_runs: std::cell::Cell<usize>,
     /// One flat quad covering the scene viewport, drawn first in a scene pass
     /// in the frame's clear colour when a [`Self::scene_viewport`] is set.
     /// Separate from the screen-overlay buffers because those hold the

@@ -12,6 +12,19 @@ impl World {
             .then_some(self.casting.module_beam_counter)
     }
 
+    /// PROT 0910's (Swordie) packet builders on the module's last pass -
+    /// the split panels and the slash streak
+    /// ([`legaia_engine_battle_vm::seru_magic_ticks::SwordieDraw`]), which
+    /// `legaia_render_kernels::cast_swordie` builds for both hosts. `None`
+    /// outside a live Swordie cast.
+    pub fn swordie_draw(&self) -> Option<legaia_engine_battle_vm::seru_magic_ticks::SwordieDraw> {
+        let st = self.casting.summon_stager.as_ref()?;
+        (self.mode == SceneMode::Battle
+            && self.cast_module_for(st.spell_id)
+                == Some(legaia_engine_battle_vm::seru_magic_ticks::SWORDIE_ENTRY))
+        .then_some(self.casting.module_swordie.draw)
+    }
+
     /// The full-screen fade quad to composite this frame, as
     /// `(rgb 0xRRGGBB, abr_mode, ot_index)` for
     /// `legaia_render_kernels::screen_prim::fade_prim` - `None` while no fade is
@@ -25,13 +38,15 @@ impl World {
 
     /// Every live full-screen fade quad this frame, the world's fade first
     /// and then the module fades running beside it
-    /// ([`crate::world::ScreenFxState::module_fades`]), each as
+    /// ([`crate::world::ScreenFxState::module_fades`], and the fades the
+    /// presentation hook spawned), each as
     /// [`Self::screen_fade_draw`] gives it. Both hosts composite the list.
     pub fn screen_fade_draws(&self) -> Vec<(u32, u8, u32)> {
         self.presentation
             .fade
             .iter()
             .chain(self.presentation.module_fades.iter())
+            .chain(self.casting.module_pres.fades.iter().map(|f| &f.state))
             .filter_map(fade_draw)
             .collect()
     }

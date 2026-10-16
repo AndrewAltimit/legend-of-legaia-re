@@ -85,14 +85,14 @@ impl LegaiaRuntime {
     /// back on the fight.
     ///
     /// `active` is the draw gate: it also carries the summon band's hide
-    /// (`+0x21C = 0xFF`, `RENDER_FLAG_HIDDEN`) - every party seat and living
-    /// monster is off screen while the creature performs - and retail's
+    /// (`+0x21C = 0xFF` over a zero colour word,
+    /// `World::battle_body_hidden`): every party seat and living monster is
+    /// off screen while the creature performs; and retail's
     /// per-body battle draw verdict ([`Self::battle_draw_plan`]: the
     /// `FUN_800480D8` colour-word / grey gate over the `FUN_8004A908` tint,
     /// plus the dispatcher's near-plane reject) - the browser twin of the
     /// native draw loop's skips.
     pub fn play_battle_actor_transforms(&self) -> Vec<f32> {
-        use legaia_engine_battle_vm::battle_target_group::RENDER_FLAG_HIDDEN;
         let (Some(br), Some(host)) = (self.battle_render.as_ref(), self.scene_host.host()) else {
             return Vec::new();
         };
@@ -105,7 +105,7 @@ impl LegaiaRuntime {
                     actor.move_state.world_z as f32,
                     battle_facing_yaw(actor.battle.facing_angle),
                     if actor.active
-                        && actor.battle.render_flag != RENDER_FLAG_HIDDEN
+                        && !host.world.battle_body_hidden(a.actor_idx)
                         && self.battle_draw_plan(a.actor_idx).is_none_or(|p| p.drawn)
                     {
                         1.0
@@ -155,6 +155,56 @@ impl LegaiaRuntime {
             return out;
         }
         a.rest_pose.clone()
+    }
+
+    /// Battle actor `i`'s body broken by the shatter renderer this frame
+    /// (its `+0x1BA` word, `BattleActorDrawPlan::shatter`; kernel
+    /// `legaia_render_kernels::shatter`, the native window's shattered
+    /// override too): one object-local position per **index** of the bound
+    /// mesh ([`Self::play_battle_actor_indices`]), so corner `k` keeps vertex
+    /// `indices[k]`'s UV, colour and bone. The page poses these with the
+    /// live pose and draws them de-indexed, both sides. Empty while the body
+    /// is whole, or for a statically-posed upload (no bone ids to pose by).
+    pub fn play_battle_actor_shatter(&self, i: u32) -> Vec<f32> {
+        let Some(a) = self
+            .battle_render
+            .as_ref()
+            .and_then(|b| b.actors.get(i as usize))
+        else {
+            return Vec::new();
+        };
+        if a.object_ids.is_empty() {
+            return Vec::new();
+        }
+        let Some(input) = self.battle_draw_plan(a.actor_idx).and_then(|p| p.shatter) else {
+            return Vec::new();
+        };
+        // A sweep row measures each object in the pose the page draws it in
+        // ([`Self::play_battle_actor_pose`]) through the body's view map, as
+        // the native override does.
+        let view = self.battle_shatter_view(a.actor_idx);
+        let bones: Vec<legaia_render_kernels::shatter::BonePose> = self
+            .play_battle_actor_pose(i)
+            .as_chunks::<6>()
+            .0
+            .iter()
+            .map(|p| {
+                (
+                    [p[0] as i16, p[1] as i16, p[2] as i16],
+                    [p[3] as i16, p[4] as i16, p[5] as i16],
+                )
+            })
+            .collect();
+        legaia_render_kernels::shatter::shatter_local_triangles(
+            &a.mesh.mesh.positions,
+            &a.mesh.mesh.indices,
+            &a.object_ids,
+            &input,
+            |o| legaia_render_kernels::shatter::bone_sweep_frame(&bones, o, true, &view),
+        )
+        .into_iter()
+        .flatten()
+        .collect()
     }
 
     /// Battle actor `i`'s **arts after-image ghosts** this frame - the

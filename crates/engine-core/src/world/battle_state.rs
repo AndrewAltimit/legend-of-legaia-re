@@ -443,6 +443,14 @@ pub struct BattleState {
     /// the item pre-arm for a party actor (`0x801E3DA0..0x801E3DC0`)
     /// ([`crate::battle_hud::battle_readout_bar_dy`]).
     pub(crate) readout_bar_glide: Option<legaia_engine_battle_vm::battle_commit_log::LogLaunch>,
+    /// The roster panels' raise glide when a cast module raises them
+    /// itself: PROT 0911 (Orb) arm 9's pass calls `FUN_801D8DE8(6, 0)`, then
+    /// `(0x4E + i, 0)` for each further member, and stores `ctx[+0x18] = 6`
+    /// for the Done hold's close (`0x801F7E64..0x801F7ED4`). Mode `0`: the
+    /// panels rise from seat A to seat B (`y = 236 -> 170`) and take the
+    /// readout bar's seat. Cleared by the next action's seed
+    /// ([`crate::battle_hud::battle_panels_visible`]).
+    pub(crate) module_panels_glide: Option<legaia_engine_battle_vm::battle_commit_log::LogLaunch>,
     /// The round prompt's open glide. The menu SM's round-start arm runs
     /// sub-draw step 0 (`FUN_801D388C(0)` at `0x801D0EE4`), whose five pairs
     /// are all mode `0`: `Begin` (record 0), `Run` (record 3) and the three
@@ -777,6 +785,14 @@ pub struct BattleState {
     /// `battle_ground_grid::backdrop_cue_step`; hosts read it through
     /// `World::battle_backdrop_cue`.
     pub(crate) backdrop_cue: u16,
+    /// Bit 3 of scratch `0x1F800394` as the last `FUN_80050120` pass left
+    /// it: set by a storing pass (`0x800507F4..0x80050808`), cleared by a
+    /// skipping one (`0x800507BC..0x800507D4`). `FUN_8001D058` calls the
+    /// mode-`0x15` render `FUN_80026CE4` - whose `FUN_80026F50` is the ground
+    /// grid's only draw - only while it is set (`0x8001D05C..0x8001D070`), so
+    /// a cast that holds `ctx[+0x278]` bit 0 once the ambient sits on its
+    /// floor (PROT 0927's `3`) takes the grid off the screen.
+    pub(crate) ground_grid_drawn: bool,
     /// Whether the stage is one of `DAT_80078C1C`'s outdoor stages - the
     /// `0x8007BDA8` byte the backdrop ramp's ceiling reads. The host that
     /// resolved the stage sets it when it enters battle rendering.
@@ -870,6 +886,7 @@ impl BattleState {
             action_plaque_glide: None,
             target_plaque_glide: None,
             readout_bar_glide: None,
+            module_panels_glide: None,
             round_prompt_glide: None,
             ring_open_glide: None,
             widget_glide_return: 0,
@@ -919,6 +936,7 @@ impl BattleState {
             burn_emit_accum: 0,
             ambient_stored: legaia_engine_battle_vm::battle_ground_grid::GRID_FAR_BASE_NEUTRAL,
             backdrop_cue: 0,
+            ground_grid_drawn: true,
             stage_outdoor: false,
             message_banner: None,
             entry_serial: 0,

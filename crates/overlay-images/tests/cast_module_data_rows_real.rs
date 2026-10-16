@@ -38,11 +38,9 @@ const WRAPPERS: [u32; 3] = [0x801D_D0AC, 0x801D_D4B0, 0x801D_D6B4];
 ///
 /// The count is `jal` sites, not records: PROT 0915's stager reaches one
 /// shared call from two arms with two different record pointers.
-const DATA_ROWS: [(u32, u32, usize); 48] = [
+const DATA_ROWS: [(u32, u32, usize); 46] = [
     (0x801F_8EAC, 904, 1),
     (0x801F_8078, 905, 2),
-    (0x801F_7FA8, 907, 2),
-    (0x801F_8310, 908, 5),
     (0x801F_89D4, 910, 1),
     (0x801F_7FE8, 911, 1),
     (0x801F_835C, 912, 3),
@@ -182,7 +180,7 @@ fn every_data_row_is_a_spawn_stager_the_pool_covers() {
         return;
     };
 
-    assert_eq!(DATA_ROWS.len(), 48, "the doc's DATA verdict count");
+    assert_eq!(DATA_ROWS.len(), 46, "the doc's DATA verdict count");
     let mut pool = CastEffectPool::new();
     let mut total_spawn = 0usize;
 

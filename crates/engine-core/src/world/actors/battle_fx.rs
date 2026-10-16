@@ -98,7 +98,11 @@ impl World {
             .actors
             .get(usize::from(self.battle_ctx.active_actor))
             .is_some_and(|a| a.battle.current_anim == ACTION_FX_ART_SLOT);
+        let mut floor_parts = 0usize;
         for s in &step.spawns {
+            if s.direct && fx::seats_floor_part(s.effect) {
+                floor_parts += 1;
+            }
             let mut effect = s.effect & !fx::EFFECT_DIRECT_BIT;
             if !s.direct && effect == 0 && art_slot_active {
                 effect = ACTION_FX_ART_CODE;
@@ -112,6 +116,13 @@ impl World {
                     facing: script_actor.facing,
                 },
             );
+        }
+        // The direct arm's codes `0x81..=0x83` seat the floor part after the
+        // pool spawn (`0x801DEEC0..0x801DEF08`): prototype
+        // [`fx::FLOOR_PART_RECORD`] on the actor's body pair at height `0`,
+        // scaled by twice its render node's `+0x58`.
+        for _ in 0..floor_parts {
+            self.seat_effect_floor_part(i);
         }
         // Terminator sink: install the staged move-power record's `+0x04`
         // word and the launch position into the move-FX streak block. The
@@ -464,9 +475,21 @@ impl World {
             self.battle.stage_outdoor,
             1,
         );
-        if !grid::ambient_store_skipped(rgb, ctx.gauge_rearm_latch, ctx_278) {
+        let skipped = grid::ambient_store_skipped(rgb, ctx.gauge_rearm_latch, ctx_278);
+        if !skipped {
             self.battle.ambient_stored = rgb;
         }
+        // The same branch sets or clears the grid's draw gate, bit 3 of
+        // `0x1F800394`.
+        self.battle.ground_grid_drawn = !skipped;
+    }
+
+    /// Whether the ground grid is on the screen this frame: retail's grid is
+    /// drawn by `FUN_80026CE4`, which `FUN_8001D058` skips while bit 3 of
+    /// `0x1F800394` is clear (`World::tick_battle_ambient`). Both battle
+    /// hosts gate their grid draw on it.
+    pub fn battle_ground_grid_drawn(&self) -> bool {
+        self.battle.ground_grid_drawn
     }
 
     /// The backdrop pair's depth-cue weight this frame, `1.0 = 0x1000`, or
@@ -657,6 +680,68 @@ impl World {
         }
     }
 
+    /// `FUN_8004CE2C` pass 2's Jette hook (`0x8004D330..0x8004D438`,
+    /// [`legaia_engine_battle_vm::battle_impact_fx::jette_shatter_hook`]):
+    /// in the Jette fight, while the acting actor aims at a monster, the
+    /// target's `+0x1BA` shatter word rides a triangular ramp on its own clip
+    /// `2` over deformation row `2` (shrink, no push) - Jette breaks into
+    /// shrinking triangles and re-forms - and is cleared once that clip is
+    /// over. The pass reads the acting actor `actor_table[ctx[+0x13]]` and its
+    /// `+0x1DD` target whatever the branch above it took.
+    pub(super) fn tick_jette_shatter_hook(&mut self) {
+        use legaia_engine_battle_vm::battle_impact_fx as ifx;
+        let acting = self.battle_ctx.active_actor as usize;
+        let Some(target) = self
+            .actors
+            .get(acting)
+            .map(|a| a.battle.active_target as usize)
+        else {
+            return;
+        };
+        let Some(t) = self.actors.get(target) else {
+            return;
+        };
+        let formation_first = self
+            .battle_monster_slots()
+            .into_iter()
+            .find(|&(_, _, slot)| slot == 0)
+            .map_or(0, |(_, id, _)| id as u8);
+        let cursor = t
+            .battle_animation
+            .as_ref()
+            .map_or(0, |p| p.cursor_sixteenths() as i16);
+        let verdict = ifx::jette_shatter_hook(
+            formation_first,
+            t.battle_monster_id.is_some(),
+            self.battle_ctx.action_state,
+            t.battle.current_anim,
+            cursor,
+        );
+        match verdict {
+            ifx::JetteShatter::Keep => {}
+            ifx::JetteShatter::Set(v) => {
+                // Row 2 of `0x8007BE60`: offset and front zero, flags 6
+                // (`0x8004D394..0x8004D3B0`) - the table the field's op
+                // `43 07` writes too.
+                self.npcs.face_rows.insert(
+                    ifx::JETTE_SHATTER_ROW,
+                    crate::world::FieldFaceRow {
+                        offset: [0; 4],
+                        flags: ifx::JETTE_SHATTER_FLAGS,
+                    },
+                );
+                let b = &mut self.actors[target].battle;
+                b.shatter_row = Some(ifx::JETTE_SHATTER_ROW);
+                b.shatter = v;
+            }
+            ifx::JetteShatter::Clear => {
+                let b = &mut self.actors[target].battle;
+                b.shatter_row = Some(0);
+                b.shatter = 0;
+            }
+        }
+    }
+
     pub(super) fn tick_battle_impact_fx(&mut self) {
         use legaia_engine_battle_vm::battle_formulas::{FadeInputs, TintWords, tint_sm_step};
         use legaia_engine_battle_vm::battle_impact_fx as ifx;
@@ -718,6 +803,7 @@ impl World {
         }
         self.tick_battle_defeat_sink();
         self.emit_battle_burn_sprites();
+        self.tick_jette_shatter_hook();
         // The per-clip arms: the acting actor's committed record key + cursor
         // window select the writes onto it and its target.
         let acting = self.battle_ctx.active_actor as usize;
@@ -981,5 +1067,55 @@ impl World {
         // for either seat, which a party table never produces.
         let frame0 = frame0.filter(|f| f.len() == player.part_count());
         Some(TweenTarget { frame0, z_bias })
+    }
+
+    /// The floor part `FUN_801DEA50`'s direct arm seats for codes
+    /// `0x81..=0x83` (`0x801DEEC0..0x801DEF08`): the actor's body pair
+    /// `+0x3C..+0x43` copied to the stack with the height zeroed
+    /// (`sh zero,0x12(sp)`), and `FUN_80050ED4` on
+    /// [`legaia_engine_effects::action_effect_script::FLOOR_PART_RECORD`] at
+    /// scale `node[+0x58] << 1` (`sll a3,a3,0x11` / `sra a3,a3,0x10`). The
+    /// angle trio at `sp+0x18` is whatever the walk's stack held (the table
+    /// arm's stores); the part is a flat ring, seated unturned here. The
+    /// screen-shake stores that follow (`0x801DEF24..0x801DEF54`, under
+    /// `0x800845C8 == 0`) are not carried.
+    ///
+    /// PORT: FUN_801DEA50 (`0x801DEEC0..0x801DEF08`, the floor part)
+    pub(super) fn seat_effect_floor_part(&mut self, i: usize) {
+        let Some(a) = self.actors.get(i) else {
+            return;
+        };
+        let (x, z) = a
+            .battle
+            .seat
+            .unwrap_or((a.move_state.world_x, a.move_state.world_z));
+        let radius = self.battle_node_radius(i);
+        self.spawn_battle_record_posed(
+            legaia_engine_effects::action_effect_script::FLOOR_PART_RECORD,
+            [x, 0, z],
+            [0; 3],
+            (radius << 1) as u16,
+        );
+    }
+
+    /// `*(actor[+0x22C]) + 0x58`, the render node's size: the record size
+    /// class `<< 5` on a monster seat ([`legaia_engine_battle::monster_catalog`]),
+    /// the creature record's on the summon seat
+    /// ([`crate::world::CastFxState::summon_body_radius`]), and
+    /// [`PARTY_BODY_RADIUS`] otherwise.
+    pub(in crate::world) fn battle_node_radius(&self, i: usize) -> i16 {
+        if self.casting.summon_actor_slot == Some(i as u8)
+            && let Some(r) = self.casting.summon_body_radius
+        {
+            return r;
+        }
+        match self.actors.get(i).and_then(|a| a.battle_monster_id) {
+            Some(id) => self
+                .tables
+                .monster_catalog
+                .get(id)
+                .map_or(0, |d| i16::from(d.size_class) << 5),
+            None => PARTY_BODY_RADIUS,
+        }
     }
 }

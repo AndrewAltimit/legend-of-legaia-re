@@ -49,21 +49,39 @@ fn the_post_hit_countdowns_pace_the_settle_arms() {
     );
     assert_eq!(n as i32, 1 + per(7));
     // PROT 0911: arm 9 adds `scalar << 8`, the settle arm drains it.
-    let mut cd = 0;
-    let mut s = seats(8);
-    let n = settle_ticks(|c| orb_tick(c, &mut s, 7, 0, None, &mut cd, |_| 400).0, 9);
-    assert_eq!(n as i32, 1 + per(8));
-    // PROT 0912: `scalar << 7` through the hold arm, `scalar << 5` more
-    // through the settle arm.
-    let mut cd = 0;
+    // Arm 9 enters on its last drain pass.
+    let mut cd = SETTLE_DRAIN_PER_TICK;
     let mut s = seats(8);
     let n = settle_ticks(
-        |c| freed_tick(c, &mut s, 7, &mut cd, |_| 0).0,
+        |c| {
+            orb_tick(
+                c,
+                &mut s,
+                7,
+                0,
+                None,
+                &mut cd,
+                &mut OrbSeatPos::default(),
+                |_| 400,
+            )
+            .0
+        },
+        9,
+    );
+    assert_eq!(n as i32, 1 + per(8));
+    // PROT 0912: `scalar << 7` through the hold arm, `scalar << 5` more
+    // through the settle arm. The damage arm drains the same word first, so
+    // it enters on its last drain pass.
+    let mut cd = SETTLE_DRAIN_PER_TICK;
+    let mut s = seats(8);
+    let n = settle_ticks(
+        |c| freed_tick(c, &mut s, 7, &mut cd, None, |_| 0).0,
         FREED_DAMAGE_PHASE,
     );
     assert_eq!(n as i32, 1 + per(7) + per(5));
-    // PROT 0913: `scalar << 7`, and a dead victim holds until faded.
-    let mut cd = 0;
+    // PROT 0913: `scalar << 7`, and a dead victim holds until faded. The
+    // damage arm drains first, so it too enters on its last pass.
+    let mut cd = SETTLE_DRAIN_PER_TICK;
     let mut s = seats(8);
     let n = settle_ticks(
         |c| nova_tick(c, &mut s, 7, 3, 0, &mut cd).0,
@@ -254,6 +272,45 @@ fn swordie_timers_reproduce_the_measured_dwell_and_land_four_hits() {
     assert_eq!(st.hits, 4);
 }
 
+/// Arms 3..5 ramp the split counter by `(rate * speed) / 4` a pass; at the
+/// retail cadence (step `32`) they take the measured 8, 17 and 46 passes.
+/// The panels draw on every pass of arms 0..4 and the streak on every pass
+/// of arm 3; arm 4 slides the panels off their rest tables.
+#[test]
+fn swordie_split_arms_reproduce_the_measured_dwell_and_draw_their_packets() {
+    let clock = SwordieClock { rate: 4, speed: 8 };
+    let mut ctx = ctx_at(0);
+    let mut s = seats(8);
+    let mut st = SwordieSlashes::default();
+    let mut dwell = std::collections::BTreeMap::<u8, u32>::new();
+    while ctx.phase < 6 {
+        let phase = ctx.phase;
+        swordie_tick(&mut ctx, &mut s, 7, 3, &mut st, clock, |_| 0);
+        *dwell.entry(phase).or_default() += 1;
+        assert_eq!(
+            st.draw.split.is_some(),
+            phase <= SWORDIE_SPLIT_ARM,
+            "arm {phase}"
+        );
+        assert_eq!(
+            st.draw.streak.is_some(),
+            phase == SWORDIE_STREAK_ARM,
+            "arm {phase}"
+        );
+        if phase == SWORDIE_STREAK_ARM {
+            assert!(st.draw.streak.unwrap() < SWORDIE_STREAK_END);
+            assert_eq!(st.draw.split, Some(SWORDIE_PANELS_AT_REST));
+        }
+        assert!(dwell[&phase] < 1000);
+    }
+    assert_eq!(dwell[&3], 8);
+    assert_eq!(dwell[&4], 17);
+    assert_eq!(dwell[&5], 46);
+    // Arm 4's last pass drew the panels at counter 17 * 8.
+    assert_eq!(st.panels, swordie_split_panels(17 * 8));
+    assert_eq!(st.panels[0][0], -4 * 17 * 8);
+}
+
 /// A finished slash is inert: the settle arm keeps calling it every frame.
 #[test]
 fn swordie_slash_step_lands_once() {
@@ -354,7 +411,16 @@ fn orb_cleanse_masks_match_the_four_selector_arms() {
 fn orb_arm_five_jumps_to_phase_nine() {
     let mut ctx = ctx_at(5);
     let mut s = seats(8);
-    let (step, healed) = orb_tick(&mut ctx, &mut s, 7, 0, None, &mut 0, |_| 400);
+    let (step, healed) = orb_tick(
+        &mut ctx,
+        &mut s,
+        7,
+        0,
+        None,
+        &mut 0,
+        &mut OrbSeatPos::default(),
+        |_| 400,
+    );
     assert_eq!(step, CastTickStep::Busy);
     assert_eq!(ctx.phase, ORB_ARM5_TARGET_PHASE);
     assert_eq!(ctx.ctx_278, ORB_ARM5_CTX_278);
@@ -379,6 +445,7 @@ fn orb_heals_the_whole_row_and_clamps_to_missing_hp() {
         orb_heal_amount(0),
         None,
         &mut 0,
+        &mut OrbSeatPos::default(),
         |seat| {
             if seat == 0 { 2000 } else { 400 }
         },
@@ -395,6 +462,34 @@ fn orb_heals_the_whole_row_and_clamps_to_missing_hp() {
     assert_eq!(seats_healed, vec![0, 1, 4, 5, 6, 7]);
 }
 
+/// Arm 9's pass hides the creature by flag and colour word together, and
+/// lights the party it brings back.
+#[test]
+fn orb_heal_pass_hides_the_creature_and_lights_the_party() {
+    let mut ctx = ctx_at(9);
+    ctx.party_count = 2;
+    let mut s = seats(8);
+    s[7].present_04 = 0x1234;
+    s[0].render_flag = 0xFF;
+    orb_tick(
+        &mut ctx,
+        &mut s,
+        7,
+        0,
+        None,
+        &mut 0,
+        &mut OrbSeatPos::default(),
+        |_| 400,
+    );
+    assert_eq!((s[7].render_flag, s[7].present_04), (0xFF, 0));
+    assert_eq!((s[0].render_flag, s[0].present_04), (0, ORB_PARTY_LIT_WORD));
+    assert_eq!(s[1].present_04, ORB_PARTY_LIT_WORD);
+    assert_ne!(
+        s[2].present_04, ORB_PARTY_LIT_WORD,
+        "an empty seat stays dark"
+    );
+}
+
 #[test]
 fn orb_cleanse_clears_the_status_bits_only_at_level_three() {
     let mut ctx = ctx_at(9);
@@ -402,7 +497,16 @@ fn orb_cleanse_clears_the_status_bits_only_at_level_three() {
     for a in s.iter_mut() {
         a.flags = 0x0403;
     }
-    orb_tick(&mut ctx, &mut s, 7, 0, None, &mut 0, |_| 400);
+    orb_tick(
+        &mut ctx,
+        &mut s,
+        7,
+        0,
+        None,
+        &mut 0,
+        &mut OrbSeatPos::default(),
+        |_| 400,
+    );
     assert_eq!(s[0].flags, 0x0403, "no selector: nothing is cleared");
 
     let mut ctx = ctx_at(9);
@@ -410,7 +514,16 @@ fn orb_cleanse_clears_the_status_bits_only_at_level_three() {
     for a in s.iter_mut() {
         a.flags = 0x0403;
     }
-    orb_tick(&mut ctx, &mut s, 7, 0, Some(4), &mut 0, |_| 400);
+    orb_tick(
+        &mut ctx,
+        &mut s,
+        7,
+        0,
+        Some(4),
+        &mut 0,
+        &mut OrbSeatPos::default(),
+        |_| 400,
+    );
     assert_eq!(s[0].flags, 0, "selector 4 clears Venom, Toxic and the mark");
 }
 
@@ -428,7 +541,16 @@ fn orb_selector_four_doubles_the_ap_gauge() {
     s[2].hp = 0;
     s[3].spirit_gauge = 9;
     s[3].flags |= FLAG_NON_TARGETABLE;
-    let (_, healed) = orb_tick(&mut ctx, &mut s, 7, 0, Some(4), &mut 0, |_| 400);
+    let (_, healed) = orb_tick(
+        &mut ctx,
+        &mut s,
+        7,
+        0,
+        Some(4),
+        &mut 0,
+        &mut OrbSeatPos::default(),
+        |_| 400,
+    );
     assert_eq!(s[0].spirit_gauge, 34);
     assert_eq!(s[1].spirit_gauge, 100, "capped at 100");
     assert_eq!(s[2].spirit_gauge, 20, "a dead seat is untouched");
@@ -439,7 +561,16 @@ fn orb_selector_four_doubles_the_ap_gauge() {
         let mut ctx = ctx_at(9);
         let mut s = seats(8);
         s[0].spirit_gauge = 17;
-        orb_tick(&mut ctx, &mut s, 7, 0, sel, &mut 0, |_| 400);
+        orb_tick(
+            &mut ctx,
+            &mut s,
+            7,
+            0,
+            sel,
+            &mut 0,
+            &mut OrbSeatPos::default(),
+            |_| 400,
+        );
         assert_eq!(s[0].spirit_gauge, 17, "selector {sel:?} leaves AP alone");
     }
 }
@@ -485,7 +616,7 @@ fn spoon_cure_sweep_doubles_ap_on_selector_four() {
 fn freed_sweep_uses_the_or_restage_form() {
     let mut ctx = ctx_at(FREED_DAMAGE_PHASE);
     let mut s = seats(8);
-    let (_, hits) = freed_tick(&mut ctx, &mut s, 7, &mut 0, |_| 30);
+    let (_, hits) = freed_tick(&mut ctx, &mut s, 7, &mut 0, None, |_| 30);
     assert_eq!(hits.len(), 4, "seats 3..7");
     assert_eq!(s[3].hp, 370);
     assert_eq!(s[3].staged_anim, 0x21, "alive, gate clear: alternate clip");
@@ -494,24 +625,166 @@ fn freed_sweep_uses_the_or_restage_form() {
     assert_eq!(s[0].hp, 400, "the party row is untouched");
 }
 
-#[test]
-fn freed_walks_twenty_arms_then_settles() {
+/// Ticks a body spends on each phase from arm 0 to its terminal, every seat
+/// idle.
+fn arm_dwell(mut tick: impl FnMut(&mut CastModuleCtx) -> CastTickStep) -> Vec<(u8, u32)> {
     let mut ctx = ctx_at(0);
-    let mut s = seats(8);
-    let mut steps = 0;
-    // Bounded: the chain names 0..=0x13 and then 0xFF.
-    while steps < 64 {
-        let (step, _) = freed_tick(&mut ctx, &mut s, 7, &mut 0, |_| 0);
-        steps += 1;
-        if step == CastTickStep::Done {
-            break;
+    let mut dwell: Vec<(u8, u32)> = Vec::new();
+    for _ in 0..10_000 {
+        let phase = ctx.phase;
+        match dwell.last_mut() {
+            Some((p, n)) if *p == phase => *n += 1,
+            _ => dwell.push((phase, 1)),
+        }
+        if tick(&mut ctx) == CastTickStep::Done {
+            return dwell;
         }
     }
-    assert_eq!(ctx.phase, SERU_B_DONE_PHASE);
-    assert_eq!(
-        steps, 0x15,
-        "twenty arms, the settle arm, then the terminal"
-    );
+    panic!("never finished: {dwell:?}");
+}
+
+#[test]
+fn freed_walks_twenty_arms_then_settles() {
+    let mut s = seats(8);
+    let mut peak = 0;
+    let mut cd = 0;
+    let dwell = arm_dwell(|c| {
+        let step = freed_tick(c, &mut s, 7, &mut cd, None, |_| 0).0;
+        peak = peak.max(s[7].shatter);
+        step
+    });
+    // Retail's pass counts at one pass a vsync: every gated arm drains the
+    // module word by the scalar and holds while it is positive; arm 9 holds
+    // on the shatter word arm 8 has already half drained.
+    let expected: Vec<(u8, u32)> = vec![
+        (0, 1),
+        (1, 1),
+        (2, 1),
+        (3, 128),
+        (4, 64),
+        (5, 64),
+        (6, 64),
+        (7, 32),
+        (8, 32),
+        (9, 32),
+        (0x0A, 148),
+        (0x0B, 1),
+        (0x0C, 16),
+        (0x0D, 128),
+        (0x0E, 64),
+        (0x0F, 128),
+        (0x10, 64),
+        (0x11, 64),
+        (0x12, 128),
+        (0x13, 32),
+        (SERU_B_DONE_PHASE, 1),
+    ];
+    assert_eq!(dwell, expected);
+    assert_eq!(peak, FREED_SHATTER_START, "arm 7 breaks the creature up");
+    assert_eq!(s[7].shatter, 0, "arm 9 leaves it whole");
+}
+
+/// PROT 0912's colour-word stores: arm 2 hides the creature (`+0x04 = 0`),
+/// arm 7 lights its shards, arm `0x0E` hides it again, arm `0x0F` restores
+/// the living row's neutral word and arm `0x10` freezes it blue-white.
+#[test]
+fn freed_writes_the_creature_and_row_colour_words() {
+    let mut s = seats(8);
+    s[7].present_04 = 0x0080_2008;
+    // Each arm on a spent countdown, so a gated arm passes.
+    let run = |arm: u8, s: &mut Vec<CastActorState>| {
+        let mut ctx = ctx_at(arm);
+        freed_tick(&mut ctx, s, 7, &mut 0, None, |_| 0);
+        assert_eq!(ctx.phase, arm + 1, "arm {arm:#x} passes");
+    };
+    run(2, &mut s);
+    assert_eq!(s[7].present_04, 0);
+    run(7, &mut s);
+    assert_eq!(s[7].present_04, FREED_SHARD_COLOUR);
+    run(0x0E, &mut s);
+    assert_eq!(s[7].present_04, 0);
+    s[5].hp = 0;
+    s[5].present_04 = 7;
+    run(0x0F, &mut s);
+    assert_eq!(s[3].present_04, FREED_ROW_NEUTRAL_COLOUR);
+    assert_eq!(s[5].present_04, 7, "a dead seat keeps its word");
+    run(0x10, &mut s);
+    assert_eq!(s[4].present_04, FREED_FROZEN_COLOUR);
+    assert_eq!(s[4].render_flag, 0xFF);
+    assert_eq!(s[0].present_04, 0, "the party row is untouched");
+}
+
+/// PROT 0912's arm `0x0B` waits on the creature's strike clip reaching
+/// cursor `0x49`.
+#[test]
+fn freed_strike_arm_waits_on_the_clip_cursor() {
+    let mut ctx = ctx_at(FREED_STRIKE_WAIT_PHASE);
+    let mut s = seats(8);
+    let mut cd = 0;
+    freed_tick(&mut ctx, &mut s, 7, &mut cd, Some(0x48), |_| 0);
+    assert_eq!(ctx.phase, FREED_STRIKE_WAIT_PHASE);
+    freed_tick(&mut ctx, &mut s, 7, &mut cd, Some(0x49), |_| 0);
+    assert_eq!(ctx.phase, FREED_STRIKE_WAIT_PHASE + 1);
+    assert_eq!(cd, SETTLE_SCALAR << 4, "a store, not a re-arm");
+}
+
+#[test]
+fn orb_holds_each_arm_on_its_countdown_and_drops_the_creature() {
+    let mut s = seats(8);
+    let mut pos = OrbSeatPos::default();
+    let mut cd = 0;
+    let mut lowest = 0i16;
+    let dwell = arm_dwell(|c| {
+        let step = orb_tick(c, &mut s, 7, 0, None, &mut cd, &mut pos, |_| 400).0;
+        lowest = lowest.min(pos.y);
+        step
+    });
+    let expected: Vec<(u8, u32)> = vec![
+        (0, 1),
+        (1, 1),
+        (2, 1),
+        (3, 128),
+        (4, 100),
+        (5, 180),
+        (9, 256),
+        (0x0A, 256),
+        (SERU_B_DONE_PHASE, 1),
+    ];
+    assert_eq!(dwell, expected);
+    assert_eq!(lowest, ORB_LIFT_HEIGHT, "arm 5 lifts it highest");
+    assert_eq!(pos.z, 0x1000 >> 3, "arm 5 steps it along its facing");
+}
+
+#[test]
+fn nova_holds_each_arm_on_its_countdown() {
+    let mut s = seats(8);
+    let mut cd = 0;
+    let dwell = arm_dwell(|c| nova_tick(c, &mut s, 7, 3, 0, &mut cd).0);
+    let expected: Vec<(u8, u32)> = vec![
+        (0, 1),
+        (1, 1),
+        (2, 1),
+        (3, 64),
+        (4, 160),
+        (5, 64),
+        (6, 32),
+        (7, 240),
+        (8, 1),
+        (9, 128),
+        (0x0A, 128),
+        (0x0B, 64),
+        (0x0C, 64),
+        (0x0D, 48),
+        (0x0E, 1),
+        (0x0F, 64),
+        (0x10, 257),
+        (0x11, 1),
+        (0x12, 1),
+        (0x13, 129),
+        (0x14, 128),
+        (SERU_B_DONE_PHASE, 1),
+    ];
+    assert_eq!(dwell, expected);
 }
 
 /// PROT 0913 rolls against a corpse: only `+0x16E & 4` guards the step.
@@ -579,6 +852,7 @@ fn retail_orb_heals_six_hundred_and_forty_at_level_three() {
         orb_heal_amount(3),
         None,
         &mut 0,
+        &mut OrbSeatPos::default(),
         |_| 999,
     );
     assert_eq!(healed.len(), 1);
@@ -592,7 +866,16 @@ fn retail_orb_heals_six_hundred_and_forty_at_level_three() {
 fn retail_orb_arm_five_jumps_over_six_to_eight() {
     let mut s = seats(8);
     let mut ctx = ctx_at(5);
-    orb_tick(&mut ctx, &mut s, 7, 0, None, &mut 0, |_| 999);
+    orb_tick(
+        &mut ctx,
+        &mut s,
+        7,
+        0,
+        None,
+        &mut 0,
+        &mut OrbSeatPos::default(),
+        |_| 999,
+    );
     assert_eq!(ctx.phase, ORB_ARM5_TARGET_PHASE);
     assert_eq!(ctx.ctx_278, ORB_ARM5_CTX_278);
 }
@@ -633,4 +916,42 @@ fn a_negative_wrapper_return_still_clamps_rather_than_healing() {
     let mut v = seats(1)[0];
     assert_eq!(swordie_slash(&mut v, 0, 1, -8), 399);
     assert_eq!(v.hp, 1);
+}
+
+/// A slash's blade flies from the arm-8 origin through the victim's plane
+/// pair: at the start of its flight it sits on the origin, and the two outer
+/// slashes bow out to opposite sides of the line.
+#[test]
+fn swordie_blades_fly_from_the_origin_and_bow_apart() {
+    let origin = (0, 0);
+    let victim = (0, 0x800);
+    let (p0, _) = swordie_blade_pose(0, 0, 8, origin, victim);
+    assert_eq!(p0, [0, SWORDIE_BLADE_Y, 0]);
+    let (a, ra) = swordie_blade_pose(0, 256, 8, origin, victim);
+    let (b, rb) = swordie_blade_pose(1, 256, 8, origin, victim);
+    // Half way: both have travelled the same distance along the line and sit
+    // half a unit either side of it (`sin(0x400) >> 15`).
+    assert_eq!(a[2], b[2]);
+    assert_eq!(a[0], -b[0]);
+    assert_eq!(a[0].abs(), 0x200);
+    assert_eq!(ra[1], rb[1]);
+    // The inner pair rides up as it goes.
+    let (c, _) = swordie_blade_pose(2, 256, 8, origin, victim);
+    assert_eq!(c[1], SWORDIE_BLADE_Y - 0x100);
+}
+
+/// The slash routine draws a blade on each call that leaves its slash
+/// travelling, and none on the call that lands it.
+#[test]
+fn swordie_slash_draws_its_blade_until_it_lands() {
+    let clock = SwordieClock { rate: 4, speed: 1 };
+    let mut slashes = SwordieSlashes::default();
+    let mut v = seats(1).remove(0);
+    let mut drawn = 0;
+    for _ in 0..20 {
+        slashes.draw = SwordieDraw::default();
+        swordie_slash_step(&mut slashes, 0, &mut v, clock, || 0);
+        drawn += usize::from(slashes.draw.blades[0]);
+    }
+    assert_eq!(drawn, 15);
 }

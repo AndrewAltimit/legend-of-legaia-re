@@ -67,6 +67,15 @@ pub struct PhaseGate {
     /// `0x32` capture is the pass that entered the state, so the display
     /// gate leaves it clear.
     pub camera_pass: bool,
+    /// The capture sits on a module arm that polls the creature stream's CD
+    /// read (`FUN_8003F2B8(1)`,
+    /// `legaia_engine_battle_vm::cast_module_camera::stream_poll_arm`). Retail
+    /// holds the arm for as long as the drive takes - four vsyncs in one
+    /// PCSX-Redux cast, twenty in `nova_summon_mid_cast`'s Mednafen state -
+    /// while the engine's stream is resident and the arm passes on its first
+    /// tick. The clocks that ran on through the wait (the flash's age) then
+    /// cannot place the frame: the engine's frame is its tick on the arm.
+    pub stream_wait: bool,
 }
 
 /// How far a walk-arm yaw base has swung from its seat (`0x200`), in
@@ -81,6 +90,9 @@ impl PhaseGate {
         let mut s = self.env_state_and_fade();
         if let Some(p) = self.module_phase {
             s.push_str(&format!(",m{p}"));
+        }
+        if self.stream_wait {
+            s.push_str(",s");
         }
         if let Some(a) = self.cam_accum {
             s.push_str(&format!(",a{a}"));
@@ -161,6 +173,10 @@ impl PhaseGate {
             }
             _ => None,
         };
+        let stream_wait = parts.last() == Some(&"s");
+        if stream_wait {
+            parts.pop();
+        }
         let module_phase = match parts.last() {
             Some(t) if t.starts_with('m') => {
                 let p = t[1..].parse().ok()?;
@@ -188,6 +204,7 @@ impl PhaseGate {
             module_countdown,
             accum_align,
             camera_pass,
+            stream_wait,
         })
     }
 
@@ -253,6 +270,10 @@ impl PhaseGate {
         {
             return false;
         }
+        // On the stream poll's own arm the engine's one tick there is the
+        // frame (`Self::stream_wait`).
+        let on_stream_arm =
+            self.stream_wait && self.module_phase == Some(world.casting.module_phase);
         // A walk that arrives sooner than retail's leaves the arm before its
         // yaw gets as far; the arm's exit is then the nearest frame.
         if let Some(y) = self.walk_yaw
@@ -304,6 +325,9 @@ impl PhaseGate {
         let Some(want) = self.fade else {
             return true;
         };
+        if on_stream_arm {
+            return true;
+        }
         world.presentation.fade.as_ref().is_some_and(|f| {
             f.kind == 1
                 && (f.target_rgb()[0] == 0xFF) == want.to_white

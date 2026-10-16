@@ -287,6 +287,82 @@ impl PlayWindowApp {
         )
     }
 
+    /// Battle body `ai`'s body-to-view map under the same camera, for the
+    /// shatter renderer's sweep rows (`World::battle_shatter_view`).
+    fn body_shatter_view(&self, ai: usize) -> [[f32; 3]; 3] {
+        let world = &self.session.host.world;
+        let pose = self
+            .battle_stage_mesh
+            .is_some()
+            .then(|| world.battle_cam_pose());
+        world.battle_shatter_view(ai, pose.as_ref(), BATTLE_WORLD_SCALE)
+    }
+
+    /// Battle body `ai`'s mesh broken by the shatter renderer
+    /// (`legaia_render_kernels::shatter`, the port of `FUN_80029888` /
+    /// `FUN_80029DD8`): the TMD's local triangles through the kernel, then
+    /// each object's live pose, then the same per-body passes the posed
+    /// rebuild takes (Rot limb dimming before the split, the texture-slot
+    /// relocation and the colour word's blend after). The browser play
+    /// page runs the same kernel (`play_battle_actor_shatter`).
+    fn shattered_battle_mesh(
+        &self,
+        r: &legaia_engine_render::Renderer,
+        ai: usize,
+        actor: &legaia_engine_core::world::Actor,
+        tmd_idx: usize,
+        input: &legaia_render_kernels::shatter::ShatterInput,
+    ) -> Option<UploadedVramMesh> {
+        let (tmd, raw) = self.scene_tmd_data.get(tmd_idx)?;
+        let (mut local, object_ids) = legaia_tmd::mesh::tmd_to_vram_mesh_with_object_ids(tmd, raw);
+        if actor.battle_animation.is_some() {
+            self.session
+                .host
+                .world
+                .dim_posed_battle_mesh(ai, tmd, raw, &mut local.colors);
+        }
+        let bones = actor
+            .pose_frame
+            .as_ref()
+            .map_or(&[][..], |p| p.bone_outputs.as_slice());
+        let rotate = actor.battle_animation.is_some()
+            || self.session.host.world.player_actor_slot == Some(ai as u8);
+        let view = self.body_shatter_view(ai);
+        let mut vmesh = legaia_render_kernels::shatter::shatter_vram_mesh(
+            &local,
+            &object_ids,
+            input,
+            bones,
+            rotate,
+            // A sweep row measures each object in its pose: Freed's
+            // re-forming body (PROT 0912 arm 7's row 1) comes together from
+            // the floor up.
+            |o| legaia_render_kernels::shatter::bone_sweep_frame(bones, o, rotate, &view),
+        );
+        if let Some(slot) = actor.battle_tex_slot {
+            for ct in &mut vmesh.cba_tsb {
+                ct[0] = legaia_actor_formats::monster_archive::relocate_cba(ct[0], slot);
+                ct[1] = legaia_actor_formats::monster_archive::relocate_tsb(ct[1], slot);
+            }
+        }
+        if let Some(plan) = self.body_draw_plan(ai) {
+            plan.apply_body_blend(&mut vmesh.cba_tsb);
+        }
+        if vmesh.indices.is_empty() {
+            return None;
+        }
+        r.upload_vram_mesh(
+            &vmesh.positions,
+            &vmesh.uvs,
+            &vmesh.cba_tsb,
+            &vmesh.normals,
+            &vmesh.colors,
+            &vmesh.indices,
+        )
+        .map_err(|e| log::warn!("shattered mesh upload: {e:#}"))
+        .ok()
+    }
+
     pub(super) fn build_posed_actor_overrides(
         &self,
         r: &legaia_engine_render::Renderer,
@@ -306,6 +382,15 @@ impl PlayWindowApp {
             let Some(tmd_idx) = actor.tmd_binding else {
                 continue;
             };
+            // A body whose `+0x1BA` shatter word is up draws through the
+            // shatter renderer (`FUN_80029888`): its triangles come apart,
+            // so the mesh is rebuilt de-indexed this frame, posed or not.
+            if let Some(input) = self.body_draw_plan(ai).and_then(|p| p.shatter) {
+                if let Some(m) = self.shattered_battle_mesh(r, ai, actor, tmd_idx, &input) {
+                    posed_overrides[tmd_idx] = Some(m);
+                }
+                continue;
+            }
             let Some(pose) = &actor.pose_frame else {
                 // A battle body drawn off its rest mesh still takes its
                 // colour word's blend (the capture / defeat fade, the

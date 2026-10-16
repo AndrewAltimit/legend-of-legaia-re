@@ -94,6 +94,12 @@ impl BattleCamera {
         self.pose.tr[2] += f32::from(tr_z);
     }
 
+    /// The same direct write into the TR x global `0x800840B8` (PROT 0920's
+    /// arm 7 pan), added to the pose as it stands.
+    pub fn nudge_module_tr_x(&mut self, tr_x: i16) {
+        self.pose.tr[0] += f32::from(tr_x);
+    }
+
     /// A capture-class arm's drift: [`Self::nudge_module`] plus the yaw
     /// global `0x8007B792`, which the capture arms also walk. Retail's tween
     /// walker adds increments to the globals rather than landing on its

@@ -69,6 +69,9 @@ impl World {
                 x: a.move_state.world_x,
                 z: a.move_state.world_z,
                 facing: a.battle.facing_angle & 0x0FFF,
+                // `+0x21B`, the loop counter the anim tick keeps on the
+                // creature (`World::mirrors_loop_counter`).
+                clip_loops: a.battle.hit_count_bound,
             })
             .unwrap_or_default()
     }
