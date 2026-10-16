@@ -120,6 +120,12 @@ pub struct CastFxState {
     /// (`World::run_cast_module_code`); PROT 0909's phase rendezvous are two
     /// of them.
     pub(crate) module_stager_calls: Vec<(u8, [i16; 3], [i16; 3])>,
+    /// The clocks of PROT 0909's stager-calling records the host did not
+    /// seat, as `(record, stager arm, frames left)`
+    /// ([`legaia_engine_battle_vm::cast_module_camera::VIGURO_STAGER_CALLERS`]).
+    /// Armed on the pass whose arm spawns the record and dropped when the
+    /// record is seated as a part, which then makes the call itself.
+    pub(crate) module_record_clocks: Vec<(u32, u8, u16)>,
     // --- the fourteen trampoline arms ---
     /// The `+0x1DD` value PROT 0940's split arm displaced off the caster,
     /// which the module keeps in its own image word `0x801F8658` until the
@@ -290,6 +296,7 @@ impl CastFxState {
             module_settle_ticks: 0,
             module_nighto_outcome: None,
             module_stager_calls: Vec::new(),
+            module_record_clocks: Vec::new(),
             module_split_saved_target: None,
             module_swordie: Default::default(),
             module_rain: Default::default(),

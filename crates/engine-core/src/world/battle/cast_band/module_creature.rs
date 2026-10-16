@@ -203,22 +203,23 @@ impl World {
             ModuleSeat, ModuleSpawn, SpawnAnchor, SpawnRecord,
         };
         let mut calls = std::mem::take(&mut self.casting.module_stager_calls);
-        // A host with no parts for this module (no disc, so no effect pool)
-        // has nothing to make the calls: the two rendezvous would park the
-        // band for good. Such a host takes each call on the tick the tick
-        // body parks for it.
-        let has_parts = self
-            .casting
-            .effect_pool
-            .as_ref()
-            .is_some_and(|p| p.module(909).is_some());
-        if !has_parts {
-            match ctx.phase {
-                3 => calls.push((0, [0; 3], [0; 3])),
-                8 => calls.push((1, [0; 3], [0; 3])),
-                _ => {}
-            }
-        }
+        // A record the host did not seat as a part makes its call on the
+        // clock its script keeps (`module_record_clocks`): the rendezvous
+        // falls where the record would put it, and a phase whose record was
+        // never spawned holds, as retail's does.
+        let mut due = Vec::new();
+        self.casting
+            .module_record_clocks
+            .retain_mut(|(_, arm, left)| {
+                if *left == 0 {
+                    due.push(*arm);
+                    false
+                } else {
+                    *left -= 1;
+                    true
+                }
+            });
+        calls.extend(due.into_iter().map(|arm| (arm, [0; 3], [0; 3])));
         for (arm, pos, rot) in calls {
             legaia_engine_battle_vm::cast_module_ticks::viguro_stager(ctx, seat, arm);
             if arm == 0 {

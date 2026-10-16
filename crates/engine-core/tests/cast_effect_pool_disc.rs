@@ -251,6 +251,15 @@ fn enter_battle(w: &mut World) {
     panic!("no encounter triggered in 6000 field ticks");
 }
 
+/// One frame the way a headless driver runs it (`BootSession::tick`): the
+/// scene tick, then the world's frame tail, whose effect scene-graph step
+/// runs the cast module's parts - PROT 0909's two phase rendezvous are their
+/// op-`0x20` calls.
+fn frame(w: &mut World) {
+    let _ = w.tick();
+    let _ = w.step_world_frame_tail(None, None, |_| None);
+}
+
 fn press(w: &mut World, b: PadButton) {
     // The menu SM reads no pad while the prompt's glide is in flight
     // (`World::battle_command_pad_held`): wait it out, as a player does.
@@ -259,10 +268,10 @@ fn press(w: &mut World, b: PadButton) {
             break;
         }
         w.set_pad(0);
-        let _ = w.tick();
+        frame(w);
     }
     w.set_pad(InputState::mask_of([b]));
-    let _ = w.tick();
+    frame(w);
     w.set_pad(0);
     let _ = w.tick();
 }
@@ -274,7 +283,7 @@ fn wait_for_prompt(w: &mut World) -> bool {
             return true;
         }
         w.set_pad(0);
-        let _ = w.tick();
+        frame(w);
     }
     false
 }
@@ -296,6 +305,10 @@ fn refill(w: &mut World) {
     w.actors[ms].battle.max_hp = 9000;
     w.actors[ms].battle.set_hp_synced(9000);
 }
+
+/// Frames one cast's band is given to fold. The module directors hold each
+/// arm as long as retail does: PROT 0906 (Gizam) runs past a thousand.
+const BAND_FRAMES: usize = 0x1000;
 
 #[test]
 fn a_live_cast_stages_its_module_records() {
@@ -419,7 +432,7 @@ fn a_live_cast_stages_its_module_records() {
         let mut seen: Option<usize> = None;
         let mut seated = 0usize;
         let mut prev = 0usize;
-        for _ in 0..0x400 {
+        for _ in 0..BAND_FRAMES {
             let now = w.casting.active_summon.as_ref().map(|s| s.parts.len());
             if seen.is_none() {
                 seen = now;
@@ -435,7 +448,7 @@ fn a_live_cast_stages_its_module_records() {
             }
             let _ = w.take_pending_summon_spawn();
             w.set_pad(0);
-            let _ = w.tick();
+            frame(&mut w);
         }
         assert!(w.casting.pending_cast.is_none(), "cast {cast} never folded");
         // The id the menu actually committed, not the row we aimed at.
@@ -480,13 +493,28 @@ fn a_live_cast_stages_its_module_records() {
         // op-`0x20` hook a record calls - seats `0x801F8568` eight at a time;
         // no host runs that hook, so per-arm seating stages that record
         // nowhere.
-        let (arms, hook_only): (Vec<&[cmc::ModuleSpawn]>, &[u32]) = match entry {
+        //
+        // PROT 0908's arms call `FUN_80021B04` (`zenoir_direct`): seven in
+        // arm 4, one in arm 6 and seven in arm 11. Its stager `0x801F8310`
+        // seats `0x801F869C` (arm 0), `0x801F8880` and eight `0x801F8828`
+        // (arm 1) and two `0x801F8ABC` (arm 2) - a hook no host runs either.
+        // The static scan also recovers `0x801F90B0`, the one spawn of
+        // `0x801F8EAC`: PROT 0904's stager, inherited residue in this image.
+        //
+        // PROT 0909 makes two calls in arm 2 and one in arm 7
+        // (`viguro_direct`). Its stager `0x801F7AF4` is the one hook the band
+        // runs (`run_viguro_stager_calls`), but its arms 2, 3, 4 and 6 - each
+        // seating one record where the calling part stands - are called by
+        // no part this band seats. Arm 11's three spawns on the camera's own
+        // focus (`0x801F7FE0`, `0x801F8094`, `0x801F8158`) are not ported.
+        let (arms, hook_only, unseated): (Vec<&[cmc::ModuleSpawn]>, &[u32], &[u32]) = match entry {
             903 => (
                 vec![
                     &cmc::GIMARD_SEAT_SPAWNS,
                     &cmc::GIMARD_TUNNEL_SPAWNS,
                     &cmc::GIMARD_BREATH_SPAWNS,
                 ],
+                &[],
                 &[],
             ),
             905 => (
@@ -498,6 +526,21 @@ fn a_live_cast_stages_its_module_records() {
                     &cmc::VERA_RESTORE_SPAWNS,
                 ],
                 &[0x801F_8568],
+                &[],
+            ),
+            908 => (
+                vec![
+                    &cmc::ZENOIR_SEAT_SPAWNS,
+                    &cmc::ZENOIR_STRIKE_SPAWNS,
+                    &cmc::ZENOIR_SLAM_SPAWNS,
+                ],
+                &[0x801F_869C, 0x801F_8828, 0x801F_8880, 0x801F_8ABC],
+                &[0x801F_90B0],
+            ),
+            909 => (
+                vec![&cmc::VIGURO_OPEN_SPAWNS, &cmc::VIGURO_CREATURE_SPAWNS],
+                &[0x801F_81F4, 0x801F_8288, 0x801F_82CC, 0x801F_8310],
+                &[0x801F_7FE0, 0x801F_8094, 0x801F_8158],
             ),
             _ => panic!("PROT {entry} seats per arm but the test names no arm list"),
         };
@@ -521,14 +564,20 @@ fn a_live_cast_stages_its_module_records() {
                 cmc::SpawnRecord::BattleProto(_) => None,
             })
             .collect();
-        for p in &module.parts {
-            let va = legaia_overlay_images::summon_overlay::SUMMON_OVERLAY_LINK_BASE
-                + p.record_off as u32;
-            assert!(
-                called.contains(&va) || hook_only.contains(&va),
-                "PROT {entry} record {va:#010x} is staged by one of its arms"
-            );
-        }
+        let unstaged: Vec<String> = module
+            .parts
+            .iter()
+            .map(|p| {
+                legaia_overlay_images::summon_overlay::SUMMON_OVERLAY_LINK_BASE
+                    + p.record_off as u32
+            })
+            .filter(|va| !called.contains(va) && !hook_only.contains(va) && !unseated.contains(va))
+            .map(|va| format!("{va:#010x}"))
+            .collect();
+        assert!(
+            unstaged.is_empty(),
+            "PROT {entry} records {unstaged:?} are staged by none of its arms"
+        );
         println!(
             "[ok] spell {id:#04x} -> PROT {entry}: {parts} records on the first arm, \
              {seated} seated over the band (static set {})",

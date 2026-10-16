@@ -134,6 +134,24 @@ impl World {
             );
         }
         run.camera_shot = direction.and_then(|d| d.shot);
+        // PROT 0909: the pass whose arm spawns a stager-calling record starts
+        // that record's clock; the spawn's seating drops it again
+        // (`stage_module_arm_spawns`) when the record runs as a part.
+        if entry == 909
+            && let Some(d) = direction
+            && !d.hold
+        {
+            use legaia_engine_battle_vm::cast_module_camera::{SpawnRecord, VIGURO_STAGER_CALLERS};
+            for spawn in d.spawns {
+                if let SpawnRecord::Module(va) = spawn.record
+                    && let Some(&(record, arm, wait)) =
+                        VIGURO_STAGER_CALLERS.iter().find(|c| c.0 == va)
+                {
+                    self.casting.module_record_clocks.retain(|c| c.0 != record);
+                    self.casting.module_record_clocks.push((record, arm, wait));
+                }
+            }
+        }
         // PROT 0906: record `0x801F7B80`'s `op 0x20` calls into the stager,
         // on the clock the director runs through the phase-5 hole. Arm 0 is
         // the flash pair, arm 1 shows the creature; arm 2 is the director's

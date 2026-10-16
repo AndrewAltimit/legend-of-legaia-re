@@ -24,6 +24,10 @@
 //!   `fold_pending_cast` takes for PROT 0927 and PROT 0966, whose damage lands
 //!   inside the module's own sweep stager rather than in the generic fold.
 //!
+//! Two more reach a stager rather than a body: `Reach::Stager`, run inline
+//! off the caller's arm, and `Reach::PartCall`, reached only through the
+//! module's spawned parts' op-`0x20` calls (PROT 0909).
+//!
 //! The denominator is the **sources**: `tagged_addresses` scrapes every
 //! `// PORT:` address out of `cast_module_ticks.rs` and its submodules,
 //! which `include_str!` pulls in at compile time, and `ROWS` plus
@@ -74,6 +78,12 @@ enum Reach {
     /// that carries only a stager (PROT 0923), and "entered" has to be the
     /// state the stager itself writes.
     Stager,
+    /// A stager only the module's spawned **parts** call (move-VM op `0x20`):
+    /// PROT 0909's, whose arm `0` record `0x801F7E18` calls after its
+    /// `WAIT 0x7F`. Driven through the band seam (`arm_summon_stager` +
+    /// `summon_stager_tick`) with the parts ticking (`tick_summon`), and
+    /// "entered" is the state the stager writes, as for `Stager`.
+    PartCall,
 }
 
 /// One dispatch site of the module half.
@@ -151,7 +161,7 @@ const STAGER_PROBES: [StagerProbe; 4] = [
 
 /// Every ported dispatch site in `cast_module_ticks.rs`.
 const ROWS: [Row; 34] = [
-    // --- the five state-touching stagers the band arm runs inline ----------
+    // --- the five state-touching stagers (0909's through its parts) --------
     row(
         &[
             0x801F_75BC,
@@ -171,7 +181,7 @@ const ROWS: [Row; 34] = [
     row(&[0x801F_90E4], 922, None, None, Reach::Stager),
     row(&[0x801F_8B90], 923, None, None, Reach::Stager),
     row(&[0x801F_7740], 906, None, None, Reach::Stager),
-    row(&[0x801F_7AF4], 909, None, None, Reach::Stager),
+    row(&[0x801F_7AF4], 909, None, None, Reach::PartCall),
     // --- the two whole-row AoE sweep stagers -------------------------------
     row(&[0x801F_85A8], 927, None, None, Reach::Aoe),
     row(&[0x801F_8D64], 966, None, None, Reach::Aoe),
@@ -353,6 +363,10 @@ const NEVER_ENTERED: [u32; 11] = [
 /// Frames to drive one body before giving up: past every phase chain in the
 /// module (the longest bound is sixteen) with room for the clip holds.
 const MAX_FRAMES: usize = 96;
+
+/// Frames a `Reach::PartCall` row waits for its part's call: PROT 0909's
+/// record calls `0x7F` frames after the arm that spawns it.
+const PART_CALL_FRAMES: usize = 1024;
 
 /// Every `FUN_801Fxxxxxxxx` address on a `// PORT:` marker in the module source.
 fn tagged_addresses() -> BTreeSet<u32> {
@@ -645,6 +659,26 @@ fn every_ported_cast_module_body_is_entered_through_its_own_seam() {
                     "PROT {entry} id {id:#04X}: the module never paged, so the staging \
                      call was never reached"
                 );
+            }
+            Reach::PartCall => {
+                let probe = STAGER_PROBES
+                    .iter()
+                    .find(|(a, _)| *a == r.addrs[0])
+                    .map(|(_, f)| *f)
+                    .expect("a part-call stager row carries a probe");
+                w.casting.summon_actor_slot = Some(ticks::SUMMON_SEAT);
+                w.arm_summon_stager(caster as u8, id);
+                for _ in 0..PART_CALL_FRAMES {
+                    let busy = w.summon_stager_tick();
+                    w.tick_summon(legaia_engine_core::world::EFFECT_SCENE_GRAPH_STEP);
+                    if probe(&w) {
+                        saw_port = true;
+                        break;
+                    }
+                    if !busy {
+                        break;
+                    }
+                }
             }
             Reach::Trampoline | Reach::Entry => {
                 for _ in 0..MAX_FRAMES {

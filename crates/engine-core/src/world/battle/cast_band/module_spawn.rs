@@ -298,6 +298,11 @@ impl World {
                 for part in &mut scene.parts[first..] {
                     part.tag.get_or_insert(va);
                 }
+                // A seated stager-calling record makes its own call, so the
+                // clock kept in its place stops.
+                self.casting
+                    .module_record_clocks
+                    .retain(|c| !(prot_entry == 909 && c.0 == va));
             }
         }
     }

@@ -41,6 +41,16 @@ pub const VIGURO_CREATURE_SPAWNS: [ModuleSpawn; 1] = [ModuleSpawn {
     anchor: SpawnAnchor::Creature,
 }];
 
+/// PROT 0909's two records that call into its stager, as `(record, stager
+/// arm, frames from the spawn to the call)`. Record `0x801F7E18` (arm 2's
+/// first spawn) is `WAIT 0x7F` then op `0x20` arm `0`; record `0x801F7F20`
+/// (arm 7's spawn) waits `0x13`, loops a 20-frame body six times and then
+/// calls arm `1`. A host that does not seat a record keeps its clock in its
+/// place, so each rendezvous falls where the record's script puts it and
+/// never earlier.
+pub const VIGURO_STAGER_CALLERS: [(u32, u8, u16); 2] =
+    [(0x801F_7E18, 0, 0x7F), (0x801F_7F20, 1, 0x13 + 6 * 0x14)];
+
 /// The `ctx[+0x6D8]` gate the counted arms share: drain by the frame
 /// product, store the halfword, and hold while it reads non-negative
 /// (`subu; sh; sll 0x10; bgez`).

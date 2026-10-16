@@ -1539,7 +1539,13 @@ phase 3. Arm 7 spawns record `0x801F7F20`, which waits `0x13`, loops a
 20-vsync body six times and calls arm `1`, stepping phase 8. The port queues
 every op-`0x20` call a module's parts make (`CastFxState::module_stager_calls`)
 and runs PROT 0909's through its stager on the module's next tick, so both
-rendezvous fall where the parts' own waits put them.
+rendezvous fall where the parts' own waits put them. A host that does not
+seat one of the two records (no disc, or a driver that steps the module
+without the band seam) keeps that record's clock in its place
+(`cast_module_camera::VIGURO_STAGER_CALLERS`, `CastFxState::module_record_clocks`):
+armed on the pass whose arm spawns the record, dropped when the record is
+seated as a part. A rendezvous phase with no record behind it holds, as
+retail's does.
 
 The director `cast_module_camera::viguro_direct` carries the rest: arm 4 holds
 while the creature's `+0x38` is at or past `0x200`; arms 5, 7, 9 and 11 drain

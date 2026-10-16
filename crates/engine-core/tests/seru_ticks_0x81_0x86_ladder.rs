@@ -36,10 +36,11 @@ const IDS: [(u8, u32); 6] = [
 
 /// Hard stop on the walk. A body the engine runs ungated steps one arm a
 /// frame; one whose arms are paced on its own countdown
-/// (`legaia_engine_battle_vm::cast_module_camera`, PROT 0903) holds each counted arm
-/// for as long as retail does - about 500 frames for Gimard - so anything
-/// past this is a body that never reported done.
-const MAX_FRAMES: usize = 1024;
+/// (`legaia_engine_battle_vm::cast_module_camera`) holds each counted arm
+/// for as long as retail does - about 500 frames for Gimard (PROT 0903) and
+/// over 1000 for Gizam (PROT 0906) - so anything past this is a body that
+/// never reported done.
+const MAX_FRAMES: usize = 4096;
 
 /// The hosts seat the summon creature at `8 + party_count`.
 const LONE_SUMMON_SLOT: u8 = 9;
@@ -158,6 +159,10 @@ fn every_player_seru_tick_walks_its_phase_chain_and_writes_state() {
                 run.prot_entry, expect_entry,
                 "id {id:#04x} ran a different entry than the resolver named"
             );
+            // The battle animation pass: it commits the clips the arms stage
+            // (PROT 0904's arm 7 waits on its creature's) and fades the dead
+            // (the settle polls wait on that).
+            w.tick_battle_animations();
             entered |= run.tick_ported;
             phases.push(run.phase);
             frames += 1;

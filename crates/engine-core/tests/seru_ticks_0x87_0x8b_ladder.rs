@@ -13,9 +13,11 @@
 //! `World::run_cast_module_code` until the body reports `Done` or a bound is
 //! hit, asserting that a ported tick body entered, that the module phase
 //! walked, and that each body's own signature write landed. PROT 0909's two
-//! **rendezvous** phases (`3` and `8`) are walked the way retail walks them -
-//! by calling the module's move-VM stager arm `0`, which is the only thing
-//! that bumps `ctx[+0x279]` there.
+//! **rendezvous** phases (`3` and `8`) are released only by its stager,
+//! which the records its arms 2 and 7 spawn call through the move VM's op
+//! `0x20`. This walk seats no parts, so the band keeps those records' clocks
+//! in their place (`cast_module_camera::VIGURO_STAGER_CALLERS`) and each
+//! rendezvous holds for as long as the record's script would make it.
 //!
 //! Skips (and passes) without `LEGAIA_DISC_BIN` / `extracted/`.
 
@@ -31,8 +33,9 @@ const SUMMON_SLOT: usize = 7;
 /// Frames stepped per id before the ladder gives up. Every chain here is at
 /// most 21 arms plus a settle arm plus the terminal; PROT 0910 also runs its
 /// own arm timers (`seru_magic_ticks::swordie_tick`), several hundred frames
-/// at a frame step of one.
-const FRAME_BOUND: usize = 1024;
+/// at a frame step of one, and PROT 0909's countdown arms and two record-paced
+/// rendezvous hold it for about 1200.
+const FRAME_BOUND: usize = 4096;
 
 fn extracted_dir() -> Option<PathBuf> {
     std::env::var_os("LEGAIA_DISC_BIN")?;
@@ -75,23 +78,20 @@ fn battle_world() -> World {
 }
 
 /// One id's walk. Returns `(phases observed, frames a ported body ran,
-/// reached Done)`.
-fn walk(world: &mut World, id: u8) -> (Vec<u8>, usize, bool) {
+/// reached Done, the values ctx+0x278 took in order)`.
+fn walk(world: &mut World, id: u8) -> (Vec<u8>, usize, bool, Vec<u8>) {
     world.casting.module_phase = 0;
     world.casting.module_ctx_278 = 0;
     let mut phases = vec![0u8];
+    let mut ctx_278 = vec![0u8];
     let mut ported = 0usize;
     let mut done = false;
     for _ in 0..FRAME_BOUND {
         let phase = world.casting.module_phase;
-        // PROT 0909 parks on phases 3 and 8 until its move-VM stager bumps
-        // the phase; every other arm of that stager - and every arm of the
-        // other four modules' stagers - only hands spawn records to the pool.
-        let arm = if seru::VIGURO_RENDEZVOUS_PHASES.contains(&phase) {
-            0
-        } else {
-            2
-        };
+        // PROT 0909's stager is reached through its parts' op-`0x20` calls,
+        // not off this argument; the other four modules' stagers only hand
+        // spawn records to the pool.
+        let arm = 2;
         let Some(run) = world.run_cast_module_code(id, arm) else {
             break;
         };
@@ -101,12 +101,15 @@ fn walk(world: &mut World, id: u8) -> (Vec<u8>, usize, bool) {
         if world.casting.module_phase != phase {
             phases.push(world.casting.module_phase);
         }
+        if ctx_278.last() != Some(&world.casting.module_ctx_278) {
+            ctx_278.push(world.casting.module_ctx_278);
+        }
         if run.tick_ported && !run.busy {
             done = true;
             break;
         }
     }
-    (phases, ported, done)
+    (phases, ported, done, ctx_278)
 }
 
 #[test]
@@ -147,7 +150,7 @@ fn every_player_seru_tick_body_walks_its_phase_chain() {
             "id {id:#04x} must seat PROT {entry} against the disc's own spell table"
         );
 
-        let (phases, ported, done) = walk(&mut world, id);
+        let (phases, ported, done, ctx_278) = walk(&mut world, id);
         assert!(
             ported > 0,
             "id {id:#04x} (PROT {entry}) never entered a ported tick body"
@@ -205,10 +208,13 @@ fn every_player_seru_tick_body_walks_its_phase_chain() {
                     phases.contains(&seru::NOVA_DAMAGE_PHASE),
                     "PROT 0913 skipped its damage arm: {phases:?}"
                 );
+                // Arm 9 writes the clip register into ctx+0x278 and arm 0x10
+                // clears it on its way out (`sb zero,0x278` at `0x801F8154`).
                 assert_eq!(
-                    world.casting.module_ctx_278,
-                    seru::NOVA_ARM9_CLIP,
-                    "PROT 0913's arm 9 writes ctx+0x278 out of the clip register"
+                    ctx_278,
+                    [0, seru::NOVA_ARM9_CLIP, 0],
+                    "PROT 0913's arm 9 writes ctx+0x278 out of the clip register, and arm \
+                     0x10 clears it"
                 );
             }
         }
@@ -221,40 +227,118 @@ fn every_player_seru_tick_body_walks_its_phase_chain() {
 }
 
 /// PROT 0909 parks on phases `3` and `8` and only its **stager** moves it on.
-/// This is the property the ladder's arm choice rests on, asserted directly
+/// This is the property the ladder's walk rests on, asserted directly
 /// so a regression shows up here rather than as a mysterious bound hit.
+///
+/// Three ways. A rendezvous phase entered with no record behind it holds for
+/// good. Through the band seam with the module's parts running, each
+/// rendezvous lasts at least as long as its record's script waits before its
+/// op-`0x20` call. And with the records seated but their parts stopped, the
+/// phase holds for good again: a seated record is the only caller, so the
+/// band keeps no clock of its own in its place.
 #[test]
 fn the_viguro_rendezvous_needs_the_stager() {
+    use legaia_engine_battle_vm::cast_module_camera::VIGURO_STAGER_CALLERS;
     let Some(dir) = extracted_dir() else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset or extracted/ incomplete");
         return;
     };
     let scus = std::fs::read(dir.join("SCUS_942.54")).expect("read SCUS_942.54");
-    let mut world = battle_world();
-    world.install_menu_text(&scus);
 
+    // 1. No record spawned: nothing will call the stager.
     for phase in seru::VIGURO_RENDEZVOUS_PHASES {
+        let mut world = battle_world();
+        world.install_menu_text(&scus);
         world.casting.module_phase = phase;
-        // Stager arm 2 is a pure spawn arm: it writes no state and no phase.
-        let run = world
-            .run_cast_module_code(0x87, 2)
-            .expect("PROT 0909 seats");
-        assert!(run.tick_ported, "the tick body ran");
+        for _ in 0..FRAME_BOUND {
+            let run = world
+                .run_cast_module_code(0x87, 2)
+                .expect("PROT 0909 seats");
+            assert!(run.tick_ported, "the tick body ran");
+            assert!(run.busy, "and reports busy while it holds");
+        }
         assert_eq!(
             world.casting.module_phase, phase,
             "phase {phase} holds without the stager"
         );
-        assert!(run.busy, "and reports busy while it holds");
+    }
 
-        // Stager arm 0 carries `lbu 0x279 / addiu 1 / sb 0x279`.
+    // 2. The band seam with the parts running: the records release both.
+    let mut archive =
+        legaia_prot::archive::Archive::open(&dir.join("PROT.DAT")).expect("open PROT.DAT");
+    let mut pool = legaia_overlay_images::cast_effect_pool::CastEffectPool::new();
+    for idx in CAST_MODULE_PROT_FIRST..=CAST_MODULE_PROT_LAST {
+        let Some(entry) = archive.entries.get(idx as usize).cloned() else {
+            continue;
+        };
+        let mut bytes = Vec::new();
+        if archive.read_entry(&entry, &mut bytes).is_ok() {
+            pool.insert(idx, &bytes);
+        }
+    }
+    let pool = std::sync::Arc::new(pool);
+    let band_world = || {
+        let mut world = battle_world();
+        world.install_menu_text(&scus);
+        world.casting.effect_pool = Some(pool.clone());
+        world.arm_summon_stager(0, 0x87);
+        world.casting.summon_actor_slot = Some(SUMMON_SLOT as u8);
+        world.battle_ctx.action_state = 0x35;
         world
-            .run_cast_module_code(0x87, 0)
-            .expect("PROT 0909 seats");
-        assert_eq!(
-            world.casting.module_phase,
-            phase + 1,
-            "the stager's arm 0 releases phase {phase}"
+    };
+    let mut world = band_world();
+    let mut held = std::collections::BTreeMap::<u8, usize>::new();
+    for _ in 0..FRAME_BOUND {
+        let phase = world.casting.module_phase;
+        let busy = world.summon_stager_tick();
+        world.tick_summon(legaia_engine_core::world::EFFECT_SCENE_GRAPH_STEP);
+        world.tick_battle_animations();
+        *held.entry(phase).or_default() += 1;
+        if !busy {
+            break;
+        }
+    }
+    for (phase, (_, _, wait)) in seru::VIGURO_RENDEZVOUS_PHASES
+        .iter()
+        .zip(VIGURO_STAGER_CALLERS)
+    {
+        let frames = held.get(phase).copied().unwrap_or(0);
+        assert!(
+            frames > usize::from(wait),
+            "phase {phase} lasts the record's {wait} frames before its call: held {frames} \
+             ({held:?})"
         );
     }
-    eprintln!("[ok] PROT 0909's two rendezvous phases hold for the tick and move for the stager");
+    assert!(
+        world.casting.summon_stager.is_none(),
+        "the band ran out past both rendezvous: {held:?}"
+    );
+
+    // 3. The records seated, their parts stopped: no call, so no release.
+    let mut world = band_world();
+    while world.casting.module_phase != 3 {
+        world.summon_stager_tick();
+    }
+    for _ in 0..FRAME_BOUND {
+        world.summon_stager_tick();
+    }
+    assert_eq!(
+        world.casting.module_phase, 3,
+        "a seated record is the only caller: phase 3 holds while its part is stopped"
+    );
+    for _ in 0..FRAME_BOUND {
+        world.summon_stager_tick();
+        world.tick_summon(legaia_engine_core::world::EFFECT_SCENE_GRAPH_STEP);
+        if world.casting.module_phase != 3 {
+            break;
+        }
+    }
+    assert_eq!(
+        world.casting.module_phase, 4,
+        "and the part's call releases it once the part runs"
+    );
+    eprintln!(
+        "[ok] PROT 0909's two rendezvous hold without their records and move for the stager \
+         ({held:?})"
+    );
 }
