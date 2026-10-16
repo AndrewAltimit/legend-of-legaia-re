@@ -54,8 +54,8 @@ fn nighto_drain_holds(st: &mut ModuleCamState) -> bool {
 /// | 4 | the stream poll | pitch `0x200`, yaw `-y`, TR `(0, 0, 0x600)`, over `0x80` frames; `ctx[+0x6D8] = scalar * 129` |
 /// | 5 | drift TR z `+P`; drain, hold while non-negative | snap... over `0x10` frames: pitch `0`, TR `(0, 0x500, 0xA00)`; `ctx[+0x6D8] = scalar * 96` |
 /// | 6 | drift TR z `+2P`; drain, hold while non-negative | seats the creature on the grid point facing the victim; `ctx[+0x6D8] = scalar << 6` |
-/// | 7 | drift TR z `-4P`; drain, hold while non-negative | `ctx[+0x6D8] = scalar * 180` |
-/// | 8 | drain, hold while non-negative | snap: pitch `-0x100`, yaw `0x800 - f`, TR `(0, 0x500, 0x400)`, focus the creature |
+/// | 7 | drift TR z `-4P`; drain, hold while non-negative | the spell name (`FUN_8003541C` at `0x801F78F8`); `ctx[+0x6D8] = scalar * 180` |
+/// | 8 | drain, hold while non-negative | the attack name (`0x801F79E8`); snap: pitch `-0x100`, yaw `0x800 - f`, TR `(0, 0x500, 0x400)`, focus the creature |
 /// | 9 | - | pitch `0x40`, yaw `0x800 - f`, TR `(0, 0x700, 0x800)`, over `0xC0` frames |
 /// | 10 | hold until the creature's clip `2` is playing ([`NIGHTO_SUMMON_CLIP`]) | pitch `0`, yaw `0x800 - f`, TR `(0, 0x700, 0x480)`, over `0x80` frames; `ctx[+0x6D8] = scalar << 7` |
 /// | 11 | drain, hold while non-negative | - |
@@ -64,7 +64,7 @@ fn nighto_drain_holds(st: &mut ModuleCamState) -> bool {
 /// | 14 | drain | the kill leg's settle: the body holds on the victim's fade |
 /// | 15 | drain, hold while non-negative | the confuse leg |
 ///
-/// PORT: FUN_801F69E8 (PROT 0907; the camera arms 0/1/4/5/8/9/10/12, the countdown gates of arms 3/5/6/7/8/11/13/15, arm 10's clip gate, arm 6's creature placement and the TR z drift of arms 5..7)
+/// PORT: FUN_801F69E8 (PROT 0907; the camera arms 0/1/4/5/8/9/10/12, the arm 7/8 captions, the countdown gates of arms 3/5/6/7/8/11/13/15, arm 10's clip gate, arm 6's creature placement and the TR z drift of arms 5..7)
 pub fn nighto_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) -> ArmDirection {
     let v = seats.victim;
     let h = heading(v, seats.caster).wrapping_add(0x800) & 0xFFF;
@@ -156,13 +156,19 @@ pub fn nighto_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) 
                 return ArmDirection::HOLD.drifted(tr_z(-4));
             }
             st.countdown.0 = SPEED_SCALAR * 180;
-            ArmDirection::PASS.drifted(tr_z(-4))
+            ArmDirection {
+                caption: Some(ModuleCaption::SpellName),
+                ..ArmDirection::PASS.drifted(tr_z(-4))
+            }
         }
         8 => {
             if nighto_drain_holds(st) {
                 return ArmDirection::HOLD;
             }
-            on_creature(-0x100, 0x800, [0, 0x500, 0x400], 1)
+            ArmDirection {
+                caption: Some(ModuleCaption::AttackName),
+                ..on_creature(-0x100, 0x800, [0, 0x500, 0x400], 1)
+            }
         }
         9 => on_creature(0x40, 0x800, [0, 0x700, 0x800], 0xC0),
         10 => {

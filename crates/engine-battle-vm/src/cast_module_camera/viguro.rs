@@ -90,15 +90,15 @@ fn row_focus(st: &ModuleCamState) -> [i16; 3] {
 /// | 10 | - | the same framing pulled to TR z `0x2000` over `0x13C` frames |
 /// | 11 | drift yaw `+P/2`; drain, hold while non-negative | `ctx[+0x6D8] = 0` |
 /// | 12 | drift yaw `+P/2`; the word **climbs** by `P/4`, hold while below [`VIGURO_CHARGE_TOP`] | - |
-/// | 13 | drift yaw `+P/4` | the sweep (the body's) |
+/// | 13 | drift yaw `+P/4` | the sweep (the body's); pitch `0xC0`, the live yaw, TR z `0x1800`, focus the enemy row, over `0x100` frames |
 /// | 14 | drift yaw `+P/4` | the settle (the body's) |
 ///
-/// Arm 12's sixteen-ray ring (`FUN_801E1D98` per pass), arm 11's three
-/// spawns on the camera's own focus, and arm 13's shot - which keeps the
-/// live yaw the arms have been drifting, a value the director does not
-/// hold - are not ported.
+/// Arm 12's sixteen-ray ring (`FUN_801E1D98` per pass) and arm 11's three
+/// spawns on the camera's own focus are not ported. Arm 13's shot keeps the
+/// live yaw the arms have been drifting, which the host feeds in
+/// ([`ModuleCamState::live_yaw`]).
 ///
-/// PORT: FUN_801F69F4 (PROT 0909; the camera arms 0/4/5/6/9/10, the countdown gates of arms 5/7/9/11/12, arm 4's arrival gate, the yaw drift of arms 11..14 and the spawn calls of arms 2/7)
+/// PORT: FUN_801F69F4 (PROT 0909; the camera arms 0/4/5/6/9/10/13, the countdown gates of arms 5/7/9/11/12, arm 4's arrival gate, the yaw drift of arms 11..14 and the spawn calls of arms 2/7)
 pub fn viguro_direct(st: &mut ModuleCamState, phase: u8, _: ModuleCamSeats) -> ArmDirection {
     let p = MODULE_DRAIN_PER_TICK;
     let creature = st.creature_live.or(st.creature).unwrap_or_default();
@@ -201,7 +201,23 @@ pub fn viguro_direct(st: &mut ModuleCamState, phase: u8, _: ModuleCamSeats) -> A
             st.countdown.0 = i32::from(st.countdown.0 as i16);
             gate(st.countdown.0 < VIGURO_CHARGE_TOP).drifted(drift(p / 2))
         }
-        13 | 14 => ArmDirection::PASS.drifted(drift(p / 4)),
+        // `FUN_801DCEAC(9)` again after the sweep, then pitch `0xC0`, the
+        // live yaw the arm has just added to, TR z `0x1800` on the row over
+        // `0x100` frames (`0x801F7748..0x801F7788`).
+        13 => {
+            let shot = st.live_yaw.map(|y| ModuleShot {
+                angles: [0xC0, ((i32::from(y) + p / 4) & 0xFFF) as i16, 0],
+                tr: [0, 0, 0x1800],
+                focus: row_focus(st),
+                frames: 0x100,
+            });
+            ArmDirection {
+                shot,
+                ..ArmDirection::PASS
+            }
+            .drifted(drift(p / 4))
+        }
+        14 => ArmDirection::PASS.drifted(drift(p / 4)),
         _ => ArmDirection::PASS,
     }
 }

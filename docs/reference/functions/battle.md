@@ -317,6 +317,10 @@ PROT 0907, 0908 and 0909's arm gates (countdowns, the creature's clip,
 reach and height, PROT 0909's op-`0x20` rendezvous) are ported as directors
 beside the bodies, `cast_module_camera::{nighto,zenoir,viguro}_direct`; see
 [`cast-module.md`](../../subsystems/cast-module.md#prot-0907-nighto).
+PROT 0910..0913's camera arms, drifts and captions are body-paced directors,
+`cast_module_camera::{swordie,orb,freed,nova}_direct`, which ride beside the
+ported bodies without holding them; see
+[`cast-module.md`](../../subsystems/cast-module.md#body-paced-directors).
 
 PROT 0906's arm run has a hole at phase `5` that no arm names, and PROT 0911's
 arm `5` writes phase `9` directly, so its arms `6..8` are unreachable. PROT

@@ -1626,8 +1626,9 @@ caster turned half round).
 
 Port: the arm gates are the ones above plus the arm-`6..0x0A` timers
 (`swordie_tick`); `cast_module_camera::swordie_direct` carries arm 0's cut,
-arm 2's placement and the creature framings of arms `5..9`; the presentation
-hook fires arm 2's kill and flash.
+arm 2's placement, the captions of arms 4 and 5, the creature framings of
+arms `5..9` and arm 10's sway ([body-paced directors](#body-paced-directors));
+the presentation hook fires arm 2's kill and flash.
 
 ### PROT 0911..0913 arm holds
 
@@ -1678,9 +1679,82 @@ Port: `seru_magic_ticks::{orb_tick, freed_tick, nova_tick}`. Each of 0910..0913
 has a `ModuleProfile::body_paced` profile, so `0x36` holds on the body and the
 creature walks nowhere the module does not move it (the stager's generic walk
 otherwise drove Swordie's root-motion clip off the stage and parked the band
-in phase `0xFF`). Not ported: Nova's victim lift (`+0x36 = -sin(W) *
-ctx[+0x6D0] >> 14` / `>> 12`), the effect-handle jitter loops and the camera
-arms past Nova's arm 2 and Orb's and Freed's.
+in phase `0xFF`). Not ported: Nova's victim lift and spin (`+0x36 = -sin(W) *
+ctx[+0x6D0] >> 14` / `>> 12`, `+0x46 -= sin(W) / 2`) and the effect-handle
+jitter loops. The camera arms are the [body-paced directors](#body-paced-directors).
+
+### Body-paced directors
+
+<a id="body-paced-directors"></a>
+
+PROT 0910..0913's tick bodies are ported and hold their own arms, so their
+directors (`cast_module_camera::{swordie,orb,freed,nova}_direct`) run before
+the body, never hold, and see only the phase the body is about to run. What a
+retail arm does on its **pass** - the `FUN_801D829C` call after the gate, a
+caption - lands on the first tick of the arm the pass moved to, half a retail
+frame after retail's; what it does on **every** pass (drifts into the camera
+globals ahead of the gate, a shot re-armed before the gate) runs on every
+tick the body spends in the arm. The clock lives in the director's countdown
+word: `(phase + 1) << 16 | ticks in the arm`. A drift `P` below is the frame
+product `scalar * delta`, per engine tick the scalar alone.
+
+Three inputs come from the host beside the seats
+(`World::feed_seru_cam`): the live yaw `0x8007B792`, for an arm that re-arms
+a shot on the yaw it drifts or stores a yaw straight into the global;
+`FUN_801DCEAC(caster[+0x1DD])` over the cast's own target code; and PROT
+0910's module words (hit counter `0x801F8DAC`, fourth-slash progress
+`0x801F8DA8`).
+
+**PROT 0911 (Orb)**, `f` the creature's heading:
+
+| Arm | When | Camera |
+|---|---|---|
+| 0 | pass | cut: pitch `-0x140`, yaw `0x800 - caster[+0x46]`, TR `(0, 0xC00, 0xC00)` on the caster (`0x801F6B74`) |
+| 3 | pass | pitch `0x40`, yaw `0x800 - f`, TR `(0, 0x300, 0x800)` on the creature, `0x80` frames (`0x801F7130`) |
+| 4, 5 | pass | the spell name, then the attack name and a cut: yaw `0x800 - f`, TR `(0, 0x1400, 0x400)` (`0x801F7634`) |
+| 9 | every pass / pass | TR z `+= 2P`; cut: pitch `0x80`, yaw `0x600 - f`, TR z the group's extent, focus its centroid (`0x801F7890`) |
+| 10 | every pass | yaw `+= 4 * delta`, then pitch `0x80` on the live yaw, TR z six extents, `0x80` frames (`0x801F7EF4..0x801F7F6C`) |
+
+**PROT 0912 (Freed)**: arm 2 stores the creature's heading `0`
+(`0x801F6C54`) and nothing turns it after.
+
+| Arm | When | Camera |
+|---|---|---|
+| 0 | pass | cut: pitch `0x40`, TR `(0, 0x800, 0x1000)` on the caster |
+| 2, 3, 4 | pass | on the creature: TR `(0, 0x600, 0x1200)` over `0x80`, TR `(0, 0x800, 0x800)` over `0x40`, cut pitch `-0x40` |
+| 5..8 | every pass | yaw `+= P`; TR z `+= 2P` (5, 6), `+= 8P` with TR y `-= P` (7), `-= 4P` (8) |
+| 8, 10 | pass | spell name; pitch `0x40`, yaw `0x840`, TR `(0x100, 0x300, 0xA00)` over `0x30` - attack name; cut pitch `0x100`, yaw `0x980`, TR `(0, 0x300, 0x800)` |
+| 11 | pass | cut: yaw `0x800`, TR `(0x140, 0x600, 0x600)` |
+| 13 | every pass / pass | TR y `+= 4P` up to `0xC00`; cut pitch `-0x200`, yaw `0xA00`, TR `(0x200, 0x800, 0x100)` |
+| 14, 15 | every pass / pass | TR y `+= 2P`, cut yaw `0x800`, TR `(0, 0x2000, 0x600)` on the origin - TR z `-= P / 2`, pitch `0x180`, TR `(0, 0, 0x1000)` over `0x40` |
+| 16..19 | every pass | yaw `+= 2P` (16, 17), TR z `+= 4P` and pitch `-= P / 2` (17), TR z `+= 4P` and pitch `+= P / 4` (18), TR z `-= P` (19) |
+
+Arm `0x0B` (the creature's clip cursor) and arm `0x13` (the enemy row idle)
+are the body's waits, not camera waits: their length follows the creature's
+and the monsters' animation rates.
+
+**PROT 0913 (Nova)**, `f` the creature's heading, `v` the victim, `d` the
+depth `ctx[+0x6D0]`:
+
+| Arm | When | Camera |
+|---|---|---|
+| 0 | pass | cut: pitch `0x400`, yaw `0x900 - caster[+0x46]`, TR `(0, 0, 0x400)` on the caster |
+| 1, 2 | every pass | TR z `+= P / 4` |
+| 2 | pass | pitch `0x80`, yaw `0x900 - f`, TR `(0, 0x300, 0x800)` on the creature over `0x40` |
+| 3 | every pass / pass | yaw `+= 8P`, one whole turn over the arm; yaw global `= 0x900 - f` |
+| 4 | every pass / pass | TR z and yaw `+= P / 4`; yaw global `= 0xA40 - f`, then pitch `-0x100`, yaw `0x940 - f`, TR `(0, 0x600, 0x400)` over `0x40` |
+| 5..9 | pass | on the creature: `(0, 0x900, (0, 0x800, 0x800), 0x20)`, spell name and `(-0x80, 0x900, (0, 0x400, 0x800), 0x20)`, attack name and `(-0x80, 0x700, (0, 0x400, 0x600), 1)`, `(-0x40, 0x780, (0, 0x600, 0x400), 0x80)`, `(0x40, 0x800, (0, 0x600, 0x800), 0x80)` as (pitch, yaw `- f`, TR, frames) |
+| 11 | every pass | TR y `+= 4P`, TR z `+= 2P`, pitch `-= P / 4` |
+| 12, 13 | pass / every pass | pitch `-0x200`, yaw `0x800 - f`, TR `(0, 0x1000, 0x200)` on the creature over `0x10` |
+| 13 | pass | the globals stored straight (`0x801F7B10..0x801F7B5C`): pitch `-0x200`, yaw `0x800 - v[+0x46]`, TR y `0x1000`, scaled TR z `0x200`, focus the victim |
+| 14, 15 | pass | on the victim: pitch `0x40`, TR `(0, 0x600, d)` over `0x40`; pitch `-0x300`, TR `(0, d / 2, -d / 2)` over `0x100`; yaw `0x800 - v[+0x46]` |
+| 16 | every pass | yaw `+= sin(W / 2) / 2`, `W` the climbing countdown - a fixed step a pass, so two engine ticks take half each |
+| 17, 18 | pass | on the victim: cut pitch `-0x300`, yaw `-v[+0x46]`, TR `(0, 4d, 0)`; pitch `0x40`, yaw `0x800 - v[+0x46]`, TR `(0, 0x600, d)` over `0x80` |
+| 20 | every pass | `FUN_801D5854(caster, 8)` |
+
+Arm 16 turns the victim by `sin(W) / 2` a pass. The engine does not spin it,
+so arms 17 and 18 take the turn retail's passes add up at the normal scalar
+(`nova_victim_spin`) off the heading the victim kept.
 
 ### The shatter effect on monsters
 
@@ -2096,12 +2170,10 @@ Directors, each read off its own tick's disassembly:
 | 0904 Theeder | camera-beside, gating | the countdown gates of arms 2..6 and 14 and the camera arms beside the ported tick body, which paces arms 7..13 ([module notes](#prot-0904-theeder)) |
 | 0906 Gizam | camera-beside, gating | every countdown gate, the phase-5 stager record clock and the camera arms 0, 1 and 7..13 ([module notes](#prot-0906-gizam)) |
 | 0905 Vera | full | the whole choreography, plus a third kernel: arms 8..10 write the camera globals directly every pass (pitch `0x8007B790`, TR y / z), a drift on top of arm 8's cut. Its gate is the `bgez` form (hold while the word is non-negative). Arm 5 advances the phase by 3, so arms 6 and 7 are unreachable |
-| 0907 Nighto | full, beside the ported body | the summoning on the victim's grid cell (the same arithmetic as Zenoir's), the TR z drift of arms 5..7, the creature framings of arms 8..12 and every countdown gate; arm 10's clip gate. [Notes](#prot-0907-nighto) |
+| 0907 Nighto | full, beside the ported body | the summoning on the victim's grid cell (the same arithmetic as Zenoir's), the TR z drift of arms 5..7, the creature framings of arms 8..12, the spell and attack captions of arms 7 and 8, and every countdown gate; arm 10's clip gate. [Notes](#prot-0907-nighto) |
 | 0908 Zenoir | full, beside the ported body | the framed point is the victim's `0x200` grid cell half a unit back toward the caster; arm 3 waits on the **band's** timer `ctx[+0x6D8]` (the sustain `0x35`'s own `0x78` frames) before arm 4 seats the creature and reuses that word as the module's countdown. Arms 6..12 gate on the creature's clip, its reach and its height, and arms 11 and 12 write the camera globals. [Notes](#prot-0908-zenoir) |
-| 0909 Viguro | full, beside the ported body | the countdown gates, arm 4's arrival gate, the creature and enemy-row framings and the yaw drift of arms 11..14; its two rendezvous are released by its own parts. [Notes](#prot-0909-viguro) |
-| 0910 Swordie | body-paced | arm 0's cut on the point half a unit from the victim, arm 2's creature placement there, and the creature framings of arms 5..9 ([PROT 0910](#prot-0910-swordie)), each landing on the next arm's first tick; arm 10's sway is not directed |
-| 0911 Orb, 0912 Freed | body-paced | no camera arm; the ported holds pace the band ([arm holds](#prot-0911-0913-arm-holds)) |
-| 0913 Nova | body-paced | the tick body is ported, so the director reads the phase and never holds it: arm 0's cut behind the caster (pitch `0x400`, yaw `0x900 - caster[+0x46]`, TR `(0, 0, 0x400)`) and the `(scalar * delta) / 4` TR z drift of the stream-request and CD-poll arms 1 and 2 |
+| 0909 Viguro | full, beside the ported body | the countdown gates, arm 4's arrival gate, the creature and enemy-row framings (arm 13's on the live yaw) and the yaw drift of arms 11..14; its two rendezvous are released by its own parts. [Notes](#prot-0909-viguro) |
+| 0910 Swordie, 0911 Orb, 0912 Freed, 0913 Nova | body-paced | every camera arm, drift and caption, on the arm clock of [body-paced directors](#body-paced-directors); the ported holds pace the band ([arm holds](#prot-0911-0913-arm-holds)) |
 | 0914, 0915, 0917, 0920, 0923, 0928, 0930, 0931 | camera-only | the opening arms the sustain `0x35` runs (the arm-0 cut, an arm-1 cut or pan, and any drift written while the load runs); owns the module phase over those arms and **parks** on the first arm it does not cover |
 | 0916, 0921, 0929, 0932, 0933, 0934 (Aluru, Iota, Mule, Meta, Terra, Ozma) | camera-only | the same, plus the arms that frame the arrived creature, gated on the module's own countdown |
 

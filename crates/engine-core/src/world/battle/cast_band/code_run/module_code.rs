@@ -105,6 +105,7 @@ impl World {
                     .get_or_insert(victim_slot);
                 let seats = self.module_cam_seats(caster_slot, latched);
                 let mut st = self.module_cam_with_yaw_base();
+                self.feed_seru_cam(entry, caster_slot, &mut st);
                 // A settle gate's row (`summon_holds::Gate::Settle`): every
                 // monster seat idle, or faded out once dead.
                 let pc = usize::from(self.party.party_count);

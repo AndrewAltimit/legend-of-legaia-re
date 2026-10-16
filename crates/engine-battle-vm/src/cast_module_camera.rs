@@ -195,6 +195,21 @@ pub struct ModuleCamState {
     /// while it held - a write the phase-chain body, which does not run on
     /// a held pass, cannot make. The host takes it once.
     pub creature_stage: Option<u8>,
+    /// `FUN_801DCEAC(caster[+0x1DD], ..)` - the same centroid and extent
+    /// over the cast's own target code (a seat, or the group code `8` /
+    /// `9`), as the host last measured it. PROT 0911's arms 9 and 10 frame
+    /// the healed party through it.
+    pub target_aim: Option<crate::battle_target_group::GroupAim>,
+    /// The live yaw global `0x8007B792` as the host last saw it, for an arm
+    /// that re-arms a shot on the yaw it has been drifting or stores a yaw
+    /// straight into the global (PROT 0909 arm 13, PROT 0911 arm 10, PROT
+    /// 0913 arms 3 and 4). `None` where the host has no camera.
+    pub live_yaw: Option<u16>,
+    /// Module-image words a director reads that the module's ported tick
+    /// body owns, fed by the host each tick: PROT 0910's hit counter
+    /// `0x801F8DAC` and fourth-slash progress `0x801F8DA8`, which pick its
+    /// arm-10 sway framing.
+    pub module_words: [i32; 2],
 }
 
 /// `FUN_801D5854(7, 6)` out of a module arm: the action SM's own case-6
@@ -529,11 +544,15 @@ pub(super) fn focus_on(seat: ModuleSeat) -> [i16; 3] {
     [seat.x.wrapping_neg(), 0, seat.z.wrapping_neg()]
 }
 
+mod body_paced;
 pub mod capture;
 pub mod capture_countdown;
 pub mod creature;
 mod evil_seru_magic;
+mod freed;
 mod nighto;
+mod nova;
+mod orb;
 mod seru;
 pub mod summon_holds;
 mod swordie;
@@ -543,7 +562,10 @@ pub use capture::*;
 pub use capture_countdown::{ArmCountdown, CountdownWrite, arm_countdown, capture_arm_countdowns};
 pub use creature::*;
 pub use evil_seru_magic::*;
+pub use freed::*;
 pub use nighto::*;
+pub use nova::*;
+pub use orb::*;
 pub use seru::*;
 pub use swordie::*;
 pub use theeder_gizam::*;
@@ -710,21 +732,19 @@ pub fn module_profile(prot_entry: u32) -> Option<ModuleProfile> {
         // ramps and seat polls, `crate::seru_magic_ticks`), so each paces the
         // band like PROT 0904's: `0x36` holds on the body, the creature walks
         // nowhere the module does not move it, and the outcome lands once the
-        // phase has passed the body's hit arm.
+        // phase has passed the body's hit arm. Each director arms the camera
+        // beside its body on the arm clock of `body_paced`.
         910 => Some(
             ModuleProfile::body_paced(swordie_direct, crate::seru_magic_ticks::SWORDIE_SLASH_ARM)
                 .seated_at(910),
         ),
         911 => Some(
-            ModuleProfile::body_paced(seru_body_direct, crate::seru_magic_ticks::ORB_HEAL_ARM)
+            ModuleProfile::body_paced(orb_direct, crate::seru_magic_ticks::ORB_HEAL_ARM)
                 .seated_at(911),
         ),
         912 => Some(
-            ModuleProfile::body_paced(
-                seru_body_direct,
-                crate::seru_magic_ticks::FREED_DAMAGE_PHASE,
-            )
-            .seated_at(912),
+            ModuleProfile::body_paced(freed_direct, crate::seru_magic_ticks::FREED_DAMAGE_PHASE)
+                .seated_at(912),
         ),
         913 => Some(
             ModuleProfile::body_paced(nova_direct, crate::seru_magic_ticks::NOVA_DAMAGE_PHASE)
@@ -734,12 +754,6 @@ pub fn module_profile(prot_entry: u32) -> Option<ModuleProfile> {
         918 | 919 | 922 | 924 | 925 | 927 => summon_holds::summon_hold_profile(prot_entry),
         _ => None,
     }
-}
-
-/// The director beside PROT 0911 and 0912's ported tick bodies: no camera arm
-/// is ported, so every arm passes and the body's own holds pace the band.
-fn seru_body_direct(_: &mut ModuleCamState, _: u8, _: ModuleCamSeats) -> ArmDirection {
-    ArmDirection::PASS
 }
 
 impl ModuleProfile {

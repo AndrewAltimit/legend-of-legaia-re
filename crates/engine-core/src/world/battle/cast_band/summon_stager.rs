@@ -141,9 +141,6 @@ impl World {
             if !r.spawns.is_empty() {
                 self.stage_module_arm_spawns(r.prot_entry, r.spawns, r.camera_shot);
             }
-            if let Some(c) = r.caption {
-                self.casting.module_caption = Some(c);
-            }
             // The arm's own fades run beside the band's flash: retail's
             // spawner takes a fresh pool actor per call.
             if r.kills_fades {
@@ -158,6 +155,11 @@ impl World {
                 );
                 self.presentation.module_fades.extend(seat);
             }
+        }
+        // A caption is the arm's own text actor, whichever way the module's
+        // spawns are seated.
+        if let Some(c) = run.as_ref().and_then(|r| r.caption) {
+            self.casting.module_caption = Some(c);
         }
         let directed_hit = profile.and_then(|p| p.hit_arm);
         let module_busy =
