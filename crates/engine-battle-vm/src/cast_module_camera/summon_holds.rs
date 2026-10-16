@@ -463,6 +463,24 @@ pub fn summon_hold_profile(prot_entry: u32) -> Option<ModuleProfile> {
     })
 }
 
+/// The countdown gate's `bgtz` of an arm whose decoded presentation sites
+/// the decoder could not split around it
+/// (`legaia_overlay_images::cast_presentation::SiteTiming::Every`): a site
+/// past this VA runs only on the tick the gate lets through, the way the
+/// `bgtz` to the epilogue leaves it. The arms are the ones in these modules
+/// with such a site past their gate: PROT 0919 arm 7 (`0x801F7C64`; its
+/// three fades, the kills and the CLUT loads), PROT 0922 arms 14
+/// (`0x801F7AA0`) and 15 (`0x801F7CAC`; the wash alpha store past the
+/// ramp).
+pub fn gate_va(prot_entry: u32, arm: u8) -> Option<u32> {
+    Some(match (prot_entry, arm) {
+        (919, 7) => 0x801F_7C64,
+        (922, 14) => 0x801F_7AA0,
+        (922, 15) => 0x801F_7CAC,
+        _ => return None,
+    })
+}
+
 /// PROT 0922's damage arm: the `FUN_801DD0AC` site `0x801F8E1C` is in arm 23.
 pub const PUERA_DAMAGE_ARM: u8 = 23;
 /// PROT 0927's damage arm: the `FUN_801DD0AC` site `0x801F7E0C` is in arm 26.

@@ -2438,6 +2438,10 @@ of an arm's exit jump reads as running on every pass (PROT 0922 arm 11's
 `0x801F746C`, PROT 0918 arm 15's `0x801F8120`); on a held arm that put it on
 the first hold, before the pass that spawns the fade, and left the held fade
 unkillable - a solid yellow or white screen for the rest of the band.
+Where the decoder could not split an arm's sites around a ported countdown
+gate, the gate's `bgtz` VA (`summon_holds::gate_va`) does: a site past it
+fires on the pass alone, as in retail (PROT 0919 arm 7's three fades, which
+otherwise flashed white a countdown early).
 
 **The colour wash.** Both cast dispatchers end by calling `FUN_801F2410` when
 `ctx[+0x27A]` (the alpha) is non-zero, so the wash draws on every frame the

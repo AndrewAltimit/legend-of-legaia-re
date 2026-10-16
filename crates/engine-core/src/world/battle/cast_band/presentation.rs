@@ -189,13 +189,21 @@ impl World {
         // that held fade unkillable.
         let mut spawned_now: Vec<u32> = Vec::new();
         for s in &sites {
-            let once = match s.timing {
+            // Past a ported countdown gate a site runs on the pass alone
+            // (`summon_holds::gate_va`), whatever timing the decoder read.
+            let timing = match legaia_engine_battle_vm::cast_module_camera::summon_holds::gate_va(
+                entry, phase_in,
+            ) {
+                Some(gate) if s.va > gate => SiteTiming::Pass,
+                _ => s.timing,
+            };
+            let once = match timing {
                 SiteTiming::Pass => passed && paced,
                 SiteTiming::Every if holds => first_hold || first_pass,
                 SiteTiming::Hold if holds => first_hold,
                 SiteTiming::Hold | SiteTiming::Every => first,
             };
-            let each = match s.timing {
+            let each = match timing {
                 SiteTiming::Pass => passed && paced,
                 SiteTiming::Hold => !passed,
                 SiteTiming::Every => paced || !passed,
