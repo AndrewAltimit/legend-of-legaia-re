@@ -43,6 +43,12 @@ pub struct CastFxState {
     /// Actor slot a host seated the summon creature at
     /// ([`crate::world::World::seat_summon_actor`]); `None` while no creature is out.
     pub summon_actor_slot: Option<u8>,
+    /// The seated creature's render-node size `+0x58`: its `summon.dat`
+    /// actor record's byte `+0x1F << 5` (`lbu v1,0x1f(v1)` / `sll v1,v1,0x5`
+    /// / `sh v1,0x58(v0)` in the seat installer `FUN_801F19EC`,
+    /// `0x801F1DE4..0x801F1DF0`). Set by the host's seat; `None` while no
+    /// creature record is known.
+    pub summon_body_radius: Option<i16>,
     /// A cast the action SM is carrying whose outcome is still owed - folded
     /// once, at retail's seam ([`crate::world::World::settle_cast_band`] / the stager's
     /// strike).
@@ -318,6 +324,7 @@ impl CastFxState {
             effect_pool: None,
             summon_stager: None,
             summon_actor_slot: None,
+            summon_body_radius: None,
             pending_cast: None,
             module_phase: 0,
             module_ctx_278: 0,

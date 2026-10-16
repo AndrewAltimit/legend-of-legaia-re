@@ -82,6 +82,20 @@ impl World {
         if let Some(p) = a.battle_animation.as_mut() {
             p.release_loop_window();
         }
+        // ...and the walker runs the clip it hung there all the same: the
+        // per-frame `FUN_80047430` -> `FUN_801DEA50` call reads the node's
+        // record, so clip 0's effect script fires on its frames (PROT 0913's
+        // emergence clip lands its dust and floor ring at frame `0x62`). The
+        // installer leaves the cursor `+0x1F5` alone; the seat it reuses
+        // holds `0` (retail RAM across PROT 0913's arms 3..7).
+        a.battle_effect_script = a
+            .battle_action_clips
+            .as_ref()
+            .and_then(|c| c.first().cloned().flatten())
+            .map(|c| c.effect_script)
+            .filter(|s| !s.is_empty());
+        a.battle_effect_cursor = 0;
+        a.battle_anim_cue_cursor = 0;
         // The seat arm's own stores, which run after the installer on the
         // same pass (`module_seat_arm`).
         if let Some(e) = entry {

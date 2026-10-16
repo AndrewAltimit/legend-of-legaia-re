@@ -236,6 +236,56 @@ impl World {
         true
     }
 
+    /// Seat one battle-overlay record by its address, as `FUN_80050ED4`
+    /// does for a literal record pointer: the record's parts at `origin`,
+    /// turned by `rot` and scaled by `scale` (`+0x72`), as their own scene
+    /// in [`crate::world::CastFxState::active_action_fx`]. Returns whether it
+    /// seated.
+    pub fn spawn_battle_record_posed(
+        &mut self,
+        record_va: u32,
+        origin: [i16; 3],
+        rot: [i16; 3],
+        scale: u16,
+    ) -> bool {
+        use legaia_game_tables::move_power;
+        if self.casting.active_action_fx.len() >= Self::ACTION_FX_CAP {
+            return false;
+        }
+        let Some(overlay) = self.tables.move_power_overlay.clone() else {
+            return false;
+        };
+        let Some(off) = record_va
+            .checked_sub(move_power::BATTLE_OVERLAY_BASE)
+            .map(|o| o as usize)
+        else {
+            return false;
+        };
+        let mut offs: Vec<usize> = move_power::parse_effect_proto_records(&overlay)
+            .unwrap_or_default()
+            .iter()
+            .map(|p| p.record_off)
+            .collect();
+        offs.push(off);
+        let parts: Vec<_> =
+            legaia_overlay_images::summon_overlay::parse_records_at(&overlay, &offs)
+                .into_iter()
+                .filter(|p| p.record_off == off)
+                .collect();
+        if parts.is_empty() {
+            return false;
+        }
+        let mut scene = legaia_engine_effects::summon::SummonScene::spawn_parts(
+            &parts,
+            &overlay,
+            crate::scene_host::EFFECT_MODEL_LIBRARY_BASE,
+            origin,
+        );
+        scene.pose_parts(rot, scale);
+        self.casting.active_action_fx.push(scene);
+        true
+    }
+
     /// Seat what the effect spawner and move-VM op `0x17` queued this step
     /// ([`crate::world::CastFxState::pending_burst_triggers`] /
     /// [`crate::world::CastFxState::pending_bursts`]) into the effect-script

@@ -1470,9 +1470,14 @@ The two arms carry per-code behaviour worth pinning:
   `FUN_801DF570` before the rotation (`0x801DEDC0..0x801DEDD0`), clamping it
   into `[3d/4, d]` of the attacker-to-target-seat separation `d` (engine:
   `action_effect_script::step_effect_script`); `0xFF` terminates;
-  codes `0x81..=0x83` follow the digit spawn with a secondary part from
-  prototype `0x801F5EB0` seated at the actor's `+0x3C..+0x43` position plus
-  a screen-shake global write when the `+0x45C8` context word is clear.
+  codes `0x81..=0x83` follow the pool spawn with a secondary part: the
+  floor ring `0x801F5EB0` through `FUN_80050ED4`, on the actor's body pair
+  `+0x3C..+0x43` with the height zeroed, at scale `node[+0x58] << 1`
+  (`0x801DEEC0..0x801DEF08`), then a screen-shake global write when the
+  word `0x800845C8` is clear. Engine: `action_effect_script::seats_floor_part`
+  and `World::seat_effect_floor_part`; the shake is not carried. A seated
+  summon creature runs the walk too, on the clip `FUN_801F19EC` hung on its
+  node without a commit (PROT 0913's landing ring).
 
 #### `0x801F6418` is a CLUT-row map, not an SFX map
 

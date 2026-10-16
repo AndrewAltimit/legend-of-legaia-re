@@ -98,7 +98,11 @@ impl World {
             .actors
             .get(usize::from(self.battle_ctx.active_actor))
             .is_some_and(|a| a.battle.current_anim == ACTION_FX_ART_SLOT);
+        let mut floor_parts = 0usize;
         for s in &step.spawns {
+            if s.direct && fx::seats_floor_part(s.effect) {
+                floor_parts += 1;
+            }
             let mut effect = s.effect & !fx::EFFECT_DIRECT_BIT;
             if !s.direct && effect == 0 && art_slot_active {
                 effect = ACTION_FX_ART_CODE;
@@ -112,6 +116,13 @@ impl World {
                     facing: script_actor.facing,
                 },
             );
+        }
+        // The direct arm's codes `0x81..=0x83` seat the floor part after the
+        // pool spawn (`0x801DEEC0..0x801DEF08`): prototype
+        // [`fx::FLOOR_PART_RECORD`] on the actor's body pair at height `0`,
+        // scaled by twice its render node's `+0x58`.
+        for _ in 0..floor_parts {
+            self.seat_effect_floor_part(i);
         }
         // Terminator sink: install the staged move-power record's `+0x04`
         // word and the launch position into the move-FX streak block. The
@@ -1056,5 +1067,55 @@ impl World {
         // for either seat, which a party table never produces.
         let frame0 = frame0.filter(|f| f.len() == player.part_count());
         Some(TweenTarget { frame0, z_bias })
+    }
+
+    /// The floor part `FUN_801DEA50`'s direct arm seats for codes
+    /// `0x81..=0x83` (`0x801DEEC0..0x801DEF08`): the actor's body pair
+    /// `+0x3C..+0x43` copied to the stack with the height zeroed
+    /// (`sh zero,0x12(sp)`), and `FUN_80050ED4` on
+    /// [`legaia_engine_effects::action_effect_script::FLOOR_PART_RECORD`] at
+    /// scale `node[+0x58] << 1` (`sll a3,a3,0x11` / `sra a3,a3,0x10`). The
+    /// angle trio at `sp+0x18` is whatever the walk's stack held (the table
+    /// arm's stores); the part is a flat ring, seated unturned here. The
+    /// screen-shake stores that follow (`0x801DEF24..0x801DEF54`, under
+    /// `0x800845C8 == 0`) are not carried.
+    ///
+    /// PORT: FUN_801DEA50 (`0x801DEEC0..0x801DEF08`, the floor part)
+    pub(super) fn seat_effect_floor_part(&mut self, i: usize) {
+        let Some(a) = self.actors.get(i) else {
+            return;
+        };
+        let (x, z) = a
+            .battle
+            .seat
+            .unwrap_or((a.move_state.world_x, a.move_state.world_z));
+        let radius = self.battle_node_radius(i);
+        self.spawn_battle_record_posed(
+            legaia_engine_effects::action_effect_script::FLOOR_PART_RECORD,
+            [x, 0, z],
+            [0; 3],
+            (radius << 1) as u16,
+        );
+    }
+
+    /// `*(actor[+0x22C]) + 0x58`, the render node's size: the record size
+    /// class `<< 5` on a monster seat ([`legaia_engine_battle::monster_catalog`]),
+    /// the creature record's on the summon seat
+    /// ([`crate::world::CastFxState::summon_body_radius`]), and
+    /// [`PARTY_BODY_RADIUS`] otherwise.
+    pub(in crate::world) fn battle_node_radius(&self, i: usize) -> i16 {
+        if self.casting.summon_actor_slot == Some(i as u8)
+            && let Some(r) = self.casting.summon_body_radius
+        {
+            return r;
+        }
+        match self.actors.get(i).and_then(|a| a.battle_monster_id) {
+            Some(id) => self
+                .tables
+                .monster_catalog
+                .get(id)
+                .map_or(0, |d| i16::from(d.size_class) << 5),
+            None => PARTY_BODY_RADIUS,
+        }
     }
 }
