@@ -94,12 +94,16 @@ pub(super) fn seed_debug_story_flags(
     );
 }
 
-/// A `--battle` operand: a scene MAN formation-row index, or "the first row
-/// the scene registered that carries monsters".
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// A `--battle` operand: a scene MAN formation-row index, "the first row
+/// the scene registered that carries monsters", or a formation cell no row
+/// carries (`cell:[s:]id,...`, hex ids, `s:` = scripted), registered as a
+/// formation of its own the way the retail comparison's headless seed does
+/// (`legaia_engine_capture::formation_cell`).
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(in crate::window) enum BattleEntry {
     Row(u16),
     First,
+    Cell(legaia_engine_capture::formation_cell::FormationCell),
 }
 
 impl BattleEntry {
@@ -108,16 +112,29 @@ impl BattleEntry {
         if t.eq_ignore_ascii_case("first") {
             return Ok(Self::First);
         }
+        if let Some(cell) = legaia_engine_capture::formation_cell::FormationCell::parse_spec(t) {
+            return Ok(Self::Cell(cell));
+        }
         t.parse::<u16>().map(Self::Row).map_err(|_| {
-            anyhow::anyhow!("--battle wants a formation row index or `first`, got {spec:?}")
+            anyhow::anyhow!(
+                "--battle wants a formation row index, `first` or `cell:[s:]id,...`, got {spec:?}"
+            )
         })
     }
 
-    /// Resolve against the world's registered formations.
-    pub(super) fn resolve(self, world: &legaia_engine_core::world::World) -> Option<u16> {
+    /// Resolve against the world's registered formations; a cell is
+    /// registered first, its monsters read out of the archive when the
+    /// catalog lacks them.
+    pub(super) fn resolve(&self, session: &mut NativeSession) -> Option<u16> {
+        let world = &mut session.host.world;
         match self {
-            Self::Row(row) => Some(row),
+            Self::Row(row) => Some(*row),
             Self::First => world.first_rollable_formation_id(),
+            Self::Cell(cell) => {
+                let scene = world.active_scene_label.clone();
+                let index = &session.host.index;
+                cell.register(world, &scene, || index.entry_bytes_extended(867).ok())
+            }
         }
     }
 }
@@ -137,8 +154,9 @@ pub(super) fn arm_requested_battle(session: &mut NativeSession, spec: &str) {
             return;
         }
     };
+    let resolved = entry.resolve(session);
     let world = &mut session.host.world;
-    let Some(row) = entry.resolve(world) else {
+    let Some(row) = resolved else {
         log::error!(
             "play-window: --battle {spec} found no registered formation in '{}' (rows: {:?})",
             world.active_scene_label,

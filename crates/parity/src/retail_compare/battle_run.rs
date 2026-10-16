@@ -292,9 +292,11 @@ pub(super) fn run_battle(
     // A state made on a patched disc replays that build's executable: what
     // the patch writes into a combatant (the shiny-Seru boost's `x135/100`
     // on a monster's maxima) is not retail behaviour, and a channel that
-    // reads it says so instead of reading as an engine miss.
+    // reads it says so instead of reading as an engine miss. So does the
+    // frame: a party-swap patch draws its own battle models (the Delilas
+    // captures' fighter where the engine draws the unpatched member).
     if let Some(patch) = entry.resident_patch.as_deref() {
-        for key in ["enemy_hp", "battle_party"] {
+        for key in ["enemy_hp", "battle_party", "image"] {
             if let Some(d) = det.get_mut(key) {
                 d.push_str(&format!(
                     "; retail ran a patched executable (resident patch: {patch})"
@@ -308,8 +310,9 @@ pub(super) fn run_battle(
     report.channels = ch;
 }
 
-/// The battle frame through `play-window --battle`, when the fight has a MAN
-/// row to name and the retail frame is not a fade.
+/// The battle frame through `play-window --battle` (the fight's MAN row, or
+/// its formation cell where no row carries it), when the retail frame is not
+/// a fade.
 pub(super) fn battle_image(
     opts: &RunOptions<'_>,
     entry: &CorpusEntry,
@@ -326,19 +329,12 @@ pub(super) fn battle_image(
         );
         return None;
     }
-    let Some(row) = engine.man_row else {
-        report.detail.insert(
-            "image".into(),
-            "not scored: formation has no MAN row for `play-window --battle`".into(),
-        );
-        return None;
-    };
     let flags = retail
         .save
         .as_ref()
         .map(system_flag_ids)
         .unwrap_or_default();
-    let extra = crate::retail_compare_battle::play_window_args(battle, row);
+    let extra = crate::retail_compare_battle::play_window_args(battle, engine.man_row);
     // The child lands the save the headless seed landed: the fight's own
     // entry latches held back, and raised after its settle
     // (`LEGAIA_BATTLE_LATCHES`).

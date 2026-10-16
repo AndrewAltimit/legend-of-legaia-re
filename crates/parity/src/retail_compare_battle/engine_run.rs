@@ -256,39 +256,21 @@ pub fn run_engine_battle(
             // No row of this scene carries the retail cell: a scripted
             // fight installed from another table, or a scene whose rows the
             // engine does not register. Register the cell as its own
-            // formation, with the archive's stats for its ids.
-            let rec = legaia_scene_formats::encounter_record::EncounterRecord::new(
-                battle.monster_ids.len() as u8,
-                &battle.monster_ids,
-            )
-            .context("formation cell does not fit a record")?;
-            let mut def = legaia_engine_battle::encounter_formation::formation_def_from_record(
-                &rec,
-                retail.scene.clone(),
-            );
-            let mut id = def.formation_id;
-            while world.tables.formation_table.formation(id).is_some() {
-                id = id.wrapping_add(1);
-            }
-            def.formation_id = id;
-            def.header_flags = u8::from(battle.scripted);
-            world.tables.formation_table.insert(def);
+            // formation, with the archive's stats for its ids - the same
+            // registration the image child runs for `--battle cell:...`.
             source = "synthesized".to_string();
-            id
+            battle
+                .formation_cell()
+                .register(world, &retail.scene, || None)
+                .context("formation cell does not fit a record")?
         }
     };
-    let ids: Vec<u16> = battle.monster_ids.iter().map(|&i| u16::from(i)).collect();
-    if ids
-        .iter()
-        .any(|id| session.host.world.tables.monster_catalog.get(*id).is_none())
-    {
-        let archive = session.host.index.entry_bytes_extended(867)?;
-        let cat =
-            legaia_engine_battle::monster_catalog::catalog_from_monster_archive(&archive, &ids);
-        for def in cat.by_id.into_values() {
-            session.host.world.tables.monster_catalog.insert(def);
-        }
-    }
+    let index = &session.host.index;
+    legaia_engine_capture::formation_cell::ensure_monsters(
+        &mut session.host.world,
+        &battle.monster_ids,
+        || index.entry_bytes_extended(867).ok(),
+    );
     // The fight's own composition: retail's present list `0x8007BD10` is
     // the battle's seat table, not the save window's field party. They
     // differ on a guest seat (id `4`) and on a battle-id fight, whose init

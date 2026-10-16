@@ -24,6 +24,9 @@ form in both directions.
 - [`bar_seeds`](src/bar_seeds.rs), [`hud_glide`](src/hud_glide.rs),
   [`camera_align`](src/camera_align.rs) - a fight's HP / MP / status bars,
   HUD glides and camera tween at the capture instant.
+- [`formation_cell`](src/formation_cell.rs) - `FormationCell`, a fight named
+  by its formation cell where no scene MAN row carries it
+  (`play-window --battle cell:[s:]ids`), registered the same way on both sides.
 - [`field_seeds`](src/field_seeds.rs) - the field-side seeds: placed-object
   clips, ambient walkers, morph envelopes, the fog pool, sprite arms,
   CLUT-cell cyclers, scroller rects, the panel widget and the camera block.

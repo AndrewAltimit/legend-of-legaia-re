@@ -711,7 +711,13 @@ retail's was, so the scene's track has started.
 - **Formation.** The formation cell is matched against the scene's registered
   MAN rows. A cell no row carries (a fight installed from another table) is
   registered as a formation of its own, carrying the scripted bit, with the
-  monster archive's stats for its ids.
+  monster archive's stats for its ids
+  ([`FormationCell`](../../crates/engine-capture/src/formation_cell.rs)).
+  The bosses and duels are such cells (Cort, Zeto, the Delilas duels at
+  `jou`, Zora at `town01`), and so is every showcase fight staged on a scene
+  whose rows never held it (the summon captures on `map03`). The image child
+  registers the same cell through `play-window --battle cell:[s:]ids`, so
+  both sides arm the same formation id with the same monsters.
 - **Party.** Retail's present list `0x8007BD10` becomes the engine's active
   party. A guest seat, or a battle-id fight whose init re-seeds the trio, is
   not the save window's field party.
@@ -1426,15 +1432,21 @@ does not seat (a guest combatant) reads as a short engine party in
 `battle_party`.
 
 **The image** comes from `play-window --resume-save <lifted save> --battle <row>
---party <ids>` with the retail stage variant. That is the card-load resume the
+--party <ids>` with the retail stage variant; a fight no MAN row carries passes
+its formation cell instead (`--battle cell:s:b4`). That is the card-load resume the
 headless side takes, so the frame's party is retail's (levels, equipment and the
 battle meshes assembled from it, the HP / MP the HUD prints) rather than the New
 Game template a bare door entry seeds. It is captured a fixed number of ticks
 past the fight's first prompt. The evolved-Cort arrival (PROT 0968) holds the
 prompt back some two thousand vsync ticks longer than an ordinary opening (its
 countdowns drain by the frame step a pass, so one a tick), and the headless
-side's opening window runs long enough to wait it out. A fight with no MAN row
-to name is not imaged; its reason is in the report.
+side's opening window runs long enough to wait it out. A battle capture whose
+retail frame is a fade is not imaged, and its reason is in the report.
+
+A capture made on a patched disc is imaged like any other, and its `image`
+detail names the resident patch: a party-swap build draws its own battle
+models, so the Delilas captures' fighter is the patch's mesh where the engine
+draws the unpatched member, and that part of the distance is the patch's.
 
 A replayed cast is one frame of a cast that runs for hundreds of vsyncs, and
 on most summons that frame is the white flash. The
