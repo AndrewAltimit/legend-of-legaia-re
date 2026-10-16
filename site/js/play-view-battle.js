@@ -149,7 +149,14 @@
             b.groundAmbientKey = ambientKey;
           }
         }
-        draws.push({ meshId: b.ground, x: 0, y: 0, z: 0, rotY: 0, scale: 1.0, cue: b.groundCue });
+        /* A cast holding `ctx[+0x278]` bit 0 on the floor ambient takes the
+         * grid off the screen (`World::battle_ground_grid_drawn`). Guarded
+         * against a cached WASM without the export. */
+        const groundDrawn = (typeof rt.play_battle_ground_drawn !== 'function')
+          || rt.play_battle_ground_drawn();
+        if (groundDrawn) {
+          draws.push({ meshId: b.ground, x: 0, y: 0, z: 0, rotY: 0, scale: 1.0, cue: b.groundCue });
+        }
       }
       const S = b.scale;
       const tf = rt.play_battle_actor_transforms();

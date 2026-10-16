@@ -785,6 +785,14 @@ pub struct BattleState {
     /// `battle_ground_grid::backdrop_cue_step`; hosts read it through
     /// `World::battle_backdrop_cue`.
     pub(crate) backdrop_cue: u16,
+    /// Bit 3 of scratch `0x1F800394` as the last `FUN_80050120` pass left
+    /// it: set by a storing pass (`0x800507F4..0x80050808`), cleared by a
+    /// skipping one (`0x800507BC..0x800507D4`). `FUN_8001D058` calls the
+    /// mode-`0x15` render `FUN_80026CE4` - whose `FUN_80026F50` is the ground
+    /// grid's only draw - only while it is set (`0x8001D05C..0x8001D070`), so
+    /// a cast that holds `ctx[+0x278]` bit 0 once the ambient sits on its
+    /// floor (PROT 0927's `3`) takes the grid off the screen.
+    pub(crate) ground_grid_drawn: bool,
     /// Whether the stage is one of `DAT_80078C1C`'s outdoor stages - the
     /// `0x8007BDA8` byte the backdrop ramp's ceiling reads. The host that
     /// resolved the stage sets it when it enters battle rendering.
@@ -928,6 +936,7 @@ impl BattleState {
             burn_emit_accum: 0,
             ambient_stored: legaia_engine_battle_vm::battle_ground_grid::GRID_FAR_BASE_NEUTRAL,
             backdrop_cue: 0,
+            ground_grid_drawn: true,
             stage_outdoor: false,
             message_banner: None,
             entry_serial: 0,

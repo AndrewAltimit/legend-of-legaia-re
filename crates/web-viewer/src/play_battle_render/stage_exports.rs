@@ -265,6 +265,16 @@ impl LegaiaRuntime {
         }
     }
 
+    /// Whether the ground grid is on the screen this frame
+    /// (`World::battle_ground_grid_drawn`: retail skips the grid's draw
+    /// while a cast holds `ctx[+0x278]` bit 0 with the ambient on its
+    /// floor). `true` outside a running host.
+    pub fn play_battle_ground_drawn(&self) -> bool {
+        self.scene_host
+            .host()
+            .is_none_or(|h| h.world.battle_ground_grid_drawn())
+    }
+
     /// Ground-grid depth-cue parameters:
     /// `{"far":[r,g,b],"near_z":0,"far_z":Z,"max_ir0":M}` (display 0..1
     /// colour), or `null` when no grid is up. The page attaches this to the

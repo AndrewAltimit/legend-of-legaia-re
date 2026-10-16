@@ -236,6 +236,7 @@ impl<'m> DrawCtx<'_, 'm> {
         // docs/subsystems/battle.md, the grid's near colour and cue
         // depth, for the capture that pins it).
         if in_battle
+            && app.session.host.world.battle_ground_grid_drawn()
             && let Some(gi) = app.battle_ground_mesh
             && let Some(gmesh) = store.meshes.get(gi)
         {

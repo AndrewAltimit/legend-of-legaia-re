@@ -464,9 +464,21 @@ impl World {
             self.battle.stage_outdoor,
             1,
         );
-        if !grid::ambient_store_skipped(rgb, ctx.gauge_rearm_latch, ctx_278) {
+        let skipped = grid::ambient_store_skipped(rgb, ctx.gauge_rearm_latch, ctx_278);
+        if !skipped {
             self.battle.ambient_stored = rgb;
         }
+        // The same branch sets or clears the grid's draw gate, bit 3 of
+        // `0x1F800394`.
+        self.battle.ground_grid_drawn = !skipped;
+    }
+
+    /// Whether the ground grid is on the screen this frame: retail's grid is
+    /// drawn by `FUN_80026CE4`, which `FUN_8001D058` skips while bit 3 of
+    /// `0x1F800394` is clear (`World::tick_battle_ambient`). Both battle
+    /// hosts gate their grid draw on it.
+    pub fn battle_ground_grid_drawn(&self) -> bool {
+        self.battle.ground_grid_drawn
     }
 
     /// The backdrop pair's depth-cue weight this frame, `1.0 = 0x1000`, or
