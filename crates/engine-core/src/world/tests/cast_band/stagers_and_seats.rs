@@ -37,15 +37,27 @@ fn the_viguro_stager_runs_from_the_cast_band_seam() {
     assert_eq!(world.casting.module_phase, 1, "arm 0 advances ctx+0x279");
 }
 
-/// PROT 0922 (Puera, spell `0x94`) writes one byte and nothing else, and only
-/// on arm 0 - the `bnez a1` at the routine's head.
+/// PROT 0922 (Puera, spell `0x94`)'s stager writes one byte and nothing
+/// else, and only on arm 0 - the `bnez a1` at the routine's head. It is
+/// reached through a part's op-`0x20` call, not off the module phase.
 #[test]
 fn the_puera_stager_writes_ctx_278_only_on_arm_zero() {
     let mut world = module_code_world();
     assert_eq!(world.cast_module_for(0x94), Some(922));
-    world.run_cast_module_code(0x94, 1).unwrap();
+    // Arm 3 of the body writes no `ctx[+0x278]` of its own.
+    world.casting.module_phase = 3;
+    world
+        .casting
+        .module_stager_calls
+        .push((1, Default::default()));
+    world.run_cast_module_code(0x94, 3).unwrap();
     assert_eq!(world.casting.module_ctx_278, 0);
-    world.run_cast_module_code(0x94, 0).unwrap();
+    world.casting.module_phase = 3;
+    world
+        .casting
+        .module_stager_calls
+        .push((0, Default::default()));
+    world.run_cast_module_code(0x94, 3).unwrap();
     assert_eq!(world.casting.module_ctx_278, 3);
 }
 

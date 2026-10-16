@@ -483,7 +483,15 @@ pub fn puera_tick(
         }
         _ => {}
     }
-    run_tick(ctx, 25, |_| {
+    run_tick(ctx, 25, |c| {
+        // `ctx[+0x278]`: `0` on arm 0's pass (`0x801F6C6C`), `2` on arm
+        // 11's (`0x801F7374`), `0` again on arm 12's (`0x801F76C4`). The `3`
+        // the stager raises comes off a part's op-`0x20` call.
+        match c.phase {
+            0 | 12 => c.ctx_278 = 0,
+            11 => c.ctx_278 = 2,
+            _ => {}
+        }
         if let Some(roll) = hit
             && aoe_seat_is_hittable(victim)
         {
@@ -601,6 +609,14 @@ pub fn kemaro_tick(
     if ctx.phase == KEMARO_FINISH_PHASE {
         ctx.phase = KEMARO_DONE_PHASE;
         return Some(CastTickStep::Busy);
+    }
+    // `ctx[+0x278]`: `2` on arm 4's pass (`0x801F7230`), `3` on arm 16's
+    // (`0x801F8308`), which with the ambient on its floor takes the stage
+    // floor off the screen.
+    match ctx.phase {
+        4 => ctx.ctx_278 = 2,
+        16 => ctx.ctx_278 = 3,
+        _ => {}
     }
     advance_phase(ctx);
     Some(CastTickStep::Busy)

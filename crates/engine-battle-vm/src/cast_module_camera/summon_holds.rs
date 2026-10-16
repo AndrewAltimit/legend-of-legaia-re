@@ -386,19 +386,9 @@ fn direct(table: &[HoldArm], st: &mut ModuleCamState, phase: u8) -> ArmDirection
     super::gate(hold_step(table, st, phase))
 }
 
-/// PROT 0918's director: [`KEMARO`].
-pub fn kemaro_direct(st: &mut ModuleCamState, phase: u8, _: ModuleCamSeats) -> ArmDirection {
-    direct(KEMARO, st, phase)
-}
-
 /// PROT 0919's director: [`SPOON`].
 pub fn spoon_direct(st: &mut ModuleCamState, phase: u8, _: ModuleCamSeats) -> ArmDirection {
     direct(SPOON, st, phase)
-}
-
-/// PROT 0922's director: [`PUERA`].
-pub fn puera_direct(st: &mut ModuleCamState, phase: u8, _: ModuleCamSeats) -> ArmDirection {
-    direct(PUERA, st, phase)
 }
 
 /// PROT 0924's director: [`ULTIMATE_RAVE`].
@@ -422,7 +412,7 @@ pub fn summon_hold_profile(prot_entry: u32) -> Option<ModuleProfile> {
         // The damage arm `0x12` (`0x801F87A4`); the seat at arm 4's pass
         // (`0x801F71E0`).
         918 => (
-            kemaro_direct,
+            super::kemaro_direct,
             crate::cast_module_ticks::KEMARO_DAMAGE_PHASE,
             5,
         ),
@@ -430,7 +420,7 @@ pub fn summon_hold_profile(prot_entry: u32) -> Option<ModuleProfile> {
         919 => (spoon_direct, crate::seru_magic_ticks::SPOON_HEAL_ARM, 3),
         // The damage arm 23 (`0x801F8E1C`); the seat at arm 3's pass
         // (`0x801F6DFC`).
-        922 => (puera_direct, PUERA_DAMAGE_ARM, 4),
+        922 => (super::puera_direct, PUERA_DAMAGE_ARM, 4),
         // The finale arm; the seat at arm 2's pass (`0x801F6D24`).
         924 => (
             ultimate_rave_direct,
@@ -452,9 +442,9 @@ pub fn summon_hold_profile(prot_entry: u32) -> Option<ModuleProfile> {
         hit_arm: Some(hit_arm),
         walk_arm: None,
         owns_phase: false,
-        // A director that reports its arms' spawn calls (PROT 0927's) seats
+        // A director that reports its arms' spawn calls (PROT 0918's, 0922's, 0927's) seats
         // them per arm; the others leave the stager to seat the record set.
-        stages_spawns: prot_entry == 927,
+        stages_spawns: matches!(prot_entry, 918 | 922 | 927),
         seat_arm: Some(seat_arm),
         director_body: false,
     })

@@ -67,7 +67,7 @@ impl World {
             // calling parts (Nighto's rays and rings, Zenoir's floor rings,
             // rays and final blasts).
             e if Self::runs_part_stager_calls(e) => self.run_part_stager_calls(e),
-            922 => ticks::puera_stager(&mut ctx, arm),
+            922 => self.run_puera_stager_calls(&mut ctx),
             927 => self.run_juggernaut_stager_calls(),
             923 => ticks::gilium_stager(&mut ctx, arm),
             949 => ticks::water_crystals_stager(&mut victim, arm),
@@ -105,6 +105,9 @@ impl World {
         } else {
             legaia_engine_battle_vm::cast_module_camera::module_profile(entry)
         };
+        // The module countdown this pass opens on (PROT 0922's seat writes
+        // read it).
+        let countdown_before = self.casting.module_cam.countdown.0;
         let direction = if has_trampoline {
             None
         } else {
@@ -152,6 +155,16 @@ impl World {
             && let Some(d) = direction
         {
             self.apply_juggernaut_writes(ctx.phase, !d.hold, ctx.monster_count);
+        }
+        if entry == 918
+            && let Some(d) = direction
+        {
+            self.apply_kemaro_writes(ctx.phase, !d.hold, victim_slot);
+        }
+        if entry == 922
+            && let Some(d) = direction
+        {
+            self.apply_puera_writes(ctx.phase, !d.hold, countdown_before, ctx.monster_count);
         }
         run.camera_shot = direction.and_then(|d| d.shot);
         // PROT 0909: the pass whose arm spawns a stager-calling record starts
