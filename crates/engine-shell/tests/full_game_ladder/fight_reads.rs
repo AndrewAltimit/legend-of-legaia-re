@@ -494,32 +494,90 @@ pub(super) fn bag_can_heal(w: &legaia_engine_core::world::World) -> bool {
     })
 }
 
-/// A solo duel's heal once the bag has none: the healing spell `actor`
-/// knows and can pay for that restores the most, cast while the member is
-/// under the duel's heal line (three fifths of its HP). The three Nivora
-/// duels are fought out of one bag, and each duellist knows Spoon (270 HP,
-/// 45 MP): a member that ran the bag dry held the Spirit stance with a full
-/// MP pool until the foe finished it.
-pub(super) fn duel_spell_heal(w: &legaia_engine_core::world::World, actor: u8) -> Option<u8> {
+/// Is the pending action a party-wide heal spell?
+pub(super) fn is_party_heal_spell(
+    w: &legaia_engine_core::world::World,
+    p: &Option<legaia_engine_core::battle_round::PendingPartyAction>,
+) -> bool {
     use legaia_engine_battle::spells::SpellEffect;
-    if !w.battle.no_escape || bag_can_heal(w) {
+    matches!(p, Some(legaia_engine_core::battle_round::PendingPartyAction::Spell { spell_id, .. })
+    if w.tables.spell_catalog.get(*spell_id).is_some_and(|d| {
+        matches!(d.effect, SpellEffect::HealAll { .. })
+    }))
+}
+
+/// The healing spell worth casting now in a fight that forbids running: the
+/// one `actor` knows and can pay for that restores the most.
+///
+/// - In a **solo duel** it is cast once the bag has no restorative left,
+///   while the member is under the duel's heal line (three fifths of its
+///   HP). The three Nivora duels are fought out of one bag, and each
+///   duellist knows Spoon (45 MP): a member that ran the bag dry held the
+///   Spirit stance with a full MP pool until the foe finished it.
+/// - In a **party fight** the group heal is cast for any member under the
+///   line once the bag is dry (Gaza's second fight, `korb3`, ran it dry with
+///   every member's Spoon unspent), and ahead of the bag whenever two members
+///   are under it: one Spoon restores ~1150 on each of three members, where an
+///   item's turn restores one. The line there is also the foe's party-wide
+///   hit with a quarter's margin: Zora's (`taiku` P2[19]) is ~1150 a member,
+///   two thirds of a 1710-HP Noa.
+pub(super) fn spell_heal(w: &legaia_engine_core::world::World, actor: u8) -> Option<u8> {
+    use legaia_engine_battle::spells::SpellEffect;
+    if !w.battle.no_escape {
         return None;
     }
     let duel = solo_duel(w);
+    if duel && bag_can_heal(w) {
+        return None;
+    }
     let a = &w.actors.get(usize::from(actor))?.battle;
     if a.hp == 0 {
         return None;
     }
-    let low = |i: usize| {
-        let b = &w.actors[i].battle;
-        b.hp > 0 && u32::from(b.hp) * 5 < u32::from(b.max_hp) * 3
-    };
-    // In a party fight that forbids running the same holds for the group
-    // heal, cast for any member under the line: Gaza's second fight
-    // (`korb3`) ran the bag dry with every member's Spoon unspent.
     let n = w.party.party_count.clamp(1, 3) as usize;
-    if duel && !low(usize::from(actor)) || !duel && !(0..n).any(low) {
+    let aoe = AOE_HIT.with(std::cell::Cell::get);
+    // One group heal a round covers the party: a heal the round's earlier
+    // members committed counts as landed ([`projected_hp`]). The exception
+    // is the backup the item arm also commits ([`wanted_item`]): while a
+    // member stands within one party-wide hit of death, the round's drawn
+    // order may put the first caster behind the foe, so a second member
+    // casts on the HP as it stands. A third never does.
+    let queued = w
+        .battle
+        .round_flow
+        .pending
+        .iter()
+        .take(n)
+        .filter(|p| is_party_heal_spell(w, p))
+        .count();
+    let raw: Vec<u32> = (0..n).map(|i| u32::from(w.actors[i].battle.hp)).collect();
+    let brink = aoe > 0 && raw.iter().any(|&h| h > 0 && h <= aoe + aoe / 8);
+    if queued >= 2 {
         return None;
+    }
+    let hp = if queued == 1 && brink {
+        raw
+    } else {
+        projected_hp(w)
+    };
+    let low = |i: usize| {
+        let max = u32::from(w.actors[i].battle.max_hp);
+        let hit = if duel {
+            0
+        } else {
+            (aoe + aoe / 4).min(max * 95 / 100)
+        };
+        hp[i] > 0 && (hp[i] * 5 < max * 3 || hp[i] <= hit)
+    };
+    if duel {
+        if !low(usize::from(actor)) {
+            return None;
+        }
+    } else {
+        let lows = (0..n).filter(|&i| low(i)).count();
+        if lows == 0 || lows < 2 && bag_can_heal(w) {
+            return None;
+        }
     }
     let m = w
         .party

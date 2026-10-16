@@ -1348,11 +1348,25 @@ the bag and its own spell list give it:
   most and that it can pay for (Spoon, 270 HP for 45 MP, for all three
   duellists), and drinks the bag's largest MP item when it cannot pay.
 
-The spell heal is not only a duel's. In any fight that forbids running, a
-bag with no restorative left and a member under three fifths of its HP has
-a caster with an affordable group heal cast it (Spoon heals all three):
-Gaza's second fight (`korb3` P2[2]) ran the bag dry with every member's
-Spoon unspent.
+The spell heal is not only a duel's. In a party fight that forbids running,
+a caster with an affordable group heal casts it (Spoon restores ~1150 on
+each of three members, Orb ~700) for any member under the line once the bag
+holds no restorative - Gaza's second fight (`korb3` P2[2]) ran the bag dry
+with every member's Spoon unspent - and ahead of the bag and of the Spirit
+stance whenever two members are under it. The line there is three fifths of
+the member's HP or the foe's party-wide hit with a quarter's margin,
+whichever is higher: Zora (`taiku` P2[19]) hits all three for ~1150 a
+round, two thirds of Noa's HP. One group heal a round is counted as landed
+for the members after its caster, with the same backup rule as the items
+below. A member whose spell list holds no damage spell still opens the
+Magic window for its heal: the window's "nothing to cast" is remembered per
+battle for damage spells only.
+
+The MP for those heals is kept. Against a boss, a member that knows a group
+heal casts damage spells only out of the MP above two casts of it; and on
+the way to a boss a staged fight short of one is cast at only out of the
+upper half of the pool, like a random encounter (`taiku`'s P1[2] fight
+otherwise took Vahn from 197 MP to 24 two rooms before Zora).
 
 The heals follow the bag. A second member backs up a committed heal while
 someone stands within one party-wide hit of death (turn order is drawn per

@@ -120,6 +120,16 @@ pub(super) fn fight_pad(session: &NativeSession) -> u16 {
             SpellPhase::Select { cursor } => match wanted_spell(w, m) {
                 Some(i) if i == usize::from(*cursor) => PadButton::Cross.mask(),
                 Some(_) => PadButton::Down.mask(),
+                // A heal the window cannot cast is not asked for again until
+                // someone's HP moves; a window with no damage spell worth
+                // casting is not reopened for one this battle. The two are
+                // kept apart: Gala's list is Spoon and Orb alone, and reading
+                // the first round's "no damage spell" as "no spell" kept her
+                // Spoon unspent through Zora's party-wide hits.
+                None if spell_heal(w, m.actor).is_some() => {
+                    NO_HEAL_SPELL.with(|n| n.borrow_mut().insert((m.actor, party_hp_key(w))));
+                    PadButton::Circle.mask()
+                }
                 None => {
                     NO_MAGIC.with(|n| n.borrow_mut().insert(m.actor));
                     PadButton::Circle.mask()
@@ -168,8 +178,32 @@ pub(super) fn fight_pad(session: &NativeSession) -> u16 {
         };
         // A Miracle Art the live pool pays for outdamages any summon the
         // hand can cast (Koru: ~2000 against Aluru's ~1300).
-        let magic =
-            || !NO_MAGIC.with(|n| n.borrow().contains(&cmd.actor)) && !miracle_ready(w, cmd.actor);
+        let refused = || {
+            MAGIC_REFUSED.with(|r| r.borrow().get(&cmd.actor).copied().unwrap_or(0))
+                > MAGIC_RING_TRIES
+        };
+        let magic = || {
+            !NO_MAGIC.with(|n| n.borrow().contains(&cmd.actor))
+                && !refused()
+                && !miracle_ready(w, cmd.actor)
+        };
+        let heal_spell = || {
+            !refused()
+                && !NO_HEAL_SPELL.with(|n| n.borrow().contains(&(cmd.actor, party_hp_key(w))))
+                && spell_heal(w, cmd.actor).is_some()
+        };
+        // A Magic pick from the ring, counted so a ring that never opens the
+        // spell window is asked only a few times this battle.
+        let ask_magic = || {
+            MAGIC_REFUSED.with(|r| {
+                *r.borrow_mut().entry(cmd.actor).or_insert(0) += 1;
+            });
+            if refused() {
+                PadButton::Left.mask()
+            } else {
+                PadButton::Right.mask()
+            }
+        };
         let drink = || {
             let bag: Vec<u8> = w
                 .party
@@ -205,6 +239,15 @@ pub(super) fn fight_pad(session: &NativeSession) -> u16 {
             CommandPhase::Menu { .. } if lesson.is_none() && wants_guard(w, cmd.actor) => {
                 PadButton::Down.mask()
             }
+            // A party fight's heal spell ([`spell_heal`]) comes before the
+            // stance against the next party-wide hit and before the bag: a
+            // group heal lifts every member out of its reach, where the
+            // stance halves it only on the member who takes it (Gala held the
+            // stance with Spoon in hand while Zora's single hit dropped Noa
+            // beside her), and an item lifts one.
+            CommandPhase::Menu { .. } if lesson.is_none() && !solo_duel(w) && heal_spell() => {
+                ask_magic()
+            }
             CommandPhase::Menu { .. } if lesson.is_none() && guard_before_heal(w, cmd.actor) => {
                 PadButton::Down.mask()
             }
@@ -224,14 +267,8 @@ pub(super) fn fight_pad(session: &NativeSession) -> u16 {
             CommandPhase::Menu { .. } if lesson.is_none() && wants_aoe_guard(w, cmd.actor) => {
                 PadButton::Down.mask()
             }
-            // A bag run dry in a fight that forbids running: a spell heal.
-            CommandPhase::Menu { .. }
-                if lesson.is_none()
-                    && !NO_MAGIC.with(|n| n.borrow().contains(&cmd.actor))
-                    && duel_spell_heal(w, cmd.actor).is_some() =>
-            {
-                PadButton::Right.mask()
-            }
+            // A duellist's bag run dry: a spell heal.
+            CommandPhase::Menu { .. } if lesson.is_none() && heal_spell() => ask_magic(),
             // A solo duel builds its gauge between Arts turns.
             CommandPhase::Menu { .. } if lesson.is_none() && duel_wants_spirit(w, cmd.actor) => {
                 PadButton::Down.mask()
@@ -244,18 +281,7 @@ pub(super) fn fight_pad(session: &NativeSession) -> u16 {
             // then not again this battle: pressing it for good left Gala on
             // the ring with a dead foe and a live one for the whole budget.
             CommandPhase::Menu { .. } if lesson.is_none() && magic() && !solo_duel(w) => {
-                let tries = MAGIC_REFUSED.with(|r| {
-                    let mut r = r.borrow_mut();
-                    let n = r.entry(cmd.actor).or_insert(0);
-                    *n += 1;
-                    *n
-                });
-                if tries > MAGIC_RING_TRIES {
-                    NO_MAGIC.with(|n| n.borrow_mut().insert(cmd.actor));
-                    PadButton::Left.mask()
-                } else {
-                    PadButton::Right.mask()
-                }
+                ask_magic()
             }
             CommandPhase::AttackMode { .. }
                 if lesson.is_none() || lesson == Some(TutorialLesson::HyperArts) =>
@@ -446,6 +472,7 @@ pub(super) fn drain_battle(session: &mut NativeSession) -> Option<Run> {
 pub(super) fn fight_battle(session: &mut NativeSession) -> Option<Run> {
     NO_ITEM.with(|n| n.borrow_mut().clear());
     NO_MAGIC.with(|n| n.borrow_mut().clear());
+    NO_HEAL_SPELL.with(|n| n.borrow_mut().clear());
     MAGIC_REFUSED.with(|n| n.borrow_mut().clear());
     DUEL_SPIRIT_ROUND.with(|d| d.set(None));
     BIGGEST_HIT.with(|b| b.set(0));

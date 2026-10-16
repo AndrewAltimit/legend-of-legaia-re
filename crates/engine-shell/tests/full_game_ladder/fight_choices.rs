@@ -31,14 +31,25 @@ pub(super) fn item_restore(
     })
 }
 
-/// Each member's HP once the items the round's earlier members already
-/// committed have landed - so two members never spend their turns on the
-/// same wound.
+/// Each member's HP once the items and party heal spells the round's earlier
+/// members already committed have landed - so two members never spend their
+/// turns on the same wound. A party heal spell is counted at three eighths of
+/// each standing member's maximum HP, short of what Orb (~700 on a 1900-HP
+/// member) and Spoon (~1150) restore.
 pub(super) fn projected_hp(w: &legaia_engine_core::world::World) -> Vec<u32> {
     use legaia_engine_core::battle_round::PendingPartyAction;
     let n = w.party.party_count.clamp(1, 3) as usize;
     let mut hp: Vec<u32> = (0..n).map(|i| u32::from(w.actors[i].battle.hp)).collect();
     for (actor, p) in w.battle.round_flow.pending.iter().enumerate().take(n) {
+        if is_party_heal_spell(w, p) {
+            for (i, h) in hp.iter_mut().enumerate() {
+                let max = u32::from(w.actors[i].battle.max_hp);
+                if *h > 0 {
+                    *h = (*h + max * 3 / 8).min(max);
+                }
+            }
+            continue;
+        }
         let Some(PendingPartyAction::Item { item_id, .. }) = p else {
             continue;
         };
@@ -288,14 +299,14 @@ pub(super) fn wanted_mp_item(
         return None;
     }
     // A duellist with no restorative left and too little MP for its heal
-    // spell ([`duel_spell_heal`]) drinks the largest MP item: a Magic Fruit
+    // spell ([`spell_heal`]) drinks the largest MP item: a Magic Fruit
     // is four Spoons.
     if solo_duel(w) {
         let a = &w.actors.get(usize::from(actor))?.battle;
         if bag_can_heal(w)
             || a.hp == 0
             || u32::from(a.hp) * 5 >= u32::from(a.max_hp) * 3
-            || duel_spell_heal(w, actor).is_some()
+            || spell_heal(w, actor).is_some()
             || !knows_heal_spell(w, actor)
         {
             return None;
@@ -572,21 +583,31 @@ pub(super) fn wanted_spell(
     m: &legaia_engine_battle::battle_magic::BattleSpellSession,
 ) -> Option<usize> {
     use legaia_engine_battle::spells::SpellEffect;
-    // A duellist out of restoratives casts its heal ([`duel_spell_heal`]).
-    if let Some(heal) = duel_spell_heal(w, m.actor) {
+    // A heal spell worth casting ([`spell_heal`]) comes before any damage.
+    if let Some(heal) = spell_heal(w, m.actor) {
         return m.spells.iter().position(|r| r.id == heal && r.affordable);
     }
     // The continuous hand keeps half its MP for the fights it cannot run
-    // from: a random encounter is cast at only out of the upper half.
-    let floor = if continuous::PLAYS_ON.with(std::cell::Cell::get) && !w.battle.no_escape {
-        w.party
-            .roster
-            .members
-            .get(w.party_roster_slot(usize::from(m.actor)))
-            .map_or(0, |r| u32::from(r.hp_mp_sp().mp_max) / 2)
-    } else {
-        0
-    };
+    // from: a random encounter is cast at only out of the upper half. So is
+    // a staged fight short of a boss on the way to one: `taiku`'s P1[2]
+    // pair (1600 HP each) took Vahn from 197 MP to 24 two rooms before Zora,
+    // with no bed between and no MP item in the bag.
+    let saving = continuous::SAVING_FOR_BOSS.with(std::cell::Cell::get) && !boss_fight(w);
+    let floor =
+        if continuous::PLAYS_ON.with(std::cell::Cell::get) && (!w.battle.no_escape || saving) {
+            w.party
+                .roster
+                .members
+                .get(w.party_roster_slot(usize::from(m.actor)))
+                .map_or(0, |r| u32::from(r.hp_mp_sp().mp_max) / 2)
+        } else {
+            0
+        };
+    // Against a boss, a member who knows a party heal keeps the MP for two
+    // casts of it: one Spoon is ~1150 on each member, worth more than any
+    // summon it pays for, and a Vahn who spent his pool on two Viguros met
+    // Zora's (`taiku` P2[19]) third party-wide hit with three MP and a dry bag.
+    let floor = floor.max(heal_spell_reserve(w, m.actor));
     let mp = w
         .actors
         .get(usize::from(m.actor))
@@ -610,6 +631,36 @@ pub(super) fn wanted_spell(
         })
         .max_by_key(|&(_, p)| p)
         .map(|(i, _)| i)
+}
+
+/// The MP a member keeps back from damage spells in a boss fight
+/// ([`boss_fight`]) with allies beside it: two casts of the largest party
+/// heal it knows, `0` when it knows none.
+pub(super) fn heal_spell_reserve(w: &legaia_engine_core::world::World, actor: u8) -> u32 {
+    use legaia_engine_battle::spells::SpellEffect;
+    if w.party.party_count.clamp(1, 3) < 2 || !boss_fight(w) {
+        return 0;
+    }
+    let Some(m) = w
+        .party
+        .roster
+        .members
+        .get(w.party_roster_slot(usize::from(actor)))
+    else {
+        return 0;
+    };
+    let list = m.spell_list();
+    list.ids[..(list.count as usize).min(list.ids.len())]
+        .iter()
+        .filter_map(|&id| {
+            let d = w.tables.spell_catalog.get(id)?;
+            match d.effect {
+                SpellEffect::HealAll { amount } => Some((amount, u32::from(d.mp_cost))),
+                _ => None,
+            }
+        })
+        .max()
+        .map_or(0, |(_, cost)| cost * 2)
 }
 
 /// The element-affinity percent a Seru-magic cast lands with on the first
