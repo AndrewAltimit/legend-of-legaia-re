@@ -504,9 +504,12 @@ fn a_live_cast_stages_its_module_records() {
         // PROT 0905 makes four calls in arm 0, three in arm 4, two in arm 5,
         // two in arm 8 and five in arm 9 (`vera_direct`); its first staged
         // frame is arm 0's four. Its spawn stager `0x801F8078` - the move-VM
-        // op-`0x20` hook a record calls - seats `0x801F8568` eight at a time;
-        // no host runs that hook, so per-arm seating stages that record
-        // nowhere.
+        // op-`0x20` hook arm 5's first glow calls - seats `0x801F8568` eight
+        // at a time (`run_part_stager_calls`).
+        //
+        // PROT 0910, 0911 and 0913 report their arms' calls the same way
+        // (`swordie_direct`, `orb_direct`, `nova_direct`) and their stagers
+        // run off their parts' op-`0x20` calls too.
         //
         // PROT 0907's arms call `FUN_80021B04` (`nighto_direct`): two in arm
         // 4, one each in arms 5, 10 and 11. Its stager `0x801F7FA8` seats the
@@ -605,6 +608,53 @@ fn a_live_cast_stages_its_module_records() {
                 &[0x801F_81F4, 0x801F_8288, 0x801F_82CC, 0x801F_8310],
                 &[0x801F_7FE0, 0x801F_8094, 0x801F_8158],
             ),
+            // `0x801F8D0C` is stager arm 4's (called by arm 8's glow);
+            // `0x801F8C7C` is the slash routine `FUN_801F81DC`'s hit spark
+            // (`0x801F883C`), not reported; `0x801F90B0` is the one spawn of
+            // `0x801F8EAC`, PROT 0904's stager, residue in this image.
+            910 => (
+                vec![&cmc::SWORDIE_RING_SPAWNS, &cmc::SWORDIE_GLOW_SPAWNS],
+                &[0x801F_8A9C, 0x801F_8AF0, 0x801F_8BEC, 0x801F_8C34],
+                &[0x801F_8C7C, 0x801F_8D0C, 0x801F_90B0],
+            ),
+            // `0x801F8190` is the opening's star swarm (arm 2's rand-spread
+            // `FUN_80050ED4` loop and arm 3's mover), not seated.
+            911 => (
+                vec![
+                    &cmc::ORB_FLASH_SPAWNS,
+                    &cmc::ORB_RAY_SPAWNS,
+                    &cmc::ORB_HEAL_SPAWNS,
+                ],
+                &[0x801F_832C, 0x801F_8498],
+                &[0x801F_8190],
+            ),
+            913 => (
+                vec![
+                    &cmc::NOVA_VORTEX_SPAWNS,
+                    &cmc::NOVA_CLOUD_SPAWNS,
+                    &cmc::NOVA_WHIRLWIND_SPAWNS,
+                    &cmc::NOVA_LIFT_SPAWNS,
+                    &cmc::NOVA_LANDING_SPAWNS,
+                ],
+                &[0x801F_8850, 0x801F_8914, 0x801F_8960],
+                // Arm 8's calls (`0x801F73D4..0x801F7738`) are not reported;
+                // the stager's arms 3..5 (`0x801F8E88` / `0x801F8FCC` /
+                // `0x801F9088`) are called after the fold.
+                &[
+                    0x801F_89FC,
+                    0x801F_8A44,
+                    0x801F_8A8C,
+                    0x801F_8B04,
+                    0x801F_8B7C,
+                    0x801F_8BDC,
+                    0x801F_8C60,
+                    0x801F_8CE4,
+                    0x801F_8D68,
+                    0x801F_8E88,
+                    0x801F_8FCC,
+                    0x801F_9088,
+                ],
+            ),
             _ => panic!("PROT {entry} seats per arm but the test names no arm list"),
         };
         assert_eq!(
@@ -616,8 +666,17 @@ fn a_live_cast_stages_its_module_records() {
         // PROT 0907's and 0908's parts call their stager (op `0x20`), whose
         // arms seat more records off the calling part; every one of those
         // records is seated over the band, on top of the arms' own calls.
-        let stager_run = matches!(entry, 906 | 907 | 908 | 912);
-        if stager_run {
+        let stager_run = matches!(entry, 905 | 906 | 907 | 908 | 910 | 912);
+        // PROT 0911 and 0913 fold on their hit arms (9 / `0x13`), and a
+        // body-paced director hands a pass's calls over on the next arm's
+        // first tick, so this window closes before the later arms seat: it
+        // holds at least the first arm's calls.
+        if matches!(entry, 911 | 913) {
+            assert!(
+                *seated >= arms[0].len(),
+                "spell {id:#04x}: PROT {entry} seats at least its first arm's calls ({seated})"
+            );
+        } else if stager_run {
             assert!(
                 *seated > calls,
                 "spell {id:#04x}: PROT {entry} seats its arms' {calls} calls and its stager's"
