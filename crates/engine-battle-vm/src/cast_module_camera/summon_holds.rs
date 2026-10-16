@@ -12,7 +12,11 @@
 //! The director here is that gate and nothing else: it holds the phase
 //! while the arm's wait lasts, applies the arm's re-arm on the tick it lets
 //! the tick body run, and arms no camera (the modules' shot arms are not
-//! ported, so the battle camera keeps the band's framing). The phase walk,
+//! ported, so the battle camera keeps the band's framing) - for PROT 0919,
+//! 0924 and 0925. PROT 0918, 0922 and 0927 run full directors over these
+//! tables (`super::kemaro_direct`, `super::puera_direct`,
+//! `super::juggernaut_direct`) that add their camera, drift, spawn and
+//! caption writes. The phase walk,
 //! staging and outcome stay in the tick bodies in
 //! [`crate::cast_module_ticks`] and [`crate::cast_module_ticks::SPOON_CHAIN`],
 //! which own the arms that store a literal phase instead of `phase + 1`.

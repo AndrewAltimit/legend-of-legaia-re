@@ -2023,8 +2023,10 @@ their own image and open most arms on it: drain, store, return busy while it
 is positive, and on the tick it is not run the arm's writes, re-arm the word
 and advance. Their tick bodies are ported; the holds are
 `cast_module_camera::summon_holds`, one table per module, run as a director
-ahead of the body (it arms no camera, so the band keeps its framing). Each
-module's profile paces the band, so `0x36` lasts as long as the module.
+ahead of the body. For 0919, 0924 and 0925 the hold is the whole director:
+it arms no camera, so the band keeps its framing. 0918, 0922 and 0927 have
+full directors over the same tables ([below](#prot-0918-0922-and-0927-directors)).
+Each module's profile paces the band, so `0x36` lasts as long as the module.
 
 | PROT | word | drain | gate shapes beyond the plain countdown |
 |---|---|---|---|
@@ -2049,6 +2051,49 @@ matches the table within a battle frame. Arms retail runs at step `4` read
 up to twice their countdown in vsyncs: a frame that takes longer than four
 vsyncs still drains four vsyncs' worth, so those arms carry the lag of a
 scene the hardware cannot draw at speed, and the port keeps the countdown.
+
+### PROT 0918, 0922 and 0927 directors
+
+<a id="prot-0918-0922-and-0927-directors"></a>
+
+Kemaro (`0x90`), Puera (`0x94`) and Juggernaut (`0x99`) run a director
+over their hold tables that carries every camera write of the body, read off
+each image's own disassembly: the `FUN_801D829C` cuts on the arms' passes,
+and the drifts the arms add to the camera globals (pitch / yaw `0x8007B790`
+/ `0x8007B792`, TR `0x800840B8..C0`) on every pass, held or not - Puera's
+only while its countdown is still positive, since its drifts sit past the
+`blez`. Ports: `cast_module_camera::kemaro_direct`, `puera_direct`,
+`juggernaut_direct`. Juggernaut's cuts and drifts are PROT 0966's one for one
+(the Evil Seru Magic body is the same choreography, numbered differently).
+
+Each director reports its spawn calls, so the records are seated on the arm
+that makes the call rather than all at once on the stager's first tick.
+Every anchor is a literal stack trio or a seat: Puera's arm 13 seats two
+rings and its arm 18 a standing ring of 23, each point off the trig table the
+arm indexes. The fades are the presentation hook's, decoded off the image
+([Presentation calls](#presentation-calls)); the captions are the arms' own
+(`ModuleCaption::ModuleString` prints the string at the head of 0927's
+image, its attack name).
+
+Beside the directors an engine-side pass applies each arm's seat writes
+(`World::apply_kemaro_writes`, `apply_puera_writes`, `apply_juggernaut_writes`):
+
+| PROT | Writes |
+|---|---|
+| 0918 | the victim moved to `(0, -0x800)` and back, hidden and re-shown; the creature's spin as it grows (`facing = +0x72 * 6`), its landing at `z = 0x400`; `ctx[+0x278] = 2` on arm 4, `3` on arm 16 |
+| 0922 | the monsters re-formed at half their alternate-family seats and restored on arm 24; the creature's sink, its ring pose `(0, -0x1100, -0x1100)` and rise; the part halts each arm makes by handle; `ctx[+0x278]` `0` / `2` / `0` on arms 0 / 11 / 12, and `3` from the stager, which only its parts' op-`0x20` calls reach |
+| 0927 | `ctx[+0x278] = 3` and the backdrop pair dropped on arm 0; the monster row re-formed off `0x80077628` and restored; party and monsters hidden and re-shown; the creature's clips and rates; its emergence clipped by object-effect row 1 (`+0x42 = 2`); the pool flushes of arms 26 / 27; its stager run off the parts' calls (spawn arms, the salmon fades, the shake word `0x801F9C90` the epilogue runs down on TR y, and arm 4's sweep, which lands the outcome) |
+
+`ctx[+0x278]` bit 0 with the stage ambient on its floor also takes the
+ground grid off the screen
+([battle-stage-camera.md](battle-stage-camera.md#near-colour-and-depth-cue)),
+which is the black stage of Juggernaut's summoning.
+
+Not carried: Kemaro's arm-4 and Puera's arms-14 / 15 TR y shakes (absolute
+stores on alternate passes), Kemaro's arm-12 absolute pose store and the
+heights its arms 13..17 walk the arm-9 parts through, Puera's arm-19 `rand()`
+scatter, the monsters' half render scale under 0927 (`+0x72 = 0x800`), and
+0927's second, kill-capable hit at arm 26: the band folds the cast once.
 
 ### PROT 0948 (Cross Beam)
 
