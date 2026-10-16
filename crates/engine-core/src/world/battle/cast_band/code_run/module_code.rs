@@ -108,6 +108,11 @@ impl World {
         // The module countdown this pass opens on (PROT 0922's seat writes
         // read it).
         let countdown_before = self.casting.module_cam.countdown.0;
+        // PROT 0916's arm-0 kill roll, drawn once per cast ahead of its
+        // director.
+        if entry == legaia_engine_battle_vm::cast_module_camera::ALURU_ENTRY {
+            self.draw_aluru_verdict(caster_slot, victim_slot, spell_id);
+        }
         let direction = if has_trampoline {
             None
         } else {
@@ -128,6 +133,8 @@ impl World {
                         Some(a) if a.battle.hp == 0 => a.battle.render_color == 0 || !a.active,
                         _ => self.chain_seat_settled(s, false),
                     });
+                // PROT 0916's arm `0x14` settle poll on the latched victim.
+                st.victim_settled = self.chain_seat_settled(usize::from(latched), true);
                 let d = direct(&mut st, ctx.phase, seats);
                 self.store_module_cam(st);
                 d
@@ -1179,6 +1186,11 @@ impl World {
         if entry == 908 && phase_in == ticks_a::ZENOIR_SHATTER_ARM {
             let latched = self.casting.module_cam.victim_slot.unwrap_or(victim_slot);
             self.zenoir_shatter(latched);
+        }
+        // PROT 0916's HP and colour-word stores, after the views' fold-back
+        // like PROT 0908's.
+        if entry == legaia_engine_battle_vm::cast_module_camera::ALURU_ENTRY {
+            self.apply_aluru_writes(phase_in, ctx.phase != phase_in, victim_slot, seat_slot);
         }
         // PROT 0948's beam: arm 2 zeroes the builder's counter as it passes,
         // and arm 3 calls the builder (`jal 0x801F726C` at `0x801F6EF4`)

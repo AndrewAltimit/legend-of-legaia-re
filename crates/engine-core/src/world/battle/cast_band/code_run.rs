@@ -1,6 +1,7 @@
 use super::*;
 
 mod actor_state;
+mod aluru_writes;
 mod band_word;
 mod juggernaut_writes;
 mod kemaro_writes;

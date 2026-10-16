@@ -515,63 +515,6 @@ fn delta_gate(st: &mut ModuleCamState, rearm: i32) -> bool {
     false
 }
 
-/// PROT 0916 (Aluru): with `h` the heading from the victim to the caster
-/// turned half round, a cut at arm 0 - pitch `-0x80`, yaw `0x800 - h`, TR
-/// `(0, 0x400, 0x800)`, on the point half a unit from the victim along `h`
-/// (`0x801F6C00..0x801F6CCC`). Arm 1 is the stream request; it skips arm 2
-/// when the band timer is already spent, and arm 2 otherwise waits for it -
-/// folded here into arm 2's gate, one tick later. Arm 3 (the CD poll) arms
-/// the band timer `ctx[+0x6D8] = scalar * 20`, which arm 4 drains by
-/// `scalar * delta` while it stays non-negative (`bgez`); this director keeps
-/// that word in its own countdown. Arm 4 then seats the creature half a unit
-/// from the victim along `h`, facing `h`, and frames it - pitch `0`, yaw
-/// `0x800 - h`, TR `(0, 0x500, 0x400)` over `0x80` frames
-/// (`0x801F7040..0x801F7190`). Parks at arm 5.
-///
-/// PORT: overlay_summon_aluru_0916_801f69f8 (PROT 0916; camera arms 0 and 4, the arm 2 wait and the arm 4 countdown)
-pub fn aluru_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) -> ArmDirection {
-    let v = seats.victim;
-    let h = heading(v, seats.caster).wrapping_add(0x800) & 0xFFF;
-    let (sin, cos) = trig12(h);
-    match phase {
-        0 => cut(
-            [-0x80, yaw_from(0x800, h), 0],
-            [0, 0x400, 0x800],
-            [
-                (half(sin) - i32::from(v.x)) as i16,
-                0,
-                (half(cos) - i32::from(v.z)) as i16,
-            ],
-            1,
-        ),
-        1 => ArmDirection::PASS,
-        2 => gate(seats.band_timer != 0),
-        3 => {
-            st.countdown.0 = SPEED_SCALAR * 20;
-            ArmDirection::PASS
-        }
-        4 => {
-            if st.countdown.drain_non_negative() {
-                return ArmDirection::HOLD;
-            }
-            let creature = ModuleSeat {
-                x: (i32::from(v.x) - half(sin)) as i16,
-                y: 0,
-                z: (i32::from(v.z) - half(cos)) as i16,
-                facing: h,
-            };
-            st.creature = Some(creature);
-            cut(
-                [0, yaw_from(0x800, h), 0],
-                [0, 0x500, 0x400],
-                focus_on(creature),
-                0x80,
-            )
-        }
-        _ => ArmDirection::PARK,
-    }
-}
-
 /// PROT 0921 (Iota): a cut at arm 0 - pitch `0`, yaw `0x800`, TR
 /// `(0, 0x400, 0x800)` on the stage origin (`0x801F6C38`) - arming the
 /// countdown `0x801F8CB0 = scalar << 6`. While the word is positive arms 1..3

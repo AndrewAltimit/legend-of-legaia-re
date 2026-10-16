@@ -225,6 +225,26 @@ pub struct ModuleCamState {
     /// branch a targetable victim takes (`bne v0,zero,0x801F7D9C` at
     /// `0x801F7C04`).
     pub victim_untargetable: bool,
+    /// A module's arm-0 kill verdict as the host drew it, held for the whole
+    /// cast: `Some(true)` on the kill path. PROT 0916's word `0x801F9010`
+    /// (`0` kills) picks between arm `0x11`'s instant kill and arm `0x12`'s
+    /// damage. `None` until the host has drawn it.
+    pub kill: Option<bool>,
+    /// The spread the module's inline light bands draw at on this pass
+    /// (PROT 0916's arms `0x11..=0x13`), `None` on a pass that draws none.
+    /// The director rewrites it every pass.
+    pub band_spread: Option<i16>,
+    /// The creature seat's `+0x1BA` colour word as the module's arms own it
+    /// (PROT 0916 arms 4..6 assemble the creature), `None` while no arm has
+    /// written it. The host mirrors it onto the seat.
+    pub creature_shatter: Option<u16>,
+    /// What the arm adds to the victim's `+0x1BA` on this pass (PROT 0916's
+    /// arm `0x13` breaks a killed victim up). Rewritten every pass.
+    pub victim_shatter_step: u16,
+    /// The host's answer to a victim-settle poll (PROT 0916's arm `0x14`):
+    /// a dead victim's playing clip back to `0`, a living one's tint word
+    /// `+0x04` cleared.
+    pub victim_settled: bool,
 }
 
 /// `FUN_801D5854(7, 6)` out of a module arm: the action SM's own case-6
@@ -787,6 +807,7 @@ pub(super) fn focus_on(seat: ModuleSeat) -> [i16; 3] {
     [seat.x.wrapping_neg(), 0, seat.z.wrapping_neg()]
 }
 
+mod aluru;
 mod body_paced;
 pub mod capture;
 pub mod capture_countdown;
@@ -804,6 +825,7 @@ pub mod summon_holds;
 mod swordie;
 mod theeder_gizam;
 mod viguro;
+pub use aluru::*;
 pub use capture::*;
 pub use capture_countdown::{ArmCountdown, CountdownWrite, arm_countdown, capture_arm_countdowns};
 pub use creature::*;
@@ -973,7 +995,14 @@ pub fn module_profile(prot_entry: u32) -> Option<ModuleProfile> {
         928 => Some(ModuleProfile::camera_only(palma_direct)),
         930 => Some(ModuleProfile::camera_only(horn_direct).seated_at(930)),
         931 => Some(ModuleProfile::camera_only(jedo_direct)),
-        916 => Some(ModuleProfile::camera_only(aluru_direct).seated_at(916)),
+        // PROT 0916's director carries the whole chain; the damage path's
+        // hit lands once the phase passes arm `0x12`, and the kill path's
+        // HP store is the host's at arm `0x11`.
+        916 => Some(
+            ModuleProfile::director_body(aluru_direct, ALURU_HIT_ARM)
+                .with_staged_spawns()
+                .seated_at(916),
+        ),
         921 => Some(ModuleProfile::camera_only(iota_direct).seated_at(921)),
         929 => Some(ModuleProfile::camera_only(mule_direct)),
         932 => Some(ModuleProfile::camera_only(meta_direct).seated_at(932)),

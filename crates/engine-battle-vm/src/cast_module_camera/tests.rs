@@ -424,11 +424,11 @@ fn walk_director(
     panic!("director never parked");
 }
 
-/// The six summon-creature directors read off PROT 0916 / 0921 / 0929 /
+/// The summon-creature directors read off PROT 0921 / 0929 /
 /// 0932 / 0933 / 0934 are registered as camera-only and each parks.
 #[test]
 fn summon_creature_directors_are_camera_only_and_park() {
-    for (entry, park) in [(916, 5), (921, 5), (929, 3), (932, 6), (933, 5), (934, 5)] {
+    for (entry, park) in [(921, 5), (929, 3), (932, 6), (933, 5), (934, 5)] {
         let p = module_profile(entry).expect("registered");
         assert!(p.owns_phase && p.hit_arm.is_none(), "PROT {entry}");
         let (arms, _) = walk_director(p.direct, seats());
@@ -473,23 +473,146 @@ fn meta_swings_until_its_word_falls_below_0x41() {
     assert_eq!(arm4.tr, [-0x5C8, 0x600, -0x1000]);
 }
 
+/// Walk a director that carries its whole chain to `0xFF`, honouring its
+/// phase jumps. Returns the passes each arm dwelt, every shot with its arm,
+/// every direction with its arm, and the director state it ended on.
+type BodyWalk = (
+    std::collections::BTreeMap<u8, u32>,
+    Vec<(u8, ModuleShot)>,
+    Vec<(u8, ArmDirection)>,
+    ModuleCamState,
+);
+
+fn walk_body(direct: ModuleDirector, seats: ModuleCamSeats, mut st: ModuleCamState) -> BodyWalk {
+    let mut phase = 0u8;
+    let mut dwell = std::collections::BTreeMap::<u8, u32>::new();
+    let mut shots = Vec::new();
+    let mut passes = Vec::new();
+    for _ in 0..20_000 {
+        if phase == crate::seru_magic_ticks::SERU_B_DONE_PHASE {
+            return (dwell, shots, passes, st);
+        }
+        let d = direct(&mut st, phase, seats);
+        assert!(!d.park, "arm {phase} parks");
+        *dwell.entry(phase).or_default() += 1;
+        if let Some(s) = d.shot {
+            shots.push((phase, s));
+        }
+        passes.push((phase, d));
+        if !d.hold {
+            phase = d.jump.unwrap_or(phase + 1);
+        }
+    }
+    panic!("director never reached 0xFF");
+}
+
 /// Aluru frames a point half a unit off the victim along the reversed
 /// victim-to-caster heading, then seats its creature there and frames it.
 #[test]
 fn aluru_frames_the_victim_then_its_creature() {
     let s = seats();
-    let (arms, shots) = walk_director(aluru_direct, s);
+    let mut st = ModuleCamState::default();
     let h = heading(s.victim, s.caster).wrapping_add(0x800) & 0xFFF;
     let (sin, cos) = trig12(h);
-    let arm0 = shots[0].1;
+    let arm0 = aluru_direct(&mut st, 0, s).shot.unwrap();
     assert_eq!(arm0.angles, [-0x80, yaw_from(0x800, h), 0]);
     assert_eq!(arm0.focus[0], (half(sin) - i32::from(s.victim.x)) as i16);
     assert_eq!(arm0.focus[2], (half(cos) - i32::from(s.victim.z)) as i16);
-    // The band timer `scalar * 20` drains `scalar` a tick under `bgez`.
-    assert_eq!(arms[4], 21);
+    // A spent band timer skips arm 2 (`addiu v0,a0,0x2` at `0x801F6F00`).
+    assert_eq!(aluru_direct(&mut st, 1, s).jump, Some(3));
+    let settled = ModuleCamState {
+        victim_settled: true,
+        ..Default::default()
+    };
+    let (dwell, shots, _, _) = walk_body(aluru_direct, s, settled);
+    // The band word `scalar * 20` drains `scalar` a tick under `bgez`.
+    assert_eq!(dwell[&4], 21);
     let arm4 = shots.iter().find(|(a, _)| *a == 4).unwrap().1;
     assert_eq!(arm4.frames, 0x80);
     assert_eq!(arm4.focus[0], (half(sin) - i32::from(s.victim.x)) as i16);
+}
+
+/// Aluru's chain reaches `0xFF` on both paths: the damage path steps
+/// through arms `0x12`, `0x13` and `0x14`, the kill path leaves `0x13` for
+/// `0xFF`. The band word grows `scalar` a tick, so arm `0x12` lasts until it
+/// passes `scalar * 32` and arm `0x13` until it passes `scalar * 192`.
+#[test]
+fn aluru_walks_both_paths_to_0xff_with_the_band_word_dwell() {
+    let profile = module_profile(ALURU_ENTRY).expect("directed");
+    assert!(profile.director_body && profile.paces_band() && profile.stages_spawns);
+    assert_eq!(profile.hit_arm, Some(ALURU_HIT_ARM));
+    let damage = ModuleCamState {
+        kill: Some(false),
+        victim_settled: true,
+        ..Default::default()
+    };
+    let (dwell, shots, passes, _) = walk_body(aluru_direct, seats(), damage);
+    assert_eq!(dwell[&ALURU_HIT_ARM], 33);
+    assert_eq!(dwell[&ALURU_SPREAD_ARM], 160);
+    assert_eq!(dwell[&ALURU_SETTLE_ARM], 1);
+    // Arm 5 drains the creature's colour word `0x800` to `0x400`, arm 6 on
+    // to `0`, `scalar` a tick.
+    assert_eq!(dwell[&5], 0x400 / MODULE_DRAIN_PER_TICK as u32);
+    assert_eq!(dwell[&6], 0x400 / MODULE_DRAIN_PER_TICK as u32);
+    // The spell name, then the attack name, then the clear on the hit.
+    let captions: Vec<(u8, ModuleCaption)> = passes
+        .iter()
+        .filter_map(|(a, d)| d.caption.map(|c| (*a, c)))
+        .collect();
+    assert_eq!(
+        captions,
+        vec![
+            (6, ModuleCaption::SpellName),
+            (7, ModuleCaption::AttackName),
+            (ALURU_HIT_ARM, ModuleCaption::Cleared),
+        ]
+    );
+    let settle = shots
+        .iter()
+        .find(|(a, _)| *a == ALURU_SETTLE_ARM)
+        .unwrap()
+        .1;
+    assert_eq!(settle.angles[0], 0x40);
+    assert_eq!(settle.frames, 0x10);
+    // The kill path never reaches arm 0x14, and breaks the victim up on
+    // every pass of arm 0x13.
+    let kill = ModuleCamState {
+        kill: Some(true),
+        ..Default::default()
+    };
+    let (dwell, _, passes, _) = walk_body(aluru_direct, seats(), kill);
+    assert!(!dwell.contains_key(&ALURU_SETTLE_ARM));
+    assert_eq!(dwell[&ALURU_SPREAD_ARM], 160);
+    assert!(
+        passes
+            .iter()
+            .filter(|(a, _)| *a == ALURU_SPREAD_ARM)
+            .all(|(_, d)| d.jump.is_none_or(|j| j == 0xFF))
+    );
+}
+
+/// The bands draw once at rest on arm `0x11`'s passing tick and then on
+/// every pass of `0x12` / `0x13`, spread by the band word over 24.
+#[test]
+fn aluru_band_spread_follows_the_band_word() {
+    let mut st = ModuleCamState {
+        kill: Some(false),
+        ..Default::default()
+    };
+    let d = aluru_direct(&mut st, ALURU_BLAST_ARM, seats());
+    assert!(!d.hold && d.kills_fades);
+    assert_eq!(st.band_spread, Some(0));
+    for k in 1..=10 {
+        let _ = aluru_direct(&mut st, ALURU_HIT_ARM, seats());
+        assert_eq!(st.countdown.0, k * MODULE_DRAIN_PER_TICK);
+        assert_eq!(
+            st.band_spread,
+            Some((k * MODULE_DRAIN_PER_TICK / 24) as i16)
+        );
+    }
+    let _ = aluru_direct(&mut st, 8, seats());
+    assert_eq!(st.band_spread, None, "a non-band arm draws none");
+    assert_eq!(aluru_band_spread(0xFFE8), -1);
 }
 
 /// Iota pulls TR z in by the drain while its word runs and only passes arm

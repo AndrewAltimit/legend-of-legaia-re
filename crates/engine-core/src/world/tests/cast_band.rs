@@ -6,6 +6,7 @@
 use super::*;
 use legaia_engine_mode::mode::SceneMode;
 
+mod aluru;
 mod band_flow;
 mod fight_kind_gates;
 mod hit_folds;
