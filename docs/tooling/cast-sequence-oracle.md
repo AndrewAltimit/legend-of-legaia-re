@@ -59,8 +59,9 @@ category). Retail pages the module in and runs it on retail bytes. From the
 caster's cast begin (`0x28`) it grabs `PCSX.GPU.takeScreenShot()` every
 `--every` vsyncs. From the inject it writes one `meta.csv` row per vsync:
 `ctx[+0x07]`, `ctx[+0x279]`, the acting seat, the frame step `*(0x1F800393)`,
-the `ctx[+0x6D8]` / `+0x6DA` / `+0x87C` words, PROT 0903's countdown, and every
-seat's HP. At cast begin it also logs each pool slot's ground pair
+the `ctx[+0x6D8]` / `+0x6DA` / `+0x87C` words, PROT 0903's countdown, every
+seat's HP, and the main loop's frame counter `gp+0x480` (`frame`, read at
+`0x8007B798`). At cast begin it also logs each pool slot's ground pair
 `+0x34` / `+0x38` (`done.txt`). The run uses the recompiler (`--fast`) unless a
 formation is forced, and `run_probe.sh` stages the disc in a private directory,
 so no `.ppf` beside the image reaches it.
@@ -106,16 +107,63 @@ Frames pair on the action-SM clock, never on wall time:
    just ran and takes no lag. On a cast whose close-up the engine already
    matches, `auto` scores those segments higher than a fixed lag of `0`, `2`,
    `6` or `10`; a re-score with `--score-only --retail-lag` repeats that check.
-4. **Offset.** A retail frame `k` vsyncs into its segment pairs with the engine
-   frame `k` ticks into the aligned segment, clamped to that segment's last
-   tick. An engine arm that ends early is compared at its last frame for the
-   rest of retail's arm, which is what a viewer would see.
+4. **Offset.** A retail frame `k` vsyncs into its segment, measured on the
+   [game clock](#the-game-clock), pairs with the engine frame `k` ticks into
+   the aligned segment, clamped to that segment's last tick. An engine arm
+   that ends early is compared at its last frame for the rest of retail's
+   arm, which is what a viewer would see.
 
 Each pair is scored with the corpus metric (`within`, the fraction of `8 x 8`
 blocks within `24` per channel; [The image channel](retail-compare.md#the-image-channel)).
 A pair whose retail frame has mean luma above `230` (a white flash) or below
 `8` (a fade) goes into its own count and stays out of the mean. The cast's
 number is the **mean `within` over the remaining scene pairs**.
+
+## The game clock
+
+Retail's frames do not all last their step. The frame driver `FUN_80016B6C`
+sets the step from the slowest of the last sixteen frames, capped at `4`
+([the frame step](../subsystems/battle-stage-camera.md#the-battle-frame-step-is-the-frames-own-cost)),
+and paces the loop with `VSync(step)`. A frame that costs more than `4`
+vsyncs, or more than the step the ring has not caught up to yet, takes longer:
+its timers still drain one step, so on wall vsyncs retail's arm runs long
+while its game time does not. The emulator's GPU and CPU cost model decides
+which frames overrun; nothing in the game state the engine carries does, so
+the engine does not reproduce it.
+
+The probe records the frame counter on every vsync. A run of one counter value
+is one game frame of `L` vsyncs, its step the byte its last row reads. The
+**game clock** adds the step per frame, spread evenly over the frame's rows,
+so an overrunning frame advances it by its step, not by `L`. The pairing
+measures retail's offset into a segment on that clock, and the engine's tick
+(one vsync, no overrun) on its own. A capture without the `frame` column
+pairs on wall vsyncs, and the report says which clock it used.
+
+The segment table shows both: `retail vsyncs` (wall), `retail game` (the
+clock), and `slow frames`, the frames that ran past their step and the vsyncs
+they ran over by. The overrun sits in the heavy effect arms, almost all of it
+in frames at step `4` that take `5` to `12` vsyncs, plus a few frames at
+step `1` that take `3` to `8` on the pass a heavy arm starts, before the ring
+has caught up. Measured on the `party_basic_attack_vs_gobu_gobu` captures
+(target seat `0` for `0x83` and `0x89`), each run paced on the step the run
+before it reads:
+
+| Cast | Overrun in all | Module phases that carry most of it |
+|---|---:|---|
+| `0x81` Gimard | 143 | 12 (+78), 4 (+37) |
+| `0x82` Theeder | 42 | 5 (+16), 14 (+11) |
+| `0x83` Vera | 161 | 5 (+89), 8 (+45) |
+| `0x84` Gizam | 208 | 13 (+148), 5 (+55) |
+| `0x85` Nighto | 18 | 5 (+6) |
+| `0x86` Zenoir | 238 | 12 (+122), 5 (+104) |
+| `0x87` Viguro | 111 | 12 (+77), 14 (+26) |
+| `0x88` Swordie | 168 | 7 (+91), 9 (+71) |
+| `0x89` Orb | 73 | 10 (+66) |
+| `0x8A` Freed | 350 | 13 (+108), 8 (+64), 9 (+60) |
+| `0x8B` Nova | 495 | 4 (+131), 16 (+105), 7 (+60), 15 (+57) |
+| `0x90` | 190 | 8 (+116), 12 (+32) |
+| `0x94` | 298 | 19 (+64), 18 (+37), 20 (+37) |
+| `0x99` | 568 | 24 (+191), 25 (+90), 19 (+74), 23 (+61) |
 
 ## Reading the report
 
@@ -145,8 +193,8 @@ offset, both states, class, `within`, `mae`, both lumas) for scripts.
   module owns the camera (`0x28..=0x34`) can part on framing alone.
 - **One tick is one vsync on the engine side.** The engine's battle state
   machine is not on retail's frame step, so a segment's length is compared in
-  vsyncs. Retail's arms that count in passes run `step` times longer than the
-  pass count.
+  vsyncs of game time. Retail's arms that count in passes (not in drained
+  steps) run `step` times longer than the pass count.
 - **Damage and RNG are not aligned.** Popups and HP readouts can differ.
 - **A forced formation is retail-only.** See the flag table.
 - **A monster cast does not inject yet.** The probe writes the monster's

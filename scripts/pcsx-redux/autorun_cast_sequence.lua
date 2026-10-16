@@ -21,8 +21,9 @@
 --   meta.csv     one row per vsync from the inject: the action-SM state, the
 --                module phase ctx[+0x279], the acting seat, the adaptive
 --                frame step *(0x1F800393), the countdown / camera words the
---                capture gates use, and every seat's HP. `shot` names the
---                frame taken on that vsync, if any.
+--                capture gates use, every seat's HP, and the main loop's
+--                frame counter `frame` (gp+0x480). `shot` names the frame
+--                taken on that vsync, if any.
 --   r_<vsync>.raw  PCSX.GPU.takeScreenShot() pixels (BGR555, or BGR888 when
 --                `bpp` says 24); width / height / bpp are on the meta row.
 --   manifest.txt the run's knobs.
@@ -88,6 +89,10 @@ local GIMARD_CD    = 0x801F7960   -- PROT 0903's module countdown word
 local function u8(a)  return probe.read_u8(a)  or 0 end
 local function u16(a) return probe.read_u16(a) or 0 end
 local function u32(a) return probe.read_u32(a) or 0 end
+-- The main loop's frame counter gp+0x480 (gp = 0x8007B318): FUN_80016B6C
+-- bumps it once per pass (`sw v0,0x480(gp)` at 0x80016BA8), so the vsyncs
+-- between two of its values are what one game frame really took.
+local FRAME_COUNTER = 0x8007B798
 local function s32(a)
     local v = u32(a)
     if v >= 0x80000000 then v = v - 0x100000000 end
@@ -167,7 +172,7 @@ probe.run({
         })
         meta = probe.csv_open(probe.out_path("meta.csv"),
             "vsync,st7,phase,acting,step,flow,c6d8,c6da,c87c,cd7960,loader," ..
-            "hp0,hp1,hp2,hp3,hp4,hp5,hp6,hp7,shot,w,h,bpp")
+            "hp0,hp1,hp2,hp3,hp4,hp5,hp6,hp7,shot,w,h,bpp,frame")
         if FORCE_ROW ~= "" then
             -- FUN_801DA600 returns the formation row in v0; rewriting its
             -- bytes on the return seats the forced monsters.
@@ -271,11 +276,11 @@ probe.run({
             local a = actor(s)
             hp[#hp + 1] = a and u16(a + 0x14C) or -1
         end
-        meta:row("%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%s,%d,%d,%d",
+        meta:row("%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%s,%d,%d,%d,%d",
             elapsed, st7, u8(cx + 0x279), acting, probe.read_scratch_u8(0x1F800393),
             u8(cx + 6), u16(cx + 0x6D8), u16(cx + 0x6DA), u32(cx + 0x87C), s32(GIMARD_CD),
             u8(LOADER_ID), hp[1], hp[2], hp[3], hp[4], hp[5], hp[6], hp[7], hp[8],
-            shot, w, h, bpp)
+            shot, w, h, bpp, u32(FRAME_COUNTER))
         -- The module phase counts as movement: a slot-B module runs every
         -- arm inside one band state.
         local park_key = st7 * 256 + u8(cx + 0x279)

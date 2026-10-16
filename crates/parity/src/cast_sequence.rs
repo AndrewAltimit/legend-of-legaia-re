@@ -7,8 +7,8 @@
 //! probe `autorun_cast_sequence.lua`, the engine through `play-window`'s
 //! `LEGAIA_DIAG_CAST_SEQ` recorder. Each side writes a directory holding
 //! `meta.csv` (one row per vsync / tick: the action-SM state `ctx[+0x07]`,
-//! the module phase `ctx[+0x279]`, the acting seat, retail's frame step) and
-//! its frames.
+//! the module phase `ctx[+0x279]`, the acting seat, retail's frame step and
+//! main-loop frame counter) and its frames.
 //!
 //! # Pairing
 //!
@@ -26,9 +26,11 @@
 //!    earlier (retail double-buffers its packet pools; the displayed frame is
 //!    two game frames, `2 * *(0x1F800393)` vsyncs, older than the RAM - see
 //!    `retail-compare.md`, "Replayed casts"). It is keyed on the row at
-//!    `v - lag`, `k` vsyncs into its segment, and paired with the engine
-//!    frame `k` ticks into the aligned engine segment, clamped to that
-//!    segment's end. The engine renders the tick it just ran: no lag.
+//!    `v - lag`, `k` vsyncs of game time into its segment
+//!    ([`Side::game_clock`]: a retail frame that ran past its step counts
+//!    its step, not the vsyncs it took), and paired with the engine frame
+//!    `k` ticks into the aligned engine segment, clamped to that segment's
+//!    end. The engine renders the tick it just ran: no lag.
 //!
 //! # Score
 //!
@@ -94,6 +96,10 @@ pub struct Row {
     pub phase: u8,
     /// Retail's adaptive frame step `*(0x1F800393)`; `0` on the engine side.
     pub step: u8,
+    /// Retail's main-loop frame counter `gp+0x480` (`frame` column), when
+    /// the probe recorded it: the vsyncs between two values are what one
+    /// game frame really took.
+    pub frame: Option<u32>,
     /// The frame recorded on this row, if any.
     pub shot: Option<String>,
     /// Pixel geometry of a retail shot (`width`, `height`, `bpp`).
@@ -166,6 +172,7 @@ impl Side {
                 st7: field(r, "st7").unwrap_or(0),
                 phase: field(r, "phase").unwrap_or(0),
                 step: field(r, "step").unwrap_or(0),
+                frame: field(r, "frame"),
                 shot,
                 geom: (
                     field(r, "w").unwrap_or(FRAME_W),
@@ -198,6 +205,84 @@ impl Side {
             }
         }
         out
+    }
+
+    /// The **game clock** at every row: vsyncs of game time, the frame step
+    /// summed over the game frames run so far.
+    ///
+    /// A game frame lasts `step` vsyncs when it keeps to the step its timers
+    /// drain by, and longer when it overruns: the frame driver's `VSync(step)`
+    /// (`0x800171C0`) then returns on the next vsync after the late frame
+    /// ends, so the frame took `L > step` vsyncs while every drain still
+    /// counted `step`. The game clock advances `step` per frame however long
+    /// the frame took, spread evenly over its rows, so a slow retail frame
+    /// costs no game time. The engine ticks once a vsync with no overrun, so
+    /// its clock is its tick.
+    ///
+    /// `None` without the `frame` column (the engine, or an older capture).
+    pub fn game_clock(&self) -> Option<Vec<u64>> {
+        let runs = self.frame_runs()?;
+        let mut out = Vec::with_capacity(self.rows.len());
+        let mut base = 0u64;
+        for (i, j, step) in runs {
+            let len = (j - i) as u64;
+            let step = u64::from(step);
+            for k in 0..len {
+                out.push(base + k * step / len);
+            }
+            base += step;
+        }
+        Some(out)
+    }
+
+    /// The rows cut into game frames: `(first row, end row, step)` per run of
+    /// one frame-counter value, `None` without the `frame` column.
+    ///
+    /// A run is the vsyncs between two counter bumps. The frame driver bumps
+    /// the counter at its head (`0x80016BA8`), computes the next step into
+    /// `0x1F800393`, waits `VSync(*(0x1F800392))` - the step the frame just
+    /// drained by - and only then copies the new step down (`0x800171C0` /
+    /// `0x800171D8`). So the wall time between two bumps is the wait of the
+    /// frame *before* the run plus this frame's work, and the step it is
+    /// paced on is the one the previous run's last row reads.
+    fn frame_runs(&self) -> Option<Vec<(usize, usize, u8)>> {
+        if self.rows.iter().any(|r| r.frame.is_none()) {
+            return None;
+        }
+        let mut out = Vec::new();
+        let mut i = 0;
+        let mut paced: Option<u8> = None;
+        while i < self.rows.len() {
+            let f = self.rows[i].frame;
+            let mut j = i;
+            while j < self.rows.len()
+                && self.rows[j].frame == f
+                && self.rows[j].t == self.rows[i].t + (j - i) as u64
+            {
+                j += 1;
+            }
+            let own = self.rows[j - 1].step.max(1);
+            out.push((i, j, paced.unwrap_or(own)));
+            paced = Some(own);
+            i = j;
+        }
+        Some(out)
+    }
+
+    /// Each game frame's real length against its step: `(first row time,
+    /// vsyncs taken, step)` for every frame whose rows the recording holds
+    /// whole. Empty without the `frame` column.
+    pub fn frames(&self) -> Vec<(u64, u64, u8)> {
+        let Some(runs) = self.frame_runs() else {
+            return Vec::new();
+        };
+        let n = runs.len();
+        runs.into_iter()
+            .enumerate()
+            // The first and last frame may be cut by the recording's ends.
+            .filter(|&(k, _)| k > 0 && k + 1 < n)
+            .map(|(_, (i, j, step))| (self.rows[i].t, (j - i) as u64, step))
+            .collect()
     }
 
     fn row_at(&self, t: u64) -> Option<&Row> {
@@ -338,7 +423,10 @@ pub struct Pair {
     pub shown_vsync: u64,
     pub engine_tick: u64,
     pub key: Key,
-    /// Vsyncs into the retail segment.
+    /// How far into the retail segment the shown row sits: game-clock
+    /// vsyncs ([`Side::game_clock`]) when the capture carries the frame
+    /// counter, wall vsyncs otherwise. The engine frame paired with it is
+    /// the same count of ticks into its segment.
     pub into: u64,
     pub retail_st7: u8,
     pub engine_st7: u8,
@@ -354,6 +442,16 @@ pub struct Pair {
 pub struct SegmentReport {
     pub key: Key,
     pub retail_len: Option<u64>,
+    /// The retail segment's length on the game clock: its wall length less
+    /// the vsyncs its slow frames ran past their step.
+    #[serde(default)]
+    pub retail_game_len: Option<u64>,
+    /// Retail game frames inside the segment that took longer than their
+    /// step, and the vsyncs they ran over by in all.
+    #[serde(default)]
+    pub overrun_frames: usize,
+    #[serde(default)]
+    pub overrun_vsyncs: u64,
     pub engine_len: Option<u64>,
     pub pairs: usize,
     /// Mean `within` over the segment's scene pairs.
@@ -365,6 +463,10 @@ pub struct SegmentReport {
 pub struct Report {
     pub label: String,
     pub lag: Lag,
+    /// Whether retail frames were placed on the game clock
+    /// ([`Side::game_clock`]) rather than on wall vsyncs.
+    #[serde(default)]
+    pub game_clock: bool,
     /// Mean `within` over the scene pairs (neither near-white nor near-black):
     /// the cast's single number.
     pub mean_within: f64,
@@ -413,6 +515,21 @@ pub fn compare(
     };
     let rs = retail.segments();
     let es = engine.segments();
+    // Retail's game clock, where the capture carries the frame counter: a
+    // slow frame (one that ran past its step) then advances the pairing by
+    // the step it drained, not by the vsyncs it took, so retail's overrun is
+    // not scored as an engine that ran ahead.
+    let clock = retail.game_clock();
+    let game = |t: u64| -> u64 {
+        clock
+            .as_ref()
+            .and_then(|c| {
+                let i = retail.rows.binary_search_by_key(&t, |r| r.t).ok()?;
+                c.get(i).copied()
+            })
+            .unwrap_or(t)
+    };
+    let frames = retail.frames();
     let aligned = align(&rs, &es);
     let to_engine: BTreeMap<usize, usize> = aligned.iter().copied().collect();
     let engine_shots: BTreeMap<u64, &Row> = engine
@@ -445,7 +562,7 @@ pub fn compare(
             continue;
         };
         let (rseg, eseg) = (&rs[ri], &es[ei]);
-        let into = shown - rseg.start;
+        let into = game(shown).saturating_sub(game(rseg.start));
         let want = eseg.start + into.min(eseg.len() - 1);
         // The engine frame nearest the wanted tick inside the segment.
         let before = engine_shots.range(eseg.start..=want).next_back();
@@ -506,6 +623,9 @@ pub fn compare(
                 segments.push(SegmentReport {
                     key: es[ej].key,
                     retail_len: None,
+                    retail_game_len: None,
+                    overrun_frames: 0,
+                    overrun_vsyncs: 0,
                     engine_len: Some(es[ej].len()),
                     pairs: 0,
                     mean_within: None,
@@ -519,9 +639,21 @@ pub fn compare(
             .copied()
             .filter(|p| s.start <= p.shown_vsync && p.shown_vsync <= s.end)
             .collect();
+        let over: Vec<&(u64, u64, u8)> = frames
+            .iter()
+            .filter(|(t, len, step)| s.start <= *t && *t <= s.end && *len > u64::from(*step))
+            .collect();
         segments.push(SegmentReport {
             key: s.key,
             retail_len: Some(s.len()),
+            retail_game_len: clock
+                .as_ref()
+                .map(|_| game(s.end).saturating_sub(game(s.start)) + 1),
+            overrun_frames: over.len(),
+            overrun_vsyncs: over
+                .iter()
+                .map(|(_, len, step)| len - u64::from(*step))
+                .sum(),
             engine_len: to_engine.get(&i).map(|&e| es[e].len()),
             pairs: pairs
                 .iter()
@@ -534,6 +666,9 @@ pub fn compare(
         segments.push(SegmentReport {
             key: e.key,
             retail_len: None,
+            retail_game_len: None,
+            overrun_frames: 0,
+            overrun_vsyncs: 0,
             engine_len: Some(e.len()),
             pairs: 0,
             mean_within: None,
@@ -543,6 +678,7 @@ pub fn compare(
     Ok(Report {
         label: label.to_string(),
         lag,
+        game_clock: clock.is_some(),
         mean_within: mean(&scene).unwrap_or(0.0),
         min_within: scene.iter().map(|p| p.within).fold(1.0, f64::min),
         valid_pairs: scene.len(),
@@ -567,7 +703,7 @@ pub fn markdown(r: &Report, worst: usize, strip: &[Pair]) -> String {
     s.push_str(&format!(
         "**Mean `within` {:.3}** over {} scene pairs (min {:.3}). White-flash pairs: {} (mean {}); \
          dark pairs: {}; retail frames with no engine counterpart: {}; pairs in different action \
-         states: {}. Retail frames {}, engine frames {}, display lag {:?}.\n\n",
+         states: {}. Retail frames {}, engine frames {}, display lag {:?}, retail paced on {}.\n\n",
         r.mean_within,
         r.valid_pairs,
         r.min_within,
@@ -580,14 +716,25 @@ pub fn markdown(r: &Report, worst: usize, strip: &[Pair]) -> String {
         r.retail_frames,
         r.engine_frames,
         r.lag,
+        if r.game_clock {
+            "the game clock"
+        } else {
+            "wall vsyncs (no frame counter in the capture)"
+        },
     ));
-    s.push_str("## Segments\n\n| key | retail vsyncs | engine ticks | pairs | mean within |\n|---|---|---|---|---|\n");
+    s.push_str("## Segments\n\n`retail game` is the segment on retail's game clock; `slow frames` counts the retail frames that ran past their step and the vsyncs they ran over by.\n\n| key | retail vsyncs | retail game | slow frames | engine ticks | pairs | mean within |\n|---|---|---|---|---|---|---|\n");
     for g in &r.segments {
         let o = |v: Option<u64>| v.map_or("-".to_string(), |v| v.to_string());
         s.push_str(&format!(
-            "| {} | {} | {} | {} | {} |\n",
+            "| {} | {} | {} | {} | {} | {} | {} |\n",
             g.key,
             o(g.retail_len),
+            o(g.retail_game_len),
+            if g.overrun_frames == 0 {
+                "-".to_string()
+            } else {
+                format!("{} (+{})", g.overrun_frames, g.overrun_vsyncs)
+            },
             o(g.engine_len),
             g.pairs,
             g.mean_within.map_or("-".into(), |m| format!("{m:.3}"))
@@ -784,6 +931,56 @@ mod tests {
             seg(Key::Module(1), 4, 4),
         ];
         assert_eq!(align(&a, &b), vec![(0, 0), (2, 1), (3, 2)]);
+    }
+
+    fn side(frames: &[(u32, u8, u64)]) -> Side {
+        // (frame counter, step, vsyncs the frame took)
+        let mut rows = Vec::new();
+        let mut t = 100;
+        for &(f, step, len) in frames {
+            for _ in 0..len {
+                rows.push(Row {
+                    t,
+                    st7: 0x35,
+                    phase: 5,
+                    step,
+                    frame: Some(f),
+                    shot: None,
+                    geom: (FRAME_W, FRAME_H, 16),
+                });
+                t += 1;
+            }
+        }
+        Side {
+            dir: PathBuf::new(),
+            rows,
+        }
+    }
+
+    /// A frame that ran past its step adds its step, not its length, to the
+    /// game clock; one that kept to its step adds what it took.
+    #[test]
+    fn game_clock_counts_the_step_not_the_overrun() {
+        // Each run is paced on the step the run before it reads.
+        let s = side(&[(1, 2, 2), (2, 4, 4), (3, 4, 5), (4, 4, 3), (5, 1, 4)]);
+        let c = s.game_clock().unwrap();
+        // run 1: own step 2 over 2; run 2: paced 2 over 4; run 3: 4 over 5;
+        // run 4: 4 over 3 (the catch-up after an overrun); run 5: 4 over 4.
+        assert_eq!(
+            c,
+            vec![0, 1, 2, 2, 3, 3, 4, 4, 5, 6, 7, 8, 9, 10, 12, 13, 14, 15]
+        );
+        // The whole frames between the cut ends, with the step they ran on.
+        assert_eq!(s.frames(), vec![(102, 4, 2), (106, 5, 4), (111, 3, 4)]);
+    }
+
+    /// No frame counter, no game clock: the pairing stays on wall vsyncs.
+    #[test]
+    fn game_clock_needs_the_frame_column() {
+        let mut s = side(&[(1, 2, 2), (2, 2, 2)]);
+        s.rows[1].frame = None;
+        assert!(s.game_clock().is_none());
+        assert!(s.frames().is_empty());
     }
 
     #[test]

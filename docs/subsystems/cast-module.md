@@ -573,9 +573,14 @@ driver rewrites `DAT_1F800393` per frame, see [`audio.md`](audio.md)), so a
 dwell is the seed divided by the *sum* of per-pass drains. Measured dwells are
 in [measured arm timing](#measured-arm-timing).
 
-The band timer `ctx[+0x6D8]` is separate. A player-Seru cast finds it at `120`
-(`0x78`) on its first tick and it decrements by `1` per tick; a capture-class
-cast leaves it at `20` throughout (333 tick entries of PROT 0959).
+The band timer `ctx[+0x6D8]` is a context word, not a module word. A
+player-Seru cast finds it at `120` (`0x78`) on its first tick and the sustain
+state `0x35` drains it by the frame step; a capture-class cast leaves it at
+`20` throughout (333 tick entries of PROT 0959). PROT 0904, 0907 and 0908 take
+it over as their own countdown, which holds the action SM in `0x35` until the
+module lets it go negative ([state `0x35`](battle-action.md#state-0x35---summon---sustain)):
+their arms in `0x35` drain the module's `rate * speed` plus the SM's `rate`
+a pass.
 
 ### Worked example: PROT 0903 (Gimard)
 
@@ -1734,7 +1739,10 @@ Retail's measured dwell runs longer than these on the arms that draw the
 heavy effects (Swordie's wind-up 347 vsyncs for 64 passes, Freed's shatter
 arms three times their pass count): the frame step stays at `4` while a frame
 takes longer, so the drain per pass undercounts the vsyncs. The port matches
-the pass count.
+the pass count. The overrun is the emulated frame cost, which no game state
+the engine carries decides; the cast-sequence oracle measures retail on its
+[game clock](../tooling/cast-sequence-oracle.md#the-game-clock) so the overrun
+does not score as engine error.
 
 Port: `seru_magic_ticks::{orb_tick, freed_tick, nova_tick}`. Each of 0910..0913
 has a `ModuleProfile::body_paced` profile, so `0x36` holds on the body and the
