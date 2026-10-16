@@ -282,6 +282,7 @@ impl Renderer {
             screen_overlay_icap: std::cell::Cell::new(overlay.initial_quads * 6),
             screen_overlay_runs: std::cell::RefCell::new(Vec::new()),
             screen_overlay_under_runs: std::cell::Cell::new(0),
+            screen_overlay_backdrop_runs: std::cell::Cell::new(0),
             viewport_fill_vbuf,
             viewport_fill_ibuf,
         })

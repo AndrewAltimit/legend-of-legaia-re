@@ -260,6 +260,23 @@ impl ScreenPrim {
         }
     }
 
+    /// Whether this primitive is a **backdrop**: every corner at the
+    /// far-plane depth (`1.0`, [`CornerDepth`]). Retail links such a packet
+    /// into the farthest ordering-table bucket, so it is the first thing the
+    /// frame draws and every scene primitive - opaque or blended - lands
+    /// over it: PROT 0898's colour wash (`ot + 0x3FFC`), the overworld sky
+    /// band. A host composites screen primitives after its 3D pass, where a
+    /// far-plane depth test keeps a backdrop off opaque geometry but not off
+    /// a blended primitive (which writes no depth), so the hosts draw these
+    /// ahead of the scene instead ([`split_backdrop`]).
+    pub fn is_backdrop(&self) -> bool {
+        let depth = match self {
+            ScreenPrim::Textured(q) => q.depth,
+            ScreenPrim::Flat(q) => q.depth,
+        };
+        depth.is_some_and(|d| d.get().iter().all(|&z| z >= 1.0))
+    }
+
     /// The blend class that groups this primitive into a [`DrawRun`].
     pub fn blend_class(&self) -> BlendClass {
         match self {
@@ -268,6 +285,13 @@ impl ScreenPrim {
             _ => BlendClass::Opaque,
         }
     }
+}
+
+/// Split a list into its backdrops ([`ScreenPrim::is_backdrop`]) and the
+/// rest, each in its original order. Both hosts draw the first list before
+/// the 3D scene and the second after it.
+pub fn split_backdrop(prims: &[ScreenPrim]) -> (Vec<ScreenPrim>, Vec<ScreenPrim>) {
+    prims.iter().cloned().partition(|p| p.is_backdrop())
 }
 
 /// Which pipeline draws a run of quads.
@@ -1094,6 +1118,41 @@ pub fn line_quad(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A far-plane quad (the colour wash's band) is a backdrop and splits
+    /// out ahead of the rest, order kept; a depth-less or nearer quad is not.
+    #[test]
+    fn far_plane_quads_split_out_as_backdrops() {
+        let quad = |depth: Option<[f32; 4]>, ot: u32| {
+            ScreenPrim::Flat(FlatQuad {
+                xy: [(0, 0), (10, 0), (0, 10), (10, 10)],
+                color: [1, 2, 3, 255],
+                gouraud: None,
+                semi_transparent: false,
+                abr_mode: 0,
+                ot_index: ot,
+                depth: depth.map(CornerDepth::new),
+            })
+        };
+        let prims = [
+            quad(None, 1),
+            quad(Some([1.0; 4]), 0xFFF),
+            quad(Some([0.5, 1.0, 1.0, 1.0]), 7),
+            quad(Some([1.0; 4]), 0xFFE),
+        ];
+        assert!(!prims[0].is_backdrop());
+        assert!(prims[1].is_backdrop());
+        assert!(!prims[2].is_backdrop());
+        let (back, rest) = split_backdrop(&prims);
+        assert_eq!(
+            back.iter().map(|p| p.ot_index()).collect::<Vec<_>>(),
+            [0xFFF, 0xFFE]
+        );
+        assert_eq!(
+            rest.iter().map(|p| p.ot_index()).collect::<Vec<_>>(),
+            [1, 7]
+        );
+    }
 
     /// The opening's `34 05 00 00 00 D2 00` push to black is kind `0` -
     /// bucket `0`, in front of the glyphs at bucket `1` - so it washes the

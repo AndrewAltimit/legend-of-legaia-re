@@ -228,6 +228,17 @@ no such distinction - 3D primitives and screen-space packets share one
 ordering table and one `DrawOTag` walk - so the split is a port artifact and
 this variant is where the halves meet.
 
+**Backdrops draw first.** A screen primitive whose four corners sit at the
+far plane (`ScreenPrim::is_backdrop`) is one retail links into the farthest
+bucket: PROT 0898's cast colour wash (`ot + 0x3FFC`) and the overworld sky
+band. Composited after the 3D pass, a far-plane depth test keeps it off
+opaque geometry but not off a blended primitive, which writes no depth, so a
+wash drawn there erases every additive effect over the sky. Both hosts split the under
+list (`screen_prim::split_backdrop`) and draw the backdrops in the scene pass
+after the clear and before the first 3D draw: the native renderer's
+`draw_screen_overlay_backdrop_runs`, the play page's `preSceneHook` on
+`renderAssembled` (`play_screen_prim_backdrop_run_end` names the span).
+
 The primitives are authored in the **PSX display space** (320x240), not the
 window: every retail emitter clamps against `0x140`/`0xF0`, so the renderer
 hands `build_geometry` that space and the overlay stretches over the whole

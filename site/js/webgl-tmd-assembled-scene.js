@@ -403,6 +403,23 @@ window.LegaiaUtil.installMethods(TmdRenderer, class {
       gl.bindVertexArray(null);
     }
 
+    /* The page's screen-primitive backdrops (`preSceneHook`, one-shot):
+     * the primitives retail links into the farthest ordering-table bucket
+     * - the cast colour wash, the overworld sky band - drawn before every
+     * 3D draw, so a blended scene primitive (which writes no depth) lands
+     * over them as it does over retail's first-drawn packets. */
+    if (this.preSceneHook) {
+      const hook = this.preSceneHook;
+      this.preSceneHook = null;
+      try { hook(); } catch (e) { /* presentation-only */ }
+      gl.viewport(0, 0, w, h);
+      gl.enable(gl.DEPTH_TEST);
+      gl.depthFunc(gl.LEQUAL);
+      gl.depthMask(true);
+      gl.disable(gl.CULL_FACE);
+      gl.disable(gl.BLEND);
+    }
+
     /* Nothing to draw with the textured program (no ground, no placed
      * meshes) - the ocean pass above already ran, so bail. */
     const haveGround = this.groundEnable && this.ground && this.ground.indexCount > 0;

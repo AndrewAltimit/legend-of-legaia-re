@@ -212,6 +212,10 @@
       /* The renderer's sticky per-frame state, staged ahead of EVERY draw
        * branch (see `_stageFrameState`). */
       this._stageFrameState(rt);
+      /* The frame's screen-primitive backdrops draw inside the 3D pass,
+       * after its clear and before its first draw (`preSceneHook`). */
+      this._screenStaged = false;
+      this.renderer.preSceneHook = skipDraw ? null : () => this._drawScreenPrimsBackdrop(rt);
       /* The scene clear colour too: the engine's `World::frame_clear_rgb`
        * already answers black for the four minigame modes (the native
        * window clears every venue to it), but the page applied it only on
@@ -613,29 +617,61 @@
      * Guarded against a cached WASM bundle predating the exports, and against
      * a driver that cannot link the pass: either way the page keeps playing
      * with the pass switched off for the session. */
+    /* Upload this frame's screen primitives once and work out its three
+     * spans: `[0, back)` the backdrops (drawn before the 3D scene), then
+     * `[back, split)` the rest of the under list, `[split, total)` the over
+     * list. Returns null when the frame carries none. */
+    _stageScreenPrims(rt) {
+      if (this._screenStaged) return this._screenSpans;
+      this._screenStaged = true;
+      this._screenSpans = null;
+      if (this._screenPrimBroken) return null;
+      if (typeof rt.play_screen_prim_count !== 'function') return null;
+      let n = 0;
+      try { n = rt.play_screen_prim_count() | 0; } catch (e) { return null; }
+      if (n <= 0) return null;
+      if (!this._screenPrims) this._screenPrims = new ScreenPrimPass(this.renderer);
+      const runs = rt.play_screen_prim_runs();
+      const total = (runs.length / 3) | 0;
+      /* A cached WASM predating the split draws everything here, under
+       * the text - the order this page had before it. */
+      const split = (typeof rt.play_screen_prim_over_run_start === 'function')
+        ? Math.min(rt.play_screen_prim_over_run_start() >>> 0, total) : total;
+      const back = (typeof rt.play_screen_prim_backdrop_run_end === 'function')
+        ? Math.min(rt.play_screen_prim_backdrop_run_end() >>> 0, split) : 0;
+      this._screenPrims.upload(
+        rt.play_screen_prim_vertex_bytes(),
+        rt.play_screen_prim_indices(),
+        runs,
+        (typeof rt.play_fx_depth_affine === 'function') ? rt.play_fx_depth_affine() : null,
+      );
+      this._screenSpans = { back, split, total, backDrawn: false };
+      return this._screenSpans;
+    }
+
+    /* The backdrops, from inside the 3D pass (`preSceneHook`). */
+    _drawScreenPrimsBackdrop(rt) {
+      try {
+        const sp = this._stageScreenPrims(rt);
+        if (!sp) return;
+        this._screenPrims.drawRuns(0, sp.back);
+        sp.backDrawn = true;
+      } catch (e) {
+        this._screenPrimBroken = true;
+        try { console.warn('screen-prim pass disabled:', e); } catch (_) { /* no console */ }
+      }
+    }
+
     _drawScreenPrims(rt) {
       this._screenOver = null;
-      if (this._screenPrimBroken) return;
-      if (typeof rt.play_screen_prim_count !== 'function') return;
-      let n = 0;
-      try { n = rt.play_screen_prim_count() | 0; } catch (e) { return; }
-      if (n <= 0) return;
       try {
-        if (!this._screenPrims) this._screenPrims = new ScreenPrimPass(this.renderer);
-        const runs = rt.play_screen_prim_runs();
-        const total = (runs.length / 3) | 0;
-        /* A cached WASM predating the split draws everything here, under
-         * the text - the order this page had before it. */
-        const split = (typeof rt.play_screen_prim_over_run_start === 'function')
-          ? Math.min(rt.play_screen_prim_over_run_start() >>> 0, total) : total;
-        this._screenPrims.upload(
-          rt.play_screen_prim_vertex_bytes(),
-          rt.play_screen_prim_indices(),
-          runs,
-          (typeof rt.play_fx_depth_affine === 'function') ? rt.play_fx_depth_affine() : null,
-        );
-        this._screenPrims.drawRuns(0, split);
-        if (split < total) this._screenOver = [split, total];
+        const sp = this._stageScreenPrims(rt);
+        this._screenStaged = false;
+        if (!sp) return;
+        /* A frame whose 3D pass never ran the hook (no scene drawn) still
+         * draws its backdrops, here, first. */
+        this._screenPrims.drawRuns(sp.backDrawn ? sp.back : 0, sp.split);
+        if (sp.split < sp.total) this._screenOver = [sp.split, sp.total];
       } catch (e) {
         this._screenPrimBroken = true;
         this._screenOver = null;

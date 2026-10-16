@@ -2827,10 +2827,13 @@ ported whole as `legaia_render_kernels::cast_colour_wash`: from `y = -scroll`
 down to line `0xE0`, bands of `ctx[+0x27C]` lines, each two opaque `POLY_G4`
 across the screen shading colour A to colour B and back, every colour scaled
 `c * alpha / 255`, linked at `ot + 0x3FFC` - the farthest bucket, so the wash
-is a backdrop the whole scene covers. In the engine frames checked (PROT 0909
-mid-cast) the battle stage covers it everywhere; what retail shows over it is
-open, since no retail capture in the corpus holds a non-zero alpha. Seven
-modules set the band mode (0909,
+is a backdrop the whole scene covers - the blended parts included. Both
+hosts composite screen primitives after their 3D pass, so they draw a
+far-plane primitive (`ScreenPrim::is_backdrop`) ahead of the scene instead
+([renderer-port.md](renderer-port.md#screen-space-overlay-pass)). Drawn after
+it, the wash covers every additive part over the sky: PROT 0909's vortex
+(the textured cones `0x801F7E18` / `0x801F7EA0`, the spiral at tpage `0x88`)
+then shows only where it crosses the floor. Seven modules set the band mode (0909,
 0918, 0922, 0930, 0931, 0946, 0950). Six set mode `1` (0917, 0923, 0928,
 0929, 0963, 0965): per-line textured strips that resample texture page `0xA8`
 through CLUT `0x7A00` with a sine wobble off two per-line arrays at
