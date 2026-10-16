@@ -136,9 +136,9 @@ In that stream only about 10 % of 128-byte sound groups pass the standard XA val
 
 The `extracted/XA/*.XA` files copied by the disc-extract step are exactly those Form-1-truncated bytes. They are usable for byte-stable hashing only, not for decoding.
 
-## What's still open
+## Scope limits
 
-- **8-bit ADPCM mode is decoded but unexercised** (see "Sound-group decode (8-bit)" above). The NA corpus is **entirely 4-bit, 37.8 kHz** (`demux-disc-all` reports `bits_per_sample = 4` for all 316 channels across 34 `*.XA` files), so nothing on the NA disc exercises it; the path is covered by synthetic unit tests and is wired through the demux/CLI/cutscene consumers (which map each channel's reported width). A disc that uses 8-bit would decode without code changes. The 8-bit path is **not** verified bit-exact against a real 8-bit reference, since the NA corpus has no 8-bit source.
+- **8-bit ADPCM is decoded but has no disc to test against.** Every channel on the NA disc is 4-bit at 37.8 kHz ([settled](../reference/re-settled-threads/audio.md)), so the 8-bit path (see "Sound-group decode (8-bit)" above) is covered by synthetic unit tests only. It is wired through the demux, CLI and cutscene consumers, which map each channel's reported width, so a disc that uses 8-bit would decode without code changes; it is not verified bit-exact against a real 8-bit reference.
 - **Which event plays which channel is not part of this format.** `demux-disc` emits one WAV per channel keyed by `(file_no, ch_no)`. The clip → channel routing is game logic: the voice-cue dispatchers and SCUS cue tables in [`audio.md`](../subsystems/audio.md#cd-xa-voice-clip-dispatchers-and-static-cue-census) and the movie channel selection in [`cutscene.md`](../subsystems/cutscene.md#xa-channel-selection). The extracted WAV filenames carry no scene labels.
 
 ## Provenance

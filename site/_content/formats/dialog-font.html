@@ -231,9 +231,11 @@ V = (c &amp; 0xF0) - 0x20</code></pre>
     <summary>Open questions</summary>
     <div class="disclosure-body">
       <ul class="bullets">
-        <li><strong>The upload routine.</strong> The boot-time routine that issues the GPU <code>LoadImage</code> of the head-gap TIM to <code>(896, 0)</code> is not named; it sits between the PROT TOC loader and the first dialog open.</li>
+        <li><strong>The upload routine.</strong> The font TIM sits in the unindexed gap of <code>PROT.DAT</code> ahead of the first entry, with the other boot-resident UI pages; the routine that uploads that gap to VRAM is not named.</li>
         <li><strong>Description lines.</strong> Item and spell description lines have no pinned width; the 144 px info window bounds them only by inference.</li>
+        <li><strong>The expansion buffer's end.</strong> The buffer at <code>0x800740EC</code> can run at most <code>0x206</code> bytes to the next initialised data, an upper bound by inference.</li>
       </ul>
+      <p>All three are tracked on <a href="../reference/open-rev-eng-threads.html">open RE threads</a>. The text-actor walker <code>FUN_80031D00</code> has no escape ops of its own - it walks the drawable list and reads no glyph stream.</p>
     </div>
   </details>
   <p>Source of record: <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/formats/dialog-font.md" target="_blank" rel="noopener"><code>docs/formats/dialog-font.md</code></a>.</p>

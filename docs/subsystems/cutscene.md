@@ -2698,22 +2698,21 @@ Three details of these bodies are visible only in the disassembly; the port
 
 ## Open items
 
-- **XA clip-table writer + cue census.** The `0x801C6ED8` clip-table *content* is pinned (34
-  slots = `XA1..XA34`, `[CdlLOC][byte len]`), but its filler is a DMA/computed-pointer write no
-  static addressing-form scan sees (both `lui 0x801c`-materialised sites in SCUS are the readers
-  `FUN_8003D53C` / `FUN_8003EAE4`). Which game systems fire which `(clip_id, chan)` cues beyond
-  the menu voice dispatcher `FUN_8004FCC8` is a per-caller census, still open.
 - **The prologue CLUT rewrite.** The gold CLUT law is capture-pinned and reproduced, but the
   retail routine that rewrites the rows is not located
-  ([sepia grade](#full-scene-sepia-grade-the-gold-prologue-look)).
-- **`MOV15.STR` + `MV1A.STR`.** Two extra path strings (`\DATA\MOV15.STR;1` and
-  `\MOV\MV1A.STR;1`) sit alongside the six numbered movies, dispatched by dev slots 9/10 (the
-  only slots selecting the STRv2/v3 decoder and non-default VRAM rects): `MOV15` is the 15-FPS
-  test file (referenced by the `psx.cdspeedup` / 15 fps debug paths), and `MV1A` is an alternate
-  / cut version of MV1. Neither ships on the released disc.
-- **Cutscene camera re-seed.** `CutsceneCameraInterp` arms glides per component where retail
-  re-seeds all ten axes per apply beat
+  ([sepia grade](#full-scene-sepia-grade-the-gold-prologue-look)); the hunt is indexed on
+  [open-rev-eng-threads.md](../reference/open-rev-eng-threads.md#battle--rendering).
+- **Cutscene camera re-seed** (a port difference). `CutsceneCameraInterp` arms glides per
+  component where retail re-seeds all ten axes per apply beat
   ([engine port](#timeline-execution-engine-port)).
+
+Answered elsewhere: the XA clip-table writer is `FUN_801CFA78` in PROT 0895 and the
+`(clip_id, chan)` cue census is complete over `SCUS_942.54` and the static overlay corpus
+([`audio.md`](audio.md#cd-xa-voice-clip-dispatchers-and-static-cue-census),
+[settled](../reference/re-settled-threads/audio.md#xa-clip-table-writer--clip_id-chan-cue-census));
+the field-VM opcode's own literals are per-scene MAN data, named by their decode rule there.
+`MOV15.STR` and `MV1A.STR` are dev path strings in the STR overlay that do not ship
+([settled](../reference/re-settled-threads/title-boot-overlays.md)).
 
 ## Provenance
 

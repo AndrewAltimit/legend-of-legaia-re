@@ -140,10 +140,7 @@ Two neighbouring shapes are fully accounted for on their own pages:
 - **The scene texture pack.** A file opening with `0x01059B84` is a `(TIM_LIST << 24) | size` chunk header followed by the `[u32 count][u32 word_offsets]` [pack](pack.md) table of one scene's TIMs. 23 blocks carry such a file, one apiece. It is not a separate "field-pack" format; see [field-pack.md](field-pack.md).
 - **The per-scene asset table.** The walk is positional (`FUN_80020224`, `count` at `+0x00`, 8-byte descriptors from `+0x08`), and the bundle reaches the walker's base by a whole-sector block copy of the entry. `+0x04` is the sum of the descriptor sizes. See [scene-bundles.md](scene-bundles.md#scene_asset_table---count-prefixed-asset-bundle) and [asset-descriptor.md](asset-descriptor.md).
 
-Still open:
-
-- Cross-entry pointers - NPC references that point into other PROT entries. The asset chain in [asset-loader.md](../subsystems/asset-loader.md) is best-effort here.
-- The consumer of the post-terminator trailer bytes (see [Trailer data](#trailer-data)).
+Two questions about the layer are live hunts, indexed on [open-rev-eng-threads.md](../reference/open-rev-eng-threads.md#containers--data-blobs): what the post-terminator [trailer bytes](#trailer-data) are, and whether any scene places an actor whose model lives in another PROT entry (the asset chain in [asset-loader.md](../subsystems/asset-loader.md) resolves those best-effort).
 
 Every PROT entry classifies to *something* under `categorize`, and about 95% of bytes fall into known classes; [`tooling/byte-accounting.md`](../tooling/byte-accounting.md) tracks the residue per entry.
 

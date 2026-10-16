@@ -1935,28 +1935,20 @@ Kernels that live elsewhere: `engine-battle-vm::status_effects` (`toxic_tick_dam
 
 ## What's still open
 
-- **Juggle window.** (1) `FUN_80050E00`'s fall-through exit returns `a0 + 3` in
-  `v0`, so an entry whose `+0x11..+0x13` are all non-zero hands the tick an
-  index that depends on the block's load address. No reaction entry on the disc
-  has such a list (`light_flinch_juggle_windows_resolve_over_real_archives`),
-  so it only touches an attack-band entry's own `+0x1F7`, uncaptured. (2) The
-  measured window can run 1-2 ticks past `32 * beat / (speed * rate)` - the
-  cursor's sub-frame carry at the commit is not modelled. (3) Whether the anim
-  commit's counter / guard window (`+0x1F6`, `0x8004AFC0..`) uses the same beat
-  for a parry is untraced.
-- **Spell-entry effect descriptor.** The descriptor the
-  [spell list](#spell-list-record-0x4c) indices resolve to has open interior
-  fields; its consumer is the cast / effect path.
-- **Ability-bit catalogue.** The bitfield at record `+0xF4` / `+0xF8` has the
-  bits named on this page pinned (plus the HP-cap / MP-cap bits `0x100` /
-  `0x200`, beside the record's stat fields at `+0x100..+0x110`, and the impact-step modifier `0x10` / `0x20` on attack actions); a
-  full per-bit table is in
-  [accessory-passive-table.md](../formats/accessory-passive-table.md).
-- **Astral Slash's damage call site** and PROT 952's unreachable respect call
-  ([wrappers](#capture-class-wrappers---fun_801dd4b0--fun_801dd6b4)).
-- **Port gaps.** The Slow halving of the initiative key, the scripted-fight
-  one-tick DoT clear for monsters, and Jedo's non-scripted effect on the monster
-  seats are not modelled.
+The page's live hunts are indexed on
+[open-rev-eng-threads.md](../reference/open-rev-eng-threads.md#battle--rendering):
+the three [juggle-window](#the-juggle-window---what-makes-a-monster-juggleable)
+residuals, the interior of the [spell-entry effect descriptor](#spell-list-record-0x4c),
+and the call that applies Astral Slash's damage together with PROT 952's
+unreachable respect call ([wrappers](#capture-class-wrappers---fun_801dd4b0--fun_801dd6b4)).
+The ability bitfield at record `+0xF4` / `+0xF8` is fully catalogued as the
+64 passive indices of [accessory-passive-table.md](../formats/accessory-passive-table.md#the-64-passive-indices)
+([settled](../reference/re-settled-threads/battle.md)).
+
+**Port gaps** (known differences, not reverse-engineering questions): the
+Slow halving of the initiative key (the kernel carries it, but no actor is
+flagged Slow), the scripted-fight one-tick DoT clear for monsters, and Jedo's
+non-scripted effect on the monster seats are not modelled.
 
 Not open: "`FUN_801F3894`" (`overlay_0897_801f3894`) is not a fourth caller of the damage chain. Its
 257 instructions are `FUN_801DD0AC`'s byte for byte (the absolute `j

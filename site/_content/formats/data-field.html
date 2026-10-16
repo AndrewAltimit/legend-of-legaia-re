@@ -155,10 +155,10 @@
       <tr><td>6..8</td><td><code>SceneVabStream</code> (rare; only on scenes with custom audio)</td><td>per-scene VAB + SEQ</td></tr>
     </tbody>
   </table>
-  <p>What is <strong>not</strong> modelled yet:</p>
+  <p>Two questions about the layer are live hunts on <a href="../reference/open-rev-eng-threads.html">open RE threads</a>:</p>
   <ul class="bullets">
-    <li>Cross-entry pointers (NPC references that point into other PROT entries - the asset chain in <a href="../subsystems/asset-loader.html">asset loader</a> is best-effort).</li>
-    <li>Which function consumes the post-terminator trailer bytes.</li>
+    <li>Whether any scene places an actor whose model lives in another PROT entry (the asset chain in <a href="../subsystems/asset-loader.html">asset loader</a> resolves those best-effort).</li>
+    <li>What the post-terminator trailer bytes are, and whether anything reads them.</li>
   </ul>
   <p>The categorize sweep classifies every PROT entry to <em>something</em>; the items above are the residual edge. See <a href="../subsystems/engine.html">the engine page</a> for how scene loading consumes these shapes.</p>
 </section>
