@@ -101,6 +101,10 @@ fn nighto_kill_on_a_two_member_partys_first_monster_releases_the_done_band() {
             finished = true;
             break;
         }
+        // Arm 14 holds until the kill leg's defeat fade (render flag `2`,
+        // stepped by the per-frame tint pass) has walked the victim's colour
+        // word to `0`, so the battle frame's presentation pass runs too.
+        w.tick_battle_animations();
     }
     assert!(finished, "Nighto's chain never reported done");
     assert_eq!(w.actors[2].battle.hp, 0, "the kill fork wrote live HP");
