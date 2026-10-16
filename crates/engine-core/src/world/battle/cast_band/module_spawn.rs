@@ -71,6 +71,17 @@ impl World {
         a.battle.anim_rate = legaia_engine_battle_vm::battle_anim_rate::AnimRate(
             super::module_creature::SUMMON_SEAT_ANIM_RATE,
         );
+        // The installer hangs the record's first clip on the node directly
+        // (`sw v1,0x4c(v0)` / `sh zero,0x68(v0)` at `0x801F1DCC..0x801F1DE8`)
+        // without the commit `FUN_8004AD80`, so nothing seeds the clip's
+        // window: `+0x176` / `+0x21B` keep the zeros the previous cast's
+        // `0xFF` arm left on the seat (`sb zero,0x21b` / `sh zero,0x176`,
+        // e.g. PROT 0907 `0x801F7F68`). The window first applies at the
+        // clip's first commit.
+        a.battle.hit_count_bound = 0;
+        if let Some(p) = a.battle_animation.as_mut() {
+            p.release_loop_window();
+        }
         // The seat arm's own stores, which run after the installer on the
         // same pass (`module_seat_arm`).
         if let Some(e) = entry {

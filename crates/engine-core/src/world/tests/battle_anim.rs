@@ -1351,3 +1351,75 @@ fn the_art_name_label_closes_when_the_art_clip_hands_off() {
     world.commit_staged_battle_anim_at_boundary(0);
     assert!(!world.battle.move_label_closed, "only slot 0x11 closes it");
 }
+
+// --- the summon creature's clip loop counter `+0x21B` -----------------------
+
+/// A one-part clip whose entry head parks on `park` with the count `0xFF`.
+fn parked_clip(action_id: u8, frames: usize, park: u8) -> MonsterAnimation {
+    let mut clip = pose_test_clip(action_id, frames, 0);
+    let mut head = vec![0u8; legaia_actor_formats::monster_archive::EFFECT_SCRIPT_HEAD_BYTES];
+    head[0x84] = 0xFF;
+    head[0x85] = park;
+    head[0x86] = park;
+    clip.effect_script = head;
+    clip
+}
+
+/// The commit seeds the creature's `+0x21B` with the entry's count and the
+/// anim tick's park takes it off `0xFF` once the cursor reaches the park
+/// frame - what PROT 0904's arm 7 and PROT 0907's arm 10 hold on. A seat
+/// that is not the creature keeps its byte.
+#[test]
+fn the_creature_loop_counter_follows_its_clip_window() {
+    let run = |creature: bool| -> Vec<u8> {
+        let mut world = World::new();
+        let slot = 1usize;
+        world.mode = SceneMode::Battle;
+        world.actors[slot].active = true;
+        world.actors[slot].battle.hp = 100;
+        if creature {
+            world.casting.summon_actor_slot = Some(slot as u8);
+        }
+        let clips = vec![Some(pose_test_clip(0, 4, 0)), Some(parked_clip(1, 10, 3))];
+        world.set_actor_battle_action_clips(slot, std::sync::Arc::new(clips));
+        world.apply_battle_pose(
+            slot,
+            legaia_engine_battle_vm::battle_action::Pose::Idle as u8,
+        );
+        world.actors[slot].battle.queued_anim = 1;
+        world.actors[slot]
+            .battle
+            .flag_bits
+            .set(legaia_engine_battle_vm::battle_action::ActorFlags::WINDUP_DONE);
+        world.commit_staged_battle_anim(slot);
+        assert_eq!(world.actors[slot].battle.current_anim, 1);
+        // A keyframe a tick (the normal rate doubles the base step).
+        world.actors[slot].battle_animation.as_mut().unwrap().step = 128;
+        let mut seen = vec![world.actors[slot].battle.hit_count_bound];
+        for _ in 0..10 {
+            world.tick_battle_animations();
+            seen.push(world.actors[slot].battle.hit_count_bound);
+        }
+        seen
+    };
+    let creature = run(true);
+    assert_eq!(creature[0], 0xFF, "the commit seeds the count");
+    let left = creature
+        .iter()
+        .position(|&c| c != 0xFF)
+        .expect("the park took the counter off 0xFF");
+    // Frame 3 is reached on tick 3 with no overshoot; tick 4 spends a
+    // keyframe of the budget, and every later tick another.
+    assert_eq!(
+        left, 4,
+        "held until the cursor passed frame 3 ({creature:?})"
+    );
+    assert_eq!(
+        &creature[left..],
+        &[0xFE, 0xFD, 0xFC, 0xFB, 0xFA, 0xF9, 0xF8]
+    );
+    assert!(
+        run(false).iter().all(|&c| c == 0),
+        "a non-creature seat is untouched"
+    );
+}

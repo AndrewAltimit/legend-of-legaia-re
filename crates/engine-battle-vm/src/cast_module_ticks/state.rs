@@ -112,6 +112,18 @@ pub struct CastActorState {
     /// list). The port's stand-in for the per-arm countdowns it does not
     /// model - see [`crate::cast_module_ticks::plasma_strike_tick`].
     pub hits_pending: bool,
+    /// `+0x21B` - the clip **loop counter**: every commit stores the
+    /// entry's `+0x84` count (`FUN_8004AD80` `0x8004BDF4`), and the anim
+    /// tick's window arm rewrites it as `+0x176 >> 4` on each rewind or
+    /// park (`FUN_80047430` `0x800477E8` / `0x8004783C`). A clip whose count
+    /// is `0xFF` reads `0xFF` from its commit until the cursor first reaches
+    /// the window's end - the edge PROT 0904's arm 7 and PROT 0907's arm 10
+    /// wait for.
+    pub loop_count: u8,
+    /// `+0x176` - the window's hold budget in sixteenths of a keyframe
+    /// (`count << 4` at the commit). A module clears it together with
+    /// [`Self::loop_count`] to release a parked clip.
+    pub loop_timer: u16,
     /// `+0x1BA` - the shatter word
     /// ([`BattleActor::shatter`](crate::battle_action::BattleActor::shatter)):
     /// Zenoir and Jedo raise it on monsters, six summons on their creature.
@@ -174,6 +186,8 @@ impl CastActorState {
             reaction_gate,
             combo_total,
             shatter,
+            loop_count,
+            loop_timer,
         );
     }
 }

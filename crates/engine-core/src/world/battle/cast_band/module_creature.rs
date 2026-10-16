@@ -103,6 +103,12 @@ impl World {
         self.casting.module_cam.row_aim =
             legaia_engine_battle_vm::battle_target_group::target_group_aim(9, &slots);
         self.casting.module_cam.creature_clip = clip;
+        // `+0x21B`, the loop counter the anim tick keeps on the creature
+        // (`World::mirrors_loop_counter`).
+        self.casting.module_cam.creature_loops = seat
+            .and_then(|s| self.actors.get(s as usize))
+            .filter(|a| a.battle_action_clips.is_some())
+            .map(|a| a.battle.hit_count_bound);
         self.casting.module_cam.creature_in_range = in_range;
     }
 

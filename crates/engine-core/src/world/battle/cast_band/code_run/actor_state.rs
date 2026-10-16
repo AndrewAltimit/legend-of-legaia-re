@@ -104,6 +104,8 @@ impl World {
             reaction_gate: a.battle.params.get(0x1F2 - 0x1DF).copied().unwrap_or(0),
             combo_total: a.battle.damage_accum,
             shatter: a.battle.shatter,
+            loop_count: a.battle.hit_count_bound,
+            loop_timer: a.battle_animation.as_ref().map_or(0, |p| p.loop_timer()),
             hits_pending: a.battle_staged_anim.is_some()
                 && a.battle_animation
                     .as_ref()
@@ -229,6 +231,16 @@ impl World {
         a.battle.action_category = st.action_category;
         a.battle.damage_accum = st.combo_total;
         a.battle.shatter = st.shatter;
+        // `+0x21B` / `+0x176`: a module's stores land on the actor's counter
+        // and on the playing clip's hold budget. The budget is written only
+        // when the module moved it, so the view's whole-unit rounding never
+        // eats a park's fractional overshoot.
+        a.battle.hit_count_bound = st.loop_count;
+        if let Some(p) = a.battle_animation.as_mut()
+            && p.loop_timer() != st.loop_timer
+        {
+            p.set_loop_timer(st.loop_timer);
+        }
         // ...and back into the mirrors the rest of the engine reads, so a
         // five-stat debuff is visible to turn order and the accuracy seed
         // rather than only to the next module tick.

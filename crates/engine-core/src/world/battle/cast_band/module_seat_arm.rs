@@ -40,6 +40,9 @@ pub(in crate::world) struct SeatArmWrite {
     pub facing: Option<u16>,
     /// `+0x21D`, the animation rate.
     pub rate: Option<u8>,
+    /// `(+0x21B, +0x176)`: a loop counter and hold budget armed on the
+    /// installer's clip, which the installer itself leaves unseeded.
+    pub loop_hold: Option<(u8, u16)>,
 }
 
 const fn seat(x: SeatCoord, z: SeatCoord, facing: u16) -> SeatArmWrite {
@@ -49,6 +52,7 @@ const fn seat(x: SeatCoord, z: SeatCoord, facing: u16) -> SeatArmWrite {
         z,
         facing: Some(facing),
         rate: None,
+        loop_hold: None,
     }
 }
 
@@ -74,13 +78,17 @@ use SeatCoord::{Keep, Lit, SeatPlus, VictimPlus};
 /// installer's Z.
 pub(in crate::world) fn seat_arm_write(prot_entry: u32) -> Option<SeatArmWrite> {
     Some(match prot_entry {
-        // `0x801F70E8..0x801F70F0`: the height only (`-0x320`).
+        // `0x801F70E8..0x801F70F0`: the height only (`-0x320`); and
+        // `+0x21B = 8` / `+0x176 = 0x80` (`0x801F70C8..0x801F70D4`), which
+        // parks the installer's clip on its window frame `3` for eight
+        // keyframes.
         911 => SeatArmWrite {
             x: Keep,
             y: Lit(-0x320),
             z: Keep,
             facing: None,
             rate: None,
+            loop_hold: Some((8, 0x80)),
         },
         // `0x801F6C54`: the facing only.
         912 => SeatArmWrite {
@@ -89,6 +97,7 @@ pub(in crate::world) fn seat_arm_write(prot_entry: u32) -> Option<SeatArmWrite> 
             z: Keep,
             facing: Some(0),
             rate: None,
+            loop_hold: None,
         },
         // `0x801F6CC0..0x801F6CE0`: `0x400` across and `0x267` back off
         // the installer's seat.
@@ -107,6 +116,7 @@ pub(in crate::world) fn seat_arm_write(prot_entry: u32) -> Option<SeatArmWrite> 
             z: Keep,
             facing: None,
             rate: None,
+            loop_hold: None,
         },
         // `0x801F6FC0..0x801F6FC8`.
         921 => seat(Lit(0), Lit(0), 0),
@@ -186,6 +196,12 @@ impl World {
         }
         if let Some(r) = w.rate {
             a.battle.anim_rate = legaia_engine_battle_vm::battle_anim_rate::AnimRate(r);
+        }
+        if let Some((count, timer)) = w.loop_hold {
+            a.battle.hit_count_bound = count;
+            if let Some(p) = a.battle_animation.as_mut() {
+                p.set_loop_timer(timer);
+            }
         }
     }
 

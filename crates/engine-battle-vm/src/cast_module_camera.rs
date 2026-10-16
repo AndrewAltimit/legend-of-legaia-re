@@ -177,6 +177,12 @@ pub struct ModuleCamState {
     /// exists or where the host plays no clip on it: a clip gate then
     /// passes rather than park.
     pub creature_clip: Option<u8>,
+    /// The creature seat's clip loop counter `+0x21B`, as the host last saw
+    /// it (fed each tick beside [`Self::creature_clip`]): the committed
+    /// entry's `+0x84` count, taken off a `0xFF` sentinel the first time the
+    /// cursor reaches the window's end. `None` where the host plays no clip
+    /// on the seat.
+    pub creature_loops: Option<u8>,
     /// The host's answer to `FUN_8004E2F0(7, victim) == 0` - the creature in
     /// reach of the cast's victim. `None` where the host cannot answer.
     pub creature_in_range: Option<bool>,
@@ -195,6 +201,10 @@ pub struct ModuleCamState {
     /// while it held - a write the phase-chain body, which does not run on
     /// a held pass, cannot make. The host takes it once.
     pub creature_stage: Option<u8>,
+    /// An arm cleared the creature's loop counter on this pass, held or not
+    /// (`sb zero,0x21b` / `sh zero,0x176`): the park of the playing clip is
+    /// released. The host takes it once.
+    pub creature_loop_release: bool,
     /// `FUN_801DCEAC(caster[+0x1DD], ..)` - the same centroid and extent
     /// over the cast's own target code (a seat, or the group code `8` /
     /// `9`), as the host last measured it. PROT 0911's arms 9 and 10 frame

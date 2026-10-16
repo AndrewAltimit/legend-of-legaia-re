@@ -1,7 +1,7 @@
 //! The creature-seat writes a player Seru-magic director's arms make on
 //! their own passes, held or not, that no phase-chain body carries: the
 //! render node's floor clip `+0x42`, PROT 0903's hand-driven rise `+0x36`,
-//! and a clip staged on a held pass.
+//! a clip staged on a held pass and a loop-counter clear.
 
 use super::*;
 
@@ -30,6 +30,7 @@ impl World {
         phase: u8,
     ) {
         let stage = self.casting.module_cam.creature_stage.take();
+        let release = std::mem::take(&mut self.casting.module_cam.creature_loop_release);
         let Some(slot) = self.casting.summon_actor_slot else {
             return;
         };
@@ -48,6 +49,13 @@ impl World {
         }
         if let Some(clip) = stage {
             a.battle.queued_anim = clip;
+        }
+        // A director arm's `+0x21B` / `+0x176` clear (PROT 0905's arm 8).
+        if release {
+            a.battle.hit_count_bound = 0;
+            if let Some(p) = a.battle_animation.as_mut() {
+                p.release_loop_window();
+            }
         }
     }
 }

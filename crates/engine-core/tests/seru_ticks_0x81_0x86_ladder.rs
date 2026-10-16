@@ -281,3 +281,79 @@ fn gizam_settles_over_a_row_with_a_dead_foe() {
     assert_eq!(w.actors[dead].battle.render_color, 0);
     eprintln!("[ok] Gizam over a dead foe: phases {phases:?}");
 }
+
+/// Theeder (`0x82`, PROT 0904) with its real creature clips: arm 7 holds on
+/// the creature's loop counter `+0x21B` (`lbu v1,0x21b(s4)` / `beq` on `0xFF`
+/// at `0x801F71C4`) for as long as clip 1 - `summon.dat`'s Theeder record,
+/// entry window `(0xFF, 17, 17)` at rate `1` - takes to reach its park
+/// frame. At the creature's post-commit animation rate `4` that is 17
+/// keyframes at an eighth of a keyframe a tick: 136 ticks, against the ~141
+/// vsyncs the cast-sequence oracle measures on retail. Before the counter
+/// was kept the arm passed on the commit, one tick.
+#[test]
+fn theeder_arm_seven_holds_on_the_creature_loop_counter() {
+    use legaia_engine_battle_vm::seru_magic_ticks::THEEDER_ATTACK_ARM;
+    let Some(dir) = extracted_dir() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset or extracted/ incomplete");
+        return;
+    };
+    let scus = std::fs::read(dir.join("SCUS_942.54")).expect("read SCUS_942.54");
+    let mut archive =
+        legaia_prot::archive::Archive::open(&dir.join("PROT.DAT")).expect("open PROT.DAT");
+    let entry = archive
+        .entries
+        .get(usize::from(
+            legaia_actor_formats::summon_readef::SUMMON_PROT_INDEX,
+        ))
+        .cloned()
+        .expect("summon.dat entry");
+    let mut summon_dat = Vec::new();
+    archive
+        .read_entry(&entry, &mut summon_dat)
+        .expect("read summon.dat");
+    let cast = legaia_actor_formats::summon_readef::parse_cast(&summon_dat, 0x82)
+        .expect("Theeder's summon record");
+    assert_eq!(
+        cast.clips.get(1).and_then(|c| c.entry_loop_window()),
+        Some((0xFF, 17, 17)),
+        "Theeder's attack clip parks on frame 17 with the count 0xFF"
+    );
+
+    let mut w = battle_world();
+    w.install_menu_text(&scus);
+    w.casting.effect_pool = Some(cast_pool(&dir));
+    let seat = usize::from(LONE_SUMMON_SLOT);
+    let idle = legaia_engine_battle::battle_anim::MonsterAnimPlayer::new(&cast.clips[0])
+        .expect("idle clip");
+    w.set_actor_battle_animation(seat, idle);
+    w.set_actor_battle_action_clips(
+        seat,
+        std::sync::Arc::new(cast.clips.iter().cloned().map(Some).collect()),
+    );
+    // The seat installer leaves the clip unseeded and the creature at rate 2.
+    w.actors[seat].battle.anim_rate = legaia_engine_battle_vm::battle_anim_rate::AnimRate(2);
+
+    let mut held = 0usize;
+    let mut counters = Vec::new();
+    for _ in 0..MAX_FRAMES {
+        let run = w.run_cast_module_code(0x82, 0).expect("PROT 0904 runs");
+        w.tick_battle_animations();
+        if run.phase == THEEDER_ATTACK_ARM {
+            held += 1;
+            counters.push(w.actors[seat].battle.hit_count_bound);
+        }
+        if !run.busy {
+            break;
+        }
+    }
+    assert!(
+        counters.first() == Some(&0xFF),
+        "the attack clip's commit seeds the counter ({:?})",
+        &counters[..counters.len().min(4)]
+    );
+    assert!(
+        (130..=150).contains(&held),
+        "arm 7 held {held} ticks; retail holds ~141"
+    );
+    eprintln!("[ok] Theeder arm 7 held {held} ticks on the creature's loop counter");
+}

@@ -6,6 +6,12 @@ use super::*;
 /// The Spikefish flute's band entry (spell `0x97`).
 const SPIKEFISH_ENTRY: u32 = 925;
 
+/// The player-Seru modules whose `0xFF` arm clears the creature's
+/// `+0x21B` / `+0x176` (Theeder, Gizam, Nighto, Zenoir, Swordie, Orb, Freed,
+/// Nova). PROT 0903 and 0905 have no such store, and 0909's clear sits in
+/// its stager instead.
+const SERU_EXIT_LOOP_CLEARS: [u32; 8] = [904, 906, 907, 908, 910, 911, 912, 913];
+
 impl World {
     pub fn run_cast_module_code(&mut self, spell_id: u8, arm: u8) -> Option<CastModuleCodeRun> {
         use legaia_engine_battle_vm::cast_arm_ticks as arms;
@@ -1112,6 +1118,21 @@ impl World {
             let mut live = self.cast_view(slot);
             live.fold_writes(orig, view);
             self.write_cast_view(slot, &live);
+        }
+        // The `0xFF` arm of eight player-Seru modules leaves the creature
+        // seat's loop counter clear for the next cast's installer, which
+        // seeds none (`sb zero,0x21b` / `sh zero,0x176`; PROT 0904
+        // `0x801F80F0`, 0906 `0x801F76E8`, 0907 `0x801F7F68`, 0908
+        // `0x801F82A4`, 0910 `0x801F7BDC`, 0911 `0x801F7FAC`, 0912
+        // `0x801F831C`, 0913 `0x801F8608`).
+        if phase_entry == legaia_engine_battle_vm::cast_module_ticks::CHOREOGRAPHY_DONE_PHASE
+            && SERU_EXIT_LOOP_CLEARS.contains(&entry)
+            && let Some(a) = self.actors.get_mut(usize::from(seat_slot))
+        {
+            a.battle.hit_count_bound = 0;
+            if let Some(p) = a.battle_animation.as_mut() {
+                p.release_loop_window();
+            }
         }
         // PROT 0903's settle arm breaks the creature up on every pass: `+0x1BA += 2 *
         // frame * scalar` on seat 7 (`0x801F76A4..0x801F76C4`, past the

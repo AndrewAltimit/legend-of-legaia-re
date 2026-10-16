@@ -159,12 +159,13 @@ pub fn theeder_tick(
         }
         // `lbu v1,0x21b(s4); li v0,0xff; beq v1,v0,<epilogue>` at
         // `0x801F71C4`: the arm waits for the clip arm 6 staged to commit
-        // and run its loop window once - the commit copies the clip's loop
-        // count into `+0x21B`, and its first rewind takes the `0xFF`
-        // sentinel down (`FUN_80047430`).
-        //
-        // The engine's creature clip carries no loop window (`+0x21B` reads
-        // `0` once committed), so the wait ends on the commit there.
+        // and reach its window - the commit copies the clip's loop count
+        // `0xFF` into `+0x21B`, and the window arm of `FUN_80047430` takes
+        // it off the sentinel the first time the cursor reaches the park
+        // frame (clip 1 parks on frame 17). Before the commit the seat still
+        // reads the previous clip's count, which the bump of arm 6 replaces
+        // on the anim pass after it; the port waits for the commit
+        // explicitly so its own pass order cannot let the idle's `0` through.
         THEEDER_ATTACK_ARM => {
             let committed = seats
                 .get(who.summon as usize)

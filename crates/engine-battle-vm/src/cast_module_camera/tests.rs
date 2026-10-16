@@ -674,3 +674,28 @@ fn capture_bodies_that_finish_on_the_0x780_yaw_counter() {
     assert_eq!(capture_exit_yaw_base(962, ULTRA_CHARGE_BODY), None);
     assert_eq!(capture_exit_yaw_base(959, 0x801F_69F0), None);
 }
+
+/// PROT 0907's arm 10 holds on the creature's loop counter `+0x21B`
+/// (`0x801F7AC0`): while clip 2's count `0xFF` is unspent, and while the
+/// seat still plays clip 1 (whose count, `0`, is stale until the commit).
+#[test]
+fn nighto_arm_ten_holds_on_the_loop_counter_sentinel() {
+    let mut st = ModuleCamState {
+        creature_clip: Some(1),
+        creature_loops: Some(0),
+        ..Default::default()
+    };
+    assert!(
+        nighto_direct(&mut st, 10, seats()).hold,
+        "clip 1 still playing"
+    );
+    st.creature_clip = Some(NIGHTO_SUMMON_CLIP);
+    st.creature_loops = Some(NIGHTO_LOOP_SENTINEL);
+    for _ in 0..4 {
+        assert!(nighto_direct(&mut st, 10, seats()).hold, "count unspent");
+    }
+    st.creature_loops = Some(0xFE);
+    let d = nighto_direct(&mut st, 10, seats());
+    assert!(!d.hold, "the park took the counter off 0xFF");
+    assert_eq!(st.countdown.0, SPEED_SCALAR << 7);
+}

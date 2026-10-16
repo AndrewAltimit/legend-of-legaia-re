@@ -1421,9 +1421,9 @@ the trail is empty, and arm 14 drains it and then polls the monster row
 (alive and on idle, or dead with the node's `+0x74` colour gone) before it
 stores `0xFF`. Port: `cast_module_camera::theeder_direct` (the countdown
 gates, the settle word and the camera arms 0, 3, 6, 8, 9, 11, 12 and `0xFF`'s
-case 8) beside the tick body (arm 7's wait and arm 14's poll). The engine's
-creature clip carries no loop window, so arm 7 passes once the clip commits;
-retail holds it about 140 vsyncs.
+case 8) beside the tick body (arm 7's wait and arm 14's poll). Clip 1 parks
+on frame 17, so arm 7 holds about 140 vsyncs
+([the loop counter](#the-creatures-loop-counter-0x21b)).
 
 ### PROT 0905 (Vera)
 
@@ -1524,9 +1524,12 @@ frame product and holds while it reads non-negative; the director
 | 11, 13, 15 | the countdown | -, the leg's (`scalar * 120` kill, `scalar * 70` confuse) |
 | 14 | the victim's colour word `+0x04` reaching `0`; a resisted kill also lets go once the countdown is spent | - |
 
-Arm 10's `+0x21B` is the clip's loop counter (`+0x176 >> 4`), which the
-commit of the clip arm 8 staged reseeds, so the port reads it as "clip `2`
-is playing". Arm 12 writes the victim's colour word `0x20080200` before arm
+Arm 10's `+0x21B` is the clip's loop counter
+([the loop counter](#the-creatures-loop-counter-0x21b)): the commit of clip 2,
+which arm 8 staged with the `+0x1DC` cut, seeds it with the count `0xFF`, and
+it leaves the sentinel when the clip reaches its park on frame 19. The port
+also waits for clip 2's commit, so its own pass order cannot let clip 1's
+count through. Arm 12 writes the victim's colour word `0x20080200` before arm
 14 polls it.
 
 ### PROT 0908 (Zenoir)
@@ -2591,6 +2594,7 @@ seats a creature, and what it writes holds band-wide
 | target `+0x1DD` | `0x801F1DB8` | the caster's |
 | anim rate `+0x21D` | `li s3,0x2` at `0x801F1CFC`, `0x801F1DFC` | `2`, a quarter of normal |
 | playing clip `+0x1D9` | `0x801F1DD8` | `0` |
+| loop counter `+0x21B` / budget `+0x176` | - | not written: the clip is hung on the node without the commit, so no window is seeded ([the loop counter](#the-creatures-loop-counter-0x21b)) |
 
 So a creature first stands on its caster, wearing the caster's facing. The
 library states agree: `vera_summon_mid_cast` still holds the previous cast's
@@ -2635,6 +2639,71 @@ rate `2`, 30 units a vsync, the 87 vsyncs the `viguro` capture takes over
 `0xA00`). The anim tick's root-motion term moves both. A creature with no
 root speed to play (a headless seat, or a body with no record clips) is
 glided at 30 units a tick instead (`World::apply_module_creature_writes`).
+
+### The creature's loop counter (`+0x21B`)
+
+`+0x21B` is the battle actor's **clip loop counter**, and `+0x176` the hold
+budget behind it. Both belong to the anim system, which keeps them for every
+actor:
+
+| Writer | Where | What |
+|---|---|---|
+| the commit `FUN_8004AD80` | `0x8004BDEC..0x8004BE0C`, on every install and re-commit (the natural-end re-commit included) | `+0x21B = entry[+0x84]`, `+0x176 = entry[+0x84] << 4` |
+| the anim tick `FUN_80047430`, park (`entry[+0x85] == entry[+0x86]`) | `0x800477A4..0x800477E8` | once the cursor reaches the park frame: `+0x176 -=` the overshoot (or `0` when it exceeds the budget), cursor back on the frame, `+0x21B = +0x176 >> 4` |
+| the same tick, window (`+0x85 < +0x86`) | `0x800477EC..0x8004783C` | per rewind of the span: `+0x176 -= 0x10`, `+0x21B = +0x176 >> 4`, until the cursor is below the end or the budget is spent |
+| a cast module | see below | `sb zero,0x21b` / `sh zero,0x176` releases a park; PROT 0911 arms one |
+
+The window test runs only while `+0x176` is non-zero, so a spent or cleared
+budget lets the cursor run on to the clip's natural end. Every creature
+attack clip with a window carries the count `0xFF`, and nearly all of them
+park (`start == end`): the commit reads `0xFF`, and the first tick that
+carries the cursor past the park frame spends some of `0xFF0` and drops the
+counter to `0xFE`. "`+0x21B` still reads `0xFF`" therefore means "the clip
+has not yet reached its park frame". Theeder's attack clip parks on frame 17
+and Nighto's clip 2 on frame 19, both at rate `1`; at the creature's
+post-commit rate `4` (two sixteenths a vsync) that is 136 and 152 vsyncs,
+the holds retail shows on PROT 0904's arm 7 (~141) and PROT 0907's arm 10
+(~153).
+
+The installer `FUN_801F19EC` hangs the record's first clip on the node
+without the commit, so the creature starts with whatever `+0x21B` /
+`+0x176` the seat last held - the zeros the previous cast's `0xFF` arm left.
+Its window first applies at the clip's first commit.
+
+Module stores in the Seru band (PROT 0903..0913):
+
+| Module | Address | Arm | Store |
+|---|---|---|---|
+| 0904 Theeder | `0x801F71C4` | 7 | holds while `+0x21B == 0xFF` |
+| 0907 Nighto | `0x801F7AC0` | 10 | holds while `+0x21B == 0xFF` |
+| 0905 Vera | `0x801F78E4` | 8, every pass | clears, with `+0x1DA = 2`: releases clip 1's park on frame 0 |
+| 0909 Viguro | `0x801F7BEC` | stager arm 1 | clears, with `+0x1DA = 1` |
+| 0910 Swordie | `0x801F6F24`, `0x801F76F0` | 3 (exit), 7 (exit) | clears: releases clip 1's and clip 2's parks |
+| 0911 Orb | `0x801F70CC` | the seat arm | `+0x21B = 8`, `+0x176 = 0x80`: an eight-keyframe park on frame 3 of the installer's clip |
+| 0904, 0906, 0907, 0908, 0910, 0911, 0912, 0913 | `0x801F80F0`, `0x801F76E8`, `0x801F7F68`, `0x801F82A4`, `0x801F7BDC`, `0x801F7FAC`, `0x801F831C`, `0x801F8608` | `0xFF` | clears, leaving the seat clean for the next installer |
+
+In the summon band, PROT 0914 (Gola Gola) re-arms `+0x21B = 0xFF` /
+`+0x176 = 0xFF0` in three arms (`0x801F73E0`, `0x801F7528`, `0x801F78B0`)
+and holds on the sentinel at `0x801F72D0`; PROT 0928 (Palma) reads and
+rewrites the counter in one arm (`0x801F79D4..0x801F7AF8`); PROT 0923
+(Gilium) writes it (`0x801F7858`, `0x801F7904`, `0x801F7B58`); the rest of
+the band only clears it. The capture band reads the **caster's** counter
+(PROT 0935's arms 1 and 3, the countdown modules' `+0x21B` leaving `0xFF`).
+
+Port: the clip player `engine-battle::battle_anim::MonsterAnimPlayer` keeps
+the budget and reports each window store; `World::tick_battle_animations`
+and the commit mirror the counter into the creature seat's `+0x21B`
+(`BattleActor::hit_count_bound`, `World::mirrors_loop_counter`). The
+summon record's clips keep their whole entry head (`summon_readef`'s part
+entries, `+0x00..+0x88`), which is where the window lives. The module views
+carry the pair as `CastActorState::loop_count` / `loop_timer`; Theeder's
+tick body and Nighto's director read the counter, and the Seru-band stores
+above are ported (Vera's through `ModuleCamState::creature_loop_release`,
+Orb's in the seat-arm row, the `0xFF` clears in `run_cast_module_code`). The
+mirror stays on the creature seat: the same byte's readers on other seats
+(the magic hit loop's bound, the battle camera's arm selector, the monster
+impact arm) are fed separately, and the summon band's and capture band's
+readers above are not ported.
 
 ### Module fades
 

@@ -88,6 +88,16 @@ pub struct MonsterAnimPlayer {
     loop_budget: u32,
     loop_start: u32,
     loop_end: u32,
+    /// The entry's raw `+0x84` count - what every commit `FUN_8004AD80`
+    /// stores into `actor+0x21B` and seeds `actor+0x176` from
+    /// (`0x8004BDEC..0x8004BE0C`), window valid or not.
+    loop_seed: u8,
+    /// Whether the entry's window passed the `start <= end <= frames` test
+    /// [`Self::new`] applies.
+    window_valid: bool,
+    /// Set whenever the window arm stored the counter (`sb v0,0x21b` at
+    /// `0x800477E8` / `0x8004783C`); taken by [`Self::take_loop_store`].
+    loop_stored: bool,
     /// Set by [`Self::apply_loop_window`] when a real window (`start !=
     /// end`) rewound the cursor this tick; taken by
     /// [`Self::take_loop_rewound`]. The tick re-zeroes the per-clip hit
@@ -186,7 +196,8 @@ impl MonsterAnimPlayer {
         // natural end (the disc census filter `animation_loop_windows`
         // applies is the same bound).
         let frames = anim.frame_count as u32;
-        let (loop_budget, loop_start, loop_end) = match anim.entry_loop_window() {
+        let loop_seed = anim.entry_loop_window().map_or(0, |(count, _, _)| count);
+        let (loop_budget, loop_start, loop_end, window_valid) = match anim.entry_loop_window() {
             Some((count, start, end))
                 if u32::from(start) <= u32::from(end) && u32::from(end) <= frames =>
             {
@@ -194,9 +205,10 @@ impl MonsterAnimPlayer {
                     u32::from(count) * PHASE_ONE,
                     u32::from(start) * PHASE_ONE,
                     u32::from(end) * PHASE_ONE,
+                    true,
                 )
             }
-            _ => (0, 0, 0),
+            _ => (0, 0, 0, false),
         };
         let hit_source = match (anim.entry_power_run(), anim.entry_event_frames()) {
             (Some(power_run), Some(event_frames)) => Some(HitEventSource {
@@ -221,6 +233,9 @@ impl MonsterAnimPlayer {
             loop_budget,
             loop_start,
             loop_end,
+            loop_seed,
+            window_valid,
+            loop_stored: false,
             loop_rewound: false,
             root_speed: anim.entry_root_speed().unwrap_or(0),
             hit_source,
@@ -278,6 +293,47 @@ impl MonsterAnimPlayer {
     /// this; see `docs/formats/monster-animation.md` § Playback).
     pub fn release_loop_window(&mut self) {
         self.loop_budget = 0;
+    }
+
+    /// The entry's `+0x84` loop count, which every commit of this clip
+    /// stores into `actor+0x21B` (`FUN_8004AD80` `0x8004BDEC..0x8004BDF4`).
+    pub fn entry_loop_count(&self) -> u8 {
+        self.loop_seed
+    }
+
+    /// The hold budget `actor+0x176` in retail's 12.4 unit (sixteenths of a
+    /// keyframe): `count << 4` at the commit, less one whole unit a window
+    /// rewind and the overshoot a park.
+    pub fn loop_timer(&self) -> u16 {
+        (self.loop_budget >> 4).min(u32::from(u16::MAX)) as u16
+    }
+
+    /// Store `actor+0x176` - the halfword a cast module writes beside
+    /// `+0x21B` (`sh zero,0x176` to release a park, PROT 0911's
+    /// `sh v0,0x176` with `0x80` to arm one). The window's frames are the
+    /// committed entry's; only the budget moves.
+    pub fn set_loop_timer(&mut self, sixteenths: u16) {
+        self.loop_budget = u32::from(sixteenths) << 4;
+    }
+
+    /// Re-seed the budget from the entry, as a commit of the same clip does
+    /// (`FUN_8004AD80` reaches the seed at `0x8004BDD8` on a re-commit too).
+    /// A window the player dropped as unusable stays dropped.
+    pub fn reseed_loop_window(&mut self) {
+        self.loop_budget = if self.window_valid {
+            u32::from(self.loop_seed) * PHASE_ONE
+        } else {
+            0
+        };
+    }
+
+    /// `true` once per tick on which the window arm stored the counter
+    /// (`actor+0x21B = actor+0x176 >> 4`, `0x800477D8..0x800477E8` for a park
+    /// and `0x80047820..0x8004783C` per rewind). Clears on read; the world
+    /// then mirrors [`Self::loop_cycles_remaining`] into the actor's
+    /// `+0x21B`.
+    pub fn take_loop_store(&mut self) -> bool {
+        std::mem::take(&mut self.loop_stored)
     }
 
     /// `true` once per tick on which a real loop window rewound the cursor
@@ -413,6 +469,7 @@ impl MonsterAnimPlayer {
         if self.loop_budget == 0 || phase < self.loop_end {
             return phase;
         }
+        self.loop_stored = true;
         if self.loop_end == self.loop_start {
             let over = phase - self.loop_start;
             self.loop_budget = self.loop_budget.saturating_sub(over);
@@ -900,6 +957,72 @@ mod one_shot_tests {
             p.tick();
         }
         assert!(p.finished());
+    }
+
+    /// The `+0x21B` counter a park drives: the commit's count `0xFF` holds
+    /// until the cursor first reaches the park frame, where the overshoot
+    /// takes the budget below `0xFF0` and the counter to `0xFE`
+    /// (`FUN_80047430` `0x800477A4..0x800477E8`). PROT 0904's arm 7 and
+    /// PROT 0907's arm 10 wait on exactly that edge.
+    #[test]
+    fn a_park_takes_the_loop_counter_off_its_sentinel_on_the_park_frame() {
+        let mut p = MonsterAnimPlayer::new(&windowed_clip(40, 0xFF, 17, 17)).unwrap();
+        assert_eq!(p.entry_loop_count(), 0xFF);
+        assert_eq!(p.loop_cycles_remaining(), 0xFF);
+        assert_eq!(p.loop_timer(), 0xFF0);
+        // A quarter keyframe a tick: the cursor reaches frame 17 on tick 68.
+        p.step = 64;
+        let mut first_store = None;
+        for t in 1..=80 {
+            p.tick();
+            if p.take_loop_store() && first_store.is_none() {
+                first_store = Some((t, p.loop_cycles_remaining()));
+            }
+        }
+        // Tick 68 lands exactly on the park frame: no overshoot yet.
+        assert_eq!(first_store, Some((68, 0xFF)), "the park's first store");
+        // Every later tick spends its quarter keyframe of overshoot.
+        assert_eq!(p.current_frame(), 17);
+        assert_eq!(p.loop_timer(), 0xFF0 - 4 * (80 - 68));
+        assert!(p.loop_cycles_remaining() < 0xFF);
+    }
+
+    /// A real window stores the counter once per rewind (`+0x176 -= 0x10`,
+    /// `+0x21B = +0x176 >> 4`), and nothing is stored before the window's end.
+    #[test]
+    fn a_rewind_drops_the_loop_counter_by_one_cycle() {
+        let mut p = MonsterAnimPlayer::new_one_shot(&windowed_clip(10, 3, 4, 6)).unwrap();
+        p.step = 256;
+        let mut counts = Vec::new();
+        for _ in 0..16 {
+            p.tick();
+            if p.take_loop_store() {
+                counts.push(p.loop_cycles_remaining());
+            }
+            if p.finished() {
+                break;
+            }
+        }
+        assert_eq!(counts, vec![2, 1, 0]);
+        assert!(!p.take_loop_store(), "cleared by the read");
+    }
+
+    /// A module's `+0x176` store re-arms or releases the park; a re-commit
+    /// re-seeds it from the entry.
+    #[test]
+    fn module_timer_stores_and_the_recommit_reseed() {
+        let mut p = MonsterAnimPlayer::new(&windowed_clip(8, 0xFF, 3, 3)).unwrap();
+        p.set_loop_timer(0x80);
+        assert_eq!(p.loop_timer(), 0x80);
+        assert_eq!(p.loop_cycles_remaining(), 8);
+        p.set_loop_timer(0);
+        assert_eq!(p.loop_cycles_remaining(), 0);
+        p.reseed_loop_window();
+        assert_eq!(p.loop_timer(), 0xFF0);
+        // A clip with no window reseeds to nothing.
+        let mut q = MonsterAnimPlayer::new(&clip(4)).unwrap();
+        q.reseed_loop_window();
+        assert_eq!((q.entry_loop_count(), q.loop_timer()), (0, 0));
     }
 
     #[test]

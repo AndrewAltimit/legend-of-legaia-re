@@ -564,6 +564,9 @@ pub fn vera_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) ->
             // `sb zero,0x21b(s4)` / `sh zero,0x176(s4)` (`0x801F78D0..
             // 0x801F78F4`) - the creature holds its hover clip 2 while the
             // countdown runs; the pass then stages clip 3 (the body's).
+            // The clear releases clip 1's park on frame 0 (window `[0, 0]`,
+            // count `0xFF`), so it plays out into the hover clip.
+            st.creature_loop_release = true;
             if st.countdown.drain_non_negative() {
                 st.creature_stage = Some(2);
                 return ArmDirection::HOLD.nudged(drift);

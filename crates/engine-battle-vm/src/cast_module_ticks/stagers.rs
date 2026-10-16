@@ -160,8 +160,8 @@ pub const VIGURO_STAGER_ARM1_CLIP: u8 = 1;
 /// body's phase-`8` rendezvous ([`crate::seru_magic_ticks`]):
 ///
 /// ```text
-/// summon[+0x176] = 0                      ; pose, unported
-/// summon[+0x21B] = 0                      ; pose, unported
+/// summon[+0x176] = 0                      ; 0x801F7BE0, the hold budget
+/// summon[+0x21B] = 0                      ; 0x801F7BEC, the loop counter
 /// summon[+0x1DA] = 1                      ; 0x801F7BF8, no +0x1DC bump
 /// jal FUN_80024E80 -> ctx[+0x102C]        ; the pool's
 /// ctx[+0x279]   += 1                      ; 0x801F7C54
@@ -181,6 +181,8 @@ pub fn viguro_stager(
     arm: u8,
 ) -> Option<u8> {
     if arm == VIGURO_STAGER_STAGE_ARM {
+        summon_seat.loop_timer = 0;
+        summon_seat.loop_count = 0;
         summon_seat.staged_anim = VIGURO_STAGER_ARM1_CLIP;
         advance_phase(ctx);
         return None;

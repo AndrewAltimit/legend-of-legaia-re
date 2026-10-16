@@ -215,7 +215,8 @@ impl SwordieClock {
 /// * `3` - summon `+0x21C = 0` and shatter `+0x1BA = 0` every pass; the split counter grows by
 ///   `(rate * speed) / 4` and the arm **holds** below `0x40`
 ///   ([`SWORDIE_STREAK_END`]); the crossing pass clamps it to `0x3F`, stores
-///   summon `+0x1DA = 0` and advances, and the counter is zeroed after the
+///   summon `+0x1DA = 0`, clears its loop counter `+0x21B` / `+0x176` and
+///   advances, and the counter is zeroed after the
 ///   pass's draws;
 /// * `4` - the counter grows the same way, the panel tables are rewritten
 ///   from it ([`swordie_split_panels`]) and the arm holds while it is at most
@@ -225,7 +226,8 @@ impl SwordieClock {
 ///   `+0x1DC += 1`, `+0x21C = 7`;
 /// * `6` - `ctx[+0x6D8] = speed << 8` (`0x801F76A8`);
 /// * `7` - drain `ctx[+0x6D8]` by `rate * speed` and **hold** while it is not
-///   negative (`bgez` at `0x801F76E0`); then summon `+0x21D = speed`
+///   negative (`bgez` at `0x801F76E0`); then summon `+0x21B = 0`,
+///   `+0x176 = 0` and `+0x21D = speed`
 ///   (`0x801F7718`), i.e. the animation rate is set to the game-speed scalar
 ///   for the strike;
 /// * `8` - `ctx[+0x6D8] = 0`, victim `+0x21C = 0`, all four slash progress
@@ -319,8 +321,14 @@ pub fn swordie_tick(
             let crossed = slashes.split >= SWORDIE_STREAK_END;
             if crossed {
                 slashes.split = SWORDIE_STREAK_END - 1;
+                // `sb zero,0x1da` / `sb zero,0x21b` / `sh zero,0x176` at
+                // `0x801F6F20..0x801F6F28`: back to idle, and the park of
+                // the clip arm 2 staged released so its cursor runs on to
+                // the natural end that commits the idle.
                 if let Some(s) = seats.get_mut(summon_seat as usize) {
                     s.staged_anim = 0;
+                    s.loop_count = 0;
+                    s.loop_timer = 0;
                 }
             }
             slashes.draw.streak = Some(slashes.split);
@@ -363,7 +371,11 @@ pub fn swordie_tick(
             if slashes.timer >= 0 {
                 return CastArmStep::Hold;
             }
+            // `sb zero,0x21b` / `sh zero,0x176` at `0x801F76F0..0x801F76F4`
+            // release the strike clip's park, then `+0x21D = speed`.
             if let Some(s) = seats.get_mut(summon_seat as usize) {
+                s.loop_count = 0;
+                s.loop_timer = 0;
                 s.anim_rate = clock.speed;
             }
             CastArmStep::Advance
