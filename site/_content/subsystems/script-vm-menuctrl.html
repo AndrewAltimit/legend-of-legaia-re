@@ -138,10 +138,12 @@
   <table>
     <thead><tr><th>Op</th><th>What it does</th></tr></thead>
     <tbody>
+      <tr><td><code>4C C0</code></td><td>seats the actor's clip at a random frame - not a cancel. The festival crowd in <code>town0d</code> issues it for every dancer, so each starts its loop at its own phase rather than in lockstep</td></tr>
       <tr><td><code>4C C1</code></td><td>fog-region enable reset</td></tr>
       <tr><td><code>4C C3</code></td><td>script-table teleport and spawn-section re-run</td></tr>
       <tr><td><code>4C C4 x z</code></td><td>camera-zone query at an explicit tile: frames a shot from a region the player is not standing in</td></tr>
       <tr><td><code>4C C5</code> / <code>C6</code></td><td>wait until a system flag is set / cleared. The flag is flipped by a move-VM part the record itself just spawned (ext sub-op <code>0x1C</code> / <code>0x1D</code> in the scene's stager record), so the wait lasts as long as that part takes to reach it</td></tr>
+      <tr><td><code>4C C7 char art</code></td><td><strong>teach a Hyper Art</strong>: inserts <code>art</code> into roster slot <code>char</code>'s learned list - the masters' lessons</td></tr>
       <tr><td><code>4C CA</code> / <code>CB</code> / <code>CC</code></td><td>script counter set / add / subtract</td></tr>
       <tr><td><code>4C CD</code></td><td>wait for the camera glide</td></tr>
       <tr><td><code>4C CE</code></td><td>player clip override: re-points walk, idle and run at other scene-bank records</td></tr>
@@ -166,7 +168,7 @@
     <li><strong>Nibble 5</strong> - model select (which re-stages the actor), move-to-tile, <strong>TAKE_ITEM</strong> (sub-2 removes an item from the bag; it is not a menu poll), and two dialog polls.</li>
     <li><strong>Nibble 6</strong> - VRAM image moves and a CLUT-cell write.</li>
     <li><strong>Nibble A</strong> - conditional skip on a flag bit: a set bit steps over the bytes its halfword names, counted from the end of the instruction (the shared exit <code>LAB_801E360C</code> adds the halfword less two), not an absolute target. <code>4C DC</code> / <code>4C DE</code> skip the same way when the party holds or wears an item, and so do <code>4C 8B</code>..<code>8D</code> (spell known, a context word zero, art learned), <code>4C D1</code> (a camera glide running) and <code>4C EB</code> (an actor missing).</li>
-    <li><strong>Nibble E</strong> - text balloon, movie trigger, a position-copy teleport, a box-test branch, camera animate and zoom, and the casino coin delta.</li>
+    <li><strong>Nibble E</strong> - text balloon, movie trigger, a position-copy teleport, a box-test branch, camera animate and zoom, and the casino coin delta. <code>4C E0</code> formats the reading box: a row capacity, or a latch that loads the next page whole (the help pages use twelve-row boxes loaded at once).</li>
     <li><strong>Nibbles B and F</strong> - the error printer. They form a message string and call the message routine, returning the PC unchanged. Only <code>4C FF</code> passes through. The disc-wide opcode census finds no coherent use of either in any scene.</li>
   </ul>
 </section>

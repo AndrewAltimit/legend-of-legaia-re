@@ -209,6 +209,16 @@
   <p>Both shadows are checked against retail captures packet for packet. In the port each sits a few units above the floor so a depth test does the job retail's ordering does.</p>
 </section>
 
+<section class="doc-section" id="shatter">
+  <h2>The shatter renderer: a body that flies apart</h2>
+  <p>A body whose break-up word is non-zero leaves the ordinary primitive dispatcher and is drawn by a sibling pair (<code>FUN_80029888</code> per object, <code>FUN_80029DD8</code> per primitive). It is not a whole-model spin: every triangle spins about its own centroid and is pushed away from a burst centre, so the mesh comes apart in shards. A quad is two triangles, each with its own centroid, and there is no back-face test, so a shattering body draws both sides.</p>
+  <ul class="bullets">
+    <li><strong>Flags shape the burst.</strong> One row of flags turns off the spin, makes each shard shrink as the word rises, or holds the shards in place. Three more sweep a front across the body along a camera axis: only the triangles past the front come apart, which is how a summon creature assembles from the floor up.</li>
+    <li><strong>Who drives it.</strong> On the field, a script op ramps the word from <code>0</code> to <code>0x1000</code> (<a href="script-vm.html">script VM</a>). In battle the cast modules do: six summons break up or assemble their own creature, and two of them do it to the monsters (<a href="cast-module.html">cast modules</a>). Effect parts pass the same gate, so a summoning mound or a crystal bursts the same way.</li>
+    <li><strong>In the port.</strong> <code>render-kernels::shatter</code> is the integer kernel, shared by both play hosts for battle bodies and field NPCs; a body whose word is zero takes the plain path untouched. The field's view-space sweep frame, the per-triangle depth window and the light-source rows' colour are not modelled.</li>
+  </ul>
+</section>
+
 <section class="doc-section" id="frame-as-texture">
   <h2>The frame as a texture, and the grade</h2>
   <p>On the console the framebuffer <em>is</em> VRAM: the display area is a rectangle inside the same image textures are read from, so a primitive can sample pixels the GPU drew a moment earlier. The field-to-battle transitions depend on it - the curtain slices a captured field frame into row and column strips, each an ordinary textured quad whose texture page is the capture.</p>

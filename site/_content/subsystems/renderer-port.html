@@ -118,6 +118,7 @@
   <h2>The screen-space overlay</h2>
   <p>A screen primitive is a textured quad or a flat quad carrying an ordering-table index. The pass reproduces the retail walk - farthest bucket first, later-submitted-first inside a bucket - and draws coalesced runs by blend class. Primitives are authored in the 320x240 display space every retail emitter clamps against, and the overlay stretches over the surface.</p>
   <p>Its consumers are the things retail draws as 2D packets into the 3D table: battle streaks and trails, the field-to-battle transition styles, billboards. The corner projection is the GTE&rsquo;s own, including its reciprocal and its saturating screen coordinates, so a corner behind the camera smears the way hardware does.</p>
+  <p><strong>Backdrops draw first.</strong> A screen primitive whose four corners sit at the far plane is one retail links into the farthest bucket - the cast colour wash and the overworld sky band. Composited after the 3D pass, a blended primitive writes no depth, so a wash drawn there would erase every additive effect over the sky. Both hosts split those backdrops off the under list and draw them in the scene pass, after the clear and before the first 3D draw.</p>
 </section>
 
 <section class="doc-section" id="capture">

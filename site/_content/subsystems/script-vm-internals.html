@@ -95,7 +95,7 @@
     <tbody>
       <tr><td><code>0</code></td><td>7</td><td>Effect-global colour and intensity (the fade pipeline)</td></tr>
       <tr><td><code>1</code></td><td>13</td><td>Attached light: a coloured rim on a target actor, extents in view-space units</td></tr>
-      <tr><td><code>2</code></td><td>2</td><td>Capture-and-yield: if the next op is a <code>0x40</code> block, capture its payload and yield</td></tr>
+      <tr><td><code>2</code></td><td>2</td><td>Re-script the attached light: when the actor has one and the next op is a <code>0x40</code> block, the light takes the block as its new script and the PC steps past it. No yield; with no light the block runs as an ordinary <code>0x40</code></td></tr>
       <tr><td><code>3</code></td><td>4</td><td>Spawn a scene-local 3D animation from the scene's prescript window at the actor</td></tr>
       <tr><td>other</td><td>-</td><td>Halts at PC</td></tr>
     </tbody>
@@ -150,11 +150,11 @@
       <tr><td><code>0 1 A B</code></td><td>var</td><td>Scripted arc jump (halt-acquire, target tile, floor lookup)</td></tr>
       <tr><td><code>2</code></td><td>8</td><td>Three-actor talk</td></tr>
       <tr><td><code>3..6</code></td><td>10</td><td>Camera-register zone ramp: while the player is in a tile box, lerp pitch / yaw / depth / projection on his Z. Every disc site is sub-3, a field-of-view ramp</td></tr>
-      <tr><td><code>7</code> / <code>8</code></td><td>17 / 2</td><td>Face / body rotation setup / reset</td></tr>
+      <tr><td><code>7</code> / <code>8</code></td><td>17 / 2</td><td>Spin-and-shrink deformation / reset: writes a row of the break-up table and ramps the actor's word, which hands its draw to the <a href="renderer.html#shatter">shatter renderer</a></td></tr>
       <tr><td><code>9</code></td><td>10</td><td>Position: immediate, or an eased move over <code>ticks</code></td></tr>
       <tr><td><code>C</code></td><td>5</td><td>Shutter blackout: two black bars close, hold and open</td></tr>
-      <tr><td><code>D</code> / <code>F</code></td><td>6</td><td>Allocate an actor</td></tr>
-      <tr><td><code>E</code></td><td>2</td><td>Mark the iterating actor (flag bit 8)</td></tr>
+      <tr><td><code>D</code> / <code>F</code></td><td>6</td><td>Screen frame: a <code>w</code>-wide opaque band round the screen in one colour, bevelled at the inner corners</td></tr>
+      <tr><td><code>E</code></td><td>2</td><td>Retire the first live screen frame</td></tr>
       <tr><td><code>10..15</code></td><td>21 / 12 / 14 / 14 / 10 / 14</td><td>Screen widgets of the ending scenes: sprite, iris mask, VRAM rect copy, image panel, panel move / scale, letterbox</td></tr>
       <tr><td><code>16+</code></td><td>-</td><td>Halts at PC</td></tr>
     </tbody>

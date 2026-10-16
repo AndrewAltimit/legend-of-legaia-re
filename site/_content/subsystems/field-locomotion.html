@@ -199,6 +199,7 @@
   <ul class="bullets">
     <li><strong>The probe looks along the last step.</strong> The settle controller keeps the direction of the last committed step in two globals; the hop probe samples the floor a step ahead in that direction and posts the hop only when the rise is a ledge.</li>
     <li><strong>The lock is the same bit a cutscene holds,</strong> which is why the pad opens no menu in mid-air. The take-off also raises the flag that hides the player's ground shadow (<a href="renderer.html#battle-draw">renderer</a>).</li>
+    <li><strong>Retail never tests the landing.</strong> The probe checks the wall bits along the way, but nothing checks the cell the arc sets the player down in. A hop into an open sub-cell that is walled on every side leaves the player where all four directions are refused, and with no step committed the probe never runs again - one diagonal step-up in <code>jouind</code> lands exactly so. The port's landing guard refuses such a hop; it is an enhancement, on by default and off in the retail-faithful mode.</li>
   </ul>
 </section>
 
