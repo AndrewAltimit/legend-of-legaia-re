@@ -47,6 +47,7 @@ impl World {
         self.casting.module_swordie = Default::default();
         self.casting.module_settle_countdown = 0;
         self.casting.module_cam = Default::default();
+        self.casting.module_pres = Default::default();
         self.casting.summon_stager = Some(SummonStager {
             caster,
             spell_id,

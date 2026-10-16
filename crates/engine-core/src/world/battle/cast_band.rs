@@ -74,9 +74,12 @@
 
 use super::*;
 
+pub use presentation::ModulePresentation;
+
 mod arm_and_fold;
 mod caster_stages;
 mod module_spawn;
+mod presentation;
 mod screen_fade;
 mod summon_stager;
 mod voice_cues;

@@ -134,6 +134,12 @@ pub struct CastFxState {
     /// ([`legaia_engine_battle_vm::cast_module_camera`]). Module-image words in
     /// retail, so a fresh cast starts them at zero.
     pub module_cam: legaia_engine_battle_vm::cast_module_camera::ModuleCamState,
+    /// The resident module's presentation-hook state: the colour-wash block
+    /// `ctx[+0x27A..]`, the armed wash its last tick armed, and which arm's
+    /// once-per-arm calls have fired
+    /// (`crate::world::battle::cast_band::presentation`). Reset when a cast
+    /// is armed.
+    pub module_pres: crate::world::battle::ModulePresentation,
     /// The action id whose **capture-band** module is resident, i.e. the one
     /// battle phase `0x70` re-enters every frame through `FUN_801F2160`.
     ///
@@ -262,6 +268,7 @@ impl CastFxState {
             module_swordie: Default::default(),
             module_settle_countdown: 0,
             module_cam: Default::default(),
+            module_pres: Default::default(),
             capture_spell: None,
             caster_stages: None,
             pending_move_fx_spawn: None,

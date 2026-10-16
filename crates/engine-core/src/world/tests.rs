@@ -326,6 +326,7 @@ mod battle_tutorial_flow;
 mod battle_xp_attack;
 mod camera_offset_ease;
 mod cast_band;
+mod cast_presentation_disc;
 mod commit_confirm;
 mod core;
 mod counterattack;

@@ -46,8 +46,8 @@ mod victory;
 pub use actor_draw::{BattleActorDrawPlan, PARTY_BODY_RADIUS};
 pub use auto_combo::{AutoComboInputs, AutoComboState};
 pub use cast_band::{
-    CASTER_STAGE_TICK_LIMIT, CasterStagePhase, CasterStageRun, PendingCast, SUMMON_SPAWN_BEHIND,
-    SUMMON_STRIKE_BEHIND, SummonPhase, SummonStager,
+    CASTER_STAGE_TICK_LIMIT, CasterStagePhase, CasterStageRun, ModulePresentation, PendingCast,
+    SUMMON_SPAWN_BEHIND, SUMMON_STRIKE_BEHIND, SummonPhase, SummonStager,
 };
 pub(in crate::world) use commit_log_launch::BATTLE_PASS_STEP_PER_TICK;
 pub use effect_route::RoutedEffectSpawn;

@@ -25,13 +25,15 @@ impl World {
 
     /// Every live full-screen fade quad this frame, the world's fade first
     /// and then the module fades running beside it
-    /// ([`crate::world::ScreenFxState::module_fades`]), each as
+    /// ([`crate::world::ScreenFxState::module_fades`], and the fades the
+    /// presentation hook spawned), each as
     /// [`Self::screen_fade_draw`] gives it. Both hosts composite the list.
     pub fn screen_fade_draws(&self) -> Vec<(u32, u8, u32)> {
         self.presentation
             .fade
             .iter()
             .chain(self.presentation.module_fades.iter())
+            .chain(self.casting.module_pres.fades.iter().map(|f| &f.state))
             .filter_map(fade_draw)
             .collect()
     }

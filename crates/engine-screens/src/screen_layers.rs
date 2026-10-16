@@ -201,6 +201,9 @@ pub fn compose_screen_prims(
         under.extend(legaia_render_kernels::cast_beam::cross_beam_prims(c));
     }
     under.extend(theeder);
+    // The cast modules' full-screen washes: PROT 0898's colour wash behind
+    // the scene and the armed subtractive wash, both in the farthest bucket.
+    under.extend(world.cast_wash_prims());
     // The world's one live full-screen fade, split at the text layer by its
     // ordering-table id: the summon band's flashes (id `1`) under the HUD,
     // a field warp's fade (id `0`) over it.

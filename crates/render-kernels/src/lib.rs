@@ -21,6 +21,7 @@ pub mod battle_intro_transition;
 pub mod battle_trail;
 pub mod billboard;
 pub mod cast_beam;
+pub mod cast_colour_wash;
 pub mod display_mirror;
 pub mod drop_shadow;
 pub mod effect_billboard;

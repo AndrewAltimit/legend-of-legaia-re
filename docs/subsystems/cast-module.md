@@ -1994,6 +1994,7 @@ through one `World` seam, so a live cast reaches every routine below.
 | Camera and gates | `cast_module_camera` | [directors](#the-module-owns-the-camera) and countdown tables |
 | Damage | `World::cast_spell_on_slots_prepaid`, `World::run_cast_module_aoe` | the [one-owner rule](#one-owner-per-hit) |
 | Caster clips | `CAPTURE_CASTER_STAGES`, `World::capture_stager_tick` | below |
+| Presentation calls | `cast_presentation`, `World::fire_cast_presentation` | fades, the colour and armed washes and CLUT copies, decoded per arm off the image and fired after the tick ([below](#presentation-calls)) |
 
 Left out, per function: the GPU-packet arms (except Theeder's and Cross
 Beam's, which are drawn), the camera arms of modules with no director, and
@@ -2078,7 +2079,112 @@ spawns a warm `(0xFF, 0xE0, 0x80)` and a blue `(0, 0x1F, 0x7F)` flash decaying
 to black. `vera_summon_mid_cast` holds the rise eight vsyncs in beside the
 band's flash-out, and the frame is their sum. The engine keeps such fades in
 `presentation.module_fades` (`ArmDirection::fades`), and both hosts composite
-every live fade through `World::screen_fade_draws`.
+every live fade through `World::screen_fade_draws`. Vera's are carried by its
+director; every other module's come through the
+[presentation calls](#presentation-calls).
+
+### Presentation calls
+
+<a id="presentation-calls"></a>
+
+Besides its spawn records, what a module puts on screen goes mostly through
+five shared helpers, and every arm hands them literals computed a few
+instructions before the call:
+
+| Helper | Arm's argument | Modules |
+|---|---|---|
+| `FUN_80024E80` screen fade | a 13-halfword template written into `0x801C9070`, id in `a1` | 52 |
+| `FUN_8004695C` armed wash | a 24-bit colour, armed for one frame (`gp+0x9D0`) | 9 |
+| `FUN_80058490` `MoveImage` | the effect-CLUT copy `(0xD0, 0x1DC)` -> `(0xE0, 0x1DC)`, 16x1, rect at `*(0x1F8003A0)` | 7 |
+| PROT 0898 `FUN_801F2410` colour wash | stores into `ctx[+0x27A..+0x286]`, `ctx[+0x32A]`, `ctx[+0x32C]` | 14 |
+| `FUN_801E1D98` streak ribbon | a stack trio anchor and a trail id | 6 |
+
+`legaia_overlay_images::cast_presentation::decode` recovers them as data.
+Each tick body opens on a switch over `ctx[+0x279]` - a jump table bounded by
+`sltiu` or a `beq` / `slti` chain - and the decoder walks the switch with the
+phase's value set to each arm's entry, walks each arm's control flow (not into
+the other arms) to the helper sites it reaches, and folds each call's
+arguments with a straight-line constant tracker seeded from the prologue's
+stack stores (the fade kind is often the busy word `sp+0x38 = 1`). A site in a
+routine an arm calls inherits the call's arm. Where a site sits in its arm is
+read off the same control flow: on the path that writes the phase (`Pass`),
+on the paths that return without writing it (`Hold`), or both (`Every`).
+
+The decode reproduces the three hand ports exactly: Vera's arm 2 and arm 4
+fades, Evil Seru Magic's arm 2 / 4 / 10 / 26 / 27 fades (all three of arm
+26's), and Gimard's arm 8 CLUT copy
+(`crates/overlay-images/tests/cast_presentation_real.rs`). Of the band's 258
+`FUN_80024E80` sites, 241 sit on a phase arm and 239 of those resolve whole.
+
+`World::fire_cast_presentation` fires them after `World::run_cast_module_code`
+has run the tick, keyed by `(module, tick body, phase)`. A call that leaves
+something behind (a fade actor, a VRAM copy, a parameter store) fires once:
+on the passing tick for a `Pass` site, on the arm's first tick otherwise. A
+per-frame call (the armed wash, an alpha ramp) fires on every tick its timing
+covers. A ramp's bound is the literal the arm stores behind its bound test
+(`if (alpha > 0x80) alpha = 0x80`). PROT 0905, 0954 and 0966 keep their
+hand-ported fades and PROT 0903 its director's CLUT copy, so nothing is
+spawned twice.
+
+**Held fades and their kills.** A fade whose hold word is `-1` stays on its
+end colour until something kills it, and a module kills its own: it parks the
+actor pointer `FUN_80024E80` returned (`sw v0, 0x102C(ctx)`, or a word of its
+image) and a later arm sets the done bit on it (`lw; lw +0x10; ori 0x8; sw`).
+The decoder tracks both through the same constant pass (`FadeStore`,
+`ActorKill`), so PROT 0906's arm 12 parks its held `(0xA0, 0xA0, 0xE0)` fade
+and arm 13 kills it before spawning the fade back out. A held fade the module
+never kills is dropped once no cast module is resident, so a band that ends on
+one does not leave its tint over the rest of the battle.
+
+**Only where the port paces the arm.** A call is placed in time by its arm,
+so it is as right as the port's pacing of that arm, and many tick ports walk
+their arms one per tick where retail holds each on a countdown or a poll:
+PROT 0913's body runs its 21 arms in 21 ticks, while `nova_summon_mid_cast`
+holds retail's arm 2 through the band's whole flash-out. Firing there stacked
+seconds of ramps into a few frames and turned that state's frame solid white.
+So the decoder also marks the arms that **can hold** (a phase write on one
+path, a return without one on another), and on such an arm the hook fires only
+once the engine has held it a tick: its `Every` / `Hold` calls on the first
+holding tick, its `Pass` calls on the pass after a hold. An arm the engine
+passes on its first tick is counted (`ModulePresentation::unpaced_arms`) and
+fires nothing. An arm that cannot hold fires as it runs. Driving every band
+module through `World::run_cast_module_code` alone, the unpaced arms carry
+every site of PROT 0906, 0912, 0913, 0918, 0922, 0945, 0949, 0951, 0957, 0958
+and 0965 and some of 0903, 0904, 0908, 0910, 0911, 0917, 0924, 0925, 0928,
+0929, 0940 and 0962; those wait on their bodies' arm pacing.
+
+**The colour wash.** Both cast dispatchers end by calling `FUN_801F2410` when
+`ctx[+0x27A]` (the alpha) is non-zero, so the wash draws on every frame the
+resident module ticks with it armed. Its band mode (`ctx[+0x27D] == 0`) is
+ported whole as `legaia_render_kernels::cast_colour_wash`: from `y = -scroll`
+down to line `0xE0`, bands of `ctx[+0x27C]` lines, each two opaque `POLY_G4`
+across the screen shading colour A to colour B and back, every colour scaled
+`c * alpha / 255`, linked at `ot + 0x3FFC` - the farthest bucket, so the wash
+is a backdrop the whole scene covers. In the engine frames checked (PROT 0909
+mid-cast) the battle stage covers it everywhere; what retail shows over it is
+open, since no retail capture in the corpus holds a non-zero alpha. Seven
+modules set the band mode (0909,
+0918, 0922, 0930, 0931, 0946, 0950). Six set mode `1` (0917, 0923, 0928,
+0929, 0963, 0965): per-line textured strips that resample texture page `0xA8`
+through CLUT `0x7A00` with a sine wobble off two per-line arrays at
+`ctx[+0x32E]` / `ctx[+0x4EE]`. That mode is not ported, and the hook draws
+nothing for it.
+
+**The armed wash** only arms a flag the frame's drain clears, so an arm that
+wants it held re-arms it every pass. The drain draws it subtractive (ABR `2`)
+in the farthest bucket, under the whole scene: on a frame the scene repaints
+everywhere it is close to invisible in retail too.
+
+**Not fired.** The 17 fade sites the decoder does not place sit in spawn
+stagers, routines the move VM's op `0x20` calls with an arm of its own rather
+than off `ctx[+0x279]` (PROT 0906, 0909, 0912, 0916, 0923, 0927, 0929, 0948,
+0959, 0963, 0966). The streak ribbon's anchor is a trio the arm builds from a
+seat or the camera plus a random spread, which the constant tracker does not
+fold. The party CLUT reload on a status cure (`LoadImage` of a 240x1 row at
+`y = 0x1E1 + seat` out of a RAM copy) has no source the data names. A
+camera-only director parks on the first arm it does not cover, so the sites
+of every later arm of PROT 0914..0917, 0920, 0921, 0923 and 0928..0934 wait
+on those directors' arm timing.
 
 ### Spawn reports
 

@@ -20,6 +20,9 @@ impl World {
             return Some(self.run_fatal_decision(entry));
         }
         let mut ctx = self.cast_module_ctx();
+        // The phase the tick enters on, before a state-touching stager below
+        // steps it (PROT 0909's arm 0 is its stager's).
+        let phase_entry = ctx.phase;
         let caster_slot = self.battle_ctx.active_actor;
         let victim_slot = self
             .actors
@@ -1064,6 +1067,16 @@ impl World {
             let _ = self.party.inventory.add(id, 1);
             self.refresh_party_ability_bits();
         }
+        // The arm's calls into the shared presentation helpers (fades,
+        // washes, CLUT copies), decoded off the module image.
+        self.fire_cast_presentation(
+            entry,
+            if has_trampoline { body } else { None },
+            (phase_entry != phase_in).then_some(phase_entry),
+            phase_in,
+            ctx.phase,
+            run.tick_ported && !run.busy,
+        );
         Some(run)
     }
 }
