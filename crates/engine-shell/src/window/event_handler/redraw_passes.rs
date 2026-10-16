@@ -287,6 +287,17 @@ impl PlayWindowApp {
         )
     }
 
+    /// Battle body `ai`'s body-to-view map under the same camera, for the
+    /// shatter renderer's sweep rows (`World::battle_shatter_view`).
+    fn body_shatter_view(&self, ai: usize) -> [[f32; 3]; 3] {
+        let world = &self.session.host.world;
+        let pose = self
+            .battle_stage_mesh
+            .is_some()
+            .then(|| world.battle_cam_pose());
+        world.battle_shatter_view(ai, pose.as_ref(), BATTLE_WORLD_SCALE)
+    }
+
     /// Battle body `ai`'s mesh broken by the shatter renderer
     /// (`legaia_render_kernels::shatter`, the port of `FUN_80029888` /
     /// `FUN_80029DD8`): the TMD's local triangles through the kernel, then
@@ -316,12 +327,17 @@ impl PlayWindowApp {
             .map_or(&[][..], |p| p.bone_outputs.as_slice());
         let rotate = actor.battle_animation.is_some()
             || self.session.host.world.player_actor_slot == Some(ai as u8);
+        let view = self.body_shatter_view(ai);
         let mut vmesh = legaia_render_kernels::shatter::shatter_vram_mesh(
             &local,
             &object_ids,
             input,
             bones,
             rotate,
+            // A sweep row measures each object in its pose: Freed's
+            // re-forming body (PROT 0912 arm 7's row 1) comes together from
+            // the floor up.
+            |o| legaia_render_kernels::shatter::bone_sweep_frame(bones, o, rotate, &view),
         );
         if let Some(slot) = actor.battle_tex_slot {
             for ct in &mut vmesh.cba_tsb {

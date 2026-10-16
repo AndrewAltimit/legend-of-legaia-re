@@ -3143,7 +3143,16 @@ it kills all twelve (`ori 0x8`, `0x801F7158..0x801F7174`). Arm 7 hands the
 creature deformation row 1 (`+0x6D = 1`, row `(0, 0, 0, -0x400)`, flags
 `0xC`, `0x801F7500..0x801F7528`) beside its `+0x1BA`, and lights it
 `+0x04 = 0x3FFFFFFF`; arm `0x0F` restores the living row's `0x20080200`
-and arm `0x10` freezes it at `0x3FF00000`. The stager `0x801F835C`
+and arm `0x10` freezes it at `0x3FF00000`. Both arms also raise `+0x21C` to
+`0xFF` and store `+0x0C = 0x1000`, the tint blend that pushes the body fully
+onto those lanes: the creature re-forms white and the monsters stand dark
+blue inside the ice. The `0xFF` hides nothing on its own (the band's hide is
+the zero `+0x04` beside it), so the hosts gate on the pair
+(`World::battle_body_hidden`) and the band writes the module's `+0x0C` to the
+actor's tint blend. Row 1's sweep front climbs from the floor as arms 8 and 9
+drain `+0x1BA`, each centroid measured along view Y at the battle world scale
+([renderer.md](renderer.md#the-shatter-renderer-fun_80029888--fun_80029dd8)), so the body assembles from
+its feet up over the two arms. The stager `0x801F835C`
 (`World::run_part_stager_calls`, `freed_stager_spawns`) seats eight `0x801F88FC` shards on its arm
 3, shard `k` then stored `+0x54 = k`, `+0x84 = trunc(((rand & 0xFF) -
 0x80) / 4)`, `+0xBA = -0x80`, `+0xB4 = rand % 31 + 0x20`, `+0xB6 = rand %

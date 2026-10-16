@@ -339,21 +339,80 @@ fn pose_corner(p: [f32; 3], o: u32, bones: &[BonePose], rotate: bool) -> [f32; 3
     ]
 }
 
+/// The body-to-view rotation [`bone_sweep_frame`] takes for a frame measured
+/// along the body's own axes.
+pub const BODY_AXES: [[f32; 3]; 3] = [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]];
+
+/// The sweep frame of object `o` posed by `bones`, measured the way retail
+/// measures it: the centroid through the object's own GTE matrix less the
+/// node's view translation (`0x8002A000`), i.e. the triangle's offset from
+/// the body root along a **view** axis. `view` is the body-to-view linear
+/// map retail's object matrix carries above the object's pose - the battle
+/// world scale, the camera rotation and the body's facing
+/// (`legaia_engine_core::World::battle_shatter_view`), or [`BODY_AXES`] to
+/// measure along the body's own axes. The pose is the posed builders'
+/// `Rz * Ry * Rx` (the identity without `rotate`) and its translation; an
+/// object past the end of `bones` is measured unposed.
+pub fn bone_sweep_frame(
+    bones: &[BonePose],
+    o: u32,
+    rotate: bool,
+    view: &[[f32; 3]; 3],
+) -> SweepFrame {
+    const A2R: f32 = std::f32::consts::TAU / 4096.0;
+    let (t, r) = bones.get(o as usize).copied().unwrap_or(([0; 3], [0; 3]));
+    let pose = |e: [f32; 3]| -> [f32; 3] {
+        if !rotate {
+            return e;
+        }
+        let (sx, cx) = (f32::from(r[0]) * A2R).sin_cos();
+        let (sy, cy) = (f32::from(r[1]) * A2R).sin_cos();
+        let (sz, cz) = (f32::from(r[2]) * A2R).sin_cos();
+        legaia_tmd::mesh::rot_zyx(e, cx, sx, cy, sy, cz, sz)
+    };
+    let apply = |v: [f32; 3]| -> [f32; 3] {
+        std::array::from_fn(|row| (0..3).map(|k| view[row][k] * v[k]).sum())
+    };
+    let q = |x: f32| x.round().clamp(-32768.0, 32767.0);
+    // Column `c` is the image of axis `c` under `view * pose`.
+    let mut m = [[0i16; 3]; 3];
+    for c in 0..3 {
+        let mut e = [0.0f32; 3];
+        e[c] = 1.0;
+        for (row, x) in apply(pose(e)).iter().enumerate() {
+            m[row][c] = q(x * 4096.0) as i16;
+        }
+    }
+    let tr = apply(t.map(f32::from));
+    SweepFrame {
+        rot: GteMat3 { m },
+        tr: tr.map(|x| q(x) as i32),
+        node_t: [0; 3],
+    }
+}
+
 /// The shattered, posed, de-indexed copy of a local textured mesh (built by
 /// `legaia_tmd::mesh::tmd_to_vram_mesh_with_object_ids`): every triangle
 /// through [`shatter_local_triangles`], then its object's pose. Each corner
 /// keeps its source vertex's UV, CBA/TSB and colour. Normals are left at the
-/// zero sentinel - a shard has no smooth neighbour.
+/// zero sentinel - a shard has no smooth neighbour. `sweep_of` is each
+/// object's sweep frame: [`bone_sweep_frame`] measures it in its pose,
+/// [`SweepFrame::MODEL`] along its own local axes.
 pub fn shatter_vram_mesh(
     local: &legaia_tmd::mesh::VramMesh,
     object_ids: &[u32],
     input: &ShatterInput,
     bones: &[BonePose],
     rotate: bool,
+    sweep_of: impl Fn(u32) -> SweepFrame,
 ) -> legaia_tmd::mesh::VramMesh {
-    let pos = shatter_local_triangles(&local.positions, &local.indices, object_ids, input, |_| {
-        SweepFrame::MODEL
-    });
+    let pos = shatter_local_triangles(
+        &local.positions,
+        &local.indices,
+        object_ids,
+        input,
+        sweep_of,
+    );
     let pick = |k: usize| local.indices[k] as usize;
     let n = local.indices.len();
     legaia_tmd::mesh::VramMesh {
@@ -379,10 +438,15 @@ pub fn shatter_color_mesh(
     input: &ShatterInput,
     bones: &[BonePose],
     rotate: bool,
+    sweep_of: impl Fn(u32) -> SweepFrame,
 ) -> legaia_tmd::mesh::ColorMesh {
-    let pos = shatter_local_triangles(&local.positions, &local.indices, object_ids, input, |_| {
-        SweepFrame::MODEL
-    });
+    let pos = shatter_local_triangles(
+        &local.positions,
+        &local.indices,
+        object_ids,
+        input,
+        sweep_of,
+    );
     let pick = |k: usize| local.indices[k] as usize;
     let n = local.indices.len();
     legaia_tmd::mesh::ColorMesh {
@@ -525,10 +589,38 @@ mod tests {
             indices: vec![0, 1, 2, 1, 3, 2],
         };
         let input = ShatterInput::new(0x80, row(1)).unwrap();
-        let m = shatter_vram_mesh(&local, &[0; 4], &input, &[], false);
+        let m = shatter_vram_mesh(&local, &[0; 4], &input, &[], false, |_| SweepFrame::MODEL);
         assert_eq!(m.positions.len(), 6);
         assert_eq!(m.uvs[3], [1, 1]);
         assert_eq!(m.uvs[4], [3, 3]);
         assert!(ShatterInput::new(0, row(1)).is_none());
+    }
+
+    /// A sweep row measures through the body's view map: Freed's row 1
+    /// (front `-0x400 + v`, shrink + sweep Y) leaves a triangle `0x100` above
+    /// the root intact along the bare body axes, but the battle's 4x world
+    /// scale puts it `0x400` up the view, past the front at `v = 0x100`.
+    #[test]
+    fn the_view_map_scales_the_sweep_measure() {
+        let row = ShatterRow {
+            off: [0; 3],
+            h3: -0x400,
+            flags: (FLAG_SHRINK | FLAG_SWEEP_Y) >> 16,
+        };
+        let input = ShatterInput::new(0x100, row).unwrap();
+        let tri = [[-16, -0x100, 0], [16, -0x100, 0], [0, -0x100 + 16, 0]];
+        let bones: [BonePose; 1] = [([0; 3], [0; 3])];
+        let run = |view: &[[f32; 3]; 3]| {
+            let mut o = ShatterObject::new(
+                input.word,
+                &input.row,
+                bone_sweep_frame(&bones, 0, true, view),
+            );
+            o.triangle(tri)
+        };
+        let whole = run(&BODY_AXES);
+        assert_eq!(whole[0], [-16, -0x100, 0], "below the front: intact");
+        let scaled = run(&[[4.0, 0.0, 0.0], [0.0, 4.0, 0.0], [0.0, 0.0, 4.0]]);
+        assert_ne!(scaled, whole, "past the front: pushed and shrunk");
     }
 }

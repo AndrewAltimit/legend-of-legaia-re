@@ -444,8 +444,12 @@ matrix (`M`, `T - M * off`), and subtracts the node's view translation
 `+0x2C..+0x34`, which the caller stages at `0x1F8003BC`. So the front crosses
 the body along a camera axis, measured from the actor's origin. A
 past-the-front triangle under `0x10000` does not rebuild the matrix: it scales
-whatever the previous triangle left in `0x1F800314`. Of the shipped flag words
-only `0xC` (`jagaroom`) sweeps.
+whatever the previous triangle left in `0x1F800314`. Of the field's flag words
+only `0xC` (`jagaroom`) sweeps; in battle PROT 0912 (Freed) writes the same
+`0xC` into row 1 with `h3 = -0x400` and re-forms its creature under it, the
+front climbing from the floor as `+0x1BA` drains. The object matrix carries
+the battle world scale (base matrix `16384 * I`), so a triangle's measure is
+four times its body-space height.
 
 The field's `43 07` script op writes the row and ramps `+0x7A` from `0` to
 `0x1000` ([`script-vm.md`](script-vm.md#0x43-sub-7--8---the-spin-and-shrink-deformation)).
@@ -476,9 +480,13 @@ path untouched while the word is zero.
 | Native `play-window` | `shattered_battle_mesh` (`redraw_passes.rs`) re-uploads the posed body when `BattleActorDrawPlan::shatter` is up | `shatter_npc_meshes` (`redraw_stage.rs`) builds both halves at the live clip pose when `World::field_npc_shatter` is up |
 | Browser play page | `play_battle_actor_shatter`, posed and drawn from a de-indexed companion mesh (`LegaiaFieldActors.shardMesh`) | `play_npc_shatter_states` / `play_npc_shatter` in `field-actors.js`, the map viewer's `field_scene_npc_*` twins too |
 
-Not modelled: the sweep's view frame (the hosts hand the kernel the object's
-own axes, `SweepFrame::MODEL`, so `jagaroom`'s `0xC` front crosses the body
-along model Y rather than view Y); the depth window per triangle; and the
+The battle hosts hand the kernel each object's sweep frame through
+`shatter::bone_sweep_frame`: the object's pose under the body-to-view map
+`World::battle_shatter_view` (world scale, camera `Rx(pitch) * Ry(yaw)`, the
+body's facing), measured from the body root. Not modelled: the field's sweep
+view frame (the field hosts hand the kernel the object's own axes,
+`SweepFrame::MODEL`, so `jagaroom`'s `0xC` front crosses the body along model
+Y rather than view Y); the depth window per triangle; and the
 `DPCS` colour of the lit rows `0x10..0x17`, whose shards keep the mesh's own
 colours. `LEGAIA_DEBUG_SHATTER=<v>` (with `LEGAIA_DEBUG_SHATTER_FLAGS` for the
 field row) stamps a value onto every monster and placed NPC in the native

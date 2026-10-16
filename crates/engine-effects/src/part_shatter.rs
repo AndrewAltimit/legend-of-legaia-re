@@ -30,7 +30,7 @@
 //!
 //! REF: FUN_8001ADA4 (`0x8001B45C..0x8001B568`), FUN_80029888
 
-use legaia_render_kernels::shatter::{ShatterInput, ShatterRow, shatter_vram_mesh};
+use legaia_render_kernels::shatter::{ShatterInput, ShatterRow, SweepFrame, shatter_vram_mesh};
 use legaia_tmd::mesh::VramMesh;
 
 /// The shattered copy of a part's local mesh for draw word `value` (the
@@ -40,7 +40,9 @@ use legaia_tmd::mesh::VramMesh;
 pub fn shatter_part_mesh(mesh: &VramMesh, value: i16) -> Option<VramMesh> {
     let input = ShatterInput::new(value, ShatterRow::default())?;
     let ids = vec![0u32; mesh.positions.len()];
-    Some(shatter_vram_mesh(mesh, &ids, &input, &[], false))
+    Some(shatter_vram_mesh(mesh, &ids, &input, &[], false, |_| {
+        SweepFrame::MODEL
+    }))
 }
 
 /// The shatter word a part's model draw takes: its `+0x7A`, or zero while

@@ -432,9 +432,14 @@ impl PlayWindowApp {
             };
             let (vlocal, voids) = legaia_tmd::mesh::tmd_to_vram_mesh_with_object_ids(tmd, raw);
             let (clocal, coids) = legaia_tmd::mesh::tmd_to_color_mesh_with_object_ids(tmd, raw);
-            use legaia_render_kernels::shatter::{shatter_color_mesh, shatter_vram_mesh};
-            let vmesh = shatter_vram_mesh(&vlocal, &voids, &input, &bones, true);
-            let cmesh = shatter_color_mesh(&clocal, &coids, &input, &bones, true);
+            use legaia_render_kernels::shatter::{
+                SweepFrame, shatter_color_mesh, shatter_vram_mesh,
+            };
+            // The browser page's NPC shards measure along each object's
+            // own axes too (`field_actors::shatter`).
+            let model = |_| SweepFrame::MODEL;
+            let vmesh = shatter_vram_mesh(&vlocal, &voids, &input, &bones, true, model);
+            let cmesh = shatter_color_mesh(&clocal, &coids, &input, &bones, true, model);
             let vm = (!vmesh.indices.is_empty())
                 .then(|| {
                     r.upload_vram_mesh(

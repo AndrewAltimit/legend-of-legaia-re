@@ -179,12 +179,28 @@ impl LegaiaRuntime {
         let Some(input) = self.battle_draw_plan(a.actor_idx).and_then(|p| p.shatter) else {
             return Vec::new();
         };
+        // A sweep row measures each object in the pose the page draws it in
+        // ([`Self::play_battle_actor_pose`]) through the body's view map, as
+        // the native override does.
+        let view = self.battle_shatter_view(a.actor_idx);
+        let bones: Vec<legaia_render_kernels::shatter::BonePose> = self
+            .play_battle_actor_pose(i)
+            .as_chunks::<6>()
+            .0
+            .iter()
+            .map(|p| {
+                (
+                    [p[0] as i16, p[1] as i16, p[2] as i16],
+                    [p[3] as i16, p[4] as i16, p[5] as i16],
+                )
+            })
+            .collect();
         legaia_render_kernels::shatter::shatter_local_triangles(
             &a.mesh.mesh.positions,
             &a.mesh.mesh.indices,
             &a.object_ids,
             &input,
-            |_| legaia_render_kernels::shatter::SweepFrame::MODEL,
+            |o| legaia_render_kernels::shatter::bone_sweep_frame(&bones, o, true, &view),
         )
         .into_iter()
         .flatten()

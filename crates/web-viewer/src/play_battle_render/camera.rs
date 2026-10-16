@@ -93,6 +93,22 @@ impl LegaiaRuntime {
             .battle_actor_draw_plan(actor_idx, pose.as_ref(), BATTLE_WORLD_SCALE, br.outdoor)
     }
 
+    /// Battle body `actor_idx`'s body-to-view map under the same camera, for
+    /// the shatter renderer's sweep rows (`World::battle_shatter_view`).
+    pub(crate) fn battle_shatter_view(&self, actor_idx: usize) -> [[f32; 3]; 3] {
+        let backdrop = self
+            .battle_render
+            .as_ref()
+            .is_some_and(|b| b.backdrop.is_some());
+        let pose = backdrop.then(|| self.battle_cam_pose());
+        self.scene_host
+            .host()
+            .map_or(legaia_render_kernels::shatter::BODY_AXES, |h| {
+                h.world
+                    .battle_shatter_view(actor_idx, pose.as_ref(), BATTLE_WORLD_SCALE)
+            })
+    }
+
     /// The engine's battle-camera pose (`World::battle_cam_pose` - the state
     /// `World::tick` steps for every host), or the shared boot pose off a
     /// scene host.

@@ -354,6 +354,46 @@ impl World {
         legaia_render_kernels::shatter::ShatterInput::new(b.shatter as i16, row)
     }
 
+    /// The body-to-view map battle body `actor_idx`'s object matrices carry
+    /// above each object's pose - the battle world scale (the base matrix
+    /// `0x8007BF10 = 16384 * I`), the camera rotation `Rx(pitch) * Ry(yaw)`
+    /// and the body's facing `+0x46` - which the shatter renderer's sweep
+    /// arms measure a triangle's centroid through (`0x8002A000`), less the
+    /// node's view translation. Hand it to
+    /// [`legaia_render_kernels::shatter::bone_sweep_frame`]. Without a
+    /// camera pose the body is measured unturned by the camera.
+    // REF: FUN_80029DD8, FUN_80048A08
+    pub fn battle_shatter_view(
+        &self,
+        actor_idx: usize,
+        pose: Option<&BattleCamPose>,
+        world_scale: f32,
+    ) -> [[f32; 3]; 3] {
+        let to_rad = |units: f32| units / 4096.0 * std::f32::consts::TAU;
+        // `Ry(b)` in the camera kernel's convention: `+Z` turns onto
+        // `(sin b, 0, cos b)`, the same turn a body's facing makes.
+        let ry = |b: f32| {
+            let (s, c) = b.sin_cos();
+            [[c, 0.0, s], [0.0, 1.0, 0.0], [-s, 0.0, c]]
+        };
+        let mul = |a: [[f32; 3]; 3], b: [[f32; 3]; 3]| -> [[f32; 3]; 3] {
+            std::array::from_fn(|r| {
+                std::array::from_fn(|c| (0..3).map(|k| a[r][k] * b[k][c]).sum())
+            })
+        };
+        let facing = self
+            .actors
+            .get(actor_idx)
+            .map_or(0.0, |a| f32::from(a.battle.facing_angle & 0xFFF));
+        let mut m = ry(to_rad(facing));
+        if let Some(p) = pose {
+            let (sa, ca) = to_rad(p.pitch).sin_cos();
+            let rx = [[1.0, 0.0, 0.0], [0.0, ca, -sa], [0.0, sa, ca]];
+            m = mul(mul(rx, ry(to_rad(p.yaw))), m);
+        }
+        m.map(|row| row.map(|x| x * world_scale))
+    }
+
     /// Whether battle body `actor_idx` is off screen under a hide: its
     /// `+0x21C` raised to `0xFF` **and** its colour word `+0x04` zero.
     /// Retail's hide is the colour word - the summon band writes
