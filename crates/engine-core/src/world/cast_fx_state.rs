@@ -115,11 +115,12 @@ pub struct CastFxState {
         Option<legaia_engine_battle_vm::seru_magic_ticks::NightoOutcome>,
     /// The move VM's op-`0x20` calls a resident module's parts made since
     /// the module's last tick - `(*gp[0x714])(actor, op[1], op[2])`, the
-    /// module's own `0x801F6734` stager row - as `(arm, part position, part
-    /// rotation)`. The band drains them into the module's stager
+    /// module's own `0x801F6734` stager row - as `(arm, what the stager reads
+    /// off the calling part)`. The band drains them into the module's stager
     /// (`World::run_cast_module_code`); PROT 0909's phase rendezvous are two
     /// of them.
-    pub(crate) module_stager_calls: Vec<(u8, [i16; 3], [i16; 3])>,
+    pub(crate) module_stager_calls:
+        Vec<(u8, legaia_engine_battle_vm::cast_module_ticks::StagerCaller)>,
     /// The clocks of PROT 0909's stager-calling records the host did not
     /// seat, as `(record, stager arm, frames left)`
     /// ([`legaia_engine_battle_vm::cast_module_camera::VIGURO_STAGER_CALLERS`]).

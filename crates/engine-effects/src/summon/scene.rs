@@ -167,6 +167,14 @@ impl SummonScene {
             }
             _ => {}
         }
+        // The seating code's own stores into the part `FUN_80021B04`
+        // returned, which follow the seater's run.
+        for (off, value) in std::mem::take(&mut part.seat_pokes) {
+            part.poke(off, value);
+        }
+        if std::mem::take(&mut part.seat_halve_speed) {
+            part.state.tween_scale_y /= 2;
+        }
         true
     }
 
@@ -435,6 +443,8 @@ fn seed_part(p: &SummonPart, record_bytes: &[u8], origin: [i16; 3]) -> Option<Su
         finished: false,
         origin: None,
         tag: None,
+        seat_pokes: Vec::new(),
+        seat_halve_speed: false,
     })
 }
 

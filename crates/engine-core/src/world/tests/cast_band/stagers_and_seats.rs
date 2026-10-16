@@ -16,7 +16,10 @@ fn the_viguro_stager_runs_from_the_cast_band_seam() {
     world.actors[7].battle.render_flag = 0xFF;
     // The stager is reached through a part's op `0x20`, queued for the
     // module's next tick.
-    world.casting.module_stager_calls.push((0, [0; 3], [0; 3]));
+    world
+        .casting
+        .module_stager_calls
+        .push((0, Default::default()));
 
     let run = world
         .run_cast_module_code(0x87, 0)

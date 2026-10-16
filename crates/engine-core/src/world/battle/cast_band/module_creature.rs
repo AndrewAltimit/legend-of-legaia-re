@@ -233,8 +233,9 @@ impl World {
                     true
                 }
             });
-        calls.extend(due.into_iter().map(|arm| (arm, [0; 3], [0; 3])));
-        for (arm, pos, rot) in calls {
+        calls.extend(due.into_iter().map(|arm| (arm, Default::default())));
+        for (arm, caller) in calls {
+            let (pos, rot) = (caller.pos, caller.rot);
             legaia_engine_battle_vm::cast_module_ticks::viguro_stager(ctx, seat, arm);
             if arm == 0 {
                 self.casting.module_cam.creature = Some(ModuleSeat {

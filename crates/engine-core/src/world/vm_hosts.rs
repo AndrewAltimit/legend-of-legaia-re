@@ -174,16 +174,21 @@ impl<'a> MoveHost for MoveVmHostImpl<'a> {
     /// Op `0x20` - `(*gp[0x714])(actor, op[1], op[2])`: the resident cast
     /// module's stager row (`0x801F6734`, copied to `gp[+0x714]` as the band
     /// pages the module in). Queued with the calling part's position and
-    /// rotation (`a0 + 0x14` / `+ 0x24` in the stager's spawn arms) for the
-    /// band to run on the module's next tick. Battle-only.
-    fn ext_20(&mut self, state: &mut vm::move_vm::ActorState, arg0: i16, _arg1: i16) {
+    /// rotation (`a0 + 0x14` / `+ 0x24` in the stager's spawn arms) and its
+    /// `+0xB4` (PROT 0907's arm 1 sizes its ring off it) for the band to run
+    /// on the module's next tick. Battle-only.
+    fn ext_20(&mut self, state: &mut vm::move_vm::ActorState, arg0: i16, arg1: i16) {
         if self.world.mode != SceneMode::Battle {
             return;
         }
         self.world.casting.module_stager_calls.push((
             arg0 as u8,
-            [state.world_x, state.world_y, state.world_z],
-            [state.render_24, state.render_26, state.render_28],
+            legaia_engine_battle_vm::cast_module_ticks::StagerCaller {
+                pos: [state.world_x, state.world_y, state.world_z],
+                rot: [state.render_24, state.render_26, state.render_28],
+                radius_b4: state.actor_u16(0xB4) as i16,
+                arg: arg1,
+            },
         ));
     }
 
