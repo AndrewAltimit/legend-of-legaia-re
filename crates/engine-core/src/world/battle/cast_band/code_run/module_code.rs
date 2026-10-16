@@ -133,6 +133,9 @@ impl World {
                 ticks_a::GIMARD_SETTLE_ANIM_RATE,
             );
         }
+        if direction.is_some() {
+            self.apply_seru_seat_writes(entry, ctx.phase);
+        }
         run.camera_shot = direction.and_then(|d| d.shot);
         // PROT 0909: the pass whose arm spawns a stager-calling record starts
         // that record's clock; the spawn's seating drops it again

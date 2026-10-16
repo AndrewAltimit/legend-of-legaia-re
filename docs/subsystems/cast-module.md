@@ -587,9 +587,9 @@ frame step of `4` (see [measured arm timing](#measured-arm-timing)).
 | 0 | camera snap | 1 |
 | 1 | camera pan | 1 |
 | 2 | countdown gate | 64 |
-| 3 | places the creature half a unit from the victim toward the caster, facing the victim; spawns the arrival records | 1 |
-| 4 | camera cut, gate | 9 |
-| 5 | gate; prints the spell name, measured, at `x = 0xAC - width/2` (PROT 0903 and 0905 centre on 172, eight sibling modules on 166, the rest on 160 - see [name-centering.md](../reference/glitches/name-centering.md)) | 8 |
+| 3 | places the creature half a unit from the victim toward the caster, facing the victim, `0x200` under the floor with its render node's floor clip `+0x42 = 1`; spawns the arrival records | 1 |
+| 4 | raises the creature a frame product a pass; camera cut, gate | 9 |
+| 5 | raises the creature; gate; lands it (`+0x36 = 0`) and drops the floor clip (`0x801F701C`); prints the spell name, measured, at `x = 0xAC - width/2` (PROT 0903 and 0905 centre on 172, eight sibling modules on 166, the rest on 160 - see [name-centering.md](../reference/glitches/name-centering.md)) | 8 |
 | 6 | camera cut, gate; replaces the caption with the actor record's attack name (`FUN_8003541C(.., 0x96, ..)`); spawns the fire tunnel | 99 |
 | 7 | `0xC0`-frame pan, gate | 1 |
 | 8 | gate; spawns the breath | 15 |
@@ -1439,6 +1439,17 @@ kills the two glows stayed on screen past the cast. Port:
 seats with its record and marks the named ones done on the arm's pass. Arm 5
 steps the phase by three (`0x801F7434`), which the tick body now does.
 
+Arm 4 also hides the target behind the cut's flash: render flag `0xFF` and
+`+0x04 = 0` (`0x801F6FC8..0x801F6FD8`). Arms 5 and 8 frame the point over
+the target's head and the hovering creature with nobody under it; arm 8's
+exit shows the target again (`+0x04 = 0x20080200`, `+0x21C = 0` at
+`0x801F7A20..0x801F7A24`). Ahead of its gate, every arm-8 pass restages the
+creature's hover clip `2` and zeroes `+0x21B` / `+0x176`
+(`0x801F78D0..0x801F78F4`), so the creature hovers until the countdown runs
+out; the exit stages clip `3`. Ports: the tick body's `VERA_HIDE_ARM` and
+`VERA_CAST_ARM`, and the director's held-pass clip
+(`ModuleCamState::creature_stage`).
+
 ### PROT 0906 (Gizam)
 
 Gizam's tick parks in a phase hole: no arm answers phase 5, and only stager
@@ -1467,8 +1478,13 @@ keeps its defeat-fade state and its spent colour word. Clearing the dead
 seat's flag as well hands it to the tint pass's decay arm, which never brings
 `+0x04` back to zero, and the poll then holds for good. The director frames arms 0
 and 1 on the caster and arms 7..12 on the creature; arm 9 frames the
-creature's `+0x3C` / `+0x40` pair, which the port reads as its seat, and arm
-13's centroid shot is not ported. The engine seats the creature behind the
+creature's `+0x3C` / `+0x40` pair, which the port reads as its seat. Arm
+13's exit snaps onto the sweep's outcome at yaw `-facing` of the creature
+(`0x801F7514..0x801F75CC`): on a group target (`caster[+0x1DD] >= 8`) the
+negated centroid `FUN_801DCEAC` returns, pitch `0x80`, TR y `0x500` and TR z
+three times the group's extent; on a single target the victim, pitch `0x40`,
+TR y `0x600` and TR z two thirds of `ctx[+0x6D0]`
+(`cast_module_camera::gizam_sweep_exit_shot`). The engine seats the creature behind the
 caster, not where `FUN_801F19EC` leaves it, so those framings sit off
 retail's.
 
@@ -1532,7 +1548,17 @@ pass, up in 9 and 10, down in 11 and 12). The strike and the shatter have no
 shot of their own: arm 10 cuts to the victim at the band's depth
 `ctx[+0x6D0]`, and arms 11 and 12 add to pitch, yaw, TR y and TR z every
 pass (`0x801F7B40..0x801F7B88`, `0x801F8184..0x801F81B0`), the pull-back the
-shards fly in. Arms 4, 6 and 11 spawn their records on the creature's plane
+shards fly in.
+
+The creature's render node `+0x42` (the floor clip, see
+[renderer.md](renderer.md#what-a-raised-0x42-draws)) goes up as arm 4 seats
+it (`0x801F7094`) and down on arm 5's exit (`0x801F7254`): its appear clip
+starts under the floor and climbs out through the summoning beams, so nothing
+of it shows while the beams stand. Arm 11's hit raises it again
+(`0x801F7D7C`, inside the targetable-victim branch), and the creature sinks
+through the floor in arm 12. The director carries the byte
+(`ModuleCamState::creature_floor_clip`); the host puts it on the seat's draw
+every pass. Arms 4, 6 and 11 spawn their records on the creature's plane
 pair (`ZENOIR_SEAT_SPAWNS`, `ZENOIR_STRIKE_SPAWNS`, `ZENOIR_SLAM_SPAWNS`).
 
 ### PROT 0909 (Viguro)
@@ -2068,7 +2094,7 @@ Directors, each read off its own tick's disassembly:
 |---|---|---|
 | 0903 Gimard | full | the whole choreography ([phase table](#worked-example-prot-0903-gimard)), its spawn calls and its two caption arms; the caption shows through `battle_hud::battle_move_name` until the band's `0x37` exit |
 | 0904 Theeder | camera-beside, gating | the countdown gates of arms 2..6 and 14 and the camera arms beside the ported tick body, which paces arms 7..13 ([module notes](#prot-0904-theeder)) |
-| 0906 Gizam | camera-beside, gating | every countdown gate, the phase-5 stager record clock and the camera arms 0, 1 and 7..12 ([module notes](#prot-0906-gizam)) |
+| 0906 Gizam | camera-beside, gating | every countdown gate, the phase-5 stager record clock and the camera arms 0, 1 and 7..13 ([module notes](#prot-0906-gizam)) |
 | 0905 Vera | full | the whole choreography, plus a third kernel: arms 8..10 write the camera globals directly every pass (pitch `0x8007B790`, TR y / z), a drift on top of arm 8's cut. Its gate is the `bgez` form (hold while the word is non-negative). Arm 5 advances the phase by 3, so arms 6 and 7 are unreachable |
 | 0907 Nighto | full, beside the ported body | the summoning on the victim's grid cell (the same arithmetic as Zenoir's), the TR z drift of arms 5..7, the creature framings of arms 8..12 and every countdown gate; arm 10's clip gate. [Notes](#prot-0907-nighto) |
 | 0908 Zenoir | full, beside the ported body | the framed point is the victim's `0x200` grid cell half a unit back toward the caster; arm 3 waits on the **band's** timer `ctx[+0x6D8]` (the sustain `0x35`'s own `0x78` frames) before arm 4 seats the creature and reuses that word as the module's countdown. Arms 6..12 gate on the creature's clip, its reach and its height, and arms 11 and 12 write the camera globals. [Notes](#prot-0908-zenoir) |

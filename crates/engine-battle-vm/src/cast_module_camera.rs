@@ -184,6 +184,17 @@ pub struct ModuleCamState {
     /// measured it: the negated centroid (a focus trio's `x` / `z`) and the
     /// extent. `None` with no live monster.
     pub row_aim: Option<crate::battle_target_group::GroupAim>,
+    /// The creature render node's `+0x42` (`creature[+0x22C] + 0x42`) as
+    /// the module's arms last wrote it: `true` draws the body clipped at
+    /// the stage floor (`World::battle_actor_floor_clip`), so a creature
+    /// seated under the floor rises out of it. PROT 0903 raises it in arm 3
+    /// and drops it on arm 5's exit, PROT 0908 in arm 4 / arm 5's exit and
+    /// again on arm 11's hit.
+    pub creature_floor_clip: bool,
+    /// A clip id an arm staged onto the creature's `+0x1DA` on this pass
+    /// while it held - a write the phase-chain body, which does not run on
+    /// a held pass, cannot make. The host takes it once.
+    pub creature_stage: Option<u8>,
 }
 
 /// `FUN_801D5854(7, 6)` out of a module arm: the action SM's own case-6

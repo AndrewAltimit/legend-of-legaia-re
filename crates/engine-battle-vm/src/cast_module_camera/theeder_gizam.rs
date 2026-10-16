@@ -277,6 +277,48 @@ pub const GIZAM_SWEEP_WAIT: i32 = 0x100;
 /// (`0x801F75FC`), which arm 14 drains before it polls the row.
 pub const GIZAM_SETTLE_WAIT: i32 = 0x80;
 
+/// PROT 0906's arm-13 exit shot (`0x801F7514..0x801F75CC`), snapped (`a3 =
+/// 1`), yaw `-facing` of the creature either way. On a group target
+/// (`caster[+0x1DD] >= 8`) the arm calls `FUN_801DCEAC(code, sp+0x30,
+/// sp+0x28)`, which writes the negated centroid over the focus trio and the
+/// group's extent over TR z; the arm then stores TR y `0x500`, pitch `0x80`
+/// and TR z `= 3 * extent` (`lh v1,0x2c(sp)`; `sll 1; addu`). On a single
+/// target it focuses the victim's `+0x34` / `+0x38` and stores TR y
+/// `0x600`, pitch `0x40` and TR z `= (2 * ctx[+0x6D0]) / 3` (the
+/// `0x55555556` reciprocal, rounded toward zero).
+///
+/// The group branch reads the enemy row's aim the host measured
+/// ([`ModuleCamState::row_aim`], `FUN_801DCEAC(9, ..)`): a player Gizam's
+/// group target is that row. With no live monster the focus stays on the
+/// origin and the extent is `0`.
+pub fn gizam_sweep_exit_shot(
+    st: &ModuleCamState,
+    creature: ModuleSeat,
+    seats: ModuleCamSeats,
+) -> ModuleShot {
+    let yaw = yaw_from(0, creature.facing);
+    if st.victim_slot.is_some_and(|code| code >= 8) {
+        let aim = st.row_aim.unwrap_or(crate::battle_target_group::GroupAim {
+            centroid_x: 0,
+            centroid_z: 0,
+            extent: 0,
+        });
+        ModuleShot {
+            angles: [0x80, yaw, 0],
+            tr: [0, 0x500, (i32::from(aim.extent) * 3) as i16],
+            focus: [aim.centroid_x, 0, aim.centroid_z],
+            frames: 1,
+        }
+    } else {
+        ModuleShot {
+            angles: [0x40, yaw, 0],
+            tr: [0, 0x600, ((2 * seats.depth_raw) / 3) as i16],
+            focus: focus_on(seats.victim),
+            frames: 1,
+        }
+    }
+}
+
 /// PROT 0906 (Gizam) - the camera and countdown half of the tick
 /// `0x801F69F4`. The creature is the summon seat `actor_table[7]` as the host
 /// last placed it; arms 0 and 1 frame the caster.
@@ -295,15 +337,13 @@ pub const GIZAM_SETTLE_WAIT: i32 = 0x80;
 /// | 10 | drain, hold while non-negative (`0x801F70E4`) | snap: pitch `0`, yaw `0x800 - facing`, TR `(0, 0x600, 0x200)`, focus the creature |
 /// | 11 | - | pitch `0xB4`, yaw `0x800 - facing`, TR `(0, 0x280, 0x800)`, focus the creature, over `0x28` frames; `ctx[+0x6D8] = scalar * 40` |
 /// | 12 | drain, hold while non-negative (`0x801F71D4`) | pitch `0xC0`, yaw `0x800 - facing`, TR `(0, 0, 0x2800)`, focus the creature, over `0x100` frames (`0x801F7228`); `ctx[+0x6D8] = scalar << 8` |
-/// | 13 | drain, hold while non-negative (`0x801F7330`) | the sweep; the settle word `= scalar << 7` |
+/// | 13 | drain, hold while non-negative (`0x801F7330`) | the sweep; snap: [`gizam_sweep_exit_shot`] - the enemy row's centroid, or the victim (`0x801F75CC`); the settle word `= scalar << 7` |
 /// | 14 | drain the settle word while positive, hold while it is (`0x801F7610..0x801F7640`) | the body's row poll follows |
 ///
 /// Arm 9 frames the creature's `+0x3C` / `+0x40` pair rather than its
-/// `+0x34` / `+0x38` seat; the port frames the seat. Arm 13's exit shot
-/// (a row centroid through `FUN_801DCEAC` or the victim, `0x801F7514..`) is
-/// not ported.
+/// `+0x34` / `+0x38` seat; the port frames the seat.
 ///
-/// PORT: FUN_801F69F4 (PROT 0906; the camera arms 0/1/7..12, the countdown gates of arms 3/5/7/9/10/12/13/14 and the phase-5 stager record clock)
+/// PORT: FUN_801F69F4 (PROT 0906; the camera arms 0/1/7..13, the countdown gates of arms 3/5/7/9/10/12/13/14 and the phase-5 stager record clock)
 pub fn gizam_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) -> ArmDirection {
     let c = seats.caster;
     let creature = st.creature_live.or(st.creature).unwrap_or(seats.victim);
@@ -368,7 +408,7 @@ pub fn gizam_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) -
                 return ArmDirection::HOLD;
             }
             st.countdown.0 = SPEED_SCALAR * GIZAM_SETTLE_WAIT;
-            ArmDirection::PASS
+            ArmDirection::shot(gizam_sweep_exit_shot(st, creature, seats))
         }
         14 => {
             if st.countdown.0 > 0 {
@@ -483,6 +523,44 @@ mod tests {
         }
         assert_eq!(n, 256);
         assert_eq!(due, vec![(191, 0), (192, 1)]);
+    }
+
+    /// Arm 13's exit snaps onto the victim at two thirds of the band depth
+    /// on a single target, and onto the enemy row's centroid at three
+    /// extents on a group code.
+    #[test]
+    fn gizam_arm_13_exit_frames_the_victim_or_the_row() {
+        let mut s = seats(0);
+        s.depth_raw = 0x900;
+        let mut st = ModuleCamState {
+            creature: Some(ModuleSeat {
+                x: 0,
+                y: 0,
+                z: 0,
+                facing: 0x100,
+            }),
+            victim_slot: Some(3),
+            ..Default::default()
+        };
+        st.countdown.0 = 0;
+        let d = gizam_direct(&mut st, 13, s);
+        let shot = d.shot.expect("arm 13 exit shot");
+        assert_eq!(shot.angles, [0x40, 0xF00, 0]);
+        assert_eq!(shot.tr, [0, 0x600, 0x600]);
+        assert_eq!(shot.focus, [-70, 0, 260]);
+        assert_eq!(shot.frames, 1);
+
+        st.victim_slot = Some(9);
+        st.row_aim = Some(crate::battle_target_group::GroupAim {
+            centroid_x: -100,
+            centroid_z: 300,
+            extent: 0x200,
+        });
+        st.countdown.0 = 0;
+        let shot = gizam_direct(&mut st, 13, s).shot.expect("group shot");
+        assert_eq!(shot.angles, [0x80, 0xF00, 0]);
+        assert_eq!(shot.tr, [0, 0x500, 0x600]);
+        assert_eq!(shot.focus, [-100, 0, 300]);
     }
 
     #[test]

@@ -149,6 +149,10 @@ pub fn gimard_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) 
                 z: (i32::from(seats.victim.z) - half(cos)) as i16,
                 facing: h,
             });
+            // `li v0,0x200; sh v0,0x36(s3)` / `li v0,1; sh v0,0x42(v1)` with
+            // `v1 = creature[+0x22C]` (`0x801F6E40..0x801F6E54`): seated under
+            // the floor, drawn clipped at it.
+            st.creature_floor_clip = true;
             st.countdown.arm(6);
             ArmDirection {
                 spawns: &GIMARD_SEAT_SPAWNS,
@@ -179,6 +183,8 @@ pub fn gimard_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) 
             if let Some(c) = st.creature.as_mut() {
                 c.y = 0;
             }
+            // `sh zero,0x42(v0)` on `creature[+0x22C]` (`0x801F701C`).
+            st.creature_floor_clip = false;
             st.countdown.add(180);
             // `FUN_8003541C(0, 0, name, 0xAC - w / 2, 0x96, ..)` at
             // `0x801F700C`, the name off `DAT_800754C8[id * 12 + 8]`.
@@ -554,7 +560,12 @@ pub fn vera_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) ->
                 tr_y: (p >> 3) as i16,
                 tr_z: -p as i16,
             };
+            // Every pass, ahead of the gate: `li v0,2; sb v0,0x1da(s4)` /
+            // `sb zero,0x21b(s4)` / `sh zero,0x176(s4)` (`0x801F78D0..
+            // 0x801F78F4`) - the creature holds its hover clip 2 while the
+            // countdown runs; the pass then stages clip 3 (the body's).
             if st.countdown.drain_non_negative() {
+                st.creature_stage = Some(2);
                 return ArmDirection::HOLD.nudged(drift);
             }
             st.countdown.add(112);
@@ -754,6 +765,10 @@ pub fn zenoir_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) 
         3 => gate(seats.band_timer != 0),
         4 => {
             st.creature = Some(point);
+            // `li v0,1; sh v0,0x42(v1)` on `creature[+0x22C]` (`0x801F7094`):
+            // the creature's appear clip starts under the floor and rises
+            // through it behind the summoning beams.
+            st.creature_floor_clip = true;
             st.countdown.0 = SPEED_SCALAR * 140;
             ArmDirection {
                 spawns: &ZENOIR_SEAT_SPAWNS,
@@ -770,6 +785,8 @@ pub fn zenoir_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) 
                 return ArmDirection::HOLD;
             }
             st.countdown.0 = SPEED_SCALAR * 180;
+            // `sh zero,0x42(v1)` on `creature[+0x22C]` (`0x801F7254`).
+            st.creature_floor_clip = false;
             // `FUN_8003541C(0, 0, name, 0xA0 - w / 2, 0x96, ..)` at
             // `0x801F72E4`.
             ArmDirection {
@@ -878,6 +895,10 @@ pub fn zenoir_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) 
             // (`0x801F7BBC..0x801F7BD0`), the shatter arm's countdown.
             st.countdown.0 =
                 SPEED_SCALAR * crate::seru_magic_ticks::ZENOIR_SHATTER_COUNTDOWN_PER_SCALAR;
+            // The hit raises the floor clip again (`sh v0,0x42(v1)` with
+            // `v0 = 1` at `0x801F7D7C`, inside the targetable-victim branch
+            // `0x801F7C04`): the creature sinks through the floor in arm 12.
+            st.creature_floor_clip = true;
             ArmDirection {
                 spawns: &ZENOIR_SLAM_SPAWNS,
                 ..ArmDirection::PASS
@@ -899,5 +920,87 @@ pub fn zenoir_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) 
             gate(zenoir_drain_holds(st)).drifted(drift)
         }
         _ => ArmDirection::PASS,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn seats() -> ModuleCamSeats {
+        ModuleCamSeats {
+            caster: ModuleSeat {
+                x: 63,
+                y: 0,
+                z: -591,
+                facing: 0,
+            },
+            victim: ModuleSeat {
+                x: 70,
+                y: 0,
+                z: -260,
+                facing: 0x800,
+            },
+            band_timer: 0,
+            first_monster: 0,
+            caster_monster: 0,
+            action: 0,
+            depth_raw: 0,
+            caster_latch: 0,
+        }
+    }
+
+    /// PROT 0903 seats its creature `0x200` under the floor with the floor
+    /// clip up, raises it a frame product a pass through arms 4 and 5, and
+    /// lands it and drops the clip on arm 5's exit.
+    #[test]
+    fn gimard_creature_rises_out_of_the_floor() {
+        let mut st = ModuleCamState::default();
+        let s = seats();
+        assert!(!gimard_direct(&mut st, 3, s).hold);
+        assert!(st.creature_floor_clip);
+        assert_eq!(st.creature.map(|c| c.y), Some(0x200));
+        while gimard_direct(&mut st, 4, s).hold {}
+        let mid = st.creature.unwrap().y;
+        assert!(0 < mid && mid < 0x200, "half risen at arm 4's exit: {mid}");
+        assert!(st.creature_floor_clip);
+        while gimard_direct(&mut st, 5, s).hold {
+            assert!(st.creature_floor_clip);
+        }
+        assert_eq!(st.creature.map(|c| c.y), Some(0));
+        assert!(!st.creature_floor_clip);
+    }
+
+    /// PROT 0908 raises the floor clip as it seats the creature, drops it
+    /// on arm 5's exit and raises it again on the finisher's landing.
+    #[test]
+    fn zenoir_floor_clip_brackets_the_appear_and_the_sink() {
+        let mut st = ModuleCamState::default();
+        let s = seats();
+        zenoir_direct(&mut st, 4, s);
+        assert!(st.creature_floor_clip);
+        while zenoir_direct(&mut st, 5, s).hold {
+            assert!(st.creature_floor_clip);
+        }
+        assert!(!st.creature_floor_clip);
+        if let Some(c) = st.creature.as_mut() {
+            c.y = ZENOIR_SLAM_FLOOR_Y as i16;
+        }
+        assert!(!zenoir_direct(&mut st, ZENOIR_FINISH_ARM, s).hold);
+        assert!(st.creature_floor_clip);
+    }
+
+    /// PROT 0905's arm 8 stages hover clip 2 on every held pass and leaves
+    /// the exit's clip 3 to the body.
+    #[test]
+    fn vera_arm_8_holds_the_hover_clip() {
+        let mut st = ModuleCamState::default();
+        st.countdown.0 = SPEED_SCALAR * 2;
+        assert!(vera_direct(&mut st, 8, seats()).hold);
+        assert_eq!(st.creature_stage.take(), Some(2));
+        while vera_direct(&mut st, 8, seats()).hold {
+            assert_eq!(st.creature_stage.take(), Some(2));
+        }
+        assert_eq!(st.creature_stage, None);
     }
 }
