@@ -18,6 +18,7 @@ const fn hand(side: i16, extra: i16, y: i16) -> SpawnAnchor {
         extra,
         y,
         yaw: 0x400,
+        roll: 0,
     }
 }
 
@@ -39,6 +40,7 @@ pub const SWORDIE_RING_SPAWNS: [ModuleSpawn; 5] = [
             extra: 0,
             y: 0,
             yaw: 0,
+            roll: 0,
         },
     ),
     swordie_spawn(0x801F_8B44, hand(40, 0, -0xE0)),

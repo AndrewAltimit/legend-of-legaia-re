@@ -444,15 +444,19 @@ pub enum SpawnAnchor {
     /// moved `trunc(cos(h) / side)` / `-trunc(sin(h) / side)` across it
     /// (`side == 0`: not), then `trunc(sin(h) / extra)` / `trunc(cos(h) /
     /// extra)` further back (`extra == 0`: not), at the literal height `y`,
-    /// on the creature's angle trio turned by `yaw`. PROT 0910 arm 5 builds
-    /// its five points this way (`0x801F71FC..0x801F7628`: `/ 64` for the
-    /// ring's emitter, `/ 12` and `/ 40` for the hands, `/ 32` past them).
+    /// on the creature's angle trio turned by `yaw`, with `roll` stored over
+    /// the trio's `z` (`sp+0x24`). PROT 0910 arm 5 builds its five points
+    /// this way (`0x801F71FC..0x801F7628`: `/ 64` for the ring's emitter,
+    /// `/ 12` and `/ 40` for the hands, `/ 32` past them); PROT 0913 arm 8
+    /// its twelve (`0x801F7310..0x801F76BC`: `/ 26`, then `/ 12` and `/ 11`
+    /// each pair's last two rolled).
     CreatureFrame {
         div: i16,
         side: i16,
         extra: i16,
         y: i16,
         yaw: i16,
+        roll: i16,
     },
     /// The victim seat at the framing depth `ctx[+0x6D0]` as the scale
     /// (`lh a3,0x6D0(v0)`): PROT 0913 arms 13, 18 and 19.
@@ -551,6 +555,7 @@ pub fn spawn_anchor_point_with(
             extra,
             y,
             yaw,
+            roll,
         } => {
             let c = creature?;
             let (sin, cos) = trig12(c.facing & 0xFFF);
@@ -560,7 +565,7 @@ pub fn spawn_anchor_point_with(
             let z = i32::from(c.z) - q(cos, div) + q(sin, side) - q(cos, extra);
             (
                 [x as i16, y, z as i16],
-                [0, (c.facing as i16).wrapping_add(yaw), 0],
+                [0, (c.facing as i16).wrapping_add(yaw), roll],
             )
         }
         SpawnAnchor::VictimColumn { index } => {

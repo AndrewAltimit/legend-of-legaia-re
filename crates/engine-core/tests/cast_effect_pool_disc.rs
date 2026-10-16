@@ -633,29 +633,16 @@ fn a_live_cast_stages_its_module_records() {
             913 => (
                 vec![
                     &cmc::NOVA_VORTEX_SPAWNS,
+                    &cmc::NOVA_ARM8_SPAWNS,
                     &cmc::NOVA_CLOUD_SPAWNS,
                     &cmc::NOVA_WHIRLWIND_SPAWNS,
                     &cmc::NOVA_LIFT_SPAWNS,
                     &cmc::NOVA_LANDING_SPAWNS,
                 ],
                 &[0x801F_8850, 0x801F_8914, 0x801F_8960],
-                // Arm 8's calls (`0x801F73D4..0x801F7738`) are not reported;
-                // the stager's arms 3..5 (`0x801F8E88` / `0x801F8FCC` /
+                // The stager's arms 3..5 (`0x801F8E88` / `0x801F8FCC` /
                 // `0x801F9088`) are called after the fold.
-                &[
-                    0x801F_89FC,
-                    0x801F_8A44,
-                    0x801F_8A8C,
-                    0x801F_8B04,
-                    0x801F_8B7C,
-                    0x801F_8BDC,
-                    0x801F_8C60,
-                    0x801F_8CE4,
-                    0x801F_8D68,
-                    0x801F_8E88,
-                    0x801F_8FCC,
-                    0x801F_9088,
-                ],
+                &[0x801F_8E88, 0x801F_8FCC, 0x801F_9088],
             ),
             _ => panic!("PROT {entry} seats per arm but the test names no arm list"),
         };

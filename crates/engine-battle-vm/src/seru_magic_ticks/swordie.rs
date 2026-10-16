@@ -138,6 +138,10 @@ pub struct SwordieDraw {
     pub split: Option<[[i16; 8]; 2]>,
     /// `FUN_801F7DD0` ran with this split counter.
     pub streak: Option<u32>,
+    /// The slashes whose `FUN_801F81DC` call drew the blade
+    /// ([`SWORDIE_BLADE_RECORD`]) on this pass: still travelling after the
+    /// call's progress step.
+    pub blades: [bool; SWORDIE_SLASHES as usize],
 }
 
 /// PROT 0910's module words and the context timer its arms `6..=0x0A` pace
@@ -173,6 +177,10 @@ pub struct SwordieSlashes {
     pub panels: [[i16; 8]; 2],
     /// What the last pass drew ([`SwordieDraw`]).
     pub draw: SwordieDraw,
+    /// `0x801F8D90` / `0x801F8D92` - the plane pair the slashes fly from,
+    /// stored by arm 8 ([`swordie_blade_origin`]). The tick body has no seat
+    /// positions; the host writes it on arm 8's pass.
+    pub origin: (i16, i16),
 }
 
 /// The two scratchpad scalars PROT 0910's timers are built from.
@@ -467,7 +475,7 @@ pub fn swordie_tick(
 ///
 /// Returns the damage applied on a landing call, `None` otherwise.
 ///
-/// PORT: FUN_801F81DC (PROT 0910; the whole routine: progress accumulator, hit counter, and the landing through `swordie_slash`)
+/// PORT: FUN_801F81DC (PROT 0910; the whole routine: progress accumulator, hit counter, and the blade-draw flag whose seat is `swordie_blade_pose`, and the landing through `swordie_slash`)
 pub fn swordie_slash_step(
     slashes: &mut SwordieSlashes,
     slash: u8,
@@ -482,6 +490,7 @@ pub fn swordie_slash_step(
     }
     *progress = progress.wrapping_add(clock.step());
     if *progress < limit {
+        slashes.draw.blades[slash as usize] = true;
         return None;
     }
     slashes.hits = slashes.hits.wrapping_add(1);
@@ -559,4 +568,94 @@ pub fn swordie_slash(
         victim.restage |= 0x01;
     }
     applied
+}
+
+/// The record PROT 0910's slash routine seats on every call that leaves its
+/// slash travelling (`addiu a2,a2,-0x7384` / `jal 0x80021B04` at
+/// `0x801F8834..0x801F883C`, scale `0x1000`): one blade image a pass, so a
+/// slash leaves a trail of them along its curve.
+pub const SWORDIE_BLADE_RECORD: u32 = 0x801F_8C7C;
+
+/// The height the blades fly at before slashes `2` / `3` lift them
+/// (`li t4,-0xc8` / `sh t4,0x12(sp)` at `0x801F8350`).
+pub const SWORDIE_BLADE_Y: i16 = -0xC8;
+
+/// The plane pair arm 8 stores at `0x801F8D90` for the slashes to fly from:
+/// the creature's pair moved a twelfth of a unit along its heading `f`
+/// (`* 0x2AAAAAAB`, `sra 1`, less the sign: `trunc(sin f / 12)` /
+/// `trunc(cos f / 12)` at `0x801F77F4..0x801F789C`).
+pub fn swordie_blade_origin(x: i16, z: i16, facing: u16) -> (i16, i16) {
+    let (sin, cos) = legaia_engine_system::trig::trig12(facing & 0xFFF);
+    (x.wrapping_add(sin / 12), z.wrapping_add(cos / 12))
+}
+
+/// `(sin(a) * b) >> shift`, rounded toward zero (`bgez` / `addiu 2^shift -
+/// 1` / `sra shift`).
+fn mul_shift(a: i16, b: i16, shift: u32) -> i32 {
+    let p = i32::from(a) * i32::from(b);
+    let p = if p < 0 { p + (1 << shift) - 1 } else { p };
+    p >> shift
+}
+
+/// Where `FUN_801F81DC` seats slash `slash`'s blade for its progress word
+/// `progress` (after the call's step) and the speed scalar `speed`, flying
+/// from `origin` past the victim's plane pair `victim`: `(pos, angles)`.
+///
+/// ```text
+/// h  = FUN_80019B28(victim, origin) + 0x800          ; 0x801F82B0..0x801F82BC
+/// b  = origin + ((sin h, cos h) * progress / speed) >> 7   ; mult, divu, srl 7
+/// u  = (progress << 5) / speed                       ; the arc's half-turn
+/// h2 = h - 0x400
+/// 0: b - (sin h2, cos h2) * sin u >> 15, yaw h2 - cos u / 8
+/// 1: b + (sin h2, cos h2) * sin u >> 15, yaw h2 + cos u / 8
+/// 2: b - (sin h2, cos h2) * sin u >> 16, yaw h2 - cos u / 16, y -0xC8 - sin u / 16
+/// 3: b + (sin h2, cos h2) * sin u >> 16, yaw h2 + cos u / 16, y -0xC8 - sin u / 16
+/// ```
+///
+/// The base's `divu` takes the signed product as unsigned and `srl 7`
+/// shifts it logically; the halfword store keeps the low sixteen bits, which
+/// for a power-of-two speed is the arithmetic quotient. The two outer
+/// slashes bow out half a unit either side of the line, the inner two a
+/// quarter and rise as they go.
+///
+/// REF: FUN_801F81DC (PROT 0910; `0x801F829C..0x801F8840`, the blade's seat, under [`swordie_slash_step`]'s tag)
+pub fn swordie_blade_pose(
+    slash: u8,
+    progress: u32,
+    speed: u8,
+    origin: (i16, i16),
+    victim: (i16, i16),
+) -> ([i16; 3], [i16; 3]) {
+    use crate::cast_module_camera::{ModuleSeat, heading};
+    use legaia_engine_system::trig::trig12;
+    let speed = u32::from(speed.max(1));
+    let seat = |(x, z): (i16, i16)| ModuleSeat {
+        x,
+        y: 0,
+        z,
+        facing: 0,
+    };
+    let h = heading(seat(victim), seat(origin)).wrapping_add(0x800) & 0xFFF;
+    let (sin_h, cos_h) = trig12(h);
+    let reach = |t: i16| {
+        let lo = (i32::from(t).wrapping_mul(progress as i32)) as u32;
+        ((lo / speed) >> 7) as u16
+    };
+    let bx = (origin.0 as u16).wrapping_add(reach(sin_h)) as i16;
+    let bz = (origin.1 as u16).wrapping_add(reach(cos_h)) as i16;
+    let u = ((progress << 5) / speed) as u16 & 0xFFF;
+    let (sin_u, cos_u) = trig12(u);
+    let h2 = h.wrapping_sub(0x400) & 0xFFF;
+    let (sin_h2, cos_h2) = trig12(h2);
+    let (shift, sign, lift, turn) = match slash {
+        0 => (15, -1, 0, -i32::from(cos_u) / 8),
+        1 => (15, 1, 0, i32::from(cos_u) / 8),
+        2 => (16, -1, i32::from(sin_u) / 16, -i32::from(cos_u) / 16),
+        _ => (16, 1, i32::from(sin_u) / 16, i32::from(cos_u) / 16),
+    };
+    let x = i32::from(bx) + sign * mul_shift(sin_h2, sin_u, shift);
+    let z = i32::from(bz) + sign * mul_shift(cos_h2, sin_u, shift);
+    let y = i32::from(SWORDIE_BLADE_Y) - lift;
+    let yaw = i32::from(h2) + turn;
+    ([x as i16, y as i16, z as i16], [0, yaw as i16, 0])
 }

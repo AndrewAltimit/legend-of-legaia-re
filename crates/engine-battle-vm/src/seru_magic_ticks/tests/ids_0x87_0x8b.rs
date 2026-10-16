@@ -917,3 +917,41 @@ fn a_negative_wrapper_return_still_clamps_rather_than_healing() {
     assert_eq!(swordie_slash(&mut v, 0, 1, -8), 399);
     assert_eq!(v.hp, 1);
 }
+
+/// A slash's blade flies from the arm-8 origin through the victim's plane
+/// pair: at the start of its flight it sits on the origin, and the two outer
+/// slashes bow out to opposite sides of the line.
+#[test]
+fn swordie_blades_fly_from_the_origin_and_bow_apart() {
+    let origin = (0, 0);
+    let victim = (0, 0x800);
+    let (p0, _) = swordie_blade_pose(0, 0, 8, origin, victim);
+    assert_eq!(p0, [0, SWORDIE_BLADE_Y, 0]);
+    let (a, ra) = swordie_blade_pose(0, 256, 8, origin, victim);
+    let (b, rb) = swordie_blade_pose(1, 256, 8, origin, victim);
+    // Half way: both have travelled the same distance along the line and sit
+    // half a unit either side of it (`sin(0x400) >> 15`).
+    assert_eq!(a[2], b[2]);
+    assert_eq!(a[0], -b[0]);
+    assert_eq!(a[0].abs(), 0x200);
+    assert_eq!(ra[1], rb[1]);
+    // The inner pair rides up as it goes.
+    let (c, _) = swordie_blade_pose(2, 256, 8, origin, victim);
+    assert_eq!(c[1], SWORDIE_BLADE_Y - 0x100);
+}
+
+/// The slash routine draws a blade on each call that leaves its slash
+/// travelling, and none on the call that lands it.
+#[test]
+fn swordie_slash_draws_its_blade_until_it_lands() {
+    let clock = SwordieClock { rate: 4, speed: 1 };
+    let mut slashes = SwordieSlashes::default();
+    let mut v = seats(1).remove(0);
+    let mut drawn = 0;
+    for _ in 0..20 {
+        slashes.draw = SwordieDraw::default();
+        swordie_slash_step(&mut slashes, 0, &mut v, clock, || 0);
+        drawn += usize::from(slashes.draw.blades[0]);
+    }
+    assert_eq!(drawn, 15);
+}

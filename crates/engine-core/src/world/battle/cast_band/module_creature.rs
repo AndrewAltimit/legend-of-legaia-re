@@ -24,9 +24,14 @@ const CREATURE_CLOSE_STEP: i32 = 30;
 /// PROT 0908's arm that moves the creature over the victim (`0x801F79F4`).
 const ZENOIR_OVER_VICTIM_ARM: u8 = 10;
 
-/// The modules whose arms gate on their creature's clip `+0x1D9` and so
-/// need its commits on retail's boundary: PROT 0907, 0908 and 0909.
-const CLIP_GATED_MODULES: [u32; 3] = [907, 908, 909];
+/// The modules whose creature's bare `+0x1DA` stores need retail's commit
+/// boundary: PROT 0907, 0908 and 0909, whose arms gate on the creature's
+/// clip `+0x1D9`, and PROT 0913, whose arm 3 stages clip `1` with no stage
+/// bit (`sb v0,0x1da(s8)` at `0x801F6EC8`) over the long emergence clip `0`.
+/// Retail RAM through arms 3..7 holds `+0x1D9 = 0`, `+0x1DA = 1` and the
+/// installer's rate `2`: the creature climbs out of the vortex on clip `0`
+/// until arm 9's stage-bit commit of clip `2`.
+const CLIP_GATED_MODULES: [u32; 4] = [907, 908, 909, 913];
 
 /// The animation rate `+0x21D` the creature seat installer `FUN_801F19EC`
 /// gives the creature it seats (`li s3,0x2` at `0x801F1CFC`, stored at

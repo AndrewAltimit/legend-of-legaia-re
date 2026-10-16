@@ -89,6 +89,7 @@ mod orb_stager;
 mod presentation;
 mod screen_fade;
 mod summon_stager;
+mod swordie_blades;
 mod voice_cues;
 
 /// How far behind the caster (toward negative Z, the party side) the

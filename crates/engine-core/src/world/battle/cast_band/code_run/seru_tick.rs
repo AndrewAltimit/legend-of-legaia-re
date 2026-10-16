@@ -86,8 +86,17 @@ impl World {
                     speed: legaia_engine_battle_vm::battle_anim_rate::RATE_NORMAL,
                 };
                 let mut slashes = self.casting.module_swordie;
+                let phase_in = ctx.phase;
                 let (step, hits) =
                     seru::swordie_tick(ctx, seats, r_summon, r_victim, &mut slashes, clock, |_| 0);
+                self.swordie_blades(
+                    phase_in,
+                    ctx.phase,
+                    &mut slashes,
+                    clock.speed,
+                    summon_slot,
+                    victim_slot,
+                );
                 self.casting.module_swordie = slashes;
                 (step, lift(&hits))
             }

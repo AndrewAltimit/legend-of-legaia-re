@@ -21,6 +21,47 @@ pub const NOVA_VORTEX_SPAWNS: [ModuleSpawn; 2] = [
     nova_spawn(0x801F_89AC, SpawnAnchor::CasterUnturned { y: 0 }),
 ];
 
+const fn arm8_frame(div: i16, side: i16, y: i16, roll: i16) -> SpawnAnchor {
+    SpawnAnchor::CreatureFrame {
+        div,
+        side,
+        extra: 0,
+        y,
+        yaw: 0,
+        roll,
+    }
+}
+
+/// PROT 0913 arm 8's twelve spawns on its pass (`0x801F7310..0x801F773C`),
+/// all on the creature `c` (heading `f`) and its own angle trio:
+///
+/// * `0x801F89FC` at `c - (sin f, cos f) / 26`, `y = -0x258`
+///   (`* 0x4EC4EC4F >> 3` at `0x801F7360`);
+/// * on each side `s = +-1`, the point `c - (sin f, cos f) / 12 + s (cos f,
+///   -sin f) / 11` at `y = -0x280` (`* 0x2AAAAAAB >> 1`, `* 0x2E8BA2E9 >> 1`
+///   of the table read at `f + 0x400`): `0x801F8A44`, then two of
+///   `0x801F8A8C` (`s = +1`) or `0x801F8B04` (`s = -1`) with the trio's roll
+///   stepped `-+0x80` and then `-+0x100` further (`sh v0,0x24(sp)` in each
+///   call's delay slot);
+/// * `0x801F8B7C`, `0x801F8BDC`, `0x801F8C60`, `0x801F8CE4`, `0x801F8D68`
+///   on the creature seat itself (`a0 = c + 0x34`, `a1 = c + 0x44`).
+///
+/// The arm passes at once, so these land on the same tick as its framing.
+pub const NOVA_ARM8_SPAWNS: [ModuleSpawn; 12] = [
+    nova_spawn(0x801F_89FC, arm8_frame(26, 0, -0x258, 0)),
+    nova_spawn(0x801F_8A44, arm8_frame(12, -11, -0x280, 0)),
+    nova_spawn(0x801F_8A8C, arm8_frame(12, -11, -0x280, -0x80)),
+    nova_spawn(0x801F_8A8C, arm8_frame(12, -11, -0x280, -0x180)),
+    nova_spawn(0x801F_8A44, arm8_frame(12, 11, -0x280, 0)),
+    nova_spawn(0x801F_8B04, arm8_frame(12, 11, -0x280, 0x80)),
+    nova_spawn(0x801F_8B04, arm8_frame(12, 11, -0x280, 0x180)),
+    nova_spawn(0x801F_8B7C, SpawnAnchor::Creature),
+    nova_spawn(0x801F_8BDC, SpawnAnchor::Creature),
+    nova_spawn(0x801F_8C60, SpawnAnchor::Creature),
+    nova_spawn(0x801F_8CE4, SpawnAnchor::Creature),
+    nova_spawn(0x801F_8D68, SpawnAnchor::Creature),
+];
+
 /// The two cloud-bank records, in the order arm 10 spawns them.
 pub const NOVA_CLOUD_RECORDS: [u32; 2] = [0x801F_87F0, 0x801F_8790];
 
@@ -157,7 +198,10 @@ pub fn nova_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) ->
                         shot([-0x80, yaw_from(0x700, f)], [0, 0x400, 0x600], c, 1),
                         ModuleCaption::AttackName,
                     ),
-                    8 => shot([-0x40, yaw_from(0x780, f)], [0, 0x600, 0x400], c, 0x80),
+                    8 => ArmDirection {
+                        spawns: &NOVA_ARM8_SPAWNS,
+                        ..shot([-0x40, yaw_from(0x780, f)], [0, 0x600, 0x400], c, 0x80)
+                    },
                     9 => shot([0x40, yaw_from(0x800, f)], [0, 0x600, 0x800], c, 0x80),
                     0x0C => shot([-0x200, yaw_from(0x800, f)], [0, 0x1000, 0x200], c, 0x10),
                     // The stores land the scaled TR z `0x200` itself: the
@@ -264,7 +308,7 @@ mod tests {
     }
 
     /// Nova reports its spawn calls on the arms that make them, each on the
-    /// next arm's first tick: the vortex (2), the cloud banks (10), the
+    /// next arm's first tick: the vortex (2), arm 8's twelve, the cloud banks (10), the
     /// whirlwind (13), the parts that ride the victim (18) and the landing
     /// flash (0x13).
     #[test]
@@ -282,7 +326,7 @@ mod tests {
         }
         assert_eq!(
             seen,
-            vec![(3, 2), (0x0B, 2), (0x0E, 17), (0x13, 3), (0x14, 2)]
+            vec![(3, 2), (9, 12), (0x0B, 2), (0x0E, 17), (0x13, 3), (0x14, 2)]
         );
         assert_eq!(
             NOVA_WHIRLWIND_SPAWNS[16].anchor,
