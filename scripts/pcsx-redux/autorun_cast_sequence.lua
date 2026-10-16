@@ -47,6 +47,11 @@
 --   LEGAIA_SHOT_EVERY    vsyncs between frames (2)
 --   LEGAIA_MAX_SHOTS     frame cap (1500)
 --   LEGAIA_TAIL          vsyncs to keep going past the Done band (60)
+--   LEGAIA_RAM_AT        comma list of vsyncs past the cast begin at which the
+--                        full 2 MiB main RAM is written as ram_<vsync>.bin
+--                        (the absolute vsync, as in meta.csv), and the whole
+--                        emulator state beside it as state_<vsync>.rawsstate
+--                        (VRAM included: sstate_vram.py); empty = none
 --   LEGAIA_PARK          quit when the action state and the module phase
 --                        have not moved for this
 --                        many vsyncs after the inject (900): a cast the
@@ -70,6 +75,10 @@ local SHOT_EVERY   = probe.getenv_num("LEGAIA_SHOT_EVERY", 2)
 local MAX_SHOTS    = probe.getenv_num("LEGAIA_MAX_SHOTS", 1500)
 local TAIL         = probe.getenv_num("LEGAIA_TAIL", 60)
 local PARK         = probe.getenv_num("LEGAIA_PARK", 900)
+local RAM_AT = {}
+for v in string.gmatch(probe.getenv("LEGAIA_RAM_AT", ""), "[^,]+") do
+    RAM_AT[tonumber(v)] = true
+end
 
 local ACTOR_TABLE  = 0x801C9370
 local CTX_PTR      = 0x8007BD24
@@ -244,6 +253,18 @@ probe.run({
         local shot, w, h, bpp = "", 0, 0, 0
         if cast_seen and (elapsed - cast_vsync) % SHOT_EVERY == 0 and shots < MAX_SHOTS then
             shot, w, h, bpp = take_shot(elapsed)
+        end
+        if cast_seen and RAM_AT[elapsed - cast_vsync] then
+            local buf = probe.read_bytes(0x80000000, probe.RAM_SIZE)
+            if buf ~= nil then
+                local fh = io.open(probe.out_path(string.format("ram_%05d.bin", elapsed)), "wb")
+                if fh ~= nil then fh:write(tostring(buf)); fh:close() end
+            end
+            pcall(function()
+                local w = PCSX.createSaveState()
+                local sh = Support.File.open(probe.out_path(string.format("state_%05d.rawsstate", elapsed)), "TRUNCATE")
+                sh:writeMoveSlice(w); sh:close()
+            end)
         end
         local hp = {}
         for s = 0, 7 do
