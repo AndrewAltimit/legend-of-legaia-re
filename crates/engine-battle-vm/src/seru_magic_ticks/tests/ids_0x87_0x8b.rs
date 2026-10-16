@@ -538,19 +538,27 @@ fn freed_walks_twenty_arms_then_settles() {
     let mut ctx = ctx_at(0);
     let mut s = seats(8);
     let mut steps = 0;
+    let mut peak = 0;
     // Bounded: the chain names 0..=0x13 and then 0xFF.
-    while steps < 64 {
+    while steps < 256 {
         let (step, _) = freed_tick(&mut ctx, &mut s, 7, &mut 0, |_| 0);
         steps += 1;
+        peak = peak.max(s[7].shatter);
         if step == CastTickStep::Done {
             break;
         }
     }
     assert_eq!(ctx.phase, SERU_B_DONE_PHASE);
+    // Arm 9 holds while the creature re-forms: `scalar << 7` drained by
+    // twice the scalar a tick is 64 passes, 63 more than an unheld arm.
+    let assemble = u32::from(FREED_SHATTER_START / FREED_SHATTER_STEP_PER_TICK) - 1;
     assert_eq!(
-        steps, 0x15,
-        "twenty arms, the settle arm, then the terminal"
+        steps,
+        0x15 + assemble,
+        "twenty arms, the assembly hold, the settle arm, then the terminal"
     );
+    assert_eq!(peak, FREED_SHATTER_START, "arm 7 breaks the creature up");
+    assert_eq!(s[7].shatter, 0, "arm 9 leaves it whole");
 }
 
 /// PROT 0913 rolls against a corpse: only `+0x16E & 4` guards the step.

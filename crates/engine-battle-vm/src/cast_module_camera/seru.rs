@@ -609,16 +609,18 @@ fn zenoir_grid(v: i16, trig: i16) -> i16 {
 /// | 3 | hold until the band timer `ctx[+0x6D8]` reads `0` | - |
 /// | 4 | - | seats the creature on the grid point facing `0x800`; pitch `0x3C`, TR `(0, 0x400, 0xA00)`, the same focus, over `0x78` frames (`0x801F719C`); `ctx[+0x6D8] = scalar * 140` |
 /// | 5 | drain `ctx[+0x6D8]`, hold while non-negative | the spell caption |
+/// | 11 | - | `ctx[+0x6D8] = scalar * 192` on the way out |
+/// | 12 | drain `ctx[+0x6D8]`, hold while non-negative | the shatter loop runs on every pass |
 ///
 /// Arm 3's wait is on the **band's** timer: the `0x78` frames the actor
 /// freeze `0x34` armed and the sustain `0x35` counts down. So the module
 /// frames its opening pan for exactly the band's sustain, and from arm 4 on
 /// it reuses the same word as its own countdown.
 ///
-/// Arms 6 and later - the creature's clip-paced strike, the hit framings of
-/// arms 6..10 - are not directed; they run on the phase chain alone.
+/// Arms 6..10 - the creature's clip-paced strike and its hit framings - are
+/// not directed; they run on the phase chain alone.
 ///
-/// PORT: FUN_801F69D8 (PROT 0908; the camera arms 0/1/4, arm 3's band-timer wait, arm 4's creature placement and arm 5's gate)
+/// PORT: FUN_801F69D8 (PROT 0908; the camera arms 0/1/4, arm 3's band-timer wait, arm 4's creature placement, arm 5's gate and arm 12's countdown)
 pub fn zenoir_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) -> ArmDirection {
     let v = seats.victim;
     let h = heading(v, seats.caster).wrapping_add(0x800) & 0xFFF;
@@ -656,6 +658,21 @@ pub fn zenoir_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) 
         5 => {
             // `sh` into the halfword `ctx[+0x6D8]`, then `bgez` on it
             // sign-extended.
+            st.countdown.drain();
+            st.countdown.0 = i32::from(st.countdown.0 as i16);
+            gate(st.countdown.0 >= 0)
+        }
+        // The finisher arm leaves through `ctx[+0x6D8] = scalar * 192`
+        // (`0x801F7BBC..0x801F7BD0`), the shatter arm's countdown.
+        ZENOIR_FINISH_ARM => {
+            st.countdown.0 =
+                SPEED_SCALAR * crate::seru_magic_ticks::ZENOIR_SHATTER_COUNTDOWN_PER_SCALAR;
+            ArmDirection::PASS
+        }
+        // The shatter arm drains it and holds while it reads non-negative as
+        // a halfword (`0x801F8268..0x801F829C`); the shatter loop itself runs
+        // on every pass, held or not (`zenoir_shatter_pass`, the host's).
+        crate::seru_magic_ticks::ZENOIR_SHATTER_ARM => {
             st.countdown.drain();
             st.countdown.0 = i32::from(st.countdown.0 as i16);
             gate(st.countdown.0 >= 0)

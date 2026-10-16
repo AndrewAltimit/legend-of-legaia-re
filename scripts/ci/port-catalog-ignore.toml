@@ -308,8 +308,6 @@
 "8001cd68" = "GPU gouraud quad primitive emitter (0x9000000, 10-word prim) + OT insert"
 "8001d230" = "VRAM framebuffer/handle setup (fb rects, alloc + register into gp+0x6d8..)"
 "8001e1b4" = "per_stage_init asset-buffer alloc + fills 0x80091508 buffer-ptr table + VRAM params"
-"80029888" = "Shatter renderer front half: GTE/GPU emit over the DAT_8007326c table for a body with +0x7A set. The routine is replaced by the wgpu pipeline, but its per-triangle shatter is not reproduced (docs/subsystems/renderer.md, the shatter renderer)"
-"80029dd8" = "Shatter renderer per-primitive half: centroid spin + outward push (MVMVA), RTPT, packet emit + OT insert. GTE/GPU I/O replaced by wgpu; the shatter behaviour itself is not reproduced (docs/subsystems/renderer.md)"
 "8002bdc4" = "gradient textured poly-strip emitter (0xc000000 prim) into _DAT_1f8003a0 + OT insert"
 "8001e3b8" = "Primitive-packet buffer + ordering-table allocator (OT = 1<<depth entries, double-buffered packet pool into DISPENV @ 0x8007BF30; malloc via 80017888). engine-render uses a wgpu pipeline with no OT/packet-pool"
 "8001daf8" = "Display-environment + GTE screen setup: builds the double-buffered DISPENV/DRAWENV pair (libgpu 8005731c/8005724c), selects 320x240 / 640x480, primes GTE SetGeomScreen/Offset. Engine sets the viewport via the winit surface + Camera::for_viewport"
@@ -360,7 +358,7 @@
 
 # Added by the port-wiring wave.
 "80026be0" = "Boot-time GTE screen + trig-table pointer install: SetGeomScreen(0xA0) through the libgte leaf 8005b818, then stores &DAT_80070A2C into 0x8007B81C and &DAT_8007122C (that address + 0x800) into 0x8007B7F8 - the two static table bases the battle quad emitter FUN_800485BC reads as its sin/cos lookup..."
-"80027c6c" = "TMD per-primitive GTE emitter: loads a group's vertices into the GTE, transforms, and writes the resulting packet through the scratchpad OT cursor _DAT_1F8003A0 (docs/subsystems/renderer.md). Same leaf family as the already-listed 80029888 / 80029dd8 / 8002a5a4 GTE+GPU emitters inside the FUN_800..."
+"80027c6c" = "TMD per-primitive GTE emitter: loads a group's vertices into the GTE, transforms, and writes the resulting packet through the scratchpad OT cursor _DAT_1F8003A0 (docs/subsystems/renderer.md). Same leaf family as the listed 8002a5a4 GTE+GPU emitter and the shatter renderer 80029888 / 80029dd8 (whose per-triangle transform is ported in render-kernels::shatter) inside the FUN_800..."
 "80027f00" = "Near/far vertex clip loop of the same renderer region: walks the edge list in the scratchpad render context 0x1F800314, and for each endpoint outside the near/far bound synthesises a clipped vertex (via 80029724) before the group is handed to the emitter 80027c6c. Software clipping the engine get..."
 "80034358" = "Arts-list panel renderer: draws a scrollable list of the active character's learned Arts by matching the SCUS arts-name table DAT_80075EC4 against the per-character list at 0x80084140 + char*0x414 + 0x74E (count +0x74D, scroll top gp+0x140) and pushing each row through the font sprite path. Conte..."
 "8003479c" = "Screen wipe / curtain emitter, (progress 0..0xF2): emits top+bottom fill bars through the POLY_G3 leaf 8003c510 whose extent tracks progress, a gradient pair through the POLY_G4 leaf 8003c43c below progress 0x81, and a full-screen fill at >= 0xF2, linking each packet with the libgs OT linker 8003..."

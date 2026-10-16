@@ -1017,6 +1017,28 @@ impl World {
             live.fold_writes(orig, view);
             self.write_cast_view(slot, &live);
         }
+        // PROT 0903's settle arm breaks the creature up on every pass: `+0x1BA += 2 *
+        // frame * scalar` on seat 7 (`0x801F76A4..0x801F76C4`, past the
+        // countdown's jump-in like the rate store), the dissolve the settle
+        // plays while the victim's knock-back runs out.
+        if entry == 903
+            && phase_in == ticks_a::GIMARD_SETTLE_ARM
+            && let Some(a) = self.actors.get_mut(usize::from(seat_slot))
+        {
+            a.battle.shatter = a
+                .battle
+                .shatter
+                .wrapping_add(ticks_a::GIMARD_SHATTER_STEP_PER_TICK);
+        }
+        // PROT 0908's arm 12 shatters the monsters the finisher killed, on
+        // every pass of the arm, held or not (the loop sits ahead of the
+        // countdown gate the director runs). Both writes land after the
+        // views' fold-back above, which would otherwise restore the word
+        // from a view read before them.
+        if entry == 908 && phase_in == ticks_a::ZENOIR_SHATTER_ARM {
+            let latched = self.casting.module_cam.victim_slot.unwrap_or(victim_slot);
+            self.zenoir_shatter(latched);
+        }
         // PROT 0948's beam: arm 2 zeroes the builder's counter as it passes,
         // and arm 3 calls the builder (`jal 0x801F726C` at `0x801F6EF4`)
         // ahead of its own gate, so it draws on every tick the arm runs.

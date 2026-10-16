@@ -26,6 +26,7 @@ impl<'m> DrawCtx<'_, 'm> {
             color_draws,
             clip_marks,
             color_clip_marks,
+            nclip_marks,
             ..
         } = out;
         // The player's untextured mesh half (pants /
@@ -110,11 +111,16 @@ impl<'m> DrawCtx<'_, 'm> {
                 clip_marks.push((draws.len(), c));
                 color_clip_marks.push((color_draws.len(), c));
             }
-            // A clip-less NPC's op-`0x4B` morph re-stages
-            // its static mesh (`npc_morph_static`).
-            let posed = npc_posed
-                .get(&d.slot)
-                .copied()
+            // An NPC the op-`43 07` deformation is breaking up draws its
+            // shards (`PosedFrame::npc_shattered`), both sides: the shatter
+            // renderer issues no NCLIP. A clip-less NPC's op-`0x4B` morph
+            // re-stages its static mesh (`npc_morph_static`).
+            let shattered = store.posed.npc_shattered.get(&d.slot);
+            if shattered.is_some() {
+                nclip_marks.push((draws.len(), legaia_render_kernels::shatter::SHATTER_NCLIP));
+            }
+            let posed = shattered
+                .or_else(|| npc_posed.get(&d.slot).copied())
                 .or_else(|| store.npc_morph_static.get(&d.slot));
             match (posed.and_then(|p| p.0.as_ref()), d.mesh_idx) {
                 (Some(mesh), _) => draws.push(SceneDraw {

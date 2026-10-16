@@ -423,12 +423,29 @@ So every triangle spins about its own centre and the triangles fly apart,
 `v / 128` of their distance from the burst centre per unit. At `v = 0x1000`
 a triangle sits 33 times as far out as it started.
 
+A quad is two triangles, `(v0, v1, v2)` and `(v1, v2, v3)`, each with its own
+centroid (the quad's second centroid is summed at `0x80029E4C..0x80029EC4`
+and swapped in at `0x8002A550`). The routine runs `RTPT`, `AVSZ3` and the
+`0xA1..0x4000` depth window but no `NCLIP`, so a shattering body draws both
+sides of every triangle. Its colours are the packet's colour word through
+`DPCS` against the caller's far colour and `IR0`, the same cue the plain
+dispatcher takes.
+
 | Flag (in `row[+8] << 16`) | Effect |
 |---|---|
 | `0x10000` | No spin (`F` is the identity) |
 | `0x40000` | Each triangle shrinks with `0x1000 - v` |
 | `0x20000` | No outward push: triangles spin and shrink in place (`0x80029FD4`) |
-| `0x100000` / `0x80000` / `0x200000` | Sweep along X / Y / Z: a front at `h3 - v` (or `h3 + v` when `h3 <= 0`) moves across the body; only triangles past it come apart, each by its own distance past the front (spin `(d << 4, d << 2, d << 4)`, push `d / 128`, shrink `0x1000 - d * 8`). The rest draw intact (`0x8002A030..0x8002A1B8`). |
+| `0x100000` / `0x80000` / `0x200000` | Sweep along view X / Y / Z: a front at `h3 - v` (or `h3 + v` when `h3 <= 0`) moves across the body; only triangles past it come apart, each by its own distance past the front (spin `(d << 4, d << 2, d << 4)`, push `d / 128`, shrink `0x1000 - d * 8` floored at `0`). The rest draw intact with the identity (`0x8002A030..0x8002A1B8`). |
+
+The sweep measures each centroid in **view** space: `FUN_8003D344` at
+`0x8002A000` runs `MVMVA` with the translation, through the object's own GTE
+matrix (`M`, `T - M * off`), and subtracts the node's view translation
+`+0x2C..+0x34`, which the caller stages at `0x1F8003BC`. So the front crosses
+the body along a camera axis, measured from the actor's origin. A
+past-the-front triangle under `0x10000` does not rebuild the matrix: it scales
+whatever the previous triangle left in `0x1F800314`. Of the shipped flag words
+only `0xC` (`jagaroom`) sweeps.
 
 The field's `43 07` script op writes the row and ramps `+0x7A` from `0` to
 `0x1000` ([`script-vm.md`](script-vm.md#0x43-sub-7--8---the-spin-and-shrink-deformation)).
@@ -437,10 +454,28 @@ creature's `+0x1BA` (seat 7) to break it up or assemble it, and Zenoir and
 Jedo raise it on monsters
 ([`cast-module.md`](cast-module.md#the-shatter-effect-on-monsters)).
 
-**Port.** Not reproduced. The field NPC path folds the row into one rigid pose
-(`NpcDrawPose::with_face`: `F` as Euler angles, the shrink as a scale), which
-is right only for a body with a single triangle; the battle path draws the
-body intact. A faithful port needs the per-primitive transform above.
+**Port.** `legaia_render_kernels::shatter` (`crates/render-kernels/src/shatter.rs`):
+`ShatterObject::new` is the prologue, `ShatterObject::triangle` the
+per-triangle half, integer like the GTE (q12 `RotMatrix`, the `* 0x555 >> 12`
+centroid, the halfword stores). `shatter_local_triangles` runs it over an
+object-local mesh in index order, a fresh object state per TMD object, and
+returns one corner per index: the shards share no vertex, so a host draws
+them de-indexed, both sides (`SHATTER_NCLIP`). Every host keeps its plain
+path untouched while the word is zero.
+
+| Host | Battle body | Field NPC |
+|---|---|---|
+| Native `play-window` | `shattered_battle_mesh` (`redraw_passes.rs`) re-uploads the posed body when `BattleActorDrawPlan::shatter` is up | `shatter_npc_meshes` (`redraw_stage.rs`) builds both halves at the live clip pose when `World::field_npc_shatter` is up |
+| Browser play page | `play_battle_actor_shatter`, posed and drawn from a de-indexed companion mesh (`LegaiaFieldActors.shardMesh`) | `play_npc_shatter_states` / `play_npc_shatter` in `field-actors.js`, the map viewer's `field_scene_npc_*` twins too |
+
+Not modelled: the sweep's view frame (the hosts hand the kernel the object's
+own axes, `SweepFrame::MODEL`, so `jagaroom`'s `0xC` front crosses the body
+along model Y rather than view Y); the depth window per triangle; and the
+`DPCS` colour of the lit rows `0x10..0x17`, whose shards keep the mesh's own
+colours. `LEGAIA_DEBUG_SHATTER=<v>` (with `LEGAIA_DEBUG_SHATTER_FLAGS` for the
+field row) stamps a value onto every monster and placed NPC in the native
+window, and the play page's `debug_shatter(value, flags)` does the same: debug
+affordances for looking at the renderer.
 ## Lighting
 
 **Retail has no general light source.** Nearly every primitive is shaded by a
@@ -677,7 +712,7 @@ and carried as a scope row in `scripts/ci/port-catalog-ignore.toml`:
 | `FUN_80019D50` | CLUT-cell HSV cycler ([`field-ambient-fx.md`](field-ambient-fx.md)) | **Ported** - `legaia_engine_field::clut_cell_fx`, live through `world::ambient` |
 | `FUN_800351C0` | Full-screen `320x224` backdrop quad (tag `0x08000000`) | Scope row (`render_pipeline`) |
 | `FUN_8001B73C` | On-screen visibility test, not an emitter ([probes](#on-screen-probes-two-tests-that-are-not-the-same-test)) | Scope row (`libgte`) |
-| `FUN_80029DD8` | Per-primitive half of the [shatter renderer](#the-shatter-renderer-fun_80029888--fun_80029dd8) | Not reproduced; scope row (`render_pipeline`) |
+| `FUN_80029DD8` | Per-primitive half of the [shatter renderer](#the-shatter-renderer-fun_80029888--fun_80029dd8) | `render-kernels::shatter::ShatterObject::triangle` |
 
 `FUN_80028158` / `FUN_8002A5A4` / `FUN_801CFA48` are the three emitters the
 per-actor render dispatcher `FUN_8001ADA4` case 4 picks on `actor[+0x9e]`;

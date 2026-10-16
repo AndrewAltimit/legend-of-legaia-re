@@ -81,10 +81,19 @@ impl ColorMesh {
 /// [`tmd_to_vram_mesh_filtered`]: super::tmd_to_vram_mesh_filtered
 /// [`tmd_to_vram_mesh_field_hybrid`]: super::tmd_to_vram_mesh_field_hybrid
 pub fn tmd_to_color_mesh(tmd: &Tmd, buf: &[u8]) -> ColorMesh {
+    tmd_to_color_mesh_with_object_ids(tmd, buf).0
+}
+
+/// [`tmd_to_color_mesh`] plus a per-vertex **object id** (the TMD object each
+/// emitted vertex came from), parallel to `mesh.positions` - the colour twin
+/// of [`super::tmd_to_vram_mesh_with_object_ids`]. `tmd_to_color_mesh` is
+/// this function's mesh half, so the two never drift.
+pub fn tmd_to_color_mesh_with_object_ids(tmd: &Tmd, buf: &[u8]) -> (ColorMesh, Vec<u32>) {
     use crate::descriptor::Descriptor;
 
     let mut out = ColorMesh::default();
-    for o in &tmd.objects {
+    let mut object_ids = Vec::new();
+    for (o_idx, o) in tmd.objects.iter().enumerate() {
         let object_vert_count = o.header.n_vert;
         let groups = legaia_prims::iter_groups_lenient(
             buf,
@@ -111,6 +120,7 @@ pub fn tmd_to_color_mesh(tmd: &Tmd, buf: &[u8]) -> ColorMesh {
                     out.colors
                         .push(prim.colors.get(corner).copied().unwrap_or([128, 128, 128]));
                     out.blend.push(blend_word);
+                    object_ids.push(o_idx as u32);
                     i
                 };
                 match raw_idx.len() {
@@ -132,7 +142,7 @@ pub fn tmd_to_color_mesh(tmd: &Tmd, buf: &[u8]) -> ColorMesh {
             }
         }
     }
-    out
+    (out, object_ids)
 }
 
 /// Like [`tmd_to_color_mesh`] but applies the per-object **rigid transform**

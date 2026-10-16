@@ -694,8 +694,10 @@ the shards stay lit on stage until the battle ends.
    `FUN_80029888` / `FUN_80029DD8`: each triangle spins about its own centre and is pushed out by
    `+0x7A / 128` of its distance from the body's centre
    ([renderer.md](../../subsystems/renderer.md#the-shatter-renderer-fun_80029888--fun_80029dd8)).
-   The ramp stops when the actor's `+0x04` counter, which falls by the same step, reaches zero:
-   `+0x1BA` ends near 1000, about 8.8 times the starting distance. Nothing resets it.
+   A seat stops growing once its `+0x04` colour word, which the fade below drains, reaches zero,
+   and the arm itself ends when the countdown `ctx[+0x6D8] = scalar * 192` the finisher seeded
+   runs out: `+0x1BA` ends near 1000 in the capture, about 8.8 times the starting distance.
+   Nothing resets it.
 2. **The fade.** A killed monster enters arm 2 of the tint state machine (`+0x21C = 2`), which
    walks its colour to black; a body at black is no longer drawn.
 3. **The exception.** The draw tick `FUN_800480D8` overrides the colour with `0x00808080` and
@@ -704,7 +706,9 @@ the shards stay lit on stage until the battle ends.
    `0x80048278..0x800482DC`).
 4. **Zenoir's gate.** The loop skips a seat when the fight is scripted and record `+0x20` is set
    (`0x801F81F0..0x801F8210`), or when the first formation id is `0x4D`, `0xAD` or `0xAE`
-   (`0x801F8218..0x801F8230`).
+   (`0x801F8218..0x801F8230`). The record it tests is the latched victim's for every seat (the
+   pointer is set from the victim seat at `0x801F813C` and never stepped), so in a two-monster
+   scripted fight the boss byte of whichever monster was targeted decides for both.
 5. **Jedo** (PROT entry 0931) shatters every monster it kills in a random fight
    (`0x801F86E0..0x801F874C`) and skips the effect in every scripted fight, so it never meets the
    problem.
@@ -723,8 +727,12 @@ action, and the target's HP was set to 1. Every fight here is forced and every c
 | Berserker (`0x4D`) alone | yes | The list test runs every frame and the store never does; `+0x1BA` stays `0` and the body stays whole |
 | Berserker alone, id cell poked to `0x4E` during the list test | yes | Shatters into a lit cloud of green and purple shards |
 
-The `0x8007BE60` rows the battle uses read zero, so the shatter takes its default form: spin and
-outward push, no shrink.
+The battle node's `+0x6D` reads `0xFF`, and the row it names reads zero, so the shatter takes its
+default form: spin and outward push, no shrink.
+
+The port reproduces the shatter and this gate (`zenoir_shatter_pass`, drawn by both hosts through
+`legaia_render_kernels::shatter`), and the grey stamp keeps the scripted lone Golem's shards lit as
+retail does ([cast-module.md](../../subsystems/cast-module.md#what-the-port-runs)).
 
 ### Addresses
 

@@ -198,3 +198,131 @@ pub fn zenoir_tick(
     });
     (step, hits)
 }
+
+/// The arm PROT 0908 runs its shatter loop in (`0x801F8108`), after the
+/// finisher has killed what it kills.
+pub const ZENOIR_SHATTER_ARM: u8 = 12;
+
+/// The formation ids PROT 0908 never shatters - the three Berserkers
+/// (`li v0,0x4d` / `0xad` / `0xae` at `0x801F821C..0x801F822C`), tested
+/// against the formation's **first** cell `0x8007BD0C`.
+pub const ZENOIR_SHATTER_SKIP_IDS: [u8; 3] = [0x4D, 0xAD, 0xAE];
+
+/// The arm-12 countdown PROT 0908's finisher arm seeds into `ctx[+0x6D8]` on
+/// its way out (`lbu v1,0x69(t0)` / `* 3 << 6` / `sh v0,0(s8)` at
+/// `0x801F7BBC..0x801F7BD0`): `scalar * 192`, drained by the frame product
+/// while arm 12 runs (`0x801F8268..0x801F82A0`).
+pub const ZENOIR_SHATTER_COUNTDOWN_PER_SCALAR: i32 = 192;
+
+/// What PROT 0908's shatter loop gates on, read once per pass.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ZenoirShatterGate {
+    /// `ctx[+0x287]` - the scripted-fight flag.
+    pub scripted: bool,
+    /// The monster record `+0x20` byte of the **latched victim**: the loop
+    /// reads `0x801C9348[victim - 3]` through a pointer it never steps
+    /// (`t5`, set at `0x801F813C` from `s3`, the victim seat), so every seat
+    /// is tested against the victim's record, not its own.
+    pub victim_record_20: u8,
+    /// The formation's first monster id (`0x8007BD0C`).
+    pub formation_first: u8,
+}
+
+/// PROT 0908's shatter loop (`0x801F81C8..0x801F8264`), one pass: every
+/// monster seat `3..=6` that is **dead** (`+0x14C == 0`) and still has a
+/// colour word (`+0x04 != 0`, which the defeat fade drains to zero) takes
+/// `step` onto its `+0x1BA` shatter word - unless the fight is scripted and
+/// the victim's record `+0x20` is set (the boss stand-in), or the formation
+/// opens with a Berserker. Retail's step is the frame product
+/// `[0x1F800393] * [0x1F80037D]`; the loop runs on every pass of arm 12,
+/// ahead of the arm's countdown gate. Returns how many seats it raised.
+///
+/// `neutral_colour(seat, view)` reports whether a seat's colour word is the
+/// engine's resting `0` that stands for retail's neutral `0x20080200` (a
+/// seated body that has not entered the defeat fade) - the gate reads that
+/// as non-zero. An empty seat's word is a real zero.
+///
+/// REF: FUN_801F69D8 (PROT 0908's arm-12 shatter loop 0x801F81C8..0x801F8264 - one arm of the body [`zenoir_tick`] ports, run by the host on every pass of the arm)
+pub fn zenoir_shatter_pass(
+    seats: &mut [CastActorState],
+    gate: ZenoirShatterGate,
+    step: u16,
+    neutral_colour: impl Fn(u8, &CastActorState) -> bool,
+) -> usize {
+    if gate.scripted && gate.victim_record_20 != 0 {
+        return 0;
+    }
+    if ZENOIR_SHATTER_SKIP_IDS.contains(&gate.formation_first) {
+        return 0;
+    }
+    let mut n = 0;
+    for seat in FIRST_MONSTER_SEAT..MONSTER_ROW_END {
+        let Some(v) = seats.get_mut(seat as usize) else {
+            continue;
+        };
+        if v.hp != 0 || (v.present_04 == 0 && !neutral_colour(seat, v)) {
+            continue;
+        }
+        v.shatter = v.shatter.wrapping_add(step);
+        n += 1;
+    }
+    n
+}
+
+#[cfg(test)]
+mod shatter_tests {
+    use super::*;
+
+    fn row() -> Vec<CastActorState> {
+        let mut seats = vec![CastActorState::default(); 8];
+        for s in &mut seats[3..7] {
+            s.hp = 10;
+            s.present_04 = 0x2008_0200;
+        }
+        seats
+    }
+
+    const OPEN: ZenoirShatterGate = ZenoirShatterGate {
+        scripted: false,
+        victim_record_20: 0,
+        formation_first: 0x10,
+    };
+
+    #[test]
+    fn dead_seats_with_colour_take_the_step() {
+        let mut seats = row();
+        seats[3].hp = 0;
+        seats[5].hp = 0;
+        seats[5].present_04 = 0; // faded out
+        assert_eq!(zenoir_shatter_pass(&mut seats, OPEN, 32, |_, _| false), 1);
+        assert_eq!(seats[3].shatter, 32);
+        assert_eq!(seats[4].shatter, 0, "alive");
+        assert_eq!(seats[5].shatter, 0, "colour word drained");
+    }
+
+    #[test]
+    fn boss_stand_in_and_berserkers_skip() {
+        let mut seats = row();
+        seats[3].hp = 0;
+        let boss = ZenoirShatterGate {
+            scripted: true,
+            victim_record_20: 1,
+            ..OPEN
+        };
+        assert_eq!(zenoir_shatter_pass(&mut seats, boss, 32, |_, _| false), 0);
+        // A scripted fight whose victim record byte is 0 (the lone Golem).
+        let golem = ZenoirShatterGate {
+            scripted: true,
+            victim_record_20: 0,
+            ..OPEN
+        };
+        assert_eq!(zenoir_shatter_pass(&mut seats, golem, 32, |_, _| false), 1);
+        for id in ZENOIR_SHATTER_SKIP_IDS {
+            let g = ZenoirShatterGate {
+                formation_first: id,
+                ..OPEN
+            };
+            assert_eq!(zenoir_shatter_pass(&mut seats, g, 32, |_, _| false), 0);
+        }
+    }
+}

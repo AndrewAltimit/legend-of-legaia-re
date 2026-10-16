@@ -53,6 +53,11 @@ pub struct BattleActorDrawPlan {
     /// The body's retail pool slot `+0x5A`: the party seat, `3 + k` for
     /// monster `k`, `7` for the summon creature.
     pub seat: i16,
+    /// The shatter the body draws under this frame - its `+0x1BA` word over
+    /// the deformation row its node's `+0x6D` names - or `None` while the
+    /// word is zero and the body takes the plain dispatcher
+    /// ([`World::battle_actor_shatter`]).
+    pub shatter: Option<legaia_render_kernels::shatter::ShatterInput>,
 }
 
 impl BattleActorDrawPlan {
@@ -141,8 +146,14 @@ impl BattleActorDrawPlan {
     /// the far side, but a semi-transparent one adds both shells: the
     /// near-camera ghost (`B + F/4`, `theeder_summon_mid_cast`'s Gilium)
     /// drew about twice retail's brightness.
+    ///
+    /// A shattering body takes neither: the shatter renderer `FUN_80029DD8`
+    /// emits every triangle with no `NCLIP`, so both sides draw
+    /// ([`legaia_render_kernels::shatter::SHATTER_NCLIP`]).
     pub fn nclip_mode(&self) -> u32 {
-        if self.draw_colour & DOUBLE_SIDED_BIT != 0 {
+        if self.shatter.is_some() {
+            legaia_render_kernels::shatter::SHATTER_NCLIP
+        } else if self.draw_colour & DOUBLE_SIDED_BIT != 0 {
             0
         } else {
             BATTLE_BODY_NCLIP
@@ -317,7 +328,30 @@ impl World {
             view_z,
             radius,
             seat,
+            shatter: self.battle_actor_shatter(actor_idx),
         })
+    }
+
+    /// Battle body `actor_idx`'s shatter this frame: its `+0x1BA` word,
+    /// which `FUN_80047430` copies into the render node's `+0x7A`
+    /// (`0x800480A4`), over the deformation-table row the node's `+0x6D`
+    /// names. `FUN_80048A08` routes every object of a body whose `+0x7A` is
+    /// non-zero to the shatter renderer `FUN_80029888` with
+    /// `+0x7A | row[+8] << 16` (`0x80048EE0..0x80048FC0`). `None` while the
+    /// word is zero. A battle node's `+0x6D` reads `0xFF` in every capture,
+    /// whose row reads zero, so a battle shatter takes the default spin and
+    /// push; a row the Jette hook stages comes out of the field's table
+    /// ([`World::shatter_row`]), global as retail's is.
+    // REF: FUN_80048A08, FUN_80047430
+    pub fn battle_actor_shatter(
+        &self,
+        actor_idx: usize,
+    ) -> Option<legaia_render_kernels::shatter::ShatterInput> {
+        let b = &self.actors.get(actor_idx)?.battle;
+        let row = b
+            .shatter_row
+            .map_or_else(Default::default, |id| self.shatter_row(id));
+        legaia_render_kernels::shatter::ShatterInput::new(b.shatter as i16, row)
     }
 
     /// Battle body `actor_idx`'s **ground shadow** this frame, as a mesh
@@ -553,6 +587,16 @@ mod tests {
             ..plan
         };
         assert_eq!(both.nclip_mode(), 0);
+        // A shattering body draws both sides whatever its word.
+        world.actors[0].battle.shatter = 0x100;
+        let shattering = world
+            .battle_actor_draw_plan(0, Some(&pose(4000.0)), 4.0, false)
+            .expect("party seat");
+        let s = shattering
+            .shatter
+            .expect("the +0x1BA word reaches the plan");
+        assert_eq!(s.word, 0x100, "battle rows read zero: default spin + push");
+        assert_eq!(shattering.nclip_mode(), 0);
     }
 
     /// A drawn party body casts the 24-column subtractive disc of radius

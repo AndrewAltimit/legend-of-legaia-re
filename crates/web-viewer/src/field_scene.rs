@@ -1139,6 +1139,40 @@ impl LegaiaViewer {
         Ok(i)
     }
 
+    /// [`crate::field_actors::FieldActors::shatter_states`] over the live
+    /// scene - the play page's `play_npc_shatter_states`.
+    pub fn field_scene_npc_shatter_states(&self) -> Vec<u8> {
+        self.npc_ctx()
+            .map(|(a, h, _)| a.shatter_states(h))
+            .unwrap_or_default()
+    }
+
+    /// [`crate::field_actors::FieldActors::shatter`] over the live scene -
+    /// the play page's `play_npc_shatter`.
+    pub fn field_scene_npc_shatter(&mut self, i: u32) -> Vec<f32> {
+        let Some(pack) = self.field_scene.as_mut() else {
+            return Vec::new();
+        };
+        let FieldScenePack {
+            live,
+            actors,
+            scene_anm,
+            locomotion_anm,
+            ..
+        } = pack;
+        let Some(live) = live.as_ref() else {
+            return Vec::new();
+        };
+        actors.shatter(
+            &live.host,
+            crate::field_actors::ActorBanks {
+                scene_anm: scene_anm.as_ref(),
+                locomotion_anm: locomotion_anm.as_ref(),
+            },
+            i,
+        )
+    }
+
     pub fn field_scene_npc_mesh_positions(&self) -> Vec<f32> {
         self.npc_actors()
             .map(|a| a.mesh_positions())

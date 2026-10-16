@@ -657,6 +657,68 @@ impl World {
         }
     }
 
+    /// `FUN_8004CE2C` pass 2's Jette hook (`0x8004D330..0x8004D438`,
+    /// [`legaia_engine_battle_vm::battle_impact_fx::jette_shatter_hook`]):
+    /// in the Jette fight, while the acting actor aims at a monster, the
+    /// target's `+0x1BA` shatter word rides a triangular ramp on its own clip
+    /// `2` over deformation row `2` (shrink, no push) - Jette breaks into
+    /// shrinking triangles and re-forms - and is cleared once that clip is
+    /// over. The pass reads the acting actor `actor_table[ctx[+0x13]]` and its
+    /// `+0x1DD` target whatever the branch above it took.
+    pub(super) fn tick_jette_shatter_hook(&mut self) {
+        use legaia_engine_battle_vm::battle_impact_fx as ifx;
+        let acting = self.battle_ctx.active_actor as usize;
+        let Some(target) = self
+            .actors
+            .get(acting)
+            .map(|a| a.battle.active_target as usize)
+        else {
+            return;
+        };
+        let Some(t) = self.actors.get(target) else {
+            return;
+        };
+        let formation_first = self
+            .battle_monster_slots()
+            .into_iter()
+            .find(|&(_, _, slot)| slot == 0)
+            .map_or(0, |(_, id, _)| id as u8);
+        let cursor = t
+            .battle_animation
+            .as_ref()
+            .map_or(0, |p| p.cursor_sixteenths() as i16);
+        let verdict = ifx::jette_shatter_hook(
+            formation_first,
+            t.battle_monster_id.is_some(),
+            self.battle_ctx.action_state,
+            t.battle.current_anim,
+            cursor,
+        );
+        match verdict {
+            ifx::JetteShatter::Keep => {}
+            ifx::JetteShatter::Set(v) => {
+                // Row 2 of `0x8007BE60`: offset and front zero, flags 6
+                // (`0x8004D394..0x8004D3B0`) - the table the field's op
+                // `43 07` writes too.
+                self.npcs.face_rows.insert(
+                    ifx::JETTE_SHATTER_ROW,
+                    crate::world::FieldFaceRow {
+                        offset: [0; 4],
+                        flags: ifx::JETTE_SHATTER_FLAGS,
+                    },
+                );
+                let b = &mut self.actors[target].battle;
+                b.shatter_row = Some(ifx::JETTE_SHATTER_ROW);
+                b.shatter = v;
+            }
+            ifx::JetteShatter::Clear => {
+                let b = &mut self.actors[target].battle;
+                b.shatter_row = Some(0);
+                b.shatter = 0;
+            }
+        }
+    }
+
     pub(super) fn tick_battle_impact_fx(&mut self) {
         use legaia_engine_battle_vm::battle_formulas::{FadeInputs, TintWords, tint_sm_step};
         use legaia_engine_battle_vm::battle_impact_fx as ifx;
@@ -718,6 +780,7 @@ impl World {
         }
         self.tick_battle_defeat_sink();
         self.emit_battle_burn_sprites();
+        self.tick_jette_shatter_hook();
         // The per-clip arms: the acting actor's committed record key + cursor
         // window select the writes onto it and its target.
         let acting = self.battle_ctx.active_actor as usize;

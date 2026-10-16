@@ -14,6 +14,7 @@ mod module_geometry;
 mod monster_casts;
 mod nighto;
 mod restore_spells;
+mod shatter_writers;
 mod stagers_and_seats;
 
 /// A one-member party with Gimard (0x81) learned, one monster, the retail

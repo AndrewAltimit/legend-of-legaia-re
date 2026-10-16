@@ -1305,12 +1305,13 @@ per-triangle maths and the flag table are in
 `town0b`, `uru`, `rugi`, `noaru`, `nilboa` and a dozen more scenes run it; the
 shipped flag words are `1`, `4`, `5`, `6`, `7` and `0xC`.
 
-Port: `World::npcs.face_rows` / `faces` / `face_ramps`, folded into the one
-draw pose both hosts build an NPC's model from
-(`NpcDrawPose::with_face`: `M * F` as `X, Y, Z` Euler angles, the pivot in the
-position, the shrink in the scale). That is a whole-model approximation: the
-body spins and shrinks in one piece instead of breaking apart. Placements
-only; a player target writes the row and draws undeformed.
+Port: `World::npcs.face_rows` / `faces` / `face_ramps`, read back as
+`World::field_npc_shatter`, which both hosts hand to the shatter kernel
+(`legaia_render_kernels::shatter`) to break the NPC's mesh into its
+triangles; the draw pose is untouched. Placements only; a player target writes
+the row and draws undeformed. The sweep's view frame is not modelled
+([`renderer.md`](renderer.md#the-shatter-renderer-fun_80029888--fun_80029dd8)).
+The battle reads the same row table: the Jette hook stages its row `2` there.
 
 #### 0x43 sub-3..6 - the camera-register zone ramp
 

@@ -112,6 +112,10 @@ pub struct CastActorState {
     /// list). The port's stand-in for the per-arm countdowns it does not
     /// model - see [`crate::cast_module_ticks::plasma_strike_tick`].
     pub hits_pending: bool,
+    /// `+0x1BA` - the shatter word
+    /// ([`BattleActor::shatter`](crate::battle_action::BattleActor::shatter)):
+    /// Zenoir and Jedo raise it on monsters, six summons on their creature.
+    pub shatter: u16,
 }
 
 impl CastActorState {
@@ -169,6 +173,7 @@ impl CastActorState {
             render_225,
             reaction_gate,
             combo_total,
+            shatter,
         );
     }
 }

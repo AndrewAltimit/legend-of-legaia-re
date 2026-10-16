@@ -1477,14 +1477,41 @@ write monsters:
 | Module | Loop | Which monsters | Gate |
 |---|---|---|---|
 | 0908 Zenoir | phase `0xC`, `0x801F81C8..0x801F8264`, after the damage of phase 8 (`FUN_801DD0AC` at `0x801F76CC`) | seats 3..6 with `+0x14C == 0` and `+0x04 != 0`: the ones the blast killed | skipped when `ctx[+0x287]` and record `+0x20` are both set, or when the formation's first id is `0x4D`, `0xAD` or `0xAE` (the Berserkers) |
-| 0931 Jedo | `0x801F86E0..0x801F874C`, ahead of the kill store at `0x801F8814` | seats 3..6 with `+0x14C != 0`: every living monster, which the module then kills | the whole loop is skipped when `ctx[+0x287]` is set |
+| 0931 Jedo | phase `0x1E` (jump-table word 30), `0x801F86E0..0x801F874C`, ahead of the kill store at `0x801F8814` | seats 3..6 with `+0x14C != 0`: every living monster, which the module then kills | the whole loop is skipped when `ctx[+0x287]` is set |
 
-Each frame adds a step (`[0x1F800393] * [0x1F80037D]` for Zenoir, 32 per tick
-in the capture; `[0x1F80037D] << 2` for Jedo). Zenoir's ramp ends when the
-actor's `+0x04` counter, which falls by the same step, reaches zero, near
-`+0x1BA = 1000`. Nothing in either module clears the word. The battle rows of
-`0x8007BE60` read zero, so the default shatter (spin and outward push) is what
+Each pass adds a step: `[0x1F800393] * [0x1F80037D]` for Zenoir, 32 per tick
+in the capture; `[0x1F800393] << 2` for Jedo (`lbu v0,0x7f(a2)` off
+`0x1F800314` is the frame byte, not the rate scalar). Zenoir's record test
+reads the **latched victim's** record for every seat: the pointer `t5` is set
+from the victim seat `s3` before the loop (`0x801F813C`) and never stepped.
+The arm runs until the countdown its finisher arm seeds,
+`ctx[+0x6D8] = scalar * 192` (`0x801F7BBC..0x801F7BD0`), drains negative, and
+a seat stops growing once its `+0x04` colour word, which the defeat fade
+drains, reaches zero - near `+0x1BA = 1000` in the capture. Nothing in either
+module clears the word. A battle node's `+0x6D` reads `0xFF` in the capture,
+whose row reads zero, so the default shatter (spin and outward push) is what
 shows.
+
+The summon writers, on seat 7:
+
+| Module | Sites | What |
+|---|---|---|
+| 0903 Gimard | settle arm 12, `0x801F76A4..0x801F76C4` | `+= 2 * frame * scalar` on every pass, past the countdown's jump-in: the creature dissolves |
+| 0910 Swordie | arms 2 and 3, `0x801F6E28` / `0x801F6E8C` | `= 0`: the creature appears whole |
+| 0912 Freed | arm 7 `0x801F74EC`; arms 8 and 9 `0x801F75B8..0x801F75D4`, `0x801F7720..0x801F7744` | `= scalar << 7` as it hides the creature, then `-= 2 * frame * scalar` a pass until it reads non-positive, then `= 0`: the creature re-forms |
+| 0914 Gola Gola | `0x801F790C..0x801F792C` | a ramp clamped at `0x7530` |
+| 0916 Aluru | arm 4 `0x801F7138` `= 0x800`; drains `0x801F727C` (to `0x400`) and `0x801F7338` (to `0`); `0x801F81AC` `+= 2 * frame * scalar` | assembles the creature, later breaks it up |
+| 0925 Spikefish | arm 8, `0x801F7348..0x801F7358` | `+= frame << 3` a pass |
+
+The **Jette hook** at the tail of `FUN_8004CE2C`'s pass 2
+(`0x8004D330..0x8004D438`) is the one writer outside the cast band. When the
+first formation cell is Jette (`0xAA`), the acting actor targets a monster
+seat and the action SM sits in `0x1E..0x20`, a target playing clip `2` takes
+row `2` of `0x8007BE60` (offset zero, flags `6`: shrink, no push) and
+`+0x1BA = cursor * 18` up to its node cursor `0xE0`, `0x1F80 - cursor * 18`
+after; any other clip clears `+0x6D` and `+0x1BA`. Outside those states the
+pair is cleared once the target's clip is back to `0`, unless the SM sits in
+`0x32..0x3B`. Jette's dodge shrinks to nothing and grows back.
 
 **Why scripted bosses are left out.** A monster killed in a random fight fades
 to black and stops being drawn (the tint SM's arm 2, `+0x21C = 2`), so its
@@ -2133,6 +2160,26 @@ modules with no director, and the per-arm frame gating of bodies with no
 director or countdown table. PROT 0916's light bands and PROT 0957's
 roulette sprites are the packet arms still owed; what each needs first is in
 [their notes](#prot-0916-aluru).
+
+**The shatter writers.** The `+0x1BA` word is `BattleActor::shatter`, carried
+to both hosts' draw by `BattleActorDrawPlan::shatter`
+([`renderer.md`](renderer.md#the-shatter-renderer-fun_80029888--fun_80029dd8)).
+Ported writers, one engine tick standing for one vsync of the frame product:
+
+| Writer | Port | Note |
+|---|---|---|
+| Zenoir arm 12 | `zenoir_shatter_pass`, run by `World::zenoir_shatter` on every pass of the arm; `zenoir_direct` seeds and drains the arm's countdown | the scalar a tick; an empty engine seat counts as a zero colour word |
+| Gimard settle | `World::run_cast_module_code`, `GIMARD_SHATTER_STEP_PER_TICK` on seat 7 | on every pass, held or not |
+| Swordie arms 2 / 3 | `swordie_tick` | the zero stores |
+| Freed arms 7 / 9 | `freed_tick` (`FREED_SHATTER_START`, `FREED_ASSEMBLE_PHASE`) | arm 8's drain rides an unmodelled countdown, so the creature re-forms from the full `scalar << 7` in arm 9 |
+| Jette hook | `jette_shatter_hook`, `World::tick_jette_shatter_hook` | |
+
+Not wired: Jedo's loop (the port's PROT 0931 parks at arm 2 under its
+camera-only director and never reaches word 30), Aluru's and Gola Gola's
+(their camera-only directors park at arms 5 and 4, ahead of every drain, so a
+lone arm-4 store would leave the creature broken for the rest of the cast) and
+the Spikefish arm 8 ramp (the port passes the arm in one tick, which would
+leave a single step stuck on the creature).
 
 **Caster clips.** Most capture-class body ports carry the phase walk, the
 damage and the victim's reaction but not the body's

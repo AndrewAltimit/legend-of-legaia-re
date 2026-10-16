@@ -157,6 +157,40 @@ impl LegaiaRuntime {
         a.rest_pose.clone()
     }
 
+    /// Battle actor `i`'s body broken by the shatter renderer this frame
+    /// (its `+0x1BA` word, `BattleActorDrawPlan::shatter`; kernel
+    /// `legaia_render_kernels::shatter`, the native window's shattered
+    /// override too): one object-local position per **index** of the bound
+    /// mesh ([`Self::play_battle_actor_indices`]), so corner `k` keeps vertex
+    /// `indices[k]`'s UV, colour and bone. The page poses these with the
+    /// live pose and draws them de-indexed, both sides. Empty while the body
+    /// is whole, or for a statically-posed upload (no bone ids to pose by).
+    pub fn play_battle_actor_shatter(&self, i: u32) -> Vec<f32> {
+        let Some(a) = self
+            .battle_render
+            .as_ref()
+            .and_then(|b| b.actors.get(i as usize))
+        else {
+            return Vec::new();
+        };
+        if a.object_ids.is_empty() {
+            return Vec::new();
+        }
+        let Some(input) = self.battle_draw_plan(a.actor_idx).and_then(|p| p.shatter) else {
+            return Vec::new();
+        };
+        legaia_render_kernels::shatter::shatter_local_triangles(
+            &a.mesh.mesh.positions,
+            &a.mesh.mesh.indices,
+            &a.object_ids,
+            &input,
+            |_| legaia_render_kernels::shatter::SweepFrame::MODEL,
+        )
+        .into_iter()
+        .flatten()
+        .collect()
+    }
+
     /// Battle actor `i`'s **arts after-image ghosts** this frame - the
     /// browser seat of the retail walk `FUN_80049348`
     /// (`legaia_engine_battle::battle_afterimage`; the plan comes from the

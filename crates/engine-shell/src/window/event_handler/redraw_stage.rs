@@ -43,6 +43,10 @@ pub(super) struct PosedFrame {
     /// `(slot, pose key)` of each placed NPC's clip frame this redraw shows,
     /// the key into `npc_pose_cache`.
     pub npc_frames: Vec<(u8, usize)>,
+    /// This frame's broken-up mesh halves of every placed NPC whose op-`43
+    /// 07` deformation is running (`World::field_npc_shatter`), keyed by
+    /// placement slot; drawn in place of the posed or rest halves.
+    pub npc_shattered: std::collections::HashMap<u8, NpcPosedHalves>,
 }
 
 impl PlayWindowApp {
@@ -260,6 +264,42 @@ impl PlayWindowApp {
             .renderer
             .as_ref()
             .expect("render gate: renderer present");
+        // DEBUG affordance, not a player surface: `LEGAIA_DEBUG_SHATTER=<v>`
+        // stamps `<v>` onto every seated monster's `+0x1BA` shatter word each
+        // redraw - and, in the field, onto every placed NPC's `+0x7A` over a
+        // debug deformation row whose flag word is `LEGAIA_DEBUG_SHATTER_FLAGS`
+        // (default `0`) - so the shatter renderer can be looked at without
+        // driving a Zenoir cast to its arm 12 or a scene to its op `43 07`.
+        // Unset, nothing changes.
+        if let Some(v) = std::env::var("LEGAIA_DEBUG_SHATTER")
+            .ok()
+            .and_then(|v| v.trim().parse::<u16>().ok())
+        {
+            let w = &mut self.session.host.world;
+            for (slot, _, _) in w.battle_monster_slots() {
+                if let Some(a) = w.actors.get_mut(slot) {
+                    a.battle.shatter = v;
+                }
+            }
+            if w.mode == legaia_engine_mode::mode::SceneMode::Field {
+                const DEBUG_ROW: u8 = 0xFE;
+                let flags = std::env::var("LEGAIA_DEBUG_SHATTER_FLAGS")
+                    .ok()
+                    .and_then(|f| f.trim().parse::<u32>().ok())
+                    .unwrap_or(0);
+                w.npcs.face_rows.insert(
+                    DEBUG_ROW,
+                    legaia_engine_core::world::FieldFaceRow {
+                        offset: [0; 4],
+                        flags,
+                    },
+                );
+                let slots: Vec<u8> = self.field_npc_draws.iter().map(|d| d.slot).collect();
+                for slot in slots {
+                    w.npcs.faces.insert(slot, (DEBUG_ROW, v as i16));
+                }
+            }
+        }
         // For each active actor with a tmd_binding and a current
         // pose_frame, regenerate and re-upload the posed mesh.
         // posed_overrides[i] replaces meshes[i] when present.
@@ -334,6 +374,7 @@ impl PlayWindowApp {
         }
 
         let npc_frames = self.pose_npc_clips();
+        let npc_shattered = self.shatter_npc_meshes();
         PosedFrame {
             posed_overrides,
             player_color_posed,
@@ -343,7 +384,84 @@ impl PlayWindowApp {
             posed_prop_live_v,
             posed_prop_live_c,
             npc_frames,
+            npc_shattered,
         }
+    }
+
+    /// The placed NPCs the op-`43 07` deformation is breaking up this frame
+    /// (`World::field_npc_shatter`): each one's TMD through the shatter
+    /// kernel (`legaia_render_kernels::shatter`, the port of the object
+    /// draw's `FUN_80029888` arm) at its live clip pose, or its rest pose
+    /// without a clip, both halves re-uploaded. Rebuilt every frame while the
+    /// ramp runs - the triangles move every frame, so there is nothing to
+    /// memoise - and empty otherwise. The browser play page builds the same
+    /// shards from `play_npc_shatter`.
+    fn shatter_npc_meshes(&self) -> std::collections::HashMap<u8, NpcPosedHalves> {
+        let mut out = std::collections::HashMap::new();
+        let w = &self.session.host.world;
+        let r = self
+            .win
+            .renderer
+            .as_ref()
+            .expect("render gate: renderer present");
+        for d in &self.field_npc_draws {
+            let Some(input) = w.field_npc_shatter(d.slot) else {
+                continue;
+            };
+            let Some((tmd, raw)) = self.npc_anim_srcs.get(&d.slot) else {
+                continue;
+            };
+            let bones: Vec<([i16; 3], [i16; 3])> = match self.npc_clip_players.get(&d.slot) {
+                Some(player) => player.current_pose().bone_outputs,
+                None => self
+                    .npc_rest_srcs
+                    .get(&d.slot)
+                    .and_then(|(_, _, pose)| pose.clone())
+                    .unwrap_or_default(),
+            };
+            // The clip's bone count bounds the objects drawn, as the pose
+            // pass cuts it.
+            let cut;
+            let tmd = if !bones.is_empty() && tmd.objects.len() > bones.len() {
+                let mut t = tmd.clone();
+                t.objects.truncate(bones.len());
+                cut = t;
+                &cut
+            } else {
+                tmd
+            };
+            let (vlocal, voids) = legaia_tmd::mesh::tmd_to_vram_mesh_with_object_ids(tmd, raw);
+            let (clocal, coids) = legaia_tmd::mesh::tmd_to_color_mesh_with_object_ids(tmd, raw);
+            use legaia_render_kernels::shatter::{shatter_color_mesh, shatter_vram_mesh};
+            let vmesh = shatter_vram_mesh(&vlocal, &voids, &input, &bones, true);
+            let cmesh = shatter_color_mesh(&clocal, &coids, &input, &bones, true);
+            let vm = (!vmesh.indices.is_empty())
+                .then(|| {
+                    r.upload_vram_mesh(
+                        &vmesh.positions,
+                        &vmesh.uvs,
+                        &vmesh.cba_tsb,
+                        &vmesh.normals,
+                        &vmesh.colors,
+                        &vmesh.indices,
+                    )
+                    .ok()
+                })
+                .flatten();
+            let cm = (!cmesh.is_empty())
+                .then(|| {
+                    r.upload_color_mesh_blended(
+                        &cmesh.positions,
+                        &cmesh.colors,
+                        &cmesh.indices,
+                        &cmesh.blend,
+                    )
+                    .ok()
+                })
+                .flatten();
+            out.insert(d.slot, (vm, cm));
+        }
+        out
     }
 }
 

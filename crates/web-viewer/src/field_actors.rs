@@ -501,6 +501,64 @@ impl FieldActors {
         Ok(())
     }
 
+    /// Per catalog entry: `1` while the actor's op-`43 07` deformation is
+    /// breaking it up (`World::field_npc_shatter`), `0` otherwise. Empty while
+    /// no entry is shattering - the page asks [`Self::shatter`] only for the
+    /// entries this marks.
+    pub fn shatter_states(&self, host: &SceneHost) -> Vec<u8> {
+        let Some(n) = self.npcs.as_ref() else {
+            return Vec::new();
+        };
+        let states: Vec<u8> = n
+            .pack
+            .entries
+            .iter()
+            .map(|e| {
+                u8::from(
+                    host.world
+                        .field_npc_shatter(e.placement.index as u8)
+                        .is_some(),
+                )
+            })
+            .collect();
+        if states.contains(&1) {
+            states
+        } else {
+            Vec::new()
+        }
+    }
+
+    /// Catalog entry `i`'s mesh broken by the shatter renderer this frame
+    /// (`legaia_render_kernels::shatter`, the native window's NPC shards
+    /// too): one object-local position per **index** of the entry's mesh
+    /// ([`Self::mesh_indices`]), so corner `k` keeps vertex `indices[k]`'s
+    /// attributes and bone. Builds (or reuses) the entry's mesh as
+    /// [`Self::build_mesh`] does. Empty while the entry is not shattering.
+    pub fn shatter(&mut self, host: &SceneHost, banks: ActorBanks<'_>, i: u32) -> Vec<f32> {
+        let Some(slot) = self.entry(i).map(|e| e.placement.index as u8) else {
+            return Vec::new();
+        };
+        let Some(input) = host.world.field_npc_shatter(slot) else {
+            return Vec::new();
+        };
+        if self.build_mesh(host, banks, i).is_err() {
+            return Vec::new();
+        }
+        let Some((_, m, object_ids, _)) = self.cur() else {
+            return Vec::new();
+        };
+        legaia_render_kernels::shatter::shatter_local_triangles(
+            &m.positions,
+            &m.indices,
+            object_ids,
+            &input,
+            |_| legaia_render_kernels::shatter::SweepFrame::MODEL,
+        )
+        .into_iter()
+        .flatten()
+        .collect()
+    }
+
     #[allow(clippy::type_complexity)]
     fn cur(&self) -> Option<&(usize, legaia_tmd::mesh::VramMesh, Vec<u32>, Vec<u8>)> {
         self.npcs.as_ref()?.pack.cur.as_ref()

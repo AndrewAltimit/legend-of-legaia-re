@@ -11,6 +11,19 @@ pub const FREED_TICK: u32 = 0x801F_69D8;
 // PROT 0912 - Freed
 // ---------------------------------------------------------------------------
 
+/// The `+0x1BA` shatter word PROT 0912's arm 7 leaves on its creature as it
+/// hides it (`lbu v0,0x69(a2)` / `sll v0,v0,0x7` / `sh v0,0x1ba(s2)` at
+/// `0x801F74E0..0x801F74EC`): `scalar << 7`.
+pub const FREED_SHATTER_START: u16 = (crate::cast_module_camera::SPEED_SCALAR as u16) << 7;
+
+/// What PROT 0912's assembly arms take off that word per engine tick
+/// (`2 * frame * scalar` a pass, `0x801F75C8` / `0x801F7724`).
+pub const FREED_SHATTER_STEP_PER_TICK: u16 =
+    2 * crate::cast_module_camera::MODULE_DRAIN_PER_TICK as u16;
+
+/// The arm PROT 0912's creature re-forms in (`0x801F76F0`).
+pub const FREED_ASSEMBLE_PHASE: u8 = 9;
+
 /// PROT 0912's damage arm.
 pub const FREED_DAMAGE_PHASE: u8 = 0x11;
 
@@ -41,8 +54,12 @@ pub const FREED_HIT_ANIM_RATE: u8 = 2;
 ///
 /// * `0` - `ctx[+0x278] = 0`;
 /// * `2` - summon `+0x21C = 0xFF`, `+0x04 = 0`;
-/// * `7` - summon `+0x0C = 0x1000`, `+0x21C = 0xFF`;
-/// * `9` - summon `+0x21C = 0`;
+/// * `7` - summon `+0x0C = 0x1000`, `+0x21C = 0xFF`, shatter
+///   `+0x1BA = scalar << 7`;
+/// * `9` - summon `+0x21C = 0`; the shatter word drains by `2 * frame *
+///   scalar` a pass and the arm holds until it reaches zero (arm `8`'s own
+///   drain of the same word rides its countdown, which is not modelled, so
+///   the port's creature re-forms from the full `scalar << 7`);
 /// * `0x0A` - summon `+0x1DA += 1`, `+0x1DC += 1`;
 /// * `0x0E` - summon `+0x21C = 0xFF` (out of `s0`, loaded `0xFF` at
 ///   `0x801F7D04` for a colour store nine instructions earlier - another
@@ -88,13 +105,23 @@ pub fn freed_tick(
             if let Some(s) = seats.get_mut(summon_seat as usize) {
                 s.root_speed = FREED_ROOT_SPEED;
                 s.render_flag = 0xFF;
+                s.shatter = FREED_SHATTER_START;
             }
             CastArmStep::Advance
         }
-        9 => {
-            if let Some(s) = seats.get_mut(summon_seat as usize) {
-                s.render_flag = 0;
+        FREED_ASSEMBLE_PHASE => {
+            // `+0x1BA -= 2 * frame * scalar` a pass, hold while it reads
+            // positive as a halfword, then `+0x1BA = 0` (`0x801F7720..
+            // 0x801F7744`): the creature's triangles fly back together.
+            let Some(s) = seats.get_mut(summon_seat as usize) else {
+                return CastArmStep::Advance;
+            };
+            s.render_flag = 0;
+            s.shatter = s.shatter.wrapping_sub(FREED_SHATTER_STEP_PER_TICK);
+            if s.shatter as i16 > 0 {
+                return CastArmStep::Hold;
             }
+            s.shatter = 0;
             CastArmStep::Advance
         }
         0x0A => {

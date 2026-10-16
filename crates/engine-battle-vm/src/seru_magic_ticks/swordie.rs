@@ -206,8 +206,8 @@ impl SwordieClock {
 /// * `0` - `ctx[+0x278] = 0`, hit counter `0x801F8DAC = 0`, split counter
 ///   `0x801F8D8C = 0`, the split panels seeded ([`SWORDIE_PANELS_AT_REST`]);
 /// * `2` - summon `+0x1DA = 1`, `+0x1DC = 1`, `+0x21C = 0`, `+0x225 = 0`,
-///   hit and split counters `= 0`;
-/// * `3` - summon `+0x21C = 0` every pass; the split counter grows by
+///   shatter `+0x1BA = 0`, hit and split counters `= 0`;
+/// * `3` - summon `+0x21C = 0` and shatter `+0x1BA = 0` every pass; the split counter grows by
 ///   `(rate * speed) / 4` and the arm **holds** below `0x40`
 ///   ([`SWORDIE_STREAK_END`]); the crossing pass clamps it to `0x3F`, stores
 ///   summon `+0x1DA = 0` and advances, and the counter is zeroed after the
@@ -292,6 +292,9 @@ pub fn swordie_tick(
                 s.staged_anim = SWORDIE_ARM2_CLIP;
                 s.restage = SWORDIE_ARM2_CLIP;
                 s.render_flag = 0;
+                // The creature appears whole: `sh zero,0x1ba(s2)` at
+                // `0x801F6E28`.
+                s.shatter = 0;
             }
             slashes.split = 0;
             slashes.hits = 0;
@@ -304,6 +307,8 @@ pub fn swordie_tick(
         SWORDIE_STREAK_ARM => {
             if let Some(s) = seats.get_mut(summon_seat as usize) {
                 s.render_flag = 0;
+                // `sh zero,0x1ba(s2)` at `0x801F6E8C`.
+                s.shatter = 0;
             }
             slashes.split = slashes.split.wrapping_add(clock.split_step());
             let crossed = slashes.split >= SWORDIE_STREAK_END;

@@ -70,6 +70,30 @@ impl LegaiaRuntime {
         Ok(i)
     }
 
+    /// Per catalogued NPC, `1` while its op-`43 07` deformation breaks it up
+    /// (`FieldActors::shatter_states`); empty while none does.
+    pub fn play_npc_shatter_states(&self) -> Vec<u8> {
+        self.scene_host
+            .host()
+            .map(|h| self.actors.shatter_states(h))
+            .unwrap_or_default()
+    }
+
+    /// Catalog entry `i`'s shattered object-local corners, one per index of
+    /// its mesh (`FieldActors::shatter`); empty while it is whole. Selects
+    /// the entry's mesh as [`Self::play_npc_mesh`] does, so the `mesh_*`
+    /// readers then describe it.
+    pub fn play_npc_shatter(&mut self, i: u32) -> Vec<f32> {
+        let Some(h) = self.scene_host.host() else {
+            return Vec::new();
+        };
+        let banks = crate::field_actors::ActorBanks {
+            scene_anm: self.scene_anm.as_ref(),
+            locomotion_anm: self.locomotion_anm.as_ref(),
+        };
+        self.actors.shatter(h, banks, i)
+    }
+
     /// The live model id the scripted-motion VM's op `0x0E` re-bound catalog
     /// entry `i`'s actor to, or `-1` while it still draws its spawn mesh. The
     /// page re-uploads the mesh when the answer moves.

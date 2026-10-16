@@ -131,4 +131,61 @@ impl World {
         self.casting.module_nighto_outcome = Some(outcome);
         outcome
     }
+
+    /// One pass of PROT 0908's shatter loop
+    /// ([`legaia_engine_battle_vm::seru_magic_ticks::zenoir_shatter_pass`])
+    /// over the seated row: every dead monster with a colour word left takes
+    /// the frame product onto its `+0x1BA`. `victim_slot` is the cast's
+    /// latched victim, whose record `+0x20` byte stands in for every seat.
+    ///
+    /// The step is one engine tick's share of retail's frame product
+    /// `[0x1F800393] * [0x1F80037D]` - the scalar alone, as the module
+    /// countdowns drain ([`legaia_engine_battle_vm::cast_module_camera::MODULE_DRAIN_PER_TICK`]).
+    pub(in crate::world::battle::cast_band) fn zenoir_shatter(&mut self, victim_slot: u8) {
+        use legaia_engine_battle_vm::seru_magic_ticks as ticks_a;
+        let record_20 = |w: &World, slot: u8| {
+            w.actors
+                .get(slot as usize)
+                .and_then(|a| a.battle_monster_id)
+                .and_then(|id| w.tables.monster_catalog.get(id))
+                .map_or(0, |def| def.wide_texture_page)
+        };
+        let formation_first = self
+            .battle_monster_slots()
+            .into_iter()
+            .find(|&(_, _, slot)| slot == 0)
+            .map_or(0, |(_, id, _)| id as u8);
+        let gate = ticks_a::ZenoirShatterGate {
+            scripted: self.battle_ctx.scripted_fight != 0,
+            victim_record_20: record_20(self, victim_slot),
+            formation_first,
+        };
+        let mut seats = self.cast_seat_row();
+        let before: Vec<u16> = seats.iter().map(|s| s.shatter).collect();
+        // The engine's resting colour word `0` is retail's neutral
+        // `0x20080200` on a seated monster until a presentation arm owns the
+        // word; an empty seat's is a real zero.
+        let map = self.cast_seat_map();
+        let seated: Vec<bool> = (0..seats.len())
+            .map(|r| {
+                map.engine(r as u8)
+                    .and_then(|e| self.actors.get(e as usize))
+                    .is_some_and(|a| a.active && a.battle_monster_id.is_some())
+            })
+            .collect();
+        ticks_a::zenoir_shatter_pass(
+            &mut seats,
+            gate,
+            legaia_engine_battle_vm::cast_module_camera::MODULE_DRAIN_PER_TICK as u16,
+            |seat, s| s.render_flag == 0 && seated.get(usize::from(seat)).copied().unwrap_or(false),
+        );
+        for (r, (st, was)) in seats.iter().zip(before).enumerate() {
+            if st.shatter != was
+                && let Some(e) = map.engine(r as u8)
+                && let Some(a) = self.actors.get_mut(e as usize)
+            {
+                a.battle.shatter = st.shatter;
+            }
+        }
+    }
 }
