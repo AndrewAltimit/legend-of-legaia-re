@@ -95,6 +95,9 @@ pub fn swordie_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats)
                         focus_on(v),
                         1,
                     ),
+                    // The settle arm's pass, ahead of the `0xFF` latch
+                    // (`0x801F7BC4`).
+                    SWORDIE_SETTLE_PHASE => captioned(ArmDirection::PASS, ModuleCaption::Cleared),
                     _ => ArmDirection::PASS,
                 }
             },

@@ -84,6 +84,7 @@ mod module_rain;
 mod module_seat_arm;
 mod module_spawn;
 mod module_stager_spawns;
+mod orb_stager;
 mod presentation;
 mod screen_fade;
 mod summon_stager;

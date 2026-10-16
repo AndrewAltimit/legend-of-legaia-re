@@ -113,6 +113,10 @@ pub fn nova_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) ->
                     0x0F => on_v(-0x300, 0x800, [0, d / 2, d.wrapping_neg() / 2], 0x100),
                     0x11 => on_v(-0x300, 0, [0, d.wrapping_mul(4), 0], 1),
                     0x12 => on_v(0x40, 0x800, [0, 0x600, d], 0x80),
+                    // The hit's `jal 0x801F44A0` is followed by
+                    // `FUN_800319A8(0)` (`0x801F8460`), inside the victim's
+                    // targetable branch (`+0x16E & 4` clear, `0x801F8434`).
+                    0x13 => captioned(ArmDirection::PASS, ModuleCaption::Cleared),
                     _ => ArmDirection::PASS,
                 }
             },

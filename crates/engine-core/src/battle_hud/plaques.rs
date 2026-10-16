@@ -169,6 +169,7 @@ pub fn battle_move_name(world: &crate::world::World) -> Option<String> {
                     .and_then(|t| t.spell_name(id))
                     .map(str::to_string),
                 ModuleCaption::AttackName => world.tables.summon_attack_names.get(&id).cloned(),
+                ModuleCaption::Cleared => None,
             };
         }
         let id = actor.battle.params[0];

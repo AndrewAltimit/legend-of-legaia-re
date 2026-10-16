@@ -4,6 +4,65 @@
 use super::body_paced::*;
 use super::*;
 
+/// PROT 0911 arm 2's four spawns on its pass (`jal 0x80021B04` at
+/// `0x801F6C70` / `6C88` / `6CA0` / `6CB8`), seated `0x3E8` over the
+/// caster: the three white glow discs and the six-point star of the
+/// opening flash. The retail capture of the cast holds the three discs at
+/// `(caster x, -1000, caster z)`.
+pub const ORB_FLASH_SPAWNS: [ModuleSpawn; 4] = [
+    orb_spawn(0x801F_804C, SpawnAnchor::Caster { y: -0x3E8 }),
+    orb_spawn(0x801F_8098, SpawnAnchor::Caster { y: -0x3E8 }),
+    orb_spawn(0x801F_80E4, SpawnAnchor::Caster { y: -0x3E8 }),
+    orb_spawn(0x801F_8130, SpawnAnchor::Caster { y: -0x3E8 }),
+];
+
+/// PROT 0911 arm 5's four spawns on its pass (`jal 0x80050ED4` at
+/// `0x801F7704` / `771C` / `7734` / `774C`), on the creature `0x140`
+/// above its seat: the star, the ray fan, the light column and the record
+/// whose op-`0x20` loop calls stager arm `0` eleven times.
+pub const ORB_RAY_SPAWNS: [ModuleSpawn; 4] = [
+    orb_spawn(0x801F_81DC, SpawnAnchor::CreatureRaised { dy: -0x140 }),
+    orb_spawn(0x801F_823C, SpawnAnchor::CreatureRaised { dy: -0x140 }),
+    orb_spawn(0x801F_8288, SpawnAnchor::CreatureRaised { dy: -0x140 }),
+    orb_spawn(0x801F_82D4, SpawnAnchor::CreatureRaised { dy: -0x140 }),
+];
+
+/// PROT 0911 arm 9's spawns on its pass: four on the healed group's centre,
+/// turned to the creature's facing plus `0x800` (`jal 0x80050ED4` at
+/// `0x801F7994..0x801F79DC`), then the light ring `0x801F84E4` under each
+/// live party member (`0x801F7A40`, the loop at `0x801F7A1C`).
+///
+/// The four group calls pass the group's extent as the scale
+/// (`lh a3,0x2C(sp)`, [`spawn_anchor_scale`]); the rings go at `0x1000`.
+pub const ORB_HEAL_SPAWNS: [ModuleSpawn; 7] = [
+    orb_spawn(
+        0x801F_8380,
+        SpawnAnchor::ShotPointFacing { y: 0, yaw: 0x800 },
+    ),
+    orb_spawn(
+        0x801F_83E4,
+        SpawnAnchor::ShotPointFacing { y: 0, yaw: 0x800 },
+    ),
+    orb_spawn(
+        0x801F_8430,
+        SpawnAnchor::ShotPointFacing { y: 0, yaw: 0x800 },
+    ),
+    orb_spawn(
+        0x801F_847C,
+        SpawnAnchor::ShotPointFacing { y: 0, yaw: 0x800 },
+    ),
+    orb_spawn(0x801F_84E4, SpawnAnchor::PartySeat(0)),
+    orb_spawn(0x801F_84E4, SpawnAnchor::PartySeat(1)),
+    orb_spawn(0x801F_84E4, SpawnAnchor::PartySeat(2)),
+];
+
+const fn orb_spawn(va: u32, anchor: SpawnAnchor) -> ModuleSpawn {
+    ModuleSpawn {
+        record: SpawnRecord::Module(va),
+        anchor,
+    }
+}
+
 /// PROT 0911 (Orb). `c` is the creature seat `actor_table[7]` (`s4`), `f` its
 /// heading, `P` the per-tick frame product, and `g` the cast's target group as
 /// `FUN_801DCEAC(caster[+0x1DD], sp+0x30, sp+0x28)` measures it - the focus
@@ -23,7 +82,7 @@ use super::*;
 /// from wherever the camera stands each frame: a slow pull-back while the
 /// camera circles the healed party.
 ///
-/// PORT: FUN_801F69D8 (PROT 0911; camera arms 0/3/5/9/10, the arm 9 and 10 drift and the arm 4/5 captions)
+/// PORT: FUN_801F69D8 (PROT 0911; camera arms 0/3/5/9/10, the arm 9 and 10 drift, the arm 4/5 captions, arm 9's caption clear and the spawn calls of arms 2/5/9)
 pub fn orb_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) -> ArmDirection {
     let caster = seats.caster;
     run_body_paced(
@@ -41,6 +100,10 @@ pub fn orb_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) -> 
             pass: |st, arm| {
                 let c = st.creature_live.or(st.creature).unwrap_or_default();
                 match arm {
+                    2 => ArmDirection {
+                        spawns: &ORB_FLASH_SPAWNS,
+                        ..ArmDirection::PASS
+                    },
                     3 => shot(
                         [0x40, yaw_from(0x800, c.facing)],
                         [0, 0x300, 0x800],
@@ -48,23 +111,35 @@ pub fn orb_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) -> 
                         0x80,
                     ),
                     4 => captioned(ArmDirection::PASS, ModuleCaption::SpellName),
-                    5 => captioned(
-                        shot(
-                            [0, yaw_from(0x800, c.facing)],
-                            [0, 0x1400, 0x400],
-                            focus_on(c),
-                            1,
-                        ),
-                        ModuleCaption::AttackName,
-                    ),
+                    5 => ArmDirection {
+                        spawns: &ORB_RAY_SPAWNS,
+                        ..captioned(
+                            shot(
+                                [0, yaw_from(0x800, c.facing)],
+                                [0, 0x1400, 0x400],
+                                focus_on(c),
+                                1,
+                            ),
+                            ModuleCaption::AttackName,
+                        )
+                    },
+                    // The heal arm's pass ends its line: `FUN_800319A8(0)`
+                    // after the per-member `FUN_801D8DE8` loop
+                    // (`0x801F7ED0`).
                     9 => {
                         let (focus, extent) = group_aim(st);
-                        shot(
-                            [0x80, yaw_from(0x600, c.facing)],
-                            [0, 0x300, extent],
-                            focus,
-                            1,
-                        )
+                        ArmDirection {
+                            spawns: &ORB_HEAL_SPAWNS,
+                            ..captioned(
+                                shot(
+                                    [0x80, yaw_from(0x600, c.facing)],
+                                    [0, 0x300, extent],
+                                    focus,
+                                    1,
+                                ),
+                                ModuleCaption::Cleared,
+                            )
+                        }
                     }
                     _ => ArmDirection::PASS,
                 }

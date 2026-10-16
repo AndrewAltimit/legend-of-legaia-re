@@ -334,6 +334,12 @@ pub enum ModuleCaption {
     /// (`*(0x801C9348 + 0x10)`), after `FUN_800319A8(0)` has cleared the
     /// spell name.
     AttackName,
+    /// No text: the arm called `FUN_800319A8(0)` on its own, freeing the text
+    /// actor it put up and printing nothing after it. Every player Seru
+    /// module ends its line this way ahead of the band's exit (PROT 0903
+    /// `0x801F74C8`, 0905 `0x801F802C`, 0910 `0x801F7BC4`, 0911 `0x801F7ED0`,
+    /// 0913 `0x801F8460`).
+    Cleared,
 }
 
 /// Where one module spawn call seats its record (`a0` / `a1` of
@@ -385,6 +391,44 @@ pub enum SpawnAnchor {
         dz: i16,
         rot: [i16; 3],
     },
+    /// The creature seat itself (`a0 = creature + 0x34`, `a1 = creature +
+    /// 0x44`, facing kept), read before the arm's later store over its
+    /// height: the plane pair the arm has just written, at the literal `y`
+    /// the seat still held at the call. PROT 0903 arm 3 makes its three calls
+    /// (`0x801F6E04..0x801F6E34`) after storing `+0x34` / `+0x38` / `+0x46`
+    /// and before `sh 0x200,0x36(s3)` (`0x801F6E48`), so the parts sit at the
+    /// height `FUN_801F19EC` seated the creature at: the caster's `+0x36`,
+    /// the floor.
+    CreatureBeforeHeight { y: i16 },
+    /// The creature seat lifted by `dy` (`creature + 0x34` copied to the
+    /// stack, `dy` added to its middle halfword), on the creature's angle
+    /// trio `+0x44`. PROT 0911 arm 5's pass, `dy = -0x140`
+    /// (`0x801F76B4..0x801F7700`).
+    CreatureRaised { dy: i16 },
+    /// The caster seat `actor_table[ctx + 0x13]` at the literal height `y`,
+    /// on the caster's angle trio `+0x44`. PROT 0911 arm 2: the plane pair
+    /// copied off the caster, `-0x3E8` stored over the height
+    /// (`0x801F6C14..0x801F6C74`).
+    Caster { y: i16 },
+    /// The arm's shot focus turned back into a world point at the literal
+    /// height `y`, turned to the creature's facing plus `yaw`: PROT 0911 arm
+    /// 9 negates the `FUN_801DCEAC` centroid it framed (`0x801F7968..
+    /// 0x801F7980`) and stores `creature[+0x46] + 0x800` as the yaw
+    /// (`0x801F7984..0x801F7998`).
+    ShotPointFacing { y: i16, yaw: i16 },
+    /// A literal point, rotation and scale (`FUN_80050ED4`'s `a3`): a stager
+    /// call that forwards its caller's `+0x72` (PROT 0911's arm `1`,
+    /// `lh a3,0x72(v1)` at `0x801F8028`).
+    LiteralScaled {
+        pos: [i16; 3],
+        rot: [i16; 3],
+        scale: u16,
+    },
+    /// Party seat `n` (`actor_table[n]`, `a0 = seat + 0x34`, `a1 = seat +
+    /// 0x44`), resolved only while the seat holds a live member
+    /// (`+0x14C != 0`). PROT 0911 arm 9's loop over the party
+    /// (`0x801F7A1C..0x801F7A40`).
+    PartySeat(u8),
     /// A literal point and rotation the arm built on its stack: PROT 0909
     /// arm 2's two parts at `(0, -0x100, 0x600)` (`0x801F6C40..0x801F6C70`).
     Literal { pos: [i16; 3], rot: [i16; 3] },
@@ -402,6 +446,14 @@ pub enum HeadingBase {
     Creature,
 }
 
+/// The seats an anchor may name beyond the creature and the victim: the
+/// caster and the live party members (`None` for an empty or dead seat).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct AnchorSeats {
+    pub caster: Option<ModuleSeat>,
+    pub party: [Option<ModuleSeat>; 3],
+}
+
 /// Resolve one spawn call's `(a0, a1)` - the position trio and the angle
 /// trio `FUN_80021B04` seats the record on - from the seats the arm read and
 /// the shot it armed this pass. `None` when the anchor's seat or shot is not
@@ -412,8 +464,37 @@ pub fn spawn_anchor_point(
     victim: Option<ModuleSeat>,
     shot: Option<ModuleShot>,
 ) -> Option<([i16; 3], [i16; 3])> {
+    spawn_anchor_point_with(anchor, creature, victim, shot, AnchorSeats::default())
+}
+
+/// [`spawn_anchor_point`] with the caster and party seats as well.
+pub fn spawn_anchor_point_with(
+    anchor: SpawnAnchor,
+    creature: Option<ModuleSeat>,
+    victim: Option<ModuleSeat>,
+    shot: Option<ModuleShot>,
+    seats: AnchorSeats,
+) -> Option<([i16; 3], [i16; 3])> {
     let seat_at = |s: ModuleSeat| ([s.x, s.y, s.z], [0, s.facing as i16, 0]);
     Some(match anchor {
+        SpawnAnchor::CreatureRaised { dy } => {
+            let c = creature?;
+            ([c.x, c.y.wrapping_add(dy), c.z], [0, c.facing as i16, 0])
+        }
+        SpawnAnchor::Caster { y } => {
+            let c = seats.caster?;
+            ([c.x, y, c.z], [0, c.facing as i16, 0])
+        }
+        SpawnAnchor::ShotPointFacing { y, yaw } => {
+            let s = shot?;
+            let f = creature.map_or(0, |c| c.facing as i16);
+            (
+                [s.focus[0].wrapping_neg(), y, s.focus[2].wrapping_neg()],
+                [0, f.wrapping_add(yaw), 0],
+            )
+        }
+        SpawnAnchor::PartySeat(n) => seat_at((*seats.party.get(usize::from(n))?)?),
+        SpawnAnchor::LiteralScaled { pos, rot, .. } => (pos, rot),
         SpawnAnchor::Creature => seat_at(creature?),
         SpawnAnchor::Victim => seat_at(victim?),
         SpawnAnchor::ShotFocus => {
@@ -434,6 +515,10 @@ pub fn spawn_anchor_point(
         SpawnAnchor::CreatureOffset { dx, y, dz, rot } => {
             let c = creature?;
             ([c.x.wrapping_add(dx), y, c.z.wrapping_add(dz)], rot)
+        }
+        SpawnAnchor::CreatureBeforeHeight { y } => {
+            let c = creature?;
+            ([c.x, y, c.z], [0, c.facing as i16, 0])
         }
         SpawnAnchor::Literal { pos, rot } => (pos, rot),
         // The host resolves it from the arm's own direction.
@@ -456,6 +541,21 @@ pub fn spawn_anchor_point(
             )
         }
     })
+}
+
+/// The scale one spawn call seats its record at (`a3`, stored at `+0x72` by
+/// `FUN_80021B04` at `0x80021DAC`): `0x1000` at nearly every call; PROT
+/// 0911 arm 9 passes the healed group's extent (`lh a3,0x2C(sp)`, the TR z
+/// of the shot it armed), and a [`SpawnAnchor::LiteralScaled`] call its own.
+pub fn spawn_anchor_scale(anchor: SpawnAnchor, shot: Option<ModuleShot>) -> u16 {
+    match anchor {
+        SpawnAnchor::ShotPointFacing { .. } => shot
+            .map(|s| s.tr[2])
+            .filter(|&z| z > 0)
+            .map_or(0x1000, |z| z as u16),
+        SpawnAnchor::LiteralScaled { scale, .. } => scale,
+        _ => 0x1000,
+    }
 }
 
 /// Which record one module spawn call hands `FUN_80021B04` as `a2`.
@@ -786,6 +886,7 @@ pub fn module_profile(prot_entry: u32) -> Option<ModuleProfile> {
         ),
         911 => Some(
             ModuleProfile::body_paced(orb_direct, crate::seru_magic_ticks::ORB_HEAL_ARM)
+                .with_staged_spawns()
                 .seated_at(911),
         ),
         // PROT 0912's spawn calls are seated on the body's own passes
@@ -843,6 +944,14 @@ impl ModuleProfile {
             seat_arm: None,
             director_body: false,
         }
+    }
+
+    /// The director reports its arms' spawn calls
+    /// ([`ArmDirection::spawns`]), so the stager seats no record set of its
+    /// own.
+    const fn with_staged_spawns(mut self) -> Self {
+        self.stages_spawns = true;
+        self
     }
 
     const fn seated_at(mut self, prot_entry: u32) -> Self {

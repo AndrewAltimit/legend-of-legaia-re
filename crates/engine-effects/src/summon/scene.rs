@@ -96,6 +96,20 @@ impl SummonScene {
         pos: [i16; 3],
         rot: [i16; 3],
     ) {
+        self.push_parts_scaled(parts, record_bytes, pos, rot, SPAWN_RENDER_SCALE);
+    }
+
+    /// [`Self::push_parts`] at a call's own scale - `FUN_80021B04`'s fourth
+    /// argument, stored at `+0x72` (`sh s4,0x72(s0)` at `0x80021DAC`) ahead
+    /// of the part's first move-VM run.
+    pub fn push_parts_scaled(
+        &mut self,
+        parts: &[SummonPart],
+        record_bytes: &[u8],
+        pos: [i16; 3],
+        rot: [i16; 3],
+        scale: u16,
+    ) {
         self.retail_wait_drain = true;
         self.parts.extend(parts.iter().filter_map(|p| {
             let mut part = seed_part(p, record_bytes, pos)?;
@@ -107,6 +121,7 @@ impl SummonScene {
             // seater also takes `rot[1]` as the part's heading `+0x96`, the
             // direction the motion block's `+0x98` speed runs along.
             part.state.tween_scale_x = rot[1] & 0xFFF;
+            part.state.field_72 = scale;
             Some(part)
         }));
     }

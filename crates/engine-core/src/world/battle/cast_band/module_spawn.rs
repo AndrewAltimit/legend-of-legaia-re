@@ -310,11 +310,34 @@ impl World {
                     facing: a.battle.facing_angle & 0xFFF,
                 },
             );
+        let seat_of = |slot: usize| {
+            self.actors.get(slot).map(
+                |a| legaia_engine_battle_vm::cast_module_camera::ModuleSeat {
+                    x: a.move_state.world_x,
+                    y: a.move_state.world_y,
+                    z: a.move_state.world_z,
+                    facing: a.battle.facing_angle & 0xFFF,
+                },
+            )
+        };
+        let party_count = usize::from(self.party.party_count);
+        let anchor_seats = legaia_engine_battle_vm::cast_module_camera::AnchorSeats {
+            caster: seat_of(usize::from(self.battle_ctx.active_actor)),
+            party: std::array::from_fn(|n| {
+                (n < party_count && self.actors.get(n).is_some_and(|a| a.battle.hp != 0))
+                    .then(|| seat_of(n))
+                    .flatten()
+            }),
+        };
         for spawn in spawns {
             let point = match spawn.anchor {
                 legaia_engine_battle_vm::cast_module_camera::SpawnAnchor::ArmPoint => arm_point,
-                anchor => legaia_engine_battle_vm::cast_module_camera::spawn_anchor_point(
-                    anchor, creature, victim, shot,
+                anchor => legaia_engine_battle_vm::cast_module_camera::spawn_anchor_point_with(
+                    anchor,
+                    creature,
+                    victim,
+                    shot,
+                    anchor_seats,
                 ),
             };
             let Some((pos, rot)) = point else {
@@ -379,7 +402,9 @@ impl World {
                 )
             });
             let first = scene.parts.len();
-            scene.push_parts(&picked, &bytes, pos, rot);
+            let scale =
+                legaia_engine_battle_vm::cast_module_camera::spawn_anchor_scale(spawn.anchor, shot);
+            scene.push_parts_scaled(&picked, &bytes, pos, rot, scale);
             // Each part keeps the record it was spawned from, the handle a
             // later arm kills it by (`ori 0x8` into the actor's flag word).
             if let SpawnRecord::Module(va) = spawn.record {

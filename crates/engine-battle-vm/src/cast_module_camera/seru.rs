@@ -17,21 +17,36 @@ pub const GIMARD_WALK_YAW_BASE: i32 = 0x200;
 /// played until the range poll clears.
 pub const GIMARD_WALK_ARM: u8 = 11;
 
+/// The height PROT 0903 arm 3's spawns read off the creature seat: the arm
+/// stores `+0x36 = 0x200` only after its three calls (`0x801F6E48`), so the
+/// calls see the height the installer `FUN_801F19EC` gave the seat, the
+/// caster's `+0x36` - the battle floor. The `gimard` retail capture holds
+/// the three arrival rings at `y = 0` under the creature's plane pair.
+pub const GIMARD_SEAT_SPAWN_Y: i16 = 0;
+
 /// PROT 0903 arm 3's three spawns, on the creature it has just seated
 /// (`a0 = creature + 0x34`, `a1 = creature + 0x44`; `jal 0x80021B04` at
-/// `0x801F6E04` / `0x801F6E1C` / `0x801F6E34`).
+/// `0x801F6E04` / `0x801F6E1C` / `0x801F6E34`): the fire rings that open on
+/// the floor and rise into a wall round the creature, at
+/// [`GIMARD_SEAT_SPAWN_Y`].
 pub const GIMARD_SEAT_SPAWNS: [ModuleSpawn; 3] = [
     ModuleSpawn {
         record: SpawnRecord::Module(0x801F_7820),
-        anchor: SpawnAnchor::Creature,
+        anchor: SpawnAnchor::CreatureBeforeHeight {
+            y: GIMARD_SEAT_SPAWN_Y,
+        },
     },
     ModuleSpawn {
         record: SpawnRecord::Module(0x801F_7870),
-        anchor: SpawnAnchor::Creature,
+        anchor: SpawnAnchor::CreatureBeforeHeight {
+            y: GIMARD_SEAT_SPAWN_Y,
+        },
     },
     ModuleSpawn {
         record: SpawnRecord::Module(0x801F_78C4),
-        anchor: SpawnAnchor::Creature,
+        anchor: SpawnAnchor::CreatureBeforeHeight {
+            y: GIMARD_SEAT_SPAWN_Y,
+        },
     },
 ];
 
@@ -262,8 +277,14 @@ pub fn gimard_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) 
                 };
             }
             st.countdown.add(192);
+            // The hit's `jal 0x801F44A0` is followed by `FUN_800319A8(0)`
+            // (`0x801F74C8`): the attack name comes down as the damage
+            // lands. The call sits inside the victim's targetable branch
+            // (`+0x16E & 4` clear, `0x801F749C`), which the seats do not
+            // carry; a summon's victim is targetable when it is cast on.
             ArmDirection {
                 follow,
+                caption: Some(ModuleCaption::Cleared),
                 ..ArmDirection::PASS
             }
         }
@@ -548,8 +569,11 @@ pub fn vera_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) ->
                 facing: g,
             });
             st.countdown.add(180);
+            // `FUN_8003541C(0, 0, name, 0xAC - w / 2, 0x96, ..)` at
+            // `0x801F727C`, the spell table's `+8` name, ahead of the seat.
             ArmDirection {
                 spawns: &VERA_SEAT_SPAWNS,
+                caption: Some(ModuleCaption::SpellName),
                 ..ArmDirection::PASS
             }
         }
@@ -572,8 +596,12 @@ pub fn vera_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) ->
                 return ArmDirection::HOLD.nudged(drift);
             }
             st.countdown.add(112);
+            // `FUN_800319A8(0)` then `FUN_8003541C(0, 0, attack, 0xA0 - w /
+            // 2, 0x96, ..)` (`0x801F799C..0x801F79EC`): the attack name
+            // replaces the spell name.
             ArmDirection {
                 spawns: &VERA_CREATURE_SPAWNS,
+                caption: Some(ModuleCaption::AttackName),
                 ..ArmDirection::shot(ModuleShot {
                     angles: [0, yaw_from(0x800, creature.facing), 0],
                     tr: [0, 0xA00, 0x200],
@@ -610,7 +638,12 @@ pub fn vera_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) ->
             if st.countdown.drain_non_negative() {
                 return ArmDirection::HOLD.nudged(drift);
             }
-            ArmDirection::PASS.nudged(drift)
+            // `FUN_800319A8(0)` ahead of the `0xFF` latch (`0x801F802C`):
+            // the attack name comes down as the cast ends.
+            ArmDirection {
+                caption: Some(ModuleCaption::Cleared),
+                ..ArmDirection::PASS.nudged(drift)
+            }
         }
         _ => ArmDirection::PASS,
     }

@@ -188,6 +188,7 @@ impl<'a> MoveHost for MoveVmHostImpl<'a> {
                 rot: [state.render_24, state.render_26, state.render_28],
                 radius_b4: state.actor_u16(0xB4) as i16,
                 arg: arg1,
+                scale: state.field_72,
             },
         ));
     }

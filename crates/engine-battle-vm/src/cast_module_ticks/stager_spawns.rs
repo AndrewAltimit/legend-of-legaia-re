@@ -25,6 +25,9 @@ pub struct StagerCaller {
     pub radius_b4: i16,
     /// Op `0x20`'s second operand, the stager's third argument (`a2`).
     pub arg: i16,
+    /// `+0x72`, the caller's render scale, which a stager arm forwards as the
+    /// seat's scale (PROT 0911 arm 1, PROT 0913 arms 3..5).
+    pub scale: u16,
 }
 
 /// One `FUN_80021B04(pos, rot, record, 0x1000)` call out of a stager arm.
@@ -44,6 +47,9 @@ pub struct StagerSpawn {
     /// (`lhu; sll 0x10; sra 0x10; srl 0x1F; addu; sra 1`: a signed halving
     /// rounding toward zero).
     pub halve_speed: bool,
+    /// The seat's scale, `FUN_80021B04`'s `a3` (stored at `+0x72`): `0x1000`
+    /// unless the arm forwards its caller's.
+    pub scale: u16,
 }
 
 impl StagerSpawn {
@@ -55,6 +61,7 @@ impl StagerSpawn {
             pokes: Vec::new(),
             patches: Vec::new(),
             halve_speed: false,
+            scale: 0x1000,
         }
     }
 }
@@ -328,6 +335,7 @@ mod tests {
             rot: [0, 0x400, 0],
             radius_b4: 0,
             arg: 0,
+            scale: 0x1000,
         };
         let mut r = counter();
         let s = nighto_stager_spawns(0, caller, &mut r);
@@ -378,6 +386,7 @@ mod tests {
             rot: [0, 0x100, 0],
             radius_b4: 0,
             arg: 0,
+            scale: 0x1000,
         };
         let body = [10, -20, 30];
         let s = zenoir_stager_spawns(1, caller, body, &mut counter());
@@ -407,6 +416,7 @@ mod tests {
             rot: [1, 2, 3],
             radius_b4: 0,
             arg: 2,
+            scale: 0x1000,
         };
         let mut draws = [129 + 0x40, 65 + 0x20].into_iter();
         let b = gizam_stager_spawns(3, caller, [7; 3], &mut || draws.next().unwrap());
@@ -445,6 +455,7 @@ mod tests {
             rot: [4, 5, 6],
             radius_b4: 0,
             arg: 0,
+            scale: 0x1000,
         };
         let mut n = 0u32;
         let shards = freed_stager_spawns(3, caller, &mut || {

@@ -6,14 +6,14 @@
 use super::*;
 use legaia_engine_battle_vm::cast_module_ticks::{
     FREED_STAGER_FADE, StagerSpawn, freed_stager_spawns, gizam_stager_spawns, nighto_stager_spawns,
-    zenoir_stager_spawns,
+    orb_stager_spawns, zenoir_stager_spawns,
 };
 
 impl World {
     /// Whether module `entry`'s stager arms are run off its parts' op-`0x20`
     /// calls by [`Self::run_part_stager_calls`].
     pub(in crate::world::battle::cast_band) fn runs_part_stager_calls(entry: u32) -> bool {
-        matches!(entry, 906 | 907 | 908 | 912)
+        matches!(entry, 906 | 907 | 908 | 911 | 912)
     }
 
     /// Run the op-`0x20` calls module `entry`'s parts made since its last
@@ -69,6 +69,7 @@ impl World {
                 906 => gizam_stager_spawns(arm, caller, body, &mut rand),
                 907 => nighto_stager_spawns(arm, caller, &mut rand),
                 908 => zenoir_stager_spawns(arm, caller, body, &mut rand),
+                911 => orb_stager_spawns(arm, caller),
                 912 => freed_stager_spawns(arm, caller, &mut rand),
                 _ => Vec::new(),
             };
@@ -127,7 +128,7 @@ impl World {
             )
         });
         let first = scene.parts.len();
-        scene.push_parts(&picked, &bytes, spawn.pos, spawn.rot);
+        scene.push_parts_scaled(&picked, &bytes, spawn.pos, spawn.rot, spawn.scale);
         for part in &mut scene.parts[first..] {
             part.tag.get_or_insert(spawn.record);
             part.seat_pokes.extend_from_slice(&spawn.pokes);
