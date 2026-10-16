@@ -39,6 +39,18 @@ impl World {
                 ..Default::default()
             };
         };
+        // The reaction slots `+0x1EF..+0x1F2`, as the monster init builds them
+        // off the entry tags (`World::battle_reaction_map`, the party's fixed
+        // map on a party seat); the action bytes stand in for a seat with no
+        // clips.
+        let param = |off: usize| a.battle.params.get(off - 0x1DF).copied().unwrap_or(0);
+        let map = self.battle_reaction_map(slot as usize).unwrap_or([
+            param(0x1EF),
+            param(0x1F0),
+            param(0x1F1),
+            param(0x1F2),
+            0,
+        ]);
         CastActorState {
             // `+0x0C` is the tint blend the tint pass `FUN_8004A908` weights
             // the colour word by (`render_blend`): a module's `0x1000` there
@@ -54,7 +66,7 @@ impl World {
             target_code: a.battle.active_target,
             // `+0x1F1` sits inside the per-action parameter stream that starts
             // at `+0x1DF`.
-            knockdown_anim: a.battle.params.get(0x1F1 - 0x1DF).copied().unwrap_or(0),
+            knockdown_anim: map[2],
             render_flag: a.battle.render_flag,
             // The three mirrors the band's hit arms stamp beside the HP write
             // all have a home on the battle actor already, so they are seeded
@@ -103,9 +115,9 @@ impl World {
             init_key: a.battle.init_key,
             action_category: a.battle.action_category,
             queued_action: a.battle.params.first().copied().unwrap_or(0),
-            reaction_alt: a.battle.params.get(0x1EF - 0x1DF).copied().unwrap_or(0),
-            reaction_alt2: a.battle.params.get(0x1F0 - 0x1DF).copied().unwrap_or(0),
-            reaction_gate: a.battle.params.get(0x1F2 - 0x1DF).copied().unwrap_or(0),
+            reaction_alt: map[0],
+            reaction_alt2: map[1],
+            reaction_gate: map[3],
             combo_total: a.battle.damage_accum,
             shatter: a.battle.shatter,
             loop_count: a.battle.hit_count_bound,
@@ -201,6 +213,7 @@ impl World {
     ) {
         use legaia_engine_battle_vm::battle_anim_rate::AnimRate;
         let creature = self.casting.summon_actor_slot == Some(slot);
+        let reaction_map = self.battle_reaction_map(slot as usize);
         let Some(a) = self.actors.get_mut(slot as usize) else {
             return;
         };
@@ -215,7 +228,21 @@ impl World {
         a.battle.hp_bar_pending = st.hp_bar_delta;
         a.battle.hp = st.hp;
         a.battle.field_flags = st.flags;
-        a.battle.queued_anim = st.staged_anim;
+        // A reaction a module stages on a combatant with the commit bit
+        // (`+0x1DC |= 1`) - one of its `+0x1EF..+0x1F2` entries - plays at
+        // once on the reaction channel, the engine's seat of retail's
+        // `FUN_8004AD80` for an entry a hit staged
+        // (`World::commit_battle_reaction_entry`): its tag ladder, its effect
+        // script (the hit spark) and the death arm at its natural end. A
+        // caster's own clip stays on the action channel.
+        let reaction = (!creature
+            && st.restage & 1 != 0
+            && st.staged_anim != 0
+            && reaction_map.is_some_and(|m| m[..4].contains(&st.staged_anim)))
+        .then_some(st.staged_anim);
+        if reaction.is_none() {
+            a.battle.queued_anim = st.staged_anim;
+        }
         a.battle.active_target = st.target_code;
         a.battle.render_flag = st.render_flag;
         a.battle.render_color = st.present_04;
@@ -261,6 +288,9 @@ impl World {
             && s.is_some()
         {
             *s = Some((st.udf, st.ldf));
+        }
+        if let Some(entry) = reaction {
+            self.commit_battle_reaction_entry(slot as usize, entry);
         }
     }
 
