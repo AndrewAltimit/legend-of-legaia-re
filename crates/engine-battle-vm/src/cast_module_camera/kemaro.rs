@@ -1,7 +1,8 @@
 //! PROT 0918 (Kemaro, `0x90`)'s director, beside its ported tick body
 //! (`crate::cast_module_ticks::kemaro_tick`): the countdown holds of
-//! [`super::summon_holds::KEMARO`] plus the camera, drift, spawn, caption
-//! and fade writes of the body `FUN_801F6C70`.
+//! [`super::summon_holds::KEMARO`] plus the camera, drift, spawn and caption
+//! writes of the body `FUN_801F6C70`; its fades are the presentation hook's
+//! (`cast_band::presentation`), decoded off the image.
 //!
 //! Every drift is the speed scalar `*(0x1F80037D)` times the frame step
 //! `*(0x1F800393)` a battle frame, so `scalar * k` a tick here
@@ -71,35 +72,6 @@ pub const KEMARO_ARM17_SPAWNS: [ModuleSpawn; 5] = [
     rec(0x801F_9264, lit([0, 0, 0x400], [0, 0xC00, 0])),
 ];
 
-const fn fade(
-    duration: i16,
-    start_rgb: [i16; 3],
-    end_rgb: [i16; 3],
-    hold: i16,
-) -> crate::battle_action::SummonFadeTemplate {
-    crate::battle_action::SummonFadeTemplate {
-        kind: 1,
-        duration,
-        start_rgb,
-        end_rgb,
-        delay: 0,
-        hold,
-    }
-}
-
-/// PROT 0918 arm 15's fade (`0x801F810C`): six vsyncs black to white, held
-/// (its handle kept at `ctx[+0x102C]`).
-pub const KEMARO_ARM15_FADES: [(crate::battle_action::SummonFadeTemplate, i16); 1] =
-    [(fade(6, [0; 3], [0xFF; 3], -1), 1)];
-
-/// PROT 0918 arm 17's two fades (`0x801F8580`, `0x801F85C4`), after it
-/// kills arm 15's: `0x80` vsyncs white to black, and a one-vsync grade to
-/// `(0x3F, 0x1F, 0x0F)`, held.
-pub const KEMARO_ARM17_FADES: [(crate::battle_action::SummonFadeTemplate, i16); 2] = [
-    (fade(0x80, [0xFF; 3], [0; 3], 0), 1),
-    (fade(1, [0; 3], [0x3F, 0x1F, 0x0F], -1), 1),
-];
-
 /// A cut on the focus trio `(0, fy, fz)`.
 fn cut(angles: [i16; 2], tr: [i16; 3], fy: i16, fz: i16, frames: u16) -> ModuleShot {
     ModuleShot {
@@ -158,9 +130,9 @@ pub fn kemaro_drift(phase: u8, drained: i32) -> Option<CaptureDrift> {
 /// | 11 (`0x801F7ACC`) | cut pitch `0x40`, yaw `-0x700`, TR `(0, 0x400, 0x800)` on the creature's `z` |
 /// | 13 (`0x801F7DFC`) | cut pitch `0`, yaw `0`, TR `(0, 0x400, 0)` on the victim's `z` |
 /// | 14 (`0x801F7EE8`) | cut pitch `0x80`, yaw `0x900`, TR `(0, 0x500, ctx[+0x6D0])` on the victim's `z` |
-/// | 15 (`0x801F810C`) | [`KEMARO_ARM15_FADES`] |
+/// | 15 (`0x801F810C`) | a held white fade (the presentation hook's) |
 /// | 16 (`0x801F82CC`) | cut pitch `-0x20`, yaw `0xC00`, TR `(0, 0x200, ctx[+0x6D0] / 4)` on the victim's `z` |
-/// | 17 (`0x801F8400`, no gate) | a `0x60`-frame shot pitch `-0x20`, yaw `0xC00`, TR `(0, 0x200, ctx[+0x6D0] * 3 / 2)` on the victim's `z`; [`KEMARO_ARM17_FADES`] (after killing arm 15's), [`KEMARO_ARM17_SPAWNS`] |
+/// | 17 (`0x801F8400`, no gate) | a `0x60`-frame shot pitch `-0x20`, yaw `0xC00`, TR `(0, 0x200, ctx[+0x6D0] * 3 / 2)` on the victim's `z`; [`KEMARO_ARM17_SPAWNS`] |
 /// | `0x13` (`0x801F8A4C`) | the line cleared |
 ///
 /// The drifts are [`kemaro_drift`]'s. Not carried: arm 4's TR y shake
@@ -170,7 +142,7 @@ pub fn kemaro_drift(phase: u8, drained: i32) -> Option<CaptureDrift> {
 /// parts through by handle, and the `y` of the shots of arms 16 / 17,
 /// which read the first arm-9 part's height.
 ///
-/// PORT: overlay_summon_kemaro_0918_801f6c70 (PROT 0918; camera arms 0, 4, 7, 9, 11, 13, 14, 16 and 17, the drifts of arms 1, 4 and 8..13, the spawn calls of arms 3, 5, 7, 9, 13 and 17, the captions of arms 6, 7 and 0x13 and the fades of arms 15 and 17)
+/// PORT: overlay_summon_kemaro_0918_801f6c70 (PROT 0918; camera arms 0, 4, 7, 9, 11, 13, 14, 16 and 17, the drifts of arms 1, 4 and 8..13, the spawn calls of arms 3, 5, 7, 9, 13 and 17 and the captions of arms 6, 7 and 0x13)
 pub fn kemaro_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) -> ArmDirection {
     let drained = st.countdown.0 - SPEED_SCALAR;
     let ramp_before = st.ramp;
@@ -228,7 +200,6 @@ fn kemaro_pass(phase: u8, seats: ModuleCamSeats, st: &ModuleCamState) -> ArmDire
         13 => ArmDirection::shot(cut([0, 0], [0, 0x400, 0], 0, victim_z, 1)),
         14 => ArmDirection::shot(cut([0x80, 0x900], [0, 0x500, depth], 0, victim_z, 1)),
         15 => ArmDirection {
-            fades: &KEMARO_ARM15_FADES,
             ..ArmDirection::PASS
         },
         16 => ArmDirection::shot(cut([-0x20, 0xC00], [0, 0x200, depth / 4], 0, victim_z, 1)),
@@ -236,8 +207,6 @@ fn kemaro_pass(phase: u8, seats: ModuleCamSeats, st: &ModuleCamState) -> ArmDire
             let z = (i32::from(depth) * 15 / 10) as i16;
             ArmDirection {
                 spawns: &KEMARO_ARM17_SPAWNS,
-                fades: &KEMARO_ARM17_FADES,
-                kills_fades: true,
                 ..ArmDirection::shot(cut([-0x20, 0xC00], [0, 0x200, z], 0, victim_z, 0x60))
             }
         }

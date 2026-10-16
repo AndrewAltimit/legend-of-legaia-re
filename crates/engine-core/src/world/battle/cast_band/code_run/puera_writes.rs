@@ -10,6 +10,15 @@ const SHOWN_TINT: u32 = 0x2008_0200;
 const HIDDEN: u8 = 0xFF;
 
 impl World {
+    /// Queue one op-`0x20` call into the resident module's stager, as a
+    /// part's program makes it (`MoveVmHostImpl::ext_20`); the module's next
+    /// tick runs it. A test seam for the stagers only parts reach.
+    pub fn queue_cast_stager_call(&mut self, arm: u8) {
+        self.casting
+            .module_stager_calls
+            .push((arm, Default::default()));
+    }
+
     /// Run the op-`0x20` calls PROT 0922's parts made since its last tick
     /// through its stager `FUN_801F90E4`: arm 0 raises `ctx[+0x278] = 3`.
     ///

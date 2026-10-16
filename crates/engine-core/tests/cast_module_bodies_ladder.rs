@@ -24,9 +24,10 @@
 //!   `fold_pending_cast` takes for PROT 0927 and PROT 0966, whose damage lands
 //!   inside the module's own sweep stager rather than in the generic fold.
 //!
-//! Two more reach a stager rather than a body: `Reach::Stager`, run inline
-//! off the caller's arm, and `Reach::PartCall`, reached only through the
-//! module's spawned parts' op-`0x20` calls (PROT 0909).
+//! Three more reach a stager rather than a body: `Reach::Stager`, run inline
+//! off the caller's arm; `Reach::PartCall`, reached only through the
+//! module's spawned parts' op-`0x20` calls (PROT 0909); and
+//! `Reach::QueuedCall`, the same part call queued by hand (PROT 0922).
 //!
 //! The denominator is the **sources**: `tagged_addresses` scrapes every
 //! `// PORT:` address out of `cast_module_ticks.rs` and its submodules,
@@ -84,6 +85,11 @@ enum Reach {
     /// `summon_stager_tick`) with the parts ticking (`tick_summon`), and
     /// "entered" is the state the stager writes, as for `Stager`.
     PartCall,
+    /// A stager reached through its parts' op-`0x20` calls, driven by
+    /// queueing the call the way `MoveVmHostImpl::ext_20` does and running
+    /// one module tick on an arm whose body writes no `ctx[+0x278]` of its
+    /// own (PROT 0922's arm 3).
+    QueuedCall,
 }
 
 /// One dispatch site of the module half.
@@ -178,7 +184,7 @@ const ROWS: [Row; 34] = [
         None,
         Reach::Stager,
     ),
-    row(&[0x801F_90E4], 922, None, None, Reach::Stager),
+    row(&[0x801F_90E4], 922, None, None, Reach::QueuedCall),
     row(&[0x801F_8B90], 923, None, None, Reach::Stager),
     row(&[0x801F_7740], 906, None, None, Reach::Stager),
     row(&[0x801F_7AF4], 909, None, None, Reach::PartCall),
@@ -659,6 +665,20 @@ fn every_ported_cast_module_body_is_entered_through_its_own_seam() {
                     "PROT {entry} id {id:#04X}: the module never paged, so the staging \
                      call was never reached"
                 );
+            }
+            Reach::QueuedCall => {
+                let probe = STAGER_PROBES
+                    .iter()
+                    .find(|(a, _)| *a == r.addrs[0])
+                    .map(|(_, f)| *f)
+                    .expect("a queued-call stager row carries a probe");
+                w.casting.module_phase = 3;
+                w.queue_cast_stager_call(0);
+                let run = w
+                    .run_cast_module_code(id, 3)
+                    .expect("the queued-call module pages");
+                assert_eq!(run.prot_entry, entry);
+                saw_port = probe(&w);
             }
             Reach::PartCall => {
                 let probe = STAGER_PROBES

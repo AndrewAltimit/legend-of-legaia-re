@@ -1,7 +1,8 @@
 //! PROT 0927 (Juggernaut, `0x99`)'s director, beside its ported tick body
 //! (`crate::cast_module_ticks::juggernaut_tick`): the countdown holds of
-//! [`super::summon_holds::JUGGERNAUT`] plus every camera, drift, spawn,
-//! caption and fade write of the body `FUN_801F6A84`.
+//! [`super::summon_holds::JUGGERNAUT`] plus every camera, drift, spawn
+//! and caption write of the body `FUN_801F6A84`; its fades are the presentation
+//! hook's (`cast_band::presentation`).
 //!
 //! The camera arms read one for one against PROT 0966's Evil Seru Magic
 //! ([`super::evil_seru_magic_camera`]): the same shots and the same drifts,
@@ -100,41 +101,6 @@ pub fn juggernaut_flushes_pool(phase: u8) -> bool {
     matches!(phase, 26 | 27)
 }
 
-const fn fade(
-    duration: i16,
-    start_rgb: [i16; 3],
-    end_rgb: [i16; 3],
-    delay: i16,
-    hold: i16,
-) -> crate::battle_action::SummonFadeTemplate {
-    crate::battle_action::SummonFadeTemplate {
-        kind: 1,
-        duration,
-        start_rgb,
-        end_rgb,
-        delay,
-        hold,
-    }
-}
-
-/// PROT 0927 arm 26's three `FUN_80024E80(0x801C9070, 1)` calls
-/// (`0x801F7D14`, `7D5C`, `7DA0`), each over the template as the arm left
-/// it: a `0x40`-vsync white flash out, a held `0x100`-vsync blue grade
-/// `(0x10, 0x10, 0x20) -> (0x80, 0x80, 0xFF)`, and a white-in `0xC0` vsyncs
-/// later, held.
-pub const JUGGERNAUT_ARM26_FADES: [(crate::battle_action::SummonFadeTemplate, i16); 3] = [
-    (fade(0x40, [0xFF; 3], [0; 3], 0, 0), 1),
-    (
-        fade(0x100, [0x10, 0x10, 0x20], [0x80, 0x80, 0xFF], 0, -1),
-        1,
-    ),
-    (fade(0x40, [0; 3], [0xFF; 3], 0xC0, -1), 1),
-];
-
-/// PROT 0927 arm 27's fade (`0x801F804C`): `0x80` vsyncs white to black.
-pub const JUGGERNAUT_ARM27_FADES: [(crate::battle_action::SummonFadeTemplate, i16); 1] =
-    [(fade(0x80, [0xFF; 3], [0; 3], 0, 0), 1)];
-
 /// The string PROT 0927's arm 21 prints, the head of its own image (the arm
 /// table starts four words later, at `0x801F69E8`).
 pub const JUGGERNAUT_ATTACK_STRING: u32 = 0x801F_69D8;
@@ -196,8 +162,8 @@ pub fn juggernaut_drift(phase: u8) -> Option<CaptureDrift> {
 /// | 23 (`0x801F7808`) | yaw `-1`, TR z `+4` | [`JUGGERNAUT_ARM23_SPAWNS`]; cut pitch `-0x80`, yaw `-0x80`, TR `(-0x600, 0x800, 0x1400)`, focus z `-0x600` (`0x801F7A94`) |
 /// | 24 (`0x801F7AC0`) | yaw `+2`, TR x `+14`, TR y `+1`, TR z `+4` | - |
 /// | 25 (`0x801F7B5C`) | - | cut pitch `-0x80`, TR `(0, 0x900, 0x1600)`, focus z `-0x400` (`0x801F7BB0`) |
-/// | 26 (`0x801F7BC0`) | TR z `+4` | pool flush, [`JUGGERNAUT_ARM26_SPAWNS`], [`JUGGERNAUT_ARM26_FADES`] |
-/// | 27 (`0x801F7F40`) | TR z `+4` | pool flush, [`JUGGERNAUT_ARM27_FADES`], text cleared; cut yaw `0x800 - caster[+0x46]`, TR `(0, 0x400, 0x500)` on the caster (`0x801F81A8`) |
+/// | 26 (`0x801F7BC0`) | TR z `+4` | pool flush, [`JUGGERNAUT_ARM26_SPAWNS`], three fades |
+/// | 27 (`0x801F7F40`) | TR z `+4` | pool flush, a fade, text cleared; cut yaw `0x800 - caster[+0x46]`, TR `(0, 0x400, 0x500)` on the caster (`0x801F81A8`) |
 /// | 28 (`0x801F81D8`) | TR z `+2` | the body finishes |
 ///
 /// Arm 20 prints `*(0x801C9358)` after clearing the line - the streamed
@@ -207,7 +173,7 @@ pub fn juggernaut_drift(phase: u8) -> Option<CaptureDrift> {
 /// ([`JUGGERNAUT_ATTACK_STRING`]), the attack name. The holds are
 /// [`super::summon_holds::JUGGERNAUT`]'s.
 ///
-/// PORT: overlay_summon_juggernaut_0927_801f6a84 (PROT 0927; camera arms 0, 11..28, their drifts, the spawn calls of arms 2 / 23 / 26, the captions of arms 20 / 21 / 27 and the fades of arms 26 / 27)
+/// PORT: overlay_summon_juggernaut_0927_801f6a84 (PROT 0927; camera arms 0, 11..28, their drifts, the spawn calls of arms 2 / 23 / 26 and the captions of arms 20 / 21 / 27)
 pub fn juggernaut_direct(
     st: &mut ModuleCamState,
     phase: u8,
@@ -250,13 +216,11 @@ fn juggernaut_pass(phase: u8, seats: ModuleCamSeats) -> ArmDirection {
         25 => ArmDirection::shot(fixed([-0x80, 0], [0, 0x900, 0x1600], -0x400)),
         26 => ArmDirection {
             spawns: &JUGGERNAUT_ARM26_SPAWNS,
-            fades: &JUGGERNAUT_ARM26_FADES,
             ..ArmDirection::PASS
         },
         27 => {
             let c = seats.caster;
             ArmDirection {
-                fades: &JUGGERNAUT_ARM27_FADES,
                 caption: Some(ModuleCaption::Cleared),
                 ..ArmDirection::shot(ModuleShot {
                     angles: [0, yaw_from(0x800, c.facing), 0],
@@ -313,6 +277,5 @@ mod tests {
         assert_eq!(s.angles, [0, 0, 0]);
         assert_eq!(s.tr, [0, 0x400, 0x500]);
         assert_eq!(s.focus, [-56, 0, -768]);
-        assert_eq!(a.fades.len(), 1);
     }
 }

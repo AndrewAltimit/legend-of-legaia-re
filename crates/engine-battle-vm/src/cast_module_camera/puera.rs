@@ -1,7 +1,8 @@
 //! PROT 0922 (Puera, `0x94`)'s director, beside its ported tick body
 //! (`crate::cast_module_ticks::puera_tick`): the countdown holds of
-//! [`super::summon_holds::PUERA`] plus the camera, drift, spawn, caption and
-//! fade writes of the body `FUN_801F6A3C`.
+//! [`super::summon_holds::PUERA`] plus the camera, drift, spawn and caption
+//! writes of the body `FUN_801F6A3C`; its fades are the presentation hook's
+//! (`cast_band::presentation`).
 //!
 //! Every gate drains only a positive word (`blez` ahead of the `subu`), and
 //! the drifts sit inside that branch: an arm drifts while its countdown is
@@ -175,36 +176,6 @@ pub fn puera_arm_kills(phase: u8) -> &'static [u32] {
     }
 }
 
-const fn fade(
-    duration: i16,
-    start_rgb: [i16; 3],
-    end_rgb: [i16; 3],
-    delay: i16,
-    hold: i16,
-) -> crate::battle_action::SummonFadeTemplate {
-    crate::battle_action::SummonFadeTemplate {
-        kind: 1,
-        duration,
-        start_rgb,
-        end_rgb,
-        delay,
-        hold,
-    }
-}
-
-/// PROT 0922 arm 11's two fades (`0x801F7424`, `0x801F7460`), each `0x20`
-/// vsyncs late and held: black to blue over `0x20`, black to yellow over
-/// `0x18`.
-pub const PUERA_ARM11_FADES: [(crate::battle_action::SummonFadeTemplate, i16); 2] = [
-    (fade(0x20, [0; 3], [0, 0, 0xFF], 0x20, -1), 1),
-    (fade(0x18, [0; 3], [0xFF, 0xFF, 0], 0x20, -1), 1),
-];
-
-/// PROT 0922 arm 12's fade (`0x801F7694`), after it kills arm 11's: `0x20`
-/// vsyncs white to black.
-pub const PUERA_ARM12_FADES: [(crate::battle_action::SummonFadeTemplate, i16); 1] =
-    [(fade(0x20, [0xFF; 3], [0; 3], 0, 0), 1)];
-
 /// A cut on the stage origin (every shot of the body has a zero focus).
 fn cut(angles: [i16; 2], tr: [i16; 3], frames: u16) -> ModuleShot {
     ModuleShot {
@@ -254,8 +225,8 @@ pub fn puera_drift(phase: u8) -> Option<CaptureDrift> {
 /// | 6 (`0x801F702C`, `0x801F7060`) | the spell name; a `0x80`-frame shot pitch `-0x80`, yaw `0x800`, TR `(0, 0x300, 0x600)` |
 /// | 9 (`0x801F7200`, `0x801F7258`) | a `0x20`-frame shot pitch `0x80`, yaw `0x800`, TR `(0, 0x300, 0x800)`; the attack-record name |
 /// | 10 (`0x801F72E8`) | a `0x40`-frame shot yaw `0x800`, TR `(0, 0x1200, 0x800)` |
-/// | 11 | [`PUERA_ARM11_SPAWNS`], [`PUERA_ARM11_FADES`] |
-/// | 12 (`0x801F74E8` every pass, `0x801F75D0`) | every pass a 3-frame shot yaw `0x800`, TR `(0, 8 w + 0x1200, 2 w + 0x800)` with `w = (scalar << 6) - countdown`; on the pass a cut pitch `0x20`, TR `(0, 0x400, 0xC00)`, [`PUERA_ARM12_SPAWNS`], [`PUERA_ARM12_FADES`] |
+/// | 11 | [`PUERA_ARM11_SPAWNS`] |
+/// | 12 (`0x801F74E8` every pass, `0x801F75D0`) | every pass a 3-frame shot yaw `0x800`, TR `(0, 8 w + 0x1200, 2 w + 0x800)` with `w = (scalar << 6) - countdown`; on the pass a cut pitch `0x20`, TR `(0, 0x400, 0xC00)`, [`PUERA_ARM12_SPAWNS`] |
 /// | 13 | [`puera_arm13_spawns`] |
 /// | 16 (`0x801F7DE0`) | cut pitch `-0x140`, yaw `0x700`, TR `(0, -0xE00, 0x1700)` |
 /// | 17 | [`PUERA_ARM17_SPAWNS`] |
@@ -271,7 +242,7 @@ pub fn puera_drift(phase: u8) -> Option<CaptureDrift> {
 /// passes (`0x801F7A0C..0x801F7A60`, `0x801F7BDC..0x801F7C6C`), arm 19's
 /// `rand()` scatter and arm 22's colour-wash writes.
 ///
-/// PORT: overlay_summon_puera_0922_801f6a3c (PROT 0922; camera arms 0, 6, 9, 10, 12, 16, 19, 22 and 23, the drifts of arms 1, 2, 13..17, 20 and 24, the spawn calls of arms 2, 5, 11, 12, 13, 17, 18, 20 and 22, the captions of arms 6, 9 and 24 and the fades of arms 11 and 12)
+/// PORT: overlay_summon_puera_0922_801f6a3c (PROT 0922; camera arms 0, 6, 9, 10, 12, 16, 19, 22 and 23, the drifts of arms 1, 2, 13..17, 20 and 24, the spawn calls of arms 2, 5, 11, 12, 13, 17, 18, 20 and 22 and the captions of arms 6, 9 and 24)
 pub fn puera_direct(st: &mut ModuleCamState, phase: u8, _seats: ModuleCamSeats) -> ArmDirection {
     let before = st.countdown.0;
     let held = hold_step(PUERA, st, phase);
@@ -316,13 +287,10 @@ fn puera_pass(phase: u8) -> ArmDirection {
         10 => ArmDirection::shot(cut([0, 0x800], [0, 0x1200, 0x800], 0x40)),
         11 => ArmDirection {
             spawns: &PUERA_ARM11_SPAWNS,
-            fades: &PUERA_ARM11_FADES,
             ..ArmDirection::PASS
         },
         12 => ArmDirection {
             spawns: &PUERA_ARM12_SPAWNS,
-            fades: &PUERA_ARM12_FADES,
-            kills_fades: true,
             ..ArmDirection::shot(cut([0x20, 0], [0, 0x400, 0xC00], 1))
         },
         13 => ArmDirection {
