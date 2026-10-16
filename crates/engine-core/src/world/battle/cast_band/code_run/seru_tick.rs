@@ -119,6 +119,7 @@ impl World {
                         facing: a.battle.facing_angle & 0xFFF,
                     });
                 let mut scratch = pos.unwrap_or_default();
+                let phase_in = ctx.phase;
                 let (step, _healed) = seru::orb_tick(
                     ctx,
                     seats,
@@ -130,6 +131,13 @@ impl World {
                     |s| maxes.get(s as usize).copied().unwrap_or(0),
                 );
                 self.casting.module_settle_countdown = settle;
+                // Arm 5's pass steps and lifts the creature in the pass that
+                // cuts to it, and the cut lands on the next tick here.
+                if pos.is_some_and(|b| b != scratch)
+                    && self.orb_defer_seat(phase_in, ctx.phase, &scratch)
+                {
+                    return (step, Vec::new());
+                }
                 if let Some(before) = pos.as_mut()
                     && *before != scratch
                     && let Some(a) = self.actors.get_mut(usize::from(summon_slot))

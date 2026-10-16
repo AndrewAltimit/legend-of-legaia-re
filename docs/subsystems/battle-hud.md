@@ -306,12 +306,19 @@ for the Done hold's close:
 - the item band's `0x3E` arm (`0x801E404C`), reached from a single branch at
   `0x801E3E88` off its non-gauge-extend path, for any caster.
 
-So a party member's magic cast on the whole party keeps them parked:
-`orb_summon_mid_cast` holds `ctx[+0x18] = 0` with Orb's `+0x1DD` at `8`. The
+So a party member's magic cast on the whole party keeps them parked at the
+seed: `orb_summon_mid_cast` holds `ctx[+0x18] = 0` with Orb's `+0x1DD` at
+`8`. A cast module can raise them itself. PROT 0911 (Orb) arm 9's pass calls
+`FUN_801D8DE8(6, 0)`, then `(0x4E + i, 0)` for each further member, and
+stores `ctx[+0x18] = 6` (`0x801F7E64..0x801F7ED4`): the panels glide up under
+the heal, in place of the readout bar, and the HP readout counts up in them;
+the Done hold closes them like the openers' ([cast-module.md](cast-module.md#module-stagers-and-spawn-reports)).
+The
 same routine opens the target plaque (record 81) for a monster target, except
 for Theeder, Zenoir and Mushura (`0x82` / `0x86` / `0x8D`), which it sends down
 its row arm whatever their target byte (`0x801E6E4C..0x801E6E68`). Port:
-`battle_hud::battle_panels_visible` / `battle_target_plaque`.
+`battle_hud::battle_panels_visible` / `battle_target_plaque`; the module raise
+is `BattleState::module_panels_glide`.
 
 ### Numbers are cells, names are glyphs
 

@@ -687,6 +687,35 @@ fn a_party_item_shows_the_actor_bar_and_a_party_wide_item_shows_the_panels() {
     assert_eq!(battle_readout_bar_slot(&w), None);
 }
 
+/// PROT 0911 (Orb)'s arm 9 raises the panels itself: they glide up from
+/// seat A, take the readout bar's seat, hold through the Done band and go
+/// with the next action's seed.
+#[test]
+fn a_module_panel_raise_takes_the_bars_seat() {
+    use legaia_engine_battle_vm::battle_action::ActionCategory;
+    use legaia_engine_battle_vm::battle_cue_group::HUD_CASTER_BANNER;
+    let mut w = battle_world(1);
+    arm_action(&mut w, 0, ActionCategory::Magic.as_byte(), 0);
+    w.battle_ctx.action_state = 0x36;
+    assert_eq!(battle_readout_bar_slot(&w), Some(0), "the seed's bar");
+    assert!(!battle_panels_visible(&w));
+    w.raise_module_roster_panels();
+    assert!(battle_panels_visible(&w), "arm 9's raise");
+    assert_eq!(battle_readout_bar_slot(&w), None, "the panel took the seat");
+    assert_eq!(battle_round_prompt_panels_dy(&w), 236 - 170, "from seat A");
+    for _ in 0..16 {
+        w.step_action_plate_glides();
+    }
+    assert_eq!(battle_round_prompt_panels_dy(&w), 0, "landed");
+    w.battle_ctx.action_state = 0x51;
+    assert!(battle_panels_visible(&w), "up through the Done hold");
+    w.battle_ctx.action_state = 0x52;
+    assert!(!battle_panels_visible(&w), "the Done hold closed them");
+    w.battle_ctx.action_state = 0x36;
+    w.note_action_plate_raise(HUD_CASTER_BANNER, 0);
+    assert!(!battle_panels_visible(&w), "the next seed clears the raise");
+}
+
 /// `FUN_801E6D84`: a monster's party-wide cast raises the panels at the
 /// seed; the three row-arm Seru ids raise no target plaque.
 #[test]

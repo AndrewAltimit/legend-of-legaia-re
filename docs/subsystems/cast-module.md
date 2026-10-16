@@ -1483,7 +1483,17 @@ also clears the render flag of each living monster seat and lights it
 `0x801F6F74`, whose delay slot is a `nop`, so a foe that died before the cast
 keeps its defeat-fade state and its spent colour word. Clearing the dead
 seat's flag as well hands it to the tint pass's decay arm, which never brings
-`+0x04` back to zero, and the poll then holds for good. The director frames arms 0
+`+0x04` back to zero, and the poll then holds for good. Arm 12's pass ends
+on a loop over seats `3..7` storing render flag `4`, the tint pass's blue
+arm, on every seat whose `+0x14C` is non-zero (`0x801F72C4..0x801F72FC`):
+the row goes blue under the bubbles. Arm 13's hits take it off again: each
+stamps `+0x04 = 0x3FF00000`, `+0x0C = 0x1000` and `+0x21C = 0`
+(`0x801F7440..0x801F745C`) inside the live / targetable branch but outside
+the damage, so `gizam_tick` makes those stores even when the host folds the
+damage elsewhere; without them a killed foe enters its defeat fade from the
+full blue lane and arm 14's poll holds sixty ticks longer than retail's.
+Arm 13's pass also clears the caption after its exit shot (`FUN_800319A8(0)`
+at `0x801F75D4`). The director frames arms 0
 and 1 on the caster and arms 7..12 on the creature; arm 9 frames the
 creature's `+0x3C` / `+0x40` pair, which the port reads as its seat. Arm
 13's exit snaps onto the sweep's outcome at yaw `-facing` of the creature
@@ -3090,7 +3100,10 @@ The stagers:
 
 Module writes into the parts it keeps handles on, and into the victim:
 
-- PROT 0911 arm 9's pass flushes the part pool (`jal 0x80050E74` at `0x801F77D0`): every part seated through `FUN_80050ED4` - arm 5's four and the stager's arm-`0` records - gets its halt bit before arm 9's own calls. A retail capture of the cast holds them halted at the start of arm 10. Port: `World::orb_pool_flush`, by record tag. Arm 3's flush (`0x801F70A8`) reaches only the opening's star swarm (`0x801F8190`, sixteen spread by `rand()` in arm 2 and moved by arm 3), which is not seated.
+- PROT 0911 arm 2's pass seats the opening's star swarm: sixteen `0x801F8190` billboards through `FUN_80050ED4`, two a loop pass (`0x801F6CDC..0x801F7070`). Five `rand()` draws give a star's offset (`y = -(r % 511)`, `x = r % 511 + 0x100` negated on an odd draw, `z = r % 255 + 0x300`) and its mirror's (`-x`, `y = -0x200 - r % 511`), each turned round the caster by its facing. While arm 3 holds, each star sits `k / 128` of the way from its offset height to `y = -0x3E8` and its plane offset shrinks by `(0x80 - k) / 128`, with `k = 0x80 - countdown / scalar` (`0x801F7140..0x801F73D0`): the swarm closes on the flash point as the countdown runs out. Port: `orb_stager::{orb_star_pair, orb_star_place}`, seated with the arm's other calls on arm 3's first tick.
+- PROT 0911 arms 3 and 9 flush the part pool on their pass (`jal 0x80050E74` at `0x801F70A8` and `0x801F77D0`): every part seated through `FUN_80050ED4` gets its halt bit. Arm 3's reaches only the stars; arm 9's takes arm 5's four and the stager's arm-`0` records before arm 9's own calls, and a retail capture of the cast holds them halted at the start of arm 10. Port: `World::orb_arm_writes`, by record tag.
+- PROT 0911 arm 9's pass also raises the roster panels (`FUN_801D8DE8(6, 0)` and `(0x4E + i, 0)`, then `ctx[+0x18] = 6`, `0x801F7E64..0x801F7ED4`): the party's status window the heal counts up in, which takes the readout bar's seat ([battle-hud.md](battle-hud.md#the-party-status-readout)). It stores `+0x78 = 0x800` into both backdrop records (`0x801F7848..0x801F7860`), lights each occupied party seat with `+0x04 = 0x20080200` as it un-hides it, and hides the creature by flag and colour word together (`sb 0xff,0x21c` / `sw zero,0x4` at `0x801F78BC..0x801F78CC`).
+- PROT 0911 arm 5's pass steps and lifts the creature in the pass that cuts to it (`0x801F75E4..0x801F7634`). The body-paced director lands that cut on the next tick, so the port holds the seat for that tick (`World::orb_defer_seat`); otherwise one frame shows the old shot with the creature lifted out of it.
 - PROT 0913 arm `0x0D`'s pass carries the two cloud banks onto the victim's plane pair and turns them by the victim's heading less the creature's. Arm `0x10` lifts the victim to `-sin(W) * d >> 14`, turns it by `sin(W) / 2` a frame, jitters each whirlwind ring `rand() % 63 - 0x20` round it, and on its pass halts the rings. Arm `0x13` brings it down along `-sin(W) * d >> 12`, turning `0x600` a frame with arm 18's parts riding on it, and stands it on the floor facing the creature. Port: `World::nova_victim_motion`; the director reads the victim's live heading.
 
 Each module ends its line with `FUN_800319A8(0)` (`ModuleCaption::Cleared`):

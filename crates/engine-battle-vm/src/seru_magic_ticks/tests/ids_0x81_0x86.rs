@@ -642,6 +642,45 @@ fn gizam_sweep_marks_every_seat_it_hits() {
     assert_eq!(seats[7].render_flag, GIZAM_HIDDEN_RENDER_FLAG);
 }
 
+/// Arm 12's pass turns the living row blue; a dead seat keeps its fade.
+#[test]
+fn gizam_bubbles_tint_the_living_row_blue() {
+    let mut seats = row();
+    seats[4].hp = 0;
+    seats[4].render_flag = 2;
+    let mut ctx = CastModuleCtx {
+        phase: GIZAM_BUBBLE_ARM,
+        ..Default::default()
+    };
+    gizam_tick(&mut ctx, &mut seats, WHO, |_| None);
+    assert_eq!(seats[3].render_flag, GIZAM_BUBBLE_RENDER_FLAG);
+    assert_eq!(seats[4].render_flag, 2);
+    assert_eq!(ctx.phase, GIZAM_BUBBLE_ARM + 1);
+}
+
+/// The sweep's presentation lands with the damage folded elsewhere: the
+/// row comes off the blue and takes the hit's colour word.
+#[test]
+fn gizam_sweep_presents_without_a_roll() {
+    let mut seats = row();
+    seats[5].flags = FLAG_NON_TARGETABLE;
+    for s in &mut seats[3..7] {
+        s.render_flag = GIZAM_BUBBLE_RENDER_FLAG;
+    }
+    let mut ctx = CastModuleCtx {
+        phase: GIZAM_SWEEP_ARM,
+        ..Default::default()
+    };
+    let (_, hits) = gizam_tick(&mut ctx, &mut seats, WHO, |_| None);
+    assert!(hits.is_empty());
+    assert_eq!(seats[3].hp, 200);
+    assert_eq!(
+        (seats[3].render_flag, seats[3].present_04),
+        (0, GIZAM_HIT_PRESENT_WORD)
+    );
+    assert_eq!(seats[5].render_flag, GIZAM_BUBBLE_RENDER_FLAG);
+}
+
 #[test]
 fn gizam_sweep_is_kill_capable() {
     // `sltu a0, s1` at 0x801F739C is against live HP, not `HP - 1`: this

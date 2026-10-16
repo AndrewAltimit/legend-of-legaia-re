@@ -151,6 +151,8 @@ pub struct CastFxState {
     /// PROT 0920 (Slippery)'s Deadly Rain: its records, budget and colour
     /// words and the streaks its last call drew ([`ModuleRain`]).
     pub module_rain: ModuleRain,
+    /// PROT 0911 (Orb)'s module words the port keeps ([`ModuleOrb`]).
+    pub module_orb: ModuleOrb,
     /// The settle countdown word PROT 0909 / 0911 / 0912 / 0913 arm after
     /// their hit and drain before they write `0xFF`
     /// (`legaia_engine_battle_vm::seru_magic_ticks::SETTLE_DRAIN_PER_TICK`).
@@ -274,6 +276,21 @@ pub struct ModuleRain {
     pub frame: legaia_render_kernels::cast_rain::RainFrame,
 }
 
+/// PROT 0911 (Orb)'s words: the opening star swarm's per-star offsets
+/// (`0x801F8560`, eight bytes a star) and the creature seat arm 5's pass
+/// wrote, held for the tick its cut lands on. Module-image words in retail,
+/// so a fresh cast starts them empty.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ModuleOrb {
+    /// Star `i`'s `(x, y, z)` offset, in seating order.
+    pub star_offsets: Vec<[i16; 3]>,
+    /// The creature's `(x, y, z)` after arm 5's step and lift, not yet on
+    /// the actor.
+    pub deferred_seat: Option<[i16; 3]>,
+    /// Arm 2 passed and its stars are owed on the next tick.
+    pub stars_owed: bool,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PendingBurst {
     pub mode: u32,
@@ -312,6 +329,7 @@ impl CastFxState {
             module_split_saved_target: None,
             module_swordie: Default::default(),
             module_rain: Default::default(),
+            module_orb: Default::default(),
             module_settle_countdown: 0,
             module_cam: Default::default(),
             module_pres: Default::default(),

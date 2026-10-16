@@ -379,7 +379,7 @@ pub fn gizam_sweep_exit_shot(
 /// Arm 9 frames the creature's `+0x3C` / `+0x40` pair rather than its
 /// `+0x34` / `+0x38` seat; the port frames the seat.
 ///
-/// PORT: FUN_801F69F4 (PROT 0906; the camera arms 0/1/7..13, the countdown gates of arms 3/5/7/9/10/12/13/14, the phase-5 stager record clock, the arm 6/7 captions and the arm 4/7/12 spawn calls)
+/// PORT: FUN_801F69F4 (PROT 0906; the camera arms 0/1/7..13, the countdown gates of arms 3/5/7/9/10/12/13/14, the phase-5 stager record clock, the arm 6/7 captions, arm 13's caption clear and the arm 4/7/12 spawn calls)
 pub fn gizam_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) -> ArmDirection {
     let c = seats.caster;
     let creature = st.creature_live.or(st.creature).unwrap_or(seats.victim);
@@ -466,7 +466,12 @@ pub fn gizam_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) -
                 return ArmDirection::HOLD;
             }
             st.countdown.0 = SPEED_SCALAR * GIZAM_SETTLE_WAIT;
-            ArmDirection::shot(gizam_sweep_exit_shot(st, creature, seats))
+            // The exit shot, then `FUN_800319A8(0)` (`0x801F75D4`): the
+            // attack name leaves with the sweep.
+            ArmDirection {
+                caption: Some(ModuleCaption::Cleared),
+                ..ArmDirection::shot(gizam_sweep_exit_shot(st, creature, seats))
+            }
         }
         14 => {
             if st.countdown.0 > 0 {

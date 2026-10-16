@@ -1200,8 +1200,8 @@ impl World {
         {
             self.spikefish_outcome(&mut ctx);
         }
-        if entry == 911 && ctx.phase != phase_in {
-            self.orb_pool_flush(phase_in);
+        if entry == 911 {
+            self.orb_arm_writes(phase_in, ctx.phase);
         }
         self.casting.module_ctx_278 = ctx.ctx_278;
         self.casting.module_ring_angle = ctx.ctx_6d8;

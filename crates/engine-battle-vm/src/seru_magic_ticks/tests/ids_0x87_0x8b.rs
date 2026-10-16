@@ -462,6 +462,34 @@ fn orb_heals_the_whole_row_and_clamps_to_missing_hp() {
     assert_eq!(seats_healed, vec![0, 1, 4, 5, 6, 7]);
 }
 
+/// Arm 9's pass hides the creature by flag and colour word together, and
+/// lights the party it brings back.
+#[test]
+fn orb_heal_pass_hides_the_creature_and_lights_the_party() {
+    let mut ctx = ctx_at(9);
+    ctx.party_count = 2;
+    let mut s = seats(8);
+    s[7].present_04 = 0x1234;
+    s[0].render_flag = 0xFF;
+    orb_tick(
+        &mut ctx,
+        &mut s,
+        7,
+        0,
+        None,
+        &mut 0,
+        &mut OrbSeatPos::default(),
+        |_| 400,
+    );
+    assert_eq!((s[7].render_flag, s[7].present_04), (0xFF, 0));
+    assert_eq!((s[0].render_flag, s[0].present_04), (0, ORB_PARTY_LIT_WORD));
+    assert_eq!(s[1].present_04, ORB_PARTY_LIT_WORD);
+    assert_ne!(
+        s[2].present_04, ORB_PARTY_LIT_WORD,
+        "an empty seat stays dark"
+    );
+}
+
 #[test]
 fn orb_cleanse_clears_the_status_bits_only_at_level_three() {
     let mut ctx = ctx_at(9);

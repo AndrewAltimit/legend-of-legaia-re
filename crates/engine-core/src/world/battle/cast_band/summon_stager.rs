@@ -48,6 +48,7 @@ impl World {
         self.casting.module_theeder = Default::default();
         self.casting.module_swordie = Default::default();
         self.casting.module_rain = Default::default();
+        self.casting.module_orb = Default::default();
         self.casting.module_settle_countdown = 0;
         self.casting.module_cam = Default::default();
         self.casting.module_pres = Default::default();
@@ -77,6 +78,7 @@ impl World {
         // Retail re-enters the paged module every frame from this seam; the
         // band's PORT rows are the code that runs there.
         let module_arm = self.casting.module_phase;
+        self.orb_land_deferred_seat();
         // The creature's live seat and walk state, as a directed module's
         // walk arm reads them.
         let seat_live = self

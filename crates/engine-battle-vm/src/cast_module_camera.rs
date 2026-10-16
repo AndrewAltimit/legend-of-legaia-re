@@ -337,8 +337,8 @@ pub enum ModuleCaption {
     /// No text: the arm called `FUN_800319A8(0)` on its own, freeing the text
     /// actor it put up and printing nothing after it. Every player Seru
     /// module ends its line this way ahead of the band's exit (PROT 0903
-    /// `0x801F74C8`, 0905 `0x801F802C`, 0910 `0x801F7BC4`, 0911 `0x801F7ED0`,
-    /// 0913 `0x801F8460`).
+    /// `0x801F74C8`, 0905 `0x801F802C`, 0906 `0x801F75D4`, 0910
+    /// `0x801F7BC4`, 0911 `0x801F7ED0`, 0913 `0x801F8460`).
     Cleared,
 }
 

@@ -443,6 +443,14 @@ pub struct BattleState {
     /// the item pre-arm for a party actor (`0x801E3DA0..0x801E3DC0`)
     /// ([`crate::battle_hud::battle_readout_bar_dy`]).
     pub(crate) readout_bar_glide: Option<legaia_engine_battle_vm::battle_commit_log::LogLaunch>,
+    /// The roster panels' raise glide when a cast module raises them
+    /// itself: PROT 0911 (Orb) arm 9's pass calls `FUN_801D8DE8(6, 0)`, then
+    /// `(0x4E + i, 0)` for each further member, and stores `ctx[+0x18] = 6`
+    /// for the Done hold's close (`0x801F7E64..0x801F7ED4`). Mode `0`: the
+    /// panels rise from seat A to seat B (`y = 236 -> 170`) and take the
+    /// readout bar's seat. Cleared by the next action's seed
+    /// ([`crate::battle_hud::battle_panels_visible`]).
+    pub(crate) module_panels_glide: Option<legaia_engine_battle_vm::battle_commit_log::LogLaunch>,
     /// The round prompt's open glide. The menu SM's round-start arm runs
     /// sub-draw step 0 (`FUN_801D388C(0)` at `0x801D0EE4`), whose five pairs
     /// are all mode `0`: `Begin` (record 0), `Run` (record 3) and the three
@@ -870,6 +878,7 @@ impl BattleState {
             action_plaque_glide: None,
             target_plaque_glide: None,
             readout_bar_glide: None,
+            module_panels_glide: None,
             round_prompt_glide: None,
             ring_open_glide: None,
             widget_glide_return: 0,

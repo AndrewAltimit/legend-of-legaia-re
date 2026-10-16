@@ -94,6 +94,8 @@ impl World {
             self.battle.target_plate_cleared = false;
             self.battle.action_hud_wiped = false;
             self.battle.counter_hud = None;
+            // A module's panel raise belongs to the action that made it.
+            self.battle.module_panels_glide = None;
             // The seed's own record-7 open (`0x801E2F24..0x801E2F44`): the
             // Attack arm and the Magic arm past its item-class branch fall
             // into `sltiu v0,t2,3` on the target and raise the bar for a
@@ -109,6 +111,16 @@ impl World {
             self.battle.target_plate_cleared = false;
             self.battle.action_hud_wiped = false;
         }
+    }
+
+    /// A cast module raising the roster panels on mode `0`: PROT 0911's arm
+    /// 9 pass, `FUN_801D8DE8(6, 0)` and `(0x4E + i, 0)` for `i` below
+    /// `ctx[+0] - 1`, then `ctx[+0x18] = 6` (`0x801F7E64..0x801F7ED4`). Each
+    /// record spawns at seat A and glides to seat B
+    /// ([`crate::world::BattleState::module_panels_glide`]).
+    pub(crate) fn raise_module_roster_panels(&mut self) {
+        use legaia_engine_battle_vm::battle_commit_log::LogLaunch;
+        self.battle.module_panels_glide = Some(LogLaunch::new(false));
     }
 
     /// Whether the action seed opens record 7 for its target: an Attack or a
@@ -152,6 +164,7 @@ impl World {
             self.battle.action_plaque_glide.as_mut(),
             self.battle.target_plaque_glide.as_mut(),
             self.battle.readout_bar_glide.as_mut(),
+            self.battle.module_panels_glide.as_mut(),
             self.battle.result_windows_glide.as_mut(),
             self.battle.round_prompt_glide.as_mut(),
             self.battle.ring_open_glide.as_mut(),
@@ -245,6 +258,7 @@ impl World {
             self.battle.action_plaque_glide.as_mut(),
             self.battle.target_plaque_glide.as_mut(),
             self.battle.readout_bar_glide.as_mut(),
+            self.battle.module_panels_glide.as_mut(),
             self.battle.round_prompt_glide.as_mut(),
             self.battle.ring_open_glide.as_mut(),
         ]
@@ -337,6 +351,7 @@ impl World {
             self.battle.action_plaque_glide.as_ref(),
             self.battle.target_plaque_glide.as_ref(),
             self.battle.readout_bar_glide.as_ref(),
+            self.battle.module_panels_glide.as_ref(),
             self.battle.round_prompt_glide.as_ref(),
             self.battle.ring_open_glide.as_ref(),
         ]

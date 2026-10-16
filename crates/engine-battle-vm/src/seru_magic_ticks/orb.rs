@@ -103,6 +103,11 @@ pub struct OrbSeatPos {
     pub facing: u16,
 }
 
+/// The colour word arm `9` lights each un-hidden party seat with (`lui a0,
+/// 0x2008; ori a0,a0,0x200` / `sw a0,0x4(v0)` at `0x801F77E0..0x801F7814`) -
+/// the target cursor's bright word.
+pub const ORB_PARTY_LIT_WORD: u32 = 0x2008_0200;
+
 /// The height arm `3` lifts the creature to as it seats it (`li v1,-0x320`
 /// / `sh v1,0x36(s4)` at `0x801F70EC..0x801F70F0`); arm `4` lowers it back
 /// to the ground.
@@ -145,7 +150,8 @@ pub const ORB_ARM4_REARM_MUL: i32 = 180;
 ///   not an advance, which is why `6`, `7` and `8` are unreachable;
 /// * `9` - drain, **hold** while positive (`bgtz` at `0x801F77C8`); then
 ///   un-hide the party seats (`+0x21C = 0`, `+0x04 = 0x20080200`),
-///   `ctx[+0x278] = 0`, countdown `+= scalar << 8`, summon `+0x21C = 0xFF`,
+///   `ctx[+0x278] = 0`, countdown `+= scalar << 8`, summon `+0x21C = 0xFF`
+///   with its colour word `+0x04 = 0`,
 ///   then the heal sweep over
 ///   `actor_table[0 .. ctx[+0]]`: skip a dead seat, and unless `+0x16E & 4`
 ///   `restored = min(amount, maxHP - HP)`, `+0x14C += restored`,
@@ -238,16 +244,25 @@ pub fn orb_tick(
             if *settle > 0 {
                 return CastArmStep::Hold;
             }
-            for seat in 0..ORB_PARTY_SEATS {
+            // `0x801F77D8..0x801F7824`: every occupied party seat (the
+            // per-seat character byte `0x8007BD10[seat]`) back to render
+            // flag `0` and lit with the bright word, which the tint pass
+            // then eases back to neutral.
+            for seat in 0..ORB_PARTY_SEATS.min(c.party_count.max(1)) {
                 if let Some(s) = seats.get_mut(seat as usize) {
                     s.render_flag = 0;
+                    s.present_04 = ORB_PARTY_LIT_WORD;
                 }
             }
             c.ctx_278 = 0;
             // `countdown += scalar << 8` (`0x801F78A4..0x801F78B8`).
             *settle += SETTLE_SCALAR << 8;
+            // `sb 0xff,0x21c(s4)` / `sw zero,0x4(s4)` (`0x801F78BC..
+            // 0x801F78CC`): the creature's hide is the flag and the zeroed
+            // colour word together.
             if let Some(s) = seats.get_mut(summon_seat as usize) {
                 s.render_flag = 0xFF;
+                s.present_04 = 0;
             }
             let mask = cleanse.and_then(orb_cleanse_mask);
             for seat in 0..c.party_count {

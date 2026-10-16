@@ -618,7 +618,9 @@ fn a_live_cast_stages_its_module_records() {
                 &[0x801F_8C7C, 0x801F_8D0C, 0x801F_90B0],
             ),
             // `0x801F8190` is the opening's star swarm (arm 2's rand-spread
-            // `FUN_80050ED4` loop and arm 3's mover), not seated.
+            // `FUN_80050ED4` loop and arm 3's mover): seated by the engine's
+            // own port of that loop beside arm 2's calls, not reported by
+            // the director.
             911 => (
                 vec![
                     &cmc::ORB_FLASH_SPAWNS,
@@ -657,9 +659,11 @@ fn a_live_cast_stages_its_module_records() {
             ),
             _ => panic!("PROT {entry} seats per arm but the test names no arm list"),
         };
+        // PROT 0911's first staged frame also holds arm 2's sixteen stars.
+        let swarm = if entry == 911 { 16 } else { 0 };
         assert_eq!(
             *parts,
-            arms[0].len(),
+            arms[0].len() + swarm,
             "spell {id:#04x}: PROT {entry}'s first staged frame is its first arm's calls"
         );
         let calls: usize = arms.iter().map(|a| a.len()).sum();
@@ -673,7 +677,7 @@ fn a_live_cast_stages_its_module_records() {
         // holds at least the first arm's calls.
         if matches!(entry, 911 | 913) {
             assert!(
-                *seated >= arms[0].len(),
+                *seated >= arms[0].len() + swarm,
                 "spell {id:#04x}: PROT {entry} seats at least its first arm's calls ({seated})"
             );
         } else if stager_run {
