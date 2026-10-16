@@ -160,8 +160,11 @@ def run_engine(a, out: Path) -> bool:
     rest = toks[3:]
     env = dict(os.environ)
     i = 0
+    child_inflight = None
     while i < len(rest) and "=" in rest[i] and not rest[i].startswith("/"):
         k, v = rest[i].split("=", 1)
+        if k == "LEGAIA_BATTLE_INFLIGHT":
+            child_inflight = v
         if k not in DROP_ENV:
             env[k] = v
         i += 1
@@ -174,6 +177,10 @@ def run_engine(a, out: Path) -> bool:
             args[j + 1] = str(work / "cast-sequence-unused.png")
     done = read_kv(out / "retail" / "done.txt")
     caster = int(done.get("caster", a.caster)) if done else a.caster
+    if not done and child_inflight and a.caster == 0:
+        # No retail recording yet (an engine-only look at a corpus mid-cast
+        # state): keep the caster the state's own replay seeds.
+        caster = int(child_inflight.split(",")[0])
     if caster < 3:
         ground = done.get("ground", "") if not a.no_ground else ""
         env["LEGAIA_BATTLE_INFLIGHT"] = f"{caster},{a.spell},{a.target}" + (f";{ground}" if ground else "")
@@ -262,6 +269,9 @@ def main() -> int:
         return 0
     if not a.score_only and not run_engine(a, out):
         return 1
+    if not (out / "retail" / "meta.csv").exists():
+        print(f"[score] no retail recording under {out / 'retail'}: engine side only")
+        return 0
     return score(a, out)
 
 

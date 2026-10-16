@@ -149,6 +149,23 @@ offset, both states, class, `within`, `mae`, both lumas) for scripts.
   pass count.
 - **Damage and RNG are not aligned.** Popups and HP readouts can differ.
 - **A forced formation is retail-only.** See the flag table.
+- **A monster cast does not inject yet.** The probe writes the monster's
+  queue on the first `0x0A`, but the monster's own turn runs its AI pick in
+  the same pass as the `0x0C` category read, which a vsync hook cannot get
+  between. The retail side then records the monster's AI action, not the
+  cast, and the run fails with no cast begin. A breakpoint on the AI pick's
+  return is the missing piece. The engine half (`LEGAIA_BATTLE_MONSTER_CAST`,
+  `--caster 3`) is wired.
+- **The target has to suit the spell.** A heal aimed at a monster seat parks
+  the module (Orb on seat `3` sits in its phase `9`); pass `--target 0` for an
+  ally spell. The probe quits on a park (`LEGAIA_PARK`, state and module phase
+  unchanged for `900` vsyncs) and the driver reports it.
+
+`--engine-only` on a state with no retail recording runs the engine half
+alone. The corpus's `*_summon_mid_cast` states are mednafen captures that
+PCSX-Redux cannot load, but their child commands seed the cast. That is
+enough to read the engine's own segment lengths for a cast in the fight the
+corpus scores it in.
 - **An item cast (the flutes) is not injectable.** The probe writes category
   `2` (Magic). An item summon needs the item category and its own id space.
 
