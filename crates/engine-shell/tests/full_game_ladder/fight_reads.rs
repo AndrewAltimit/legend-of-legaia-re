@@ -678,6 +678,40 @@ pub(super) fn spell_heal(w: &legaia_engine_core::world::World, actor: u8) -> Opt
         if !cover && (lows == 0 || lows < 2 && bag_can_heal(w)) {
             return None;
         }
+        // The group heal is the turn of the member whose swing deals least:
+        // one still to commit this round who can pay for a group heal and
+        // whose actions have taken less off the foes ([`DEALT`]) casts it,
+        // and this member swings. A boss's race is lost on the round the
+        // heavy hitter heals (`nilboa` P2[20]: Vahn's Spoon in place of a
+        // ~2500 Art let the foe reach the party-wide blow it opens its fifth
+        // round with, where Gala's ~1200 spell was the cheaper turn to give).
+        if queued == 0 {
+            let best = |i: usize| {
+                DEALT.with(|d| {
+                    d.borrow()
+                        .iter()
+                        .filter(|((m, _), _)| usize::from(*m) == i)
+                        .map(|(_, &v)| v)
+                        .max()
+                        .unwrap_or(0)
+                })
+            };
+            let mine = best(usize::from(actor));
+            let weaker_healer = (0..n).any(|j| {
+                j != usize::from(actor)
+                    && w.actors[j].battle.hp > 0
+                    && w.battle
+                        .round_flow
+                        .pending
+                        .get(j)
+                        .is_some_and(Option::is_none)
+                    && best(j) < mine
+                    && can_cast_group_heal(w, j as u8)
+            });
+            if weaker_healer {
+                return None;
+            }
+        }
     }
     let m = w
         .party
@@ -699,4 +733,28 @@ pub(super) fn spell_heal(w: &legaia_engine_core::world::World, actor: u8) -> Opt
         })
         .max()
         .map(|(_, id)| id)
+}
+
+/// Whether `actor` knows a group heal it can pay for now.
+fn can_cast_group_heal(w: &legaia_engine_core::world::World, actor: u8) -> bool {
+    use legaia_engine_battle::spells::SpellEffect;
+    let Some(a) = w.actors.get(usize::from(actor)) else {
+        return false;
+    };
+    let Some(m) = w
+        .party
+        .roster
+        .members
+        .get(w.party_roster_slot(usize::from(actor)))
+    else {
+        return false;
+    };
+    let list = m.spell_list();
+    list.ids[..(list.count as usize).min(list.ids.len())]
+        .iter()
+        .filter_map(|&id| w.tables.spell_catalog.get(id))
+        .any(|d| {
+            matches!(d.effect, SpellEffect::HealAll { .. })
+                && u32::from(d.mp_cost) <= u32::from(a.battle.mp)
+        })
 }
