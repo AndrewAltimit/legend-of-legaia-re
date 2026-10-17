@@ -66,7 +66,7 @@ pub const BLADE_BREATH_POWER: u16 = 0x0200;
 ///   `0x801F7C0C` sends a non-zero metric to the hold arm, which stages the
 ///   run clip `1` with `+0x1DC += 1` and stays on phase `1`. Arrived, it runs
 ///   `FUN_80050BB8` - the pairwise **separation nudge**
-///   ([`crate::battle_separation`]), not the approach - 0x20 times and
+///   ([`legaia_engine_battle_vm::battle_separation`]), not the approach - 0x20 times and
 ///   advances the phase again;
 /// * arm `1` - the same test, advancing once the metric reads zero;
 /// * arm `2` - the sound cue (`0x18B` / `0x18C` / `0x18D`), the facing, the

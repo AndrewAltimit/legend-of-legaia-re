@@ -13,7 +13,7 @@ pub const SUMMON_MODULE_STATES: [u8; 2] = [0x35, 0x36];
 /// The capture band's module tick `0x70`: like the summon band's sustain it
 /// calls no framing case (`0x801E50C8..0x801E50E8`), so the camera holds the
 /// pose `0x6F`'s last case-6 pass left and moves only as the module moves it
-/// ([`crate::cast_module_camera::capture_camera_director`]).
+/// (`legaia_engine_cast::cast_module_camera::capture_camera_director`).
 pub const CAPTURE_MODULE_STATE: u8 = 0x70;
 
 /// The yaw the escape roll's success arm snaps the live camera to before it

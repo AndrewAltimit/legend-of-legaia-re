@@ -76,7 +76,7 @@ fn evil_seru_magic_lands_the_stager_hit_then_the_tick_hit_and_folds_nothing_more
 /// that took a full-HP Noa to zero in one Plasma Strike.
 #[test]
 fn no_capture_module_lands_its_hit_through_both_the_tick_and_the_fold() {
-    use legaia_engine_battle_vm::cast_module_ticks::capture_trampoline_for;
+    use legaia_engine_cast::cast_module_ticks::capture_trampoline_for;
     use legaia_game_tables::spell_names::{CAPTURE_CLASS, SpellEntry, SpellNameTable};
 
     const CASTER: u8 = 3;
@@ -100,7 +100,7 @@ fn no_capture_module_lands_its_hit_through_both_the_tick_and_the_fold() {
     casts.push((
         0x19,
         0x7B,
-        legaia_engine_battle_vm::cast_module_ticks::PLASMA_STRIKE_BURST_ARM,
+        legaia_engine_cast::cast_module_ticks::PLASMA_STRIKE_BURST_ARM,
     ));
     for (sub, id, start_arm) in casts {
         let entry = 935 + u32::from(sub);
@@ -164,8 +164,7 @@ fn no_capture_module_lands_its_hit_through_both_the_tick_and_the_fold() {
                 fold_owned += 1;
             } else if start_arm == 0
                 && !waived
-                && legaia_engine_battle_vm::cast_module_ticks::capture_site_power(entry, id)
-                    .is_some()
+                && legaia_engine_cast::cast_module_ticks::capture_site_power(entry, id).is_some()
             {
                 // A body with a baked damage site owes its hit through one
                 // owner or the other; landing it through neither is the

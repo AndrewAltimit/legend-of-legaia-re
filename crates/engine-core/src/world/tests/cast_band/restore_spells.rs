@@ -12,7 +12,7 @@ use super::*;
 /// arm keeps its cure sweep - that half has no second owner.
 #[test]
 fn the_vera_restore_arm_leaves_hp_to_the_fold_and_still_cures() {
-    use legaia_engine_battle_vm::seru_magic_ticks::{
+    use legaia_engine_cast::seru_magic_ticks::{
         VERA_CURE_MASKS, VERA_CURE_MIN_LEVEL, VERA_RESTORE_ARM,
     };
     let mut world = module_code_world();
@@ -37,7 +37,7 @@ fn the_vera_restore_arm_leaves_hp_to_the_fold_and_still_cures() {
 
     // Each arm is re-entered until it lets the phase through: PROT 0905's
     // counted arms hold on the module's own countdown
-    // (`legaia_engine_battle_vm::cast_module_camera`), so one call per arm would
+    // (`legaia_engine_cast::cast_module_camera`), so one call per arm would
     // stop at the first gate.
     let mut ran_restore = false;
     for arm in 0..=VERA_RESTORE_ARM {
@@ -70,7 +70,7 @@ fn the_vera_restore_arm_leaves_hp_to_the_fold_and_still_cures() {
 /// save-state testing; a lower tier leaves AP alone.
 #[test]
 fn a_level_nine_vera_doubles_the_targets_ap() {
-    use legaia_engine_battle_vm::seru_magic_ticks::VERA_RESTORE_ARM;
+    use legaia_engine_cast::seru_magic_ticks::VERA_RESTORE_ARM;
     for (tier, before, after) in [(4u8, 17u16, 34u16), (4, 60, 100), (3, 17, 17)] {
         let mut world = module_code_world();
         world.casting.summon_actor_slot = Some(7);
@@ -90,7 +90,7 @@ fn a_level_nine_vera_doubles_the_targets_ap() {
 /// PROT 0911 `0x801F7E10..0x801F7E3C`.
 #[test]
 fn a_level_nine_orb_doubles_the_party_ap() {
-    use legaia_engine_battle_vm::seru_magic_ticks::ORB_ARM5_TARGET_PHASE;
+    use legaia_engine_cast::seru_magic_ticks::ORB_ARM5_TARGET_PHASE;
     let mut world = module_code_world();
     assert_eq!(world.cast_module_for(0x89), Some(911));
     world.casting.summon_actor_slot = Some(7);
@@ -107,7 +107,7 @@ fn a_level_nine_orb_doubles_the_party_ap() {
 /// cures nothing below tier 4's selector beyond its mask.
 #[test]
 fn a_level_nine_spoon_doubles_the_party_ap_once() {
-    use legaia_engine_battle_vm::seru_magic_ticks::SPOON_HEAL_ARM;
+    use legaia_engine_cast::seru_magic_ticks::SPOON_HEAL_ARM;
     let mut world = module_code_world();
     assert_eq!(world.cast_module_for(0x91), Some(919));
     world.casting.summon_actor_slot = Some(7);

@@ -218,7 +218,7 @@ pub const CAPTURE_WALK_ENTRY: u8 = 1;
 pub const CASTER_STAGE_TICK_LIMIT: u16 = 900;
 
 /// The caster's clip stages a capture-class body owes and its port does not
-/// write ([`legaia_engine_battle_vm::cast_module_ticks::CAPTURE_CASTER_STAGES`]),
+/// write ([`legaia_engine_cast::cast_module_ticks::CAPTURE_CASTER_STAGES`]),
 /// in flight at the head of battle phase `0x70`.
 ///
 /// Each stage is written into the caster's `+0x1DA` and the next one is
@@ -235,7 +235,7 @@ pub struct CasterStageRun {
     /// Index of the clip being staged / waited on.
     pub cursor: usize,
     /// The seat the caster walks into reach of before the first stage
-    /// ([`legaia_engine_battle_vm::cast_module_ticks::capture_body_approaches`]); `None` for a
+    /// ([`legaia_engine_cast::cast_module_ticks::capture_body_approaches`]); `None` for a
     /// body that strikes from where it stands, or a group target.
     pub approach: Option<u8>,
     /// Where the run is.
@@ -331,7 +331,7 @@ pub struct CastModuleCodeRun {
     /// `ctx+0x278` after the tick.
     pub ctx_278: u8,
     /// Seats an AoE stager swept, with the amount applied to each.
-    pub aoe_hits: Vec<legaia_engine_battle_vm::cast_module_ticks::AoeHit>,
+    pub aoe_hits: Vec<legaia_engine_cast::cast_module_ticks::AoeHit>,
     /// `true` while the module's phase machine still reports busy.
     ///
     /// Seeded `true` for a resident module and only *lowered* by a ported
@@ -348,8 +348,7 @@ pub struct CastModuleCodeRun {
     /// action queued.
     pub item_refund: Option<u8>,
     /// What PROT 0955's Void Accessories arm decided this frame.
-    pub voided_accessory:
-        Option<legaia_engine_battle_vm::cast_module_ticks::VoidAccessoriesOutcome>,
+    pub voided_accessory: Option<legaia_engine_cast::cast_module_ticks::VoidAccessoriesOutcome>,
     /// `(element, group)` PROT 0964's Element Change committed onto the first
     /// monster seat's record this frame (`+0x1D` / `+0x1C`).
     pub element_change: Option<(u8, u8)>,
@@ -357,30 +356,30 @@ pub struct CastModuleCodeRun {
     /// ([`vm::battle_cam_script::ModuleShot`]).
     pub camera_shot: Option<legaia_engine_battle_vm::battle_cam_script::ModuleShot>,
     /// The case-6 follow the module re-armed this frame
-    /// ([`vm::cast_module_camera::ModuleFollow`]).
-    pub camera_follow: Option<legaia_engine_battle_vm::cast_module_camera::ModuleFollow>,
+    /// ([`legaia_engine_cast::cast_module_camera::ModuleFollow`]).
+    pub camera_follow: Option<legaia_engine_cast::cast_module_camera::ModuleFollow>,
     /// The module framed the acting actor through case 8 this frame
-    /// ([`vm::cast_module_camera::ArmDirection::end_frame`]).
+    /// ([`legaia_engine_cast::cast_module_camera::ArmDirection::end_frame`]).
     pub camera_end_frame: bool,
     /// The drift the module wrote into the camera globals this frame.
-    pub camera_nudge: Option<legaia_engine_battle_vm::cast_module_camera::ModuleNudge>,
+    pub camera_nudge: Option<legaia_engine_cast::cast_module_camera::ModuleNudge>,
     /// A capture-class body's drift this frame
-    /// ([`vm::cast_module_camera::capture_camera_director`]).
-    pub capture_drift: Option<legaia_engine_battle_vm::cast_module_camera::CaptureDrift>,
+    /// ([`legaia_engine_cast::cast_module_camera::capture_camera_director`]).
+    pub capture_drift: Option<legaia_engine_cast::cast_module_camera::CaptureDrift>,
     /// The spawn calls the module's arm made this frame, for a director that
-    /// reports them ([`vm::cast_module_camera::ModuleProfile::stages_spawns`]).
-    pub spawns: &'static [legaia_engine_battle_vm::cast_module_camera::ModuleSpawn],
+    /// reports them ([`legaia_engine_cast::cast_module_camera::ModuleProfile::stages_spawns`]).
+    pub spawns: &'static [legaia_engine_cast::cast_module_camera::ModuleSpawn],
     /// The spawn calls a summon-creature arm makes on every pass, held or
     /// not, beside [`Self::spawns`]
-    /// ([`vm::cast_module_camera::creature_arm_spawns`]).
-    pub every_spawns: &'static [legaia_engine_battle_vm::cast_module_camera::ModuleSpawn],
-    /// The point the arm built for its [`vm::cast_module_camera::SpawnAnchor::ArmPoint`]
+    /// ([`legaia_engine_cast::cast_module_camera::creature_arm_spawns`]).
+    pub every_spawns: &'static [legaia_engine_cast::cast_module_camera::ModuleSpawn],
+    /// The point the arm built for its [`legaia_engine_cast::cast_module_camera::SpawnAnchor::ArmPoint`]
     /// spawns this frame.
     pub arm_point: Option<([i16; 3], [i16; 3])>,
     /// The `MoveImage` the module's arm issued this frame.
-    pub vram_move: Option<legaia_engine_battle_vm::cast_module_camera::ModuleVramMove>,
+    pub vram_move: Option<legaia_engine_cast::cast_module_camera::ModuleVramMove>,
     /// The text the module's arm put up this frame.
-    pub caption: Option<legaia_engine_battle_vm::cast_module_camera::ModuleCaption>,
+    pub caption: Option<legaia_engine_cast::cast_module_camera::ModuleCaption>,
     /// The fades the module's arm spawned this frame, each `(template, id)`.
     pub fades: &'static [(
         legaia_engine_battle_vm::battle_action::SummonFadeTemplate,
@@ -434,9 +433,7 @@ mod capture_hold_tests {
     /// guarding seat, and the hit fills the defender's Spirit gauge.
     #[test]
     fn a_module_hit_is_finished_guard_halve_and_spirit() {
-        use legaia_engine_battle_vm::cast_module_ticks::{
-            MYSTIC_CIRCLE_TICK, sweep_damage_shape_for,
-        };
+        use legaia_engine_cast::cast_module_ticks::{MYSTIC_CIRCLE_TICK, sweep_damage_shape_for};
         let shape = sweep_damage_shape_for(MYSTIC_CIRCLE_TICK).expect("Mystic Circle shape");
         let mut world = band_world();
         world.actors[0].battle.max_hp = 2000;
@@ -566,10 +563,10 @@ mod sweep_code_tests {
 mod divide_split_tests {
     use super::*;
 
-    fn split() -> legaia_engine_battle_vm::cast_arm_ticks::GlareDivideSplit {
-        legaia_engine_battle_vm::cast_arm_ticks::GlareDivideSplit {
+    fn split() -> legaia_engine_cast::cast_arm_ticks::GlareDivideSplit {
+        legaia_engine_cast::cast_arm_ticks::GlareDivideSplit {
             // Retail pool space: the second monster of any party.
-            clone_seat: legaia_engine_battle_vm::cast_module_ticks::FIRST_MONSTER_SEAT + 1,
+            clone_seat: legaia_engine_cast::cast_module_ticks::FIRST_MONSTER_SEAT + 1,
             clone_hp: 69,
             saved_caster_target: 0,
             weakened: None,

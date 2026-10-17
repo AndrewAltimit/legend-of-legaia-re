@@ -1,5 +1,5 @@
 //! PROT 0954 (Fatal Decision) on the world: the battle side of
-//! [`legaia_engine_battle_vm::cast_fatal_decision`] - the seats it reads, the
+//! [`legaia_engine_cast::cast_fatal_decision`] - the seats it reads, the
 //! records it seats and moves, the stop prompt and the outcome banner, and
 //! the sixteen outcomes on the victim.
 //!
@@ -11,7 +11,7 @@
 
 use super::cast_band::{BATTLE_TABLE_SLOTS, CastModuleCodeRun};
 use super::*;
-use legaia_engine_battle_vm::cast_fatal_decision as fd;
+use legaia_engine_cast::cast_fatal_decision as fd;
 
 /// The label of the backdrop part.
 const TAG_BACKDROP: u32 = 0x0954_0000;
@@ -506,7 +506,7 @@ impl World {
                     *cell = data.price(id as u8) != 0;
                 }
             }
-            legaia_engine_battle_vm::cast_arm_ticks::steal_pick_bag_slot(
+            legaia_engine_cast::cast_arm_ticks::steal_pick_bag_slot(
                 &bag,
                 None,
                 || self.next_rand(),

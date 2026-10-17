@@ -72,7 +72,7 @@ impl World {
     /// `battle_damage_wrappers::int_wrapper_predamage`)
     /// The **baked** per-hit power the resident slot-B module hands its
     /// damage wrapper, when the cast's module is one of the six the band's
-    /// PORT rows decode ([`legaia_engine_battle_vm::cast_module_ticks`]).
+    /// PORT rows decode ([`legaia_engine_cast::cast_module_ticks`]).
     ///
     /// Retail's capture-class modules do not read the move-power table at
     /// all: each `jal` into `FUN_801DD4B0` / `FUN_801DD6B4` / `FUN_801DD0AC`
@@ -92,18 +92,15 @@ impl World {
         // PROT 0950 pairs `0x100` against `0x29A` - so the entry alone cannot
         // answer for them. Resolve the body through the module's trampoline
         // first and fall back to the entry-keyed table.
-        if let Some(body) =
-            legaia_engine_battle_vm::cast_module_ticks::capture_tick_body(entry, move_id)
+        if let Some(body) = legaia_engine_cast::cast_module_ticks::capture_tick_body(entry, move_id)
             && let Some(shape) =
-                legaia_engine_battle_vm::cast_arm_ticks::arm_damage_shape_for(entry, body)
+                legaia_engine_cast::cast_arm_ticks::arm_damage_shape_for(entry, body)
             && let Some(power) = shape.powers.first()
         {
             return Some(i32::from(*power));
         }
-        legaia_engine_battle_vm::cast_module_ticks::baked_power_for(entry)
-            .or_else(|| {
-                legaia_engine_battle_vm::cast_module_ticks::capture_site_power(entry, move_id)
-            })
+        legaia_engine_cast::cast_module_ticks::baked_power_for(entry)
+            .or_else(|| legaia_engine_cast::cast_module_ticks::capture_site_power(entry, move_id))
             .map(i32::from)
     }
 
@@ -121,7 +118,7 @@ impl World {
     /// REF: FUN_801F69D8 (PROT 0961 arm 3, `0x801F738C..0x801F740C`)
     pub(in crate::world) fn dead_end_crisis_wipes(&self, move_id: u8) -> bool {
         if self.cast_module_for(move_id)
-            != Some(legaia_engine_battle_vm::cast_module_ticks::DEAD_END_CRISIS_ENTRY)
+            != Some(legaia_engine_cast::cast_module_ticks::DEAD_END_CRISIS_ENTRY)
         {
             return false;
         }
@@ -131,7 +128,7 @@ impl World {
             .find(|&(_, _, slot)| slot == 0)
             .map(|(_, id, _)| id);
         lead != Some(u16::from(
-            legaia_engine_battle_vm::cast_module_ticks::DEAD_END_CRISIS_ROLL_FORMATION,
+            legaia_engine_cast::cast_module_ticks::DEAD_END_CRISIS_ROLL_FORMATION,
         ))
     }
 

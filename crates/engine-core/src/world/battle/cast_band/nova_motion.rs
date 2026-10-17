@@ -3,10 +3,10 @@
 //! over to the victim, and the parts that ride the victim down.
 
 use crate::world::World;
-use legaia_engine_battle_vm::cast_module_camera::{
+use legaia_engine_cast::cast_module_camera::{
     NOVA_CLOUD_RECORDS, NOVA_LIFT_RECORDS, NOVA_RING_RECORD,
 };
-use legaia_engine_battle_vm::seru_magic_ticks::{NOVA_DAMAGE_PHASE, NOVA_LIFT_PHASE};
+use legaia_engine_cast::seru_magic_ticks::{NOVA_DAMAGE_PHASE, NOVA_LIFT_PHASE};
 use legaia_engine_system::trig::trig12;
 
 /// The arm whose pass carries the cloud banks over to the victim
@@ -157,7 +157,7 @@ impl World {
             NOVA_DAMAGE_PHASE => {
                 // `FUN_80019B28(v.z, v.x, c.z, c.x)` (`0x801F8374..0x801F8388`).
                 let toward = creature.map(|c| {
-                    use legaia_engine_battle_vm::cast_module_camera::{ModuleSeat, heading};
+                    use legaia_engine_cast::cast_module_camera::{ModuleSeat, heading};
                     let seat = |x: i16, z: i16| ModuleSeat {
                         x,
                         y: 0,

@@ -31,8 +31,8 @@ impl World {
     pub(in crate::world::battle::cast_band) fn cast_actor_state(
         &self,
         slot: u8,
-    ) -> legaia_engine_battle_vm::cast_module_ticks::CastActorState {
-        use legaia_engine_battle_vm::cast_module_ticks::{ANIM_RATE_NORMAL, CastActorState};
+    ) -> legaia_engine_cast::cast_module_ticks::CastActorState {
+        use legaia_engine_cast::cast_module_ticks::{ANIM_RATE_NORMAL, CastActorState};
         let Some(a) = self.actors.get(slot as usize) else {
             return CastActorState {
                 anim_rate: ANIM_RATE_NORMAL,
@@ -192,10 +192,8 @@ impl World {
     /// battle with the same monster starts on its disc element.
     pub(in crate::world) fn apply_cast_element_change(&mut self, element: u8) {
         let first = self
-            .engine_slot_for_retail_pool(
-                legaia_engine_battle_vm::cast_module_ticks::FIRST_MONSTER_SEAT,
-            )
-            .unwrap_or(legaia_engine_battle_vm::cast_module_ticks::FIRST_MONSTER_SEAT);
+            .engine_slot_for_retail_pool(legaia_engine_cast::cast_module_ticks::FIRST_MONSTER_SEAT)
+            .unwrap_or(legaia_engine_cast::cast_module_ticks::FIRST_MONSTER_SEAT);
         if let Some(a) = self
             .actors
             .get_mut(first as usize)
@@ -209,7 +207,7 @@ impl World {
     pub(in crate::world::battle::cast_band) fn write_cast_actor_state(
         &mut self,
         slot: u8,
-        st: &legaia_engine_battle_vm::cast_module_ticks::CastActorState,
+        st: &legaia_engine_cast::cast_module_ticks::CastActorState,
     ) {
         use legaia_engine_battle_vm::battle_anim_rate::AnimRate;
         let creature = self.casting.summon_actor_slot == Some(slot);

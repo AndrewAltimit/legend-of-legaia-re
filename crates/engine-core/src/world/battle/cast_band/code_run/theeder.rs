@@ -16,7 +16,7 @@ impl World {
         summon_slot: u8,
         ctx_6d8: u16,
     ) -> ([i16; 3], [i16; 3]) {
-        use legaia_engine_battle_vm::seru_magic_ticks as ta;
+        use legaia_engine_cast::seru_magic_ticks as ta;
         let g = self.theeder_geom(summon_slot);
         let mouth = ta::theeder_mouth(g.x, g.z, g.facing);
         let tip = ta::theeder_ray_tip(mouth, g.facing, ta::theeder_sweep_phase(ctx_6d8));
@@ -24,7 +24,7 @@ impl World {
     }
 
     /// PROT 0904's arm-4 seat placement
-    /// ([`legaia_engine_battle_vm::seru_magic_ticks::theeder_seat_placement`]) from the victim's
+    /// ([`legaia_engine_cast::seru_magic_ticks::theeder_seat_placement`]) from the victim's
     /// and the caster's live positions.
     ///
     /// REF: FUN_801F69D8 (PROT 0904 arm 4, `0x801F6EEC..0x801F6F8C`)
@@ -39,7 +39,7 @@ impl World {
                 .map(|a| (a.move_state.world_x, a.move_state.world_z))
         };
         Some(
-            legaia_engine_battle_vm::seru_magic_ticks::theeder_seat_placement(
+            legaia_engine_cast::seru_magic_ticks::theeder_seat_placement(
                 pos(victim_slot)?,
                 pos(caster_slot)?,
             ),
@@ -62,10 +62,10 @@ impl World {
     pub(in crate::world::battle::cast_band) fn theeder_geom(
         &self,
         summon_slot: u8,
-    ) -> legaia_engine_battle_vm::seru_magic_ticks::TheederGeom {
+    ) -> legaia_engine_cast::seru_magic_ticks::TheederGeom {
         self.actors
             .get(summon_slot as usize)
-            .map(|a| legaia_engine_battle_vm::seru_magic_ticks::TheederGeom {
+            .map(|a| legaia_engine_cast::seru_magic_ticks::TheederGeom {
                 x: a.move_state.world_x,
                 z: a.move_state.world_z,
                 facing: a.battle.facing_angle & 0x0FFF,
@@ -83,7 +83,7 @@ impl World {
     /// and build the primitives with `legaia_engine_ui::cast_theeder`.
     ///
     /// REF: FUN_801F815C, FUN_801F83A4, FUN_801F8634, FUN_801F8B84
-    pub fn theeder_draw(&self) -> Option<legaia_engine_battle_vm::seru_magic_ticks::TheederPacket> {
+    pub fn theeder_draw(&self) -> Option<legaia_engine_cast::seru_magic_ticks::TheederPacket> {
         if self.mode != SceneMode::Battle || self.casting.summon_stager.is_none() {
             return None;
         }

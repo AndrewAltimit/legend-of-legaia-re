@@ -158,9 +158,9 @@ fn a_bypass_class_cast_rolls_the_resist_bypass_wrapper() {
     // scalar: at the baked `0x38E` both kernels land on the same number, so
     // reusing it there would make the control stop discriminating.
     let baked = i32::from(
-        legaia_engine_battle_vm::cast_arm_ticks::arm_damage_shape_for(
+        legaia_engine_cast::cast_arm_ticks::arm_damage_shape_for(
             944,
-            legaia_engine_battle_vm::cast_arm_ticks::GUILTY_CROSS_TICK,
+            legaia_engine_cast::cast_arm_ticks::GUILTY_CROSS_TICK,
         )
         .and_then(|s| s.powers.first().copied())
         .expect("PROT 0944's 0x37 body has a baked power"),

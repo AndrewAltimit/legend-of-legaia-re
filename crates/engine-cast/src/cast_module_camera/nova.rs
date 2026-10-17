@@ -269,7 +269,9 @@ mod tests {
     #[test]
     fn nova_snap_depth_scales_to_the_stored_global() {
         assert_eq!(
-            crate::battle_cam_script::prescale_tr_z(i32::from(NOVA_SNAP_TR_Z_RAW)),
+            legaia_engine_battle_vm::battle_cam_script::prescale_tr_z(i32::from(
+                NOVA_SNAP_TR_Z_RAW
+            )),
             512.0
         );
     }

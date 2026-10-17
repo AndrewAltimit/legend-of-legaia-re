@@ -44,6 +44,7 @@ members = [
     "crates/engine-battle",
     "crates/engine-battle-vm",
     "crates/engine-camera",
+    "crates/engine-cast",
     "crates/engine-system",
     "crates/engine-dialog",
     "crates/engine-menus",
@@ -129,6 +130,7 @@ legaia-engine-battle = { path = "crates/engine-battle" }
 legaia-engine-battle-vm = { path = "crates/engine-battle-vm" }
 legaia-engine-camera = { path = "crates/engine-camera" }
 legaia-engine-capture = { path = "crates/engine-capture" }
+legaia-engine-cast = { path = "crates/engine-cast" }
 legaia-engine-core = { path = "crates/engine-core" }
 legaia-engine-effects = { path = "crates/engine-effects" }
 legaia-engine-export = { path = "crates/engine-export" }

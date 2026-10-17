@@ -65,7 +65,7 @@ impl World {
         // PROT 0961's party sweep rolls its wrapper only in the evolved-Cort
         // fight; anywhere else it is a scripted wipe with no roll at all.
         if self.dead_end_crisis_wipes(move_id) {
-            return Some(legaia_engine_battle_vm::cast_module_ticks::DEAD_END_CRISIS_WIPE_DAMAGE);
+            return Some(legaia_engine_cast::cast_module_ticks::DEAD_END_CRISIS_WIPE_DAMAGE);
         }
         if CAPTURE_BYPASS_MOVE_IDS.contains(&move_id) {
             let power = self.baked_module_power(move_id).unwrap_or(power);

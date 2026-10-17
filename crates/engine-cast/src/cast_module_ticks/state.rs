@@ -86,25 +86,25 @@ pub struct CastActorState {
     /// `+0x04` - the per-actor **mesh tint word** the band's hit sites stamp
     /// alongside the HP write (PROT 0904's ring sweep stores `0x3FF0000`
     /// there per hit). It is the same word
-    /// [`BattleActor::render_color`](crate::battle_action::BattleActor::render_color)
+    /// [`BattleActor::render_color`](legaia_engine_battle_vm::battle_action::BattleActor::render_color)
     /// already models, so a store here reaches the renderer's tint pass
     /// rather than stopping at this view.
     pub present_04: u32,
     /// `+0x21F` - the **impact-effect selector** a hit arm sets beside
     /// [`Self::render_flag`] (`2` on PROT 0904's ring-sweep victims): which
     /// entry of the impact-config table owns [`Self::present_04`]. Mirrors
-    /// [`BattleActor::impact_state`](crate::battle_action::BattleActor::impact_state).
+    /// [`BattleActor::impact_state`](legaia_engine_battle_vm::battle_action::BattleActor::impact_state).
     pub render_21f: u8,
     /// `+0x225` - the capture-state byte PROT 0907's kill arm writes together
     /// with `+0x21C` (one `li v0,0x2` at `0x801F7E54` feeds both stores).
     /// Mirrors
-    /// [`BattleActor::capture_state`](crate::battle_action::BattleActor::capture_state).
+    /// [`BattleActor::capture_state`](legaia_engine_battle_vm::battle_action::BattleActor::capture_state).
     pub render_225: u8,
     /// `+0x1F2` - the gate that picks [`CastActorState::knockdown_anim`]
     /// over [`CastActorState::reaction_alt`].
     pub reaction_gate: u8,
     /// `+0x00` - the combo damage accumulator
-    /// ([`BattleActor::damage_accum`](crate::battle_action::BattleActor::damage_accum)).
+    /// ([`BattleActor::damage_accum`](legaia_engine_battle_vm::battle_action::BattleActor::damage_accum)).
     /// A cast clip's hit events add to it without touching HP; PROT 0960's
     /// arm `0x0C` lands it.
     pub combo_total: u32,
@@ -126,7 +126,7 @@ pub struct CastActorState {
     /// [`Self::loop_count`] to release a parked clip.
     pub loop_timer: u16,
     /// `+0x1BA` - the shatter word
-    /// ([`BattleActor::shatter`](crate::battle_action::BattleActor::shatter)):
+    /// ([`BattleActor::shatter`](legaia_engine_battle_vm::battle_action::BattleActor::shatter)):
     /// Zenoir and Jedo raise it on monsters, six summons on their creature.
     pub shatter: u16,
 }

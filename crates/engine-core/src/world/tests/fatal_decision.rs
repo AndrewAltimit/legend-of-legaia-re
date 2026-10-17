@@ -3,8 +3,8 @@
 //! the band seam with the player stopping the wheel.
 
 use super::*;
-use legaia_engine_battle_vm::cast_fatal_decision::{self as fd, FatalOutcome};
 use legaia_engine_battle_vm::status_effects::StatusKind;
+use legaia_engine_cast::cast_fatal_decision::{self as fd, FatalOutcome};
 use legaia_engine_mode::mode::SceneMode;
 
 const VICTIM: u8 = 0;

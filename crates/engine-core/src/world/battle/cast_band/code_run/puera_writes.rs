@@ -25,10 +25,10 @@ impl World {
     /// REF: FUN_801F90E4
     pub(in crate::world::battle::cast_band) fn run_puera_stager_calls(
         &mut self,
-        ctx: &mut legaia_engine_battle_vm::cast_module_ticks::CastModuleCtx,
+        ctx: &mut legaia_engine_cast::cast_module_ticks::CastModuleCtx,
     ) {
         for (arm, _) in std::mem::take(&mut self.casting.module_stager_calls) {
-            legaia_engine_battle_vm::cast_module_ticks::puera_stager(ctx, arm);
+            legaia_engine_cast::cast_module_ticks::puera_stager(ctx, arm);
         }
     }
 
@@ -45,7 +45,7 @@ impl World {
     /// | 19 (`0x801F81C8..0x801F8210`, while counting; pass `0x801F82B4..0x801F82C0`) | with `w = (scalar << 6) - countdown`, the creature at `y = 17 w / 2 - 0x1100`, `z = 13 w - 0x1100`; on the pass it is hidden |
     /// | 24 (`0x801F9014..0x801F90A0`, pass) | each live monster back on its saved pose |
     ///
-    /// plus the part halts of [`legaia_engine_battle_vm::cast_module_camera::puera_arm_kills`]
+    /// plus the part halts of [`legaia_engine_cast::cast_module_camera::puera_arm_kills`]
     /// on each pass.
     ///
     /// PORT: overlay_summon_puera_0922_801f6a3c (PROT 0922; the monster, creature and part-halt writes of arms 0, 5, 11, 12, 18, 19, 22 and 24)
@@ -56,7 +56,7 @@ impl World {
         before: i32,
         monster_count: u8,
     ) {
-        let s = legaia_engine_battle_vm::cast_module_camera::SPEED_SCALAR;
+        let s = legaia_engine_cast::cast_module_camera::SPEED_SCALAR;
         let monsters = usize::from(monster_count);
         let map = self.cast_seat_map();
         let monster_slots: Vec<(usize, usize)> = (0..monsters)
@@ -81,7 +81,7 @@ impl World {
         if !passed {
             return;
         }
-        let kills = legaia_engine_battle_vm::cast_module_camera::puera_arm_kills(phase);
+        let kills = legaia_engine_cast::cast_module_camera::puera_arm_kills(phase);
         if !kills.is_empty()
             && let Some(scene) = self.casting.active_summon.as_mut()
         {
@@ -132,7 +132,7 @@ impl World {
                     v.render_flag = 0;
                     v.present_04 = 0;
                     let next = v.staged_anim.wrapping_add(1);
-                    legaia_engine_battle_vm::cast_module_ticks::stage_clip(&mut v, next);
+                    legaia_engine_cast::cast_module_ticks::stage_clip(&mut v, next);
                     self.write_cast_view(slot, &v);
                     if let Some(a) = self.actors.get_mut(usize::from(slot)) {
                         a.move_state.world_x = 0;

@@ -5,7 +5,7 @@
 //! phase and runs through [`World::run_viguro_stager_calls`].
 
 use super::*;
-use legaia_engine_battle_vm::cast_module_ticks::{
+use legaia_engine_cast::cast_module_ticks::{
     FREED_STAGER_FADE, StagerSpawn, blade_breath_cell_stager_spawns,
     chaos_breath_cell_stager_spawns, freed_stager_spawns, gizam_stager_spawns,
     nighto_stager_spawns, nova_stager_spawns, orb_stager_spawns, swordie_stager_spawns,
@@ -88,11 +88,11 @@ impl World {
                 && arm == 0
                 && let Some(glow) = self.casting.active_summon.as_mut().and_then(|s| {
                     s.parts.iter_mut().find(|p| {
-                        p.tag == Some(legaia_engine_battle_vm::cast_module_ticks::VERA_SPARK_CALLER)
+                        p.tag == Some(legaia_engine_cast::cast_module_ticks::VERA_SPARK_CALLER)
                     })
                 })
             {
-                glow.state.world_y = legaia_engine_battle_vm::cast_module_ticks::VERA_SPARK_HEIGHT;
+                glow.state.world_y = legaia_engine_cast::cast_module_ticks::VERA_SPARK_HEIGHT;
             }
             let mut rand = || self.next_rand();
             let spawns = match entry {
@@ -115,7 +115,7 @@ impl World {
     }
 
     /// The part-pool flush `FUN_80050E74` a capture arm makes on its pass
-    /// ([`legaia_engine_battle_vm::cast_module_camera::capture_arm_flushes_pool`]):
+    /// ([`legaia_engine_cast::cast_module_camera::capture_arm_flushes_pool`]):
     /// every part of the cast's running scene gets its halt bit. The
     /// modules that call it seat every part through the pool wrapper
     /// `FUN_80050ED4`.

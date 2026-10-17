@@ -47,8 +47,12 @@ role = "the shared GTE camera: build, projection, mover, shake, camera-relative 
 deps = ["engine-system"]
 
 [crates.engine-battle-vm]
-role = "battle action SM, formulas, battle camera script, cast-module ticks"
+role = "battle action SM, formulas, battle camera script, battle-overlay leaves"
 deps = ["engine-camera", "engine-system"]
+
+[crates.engine-cast]
+role = "slot-B cast / summon module ticks, their camera and countdown, cast-arm kernels"
+deps = ["engine-battle-vm", "engine-camera", "engine-system"]
 
 [crates.engine-motion-vm]
 role = "the two per-actor motion VMs"
@@ -64,7 +68,7 @@ deps = ["engine-camera", "engine-vm"]
 
 [crates.engine-ui]
 role = "renderer-agnostic draw-list builders"
-deps = ["engine-battle-vm", "render-kernels"]
+deps = ["engine-battle-vm", "engine-cast", "render-kernels"]
 dev = ["engine-camera", "engine-field"]
 
 [crates.engine-effects]
@@ -182,5 +186,11 @@ reason = "the dance floor's step markers are tile actors the shared minigame flo
 [[coupling]]
 from = "engine-ui"
 to = "engine-battle-vm"
-items = ["battle_party_panel", "battle_commit_log", "panel_backread_loader", "battle_value_readout", "battle_action::FlashQuad", "seru_magic_ticks::TheederPacket"]
-reason = "the battle HUD model, the numeral readout and the Theeder packet the draw-list builders project are defined with the battle kernels that fill them"
+items = ["battle_party_panel", "battle_commit_log", "panel_backread_loader", "battle_value_readout", "battle_action::FlashQuad"]
+reason = "the battle HUD model and the numeral readout the draw-list builders project are defined with the battle kernels that fill them"
+
+[[coupling]]
+from = "engine-ui"
+to = "engine-cast"
+items = ["seru_magic_ticks::TheederPacket"]
+reason = "the Theeder packet the cast draw-list builder projects is defined with the PROT 0904 tick body that fills it"

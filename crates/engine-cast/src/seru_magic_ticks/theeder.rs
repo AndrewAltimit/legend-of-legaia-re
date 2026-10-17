@@ -564,8 +564,10 @@ pub fn theeder_ray_rest_tip(mouth: [i16; 3], facing: u16) -> [i16; 3] {
 /// No later arm moves the seat; the arm-12 beam (`2/3` of a unit from a root
 /// `0x5C` ahead) is what reaches the row.
 pub fn theeder_seat_placement(victim: (i16, i16), caster: (i16, i16)) -> (i16, i16, u16) {
-    let facing = crate::battle_action::bearing_12bit_approx(victim.1, victim.0, caster.1, caster.0)
-        .wrapping_add(0x800)
+    let facing = legaia_engine_battle_vm::battle_action::bearing_12bit_approx(
+        victim.1, victim.0, caster.1, caster.0,
+    )
+    .wrapping_add(0x800)
         & 0x0FFF;
     let (s, c) = legaia_engine_system::trig::trig12(facing);
     (

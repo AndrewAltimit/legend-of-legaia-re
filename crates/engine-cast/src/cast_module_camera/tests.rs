@@ -876,7 +876,7 @@ fn seru_modules_take_their_caption_down() {
 #[test]
 fn orb_reports_its_pass_spawns_on_the_next_arm() {
     let mut st = ModuleCamState {
-        target_aim: Some(crate::battle_target_group::GroupAim {
+        target_aim: Some(legaia_engine_battle_vm::battle_target_group::GroupAim {
             centroid_x: -100,
             centroid_z: 200,
             extent: 0x666,

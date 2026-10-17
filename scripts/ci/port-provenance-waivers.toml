@@ -1056,7 +1056,7 @@ cannot see the image, so it still fires.
 """
 
 [[waiver]]
-key = "module-orphan:crates/engine-battle-vm/src/cast_arm_ticks.rs:801f7298"
+key = "module-orphan:crates/engine-cast/src/cast_arm_ticks.rs:801f7298"
 reason = """
 Reviewed against the disassembly. The signal corroborates a tag against its
 same-module siblings, and this module deliberately groups fourteen bodies from
@@ -1290,7 +1290,7 @@ page describes it under this name.
 """
 
 [[waiver]]
-key = "module-orphan:crates/engine-battle-vm/src/cast_module_ticks.rs:801f7fa8"
+key = "module-orphan:crates/engine-cast/src/cast_module_ticks.rs:801f7fa8"
 reason = """
 Correct tag, read in overlay_summon_nighto_0907_801f7fa8.txt. PROT 0907's
 stager dispatches on a1 (`beq a1,1` at 0x801F7FC4, `beq a1,zero` at

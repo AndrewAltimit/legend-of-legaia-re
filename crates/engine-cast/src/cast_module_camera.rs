@@ -48,13 +48,13 @@
 //!
 //! REF: FUN_801D829C (the tween every shot arms), FUN_80019B28 (the headings)
 
-use crate::battle_action::bearing_12bit_approx;
-use crate::battle_cam_script::ModuleShot;
+use legaia_engine_battle_vm::battle_action::bearing_12bit_approx;
+use legaia_engine_battle_vm::battle_cam_script::ModuleShot;
 use legaia_engine_system::trig::trig12;
 
 /// `*(0x1F80037D)` in battle - the speed scalar the battle seating seeds
-/// ([`crate::battle_anim_rate::RATE_NORMAL`]).
-pub const SPEED_SCALAR: i32 = crate::battle_anim_rate::RATE_NORMAL as i32;
+/// ([`legaia_engine_battle_vm::battle_anim_rate::RATE_NORMAL`]).
+pub const SPEED_SCALAR: i32 = legaia_engine_battle_vm::battle_anim_rate::RATE_NORMAL as i32;
 
 /// The countdown drain per engine tick. Retail drains `scalar * delta` per
 /// battle frame, and a battle frame spans `delta` vsyncs; the engine ticks
@@ -149,7 +149,7 @@ pub struct ModuleCamState {
     /// `FUN_801DCEAC(9, ..)` over the live enemy row, as the host last
     /// measured it: the negated centroid (a focus trio's `x` / `z`) and the
     /// extent. `None` with no live monster.
-    pub row_aim: Option<crate::battle_target_group::GroupAim>,
+    pub row_aim: Option<legaia_engine_battle_vm::battle_target_group::GroupAim>,
     /// The creature render node's `+0x42` (`creature[+0x22C] + 0x42`) as
     /// the module's arms last wrote it: `true` draws the body clipped at
     /// the stage floor (`World::battle_actor_floor_clip`), so a creature
@@ -169,7 +169,7 @@ pub struct ModuleCamState {
     /// over the cast's own target code (a seat, or the group code `8` /
     /// `9`), as the host last measured it. PROT 0911's arms 9 and 10 frame
     /// the healed party through it.
-    pub target_aim: Option<crate::battle_target_group::GroupAim>,
+    pub target_aim: Option<legaia_engine_battle_vm::battle_target_group::GroupAim>,
     /// The live yaw global `0x8007B792` as the host last saw it, for an arm
     /// that re-arms a shot on the yaw it has been drifting or stores a yaw
     /// straight into the global (PROT 0909 arm 13, PROT 0911 arm 10, PROT
@@ -309,7 +309,10 @@ pub struct ArmDirection {
     /// The full-screen fades the arm spawned on this pass
     /// (`FUN_80024E80(0x801C9070, id)` over the template it wrote), in call
     /// order, each `(template, id)`.
-    pub fades: &'static [(crate::battle_action::SummonFadeTemplate, i16)],
+    pub fades: &'static [(
+        legaia_engine_battle_vm::battle_action::SummonFadeTemplate,
+        i16,
+    )],
     /// The arm killed the module's earlier fades (`ori 0x8` into each fade
     /// actor's flag word) before it spawned its own.
     pub kills_fades: bool,

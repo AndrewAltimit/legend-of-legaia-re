@@ -171,13 +171,13 @@
 //! --addr <va>`), plus `crates/asset/data/static-overlays.toml` for the
 //! per-entry anchor VA that names each tick.
 
-use crate::battle_damage_wrappers::{WrapperAttacker, WrapperDefender};
-use crate::battle_formulas::vera_heal_amount;
 use crate::cast_module_ticks::{
     ANIM_RATE_NORMAL, CHOREOGRAPHY_DONE_PHASE, CastActorState, CastArmStep, CastDamageShape,
     CastModuleCtx, CastTickStep, CastWrapper, FIRST_MONSTER_SEAT, FLAG_NON_TARGETABLE, SUMMON_SEAT,
     SweepHit, TARGET_CODE_ENEMY_ROW, advance_phase, apply_hit_floor_zero, roll_module_hit,
 };
+use legaia_engine_battle_vm::battle_damage_wrappers::{WrapperAttacker, WrapperDefender};
+use legaia_engine_battle_vm::battle_formulas::vera_heal_amount;
 
 mod hit_sites;
 pub use hit_sites::*;

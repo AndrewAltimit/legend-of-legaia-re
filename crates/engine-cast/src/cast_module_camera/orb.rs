@@ -194,7 +194,7 @@ mod tests {
     fn orb_frames_the_party_and_swings_round_it() {
         let seats = ModuleCamSeats::default();
         let mut st = ModuleCamState {
-            target_aim: Some(crate::battle_target_group::GroupAim {
+            target_aim: Some(legaia_engine_battle_vm::battle_target_group::GroupAim {
                 centroid_x: -100,
                 centroid_z: 200,
                 extent: 0x300,

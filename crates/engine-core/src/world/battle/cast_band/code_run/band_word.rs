@@ -11,7 +11,7 @@
 //! ([`legaia_engine_battle_vm::battle_action`]'s `summon_sustain`).
 //!
 //! The engine keeps those modules' countdown on the director's
-//! [`ModuleCamState::countdown`](legaia_engine_battle_vm::cast_module_camera::ModuleCamState)
+//! [`ModuleCamState::countdown`](legaia_engine_cast::cast_module_camera::ModuleCamState)
 //! and the SM's on `BattleActionCtx::frame_timer`; this file is the seam that
 //! makes them one word while the SM is in `0x34` / `0x35`.
 

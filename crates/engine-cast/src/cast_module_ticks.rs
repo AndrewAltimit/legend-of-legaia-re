@@ -85,7 +85,7 @@
 //! <va>`), plus PROT 0898's three entry tables for the owner attribution
 //! (`docs/subsystems/cast-module.md#the-entry-tables-and-where-the-addresses-live`).
 
-use crate::battle_damage_wrappers::{
+use legaia_engine_battle_vm::battle_damage_wrappers::{
     WrapperAttacker, WrapperDefender, atk_wrapper_predamage, int_wrapper_predamage,
     wrapper_net_damage,
 };

@@ -238,9 +238,12 @@ pub fn gizam_stager_arm_due(phase: u8, countdown: i32) -> Option<u8> {
 /// PROT 0906's stager arm `0` (`0x801F7788..0x801F7804`): two additive
 /// flashes over `0x20` frames, both id `1` and done when they land - white
 /// to black, then blue `(0, 0, 0xFF)` to black.
-pub const GIZAM_STAGER_FLASHES: [(crate::battle_action::SummonFadeTemplate, i16); 2] = [
+pub const GIZAM_STAGER_FLASHES: [(
+    legaia_engine_battle_vm::battle_action::SummonFadeTemplate,
+    i16,
+); 2] = [
     (
-        crate::battle_action::SummonFadeTemplate {
+        legaia_engine_battle_vm::battle_action::SummonFadeTemplate {
             kind: 1,
             duration: 0x20,
             start_rgb: [0xFF, 0xFF, 0xFF],
@@ -251,7 +254,7 @@ pub const GIZAM_STAGER_FLASHES: [(crate::battle_action::SummonFadeTemplate, i16)
         1,
     ),
     (
-        crate::battle_action::SummonFadeTemplate {
+        legaia_engine_battle_vm::battle_action::SummonFadeTemplate {
             kind: 1,
             duration: 0x20,
             start_rgb: [0, 0, 0xFF],
@@ -334,11 +337,13 @@ pub fn gizam_sweep_exit_shot(
 ) -> ModuleShot {
     let yaw = yaw_from(0, creature.facing);
     if st.victim_slot.is_some_and(|code| code >= 8) {
-        let aim = st.row_aim.unwrap_or(crate::battle_target_group::GroupAim {
-            centroid_x: 0,
-            centroid_z: 0,
-            extent: 0,
-        });
+        let aim = st
+            .row_aim
+            .unwrap_or(legaia_engine_battle_vm::battle_target_group::GroupAim {
+                centroid_x: 0,
+                centroid_z: 0,
+                extent: 0,
+            });
         ModuleShot {
             angles: [0x80, yaw, 0],
             tr: [0, 0x500, (i32::from(aim.extent) * 3) as i16],
@@ -647,7 +652,7 @@ mod tests {
         assert_eq!(shot.frames, 1);
 
         st.victim_slot = Some(9);
-        st.row_aim = Some(crate::battle_target_group::GroupAim {
+        st.row_aim = Some(legaia_engine_battle_vm::battle_target_group::GroupAim {
             centroid_x: -100,
             centroid_z: 300,
             extent: 0x200,

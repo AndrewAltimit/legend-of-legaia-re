@@ -4,7 +4,7 @@
 //! monster-row sweep [`super::juggernaut_stager`] ports.
 
 use super::{StagerCaller, StagerSpawn};
-use crate::battle_action::SummonFadeTemplate;
+use legaia_engine_battle_vm::battle_action::SummonFadeTemplate;
 
 fn at(record: u32, caller: StagerCaller) -> StagerSpawn {
     StagerSpawn {

@@ -2,7 +2,7 @@
 //! tick bodies and stagers make, and the parts Freed's arm 4 moves and kills.
 
 use super::*;
-use legaia_engine_battle_vm::cast_module_camera::{self as cam, ModuleSeat};
+use legaia_engine_cast::cast_module_camera::{self as cam, ModuleSeat};
 
 impl World {
     /// The summon seat's live trio, or where the module last placed it.

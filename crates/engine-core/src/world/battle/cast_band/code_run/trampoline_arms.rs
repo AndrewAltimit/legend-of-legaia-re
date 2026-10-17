@@ -7,7 +7,7 @@ impl World {
     // --- the fourteen trampoline arms ---
 
     /// The five extra record fields
-    /// [`legaia_engine_battle_vm::cast_arm_ticks::CastArmExtState`] carries, lifted
+    /// [`legaia_engine_cast::cast_arm_ticks::CastArmExtState`] carries, lifted
     /// off one actor slot.
     ///
     /// Two of them have an engine home: `+0x150` is the actor's live MP and
@@ -20,8 +20,8 @@ impl World {
     pub(in crate::world::battle::cast_band) fn cast_arm_ext_state(
         &self,
         slot: u8,
-    ) -> legaia_engine_battle_vm::cast_arm_ticks::CastArmExtState {
-        use legaia_engine_battle_vm::cast_arm_ticks::CastArmExtState;
+    ) -> legaia_engine_cast::cast_arm_ticks::CastArmExtState {
+        use legaia_engine_cast::cast_arm_ticks::CastArmExtState;
         let Some(a) = self.actors.get(slot as usize) else {
             return CastArmExtState::default();
         };
@@ -39,7 +39,7 @@ impl World {
     pub(in crate::world::battle::cast_band) fn write_cast_arm_ext_state(
         &mut self,
         slot: u8,
-        st: &legaia_engine_battle_vm::cast_arm_ticks::CastArmExtState,
+        st: &legaia_engine_cast::cast_arm_ticks::CastArmExtState,
     ) {
         let Some(a) = self.actors.get_mut(slot as usize) else {
             return;
@@ -52,35 +52,34 @@ impl World {
     /// visits its seats.
     ///
     /// Only the body's own sweep arm draws anything
-    /// ([`legaia_engine_battle_vm::cast_arm_ticks::arm_sweep_arm`]); rolling on every
+    /// ([`legaia_engine_cast::cast_arm_ticks::arm_sweep_arm`]); rolling on every
     /// re-entry would run the shared RNG cursor forward on frames retail never
     /// draws. The sibling of [`Self::sweep_status_rolls`] for the arms
     /// `cast_arm_ticks` carries.
     pub(in crate::world::battle::cast_band) fn cast_arm_sweep_rolls(
         &mut self,
-        ctx: &legaia_engine_battle_vm::cast_module_ticks::CastModuleCtx,
+        ctx: &legaia_engine_cast::cast_module_ticks::CastModuleCtx,
         entry: u32,
         body: u32,
         caster: u8,
     ) -> Vec<(u8, i32)> {
-        let Some(arm) = legaia_engine_battle_vm::cast_arm_ticks::arm_sweep_arm(entry, body) else {
+        let Some(arm) = legaia_engine_cast::cast_arm_ticks::arm_sweep_arm(entry, body) else {
             return Vec::new();
         };
         if ctx.phase != arm {
             return Vec::new();
         }
-        let Some(shape) =
-            legaia_engine_battle_vm::cast_arm_ticks::arm_damage_shape_for(entry, body)
+        let Some(shape) = legaia_engine_cast::cast_arm_ticks::arm_damage_shape_for(entry, body)
         else {
             return Vec::new();
         };
-        let seats: Vec<legaia_engine_battle_vm::cast_module_ticks::CastActorState> = (0..ctx
+        let seats: Vec<legaia_engine_cast::cast_module_ticks::CastActorState> = (0..ctx
             .party_count)
             .map(|s| self.cast_actor_state(s))
             .collect();
         let mut out = Vec::new();
         for (seat, s) in seats.iter().enumerate() {
-            if !legaia_engine_battle_vm::cast_module_ticks::aoe_seat_is_hittable(s) {
+            if !legaia_engine_cast::cast_module_ticks::aoe_seat_is_hittable(s) {
                 continue;
             }
             let seat = seat as u8;
@@ -96,19 +95,19 @@ impl World {
     /// tick, write the seats back.
     pub(in crate::world::battle::cast_band) fn run_cast_arm_sweep(
         &mut self,
-        ctx: &mut legaia_engine_battle_vm::cast_module_ticks::CastModuleCtx,
+        ctx: &mut legaia_engine_cast::cast_module_ticks::CastModuleCtx,
         entry: u32,
         body: u32,
         caster_slot: u8,
-        _caster: &mut legaia_engine_battle_vm::cast_module_ticks::CastActorState,
+        _caster: &mut legaia_engine_cast::cast_module_ticks::CastActorState,
     ) -> (
-        legaia_engine_battle_vm::cast_module_ticks::CastTickStep,
-        Vec<legaia_engine_battle_vm::cast_module_ticks::AoeHit>,
+        legaia_engine_cast::cast_module_ticks::CastTickStep,
+        Vec<legaia_engine_cast::cast_module_ticks::AoeHit>,
     ) {
         let sweep =
-            Some(ctx.phase) == legaia_engine_battle_vm::cast_arm_ticks::arm_sweep_arm(entry, body);
+            Some(ctx.phase) == legaia_engine_cast::cast_arm_ticks::arm_sweep_arm(entry, body);
         let rolls = self.cast_arm_sweep_rolls(ctx, entry, body, caster_slot);
-        let mut seats: Vec<legaia_engine_battle_vm::cast_module_ticks::CastActorState> =
+        let mut seats: Vec<legaia_engine_cast::cast_module_ticks::CastActorState> =
             self.cast_seat_row();
         let take = |seat: u8| {
             rolls
@@ -118,12 +117,12 @@ impl World {
                 .unwrap_or(0)
         };
         let (step, hits) =
-            legaia_engine_battle_vm::cast_arm_ticks::steal_sweep_tick(ctx, &mut seats, sweep, take);
+            legaia_engine_cast::cast_arm_ticks::steal_sweep_tick(ctx, &mut seats, sweep, take);
         self.write_cast_seat_row(&seats);
         (
             step,
             self.cast_hits_to_engine(hits.iter().map(|h| {
-                legaia_engine_battle_vm::cast_module_ticks::AoeHit {
+                legaia_engine_cast::cast_module_ticks::AoeHit {
                     seat: h.seat,
                     applied: h.applied as i32,
                 }
@@ -168,8 +167,8 @@ impl World {
     pub(in crate::world) fn roll_cast_steal(
         &mut self,
         victim_slot: u8,
-    ) -> Option<legaia_engine_battle_vm::cast_arm_ticks::StealOutcome> {
-        use legaia_engine_battle_vm::cast_arm_ticks::StealOutcome;
+    ) -> Option<legaia_engine_cast::cast_arm_ticks::StealOutcome> {
+        use legaia_engine_cast::cast_arm_ticks::StealOutcome;
         // A monster seat is the engine's compacted row, not retail's fixed
         // `>= 3` (see [`Self::engine_slot_for_retail_pool`]).
         if victim_slot >= self.party.party_count.clamp(1, 3) {
@@ -207,7 +206,7 @@ impl World {
         // One `next_rand` per rejected slot, not a pre-drawn batch: retail
         // advances the shared cursor once per draw, so over-drawing would
         // desynchronise every later roll in the battle.
-        let slot = legaia_engine_battle_vm::cast_arm_ticks::steal_pick_bag_slot(
+        let slot = legaia_engine_cast::cast_arm_ticks::steal_pick_bag_slot(
             &bag,
             floor,
             || self.next_rand(),
@@ -248,9 +247,9 @@ impl World {
     pub(in crate::world::battle::cast_band) fn apply_glare_divide_split(
         &mut self,
         caster_slot: u8,
-        split: &legaia_engine_battle_vm::cast_arm_ticks::GlareDivideSplit,
+        split: &legaia_engine_cast::cast_arm_ticks::GlareDivideSplit,
     ) -> bool {
-        use legaia_engine_battle_vm::cast_arm_ticks::{
+        use legaia_engine_cast::cast_arm_ticks::{
             SPLIT_CLONE_ACTION, SPLIT_CLONE_CATEGORY, SPLIT_WEAK_AGL, SplitWeakened,
         };
         // `clone_seat` is a retail pool slot (`3 + ctx[+1]`): retail seats
@@ -283,8 +282,7 @@ impl World {
         if let Some(p) = clone.battle.params.first_mut() {
             *p = SPLIT_CLONE_ACTION;
         }
-        clone.battle.active_target =
-            legaia_engine_battle_vm::cast_module_ticks::TARGET_CODE_ENEMY_ROW;
+        clone.battle.active_target = legaia_engine_cast::cast_module_ticks::TARGET_CODE_ENEMY_ROW;
         clone.battle.hp = split.clone_hp;
         clone.battle.max_hp = split.clone_hp;
         if split.weakened == Some(SplitWeakened::Clone) {

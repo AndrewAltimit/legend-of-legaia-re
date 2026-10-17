@@ -27,7 +27,7 @@ fn the_viguro_stager_runs_from_the_cast_band_seam() {
     assert_eq!(run.prot_entry, 909);
     assert_eq!(
         world.actors[7].battle.active_target,
-        legaia_engine_battle_vm::cast_module_ticks::TARGET_CODE_ENEMY_ROW,
+        legaia_engine_cast::cast_module_ticks::TARGET_CODE_ENEMY_ROW,
         "arm 0 retargets the summon seat to the enemy row"
     );
     assert_eq!(
@@ -240,7 +240,7 @@ fn arming_the_stager_zeroes_the_module_phase() {
 /// its pass (`0x801F7184..0x801F730C`, `0x801F7158..0x801F7174`).
 #[test]
 fn freed_arm_4_turns_then_kills_the_crystals() {
-    use legaia_engine_battle_vm::cast_module_camera as cam;
+    use legaia_engine_cast::cast_module_camera as cam;
     let mut world = module_code_world();
     world.casting.summon_actor_slot = Some(9);
     world.actors[9].active = true;

@@ -55,7 +55,7 @@ pub struct CastFxState {
     pub pending_cast: Option<PendingCast>,
     /// The resident slot-B module's **phase byte** (`ctx+0x279`) - the second
     /// phase space riding under battle phase `0x70`, driven by the module
-    /// code kernels ([`legaia_engine_battle_vm::cast_module_ticks`]) from
+    /// code kernels ([`legaia_engine_cast::cast_module_ticks`]) from
     /// [`crate::world::World::run_cast_module_code`]. Zeroed when a cast is armed, exactly
     /// as retail's `0x801E4B1C` does.
     pub module_phase: u8,
@@ -66,9 +66,8 @@ pub struct CastFxState {
     /// charge): the band's fold owes the cast nothing.
     pub module_skips_fold: bool,
     /// PROT 0954's module-resident words while its body runs
-    /// ([`legaia_engine_battle_vm::cast_fatal_decision`]).
-    pub(crate) fatal_decision:
-        Option<legaia_engine_battle_vm::cast_fatal_decision::FatalDecisionState>,
+    /// ([`legaia_engine_cast::cast_fatal_decision`]).
+    pub(crate) fatal_decision: Option<legaia_engine_cast::cast_fatal_decision::FatalDecisionState>,
     /// The outcome name PROT 0954's arm 9 put up in the move-name label
     /// (HUD element `0x4C`), until the band leaves. Read by
     /// `battle_hud::battle_move_name`.
@@ -102,10 +101,10 @@ pub struct CastFxState {
     /// PROT 0904's draw state: the beam trail ring and the packets its last
     /// tick drew ([`crate::world::World::theeder_draw`]). Reset when a cast
     /// is armed.
-    pub module_theeder: legaia_engine_battle_vm::seru_magic_ticks::TheederFx,
+    pub module_theeder: legaia_engine_cast::seru_magic_ticks::TheederFx,
     /// PROT 0912's crystal turn word `0x801F92AC`: zeroed on arm 3's pass,
     /// stepped down on each held pass of arm 4
-    /// ([`legaia_engine_battle_vm::cast_module_camera::freed_crystal_corners`]).
+    /// ([`legaia_engine_cast::cast_module_camera::freed_crystal_corners`]).
     pub(crate) module_freed_turn: i32,
     /// The monster poses PROT 0927's arm 0 saves (`0x801F9C9C` / `0x801F9CBC`)
     /// and arms 27 / 28 restore: `(engine slot, position, facing)`.
@@ -136,19 +135,17 @@ pub struct CastFxState {
     /// cast and holds the verdict here for every later frame, instead of
     /// re-rolling per frame (which would make a resist flicker into a kill).
     /// `None` while no Nighto cast is resident.
-    pub(crate) module_nighto_outcome:
-        Option<legaia_engine_battle_vm::seru_magic_ticks::NightoOutcome>,
+    pub(crate) module_nighto_outcome: Option<legaia_engine_cast::seru_magic_ticks::NightoOutcome>,
     /// The move VM's op-`0x20` calls a resident module's parts made since
     /// the module's last tick - `(*gp[0x714])(actor, op[1], op[2])`, the
     /// module's own `0x801F6734` stager row - as `(arm, what the stager reads
     /// off the calling part)`. The band drains them into the module's stager
     /// (`World::run_cast_module_code`); PROT 0909's phase rendezvous are two
     /// of them.
-    pub(crate) module_stager_calls:
-        Vec<(u8, legaia_engine_battle_vm::cast_module_ticks::StagerCaller)>,
+    pub(crate) module_stager_calls: Vec<(u8, legaia_engine_cast::cast_module_ticks::StagerCaller)>,
     /// The clocks of PROT 0909's stager-calling records the host did not
     /// seat, as `(record, stager arm, frames left)`
-    /// ([`legaia_engine_battle_vm::cast_module_camera::VIGURO_STAGER_CALLERS`]).
+    /// ([`legaia_engine_cast::cast_module_camera::VIGURO_STAGER_CALLERS`]).
     /// Armed on the pass whose arm spawns the record and dropped when the
     /// record is seated as a part, which then makes the call itself.
     pub(crate) module_record_clocks: Vec<(u32, u8, u16)>,
@@ -156,14 +153,14 @@ pub struct CastFxState {
     /// The `+0x1DD` value PROT 0940's split arm displaced off the caster,
     /// which the module keeps in its own image word `0x801F8658` until the
     /// `0xFF` arm puts it back
-    /// ([`legaia_engine_battle_vm::cast_arm_ticks::glare_divide_split_tick`]).
+    /// ([`legaia_engine_cast::cast_arm_ticks::glare_divide_split_tick`]).
     /// `None` outside that choreography.
     pub(crate) module_split_saved_target: Option<u8>,
     /// PROT 0910 (Swordie)'s per-slash progress words, hit counter, settle
     /// countdown and `ctx[+0x6D8]` arm timer
-    /// ([`legaia_engine_battle_vm::seru_magic_ticks::SwordieSlashes`]) - the module
+    /// ([`legaia_engine_cast::seru_magic_ticks::SwordieSlashes`]) - the module
     /// image's own words in retail, so a fresh cast starts them at zero.
-    pub module_swordie: legaia_engine_battle_vm::seru_magic_ticks::SwordieSlashes,
+    pub module_swordie: legaia_engine_cast::seru_magic_ticks::SwordieSlashes,
     /// PROT 0920 (Slippery)'s Deadly Rain: its records, budget and colour
     /// words and the streaks its last call drew ([`ModuleRain`]).
     pub module_rain: ModuleRain,
@@ -171,13 +168,13 @@ pub struct CastFxState {
     pub module_orb: ModuleOrb,
     /// The settle countdown word PROT 0909 / 0911 / 0912 / 0913 arm after
     /// their hit and drain before they write `0xFF`
-    /// (`legaia_engine_battle_vm::seru_magic_ticks::SETTLE_DRAIN_PER_TICK`).
+    /// (`legaia_engine_cast::seru_magic_ticks::SETTLE_DRAIN_PER_TICK`).
     pub module_settle_countdown: i32,
     /// The resident player-Seru module's camera-arm state: its countdown
     /// word and the creature seat as the module placed it
-    /// ([`legaia_engine_battle_vm::cast_module_camera`]). Module-image words in
+    /// ([`legaia_engine_cast::cast_module_camera`]). Module-image words in
     /// retail, so a fresh cast starts them at zero.
-    pub module_cam: legaia_engine_battle_vm::cast_module_camera::ModuleCamState,
+    pub module_cam: legaia_engine_cast::cast_module_camera::ModuleCamState,
     /// The resident module's presentation-hook state: the colour-wash block
     /// `ctx[+0x27A..]`, the armed wash its last tick armed, and which arm's
     /// once-per-arm calls have fired
@@ -194,7 +191,7 @@ pub struct CastFxState {
     /// disc-free host, or any cast that is not capture-class, sees.
     pub(crate) capture_spell: Option<u8>,
     /// The caster's clip stages the resident capture-class body owes and its
-    /// port does not write ([`legaia_engine_battle_vm::cast_module_ticks::CAPTURE_CASTER_STAGES`]),
+    /// port does not write ([`legaia_engine_cast::cast_module_ticks::CAPTURE_CASTER_STAGES`]),
     /// replayed at the head of the band by
     /// [`crate::world::World::capture_stager_tick`]. `None` once played out,
     /// or for a body that stages nothing on its caster.
@@ -262,9 +259,9 @@ pub struct CastFxState {
     /// seed (`0x0C`).
     pub(crate) homing_holds_lists: Option<u8>,
     /// The text a directed summon module's arm last put up
-    /// ([`legaia_engine_battle_vm::cast_module_camera::ModuleCaption`]), cleared at
+    /// ([`legaia_engine_cast::cast_module_camera::ModuleCaption`]), cleared at
     /// the band's `0x37` exit. Read by `battle_hud::battle_move_name`.
-    pub(crate) module_caption: Option<legaia_engine_battle_vm::cast_module_camera::ModuleCaption>,
+    pub(crate) module_caption: Option<legaia_engine_cast::cast_module_camera::ModuleCaption>,
     /// Pending move-FX sound cue id (`+0x0d`), set by [`crate::world::World::spawn_move_fx`]
     /// when the move carries a non-zero cue. The host drains it via
     /// [`crate::world::World::take_pending_move_fx_cue`] and routes it through

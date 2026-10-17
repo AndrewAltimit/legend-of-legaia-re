@@ -83,12 +83,12 @@ impl World {
                     13 | 18 => {
                         s.anim_rate = 8;
                         let next = s.staged_anim.wrapping_add(1);
-                        legaia_engine_battle_vm::cast_module_ticks::stage_clip(&mut s, next);
+                        legaia_engine_cast::cast_module_ticks::stage_clip(&mut s, next);
                     }
                     23 => {
                         s.anim_rate = 2;
                         let next = s.staged_anim.wrapping_add(1);
-                        legaia_engine_battle_vm::cast_module_ticks::stage_clip(&mut s, next);
+                        legaia_engine_cast::cast_module_ticks::stage_clip(&mut s, next);
                     }
                     _ => {}
                 }
@@ -103,7 +103,7 @@ impl World {
         }
         // The flush runs ahead of the arm's own spawns, which the band seats
         // after the module's pass.
-        if legaia_engine_battle_vm::cast_module_camera::juggernaut_flushes_pool(phase) {
+        if legaia_engine_cast::cast_module_camera::juggernaut_flushes_pool(phase) {
             self.juggernaut_pool_flush();
         }
         match phase {
@@ -228,7 +228,7 @@ impl World {
     ///
     /// REF: FUN_801F85A8
     pub(in crate::world::battle::cast_band) fn run_juggernaut_stager_calls(&mut self) {
-        use legaia_engine_battle_vm::cast_module_ticks as ticks;
+        use legaia_engine_cast::cast_module_ticks as ticks;
         let calls = std::mem::take(&mut self.casting.module_stager_calls);
         for (arm, caller) in calls {
             for s in ticks::juggernaut_stager_spawns(arm, caller) {
@@ -251,9 +251,9 @@ impl World {
     }
 
     /// PROT 0927's epilogue shake, once per tick of its body
-    /// ([`legaia_engine_battle_vm::cast_module_ticks::juggernaut_shake_step`]).
+    /// ([`legaia_engine_cast::cast_module_ticks::juggernaut_shake_step`]).
     fn juggernaut_shake(&mut self) {
-        let dy = legaia_engine_battle_vm::cast_module_ticks::juggernaut_shake_step(
+        let dy = legaia_engine_cast::cast_module_ticks::juggernaut_shake_step(
             &mut self.casting.module_shake,
         );
         if dy != 0
@@ -267,7 +267,7 @@ impl World {
     /// module image ([`ModuleCaption::ModuleString`]), read off the disc's
     /// copy the effect pool holds. `None` disc-free.
     ///
-    /// [`ModuleCaption::ModuleString`]: legaia_engine_battle_vm::cast_module_camera::ModuleCaption::ModuleString
+    /// [`ModuleCaption::ModuleString`]: legaia_engine_cast::cast_module_camera::ModuleCaption::ModuleString
     pub(crate) fn cast_module_string(&self, spell_id: u8, va: u32) -> Option<String> {
         const LINK_BASE: u32 = legaia_overlay_images::summon_overlay::SUMMON_OVERLAY_LINK_BASE;
         let entry = self.cast_module_for(spell_id)?;
@@ -283,7 +283,7 @@ impl World {
     /// arms' and its stager's - halts; the two records it seats through
     /// `FUN_80021B04` run on.
     pub(in crate::world::battle::cast_band) fn juggernaut_pool_flush(&mut self) {
-        use legaia_engine_battle_vm::cast_module_camera::JUGGERNAUT_UNPOOLED;
+        use legaia_engine_cast::cast_module_camera::JUGGERNAUT_UNPOOLED;
         if let Some(scene) = self.casting.active_summon.as_mut() {
             for part in &mut scene.parts {
                 if part.tag.is_some_and(|t| !JUGGERNAUT_UNPOOLED.contains(&t)) {

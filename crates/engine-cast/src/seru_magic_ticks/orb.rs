@@ -147,7 +147,7 @@ pub const ORB_ARM4_REARM_MUL: i32 = 180;
 /// `4` 100, arm `5` 180, arm `9` 256 and arm `0x0A` 256 - retail's measured
 /// 128 / 103 / 180 / 256 vsyncs.
 ///
-/// `amount` is [`crate::battle_formulas::orb_heal_amount`] of the caster's per-magic level, and
+/// `amount` is [`legaia_engine_battle_vm::battle_formulas::orb_heal_amount`] of the caster's per-magic level, and
 /// `max_hp` answers `+0x14E` for a seat, neither of which
 /// [`CastActorState`] carries. `cleanse` is the `0x801F6960` selector, or
 /// `None` when the level gate fails.

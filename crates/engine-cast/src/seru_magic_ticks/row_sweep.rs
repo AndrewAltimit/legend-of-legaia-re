@@ -239,10 +239,11 @@ pub const SERU_B_DONE_PHASE: u8 = 0xFF;
 /// countdown word by `0x1F800393 * 0x1F80037D` (frame step times the speed
 /// scalar) a battle pass; the engine ticks once a vsync, so a tick drains
 /// the scalar alone - the convention [`SwordieClock`] states for PROT 0910.
-pub const SETTLE_DRAIN_PER_TICK: i32 = crate::battle_anim_rate::RATE_NORMAL as i32;
+pub const SETTLE_DRAIN_PER_TICK: i32 =
+    legaia_engine_battle_vm::battle_anim_rate::RATE_NORMAL as i32;
 
 /// The scalar the arms shift into their countdown re-arms (`lbu 0x37D`).
-pub(super) const SETTLE_SCALAR: i32 = crate::battle_anim_rate::RATE_NORMAL as i32;
+pub(super) const SETTLE_SCALAR: i32 = legaia_engine_battle_vm::battle_anim_rate::RATE_NORMAL as i32;
 
 /// The gated drain the settle arms of PROT 0909, 0912 and 0913 open with
 /// (`lw; blez; subu; sw; bgtz`): a word already spent is left alone, a live

@@ -1,5 +1,5 @@
 //! The summon-creature directors' writes outside the camera
-//! ([`legaia_engine_battle_vm::cast_module_camera`]'s whole-chain directors):
+//! ([`legaia_engine_cast::cast_module_camera`]'s whole-chain directors):
 //! the colour words their arms drive on the creature and the victim,
 //! PROT 0916's (Aluru) kill verdict and instant kill, and PROT 0931's (Jedo)
 //! kill of the monster row.
@@ -16,7 +16,7 @@ impl World {
     /// Nighto's: the scripted-fight byte and the victim record's `+0x20`,
     /// unless the victim carries `+0x16E` bit `4`.
     ///
-    /// [`ModuleCamState::kill`]: legaia_engine_battle_vm::cast_module_camera::ModuleCamState::kill
+    /// [`ModuleCamState::kill`]: legaia_engine_cast::cast_module_camera::ModuleCamState::kill
     ///
     /// REF: overlay_summon_aluru_0916_801f69f8 (`0x801F6D44..0x801F6E44`)
     pub(in crate::world::battle::cast_band) fn draw_aluru_verdict(
@@ -25,7 +25,7 @@ impl World {
         victim_slot: u8,
         spell_id: u8,
     ) {
-        use legaia_engine_battle_vm::cast_module_camera as cam;
+        use legaia_engine_cast::cast_module_camera as cam;
         if self.casting.module_cam.kill.is_some() {
             return;
         }
@@ -38,7 +38,7 @@ impl World {
                 .and_then(|id| self.tables.monster_catalog.get(id))
                 .is_some_and(|def| def.wide_texture_page != 0)
             && self.cast_view(victim_slot).flags
-                & legaia_engine_battle_vm::cast_module_ticks::FLAG_NON_TARGETABLE
+                & legaia_engine_cast::cast_module_ticks::FLAG_NON_TARGETABLE
                 == 0;
         let roll = (!skipped).then(|| self.next_rand());
         self.casting.module_cam.kill = Some(cam::aluru_kill_verdict(roll, level));
@@ -61,8 +61,8 @@ impl World {
     ///   monster's `+0x1BA` a pass (`0x801F86E0..0x801F874C`) and its exit
     ///   zeroes their HP (`0x801F8814`).
     ///
-    /// [`ModuleCamState::creature_shatter`]: legaia_engine_battle_vm::cast_module_camera::ModuleCamState::creature_shatter
-    /// [`ModuleCamState::victim_shatter_step`]: legaia_engine_battle_vm::cast_module_camera::ModuleCamState::victim_shatter_step
+    /// [`ModuleCamState::creature_shatter`]: legaia_engine_cast::cast_module_camera::ModuleCamState::creature_shatter
+    /// [`ModuleCamState::victim_shatter_step`]: legaia_engine_cast::cast_module_camera::ModuleCamState::victim_shatter_step
     pub(in crate::world::battle::cast_band) fn apply_summon_body_writes(
         &mut self,
         entry: u32,
@@ -71,7 +71,7 @@ impl World {
         victim_slot: u8,
         seat_slot: u8,
     ) {
-        use legaia_engine_battle_vm::cast_module_camera as cam;
+        use legaia_engine_cast::cast_module_camera as cam;
         let st = self.casting.module_cam;
         let victim = st.victim_slot.unwrap_or(victim_slot);
         if entry == cam::ALURU_ENTRY
@@ -122,7 +122,7 @@ impl World {
     /// band's fold, on the pass that makes them: each target's roll is the
     /// summon branch of `FUN_801DD0AC` ([`Self::player_summon_predamage`]),
     /// clamped to `HP - 1`
-    /// ([`legaia_engine_battle_vm::seru_magic_ticks::summon_pre_hit`]).
+    /// ([`legaia_engine_cast::seru_magic_ticks::summon_pre_hit`]).
     ///
     /// - PROT 0915 arm 7's pass: the latched victim, the roll quartered and
     ///   floored at `1` (`0x801F7004..`); skipped for a victim with
@@ -144,7 +144,7 @@ impl World {
         caster: u8,
         spell_id: u8,
     ) {
-        use legaia_engine_battle_vm::cast_module_ticks::FLAG_NON_TARGETABLE;
+        use legaia_engine_cast::cast_module_ticks::FLAG_NON_TARGETABLE;
         let st = self.casting.module_cam;
         let targets: Vec<u8> = match (entry, phase_in) {
             (915, 7) if passed => st
@@ -180,7 +180,7 @@ impl World {
             if v.hp == 0 {
                 continue;
             }
-            legaia_engine_battle_vm::seru_magic_ticks::summon_pre_hit(&mut v, u32::from(dmg));
+            legaia_engine_cast::seru_magic_ticks::summon_pre_hit(&mut v, u32::from(dmg));
             self.write_cast_view(t, &v);
         }
     }
@@ -271,7 +271,7 @@ impl World {
         let st = self.casting.summon_stager.as_ref()?;
         (self.mode == legaia_engine_mode::mode::SceneMode::Battle
             && self.cast_module_for(st.spell_id)
-                == Some(legaia_engine_battle_vm::cast_module_camera::ALURU_ENTRY))
+                == Some(legaia_engine_cast::cast_module_camera::ALURU_ENTRY))
         .then_some(self.casting.module_cam.band_spread)
         .flatten()
     }

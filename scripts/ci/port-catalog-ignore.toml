@@ -2015,7 +2015,7 @@
 #
 # The line between this section and a port is a damage wrapper or a write to
 # simulation state; the band's thirteen routines that cross it are ported in
-# `legaia_engine_battle_vm::cast_module_ticks` instead, and are not listed here.
+# `legaia_engine_cast::cast_module_ticks` instead, and are not listed here.
 # `crates/overlay-images/tests/cast_module_data_rows_real.rs` re-derives all three facts
 # per row off the disc: the frame-matched extent in the OWNING image, the spawn
 # count quoted in each reason below, and zero calls to FUN_801DD0AC /

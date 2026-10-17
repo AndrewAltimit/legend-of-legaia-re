@@ -6,11 +6,11 @@ use super::*;
 impl World {
     /// The capture-class module a cast of `spell_id` pages, when the body
     /// its trampoline picks has its spawns seated per arm
-    /// ([`legaia_engine_battle_vm::cast_module_camera::capture_spawns_per_arm`]).
+    /// ([`legaia_engine_cast::cast_module_camera::capture_spawns_per_arm`]).
     pub(in crate::world) fn capture_per_arm_entry(&self, spell_id: u8) -> Option<u32> {
         let e = self.cast_module_for(spell_id)?;
-        let body = legaia_engine_battle_vm::cast_module_ticks::capture_tick_body(e, spell_id);
-        legaia_engine_battle_vm::cast_module_camera::capture_spawns_per_arm(e, body).then_some(e)
+        let body = legaia_engine_cast::cast_module_ticks::capture_tick_body(e, spell_id);
+        legaia_engine_cast::cast_module_camera::capture_spawns_per_arm(e, body).then_some(e)
     }
 
     /// One tick of the **capture band's** resident module - the engine body
@@ -31,7 +31,7 @@ impl World {
     /// the two.
     ///
     /// PORT: FUN_801F2160 (the dispatch seam; the per-module tick bodies are
-    /// [`legaia_engine_battle_vm::cast_module_ticks`])
+    /// [`legaia_engine_cast::cast_module_ticks`])
     pub fn capture_stager_tick(&mut self) -> bool {
         let Some(spell_id) = self.casting.capture_spell else {
             return false;
@@ -79,7 +79,7 @@ impl World {
         // A module whose arms' spawns are ported seats each on the pass
         // its arm makes the call.
         if per_arm == Some(run.prot_entry) {
-            use legaia_engine_battle_vm::cast_module_camera as cmc;
+            use legaia_engine_cast::cast_module_camera as cmc;
             // An arm that seats on every pass (PROT 0962's rays): the roll
             // is `rand() % 0x1000` over the zeroed stack trio's `z`.
             let every = cmc::capture_arm_spawns_every(run.prot_entry, arm);
@@ -156,7 +156,7 @@ impl World {
 
     /// The [`CasterStageRun`] a capture-class cast of `spell_id` by the
     /// acting seat owes, when its body's port stages nothing on the caster
-    /// ([`vm::cast_module_ticks::capture_caster_stages`]). Only a monster seat
+    /// ([`legaia_engine_cast::cast_module_ticks::capture_caster_stages`]). Only a monster seat
     /// with installed clips plays one, and a stage naming an entry the
     /// caster's record does not carry is dropped - retail would index past
     /// the record's offset array there (the Gobu Gobu Curse fault on
@@ -168,10 +168,10 @@ impl World {
         let seat_monster = (actor.battle_monster_id? & 0xFF) as u8;
         let installed = actor.battle_action_clips.as_ref()?;
         let approach =
-            legaia_engine_battle_vm::cast_module_ticks::capture_body_approaches(entry, spell_id)
+            legaia_engine_cast::cast_module_ticks::capture_body_approaches(entry, spell_id)
                 .then_some(actor.battle.active_target)
                 .filter(|&t| t < 8 && usize::from(t) < self.actors.len() && t != slot);
-        let clips: Vec<u8> = legaia_engine_battle_vm::cast_module_ticks::capture_caster_stages(
+        let clips: Vec<u8> = legaia_engine_cast::cast_module_ticks::capture_caster_stages(
             entry,
             spell_id,
             seat_monster,

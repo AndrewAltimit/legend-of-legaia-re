@@ -6,7 +6,7 @@ use super::*;
 
 impl World {
     /// Fill the director inputs of `st` that the seats do not carry
-    /// ([`legaia_engine_battle_vm::cast_module_camera::ModuleCamState::live_yaw`],
+    /// ([`legaia_engine_cast::cast_module_camera::ModuleCamState::live_yaw`],
     /// `target_aim`, `module_words`) for module `entry` cast by `caster`.
     ///
     /// REF: FUN_801DCEAC
@@ -14,7 +14,7 @@ impl World {
         &self,
         entry: u32,
         caster: u8,
-        st: &mut legaia_engine_battle_vm::cast_module_camera::ModuleCamState,
+        st: &mut legaia_engine_cast::cast_module_camera::ModuleCamState,
     ) {
         use legaia_engine_battle_vm::battle_target_group::{
             GroupSlot, MIN_GROUP_EXTENT, RENDER_FLAG_HIDDEN, target_group_aim,

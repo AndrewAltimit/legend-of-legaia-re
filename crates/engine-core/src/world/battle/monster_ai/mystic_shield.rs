@@ -77,10 +77,8 @@ impl World {
     pub fn raise_mystic_shield(&mut self) {
         self.battle.monster_ai_state.flag_bd84 = 1;
         let seat = self
-            .engine_slot_for_retail_pool(
-                legaia_engine_battle_vm::cast_module_ticks::FIRST_MONSTER_SEAT,
-            )
-            .unwrap_or(legaia_engine_battle_vm::cast_module_ticks::FIRST_MONSTER_SEAT);
+            .engine_slot_for_retail_pool(legaia_engine_cast::cast_module_ticks::FIRST_MONSTER_SEAT)
+            .unwrap_or(legaia_engine_cast::cast_module_ticks::FIRST_MONSTER_SEAT);
         let Some((pos, rot)) = self.shield_anchor(usize::from(seat)) else {
             return;
         };

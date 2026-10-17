@@ -146,7 +146,7 @@ pub struct MonsterDef {
     /// ticks (PROT 0907 Nighto, 0908, 0916) read the byte record-direct
     /// through `0x801C9348[seat - 3]` as a "big model" resist proxy, and
     /// Nighto's kill / confuse roll
-    /// ([`legaia_engine_battle_vm::seru_magic_ticks::NightoRoll::target_immune`])
+    /// (`legaia_engine_cast::seru_magic_ticks::NightoRoll::target_immune`)
     /// forces the resist when it is non-zero **and** the fight is a scripted
     /// one (`ctx[+0x287]`). Its first reader is the model upload's VRAM rect
     /// widen, which the port's texture path does not consult.

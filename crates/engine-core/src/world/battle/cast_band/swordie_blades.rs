@@ -3,8 +3,8 @@
 //! call that leaves its slash travelling.
 
 use crate::world::World;
-use legaia_engine_battle_vm::cast_module_camera::{ModuleSpawn, SpawnAnchor, SpawnRecord};
-use legaia_engine_battle_vm::seru_magic_ticks::{
+use legaia_engine_cast::cast_module_camera::{ModuleSpawn, SpawnAnchor, SpawnRecord};
+use legaia_engine_cast::seru_magic_ticks::{
     SWORDIE_BLADE_RECORD, SwordieSlashes, swordie_blade_origin, swordie_blade_pose,
 };
 

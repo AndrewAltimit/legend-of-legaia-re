@@ -23,7 +23,7 @@
 //! Skips (and passes) without `LEGAIA_DISC_BIN` / `extracted/`.
 
 use legaia_engine_battle::monster_catalog::{vanilla_formation_table, vanilla_monster_catalog};
-use legaia_engine_battle_vm::cast_module_camera as cmc;
+use legaia_engine_cast::cast_module_camera as cmc;
 use legaia_engine_core::world::{Actor, World};
 use legaia_engine_mode::mode::SceneMode;
 use legaia_engine_system::input::{InputState, PadButton};

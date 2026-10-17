@@ -14,14 +14,14 @@ impl World {
 
     /// PROT 0910's (Swordie) packet builders on the module's last pass -
     /// the split panels and the slash streak
-    /// ([`legaia_engine_battle_vm::seru_magic_ticks::SwordieDraw`]), which
+    /// ([`legaia_engine_cast::seru_magic_ticks::SwordieDraw`]), which
     /// `legaia_render_kernels::cast_swordie` builds for both hosts. `None`
     /// outside a live Swordie cast.
-    pub fn swordie_draw(&self) -> Option<legaia_engine_battle_vm::seru_magic_ticks::SwordieDraw> {
+    pub fn swordie_draw(&self) -> Option<legaia_engine_cast::seru_magic_ticks::SwordieDraw> {
         let st = self.casting.summon_stager.as_ref()?;
         (self.mode == SceneMode::Battle
             && self.cast_module_for(st.spell_id)
-                == Some(legaia_engine_battle_vm::seru_magic_ticks::SWORDIE_ENTRY))
+                == Some(legaia_engine_cast::seru_magic_ticks::SWORDIE_ENTRY))
         .then_some(self.casting.module_swordie.draw)
     }
 

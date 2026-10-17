@@ -144,7 +144,7 @@ fn drive_module_through(world: &mut World, spell_id: u8, last: u8) {
 /// countdown, so this runs until the kill leg's settle (arm 14, which holds
 /// on the victim's fade) or the end of the cast.
 fn run_nighto_to_the_fork(world: &mut World) {
-    use legaia_engine_battle_vm::seru_magic_ticks::NIGHTO_KILL_SETTLE_ARM;
+    use legaia_engine_cast::seru_magic_ticks::NIGHTO_KILL_SETTLE_ARM;
     for _ in 0..8192 {
         if world.run_cast_module_code(0x85, 0).is_none() {
             break;

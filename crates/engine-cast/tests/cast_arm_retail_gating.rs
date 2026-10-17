@@ -41,7 +41,7 @@
 //! REF: FUN_801F2160
 //! REF: FUN_8004AD80
 
-use legaia_engine_battle_vm::cast_arm_ticks as arms;
+use legaia_engine_cast::cast_arm_ticks as arms;
 
 /// One measured cast: action id, owning PROT entry, the body VA retail
 /// entered, the phase bytes its arms walked in order, the dwell in module

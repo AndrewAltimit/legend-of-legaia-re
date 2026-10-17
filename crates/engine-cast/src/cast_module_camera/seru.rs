@@ -417,8 +417,8 @@ pub fn vera_arm_kills(phase: u8) -> Option<&'static [u32]> {
 /// keeps its actor at `ctx[+0x102C]`. The kind is the busy word the routine
 /// returns (`sp+0x38`, `1` while it runs). `vera_summon_mid_cast` holds it
 /// eight vsyncs in beside the band's flash-out.
-pub const VERA_RISE_FADE: crate::battle_action::SummonFadeTemplate =
-    crate::battle_action::SummonFadeTemplate {
+pub const VERA_RISE_FADE: legaia_engine_battle_vm::battle_action::SummonFadeTemplate =
+    legaia_engine_battle_vm::battle_action::SummonFadeTemplate {
         kind: 1,
         duration: 0x20,
         start_rgb: [0, 0, 0],
@@ -432,9 +432,12 @@ pub const VERA_RISE_FADE: crate::battle_action::SummonFadeTemplate =
 /// `(0xFF, 0xE0, 0x80)` -> black over `0x40` vsyncs and a blue one
 /// `(0, 0x1F, 0x7F)` -> black over `0x20`, both id `1` and done when they
 /// land.
-pub const VERA_CUT_FADES: [(crate::battle_action::SummonFadeTemplate, i16); 2] = [
+pub const VERA_CUT_FADES: [(
+    legaia_engine_battle_vm::battle_action::SummonFadeTemplate,
+    i16,
+); 2] = [
     (
-        crate::battle_action::SummonFadeTemplate {
+        legaia_engine_battle_vm::battle_action::SummonFadeTemplate {
             kind: 1,
             duration: 0x40,
             start_rgb: [0xFF, 0xE0, 0x80],
@@ -445,7 +448,7 @@ pub const VERA_CUT_FADES: [(crate::battle_action::SummonFadeTemplate, i16); 2] =
         1,
     ),
     (
-        crate::battle_action::SummonFadeTemplate {
+        legaia_engine_battle_vm::battle_action::SummonFadeTemplate {
             kind: 1,
             duration: 0x20,
             start_rgb: [0, 0x1F, 0x7F],

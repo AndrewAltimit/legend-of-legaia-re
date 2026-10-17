@@ -104,7 +104,7 @@ impl RetailBattle {
             track_coin: game_anchors::u8_at(ram, ctx + 0x26D) & 1,
             gimard_countdown: game_anchors::u32_at(
                 ram,
-                legaia_engine_battle_vm::cast_module_camera::GIMARD_COUNTDOWN_VA,
+                legaia_engine_cast::cast_module_camera::GIMARD_COUNTDOWN_VA,
             ) as i32,
             cam_style: game_anchors::u8_at(ram, ctx + 0xD),
             cam_tween: retail_cam_tween(ram, ctx),

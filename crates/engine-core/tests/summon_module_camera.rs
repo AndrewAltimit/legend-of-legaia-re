@@ -4,7 +4,7 @@
 //! Drives PROT 0903 (Gimard, spell `0x81`) through the stager seam the action
 //! SM calls in `0x35` / `0x36` (`World::summon_stager_tick`) with the shared
 //! battle camera stepping beside it, and checks the three things the module
-//! director (`legaia_engine_battle_vm::cast_module_camera`) is for:
+//! director (`legaia_engine_cast::cast_module_camera`) is for:
 //!
 //! - the band holds for as long as the module's countdown-paced arms do -
 //!   hundreds of frames, not the engine stager's own walk-in;
@@ -14,7 +14,7 @@
 //!
 //! Skips (and passes) without `LEGAIA_DISC_BIN` / `extracted/`.
 
-use legaia_engine_battle_vm::cast_module_ticks::SUMMON_SEAT;
+use legaia_engine_cast::cast_module_ticks::SUMMON_SEAT;
 use legaia_engine_core::world::{Actor, World};
 use legaia_engine_mode::mode::SceneMode;
 use legaia_overlay_images::cast_effect_pool::{CAST_MODULE_PROT_FIRST, CAST_MODULE_PROT_LAST};

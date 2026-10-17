@@ -263,8 +263,8 @@ pub fn gizam_stager_spawns(
 
 /// PROT 0912's stager arm `6` fade (`0x801F84CC..0x801F850C`): additive,
 /// `(0x80, 0x80, 0xFF)` to black over `0x40` frames, id `1`.
-pub const FREED_STAGER_FADE: crate::battle_action::SummonFadeTemplate =
-    crate::battle_action::SummonFadeTemplate {
+pub const FREED_STAGER_FADE: legaia_engine_battle_vm::battle_action::SummonFadeTemplate =
+    legaia_engine_battle_vm::battle_action::SummonFadeTemplate {
         kind: 1,
         duration: 0x40,
         start_rgb: [0x80, 0x80, 0xFF],

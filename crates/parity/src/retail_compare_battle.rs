@@ -311,7 +311,7 @@ pub struct RetailBattle {
     /// clip commit (`rand() % 2`).
     pub track_coin: u8,
     /// PROT 0903's countdown word
-    /// ([`legaia_engine_battle_vm::cast_module_camera::GIMARD_COUNTDOWN_VA`]) - only
+    /// ([`legaia_engine_cast::cast_module_camera::GIMARD_COUNTDOWN_VA`]) - only
     /// meaningful while that module is resident.
     pub gimard_countdown: i32,
     /// `ctx[+0xD]` - the acting action's framing style.

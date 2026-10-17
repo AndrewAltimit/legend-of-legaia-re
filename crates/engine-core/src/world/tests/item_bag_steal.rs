@@ -7,7 +7,7 @@
 //! (`[gp[+0x2D2], gp[+0x2D4])`).
 
 use super::*;
-use legaia_engine_battle_vm::cast_arm_ticks::StealOutcome;
+use legaia_engine_cast::cast_arm_ticks::StealOutcome;
 use legaia_save::retail_inventory::{ITEM_SLOTS_TOTAL, ItemWindow, NOT_IN_WINDOW};
 
 /// A party-seat world whose bag holds exactly the given `(slot, id, count)`

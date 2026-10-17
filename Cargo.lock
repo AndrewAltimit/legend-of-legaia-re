@@ -1568,6 +1568,7 @@ dependencies = [
  "legaia-engine-battle",
  "legaia-engine-battle-vm",
  "legaia-engine-camera",
+ "legaia-engine-cast",
  "legaia-engine-core",
  "legaia-engine-dialog",
  "legaia-engine-effects",
@@ -1577,6 +1578,19 @@ dependencies = [
  "legaia-engine-system",
  "legaia-save",
  "legaia-scene-formats",
+]
+
+[[package]]
+name = "legaia-engine-cast"
+version = "0.1.0"
+dependencies = [
+ "legaia-actor-formats",
+ "legaia-engine-battle-vm",
+ "legaia-engine-camera",
+ "legaia-engine-system",
+ "legaia-game-tables",
+ "legaia-overlay-images",
+ "legaia-prot",
 ]
 
 [[package]]
@@ -1594,6 +1608,7 @@ dependencies = [
  "legaia-engine-battle",
  "legaia-engine-battle-vm",
  "legaia-engine-camera",
+ "legaia-engine-cast",
  "legaia-engine-dialog",
  "legaia-engine-effects",
  "legaia-engine-field",
@@ -2001,6 +2016,7 @@ dependencies = [
  "glam",
  "legaia-engine-battle-vm",
  "legaia-engine-camera",
+ "legaia-engine-cast",
  "legaia-engine-field",
  "legaia-font",
  "legaia-game-tables",
@@ -2208,6 +2224,7 @@ dependencies = [
  "legaia-engine-battle-vm",
  "legaia-engine-camera",
  "legaia-engine-capture",
+ "legaia-engine-cast",
  "legaia-engine-core",
  "legaia-engine-dialog",
  "legaia-engine-effects",

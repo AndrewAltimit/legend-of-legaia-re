@@ -304,7 +304,7 @@ fn cast(
     w.battle.forced_monster_cast = Some((seat as u8, spell));
     let mut t = CastTrace {
         idles_in_retail: w.cast_module_for(spell).is_some_and(|entry| {
-            legaia_engine_battle_vm::cast_module_ticks::capture_body_idles_caster(entry, spell)
+            legaia_engine_cast::cast_module_ticks::capture_body_idles_caster(entry, spell)
         }),
         ..CastTrace::default()
     };
@@ -314,11 +314,11 @@ fn cast(
     // over; that action is not the seeded one. Only an action that *starts*
     // under observation counts.
     t.approaches = w.cast_module_for(spell).is_some_and(|entry| {
-        legaia_engine_battle_vm::cast_module_ticks::capture_body_approaches(entry, spell)
+        legaia_engine_cast::cast_module_ticks::capture_body_approaches(entry, spell)
     });
     t.walk_only = t.approaches
         && w.cast_module_for(spell).is_some_and(|entry| {
-            legaia_engine_battle_vm::cast_module_ticks::capture_caster_stages(entry, spell, 0, 0)
+            legaia_engine_cast::cast_module_ticks::capture_caster_stages(entry, spell, 0, 0)
                 .is_none()
         });
     t.evil_seru_magic = w.cast_module_for(spell) == Some(EVIL_SERU_MAGIC_ENTRY);
@@ -327,15 +327,15 @@ fn cast(
     // band is the choreography's retail length, which runs past the guard
     // (Genocidal Cannon ~1750 ticks, Dead End Crisis ~1540).
     t.owns_band = w.cast_module_for(spell).is_some_and(|entry| {
-        use legaia_engine_battle_vm::cast_module_camera as cam;
-        let body = legaia_engine_battle_vm::cast_module_ticks::capture_tick_body(entry, spell)
+        use legaia_engine_cast::cast_module_camera as cam;
+        let body = legaia_engine_cast::cast_module_ticks::capture_tick_body(entry, spell)
             .unwrap_or(cam::SINGLE_BODY);
-        entry == legaia_engine_battle_vm::cast_fatal_decision::FATAL_DECISION_ENTRY
+        entry == legaia_engine_cast::cast_fatal_decision::FATAL_DECISION_ENTRY
             || cam::capture_arm_countdowns(entry, body).is_some()
     });
     let mut start = (0i32, 0i32);
     t.deals_damage = w.cast_module_for(spell).is_some_and(|entry| {
-        legaia_engine_battle_vm::cast_module_ticks::capture_site_power(entry, spell).is_some()
+        legaia_engine_cast::cast_module_ticks::capture_site_power(entry, spell).is_some()
     });
     let party_hp = |w: &World| -> u32 { (0..3).map(|i| u32::from(w.actors[i].battle.hp)).sum() };
     let mut hp_at_start = party_hp(&w);

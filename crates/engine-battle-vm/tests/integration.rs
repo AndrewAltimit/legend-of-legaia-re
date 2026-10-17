@@ -15,6 +15,3 @@ mod battle_cue_group_wiring;
 mod battle_grid_cue_scus_real;
 mod battle_physical_predamage;
 mod battle_strike_facing;
-mod cast_arm_retail_gating;
-mod cast_chain_bodies_real;
-mod cast_module_trampoline_bodies;

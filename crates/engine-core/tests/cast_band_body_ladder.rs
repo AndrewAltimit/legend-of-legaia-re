@@ -30,42 +30,42 @@ const MODULE_SOURCES: [(&str, &str); 3] = [
     (
         "cast_seru_ticks_a",
         concat!(
-            include_str!("../../engine-battle-vm/src/seru_magic_ticks/hit_sites.rs"),
-            include_str!("../../engine-battle-vm/src/seru_magic_ticks/gimard.rs"),
-            include_str!("../../engine-battle-vm/src/seru_magic_ticks/theeder.rs"),
-            include_str!("../../engine-battle-vm/src/seru_magic_ticks/vera.rs"),
-            include_str!("../../engine-battle-vm/src/seru_magic_ticks/gizam.rs"),
-            include_str!("../../engine-battle-vm/src/seru_magic_ticks/nighto.rs"),
-            include_str!("../../engine-battle-vm/src/seru_magic_ticks/zenoir.rs"),
-            include_str!("../../engine-battle-vm/src/seru_magic_ticks/tests/ids_0x81_0x86.rs"),
+            include_str!("../../engine-cast/src/seru_magic_ticks/hit_sites.rs"),
+            include_str!("../../engine-cast/src/seru_magic_ticks/gimard.rs"),
+            include_str!("../../engine-cast/src/seru_magic_ticks/theeder.rs"),
+            include_str!("../../engine-cast/src/seru_magic_ticks/vera.rs"),
+            include_str!("../../engine-cast/src/seru_magic_ticks/gizam.rs"),
+            include_str!("../../engine-cast/src/seru_magic_ticks/nighto.rs"),
+            include_str!("../../engine-cast/src/seru_magic_ticks/zenoir.rs"),
+            include_str!("../../engine-cast/src/seru_magic_ticks/tests/ids_0x81_0x86.rs"),
         ),
     ),
     (
         "cast_seru_ticks_b",
         concat!(
-            include_str!("../../engine-battle-vm/src/seru_magic_ticks/row_sweep.rs"),
-            include_str!("../../engine-battle-vm/src/seru_magic_ticks/viguro.rs"),
-            include_str!("../../engine-battle-vm/src/seru_magic_ticks/swordie.rs"),
-            include_str!("../../engine-battle-vm/src/seru_magic_ticks/orb.rs"),
-            include_str!("../../engine-battle-vm/src/seru_magic_ticks/spoon.rs"),
-            include_str!("../../engine-battle-vm/src/seru_magic_ticks/freed.rs"),
-            include_str!("../../engine-battle-vm/src/seru_magic_ticks/nova.rs"),
-            include_str!("../../engine-battle-vm/src/seru_magic_ticks/tests/ids_0x87_0x8b.rs"),
+            include_str!("../../engine-cast/src/seru_magic_ticks/row_sweep.rs"),
+            include_str!("../../engine-cast/src/seru_magic_ticks/viguro.rs"),
+            include_str!("../../engine-cast/src/seru_magic_ticks/swordie.rs"),
+            include_str!("../../engine-cast/src/seru_magic_ticks/orb.rs"),
+            include_str!("../../engine-cast/src/seru_magic_ticks/spoon.rs"),
+            include_str!("../../engine-cast/src/seru_magic_ticks/freed.rs"),
+            include_str!("../../engine-cast/src/seru_magic_ticks/nova.rs"),
+            include_str!("../../engine-cast/src/seru_magic_ticks/tests/ids_0x87_0x8b.rs"),
         ),
     ),
     (
         "cast_arm_ticks",
         concat!(
-            include_str!("../../engine-battle-vm/src/cast_arm_ticks.rs"),
-            include_str!("../../engine-battle-vm/src/cast_arm_ticks/damage_shapes.rs"),
-            include_str!("../../engine-battle-vm/src/cast_arm_ticks/glare_divide.rs"),
-            include_str!("../../engine-battle-vm/src/cast_arm_ticks/steal.rs"),
-            include_str!("../../engine-battle-vm/src/cast_arm_ticks/curse.rs"),
-            include_str!("../../engine-battle-vm/src/cast_arm_ticks/guilty_cross.rs"),
-            include_str!("../../engine-battle-vm/src/cast_arm_ticks/rolling_flare.rs"),
-            include_str!("../../engine-battle-vm/src/cast_arm_ticks/water_hazard.rs"),
-            include_str!("../../engine-battle-vm/src/cast_arm_ticks/blade_breath.rs"),
-            include_str!("../../engine-battle-vm/src/cast_arm_ticks/tests.rs"),
+            include_str!("../../engine-cast/src/cast_arm_ticks.rs"),
+            include_str!("../../engine-cast/src/cast_arm_ticks/damage_shapes.rs"),
+            include_str!("../../engine-cast/src/cast_arm_ticks/glare_divide.rs"),
+            include_str!("../../engine-cast/src/cast_arm_ticks/steal.rs"),
+            include_str!("../../engine-cast/src/cast_arm_ticks/curse.rs"),
+            include_str!("../../engine-cast/src/cast_arm_ticks/guilty_cross.rs"),
+            include_str!("../../engine-cast/src/cast_arm_ticks/rolling_flare.rs"),
+            include_str!("../../engine-cast/src/cast_arm_ticks/water_hazard.rs"),
+            include_str!("../../engine-cast/src/cast_arm_ticks/blade_breath.rs"),
+            include_str!("../../engine-cast/src/cast_arm_ticks/tests.rs"),
         ),
     ),
 ];
@@ -223,7 +223,7 @@ fn seru_world() -> World {
     let mut world = seated_world(3);
     world.actors[0].battle.active_target = 3;
     world.battle_ctx.active_actor = 0;
-    world.casting.summon_actor_slot = Some(legaia_engine_battle_vm::cast_module_ticks::SUMMON_SEAT);
+    world.casting.summon_actor_slot = Some(legaia_engine_cast::cast_module_ticks::SUMMON_SEAT);
     world
 }
 

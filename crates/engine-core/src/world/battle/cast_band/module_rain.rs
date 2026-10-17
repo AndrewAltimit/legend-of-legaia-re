@@ -3,7 +3,7 @@
 //! non-zero, and the streaks both hosts draw.
 
 use super::*;
-use legaia_engine_battle_vm::cast_module_camera::{
+use legaia_engine_cast::cast_module_camera::{
     DELTA_PER_TICK, SLIPPERY_COLOUR_ARM, SLIPPERY_RAIN_DRAIN_ARM, SLIPPERY_RAIN_SEED_ARM,
 };
 use legaia_engine_mode::mode::SceneMode;
@@ -58,7 +58,7 @@ impl World {
                     rain.colour = RAIN_RED;
                 }
             }
-            legaia_engine_battle_vm::seru_magic_ticks::SERU_B_DONE_PHASE => rain.budget = 0,
+            legaia_engine_cast::seru_magic_ticks::SERU_B_DONE_PHASE => rain.budget = 0,
             _ => {}
         }
     }
@@ -117,10 +117,11 @@ impl World {
         if splashes.is_empty() {
             return;
         }
-        let Some(module) =
-            self.casting.effect_pool.as_ref().and_then(|p| {
-                p.module(legaia_engine_battle_vm::cast_module_camera::SLIPPERY_ENTRY)
-            })
+        let Some(module) = self
+            .casting
+            .effect_pool
+            .as_ref()
+            .and_then(|p| p.module(legaia_engine_cast::cast_module_camera::SLIPPERY_ENTRY))
         else {
             return;
         };

@@ -171,9 +171,8 @@ impl World {
         // in a single pass too (PROT 0918's ungated arm 17, whose kill of
         // arm 15's held white fade would otherwise never fire).
         let engine_paced =
-            legaia_engine_battle_vm::cast_module_camera::summon_holds::summon_holds(entry)
-                .is_some()
-                || legaia_engine_battle_vm::cast_module_camera::module_profile(entry)
+            legaia_engine_cast::cast_module_camera::summon_holds::summon_holds(entry).is_some()
+                || legaia_engine_cast::cast_module_camera::module_profile(entry)
                     .is_some_and(|p| p.director_body);
         let paced = !holds || held > 0 || engine_paced || BODY_PACED.contains(&entry);
         let first_hold = holds && !passed && held == 0;
@@ -208,7 +207,7 @@ impl World {
         for s in &sites {
             // Past a ported countdown gate a site runs on the pass alone
             // (`summon_holds::gate_va`), whatever timing the decoder read.
-            let timing = match legaia_engine_battle_vm::cast_module_camera::summon_holds::gate_va(
+            let timing = match legaia_engine_cast::cast_module_camera::summon_holds::gate_va(
                 entry, phase_in,
             ) {
                 Some(gate) if s.va > gate => SiteTiming::Pass,
