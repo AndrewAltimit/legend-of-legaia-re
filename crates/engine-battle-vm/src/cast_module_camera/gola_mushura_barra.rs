@@ -41,18 +41,21 @@ pub const GOLA_GOLA_SHATTER_CAP: u16 = 0x7530;
 /// |---|---|---|
 /// | 0, 1 | - | cuts (`0x801F6B2C`, `0x801F6BA4`) |
 /// | 2, 3 | - (the load) | TR z `+= 4 delta` a pass; arm 3 seats the creature `(0x400, -0x267)` off the caster, facing `0`, raises its floor clip, stages clip `1` and frames it over `0x40` frames |
-/// | 4..6 | the creature's clip frame `+0x68` (not fed: pass) | three `0x40` / `0x70`-frame framings |
+/// | 4..6 | the creature's clip cursor `+0x68` past `0x100` / `0x200` / `0x300` | three `0x40` / `0x70`-frame framings |
 /// | 7 | creature clip `0` | `0x40`-frame rise; clip `2` staged |
-/// | 8 | clip frame (pass) | `0x40`-frame framing, floor clip dropped, the spell name |
+/// | 8 | the cursor past `0x200` | `0x40`-frame framing, floor clip dropped, the spell name |
 /// | 9 | until clip `2` plays | word `= scalar * 180` |
 /// | 0xA | word | a `0xC0`-frame tilt onto the caster, the attack name, clip `3` |
-/// | 0xB | the loop (pass) | yaw `+= 4 p` a pass; word `= 0`; a red fade in |
-/// | 0xC | word `+= p` until `word >> 4 + 2` reaches `0x20` | yaw and TR z `+= 4 p`; word `= scalar * 0x70` |
+/// | 0xB | the clip's park (`+0x21B` off `0xFF`) | yaw `+= 4 p` a pass; word `= 0`; a red fade in |
+/// | 0xC | word `+= p` until `word >> 4 + 2` reaches `0x20` | yaw and TR z `+= 4 p`; the park re-armed and the rate ramped to that byte; word `= scalar * 0x70` |
 /// | 0xD | word | yaw / TR z `+= 4 p`, pitch `-= p`; on its pass the hit, a `0x40`-frame framing of the target (a group by its centroid, TR z four extents; a seat at two thirds of the depth), two fades; word `+= scalar << 7` |
 /// | 0xE | the row settled and the word spent | the creature breaks up (`+= delta << 7` a pass, capped at `0x7530`); yaw `+= p / 2`, TR z `+= 4 p`; then `0xFF` |
 /// | 0xFF | - | `ctx[+0x6DA] = 0`; the creature's loop counter cleared; done |
 ///
-/// PORT: FUN_801F69F0 (PROT 0914; the whole phase chain's gates, camera writes, captions, creature seat, clips and colour word - part spawns, the row's reaction writes and the clip-frame waits of arms 4..6 and 8 not carried)
+/// The frame and park waits are bounded ([`HOST_WAIT_CAP`]) so a creature
+/// the host stops animating cannot hold the band.
+///
+/// PORT: FUN_801F69F0 (PROT 0914; the whole phase chain's gates, camera writes, captions, creature seat, clips, rate, loop window and colour word - the row's reaction writes not carried)
 pub fn gola_gola_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) -> ArmDirection {
     let c = seats.caster;
     let at = |dx: i32| [-i32::from(c.x) - dx, 0, -i32::from(c.z) + 0x267];
@@ -75,6 +78,12 @@ pub fn gola_gola_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeat
                 tr_z,
             )
         }
+        // `lh v0,0x68(node); slti v0,v0,0x100 / 0x200 / 0x300; bne` - the
+        // arms hold until the creature's clip cursor reaches the frame
+        // (`0x801F6D88`, `0x801F6E30`, `0x801F6EC4`).
+        4 if frame_wait(st, phase, 0x100) => ArmDirection::HOLD,
+        5 if frame_wait(st, phase, 0x200) => ArmDirection::HOLD,
+        6 if frame_wait(st, phase, 0x300) => ArmDirection::HOLD,
         4 => cut([-0x180, 0xC00], [0, 0x600, 0x100], at(0x400), 0x40),
         5 => cut([0x200, 0xC00], [0, 0, 0x800], at(0x672), 0x40),
         6 => cut([0, 0x800], [0, 0x600, 0x1000], at(0x400), 0x70),
@@ -86,6 +95,10 @@ pub fn gola_gola_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeat
             cut([-0x100, 0x800], [0, 0x2000, 0x1000], at(0x400), 0x40)
         }
         8 => {
+            // `slti v0,v0,0x200` on the cursor at `0x801F7004`.
+            if frame_wait(st, phase, 0x200) {
+                return ArmDirection::HOLD;
+            }
             st.creature_floor_clip = false;
             caption(
                 cut([-0x80, 0x900], [0x200, 0x600, 0x800], at(0x400), 0x40),
@@ -110,15 +123,27 @@ pub fn gola_gola_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeat
             )
         }
         0xB => {
+            let d = Some(drift(0, 4 * P, 0, 0, 0));
+            // `lbu v0,0x21b(s5); beq v0,0xff` at `0x801F72D0`: the attack
+            // clip arm `0xA` cut to has not reached its park frame.
+            if park_wait(st, phase) {
+                return held(d);
+            }
             st.countdown.0 = 0;
-            with_drift(ArmDirection::PASS, Some(drift(0, 4 * P, 0, 0, 0)))
+            with_drift(ArmDirection::PASS, d)
         }
         0xC => {
             let d = Some(drift(0, 4 * P, 0, 0, 4 * P));
+            // Every pass re-arms the creature's park (`0x801F73E0`) and
+            // ramps its rate `+0x21D = word >> 4 + 2` (`0x801F7418`).
+            st.creature_loop_arm = true;
             st.countdown.0 += P;
-            if (st.countdown.0 >> 4) + 2 < 0x20 {
+            let rate = (st.countdown.0 >> 4) + 2;
+            if rate < 0x20 {
+                st.creature_rate = Some(rate as u8);
                 return held(d);
             }
+            st.creature_rate = Some(0x20);
             st.countdown.0 = S * 0x70;
             with_drift(ArmDirection::PASS, d)
         }
@@ -147,6 +172,8 @@ pub fn gola_gola_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeat
         }
         0xE => {
             let d = Some(drift(0, P / 2, 0, 0, 4 * P));
+            // Every pass re-arms the park (`0x801F78B0`).
+            st.creature_loop_arm = true;
             let w = st.creature_shatter.unwrap_or(0);
             st.creature_shatter =
                 Some(w.saturating_add((D << 7) as u16).min(GOLA_GOLA_SHATTER_CAP));

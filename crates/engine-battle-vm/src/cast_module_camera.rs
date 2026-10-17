@@ -250,6 +250,24 @@ pub struct ModuleCamState {
     /// through `FUN_801DCEAC` and a seat otherwise). `None` where the host
     /// cannot read it.
     pub target_code: Option<u8>,
+    /// The creature's anim-node cursor `+0x68` in its 12.4 unit, as the host
+    /// last saw it: the frame waits of PROT 0914's arms 4..6 and 8 and PROT
+    /// 0931's arm 22 read it. `None` where the host plays no clip on the
+    /// seat (a frame wait then passes).
+    pub creature_frame: Option<u16>,
+    /// An arm re-armed the creature's loop window on this pass (`sb 0xFF,
+    /// 0x21B` / `sh 0xFF0, 0x176`: PROT 0914 arms `0xC` / `0xE`, PROT 0923
+    /// arms 9..`0xB`, PROT 0928 arms 8 / 9). The host takes it once.
+    pub creature_loop_arm: bool,
+    /// A cursor store an arm made on the creature's node this pass (PROT
+    /// 0928's `sh 0xF0, 0x68`). The host takes it once.
+    pub creature_seek: Option<u16>,
+    /// An anim-rate store `+0x21D` an arm made on the creature this pass
+    /// (PROT 0914's arm `0xC` ramp). The host takes it once.
+    pub creature_rate: Option<u8>,
+    /// The arm a bounded host wait (a frame or park wait) is counting,
+    /// and how many passes it has held.
+    pub wait: (u8, u16),
 }
 
 /// `FUN_801D5854(7, 6)` out of a module arm: the action SM's own case-6
@@ -502,6 +520,22 @@ pub enum SpawnAnchor {
     /// are the grid cell off the victim, a point ahead of the creature, or a
     /// point back from the victim by the band's depth.
     ArmPoint,
+    /// The creature seat (`a0 = creature + 0x34`, `a1 = creature + 0x44`) at
+    /// the scale `a3`: PROT 0923 arm 4's four calls (`0x801F7118..
+    /// 0x801F7168`, three at `0x400`).
+    CreatureScaled { scale: u16 },
+    /// The victim's plane pair moved by `(dx, dz)` at the literal height `y`,
+    /// with the arm's zeroed angle trio: PROT 0915 arm 3 copies the victim's
+    /// `+0x34..+0x3B` (`lwl` / `lwr`), stores `-0x190` over the height and
+    /// pulls `z` back `0x800` (`0x801F6D40..0x801F6D78`).
+    VictimOffset { dx: i16, y: i16, dz: i16 },
+    /// The victim seat's position (`a0 = victim + 0x34`) on the arm's zeroed
+    /// angle trio: PROT 0917 arm 13's five calls (`0x801F7EB8..0x801F7F18`).
+    VictimFlat,
+    /// The caster seat's position on the creature's angle trio (`a0 =
+    /// caster + 0x34`, `a1 = creature + 0x44`): PROT 0914 arm `0xB`
+    /// (`0x801F7300..0x801F7324`).
+    CasterCreatureRot,
 }
 
 /// The seat a [`SpawnAnchor::AlongVictimHeading`] point starts from.
@@ -623,6 +657,20 @@ pub fn spawn_anchor_point_with(
             ([c.x, y, c.z], [0, c.facing as i16, 0])
         }
         SpawnAnchor::Literal { pos, rot } => (pos, rot),
+        SpawnAnchor::CreatureScaled { .. } => seat_at(creature?),
+        SpawnAnchor::VictimOffset { dx, y, dz } => {
+            let v = victim?;
+            ([v.x.wrapping_add(dx), y, v.z.wrapping_add(dz)], [0; 3])
+        }
+        SpawnAnchor::VictimFlat => {
+            let v = victim?;
+            ([v.x, v.y, v.z], [0; 3])
+        }
+        SpawnAnchor::CasterCreatureRot => {
+            let c = seats.caster?;
+            let f = creature.map_or(0, |k| k.facing as i16);
+            ([c.x, c.y, c.z], [0, f, 0])
+        }
         // The host resolves it from the arm's own direction.
         SpawnAnchor::ArmPoint => return None,
         SpawnAnchor::AlongVictimHeading { base, div, y } => {
@@ -666,6 +714,7 @@ pub fn spawn_anchor_scale(
             .filter(|&z| z > 0)
             .map_or(0x1000, |z| z as u16),
         SpawnAnchor::LiteralScaled { scale, .. } => scale,
+        SpawnAnchor::CreatureScaled { scale } => scale,
         _ => 0x1000,
     }
 }
@@ -797,6 +846,7 @@ mod body_paced;
 pub mod capture;
 pub mod capture_countdown;
 pub mod creature;
+mod creature_spawns;
 mod evil_seru_magic;
 mod freed;
 mod gilium_palma_horn;
@@ -818,6 +868,7 @@ pub use aluru::*;
 pub use capture::*;
 pub use capture_countdown::{ArmCountdown, CountdownWrite, arm_countdown, capture_arm_countdowns};
 pub use creature::*;
+pub use creature_spawns::*;
 pub use evil_seru_magic::*;
 pub use freed::*;
 pub use gilium_palma_horn::*;
@@ -972,11 +1023,21 @@ pub fn module_profile(prot_entry: u32) -> Option<ModuleProfile> {
         // chain (`gola_mushura_barra`, `gilium_palma_horn`, `jedo_iota_mule`,
         // `meta_terra_ozma`): each paces the band and lands the outcome once
         // the phase passes its hit arm.
-        914 => {
-            Some(ModuleProfile::director_body(gola_gola_direct, GOLA_GOLA_HIT_ARM).seated_at(914))
-        }
-        915 => Some(ModuleProfile::director_body(mushura_direct, MUSHURA_HIT_ARM).seated_at(915)),
-        917 => Some(ModuleProfile::director_body(barra_direct, BARRA_HIT_ARM).seated_at(917)),
+        914 => Some(
+            ModuleProfile::director_body(gola_gola_direct, GOLA_GOLA_HIT_ARM)
+                .with_staged_spawns()
+                .seated_at(914),
+        ),
+        915 => Some(
+            ModuleProfile::director_body(mushura_direct, MUSHURA_HIT_ARM)
+                .with_staged_spawns()
+                .seated_at(915),
+        ),
+        917 => Some(
+            ModuleProfile::director_body(barra_direct, BARRA_HIT_ARM)
+                .with_staged_spawns()
+                .seated_at(917),
+        ),
         // PROT 0920's arms are countdown gates and camera writes end to end,
         // so its director carries the whole phase chain and paces the band:
         // the rain the draw tick runs between arms 5 and `0xFF` needs the
@@ -984,10 +1045,26 @@ pub fn module_profile(prot_entry: u32) -> Option<ModuleProfile> {
         920 => {
             Some(ModuleProfile::director_body(slippery_direct, SLIPPERY_DAMAGE_ARM).seated_at(920))
         }
-        923 => Some(ModuleProfile::director_body(gilium_direct, GILIUM_HIT_ARM).seated_at(923)),
-        928 => Some(ModuleProfile::director_body(palma_direct, PALMA_HIT_ARM).seated_at(928)),
-        930 => Some(ModuleProfile::director_body(horn_direct, HORN_HEAL_ARM).seated_at(930)),
-        931 => Some(ModuleProfile::director_body(jedo_direct, JEDO_HIT_ARM).seated_at(931)),
+        923 => Some(
+            ModuleProfile::director_body(gilium_direct, GILIUM_HIT_ARM)
+                .with_staged_spawns()
+                .seated_at(923),
+        ),
+        928 => Some(
+            ModuleProfile::director_body(palma_direct, PALMA_HIT_ARM)
+                .with_staged_spawns()
+                .seated_at(928),
+        ),
+        930 => Some(
+            ModuleProfile::director_body(horn_direct, HORN_HEAL_ARM)
+                .with_staged_spawns()
+                .seated_at(930),
+        ),
+        931 => Some(
+            ModuleProfile::director_body(jedo_direct, JEDO_HIT_ARM)
+                .with_staged_spawns()
+                .seated_at(931),
+        ),
         // PROT 0916's director carries the whole chain; the damage path's
         // hit lands once the phase passes arm `0x12`, and the kill path's
         // HP store is the host's at arm `0x11`.
@@ -996,11 +1073,31 @@ pub fn module_profile(prot_entry: u32) -> Option<ModuleProfile> {
                 .with_staged_spawns()
                 .seated_at(916),
         ),
-        921 => Some(ModuleProfile::director_body(iota_direct, IOTA_HIT_ARM).seated_at(921)),
-        929 => Some(ModuleProfile::director_body(mule_direct, MULE_HIT_ARM).seated_at(929)),
-        932 => Some(ModuleProfile::director_body(meta_direct, META_HIT_ARM).seated_at(932)),
-        933 => Some(ModuleProfile::director_body(terra_direct, TERRA_HIT_ARM).seated_at(933)),
-        934 => Some(ModuleProfile::director_body(ozma_direct, OZMA_HIT_ARM).seated_at(934)),
+        921 => Some(
+            ModuleProfile::director_body(iota_direct, IOTA_HIT_ARM)
+                .with_staged_spawns()
+                .seated_at(921),
+        ),
+        929 => Some(
+            ModuleProfile::director_body(mule_direct, MULE_HIT_ARM)
+                .with_staged_spawns()
+                .seated_at(929),
+        ),
+        932 => Some(
+            ModuleProfile::director_body(meta_direct, META_HIT_ARM)
+                .with_staged_spawns()
+                .seated_at(932),
+        ),
+        933 => Some(
+            ModuleProfile::director_body(terra_direct, TERRA_HIT_ARM)
+                .with_staged_spawns()
+                .seated_at(933),
+        ),
+        934 => Some(
+            ModuleProfile::director_body(ozma_direct, OZMA_HIT_ARM)
+                .with_staged_spawns()
+                .seated_at(934),
+        ),
         // PROT 0910..0913's tick bodies hold their own arms (countdowns,
         // ramps and seat polls, `crate::seru_magic_ticks`), so each paces the
         // band like PROT 0904's: `0x36` holds on the body, the creature walks

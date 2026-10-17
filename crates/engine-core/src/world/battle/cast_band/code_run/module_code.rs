@@ -406,6 +406,18 @@ impl World {
                 .and_then(|d| d.jump)
                 .unwrap_or(ctx.phase.wrapping_add(1));
         }
+        // The summon-creature modules' part spawns, read off each image by
+        // arm: the calls on the pass that leaves the arm, and those that run
+        // on every pass.
+        if direction.is_some()
+            && legaia_engine_battle_vm::cast_module_camera::CREATURE_SPAWN_ENTRIES.contains(&entry)
+        {
+            use legaia_engine_battle_vm::cast_module_camera::{SpawnTiming, creature_arm_spawns};
+            if ctx.phase != phase_in {
+                run.spawns = creature_arm_spawns(entry, phase_in, SpawnTiming::Pass);
+            }
+            run.every_spawns = creature_arm_spawns(entry, phase_in, SpawnTiming::Every);
+        }
         let step = if held && !owns_chain {
             Some(ticks::CastTickStep::Busy)
         } else if held || owns_chain {
@@ -1206,6 +1218,13 @@ impl World {
                 ctx.phase != phase_in,
                 victim_slot,
                 seat_slot,
+            );
+            self.apply_summon_pre_hits(
+                entry,
+                phase_in,
+                ctx.phase != phase_in,
+                caster_slot,
+                spell_id,
             );
         }
         // PROT 0948's beam: arm 2 zeroes the builder's counter as it passes,

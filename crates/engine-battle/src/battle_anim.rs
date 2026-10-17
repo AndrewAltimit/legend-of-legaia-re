@@ -419,6 +419,15 @@ impl MonsterAnimPlayer {
         (self.phase >> PHASE_FRAC_BITS) as i16
     }
 
+    /// Store the node cursor `+0x68` in retail's 12.4 unit - the halfword a
+    /// cast module writes to replay a clip from a keyframe (PROT 0928's arms
+    /// 8 and 9 store `0xF0`, keyframe 15). Clamped to the clip's length.
+    pub fn seek_sixteenths(&mut self, sixteenths: u16) {
+        let max = self.frame_count().saturating_sub(1) << PHASE_FRAC_BITS;
+        self.phase = (u32::from(sixteenths) << 4).min(max);
+        self.finished = false;
+    }
+
     /// Reset the cursor to the clip's first keyframe. A one-shot player that
     /// had run out plays again from here (retail's re-commit of a still
     /// queued clip zeroes the node cursor, `FUN_8004AD80`), so the

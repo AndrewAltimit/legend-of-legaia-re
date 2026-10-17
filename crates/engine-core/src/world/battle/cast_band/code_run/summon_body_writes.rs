@@ -118,6 +118,73 @@ impl World {
         }
     }
 
+    /// The non-lethal pre-hits four summon-creature modules land before the
+    /// band's fold, on the pass that makes them: each target's roll is the
+    /// summon branch of `FUN_801DD0AC` ([`Self::player_summon_predamage`]),
+    /// clamped to `HP - 1`
+    /// ([`legaia_engine_battle_vm::seru_magic_ticks::summon_pre_hit`]).
+    ///
+    /// - PROT 0915 arm 7's pass: the latched victim, the roll quartered and
+    ///   floored at `1` (`0x801F7004..`); skipped for a victim with
+    ///   `+0x16E` bit `4`.
+    /// - PROT 0928 arm `0xF`: once, on the first pass its word falls below
+    ///   `0x1C1` (`0x801F80C4..0x801F81EC`), every living targetable monster.
+    /// - PROT 0932 arm `0x12` and PROT 0933 arm `0xC`, on their pass: every
+    ///   living monster.
+    ///
+    /// Not carried: the per-seat tallies `0x801F6978` / `0x801F6980` the
+    /// quartered roll is checked against, the first argument's `0x10` /
+    /// `0x12` mode (the predamage port has one summon branch), and PROT 0929
+    /// arm 16's and PROT 0934 arm `0x18`'s per-pass ladders.
+    pub(in crate::world::battle::cast_band) fn apply_summon_pre_hits(
+        &mut self,
+        entry: u32,
+        phase_in: u8,
+        passed: bool,
+        caster: u8,
+        spell_id: u8,
+    ) {
+        use legaia_engine_battle_vm::cast_module_ticks::FLAG_NON_TARGETABLE;
+        let st = self.casting.module_cam;
+        let targets: Vec<u8> = match (entry, phase_in) {
+            (915, 7) if passed => st
+                .victim_slot
+                .filter(|&v| self.cast_view(v).flags & FLAG_NON_TARGETABLE == 0)
+                .into_iter()
+                .collect(),
+            (928, 0xF) if st.countdown.0 < 0x1C1 && st.wait != (0xF, 1) => {
+                // Once: the arm hides the row after its sweep, so later
+                // passes find nothing to hit.
+                self.casting.module_cam.wait = (0xF, 1);
+                self.living_monster_slots()
+                    .into_iter()
+                    .map(|s| s as u8)
+                    .filter(|&s| self.cast_view(s).flags & FLAG_NON_TARGETABLE == 0)
+                    .collect()
+            }
+            (932, 0x12) | (933, 0xC) if passed => self
+                .living_monster_slots()
+                .into_iter()
+                .map(|s| s as u8)
+                .collect(),
+            _ => return,
+        };
+        for t in targets {
+            let Some(mut dmg) = self.player_summon_predamage(caster, t, spell_id) else {
+                continue;
+            };
+            if entry == 915 {
+                dmg = (dmg >> 2).max(1);
+            }
+            let mut v = self.cast_view(t);
+            if v.hp == 0 {
+                continue;
+            }
+            legaia_engine_battle_vm::seru_magic_ticks::summon_pre_hit(&mut v, u32::from(dmg));
+            self.write_cast_view(t, &v);
+        }
+    }
+
     /// The engine slots of the seated monsters with HP left.
     fn living_monster_slots(&self) -> Vec<usize> {
         let pc = usize::from(self.party.party_count);

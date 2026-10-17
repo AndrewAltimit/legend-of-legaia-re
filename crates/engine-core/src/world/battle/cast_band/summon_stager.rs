@@ -153,6 +153,14 @@ impl World {
             if !r.spawns.is_empty() {
                 self.stage_module_arm_spawns(r.prot_entry, r.spawns, r.camera_shot, r.arm_point);
             }
+            if !r.every_spawns.is_empty() {
+                self.stage_module_arm_spawns(
+                    r.prot_entry,
+                    r.every_spawns,
+                    r.camera_shot,
+                    r.arm_point,
+                );
+            }
             // The arm's own fades run beside the band's flash: retail's
             // spawner takes a fresh pool actor per call.
             if r.kills_fades {
@@ -245,6 +253,10 @@ impl World {
                 // records carry summon-local offsets.
                 if !stages_spawns {
                     self.spawn_cast_module_fx(st.spell_id, st.spawn);
+                } else if self.cast_module_for(st.spell_id).is_some_and(|e| {
+                    legaia_engine_battle_vm::cast_module_camera::CREATURE_SPAWN_ENTRIES.contains(&e)
+                }) {
+                    self.spawn_cast_module_stager_records(st.spell_id, st.spawn);
                 }
                 st.phase = SummonPhase::Approach;
                 st.frames = 0;

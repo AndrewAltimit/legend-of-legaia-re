@@ -115,6 +115,12 @@ impl World {
             .filter(|a| a.battle_action_clips.is_some())
             .map(|a| a.battle.hit_count_bound);
         self.casting.module_cam.creature_in_range = in_range;
+        // The node cursor `+0x68` (12.4) a frame wait reads.
+        self.casting.module_cam.creature_frame = seat
+            .and_then(|s| self.actors.get(s as usize))
+            .filter(|a| a.battle_action_clips.is_some())
+            .and_then(|a| a.battle_animation.as_ref())
+            .map(|p| p.cursor_sixteenths());
     }
 
     /// The module's direct writes after its pass: the creature seat's

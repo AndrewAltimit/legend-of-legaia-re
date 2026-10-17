@@ -56,7 +56,7 @@ pub const JEDO_LAST_ARM: u8 = 31;
 /// | 9, 10 | word | the spell name; the attack name and a cut; `+= 0x133` / `0xE0` |
 /// | 11 | one drain | a `0x100`-frame pan |
 /// | 12..21 | word (13 and 20 re-arm a shot each pass; 16 TR z `-= 2 d`, 19 `+= 2 d`) | cuts, clips `3..6`, a red fade (15), the loop counter cleared (14) |
-/// | 22 | one drain; the creature's clip frame (not fed: pass) | two flash fades |
+/// | 22 | one drain a pass; the creature's clip cursor on `0x120` | two flash fades |
 /// | 23, 24 | word | cuts, the same flashes |
 /// | 25 | word | the loop counter cleared, a red hold |
 /// | 26 | the word | a cut; `+= 0x40` |
@@ -202,7 +202,14 @@ pub fn jedo_direct(st: &mut ModuleCamState, phase: u8, _seats: ModuleCamSeats) -
             cut([0x28, 0x8B8], [0, 0x1110, 0x1416], at4, 0x28)
         }
         22 => {
+            // `lh v1,0x68(node); li v0,0x120; bne` at `0x801F7C80`: the arm
+            // waits for the creature's cursor to stand on `0x120`. The
+            // engine's cursor steps in its own increments, so the port waits
+            // for it to reach the frame rather than to equal it.
             st.countdown.0 -= D;
+            if frame_wait(st, phase, 0x120) {
+                return ArmDirection::HOLD;
+            }
             ArmDirection::PASS
         }
         23 | 24 => {

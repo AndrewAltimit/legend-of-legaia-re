@@ -132,3 +132,36 @@ pub fn yaw_to(st: &ModuleCamState, yaw: i32) -> i32 {
         if d >= 0x800 { d - 0x1000 } else { d }
     })
 }
+
+/// The most passes a director holds an arm on a host-fed creature state
+/// (a clip frame, a loop counter) before it lets the arm through: well past
+/// any clip the band plays at the creature's slowest rate, so the bound only
+/// ever releases an arm whose state the host stopped advancing.
+pub const HOST_WAIT_CAP: u16 = 0x400;
+
+/// Hold arm `phase` while `waiting`, for at most [`HOST_WAIT_CAP`] passes.
+/// Returns whether the arm holds this pass.
+pub fn host_wait(st: &mut ModuleCamState, phase: u8, waiting: bool) -> bool {
+    if st.wait.0 != phase {
+        st.wait = (phase, 0);
+    }
+    if !waiting || st.wait.1 >= HOST_WAIT_CAP {
+        return false;
+    }
+    st.wait.1 += 1;
+    true
+}
+
+/// A frame wait on the creature's node cursor: holds while it reads below
+/// `frame` (sixteenths). With no cursor fed the wait passes.
+pub fn frame_wait(st: &mut ModuleCamState, phase: u8, frame: u16) -> bool {
+    let waiting = st.creature_frame.is_some_and(|f| f < frame);
+    host_wait(st, phase, waiting)
+}
+
+/// A wait on the creature's loop counter `+0x21B` still reading the
+/// `0xFF` sentinel: its clip has not reached its park frame.
+pub fn park_wait(st: &mut ModuleCamState, phase: u8) -> bool {
+    let waiting = st.creature_loops == Some(0xFF);
+    host_wait(st, phase, waiting)
+}

@@ -75,6 +75,12 @@ pub fn gilium_direct(st: &mut ModuleCamState, phase: u8, _seats: ModuleCamSeats)
     };
     let z = |n: i32| drift(0, 0, 0, 0, n);
     let pass = |d: Option<CaptureDrift>, dir: ArmDirection| with_drift(dir, d);
+    // Arms 9..`0xB` hold the creature's clip on its park every pass, held or
+    // not (`sb 0xFF,0x21B` / `sh 0xFF0,0x176` at `0x801F7858`,
+    // `0x801F7904`, `0x801F7B58`).
+    if (9..=0xB).contains(&phase) {
+        st.creature_loop_arm = true;
+    }
     let r = (|| -> Result<ArmDirection, ArmDirection> {
         Ok(match phase {
             0 => {
@@ -239,8 +245,8 @@ fn palma_sweep(phase: u8, t: i32) -> ArmDirection {
 /// | 5 | `T` | a `0x10`-frame shot, the spell name, clip `1`, `T = scalar * 64` |
 /// | 6 | `T`, that shot re-armed each pass | a `0x60`-frame shot, clip `2`, `T = scalar * 180` |
 /// | 7 | until clip `2` plays, that shot re-armed | a cut, the attack name, `T = scalar * 128` |
-/// | 8 | the creature's loop (not fed: pass) | TR z `+= 4 p`, TR y `-= p / 2`; a cut |
-/// | 9, 0xA | the loop (pass) | cuts; arm 0xA `T = scalar * 64` |
+/// | 8 | the creature's park (`+0x21B` off `0xFF`) | TR z `+= 4 p`, TR y `-= p / 2`; a cut; the cursor back on keyframe 15 and the park re-armed |
+/// | 9, 0xA | the park | cuts; arm 9 replays the swing like arm 8; arm 0xA `T = scalar * 64` |
 /// | 0xB, 0xC | `T`, TR z `+= 32 p`, TR y `-= 4 p` | `T = scalar * 96`; arm 0xC: an all-zero cut, `T = scalar * 256` |
 /// | 0xD, 0xE | `T` | `T = scalar * 120`; arm 0xE: a cut, `T = scalar * 128` |
 /// | 0xF, 0x10 | `T`, a shot re-armed each pass | arm 0xF: a cut; arm 0x10: a fade in, a `0x80`-frame shot |
@@ -317,15 +323,34 @@ pub fn palma_direct(st: &mut ModuleCamState, phase: u8, _seats: ModuleCamSeats) 
                 ModuleCaption::AttackName,
             )
         }
+        // Arms 8..`0xA` hold while the creature's clip has not reached its
+        // park (`lbu v0,0x21b(s4); beq v0,0xff` at `0x801F79D4`,
+        // `0x801F7A70`, `0x801F7AF8`). Arms 8 and 9 then put the cursor
+        // back on keyframe 15 (`sh 0xF0,0x68(node)`) and re-arm the park
+        // (`+0x21B = 0xFF`, `+0x176 = 0xFF0`), so the clip replays its
+        // swing from there.
         8 => {
+            let d = Some(drift(0, 0, 0, -(P / 2), 4 * P));
             st.countdown.0 -= P;
-            with_drift(
-                cut([0, 0x800], [0xC00, 0x480, 0x200], [0; 3], 1),
-                Some(drift(0, 0, 0, -(P / 2), 4 * P)),
-            )
+            if park_wait(st, phase) {
+                return held(d);
+            }
+            st.creature_seek = Some(0xF0);
+            st.creature_loop_arm = true;
+            with_drift(cut([0, 0x800], [0xC00, 0x480, 0x200], [0; 3], 1), d)
         }
-        9 => cut([0, 0x800], [-0xC00, 0x480, 0x200], [0; 3], 1),
+        9 => {
+            if park_wait(st, phase) {
+                return ArmDirection::HOLD;
+            }
+            st.creature_seek = Some(0xF0);
+            st.creature_loop_arm = true;
+            cut([0, 0x800], [-0xC00, 0x480, 0x200], [0; 3], 1)
+        }
         0xA => {
+            if park_wait(st, phase) {
+                return ArmDirection::HOLD;
+            }
             st.countdown.0 = 64 * S;
             cut([0, 0x800], [0, 0x300, 0xA00], [0; 3], 1)
         }

@@ -110,6 +110,7 @@ impl World {
             camera_nudge: None,
             capture_drift: None,
             spawns: &[],
+            every_spawns: &[],
             arm_point: None,
             vram_move: None,
             caption: None,

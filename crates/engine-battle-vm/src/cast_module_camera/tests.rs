@@ -957,3 +957,107 @@ fn orb_anchors_resolve_like_the_arms_build_them() {
         0x1000
     );
 }
+
+/// Gola Gola's arms 4..6 hold until the creature's clip cursor reaches
+/// `0x100` / `0x200` / `0x300` (`slti` on node `+0x68`), pass at once with
+/// no cursor fed, and never hold past the bound.
+#[test]
+fn gola_gola_frame_waits_follow_the_creature_cursor() {
+    let s = seats();
+    let mut st = ModuleCamState {
+        creature_frame: Some(0xF0),
+        ..Default::default()
+    };
+    assert!(gola_gola_direct(&mut st, 4, s).hold);
+    st.creature_frame = Some(0x100);
+    assert!(!gola_gola_direct(&mut st, 4, s).hold, "the frame reached");
+    st.creature_frame = Some(0x100);
+    assert!(gola_gola_direct(&mut st, 5, s).hold);
+    st.creature_frame = None;
+    assert!(!gola_gola_direct(&mut st, 6, s).hold, "no cursor: pass");
+    // A cursor that never moves is let go after the bound.
+    let mut st = ModuleCamState {
+        creature_frame: Some(0),
+        ..Default::default()
+    };
+    let mut holds = 0;
+    while gola_gola_direct(&mut st, 8, s).hold {
+        holds += 1;
+        assert!(holds <= super::body_kit::HOST_WAIT_CAP);
+    }
+    assert_eq!(holds, super::body_kit::HOST_WAIT_CAP);
+}
+
+/// Gola Gola's arm `0xB` waits for the attack clip's park (`+0x21B` off
+/// `0xFF`) with the yaw drift on every pass, and arm `0xC` re-arms the park
+/// and ramps the creature's rate `word >> 4 + 2` to `0x20`.
+#[test]
+fn gola_gola_holds_the_park_and_ramps_the_rate() {
+    let s = seats();
+    let mut st = ModuleCamState {
+        creature_loops: Some(0xFF),
+        ..Default::default()
+    };
+    let d = gola_gola_direct(&mut st, 0xB, s);
+    assert!(d.hold && d.drift.is_some());
+    st.creature_loops = Some(0xFE);
+    assert!(!gola_gola_direct(&mut st, 0xB, s).hold);
+    let mut rates = Vec::new();
+    loop {
+        let d = gola_gola_direct(&mut st, 0xC, s);
+        assert!(
+            std::mem::take(&mut st.creature_loop_arm),
+            "the park re-armed"
+        );
+        rates.push(st.creature_rate.take().unwrap());
+        if !d.hold {
+            break;
+        }
+    }
+    assert_eq!(rates.first(), Some(&2));
+    assert_eq!(rates.last(), Some(&0x20));
+    assert!(rates.windows(2).all(|w| w[0] <= w[1]));
+}
+
+/// Palma's arms 8 and 9 hold on the park, then put the cursor back on
+/// keyframe 15 and re-arm the park; arm `0xA` only waits.
+#[test]
+fn palma_replays_its_swing_from_keyframe_fifteen() {
+    let s = seats();
+    let mut st = ModuleCamState {
+        creature_loops: Some(0xFF),
+        ..Default::default()
+    };
+    for arm in [8u8, 9, 0xA] {
+        st.creature_loops = Some(0xFF);
+        assert!(palma_direct(&mut st, arm, s).hold, "arm {arm} waits");
+        st.creature_loops = Some(3);
+        assert!(!palma_direct(&mut st, arm, s).hold);
+        let replays = arm != 0xA;
+        assert_eq!(
+            st.creature_seek.take(),
+            replays.then_some(0xF0),
+            "arm {arm}"
+        );
+        assert_eq!(
+            std::mem::take(&mut st.creature_loop_arm),
+            replays,
+            "arm {arm}"
+        );
+    }
+}
+
+/// The summon pre-hit cannot kill and stages the reaction.
+#[test]
+fn a_summon_pre_hit_leaves_the_target_at_one_hp() {
+    let mut v = crate::cast_module_ticks::CastActorState {
+        hp: 50,
+        reaction_alt: 3,
+        knockdown_anim: 4,
+        ..Default::default()
+    };
+    let applied = crate::seru_magic_ticks::summon_pre_hit(&mut v, 999);
+    assert_eq!((applied, v.hp, v.hp_bar_delta), (49, 1, 49));
+    assert_eq!(v.staged_anim, 3);
+    assert_eq!(v.restage & 0x05, 0x05);
+}

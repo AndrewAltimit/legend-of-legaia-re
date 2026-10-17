@@ -370,6 +370,10 @@ pub struct CastModuleCodeRun {
     /// The spawn calls the module's arm made this frame, for a director that
     /// reports them ([`vm::cast_module_camera::ModuleProfile::stages_spawns`]).
     pub spawns: &'static [legaia_engine_battle_vm::cast_module_camera::ModuleSpawn],
+    /// The spawn calls a summon-creature arm makes on every pass, held or
+    /// not, beside [`Self::spawns`]
+    /// ([`vm::cast_module_camera::creature_arm_spawns`]).
+    pub every_spawns: &'static [legaia_engine_battle_vm::cast_module_camera::ModuleSpawn],
     /// The point the arm built for its [`vm::cast_module_camera::SpawnAnchor::ArmPoint`]
     /// spawns this frame.
     pub arm_point: Option<([i16; 3], [i16; 3])>,
