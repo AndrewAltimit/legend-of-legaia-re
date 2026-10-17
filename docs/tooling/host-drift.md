@@ -45,8 +45,9 @@ that runs both hosts is the [frame-body trace](#output-level-the-frame-body-trac
 | 12 content | do two paired frame kernels reach the same engine calls? | `[[frame_content]]` | arguments, order, guards, std-named calls |
 | 13 boot installs | does the page's boot make every `world.install_*` / `set_*` call the native boot makes? | derived, `[[boot_install]]` | tables written as field assignments |
 | 14 save routing | does every save / load go through the retail screen's applier? | `SAVE_IO_ROUTES` | the page's save-bar import |
+| 15 engine environment | does an engine crate read a switch from the process environment? | `ENV_KERNEL_ROOTS`, `ENV_ALLOWED_*` | an env read in a crate no browser host links |
 
-Tiers 1-3 and 5-14 live in
+Tiers 1-3 and 5-15 live in
 [`scripts/ci/check-ui-host-drift.py`](../../scripts/ci/check-ui-host-drift.py)
 (`--list` prints the full surface table, `--selftest` the detector controls,
 `--quiet` findings only); tier 4 is
@@ -84,6 +85,7 @@ docstring is the text `--help` prints. The package keeps three things apart: the
 | [`rows/frame_content.py`](../../scripts/ci/ui_host_drift/rows/frame_content.py) | `ENGINE_API_CRATES`, `STD_METHOD_NAMES`, `CONTENT_WALK_STOPS` |
 | [`rows/boot_installs.py`](../../scripts/ci/ui_host_drift/rows/boot_installs.py) | `BOOT_NATIVE`, `BOOT_WEB_ROOT` |
 | [`rows/save_io.py`](../../scripts/ci/ui_host_drift/rows/save_io.py) | `SAVE_IO_ROUTES`, `PAGE_CARD_RACK`, `PAGE_CARD_RACK_RULES` |
+| [`rows/env_reads.py`](../../scripts/ci/ui_host_drift/rows/env_reads.py) | `ENV_KERNEL_ROOTS`, `ENV_NATIVE_HOST_PATHS`, `ENV_ALLOWED_PREFIXES`, `ENV_ALLOWED_NAMES` |
 | [`tiers/`](../../scripts/ci/ui_host_drift/tiers/__init__.py) | the analysis, one module per tier, named as its rows module is (`tiers/screens.py` is tier 1, which has no table) |
 | [`rust_text.py`](../../scripts/ci/ui_host_drift/rust_text.py) | comment stripping, signature and body extraction, whole-word sets |
 | [`controls.py`](../../scripts/ci/ui_host_drift/controls.py), [`selftest.py`](../../scripts/ci/ui_host_drift/selftest.py) | the detector controls and `--selftest` |
@@ -1014,6 +1016,30 @@ resumes it directly. That is page chrome for getting a save into the browser
 at all - the native twin is `legaia-engine load` - and it moves no bytes
 into a card.
 
+## Tier 15 - engine environment reads
+
+`check_env_reads` in [`tiers/env_reads.py`](../../scripts/ci/ui_host_drift/tiers/env_reads.py), rows in
+[`rows/env_reads.py`](../../scripts/ci/ui_host_drift/rows/env_reads.py).
+
+A `wasm32` build has no process environment: `std::env::var` answers `Err`
+and `var_os` answers `None`. A gameplay switch an engine crate reads from the
+environment is therefore one the native window can throw and the browser
+never can, and the difference shows nowhere in a diff. A switch is an engine
+field instead (`WorldToggles`), written by each host: the native session from
+its environment in one function
+(`legaia_engine_session::native::apply_env_world_toggles`, run on every native
+session open, so a corpus run's child processes inherit it) and the play page
+from a `LegaiaRuntime` setter ([`play_toggles.rs`](../../crates/web-viewer/src/play_toggles.rs)).
+
+The tier scans every `crates/engine-*` crate a browser host links, plus
+`render-kernels`, for `env::var` / `var_os` / `vars` / `vars_os` (comments
+stripped, test files skipped by path) and fails as `ENGINE ENV READ` on any
+read whose name is not allowed. Allowed: the `LEGAIA_DIAG_*` gates, which tier
+6 declares and classifies, and `LEGAIA_DISC_BIN` in an inline test module. A
+non-literal name is never allowed. Out of scope, because no browser host links
+them: `engine-shell`, `engine-render`, `engine-export`, `engine-capture`, and
+`engine-session`'s `native` module.
+
 ## Two JavaScript-side gates
 
 No Rust tier reads `site/js/`. Two scripts do, in the pre-commit hook when
@@ -1139,7 +1165,8 @@ table; a switch with no page twin is a host difference, not a world default.
 | `--party` | `set_active_party_spec` |
 | `--card`, `--resume-save`, `--boot-ui`, `--world-map` | the card rack, a card Load, the boot title, the scene picker |
 | `LEGAIA_SMART_MONSTERS`, `LEGAIA_WORLD_MAP_MARKERS` | `set_smart_monsters`, `set_world_map_markers` |
-| `--no-entry-pulse` | only through the retail box, which also pins the options |
+| `LEGAIA_BATTLE_FRAME_CADENCE`, `LEGAIA_ARTS_SAVED_LIST` | `set_battle_frame_cadence`, `set_arts_saved_list` (both default off on both hosts) |
+| `--no-entry-pulse` | `set_entry_pulse(false)`, the "Entry pulse" box; the retail box also holds it off |
 | `--simple-dialogue`, `--flat-y`, `--no-edge-collision`, `--no-solid-npcs`, `--no-live-npcs`, `--no-damage-finish`, `--no-player-battle`, `--seed-party`, `--battle` | none: comparison and debug opt-outs from the retail default, which is the page's only setting (`--battle` has the wasm `debug_force_battle`) |
 | `--screenshot*`, `--pad-script`, `--key-script`, `--str-file`, `--cutscene-map` | none: native capture tooling |
 
@@ -1929,7 +1956,10 @@ The gates around it:
   previous clip's span plays nothing (`battle_xa_busy_frames`).
 
 Not this path: the arts shout (`FUN_8004C140`, `XA2` / `XA4` / `XA6`) plays on
-both hosts, and `cast_item_give` (`FUN_8003D53C(char_kind + 0x19, 0, 0x5A)`) is
+both hosts - including its one forced-channel exception, formation slot 0
+`0x4F` (Tetsu) playing channel `0xC`, which `route_battle_audio` feeds from
+`World::formation_slot0_monster_id` every step (oracle
+`engine-session/tests/arts_shout_battle.rs`) - and `cast_item_give` (`FUN_8003D53C(char_kind + 0x19, 0, 0x5A)`) is
 dropped at the `BattleActionHost` trait default. Oracles:
 `engine-core/tests/cast_voice_head_cue_disc.rs`,
 `engine-session/tests/cast_voice_lazy_stage.rs`.

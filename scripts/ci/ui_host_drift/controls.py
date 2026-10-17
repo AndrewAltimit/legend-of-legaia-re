@@ -519,3 +519,27 @@ SELFTEST_PATH_STRINGS: list[tuple[str, str, bool]] = [
     ("prose that mentions a path", "see crates/engine-ui/src for the builders", False),
     ("a path outside the known roots", "target/port-catalog/catalog.csv", False),
 ]
+
+# Detector controls for tier 15: each source and the env-read violations the
+# scan must report for it (`(call, name)`; a non-literal name is `None`).
+SELFTEST_ENV_READS: list[tuple[str, str, list[tuple[str, object]]]] = [
+    (
+        "a gameplay switch read through the full path",
+        'let on = std::env::var_os("LEGAIA_BATTLE_FRAME_CADENCE").is_some();',
+        [("var_os", "LEGAIA_BATTLE_FRAME_CADENCE")],
+    ),
+    (
+        "a read through a `use std::env;` import",
+        'use std::env;\nlet v = env::var("LEGAIA_SOMETHING");',
+        [("var", "LEGAIA_SOMETHING")],
+    ),
+    (
+        "a non-literal name is never allowed",
+        "let v = std::env::var(name);",
+        [("var", None)],
+    ),
+    ("a declared diagnostic gate", 'std::env::var_os("LEGAIA_DIAG_HUD")', []),
+    ("an inline test's disc gate", 'std::env::var_os("LEGAIA_DISC_BIN")?;', []),
+    ("a read in a comment", '// std::env::var_os("LEGAIA_ARTS_SAVED_LIST")', []),
+    ("temp_dir is not a read", "let d = std::env::temp_dir();", []),
+]
