@@ -81,7 +81,7 @@
     <li><b>Copy the kit</b><span><code>scripts/vrchat-world/world-project/Assets/LegaiaWorld/</code> into the project's <code>Assets/</code>.</span></li>
   </ol>
   <p class="hint">Pin glTFast to <code>6.14.1</code>: on the VRChat-mandated 2022.3.22f1 editor, newer releases require a newer Unity than the SDK allows, so the Package Manager refuses them. Equivalently, add <code>"com.unity.cloud.gltfast": "6.14.1"</code> under <code>"dependencies"</code> in <code>Packages/manifest.json</code>. glTFast is a Unity-registry package, so it never appears inside the Creator Companion, and the VRChat packages live in <code>Packages/vpm-manifest.json</code> - <code>Packages/manifest.json</code> showing no <code>com.vrchat.*</code> entries is normal.</p>
-  <p>The kit holds the editor builder with its realism, camp-props and audio modules, a JSON reader, four small shaders, and eight UdonSharp behaviours (doorway teleport, proximity door, wander, day/night, rack pickup, torch, settings panel, firelight flicker).</p>
+  <p>The kit holds the editor builder and its modules (realism, living town, weather, camp props, common prefabs, audio, the slot machine and card table), a JSON reader, its own shaders, and the UdonSharp behaviours the built world runs (doorways, doors, villager locomotion and routines, day/night and weather, pickups, torches, the settings panel, the purse). The file-by-file list is in the kit README.</p>
 </section>
 
 <section class="doc-section" id="build">
@@ -123,6 +123,7 @@
     <li><strong>More scenes</strong> - build several exported scenes into the same Unity scene and the town-exit portals connect automatically: when a portal's target root (<code>Legaia_map01</code>, say) exists, walking out the town gate teleports you onto the world map.</li>
     <li><strong>More animation</strong> - every NPC glb carries all the scene's skeleton-matching clips as <code>record_N</code> takes; retarget the generated Animator at any of them.</li>
   </ul>
+  <p>The builder goes further than this page walks: a <strong>Living town</strong> pass (default on) gives the villagers a routine - meeting and talking in pictogram speech bubbles, visiting errand stops, going indoors at night - a synced <strong>weather</strong> schedule, a <strong>Common prefabs</strong> foldout (mirror, video TV, card table, posters, the slot cabinet) and a persistent per-player <strong>coin purse</strong>. Each is documented in the <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/scripts/vrchat-world/README.md">kit README</a>.</p>
 </section>
 
 <section class="doc-section" id="slot-machine">
