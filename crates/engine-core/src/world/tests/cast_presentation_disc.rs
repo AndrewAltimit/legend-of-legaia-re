@@ -99,7 +99,7 @@ fn gizam_parks_its_held_fade_and_kills_it_next_arm() {
     assert_eq!(w.screen_fade_draws().len(), 1, "both hosts draw it");
     // Held: it survives its ramp while the module is resident.
     for _ in 0..0x140 {
-        w.step_cast_hook_fades();
+        w.step_cast_hook_fades(1);
     }
     assert_eq!(w.casting.module_pres.fades.len(), 1);
     w.fire_cast_presentation(906, None, None, 13, 13, false);

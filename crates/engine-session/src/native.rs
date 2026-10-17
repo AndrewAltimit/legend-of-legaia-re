@@ -112,6 +112,17 @@ pub fn env_battle_frame_cadence() -> bool {
     std::env::var_os("LEGAIA_BATTLE_FRAME_CADENCE").is_some_and(|v| v != "0")
 }
 
+/// Whether a native session's battles run on retail's battle-frame cadence:
+/// `LEGAIA_BATTLE_FRAME_CADENCE` when set (`0` lowers it), the engine's
+/// default ([`legaia_engine_core::world::WorldToggles::new`]) otherwise. The
+/// retail comparison reads it to know which clock its replays run on.
+pub fn battle_frame_cadence_on() -> bool {
+    match std::env::var_os("LEGAIA_BATTLE_FRAME_CADENCE") {
+        Some(v) => v != "0",
+        None => legaia_engine_core::world::WorldToggles::new().battle_sm_frame_cadence,
+    }
+}
+
 /// `LEGAIA_ARTS_SAVED_LIST`: set at all.
 pub fn env_arts_saved_list() -> bool {
     std::env::var_os("LEGAIA_ARTS_SAVED_LIST").is_some()

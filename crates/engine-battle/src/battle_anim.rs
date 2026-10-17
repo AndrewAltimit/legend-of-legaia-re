@@ -480,8 +480,22 @@ impl MonsterAnimPlayer {
         rate: legaia_engine_battle_vm::battle_anim_rate::AnimRate,
         slowed_idle: bool,
     ) -> PoseFrame {
+        self.tick_rated_vsyncs(rate, slowed_idle, 1)
+    }
+
+    /// [`Self::tick_rated`] over a pass of `vsyncs` vsyncs: retail's advance
+    /// multiplies the frame step `DAT_1F800393` into the product before the
+    /// shift (`(dt * rate * clip_rate) >> 1`, `0x80047730..0x8004775C`), so
+    /// one pass at step `n` moves the cursor by one `n`-scaled advance.
+    // REF: FUN_80047430 (the frame-step factor of the cursor advance)
+    pub fn tick_rated_vsyncs(
+        &mut self,
+        rate: legaia_engine_battle_vm::battle_anim_rate::AnimRate,
+        slowed_idle: bool,
+        vsyncs: u8,
+    ) -> PoseFrame {
         let step = legaia_engine_battle_vm::battle_anim_rate::scaled_anim_step(
-            self.step,
+            self.step * u32::from(vsyncs.max(1)),
             rate,
             slowed_idle,
         );

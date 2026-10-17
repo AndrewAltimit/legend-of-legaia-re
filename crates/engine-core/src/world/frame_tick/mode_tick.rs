@@ -57,6 +57,7 @@ impl World {
         // The near-camera ghost pass reads the pose this tick settled
         // (`FUN_80046A20` calls `FUN_8004DC68` after its camera update).
         self.tick_battle_camera_ghost();
+        self.tick_battle_anim_pass();
         // The volumetric ground-fog enhancement steps on the tick this frame
         // settled, after every actor moved (`legaia_render_kernels::fog_volume`).
         self.tick_fog_volume();
@@ -262,16 +263,29 @@ impl World {
         // whose hold word is `-1` - the battle-end / escape template - keeps
         // its end colour up until the battle teardown clears it
         // (`FadeState::holds_at_end`, `finish_battle`).
-        if let Some(fade) = &mut self.presentation.fade
-            && !fade.step()
-            && !fade.holds_at_end()
-        {
-            self.presentation.fade = None;
+        //
+        // In battle on retail's cadence the fade actors (`FUN_80025000`,
+        // whose ramp `FUN_80020C14` drains `DAT_1F800393` a call) tick with
+        // the battle pass, a frame step at a time
+        // (`World::battle_anim_pass_vsyncs`); between passes they hold.
+        let pass_vsyncs = if self.mode == SceneMode::Battle {
+            self.battle_anim_pass_vsyncs()
+        } else {
+            1
+        };
+        self.battle.anim_pass_vsyncs = pass_vsyncs;
+        if pass_vsyncs > 0 {
+            if let Some(fade) = &mut self.presentation.fade
+                && !fade.step_vsyncs(pass_vsyncs)
+                && !fade.holds_at_end()
+            {
+                self.presentation.fade = None;
+            }
+            self.presentation
+                .module_fades
+                .retain_mut(|f| f.step_vsyncs(pass_vsyncs) || f.holds_at_end());
+            self.step_cast_hook_fades(pass_vsyncs);
         }
-        self.presentation
-            .module_fades
-            .retain_mut(|f| f.step() || f.holds_at_end());
-        self.step_cast_hook_fades();
         // Step the scripted global multiply tint (op `0x4C 0x12`). A ramp
         // that lands on a non-neutral target HOLDS there (a screen faded to
         // black stays black until a new op replaces it); one that lands on
@@ -304,8 +318,14 @@ impl World {
         // is one sweep per sim tick; the gate names the clock the walker's
         // wait counters are denominated in rather than thinning them.
         // REF: FUN_801E0088
+        //
+        // In battle on retail's cadence the walker's sweeps run with the
+        // battle pass, one per vsync the pass spans, so an effect stands
+        // where the pass left it until the next one (as on retail's screen).
         if self.clock.display_frame_step == 1 && runs_master_driver {
-            self.tick_effects();
+            for _ in 0..pass_vsyncs {
+                self.tick_effects();
+            }
         }
         if runs_master_driver {
             self.tick_move_vms();
@@ -532,7 +552,17 @@ impl World {
                 // Driving the anims from inside it would freeze every actor's
                 // idle loop for that whole window and un-freeze it on confirm.
                 // REF: FUN_8002519C
-                self.tick_battle_animations();
+                //
+                // On retail's cadence the pass runs once a battle frame and
+                // advances by the frame step (`World::battle_anim_pass_vsyncs`);
+                // the ticks between hold every actor where the pass left it.
+                //
+                // On retail's cadence the anim tick runs after the frame
+                // driver's pass instead (`World::tick_battle_anim_pass`).
+                self.battle.anim_slot_reached = false;
+                if self.battle.anim_pass_vsyncs > 0 && !self.toggles.battle_sm_frame_cadence {
+                    self.tick_battle_animations();
+                }
                 // The Arts announcement banner's slide clock. Retail steps it
                 // from the battle DRAW tick (`FUN_800480D8`); the engine steps
                 // it here so every host advances it, and reads the quads back

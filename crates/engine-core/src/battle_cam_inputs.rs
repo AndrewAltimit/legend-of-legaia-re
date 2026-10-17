@@ -724,10 +724,12 @@ impl World {
         let frames = self.clock.display_frames;
         // On retail's cadence the camera steps on the tick the action SM's
         // pass runs on (`BattleCamera::sync_step_phase`).
-        if self.toggles.battle_sm_frame_cadence
-            && let Some(cam) = self.battle.camera.as_mut()
-        {
-            cam.sync_step_phase(self.battle.frame_clock.ticks_into_frame(frames));
+        if let Some(cam) = self.battle.camera.as_mut() {
+            let cadence = self.toggles.battle_sm_frame_cadence;
+            cam.set_pass_granular(cadence);
+            if cadence {
+                cam.sync_step_phase(self.battle.frame_clock.ticks_into_frame(frames));
+            }
         }
         // The camera's draws (shake pair, strike-loop yaw coin, per-art
         // track column) are retail `rand()` calls on the one process-wide

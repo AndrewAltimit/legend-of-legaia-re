@@ -179,7 +179,22 @@ impl PlayWindowApp {
         for (i, m) in w.party.roster.members.iter().enumerate() {
             eprintln!("capture roster {i}: equip {:?}", m.equipment().slots);
         }
+        eprintln!(
+            "capture clock: tick {} frame step {} close-up accum {:?} fade age {:?}",
+            w.clock.display_frames,
+            w.battle_frame_step(),
+            w.battle.camera.as_ref().map(|c| c.close_up_accum()),
+            w.presentation.fade.as_ref().map(|f| f.age_vsyncs()),
+        );
+        eprintln!("capture camera: {:?}", w.battle_cam_pose());
         for (i, a) in w.actors.iter().enumerate().take(8) {
+            eprintln!(
+                "capture actor {i}: clip {:#04x} cursor {:?} body {:?} pose {}",
+                a.battle.current_anim,
+                a.battle_animation.as_ref().map(|p| p.cursor_sixteenths()),
+                a.battle.seat,
+                a.pose_frame.is_some(),
+            );
             eprintln!(
                 "capture actor {i}: xz ({},{}) y {} facing {} flag {:#010x} colour {:#010x} blend {:#x}",
                 a.move_state.world_x,

@@ -2717,6 +2717,21 @@ every pass, so it moves with the phase of both clips):
   close-ups read their framing (`freed`, `iota`, `meta`, `orb`, `swordie`
   and `gizam` exact); what the rest still show is the caster's body pair,
   which the focus and the heading are read off.
+- **On the battle-frame cadence the flash is aligned too.** With
+  `LEGAIA_BATTLE_FRAME_CADENCE=1` the replay steps its flash with the pass, a
+  frame step of vsyncs at a time, so the ages it can stop on are the spawn
+  pass's plus whole frames, while retail's own frames vary in length with
+  their cost. `mule_summon_mid_cast` shows age `29` where the replay's
+  step-`2` passes hold `28` and `30`, and the flash ramps `0xFF / 20` a
+  vsync, enough to lift the whole frame out of the image tolerance (`.017`).
+  Once the gate holds the flash is re-run from its spawn to the capture's age
+  (`PhaseGate::align_fade`, beside the accumulator alignment), and a flash
+  more than one step off is left alone. The age reading itself depends on
+  the clock: the block's delay keeps its landing overshoot, and the landing
+  tick's step is not in RAM. The battle-frame replay takes the capture's
+  step (`nighto_summon_mid_cast`, delay `-1`, duration `14`: `24` vsyncs);
+  the per-vsync replay keeps the smallest step the overshoot allows (`25`),
+  the reading its gates are matched on (`summon_fade_on`).
 - **A wait lasts as long as the stream took.** `flute_lippian_midcast` and
   `flute_spikefish_midcast` are captured in `0x32`, which runs case 6 on the
   caster every pass (`0x801E4984`) and holds until the summon archive read

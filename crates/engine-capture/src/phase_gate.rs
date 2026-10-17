@@ -214,10 +214,69 @@ impl PhaseGate {
     /// headless seed calls it before it samples `camera`, the image child on
     /// the frame it captures.
     pub fn align_camera(&self, world: &mut legaia_engine_core::world::World) -> bool {
-        match (self.accum_align, world.battle.camera.as_mut()) {
+        let fade = self.align_fade(world);
+        let accum = match (self.accum_align, world.battle.camera.as_mut()) {
             (Some(accum), Some(cam)) => cam.align_close_up_accum(accum),
             _ => false,
+        };
+        fade || accum
+    }
+
+    /// Once the gate holds, phase-align the summon flash to the capture's
+    /// age ([`Self::fade`]); returns whether it moved.
+    ///
+    /// On retail's cadence the flash steps with the battle pass, a frame
+    /// step of vsyncs at a time (`FUN_80020C14` drains `DAT_1F800393` a
+    /// tick), so the ages a replay can stop on are the spawn pass's plus
+    /// whole frames. Retail's own frames are not all one step - the step is
+    /// measured per frame from the frame's cost (`FUN_80016B6C`), and a
+    /// summon's heavy frames run longer - so the age a capture holds can
+    /// fall between two of the replay's passes (`mule_summon_mid_cast`
+    /// shows age `29` where the replay's step-`2` passes hold `28` and
+    /// `30`). The flash ramps `0xFF / 20` a vsync, so a vsync's difference
+    /// lifts the whole frame by a dozen levels. The flash is then re-run to
+    /// the capture's age from its spawn: a clock aligned once the gate
+    /// holds, like the close-up accumulator, not a predicate. A flash more
+    /// than one frame step from the capture's is a different frame, and is
+    /// left alone.
+    pub fn align_fade(&self, world: &mut legaia_engine_core::world::World) -> bool {
+        use legaia_engine_battle_vm::battle_action::{
+            SUMMON_FADE_ID, SUMMON_FLASH_IN, SUMMON_FLASH_OUT,
+        };
+        let Some(want) = self.fade else {
+            return false;
+        };
+        let max_drift = u16::from(world.battle_frame_step().max(1));
+        let Some(have) = world.presentation.fade.as_ref().and_then(|f| {
+            (f.kind == 1 && (f.target_rgb()[0] == 0xFF) == want.to_white).then(|| f.age_vsyncs())
+        }) else {
+            return false;
+        };
+        if have == want.age || have.abs_diff(want.age) > max_drift {
+            return false;
         }
+        let t = if want.to_white {
+            SUMMON_FLASH_IN
+        } else {
+            SUMMON_FLASH_OUT
+        };
+        legaia_engine_system::fade::spawn_fade(
+            &mut world.presentation.fade,
+            &legaia_engine_system::fade::FadeTemplate {
+                kind: t.kind,
+                duration: t.duration,
+                start_rgb: t.start_rgb,
+                end_rgb: t.end_rgb,
+                mode: [t.delay, t.hold, 0],
+            },
+            SUMMON_FADE_ID,
+        );
+        if let Some(f) = world.presentation.fade.as_mut() {
+            for _ in 0..want.age {
+                f.step_vsyncs(1);
+            }
+        }
+        true
     }
 
     /// Per-tick world steering for a `0x32` capture, run before each tick of

@@ -457,8 +457,17 @@ impl World {
         if self.mode != SceneMode::Battle {
             return;
         }
+        // The frame driver calls `FUN_80050120` once a pass with the frame
+        // step as its `dt` (`jal 0x80050120` at `0x8004712C`): on retail's
+        // cadence the ramps move on the pass tick by the step and hold
+        // between (`World::battle_anim_pass_vsyncs`).
+        let dt = self.battle.anim_pass_vsyncs;
+        if dt == 0 {
+            return;
+        }
         let ctx = &mut self.battle_ctx;
-        ctx.ambient_base = grid::ambient_base_step(ctx.ambient_base, ctx.gauge_rearm_latch != 0, 1);
+        ctx.ambient_base =
+            grid::ambient_base_step(ctx.ambient_base, ctx.gauge_rearm_latch != 0, dt);
         let rgb = grid::ambient_base_rgb(ctx.ambient_base);
         // `ctx[+0x278]` is one retail byte the port carries in two places:
         // the summon band's own `summon_staging_a` (set at `0x32 -> 0x33`,
@@ -473,7 +482,7 @@ impl World {
             ctx.gauge_rearm_latch,
             ctx_278,
             self.battle.stage_outdoor,
-            1,
+            dt,
         );
         let skipped = grid::ambient_store_skipped(rgb, ctx.gauge_rearm_latch, ctx_278);
         if !skipped {

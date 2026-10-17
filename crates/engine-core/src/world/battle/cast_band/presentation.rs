@@ -337,12 +337,12 @@ impl World {
     /// `-1`) lives until an arm kills it; one the module never killed is
     /// dropped once no cast module is resident, so a band that ends on a
     /// held tint does not leave it over the rest of the battle.
-    pub(crate) fn step_cast_hook_fades(&mut self) {
+    pub(crate) fn step_cast_hook_fades(&mut self, vsyncs: u8) {
         let resident = self.casting.summon_stager.is_some() || self.casting.capture_spell.is_some();
         self.casting
             .module_pres
             .fades
-            .retain_mut(|f| f.state.step() || (resident && f.state.holds_at_end()));
+            .retain_mut(|f| f.state.step_vsyncs(vsyncs) || (resident && f.state.holds_at_end()));
     }
 
     /// The dispatchers' tail: an armed colour wash steps its scroll and
