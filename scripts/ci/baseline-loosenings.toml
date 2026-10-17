@@ -94,7 +94,7 @@ changes = [
 
 [[loosening]]
 file = "scripts/ci/retail-compare-baseline.json"
-reason = "The world stream now steps the BIOS rand() recurrence (0x41C64E6D / 0x3039) in place of the Numerical Recipes LCG, which re-deals every BATTLE_RNG_SEEDS stream. The super art's drive reaches its phase on every stream tried with the camera at 1.000, but none of the twenty streams swept with frames (from the list's head and tail) frames it as the old first stream did: the best, 0x8BAE8BFB, is pinned at 0.880 against 0.897. Which stream replays a drive is a search result; the capture's own 0x80009010 word cannot be stepped back to the entry because the engine's draw count to the phase moves with the stream."
+reason = "The world stream now steps the BIOS rand() recurrence (0x41C64E6D / 0x3039) in place of the Numerical Recipes LCG, which re-deals every BATTLE_RNG_SEEDS stream. The super art's drive reaches its phase on every stream tried with the camera at 1.000, but none of the twenty streams swept with frames (from the list's head and tail) frames it as the old first stream did: the best, 0x8BAE8BFB, is pinned at 0.880 against 0.883 (and the 0.897 the battle clip seating raised it to). Which stream replays a drive is a search result; the capture's own 0x80009010 word cannot be stepped back to the entry because the engine's draw count to the phase moves with the stream."
 changes = [
-  ["states/battle_vahn_tri_somersault_super/image", 0.897, 0.88],
+  ["states/battle_vahn_tri_somersault_super/image", 0.883, 0.88],
 ]
