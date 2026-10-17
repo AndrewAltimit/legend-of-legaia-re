@@ -1263,8 +1263,8 @@ def _playability_tiles() -> list[str]:
       both tiles say so. The denominator is the baseline's own segment count.
     * The continuous run (`[continuous] reached` in the same baseline): how
       many of those milestones one New Game reaches in order when it is never
-      re-seeded. The segmented tiles sit at their ceiling; this one does not,
-      so it is drawn beside them rather than left in the baseline.
+      re-seeded, drawn beside the segmented tiles: the distance between them
+      is how much of each stretch rests on a retail player's party.
     * Retail compare (`scripts/ci/retail-compare-baseline.json`): the mean
       `image` score - the fraction of 8x8 blocks whose mean colour is within
       tolerance of retail's frame - over the baselined states that carry one.
@@ -1329,9 +1329,9 @@ def _playability_tiles() -> list[str]:
             f"in order without a retail save",
             f"Continuous run: one New Game plays toward each milestone in turn on pad "
             f"input, never re-seeded from a retail save and reloading only the engine's "
-            f"own saves; it reaches {reached} of {n} before it stalls. The gap to the "
-            f"segmented tiles is how much of each stretch rests on arriving with a "
-            f"retail player's party.",
+            f"own saves; it reaches {reached} of {n}. The gap to the segmented tiles "
+            f"is how much of each stretch rests on arriving with a retail player's "
+            f"party.",
             href + "#the-continuous-run"))
 
     rc = ROOT.parent / "scripts" / "ci" / "retail-compare-baseline.json"
