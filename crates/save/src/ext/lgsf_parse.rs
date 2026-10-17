@@ -228,6 +228,22 @@ impl SaveFile {
             cursor = ext9_end;
         }
 
+        // Optional LGXA options block. A body whose values are past their
+        // rows' choices is not this block's; it reads as absent.
+        if cursor + 8 <= buf.len() && buf[cursor..cursor + 4] == SAVE_FILE_EXTA_MAGIC {
+            cursor += 4;
+            let exta_total_size =
+                u32::from_le_bytes(buf[cursor..cursor + 4].try_into().unwrap()) as usize;
+            cursor += 4;
+            let exta_end = cursor
+                .checked_add(exta_total_size)
+                .filter(|&e| e <= buf.len() && exta_total_size >= 9)
+                .ok_or_else(|| anyhow::anyhow!("LGSF: LGXA options block truncated"))?;
+            let b: [u8; 9] = buf[cursor..cursor + 9].try_into().unwrap();
+            ext_v2.options = crate::card::RetailOptions::from_bytes(b);
+            cursor = exta_end;
+        }
+
         // Optional LGX5 resume trailer: present only when the writer had a
         // scene / location to record. Absent = empty, never an error, so a
         // pre-trailer v4 file and a trailer-less v4 file read the same.
@@ -454,6 +470,7 @@ pub(super) fn parse_ext_v2(buf: &[u8]) -> Result<SaveExtV2> {
         play_time_seconds,
         field_position: None,
         audio_levels: None,
+        options: None,
         active_party,
         per_char,
         saved_chains,

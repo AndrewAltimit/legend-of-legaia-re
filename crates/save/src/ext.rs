@@ -187,6 +187,10 @@ pub const SAVE_FILE_EXT8_MAGIC: [u8; 4] = *b"LGX8";
 /// configured_level`, `i32 voice_volume`. Emitted only when the save carries
 /// the pair, like `LGX8`.
 pub const SAVE_FILE_EXT9_MAGIC: [u8; 4] = *b"LGX9";
+/// Optional options block ([`SaveExtV2::options`]): the nine option-screen
+/// config words, one byte each in [`crate::card::RetailOptions::to_bytes`]
+/// order. Emitted only when the save carries them, like `LGX9`.
+pub const SAVE_FILE_EXTA_MAGIC: [u8; 4] = *b"LGXA";
 /// Byte offset of the engine-ext blob inside a retail SC block: the first
 /// byte past the `0x1A18`-byte live-state copy retail composes and loads.
 pub const RETAIL_ENGINE_EXT_OFFSET: usize = crate::card::RETAIL_LIVE_STATE_SIZE;
@@ -321,6 +325,14 @@ pub struct SaveExtV2 {
     /// block. `None` = the save names none, and a load keeps the cold-reset
     /// pair.
     pub audio_levels: Option<crate::card::RetailAudioLevels>,
+    /// The options screen's config words retail keeps in its live-state
+    /// window - Battle Camera, Select Attack, Battle Command, Field Move,
+    /// Field HP Display, Sound and the three vibration rows
+    /// ([`crate::card::RetailOptions`]). A retail block carries them at their
+    /// own offsets, so a card load restores them; an `LGSF` file carries them
+    /// in the optional `LGXA` block. `None` = the save names none, and a load
+    /// keeps the session's options.
+    pub options: Option<crate::card::RetailOptions>,
 }
 
 /// Where a save was written: the scene to resume into and the name the

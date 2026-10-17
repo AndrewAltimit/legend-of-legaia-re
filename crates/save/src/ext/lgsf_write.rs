@@ -184,6 +184,15 @@ impl SaveFile {
             out.extend_from_slice(&levels.voice_volume.to_le_bytes());
         }
 
+        // Optional LGXA block: the options screen's config words. Emitted
+        // only when the save carries them.
+        if let Some(options) = self.ext_v2.options {
+            let body = options.to_bytes();
+            out.extend_from_slice(&SAVE_FILE_EXTA_MAGIC);
+            out.extend_from_slice(&(body.len() as u32).to_le_bytes());
+            out.extend_from_slice(&body);
+        }
+
         out
     }
 }

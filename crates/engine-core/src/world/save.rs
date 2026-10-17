@@ -374,6 +374,9 @@ impl World {
                 // Always the live pair: a block composed from scratch must not
                 // read back as the all-zero pair (silence) on retail's load.
                 audio_levels: Some(self.audio.levels),
+                // Always the live words, for the same reason: retail's load
+                // restores them with the window.
+                options: Some(self.retail_options()),
             },
         }
     }
@@ -439,6 +442,43 @@ impl World {
         }
     }
 
+    /// The options screen's nine config words as this session plays them:
+    /// the rows the simulation reads off their live mirrors, the rest as the
+    /// host last pushed them. What [`Self::save_full`] writes.
+    pub fn retail_options(&self) -> legaia_save::card::RetailOptions {
+        legaia_save::card::RetailOptions {
+            battle_camera: self.toggles.battle_camera as u8,
+            select_attack: self.toggles.select_attack as u8,
+            battle_command: self.toggles.battle_command as u8,
+            field_move: u8::from(self.locomotion.run_default),
+            hp_display: self.toggles.field_hp_display as u8,
+            ..self.toggles.retail_options
+        }
+    }
+
+    /// Set the options screen's words and the simulation's mirrors of them.
+    pub fn set_retail_options(&mut self, options: legaia_save::card::RetailOptions) {
+        use legaia_engine_menus::options::{OptionsSetting, OptionsState};
+        let mut o = OptionsState::default();
+        for (s, v) in OptionsSetting::ALL.into_iter().zip(options.to_bytes()) {
+            s.set(&mut o, v);
+        }
+        self.toggles.battle_camera = o.battle_camera;
+        self.toggles.select_attack = o.battle_select_attack;
+        self.toggles.battle_command = o.battle_command;
+        self.locomotion.run_default =
+            o.field_move == legaia_engine_menus::option_values::FieldMoveOpt::Run;
+        self.toggles.field_hp_display = o.field_hp_display;
+        self.toggles.retail_options = options;
+    }
+
+    /// The option words the last save load restored, once: a host adopts
+    /// them into its options (`OptionsPins::adopt_saved`, where a session
+    /// override wins) before it pushes its options back onto the world.
+    pub fn take_loaded_options(&mut self) -> Option<legaia_save::card::RetailOptions> {
+        self.toggles.loaded_options.take()
+    }
+
     /// [`Self::load_full`] past the party, flags and gold.
     fn load_full_tail(&mut self, sf: legaia_save::SaveFile) {
         // The configured audio level and the voice volume ride in the same
@@ -447,6 +487,15 @@ impl World {
         // pair keeps the current one.
         if let Some(levels) = sf.ext_v2.audio_levels {
             self.audio.levels = levels;
+        }
+        // The options screen's words sit in the same window: a save made
+        // running resumes running. The simulation's mirrors take them at
+        // once, so a session with no host options (a headless run) plays the
+        // save's Field Move; a host adopts them into its own options through
+        // `take_loaded_options`, which is where a session override wins.
+        if let Some(options) = sf.ext_v2.options {
+            self.set_retail_options(options);
+            self.toggles.loaded_options = Some(options);
         }
         // The minigame purses and records - retail keeps all of them in the
         // live-state window a save block mirrors (`legaia_save::minigame_save`).

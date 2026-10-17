@@ -55,6 +55,7 @@ fn a_save() -> SaveFile {
             play_time_seconds: 3661,
             field_position: None,
             audio_levels: None,
+            options: None,
             active_party: vec![1, 0],
             per_char: vec![
                 (
@@ -236,6 +237,8 @@ fn engine_ext_round_trips_through_a_retail_block_and_keeps_it_valid() {
         SaveExtV2 {
             field_position: retail_field_position(&block),
             audio_levels: legaia_save::card::read_retail_audio_levels(&block),
+            options: legaia_save::card::read_retail_audio_levels(&block)
+                .and_then(|_| legaia_save::card::read_retail_options(&block)),
             ..sf.ext_v2.clone()
         }
     );
@@ -281,6 +284,8 @@ fn retail_only_ext(block: &[u8]) -> SaveExtV2 {
         active_party: legaia_save::card::read_retail_present_party(block).unwrap_or_default(),
         field_position: retail_field_position(block),
         audio_levels: legaia_save::card::read_retail_audio_levels(block),
+        options: legaia_save::card::read_retail_audio_levels(block)
+            .and_then(|_| legaia_save::card::read_retail_options(block)),
         play_time_seconds: legaia_save::card::read_retail_play_counter(block).unwrap_or(0)
             / legaia_save::card::RETAIL_PLAY_COUNTER_HZ,
         ..SaveExtV2::default()

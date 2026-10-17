@@ -196,21 +196,9 @@ impl PlayWindowApp {
             port1_card,
             save_flow: legaia_engine_menus::save_screen::SaveScreenFlow::new(),
             options_pins: Default::default(),
-            options_state: {
-                let mut o = legaia_engine_menus::options::OptionsState::load_or_default(
-                    &std::path::PathBuf::from(OPTIONS_CONFIG_FILE),
-                );
-                // `LEGAIA_BATTLE_CAMERA_OPTION=<0|1|2>`: the retail-compare image
-                // child plays the capture's own Battle Camera word (`0x800846C0`).
-                if let Some(v) = std::env::var("LEGAIA_BATTLE_CAMERA_OPTION")
-                    .ok()
-                    .and_then(|v| v.trim().parse::<u8>().ok())
-                {
-                    o.battle_camera =
-                        legaia_engine_menus::option_values::BattleCameraOpt::from_word(v);
-                }
-                o
-            },
+            options_state: legaia_engine_menus::options::OptionsState::load_or_default(
+                &std::path::PathBuf::from(OPTIONS_CONFIG_FILE),
+            ),
             record_log: record_to.map(RecordLog::from_target),
             field_live_opts,
             // In-flow cutscene STR resolves from the extracted root (video only)
@@ -287,6 +275,21 @@ impl PlayWindowApp {
                 legaia_engine_menus::options::options_pin::VOLUMETRIC_FOG,
             );
             self.options_state.volumetric_fog = false;
+        }
+        // `LEGAIA_BATTLE_CAMERA_OPTION=<0|1|2>`: the retail-compare image
+        // child plays the capture's own Battle Camera word (`0x800846C0`).
+        // Pinned like the fog: a session override, which neither a loaded
+        // save's word nor the options file moves.
+        if let Some(v) = std::env::var("LEGAIA_BATTLE_CAMERA_OPTION")
+            .ok()
+            .and_then(|v| v.trim().parse::<u8>().ok())
+        {
+            self.options_pins.pin(
+                &self.options_state,
+                legaia_engine_menus::options::OptionsSetting::BattleCamera.pin_bit(),
+            );
+            self.options_state.battle_camera =
+                legaia_engine_menus::option_values::BattleCameraOpt::from_word(v);
         }
         // Push the loaded options into their live consumers (audio downmix)
         // before the loop starts.

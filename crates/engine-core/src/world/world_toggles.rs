@@ -158,6 +158,16 @@ pub struct WorldToggles {
     /// at `(2880, 2886)`), with no step left to start another hop. Off is
     /// retail's unguarded hop.
     pub hop_landing_guard: bool,
+    /// The options screen's nine config words as the host last pushed them
+    /// (`crate::options::apply_to_world`) or a save last loaded them. The
+    /// rows the simulation reads have their own mirrors here and on
+    /// `FieldLocomotion::run_default`; this keeps the rest (Sound, the
+    /// vibration rows) so a save carries the whole window, as retail's
+    /// does. See [`crate::world::World::retail_options`].
+    pub retail_options: legaia_save::card::RetailOptions,
+    /// The option words a save load restored that the host has not adopted
+    /// yet ([`crate::world::World::take_loaded_options`]).
+    pub(crate) loaded_options: Option<legaia_save::card::RetailOptions>,
 }
 
 impl WorldToggles {
@@ -180,6 +190,8 @@ impl WorldToggles {
             battle_sm_frame_cadence: false,
             arts_saved_list: false,
             hop_landing_guard: true,
+            retail_options: legaia_save::card::RetailOptions::default(),
+            loaded_options: None,
         }
     }
 }

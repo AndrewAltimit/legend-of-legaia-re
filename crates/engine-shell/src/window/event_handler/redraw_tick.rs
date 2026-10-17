@@ -401,7 +401,14 @@ impl PlayWindowApp {
         // battle Select Attack): scene / New Game transitions can reseed
         // world state, and the knobs are host policy (options file + `R`
         // key), not world state. The browser page runs the same session
-        // step on each of its ticks.
+        // step on each of its ticks. A save load's option words land first
+        // (retail restores them with the card), so this push carries them.
+        if self
+            .session
+            .adopt_loaded_options(&mut self.options_state, &mut self.options_pins)
+        {
+            self.persist_and_apply_options();
+        }
         self.session.apply_option_knobs(&self.options_state, None);
         // `set_pad` also latches the run button off the same word, so
         // there is nothing host-side to keep in sync.

@@ -375,6 +375,122 @@ pub fn write_retail_audio_levels(sc_block: &mut [u8], levels: RetailAudioLevels)
     Ok(())
 }
 
+/// The options screen's config words a retail save block carries, as each
+/// row's value index (the word retail's picker writes, `FUN_801DA9F8`).
+///
+/// All nine sit in the live-state window the block mirrors, at `VA -
+/// 0x80084140` like the audio level ([`RETAIL_OPTION_WORD_OFFSETS`]), so
+/// retail's card load restores them with the rest of the window: a save made
+/// with Run on resumes running. Vibration rows read `0` = Vibration On,
+/// `1` = Off, as the picker stores them.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct RetailOptions {
+    /// `0x800846C0` Battle Camera: Close / Normal / Far.
+    pub battle_camera: u8,
+    /// `0x800846C4` Battle Select Attack: Select / Automatic / Command.
+    pub select_attack: u8,
+    /// `0x800846C8` Battle Command: directional buttons / cross button.
+    pub battle_command: u8,
+    /// `0x800846CC` Field Move: Walk / Run.
+    pub field_move: u8,
+    /// `0x800845C4` Field HP Display: Immediate / Gradual / Display Off.
+    pub hp_display: u8,
+    /// `0x800846BC` Sound: Stereo / Monaural.
+    pub sound: u8,
+    /// `0x800845C8` Dual Shock "Battles".
+    pub vibration_battles: u8,
+    /// `0x800845A8` Dual Shock "Events".
+    pub vibration_events: u8,
+    /// `0x800845CC` Dual Shock "Encounters".
+    pub vibration_encounters: u8,
+}
+
+/// Block offset and choice count of each [`RetailOptions`] word, in
+/// [`RetailOptions::to_bytes`] order.
+pub const RETAIL_OPTION_WORD_OFFSETS: [(usize, u8); 9] = [
+    (0x580, 3),
+    (0x584, 3),
+    (0x588, 2),
+    (0x58C, 2),
+    (0x484, 3),
+    (0x57C, 2),
+    (0x488, 2),
+    (0x468, 2),
+    (0x48C, 2),
+];
+
+impl RetailOptions {
+    /// The nine values in [`RETAIL_OPTION_WORD_OFFSETS`] order.
+    pub fn to_bytes(self) -> [u8; 9] {
+        [
+            self.battle_camera,
+            self.select_attack,
+            self.battle_command,
+            self.field_move,
+            self.hp_display,
+            self.sound,
+            self.vibration_battles,
+            self.vibration_events,
+            self.vibration_encounters,
+        ]
+    }
+
+    /// The inverse of [`Self::to_bytes`]. `None` when a value is past its
+    /// row's choices.
+    pub fn from_bytes(b: [u8; 9]) -> Option<Self> {
+        if b.iter()
+            .zip(RETAIL_OPTION_WORD_OFFSETS)
+            .any(|(&v, (_, n))| v >= n)
+        {
+            return None;
+        }
+        Some(Self {
+            battle_camera: b[0],
+            select_attack: b[1],
+            battle_command: b[2],
+            field_move: b[3],
+            hp_display: b[4],
+            sound: b[5],
+            vibration_battles: b[6],
+            vibration_events: b[7],
+            vibration_encounters: b[8],
+        })
+    }
+}
+
+/// Read the nine option words. `None` when the block is too small or a word
+/// is past its row's choices - not an options window (a continuation block,
+/// or bytes retail never wrote there).
+pub fn read_retail_options(sc_block: &[u8]) -> Option<RetailOptions> {
+    let mut b = [0u8; 9];
+    for (dst, (o, _)) in b.iter_mut().zip(RETAIL_OPTION_WORD_OFFSETS) {
+        let w = i32::from_le_bytes(sc_block.get(o..o + 4)?.try_into().ok()?);
+        *dst = u8::try_from(w).ok()?;
+    }
+    RetailOptions::from_bytes(b)
+}
+
+/// Write the nine option words, restamping the block checksum.
+pub fn write_retail_options(sc_block: &mut [u8], options: RetailOptions) -> Result<()> {
+    let end = RETAIL_OPTION_WORD_OFFSETS
+        .iter()
+        .map(|&(o, _)| o + 4)
+        .max()
+        .unwrap_or(0);
+    if sc_block.len() < end {
+        bail!("sc_block too small for the option words (need >= {end})");
+    }
+    for (v, (o, _)) in options
+        .to_bytes()
+        .into_iter()
+        .zip(RETAIL_OPTION_WORD_OFFSETS)
+    {
+        sc_block[o..o + 4].copy_from_slice(&i32::from(v).to_le_bytes());
+    }
+    restamp_sc_block_checksum(sc_block);
+    Ok(())
+}
+
 /// The present-party member list (roster ids, count taken from
 /// [`RETAIL_PARTY_COUNT_OFFSET`]). `None` when the block is too small or the
 /// count is `0` or past [`RETAIL_PARTY_MEMBERS_MAX`] - a free block, not a

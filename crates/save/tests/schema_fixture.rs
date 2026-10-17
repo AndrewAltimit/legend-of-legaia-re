@@ -83,6 +83,13 @@ fn build_synthetic_save() -> SaveFile {
                 configured_level: 0x6B,
                 voice_volume: 90,
             }),
+            options: Some(legaia_save::card::RetailOptions {
+                battle_camera: 2,
+                field_move: 1,
+                sound: 1,
+                vibration_events: 1,
+                ..Default::default()
+            }),
             active_party: vec![0, 1, 2],
             per_char: vec![(
                 0,
@@ -282,6 +289,7 @@ fn retail_sc_round_trips_only_representable_fields() {
             active_party: save.ext_v2.active_party.clone(),
             field_position: save.ext_v2.field_position,
             audio_levels: save.ext_v2.audio_levels,
+            options: save.ext_v2.options,
             play_time_seconds: save.ext_v2.play_time_seconds,
             ..SaveExtV2::default()
         },

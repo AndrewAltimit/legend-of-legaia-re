@@ -41,6 +41,7 @@ impl LegaiaRuntime {
         // service below still runs: it is what advances the picture and ends
         // the cutscene.
         let movie_held = self.fmv.armed_for().is_some();
+        let mut options_adopted = false;
         let event = if movie_held {
             SceneTickEvent::Stepped
         } else {
@@ -54,7 +55,11 @@ impl LegaiaRuntime {
             session.camera_azimuth_override = self.camera_azimuth_override.take();
             // The options' simulation knobs and the camera distance,
             // re-asserted ahead of the tick as the native window does in its
-            // `resolve_tick_pad`: one session step on both hosts.
+            // `resolve_tick_pad`: one session step on both hosts. A save
+            // load's option words land first, as the native window takes
+            // them (retail restores them with the card).
+            options_adopted =
+                session.adopt_loaded_options(&mut self.options_state, &mut self.options_pins);
             session.apply_option_knobs(&self.options_state, self.precise_movement_override);
             session
                 .tick()
@@ -64,6 +69,9 @@ impl LegaiaRuntime {
         // back the scene label when the post-movie hand-off entered one (the
         // session's hand-off, which resets the camera globals and drops the
         // SFX queue as a door does).
+        if options_adopted {
+            self.persist_and_apply_options();
+        }
         let fmv_handoff_scene = self.service_cutscene_fmv();
         // ...and the rest of the frame tail is the world's, so it freezes
         // with the scene tick. A movie that ends this frame falls through, as

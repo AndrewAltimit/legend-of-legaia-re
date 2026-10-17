@@ -92,6 +92,7 @@ fn round_trip_v2_full_ext() {
             play_time_seconds: 7200,
             field_position: None,
             audio_levels: None,
+            options: None,
             active_party: vec![0, 1, 2],
             per_char: vec![
                 (
@@ -350,6 +351,7 @@ fn save_with_saved_chain() -> SaveFile {
             play_time_seconds: 42,
             field_position: None,
             audio_levels: None,
+            options: None,
             active_party: vec![0, 1],
             per_char: vec![(
                 0,
