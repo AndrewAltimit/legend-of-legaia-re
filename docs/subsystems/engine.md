@@ -547,6 +547,7 @@ The shell loop closes: title -> save-select -> field / encounter -> battle -> sa
 | `LGX7` trailer (optional) | The minigame purses: casino coin bank, Point Card bank, fishing point record. |
 | `LGX8` trailer (optional) | The field position (`i16 x`, `i16 z`). |
 | `LGX9` trailer (optional) | The audio levels (`i32 configured_level`, `i32 voice_volume`). |
+| `LGXA` trailer (optional) | The options screen's nine config words, one byte each (Battle Camera, Select Attack, Battle Command, Field Move, Field HP Display, Sound, the three vibration rows). |
 
 Each optional trailer is emitted only when it has something to carry, so a save without one is the same bytes as before the trailer existed. The writer emits the highest version any populated field requires; readers accept every earlier one. The retail-card bridge carries the same engine-only state in the SC block's unread tail (`LGXE`, [save-screen](save-screen.md#the-engine-ext-blob-in-the-unread-tail)).
 

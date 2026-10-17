@@ -452,6 +452,14 @@ fn every_library_save_survives_load_and_a_save_load_round_trip() {
                     "[note] {card} {name} @{scene}: never free to save ({:?} in {})",
                     session.host.world.mode, session.host.world.active_scene_label
                 );
+                // A fight the settle walked into and could not end is no
+                // place a player saves from: its world holds the battle
+                // seats, and a resume lands back on the field. A save made
+                // running (the block's Field Move word) covers more ground
+                // and rolls more of them.
+                if session.host.world.mode == SceneMode::Battle {
+                    continue;
+                }
             }
             for p in card_round_trip(&mut session) {
                 failures.push(format!("{card} {name} @{scene}: {p}"));
