@@ -764,6 +764,9 @@ pub(super) struct PlayWindowApp {
     /// keyboard's [`Self::pad`] so a released button never clears a bit a
     /// key still holds; each tick sees the OR of the two.
     pub(super) gamepad_held: u16,
+    /// Pad bits the `--simple-dialogue` picker owned and that are still held
+    /// (`step_simple_dialog_picker`): hidden from the world until released.
+    pub(super) picker_swallow: u16,
     /// Input binding loaded from file (or default).
     pub(super) mapping: legaia_engine_system::input::Mapping,
     /// Physical keys currently held.

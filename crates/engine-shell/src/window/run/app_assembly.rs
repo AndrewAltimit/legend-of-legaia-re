@@ -170,6 +170,7 @@ impl PlayWindowApp {
             pad_taps: Default::default(),
             gamepad: None,
             gamepad_held: 0,
+            picker_swallow: 0,
             tick_no: 0,
             screenshot,
             sweep_next_tick: 0,

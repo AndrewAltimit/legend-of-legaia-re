@@ -44,7 +44,10 @@ mod tick;
 pub use borrowed_panel::*;
 pub use inline_segments::*;
 pub use owned_panel::*;
-pub use picker::{PICKER_CONFIRM_CUE, PICKER_MOVE_CUE};
+pub use picker::{
+    PICKER_CONFIRM_CUE, PICKER_MOVE_CUE, PICKER_PAD_CONFIRM, PICKER_PAD_DOWN, PICKER_PAD_MASK,
+    PICKER_PAD_UP, PickerPadStep,
+};
 pub use scene_mes::*;
 pub use substitutions::*;
 

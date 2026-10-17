@@ -252,6 +252,50 @@ fn confirm_menu_jumps_to_the_chosen_branch_reply() {
     assert!(panel.page_bytes().starts_with(b"Y!"));
 }
 
+/// The pad-word picker step: Down then Cross commits option 1, and every
+/// picker bit is owned while the menu is up (none before it opens).
+#[test]
+fn step_picker_pad_reads_the_bound_pad_word() {
+    let mut b = vec![0x1F, b'O', b'K', b'?', 0x00];
+    let open = b.len();
+    b.push(0x27);
+    let entries_at = b.len();
+    b.extend_from_slice(&[0, 0, 0, 0]);
+    b.push(0x24);
+    b.extend_from_slice(&[0x1F, b'Y', b'e', b's', 0x00]);
+    b.extend_from_slice(&[0x1F, b'N', b'o', 0x00]);
+    let reply0 = b.len();
+    b.extend_from_slice(&[0x1F, b'Y', b'!', 0x00]);
+    let reply1 = b.len();
+    b.extend_from_slice(&[0x1F, b'N', b'!', 0x00]);
+    let j0 = (reply0 as i32 - (open as i32 + 1)) as i16;
+    let j1 = (reply1 as i32 - (open as i32 + 1 + 2)) as i16;
+    b[entries_at..entries_at + 2].copy_from_slice(&j0.to_le_bytes());
+    b[entries_at + 2..entries_at + 4].copy_from_slice(&j1.to_le_bytes());
+
+    let mut panel = OwnedDialogPanel::from_inline_dialog(&b).unwrap();
+    type_until_wait(&mut panel);
+    assert_eq!(
+        panel.step_picker_pad(PICKER_PAD_CONFIRM),
+        PickerPadStep::default(),
+        "no menu yet: the pad is the world's"
+    );
+    panel.advance_page();
+    slide_in(&mut panel);
+    let down = panel.step_picker_pad(PICKER_PAD_DOWN);
+    assert!(down.moved);
+    assert_eq!(down.consumed, PICKER_PAD_MASK);
+    let held = panel.step_picker_pad(0);
+    assert_eq!((held.moved, held.chosen), (false, None), "no edge, no step");
+    assert_eq!(
+        held.consumed, PICKER_PAD_MASK,
+        "the held bits stay the picker's"
+    );
+    assert_eq!(panel.step_picker_pad(0x4000).chosen, Some(1));
+    assert_eq!(type_until_wait(&mut panel), PanelState::Done);
+    assert_eq!(panel.page_bytes(), vec![b'N', b'!']);
+}
+
 /// The press opens the menu hidden (sentinel), the box rises from
 /// `y = 0xF0` to its rest rect over thirteen pager calls at frame step 2,
 /// and Up/Down + confirm do nothing until the call after it rests - the

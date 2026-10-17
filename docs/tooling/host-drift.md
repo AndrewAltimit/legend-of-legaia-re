@@ -1530,8 +1530,16 @@ reaches it. One layout, the W3C standard mapping, lives in
 | where the word lands | the tick's pad word | `gamepad_held`, ORed with the keyboard's held word each tick; a press since the last poll goes through `PadTapLatch` | `Gamepad:<Button>` entries in the `held` / `pulse` sets; on the minigames page an edge event naming its button through the key handlers |
 
 Scripted and headless native runs open no controller: the pad word there is
-the script's. The window's `--simple-dialogue` picker moves on the arrow keys
-alone, so a controller does not reach it.
+the script's. Two native surfaces read the pad outside the tick's word and
+were keyboard-only until they took it:
+
+- the `--simple-dialogue` panel's option picker steps on the tick's bound pad
+  word (`OwnedDialogPanel::step_picker_pad`); the bits it owns stay hidden
+  from the world until released, so the committing confirm does not also
+  dismiss the reply;
+- the preview movie player (`play-str`, a `play-window` phase-1 movie) ends on
+  a controller press of retail's abort set (`cutscene::fmv_abort_edge`, the
+  button half of `fmv_skip_edge_hit`), as `Esc` ends it.
 
 ### Camera
 

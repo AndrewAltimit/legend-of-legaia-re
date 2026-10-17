@@ -11,7 +11,56 @@ pub const PICKER_MOVE_CUE: i16 = 0x21;
 /// edge word against the confirm mask `0x800846D0`.
 pub const PICKER_CONFIRM_CUE: i16 = 0x20;
 
+/// Raw PSX pad bits an open picker reads: Up / Down step the cursor, Cross
+/// and Circle commit the choice.
+pub const PICKER_PAD_UP: u16 = 0x0010;
+/// See [`PICKER_PAD_UP`].
+pub const PICKER_PAD_DOWN: u16 = 0x0040;
+/// See [`PICKER_PAD_UP`].
+pub const PICKER_PAD_CONFIRM: u16 = 0x4000 | 0x2000;
+/// Every bit an open picker owns while it is up.
+pub const PICKER_PAD_MASK: u16 = PICKER_PAD_UP | PICKER_PAD_DOWN | PICKER_PAD_CONFIRM;
+
+/// What one tick's pad edges did to an open picker
+/// ([`OwnedDialogPanel::step_picker_pad`]).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct PickerPadStep {
+    /// Bits the picker owns this tick: the caller hides them from whatever
+    /// else reads the pad (the world's dialog dismiss), so the confirm that
+    /// commits a choice does not also close the box.
+    pub consumed: u16,
+    /// The cursor moved ([`PICKER_MOVE_CUE`]).
+    pub moved: bool,
+    /// The option a confirm committed ([`PICKER_CONFIRM_CUE`]).
+    pub chosen: Option<usize>,
+}
+
 impl OwnedDialogPanel {
+    /// Drive an open picker from one tick's **raw** pad words (`pressed` =
+    /// this tick's press edges). The bound pad word is the input, not a key:
+    /// a rebound key or a controller reaches the picker exactly as a default
+    /// key does. Up and Down step the cursor, Cross / Circle commit. With no
+    /// menu up nothing is consumed.
+    pub fn step_picker_pad(&mut self, pressed: u16) -> PickerPadStep {
+        if !self.menu_active() {
+            return PickerPadStep::default();
+        }
+        let mut step = PickerPadStep {
+            consumed: PICKER_PAD_MASK,
+            ..PickerPadStep::default()
+        };
+        if pressed & PICKER_PAD_UP != 0 {
+            step.moved |= self.move_picker_cursor(-1);
+        }
+        if pressed & PICKER_PAD_DOWN != 0 {
+            step.moved |= self.move_picker_cursor(1);
+        }
+        if pressed & PICKER_PAD_CONFIRM != 0 {
+            step.chosen = self.confirm_menu();
+        }
+        step
+    }
+
     /// Confirm the highlighted menu option: apply its relative jump and resume
     /// the dialogue at the chosen branch's reply (mirrors the retail inline-
     /// script control handler `FUN_80038050`, which sets the script PC to

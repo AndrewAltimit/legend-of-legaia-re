@@ -27,6 +27,33 @@ impl PlayWindowApp {
         self.run_sim_ticks(ticks);
     }
 
+    /// The `--simple-dialogue` panel's option picker, on this tick's bound pad
+    /// word (`OwnedDialogPanel::step_picker_pad`): a rebound key or a
+    /// controller drives it as a default key does. Returns `pad` with the
+    /// bits the open picker owns cleared, so the confirm that commits a
+    /// choice does not also reach the world's dialog dismiss. The pager
+    /// cues its picker (move `0x21`, commit `0x20`).
+    ///
+    /// A bit the picker owned stays hidden until it is released: the confirm
+    /// that commits closes the menu, and the same held button must not
+    /// arrive at the world one tick later as a fresh press that dismisses
+    /// the reply.
+    fn step_simple_dialog_picker(&mut self, pad: u16) -> u16 {
+        let pressed = pad & !self.prev_pad;
+        self.picker_swallow &= pad;
+        if let Some(panel) = self.active_dialog.as_mut() {
+            let step = panel.step_picker_pad(pressed);
+            if step.moved {
+                self.fire_menu_cue(legaia_engine_dialog::dialog::PICKER_MOVE_CUE as u16);
+            }
+            if step.chosen.is_some() {
+                self.fire_menu_cue(legaia_engine_dialog::dialog::PICKER_CONFIRM_CUE as u16);
+            }
+            self.picker_swallow |= step.consumed & pad;
+        }
+        pad & !self.picker_swallow
+    }
+
     /// Read the controllers once for this display frame (`window::gamepad`):
     /// adopt the folded word as [`Self::gamepad_held`] and hand every press
     /// since the last poll to the tap latch, the keyboard's sub-frame rule.
@@ -223,6 +250,7 @@ impl PlayWindowApp {
         // is frozen below.
         let neutral = !matches!(owner, TickOwner::Field(false));
         let field_pad = if neutral { 0 } else { self.pad };
+        let field_pad = self.step_simple_dialog_picker(field_pad);
         let field_suspended = owner == TickOwner::OverlayScreen;
         let field_pad = self.resolve_tick_pad(field_pad);
         self.session.host.world.set_pad(field_pad);

@@ -51,7 +51,6 @@ impl PlayWindowApp {
             || self.minigame_key(code, state)
             || self.option_key(code, state)
             || self.key_name_entry(code, state)
-            || self.key_dialog_picker(code, state)
         {
             return;
         }
@@ -92,42 +91,6 @@ impl PlayWindowApp {
         {
             self.session.host.world.open_name_entry(0);
             return true;
-        }
-        false
-    }
-
-    /// Menu input: while the active dialog box is a multiple-choice
-    /// menu (a picker decoded from the inline interaction script),
-    /// Up/Down move the option cursor and a confirm button applies
-    /// the chosen option's relative jump (`FUN_80038050`) instead of
-    /// driving movement / dismissing the box. Resolve the key->button
-    /// first so the immutable `mapping` borrow ends before the
-    /// mutable `active_dialog` borrow.
-    fn key_dialog_picker(&mut self, code: KeyCode, state: ElementState) -> bool {
-        if state == ElementState::Pressed {
-            let is_confirm = matches!(
-                self.mapping.pad_button_for_key(keycode_to_name(code)),
-                Some(
-                    legaia_engine_system::input::PadButton::Cross
-                        | legaia_engine_system::input::PadButton::Circle
-                )
-            );
-            if let Some(panel) = self.active_dialog.as_mut()
-                && panel.menu_active()
-            {
-                if matches!(code, KeyCode::ArrowUp) {
-                    panel.move_picker_cursor(-1);
-                    return true;
-                }
-                if matches!(code, KeyCode::ArrowDown) {
-                    panel.move_picker_cursor(1);
-                    return true;
-                }
-                if is_confirm {
-                    panel.confirm_menu();
-                    return true;
-                }
-            }
         }
         false
     }

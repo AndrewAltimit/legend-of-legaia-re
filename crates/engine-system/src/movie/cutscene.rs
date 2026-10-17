@@ -279,7 +279,15 @@ pub const FMV_SKIP_BUTTONS: [crate::input::PadButton; 5] = [
 /// which is a difference a visitor notices in the first ten seconds.
 // REF: FUN_801cea3c
 pub fn fmv_skip_edge_hit(fmv_id: i16, edge: u16) -> bool {
-    fmv_is_skippable(fmv_id) && FMV_SKIP_BUTTONS.iter().any(|b| edge & (*b as u16) != 0)
+    fmv_is_skippable(fmv_id) && fmv_abort_edge(edge)
+}
+
+/// The button half of [`fmv_skip_edge_hit`]: `edge` holds a press of one of
+/// [`FMV_SKIP_BUTTONS`]. For a movie player with no `fmv_id` to gate on (the
+/// native window's preview movie, which its keyboard already skips), so a
+/// controller ends it on retail's abort set rather than on a host's own pick.
+pub fn fmv_abort_edge(edge: u16) -> bool {
+    FMV_SKIP_BUTTONS.iter().any(|b| edge & (*b as u16) != 0)
 }
 
 /// Wall-clock seconds a movie's audio cursor may sit at zero before the
