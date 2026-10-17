@@ -25,6 +25,7 @@ band reader call each other.
 | `slot_b_module` | File layout of the slot-B cast / summon images: head table, code, spawn-record band, inherited tail. See [`slot-b-module-layout.md`](../../docs/formats/slot-b-module-layout.md). |
 | `summon_overlay` | The spawn-record band of a slot-B module: the spawn-call scan and the part records it names. See [`cast-module.md`](../../docs/subsystems/cast-module.md). |
 | `cast_effect_pool` | The slot-B band indexed by PROT entry (action id or capture sub-id to module), each image resolved to its spawn records. |
+| `cast_presentation` | The presentation calls a slot-B module's tick arms make into the shared helpers (screen fades, washes, the streak ribbon, CLUT copies), decoded off the module image per phase arm. |
 
 ## Layering
 

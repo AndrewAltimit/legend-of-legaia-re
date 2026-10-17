@@ -7,7 +7,8 @@ written from the routine's disassembly (the decompiled C in
 plus the format notes in `docs/subsystems/`, with no static-recompiled bytes
 from the original executable. The crate is the VMs and what they import: the
 window-widget VM at the root, `field`, `effect_vm`, `move_vm` with its buffers
-and extension, `anim_vm`, and the actor allocator and tick. The battle-side VMs
+and extension, `anim_vm`, the actor allocator and tick, and the `World`'s frame clock
+(`frame_clock`). The battle-side VMs
 are `legaia-engine-battle-vm` and the two motion VMs are
 `legaia-engine-motion-vm`. Kernels that are not a VM live in the crate whose
 role they fit - field-overlay kernels in `legaia-engine-field`, the title and

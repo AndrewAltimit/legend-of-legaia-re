@@ -97,6 +97,10 @@ link into a dependent crate.
   engine-core's `World`, which holds the field host borrow.
 - **Inn** - `inn` (the rest confirmation and HP / MP restore session; see
   [`docs/subsystems/inn.md`](../../docs/subsystems/inn.md)).
+- **Session state held on `World`** - `party_state` (roster, active party,
+  money, inventory, arts, level-up tracking, name entry) and `shop_state`
+  (the gold-shop and prize-exchange sessions), each one subsystem's state
+  held as a unit on the composite `World`.
 
 ## Title overlay, game-over banner and menu state machine
 

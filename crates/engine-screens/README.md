@@ -43,7 +43,12 @@ nothing. This crate is the projection between them for:
 - the **dialog reading box** (`dialog_screens`): the pager snapshot, its
   stage layout off the pager's own row word, and both halves of the box;
 - the **field-side projections** (`field_screens`): the save-menu atlas'
-  band table and badge cells, the name-entry view, the field party HUD.
+  band table and badge cells, the name-entry view, the field party HUD;
+- the **frame's field decisions** (`field_frame`): the enhanced scene lights
+  a frame draws and the frame clear colour, off the world and the open
+  screen;
+- the **screen-space primitive layers** (`screen_layers`): the frame's
+  `under` / `over` PSX primitive lists, composed in one order for both hosts.
 
 ## How a host uses it
 

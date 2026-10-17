@@ -16,6 +16,7 @@ round. Hosts and tests name its modules directly
 | `dialog_pacing` | The typewriter reveal clock. |
 | `dialog_picker_slide` | How a picker box enters. |
 | `text_balloon` | The `4C E1` one-line balloon. |
+| `cursor_sprite` | The animation half of the cursor sprite primitive `FUN_8002B994`: the frame and idle bob of each hand, pager triangle and page mark (`CursorSprites`). |
 
 ## The split line
 

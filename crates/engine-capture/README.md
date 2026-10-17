@@ -30,6 +30,9 @@ form in both directions.
 - [`field_seeds`](src/field_seeds.rs) - the field-side seeds: placed-object
   clips, ambient walkers, morph envelopes, the fog pool, sprite arms,
   CLUT-cell cyclers, scroller rects, the panel widget and the camera block.
+- [`clip_cursors`](src/clip_cursors.rs) - `ClipCursorSeed`, where each
+  combatant's playing clip stood in the capture (the anim node's cursor
+  `+0x68`), so a seated fight draws its combatants at retail's keyframe.
 
 ## Layering
 
