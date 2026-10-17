@@ -716,6 +716,7 @@ for a reason that is not a port defect:
 | [Take back double pushes](#a-push-the-capture-already-holds) | - (measured from the engine's own replay) | `RetailBattle::undrift`, `ground_residual` |
 | [Sit out spent turns](#combatants-that-had-already-acted) | initiative keys `+0x16C` | `RetailBattle::engine_spent_keys`, the `:k` tail of `LEGAIA_BATTLE_BARS` |
 | [Raise the Mystic Shield](#the-mystic-shield-a-capture-already-holds) | the shield word `_DAT_8007BD84` | `World::raise_mystic_shield`, `LEGAIA_BATTLE_MYSTIC_SHIELD=1` |
+| [Land each body's clip](#the-keyframe-each-body-stands-on) | anim node cursor `*(+0x22C) + 0x68`, clip `+0x1D9`, rates `+0x21D` / entry `+0x78` | `World::seat_battle_clip_cursor`, `LEGAIA_SEAT_BATTLE_CLIPS` |
 | [Take back rewards](#rewards-already-granted) | EXP share `gp+0xA04`, stat window, banner element `ctx[+0x26]` | `ungrant_results_rewards`, `ungrant_magic_level_up` |
 | [Place the phase](#placing-the-phase) | command-flow byte `ctx[+0x06]`, cursor `ctx[+0x07]`, seat `ctx[+0x13]` | `SeedPlan` |
 
@@ -974,6 +975,26 @@ reads the word and the seed raises the shield on the first battle tick, beside
 the bars - the headless seed directly, the image child through
 `LEGAIA_BATTLE_MYSTIC_SHIELD=1`. `cort_guilty_cross_mid_cast` and
 `cort_mystic_circle_mid_cast` are the two.
+
+### The keyframe each body stands on
+
+A looping clip - every idle stance - is a clock of its own, and the replay
+reaches a capture's phase on the pad path's clock, not retail's. A seat that
+lands the right phase still draws each body mid-sway at whatever keyframe the
+replay left it on; a drive that commits a member's Spirit instead of an Attack
+reaches the same surface four ticks sooner and moves every idle by a quarter
+of a keyframe (`arts_bar_ideal_noa_fangs`).
+
+`RetailBattle::clip_cursors` reads each pool slot's playing clip `+0x1D9` and
+its anim node's cursor `*(+0x22C) + 0x68` (12.4 sixteenths of a keyframe), and
+takes the cursor back to the frame on the screen: the display shows the frame
+built two game frames before the RAM's (`display_lag_vsyncs`), and each frame
+advances the cursor by `(frame step * +0x21D * entry +0x78) >> 1` (`>> 2` for
+a Slowed member's idle; `FUN_80047430`, `0x800476D8..0x80047764`). The image
+child lands each slot on that cursor on the capture frame
+(`LEGAIA_SEAT_BATTLE_CLIPS`, `World::seat_battle_clip_cursor`) when it plays
+the same clip and the clip loops; a one-shot started with its action, which
+the seed has already placed.
 
 ### Rewards already granted
 
