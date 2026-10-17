@@ -101,19 +101,18 @@ impl LegaiaMinigames {
         // `World::dome_special_word`; only the flag *source* differs.
         let special = self.muscle_special;
         session.set_special_word(special);
-        // NOT WIRED (this host only): no art catalog is installed, so this
-        // panel's turn resolves the raw direction string rather than the
-        // tokenizer's action queue. `MuscleDomeSession::install_art_catalog`
-        // wants `(ActionConstant, commands)` rows and this page's only art
-        // source is the SCUS arts-**name** table (`muscle_art_catalog`),
-        // which carries a display index, not the action constant - the
-        // constants live in the per-character art records (PROT `0x05C4`)
-        // this page does not decode. The arena-door warp path
-        // (`engine-core::scene_host::host::minigame_warp`) and the native window's
-        // own dome entry both install one through
-        // `muscle_dome::art_catalog_for`; this panel owes the art-record
-        // decode, not another filter.
-        //
+        // The fighter's normal-art catalog, so the turn resolves the
+        // tokenizer's action queue rather than the raw direction string.
+        // The source is the one the play hosts' battle entry installs from
+        // (`World::install_art_bank_records`): the character's art-animation
+        // bank in its player battle file, through the shared filter both dome
+        // hosts build with (`muscle_dome_session::art_catalog_from_bank` /
+        // `art_catalog_for`). A file that does not decode leaves plain swings,
+        // retail's own answer for a character with no arts.
+        let catalog = self.muscle_art_catalog_rows(char_slot);
+        if !catalog.is_empty() {
+            session.install_art_catalog(0, catalog);
+        }
         // Damage resolves through the shared retail kernel - the same
         // `DomeDamageModel` the native play-window host installs, so neither
         // host carries a damage rule of its own.
@@ -612,6 +611,11 @@ impl LegaiaMinigames {
             "time_meter": s.time_meter(),
             "time_meter_max": legaia_engine_minigames::muscle_dome::TIME_METER_MAX,
             "queue": [s.queue(0), s.queue(1)],
+            // The player's committed string as the action queue the turn
+            // walks (the tokenizer over the installed art catalog), and the
+            // Triangle list's page count over that catalog.
+            "action_queue": s.tokenized_queue(0),
+            "arts_pages": s.arts_list_pages(),
             "last_damage": s.last_turn_damage(),
             "hand": hand,
             "reward_spell": s.reward_spell_id(),

@@ -86,6 +86,31 @@ impl LegaiaMinigames {
         Some(out)
     }
 
+    /// The player character's normal-art catalog for the dome session,
+    /// from the art-animation bank in their player battle file (`record[0]
+    /// +0x58`) - the records the play hosts' battle entry installs. Empty
+    /// when the file or the bank does not decode.
+    pub(super) fn muscle_art_catalog_rows(
+        &self,
+        char_slot: usize,
+    ) -> Vec<(legaia_art::ActionConstant, Vec<legaia_art::Command>)> {
+        use legaia_actor_formats::battle_char_assembly as bca;
+        let Some(raw) = entry_bytes(
+            &self.prot,
+            &self.entries,
+            PLAYER_BATTLE_FILE_BASE + char_slot as u32,
+        ) else {
+            return Vec::new();
+        };
+        let Ok(record0) = bca::decode_record0(raw) else {
+            return Vec::new();
+        };
+        let Ok(records) = bca::art_animation_bank(&record0) else {
+            return Vec::new();
+        };
+        legaia_engine_menus::muscle_dome_session::art_catalog_from_bank(&records)
+    }
+
     /// The player fighter's record stats: SCUS new-game template leveled
     /// through the growth curves (jitter-free core), battle-load initialised.
     pub(super) fn muscle_player_fighter(
