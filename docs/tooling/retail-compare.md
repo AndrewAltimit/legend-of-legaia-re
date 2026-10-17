@@ -1086,6 +1086,7 @@ that holds the phase; a drive the headless side never completed is not imaged.
 | Seat | Commit |
 |---|---|
 | Members ahead of the capture's seat | a plain Attack: the ring's Left arm, `Auto`, the first target |
+| Members ahead of a menu capture's seat that committed Spirit | Spirit (the ring's Down arm), read off each seat's `+0x1DE = 4`: the commit log draws each member's committed command (`delilas_che_hammer_gaps_v3`'s Vahn and Noa) |
 | The capture's seat, menu capture | the arm that leads to the captured surface: Left then `Command` for the arts entry `0x50`, Up for the item window `0x3C`, Right for the magic window `0x46` |
 | The capture's seat, action capture | the same Attack every round; Spirit when its committed category `+0x1DE` is `4` |
 | A monster seat that was casting (`+0x1DE = 2`) | casts the capture's spell id `+0x1DF` on its next turn (`BattleState::forced_monster_cast`, with the capture's already-debited MP credited back) |

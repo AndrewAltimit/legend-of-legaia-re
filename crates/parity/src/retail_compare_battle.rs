@@ -267,6 +267,9 @@ pub struct RetailBattle {
     pub backdrop_slot_1_yaw: u16,
     /// `0x8007BD10[0..party_count]`.
     pub seat_chars: Vec<u8>,
+    /// Each party seat's committed action category `+0x1DE` (`4` = Spirit).
+    /// For the seats a menu capture's member follows, this round's commit.
+    pub party_categories: Vec<u8>,
     /// Formation-cell ids, trimmed to the monster count.
     pub monster_ids: Vec<u8>,
     /// Party slots `0..party_count` (fixed pool slots).

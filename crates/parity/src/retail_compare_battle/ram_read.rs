@@ -74,6 +74,16 @@ impl RetailBattle {
             seat_chars: (0..u32::from(party_count))
                 .map(|s| game_anchors::u8_at(ram, SEAT_CHARS + s))
                 .collect(),
+            party_categories: (0..u32::from(party_count))
+                .map(|s| {
+                    let p = game_anchors::u32_at(ram, ACTOR_TABLE + s * 4);
+                    if in_ram(p) {
+                        game_anchors::u8_at(ram, p + 0x1DE)
+                    } else {
+                        0
+                    }
+                })
+                .collect(),
             party: (0..u32::from(party_count))
                 .map(|s| combatant(ram, s))
                 .collect(),

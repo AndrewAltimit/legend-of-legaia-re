@@ -50,6 +50,8 @@ pub struct EngineBattle {
     pub action_state: u8,
     /// The engine's active seat `ctx[+0x13]` when sampled.
     pub active_actor: u8,
+    /// The active seat's target byte (`+0x1DD`) when sampled.
+    pub active_target: u8,
     pub monster_ids: Vec<Option<u16>>,
     pub party: Vec<Combatant>,
     pub monsters: Vec<Combatant>,
@@ -690,6 +692,10 @@ pub fn run_engine_battle(
         win_pose: world.battle.victory.and_then(|v| v.pose_id),
         action_state: world.battle_ctx.action_state,
         active_actor: world.battle_ctx.active_actor,
+        active_target: world
+            .actors
+            .get(usize::from(world.battle_ctx.active_actor))
+            .map_or(0, |a| a.battle.active_target),
         monster_ids: snap.monster_ids,
         party: snap.party,
         monsters: snap.monsters,

@@ -12,10 +12,17 @@ fn the_battle_drive_round_trips_through_its_env_form() {
         BattleDrive::Menu {
             flow: BattleFlowState::ArtsCommandEntry,
             seat: 2,
+            spirit: 0,
         },
         BattleDrive::Menu {
             flow: BattleFlowState::CommitBegin,
             seat: 1,
+            spirit: 0,
+        },
+        BattleDrive::Menu {
+            flow: BattleFlowState::CategoryMenu,
+            seat: 2,
+            spirit: 0b11,
         },
         BattleDrive::Action {
             seat: 3,
