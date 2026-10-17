@@ -64,11 +64,11 @@ flowchart LR
     core --> mini["Browser minigames page"]
 ```
 
-## What works, and what is rough
+## What works
 
-Most of the game works:
+The whole game plays, New Game to the ending credits:
 
-- **Boot and story.** Launcher, title screen, New Game through the opening (prologue, narration crawl, FMVs), Continue from a save. An automated [full-game ladder](docs/tooling/full-game-ladder.md) drives every story segment from New Game to the ending credits with pad input alone, each segment seeded from a retail save at its milestone.
+- **Boot and story.** Launcher, title screen, New Game through the opening (prologue, narration crawl, FMVs), Continue from a save. An automated [full-game ladder](docs/tooling/full-game-ladder.md) plays one New Game through every story milestone to the credits on pad input alone, reloading only its own saves, and also clears each story segment from the retail save at its milestone.
 - **Field.** Every scene on the disc loads and runs its own scripts through the ported field VM: retail movement and collision, NPCs and branching dialogue, doors, chests, cutscene choreography, the world map.
 - **Battle.** Random and story encounters into player-driven battles: the command ring, Tactical Arts with Super and Miracle Arts, Seru magic and summons, items, Spirit, running away, then spoils, level-ups and Seru capture.
 - **Menus and towns.** The pause menu and the screens behind it (status, items, magic, equipment, options), shops, inns, the save screen.
@@ -77,14 +77,13 @@ Most of the game works:
 - **Saves.** The engine's own save files, plus real PSX memory-card images an emulator still accepts.
 - **Tooling.** One-command extraction of the whole disc, the randomizer and content mods, language packs, and reproducible static analysis.
 
-What is still rough:
+Known gaps:
 
-- **Bugs happen.** Expect the occasional visual glitch, mistimed animation or stuck script. The ladder above is segmented: every stretch starts from a retail save, with a retail player's party and bag. One New Game played straight through on its own saves stalls among the early milestones, and how far it gets is the ladder's [continuous-run score](docs/tooling/full-game-ladder.md#the-continuous-run). [Issues](https://github.com/AndrewAltimit/legend-of-legaia-re/issues) naming the scene and what you did are welcome.
-- **Parity is measured, not finished.** The [retail comparison corpus](docs/tooling/retail-compare.md) scores the port against retail save states - RAM, camera, and the frame on screen - and ranks where it still differs.
+- **Bug reports help.** If you hit a visual glitch, a mistimed animation or a stuck script, an [issue](https://github.com/AndrewAltimit/legend-of-legaia-re/issues) naming the scene and what you did is the fastest way to a fix.
+- **Frame-for-frame parity is still closing.** The [retail comparison corpus](docs/tooling/retail-compare.md) scores the port against retail save states - RAM, camera, and the frame on screen - and ranks where it still differs.
 - **Spell voices are silent.** A cast or summon module's own voice clip is resolved to its `XA` file and channel but not played; the arts shouts and battle stings are the voice clips you hear.
 - **Some sounds are the port's pick.** Where retail's sound-effect id for an event is untraced, the port plays the closest cue and labels it as its own choice ([details](docs/guides/playing-and-viewing.md#5-what-you-hear)).
 - **USA disc only for the port.** Other regions' discs extract, and an official PAL translation can be lifted into a USA language pack, but the engine and the patcher target `SCUS-94254`.
-- **Library APIs move.** The binaries and file formats are the surface to rely on; the Rust crate APIs change freely.
 - **Open questions remain** in the reverse engineering itself: [open threads](docs/reference/open-rev-eng-threads.md).
 
 ## Quick start
@@ -229,7 +228,7 @@ The last line turns on the disc-gated tests; without the variable they skip and 
 
 ## Status and license
 
-**Status:** a working port under active development. Most of the game plays; [What works, and what is rough](#what-works-and-what-is-rough) says where it does not yet. Prebuilt releases are on the [Releases page](https://github.com/AndrewAltimit/legend-of-legaia-re/releases).
+**Status:** playable from New Game to the credits, natively and in the browser; [What works](#what-works) lists the known gaps. Prebuilt releases are on the [Releases page](https://github.com/AndrewAltimit/legend-of-legaia-re/releases).
 
 **License:** dual-licensed at your option under either the [Unlicense](LICENSE) (public-domain dedication) or the [MIT License](LICENSE-MIT). Apache-2.0 is intentionally not offered - this project is meant to be as close to public domain as the law in your jurisdiction allows, with no patent-retaliation strings attached: copy it, fork it, sell it, patent improvements on it, just don't stop anyone else from doing the same.
 

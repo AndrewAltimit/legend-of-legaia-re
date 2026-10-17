@@ -11,7 +11,7 @@ Two tracks share one Cargo workspace:
 1. **Asset preservation.** Extract every asset on the disc, document every format with Ghidra-traced provenance, build round-trip parsers.
 2. **Engine reimplementation.** A from-scratch Rust port, written from the format docs and the Ghidra-traced disassembly - the ScummVM / OpenRCT2 model, not a decompilation and not a static recompilation of `SCUS_942.54`.
 
-The port plays: most of the game runs on the native window and in the browser, and the disc patcher and translation tools are in use. So a change here lands in something people run - which is why the gates below are strict, and why a regression in a working feature matters more than a missing one. The root [`README.md`](README.md#what-works-and-what-is-rough) says what works and what is still rough.
+The port plays: the whole game runs, New Game to the credits, in the native window and in the browser, and the disc patcher and translation tools are in use. So a change here lands in something people run - which is why the gates below are strict, and why a regression in a working feature matters more than a missing one. The root [`README.md`](README.md#what-works) says what works and lists the known gaps.
 
 The end-user model is: ship the engine, the user supplies their own disc image, the engine reads it and runs.
 
