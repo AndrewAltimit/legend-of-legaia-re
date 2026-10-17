@@ -128,12 +128,25 @@ impl World {
                 .party_count
                 .min(FIRST_MONSTER_SEAT)
                 .min(table as u8),
-            // Counted over retail's seats `3..8` (the kernels' row,
-            // `seat_map`), each read through the engine slot behind it: a
-            // small party's monsters sit below engine slot `3`.
+            // Retail's `ctx[+1]` is the fight's **seated monster** count: the
+            // battle loader seats monster `k` at pool slot `3 + k`
+            // (`addiu s0,s2,0x3` at `0x8005185C`) and every reader bounds its
+            // sweep with it from seat `3` (`lbu a1,1(ctx)` at `0x8004B10C`),
+            // a downed monster included (the escape divisor keeps it,
+            // `0x801EC118`). Counted over retail's seats `3..8` (the
+            // kernels' row, `seat_map`), each read through the engine slot
+            // behind it - a small party's monsters sit below engine slot `3`
+            // - and counted by the monster seated there, not by the slot's
+            // `active` flag: an empty slot left active (a stale row, a
+            // host-side extra) is no monster, and a row poll over it never
+            // ends (Theeder's and Gizam's arm 14).
             monster_count: (FIRST_MONSTER_SEAT..BATTLE_TABLE_SLOTS as u8)
                 .filter_map(|r| map.engine(r))
-                .filter(|&e| self.actors.get(usize::from(e)).is_some_and(|a| a.active))
+                .filter(|&e| {
+                    self.actors
+                        .get(usize::from(e))
+                        .is_some_and(|a| a.battle_monster_id.is_some())
+                })
                 .count() as u8,
             caster_seat: map.retail(self.battle_ctx.active_actor),
             ctx_278: self.casting.module_ctx_278,

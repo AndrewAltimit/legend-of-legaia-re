@@ -117,6 +117,15 @@ const SUMMON_WALK_STEP: i16 = 12;
 const SUMMON_DIRECTED_WALK_STEP: i32 = 28;
 /// Frames the creature stands at the strike point after the outcome.
 const SUMMON_LINGER_FRAMES: u16 = 40;
+/// The longest the band lingers on a module still busy after its outcome
+/// before it lets go anyway: twice the longest post-hit tail a ported module
+/// runs (PROT 0928's settle arm `0xC8`, `T = scalar * 128` drained a scalar a
+/// tick, then its row poll). A module still busy past it is held on a poll
+/// the engine cannot answer - a dead seat whose defeat fade never runs, so
+/// its colour word `+0x04` never reaches the zero the row polls wait for -
+/// and retail's band would not be standing there. Letting go keeps the
+/// fight moving.
+pub(in crate::world) const SUMMON_LINGER_STALL_FRAMES: u16 = 0x800;
 /// A host with no creature to seat (a headless driver) still owes the
 /// outcome: fold it after this many frames without a seat.
 const SUMMON_UNSEATED_GRACE: u16 = 60;

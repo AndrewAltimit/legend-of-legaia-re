@@ -300,7 +300,10 @@ impl World {
                     // Back to the idle loop for the hold.
                     a.battle.queued_anim = 0;
                 }
-                if st.frames >= SUMMON_LINGER_FRAMES && !module_busy {
+                // A module still busy long past its outcome is held on a poll
+                // the engine cannot answer (`SUMMON_LINGER_STALL_FRAMES`).
+                let stalled = module_busy && st.frames >= SUMMON_LINGER_STALL_FRAMES;
+                if (st.frames >= SUMMON_LINGER_FRAMES && !module_busy) || stalled {
                     self.despawn_summon_actor();
                     st.phase = SummonPhase::Done;
                 }

@@ -71,6 +71,7 @@ fn the_juggernaut_sweep_spares_the_party_and_never_kills() {
     assert_eq!(world.cast_module_for(0x99), Some(927));
     for i in 3..8 {
         world.actors[i].battle.hp = 40;
+        world.actors[i].battle_monster_id = Some(1);
     }
     world.set_battle_attack(0, 400);
     let run = world

@@ -201,3 +201,111 @@ fn every_summon_creature_module_runs_to_done() {
         assert!(ticks > 200, "PROT {entry} lasts {ticks} ticks");
     }
 }
+
+/// `ctx[+1]` counts the fight's seated monsters, not the active slots: a
+/// slot the last fight left active (no monster, the resting colour word no
+/// defeat fade drains) is no monster seat, and the next fight's entry clears
+/// it. Long unbroken sessions hung Theeder's and Gizam's arm-14 row poll on
+/// such a phantom seat.
+#[test]
+fn a_stale_active_row_is_neither_seated_nor_counted() {
+    let mut world = World::default();
+    world.enter_battle(3, 3);
+    for i in 3..6 {
+        world.actors[i].battle_monster_id = Some(1);
+        world.actors[i].battle.hp = 0;
+        world.actors[i].battle.render_color =
+            legaia_engine_battle_vm::battle_formulas::TINT_NEUTRAL;
+    }
+    world.enter_battle(3, 2);
+    assert!(
+        !world.actors[5].active,
+        "the row past the layout starts empty"
+    );
+    world.actors[3].battle_monster_id = Some(1);
+    world.actors[4].battle_monster_id = Some(1);
+    assert_eq!(world.cast_module_ctx().monster_count, 2);
+    // A slot some other path leaves active still counts for nothing.
+    world.actors[5].active = true;
+    world.actors[5].battle.render_color = legaia_engine_battle_vm::battle_formulas::TINT_NEUTRAL;
+    assert_eq!(world.cast_module_ctx().monster_count, 2);
+    // A downed monster keeps its seat in the count (retail's escape divisor
+    // keeps it too).
+    world.actors[4].battle.hp = 0;
+    world.actors[4].active = false;
+    assert_eq!(world.cast_module_ctx().monster_count, 2);
+}
+
+/// The band does not stand forever on a module held by a poll the engine
+/// cannot answer: PROT 0912's arm `0x13` waits for every dead monster's
+/// colour word to drain, and a dead seat whose defeat fade never runs holds
+/// it. The Deene fight's `0x8A` stood in the Linger phase at module phase
+/// `0x13` for good; the stager lets go after
+/// [`crate::world::battle::cast_band::SUMMON_LINGER_STALL_FRAMES`].
+#[test]
+fn the_band_lets_go_of_a_module_held_on_an_undrainable_seat() {
+    let mut world = module_code_world();
+    world.actors[1].battle_monster_id = Some(1);
+    world.actors[0].battle.active_target = 1;
+    world.casting.summon_actor_slot = Some(9);
+    world.actors[9].active = true;
+    world.actors[9].battle.hp = 100;
+    world.arm_summon_stager(0, 0x8A);
+    assert_eq!(world.cast_module_for(0x8A), Some(912));
+    // The seat dies with its resting colour word and never enters the
+    // defeat fade.
+    world.actors[1].battle.hp = 0;
+    world.actors[1].battle.render_color = legaia_engine_battle_vm::battle_formulas::TINT_NEUTRAL;
+    let mut ticks = 0u32;
+    while world.summon_stager_tick() {
+        ticks += 1;
+        // Keep the seat undrained: nothing in the engine fades it.
+        world.actors[1].battle.hp = 0;
+        world.actors[1].battle.render_color =
+            legaia_engine_battle_vm::battle_formulas::TINT_NEUTRAL;
+        assert!(ticks < 20_000, "the band never let go");
+    }
+    assert_eq!(
+        world.casting.module_phase,
+        legaia_engine_battle_vm::seru_magic_ticks::FREED_SETTLE_PHASE,
+        "held on the row poll until the stager let go"
+    );
+}
+
+/// Theeder's arm-14 row poll walks the seated monster row only: a phantom
+/// active slot past it (no monster, a colour word nothing drains) does not
+/// hold the module.
+#[test]
+fn theeder_finishes_beside_a_phantom_active_seat() {
+    let mut world = module_code_world();
+    world.party.party_count = 3;
+    for i in 3..5 {
+        world.actors[i].battle_monster_id = Some(1);
+    }
+    world.actors[0].battle.active_target = 3;
+    world.actors[5].battle.hp = 0;
+    world.actors[5].battle.render_color = legaia_engine_battle_vm::battle_formulas::TINT_NEUTRAL;
+    for i in 6..8 {
+        world.actors[i].active = false;
+        world.actors[i].battle.hp = 0;
+    }
+    world.casting.summon_actor_slot = Some(9);
+    world.actors[9].active = true;
+    world.actors[9].battle.hp = 100;
+    assert_eq!(world.cast_module_for(0x82), Some(904));
+    assert_eq!(world.cast_module_ctx().monster_count, 2);
+    // From the arm-14 row poll on.
+    world.casting.module_phase = 14;
+    let mut done = false;
+    for _ in 0..8000 {
+        let phase = world.casting.module_phase;
+        match world.run_cast_module_code(0x82, phase) {
+            Some(r) if r.busy => {}
+            _ => {
+                done = true;
+                break;
+            }
+        }
+    }
+    assert!(done, "held at phase {:#x}", world.casting.module_phase);
+}
