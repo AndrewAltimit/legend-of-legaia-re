@@ -22,15 +22,15 @@ pub struct MonsterSpell {
     /// Block-relative byte offset of this spell entry (the `+0x4C` array
     /// element, before the loader's add-block-base fixup).
     pub offset: u32,
-    /// Resolved block-relative byte offset of this spell's **effect /
-    /// animation descriptor**, or `None` when the entry has none. On disc the
+    /// Resolved block-relative byte offset of this entry's first **clip
+    /// morph** lane ([`super::ClipMorph`]), or `None` when the entry has none. On disc the
     /// entry's `+0x04` field is a 1-based **index** (0 = none) into the
     /// per-block effect-offset table; this is the table slot already resolved
     /// to a block-relative offset (the value the loader then add-block-bases
     /// into the runtime `+0x04` pointer). See [`Self::aux_offset`] for `+0x08`.
     pub effect_offset: Option<u32>,
-    /// Resolved block-relative byte offset of this spell's secondary descriptor
-    /// (entry `+0x08`, same index-into-effect-offset-table scheme as
+    /// Resolved block-relative byte offset of this entry's second clip-morph
+    /// lane (entry `+0x08`, same index-into-effect-offset-table scheme as
     /// [`Self::effect_offset`]), or `None`. Set on far fewer entries.
     pub aux_offset: Option<u32>,
 }

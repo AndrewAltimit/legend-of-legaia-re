@@ -665,7 +665,7 @@ Small `SCUS_942.54` routines the battle tick and scene init reach through the ac
 | `FUN_80051078` | Separation driver: a 7 x 7 loop calling `FUN_80050BB8(i, j)` for every ordered pair of living actors (`i != j`, both `+4 != 0`). `FUN_80046A20` runs it every battle frame directly after the action SM (`jal 0x801E295C` then `jal 0x80051078`). | same |
 | `FUN_8005133C` | Per-actor status-marker spawn: allocates a primitive on the ordered list `_DAT_1F8003A0` (type tag `0x1E1 + slot`, size `0xF0`, priority 1), fills it from `gp[0xA0C] + slot*0x1E0 + 0x894` through `FUN_800583C8`, then sets `+0x220..+0x223 = 1`. | The primitive is a wgpu draw; the markers ride the actor's status flags. |
 
-The animation pair `FUN_800495C8` / `FUN_80049858` (pose-to-vertex blend) is in [`monster-animation.md`](../formats/monster-animation.md#vertex-blend-variants-fun_800495c8--fun_80049858). The tween / separation cluster is presentation only: it moves and tints actors but touches no HP, MP or stat field.
+The clip-morph pair `FUN_800495C8` / `FUN_80049858` (per-entry vertex deltas blended onto the mesh, then restored) is in [`monster-animation.md`](../formats/monster-animation.md#clip-morphs-fun_800495c8--fun_80049858). The tween / separation cluster is presentation only: it moves and tints actors but touches no HP, MP or stat field.
 
 ## See also
 

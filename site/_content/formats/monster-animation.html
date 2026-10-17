@@ -41,9 +41,9 @@
     </svg>
     <figcaption>From the archive to one keyframe. The stat record's <code>+0x4C</code> offset array points at each action entry; each entry is a fixed head followed by its own keyframe stream.</figcaption>
   </figure>
-  <div class="byte-map" role="img" aria-label="Action entry head (widths not to scale), first half: tag, runtime pointers, root speed, end step, event frames, effect script">
+  <div class="byte-map" role="img" aria-label="Action entry head (widths not to scale), first half: tag, clip-morph lanes, root speed, end step, event frames, effect script">
     <div class="bm-cell bm-accent" style="--w:3"><span class="bm-off">+0x00</span><span class="bm-name">action tag</span><span class="bm-size">u8 (+3)</span></div>
-    <div class="bm-cell bm-pad" style="--w:5"><span class="bm-off">+0x04</span><span class="bm-name">runtime ptrs</span><span class="bm-size">u32 &times; 2</span></div>
+    <div class="bm-cell bm-pad" style="--w:5"><span class="bm-off">+0x04</span><span class="bm-name">morph lanes</span><span class="bm-size">u32 &times; 2</span></div>
     <div class="bm-cell" style="--w:3"><span class="bm-off">+0x0C</span><span class="bm-name">root speed</span><span class="bm-size">i16</span></div>
     <div class="bm-cell" style="--w:3"><span class="bm-off">+0x0E</span><span class="bm-name">end step</span><span class="bm-size">i16</span></div>
     <div class="bm-cell bm-accent" style="--w:3"><span class="bm-off">+0x10</span><span class="bm-name">event frames</span><span class="bm-size">u8[4]</span></div>
@@ -61,7 +61,8 @@
     <thead><tr><th>Offset</th><th>Size</th><th>Field</th><th>Meaning</th></tr></thead>
     <tbody>
       <tr><td><code>+0x00</code></td><td>u8</td><td>action tag</td><td>Semantic tag (idle / walk / flinch / knockdown / attack &hellip;), <em>not</em> an index - <a href="#action-tags">table below</a></td></tr>
-      <tr><td><code>+0x04</code>, <code>+0x08</code>, <code>+0x88</code></td><td>u32</td><td>runtime pointers</td><td>Zero on disc; the loader fills them, <code>+0x88</code> pointing at the <code>+0x8C</code> stream</td></tr>
+      <tr><td><code>+0x04</code>, <code>+0x08</code></td><td>u32</td><td>clip-morph lanes</td><td>1-based index (<code>0</code> = none) the loader turns into a pointer to a <a href="#clip-morphs">clip morph</a></td></tr>
+      <tr><td><code>+0x88</code></td><td>u32</td><td>stream pointer</td><td>Zero on disc; the loader points it at the <code>+0x8C</code> stream</td></tr>
       <tr><td><code>+0x0C</code></td><td>i16</td><td>root speed</td><td>Signed per-tick drive of the actor along its facing while the clip plays</td></tr>
       <tr><td><code>+0x0E</code></td><td>i16</td><td>end step</td><td>How far the clip leaves the body from where it began (<a href="#end-step">below</a>); 0 on every idle</td></tr>
       <tr><td><code>+0x10</code></td><td>u8[4]</td><td>event frames</td><td>Zero-terminated ascending list of the clip's beats; drives the juggle window</td></tr>
@@ -187,12 +188,33 @@ ry = b6 | (b8 &amp; 0x0f) &lt;&lt; 8      rz = b7 | (b8 &amp; 0xf0) &lt;&lt; 4</
   <h3 id="end-step">The end-of-clip step (<code>+0x0E</code>)</h3>
   <p>A lunge ends one step forward without a snap. The decoder adds <code>+0x0E</code> to the Z delta of the last frame's blend into the queued frame 0, carrying the body forward in model space; at the natural end the anim tick moves the actor by the same step along its facing (<code>+0x34 += sin &middot; step &gt;&gt; 12</code>, <code>+0x38 += cos &middot; step &gt;&gt; 12</code>) and the pose snaps back to frame 0 at the new position. An event-cut clip moves it pro-rated by <code>frame / frames</code>. The tick skips the move while the root latch is up or a dead actor has no Seru staged.</p>
   <p class="caption">In the port: <code>engine-battle::battle_anim::MonsterAnimPlayer</code> (blend kernel <code>engine-battle-vm::battle_pose_blend</code>), end-step kernels <code>engine-battle-vm::battle_action::motion</code>.</p>
-  <details class="disclosure">
-    <summary>Vertex-blend variants</summary>
-    <div class="disclosure-body">
-      <p>Two sibling routines write the decoded pose onto the object vertices in the per-actor draw buffer. One is a straight copy. The other is a <strong>morph</strong> variant: it derives a 12-bit blend factor from the phase against a per-object frame-range table (bytes <code>[1..=4]</code> of the entry) and lerps each vertex toward its next-frame target - sub-keyframe morphing on top of the rigid decode.</p>
-    </div>
-  </details>
+  <h3 id="clip-morphs">Clip morphs (<code>+0x04</code> / <code>+0x08</code>)</h3>
+  <p>An entry's <code>+0x04</code> and <code>+0x08</code> are two <strong>morph lanes</strong>: per-vertex deltas over the monster's own mesh that the battle draw blends in while the clip plays, on top of the rigid part motion. Each lane points at four envelope keys and a run list - the same record shape as a field scene's VDF morph:</p>
+  <div class="byte-map" role="img" aria-label="Clip morph layout: an unread byte, the four envelope keys k1 to k4, three unread bytes, the record count at +0x08, then records of object, first vertex, count and 8-byte deltas">
+    <div class="bm-cell bm-pad" style="--w:1"><span class="bm-off">+0x00</span><span class="bm-name">-</span><span class="bm-size">u8</span></div>
+    <div class="bm-cell bm-accent" style="--w:4"><span class="bm-off">+0x01</span><span class="bm-name">k1 k2 k3 k4</span><span class="bm-size">u8 &times; 4</span></div>
+    <div class="bm-cell bm-pad" style="--w:2"><span class="bm-off">+0x05</span><span class="bm-name">-</span><span class="bm-size">u8 &times; 3</span></div>
+    <div class="bm-cell" style="--w:3"><span class="bm-off">+0x08</span><span class="bm-name">record count</span><span class="bm-size">u32</span></div>
+    <div class="bm-cell bm-accent" style="--w:8"><span class="bm-off">+0x0C</span><span class="bm-name">object, first vertex, count, deltas</span><span class="bm-size">3 &times; u32 + count &times; 8 B</span></div>
+  </div>
+  <figure class="diagram">
+    <svg viewBox="0 0 720 230" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Lane weight over the clip: zero before frame k1, rising linearly to 0x1000 at k2, holding at 0x1000 through k3, falling linearly to zero at k4, and zero after.">
+      <path class="dg-edge-dim" d="M60 180 L680 180"/>
+      <path class="dg-edge-dim" d="M60 180 L60 30"/>
+      <path class="dg-edge" d="M60 180 L200 180 L320 50 L460 50 L620 180 L680 180" style="stroke-width:2.5"/>
+      <text class="dg-sub" x="200" y="204">k1</text>
+      <text class="dg-sub" x="320" y="204">k2</text>
+      <text class="dg-sub" x="460" y="204">k3</text>
+      <text class="dg-sub" x="620" y="204">k4</text>
+      <text class="dg-sub" x="30" y="54">0x1000</text>
+      <text class="dg-sub" x="44" y="184">0</text>
+      <text class="dg-label" x="390" y="36">full weight</text>
+      <text class="dg-sub" x="650" y="222">clip frame</text>
+    </svg>
+    <figcaption>The lane weight against the clip cursor (frames in 12.4 fixed point): a linear ramp from <code>k1</code> to <code>k2</code>, a hold to <code>k3</code>, a linear fall to <code>k4</code>. Equal keys skip a ramp.</figcaption>
+  </figure>
+  <p>The per-actor draw blends each lane in just before it draws the actor and undoes it just after: for every run it saves the authored vertices, adds <code>delta &times; weight &gt;&gt; 12</code> to them in place, and after the draw copies the saved vertices back, second lane first, so the next frame starts from the rest pose. Every one of the disc's 313 lanes parses, and each run stays inside the object it names.</p>
+  <p class="caption">In the port: <code>legaia_actor_formats::monster_archive::{parse_clip_morph, clip_morph_weight}</code>. No host blends them yet.</p>
 </section>
 
 <section class="doc-section" id="texture-pool">
@@ -224,7 +246,7 @@ ry = b6 | (b8 &amp; 0x0f) &lt;&lt; 8      rz = b7 | (b8 &amp; 0xf0) &lt;&lt; 4</
       <tr><td>Damage primitive</td><td><code>FUN_800402F4</code></td><td>Reaction staged from the tag map</td><td><code>800402f4.txt</code></td></tr>
       <tr><td>First-match tag search</td><td><code>FUN_80050E2C</code></td><td>Attack-anim lookup, <code>0xFF</code> sentinel</td><td><code>80050e2c.txt</code></td></tr>
       <tr><td>Effect-script walker</td><td><code>FUN_801DEA50</code> (battle overlay)</td><td>Gate / effect / offset semantics</td><td><code>overlay_battle_action_801dea50.txt</code></td></tr>
-      <tr><td>Vertex blend</td><td><code>FUN_800495C8</code> / <code>FUN_80049858</code> / <code>FUN_8005B038</code></td><td>Morph vs straight copy</td><td><code>800495c8.txt</code>, <code>80049858.txt</code></td></tr>
+      <tr><td>Clip morphs</td><td><code>FUN_800495C8</code> / <code>FUN_80049858</code> / <code>FUN_8005B038</code></td><td>Envelope weight, save and in-place blend; restore</td><td><code>800495c8.txt</code>, <code>80049858.txt</code></td></tr>
       <tr><td>Texture-pool loader</td><td><code>FUN_80055468</code></td><td>15 palettes + 4bpp page</td><td><code>80055468.txt</code></td></tr>
       <tr><td>Slot loader</td><td><code>FUN_800542C8</code></td><td><code>(id-1) &times; 0x14000</code> slot, literal <code>0x28</code>-sector read at <code>0x80054608</code>, LZS from <code>slot + 4</code></td><td><code>800542c8.txt</code></td></tr>
       <tr><td>AI cast pick</td><td><code>FUN_801E9FD4</code> (battle overlay)</td><td>Reverse slot pairing; clip written to <code>+0x1E7</code> / <code>+0x1E0</code> at <code>0x801EA53C</code> / <code>0x801EA540</code></td><td>overlay dump</td></tr>

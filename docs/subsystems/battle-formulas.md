@@ -1240,16 +1240,18 @@ runs at its round boundary ahead of the status tick and the reseed.
 | `+0x4A` u8 | spell count (`magic_count`) |
 | `+0x4C` u32[count] | **block-relative offsets** to spell entries; the loader adds `block_base` |
 | entry `+0x00` u8 | spell / action id, doubling as a category |
-| entry `+0x04`, `+0x08` | **1-based indices** (`0` = none) into the per-block effect-offset table that follows the spell-offset array (word base `magic_count + 0x13`) |
+| entry `+0x04`, `+0x08` | **1-based indices** (`0` = none) into the per-block offsets that follow the spell-offset array (word base `magic_count + 0x13`): the entry's two [clip-morph lanes](../formats/monster-animation.md#clip-morphs-fun_800495c8--fun_80049858) |
 | entry `+0x74` u8 | AGL cost; `0xFF` = never rolled |
 | entry `+0x88` | self-pointer to `entry+0x8C`, set by the loader |
 
 The battle loader `FUN_800542C8` (`800542c8.txt`, lines 633-658) fixes each
 offset to a pointer and resolves the indices: `entry[+0x04] = block[(index +
-magic_count + 0x12)*4] + block_base`. The target is a short per-spell effect /
-animation descriptor (observed head `[00, a, b, b, len, 00 00 00, u32, ...]`),
-not a TMD; its interior fields are open. 289 of 1811 spell entries carry an
-effect index, 24 an aux index.
+magic_count + 0x12)*4] + block_base`. The target is a **clip morph**: four
+envelope keys at `+0x01..=+0x04`, then a VDF-shaped run of per-vertex deltas
+over the monster's own mesh, which the battle draw blends in while the clip
+plays (`FUN_800495C8`) and restores after (`FUN_80049858`) - see
+[`monster-animation.md`](../formats/monster-animation.md#clip-morphs-fun_800495c8--fun_80049858).
+289 of 1811 spell entries carry a `+0x04` lane, 24 a `+0x08` lane.
 
 Id categories: `FUN_80054CB0` (lines 700-727) treats ids `2,3,4,5,0x0B` as
 reaction / affinity markers and writes the matching spell's index into actor
@@ -1956,8 +1958,7 @@ Kernels that live elsewhere: `engine-battle-vm::status_effects` (`toxic_tick_dam
 The page's live hunts are indexed on
 [open-rev-eng-threads.md](../reference/open-rev-eng-threads.md#battle--rendering):
 the three [juggle-window](#the-juggle-window---what-makes-a-monster-juggleable)
-residuals, the interior of the [spell-entry effect descriptor](#spell-list-record-0x4c),
-and the call that applies Astral Slash's damage together with PROT 952's
+residuals and the call that applies Astral Slash's damage together with PROT 952's
 unreachable respect call ([wrappers](#capture-class-wrappers---fun_801dd4b0--fun_801dd6b4)).
 The ability bitfield at record `+0xF4` / `+0xF8` is fully catalogued as the
 64 passive indices of [accessory-passive-table.md](../formats/accessory-passive-table.md#the-64-passive-indices)
