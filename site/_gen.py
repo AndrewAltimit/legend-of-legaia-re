@@ -1223,6 +1223,28 @@ def build_progress_meter() -> str:
             f'    <div class="meter"><i style="width: {pct:.1f}%"></i></div>\n'
             f'  </div>'
         )
+    # Once every track is complete the meters carry no information - four full
+    # bars - so they collapse into one checklist line each. Any track below
+    # 100% brings the meters back, for all four, so a regression is visible.
+    all_done = bool(tracks) and all(float(t.get("pct", 0.0)) >= 100.0 for t in tracks)
+    if all_done:
+        done_txt = {
+            "decompilation": "of the executable's code traced in Ghidra",
+            "formats": "of disc bytes resolve to a documented format",
+            "port": "retail functions reimplemented in Rust",
+            "wiring": "of the ported code a host is owed for is wired",
+        }
+        rows = []
+        for t in tracks:
+            key = str(t.get("key", ""))
+            headline = str(t.get("headline", ""))
+            num = (headline.split(" ", 1)[0] if key == "port" and headline else "100%")
+            lbl = done_txt.get(key, str(t.get("label", "")))
+            href = html.escape(str(t.get("href", "tooling/disc-coverage.html")))
+            rows.append(
+                f'  <li><a href="{href}" title="{html.escape(str(t.get("detail", "")))}">'
+                f'<b>{html.escape(num)}</b> {html.escape(lbl)}</a></li>'
+            )
     out = ['<div class="stats-block">']
     if play:
         out += [
@@ -1231,7 +1253,16 @@ def build_progress_meter() -> str:
             *play,
             "</div>",
         ]
-    if rows:
+    if rows and all_done:
+        out += [
+            '<div class="stats-group">How much is traced and ported</div>',
+            '<ul class="done-strip">',
+            *rows,
+            "</ul>",
+            '<div class="stats-foot"><a href="tooling/disc-coverage.html">'
+            "How these are measured →</a></div>",
+        ]
+    elif rows:
         out += [
             '<div class="stats-group">How much is traced and ported</div>',
             '<div class="stats">',
@@ -1294,7 +1325,23 @@ def _playability_tiles() -> list[str]:
     n = len(lb.get("segments", {}))
     head = lb.get("headline", {})
     href = DOCS_BLOB + "tooling/full-game-ladder.md"
-    if n and "contiguous_progresses" in head:
+    reached = lb.get("continuous", {}).get("reached")
+    # One unbroken New Game reaching every milestone is the stronger claim; the
+    # segmented tiles (each segment seeded from a retail save) only add
+    # information while the continuous run falls short of them.
+    whole = bool(n) and reached == n
+    if whole:
+        tiles.append(tile(
+            f"{n}<small>/{n}</small>",
+            "story milestones, New Game to the credits in one unbroken run on pad input",
+            100.0,
+            f"Continuous run: one New Game reaches all {n} story milestones in order "
+            f"on pad input, without a retail save",
+            f"Continuous run: one New Game plays toward each milestone in turn on pad "
+            f"input, never re-seeded from a retail save and reloading only the engine's "
+            f"own saves; it reaches all {n}, through the credits.",
+            href + "#the-continuous-run"))
+    if n and not whole and "contiguous_progresses" in head:
         k = int(head["contiguous_progresses"])
         tiles.append(tile(
             f"{k}<small>/{n}</small>",
@@ -1307,7 +1354,7 @@ def _playability_tiles() -> list[str]:
             f"{n} segments reach their next milestone (tier 'progresses': scripted "
             f"traversal plus the story beats).",
             href))
-    if n and "contiguous_pad" in head:
+    if n and not whole and "contiguous_pad" in head:
         k = int(head["contiguous_pad"])
         tiles.append(tile(
             f"{k}<small>/{n}</small>",
@@ -1319,8 +1366,7 @@ def _playability_tiles() -> list[str]:
             f"milestone with nothing but pad input. Each still starts from the retail "
             f"save at its milestone, with a retail player's party and bag.",
             href))
-    reached = lb.get("continuous", {}).get("reached")
-    if n and isinstance(reached, int):
+    if n and not whole and isinstance(reached, int):
         tiles.append(tile(
             f"{reached}<small>/{n}</small>",
             "milestones one unbroken New Game reaches on its own saves",
@@ -1459,6 +1505,28 @@ def build_image_port_status() -> str:
     game = [r for r in images if r.get("kind", "game") == "game"]
     other = [r for r in images if r.get("kind", "game") != "game"]
     n_done = sum(1 for r in game if r.get("fully_ported"))
+    if game and n_done == len(game):
+        # Every card would read 100% / Fully ported, so the grid is folded
+        # behind one line; a single incomplete image brings it back open.
+        everything = game + other
+        return "\n".join([
+            '<div class="ip-block">',
+            '<div class="ip-head"><h2>Port status by code image</h2>'
+            f'<span class="ip-count">{n_done} of {len(game)} game images complete</span></div>',
+            '<p class="ip-lede">The game\'s logic ships as one executable plus overlays the '
+            'disc swaps in per mode. In every one of them, each function is ported to Rust, '
+            'covered natively by the engine (PsyQ libraries, BIOS, GPU and CD plumbing), or '
+            'has no retail behaviour to carry, and every code byte sits in an identified '
+            'function.</p>',
+            f'<details class="ip-more"><summary>All {len(everything)} images, '
+            'card by card</summary>',
+            '<div class="ip-grid">',
+            *(card(r) for r in everything),
+            "</div></details>",
+            '<div class="stats-foot"><a href="tooling/disc-coverage.html'
+            '#per-image-port-status">How this is measured →</a></div>',
+            "</div>",
+        ])
     out = [
         '<div class="ip-block">',
         '<div class="ip-head"><h2>Port status by code image</h2>'

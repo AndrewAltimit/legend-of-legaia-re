@@ -1340,11 +1340,20 @@ that still moves: how far the port plays. `site/_gen.py` reads it at build time
 from two committed instrument baselines, so it needs no disc and cannot go
 stale against the tree:
 
-- the [full-game ladder](full-game-ladder.md)'s contiguous milestone counts at
-  tier `progresses` and tier `pad`, each over the baseline's own segment count;
+- the [full-game ladder](full-game-ladder.md)'s continuous run (`[continuous]
+  reached`) over the baseline's own segment count. While it falls short of the
+  segment count, the contiguous segmented counts at tier `progresses` and tier
+  `pad` are drawn beside it; once one New Game reaches every milestone they are
+  the weaker claim and are left out;
 - the [retail compare](retail-compare.md) `image` channel's **mean** over the
   baselined states that carry a scored frame, with that N printed beside it -
   the mean rather than the median, so a few badly drawn states move the figure.
+
+A saturated figure is drawn as a figure, not a meter: once all four structural
+tracks read 100% they render as one checked line each, and once every game image
+is complete the per-image cards fold behind a single line. One track or image
+falling short brings the full meters or the open grid back, so a regression is
+never hidden by the compact form.
 
 ### Per-image port status
 
