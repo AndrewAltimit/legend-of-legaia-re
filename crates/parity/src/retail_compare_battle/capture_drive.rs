@@ -84,6 +84,25 @@ impl RetailBattle {
             && !matches!(self.span_gate, SpanGate::DoneHold { .. })
     }
 
+    /// [`Self::clip_cursors`] on engine slots: the party's pool slots
+    /// `0..party_count` as they are, the monster row `3..` packed behind
+    /// the party, as the engine seats it.
+    pub fn engine_clip_cursors(&self) -> Vec<legaia_engine_capture::clip_cursors::ClipCursorSeed> {
+        let pc = self.party_count.clamp(1, 3);
+        self.clip_cursors
+            .iter()
+            .filter_map(|&(slot, clip, cursor)| {
+                let slot = if slot < 3 {
+                    (slot < pc).then_some(slot)?
+                } else {
+                    let m = slot - 3;
+                    (m < self.monster_count).then_some(pc + m)?
+                };
+                Some(legaia_engine_capture::clip_cursors::ClipCursorSeed { slot, clip, cursor })
+            })
+            .collect()
+    }
+
     /// The party seats ahead of `seat` whose committed category this round
     /// is Spirit (`+0x1DE = 4`), as a bitmask: a menu capture's commit log
     /// shows each such member's `Spirit` (`delilas_che_hammer_gaps_v3`'s

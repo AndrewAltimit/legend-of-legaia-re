@@ -69,6 +69,12 @@ impl PlayWindowApp {
                 self.cutscene_glide.align_frames_left(left as u32);
                 self.session.camera.align_glide_frames_left(left);
             }
+            if due && !sc.seat_battle_clips.is_empty() {
+                legaia_engine_capture::clip_cursors::apply_clip_cursors(
+                    &mut self.session.host.world,
+                    &sc.seat_battle_clips,
+                );
+            }
             if due && sc.seat_hud_glides_landed {
                 self.session.host.world.land_battle_hud_glides();
             }

@@ -5,6 +5,36 @@ use super::*;
 use legaia_engine_mode::mode::SceneMode;
 
 impl World {
+    /// Land battle slot `slot`'s playing clip on the node cursor `+0x68` a
+    /// capture held (12.4 sixteenths of a keyframe), re-posing it there -
+    /// when the slot plays the clip the capture's `+0x1D9` names. Returns
+    /// whether it landed. A capture seat: the replay reaches the capture's
+    /// phase on its own clock, so an idle loop stands at whatever phase that
+    /// clock left it rather than retail's. `cursor` may sit below zero (the
+    /// displayed frame from before the loop's last wrap).
+    pub fn seat_battle_clip_cursor(&mut self, slot: usize, clip: u8, cursor: i32) -> bool {
+        let Some(a) = self.actors.get_mut(slot) else {
+            return false;
+        };
+        if a.battle.current_anim != clip {
+            return false;
+        }
+        let Some(player) = a.battle_animation.as_mut() else {
+            return false;
+        };
+        // Only a looping clip runs free of the phase the seed placed: a
+        // one-shot (a swing, a reaction) started with its action, which the
+        // seed already put where the capture's was. A looping clip wraps
+        // (retail's re-commit zeroes the cursor at the stream's end).
+        if !player.is_looping() {
+            return false;
+        }
+        let total = (player.frame_count() * 16).max(1) as i32;
+        let cursor = cursor.rem_euclid(total);
+        a.pose_frame = Some(player.seat_cursor(cursor as u16));
+        true
+    }
+
     /// Advance the per-object battle animation of every actor carrying one,
     /// folding the result into `pose_frame`. The battle render path then
     /// deforms each actor's mesh through `tmd_to_vram_mesh_posed_rot`. Call once

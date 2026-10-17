@@ -158,6 +158,40 @@ impl RetailBattle {
                 .flatten(),
             module_phase: game_anchors::u8_at(ram, ctx + 0x279),
             entry_latches: Vec::new(),
+            clip_cursors: (0..8u32)
+                .filter_map(|slot| {
+                    let p = game_anchors::u32_at(ram, ACTOR_TABLE + slot * 4);
+                    if !in_ram(p) {
+                        return None;
+                    }
+                    let node = game_anchors::u32_at(ram, p + 0x22C);
+                    if !in_ram(node) {
+                        return None;
+                    }
+                    let clip = game_anchors::u8_at(ram, p + 0x1D9);
+                    let cursor = i32::from(game_anchors::u16_at(ram, node + 0x68));
+                    // The frame on screen is the one built two game frames
+                    // before the RAM's ([`display_lag_vsyncs`]), and
+                    // each frame advances the cursor by `(frame step * rate
+                    // +0x21D * the entry's rate byte +0x78) >> 1` - `>> 2` for
+                    // a Slowed (`+0x16E & 0x1000`) member's idle
+                    // (`FUN_80047430`, `0x800476D8..0x80047764`).
+                    let entry = game_anchors::u32_at(ram, node + 0x4C);
+                    let entry_rate = if in_ram(entry) {
+                        i32::from(game_anchors::u8_at(ram, entry + 0x78))
+                    } else {
+                        0
+                    };
+                    let slowed = game_anchors::u16_at(ram, p + 0x16E) & 0x1000 != 0 && clip == 0;
+                    let prod = i32::from(frame_step(ram))
+                        * i32::from(game_anchors::u8_at(ram, p + 0x21D))
+                        * entry_rate;
+                    let advance = if slowed { prod >> 2 } else { prod >> 1 };
+                    let frames_back =
+                        i32::from(display_lag_vsyncs(ram) / u16::from(frame_step(ram).max(1)));
+                    Some((slot as u8, clip, cursor - frames_back * advance))
+                })
+                .collect(),
             captured: (0..8u32)
                 .map(|slot| {
                     let p = game_anchors::u32_at(ram, ACTOR_TABLE + slot * 4);

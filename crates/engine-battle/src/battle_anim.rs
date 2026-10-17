@@ -451,6 +451,13 @@ impl MonsterAnimPlayer {
         self.finished = false;
     }
 
+    /// [`Self::seek_sixteenths`] and the pose the cursor now stands on, with
+    /// no advance: what a capture seat lands a playing clip on.
+    pub fn seat_cursor(&mut self, sixteenths: u16) -> PoseFrame {
+        self.seek_sixteenths(sixteenths);
+        self.advance(0)
+    }
+
     /// Reset the cursor to the clip's first keyframe. A one-shot player that
     /// had run out plays again from here (retail's re-commit of a still
     /// queued clip zeroes the node cursor, `FUN_8004AD80`), so the

@@ -388,6 +388,13 @@ pub struct RetailBattle {
     /// places and [`Self::undrift`] moves it; this is what the capture
     /// held. The post-strike framings read the body pair (cases 7 and 8).
     pub captured: Vec<Option<CapturedActor>>,
+    /// Each pool slot's playing clip `+0x1D9` and the cursor of its anim
+    /// node (`*(+0x22C) + 0x68`, 12.4 sixteenths of a keyframe) taken back
+    /// to the **displayed** frame, two game frames before the RAM's: as
+    /// `(pool slot, clip, cursor)`, the cursor possibly below zero (the
+    /// clip wraps). The frame the capture shows each body on
+    /// ([`legaia_engine_capture::clip_cursors`]).
+    pub clip_cursors: Vec<(u8, u8, i32)>,
     /// Each pool slot's heading `+0x46` (12-bit), beside [`Self::ground`]:
     /// the attack band's facing recompute stores it every frame of a
     /// swing and nothing turns the actor back, so a member stands facing

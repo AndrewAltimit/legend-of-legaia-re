@@ -367,6 +367,14 @@ pub(super) fn battle_image(
             legaia_engine_capture::bar_seeds::bar_seeds_to_env(&engine.hp_seed),
         ),
     ];
+    // Each body on the keyframe the capture shows it at.
+    let seeds = battle.engine_clip_cursors();
+    if !seeds.is_empty() {
+        env.push((
+            "LEGAIA_SEAT_BATTLE_CLIPS",
+            legaia_engine_capture::clip_cursors::clip_cursors_to_env(&seeds),
+        ));
+    }
     if battle.mystic_shield {
         env.push(("LEGAIA_BATTLE_MYSTIC_SHIELD", "1".to_string()));
     }
