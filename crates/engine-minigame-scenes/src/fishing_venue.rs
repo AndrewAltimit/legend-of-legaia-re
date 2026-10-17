@@ -321,14 +321,16 @@ pub fn tick_fishing_venue(
         if let Some(t) = rolled
             && let Some(r) = fc::ripple_spawn(t.x as i16, t.z as i16, 0)
         {
-            mg.fx.spawn_ripple(&r);
+            let (x, y) = r.fx_seat();
+            mg.fx
+                .spawn(x, y, legaia_engine_minigames::minigame_fx::RIPPLE_SPRITE_ID);
         }
     }
     // Settle the actor onto the venue floor (the `.MAP` height grid through
     // the shared ground solver) and publish its camera.
     if let (Some(w), Some(buf)) = (v.wander.as_mut(), v.floor.as_ref()) {
-        let ramp = legaia_engine_fishing::minigame_floor::height_ramp();
-        let grid = legaia_engine_fishing::minigame_floor::FloorGrid::new(buf);
+        let ramp = legaia_engine_field::minigame_floor::height_ramp();
+        let grid = legaia_engine_field::minigame_floor::FloorGrid::new(buf);
         let t = fc::float_actor_tick(grid, w.x, w.z, 0, &ramp);
         w.y = t.y;
     }
@@ -364,7 +366,9 @@ pub fn tick_fishing_venue(
         // `World::tick_fishing` off the session's own events, where every
         // host drains them. Firing them here as well would play each twice.
         for b in &f.bursts {
-            mg.fx.spawn_burst(b, origin);
+            let (x, y) = b.fx_seat(origin);
+            mg.fx
+                .spawn(x, y, legaia_engine_minigames::minigame_fx::BURST_SPRITE_ID);
         }
         if !f.done {
             v.line = Some(line);

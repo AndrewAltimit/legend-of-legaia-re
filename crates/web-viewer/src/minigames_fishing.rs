@@ -552,7 +552,10 @@ impl LegaiaMinigames {
                         legaia_engine_minigames::minigame_fx::SPLASH_SPRITE_ID,
                         SPLASH_SPREAD,
                     );
-                    self.fx.spawn_splash(&parts);
+                    for p in &parts {
+                        let (x, y) = p.fx_seat();
+                        self.fx.spawn(x, y, p.sprite_id);
+                    }
                     out.push(r#"{"e":"splash"}"#.to_string());
                 }
                 PondEvent::Hooked(id) => {

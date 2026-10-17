@@ -634,8 +634,8 @@ impl FishingSurface {
             session
                 .venue_map()
                 .map(|v| {
-                    let ramp = legaia_engine_fishing::minigame_floor::height_ramp();
-                    let grid = legaia_engine_fishing::minigame_floor::FloorGrid::new(&v.map);
+                    let ramp = legaia_engine_field::minigame_floor::height_ramp();
+                    let grid = legaia_engine_field::minigame_floor::FloorGrid::new(&v.map);
                     legaia_engine_fishing::fishing_chrome::float_actor_tick(grid, x, z, 0, &ramp).y
                         as f32
                 })

@@ -92,40 +92,6 @@ impl MinigameFxPool {
         self.parts.push(a)
     }
 
-    /// Spawn the three-part fishing strike splash at its fanned-out seats.
-    ///
-    /// The geometry is [`legaia_engine_fishing::fishing_chrome::splash_burst`]'s
-    /// (`FUN_801D7A5C`); the `>> 3` on the nudge is the host presentation glue
-    /// the play window applied before this pool was shared, kept verbatim so
-    /// the move changes no pixel on the host that already drew it.
-    pub fn spawn_splash(&mut self, parts: &[legaia_engine_fishing::fishing_chrome::SplashPart]) {
-        for p in parts {
-            self.spawn(
-                (p.x as i32 + (p.nudge.0 >> 3)) as i16,
-                (p.y as i32 + (p.nudge.1 >> 3)) as i16,
-                p.sprite_id,
-            );
-        }
-    }
-
-    /// Spawn a wander-retarget ripple at the actor's world XZ pair.
-    pub fn spawn_ripple(&mut self, r: &legaia_engine_fishing::fishing_chrome::RippleSpawn) {
-        self.spawn(r.pos[0] >> 3, r.pos[2] >> 3, RIPPLE_SPRITE_ID);
-    }
-
-    /// Spawn one catch-celebration burst at its offset from the catch point.
-    pub fn spawn_burst(
-        &mut self,
-        b: &legaia_engine_fishing::fishing_actors::CelebrationBurst,
-        origin: (i16, i16),
-    ) {
-        self.spawn(
-            ((origin.0 as i32 + b.offset.0 as i32) >> 3) as i16,
-            ((origin.1 as i32 + b.offset.2 as i32) >> 3) as i16,
-            BURST_SPRITE_ID,
-        );
-    }
-
     /// Age every part by `frame_delta` frames and retire the faded ones - the
     /// same `+0x78` down-ramp [`crate::dance::DanceGame`] runs on its pool.
     pub fn tick(&mut self, frame_delta: u32) {
@@ -179,7 +145,7 @@ impl MinigameFxPool {
 /// spawn's `+0x50` in a register the backward scan does not reach, so the port
 /// spawns a distinct id per producer and each host's placeholder table keys on
 /// it. Stated rather than implied - the *geometry* is
-/// [`legaia_engine_fishing::fishing_chrome::ripple_spawn`]'s.
+/// `legaia_engine_fishing::fishing_chrome::ripple_spawn`'s.
 pub const RIPPLE_SPRITE_ID: u16 = 0x101;
 
 /// Sprite id the port spawns a catch-celebration burst with (same status as
@@ -225,24 +191,5 @@ mod tests {
         assert_eq!(pool.len(), FX_POOL_CAPACITY);
         // The four oldest are gone, so the first surviving part is #4.
         assert_eq!(pool.frames()[0].sprite, 4);
-    }
-
-    #[test]
-    fn the_splash_keeps_the_play_windows_seats() {
-        let mut pool = MinigameFxPool::new();
-        let parts = legaia_engine_fishing::fishing_chrome::splash_burst(
-            legaia_engine_fishing::fishing_actors::SCREEN_CENTRE.0,
-            legaia_engine_fishing::fishing_actors::SCREEN_CENTRE.1,
-            SPLASH_SPRITE_ID,
-            0x40,
-        );
-        pool.spawn_splash(&parts);
-        let f = pool.frames();
-        assert_eq!(f.len(), 3);
-        // Direct form: the first part moves `-spread >> 3` on both axes, the
-        // middle one is the anchor, the third `+spread >> 3` on x.
-        assert_eq!((f[1].x, f[1].y), (0xA0, 0x78));
-        assert_eq!((f[0].x, f[0].y), (0xA0 - 8, 0x78 - 8));
-        assert_eq!(f[2].x, 0xA0 + 8);
     }
 }

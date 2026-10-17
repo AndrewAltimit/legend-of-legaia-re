@@ -20,9 +20,11 @@ Hosts and tests name the modules here directly
 | `prize_exchange` | The casino prize-exchange sub-screen `0x20`: the menu overlay's prize table, its 4-state browse / confirm / commit machine, and `apply_redeem` over any bag implementing `RedeemBag`. See [`shop.md`](../../docs/subsystems/shop.md). |
 | `tile_board` | The op-`0x49` tile board: cell codes, header, walk state machine, fades, prompt. See [`tile-board.md`](../../docs/subsystems/tile-board.md). |
 
-The fishing minigame (`PondSession`, its actors, the venue chrome, the hub
-screen and the venue floor grid `minigame_floor`) is the crate below this
-one, [`legaia-engine-fishing`](../engine-fishing/README.md).
+The fishing minigame (`PondSession`, its actors, the venue chrome and the hub
+screen) is a sibling crate, [`legaia-engine-fishing`](../engine-fishing/README.md);
+neither depends on the other. The minigame floor both stand on and the dance
+floor's step markers (`minigame_floor`, `dance_marker`) are
+`legaia-engine-field`'s.
 
 ## What lives elsewhere, and why
 
@@ -59,5 +61,6 @@ step, the retail camera globals, the camera-relative glide and the menu cursor
 navigator `menu_input`) live lower: pad words, `rand` and `menu_input` in
 `legaia-engine-system`, the camera kernels in `legaia-engine-battle-vm` and
 the clip step in `legaia-engine-vm` (`actor_tick`). The `.MAP` region tables
-are `legaia-engine-field`'s, read by `legaia-engine-fishing`'s venue floor;
-this crate does not depend on `legaia-engine-field` or `legaia-engine-battle`.
+are `legaia-engine-field`'s, read by the shared minigame floor there; this
+crate reaches `legaia-engine-field` for that floor's step markers only, and
+does not depend on `legaia-engine-battle` or `legaia-engine-fishing`.

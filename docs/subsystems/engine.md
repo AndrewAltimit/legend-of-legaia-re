@@ -171,7 +171,7 @@ Internal dependencies as declared in each crate's `Cargo.toml`. "Format-family c
 | `engine-effects` | `engine-battle-vm`, `engine-system`, `engine-vm`, `render-kernels`, `actor-formats`, `overlay-images`, `tmd` | Effect kernels. |
 | `engine-field` | `engine-mode`, `engine-motion-vm`, `engine-dialog`, `engine-camera`, `engine-system`, `engine-vm`, `render-kernels`, `actor-formats`, `overlay-images`, `scene-formats`, `anm`, `mes`, `save`, `tmd` | Field kernels: actor programs, camera, cue routers. |
 | `engine-fishing` | `engine-field`, `engine-system`, `render-kernels`, `game-tables`, `minigame-formats`, `scene-formats`, `tmd` | Fishing rules engine. |
-| `engine-minigames` | `engine-fishing`, `engine-battle-vm`, `engine-camera`, `engine-system`, `engine-vm`, `render-kernels`, `actor-formats`, `game-tables`, `minigame-formats`, `scene-formats`, `save` | Minigame rules engines. |
+| `engine-minigames` | `engine-field`, `engine-battle-vm`, `engine-camera`, `engine-system`, `engine-vm`, `render-kernels`, `actor-formats`, `game-tables`, `minigame-formats`, `scene-formats`, `save` | Minigame rules engines. |
 | `engine-menus` | `engine-minigames`, `engine-field`, `engine-dialog`, `engine-battle`, `engine-battle-vm`, `engine-system`, `engine-vm`, `actor-formats`, `game-tables`, `minigame-formats`, `scene-formats`, `ui-formats`, `art`, `font`, `save`, `tim` | Menu, title and memory-card front end. |
 | `engine-minigame-scenes` | `engine-scene`, `engine-menus`, `engine-minigames`, `engine-fishing`, `engine-field`, `engine-battle`, `engine-battle-vm`, `engine-camera`, `engine-mode`, `engine-system`, `engine-vm`, `render-kernels`, `actor-formats`, `container-formats`, `game-tables`, `minigame-formats`, `overlay-images`, `scene-formats`, `prot`, `tim`, `tmd` | The minigames' 3D scene surfaces, venues and the `World`'s minigame seat. |
 | `engine-scene` | `engine-field`, `engine-dialog`, `engine-system`, `engine-vm`, `render-kernels`, `disc-audit` + the format-family and parser crates | Scene resolution and loading, environment draws, virtual filesystem; no `World`. |
@@ -198,10 +198,9 @@ The edges among the `World`-free kernel crates are a committed table, [`scripts/
 | 1 | `engine-camera`, `engine-mode`, `engine-motion-vm` |
 | 2 | `engine-battle-vm`, `render-kernels` |
 | 3 | `engine-battle`, `engine-effects`, `engine-field`, `engine-ui` |
-| 4 | `engine-fishing`, `engine-scene` |
-| 5 | `engine-minigames` |
-| 6 | `engine-menus` |
-| 7 | `engine-minigame-scenes` |
+| 4 | `engine-fishing`, `engine-minigames`, `engine-scene` |
+| 5 | `engine-menus` |
+| 6 | `engine-minigame-scenes` |
 
 Three more rules ride on the same table. A kernel crate depends only on kernel crates, so nothing in it can reach `engine-core`, the session, the renderer or a host. A crate outside the engine layer (a format, tool or patcher crate) never depends on an engine-layer crate. And `engine-system` carries a `foreign` set: the only workspace crates it names are the two label crates `cheats` and `gamedata`.
 
@@ -210,10 +209,11 @@ Most rows follow from the crates' roles. The ones that do not are listed in the 
 - **`engine-battle -> render-kernels` is one constant,** the encounter session's default transition length `battle_intro_styles::INTRO_DURATION_FRAMES`: the battle-intro model sits with its draw half.
 - **`engine-minigames -> engine-battle-vm` is the ringside still.** The contest hub picks the still a battle end leaves resident through `panel_backread_loader`; `battle_formulas` is the Muscle Dome's by role.
 - **`engine-menus -> engine-field` is the field overlay's dev-menu bodies.** The equip applier (`dev_equip_commit`) that the pause menu's equip session calls too, and the row kernels (`dev_menu_leaves`, `dev_menu_adjust`, `dev_menu_flags`) the dev menu screen (`dev_menu_host`) steps.
-- **`engine-fishing -> engine-field` is `field_regions`.** A venue floor is a field `.MAP` walk grid with tile triggers.
+- **`engine-fishing -> engine-field` is the shared minigame floor** (`minigame_floor`, over `field_regions`): a venue floor is a field `.MAP` walk grid with tile triggers.
+- **`engine-minigames -> engine-field` is the dance step markers** (`dance_marker`), tile actors the same floor spawns. Fishing and the other minigames are siblings: the effect parts fishing produces carry their own pool seat, so neither crate names the other.
 - **`engine-ui -> engine-battle-vm` is the battle HUD model** (`battle_party_panel`, `battle_commit_log`, the value readout, the Theeder packet): the draw-list builders project types defined beside the kernels that fill them.
 
-Some edges look thin by item count and stand because the role explains them, or because cutting them would cost more than the edge: `engine-camera` and `engine-motion-vm` reach `engine-system` only for its BIOS `rand` (the leaf's role; a rand-only leaf would move every `rand` call site in the engine), `engine-fishing -> render-kernels` is one GTE divide (render-kernels' role, and already below it through `engine-field`), and `engine-minigames -> engine-fishing` holds the shared minigame floor, the dance step markers and the fishing parts the minigame effect pool ages - a module set, not a symbol.
+Some edges look thin by item count and stand because the role explains them, or because cutting them would cost more than the edge: `engine-camera` and `engine-motion-vm` reach `engine-system` only for its BIOS `rand` (the leaf's role; a rand-only leaf would move every `rand` call site in the engine), `engine-fishing -> render-kernels` is one GTE divide (render-kernels' role, and already below it through `engine-field`).
 
 Adding an edge means editing the table, which is the point: the row is where the reason goes. A test that exercises another crate's code belongs in that crate's `tests/`, so a `[dev-dependencies]` edge needs its own `dev` entry.
 

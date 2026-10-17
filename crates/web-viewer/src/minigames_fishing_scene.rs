@@ -343,8 +343,8 @@ impl FishingScene {
     /// Falls back to the drawn walk ground without a map.
     fn seat_floor(&self, x: i16, z: i16) -> f32 {
         if let Some(buf) = self.map.as_deref() {
-            let ramp = legaia_engine_fishing::minigame_floor::height_ramp();
-            let grid = legaia_engine_fishing::minigame_floor::FloorGrid::new(buf);
+            let ramp = legaia_engine_field::minigame_floor::height_ramp();
+            let grid = legaia_engine_field::minigame_floor::FloorGrid::new(buf);
             return legaia_engine_fishing::fishing_chrome::float_actor_tick(grid, x, z, 0, &ramp).y
                 as f32;
         }

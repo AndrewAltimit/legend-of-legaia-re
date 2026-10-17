@@ -301,7 +301,10 @@ impl World {
                     legaia_engine_minigames::minigame_fx::SPLASH_SPRITE_ID,
                     SPLASH_SPREAD,
                 );
-                self.minigames.fx.spawn_splash(&parts);
+                for p in &parts {
+                    let (x, y) = p.fx_seat();
+                    self.minigames.fx.spawn(x, y, p.sprite_id);
+                }
             }
             // The hook and catch cues - one kernel shared with the minigames
             // page. The hook cue used to live on the native window's line

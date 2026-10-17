@@ -21,7 +21,11 @@ initialisers), `legaia-engine-mode` (the game-mode seat), `legaia-engine-vm`
 or the other `World`-free crates below `engine-core`. The field-overlay
 kernels the field VM itself does not import live here rather than in
 `legaia-engine-vm`, and `legaia-engine-fishing`, `legaia-engine-minigames`
-and `legaia-engine-menus` sit above this crate. Tests that need a `World` stay on the engine-core side (the
+and `legaia-engine-menus` sit above this crate. The slot-A minigame overlays'
+shared scene floor (`minigame_floor`: ground height, polar tables, the floor
+sweep) and the dance floor's step-marker flipbook (`dance_marker`) live here
+because both the fishing and the dance engines stand on them and the floor is
+a field `.MAP` floor read through `field_regions`. Tests that need a `World` stay on the engine-core side (the
 world test module `field_kernels`). Doc links that point back up at
 `engine-core` are plain code spans, since rustdoc cannot resolve a link into
 a dependent crate.

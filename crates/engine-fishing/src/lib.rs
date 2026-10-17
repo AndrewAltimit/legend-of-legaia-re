@@ -10,9 +10,7 @@
 
 #![forbid(unsafe_code)]
 
-pub mod dance_marker;
 pub mod fishing;
 pub mod fishing_actors;
 pub mod fishing_chrome;
 pub mod fishing_hub;
-pub mod minigame_floor;

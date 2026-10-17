@@ -56,6 +56,17 @@ pub struct CelebrationBurst {
     pub cue: Option<u8>,
 }
 
+impl CelebrationBurst {
+    /// The stage seat a minigame effect pool spawns this burst at: its X / Z
+    /// offset from the catch point `origin`, `>> 3`.
+    pub fn fx_seat(&self, origin: (i16, i16)) -> (i16, i16) {
+        (
+            ((origin.0 as i32 + self.offset.0 as i32) >> 3) as i16,
+            ((origin.1 as i32 + self.offset.2 as i32) >> 3) as i16,
+        )
+    }
+}
+
 /// The four bursts, in the order retail evaluates them. Every tier whose
 /// threshold the score clears fires, so a big catch plays all four.
 ///

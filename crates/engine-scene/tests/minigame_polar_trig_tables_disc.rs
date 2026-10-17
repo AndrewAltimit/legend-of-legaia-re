@@ -1,5 +1,5 @@
 //! Disc-gated: the two quadrature tables
-//! [`legaia_engine_fishing::minigame_floor::polar_offset`] indexes are **static
+//! [`legaia_engine_field::minigame_floor::polar_offset`] indexes are **static
 //! `SCUS_942.54` rodata**, not overlay-installed runtime data.
 //!
 //! This is the oracle behind that port's corrected `NOT WIRED:` reason. The
@@ -25,7 +25,7 @@
 //!
 //! Skips and passes without `LEGAIA_DISC_BIN`.
 
-use legaia_engine_fishing::minigame_floor::{POLAR_SHIFT, POLAR_TABLE_LEN, polar_offset};
+use legaia_engine_field::minigame_floor::{POLAR_SHIFT, POLAR_TABLE_LEN, polar_offset};
 use legaia_engine_scene::vfs::Vfs;
 use legaia_minigame_formats::minigame_slot_scene::{
     ANGLE_FULL, COS_TABLE_VA, SIN_TABLE_VA, cos_4096, sin_4096,

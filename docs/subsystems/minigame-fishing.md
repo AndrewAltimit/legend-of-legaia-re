@@ -563,7 +563,7 @@ Port: `fishing_scene::sky_quads` (the strip), and `sky_mesh` / `sky_positions`, 
 
 ### The scene floor buffer
 
-`FUN_801d6028` is the **ground-height solver**: given an actor it returns the world height under it and maintains the actor's off-floor flag. It is shared library code in the overlay band above `0x801D0018` - the fishing, slot-machine and debug-menu dumps of it are byte-identical - and the dance overlay's floor pass `FUN_801d3a2c` indexes the same tables. Port: [`minigame_floor`](../../crates/engine-fishing/src/minigame_floor.rs).
+`FUN_801d6028` is the **ground-height solver**: given an actor it returns the world height under it and maintains the actor's off-floor flag. It is shared library code in the overlay band above `0x801D0018` - the fishing, slot-machine and debug-menu dumps of it are byte-identical - and the dance overlay's floor pass `FUN_801d3a2c` indexes the same tables. Port: [`minigame_floor`](../../crates/engine-field/src/minigame_floor.rs).
 
 Three regions of the buffer at `_DAT_1f8003ec` matter:
 

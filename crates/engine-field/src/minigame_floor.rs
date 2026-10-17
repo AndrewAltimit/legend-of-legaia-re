@@ -97,7 +97,7 @@ pub const HEIGHT_RAMP_LEN: usize = 16;
 // PORT: FUN_801d2a10 (the scratchpad height-ramp install, `0x1F80035C`)
 // Wired: the play window's fishing floor host builds this table at venue
 // entry and passes it to every [`ground_height`] solve (through
-// [`crate::fishing_chrome::float_actor_tick`]) - the host-side stand-in for
+// `legaia_engine_fishing::fishing_chrome::float_actor_tick`) - the host-side stand-in for
 // the scratchpad install.
 /// The 16-entry height ramp `FUN_801D2A10` writes into scratchpad before it
 /// walks the floor rect: `ramp[i] = i * 0x20`.
@@ -260,7 +260,7 @@ pub const STEP_LAYER_KIND: usize = 2;
 /// Record stride of [`STEP_LAYER_KIND`]: the resident byte `DAT_8007B31A`
 /// (the per-kind stride table at `0x8007B318` reads `04 04 04 08 ..` in the
 /// library states; kind `3`'s `8` is
-/// [`legaia_engine_field::field_regions::REGION_RECORD_STRIDE`]).
+/// [`crate::field_regions::REGION_RECORD_STRIDE`]).
 pub const STEP_RECORD_STRIDE: usize = 4;
 
 /// Find the step-layer record for grid cell `(gx, gz)` in one layer block
@@ -344,7 +344,7 @@ pub struct GroundSample {
 // Wired: the play window builds a [`FloorGrid`] over the venue scene's `.MAP`
 // extended footprint at fishing entry (the same bytes retail installs behind
 // `_DAT_1F8003EC`) and solves the wander actor's ground height through
-// [`crate::fishing_chrome::float_actor_tick`] each frame.
+// `legaia_engine_fishing::fishing_chrome::float_actor_tick` each frame.
 pub fn ground_height(
     grid: FloorGrid<'_>,
     world_x: i16,
@@ -545,20 +545,20 @@ pub enum MarkerTemplate {
 /// `+4k+2`, count `s16` at `+4k+4`, stride `_DAT_8007B318[kind]` - for the
 /// first record whose `rec[0]`/`rec[1]` match the cell, primary `+0x10000`
 /// first and `+0x12000` on a miss. At `kind == 1` that is exactly the
-/// [`legaia_engine_field::field_regions::TileTrigger`] table, so the marker's clip index is
+/// [`crate::field_regions::TileTrigger`] table, so the marker's clip index is
 /// [`TileTrigger::record`] `+ 1` of the record
-/// [`legaia_engine_field::field_regions::lookup_tile_trigger`] already returns.
+/// [`crate::field_regions::lookup_tile_trigger`] already returns.
 ///
 /// The `6 ..= 9` window is an unsigned `clip - 6 < 4` test, so it is exactly
 /// the four marker clips; everything else falls through to the plain template.
 ///
-/// [`TileTrigger::record`]: legaia_engine_field::field_regions::TileTrigger::record
+/// [`TileTrigger::record`]: crate::field_regions::TileTrigger::record
 // PORT: FUN_801d2a10 (template + `+0x50` sub-index selection)
 // REF: FUN_801d3ec0, FUN_801d3f54 (the two-layer kind-N record lookup the clip
 // index comes out of)
 // WIRED: [`MarkerFloor::build`] calls this for every drawn cell of a venue's
 // floor rect, resolving the clip index through the same kind-1
-// primary-then-fallback tile scan `legaia_engine_field::field_regions` ports, and the browser
+// primary-then-fallback tile scan `crate::field_regions` ports, and the browser
 // minigames page draws the tiles it classes as markers. Measured on the real
 // venue: `other7` yields ten marker tiles, classes `[2, 2, 2, 4]`, and all ten
 // swap mesh inside 240 frames
@@ -618,7 +618,7 @@ impl MarkerFloor {
     /// Resolve every marker cell of the floor rect.
     ///
     /// `triggers_primary` / `triggers_fallback` are the `.MAP` trigger block's
-    /// kind-1 sub-tables ([`legaia_engine_field::field_regions::parse_tile_triggers`] over
+    /// kind-1 sub-tables ([`crate::field_regions::parse_tile_triggers`] over
     /// `+0x10000` then `+0x12000`) - the same two-layer scan
     /// `FUN_801D3F54(1, x, z)` performs, which is where the marker's clip index
     /// comes from ([`marker_template`]).
@@ -634,8 +634,8 @@ impl MarkerFloor {
         width: i32,
         height: i32,
         neighbour_block: bool,
-        triggers_primary: &[legaia_engine_field::field_regions::TileTrigger],
-        triggers_fallback: &[legaia_engine_field::field_regions::TileTrigger],
+        triggers_primary: &[crate::field_regions::TileTrigger],
+        triggers_fallback: &[crate::field_regions::TileTrigger],
         script: crate::dance_marker::MarkerScript,
     ) -> Self {
         let mut tiles = Vec::new();
@@ -646,7 +646,7 @@ impl MarkerFloor {
             // Retail spells the clip index `rec[2] + 1`, with `0` standing for
             // "no record here" - so an absent record and a record whose byte is
             // `0xFF` stay distinguishable.
-            let marker = legaia_engine_field::field_regions::lookup_tile_trigger(
+            let marker = crate::field_regions::lookup_tile_trigger(
                 triggers_primary,
                 triggers_fallback,
                 tx,
@@ -739,12 +739,12 @@ pub const POLAR_SHIFT: u32 = 12;
 // callers), FUN_801d0fa8 (the reel renderer, which reads the same tables
 // inline and is NOT a caller)
 
-// Wired: [`crate::fishing_actors::LureActor::cast`] offsets the cast lure
+// Wired: `legaia_engine_fishing::fishing_actors::LureActor::cast` offsets the cast lure
 // from the angler's facing through this, over the pair [`polar_tables`]
 // materialises, and both fishing hosts reach that. The gap the previous note
 // named - the **lure point** - is what closed; its two companion rows
-// ([`crate::fishing_actors::walk_grid_overhead`] and
-// [`crate::fishing_actors::water_tile_class`]) closed with it, as that note
+// (`legaia_engine_fishing::fishing_actors::walk_grid_overhead` and
+// `legaia_engine_fishing::fishing_actors::water_tile_class`) closed with it, as that note
 // predicted they would.
 //
 // [`SIN_TABLE_VA`]: legaia_minigame_formats::minigame_slot_scene::SIN_TABLE_VA
