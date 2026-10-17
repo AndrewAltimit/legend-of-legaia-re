@@ -277,7 +277,8 @@ conversation too.
 The replay format carries no scene field, so the start scene and seed ride in
 header comments (`# soak-scene`, `# soak-seed`, `# soak-signature`) that
 TOML ignores. A replay recorded under a non-default starve window carries it
-too (`# soak-starve-frames`), and is judged by it. Every replay names the
+too (`# soak-starve-frames`), and is judged by it; so does one recorded under
+a non-default endless-battle threshold (`# soak-battle-frames`). Every replay names the
 session configuration it ran under (`# soak-arming = "host"` or `"bare"`);
 one without the tag predates the hosts' arming and replays bare, so a fixed
 finding recorded before it still replays the input that once raised it.
@@ -418,6 +419,7 @@ regression.
 | `edlast_ending_unequip_live_max_stale` | `edbalden+rt@...:PRO-00`: the ending's scripted unequip left a Max HP +10% on a record whose accessory was gone | the aggregator pass every equipment change runs rebuilds the live maxima with the ability bits |
 | `map01_door_of_wind_carries_cupboard_run` / `map02_door_of_light_carries_conversation` | `chitei2+talk@PRO-03` / `ropeway2+talk@...:PRO-02`: a cupboard or a conversation opened while a Door's travel art ran, and its record parked in the overworld for good | a scene load drops the departing scene's conversation and prop runs with its actor list |
 | `jouind_ledge_hop_walled_landing` | a diagonal step-up hop under Right+Down set the player in the corner of a raised pocket at (2880, 2886), every direction walled and no step left to hop out | retail tests no landing (`FUN_801d1878` checks only `2s` / `3s`, the arc runs no collision); the port's landing guard (`WorldToggles::hop_landing_guard`, an enhancement, off under `pin_retail`) refuses a hop no step could leave |
+| `jouina_terra_summon_hits_for_one` | `jouina@PRO-10` under a 7200-frame battle window: Noa's Terra summon hit each Bio Castle Freed for 1, and the fight outlasted the window | every player cast's summon body is its own `summon.dat` record (`FUN_80054CB0(record, 4)` from `FUN_801F19EC`); the big summons had no body and rolled the MP-scaled placeholder - see [summon-readef.md](../formats/summon-readef.md#the-stat-head-is-the-summon-body) |
 
 The field-side fixes are described with their retail evidence in
 [`script-vm.md`](../subsystems/script-vm.md#engagement-and-the-system-script);

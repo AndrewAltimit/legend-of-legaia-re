@@ -423,6 +423,56 @@ pub fn catalog_from_monster_archive(entry867: &[u8], ids: &[u16]) -> MonsterCata
     cat
 }
 
+/// Seat a player cast's **summon body** stats on `def`: the cast's own
+/// `summon.dat` actor-record head, through the same record -> actor copy and
+/// boost profile [`monster_def_from_record`] applies to a monster.
+///
+/// The slot-7 actor the summon damage roll reads (`FUN_801DD0AC(_, 7, seat)`)
+/// is installed from the **streamed** record: `FUN_801F19EC` calls
+/// `FUN_80054CB0(record, 4)` (`0x801F1D1C`), which copies `+0x0C` HP, `+0x10`
+/// MP and the six stats into actor slot `3 + 4`. The `battle_data` twin a base
+/// or evolved Seru shares its mesh with is a different, weaker record (the
+/// enemy Gimard is HP 99 / INT 16; the Burning Attack body is HP 192 / INT 48),
+/// and the flutes and big summons have no twin at all. Mesh-side fields
+/// (`id`, the reaction and clip tables) stay as `def` carries them.
+///
+/// PORT: FUN_80054CB0 (the seat-4 call from FUN_801F19EC; the scripted boost
+/// profile, as `monster_def_from_record` takes it)
+pub fn apply_cast_record(
+    def: &mut MonsterDef,
+    head: &legaia_actor_formats::summon_readef::CastRecordStats,
+) {
+    let bs = legaia_actor_formats::monster_archive::boost_profile(head.stats, true);
+    def.hp = head.hp;
+    def.mp = head.mp;
+    def.raw_stats = head.stats;
+    def.agl = bs[0];
+    def.attack = bs[1];
+    def.udf = bs[2];
+    def.ldf = bs[3];
+    def.intel = bs[4];
+    let int_byte = bs[4].min(u8::MAX as u16) as u8;
+    def.accuracy = int_byte;
+    def.evasion = int_byte;
+    def.speed = bs[5];
+    def.element = head.element;
+    def.size_class = head.size_class;
+}
+
+/// A summon body built from its cast record alone - for the casts with no
+/// `battle_data` twin (the flutes `0x96..=0x99` and the big summons
+/// `0x9A..=0xA0`). `id` is `0`: no archive record stands behind it.
+pub fn monster_def_from_cast_record(
+    name: impl Into<String>,
+    head: &legaia_actor_formats::summon_readef::CastRecordStats,
+) -> MonsterDef {
+    let mut def = MonsterDef::new(0, name, head.hp, 0);
+    def.exp = 0;
+    def.gold = 0;
+    apply_cast_record(&mut def, head);
+    def
+}
+
 /// One slot in a formation row.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FormationSlot {

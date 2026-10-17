@@ -323,9 +323,10 @@ impl World {
     /// unchanged RNG stream.
     ///
     /// Faithful seeds:
-    /// - **Summon body** (the retail slot-7 actor): the namesake `battle_data`
-    ///   creature's record HP (`+0x0C`) and AGL - the battle loader installs
-    ///   the record stats on the freshly-spawned summon actor
+    /// - **Summon body** (the retail slot-7 actor): the cast's own
+    ///   `summon.dat` record HP (`+0x0C`) and INT (`+0x18`) - the seat arm
+    ///   copies the streamed record onto slot 7 (`FUN_80054CB0(record, 4)`
+    ///   from `FUN_801F19EC`), for the big summons as for the Seru
     ///   ([`Self::summon_creature_def`]).
     /// - **Caster AGL** (`DAT_801C9370[ctx+0x13]` `+0x168`): the casting
     ///   party member's `battle_accuracy`, doubled into the roll.

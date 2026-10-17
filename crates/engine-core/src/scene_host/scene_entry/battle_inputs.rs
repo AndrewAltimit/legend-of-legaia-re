@@ -51,6 +51,36 @@ impl SceneHost {
         self.monster_archive_cache.clone()
     }
 
+    /// Seat every player cast's summon-body stats from its own `summon.dat`
+    /// actor record (extraction PROT 893) onto
+    /// [`crate::world::DiscTables::summon_creatures`]: over the archive twin's
+    /// stats where one is installed, as a record-only body where none is (the
+    /// flutes and the big summons).
+    ///
+    /// REF: FUN_801F19EC (`FUN_80054CB0(record, 4)` at `0x801F1D1C`)
+    pub(super) fn install_summon_cast_records(&mut self) {
+        use legaia_actor_formats::summon_readef as sr;
+        use legaia_engine_battle::monster_catalog as mc;
+        let Ok(summon_dat) = self.index.entry_bytes(u32::from(sr::SUMMON_PROT_INDEX)) else {
+            return;
+        };
+        for spell_id in sr::PLAYER_CAST_IDS {
+            let Ok(head) = sr::cast_record_stats(&summon_dat, spell_id) else {
+                continue;
+            };
+            let creatures = &mut self.world.tables.summon_creatures;
+            if let Some(def) = creatures.get_mut(&spell_id) {
+                mc::apply_cast_record(def, &head);
+            } else {
+                let name = sr::parse_cast(&summon_dat, spell_id)
+                    .ok()
+                    .and_then(|c| c.attack_name)
+                    .unwrap_or_default();
+                creatures.insert(spell_id, mc::monster_def_from_cast_record(name, &head));
+            }
+        }
+    }
+
     /// Install the sparring-tutorial prompt corpus onto the world from PROT
     /// entry 0967 (the battle-stage slot-B overlay), once per host.
     ///

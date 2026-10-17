@@ -558,7 +558,7 @@ damage = atk - def;
 | Input | Source |
 |---|---|
 | `INT` | actor `+0x168` |
-| `HP` | actor `+0x14C`. The summon body's HP / INT are the stats the loader installs on the slot-7 actor from the creature's record (INT = record `+0x18`). |
+| `HP` | actor `+0x14C`. The summon body's HP / INT are the stats `FUN_80054CB0(record, 4)` installs on the slot-7 actor from the cast's own `summon.dat` record, not its `battle_data` twin's ([summon-readef.md](../formats/summon-readef.md#the-stat-head-is-the-summon-body)). |
 | `DEFa`, `DEFb` | defender `+0x15C` (UDF), `+0x160` (LDF) |
 | `power` | `(i16)` word `+0` of the 26-byte move-power record at `0x801F4F5C`, indexed by `map[actor[+0x1DF]]` ([move-power.md](../formats/move-power.md)) |
 | `caster.INT` | the casting party member's `+0x168` |
@@ -587,10 +587,12 @@ Wiring, in `engine-core::world::battle::casting`:
   defender's Spirit stance; so do the two capture-class wrappers, whose own
   `jal 0x801DD864` passes the attacker and defender seats too.
 - **Player Seru-magic casts.** `World::player_summon_predamage` seeds
-  `summon_predamage_lazy` from the namesake creature's `battle_data` record
-  (read from `DiscTables::summon_creatures`, filled at scene entry from the
-  monster archive for every summon), the caster's `battle.accuracy` doubled, the
-  affinity percent inside the roll, and the caster's per-spell magic level.
+  `summon_predamage_lazy` from the summon body on `DiscTables::summon_creatures`
+  (filled at scene entry for every player cast `0x81..=0xA0`, its stats from the
+  cast's `summon.dat` record), the caster's `battle.accuracy` doubled, the
+  affinity percent inside the roll, and the caster's per-spell magic level. The
+  flutes and big summons included: with no body their roll took the MP-scaled
+  placeholder, which a late-game defence floors at 1.
 - **Gating.** Both overrides engage only when their disc tables are installed;
   a disc-free or synthetic battle keeps a placeholder magnitude and an untouched
   RNG stream.

@@ -400,3 +400,76 @@ fn a_summon_rolls_from_its_archive_body_when_the_scene_lacks_the_creature() {
         );
     }
 }
+
+/// A big summon (`0x9A..=0xA0`) rolls the same summon branch from its own
+/// `summon.dat` record: every image `0927..=0934` calls `FUN_801DD0AC(_, 7,
+/// seat)` (Terra's at `0x801F7CCC`), and slot 7 is the streamed record the
+/// seat arm copies in (`FUN_80054CB0(record, 4)`). The body resolved only
+/// for the Seru blocks, so a Terra cast took the MP-scaled placeholder,
+/// which a Bio Castle Freed's defence floored at 1 per target. The roll here
+/// is the kernel composition over the record's stats.
+#[test]
+fn a_big_summon_rolls_the_summon_branch_from_its_cast_record() {
+    use legaia_actor_formats::summon_readef::CastRecordStats;
+    use legaia_engine_battle::monster_catalog::{MonsterDef, monster_def_from_cast_record};
+
+    // Terra's record head as it sits on the disc's shape: HP, MP, then
+    // `[AGL, ATK, UDF, LDF, INT, SPD]`, element 3 (wind).
+    let head = CastRecordStats {
+        hp: 2176,
+        mp: 0,
+        stats: [999, 999, 999, 999, 272, 999],
+        element: 3,
+        size_class: 0,
+    };
+    let build = |body: bool| {
+        let mut world = World {
+            party: legaia_engine_menus::party_state::PartyState {
+                party_count: 1,
+                ..Default::default()
+            },
+            ..World::default()
+        };
+        world.mode = SceneMode::Battle;
+        let mut catalog = legaia_engine_battle::monster_catalog::MonsterCatalog::new();
+        catalog.insert(MonsterDef::new(5, "Freed", 3518, 8));
+        world.tables.monster_catalog = catalog;
+        if body {
+            world
+                .tables
+                .summon_creatures
+                .insert(0x9F, monster_def_from_cast_record("Queen Twister", &head));
+        }
+        world.actors[0].battle.max_hp = 1500;
+        world.actors[0].battle.hp = 1500;
+        world.actors[0].battle.liveness = 1;
+        world.battle.accuracy[0] = 90;
+        world.actors[1].battle.max_hp = 3518;
+        world.actors[1].battle.hp = 3518;
+        world.actors[1].battle.liveness = 1;
+        world.actors[1].battle_monster_id = Some(5);
+        world.battle.accuracy[1] = 78;
+        world.battle.defense[1] = 300;
+        world
+    };
+
+    assert_eq!(
+        build(false).player_summon_predamage(0, 1, 0x9F),
+        None,
+        "no body: the placeholder path"
+    );
+
+    // The body carries the record's installed stats: the scripted boost
+    // profile takes INT x9/8, HP and element straight.
+    let mut world = build(true);
+    let def = world.tables.summon_creatures.get(&0x9F).unwrap();
+    assert_eq!((def.hp, def.intel, def.element), (2176, 272 + 34, 3));
+    // The roll's attacker term is at least the body's HP plus the caster's
+    // doubled AGL, against a defender roll this target keeps under 400, so
+    // the hit is in the thousands - never the placeholder's floor.
+    let rolled = world.player_summon_predamage(0, 1, 0x9F);
+    assert!(
+        rolled.is_some_and(|d| d > 1500),
+        "a big summon rolls its body: {rolled:?}"
+    );
+}

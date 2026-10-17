@@ -24,6 +24,11 @@ const SLOT_BYTES: usize = 0x10800;
 
 fn root() -> Option<PathBuf> {
     std::env::var_os("LEGAIA_DISC_BIN")?;
+    if let Some(d) = std::env::var_os("LEGAIA_EXTRACTED_DIR").map(PathBuf::from)
+        && d.join("PROT.DAT").is_file()
+    {
+        return Some(d);
+    }
     for p in ["extracted", "../extracted", "../../extracted"] {
         let d = PathBuf::from(p);
         if d.join("PROT.DAT").is_file() {
@@ -175,5 +180,58 @@ fn high_block_summons_are_bespoke_not_archive_meshes() {
              archive mesh ({best}-byte prefix) - revisit the bespoke-mesh reading",
         );
         eprintln!("0x{spell:02X}: bespoke summon mesh (best archive prefix {best} bytes)");
+    }
+}
+
+/// The stat head the battle loader copies onto the slot-7 summon actor
+/// (`FUN_80054CB0(record, 4)` from `FUN_801F19EC`) is the streamed record's own,
+/// and it is **not** the `battle_data` twin's: the twin shares the mesh and the
+/// element, but its HP and stats are the enemy's. Gimard's
+/// Burning Attack body is HP 192 / INT 48 against the enemy's 99 / 16. The
+/// flutes and big summons have no twin, and their record is the only source
+/// of a body; each carries a non-zero HP.
+#[test]
+fn cast_record_stat_heads_are_their_own_bodies() {
+    let Some(root) = root() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN / extracted absent");
+        return;
+    };
+    let summon = entry_bytes(&root, "0893_").expect("summon.dat entry 893");
+    let battle = entry_bytes(&root, "0867_").expect("battle_data entry 867");
+    let mut differ = 0;
+    for c in SUMMON_CREATURES {
+        let head = summon_readef::cast_record_stats(&summon, c.spell_id).expect("stat head");
+        let rec = monster_archive::record(&battle, c.creature_id)
+            .ok()
+            .flatten()
+            .expect("archive record");
+        assert_eq!(
+            head.element, rec.element,
+            "0x{:02X} {}: element differs from archive id {}",
+            c.spell_id, c.name, c.creature_id,
+        );
+        assert!(
+            head.hp > 0 && head.stats[4] > 0,
+            "0x{:02X}: {head:?}",
+            c.spell_id
+        );
+        if (head.hp, head.stats) != (rec.hp, rec.stats) {
+            differ += 1;
+        }
+        eprintln!(
+            "0x{:02X} {:10} body HP {:4} INT {:3} | enemy HP {:4} INT {:3}",
+            c.spell_id, c.name, head.hp, head.stats[4], rec.hp, rec.stats[4]
+        );
+    }
+    let gimard = summon_readef::cast_record_stats(&summon, 0x81).expect("Gimard head");
+    assert_eq!((gimard.hp, gimard.stats[4]), (192, 48));
+    assert!(
+        differ > 0,
+        "every head matched its twin - revisit the reading"
+    );
+    for spell in 0x96u8..=0xA0 {
+        let head = summon_readef::cast_record_stats(&summon, spell).expect("stat head");
+        assert!(head.hp > 0, "0x{spell:02X}: empty stat head {head:?}");
+        eprintln!("0x{spell:02X}: {head:?}");
     }
 }
