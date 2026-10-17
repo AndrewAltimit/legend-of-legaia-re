@@ -377,21 +377,20 @@ is met at the end of a castle the hand had been fighting its way through:
 it arrived at a third of its HP with the Healing Flowers spent on the
 road, and lost six times.
 
-**Its options survive a reload.** A wipe reloads the run's own save into a
-fresh session, and the engine keeps Field Move as a host option rather than
-save data (retail keeps it in the block, SC `+0x58C`;
+**Its options travel with its saves.** The options screen's words, Field
+Move among them, are part of the save as on a retail card (SC `+0x58C`;
 [`save-screen.md`](../subsystems/save-screen.md#what-a-card-load-restores)),
-so the reload carries it over from the session it replaces, and a
-checkpoint kept under `LEGAIA_FGL_CHECKPOINT_DIR` carries it beside the
-save. Walking instead of running misses `jouind`'s timed switch pair on
-every try.
+so a wipe's reload, a checkpoint kept under `LEGAIA_FGL_CHECKPOINT_DIR` and
+a seed from an anchor all play the Field Move their save was written with.
+Walking instead of running misses `jouind`'s timed switch pair on every try.
 
 **It runs when walking is what holds it.** A New Game walks, and the
 playthrough's player switched Field Move to Run by Mt. Rikuroa (every
 order-checked anchor from `mt_rikuroa` on holds `1` at SC `+0x58C`). The
 continuous player keeps walking until a stretch stalls short of a wipe in
 a stretch whose anchor runs; then it sets Run, reloads the stretch's save
-once and keeps running. Running from Mt. Rikuroa on re-dealt the whole
+once and keeps running - setting it again on any reload of a save from
+before the switch. Running from Mt. Rikuroa on re-dealt the whole
 middle of the game, and a runner meets corners and stones differently: it
 wedged in `ropeway` at (24, 27), and Sol's lower floors closed off Gaza's
 second fight (`korb3` P2[2]). Held back, it first switches on at
@@ -888,10 +887,9 @@ whole system-flag bank up to the item array at `0x80085958`, the party count
 at `0x80084594` and the roster at `0x80084598`, and the field position
 snapshot at `0x80084568` / `0x8008456C`, where the resume seats the party.
 
-The anchor's **Field Move** word (`0x800846CC`, SC `+0x58C`) goes onto
-`World::locomotion.run_default`: the engine keeps it as a host option rather
-than save data, but retail restores it with the block, and the ladder's player
-runs or walks as the anchor's player did. Timed scripts are paced for it -
+The anchor's **Field Move** word (`0x800846CC`, SC `+0x58C`) comes in with
+the block's other options words, as retail's card load restores it, so the
+ladder's player runs or walks as the anchor's player did. Timed scripts are paced for it -
 `jouind`'s switch pair resets unless the second switch is reached within 50
 vsyncs of free walk (system script slot `0`, `4C CB 00 FF FF` against
 `4E 00 50 32`), which a walking pad hand misses by a few frames.

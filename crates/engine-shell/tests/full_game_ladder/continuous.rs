@@ -155,14 +155,9 @@ fn store_checkpoint(id: &str, cp: &Checkpoint, session: &NativeSession) {
         return;
     };
     let (lost, dealt) = EXCHANGE.with(std::cell::Cell::get);
-    // Field Move is a host option to the engine, not save data (retail
-    // keeps it in the block, SC `+0x58C`), so it travels beside the save: a
-    // resume that walked missed `jouind`'s timed switch pair every time.
     let text = format!(
-        "{}\n{}\n{lost}\n{dealt}\n{}\n",
-        cp.scene,
-        session.host.world.rng_state,
-        u8::from(session.host.world.locomotion.run_default)
+        "{}\n{}\n{lost}\n{dealt}\n",
+        cp.scene, session.host.world.rng_state
     );
     if let Some(dir) = save.parent() {
         let _ = std::fs::create_dir_all(dir);
@@ -173,8 +168,9 @@ fn store_checkpoint(id: &str, cp: &Checkpoint, session: &NativeSession) {
 }
 
 /// The checkpoint an earlier run stored for milestone `id`, with its rand
-/// stream, exchange rate and Field Move option (when stored) put back.
-fn stored_checkpoint(id: &str) -> Result<(Checkpoint, u32, Option<bool>), String> {
+/// stream and exchange rate put back. Field Move travels in the save itself
+/// (the options words, SC `+0x58C`), as on a retail card.
+fn stored_checkpoint(id: &str) -> Result<(Checkpoint, u32), String> {
     let (save, side) = checkpoint_paths(id).ok_or("LEGAIA_FGL_CHECKPOINT_DIR is not set")?;
     let bytes = std::fs::read(&save).map_err(|e| format!("{}: {e}", save.display()))?;
     let save = legaia_save::SaveFile::parse(&bytes).map_err(|e| format!("{e:#}"))?;
@@ -192,11 +188,7 @@ fn stored_checkpoint(id: &str) -> Result<(Checkpoint, u32, Option<bool>), String
     if dealt > 0 {
         EXCHANGE.with(|e| e.set((lost, dealt)));
     }
-    let run = lines
-        .next()
-        .and_then(|l| l.parse::<u8>().ok())
-        .map(|r| r != 0);
-    Ok((Checkpoint { save, scene }, rng, run))
+    Ok((Checkpoint { save, scene }, rng))
 }
 
 /// A fresh session resumed from `cp`, as a card load of that save.
@@ -405,14 +397,11 @@ fn part_c_continuous_run() {
         .as_ref()
         .and_then(|r| load_anchor(&inp.library, r).ok());
     let mut cp = if let Some(id) = &resume_id {
-        let (cp, rng, run) =
+        let (cp, rng) =
             stored_checkpoint(id).unwrap_or_else(|e| panic!("LEGAIA_FGL_CONTINUOUS_RESUME: {e}"));
         session = reload(&inp, &cp, &opts)
             .unwrap_or_else(|e| panic!("LEGAIA_FGL_CONTINUOUS_RESUME: {e}"));
         session.host.world.rng_state = rng;
-        if let Some(run) = run {
-            session.host.world.locomotion.run_default = run;
-        }
         cp
     } else {
         if let Err(e) = seed(&mut session, &spine[seed_at], seed_anchor.as_ref(), &opts) {
@@ -608,11 +597,6 @@ fn part_c_continuous_run() {
             // milestone, and another hand of the rand stream unless this is
             // the guard retry (which measures the guard alone).
             reloads += 1;
-            // The player's Field Move option survives the reload: retail
-            // keeps it in the save block (`0x800846CC`, SC `+0x58C`), and the
-            // engine as a host option the fresh session would otherwise
-            // reset to Walk - which misses `jouind`'s 50-vsync switch pair.
-            let run_default = session.host.world.locomotion.run_default;
             session = match reload(&inp, &cp, &opts) {
                 Ok(s) => s,
                 Err(e) => {
@@ -620,7 +604,12 @@ fn part_c_continuous_run() {
                     break 'spine;
                 }
             };
-            session.host.world.locomotion.run_default = run_default || run_retry;
+            // The reload restores the save's own Field Move (the options
+            // words travel with it, SC `+0x58C`); a player who switched to Run
+            // switches again on a save from before the switch.
+            if run_retry || run_tried {
+                session.host.world.locomotion.run_default = true;
+            }
             if run_retry {
                 run_tried = true;
                 if std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
