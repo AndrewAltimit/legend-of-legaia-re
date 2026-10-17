@@ -470,7 +470,7 @@
               <input type="checkbox" id="play-fx-outline"> Effect outlines
             </label>
             <label class="play-dev-menu"
-                   title="Run the battle action state machine once per battle frame, retail's cadence, instead of once per vsync (the native LEGAIA_BATTLE_FRAME_CADENCE=1). The faithful model, staged off on both hosts while the comparison drives are re-tuned.">
+                   title="Run the battle pass (action state machine, animation, effects) once per battle frame, retail's cadence, instead of once per vsync (the native LEGAIA_BATTLE_FRAME_CADENCE; 0 turns it off). Starts on the engine's default.">
               <input type="checkbox" id="play-battle-frame-cadence"> Retail battle cadence
             </label>
             <label class="play-dev-menu"
@@ -2240,6 +2240,13 @@
     if (r !== undefined) retailModeEl.checked = !!r;
   }
   function applyPageToggles() {
+    /* The cadence box starts on the engine's default: read it back from the
+     * fresh runtime before the first write (WorldToggles'
+     * DEFAULT_BATTLE_SM_FRAME_CADENCE). */
+    if (cadenceEl.dataset.synced !== '1') {
+      const c = rtCall('battle_frame_cadence');
+      if (c !== undefined) { cadenceEl.checked = !!c; cadenceEl.dataset.synced = '1'; }
+    }
     rtCall('set_smart_monsters', !!smartEl.checked);
     rtCall('set_world_map_markers', !!markersEl.checked);
     rtCall('set_battle_fx_outline', !!fxOutlineEl.checked);

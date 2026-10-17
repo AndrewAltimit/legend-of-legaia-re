@@ -132,7 +132,7 @@ pub use screen_fx_state::{ClearColourRamp, ScreenFrame, ScreenFxState};
 pub use state::*;
 pub use types::*;
 pub use world_map_state::WorldMapState;
-pub use world_toggles::WorldToggles;
+pub use world_toggles::{DEFAULT_BATTLE_SM_FRAME_CADENCE, WorldToggles};
 
 mod actors;
 pub mod ambient;

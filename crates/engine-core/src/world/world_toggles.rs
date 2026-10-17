@@ -170,6 +170,14 @@ pub struct WorldToggles {
     pub(crate) loaded_options: Option<legaia_save::card::RetailOptions>,
 }
 
+/// The default of [`WorldToggles::battle_sm_frame_cadence`] - the one value
+/// every host starts from: [`WorldToggles::new`], the native session's
+/// environment switch (`legaia_engine_session::native::apply_env_world_toggles`,
+/// which raises or lowers from here) and the browser play page's
+/// `PageToggles` with its "Retail battle cadence" box, which reads the runtime
+/// before its first write.
+pub const DEFAULT_BATTLE_SM_FRAME_CADENCE: bool = false;
+
 impl WorldToggles {
     pub fn new() -> Self {
         Self {
@@ -187,7 +195,7 @@ impl WorldToggles {
             field_hp_display: legaia_engine_menus::option_values::HpDisplayOpt::Immediate,
             overworld_marker_overlay: false,
             battle_pass_rand_draw: true,
-            battle_sm_frame_cadence: false,
+            battle_sm_frame_cadence: DEFAULT_BATTLE_SM_FRAME_CADENCE,
             arts_saved_list: false,
             hop_landing_guard: true,
             retail_options: legaia_save::card::RetailOptions::default(),
@@ -306,7 +314,10 @@ mod fidelity_tests {
     #[test]
     fn env_switches_default_off_in_the_engine() {
         let t = WorldToggles::new();
-        assert!(!t.battle_sm_frame_cadence);
+        assert_eq!(
+            t.battle_sm_frame_cadence,
+            super::DEFAULT_BATTLE_SM_FRAME_CADENCE
+        );
         assert!(!t.arts_saved_list);
     }
 }

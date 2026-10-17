@@ -36,10 +36,12 @@ impl World {
         // are written in vsyncs, so a pass runs one per vsync it spans.
         for _ in 0..vsyncs {
             self.tick_battle_impact_fx();
-            // The same pass's Mystic Shield pose and break (`0x8004D534..0x8004D674`).
-            if self.mode == SceneMode::Battle {
-                self.tick_mystic_shield();
-            }
+        }
+        // The same pass's Mystic Shield pose and break
+        // (`0x8004D534..0x8004D674`): once a pass - it counts nothing, it
+        // seats the sphere and tests the break.
+        if self.mode == SceneMode::Battle {
+            self.tick_mystic_shield();
         }
         for i in 0..self.actors.len() {
             // Hit-reaction chaining first: a finished reaction clip takes the

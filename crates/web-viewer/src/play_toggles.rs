@@ -30,9 +30,11 @@ pub struct PageToggles {
     /// `--no-entry-pulse`. On by default, as on the window. Retail mode
     /// holds it off whatever this says.
     pub entry_pulse: bool,
-    /// `LEGAIA_BATTLE_FRAME_CADENCE`: the battle action SM on retail's
+    /// `LEGAIA_BATTLE_FRAME_CADENCE`: the battle pass on retail's
     /// once-a-battle-frame cadence (`WorldToggles::battle_sm_frame_cadence`).
-    /// Staged off on both hosts.
+    /// Starts from the engine's one default,
+    /// `legaia_engine_core::world::DEFAULT_BATTLE_SM_FRAME_CADENCE`; the page's
+    /// box reads it back before its first write.
     pub battle_frame_cadence: bool,
     /// `LEGAIA_ARTS_SAVED_LIST`: the ring's Arts arm opens the legacy
     /// saved-chain list instead of retail's per-press input
@@ -47,7 +49,7 @@ impl Default for PageToggles {
             world_map_markers: false,
             retail: false,
             entry_pulse: true,
-            battle_frame_cadence: false,
+            battle_frame_cadence: legaia_engine_core::world::DEFAULT_BATTLE_SM_FRAME_CADENCE,
             arts_saved_list: false,
         }
     }
@@ -109,8 +111,9 @@ impl LegaiaRuntime {
         self.page_toggles.entry_pulse
     }
 
-    /// Run the battle action SM once a battle frame, retail's cadence (the
-    /// native `LEGAIA_BATTLE_FRAME_CADENCE=1`). Staged off on both hosts.
+    /// Run the battle pass once a battle frame, retail's cadence (the native
+    /// `LEGAIA_BATTLE_FRAME_CADENCE`), or once a vsync. Both hosts start from
+    /// `DEFAULT_BATTLE_SM_FRAME_CADENCE`.
     pub fn set_battle_frame_cadence(&mut self, on: bool) {
         self.page_toggles.battle_frame_cadence = on;
         self.apply_page_toggles();
@@ -210,10 +213,15 @@ mod tests {
         rt.set_smart_monsters(true);
         rt.set_world_map_markers(true);
         assert!(rt.smart_monsters() && rt.world_map_markers());
-        // The entry pulse starts on, as on the window; the two staged
-        // switches start off, as a native session with an empty environment.
+        // The entry pulse starts on, as on the window; the cadence starts
+        // on the engine's one default and the saved-chain list off, as a
+        // native session with an empty environment.
         assert!(rt.entry_pulse());
-        assert!(!rt.battle_frame_cadence() && !rt.arts_saved_list());
+        assert_eq!(
+            rt.battle_frame_cadence(),
+            legaia_engine_core::world::DEFAULT_BATTLE_SM_FRAME_CADENCE
+        );
+        assert!(!rt.arts_saved_list());
         rt.set_entry_pulse(false);
         rt.set_battle_frame_cadence(true);
         rt.set_arts_saved_list(true);
@@ -230,5 +238,29 @@ mod tests {
         // No scene: the flag write is refused, not dropped silently.
         assert!(!rt.set_system_flag(0x142, true));
         assert!(!rt.system_flag(0x142));
+    }
+
+    /// The page's cadence starts where `WorldToggles::new` does, and the
+    /// play page's box carries no state of its own: it reads the runtime
+    /// back before its first write.
+    #[test]
+    fn the_cadence_default_is_single_sourced() {
+        assert_eq!(
+            PageToggles::default().battle_frame_cadence,
+            legaia_engine_core::world::WorldToggles::new().battle_sm_frame_cadence
+        );
+        let page = include_str!("../../../site/_content/play.html");
+        let tag = page
+            .lines()
+            .find(|l| l.contains("id=\"play-battle-frame-cadence\""))
+            .expect("the cadence box");
+        assert!(
+            !tag.contains("checked"),
+            "the box hardcodes its state: {tag}"
+        );
+        assert!(
+            page.contains("cadenceEl.checked = !!c"),
+            "the box no longer reads the runtime's default"
+        );
     }
 }
