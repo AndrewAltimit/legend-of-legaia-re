@@ -640,8 +640,17 @@ so the run keeps the save it already had, and a wipe after it reloads that
 earlier save and plays the stretches between again, each as itself, with
 the failing stretch's attempts carried over. The scene is remembered as one
 whose door leads to a boss, and a hop into it goes through ready
-(`pad_ready`: the last chest's gear on, the bag's MP and HP restoratives
-under three fifths, a rest close by).
+(`pad_ready`: the last chest's gear on, a rest close by), and then full on
+HP and MP from the bag, since the fight starts as the door lands.
+
+Cort is the case. Its first turn of party-wide damage is about 2500 a member
+(a `0x70` hit on all three seats; its MP falls 100 a cast and 255 for
+Doomsday, as the boss table lists), and a party that walks in from
+`jouind`'s fights at three fifths loses two members to it. The hand then
+spends every turn reviving one member at a quarter HP into Cort's next
+strike, and wipes; the reload's Dark guard (Cort's element) halves the cast,
+which is what wins the second attempt. That is the hand's first sight of the
+fight, not an engine fault the trace shows.
 
 ### A later start
 
