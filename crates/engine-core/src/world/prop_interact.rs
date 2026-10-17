@@ -892,6 +892,16 @@ impl World {
     /// ([`Self::player_move_cue`]).
     ///
     /// REF: FUN_800204F8
+    /// The cursor (`+0x68`) of the clip a script poked on the player
+    /// ([`Self::bind_player_script_clip`]), which the record's `AD F8 08`
+    /// end-latch spin waits on. `None` before any poke.
+    pub fn player_script_clip_cursor(&self) -> Option<i16> {
+        self.props
+            .bank
+            .actor_clip(legaia_engine_scene::field_env::PLAYER_ANCHOR_TARGET)
+            .map(|a| a.cursor)
+    }
+
     pub(crate) fn bind_player_script_clip(&mut self, move_id: u8) {
         let fallback = self.player_clip_frames_hint();
         self.props.bank.bind_actor_clip(

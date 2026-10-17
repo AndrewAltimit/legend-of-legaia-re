@@ -495,7 +495,14 @@ engine's box has typed its page and waits for the press - the press that
 turns the page, or on the last page the press that closes the box - the
 frame every such capture shows. Counting only the page-turn wait missed
 every capture on a closing page (`garmel`'s Songi taunt), and the run
-sampled the settle window instead. A capture with no camera mover on its
+sampled the settle window instead. A capture caught while the pager still
+types (`_DAT_801F2734` in state `0x0B`) is met on the typing row instead:
+the same window row (`_DAT_801F3530`) with the reveal counter
+`_DAT_801F2748` at least the capture's, taken two pager calls back for the
+displayed frame (each typing call adds `min(step, 4)` units).
+`casino_ticket_counter_dialog` shows "This is the P" with the rest of its
+page still to type; met on the page's wait, its frame showed the whole page
+and read `0.976`, met on the counter it reads `0.992`. A capture with no camera mover on its
 lists holds a landed shot (retail frees the mover when its glide ends), so
 there the record's context is met on the gate PC only once the engine's glide
 has landed too: `name_input_ui` is parked on the opening's `49 03` one op
@@ -2399,7 +2406,7 @@ camera exactly on retail's shot and the player on retail's `(5952, 12992)`.
 An engine that stepped the placements the record pokes left the player at
 `(6208, 13120)`; no poke engages a placement, so none runs.
 
-### A capture parked on an end latch has no phase to gate on
+### A capture parked on an end latch gates on the clip cursor
 
 `minigame_baka_pcsx` is `koin1` with the player's talk to the Baka Fighter
 cabinet (flat `64`) parked on `AD F8 08` at `+0x41`, the spin on the end latch
@@ -2409,14 +2416,17 @@ of the sit-down clip the record poked just before (`B8 F8 84 17`, `B3 F8 0A`,
 seven vsyncs short of the latch - and the frame on screen shows him seated
 with his back to the camera.
 
-The gate has a wait for a `0x4A` park and a glide for a camera mover, and
-nothing for a latch: it is met on the first tick the engine's record stands on
-the `AD`, where the clip has only begun, so the engine frame catches Vahn
-swinging a leg over the stool. The blocks around him move by one with any
-change that shifts the tick the record arrives on: the frames an engine built
-before and after the `0x4A` grid credit differ in `623` pixels, all inside the
-box around the stool, and in one scored block. A gate that carried the clip
-cursor the way it carries the glide would close it.
+A gate on the PC alone is met on the first tick the engine's record stands
+on the `AD`, where the clip has only begun, and the engine frame caught Vahn
+swinging a leg over the stool. So a gate parked on `AD F8 08` carries the
+player's clip cursor `+0x68` (`ScriptGate::latch`) and is met once the
+engine's player clip (`World::player_script_clip_cursor`) has run as far.
+That is the RAM's cursor, and a latch has no wait to take the display lag
+off, so the image child takes its frame the lag's ticks earlier (the battle
+drives' retake, `LEGAIA_CAPTURE_DISPLAY_LAG`, counted from the tick the
+engine started replaying the record). `minigame_baka_pcsx` reads `0.965`
+and `minigame_slot_machine_pcsx` `0.993` (from `0.961` / `0.990`); the
+remaining blocks are the floor emblem's palette cycle.
 
 ### An attack-face capture frames the shot the state before it armed
 

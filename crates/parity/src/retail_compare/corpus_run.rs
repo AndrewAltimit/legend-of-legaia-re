@@ -230,6 +230,16 @@ pub(super) fn run_one(
             let frame = match gate {
                 Some(g) => {
                     let mut env = vec![("LEGAIA_SCRIPT_GATE", g.to_env())];
+                    // A gate on the player's clip latch is met on the RAM's
+                    // cursor, which has no wait to take the lag off: the
+                    // child takes the frame `display_lag` ticks back, while
+                    // the record it replays already ran.
+                    if g.latch.is_some() {
+                        env.push((
+                            "LEGAIA_CAPTURE_DISPLAY_LAG",
+                            retail.scripts.display_lag.to_string(),
+                        ));
+                    }
                     env.extend(retail.seat_env(opts.out_dir, &entry.label));
                     if let Some(n) = retail.hud_countdown {
                         env.push(("LEGAIA_HUD_COUNTDOWN", n.to_string()));

@@ -529,6 +529,18 @@ impl PlayWindowApp {
                 );
             }
         }
+        // A script gate on the player's clip latch takes the displayed frame
+        // `display_lag` ticks before the gate: any tick since the engine
+        // started replaying the gate's record is a frame retail drew too.
+        if let Some(sc) = self.screenshot.as_ref()
+            && sc.display_lag > 0
+            && let Some(g) = sc.script_gate.as_ref()
+            && g.latch.is_some()
+            && sc.state_since.get().is_none()
+            && g.context(&self.session.host.world).is_some()
+        {
+            sc.state_since.set(Some(self.tick_no));
+        }
         // The Field <-> Battle mode edge, latched on the tick that
         // crossed it. The battle load it runs installs gameplay state as
         // well as meshes - the party's idle / action clips, art banks and

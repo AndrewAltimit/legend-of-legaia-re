@@ -54,3 +54,10 @@ changes = [
   ["states/nova_summon_mid_cast/camera", 0.997, 0.996],
   ["states/shiny_refactor_gimard_levelup/image", 0.839, 0.835],
 ]
+
+[[loosening]]
+file = "scripts/ci/retail-compare-baseline.json"
+reason = "The image child's seat lands the state's own eye translation over the arrival snap; the record the gate resumes snaps the same pose on the same spot again, which used to put the engine's composed eye (Z 11978) back over retail's (11882). The zone camera now keeps the seated eye through such a snap (SeatHold). Against the retail crop the frame's mean absolute error falls from 33.1 to 31.7 and the blocks above an error of 30 from 452 to 343, while the block-tolerance score moves one thousandth the other way; the residual is the Genesis tree's morph and Caruban's pose, which the seed does not carry."
+changes = [
+  ["states/rikuroa_pre_caruban/image", 0.938, 0.937],
+]
