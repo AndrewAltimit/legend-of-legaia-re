@@ -200,10 +200,16 @@ pub fn retail_name_at(table: &[u8], record: usize) -> Vec<u8> {
 /// value is not settled. See `docs/formats/cdname.md` and
 /// `docs/subsystems/boot.md`.
 ///
+/// This is a keyed **view** over the port, not a port of its own: the retail
+/// model is [`retail_name_table`] + [`retail_name_at`], and that pair is what
+/// `prot-extract retail-names` runs. That command walks the records in
+/// declaration order rather than through this map on purpose - `CDNAME.TXT`
+/// declares at least one index twice, and keying on the index keeps only the
+/// later record. The crate's resolution paths (`block_for`, `prot-extract`
+/// labels, scene windows) use the tolerant [`parse_str`]; this map serves the
+/// disc-gated `tests/cdname_retail_parse_disc.rs` oracle.
+///
 // REF: FUN_8001d8fc
-// NOT WIRED: the crate's own consumers (`block_for`, `prot-extract` labels,
-// scene windows) all use the tolerant `parse_str`. This retail model is
-// exercised only by `tests/cdname_retail_parse_disc.rs`.
 pub fn parse_retail_str(text: &str) -> RetailNameMap {
     let (table, indices) = retail_name_table(text);
     indices
