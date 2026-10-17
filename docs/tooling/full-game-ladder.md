@@ -1330,6 +1330,22 @@ the threat by the hit it learned. Only a reload of the same segment against
 the same boss uses it; a fight the hand wins first time is played exactly as
 before.
 
+Songi in `noaru` (P2[30], `3E FF 04`, formation F4, monster 179, 48000 HP)
+is a real fight, not a scripted loss. The band raises no scripted-loss latch
+(system flag `0`) before the battle op, and the party that "wipes" at 1 HP
+apiece is the annihilated arm's unconditional floor
+([battle-round-loop.md](../subsystems/battle-round-loop.md)), so the loss is
+a game over and the band, its C1 gate `0x448` raised on the way in, spawns
+again on the reload. Songi hits one member a round for 1260..2380 and never
+the party at once. Against members of 2258..2681 HP that keeps two of the
+three turns on Healing Flowers most rounds, and the arts the hand types deal
+about 900..1400 a round, so most attempts lose the race with 15000..35000
+left. The same spell is not the same hit from every caster: Slippery (`0x92`)
+took 3171 off Songi from Gala and 862 from Vahn, and Gala's party-heal
+reserve keeps her from casting it a second time. Treating a single-target hit
+within a quarter of a member's HP as one no heal outlasts (heal on the
+fraction line only) did not change the outcome on two streams.
+
 Koru (`nilboa` P2[20], 20000 HP) is a race. Its pick arm casts by the
 battle-mode counter - `0xA2`, `0xA3`, `0xA4`, `0xA5` on modes `0..=3`, then
 Dead End Crisis (`0xA1`), which in this fight writes a flat 9999 to every
