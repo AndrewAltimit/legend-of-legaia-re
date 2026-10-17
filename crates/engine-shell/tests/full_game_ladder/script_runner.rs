@@ -136,7 +136,7 @@ pub(super) fn held_pad_poll(session: &NativeSession) -> Option<u16> {
 /// off there - and a hand that held nothing rode lap after lap, about a
 /// thousand frames each, until the ride ended some other way: a crossing
 /// cost the walking budget some 75000 frames.
-fn poll_ahead(bc: &[u8], mut pc: usize) -> Option<usize> {
+pub(super) fn poll_ahead(bc: &[u8], mut pc: usize) -> Option<usize> {
     use legaia_scene_formats::field_disasm::{FlagKind, InsnInfo, decode};
     for _ in 0..32 {
         let insn = decode(bc, pc).ok()?;

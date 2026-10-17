@@ -717,3 +717,28 @@ fn part_b_full_game_ladder() {
         "full-game ladder regressed: {regressions:#?}"
     );
 }
+
+/// The rapids' landing poll is reached across the waits ahead of it: a
+/// standard yield on the player, a context-flag busy-wait, local-flag
+/// writes and an animate, then the `42 01` compass chain (`jouinb` P2[6] at
+/// `0x0281..0x02A3`). A jump or a text segment in between ends the look.
+/// Disc-free.
+#[test]
+fn poll_ahead_reaches_a_poll_past_waits() {
+    let ride: Vec<u8> = [
+        &[0xC1, 0xF8, 0x02, 0xC1][..], // yield on the player
+        &[0xB3, 0xF8, 0x0A],           // wait on its context flag
+        &[0xAC, 0x0B, 0x0B],           // local flag clear
+        &[
+            0xCB, 0x0B, 0x02, 0x03, 0x66, 0x00, 0x66, 0x00, 0x66, 0x00, 0x66, 0x00,
+        ],
+        &[0x42, 0x01, 0x00, 0x4D, 0x01], // the Down poll
+    ]
+    .concat();
+    assert_eq!(poll_ahead(&ride, 0), Some(ride.len() - 5));
+    // A relative jump before the poll: the poll may never run.
+    let jumped: Vec<u8> = [&[0x26, 0x03, 0x00][..], &[0x42, 0x01, 0x00, 0x4D, 0x01]].concat();
+    assert_eq!(poll_ahead(&jumped, 0), None);
+    // A flag-bit test (`42 00`) is not a pad poll.
+    assert_eq!(poll_ahead(&[0x42, 0x00, 0x05, 0x10, 0x00], 0), None);
+}

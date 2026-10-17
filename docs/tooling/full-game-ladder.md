@@ -381,8 +381,21 @@ road, and lost six times.
 fresh session, and the engine keeps Field Move as a host option rather than
 save data (retail keeps it in the block, SC `+0x58C`;
 [`save-screen.md`](../subsystems/save-screen.md#what-a-card-load-restores)),
-so the reload carries it over from the session it replaces. Walking instead
-of running misses `jouind`'s timed switch pair on every try.
+so the reload carries it over from the session it replaces, and a
+checkpoint kept under `LEGAIA_FGL_CHECKPOINT_DIR` carries it beside the
+save. Walking instead of running misses `jouind`'s timed switch pair on
+every try.
+
+**It runs when walking is what holds it.** A New Game walks, and the
+playthrough's player switched Field Move to Run by Mt. Rikuroa (every
+order-checked anchor from `mt_rikuroa` on holds `1` at SC `+0x58C`). The
+continuous player keeps walking until a stretch stalls short of a wipe in
+a stretch whose anchor runs; then it sets Run, reloads the stretch's save
+once and keeps running. Running from Mt. Rikuroa on re-dealt the whole
+middle of the game, and a runner meets corners and stones differently: it
+wedged in `ropeway` at (24, 27), and Sol's lower floors closed off Gaza's
+second fight (`korb3` P2[2]). Held back, it first switches on at
+`jouind`'s switch pair.
 
 **It waits on a running clock.** A hop that fails while the field's op
 `4C D3` countdown is armed (`FUN_801D2EBC`, read from the engine), with its
@@ -613,6 +626,22 @@ not. It is the instrument that tells an engine defect from a weak party:
 Chapter-1 anchors come from several sessions, some with cheat-seeded
 parties (three members before the story joins them, a full bag), so a line
 of the retail side is evidence only where the next anchor agrees with it.
+
+### A milestone reached with a fight committed
+
+A milestone can be reached between a record's `3E FF` and the fight it
+commits: `jouine` P2[5] is the arrival cutscene, it commits Cort, and the
+milestone (`cort_chamber`, reached on arrival) holds while the battle
+intro has yet to run (`World::field_scripts_held_for_battle`). A save there
+carries the flags the record set past the op but not the fight, and a
+reload of it seated the party on the epilogue's walk-on band
+(`jouine` P2[2]) with Cort unbeaten. No retail player saves on that frame,
+so the run keeps the save it already had, and a wipe after it reloads that
+earlier save and plays the stretches between again, each as itself, with
+the failing stretch's attempts carried over. The scene is remembered as one
+whose door leads to a boss, and a hop into it goes through ready
+(`pad_ready`: the last chest's gear on, the bag's MP and HP restoratives
+under three fifths, a rest close by).
 
 ### A later start
 
@@ -1290,6 +1319,8 @@ For each member, in order of priority:
 3. **Cast.** Otherwise a member with an affordable damaging Seru spell casts the strongest one. A command ring that answers Magic by reopening itself (a fight whose special word forbids the Ra-Seru chip, or a caster with no spell session) is asked for two seconds and then not again that battle.
 4. **Attack.** Otherwise it attacks through `Command`, entering the longest art its command pool pays for and spending the rest on plain directions. Whether a matched art fires is the queue builder's call, out of the Spirit gauge. The plan runs up to nine commands, the length of each character's Miracle Art. A member with all three limbs rotted (`+0x16E & 0x38`) takes the Spirit stance instead: the ring refuses its Attack arm (`FUN_801D0748`, `0x801D1560`) and stays up, and a fighter that kept pressing it left Sol's fights against monster 120 unresolved.
 
+   One or two rotted limbs leave the entry open but refuse their own directions (Left for `0x08`, Right for `0x10`, Up and Down for `0x20`; `rot_blocks`, `0x801D1E60..0x801D1F7C`), so the plan keeps to the open ones: a plan through a rotted arm waited on a Left that never landed, and a `jouinc` fight after a party-wide Rot ran out its budget with the entry half typed.
+
 A member is **in danger** when it is standing and either:
 
 - under 45% of its HP - three fifths against a boss of eight times the party's largest HP or more, whose party-wide hit is unseen until it lands; or
@@ -1536,6 +1567,15 @@ clips and matches the same arts a windowed one does. Beyond that:
   for that tick, as a player walking through does: `balden`'s elevator call
   bands (P2[6], P2[7]) want Up toward the car, and answering their poll
   walked the player back off the band onto which the walk re-crossed it.
+  A modal timeline that reaches its poll only on the tick a wait ends gets
+  the direction held through the wait: the hand looks past yields, flag
+  busy-waits and the flag, move and camera ops that cannot branch to the
+  next `42 01` (a jump, a branch test or text ends the look). `jouinb`'s
+  rapids (P2[6..8]) poll any compass point or Circle at each landing, on
+  the tick the walk-to yield on the player ends, and jump off there; the
+  ride otherwise loops its lap. A hand that held nothing rode about 75000
+  frames a crossing, which spent the continuous run's walking budget in
+  `jouinc`.
 - An op-`49 04` flag-window picker (the Uru Mais warp pads) gets the row
   whose branch in the record names the hop's destination; the rows are drawn
   flipped, so Up raises the selection.

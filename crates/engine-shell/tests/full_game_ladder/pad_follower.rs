@@ -3,6 +3,12 @@
 
 use super::*;
 
+/// Frames without progress after which a runner stuck on a corner walks it
+/// (the follower's run-button hold).
+const SLOW_WALK_AFTER: u32 = 20;
+/// The d-pad bits of a pad word.
+const DIRECTIONS: u16 = 0x00F0;
+
 /// Every tile of the loaded scene a pad walk should not **enter** on its way
 /// somewhere else: the walk-on door bands, the kind-0 intra-scene
 /// teleports, and every gate-1 walk-on band whose partition-2 record the
@@ -926,6 +932,20 @@ pub(super) fn pad_walk(
                 tap_owed = false;
                 tapped_at = Some(step);
             }
+        }
+        // Running into a corner the wall slide deflects, the press and the
+        // one after it can trade places forever: `ropeway`'s (24, 27), where
+        // a Left press slid the runner 12 units south-west and the Down that
+        // answers it slid it back. A player walks the corner instead - the
+        // run button held against Field Move = Run walks
+        // (`World::field_run_active`) - once a few frames have gone by
+        // without progress.
+        if since >= SLOW_WALK_AFTER
+            && walking_mode == SceneMode::Field
+            && pad & DIRECTIONS != 0
+            && session.host.world.locomotion.run_default
+        {
+            pad |= PadButton::R1.mask();
         }
         pressed_at = Some((wx, wz));
         session.host.world.set_pad(pad);

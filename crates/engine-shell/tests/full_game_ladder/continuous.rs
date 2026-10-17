@@ -48,6 +48,11 @@ thread_local! {
     /// of one is crossed to ([`pad_far_talks`]), not only an errand's.
     pub(super) static STORY_WAYPOINTS: std::cell::RefCell<BTreeSet<String>> =
         const { std::cell::RefCell::new(BTreeSet::new()) };
+    /// Scenes whose arrival commits a fight, learned where a milestone was
+    /// reached with one committed: the hop into one walks in ready
+    /// ([`pad_ready`]), as a player who met the boss at that door does.
+    pub(super) static FIGHT_ON_ARRIVAL: std::cell::RefCell<BTreeSet<String>> =
+        const { std::cell::RefCell::new(BTreeSet::new()) };
 }
 
 /// Holds [`SAVING_FOR_BOSS`] for a scope and puts back what was there.
@@ -367,6 +372,7 @@ fn part_c_continuous_run() {
 
     let opts = live_opts(true);
     PLAYS_ON.with(|p| p.set(true));
+    FIGHT_ON_ARRIVAL.with(|f| f.borrow_mut().clear());
     reset_shopping();
     let mut session = open_session(&inp.extracted);
     // `LEGAIA_FGL_CONTINUOUS_FROM=<milestone>` starts the run at a later
@@ -425,6 +431,7 @@ fn part_c_continuous_run() {
     // when that one was reached with a fight committed (see below).
     let mut cp_at = start;
     let mut reloads = 0u32;
+    let mut run_tried = false;
     let mut stall: Option<String> = None;
     // Attempts a stretch had used when a reload sent the run back behind
     // it, by stretch.
@@ -503,12 +510,6 @@ fn part_c_continuous_run() {
         // A stretch played again after a reload from behind it keeps the
         // attempts it had used.
         let (mut attempt, mut prepare) = retries.remove(&i).unwrap_or((0, None));
-        // The player switches Field Move to Run where the playthrough had,
-        // by the stretch's end, and keeps it (`west_voz_forest`'s anchor,
-        // from another session, walks between two that run).
-        if anchor_run[i + 1] == Some(true) {
-            session.host.world.locomotion.run_default = true;
-        }
         let t0 = std::time::Instant::now();
         loop {
             attempt += 1;
@@ -539,6 +540,7 @@ fn part_c_continuous_run() {
                     // reload from its arrival landed in the epilogue). The
                     // player's last save is still the one before.
                     if session.host.world.field_scripts_held_for_battle() {
+                        FIGHT_ON_ARRIVAL.with(|f| f.borrow_mut().insert(scene_name(&session)));
                         if std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
                             eprintln!(
                                 "    [checkpoint] {} reached with a fight committed: keeping the {} save",
@@ -577,12 +579,22 @@ fn part_c_continuous_run() {
             };
             let wiped = err.contains("party wiped");
             let guard = LOST_TO_ELEMENT.with(std::cell::Cell::get);
+            // A walking player stuck where the playthrough ran switches
+            // Field Move to Run and reloads, once, and keeps running.
+            // Turned on from the start of the playthrough's running stretch
+            // it re-dealt the whole middle of the game (and a runner wedges
+            // and pushes stones differently), so it waits for the stretch
+            // that needs it: `jouind`'s switch pair.
+            let run_retry = !wiped
+                && !run_tried
+                && !session.host.world.locomotion.run_default
+                && anchor_run[i + 1] == Some(true);
             let again = match guard {
                 Some(el) if wiped && prepare.is_none() => {
                     prepare = Some(el);
                     true
                 }
-                _ => wiped && attempt < CONTINUOUS_WIPE_ATTEMPTS,
+                _ => (wiped && attempt < CONTINUOUS_WIPE_ATTEMPTS) || run_retry,
             };
             if !again {
                 print_state_diff(&mut session, &inp, to);
@@ -608,7 +620,16 @@ fn part_c_continuous_run() {
                     break 'spine;
                 }
             };
-            session.host.world.locomotion.run_default = run_default;
+            session.host.world.locomotion.run_default = run_default || run_retry;
+            if run_retry {
+                run_tried = true;
+                if std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
+                    eprintln!(
+                        "    [run] {} -> {}: Field Move set to Run",
+                        spine[i].id, to.id
+                    );
+                }
+            }
             if !(attempt == 1 && prepare.is_some()) {
                 let w = &mut session.host.world;
                 w.rng_state = w

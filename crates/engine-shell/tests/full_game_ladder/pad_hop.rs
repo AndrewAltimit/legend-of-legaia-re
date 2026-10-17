@@ -94,6 +94,14 @@ pub(super) fn pad_hop(
     if let Some(s) = pad_rest(session)? {
         return Ok(s);
     }
+    // A door the run has met a boss behind (`jouine`, whose arrival commits
+    // Cort): the party goes through it ready. Met at half HP and next to no
+    // MP after the walk from the switch pair, Cort won six times running.
+    if continuous::FIGHT_ON_ARRIVAL.with(|f| f.borrow().contains(dest))
+        && let Some(s) = pad_ready(session)?
+    {
+        return Ok(s);
+    }
     let doors = match doors_to(session, graph, dest) {
         Ok(d) => d,
         // A hop no walk-on band carries is taken by talking, as a player does.
