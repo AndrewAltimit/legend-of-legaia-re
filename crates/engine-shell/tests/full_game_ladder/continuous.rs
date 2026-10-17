@@ -109,6 +109,16 @@ pub(super) fn worth_fighting(w: &legaia_engine_core::world::World) -> bool {
     cost * 5 <= party * 3
 }
 
+/// Milestone `m` as the continuous run plays toward it: its own
+/// waypoints, where the spine gives them.
+fn continuous_target(m: &Milestone) -> Milestone {
+    let mut m = m.clone();
+    if let Some(v) = &m.continuous_via {
+        m.via = v.clone();
+    }
+    m
+}
+
 /// The engine's own save at the last milestone reached.
 struct Checkpoint {
     save: legaia_save::SaveFile,
@@ -384,16 +394,27 @@ fn part_c_continuous_run() {
     }
 
     let mut reached_count = 0usize;
+    // The milestone whose state `cp` holds: behind the one last reached
+    // when that one was reached with a fight committed (see below).
+    let mut cp_at = start;
     let mut reloads = 0u32;
     let mut stall: Option<String> = None;
-    'spine: for i in start..spine.len() - 1 {
+    // Attempts a stretch had used when a reload sent the run back behind
+    // it, by stretch.
+    let mut retries: BTreeMap<usize, (u32, Option<u8>)> = BTreeMap::new();
+    let mut next = start;
+    'spine: while next < spine.len() - 1 {
+        let i = next;
+        next += 1;
         // The continuous run's own waypoints, where the spine gives them.
-        let mut to_run = spine[i + 1].clone();
-        STORY_WAYPOINTS.with(|w| w.borrow_mut().clear());
-        if let Some(v) = &to_run.continuous_via {
-            to_run.via = v.clone();
-            STORY_WAYPOINTS.with(|w| w.borrow_mut().extend(v.iter().cloned()));
-        }
+        let to_run = continuous_target(&spine[i + 1]);
+        STORY_WAYPOINTS.with(|w| {
+            let mut w = w.borrow_mut();
+            w.clear();
+            if spine[i + 1].continuous_via.is_some() {
+                w.extend(to_run.via.iter().cloned());
+            }
+        });
         let to = &to_run;
         // What the retail run had played by the next milestone and the one
         // after it: chapter 1's anchors come from several sessions, and a
@@ -452,8 +473,9 @@ fn part_c_continuous_run() {
                 .map(|&lv| if lv == u8::MAX { 0 } else { lv })
                 .collect();
         });
-        let mut prepare: Option<u8> = None;
-        let mut attempt = 0u32;
+        // A stretch played again after a reload from behind it keeps the
+        // attempts it had used.
+        let (mut attempt, mut prepare) = retries.remove(&i).unwrap_or((0, None));
         let t0 = std::time::Instant::now();
         loop {
             attempt += 1;
@@ -475,8 +497,25 @@ fn part_c_continuous_run() {
             }));
             let err = match played {
                 Ok(Ok(())) => {
-                    reached_count = i + 1 - start;
-                    cp = checkpoint(&mut session);
+                    reached_count = reached_count.max(i + 1 - start);
+                    // A milestone reached with a scripted fight committed and
+                    // not yet begun is no state a player could save in: the
+                    // save carries the flags the record set past its `3E FF`
+                    // but not the fight, and a reload of it walks on as if
+                    // the fight were won (`jouine` P2[5] commits Cort, and a
+                    // reload from its arrival landed in the epilogue). The
+                    // player's last save is still the one before.
+                    if session.host.world.field_scripts_held_for_battle() {
+                        if std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
+                            eprintln!(
+                                "    [checkpoint] {} reached with a fight committed: keeping the {} save",
+                                to.id, cp.scene
+                            );
+                        }
+                    } else {
+                        cp = checkpoint(&mut session);
+                        cp_at = i + 1;
+                    }
                     store_checkpoint(&to.id, &cp, &session);
                     if std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
                         print_state_diff(&mut session, &inp, to);
@@ -548,6 +587,13 @@ fn part_c_continuous_run() {
             if let Some(s) = rng_seed_override() {
                 let w = &mut session.host.world;
                 w.rng_state ^= s;
+            }
+            // A save from behind this stretch: the stretches between it
+            // and here are played again, each as itself.
+            if cp_at < i {
+                retries.insert(i, (attempt, prepare));
+                next = cp_at;
+                continue 'spine;
             }
         }
     }
