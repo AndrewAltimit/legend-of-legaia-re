@@ -447,6 +447,11 @@ impl PlayWindowApp {
                 }
                 None => pose,
             };
+            // The playing clip's morph lanes (`FUN_800495C8`, blended before
+            // the draw and restored after it): the posed mesh is built from
+            // a blended clone, the rest TMD stays untouched.
+            let morphed = self.session.host.world.battle_morphed_tmd(ai, tmd);
+            let tmd = morphed.as_ref().unwrap_or(tmd);
             let mut vmesh = if actor.battle_animation.is_some() || player_slot == Some(ai as u8) {
                 legaia_tmd::mesh::tmd_to_vram_mesh_posed_rot(tmd, raw, &pose.bone_outputs)
             } else {

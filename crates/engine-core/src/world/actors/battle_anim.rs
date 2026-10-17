@@ -861,6 +861,70 @@ impl World {
     /// [`Actor::battle_action_clips`]). The battle-action SM's `pose()` host
     /// hook then switches `battle_animation` between the idle loop and the
     /// matching action clip. No-ops for out-of-range slots.
+    /// Install monster actor `slot`'s clip-morph table (see
+    /// [`crate::world::Actor::battle_clip_morphs`]).
+    pub fn set_actor_battle_clip_morphs(
+        &mut self,
+        slot: usize,
+        table: std::sync::Arc<Vec<Option<legaia_actor_formats::monster_archive::ClipMorph>>>,
+    ) {
+        if let Some(actor) = self.actors.get_mut(slot) {
+            actor.battle_clip_morphs = Some(table);
+        }
+    }
+
+    /// The clip-morph lanes battle actor `actor_idx`'s playing clip blends
+    /// this frame, with their q12 weights at the clip cursor: the entry's
+    /// `+0x04` lane, then `+0x08`, as `FUN_800495C8` walks them. Only lanes
+    /// with a non-zero weight are returned, so an empty list means the rest
+    /// mesh draws as is.
+    ///
+    /// PORT: FUN_800495C8 (lane walk: `s4` over `entry+4` / `entry+8`,
+    /// `0x80049620..0x80049824`)
+    pub fn battle_clip_morph_lanes(
+        &self,
+        actor_idx: usize,
+    ) -> Vec<(&legaia_actor_formats::monster_archive::ClipMorph, i16)> {
+        let Some(actor) = self.actors.get(actor_idx) else {
+            return Vec::new();
+        };
+        let (Some(player), Some(table)) = (&actor.battle_animation, &actor.battle_clip_morphs)
+        else {
+            return Vec::new();
+        };
+        let phase = player.cursor_sixteenths() as i16;
+        player
+            .morph_lanes()
+            .into_iter()
+            .filter_map(|ix| {
+                let m = table.get((ix as usize).checked_sub(1)?)?.as_ref()?;
+                let w = legaia_actor_formats::monster_archive::clip_morph_weight(m.keys, phase);
+                (w != 0).then_some((m, w))
+            })
+            .collect()
+    }
+
+    /// `tmd` with battle actor `actor_idx`'s active clip morphs blended into
+    /// its vertices ([`Self::battle_clip_morph_lanes`],
+    /// [`legaia_actor_formats::monster_archive::apply_clip_morphs`]) - the
+    /// mesh both play hosts pose and draw this frame. `None` when no lane is
+    /// active, so the caller keeps its rest mesh. The clone is retail's
+    /// save / blend / restore around the draw (`FUN_800495C8` before it,
+    /// `FUN_80049858` after it, `FUN_80048A08`).
+    pub fn battle_morphed_tmd(
+        &self,
+        actor_idx: usize,
+        tmd: &legaia_tmd::Tmd,
+    ) -> Option<legaia_tmd::Tmd> {
+        let lanes = self.battle_clip_morph_lanes(actor_idx);
+        if lanes.is_empty() {
+            return None;
+        }
+        let mut out = tmd.clone();
+        legaia_actor_formats::monster_archive::apply_clip_morphs(&mut out, &lanes);
+        Some(out)
+    }
+
     pub fn set_actor_battle_action_clips(
         &mut self,
         slot: usize,

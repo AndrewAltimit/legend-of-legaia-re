@@ -545,6 +545,15 @@ pub struct Actor {
     /// idle-only behavior.
     pub battle_action_clips: Option<std::sync::Arc<Vec<Option<MonsterAnimation>>>>,
 
+    /// The monster block's clip morphs, addressed by the 1-based lane index
+    /// an action entry carries at `+0x04` / `+0x08` (`table[index - 1]`,
+    /// [`legaia_actor_formats::monster_archive::clip_morph_table`]). Installed
+    /// with the action clips; the battle draw blends the playing clip's
+    /// lanes onto the mesh through [`crate::world::World::battle_morphed_tmd`].
+    /// `None` for an actor that is not a monster.
+    pub battle_clip_morphs:
+        Option<std::sync::Arc<Vec<Option<legaia_actor_formats::monster_archive::ClipMorph>>>>,
+
     /// Pose id the current `battle_animation` was selected for, in the pose-id
     /// space the battle-action SM emits (`6` idle / `7` ready / `8` recover /
     /// `9` defeat). Lets a repeated request for the same pose keep the playing

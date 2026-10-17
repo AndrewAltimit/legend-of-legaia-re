@@ -293,12 +293,30 @@ impl SceneHost {
             .filter(|(_, a)| a.battle_action_clips.is_none())
             .filter_map(|(i, a)| a.battle_monster_id.map(|id| (i, id)))
             .collect();
-        if pending.is_empty() {
+        // Each monster's clip morphs, the table its entries' `+0x04` /
+        // `+0x08` lane indices address (`FUN_800542C8` resolves them at load).
+        let morph_pending: Vec<(usize, u16)> = self
+            .world
+            .actors
+            .iter()
+            .enumerate()
+            .filter(|(_, a)| a.battle_clip_morphs.is_none())
+            .filter_map(|(i, a)| a.battle_monster_id.map(|id| (i, id)))
+            .collect();
+        if pending.is_empty() && morph_pending.is_empty() {
             return;
         }
         let Some(archive) = self.monster_archive_bytes() else {
             return;
         };
+        for (slot, id) in morph_pending {
+            if let Ok(Some(table)) =
+                legaia_actor_formats::monster_archive::clip_morph_table(&archive, id)
+            {
+                self.world
+                    .set_actor_battle_clip_morphs(slot, Arc::new(table));
+            }
+        }
         for (slot, id) in pending {
             if let Ok(Some(clips)) =
                 legaia_actor_formats::monster_archive::animations_by_entry(&archive, id)

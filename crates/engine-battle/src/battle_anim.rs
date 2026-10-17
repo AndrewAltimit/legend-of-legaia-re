@@ -126,6 +126,12 @@ pub struct MonsterAnimPlayer {
     /// one-shot finishing, a looping clip wrapping); taken by
     /// [`Self::take_natural_end`].
     natural_end: bool,
+    /// The entry's two clip-morph lane indices (`+0x04`, `+0x08`): the
+    /// 1-based on-disc indices `FUN_800542C8` resolves to the
+    /// [`legaia_actor_formats::monster_archive::ClipMorph`]s the battle draw
+    /// blends while this clip plays (`FUN_800495C8`). `0` = none, and both
+    /// `0` for a clip built without an entry head.
+    morph_lanes: [u32; 2],
 }
 
 /// What the decoder blends a clip's **last** frame toward: frame 0 of the
@@ -180,7 +186,20 @@ pub fn step_for_rate(rate: u8) -> u32 {
     if rate == 0 { 64 } else { rate as u32 * 32 }
 }
 
+/// A little-endian word of an entry head, `0` past its end.
+fn head_u32(head: &[u8], off: usize) -> u32 {
+    head.get(off..off + 4)
+        .map_or(0, |b| u32::from_le_bytes([b[0], b[1], b[2], b[3]]))
+}
+
 impl MonsterAnimPlayer {
+    /// The playing entry's clip-morph lane indices (`+0x04`, `+0x08`;
+    /// 1-based, `0` = none) - what `FUN_800495C8` reads off the node's
+    /// committed entry (`lw v0,0x4c(s8)` at `0x800495FC`, then `+4` / `+8`).
+    pub fn morph_lanes(&self) -> [u32; 2] {
+        self.morph_lanes
+    }
+
     /// Build a player around one decoded animation (typically action 0 = idle).
     /// Returns `None` for a degenerate animation (no parts or no frames).
     /// The playback step comes from the clip's entry rate byte
@@ -242,6 +261,10 @@ impl MonsterAnimPlayer {
             end_root_step: anim.entry_end_root_step().unwrap_or(0),
             tween: None,
             natural_end: false,
+            morph_lanes: [
+                head_u32(&anim.effect_script, 0x04),
+                head_u32(&anim.effect_script, 0x08),
+            ],
         })
     }
 

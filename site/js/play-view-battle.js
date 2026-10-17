@@ -199,10 +199,22 @@
           /* Live battle pose (idle loop / hit reaction / staged swing), the
            * same per-bone R.v+T composition every other animator here runs. */
           const pose = rt.play_battle_actor_pose(i);
-          if (pose.length) {
-            poseInto(a.out, a.base, a.objectIds, pose, pose.length / 6, 0);
-            this.renderer.updateSceneMeshPositions(a.meshId, a.out);
+          /* The playing clip's morph lanes (FUN_800495C8): object-local
+           * positions with the lanes' deltas blended in, posed in place of
+           * the rest upload this frame. Empty = no lane active. Guarded
+           * against a cached WASM without the export. */
+          let src = a.base;
+          if (typeof rt.play_battle_actor_morph === 'function') {
+            const m = rt.play_battle_actor_morph(i);
+            if (m.length === a.base.length) src = m;
           }
+          if (pose.length) {
+            poseInto(a.out, src, a.objectIds, pose, pose.length / 6, 0);
+            this.renderer.updateSceneMeshPositions(a.meshId, a.out);
+          } else if (src !== a.base || a.morphed) {
+            this.renderer.updateSceneMeshPositions(a.meshId, src);
+          }
+          a.morphed = src !== a.base;
         }
         /* Rot limb dimming (FUN_80048A08's per-object colour rule): re-send
          * the actor's packet colours only when the engine's dimmed set

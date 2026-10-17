@@ -214,7 +214,7 @@ ry = b6 | (b8 &amp; 0x0f) &lt;&lt; 8      rz = b7 | (b8 &amp; 0xf0) &lt;&lt; 4</
     <figcaption>The lane weight against the clip cursor (frames in 12.4 fixed point): a linear ramp from <code>k1</code> to <code>k2</code>, a hold to <code>k3</code>, a linear fall to <code>k4</code>. Equal keys skip a ramp.</figcaption>
   </figure>
   <p>The per-actor draw blends each lane in just before it draws the actor and undoes it just after: for every run it saves the authored vertices, adds <code>delta &times; weight &gt;&gt; 12</code> to them in place, and after the draw copies the saved vertices back, second lane first, so the next frame starts from the rest pose. Every one of the disc's 313 lanes parses, and each run stays inside the object it names.</p>
-  <p class="caption">In the port: <code>legaia_actor_formats::monster_archive::{parse_clip_morph, clip_morph_weight}</code>. No host blends them yet.</p>
+  <p class="caption">In the port: <code>legaia_actor_formats::monster_archive::{clip_morph_table, clip_morph_weight, apply_clip_morphs}</code>; <code>World::battle_morphed_tmd</code> blends the playing clip's lanes, and both the native window and the browser play page draw the blended mesh.</p>
 </section>
 
 <section class="doc-section" id="texture-pool">

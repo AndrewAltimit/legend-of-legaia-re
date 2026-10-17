@@ -33,12 +33,13 @@
 //! ([`clip_morph_weight`]); `FUN_80049858` copies the saved vertices back,
 //! lane `+0x08` first, so the rest pose is what the next frame starts from.
 //!
-//! NOT WIRED: no host blends these. The port poses monster meshes by the
-//! rigid per-part decode only; wiring is the monster mesh build applying each
-//! lane's records at [`clip_morph_weight`] of the clip cursor before the
-//! draw, against a copy of the rest vertices.
+//! The port blends onto a **clone** of the mesh ([`apply_clip_morphs`]) and
+//! poses the clone, which is the same as retail's save / blend / restore: the
+//! authored vertices are never changed. The table the indices address is
+//! [`clip_morph_table`]; the engine installs it per monster actor and both
+//! play hosts draw the blended mesh (`World::battle_morphed_tmd`).
 
-use super::MonsterSpell;
+use super::{MIN_RECORD_BYTES, MonsterSpell, decode_block};
 
 /// One vertex-delta run of a [`ClipMorph`].
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -100,6 +101,74 @@ pub fn parse_clip_morph(block: &[u8], offset: u32) -> Option<ClipMorph> {
     Some(ClipMorph { keys, records })
 }
 
+/// Every clip morph of monster `id`'s block, addressed by the on-disc
+/// 1-based lane index an action entry carries at `+0x04` / `+0x08`
+/// (`table[index - 1]`): the loader's
+/// `block[(index + magic_count + 0x12) * 4]` offset (`0x80054768..0x8005478C`),
+/// parsed. The table runs to the largest index any entry names; a slot
+/// whose offset does not parse is `None`. `Ok(None)` for a filler slot.
+pub fn clip_morph_table(entry: &[u8], id: u16) -> anyhow::Result<Option<Vec<Option<ClipMorph>>>> {
+    let Some(block) = decode_block(entry, id)? else {
+        return Ok(None);
+    };
+    if block.len() < MIN_RECORD_BYTES {
+        return Ok(None);
+    }
+    let mc = block[0x4a] as usize;
+    let mut max_index = 0u32;
+    for i in 0..mc {
+        let Some(e) = legaia_bytes::u32_le(&block, 0x4c + i * 4) else {
+            break;
+        };
+        for lane in [4, 8] {
+            if let Some(ix) = legaia_bytes::u32_le(&block, e as usize + lane)
+                && ix < 0x100
+            {
+                max_index = max_index.max(ix);
+            }
+        }
+    }
+    let table = (1..=max_index as usize)
+        .map(|ix| {
+            let off = legaia_bytes::u32_le(&block, (ix + mc + 0x12) * 4)?;
+            (off != 0).then(|| parse_clip_morph(&block, off)).flatten()
+        })
+        .collect();
+    Ok(Some(table))
+}
+
+/// Blend each `(morph, weight)` lane into `tmd`'s vertices, in order: every
+/// record adds `(delta * weight) >> 12` (saturated to a halfword, then a
+/// wrapping add - `FUN_8005B038`'s `GPF sf=1, lm=0`) to the `count`
+/// vertices of its object from `first_vertex` (`0x80049740..0x800497E0`).
+/// A zero weight is skipped; a run past its object's vertices is clipped
+/// (retail writes it unchecked, and no disc run needs it).
+///
+/// PORT: FUN_800495C8 (the per-record blend)
+pub fn apply_clip_morphs(tmd: &mut legaia_tmd::Tmd, lanes: &[(&ClipMorph, i16)]) {
+    let scale = |w: i16, d: i16| -> i16 {
+        ((i32::from(w) * i32::from(d)) >> 12).clamp(-0x8000, 0x7FFF) as i16
+    };
+    for &(m, w) in lanes {
+        if w == 0 {
+            continue;
+        }
+        for r in &m.records {
+            let Some(o) = tmd.objects.get_mut(r.object as usize) else {
+                continue;
+            };
+            for (k, d) in r.deltas.iter().enumerate() {
+                let Some(v) = o.vertices.get_mut(r.first_vertex as usize + k) else {
+                    break;
+                };
+                v.x = v.x.wrapping_add(scale(w, d[0]));
+                v.y = v.y.wrapping_add(scale(w, d[1]));
+                v.z = v.z.wrapping_add(scale(w, d[2]));
+            }
+        }
+    }
+}
+
 impl MonsterSpell {
     /// The entry's two clip-morph lanes (`+0x04`, `+0x08`), parsed out of
     /// the decoded `block`.
@@ -124,7 +193,6 @@ impl MonsterSpell {
 /// (`sll a3,s3,0x10; sra a3,a3,0x10` at `0x800497C8`).
 ///
 /// PORT: FUN_800495C8 (the lane weight)
-/// NOT WIRED: see the module note - no host blends clip morphs.
 pub fn clip_morph_weight(keys: [u8; 4], phase: i16) -> i16 {
     let [k1, k2, k3, k4] = keys.map(i32::from);
     let phase = i32::from(phase);
@@ -178,6 +246,80 @@ mod tests {
         assert_eq!(clip_morph_weight(step, 5 * 16), 0x1000);
         assert_eq!(clip_morph_weight(step, 8 * 16 + 15), 0x1000);
         assert_eq!(clip_morph_weight(step, 9 * 16), 0);
+    }
+
+    fn one_object_tmd(verts: &[[i16; 3]]) -> legaia_tmd::Tmd {
+        legaia_tmd::Tmd {
+            header: legaia_tmd::Header {
+                id: 0x8000_0002,
+                flags: 0,
+                nobj: 1,
+                flist_bit_set: false,
+            },
+            objects: vec![legaia_tmd::Object {
+                header: legaia_tmd::ObjectHeader {
+                    vert_top: 0,
+                    n_vert: verts.len() as u32,
+                    normal_top: 0,
+                    n_normal: 0,
+                    prim_top: 0,
+                    n_primitive: 0,
+                    scale: 0,
+                },
+                vertices: verts
+                    .iter()
+                    .map(|v| legaia_tmd::Vector {
+                        x: v[0],
+                        y: v[1],
+                        z: v[2],
+                        _pad: 0,
+                    })
+                    .collect(),
+                normals: Vec::new(),
+                primitives_byte_offset: 0,
+                primitives_byte_size: 0,
+                claimed_n_primitive: 0,
+                primitives_psx_walk: None,
+            }],
+        }
+    }
+
+    #[test]
+    fn blend_adds_weighted_deltas_lane_after_lane() {
+        let mut tmd = one_object_tmd(&[[0, 0, 0], [10, 20, 30], [5, 5, 5]]);
+        let a = ClipMorph {
+            keys: [0, 1, 1, 2],
+            records: vec![ClipMorphRecord {
+                object: 0,
+                first_vertex: 1,
+                deltas: vec![[0x100, -0x100, 3, 0], [8, 0, 0, 0]],
+            }],
+        };
+        let b = ClipMorph {
+            keys: [0, 1, 1, 2],
+            records: vec![ClipMorphRecord {
+                object: 0,
+                first_vertex: 2,
+                // Runs past the object's three vertices: clipped.
+                deltas: vec![[0x40, 0, 0, 0], [99, 99, 99, 0]],
+            }],
+        };
+        // Half weight on lane `+0x04`, full on `+0x08`; `>> 12` floors
+        // (`3 * 0x800 >> 12 = 1`, `-0x100 * 0x800 >> 12 = -0x80`).
+        apply_clip_morphs(&mut tmd, &[(&a, 0x800), (&b, 0x1000)]);
+        let v: Vec<[i16; 3]> = tmd.objects[0]
+            .vertices
+            .iter()
+            .map(|v| [v.x, v.y, v.z])
+            .collect();
+        assert_eq!(
+            v,
+            vec![[0, 0, 0], [10 + 0x80, 20 - 0x80, 31], [5 + 4 + 0x40, 5, 5]]
+        );
+        // A zero weight leaves the rest pose.
+        let mut rest = one_object_tmd(&[[1, 2, 3]]);
+        apply_clip_morphs(&mut rest, &[(&a, 0)]);
+        assert_eq!(rest.objects[0].vertices[0].x, 1);
     }
 
     #[test]

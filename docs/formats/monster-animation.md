@@ -580,7 +580,7 @@ The per-actor draw `FUN_80048A08` calls `FUN_800495C8` before it draws (`jal` at
 - **Blend.** Per lane (`+0x04`, then `+0x08`) and per record, `FUN_800495C8` finds the object through the mesh's `0x1C`-stride table (actor table `0x801C9370[+0x5A]` -> `+0x230`), saves the `count` authored vertices from `first_vertex` into the per-slot buffer at `gp[+0xA0C] + 0x1060` (`0x80049778..0x800497C4`), then blends the deltas into them in place through `FUN_8005B038` at the lane weight (`0x800497DC`).
 - **Restore.** `FUN_80049858` copies the saved vertices back, lane `+0x08` first (`li t1,0x1` at `0x80049860`, counting down), so overlapping runs unwind to the rest pose and the next frame starts clean.
 
-The decoded rigid pose is not involved: the morph moves the mesh's vertices, and the per-part matrices then place them. The parser and the weight are `legaia_actor_formats::monster_archive::{parse_clip_morph, clip_morph_weight}`; no host blends them yet.
+The decoded rigid pose is not involved: the morph moves the mesh's vertices, and the per-part matrices then place them. **Port.** `monster_archive::clip_morph_table` builds the per-monster table the indices address, and the scene host installs it on each monster actor with its action clips (`Actor::battle_clip_morphs`). The animation player keeps the playing entry's two indices; `World::battle_clip_morph_lanes` weighs them at the clip cursor (`clip_morph_weight`), and `World::battle_morphed_tmd` blends them into a clone of the monster's TMD (`apply_clip_morphs`), Both play hosts draw that clone: the native window builds its posed mesh from it, and the browser page poses `play_battle_actor_morph`'s positions in place of the rest upload. Pinned by `engine-core`'s `battle_clip_morph_disc`.
 
 ## Provenance
 

@@ -216,6 +216,11 @@ struct BattleActorRender {
     /// [`LegaiaRuntime::play_battle_actor_pose`] serves until the world's
     /// first battle tick publishes a live `pose_frame`.
     rest_pose: Vec<i32>,
+    /// The monster's TMD and its bytes, kept to rebuild the object-local
+    /// positions with the playing clip's morph lanes blended in
+    /// ([`LegaiaRuntime::play_battle_actor_morph`]). `None` for party forms
+    /// and summon creatures.
+    morph_src: Option<std::sync::Arc<(legaia_tmd::Tmd, Vec<u8>)>>,
 }
 
 /// The live battle render state, built on the `Field -> Battle` mode edge
@@ -311,6 +316,7 @@ impl BattleRender {
             mesh: BattleMesh::textured(mesh),
             object_ids,
             rest_pose,
+            morph_src: None,
         });
     }
 }
@@ -481,6 +487,7 @@ impl LegaiaRuntime {
                 mesh: BattleMesh::textured(vmesh),
                 object_ids,
                 rest_pose,
+                morph_src: Some(std::sync::Arc::new((tmd, mesh.tmd_bytes().to_vec()))),
             });
         }
         let tex_slots_used =
@@ -643,6 +650,7 @@ fn party_actor_render(
         mesh: BattleMesh::textured(vmesh),
         object_ids,
         rest_pose,
+        morph_src: None,
     })
 }
 
