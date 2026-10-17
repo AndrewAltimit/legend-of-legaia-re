@@ -13,7 +13,6 @@ path = "src/lib.rs"
 [dependencies]
 legaia-engine-battle-vm.workspace = true
 legaia-render-kernels.workspace = true
-legaia-engine-battle.workspace = true
 legaia-engine-system.workspace = true
 legaia-engine-vm.workspace = true
 legaia-tmd.workspace = true

@@ -157,8 +157,8 @@ pub fn summon_stager_prot_entry(spell_id: u8) -> Option<u32> {
 /// mesh identity first and have since gained injected-cast capture states too).
 /// The high block `0x99..=0xA0` carries a bespoke mesh (not an archive creature)
 /// and is intentionally unmapped - those summons return `None` here for now.
-/// The map id is validated as live in this archive; a name-based fallback covers
-/// anything [`legaia_engine_battle::retail_magic`] names but the map does not.
+/// The map id is validated as live in this archive; when it is not, the map
+/// entry's creature name is looked up among the archive's records instead.
 pub fn summon_creature_id(spell_id: u8, battle_data_entry: &[u8]) -> Option<u16> {
     // Disc-pinned map: the creature id is exact (byte-validated mesh identity),
     // so prefer it. Validate it resolves in this archive before returning.
@@ -171,8 +171,10 @@ pub fn summon_creature_id(spell_id: u8, battle_data_entry: &[u8]) -> Option<u16>
     if let Some(c) = mapped {
         return Some(c.creature_id);
     }
-    // Fallback: name-based resolution for any other named summon.
-    let name = legaia_engine_battle::retail_magic::get(spell_id)?.name;
+    // Fallback: the mapped creature's name, resolved among this archive's
+    // records. The battle spell mirror's summon names (`0x81..=0x8B`) are the
+    // map's own names for those ids, so the map is the one name source.
+    let name = legaia_actor_formats::summon_creatures::creature_for_spell(spell_id)?.name;
     let slots = legaia_actor_formats::monster_archive::slot_count(battle_data_entry) as u16;
     (1..=slots).find(|&id| {
         legaia_actor_formats::monster_archive::record(battle_data_entry, id)
@@ -369,8 +371,10 @@ const FLUTE_SUMMON_NAMES: &[(u8, &str)] = &[(0x96, "Lippian"), (0x97, "Spikefish
 /// Display name of the creature a player summon spell brings out, across the
 /// whole `0x81..=0xA0` span: the namesake `battle_data` creature for the base
 /// and evolved blocks ([`legaia_actor_formats::summon_creatures`]), the summon's own
-/// name for the big-summon band ([`BIG_SUMMONS`]), and the spell-table name
-/// otherwise. `None` for an id that is not a player summon.
+/// name for the big-summon band ([`BIG_SUMMONS`]) and the two flute summons.
+/// `None` for any other id - the unused `0x98` slot, and ids outside the
+/// player-summon span. (The battle spell mirror names only `0x81..=0x8B`, which
+/// the creature map already covers with the same names.)
 pub fn summon_display_name(spell_id: u8) -> Option<&'static str> {
     if let Some(c) = legaia_actor_formats::summon_creatures::creature_for_spell(spell_id) {
         return Some(c.name);
@@ -381,8 +385,5 @@ pub fn summon_display_name(spell_id: u8) -> Option<&'static str> {
     if let Some((_, n)) = FLUTE_SUMMON_NAMES.iter().find(|(id, _)| *id == spell_id) {
         return Some(n);
     }
-    PLAYER_SUMMON_IDS
-        .contains(&spell_id)
-        .then(|| legaia_engine_battle::retail_magic::get(spell_id).map(|s| s.name))
-        .flatten()
+    None
 }

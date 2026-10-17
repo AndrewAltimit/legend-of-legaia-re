@@ -168,7 +168,7 @@ Internal dependencies as declared in each crate's `Cargo.toml`. "Format-family c
 | `engine-vm` | `scene-formats`, `minigame-formats`, `anm` | Field, move, effect and window-widget VMs; no GPU or audio deps. |
 | `engine-battle` | `engine-battle-vm`, `engine-system`, `render-kernels`, `actor-formats`, `game-tables`, `scene-formats`, `ui-formats`, `art`, `anm`, `save`, `tim`, `tmd`, `bytes` | `World`-free battle kernels. |
 | `render-kernels` | `engine-camera`, `engine-vm`, `actor-formats`, `overlay-images`, `scene-formats`, `tim`, `tmd` | GTE math, screen prims, VRAM capture, effect emitters, the battle-intro model; no wgpu. |
-| `engine-effects` | `engine-battle`, `engine-battle-vm`, `engine-system`, `engine-vm`, `render-kernels`, `actor-formats`, `overlay-images`, `tmd` | Effect kernels. |
+| `engine-effects` | `engine-battle-vm`, `engine-system`, `engine-vm`, `render-kernels`, `actor-formats`, `overlay-images`, `tmd` | Effect kernels. |
 | `engine-field` | `engine-mode`, `engine-motion-vm`, `engine-dialog`, `engine-camera`, `engine-system`, `engine-vm`, `render-kernels`, `actor-formats`, `overlay-images`, `scene-formats`, `anm`, `mes`, `save`, `tmd` | Field kernels: actor programs, camera, cue routers. |
 | `engine-fishing` | `engine-field`, `engine-system`, `render-kernels`, `game-tables`, `minigame-formats`, `scene-formats`, `tmd` | Fishing rules engine. |
 | `engine-minigames` | `engine-fishing`, `engine-battle-vm`, `engine-camera`, `engine-system`, `engine-vm`, `render-kernels`, `actor-formats`, `game-tables`, `minigame-formats`, `scene-formats`, `save` | Minigame rules engines. |
@@ -180,7 +180,7 @@ Internal dependencies as declared in each crate's `Cargo.toml`. "Format-family c
 | `engine-render` | `engine-ui`, `render-kernels`, `engine-camera`, `tim`, `font` | wgpu renderer. |
 | `engine-audio` | `xa`, `vab`, `seq`, `prot` | SPU model, sequencer, output backends. |
 | `engine-session` | `engine-core`, `engine-scene`, `engine-audio`, `engine-menus`, `engine-minigame-scenes`, `engine-battle`, `engine-field`, `engine-mode`, `engine-system` + format-family and parser crates | `BootSession` + BGM director; no wgpu or winit. |
-| `engine-screens` | `engine-core`, `engine-scene`, `engine-ui`, `engine-battle`, `engine-effects`, `engine-menus`, `engine-mode`, `render-kernels`, `game-tables`, `minigame-formats`, `font` | Shop / prize / inn / banner screens both hosts draw. |
+| `engine-screens` | `engine-core`, `engine-scene`, `engine-ui`, `engine-battle`, `engine-dialog`, `engine-effects`, `engine-field`, `engine-fishing`, `engine-menus`, `engine-minigame-scenes`, `engine-minigames`, `engine-mode`, `engine-system`, `render-kernels`, `game-tables`, `minigame-formats`, `font` | The screens both hosts draw: shop family, battle HUD, pause menu, dialog box. |
 | `engine-export` | `engine-core`, `engine-scene`, `engine-field`, `engine-vm`, `actor-formats`, `game-tables`, `scene-formats`, `tim`, `tmd` | The `.glb` world exporter behind `export-glb`. |
 | `engine-capture` | `engine-core`, `engine-battle`, `engine-battle-vm`, `engine-camera`, `engine-dialog`, `engine-effects`, `engine-field`, `engine-menus`, `engine-mode`, `engine-system`, `art`, `save`, `scene-formats` | Capture seeds, gates and pad drives shared by `parity` and the native capture child. |
 | `parity` | `engine-capture`, `engine-session`, `engine-core`, `engine-scene`, `engine-audio`, `engine-ui`, the kernel crates it measures, `mednafen`, `pcsx-redux`, `ram-image` + parser crates | Parity oracles + retail comparison. |
@@ -197,8 +197,8 @@ The edges among the `World`-free kernel crates are a committed table, [`scripts/
 | 0 | `engine-system`, `engine-dialog`, `engine-vm` |
 | 1 | `engine-camera`, `engine-mode`, `engine-motion-vm` |
 | 2 | `engine-battle-vm`, `render-kernels` |
-| 3 | `engine-battle`, `engine-field`, `engine-ui` |
-| 4 | `engine-effects`, `engine-fishing`, `engine-scene` |
+| 3 | `engine-battle`, `engine-effects`, `engine-field`, `engine-ui` |
+| 4 | `engine-fishing`, `engine-scene` |
 | 5 | `engine-minigames` |
 | 6 | `engine-menus` |
 | 7 | `engine-minigame-scenes` |
@@ -209,10 +209,11 @@ Most rows follow from the crates' roles. The ones that do not are listed in the 
 
 - **`engine-battle -> render-kernels` is one constant,** the encounter session's default transition length `battle_intro_styles::INTRO_DURATION_FRAMES`: the battle-intro model sits with its draw half.
 - **`engine-minigames -> engine-battle-vm` is the ringside still.** The contest hub picks the still a battle end leaves resident through `panel_backread_loader`; `battle_formulas` is the Muscle Dome's by role.
-- **`engine-effects -> engine-battle` is one lookup,** the summon catalogue resolving a spell id to its name through `retail_magic`.
 - **`engine-menus -> engine-field` is the field overlay's dev-menu bodies.** The equip applier (`dev_equip_commit`) that the pause menu's equip session calls too, and the row kernels (`dev_menu_leaves`, `dev_menu_adjust`, `dev_menu_flags`) the dev menu screen (`dev_menu_host`) steps.
 - **`engine-fishing -> engine-field` is `field_regions`.** A venue floor is a field `.MAP` walk grid with tile triggers.
 - **`engine-ui -> engine-battle-vm` is the battle HUD model** (`battle_party_panel`, `battle_commit_log`, the value readout, the Theeder packet): the draw-list builders project types defined beside the kernels that fill them.
+
+Some edges look thin by item count and stand because the role explains them, or because cutting them would cost more than the edge: `engine-camera` and `engine-motion-vm` reach `engine-system` only for its BIOS `rand` (the leaf's role; a rand-only leaf would move every `rand` call site in the engine), `engine-fishing -> render-kernels` is one GTE divide (render-kernels' role, and already below it through `engine-field`), and `engine-minigames -> engine-fishing` holds the shared minigame floor, the dance step markers and the fishing parts the minigame effect pool ages - a module set, not a symbol.
 
 Adding an edge means editing the table, which is the point: the row is where the reason goes. A test that exercises another crate's code belongs in that crate's `tests/`, so a `[dev-dependencies]` edge needs its own `dev` entry.
 

@@ -70,7 +70,6 @@ dev = ["engine-camera", "engine-field"]
 [crates.engine-effects]
 role = "World-free effect kernels"
 deps = [
-    "engine-battle",
     "engine-battle-vm",
     "engine-system",
     "engine-vm",
@@ -161,12 +160,6 @@ from = "engine-battle"
 to = "render-kernels"
 items = ["battle_intro_styles::INTRO_DURATION_FRAMES"]
 reason = "the encounter session's default transition length is the battle-intro model's, which sits with its draw half"
-
-[[coupling]]
-from = "engine-effects"
-to = "engine-battle"
-items = ["retail_magic::get"]
-reason = "the summon catalogue resolves a spell id to its name through the battle spell mirror"
 
 [[coupling]]
 from = "engine-menus"
