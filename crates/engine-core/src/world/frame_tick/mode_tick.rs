@@ -812,6 +812,19 @@ impl World {
                 if self.clock.display_frame_step == 1 {
                     self.tick_field_npc_motions();
                 }
+                // The same driver's scripted-motion half (`FUN_80038158`,
+                // `jal` at `0x8003BD98`): each placed actor's tail-section-1
+                // stream, its variant re-selected every tick on a story
+                // flag. The overworld's own streams write story flags:
+                // `map02` P1[0] raises `0x5A4` (P2[14]) once the Karisto cart
+                // has stood east long enough, and the cart actor's `0x5A4`
+                // variant flies it back and raises `0x467` / drops `0x466`,
+                // the flags `station` P1[15] sells the ride on. Without the
+                // tick the cart never returned.
+                // REF: FUN_8003BC08, FUN_80038158
+                if actor_tick_fired {
+                    self.tick_field_npc_ambient();
+                }
                 // The per-actor anim tick: the overworld's MAN actors play
                 // the kingdom bundle's slot-4 clips through `FUN_800204F8`
                 // exactly as a town's do (a live `map01` actor list holds

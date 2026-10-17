@@ -1842,14 +1842,17 @@ Scene-specific facts the route and the pad hand depend on. Each is a property of
   starts). A reach beat that clears a flag the live state holds waits while
   another missing reach flag's band is out of reach: P2[11] clears the switch
   flags the `deroa` route needs, so the junction comes first.
-- The Karisto cart runs only from the side it stands on. `station` P1[15]
-  sells the ride east (P2[24], which raises `0x466` and clears `0x467`)
-  only while `0x467` is up, and says no return is scheduled otherwise; only
-  `station3` P2[2] brings it back west. The chapter-3 crash (`station`
-  P2[23]) does not move it, and `station3`'s arrival P2[0] raises `0x466`.
-  After Jette the only way west is `concend` to Drake, and the only ways
-  back east are the cart, the one-shot crash and the one-shot Uru Mais warp
-  (`rikuroa` P2[57], `0x3BC`). The endgame card's anchors carry the cart in
-  the west (`0x467`); the playthrough card's Zora anchor still carries it
-  east (`0x466`). A run whose cart stands east when it reaches Drake has no
-  way back to `map03`.
+- The Karisto cart runs only from the side it stands on, and shuttles on a
+  clock once Zora's castle has raised `0x38F`. `station` P1[15] sells the
+  ride east (P2[24], which raises `0x466` and clears `0x467`) only while
+  `0x467` is up and otherwise says no return is scheduled; `station3` P2[2]
+  rides it back west. Neither ride is the only writer: the overworld moves
+  the cart too. `map02` P1[0], while `0x38F` is up and the cart stands east,
+  adds the frame tick to script counter 0 (`4C CB 00 FF FF`), and once it
+  reaches 480 rolls `Rand() & 0xFF` against 1 each frame; on the roll it
+  spawns P2[14], which raises `0x5A4`, and the cart actor's tail-section-1
+  stream switches to its `0x5A4` variant, flies the cart west and raises
+  `0x467` / drops `0x466` (motion-VM ops `0x07` / `0x08`). `map02` P2[15]
+  (`0x5A5`) and `map03` P2[17] / P2[18] (`0x5A2` / `0x5A3`) are the other
+  legs. A party that crosses the Karisto overworld for a few hundred frames
+  finds the cart waiting at the station.
