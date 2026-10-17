@@ -91,6 +91,12 @@ impl RetailBattle {
         let pc = self.party_count.clamp(1, 3);
         self.clip_cursors
             .iter()
+            // The acting seat's clip and its target's reaction run with the
+            // action, which the seed already placed where the capture's
+            // stood.
+            .filter(|&&(slot, ..)| {
+                self.action_state == 0 || (slot != self.active_actor && slot != self.target_code)
+            })
             .filter_map(|&(slot, clip, cursor)| {
                 let slot = if slot < 3 {
                     (slot < pc).then_some(slot)?

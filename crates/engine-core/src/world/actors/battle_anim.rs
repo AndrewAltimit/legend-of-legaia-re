@@ -5,6 +5,17 @@ use super::*;
 use legaia_engine_mode::mode::SceneMode;
 
 impl World {
+    /// What a frame of seated clip cursors moves with them, re-derived the
+    /// way the pass that poses the bodies derives it: every body pair
+    /// `+0x3C..+0x40` (the live pair plus the new pose's centroid) and the
+    /// Mystic Shield, which sits on the first monster seat's pair.
+    pub fn settle_seated_clips(&mut self) {
+        self.refresh_battle_body_pairs();
+        if self.mode == SceneMode::Battle {
+            self.tick_mystic_shield();
+        }
+    }
+
     /// Land battle slot `slot`'s playing clip on the node cursor `+0x68` a
     /// capture held (12.4 sixteenths of a keyframe), re-posing it there -
     /// when the slot plays the clip the capture's `+0x1D9` names. Returns

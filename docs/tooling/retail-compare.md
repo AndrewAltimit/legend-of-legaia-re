@@ -993,8 +993,11 @@ advances the cursor by `(frame step * +0x21D * entry +0x78) >> 1` (`>> 2` for
 a Slowed member's idle; `FUN_80047430`, `0x800476D8..0x80047764`). The image
 child lands each slot on that cursor on the capture frame
 (`LEGAIA_SEAT_BATTLE_CLIPS`, `World::seat_battle_clip_cursor`) when it plays
-the same clip and the clip loops; a one-shot started with its action, which
-the seed has already placed.
+the same clip and the clip loops. Left on the replay's clock: a one-shot,
+which started with its action, and - while an action is in flight - the
+acting seat and its target, whose clips run with the action the seed has
+already placed (seated, Zeto's parked Big Wave clip cost
+`zeto_big_wave_mid_cast` `0.03`).
 
 ### Rewards already granted
 

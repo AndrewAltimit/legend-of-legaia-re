@@ -21,8 +21,12 @@ pub struct ClipCursorSeed {
 /// Land each seed on its slot's clip (`World::seat_battle_clip_cursor`);
 /// a slot playing another clip than the capture's keeps its own cursor.
 pub fn apply_clip_cursors(world: &mut legaia_engine_core::world::World, seeds: &[ClipCursorSeed]) {
+    let mut any = false;
     for s in seeds {
-        world.seat_battle_clip_cursor(usize::from(s.slot), s.clip, s.cursor);
+        any |= world.seat_battle_clip_cursor(usize::from(s.slot), s.clip, s.cursor);
+    }
+    if any {
+        world.settle_seated_clips();
     }
 }
 
