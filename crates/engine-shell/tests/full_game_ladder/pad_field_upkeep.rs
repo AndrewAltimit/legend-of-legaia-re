@@ -3,6 +3,22 @@
 
 use super::*;
 
+thread_local! {
+    /// Set while [`pad_ready`] readies the party at a staged fight's door.
+    static AT_BOSS_DOOR: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Whether the field upkeep is spending toward a boss: on the walk to one
+/// ([`continuous::SAVING_FOR_BOSS`]) or at its door ([`pad_ready`]). Its
+/// group-heal MP then stays for the fight: Zora (`taiku` P2[19]) was met
+/// with Vahn's pool spent from 197 to 17 on four field casts at the door,
+/// the bag holding no restorative, and the Spoons the fight's party-wide
+/// hits needed were the ones cast.
+fn boss_bound() -> bool {
+    continuous::SAVING_FOR_BOSS.with(std::cell::Cell::get)
+        || AT_BOSS_DOOR.with(std::cell::Cell::get)
+}
+
 // ---------------------------------------------------------------------------
 // Healing through the pause menu
 // ---------------------------------------------------------------------------
@@ -193,11 +209,23 @@ pub(super) fn pad_field_restore(session: &mut NativeSession, threshold: u32, mp:
         });
         if !holds_heal {
             return spells
-                + if mp {
+                + if mp || boss_bound() {
                     0
                 } else {
                     pad_field_spell_heal(session, threshold, false)
                 };
+        }
+        // On the walk to a boss the bag's last heals are the boss's: the
+        // road spends restoratives only above the reserve the shop buys
+        // first ([`HEAL_RESERVE`] a member). `son`'s nineteen Healing
+        // Berries were all drunk on `taiku`'s road and Zora was fought out
+        // of an empty bag.
+        if !mp
+            && continuous::SAVING_FOR_BOSS.with(std::cell::Cell::get)
+            && !AT_BOSS_DOOR.with(std::cell::Cell::get)
+            && heals_held(w) <= HEAL_RESERVE * w.present_party_list().len().clamp(1, 3) as u32
+        {
+            return spells;
         }
     }
     open_pause_menu(session);
@@ -1325,6 +1353,13 @@ pub(super) fn pad_ready(session: &mut NativeSession) -> Result<Option<String>, S
         pad_field_heal(session, 900);
         return Ok(None);
     }
+    struct Door(bool);
+    impl Drop for Door {
+        fn drop(&mut self) {
+            AT_BOSS_DOOR.with(|d| d.set(self.0));
+        }
+    }
+    let _door = Door(AT_BOSS_DOOR.with(|d| d.replace(true)));
     // What the last chest held goes on first.
     pad_equip_best(session);
     // A party that spent its MP on the way tops it up from the bag: the
