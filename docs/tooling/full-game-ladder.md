@@ -319,6 +319,19 @@ the anchor five milestones ahead, read only as far as every later anchor
 agrees with it (several chapter-1 anchors are other sessions), and leaving
 out the anchors outside the order check. Five ahead, because a party is
 trained where the rests are, not inside the dungeon an anchor was saved in.
+Near the end of the spine the fifth milestone ahead carries no party (the
+ending's anchors are the debug credits), so the target is the furthest
+anchor within five that does: Biron's castle, levels 50..53, for the
+stretches from Jette's fortress on. Without it those stretches trained to
+nothing and the run met Songi in `noaru` at level 40.
+
+A scene whose beats include a staged fight trains before them, since the
+beats walk into the boss, and so does a scene with a bed while a member is
+five or more levels below the target. `conc3` is the last bed before
+Rogue's tower, Jette's fortress and Cort (`chitei2`, 50000 HP), and its
+boss band is already down when the run arrives: a party that left it at
+level 35 lost to Cort six times, one trained there to 41 beat him first
+time.
 
 **Which beats it plays** is still the next anchor's flags. One exception:
 standing early in the scene of the milestone after next, it plays toward
@@ -1342,9 +1355,21 @@ three turns on Healing Flowers most rounds, and the arts the hand types deal
 about 900..1400 a round, so most attempts lose the race with 15000..35000
 left. The same spell is not the same hit from every caster: Slippery (`0x92`)
 took 3171 off Songi from Gala and 862 from Vahn, and Gala's party-heal
-reserve keeps her from casting it a second time. Treating a single-target hit
-within a quarter of a member's HP as one no heal outlasts (heal on the
-fraction line only) did not change the outcome on two streams.
+reserve keeps her from casting it a second time. The gap is the formula's
+([battle-formulas.md](../subsystems/battle-formulas.md#scale---fun_801dd864-and-the-element-matrix)):
+Gala held Slippery at magic level 7 and Vahn at 3, which scales the attacker
+roll by 1.75 and 1.25 before the defender roll is subtracted, so a common
+roll of about 4600 against a defence of about 4900 gives 3171 and 862.
+Treating a single-target hit within a quarter of a member's HP as one no heal
+outlasts did not change the outcome on two streams.
+
+The party was the difference. At `noaru` the run stood at level 40 (HP
+2258..2681) against the retail anchor's 31, but the retail party reached
+Biron's castle at 50..53, so it fought Songi well past 40, and the run's
+level target for these stretches was empty (above). Trained to 49 on the
+way, the run beats Songi on the first attempt on both streams. The retail
+party also carries about twenty Seru spells a member to the run's five to
+ten.
 
 Koru (`nilboa` P2[20], 20000 HP) is a race. Its pick arm casts by the
 battle-mode counter - `0xA2`, `0xA3`, `0xA4`, `0xA5` on modes `0..=3`, then
@@ -1533,7 +1558,7 @@ clips and matches the same arts a windowed one does. Beyond that:
 | `LEGAIA_FGL_PLAN_DEBUG` | Each object-door edge the planner adds. |
 | `LEGAIA_FGL_COMP_DEBUG` | The tile map of every walk component a plan failed inside (`o` reached, `A` avoided door tile, `b` actor box, `G` the goal), with the overworld's installed entities, the live NPCs, the solid props with their bind records, and the self-opening doors. Beside it, a sub-cell flood of the wall bits alone. |
 | `LEGAIA_FGL_JUMP_DEBUG` | Every pad-walk frame that moves the player more than 64 units (a door or lift ride), with the live arrival bracket. |
-| `LEGAIA_FGL_CLOCK_DEBUG` | Each flip of a clock flag the follower watches (frame, whether it was timed, the shortest run of each phase), and each frame a walk steps toward a clock pad in the phase it wants. |
+| `LEGAIA_FGL_CLOCK_DEBUG` | Each flip of a clock flag the follower watches (frame, whether it was timed, the shortest run of each phase), and each frame a walk steps toward a clock pad in the phase it wants; and each overworld clock a talk on the route wants, with its live value. |
 | `LEGAIA_FGL_POS_TRACE` | Every tick of a scripted run that moves the player or changes the pad holder's park site. |
 | `LEGAIA_FGL_PROBE_AT=<scene>:<x>,<z>;U;R;...` | Seats the player at the start of the first pad hop in that scene and holds each listed direction for 40 frames, printing where it went. |
 | `LEGAIA_FGL_EDGES=<scene>,...` | Part A: each named scene's out- and in-edges (`*` marks a scripted one). |
@@ -1872,3 +1897,14 @@ Scene-specific facts the route and the pad hand depend on. Each is a property of
   (`0x5A5`) and `map03` P2[17] / P2[18] (`0x5A2` / `0x5A3`) are the other
   legs. A party that crosses the Karisto overworld for a few hundred frames
   finds the cart waiting at the station.
+
+  The clock runs both ways, so a party that trains on `map02` can send the
+  cart back east as easily as west. Before the hand leaves an overworld, it
+  reads each talk along its route up to the next overworld: a flag that
+  only this overworld's motion streams write, which the talk tests, and
+  under one value of which (and not the other) the talk leads on - followed
+  through the talk's picker, compare and box branches both ways - is a clock
+  the hand stands still for until it shows. Short of the overworld, with the
+  clock wrong, the hand steps out onto it first, and training outings head
+  there rather than toward the talk. `station` P1[15] wants `0x467` up; the
+  cart lands in a little over a thousand frames of standing on `map02`.
