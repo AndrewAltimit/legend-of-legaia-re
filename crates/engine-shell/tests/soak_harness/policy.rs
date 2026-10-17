@@ -103,12 +103,12 @@ pub(super) fn held_pad_poll(s: &NativeSession) -> Option<u16> {
     w.field_vm
         .helper_contexts
         .iter()
-        .find_map(|hc| at(&hc.bytecode, hc.pc as usize))
+        .find_map(|hc| at(&hc.bytecode, hc.pc))
         .or_else(|| {
             w.cutscene
                 .timeline
                 .as_ref()
-                .and_then(|tl| at(&tl.bytecode, tl.pc as usize))
+                .and_then(|tl| at(&tl.bytecode, tl.pc))
         })
 }
 
