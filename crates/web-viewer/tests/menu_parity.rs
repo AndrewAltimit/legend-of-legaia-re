@@ -193,7 +193,7 @@ fn every_pause_menu_row_renders_full_retail_content() {
 /// The live session's gold, read back through the public save round-trip
 /// (the runtime's world is crate-private).
 fn session_money(rt: &mut LegaiaRuntime) -> i32 {
-    let bytes = rt.export_save();
+    let bytes = rt.export_save_core().expect("a session save");
     legaia_save::SaveFile::parse(&bytes)
         .expect("session exports")
         .ext

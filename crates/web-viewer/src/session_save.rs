@@ -325,7 +325,7 @@ impl LegaiaRuntime {
 impl LegaiaRuntime {
     /// [`Self::export_save`]'s body: `Err` while a committed fight has yet
     /// to begin.
-    pub(crate) fn export_save_core(&mut self) -> Result<Vec<u8>, String> {
+    pub fn export_save_core(&mut self) -> Result<Vec<u8>, String> {
         if !self.world_mut().host_save_allowed() {
             return Err("A battle is starting - save once it is over.".into());
         }
