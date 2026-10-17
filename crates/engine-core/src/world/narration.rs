@@ -1,6 +1,7 @@
 //! Name entry, cutscene narration, prologue handoff, cutscene timelines, field channels, and inline-dialogue driving.
 
 use super::*;
+use legaia_engine_field::inline_dialogue::HeldBox;
 use legaia_engine_mode::mode::SceneMode;
 
 mod dialogue_drive;
@@ -623,6 +624,15 @@ impl World {
                     .min_by_key(|(claim, _)| *claim)
                     .map(|(_, d)| d)
             })
+            .or_else(|| {
+                // No box is being typed: the pager goes on drawing the one
+                // its last press dispatched (`HeldBox`).
+                self.cutscene
+                    .timeline
+                    .iter()
+                    .chain(self.field_vm.helper_contexts.iter().filter(|tl| !tl.done))
+                    .find_map(|tl| tl.held_box.as_ref().map(|h| &h.panel))
+            })
     }
 
     /// Step the opening-cutscene timeline one frame.
@@ -705,6 +715,7 @@ impl World {
         // cursor, confirm commits a choice (applying its relative jump) or
         // dismisses a finished box, resuming the timeline past the segment.
         // The park freezes the frame cap - a dialog waits on the player.
+        drop_one_frame_held_box(&mut tl.held_box);
         if tl.dialog.is_some() {
             self.drive_script_dialog(&mut tl, true);
             if tl.dialog.is_some() && !tl.done {
@@ -815,9 +826,12 @@ impl World {
                     Some(t) => tl.pc = t,
                     None => tl.done = true,
                 }
+                let continuation = panel.picker().map(|pk| pk.continuation);
+                tl.held_box = Some(HeldBox::after_press(panel, continuation));
                 tl.dialog = None;
             } else if panel.is_done() {
                 tl.pc = panel.pc;
+                tl.held_box = Some(HeldBox::after_press(panel, post_page_byte(panel)));
                 tl.dialog = None;
                 end_interaction_at_post_box_byte(tl);
             } else if panel.is_waiting_for_input() {
@@ -827,6 +841,7 @@ impl World {
                 panel.advance_page();
                 if panel.is_done() {
                     tl.pc = panel.pc;
+                    tl.held_box = Some(HeldBox::after_press(panel, post_page_byte(panel)));
                     tl.dialog = None;
                     end_interaction_at_post_box_byte(tl);
                 }
@@ -1123,6 +1138,7 @@ impl World {
             );
             self.field_vm.halted_elsewhere = halted;
             let tl = &mut contexts[i];
+            drop_one_frame_held_box(&mut tl.held_box);
             // Parked on its text segment: the box, not the slice, advances
             // it; the park holds the frame cap like the modal timeline's.
             if tl.dialog.is_some() {
@@ -1243,6 +1259,20 @@ impl World {
             }
         }
     }
+}
+
+/// Drop a held box ([`HeldBox`]) that was shown for its press's own frame:
+/// the idle state after the dispatch has cleared it by the next pager call.
+fn drop_one_frame_held_box(held: &mut Option<HeldBox>) {
+    if held.as_ref().is_some_and(|h| !h.until_next_line) {
+        *held = None;
+    }
+}
+
+/// The post-page byte the pager's state `0x19` dispatches a finished box on
+/// (`*pbVar14 & 0x7F`, `0x801D8FDC`): the byte at the panel's cursor.
+fn post_page_byte(panel: &legaia_engine_dialog::dialog::OwnedDialogPanel) -> Option<u8> {
+    panel.bytes.get(panel.pc).map(|b| b & 0x7F)
 }
 
 /// Apply `FUN_80038050`'s verdict on the byte after a dismissed box to the

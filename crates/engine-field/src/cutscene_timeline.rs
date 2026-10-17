@@ -213,6 +213,9 @@ pub struct CutsceneTimeline {
     /// `legaia_engine_core::world::FieldVmState::dialog_claims` order - which of several
     /// contexts holding text got to the shared box first.
     pub dialog_claim: u64,
+    /// The box the pager still draws after the press that dismissed
+    /// [`Self::dialog`] ([`crate::inline_dialogue::HeldBox`]).
+    pub held_box: Option<crate::inline_dialogue::HeldBox>,
     /// Per-byte "an instruction was executed here" map over
     /// [`Self::bytecode`], kept for the timeline's whole life. A backward
     /// jump into an already-executed PC means the record's linear
@@ -537,6 +540,7 @@ impl CutsceneTimeline {
             narration_pending_open: false,
             dialog: None,
             dialog_claim: 0,
+            held_box: None,
             visited,
             channel_wait: None,
             player_move_frames: 0,

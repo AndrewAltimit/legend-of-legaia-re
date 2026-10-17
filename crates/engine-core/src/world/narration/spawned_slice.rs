@@ -387,6 +387,9 @@ impl World {
                         panel.substitutions = host.world.dialog_substitutions(&tl.bytecode);
                         host.world.apply_dialog_window_format(&mut panel);
                         tl.dialog = Some(panel);
+                        // The next line loads into the pager, which ends a
+                        // held box.
+                        tl.held_box = None;
                         host.world.field_vm.dialog_claims += 1;
                         tl.dialog_claim = host.world.field_vm.dialog_claims;
                         break;

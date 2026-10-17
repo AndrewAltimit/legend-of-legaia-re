@@ -110,7 +110,13 @@ pub fn dialog_snapshot(
     {
         return Some(snap);
     }
-    let panel = world.dialog.inline.as_ref()?.panel.as_ref()?;
+    let inline = world.dialog.inline.as_ref()?;
+    // Between boxes the pager still draws the box its last press dispatched
+    // (`InlineDialogue::held_box`).
+    let panel = inline
+        .panel
+        .as_ref()
+        .or_else(|| inline.held_box.as_ref().map(|h| &h.panel))?;
     dialog_snapshot_from_panel(world, panel, true)
 }
 

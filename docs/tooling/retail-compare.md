@@ -1704,16 +1704,18 @@ The report writes `retail | engine | |diff|` side by side for every scored
 state. **Those PNGs are retail pixels**; the report directory must stay
 gitignored (`captures/` is).
 
-### A box on screen that the RAM has already closed
+### A box on screen while the record runs on
 
-`retock_innkeeper_talk_open` shows the innkeeper's question box, but the
-state's pager word `_DAT_801F2734` already reads `4`, a free state, and the
-talk (`retock` `P1[26]`) is parked on `AD F8 08` at `+0xAC`, past the Yes
-branch's player ops. The box on screen is the displayed frame's, two game
-frames older than the RAM ([above](#mid-script-states)); the engine reaches
-the same PC on the tick the picker commits, with its box already gone. A
-gate with no wait to take the lag off cannot reach that earlier frame, so
-the missing box is the display lag, not a pager defect.
+`retock_innkeeper_talk_open` shows the innkeeper's question box with no
+picker, while the talk (`retock` `P1[26]`) is parked on `AD F8 08` at
+`+0xAC`, past the Yes branch's player ops, and the pager word
+`_DAT_801F2734` reads `4`. State `4` is not a free box: it is the idle state
+a `0x24` dispatch leaves, which keeps the rows and goes on drawing them, and
+the stay offer's picker continues on `0x24`
+([mes](../formats/mes.md#post-page-dispatch-state-0x19)). The engine used to
+drop its panel on the commit, so its frame at the same PC had no box at all.
+It now keeps the dismissed box up until the next line loads, and the frame
+reads `0.994`.
 
 ### A black band across the top is a readback race
 
