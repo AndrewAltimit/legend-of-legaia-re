@@ -319,11 +319,16 @@ impl World {
         // wait counters are denominated in rather than thinning them.
         // REF: FUN_801E0088
         //
-        // In battle on retail's cadence the walker's sweeps run with the
-        // battle pass, one per vsync the pass spans, so an effect stands
-        // where the pass left it until the next one (as on retail's screen).
+        // In battle on retail's cadence the walker runs from the battle draw
+        // tick instead, after the pass (`World::tick_battle_anim_pass`).
+        let effect_sweeps =
+            if self.mode == SceneMode::Battle && self.toggles.battle_sm_frame_cadence {
+                0
+            } else {
+                pass_vsyncs
+            };
         if self.clock.display_frame_step == 1 && runs_master_driver {
-            for _ in 0..pass_vsyncs {
+            for _ in 0..effect_sweeps {
                 self.tick_effects();
             }
         }

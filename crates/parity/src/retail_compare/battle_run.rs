@@ -453,7 +453,24 @@ pub(super) fn battle_image(
                 ground.join(",")
             ),
         ));
-        env.push(("LEGAIA_CAPTURE_GATE", gate.to_env()));
+        // On the battle-frame cadence a `0x32` capture's displayed frame is
+        // the pass before the state was entered (`0x29`'s summon-route pass):
+        // the RAM gate holds one whole pass in `0x32`, and the display is two
+        // passes older. A gate on the state cannot name it, so the child
+        // takes the RAM's gate and re-runs to the tick the display lag back
+        // (`LEGAIA_CAPTURE_DISPLAY_LAG`, the retake).
+        let ram_gate = battle.phase_gate();
+        match ram_gate {
+            Some(g)
+                if g.camera_pass
+                    && battle.display_lag > 0
+                    && legaia_engine_session::native::battle_frame_cadence_on() =>
+            {
+                env.push(("LEGAIA_CAPTURE_GATE", g.to_env()));
+                env.push(("LEGAIA_CAPTURE_DISPLAY_LAG", battle.display_lag.to_string()));
+            }
+            _ => env.push(("LEGAIA_CAPTURE_GATE", gate.to_env())),
+        }
         tick += crate::retail_compare_battle::INFLIGHT_DEADLINE;
     }
     // A menu capture or any other action in flight is walked there through

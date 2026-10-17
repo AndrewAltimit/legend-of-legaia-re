@@ -477,12 +477,23 @@ impl PlayWindowApp {
         let Some(sc) = self.screenshot.as_ref() else {
             return;
         };
-        let (Some(path), Some(since)) = (sc.path.as_ref(), sc.state_since.get()) else {
-            return;
-        };
         if sc.display_lag == 0 || std::env::var_os("LEGAIA_DIAG_CAPTURE_TICK").is_some() {
             return;
         }
+        // A cast gate with a lag (the battle-frame cadence's `0x32` capture)
+        // names the tick the lag back whatever state it held: on that cadence
+        // every tick of a pass shows the pass, so the frame is retail's
+        // displayed one even across the state's entry.
+        if let (Some(path), Some(_)) = (sc.path.as_ref(), sc.phase_gate.as_ref()) {
+            if let Some(want) = self.tick_no.checked_sub(sc.display_lag) {
+                eprintln!("display lag: retake at tick {want} (cast gate)");
+                let _ = std::fs::write(path.with_extension("retake"), want.to_string());
+            }
+            return;
+        }
+        let (Some(path), Some(since)) = (sc.path.as_ref(), sc.state_since.get()) else {
+            return;
+        };
         if let Some(want) = self
             .tick_no
             .checked_sub(sc.display_lag)

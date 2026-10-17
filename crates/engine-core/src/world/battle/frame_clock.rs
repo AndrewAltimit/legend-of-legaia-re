@@ -324,11 +324,32 @@ impl World {
             cam.observe_active_commits(commits);
             cam.observe_active_installs(installs);
         }
+        // The battle draw tick `FUN_800480D8` runs the effect pool's walker
+        // `FUN_801E0080` (`jal` at `0x80048128`, its one caller) once a
+        // frame, after the tick passes: an effect the anim tick spawned
+        // (`FUN_801DEA50` -> `FUN_801DFDF0`) takes its first sweep in the
+        // frame that spawned it. So the pass routes its spawns here and runs
+        // the walker after them, a sweep per vsync the pass spans.
+        // The effect scene-graphs (the summon's, the move-FX's) step with
+        // the same pass, after the routing whose effects they retire.
+        self.route_battle_effect_spawns();
+        for _ in 0..self.battle.anim_pass_vsyncs {
+            self.tick_effects();
+            self.tick_effect_scene_graphs();
+        }
         // The draw: every body pair from the pose the pass left, for the
         // next pass's SM and camera to read - a seat the root-motion pass
         // has not seeded yet included (the draw stores every drawn actor's).
         self.seed_battle_seats();
         self.refresh_battle_body_pairs();
+    }
+
+    /// Whether the battle pass steps the effect walker and the effect
+    /// scene-graphs itself (retail's cadence in battle,
+    /// [`Self::tick_battle_anim_pass`]), so the per-tick tail leaves them.
+    pub fn battle_pass_owns_effects(&self) -> bool {
+        self.mode == legaia_engine_mode::mode::SceneMode::Battle
+            && self.toggles.battle_sm_frame_cadence
     }
 
     /// The action state the battle camera frames. Retail's framing calls
