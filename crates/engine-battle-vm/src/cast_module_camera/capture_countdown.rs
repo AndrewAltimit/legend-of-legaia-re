@@ -217,6 +217,22 @@ pub const ROLLING_FLARE_SWEEP: &[ArmCountdown] = &[
     gate(13, P, None),
 ];
 
+/// PROT 0952 `0xB8` Astral Slash (`0x801F6A0C`, word `0x801F7BA8`): arm 2,
+/// which stages the strike clip `0x0A`, seeds `scalar << 6` as it passes
+/// (`sll v0,v0,0x6` / `sw v0,0x7ba8(a0)` at `0x801F6E04..0x801F6E08`); arm 3
+/// drains the product (`mult v1,v0` on `0x1F80037D` / `0x1F800393` at
+/// `0x801F6EF4..0x801F6F00`, store `0x801F6F40`), holds on `bgtz`
+/// (`0x801F6F9C`) and on its pass restores the rates and adds
+/// `scalar << 8` (`0x801F6FCC..0x801F6FDC`); arm 4 drains the product
+/// again (`0x801F7024..0x801F7070`) and ends the module once the word is
+/// not positive (`bgtz` at `0x801F70CC`, `clear s6` at `0x801F70DC`). The
+/// two holds are the strike clip's time on stage: without them the band
+/// ended three ticks after staging `0x0A`, and the clip's hits fired in the
+/// next actor's action on the boss's stale target - totals the `0x50`
+/// landing then subtracted from a member that action had just healed.
+pub const ASTRAL_SLASH: &[ArmCountdown] =
+    &[seed(2, S << 6), gate(3, P, add(S << 8)), gate(4, P, None)];
+
 /// PROT 0956 `0x71` (`0x801F7298`, word `0x801F86A0`): seed `scalar << 7`
 /// (`0x801F7470`), product gates at `0x801F7578` / `76C8` / `7C24`, the
 /// first two re-arming `scalar << 7` (`0x801F75F0`, `76FC`). Arm 3 then also
@@ -510,6 +526,7 @@ pub fn capture_arm_countdowns(entry: u32, body: u32) -> Option<&'static [ArmCoun
         (950, arms::ROLLING_FLARE_TICK) => ROLLING_FLARE,
         (950, arms::ROLLING_FLARE_SWEEP_TICK) => ROLLING_FLARE_SWEEP,
         (956, arms::WATER_HAZARD_TICK) => WATER_HAZARD,
+        (952, crate::cast_module_ticks::ASTRAL_SLASH_TICK) => ASTRAL_SLASH,
         (948, super::SINGLE_BODY) => CROSS_BEAM,
         (935, super::SINGLE_BODY) => EARTHQUAKE,
         (936, super::SINGLE_BODY) => HYPER_CRUSH,
@@ -566,6 +583,18 @@ mod tests {
     #[test]
     fn the_steal_sweep_holds_its_measured_arms() {
         assert_eq!(dwells(STEAL_SWEEP, 5), vec![1, 256, 128, 256, 64]);
+    }
+
+    /// Astral Slash holds its strike on stage: arm 3 for `scalar << 6` over
+    /// the product drain (64 ticks), arm 4 for the `scalar << 8` re-arm
+    /// (256), before the terminal arm ends the module.
+    #[test]
+    fn astral_slash_holds_its_strike_arms() {
+        assert_eq!(
+            capture_arm_countdowns(952, crate::cast_module_ticks::ASTRAL_SLASH_TICK),
+            Some(ASTRAL_SLASH)
+        );
+        assert_eq!(dwells(ASTRAL_SLASH, 5), vec![1, 1, 1, 64, 256]);
     }
 
     #[test]
