@@ -282,12 +282,33 @@ impl Camera {
         );
         g[6] = clamped[0];
         g[8] = clamped[1];
-        if snapped && let Some([fx, fz]) = zone.seat_focus.take() {
-            g[6] = fx;
-            g[8] = fz;
+        if zone.seat_hold.is_some_and(|h| h.player != [x, y, z]) {
+            zone.seat_hold = None;
         }
-        if snapped && let Some(eye) = zone.seat_eye.take() {
-            g[3..6].copy_from_slice(&eye);
+        if snapped {
+            let seat = (zone.seat_focus.take(), zone.seat_eye.take());
+            let landed = match seat {
+                (None, None) => zone.seat_hold.filter(|h| h.target == t),
+                (focus, eye) => {
+                    let h = super::state::SeatHold {
+                        player: [x, y, z],
+                        target: t,
+                        focus,
+                        eye,
+                    };
+                    zone.seat_hold = Some(h);
+                    Some(h)
+                }
+            };
+            if let Some(h) = landed {
+                if let Some([fx, fz]) = h.focus {
+                    g[6] = fx;
+                    g[8] = fz;
+                }
+                if let Some(eye) = h.eye {
+                    g[3..6].copy_from_slice(&eye);
+                }
+            }
         }
         zone.focus_held = Some([g[6], g[8]]);
         zone.active = true;

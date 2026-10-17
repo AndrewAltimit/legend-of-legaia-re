@@ -2212,9 +2212,22 @@ snap too (`RetailObs::seat_eye`, `LEGAIA_SEAT_EYE`,
 `ZoneFollow::seat_eye_after_snap`), and the engine's ease carries on from it
 the next frame the player moves. The two chest frames read `.958` to `.994`
 and `.966` to `.998`. The headless `camera` channel keeps the snap's eye, so
-it goes on scoring the compose. `town01_npc16_dialogue_first_page` does not
-move: its talk record is resumed from its start, and the eye the seat landed
-does not survive to the gate.
+it goes on scoring the compose.
+
+A seat is not the last snap of the settle window. The entry script runs its
+first pass on the ticks after the seat
+([below](#the-region-selector-band-and-the-entry-order)), and in `town01` and
+`town0c` the region selector's arm ends on `4C 39` (query, footing conform,
+snap and focus clamp), two ticks after the seat composed the same pose on the
+same spot - which put the composed eye back over the one the seat had landed.
+Retail ran that pass when the player arrived, before the walk that left the
+eye where the state holds it. So the zone camera
+keeps what a seat landed, with the pose its snap composed (`SeatHold`), while
+the player stands on the seat, and re-lands it on any later snap of the same
+pose there. `town01_npc16_dialogue_first_page` read `0.939` to `1.000`,
+`v0_1_pre_battle_tetsu` `0.972` to `1.000`, and the two Mei house doors
+`0.971` / `0.982` to `1.000`; the card-boot states that snap again move a few
+thousandths each.
 
 ### Arrival states are captured before the town runs
 
