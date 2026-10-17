@@ -800,6 +800,16 @@ pub(super) fn arts_plan(
     let roster = w.party_roster_slot(usize::from(s.actor));
     let character = legaia_engine_battle::battle_arts::character_for_slot(roster as u8);
     let cost = |cmds: &[Command]| -> u16 { cmds.iter().map(|&c| s.cost_of(c)).sum() };
+    // A rotted limb refuses its directions at entry (`rot_blocks`, the
+    // `0x801D1E60..` gate): a plan through one waits on a press that never
+    // lands, and the hand held Left against a rotted arm until the battle
+    // ran out (`jouinc`, after a party-wide Rot).
+    let status = rot_status(w, s.actor);
+    let open = |cmds: &[Command]| {
+        !cmds
+            .iter()
+            .any(|&c| legaia_engine_battle::arts_command_input::rot_blocks(status, c))
+    };
     let mut normal: Vec<(legaia_art::ActionConstant, &[Command])> = w
         .tables
         .art_records
@@ -817,6 +827,7 @@ pub(super) fn arts_plan(
             .find(|m| m.character == character)
         && cost(m.commands) <= s.pool_max
         && m.commands.len() <= MAX_ENTRY
+        && open(m.commands)
     {
         return bytes(m.commands);
     }
@@ -836,12 +847,12 @@ pub(super) fn arts_plan(
     });
     if let Some(input) = supers
         .into_iter()
-        .filter(|inp| inp.len() <= MAX_ENTRY && cost(inp) <= s.pool_max)
+        .filter(|inp| inp.len() <= MAX_ENTRY && cost(inp) <= s.pool_max && open(inp))
         .max_by_key(|inp| inp.len())
     {
         return bytes(&input);
     }
-    let arts: Vec<&[Command]> = normal.iter().map(|(_, c)| *c).collect();
+    let arts: Vec<&[Command]> = normal.iter().map(|(_, c)| *c).filter(|c| open(c)).collect();
     let mut plan: Vec<Command> = Vec::new();
     let mut pool = s.pool_max;
     loop {
@@ -861,7 +872,7 @@ pub(super) fn arts_plan(
         }
         let Some(&d) = [Command::Left, Command::Right, Command::Down, Command::Up]
             .iter()
-            .filter(|&&d| s.cost_of(d) <= pool)
+            .filter(|&&d| s.cost_of(d) <= pool && open(&[d]))
             .min_by_key(|&&d| s.cost_of(d))
         else {
             break;
@@ -892,12 +903,15 @@ pub(super) fn direction_mask(b: u8) -> u16 {
 /// (`FUN_801D0748`, `0x801D1560..0x801D156C`; `ring_arm_refused` in the
 /// engine). Sol's monster 120 rots limbs.
 pub(super) fn attack_refused(w: &legaia_engine_core::world::World, actor: u8) -> bool {
-    let raw = w
-        .actors
+    rot_status(w, actor) & 0x38 == 0x38
+}
+
+/// The `+0x16E` status word the arts entry's Rot gate reads for `actor`.
+fn rot_status(w: &legaia_engine_core::world::World, actor: u8) -> u16 {
+    w.actors
         .get(usize::from(actor))
         .map_or(0, |a| a.battle.field_flags)
         | legaia_engine_battle_vm::status_effects::pack_display_flags(
             w.battle.status_effects.statuses(actor),
-        );
-    raw & 0x38 == 0x38
+        )
 }

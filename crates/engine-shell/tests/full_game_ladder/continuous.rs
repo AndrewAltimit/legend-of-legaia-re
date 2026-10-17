@@ -133,8 +133,8 @@ fn checkpoint(session: &mut NativeSession) -> Checkpoint {
 }
 
 /// Where `LEGAIA_FGL_CHECKPOINT_DIR` keeps milestone `id`'s checkpoint: the
-/// engine's own save, and beside it the scene, the rand stream and the
-/// learned exchange rate.
+/// engine's own save, and beside it the scene, the rand stream, the
+/// learned exchange rate and the Field Move option.
 fn checkpoint_paths(id: &str) -> Option<(PathBuf, PathBuf)> {
     let dir = PathBuf::from(std::env::var_os("LEGAIA_FGL_CHECKPOINT_DIR")?);
     Some((
@@ -150,9 +150,14 @@ fn store_checkpoint(id: &str, cp: &Checkpoint, session: &NativeSession) {
         return;
     };
     let (lost, dealt) = EXCHANGE.with(std::cell::Cell::get);
+    // Field Move is a host option to the engine, not save data (retail
+    // keeps it in the block, SC `+0x58C`), so it travels beside the save: a
+    // resume that walked missed `jouind`'s timed switch pair every time.
     let text = format!(
-        "{}\n{}\n{lost}\n{dealt}\n",
-        cp.scene, session.host.world.rng_state
+        "{}\n{}\n{lost}\n{dealt}\n{}\n",
+        cp.scene,
+        session.host.world.rng_state,
+        u8::from(session.host.world.locomotion.run_default)
     );
     if let Some(dir) = save.parent() {
         let _ = std::fs::create_dir_all(dir);
@@ -163,8 +168,8 @@ fn store_checkpoint(id: &str, cp: &Checkpoint, session: &NativeSession) {
 }
 
 /// The checkpoint an earlier run stored for milestone `id`, with its rand
-/// stream and exchange rate put back.
-fn stored_checkpoint(id: &str) -> Result<(Checkpoint, u32), String> {
+/// stream, exchange rate and Field Move option (when stored) put back.
+fn stored_checkpoint(id: &str) -> Result<(Checkpoint, u32, Option<bool>), String> {
     let (save, side) = checkpoint_paths(id).ok_or("LEGAIA_FGL_CHECKPOINT_DIR is not set")?;
     let bytes = std::fs::read(&save).map_err(|e| format!("{}: {e}", save.display()))?;
     let save = legaia_save::SaveFile::parse(&bytes).map_err(|e| format!("{e:#}"))?;
@@ -182,7 +187,11 @@ fn stored_checkpoint(id: &str) -> Result<(Checkpoint, u32), String> {
     if dealt > 0 {
         EXCHANGE.with(|e| e.set((lost, dealt)));
     }
-    Ok((Checkpoint { save, scene }, rng))
+    let run = lines
+        .next()
+        .and_then(|l| l.parse::<u8>().ok())
+        .map(|r| r != 0);
+    Ok((Checkpoint { save, scene }, rng, run))
 }
 
 /// A fresh session resumed from `cp`, as a card load of that save.
@@ -296,6 +305,21 @@ fn part_c_continuous_run() {
         })
         .collect();
 
+    // The Field Move option each playthrough anchor was saved with (SC
+    // `+0x58C`): the retail player walked chapter 1 and ran from Mt.
+    // Rikuroa on. The engine keeps it as a host option, not save data, and
+    // `jouind`'s timed switch pair is out of a walker's reach.
+    let anchor_run: Vec<Option<bool>> = spine
+        .iter()
+        .map(|m| {
+            m.anchor
+                .as_ref()
+                .filter(|_| m.order_check)
+                .and_then(|r| load_anchor(&inp.library, r).ok())
+                .map(|a| i32_at(&a.sc, SC_FIELD_MOVE) != 0)
+        })
+        .collect();
+
     // The level each character holds in each anchor, read as a player's
     // own growth curve: a line counts only as far as every later anchor
     // agrees with it (several chapter-1 anchors are other sessions).
@@ -375,11 +399,14 @@ fn part_c_continuous_run() {
         .as_ref()
         .and_then(|r| load_anchor(&inp.library, r).ok());
     let mut cp = if let Some(id) = &resume_id {
-        let (cp, rng) =
+        let (cp, rng, run) =
             stored_checkpoint(id).unwrap_or_else(|e| panic!("LEGAIA_FGL_CONTINUOUS_RESUME: {e}"));
         session = reload(&inp, &cp, &opts)
             .unwrap_or_else(|e| panic!("LEGAIA_FGL_CONTINUOUS_RESUME: {e}"));
         session.host.world.rng_state = rng;
+        if let Some(run) = run {
+            session.host.world.locomotion.run_default = run;
+        }
         cp
     } else {
         if let Err(e) = seed(&mut session, &spine[seed_at], seed_anchor.as_ref(), &opts) {
@@ -476,6 +503,12 @@ fn part_c_continuous_run() {
         // A stretch played again after a reload from behind it keeps the
         // attempts it had used.
         let (mut attempt, mut prepare) = retries.remove(&i).unwrap_or((0, None));
+        // The player switches Field Move to Run where the playthrough had,
+        // by the stretch's end, and keeps it (`west_voz_forest`'s anchor,
+        // from another session, walks between two that run).
+        if anchor_run[i + 1] == Some(true) {
+            session.host.world.locomotion.run_default = true;
+        }
         let t0 = std::time::Instant::now();
         loop {
             attempt += 1;

@@ -575,7 +575,7 @@ pub(super) fn fight_battle(session: &mut NativeSession) -> Option<Run> {
         {
             let w = &session.host.world;
             eprintln!(
-                "      [pad-debug] t={t} want {want:#06x} cmd {:?} spell {:?} items {:?} flow {:?} ctx7 {:#04x}",
+                "      [pad-debug] t={t} want {want:#06x} cmd {:?} spell {:?} items {:?} arts {:?} flow {:?} ctx7 {:#04x}",
                 w.battle
                     .command
                     .as_ref()
@@ -588,6 +588,10 @@ pub(super) fn fight_battle(session: &mut NativeSession) -> Option<Run> {
                     .item_menu
                     .as_ref()
                     .map(|m| format!("{:?}", m.state)),
+                w.battle.arts_input.as_ref().map(|a| format!(
+                    "actor {} {:?} pool {}/{} costs {:?} buffer {:?} preseed {:?}",
+                    a.actor, a.phase, a.pool, a.pool_max, a.costs, a.buffer, a.preseed
+                )),
                 w.battle.round_flow.phase,
                 w.battle_ctx.action_state,
             );
