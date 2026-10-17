@@ -205,6 +205,7 @@
 use anyhow::{Result, bail};
 
 mod animation;
+mod boss_page;
 mod clip_morph;
 mod mesh;
 mod rebuild;
@@ -213,6 +214,7 @@ mod slim;
 mod texture_page;
 
 pub use animation::*;
+pub use boss_page::*;
 pub use clip_morph::*;
 pub use mesh::*;
 pub use rebuild::*;

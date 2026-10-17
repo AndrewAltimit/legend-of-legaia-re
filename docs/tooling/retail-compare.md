@@ -706,6 +706,7 @@ for a reason that is not a port defect:
 | [Land the HUD](#hud-glides-the-capture-had-landed) | glide records at `ctx[+0x11B4]` | `LEGAIA_SEAT_HUD_GLIDES_LANDED`, `LEGAIA_SEAT_HUD_GLIDES` |
 | [Take back double pushes](#a-push-the-capture-already-holds) | - (measured from the engine's own replay) | `RetailBattle::undrift`, `ground_residual` |
 | [Sit out spent turns](#combatants-that-had-already-acted) | initiative keys `+0x16C` | `RetailBattle::engine_spent_keys`, the `:k` tail of `LEGAIA_BATTLE_BARS` |
+| [Raise the Mystic Shield](#the-mystic-shield-a-capture-already-holds) | the shield word `_DAT_8007BD84` | `World::raise_mystic_shield`, `LEGAIA_BATTLE_MYSTIC_SHIELD=1` |
 | [Take back rewards](#rewards-already-granted) | EXP share `gp+0xA04`, stat window, banner element `ctx[+0x26]` | `ungrant_results_rewards`, `ungrant_magic_level_up` |
 | [Place the phase](#placing-the-phase) | command-flow byte `ctx[+0x06]`, cursor `ctx[+0x07]`, seat `ctx[+0x13]` | `SeedPlan` |
 
@@ -952,6 +953,18 @@ Two limits are measured rather than argued:
   replayed kill reads a spent key as well. Sat out, the two
   `rim_elm_gimard_seru_capture_*` drives frame Vahn's last swing some fifty
   yaw units further off (`camera` `.962` to `.932`, `.953` to `.918`).
+
+### The Mystic Shield a capture already holds
+
+Cort raises his Mystic Shield on an earlier turn (PROT 0940's arm 4), and the
+sphere it seats stays on him for the rest of the fight
+([cast-module](../subsystems/cast-module.md#the-mystic-shield-effect)). A
+capture whose shield word `_DAT_8007BD84` is non-null holds it; the replayed
+fight casts no shield before the captured phase. `RetailBattle::mystic_shield`
+reads the word and the seed raises the shield on the first battle tick, beside
+the bars - the headless seed directly, the image child through
+`LEGAIA_BATTLE_MYSTIC_SHIELD=1`. `cort_guilty_cross_mid_cast` and
+`cort_mystic_circle_mid_cast` are the two.
 
 ### Rewards already granted
 

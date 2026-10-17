@@ -22,9 +22,9 @@ impl World {
         // like retail's tick order (the maintenance sweep runs off the
         // XA-template tick ahead of the anim node advance).
         self.tick_battle_impact_fx();
-        // The same pass's Mystic Shield break (`0x8004D534..0x8004D668`).
+        // The same pass's Mystic Shield pose and break (`0x8004D534..0x8004D674`).
         if self.mode == SceneMode::Battle {
-            self.tick_mystic_shield_break();
+            self.tick_mystic_shield();
         }
         for i in 0..self.actors.len() {
             // Hit-reaction chaining first: a finished reaction clip takes the

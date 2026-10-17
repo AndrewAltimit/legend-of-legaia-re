@@ -6,16 +6,20 @@
 
 use super::*;
 use legaia_engine_battle_vm::cast_module_ticks::{
-    FREED_STAGER_FADE, StagerSpawn, freed_stager_spawns, gizam_stager_spawns, nighto_stager_spawns,
-    nova_stager_spawns, orb_stager_spawns, swordie_stager_spawns, vera_stager_spawns,
-    zenoir_stager_spawns,
+    FREED_STAGER_FADE, StagerSpawn, blade_breath_cell_stager_spawns,
+    chaos_breath_cell_stager_spawns, freed_stager_spawns, gizam_stager_spawns,
+    nighto_stager_spawns, nova_stager_spawns, orb_stager_spawns, swordie_stager_spawns,
+    vera_stager_spawns, zenoir_stager_spawns,
 };
 
 impl World {
     /// Whether module `entry`'s stager arms are run off its parts' op-`0x20`
     /// calls by [`Self::run_part_stager_calls`].
     pub(in crate::world::battle::cast_band) fn runs_part_stager_calls(entry: u32) -> bool {
-        matches!(entry, 905 | 906 | 907 | 908 | 910 | 911 | 912 | 913)
+        matches!(
+            entry,
+            905 | 906 | 907 | 908 | 910 | 911 | 912 | 913 | 938 | 962
+        )
     }
 
     /// Run the op-`0x20` calls module `entry`'s parts made since its last
@@ -35,6 +39,18 @@ impl World {
     /// through `gp[+0x714]`
     pub(in crate::world::battle::cast_band) fn run_part_stager_calls(&mut self, entry: u32) {
         let calls = std::mem::take(&mut self.casting.module_stager_calls);
+        // A capture cell's stager runs only for the body whose arms seat
+        // per arm; its other bodies keep the pager's whole-set placement,
+        // which already holds the records the stager would seat.
+        if matches!(entry, 938 | 962)
+            && self
+                .casting
+                .capture_spell
+                .and_then(|s| self.capture_per_arm_entry(s))
+                != Some(entry)
+        {
+            return;
+        }
         // PROT 0908's arm 1 and PROT 0906's arms 4 / 5 read the creature's
         // body point `+0x3C..+0x40`.
         let body = self
@@ -88,10 +104,27 @@ impl World {
                 911 => orb_stager_spawns(arm, caller),
                 913 => nova_stager_spawns(arm, caller),
                 912 => freed_stager_spawns(arm, caller, &mut rand),
+                938 => chaos_breath_cell_stager_spawns(arm, caller),
+                962 => blade_breath_cell_stager_spawns(arm, caller),
                 _ => Vec::new(),
             };
             for s in &spawns {
                 self.seat_stager_spawn(entry, s);
+            }
+        }
+    }
+
+    /// The part-pool flush `FUN_80050E74` a capture arm makes on its pass
+    /// ([`legaia_engine_battle_vm::cast_module_camera::capture_arm_flushes_pool`]):
+    /// every part of the cast's running scene gets its halt bit. The
+    /// modules that call it seat every part through the pool wrapper
+    /// `FUN_80050ED4`.
+    ///
+    /// REF: FUN_80050E74
+    pub(in crate::world::battle) fn flush_module_part_pool(&mut self) {
+        if let Some(scene) = self.casting.active_summon.as_mut() {
+            for part in &mut scene.parts {
+                part.finished = true;
             }
         }
     }

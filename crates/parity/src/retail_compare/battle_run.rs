@@ -367,6 +367,9 @@ pub(super) fn battle_image(
             legaia_engine_capture::bar_seeds::bar_seeds_to_env(&engine.hp_seed),
         ),
     ];
+    if battle.mystic_shield {
+        env.push(("LEGAIA_BATTLE_MYSTIC_SHIELD", "1".to_string()));
+    }
     if !battle.entry_latches.is_empty() {
         env.push((
             "LEGAIA_BATTLE_LATCHES",

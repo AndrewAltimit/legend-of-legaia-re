@@ -92,6 +92,7 @@ use crate::battle_damage_wrappers::{
 
 mod arms;
 mod capture;
+mod capture_stager_spawns;
 mod caster_stages;
 mod chain_bodies;
 mod evil_seru_magic;
@@ -107,6 +108,7 @@ mod ticks;
 
 pub use arms::*;
 pub use capture::*;
+pub use capture_stager_spawns::*;
 pub use caster_stages::*;
 pub use chain_bodies::*;
 pub use evil_seru_magic::*;

@@ -225,6 +225,14 @@ pub struct CastFxState {
     /// [`crate::world::World::tick_move_fx`]; drawn through
     /// [`crate::world::World::active_move_fx_part_draws`].
     pub active_action_fx: Vec<legaia_engine_effects::summon::SummonScene>,
+    /// Cort's **Mystic Shield** effect: the sphere `0x80078644` (part `0`,
+    /// the handle retail keeps in `_DAT_8007BD84`) and its texture scroller
+    /// `0x80078720` (part `1`), both SCUS-resident records PROT 0940's arm 4
+    /// seats on the first monster seat. It outlives the cast that raised it
+    /// (the sphere's program loops), so it has a seat of its own rather than
+    /// riding [`Self::active_summon`], which the next action retires. Posed
+    /// every frame and broken by [`crate::world::World::tick_mystic_shield`].
+    pub mystic_shield_fx: Option<legaia_engine_effects::summon::SummonScene>,
     /// The trail / afterimage GP0 texpage word (`0x7700 + id`) for the active
     /// move-FX scene, set by [`crate::world::World::spawn_move_fx`] from the move record's
     /// `+0x0b` field and cleared when the scene drains. Surfaced via
@@ -358,6 +366,7 @@ impl CastFxState {
             pending_move_fx_spawn: None,
             active_move_fx: None,
             active_action_fx: Vec::new(),
+            mystic_shield_fx: None,
             move_fx_trail_texpage: None,
             move_fx_streak: Default::default(),
             homing: Default::default(),

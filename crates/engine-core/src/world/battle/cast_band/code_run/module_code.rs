@@ -636,10 +636,10 @@ impl World {
                     let step = arms::glare_divide_blind_tick(&mut ctx, &mut seat, &mut ext);
                     self.write_cast_view(first, &seat);
                     self.write_cast_arm_ext_state(first, &ext);
-                    if shield_arm {
+                    if shield_arm && !self.mystic_shield_up() {
                         // `_DAT_8007BD84 = FUN_80021B04(..)` - the shield's
-                        // effect handle; the engine carries it as a flag.
-                        self.battle.monster_ai_state.flag_bd84 = 1;
+                        // sphere, seated with its texture scroller.
+                        self.raise_mystic_shield();
                     }
                     Some(step)
                 }

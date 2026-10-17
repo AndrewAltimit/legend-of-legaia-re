@@ -80,7 +80,7 @@
     </tbody>
   </table>
   <h3 id="slot-transfer">The archive slot moves whole</h3>
-  <p>The archive is a flat array of fixed <code>0x14000</code>-byte slots, <code>slot = (id - 1) &times; 0x14000</code>. The loader reads the slot's full <code>0x28</code> sectors whatever the block costs, then LZS-decodes from <code>slot + 4</code> until the stream's own terminator. The run between a block's compressed stream and the slot end is transferred and never interpreted - declared slack, not a hidden format. Slots whose head word is <code>0x10</code> hold a raw PSX TIM instead of a monster.</p>
+  <p>The archive is a flat array of fixed <code>0x14000</code>-byte slots, <code>slot = (id - 1) &times; 0x14000</code>. The loader reads the slot's full <code>0x28</code> sectors whatever the block costs, then LZS-decodes from <code>slot + 4</code> until the stream's own terminator. The run between a block's compressed stream and the slot end is transferred and never interpreted - declared slack, not a hidden format. Slots whose head word is <code>0x10</code> hold a raw PSX TIM instead of a monster. The loader reads one eight slots past any formation id above <code>0xB2</code> - Cort's two forms - and uploads it to texture page <code>0x16</code> and CLUT row 485 whatever its header says: the page the Mystic Shield's sphere is drawn from.</p>
 </section>
 
 <section class="doc-section" id="packed-stream">

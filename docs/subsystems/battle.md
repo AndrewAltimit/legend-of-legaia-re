@@ -432,7 +432,7 @@ Two SCUS loaders feed the actor table: `FUN_80052FA0` (party battle files) and `
 
 ### The battle heap budget
 
-Everything the loader places in RAM comes from one heap, and its arithmetic - not VRAM and not the AI - bounds a formation. Each battle seat owns its own texture-page column at `(320 + slot*64, 256)` and CLUT row `484 + slot`, so distinct enemies never contend for VRAM.
+Everything the loader places in RAM comes from one heap, and its arithmetic - not VRAM and not the AI - bounds a formation. Each battle seat owns its own texture-page column at `(320 + slot*64, 256)` and CLUT row `484 + slot`, so distinct enemies never contend for VRAM. One upload breaks the pattern: [the boss effect page](#the-boss-effect-page).
 
 **The heap.** `FUN_8002B3D4(pool_count=2, DAT_8007B414, size)` initialises a best-fit free-list heap with 12-byte node headers, one shared free ring and a per-pool allocated ring. Stage init (`FUN_8001E1B4`) sizes it `0x134800` (about 1.23 MB) over the arena `0x80091800..0x801C6000`. With `gp = 0x8007B318`: descriptor pointer `gp+0x840 = 0x8007BB58`, allocation counter `gp+0x488 = 0x8007B7A0`, malloc-error accumulator `gp+0x510 = 0x8007B828`. The wrapper `FUN_80017888(pool, size)` -> `FUN_8002B468` returns NULL on exhaustion (dev-console `malloc err size %d`), and `FUN_800542C8` copies through that pointer **unchecked**. An over-budget formation therefore writes the decoded block over low kernel RAM and the machine locks inside the mode-`0x15` tick.
 
@@ -466,6 +466,26 @@ With **three** distinct species `s3` is overwritten by each later species, so `[
 Pinned live (write watchpoints at `0x80055D14` / `0x80055D18` plus cell readback, `autorun_formation_cell_writers.lua`): forced `[133,151,94]`, `[94,133,151]`, `[151,133,94]` and `[32,34,14]` each read back `[c2, c2, c0]`, seat 1 sharing seat 0's block. With the flip forced verbatim, `[133,151,94]` (180.0 KB) ran the heap to 0 bytes free, and `[14,150,93]` (177.2 KB) and `[162,163]` (169.2 KB) each crashed with decoded-block bytes over the exception vector at `0x80000080`. Passing brackets: 146.3 KB with 17 KB free, 137.6 KB with 6 KB free.
 
 Both limits are why the encounter randomizer's unconditional battle-load safety pass (`legaia_patcher::encounter::SceneEncounters::enforce_species_limits`) caps every random formation at two distinct species and at the disc's own authored heap-cost maximum ([`randomizer.md`](../tooling/randomizer.md)).
+
+### The boss effect page
+
+<a id="the-boss-effect-page"></a>
+
+For a formation id above `0xB2` (`sltiu v0,v0,0xb3` at `0x80054830`) the
+monster loader `FUN_800542C8` reads one more archive slot after the block: a
+seek of `0x8C000` bytes relative to the end of the block it just read
+(`FUN_80060920(handle, 0x8C000, 1)`; on the CD path `FUN_8003E964(0x118, 1)`,
+the same span in sectors), so the slot of id `id + 8`, which holds a bare PSX
+TIM. It uploads the TIM's pixels (`+0x220`) to `(0x180, 0x100, 0x40, 0x100)` -
+page `0x16`, the seat-1 column - and its 256-entry CLUT (`+0x14`), the STP bit
+ORed onto every non-zero colour, to row `0x1E5` (485), whatever the TIM's own
+header says. Cort's two forms are the ids that sample it: `0xB4` stages slot
+`0xBC`, `0xB5` slot `0xBD`, each byte-matched against the captured battle VRAM
+of its fight. The Mystic Shield's sphere draws from it
+([cast-module](cast-module.md#the-mystic-shield-effect)).
+
+Port: `legaia_actor_formats::monster_archive::write_boss_effect_page`, called by
+both hosts beside each monster's `battle_render_mesh`.
 
 ## Character record layout
 

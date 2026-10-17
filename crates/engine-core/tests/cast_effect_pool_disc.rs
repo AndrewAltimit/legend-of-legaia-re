@@ -762,7 +762,7 @@ fn every_creature_arm_spawn_names_a_record_of_its_module() {
                 let capture = if timing == cmc::SpawnTiming::Pass {
                     cmc::capture_arm_spawns(entry, phase)
                 } else {
-                    &[]
+                    cmc::capture_arm_spawns_every(entry, phase)
                 };
                 for s in cmc::creature_arm_spawns(entry, phase, timing)
                     .iter()

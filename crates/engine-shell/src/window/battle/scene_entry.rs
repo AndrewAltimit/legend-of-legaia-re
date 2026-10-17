@@ -272,6 +272,11 @@ impl PlayWindowApp {
             let Some(vmesh) = mesh.battle_render_mesh(slot, &mut vram) else {
                 continue;
             };
+            // The boss effect page the loader stages behind every id above
+            // `0xB2` (Cort's Mystic Shield samples it).
+            legaia_actor_formats::monster_archive::write_boss_effect_page(
+                &archive, monster_id, &mut vram,
+            );
             if vmesh.indices.is_empty() {
                 continue;
             }

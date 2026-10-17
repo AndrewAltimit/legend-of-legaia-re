@@ -69,6 +69,7 @@ impl RetailBattle {
             scripted: game_anchors::u32_at(ram, PER_BATTLE_FLAGS) & 0x80 != 0,
             stage_variant: game_anchors::u8_at(ram, PER_BATTLE_FLAGS) & 0x1F,
             keep_backdrop_object_1: game_anchors::u8_at(ram, KEEP_BACKDROP_OBJECT_1) != 0,
+            mystic_shield: game_anchors::u32_at(ram, MYSTIC_SHIELD_HANDLE) != 0,
             backdrop_slot_1_yaw: game_anchors::u16_at(ram, BACKDROP_SLOT_1_YAW),
             monster_ids,
             seat_chars: (0..u32::from(party_count))

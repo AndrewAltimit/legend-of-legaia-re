@@ -409,6 +409,9 @@ pub fn run_engine_battle(
             .collect()
     };
     apply_bar_seeds(&mut session.host.world, &hp_seed);
+    if battle.mystic_shield {
+        session.host.world.raise_mystic_shield();
+    }
     // Place the engine at the capture's phase ([`SeedPlan`]).
     //
     // An opening capture is sampled at retail's entry-sweep counter. Everything else

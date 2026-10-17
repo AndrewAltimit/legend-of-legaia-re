@@ -244,6 +244,11 @@ pub struct ScreenshotConfig {
     pub battle_bars: Vec<legaia_engine_capture::bar_seeds::BarSeed>,
     /// Whether [`Self::battle_bars`] have been seeded.
     pub battle_bars_seeded: std::cell::Cell<bool>,
+    /// `LEGAIA_BATTLE_MYSTIC_SHIELD=1`: the capture holds Cort's Mystic
+    /// Shield up (`_DAT_8007BD84` non-null), raised on the first battle tick
+    /// beside the bars as the headless seed raises it
+    /// (`World::raise_mystic_shield`). Cleared once raised.
+    pub mystic_shield: std::cell::Cell<bool>,
 }
 
 /// Debug state `play-window` seeds before the first world tick, so a capture
@@ -575,6 +580,9 @@ impl ScreenshotConfig {
                 .map(|v| legaia_engine_capture::bar_seeds::bar_seeds_from_env(&v))
                 .unwrap_or_default(),
             battle_bars_seeded: std::cell::Cell::new(false),
+            mystic_shield: std::cell::Cell::new(
+                std::env::var("LEGAIA_BATTLE_MYSTIC_SHIELD").is_ok_and(|v| v.trim() == "1"),
+            ),
         }))
     }
 }

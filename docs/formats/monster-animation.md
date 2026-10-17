@@ -59,7 +59,7 @@ The archive is a flat array of fixed `0x14000`-byte slots, `slot = (id-1) * 0x14
 
 So the bytes between a block's compressed stream and the end of its slot are transferred and never interpreted. Every slot ends in such a run and the entry's extent is an exact multiple of the stride, so the slot boundary is a **declared** bound. [Byte accounting](../tooling/byte-accounting.md) claims those runs as `pad`; they are the largest run of declared slack on the disc and hide no format.
 
-Slots whose head word is `0x10` are not blocks: they carry a raw PSX TIM at the slot head, zero-filled to the same stride.
+Slots whose head word is `0x10` are not blocks: they carry a raw PSX TIM at the slot head, zero-filled to the same stride. The loader reads one eight slots past any formation id above `0xB2` and uploads it at fixed coordinates ([battle.md](../subsystems/battle.md#the-boss-effect-page)).
 
 ## Action tags and the `+0x1EF` reaction map
 

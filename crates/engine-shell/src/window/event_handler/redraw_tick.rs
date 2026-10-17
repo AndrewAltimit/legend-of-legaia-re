@@ -419,6 +419,12 @@ impl PlayWindowApp {
                 &sc.battle_bars,
             );
         }
+        if let Some(sc) = self.screenshot.as_ref()
+            && self.session.host.world.mode == SceneMode::Battle
+            && sc.mystic_shield.replace(false)
+        {
+            self.session.host.world.raise_mystic_shield();
+        }
         // A replayed cast's gate holds the summon head's CD poll for a pass
         // (`PhaseGate::steer`), as the headless seed does.
         if let Some(gate) = self.screenshot.as_ref().and_then(|sc| sc.phase_gate) {

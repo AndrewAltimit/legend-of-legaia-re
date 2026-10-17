@@ -86,6 +86,8 @@ const STAGE_ID: u32 = 0x8007_B64A;
 /// Battle init's keep-object-1 byte: set, `FUN_800513F0` keeps the backdrop
 /// shell's object 1 (`0x80051ABC`).
 const KEEP_BACKDROP_OBJECT_1: u32 = 0x8007_B64B;
+/// `_DAT_8007BD84`, the Mystic Shield's effect handle.
+const MYSTIC_SHIELD_HANDLE: u32 = 0x8007_BD84;
 /// The backdrop draw's slot-1 Y angle: the second row's `+2` of the per-slot
 /// angle table at `0x800891C8` (`FUN_8001ADA4`'s backdrop arm reads it,
 /// `FUN_80046A20` winds it while [`KEEP_BACKDROP_OBJECT_1`] is up).
@@ -261,6 +263,11 @@ pub struct RetailBattle {
     /// `0x8007B64B != 0` - battle init kept the backdrop shell's object 1
     /// (the region reader's long-layout `+8` bit 5).
     pub keep_backdrop_object_1: bool,
+    /// `0x8007BD84 != 0` - Cort's Mystic Shield is up: the handle of the
+    /// sphere PROT 0940's arm 4 seated on an earlier turn. Nothing in the
+    /// replayed fight casts it again before the captured phase, so the seed
+    /// raises it on the first battle tick (`World::raise_mystic_shield`).
+    pub mystic_shield: bool,
     /// `0x800891D2` - the Y angle the backdrop draw turns its slot 1 by, in
     /// 4096ths of a turn. Time spent in keeping fights since boot, so a
     /// replay carries it over rather than winding its own.
