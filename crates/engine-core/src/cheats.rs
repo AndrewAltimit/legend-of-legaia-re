@@ -179,6 +179,7 @@ impl World {
                 && let Some(rec) = self.party.roster.members.get_mut(roster_slot)
             {
                 LevelUpTracker::apply_to_record(&res, rec);
+                self.rebuild_live_hp_mp(roster_slot);
             }
         }
         // Mirror the tracker onto the record the way a battle grant does

@@ -327,6 +327,45 @@ fn apply_to_record_bumps_max_and_leaves_current_alone() {
     assert_eq!((rs.hp_max, rs.mp_max), (110, 55));
 }
 
+/// The applier grows the **base** maxima (`+0x6E4` / `+0x6E6` = record
+/// `+0x11C` / `+0x11E`), never the live ones the aggregator rebuilds with the
+/// equipment's boosts. A member wearing Max HP +25% (base 2097, live 2621)
+/// levels to base 2167; the live window is left for the rebuild. Growing the
+/// live maximum and copying it down had set the base to 2691, baking the
+/// accessory into it.
+#[test]
+fn apply_to_record_grows_the_base_maxima_not_the_boosted_live_ones() {
+    let mut rec = CharacterRecord::zeroed();
+    let mut hms = rec.hp_mp_sp();
+    hms.hp_max = 2621;
+    hms.hp_cur = 1000;
+    hms.mp_max = 435;
+    hms.mp_cur = 100;
+    rec.set_hp_mp_sp(hms);
+    let mut rs = rec.record_stats();
+    rs.hp_max = 2097;
+    rs.mp_max = 348;
+    rec.set_record_stats(rs);
+    let result = LevelUpResult {
+        char_id: 1,
+        old_level: 37,
+        new_level: 38,
+        xp_gained: 0,
+        hp_gained: 70,
+        mp_gained: 9,
+        battle_gained: [0; 6],
+    };
+    LevelUpTracker::apply_to_record(&result, &mut rec);
+    let rs = rec.record_stats();
+    assert_eq!((rs.hp_max, rs.mp_max), (2167, 357));
+    let live = rec.hp_mp_sp();
+    assert_eq!(
+        (live.hp_max, live.mp_max, live.hp_cur, live.mp_cur),
+        (2621, 435, 1000, 100),
+        "the live window is the aggregator's"
+    );
+}
+
 #[test]
 fn multiple_party_slots_independent() {
     let mut t = LevelUpTracker::new().with_xp_table(placeholder_xp_table());

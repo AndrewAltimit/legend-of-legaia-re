@@ -82,6 +82,11 @@ impl Default for LevelUpTracker {
     }
 }
 
+/// `FUN_801E9504`'s cap on the base `hp_max` it grows (`0x270F`).
+pub const LEVEL_UP_HP_CAP: u16 = 0x270F;
+/// `FUN_801E9504`'s cap on the base `mp_max` it grows (`0x3E7`).
+pub const LEVEL_UP_MP_CAP: u16 = 0x3E7;
+
 impl LevelUpTracker {
     pub fn new() -> Self {
         Self::default()
@@ -393,20 +398,44 @@ impl LevelUpTracker {
     /// This mattered: the free full heal was load-bearing in the pad-driven
     /// `critical_path_replay` crossing, where a mid-route level-up returned a
     /// solo Vahn to full HP for nothing.
+    ///
+    /// **The maxima grow on the base window, not the live one.** The applier's
+    /// `+0x6E4` / `+0x6E6` are the record-side `hp_max` / `mp_max` at
+    /// `+0x11C` / `+0x11E` - the window the stat aggregator `FUN_80042558`
+    /// copies over the live `+0x104` / `+0x108` before it adds the
+    /// equipment's percent boosts. Growing the live maximum and copying it
+    /// down baked an accessory's boost into the base on every level: a
+    /// Max HP +25% Noa at base 2097 / live 2621 left level 38 at base 2691
+    /// instead of 2167. The live maxima are the aggregator's to rebuild; a
+    /// caller holding the ability bits runs it
+    /// (`World::rebuild_record_live_hp_mp`). A record with no base window (a
+    /// synthetic party that sets its live maxima directly) grows its live
+    /// maxima instead, as before.
     pub fn apply_to_record(result: &LevelUpResult, record: &mut CharacterRecord) {
         let mut hms = record.hp_mp_sp();
-        hms.hp_max = hms.hp_max.saturating_add(result.hp_gained);
-        hms.mp_max = hms.mp_max.saturating_add(result.mp_gained);
-        record.set_hp_mp_sp(hms);
+        let mut rs = record.record_stats();
+        if rs.hp_max == 0 {
+            hms.hp_max = hms.hp_max.saturating_add(result.hp_gained);
+            hms.mp_max = hms.mp_max.saturating_add(result.mp_gained);
+            record.set_hp_mp_sp(hms);
+            rs.hp_max = hms.hp_max;
+            rs.mp_max = hms.mp_max;
+        } else {
+            rs.hp_max = rs
+                .hp_max
+                .saturating_add(result.hp_gained)
+                .min(LEVEL_UP_HP_CAP);
+            rs.mp_max = rs
+                .mp_max
+                .saturating_add(result.mp_gained)
+                .min(LEVEL_UP_MP_CAP);
+        }
 
         // Six battle stats: AGL / ATK / UDF / LDF / SPD / INT. Retail grows the
         // record-side window (+0x11C..+0x12D) then MIRRORS it into the live
         // window (+0x110..+0x11B), so the two stay consistent.
         let [d_agl, d_atk, d_udf, d_ldf, d_spd, d_int] = result.battle_gained;
 
-        let mut rs = record.record_stats();
-        rs.hp_max = hms.hp_max; // keep the record-side HP/MP copy in sync
-        rs.mp_max = hms.mp_max;
         rs.agl = rs.agl.saturating_add(d_agl);
         rs.atk = rs.atk.saturating_add(d_atk);
         rs.udf = rs.udf.saturating_add(d_udf);
