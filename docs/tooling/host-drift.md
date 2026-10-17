@@ -1346,7 +1346,6 @@ reverse-engineering questions, so they are not on
 | lit rows under the palette collapse | Not drift: both hosts run a lit row's shaded colour through the prologue's packet sepia, which the light kernel's output never meets in retail. See [light-source rows](#light-source-rows-in-a-graded-scene). |
 | cheats | One `World::cheat_*` call each. Every listed cheat is a launch switch natively and a runtime control on the page (`F6` / `F7` are runtime on both, through the [hotkey table](#host-hotkeys)); a GameShark file is a launch switch natively and pasted text on the page (`cheat_apply_codes`). |
 | launch switches | See [launch switches](#launch-switches-against-page-settings). |
-| title Continue | Native opens its own save select (`SaveSelectSession::for_rack`); the page opens the pause menu's Load row (`play_menu_open_row("Load")`), whose own gates can send the player back to the title. One session both reach is engineering work, not a gate. |
 | fishing wander readout | Native dev-menu aid for `FUN_801d2050`'s tracked points; no page twin by choice. |
 | fishing exchange panel pen | Native adds the venue overlay's idle sway (`FUN_801d03b0`). |
 | op `0x35` sub-op `8` | Open on purpose: `FUN_80019898` replays the record at `0x8007057C` through `FUN_80026478`, which in every captured state is silent, so the default no-op is faithful ([`audio.md`](../subsystems/audio.md#sub-op-8-replays-an-empty-record)). |
@@ -1575,6 +1574,7 @@ screens.
 
 | Decision | Kernel |
 |---|---|
+| title Continue | `SaveSelectSession::title_continue`: retail's title card manager, no pause-menu gate (window: `BootUiState::SaveSelect`; page: `play_menu_open_title_continue`, a title-opened save sub-screen). The page once opened the pause menu's Load row, whose field gates could bounce a Continue back to the title |
 | pause-menu press and open | `BootSession::press_field_menu`, `World::field_menu_open_allowed` (dialogue engagement, narration, title card, locks, shop), `open_field_menu`, `close_field_menu` |
 | pause-menu stack | `field_menu_dispatch::tick_root_list`, `tick_open_subsession`, `finish_subsession`; per host: rack I/O, key table, options store (`SubsessionHandoff`) |
 | pause-menu draw assembly | `engine-ui::pause_menu` (`engine-ui/tests/pause_menu_compose.rs`); the session-to-view projection `engine-screens::pause_screens` |

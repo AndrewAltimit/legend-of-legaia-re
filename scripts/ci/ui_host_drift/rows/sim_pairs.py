@@ -559,6 +559,22 @@ SIM_PAIRS: list[dict[str, object]] = [
         ],
     },
     {
+        "what": "title Continue, native vs play page - retail runs CONTINUE "
+        "inside the title overlay's own card manager (`FUN_801DDCCC`: row 1 "
+        "of sub-mode `0x10` stores `0x18` at `0x801DDC5C`, the card path runs "
+        "to `LaunchFade`'s load-route master-mode write at `0x801DFAFC`), with "
+        "no field under it. The native window opened a standalone save "
+        "select; the page opened the pause menu's Load row, whose field gates "
+        "could bounce a Continue back to the title. Both open "
+        "`SaveSelectSession::title_continue`",
+        "sites": {
+            "native": (NATIVE_BOOT_CUTSCENE, "tick_boot_ui"),
+            "web": (WEB_PLAY_MENU_OPEN_CLOSE, "play_menu_open_title_continue"),
+        },
+        "mode": "symbols_all",
+        "symbols": ["title_continue"],
+    },
+    {
         "what": "options persistence, native vs play page - what a save "
         "writes while a session pins engine-only knobs. The native window "
         "saved its `--no-volumetric-fog` override into the options file on the "

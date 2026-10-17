@@ -637,11 +637,12 @@ fn the_save_row_is_greyed_and_buzzes_in_a_field_scene() {
     );
 }
 
-/// The title's Continue opens the save-select through the pause menu's Load
-/// row; backing out of it must return to the title, not to a pause root list
-/// the title never showed. The native window runs Continue as a standalone
-/// save-select whose cancel lands on the title; the page marks the
-/// title-opened menu so the sub-screen's exit closes it.
+/// The title's Continue opens the save-select as retail's title card
+/// manager (`SaveSelectSession::title_continue`, both hosts' call); backing
+/// out of it must return to the title, not to a pause root list the title
+/// never showed. The page marks the title-opened menu so the sub-screen's
+/// exit closes it, as the native window's standalone save-select's cancel
+/// lands on the title.
 #[test]
 fn a_backed_out_title_continue_closes_the_menu_instead_of_landing_on_the_root() {
     let Some(mut rt) = loaded_in_town() else {

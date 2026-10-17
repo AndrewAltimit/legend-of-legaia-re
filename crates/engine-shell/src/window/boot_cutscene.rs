@@ -508,15 +508,13 @@ impl PlayWindowApp {
                             self.boot_ui = BootUiState::Inactive;
                         }
                         TitleOutcome::Continue => {
-                            // Open the save-select panel against the shell's
-                            // rack: retail's two card ports, each a mounted
-                            // card image. The rack kind is what puts the
-                            // session in the two-stage flow - no host flips
-                            // that flag by hand.
+                            // Retail's title card manager over the shell's
+                            // rack (retail's two card ports, each a mounted
+                            // card image): `title_continue`, the browser
+                            // page's call too, with no field gate in front.
                             self.save_flow.reset();
                             self.boot_ui = BootUiState::SaveSelect(
-                                legaia_engine_menus::save_select::SaveSelectSession::for_rack(
-                                    legaia_engine_menus::save_select::SaveSelectMode::Load,
+                                legaia_engine_menus::save_select::SaveSelectSession::title_continue(
                                     &card_save_rack(self.card_ports()),
                                 ),
                             );

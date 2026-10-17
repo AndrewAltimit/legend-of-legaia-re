@@ -218,6 +218,47 @@ impl LegaiaRuntime {
 mod blip_tests {
     use super::*;
 
+    /// The title's Continue is retail's title card manager, not a pause row:
+    /// it opens the Load screen where the pause menu itself is refused (a
+    /// dialogue owns the player), as the native window's standalone save
+    /// select does. Through the Load row it used to bounce to the title.
+    #[test]
+    fn title_continue_opens_where_the_pause_menu_would_not() {
+        let mut rt = LegaiaRuntime::new();
+        let host = legaia_engine_core::scene_host::SceneHost::from_prot_bytes(
+            crate::play_fmv::tests::synthetic_prot(),
+            None,
+        )
+        .expect("synthetic host");
+        rt.scene_host.install(host, None).expect("session");
+        rt.scene_host.host_mut().expect("host").world.dialog.current =
+            Some(legaia_engine_field::dialog_state::DialogRequest {
+                text_id: 0,
+                inline: vec![0x1F, b'x', 0x00],
+                world_x: 0,
+                world_z: 0,
+                depth_id: 0,
+            });
+        assert!(
+            !rt.play_menu_open_row("Load"),
+            "the pause menu's Load row is refused under a dialogue"
+        );
+        assert!(!rt.play_menu_is_open());
+        assert!(rt.play_menu_open_title_continue(), "Continue opens anyway");
+        assert!(rt.play_menu_owns_frame());
+        assert!(rt.play_menu_sub_is_open(), "on the Load screen");
+        let m = rt.play_menu.as_ref().expect("menu");
+        assert!(m.from_title, "backing out returns to the title");
+        let Some(PlaySub::Session(sub)) = m.sub.as_ref() else {
+            panic!("a sub-session");
+        };
+        assert!(
+            matches!(sub.as_ref(), FieldMenuSubsession::Save(s)
+                if s.mode() == legaia_engine_menus::save_select::SaveSelectMode::Load),
+            "the Load screen"
+        );
+    }
+
     /// The menu's blip rides the edge the refusal box let through: the press
     /// that dismisses a refusal is silent, as on the native window, and an
     /// ordinary root-list press still blips exactly once.

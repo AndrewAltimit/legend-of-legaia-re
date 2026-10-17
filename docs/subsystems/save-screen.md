@@ -1021,6 +1021,16 @@ New Game is the sibling entry, `resume::enter_new_game` (the seeded slate,
 then `opdeene`, else `town01`; native `BootSession::start_new_game`, page
 `play_new_game`), and the only thing the title's New Game row reaches.
 
+Continue itself is the title's, not the pause menu's. Retail runs it inside
+the title overlay's own card manager (`FUN_801DDCCC`): `AttractIdle`
+(sub-mode `0x10`) confirms on `pad & 0x844` at `0x801DDC04`, row 1 stores
+`0x18` (`ContinueFadeIn`) at `0x801DDC5C` with cue `0x20`, and the card path
+(`0x14` -> `0x07` -> `0x15` -> `0x09` -> `0x0A` -> `0x0B` -> `0x0E`, the load
+leg `0x04` / `0x05`) ends in `LaunchFade` (`0x16`), whose load-route master
+mode write is at `0x801DFAFC`. No field runs under the title, so nothing a
+field gate refuses (a dialogue, a lock, an op-`0x49` park) stands in front of
+it. Both hosts open it as `SaveSelectSession::title_continue`.
+
 Continue's enablement is a port guard with no retail counterpart (retail lets
 the row be picked and lets the save screen say "No data"). Both hosts open
 every title through `TitleSession::for_front_end_at` with a fresh scan of

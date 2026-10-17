@@ -125,6 +125,31 @@ impl LegaiaRuntime {
             .is_some_and(|m| matches!(m.sub, Some(PlaySub::Session(_))))
     }
 
+    /// The title's CONTINUE: stand the Load screen up over the card rack as a
+    /// title-opened save sub-screen
+    /// ([`SaveSelectSession::title_continue`], the native window's call too).
+    ///
+    /// Retail runs Continue inside the title overlay's own card manager, with
+    /// no field under it, so no pause menu opens and no pause-menu gate is
+    /// asked: this page used to open the Load row through
+    /// `play_menu_open_row`, whose field gates (a dialogue, a lock, an
+    /// op-`0x49` park) could refuse a Continue and send it back to the title.
+    /// `false` only when the menu art is missing or a menu is already up.
+    pub(crate) fn play_menu_open_title_continue(&mut self) -> bool {
+        if !self.ensure_menu_assets() || self.play_menu.is_some() {
+            return false;
+        }
+        let rack = SaveRack::CardPorts(self.card_slot_snapshots());
+        let mut menu = PlayMenu::new();
+        menu.owns_frame = true;
+        menu.from_title = true;
+        menu.sub = Some(PlaySub::Session(Box::new(FieldMenuSubsession::Save(
+            SaveSelectSession::title_continue(&rack),
+        ))));
+        self.play_menu = Some(menu);
+        true
+    }
+
     /// Mark the open menu as a boot-title row's (see `PlayMenu::from_title`).
     pub(crate) fn play_menu_mark_from_title(&mut self) {
         if let Some(m) = self.play_menu.as_mut() {

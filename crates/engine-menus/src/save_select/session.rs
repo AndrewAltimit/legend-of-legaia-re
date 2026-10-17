@@ -98,6 +98,28 @@ impl SaveSelectSession {
         s
     }
 
+    /// The title's CONTINUE: the Load screen over `rack`, opened by the title
+    /// itself and owing nothing to the field.
+    ///
+    /// Retail runs it inside the title overlay's own front-end machine
+    /// (`FUN_801DDCCC`, see [`crate::title_overlay`]): `AttractIdle`
+    /// (sub-mode `0x10`) confirms on `pad & 0x844` (`0x801DDC04`), and row 1
+    /// stores `0x18` (`ContinueFadeIn`, `0x801DDC5C`) with the cue `0x20`.
+    /// From there the card manager (`0x14` -> `0x07` -> `0x15` -> `0x09` ->
+    /// `0x0A` -> `0x0B` -> `0x0E`, the load leg `0x04` / `0x05`) runs to
+    /// `LaunchFade` (`0x16`), which writes master mode `2` on the load route
+    /// (`0x801DFAFC`). No field runs under the title, so no pause-menu gate
+    /// (a dialogue, a lock, an op-`0x49` park) stands in front of it.
+    ///
+    /// Both play hosts open Continue through this: the native window as its
+    /// standalone save select, the browser page as a title-opened save
+    /// sub-screen. The page used to reach it through the pause menu's Load
+    /// row, whose field gates could send a Continue back to the title.
+    // REF: FUN_801DDCCC
+    pub fn title_continue(rack: &SaveRack) -> Self {
+        Self::for_rack(SaveSelectMode::Load, rack)
+    }
+
     pub fn new(mode: SaveSelectMode, slots: Vec<SlotSnapshot>) -> Self {
         let phase = if slots.is_empty() {
             SelectPhase::Done(SelectOutcome::Cancelled)

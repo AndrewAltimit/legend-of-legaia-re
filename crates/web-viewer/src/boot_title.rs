@@ -148,15 +148,12 @@ impl LegaiaRuntime {
     /// A picked title row whose pause-menu door would not open returns the
     /// player to the TITLE, not into a new game.
     ///
-    /// `play_menu_open_row` fails whenever the row is unavailable on this
-    /// world - a standing op-`0x49` entry-context park blocks Load, and a
-    /// menu that will not open blocks both - and this page used to answer
-    /// that with `"new_game"`, so a player who pressed Continue could find
-    /// themselves in the opening cutscene with their save untouched. The
-    /// native window never has this door: `TitleOutcome::Continue` installs
-    /// `BootUiState::SaveSelect` and `Options` installs `BootUiState::Options`
-    /// directly, and neither can decay into New Game
-    /// (`window/boot_cutscene.rs`).
+    /// `play_menu_open_row("Options")` fails when the menu will not open on
+    /// this world, and this page used to answer a failed row with
+    /// `"new_game"`. The native window's Options row has the same door and
+    /// the same answer (`open_menu_row_from_title`). Continue no longer goes
+    /// through a pause row on either host (`SaveSelectSession::title_continue`),
+    /// so it reaches this only when the menu art is missing.
     ///
     /// Returns `""` (the "title still running" answer), having put a fresh
     /// title session back up with its attract countdown armed.
@@ -326,13 +323,13 @@ impl LegaiaRuntime {
                     // the pause menu's own rows rather than through a second
                     // copy of either. The page then drives `play_menu_input`
                     // / `play_menu_draws_json` until the menu closes.
+                    // Continue is retail's title card manager, not a pause
+                    // row: `SaveSelectSession::title_continue`, the native
+                    // window's call too, with no field gate in front of it.
+                    // Backing out returns to the title card (the menu is
+                    // title-opened).
                     TitleOutcome::Continue => {
-                        if self.play_menu_open_row("Load") {
-                            // Backing out of the save-select returns to the
-                            // title card, not to a pause root the title never
-                            // showed - the native window's standalone
-                            // save-select does the same.
-                            self.play_menu_mark_from_title();
+                        if self.play_menu_open_title_continue() {
                             self.boot_title_backdrop = parked;
                             "continue".to_string()
                         } else {
