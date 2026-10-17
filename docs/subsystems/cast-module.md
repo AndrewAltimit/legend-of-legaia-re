@@ -2197,12 +2197,23 @@ point and TR z scale (the origin at unit scale). The records only a module's
 own stager seats (reached through a part's op-`0x20` call, which the engine
 does not run for these modules) are seated whole on the stager's first tick.
 
-Not carried by any of them: the writes to the other seats (the monster row's
-re-seat, hiding, orbits and restore, Mushura's walk and steering, Barra's
-seat swaps and arcs), the stage words `ctx[+0x27A..+0x286]` and the camera
+Horn's seat visibility is carried (`World::apply_horn_writes`): arm 1 shows
+the party, arm 3 seats the creature hidden and arm 4 shows it, arm 8 hides
+the party for the rise, and the heal arm `0xA` shows it again and hides the
+creature. Otherwise not carried by any of them: the writes to the other
+seats (the monster row's re-seat, hiding, orbits and restore, Mushura's walk
+and steering, Barra's seat swaps and arcs), the stage words `ctx[+0x27A..+0x286]` and the camera
 block `0x80083FF8`, and pad rumble. Jedo's kill is the host's
 (`World::apply_summon_body_writes`): on a fight that is not scripted arm 29
 makes no damage call and arm 30 breaks every living monster up and kills it.
+
+**Dead seats fade.** The row polls wait on every dead monster's colour word
+`+0x04` draining in the defeat fade. Two ways a dead body stood lit outside
+it are closed in the tint pass: the fade gate compares the committed clip
+against the cached knockdown entry `+0x1F1` itself (a knockdown committed on
+the action channel, as a seat seeded dead from retail RAM carries it), and a
+dead, idle, lit monster the death arm never reached - a hit on a seat a
+module had frozen - enters the fade.
 
 **The band lets go of a stalled module.** A module still busy
 `SUMMON_LINGER_STALL_FRAMES` ticks after its outcome is held on a poll the
@@ -2444,6 +2455,18 @@ Two gates the engine reads as already open: the creature stream load
 The engine has the record resident, so a module that spends its opening frames
 on the load (Nova sits in arm 2 on that poll through most of the sustain)
 frames differently until a director models the read.
+
+### Capture-band spawns
+
+<a id="capture-band-spawns"></a>
+
+The capture band's pager (`0x6E`) seats a module's whole record set at the
+caster as it pages the module in. PROT 0966 (Evil Seru Magic) instead seats
+the 46 spawn calls of its `0x801F6A74` body on the passes their arms make
+them inside `0x70` (`cast_module_camera::capture_arm_spawns`, all literal
+points), and the records only its stager seats as the body first ticks; the
+pager placement drew them a phase band early. The other capture bodies keep
+the pager placement.
 
 ### Capture-band camera
 
