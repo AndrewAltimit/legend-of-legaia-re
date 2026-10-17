@@ -1857,7 +1857,7 @@
   function storeCardBytes(port, bytes) {
     const id = portSaveIds[port];
     if (id === BROWSER_CARD) {
-      LegaiaSaves.putBrowserCard(bytes);
+      if (LegaiaSaves.putBrowserCard(bytes) === null) return null;
       return { name: 'legaia-browser-card', format: 'mcr' };
     }
     const meta = id ? (LegaiaSaves.listSessions().find(s => s.id === id) || {}) : {};
@@ -1871,10 +1871,11 @@
         const s = (listing.saves || []).find(x => x.block === meta.block);
         if (s) { party = s.party; money = s.money; location = s.location; level = s.level; }
       } catch (e) { /* keep the old meta; the bytes are what matter */ }
-      LegaiaSaves.putSession({
+      const stored = LegaiaSaves.putSession({
         id, kind: 'card', name, scene: meta.scene || '', block: meta.block,
         format: meta.format || 'mcr', party, level, money, location,
       }, bytes);
+      if (stored === null) return null;
       if (savesBar) savesBar.invalidateIcon(id);
     }
     return meta;
@@ -1888,7 +1889,8 @@
     try { bytes = runtime.export_card(port); }
     catch (err) { saveMsg(`Export failed: ${err.message || err}`, true); return; }
     if (!bytes || !bytes.length) return;
-    const meta = storeCardBytes(port, bytes);
+    /* A failed browser store still downloads: the export is the copy. */
+    const meta = storeCardBytes(port, bytes) || {};
     const name = meta.name || `card-slot-${port + 1}`;
     downloadBytes(bytes, `${name.replace(/[^\w.-]+/g, '-')}.${meta.format || 'mcr'}`);
     saveMsg(`Exported MEMORY CARD SLOT ${port + 1} - load it in your emulator to carry on there.`);
@@ -2014,16 +2016,23 @@
   /* An in-game Save writes the card image inside the engine. Store it back
    * over its browser session as soon as it lands, the way the native window
    * persists its card file on the same commit - otherwise a reload before
-   * Export drops the save. Export still downloads (and clears "not exported"). */
+   * Export drops the save. Export still downloads (and clears "not exported").
+   * A store the browser refuses (storage full or blocked) raises the save
+   * screen's write-failed notice (`card_store_failed`), as the native
+   * window's failed `card.persist()` does - the screen used to say the save
+   * worked and a reload lost it. */
   setInterval(() => {
     if (!runtime || typeof runtime.card_take_written !== 'function') return;
     for (let p = 0; p < CARD_PORTS; p++) {
       if (!runtime.card_take_written(p)) continue;
       const bytes = runtime.card_bytes(p);
-      if (bytes && bytes.length) storeCardBytes(p, bytes);
+      if (bytes && bytes.length && storeCardBytes(p, bytes) === null) {
+        saveMsg(`Could not store the card in port ${p + 1} in this browser - export it to keep the save.`, true);
+        if (typeof runtime.card_store_failed === 'function') runtime.card_store_failed();
+      }
       renderCardRack();
     }
-  }, 500);
+  }, 100);
   window.addEventListener('legaia-saves-change', () => {
     renderSavesStrip();
     /* A deleted card must not stay in a port. */

@@ -115,6 +115,47 @@ impl HostHotkey {
             HostHotkey::DebugCamera | HostHotkey::CameraDistance | HostHotkey::PreciseMovement
         )
     }
+
+    /// Whether a play host refuses this key with `screens` owning its frame:
+    /// a [`Self::needs_field`] key under any front-end screen. The one rule
+    /// both hosts ask. The native window refused under its pause menu and
+    /// game-over panel while the page refused only under the logos and the
+    /// title, so `T` / `R` edited and persisted options behind the page's
+    /// pause menu; each host now names every screen.
+    pub fn refused(self, screens: FrontEndScreens) -> bool {
+        self.needs_field() && screens.any()
+    }
+}
+
+/// The front-end screens that can own a play host's frame, as the hotkey
+/// gate ([`HostHotkey::refused`]) reads them. Each host fills every field
+/// from its own state; a gate pairs the two fills by name.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct FrontEndScreens {
+    /// The publisher logos.
+    pub boot_logos: bool,
+    /// The title screen.
+    pub title: bool,
+    /// A save-select screen outside the pause menu (the title's Continue).
+    pub save_select: bool,
+    /// The pause menu and the screens behind it.
+    pub pause_menu: bool,
+    /// The game-over panel.
+    pub game_over: bool,
+}
+
+impl FrontEndScreens {
+    /// Whether any front-end screen owns the frame.
+    pub fn any(self) -> bool {
+        let FrontEndScreens {
+            boot_logos,
+            title,
+            save_select,
+            pause_menu,
+            game_over,
+        } = self;
+        boot_logos || title || save_select || pause_menu || game_over
+    }
 }
 
 /// Apply `hotkey`'s edit to the persisted options, if it is an options

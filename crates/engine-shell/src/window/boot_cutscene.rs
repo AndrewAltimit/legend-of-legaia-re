@@ -1238,6 +1238,7 @@ impl PlayWindowApp {
             pending_audio: audio,
             has_audio: false,
             movie_clock: legaia_engine_system::movie::cutscene::MovieClock::new(),
+            skipped: false,
         });
     }
 

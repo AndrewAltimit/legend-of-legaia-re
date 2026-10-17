@@ -230,21 +230,30 @@ impl OptionsState {
         self.enhanced_lighting = false;
     }
 
-    /// What to persist while [`Self::pin_retail`] holds for the session:
-    /// `self` with every knob the pin writes taken back from `stored`, the
-    /// state as it was before the pin. The rows the pin leaves alone (the
-    /// player's own options, time of day) keep this session's edits, so a
-    /// `--retail` session never writes its pinned values over the player's.
-    pub fn unpinned_over(&self, stored: &OptionsState) -> OptionsState {
-        let mut out = self.clone();
-        out.camera_distance = stored.camera_distance;
-        out.precise_movement = stored.precise_movement;
-        out.reduce_flashing = stored.reduce_flashing;
-        out.retail_static_window = stored.retail_static_window;
-        out.retail_view_window = stored.retail_view_window;
-        out.volumetric_fog = stored.volumetric_fog;
-        out.enhanced_lighting = stored.enhanced_lighting;
-        out
+    /// Copy the knobs in `knobs` ([`OptionsPins`] bits) from `from`.
+    fn take_knobs(&mut self, from: &OptionsState, knobs: u8) {
+        use options_pin::*;
+        if knobs & CAMERA_DISTANCE != 0 {
+            self.camera_distance = from.camera_distance;
+        }
+        if knobs & PRECISE_MOVEMENT != 0 {
+            self.precise_movement = from.precise_movement;
+        }
+        if knobs & REDUCE_FLASHING != 0 {
+            self.reduce_flashing = from.reduce_flashing;
+        }
+        if knobs & STATIC_WINDOW != 0 {
+            self.retail_static_window = from.retail_static_window;
+        }
+        if knobs & VIEW_WINDOW != 0 {
+            self.retail_view_window = from.retail_view_window;
+        }
+        if knobs & VOLUMETRIC_FOG != 0 {
+            self.volumetric_fog = from.volumetric_fog;
+        }
+        if knobs & ENHANCED_LIGHTING != 0 {
+            self.enhanced_lighting = from.enhanced_lighting;
+        }
     }
 
     /// The engine-only knobs currently off their retail value, by field
@@ -1008,9 +1017,132 @@ impl OptionsState {
     }
 }
 
+/// The engine-only knobs a session can pin, as [`OptionsPins`] bits.
+pub mod options_pin {
+    /// `camera_distance`.
+    pub const CAMERA_DISTANCE: u8 = 1 << 0;
+    /// `precise_movement`.
+    pub const PRECISE_MOVEMENT: u8 = 1 << 1;
+    /// `reduce_flashing`.
+    pub const REDUCE_FLASHING: u8 = 1 << 2;
+    /// `retail_static_window`.
+    pub const STATIC_WINDOW: u8 = 1 << 3;
+    /// `retail_view_window`.
+    pub const VIEW_WINDOW: u8 = 1 << 4;
+    /// `volumetric_fog`.
+    pub const VOLUMETRIC_FOG: u8 = 1 << 5;
+    /// `enhanced_lighting`.
+    pub const ENHANCED_LIGHTING: u8 = 1 << 6;
+    /// Every knob [`super::OptionsState::pin_retail`] writes.
+    pub const RETAIL: u8 = CAMERA_DISTANCE
+        | PRECISE_MOVEMENT
+        | REDUCE_FLASHING
+        | STATIC_WINDOW
+        | VIEW_WINDOW
+        | VOLUMETRIC_FOG
+        | ENHANCED_LIGHTING;
+}
+
+/// Session-only overrides of persisted options, and what to persist under
+/// them - one rule for both play hosts.
+///
+/// A host pins knobs it overrides for the session without the player
+/// choosing it (retail-faithful mode, a `--no-volumetric-fog` launch). The
+/// pinned knobs persist as they were before the pin; every other row - the
+/// retail options screen's rows, volumes, mute, time of day - persists this
+/// session's edits. The native window used to save its fog override into the
+/// options file, and the browser page dropped every edit made while its
+/// retail box held; both now save [`Self::persistable`].
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct OptionsPins {
+    /// The pinned knobs' values before their pin.
+    stored: OptionsState,
+    /// Which knobs are pinned ([`options_pin`] bits).
+    knobs: u8,
+}
+
+impl OptionsPins {
+    /// Pin `knobs` of `live` for this session: remember their current values
+    /// (a knob already pinned keeps its first value). Call before writing the
+    /// override into `live`.
+    pub fn pin(&mut self, live: &OptionsState, knobs: u8) {
+        let fresh = knobs & !self.knobs;
+        self.stored.take_knobs(live, fresh);
+        self.knobs |= knobs;
+    }
+
+    /// Pin retail mode: [`Self::pin`] every knob [`OptionsState::pin_retail`]
+    /// writes, then write it.
+    pub fn pin_retail(&mut self, live: &mut OptionsState) {
+        self.pin(live, options_pin::RETAIL);
+        live.pin_retail();
+    }
+
+    /// Lift every pin: the pinned knobs take back their pre-pin values in
+    /// `live`; the session's other edits stay.
+    pub fn release_all(&mut self, live: &mut OptionsState) {
+        live.take_knobs(&self.stored, self.knobs);
+        self.knobs = 0;
+    }
+
+    /// Whether any knob is pinned.
+    pub fn any(&self) -> bool {
+        self.knobs != 0
+    }
+
+    /// What to persist: `live` with every pinned knob at its pre-pin value.
+    pub fn persistable(&self, live: &OptionsState) -> OptionsState {
+        let mut out = live.clone();
+        out.take_knobs(&self.stored, self.knobs);
+        out
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A fog-only pin persists the stored fog and every other edit; a retail
+    /// pin on top keeps the fog's first stored value; lifting the pins
+    /// restores the knobs and keeps the rows the player edited.
+    #[test]
+    fn options_pins_persist_only_the_unpinned_edits() {
+        let stored = OptionsState::default();
+        let mut live = stored.clone();
+        let mut pins = OptionsPins::default();
+        pins.pin(&live, options_pin::VOLUMETRIC_FOG);
+        live.volumetric_fog = false;
+        live.message_speed = 2;
+        live.precise_movement = true;
+        let saved = pins.persistable(&live);
+        assert_eq!(
+            saved.volumetric_fog, stored.volumetric_fog,
+            "the override is not saved"
+        );
+        assert!(saved.precise_movement, "an unpinned knob's edit is saved");
+        assert_eq!(saved.message_speed, 2);
+
+        pins.pin_retail(&mut live);
+        assert!(live.retail_deviations().is_empty());
+        live.lighting_time_of_day = "night".to_string();
+        let saved = pins.persistable(&live);
+        assert_eq!(
+            saved.volumetric_fog, stored.volumetric_fog,
+            "first pin's value kept"
+        );
+        assert!(saved.precise_movement, "the value before the retail pin");
+        assert_eq!(
+            saved.lighting_time_of_day, "night",
+            "retail-session edit kept"
+        );
+
+        pins.release_all(&mut live);
+        assert!(!pins.any());
+        assert_eq!(live.volumetric_fog, stored.volumetric_fog);
+        assert!(live.precise_movement);
+        assert_eq!(live.lighting_time_of_day, "night");
+        assert_eq!(pins.persistable(&live), live);
+    }
 
     #[test]
     fn pinned_options_report_no_retail_deviation() {
@@ -1034,24 +1166,6 @@ mod tests {
         assert!(o.retail_deviations().is_empty());
         // The rows retail's own options screen carries stay the player's.
         assert_eq!((o.battle_camera, o.field_move, o.audio), rows);
-    }
-
-    /// A `--retail` session's save keeps the player's stored engine knobs and
-    /// this session's edits to the rows the pin leaves alone.
-    #[test]
-    fn unpinned_over_restores_only_the_pinned_knobs() {
-        let stored = OptionsState::default();
-        let mut live = stored.clone();
-        live.pin_retail();
-        live.lighting_time_of_day = "night".to_string();
-        live.message_speed = 2;
-        live.volumetric_fog = !live.volumetric_fog;
-        let saved = live.unpinned_over(&stored);
-        assert_eq!(saved.retail_deviations(), stored.retail_deviations());
-        assert_eq!(saved.camera_distance, stored.camera_distance);
-        assert_eq!(saved.volumetric_fog, stored.volumetric_fog);
-        assert_eq!(saved.lighting_time_of_day, "night");
-        assert_eq!(saved.message_speed, 2);
     }
 
     /// The cycle steps the stored option - the value an options apply

@@ -8,6 +8,7 @@ from ui_host_drift.rows.host_files import (
     NATIVE_ASSETS_ACTORS,
     NATIVE_BOOT_CUTSCENE,
     NATIVE_BOOT_FRAME_TICK,
+    NATIVE_WINDOW,
     SESSION_TICK_OWNER,
     WEB_RUNTIME_FRAME_TICKS,
     NATIVE_BOOT_SCENE_ENTRY,
@@ -34,6 +35,7 @@ from ui_host_drift.rows.host_files import (
     WEB_PLAY_BATTLE_SESSION_EXPORTS,
     WEB_PLAY_CAMERA,
     WEB_PLAY_HOTKEYS,
+    WEB_RUNTIME_OPTIONS,
     WEB_RUNTIME_FRAME,
     WEB_PLAY_DEV_MENU,
     WEB_PLAY_FISHING,
@@ -534,7 +536,10 @@ SIM_PAIRS: list[dict[str, object]] = [
         "JavaScript, so the enhancement toggles the docs name had no key in "
         "the browser. Both resolve the key through the shared table "
         "(`HostHotkey::from_dom_code`), refuse the field-only keys under a "
-        "front-end screen (`needs_field`), and make the options edit through "
+        "front-end screen (`HostHotkey::refused` over a `FrontEndScreens` "
+        "each host fills field by field - the page once tested `needs_field` "
+        "against the title and logos alone, so `T` / `R` persisted options "
+        "behind its pause menu), and make the options edit through "
         "`apply_options_hotkey` before persisting",
         "sites": {
             "native": (NATIVE_KEYBOARD_OPTION, "option_key"),
@@ -543,10 +548,29 @@ SIM_PAIRS: list[dict[str, object]] = [
         "mode": "symbols_all",
         "symbols": [
             "from_dom_code",
-            "needs_field",
+            "refused",
+            "boot_logos",
+            "title",
+            "save_select",
+            "pause_menu",
+            "game_over",
             "apply_options_hotkey",
             "persist_and_apply_options",
         ],
+    },
+    {
+        "what": "options persistence, native vs play page - what a save "
+        "writes while a session pins engine-only knobs. The native window "
+        "saved its `--no-volumetric-fog` override into the options file on the "
+        "next options close; the page skipped the write outright under its "
+        "retail box, dropping volumes, mute, time of day and the retail rows "
+        "edited there. Both write `OptionsPins::persistable`",
+        "sites": {
+            "native": (NATIVE_WINDOW, "persist_and_apply_options"),
+            "web": (WEB_RUNTIME_OPTIONS, "persist_and_apply_options"),
+        },
+        "mode": "symbols_all",
+        "symbols": ["persistable", "options_pins"],
     },
     {
         "what": "options simulation knobs per tick, native vs play page - "

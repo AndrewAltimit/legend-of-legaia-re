@@ -388,7 +388,7 @@ fn rung3_dance_opens_and_paints_its_hud() {
         "dance",
         "40:K",
         Some("120:Square,160:Circle,200:Triangle,240:Square"),
-        "dance: count-in",
+        "minigame warp: entered dance",
         0.001,
         SHOT_TICK,
     );

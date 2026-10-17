@@ -373,11 +373,17 @@ impl MountedCard {
     /// Grid cell `i` is card block `i + 1`: block 0 is the card directory and
     /// is never a save. A block whose frame does not mark it as a chain
     /// *start* holds nothing of its own - a mid-chain continuation belongs to
-    /// the save that opened the chain.
+    /// the save that opened the chain. A block whose first character record
+    /// is all zero holds no party and is no save either: the browser host
+    /// refused one at load while the native window resumed it into a
+    /// party-less world, so the rule lives here, under both.
     pub fn save_at(&self, cell: u8) -> Option<(crate::SaveFile, crate::SaveResume)> {
         let block = cell.checked_add(1)?;
         let sc = self.sc_block(block)?;
         let sf = crate::SaveFile::from_retail_sc_block(sc, card::RETAIL_SC_PARTY_RECORDS).ok()?;
+        if sf.party.members.is_empty() {
+            return None;
+        }
         Some((sf, crate::SaveResume::from_retail_sc_block(sc)))
     }
 
@@ -438,6 +444,16 @@ mod tests {
         loose.dirty = true;
         assert!(!loose.persist().unwrap(), "no file to write back to");
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A save-start block whose character records are all zero lists as a
+    /// chain start but is no loadable save on either host.
+    #[test]
+    fn a_party_less_block_is_no_save() {
+        let card = MountedCard::from_bytes(raw_card(), "upload").unwrap();
+        assert!(card.block_is_save_start(1));
+        assert!(card.sc_block(1).is_some());
+        assert!(card.save_at(0).is_none());
     }
 
     #[test]

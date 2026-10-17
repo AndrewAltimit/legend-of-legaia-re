@@ -138,11 +138,12 @@ impl LegaiaRuntime {
     /// engine-only option to its retail value (`OptionsState::pin_retail`:
     /// retail camera distance, 8-way movement, no photosensitivity slew,
     /// retail tile windows, no fog, no enhanced lighting) and turn the
-    /// scene-entry pulse off, for this session only - nothing is written to
-    /// the store, including an option the player edits while the mode holds
-    /// (the page's render boxes re-apply the pinned values on every scene
-    /// rebuild, and one such write used to bake the pin into the store). Off
-    /// restores the stored options. The page's own render
+    /// scene-entry pulse off, for this session only. The pinned knobs never
+    /// reach the store (`OptionsPins::persistable`: the page's render boxes
+    /// re-apply the pinned values on every scene rebuild, and one such write
+    /// used to bake the pin into the store); every other row the player
+    /// edits while the mode holds is saved, as natively. Off gives the
+    /// pinned knobs back their pre-pin values. The page's own render
     /// switches (lighting, lamp shadows, fog, occlusion fade) are its
     /// checkboxes, which the page sets beside this call.
     pub fn set_retail_mode(&mut self, on: bool) {
@@ -151,11 +152,14 @@ impl LegaiaRuntime {
         }
         self.page_toggles.retail = on;
         if on {
-            self.options_state.pin_retail();
+            self.options_pins.pin_retail(&mut self.options_state);
         } else {
-            self.options_state = crate::runtime::load_persisted_options();
+            self.options_pins.release_all(&mut self.options_state);
         }
-        self.apply_options_side_effects();
+        // The pinned knobs persist as they were before the pin; every other
+        // row keeps the edits made while the mode held (`OptionsPins`, the
+        // native window's rule).
+        self.persist_and_apply_options();
         self.apply_page_toggles();
     }
 

@@ -11,22 +11,33 @@
 //! HUD bar, its debug vantage.
 
 use crate::runtime::LegaiaRuntime;
-use legaia_engine_session::hotkeys::{HOST_HOTKEYS, HostHotkey, apply_options_hotkey};
+use legaia_engine_session::hotkeys::{
+    FrontEndScreens, HOST_HOTKEYS, HostHotkey, apply_options_hotkey,
+};
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen]
 impl LegaiaRuntime {
     /// Resolve and apply one host hotkey press. Returns the hotkey's id
     /// (`HostHotkey::id`), or `""` when `code` is no hotkey or the hotkey is
-    /// refused while the boot logos / title own the frame (the native window's
-    /// `boot_ui.is_active()` gate). An options hotkey has already been applied
+    /// refused while a front-end screen owns the frame (`HostHotkey::refused`,
+    /// the rule the native window asks). An options hotkey has already been applied
     /// and persisted when this returns; the page mirrors the stored value into
     /// its controls.
     pub fn play_host_hotkey(&mut self, code: &str) -> String {
         let Some(hotkey) = HostHotkey::from_dom_code(code) else {
             return String::new();
         };
-        if hotkey.needs_field() && (self.boot_title_is_active() || self.boot_logos_is_active()) {
+        let screens = FrontEndScreens {
+            boot_logos: self.boot_logos_is_active(),
+            title: self.boot_title_is_active(),
+            // The page's Continue opens the pause menu's Load row: its save
+            // select is `pause_menu`.
+            save_select: false,
+            pause_menu: self.play_menu_is_open(),
+            game_over: self.game_over.is_some(),
+        };
+        if hotkey.refused(screens) {
             return String::new();
         }
         if apply_options_hotkey(&mut self.options_state, hotkey) {

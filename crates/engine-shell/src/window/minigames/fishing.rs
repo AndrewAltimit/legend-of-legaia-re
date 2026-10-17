@@ -258,7 +258,7 @@ impl PlayWindowApp {
     /// species / spawn / cadence tables, the bring-up's rod and lure ownership
     /// scans, the persistent save-block words and the venue the cast lure
     /// lands in. Returns `false` (and logs) when no disc is attached or the
-    /// tables can't decode. Mirrors [`Self::start_dance_minigame`]'s overlay
+    /// tables can't decode. Mirrors [`Self::start_dance_minigame_mode`]'s overlay
     /// path.
     pub(in crate::window) fn start_fishing_minigame(&mut self) -> bool {
         use legaia_overlay_images::static_overlay;

@@ -86,7 +86,7 @@ impl PlayWindowApp {
         if self
             .cutscene
             .as_ref()
-            .is_some_and(|c| c.idx >= c.frames.len())
+            .is_some_and(|c| c.skipped || c.idx >= c.frames.len())
         {
             // Stop the cutscene audio and give the score back whatever the
             // movie took from it - nothing, when it ducked nothing.
@@ -108,6 +108,22 @@ impl PlayWindowApp {
         let key_pad = self.pad;
         let held_pad = key_pad | self.gamepad_held;
         let first_tick_pad = self.pad_taps.take_frame_word(held_pad);
+        // Retail's movie abort on an in-flow movie (`fmv_skip_edge_hit`: the
+        // attract id only, on a face button / Select), which the browser
+        // page's FMV lane tests on every frame of a field cutscene too. The
+        // movie holds the ticks, so the edge is the frame's own; the movie
+        // ends on the next redraw.
+        if run_ticks == 0
+            && let Some(c) = self.cutscene.as_mut()
+        {
+            let edge = first_tick_pad & !self.prev_pad;
+            if let Some(fmv_id) = self.session.host.world.active_fmv()
+                && legaia_engine_system::movie::cutscene::fmv_skip_edge_hit(fmv_id, edge)
+            {
+                c.skipped = true;
+            }
+            self.prev_pad = held_pad;
+        }
         let mut first_tick = true;
         for _ in 0..run_ticks {
             // A phase-gated capture stops ticking the frame its phase is

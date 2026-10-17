@@ -1346,6 +1346,7 @@ reverse-engineering questions, so they are not on
 | lit rows under the palette collapse | Not drift: both hosts run a lit row's shaded colour through the prologue's packet sepia, which the light kernel's output never meets in retail. See [light-source rows](#light-source-rows-in-a-graded-scene). |
 | cheats | One `World::cheat_*` call each. Every listed cheat is a launch switch natively and a runtime control on the page (`F6` / `F7` are runtime on both, through the [hotkey table](#host-hotkeys)); a GameShark file is a launch switch natively and pasted text on the page (`cheat_apply_codes`). |
 | launch switches | See [launch switches](#launch-switches-against-page-settings). |
+| title Continue | Native opens its own save select (`SaveSelectSession::for_rack`); the page opens the pause menu's Load row (`play_menu_open_row("Load")`), whose own gates can send the player back to the title. One session both reach is engineering work, not a gate. |
 | fishing wander readout | Native dev-menu aid for `FUN_801d2050`'s tracked points; no page twin by choice. |
 | fishing exchange panel pen | Native adds the venue overlay's idle sway (`FUN_801d03b0`). |
 | op `0x35` sub-op `8` | Open on purpose: `FUN_80019898` replays the record at `0x8007057C` through `FUN_80026478`, which in every captured state is silent, so the default no-op is faithful ([`audio.md`](../subsystems/audio.md#sub-op-8-replays-an-empty-record)). |
@@ -1507,9 +1508,17 @@ vocabulary (`F1`..`F9` except `F5`, `I`, `Y`, `T`, `R`) are one table,
 The native window's `option_key` resolves winit's `KeyCode` through it (the
 variant's `Debug` name is the `KeyboardEvent.code` string); the page's
 keydown asks `play_host_hotkey(event.code)`. Both refuse the field-only keys
-(`F3`, `T`, `R`) under a front-end screen (`HostHotkey::needs_field`), and
-both make an options key's edit through `apply_options_hotkey` before
-persisting, so `I`, `F8`, `F9`, `T`, `R` and `F2` are one code path. What a
+(`F3`, `T`, `R`) under a front-end screen through one rule,
+`HostHotkey::refused` over a `FrontEndScreens` each host fills field by field
+(logos, title, save select, pause menu, game over) - the page used to test
+the shared predicate against its title and logos alone, so `T` / `R` edited
+and persisted options behind its pause menu. Both make an options key's edit
+through `apply_options_hotkey` before persisting, so `I`, `F8`, `F9`, `T`,
+`R` and `F2` are one code path. A persisted write goes through
+`OptionsPins::persistable` on both hosts: the knobs a session pins (`--retail`
+or the page's retail box, `--no-volumetric-fog`) persist as they were before
+the pin, every other row with the session's edits. The window used to save its
+fog override; the page dropped every edit made under its retail box. What a
 host adds is only what it holds alone: the window's renderer toggles, its
 diagnostic text rows and debug vantage; the page's checkboxes (mirrored from
 the stored option, or clicked for the keys that stand for a page control) and
@@ -2009,9 +2018,14 @@ dropped at the `BattleActionHost` trait default. Oracles:
 
 ### Minigames
 
-Every native minigame hotkey arms the mode-24 door warp
+The native minigame hotkeys (`K`, `O`, `M`, `B`) arm the mode-24 door warp
 (`World::request_minigame_warp`; page `play_mg_debug_warp`), so a launcher and
-a walked door reach one session through `SceneHost::drain_minigame_warp`.
+a walked door reach one session through `SceneHost::drain_minigame_warp`. `K`
+built a Qualifier floor of its own until it took the warp, so the dance it
+opened ignored the story flags the hall's floor is read from. Two launchers
+stay direct on purpose: `U` (the how-to floor, which no flag state in a
+launcher reaches) and fishing (`L`, and the page's `play_fishing_start`,
+alike).
 
 ### The minigame side-channel step is paired; its contents are not
 

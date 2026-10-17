@@ -195,7 +195,7 @@ impl PlayWindowApp {
             card: mounted_card,
             port1_card,
             save_flow: legaia_engine_menus::save_screen::SaveScreenFlow::new(),
-            options_before_retail_pin: None,
+            options_pins: Default::default(),
             options_state: {
                 let mut o = legaia_engine_menus::options::OptionsState::load_or_default(
                     &std::path::PathBuf::from(OPTIONS_CONFIG_FILE),
@@ -268,8 +268,7 @@ impl PlayWindowApp {
         // `--retail` pins the persisted engine-only options for this session
         // only, the way the fog override below does: nothing is written back.
         if fidelity.retail {
-            self.options_before_retail_pin = Some(self.options_state.clone());
-            self.options_state.pin_retail();
+            self.options_pins.pin_retail(&mut self.options_state);
         }
         self.psx_render |= fidelity.psx_render;
         if let Some(info) = self.session.equip_restrictions.clone() {
@@ -278,9 +277,15 @@ impl PlayWindowApp {
         }
 
         // `--no-volumetric-fog` (and a recording, which stays on the faithful
-        // render) lowers the volumetric ground-fog option for this session only:
-        // the window never writes the override back unless `F9` is pressed.
+        // render) lowers the volumetric ground-fog option for this session
+        // only: the knob is pinned, so a save writes the stored value back
+        // (it used to write the override into the options file on the next
+        // options close or hotkey).
         if !volumetric_fog {
+            self.options_pins.pin(
+                &self.options_state,
+                legaia_engine_menus::options::options_pin::VOLUMETRIC_FOG,
+            );
             self.options_state.volumetric_fog = false;
         }
         // Push the loaded options into their live consumers (audio downmix)

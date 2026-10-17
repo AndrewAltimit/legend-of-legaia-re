@@ -119,6 +119,9 @@ pub(super) struct WindowedCutscene {
     /// which the page's movie lane runs too: the audio cursor, or the wall
     /// clock once the cursor has sat at zero past the stall window.
     pub(super) movie_clock: legaia_engine_system::movie::cutscene::MovieClock,
+    /// The player aborted the movie (`fmv_skip_edge_hit`): the next redraw
+    /// ends it as a drained one.
+    pub(super) skipped: bool,
 }
 
 /// Pre-decoded publisher-logos atlas + GPU upload. Created once at boot
@@ -871,12 +874,12 @@ pub(super) struct PlayWindowApp {
     /// to the Options screen's [`OptionsSession`] and persisted via
     /// the engine's options round-trip path.
     pub(super) options_state: legaia_engine_menus::options::OptionsState,
-    /// The options as loaded, before `--retail` pinned the engine-only
-    /// knobs for the session (`None` without the flag). A save writes the
-    /// pinned knobs back from here ([`OptionsState::unpinned_over`]).
-    ///
-    /// [`OptionsState::unpinned_over`]: legaia_engine_menus::options::OptionsState::unpinned_over
-    pub(super) options_before_retail_pin: Option<legaia_engine_menus::options::OptionsState>,
+    /// The engine-only knobs this session overrides without the player
+    /// choosing it (`--retail`, `--no-volumetric-fog`, a recording). A save
+    /// writes them as they were before the pin
+    /// ([`legaia_engine_menus::options::OptionsPins::persistable`], the
+    /// browser page's rule too).
+    pub(super) options_pins: legaia_engine_menus::options::OptionsPins,
     /// Opt-in dynamic-lighting enhancement (NON-RETAIL - the field path has
     /// no light source). Seeded from `--dynamic-lighting`, toggled at
     /// runtime with the `I` key; mirrored into the renderer via
