@@ -12,7 +12,11 @@ use super::*;
 fn the_module_context_takes_ctx0_from_the_party_row() {
     use legaia_engine_battle_vm::cast_module_ticks::FIRST_MONSTER_SEAT;
     let mut world = module_code_world();
-    // Eight seated combat actors, three of them party.
+    // Eight seated combat actors, three of them party; `ctx[+1]` counts the
+    // seats a monster sits in.
+    for i in 1..8 {
+        world.actors[i].battle_monster_id = Some(1);
+    }
     world.party.party_count = 3;
     let ctx = world.cast_module_ctx();
     assert_eq!(ctx.party_count, 3, "ctx[+0] followed the actor table");

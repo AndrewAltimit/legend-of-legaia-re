@@ -24,7 +24,7 @@ const TRIGGER_FALLBACK_OFFSET: usize = 0x12000;
 /// Static topology, per-frame positions, and no allocation in the frame path.
 #[derive(Default)]
 pub(crate) struct DanceMarkers {
-    floor: legaia_engine_fishing::minigame_floor::MarkerFloor,
+    floor: legaia_engine_field::minigame_floor::MarkerFloor,
     /// Base positions - every span at its real world position.
     positions: Vec<f32>,
     uvs: Vec<i32>,
@@ -89,9 +89,9 @@ pub(super) fn bake_dance_markers(
     overlay: &[u8],
     origin: (f32, f32, f32),
 ) -> DanceMarkers {
-    use legaia_engine_fishing::minigame_floor as mf;
+    use legaia_engine_field::minigame_floor as mf;
 
-    let Some(script) = legaia_engine_fishing::dance_marker::MarkerScript::from_overlay(
+    let Some(script) = legaia_engine_field::dance_marker::MarkerScript::from_overlay(
         overlay,
         DANCE_OVERLAY_BASE_VA,
     ) else {

@@ -87,8 +87,8 @@ impl LureActor {
     ///
     /// PORT: FUN_801cf3bc (case 0x14 - the cast lure spawn)
     pub fn cast(anchor_x: i16, anchor_z: i16, facing: i16, frame_step: i32) -> Option<Self> {
-        let (sin, cos) = crate::minigame_floor::polar_tables();
-        let (dx, dz) = crate::minigame_floor::polar_offset(
+        let (sin, cos) = legaia_engine_field::minigame_floor::polar_tables();
+        let (dx, dz) = legaia_engine_field::minigame_floor::polar_offset(
             facing as u32,
             LURE_CAST_RADIUS,
             frame_step.max(1),
@@ -149,7 +149,7 @@ impl LureActor {
         }
         let tile_x = (x as i32) >> LURE_TILE_SHIFT;
         let tile_z = (self.z as i32) >> LURE_TILE_SHIFT;
-        let grid = crate::minigame_floor::FloorGrid::new(map);
+        let grid = legaia_engine_field::minigame_floor::FloorGrid::new(map);
         if grid.cell(tile_x, tile_z) & CELL_WATER_BIT == 0 {
             return out;
         }

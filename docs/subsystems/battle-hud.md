@@ -306,6 +306,14 @@ for the Done hold's close:
 - the item band's `0x3E` arm (`0x801E404C`), reached from a single branch at
   `0x801E3E88` off its non-gauge-extend path, for any caster.
 
+The close is the Done band's, so the panels hold through every band the action
+runs before it - including the capture band `0x6E..=0x71`, whose state bytes
+sit above `0x51` but which exits into `0x50`. A boss special is such an action:
+`cort_mystic_circle_mid_cast`, `cort_evil_seru_magic_mid_cast` and
+`zeto_big_wave_mid_cast` hold `0x70` / `0x6F` with Cort's or Zeto's `+0x1DD`
+at `8` and all three panels up. Port: `battle_panels_visible` keeps them open
+below `0x52` and across `0x68..=0x71`.
+
 So a party member's magic cast on the whole party keeps them parked at the
 seed: `orb_summon_mid_cast` holds `ctx[+0x18] = 0` with Orb's `+0x1DD` at
 `8`. A cast module can raise them itself. PROT 0911 (Orb) arm 9's pass calls

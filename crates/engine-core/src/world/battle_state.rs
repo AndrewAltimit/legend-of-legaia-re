@@ -287,6 +287,13 @@ pub struct BattleState {
     /// long walk-in hardens the opening hit. Zeroed with
     /// [`Self::attack_ramp`].
     pub(crate) guard_ramp: i16,
+    /// `ctx[+0x0A]` - the melee kernel's **juggle** counter. Every hit
+    /// `FUN_801EC3E4` resolves rewrites it (`0x801ECA20..0x801ECA80`): `1`
+    /// when the defender holds its block entry (`+0x1D9 == +0x1F3`), the
+    /// previous value plus one while the defender's `+0x1F7` juggle window
+    /// is up, `1` otherwise. The damage roll adds `(juggle * ATK) >> 6` to the
+    /// offense and `(juggle * raw) >> 6 + juggle` to the underdog rewrite.
+    pub(crate) juggle: u8,
     /// Per-party-slot Fury Boost state for the current battle: `Some(delta)` is
     /// the AP added to that slot's gauge by the class-5 Fury Boost item (retail
     /// actor `+0x1F9` flag). Reverted wholesale at battle end (`finish_battle`),
@@ -340,7 +347,7 @@ pub struct BattleState {
     /// are wired: Attack strikes; Arts opens the per-press
     /// [`crate::world::BattleState::arts_input`] (the saved-chain
     /// [`crate::world::BattleState::arts_menu`] is the legacy path, behind
-    /// `LEGAIA_ARTS_SAVED_LIST=1`); Magic / Item open
+    /// `WorldToggles::arts_saved_list`); Magic / Item open
     /// [`crate::world::BattleState::spell_menu`] / [`crate::world::BattleState::item_menu`].
     pub player_driven: bool,
     /// Active command-selection session for the player-driven battle. `Some`
@@ -379,7 +386,7 @@ pub struct BattleState {
     /// party member is entering commands / reviewing / picking the Begin
     /// target; the action SM and [`crate::world::BattleState::command`] are parked
     /// meanwhile. The saved-chain list ([`crate::world::BattleState::arts_menu`]) is the
-    /// legacy path, kept reachable via `LEGAIA_ARTS_SAVED_LIST=1`.
+    /// legacy path, kept reachable via `WorldToggles::arts_saved_list`.
     pub arts_input: Option<legaia_engine_battle::arts_command_input::ArtsCommandInputSession>,
     /// Per-party-slot **swing costs** for the Arts command gauge: the four
     /// `+0x74` AP prices (Left / Right / Down / Up = runtime action slots
@@ -421,6 +428,17 @@ pub struct BattleState {
     /// standing,
     /// instead of on a fresh roll. `None` on every ordinary fight.
     pub forced_monster_target: Option<u8>,
+    /// A debug seed that makes the next party killing blow's steal roll
+    /// land - the retail comparison corpus's way into a capture that shows
+    /// the death-spoils caption: the capture holds the outcome of a
+    /// `rand() % 100` the replay's stream does not share. The roll still
+    /// draws, so the stream advances as retail's did. `false` on every
+    /// ordinary fight; consumed (taken) by the roll.
+    pub forced_steal: bool,
+    /// The same seed for a capture whose kill absorbed a Seru (`ctx[+0x269]`
+    /// staged): the next party killing blow's absorb roll lands. Drawn and
+    /// consumed like [`Self::forced_steal`].
+    pub forced_absorb: bool,
     /// The commit log's launch glide - retail's `0x35 + i` clones gliding the
     /// log off the left edge when the member leaves the ring for a sub-screen
     /// and back when they return
@@ -857,6 +875,7 @@ impl BattleState {
             guarding: [false; 3],
             attack_ramp: 0,
             guard_ramp: 0,
+            juggle: 0,
             fury_boost: [None; 3],
             buffs: Vec::new(),
             escaped: false,
@@ -882,6 +901,8 @@ impl BattleState {
             inflight_seed: None,
             forced_monster_cast: None,
             forced_monster_target: None,
+            forced_steal: false,
+            forced_absorb: false,
             commit_log_launch: None,
             action_plaque_glide: None,
             target_plaque_glide: None,

@@ -16,10 +16,7 @@ use legaia_engine_render::{
 use legaia_engine_scene::scene::Scene;
 use legaia_engine_scene::scene_resources::{BuildOptions, SceneLoadKind, SceneResources};
 use legaia_engine_session::native::NativeSession;
-use legaia_engine_ui::{
-    HudPopupView, HudSlotMeta, HudSlotView, TextDraw, battle_hud_draws_for,
-    encounter_banner_draws_for, text_draws_for,
-};
+use legaia_engine_ui::{TextDraw, text_draws_for};
 use legaia_font::Font;
 use std::path::Path;
 use winit::application::ApplicationHandler;
@@ -141,12 +138,6 @@ const OPTIONS_CONFIG_FILE: &str = "legaia-options.toml";
 pub(super) const INPUT_CONFIG_FILE: &str = "legaia-input.toml";
 
 impl PlayWindowApp {
-    /// Content rect for a menu window id: the disc-parsed descriptor when
-    /// available, else the shared pinned mirror.
-    fn menu_window_rect(&self, id: usize) -> (i32, i32, i32, i32) {
-        legaia_engine_ui::pause_menu::MenuRects::new(self.menu_window_table.as_ref()).rect(id)
-    }
-
     /// Advance `World::clock.play_time_seconds` off the window's wall clock,
     /// through the engine's one play-clock law (`World::tick_play_clock`) -
     /// the browser page's `tick_play_clock` calls the same kernel. The origin
@@ -201,26 +192,6 @@ impl PlayWindowApp {
             // default level is unity, the retail mix.
             audio.set_bus_volumes(self.options_state.bgm_volume, self.options_state.sfx_volume);
         }
-    }
-
-    /// Content rect for the options value popup (window descriptor id 47:
-    /// x/w from the table, y/h stamped per-open by the retail SM
-    /// `FUN_801da9f8` off the id-48 settings window's y + the cursor
-    /// row's layout offset).
-    fn options_popup_rect(
-        &self,
-        popup: &legaia_engine_menus::options::OptionsPopup,
-    ) -> (i32, i32, i32, i32) {
-        use legaia_game_tables::menu_windows::window_ids;
-        let (px, _, pw, _) = self.menu_window_rect(window_ids::OPTIONS_POPUP);
-        let (_, sy, _, _) = self.menu_window_rect(window_ids::OPTIONS_MAIN);
-        legaia_engine_menus::options::options_popup_content_rect(
-            sy,
-            px,
-            pw,
-            popup.row,
-            popup.choices.len(),
-        )
     }
 }
 

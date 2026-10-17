@@ -790,6 +790,6 @@ Three tells, any one of which settles it, all read off the printed disassembly:
 The repair is to replace the fabricated body with a hexdump under a header that
 says the window is data. That removes the citations - hex bytes carry no
 `jal 0x` prefix - while keeping the address resolvable for anyone who follows
-the old citation. `ghidra/scripts/dump_wave_closeout.py` does this as its
+the old citation. `ghidra/scripts/dump/dump_wave_closeout.py` does this as its
 `"data"` kind, alongside the `"label"` kind that writes the citation-pointer
 file for an interior VA.

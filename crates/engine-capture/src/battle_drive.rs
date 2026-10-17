@@ -48,9 +48,14 @@ pub enum BattleDrive {
     /// ([`entry_sweep_reached`]).
     Opening { swept: bool, entry: u8 },
     /// A command-selection surface on party seat `seat`: members ahead of
-    /// it commit a plain Attack, the seat itself takes the arm that leads
-    /// to `flow`.
-    Menu { flow: BattleFlowState, seat: u8 },
+    /// it commit a plain Attack, or Spirit for each seat set in `spirit`
+    /// (the retail commit each member's `+0x1DE` holds, which the commit
+    /// log draws), and the seat itself takes the arm that leads to `flow`.
+    Menu {
+        flow: BattleFlowState,
+        seat: u8,
+        spirit: u8,
+    },
     /// An action in flight: rounds are committed (a plain Attack each, the
     /// capture's own seat Spirit when that is what it had committed) until
     /// the action SM holds `state` on `seat`. A monster seat that was
@@ -487,7 +492,10 @@ impl BattleDrive {
     pub fn to_env(&self) -> String {
         match *self {
             Self::Opening { swept, entry } => format!("opening,{},{entry}", u8::from(swept)),
-            Self::Menu { flow, seat } => format!("menu,{},{seat}", flow.raw()),
+            Self::Menu { flow, seat, spirit } if spirit != 0 => {
+                format!("menu,{},{seat},{spirit}", flow.raw())
+            }
+            Self::Menu { flow, seat, .. } => format!("menu,{},{seat}", flow.raw()),
             Self::Action {
                 seat,
                 state,
@@ -652,6 +660,12 @@ impl BattleDrive {
             ("menu", &[flow, seat]) => Some(Self::Menu {
                 flow: BattleFlowState::from_raw(flow),
                 seat,
+                spirit: 0,
+            }),
+            ("menu", &[flow, seat, spirit]) => Some(Self::Menu {
+                flow: BattleFlowState::from_raw(flow),
+                seat,
+                spirit,
             }),
             ("action", &[seat, state, category, queued]) => Some(Self::Action {
                 seat,
@@ -724,6 +738,24 @@ impl BattleDrive {
             && let Some(queue) = steer.queue
         {
             seed_entered_arrows(world, seat, &queue);
+        }
+        // A capture showing the steal caption holds a landed `rand() % 100`
+        // the replay's stream does not share: the outcome is the capture's,
+        // so it is seeded rather than searched for across streams (a search
+        // let any change to the swing's draws decide whether the phase was
+        // reachable at all).
+        if let Self::Action { seat, steer, .. } = *self
+            && seat < 3
+            && steer.spoils
+        {
+            world.battle.forced_steal = true;
+        }
+        // Likewise the absorb roll of a capture whose kill took a Seru.
+        if let Self::Action { seat, absorbed, .. } = *self
+            && seat < 3
+            && absorbed != 0
+        {
+            world.battle.forced_absorb = true;
         }
         if let Self::Action { seat, absorbed, .. } = *self
             && absorbed != 0
@@ -816,7 +848,7 @@ impl BattleDrive {
             }
             // A menu capture is a surface the player sat on: the camera has
             // arrived at its framing, so the frame waits out the glide.
-            Self::Menu { flow, seat } => {
+            Self::Menu { flow, seat, .. } => {
                 world.battle.flow == flow
                     && (!menu_seat_matters(flow) || world.battle_ctx.active_actor == seat)
                     && !world.battle.camera.as_ref().is_some_and(|c| c.is_gliding())
@@ -1091,10 +1123,15 @@ impl BattleDrive {
         let cmd = world.battle.command.as_ref()?;
         match *self {
             Self::Opening { .. } => None,
-            Self::Menu { flow, seat } => {
+            Self::Menu { flow, seat, spirit } => {
                 let ours = cmd.actor == seat && flow != BattleFlowState::CommitBegin;
                 match cmd.phase {
                     CommandPhase::RoundPrompt { .. } => Some(PadButton::Left),
+                    CommandPhase::Menu { .. }
+                        if !ours && cmd.actor < seat && spirit & (1 << cmd.actor) != 0 =>
+                    {
+                        Some(PadButton::Down)
+                    }
                     CommandPhase::Menu { .. } if !ours => Some(PadButton::Left),
                     CommandPhase::Menu { .. } => match flow {
                         BattleFlowState::ItemWindow => Some(PadButton::Up),

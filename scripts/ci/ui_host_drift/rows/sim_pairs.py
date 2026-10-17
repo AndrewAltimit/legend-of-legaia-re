@@ -250,20 +250,11 @@ SIM_PAIRS: list[dict[str, object]] = [
         "mode": "symbols_all",
         "symbols": ["step_effect_scene_graphs"],
     },
-    {
-        "what": "dialog picker option labels, native vs play page - both "
-        "printed `legaia_mes::PickerOption::label`, which carries no name "
-        "escapes, so a choice naming a party member drew a blank where the "
-        "name belongs on either host. Both read "
-        "`OwnedDialogPanel::picker_labels`, resolved through the panel's "
-        "substitution table",
-        "sites": {
-            "native": ("crates/engine-shell/src/window/hud/dialog.rs", "dialog_snapshot"),
-            "web": ("crates/web-viewer/src/play_dialog.rs", "from_panel"),
-        },
-        "mode": "symbols_all",
-        "symbols": ["picker_labels"],
-    },
+    # The "dialog picker option labels" row (both snapshots must read
+    # `OwnedDialogPanel::picker_labels`) is gone because the second snapshot
+    # is: both hosts snapshot the pager through
+    # `legaia_engine_screens::dialog_screens::dialog_snapshot`, which reads
+    # `picker_labels` once. A re-duplicated snapshot needs the row back.
     {
         "what": "movie pacing, native in-window FMV vs play page - the page "
         "re-implemented the audio-cursor rule in play-fmv.js with a stall "
@@ -503,21 +494,11 @@ SIM_PAIRS: list[dict[str, object]] = [
         "mode": "symbols_all",
         "symbols": ["arm_for_battle"],
     },
-    {
-        "what": "Options screen model, native vs play page - the rows, the "
-        "hand's row offset and the Key Config rows were derived once per "
-        "host from the session. Both Options builders must read "
-        "`OptionsSession::screen_model`",
-        "sites": {
-            "native": (
-                "crates/engine-shell/src/window/menu_draws.rs",
-                "field_menu_sub_draws",
-            ),
-            "web": ("crates/web-viewer/src/play_menu/panel_draws.rs", "build_config"),
-        },
-        "mode": "symbols_all",
-        "symbols": ["screen_model"],
-    },
+    # The "Options screen model" row (both Options builders must read
+    # `OptionsSession::screen_model`) is gone because the second builder is:
+    # both hosts draw the Options screen through
+    # `legaia_engine_screens::pause_screens::options_draws`, so the model is
+    # read once. A re-duplicated Options projection needs the row back.
     {
         "what": "camera-occlusion fade gate, native vs play page - the gate "
         "ray-casts the player's body cross from the eye, and the cross is "
@@ -735,13 +716,15 @@ SIM_PAIRS: list[dict[str, object]] = [
         "(`SaveScreenFlow::overlay_model`, which reads `phase_layout`) and one "
         "composition (`save_select_overlay_draws`), whose text half draws "
         "without the chrome atlas - the page had returned before every phase "
-        "overlay without it. Both sites must call both",
+        "overlay without it. Both sites route through the shared "
+        "`engine-screens::pause_screens::save_select_overlay_draws`, which "
+        "reads `overlay_model` once",
         "sites": {
             "native": (NATIVE_TITLE_SAVE, "save_select_overlay"),
             "web": (WEB_PLAY_MENU_SUB_SCREEN_DRAWS, "build_save_select"),
         },
         "mode": "symbols_all",
-        "symbols": ["overlay_model", "save_select_overlay_draws"],
+        "symbols": ["save_select_overlay_draws"],
     },
     {
         "what": "shop / inn / prize / coin overlay stage transform, native "

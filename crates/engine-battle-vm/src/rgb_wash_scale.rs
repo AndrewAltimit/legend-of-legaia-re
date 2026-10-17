@@ -8,7 +8,7 @@
 //! REF: FUN_8004695C (the arm whose drain `scale_rgb24` is the maths of)
 //! REF: FUN_80024EE4 (that drain's submit)
 //!
-//! # NOT WIRED
+//! # Why no host calls it
 //!
 //! [`scale_rgb24`] is the **drain of the armed wash**, and every part of that
 //! protocol has an engine form - which is exactly why wiring it would be a

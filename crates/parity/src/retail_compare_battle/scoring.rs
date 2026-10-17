@@ -160,7 +160,7 @@ pub fn compare_battle(
         "phase",
         f64::from(u8::from(phase_ok)),
         format!(
-            "retail flow=0x{:02X} ({want:?}) action=0x{:02X} run=0x{:02X} seat={} cat={} queued=0x{:02X} clip=0x{:02X}; engine {:?} action=0x{:02X} seat={} (first prompt at +{:?}){inflight}{driven}",
+            "retail flow=0x{:02X} ({want:?}) action=0x{:02X} run=0x{:02X} seat={} cat={} queued=0x{:02X} clip=0x{:02X} target={}; engine {:?} action=0x{:02X} seat={} target={} (first prompt at +{:?}){inflight}{driven}",
             battle.flow,
             battle.action_state,
             battle.run_state,
@@ -168,9 +168,11 @@ pub fn compare_battle(
             battle.queued_category,
             battle.queued_action,
             battle.caster_clip,
+            battle.target_code,
             engine.flow,
             engine.action_state,
             engine.active_actor,
+            engine.active_target,
             engine.prompt_tick
         ),
     );

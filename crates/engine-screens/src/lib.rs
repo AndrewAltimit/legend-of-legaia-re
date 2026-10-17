@@ -203,3 +203,10 @@ pub fn shop_item_description(world: &World, id: u8) -> String {
 
 #[cfg(test)]
 mod tests;
+
+// --- lane L6 ---
+pub mod battle_screens;
+pub mod dialog_screens;
+pub mod field_screens;
+pub mod pause_screens;
+// --- end lane L6 ---

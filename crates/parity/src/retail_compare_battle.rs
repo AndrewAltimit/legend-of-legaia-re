@@ -267,6 +267,9 @@ pub struct RetailBattle {
     pub backdrop_slot_1_yaw: u16,
     /// `0x8007BD10[0..party_count]`.
     pub seat_chars: Vec<u8>,
+    /// Each party seat's committed action category `+0x1DE` (`4` = Spirit).
+    /// For the seats a menu capture's member follows, this round's commit.
+    pub party_categories: Vec<u8>,
     /// Formation-cell ids, trimmed to the monster count.
     pub monster_ids: Vec<u8>,
     /// Party slots `0..party_count` (fixed pool slots).
@@ -426,8 +429,6 @@ pub use results_undo::*;
 /// the headless side takes.
 pub const BATTLE_CAPTURE_TICK: u64 = 320;
 
-/// The `play-window` arguments that reproduce this fight: the MAN row and
-/// the retail party composition (`0x8007BD10` ids are 1-based roster ids).
 /// Retail's present list as 0-based roster slots (`0x8007BD10` holds 1-based
 /// roster ids; `4` is the guest / AI-companion record).
 fn retail_roster_slots(battle: &RetailBattle) -> Vec<u8> {
@@ -439,8 +440,25 @@ fn retail_roster_slots(battle: &RetailBattle) -> Vec<u8> {
         .collect()
 }
 
-pub fn play_window_args(battle: &RetailBattle, row: u16) -> Vec<String> {
-    let mut args = vec!["--battle".to_string(), row.to_string()];
+impl RetailBattle {
+    /// The fight's formation cell, as [`FormationCell::register`] stands it
+    /// up where no MAN row carries it.
+    ///
+    /// [`FormationCell::register`]: legaia_engine_capture::formation_cell::FormationCell::register
+    pub fn formation_cell(&self) -> legaia_engine_capture::formation_cell::FormationCell {
+        legaia_engine_capture::formation_cell::FormationCell {
+            ids: self.monster_ids.clone(),
+            scripted: self.scripted,
+        }
+    }
+}
+
+/// The `play-window` arguments that reproduce this fight: the MAN row (or,
+/// with none, the formation cell the headless seed registered) and the
+/// retail party composition (`0x8007BD10` ids are 1-based roster ids).
+pub fn play_window_args(battle: &RetailBattle, row: Option<u16>) -> Vec<String> {
+    let entry = row.map_or_else(|| battle.formation_cell().to_spec(), |r| r.to_string());
+    let mut args = vec!["--battle".to_string(), entry];
     let party: Vec<String> = retail_roster_slots(battle)
         .iter()
         .map(|c| c.to_string())

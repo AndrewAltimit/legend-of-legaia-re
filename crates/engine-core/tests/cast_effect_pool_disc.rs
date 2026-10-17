@@ -735,3 +735,65 @@ fn a_live_cast_stages_its_module_records() {
         );
     }
 }
+
+/// The summon-creature directors' per-arm spawn tables
+/// (`cast_module_camera::creature_arm_spawns`) were read off the
+/// disassembly; every record they name parses as a record of the image
+/// (most are ones its own spawn-site scan recovers), so a mistyped `a2`
+/// would show here.
+#[test]
+fn every_creature_arm_spawn_names_a_record_of_its_module() {
+    let Some(dir) = extracted_dir() else {
+        eprintln!("[skip] creature arm spawns: no LEGAIA_DISC_BIN / extracted/");
+        return;
+    };
+    let pool = build_pool(&dir);
+    let base = legaia_overlay_images::summon_overlay::SUMMON_OVERLAY_LINK_BASE;
+    for entry in cmc::CREATURE_SPAWN_ENTRIES
+        .into_iter()
+        .chain(cmc::CAPTURE_SPAWN_ENTRIES)
+    {
+        let m = pool.module(entry).expect("module loaded");
+        let known: std::collections::BTreeSet<u32> =
+            m.parts.iter().map(|p| base + p.record_off as u32).collect();
+        let mut named = std::collections::BTreeSet::new();
+        for phase in 0..=u8::MAX {
+            for timing in [cmc::SpawnTiming::Pass, cmc::SpawnTiming::Every] {
+                let capture = if timing == cmc::SpawnTiming::Pass {
+                    cmc::capture_arm_spawns(entry, phase)
+                } else {
+                    &[]
+                };
+                for s in cmc::creature_arm_spawns(entry, phase, timing)
+                    .iter()
+                    .chain(capture)
+                {
+                    let cmc::SpawnRecord::Module(va) = s.record else {
+                        panic!("PROT {entry} arm {phase:#x}: a module record");
+                    };
+                    // A site whose `a2` the image scan cannot follow (a
+                    // saved-register load) is parsed at its own offset, as
+                    // the host's seating does.
+                    let parsed = known.contains(&va)
+                        || legaia_overlay_images::summon_overlay::parse_records_at(
+                            &m.bytes,
+                            &[(va - base) as usize],
+                        )
+                        .iter()
+                        .any(|p| base + p.record_off as u32 == va);
+                    assert!(
+                        parsed,
+                        "PROT {entry} arm {phase:#x}: {va:#010X} is no record of the image"
+                    );
+                    named.insert(va);
+                }
+            }
+        }
+        assert!(!named.is_empty(), "PROT {entry} spawns something");
+        println!(
+            "[ok] PROT {entry}: {} of {} records seated by its arms (the rest by part stagers)",
+            named.len(),
+            known.len()
+        );
+    }
+}

@@ -70,7 +70,6 @@ dev = ["engine-camera", "engine-field"]
 [crates.engine-effects]
 role = "World-free effect kernels"
 deps = [
-    "engine-battle",
     "engine-battle-vm",
     "engine-system",
     "engine-vm",
@@ -90,7 +89,7 @@ deps = [
 ]
 
 [crates.engine-fishing]
-role = "fishing rules engine and the shared minigame venue floor"
+role = "fishing rules engine"
 deps = ["engine-field", "engine-system", "render-kernels"]
 
 [crates.engine-minigames]
@@ -98,7 +97,7 @@ role = "minigame rules engines"
 deps = [
     "engine-battle-vm",
     "engine-camera",
-    "engine-fishing",
+    "engine-field",
     "engine-system",
     "engine-vm",
     "render-kernels",
@@ -125,7 +124,7 @@ deps = [
     "engine-vm",
     "render-kernels",
 ]
-dev = ["engine-battle", "engine-fishing", "engine-menus", "engine-mode"]
+dev = ["engine-battle", "engine-menus", "engine-mode"]
 
 [crates.engine-minigame-scenes]
 role = "the minigames' 3D scene surfaces, venues and the World's minigame seat"
@@ -163,12 +162,6 @@ items = ["battle_intro_styles::INTRO_DURATION_FRAMES"]
 reason = "the encounter session's default transition length is the battle-intro model's, which sits with its draw half"
 
 [[coupling]]
-from = "engine-effects"
-to = "engine-battle"
-items = ["retail_magic::get"]
-reason = "the summon catalogue resolves a spell id to its name through the battle spell mirror"
-
-[[coupling]]
 from = "engine-menus"
 to = "engine-field"
 items = ["dev_equip_commit", "dev_menu_leaves", "dev_menu_adjust", "dev_menu_flags", "world_map_panel::{SFX_CURSOR_MOVE, dev_menu_action}", "incense_window::top_up_cooldown"]
@@ -177,8 +170,14 @@ reason = "the equip commit and the dev menu's row kernels are field-overlay dev-
 [[coupling]]
 from = "engine-fishing"
 to = "engine-field"
-items = ["field_regions"]
-reason = "a venue floor is a field .MAP walk grid with tile triggers, read through the field's region queries"
+items = ["minigame_floor", "field_regions"]
+reason = "the fishing venue stands on the shared minigame floor, a field .MAP walk grid with tile triggers read through the field's region queries"
+
+[[coupling]]
+from = "engine-minigames"
+to = "engine-field"
+items = ["dance_marker"]
+reason = "the dance floor's step markers are tile actors the shared minigame floor spawns from the field .MAP's tile triggers"
 
 [[coupling]]
 from = "engine-ui"

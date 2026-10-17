@@ -21,7 +21,7 @@ The SCUS string cluster at RAM `0x8007B380` (file offset `0x6BB80`) holds the fi
 
 ## Consumers
 
-Two SCUS functions touch the cluster (located via [`ghidra/scripts/find_sound_path_builders.py`](../../ghidra/scripts/find_sound_path_builders.py)). A third function the locator flags, `FUN_8001EBEC`, is not a sound consumer - see the note below the table:
+Two SCUS functions touch the cluster (located via [`ghidra/scripts/find/find_sound_path_builders.py`](../../ghidra/scripts/find/find_sound_path_builders.py)). A third function the locator flags, `FUN_8001EBEC`, is not a sound consumer - see the note below the table:
 
 | Function | Role | Touch points |
 |---|---|---|

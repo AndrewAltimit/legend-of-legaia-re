@@ -32,7 +32,7 @@
 <section class="doc-section" id="quick-start">
   <h2>Quick start</h2>
   <div class="cli"><code>docker compose up -d ghidra</code></div>
-  <div class="cli"><code>docker compose exec ghidra /ghidra/support/analyzeHeadless /projects legaia -process SCUS_942.54 -noanalysis -postScript /scripts/dump_funcs.py</code></div>
+  <div class="cli"><code>docker compose exec ghidra /ghidra/support/analyzeHeadless /projects legaia -process SCUS_942.54 -noanalysis -postScript /scripts/dump/dump_funcs.py</code></div>
   <p>Leave the container running and issue one <code>exec</code> per query. <code>-noanalysis</code> skips re-analysis on an already-analysed program; the script's output lands under <code>ghidra/scripts/</code> on the host.</p>
   <table>
     <thead><tr><th>Mount</th><th>Mode</th><th>Holds</th></tr></thead>
@@ -89,7 +89,7 @@ sw    a0, 0(v1)           ; the store Ghidra never attributes</code></pre>
   <h2>Adding a function dump</h2>
   <ol class="steps">
     <li><b>Add the entry point</b><span>Append the address to <code>TARGETS</code> in <code>dump_funcs.py</code> - SCUS-resident addresses only. Overlay addresses (<code>&gt;= 0x801C0000</code>) go in a per-overlay <code>dump_&lt;label&gt;_overlay.py</code>, run with <code>-process overlay_&lt;label&gt;.bin -noanalysis</code> against that overlay's own program - overlays sharing a load base hold different code at the same address. Each such script is a header, a <code>TARGETS</code> list and one <code>dump_targets(currentProgram, TARGETS)</code> call into the shared <code>lib_dump.py</code>, which skips addresses the program does not hold and prefixes output <code>overlay_&lt;label&gt;_</code> so aliased VAs cannot collide. <code>list_programs.py</code> names the programs; <code>report_program_bases.py</code> says where each is based - check it before trusting printed addresses. <code>ghidra/scripts</code></span></li>
-    <li><b>Dump just that one</b><span><code>docker compose exec -e DUMP_ONLY=8002735c ghidra ... -postScript /scripts/dump_funcs.py</code>. Without <code>DUMP_ONLY</code> the whole catalogue re-dumps. The variable is read inside the container, so it must travel via <code>exec -e</code>. <code>dump_funcs.py</code></span></li>
+    <li><b>Dump just that one</b><span><code>docker compose exec -e DUMP_ONLY=8002735c ghidra ... -postScript /scripts/dump/dump_funcs.py</code>. Without <code>DUMP_ONLY</code> the whole catalogue re-dumps. The variable is read inside the container, so it must travel via <code>exec -e</code>. <code>dump_funcs.py</code></span></li>
     <li><b>Read the disassembly</b><span>Open <code>funcs/&lt;addr&gt;.txt</code>. Port and document from the instruction stream; the C is a hint about where to look (see <a href="#decompiler-artifacts">artifacts</a>). <code>funcs/</code></span></li>
     <li><b>Record it</b><span>Notable entry points join the <a href="../reference/functions.html">function directory</a>; a port carries a <code>// PORT: FUN_&lt;addr&gt;</code> tag the <a href="port-catalog.html">catalog</a> reads.</span></li>
   </ol>
@@ -97,38 +97,39 @@ sw    a0, 0(v1)           ; the store Ghidra never attributes</code></pre>
 
 <section class="doc-section" id="script-catalogue">
   <h2>Script catalogue</h2>
+  <p>The scripts sit in bucket subdirectories of <code>ghidra/scripts/</code> (<code>dump/</code>, <code>find/</code>, <code>inventory/</code>, <code>repair/</code>, <code>symbols/</code>, <code>import/</code>, shared modules in <code>lib/</code>, one-offs in <code>archive/</code>); outputs and the <code>funcs/</code> corpus stay at the top level. Run a script by its absolute container path, <code>-postScript /scripts/dump/dump_funcs.py</code>: headless Ghidra neither searches <code>-scriptPath</code> recursively nor puts a script's own directory on the Jython path, so a script importing from <code>lib/</code> adds <code>/scripts/lib</code> itself.</p>
   <p>All Jython, run inside the container with <code>-postScript</code>; edit the constants at the top of a script to aim it. Without the <code># @runtime Jython</code> header the analyzer routes a <code>.py</code> to the PyGhidra provider the image does not enable.</p>
   <table>
     <thead><tr><th>Family</th><th>Script</th><th>Purpose</th></tr></thead>
     <tbody>
-      <tr><td rowspan="2">Symbols</td><td><code>apply_known_symbols.py</code></td><td>Re-apply the project's pinned function names and one-line comments to a fresh import (SCUS range only)</td></tr>
-      <tr><td><code>dump_globals.py</code></td><td>Authoritative <code>DAT_</code> names + lengths for the probe symbol resolver</td></tr>
-      <tr><td rowspan="8">Dumps</td><td><code>dump_funcs.py</code></td><td>Disassembly + C for a <code>TARGETS</code> list of SCUS entry points</td></tr>
-      <tr><td><code>dump_&lt;label&gt;_overlay.py</code>, <code>lib_dump.py</code></td><td>The per-overlay dumper family (title, shop / menu, dialog, cutscene, level-up, world map, save UI, minigames, ...) over one shared <code>dump_targets</code> body</td></tr>
-      <tr><td><code>dump_wave_closeout.py</code></td><td>Works the <a href="port-catalog.html">port catalog</a>'s <code>--missing-dumps</code> worklist, separating real function entries from citation artifacts such as interior addresses</td></tr>
-      <tr><td><code>dump_pending_helpers.py</code></td><td>The overlay-aware pattern: one target list, <code>in_program()</code> skips absent addresses, output prefixed per program</td></tr>
-      <tr><td><code>dump_scus_gaps.py</code></td><td>Dumps every function inside address <code>RANGES</code> from the <a href="disc-coverage.html">disc-coverage</a> gap worklist; <code>FORCE_RANGES</code> force-disassembles uncovered runs</td></tr>
-      <tr><td><code>repair_truncated_dumps.py</code></td><td>Rebuilds dumps whose body ends before the routine does (tracks the highest forward branch target, so an early <code>jr ra</code> is not the end)</td></tr>
-      <tr><td><code>force_disasm_dump.py</code></td><td>Create + dump functions Ghidra missed (JALR-only entries); targets from <code>force_disasm_targets.txt</code></td></tr>
-      <tr><td><code>dump_&lt;subsystem&gt;_*.py</code></td><td>Per-cluster dumpers (battle render tail, effect overlay 0967, field locomotion, arts input, 4C jump tables, menu inventory refs, terrain trigger, field loader trace)</td></tr>
-      <tr><td rowspan="6">Address resolution</td><td><code>find_lui_writers.py</code></td><td>Generic LUI+ADDIU resolver over a <code>[LO, HI]</code> range</td></tr>
-      <tr><td><code>find_addr_materializers.py</code></td><td>Per-address materializer sites with use-classification context</td></tr>
-      <tr><td><code>find_addr_data_xref.py</code>, <code>find_addr_const_allprogs.py</code></td><td>One address as a data word or a <code>lui</code>+<code>addiu</code> / <code>lui</code>+<code>ori</code> target in one pass - in the current program, or swept across every program</td></tr>
-      <tr><td><code>find_addr_data.py</code>, <code>find_data_word.py</code></td><td>The address as a 4-byte word in memory - function-pointer tables, with surrounding dwords</td></tr>
-      <tr><td><code>find_terrain_emitter_caller.py</code></td><td>Reference manager + LUI/ORI + <code>jal</code>/<code>j</code> sweep for a target set across every imported overlay</td></tr>
-      <tr><td><code>find_string_xrefs.py</code></td><td>Dev-path string literals to RAM addresses and every code site referencing them</td></tr>
-      <tr><td rowspan="5">Callers</td><td><code>find_callers_of.py</code></td><td>Direct callers of <code>TARGETS_HEX</code></td></tr>
-      <tr><td><code>find_jal_target.py</code>, <code>find_jal_allprogs.py</code></td><td>Every <code>jal</code> to a target in the current program, or <code>jal</code> / jump / branch across every program, independent of the reference manager</td></tr>
-      <tr><td><code>find_jal_rawbytes_allprogs.py</code>, <code>find_refs_allprogs.py</code></td><td>Raw-byte <code>jal TARGET</code> sweep (catches never-disassembled regions); reference-manager query in every program</td></tr>
-      <tr><td><code>dispatcher_callers.py</code></td><td>Callers of the asset dispatcher and the LZS decoder</td></tr>
-      <tr><td><code>find_jalr_handlers.py</code></td><td>Dispatch-table indirect calls (<code>lw R, +0x10(...)</code> then <code>jalr R</code>)</td></tr>
-      <tr><td rowspan="5">Overlays</td><td><code>find_overlay_candidates.py</code></td><td>Host-side: ranks PROT entries by MIPS-code likelihood</td></tr>
-      <tr><td><code>import_overlay.sh</code>, <code>dump_overlay.lua</code></td><td>Import a captured RAM window as raw binary; the PCSX-Redux dumper that captures it</td></tr>
-      <tr><td><code>find_overlay_calls.py</code>, <code>find_overlay_asset_loads.py</code></td><td>Every call into the overlay region; every <code>jal</code> to a known asset loader with its constant PROT index</td></tr>
-      <tr><td><code>inventory_overlay.py</code>, <code>list_overlay_functions.py</code></td><td>Per-program function inventory CSV; size-sorted listing</td></tr>
-      <tr><td><code>list_programs.py</code>, <code>report_program_bases.py</code></td><td>What is imported, and where each program thinks it lives - the fact that decides whether its dumps are usable</td></tr>
-      <tr><td>Game modes</td><td><code>find_game_mode_*.py</code>, <code>find_gp_init_and_mode_table.py</code>, <code>find_per_mode_callers.py</code></td><td>The game-mode dispatcher, its writers, the 28-entry mode table at <code>0x8007078C</code> and its handlers' callers</td></tr>
-      <tr><td>Whole-program</td><td><code>explore.py</code></td><td>JSON report: LZSS-fingerprint score per function, every string and its inbound xrefs</td></tr>
+      <tr><td rowspan="2">Symbols</td><td><code>symbols/apply_known_symbols.py</code></td><td>Re-apply the project's pinned function names and one-line comments to a fresh import (SCUS range only)</td></tr>
+      <tr><td><code>dump/dump_globals.py</code></td><td>Authoritative <code>DAT_</code> names + lengths for the probe symbol resolver</td></tr>
+      <tr><td rowspan="8">Dumps</td><td><code>dump/dump_funcs.py</code></td><td>Disassembly + C for a <code>TARGETS</code> list of SCUS entry points</td></tr>
+      <tr><td><code>dump/dump_&lt;label&gt;_overlay.py</code>, <code>lib/lib_dump.py</code></td><td>The per-overlay dumper family (title, shop / menu, dialog, cutscene, level-up, world map, save UI, minigames, ...) over one shared <code>dump_targets</code> body</td></tr>
+      <tr><td><code>dump/dump_wave_closeout.py</code></td><td>Works the <a href="port-catalog.html">port catalog</a>'s <code>--missing-dumps</code> worklist, separating real function entries from citation artifacts such as interior addresses</td></tr>
+      <tr><td><code>dump/dump_pending_helpers.py</code></td><td>The overlay-aware pattern: one target list, <code>in_program()</code> skips absent addresses, output prefixed per program</td></tr>
+      <tr><td><code>dump/dump_scus_gaps.py</code></td><td>Dumps every function inside address <code>RANGES</code> from the <a href="disc-coverage.html">disc-coverage</a> gap worklist; <code>FORCE_RANGES</code> force-disassembles uncovered runs</td></tr>
+      <tr><td><code>repair/repair_truncated_dumps.py</code></td><td>Rebuilds dumps whose body ends before the routine does (tracks the highest forward branch target, so an early <code>jr ra</code> is not the end)</td></tr>
+      <tr><td><code>repair/force_disasm_dump.py</code></td><td>Create + dump functions Ghidra missed (JALR-only entries); targets from <code>force_disasm_targets.txt</code></td></tr>
+      <tr><td><code>dump/dump_&lt;subsystem&gt;_*.py</code></td><td>Per-cluster dumpers (battle render tail, effect overlay 0967, field locomotion, arts input, 4C jump tables, menu inventory refs, terrain trigger, field loader trace)</td></tr>
+      <tr><td rowspan="6">Address resolution</td><td><code>find/find_lui_writers.py</code></td><td>Generic LUI+ADDIU resolver over a <code>[LO, HI]</code> range</td></tr>
+      <tr><td><code>find/find_addr_materializers.py</code></td><td>Per-address materializer sites with use-classification context</td></tr>
+      <tr><td><code>find/find_addr_data_xref.py</code>, <code>find/find_addr_const_allprogs.py</code></td><td>One address as a data word or a <code>lui</code>+<code>addiu</code> / <code>lui</code>+<code>ori</code> target in one pass - in the current program, or swept across every program</td></tr>
+      <tr><td><code>find/find_addr_data.py</code>, <code>find/find_data_word.py</code></td><td>The address as a 4-byte word in memory - function-pointer tables, with surrounding dwords</td></tr>
+      <tr><td><code>find/find_terrain_emitter_caller.py</code></td><td>Reference manager + LUI/ORI + <code>jal</code>/<code>j</code> sweep for a target set across every imported overlay</td></tr>
+      <tr><td><code>find/find_string_xrefs.py</code></td><td>Dev-path string literals to RAM addresses and every code site referencing them</td></tr>
+      <tr><td rowspan="5">Callers</td><td><code>find/find_callers_of.py</code></td><td>Direct callers of <code>TARGETS_HEX</code></td></tr>
+      <tr><td><code>find/find_jal_target.py</code>, <code>find/find_jal_allprogs.py</code></td><td>Every <code>jal</code> to a target in the current program, or <code>jal</code> / jump / branch across every program, independent of the reference manager</td></tr>
+      <tr><td><code>find/find_jal_rawbytes_allprogs.py</code>, <code>find/find_refs_allprogs.py</code></td><td>Raw-byte <code>jal TARGET</code> sweep (catches never-disassembled regions); reference-manager query in every program</td></tr>
+      <tr><td><code>find/dispatcher_callers.py</code></td><td>Callers of the asset dispatcher and the LZS decoder</td></tr>
+      <tr><td><code>find/find_jalr_handlers.py</code></td><td>Dispatch-table indirect calls (<code>lw R, +0x10(...)</code> then <code>jalr R</code>)</td></tr>
+      <tr><td rowspan="5">Overlays</td><td><code>find/find_overlay_candidates.py</code></td><td>Host-side: ranks PROT entries by MIPS-code likelihood</td></tr>
+      <tr><td><code>import/import_overlay.sh</code>, <code>import/dump_overlay.lua</code></td><td>Import a captured RAM window as raw binary; the PCSX-Redux dumper that captures it</td></tr>
+      <tr><td><code>find/find_overlay_calls.py</code>, <code>find/find_overlay_asset_loads.py</code></td><td>Every call into the overlay region; every <code>jal</code> to a known asset loader with its constant PROT index</td></tr>
+      <tr><td><code>inventory/inventory_overlay.py</code>, <code>inventory/list_overlay_functions.py</code></td><td>Per-program function inventory CSV; size-sorted listing</td></tr>
+      <tr><td><code>inventory/list_programs.py</code>, <code>inventory/report_program_bases.py</code></td><td>What is imported, and where each program thinks it lives - the fact that decides whether its dumps are usable</td></tr>
+      <tr><td>Game modes</td><td><code>find/find_game_mode_*.py</code>, <code>find/find_gp_init_and_mode_table.py</code>, <code>find/find_per_mode_callers.py</code></td><td>The game-mode dispatcher, its writers, the 28-entry mode table at <code>0x8007078C</code> and its handlers' callers</td></tr>
+      <tr><td>Whole-program</td><td><code>inventory/explore.py</code></td><td>JSON report: LZSS-fingerprint score per function, every string and its inbound xrefs</td></tr>
     </tbody>
   </table>
   <details class="disclosure">
@@ -137,17 +138,17 @@ sw    a0, 0(v1)           ; the store Ghidra never attributes</code></pre>
       <table>
         <thead><tr><th>Script</th><th>Targets</th></tr></thead>
         <tbody>
-          <tr><td><code>find_sound_path_builders.py</code></td><td>Sound-driver string cluster <code>0x8007B380..0x8007B3D0</code></td></tr>
-          <tr><td><code>find_debug_flag_writers.py</code></td><td>Debug-flag band <code>0x8007B400..0x8007BCFF</code>, writers and readers</td></tr>
-          <tr><td><code>find_move_table_consumers.py</code></td><td>MOVE / MOVE2 buffers <code>0x8007B888</code> / <code>0x8007B840</code></td></tr>
-          <tr><td><code>find_anm_buffer_users.py</code>, <code>find_mes_buffer_users.py</code></td><td>ANM pointer <code>_DAT_8007b7c8</code>; MES pointer <code>_DAT_8007b8a8</code></td></tr>
-          <tr><td><code>find_tmd_renderer.py</code>, <code>find_gte_users.py</code></td><td>TMD pointer table <code>0x8007C018</code>; COP2 instruction counts per function</td></tr>
-          <tr><td><code>find_streaming_consumers.py</code>, <code>find_prot_consumers.py</code>, <code>asset_table_xrefs.py</code></td><td>DATA_FIELD buffer trail; constant PROT indices into the LBA resolver; the in-RAM TOC <code>0x801C70F0</code></td></tr>
-          <tr><td><code>find_scene_name_writers.py</code>, <code>find_field_loader_callers.py</code></td><td>Scene-name buffer <code>0x80084548</code>; field loaders <code>FUN_8001f7c0</code> / <code>FUN_800255b8</code></td></tr>
-          <tr><td><code>find_effect_bundle_consumers.py</code></td><td>Effect-bundle init / spawn / walker on an imported battle overlay</td></tr>
-          <tr><td><code>find_mesh_chain_writer.py</code></td><td>Writer of the actor mesh-chain pointer <code>actor+0x44</code> (<code>FUN_80024d78</code> from <code>DAT_8007C018</code>)</td></tr>
-          <tr><td><code>find_xp_table_readers.py</code>, <code>find_xp_table_all_overlays.py</code></td><td>Superseded - the XP curve is <code>DAT_80076AF4</code>, read by <code>FUN_801E9504</code></td></tr>
-          <tr><td><code>fix_field_locomotion_flow.py</code></td><td>Database repair: re-create functions split by a non-returning-call data hole</td></tr>
+          <tr><td><code>find/find_sound_path_builders.py</code></td><td>Sound-driver string cluster <code>0x8007B380..0x8007B3D0</code></td></tr>
+          <tr><td><code>find/find_debug_flag_writers.py</code></td><td>Debug-flag band <code>0x8007B400..0x8007BCFF</code>, writers and readers</td></tr>
+          <tr><td><code>find/find_move_table_consumers.py</code></td><td>MOVE / MOVE2 buffers <code>0x8007B888</code> / <code>0x8007B840</code></td></tr>
+          <tr><td><code>find/find_anm_buffer_users.py</code>, <code>find/find_mes_buffer_users.py</code></td><td>ANM pointer <code>_DAT_8007b7c8</code>; MES pointer <code>_DAT_8007b8a8</code></td></tr>
+          <tr><td><code>find/find_tmd_renderer.py</code>, <code>find/find_gte_users.py</code></td><td>TMD pointer table <code>0x8007C018</code>; COP2 instruction counts per function</td></tr>
+          <tr><td><code>find/find_streaming_consumers.py</code>, <code>find/find_prot_consumers.py</code>, <code>find/asset_table_xrefs.py</code></td><td>DATA_FIELD buffer trail; constant PROT indices into the LBA resolver; the in-RAM TOC <code>0x801C70F0</code></td></tr>
+          <tr><td><code>find/find_scene_name_writers.py</code>, <code>find/find_field_loader_callers.py</code></td><td>Scene-name buffer <code>0x80084548</code>; field loaders <code>FUN_8001f7c0</code> / <code>FUN_800255b8</code></td></tr>
+          <tr><td><code>find/find_effect_bundle_consumers.py</code></td><td>Effect-bundle init / spawn / walker on an imported battle overlay</td></tr>
+          <tr><td><code>find/find_mesh_chain_writer.py</code></td><td>Writer of the actor mesh-chain pointer <code>actor+0x44</code> (<code>FUN_80024d78</code> from <code>DAT_8007C018</code>)</td></tr>
+          <tr><td><code>find/find_xp_table_readers.py</code>, <code>find/find_xp_table_all_overlays.py</code></td><td>Superseded - the XP curve is <code>DAT_80076AF4</code>, read by <code>FUN_801E9504</code></td></tr>
+          <tr><td><code>repair/fix_field_locomotion_flow.py</code></td><td>Database repair: re-create functions split by a non-returning-call data hole</td></tr>
         </tbody>
       </table>
       <p>Host-side companions under <code>scripts/</code>: <code>ghidra-analysis/call-graph.py</code> (callees / callers / xref over the dumps), <code>ghidra-analysis/bulk-import-overlays.sh</code>, <code>ghidra-analysis/extract-mednafen-overlay.py</code>, <code>ghidra-analysis/analyze-overlay.sh</code>, <code>ci/function-coverage.py</code>.</p>
@@ -156,7 +157,7 @@ sw    a0, 0(v1)           ; the store Ghidra never attributes</code></pre>
   <details class="disclosure">
     <summary>Known dev paths in the binary</summary>
     <div class="disclosure-body">
-      <p>The executable carries leftover Windows paths from the developers' build machine (<code>h:\PROT\FIELD\</code>, <code>data\field\player.lzs</code>, <code>h:\prot\battle\etim.dat</code>, <code>\move.mdt</code>, ...). Retail never opens them - there is no <code>h:</code> drive on a PlayStation - but each one names where a subsystem's data lives inside PROT, which makes them a good first guess at a format family. <code>find_string_xrefs.py</code> resolves them to the code that references them.</p>
+      <p>The executable carries leftover Windows paths from the developers' build machine (<code>h:\PROT\FIELD\</code>, <code>data\field\player.lzs</code>, <code>h:\prot\battle\etim.dat</code>, <code>\move.mdt</code>, ...). Retail never opens them - there is no <code>h:</code> drive on a PlayStation - but each one names where a subsystem's data lives inside PROT, which makes them a good first guess at a format family. <code>find/find_string_xrefs.py</code> resolves them to the code that references them.</p>
     </div>
   </details>
 </section>

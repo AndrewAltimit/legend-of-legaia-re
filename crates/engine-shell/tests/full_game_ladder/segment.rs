@@ -102,6 +102,9 @@ pub(super) fn traverse(
     // a further crossing is the way on (`keikoku`'s west mouth); a detour
     // that came back to `cur`, or found no crossing at all, is not retried.
     let mut crossed: BTreeMap<(String, String), usize> = BTreeMap::new();
+    // Steps out onto an overworld for its clock, per scene
+    // ([`clock_detour`]).
+    let mut clock_detours: BTreeMap<String, usize> = BTreeMap::new();
     // Both tiers play the same beats and waypoints; the pad tier plays them
     // with pad input only ([`PAD_HAND`]).
     PAD_HAND.with(|h| h.set(pad));
@@ -238,6 +241,12 @@ pub(super) fn traverse(
                     trail.push(format!("{s}(talk crossing)"));
                     continue;
                 }
+                if let Some(s) = pad_far_bands(session, graph, &cur, trail)
+                    .map_err(|b| format!("in {cur} (via), crossing to a band: {b}"))?
+                {
+                    trail.push(format!("{s}(band crossing)"));
+                    continue;
+                }
                 if scene_name(session) == cur && walking(session) {
                     let goal = vias.get(via).unwrap_or(&target.scene).clone();
                     let out = graph
@@ -281,6 +290,37 @@ pub(super) fn traverse(
                 beaten.remove(&cur);
                 continue;
             }
+            // A scene whose beats include a staged fight trains first: the
+            // beats walk into the boss, and the levels come after them.
+            // `noaru`'s Songi band (P2[30], 48000 HP) is on the way through
+            // the valley, and the run met it at level 40 where the retail
+            // run had grown to 50 by Biron's castle; `conc3` is the last bed
+            // before Rogue's tower, Jette's fortress and Cort (`chitei2`,
+            // 50000 HP), and a party that left it at level 35 lost to Cort
+            // six times where one trained there to 40 beat him. `conc3`'s
+            // boss band is down by then, so a scene with a bed trains too
+            // while a member is [`FAR_SHORT`] levels or more below target.
+            if !train_only
+                && scene_name(session) == cur
+                && walking(session)
+                && (!fight_band_tiles(session).is_empty() || far_under_levelled(session))
+                && !under_levelled(session).is_empty()
+            {
+                let goal = vias.get(via).unwrap_or(&target.scene).clone();
+                let out = graph
+                    .route_avoiding(&cur, &goal, &dead)
+                    .and_then(|r| r.get(1).cloned());
+                if let Some(s) = pad_train(session, graph, out.as_deref())
+                    .map_err(|e| format!("in {cur}, training: {e}"))?
+                {
+                    trail.push(format!("{s}(training)"));
+                    if s != cur {
+                        retrain.insert(cur.clone());
+                    }
+                    beaten.remove(&cur);
+                    continue;
+                }
+            }
             let mut log = Vec::new();
             let aim = (via >= vias.len()).then(|| target.clone());
             BEAT_TARGET.with(|t| *t.borrow_mut() = aim);
@@ -316,9 +356,14 @@ pub(super) fn traverse(
             // stands near where the retail run did by the coming milestones.
             if scene_name(session) == cur && walking(session) {
                 let goal = vias.get(via).unwrap_or(&target.scene).clone();
-                let out = graph
-                    .route_avoiding(&cur, &goal, &dead)
-                    .and_then(|r| r.get(1).cloned());
+                let route = graph.route_avoiding(&cur, &goal, &dead);
+                // Outings toward an overworld whose clock a talk ahead waits
+                // on ([`clock_detour`]) rather than toward the talk itself:
+                // `ropeway`'s outings to `station` came back with the cart
+                // still east, and the hop on had nowhere to wait for it.
+                let out = route
+                    .as_ref()
+                    .and_then(|r| clock_detour(session, graph, r).or_else(|| r.get(1).cloned()));
                 if let Some(s) = pad_train(session, graph, out.as_deref())
                     .map_err(|e| format!("in {cur}, training: {e}"))?
                 {
@@ -371,6 +416,26 @@ pub(super) fn traverse(
                 return Err(format!("no scene route from {cur} to {goal}"));
             };
             next = route[1].clone();
+            // Leaving an overworld for a scene whose talk on waits on this
+            // overworld's clock: stand until it shows
+            // ([`wait_on_overworld_clock`]).
+            // Short of the overworld, with its clock not showing what a talk
+            // ahead wants: step out onto it first (the party trained from
+            // `ropeway`, whose outings on `map02` flew the cart back east).
+            if pad && continuous::PLAYS_ON.with(std::cell::Cell::get) {
+                if session.host.world.mode == SceneMode::WorldMap {
+                    wait_on_overworld_clock(session, &route[1..])?;
+                } else if let Some(w) = clock_detour(session, graph, &route) {
+                    let n = clock_detours.entry(cur.clone()).or_insert(0);
+                    *n += 1;
+                    if *n <= 3 {
+                        if std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
+                            eprintln!("    [clock] {cur}: out to {w} for its clock");
+                        }
+                        next = w;
+                    }
+                }
+            }
             let hop = if pad {
                 pad_hop(session, graph, &next)
             } else {
@@ -551,6 +616,336 @@ pub(super) fn traverse(
         return Ok(());
     }
     Err(format!("gave up after {MAX_HOPS} hops"))
+}
+
+/// Frames the hand stands on an overworld waiting for its clock
+/// ([`wait_on_overworld_clock`]).
+const OVERWORLD_CLOCK_FRAMES: u32 = 6000;
+
+/// Does partition-1 record `rec` of `man` reach `dest` - a `0x3F` naming it,
+/// in the record or a partition-2 record it spawns - when its tests of
+/// `flag` read `on` and every other test reads the live bank? Picker,
+/// compare and box branches are followed both ways.
+fn talk_reaches_with(
+    w: &legaia_engine_core::world::World,
+    mf: &legaia_scene_formats::man_section::ManFile,
+    man: &[u8],
+    rec: usize,
+    dest: &str,
+    flag: u16,
+    on: bool,
+) -> bool {
+    use legaia_engine_field::man_field_scripts::partition_record_span;
+    use legaia_scene_formats::field_disasm::{InsnInfo, decode, scene_change_name};
+    let n0 = mf.partitions.first().map_or(0, Vec::len);
+    let n1 = mf.partitions.get(1).map_or(0, Vec::len);
+    let names = |part: usize, r: usize| -> bool {
+        partition_record_span(mf, man, part, r).is_some_and(|(start, pc0, len)| {
+            let body = &man[start..start + len];
+            legaia_scene_formats::field_disasm::LinearWalker::new(body, pc0)
+                .flatten()
+                .any(|i| {
+                    matches!(i.info, InsnInfo::SceneChange { .. })
+                        && scene_change_name(body, &i).as_deref() == Some(dest)
+                })
+        })
+    };
+    let Some((start, pc0, len)) = partition_record_span(mf, man, 1, rec) else {
+        return false;
+    };
+    let body = &man[start..start + len];
+    let mut seen: HashSet<usize> = HashSet::new();
+    let mut stack = vec![pc0];
+    while let Some(mut pc) = stack.pop() {
+        while seen.insert(pc) {
+            let Ok(insn) = decode(body, pc) else { break };
+            if insn.size == 0 {
+                break;
+            }
+            let after = pc + insn.size;
+            match insn.info {
+                InsnInfo::SceneChange { .. }
+                    if scene_change_name(body, &insn).as_deref() == Some(dest) =>
+                {
+                    return true;
+                }
+                InsnInfo::SpawnRecord { global_index } => {
+                    if let Some(r2) = usize::from(global_index).checked_sub(n0 + n1)
+                        && (names(2, r2)
+                            || spawned_p2(mf, man, 2, r2, n0 + n1, 2)
+                                .into_iter()
+                                .any(|r3| names(2, r3)))
+                    {
+                        return true;
+                    }
+                }
+                InsnInfo::SystemFlag {
+                    kind: FlagKind::Test,
+                    idx,
+                    target: Some(target),
+                    ..
+                } => {
+                    let set = if idx == flag {
+                        on
+                    } else {
+                        w.system_flag_test(idx)
+                    };
+                    if set {
+                        pc = target & 0xFFFF;
+                        continue;
+                    }
+                }
+                InsnInfo::JmpRel { target, .. } => {
+                    pc = target & 0xFFFF;
+                    continue;
+                }
+                InsnInfo::Picker { count, targets, .. } => {
+                    for &t in targets.iter().take(usize::from(count)) {
+                        stack.push(t & 0xFFFF);
+                    }
+                    break;
+                }
+                InsnInfo::CondJmp { target, .. } => stack.push(target & 0xFFFF),
+                InsnInfo::InventoryCmp {
+                    kind:
+                        legaia_scene_formats::field_disasm::InventoryCmpKind::Compare {
+                            skip_target,
+                            ..
+                        },
+                    ..
+                } => stack.push(skip_target & 0xFFFF),
+                InsnInfo::BBoxTest { skip_target, .. } => stack.push(skip_target & 0xFFFF),
+                _ => {}
+            }
+            pc = after;
+        }
+    }
+    false
+}
+
+/// What the overworld `map` must show before the party leaves it for `x`,
+/// where a talk carries it on to `y`: each flag `map`'s own motion streams
+/// write (and nothing in `x` does) that a talk leading to `y` tests, with the
+/// value under which the talk leads there and the other does not. The
+/// Karisto cart: `station` P1[15] sells the ride to `station3` only while
+/// `0x467` is up, and only the cart's streams on `map02` (and `map03`) move
+/// it, landing it at either station on the overworld's script counter once
+/// `0x38F` is up (`map02` P1[0], P2[14] / P2[15]).
+fn overworld_clock_wants(session: &NativeSession, map: &str, x: &str, y: &str) -> Vec<(u16, bool)> {
+    let index = &session.host.index;
+    let Ok(scene) = Scene::load(index, x) else {
+        return Vec::new();
+    };
+    let Some(man) = scene.field_man_payload(index).ok().flatten() else {
+        return Vec::new();
+    };
+    let Ok(mf) = legaia_scene_formats::man_section::parse(&man) else {
+        return Vec::new();
+    };
+    let census = legaia_engine_scene::man_census::motion_flag_census(index, [map]);
+    let n1 = mf.partitions.get(1).map_or(0, Vec::len);
+    let w = &session.host.world;
+    let mut out = Vec::new();
+    for &flag in census.keys() {
+        let leads: Vec<(bool, bool)> = (0..n1)
+            .map(|r| {
+                (
+                    talk_reaches_with(w, &mf, &man, r, y, flag, true),
+                    talk_reaches_with(w, &mf, &man, r, y, flag, false),
+                )
+            })
+            .collect();
+        let on = leads.iter().any(|&(t, _)| t);
+        let off = leads.iter().any(|&(_, f)| f);
+        if on != off {
+            out.push((flag, on));
+        }
+    }
+    out
+}
+
+/// An overworld one door from the route's start whose clock a talk further
+/// along the route waits on, and does not show it now
+/// ([`overworld_clock_wants`]): the scene to step out to before going on.
+fn clock_detour(session: &NativeSession, graph: &DiscGraph, route: &[String]) -> Option<String> {
+    let cur = route.first()?;
+    // Overworlds within two doors, by their first step: `station`'s own
+    // edge to `map02` is the scripted flight, so the way out is `ropeway`.
+    let maps: Vec<(String, String)> = graph
+        .edges
+        .keys()
+        .filter(|s| legaia_engine_scene::scene::is_world_map_scene(s))
+        .filter_map(|m| {
+            let r = graph.route_avoiding(cur, m, &BTreeSet::new())?;
+            (r.len() <= 3 && r.len() >= 2).then(|| (m.clone(), r[1].clone()))
+        })
+        .collect();
+    for (map, step) in &maps {
+        let map = map.as_str();
+        for pair in route.windows(2) {
+            if legaia_engine_scene::scene::is_world_map_scene(&pair[0]) {
+                break;
+            }
+            let wants = overworld_clock_wants(session, map, &pair[0], &pair[1]);
+            if !wants.is_empty() && std::env::var_os("LEGAIA_FGL_CLOCK_DEBUG").is_some() {
+                let now: Vec<bool> = wants
+                    .iter()
+                    .map(|&(f, _)| session.host.world.system_flag_test(f))
+                    .collect();
+                eprintln!(
+                    "    [clock] {cur}: {} -> {} wants {wants:03X?} now {now:?}",
+                    pair[0], pair[1]
+                );
+            }
+            if !wants.is_empty()
+                && !wants
+                    .iter()
+                    .all(|&(f, on)| session.host.world.system_flag_test(f) == on)
+            {
+                return Some(step.clone());
+            }
+        }
+    }
+    None
+}
+
+/// On an overworld whose route leaves for `x` and then `y` by a talk that
+/// waits on the overworld's own clock ([`overworld_clock_wants`]): stand
+/// still until the clock shows what the talk wants. A run that crossed
+/// `map02` while the cart stood east met the station master's "no scheduled
+/// return time" at the counter, out of reach of the overworld it had to
+/// wait on. `Ok(true)` when it waited.
+fn wait_on_overworld_clock(session: &mut NativeSession, ahead: &[String]) -> Result<bool, String> {
+    let map = scene_name(session);
+    if session.host.world.mode != SceneMode::WorldMap {
+        return Ok(false);
+    }
+    // Every hop of the route up to the next overworld: the clock runs only
+    // while the party stands on this one (`ropeway` lies between `map02`
+    // and the station counter).
+    let mut wants: Vec<(u16, bool)> = Vec::new();
+    for pair in ahead.windows(2) {
+        if legaia_engine_scene::scene::is_world_map_scene(&pair[0]) {
+            break;
+        }
+        for want in overworld_clock_wants(session, &map, &pair[0], &pair[1]) {
+            if !wants.contains(&want) {
+                wants.push(want);
+            }
+        }
+    }
+    let (x, y) = (
+        ahead.first().cloned().unwrap_or_default(),
+        ahead.last().cloned().unwrap_or_default(),
+    );
+    let met = |s: &NativeSession| {
+        wants
+            .iter()
+            .all(|&(f, on)| s.host.world.system_flag_test(f) == on)
+    };
+    if wants.is_empty() || met(session) {
+        return Ok(false);
+    }
+    let trace = std::env::var_os("LEGAIA_FGL_TRACE").is_some();
+    if trace {
+        eprintln!("    [clock] {map}: {x} -> {y} waits on {wants:03X?}");
+    }
+    for n in 0..OVERWORLD_CLOCK_FRAMES {
+        pad_budget(session)?;
+        session.host.world.set_pad(0);
+        match session.tick() {
+            Ok(SceneTickEvent::SceneEntered { .. }) => break,
+            Ok(_) => {}
+            Err(e) => return Err(format!("tick: {e:#}")),
+        }
+        if session.host.world.mode != SceneMode::WorldMap {
+            break;
+        }
+        if met(session) {
+            if trace {
+                eprintln!("    [clock] {map}: shown after {n} frames");
+            }
+            break;
+        }
+    }
+    Ok(true)
+}
+
+/// Most round trips [`pad_far_bands`] takes in one waypoint.
+const MAX_FAR_BANDS: usize = 3;
+
+/// The continuous hand's story bands in another walk component of a
+/// waypoint: live walk-on records whose body raises a flag the next anchor
+/// carries and the world lacks, standing where the walk cannot reach. A
+/// round trip through a neighbouring scene that lands on a band's side
+/// ([`cross_over`]), then the waypoint's beats again, while such bands
+/// remain. `chitei2`'s Jette fight (P2[13] at (18, 89), `0x4C4`) is reached
+/// only from the side `deroa` P2[3] re-enters at (93, 108), by the car to
+/// (94, 22); the `0x4C8` its aftermath raises opens `map03`'s portal to
+/// `concend`. `Ok(Some(scene))` when it ended outside `cur`.
+fn pad_far_bands(
+    session: &mut NativeSession,
+    graph: &DiscGraph,
+    cur: &str,
+    trail: &mut Vec<String>,
+) -> Result<Option<String>, String> {
+    let trace = std::env::var_os("LEGAIA_FGL_TRACE").is_some();
+    for _ in 0..MAX_FAR_BANDS {
+        if scene_name(session) != cur || !walking(session) {
+            break;
+        }
+        let Some(wanted) = NEXT_ANCHOR_FLAGS.with(|a| a.borrow().clone()) else {
+            break;
+        };
+        let missing: Vec<u16> = wanted
+            .into_iter()
+            .filter(|&f| !session.host.world.system_flag_test(f))
+            .collect();
+        // A boss's band only: the record (or one it spawns) stages a fight.
+        // Crossing to every far band that raises an anchor flag replayed
+        // `uru`'s dream bands out of order and walled off the `urudre1`
+        // door.
+        let Some((mf, man, triggers)) = scene_man_and_triggers(session) else {
+            break;
+        };
+        let boss = |t: &(i16, i16)| {
+            triggers.iter().any(|tr| {
+                tr.gate == 1
+                    && (i16::from(tr.tile_x), i16::from(tr.tile_z)) == *t
+                    && !staged_formation_rows(&mf, &man, 2, usize::from(tr.record)).is_empty()
+            })
+        };
+        let tiles: Vec<(i16, i16)> = reach_flag_bands(session, &missing)
+            .into_iter()
+            .filter(|t| boss(t) && !tiles_in_reach(session, &[*t]))
+            .collect();
+        if tiles.is_empty() {
+            break;
+        }
+        pad_budget(session)?;
+        match cross_over(session, graph, cur, "", &CrossTarget::Tiles(tiles.clone())) {
+            Ok(s) if s == cur => {
+                if trace {
+                    eprintln!("    [far-band] {cur}: crossed toward {tiles:?}");
+                }
+                trail.push(format!("{s}(band crossing)"));
+                let mut log = Vec::new();
+                let left = play_beats(session, &mut log)?;
+                trail.push(format!("[{}]", log.join("; ")));
+                if let Some(s) = left {
+                    return Ok(Some(s));
+                }
+            }
+            Ok(s) => return Ok(Some(s)),
+            Err(why) => {
+                if trace {
+                    eprintln!("    [far-band] {cur}: no way to {tiles:?}: {why}");
+                }
+                break;
+            }
+        }
+    }
+    Ok(None)
 }
 
 pub(super) fn panic_text(p: &(dyn std::any::Any + Send)) -> String {

@@ -14,8 +14,10 @@ Consumers name the kernels here directly (`legaia_engine_effects::summon`).
 
 A module moves here when its whole dependency closure inside the engine is in
 this crate, `legaia-engine-vm`, or the other `World`-free crates below
-`engine-core` (`legaia-engine-battle` for the spell table,
-`legaia-render-kernels` for the shared colour word). Doc links that point
+`engine-core` (`legaia-engine-battle-vm` for the battle actor and action
+types, `legaia-render-kernels` for the shared colour word). It does not depend
+on `legaia-engine-battle`: the summon catalogue names its creatures off
+`legaia_actor_formats::summon_creatures`. Doc links that point
 back up at `engine-core` are plain code spans, since rustdoc cannot resolve a
 link into a dependent crate.
 

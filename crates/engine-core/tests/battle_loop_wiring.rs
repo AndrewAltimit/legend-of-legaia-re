@@ -197,10 +197,23 @@ fn status_0x400_waker_clears_the_bit_on_a_live_actor_only() {
     );
 
     // A live actor's bit is rolled off within a handful of round boundaries
-    // (1-in-8 per boundary).
+    // (1-in-8 per boundary). Which boundary is the stream's: the fight is
+    // driven until the bit drops or the fight ends, against monsters with
+    // the HP to outlast many rounds.
     let mut w = battle_world(3);
+    for i in 0..6 {
+        w.actors[i].battle.hp = 4000;
+        w.actors[i].battle.max_hp = 4000;
+    }
     w.actors[0].battle.field_flags |= 0x400;
-    let w = run_rounds(w, 8000);
+    let mut w = run_rounds(w, 0);
+    for _ in 0..40_000 {
+        if w.actors[0].battle.field_flags & 0x400 == 0 || w.mode != SceneMode::Battle {
+            break;
+        }
+        w.tick();
+    }
+    assert_eq!(w.mode, SceneMode::Battle, "the fight outlasts the roll");
     assert_eq!(
         w.actors[0].battle.field_flags & 0x400,
         0,

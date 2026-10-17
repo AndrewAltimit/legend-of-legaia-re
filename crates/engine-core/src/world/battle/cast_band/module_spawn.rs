@@ -282,6 +282,61 @@ impl World {
         true
     }
 
+    /// Seat, on the stager's first tick, the records of a summon-creature
+    /// (or per-arm capture-class) module that none of its arms spawns: the
+    /// ones only its part stager
+    /// (reached through a part's op-`0x20` call, which the engine does not
+    /// run for these modules) seats. The arm-spawned records go on their
+    /// own arms ([`vm::cast_module_camera::creature_arm_spawns`]).
+    pub(super) fn spawn_cast_module_stager_records(&mut self, spell_id: u8, origin: [i16; 3]) {
+        use legaia_engine_battle_vm::cast_module_camera::{
+            SpawnRecord, SpawnTiming, creature_arm_spawns,
+        };
+        const LINK_BASE: u32 = legaia_overlay_images::summon_overlay::SUMMON_OVERLAY_LINK_BASE;
+        let Some(entry) = self.cast_module_for(spell_id) else {
+            return;
+        };
+        let Some(module) = self
+            .casting
+            .effect_pool
+            .clone()
+            .and_then(|p| p.module(entry).cloned())
+        else {
+            return;
+        };
+        let named: std::collections::BTreeSet<u32> = (0..=u8::MAX)
+            .flat_map(|phase| {
+                [SpawnTiming::Pass, SpawnTiming::Every]
+                    .into_iter()
+                    .flat_map(move |t| creature_arm_spawns(entry, phase, t).iter())
+                    .chain(
+                        legaia_engine_battle_vm::cast_module_camera::capture_arm_spawns(
+                            entry, phase,
+                        ),
+                    )
+            })
+            .filter_map(|s| match s.record {
+                SpawnRecord::Module(va) => Some(va),
+                SpawnRecord::BattleProto(_) => None,
+            })
+            .collect();
+        let rest: Vec<_> = module
+            .parts
+            .iter()
+            .filter(|p| !named.contains(&(LINK_BASE + p.record_off as u32)))
+            .cloned()
+            .collect();
+        if rest.is_empty() {
+            return;
+        }
+        self.casting.active_summon = Some(legaia_engine_effects::summon::SummonScene::spawn_parts(
+            &rest,
+            &module.bytes,
+            crate::scene_host::EFFECT_MODEL_LIBRARY_BASE,
+            origin,
+        ));
+    }
+
     /// Seat the spawn calls one module arm made this pass, each on its own
     /// anchor, into the cast's running scene - the per-arm form of
     /// [`Self::spawn_cast_module_fx`] for a module whose director reports its

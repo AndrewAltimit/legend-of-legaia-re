@@ -10,13 +10,14 @@
 //! ([`crate::play_menu`]) - the page blits them over the live (NOT frozen)
 //! field, exactly as retail draws the box over the running scene.
 //!
-//! Geometry mirrors the traced pager (`FUN_801D84D0`, the native window's
-//! `dialog_stage_layout`):
+//! The snapshot, the layout and both halves of the box are
+//! `legaia_engine_screens::dialog_screens`, the native window's calls too.
+//! Geometry mirrors the traced pager (`FUN_801D84D0`):
 //!
 //! - Main (reading) box centre rect `(0x26, 0x10, 0xF4, lines*0xF - 3)`,
-//!   anchored at the TOP of the 320x240 stage; retail's standard box is
-//!   always 3 rows tall (`_DAT_801F2740 = 3`), only over-long simplified
-//!   pages grow it to a 4th row. The drawn skin extends 8 px beyond the
+//!   anchored at the TOP of the 320x240 stage; `lines` is the pager's window
+//!   word (`_DAT_801F2740`, 3 unless op `4C E0` set another), and only the
+//!   plain-MES panel sizes off its page (3..=4 rows). The drawn skin extends 8 px beyond the
 //!   centre rect on every side (the chrome builder's inflation).
 //! - Picker box: the engine's slide rect
 //!   ([`legaia_engine_dialog::dialog::OwnedDialogPanel::picker_rect`]), the
@@ -35,134 +36,21 @@
 
 use super::*;
 use crate::runtime::LegaiaRuntime;
+use legaia_engine_screens::dialog_screens::{self, DialogSnapshot};
 use legaia_engine_ui::{self as ui, SpriteDraw, TextDraw};
-
-/// Plain-string view of the live dialog panel (the native window's
-/// `DialogSnapshot` twin): the typed page, picker options, cursor, and
-/// whether the pager waits for a confirm.
-struct DialogSnapshot {
-    /// Current typed-out page, `|` (0x7C) separating rows.
-    page: String,
-    /// Whole pixels the rows draw above their slots (the pager window's
-    /// scroll, `<= 0`).
-    scroll_px: i32,
-    /// The pager window's height in rows (`None` for the plain-MES panel);
-    /// also the text clip band.
-    box_rows: Option<usize>,
-    options: Vec<String>,
-    cursor: usize,
-    /// The picker box's rect this frame, from the engine's slide; `None`
-    /// before it starts.
-    picker_rect: Option<StageRect>,
-    /// The option hand is drawn (the slide rests).
-    picker_hand: bool,
-    /// The option hand's idle bob (X, stage pixels).
-    hand_bob: i32,
-    /// The page mark's strip frame, `None` when the pager draws none.
-    advance_icon: Option<u8>,
-}
-
-/// A stage-pixel centre rect `(x, y, w, h)`.
-pub type StageRect = (i32, i32, i32, i32);
-
-/// Stage-pixel dialog box layout: main reading-box centre rect + the
-/// option-picker rect when a menu is open.
-struct DialogStageLayout {
-    main: StageRect,
-    picker: Option<StageRect>,
-}
-
-fn to_ascii(bytes: &[u8]) -> String {
-    bytes
-        .iter()
-        .map(|&b| {
-            if (0x20..=0x7E).contains(&b) {
-                b as char
-            } else {
-                '?'
-            }
-        })
-        .collect()
-}
-
-fn from_panel(
-    panel: &legaia_engine_dialog::dialog::OwnedDialogPanel,
-    require_text: bool,
-) -> Option<DialogSnapshot> {
-    let page = ui::dialog_page_string(&panel.page_bytes());
-    if require_text && page.is_empty() {
-        return None;
-    }
-    let (options, cursor) = if panel.menu_active() {
-        match panel.picker() {
-            Some(_) => (
-                panel.picker_labels().iter().map(|l| to_ascii(l)).collect(),
-                panel.picker_cursor(),
-            ),
-            None => (Vec::new(), 0),
-        }
-    } else {
-        (Vec::new(), 0)
-    };
-    Some(DialogSnapshot {
-        page,
-        scroll_px: panel.scroll_px(),
-        box_rows: panel.box_rows(),
-        options,
-        cursor,
-        picker_rect: panel.picker_rect(),
-        picker_hand: panel.picker_hand_drawn(),
-        hand_bob: panel.picker_hand_bob(),
-        advance_icon: panel.advance_icon(),
-    })
-}
-
-/// Retail reading-box centre rect for a box of `page_lines` rows
-/// ([`ui::dialog_reading_box_lines`]) - the same literal geometry as the
-/// native window's `dialog_stage_layout`: `(0x26, 0x10, 0xF4, lines*0xF -
-/// 3)`, `lines` clamped 3..=4 (retail's standard box is always 3 rows,
-/// `_DAT_801F2740 = 3`). The picker rect is not computed here: both hosts
-/// read the engine's slide rect.
-///
-/// REF: FUN_801D84D0
-pub fn dialog_reading_box_layout(page_lines: usize) -> StageRect {
-    let lines = page_lines.clamp(3, 4) as i32;
-    (0x26, 0x10, 0xF4, lines * 0xF - 3)
-}
-
-fn dialog_stage_layout(snap: &DialogSnapshot) -> DialogStageLayout {
-    let main =
-        dialog_reading_box_layout(ui::dialog_reading_box_lines(&snap.page, snap.box_rows) as usize);
-    let picker = if snap.options.is_empty() {
-        None
-    } else {
-        snap.picker_rect
-    };
-    DialogStageLayout { main, picker }
-}
 
 /// What one frame's `4C E1` balloon needs to draw: the page bytes, the centred
 /// text pen, and the window rect - all in 320x240 stage pixels.
 type TextBalloonPlacement = (Vec<u8>, (i32, i32), (i32, i32, i32, i32));
 
 impl LegaiaRuntime {
-    /// Snapshot the live dialog source. The web host runs with
-    /// `use_vm_dialogue` armed, so the sources are the cutscene-timeline
-    /// segment (when a timeline plays) and the inline-script field-VM runner -
-    /// the same precedence as the native window's `dialog_snapshot`.
+    /// Snapshot the live dialog source
+    /// (`legaia_engine_screens::dialog_screens::dialog_snapshot`). The web
+    /// host runs with `use_vm_dialogue` armed and has no typed-out panel of
+    /// its own, so the sources are the cutscene-timeline segment and the
+    /// inline-script field-VM runner.
     fn dialog_snapshot(&self) -> Option<DialogSnapshot> {
-        let h = self.scene_host.host()?;
-        if let Some(panel) = h.world.script_dialog_panel()
-            && let Some(snap) = from_panel(panel, true)
-        {
-            return Some(snap);
-        }
-        if let Some(id) = h.world.dialog.inline.as_ref()
-            && let Some(panel) = id.panel.as_ref()
-        {
-            return from_panel(panel, true);
-        }
-        None
+        legaia_engine_screens::dialog_screens::dialog_snapshot(&self.scene_host.host()?.world, None)
     }
 
     /// Measure the live `4C E1` balloon in the host font, commit the width to
@@ -312,58 +200,14 @@ impl LegaiaRuntime {
             })
             .to_string();
         };
-        let lay = dialog_stage_layout(&snap);
-
         if let Some(rects) = assets.chrome_rects() {
-            sprites.extend(ui::dialog_window_chrome_draws_for(
-                rects, lay.main, origin, scale,
+            sprites.extend(dialog_screens::dialog_box_chrome_draws(
+                rects, &snap, origin, scale,
             ));
-            if let Some(prect) = lay.picker {
-                sprites.extend(ui::dialog_window_chrome_draws_for(
-                    rects, prect, origin, scale,
-                ));
-                // Pointing-hand cursor on the selected option row
-                // (FUN_8002B994 kind 0 at box_x-6, box_y + cursor*0xF),
-                // drawn only once the slide rests (count 0).
-                if snap.picker_hand {
-                    sprites.push(ui::dialog_option_hand_sprite(
-                        rects,
-                        (prect.0 + snap.hand_bob, prect.1),
-                        snap.cursor,
-                        origin,
-                        scale,
-                    ));
-                }
-            } else if let Some(frame) = snap.advance_icon {
-                // The two-frame page mark at the lower-right rim while the
-                // pager waits for confirm (FUN_8002B994 kind 1).
-                let icon = legaia_engine_menus::save_menu_atlas::ATLAS_RECT_ADVANCE_ICON
-                    [usize::from(frame) & 1];
-                sprites.push(ui::dialog_page_mark_sprite(icon, lay.main, origin, scale));
-            }
         }
-
-        let (bx, by, _, _) = lay.main;
-        // Main text: the pager's row window at the retail 15-px pitch from
-        // the box origin, offset by its scroll and clipped to the rows band
-        // - the native window's builder.
-        texts.extend(ui::dialog_reading_box_text_draws_for(
-            font,
-            &snap.page,
-            (bx, by),
-            snap.scroll_px,
-            snap.box_rows,
+        texts.extend(dialog_screens::dialog_box_text_draws(
+            font, &snap, has_chrome,
         ));
-        // Option-picker labels, through the builder the native window shares.
-        if let Some((px, py, _, _)) = lay.picker {
-            texts.extend(ui::dialog_picker_label_draws_for(
-                font,
-                &snap.options,
-                snap.cursor,
-                (px, py),
-                has_chrome,
-            ));
-        }
         ui::scale_stage_text_draws(&mut texts, origin, scale);
 
         serde_json::json!({
@@ -377,26 +221,6 @@ impl LegaiaRuntime {
 
 #[cfg(test)]
 mod tests {
-    use super::dialog_reading_box_layout;
-
-    /// The retail standard reading box: 3 rows regardless of typed lines
-    /// below 3, centre rect `(0x26, 0x10, 0xF4, 0x2A)` - the geometry the
-    /// `v0_1_tetsu_dialogue_accept` capture pins (drawn footprint = this
-    /// rect inflated by the 8-px skin border).
-    #[test]
-    fn standard_reading_box_is_three_rows_at_the_top() {
-        for lines in [1, 2, 3] {
-            assert_eq!(
-                dialog_reading_box_layout(lines),
-                (0x26, 0x10, 0xF4, 3 * 0xF - 3)
-            );
-        }
-        assert_eq!(
-            dialog_reading_box_layout(4),
-            (0x26, 0x10, 0xF4, 4 * 0xF - 3)
-        );
-    }
-
     /// The `4C E1` balloon reaches the page's draw channel, is centred from a
     /// real font measurement, and stops drawing when it dies.
     ///

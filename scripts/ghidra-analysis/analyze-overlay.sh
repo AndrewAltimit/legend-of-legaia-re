@@ -48,13 +48,13 @@ scripts/ghidra-analysis/extract-mednafen-overlay.py "$SAVE" --out "$DUMP"
 
 echo
 echo ">>> 2/3 Importing into Ghidra (this re-imports as overlay.bin)..."
-ghidra/scripts/import_overlay.sh "$DUMP" 2>&1 | tail -5
+ghidra/scripts/import/import_overlay.sh "$DUMP" 2>&1 | tail -5
 
 echo
 echo ">>> 3/3 Scanning overlay for asset-loader calls..."
 docker compose exec -T ghidra /ghidra/support/analyzeHeadless /projects legaia \
     -process overlay.bin -noanalysis \
-    -postScript /scripts/find_overlay_asset_loads.py 2>&1 \
+    -postScript /scripts/find/find_overlay_asset_loads.py 2>&1 \
     | grep -E "^(loader|FUN_)" > "$CSV"
 
 echo

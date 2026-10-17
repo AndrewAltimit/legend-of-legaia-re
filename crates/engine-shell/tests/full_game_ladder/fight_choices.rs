@@ -624,7 +624,59 @@ pub(super) fn wanted_spell(
     // casts of it: one Spoon is ~1150 on each member, worth more than any
     // summon it pays for, and a Vahn who spent his pool on two Viguros met
     // Zora's (`taiku` P2[19]) third party-wide hit with three MP and a dry bag.
-    let floor = floor.max(heal_spell_reserve(w, m.actor));
+    // What a cast has measurably taken off the foes this battle ([`DEALT`]),
+    // per spell: the same spell is not the same hit from every caster. The
+    // attacker roll scales by the caster's own magic level before the
+    // defender roll is subtracted (`FUN_801DD864`), so Gala's level-7
+    // Slippery took 3171 off Songi where Vahn's level-3 one took 862. A
+    // spell not cast yet is estimated from the catalog power, scaled by how
+    // this caster's measured casts compare with their own estimates.
+    let est = |id: u8| -> Option<u32> {
+        match w.tables.spell_catalog.get(id)?.effect {
+            SpellEffect::Damage { base_power, .. } => {
+                Some(u32::from(base_power) * spell_affinity_pct(w, id))
+            }
+            _ => None,
+        }
+    };
+    let seen: Vec<(u8, u32)> = DEALT.with(|d| {
+        d.borrow()
+            .iter()
+            .filter(|((a, k), _)| *a == m.actor && *k != ART_KIND)
+            .map(|((_, k), &dmg)| (*k as u8, dmg))
+            .collect()
+    });
+    let ratio: Option<f64> = {
+        let r: Vec<f64> = seen
+            .iter()
+            .filter_map(|&(id, dmg)| {
+                est(id)
+                    .filter(|&e| e > 0)
+                    .map(|e| f64::from(dmg) / f64::from(e))
+            })
+            .collect();
+        (!r.is_empty()).then(|| r.iter().sum::<f64>() / r.len() as f64)
+    };
+    let score = |id: u8| -> Option<u64> {
+        let e = est(id)?;
+        Some(match (seen.iter().find(|&&(s, _)| s == id), ratio) {
+            (Some(&(_, dmg)), _) => u64::from(dmg),
+            (None, Some(r)) => (f64::from(e) * r) as u64,
+            (None, None) => u64::from(e),
+        })
+    };
+    // A caster whose measured spell hits at least twice what its Arts do
+    // keeps back one party heal, not two: Gala's second Slippery was worth
+    // more than the Spoon her reserve held it for.
+    let art = DEALT.with(|d| d.borrow().get(&(m.actor, ART_KIND)).copied());
+    let best_seen = seen.iter().map(|&(_, d)| d).max().unwrap_or(0);
+    let reserve = heal_spell_reserve(w, m.actor);
+    let reserve = if art.is_some_and(|a| best_seen >= a.saturating_mul(2)) {
+        reserve / 2
+    } else {
+        reserve
+    };
+    let floor = floor.max(reserve);
     let mp = w
         .actors
         .get(usize::from(m.actor))
@@ -640,12 +692,7 @@ pub(super) fn wanted_spell(
                     .get(r.id)
                     .is_some_and(|d| mp >= floor + u32::from(d.mp_cost))
         })
-        .filter_map(|(i, r)| match w.tables.spell_catalog.get(r.id)?.effect {
-            SpellEffect::Damage { base_power, .. } => {
-                Some((i, u32::from(base_power) * spell_affinity_pct(w, r.id)))
-            }
-            _ => None,
-        })
+        .filter_map(|(i, r)| score(r.id).map(|s| (i, s)))
         .max_by_key(|&(_, p)| p)
         .map(|(i, _)| i)
 }

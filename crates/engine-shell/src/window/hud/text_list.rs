@@ -547,35 +547,6 @@ impl PlayWindowApp {
                 out.extend(cd);
             }
         }
-        // Muscle Dome leg: the battle HUD's text half - the status plate and
-        // the command cluster's labels - off the same builders a battle
-        // draws, fed by the dome session's command flow (the sprite half
-        // rides `battle_chrome_sprite_draws`). The browser play page makes
-        // the same two calls.
-        if self.session.host.world.mode == SceneMode::MuscleDome && self.dome_battle_chrome_up() {
-            out.extend(self.battle_hud_frame_draws(w, h).text);
-            if let Some((chips, cursor, phase)) = self.battle_command_menu_chips() {
-                use legaia_engine_ui::battle_command_ui as bcu;
-                let (origin, scale) = self.save_select_stage(w, h);
-                let views = bcu::command_chip_views(&chips);
-                out.extend(bcu::battle_command_chip_text(
-                    &self.font,
-                    &bcu::BattleCommandMenuFrame {
-                        chips: &views,
-                        cursor,
-                        phase,
-                        offsets: legaia_engine_core::battle_hud::battle_chip_offsets(
-                            &self.session.host.world,
-                        ),
-                        dpad: legaia_engine_core::battle_hud::battle_chip_dpad_visible(
-                            &self.session.host.world,
-                        ),
-                    },
-                    origin,
-                    scale,
-                ));
-            }
-        }
         // The Muscle Dome's status rows (`minigame_status::muscle_status_rows`:
         // the Ra-Seru list stand-in and the between-turn prompts) are the
         // title bar's caption, not text here.
@@ -612,338 +583,27 @@ impl PlayWindowApp {
                 out.extend(text_draws_for(&layout, (220, y), log_color));
             }
         }
-        // Battle HUD: party + monster HP plus, when the battle is
-        // player-driven, the live command menu / target cursor. Only drawn in
-        // SceneMode::Battle; harmless when the live loop is off (it just never
-        // enters battle).
+        // Battle and Muscle Dome text: the HUD frame's text half, the
+        // diagnostic encounter banner and whichever player-driven submenu
+        // owns the frame (`battle_screens::battle_text_draws`, the browser
+        // page's call too), in surface pixels; then the sparring tutorial's
+        // rows and Koru's timed-fight strip, which sit in the 320x240 stage
+        // and go through the stage transform the window chrome uses.
+        out.extend(legaia_engine_screens::battle_screens::battle_text_draws(
+            &self.battle_screen_inputs(),
+            self.encounter_banner.as_ref().map(|(_, l)| l.as_str()),
+            w,
+            h,
+        ));
         if self.session.host.world.mode == SceneMode::Battle {
-            use legaia_engine_battle::target_picker::{CursorRow, PickerState};
-            use legaia_engine_menus::battle_input::CommandPhase;
-            let bw = &self.session.host.world;
-            // Greyed-out row tint, used by the target lists in the Arts /
-            // Magic / Item submenus below for a K.O.'d target.
-            let down_color = [0.6f32, 0.6, 0.6, 1.0];
-
-            // The retail party strip (one full-width lozenge per live member
-            // across the stage bottom), the top-left plaque and the floating
-            // popups all come from the shared builder. Its text half lands
-            // here; its chrome sprites ride `battle_chrome_sprite_draws` in
-            // the system-UI atlas slot. Numerals carry the ported retail
-            // readout-tint law (`hp_bar_color_index` / `mp_bar_color_index`,
-            // FUN_800349EC / FUN_80035EA8). Rows are fed from the `BattleHud`
-            // model, refreshed each tick by `sync_battle_hud_rows`.
-            out.extend(self.battle_hud_frame_draws(w, h).text);
-
-            // Encounter-transition banner: centred "ENCOUNTER!" over the
-            // formation label, shown for the opening frames of the battle.
-            // Armed once per Field -> Battle edge by `sync_battle_render`,
-            // aged in `drain_and_log_battle_events`. A port invention with no
-            // retail counterpart - retail's Field -> Battle edge draws no
-            // banner at all - so it is gated off by default and only appears
-            // under `LEGAIA_DIAG_HUD` (`encounter_banner_enabled`).
-            if let Some((_, label)) = self
-                .encounter_banner
-                .as_ref()
-                .filter(|_| legaia_engine_core::battle_hud::encounter_banner_enabled())
-            {
-                let head_w = self.font.layout_ascii("ENCOUNTER!").advance_x as i32;
-                let pen = ((w as i32 - head_w) / 2, h as i32 / 4);
-                out.extend(encounter_banner_draws_for(&self.font, label, pen));
-            }
-
-            // Player-driven submenus (opened from the Arts / Magic / Item
-            // commands). Each parks both the SM and the command session while
-            // open, so it takes priority over the command menu.
-            //
-            // While an in-battle dialogue box owns the frame (the tutorial
-            // text; the battle tick parks the SM and the camera holds the
-            // dialogue close-up), the menus are hidden - retail shows no
-            // command chrome under the tutorial box.
-            let dialogue_up = bw.dialogue_owns_input();
-            if dialogue_up {
-                // Dialogue box up: no menu chrome.
-            } else if bw.arts_input_view().is_some() {
-                // Retail-model arts entry: the whole screen is baked art,
-                // drawn in the sprite layer by
-                // `arts_input_chrome_sprite_draws`, so it puts up no text.
-                // The Begin | Reselect pick is the party's commit confirm
-                // (the command-chip cluster), not a line of this screen.
-            } else if let Some(arts) = &bw.battle.arts_menu {
-                use legaia_engine_battle::battle_arts::ArtsPhase;
-                let menu_x = 8i32;
-                let mut my = 210i32;
-                match &arts.phase {
-                    ArtsPhase::Select { cursor } => {
-                        let header = format!("P{} - arts:", arts.actor + 1);
-                        out.extend(text_draws_for(
-                            &self.font.layout_ascii(&header),
-                            (menu_x, my),
-                            white,
-                        ));
-                        my += 16;
-                        if arts.arts.is_empty() {
-                            out.extend(text_draws_for(
-                                &self.font.layout_ascii("  (no saved arts)"),
-                                (menu_x + 8, my),
-                                down_color,
-                            ));
-                        }
-                        for (i, row) in arts.arts.iter().enumerate() {
-                            let sel = i as u8 == *cursor;
-                            let marker = if sel { ">" } else { " " };
-                            let line = match (row.miracle, row.super_art) {
-                                (Some(name), _) => {
-                                    format!("{} {} x{} *{}*", marker, row.name, row.hits(), name)
-                                }
-                                (None, Some(name)) => {
-                                    format!("{} {} x{} <{}>", marker, row.name, row.hits(), name)
-                                }
-                                (None, None) => format!("{} {} x{}", marker, row.name, row.hits()),
-                            };
-                            let color = if sel { white } else { dim };
-                            out.extend(text_draws_for(
-                                &self.font.layout_ascii(&line),
-                                (menu_x + 8, my),
-                                color,
-                            ));
-                            my += 14;
-                        }
-                    }
-                    ArtsPhase::Targeting { picker, .. } => {
-                        // Enemy cursor: the retail dedup name strip
-                        // (FUN_801D9D3C rows + layout). Ally / sweep states
-                        // keep the text line.
-                        if let Some(strip) = self.enemy_target_strip_draws(picker, w, h) {
-                            out.extend(strip);
-                        } else {
-                            let line = match picker.state() {
-                                PickerState::Cursor {
-                                    row: CursorRow::Ally,
-                                    slot,
-                                } => format!("art -> target P{}", slot + 1),
-                                _ => "art -> select target".to_string(),
-                            };
-                            out.extend(text_draws_for(
-                                &self.font.layout_ascii(&line),
-                                (menu_x, my),
-                                white,
-                            ));
-                        }
-                        my += 14;
-                        out.extend(text_draws_for(
-                            &self
-                                .font
-                                .layout_ascii("Left/Right=move  Cross=confirm  Circle=back"),
-                            (menu_x, my),
-                            dim,
-                        ));
-                    }
-                    _ => {}
-                }
-            } else if let Some(spell) = &bw.battle.spell_menu {
-                use legaia_engine_battle::battle_magic::SpellPhase;
-                let menu_x = 8i32;
-                let mut my = 210i32;
-                match &spell.phase {
-                    SpellPhase::Select { cursor } => {
-                        let header = format!("P{} - magic:", spell.actor + 1);
-                        out.extend(text_draws_for(
-                            &self.font.layout_ascii(&header),
-                            (menu_x, my),
-                            white,
-                        ));
-                        my += 16;
-                        if spell.spells.is_empty() {
-                            out.extend(text_draws_for(
-                                &self.font.layout_ascii("  (no spells)"),
-                                (menu_x + 8, my),
-                                down_color,
-                            ));
-                        }
-                        for (i, row) in spell.spells.iter().enumerate() {
-                            let sel = i as u8 == *cursor;
-                            let marker = if sel { ">" } else { " " };
-                            let line = format!("{} {} {:>2}MP", marker, row.name, row.mp_cost);
-                            let color = if !row.affordable {
-                                down_color
-                            } else if sel {
-                                white
-                            } else {
-                                dim
-                            };
-                            out.extend(text_draws_for(
-                                &self.font.layout_ascii(&line),
-                                (menu_x + 8, my),
-                                color,
-                            ));
-                            my += 14;
-                        }
-                    }
-                    SpellPhase::Targeting { picker, .. } => {
-                        if let Some(strip) = self.enemy_target_strip_draws(picker, w, h) {
-                            out.extend(strip);
-                        } else {
-                            let line = match picker.state() {
-                                PickerState::Cursor {
-                                    row: CursorRow::Ally,
-                                    slot,
-                                } => format!("cast -> target P{}", slot + 1),
-                                _ => "cast -> select target".to_string(),
-                            };
-                            out.extend(text_draws_for(
-                                &self.font.layout_ascii(&line),
-                                (menu_x, my),
-                                white,
-                            ));
-                        }
-                        my += 14;
-                        out.extend(text_draws_for(
-                            &self
-                                .font
-                                .layout_ascii("Left/Right=move  Cross=confirm  Circle=back"),
-                            (menu_x, my),
-                            dim,
-                        ));
-                    }
-                    _ => {}
-                }
-            } else if bw.battle.item_menu.is_some() {
-                // Retail's item window (state 0x3C): the packet-pinned list
-                // + description windows with breadcrumbs and the hand
-                // cursor. Text half here; the window chrome + hand ride the
-                // sprite layer (`battle_chrome_sprite_draws`).
-                if let Some(model) = self.battle_item_menu_model() {
-                    let (origin, scale) = self.save_select_stage(w, h);
-                    out.extend(legaia_engine_screens::with_battle_item_frame(
-                        &model,
-                        |frame| {
-                            legaia_engine_ui::battle_item_ui::battle_item_window_text(
-                                &self.font, frame, origin, scale,
-                            )
-                        },
-                    ));
-                }
-            } else if let Some(cmd) = &bw.battle.command {
-                let menu_x = 8i32;
-                let mut my = 210i32;
-                match &cmd.phase {
-                    CommandPhase::RoundPrompt { .. }
-                    | CommandPhase::Menu { .. }
-                    | CommandPhase::AttackMode { .. }
-                    | CommandPhase::CommitConfirm { .. } => {
-                        // Retail's command surfaces are clusters of framed
-                        // chips around a D-pad glyph, not lists: the
-                        // round-open `Begin | Run` pair, the packet-pinned
-                        // four-arm diamond at `(228, 70)`, and the
-                        // `Auto | Command` pair that re-uses the diamond's
-                        // own left / right arms. Labels ride the shared
-                        // builder's left-aligned interior pen, and a
-                        // command that cannot be chosen keeps its chip and
-                        // draws a single `-`. The plates themselves go out
-                        // in the sprite layer
-                        // (`battle_chrome_sprite_draws`).
-                        if let Some((chips, cursor, phase)) = self.battle_command_menu_chips() {
-                            use legaia_engine_ui::battle_command_ui as bcu;
-                            let (origin, scale) = self.save_select_stage(w, h);
-                            let views = bcu::command_chip_views(&chips);
-                            out.extend(bcu::battle_command_chip_text(
-                                &self.font,
-                                &bcu::BattleCommandMenuFrame {
-                                    chips: &views,
-                                    cursor,
-                                    phase,
-                                    offsets: legaia_engine_core::battle_hud::battle_chip_offsets(
-                                        &self.session.host.world,
-                                    ),
-                                    dpad: legaia_engine_core::battle_hud::battle_chip_dpad_visible(
-                                        &self.session.host.world,
-                                    ),
-                                },
-                                origin,
-                                scale,
-                            ));
-                        }
-                    }
-                    CommandPhase::Targeting { command, picker } => {
-                        if let Some(strip) = self.enemy_target_strip_draws(picker, w, h) {
-                            out.extend(strip);
-                        } else {
-                            let line = match picker.state() {
-                                PickerState::Cursor {
-                                    row: CursorRow::Ally,
-                                    slot,
-                                } => format!("{} -> target P{}", command.label(), slot + 1),
-                                _ => format!("{} -> select target", command.label()),
-                            };
-                            out.extend(text_draws_for(
-                                &self.font.layout_ascii(&line),
-                                (menu_x, my),
-                                white,
-                            ));
-                        }
-                        my += 14;
-                        let hint = "Left/Right=move  Cross=confirm  Circle=back";
-                        out.extend(text_draws_for(
-                            &self.font.layout_ascii(hint),
-                            (menu_x, my),
-                            dim,
-                        ));
-                    }
-                    _ => {}
-                }
-            }
-
-            // Sparring-tutorial prompt box. `FUN_801F747C` measures the prompt
-            // and registers a text actor with a full rect, so this is a sized
-            // window, not loose text: the shared builder lays the rows out at
-            // the rect origin and the sprite layer
-            // (`battle_tutorial_chrome_sprite_draws`) frames it.
-            //
-            // Unlike the rest of this battle HUD - which is authored in
-            // surface pixels - the tutorial rect is in retail's 320x240 stage
-            // space, so it goes through the stage transform the dialog box and
-            // window chrome use. Drawn last inside the battle block so it sits
-            // over the menus, which is where retail's message box lands too.
-            //
-            // Every box of the on-screen group draws, not just the front
-            // one: a retail hook dispatch registers all its boxes at once
-            // (the lesson's top-anchored intro and its bottom-anchored
-            // explainer share the frame at `Begin | Run`).
             let (stage_origin, stage_scale) = self.save_select_stage(w, h);
-            for (rect, tbox) in self.battle_tutorial_stage_boxes() {
-                let mut draws =
-                    legaia_engine_ui::battle_tutorial_text_draws_for(&self.font, &tbox.text, rect);
-                // Without the system-UI atlas there is no frame and no advance
-                // hand, so keep a plain confirm hint as the only affordance a
-                // waiting box would otherwise have.
-                if tbox.waits_for_input && self.save_menu.is_none() {
-                    let lines = tbox.text.lines().count() as i32;
-                    draws.extend(text_draws_for(
-                        &self.font.layout_ascii("Cross=continue"),
-                        (rect.0, rect.1 + lines * 14),
-                        dim,
-                    ));
-                }
-                legaia_engine_ui::scale_stage_text_draws(&mut draws, stage_origin, stage_scale);
-                out.extend(draws);
-            }
-            // Koru's timed-fight strip (`Turns Left / HP Left`): a stage-space
-            // text actor like the tutorial box, framed in the same layer by
-            // `battle_tutorial_chrome_sprite_draws`.
-            if let Some(strip) = legaia_engine_core::world_views::timed_fight::timed_fight_strip(
+            let mut draws = legaia_engine_screens::battle_screens::battle_tutorial_stage_draws(
                 &self.session.host.world,
-            ) {
-                let mut draws = legaia_engine_ui::timed_fight_strip_text_draws(
-                    &self.font,
-                    &legaia_engine_ui::TimedFightStripView {
-                        label: &strip.label,
-                        turns_left: strip.turns_left,
-                        hp_left: strip.hp_left,
-                    },
-                );
-                legaia_engine_ui::scale_stage_text_draws(&mut draws, stage_origin, stage_scale);
-                out.extend(draws);
-            }
+                &self.font,
+                self.save_menu.is_some(),
+            );
+            legaia_engine_ui::scale_stage_text_draws(&mut draws, stage_origin, stage_scale);
+            out.extend(draws);
         }
         // Level-up + Seru-capture messages: retail's framed top-of-screen
         // banner outside battle, or the loose pens on a chrome-less run -
@@ -1013,33 +673,12 @@ impl PlayWindowApp {
         // frame stay locked together. The chrome itself is emitted in
         // the sprite layer (`dialog_chrome_sprite_draws`).
         if let Some(snap) = self.dialog_snapshot() {
-            let lay = Self::dialog_stage_layout(&snap);
             let (stage_origin, stage_scale) = self.save_select_stage(w, h);
-            let has_chrome = self.save_menu.is_some();
-            let (bx, by, _, _) = lay.main;
-            // Main text: the pager's row window - one row per
-            // 0x7C-separated line at the retail 15-px pitch from the box
-            // origin, offset by the window's scroll and clipped to the rows
-            // band (`FUN_801D84D0` draws `FUN_80036888(row, 0, 0, ctx+0x12,
-            // ctx+0x14 + (scroll >> 4) + i*0xF)` in the staged CLUT-7 menu
-            // white). The shared builder is the browser page's too.
-            let mut draws: Vec<TextDraw> = legaia_engine_ui::dialog_reading_box_text_draws_for(
+            let mut draws = legaia_engine_screens::dialog_screens::dialog_box_text_draws(
                 &self.font,
-                &snap.page,
-                (bx, by),
-                snap.scroll_px,
-                snap.box_rows,
+                &snap,
+                self.save_menu.is_some(),
             );
-            // Option-picker labels, through the builder the page shares.
-            if let Some((px, py, _, _)) = lay.picker {
-                draws.extend(legaia_engine_ui::dialog_picker_label_draws_for(
-                    &self.font,
-                    &snap.options,
-                    snap.cursor,
-                    (px, py),
-                    has_chrome,
-                ));
-            }
             legaia_engine_ui::scale_stage_text_draws(&mut draws, stage_origin, stage_scale);
             out.extend(draws);
         }

@@ -141,11 +141,11 @@ prev2   = prev1;  prev1 = value     // history is the UNCLAMPED, UNROUNDED value
   <p>This yields 112 samples/group vs the 4-bit path's 224. Select it with <code>legaia_xa::DecodeOptions { bits: BitsPerSample::Eight, .. }</code> (the demux path maps each channel's reported width automatically; the CLI exposes <code>--bits 8</code>). The whole NA corpus is 4-bit, so 4-bit is the default.</p>
 </section>
 
-<section class="doc-section" id="what-s-still-open">
-  <h2>What's still open</h2>
+<section class="doc-section" id="scope-limits">
+  <h2>Scope limits</h2>
   <ul class="bullets">
-    <li><strong>8-bit ADPCM verification.</strong> The NA corpus is <strong>entirely 4-bit, 37.8 kHz</strong> (<code>demux-disc-all</code> reports <code>bits_per_sample = 4</code> for every channel of every <code>*.XA</code> file), so nothing on the NA disc exercises 8-bit and that path is <strong>not</strong> verified bit-exact against a real 8-bit source. A JP/EU build that uses 8-bit would decode without code changes.</li>
-    <li><strong>Per-cutscene file-no / ch-no map.</strong> <code>demux-disc</code> emits one WAV per channel keyed by <code>(file_no, ch_no)</code>. The mapping from cutscene name to expected channel pair lives inside the cutscene-overlay's mode driver, which is <a href="../tooling/overlay-capture.html">not yet captured</a>. Until that is reversed, the WAV-to-cutscene assignment is manual. The Art-shout side is better pinned: <code>crates/art</code>'s <code>arts_voice</code> tables give each character's file and candidate-channel pool.</li>
+    <li><strong>8-bit ADPCM has no disc to test against.</strong> Every channel of every <code>*.XA</code> file on the NA disc is 4-bit at 37.8 kHz (<code>demux-disc-all</code> reports <code>bits_per_sample = 4</code> throughout), so the 8-bit path is covered by synthetic tests only and is not verified bit-exact against a real 8-bit source. A build that uses 8-bit would decode without code changes.</li>
+    <li><strong>Which event plays which channel is not part of this format.</strong> <code>demux-disc</code> emits one WAV per channel keyed by <code>(file_no, ch_no)</code>. The routing is game logic: the voice-cue dispatchers and cue tables on the <a href="../subsystems/audio.html">audio page</a> and the movie channel selection on the <a href="../subsystems/cutscene.html">cutscene page</a>. The Art-shout side is in <code>crates/art</code>'s <code>arts_voice</code> tables.</li>
   </ul>
 </section>
 

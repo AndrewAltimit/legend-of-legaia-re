@@ -566,6 +566,7 @@ pub(super) fn pad_walk(
     };
     for step in 0..PAD_LEG_FRAMES as usize {
         pad_budget(session)?;
+        watch_clocks(session);
         // Per overworld tile: the encounter step counter it left behind.
         if std::env::var_os("LEGAIA_FGL_WALK_DEBUG").is_some()
             && session.host.world.mode == SceneMode::WorldMap
@@ -737,6 +738,51 @@ pub(super) fn pad_walk(
                 }
             }
             planned_from = Some(cell);
+        }
+        // The next step is onto a pad that forks on a clock flag, and the
+        // route wants the phase the clock is not in, or one that will end
+        // before the pad tests it: stand at the pad's edge until it comes
+        // round, as a player times the step ([`phase_ready`]).
+        // A route whose first move is a jump from the walker's own cell (a
+        // pad re-entered from beside it, [`plan_search`]) presses from here.
+        // Only a clock pad's landing counts: `PRESS_AT` outlives the plans
+        // that wrote it, and a route rejoined two cells off reads the same.
+        if let Some(&first) = path.first()
+            && first != cell
+            && !adjacent(cell, first)
+            && let Some((px, pz)) = PRESS_AT.with(|m| m.borrow().get(&cell).copied())
+            && phased_pads(session)
+                .get(&dispatch_tile(px, pz))
+                .is_some_and(|lands| lands.iter().any(|&(l, _, _)| l == first))
+        {
+            path.insert(0, cell);
+        }
+        let wanted = phase_wanted(session, &path, cell);
+        if let Some((flag, on)) = wanted
+            && phase_ready(session, flag, on)
+            && std::env::var_os("LEGAIA_FGL_CLOCK_DEBUG").is_some()
+        {
+            eprintln!(
+                "      [clock] {} step toward {:?} for {flag:#05X}={on} at frame {}",
+                scene_name(session),
+                path.first().map(|&c| {
+                    let (x, z) = cell_center(c);
+                    dispatch_tile(x, z)
+                }),
+                session.host.world.frame
+            );
+        }
+        if let Some((flag, on)) = wanted
+            && !phase_ready(session, flag, on)
+        {
+            session.host.world.set_pad(0);
+            match session.tick() {
+                Ok(SceneTickEvent::SceneEntered { name }) => return Ok(Walk::Entered(name)),
+                Ok(_) => {}
+                Err(e) => return Err(format!("tick: {e:#}")),
+            }
+            pressed_at = None;
+            continue;
         }
         let (tx, tz) = match path.first() {
             Some(&c) if c == cell => PRESS_AT

@@ -61,7 +61,7 @@ Completely distinct from the minigame-hub family (only 17 shared prologues). The
 
 A level-up save state was re-extracted at the full 256 KB window
 (`0x801C0000–0x801FFFFF`) and imported as `overlay_magic_level_up_full.bin`.
-The data section (`ghidra/scripts/dump_levelup_data_section.py`) was dumped
+The data section (`ghidra/scripts/dump/dump_levelup_data_section.py`) was dumped
 in ten 4 KB blocks. Key findings:
 
 | Address | Content |
@@ -85,7 +85,7 @@ actor's colour word, stamped with the 24-bit mid-grey `0x00808080` (masked
 
 1. Boot PCSX-Redux with the disc image; run the game to the scene whose overlay you want to capture.
 2. `File → Show Lua Console`.
-3. Run `ghidra/scripts/dump_overlay.lua` from the Lua console - it writes `0x801C0000-0x801EFFFF` to `/tmp/legaia_overlay_<TIMESTAMP>.bin`.
+3. Run `ghidra/scripts/import/dump_overlay.lua` from the Lua console - it writes `0x801C0000-0x801EFFFF` to `/tmp/legaia_overlay_<TIMESTAMP>.bin`.
 
 > The 192 KB window in `dump_overlay.lua` is too narrow for some battle-effect handlers and for the world-map overlay's high-mode prim renderers at `0x801F7644..0x801F8690` (consumed by `FUN_80043390`'s overlay-mode dispatch table at `0x801F8968`). Use `extract-mednafen-overlay.py` (default window `0x801C0000-0x801F9000`, 228 KB) - or pass `--end 0x80200000` for the full 256 KB.
 
@@ -107,7 +107,7 @@ docker compose exec ghidra /ghidra/support/analyzeHeadless \
     /projects legaia -process overlay.bin
 ```
 
-`ghidra/scripts/import_overlay.sh <dump>` wraps exactly these two calls.
+`ghidra/scripts/import/import_overlay.sh <dump>` wraps exactly these two calls.
 
 ## Caveat: overlay-buffer captures are mixed content
 
@@ -190,7 +190,7 @@ scripts/ghidra-analysis/auto-name-overlay.py "$HOME/.mednafen/mcs/Legend of Lega
 # [info] format: mednafen; sliced 262,144 bytes
 # [info] auto-detected label: world_map  (world_map=4, field=3)
 # [ok]   /tmp/overlay_world_map.bin
-# [ok]   ghidra/scripts/dump_world_map_overlay.py
+# [ok]   ghidra/scripts/dump/dump_world_map_overlay.py
 ```
 
 When the auto-detection picks the wrong label (the anchor table is
@@ -209,7 +209,7 @@ overwrite). After running, follow with the existing Ghidra import:
 scripts/ghidra-analysis/import-overlay-named.sh /tmp/overlay_<label>.bin <label>
 docker compose exec ghidra /ghidra/support/analyzeHeadless /projects legaia \
     -process overlay_<label>.bin -noanalysis \
-    -postScript /scripts/dump_<label>_overlay.py
+    -postScript /scripts/dump/dump_<label>_overlay.py
 ```
 
 Cuts the per-scene reverse cycle from manually identifying which

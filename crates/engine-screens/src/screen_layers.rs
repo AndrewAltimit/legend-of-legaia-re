@@ -219,6 +219,10 @@ pub fn compose_screen_prims(
             under.extend(legaia_render_kernels::cast_swordie::swordie_split_prims(&p));
         }
     }
+    // PROT 0916's light bands (additive, at the framing depth in retail).
+    if let Some(s) = world.aluru_band_draw() {
+        under.extend(legaia_render_kernels::cast_aluru::aluru_band_prims(s));
+    }
     // The world's one live full-screen fade, split at the text layer by its
     // ordering-table id: the summon band's flashes (id `1`) under the HUD,
     // a field warp's fade (id `0`) over it.

@@ -99,7 +99,7 @@
 //!
 //! Provenance: disassembly of the 64 extracted band images against
 //! `crates/asset/data/static-overlays.toml`; the frame-matched partition
-//! mirrors `ghidra/scripts/dump_static_overlay.py`, and reproduces its
+//! mirrors `ghidra/scripts/dump/dump_static_overlay.py`, and reproduces its
 //! committed `RANGES` rows.
 
 use std::ops::Range;
@@ -249,7 +249,7 @@ fn jal_word(addr: u32) -> u32 {
 
 /// Frame-matched function partition of a raw image.
 ///
-/// Mirrors `ghidra/scripts/dump_static_overlay.py`: a body opens at
+/// Mirrors `ghidra/scripts/dump/dump_static_overlay.py`: a body opens at
 /// `addiu sp, sp, -F` and closes at the first `jr ra` whose delay slot is
 /// `addiu sp, sp, +F` for the same `F`. Unlike a count-and-interleave rule this
 /// survives a frameless leaf, an early `jr ra` inside a body, and a `jr ra`

@@ -90,3 +90,27 @@ fn gimard_settle_arm_breaks_up_the_creature() {
         "one pass of the settle arm on the creature seat"
     );
 }
+
+/// The Spikefish flute's outcome arm breaks its creature up a step a pass
+/// while the arm's countdown holds it.
+#[test]
+fn spikefish_outcome_arm_breaks_up_the_creature_while_it_holds() {
+    use legaia_engine_battle_vm::cast_module_ticks::{
+        SPIKEFISH_OUTCOME_ARM, SPIKEFISH_SHATTER_STEP_PER_TICK,
+    };
+    let mut world = shatter_world();
+    assert_eq!(world.cast_module_for(0x97), Some(925));
+    world.casting.module_phase = SPIKEFISH_OUTCOME_ARM;
+    world.casting.module_cam.countdown.0 = 0x40;
+    for _ in 0..3 {
+        world.run_cast_module_code(0x97, 0).expect("PROT 0925 runs");
+    }
+    assert_eq!(
+        world.casting.module_phase, SPIKEFISH_OUTCOME_ARM,
+        "still held"
+    );
+    assert_eq!(
+        world.actors[9].battle.shatter,
+        3 * SPIKEFISH_SHATTER_STEP_PER_TICK
+    );
+}

@@ -280,15 +280,11 @@ In battle, the message banner and the formation line draw from pen `(16, 12)` in
 
 The pinned budgets are the table `legaia_font::limits::TEXT_LIMITS`, one `TextLimit` per context with its pad and provenance.
 
-### Still open
+### Limits of the measurement
 
-- The item and spell **description** lines (`FUN_800337B0`, the 27 KB menu-string formatter) have no pinned width; the info window is 144 px wide, which bounds them only by inference.
-- Speaker names, the world-map place-name labels, the title and save screens, and the minigame HUDs are not measured here.
-- The end of the expansion buffer at `0x800740EC` is not pinned. The zero-initialised region it opens runs `0x206` bytes to the next initialised data at `0x800742F2`, and no dumped routine references an address inside it, which makes 518 bytes an upper bound by inference.
+Speaker names, the world-map place-name labels, the title and save screens and the minigame HUDs are outside what this page measures. Two edges inside it are live hunts on [open-rev-eng-threads.md](../reference/open-rev-eng-threads.md#field--locomotion): the width of an item or spell **description** line (`FUN_800337B0`, the menu-string formatter; the 144 px info window bounds it only by inference), and the end of the expansion buffer at `0x800740EC` (the zero-initialised run reaches `0x800742F2`, `0x206` bytes, and no dumped routine addresses inside it - an upper bound by inference).
 
-## What's still open
-
-- **`0xCC` opcode.** The text-actor renderer at `FUN_80031D00` recognises a small handful of single-byte ops (`0xCC..=0xCF`) inside its glyph stream that are distinct from the dialog renderer's `0xCE/0xCF`. They're outside the dialog font's scope and tracked under the [field script VM](../subsystems/script-vm.md) docs.
+The text-actor walker `FUN_80031D00` has no escape ops of its own: it walks the drawable list and reads no glyph stream ([falsified](../reference/re-do-not-re-walk.md#menus--ui)).
 
 ## Extraction tools
 

@@ -45,8 +45,9 @@ that runs both hosts is the [frame-body trace](#output-level-the-frame-body-trac
 | 12 content | do two paired frame kernels reach the same engine calls? | `[[frame_content]]` | arguments, order, guards, std-named calls |
 | 13 boot installs | does the page's boot make every `world.install_*` / `set_*` call the native boot makes? | derived, `[[boot_install]]` | tables written as field assignments |
 | 14 save routing | does every save / load go through the retail screen's applier? | `SAVE_IO_ROUTES` | the page's save-bar import |
+| 15 engine environment | does an engine crate read a switch from the process environment? | `ENV_KERNEL_ROOTS`, `ENV_ALLOWED_*` | an env read in a crate no browser host links |
 
-Tiers 1-3 and 5-14 live in
+Tiers 1-3 and 5-15 live in
 [`scripts/ci/check-ui-host-drift.py`](../../scripts/ci/check-ui-host-drift.py)
 (`--list` prints the full surface table, `--selftest` the detector controls,
 `--quiet` findings only); tier 4 is
@@ -84,6 +85,7 @@ docstring is the text `--help` prints. The package keeps three things apart: the
 | [`rows/frame_content.py`](../../scripts/ci/ui_host_drift/rows/frame_content.py) | `ENGINE_API_CRATES`, `STD_METHOD_NAMES`, `CONTENT_WALK_STOPS` |
 | [`rows/boot_installs.py`](../../scripts/ci/ui_host_drift/rows/boot_installs.py) | `BOOT_NATIVE`, `BOOT_WEB_ROOT` |
 | [`rows/save_io.py`](../../scripts/ci/ui_host_drift/rows/save_io.py) | `SAVE_IO_ROUTES`, `PAGE_CARD_RACK`, `PAGE_CARD_RACK_RULES` |
+| [`rows/env_reads.py`](../../scripts/ci/ui_host_drift/rows/env_reads.py) | `ENV_KERNEL_ROOTS`, `ENV_NATIVE_HOST_PATHS`, `ENV_ALLOWED_PREFIXES`, `ENV_ALLOWED_NAMES` |
 | [`tiers/`](../../scripts/ci/ui_host_drift/tiers/__init__.py) | the analysis, one module per tier, named as its rows module is (`tiers/screens.py` is tier 1, which has no table) |
 | [`rust_text.py`](../../scripts/ci/ui_host_drift/rust_text.py) | comment stripping, signature and body extraction, whole-word sets |
 | [`controls.py`](../../scripts/ci/ui_host_drift/controls.py), [`selftest.py`](../../scripts/ci/ui_host_drift/selftest.py) | the detector controls and `--selftest` |
@@ -208,7 +210,11 @@ host call site at all: the shop-family screens' only caller is
 [`crates/engine-screens`](../../crates/engine-screens/README.md), the
 projection both hosts share. The gate's `SHARED_COMPOSERS` table names each
 such crate with its entry points, and a builder named in the crate's source is
-credited to exactly the hosts that **call** an entry (`shop_overlay_frame`).
+credited to exactly the hosts that **call** an entry (`shop_overlay_frame`,
+the battle screens' `battle_hud_frame_draws` / `battle_chrome_sprite_draws`,
+the pause menu's `field_menu_root_draws` / `field_menu_sub_draws`, and the
+battle text list, the dialog box, the field party HUD and the save-select
+screen).
 The credit is per host, not per crate: a host that stops calling the entry
 loses every builder behind it, so a one-host composition still reads as
 `DRIFT`.
@@ -1012,6 +1018,30 @@ resumes it directly. That is page chrome for getting a save into the browser
 at all - the native twin is `legaia-engine load` - and it moves no bytes
 into a card.
 
+## Tier 15 - engine environment reads
+
+`check_env_reads` in [`tiers/env_reads.py`](../../scripts/ci/ui_host_drift/tiers/env_reads.py), rows in
+[`rows/env_reads.py`](../../scripts/ci/ui_host_drift/rows/env_reads.py).
+
+A `wasm32` build has no process environment: `std::env::var` answers `Err`
+and `var_os` answers `None`. A gameplay switch an engine crate reads from the
+environment is therefore one the native window can throw and the browser
+never can, and the difference shows nowhere in a diff. A switch is an engine
+field instead (`WorldToggles`), written by each host: the native session from
+its environment in one function
+(`legaia_engine_session::native::apply_env_world_toggles`, run on every native
+session open, so a corpus run's child processes inherit it) and the play page
+from a `LegaiaRuntime` setter ([`play_toggles.rs`](../../crates/web-viewer/src/play_toggles.rs)).
+
+The tier scans every `crates/engine-*` crate a browser host links, plus
+`render-kernels`, for `env::var` / `var_os` / `vars` / `vars_os` (comments
+stripped, test files skipped by path) and fails as `ENGINE ENV READ` on any
+read whose name is not allowed. Allowed: the `LEGAIA_DIAG_*` gates, which tier
+6 declares and classifies, and `LEGAIA_DISC_BIN` in an inline test module. A
+non-literal name is never allowed. Out of scope, because no browser host links
+them: `engine-shell`, `engine-render`, `engine-export`, `engine-capture`, and
+`engine-session`'s `native` module.
+
 ## Two JavaScript-side gates
 
 No Rust tier reads `site/js/`. Two scripts do, in the pre-commit hook when
@@ -1137,7 +1167,8 @@ table; a switch with no page twin is a host difference, not a world default.
 | `--party` | `set_active_party_spec` |
 | `--card`, `--resume-save`, `--boot-ui`, `--world-map` | the card rack, a card Load, the boot title, the scene picker |
 | `LEGAIA_SMART_MONSTERS`, `LEGAIA_WORLD_MAP_MARKERS` | `set_smart_monsters`, `set_world_map_markers` |
-| `--no-entry-pulse` | only through the retail box, which also pins the options |
+| `LEGAIA_BATTLE_FRAME_CADENCE`, `LEGAIA_ARTS_SAVED_LIST` | `set_battle_frame_cadence`, `set_arts_saved_list` (both default off on both hosts) |
+| `--no-entry-pulse` | `set_entry_pulse(false)`, the "Entry pulse" box; the retail box also holds it off |
 | `--simple-dialogue`, `--flat-y`, `--no-edge-collision`, `--no-solid-npcs`, `--no-live-npcs`, `--no-damage-finish`, `--no-player-battle`, `--seed-party`, `--battle` | none: comparison and debug opt-outs from the retail default, which is the page's only setting (`--battle` has the wasm `debug_force_battle`) |
 | `--screenshot*`, `--pad-script`, `--key-script`, `--str-file`, `--cutscene-map` | none: native capture tooling |
 
@@ -1497,17 +1528,17 @@ screens.
 |---|---|
 | pause-menu press and open | `BootSession::press_field_menu`, `World::field_menu_open_allowed` (dialogue engagement, narration, title card, locks, shop), `open_field_menu`, `close_field_menu` |
 | pause-menu stack | `field_menu_dispatch::tick_root_list`, `tick_open_subsession`, `finish_subsession`; per host: rack I/O, key table, options store (`SubsessionHandoff`) |
-| pause-menu draw assembly | `engine-ui::pause_menu` (`engine-ui/tests/pause_menu_compose.rs`) |
+| pause-menu draw assembly | `engine-ui::pause_menu` (`engine-ui/tests/pause_menu_compose.rs`); the session-to-view projection `engine-screens::pause_screens` |
 | boot Options | The title row opens the pause menu on the Options sub-screen (`open_menu_row_from_title`, `play_menu_open_row`); a `menu_from_title` / `PlayMenu::from_title` flag returns to the title. |
 | Options rows | `OptionsSession::screen_model`; simulation knobs `engine-core::options::apply_to_world` |
 | shop / prize / inn step | `MenuRuntime::poll_field_overlay` (the open plus the opening tick's no-edge step), `step_field_session` (every later tick; returns the cue), `suspends_field` (an inn is a field dialogue and is not suspended) |
 | shop-family draw | `legaia_engine_screens::shop_overlay_frame`; frame rect from `shop_panel_rows` + `shop_panel_frame_rect`; labels `menu_runtime::shop_root_labels`, `MenuState::item_label` |
 | Seru-trade text | `seru_trade::trade_screen_text` |
-| save-select | `SaveScreenFlow::overlay_model`, `save_select_overlay_draws`, `title_band_sprites` + `TitleBandState` (page backdrop: `boot_title_backdrop_draws_json`) |
+| save-select | `engine-screens::pause_screens::save_select_overlay_draws` over `SaveScreenFlow::overlay_model` and `engine-ui`'s `save_select_overlay_draws`, `title_band_sprites` + `TitleBandState` (page backdrop: `boot_title_backdrop_draws_json`) |
 | Load / New Game | `engine-core::resume` (`resume_card_load`, `enter_new_game`), `TitleSession::for_front_end`, `SceneHost::current_resume` ([`save-screen.md`](../subsystems/save-screen.md#where-a-load-lands-and-when-continue-is-live)) |
 | card write | `engine-core::card_write::write_save_into_card`, `MountedCard::persist` |
 | menu blips | `menu_cues::menu_edge_blip`; a blip is a one-cue batch (`SfxFireBatch::immediate`) and ages no other cue |
-| name entry | `NameEntryInput::from_pad_edge`, `NameEntry::cursor_cells`, `name_entry::caret_on` |
+| name entry | `NameEntryInput::from_pad_edge`; view `engine-screens::field_screens::name_entry_view` (`NameEntry::cursor_cells`, `name_entry::caret_on`) |
 | dev menu | `DevMenuWorldExt::tick_host` (CAMERA row, EQUIP commit), `DevMenuWorldExt::route_sfx` |
 | coin counter (op `0x49` sub-op 6) | `field_submode_screen::coin_counter_lines` through `engine-ui::text_lines::pen_line_draws_for`: the field overlay's entry panel `FUN_801E6F70` (record 10) and confirm panel (record 11) |
 | place-name banner | `engine-core::place_name_banner` from `SceneHost::load_scene` (a text balloon, not the slot-`0x2E` actor whose script `0x801F32B4` only closes panels) |
@@ -1545,6 +1576,7 @@ skips the picker's story baseline, which would otherwise clear system flags
 | object-effect clip (field-VM `4C C2 1`) | `World::object_effect_mesh_clip` ([`renderer.md`](../subsystems/renderer.md#what-a-raised-0x42-draws)) |
 | world-map markers | `legaia_engine_core::world_map_markers` + `screen_prim::world_map_marker_prim` |
 | narration crawl, title card | `cutscene_text_stage_draws` (stage pixels) |
+| dialog reading box (snapshot, layout, both halves) | `engine-screens::dialog_screens`; box height off the pager's row word `_DAT_801F2740` |
 | picker labels, two-line descriptions | `OwnedDialogPanel::picker_labels`; `broken_text_draws_for` (`FUN_80036888` breaks on `0x7C`) |
 
 The site's full-map viewer is a fifth consumer of the same kernels:
@@ -1773,7 +1805,8 @@ Three more surfaces sit outside every tier:
 | body blend | `engine-battle::battle_body_blend` behind `BattleActorDrawPlan::apply_body_blend`; cue precedence `body_cue`, `tint_cue_applies` |
 | target cursor cue | `battle_action::cursor_cue` |
 | monster action-tag clips | `SceneHost::install_battle_monster_action_clips` |
-| HUD frame | `battle_hud::battle_intro_names`, `battle_commit_log`, `battle_banner_message` (elements `0x59` / `0x65` share the string at `ctx + 0x1F9`; [`battle-action.md`](../subsystems/battle-action.md#the-battle-message-banner-elements-0x59-and-0x65)) |
+| HUD frame and chrome, text list, tutorial boxes, arts-input chrome | `engine-screens::battle_screens` (`battle_hud_frame_draws`, `battle_chrome_sprite_draws`, `battle_text_draws`, `battle_tutorial_stage_draws`, `battle_tutorial_chrome_draws`, `arts_input_chrome_draws`) |
+| HUD frame rows | `battle_hud::battle_intro_names`, `battle_commit_log`, `battle_banner_message` (elements `0x59` / `0x65` share the string at `ctx + 0x1F9`; [`battle-action.md`](../subsystems/battle-action.md#the-battle-message-banner-elements-0x59-and-0x65)) |
 | effect spawns | `World::route_battle_effect_spawns`; a `ui_element` raise is a placement index for the HUD spawner `FUN_801D8DE8`, not an effect |
 | effect ribbon (move-VM op `0x42`, `FUN_801CFA48`) | `World::active_effect_ribbons` (`effect_ribbon`); in play the carrier is Gilium's summon (PROT 0923) |
 | ground shadow, default draw-kind-4 arm | `engine-effects::effect_default_arm` (`FUN_80028158`), `World::active_effect_kind4_draws`, `World::battle_ground_shadows` ([`effect-vm.md`](../subsystems/effect-vm.md#the-default-arms-draw)) |
@@ -1926,7 +1959,10 @@ The gates around it:
   previous clip's span plays nothing (`battle_xa_busy_frames`).
 
 Not this path: the arts shout (`FUN_8004C140`, `XA2` / `XA4` / `XA6`) plays on
-both hosts, and `cast_item_give` (`FUN_8003D53C(char_kind + 0x19, 0, 0x5A)`) is
+both hosts - including its one forced-channel exception, formation slot 0
+`0x4F` (Tetsu) playing channel `0xC`, which `route_battle_audio` feeds from
+`World::formation_slot0_monster_id` every step (oracle
+`engine-session/tests/arts_shout_battle.rs`) - and `cast_item_give` (`FUN_8003D53C(char_kind + 0x19, 0, 0x5A)`) is
 dropped at the `BattleActionHost` trait default. Oracles:
 `engine-core/tests/cast_voice_head_cue_disc.rs`,
 `engine-session/tests/cast_voice_lazy_stage.rs`.

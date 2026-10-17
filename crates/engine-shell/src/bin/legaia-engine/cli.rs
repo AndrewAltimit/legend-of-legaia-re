@@ -1071,12 +1071,15 @@ pub(crate) enum Cmd {
         /// roll: `--battle <ROW>` names one of the scene's MAN encounter
         /// formation rows (the id space the region roll itself produces), and
         /// `--battle first` takes the scene's lowest row that carries
-        /// monsters. The fight is armed at boot and opens through the ordinary
-        /// transition, so what it shows is what an organic encounter shows.
+        /// monsters. `--battle cell:[s:]ID,...` (hex monster ids, `s:` =
+        /// scripted) registers a formation no row carries, as a boss or duel
+        /// installed from another table. The fight is armed at boot and opens
+        /// through the ordinary transition, so what it shows is what an
+        /// organic encounter shows.
         /// Forces the live loop on. Omit for normal play - the flag changes
         /// nothing when absent. Pairs with `--screenshot-tick` (allow ~40
         /// ticks for the intro transition).
-        #[arg(long, value_name = "ROW|first")]
+        #[arg(long, value_name = "ROW|first|cell:IDS")]
         battle: Option<String>,
         /// Force the enhanced-lighting ENHANCEMENT (non-retail) on for this
         /// session: the scene mood's ambient + key light over the baked

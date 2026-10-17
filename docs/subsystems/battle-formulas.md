@@ -310,8 +310,16 @@ Venom:  Defense = Defense * 9 / 10        Toxic: Defense = Defense * 7 / 10
 | `def` | defender **UDF** (`+0x15C`) when `(byte - 0x0C) % 10 < 5`, else **LDF** (`+0x160`). A monster's is the record stat after the [battle-load boost](#actor-stat-block--monster-record-mapping); a party member's is record UDF / LDF plus the equipment defence bytes `FUN_80053CB8` folds. | `0x801ECE0C..0x801ECE74` (pick at `0x801ECE14`) |
 | `Rnd(def)` | `def + rand() % ((def>>3) + 1)` | `0x801ED1B0..0x801ED1D0` (`0x801ED1B8`) |
 | Distance | `ctx[+0x6D4]`, see [angle and distance](#angle-and-distance-terms) | `0x801ED1E0..0x801ED220` |
-| Spirit stance | defender `+0x1DE == 4`, or `+0x1DE == 5` (fleeing) while a living party member wears passive `0x35` **Safe Escape** (`+0xF8` bit `0x200000`) | `0x801ECFB8..0x801ED03C`, `0x801ED210..0x801ED230` |
+| Spirit stance | defender `+0x1DE == 4`, or a party defender with `+0x1DE == 5` (fleeing) while a seated party member wears passive `0x35` **Safe Escape** (`+0xF8` bit `0x200000`) | `0x801ECFB8..0x801ED03C`, `0x801ED210..0x801ED230` |
 | Venom / Toxic | defender `+0x16E` bit `0x1` / `0x2` | `0x801ED2B8..0x801ED304` |
+
+The Safe Escape count runs only for a party defender (`sltiu v0,a1,0x3` at
+`0x801ECF78`; a monster defender takes the record-element arm instead) and
+walks the `ctx[+0x00]` seated members' records with no HP test
+(`0x801ED000..0x801ED04C`), so a downed wearer still counts. **Port.**
+`World::safe_escape_guards` folds it into the guard flag `land_melee_hit`
+hands `physical_predamage`; the engine stamps category `5` only at a member's
+dispatch, so the round's pending Run stands in for the byte.
 
 ### Underdog rewrite, chip floor and cap
 
@@ -424,6 +432,13 @@ states sees no other `pc` and measures the computed windows: Gilium id 161
 `3`, `4` on hits 8-12 ticks apart; Gobu Gobu id 4 (`f8/2`) 16 ticks
 (`t=326..342`), its tag-3 flinch `f10/2` 22 against a computed 20; Vahn
 (`f3/1`) 12 ticks three times.
+
+**Port.** `World::next_juggle` rewrites `BattleState::juggle` on every hit
+`land_melee_hit` resolves, from the defender's block entry and its
+`battle_juggle_window` (the anim tick's `+0x1F7`), and hands it to
+`physical_predamage` as `combo_scale`. The same call passes the element pass
+(`World::melee_affinity_pct`), War Soul (`+0xF8 & 0x1000`, party attackers)
+and both sides' `+0x16E` words (`World::raw_status_word`).
 
 ### Angle and distance terms
 
@@ -567,8 +582,10 @@ Wiring, in `engine-core::world::battle::casting`:
   move id resolves to a power record, `cast_spell_on_slots` takes its damage
   from `World::enemy_move_predamage`, which reads INT from `battle.accuracy`, HP
   from `battle.hp` and the two defence terms from `battle.defense_split`, and
-  draws attacker x2 + defender x1 up front and the bonus pair lazily. Status and
-  guard inputs to the scale are defaulted on this path.
+  draws attacker x2 + defender x1 up front and the bonus pair lazily. The scale
+  stage reads both seats' `+0x16E` words (`World::raw_status_word`) and the
+  defender's Spirit stance; so do the two capture-class wrappers, whose own
+  `jal 0x801DD864` passes the attacker and defender seats too.
 - **Player Seru-magic casts.** `World::player_summon_predamage` seeds
   `summon_predamage_lazy` from the namesake creature's `battle_data` record
   (read from `DiscTables::summon_creatures`, filled at scene entry from the
@@ -1145,10 +1162,10 @@ roll alone also appears under the phantom name `overlay_0897_801e23ec`: PROT
 (`InitiativeActor`, `InitiativeAbility`), driven by `World::reseed_initiative`
 (`engine-core::world::battle::initiative`); next actor
 `World::next_combatant_by_initiative` (see
-[turn order](battle-round-loop.md#auto-resolve-vs-player-driven)). The engine
-passes `slowed: false` - its status model does not carry the raw `+0x16E ==
-0x1000` test - so the Slow halving never fires there; the wounded bonus, the
-lockout and the ability arms do. `reseed_initiative` applies the lockout
+[turn order](battle-round-loop.md#auto-resolve-vs-player-driven)). The halving
+reads `World::raw_status_word` against `0x1000` with the same exact compare, so
+it reaches an actor whose word is that bit alone (the Curse store of
+[selector 10](#selector-9---opposed-int-roll-stone)). `reseed_initiative` applies the lockout
 against its own `party_count` boundary because the engine compacts battle
 seating; `apply_side_lockout` keeps retail's fixed `0..=2` / `3..=6` split as
 the test-side reference.
@@ -1522,8 +1539,9 @@ inline twin in `FUN_801EC3E4` (dump lines 2800-2808).
 instructions); called by the round driver `FUN_801D0748` state `0x14`, after
 `FUN_801D88CC` / `FUN_801DA780`. **Port.** `status_effects::toxic_tick_damage`
 / `venom_tick_damage` (module `engine-battle-vm::status_effects`); the roll scales are
-`apply_status_weaken`. The scripted-fight one-tick clear for monsters is not
-modelled.
+`apply_status_weaken`. `World::tick_status_effects` makes the scripted-fight
+clear on a monster seat: the arm that ticked (Toxic ahead of Venom) cures its
+own status.
 
 ### Status application (the art / move record status byte)
 
@@ -1935,28 +1953,19 @@ Kernels that live elsewhere: `engine-battle-vm::status_effects` (`toxic_tick_dam
 
 ## What's still open
 
-- **Juggle window.** (1) `FUN_80050E00`'s fall-through exit returns `a0 + 3` in
-  `v0`, so an entry whose `+0x11..+0x13` are all non-zero hands the tick an
-  index that depends on the block's load address. No reaction entry on the disc
-  has such a list (`light_flinch_juggle_windows_resolve_over_real_archives`),
-  so it only touches an attack-band entry's own `+0x1F7`, uncaptured. (2) The
-  measured window can run 1-2 ticks past `32 * beat / (speed * rate)` - the
-  cursor's sub-frame carry at the commit is not modelled. (3) Whether the anim
-  commit's counter / guard window (`+0x1F6`, `0x8004AFC0..`) uses the same beat
-  for a parry is untraced.
-- **Spell-entry effect descriptor.** The descriptor the
-  [spell list](#spell-list-record-0x4c) indices resolve to has open interior
-  fields; its consumer is the cast / effect path.
-- **Ability-bit catalogue.** The bitfield at record `+0xF4` / `+0xF8` has the
-  bits named on this page pinned (plus the HP-cap / MP-cap bits `0x100` /
-  `0x200`, beside the record's stat fields at `+0x100..+0x110`, and the impact-step modifier `0x10` / `0x20` on attack actions); a
-  full per-bit table is in
-  [accessory-passive-table.md](../formats/accessory-passive-table.md).
-- **Astral Slash's damage call site** and PROT 952's unreachable respect call
-  ([wrappers](#capture-class-wrappers---fun_801dd4b0--fun_801dd6b4)).
-- **Port gaps.** The Slow halving of the initiative key, the scripted-fight
-  one-tick DoT clear for monsters, and Jedo's non-scripted effect on the monster
-  seats are not modelled.
+The page's live hunts are indexed on
+[open-rev-eng-threads.md](../reference/open-rev-eng-threads.md#battle--rendering):
+the three [juggle-window](#the-juggle-window---what-makes-a-monster-juggleable)
+residuals, the interior of the [spell-entry effect descriptor](#spell-list-record-0x4c),
+and the call that applies Astral Slash's damage together with PROT 952's
+unreachable respect call ([wrappers](#capture-class-wrappers---fun_801dd4b0--fun_801dd6b4)).
+The ability bitfield at record `+0xF4` / `+0xF8` is fully catalogued as the
+64 passive indices of [accessory-passive-table.md](../formats/accessory-passive-table.md#the-64-passive-indices)
+([settled](../reference/re-settled-threads/battle.md)).
+
+Jedo's non-scripted effect on the monster seats is carried by its summon
+director ([cast-module.md](cast-module.md#summon-creature-directors)); the Slow initiative halving and the
+scripted-fight one-tick DoT clear are modelled.
 
 Not open: "`FUN_801F3894`" (`overlay_0897_801f3894`) is not a fourth caller of the damage chain. Its
 257 instructions are `FUN_801DD0AC`'s byte for byte (the absolute `j

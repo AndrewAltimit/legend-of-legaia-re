@@ -1580,7 +1580,6 @@ name = "legaia-engine-effects"
 version = "0.1.0"
 dependencies = [
  "legaia-actor-formats",
- "legaia-engine-battle",
  "legaia-engine-battle-vm",
  "legaia-engine-system",
  "legaia-engine-vm",
@@ -1621,6 +1620,7 @@ dependencies = [
  "legaia-engine-vm",
  "legaia-lzs",
  "legaia-mes",
+ "legaia-minigame-formats",
  "legaia-overlay-images",
  "legaia-render-kernels",
  "legaia-save",
@@ -1702,7 +1702,7 @@ dependencies = [
  "legaia-actor-formats",
  "legaia-engine-battle-vm",
  "legaia-engine-camera",
- "legaia-engine-fishing",
+ "legaia-engine-field",
  "legaia-engine-system",
  "legaia-engine-vm",
  "legaia-game-tables",
@@ -1768,7 +1768,6 @@ dependencies = [
  "legaia-engine-battle",
  "legaia-engine-dialog",
  "legaia-engine-field",
- "legaia-engine-fishing",
  "legaia-engine-menus",
  "legaia-engine-mode",
  "legaia-engine-system",
@@ -1798,6 +1797,7 @@ version = "0.1.0"
 dependencies = [
  "legaia-engine-battle",
  "legaia-engine-core",
+ "legaia-engine-dialog",
  "legaia-engine-effects",
  "legaia-engine-field",
  "legaia-engine-fishing",

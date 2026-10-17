@@ -509,7 +509,7 @@ The file analysed here is extraction 905, the spell-`0x83` slot. PROT 903 (Gimar
 - **PROT 871** (`etmd.dat`) is a 30-entry `container-formats::pack` of Legaia TMDs. The battle scene loader `FUN_800520F0` pulls it at battle init (raw TOC index `0x369`, dev path `h:\prot\battle\etmd.dat`) and registers it via `FUN_80026B4C`, populating `DAT_8007C018[3..32]`. `[0..2]` are the party battle meshes.
 - Despite its CDNAME label `sound_data`, PROT 871 is the effect-model library. Its texture sibling PROT 870 (a 256x256 flame-frame atlas, also labelled `sound_data`) is loaded by a separate path.
 
-**Spawning parts.** Decompiled with `ghidra/scripts/dump_summon_overlay.py`:
+**Spawning parts.** Decompiled with `ghidra/scripts/dump/dump_summon_overlay.py`:
 
 - The overlay spawns part-actors through the SCUS part-stager **`FUN_80021B04(world_pos, render_slots, record_ptr, 0x1000)`**. `param_1` is the world position written to `actor[+0x14..0x18]`, `param_3` a part record, and the actor is allocated from the effect pool `DAT_8007062c`.
 - The thin pool wrapper **`FUN_80050ED4`** stores the spawned actor pointer in the first free slot among the first `0x60` words of the pool at `DAT_801C90F0`, then forwards the same arguments (see `ghidra/scripts/funcs/80050ed4.txt`). The array itself is `0x80` words: battle init `FUN_80055B6C` zeroes `0x80` (`0x8005603C..0x80056050`), and the flush `FUN_80050E74` and the per-frame release in `FUN_800480D8` both walk `0x80`. No code on the disc references the last 32 words, so they stay zero. It is the dominant call form in the high-summon and enemy boss stagers.

@@ -248,7 +248,7 @@ Two things then happen to the preseed, both in the entry arm:
 
 **Port.** `ArtsCommandInputSession::preseed` / `replay` / `committed_string`, filled by `World::open_arts_command_input` through `preseed_auto_command_string` (`crates/engine-core/src/world/battle/auto_command.rs`). `with_preseed` runs the gauge build's cut, and `bar_commands` / `bar_spent` hand the preseeded pennants to the shared `engine-ui::arts_input` bar on both hosts. `World::run_battle_art` stages the arrows as swing bytes and runs the write-back at the commit; the Attack dispatch sends a preseeded string through `build_arts_action_queue` and `charge_art_spirit`, as the arts dispatch does.
 
-The engine's named chain library `World::party.saved_chains` is separate data. The chain editor writes it, the save round-trip carries it, and the legacy `LEGAIA_ARTS_SAVED_LIST=1` list reads it, but nothing preseeds from it.
+The engine's named chain library `World::party.saved_chains` is separate data. The chain editor writes it, the save round-trip carries it, and the legacy saved-chain list (`WorldToggles::arts_saved_list`) reads it, but nothing preseeds from it.
 
 Because a turn performs however many arts the pool paid for, the shout cue and the learn-on-use check are per art, not per turn. See [audio.md](audio.md#battle-arts-voice-shout-path-engine).
 

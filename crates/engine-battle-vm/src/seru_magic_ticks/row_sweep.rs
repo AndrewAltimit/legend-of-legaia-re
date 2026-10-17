@@ -181,6 +181,19 @@ pub(super) fn stage_reaction_or(victim: &mut CastActorState) {
     victim.restage |= 0x01;
 }
 
+/// A summon-creature module's **non-lethal pre-hit**, the hit some modules
+/// land before their killing one: the roll is clamped to `HP - 1`
+/// (`sltu` against `+0x14C - 1`, [`apply_hit_cap_hp_minus_one`]), `+0x10`
+/// accumulates it, and the reaction is staged in the `OR` form. PROT 0915
+/// arm 7 (`0x801F7004..`), PROT 0928 arm `0xF` (`0x801F80C4..0x801F81EC`),
+/// PROT 0932 arm `0x12` and PROT 0933 arm `0xC` each run it, over their
+/// latched victim or their living monster row. Returns the damage applied.
+pub fn summon_pre_hit(victim: &mut CastActorState, dmg: u32) -> u32 {
+    let applied = super::apply_hit_cap_hp_minus_one(victim, dmg);
+    stage_reaction_or(victim);
+    applied
+}
+
 /// Is this seat in the enemy row's sweep? Both PROT 0909's and PROT 0912's
 /// loops open with `lhu +0x14C; beqz skip` then `lhu +0x16E; andi 4; bnez
 /// skip`, over `actor_table[3 .. 7]` (`addiu a0,s6,0xc` then `sltiu s3,7`).

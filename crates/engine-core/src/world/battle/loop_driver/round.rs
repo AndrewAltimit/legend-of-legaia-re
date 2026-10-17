@@ -349,11 +349,21 @@ impl World {
         // whole row: the action seed opens the readout bar on it
         // (`sltiu v0,t2,3` at `0x801E2F24..0x801E2F44`) and the module aims
         // at it (`FUN_801DCEAC(caster[+0x1DD])`), where the row code `8`
-        // opens nothing and aims at the row.
-        if seed.target < MONSTER_SLOT_FIRST
+        // opens nothing and aims at the row. A monster seat stays that
+        // monster too: a flute's summon is an item (category `1`) whose
+        // target is the item descriptor's, not the spell record's `+2`
+        // shape - `flute_spikefish_midcast` holds `+0x1DD = 3` under spell
+        // `0x97`, whose `0x24` byte reads all allies.
+        let pc = self.party.party_count.max(1);
+        let engine_target = match seed.target {
+            8 | 9 => None,
+            t if t < MONSTER_SLOT_FIRST => Some(t),
+            t => Some(pc + (t - MONSTER_SLOT_FIRST)),
+        };
+        if let Some(t) = engine_target
             && let Some(a) = self.actors.get_mut(usize::from(seed.caster))
         {
-            a.battle.active_target = seed.target;
+            a.battle.active_target = t;
         }
     }
 

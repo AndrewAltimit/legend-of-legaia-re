@@ -44,7 +44,7 @@ NO_EXIT_MIN_BYTES = 1024
 # `addiu $sp, $sp, -F` - the only way a MIPS I routine opens a stack frame, and
 # therefore the word a function ENTRY is recognised by. Paired with `jr ra`
 # (the only way one ends) it bounds every framed body in the corpus; the
-# frame-matched partition in `ghidra/scripts/dump_static_overlay.py` is built
+# frame-matched partition in `ghidra/scripts/dump/dump_static_overlay.py` is built
 # out of exactly these two words. See the `no_boundary` shape.
 _ADDIU_SP_NEG = 0x27BD0000
 # `addiu $t2, $zero, imm` - the register a PSX BIOS-call thunk loads its jump
@@ -175,7 +175,7 @@ def in_data_segment(image, base_va, a, b, floor=None):
 
     Corroborated independently by the thirteen slot-B modules whose function
     partition was recovered by FRAME MATCHING in
-    `ghidra/scripts/dump_static_overlay.py`: in all thirteen the last range ends
+    `ghidra/scripts/dump/dump_static_overlay.py`: in all thirteen the last range ends
     at exactly `data_floor`, i.e. the frame scan and this rule put the
     code/data boundary in the same place without sharing a test.
     """

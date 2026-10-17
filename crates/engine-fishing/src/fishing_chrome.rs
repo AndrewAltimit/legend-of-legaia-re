@@ -198,8 +198,21 @@ pub const SPLASH_SPREAD_MASK: i32 = 0xFFF;
 // Wired: the SESSION's own hook edge spawns the burst -
 // `World::tick_fishing` on the `Casting -> Fighting` transition, and the
 // minigames page on its `PondEvent::Splash` - into
-// [`crate::minigame_fx::MinigameFxPool`], which ages the three parts and
+// `legaia_engine_minigames::minigame_fx::MinigameFxPool`, which ages the three parts and
 // hands them to whichever host is drawing.
+impl SplashPart {
+    /// The stage seat a minigame effect pool spawns this part at: the part's
+    /// pair plus its nudge `>> 3`. The `>> 3` is the host presentation glue
+    /// the play window applied before the pool was shared, kept verbatim so
+    /// no host's pixels moved.
+    pub fn fx_seat(&self) -> (i16, i16) {
+        (
+            (self.x as i32 + (self.nudge.0 >> 3)) as i16,
+            (self.y as i32 + (self.nudge.1 >> 3)) as i16,
+        )
+    }
+}
+
 /// PORT: FUN_801D7A5C - the three-part splash burst.
 ///
 /// `(x, y, sprite_id, packed)` spawns the same part three times at one point
@@ -288,11 +301,11 @@ pub struct FloatActorTick {
 // `_DAT_1F8003EC` buffer retail's solver reads, sourced from the scene's
 // field-map entry.
 //
-// [`FloorGrid`]: crate::minigame_floor::FloorGrid
+// [`FloorGrid`]: legaia_engine_field::minigame_floor::FloorGrid
 /// PORT: FUN_801D70EC - the fishing float's per-frame actor wrapper.
 ///
 /// Calls the float height solver `FUN_801D6028(actor)`
-/// ([`crate::minigame_floor::ground_height`]), stores its return into the
+/// ([`legaia_engine_field::minigame_floor::ground_height`]), stores its return into the
 /// actor's `+0x16` screen y, clears [`ACTOR_FLAG_TICK`] and re-enters the
 /// shared actor dispatcher `FUN_800204F8`. The wrapper adds nothing else - it
 /// exists so the solver can be shared with the sibling caller that does not
@@ -302,16 +315,20 @@ pub struct FloatActorTick {
 /// returned, so the solver's own `0x800000` maintenance survives into the
 /// stored word.
 pub fn float_actor_tick(
-    grid: crate::minigame_floor::FloorGrid<'_>,
+    grid: legaia_engine_field::minigame_floor::FloorGrid<'_>,
     world_x: i16,
     world_z: i16,
     flags: u32,
     ramp: &[i16],
 ) -> FloatActorTick {
-    let solved =
-        crate::minigame_floor::ground_height(grid, world_x, world_z, flags, ramp, |gx, gz| {
-            grid.step_patch(gx, gz)
-        });
+    let solved = legaia_engine_field::minigame_floor::ground_height(
+        grid,
+        world_x,
+        world_z,
+        flags,
+        ramp,
+        |gx, gz| grid.step_patch(gx, gz),
+    );
     FloatActorTick {
         y: solved.height as i16,
         flags: solved.flags & !ACTOR_FLAG_TICK,
@@ -335,8 +352,16 @@ pub struct RippleSpawn {
     pub scale: i32,
 }
 
+impl RippleSpawn {
+    /// The stage seat a minigame effect pool spawns this ripple at: the
+    /// world X / Z pair `>> 3`.
+    pub fn fx_seat(&self) -> (i16, i16) {
+        (self.pos[0] >> 3, self.pos[2] >> 3)
+    }
+}
+
 // Wired: the play window spawns the wander actor's retarget ripple through
-// this into the shared [`crate::minigame_fx::MinigameFxPool`]
+// this into the shared `legaia_engine_minigames::minigame_fx::MinigameFxPool`
 // (`window/minigames.rs`). The seat is the wander actor's, and only that
 // host installs one, so the SPAWN stays native while the pool does not.
 /// PORT: FUN_801D7C30 - the ripple spawn wrapper.
@@ -361,6 +386,22 @@ pub fn ripple_spawn(actor_x: i16, actor_z: i16, mode: i32) -> Option<RippleSpawn
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The splash's pool seats: the middle part is the anchor, the first
+    /// moves `-spread >> 3` on both axes and the third `+spread >> 3` on x
+    /// (the direct form).
+    #[test]
+    fn the_splash_keeps_the_play_windows_seats() {
+        let parts = splash_burst(
+            crate::fishing_actors::SCREEN_CENTRE.0,
+            crate::fishing_actors::SCREEN_CENTRE.1,
+            0x100,
+            0x40,
+        );
+        assert_eq!(parts[1].fx_seat(), (0xA0, 0x78));
+        assert_eq!(parts[0].fx_seat(), (0xA0 - 8, 0x78 - 8));
+        assert_eq!(parts[2].fx_seat().0, 0xA0 + 8);
+    }
 
     fn table() -> Vec<i16> {
         (0..SINE_TURN)
@@ -446,7 +487,7 @@ mod tests {
 
     #[test]
     fn float_tick_clears_only_the_tick_bit() {
-        use crate::minigame_floor::{
+        use legaia_engine_field::minigame_floor::{
             ACTOR_FLAG_OFF_FLOOR, CELL_GRID_OFF, CELL_GRID_PITCH, CELL_ON_FLOOR, FloorGrid,
             HEIGHT_GRID_OFF, HEIGHT_GRID_PITCH, height_ramp,
         };

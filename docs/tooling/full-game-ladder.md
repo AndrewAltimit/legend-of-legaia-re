@@ -319,6 +319,19 @@ the anchor five milestones ahead, read only as far as every later anchor
 agrees with it (several chapter-1 anchors are other sessions), and leaving
 out the anchors outside the order check. Five ahead, because a party is
 trained where the rests are, not inside the dungeon an anchor was saved in.
+Near the end of the spine the fifth milestone ahead carries no party (the
+ending's anchors are the debug credits), so the target is the furthest
+anchor within five that does: Biron's castle, levels 50..53, for the
+stretches from Jette's fortress on. Without it those stretches trained to
+nothing and the run met Songi in `noaru` at level 40.
+
+A scene whose beats include a staged fight trains before them, since the
+beats walk into the boss, and so does a scene with a bed while a member is
+five or more levels below the target. `conc3` is the last bed before
+Rogue's tower, Jette's fortress and Cort (`chitei2`, 50000 HP), and its
+boss band is already down when the run arrives: a party that left it at
+level 35 lost to Cort six times, one trained there to 41 beat him first
+time.
 
 **Which beats it plays** is still the next anchor's flags. One exception:
 standing early in the scene of the milestone after next, it plays toward
@@ -490,6 +503,14 @@ the bag is short of an errand's copies:
   first contact hands over the chest's own item and raises its
   `0x413..0x41A`; a talk that runs and raises nothing is not crossed to again
   until the bag holds more of the errand's item.
+- **So are a waypoint's boss bands.** A live walk-on band in a waypoint
+  whose record raises a flag the next anchor carries and stages a fight
+  (itself or through a record it spawns), standing outside the player's
+  walk component, is reached the same way, up to three round trips a visit.
+  Any band is too many: crossing to every far band of `uru` replays its
+  dream bands out of order and walls off the `urudre1` door. `chitei2`'s Jette fight (P2[13] at (18, 89), `0x4C4`) lies past
+  the car from the side `deroa` P2[3] re-enters at (93, 108); the `0x4C8`
+  its aftermath raises opens `map03`'s portal to `concend`.
 - **It sells what the party has outgrown.** At any counter, an armament
   piece no present member is better off wearing - worth less, summed over
   its stat bonuses, than what each member who can wear it wears in its slot,
@@ -1056,8 +1077,7 @@ map as its street:
   set. `0x462` / `0x463` are not story state: no field script writes them,
   and the scene's ambient move-VM effect flips them as time passes (ext
   sub-ops `0x1C` / `0x1D`, [`move-vm-overlay-ext.md`](../subsystems/move-vm-overlay-ext.md)),
-  so the pads change partner on a clock. The planner reads the landing at
-  plan time and does not time its step onto a pad. A leg's encoded point can sit in the
+  so the pads change partner on a clock. A leg's encoded point can sit in the
   pillar beside where the platform parks the player (the hub's west leg,
   `0xB6`), so a landing in a wall cell is moved to the nearest open cell.
 - a **lift** - the same kind of record whose player moves are compass legs
@@ -1072,6 +1092,28 @@ map as its street:
   is what the entry script spawns the closing beat P2[13] on (`0x1D4`, which
   every `station` placement waits on). A run of legs that ends inside a tile
   of where it began is a step back off a band, not a ride.
+- a **clock pad** - a pad of the kinds above whose landing forks on a flag
+  the scene's own ambient move-VM stagers write (`2F 1C flag` / `2F 1D flag`
+  in the prescript records) rather than on story state - is an edge to each
+  phase's landing, the phase the flag is not in now dearer by the wait.
+  `rugi`'s prescript cycler idles until `0x594` (raised by the entry cutscene
+  P2[72]), then each lap holds `0x463` for a moment and `0x462` for a
+  stretch; in the engine `0x462` is up 92 frames of every 442. The upper pads
+  P2[40..61] land on their partner pad while it is down and on the hub
+  (86, 59) while it is up, and the hub's own pad P2[62] lands on (86, 53),
+  which is P2[40]'s tile. A plan that read only the live landing saw the hub
+  as a dead end whenever it was made while `0x462` was up, and a pad tile the
+  walker landed on was never entered again; the jump onto such a tile is now
+  planned from the cell beside it.
+
+  The follower times the step. It watches each clock flag's flips, keeps the
+  shortest run of each phase it has seen, and steps onto the pad only while
+  the wanted phase will still hold when the pad tests it (`PHASE_TEST_LEAD`:
+  the walk leg onto the pad, its fade and the 80 wait frames before P2[40]'s
+  `74 62 69 00`). A phase shorter than that is not planned through, so the
+  hub landing is not used once `0x462`'s run is known. Rogue's fight P2[38]
+  raises `0x46A`, on which the cycler parks; a clock that has not flipped for
+  4000 frames is not waited on.
 
 ### The follower
 
@@ -1301,6 +1343,34 @@ the threat by the hit it learned. Only a reload of the same segment against
 the same boss uses it; a fight the hand wins first time is played exactly as
 before.
 
+Songi in `noaru` (P2[30], `3E FF 04`, formation F4, monster 179, 48000 HP)
+is a real fight, not a scripted loss. The band raises no scripted-loss latch
+(system flag `0`) before the battle op, and the party that "wipes" at 1 HP
+apiece is the annihilated arm's unconditional floor
+([battle-round-loop.md](../subsystems/battle-round-loop.md)), so the loss is
+a game over and the band, its C1 gate `0x448` raised on the way in, spawns
+again on the reload. Songi hits one member a round for 1260..2380 and never
+the party at once. Against members of 2258..2681 HP that keeps two of the
+three turns on Healing Flowers most rounds, and the arts the hand types deal
+about 900..1400 a round, so most attempts lose the race with 15000..35000
+left. The same spell is not the same hit from every caster: Slippery (`0x92`)
+took 3171 off Songi from Gala and 862 from Vahn, and Gala's party-heal
+reserve keeps her from casting it a second time. The gap is the formula's
+([battle-formulas.md](../subsystems/battle-formulas.md#scale---fun_801dd864-and-the-element-matrix)):
+Gala held Slippery at magic level 7 and Vahn at 3, which scales the attacker
+roll by 1.75 and 1.25 before the defender roll is subtracted, so a common
+roll of about 4600 against a defence of about 4900 gives 3171 and 862.
+Treating a single-target hit within a quarter of a member's HP as one no heal
+outlasts did not change the outcome on two streams.
+
+The party was the difference. At `noaru` the run stood at level 40 (HP
+2258..2681) against the retail anchor's 31, but the retail party reached
+Biron's castle at 50..53, so it fought Songi well past 40, and the run's
+level target for these stretches was empty (above). Trained to 49 on the
+way, the run beats Songi on the first attempt on both streams. The retail
+party also carries about twenty Seru spells a member to the run's five to
+ten.
+
 Koru (`nilboa` P2[20], 20000 HP) is a race. Its pick arm casts by the
 battle-mode counter - `0xA2`, `0xA3`, `0xA4`, `0xA5` on modes `0..=3`, then
 Dead End Crisis (`0xA1`), which in this fight writes a flat 9999 to every
@@ -1392,7 +1462,13 @@ The MP for those heals is kept. Against a boss, a member that knows a group
 heal casts damage spells only out of the MP above two casts of it; and on
 the way to a boss a staged fight short of one is cast at only out of the
 upper half of the pool, like a random encounter (`taiku`'s P1[2] fight
-otherwise took Vahn from 197 MP to 24 two rooms before Zora).
+otherwise took Vahn from 197 MP to 24 two rooms before Zora). The field
+upkeep keeps it too: on the way to a boss and at its door a dry bag no longer
+turns into field casts out of the whole pool (four door casts took Vahn from
+197 to 17 before Zora), and the road leaves the bag's last three heals a
+member for the boss (`son`'s nineteen Healing Berries were drunk on
+`taiku`'s road). The shop buys one MP restorative a member, the best MP per
+gold on the counter, right after those three heals.
 
 The heals follow the bag. A second member backs up a committed heal while
 someone stands within one party-wide hit of death (turn order is drawn per
@@ -1482,6 +1558,7 @@ clips and matches the same arts a windowed one does. Beyond that:
 | `LEGAIA_FGL_PLAN_DEBUG` | Each object-door edge the planner adds. |
 | `LEGAIA_FGL_COMP_DEBUG` | The tile map of every walk component a plan failed inside (`o` reached, `A` avoided door tile, `b` actor box, `G` the goal), with the overworld's installed entities, the live NPCs, the solid props with their bind records, and the self-opening doors. Beside it, a sub-cell flood of the wall bits alone. |
 | `LEGAIA_FGL_JUMP_DEBUG` | Every pad-walk frame that moves the player more than 64 units (a door or lift ride), with the live arrival bracket. |
+| `LEGAIA_FGL_CLOCK_DEBUG` | Each flip of a clock flag the follower watches (frame, whether it was timed, the shortest run of each phase), and each frame a walk steps toward a clock pad in the phase it wants; and each overworld clock a talk on the route wants, with its live value. |
 | `LEGAIA_FGL_POS_TRACE` | Every tick of a scripted run that moves the player or changes the pad holder's park site. |
 | `LEGAIA_FGL_PROBE_AT=<scene>:<x>,<z>;U;R;...` | Seats the player at the start of the first pad hop in that scene and holds each listed direction for 40 frames, printing where it went. |
 | `LEGAIA_FGL_EDGES=<scene>,...` | Part A: each named scene's out- and in-edges (`*` marks a scripted one). |
@@ -1586,6 +1663,19 @@ Scene-specific facts the route and the pad hand depend on. Each is a property of
   (109, 78) that joins Zora Castle's east corridor to its south half (the
   way to the west wing's exit band P2[15] after the fight); it runs only
   while `0x38C` is set, and `0x38B` picks the direction.
+- A prop whose bind record spawns the ride as a partition-2 record is a
+  ride to where that record leaves the player: its last reposition (walk
+  leg, `0x23` MOVE_TO or `4C 51` seat) plus the compass legs after it.
+  `chitei2`'s cars are the case: P0[5] at (100, 102) spawns P2[7], which
+  seats the party at (94, 24) inside the far car's box and walks it two
+  tiles north (`C1 F8 00 84`) to (94, 22); P0[12] at (94, 24) spawns P2[8],
+  back to (100, 102) and two tiles west to (98, 102). Neither record tests a
+  flag: the cars run whatever the Rapid Transport switches (`0x4EF` /
+  `0x4F0`) say, which route only `deroa`'s hub. The car is the one way from
+  the side `deroa` P2[3] re-enters at (93, 108) to the column at (94, 5..24),
+  the room behind it and the corridor down to the Jette gate (41, 122). The
+  `.MAP` also carries a kind-0 teleport on the near car's tile to (94, 24),
+  which no walk reaches past the car's box.
 - A pad hop whose walk stalls against the door's own frame (two tiles or
   less short) treats the door as refused and tries the scene's other door
   to the same place, as for a door that turns the walk back.
@@ -1793,3 +1883,28 @@ Scene-specific facts the route and the pad hand depend on. Each is a property of
   starts). A reach beat that clears a flag the live state holds waits while
   another missing reach flag's band is out of reach: P2[11] clears the switch
   flags the `deroa` route needs, so the junction comes first.
+- The Karisto cart runs only from the side it stands on, and shuttles on a
+  clock once Zora's castle has raised `0x38F`. `station` P1[15] sells the
+  ride east (P2[24], which raises `0x466` and clears `0x467`) only while
+  `0x467` is up and otherwise says no return is scheduled; `station3` P2[2]
+  rides it back west. Neither ride is the only writer: the overworld moves
+  the cart too. `map02` P1[0], while `0x38F` is up and the cart stands east,
+  adds the frame tick to script counter 0 (`4C CB 00 FF FF`), and once it
+  reaches 480 rolls `Rand() & 0xFF` against 1 each frame; on the roll it
+  spawns P2[14], which raises `0x5A4`, and the cart actor's tail-section-1
+  stream switches to its `0x5A4` variant, flies the cart west and raises
+  `0x467` / drops `0x466` (motion-VM ops `0x07` / `0x08`). `map02` P2[15]
+  (`0x5A5`) and `map03` P2[17] / P2[18] (`0x5A2` / `0x5A3`) are the other
+  legs. A party that crosses the Karisto overworld for a few hundred frames
+  finds the cart waiting at the station.
+
+  The clock runs both ways, so a party that trains on `map02` can send the
+  cart back east as easily as west. Before the hand leaves an overworld, it
+  reads each talk along its route up to the next overworld: a flag that
+  only this overworld's motion streams write, which the talk tests, and
+  under one value of which (and not the other) the talk leads on - followed
+  through the talk's picker, compare and box branches both ways - is a clock
+  the hand stands still for until it shows. Short of the overworld, with the
+  clock wrong, the hand steps out onto it first, and training outings head
+  there rather than toward the talk. `station` P1[15] wants `0x467` up; the
+  cart lands in a little over a thousand frames of standing on `map02`.

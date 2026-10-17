@@ -188,7 +188,8 @@ impl World {
                 .unwrap_or(0),
             stat_a,
             stat_b,
-            status: 0,
+            // `FUN_801DD864` reads the defender's `+0x16E` Venom / Toxic bits.
+            status: self.raw_status_word(slot),
             guard: if self
                 .battle
                 .guarding

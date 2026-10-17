@@ -711,7 +711,13 @@ retail's was, so the scene's track has started.
 - **Formation.** The formation cell is matched against the scene's registered
   MAN rows. A cell no row carries (a fight installed from another table) is
   registered as a formation of its own, carrying the scripted bit, with the
-  monster archive's stats for its ids.
+  monster archive's stats for its ids
+  ([`FormationCell`](../../crates/engine-capture/src/formation_cell.rs)).
+  The bosses and duels are such cells (Cort, Zeto, the Delilas duels at
+  `jou`, Zora at `town01`), and so is every showcase fight staged on a scene
+  whose rows never held it (the summon captures on `map03`). The image child
+  registers the same cell through `play-window --battle cell:[s:]ids`, so
+  both sides arm the same formation id with the same monsters.
 - **Party.** Retail's present list `0x8007BD10` becomes the engine's active
   party. A guest seat, or a battle-id fight whose init re-seeds the trio, is
   not the save window's field party.
@@ -1080,6 +1086,7 @@ that holds the phase; a drive the headless side never completed is not imaged.
 | Seat | Commit |
 |---|---|
 | Members ahead of the capture's seat | a plain Attack: the ring's Left arm, `Auto`, the first target |
+| Members ahead of a menu capture's seat that committed Spirit | Spirit (the ring's Down arm), read off each seat's `+0x1DE = 4`: the commit log draws each member's committed command (`delilas_che_hammer_gaps_v3`'s Vahn and Noa) |
 | The capture's seat, menu capture | the arm that leads to the captured surface: Left then `Command` for the arts entry `0x50`, Up for the item window `0x3C`, Right for the magic window `0x46` |
 | The capture's seat, action capture | the same Attack every round; Spirit when its committed category `+0x1DE` is `4` |
 | A monster seat that was casting (`+0x1DE = 2`) | casts the capture's spell id `+0x1DF` on its next turn (`BattleState::forced_monster_cast`, with the capture's already-debited MP credited back) |
@@ -1261,6 +1268,7 @@ an orbit clock. `evil_medallion_rage_battle` is one.
 | Taken on the killing blow | a party action in flight whose target already reads `0` HP. Seeded so, the fight ends at the first `0x5A` wipe gate before the swing starts | When no seed reaches it with the HP as read, the search re-runs with each such victim at `1` HP (`RetailBattle::action_victims`); the victim's HP is then read at the phase. The other members commit Spirit (`BattleDrive::Action`'s `spare`), since any swing kills a `1`-HP victim |
 | The killing blow's body | a `0`-HP victim is no target, so the auto-target picks the next standing monster | The phase is held only with the acting seat on that target (`ActionSteer::target`); otherwise the search moves on to the `1`-HP re-run |
 | An absorbed Seru | the Done band's banner hold `0x52` carries the absorbed Seru in `ctx[+0x269]`, and the grant already prepended spell `seru + 0x80` to the acting character's list | The drive takes the spell back off that list on its first battle tick (`absorbed`), so the replayed kill's absorb lookup stages the banner instead of leaving `0x51` for `0x5A` |
+| A landed roll | the steal caption (HUD element `0x5B`) or an absorbed Seru: the outcome of a `rand() % 100` the replay's stream does not share | The drive seeds the outcome (`BattleState::forced_steal` / `forced_absorb`): the roll still draws, and lands. Searched for across streams instead, any change to the swing's own draws (a damage term) decided whether the phase was reachable (`player_steal_skeleton_banner`) |
 | A counterattack's HUD | a timed message up (HUD element `0x66`, hold `0x801F6964` non-zero) carries its overlay string and the hold left; a target plaque whose content word is zero carries that too (the strike loop's counter swap clears it) | The drive reaches a counterer's strike loop through the member's own turn, so it raises both when it holds the state (`ActionSteer::message` / `plate_cleared`). The text is read off the engine's own PROT 0898 image (`battle_vahn_tri_somersault_super`) |
 
 #### Monster casts the drive relies on
@@ -1314,6 +1322,14 @@ id queued at `+0x1DF`, or on the Done band it hands on to (`0x37` / `0x38`,
 **The seed.** The engine is handed that cast (`World::battle.inflight_seed`,
 target byte `+0x1DD`), dispatched the moment the first command prompt opens:
 
+- the target byte is the one the seed read, not always the capture's. The magic
+  band rewrites a group code in place once one combatant is left on that side:
+  `8` becomes the lone member's slot `ctx[+0x24A] - 1` (`0x801E431C`), `9` the
+  lone monster `ctx[+0x24B]` (`0x801E42D0`). The seed tests the byte once, and a
+  party-wide cast seeded on the slot opens the readout bar, which retail's seed
+  on `8` never does. So an all-allies spell whose byte reads the lone member's
+  slot is replayed on `8` (`seed_target_code`; `evolved_0x91_midcast`, Holy
+  Eyes from a lone Vahn). The `9` arm is replayed as read;
 - the capture's MP charge is credited back, so the band's own debit lands on the
   captured figure;
 - the seed carries every combatant's live `+0x34` / `+0x38` pair
@@ -1396,8 +1412,8 @@ shows.
   module's, so the capture is gated on `ctx[+0x279]` too. A walk arm is gated on
   its entry, not on how far the creature has walked, so a mid-walk capture reads
   its `camera` against the framing the walk starts from.
-- **Camera-only director (the summon creatures).** It does not move the band's
-  length, so its captures stay gated on the flash alone.
+- **Whole-chain director (the summon creatures).** It paces the band like
+  the pacing directors above, so the capture is gated on `ctx[+0x279]` too.
 - **No director.** The module keeps case 6 on the caster through `0x35` /
   `0x36`, and its capture's `camera` reads that gap. PROT 0913 (Nova), whose
   opening arms wait on the creature's CD read, is the one `0x35` capture of that
@@ -1426,15 +1442,21 @@ does not seat (a guest combatant) reads as a short engine party in
 `battle_party`.
 
 **The image** comes from `play-window --resume-save <lifted save> --battle <row>
---party <ids>` with the retail stage variant. That is the card-load resume the
+--party <ids>` with the retail stage variant; a fight no MAN row carries passes
+its formation cell instead (`--battle cell:s:b4`). That is the card-load resume the
 headless side takes, so the frame's party is retail's (levels, equipment and the
 battle meshes assembled from it, the HP / MP the HUD prints) rather than the New
 Game template a bare door entry seeds. It is captured a fixed number of ticks
 past the fight's first prompt. The evolved-Cort arrival (PROT 0968) holds the
 prompt back some two thousand vsync ticks longer than an ordinary opening (its
 countdowns drain by the frame step a pass, so one a tick), and the headless
-side's opening window runs long enough to wait it out. A fight with no MAN row
-to name is not imaged; its reason is in the report.
+side's opening window runs long enough to wait it out. A battle capture whose
+retail frame is a fade is not imaged, and its reason is in the report.
+
+A capture made on a patched disc is imaged like any other, and its `image`
+detail names the resident patch: a party-swap build draws its own battle
+models, so the Delilas captures' fighter is the patch's mesh where the engine
+draws the unpatched member, and that part of the distance is the patch's.
 
 A replayed cast is one frame of a cast that runs for hundreds of vsyncs, and
 on most summons that frame is the white flash. The
@@ -2386,37 +2408,37 @@ cursor the way it carries the glide would close it.
 The three `super_queue_replace_*` states are one base capture with a
 RAM-injected action queue, so they carry the same camera words: `ctx[7]` is
 `0x14`, `ctx[+0xD] = 3`, `DAT_8007BD71 = 0xFF`, eye `(0, 972, 2867)` at pitch
-`0x80`. State `0x14` lasts one frame on both sides: its body (`0x801E305C`)
-calls `FUN_801D5854(seat, 6)` and leaves for `0x19` or `0x1E` before it
-returns. So the shot on screen is the one the `0x0C` seed armed, and both
-sides take case 6's in-fight arm. The engine's framing is not the gap. The gap
-is where the glide starts from:
+`0x80`, yaw `3205`. The seed `0x0C` stores the `0x800` rung over the yaw
+counter (`0x801E2CF8`), arms case 6 (`jal 0x801D5854` with `a1 = 6` at
+`0x801E2D50`), and only then stores state `0x14` (`0x801E2F18`) and the
+`0x200` rung (`0x801E2F20`). The capture reads `0x14` with the counter still
+on `0x200`, so `0x14`'s body has not run: the camera is the walker's pass
+after the seed's arm, closing on that arm's endpoint, yaw `4062` =
+`0x800 + 0x800 - actor[+0x46]` (the capture's tween table `ctx[+0x118C]`).
 
-- Retail's depth `2867` is `prescale(0x700)`, exactly one sixth of the way
-  from the arts-entry close-up `prescale(0x600)` toward case 6's
-  `prescale(0xC00)`. The acting member came straight out of its own arts
-  entry. In the engine's round the monster acts first, and the pad drive takes
-  Auto at the attack-mode prompt, so the engine's glide starts from the
-  monster's end-of-action shot.
-- The captured yaw `3205` is mid-glide, not a framing. The capture's tween
-  table (`ctx[+0x118C]`) holds the endpoint `4062` = `0x800 + 0x800 -
-  actor[+0x46]`: the seed pass's `ctx[+0x6DA] = 0x800` with style `3`'s
-  half-turn, armed two frames before the save, which the counter's `0x200`
-  (the Attack branch's store) has not yet re-armed.
+Three things put the engine on the same pass:
 
-Pitch `0x80` already reached and `TR.y = 972` do not fit a single glide step,
-so the capture's own glide history is not fully explained either.
+- **The seed's own shot.** On the per-vsync SM the seed's pass and the
+  `0x14` store land on one tick, and the camera framed the live state. So the
+  seed's shot never reached the camera, and the engine glided toward
+  `0x14`'s `0x200`-rung endpoint (`2561`). The camera now frames the seed's
+  pass as the seed's on both cadences (`World::battle_camera_state`).
+- **The acting seat's heading.** The case-6 arm subtracts the attacker's
+  `+0x46`, which `0x14` recomputes from the target bearing
+  (`0x801E3078..0x801E3088`). Before that store, the heading is the one
+  Vahn's last turn left (`34`), which the replayed prompt does not restore,
+  so the seed stands the seat on it (`RetailBattle::seeded_facing`).
+- **The turn order.** The capture is round `0` (`ctx[+0x28A] = 0`) with
+  both initiative keys `+0x16C` spent, so Gobu Gobu had already dispatched.
+  A replayed swing walks Gobu Gobu about `250` units on and pushes Vahn `164`
+  back, so the spent key is seeded
+  ([above](#combatants-that-had-already-acted)): the monster sits the round
+  out and both stand on retail's ground.
 
-The capture is round `0` (`ctx[+0x28A] = 0`) with both initiative keys
-`+0x16C` spent, so Gobu Gobu had already dispatched in retail - and every
-battle stream puts it ahead of Vahn in the engine too. What parted the two
-sides was that turn played twice: retail stands Gobu Gobu on `(0, 0)` and Vahn
-on `(-7, -338)`, and a replayed swing walks Gobu Gobu about `250` units on and
-pushes Vahn `164` back. With the spent key seeded
-([above](#combatants-that-had-already-acted)) the monster sits the round out,
-both stand on retail's ground, and the focus reads `(-11, -381)` on both
-sides; what is left of the channel is the mid-glide yaw (`3127` against
-`3205`).
+With all three the endpoints agree (`4063` against `4062`), the glide origin
+is aligned ([below](#an-ease-out-camera-carries-its-history)), and the
+`camera` channel reads `1.0`. The frame's residual is the pose of the
+injected swing and the stage.
 
 ### An ease-out camera carries its history
 

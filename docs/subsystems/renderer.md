@@ -1154,7 +1154,7 @@ is no eye-back depth constant in the chain: the live trio is the eye-space
 offset. A renderer that draws geometry at `1x` reproduces the frame by
 dividing the trio by `S`, since the perspective divide is invariant under a
 uniform scale of the whole eye-space vector. That is the rule
-`engine-core::camera_view::FIELD_CAM_DEPTH` is derived from, and the one an
+`engine-field::camera_frame::FIELD_CAM_DEPTH` is derived from, and the one an
 op-`0x45` beat's offset trio goes through ([`cutscene.md`](cutscene.md)).
 
 Details that matter to a port:

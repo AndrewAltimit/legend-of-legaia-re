@@ -131,7 +131,7 @@ docker compose exec ghidra /ghidra/support/analyzeHeadless \
 # run an analysis script
 docker compose exec ghidra /ghidra/support/analyzeHeadless \
     /projects legaia -process SCUS_942.54 \
-    -postScript dump_funcs.py -noanalysis -scriptPath /scripts</code></pre>
+    -postScript /scripts/dump/dump_funcs.py -noanalysis</code></pre>
   <p class="hint">The one-time <code>docker compose build ghidra</code> wraps the base image with a user matching your host UID/GID, so script output lands in <code>ghidra/scripts/</code> owned by you.</p>
   <p>Most of the game's logic is not in the executable at all - it lives in code overlays the game loads into RAM as it runs. Capturing those is its own pipeline: <a href="tooling/overlay-capture.html">overlay capture</a> (from an emulator save state) and the <a href="tooling/static-overlay-pipeline.html">static overlay pipeline</a> (straight from the disc).</p>
   <div class="see-also">

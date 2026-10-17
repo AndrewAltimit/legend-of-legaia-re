@@ -437,7 +437,15 @@ fn part_c_continuous_run() {
         }
         ERRANDS.with(|e| *e.borrow_mut() = errands);
         LEARNED_CADENCE.with(|l| l.set(None));
-        let ahead = (i + LEVEL_LOOKAHEAD).min(spine.len() - 1);
+        // The furthest anchor in reach that records a party: the spine's
+        // last milestones (the ending's debug-credits anchors) carry none,
+        // and a lookahead that lands on one left the last stretches with no
+        // target at all - the run met Songi in `noaru` at level 40 where
+        // the retail run had grown to 50 by Biron's castle.
+        let ahead = (i + 1..=(i + LEVEL_LOOKAHEAD).min(spine.len() - 1))
+            .rev()
+            .find(|&k| !anchor_levels[k].is_empty())
+            .unwrap_or((i + LEVEL_LOOKAHEAD).min(spine.len() - 1));
         TARGET_LEVELS.with(|t| {
             *t.borrow_mut() = anchor_levels[ahead]
                 .iter()

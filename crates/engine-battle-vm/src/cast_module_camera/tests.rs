@@ -130,34 +130,6 @@ fn gimard_creature_shots_frame_the_placed_creature() {
 }
 
 #[test]
-fn camera_only_directors_park_past_their_arms() {
-    for entry in [914, 915, 917, 923, 928, 930, 931] {
-        let p = module_profile(entry).expect("directed");
-        assert!(!p.paces_band(), "PROT {entry} is camera-only");
-        let mut st = ModuleCamState::default();
-        let d = (p.direct)(&mut st, 0, seats());
-        assert!(d.shot.is_some(), "PROT {entry} cuts at arm 0");
-        // Walk until it parks; every covered arm lets the phase through
-        // eventually.
-        let mut phase = 0u8;
-        for _ in 0..4096 {
-            let d = (p.direct)(&mut st, phase, seats());
-            if d.park {
-                break;
-            }
-            if !d.hold {
-                phase += 1;
-            }
-        }
-        assert!((1..8).contains(&phase), "PROT {entry} parked at {phase}");
-    }
-}
-
-/// PROT 0920's director carries the whole chain: it paces the band, every
-/// arm is a countdown gate, arm 10 stores `0xFF`, and at the engine's step
-/// the arms dwell `scalar << n` drained `scalar` a tick - 64, 128, 128, 256,
-/// 256, 32, 128 and 128 ticks for arms 3..10.
-#[test]
 fn slippery_director_walks_the_whole_chain_to_0xff() {
     let p = module_profile(920).expect("directed");
     assert!(p.paces_band() && p.director_body && p.owns_phase);
@@ -170,7 +142,6 @@ fn slippery_director_walks_the_whole_chain_to_0xff() {
             break;
         }
         let d = slippery_direct(&mut st, phase, seats());
-        assert!(!d.park, "arm {phase} parks");
         *dwell.entry(phase).or_default() += 1;
         if !d.hold {
             phase = d.jump.unwrap_or(phase + 1);
@@ -398,51 +369,53 @@ fn vera_reports_its_spawns_on_their_arms() {
     assert_eq!(rot4, [0, 0, 0x200]);
 }
 
-/// Walk any director to its park, returning `(passes per arm, shots by arm)`.
-fn walk_director(
-    direct: ModuleDirector,
-    seats: ModuleCamSeats,
-) -> (Vec<u32>, Vec<(u8, ModuleShot)>) {
-    let mut st = ModuleCamState::default();
-    let mut phase = 0u8;
-    let mut ticks_in_arm = vec![0u32];
-    let mut shots = Vec::new();
-    for _ in 0..4000 {
-        let d = direct(&mut st, phase, seats);
-        if d.park {
-            return (ticks_in_arm, shots);
-        }
-        if let Some(s) = d.shot {
-            shots.push((phase, s));
-        }
-        *ticks_in_arm.last_mut().unwrap() += 1;
-        if !d.hold {
-            phase += 1;
-            ticks_in_arm.push(0);
-        }
-    }
-    panic!("director never parked");
-}
-
-/// The six summon-creature directors read off PROT 0916 / 0921 / 0929 /
-/// 0932 / 0933 / 0934 are registered as camera-only and each parks.
+/// Every summon-creature module's director carries its whole chain: no arm
+/// parks, it cuts at arm 0, it reaches the done phase with the row settled
+/// and the band timer spent, and it passes its hit arm on the way.
 #[test]
-fn summon_creature_directors_are_camera_only_and_park() {
-    for (entry, park) in [(916, 5), (921, 5), (929, 3), (932, 6), (933, 5), (934, 5)] {
-        let p = module_profile(entry).expect("registered");
-        assert!(p.owns_phase && p.hit_arm.is_none(), "PROT {entry}");
-        let (arms, _) = walk_director(p.direct, seats());
-        assert_eq!(arms.len() - 1, park, "PROT {entry} parks at arm {park}");
+fn every_summon_creature_director_walks_its_chain_to_0xff() {
+    for entry in [
+        914, 915, 916, 917, 921, 923, 928, 929, 930, 931, 932, 933, 934,
+    ] {
+        let p = module_profile(entry).expect("directed");
+        assert!(
+            p.director_body && p.paces_band() && p.owns_phase,
+            "PROT {entry} carries its chain"
+        );
+        let hit = p.hit_arm.expect("a hit arm");
+        let st = ModuleCamState {
+            row_settled: true,
+            victim_settled: true,
+            ..Default::default()
+        };
+        let mut first = st;
+        assert!(
+            (p.direct)(&mut first, 0, seats()).shot.is_some(),
+            "PROT {entry} cuts at arm 0"
+        );
+        let (dwell, _, _, _) = walk_body(p.direct, seats(), st);
+        assert!(
+            dwell.contains_key(&hit),
+            "PROT {entry} runs its hit arm {hit:#x}"
+        );
+        let total: u32 = dwell.values().sum();
+        assert!(total > 200, "PROT {entry} lasts {total} ticks");
     }
 }
 
-/// Terra's arm 3 / 4 gates drain the `0x100` its arm 2 arms by one frame
-/// delta a tick and re-arm `0x20` / `0x60` on what is left.
 #[test]
 fn terra_counts_its_rise_out_and_cuts_on_arm_4() {
-    let (arms, shots) = walk_director(terra_direct, seats());
-    assert_eq!(arms[3], 0x100);
-    assert_eq!(arms[4], 0x20);
+    let (arms, shots, _, _) = walk_body(
+        terra_direct,
+        seats(),
+        ModuleCamState {
+            row_settled: true,
+            victim_settled: true,
+            ..Default::default()
+        },
+    );
+    assert_eq!(arms[&3], 0x100);
+    assert_eq!(arms[&4], 0x20);
     let arm2 = shots.iter().find(|(a, _)| *a == 2).unwrap().1;
     assert_eq!(
         (arm2.angles, arm2.tr, arm2.frames),
@@ -460,7 +433,7 @@ fn meta_swings_until_its_word_falls_below_0x41() {
     let mut holds = 0;
     loop {
         let d = meta_direct(&mut st, 1, seats());
-        let n = d.nudge.expect("every pass swings");
+        let n = d.drift.expect("every pass swings");
         assert_eq!((n.pitch, n.tr_y, n.tr_z), (-4, 12, -12));
         if !d.hold {
             break;
@@ -468,9 +441,49 @@ fn meta_swings_until_its_word_falls_below_0x41() {
         holds += 1;
     }
     assert_eq!(holds, 0xC0 - 0x41);
-    let (_, shots) = walk_director(meta_direct, seats());
+    let (_, shots, _, _) = walk_body(
+        meta_direct,
+        seats(),
+        ModuleCamState {
+            row_settled: true,
+            victim_settled: true,
+            ..Default::default()
+        },
+    );
     let arm4 = shots.iter().find(|(a, _)| *a == 4).unwrap().1;
     assert_eq!(arm4.tr, [-0x5C8, 0x600, -0x1000]);
+}
+
+/// Walk a director that carries its whole chain to `0xFF`, honouring its
+/// phase jumps. Returns the passes each arm dwelt, every shot with its arm,
+/// every direction with its arm, and the director state it ended on.
+type BodyWalk = (
+    std::collections::BTreeMap<u8, u32>,
+    Vec<(u8, ModuleShot)>,
+    Vec<(u8, ArmDirection)>,
+    ModuleCamState,
+);
+
+fn walk_body(direct: ModuleDirector, seats: ModuleCamSeats, mut st: ModuleCamState) -> BodyWalk {
+    let mut phase = 0u8;
+    let mut dwell = std::collections::BTreeMap::<u8, u32>::new();
+    let mut shots = Vec::new();
+    let mut passes = Vec::new();
+    for _ in 0..20_000 {
+        if phase == crate::seru_magic_ticks::SERU_B_DONE_PHASE {
+            return (dwell, shots, passes, st);
+        }
+        let d = direct(&mut st, phase, seats);
+        *dwell.entry(phase).or_default() += 1;
+        if let Some(s) = d.shot {
+            shots.push((phase, s));
+        }
+        passes.push((phase, d));
+        if !d.hold {
+            phase = d.jump.unwrap_or(phase + 1);
+        }
+    }
+    panic!("director never reached 0xFF");
 }
 
 /// Aluru frames a point half a unit off the victim along the reversed
@@ -478,18 +491,108 @@ fn meta_swings_until_its_word_falls_below_0x41() {
 #[test]
 fn aluru_frames_the_victim_then_its_creature() {
     let s = seats();
-    let (arms, shots) = walk_director(aluru_direct, s);
+    let mut st = ModuleCamState::default();
     let h = heading(s.victim, s.caster).wrapping_add(0x800) & 0xFFF;
     let (sin, cos) = trig12(h);
-    let arm0 = shots[0].1;
+    let arm0 = aluru_direct(&mut st, 0, s).shot.unwrap();
     assert_eq!(arm0.angles, [-0x80, yaw_from(0x800, h), 0]);
     assert_eq!(arm0.focus[0], (half(sin) - i32::from(s.victim.x)) as i16);
     assert_eq!(arm0.focus[2], (half(cos) - i32::from(s.victim.z)) as i16);
-    // The band timer `scalar * 20` drains `scalar` a tick under `bgez`.
-    assert_eq!(arms[4], 21);
+    // A spent band timer skips arm 2 (`addiu v0,a0,0x2` at `0x801F6F00`).
+    assert_eq!(aluru_direct(&mut st, 1, s).jump, Some(3));
+    let settled = ModuleCamState {
+        victim_settled: true,
+        ..Default::default()
+    };
+    let (dwell, shots, _, _) = walk_body(aluru_direct, s, settled);
+    // The band word `scalar * 20` drains `scalar` a tick under `bgez`.
+    assert_eq!(dwell[&4], 21);
     let arm4 = shots.iter().find(|(a, _)| *a == 4).unwrap().1;
     assert_eq!(arm4.frames, 0x80);
     assert_eq!(arm4.focus[0], (half(sin) - i32::from(s.victim.x)) as i16);
+}
+
+/// Aluru's chain reaches `0xFF` on both paths: the damage path steps
+/// through arms `0x12`, `0x13` and `0x14`, the kill path leaves `0x13` for
+/// `0xFF`. The band word grows `scalar` a tick, so arm `0x12` lasts until it
+/// passes `scalar * 32` and arm `0x13` until it passes `scalar * 192`.
+#[test]
+fn aluru_walks_both_paths_to_0xff_with_the_band_word_dwell() {
+    let profile = module_profile(ALURU_ENTRY).expect("directed");
+    assert!(profile.director_body && profile.paces_band() && profile.stages_spawns);
+    assert_eq!(profile.hit_arm, Some(ALURU_HIT_ARM));
+    let damage = ModuleCamState {
+        kill: Some(false),
+        victim_settled: true,
+        ..Default::default()
+    };
+    let (dwell, shots, passes, _) = walk_body(aluru_direct, seats(), damage);
+    assert_eq!(dwell[&ALURU_HIT_ARM], 33);
+    assert_eq!(dwell[&ALURU_SPREAD_ARM], 160);
+    assert_eq!(dwell[&ALURU_SETTLE_ARM], 1);
+    // Arm 5 drains the creature's colour word `0x800` to `0x400`, arm 6 on
+    // to `0`, `scalar` a tick.
+    assert_eq!(dwell[&5], 0x400 / MODULE_DRAIN_PER_TICK as u32);
+    assert_eq!(dwell[&6], 0x400 / MODULE_DRAIN_PER_TICK as u32);
+    // The spell name, then the attack name, then the clear on the hit.
+    let captions: Vec<(u8, ModuleCaption)> = passes
+        .iter()
+        .filter_map(|(a, d)| d.caption.map(|c| (*a, c)))
+        .collect();
+    assert_eq!(
+        captions,
+        vec![
+            (6, ModuleCaption::SpellName),
+            (7, ModuleCaption::AttackName),
+            (ALURU_HIT_ARM, ModuleCaption::Cleared),
+        ]
+    );
+    let settle = shots
+        .iter()
+        .find(|(a, _)| *a == ALURU_SETTLE_ARM)
+        .unwrap()
+        .1;
+    assert_eq!(settle.angles[0], 0x40);
+    assert_eq!(settle.frames, 0x10);
+    // The kill path never reaches arm 0x14, and breaks the victim up on
+    // every pass of arm 0x13.
+    let kill = ModuleCamState {
+        kill: Some(true),
+        ..Default::default()
+    };
+    let (dwell, _, passes, _) = walk_body(aluru_direct, seats(), kill);
+    assert!(!dwell.contains_key(&ALURU_SETTLE_ARM));
+    assert_eq!(dwell[&ALURU_SPREAD_ARM], 160);
+    assert!(
+        passes
+            .iter()
+            .filter(|(a, _)| *a == ALURU_SPREAD_ARM)
+            .all(|(_, d)| d.jump.is_none_or(|j| j == 0xFF))
+    );
+}
+
+/// The bands draw once at rest on arm `0x11`'s passing tick and then on
+/// every pass of `0x12` / `0x13`, spread by the band word over 24.
+#[test]
+fn aluru_band_spread_follows_the_band_word() {
+    let mut st = ModuleCamState {
+        kill: Some(false),
+        ..Default::default()
+    };
+    let d = aluru_direct(&mut st, ALURU_BLAST_ARM, seats());
+    assert!(!d.hold);
+    assert_eq!(st.band_spread, Some(0));
+    for k in 1..=10 {
+        let _ = aluru_direct(&mut st, ALURU_HIT_ARM, seats());
+        assert_eq!(st.countdown.0, k * MODULE_DRAIN_PER_TICK);
+        assert_eq!(
+            st.band_spread,
+            Some((k * MODULE_DRAIN_PER_TICK / 24) as i16)
+        );
+    }
+    let _ = aluru_direct(&mut st, 8, seats());
+    assert_eq!(st.band_spread, None, "a non-band arm draws none");
+    assert_eq!(aluru_band_spread(0xFFE8), -1);
 }
 
 /// Iota pulls TR z in by the drain while its word runs and only passes arm
@@ -500,11 +603,19 @@ fn iota_pulls_in_while_its_countdown_runs() {
     let _ = iota_direct(&mut st, 0, seats());
     let a1 = iota_direct(&mut st, 1, seats());
     assert!(!a1.hold);
-    assert_eq!(a1.nudge.unwrap().tr_z, -MODULE_DRAIN_PER_TICK as i16);
-    let (arms, shots) = walk_director(iota_direct, seats());
+    assert_eq!(a1.drift.unwrap().tr_z, -MODULE_DRAIN_PER_TICK as i16);
+    let (arms, shots, _, _) = walk_body(
+        iota_direct,
+        seats(),
+        ModuleCamState {
+            row_settled: true,
+            victim_settled: true,
+            ..Default::default()
+        },
+    );
     // Arm 2: `scalar << 6` less the arm-1 drain, a drain a tick, then the
     // passing tick.
-    assert_eq!(arms[2], (64 - 1) + 1);
+    assert_eq!(arms[&2], (64 - 1) + 1);
     assert!(
         shots
             .iter()
@@ -845,4 +956,108 @@ fn orb_anchors_resolve_like_the_arms_build_them() {
         spawn_anchor_scale(SpawnAnchor::Caster { y: 0 }, Some(shot), seats),
         0x1000
     );
+}
+
+/// Gola Gola's arms 4..6 hold until the creature's clip cursor reaches
+/// `0x100` / `0x200` / `0x300` (`slti` on node `+0x68`), pass at once with
+/// no cursor fed, and never hold past the bound.
+#[test]
+fn gola_gola_frame_waits_follow_the_creature_cursor() {
+    let s = seats();
+    let mut st = ModuleCamState {
+        creature_frame: Some(0xF0),
+        ..Default::default()
+    };
+    assert!(gola_gola_direct(&mut st, 4, s).hold);
+    st.creature_frame = Some(0x100);
+    assert!(!gola_gola_direct(&mut st, 4, s).hold, "the frame reached");
+    st.creature_frame = Some(0x100);
+    assert!(gola_gola_direct(&mut st, 5, s).hold);
+    st.creature_frame = None;
+    assert!(!gola_gola_direct(&mut st, 6, s).hold, "no cursor: pass");
+    // A cursor that never moves is let go after the bound.
+    let mut st = ModuleCamState {
+        creature_frame: Some(0),
+        ..Default::default()
+    };
+    let mut holds = 0;
+    while gola_gola_direct(&mut st, 8, s).hold {
+        holds += 1;
+        assert!(holds <= super::body_kit::HOST_WAIT_CAP);
+    }
+    assert_eq!(holds, super::body_kit::HOST_WAIT_CAP);
+}
+
+/// Gola Gola's arm `0xB` waits for the attack clip's park (`+0x21B` off
+/// `0xFF`) with the yaw drift on every pass, and arm `0xC` re-arms the park
+/// and ramps the creature's rate `word >> 4 + 2` to `0x20`.
+#[test]
+fn gola_gola_holds_the_park_and_ramps_the_rate() {
+    let s = seats();
+    let mut st = ModuleCamState {
+        creature_loops: Some(0xFF),
+        ..Default::default()
+    };
+    let d = gola_gola_direct(&mut st, 0xB, s);
+    assert!(d.hold && d.drift.is_some());
+    st.creature_loops = Some(0xFE);
+    assert!(!gola_gola_direct(&mut st, 0xB, s).hold);
+    let mut rates = Vec::new();
+    loop {
+        let d = gola_gola_direct(&mut st, 0xC, s);
+        assert!(
+            std::mem::take(&mut st.creature_loop_arm),
+            "the park re-armed"
+        );
+        rates.push(st.creature_rate.take().unwrap());
+        if !d.hold {
+            break;
+        }
+    }
+    assert_eq!(rates.first(), Some(&2));
+    assert_eq!(rates.last(), Some(&0x20));
+    assert!(rates.windows(2).all(|w| w[0] <= w[1]));
+}
+
+/// Palma's arms 8 and 9 hold on the park, then put the cursor back on
+/// keyframe 15 and re-arm the park; arm `0xA` only waits.
+#[test]
+fn palma_replays_its_swing_from_keyframe_fifteen() {
+    let s = seats();
+    let mut st = ModuleCamState {
+        creature_loops: Some(0xFF),
+        ..Default::default()
+    };
+    for arm in [8u8, 9, 0xA] {
+        st.creature_loops = Some(0xFF);
+        assert!(palma_direct(&mut st, arm, s).hold, "arm {arm} waits");
+        st.creature_loops = Some(3);
+        assert!(!palma_direct(&mut st, arm, s).hold);
+        let replays = arm != 0xA;
+        assert_eq!(
+            st.creature_seek.take(),
+            replays.then_some(0xF0),
+            "arm {arm}"
+        );
+        assert_eq!(
+            std::mem::take(&mut st.creature_loop_arm),
+            replays,
+            "arm {arm}"
+        );
+    }
+}
+
+/// The summon pre-hit cannot kill and stages the reaction.
+#[test]
+fn a_summon_pre_hit_leaves_the_target_at_one_hp() {
+    let mut v = crate::cast_module_ticks::CastActorState {
+        hp: 50,
+        reaction_alt: 3,
+        knockdown_anim: 4,
+        ..Default::default()
+    };
+    let applied = crate::seru_magic_ticks::summon_pre_hit(&mut v, 999);
+    assert_eq!((applied, v.hp, v.hp_bar_delta), (49, 1, 49));
+    assert_eq!(v.staged_anim, 3);
+    assert_eq!(v.restage & 0x05, 0x05);
 }

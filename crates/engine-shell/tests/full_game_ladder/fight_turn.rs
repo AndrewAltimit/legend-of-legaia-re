@@ -404,9 +404,12 @@ pub(super) fn party_dump(session: &NativeSession) {
             })
             .collect();
         let a = &w.actors[i].battle;
+        // `battle.character` is written only when an arts string commits, so
+        // it reads Vahn (its zero) for every member before then: name the
+        // member by its roster slot.
+        let ch = legaia_engine_battle::battle_arts::character_for_slot(slot as u8);
         eprintln!(
-            "    [party] #{i} char {:?} lv {} hp {}/{} mp {} equip {:?} spells [{}]",
-            a.character,
+            "    [party] #{i} char {ch:?} lv {} hp {}/{} mp {} equip {:?} spells [{}]",
             m.level(),
             a.hp,
             a.max_hp,

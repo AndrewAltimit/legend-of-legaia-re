@@ -39,6 +39,26 @@ impl World {
             CasterStageGate::RunModule => {}
         }
         let arm = self.casting.module_phase;
+        // A per-arm capture module's stager-only records go in as its body
+        // first ticks, inside `0x70` - not at the pager.
+        if arm == 0
+            && self.casting.active_summon.is_none()
+            && self.cast_module_for(spell_id).is_some_and(|e| {
+                legaia_engine_battle_vm::cast_module_camera::CAPTURE_SPAWN_ENTRIES.contains(&e)
+            })
+        {
+            let origin = self
+                .actors
+                .get(usize::from(self.battle_ctx.active_actor))
+                .map_or([0; 3], |a| {
+                    [
+                        a.move_state.world_x,
+                        a.move_state.world_y,
+                        a.move_state.world_z,
+                    ]
+                });
+            self.spawn_cast_module_stager_records(spell_id, origin);
+        }
         let Some(run) = self.run_cast_module_code(spell_id, arm) else {
             if self.close_caster_stages() {
                 return true;
@@ -46,6 +66,20 @@ impl World {
             self.casting.capture_spell = None;
             return false;
         };
+        // A module whose arms' spawns are ported seats each on the pass
+        // its arm makes the call.
+        if (run.phase != arm || !run.busy)
+            && legaia_engine_battle_vm::cast_module_camera::CAPTURE_SPAWN_ENTRIES
+                .contains(&run.prot_entry)
+        {
+            let spawns = legaia_engine_battle_vm::cast_module_camera::capture_arm_spawns(
+                run.prot_entry,
+                arm,
+            );
+            if !spawns.is_empty() {
+                self.stage_module_arm_spawns(run.prot_entry, spawns, run.camera_shot, None);
+            }
+        }
         // `0x70` frames nothing of its own: the camera is the module's.
         if let Some(cam) = self.battle.camera.as_mut() {
             if let Some(shot) = run.camera_shot {

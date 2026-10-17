@@ -1,7 +1,8 @@
 //! The creature-seat writes a player Seru-magic director's arms make on
 //! their own passes, held or not, that no phase-chain body carries: the
 //! render node's floor clip `+0x42`, PROT 0903's hand-driven rise `+0x36`,
-//! a clip staged on a held pass and a loop-counter clear.
+//! a clip staged on a held pass, a loop-counter clear or re-arm, a cursor
+//! store and an anim-rate store.
 
 use super::*;
 
@@ -31,6 +32,9 @@ impl World {
     ) {
         let stage = self.casting.module_cam.creature_stage.take();
         let release = std::mem::take(&mut self.casting.module_cam.creature_loop_release);
+        let rearm = std::mem::take(&mut self.casting.module_cam.creature_loop_arm);
+        let seek = self.casting.module_cam.creature_seek.take();
+        let rate = self.casting.module_cam.creature_rate.take();
         let Some(slot) = self.casting.summon_actor_slot else {
             return;
         };
@@ -49,6 +53,24 @@ impl World {
         }
         if let Some(clip) = stage {
             a.battle.queued_anim = clip;
+        }
+        // A director arm's `+0x21B = 0xFF` / `+0x176 = 0xFF0`: the playing
+        // clip's park is held again (PROT 0914, 0923, 0928).
+        if rearm {
+            a.battle.hit_count_bound = 0xFF;
+            if let Some(p) = a.battle_animation.as_mut() {
+                p.set_loop_timer(0xFF0);
+            }
+        }
+        // A cursor store on the creature's node (PROT 0928's `0xF0`).
+        if let Some(c) = seek
+            && let Some(p) = a.battle_animation.as_mut()
+        {
+            p.seek_sixteenths(c);
+        }
+        // An anim-rate store `+0x21D` (PROT 0914's arm `0xC` ramp).
+        if let Some(r) = rate {
+            a.battle.anim_rate = legaia_engine_battle_vm::battle_anim_rate::AnimRate(r);
         }
         // A director arm's `+0x21B` / `+0x176` clear (PROT 0905's arm 8).
         if release {

@@ -217,7 +217,7 @@ Unbounded, the frontier rule is worse than the truncating rules it replaces. One
 forward branch whose target lies beyond the routine drags the frontier past
 every `jr ra` in between, and the walk swallows a run of functions into a single
 body. Measured against
-[`repair_truncated_dumps.py`](../../ghidra/scripts/repair_truncated_dumps.py):
+[`repair_truncated_dumps.py`](../../ghidra/scripts/repair/repair_truncated_dumps.py):
 a 68-byte routine became a 20060-byte one, and a 4-byte jump-table slot became a
 32256-byte one.
 
@@ -682,7 +682,7 @@ would never spot is exactly the one that propagates furthest, because nothing
 about the file looks incomplete.
 
 `check-dump-base-integrity.py --audit-dumpers` reports which
-`ghidra/scripts/*.py` still carry each of the three. Repairing dumps without
+`ghidra/scripts/**/*.py` still carry each of the three. Repairing dumps without
 repairing the script that wrote them regenerates the defect on the next run.
 
 ## The disc-denominated gap list finds header-less dumps for free

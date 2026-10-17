@@ -73,31 +73,21 @@
 
 use super::*;
 use crate::runtime::LegaiaRuntime;
-use legaia_engine_core::field_menu_dispatch::{
-    self, ArtsEditorPhaseTag, FieldMenuSubsession, status_snapshots,
-};
-use legaia_engine_menus::equip_session::EquipSession;
+use legaia_engine_core::field_menu_dispatch::{self, FieldMenuSubsession};
 use legaia_engine_menus::field_menu::{FieldMenuOutcome, FieldMenuRow, FieldMenuSession};
-use legaia_engine_menus::options::OptionsSession;
 use legaia_engine_menus::save_menu_atlas::{SaveMenuAtlas, build_atlas};
 use legaia_engine_menus::save_screen::{SaveCommitKind, SaveRefusal, SaveScreenFlow};
 use legaia_engine_menus::save_select::{SaveRack, SaveSelectSession};
-use legaia_engine_menus::spell_menu::{SpellMenuPhase, SpellMenuSession};
-use legaia_engine_menus::status_screen::StatusScreenSession;
 use legaia_engine_system::input::PadButton;
-use legaia_engine_ui::{
-    self as ui, FieldMenuPartyView, FieldMenuRowView, SaveMenuAtlasRects, SlotGridCell,
-    SlotInfoView, SpriteDraw, StatusPanelView, StatusSatelliteView, StatusStatRow, TextDraw,
-};
+use legaia_engine_ui::{SaveMenuAtlasRects, SpriteDraw, TextDraw};
 
+use legaia_engine_screens::pause_screens;
 /// Stage origin + integer scale that upscales the 320x240 boot-UI stage to
 /// fill the play surface, centred. Shared with the native window rather than
 /// mirrored: `legaia_engine_ui::pause_menu::stage_transform`.
 pub(crate) use legaia_engine_ui::pause_menu::stage_transform;
 use legaia_engine_ui::pause_menu::{
-    GenericContent, ItemsScreenView, KeyRebindView, MagicScreenView, MenuRects, OptionsScreenView,
-    PauseMenuCtx, PauseScreen, SpecialConfirmView, StatusScreenView, TopLevelView,
-    art_learned_notice_draws, equip_screen_compose, pause_screen_draws, spell_level_notice_draws,
+    MenuRects, PauseMenuCtx, PauseMenuDraws, art_learned_notice_draws, spell_level_notice_draws,
 };
 
 mod assets;
@@ -223,10 +213,6 @@ impl LegaiaRuntime {
         }
     }
 }
-
-/// Heading the list-reorder page prints, paired with the native window's
-/// constant of the same name.
-const LIST_ORDER_TITLE: &str = "ORDER";
 
 #[cfg(test)]
 mod blip_tests {

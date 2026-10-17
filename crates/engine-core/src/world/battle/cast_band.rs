@@ -117,6 +117,15 @@ const SUMMON_WALK_STEP: i16 = 12;
 const SUMMON_DIRECTED_WALK_STEP: i32 = 28;
 /// Frames the creature stands at the strike point after the outcome.
 const SUMMON_LINGER_FRAMES: u16 = 40;
+/// The longest the band lingers on a module still busy after its outcome
+/// before it lets go anyway: twice the longest post-hit tail a ported module
+/// runs (PROT 0928's settle arm `0xC8`, `T = scalar * 128` drained a scalar a
+/// tick, then its row poll). A module still busy past it is held on a poll
+/// the engine cannot answer - a dead seat whose defeat fade never runs, so
+/// its colour word `+0x04` never reaches the zero the row polls wait for -
+/// and retail's band would not be standing there. Letting go keeps the
+/// fight moving.
+pub(in crate::world) const SUMMON_LINGER_STALL_FRAMES: u16 = 0x800;
 /// A host with no creature to seat (a headless driver) still owes the
 /// outcome: fold it after this many frames without a seat.
 const SUMMON_UNSEATED_GRACE: u16 = 60;
@@ -361,6 +370,10 @@ pub struct CastModuleCodeRun {
     /// The spawn calls the module's arm made this frame, for a director that
     /// reports them ([`vm::cast_module_camera::ModuleProfile::stages_spawns`]).
     pub spawns: &'static [legaia_engine_battle_vm::cast_module_camera::ModuleSpawn],
+    /// The spawn calls a summon-creature arm makes on every pass, held or
+    /// not, beside [`Self::spawns`]
+    /// ([`vm::cast_module_camera::creature_arm_spawns`]).
+    pub every_spawns: &'static [legaia_engine_battle_vm::cast_module_camera::ModuleSpawn],
     /// The point the arm built for its [`vm::cast_module_camera::SpawnAnchor::ArmPoint`]
     /// spawns this frame.
     pub arm_point: Option<([i16; 3], [i16; 3])>,
@@ -476,16 +489,15 @@ mod capture_hold_tests {
     #[test]
     fn an_unported_tick_body_never_holds_the_phase() {
         let mut world = band_world();
-        // PROT 0914's tick body is one of the band's unported rows. (This
-        // test used to key on PROT 0909, whose tick body is now ported -
-        // `legaia_engine_battle_vm::seru_magic_ticks::viguro_tick` - so keying on
-        // it would have made the assertion vacuous.)
-        assert_eq!(world.cast_module_for(0x8C), Some(914));
-        let run = world.run_cast_module_code(0x8C, 0).unwrap();
+        // PROT 0926 (id `0x98`) is the band's null stub: no tick arm at all.
+        // (This test used to key on PROT 0909 and then 0914, whose chains are
+        // now carried - keying on either would make the assertion vacuous.)
+        assert_eq!(world.cast_module_for(0x98), Some(926));
+        let run = world.run_cast_module_code(0x98, 0).unwrap();
         assert!(run.busy, "the seeded value on its own says 'busy'");
         assert!(!run.tick_ported, "but no tick body ran");
 
-        world.arm_capture_cast_module(0x8C);
+        world.arm_capture_cast_module(0x98);
         assert!(
             !world.capture_stager_tick(),
             "so the band is not held on it"

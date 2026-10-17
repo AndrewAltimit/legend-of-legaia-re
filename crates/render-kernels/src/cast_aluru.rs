@@ -1,13 +1,9 @@
-//! NOT WIRED: PROT 0916's (Aluru) tick body is not ported past its camera
-//! arms 0..4 (`cast_module_camera::aluru_direct` parks at arm 5), so no
-//! engine state reaches arms `0x11..=0x13`, where these bands draw. A port of
-//! the body's arms 5..0x14 (their `ctx[+0x6D8]` and creature `+0x1BA`
-//! timers, camera cuts, and arm 0's kill roll, which picks between the
-//! instant-kill and damage paths) is what has to exist first; it then feeds
-//! [`aluru_band_prims`] the spread of each pass.
-//!
 //! PROT 0916's light bands: the four full-width semi-transparent gradient
 //! quads its tick body draws inline while the blast lands.
+//!
+//! The spread is the band word `ctx[+0x6D8]` over `24`, which the module's
+//! director carries (`legaia_engine_battle_vm::cast_module_camera::aluru_direct`);
+//! `World::aluru_band_draw` hands it to both hosts' screen layers.
 //!
 //! PORT: overlay_summon_aluru_0916_801f69f8 (PROT 0916; the inline band packets of arms 0x11..0x13, 0x801F7E74..0x801F8548)
 //!
@@ -47,12 +43,6 @@ use crate::screen_prim::{FlatQuad, ScreenPrim};
 pub const ALURU_BAND_ABR_MODE: u8 = 1;
 /// Where the overlay links the bands (retail: the framing depth).
 pub const ALURU_BAND_OT: u32 = 0x200;
-
-/// The spread arms `0x12` / `0x13` draw at for a `ctx[+0x6D8]` value:
-/// the signed halfword over `24`, rounded toward zero.
-pub fn aluru_band_spread(timer: u16) -> i16 {
-    (timer as i16) / 24
-}
 
 /// The four bands at spread `s`, in `AddPrim` order.
 pub fn aluru_band_prims(s: i16) -> Vec<ScreenPrim> {
@@ -103,7 +93,5 @@ mod tests {
         let wide = at(64);
         assert_eq!(wide[0].xy[0].1, 0x58 - 64);
         assert_eq!(wide[3].xy[0].1, 0x98 + 64);
-        assert_eq!(aluru_band_spread(1536), 64);
-        assert_eq!(aluru_band_spread(0xFFE8), -1);
     }
 }

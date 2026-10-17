@@ -503,7 +503,7 @@ four more: `0x801DAC90`, `0x801DAFC8`, `0x801DB35C` and `0x801DB70C`, each named
 by the image's own twenty-one-word handler table at file `+0x8960` and each
 opening four instructions **above** its `addiu sp, sp, -X`, which is why a
 prologue scan does not see them and why the walk's `jr ra` + delay-slot split
-lands on all four (`WALK_RANGES` row in `ghidra/scripts/dump_static_overlay.py`).
+lands on all four (`WALK_RANGES` row in `ghidra/scripts/dump/dump_static_overlay.py`).
 The smaller hole, file `+0x7E08`, is a lone `jr ra; nop` - a null routine whose
 address the image holds as a word at file `+0x8708`.
 

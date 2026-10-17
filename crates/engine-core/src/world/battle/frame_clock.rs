@@ -224,9 +224,23 @@ impl World {
     /// (`FUN_801D5854`, the cast-effect driver) sit inside the state body, so
     /// a pass arms the shot of the state it **ran** and the state it stores
     /// is framed by the next pass: the seed `0x0C` arms case 6 on the `0x800`
-    /// rung and only then stores `0x14` and `0x200` (`0x801E2D50`,
-    /// `0x801E2F20`). On retail's cadence the camera therefore follows the
-    /// state the last pass ran; on the per-vsync cadence the live state.
+    /// rung and only then stores `0x14` and `0x200` (`0x801E2CF8`,
+    /// `0x801E2D50`, `0x801E2F18..0x801E2F20`). On retail's cadence the
+    /// camera therefore follows the state the last pass ran.
+    ///
+    /// On the per-vsync cadence it follows the live state, except on the
+    /// tick the seed ran: that pass's framing is the seed's `0x800`-rung
+    /// case 6, and framed on the live `0x14` it is the `0x200` rung's, a
+    /// shot retail arms only on the pass after. Framed as the live state,
+    /// the seed's shot never reached the camera, and every capture on the
+    /// walker pass after the seed glided toward the wrong endpoint
+    /// (`super_queue_replace_*`: yaw endpoint `2561` against retail's
+    /// `4062`). Every other state is still framed live there: the camera
+    /// steps once per two vsyncs while the SM takes a pass per vsync, so
+    /// following the ran state through every transition moves which arm the
+    /// step lands on, and the casts that walk `0x0A..0x29` in one-vsync
+    /// passes measured worse for it (`flute_lippian_midcast` `image` `.740`
+    /// to `.705`).
     ///
     /// The summon band `0x32..=0x37` is framed by the pass that enters it:
     /// `0x29`'s summon-route arm stores the `0x600` depth and falls through
@@ -236,8 +250,12 @@ impl World {
     /// (`camera` `.3` to `.8` across the corpus).
     pub fn battle_camera_state(&self) -> u8 {
         let live = self.battle_ctx.action_state;
-        if self.toggles.battle_sm_frame_cadence && !matches!(live, 0x32..=0x37) {
-            self.battle.sm_ran_state.unwrap_or(live)
+        if matches!(live, 0x32..=0x37) {
+            return live;
+        }
+        let ran = self.battle.sm_ran_state.unwrap_or(live);
+        if self.toggles.battle_sm_frame_cadence || ran == 0x0C {
+            ran
         } else {
             live
         }
@@ -320,15 +338,23 @@ mod tests {
 
     /// On retail's cadence the camera frames the state the last pass ran -
     /// the seed `0x0C` arms its own shot before it stores `0x14` - except
-    /// in the module bands, whose shots the modules arm; on the per-vsync
-    /// cadence it frames the live state.
+    /// in the module bands, whose shots the modules arm. On the per-vsync
+    /// cadence it frames the live state, but the seed's pass still frames
+    /// the seed: its arm precedes the `0x14` store on both cadences.
     #[test]
     fn the_camera_frames_the_state_the_last_pass_ran() {
         let mut w = World::new();
+        w.toggles.battle_sm_frame_cadence = false;
         w.battle.sm_ran_state = Some(0x0C);
         w.battle_ctx.action_state = 0x14;
-        assert_eq!(w.battle_camera_state(), 0x14);
+        assert_eq!(w.battle_camera_state(), 0x0C);
+        w.battle.sm_ran_state = Some(0x28);
+        w.battle_ctx.action_state = 0x29;
+        assert_eq!(w.battle_camera_state(), 0x29);
         w.toggles.battle_sm_frame_cadence = true;
+        assert_eq!(w.battle_camera_state(), 0x28);
+        w.battle.sm_ran_state = Some(0x0C);
+        w.battle_ctx.action_state = 0x14;
         assert_eq!(w.battle_camera_state(), 0x0C);
         w.battle_ctx.action_state = 0x35;
         assert_eq!(w.battle_camera_state(), 0x35);

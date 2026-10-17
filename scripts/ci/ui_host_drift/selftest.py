@@ -8,6 +8,7 @@ from ui_host_drift.controls import (
     SELFTEST_CONSTANTS,
     SELFTEST_CONTENT,
     SELFTEST_DIAG,
+    SELFTEST_ENV_READS,
     SELFTEST_FRAME,
     SELFTEST_OWNERSHIP,
     SELFTEST_PAGE_KEYS,
@@ -31,6 +32,7 @@ from ui_host_drift.rust_text import (
 )
 from ui_host_drift.tiers.constant_pairs import normalise_value
 from ui_host_drift.tiers.diag_gates import initialiser_is_off
+from ui_host_drift.tiers.env_reads import env_read_violations
 from ui_host_drift.tiers.frame_content import CONTENT_FN_RE, kernel_engine_calls
 from ui_host_drift.tiers.frame_paths import frame_path_scan
 from ui_host_drift.tiers.owned_types import owns_type
@@ -144,6 +146,12 @@ def run_selftest() -> int:
         else:
             print(f"  FAIL  diag toggle: {label}")
             failures += 1
+    for label, src, want in SELFTEST_ENV_READS:
+        if env_read_violations(src) == want:
+            print(f"  ok    env read: {label}")
+        else:
+            print(f"  FAIL  env read: {label}")
+            failures += 1
     for label, rule, src, want in SELFTEST_RENDER:
         if _selftest_render_case(rule, src) == want:
             print(f"  ok    render kernel: {label}")
@@ -202,6 +210,7 @@ def run_selftest() -> int:
         + len(SELFTEST_SIM)
         + len(SELFTEST_PAGE_KEYS)
         + len(SELFTEST_DIAG)
+        + len(SELFTEST_ENV_READS)
         + len(SELFTEST_RENDER)
         + len(SELFTEST_OWNERSHIP)
         + len(SELFTEST_VARIANT_USE)

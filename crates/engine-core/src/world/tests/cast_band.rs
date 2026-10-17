@@ -16,6 +16,7 @@ mod nighto;
 mod restore_spells;
 mod shatter_writers;
 mod stagers_and_seats;
+mod summon_bodies;
 
 /// A one-member party with Gimard (0x81) learned, one monster, the retail
 /// Seru-magic catalog, the spell submenu open on the caster.

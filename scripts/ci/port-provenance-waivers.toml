@@ -1277,7 +1277,7 @@ machine (801F747C / 801F7628), a different image the stage id pages in.
 """
 
 [[waiver]]
-key = "non-entry:crates/engine-fishing/src/minigame_floor.rs:801d79e0"
+key = "non-entry:crates/engine-field/src/minigame_floor.rs:801d79e0"
 reason = """
 An entry, and a duplicate rather than a non-function: PROT 0972 (fishing)
 holds a 31-instruction leaf at 0x801D79E0 (no frame, opens `addu t0,zero,

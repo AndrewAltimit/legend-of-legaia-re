@@ -31,7 +31,7 @@ Subcommands:
 
 ADDR accepts either hex (`0x801DE840`, `801de840`) or a Ghidra symbol
 name (`FUN_801DD35C`, `_DAT_8007BCD0`) resolved via the same
-ghidra/scripts/symbols.json the Lua probe layer uses.
+ghidra/scripts/symbols/symbols.json the Lua probe layer uses.
 
 Default host:port is 127.0.0.1:3333. PCSX-Redux's setting is
 `Emulator -> GDB server port`; enable it before running.
@@ -52,7 +52,7 @@ from pathlib import Path
 from typing import Optional
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-SYMBOLS_JSON = REPO_ROOT / "ghidra" / "scripts" / "symbols.json"
+SYMBOLS_JSON = REPO_ROOT / "ghidra" / "scripts" / "symbols" / "symbols.json"
 
 
 # ============================================================
@@ -62,7 +62,7 @@ _symbols_cache: dict[str, int] | None = None
 
 
 def load_symbols() -> dict[str, int]:
-    """Load ghidra/scripts/symbols.json once. Empty dict if missing."""
+    """Load ghidra/scripts/symbols/symbols.json once. Empty dict if missing."""
     global _symbols_cache
     if _symbols_cache is not None:
         return _symbols_cache
@@ -96,7 +96,7 @@ def resolve_addr(spec: str) -> int:
         return syms[norm]
     raise SystemExit(
         f"gdb-probe: cannot resolve '{spec}' as hex or as a Ghidra symbol. "
-        f"Regenerate ghidra/scripts/symbols.json via "
+        f"Regenerate ghidra/scripts/symbols/symbols.json via "
         "scripts/pcsx-redux/build-symbols.py.")
 
 

@@ -185,8 +185,8 @@ offset, both states, class, `within`, `mae`, both lumas) for scripts.
 ## Limits
 
 - **The fight is the state's.** The engine fight is the one `retail-compare`
-  seeds for the state, so a state it cannot image (no MAN row for
-  `play-window --battle`) has no engine side.
+  seeds for the state, so a state it cannot image (a retail frame that is a
+  fade) has no engine side.
 - **The cast is dispatched from the first prompt, not from retail's turn
   order.** Ground pairs are carried over. Facing, status, HP already lost, and
   the camera history an earlier action left are not, so the frames before the

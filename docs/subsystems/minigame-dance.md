@@ -380,7 +380,7 @@ Several interior addresses of `FUN_801d2a10` (`0x801d2b44`, `0x801d2c98`, `0x801
 
 ### The floor pass
 
-`FUN_801d3a2c` and `FUN_801d2a10` are the same walk over the scene floor buffer, and the byte-identical `FUN_801d6bbc` in the shared overlay band is a third copy (see [`minigame-fishing.md`](minigame-fishing.md#fishing-actors-and-scene-render)). Port: `legaia_engine_fishing::minigame_floor` (`crates/engine-fishing/src/minigame_floor.rs`).
+`FUN_801d3a2c` and `FUN_801d2a10` are the same walk over the scene floor buffer, and the byte-identical `FUN_801d6bbc` in the shared overlay band is a third copy (see [`minigame-fishing.md`](minigame-fishing.md#fishing-actors-and-scene-render)). Port: `legaia_engine_field::minigame_floor` (`crates/engine-field/src/minigame_floor.rs`).
 
 Three regions of the scene buffer are involved:
 
@@ -420,7 +420,7 @@ The clip index is the record's `record` byte plus one:
 
 **Port.**
 
-- Kernel: `legaia_engine_fishing::dance_marker::step_marker`, with `MarkerActor` carrying the three fields the retail actor does (`+0x50` class, `+0x9C` script cursor, `+0x54` countdown). `DanceGame::advance` steps one cursor per class.
+- Kernel: `legaia_engine_field::dance_marker::step_marker`, with `MarkerActor` carrying the three fields the retail actor does (`+0x50` class, `+0x9C` script cursor, `+0x54` countdown). `DanceGame::advance` steps one cursor per class.
 - Pool: `minigame_floor::MarkerFloor` runs the `floor_tile_spawns` sweep over a venue's floor rect, keeps the cells `marker_template` classes as markers, advances every tile in `MarkerFloor::step`, and reports the staged meshes through `draws`.
 - Both browser pages draw the tiles. `bake_dance_markers` in `web-viewer::minigames_dance` bakes every candidate mesh of every tile into the page's static-topology buffer; each frame `dance_marker_step` (`play_mg_dance_marker_step` on the play page) returns positions with the non-current meshes collapsed to a point, so the index buffer stays static.
 - The native play window builds and draws the hall but does not draw the marker tiles. See [`host-drift.md`](../tooling/host-drift.md).
@@ -836,7 +836,7 @@ The dance is fully playable in the port on all three surfaces. The rules, the ca
 | Parsers | `legaia_minigame_formats::dance_chart`, `dance_cast`, `dance_art` | chart + scoring tables, spawn + descriptor tables, art pack + widget table |
 | Rules engine | [`legaia_engine_minigames::dance`](../../crates/engine-minigames/src/dance.rs) | beat clock, per-dancer handler, judge, CPU feed, award, count-in, finish countdown, camera track, HUD layout |
 | Tutorial | `legaia_engine_minigames::dance_tutorial` | the Disco King script's shape |
-| Marker kernel | `legaia_engine_fishing::dance_marker`, `minigame_floor::MarkerFloor` | marker flipbook + floor sweep |
+| Marker kernel | `legaia_engine_field::dance_marker`, `minigame_floor::MarkerFloor` | marker flipbook + floor sweep |
 | World wiring | `engine-core`: `World::enter_dance` / `tick_dance` / `exit_dance`, `SceneMode::Dance` | suspending scene mode, flag writes, count-in, SFX |
 | Venue | `engine-minigame-scenes::dance_venue`, `dance_cast_scene`; `engine-core::dance_venue::sync_dance_venue` | hall build, staging, camera, face stamps, posed cast surface |
 | Draw builders | `engine-ui::dance` | HUD / count-in / tutorial screen primitives |

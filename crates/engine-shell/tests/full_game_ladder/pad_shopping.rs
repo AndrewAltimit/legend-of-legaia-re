@@ -48,6 +48,71 @@ pub(super) const HEAL_STOCK: u8 = 15;
 /// equipment ([`next_want`]).
 pub(super) const HEAL_RESERVE: u32 = 3;
 
+/// MP restoratives the hand keeps in the bag for each present member, bought
+/// right after the [`HEAL_RESERVE`] when a counter sells one ([`mp_want`]).
+pub(super) const MP_RESERVE: u32 = 1;
+
+/// What an MP restorative restores, for ranking stock rows: a full restore
+/// counts as a whole pool.
+fn mp_restore(effect: &legaia_engine_menus::items::ItemEffect) -> Option<u32> {
+    use legaia_engine_menus::items::ItemEffect;
+    match *effect {
+        ItemEffect::HealMp { amount } => Some(u32::from(amount)),
+        ItemEffect::HealMpAll => Some(999),
+        _ => None,
+    }
+}
+
+/// The MP restoratives in the bag, an errand's item aside.
+pub(super) fn mp_items_held(w: &legaia_engine_core::world::World) -> u32 {
+    w.party
+        .inventory
+        .iter()
+        .filter(|&(&id, _)| {
+            !errand_item(w, id)
+                && w.tables
+                    .item_catalog
+                    .get(id)
+                    .is_some_and(|e| mp_restore(&e.effect).is_some())
+        })
+        .map(|(_, &n)| u32::from(n))
+        .sum()
+}
+
+/// The buy that brings the bag's MP restoratives up to `target`: the stock
+/// row that restores the most MP per gold, as many as the purse pays for
+/// after the errands' price.
+fn mp_want(
+    session: &legaia_engine_menus::shop::ShopSession,
+    w: &legaia_engine_core::world::World,
+    target: u32,
+) -> Option<Want> {
+    let short = target.saturating_sub(mp_items_held(w));
+    if short == 0 {
+        return None;
+    }
+    let (row, id, price) = session
+        .inventory
+        .items
+        .iter()
+        .enumerate()
+        .filter_map(|(row, it)| {
+            let amount = mp_restore(&w.tables.item_catalog.get(it.item_id)?.effect)?;
+            (it.price > 0).then_some((row, it.item_id, it.price, amount))
+        })
+        .max_by_key(|&(row, _, price, amount)| (amount * 1000 / price, std::cmp::Reverse(row)))
+        .map(|(row, id, price, _)| (row, id, price))?;
+    let held = w.party.inventory.get(&id).copied().unwrap_or(0);
+    let room = legaia_engine_menus::shop::SHOP_HELD_CAP.saturating_sub(held);
+    let afford =
+        u32::try_from((i64::from(w.party.money) - errand_cost(w)).max(0)).unwrap_or(0) / price;
+    let qty = short.min(afford).min(u32::from(room));
+    (qty > 0).then_some(Want::Stack {
+        row,
+        qty: qty as u8,
+    })
+}
+
 /// What the hand wants from the open buy list next.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Want {
@@ -229,6 +294,13 @@ fn next_want(menu: &MenuRuntime, w: &legaia_engine_core::world::World) -> Option
     // one Healing Flower.
     let members = w.present_party_list().len().clamp(1, 3) as u32;
     if let Some(want) = heal_want(HEAL_RESERVE * members) {
+        return Some(want);
+    }
+    // Then an MP restorative for each present member: a boss's group heals
+    // are cast, and a counter whose heals the hand bought alone left Zora's
+    // party (`son`'s nineteen Healing Berries, its Magic Fruit row untouched)
+    // with no way to pay for the Spoons its party-wide hits called for.
+    if let Some(want) = mp_want(session, w, members * MP_RESERVE) {
         return Some(want);
     }
     // Equipment. At a counter with no healing row, a bag short of its

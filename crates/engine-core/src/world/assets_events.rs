@@ -438,7 +438,33 @@ impl World {
             if max == 0 {
                 continue;
             }
+            use legaia_engine_battle_vm::status_effects::StatusKind;
+            let fx = &self.battle.status_effects;
+            let (toxic, venom) = (
+                fx.has(slot, StatusKind::Toxic),
+                fx.has(slot, StatusKind::Venom),
+            );
             let dmg = self.battle.status_effects.tick_actor(slot, cur, max);
+            // In a scripted fight a monster's DoT lasts one tick: the arm
+            // that ticked clears its own bit (`andi 0xFFFD` at `0x801E762C`
+            // for Toxic, `andi 0xFFFE` at `0x801E76C4` for Venom, both behind
+            // `ctx[+0x287] != 0` and `slot >= 3`). Toxic is tested first, so
+            // a monster carrying both keeps its Venom for the next round.
+            if self.battle.scripted_fight && slot >= self.party.party_count && cur != 0 {
+                let kind = if toxic {
+                    Some(StatusKind::Toxic)
+                } else if venom {
+                    Some(StatusKind::Venom)
+                } else {
+                    None
+                };
+                if let Some(kind) = kind {
+                    self.battle.status_effects.cure(slot, kind);
+                    if let Some(a) = self.actors.get_mut(slot as usize) {
+                        a.battle.field_flags &= !kind.display_bit();
+                    }
+                }
+            }
             if dmg > 0
                 && let Some(actor) = self.actors.get_mut(slot as usize)
             {

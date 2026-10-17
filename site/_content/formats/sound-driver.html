@@ -112,7 +112,7 @@
       <tr><td>Streaming-asset path builder</td><td><code>FUN_8001FC00</code></td><td>Builds paths under the <code>sound\</code> prefix; the XA / <code>.pac</code> / <code>STR</code> consumer</td><td><code>funcs/8001fc00.txt</code></td></tr>
       <tr><td>Chunk walker (consumer)</td><td><code>FUN_8001FE70</code>, called by <code>FUN_800513F0</code> on the loaded buffer</td><td><code>[type|size]</code> chunk walk, advance <code>(size &amp; ~3) + 4</code>, type-2 terminator; type-1 &rarr; TIM upload on the graphics walk</td><td><code>funcs/8001fe70.txt</code>, <code>funcs/800513f0.txt</code></td></tr>
       <tr><td>Not-a-sound-consumer trap</td><td><code>FUN_8001EBEC</code></td><td>Reads <code>0x8007B3A4</code>/<code>0x8007B3A8</code> as equipment-swap selectors against <code>DAT_8007C018</code> TMD pointers - a graphics routine</td><td><code>funcs/8001ebec.txt</code></td></tr>
-      <tr><td>Locator sweep</td><td><code>ghidra/scripts/find_sound_path_builders.py</code></td><td>These are the only SCUS functions touching the cluster</td><td>-</td></tr>
+      <tr><td>Locator sweep</td><td><code>ghidra/scripts/find/find_sound_path_builders.py</code></td><td>These are the only SCUS functions touching the cluster</td><td>-</td></tr>
       <tr><td>Disc check</td><td>PROT <code>0877</code>..<code>0885</code></td><td>PROT <code>0877</code> walks as <code>[0: 0x2820][1: 0x1BA90][2: SEQ]</code>; <code>0x2820 + 0x1BA90 == 0x1E2B0</code> = the VAB's declared <code>total_size</code>; verified across <code>0877</code>..<code>0885</code></td><td>-</td></tr>
     </tbody>
   </table></div>

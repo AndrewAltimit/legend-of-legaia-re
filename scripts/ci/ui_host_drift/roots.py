@@ -29,5 +29,16 @@ HOSTS = {
 # entry loses every builder behind it, and the reachability claim stays a
 # claim about each host rather than about the crate.
 SHARED_COMPOSERS: dict[Path, tuple[str, ...]] = {
-    REPO / "crates" / "engine-screens" / "src": ("shop_overlay_frame",),
+    REPO / "crates" / "engine-screens" / "src": (
+        "shop_overlay_frame",
+        "battle_hud_frame_draws",
+        "battle_chrome_sprite_draws",
+        "field_menu_root_draws",
+        "field_menu_sub_draws",
+        "battle_text_draws",
+        "dialog_box_chrome_draws",
+        "dialog_box_text_draws",
+        "field_party_hud_draws",
+        "save_select_overlay_draws",
+    ),
 }

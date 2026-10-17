@@ -110,15 +110,45 @@ pub fn art_catalog_for(
     >,
     character: legaia_art::Character,
 ) -> Vec<(legaia_art::ActionConstant, Vec<legaia_art::Command>)> {
-    let mut rows: Vec<(legaia_art::ActionConstant, Vec<legaia_art::Command>)> = records
-        .iter()
-        .filter(|((ch, action), rec)| {
-            *ch == character
-                && action.is_art()
-                && action.as_byte() >= NORMAL_ART_MIN_CONSTANT
-                && rec.commands.len() >= 2
+    normal_art_rows(
+        records
+            .iter()
+            .filter(|((ch, _), _)| *ch == character)
+            .map(|((_, action), rec)| (*action, rec.commands.clone())),
+    )
+}
+
+/// [`art_catalog_for`] over one character's **art-animation bank** - the
+/// per-character player file's `record[0] +0x58` records
+/// ([`legaia_actor_formats::battle_char_assembly::art_animation_bank`]) - for a
+/// host that holds no `World`. Each record converts the way the native
+/// battle entry installs it (`World::install_art_bank_records`: record
+/// `anim_id` is the action constant, its `+0x00` combo bytes the arrows) and
+/// then passes the same normal-art filter, so the minigames page's dome and
+/// the play hosts' dome tokenize one catalog.
+pub fn art_catalog_from_bank(
+    records: &[legaia_actor_formats::battle_char_assembly::ArtAnimRecord],
+) -> Vec<(legaia_art::ActionConstant, Vec<legaia_art::Command>)> {
+    normal_art_rows(records.iter().filter_map(|rec| {
+        let action = legaia_art::ActionConstant::from_byte(rec.anim_id)?;
+        let commands = rec
+            .combo
+            .iter()
+            .filter_map(|&b| legaia_art::Command::from_byte(b))
+            .collect();
+        Some((action, commands))
+    }))
+}
+
+/// The queue builder's normal-art filter and grid order, shared by both
+/// catalog sources.
+fn normal_art_rows(
+    rows: impl Iterator<Item = (legaia_art::ActionConstant, Vec<legaia_art::Command>)>,
+) -> Vec<(legaia_art::ActionConstant, Vec<legaia_art::Command>)> {
+    let mut rows: Vec<_> = rows
+        .filter(|(action, commands)| {
+            action.is_art() && action.as_byte() >= NORMAL_ART_MIN_CONSTANT && commands.len() >= 2
         })
-        .map(|((_, action), rec)| (*action, rec.commands.clone()))
         .collect();
     rows.sort_by_key(|(a, _)| a.as_byte());
     rows

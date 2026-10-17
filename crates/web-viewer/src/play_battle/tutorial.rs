@@ -4,80 +4,27 @@
 use super::*;
 
 impl LegaiaRuntime {
-    pub(crate) fn battle_tutorial_stage_rect(
-        &self,
-        font: &legaia_font::Font,
-    ) -> Option<(i32, i32, i32, i32)> {
-        let tbox = self.scene_host.host()?.world.battle_tutorial_box()?;
-        let width = ui::battle_tutorial_text_width(font, &tbox.text);
-        let (x, y, w, h) = tbox.rect(width)?;
-        Some((x as i32, y as i32, w as i32, h as i32))
-    }
-
-    /// Every tutorial box on screen with its stage rect - the front group of
-    /// the world's box queue (one retail hook dispatch registers all of its
-    /// boxes together, so the group draws together). Twin of the native
-    /// window's `battle_tutorial_stage_boxes`.
-    pub(crate) fn battle_tutorial_stage_boxes(
-        &self,
-        font: &legaia_font::Font,
-    ) -> Vec<TutorialStageBox<'_>> {
-        let Some(host) = self.scene_host.host() else {
-            return Vec::new();
-        };
-        host.world
-            .battle_tutorial_boxes_on_screen()
-            .filter_map(|tbox| {
-                let width = ui::battle_tutorial_text_width(font, &tbox.text);
-                let (x, y, w, h) = tbox.rect(width)?;
-                Some(((x as i32, y as i32, w as i32, h as i32), tbox))
-            })
-            .collect()
-    }
-
-    /// Tutorial prompt rows in stage pixels, at the rect origin on the retail
-    /// 14-px pitch.
+    /// Tutorial prompt rows and Koru's timed-fight strip in stage pixels
+    /// (`legaia_engine_screens::battle_screens::battle_tutorial_stage_draws`,
+    /// the native window's call too).
     pub(crate) fn battle_tutorial_stage_draws(
         &self,
         font: &legaia_font::Font,
         has_chrome: bool,
     ) -> Vec<TextDraw> {
-        let mut out = Vec::new();
-        for (rect, tbox) in self.battle_tutorial_stage_boxes(font) {
-            out.extend(ui::battle_tutorial_text_draws_for(font, &tbox.text, rect));
-            // Without the system-UI atlas there is no frame and no advance
-            // hand, so keep a plain confirm hint as the only affordance a
-            // waiting box would otherwise have.
-            if tbox.waits_for_input && !has_chrome {
-                let lines = tbox.text.lines().count() as i32;
-                out.extend(ui::text_draws_for(
-                    &font.layout_ascii("Cross=continue"),
-                    (rect.0, rect.1 + lines * 14),
-                    [0.75, 0.75, 0.8, 1.0],
-                ));
-            }
-        }
-        // Koru's timed-fight strip - the same stage-space text-actor family,
-        // one shared builder with the native window.
-        if let Some(strip) = self
-            .scene_host
-            .host()
-            .and_then(|h| legaia_engine_core::world_views::timed_fight::timed_fight_strip(&h.world))
-        {
-            out.extend(ui::timed_fight_strip_text_draws(
-                font,
-                &ui::TimedFightStripView {
-                    label: &strip.label,
-                    turns_left: strip.turns_left,
-                    hp_left: strip.hp_left,
-                },
-            ));
-        }
-        out
+        let Some(host) = self.scene_host.host() else {
+            return Vec::new();
+        };
+        legaia_engine_screens::battle_screens::battle_tutorial_stage_draws(
+            &host.world,
+            font,
+            has_chrome,
+        )
     }
 
-    /// Tutorial prompt-box chrome: the same gradient fill + gold 9-slice
-    /// frame the dialog reading box wears, at the emitter's rect.
+    /// Tutorial prompt-box chrome and Koru's timed-fight strip
+    /// (`legaia_engine_screens::battle_screens::battle_tutorial_chrome_draws`,
+    /// the native window's call too).
     pub(crate) fn battle_tutorial_chrome_draws(
         &self,
         font: &legaia_font::Font,
@@ -85,26 +32,16 @@ impl LegaiaRuntime {
         origin: (i32, i32),
         scale: u32,
     ) -> Vec<SpriteDraw> {
-        let mut out = Vec::new();
-        for (rect, tbox) in self.battle_tutorial_stage_boxes(font) {
-            out.extend(ui::battle_tutorial_chrome_draws_for(
-                rects,
-                rect,
-                tbox.waits_for_input,
-                origin,
-                scale,
-            ));
-        }
-        // Koru's timed-fight strip wears the same skin.
-        if self
-            .scene_host
-            .host()
-            .and_then(|h| legaia_engine_core::world_views::timed_fight::timed_fight_strip(&h.world))
-            .is_some()
-        {
-            out.extend(ui::timed_fight_strip_chrome_draws(rects, origin, scale));
-        }
-        out
+        let Some(host) = self.scene_host.host() else {
+            return Vec::new();
+        };
+        legaia_engine_screens::battle_screens::battle_tutorial_chrome_draws(
+            &host.world,
+            font,
+            rects,
+            origin,
+            scale,
+        )
     }
 }
 

@@ -291,3 +291,32 @@ fn the_displayed_camera_walks_back_no_further_than_the_seed_arm() {
     assert_eq!(tween_passes_back(0x14, 0x202, 2), 2);
     assert_eq!(tween_passes_back(0x1E, 0x200, 2), 2);
 }
+
+/// The magic band rewrites a party-wide `8` to the lone member's slot
+/// (`ctx[+0x24A] - 1`, `0x801E431C`); the seed read `8`, so the reader hands
+/// the replay `8` back - only for an all-allies spell on that slot.
+#[test]
+fn a_lone_member_rewrite_reads_back_as_the_party_code() {
+    let mut ram = vec![0u8; 0x20_0000];
+    let ctx = 0x800E_0000;
+    let actor = 0x800E_8000;
+    let holy_eyes = 0x91u8;
+    let shape_at = 0x8007_54C8 + u32::from(holy_eyes) * 12 + 2;
+    put8(&mut ram, actor + 0x1DE, 2);
+    put8(&mut ram, actor + 0x1DF, holy_eyes);
+    put8(&mut ram, actor + 0x1DD, 0);
+    put8(&mut ram, ctx + 0x24A, 1);
+    put8(&mut ram, shape_at, 0x26);
+    assert_eq!(ram_read::seed_target_code(&ram, ctx, actor), 8);
+    // A one-ally spell on the same member is the slot it was seeded on.
+    put8(&mut ram, shape_at, 0x06);
+    assert_eq!(ram_read::seed_target_code(&ram, ctx, actor), 0);
+    // No lone-survivor latch: nothing rewrote the byte.
+    put8(&mut ram, shape_at, 0x26);
+    put8(&mut ram, ctx + 0x24A, 0);
+    assert_eq!(ram_read::seed_target_code(&ram, ctx, actor), 0);
+    // Not a magic action: the item band keeps its own byte.
+    put8(&mut ram, ctx + 0x24A, 1);
+    put8(&mut ram, actor + 0x1DE, 1);
+    assert_eq!(ram_read::seed_target_code(&ram, ctx, actor), 0);
+}

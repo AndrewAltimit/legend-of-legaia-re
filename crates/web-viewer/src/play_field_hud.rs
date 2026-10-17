@@ -206,7 +206,6 @@ impl LegaiaRuntime {
         surface_w: u32,
         surface_h: u32,
     ) -> (Vec<SpriteDraw>, Vec<TextDraw>) {
-        use ui::field_party_hud as fp;
         let empty = (Vec::new(), Vec::new());
         // Ask the suppress gate on the DRAW path too. The page's frame loop
         // (`site/js/play-app.js::_frame`) skips `tick_frame` entirely while a
@@ -229,34 +228,18 @@ impl LegaiaRuntime {
         let Some(host) = self.scene_host.host() else {
             return empty;
         };
-        let rows = legaia_engine_core::world_views::world_map_panel_host::field_party_hud_members(
-            &host.world,
-        );
-        let members: Vec<fp::FieldHudMember<'_>> = rows
-            .iter()
-            .map(|m| fp::FieldHudMember {
-                name: &m.name,
-                level: m.level,
-                hp: m.hp,
-                hp_max: m.hp_max,
-                mp: m.mp,
-                mp_max: m.mp_max,
-                alive: m.alive,
-            })
-            .collect();
         let font = assets.font_ref();
-        let (origin, scale) = crate::play_menu::stage_transform(surface_w.max(1), surface_h.max(1));
-        let draws = fp::field_party_hud_draws_for(
+        let draws = legaia_engine_screens::field_screens::field_party_hud_draws(
+            &host.world,
             font,
-            &fp::FieldPartyHudFrame {
-                members: &members,
-                y: i32::from(y),
+            legaia_engine_screens::field_screens::FieldHudSources {
                 chrome: assets.chrome_rects(),
                 scrim_src: assets.chrome_solid_texel(),
                 solid_src: ui::font_solid_src(font),
-                origin,
-                scale: scale as i32,
             },
+            y,
+            surface_w.max(1),
+            surface_h.max(1),
         );
         (draws.sprites, draws.text)
     }

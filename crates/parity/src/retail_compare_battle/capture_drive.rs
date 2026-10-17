@@ -84,10 +84,28 @@ impl RetailBattle {
             && !matches!(self.span_gate, SpanGate::DoneHold { .. })
     }
 
+    /// The party seats ahead of `seat` whose committed category this round
+    /// is Spirit (`+0x1DE = 4`), as a bitmask: a menu capture's commit log
+    /// shows each such member's `Spirit` (`delilas_che_hammer_gaps_v3`'s
+    /// Vahn and Noa), which a drive committing a plain Attack draws as
+    /// `Attack` and a target.
+    pub fn spirit_seats_ahead(&self, seat: u8) -> u8 {
+        self.party_categories
+            .iter()
+            .take(usize::from(seat))
+            .enumerate()
+            .filter(|&(_, &c)| c == 4)
+            .fold(0, |m, (s, _)| m | 1 << s)
+    }
+
     /// The pad drive that reaches this capture, when its plan has one.
     pub fn battle_drive(&self) -> Option<BattleDrive> {
         match self.seed_plan() {
-            SeedPlan::Menu { flow, seat } => Some(BattleDrive::Menu { flow, seat }),
+            SeedPlan::Menu { flow, seat } => Some(BattleDrive::Menu {
+                flow,
+                seat,
+                spirit: self.spirit_seats_ahead(seat),
+            }),
             SeedPlan::Action { seat, state } => Some(BattleDrive::Action {
                 seat,
                 state,

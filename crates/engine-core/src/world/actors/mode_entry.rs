@@ -192,10 +192,19 @@ impl World {
         // stats seated a ghost enemy: a one-member party after a larger
         // layout faced its real monster plus stale rows that never die.
         // Retail's battle loader builds the actor table fresh per fight.
+        //
+        // That includes the slot's `active` flag: a row the last fight left
+        // active read as a seated body with no monster and a resting colour
+        // word that no defeat fade ever drains, so a cast module's row poll
+        // over it (Theeder's and Gizam's arm 14) never ended - in long
+        // sessions only, since a checkpoint reload builds the table afresh.
         for actor in self.actors.iter_mut().take(8).skip(actor_count) {
+            actor.active = false;
             actor.battle = Default::default();
             actor.battle_monster_id = None;
             actor.battle_element = None;
+            actor.battle_animation = None;
+            actor.battle_reaction = None;
         }
         // Reset the battle ctx and seed at Begin via the public byte API to
         // avoid pulling battle_action::ActionState into world.rs imports.

@@ -724,7 +724,7 @@ A memory-safe model of this accessor family, with the primitive surfaced as `Add
 
 ### `0x8007C018` - Global TMD pointer table
 
-Installer `FUN_80026B4C @ 0x80026BA8` is the *sole* writer, across SCUS and every world-map overlay ([`find_addr_materializer_dat_8007c018.py`](../../ghidra/scripts/find_addr_materializer_dat_8007c018.py)). Every populated entry `[0..DAT_8007BB38]` is a post-fixup Legaia TMD: magic `0x80000002`, flags = 1, `group_count` at `+0x8`, group-descriptor array (`0x1C`-byte stride) at `+0xC`.
+Installer `FUN_80026B4C @ 0x80026BA8` is the *sole* writer, across SCUS and every world-map overlay ([`find_addr_materializer_dat_8007c018.py`](../../ghidra/scripts/find/find_addr_materializer_dat_8007c018.py)). Every populated entry `[0..DAT_8007BB38]` is a post-fixup Legaia TMD: magic `0x80000002`, flags = 1, `group_count` at `+0x8`, group-descriptor array (`0x1C`-byte stride) at `+0xC`.
 
 Only asset-dispatcher cases `0x02` / `0x09` reach `FUN_80026B4C`. The type-`0x05` slot-4 bank does **not** install into `DAT_8007C018`, so the slot-4 outer-pack signature is absent from steady-state RAM.
 

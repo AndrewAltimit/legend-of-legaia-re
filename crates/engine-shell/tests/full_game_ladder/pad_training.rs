@@ -44,6 +44,17 @@ pub(super) fn under_levelled(session: &NativeSession) -> Vec<(u8, u8, u8)> {
     })
 }
 
+/// Levels below the target at which a scene with a bed trains before its
+/// beats even with no boss band in it (`segment`'s arrival pass).
+pub(super) const FAR_SHORT: u8 = 5;
+
+/// Is a present member [`FAR_SHORT`] levels or more below the target?
+pub(super) fn far_under_levelled(session: &NativeSession) -> bool {
+    under_levelled(session)
+        .iter()
+        .any(|&(_, have, want)| want.saturating_sub(have) >= FAR_SHORT)
+}
+
 /// Is there a reason to train: a present member short of the target
 /// level, or a purse short of what the stretch's errand items cost
 /// ([`errand_gold_short`]) - the fights pay the gold as they pay the XP.

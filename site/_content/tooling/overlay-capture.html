@@ -32,10 +32,10 @@
   <h2>Quick start</h2>
   <p><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/scripts/ghidra-analysis/auto-name-overlay.py"><code>auto-name-overlay.py</code></a> detects the save-state format from the magic bytes (mednafen gzip+<code>MDFNSVST</code> or Duckstation <code>DUCCS</code>+zstd), extracts the overlay window, fingerprints which overlay is loaded against an anchor-function table, and emits both the binary slice and a stub <code>dump_&lt;label&gt;_overlay.py</code> Ghidra script with the largest function entry points pre-seeded.</p>
   <div class="cli"><code>scripts/ghidra-analysis/auto-name-overlay.py "$HOME/.mednafen/mcs/Legend of Legaia (USA).&lt;HASH&gt;.mc0"</code></div>
-  <p>It reports the format, the slice size, the label it detected with the anchor votes behind it (e.g. <code>world_map=4, field=3</code>), and the two files it wrote: <code>/tmp/overlay_&lt;label&gt;.bin</code> and <code>ghidra/scripts/dump_&lt;label&gt;_overlay.py</code>.</p>
+  <p>It reports the format, the slice size, the label it detected with the anchor votes behind it (e.g. <code>world_map=4, field=3</code>), and the two files it wrote: <code>/tmp/overlay_&lt;label&gt;.bin</code> and <code>ghidra/scripts/dump/dump_&lt;label&gt;_overlay.py</code>.</p>
   <p>Then import the slice (slice path first, label second - both required) and run the stub:</p>
   <div class="cli"><code>scripts/ghidra-analysis/import-overlay-named.sh /tmp/overlay_&lt;label&gt;.bin &lt;label&gt;</code></div>
-  <div class="cli"><code>docker compose exec ghidra /ghidra/support/analyzeHeadless /projects legaia -process overlay_&lt;label&gt;.bin -noanalysis -postScript /scripts/dump_&lt;label&gt;_overlay.py</code></div>
+  <div class="cli"><code>docker compose exec ghidra /ghidra/support/analyzeHeadless /projects legaia -process overlay_&lt;label&gt;.bin -noanalysis -postScript /scripts/dump/dump_&lt;label&gt;_overlay.py</code></div>
   <p>When the auto-detection picks the wrong label (the anchor table has no function exclusive to the shop, cutscene or level-up subset), pass <code>--label name</code>; an existing stub is preserved (<code>--force</code> overwrites). To grow the anchor table, add any function you confirm exclusive to one overlay to <code>ANCHOR_FUNCTIONS</code> in the same script.</p>
 </section>
 
@@ -93,7 +93,7 @@
 
 <section class="doc-section" id="capturing-with-pcsx-redux">
   <h2>Capturing with PCSX-Redux</h2>
-  <p>Boot with the disc, play to the scene, open <code>File &rarr; Show Lua Console</code>, and run <code>ghidra/scripts/dump_overlay.lua</code> - it writes <code>0x801C0000-0x801EFFFF</code> to <code>/tmp/legaia_overlay_&lt;TIMESTAMP&gt;.bin</code>. Then <code>ghidra/scripts/import_overlay.sh &lt;dump&gt;</code> copies the file into the container and imports it at base <code>0x801C0000</code> (MIPS LE, auto-analysed). Copy dumps to a <em>writable</em> container path: <code>/data</code> is bind-mounted read-only; <code>/tmp</code> is what the committed importers use.</p>
+  <p>Boot with the disc, play to the scene, open <code>File &rarr; Show Lua Console</code>, and run <code>ghidra/scripts/import/dump_overlay.lua</code> - it writes <code>0x801C0000-0x801EFFFF</code> to <code>/tmp/legaia_overlay_&lt;TIMESTAMP&gt;.bin</code>. Then <code>ghidra/scripts/import/import_overlay.sh &lt;dump&gt;</code> copies the file into the container and imports it at base <code>0x801C0000</code> (MIPS LE, auto-analysed). Copy dumps to a <em>writable</em> container path: <code>/data</code> is bind-mounted read-only; <code>/tmp</code> is what the committed importers use.</p>
   <aside class="notice">
     The 192 KB window in <code>dump_overlay.lua</code> is too narrow for some battle-effect handlers and for the world-map overlay's high-mode prim renderers at <code>0x801F7644..0x801F8690</code>. Use <code>extract-mednafen-overlay.py</code> (default 228 KB) or pass <code>--end 0x80200000</code> for the full 256 KB.
   </aside>

@@ -4,6 +4,16 @@
 
 use super::*;
 
+/// Character-record `+0xF8` bit `0x1000`: accessory passive `0x2C` Arts
+/// Power (War Soul), which lifts an Art hit's `13/10` to `14/10`
+/// (`0x801ED0F8..0x801ED104`).
+pub(in crate::world) const ABILITY_F8_ARTS_POWER: u32 = 0x1000;
+
+/// Character-record `+0xF8` bit `0x200000`: accessory passive `0x35` Safe
+/// Escape, the `lui a2,0x20` mask of the melee kernel's fleeing-defender
+/// fold (`0x801ECFF4`).
+pub(in crate::world) const ABILITY_F8_SAFE_ESCAPE: u32 = 0x0020_0000;
+
 impl World {
     /// The engine seat of retail's per-frame damage-kernel call. For every
     /// actor whose committed one-shot clip is in flight, ask the kernel's
@@ -561,6 +571,10 @@ impl World {
         // The block roll runs ahead of the damage rolls (`0x801EC5A8..
         // 0x801EC878` before the `0x801ECB84` fold), and a blocked hit skips
         // the whole damage body: `bne s7,zero,0x801EE6D4` at `0x801ECB60`.
+        // The juggle counter is rewritten on every resolved hit, blocked or
+        // not (`0x801ECA20..0x801ECA80`, after the block roll and ahead of
+        // the `0x801ECB60` skip). It draws nothing.
+        self.battle.juggle = self.next_juggle(target);
         let blocked = self.roll_block(attacker, target, power_byte);
         // The damage roll below reads the same two terms (`lh 0x6d2` at
         // `0x801ECED8`, `lh 0x6d4` at `0x801ED1E0`): the hit path zeroes them
@@ -588,7 +602,8 @@ impl World {
         let defense = self.physical_defense_of(target, power_byte);
         // Spirit guard stance on the defender (a party slot that picked
         // Spirit and hasn't started its next turn).
-        let target_guarding = self.battle.guarding.get(target_i).copied().unwrap_or(false);
+        let target_guarding = self.battle.guarding.get(target_i).copied().unwrap_or(false)
+            || self.safe_escape_guards(target);
         let hp = self
             .actors
             .get(attacker_i)
@@ -602,10 +617,17 @@ impl World {
                 power_byte,
             ),
             staged_anim: committed,
+            // `0x801ED0F8..0x801ED104`: War Soul (record `+0xF8 & 0x1000`)
+            // is read for a party attacker only.
+            art_power_bit: attacker < self.party.party_count
+                && self.party_ability_word_f8(attacker_i) & ABILITY_F8_ARTS_POWER != 0,
+            affinity_pct: self.melee_affinity_pct(attacker, target),
+            attacker_status: self.raw_status_word(attacker),
+            defender_status: self.raw_status_word(target),
             defender_guarding: target_guarding,
+            combo_scale: self.battle.juggle,
             attack_ramp,
             guard_ramp,
-            ..Default::default()
         };
         let mut raw =
             legaia_engine_battle_vm::battle_formulas::physical_predamage(&hit_inputs, &mut || {
@@ -976,6 +998,91 @@ impl World {
             let step = i16::from(super::commit_log_launch::BATTLE_PASS_STEP_PER_TICK);
             self.battle.guard_ramp = self.battle.guard_ramp.wrapping_add(step);
         }
+    }
+
+    /// The melee kernel's juggle counter for a hit on `target`
+    /// (`FUN_801EC3E4` `0x801ECA20..0x801ECA80`): `1` when the defender is
+    /// playing its block entry (`+0x1D9 == +0x1F3`), one more than the last
+    /// hit's while its `+0x1F7` juggle window is up, else `1`.
+    ///
+    /// PORT: FUN_801EC3E4 (`0x801ECA20..0x801ECA80`, the `ctx[+0x0A]` store)
+    pub(in crate::world) fn next_juggle(&self, target: u8) -> u8 {
+        let ti = usize::from(target);
+        let Some(t) = self.actors.get(ti) else {
+            return 1;
+        };
+        let block_entry = self.battle_reaction_map(ti).map_or(0, |m| m[4]);
+        let in_block = block_entry != 0 && t.battle_reaction_entry == Some(block_entry);
+        if !in_block && t.battle_juggle_window {
+            self.battle.juggle.wrapping_add(1)
+        } else {
+            1
+        }
+    }
+
+    /// `matrix[attacker element][defender element]` for a melee hit, as a
+    /// percent (`FUN_801EC3E4` `0x801ECF1C..0x801ED07C` resolve the two
+    /// elements the way `FUN_801DD864` does: a party seat from the
+    /// per-character table, any other seat from its monster record `+0x1D`).
+    /// `100` when the affinity tables are not installed or an element does
+    /// not resolve.
+    pub(in crate::world) fn melee_affinity_pct(&self, attacker: u8, target: u8) -> u8 {
+        let Some(aff) = self.tables.element_affinity.as_ref() else {
+            return 100;
+        };
+        match (
+            self.battle_slot_element(attacker),
+            self.battle_slot_element(target),
+        ) {
+            (Some(a), Some(d)) => aff.affinity_pct(a, d).unwrap_or(100),
+            _ => 100,
+        }
+    }
+
+    /// The melee kernel's Safe Escape fold (`FUN_801EC3E4`
+    /// `0x801ECF74..0x801ED07C`): a **party** defender whose pending
+    /// category is the Run band (`+0x1DE == 5`) has its guard roll tripled
+    /// as the Spirit stance's is, when any member counted by the seated
+    /// party byte `ctx[+0x00]` carries record `+0xF8` bit `0x200000`
+    /// (accessory passive `0x35` Safe Escape). The loop walks every seated
+    /// member's record with no HP test (`0x801ED000..0x801ED04C`); a monster
+    /// defender skips the fold (`sltiu v0,a1,0x3` at `0x801ECF78`).
+    ///
+    /// The engine stamps category `5` on a member only at its dispatch,
+    /// where retail's Run confirm stamps the whole party at commit, so the
+    /// round's pending Run stands in for the byte as well.
+    ///
+    /// PORT: FUN_801EC3E4 (`0x801ECF74..0x801ED07C`, the `s3` count)
+    pub(in crate::world) fn safe_escape_guards(&self, target: u8) -> bool {
+        let party_count = self.party.party_count.clamp(1, 3);
+        if target >= party_count {
+            return false;
+        }
+        let fleeing = self
+            .actors
+            .get(usize::from(target))
+            .is_some_and(|a| a.battle.action_category == 5)
+            || matches!(
+                self.battle.round_flow.pending.get(usize::from(target)),
+                Some(Some(crate::battle_round::PendingPartyAction::Run))
+            );
+        fleeing
+            && (0..usize::from(party_count))
+                .any(|m| self.party_ability_word_f8(m) & ABILITY_F8_SAFE_ESCAPE != 0)
+    }
+
+    /// A party member's second ability word - the character record's
+    /// `+0xF8` u32 (`0x80084140 + id*0x414 + 0x6C0`).
+    pub(in crate::world) fn party_ability_word_f8(&self, member: usize) -> u32 {
+        self.party
+            .roster
+            .members
+            .get(self.party_roster_slot(member))
+            .map(|r| {
+                let b = r.ability_bits();
+                u32::from_le_bytes([b[4], b[5], b[6], b[7]])
+            })
+            .unwrap_or(0)
     }
 
     /// A party member's ability word - the character record's `+0xF4` u32,

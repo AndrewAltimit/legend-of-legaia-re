@@ -295,11 +295,10 @@ impl RetailBattle {
         // bearing, `0x801E3078..0x801E3088`): its heading is the one its
         // last turn left, which the replayed prompt does not restore, and the
         // seed's case-6 arm subtracts it (`super_queue_replace_*`: `34`).
-        // Only on the SM's retail cadence: on the per-vsync cadence the
-        // seed's arm is never walked, so the heading it subtracts reaches no
-        // frame and the seat keeps the engine's.
-        if legaia_engine_core::world::WorldToggles::new().battle_sm_frame_cadence
-            && matches!(self.seed_plan(), SeedPlan::Action { .. })
+        // The camera frames the seed's pass on both SM cadences
+        // (`World::battle_camera_state`), so the heading reaches the frame
+        // on either.
+        if matches!(self.seed_plan(), SeedPlan::Action { .. })
             && self.action_state <= 0x14
             && let Some(a) = spent.get_mut(usize::from(engine_seat(
                 self.active_actor,

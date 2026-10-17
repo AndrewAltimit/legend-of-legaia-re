@@ -69,7 +69,7 @@ Vahn-vs-Gobu-Gobu battle paused on the Begin/Run menu while the camera orbits).
 
 The floor is not geometry from a file. `func_0x801d02c0` is a GTE rasteriser
 that emits a flat tiled grid each frame
-(`ghidra/scripts/dump_battle_backdrop_draw.py`; see also
+(`ghidra/scripts/dump/dump_battle_backdrop_draw.py`; see also
 [`functions/battle.md`](../reference/functions/battle.md#801d02c0)).
 
 | Property | Value |
@@ -1145,7 +1145,7 @@ captures hold.
 
 The engine runs the SM every vsync by default, with timers draining by one.
 Retail's cadence is in place behind `WorldToggles::battle_sm_frame_cadence`
-(`World::battle_sm_pass_due`, `LEGAIA_BATTLE_FRAME_CADENCE=1`). It runs the
+(`World::battle_sm_pass_due`; a native session raises it from `LEGAIA_BATTLE_FRAME_CADENCE=1`, the play page from its "Retail battle cadence" box). It runs the
 pass and the separation pass on the first tick of each `BattleFrameClock`
 frame with `frame_dt` the step, and these follow it:
 
@@ -1166,17 +1166,21 @@ frame with `frame_dt` the step, and these follow it:
   cast-effect driver are called from inside the state body, so a pass arms the
   shot of the state it ran (`World::battle_camera_state`). The summon band
   `0x32..=0x37` keeps the live state: `0x29`'s summon-route arm falls through
-  into the entered state's case-6 call (`0x801E4604`, `0x801E4748`).
+  into the entered state's case-6 call (`0x801E4604`, `0x801E4748`). The seed's
+  pass is framed as the seed's on the per-vsync cadence too, where it shares
+  a tick with the `0x14` store: without it the seed's `0x800`-rung shot never
+  reaches the camera.
 - **The camera steps on the pass** (`BattleCamera::sync_step_phase`).
 - **The retail-compare seed** starts the yaw-coin steer at `0x14`, since the
   seed's `0x800` value is no coin. It also stands the acting seat on its
-  captured heading for a capture before the attack band's first face store.
+  captured heading for a capture before the attack band's first face store,
+  on either cadence.
 
 Measured with `LEGAIA_BATTLE_FRAME_CADENCE=1`, the corpus rises where the
 seed's arm, the strike loop and the summon modules are filmed:
 
-- `super_queue_replace_*`: `camera` `1.0`, `image` `.927` (from `.968` /
-  `.744`);
+- `super_queue_replace_*`: `camera` `1.0`, `image` `.927` (the per-vsync
+  cadence reaches `.926` through the seed's framing alone);
 - `gimard_burning_attack`: `camera` `1.0` (from `.989`);
 - `vera_summon_mid_cast`: `image` `.974` (from `.834`).
 

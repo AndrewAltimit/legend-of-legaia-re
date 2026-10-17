@@ -17,7 +17,7 @@
 -- Address-typed fields (dump.addr, breakpoint[i].addr, breakpoint_range[i].base)
 -- accept *either* an integer literal *or* a Ghidra symbol name string
 -- ("FUN_801DD35C", "_DAT_8007BCD0"). Symbol names resolve via
--- ghidra/scripts/symbols.lua (regenerate with scripts/pcsx-redux/build-symbols.py).
+-- ghidra/scripts/symbols/symbols.lua (regenerate with scripts/pcsx-redux/build-symbols.py).
 -- An unresolved symbol raises at spec-load time -- the probe never silently
 -- arms at address 0.
 --
@@ -85,7 +85,7 @@ local function symbols()
     return _symbols_cache
 end
 
--- Accept int (taken as-is) or string (resolved via ghidra/scripts/symbols.lua).
+-- Accept int (taken as-is) or string (resolved via ghidra/scripts/symbols/symbols.lua).
 -- Anything else is a schema error. Symbol misses raise loudly (via the
 -- __index guard in probe.symbols) so a typo never silently arms at 0.
 local function resolve_addr(v, ctx)

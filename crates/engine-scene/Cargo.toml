@@ -42,7 +42,6 @@ legaia-vab.workspace = true
 # a kernel that reads the disc through `ProtIndex` / `DiscVfs` lives in this
 # crate, the lowest one that can open a disc.
 legaia-engine-battle.workspace = true
-legaia-engine-fishing.workspace = true
 legaia-engine-menus.workspace = true
 legaia-engine-mode.workspace = true
 legaia-minigame-formats.workspace = true

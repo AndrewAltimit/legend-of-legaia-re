@@ -809,6 +809,8 @@ That route is **not** a bare swing's: `map[0x0C..=0x0F] = 0`, and move-power row
 
 Port: `MuscleDomeSession::install_art_catalog` + `tokenized_queue` over `legaia_art::tokenize`; without a catalog the string stays swings, retail's own answer for a character with no arts. `DomeDamageModel::damage` falls back to `battle_formulas::command_power_scalar` for a byte with no move-power row. The catalog is built by `muscle_dome::art_catalog_for` (this character's rows, real arts only, two arrows or more, grid order) and installed on the arena-door warp path, which the native `M` launcher also takes.
 
+The minigames page, which holds no `World`, builds the same catalog with `muscle_dome_session::art_catalog_from_bank` over the art-animation bank in the fighter's player battle file (`record[0] +0x58`, PROT 863..865) - the records the play hosts' battle entry installs (`World::install_art_bank_records`) - through the same normal-art filter.
+
 ## Sound
 
 **UI cues.** The round driver fires its blips through the one-arg cue funnel `FUN_8004FCC8`, whose `< 0x40` leg enqueues `id - 1` as the static descriptor row (`sltiu $s0, 0x40` at `0x8004FD94`, `addiu $a1, $s0, -1` at `0x8004FD9C`, ring append at `0x8004FE28`; [`sfx-table.md`](../formats/sfx-table.md)). `FUN_801D0748` carries **37** immediate call sites: ids `0x21` (15), `0x22` (7), `0x23` (15), i.e. static rows `0x20` / `0x21` / `0x22`, whose category routes them to the slot-0 system bank (extraction PROT **0868**).
@@ -1065,7 +1067,6 @@ The HUD kernels read the hold as an action frame (`battle_hud::battle_hud_phase`
 - The **Ra-Seru list** is a row of the status caption (`engine-minigame-scenes::minigame_status::muscle_status_rows`), shown outside the game picture - the native title bar, the play page's strip under the canvas; its window's pieces are not pinned.
 - **Run** ends the leg on the press; the escape roll is not modelled.
 - The approach length and per-swing cadence are the port's clock, not retail's root-motion arithmetic.
-- The **minigames page's** standalone panel installs no art catalog, so its turn resolves the raw direction string: its only art source is the SCUS arts-*name* table, which carries a display index rather than an action constant, and it does not decode the per-character art records (PROT `0x05C4`). Its arts banner is unaffected.
 
 **Tests.** `engine-core/tests/muscle_dome_minigame_real.rs` (real deck + real swing costs drive a leg to a decision), `dome_leg_ends_on_ko_real.rs` (the arena's sole game-mode write is `BattleInit`; the formation cell's only writer is the arena; the ladder tops out below the timed fight's id), `muscle_contest_real.rs` / `muscle_contest_world.rs`, `muscle_hub_tally_cues_disc.rs`, `muscle_dome_lead_max_hp_disc.rs`, and `web-viewer/tests/dome_ladder_and_hub_real.rs` (29 real monster records, round counts agree with the score table, every hub draw row's cited call site still holds a `jal` to its emitter).
 

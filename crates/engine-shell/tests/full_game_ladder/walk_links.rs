@@ -256,6 +256,271 @@ pub(super) fn ledge_hops(session: &NativeSession) -> WarpMap {
     })
 }
 
+thread_local! {
+    /// The loaded field scene's **clock flags**, keyed by scene: see
+    /// [`clock_flags`].
+    static CLOCK_FLAGS: std::cell::RefCell<(String, BTreeSet<u16>)> =
+        const { std::cell::RefCell::new((String::new(), BTreeSet::new())) };
+}
+
+/// The story flags the loaded scene's ambient move-VM stagers write: the
+/// move VM's overlay-extension set / clear (`2F 1C flag` / `2F 1D flag`,
+/// u16 words, bank `DAT_80085758`) found in the scene's prescript stager
+/// records. Such a flag is a clock, not story state: the stager flips it as
+/// time passes, whatever the player does. Rogue Tower's pad cycler (`rugi`'s
+/// prescript) waits on `0x594`, then raises `0x463` and `0x462` in turn for
+/// a stretch of each lap and drops them again, and its upper pads
+/// (P2[40..61]) test `0x462` to pick their landing.
+pub(super) fn clock_flags(session: &NativeSession) -> BTreeSet<u16> {
+    if session.host.world.mode != SceneMode::Field {
+        return BTreeSet::new();
+    }
+    let name = scene_name(session);
+    CLOCK_FLAGS.with(|t| {
+        let mut t = t.borrow_mut();
+        if t.0 != name {
+            let mut flags = BTreeSet::new();
+            if let Ok(scene) = Scene::load(&session.host.index, &name)
+                && let Some(ev) = scene.find_event_scripts()
+            {
+                for &(start, end) in &ev.record_ranges {
+                    let rec = &ev.bytes[start.min(ev.bytes.len())..end.min(ev.bytes.len())];
+                    let words: Vec<u16> = rec
+                        .as_chunks::<2>()
+                        .0
+                        .iter()
+                        .map(|c| u16::from_le_bytes(*c))
+                        .collect();
+                    for w in words.windows(3) {
+                        if w[0] == 0x2F && matches!(w[1], 0x1C | 0x1D) {
+                            flags.insert(w[2]);
+                        }
+                    }
+                }
+            }
+            *t = (name, flags);
+        }
+        t.1.clone()
+    })
+}
+
+/// One landing of a pad that forks on a clock flag: where it lands, and the
+/// flag and phase it lands there in.
+pub(super) type PhasedLanding = (Cell, u16, bool);
+
+/// The loaded scene's walk-on pads whose landing hangs on a [`clock_flags`]
+/// flag, under the live story flags otherwise: trigger tile -> each phase's
+/// landing. A player times the step onto such a pad; the planner offers both
+/// landings and the follower waits on the pad's edge for the phase its route
+/// wants ([`phase_ready`]).
+pub(super) fn phased_pads(session: &NativeSession) -> HashMap<(i32, i32), Vec<PhasedLanding>> {
+    let clocks = clock_flags(session);
+    let mut out = HashMap::new();
+    if clocks.is_empty() {
+        return out;
+    }
+    let _ = ledge_hops(session);
+    let w = &session.host.world;
+    LEDGE_HOPS.with(|t| {
+        let t = t.borrow();
+        for (tile, body, pc0, c1, c2) in &t.2 {
+            if !w.p2_record_gates_pass(c1, c2) {
+                continue;
+            }
+            let tested: BTreeSet<u16> =
+                legaia_scene_formats::field_disasm::LinearWalker::new(body, *pc0)
+                    .flatten()
+                    .filter_map(|insn| match insn.info {
+                        legaia_scene_formats::field_disasm::InsnInfo::SystemFlag {
+                            kind: legaia_scene_formats::field_disasm::FlagKind::Test,
+                            idx,
+                            ..
+                        } if clocks.contains(&idx) => Some(idx),
+                        _ => None,
+                    })
+                    .collect();
+            // One clock per pad: two would make four phases the follower
+            // cannot time from one flag's edges.
+            let [flag] = tested.iter().copied().collect::<Vec<_>>()[..] else {
+                continue;
+            };
+            let lands: Vec<PhasedLanding> = [false, true]
+                .into_iter()
+                .filter_map(|on| {
+                    let test = |f: u16| if f == flag { on } else { w.system_flag_test(f) };
+                    flag_path_landing_with(&test, body, *pc0, Some(*tile))
+                        .map(|l| (open_landing(w, l), flag, on))
+                })
+                .collect();
+            if lands.len() == 2 && lands[0].0 != lands[1].0 {
+                out.insert(*tile, lands);
+            }
+        }
+    });
+    out
+}
+
+/// Frames from the step onto a clock pad to its flag test: the walk leg onto
+/// the pad, the fade, and the `4A 0A 00` / `4A 3C 00` waits before `rugi`
+/// P2[40]'s `74 62 69 00`. A phase that ends sooner than this after the
+/// step sends the walker the other way.
+pub(super) const PHASE_TEST_LEAD: u64 = 120;
+/// A phase seen to start no more than this many frames ago is taken while
+/// its length is still unknown.
+pub(super) const PHASE_FRESH: u64 = 12;
+/// A clock flag that has not flipped for this long is held: `rugi`'s cycler
+/// parks on `0x46A` once Rogue is beaten. The follower then steps on and
+/// lets the live landing stand.
+pub(super) const PHASE_FROZEN: u64 = 4000;
+
+/// One clock flag as the follower has watched it, in world frames: its
+/// value, when it flipped into it (known only when the flip was seen to the
+/// frame), the first frame it was seen holding it, the last frame it was
+/// looked at, and the shortest run seen of each phase.
+#[derive(Clone, Copy)]
+struct ClockWatch {
+    value: bool,
+    flipped_at: Option<u64>,
+    held_since: u64,
+    looked: u64,
+    shortest: [Option<u64>; 2],
+}
+
+thread_local! {
+    static CLOCK_WATCH: std::cell::RefCell<(String, HashMap<u16, ClockWatch>)> =
+        std::cell::RefCell::new((String::new(), HashMap::new()));
+}
+
+/// Look at the loaded scene's clock flags: call once per walk tick.
+pub(super) fn watch_clocks(session: &NativeSession) {
+    let clocks = clock_flags(session);
+    if clocks.is_empty() {
+        return;
+    }
+    let name = scene_name(session);
+    let w = &session.host.world;
+    let now = w.frame;
+    CLOCK_WATCH.with(|c| {
+        let mut c = c.borrow_mut();
+        if c.0 != name {
+            *c = (name, HashMap::new());
+        }
+        for &f in &clocks {
+            let v = w.system_flag_test(f);
+            let e = c.1.entry(f).or_insert(ClockWatch {
+                value: v,
+                flipped_at: None,
+                held_since: now,
+                looked: now,
+                shortest: [None; 2],
+            });
+            // A gap in the looking (a fight, a script) restarts the hold
+            // count: the flag may have flipped and back unseen.
+            if now.saturating_sub(e.looked) > 2 {
+                e.held_since = now;
+            }
+            if e.value != v {
+                // A flip seen within a frame or two of the last look is
+                // timed; one that happened while nobody looked is not.
+                let seen = now.saturating_sub(e.looked) <= 2;
+                if seen && let Some(t) = e.flipped_at {
+                    let k = usize::from(e.value);
+                    let n = now - t;
+                    e.shortest[k] = Some(e.shortest[k].map_or(n, |m| m.min(n)));
+                }
+                if std::env::var_os("LEGAIA_FGL_CLOCK_DEBUG").is_some() {
+                    eprintln!(
+                        "      [clock] {f:#05X} -> {v} at frame {now} (timed {seen}, shortest {:?})",
+                        e.shortest
+                    );
+                }
+                e.value = v;
+                e.flipped_at = seen.then_some(now);
+                e.held_since = now;
+            }
+            e.looked = now;
+        }
+    });
+}
+
+/// May the walker step onto a pad now and be sent by `flag` in phase `on`?
+/// Yes when the flag is in that phase and the phase will still hold when the
+/// pad tests it ([`PHASE_TEST_LEAD`]), judged from the shortest run of the
+/// phase seen so far; a phase whose length is not known yet is taken only
+/// fresh. A clock that has stopped ([`PHASE_FROZEN`]) is not waited on.
+pub(super) fn phase_ready(session: &NativeSession, flag: u16, on: bool) -> bool {
+    let w = &session.host.world;
+    let now = w.frame;
+    CLOCK_WATCH.with(|c| {
+        let c = c.borrow();
+        let Some(e) = c.1.get(&flag) else {
+            return w.system_flag_test(flag) == on;
+        };
+        if now.saturating_sub(e.held_since) >= PHASE_FROZEN {
+            return true;
+        }
+        if e.value != on {
+            return false;
+        }
+        let Some(t) = e.flipped_at else {
+            return false;
+        };
+        let since = now - t;
+        match e.shortest[usize::from(on)] {
+            Some(len) => since + PHASE_TEST_LEAD <= len,
+            None => since <= PHASE_FRESH,
+        }
+    })
+}
+
+/// Can a step ever be timed into phase `on` of `flag`? Not when the phase
+/// has been seen to run shorter than the pad takes to test it: `rugi`'s
+/// `0x462` is up for under a hundred frames a lap, and a step taken as it
+/// rises is tested after it has dropped. A phase not yet timed is assumed
+/// usable.
+pub(super) fn phase_usable(session: &NativeSession, flag: u16, on: bool) -> bool {
+    let name = scene_name(session);
+    CLOCK_WATCH.with(|c| {
+        let c = c.borrow();
+        if c.0 != name {
+            return true;
+        }
+        c.1.get(&flag)
+            .and_then(|e| e.shortest[usize::from(on)])
+            .is_none_or(|len| len > PHASE_TEST_LEAD + PHASE_FRESH)
+    })
+}
+
+/// The clock phase the route wants of the pad it steps onto next: `path[0]`
+/// a pad tile, `path[1]` the landing (not a lattice step away).
+pub(super) fn phase_wanted(
+    session: &NativeSession,
+    path: &[Cell],
+    at: Cell,
+) -> Option<(u16, bool)> {
+    let (&next, &land) = (path.first()?, path.get(1)?);
+    if adjacent(next, land) {
+        return None;
+    }
+    // Either the route steps into the pad tile and lands from there, or it
+    // jumps from the walker's own cell, pressing toward the pad tile.
+    let (nx, nz) = if next == at {
+        PRESS_AT.with(|m| m.borrow().get(&at).copied())?
+    } else {
+        cell_center(next)
+    };
+    let (ax, az) = cell_center(at);
+    let tile = dispatch_tile(nx, nz);
+    if dispatch_tile(ax, az) == tile {
+        return None;
+    }
+    phased_pads(session)
+        .get(&tile)?
+        .iter()
+        .find(|&&(l, _, _)| l == land)
+        .map(|&(_, f, on)| (f, on))
+}
+
 /// `land`, or the nearest open lattice cell within a tile of it. A walk
 /// leg's target carries the half-tile bit (`0x80`), and the leg's own
 /// arrival stops short of it: `deroa`'s hub P2[11] walks its west leg to
@@ -299,11 +564,29 @@ pub(super) fn flag_path_landing(
     pc0: usize,
     tile: Option<(i32, i32)>,
 ) -> Option<Cell> {
-    flag_path_from(w, body, pc0, tile, &mut HashSet::new(), None)
+    flag_path_from(
+        &|f| w.system_flag_test(f),
+        body,
+        pc0,
+        tile,
+        &mut HashSet::new(),
+        None,
+    )
+}
+
+/// [`flag_path_landing`] with the story flags answered by `test` rather than
+/// the live world: how a pad that forks on a clock flag lands in each phase.
+pub(super) fn flag_path_landing_with(
+    test: &dyn Fn(u16) -> bool,
+    body: &[u8],
+    pc0: usize,
+    tile: Option<(i32, i32)>,
+) -> Option<Cell> {
+    flag_path_from(test, body, pc0, tile, &mut HashSet::new(), None)
 }
 
 fn flag_path_from(
-    w: &legaia_engine_core::world::World,
+    test: &dyn Fn(u16) -> bool,
     body: &[u8],
     pc0: usize,
     tile: Option<(i32, i32)>,
@@ -339,7 +622,7 @@ fn flag_path_from(
                 target: Some(target),
                 ..
             } => {
-                if w.system_flag_test(idx) {
+                if test(idx) {
                     pc = target & 0xFFFF;
                     continue;
                 }
@@ -380,8 +663,8 @@ fn flag_path_from(
                 ..
             } => {
                 let mut other = seen.clone();
-                let skip = flag_path_from(w, body, skip_target & 0xFFFF, tile, &mut other, last);
-                let on = flag_path_from(w, body, pc + insn.size.max(1), tile, seen, last);
+                let skip = flag_path_from(test, body, skip_target & 0xFFFF, tile, &mut other, last);
+                let on = flag_path_from(test, body, pc + insn.size.max(1), tile, seen, last);
                 return (skip == on).then_some(on).flatten();
             }
             InsnInfo::BBoxTest { .. } | InsnInfo::CondJmp { .. } | InsnInfo::Picker { .. } => {
@@ -492,6 +775,66 @@ pub(super) fn object_doors(session: &NativeSession) -> Vec<((i16, i16), Cell)> {
 /// centre and the cell of the last leg's tile. `taiku` P0[6], the lift at
 /// (109, 78), walks the player aboard, rides and walks them off the far
 /// side, each touch the other way (`0x38B`).
+/// Where partition-2 record `global_index` (a spawn's flat index) leaves the
+/// player when it carries them as a ride: its last player reposition (walk
+/// leg, `0x23` MOVE_TO or `4C 51` seat), plus the compass legs after it
+/// (`B7 F8 d n` / `C1 F8 d n`). `chitei2` P2[7] seats the party at (94, 24)
+/// beside the car and walks it two tiles north (`C1 F8 00 84`) to (94, 22);
+/// P2[8] seats it at (100, 102) and walks it two tiles west to (98, 102).
+/// A record that leaves the scene or forks on a story flag or a picker is
+/// not one ride.
+fn spawned_ride_landing(session: &NativeSession, global_index: u8) -> Option<Cell> {
+    use legaia_engine_field::man_field_scripts::{partition_record_span, player_moves_in_region};
+    use legaia_scene_formats::field_disasm::{InsnInfo, LinearWalker};
+    let (mf, man, _) = scene_man_and_triggers(session)?;
+    let base = mf.partitions.first().map_or(0, Vec::len) + mf.partitions.get(1).map_or(0, Vec::len);
+    let rec = usize::from(global_index).checked_sub(base)?;
+    let (start, pc0, len) = partition_record_span(&mf, &man, 2, rec)?;
+    let body = &man[start..start + len];
+    let insns: Vec<_> = LinearWalker::new(body, pc0).map_while(Result::ok).collect();
+    if insns.iter().any(|i| {
+        i.opcode == 0x3F
+            || matches!(
+                i.info,
+                InsnInfo::SystemFlag {
+                    kind: FlagKind::Test,
+                    ..
+                } | InsnInfo::Picker { .. }
+                    | InsnInfo::CondJmp { .. }
+                    | InsnInfo::BBoxTest { .. }
+            )
+    }) {
+        return None;
+    }
+    let last = player_moves_in_region(body, pc0).into_iter().next_back()?;
+    let (mut dx, mut dz) = (0i32, 0i32);
+    for i in insns.iter().filter(|i| i.pc > last.pc) {
+        if matches!(i.opcode, 0x37 | 0x41)
+            && i.extended == Some(0xF8)
+            && let (Some(&d), Some(&n)) = (body.get(i.pc + 2), body.get(i.pc + 3))
+        {
+            let rate = if i.opcode == 0x37 { 0x80 } else { 0x40 };
+            let step = rate * i32::from(n & 0x3F);
+            let signs = COMPASS_AXIS_SIGNS[usize::from(d & 7)];
+            if signs & 1 != 0 {
+                dz += step;
+            }
+            if signs & 2 != 0 {
+                dz -= step;
+            }
+            if signs & 4 != 0 {
+                dx += step;
+            }
+            if signs & 8 != 0 {
+                dx -= step;
+            }
+        }
+    }
+    let x = (i32::from(last.world_x) + dx).clamp(0, 0x3FFF) as i16;
+    let z = (i32::from(last.world_z) + dz).clamp(0, 0x3FFF) as i16;
+    Some(open_landing(&session.host.world, cell_of(x, z)))
+}
+
 pub(super) fn prop_rides(session: &NativeSession) -> Vec<((i16, i16), Cell)> {
     use legaia_scene_formats::field_disasm::{InsnInfo, decode};
     let w = &session.host.world;
@@ -525,7 +868,20 @@ pub(super) fn prop_rides(session: &NativeSession) -> Vec<((i16, i16), Cell)> {
         let mut last = None;
         while seen.insert(pc) {
             let Ok(insn) = decode(body, pc) else { break };
+            // A touch resumes past the yield it parked on.
+            if insn.opcode == 0x21 && pc == prop.parked_pc {
+                pc += 1;
+                continue;
+            }
             if insn.size == 0 || insn.opcode == 0x21 {
+                break;
+            }
+            // A bind record that spawns the ride as a partition-2 record
+            // (`chitei2`'s cars: P0[5] at (100, 102) spawns P2[7], P0[12]
+            // at (94, 24) spawns P2[8]) lands where that record leaves the
+            // player.
+            if let InsnInfo::SpawnRecord { global_index } = insn.info {
+                last = spawned_ride_landing(session, global_index);
                 break;
             }
             // A record that leaves the scene or teleports the player after

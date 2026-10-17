@@ -708,3 +708,27 @@ fn a_press_on_the_interval_screen_fast_forwards_the_tally() {
     mg.muscle_tally_voice_reset();
     assert_eq!(settled(&mg, 60), slow);
 }
+
+/// The fighter's normal-art catalog is installed from the player battle
+/// file's art-animation bank - the source the play hosts' battle entry
+/// installs from - so the Triangle list has rows and the turn walks the
+/// tokenizer's action queue. Without the catalog the list is empty and the
+/// queue is the raw direction string.
+#[test]
+fn muscle_fighter_carries_the_art_catalog() {
+    let Some((mut mg, _)) = loaded() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
+        return;
+    };
+    let monster = first_roster_id(&mg);
+    for char_slot in 0..3u32 {
+        assert!(mg.muscle_start_vs(char_slot, 30, monster, 0x2A));
+        let st: serde_json::Value = serde_json::from_str(&mg.muscle_state_json()).unwrap();
+        let pages = st["arts_pages"].as_u64().unwrap();
+        eprintln!("[ok] char {char_slot}: {pages} arts-list page(s)");
+        assert!(
+            pages > 0,
+            "char {char_slot}: the dome fighter has normal arts"
+        );
+    }
+}

@@ -165,13 +165,16 @@ impl World {
         let holds = pres.arm_holds(body, phase_in);
         let held = self.casting.module_pres.arm_held;
         // A module whose countdown gates the engine ports
-        // (`cast_module_camera::summon_holds`) holds exactly as long as
-        // retail, so an arm it passes on its first tick is one retail runs
+        // (`cast_module_camera::summon_holds`, or a director that carries the
+        // whole chain, `ModuleProfile::director_body`) holds exactly as long
+        // as retail, so an arm it passes on its first tick is one retail runs
         // in a single pass too (PROT 0918's ungated arm 17, whose kill of
         // arm 15's held white fade would otherwise never fire).
         let engine_paced =
             legaia_engine_battle_vm::cast_module_camera::summon_holds::summon_holds(entry)
-                .is_some();
+                .is_some()
+                || legaia_engine_battle_vm::cast_module_camera::module_profile(entry)
+                    .is_some_and(|p| p.director_body);
         let paced = !holds || held > 0 || engine_paced || BODY_PACED.contains(&entry);
         let first_hold = holds && !passed && held == 0;
         let first_pass = engine_paced && first && passed;

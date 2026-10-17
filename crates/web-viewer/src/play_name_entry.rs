@@ -23,27 +23,12 @@
 
 use super::*;
 use crate::runtime::LegaiaRuntime;
-use legaia_engine_menus::name_entry::{Control, GRID, NameEntry, NameEntryInput, NameEntryState};
-use legaia_engine_ui::{self as ui, NameEntryView};
+use legaia_engine_menus::name_entry::{Control, NameEntryInput, NameEntryState};
+use legaia_engine_ui as ui;
 
-/// Project the engine's [`NameEntry`] onto the renderer-agnostic view the
-/// shared builders consume, through the same two engine calls the native
-/// window's `name_entry_view` makes (`NameEntry::cursor_cells`,
-/// `name_entry::caret_on`); `engine-ui` deliberately does not depend on
-/// `engine-core`, so only the struct assembly is per host.
-fn name_entry_view<'a>(entry: &'a NameEntry, frame: u64) -> NameEntryView<'a> {
-    let (grid_cursor, control_cursor) = entry.cursor_cells();
-    NameEntryView {
-        grid_rows: &GRID,
-        name: &entry.name,
-        default_name: &entry.default_name,
-        grid_cursor,
-        control_cursor,
-        confirming: entry.state == NameEntryState::Confirm,
-        confirm_yes: entry.confirm_yes,
-        caret_on: legaia_engine_menus::name_entry::caret_on(frame),
-    }
-}
+/// The shared name-entry view (`engine-screens::field_screens::name_entry_view`,
+/// the native window's call too).
+use legaia_engine_screens::field_screens::name_entry_view;
 
 /// Test-only probes for the disc-gated New Game oracle
 /// (`tests/new_game_flow_parity.rs`). Native-only so the wasm export surface

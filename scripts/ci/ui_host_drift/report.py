@@ -11,6 +11,7 @@ from ui_host_drift.controls import (
     SELFTEST_CONSTANTS,
     SELFTEST_CONTENT,
     SELFTEST_DIAG,
+    SELFTEST_ENV_READS,
     SELFTEST_OWNERSHIP,
     SELFTEST_PAGE_KEYS,
     SELFTEST_PATH_STRINGS,
@@ -42,6 +43,7 @@ from ui_host_drift.selftest import (
 from ui_host_drift.tiers.boot_installs import boot_install_calls, check_boot_installs
 from ui_host_drift.tiers.constant_pairs import check_constant_pairs, normalise_value
 from ui_host_drift.tiers.diag_gates import check_diag_gates, initialiser_is_off
+from ui_host_drift.tiers.env_reads import check_env_reads, env_read_violations
 from ui_host_drift.tiers.entry_symmetry import check_entry_symmetry
 from ui_host_drift.tiers.enum_coverage import check_enum_coverage
 from ui_host_drift.tiers.frame_content import check_frame_content
@@ -201,6 +203,16 @@ def main() -> int:
                 "ERROR: built-in call-form control failed; a scan that counts "
                 "a `pub fn` as its own caller makes the entry-symmetry tier "
                 "vacuous. Run --selftest.",
+                file=sys.stderr,
+            )
+            return 2
+
+    for _label, src, want in SELFTEST_ENV_READS:
+        if env_read_violations(src) != want:
+            print(
+                "ERROR: built-in env-read control failed; a scan that cannot "
+                "find `env::var_os(\"X\")` cannot say whether an engine crate "
+                "reads a switch the browser does not have. Run --selftest.",
                 file=sys.stderr,
             )
             return 2
@@ -384,6 +396,11 @@ def main() -> int:
     save_io_problems, save_io_checked = check_save_io_routes()
     problems.extend(save_io_problems)
 
+    # The environment half: a switch an engine crate reads from the process
+    # environment is one a wasm32 host, which has none, can never throw.
+    env_problems, env_scanned = check_env_reads()
+    problems.extend(env_problems)
+
     if not args.quiet:
         print(
             f"[ui-drift] engine-ui draw builders: {len(builders)} "
@@ -473,6 +490,10 @@ def main() -> int:
         print(
             f"[ui-drift] save-rack I/O calls pinned to the save screen's commit "
             f"appliers: {save_io_checked}"
+        )
+        print(
+            f"[ui-drift] engine sources scanned for environment reads: "
+            f"{env_scanned}"
         )
         if web_ahead:
             print(f"[ui-drift] web-ahead (informational): {', '.join(web_ahead)}")

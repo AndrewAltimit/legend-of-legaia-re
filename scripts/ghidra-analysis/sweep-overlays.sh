@@ -188,7 +188,7 @@ for i in "${!STATES[@]}"; do
     echo "  [3/3] inventory: $PROG_NAME"
     if ! run docker compose exec -T ghidra /ghidra/support/analyzeHeadless \
             /projects legaia -process "${PROG_NAME}" -noanalysis \
-            -postScript /scripts/inventory_overlay.py 2>&1 \
+            -postScript /scripts/inventory/inventory_overlay.py 2>&1 \
             | grep -E "(wrote|ERROR|inventory)"; then
         echo "  WARN: inventory step produced no output line" >&2
     fi

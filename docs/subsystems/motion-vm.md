@@ -933,6 +933,13 @@ just the fresh-game one, because the interpreter preamble re-selects the live
 variant **every tick** against `DAT_80085758`; a swap reseeds the cursor
 rather than resuming the old variant's offset into new bytecode.
 
+The overworld runs it as well: the kingdom maps are mode-3 field-run
+scenes whose scripted actors the same driver `FUN_8003BC08` steps (`jal
+0x80038158` at `0x8003BD98`), and their streams write story flags - the
+Karisto cart's `map02` / `map03` streams move it between the stations and
+raise `0x467` / `0x466` ([`full-game-ladder.md`](../tooling/full-game-ladder.md)).
+The engine ticks the channels in both the field and the world-map arm.
+
 `World::tick_field_npc_ambient` steps each channel on the **actor game tick**
 (see [`actor-vm.md`](actor-vm.md#tick-cadence-dat_1f800393)), not per rendered
 frame - that is what keeps `0x0D` in lockstep with the ramp scheduler, since

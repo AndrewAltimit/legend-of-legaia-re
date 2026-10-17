@@ -184,37 +184,40 @@ fn read_desc(scus: &[u8], map: &ExeMap, va: u32) -> Option<String> {
 
 /// Decoded shape of a spell's `+2` target byte.
 ///
-/// The byte is two independent bits over a side/scope pair (pinned against the
-/// player Seru-magic block `0x81..=0x8b`, whose shapes are byte-exact from the
-/// gamedata cross-reference):
+/// Both runtime readers of the byte test the same two bits: the monster
+/// picker `FUN_801E9FD4` forks on `andi 0x60` (`0x801EA5A4`: `0x40` one
+/// opponent, `0x60` the party `8`, `0x20` the monster row `9`, `0x00` an ally
+/// or the caster), and the player picker `FUN_801D0748` on `andi 0x40` then
+/// `0x20` (`0x801D1C50` / `0x801D1C58`, PROT 0898):
 ///
-/// - bit `0x02` = **ally side** (clear = enemy side)
-/// - bit `0x20` = **all targets** (clear = single target)
+/// - bit `0x40` = the caster's **opponents** (clear = its own side)
+/// - bit `0x20` = **all targets** on that side (clear = single target)
 ///
 /// So `0x44` = single enemy, `0x64` = all enemies, `0x06` = single ally,
-/// `0x26` = all allies. (Empty / internal-tier slots read `0x00`/`0x04`,
-/// decoding to single-enemy.) See [`docs/formats/spell-table.md`].
-///
-/// The model holds across the whole named player block and the six offensive
-/// Ra-Seru summons, with one documented exception: the revive Ra-Seru
-/// **Horn / "Resurrector"** (`0x9c`) carries an *enemy-side* `+2` byte (`0x24`,
-/// decoding to all-enemies) even though its effect revives all allies - the
-/// summon's projection plays toward the enemy field and the revive is
-/// special-cased by spell id. (Cross-checked in
-/// `legaia-gamedata::magic_vs_disc`.)
+/// `0x26` = all allies, and the boss specials' `0x66` / `0x46` read all /
+/// one of the party. Bit `0x02` is the field menu's **field-castable** gate
+/// (`0x800311D0`), not the side: read as the side, it misread exactly the
+/// bytes where it disagrees with `0x40` - the boss specials as ally-side, and
+/// the revive Ra-Seru Horn's `0x24` and the buff tier's `0x04` as enemy-side.
+/// See [`docs/formats/spell-table.md`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
 pub enum SpellTargetShape {
-    /// Single enemy (bit `0x02` clear, `0x20` clear).
+    /// Single opponent (bit `0x40` set, `0x20` clear).
     OneEnemy,
-    /// All enemies (bit `0x02` clear, `0x20` set).
+    /// All opponents (bit `0x40` set, `0x20` set).
     AllEnemies,
-    /// Single ally (bit `0x02` set, `0x20` clear).
+    /// Single ally or the caster (bit `0x40` clear, `0x20` clear).
     OneAlly,
-    /// All allies (bit `0x02` set, `0x20` set).
+    /// All allies (bit `0x40` clear, `0x20` set).
     AllAllies,
 }
 
-/// Target-byte bit: the spell targets the **ally** side (clear = enemy side).
+/// Target-byte bit: the spell targets the caster's **opponents** (clear =
+/// its own side) - the bit both pickers test.
+pub const TARGET_OPPONENT_BIT: u8 = 0x40;
+/// Target-byte bit: the spell is **field-castable** - the field Magic
+/// list's gate (`0x800311D0`). The player block's heals (`0x06` / `0x26`)
+/// carry it; it is not the side ([`TARGET_OPPONENT_BIT`] is).
 pub const TARGET_ALLY_BIT: u8 = 0x02;
 /// Target-byte bit: the spell hits **all** targets on its side (clear = one).
 pub const TARGET_ALL_BIT: u8 = 0x20;
@@ -264,7 +267,7 @@ impl SpellEntry {
 
     /// Decode the `+2` byte into a [`SpellTargetShape`] (side + scope bits).
     pub fn target_shape(&self) -> SpellTargetShape {
-        let ally = self.target & TARGET_ALLY_BIT != 0;
+        let ally = self.target & TARGET_OPPONENT_BIT == 0;
         let all = self.target & TARGET_ALL_BIT != 0;
         match (ally, all) {
             (false, false) => SpellTargetShape::OneEnemy,
@@ -473,8 +476,13 @@ mod tests {
         assert_eq!(shape(0x64), SpellTargetShape::AllEnemies);
         assert_eq!(shape(0x06), SpellTargetShape::OneAlly);
         assert_eq!(shape(0x26), SpellTargetShape::AllAllies);
-        // Internal-tier / empty slots decode to single-enemy.
-        assert_eq!(shape(0x00), SpellTargetShape::OneEnemy);
-        assert_eq!(shape(0x04), SpellTargetShape::OneEnemy);
+        // The monster picker's `andi 0x60` ladder (`0x801EA5A4`): the boss
+        // specials' `0x66` / `0x46` are the party, `0x04` (the buff tier) and
+        // `0x24` (Horn) the caster's own side.
+        assert_eq!(shape(0x66), SpellTargetShape::AllEnemies);
+        assert_eq!(shape(0x46), SpellTargetShape::OneEnemy);
+        assert_eq!(shape(0x04), SpellTargetShape::OneAlly);
+        assert_eq!(shape(0x24), SpellTargetShape::AllAllies);
+        assert_eq!(shape(0x00), SpellTargetShape::OneAlly);
     }
 }

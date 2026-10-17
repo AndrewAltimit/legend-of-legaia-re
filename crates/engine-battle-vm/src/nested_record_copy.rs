@@ -5,7 +5,7 @@
 //! (`ghidra/scripts/funcs/80055854.txt`), not the decompiled C. No
 //! `SCUS_942.54` bytes live in this crate.
 //!
-//! # NOT WIRED
+//! # Why no host calls it
 //!
 //! [`copy_nested_records`] stages a nested record block between two raw `u32`
 //! buffers. Its one retail caller `FUN_80052FA0` (call sites `80053438`,

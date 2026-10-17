@@ -27,7 +27,7 @@
     <li><b>Windows</b><span>the spoils window, with one level-up line above it naming everyone who levelled</span></li>
   </ol>
   <figure class="diagram">
-    <svg viewBox="0 0 860 210" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="One stat's growth across a character's life: the per-level gain is the stat's range times the curve value for that level divided by 0x24C0, plus jitter. Each curve sums to exactly 0x24C0 over 98 levels, so the gains add up to exactly max minus start and the stat lands on its ceiling at level 99.">
+    <svg viewBox="0 0 860 210" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="One stat's growth across a character's life: the per-level gain is the stat's range times the curve value for that level divided by 0x24C0, plus jitter. Each curve sums to exactly 0x24C0 over 98 levels, so the gains add up to exactly max minus start and the stat lands on its ceiling at level 99. AGL divides by 0x18C0 instead and reaches its cap early.">
       <defs><marker id="lv-arrow" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
       <rect class="dg-node" x="20" y="30" width="170" height="56" rx="5"/>
       <text class="dg-label" x="105" y="54">start, max</text><text class="dg-sub" x="105" y="72">per character, per stat</text>
@@ -74,10 +74,11 @@
   <table class="data-table">
     <thead><tr><th>Term</th><th>Rule</th></tr></thead>
     <tbody>
-      <tr><td>Core gain</td><td><code>(max &minus; start) &times; curve[row][level&minus;1] / 0x24C0</code></td></tr>
+      <tr><td>Core gain</td><td><code>(max &minus; start) &times; curve[row][level&minus;1] / 0x24C0</code> (<code>/ 0x18C0</code> for AGL)</td></tr>
       <tr><td>Jitter</td><td><code>+ rand() % (2&times;jitter + 1) &minus; jitter</code>, one BIOS <code>rand()</code> per stat per level</td></tr>
       <tr><td>Floor and caps</td><td><code>max(1, core + jitter)</code>; then HP &le; 9999, MP &le; 999, SP &le; 280, others &le; 999</td></tr>
       <tr><td>Why <code>0x24C0</code></td><td>Every curve sums to exactly 9408, so the gains accumulate to exactly <code>max &minus; start</code> over 98 levels: each stat lands on its ceiling at level 99.</td></tr>
+      <tr><td>AGL is the exception</td><td>Its block divides by <code>0x18C0</code> (6336), not <code>0x24C0</code>, so AGL accumulates about one and a half times its span and hits its cap long before level 99. Three retail readings of Vahn's AGL at levels 6 / 11 / 16 match the <code>0x18C0</code> core exactly and miss the <code>0x24C0</code> one by 5 / 10 / 15.</td></tr>
     </tbody>
   </table>
   <p>Worked example - Noa, L2 to L3, HP: <code>(4500 &minus; 150) &times; 82 / 9408 = 37</code>, jitter &plusmn;4; the capture shows +39. Every one of her eight deltas that battle (MP +5, stats +2/+4/+4/+3/+4/+3) sits inside its core &plusmn; jitter band. Two per-character facts from the captures: Noa also gains +40 max Spirit per level, Gala gains none.</p>

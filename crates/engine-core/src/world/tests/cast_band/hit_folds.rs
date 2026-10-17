@@ -195,10 +195,15 @@ fn no_capture_module_lands_its_hit_through_both_the_tick_and_the_fold() {
 /// 0903..0934) take neutral wrapper returns, because their fold runs at the
 /// band's own seam (the `0x29` exit or the stager's strike), not after the
 /// tick. So no tick body there may write HP through a wrapper roll at all.
-/// Two HP writes in the band are not rolls - PROT 0907's kill / confuse fork
-/// and PROT 0924's finale (`sh zero, 0x14c(s3)` at `0x801F76A0`) each zero
-/// the victim outright, with no magnitude for the fold to carry - so those
-/// two are left out.
+/// Three HP writes in the band are not rolls - PROT 0907's kill / confuse
+/// fork, PROT 0916's instant kill (`sh zero,0x14c(s3)` at `0x801F7E14`, which
+/// waives the fold) and PROT 0924's finale (`sh zero, 0x14c(s3)` at
+/// `0x801F76A0`) each zero the victim outright, with no magnitude for the
+/// fold to carry - so those three are left out. Four more land a
+/// **non-lethal pre-hit** beside the fold, as retail does (PROT 0915 arm 7,
+/// 0928 arm `0xF`, 0932 arm `0x12`, 0933 arm `0xC`,
+/// `World::apply_summon_pre_hits`): a second damage event by design, so
+/// they are left out too.
 #[test]
 fn no_seru_or_summon_tick_writes_hp_beside_its_fold() {
     let mut checked = 0usize;
@@ -208,7 +213,7 @@ fn no_seru_or_summon_tick_writes_hp_beside_its_fold() {
         let Some(entry) = world.cast_module_for(id) else {
             continue;
         };
-        if !(903..=934).contains(&entry) || entry == 907 || entry == 924 {
+        if !(903..=934).contains(&entry) || [907, 915, 916, 924, 928, 932, 933].contains(&entry) {
             continue;
         }
         world.battle_ctx.active_actor = 0;

@@ -28,7 +28,7 @@ impl World {
     /// Retail's cell is one byte; an engine formation id above `0xFF` (a
     /// modded table) can never match the byte compare, so it resolves as
     /// "no override" rather than truncating onto an accidental match.
-    pub(in crate::world) fn formation_slot0_monster_id(&self) -> Option<u8> {
+    pub fn formation_slot0_monster_id(&self) -> Option<u8> {
         self.battle
             .active_formation
             .as_ref()

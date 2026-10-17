@@ -397,7 +397,7 @@ python3 scripts/pcsx-redux/build-symbols.py
 ```bash
 # Authoritative globals (one-time per program; optional but lossless):
 docker compose exec ghidra /ghidra/support/analyzeHeadless /projects legaia \
-    -process SCUS_942.54 -noanalysis -postScript /scripts/dump_globals.py
+    -process SCUS_942.54 -noanalysis -postScript /scripts/dump/dump_globals.py
 # ... or pass `-process overlay_<name>.bin` for per-overlay globals.
 python3 scripts/pcsx-redux/build-symbols.py
 ```
@@ -1843,7 +1843,7 @@ scripts/pcsx-redux/gdb_probe.py when-pc-hits FUN_801DD35C \
     --read-mem _DAT_801EF16C,16
 ```
 
-Symbol names resolve via the same `ghidra/scripts/symbols.json` the Lua
+Symbol names resolve via the same `ghidra/scripts/symbols/symbols.json` the Lua
 probe layer uses; misses raise with the regenerate-via hint. Hex
 (`0x801DE840`, `801de840`) is always accepted.
 

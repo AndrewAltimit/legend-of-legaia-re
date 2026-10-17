@@ -131,10 +131,22 @@ pub struct WorldToggles {
     /// a vsync. The faithful model, staged off: the retail-compare drives,
     /// phase gates and displayed-frame retakes were tuned against the
     /// per-vsync SM and measure worse until they are re-tuned (see
-    /// `docs/subsystems/battle-stage-camera.md`, the frame step). Raised by
-    /// `LEGAIA_BATTLE_FRAME_CADENCE=1` in the environment, which child
-    /// processes inherit, so a whole corpus run can measure it.
+    /// `docs/subsystems/battle-stage-camera.md`, the frame step). The engine
+    /// never reads the process environment for it: the native session
+    /// raises it from `LEGAIA_BATTLE_FRAME_CADENCE=1`
+    /// (`legaia_engine_session::native::apply_env_world_toggles`, which a
+    /// corpus run's child processes inherit) and the browser play page from
+    /// its `set_battle_frame_cadence` switch.
     pub battle_sm_frame_cadence: bool,
+    /// Open the legacy **saved-chain list**
+    /// ([`legaia_engine_battle::battle_arts::BattleArtsSession`] over
+    /// `World::party.saved_chains`) from the command ring's Arts arm instead
+    /// of retail's per-press directional command input (`FUN_801D0748`
+    /// state `0x50`). Off by default and off under [`Self::pin_retail`]:
+    /// retail has no saved-chain list. The native session raises it from
+    /// `LEGAIA_ARTS_SAVED_LIST=1`, the browser play page from its
+    /// `set_arts_saved_list` switch.
+    pub arts_saved_list: bool,
     /// Ledge-hop landing guard (enhancement, **on** by default): refuse a
     /// field ledge hop whose landing point the walk could not leave in any
     /// direction. Retail does not test the landing - the classifier
@@ -165,8 +177,8 @@ impl WorldToggles {
             field_hp_display: legaia_engine_menus::option_values::HpDisplayOpt::Immediate,
             overworld_marker_overlay: false,
             battle_pass_rand_draw: true,
-            battle_sm_frame_cadence: std::env::var_os("LEGAIA_BATTLE_FRAME_CADENCE")
-                .is_some_and(|v| v != "0"),
+            battle_sm_frame_cadence: false,
+            arts_saved_list: false,
             hop_landing_guard: true,
         }
     }
@@ -193,6 +205,7 @@ impl WorldToggles {
         self.overworld_marker_overlay = false;
         self.battle_pass_rand_draw = true;
         self.hop_landing_guard = false;
+        self.arts_saved_list = false;
     }
 
     /// The fidelity toggles currently off their retail value, by field name.
@@ -225,6 +238,9 @@ impl WorldToggles {
         }
         if self.hop_landing_guard {
             out.push("hop_landing_guard");
+        }
+        if self.arts_saved_list {
+            out.push("arts_saved_list");
         }
         out
     }
@@ -265,8 +281,20 @@ mod fidelity_tests {
         t.use_damage_finish = false;
         t.overworld_marker_overlay = true;
         t.battle_pass_rand_draw = false;
-        assert_eq!(t.retail_deviations().len(), 9);
+        t.arts_saved_list = true;
+        assert_eq!(t.retail_deviations().len(), 10);
         t.pin_retail();
         assert!(t.retail_deviations().is_empty());
+    }
+
+    /// The engine reads no process environment for a gameplay switch: a
+    /// fresh set of toggles is the same whatever the environment holds, so
+    /// a host with no environment (the browser) starts where a native one
+    /// does and raises a switch only by writing the field.
+    #[test]
+    fn env_switches_default_off_in_the_engine() {
+        let t = WorldToggles::new();
+        assert!(!t.battle_sm_frame_cadence);
+        assert!(!t.arts_saved_list);
     }
 }

@@ -1,6 +1,7 @@
 //! The play page's twins of the native window's launch switches that were
-//! native-only: `--retail`, `--set-flag`, `LEGAIA_SMART_MONSTERS` and
-//! `LEGAIA_WORLD_MAP_MARKERS`.
+//! native-only: `--retail`, `--set-flag`, `--no-entry-pulse`,
+//! `LEGAIA_SMART_MONSTERS`, `LEGAIA_WORLD_MAP_MARKERS`,
+//! `LEGAIA_BATTLE_FRAME_CADENCE` and `LEGAIA_ARTS_SAVED_LIST`.
 //!
 //! Each writes the same engine state the native launch writes - the world's
 //! `WorldToggles`, the system-flag bank, `OptionsState::pin_retail` - so the
@@ -14,7 +15,7 @@ use crate::runtime::LegaiaRuntime;
 use wasm_bindgen::prelude::*;
 
 /// The page-side switches, re-asserted on every scene entry.
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy)]
 pub struct PageToggles {
     /// `LEGAIA_SMART_MONSTERS`: a monster's single-target attack picks the
     /// lowest-HP living party member. Non-faithful, off by default.
@@ -25,6 +26,31 @@ pub struct PageToggles {
     /// `--retail`: the persisted engine-only options pinned to their retail
     /// values for the session, and the scene-entry pulse off.
     pub retail: bool,
+    /// The scene-entry VDF pulse enhancement; `false` is the native
+    /// `--no-entry-pulse`. On by default, as on the window. Retail mode
+    /// holds it off whatever this says.
+    pub entry_pulse: bool,
+    /// `LEGAIA_BATTLE_FRAME_CADENCE`: the battle action SM on retail's
+    /// once-a-battle-frame cadence (`WorldToggles::battle_sm_frame_cadence`).
+    /// Staged off on both hosts.
+    pub battle_frame_cadence: bool,
+    /// `LEGAIA_ARTS_SAVED_LIST`: the ring's Arts arm opens the legacy
+    /// saved-chain list instead of retail's per-press input
+    /// (`WorldToggles::arts_saved_list`). Off by default.
+    pub arts_saved_list: bool,
+}
+
+impl Default for PageToggles {
+    fn default() -> Self {
+        Self {
+            smart_monsters: false,
+            world_map_markers: false,
+            retail: false,
+            entry_pulse: true,
+            battle_frame_cadence: false,
+            arts_saved_list: false,
+        }
+    }
 }
 
 impl LegaiaRuntime {
@@ -36,7 +62,9 @@ impl LegaiaRuntime {
             let toggles = &mut host.world.toggles;
             toggles.smarter_monster_targeting = t.smart_monsters;
             toggles.overworld_marker_overlay = t.world_map_markers;
-            toggles.entry_pulse_enabled = !t.retail;
+            toggles.entry_pulse_enabled = t.entry_pulse && !t.retail;
+            toggles.battle_sm_frame_cadence = t.battle_frame_cadence;
+            toggles.arts_saved_list = t.arts_saved_list && !t.retail;
         }
     }
 }
@@ -66,6 +94,44 @@ impl LegaiaRuntime {
     /// Whether [`Self::set_world_map_markers`] is on.
     pub fn world_map_markers(&self) -> bool {
         self.page_toggles.world_map_markers
+    }
+
+    /// The scene-entry VDF pulse enhancement (off is the native
+    /// `--no-entry-pulse`). Takes effect at the next scene entry, where the
+    /// installer runs; retail mode holds it off.
+    pub fn set_entry_pulse(&mut self, on: bool) {
+        self.page_toggles.entry_pulse = on;
+        self.apply_page_toggles();
+    }
+
+    /// Whether [`Self::set_entry_pulse`] is on.
+    pub fn entry_pulse(&self) -> bool {
+        self.page_toggles.entry_pulse
+    }
+
+    /// Run the battle action SM once a battle frame, retail's cadence (the
+    /// native `LEGAIA_BATTLE_FRAME_CADENCE=1`). Staged off on both hosts.
+    pub fn set_battle_frame_cadence(&mut self, on: bool) {
+        self.page_toggles.battle_frame_cadence = on;
+        self.apply_page_toggles();
+    }
+
+    /// Whether [`Self::set_battle_frame_cadence`] is on.
+    pub fn battle_frame_cadence(&self) -> bool {
+        self.page_toggles.battle_frame_cadence
+    }
+
+    /// Open the legacy saved-chain list from the command ring's Arts arm
+    /// instead of retail's per-press input (the native
+    /// `LEGAIA_ARTS_SAVED_LIST=1`). Retail mode holds it off.
+    pub fn set_arts_saved_list(&mut self, on: bool) {
+        self.page_toggles.arts_saved_list = on;
+        self.apply_page_toggles();
+    }
+
+    /// Whether [`Self::set_arts_saved_list`] is on.
+    pub fn arts_saved_list(&self) -> bool {
+        self.page_toggles.arts_saved_list
     }
 
     /// Retail-faithful mode, the native `--retail`: pin every persisted
@@ -140,6 +206,14 @@ mod tests {
         rt.set_smart_monsters(true);
         rt.set_world_map_markers(true);
         assert!(rt.smart_monsters() && rt.world_map_markers());
+        // The entry pulse starts on, as on the window; the two staged
+        // switches start off, as a native session with an empty environment.
+        assert!(rt.entry_pulse());
+        assert!(!rt.battle_frame_cadence() && !rt.arts_saved_list());
+        rt.set_entry_pulse(false);
+        rt.set_battle_frame_cadence(true);
+        rt.set_arts_saved_list(true);
+        assert!(!rt.entry_pulse() && rt.battle_frame_cadence() && rt.arts_saved_list());
         let stored = rt.options_state.clone();
         rt.set_retail_mode(true);
         assert!(rt.retail_mode());
