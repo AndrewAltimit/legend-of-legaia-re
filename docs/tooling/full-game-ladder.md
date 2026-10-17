@@ -1421,7 +1421,13 @@ The MP for those heals is kept. Against a boss, a member that knows a group
 heal casts damage spells only out of the MP above two casts of it; and on
 the way to a boss a staged fight short of one is cast at only out of the
 upper half of the pool, like a random encounter (`taiku`'s P1[2] fight
-otherwise took Vahn from 197 MP to 24 two rooms before Zora).
+otherwise took Vahn from 197 MP to 24 two rooms before Zora). The field
+upkeep keeps it too: on the way to a boss and at its door a dry bag no longer
+turns into field casts out of the whole pool (four door casts took Vahn from
+197 to 17 before Zora), and the road leaves the bag's last three heals a
+member for the boss (`son`'s nineteen Healing Berries were drunk on
+`taiku`'s road). The shop buys one MP restorative a member, the best MP per
+gold on the counter, right after those three heals.
 
 The heals follow the bag. A second member backs up a committed heal while
 someone stands within one party-wide hit of death (turn order is drawn per
