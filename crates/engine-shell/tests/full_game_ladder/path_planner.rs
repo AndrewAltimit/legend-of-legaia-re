@@ -752,12 +752,16 @@ pub(super) fn plan_search(
                 // cell the walk continues from.
                 let press = tile_center((nt.0 as i16, nt.1 as i16));
                 if !s.parent.contains_key(&next) {
+                    let mut any = false;
                     for (land, wait) in lands {
                         if land != next {
                             s.step(Some(next), cur, land, gcur + 2 + wait);
+                            any = true;
                         }
                     }
-                    PRESS_AT.with(|m| m.borrow_mut().insert(next, press));
+                    if any {
+                        PRESS_AT.with(|m| m.borrow_mut().insert(next, press));
+                    }
                 } else if phased.contains_key(&nt) && s.parent.get(&cur) != Some(&next) {
                     // The tile's cells are already reached - the walker
                     // landed on the tile, as on a pad its partner pad sends

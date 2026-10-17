@@ -745,10 +745,15 @@ pub(super) fn pad_walk(
         // round, as a player times the step ([`phase_ready`]).
         // A route whose first move is a jump from the walker's own cell (a
         // pad re-entered from beside it, [`plan_search`]) presses from here.
-        if path
-            .first()
-            .is_some_and(|&f| f != cell && !adjacent(cell, f))
-            && PRESS_AT.with(|m| m.borrow().contains_key(&cell))
+        // Only a clock pad's landing counts: `PRESS_AT` outlives the plans
+        // that wrote it, and a route rejoined two cells off reads the same.
+        if let Some(&first) = path.first()
+            && first != cell
+            && !adjacent(cell, first)
+            && let Some((px, pz)) = PRESS_AT.with(|m| m.borrow().get(&cell).copied())
+            && phased_pads(session)
+                .get(&dispatch_tile(px, pz))
+                .is_some_and(|lands| lands.iter().any(|&(l, _, _)| l == first))
         {
             path.insert(0, cell);
         }
