@@ -27,22 +27,40 @@ impl<S: AudioSink> AudioDirector<S> {
         }
     }
 
-    /// One frame of the duck ramp: step the live level one unit toward the
-    /// target (retail `DAT_1F800393` per vsync, the `0x35` / `0x51` arms)
-    /// and re-apply it to the BGM as `master_vol * level / ref` - the
-    /// `FUN_800267A8` -> `SsSeqSetVol` re-apply, which halves the cell into
-    /// the 0..127 volume domain the same way `master_vol` already is.
+    /// One frame of the duck: apply the level the frame begins with, then
+    /// step the live level one unit toward the target (retail
+    /// `DAT_1F800393` per vsync, the `0x35` / `0x51` arms).
+    ///
+    /// The order is retail's. The per-frame driver `FUN_8001698C` compares
+    /// the cell `_DAT_8007B910` against the last applied level
+    /// `DAT_8007B6EC` (`0x80016A1C..0x80016A38`), stores it there and hands
+    /// it halved to `FUN_8002614C`, which sets every sound source's volume
+    /// through `SsSeqSetVol` - and that re-volumes the notes already
+    /// sounding. The action SM steps the cell later in the frame, so the BGM
+    /// plays the level one frame back
+    /// ([`legaia_engine_audio::duck::ducked_master_vol`] for the halving).
     ///
     /// A level resting below the reference is re-applied every frame too
     /// ([`legaia_engine_audio::duck::duck_apply`]), so a track started under
     /// a settled duck comes down on its first frame - the kernel the page's
     /// `tick_duck` calls.
+    ///
+    /// PORT: FUN_8001698C (the audio-level apply, `0x80016A04..0x80016A38`)
     pub fn tick_duck(&mut self) {
         use legaia_engine_audio::duck;
-        let moved = duck::step_duck(&mut self.duck_level, self.duck_target);
-        if let Some(vol) = duck::duck_apply(moved, self.master_vol, self.duck_level) {
+        let level = self.duck_level;
+        let changed = level != self.duck_applied;
+        self.duck_applied = level;
+        if let Some(vol) = duck::duck_apply(changed, self.master_vol, level) {
             self.audio.set_sequencer_master_vol(vol);
         }
+        duck::step_duck(&mut self.duck_level, self.duck_target);
+    }
+
+    /// The level last applied to the BGM (`DAT_8007B6EC`), one frame behind
+    /// [`Self::duck_level`] while the duck ramps.
+    pub fn duck_applied(&self) -> u8 {
+        self.duck_applied
     }
 
     /// The live duck level in `_DAT_8007B910` units (for tests / traces).

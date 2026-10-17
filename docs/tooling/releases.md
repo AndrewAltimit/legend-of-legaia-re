@@ -61,7 +61,7 @@ cross-compiles - including the x86_64 Linux one.
 |---|---|---|
 | `aarch64-unknown-linux-gnu` | Native | Every workspace binary |
 | `x86_64-pc-windows-gnu` | mingw-w64 cross | Every workspace binary, plus `Legend of Legaia.exe` |
-| `x86_64-unknown-linux-gnu` | `cargo-zigbuild` cross + amd64 ALSA sysroot, glibc pinned to 2.28 | Every workspace binary |
+| `x86_64-unknown-linux-gnu` | `cargo-zigbuild` cross + amd64 ALSA / libudev sysroot, glibc pinned to 2.28 | Every workspace binary |
 | `universal-apple-darwin` | Native on a macOS runner: `aarch64-apple-darwin` + `x86_64-apple-darwin`, fused by `lipo` | Every workspace binary, plus `Legend of Legaia.app` |
 
 The per-target binary list is declared explicitly in `release-build.sh`, and
@@ -144,8 +144,11 @@ ABI produces working `.exe`s with a toolchain the runner already has.
 `alsa-sys`. `alsa-sys` resolves `libasound` through `pkg-config` at build
 time, so cross-compiling it to x86_64 needs an **x86_64** `libasound`. An
 arm64 runner has only the arm64 one, and pkg-config correctly refuses to hand
-a foreign-architecture library to an x86_64 link. The rest of the workspace is
-ALSA-free and crosses without any of this.
+a foreign-architecture library to an x86_64 link. `legaia-engine`'s
+controller input (gilrs, behind its default `gamepad` feature) binds
+`libudev-sys` the same way and needs an x86_64 `libudev`, so the sysroot
+carries both. The rest of the workspace is ALSA- and udev-free and crosses
+without any of this.
 
 **apt cannot supply the x86_64 copy on an arm64 Ubuntu.** Arm64 Ubuntu serves
 from `ports.ubuntu.com`, which publishes no amd64 packages at all, so the
@@ -165,8 +168,8 @@ would mean pinning the existing `ports` entries to `arm64` and adding a second
 `archive.ubuntu.com` source restricted to `amd64` - a permanent, root-owned
 rewrite of the runner's apt configuration.
 
-`setup-cross-toolchain.sh` sidesteps that entirely: it fetches the two amd64
-`.deb`s straight from `archive.ubuntu.com` and unpacks them with `dpkg -x`
+`setup-cross-toolchain.sh` sidesteps that entirely: it fetches the four amd64
+`.deb`s (`libasound2-dev`, `libasound2t64`, `libudev-dev`, `libudev1`) straight from `archive.ubuntu.com` and unpacks them with `dpkg -x`
 into `$LEGAIA_RELEASE_CACHE/sysroot-amd64`. No root, no apt sources touched,
 nothing installed system-wide. `release-build.sh` then points pkg-config at
 that sysroot (`PKG_CONFIG_SYSROOT_DIR` + `PKG_CONFIG_LIBDIR`, with
@@ -190,8 +193,10 @@ Two details make it work:
   `release-build.sh` asserts it by reading the built symbol table
   (`objdump -T`) rather than trusting the target suffix.
 
-The binaries record `NEEDED libasound.so.2` and bind it at runtime, so a user
-needs ALSA present - true of every mainstream desktop Linux.
+The binaries record `NEEDED libasound.so.2` (and `legaia-engine` also
+`libudev.so.1`) and bind them at runtime, so a user needs ALSA and udev present
+- true of every mainstream desktop Linux. A sysroot built before libudev joined
+it is topped up on the next run: the script keys on both `.pc` files.
 
 Adding an x86_64 Linux runner would make all of this moot: the target stops
 being a cross-compile and `setup-cross-toolchain.sh` skips both zig and the
@@ -251,8 +256,8 @@ no-op once the runner is warm.
 | Rust target std | `rustup target add`, automatic | No |
 | `zig` | pip wheel into a cache venv, automatic | No |
 | `cargo-zigbuild` | `cargo install`, automatic | No |
-| amd64 ALSA sysroot | `.deb`s unpacked into the cache, automatic | No |
-| `libasound2-dev` | Already present; the native build needs it | Yes - one-time |
+| amd64 ALSA / libudev sysroot | `.deb`s unpacked into the cache, automatic | No |
+| `libasound2-dev`, `libudev-dev` | Already present; the native build needs them | Yes - one-time |
 
 `mingw-w64` is the only piece the pipeline cannot install for itself. Without
 it the Windows target fails fast with a provisioning hint rather than a linker

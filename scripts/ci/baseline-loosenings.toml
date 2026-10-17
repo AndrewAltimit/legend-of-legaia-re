@@ -54,3 +54,54 @@ changes = [
   ["states/nova_summon_mid_cast/camera", 0.997, 0.996],
   ["states/shiny_refactor_gimard_levelup/image", 0.839, 0.835],
 ]
+
+[[loosening]]
+file = "scripts/ci/retail-compare-baseline.json"
+reason = "The image child's seat lands the state's own eye translation over the arrival snap; the record the gate resumes snaps the same pose on the same spot again, which used to put the engine's composed eye (Z 11978) back over retail's (11882). The zone camera now keeps the seated eye through such a snap (SeatHold). Against the retail crop the frame's mean absolute error falls from 33.1 to 31.7 and the blocks above an error of 30 from 452 to 343, while the block-tolerance score moves one thousandth the other way; the residual is the Genesis tree's morph and Caruban's pose, which the seed does not carry."
+changes = [
+  ["states/rikuroa_pre_caruban/image", 0.938, 0.937],
+]
+
+[[loosening]]
+file = "scripts/ci/retail-compare-baseline.json"
+reason = "The image child's clip seed now also lands on placement actors (the per-slot cursor a record's A2 binds) and takes every cursor back by the display lag's game frames at the clip's own step, wrapping a loop. Across the field corpus that raises thirteen rows (nivora_cutscene_delilas_intro 0.961 -> 0.973, conc_field_card_boot 0.951 -> 0.959, cort_evolved_pre_battle 0.899 -> 0.905, the card-boot states); these three move one or two scored blocks the other way; which seeded clip moves them is not traced (a loop the wrap stands on its previous cycle, for a clip bound inside the lag, is the candidate)."
+changes = [
+  ["states/vahn_walks_out/image", 1.0, 0.999],
+  ["states/minigame_dance_pcsx/image", 0.723, 0.721],
+  ["states/ending_vignette_biron/image", 1.0, 0.999],
+]
+
+[[loosening]]
+file = "scripts/ci/retail-compare-baseline.json"
+reason = "Bisected to e4aec598f (0.778 at ac5104652, 0.777 from e4aec598f on): that wave ported FUN_801DEA50's floor part (codes 0x81..=0x83, record 0x801F5EB0), the flat ring under Vahn. Retail's state holds the same node (pos (144,0,-1173), scale 0x500, b4/b6 224/320); the engine's sits at (124,0,-1181), scale 1280, b4/b6 168/240 - retail's minus two frames of growth, the displayed frame. Content and phase match; one 8x8 block flips on the ring's edge."
+changes = [
+  ["states/battle_gimard_tail_fire_a/image", 0.778, 0.777],
+]
+
+[[loosening]]
+file = "scripts/ci/retail-compare-baseline.json"
+reason = "Bisected to 17f58ff8a (0.909 at e4aec598f): the only changed block is the damage numeral over Gimard, an 8 before and a 7 after - the swing's rand() damage roll, which moved because wave 5 added draws ahead of it on the replay's pinned stream. The capture's roll is not on that stream either way (its digit reads as neither), so the frame scores whichever value the stream happens to land on."
+changes = [
+  ["states/rim_elm_gimard_victory/image", 0.909, 0.908],
+]
+
+[[loosening]]
+file = "scripts/ci/retail-compare-baseline.json"
+reason = "The battle seed now lands every looping clip on the capture's displayed keyframe (LEGAIA_SEAT_BATTLE_CLIPS), which raised 37 battle frames in the same run (theeder_summon_mid_cast 0.779 -> 0.857, zora_glare_petrify_post 0.706 -> 0.769, arts_bar_offclass_gala_nail 0.931 -> 0.977). Here Noa and Delilas move by under a keyframe and three blocks of the drifting ground mist, which dominates the frame, flip: seated party-only 0.875, monster-only 0.876, neither 0.877."
+changes = [
+  ["states/nivora_duel_pre_plasma_strike/image", 0.877, 0.874],
+]
+
+[[loosening]]
+file = "scripts/ci/retail-compare-baseline.json"
+reason = "The world stream now steps the BIOS rand() recurrence (0x41C64E6D / 0x3039) in place of the Numerical Recipes LCG, which re-deals every BATTLE_RNG_SEEDS stream. The super art's drive reaches its phase on every stream tried with the camera at 1.000, but none of the twenty streams swept with frames (from the list's head and tail) frames it as the old first stream did: the best, 0x8BAE8BFB, is pinned at 0.880 against 0.883 (and the 0.897 the battle clip seating raised it to). Which stream replays a drive is a search result; the capture's own 0x80009010 word cannot be stepped back to the entry because the engine's draw count to the phase moves with the stream."
+changes = [
+  ["states/battle_vahn_tri_somersault_super/image", 0.883, 0.88],
+]
+
+[[loosening]]
+file = "scripts/ci/retail-compare-baseline.json"
+reason = "Stale before this change, not a regression in it: main's own tree (built from a clean worktree at the merge base) scores this overworld frame 0.997, the same as the tree here, on repeated runs. The two frames differ by under a hundredth of the 8x8 blocks."
+changes = [
+  ["states/sebucus_overworld_resident/image", 0.999, 0.997],
+]

@@ -95,7 +95,7 @@
       <tr><td><code>+0x130</code></td><td>Displayed level</td><td>The byte the Status screen reads as LV and the "Level 99" cheat targets. Incremented once per level-up event, never re-derived from XP.</td></tr>
     </tbody>
   </table>
-  <p><strong>A level-up is not a heal.</strong> The applier stores to eleven addresses and every one is a maximum, a stat or a level; current HP and MP appear nowhere in it, and its only call is the BIOS <code>rand</code>. The capture agrees: Noa enters her L2-to-L3 fight at 164/182 HP and settles at 164/221 - ceiling up, wound unchanged.</p>
+  <p><strong>A level-up is not a heal.</strong> The applier stores to eleven addresses and every one is a maximum, a stat or a level; current HP and MP appear nowhere in it, and its only call is the BIOS <code>rand</code>. The capture agrees: Noa enters her L2-to-L3 fight at 164/182 HP and settles at 164/221 - ceiling up, wound unchanged. The ceiling that grows is the <em>base</em> one: the stat aggregator then adds the equipment&rsquo;s percent boosts on top, so a Max HP +25% accessory is never folded into the base by a level-up.</p>
 </section>
 
 <section class="doc-section" id="engine-wiring">

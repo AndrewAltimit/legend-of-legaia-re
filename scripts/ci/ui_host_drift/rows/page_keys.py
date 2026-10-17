@@ -47,6 +47,14 @@ PAD_HOST_MARKERS = (
 )
 
 
+# The one site source that may read the Gamepad API. A controller binds
+# buttons to buttons through the engine's layout
+# (`legaia_engine_system::gamepad`, served by `gamepad_layout_json`, the table
+# the native window folds gilrs through); this file adopts it, and every page
+# reads controllers through its `legaiaPollGamepad` / `legaiaGamepadEdges`.
+GAMEPAD_ADOPTER = SITE_ROOT / "js" / "pad-bindings.js"
+
+
 # Keys with no PSX pad button, so a page-side comparison against one cannot
 # disagree with a binding. Kept short on purpose: every addition is a key the
 # engine then may not bind.

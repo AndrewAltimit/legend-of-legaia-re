@@ -12,7 +12,7 @@ impl World {
     /// frame the cast starts (`0x801F6B50` kill roll, `0x801F6C28` resist
     /// throw, `0x801F6CF0` the third-character extra throw). This is the same
     /// draw against this world's RNG cursor, and the arithmetic is the ported
-    /// kernel's ([`legaia_engine_battle_vm::seru_magic_ticks::nighto_outcome`]).
+    /// kernel's ([`legaia_engine_cast::seru_magic_ticks::nighto_outcome`]).
     ///
     /// The three inputs the roll needs beyond the dice:
     ///
@@ -79,17 +79,17 @@ impl World {
         caster_slot: u8,
         victim_slot: u8,
         spell_id: u8,
-    ) -> Option<legaia_engine_battle_vm::seru_magic_ticks::VeraRestore> {
+    ) -> Option<legaia_engine_cast::seru_magic_ticks::VeraRestore> {
         let magic_level = self.caster_magic_power_byte(caster_slot, spell_id);
         let max_hp = self.actors.get(victim_slot as usize)?.battle.max_hp;
-        Some(legaia_engine_battle_vm::seru_magic_ticks::VeraRestore {
+        Some(legaia_engine_cast::seru_magic_ticks::VeraRestore {
             magic_level,
             max_hp,
             cure_tier: self
                 .cure_selector(
                     caster_slot,
                     spell_id,
-                    legaia_engine_battle_vm::seru_magic_ticks::VERA_CURE_MIN_LEVEL,
+                    legaia_engine_cast::seru_magic_ticks::VERA_CURE_MIN_LEVEL,
                 )
                 .unwrap_or(0),
             apply_hp: false,
@@ -102,11 +102,11 @@ impl World {
         caster_slot: u8,
         victim_slot: u8,
         spell_id: u8,
-    ) -> legaia_engine_battle_vm::seru_magic_ticks::NightoOutcome {
+    ) -> legaia_engine_cast::seru_magic_ticks::NightoOutcome {
         if let Some(held) = self.casting.module_nighto_outcome {
             return held;
         }
-        use legaia_engine_battle_vm::seru_magic_ticks as ticks_a;
+        use legaia_engine_cast::seru_magic_ticks as ticks_a;
         let magic_level = self.caster_magic_power_byte(caster_slot, spell_id);
         let target_immune = self.battle_ctx.scripted_fight != 0
             && self
@@ -133,16 +133,16 @@ impl World {
     }
 
     /// One pass of PROT 0908's shatter loop
-    /// ([`legaia_engine_battle_vm::seru_magic_ticks::zenoir_shatter_pass`])
+    /// ([`legaia_engine_cast::seru_magic_ticks::zenoir_shatter_pass`])
     /// over the seated row: every dead monster with a colour word left takes
     /// the frame product onto its `+0x1BA`. `victim_slot` is the cast's
     /// latched victim, whose record `+0x20` byte stands in for every seat.
     ///
     /// The step is one engine tick's share of retail's frame product
     /// `[0x1F800393] * [0x1F80037D]` - the scalar alone, as the module
-    /// countdowns drain ([`legaia_engine_battle_vm::cast_module_camera::MODULE_DRAIN_PER_TICK`]).
+    /// countdowns drain ([`legaia_engine_cast::cast_module_camera::MODULE_DRAIN_PER_TICK`]).
     pub(in crate::world::battle::cast_band) fn zenoir_shatter(&mut self, victim_slot: u8) {
-        use legaia_engine_battle_vm::seru_magic_ticks as ticks_a;
+        use legaia_engine_cast::seru_magic_ticks as ticks_a;
         let record_20 = |w: &World, slot: u8| {
             w.actors
                 .get(slot as usize)
@@ -176,7 +176,7 @@ impl World {
         ticks_a::zenoir_shatter_pass(
             &mut seats,
             gate,
-            legaia_engine_battle_vm::cast_module_camera::MODULE_DRAIN_PER_TICK as u16,
+            legaia_engine_cast::cast_module_camera::MODULE_DRAIN_PER_TICK as u16,
             |seat, s| s.render_flag == 0 && seated.get(usize::from(seat)).copied().unwrap_or(false),
         );
         for (r, (st, was)) in seats.iter().zip(before).enumerate() {

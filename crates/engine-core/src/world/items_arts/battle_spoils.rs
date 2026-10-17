@@ -156,6 +156,11 @@ impl World {
             if let Some(rec) = self.party.roster.members.get_mut(char_id as usize) {
                 LevelUpTracker::apply_to_record(&result, rec);
             }
+            // The grown base window reaches the live maxima through the
+            // aggregator's rebuild, which adds the equipment's boosts
+            // (`FUN_80042558`). Record only: mid-battle the actor holds the
+            // live HP.
+            self.rebuild_record_live_hp_mp(char_id as usize);
             let new_hms = self
                 .party
                 .roster

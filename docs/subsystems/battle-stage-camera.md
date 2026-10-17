@@ -1145,10 +1145,52 @@ captures hold.
 
 The engine runs the SM every vsync by default, with timers draining by one.
 Retail's cadence is in place behind `WorldToggles::battle_sm_frame_cadence`
-(`World::battle_sm_pass_due`; a native session raises it from `LEGAIA_BATTLE_FRAME_CADENCE=1`, the play page from its "Retail battle cadence" box). It runs the
-pass and the separation pass on the first tick of each `BattleFrameClock`
-frame with `frame_dt` the step, and these follow it:
+(`World::battle_sm_pass_due`; a native session raises it from
+`LEGAIA_BATTLE_FRAME_CADENCE=1`, the play page from its "Retail battle
+cadence" box). On it the whole battle pass runs on the first tick of each
+`BattleFrameClock` frame, a frame step of vsyncs at once, and every tick
+between holds:
 
+- **The order inside the pass.** The frame driver's work comes first: the
+  cast tick's census and its effect-child drive (`FUN_801E09F8`, the
+  move-FX streak and the homing slots, `World::tick_battle_cast_drive`), the
+  SM with `frame_dt` the step, the separation pass, the stage colour pass
+  `FUN_80050120` at `dt` the step, and the camera. The actors' anim tick
+  `FUN_80047430` follows (`World::tick_battle_anim_pass`): the cursor advance
+  scaled by the step (`(dt * rate * clip_rate) >> 1`, `0x80047730..0x8004775C`),
+  the root motion, the hit walk with its event-path cut, then the commits.
+  Every commit `FUN_80047430` makes sits after the advance
+  (`0x800478EC..0x80047A44`) and `FUN_8004AD80` zeroes the cursor
+  (`sh zero,0x68` at `0x8004B068`), so a clip the SM stages starts the next
+  pass on its first keyframe. The draw closes the pass: `FUN_8004998C` stores
+  every body pair from the pose the pass left, and the next pass's SM and
+  camera read those.
+- **What pins the order.** The close-up accumulator `ctx[+0x87C]` gains
+  `8 * step` in the SM's framing prologue (`0x801D5900..0x801D5914`) and a
+  commit zeroes it beside the cursor (`0x8004BF74`).
+  `rim_elm_gimard_victory` holds accumulator `16` beside cursor `16` one
+  step-`2` pass after an event-path cut, and `theeder_summon_mid_cast` holds
+  `72` beside `36` three step-`3` passes after a commit. Framing ahead of the
+  anim tick reads both; framing after it reads `32` and `96`.
+- **The counters move on the pass.** The camera's prologue counters (the
+  accumulator, its ramps, `clip_age`) advance a frame step at the step that
+  runs the pass (`BattleCamera::set_pass_granular`), and the action yaw
+  counter `ctx[+0x6DA]` gains `step * 4 / 3` a pass, `1` when that is zero
+  (`0x801E29E4..0x801E2A24`): `4` at step `3`, not `3`.
+- **Fades and effects step with the pass.** The fade actors drain the step a
+  tick (`FUN_80020C14`, `lbu v0,0x393(v0)` at `0x80020C34`), and the effect
+  pool walker runs one sweep per vsync the pass spans, ahead of the frame
+  driver, so a flash or a spark stands where the pass left it. The walker's
+  one caller is the battle draw tick `FUN_800480D8` (`jal 0x801E0080` at
+  `0x80048128`), which runs after the pass; moved there (with the effect
+  scene-graphs) it lifted the Tail Fire rays (`battle_gimard_tail_fire_a`
+  `.801` to `.816`) and dropped the summons (`nighto_summon_mid_cast` `.984`
+  to `.858`, `swordie_summon_mid_cast` `.937` to `.863`), so a spawn's first
+  sweep is not settled yet and the walker stays ahead of the pass.
+- **A step change re-times the frame it is made in.** The replay's seeded
+  step lands on the pass that entered its state, and that pass's frame takes
+  the new length under the same id (`BattleFrameClock::retime_frame`). A new
+  id there opened a second pass on the next tick.
 - **The paged modules run inside the pass** (`World::module_pass`). Retail
   enters the summon stager `FUN_801F1ED4` and the capture tick `FUN_801F2160`
   once a pass, and each counted arm drains `scalar * delta`, drifts `k * delta`
@@ -1156,58 +1198,41 @@ frame with `frame_dt` the step, and these follow it:
   and advances `ctx[+0x279]` before returning
   ([cast-module](cast-module.md)), so the next arm starts on the next pass. The
   module ports are written in one-vsync units, so the pass runs `delta` of them
-  and stops on the one that hands over. The drain, drift and spin match one
-  `delta`-scaled call. Ticking the modules between passes instead, or not
-  stopping at a hand-over, left `gimard_burning_attack` and the summon casts
-  `zenoir`, `gola_gola`, `jedo` and `vera` one shot apart.
+  and stops on the one that hands over.
 - **The cast-effect driver's shot** (`FUN_801DC0A0`) holds until a camera step
   arms it, since the pass hands it in once a frame.
 - **The camera frames the state the pass ran.** `FUN_801D5854` and the
   cast-effect driver are called from inside the state body, so a pass arms the
   shot of the state it ran (`World::battle_camera_state`). The summon band
   `0x32..=0x37` keeps the live state: `0x29`'s summon-route arm falls through
-  into the entered state's case-6 call (`0x801E4604`, `0x801E4748`). The seed's
-  pass is framed as the seed's on the per-vsync cadence too, where it shares
-  a tick with the `0x14` store: without it the seed's `0x800`-rung shot never
-  reaches the camera.
-- **The camera steps on the pass** (`BattleCamera::sync_step_phase`).
+  into the entered state's case-6 call (`0x801E4604`, `0x801E4748`).
 - **The retail-compare seed** starts the yaw-coin steer at `0x14`, since the
-  seed's `0x800` value is no coin. It also stands the acting seat on its
-  captured heading for a capture before the attack band's first face store,
-  on either cadence.
+  seed's `0x800` value is no coin. A replay's summon flash is re-run to the
+  capture's age once the gate holds (`PhaseGate::align_fade`): retail's own
+  frame step varies frame to frame, so its flash can sit between two of the
+  replay's passes ([retail-compare](../tooling/retail-compare.md#driving-to-the-phase)).
+  A `0x32` capture's displayed frame is the `0x29` pass before the state was
+  entered (its RAM holds one whole pass in `0x32`, the display two passes
+  older), so the image child takes the RAM's gate and re-runs to the tick the
+  display lag back.
 
-Measured with `LEGAIA_BATTLE_FRAME_CADENCE=1`, the corpus rises where the
-seed's arm, the strike loop and the summon modules are filmed:
-
-- `super_queue_replace_*`: `camera` `1.0`, `image` `.927` (the per-vsync
-  cadence reaches `.926` through the seed's framing alone);
-- `gimard_burning_attack`: `camera` `1.0` (from `.989`);
-- `vera_summon_mid_cast`: `image` `.974` (from `.834`).
-
-Rows still fall:
+Measured with `LEGAIA_BATTLE_FRAME_CADENCE=1` against the per-vsync run of
+the same build, the retail-disc battle rows that rise most are
+`theeder_summon_mid_cast` `image` `.779` to `.900`, `vera_summon_mid_cast`
+`.834` to `.968`, `battle_noa_miracle_art_combo` `.636` to `.665`, `battle_gimard_tail_fire_a`
+`.777` to `.801`, `cort_mystic_shield_mid_cast` `.972` to `.996`, and
+`camera` on `gimard_burning_attack`, `gola_gola_summon_mid_cast` and
+`cort_mystic_shield_mid_cast`. The battle class's image mean is `.881`
+against the per-vsync `.887`. Rows still fall, so the toggle stays off:
 
 | Capture | Falls | Cause |
 |---|---|---|
-| `noa_levelup_fight_pre` | `camera` `.981` to `.943`, `image` `.817` to `.492` | the replayed round draws its rolls at the pass cadence, and on the drive's stream the struck Gobu Gobu takes a knockdown (clips `4` / `5`) where it reeled before; the stream is the seed search's, not retail's |
-| `nova`, `theeder`, `nighto`, `swordie`, `freed` summon casts, `flute_spikefish_midcast`, `gimard_summon_start` | `image` by `.01` to `.24` (`nova` `.963` to `.719`); `camera` `theeder` `1.0` to `.997` | the summon's flash fade and invoke effects (ray bursts) now spawn on the pass, up to a frame later than the per-vsync SM spawned them, while the cast-replay gates still place the frame on the first tick that holds the phase (flash age in vsyncs); `nova` fell the same way when only its module ran once a frame |
-| `cort_evolved_final_crisis_mid_cast`, `cort_guilty_cross_mid_cast`, `cort_evolved_ultra_charge_mid_cast`, `zeto_call_wave_mid_cast` | `camera` `.999` to `.992`, then `.001` each | the capture-module drifts land a few vsyncs off retail's at the gate's countdown |
-| `rim_elm_gimard_victory`, `battle_melee_hit_spark` | `image` `.909` to `.798`, `.691` to `.652` | the strike's hit-spark rays are timed against the swing's clip, which the pass cadence moves by a vsync |
-
-Gating every drive on the tick that closes a battle frame (the only instant a
-retail RAM can hold) was tried and lost several phases outright. Gates such as
-a clip age or a hold window are met for a single tick, and that tick need not
-close a frame. So the gates keep their per-tick predicates. Seeding retail's
-measured frame step into the capture-band states measured worse
-(`zeto_call_wave_mid_cast` `.994` to `.985`). The toggle stays off.
-
-On the per-vsync cadence the cast modules keep their per-vsync passes. Run once
-a battle frame with every drain, drift and ramp scaled by the step (retail's
-own shape) while the SM still ran every vsync, they measured worse on the
-step-`3` captures: `nova_summon_mid_cast` `image` `.963`
-to `.717` (its flash fade spawned up to two vsyncs later),
-`gimard_burning_attack` `camera` `.965` to `.932`. The captures these modules
-reach are placed by the module's own arm and countdown
-([retail-compare](../tooling/retail-compare.md#driving-to-the-phase)).
+| `noa_levelup_fight_pre` | `camera` `.981` to `.944`, `image` `.817` to `.494` | the replayed round draws its rolls at the pass cadence, and on the drive's stream the struck Gobu Gobu takes a knockdown (clips `4` / `5`) where it reeled before; the stream is the seed search's, not retail's |
+| `rim_elm_gimard_victory`, `battle_melee_hit_spark` | `image` `.908` to `.801`, `.692` to `.687` | the RAM phase matches (`camera` `.996`); the displayed frame two passes back frames the swing's clip `0x0F` eight sixteenths on and draws the hit-spark rays a pass younger than retail's |
+| `flute_lippian_midcast` | `image` `.740` to `.705` | taken the `0x29` pass back (which lifts `flute_spikefish_midcast` from `.910` to `.950`), its summon-route chase frames off retail's: the RAM's ease into the close-up matches (TR z `4279` on both), the pass before it does not |
+| `nivora_duel_pre_plasma_strike`, `nivora_duel_pre_megaton_press` | `image` `.877` to `.815`, `.888` to `.875` | the stage's mist band and ground differ at the Done hold; the clocks behind them are not traced yet |
+| `rim_elm_gimard_seru_capture_before`, `cort_evil_seru_magic_mid_cast`, `battle_gimard_tail_fire_b`, `gimard_summon_start`, `freed_summon_mid_cast`, `juggernaut_summon_mid_cast`, `noa_levelup_banner`, `player_steal_skeleton_banner` | `image` by `.01` to `.035`; `cort_evil_seru_magic_mid_cast` `camera` `1.0` to `.988` | the focus and the caster's pose sit a pass from the per-vsync frame; `gimard_summon_start` holds retail's stored ambient (`48` against the per-vsync `40`, the near colour `0x70` its RAM holds) and still falls on the caster's pose |
+| `cort_evolved_final_crisis_mid_cast`, `nivora_duel_mid_blazing_slash`, `zeto_call_wave_mid_cast` | `camera` `.999` to `.992`, `1.0` to `.995`, `.932` to `.928` image | the capture-module drifts land a few vsyncs off retail's at the gate's countdown |
 
 ### Screen shake
 

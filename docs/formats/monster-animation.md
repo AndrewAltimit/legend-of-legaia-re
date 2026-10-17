@@ -26,7 +26,7 @@ Action entry head (offsets from the entry start). The byte at `+0x00` is read tw
 |---|---|---|---|---|
 | `+0x00` | 1 | action tag | Semantic tag, [tabulated below](#action-tags-and-the-0x1ef-reaction-map) | Confirmed |
 | `+0x00..+0x03` | 4 | power bytes | One per hit, indexed by the actor's per-clip hit index `+0x1F4` | Confirmed |
-| `+0x04`, `+0x08` | 4 + 4 | runtime keyframe pointers | Zero on disc; the loader fills them | Confirmed |
+| `+0x04`, `+0x08` | 4 + 4 | clip-morph lanes | 1-based index into the block's extra offsets (`0` = none); the loader turns it into a pointer to a [clip morph](#clip-morphs-fun_800495c8--fun_80049858) | Confirmed |
 | `+0x0C` | i16 | root speed | Per-tick approach speed along the facing | Confirmed |
 | `+0x0E` | i16 | end step | Distance the clip leaves the body from its start ([details](#the-end-of-clip-step-0x0e)) | Confirmed |
 | `+0x10..+0x13` | 4 | event-frame list | Zero-terminated ascending frame indices ([details](#event-frame-list-entry-0x100x13)) | Confirmed; "contact" Inferred |
@@ -59,7 +59,7 @@ The archive is a flat array of fixed `0x14000`-byte slots, `slot = (id-1) * 0x14
 
 So the bytes between a block's compressed stream and the end of its slot are transferred and never interpreted. Every slot ends in such a run and the entry's extent is an exact multiple of the stride, so the slot boundary is a **declared** bound. [Byte accounting](../tooling/byte-accounting.md) claims those runs as `pad`; they are the largest run of declared slack on the disc and hide no format.
 
-Slots whose head word is `0x10` are not blocks: they carry a raw PSX TIM at the slot head, zero-filled to the same stride.
+Slots whose head word is `0x10` are not blocks: they carry a raw PSX TIM at the slot head, zero-filled to the same stride. The loader reads one eight slots past any formation id above `0xB2` and uploads it at fixed coordinates ([battle.md](../subsystems/battle.md#the-boss-effect-page)).
 
 ## Action tags and the `+0x1EF` reaction map
 
@@ -148,7 +148,7 @@ The capture route is where most monster specials go, and its clips are code, not
 - Several bodies stage nothing on the caster; their only `+0x1DA` writes are the victim's reaction, so the caster holds its idle through those casts in retail too.
 - Melee bodies walk the caster into reach first: arm `0` turns the caster onto its victim, stages the walk entry `1` (its root motion carries the body) and holds on the range poll `FUN_8004E2F0` until it reads zero. Nothing walks it home afterwards.
 
-Engine side: the per-body table with the stage sites is `legaia_engine_battle_vm::cast_module_ticks::CAPTURE_CASTER_STAGES` and `CAPTURE_BODIES_WITHOUT_CASTER_STAGE`; `CAPTURE_APPROACH_BODIES` lists the ported walking bodies beyond the table's `approach` rows. The engine replays the listed stages, each to its clip's natural end, at the head of battle phase `0x70` (`World::capture_stager_tick`). The disc-gated sweep `crates/engine-core/tests/monster_special_anim_sweep_disc.rs` casts every monster's every magic-slot spell plus the scripted per-monster AI's casts, and asserts the caster plays a moving special clip unless its body is one of the non-staging ones.
+Engine side: the per-body table with the stage sites is `legaia_engine_cast::cast_module_ticks::CAPTURE_CASTER_STAGES` and `CAPTURE_BODIES_WITHOUT_CASTER_STAGE`; `CAPTURE_APPROACH_BODIES` lists the ported walking bodies beyond the table's `approach` rows. The engine replays the listed stages, each to its clip's natural end, at the head of battle phase `0x70` (`World::capture_stager_tick`). The disc-gated sweep `crates/engine-core/tests/monster_special_anim_sweep_disc.rs` casts every monster's every magic-slot spell plus the scripted per-monster AI's casts, and asserts the caster plays a moving special clip unless its body is one of the non-staging ones.
 
 ## Anim selection (`actor +0x1D9/+0x1DA` → entry)
 
@@ -412,8 +412,9 @@ frame and the entry the next-entry rule picks: **linear** for translation,
 part's three angle steps run long (see
 [the blend](#the-blend-short-arcs-a-per-part-step-sum-and-the-euler-flip-retry)).
 The result is written to a pose buffer (6 shorts per object) and applied per
-object via the GTE in the draw loop, then `FUN_800495c8` / `FUN_8005b038`
-blend it onto the object vertices.
+object via the GTE in the draw loop. The entry's
+[clip morphs](#clip-morphs-fun_800495c8--fun_80049858) deform the mesh's
+vertices around that draw.
 
 The decoder also leaves one value on the actor. While it builds the pose it
 sums every part's translation into scratch `+0x120/+0x122/+0x124` (halfword
@@ -552,35 +553,42 @@ Three consequences of that commit shape:
   phase-proportional displacement at clip end - which is how a monster
   slides toward its target during the `0x19` range poll.
 
-### Vertex-blend variants (`FUN_800495C8` / `FUN_80049858`)
+### Clip morphs (`FUN_800495C8` / `FUN_80049858`)
 
-Once the decoder has a pose, two sibling routines write it onto the object
-vertices in the per-actor draw buffer at `gp[0xA0C] + slot*4 + 0x1060`. Both
-walk the actor's TMD object list (`obj[+0xC]` primitive groups reached through
-the monster-object table `DAT_801C9370 + actor[+0x5A]*4 → +0x230`) and copy
-each primitive's 8-byte packed vertices out of the pose scratch:
+An action entry's `+0x04` and `+0x08` are two **morph lanes**: per-vertex deltas the battle draw blends onto the monster's own mesh while the clip plays. On disc each is a 1-based index (`0` = none) into the offsets that follow the `+0x4C` entry array; `FUN_800542C8` turns it into a pointer (`0x80054750..0x800547D8`). Every resolved target on the disc is one, 313 lanes in all.
 
-- `FUN_80049858` is the straight copy - two fixed passes (part indices `1`
-  then `0`) that move the interpolated vertices into place with no further
-  weighting.
-- `FUN_800495C8` is the **morph** variant: it first derives a 12-bit blend
-  factor from the actor's animation phase `actor[+0x68]` against a per-object
-  frame-range table (bytes `[1..=4]` of the entry), then, after the same
-  vertex copy, calls the blend kernel `FUN_8005B038(dst, group+3, count,
-  factor)` to lerp each vertex toward its next-frame target - sub-keyframe
-  vertex morphing on top of the rigid TRS decode.
+```text
++0x00  u8      unread
++0x01  u8      k1   ramp-up start frame
++0x02  u8      k2   full-weight frame
++0x03  u8      k3   hold end frame
++0x04  u8      k4   ramp-down end frame
++0x05  u8[3]   unread
++0x08  u32     record_count
++0x0C  record[record_count]:
+         u32 object         TMD object index
+         u32 first_vertex
+         u32 count
+         count x 8-byte (x, y, z, pad) i16 deltas
+```
 
-Both thread GTE-buffer pointers and gp globals, so neither is a pure function.
-The port keeps to the rigid-TRS decode; whether any host reproduces the vertex
-morph is not verified here.
+From `+0x08` on it is a scene VDF sub-entry (see [`field-ambient-fx.md`](../subsystems/field-ambient-fx.md#the-vdf-vertex-morph-chain)) behind an eight-byte envelope head.
+
+The per-actor draw `FUN_80048A08` calls `FUN_800495C8` before it draws (`jal` at `0x80048A7C`) and `FUN_80049858` after (`0x800492C0`):
+
+- **Weight.** With `f = phase >> 4` (actor `+0x68`, frames in 12.4), the lane weight is a trapezoid (`0x80049634..0x80049704`): `((phase - k1*16) << 12) / ((k2 - k1)*16)` while `k1 <= f < k2`, `0x1000` while `k2 <= f <= k3`, `((k4*16 - phase) << 12) / ((k4 - k3)*16)` while `k3 < f <= k4`, else `0`.
+- **Blend.** Per lane (`+0x04`, then `+0x08`) and per record, `FUN_800495C8` finds the object through the mesh's `0x1C`-stride table (actor table `0x801C9370[+0x5A]` -> `+0x230`), saves the `count` authored vertices from `first_vertex` into the per-slot buffer at `gp[+0xA0C] + 0x1060` (`0x80049778..0x800497C4`), then blends the deltas into them in place through `FUN_8005B038` at the lane weight (`0x800497DC`).
+- **Restore.** `FUN_80049858` copies the saved vertices back, lane `+0x08` first (`li t1,0x1` at `0x80049860`, counting down), so overlapping runs unwind to the rest pose and the next frame starts clean.
+
+The decoded rigid pose is not involved: the morph moves the mesh's vertices, and the per-part matrices then place them. **Port.** `monster_archive::clip_morph_table` builds the per-monster table the indices address, and the scene host installs it on each monster actor with its action clips (`Actor::battle_clip_morphs`). The animation player keeps the playing entry's two indices; `World::battle_clip_morph_lanes` weighs them at the clip cursor (`clip_morph_weight`), and `World::battle_morphed_tmd` blends them into a clone of the monster's TMD (`apply_clip_morphs`), Both play hosts draw that clone: the native window builds its posed mesh from it, and the browser page poses `play_battle_actor_morph`'s positions in place of the rest upload. Pinned by `engine-core`'s `battle_clip_morph_disc`.
 
 ## Provenance
 
 - `FUN_8004998c` - packed-stream decoder + frame interpolation (`ghidra/scripts/funcs/8004998c.txt`).
 - `FUN_80048a08` - per-actor battle draw; reads the phase, drives the decoder, applies the pose per object (`ghidra/scripts/funcs/80048a08.txt`).
 - `FUN_80048310` - a second decoder consumer: the weapon swept-trail builder (documented in [`battle.md`](../subsystems/battle.md#weapon-trail-builder-fun_8005112c--fun_80048310--fun_800485bc)) calls `FUN_8004998c` per sweep step, then submits the swept quads through the GTE emitter `FUN_800485bc`. Ported: `render-kernels::battle_trail` + `render-kernels::battle_trail`, sweeping the engine's pose-history ring instead of re-decoding (`ghidra/scripts/funcs/80048310.txt`, `800485bc.txt`).
-- `FUN_800495c8` / `FUN_8005b038` - GTE vertex morph-blend of the decoded pose (`ghidra/scripts/funcs/800495c8.txt`, `8005b038.txt`).
-- `FUN_80049858` - the non-morph sibling: straight two-pass vertex copy of the decoded pose (`ghidra/scripts/funcs/80049858.txt`).
+- `FUN_800495c8` / `FUN_8005b038` - the clip-morph lanes: envelope weight, vertex save, in-place delta blend (`ghidra/scripts/funcs/800495c8.txt`, `8005b038.txt`).
+- `FUN_80049858` - the clip-morph restore: copies the saved vertices back, lane `+0x08` first (`ghidra/scripts/funcs/80049858.txt`).
 - `FUN_80054cb0` - monster init; copies the action/effect pointer (record `+0x04`) into actor `+0x230` and builds the `+0x1EF..+0x1F3` tag map (`ghidra/scripts/funcs/80054cb0.txt`).
 - `FUN_80047430` - per-frame anim-node tick: cursor advance, end-of-clip detect, commit dispatch (`ghidra/scripts/funcs/80047430.txt`). Its own caller is not in the dump corpus (open).
 - `FUN_8004AD80` - anim commit/transition: id → entry install, `+0x1D9` convergence, reaction chaining, dynamic party art slots (`ghidra/scripts/funcs/8004ad80.txt`).

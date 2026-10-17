@@ -133,17 +133,32 @@ pub struct ScriptGate {
     /// Set once [`Self::drive_resume`] has started the record ahead of
     /// [`SCRIPT_RESUME_TICK`].
     pub resumed_early: std::cell::Cell<bool>,
+    /// A text gate caught while the pager still types its page: the typing
+    /// row's window index (`_DAT_801F3530`) and the reveal counter
+    /// (`_DAT_801F2748`) of pager state `0x0B`. `None` for a page that is up
+    /// and waits - the shape [`Self::met`] assumes otherwise.
+    pub typing: Option<(u8, i32)>,
+    /// A gate parked on the player's clip end-latch spin (`AD F8 08`): the
+    /// player's clip cursor (`+0x68`) at the capture. The spin holds the
+    /// record on its PC for the whole clip, so the PC alone meets the gate
+    /// on the clip's first frame.
+    pub latch: Option<i16>,
 }
 
 impl ScriptGate {
-    /// `<flat index>:<head hex>:<pc>:<wait>:<op>[:<glide left>][:s<system pc>]`
+    /// `<flat index>:<head hex>:<pc>:<wait>:<op>[:<glide left>][:s<system pc>][:t<row>.<counter>][:l<cursor>]`
     /// - `LEGAIA_SCRIPT_GATE` for `play-window`.
     pub fn to_env(&self) -> String {
         let hex: String = self.head.iter().map(|b| format!("{b:02x}")).collect();
         let glide = self.glide_left.map(|g| format!(":{g}")).unwrap_or_default();
         let system = self.system_pc.map(|p| format!(":s{p}")).unwrap_or_default();
+        let typing = self
+            .typing
+            .map(|(r, c)| format!(":t{r}.{c}"))
+            .unwrap_or_default();
+        let latch = self.latch.map(|c| format!(":l{c}")).unwrap_or_default();
         format!(
-            "{}:{hex}:{}:{}:{}{glide}{system}",
+            "{}:{hex}:{}:{}:{}{glide}{system}{typing}{latch}",
             self.flat_index, self.pc, self.wait, self.op
         )
     }
@@ -158,10 +173,18 @@ impl ScriptGate {
         let op = it.next()?.parse().ok()?;
         let mut glide_left = None;
         let mut system_pc = None;
+        let mut typing = None;
+        let mut latch = None;
         for tail in it {
-            match tail.strip_prefix('s') {
-                Some(p) => system_pc = Some(p.parse().ok()?),
-                None => glide_left = Some(tail.parse().ok()?),
+            if let Some(c) = tail.strip_prefix('l') {
+                latch = Some(c.parse().ok()?);
+            } else if let Some(p) = tail.strip_prefix('s') {
+                system_pc = Some(p.parse().ok()?);
+            } else if let Some(t) = tail.strip_prefix('t') {
+                let (r, c) = t.split_once('.')?;
+                typing = Some((r.parse().ok()?, c.parse().ok()?));
+            } else {
+                glide_left = Some(tail.parse().ok()?);
             }
         }
         if hex.is_empty() || hex.len() % 2 != 0 {
@@ -181,6 +204,8 @@ impl ScriptGate {
             retire_watch: std::cell::Cell::new((false, false)),
             system_pc,
             resumed_early: std::cell::Cell::new(false),
+            typing,
+            latch,
         })
     }
 
@@ -243,6 +268,31 @@ impl ScriptGate {
         d.is_waiting_for_input() || d.is_done()
     }
 
+    /// The player's clip has run as far as the capture's, for a gate parked
+    /// on its end-latch spin ([`Self::latch`]); `true` for any other gate.
+    fn latch_reached(&self, world: &legaia_engine_core::world::World) -> bool {
+        self.latch.is_none_or(|cursor| {
+            world
+                .player_script_clip_cursor()
+                .is_some_and(|c| c >= cursor)
+        })
+    }
+
+    /// The text the gate's box shows: the page up and waiting, or - for a
+    /// capture caught mid-page ([`Self::typing`]) - the pager typing the same
+    /// window row with at least as many units revealed.
+    fn text_shown(&self, d: &legaia_engine_dialog::dialog::OwnedDialogPanel) -> bool {
+        let Some((row, counter)) = self.typing else {
+            return Self::page_up(d);
+        };
+        Self::page_up(d)
+            || d.window().is_some_and(|w| {
+                w.phase.retail_state() == 0x0B
+                    && w.rows.len() == usize::from(row) + 1
+                    && w.pacer.counter >= counter
+            })
+    }
+
     /// Whether the engine's context for the record is on the gate's PC, at
     /// least as far into its wait - or has already executed the op there.
     /// Retail's capture is parked on the op (a halt, a wait, a walk); the
@@ -284,13 +334,13 @@ impl ScriptGate {
         let glide_landed = match self.glide_left {
             Some(g) => world.camera.state.glide_frames <= g,
             None => world.camera.state.glide_frames <= 0,
-        };
+        } && self.latch_reached(world);
         let passed = |tl: &legaia_engine_field::cutscene_timeline::CutsceneTimeline| {
             head_of(&tl.bytecode) == self.head
                 && ((tl.pc == self.pc
                     && tl.ctx.wait_accum >= self.wait
                     && glide_landed
-                    && (!text || tl.dialog.as_ref().is_some_and(Self::page_up)))
+                    && (!text || tl.dialog.as_ref().is_some_and(|d| self.text_shown(d))))
                     || (tl.pc != self.pc && tl.visited.get(self.pc).copied().unwrap_or(false)))
         };
         if world.cutscene.timeline.as_ref().is_some_and(passed)
@@ -316,7 +366,8 @@ impl ScriptGate {
                 && head_of(&id.bytecode) == self.head
                 && (((id.pc == self.pc || on_page)
                     && id.ctx.wait_accum >= self.wait
-                    && (!text || id.panel.as_ref().is_some_and(Self::page_up)))
+                    && self.latch_reached(world)
+                    && (!text || id.panel.as_ref().is_some_and(|d| self.text_shown(d))))
                     || (id.pc != self.pc
                         && !on_page
                         && id.visited.get(self.pc).copied().unwrap_or(false)))
@@ -329,6 +380,7 @@ impl ScriptGate {
                 && !c.done
                 && c.pc == self.pc
                 && c.wait >= self.wait
+                && self.latch_reached(world)
         })
     }
 
@@ -834,10 +886,14 @@ mod tests {
             retire_watch: std::cell::Cell::new((false, false)),
             system_pc: Some(159),
             resumed_early: std::cell::Cell::new(false),
+            typing: None,
+            latch: None,
         };
         assert_eq!(ScriptGate::from_env(&g.to_env()), Some(g.clone()));
         let g = ScriptGate {
             glide_left: Some(277),
+            typing: Some((1, 15)),
+            latch: Some(-3),
             ..g
         };
         assert_eq!(ScriptGate::from_env(&g.to_env()), Some(g));

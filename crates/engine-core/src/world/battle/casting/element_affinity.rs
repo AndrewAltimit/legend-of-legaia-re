@@ -95,15 +95,16 @@ impl World {
         // exactly as the base block does; gating on the base block alone sent
         // Aluru / Gilium & co. to the MP-scaled placeholder, which a boss's
         // magic defence floors at 1.
-        if !legaia_engine_effects::summon::has_summon_body(spell_id) {
-            return None;
-        }
-        // The archive-resolved summon body, installed at scene entry for
-        // every summon. The scene catalog below holds only the scene's own
-        // monsters, so on its own it resolves a summon only where the
-        // creature also fights as an enemy.
+        // The summon body installed at scene entry for every player cast, the
+        // flutes and big summons included: the cast's own `summon.dat`
+        // record, which is what the seat arm copies onto slot 7. The scene
+        // catalog below holds only the scene's own monsters, so on its own it
+        // resolves a summon only where the creature also fights as an enemy.
         if let Some(def) = self.tables.summon_creatures.get(&spell_id) {
             return Some(def);
+        }
+        if !legaia_engine_effects::summon::has_summon_body(spell_id) {
+            return None;
         }
         let name = legaia_engine_battle::retail_magic::get(spell_id)?.name;
         self.tables

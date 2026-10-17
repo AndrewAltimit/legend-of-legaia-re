@@ -159,6 +159,24 @@ pub struct CutsceneState {
     /// fallback (`town01` when `opdeene` will not load) enters another scene
     /// straight off a New Game, and retail never does.
     pub(crate) new_game_entry_seat: Option<(i16, i16)>,
+    /// Every script context the anti-hang frame cap ended
+    /// ([`crate::world::CappedTimeline`]): a diagnostic, since retail has no
+    /// such cap and each entry is a record the engine cut short.
+    pub capped: Vec<CappedTimeline>,
+}
+
+/// One script context the engine's anti-hang frame cap ended.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CappedTimeline {
+    /// The scene it ran in.
+    pub scene: String,
+    /// `true` for the modal timeline, `false` for a concurrent helper record.
+    pub modal: bool,
+    /// The record's byte length and the PC it stood on when the cap fired.
+    pub len: usize,
+    pub pc: usize,
+    /// The opcode byte at that PC.
+    pub op: u8,
 }
 
 impl CutsceneState {
@@ -187,6 +205,7 @@ impl CutsceneState {
             caption_shown_frames: 0,
             opening_chain_active: false,
             new_game_entry_seat: None,
+            capped: Vec::new(),
         }
     }
 }

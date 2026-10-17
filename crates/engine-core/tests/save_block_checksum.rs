@@ -197,6 +197,12 @@ fn composition_is_an_in_place_patch_over_a_named_region_list() {
                 .iter()
                 .any(|&o| (o..o + 4).contains(&i))
             }
+            // The options screen's nine config words (Battle Camera ..
+            // the vibration rows) - live-state words retail's card load
+            // restores, written from the session's own options.
+            || legaia_save::card::RETAIL_OPTION_WORD_OFFSETS
+                .iter()
+                .any(|&(o, _)| (o..o + 4).contains(&i))
             || (RETAIL_BLOCK_CHECKSUM_OFFSET..RETAIL_BLOCK_CHECKSUM_OFFSET + 4).contains(&i)
     };
     let stray: Vec<usize> = touched.into_iter().filter(|&i| !owned(i)).collect();

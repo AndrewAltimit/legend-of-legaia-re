@@ -735,6 +735,58 @@ pub fn parse_cast(summon_dat: &[u8], spell_id: u8) -> Result<SummonCast> {
     })
 }
 
+/// The stat head of a cast's actor record: the fields the battle loader copies
+/// onto the slot-7 summon actor.
+///
+/// The record head is the monster-record head. `FUN_801F19EC` hands the
+/// streamed record to the monster record -> actor copy `FUN_80054CB0` with
+/// seat `4` (`li a1,0x4` at `0x801F1D20`, slot `3 + 4` = 7), which reads `+0x0C`
+/// HP, `+0x10` MP and the six stats at `+0x0E/+0x12/+0x14/+0x16/+0x18/+0x1A`
+/// into the actor (`0x8005516C..0x8005520C`) and boosts four of them by the
+/// fight's `ctx[+0x287]` - the same copy a monster seat takes. So the summon
+/// body the damage roll `FUN_801DD0AC(_, 7, seat)` reads is this record, for
+/// every player cast: the base and evolved Seru, whose records match their
+/// `battle_data` twins, and the flutes and big summons, which have none.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CastRecordStats {
+    /// Max HP (`+0x0C`).
+    pub hp: u16,
+    /// Max MP (`+0x10`).
+    pub mp: u16,
+    /// `[AGL, ATK, UDF, LDF, INT, SPD]` (`+0x0E`, `+0x12`, `+0x14`, `+0x16`,
+    /// `+0x18`, `+0x1A`) - raw, before either boost profile, in
+    /// [`crate::monster_archive::MonsterRecord::stats`] order.
+    pub stats: [u16; 6],
+    /// Element (`+0x1D`).
+    pub element: u8,
+    /// Size class (`+0x1F`), the actor scale `FUN_801F19EC` stores as
+    /// `byte << 5` (`0x801F1DE4..0x801F1DF0`).
+    pub size_class: u8,
+}
+
+/// Read the [`CastRecordStats`] of `spell_id`'s actor record out of raw
+/// `summon.dat` bytes.
+///
+/// REF: FUN_80054CB0 (the record -> actor copy, called with seat 4 by
+/// FUN_801F19EC)
+pub fn cast_record_stats(summon_dat: &[u8], spell_id: u8) -> Result<CastRecordStats> {
+    if !PLAYER_CAST_IDS.contains(&spell_id) {
+        bail!("{spell_id:#04x} is not a player summon cast id");
+    }
+    let actor_slot = crate::summon_creatures::actor_record_slot_index(spell_id);
+    let actor = slot_bytes(summon_dat, actor_slot)?;
+    actor_record_slot(actor)
+        .ok_or_else(|| anyhow::anyhow!("slot {actor_slot} is not a summon actor record"))?;
+    let h = |off: usize| u16::from_le_bytes([actor[off], actor[off + 1]]);
+    Ok(CastRecordStats {
+        hp: h(0x0C),
+        mp: h(0x10),
+        stats: [h(0x0E), h(0x12), h(0x14), h(0x16), h(0x18), h(0x1A)],
+        element: actor[ACTOR_ELEMENT_OFFSET],
+        size_class: actor[0x1F],
+    })
+}
+
 /// A decoded FX texture page: the cast's 4bpp page resolved through one
 /// 16-colour window of its CLUT row.
 #[derive(Debug, Clone)]

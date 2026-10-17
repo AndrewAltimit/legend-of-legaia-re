@@ -137,6 +137,11 @@ pub struct AudioDirector<S: AudioSink> {
     /// `duck_level` mirrors the cell; `duck_target` the arm's clamp.
     duck_level: u8,
     duck_target: u8,
+    /// The level last applied to the BGM - retail's `DAT_8007B6EC`
+    /// (`gp+0x3D4`), which the per-frame driver `FUN_8001698C` sets to the
+    /// live cell at the top of each frame, before the action SM steps the
+    /// cell ([`Self::tick_duck`]).
+    duck_applied: u8,
     /// The reference the duck takes its percentage of and rests on - the
     /// configured level `_DAT_8008457C` a save carries
     /// ([`Self::set_duck_reference`]) - and the percentage last asked for.
@@ -231,6 +236,7 @@ impl<S: AudioSink> AudioDirector<S> {
             xa_stats: XaLaneStats::default(),
             duck_level: DUCK_LEVEL_REF,
             duck_target: DUCK_LEVEL_REF,
+            duck_applied: DUCK_LEVEL_REF,
             duck_ref: DUCK_LEVEL_REF,
             duck_pct: 100,
             runtime_sfx_bundle: Vec::new(),
@@ -331,6 +337,29 @@ mod tests {
             DUCK_LEVEL_REF,
             "a percentage past 100 clamps"
         );
+    }
+
+    /// Retail applies the level at the top of a frame and the action SM
+    /// steps it later in the same frame, so the BGM's volume is always the
+    /// level one frame back: the first ducking frame still plays at the
+    /// reference, and the applied level trails the cell by one step.
+    #[test]
+    fn the_applied_level_trails_the_cell_by_one_frame() {
+        use legaia_engine_audio::duck::DUCK_LEVEL_REF;
+        let mut d = headless();
+        d.set_duck_pct(75);
+        d.tick_duck();
+        assert_eq!(d.duck_level(), DUCK_LEVEL_REF - 1);
+        assert_eq!(d.duck_applied(), DUCK_LEVEL_REF);
+        d.tick_duck();
+        assert_eq!(d.duck_level(), DUCK_LEVEL_REF - 2);
+        assert_eq!(d.duck_applied(), DUCK_LEVEL_REF - 1);
+        while d.duck_level() != d.duck_target() {
+            d.tick_duck();
+        }
+        assert_eq!(d.duck_applied(), d.duck_target() + 1);
+        d.tick_duck();
+        assert_eq!(d.duck_applied(), d.duck_target(), "settled one frame later");
     }
 
     /// A scene change empties the cue queue but keeps the reward bank: it

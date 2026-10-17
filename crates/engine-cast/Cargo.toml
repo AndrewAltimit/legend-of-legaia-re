@@ -1,0 +1,26 @@
+[package]
+name = "legaia-engine-cast"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+# tests/integration.rs gathers every tests/*.rs into one binary.
+autotests = false
+
+[lib]
+name = "legaia_engine_cast"
+path = "src/lib.rs"
+
+[dependencies]
+legaia-engine-battle-vm.workspace = true
+legaia-engine-camera.workspace = true
+legaia-engine-system.workspace = true
+legaia-game-tables.workspace = true
+legaia-overlay-images.workspace = true
+
+[dev-dependencies]
+legaia-actor-formats.workspace = true
+legaia-prot.workspace = true
+
+[[test]]
+name = "integration"
+path = "tests/integration.rs"

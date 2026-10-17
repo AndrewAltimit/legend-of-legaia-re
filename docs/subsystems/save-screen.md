@@ -878,14 +878,46 @@ looks like beyond records, flags page and bag:
   back - a block composed from scratch must not load the all-zero pair, which
   is silence.
 
-The window also carries the **Field Move** option (`0x800846CC`, SC `+0x58C`;
-nonzero = Run), so a retail card load restores whether the player runs or
-walks by default. The engine does not: it keeps Field Move as a host option
-(`OptionsState::field_move`, pushed onto `World::locomotion.run_default` by
-`options::apply_to_world`), and neither the lift nor `World::load_full` reads
-the word. A load into the engine leaves the host's setting standing - a known
-difference from retail's block, which a timed beat can feel (`jouind`'s
-switch pair must be crossed within 50 vsyncs).
+### The options screen's words travel with the save
+
+The window also carries the options screen's nine config words, so a retail
+card load restores them with the rest of it: a save made with Run on resumes
+running. Each is the row's value index, at `SC + (VA - 0x80084140)`:
+
+| Row | RAM | SC |
+|---|---|---|
+| Battle Camera | `0x800846C0` | `0x580` |
+| Battle Select Attack | `0x800846C4` | `0x584` |
+| Battle Command | `0x800846C8` | `0x588` |
+| Field Move | `0x800846CC` | `0x58C` |
+| Field HP Display | `0x800845C4` | `0x484` |
+| Sound | `0x800846BC` | `0x57C` |
+| Dual Shock Battles / Events / Encounters | `0x800845C8` / `0x800845A8` / `0x800845CC` | `0x488` / `0x468` / `0x48C` |
+
+The lift reads them (`legaia_save::card::read_retail_options`) beside a real
+audio-level pair - a window without one is a free block, and its zero words
+are nobody's setting - onto `SaveExtV2::options`; an `LGSF` file carries them
+in the optional `LGXA` trailer, and the composer writes them back.
+
+The engine plays the rule on both hosts. `World::load_full` sets the
+simulation's mirrors of the words at once (Field Move, Select Attack, Battle
+Command, Battle Camera, Field HP Display), so a session with no host options
+- a headless run - plays the save's settings. A play host then adopts them
+into its own options each tick before it pushes those back onto the world
+(`BootSession::adopt_loaded_options`, then `apply_option_knobs`), through
+`OptionsPins::adopt_saved`:
+
+- every options-screen row takes the save's value;
+- **a session override wins**: a row the host pinned for this session (the
+  retail-compare child's `LEGAIA_BATTLE_CAMERA_OPTION` pins Battle Camera)
+  keeps its override, and the save's value becomes what persists for it;
+- the engine-only knobs (fog, lighting, camera distance) are not save data
+  and do not move;
+- the adopted options persist like an options-screen edit
+  (`OptionsPins::persistable`), so the next launch starts from them.
+
+A save the engine writes always carries the live words: the simulation rows
+off their mirrors, the rest as the host last pushed them.
 
 The `cross_host` test in `web-viewer/src/cards.rs` pins the resume seat over
 the library cards, together with byte-identical blocks from both hosts' Save
@@ -1020,6 +1052,16 @@ import only parks the save until its resume call.
 New Game is the sibling entry, `resume::enter_new_game` (the seeded slate,
 then `opdeene`, else `town01`; native `BootSession::start_new_game`, page
 `play_new_game`), and the only thing the title's New Game row reaches.
+
+Continue itself is the title's, not the pause menu's. Retail runs it inside
+the title overlay's own card manager (`FUN_801DDCCC`): `AttractIdle`
+(sub-mode `0x10`) confirms on `pad & 0x844` at `0x801DDC04`, row 1 stores
+`0x18` (`ContinueFadeIn`) at `0x801DDC5C` with cue `0x20`, and the card path
+(`0x14` -> `0x07` -> `0x15` -> `0x09` -> `0x0A` -> `0x0B` -> `0x0E`, the load
+leg `0x04` / `0x05`) ends in `LaunchFade` (`0x16`), whose load-route master
+mode write is at `0x801DFAFC`. No field runs under the title, so nothing a
+field gate refuses (a dialogue, a lock, an op-`0x49` park) stands in front of
+it. Both hosts open it as `SaveSelectSession::title_continue`.
 
 Continue's enablement is a port guard with no retail counterpart (retail lets
 the row be picked and lets the save screen say "No data"). Both hosts open

@@ -23,7 +23,55 @@ impl PlayWindowApp {
         // world `rand()` stream, used to run here per redraw as well; it is a
         // per-tick session step now - `BootSession::step_field_fog`.)
         let ticks = if self.screenshot.is_some() { 1 } else { ticks };
+        self.poll_gamepad();
         self.run_sim_ticks(ticks);
+    }
+
+    /// The `--simple-dialogue` panel's option picker, on this tick's bound pad
+    /// word (`OwnedDialogPanel::step_picker_pad`): a rebound key or a
+    /// controller drives it as a default key does. Returns `pad` with the
+    /// bits the open picker owns cleared, so the confirm that commits a
+    /// choice does not also reach the world's dialog dismiss. The pager
+    /// cues its picker (move `0x21`, commit `0x20`).
+    ///
+    /// A bit the picker owned stays hidden until it is released: the confirm
+    /// that commits closes the menu, and the same held button must not
+    /// arrive at the world one tick later as a fresh press that dismisses
+    /// the reply.
+    fn step_simple_dialog_picker(&mut self, pad: u16) -> u16 {
+        let pressed = pad & !self.prev_pad;
+        self.picker_swallow &= pad;
+        if let Some(panel) = self.active_dialog.as_mut() {
+            let step = panel.step_picker_pad(pressed);
+            if step.moved {
+                self.fire_menu_cue(legaia_engine_dialog::dialog::PICKER_MOVE_CUE as u16);
+            }
+            if step.chosen.is_some() {
+                self.fire_menu_cue(legaia_engine_dialog::dialog::PICKER_CONFIRM_CUE as u16);
+            }
+            self.picker_swallow |= step.consumed & pad;
+        }
+        pad & !self.picker_swallow
+    }
+
+    /// Read the controllers once for this display frame (`window::gamepad`):
+    /// adopt the folded word as [`Self::gamepad_held`] and hand every press
+    /// since the last poll to the tap latch, the keyboard's sub-frame rule.
+    /// A change to the combined word is a replay transition, as a key's is.
+    pub(in crate::window) fn poll_gamepad(&mut self) {
+        let Some(gp) = self.gamepad.as_mut() else {
+            return;
+        };
+        let poll = gp.poll();
+        let before = self.pad | self.gamepad_held;
+        self.gamepad_held = poll.edges.held;
+        self.pad_taps.press(poll.edges.pressed | poll.taps);
+        let after = self.pad | self.gamepad_held;
+        if after != before
+            && let Some(log) = self.record_log.as_mut()
+        {
+            log.record_transition(self.session.frames, after);
+        }
     }
 
     /// Run `ticks` sim ticks as one redraw's drain: end a finished windowed
@@ -38,7 +86,7 @@ impl PlayWindowApp {
         if self
             .cutscene
             .as_ref()
-            .is_some_and(|c| c.idx >= c.frames.len())
+            .is_some_and(|c| c.skipped || c.idx >= c.frames.len())
         {
             // Stop the cutscene audio and give the score back whatever the
             // movie took from it - nothing, when it ducked nothing.
@@ -56,8 +104,26 @@ impl PlayWindowApp {
         // A key tapped between two redraws is set and cleared before any
         // tick samples `pad`; the latch hands it to this frame's first tick
         // as one held tick (`PadTapLatch`, the browser page's `pulse`).
-        let held_pad = self.pad;
+        // The keyboard's held word, plus the controller's (`poll_gamepad`).
+        let key_pad = self.pad;
+        let held_pad = key_pad | self.gamepad_held;
         let first_tick_pad = self.pad_taps.take_frame_word(held_pad);
+        // Retail's movie abort on an in-flow movie (`fmv_skip_edge_hit`: the
+        // attract id only, on a face button / Select), which the browser
+        // page's FMV lane tests on every frame of a field cutscene too. The
+        // movie holds the ticks, so the edge is the frame's own; the movie
+        // ends on the next redraw.
+        if run_ticks == 0
+            && let Some(c) = self.cutscene.as_mut()
+        {
+            let edge = first_tick_pad & !self.prev_pad;
+            if let Some(fmv_id) = self.session.host.world.active_fmv()
+                && legaia_engine_system::movie::cutscene::fmv_skip_edge_hit(fmv_id, edge)
+            {
+                c.skipped = true;
+            }
+            self.prev_pad = held_pad;
+        }
         let mut first_tick = true;
         for _ in 0..run_ticks {
             // A phase-gated capture stops ticking the frame its phase is
@@ -78,10 +144,11 @@ impl PlayWindowApp {
             self.sim_tick();
         }
         // The tap was one tick held; the word the key events maintain is
-        // the held set again. The scripted harnesses own the pad word and
-        // press through `handle_key`, so their presses are not taps.
+        // the keyboard's held set again (the controller's word stays in
+        // `gamepad_held`). The scripted harnesses own the pad word and press
+        // through `handle_key`, so their presses are not taps.
         if run_ticks > 0 && self.screenshot.is_none() {
-            self.pad = held_pad;
+            self.pad = key_pad;
         }
         if self.screenshot.is_some() {
             self.pad_taps.clear();
@@ -199,6 +266,7 @@ impl PlayWindowApp {
         // is frozen below.
         let neutral = !matches!(owner, TickOwner::Field(false));
         let field_pad = if neutral { 0 } else { self.pad };
+        let field_pad = self.step_simple_dialog_picker(field_pad);
         let field_suspended = owner == TickOwner::OverlayScreen;
         let field_pad = self.resolve_tick_pad(field_pad);
         self.session.host.world.set_pad(field_pad);
@@ -333,7 +401,14 @@ impl PlayWindowApp {
         // battle Select Attack): scene / New Game transitions can reseed
         // world state, and the knobs are host policy (options file + `R`
         // key), not world state. The browser page runs the same session
-        // step on each of its ticks.
+        // step on each of its ticks. A save load's option words land first
+        // (retail restores them with the card), so this push carries them.
+        if self
+            .session
+            .adopt_loaded_options(&mut self.options_state, &mut self.options_pins)
+        {
+            self.persist_and_apply_options();
+        }
         self.session.apply_option_knobs(&self.options_state, None);
         // `set_pad` also latches the run button off the same word, so
         // there is nothing host-side to keep in sync.
@@ -350,6 +425,12 @@ impl PlayWindowApp {
                 &mut self.session.host.world,
                 &sc.battle_bars,
             );
+        }
+        if let Some(sc) = self.screenshot.as_ref()
+            && self.session.host.world.mode == SceneMode::Battle
+            && sc.mystic_shield.replace(false)
+        {
+            self.session.host.world.raise_mystic_shield();
         }
         // A replayed cast's gate holds the summon head's CD poll for a pass
         // (`PhaseGate::steer`), as the headless seed does.
@@ -460,6 +541,18 @@ impl PlayWindowApp {
                         .then(|| sc.state_since.get().unwrap_or(self.tick_no)),
                 );
             }
+        }
+        // A script gate on the player's clip latch takes the displayed frame
+        // `display_lag` ticks before the gate: any tick since the engine
+        // started replaying the gate's record is a frame retail drew too.
+        if let Some(sc) = self.screenshot.as_ref()
+            && sc.display_lag > 0
+            && let Some(g) = sc.script_gate.as_ref()
+            && g.latch.is_some()
+            && sc.state_since.get().is_none()
+            && g.context(&self.session.host.world).is_some()
+        {
+            sc.state_since.set(Some(self.tick_no));
         }
         // The Field <-> Battle mode edge, latched on the tick that
         // crossed it. The battle load it runs installs gameplay state as

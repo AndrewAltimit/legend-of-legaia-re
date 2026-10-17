@@ -78,6 +78,7 @@ impl BattleCamera {
             last_frames: frames_now,
             frame_accum: 0,
             frame_step: DEFAULT_CAMERA_FRAME_STEP,
+            pass_granular: false,
             actor,
             formation,
             target: None,
@@ -962,26 +963,64 @@ impl BattleCamera {
     pub fn advance_to(&mut self, frames_now: u64) {
         let elapsed = frames_now.saturating_sub(self.last_frames);
         self.last_frames = frames_now;
-        // The action SM advances `ctx[+0x6DA]` once per display frame,
-        // outside its state switch, so the counter runs whether or not an
-        // action is executing.
-        if self.option != CAMERA_OPTION_FAR {
-            self.action_yaw = self.action_yaw.wrapping_add(elapsed as i32) & 0xFFFF;
-        }
-        // `FUN_801D5854`'s prologue ramps `ctx[+0x26E]` / `ctx[+0x87C]` by
-        // `8 * frame_step` on EVERY call, so they advance per display frame
-        // for as long as any framing case is being re-armed - not per camera
-        // step.
-        self.attack.ctx.advance(elapsed as u32);
-        self.clip_age = self.clip_age.wrapping_add(
-            (elapsed as u32).wrapping_mul(crate::battle_attack_camera::AttackCamCtx::RAMP_SCALE),
-        );
-        self.frame_accum += elapsed;
         let step = u64::from(self.frame_step.max(1));
+        if self.pass_granular {
+            // Retail's cadence: the counters move on the pass, a frame's
+            // worth at once, and hold between passes.
+            self.frame_accum += elapsed;
+            while self.frame_accum >= step {
+                self.frame_accum -= step;
+                self.advance_pass_counters(step);
+                self.step_once();
+            }
+            return;
+        }
+        self.advance_pass_counters(elapsed);
+        self.frame_accum += elapsed;
         while self.frame_accum >= step {
             self.frame_accum -= step;
             self.step_once();
         }
+    }
+
+    /// The counters the action SM's pass advances by the frame step, here
+    /// over `vsyncs` display frames.
+    fn advance_pass_counters(&mut self, vsyncs: u64) {
+        // The action SM advances `ctx[+0x6DA]` once a pass, outside its
+        // state switch, so the counter runs whether or not an action is
+        // executing: by `DAT_1F800393 * 4 / 3`, or `1` when that is zero
+        // (`0x801E29E4..0x801E2A24`, a `mult` by `0x55555556`). Per vsync
+        // the port adds one; on retail's cadence it adds the pass's own
+        // increment, which at step `3` is `4`, not `3`.
+        if self.option != CAMERA_OPTION_FAR {
+            let d = if self.pass_granular {
+                i32::from(action_yaw_pass_increment(vsyncs as u8))
+            } else {
+                vsyncs as i32
+            };
+            self.action_yaw = self.action_yaw.wrapping_add(d) & 0xFFFF;
+        }
+        // `FUN_801D5854`'s prologue ramps `ctx[+0x26E]` / `ctx[+0x87C]` by
+        // `8 * frame_step` on EVERY call (`lbu v0,0x7f(a2)` off `0x1F800314`,
+        // the step byte `0x1F800393`, then `sll v0,v0,0x3` at
+        // `0x801D5900..0x801D5914`), so they advance per display frame for
+        // as long as any framing case is being re-armed - not per camera
+        // step.
+        self.attack.ctx.advance(vsyncs as u32);
+        self.clip_age = self.clip_age.wrapping_add(
+            (vsyncs as u32).wrapping_mul(crate::battle_attack_camera::AttackCamCtx::RAMP_SCALE),
+        );
+    }
+
+    /// Advance the per-pass counters on the camera step that runs the
+    /// action SM's pass, a whole frame step at once, instead of a vsync at a
+    /// time. Retail's framing prologue adds `8 * DAT_1F800393` once a pass
+    /// (`0x801D5900..0x801D5914`), so on retail's cadence a frame between
+    /// two passes holds the accumulator the last pass left: the commit pass
+    /// of a clip reads `8 * step` beside a cursor advanced one pass, never
+    /// a value between.
+    pub fn set_pass_granular(&mut self, on: bool) {
+        self.pass_granular = on;
     }
 
     /// Put the camera's next step on the tick `ticks_into_frame` display
@@ -1380,5 +1419,28 @@ impl BattleCamera {
                 self.pose.yaw = self.pose.yaw.rem_euclid(4096.0);
             }
         }
+    }
+}
+
+/// The action SM's per-pass `ctx[+0x6DA]` increment at frame step `step`:
+/// `step * 4 / 3`, or `1` when that truncates to zero
+/// (`0x801E29E4..0x801E2A24`).
+pub fn action_yaw_pass_increment(step: u8) -> u16 {
+    let d = u16::from(step) * 4 / 3;
+    if d == 0 { 1 } else { d }
+}
+
+#[cfg(test)]
+mod pass_increment_tests {
+    use super::action_yaw_pass_increment;
+
+    /// `step * 4 / 3` through the `0x55555556` multiply, `1` when it
+    /// truncates to zero.
+    #[test]
+    fn the_action_yaw_gains_four_thirds_of_the_step_a_pass() {
+        assert_eq!(
+            [0u8, 1, 2, 3, 4].map(action_yaw_pass_increment),
+            [1, 1, 2, 4, 5]
+        );
     }
 }

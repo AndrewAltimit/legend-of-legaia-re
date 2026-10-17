@@ -112,7 +112,7 @@ pub(in crate::world) fn seat_arm_write(prot_entry: u32) -> Option<SeatArmWrite> 
         // `0x801F6D18..0x801F6D28`: the height only, `-(scalar << 8)`.
         920 => SeatArmWrite {
             x: Keep,
-            y: Lit(-((legaia_engine_battle_vm::cast_module_camera::SPEED_SCALAR << 8) as i16)),
+            y: Lit(-((legaia_engine_cast::cast_module_camera::SPEED_SCALAR << 8) as i16)),
             z: Keep,
             facing: None,
             rate: None,
@@ -246,7 +246,7 @@ impl World {
 /// `jal 0x801F19EC`), so the creature appears as the arm **leaves**, not as
 /// it is entered: PROT 0907 (`0x801F76B8`), 0911 (`0x801F70A0`), 0923
 /// (`0x801F6D9C`) and 0932 (`0x801F6EA4`). Their seat arm is
-/// [`legaia_engine_battle_vm::cast_module_camera::module_seat_arm`]; the
+/// [`legaia_engine_cast::cast_module_camera::module_seat_arm`]; the
 /// summon-hold modules already name the arm after theirs. PROT 0915
 /// (`0x801F6E54`) and 0934 (`0x801F7028`) seat on the pass too, but their
 /// camera-only directors park on that arm, so the port seats them as it is

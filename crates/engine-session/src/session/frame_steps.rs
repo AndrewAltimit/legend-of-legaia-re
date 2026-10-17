@@ -142,6 +142,27 @@ impl<S: AudioSink> BootSession<S> {
         self.camera.distance = opts.camera_distance;
     }
 
+    /// Adopt the option words the last save load restored into the host's
+    /// options, as retail's card load restores them with its live-state
+    /// window: every options-screen row takes the save's value, except a row
+    /// the session pinned (`OptionsPins::adopt_saved`). Returns whether the
+    /// options changed, so the host can persist them and apply their side
+    /// effects (the Sound row's downmix).
+    ///
+    /// Both play hosts call it on every sim tick, ahead of
+    /// [`Self::apply_option_knobs`] - which would otherwise push the host's
+    /// pre-load options back over the mirrors the load set.
+    pub fn adopt_loaded_options(
+        &mut self,
+        opts: &mut legaia_engine_menus::options::OptionsState,
+        pins: &mut legaia_engine_menus::options::OptionsPins,
+    ) -> bool {
+        match self.host.world.take_loaded_options() {
+            Some(saved) => pins.adopt_saved(opts, saved),
+            None => false,
+        }
+    }
+
     /// The party-wipe probe: consume the world's `game_over` flag and hand
     /// back the return-to-title hold the host runs from here.
     ///

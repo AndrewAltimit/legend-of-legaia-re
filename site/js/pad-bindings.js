@@ -65,6 +65,7 @@
     }
     PAD = table;
     PAD_BTN = buttons;
+    adoptGamepadLayout(src);
     /* Keys the canvas swallows so the page doesn't scroll under the player. */
     SWALLOW = new Set(Object.keys(PAD).concat(['ArrowUp', 'ArrowDown',
       'ArrowLeft', 'ArrowRight', 'Space']));
@@ -93,37 +94,75 @@
     return mask;
   }
 
-  /* Gamepad API, `standard` mapping -> the PSX pad, by physical position:
-   * the bottom / right / left / top face buttons are Cross / Circle /
-   * Square / Triangle, the bumpers L1 / R1, the triggers L2 / R2, back /
-   * start Select / Start, the stick clicks L3 / R3, and both the d-pad and
-   * the left stick drive the d-pad. A gamepad is a *controller*, not a key
-   * layout, so it binds buttons to buttons and the Key Config table (which
-   * maps keys) never reaches it. */
-  const GAMEPAD_BUTTONS = ['Cross', 'Circle', 'Square', 'Triangle', 'L1', 'R1',
-    'L2', 'R2', 'Select', 'Start', 'L3', 'R3', 'Up', 'Down', 'Left', 'Right'];
-  const STICK_DEAD_ZONE = 0.5;
+  /* Gamepad API, `standard` mapping -> the PSX pad. A gamepad is a
+   * *controller*, not a key layout, so it binds buttons to buttons by
+   * physical position and the Key Config table (which maps keys) never
+   * reaches it.
+   *
+   * Not a table either: the engine serves the layout
+   * (`legaia_engine_system::gamepad` through `gamepad_layout_json`), and the
+   * native window folds gilrs through the same one, so the button order,
+   * stick dead zone and trigger threshold cannot drift between hosts. Against
+   * a bundle that predates the export no controller is read - a degraded
+   * mode, said so on the console, rather than a second layout here. */
+  let GP_LAYOUT = null;
+  function adoptGamepadLayout(src) {
+    let layout = null;
+    try {
+      if (src && typeof src.gamepad_layout_json === 'function') {
+        layout = JSON.parse(src.gamepad_layout_json());
+      }
+    } catch (e) { layout = null; }
+    if (!layout || !Array.isArray(layout.buttons) || !layout.buttons.length) {
+      if (src) console.warn('[legaia] engine gamepad layout unavailable (stale wasm bundle?) - '
+        + 'controllers are not read. Rebuild site/wasm/.');
+      return;
+    }
+    GP_LAYOUT = layout;
+  }
   let gamepadHeld = new Set();
 
   /* The pad buttons every connected standard-mapped gamepad holds now. */
   function gamepadButtons() {
     const out = new Set();
+    if (!GP_LAYOUT) return out;
+    const names = GP_LAYOUT.buttons;
+    const dead = GP_LAYOUT.stick_dead_zone;
+    const press = GP_LAYOUT.press_threshold;
     let pads = [];
     try { pads = (navigator.getGamepads && navigator.getGamepads()) || []; } catch (e) { pads = []; }
     for (const gp of pads) {
       if (!gp || !gp.connected) continue;
       gp.buttons.forEach((b, i) => {
-        const name = GAMEPAD_BUTTONS[i];
-        if (name && (b.pressed || b.value > 0.5)) out.add(name);
+        const name = names[i];
+        if (name && (b.pressed || b.value > press)) out.add(name);
       });
       const [x, y] = [gp.axes[0] || 0, gp.axes[1] || 0];
-      if (x <= -STICK_DEAD_ZONE) out.add('Left');
-      if (x >= STICK_DEAD_ZONE) out.add('Right');
-      if (y <= -STICK_DEAD_ZONE) out.add('Up');
-      if (y >= STICK_DEAD_ZONE) out.add('Down');
+      if (x <= -dead) out.add('Left');
+      if (x >= dead) out.add('Right');
+      if (y <= -dead) out.add('Up');
+      if (y >= dead) out.add('Down');
     }
     return out;
   }
+
+  /* One poll of the controllers: the button names held now, and those newly
+   * held / newly released since the last poll (`StandardGamepad::update`).
+   * The edge half both helpers below share. Call once per display frame. */
+  function pollGamepadEdges() {
+    const now = gamepadButtons();
+    const pressed = [], released = [];
+    for (const name of now) if (!gamepadHeld.has(name)) pressed.push(name);
+    for (const name of gamepadHeld) if (!now.has(name)) released.push(name);
+    gamepadHeld = now;
+    return { now, pressed, released };
+  }
+  /* For a page whose controls are named buttons (the minigames page): it
+   * dispatches each edge through the same handler a key's button takes. */
+  window.legaiaGamepadEdges = () => {
+    const { pressed, released } = pollGamepadEdges();
+    return { pressed, released };
+  };
 
   /* Merge this frame's gamepad state into a page's keyboard `held` / `pulse`
    * sets as `Gamepad:<Button>` entries: a newly held button lands in both
@@ -131,8 +170,8 @@
    * `true` when anything changed, so the caller re-packs its pad word. Call
    * once per display frame, before the frame reads `pulse`. */
   window.legaiaPollGamepad = (held, pulse) => {
-    const now = gamepadButtons();
-    if (!now.size && !gamepadHeld.size) return false;
+    if (!GP_LAYOUT) return false;
+    const { now, pressed, released } = pollGamepadEdges();
     let changed = false;
     for (const name of now) {
       /* Re-asserted every frame, not only on the edge: a page clears its
@@ -141,19 +180,14 @@
        * released until pressed again. */
       const key = 'Gamepad:' + name;
       if (!held.has(key)) { held.add(key); changed = true; }
-      if (!gamepadHeld.has(name) && pulse) { pulse.add(key); changed = true; }
     }
-    for (const name of gamepadHeld) {
-      if (!now.has(name)) {
-        held.delete('Gamepad:' + name);
-        changed = true;
-      }
-    }
-    gamepadHeld = now;
+    if (pulse) for (const name of pressed) { pulse.add('Gamepad:' + name); changed = true; }
+    for (const name of released) { held.delete('Gamepad:' + name); changed = true; }
     return changed;
   };
   /* A page that clears its `held` set (focus loss) forgets the pad too, so
-   * a still-held button re-enters as a fresh press rather than a stuck one. */
+   * a still-held button re-enters as a fresh press rather than a stuck one
+   * (`StandardGamepad::reset`, the native window's focus rule). */
   window.legaiaResetGamepad = () => { gamepadHeld = new Set(); };
 
   window.legaiaAdoptPadBindings = adoptPadBindings;

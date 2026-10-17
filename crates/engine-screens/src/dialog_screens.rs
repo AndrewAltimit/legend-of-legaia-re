@@ -110,7 +110,14 @@ pub fn dialog_snapshot(
     {
         return Some(snap);
     }
-    let panel = world.dialog.inline.as_ref()?.panel.as_ref()?;
+    let inline = world.dialog.inline.as_ref()?;
+    // Between boxes the pager still draws the box its last press dispatched
+    // (`InlineDialogue::held_box`) - on the field: the battle overlay loads
+    // over the pager's, so a talk that runs into its fight draws no box there.
+    let held = (world.mode != legaia_engine_mode::mode::SceneMode::Battle)
+        .then(|| inline.held_box.as_ref().map(|h| &h.panel))
+        .flatten();
+    let panel = inline.panel.as_ref().or(held)?;
     dialog_snapshot_from_panel(world, panel, true)
 }
 

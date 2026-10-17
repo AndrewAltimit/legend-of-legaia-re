@@ -218,7 +218,7 @@ caught if roll_p &lt; roll_e, or the fight is a scripted (boss) fight</code></pr
       <tr><td>Seru-magic stat debuff</td><td><code>stat - stat &times; pct / 100</code> per hit, <code>pct</code> = 5 / 10 / 15 / 20 by magic-level band 3-4 / 5-6 / 7-8 / 9; the stat is picked by the summon's element (<a href="#seru-side-effects">below</a>)</td><td>two level-5 Gimard hits: ATK 300 &rarr; 270 &rarr; 243</td></tr>
       <tr><td>Victory gold</td><td>&Sigma; <code>gold/2</code> over dead enemies, &times;1.25 with the gold passive, then halved; lone enemy <code>floor((gold/2)/2)</code></td><td>Gimard (record gold 60) credits exactly <strong>+15</strong></td></tr>
       <tr><td>Victory EXP</td><td>&Sigma; exp &times; 3/4, split evenly among living members</td><td>two survivors of a 400-EXP fight get 150 each</td></tr>
-      <tr><td>RNG</td><td><code>seed = seed &times; 1103515245 + 12345; return (seed &gt;&gt; 16) &amp; 0x7FFF</code></td><td>range 0..32767 - the standard PsyQ <code>rand()</code></td></tr>
+      <tr><td>RNG</td><td><code>seed = seed &times; 1103515245 + 12345; return (seed &gt;&gt; 16) &amp; 0x7FFF</code></td><td>range 0..32767 - the BIOS <code>rand()</code>, its one seed the kernel word <code>0x80009010</code>; the engine's world stream steps the same recurrence</td></tr>
     </tbody>
   </table>
   </div>

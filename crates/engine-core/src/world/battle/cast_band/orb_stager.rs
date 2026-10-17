@@ -5,7 +5,7 @@
 //! part-called stagers.
 
 use crate::world::World;
-use legaia_engine_battle_vm::cast_module_ticks::ORB_STAGER_ARM0_RECORD;
+use legaia_engine_cast::cast_module_ticks::ORB_STAGER_ARM0_RECORD;
 
 /// The star record arm 2 seats sixteen times through the part-pool wrapper
 /// `FUN_80050ED4` (`a2 = 0x801F8190` at `0x801F6E90` / `0x801F703C`): a
@@ -197,7 +197,7 @@ impl World {
     }
 
     fn orb_seat_stars(&mut self) {
-        use legaia_engine_battle_vm::cast_module_camera::{ModuleSpawn, SpawnAnchor, SpawnRecord};
+        use legaia_engine_cast::cast_module_camera::{ModuleSpawn, SpawnAnchor, SpawnRecord};
         let Some((cx, cz, f)) = self.orb_caster_seat() else {
             return;
         };
@@ -261,7 +261,7 @@ impl World {
         &mut self,
         phase_in: u8,
         phase_out: u8,
-        seat: &legaia_engine_battle_vm::seru_magic_ticks::OrbSeatPos,
+        seat: &legaia_engine_cast::seru_magic_ticks::OrbSeatPos,
     ) -> bool {
         if phase_in != ORB_LIFT_ARM || phase_out == ORB_LIFT_ARM {
             return false;

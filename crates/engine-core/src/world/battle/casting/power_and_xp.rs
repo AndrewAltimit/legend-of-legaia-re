@@ -72,7 +72,7 @@ impl World {
     /// `battle_damage_wrappers::int_wrapper_predamage`)
     /// The **baked** per-hit power the resident slot-B module hands its
     /// damage wrapper, when the cast's module is one of the six the band's
-    /// PORT rows decode ([`legaia_engine_battle_vm::cast_module_ticks`]).
+    /// PORT rows decode ([`legaia_engine_cast::cast_module_ticks`]).
     ///
     /// Retail's capture-class modules do not read the move-power table at
     /// all: each `jal` into `FUN_801DD4B0` / `FUN_801DD6B4` / `FUN_801DD0AC`
@@ -92,18 +92,15 @@ impl World {
         // PROT 0950 pairs `0x100` against `0x29A` - so the entry alone cannot
         // answer for them. Resolve the body through the module's trampoline
         // first and fall back to the entry-keyed table.
-        if let Some(body) =
-            legaia_engine_battle_vm::cast_module_ticks::capture_tick_body(entry, move_id)
+        if let Some(body) = legaia_engine_cast::cast_module_ticks::capture_tick_body(entry, move_id)
             && let Some(shape) =
-                legaia_engine_battle_vm::cast_arm_ticks::arm_damage_shape_for(entry, body)
+                legaia_engine_cast::cast_arm_ticks::arm_damage_shape_for(entry, body)
             && let Some(power) = shape.powers.first()
         {
             return Some(i32::from(*power));
         }
-        legaia_engine_battle_vm::cast_module_ticks::baked_power_for(entry)
-            .or_else(|| {
-                legaia_engine_battle_vm::cast_module_ticks::capture_site_power(entry, move_id)
-            })
+        legaia_engine_cast::cast_module_ticks::baked_power_for(entry)
+            .or_else(|| legaia_engine_cast::cast_module_ticks::capture_site_power(entry, move_id))
             .map(i32::from)
     }
 
@@ -121,7 +118,7 @@ impl World {
     /// REF: FUN_801F69D8 (PROT 0961 arm 3, `0x801F738C..0x801F740C`)
     pub(in crate::world) fn dead_end_crisis_wipes(&self, move_id: u8) -> bool {
         if self.cast_module_for(move_id)
-            != Some(legaia_engine_battle_vm::cast_module_ticks::DEAD_END_CRISIS_ENTRY)
+            != Some(legaia_engine_cast::cast_module_ticks::DEAD_END_CRISIS_ENTRY)
         {
             return false;
         }
@@ -131,7 +128,7 @@ impl World {
             .find(|&(_, _, slot)| slot == 0)
             .map(|(_, id, _)| id);
         lead != Some(u16::from(
-            legaia_engine_battle_vm::cast_module_ticks::DEAD_END_CRISIS_ROLL_FORMATION,
+            legaia_engine_cast::cast_module_ticks::DEAD_END_CRISIS_ROLL_FORMATION,
         ))
     }
 
@@ -241,14 +238,14 @@ impl World {
     ///
     /// * **Vera** (`0x83`, PROT 0905 arm 9): `magic_level * 0x20 + 0xE0`,
     ///   clamped to the target's missing HP with retail's own signed compare
-    ///   ([`legaia_engine_battle_vm::seru_magic_ticks::vera_heal_amount`]).
+    ///   ([`legaia_engine_battle_vm::battle_formulas::vera_heal_amount`]).
     /// * **Orb** (`0x89`, PROT 0911 arm 9): `(magic_level << 6) + 0x1C0` -
     ///   exactly twice `spell-table.md`'s band-wide `(power << 5) + 0xE0`, so
     ///   the formula is per module
-    ///   ([`legaia_engine_battle_vm::seru_magic_ticks::orb_heal_amount`]).
+    ///   ([`legaia_engine_battle_vm::battle_formulas::orb_heal_amount`]).
     /// * **Spoon** (`0x91`, PROT 0919 arm 7): `(magic_level << 7) + 0x380`,
     ///   unsigned clamp
-    ///   ([`legaia_engine_battle_vm::seru_magic_ticks::spoon_heal_amount`]).
+    ///   ([`legaia_engine_battle_vm::battle_formulas::spoon_heal_amount`]).
     ///
     /// The magic level is the caster's per-spell byte
     /// ([`Self::caster_magic_power_byte`]), which is the record field both
@@ -275,13 +272,13 @@ impl World {
     ) -> Option<u16> {
         let level = self.caster_magic_power_byte(caster, spell_id);
         match spell_id {
-            VERA_SPELL_ID => Some(legaia_engine_battle_vm::seru_magic_ticks::vera_heal_amount(
+            VERA_SPELL_ID => Some(legaia_engine_battle_vm::battle_formulas::vera_heal_amount(
                 level,
                 target_hp,
                 target_hp_max,
             )),
             ORB_SPELL_ID => {
-                let want = legaia_engine_battle_vm::seru_magic_ticks::orb_heal_amount(level);
+                let want = legaia_engine_battle_vm::battle_formulas::orb_heal_amount(level);
                 // Retail's sweep clamps each seat to its own missing HP before
                 // storing; the fold caps at max HP anyway, so clamping here
                 // only makes the reported amount the restored one.
@@ -291,7 +288,7 @@ impl World {
             // PROT 0919's arm 7: the same unsigned clamp over its own amount
             // (`sltu v0,a0,a3` at `0x801F8078`).
             SPOON_SPELL_ID => {
-                let want = legaia_engine_battle_vm::seru_magic_ticks::spoon_heal_amount(level);
+                let want = legaia_engine_battle_vm::battle_formulas::spoon_heal_amount(level);
                 let missing = u32::from(target_hp_max.saturating_sub(target_hp));
                 Some(want.min(missing).min(u32::from(u16::MAX)) as u16)
             }

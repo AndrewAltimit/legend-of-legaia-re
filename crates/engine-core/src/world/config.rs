@@ -545,6 +545,14 @@ pub(crate) const CUTSCENE_TIMELINE_STEP_BUDGET: u32 = 256;
 /// Counting the `WAIT_FRAMES` holds turned this into a length cap and cut two
 /// real door records - `urudre3` `P2[0]` and `jouine` `P2[16]` need ~5400 and
 /// ~4900 stepping frames to reach their exits - before their tails.
+///
+/// And it counts frames on **one PC**: the counter restarts whenever the
+/// context's PC moves (`CutsceneTimeline::cap_pc`). Retail has no cap on a
+/// script context; one that loops on the player's input plays on until it
+/// comes. `jouinb`'s rapids (P2[6..8]) lap until a direction is held at a
+/// landing, and a counter over the whole ride cut the lap after about
+/// 75000 frames and left the rider on the lap's `MoveTo` seat. Over the
+/// full-game ladder (both passes) the cap ends no record at all.
 pub(crate) const CUTSCENE_TIMELINE_MAX_FRAMES: u32 = 1200;
 
 /// Frame cap for the `opdeene` prologue timeline. The record arms the

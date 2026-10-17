@@ -86,6 +86,8 @@ const STAGE_ID: u32 = 0x8007_B64A;
 /// Battle init's keep-object-1 byte: set, `FUN_800513F0` keeps the backdrop
 /// shell's object 1 (`0x80051ABC`).
 const KEEP_BACKDROP_OBJECT_1: u32 = 0x8007_B64B;
+/// `_DAT_8007BD84`, the Mystic Shield's effect handle.
+const MYSTIC_SHIELD_HANDLE: u32 = 0x8007_BD84;
 /// The backdrop draw's slot-1 Y angle: the second row's `+2` of the per-slot
 /// angle table at `0x800891C8` (`FUN_8001ADA4`'s backdrop arm reads it,
 /// `FUN_80046A20` winds it while [`KEEP_BACKDROP_OBJECT_1`] is up).
@@ -214,6 +216,42 @@ pub const BATTLE_RNG_SEEDS: [u32; 48] = [
     0x7B54_AE6C,
     0x8BAE_8BFB,
 ];
+/// Per-state streams tried ahead of [`BATTLE_RNG_SEEDS`] ([`pinned_seed`]).
+///
+/// The capture's own stream word cannot be stepped back to its entry (the
+/// engine's draw count to the phase moves with the stream it is dealt), so
+/// which stream replays a drive or a cast stays a search result. These are
+/// that search's results for the states whose first reaching stream frames
+/// the capture's phase further from retail than another: each is the first
+/// stream, from [`BATTLE_RNG_SEEDS`] in its order, that reaches the phase
+/// with the camera and then the frame no worse than the corpus held. A pin
+/// that stops reaching falls through to the list.
+pub const BATTLE_RNG_PINS: &[(&str, u32)] = &[
+    ("battle_gaza2_park_0x19", 0xAB1C_5ED5),
+    ("battle_gaza2_park_0x19_summon_melee", 0xBC5D_413F),
+    ("battle_gaza2_park_0x19_target_vahn", 0x428A_2F98),
+    ("battle_gimard_tail_fire_b", 0x1F83_D9AB),
+    ("battle_melee_hit_spark", 0x9E37_79B9),
+    ("battle_noa_miracle_art_combo", 0x1283_5B01),
+    ("battle_vahn_tri_somersault_super", 0x8BAE_8BFB),
+    ("cort_evolved_ultra_charge_mid_cast", 0xC0FF_EE01),
+    ("delilas_gi_spirit_distortion_v3", 0x1F83_D9AB),
+    ("gimard_burning_attack", 0x9E37_79B9),
+    ("nivora_duel_pre_plasma_strike", 0x1F83_D9AB),
+    ("noa_levelup_fight_pre", 0x8BAE_8BFB),
+    ("rim_elm_gimard_seru_capture_after", 0x7F4A_7C15),
+    ("rim_elm_gimard_seru_capture_before", 0x7F4A_7C15),
+    ("shiny_refactor_gimard_levelup", 0x1F83_D9AB),
+];
+
+/// The stream a state's search tries first, when it has one.
+pub fn pinned_seed(label: &str) -> Option<u32> {
+    BATTLE_RNG_PINS
+        .iter()
+        .find(|(l, _)| *l == label)
+        .map(|&(_, s)| s)
+}
+
 /// The battle projection's `H` (`FUN_8003D254`; `battle_cam_script::GTE_H`).
 const BATTLE_H: i16 = 256;
 
@@ -261,6 +299,11 @@ pub struct RetailBattle {
     /// `0x8007B64B != 0` - battle init kept the backdrop shell's object 1
     /// (the region reader's long-layout `+8` bit 5).
     pub keep_backdrop_object_1: bool,
+    /// `0x8007BD84 != 0` - Cort's Mystic Shield is up: the handle of the
+    /// sphere PROT 0940's arm 4 seated on an earlier turn. Nothing in the
+    /// replayed fight casts it again before the captured phase, so the seed
+    /// raises it on the first battle tick (`World::raise_mystic_shield`).
+    pub mystic_shield: bool,
     /// `0x800891D2` - the Y angle the backdrop draw turns its slot 1 by, in
     /// 4096ths of a turn. Time spent in keeping fights since boot, so a
     /// replay carries it over rather than winding its own.
@@ -304,7 +347,7 @@ pub struct RetailBattle {
     /// clip commit (`rand() % 2`).
     pub track_coin: u8,
     /// PROT 0903's countdown word
-    /// ([`legaia_engine_battle_vm::cast_module_camera::GIMARD_COUNTDOWN_VA`]) - only
+    /// ([`legaia_engine_cast::cast_module_camera::GIMARD_COUNTDOWN_VA`]) - only
     /// meaningful while that module is resident.
     pub gimard_countdown: i32,
     /// `ctx[+0xD]` - the acting action's framing style.
@@ -381,6 +424,13 @@ pub struct RetailBattle {
     /// places and [`Self::undrift`] moves it; this is what the capture
     /// held. The post-strike framings read the body pair (cases 7 and 8).
     pub captured: Vec<Option<CapturedActor>>,
+    /// Each pool slot's playing clip `+0x1D9` and the cursor of its anim
+    /// node (`*(+0x22C) + 0x68`, 12.4 sixteenths of a keyframe) taken back
+    /// to the **displayed** frame, two game frames before the RAM's: as
+    /// `(pool slot, clip, cursor)`, the cursor possibly below zero (the
+    /// clip wraps). The frame the capture shows each body on
+    /// ([`legaia_engine_capture::clip_cursors`]).
+    pub clip_cursors: Vec<(u8, u8, i32)>,
     /// Each pool slot's heading `+0x46` (12-bit), beside [`Self::ground`]:
     /// the attack band's facing recompute stores it every frame of a
     /// swing and nothing turns the actor back, so a member stands facing

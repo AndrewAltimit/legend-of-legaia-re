@@ -30,7 +30,7 @@ impl BiosRand {
 
     /// Advance and return the next 15-bit value (`0..=0x7FFF`), as BIOS `rand()`.
     pub fn next_u15(&mut self) -> u16 {
-        self.seed = self.seed.wrapping_mul(0x41C6_4E6D).wrapping_add(0x3039);
+        self.seed = world_lcg_step(self.seed);
         ((self.seed >> 16) & 0x7FFF) as u16
     }
 }
@@ -70,9 +70,27 @@ pub fn bios_rand_shape(state: u32) -> u32 {
 /// interleaves its draws differently from retail; lending this state in and
 /// out (see [`world_rand`]) is how a subsystem that cannot hold `&mut World`
 /// still draws in order on the one stream.
+///
+/// The step is the BIOS's own. `FUN_80056798` jumps to `A(2Fh)`, which in
+/// the retail BIOS ROM (SCPH-5501, `0xBFC02200`) reads the seed word at
+/// physical `0x9010`, multiplies it by `0x41C64E6D` (`lui 0x41C6`,
+/// `ori 0x4E6D`, `multu`), adds `0x3039`, stores it back and returns
+/// `(seed >> 16) & 0x7FFF`; `A(30h)` `srand` at `0xBFC02230` only stores the
+/// word. So the stream position a retail state holds is its RAM word at
+/// `0x80009010`, and the engine continues it exactly when seeded from it.
 pub fn world_lcg_step(state: u32) -> u32 {
-    state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223)
+    state
+        .wrapping_mul(BIOS_RAND_MUL)
+        .wrapping_add(BIOS_RAND_ADD)
 }
+
+/// The BIOS `rand()` multiplier (`A(2Fh)`, `0xBFC02208..0xBFC0220C`).
+pub const BIOS_RAND_MUL: u32 = 0x41C6_4E6D;
+/// The BIOS `rand()` increment (`addiu v1,v1,0x3039` at `0xBFC0221C`).
+pub const BIOS_RAND_ADD: u32 = 0x3039;
+/// The BIOS `rand()` seed word in kernel RAM (`lw v1,-0x6FF0(0xA0010000)` at
+/// `0xBFC02204`, physical `0x9010`).
+pub const BIOS_RAND_SEED_ADDR: u32 = 0x8000_9010;
 
 /// One retail-shaped `rand()` draw on a lent copy of the world stream:
 /// advance `state` by [`world_lcg_step`] and shape it through

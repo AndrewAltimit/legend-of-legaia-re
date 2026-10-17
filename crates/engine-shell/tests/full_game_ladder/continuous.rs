@@ -48,6 +48,11 @@ thread_local! {
     /// of one is crossed to ([`pad_far_talks`]), not only an errand's.
     pub(super) static STORY_WAYPOINTS: std::cell::RefCell<BTreeSet<String>> =
         const { std::cell::RefCell::new(BTreeSet::new()) };
+    /// Scenes whose arrival commits a fight, learned where a milestone was
+    /// reached with one committed: the hop into one walks in ready
+    /// ([`pad_ready`]), as a player who met the boss at that door does.
+    pub(super) static FIGHT_ON_ARRIVAL: std::cell::RefCell<BTreeSet<String>> =
+        const { std::cell::RefCell::new(BTreeSet::new()) };
 }
 
 /// Holds [`SAVING_FOR_BOSS`] for a scope and puts back what was there.
@@ -109,6 +114,16 @@ pub(super) fn worth_fighting(w: &legaia_engine_core::world::World) -> bool {
     cost * 5 <= party * 3
 }
 
+/// Milestone `m` as the continuous run plays toward it: its own
+/// waypoints, where the spine gives them.
+fn continuous_target(m: &Milestone) -> Milestone {
+    let mut m = m.clone();
+    if let Some(v) = &m.continuous_via {
+        m.via = v.clone();
+    }
+    m
+}
+
 /// The engine's own save at the last milestone reached.
 struct Checkpoint {
     save: legaia_save::SaveFile,
@@ -123,8 +138,8 @@ fn checkpoint(session: &mut NativeSession) -> Checkpoint {
 }
 
 /// Where `LEGAIA_FGL_CHECKPOINT_DIR` keeps milestone `id`'s checkpoint: the
-/// engine's own save, and beside it the scene, the rand stream and the
-/// learned exchange rate.
+/// engine's own save, and beside it the scene, the rand stream, the
+/// learned exchange rate and the Field Move option.
 fn checkpoint_paths(id: &str) -> Option<(PathBuf, PathBuf)> {
     let dir = PathBuf::from(std::env::var_os("LEGAIA_FGL_CHECKPOINT_DIR")?);
     Some((
@@ -153,7 +168,8 @@ fn store_checkpoint(id: &str, cp: &Checkpoint, session: &NativeSession) {
 }
 
 /// The checkpoint an earlier run stored for milestone `id`, with its rand
-/// stream and exchange rate put back.
+/// stream and exchange rate put back. Field Move travels in the save itself
+/// (the options words, SC `+0x58C`), as on a retail card.
 fn stored_checkpoint(id: &str) -> Result<(Checkpoint, u32), String> {
     let (save, side) = checkpoint_paths(id).ok_or("LEGAIA_FGL_CHECKPOINT_DIR is not set")?;
     let bytes = std::fs::read(&save).map_err(|e| format!("{}: {e}", save.display()))?;
@@ -286,6 +302,21 @@ fn part_c_continuous_run() {
         })
         .collect();
 
+    // The Field Move option each playthrough anchor was saved with (SC
+    // `+0x58C`): the retail player walked chapter 1 and ran from Mt.
+    // Rikuroa on. The engine keeps it as a host option, not save data, and
+    // `jouind`'s timed switch pair is out of a walker's reach.
+    let anchor_run: Vec<Option<bool>> = spine
+        .iter()
+        .map(|m| {
+            m.anchor
+                .as_ref()
+                .filter(|_| m.order_check)
+                .and_then(|r| load_anchor(&inp.library, r).ok())
+                .map(|a| i32_at(&a.sc, SC_FIELD_MOVE) != 0)
+        })
+        .collect();
+
     // The level each character holds in each anchor, read as a player's
     // own growth curve: a line counts only as far as every later anchor
     // agrees with it (several chapter-1 anchors are other sessions).
@@ -333,6 +364,18 @@ fn part_c_continuous_run() {
 
     let opts = live_opts(true);
     PLAYS_ON.with(|p| p.set(true));
+    // The spine's own word for the scenes whose arrival commits a fight;
+    // the run adds any it meets that way ([`FIGHT_ON_ARRIVAL`]).
+    FIGHT_ON_ARRIVAL.with(|f| {
+        let mut f = f.borrow_mut();
+        f.clear();
+        f.extend(
+            spine
+                .iter()
+                .filter(|m| m.arrival_fight)
+                .map(|m| m.scene.clone()),
+        );
+    });
     reset_shopping();
     let mut session = open_session(&inp.extracted);
     // `LEGAIA_FGL_CONTINUOUS_FROM=<milestone>` starts the run at a later
@@ -384,16 +427,28 @@ fn part_c_continuous_run() {
     }
 
     let mut reached_count = 0usize;
+    // The milestone whose state `cp` holds: behind the one last reached
+    // when that one was reached with a fight committed (see below).
+    let mut cp_at = start;
     let mut reloads = 0u32;
+    let mut run_tried = false;
     let mut stall: Option<String> = None;
-    'spine: for i in start..spine.len() - 1 {
+    // Attempts a stretch had used when a reload sent the run back behind
+    // it, by stretch.
+    let mut retries: BTreeMap<usize, (u32, Option<u8>)> = BTreeMap::new();
+    let mut next = start;
+    'spine: while next < spine.len() - 1 {
+        let i = next;
+        next += 1;
         // The continuous run's own waypoints, where the spine gives them.
-        let mut to_run = spine[i + 1].clone();
-        STORY_WAYPOINTS.with(|w| w.borrow_mut().clear());
-        if let Some(v) = &to_run.continuous_via {
-            to_run.via = v.clone();
-            STORY_WAYPOINTS.with(|w| w.borrow_mut().extend(v.iter().cloned()));
-        }
+        let to_run = continuous_target(&spine[i + 1]);
+        STORY_WAYPOINTS.with(|w| {
+            let mut w = w.borrow_mut();
+            w.clear();
+            if spine[i + 1].continuous_via.is_some() {
+                w.extend(to_run.via.iter().cloned());
+            }
+        });
         let to = &to_run;
         // What the retail run had played by the next milestone and the one
         // after it: chapter 1's anchors come from several sessions, and a
@@ -452,8 +507,9 @@ fn part_c_continuous_run() {
                 .map(|&lv| if lv == u8::MAX { 0 } else { lv })
                 .collect();
         });
-        let mut prepare: Option<u8> = None;
-        let mut attempt = 0u32;
+        // A stretch played again after a reload from behind it keeps the
+        // attempts it had used.
+        let (mut attempt, mut prepare) = retries.remove(&i).unwrap_or((0, None));
         let t0 = std::time::Instant::now();
         loop {
             attempt += 1;
@@ -475,8 +531,26 @@ fn part_c_continuous_run() {
             }));
             let err = match played {
                 Ok(Ok(())) => {
-                    reached_count = i + 1 - start;
-                    cp = checkpoint(&mut session);
+                    reached_count = reached_count.max(i + 1 - start);
+                    // A milestone reached with a scripted fight committed and
+                    // not yet begun is no state a player could save in: the
+                    // save carries the flags the record set past its `3E FF`
+                    // but not the fight, and a reload of it walks on as if
+                    // the fight were won (`jouine` P2[5] commits Cort, and a
+                    // reload from its arrival landed in the epilogue). The
+                    // player's last save is still the one before.
+                    if !session.host.world.host_save_allowed() {
+                        FIGHT_ON_ARRIVAL.with(|f| f.borrow_mut().insert(scene_name(&session)));
+                        if std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
+                            eprintln!(
+                                "    [checkpoint] {} reached with a fight committed: keeping the {} save",
+                                to.id, cp.scene
+                            );
+                        }
+                    } else {
+                        cp = checkpoint(&mut session);
+                        cp_at = i + 1;
+                    }
                     store_checkpoint(&to.id, &cp, &session);
                     if std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
                         print_state_diff(&mut session, &inp, to);
@@ -505,12 +579,22 @@ fn part_c_continuous_run() {
             };
             let wiped = err.contains("party wiped");
             let guard = LOST_TO_ELEMENT.with(std::cell::Cell::get);
+            // A walking player stuck where the playthrough ran switches
+            // Field Move to Run and reloads, once, and keeps running.
+            // Turned on from the start of the playthrough's running stretch
+            // it re-dealt the whole middle of the game (and a runner wedges
+            // and pushes stones differently), so it waits for the stretch
+            // that needs it: `jouind`'s switch pair.
+            let run_retry = !wiped
+                && !run_tried
+                && !session.host.world.locomotion.run_default
+                && anchor_run[i + 1] == Some(true);
             let again = match guard {
                 Some(el) if wiped && prepare.is_none() => {
                     prepare = Some(el);
                     true
                 }
-                _ => wiped && attempt < CONTINUOUS_WIPE_ATTEMPTS,
+                _ => (wiped && attempt < CONTINUOUS_WIPE_ATTEMPTS) || run_retry,
             };
             if !again {
                 print_state_diff(&mut session, &inp, to);
@@ -524,11 +608,6 @@ fn part_c_continuous_run() {
             // milestone, and another hand of the rand stream unless this is
             // the guard retry (which measures the guard alone).
             reloads += 1;
-            // The player's Field Move option survives the reload: retail
-            // keeps it in the save block (`0x800846CC`, SC `+0x58C`), and the
-            // engine as a host option the fresh session would otherwise
-            // reset to Walk - which misses `jouind`'s 50-vsync switch pair.
-            let run_default = session.host.world.locomotion.run_default;
             session = match reload(&inp, &cp, &opts) {
                 Ok(s) => s,
                 Err(e) => {
@@ -536,7 +615,21 @@ fn part_c_continuous_run() {
                     break 'spine;
                 }
             };
-            session.host.world.locomotion.run_default = run_default;
+            // The reload restores the save's own Field Move (the options
+            // words travel with it, SC `+0x58C`); a player who switched to Run
+            // switches again on a save from before the switch.
+            if run_retry || run_tried {
+                session.host.world.locomotion.run_default = true;
+            }
+            if run_retry {
+                run_tried = true;
+                if std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
+                    eprintln!(
+                        "    [run] {} -> {}: Field Move set to Run",
+                        spine[i].id, to.id
+                    );
+                }
+            }
             if !(attempt == 1 && prepare.is_some()) {
                 let w = &mut session.host.world;
                 w.rng_state = w
@@ -548,6 +641,13 @@ fn part_c_continuous_run() {
             if let Some(s) = rng_seed_override() {
                 let w = &mut session.host.world;
                 w.rng_state ^= s;
+            }
+            // A save from behind this stretch: the stretches between it
+            // and here are played again, each as itself.
+            if cp_at < i {
+                retries.insert(i, (attempt, prepare));
+                next = cp_at;
+                continue 'spine;
             }
         }
     }

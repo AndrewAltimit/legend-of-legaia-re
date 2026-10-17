@@ -14,7 +14,7 @@ pub fn cmd_play_str(
     win_height: u32,
 ) -> Result<()> {
     let mut event_loop = EventLoop::new().context("create event loop")?;
-    play_str_in(&mut event_loop, str_file, disc, win_width, win_height)
+    play_str_in(&mut event_loop, str_file, disc, win_width, win_height, true)
 }
 
 /// Play a movie on an event loop the caller owns, and hand the loop back when
@@ -28,6 +28,7 @@ pub(crate) fn play_str_in(
     disc: Option<&Path>,
     _win_width: u32,
     _win_height: u32,
+    controller: bool,
 ) -> Result<()> {
     use crate::cutscene_av::{CutsceneAudio, decode_str_av_from_disc, decode_str_video_only};
     use winit::platform::run_on_demand::EventLoopExtRunOnDemand;
@@ -92,6 +93,11 @@ pub(crate) fn play_str_in(
         movie_clock: legaia_engine_system::movie::cutscene::MovieClock::new(),
         audio_out,
         pending_audio: audio,
+        gamepad: if controller {
+            super::gamepad::GamepadHost::open()
+        } else {
+            None
+        },
     };
     event_loop
         .run_app_on_demand(&mut app)
@@ -138,6 +144,10 @@ struct StrPlayerApp {
     /// The decoded audio track, staged into `audio_out` on the first redraw so
     /// the audio cursor and the video start together. Taken once.
     pending_audio: Option<crate::cutscene_av::CutsceneAudio>,
+    /// The controller (`window::gamepad`): a press of one of retail's movie
+    /// abort buttons ends the movie as `Esc` does. `None` for a scripted
+    /// capture, whose pad belongs to its script.
+    gamepad: Option<super::gamepad::GamepadHost>,
 }
 
 impl ApplicationHandler for StrPlayerApp {
@@ -161,6 +171,21 @@ impl ApplicationHandler for StrPlayerApp {
                 self.win.handle_resize(size.width, size.height);
             }
             WindowEvent::RedrawRequested => {
+                // A controller ends the movie as `Esc` does, on a press of
+                // retail's abort set (`FMV_SKIP_BUTTONS`): this player has no
+                // `fmv_id`, and its keyboard already skips whatever it plays.
+                if let Some(gp) = self.gamepad.as_mut() {
+                    let poll = gp.poll();
+                    if legaia_engine_system::movie::cutscene::fmv_abort_edge(
+                        poll.edges.pressed | poll.taps,
+                    ) {
+                        if let Some(out) = self.audio_out.as_ref() {
+                            out.stop_xa();
+                        }
+                        event_loop.exit();
+                        return;
+                    }
+                }
                 // Stage the audio on the first redraw so its cursor (the video
                 // clock) starts when the picture does.
                 if let (Some(out), Some(track)) =

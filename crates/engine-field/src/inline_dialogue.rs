@@ -148,6 +148,40 @@ pub struct InlineDialogue {
     /// door's doorway, and glide it back out - without the out leg the player
     /// was left standing in a doorway the walls seal on every side.
     pub player_glide: Option<crate::cutscene_timeline::TimelinePlayerGlide>,
+    /// The box the pager still draws while no box is being typed
+    /// ([`OwnedDialogPanel::held_after_press`]): the rows of the box the last
+    /// press dispatched, with no page mark and no picker. Hosts draw it in
+    /// place of [`Self::panel`] while that is `None`.
+    pub held_box: Option<HeldBox>,
+}
+
+/// A dispatched box the pager goes on drawing ([`InlineDialogue::held_box`]).
+#[derive(Debug, Clone)]
+pub struct HeldBox {
+    pub panel: OwnedDialogPanel,
+    /// `true` for a `0x24` continuation: pager state `3` -> `4` keeps the rows
+    /// and draws them until the next line loads. `false` for every other
+    /// dispatch: the box is drawn on the press's own frame only. That is
+    /// retail's whole box for `0x25` (state `0`, then the idle `1`, which
+    /// draws nothing). It is a first frame only for the rest: `0x48` and a
+    /// post-page byte outside the table store `9`, whose `0xA` successor
+    /// collapses the box over a few calls, and `0x4C FF`'s idle `7` clears
+    /// the rows but keeps the frame up (`0x801D9770`); neither is modelled.
+    pub until_next_line: bool,
+}
+
+impl HeldBox {
+    /// The box a press on `panel` leaves on screen, given the byte the pager
+    /// dispatched on: a page's post-page byte, or a picker's continuation
+    /// byte (`open + n*2 + 1`). Retail compares the raw byte against `0x24`
+    /// (`lbu`, `li v0,0x24`, `bne` at `0x801D9554..0x801D955C` for a picker;
+    /// the post-page dispatch reads `& 0x7F`).
+    pub fn after_press(panel: &OwnedDialogPanel, dispatch_byte: Option<u8>) -> Self {
+        Self {
+            panel: panel.held_after_press(),
+            until_next_line: dispatch_byte == Some(0x24),
+        }
+    }
 }
 
 /// A player walk-to-tile leg a prop run parks on: the decoded target, the
@@ -336,6 +370,7 @@ impl InlineDialogue {
             spawned: false,
             player_walk: None,
             player_glide: None,
+            held_box: None,
         }
     }
 
@@ -372,6 +407,7 @@ impl InlineDialogue {
             spawned: false,
             player_walk: None,
             player_glide: None,
+            held_box: None,
         }
     }
 

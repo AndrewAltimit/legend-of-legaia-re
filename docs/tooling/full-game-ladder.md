@@ -259,6 +259,11 @@ one upkeep pass, in this order:
    struck off that visit's list rather than ending the visit: ending it
    there left `rayman2`'s item counter with a purse of 20000 and two
    Healing Flowers bought.
+   A purse that pays for that stock four times over buys up to three
+   stocks, and MP restoratives beside them: past Jette's fortress the run
+   carried 650000 gold through `ropeway` and `station3` with its stock
+   full, met no counter after them, and fought Cort out of an empty bag
+   with Vahn at 22 MP.
 2. **Equipment.** Start, Equip, each member, the Best Equipment row. That row ranks only the four armament slots, so the hand then fills each member's empty Goods slots from the bag, best passive first (HP, attack and arts boosts ahead of guards), never two of one passive on a member and never Rage, Zero Defense, Last Attack or No Escape.
 
    Best Equipment (`FUN_801CF760`) ranks a weapon by its stats alone, and a weapon outside the wearer's class raises the arm command's AP cost ([`arts-command-gauge.md`](../subsystems/arts-command-gauge.md)): the Astral Sword costs Vahn 54 a swing, his nine-command art no longer fits a turn, and Koru (`nilboa` P2[20]) outlasts him. So after the row the hand reads each member's arm cost off its player battle file, the way the battle loader does (`swing_command_costs`), and where a weapon in the bag swings cheaper than the one worn it puts that one on (Start, Equip, the member, the weapon row, the weapon, Yes), the best attack among equally cheap ones.
@@ -301,10 +306,14 @@ one upkeep pass, in this order:
    restoratives it would otherwise carry in.
 
 **At a waypoint** the hand plays the waypoint's story, not this upkeep -
-except that a party walking in with fewer heals than three a member stocks
-up and rests first. `retock`'s beats lead straight into the `jagaroom`
-fight (13245 HP); a party that arrived there with no heal, next to no MP
-and 36000 gold lost it six times.
+except that a party walking in with under half its stock of heals (fewer
+than seven a member) stocks up and rests first. `retock`'s beats lead
+straight into the `jagaroom` fight (13245 HP); a party that arrived there
+with no heal, next to no MP and 36000 gold lost it six times. `son` is the
+dock the boat lands at on the way to `taiku`, the last counter before Zora
+(F9, 22422 HP, a party-wide breath every other round): a party that passed
+it with eight Healing Flowers and 52000 gold fought Zora out of an empty bag
+and lost three times in four.
 
 A talk or a stay that carries the party out of the scene (`dolk2`'s inn
 plays Noa's dream and brings it back) leaves the rest of the pass for the
@@ -361,7 +370,11 @@ caster spends only the MP above three fifths of its pool there - the line
 the bag tops MP up to before a staged fight, so a cast on the road is never
 paid for with a Magic Fruit at the boss's door - and all of it once the bag
 holds no restorative: the run met Koru (`nilboa`) with an empty bag, two
-members near death and every Spoon unspent. A rest is taken for low MP as
+members near death and every Spoon unspent. On the way to a boss an empty
+bag's MP is the boss's, except when a member is under a quarter of its HP:
+the Delilas duels hand `nivora_late` a party with Noa at 1 HP and no bed in
+`nilboa`, and a hand that kept the MP lost Koru's race five times running
+with her down from the first round. A rest is taken for low MP as
 well as low HP (the lower of the two gauges reads against the line): a run
 that reached Nivora's duels with Gala at 54 of 346 MP lost Che's on every
 stream. Before a staged fight it wears what the last chest
@@ -377,12 +390,24 @@ is met at the end of a castle the hand had been fighting its way through:
 it arrived at a third of its HP with the Healing Flowers spent on the
 road, and lost six times.
 
-**Its options survive a reload.** A wipe reloads the run's own save into a
-fresh session, and the engine keeps Field Move as a host option rather than
-save data (retail keeps it in the block, SC `+0x58C`;
+**Its options travel with its saves.** The options screen's words, Field
+Move among them, are part of the save as on a retail card (SC `+0x58C`;
 [`save-screen.md`](../subsystems/save-screen.md#what-a-card-load-restores)),
-so the reload carries it over from the session it replaces. Walking instead
-of running misses `jouind`'s timed switch pair on every try.
+so a wipe's reload, a checkpoint kept under `LEGAIA_FGL_CHECKPOINT_DIR` and
+a seed from an anchor all play the Field Move their save was written with.
+Walking instead of running misses `jouind`'s timed switch pair on every try.
+
+**It runs when walking is what holds it.** A New Game walks, and the
+playthrough's player switched Field Move to Run by Mt. Rikuroa (every
+order-checked anchor from `mt_rikuroa` on holds `1` at SC `+0x58C`). The
+continuous player keeps walking until a stretch stalls short of a wipe in
+a stretch whose anchor runs; then it sets Run, reloads the stretch's save
+once and keeps running - setting it again on any reload of a save from
+before the switch. Running from Mt. Rikuroa on re-dealt the whole
+middle of the game, and a runner meets corners and stones differently: it
+wedged in `ropeway` at (24, 27), and Sol's lower floors closed off Gaza's
+second fight (`korb3` P2[2]). Held back, it first switches on at
+`jouind`'s switch pair.
 
 **It waits on a running clock.** A hop that fails while the field's op
 `4C D3` countdown is armed (`FUN_801D2EBC`, read from the engine), with its
@@ -613,6 +638,35 @@ not. It is the instrument that tells an engine defect from a weak party:
 Chapter-1 anchors come from several sessions, some with cheat-seeded
 parties (three members before the story joins them, a full bag), so a line
 of the retail side is evidence only where the next anchor agrees with it.
+
+### A milestone reached with a fight committed
+
+A milestone can be reached between a record's `3E FF` and the fight it
+commits: `jouine` P2[5] is the arrival cutscene, it commits Cort, and the
+milestone (`cort_chamber`, reached on arrival) holds while the battle
+intro has yet to run (`World::field_scripts_held_for_battle`). A save there
+carries the flags the record set past the op but not the fight, and a
+reload of it seated the party on the epilogue's walk-on band
+(`jouine` P2[2]) with Cort unbeaten. No retail player saves on that frame,
+so the run keeps the save it already had, and a wipe after it reloads that
+earlier save and plays the stretches between again, each as itself, with
+the failing stretch's attempts carried over. The scene is remembered as one
+whose door leads to a boss - and the spine marks the one it knows of
+(`arrival_fight = true` on `cort_chamber`), route knowledge like the
+waypoints, so the first visit is ready too - and a hop into it goes through ready
+(`pad_ready`: the last chest's gear on, a rest close by), and then full on
+HP and MP from the bag, since the fight starts as the door lands.
+
+Cort is the case. Its first turn of party-wide damage is about 2500 a member
+(a `0x70` hit on all three seats; its MP falls 100 a cast and 255 for
+Doomsday, as the boss table lists), and a party that walks in from
+`jouind`'s fights at three fifths loses two members to it. The hand then
+spends every turn reviving one member at a quarter HP into Cort's next
+strike, and wipes. The reload walks in full: the same cast (2700..3100 a
+member on that stream, the guard against Cort's element byte `7` worn or
+not) leaves every member standing, and the bag heals between casts. That
+is the hand's first sight of the fight, not an engine fault the trace
+shows.
 
 ### A later start
 
@@ -848,10 +902,9 @@ whole system-flag bank up to the item array at `0x80085958`, the party count
 at `0x80084594` and the roster at `0x80084598`, and the field position
 snapshot at `0x80084568` / `0x8008456C`, where the resume seats the party.
 
-The anchor's **Field Move** word (`0x800846CC`, SC `+0x58C`) goes onto
-`World::locomotion.run_default`: the engine keeps it as a host option rather
-than save data, but retail restores it with the block, and the ladder's player
-runs or walks as the anchor's player did. Timed scripts are paced for it -
+The anchor's **Field Move** word (`0x800846CC`, SC `+0x58C`) comes in with
+the block's other options words, as retail's card load restores it, so the
+ladder's player runs or walks as the anchor's player did. Timed scripts are paced for it -
 `jouind`'s switch pair resets unless the second switch is reached within 50
 vsyncs of free walk (system script slot `0`, `4C CB 00 FF FF` against
 `4E 00 50 32`), which a walking pad hand misses by a few frames.
@@ -1290,6 +1343,8 @@ For each member, in order of priority:
 3. **Cast.** Otherwise a member with an affordable damaging Seru spell casts the strongest one. A command ring that answers Magic by reopening itself (a fight whose special word forbids the Ra-Seru chip, or a caster with no spell session) is asked for two seconds and then not again that battle.
 4. **Attack.** Otherwise it attacks through `Command`, entering the longest art its command pool pays for and spending the rest on plain directions. Whether a matched art fires is the queue builder's call, out of the Spirit gauge. The plan runs up to nine commands, the length of each character's Miracle Art. A member with all three limbs rotted (`+0x16E & 0x38`) takes the Spirit stance instead: the ring refuses its Attack arm (`FUN_801D0748`, `0x801D1560`) and stays up, and a fighter that kept pressing it left Sol's fights against monster 120 unresolved.
 
+   One or two rotted limbs leave the entry open but refuse their own directions (Left for `0x08`, Right for `0x10`, Up and Down for `0x20`; `rot_blocks`, `0x801D1E60..0x801D1F7C`), so the plan keeps to the open ones: a plan through a rotted arm waited on a Left that never landed, and a `jouinc` fight after a party-wide Rot ran out its budget with the entry half typed.
+
 A member is **in danger** when it is standing and either:
 
 - under 45% of its HP - three fifths against a boss of eight times the party's largest HP or more, whose party-wide hit is unseen until it lands; or
@@ -1536,6 +1591,15 @@ clips and matches the same arts a windowed one does. Beyond that:
   for that tick, as a player walking through does: `balden`'s elevator call
   bands (P2[6], P2[7]) want Up toward the car, and answering their poll
   walked the player back off the band onto which the walk re-crossed it.
+  A modal timeline that reaches its poll only on the tick a wait ends gets
+  the direction held through the wait: the hand looks past yields, flag
+  busy-waits and the flag, move and camera ops that cannot branch to the
+  next `42 01` (a jump, a branch test or text ends the look). `jouinb`'s
+  rapids (P2[6..8]) poll any compass point or Circle at each landing, on
+  the tick the walk-to yield on the player ends, and jump off there; the
+  ride otherwise loops its lap. A hand that held nothing rode about 75000
+  frames a crossing, which spent the continuous run's walking budget in
+  `jouinc`.
 - An op-`49 04` flag-window picker (the Uru Mais warp pads) gets the row
   whose branch in the record names the hop's destination; the rows are drawn
   flipped, so Up raises the selection.
@@ -1551,6 +1615,7 @@ clips and matches the same arts a windowed one does. Beyond that:
 | `LEGAIA_FGL_TRACE=1` | One line per played beat: what ran, how it ended and the flags it set. As `[hop]`, the hop failure that sent the pass to the beats, which the final stall would otherwise hide. A `[battle]` line at each fight's start and end (formation, both sides' HP, the action-SM state). Each pad segment's frames and planner cost. On success, the seated tier's trail, so a pad stall can be read against the route the seated tier took. |
 | `LEGAIA_FGL_TRACE_BATTLE=1` | A `[battle]` line every 1000 ticks. |
 | `LEGAIA_FGL_TRACE_HITS=1` | Each HP change with its actor and action state. |
+| `LEGAIA_FGL_CAPS=1` | Each script context the engine's anti-hang timeline cap ends (`World::cutscene.capped`): scene, modal or helper, record length, PC and opcode. Retail has no such cap, so each line is a record the engine cut short; over both passes there are none. |
 | `LEGAIA_FGL_PAD_DEBUG=1` | In a fight where no foe has lost HP for 6000 ticks, the fighter's pad and the command, spell and item windows' phases every 97 ticks: what a battle that will end `unresolved` was being asked. |
 | `LEGAIA_FGL_SHOP_DEBUG=1` | Each pad edge of a shop screen with the hand's next buy and sale, the screen state, the purse and the bag's heals in Healing Flowers' worth. |
 | `LEGAIA_FGL_HEAL_DEBUG=1` | Each pad edge of the field heal with the Items screen's focus, list rows, usable rows and target rows. |

@@ -36,7 +36,7 @@ const IDS: [(u8, u32); 6] = [
 
 /// Hard stop on the walk. A body the engine runs ungated steps one arm a
 /// frame; one whose arms are paced on its own countdown
-/// (`legaia_engine_battle_vm::cast_module_camera`) holds each counted arm
+/// (`legaia_engine_cast::cast_module_camera`) holds each counted arm
 /// for as long as retail does - about 500 frames for Gimard (PROT 0903) and
 /// over 1000 for Gizam (PROT 0906) - so anything past this is a body that
 /// never reported done.
@@ -292,7 +292,7 @@ fn gizam_settles_over_a_row_with_a_dead_foe() {
 /// was kept the arm passed on the commit, one tick.
 #[test]
 fn theeder_arm_seven_holds_on_the_creature_loop_counter() {
-    use legaia_engine_battle_vm::seru_magic_ticks::THEEDER_ATTACK_ARM;
+    use legaia_engine_cast::seru_magic_ticks::THEEDER_ATTACK_ARM;
     let Some(dir) = extracted_dir() else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset or extracted/ incomplete");
         return;

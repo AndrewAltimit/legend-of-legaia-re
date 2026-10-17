@@ -135,7 +135,7 @@ pub(super) fn errands_short(w: &legaia_engine_core::world::World) -> Vec<(u8, u3
                     .count() as u32;
                 let held = u32::from(w.party.inventory.get(&e.item).copied().unwrap_or(0));
                 let price = u32::from(prices.price(e.item));
-                (owed > held && price > 0).then_some((e.item, owed - held, price))
+                (owed > held && price > 0).then(|| (e.item, owed - held, price))
             })
             .collect()
     })

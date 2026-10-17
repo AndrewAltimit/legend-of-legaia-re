@@ -102,7 +102,7 @@ pub use audio_state::{
 pub use battle_state::{BattleState, ClipRibbon, INFLIGHT_GROUND_SLOTS, InflightCastSeed};
 pub use cast_fx_state::{CastFxState, PendingBurst};
 pub use config::*;
-pub use cutscene_state::CutsceneState;
+pub use cutscene_state::{CappedTimeline, CutsceneState};
 pub use disc_tables::DiscTables;
 pub use field_locomotion::FieldLocomotion;
 pub use field_npc_state::{FieldFaceRow, FieldNpcState, SPAWN_HEADING};
@@ -132,7 +132,7 @@ pub use screen_fx_state::{ClearColourRamp, ScreenFrame, ScreenFxState};
 pub use state::*;
 pub use types::*;
 pub use world_map_state::WorldMapState;
-pub use world_toggles::WorldToggles;
+pub use world_toggles::{DEFAULT_BATTLE_SM_FRAME_CADENCE, WorldToggles};
 
 mod actors;
 pub mod ambient;

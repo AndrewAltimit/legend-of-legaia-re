@@ -166,8 +166,13 @@ pub struct CutsceneTimeline {
     /// Set once the timeline completes - it executed its closing `GFLAG_SET 26`,
     /// hit an op it cannot advance past, or exceeded its frame cap.
     pub done: bool,
-    /// Frames the timeline has been stepping (for the safety cap).
+    /// Frames the timeline has been stepping (for the safety cap) since its
+    /// PC last moved: the cap measures a context stuck on one op, not one
+    /// that is playing (see `legaia_engine_core::world::World`'s
+    /// `CUTSCENE_TIMELINE_MAX_FRAMES`).
     pub frames: u32,
+    /// The PC [`Self::frames`] is counted at.
+    pub cap_pc: usize,
     /// When `true`, `legaia_engine_core::world::World::step_cutscene_timeline` appends a
     /// [`TraceEntry`] per executed instruction to [`Self::trace`]. Off by
     /// default (no overhead on the normal opening path); turned on for the RE
@@ -213,6 +218,9 @@ pub struct CutsceneTimeline {
     /// `legaia_engine_core::world::FieldVmState::dialog_claims` order - which of several
     /// contexts holding text got to the shared box first.
     pub dialog_claim: u64,
+    /// The box the pager still draws after the press that dismissed
+    /// [`Self::dialog`] ([`crate::inline_dialogue::HeldBox`]).
+    pub held_box: Option<crate::inline_dialogue::HeldBox>,
     /// Per-byte "an instruction was executed here" map over
     /// [`Self::bytecode`], kept for the timeline's whole life. A backward
     /// jump into an already-executed PC means the record's linear
@@ -529,6 +537,7 @@ impl CutsceneTimeline {
             pc,
             done: false,
             frames: 0,
+            cap_pc: pc,
             trace_enabled: false,
             trace: Vec::new(),
             arms_prologue_handoff: false,
@@ -537,6 +546,7 @@ impl CutsceneTimeline {
             narration_pending_open: false,
             dialog: None,
             dialog_claim: 0,
+            held_box: None,
             visited,
             channel_wait: None,
             player_move_frames: 0,

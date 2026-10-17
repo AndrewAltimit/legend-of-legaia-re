@@ -3,7 +3,7 @@
 //! the bands draw on the arms that build them.
 
 use super::*;
-use legaia_engine_battle_vm::cast_module_camera::{
+use legaia_engine_cast::cast_module_camera::{
     ALURU_BLAST_ARM, ALURU_ENTRY, ALURU_HIT_ARM, ALURU_SETTLE_ARM, ALURU_SPREAD_ARM,
 };
 
@@ -267,7 +267,7 @@ fn the_band_lets_go_of_a_module_held_on_an_undrainable_seat() {
     }
     assert_eq!(
         world.casting.module_phase,
-        legaia_engine_battle_vm::seru_magic_ticks::FREED_SETTLE_PHASE,
+        legaia_engine_cast::seru_magic_ticks::FREED_SETTLE_PHASE,
         "held on the row poll until the stager let go"
     );
 }

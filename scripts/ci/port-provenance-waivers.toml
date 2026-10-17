@@ -1056,7 +1056,7 @@ cannot see the image, so it still fires.
 """
 
 [[waiver]]
-key = "module-orphan:crates/engine-battle-vm/src/cast_arm_ticks.rs:801f7298"
+key = "module-orphan:crates/engine-cast/src/cast_arm_ticks.rs:801f7298"
 reason = """
 Reviewed against the disassembly. The signal corroborates a tag against its
 same-module siblings, and this module deliberately groups fourteen bodies from
@@ -1254,18 +1254,6 @@ shared with FUN_8004FE5C, tagged one crate over in engine-core's sfx_cue.rs.
 """
 
 [[waiver]]
-key = "module-orphan:crates/engine-battle-vm/src/cast_module_ticks.rs:801f8b90"
-reason = """
-PROT 0923 (summon_gilium)'s spawn stager, read in
-overlay_summon_gilium_0923_801f8b90.txt: arm 0 hands 0x801F9450 to
-FUN_80021B04 and stashes the handle at 0x801FA4D0, the two data words the
-finding lists and the tag text names. Band-structural, as the slot-B module
-waivers before the engine-battle-vm split said: each module is its own image
-with no internal jal, and its distinctive data is a private table at its own
-VAs, which no sibling image can share.
-"""
-
-[[waiver]]
 key = "module-orphan:crates/engine-battle/src/battle_tutorial.rs:801da51c"
 reason = """
 The tag claims only the battle-entry stage-id tail, and the bytes say so:
@@ -1289,21 +1277,6 @@ FUN_801D6028 calls (`jal` at 0x801D6168 and 0x801D6198).
 """
 
 [[waiver]]
-key = "module-orphan:crates/engine-core/src/world/battle/cast_band.rs:801e9fd4"
-reason = """
-Correct tag, read against the disassembly. `monster_cast_clip` reproduces the
-generic magic pick inside the 2114-instruction monster action picker
-(overlay_battle_action_801e9fd4.txt): `li s2,0x2` at 0x801EA4A0 opens the entry
-walk, `lw 0x4c(v0)` / `lbu 0x0(v0)` / `li v0,0x23` / `bne` at
-0x801EA4C0..0x801EA4D0 is the tag-0x23 filter, `lbu 0x21(v1)` at 0x801EA4E8
-reads magic slot `s1 - 1`, the `0x800754C8` stride-12 `+3` read at
-0x801EA504..0x801EA514 is the MP-cost gate, and 0x801EA53C..0x801EA544 store
-the entry index to `+0x1E7` / `+0x1E0` and the spell id to `+0x1DF`. The orphan
-reading is file placement: the picker's other ports live in the monster-AI
-modules, while this one kernel sits beside the cast band that consumes `+0x1E0`.
-"""
-
-[[waiver]]
 key = "dual-label:801f3990"
 reason = """
 Two heading sites that agree, and a heading cannot carry the link that would
@@ -1314,4 +1287,20 @@ dispatcher battle-action-helpers.md describes. move-power.md's section exists to
 say the same routine reads no field of the move-power record. The 77-instruction
 body the minigame captures carry at this VA is a different image's code and no
 page describes it under this name.
+"""
+
+[[waiver]]
+key = "module-orphan:crates/engine-cast/src/cast_module_ticks.rs:801f7fa8"
+reason = """
+Correct tag, read in overlay_summon_nighto_0907_801f7fa8.txt. PROT 0907's
+stager dispatches on a1 (`beq a1,1` at 0x801F7FC4, `beq a1,zero` at
+0x801F7FD8, `beq a1,2` / `beq a1,3` at 0x801F7FEC / 0x801F7FF4, a0 = caller
++ 0x14 in the last delay slot). Arm 0 loops eight `jal 0x80021B04` spawns of
+`lui a2,0x8020; addiu a2,-0x7CEC` = 0x801F8314 (0x801F8080..0x801F8150);
+arm 1 stores `+0xB4 - 0x20` to 0x801F8388 / 0x801F838A before spawning
+0x801F8370 (0x801F8160..0x801F8184); arms 2 / 3 spawn 0x801F8414 /
+0x801F84B8 - the data the finding lists and `nighto_stager_spawns` seats.
+Band-structural: each slot-B module is its own image with private tables at
+its own VAs and no callee a sibling image can share beyond the BIOS-level
+spawner and rand, which the corpus counts as non-distinctive.
 """

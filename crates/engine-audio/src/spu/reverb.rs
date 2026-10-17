@@ -15,11 +15,14 @@
 //!
 //! ## Model boundaries
 //!
-//! - The hardware runs reverb at 22050 Hz with a 39-tap FIR resampler on the
-//!   input and output. This port decimates/zero-order-holds across the
-//!   44.1 kHz mixer rate instead of running the FIR; the tail's character
-//!   comes from the network, the resampler only affects high-frequency
-//!   detail.
+//! - The hardware runs reverb at 22050 Hz behind a 39-tap half-band FIR on
+//!   both sides of the network: the 44.1 kHz send is low-passed and
+//!   decimated into the tank, and the tank's output is zero-stuffed back up
+//!   to 44.1 kHz through the same kernel ([`RESAMPLE_TAPS`], the published
+//!   SPU hardware-reference coefficients). The port runs that filter, so
+//!   send content above 11 kHz is removed before the tank instead of folding
+//!   back into the audible band, and the wet output is interpolated rather
+//!   than held.
 //! - Output volume (`vLOUT` / `vROUT`) is not part of the mode preset on
 //!   real hardware (libspu sets it separately via `SpuSetReverbDepth`). The
 //!   engine only tracks the mode byte, so a fixed depth is applied; override
@@ -301,8 +304,58 @@ pub struct Reverb {
     out_vol_r: i16,
     /// 44.1 kHz -> 22.05 kHz decimation toggle.
     run_phase: bool,
-    /// Last 22.05 kHz wet output, held across the in-between 44.1 kHz tick.
-    last: (i16, i16),
+    /// 44.1 kHz send history the down-sampling FIR reads, per channel
+    /// (`[0]` left, `[1]` right); [`Self::in_pos`] is the oldest sample.
+    in_hist: [[i16; RESAMPLE_IN_LEN]; 2],
+    /// Write cursor into [`Self::in_hist`].
+    in_pos: usize,
+    /// 22.05 kHz wet-output history the up-sampling FIR reads.
+    out_hist: [[i16; RESAMPLE_OUT_LEN]; 2],
+    /// Write cursor into [`Self::out_hist`].
+    out_pos: usize,
+}
+
+/// The non-zero even taps of the SPU's reverb resampler, a 39-tap half-band
+/// FIR whose odd taps are zero except the centre ([`RESAMPLE_CENTRE`]).
+/// Symmetric; with the centre they sum to `0x7FFE`, unity in Q15. Public SPU
+/// hardware-reference constants (the "SPU Reverb Formula" resampler table),
+/// not game data.
+const RESAMPLE_TAPS: [i32; 20] = [
+    -0x0001, 0x0002, -0x000A, 0x0023, -0x0067, 0x010A, -0x0268, 0x0534, -0x0B90, 0x2806, 0x2806,
+    -0x0B90, 0x0534, -0x0268, 0x010A, -0x0067, 0x0023, -0x000A, 0x0002, -0x0001,
+];
+/// The centre tap, the one non-zero odd tap of the 39.
+const RESAMPLE_CENTRE: i32 = 0x4000;
+/// Down-sampler span in 44.1 kHz samples.
+const RESAMPLE_IN_LEN: usize = 39;
+/// Up-sampler span in 22.05 kHz samples (the even taps alone).
+const RESAMPLE_OUT_LEN: usize = 20;
+
+/// 44.1 -> 22.05 kHz: the 39-tap kernel over the send history, where
+/// `hist[(oldest + k) % 39]` is the `k`-th oldest sample.
+fn downsample(hist: &[i16; RESAMPLE_IN_LEN], oldest: usize) -> i16 {
+    let at = |k: usize| hist[(oldest + k) % RESAMPLE_IN_LEN] as i32;
+    let mut acc = RESAMPLE_CENTRE * at(19);
+    for (i, &c) in RESAMPLE_TAPS.iter().enumerate() {
+        acc += c * at(i * 2);
+    }
+    sat(acc >> 15)
+}
+
+/// 22.05 -> 44.1 kHz over the zero-stuffed stream. On the sample phase only
+/// the centre tap meets a sample, and the stuffing gain of 2 makes it unity,
+/// so the centre sample passes through; on the interpolated phase the even
+/// taps meet the samples, at gain 2.
+fn upsample(hist: &[i16; RESAMPLE_OUT_LEN], oldest: usize, interpolate: bool) -> i16 {
+    let at = |k: usize| hist[(oldest + k) % RESAMPLE_OUT_LEN] as i32;
+    if !interpolate {
+        return at(RESAMPLE_OUT_LEN / 2 - 1) as i16;
+    }
+    let mut acc = 0i32;
+    for (i, &c) in RESAMPLE_TAPS.iter().enumerate() {
+        acc += c * at(i);
+    }
+    sat(acc >> 14)
 }
 
 impl std::fmt::Debug for Reverb {
@@ -326,7 +379,10 @@ impl Reverb {
             out_vol_l: DEFAULT_OUTPUT_VOL,
             out_vol_r: DEFAULT_OUTPUT_VOL,
             run_phase: false,
-            last: (0, 0),
+            in_hist: [[0; RESAMPLE_IN_LEN]; 2],
+            in_pos: 0,
+            out_hist: [[0; RESAMPLE_OUT_LEN]; 2],
+            out_pos: 0,
         };
         r.set_mode(mode);
         r
@@ -342,7 +398,10 @@ impl Reverb {
         self.mode = mode;
         self.cur = 0;
         self.run_phase = false;
-        self.last = (0, 0);
+        self.in_hist = [[0; RESAMPLE_IN_LEN]; 2];
+        self.in_pos = 0;
+        self.out_hist = [[0; RESAMPLE_OUT_LEN]; 2];
+        self.out_pos = 0;
         match mode.preset() {
             None => {
                 self.buf = Vec::new();
@@ -497,17 +556,31 @@ impl Reverb {
     /// Push one stereo sample of *reverb send* signal into the processor and
     /// pull one stereo sample of *reverb wet* signal out, at the 44.1 kHz
     /// mixer rate. The caller mixes the wet output into the master alongside
-    /// the dry signal. The network itself runs at 22.05 kHz; every other
-    /// call advances it and the in-between call holds the last output.
+    /// the dry signal. The network itself runs at 22.05 kHz behind the
+    /// half-band resampler: every call feeds the down-sampler, every other
+    /// call steps the network on its output, and every call reads one
+    /// up-sampled wet sample.
     pub fn tick(&mut self, send_l: i16, send_r: i16) -> (i16, i16) {
         if self.size_hw == 0 {
             return (0, 0);
         }
+        self.in_hist[0][self.in_pos] = send_l;
+        self.in_hist[1][self.in_pos] = send_r;
+        self.in_pos = (self.in_pos + 1) % RESAMPLE_IN_LEN;
         self.run_phase = !self.run_phase;
         if self.run_phase {
-            self.last = self.step(send_l, send_r);
+            let in_l = downsample(&self.in_hist[0], self.in_pos);
+            let in_r = downsample(&self.in_hist[1], self.in_pos);
+            let (l, r) = self.step(in_l, in_r);
+            self.out_hist[0][self.out_pos] = l;
+            self.out_hist[1][self.out_pos] = r;
+            self.out_pos = (self.out_pos + 1) % RESAMPLE_OUT_LEN;
         }
-        self.last
+        let interpolate = !self.run_phase;
+        (
+            upsample(&self.out_hist[0], self.out_pos, interpolate),
+            upsample(&self.out_hist[1], self.out_pos, interpolate),
+        )
     }
 }
 
@@ -630,6 +703,51 @@ mod tests {
         r.set_mode(ReverbMode::Room);
         assert!(r.buf.iter().all(|&s| s == 0));
         assert_eq!(r.cur, 0);
+    }
+
+    /// The resampler kernel is the half-band one: unity DC gain through both
+    /// halves, symmetric, odd taps zero but the centre.
+    #[test]
+    fn resampler_kernel_is_unity_half_band() {
+        let sum: i32 = RESAMPLE_TAPS.iter().sum::<i32>() + RESAMPLE_CENTRE;
+        assert_eq!(sum, 0x7FFE);
+        for i in 0..10 {
+            assert_eq!(RESAMPLE_TAPS[i], RESAMPLE_TAPS[19 - i]);
+        }
+        // DC through the down-sampler.
+        let hist = [0x4000i16; RESAMPLE_IN_LEN];
+        assert!((downsample(&hist, 0) as i32 - 0x4000).abs() <= 1);
+        // DC through both up-sampler phases. The even taps alone sum to
+        // `0x3FFE`, so the interpolated phase reads DC two LSBs low.
+        let hist = [0x4000i16; RESAMPLE_OUT_LEN];
+        assert_eq!(upsample(&hist, 0, false), 0x4000);
+        assert_eq!(upsample(&hist, 0, true), 0x3FFE);
+    }
+
+    /// The anti-alias half of the resampler: a send at 3/4 of the 44.1 kHz
+    /// Nyquist (16.5 kHz, above the tank's 11.025 kHz Nyquist) is all but
+    /// removed before the tank, where plain decimation would fold it to
+    /// 5.5 kHz at full level.
+    #[test]
+    fn downsampler_rejects_content_above_the_tank_nyquist() {
+        // Period 8/3 samples: the sequence cos(3 * pi * n / 4).
+        let tone: Vec<i16> = (0..400)
+            .map(|n| (12000.0 * (3.0 * std::f64::consts::PI * n as f64 / 4.0).cos()) as i16)
+            .collect();
+        let mut hist = [0i16; RESAMPLE_IN_LEN];
+        let mut pos = 0;
+        let mut peak_filtered = 0i32;
+        let mut peak_decimated = 0i32;
+        for (n, &x) in tone.iter().enumerate() {
+            hist[pos] = x;
+            pos = (pos + 1) % RESAMPLE_IN_LEN;
+            if n >= 100 && n % 2 == 0 {
+                peak_filtered = peak_filtered.max((downsample(&hist, pos) as i32).abs());
+                peak_decimated = peak_decimated.max((x as i32).abs());
+            }
+        }
+        assert!(peak_decimated > 8000, "{peak_decimated}");
+        assert!(peak_filtered < 200, "{peak_filtered}");
     }
 
     #[test]

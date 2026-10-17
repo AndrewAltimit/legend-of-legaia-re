@@ -842,3 +842,63 @@ fn light_flinch_juggle_windows_resolve_over_real_archives() {
          the clip end (window = whole flinch): {whole_clip:?}"
     );
 }
+
+/// Every resolved `+0x04` / `+0x08` target is a clip morph that
+/// `FUN_800495C8` can walk: it parses to the end of its last record, and each
+/// record's vertex run lies inside the TMD object it names (the routine
+/// indexes the monster mesh's `0x1C`-stride object table with `object` and
+/// writes `count` vertices from `first_vertex`, unchecked).
+#[test]
+fn spell_effect_targets_are_clip_morphs_over_the_monster_mesh() {
+    let Some(entry) = entry_867() else {
+        eprintln!("[skip] extracted/PROT/0867_battle_data.BIN or LEGAIA_DISC_BIN missing");
+        return;
+    };
+    let (mut lanes, mut records) = (0usize, 0usize);
+    for id in 1..=240u16 {
+        let Ok(Some(rec)) = monster_archive::record(&entry, id) else {
+            continue;
+        };
+        let mesh = monster_archive::mesh(&entry, id).unwrap().unwrap();
+        let tmd = mesh.tmd_bytes();
+        let nobj = u32::from_le_bytes(tmd[8..12].try_into().unwrap());
+        for sp in &rec.spells {
+            let offsets = [sp.effect_offset, sp.aux_offset];
+            for (lane, m) in sp.clip_morphs(&mesh.block).into_iter().enumerate() {
+                if offsets[lane].is_none() {
+                    assert!(m.is_none());
+                    continue;
+                }
+                let Some(m) = m else {
+                    panic!("monster {id} entry {:#x} lane {lane}: unparsed", sp.offset);
+                };
+                lanes += 1;
+                let [k1, k2, k3, k4] = m.keys;
+                assert!(
+                    k1 <= k2 && k2 <= k3 && k3 <= k4,
+                    "monster {id}: keys {:?}",
+                    m.keys
+                );
+                for r in &m.records {
+                    records += 1;
+                    assert!(
+                        r.object < nobj,
+                        "monster {id}: object {} of {nobj}",
+                        r.object
+                    );
+                    let o = 12 + r.object as usize * 0x1C;
+                    let nvert = u32::from_le_bytes(tmd[o + 4..o + 8].try_into().unwrap());
+                    assert!(
+                        r.first_vertex as usize + r.deltas.len() <= nvert as usize,
+                        "monster {id}: run {}+{} past {nvert}",
+                        r.first_vertex,
+                        r.deltas.len()
+                    );
+                }
+            }
+        }
+    }
+    assert_eq!(lanes, 289 + 24, "every resolved lane is a clip morph");
+    assert!(records >= lanes, "every lane carries at least one record");
+    eprintln!("[clip-morph] {lanes} lanes, {records} records");
+}

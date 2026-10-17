@@ -95,13 +95,10 @@
 //!   `entry[+0x04] = block[(index + magic_count + 0x12)*4] + block_base`, and
 //!   initialises `+0x88` to `entry+0x8C` (a self-pointer; `0` on disc).
 //!   [`MonsterSpell::effect_offset`] / [`MonsterSpell::aux_offset`] expose the
-//!   resolved block-relative offsets, which land on a short fixed effect /
-//!   animation descriptor (a small record, not a TMD); its interior field
-//!   semantics are not yet pinned (the runtime consumer is the cast/effect path,
-//!   not the AI picker). Earlier notes calling `+0x04`/`+0x08` direct
-//!   block-relative sub-pointers "with the same geometry as the monster's own
-//!   `+0x04`" were wrong twice over: they are indices (max observed `0x0A`), and
-//!   the target is a small descriptor, not TMD geometry.
+//!   resolved block-relative offsets. Each lands on a **clip morph**
+//!   ([`ClipMorph`]): envelope keys plus per-vertex deltas over the monster's
+//!   own mesh, blended in by the battle draw while the clip plays
+//!   (`FUN_800495C8`) and restored after it (`FUN_80049858`).
 //!
 //! ## Stat-name mapping
 //!
@@ -208,6 +205,8 @@
 use anyhow::{Result, bail};
 
 mod animation;
+mod boss_page;
+mod clip_morph;
 mod mesh;
 mod rebuild;
 mod record;
@@ -215,6 +214,8 @@ mod slim;
 mod texture_page;
 
 pub use animation::*;
+pub use boss_page::*;
+pub use clip_morph::*;
 pub use mesh::*;
 pub use rebuild::*;
 pub use record::*;

@@ -375,6 +375,15 @@ impl World {
         if !(0x4000..=0x4001).contains(&(rec.model_sel as u16)) {
             state.tween_scale_x = rot[1] & 0x0FFF;
         }
+        // The two special render-mode records seed the part-tick mode
+        // `+0x5A`: `0x4000` the CLUT-cell cycler `3` (`0x80021CE4`), `0x4001`
+        // the positional sound emitter `5` (`0x80021D08`). Both skip the
+        // motion block, and mode 5 is what the emitter arm keys on.
+        match rec.model_sel as u16 {
+            0x4000 => state.move_submode = 3,
+            0x4001 => state.move_submode = legaia_engine_vm::sfx_emitter::EMITTER_RENDER_MODE,
+            _ => {}
+        }
         self.ambient.fx.push(AmbientPart {
             record_off,
             model_sel: rec.model_sel,
@@ -623,6 +632,7 @@ impl World {
         // scalar) per tick.
         let drain = u16::from(self.clock.frame_step.max(1)) * clut_cell_fx::SPEED_SCALAR as u16;
         let count = self.ambient.fx.len();
+        let emitter_listener = self.sfx_emitter_listener();
         for idx in 0..count {
             if self.ambient.fx[idx].finished {
                 continue;
@@ -640,6 +650,13 @@ impl World {
                 // puff sheets apart over a puff's life.
                 move_vm::advance_keyframe_cursor(st, self.clock.frame_step.max(1));
                 move_vm::integrate_draw_channels(st, drain);
+                // The render-mode-5 arm - a positional sound emitter
+                // (`0x800220D8..0x800226D4`) - sits between the channel block
+                // and the motion block, which mode 5 skips.
+                if let Some(op) = legaia_engine_vm::sfx_emitter::emitter_tick(st, &emitter_listener)
+                {
+                    self.audio.sfx_emitter_ops.push(op);
+                }
                 if legaia_engine_effects::part_motion::runs_motion_block(st) {
                     legaia_engine_effects::part_motion::motion_block(st, drain);
                 }
@@ -655,6 +672,26 @@ impl World {
         if let Some(pulse) = self.ambient.entry_vdf_pulse.as_mut() {
             let dirty = pulse.tick(step);
             self.ambient.morph_dirty_slots.extend(dirty);
+        }
+    }
+
+    /// What the emitter arm reads of the world this tick: the stored camera
+    /// focus, the voice-volume word, the field-mode and side-band gates, the
+    /// frame step. The per-row scale table `0x80091658` reads `0x80` in every
+    /// captured state and the port carries no writer of it, so it is that
+    /// constant; mono is the host's (`Spu::mono`).
+    fn sfx_emitter_listener(&self) -> legaia_engine_vm::sfx_emitter::EmitterListener {
+        use legaia_engine_mode::mode::GameMode;
+        legaia_engine_vm::sfx_emitter::EmitterListener {
+            focus_stored: self.audio.listener_focus,
+            voice_volume: self.audio.levels.voice_volume,
+            mono: false,
+            scale: (0x80, 0x80),
+            field_mode: GameMode::for_scene_mode(self.mode) == Some(GameMode::MainMode),
+            stream_settled: self.audio.sound_stream.is_settled(),
+            release_all: false,
+            frame_step: i32::from(self.clock.frame_step.max(1)),
+            speed: clut_cell_fx::SPEED_SCALAR as i32,
         }
     }
 

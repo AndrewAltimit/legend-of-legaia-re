@@ -78,6 +78,13 @@ pub struct DiscTables {
     /// [`crate::scene_host::SceneHost`]; `None` in disc-free battles (move FX simply
     /// don't spawn). `Arc` so cloning `World` stays cheap.
     pub move_power_overlay: Option<Arc<[u8]>>,
+    /// The disc's own `SCUS_942.54`, kept for the move-VM records the
+    /// executable itself carries - the Mystic Shield's sphere and texture
+    /// scroller (`0x80078644` / `0x80078720`) that PROT 0940's arm 4 seats
+    /// ([`crate::world::World::raise_mystic_shield`]). Installed with the
+    /// progression tables ([`crate::world::World::install_retail_progression_tables`]);
+    /// `None` disc-free.
+    pub scus: Option<Arc<[u8]>>,
     /// Each player summon cast's attack name - the `rec[0]` string of its
     /// `summon.dat` (PROT 0893) actor record, the text a summon module's
     /// caption arm prints. Installed by [`crate::scene_host::SceneHost`] with the
@@ -235,6 +242,7 @@ impl DiscTables {
             monster_catalog: legaia_engine_battle::monster_catalog::MonsterCatalog::new(),
             move_power: None,
             move_power_overlay: None,
+            scus: None,
             summon_attack_names: Default::default(),
             summon_dat: None,
             battle_vdf: None,

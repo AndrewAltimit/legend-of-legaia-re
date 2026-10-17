@@ -263,7 +263,7 @@ pub enum SpanGate {
     ///
     /// `arm` is `(ctx[+0x279], countdown)` for a `0x70` capture of a module
     /// whose countdown the engine directs
-    /// ([`legaia_engine_battle_vm::cast_module_camera::capture_countdown_va`]): the
+    /// ([`legaia_engine_cast::cast_module_camera::capture_countdown_va`]): the
     /// phase is held until the engine's module sits in that arm with its
     /// countdown run down at least as far - the module's own clock, which
     /// places a camera shot or drift in flight.

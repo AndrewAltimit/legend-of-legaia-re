@@ -413,6 +413,89 @@ impl<S: AudioSink> AudioDirector<S> {
                 k.vab_program_tone
             );
         }
+        // The positional emitters' key / volume / release calls.
+        self.drive_sfx_emitters(&world.take_sfx_emitter_ops());
+    }
+
+    /// Drive the positional sound emitters' voices (the part tick's
+    /// render-mode-5 arm, `legaia_engine_vm::sfx_emitter`). Each op names a
+    /// cue and its first voice; the cue's descriptor - the static table below
+    /// `0x200`, the scene's runtime bank at or above it, exactly as the ring
+    /// resolves - gives the voice count, program, tone and note, and its
+    /// category the bank. A key-on runs the cue key-on per voice
+    /// (`FUN_80065034` with the volume pair); a volume op writes the raw
+    /// volume to each voice (`FUN_800657D0`); a release keys them off
+    /// (`FUN_800250D4`).
+    ///
+    /// PORT: FUN_80021DF4 (the mode-5 arm's driver calls)
+    pub fn drive_sfx_emitters(&mut self, ops: &[legaia_engine_vm::sfx_emitter::EmitterOp]) {
+        use legaia_engine_vm::sfx_emitter::EmitterOp;
+        for op in ops {
+            let (cue, voice) = match *op {
+                EmitterOp::Key { cue, voice, .. }
+                | EmitterOp::Volume { cue, voice, .. }
+                | EmitterOp::Release { cue, voice } => (cue, voice),
+            };
+            // (program, tone, note, count) and the bank the category names.
+            let resolved = if (0..0x200).contains(&cue) {
+                let id = cue as u8;
+                self.sfx_bank.get(id).copied().and_then(|e| {
+                    Some((
+                        (e.program_index, e.tone, e.key, e.voices.max(1)),
+                        self.sfx_vab_for_cue(id)?,
+                    ))
+                })
+            } else {
+                legaia_engine_core::world::runtime_sfx_descriptor_in(
+                    &self.runtime_sfx_bundle,
+                    i16::try_from(cue).unwrap_or(i16::MAX),
+                )
+                .and_then(|row| {
+                    Some((
+                        (row[0], row[1], row[2], (row[3] & 0x1F).max(1)),
+                        self.sfx_vabs.get(&row[4])?,
+                    ))
+                })
+            };
+            let Some(((program, tone, note, count), vab)) = resolved else {
+                continue;
+            };
+            let voices = (0..count).filter_map(|i| {
+                let v = i32::from(voice) + i32::from(i);
+                (0..24).contains(&v).then_some((v as usize, i))
+            });
+            match *op {
+                EmitterOp::Key { vol_l, vol_r, .. } => {
+                    let voices: Vec<_> = voices.collect();
+                    self.audio.with_spu(|spu| {
+                        for (v, i) in voices {
+                            vab.play_tone_pair(
+                                spu,
+                                v,
+                                usize::from(program),
+                                usize::from(tone) + usize::from(i),
+                                note,
+                                vol_l,
+                                vol_r,
+                            );
+                        }
+                    });
+                }
+                EmitterOp::Volume { left, right, .. } => {
+                    let voices: Vec<_> = voices.collect();
+                    self.audio.with_spu(|spu| {
+                        for (v, _) in voices {
+                            spu.voices[v].vol_left = left as i16;
+                            spu.voices[v].vol_right = right as i16;
+                        }
+                    });
+                }
+                EmitterOp::Release { .. } => {
+                    let stop: Vec<u8> = voices.map(|(v, _)| v as u8).collect();
+                    self.stop_sfx_voices(&stop);
+                }
+            }
+        }
     }
 
     /// Queue one tick's battle strike / cast cues at their strike-relative

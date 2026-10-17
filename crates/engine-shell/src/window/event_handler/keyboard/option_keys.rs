@@ -24,7 +24,14 @@ impl PlayWindowApp {
         let Some(hotkey) = HostHotkey::from_dom_code(&format!("{code:?}")) else {
             return false;
         };
-        if hotkey.needs_field() && self.boot_ui.is_active() {
+        let screens = legaia_engine_session::hotkeys::FrontEndScreens {
+            boot_logos: matches!(self.boot_ui, BootUiState::PublisherLogos(_)),
+            title: matches!(self.boot_ui, BootUiState::Title(_)),
+            save_select: matches!(self.boot_ui, BootUiState::SaveSelect(_)),
+            pause_menu: matches!(self.boot_ui, BootUiState::FieldMenu { .. }),
+            game_over: matches!(self.boot_ui, BootUiState::GameOver(_)),
+        };
+        if hotkey.refused(screens) {
             return false;
         }
         if hotkey == HostHotkey::EnhancedLighting {

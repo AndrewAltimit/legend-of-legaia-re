@@ -15,10 +15,10 @@ impl PlayWindowApp {
             || self.key_baka_fighter(code, state)
     }
 
-    /// `K`: toggle the Noa dance (rhythm) minigame. Loads the dance
-    /// overlay (PROT 0980), suspends the current scene, and runs the
-    /// beat clock + hit judge; the three judged buttons are the retail
-    /// ones - Square / Circle / Triangle.
+    /// `K`: toggle the Noa dance (rhythm) minigame. Arms the mode-24 door
+    /// warp to the hall (PROT 0980 loads on the drain, the floor read off the
+    /// story flags), which runs the beat clock + hit judge; the three judged
+    /// buttons are the retail ones - Square / Circle / Triangle.
     /// Pressing K again aborts and logs the final score. The song
     /// also ends itself after its length limit (see below).
     fn key_dance(&mut self, code: KeyCode, state: ElementState) -> bool {
@@ -40,9 +40,18 @@ impl PlayWindowApp {
                 // A door-entered hall closes its mode-24 round trip here as
                 // the Start escape does (a no-op for a `K`-launched one).
                 self.session.host.world.close_minigame_round_trip();
-            } else if self.start_dance_minigame(false) {
+            } else {
+                // The mode-24 door warp, as `O` / `M` / `B` and the browser
+                // page's dance entry (`play_mg_debug_warp(6)`) take it: the
+                // floor comes from the story flags the hall's script reads
+                // (`dance_mode_from_flags`), with the warp's round trip and
+                // door XA prestage. `K` used to build a Qualifier floor of its
+                // own and skip the warp.
+                self.session.host.world.request_minigame_warp(
+                    legaia_engine_mode::minigame_entry::MinigameSubId::Dance.sub_id(),
+                );
                 log::info!(
-                    "dance: count-in - Square/Circle are the arrows, Triangle spends a groovy move, K to quit"
+                    "dance: door warp armed - Square/Circle are the arrows, Triangle spends a groovy move, K to quit"
                 );
             }
             return true;

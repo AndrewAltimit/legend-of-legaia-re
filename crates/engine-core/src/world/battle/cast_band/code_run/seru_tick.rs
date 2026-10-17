@@ -5,7 +5,7 @@ use super::*;
 impl World {
     // --- player Seru 0909..0913 ---
     /// Dispatch one of the five player-Seru tick bodies for this frame
-    /// ([`legaia_engine_battle_vm::seru_magic_ticks`], PROT 0909..0913, action ids
+    /// ([`legaia_engine_cast::seru_magic_ticks`], PROT 0909..0913, action ids
     /// `0x87..=0x8B`).
     ///
     /// The damage and heal inputs are deliberately neutral. The engine folds
@@ -18,7 +18,7 @@ impl World {
     /// heal amount is passed as `0`.
     ///
     /// The magnitude is not lost by that: `seru_tick_heal_amount` computes
-    /// `seru_magic_ticks::orb_heal_amount` of the caster's per-spell magic
+    /// `battle_formulas::orb_heal_amount` of the caster's per-spell magic
     /// level (the character record's `+0x161` byte, found by scanning the
     /// learned-id list at `+0x13D`) and overrides the spell catalog's
     /// placeholder inside the fold, so the amount a live Orb restores is
@@ -28,17 +28,17 @@ impl World {
     pub(in crate::world::battle::cast_band) fn run_seru_b_tick(
         &mut self,
         entry: u32,
-        ctx: &mut legaia_engine_battle_vm::cast_module_ticks::CastModuleCtx,
-        seats: &mut [legaia_engine_battle_vm::cast_module_ticks::CastActorState],
+        ctx: &mut legaia_engine_cast::cast_module_ticks::CastModuleCtx,
+        seats: &mut [legaia_engine_cast::cast_module_ticks::CastActorState],
         caster_slot: u8,
         summon_slot: u8,
         victim_slot: u8,
     ) -> (
-        legaia_engine_battle_vm::cast_module_ticks::CastTickStep,
-        Vec<legaia_engine_battle_vm::cast_module_ticks::AoeHit>,
+        legaia_engine_cast::cast_module_ticks::CastTickStep,
+        Vec<legaia_engine_cast::cast_module_ticks::AoeHit>,
     ) {
-        use legaia_engine_battle_vm::cast_module_ticks::{AoeHit, SweepHit};
-        use legaia_engine_battle_vm::seru_magic_ticks as seru;
+        use legaia_engine_cast::cast_module_ticks::{AoeHit, SweepHit};
+        use legaia_engine_cast::seru_magic_ticks as seru;
 
         // `seats` is the retail-shaped row (`seat_map`); the kernels take
         // their seats in it, the engine's own reads stay engine-indexed.

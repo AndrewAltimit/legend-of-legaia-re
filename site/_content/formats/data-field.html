@@ -96,7 +96,7 @@
 
 <section class="doc-section" id="trailer-data">
   <h2>Trailer data</h2>
-  <p>Some entries contain bytes past the streaming terminator. <code>asset extract</code> preserves these as <code>_trailer.bin</code> next to the extracted chunks. No consumer of the trailer is known: the walker stops at the terminator, and nothing located so far reads past it.</p>
+  <p>Every clean stream ends inside the last 2048-byte sector of its entry, and the bytes from the terminator to the sector boundary are what <code>asset extract</code> keeps as <code>_trailer.bin</code>. The walker stops at the terminator and reads none of them. They are sector fill: across all 34 streams the trailer is shorter than a sector and zero, except in entry 1208, whose fill carries eight stray bytes (<code>78 FD 00 00 01 00 0D 00</code> at <code>0xFD70</code>) that nothing is known to read.</p>
 </section>
 
 <section class="doc-section" id="related-shapes">
@@ -155,11 +155,7 @@
       <tr><td>6..8</td><td><code>SceneVabStream</code> (rare; only on scenes with custom audio)</td><td>per-scene VAB + SEQ</td></tr>
     </tbody>
   </table>
-  <p>Two questions about the layer are live hunts on <a href="../reference/open-rev-eng-threads.html">open RE threads</a>:</p>
-  <ul class="bullets">
-    <li>Whether any scene places an actor whose model lives in another PROT entry (the asset chain in <a href="../subsystems/asset-loader.html">asset loader</a> resolves those best-effort).</li>
-    <li>What the post-terminator trailer bytes are, and whether anything reads them.</li>
-  </ul>
+  <p><strong>Placed actors use their own scene's models.</strong> A placement's model byte below <code>0xF0</code> indexes the scene's TMD list, and one at or above it a global head slot (the player character pack). Across the 101 scene blocks with a MAN, every placement below <code>0xF0</code> resolves into its own block. The only exceptions are 20 placements in <code>other7</code>, an unused draft of <code>koin3</code>, whose model bytes run past its own TMD list.</p>
   <p>The categorize sweep classifies every PROT entry to <em>something</em>; the items above are the residual edge. See <a href="../subsystems/engine.html">the engine page</a> for how scene loading consumes these shapes.</p>
 </section>
 

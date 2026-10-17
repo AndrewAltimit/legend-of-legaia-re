@@ -171,6 +171,7 @@ what holds the frame:
 |---|---|
 | field / overworld | segments of: held walks (one direction or a diagonal, sometimes with Cross taps), Cross/Circle mashing, a Start tap, idle, and chaos (random masks of every button but Start) |
 | dialogue owns input, or a script holds the player | mostly Cross, some directions, some Circle - a cutscene timeline pages its own text boxes, and the ending's last record waits on a held confirm |
+| a script polls the held pad | the face button it polls, held - op `0x42` mode 1 reads the held word on one frame of its loop (`edlast`'s credits end on `4A 08 00 42 01 08`: wait eight frames, test a held Circle or Cross), which a tap reaches only by luck |
 | a picker is up | a random number of Down taps, then Cross - mashing confirm only ever takes a picker's first rows, and a conversation whose way out is its last option then reads as one that cannot be left |
 | pause menu | random taps for a random budget, then Circle until it closes |
 | battle | mostly the route ladder's fighter (Begin, Attack, Auto, confirm the target, Cross any message box), otherwise random taps. In the sparring tutorial it follows the lesson - Item, Spirit, then the `Up Down Up` drill in Command mode - since any other pick rewinds the lesson for as long as the player keeps making it, in retail as in the port |
@@ -195,7 +196,7 @@ on one frame and neutral on the next.
 | `confined` | from the frame the field hands the player back, 900 direction-held frames, each of the four directions among them, never carry them 48 units |
 | `door_loop` | six scene changes inside 600 frames with no direction pressed between them |
 | `dropped_to_title` | the world mode becomes `Title` without a game over |
-| `unknown_scene` | a transition names a map id with no scene, or a label outside the scene set |
+| `unknown_scene` | a transition names a map id with no scene, or a label outside the scene set - including the run's own start label, which is refused at entry rather than entered as an empty field |
 | `non_finite` | a camera float or the caption alpha is NaN or infinite |
 | `value` | roster HP / MP over max, a live HP / MP maximum that is not the stat aggregator's rebuild of the base window, a level outside `1..=99`, battle HP over max, money out of range, a bag stack over 99, a count on a free slot, or two stacks of one id inside the active window |
 | `unbounded_growth` | an engine queue grows past a cap |
@@ -277,7 +278,8 @@ conversation too.
 The replay format carries no scene field, so the start scene and seed ride in
 header comments (`# soak-scene`, `# soak-seed`, `# soak-signature`) that
 TOML ignores. A replay recorded under a non-default starve window carries it
-too (`# soak-starve-frames`), and is judged by it. Every replay names the
+too (`# soak-starve-frames`), and is judged by it; so does one recorded under
+a non-default endless-battle threshold (`# soak-battle-frames`). Every replay names the
 session configuration it ran under (`# soak-arming = "host"` or `"bare"`);
 one without the tag predates the hosts' arming and replays bare, so a fixed
 finding recorded before it still replays the input that once raised it.
@@ -418,6 +420,9 @@ regression.
 | `edlast_ending_unequip_live_max_stale` | `edbalden+rt@...:PRO-00`: the ending's scripted unequip left a Max HP +10% on a record whose accessory was gone | the aggregator pass every equipment change runs rebuilds the live maxima with the ability bits |
 | `map01_door_of_wind_carries_cupboard_run` / `map02_door_of_light_carries_conversation` | `chitei2+talk@PRO-03` / `ropeway2+talk@...:PRO-02`: a cupboard or a conversation opened while a Door's travel art ran, and its record parked in the overworld for good | a scene load drops the departing scene's conversation and prop runs with its actor list |
 | `jouind_ledge_hop_walled_landing` | a diagonal step-up hop under Right+Down set the player in the corner of a raised pocket at (2880, 2886), every direction walled and no step left to hop out | retail tests no landing (`FUN_801d1878` checks only `2s` / `3s`, the arc runs no collision); the port's landing guard (`WorldToggles::hop_landing_guard`, an enhancement, off under `pin_retail`) refuses a hop no step could leave |
+| `edlast_credits_end_takes_a_held_confirm` | `edbylon@...:PRO-01`: the credits ended parked on their last loop for 1800 frames | not an engine defect: the loop polls a held Circle / Cross and the policy only tapped; the policy now holds a polled button, and the replay (holding Cross) pins that the engine leaves on it, into the `49 0C` soft reset |
+| `jou_level_up_bakes_accessory_into_base` | `jou@...:PRO-01`: Noa, wearing Max HP / MP +25%, levelled to base 2691 / 446 - her boosted live maxima plus the growth - and the live maxima no longer matched the aggregator's rebuild | a level-up grows the base window and the aggregator rebuilds the live maxima from it |
+| `jouina_terra_summon_hits_for_one` | `jouina@PRO-10` under a 7200-frame battle window: Noa's Terra summon hit each Bio Castle Freed for 1, and the fight outlasted the window | every player cast's summon body is its own `summon.dat` record (`FUN_80054CB0(record, 4)` from `FUN_801F19EC`); the big summons had no body and rolled the MP-scaled placeholder - see [summon-readef.md](../formats/summon-readef.md#the-stat-head-is-the-summon-body) |
 
 The field-side fixes are described with their retail evidence in
 [`script-vm.md`](../subsystems/script-vm.md#engagement-and-the-system-script);

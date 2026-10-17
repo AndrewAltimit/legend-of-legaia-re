@@ -59,6 +59,16 @@ pub struct RetailScript {
     /// ([`run_latches`] over the record's own bytes in RAM): set after the
     /// scene entry ran, so they are not what that entry saw.
     pub latches: Vec<u16>,
+    /// Parked on the player's clip end-latch spin (`AD F8 08`): the player's
+    /// clip cursor `+0x68`, how far the poked clip has run.
+    pub player_latch: Option<i16>,
+}
+
+/// The player's clip end-latch spin: the cross-context local-flag test
+/// `AD F8 08`, which holds the record until the player's clip latches its
+/// end bit.
+fn on_player_latch(op: u8, operands: Option<Vec<u8>>) -> bool {
+    op == 0xAD && operands.is_some_and(|o| o == [0xF8, 0x08])
 }
 
 /// The field-script observables of one retail state.
@@ -77,6 +87,30 @@ pub struct RetailScripts {
     /// The scene system script's PC (`+0x9E` of the node ticked by
     /// `FUN_801DA51C`): where the entry script's last pass parked.
     pub system_pc: Option<usize>,
+    /// The field pager mid-page: its typing row's window index and reveal
+    /// counter, while `_DAT_801F2734` is the typing state `0x0B`
+    /// ([`pager_typing`]).
+    pub typing: Option<(u8, i32)>,
+}
+
+/// The pager state word `_DAT_801F2734` (field overlay).
+const PAGER_STATE: u32 = 0x801F_2734;
+/// The reveal counter `_DAT_801F2748`: units of the typing row drawn.
+const PAGER_REVEAL: u32 = 0x801F_2748;
+/// The row table's last index `_DAT_801F3530`: the row being typed.
+const PAGER_LAST_ROW: u32 = 0x801F_3530;
+/// Pager state `0x0B`: typing the row at the last index.
+const PAGER_TYPING: i32 = 0x0B;
+
+/// The pager's typing row and reveal counter when the state holds a page
+/// still being typed (`FUN_801D84D0` state `0x0B`, `0x801D89B8`).
+pub fn pager_typing(ram: &[u8]) -> Option<(u8, i32)> {
+    if game_anchors::u32_at(ram, PAGER_STATE) as i32 != PAGER_TYPING {
+        return None;
+    }
+    let row = u8::try_from(game_anchors::u32_at(ram, PAGER_LAST_ROW)).ok()?;
+    let counter = game_anchors::u32_at(ram, PAGER_REVEAL) as i32;
+    Some((row, counter))
 }
 
 fn in_ram(p: u32) -> bool {
@@ -110,6 +144,7 @@ impl RetailScripts {
         let player = game_anchors::player_ptr(ram);
         let mut out = Self {
             display_lag: crate::retail_compare_battle::display_lag_vsyncs(ram),
+            typing: pager_typing(ram),
             ..Self::default()
         };
         for node in actor_nodes(ram) {
@@ -138,11 +173,17 @@ impl RetailScripts {
             let (Ok(pc), Some(head)) = (usize::try_from(pc), head) else {
                 continue;
             };
+            let op = game_anchors::u8_at(ram, base.wrapping_add(pc as u32));
+            let player_latch =
+                on_player_latch(op, bytes_at(ram, base.wrapping_add(pc as u32 + 1), 2))
+                    .then(|| player.map(|p| game_anchors::i16_at(ram, p + 0x68)))
+                    .flatten();
             out.running.push(RetailScript {
                 flat_index: id,
                 pc,
                 wait: game_anchors::i16_at(ram, node + 0x54),
-                op: game_anchors::u8_at(ram, base.wrapping_add(pc as u32)),
+                op,
+                player_latch,
                 head,
                 latches: bytes_at(ram, base, pc + 1)
                     .map(|body| run_latches(&body, pc))
@@ -173,6 +214,8 @@ pub fn script_gate_from_retail(scripts: &RetailScripts) -> Option<ScriptGate> {
         retire_watch: std::cell::Cell::new((false, false)),
         system_pc: scripts.system_pc,
         resumed_early: std::cell::Cell::new(false),
+        typing: scripts.typing.filter(|_| s.op & 0x7F < 0x20),
+        latch: s.player_latch,
     })
 }
 
@@ -187,6 +230,11 @@ pub fn script_gate_from_retail(scripts: &RetailScripts) -> Option<ScriptGate> {
 pub fn displayed_script_gate_from_retail(scripts: &RetailScripts) -> Option<ScriptGate> {
     let mut g = script_gate_from_retail(scripts)?;
     g.wait = (i32::from(g.wait) - i32::from(scripts.display_lag)).max(0) as i16;
+    // Two pager calls back: each typing call adds `min(frame step, 4)` units
+    // (`0x801D8A08..0x801D8A70`), and the lag is two game frames.
+    if let Some((_, counter)) = g.typing.as_mut() {
+        *counter = (*counter - i32::from(scripts.display_lag.min(8))).max(1);
+    }
     if let Some(left) = g.glide_left.as_mut() {
         *left += i32::from(scripts.display_lag);
     }
@@ -247,5 +295,55 @@ mod tests {
         // A disengaged context is not running.
         w32(&mut ram, rec + 0x10, 0);
         assert!(RetailScripts::from_ram(&ram).running.is_empty());
+    }
+
+    /// A text gate caught while the pager types (state `0x0B`) carries the
+    /// typing row and reveal counter, taken two pager calls back for the
+    /// displayed frame; a gate parked on `AD F8 08` carries the player's
+    /// clip cursor.
+    #[test]
+    fn a_mid_page_text_gate_and_a_player_latch_gate_carry_their_progress() {
+        fn w32(ram: &mut [u8], va: u32, v: u32) {
+            let o = (va & 0x1F_FFFF) as usize;
+            ram[o..o + 4].copy_from_slice(&v.to_le_bytes());
+        }
+        let mut ram = vec![0u8; 0x20_0000];
+        assert_eq!(pager_typing(&ram), None);
+        w32(&mut ram, PAGER_STATE, 0x0B);
+        w32(&mut ram, PAGER_LAST_ROW, 1);
+        w32(&mut ram, PAGER_REVEAL, 19);
+        assert_eq!(pager_typing(&ram), Some((1, 19)));
+        let script = |op: u8| RetailScript {
+            flat_index: 9,
+            pc: 64,
+            wait: 0,
+            op,
+            head: vec![0x1F],
+            latches: Vec::new(),
+            player_latch: (op == 0xAD).then_some(219),
+        };
+        let scripts = RetailScripts {
+            running: vec![script(0x1F)],
+            display_lag: 4,
+            typing: pager_typing(&ram),
+            ..RetailScripts::default()
+        };
+        assert_eq!(
+            script_gate_from_retail(&scripts).and_then(|g| g.typing),
+            Some((1, 19))
+        );
+        assert_eq!(
+            displayed_script_gate_from_retail(&scripts).and_then(|g| g.typing),
+            Some((1, 15))
+        );
+        // The pager word means nothing to a gate that is not on text.
+        let scripts = RetailScripts {
+            running: vec![script(0xAD)],
+            ..scripts
+        };
+        let g = script_gate_from_retail(&scripts).unwrap();
+        assert_eq!((g.typing, g.latch), (None, Some(219)));
+        assert!(on_player_latch(0xAD, Some(vec![0xF8, 0x08])));
+        assert!(!on_player_latch(0xAD, Some(vec![0x31, 0x08])));
     }
 }

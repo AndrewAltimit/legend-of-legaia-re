@@ -61,7 +61,7 @@ fn reads_the_summon_flash_age_off_the_fade_block() {
     put16(&mut ram, b + 0x1C, 14);
     put16(&mut ram, b + 0x20, 20);
     assert_eq!(
-        summon_fade(&ram),
+        summon_fade_on(&ram, false),
         Some(RetailFade {
             to_white: true,
             age: 6
@@ -71,7 +71,18 @@ fn reads_the_summon_flash_age_off_the_fade_block() {
     // landing frame counts twice.
     put16(&mut ram, b + 0x1C, 0);
     put16(&mut ram, b + 0x20, (-14i16) as u16);
-    assert_eq!(summon_fade(&ram).map(|f| f.age), Some(53));
+    assert_eq!(summon_fade_on(&ram, false).map(|f| f.age), Some(53));
+    // At frame step 3 a landing overshoots the delay to `-1`:
+    // `nighto_summon_mid_cast`'s block (delay `-1`, duration `14`) is 21
+    // vsyncs to the landing and two passes more, `27 - 3 = 24` on the
+    // battle-frame clock, and the per-vsync reading's `25`.
+    put16(&mut ram, STEP_MODE, 0x10);
+    put16(&mut ram, FRAME_HISTORY, 0x200);
+    assert_eq!(frame_step(&ram), 3);
+    put16(&mut ram, b + 0x1C, (-1i16) as u16);
+    put16(&mut ram, b + 0x20, 14);
+    assert_eq!(summon_fade_on(&ram, true).map(|f| f.age), Some(24));
+    assert_eq!(summon_fade_on(&ram, false).map(|f| f.age), Some(25));
     // A killed block is not the live flash.
     put32(&mut ram, actor + 0x10, ACTOR_DONE);
     assert_eq!(summon_fade(&ram), None);

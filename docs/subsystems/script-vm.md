@@ -2232,13 +2232,28 @@ being story progress.
 
 ### Drake-castle interior beat band: jouinb `0x44E..0x450` + the `0x461` record-state flag
 
-`jouinb`'s cutscene records `P2[6..8]` (SJIS door-id names, the same family styling as the jouinc door
-records) each end in a one-shot latch - `P2[6]` SETs `0x44E`, `P2[7]` `0x44F`, `P2[8]` `0x450`
-(`Camera`/`WaitFrames`/`4C CD` choreography then `Set` + park-jump, hand-verified at `P2[6]` body
-`+0x4A3`). `P2[8]` additionally runs an in-body state machine on `0x461`: `Test 0x461` at `+0xBC` (skip
-to the already-done arm at `+0x1BC`, which starts with `Clear 0x461`), a second `Test` at `+0x70C`, and
+`jouinb`'s records `P2[6..8]` are the castle's **rapids**: "Do you wish to dive into the rapids
+before you?", Yes / No, then a ride. The ride is a lap of walk-to-tile yields on the player
+(`C7 F8 <x> <z> <mode>`, each followed by `B3 F8 0A`, the wait on the player's walk bit) that a
+backward `26` closes (`P2[6]` `+0x3F0` back to `+0x1AB`). At each landing the lap polls the held
+pad: a `42 01 00..08` chain (any compass point, or Circle) jumps off the ride there, and nothing
+else does. The two landings put the rider on opposite banks, so `0x44E` is the side the party is
+on, not a one-shot latch: `P2[6]` SETs it on one exit (`+0x4A3`) and CLEARs it on the other
+(`+0x559`), and the entry arm reads it (`Test 0x44E` at `+0xB8`) to start the lap from the bank
+the party dives in from. `P2[7]` / `P2[8]` carry `0x44F` / `0x450` the same way. A rider who
+presses nothing rides lap after lap: the runner steps the ride every frame, so the player's
+engaged bit stays up and no region rolls (see [encounter.md](../formats/encounter.md#steps-that-do-not-roll)).
+
+`P2[8]` additionally runs an in-body state machine on `0x461`: `Test 0x461` at `+0xBC` (skip to the
+already-done arm at `+0x1BC`, which starts with `Clear 0x461`), a second `Test` at `+0x70C`, and
 `Set 0x461` at `+0xBC2` inside the closing camera choreography. All four flags are jouinb-local; the
 census's wide `0x461` reader list across other scenes is the `ta` bigram (see the alias rules above).
+
+**Port.** The engine's anti-hang frame cap on a script context (`CUTSCENE_TIMELINE_MAX_FRAMES`)
+counts frames on one PC and restarts when the PC moves, so a ride that is playing is never cut.
+Counted over the whole ride it ended an unpressed ride about 75000 frames in, mid-lap, and dropped
+the rider on the lap's `MoveTo` seat with the region roll live again. Disc test
+`full_game_ladder::jouinb_rapids_ride_until_the_player_jumps_off`.
 
 ### Mid-visit NPC re-arrangement beats: dolk2 market swap + garmel boss staging
 

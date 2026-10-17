@@ -2,7 +2,7 @@
 //! quads its tick body draws inline while the blast lands.
 //!
 //! The spread is the band word `ctx[+0x6D8]` over `24`, which the module's
-//! director carries (`legaia_engine_battle_vm::cast_module_camera::aluru_direct`);
+//! director carries (`legaia_engine_cast::cast_module_camera::aluru_direct`);
 //! `World::aluru_band_draw` hands it to both hosts' screen layers.
 //!
 //! PORT: overlay_summon_aluru_0916_801f69f8 (PROT 0916; the inline band packets of arms 0x11..0x13, 0x801F7E74..0x801F8548)

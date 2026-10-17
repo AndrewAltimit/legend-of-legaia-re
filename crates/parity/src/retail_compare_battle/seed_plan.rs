@@ -149,14 +149,12 @@ pub(super) fn span_gate(ram: &[u8], ctx: u32) -> SpanGate {
                     } else {
                         0
                     };
-                    legaia_engine_battle_vm::cast_module_camera::capture_countdown_va(action).map(
-                        |va| {
-                            (
-                                game_anchors::u8_at(ram, ctx + 0x279),
-                                game_anchors::u32_at(ram, va) as i32,
-                            )
-                        },
-                    )
+                    legaia_engine_cast::cast_module_camera::capture_countdown_va(action).map(|va| {
+                        (
+                            game_anchors::u8_at(ram, ctx + 0x279),
+                            game_anchors::u32_at(ram, va) as i32,
+                        )
+                    })
                 })
                 .flatten();
             // The yaw counter is a clock only while the action SM drifts it

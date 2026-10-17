@@ -10,7 +10,7 @@ use super::*;
 /// what covers.
 #[test]
 fn the_module_context_takes_ctx0_from_the_party_row() {
-    use legaia_engine_battle_vm::cast_module_ticks::FIRST_MONSTER_SEAT;
+    use legaia_engine_cast::cast_module_ticks::FIRST_MONSTER_SEAT;
     let mut world = module_code_world();
     // Eight seated combat actors, three of them party; `ctx[+1]` counts the
     // seats a monster sits in.
@@ -39,7 +39,7 @@ fn the_module_context_takes_ctx0_from_the_party_row() {
 /// the wrapping edge.
 #[test]
 fn the_ring_cone_wraps_at_both_ends() {
-    use legaia_engine_battle_vm::seru_magic_ticks::THEEDER_CONE_HALF_WIDTH;
+    use legaia_engine_cast::seru_magic_ticks::THEEDER_CONE_HALF_WIDTH;
     let mut world = module_code_world();
     // Seat three monsters around a centre at the origin: due +Z (bearing 0),
     // just inside the cone's far edge, and well outside it.
@@ -74,7 +74,7 @@ fn the_ring_cone_wraps_at_both_ends() {
 /// straight ahead and never one behind the summon or off to its side.
 #[test]
 fn the_theeder_ray_only_reaches_the_arc_ahead_of_the_summon() {
-    use legaia_engine_battle_vm::seru_magic_ticks::THEEDER_CONE_HALF_WIDTH;
+    use legaia_engine_cast::seru_magic_ticks::THEEDER_CONE_HALF_WIDTH;
     let mut world = module_code_world();
     // Summon at the origin facing +Z (bearing 0).
     world.actors[7].move_state.world_x = 0;

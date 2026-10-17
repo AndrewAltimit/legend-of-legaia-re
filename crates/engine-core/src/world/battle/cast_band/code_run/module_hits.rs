@@ -12,7 +12,7 @@ impl World {
     /// `+0x16E & 4`) and both clamp to `HP - 1`, so neither **sweep** can
     /// kill. That is a property of these two stagers only - PROT 0927's own
     /// tick (`0x801F6A84`) uses the unsigned `sltu` clamp instead and is
-    /// kill-capable (`legaia_engine_battle_vm::cast_module_ticks`,
+    /// kill-capable (`legaia_engine_cast::cast_module_ticks`,
     /// `docs/subsystems/cast-module.md`). ESM also
     /// stages each victim's own `+0x1F1` reaction and drops its animation rate
     /// to `2`. The roll per seat is the module's **baked** power through the
@@ -42,7 +42,7 @@ impl World {
         spell_id: u8,
         arm: u8,
     ) -> Option<CastModuleCodeRun> {
-        use legaia_engine_battle_vm::cast_module_ticks as ticks;
+        use legaia_engine_cast::cast_module_ticks as ticks;
 
         let entry = self.cast_module_for(spell_id)?;
         let shape = ticks::damage_shape_for(entry).filter(|s| s.never_kills)?;
@@ -124,12 +124,12 @@ impl World {
     /// applies the module's clamp.
     pub(in crate::world::battle::cast_band) fn capture_module_roll(
         &mut self,
-        shape: &legaia_engine_battle_vm::cast_module_ticks::CastDamageShape,
+        shape: &legaia_engine_cast::cast_module_ticks::CastDamageShape,
         attacker: u8,
         target: u8,
     ) -> Option<i32> {
         use legaia_engine_battle_vm::battle_damage_wrappers::{WrapperAttacker, WrapperDefender};
-        use legaia_engine_battle_vm::cast_module_ticks::roll_module_hit;
+        use legaia_engine_cast::cast_module_ticks::roll_module_hit;
 
         let element_affinity_pct = self.enemy_affinity_pct(attacker, target);
         let attacker_hp = self.actors.get(attacker as usize)?.battle.hp;
@@ -188,7 +188,7 @@ impl World {
     /// PORT: FUN_801DD4B0 (`0x801DD66C..0x801DD6AC`, the finisher call and return)
     pub(in crate::world::battle::cast_band) fn finish_module_hit(
         &mut self,
-        shape: &legaia_engine_battle_vm::cast_module_ticks::CastDamageShape,
+        shape: &legaia_engine_cast::cast_module_ticks::CastDamageShape,
         attacker: u8,
         target: u8,
         net: i32,
@@ -197,7 +197,7 @@ impl World {
             ATK_WRAPPER_BYPASSES_PARTY_RESIST, INT_WRAPPER_BYPASSES_PARTY_RESIST,
         };
         use legaia_engine_battle_vm::battle_formulas::{DamageFinish, damage_finish_lazy};
-        use legaia_engine_battle_vm::cast_module_ticks::CastWrapper;
+        use legaia_engine_cast::cast_module_ticks::CastWrapper;
 
         let bypass_party_resist = match shape.wrapper {
             CastWrapper::Respect => INT_WRAPPER_BYPASSES_PARTY_RESIST,
@@ -234,7 +234,7 @@ impl World {
     /// ([`Self::cast_seat_row`]).
     pub(in crate::world::battle::cast_band) fn refresh_seat_spirit(
         &self,
-        seats: &mut [legaia_engine_battle_vm::cast_module_ticks::CastActorState],
+        seats: &mut [legaia_engine_cast::cast_module_ticks::CastActorState],
     ) {
         let map = self.cast_seat_map();
         for (seat, st) in seats.iter_mut().enumerate() {
@@ -255,7 +255,7 @@ impl World {
     /// The **damage** roll comes first, per seat, because retail's loop calls
     /// the wrapper before the status draws: each of the three sweeps opens
     /// its seat body with `jal 0x801DD4B0` on its own baked power
-    /// ([`vm::cast_module_ticks::sweep_damage_shape_for`]) and stores the
+    /// ([`legaia_engine_cast::cast_module_ticks::sweep_damage_shape_for`]) and stores the
     /// clamped net into `+0x14C` itself. So these bodies **own** the cast's
     /// HP outcome the way the PROT 0927 / 0966 stagers do, and
     /// [`Self::fold_pending_cast`] must not also run the generic fold - which
@@ -266,12 +266,12 @@ impl World {
     /// Returns `(seat, damage, (status_a, status_b))` in visit order.
     pub(in crate::world::battle::cast_band) fn sweep_status_rolls(
         &mut self,
-        ctx: &legaia_engine_battle_vm::cast_module_ticks::CastModuleCtx,
-        seats: &[legaia_engine_battle_vm::cast_module_ticks::CastActorState],
+        ctx: &legaia_engine_cast::cast_module_ticks::CastModuleCtx,
+        seats: &[legaia_engine_cast::cast_module_ticks::CastActorState],
         body: u32,
         caster: u8,
     ) -> Vec<(u8, i32, (u32, u32))> {
-        use legaia_engine_battle_vm::cast_module_ticks as ticks;
+        use legaia_engine_cast::cast_module_ticks as ticks;
         // Only the body's own sweep arm draws anything: retail reaches the
         // wrapper and the two status calls inside that one arm, so rolling on
         // every re-entry would run the shared `rand()` cursor forward on

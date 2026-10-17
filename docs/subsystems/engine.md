@@ -4,7 +4,7 @@ The engine is a from-scratch Rust port of Legend of Legaia (NA, `SCUS-94254`). Y
 
 Most of the game works on both hosts: the title and opening, field and town scenes with their event scripts and dialogue, the world map, battles with Tactical Arts and Seru magic, the pause menu and shops, the five minigames, sequenced music and sound effects, FMV movies, and saves (the engine's own format and real memory-card blocks).
 
-Two things are still rough. One is parity detail: residual differences against retail frames and RAM are measured and ranked by the [retail comparison corpus](../tooling/retail-compare.md). The other is continuity. The [full-game ladder](../tooling/full-game-ladder.md) clears every story segment, but each segment starts from a retail save at its milestone; one New Game played straight through on its own saves stalls partway through, and that distance is the ladder's [continuous-run score](../tooling/full-game-ladder.md#the-continuous-run). A cast or summon module's voice clip is also resolved but not yet played.
+The rough edge is parity detail: residual differences against retail frames and RAM are measured and ranked by the [retail comparison corpus](../tooling/retail-compare.md). The [full-game ladder](../tooling/full-game-ladder.md) clears every story segment from a retail save at its milestone, and one New Game played straight through on pad input, reloading only its own saves after a wipe, reaches the credits as well - the ladder's [continuous run](../tooling/full-game-ladder.md#the-continuous-run), measured on several dealt hands of the rand stream; a different deal meets different fights, so that figure is a ratchet, not a guarantee. A cast or summon module's voice clip is also resolved but not yet played.
 
 The code is written from the project's own reverse-engineering record - Ghidra disassembly dumps and live emulator probes - not translated from the executable. See [Legal posture](#legal-posture).
 
@@ -47,6 +47,7 @@ flowchart BT
     EDLG["engine-dialog"]
     ECAM["engine-camera"]
     EBV["engine-battle-vm"]
+    ECAST["engine-cast"]
     EMV["engine-motion-vm"]
     EVM["engine-vm"]
     EB["engine-battle"]
@@ -79,6 +80,7 @@ flowchart BT
     EMV --> FAM
     EVM --> FAM
     EB --> EBV
+    ECAST --> EBV
     EB --> RK
     RK --> ECAM
     RK --> EVM
@@ -98,8 +100,10 @@ flowchart BT
     CORE --> ESCN
     CORE --> EFX
     CORE --> EMGS
+    CORE --> ECAST
     EUI --> RK
     EUI --> EBV
+    EUI --> ECAST
     EREN --> EUI
     EAUD --> FMT
     SESS --> CORE
@@ -121,6 +125,7 @@ The shape to read off it:
 - **Every crate names the crate that owns the code it uses.** No crate re-exports another workspace crate, so the first segment of a path is where the code is.
 - **The format-family crates are the top of the preservation stack.** `container-formats`, `scene-formats`, `actor-formats`, `minigame-formats`, `ui-formats`, `game-tables` and `overlay-images` hold the Legaia-specific formats over the per-format parsers. `asset` is the `asset` command-line binary over them and `disc-audit`; it has no library.
 - **`engine-system`, `engine-dialog`, `engine-camera` and the VM crates are the bottom of the engine stack.** `engine-battle-vm`, `engine-motion-vm` and `engine-vm` hold the bytecode interpreters and state machines. They know nothing about GPU, audio or the `World`; each reaches the rest of the engine through a `Host` trait. The three VM crates are siblings: `engine-vm` depends on no engine crate at all, `engine-motion-vm` only on `engine-system`, `engine-battle-vm` on `engine-system` and `engine-camera`, and none of them names another. `engine-camera` is the shared GTE camera (build, projection, the op-`0x45` mover, shake, the camera-relative glide) that the battle camera script, the field camera, the Baka Fighter duel and the draw kernels all run on.
+- **`engine-cast` sits one rank above `engine-battle-vm`.** It holds the slot-B cast / summon module bodies the battle action SM pages in; they call the action SM's helpers, the formulas and the camera script, and nothing below names them.
 - **A ring of `World`-free kernel crates sits above them** (`engine-mode`, `engine-battle`, `engine-effects`, `engine-field`, `engine-fishing`, `engine-minigames`, `engine-menus`, `engine-scene`, `engine-minigame-scenes`). Each holds rules and state that never touch the `World` struct, so it can be unit-tested alone.
 - **`engine-scene` is the disc-facing half of scene handling.** It resolves a CDNAME scene to its PROT entries (`Scene`, `ProtIndex`), decodes what the scene is built from (`SceneResources`, `SceneAssets`, the model bank, the environment draw resolver and assembly kernel) and holds the virtual filesystem. It names no `World`, so a tool that only reads scenes links it without the simulation, and it is a row of the layering table like the other kernels: `engine-minigame-scenes` builds the dance and fishing venues on it.
 - **`engine-core` is where they meet.** It owns `World` and `SceneHost` and implements the per-VM `Host` traits. A module there that shares its name with a kernel module (`shop`, `dance`, `tile_board`, `mode`, `camera`, ...) holds only the functions that read a `World` or a `Scene`; the rules are in the kernel crate.
@@ -163,7 +168,8 @@ Internal dependencies as declared in each crate's `Cargo.toml`. "Format-family c
 | `engine-mode` | `engine-system`, `bytes` | The game-mode seat. |
 | `engine-dialog` | `font`, `mes` | Dialog pager, dialog window, text balloon. |
 | `engine-camera` | `engine-system` | The shared GTE camera: build, projection, mover, shake, camera-relative glide. |
-| `engine-battle-vm` | `engine-camera`, `engine-system`, `actor-formats`, `game-tables`, `overlay-images`, `scene-formats`, `art` | Battle action SM, formulas, battle camera script, cast ticks. |
+| `engine-battle-vm` | `engine-camera`, `engine-system`, `actor-formats`, `game-tables`, `overlay-images`, `scene-formats`, `art` | Battle action SM, formulas, battle camera script, battle-overlay leaves. |
+| `engine-cast` | `engine-battle-vm`, `engine-camera`, `engine-system`, `game-tables`, `overlay-images` | Slot-B cast / summon module ticks, their camera and countdown, cast-arm kernels. |
 | `engine-motion-vm` | `engine-system`, `scene-formats` | The two per-actor motion VMs. |
 | `engine-vm` | `scene-formats`, `minigame-formats`, `anm` | Field, move, effect and window-widget VMs; no GPU or audio deps. |
 | `engine-battle` | `engine-battle-vm`, `engine-system`, `render-kernels`, `actor-formats`, `game-tables`, `scene-formats`, `ui-formats`, `art`, `anm`, `save`, `tim`, `tmd`, `bytes` | `World`-free battle kernels. |
@@ -176,13 +182,13 @@ Internal dependencies as declared in each crate's `Cargo.toml`. "Format-family c
 | `engine-minigame-scenes` | `engine-scene`, `engine-menus`, `engine-minigames`, `engine-fishing`, `engine-field`, `engine-battle`, `engine-battle-vm`, `engine-camera`, `engine-mode`, `engine-system`, `engine-vm`, `render-kernels`, `actor-formats`, `container-formats`, `game-tables`, `minigame-formats`, `overlay-images`, `scene-formats`, `prot`, `tim`, `tmd` | The minigames' 3D scene surfaces, venues and the `World`'s minigame seat. |
 | `engine-scene` | `engine-field`, `engine-dialog`, `engine-system`, `engine-vm`, `render-kernels`, `disc-audit` + the format-family and parser crates | Scene resolution and loading, environment draws, virtual filesystem; no `World`. |
 | `engine-core` | `engine-scene`, every `engine-*` kernel crate above, `render-kernels` + the format-family and parser crates | `World`, scene host, battle loop, menu runtime, saves. |
-| `engine-ui` | `render-kernels`, `engine-battle-vm`, `game-tables`, `minigame-formats`, `ui-formats`, `tim`, `font` | Draw-list builders; no wgpu. |
+| `engine-ui` | `render-kernels`, `engine-battle-vm`, `engine-cast`, `game-tables`, `minigame-formats`, `ui-formats`, `tim`, `font` | Draw-list builders; no wgpu. |
 | `engine-render` | `engine-ui`, `render-kernels`, `engine-camera`, `tim`, `font` | wgpu renderer. |
 | `engine-audio` | `xa`, `vab`, `seq`, `prot` | SPU model, sequencer, output backends. |
 | `engine-session` | `engine-core`, `engine-scene`, `engine-audio`, `engine-menus`, `engine-minigame-scenes`, `engine-battle`, `engine-field`, `engine-mode`, `engine-system` + format-family and parser crates | `BootSession` + BGM director; no wgpu or winit. |
 | `engine-screens` | `engine-core`, `engine-scene`, `engine-ui`, `engine-battle`, `engine-dialog`, `engine-effects`, `engine-field`, `engine-fishing`, `engine-menus`, `engine-minigame-scenes`, `engine-minigames`, `engine-mode`, `engine-system`, `render-kernels`, `game-tables`, `minigame-formats`, `font` | The screens both hosts draw: shop family, battle HUD, pause menu, dialog box. |
 | `engine-export` | `engine-core`, `engine-scene`, `engine-field`, `engine-vm`, `actor-formats`, `game-tables`, `scene-formats`, `tim`, `tmd` | The `.glb` world exporter behind `export-glb`. |
-| `engine-capture` | `engine-core`, `engine-battle`, `engine-battle-vm`, `engine-camera`, `engine-dialog`, `engine-effects`, `engine-field`, `engine-menus`, `engine-mode`, `engine-system`, `art`, `save`, `scene-formats` | Capture seeds, gates and pad drives shared by `parity` and the native capture child. |
+| `engine-capture` | `engine-core`, `engine-battle`, `engine-battle-vm`, `engine-camera`, `engine-cast`, `engine-dialog`, `engine-effects`, `engine-field`, `engine-menus`, `engine-mode`, `engine-system`, `art`, `save`, `scene-formats` | Capture seeds, gates and pad drives shared by `parity` and the native capture child. |
 | `parity` | `engine-capture`, `engine-session`, `engine-core`, `engine-scene`, `engine-audio`, `engine-ui`, the kernel crates it measures, `mednafen`, `pcsx-redux`, `ram-image` + parser crates | Parity oracles + retail comparison. |
 | `engine-shell` | `parity`, `engine-capture`, `engine-session`, `engine-screens`, `engine-export`, `engine-core`, `engine-scene`, `engine-render`, `engine-ui`, `engine-audio`, the kernel crates + format-family and parser crates | The native host. |
 | `web-viewer` | `engine-session`, `engine-screens`, `engine-core`, `engine-scene`, `engine-ui`, `engine-audio`, the kernel crates, `patcher` and its layer crates + format-family and parser crates | The browser hosts and site tools. |
@@ -197,8 +203,8 @@ The edges among the `World`-free kernel crates are a committed table, [`scripts/
 | 0 | `engine-system`, `engine-dialog`, `engine-vm` |
 | 1 | `engine-camera`, `engine-mode`, `engine-motion-vm` |
 | 2 | `engine-battle-vm`, `render-kernels` |
-| 3 | `engine-battle`, `engine-effects`, `engine-field`, `engine-ui` |
-| 4 | `engine-fishing`, `engine-minigames`, `engine-scene` |
+| 3 | `engine-battle`, `engine-cast`, `engine-effects`, `engine-field` |
+| 4 | `engine-fishing`, `engine-minigames`, `engine-scene`, `engine-ui` |
 | 5 | `engine-menus` |
 | 6 | `engine-minigame-scenes` |
 
@@ -211,7 +217,8 @@ Most rows follow from the crates' roles. The ones that do not are listed in the 
 - **`engine-menus -> engine-field` is the field overlay's dev-menu bodies.** The equip applier (`dev_equip_commit`) that the pause menu's equip session calls too, and the row kernels (`dev_menu_leaves`, `dev_menu_adjust`, `dev_menu_flags`) the dev menu screen (`dev_menu_host`) steps.
 - **`engine-fishing -> engine-field` is the shared minigame floor** (`minigame_floor`, over `field_regions`): a venue floor is a field `.MAP` walk grid with tile triggers.
 - **`engine-minigames -> engine-field` is the dance step markers** (`dance_marker`), tile actors the same floor spawns. Fishing and the other minigames are siblings: the effect parts fishing produces carry their own pool seat, so neither crate names the other.
-- **`engine-ui -> engine-battle-vm` is the battle HUD model** (`battle_party_panel`, `battle_commit_log`, the value readout, the Theeder packet): the draw-list builders project types defined beside the kernels that fill them.
+- **`engine-ui -> engine-battle-vm` is the battle HUD model** (`battle_party_panel`, `battle_commit_log`, the value readout): the draw-list builders project types defined beside the kernels that fill them.
+- **`engine-ui -> engine-cast` is the Theeder packet** (`seru_magic_ticks::TheederPacket`): the cast draw-list builder projects the packet PROT 0904's tick body fills, defined beside that body.
 
 Some edges look thin by item count and stand because the role explains them, or because cutting them would cost more than the edge: `engine-camera` and `engine-motion-vm` reach `engine-system` only for its BIOS `rand` (the leaf's role; a rand-only leaf would move every `rand` call site in the engine), `engine-fishing -> render-kernels` is one GTE divide (render-kernels' role, and already below it through `engine-field`).
 
@@ -220,9 +227,9 @@ Adding an edge means editing the table, which is the point: the row is where the
 Notes on the split lines:
 
 - **Format crates stay engine-agnostic.** They produce typed in-memory data; the engine turns that into GPU resources and audio buffers.
-- **`engine-ui` is the wgpu-free draw layer under `engine-render`.** It builds renderer-agnostic draw lists (`TextDraw` / `SpriteDraw`), which is what lets the browser consume them without linking wgpu. It is not a leaf of the graph: it sits on `render-kernels` and on the battle HUD model in `engine-battle-vm`.
+- **`engine-ui` is the wgpu-free draw layer under `engine-render`.** It builds renderer-agnostic draw lists (`TextDraw` / `SpriteDraw`), which is what lets the browser consume them without linking wgpu. It is not a leaf of the graph: it sits on `render-kernels`, on the battle HUD model in `engine-battle-vm` and on the Theeder packet in `engine-cast`.
 - **`engine-ui` does not link `engine-core`,** so projecting engine state into its builders is a layer of its own. `engine-screens` is that layer for the shop-family screens (`shop_overlay_frame`), the battle HUD and its chrome (`battle_screens`) and the pause menu's sub-screens (`pause_screens`): both play hosts call the same entries and keep only input assembly, stage scale and upload.
-- **Battle splits three ways.** The action state machine and the arithmetic kernels it calls are in `engine-battle-vm` ([README](../../crates/engine-battle-vm/README.md) has the split line). The `World`-free kernels (monster AI script, catalogs, encounters, level-up, per-frame passes) are in `engine-battle`. The stateful side (round loop, command flow, cast band, monster turn picker) is in `engine-core`.
+- **Battle splits three ways.** The action state machine and the arithmetic kernels it calls are in `engine-battle-vm` ([README](../../crates/engine-battle-vm/README.md) has the split line), and the slot-B cast module bodies it pages in are in [`engine-cast`](../../crates/engine-cast/README.md). The `World`-free kernels (monster AI script, catalogs, encounters, level-up, per-frame passes) are in `engine-battle`. The stateful side (round loop, command flow, cast band, monster turn picker) is in `engine-core`.
 - **Minigames split the same way.** Rules engines are in `engine-minigames` / `engine-fishing` ([README](../../crates/engine-minigames/README.md)); `World` glue and scene assembly stay in `engine-core`. The two 3D surfaces that load through a `read_prot` closure rather than a `Scene` (the Baka Fighter duel, the Muscle Dome arena) are in [`engine-minigame-scenes`](../../crates/engine-minigame-scenes/README.md).
 - **Sequenced music** is `crates/seq` (parser) plus the `engine-audio` `Sequencer`; the `.dpk` / `.MAP` / `.PCH` family decodes through `legaia_container_formats::sound_pack`.
 
@@ -349,7 +356,7 @@ options is safe by default. A headless comparison against retail calls
 | `World::toggles.reduce_flashing` (`OptionsState::reduce_flashing`) | **on** | Photosensitivity guard: slew-limits the applied luminance channels of the ambient CLUT-cell palette cyclers ([field-ambient-fx](field-ambient-fx.md#photosensitivity-guard)). Retail's koin3 dance floor strobes bright/black at 15 Hz - far past the 3-flashes-per-second guideline - so the safe presentation is the default; off restores the retail-exact palette steps. Presentation-only: the move-VM simulation is identical either way. |
 | `OptionsState::bgm_volume` / `sfx_volume` (`legaia-options.toml` keys; no in-game row) | `8` / `8` = unity | Engine-only music and sound-effect levels, `0..=10` linear with `8` the retail mix and `10` a 1.25x boost. Each SPU voice is tagged at key-on with the bus of whoever keyed it - a sequencer note is BGM, a cue is SFX - and scaled before the dry sum and the reverb send; XA voice and FMV audio ride neither bus. Both play hosts apply it, and at the default the mix is bit-identical to the single-bus one ([audio](audio.md)). |
 | `World::toggles.entry_pulse_enabled` (`--no-entry-pulse` disables; "Entry pulse" checkbox on the browser play page) | on (off under `--retail` / the page's Retail-faithful) | Scene-entry VDF pulse: a rolling vertex-morph envelope over the packs it is authored for (jou's flesh ground, Rim Elm's shoreline; every other scene keeps retail's still geometry; [field-ambient-fx](field-ambient-fx.md#mechanism-3---strip-cycling-and-vertex-morphs)). Retail-armed morph scenes are unaffected either way. |
-| `World::toggles.battle_sm_frame_cadence` (`LEGAIA_BATTLE_FRAME_CADENCE=1` on a native session; "Retail battle cadence" checkbox on the browser play page) | off on both hosts | The battle action SM once a battle frame, retail's cadence, instead of once a vsync: the faithful model, staged off until the comparison drives are re-tuned ([battle-stage-camera](battle-stage-camera.md)). |
+| `World::toggles.battle_sm_frame_cadence` (`LEGAIA_BATTLE_FRAME_CADENCE=1` on a native session; "Retail battle cadence" checkbox on the browser play page) | off on both hosts | The whole battle pass once a battle frame, retail's cadence, instead of once a vsync: the action SM, the cast tick, the anim tick after them, the fades and the effect pool, each by the frame step. The faithful model, staged off while comparison rows still fall ([battle-stage-camera](battle-stage-camera.md)). |
 | `World::toggles.arts_saved_list` (`LEGAIA_ARTS_SAVED_LIST=1` on a native session; "Saved-chain Arts list" checkbox on the browser play page) | off (off under `pin_retail`) | The command ring's Arts arm opens the port's saved-chain list instead of retail's per-press directional input ([battle-round-loop](battle-round-loop.md)). Not retail. |
 | `OptionsState::retail_view_window` -> `World::toggles.view_window_crop` | **on**, effective at retail framing only | Retail's visible-tile crop: the field ground and decoration cells are drawn only inside the camera's tile window clipped to the walk region ([`field_view_window`](../../crates/engine-scene/src/field_view_window.rs), [encounter.md](../formats/encounter.md#the-scratchpad-window-0x1f8003e8eb)). Both hosts apply it while the camera is at `CameraDistance::Retail` with the drag / tilt / zoom knobs at identity and `F3` off, so the retail-distance frames the comparison corpus takes are cropped. Any wider or re-aimed view draws the map whole - see [below](#the-visible-tile-crop-follows-the-framing). |
 | `Renderer::set_psx_mode` (`LEGAIA_PSX_RENDER=1`; "PSX rasterisation" checkbox on the browser play page) | off | Strict-PS1 rasterisation artefacts - see below. |
@@ -547,6 +554,7 @@ The shell loop closes: title -> save-select -> field / encounter -> battle -> sa
 | `LGX7` trailer (optional) | The minigame purses: casino coin bank, Point Card bank, fishing point record. |
 | `LGX8` trailer (optional) | The field position (`i16 x`, `i16 z`). |
 | `LGX9` trailer (optional) | The audio levels (`i32 configured_level`, `i32 voice_volume`). |
+| `LGXA` trailer (optional) | The options screen's nine config words, one byte each (Battle Camera, Select Attack, Battle Command, Field Move, Field HP Display, Sound, the three vibration rows). |
 
 Each optional trailer is emitted only when it has something to carry, so a save without one is the same bytes as before the trailer existed. The writer emits the highest version any populated field requires; readers accept every earlier one. The retail-card bridge carries the same engine-only state in the SC block's unread tail (`LGXE`, [save-screen](save-screen.md#the-engine-ext-blob-in-the-unread-tail)).
 

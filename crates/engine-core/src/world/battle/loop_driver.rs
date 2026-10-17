@@ -423,18 +423,32 @@ impl World {
 
         // Battle locomotion - the anim tick's root-motion drive
         // (`FUN_80047430`): the attack band's approach walk toward the
-        // target and the recovery band's walk back to the seat. Retail runs
-        // the actor-list anim tick ahead of the battle-scene per-frame tick
-        // (`FUN_80046A20`), so this goes ahead of the SM step below.
+        // target and the recovery band's walk back to the seat. On the
+        // per-vsync cadence it goes ahead of the SM step below, with the
+        // anim tick. On retail's cadence the anim tick runs after the frame
+        // driver's pass (`World::tick_battle_anim_pass`, where the order is
+        // capture-pinned), so here the tick only marks that the pass reached
+        // the anim tick's slot.
         // REF: FUN_80047430 (root-motion term; `World::tick_battle_locomotion`)
-        self.tick_battle_locomotion();
+        let cadence = self.toggles.battle_sm_frame_cadence;
+        self.battle.anim_slot_reached = cadence;
+        let anim_vsyncs = if cadence {
+            0
+        } else {
+            self.battle.anim_pass_vsyncs
+        };
+        for _ in 0..anim_vsyncs {
+            self.tick_battle_locomotion();
+        }
 
         // The hit-event driver - the anim tick's per-frame damage-kernel call
         // and its event-path commit (`FUN_80047430` -> `FUN_801EC3E4`). Runs
         // on the cursor the frame tick advanced ahead of this function and
         // ahead of the SM step, retail's order.
         // REF: FUN_80047430 (`0x8004787C..0x800478A4`, `0x80047900..0x80047A44`)
-        self.tick_battle_hit_events();
+        if anim_vsyncs > 0 {
+            self.tick_battle_hit_events();
+        }
 
         // Final Heal sweep (FUN_801e6968): retail runs it in the cleanup
         // state 0x50 *before* the liveness count resolves a wipe. Run it
@@ -461,6 +475,12 @@ impl World {
         // rather than latches.
         // REF: FUN_801E09F8
         self.tick_battle_cast_census();
+        // On retail's cadence the same tick then drives the effect children
+        // on the pass (`World::tick_battle_cast_drive`).
+        if self.toggles.battle_sm_frame_cadence {
+            let n = self.battle.anim_pass_vsyncs;
+            self.tick_battle_cast_drive(n);
+        }
 
         // Pre-step snapshot of the attack chain's cursor. The chain consumes
         // one queued swing byte per frame it advances (`actor[+0x15]`, bumped
@@ -530,51 +550,7 @@ impl World {
         // Both play hosts drain once per simulation tick, so this only bit a
         // driver that drains on redraw - but the queue's contract is "folded
         // once", not "drained promptly".
-        let events: Vec<BattleEvent> = self.pending_battle_events.split_off(events_before);
-        for e in &events {
-            if let BattleEvent::ApplyArtStrike {
-                actor_slot,
-                target_slot,
-                outcome,
-                ..
-            } = e
-            {
-                // Surface the resolved strike damage for HUD popups (the
-                // fold below applies the HP side; this is cosmetic only).
-                if let Some(dmg) = outcome.damage
-                    && dmg > 0
-                {
-                    self.battle.hit_fx.push(BattleHitFx {
-                        target_slot: *target_slot,
-                        amount: dmg,
-                        is_heal: false,
-                        is_crit: false,
-                    });
-                }
-                // A connecting art strike arms the impact-tint triple on
-                // its target from the acting record's `+0x7A` class - the
-                // same `FUN_801EC3E4` arm the basic swing takes (retail
-                // runs that routine once per strike; a zero-damage connect
-                // still reaches it).
-                // REF: FUN_801EC3E4
-                if outcome.damage.is_some() {
-                    let class = self.attacker_impact_class(usize::from(*actor_slot));
-                    if class < legaia_engine_battle::move_power::IMPACT_CLASS_LIMIT {
-                        self.arm_impact_tint(usize::from(*target_slot), class);
-                    }
-                }
-            }
-            self.fold_battle_event(e);
-        }
-        // Re-publish the folded stream so hosts can still *observe* it. The
-        // loop owns the gameplay fold (folding twice would apply an art
-        // strike's HP twice), but the same stream also carries
-        // presentation-only members - `CameraFrameHeight`, anim / cast
-        // triggers - and taking it here used to drop those on the floor for
-        // every host running the live loop. Hosts drain, they do not fold.
-        // Appended, not prepended: an undrained backlog keeps its order and
-        // this tick's tail stays behind it.
-        self.pending_battle_events.extend(events);
+        self.fold_new_battle_events(events_before);
 
         // A byte staged this step on an actor that has **no clip** to play
         // it (a clip-less host, or an engine-synthetic clip without an entry
@@ -1061,5 +1037,58 @@ fn summon_windup_cue(a: &Actor) -> u8 {
         a.battle_effect_cursor
     } else {
         1
+    }
+}
+
+impl World {
+    /// Fold the battle events queued since `events_before` - the tick's own
+    /// tail - and re-publish them for the hosts to observe. Each event is
+    /// folded once (see [`Self::live_battle_tick`]).
+    pub(in crate::world) fn fold_new_battle_events(&mut self, events_before: usize) {
+        let events: Vec<BattleEvent> = self.pending_battle_events.split_off(events_before);
+        for e in &events {
+            if let BattleEvent::ApplyArtStrike {
+                actor_slot,
+                target_slot,
+                outcome,
+                ..
+            } = e
+            {
+                // Surface the resolved strike damage for HUD popups (the
+                // fold below applies the HP side; this is cosmetic only).
+                if let Some(dmg) = outcome.damage
+                    && dmg > 0
+                {
+                    self.battle.hit_fx.push(BattleHitFx {
+                        target_slot: *target_slot,
+                        amount: dmg,
+                        is_heal: false,
+                        is_crit: false,
+                    });
+                }
+                // A connecting art strike arms the impact-tint triple on
+                // its target from the acting record's `+0x7A` class - the
+                // same `FUN_801EC3E4` arm the basic swing takes (retail
+                // runs that routine once per strike; a zero-damage connect
+                // still reaches it).
+                // REF: FUN_801EC3E4
+                if outcome.damage.is_some() {
+                    let class = self.attacker_impact_class(usize::from(*actor_slot));
+                    if class < legaia_engine_battle::move_power::IMPACT_CLASS_LIMIT {
+                        self.arm_impact_tint(usize::from(*target_slot), class);
+                    }
+                }
+            }
+            self.fold_battle_event(e);
+        }
+        // Re-publish the folded stream so hosts can still *observe* it. The
+        // loop owns the gameplay fold (folding twice would apply an art
+        // strike's HP twice), but the same stream also carries
+        // presentation-only members - `CameraFrameHeight`, anim / cast
+        // triggers - and taking it here used to drop those on the floor for
+        // every host running the live loop. Hosts drain, they do not fold.
+        // Appended, not prepended: an undrained backlog keeps its order and
+        // this tick's tail stays behind it.
+        self.pending_battle_events.extend(events);
     }
 }

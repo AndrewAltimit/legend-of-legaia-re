@@ -800,6 +800,37 @@ mod tests {
         );
     }
 
+    /// A seated eye and focus survive a later snap that composes the same
+    /// pose on the same spot - a region selector arm's `4C 39` in the entry
+    /// script's first pass, which runs on the ticks after the seat - and stop
+    /// being re-landed once the player steps off the seat.
+    #[test]
+    fn a_snap_on_the_unmoved_seat_relands_the_seated_eye() {
+        let (mut w, mut c) = gated_zone_world();
+        c.zone.snap_pending = true;
+        w.tick();
+        c.tick(&w);
+        let composed = [c.globals.0[3], c.globals.0[4], c.globals.0[5]];
+        let seated = [composed[0], composed[1] - 300, composed[2] - 40];
+        c.zone.seat_eye_after_snap(seated);
+        c.zone.seat_focus_after_snap([-0x1000, -0x2400]);
+        c.zone.snap_pending = true;
+        w.tick();
+        c.tick(&w);
+        c.zone.request_snap();
+        w.tick();
+        c.tick(&w);
+        assert_eq!([c.globals.0[3], c.globals.0[4], c.globals.0[5]], seated);
+        assert_eq!([c.globals.0[6], c.globals.0[8]], [-0x1000, -0x2400]);
+        w.actors[0].move_state.world_x += 2;
+        w.tick();
+        c.tick(&w);
+        c.zone.request_snap();
+        w.tick();
+        c.tick(&w);
+        assert_ne!(c.globals.0[4], seated[1], "off the seat: the snap composes");
+    }
+
     /// The hold gates (`0x801DB550` / `0x801DB564`): with the follow switch
     /// off or scratchpad `0x1F800394 & 0x400` up, a moving player gets the
     /// pin leg - the focus on the player, no compose, no ease.

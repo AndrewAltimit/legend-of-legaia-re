@@ -7,7 +7,7 @@
 //! (`[gp[+0x2D2], gp[+0x2D4])`).
 
 use super::*;
-use legaia_engine_battle_vm::cast_arm_ticks::StealOutcome;
+use legaia_engine_cast::cast_arm_ticks::StealOutcome;
 use legaia_save::retail_inventory::{ITEM_SLOTS_TOTAL, ItemWindow, NOT_IN_WINDOW};
 
 /// A party-seat world whose bag holds exactly the given `(slot, id, count)`
@@ -36,12 +36,12 @@ fn steal_world(cells: &[(usize, u8, u8)], rng_seed: u32) -> World {
 
 /// The world seed whose first retail draw (`World::next_rand`, the BIOS
 /// `rand()` shape) `% 0x100` is `slot`. Derived off the stream by hand:
-/// `s' = s * 1664525 + 1013904223`, draw = `(s' >> 16) & 0x7FFF`, and the
-/// slot is the draw's low byte - seed 167 -> draw `0x4D00`, seed 64 ->
-/// `0x42C8`, seed 26 -> `0x3F03`.
-const SEED_DRAWS_SLOT_0: u32 = 167;
-const SEED_DRAWS_SLOT_200: u32 = 64;
-const SEED_DRAWS_SLOT_3: u32 = 26;
+/// `s' = s * 0x41C64E6D + 0x3039`, draw = `(s' >> 16) & 0x7FFF`, and the
+/// slot is the draw's low byte - seed 0 -> draw `0x0000`, seed 316 ->
+/// `0x30C8`, seed 31 -> `0x7703`.
+const SEED_DRAWS_SLOT_0: u32 = 0;
+const SEED_DRAWS_SLOT_200: u32 = 316;
+const SEED_DRAWS_SLOT_3: u32 = 31;
 
 #[test]
 fn the_bag_is_slot_indexed_with_holes() {

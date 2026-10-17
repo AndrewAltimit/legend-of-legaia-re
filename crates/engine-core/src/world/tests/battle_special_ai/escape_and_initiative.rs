@@ -118,7 +118,7 @@ fn escape_accessories_fold_from_the_ability_bitfield() {
     for i in 0..200u32 {
         // Spread the seeds over the state space: the shaped draw is the
         // state's high half, which consecutive small seeds barely move (one
-        // seed step moves the first state by `1664525`, about 25 in the high
+        // seed step moves the first state by `0x41C64E6D`, about 16838 in the high
         // half), so `0..200` would replay nearly one first draw 200 times.
         let seed = i.wrapping_mul(0x9E37_79B9);
         let mut w = escape_world(30, 45, None);

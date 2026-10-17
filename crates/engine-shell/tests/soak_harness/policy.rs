@@ -79,6 +79,39 @@ pub(super) fn picker_open(s: &NativeSession) -> bool {
             .is_some_and(|p| p.menu_active())
 }
 
+/// The face button a field-VM context is polling the **held** pad for, when
+/// one sits on op `0x42` mode 1 with a face-button selector (`8` Circle,
+/// `9` Cross, `10` Square, `11` Triangle) or on the `4A` wait right ahead of
+/// one. The op reads `_DAT_8007B850`, the held word, not an edge.
+pub(super) fn held_pad_poll(s: &NativeSession) -> Option<u16> {
+    let w = &s.host.world;
+    let at = |code: &[u8], pc: usize| -> Option<u16> {
+        let tail = code.get(pc..)?;
+        let poll = match tail {
+            [0x42, 0x01, sel, ..] => *sel,
+            [0x4A, _, _, 0x42, 0x01, sel, ..] => *sel,
+            _ => return None,
+        };
+        Some(match poll {
+            8 => b(PadButton::Circle),
+            9 => b(PadButton::Cross),
+            10 => b(PadButton::Square),
+            11 => b(PadButton::Triangle),
+            _ => return None,
+        })
+    };
+    w.field_vm
+        .helper_contexts
+        .iter()
+        .find_map(|hc| at(&hc.bytecode, hc.pc))
+        .or_else(|| {
+            w.cutscene
+                .timeline
+                .as_ref()
+                .and_then(|tl| at(&tl.bytecode, tl.pc))
+        })
+}
+
 pub(super) fn b(p: PadButton) -> u16 {
     p.mask()
 }
@@ -260,6 +293,14 @@ impl Policy {
                 // engaging record) pages its own text boxes, which
                 // `dialogue_owns_input` does not see: it gets the same
                 // presses.
+                // A script polling the held pad (`42 01 sel`, the
+                // credits' last loop in `edlast`: `4A 08 00 42 01 08`, wait
+                // eight frames, then test a held Circle or Cross) samples it
+                // on one frame in nine: a tap lands there only by luck, and a
+                // player holds the button. So does the policy.
+                if let Some(held) = held_pad_poll(s) {
+                    return held;
+                }
                 if (w.dialogue_owns_input() || w.script_context_engages_player())
                     && self.rng.chance(70)
                 {

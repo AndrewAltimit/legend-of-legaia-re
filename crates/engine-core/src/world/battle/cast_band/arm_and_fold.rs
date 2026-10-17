@@ -311,10 +311,9 @@ impl World {
         // would leave the cast owed forever instead of double-applied.
         if let Some(entry) = self.cast_module_for(pc.spell_id)
             && let Some(body) =
-                legaia_engine_battle_vm::cast_module_ticks::capture_tick_body(entry, pc.spell_id)
-            && legaia_engine_battle_vm::cast_module_ticks::tick_body_owns_the_fold(entry, body)
-            && let Some(arm) =
-                legaia_engine_battle_vm::cast_module_ticks::sweep_arm_for(entry, body)
+                legaia_engine_cast::cast_module_ticks::capture_tick_body(entry, pc.spell_id)
+            && legaia_engine_cast::cast_module_ticks::tick_body_owns_the_fold(entry, body)
+            && let Some(arm) = legaia_engine_cast::cast_module_ticks::sweep_arm_for(entry, body)
             && self.casting.module_phase > arm
         {
             return;
@@ -328,8 +327,8 @@ impl World {
         // the band past the sweep arm is still owed the generic fold.
         if let Some(entry) = self.cast_module_for(pc.spell_id)
             && let Some(body) =
-                legaia_engine_battle_vm::cast_module_ticks::capture_tick_body(entry, pc.spell_id)
-            && let Some(arm) = legaia_engine_battle_vm::cast_arm_ticks::arm_sweep_arm(entry, body)
+                legaia_engine_cast::cast_module_ticks::capture_tick_body(entry, pc.spell_id)
+            && let Some(arm) = legaia_engine_cast::cast_arm_ticks::arm_sweep_arm(entry, body)
             && self.casting.module_phase > arm
         {
             return;

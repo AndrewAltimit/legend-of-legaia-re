@@ -101,6 +101,7 @@ pub mod move_buffer;
 pub mod move_ext_strip;
 pub mod move_vm;
 pub mod move_vm_overlay_ext;
+pub mod sfx_emitter;
 pub mod u16_list_append;
 pub mod vdf_morph;
 pub mod vram_rect_copy;

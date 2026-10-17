@@ -307,7 +307,16 @@ engine verdict:
 - **Actor state.** NPC positions, animation phases, open doors and live
   effects are whatever the engine's own entry produces.
 - **Timing.** Retail's frame is one instant; the engine's is a fixed tick
-  after entry. Ambient animation and water CLUT-walk phases cannot be
+  after entry. Two kinds of script history are held through the headless
+  warm-up instead of being run as game time: the field VM's script-counter
+  table (`0x801C6460`, `hold_slot_table`) and, on field and overworld
+  states, the BIOS `rand()` seed `0x80009010` (`hold_rand_seed`), so every
+  warm-up tick draws the value retail's next draw would. `map03`'s cart
+  clock (`P1[0]` `+0x248`) rolls `rand() & 0xFF` against `1` every frame
+  once its counter holds `240`, and `minigame_fishing_pcsx` is captured
+  with the counter there: a warm-up on a free-running stream rolled it,
+  spawned `P2[18]` and flew the cart back (`0x5A3`, `0x467` up, `0x466`
+  down) where retail had not rolled yet. Ambient animation and water CLUT-walk phases cannot be
   phase-aligned. The one phase the channel does align is the field
   party HUD's idle countdown (`_DAT_801F348C`, `FUN_801D0D38`): the settle
   window outlasts the `0x28`-frame near idle, while a card-load state is
@@ -415,7 +424,16 @@ engine verdict:
   `LEGAIA_SEAT_OBJECT_CLIPS`), written over the matching prop's own on the
   frame the child captures (`World::seed_object_prop_clip`). A prop the
   engine holds on another clip is left alone, so the seed never re-binds
-  what the engine's own spawn or script chose.
+  what the engine's own spawn or script chose. A placement's actor takes the
+  same word on the per-slot cursor its record's `A2 <id> <clip>` bound (the
+  channel whose script id is the record), under the same rule, and every
+  cursor is the displayed frame's: the RAM's taken back by the display lag's
+  game frames at the clip's own step (`rewind_clip_cursor`), wrapping a loop
+  and clamping a one-shot. `nivora_cutscene_delilas_intro` is the case: Noa
+  loops clip `45` while her line is up, from the scene bank's record `44`
+  (byte-identical to the clip retail's `+0x4C` points at, so the bank is
+  not what parted the frames), and the state holds cursor `48` on a
+  step-`2` frame. Her arms are raised there and down at the displayed `32`.
 
   So is an ending vignette's photo panel. The vignette record grabs the
   drawn frame into `(512, 0)` (`43 12`) and shows it through the image
@@ -495,7 +513,14 @@ engine's box has typed its page and waits for the press - the press that
 turns the page, or on the last page the press that closes the box - the
 frame every such capture shows. Counting only the page-turn wait missed
 every capture on a closing page (`garmel`'s Songi taunt), and the run
-sampled the settle window instead. A capture with no camera mover on its
+sampled the settle window instead. A capture caught while the pager still
+types (`_DAT_801F2734` in state `0x0B`) is met on the typing row instead:
+the same window row (`_DAT_801F3530`) with the reveal counter
+`_DAT_801F2748` at least the capture's, taken two pager calls back for the
+displayed frame (each typing call adds `min(step, 4)` units).
+`casino_ticket_counter_dialog` shows "This is the P" with the rest of its
+page still to type; met on the page's wait, its frame showed the whole page
+and read `0.976`, met on the counter it reads `0.992`. A capture with no camera mover on its
 lists holds a landed shot (retail frees the mover when its glide ends), so
 there the record's context is met on the gate PC only once the engine's glide
 has landed too: `name_input_ui` is parked on the opening's `49 03` one op
@@ -693,12 +718,14 @@ for a reason that is not a port defect:
 | Step | What is taken from the capture | Engine side / knob |
 |---|---|---|
 | [Enter the fight](#seeding-the-fight) | formation cell, present party, stage variant, keep-object-1 byte | `World::force_encounter`, `LEGAIA_BATTLE_STAGE=variant,keep` |
-| [Pin the stream](#the-stream-at-the-entry) | nothing - retail's RNG state is not in the capture | `LEGAIA_BATTLE_RNG_SEED`, `BATTLE_RNG_SEEDS`, `EncounterState::rng_hold` |
+| [Pin the stream](#the-stream-at-the-entry) | nothing - the capture holds the stream at the capture, not at the entry | `LEGAIA_BATTLE_RNG_SEED`, `BATTLE_RNG_SEEDS`, `EncounterState::rng_hold` |
 | [Match the image child](#the-image-child-plays-the-same-fight) | - | `LEGAIA_BATTLE_SETTLE`, `LEGAIA_BATTLE_BARS`, `BootSession::fog_render_tick` |
 | [Stand the combatants](#where-the-combatants-stand) | live ground `+0x34` / `+0x38`, heading `+0x46`, tint lanes `+0x04` | `RetailBattle::seeded_ground`, the `:x:z[:facing][:d<hex>]` tail of `LEGAIA_BATTLE_BARS` |
 | [Land the HUD](#hud-glides-the-capture-had-landed) | glide records at `ctx[+0x11B4]` | `LEGAIA_SEAT_HUD_GLIDES_LANDED`, `LEGAIA_SEAT_HUD_GLIDES` |
 | [Take back double pushes](#a-push-the-capture-already-holds) | - (measured from the engine's own replay) | `RetailBattle::undrift`, `ground_residual` |
 | [Sit out spent turns](#combatants-that-had-already-acted) | initiative keys `+0x16C` | `RetailBattle::engine_spent_keys`, the `:k` tail of `LEGAIA_BATTLE_BARS` |
+| [Raise the Mystic Shield](#the-mystic-shield-a-capture-already-holds) | the shield word `_DAT_8007BD84` | `World::raise_mystic_shield`, `LEGAIA_BATTLE_MYSTIC_SHIELD=1` |
+| [Land each body's clip](#the-keyframe-each-body-stands-on) | anim node cursor `*(+0x22C) + 0x68`, clip `+0x1D9`, rates `+0x21D` / entry `+0x78` | `World::seat_battle_clip_cursor`, `LEGAIA_SEAT_BATTLE_CLIPS` |
 | [Take back rewards](#rewards-already-granted) | EXP share `gp+0xA04`, stat window, banner element `ctx[+0x26]` | `ungrant_results_rewards`, `ungrant_magic_level_up` |
 | [Place the phase](#placing-the-phase) | command-flow byte `ctx[+0x06]`, cursor `ctx[+0x07]`, seat `ctx[+0x13]` | `SeedPlan` |
 
@@ -738,7 +765,17 @@ placed at the capture's phase.
 
 ### The stream at the entry
 
-Retail's RNG state at the instant its fight began is not in the capture. Left
+Retail's RNG state at the instant its fight began is not in the capture. Its
+state at the capture is - the BIOS seed word `0x80009010`
+([battle-formulas](../subsystems/battle-formulas.md#rng-primitive)) - and the
+recurrence steps back exactly, so an entry seed `k` steps before it would
+replay retail's own draws if the drive took exactly `k` draws to the phase.
+No such seed closes: the engine's draw count from the entry to the phase moves
+with the stream it is dealt (`noa_levelup_fight_pre`: `545` to `579` over the
+first seeds, `447` where the swing lands early), and stepping the capture's
+word back by every `k` from `530` to `580` gave no run that drew exactly `k`.
+The engine does not draw what retail drew between the two (the intro hold
+alone parts them), so the capture's word names no entry. Left
 alone, the engine's would be whatever the field settle happened to draw, so
 every channel that rides a draw (a monster's pick and target, the battle
 camera, the frame) would move whenever a field-side port changed how many
@@ -754,6 +791,14 @@ draws it takes.
   the fight is still on, its opening reached a prompt, and the drive or replayed
   cast reached the capture's phase is the one scored. A state no seed satisfies
   keeps the first seed's run, `never reached`.
+- Which stream that is, is a search result, and so is a state's pin
+  (`BATTLE_RNG_PINS`, tried ahead of the list; `LEGAIA_RC_PIN_SEED` stands in
+  for it in a sweep, and the report's `stream` detail names the one used).
+  Moving the world stream onto the BIOS recurrence re-dealt every list seed,
+  and fifteen states whose first reaching stream now framed their phase worse
+  than the corpus held (`noa_levelup_fight_pre` reaching its Done hold `87`
+  ticks late, the camera `0.981` to `0.935`) are pinned to the first stream in
+  list order that reaches the phase with the camera, then the frame, no worse.
 - A capture past the end signal also wants retail's win pose. The results
   sequencer draws it from the stream (`victory_pose_id`), and the results camera
   is that pose's own script (`battle_over_script`). The pose actor's latched
@@ -945,6 +990,41 @@ Two limits are measured rather than argued:
   replayed kill reads a spent key as well. Sat out, the two
   `rim_elm_gimard_seru_capture_*` drives frame Vahn's last swing some fifty
   yaw units further off (`camera` `.962` to `.932`, `.953` to `.918`).
+
+### The Mystic Shield a capture already holds
+
+Cort raises his Mystic Shield on an earlier turn (PROT 0940's arm 4), and the
+sphere it seats stays on him for the rest of the fight
+([cast-module](../subsystems/cast-module.md#the-mystic-shield-effect)). A
+capture whose shield word `_DAT_8007BD84` is non-null holds it; the replayed
+fight casts no shield before the captured phase. `RetailBattle::mystic_shield`
+reads the word and the seed raises the shield on the first battle tick, beside
+the bars - the headless seed directly, the image child through
+`LEGAIA_BATTLE_MYSTIC_SHIELD=1`. `cort_guilty_cross_mid_cast` and
+`cort_mystic_circle_mid_cast` are the two.
+
+### The keyframe each body stands on
+
+A looping clip - every idle stance - is a clock of its own, and the replay
+reaches a capture's phase on the pad path's clock, not retail's. A seat that
+lands the right phase still draws each body mid-sway at whatever keyframe the
+replay left it on; a drive that commits a member's Spirit instead of an Attack
+reaches the same surface four ticks sooner and moves every idle by a quarter
+of a keyframe (`arts_bar_ideal_noa_fangs`).
+
+`RetailBattle::clip_cursors` reads each pool slot's playing clip `+0x1D9` and
+its anim node's cursor `*(+0x22C) + 0x68` (12.4 sixteenths of a keyframe), and
+takes the cursor back to the frame on the screen: the display shows the frame
+built two game frames before the RAM's (`display_lag_vsyncs`), and each frame
+advances the cursor by `(frame step * +0x21D * entry +0x78) >> 1` (`>> 2` for
+a Slowed member's idle; `FUN_80047430`, `0x800476D8..0x80047764`). The image
+child lands each slot on that cursor on the capture frame
+(`LEGAIA_SEAT_BATTLE_CLIPS`, `World::seat_battle_clip_cursor`) when it plays
+the same clip and the clip loops. Left on the replay's clock: a one-shot,
+which started with its action, and - while an action is in flight, ahead of
+the Done band `0x50..=0x5A` - the acting seat and its target, whose clips run
+with the action the seed has already placed (seated, Zeto's parked Big Wave clip cost
+`zeto_big_wave_mid_cast` `0.03`).
 
 ### Rewards already granted
 
@@ -1704,16 +1784,18 @@ The report writes `retail | engine | |diff|` side by side for every scored
 state. **Those PNGs are retail pixels**; the report directory must stay
 gitignored (`captures/` is).
 
-### A box on screen that the RAM has already closed
+### A box on screen while the record runs on
 
-`retock_innkeeper_talk_open` shows the innkeeper's question box, but the
-state's pager word `_DAT_801F2734` already reads `4`, a free state, and the
-talk (`retock` `P1[26]`) is parked on `AD F8 08` at `+0xAC`, past the Yes
-branch's player ops. The box on screen is the displayed frame's, two game
-frames older than the RAM ([above](#mid-script-states)); the engine reaches
-the same PC on the tick the picker commits, with its box already gone. A
-gate with no wait to take the lag off cannot reach that earlier frame, so
-the missing box is the display lag, not a pager defect.
+`retock_innkeeper_talk_open` shows the innkeeper's question box with no
+picker, while the talk (`retock` `P1[26]`) is parked on `AD F8 08` at
+`+0xAC`, past the Yes branch's player ops, and the pager word
+`_DAT_801F2734` reads `4`. State `4` is not a free box: it is the idle state
+a `0x24` dispatch leaves, which keeps the rows and goes on drawing them, and
+the stay offer's picker continues on `0x24`
+([mes](../formats/mes.md#post-page-dispatch-state-0x19)). The engine used to
+drop its panel on the commit, so its frame at the same PC had no box at all.
+It now keeps the dismissed box up until the next line loads, and the frame
+reads `0.994`.
 
 ### A black band across the top is a readback race
 
@@ -2210,9 +2292,22 @@ snap too (`RetailObs::seat_eye`, `LEGAIA_SEAT_EYE`,
 `ZoneFollow::seat_eye_after_snap`), and the engine's ease carries on from it
 the next frame the player moves. The two chest frames read `.958` to `.994`
 and `.966` to `.998`. The headless `camera` channel keeps the snap's eye, so
-it goes on scoring the compose. `town01_npc16_dialogue_first_page` does not
-move: its talk record is resumed from its start, and the eye the seat landed
-does not survive to the gate.
+it goes on scoring the compose.
+
+A seat is not the last snap of the settle window. The entry script runs its
+first pass on the ticks after the seat
+([below](#the-region-selector-band-and-the-entry-order)), and in `town01` and
+`town0c` the region selector's arm ends on `4C 39` (query, footing conform,
+snap and focus clamp), two ticks after the seat composed the same pose on the
+same spot - which put the composed eye back over the one the seat had landed.
+Retail ran that pass when the player arrived, before the walk that left the
+eye where the state holds it. So the zone camera
+keeps what a seat landed, with the pose its snap composed (`SeatHold`), while
+the player stands on the seat, and re-lands it on any later snap of the same
+pose there. `town01_npc16_dialogue_first_page` read `0.939` to `1.000`,
+`v0_1_pre_battle_tetsu` `0.972` to `1.000`, and the two Mei house doors
+`0.971` / `0.982` to `1.000`; the card-boot states that snap again move a few
+thousandths each.
 
 ### Arrival states are captured before the town runs
 
@@ -2384,7 +2479,7 @@ camera exactly on retail's shot and the player on retail's `(5952, 12992)`.
 An engine that stepped the placements the record pokes left the player at
 `(6208, 13120)`; no poke engages a placement, so none runs.
 
-### A capture parked on an end latch has no phase to gate on
+### A capture parked on an end latch gates on the clip cursor
 
 `minigame_baka_pcsx` is `koin1` with the player's talk to the Baka Fighter
 cabinet (flat `64`) parked on `AD F8 08` at `+0x41`, the spin on the end latch
@@ -2394,14 +2489,17 @@ of the sit-down clip the record poked just before (`B8 F8 84 17`, `B3 F8 0A`,
 seven vsyncs short of the latch - and the frame on screen shows him seated
 with his back to the camera.
 
-The gate has a wait for a `0x4A` park and a glide for a camera mover, and
-nothing for a latch: it is met on the first tick the engine's record stands on
-the `AD`, where the clip has only begun, so the engine frame catches Vahn
-swinging a leg over the stool. The blocks around him move by one with any
-change that shifts the tick the record arrives on: the frames an engine built
-before and after the `0x4A` grid credit differ in `623` pixels, all inside the
-box around the stool, and in one scored block. A gate that carried the clip
-cursor the way it carries the glide would close it.
+A gate on the PC alone is met on the first tick the engine's record stands
+on the `AD`, where the clip has only begun, and the engine frame caught Vahn
+swinging a leg over the stool. So a gate parked on `AD F8 08` carries the
+player's clip cursor `+0x68` (`ScriptGate::latch`) and is met once the
+engine's player clip (`World::player_script_clip_cursor`) has run as far.
+That is the RAM's cursor, and a latch has no wait to take the display lag
+off, so the image child takes its frame the lag's ticks earlier (the battle
+drives' retake, `LEGAIA_CAPTURE_DISPLAY_LAG`, counted from the tick the
+engine started replaying the record). `minigame_baka_pcsx` reads `0.965`
+and `minigame_slot_machine_pcsx` `0.993` (from `0.961` / `0.990`); the
+remaining blocks are the floor emblem's palette cycle.
 
 ### An attack-face capture frames the shot the state before it armed
 
@@ -2679,6 +2777,21 @@ every pass, so it moves with the phase of both clips):
   close-ups read their framing (`freed`, `iota`, `meta`, `orb`, `swordie`
   and `gizam` exact); what the rest still show is the caster's body pair,
   which the focus and the heading are read off.
+- **On the battle-frame cadence the flash is aligned too.** With
+  `LEGAIA_BATTLE_FRAME_CADENCE=1` the replay steps its flash with the pass, a
+  frame step of vsyncs at a time, so the ages it can stop on are the spawn
+  pass's plus whole frames, while retail's own frames vary in length with
+  their cost. `mule_summon_mid_cast` shows age `29` where the replay's
+  step-`2` passes hold `28` and `30`, and the flash ramps `0xFF / 20` a
+  vsync, enough to lift the whole frame out of the image tolerance (`.017`).
+  Once the gate holds the flash is re-run from its spawn to the capture's age
+  (`PhaseGate::align_fade`, beside the accumulator alignment), and a flash
+  more than one step off is left alone. The age reading itself depends on
+  the clock: the block's delay keeps its landing overshoot, and the landing
+  tick's step is not in RAM. The battle-frame replay takes the capture's
+  step (`nighto_summon_mid_cast`, delay `-1`, duration `14`: `24` vsyncs);
+  the per-vsync replay keeps the smallest step the overshoot allows (`25`),
+  the reading its gates are matched on (`summon_fade_on`).
 - **A wait lasts as long as the stream took.** `flute_lippian_midcast` and
   `flute_spikefish_midcast` are captured in `0x32`, which runs case 6 on the
   caster every pass (`0x801E4984`) and holds until the summon archive read

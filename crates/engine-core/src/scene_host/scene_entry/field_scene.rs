@@ -690,6 +690,14 @@ impl SceneHost {
                             );
                         }
                     }
+                    // The body's stats are the cast's own `summon.dat`
+                    // record, not the twin's: the seat arm copies the
+                    // streamed record onto slot 7 (`FUN_80054CB0(record, 4)`
+                    // from `FUN_801F19EC`). A cast with no twin - the flutes
+                    // and the big summons - gets a body from the record alone,
+                    // without which its roll fell to the MP-scaled
+                    // placeholder (a Terra cast hit for 1).
+                    self.install_summon_cast_records();
                 }
                 if self.world.tables.summon_elements.is_empty() {
                     for spell_id in (0..=u8::MAX)

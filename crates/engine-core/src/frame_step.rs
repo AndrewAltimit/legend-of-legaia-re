@@ -115,6 +115,10 @@ pub fn camera_before_world_tick(
     camera.reset_for_free_roam(world);
     let az = azimuth_override.unwrap_or_else(|| camera.compass_azimuth_units_for(world));
     world.locomotion.camera_azimuth = az % 4096;
+    // The positional sound emitters measure their box against the focus the
+    // camera last stored (`_DAT_80089118` / `_DAT_80089120`).
+    let focus = camera.globals.focus_stored();
+    world.set_sound_listener_focus(focus[0], focus[2]);
 }
 
 /// The camera's half of a world tick, after it: fold this tick's op-`0x45`

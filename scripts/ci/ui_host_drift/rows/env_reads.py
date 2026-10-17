@@ -29,6 +29,7 @@ ENV_KERNEL_ROOTS = [
         "engine-audio",
         "engine-battle",
         "engine-battle-vm",
+        "engine-cast",
         "engine-camera",
         "engine-core",
         "engine-dialog",

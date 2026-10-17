@@ -4,16 +4,6 @@
 use super::*;
 
 impl PlayWindowApp {
-    /// Load the Noa dance overlay (PROT 0980), decode its baked step chart, and
-    /// arm a dance run on the qualifier floor. Returns `false` (and logs) when
-    /// no disc is attached or the chart can't decode.
-    pub(in crate::window) fn start_dance_minigame(&mut self, long_song: bool) -> bool {
-        self.start_dance_minigame_mode(
-            legaia_engine_minigames::dance::DanceMode::Qualifier,
-            long_song,
-        )
-    }
-
     /// Load the dance overlay and arm a run on `mode`'s floor. The world
     /// stages the pre-song **count-in** (retail `FUN_801cf470` runs its
     /// below-10 states - the `1 2 3 READY... GO!` banner - before the beat

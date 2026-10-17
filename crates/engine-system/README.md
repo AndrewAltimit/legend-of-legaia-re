@@ -25,7 +25,8 @@ code spans, since rustdoc cannot resolve a link into a dependent crate.
 
 - **Input** - `pad` (the raw and packed PSX pad-word layouts), `input` (the
   PSX-shaped pad state, `input::Mapping`'s host-agnostic key binding and the
-  DOM key-code vocabulary), `retail_pad` (the per-frame libpad report to
+  DOM key-code vocabulary), `gamepad` (the W3C standard-mapping controller
+  layout every host folds a gamepad through), `retail_pad` (the per-frame libpad report to
   packed Legaia pad words, `FUN_8001822C`) and `menu_input` (the shared menu
   cursor navigation `FUN_801D688C`).
 - **Random numbers** - `rand` (`BiosRand`, `psyq_rand_step` and

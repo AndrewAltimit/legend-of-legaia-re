@@ -36,7 +36,7 @@ routine catalogue, and what the Rust port runs. Related pages:
 | Battle context | pointer at `0x8007BD24`; module phase byte `ctx+0x279`, `ctx+0x278`, caster seat `ctx+0x13`, band timer `ctx+0x6D8` |
 | Actor pointer table | `0x801C9370` (`DAT_801C9370`), eight seats: party `0..2`, monsters `3..7`, summon creature seat `7` |
 | Damage wrappers | `FUN_801DD0AC`, `FUN_801DD4B0`, `FUN_801DD6B4` in 0898 |
-| Port | `crates/engine-battle-vm` (`cast_module_ticks`, `cast_arm_ticks`, `seru_magic_ticks`, `cast_module_camera`, `cast_fatal_decision`, `battle_cast_dispatch`, `battle_cast_cue`); band driver `crates/engine-core/src/world/battle/cast_band.rs`; spawn pool `crates/overlay-images/src/cast_effect_pool.rs` |
+| Port | `crates/engine-cast` (`cast_module_ticks`, `cast_arm_ticks`, `seru_magic_ticks`, `cast_module_camera`, `cast_fatal_decision`); `crates/engine-battle-vm` (`battle_cast_dispatch`, `battle_cast_cue`); band driver `crates/engine-core/src/world/battle/cast_band.rs`; spawn pool `crates/overlay-images/src/cast_effect_pool.rs` |
 
 ### The module band
 
@@ -1157,7 +1157,8 @@ confirmed from live RAM: a probe decoding the `jal` in each 16-byte
 Ports: `seru_magic_ticks` (`gimard_tick`, `theeder_tick`, `vera_tick`,
 `gizam_tick`, `nighto_tick`, `zenoir_tick`) and `seru_magic_ticks`
 (`viguro_tick`, `swordie_tick` with `swordie_slash`, `orb_tick`, `freed_tick`,
-`nova_tick`, plus PROT 0919's `spoon_cure_sweep` / `spoon_heal_amount`). The
+`nova_tick`, plus PROT 0919's `spoon_cure_sweep`); the module heal amounts `vera_heal_amount` /
+`orb_heal_amount` / `spoon_heal_amount` are `battle_formulas`'. The
 damage folds once at `World::cast_spell_on_slots_prepaid` with the module's
 magnitudes routed in (Vera's `level * 0x20 + 0xE0`, Orb's
 `(level << 6) + 0x1C0`), so no body applies HP twice.
@@ -1275,8 +1276,9 @@ Notes on individual arms:
   to half its maximum, the pass restores the reaction run
   (`+0x1EF..+0x1F2 = 3, 2, 4, 5`), retires the effect, fires cue `0x10D` and
   clears the word. Engine: `MonsterAiState::flag_bd84`,
-  `World::tick_mystic_shield_break`. It is the one module effect retail keeps
-  alive across actions; the engine stages no visual for it. The blanked reaction
+  `World::raise_mystic_shield`, `World::tick_mystic_shield`. It is the one
+  module effect retail keeps alive across actions
+  ([below](#the-mystic-shield-effect)). The blanked reaction
   run has a second consequence: Mushura (PROT 0915, lockout load `0x801F7870`)
   and Theeder (PROT 0904, `0x801F7CF0`) use `+0x1D9 == 0` as their only re-hit
   lockout, a hit stages clip `0`, and the lockout never engages. Captured on a
@@ -1287,7 +1289,7 @@ Notes on individual arms:
   `0x801F7E34` in front of its roll.
 - **Neither `0x40` (Curse) nor `0x53` (Curse All) has a retail caster.** No
   monster record's `+0x21..+0x23` magic slots name them (disc-gated assertion
-  in `crates/engine-battle-vm/tests/cast_arm_retail_gating.rs`, with Cort's `0x37`
+  in `crates/engine-cast/tests/cast_arm_retail_gating.rs`, with Cort's `0x37`
   as the positive control), and the AI picker's formation switch queues
   neither ([`spell-table.md`](../formats/spell-table.md)). Arm 0 of both
   stages clip `0x0B` on the caster (`sb 0x0B, 0x1DA(s1)` at `0x801F6FBC`;
@@ -1308,7 +1310,7 @@ head over the phase, arms that stage clips and set `+0x21D` rates and
 is therefore data. `cast_module_ticks::chain_bodies` holds one descriptor per
 body, with every arm's landing VA and every stage, rate and wrapper site;
 `run_chain_body` interprets them. The disc-gated
-`crates/engine-battle-vm/tests/cast_chain_bodies_real.rs` re-derives each descriptor
+`crates/engine-cast/tests/cast_chain_bodies_real.rs` re-derives each descriptor
 from the owning image.
 
 Four need more than a descriptor:
@@ -2393,8 +2395,8 @@ is the module's, moved with two kernels:
   pass an arm runs (pitch `0x8007B790`, TR x / y / z `0x800840B8` /
   `0x800840BC` / `0x800840C0`), behind the module countdown.
 
-Port: `cast_module_camera` (`ModuleShot`, `ModuleCountdown`, `ModuleFollow`)
-with one director per module. A director runs on the phase the body is about
+Port: `cast_module_camera` (`ModuleCountdown`, `ModuleFollow`; the shot itself,
+`ModuleShot`, is `battle_cam_script`'s) with one director per module. A director runs on the phase the body is about
 to run and withholds the body's pass while an arm's gate holds. The battle
 camera steps the shot (`BattleCamera::arm_module_shot` /
 `arm_module_follow`) on both hosts. A module with no director arms no shot and
@@ -2467,12 +2469,57 @@ frames differently until a director models the read.
 <a id="capture-band-spawns"></a>
 
 The capture band's pager (`0x6E`) seats a module's whole record set at the
-caster as it pages the module in. PROT 0966 (Evil Seru Magic) instead seats
-the 46 spawn calls of its `0x801F6A74` body on the passes their arms make
-them inside `0x70` (`cast_module_camera::capture_arm_spawns`, all literal
-points), and the records only its stager seats as the body first ticks; the
-pager placement drew them a phase band early. The other capture bodies keep
-the pager placement.
+caster as it pages the module in. Three bodies instead seat their spawn calls
+on the passes their arms make them inside `0x70`
+(`cast_module_camera::capture_arm_spawns`, keyed on the module and the body
+the trampoline picks, `capture_spawns_per_arm`); the pager placement drew
+their records a phase band early, ran each program to its end before the arm
+that seats it, and drew a cell's other bodies' records beside them:
+
+| Module, body | Arms that seat | Stager (op `0x20`) |
+|---|---|---|
+| 0966 Evil Seru Magic, `0x801F6A74` | 46 calls at literal points over arms 2, 4, 10, 23, 26 | not ported: the records only it seats go in as the body first ticks |
+| 0938 Mystic Circle (`0xB7`), `0x801F69EC` | arm 0 the circle `0x801F7D5C` and the ray caller `0x801F7DC4`; arm 1 `0x801F7FE8` on the countdown's expiry; arms 2 and 3 on the caster, each pass flushing the part pool first (`jal 0x80050E74`) | `FUN_801F7AB8`: arm 2 seats a ray `0x801F7DF4` on the caller, which `0x801F7DC4` calls every eleven frames |
+| 0962 Ultra Charge (`0xA5`), `0x801F69D8` | arm 0 the ring caller `0x801F86B8` on the caster and three camera-locked discs; arm 1 one ray `0x801F876C` on **every** pass, rolled `rand() % 0x1000` about Z (`capture_arm_spawns_every`) | `FUN_801F813C`: arm 2 seats three rings on the caller, which `0x801F86B8` calls every fifteen frames |
+
+The two ported stagers run off the parts' own calls
+(`chaos_breath_cell_stager_spawns`, `blade_breath_cell_stager_spawns`, via
+`World::run_part_stager_calls`) and only for the body above; the cells' other
+bodies (Chaos Breath, the rest of the Blade Breath cell) keep the pager
+placement.
+
+### The Mystic Shield effect
+
+<a id="the-mystic-shield-effect"></a>
+
+PROT 0940's arm 4 (`0x801F7640..0x801F7684`) seats two **SCUS-resident**
+records on the first monster seat - position its display trio `+0x3C`,
+rotation `+0x44`, scale `0x1000` - and keeps the first as the shield word
+`_DAT_8007BD84`:
+
+- `0x80078644`, the sphere: a draw-kind-4 default-arm disc (`+0x9E = 0x100`,
+  sixteen columns, radius ramping to `224`, heights `-256` / `-192`),
+  camera-relative (`+0x52 = 0x380`), additive (`+0x74 = 0xC9000000`),
+  textured off page `0x16` / CLUT `0x7940` - the [boss effect
+  page](battle.md#the-boss-effect-page);
+- `0x80078720`, a render-mode-4 scroller rolling that page's rect
+  `(0x180, 0x100, 0x20, 0xFF)`.
+
+The sphere's program loops on a `0xFFF` wait, so nothing ends it but the
+actor pass `FUN_8004CE2C` (`0x8004D534..0x8004D674`). Every frame of an
+`0xB4` fight with the word up it reads the first monster seat's colour word
+`+0x04`: non-zero, the sphere is drawn (`+0x56 = 4`), takes the seat's render
+scale and its display trio (`+0x3C..+0x43` over the node's `+0x14..+0x1B`),
+and the half-HP break test runs; zero, the sphere is hidden
+(`sh zero,0x56(v1)` at `0x8004D670`) and the test is skipped. The break seats
+the burst `0x800786C4` on the sphere, retires it and clears the word.
+
+Port: `World::raise_mystic_shield` at the arm-4 seam and `World::tick_mystic_shield`
+in the actor pass, over `CastFxState::mystic_shield_fx` - a scene of its own,
+since the cast scene is retired when the next action opens. The records are read
+off the disc's executable (`DiscTables::scus`). The Guilty Cross and Mystic
+Circle captures hold the sphere from an earlier turn, which their seed raises
+([retail-compare](../tooling/retail-compare.md#the-mystic-shield-a-capture-already-holds)).
 
 ### Capture-band camera
 

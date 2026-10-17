@@ -68,6 +68,10 @@ impl Sequencer {
                 if !self.exact_tempo {
                     self.pump_vsync(spu);
                 }
+                if self.master_vol_dirty {
+                    self.master_vol_dirty = false;
+                    self.remix_all(spu);
+                }
                 self.flush_key_ons(spu);
             }
         }

@@ -37,8 +37,8 @@ use legaia_patcher::item_name::{SERU_BELL_ID, SERU_BELL_NAME};
 
 /// World RNG seed on which the victory drop roll lands for any positive
 /// chance - same value the drop oracle uses (`monster_drop_randomizer_runtime_e2e`
-/// derives it: draws 25300 then 24964, so `% 100 == 0` and `& 3 == 0`).
-const ROLL_LANDS_SEED: u32 = 387;
+/// derives it: draws 0 then 21468, so `% 100 == 0` and `& 3 == 0`).
+const ROLL_LANDS_SEED: u32 = 0;
 
 fn load_disc() -> Option<Vec<u8>> {
     let p = std::path::PathBuf::from(std::env::var_os("LEGAIA_DISC_BIN")?);

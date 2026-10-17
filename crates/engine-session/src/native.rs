@@ -107,9 +107,24 @@ impl<S: AudioSink> BootSession<S> {
     }
 }
 
-/// `LEGAIA_BATTLE_FRAME_CADENCE`: set and not `0`.
-pub fn env_battle_frame_cadence() -> bool {
-    std::env::var_os("LEGAIA_BATTLE_FRAME_CADENCE").is_some_and(|v| v != "0")
+/// `LEGAIA_BATTLE_FRAME_CADENCE`: `Some(true)` set and not `0`,
+/// `Some(false)` set to `0`, `None` unset.
+pub fn env_battle_frame_cadence() -> Option<bool> {
+    battle_frame_cadence_switch(std::env::var_os("LEGAIA_BATTLE_FRAME_CADENCE").as_deref())
+}
+
+/// The value of a `LEGAIA_BATTLE_FRAME_CADENCE` switch: on unless it reads
+/// `0`, no opinion when unset.
+pub fn battle_frame_cadence_switch(v: Option<&std::ffi::OsStr>) -> Option<bool> {
+    v.map(|v| v != "0")
+}
+
+/// Whether a native session's battles run on retail's battle-frame cadence:
+/// `LEGAIA_BATTLE_FRAME_CADENCE` when set, the engine's single default
+/// ([`legaia_engine_core::world::DEFAULT_BATTLE_SM_FRAME_CADENCE`]) otherwise.
+/// The retail comparison reads it to know which clock its replays run on.
+pub fn battle_frame_cadence_on() -> bool {
+    env_battle_frame_cadence().unwrap_or(legaia_engine_core::world::DEFAULT_BATTLE_SM_FRAME_CADENCE)
 }
 
 /// `LEGAIA_ARTS_SAVED_LIST`: set at all.
@@ -117,17 +132,18 @@ pub fn env_arts_saved_list() -> bool {
     std::env::var_os("LEGAIA_ARTS_SAVED_LIST").is_some()
 }
 
-/// Raise the gameplay switches a native session takes from the process
+/// Apply the gameplay switches a native session takes from the process
 /// environment. The engine itself reads no environment for a gameplay
 /// switch (a `wasm32` build has none, so a switch read there could never be
 /// thrown in the browser); this is the native host's half, and the play
 /// page's twins are `set_battle_frame_cadence` / `set_arts_saved_list`.
 /// Every native session open applies it, so a corpus run's child processes
-/// inherit the switch. Only raises - an unset variable leaves the toggle as
-/// the world built it.
+/// inherit the switch. An unset variable leaves the toggle as the world
+/// built it; `LEGAIA_BATTLE_FRAME_CADENCE` sets the cadence either way
+/// (`0` lowers it), `LEGAIA_ARTS_SAVED_LIST` only raises its list.
 pub fn apply_env_world_toggles(toggles: &mut legaia_engine_core::world::WorldToggles) {
-    if env_battle_frame_cadence() {
-        toggles.battle_sm_frame_cadence = true;
+    if let Some(on) = env_battle_frame_cadence() {
+        toggles.battle_sm_frame_cadence = on;
     }
     if env_arts_saved_list() {
         toggles.arts_saved_list = true;
@@ -147,5 +163,36 @@ fn read_scus(source: &SceneSource<'_>) -> Option<Vec<u8>> {
             .ok()?
             .read("SCUS_942.54")
             .ok(),
+    }
+}
+
+#[cfg(test)]
+mod cadence_switch_tests {
+    use super::battle_frame_cadence_switch;
+    use std::ffi::OsStr;
+
+    /// The switch sets the cadence both ways, and its absence defers to the
+    /// engine's default.
+    #[test]
+    fn the_cadence_switch_raises_and_lowers() {
+        assert_eq!(battle_frame_cadence_switch(None), None);
+        assert_eq!(
+            battle_frame_cadence_switch(Some(OsStr::new("0"))),
+            Some(false)
+        );
+        assert_eq!(
+            battle_frame_cadence_switch(Some(OsStr::new("1"))),
+            Some(true)
+        );
+        let mut t = legaia_engine_core::world::WorldToggles::new();
+        assert_eq!(
+            t.battle_sm_frame_cadence,
+            legaia_engine_core::world::DEFAULT_BATTLE_SM_FRAME_CADENCE
+        );
+        t.battle_sm_frame_cadence = true;
+        if let Some(on) = battle_frame_cadence_switch(Some(OsStr::new("0"))) {
+            t.battle_sm_frame_cadence = on;
+        }
+        assert!(!t.battle_sm_frame_cadence);
     }
 }

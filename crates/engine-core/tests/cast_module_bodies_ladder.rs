@@ -1,5 +1,5 @@
 //! Disc-gated **cast-module body ladder**: every ported body in
-//! `legaia_engine_battle_vm::cast_module_ticks`, reached the way its own dispatch
+//! `legaia_engine_cast::cast_module_ticks`, reached the way its own dispatch
 //! reaches it, with the denominator taken from the sources.
 //!
 //! Why it exists. `cast_module_ticks.rs` is the one cast-band module whose
@@ -39,7 +39,7 @@
 //!
 //! Skips (and passes) without `LEGAIA_DISC_BIN` / `extracted/`.
 
-use legaia_engine_battle_vm::cast_module_ticks as ticks;
+use legaia_engine_cast::cast_module_ticks as ticks;
 use legaia_engine_core::world::{Actor, World};
 use legaia_engine_mode::mode::SceneMode;
 use legaia_overlay_images::cast_effect_pool::{CAST_MODULE_PROT_FIRST, CAST_MODULE_PROT_LAST};
@@ -49,16 +49,16 @@ use std::path::PathBuf;
 /// The module sources (`cast_module_ticks.rs` and every file of its
 /// directory), scraped for their `// PORT:` addresses at compile time.
 const MODULE_SOURCES: &[&str] = &[
-    include_str!("../../engine-battle-vm/src/cast_module_ticks.rs"),
-    include_str!("../../engine-battle-vm/src/cast_module_ticks/state.rs"),
-    include_str!("../../engine-battle-vm/src/cast_module_ticks/idioms.rs"),
-    include_str!("../../engine-battle-vm/src/cast_module_ticks/power.rs"),
-    include_str!("../../engine-battle-vm/src/cast_module_ticks/stagers.rs"),
-    include_str!("../../engine-battle-vm/src/cast_module_ticks/ticks.rs"),
-    include_str!("../../engine-battle-vm/src/cast_module_ticks/capture.rs"),
-    include_str!("../../engine-battle-vm/src/cast_module_ticks/arms.rs"),
-    include_str!("../../engine-battle-vm/src/cast_module_ticks/six_spell_cell.rs"),
-    include_str!("../../engine-battle-vm/src/cast_module_ticks/tests.rs"),
+    include_str!("../../engine-cast/src/cast_module_ticks.rs"),
+    include_str!("../../engine-cast/src/cast_module_ticks/state.rs"),
+    include_str!("../../engine-cast/src/cast_module_ticks/idioms.rs"),
+    include_str!("../../engine-cast/src/cast_module_ticks/power.rs"),
+    include_str!("../../engine-cast/src/cast_module_ticks/stagers.rs"),
+    include_str!("../../engine-cast/src/cast_module_ticks/ticks.rs"),
+    include_str!("../../engine-cast/src/cast_module_ticks/capture.rs"),
+    include_str!("../../engine-cast/src/cast_module_ticks/arms.rs"),
+    include_str!("../../engine-cast/src/cast_module_ticks/six_spell_cell.rs"),
+    include_str!("../../engine-cast/src/cast_module_ticks/tests.rs"),
 ];
 
 /// How a row's body is reached.

@@ -35,13 +35,13 @@ fn take_commit_begin(w: &mut World) -> bool {
 /// player actor in slot 0 placed at its start-tile centre.
 /// The world seed on which Bandit Boss (monster id 5, magic `[Flame 0x20,
 /// Thunder Bolt 0x23]`) picks Flame against a lone party member. Derived by
-/// hand off the shaped stream (`s' = s * 1664525 + 1013904223`, draw =
-/// `(s' >> 16) & 0x7FFF`), which for seed 10 runs 15724, 12163, 10919, 2492,
-/// 3194, 6482. The picker draws them in this order: the pick
-/// `rand % (1 + 2)` (`15724 % 3 = 1`, so `magic[0]`), the single-target pick
+/// hand off the BIOS stream (`s' = s * 0x41C64E6D + 0x3039`, draw =
+/// `(s' >> 16) & 0x7FFF`), which for seed 10 runs 4543, 28214, 11245, 8870,
+/// 16887, 2234. The picker draws them in this order: the pick
+/// `rand % (1 + 2)` (`4543 % 3 = 1`, so `magic[0]`), the single-target pick
 /// `rand % 1`, the monster's scripted `0x51` override `rand & 3 == 0`
-/// (`10919 & 3 = 3`, so it stays off), then the flee checkpoint's two score
-/// draws and its `rand & 7 == 0` gate (`6482 & 7 = 2`, so no flee). The raw
+/// (`11245 & 3 = 1`, so it stays off), then the flee checkpoint's two score
+/// draws and its `rand & 7 == 0` gate (`2234 & 7 = 2`, so no flee). The raw
 /// stream's seed `0` did the same job only because its first **raw** word is
 /// `1 mod 3`.
 const BANDIT_BOSS_FLAME_SEED: u32 = 10;

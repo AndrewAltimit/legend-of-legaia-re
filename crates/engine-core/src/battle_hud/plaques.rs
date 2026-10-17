@@ -165,7 +165,7 @@ pub fn battle_move_name(world: &crate::world::World) -> Option<String> {
             // A summon module prints its own line at the label's place
             // (`FUN_8003541C(.., 0x96, ..)`): the spell name, then the
             // attack name, until the band's exit.
-            use legaia_engine_battle_vm::cast_module_camera::ModuleCaption;
+            use legaia_engine_cast::cast_module_camera::ModuleCaption;
             let id = actor.battle.params[0];
             return match world.casting.module_caption? {
                 ModuleCaption::SpellName => world

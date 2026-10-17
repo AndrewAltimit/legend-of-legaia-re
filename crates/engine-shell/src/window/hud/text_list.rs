@@ -308,7 +308,7 @@ impl PlayWindowApp {
                 use legaia_engine_fishing::fishing_actors::{
                     debug_readout_visible, debug_tile, tracked_point_separation,
                 };
-                let held = self.pad.rotate_right(8);
+                let held = (self.pad | self.gamepad_held).rotate_right(8);
                 if debug_readout_visible(self.dev_menu.is_some(), held) {
                     // Separation of the actor from the venue anchor it
                     // spawned at, in sub-cells (the overlay's tracked-point

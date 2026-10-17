@@ -38,6 +38,7 @@ legaia-engine-field.workspace = true
 legaia-engine-minigame-scenes.workspace = true
 legaia-engine-mode.workspace = true
 legaia-engine-system.workspace = true
+legaia-engine-vm.workspace = true
 legaia-game-tables.workspace = true
 
 [dev-dependencies]

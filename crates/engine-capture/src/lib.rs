@@ -30,6 +30,7 @@
 pub mod bar_seeds;
 pub mod battle_drive;
 pub mod camera_align;
+pub mod clip_cursors;
 pub mod field_seeds;
 pub mod formation_cell;
 pub mod hud_glide;

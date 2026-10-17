@@ -407,6 +407,32 @@ same mesh/texture installer the [monster archive](../formats/monster-animation.m
 uses - and stages the summon creature as a battle actor (`FUN_80024C88`
 allocation, scale `(part_pool_byte_0x1F) << 5`, etc.).
 
+#### The stat head is the summon body
+
+Between the two it calls `FUN_80054CB0(record, 4)` (`0x801F1D1C`): the monster
+record -> actor copy, with seat `4`, which is actor slot `3 + 4` = 7. The
+record head is a monster-record head, and the copy reads it the same way:
+`+0x0C` HP, `+0x10` MP and the six stats `+0x0E` AGL, `+0x12` ATK, `+0x14` /
+`+0x16` the defence pair, `+0x18` INT, `+0x1A` SPD (`0x8005516C..0x8005520C`),
+then boosts four of them by the fight's `ctx[+0x287]` exactly as for a monster
+seat. Slot 7 is the attacker every summon module names in its damage roll
+(`FUN_801DD0AC(_, 7, seat)`), so the HP and INT that roll reads are this
+record's.
+
+That makes the record the summon body for **every** player cast, and the
+`battle_data` twin a mesh source only. The twin's stats are the enemy's, which
+are a different record: Gimard the enemy is HP 99 / INT 16, the Burning Attack
+body HP 192 / INT 48. The flutes and the big summons have no twin, so their
+record is the only source of a body; Terra's Queen Twister record is HP 2176 /
+INT 272. Captured live (`scripts/pcsx-redux/autorun_summon_body_stats.lua` on a
+random-encounter Gimard cast): at the slot-7 roll the actor holds HP 192 and
+INT 60 - the record's 48 under the random-encounter profile (`+ INT >> 2`) -
+with UDF / LDF 21 / 25 off the record's 12 / 15 (`x7/4`), against an installed
+record reading 192 / 48. Parser `summon_readef::cast_record_stats`; the disc-gated
+`cast_record_stat_heads_are_their_own_bodies` pins that each base head shares
+its twin's element but not its stats. The engine seats these stats on `DiscTables::summon_creatures` at scene entry
+(`monster_catalog::apply_cast_record`).
+
 For the **base + evolved-Seru summons (`0x81..=0x95`)** this actor-record TMD is
 **byte-identical** to a record in the `battle_data` monster archive (PROT 867):
 the summon reuses an ordinary enemy creature's mesh. Matching each group's

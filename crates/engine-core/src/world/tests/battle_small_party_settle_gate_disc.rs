@@ -90,7 +90,7 @@ fn nighto_kill_on_a_two_member_partys_first_monster_releases_the_done_band() {
     w.battle_ctx.active_actor = 0;
     w.actors[0].battle.active_target = 2;
     w.casting.module_nighto_outcome =
-        Some(legaia_engine_battle_vm::seru_magic_ticks::NightoOutcome::Kill);
+        Some(legaia_engine_cast::seru_magic_ticks::NightoOutcome::Kill);
     assert_eq!(w.cast_module_for(NIGHTO), Some(907));
     let mut finished = false;
     for _ in 0..1024 {

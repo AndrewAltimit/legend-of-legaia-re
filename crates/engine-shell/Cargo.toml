@@ -78,6 +78,18 @@ sha2.workspace = true
 dirs.workspace = true
 rfd.workspace = true
 
+# Controller input for the play window (`window::gamepad`): gilrs reads every
+# connected gamepad, and the shared `legaia_engine_system::gamepad` layout folds
+# it into the PSX pad word - the layout the browser pages fold the Gamepad API
+# through. Linux links libudev (the release sysroot carries an amd64 copy, see
+# setup-cross-toolchain.sh); `--no-default-features` builds a keyboard-only
+# window.
+gilrs = { workspace = true, optional = true }
+
+[features]
+default = ["gamepad"]
+gamepad = ["dep:gilrs"]
+
 # SIGPIPE reset in the bin's main() so piping stdout into `head` exits
 # quietly instead of panicking on a broken pipe.
 [target.'cfg(unix)'.dependencies]

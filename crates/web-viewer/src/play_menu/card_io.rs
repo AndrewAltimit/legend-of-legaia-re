@@ -3,6 +3,23 @@
 
 use super::*;
 
+#[wasm_bindgen::prelude::wasm_bindgen]
+impl LegaiaRuntime {
+    /// The page could not store the card `card_take_written` handed it
+    /// (browser storage full or blocked): raise the save screen's
+    /// `CardWriteFailed` notice, the one the native window raises when its
+    /// `card.persist()` fails inside the same commit. Without it the screen
+    /// said the save worked and a reload lost it. `false` when no pause menu
+    /// is up to show it.
+    pub fn card_store_failed(&mut self) -> bool {
+        let Some(menu) = self.play_menu.as_mut() else {
+            return false;
+        };
+        menu.save_flow.refuse(SaveRefusal::CardWriteFailed);
+        true
+    }
+}
+
 impl LegaiaRuntime {
     /// Answer the card read [`SaveScreenFlow`] is waiting on, if any.
     ///

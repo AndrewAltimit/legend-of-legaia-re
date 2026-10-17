@@ -14,6 +14,10 @@ thread_local! {
 /// with Vahn's pool spent from 197 to 17 on four field casts at the door,
 /// the bag holding no restorative, and the Spoons the fight's party-wide
 /// hits needed were the ones cast.
+/// The weakest member's HP, per mille, under which a boss-bound party with
+/// an empty bag spends its casters' whole pools on a field heal.
+const NEAR_DEATH_PERMILLE: u32 = 250;
+
 fn boss_bound() -> bool {
     continuous::SAVING_FOR_BOSS.with(std::cell::Cell::get)
         || AT_BOSS_DOOR.with(std::cell::Cell::get)
@@ -208,8 +212,14 @@ pub(super) fn pad_field_restore(session: &mut NativeSession, threshold: u32, mp:
                     .is_some_and(|e| e.usable_in_field && restores(&e.effect))
         });
         if !holds_heal {
+            // Bound for a boss with an empty bag, the casters' MP is the
+            // boss's - unless a member is near death, where walking in is the
+            // worse spend: the Delilas duels hand `nivora_late` a party with
+            // Noa at 1 HP and no bed in `nilboa`, and Koru's race was lost
+            // five times running with her down from its first round.
+            let near_death = gauge(session) < NEAR_DEATH_PERMILLE;
             return spells
-                + if mp || boss_bound() {
+                + if mp || (boss_bound() && !near_death) {
                     0
                 } else {
                     pad_field_spell_heal(session, threshold, false)

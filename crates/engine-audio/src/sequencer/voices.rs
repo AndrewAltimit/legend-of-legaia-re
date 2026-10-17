@@ -180,6 +180,21 @@ impl Sequencer {
         }
     }
 
+    /// Re-derive the live voice volume of every sounding note, on every
+    /// channel - the per-voice loop of `FUN_80067E9C` that a sequence-volume
+    /// change runs (see [`Self::set_master_vol`]). Notes still waiting on
+    /// their key-on are skipped: their volume is computed when they key.
+    pub(super) fn remix_all(&mut self, spu: &mut Spu) {
+        for note in self.active.iter().filter(|n| n.pending.is_none()) {
+            if let Some((l, r)) = self.note_volume(note)
+                && let Some(v) = spu.voices.get_mut(note.voice as usize)
+            {
+                v.vol_left = l;
+                v.vol_right = r;
+            }
+        }
+    }
+
     /// A sounding note's voice volume, the sequencer path of `FUN_80067550`
     /// end to end: the channel's CC7 folded into the velocity
     /// ([`effective_velocity`]), the head chain, the sequence volume

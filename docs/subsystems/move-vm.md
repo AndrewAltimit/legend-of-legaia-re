@@ -202,7 +202,7 @@ subsection under the table.
 | `0x31` | `LFLAG_AND` | 2 | `+0x62 &= v1` |
 | `0x32` | `LFLAG_OR` | 2 | `+0x62 \|= v1` |
 | `0x33` | `CLEAR_BIT_40000000` | 1 | `+0x74 &= ~0x40000000` |
-| `0x34` | `TWEEN_SETUP` | 9 | Eight-operand block store - [below](#0x34---tween_setup) |
+| `0x34` | `SOUND_EMITTER_SETUP` | 9 | Seats a positional sound emitter: cue, voice, levels, box - [below](#0x34---sound_emitter_setup) |
 | `0x35` | `WORLD_INC_VARIANT2` | 3 | `+0x90 += v1; +0x92 += v2` |
 | `0x36` | `TWEEN_DURATION_SET` | 3 | `+0x98 = v1 << 3; +0x9A = v2 << 3; +0xB8 = 0` |
 | `0x37` | `WORLD_SET_VARIANT2` | 3 | `+0x90 = v1; +0x92 = v2` |
@@ -340,7 +340,7 @@ world-position lerps, bbox / distance branches, self-modifying bytecode ops,
 HSV colour ramps and the `DAT_80085758` fourth flag bank - is
 **[move-vm-overlay-ext.md](move-vm-overlay-ext.md)**.
 
-### 0x34 - `TWEEN_SETUP`
+### 0x34 - `SOUND_EMITTER_SETUP`
 
 Arm `0x80023B64` (jump-table word at `0x80010848`) stores through
 `s4 = actor + 0x90`:
@@ -355,6 +355,13 @@ Arm `0x80023B64` (jump-table word at `0x80010848`) stores through
 | `v6` | `lh`, word | `+0xA0` |
 | `v7` | `lh`, word | `+0xA4` |
 | `v8` | `lh`, word | `+0xA8` |
+
+The fields are a render-mode-5 part's: `+0xAC` the cue id, `+0xB0` the
+first SPU voice, `+0x90` / `+0x92` the left / right level, and `+0x9C` /
+`+0xA0` / `+0xA4` / `+0xA8` the box the emitter is heard in. The part tick's
+mode-5 arm reads exactly these
+([`audio.md`](audio.md#positional-sound-emitters)); the record that issues the
+op is a `model_sel = 0x4001` part, which the seater gives `+0x5A = 5`.
 
 Nothing here touches `+0xAE..+0xC8` beyond `+0xAC`'s own sign half. Not a
 zero-extended run into `+0xAC..+0xC8`: the stores are relative to `actor +
@@ -537,7 +544,8 @@ packets, SPU triggers and libgpu VRAM copies. The port splits it by block.
 | Motion block + post-VM clamps | `engine-effects::part_motion` (`motion_block`) |
 | Mode 3 CLUT-cell integrator | `engine-field::clut_cell_fx::mode3_integrate` |
 | Mode 4 VRAM-rect scroller | `engine-core::world::ambient::vram_scroll::mode4_integrate` |
-| `+0x5A` seeding from `model_sel` | `engine-effects::summon::RenderMode::from_model_sel` (`0x4000 -> Particle`, `0x4001 -> SoundEmitter`) |
+| Mode 5 positional sound emitter | `engine-vm::sfx_emitter::emitter_tick`, driven from `World::tick_ambient_fx`; voices by `AudioDirector::drive_sfx_emitters` |
+| `+0x5A` seeding from `model_sel` | `engine-effects::summon::RenderMode::from_model_sel` (`0x4000 -> Particle`, `0x4001 -> SoundEmitter`); the field seater `World::spawn_ambient_record_at` writes `+0x5A` itself (`3` / `5`) |
 | Part seater `FUN_80021B04` | `move_vm::spawn_move_actor`; field host `World::spawn_ambient_record_at` |
 
 The **field** path is live on both play hosts. Field-VM op `0x34` sub-3 ("Play

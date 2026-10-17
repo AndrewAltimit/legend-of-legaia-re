@@ -94,7 +94,7 @@ impl World {
     /// Not a retail draw: a port of a `jal 0x80056798` site goes through
     /// [`Self::next_rand`]. The raw word's low bits have short periods.
     pub fn next_rng(&mut self) -> u32 {
-        // Numerical Recipes LCG. Cheap, deterministic.
+        // The BIOS `rand()` step (`world_lcg_step`).
         self.rng_state = legaia_engine_system::rand::world_lcg_step(self.rng_state);
         self.rng_state
     }

@@ -205,16 +205,16 @@ pub fn learn_spell_prepend(record: &mut CharacterRecord, spell_id: u8) {
 ///
 /// REF: FUN_801F69D8 (PROT 0905 / 0911 / 0919 heal arms)
 pub fn module_heal_xp_gain(spell_id: u8, magic_level: u8, hp: u16, max_hp: u16) -> u32 {
-    use legaia_engine_battle_vm::seru_magic_ticks::{self as a, self as b};
+    use legaia_engine_battle_vm::battle_formulas as f;
     let missing = i32::from(max_hp) - i32::from(hp);
     let (want, full, clamped) = match spell_id {
         0x83 => (
-            (u32::from(magic_level) * a::VERA_HEAL_PER_LEVEL + a::VERA_HEAL_BASE) as i32,
+            (u32::from(magic_level) * f::VERA_HEAL_PER_LEVEL + f::VERA_HEAL_BASE) as i32,
             0xC,
             0x4,
         ),
-        0x89 => (b::orb_heal_amount(magic_level) as i32, 0x4, 0x2),
-        0x91 => (b::spoon_heal_amount(magic_level) as i32, 0x4, 0x2),
+        0x89 => (f::orb_heal_amount(magic_level) as i32, 0x4, 0x2),
+        0x91 => (f::spoon_heal_amount(magic_level) as i32, 0x4, 0x2),
         _ => return 0,
     };
     if missing <= 0 {

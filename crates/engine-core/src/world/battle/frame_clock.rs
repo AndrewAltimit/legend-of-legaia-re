@@ -59,6 +59,26 @@ impl BattleFrameClock {
         self.origin_frame + tick.saturating_sub(self.origin_tick) / u64::from(self.step.max(1))
     }
 
+    /// Re-time the frame `tick` opens to `step` vsyncs, keeping its id: the
+    /// pass that ran on `tick` belongs to a frame whose length retail
+    /// measures only at its end (`FUN_80016B6C` samples the frame's cost at
+    /// the frame-end pass and waits `VSync(step)` before the next pass), so
+    /// a step taken on the pass's own tick spans that pass's frame. A new
+    /// id here would open a second frame on the same tick, and the next
+    /// tick would claim it for a second pass.
+    pub fn retime_frame(&mut self, tick: u64, step: u8) {
+        let step = step.max(1);
+        if step == self.step {
+            return;
+        }
+        let id = self.frame_of(tick);
+        *self = Self {
+            step,
+            origin_tick: tick,
+            origin_frame: id,
+        };
+    }
+
     /// Run frames of `step` vsyncs from display tick `tick` on, the first one
     /// opening on `tick`.
     pub fn set_step(&mut self, tick: u64, step: u8) {
@@ -121,7 +141,17 @@ impl World {
             DEFAULT_BATTLE_FRAME_STEP
         };
         if self.battle.frame_clock.step != want {
-            self.set_battle_frame_step(want);
+            if self.toggles.battle_sm_frame_cadence {
+                // The pass this tick ran opened the frame the new step
+                // spans.
+                let tick = self.clock.display_frames;
+                self.battle.frame_clock.retime_frame(tick, want);
+                if let Some(cam) = self.battle.camera.as_mut() {
+                    cam.set_frame_step(want);
+                }
+            } else {
+                self.set_battle_frame_step(want);
+            }
         }
     }
 
@@ -218,6 +248,87 @@ impl World {
         }
         self.battle.sm_pass_frame = Some(frame);
         true
+    }
+
+    /// How many vsyncs of the actor anim tick this tick runs, and claim the
+    /// frame. Retail's anim tick `FUN_80047430` is an actor-list node of the
+    /// same main-loop pass as the battle frame driver, and it advances each
+    /// cursor by the frame step: `(DAT_1F800393 * +0x21D * clip rate) >> 1`
+    /// (`lbu v1,0x393(v1)` at `0x80047734`, the `>> 2` twin at
+    /// `0x80047700`). On retail's cadence the engine therefore runs the
+    /// anim family (the cursor advance, its root-motion drive and its
+    /// hit-event walk) on the first tick of each [`BattleFrameClock`] frame,
+    /// once per vsync the frame spans, and holds every actor still on the
+    /// ticks between: a pose, a hit and an effect record land on the frame
+    /// the pass ran, never between two. On the per-vsync cadence it is `1`.
+    pub(in crate::world) fn battle_anim_pass_vsyncs(&mut self) -> u8 {
+        if !self.toggles.battle_sm_frame_cadence {
+            return 1;
+        }
+        let frame = self.battle_frame_id();
+        if self.battle.anim_pass_frame == Some(frame) {
+            return 0;
+        }
+        self.battle.anim_pass_frame = Some(frame);
+        self.battle_frame_step().max(1)
+    }
+
+    /// The actor anim tick's pass on retail's cadence, run after the frame
+    /// driver's pass and its camera: the cursor advance
+    /// ([`Self::tick_battle_animations`]), then - when the pass reached the
+    /// anim slot - its root motion and its hit walk, whose events fold here,
+    /// then the draw's body-pair store.
+    ///
+    /// Retail ticks the battle frame driver `FUN_80046A20` (the action SM,
+    /// the separation pass, the camera walker) ahead of the battle actors'
+    /// anim tick `FUN_80047430` within one pass, and the battle draw
+    /// callback's pose decoder `FUN_8004998C` stores the body pairs after
+    /// both. Two captures pin the order through the close-up accumulator
+    /// `ctx[+0x87C]`, which the SM's framing prologue raises by
+    /// `8 * step` a pass (`0x801D5900..0x801D5914`) and a clip commit
+    /// zeroes beside the node cursor (`FUN_8004AD80`, `sw zero,0x87c` at
+    /// `0x8004BF74`, `sh zero,0x68` at `0x8004B068`):
+    /// `rim_elm_gimard_victory` holds accumulator `16` beside cursor `16`
+    /// one pass after a step-`2` event-path cut (`0x80047A3C`, after the
+    /// advance), and `theeder_summon_mid_cast` holds `72` beside `36`
+    /// three step-`3` passes after a commit. Framing ahead of the anim tick
+    /// reads both; framing after it would read `32` and `96`.
+    ///
+    /// A no-op on the per-vsync cadence, where the anim tick keeps its seat
+    /// ahead of the SM.
+    pub(in crate::world) fn tick_battle_anim_pass(&mut self) {
+        if self.mode != legaia_engine_mode::mode::SceneMode::Battle
+            || !self.toggles.battle_sm_frame_cadence
+            || self.battle.anim_pass_vsyncs == 0
+        {
+            return;
+        }
+        self.tick_battle_animations();
+        if self.battle.anim_slot_reached {
+            let events_before = self.pending_battle_events.len();
+            for _ in 0..self.battle.anim_pass_vsyncs {
+                self.tick_battle_locomotion();
+            }
+            self.tick_battle_hit_events();
+            self.fold_new_battle_events(events_before);
+        }
+        // A commit this pass zeroed `ctx[+0x87C]` and its ramps on the spot
+        // (`FUN_8004AD80`, `0x8004BF68..0x8004BF78`); the camera holds the
+        // retail words, so it takes the reset now rather than at its next
+        // step.
+        let (commits, installs) = (
+            self.battle_ctx.active_clip_commits,
+            self.battle_ctx.active_clip_installs,
+        );
+        if let Some(cam) = self.battle.camera.as_mut() {
+            cam.observe_active_commits(commits);
+            cam.observe_active_installs(installs);
+        }
+        // The draw: every body pair from the pose the pass left, for the
+        // next pass's SM and camera to read - a seat the root-motion pass
+        // has not seeded yet included (the draw stores every drawn actor's).
+        self.seed_battle_seats();
+        self.refresh_battle_body_pairs();
     }
 
     /// The action state the battle camera frames. Retail's framing calls
@@ -403,6 +514,59 @@ mod tests {
             (7..11).map(|t| c.ticks_into_frame(t)).collect::<Vec<_>>(),
             [0, 1, 2, 0]
         );
+    }
+
+    /// A step retimed on the tick a pass ran keeps that pass's frame: the
+    /// next tick is still inside it, so no second pass opens there.
+    #[test]
+    fn a_retimed_frame_keeps_its_id() {
+        let mut c = BattleFrameClock::default();
+        let id = c.frame_of(10);
+        c.retime_frame(10, 3);
+        assert_eq!(c.frame_of(10), id);
+        assert_eq!(c.frame_of(11), id);
+        assert_eq!(c.frame_of(12), id);
+        assert_eq!(c.frame_of(13), id + 1);
+        assert_eq!(c.ticks_into_frame(13), 0);
+    }
+
+    /// The anim pass claims each battle frame once, a frame step of vsyncs
+    /// wide, and holds on the ticks between; per vsync it is one tick.
+    #[test]
+    fn the_anim_pass_claims_a_frame_step_of_vsyncs() {
+        let mut w = World::new();
+        w.toggles.battle_sm_frame_cadence = true;
+        let mut got = Vec::new();
+        for t in 10..16u64 {
+            w.clock.display_frames = t;
+            got.push(w.battle_anim_pass_vsyncs());
+        }
+        assert_eq!(got, [2, 0, 2, 0, 2, 0]);
+        w.toggles.battle_sm_frame_cadence = false;
+        assert_eq!(w.battle_anim_pass_vsyncs(), 1);
+        assert_eq!(w.battle_anim_pass_vsyncs(), 1);
+    }
+
+    /// On retail's cadence a step change made on the pass tick does not
+    /// open a second pass on the tick after.
+    #[test]
+    fn a_seeded_step_change_opens_no_second_pass() {
+        let mut w = World::new();
+        w.toggles.battle_sm_frame_cadence = true;
+        w.seed_battle_frame_step(3, 0x33);
+        w.clock.display_frames = 10;
+        assert!(w.battle_sm_pass_due());
+        w.battle_ctx.action_state = 0x33;
+        w.apply_battle_frame_step_seed();
+        assert_eq!(w.battle_frame_step(), 3);
+        let mut passes = vec![10];
+        for t in 11..17u64 {
+            w.clock.display_frames = t;
+            if w.battle_sm_pass_due() {
+                passes.push(t);
+            }
+        }
+        assert_eq!(passes, [10, 13, 16]);
     }
 
     #[test]

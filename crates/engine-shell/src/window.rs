@@ -47,6 +47,8 @@ mod field_render;
 #[cfg(test)]
 #[path = "window/fog_texture_tests.rs"]
 mod fog_texture_tests;
+#[path = "window/gamepad.rs"]
+mod gamepad;
 #[path = "window/geometry.rs"]
 mod geometry;
 #[path = "window/headless.rs"]
@@ -157,10 +159,7 @@ impl PlayWindowApp {
             return;
         }
         let path = std::path::PathBuf::from(OPTIONS_CONFIG_FILE);
-        let to_save = match &self.options_before_retail_pin {
-            Some(stored) => self.options_state.unpinned_over(stored),
-            None => self.options_state.clone(),
-        };
+        let to_save = self.options_pins.persistable(&self.options_state);
         if let Err(e) = to_save.save(&path) {
             log::warn!("options: save to {} failed: {e:#}", path.display());
         }

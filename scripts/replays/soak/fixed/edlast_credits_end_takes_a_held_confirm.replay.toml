@@ -1,0 +1,20 @@
+# Soak-harness finding (pad input only - no disc bytes).
+# soak-scene = "edbylon@gme968-all-seru-party.mcr:PRO-01"
+# soak-seed = 15102
+# soak-signature = "softlock|edlast|helper@0x2608:op4a"
+# detail: the credits end on a held-pad poll (42 01 08 / 09); input holds Cross from frame 26700
+# soak-min-distinct = 1
+# soak-arming = "host"
+# reproduce: LEGAIA_SOAK_REPLAY=<this file> cargo test -p legaia-engine-shell --profile release-test --test integration soak_harness::soak_replay -- --nocapture
+[meta]
+schema = "j-replay-v1"
+rng_seed = 2643430841
+frames = 30000
+
+[[event]]
+frame = 0
+pad = 0
+
+[[event]]
+frame = 26700
+pad = 16384

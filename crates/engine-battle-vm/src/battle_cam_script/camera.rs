@@ -203,6 +203,11 @@ pub struct BattleCamera {
     /// the multiplier the walker `FUN_8002149C` applies to every increment.
     /// [`DEFAULT_CAMERA_FRAME_STEP`] unless a caller sets another.
     pub(super) frame_step: u8,
+    /// Whether the per-pass counters (the framing prologue's accumulator and
+    /// ramps, the action yaw counter) advance on the step that runs the
+    /// pass, a whole step at once, rather than a vsync at a time
+    /// ([`BattleCamera::set_pass_granular`]).
+    pub(super) pass_granular: bool,
     /// The acting actor the submenu close-up frames. Defaults to the
     /// measured solo-Vahn case; hosts that track the live battle actor call
     /// [`BattleCamera::set_actor`] so non-Vahn seats frame correctly.

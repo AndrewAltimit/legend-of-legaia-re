@@ -288,6 +288,26 @@ pub struct ZoneFollow {
     /// An eye translation the next snap lands instead of the composed one
     /// - [`Self::seat_eye_after_snap`].
     pub(super) seat_eye: Option<[i32; 3]>,
+    /// What the seat's snap landed ([`SeatHold`]), kept while the player
+    /// stands on the seat.
+    pub(super) seat_hold: Option<SeatHold>,
+}
+
+/// The seat's landed focus / eye, and the pose its snap composed there.
+///
+/// A seat lands a retail state's focus and eye over the snap because both
+/// are follow-ease history the seat cannot replay. A later snap composing
+/// the same target at the same spot re-lands them rather than undoing the
+/// seat: the entry script's first pass runs on the ticks after the seat, and
+/// a region selector arm that ends on `4C 39` (`town01` `P1[0]` `+0x1A4`)
+/// snaps there, where retail ran it on the player's arrival, before the walk
+/// that left the history.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) struct SeatHold {
+    pub(super) player: [i32; 3],
+    pub(super) target: crate::camera_zone::CameraTarget,
+    pub(super) focus: Option<[i32; 2]>,
+    pub(super) eye: Option<[i32; 3]>,
 }
 
 impl Default for ZoneFollow {
@@ -315,6 +335,7 @@ impl Default for ZoneFollow {
             follow_enabled: true,
             seat_focus: None,
             seat_eye: None,
+            seat_hold: None,
         }
     }
 }

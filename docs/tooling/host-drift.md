@@ -464,6 +464,22 @@ than making it lie. Both live in
 [`site/js/pad-bindings.js`](../../site/js/pad-bindings.js), the one place any
 page adopts the engine's table.
 
+A controller layout written into a page is the same defect for a gamepad, and
+it does not look like a key table either: it is an array of PSX button names
+indexed by `Gamepad.buttons[i]`. The play page carried one while the native
+window read no controller at all, so no file held both columns. Two more rules
+hold it:
+
+- An array literal of four or more quoted PSX button names is a controller
+  table. The layout is served by the engine
+  ([`legaia_engine_system::gamepad`](../../crates/engine-system/src/gamepad.rs)
+  through `gamepad_layout_json`), the table the native window folds gilrs
+  through.
+- `navigator.getGamepads` is read only by `site/js/pad-bindings.js`
+  (`GAMEPAD_ADOPTER`); every page reads controllers through its
+  `legaiaPollGamepad` (a key-set host) or `legaiaGamepadEdges` (a page whose
+  controls are named buttons), which share the focus-loss reset.
+
 There is deliberately **no waiver file** for this tier. A waiver names a
 blocking capability, and no capability is missing here: the table is exported,
 the adoption helper ships, and the answer is always to type the lookup.
@@ -1167,7 +1183,7 @@ table; a switch with no page twin is a host difference, not a world default.
 | `--party` | `set_active_party_spec` |
 | `--card`, `--resume-save`, `--boot-ui`, `--world-map` | the card rack, a card Load, the boot title, the scene picker |
 | `LEGAIA_SMART_MONSTERS`, `LEGAIA_WORLD_MAP_MARKERS` | `set_smart_monsters`, `set_world_map_markers` |
-| `LEGAIA_BATTLE_FRAME_CADENCE`, `LEGAIA_ARTS_SAVED_LIST` | `set_battle_frame_cadence`, `set_arts_saved_list` (both default off on both hosts) |
+| `LEGAIA_BATTLE_FRAME_CADENCE` (`0` lowers it), `LEGAIA_ARTS_SAVED_LIST` | `set_battle_frame_cadence`, `set_arts_saved_list`. The cadence has one default, `DEFAULT_BATTLE_SM_FRAME_CADENCE`, that `WorldToggles::new`, the page's `PageToggles` and its box all start from (`the_cadence_default_is_single_sourced`); the saved-chain list is off on both hosts |
 | `--no-entry-pulse` | `set_entry_pulse(false)`, the "Entry pulse" box; the retail box also holds it off |
 | `--simple-dialogue`, `--flat-y`, `--no-edge-collision`, `--no-solid-npcs`, `--no-live-npcs`, `--no-damage-finish`, `--no-player-battle`, `--seed-party`, `--battle` | none: comparison and debug opt-outs from the retail default, which is the page's only setting (`--battle` has the wasm `debug_force_battle`) |
 | `--screenshot*`, `--pad-script`, `--key-script`, `--str-file`, `--cutscene-map` | none: native capture tooling |
@@ -1491,15 +1507,47 @@ vocabulary (`F1`..`F9` except `F5`, `I`, `Y`, `T`, `R`) are one table,
 The native window's `option_key` resolves winit's `KeyCode` through it (the
 variant's `Debug` name is the `KeyboardEvent.code` string); the page's
 keydown asks `play_host_hotkey(event.code)`. Both refuse the field-only keys
-(`F3`, `T`, `R`) under a front-end screen (`HostHotkey::needs_field`), and
-both make an options key's edit through `apply_options_hotkey` before
-persisting, so `I`, `F8`, `F9`, `T`, `R` and `F2` are one code path. What a
+(`F3`, `T`, `R`) under a front-end screen through one rule,
+`HostHotkey::refused` over a `FrontEndScreens` each host fills field by field
+(logos, title, save select, pause menu, game over) - the page used to test
+the shared predicate against its title and logos alone, so `T` / `R` edited
+and persisted options behind its pause menu. Both make an options key's edit
+through `apply_options_hotkey` before persisting, so `I`, `F8`, `F9`, `T`,
+`R` and `F2` are one code path. A persisted write goes through
+`OptionsPins::persistable` on both hosts: the knobs a session pins (`--retail`
+or the page's retail box, `--no-volumetric-fog`) persist as they were before
+the pin, every other row with the session's edits. The window used to save its
+fog override; the page dropped every edit made under its retail box. What a
 host adds is only what it holds alone: the window's renderer toggles, its
 diagnostic text rows and debug vantage; the page's checkboxes (mirrored from
 the stored option, or clicked for the keys that stand for a page control) and
 its HUD bar for `F1`, through `window.__playHotkeyActions`. The table's test
 holds every key off the bindable set, and a `SIM_PAIRS` row pins both sites
 to the shared calls.
+
+### Controllers
+
+A gamepad binds buttons to buttons by position, so the Key Config table never
+reaches it. One layout, the W3C standard mapping, lives in
+[`legaia_engine_system::gamepad`](../../crates/engine-system/src/gamepad.rs).
+
+| Decision | Kernel | Native | Pages |
+|---|---|---|---|
+| button order, stick dead zone, trigger threshold | `gamepad::STANDARD_BUTTONS`, `STICK_DEAD_ZONE`, `BUTTON_PRESS_THRESHOLD` | gilrs buttons renamed to standard indices (`window::gamepad::standard_index`) | `gamepad_layout_json`, adopted by `pad-bindings.js` |
+| press / release edges, focus-loss reset | `StandardGamepad::update`, `reset` | `poll_gamepad` once per redraw, ahead of the ticks; `Focused(false)` | `legaiaPollGamepad` (play page, title card), `legaiaGamepadEdges` (minigames page) |
+| where the word lands | the tick's pad word | `gamepad_held`, ORed with the keyboard's held word each tick; a press since the last poll goes through `PadTapLatch` | `Gamepad:<Button>` entries in the `held` / `pulse` sets; on the minigames page an edge event naming its button through the key handlers |
+
+Scripted and headless native runs open no controller: the pad word there is
+the script's. Two native surfaces read the pad outside the tick's word and
+were keyboard-only until they took it:
+
+- the `--simple-dialogue` panel's option picker steps on the tick's bound pad
+  word (`OwnedDialogPanel::step_picker_pad`); the bits it owns stay hidden
+  from the world until released, so the committing confirm does not also
+  dismiss the reply;
+- the preview movie player (`play-str`, a `play-window` phase-1 movie) ends on
+  a controller press of retail's abort set (`cutscene::fmv_abort_edge`, the
+  button half of `fmv_skip_edge_hit`), as `Esc` ends it.
 
 ### Camera
 
@@ -1526,6 +1574,7 @@ screens.
 
 | Decision | Kernel |
 |---|---|
+| title Continue | `SaveSelectSession::title_continue`: retail's title card manager, no pause-menu gate (window: `BootUiState::SaveSelect`; page: `play_menu_open_title_continue`, a title-opened save sub-screen). The page once opened the pause menu's Load row, whose field gates could bounce a Continue back to the title |
 | pause-menu press and open | `BootSession::press_field_menu`, `World::field_menu_open_allowed` (dialogue engagement, narration, title card, locks, shop), `open_field_menu`, `close_field_menu` |
 | pause-menu stack | `field_menu_dispatch::tick_root_list`, `tick_open_subsession`, `finish_subsession`; per host: rack I/O, key table, options store (`SubsessionHandoff`) |
 | pause-menu draw assembly | `engine-ui::pause_menu` (`engine-ui/tests/pause_menu_compose.rs`); the session-to-view projection `engine-screens::pause_screens` |
@@ -1969,9 +2018,14 @@ dropped at the `BattleActionHost` trait default. Oracles:
 
 ### Minigames
 
-Every native minigame hotkey arms the mode-24 door warp
+The native minigame hotkeys (`K`, `O`, `M`, `B`) arm the mode-24 door warp
 (`World::request_minigame_warp`; page `play_mg_debug_warp`), so a launcher and
-a walked door reach one session through `SceneHost::drain_minigame_warp`.
+a walked door reach one session through `SceneHost::drain_minigame_warp`. `K`
+built a Qualifier floor of its own until it took the warp, so the dance it
+opened ignored the story flags the hall's floor is read from. Two launchers
+stay direct on purpose: `U` (the how-to floor, which no flag state in a
+launcher reaches) and fishing (`L`, and the page's `play_fishing_start`,
+alike).
 
 ### The minigame side-channel step is paired; its contents are not
 

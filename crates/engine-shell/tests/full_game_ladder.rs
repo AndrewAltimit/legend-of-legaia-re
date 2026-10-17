@@ -717,3 +717,190 @@ fn part_b_full_game_ladder() {
         "full-game ladder regressed: {regressions:#?}"
     );
 }
+
+/// The rapids' landing poll is reached across the waits ahead of it: a
+/// standard yield on the player, a context-flag busy-wait, local-flag
+/// writes and an animate, then the `42 01` compass chain (`jouinb` P2[6] at
+/// `0x0281..0x02A3`). A jump or a text segment in between ends the look.
+/// Disc-free.
+#[test]
+fn poll_ahead_reaches_a_poll_past_waits() {
+    let ride: Vec<u8> = [
+        &[0xC1, 0xF8, 0x02, 0xC1][..], // yield on the player
+        &[0xB3, 0xF8, 0x0A],           // wait on its context flag
+        &[0xAC, 0x0B, 0x0B],           // local flag clear
+        &[
+            0xCB, 0x0B, 0x02, 0x03, 0x66, 0x00, 0x66, 0x00, 0x66, 0x00, 0x66, 0x00,
+        ],
+        &[0x42, 0x01, 0x00, 0x4D, 0x01], // the Down poll
+    ]
+    .concat();
+    assert_eq!(poll_ahead(&ride, 0), Some(ride.len() - 5));
+    // A relative jump before the poll: the poll may never run.
+    let jumped: Vec<u8> = [&[0x26, 0x03, 0x00][..], &[0x42, 0x01, 0x00, 0x4D, 0x01]].concat();
+    assert_eq!(poll_ahead(&jumped, 0), None);
+    // A flag-bit test (`42 00`) is not a pad poll.
+    assert_eq!(poll_ahead(&[0x42, 0x00, 0x05, 0x10, 0x00], 0), None);
+}
+
+/// `jouine`'s arrival record P2[5] commits Cort (`3E FF`) on the way in, and
+/// the field ticks on through the battle intro. On those frames neither the
+/// pause menu (its Save row) nor a host session save may land: a save there
+/// holds the flags past the commit without the fight, and its reload walked
+/// onto the epilogue band P2[2] with Cort unbeaten. Seeded from the
+/// `bio_castle` anchor (`jouind`) and played to `cort_chamber` on the pad,
+/// which reaches it on arrival with the fight still committed; Start is then
+/// pressed on every other frame until the battle begins. Disc-gated.
+#[test]
+fn jouine_cort_commit_refuses_the_menu_and_a_host_save() {
+    let Some(inp) = inputs() else { return };
+    let spine = load_spine();
+    let at = |id: &str| spine.iter().position(|m| m.id == id).expect("spine id");
+    let (from, to) = (&spine[at("bio_castle")], &spine[at("cort_chamber")]);
+    let Some(anchor) = from
+        .anchor
+        .as_ref()
+        .and_then(|r| load_anchor(&inp.library, r).ok())
+    else {
+        eprintln!("[skip] bio_castle anchor not in the library");
+        return;
+    };
+    let index = ProtIndex::open_extracted(&inp.extracted).expect("open ProtIndex");
+    let graph = DiscGraph::build(&index);
+    let opts = live_opts(true);
+    let mut session = open_session(&inp.extracted);
+    seed(&mut session, from, Some(&anchor), &opts).expect("seed bio_castle");
+    PAD_DEADLINE.with(|d| d.set(session.frames + PAD_SEGMENT_FRAMES));
+    PAD_BATTLE_LEFT.with(|l| l.set(PAD_BATTLE_ALLOWANCE));
+    let mut trail = vec![scene_name(&session)];
+    traverse(&mut session, &graph, to, true, &mut trail).expect("reach cort_chamber");
+    PAD_DEADLINE.with(|d| d.set(u64::MAX));
+    assert_eq!(scene_name(&session), "jouine");
+    assert!(
+        session.host.world.field_scripts_held_for_battle(),
+        "the milestone is reached with Cort committed"
+    );
+    let mut held_frames = 0;
+    for f in 0..20_000 {
+        if session.host.world.mode == SceneMode::Battle {
+            break;
+        }
+        let held = session.host.world.field_scripts_held_for_battle();
+        if held {
+            held_frames += 1;
+            assert!(!session.host.world.field_menu_open_allowed(), "frame {f}");
+            assert!(!session.host.world.host_save_allowed(), "frame {f}");
+        }
+        let pad = if f % 2 == 0 {
+            PadButton::Start.mask()
+        } else {
+            0
+        };
+        session.host.world.set_pad(pad);
+        let _ = session.tick();
+        assert!(
+            !(held && session.field_menu.is_some()),
+            "Start opened the pause menu with Cort committed (frame {f})"
+        );
+    }
+    assert!(held_frames > 0);
+    assert_eq!(
+        session.host.world.mode,
+        SceneMode::Battle,
+        "Cort's fight began"
+    );
+}
+
+/// `jouinb`'s rapids (P2[6]) loop their lap until the player holds a
+/// direction (or Circle) at a landing: the poll chains `42 01 00..08` at
+/// `0x02A3` / `0x03AC` are the only ways out, and the lap's backward `26` at
+/// `0x03F0` polls the pad, so it is not a wrap. Retail has no cap on a
+/// script context, so a rider who presses nothing rides on; one who holds a
+/// direction jumps off at the next landing. No random encounter rolls on
+/// the way: the ride holds the player's engaged bit. Disc-gated.
+#[test]
+fn jouinb_rapids_ride_until_the_player_jumps_off() {
+    let Some(inp) = inputs() else { return };
+    let ride = |hold: u16| {
+        let mut session = open_session(&inp.extracted);
+        session
+            .enter_scene_live("jouinb", &live_opts(false))
+            .expect("enter jouinb");
+        for _ in 0..60 {
+            session.host.world.set_pad(0);
+            let _ = session.tick();
+        }
+        let (mf, man, _) = scene_man_and_triggers(&session).expect("jouinb MAN");
+        assert!(
+            session
+                .host
+                .world
+                .install_cutscene_timeline_record(&mf, &man, 2, 6, false),
+            "install P2[6]"
+        );
+        let mut moves = 0usize;
+        let mut last = player_xz(&session);
+        let mut frames = 0usize;
+        for f in 0..150_000usize {
+            // The script runner raises the player's engaged bit on every
+            // frame it steps the ride, and the region roll returns on it
+            // (`FUN_801D9E1C`, `encounter.md`'s steps that do not roll).
+            assert_ne!(
+                session.host.world.mode,
+                SceneMode::Battle,
+                "an encounter rolled on the ride (frame {f})"
+            );
+            if !session.host.world.cutscene_timeline_active() {
+                break;
+            }
+            frames = f;
+            // The "dive in?" picker takes its default (Yes); the ride then
+            // holds `hold`.
+            let boxed = session
+                .host
+                .world
+                .cutscene
+                .timeline
+                .as_ref()
+                .is_some_and(|t| t.dialog.is_some());
+            let pad = if boxed {
+                if f % 8 == 0 {
+                    PadButton::Cross.mask()
+                } else {
+                    0
+                }
+            } else {
+                hold
+            };
+            session.host.world.set_pad(pad);
+            let _ = session.tick();
+            let now = player_xz(&session);
+            if now != last {
+                moves += 1;
+                last = now;
+            }
+        }
+        (
+            session.host.world.cutscene_timeline_active(),
+            frames,
+            moves,
+            std::mem::take(&mut session.host.world.cutscene.capped),
+        )
+    };
+    let (riding, frames, moves, capped) = ride(0);
+    assert!(
+        moves > 500,
+        "the ride carried the player ({moves} moves in {frames} frames)"
+    );
+    assert!(
+        capped.is_empty(),
+        "the anti-hang cap cut the ride: {capped:?}"
+    );
+    assert!(riding, "a rider who presses nothing is still on the rapids");
+    let (riding, frames, _, capped) = ride(PadButton::Right.mask());
+    assert!(capped.is_empty(), "{capped:?}");
+    assert!(
+        !riding && frames < 5_000,
+        "holding Right jumps off ({frames} frames)"
+    );
+}

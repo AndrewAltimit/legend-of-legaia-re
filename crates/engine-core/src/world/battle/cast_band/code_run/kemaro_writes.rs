@@ -35,7 +35,7 @@ impl World {
         passed: bool,
         victim: u8,
     ) {
-        let s = legaia_engine_battle_vm::cast_module_camera::SPEED_SCALAR;
+        let s = legaia_engine_cast::cast_module_camera::SPEED_SCALAR;
         let countdown = self.casting.module_cam.countdown.0;
         let ramp = self.casting.module_cam.ramp;
         let creature = self.casting.summon_actor_slot.map(usize::from);

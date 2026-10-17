@@ -550,3 +550,95 @@ fn a_talkers_own_face_at_turns_the_talker() {
         "the talker faces the player: {h:#x}"
     );
 }
+
+/// A "Hi" prompt with a two-option picker whose continuation byte is
+/// `continuation`; both options wait three frames (`4A 03 00`) before the
+/// "a" reply.
+fn held_box_script(continuation: u8) -> Vec<u8> {
+    let mut b = vec![0x1F, b'H', b'i', 0x00];
+    let open = b.len();
+    b.push(0x27);
+    let entries_at = b.len();
+    b.extend_from_slice(&[0, 0, 0, 0]);
+    b.push(continuation);
+    b.extend_from_slice(&[0x1F, b'A', 0x00]);
+    b.extend_from_slice(&[0x1F, b'B', 0x00]);
+    let branch = b.len();
+    b.extend_from_slice(&[0x4A, 0x03, 0x00]);
+    b.extend_from_slice(&[0x1F, b'a', 0x00]);
+    b.push(0x00);
+    let j0 = (branch as i32 - (open as i32 + 1)) as i16;
+    let j1 = (branch as i32 - (open as i32 + 3)) as i16;
+    b[entries_at..entries_at + 2].copy_from_slice(&j0.to_le_bytes());
+    b[entries_at + 2..entries_at + 4].copy_from_slice(&j1.to_le_bytes());
+    b
+}
+
+/// Open the menu of [`held_box_script`] and commit option A.
+fn commit_first_option(world: &mut World) {
+    let mut guard = 0;
+    while !world.dialog.inline.as_ref().unwrap().menu_active() {
+        let waiting = prompt_waits(world);
+        world.step_inline_dialogue(waiting, false, false);
+        guard += 1;
+        assert!(guard < 50, "menu never became active");
+    }
+    slide_menu_in(world);
+    world.step_inline_dialogue(true, false, false);
+    assert_eq!(world.dialog.inline.as_ref().unwrap().last_choice, Some(0));
+}
+
+/// The pager is a list-0 actor tick that draws in every state but `1`, `2`
+/// and `0x0B` (`FUN_801D84D0`, `0x801D9660..0x801D9774`), and a picker
+/// commit on a `0x24` continuation stores state `3` (`0x801D9554..0x801D9568`),
+/// which the dialog SM steps to the idle `4` that keeps the rows
+/// (`0x80039C70`, `0x801D8708`). So the prompt's box stays on screen - rows,
+/// no picker, no page mark - while the branch's opcodes run, until the
+/// reply's line loads. `retock`'s innkeeper keeps "Do you want to stay the
+/// night?" up through Vahn's nod after "Yes".
+#[test]
+fn a_picker_commit_on_a_next_line_continuation_keeps_the_prompt_box_up() {
+    let mut world = World::new();
+    world.start_inline_dialogue(held_box_script(0x24));
+    commit_first_option(&mut world);
+    for _ in 0..2 {
+        let id = world.dialog.inline.as_ref().unwrap();
+        assert!(
+            id.panel.is_none(),
+            "the branch's wait runs with no box typing"
+        );
+        let held = id
+            .held_box
+            .as_ref()
+            .expect("the prompt's box is still drawn");
+        assert!(held.until_next_line);
+        assert_eq!(held.panel.page_bytes(), b"Hi");
+        assert!(held.panel.picker().is_none() && !held.panel.menu_active());
+        assert_eq!(held.panel.advance_icon(), None, "no page mark outside 0x19");
+        world.step_inline_dialogue(false, false, false);
+    }
+    let mut guard = 0;
+    while world.dialog.inline.as_ref().unwrap().panel.is_none() {
+        world.step_inline_dialogue(false, false, false);
+        guard += 1;
+        assert!(guard < 50, "the reply never opened");
+    }
+    assert!(
+        world.dialog.inline.as_ref().unwrap().held_box.is_none(),
+        "the next line's load ends the held box"
+    );
+}
+
+/// Any other continuation stores state `0` (a picker's default at
+/// `0x801D9548`), which draws on the commit's own pager call and is followed
+/// by the idle `1`, which draws nothing: the box lasts the commit frame only.
+#[test]
+fn a_picker_commit_on_a_teardown_continuation_draws_the_box_for_one_frame() {
+    let mut world = World::new();
+    world.start_inline_dialogue(held_box_script(0x25));
+    commit_first_option(&mut world);
+    let held = world.dialog.inline.as_ref().unwrap().held_box.as_ref();
+    assert!(held.is_some_and(|h| !h.until_next_line));
+    world.step_inline_dialogue(false, false, false);
+    assert!(world.dialog.inline.as_ref().unwrap().held_box.is_none());
+}

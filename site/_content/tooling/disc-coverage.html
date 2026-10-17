@@ -153,7 +153,7 @@
 
 <section class="doc-section" id="per-image-port-status">
   <h2>Per-image port status</h2>
-  <p>The homepage's whole-project tiles saturate at 100% once the worklist is empty. The per-image table below them asks the question that still moves: for each runtime code image - the executable and every overlay - how much of <em>that image's</em> code is ported.</p>
+  <p>The homepage's whole-project tiles saturate at 100% once the worklist is empty. The per-image table below them asks the question that still moves: for each runtime code image - the executable and every overlay - how much of <em>that image's</em> code is ported. Once every game image is complete the cards fold behind one line, as the saturated tiles collapse to one checked line each; a single image or track falling short brings the full view back.</p>
   <ul class="bullets">
     <li><strong>Functions</strong> are the entries this instrument's byte attribution places in the image, with the inherited tail cut. Ignore-list rows that say "no routine begins here" (labels, interior fragments, phantom prints) are not functions and leave the count.</li>
     <li><strong>Ported</strong> carries a <code>// PORT:</code> tag. <strong>Native</strong> is an ignore-list scope claim: PsyQ, BIOS, libgte, GPU and CD plumbing the engine replaces wholesale, or a routine with no retail behaviour. A VA-aliasing exemption excuses an address, not any one image's routine, so per image it excuses nothing.</li>

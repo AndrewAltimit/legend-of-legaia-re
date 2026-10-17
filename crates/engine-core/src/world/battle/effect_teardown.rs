@@ -54,6 +54,9 @@ impl World {
         if !c.active_action_fx.is_empty() {
             out.push("active_action_fx");
         }
+        if c.mystic_shield_fx.is_some() {
+            out.push("mystic_shield_fx");
+        }
         if c.move_fx_trail_texpage.is_some() {
             out.push("move_fx_trail_texpage");
         }

@@ -322,18 +322,33 @@ impl LegaiaRuntime {
     }
 }
 
-#[wasm_bindgen]
 impl LegaiaRuntime {
-    /// Export the current engine session as LGSF bytes
-    /// (`World::save_full().write()`). The page offers this as a `.lgsf`
-    /// download and persists it (base64) in localStorage.
-    pub fn export_save(&mut self) -> Vec<u8> {
+    /// [`Self::export_save`]'s body: `Err` while a committed fight has yet
+    /// to begin.
+    pub fn export_save_core(&mut self) -> Result<Vec<u8>, String> {
+        if !self.world_mut().host_save_allowed() {
+            return Err("A battle is starting - save once it is over.".into());
+        }
         // The resume trailer the native window's slot files carry
         // (`write_slot_save`): the scene the save was written in and its
         // banner name, so an import re-enters it rather than whatever the
         // page last had open.
         let resume = self.current_resume();
-        self.world_mut().save_full().write_with_resume(&resume)
+        Ok(self.world_mut().save_full().write_with_resume(&resume))
+    }
+}
+
+#[wasm_bindgen]
+impl LegaiaRuntime {
+    /// Export the current engine session as LGSF bytes
+    /// (`World::save_full().write()`). The page offers this as a `.lgsf`
+    /// download and persists it (base64) in localStorage.
+    ///
+    /// Throws while a fight is committed and has not begun
+    /// (`World::host_save_allowed`): such a save carries the record's flags
+    /// past its `3E FF` but not the fight, and reloads past the boss.
+    pub fn export_save(&mut self) -> Result<Vec<u8>, JsValue> {
+        self.export_save_core().map_err(|e| JsValue::from_str(&e))
     }
 
     /// Import an LGSF save into the live engine session. Validates the
@@ -375,7 +390,7 @@ mod tests {
                 members: vec![legaia_save::CharacterRecord::zeroed()],
             });
         }
-        let bytes = rt.export_save();
+        let bytes = rt.export_save_core().expect("export");
         assert_eq!(&bytes[..4], b"LGSF");
 
         let mut rt2 = roundtrip_runtime();
@@ -576,7 +591,7 @@ mod tests {
         rt.world_mut().load_party(legaia_save::Party {
             members: vec![legaia_save::CharacterRecord::zeroed()],
         });
-        let lgsf = rt.export_save();
+        let lgsf = rt.export_save_core().expect("export");
         let s = save_summary_json_core(&lgsf).unwrap();
         assert!(s.contains("\"kind\":\"lgsf\""), "{s}");
         assert!(save_summary_json_core(&[0u8; 32]).is_err());

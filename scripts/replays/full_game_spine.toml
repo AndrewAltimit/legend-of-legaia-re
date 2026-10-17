@@ -370,6 +370,9 @@ anchor = { kind = "card", card = "playthrough-endgame-7saves.mcr", save = "PRO-1
 id = "cort_chamber"
 scene = "jouine"
 reach = "scene"
+# jouine's arrival record P2[5] commits Cort (F21, 65535 HP) before the pad
+# comes back: the continuous hand walks through the jouind P2[4] door full.
+arrival_fight = true
 anchor = { kind = "state", label = "cort_evolved_pre_battle", fingerprint = "7a8266530955d4442f32b0e1f6a4b4d1e1f7c61f22683b2c2e0dafcf519b8598" }
 
 # ---------------------------------------------------------------- ending

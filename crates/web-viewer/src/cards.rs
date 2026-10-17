@@ -191,9 +191,6 @@ impl LegaiaRuntime {
         let (sf, resume) = card
             .save_at(cell)
             .ok_or_else(|| format!("card block {block} holds no save"))?;
-        if sf.party.members.is_empty() {
-            return Err("that block holds no character records".to_string());
-        }
         self.park_loaded_save(sf, &resume.scene);
         Ok(resume.scene)
     }

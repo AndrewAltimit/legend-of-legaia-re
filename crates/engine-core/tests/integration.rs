@@ -34,6 +34,7 @@ mod battle_bank_bgm_disc;
 mod battle_camera_framing;
 mod battle_camera_heights_disc;
 mod battle_cast_facing_chain;
+mod battle_clip_morph_disc;
 mod battle_command_arms_reachable;
 mod battle_cue_group_sinks_disc;
 mod battle_dead_actor_staged_action;

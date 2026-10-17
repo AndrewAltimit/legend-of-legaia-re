@@ -133,8 +133,10 @@ case "$BUILD_MODE" in
         # unless told to allow it and pointed at the target's own .pc tree.
         ALSA_SYSROOT="$CACHE/sysroot-amd64"
         ALSA_LIBDIR="$ALSA_SYSROOT/usr/lib/x86_64-linux-gnu"
-        if [[ ! -f "$ALSA_LIBDIR/pkgconfig/alsa.pc" ]]; then
-            printf '[release-build] ERROR: amd64 ALSA sysroot missing at %s\n' \
+        # libudev-sys (gilrs, the play window's controller input) resolves
+        # libudev through the same pkg-config tree.
+        if [[ ! -f "$ALSA_LIBDIR/pkgconfig/alsa.pc" || ! -f "$ALSA_LIBDIR/pkgconfig/libudev.pc" ]]; then
+            printf '[release-build] ERROR: amd64 ALSA / libudev sysroot missing at %s\n' \
                 "$ALSA_SYSROOT" >&2
             printf '[release-build] run: scripts/ci/setup-cross-toolchain.sh %s\n' \
                 "$TARGET" >&2

@@ -119,6 +119,7 @@ fn synthetic_save_file() -> SaveFile {
             play_time_seconds: 4500,
             field_position: None,
             audio_levels: None,
+            options: None,
             active_party: vec![0, 1, 2],
             per_char: vec![],
             saved_chains: vec![],
@@ -620,6 +621,7 @@ fn synthetic_party_loop_round_trips_via_retail_sc_block() {
             active_party: post_loop.ext_v2.active_party.clone(),
             field_position: post_loop.ext_v2.field_position,
             audio_levels: post_loop.ext_v2.audio_levels,
+            options: post_loop.ext_v2.options,
             play_time_seconds: post_loop.ext_v2.play_time_seconds,
             ..SaveExtV2::default()
         },
@@ -878,6 +880,7 @@ fn real_psx_memory_card_save_drives_full_loop() {
             play_time_seconds: 7200,
             field_position: None,
             audio_levels: None,
+            options: None,
             active_party: vec![0, 1, 2],
             per_char: vec![],
             saved_chains: vec![],

@@ -328,13 +328,12 @@ fn the_bonus_arm_floor_makes_a_bypass_hit_defence_insensitive() {
     // sampled defence. Derived by hand: the synthetic record's power is
     // 500, so the attacker roll is `r0 % 126 + (4000 >> 8) + 500` and the
     // arm fires when that falls short of `def_roll + 500`, where
-    // `def_roll >= (9999 >> 8) = 39` at any defence. Seed `0xC0FFEE20`'s
-    // first shaped draw (`s' = s * 1664525 + 1013904223`, draw =
-    // `(s' >> 16) & 0x7FFF`) is 17262 = `126 * 137`, so the attacker roll
+    // `def_roll >= (9999 >> 8) = 39` at any defence. Seed `0x000FEE15`'s
+    // first shaped draw (`s' = s * 0x41C64E6D + 0x3039`, draw =
+    // `(s' >> 16) & 0x7FFF`) is 23184 = `126 * 184`, so the attacker roll
     // is 515 and `515 < 39 + 500` holds for every defence. The world's
-    // own seed draws `16475 % 126 = 95`, which fires only once the
-    // defence reaches about 144.
-    const BONUS_ARM_SEED: u32 = 0xC0FF_EE20;
+    // own seed draws `2929 % 126 = 31`.
+    const BONUS_ARM_SEED: u32 = 0x000F_EE15;
     let with_defence = |move_id: u8, defence: u16| -> i32 {
         let mut world = world_with_resisting_party();
         if move_id == BYPASS_MOVE_ID {

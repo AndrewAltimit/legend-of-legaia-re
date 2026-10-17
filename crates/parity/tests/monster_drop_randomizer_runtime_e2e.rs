@@ -46,11 +46,11 @@ use legaia_engine_core::world::World;
 /// World RNG seed on which the victory drop roll lands for any positive
 /// chance. The one-monster roll draws twice: `rand() % 100 < chance`, then -
 /// with no 100% seat and no Items Up bonus - the `rand() & 3 == 0` gate. On the
-/// shaped stream (`s' = s * 1_664_525 + 1_013_904_223`, draw =
-/// `(s' >> 16) & 0x7FFF`) seed `387` draws 25300 (`% 100 == 0`) then 24964
-/// (`& 3 == 0`). A fresh `World` per pass reuses it, so the baseline and
-/// patched rolls are identical and the only variable is the disc byte.
-const ROLL_LANDS_SEED: u32 = 387;
+/// BIOS stream (`s' = s * 0x41C64E6D + 0x3039`, draw = `(s' >> 16) & 0x7FFF`)
+/// seed `0` draws 0 (`% 100 == 0`) then 21468 (`& 3 == 0`). A fresh `World`
+/// per pass reuses it, so the baseline and patched rolls are identical and
+/// the only variable is the disc byte.
+const ROLL_LANDS_SEED: u32 = 0;
 
 fn load_disc() -> Option<Vec<u8>> {
     let p = std::path::PathBuf::from(std::env::var_os("LEGAIA_DISC_BIN")?);

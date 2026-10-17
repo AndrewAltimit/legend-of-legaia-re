@@ -22,7 +22,7 @@
 //! stages) with the standard libspu [`ReverbMode`] presets covering the 9
 //! PSX modes plus Off. Routing is per-voice: set [`Voice::reverb_send`] to
 //! opt a voice into the wet signal (libspu `SpuSetVoiceReverb` analogue).
-//! The 22.05 kHz FIR resampler is approximated; see the [`reverb`] module.
+//! The network runs at 22.05 kHz behind the hardware's half-band FIR resampler; see the [`reverb`] module.
 //!
 //! See `docs/subsystems/audio.md` "engine-audio model" for the consumer.
 

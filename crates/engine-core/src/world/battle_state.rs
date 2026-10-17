@@ -591,6 +591,17 @@ pub struct BattleState {
     /// ([`crate::world::World::battle_sm_pass_due`]) - one pass a battle
     /// frame, however many vsyncs it spans.
     pub sm_pass_frame: Option<u64>,
+    /// The battle frame the actor anim tick last ran its pass on
+    /// ([`crate::world::World::battle_anim_pass_vsyncs`]).
+    pub anim_pass_frame: Option<u64>,
+    /// The vsyncs this tick's anim pass spans: the frame step on the tick
+    /// that opens a battle frame, `0` on the ticks between, `1` on the
+    /// per-vsync cadence.
+    pub anim_pass_vsyncs: u8,
+    /// Whether this tick's battle pass reached the anim tick's slot (its
+    /// root motion and hit walk), which on retail's cadence run after the
+    /// pass ([`crate::world::World::tick_battle_anim_pass`]).
+    pub anim_slot_reached: bool,
     /// The action state the SM's last pass ran (its state on entry), which
     /// the camera frames on retail's cadence
     /// ([`crate::world::World::battle_camera_state`]).
@@ -929,6 +940,9 @@ impl BattleState {
             frame_clock: Default::default(),
             pass_draw_frame: None,
             sm_pass_frame: None,
+            anim_pass_frame: None,
+            anim_pass_vsyncs: 1,
+            anim_slot_reached: false,
             sm_ran_state: None,
             defeat_sink_frame: None,
             vram_loads: Default::default(),

@@ -111,13 +111,13 @@ fn play_intro_movie(
     if skip_auto_str {
         // No phase-1 window; fall through to the scene window.
     } else if let Some(str_path) = resolved_str {
-        play_str_in(event_loop, str_path, None, 640, 480)?;
+        play_str_in(event_loop, str_path, None, 640, 480, !screenshot)?;
     } else if let (Some(disc_path), None) = (disc, str_file) {
         // Disc mode, no explicit file: resolve the scene's MV*.STR via the
         // cutscene map / heuristic and play it from the disc with audio.
         if let Some(rel) = cutscene_map.resolve(scene) {
             let iso_path = Path::new(&rel);
-            match play_str_in(event_loop, iso_path, Some(disc_path), 640, 480) {
+            match play_str_in(event_loop, iso_path, Some(disc_path), 640, 480, !screenshot) {
                 Ok(()) => {}
                 Err(e) => {
                     eprintln!("info: scene '{scene}' STR '{rel}' not played from disc ({e:#})")
@@ -373,6 +373,12 @@ pub(super) fn cmd_play_window_with_record(
         debug_seeds,
         record_to,
     })?;
+
+    // A player's window reads controllers; a scripted capture's pad word
+    // belongs to its script.
+    if app.screenshot.is_none() {
+        app.gamepad = super::gamepad::GamepadHost::open();
+    }
 
     // On demand, not `run_app`: only `run_app_on_demand` clears the exit
     // request a phase-1 movie left on this loop. Through `run_app` the game

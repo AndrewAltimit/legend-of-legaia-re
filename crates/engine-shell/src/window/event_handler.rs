@@ -103,9 +103,16 @@ impl ApplicationHandler for PlayWindowApp {
             // handler does: the release of a key held while the window lost
             // focus never arrives here, so the player kept walking into a
             // wall until the key was pressed and released again.
+            // The controller is forgotten too (`StandardGamepad::reset`, the
+            // page's `legaiaResetGamepad`): a button still held re-enters on
+            // the next poll as a fresh press, not a stuck one.
             WindowEvent::Focused(false) => {
-                let prev = self.pad;
+                let prev = self.pad | self.gamepad_held;
                 self.pad = 0;
+                self.gamepad_held = 0;
+                if let Some(gp) = self.gamepad.as_mut() {
+                    gp.reset();
+                }
                 self.pad_taps.clear();
                 if prev != 0
                     && let Some(log) = self.record_log.as_mut()

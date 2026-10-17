@@ -65,7 +65,7 @@ impl World {
         // PROT 0961's party sweep rolls its wrapper only in the evolved-Cort
         // fight; anywhere else it is a scripted wipe with no roll at all.
         if self.dead_end_crisis_wipes(move_id) {
-            return Some(legaia_engine_battle_vm::cast_module_ticks::DEAD_END_CRISIS_WIPE_DAMAGE);
+            return Some(legaia_engine_cast::cast_module_ticks::DEAD_END_CRISIS_WIPE_DAMAGE);
         }
         if CAPTURE_BYPASS_MOVE_IDS.contains(&move_id) {
             let power = self.baked_module_power(move_id).unwrap_or(power);
@@ -323,9 +323,10 @@ impl World {
     /// unchanged RNG stream.
     ///
     /// Faithful seeds:
-    /// - **Summon body** (the retail slot-7 actor): the namesake `battle_data`
-    ///   creature's record HP (`+0x0C`) and AGL - the battle loader installs
-    ///   the record stats on the freshly-spawned summon actor
+    /// - **Summon body** (the retail slot-7 actor): the cast's own
+    ///   `summon.dat` record HP (`+0x0C`) and INT (`+0x18`) - the seat arm
+    ///   copies the streamed record onto slot 7 (`FUN_80054CB0(record, 4)`
+    ///   from `FUN_801F19EC`), for the big summons as for the Seru
     ///   ([`Self::summon_creature_def`]).
     /// - **Caster AGL** (`DAT_801C9370[ctx+0x13]` `+0x168`): the casting
     ///   party member's `battle_accuracy`, doubled into the roll.
@@ -364,8 +365,12 @@ impl World {
         let summon = SummonRollActor {
             hp: creature.hp,
             // The summon-roll's "agl" slot is the actor's `+0x168` stat, which
-            // for a monster is record `+0x18` = INT (`MonsterDef::intel`).
-            agl: creature.intel,
+            // for a monster is record `+0x18` = INT, installed under this
+            // fight's boost profile: the seat arm's `FUN_80054CB0` picks it by
+            // `ctx[+0x287]` as for a monster seat. Pinned live: a random-
+            // encounter Gimard cast rolls a body of INT 60 off the record's 48
+            // (`autorun_summon_body_stats.lua`).
+            agl: creature.installed_stats(self.battle.scripted_fight)[4],
             ..Default::default()
         };
         let summon_element = creature.element;

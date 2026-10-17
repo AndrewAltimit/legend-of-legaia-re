@@ -128,11 +128,16 @@ enum Want {
     Stack { row: usize, qty: u8 },
 }
 
-/// Does the bag hold fewer HP restoratives than the [`HEAL_RESERVE`] the
-/// hand keeps for each present member (an errand's item aside)?
-pub(super) fn bag_short_of_heals(session: &NativeSession) -> bool {
+/// Does the bag hold fewer HP restoratives than half the [`HEAL_STOCK`] the
+/// hand keeps for each present member? What a waypoint stocks up on: its
+/// counter can be the last before the stretch's boss. `son` is the dock the
+/// boat lands at on the way to `taiku`, and a run that passed through it
+/// with eight Healing Flowers and 52000 gold fought Zora (F9, 22422 HP,
+/// a party-wide breath every other round) out of an empty bag and lost
+/// three times in four.
+pub(super) fn bag_under_half_stock(session: &NativeSession) -> bool {
     let w = &session.host.world;
-    heals_held(w) < HEAL_RESERVE * w.present_party_list().len().clamp(1, 3) as u32
+    heals_held(w) < u32::from(HEAL_STOCK) / 2 * w.present_party_list().len().clamp(1, 3) as u32
 }
 
 /// The HP restoratives in the bag, an errand's item aside.
@@ -364,7 +369,22 @@ fn next_want(menu: &MenuRuntime, w: &legaia_engine_core::world::World) -> Option
     if let Some((_, _, want)) = best {
         return Some(want);
     }
-    heal_want(u32::from(HEAL_STOCK) * (w.present_party_list().len().clamp(1, 3) as u32))
+    // A purse that pays for the stock many times over buys up to three
+    // stocks: past the Jette fortress the run carried 650000 gold through
+    // `ropeway` and `station3`, passed both with the stock full, met no
+    // counter after them, and fought Cort (Bio castle's end) out of an empty
+    // bag three times running.
+    let stock = u32::from(HEAL_STOCK) * members;
+    let wealth = heal_row.map_or(1, |(_, _, price, _)| {
+        (u32::try_from(gold).unwrap_or(0) / (price * stock * 4).max(1)).clamp(1, 3)
+    });
+    // And MP for the casts the long road and the boss call for: Vahn met
+    // Cort with 22 MP and three Magic Leaves in the bag.
+    heal_want(stock * wealth).or_else(|| {
+        (wealth > 1)
+            .then(|| mp_want(session, w, members * 5 * wealth))
+            .flatten()
+    })
 }
 
 /// The armament pieces in the bag the hand sells while an errand is short

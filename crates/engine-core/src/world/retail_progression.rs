@@ -58,6 +58,7 @@ impl World {
     pub fn install_retail_progression_tables(&mut self, scus: &[u8]) -> RetailProgressionTables {
         use legaia_game_tables::level_up_tables as lut;
         let mut got = RetailProgressionTables::default();
+        self.tables.scus = Some(std::sync::Arc::from(scus));
 
         if let Some(curve) = lut::xp_thresholds_from_scus(scus) {
             self.party.level_up_tracker.xp_table = curve;

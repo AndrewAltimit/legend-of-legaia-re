@@ -43,13 +43,16 @@ impl LegaiaRuntime {
     /// called from the same place (an Options sub-session closing).
     pub(crate) fn persist_and_apply_options(&mut self) {
         self.apply_options_side_effects();
-        // Retail-faithful mode (`crate::play_toggles`) pins the options for
-        // the session only: the pinned values are not the player's, so the
-        // store keeps what it held and lifting the mode gets it back.
+        // Retail-faithful mode (`crate::play_toggles`) pins the engine-only
+        // knobs for the session only: the store gets them as they were before
+        // the pin, and every other row with this session's edits
+        // (`OptionsPins::persistable`, the native window's rule). The store
+        // used to skip the write outright, dropping volumes, mute, time of day
+        // and the retail rows edited while the mode held.
         #[cfg(target_arch = "wasm32")]
-        if !self.page_toggles.retail
-            && let Some(store) = options_storage()
-            && let Ok(json) = serde_json::to_string(&self.options_state)
+        if let Some(store) = options_storage()
+            && let Ok(json) =
+                serde_json::to_string(&self.options_pins.persistable(&self.options_state))
             && store.set_item(OPTIONS_STORAGE_KEY, &json).is_err()
         {
             crate::console_log("options: localStorage write failed");

@@ -44,6 +44,7 @@ members = [
     "crates/engine-battle",
     "crates/engine-battle-vm",
     "crates/engine-camera",
+    "crates/engine-cast",
     "crates/engine-system",
     "crates/engine-dialog",
     "crates/engine-menus",
@@ -88,6 +89,7 @@ dirs = "6"
 encoding_rs = "0.8"
 env_logger = "0.11"
 flate2 = "1"
+gilrs = "0.11"
 glam = { version = "0.30", features = ["bytemuck"] }
 js-sys = "0.3"
 libc = "0.2"
@@ -128,6 +130,7 @@ legaia-engine-battle = { path = "crates/engine-battle" }
 legaia-engine-battle-vm = { path = "crates/engine-battle-vm" }
 legaia-engine-camera = { path = "crates/engine-camera" }
 legaia-engine-capture = { path = "crates/engine-capture" }
+legaia-engine-cast = { path = "crates/engine-cast" }
 legaia-engine-core = { path = "crates/engine-core" }
 legaia-engine-effects = { path = "crates/engine-effects" }
 legaia-engine-export = { path = "crates/engine-export" }

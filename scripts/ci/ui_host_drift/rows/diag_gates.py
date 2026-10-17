@@ -97,6 +97,7 @@ DIAG_ROOTS = [
     REPO / "crates" / "render-kernels",
     REPO / "crates" / "engine-vm",
     REPO / "crates" / "engine-battle-vm",
+    REPO / "crates" / "engine-cast",
     REPO / "crates" / "engine-motion-vm",
     REPO / "crates" / "web-viewer",
     REPO / "crates" / "parity",

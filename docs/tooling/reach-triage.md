@@ -760,24 +760,26 @@ retail's level (`FUN_80019898`'s `(raw << 15) >> 16`) and every host discards
 it. The primitive it would drive already exists
 (`legaia_engine_audio::Sequencer::set_master_vol`).
 
-**That two-host wire is declined with proof**, and the proof is on the half the
-gap reading did not look at: the level. `FUN_80019898`'s source global
-`DAT_8007B6EC` has exactly two writers anywhere on the disc - `FUN_8001DCF8`
-(`0x8001DEC4`) and `FUN_8001FFA4` (`0x80020004`), the two cold-reset leaves that
-clear the `0x80084140` game-state block - and both store `li v0,-0x1`. Nothing
-else writes it, so it holds `-1` for a whole retail session, and
-`bgm_reattach_volume(-1)` is `-1`. Its only other reader, the load-settle stage
-`FUN_800243F0` (`0x80024804`, `sra a0,a0,0x1`), takes the same halving of the
-same constant. So sub-op 8 can never change the volume relative to what the
-track's own load already applied: a host that implemented `reattach_volume`
-would re-apply one compile-time constant, which is unobservable by
-construction. Same shape as `remap_pad_direction` below - wiring it would be a
-provable identity, which is worse than the gap.
+**The wire stays declined, but not for the reason first given.** That
+reason was that `FUN_80019898`'s source global `DAT_8007B6EC` is a
+session-long constant: the two stores the dumped corpus holds to it -
+`FUN_8001DCF8` (`0x8001DEC4`) and `FUN_8001FFA4` (`0x80020004`), the two
+cold-reset leaves that clear the `0x80084140` game-state block - both write
+`li v0,-0x1`. The mednafen library falsifies the premise: the word reads `215`
+(`0xD7`) in the un-ducked states and the ducked level in the summon states
+(`161` to `213`, two or three units behind the live duck cell
+`_DAT_8007B910`), and every playing BGM record's sequence volume `+0x58` is
+that word halved (`parity/tests/mednafen_voice_parity.rs`). The writer that
+sweep missed is `gp`-relative: `FUN_8001698C` stores the live duck cell into it
+each frame the cell changes (`sw a0,0x3d4(gp)` at `0x80016A30`) and applies it
+halved through `FUN_8002614C`
+([`audio.md`](../subsystems/audio.md#a-sequence-volume-change-re-volumes-the-held-notes)).
 
-What would make the channel real is the missing *writer*: the engine's
-`SceneHost::bgm_volume_raw` likewise has no production writer either, so both
-sides of the level are constants today. Port a writer first, then the hook has
-something to carry.
+The proof that does hold is on the record, not the level: the sound-source
+record sub-op 8 replays carries no stream in any captured state
+([`audio.md`](../subsystems/audio.md#sub-op-8-replays-an-empty-record)), so the
+volume it re-applies lands on a sequence that sounds nothing, and the
+default no-op is the faithful director behaviour.
 
 Reachable only from a game state the ladders do not seed. The fix is a seeded
 save or a longer spine, not a pad stream.
@@ -1466,7 +1468,7 @@ row.
 
 ## The cast-module band, the largest cluster on this page and the one with no rows
 
-`crates/engine-battle-vm/src/cast_module_ticks.rs` (with its `cast_module_ticks/`
+`crates/engine-cast/src/cast_module_ticks.rs` (with its `cast_module_ticks/`
 submodules) is still the largest single-module
 cluster in the never-entered set, and it is still the only cluster of any size
 not cited anywhere else on this page - the file arrived whole and never went

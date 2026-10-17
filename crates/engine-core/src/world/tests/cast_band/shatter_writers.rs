@@ -23,7 +23,7 @@ fn shatter_world() -> World {
 /// Run PROT 0908 from its finisher arm to the end, returning the peak
 /// shatter word each engine slot reached.
 fn run_zenoir_tail(world: &mut World) -> Vec<u16> {
-    use legaia_engine_battle_vm::seru_magic_ticks::ZENOIR_FINISH_ARM;
+    use legaia_engine_cast::seru_magic_ticks::ZENOIR_FINISH_ARM;
     world.casting.module_phase = ZENOIR_FINISH_ARM;
     let mut peak = vec![0u16; world.actors.len()];
     for _ in 0..4000 {
@@ -79,9 +79,7 @@ fn zenoir_spares_a_scripted_fight_whose_victim_has_the_boss_byte() {
 /// Gimard's settle arm dissolves the creature on its own seat.
 #[test]
 fn gimard_settle_arm_breaks_up_the_creature() {
-    use legaia_engine_battle_vm::seru_magic_ticks::{
-        GIMARD_SETTLE_ARM, GIMARD_SHATTER_STEP_PER_TICK,
-    };
+    use legaia_engine_cast::seru_magic_ticks::{GIMARD_SETTLE_ARM, GIMARD_SHATTER_STEP_PER_TICK};
     let mut world = shatter_world();
     world.casting.module_phase = GIMARD_SETTLE_ARM;
     world.run_cast_module_code(0x81, 0).expect("PROT 0903 runs");
@@ -95,7 +93,7 @@ fn gimard_settle_arm_breaks_up_the_creature() {
 /// while the arm's countdown holds it.
 #[test]
 fn spikefish_outcome_arm_breaks_up_the_creature_while_it_holds() {
-    use legaia_engine_battle_vm::cast_module_ticks::{
+    use legaia_engine_cast::cast_module_ticks::{
         SPIKEFISH_OUTCOME_ARM, SPIKEFISH_SHATTER_STEP_PER_TICK,
     };
     let mut world = shatter_world();

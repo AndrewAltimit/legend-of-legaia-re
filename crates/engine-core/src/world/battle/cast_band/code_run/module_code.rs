@@ -14,15 +14,15 @@ const SERU_EXIT_LOOP_CLEARS: [u32; 8] = [904, 906, 907, 908, 910, 911, 912, 913]
 
 impl World {
     pub fn run_cast_module_code(&mut self, spell_id: u8, arm: u8) -> Option<CastModuleCodeRun> {
-        use legaia_engine_battle_vm::cast_arm_ticks as arms;
-        use legaia_engine_battle_vm::cast_module_ticks as ticks;
-        use legaia_engine_battle_vm::seru_magic_ticks as ticks_a;
+        use legaia_engine_cast::cast_arm_ticks as arms;
+        use legaia_engine_cast::cast_module_ticks as ticks;
+        use legaia_engine_cast::seru_magic_ticks as ticks_a;
 
         let entry = self.cast_module_for(spell_id)?;
         // PROT 0954's body is ported whole - camera, records, wheel and
         // outcomes - and drives the band on its own
         // (`world::battle::fatal_decision`).
-        if entry == legaia_engine_battle_vm::cast_fatal_decision::FATAL_DECISION_ENTRY {
+        if entry == legaia_engine_cast::cast_fatal_decision::FATAL_DECISION_ENTRY {
             return Some(self.run_fatal_decision(entry));
         }
         let mut ctx = self.cast_module_ctx();
@@ -103,20 +103,20 @@ impl World {
         let profile = if has_trampoline {
             None
         } else {
-            legaia_engine_battle_vm::cast_module_camera::module_profile(entry)
+            legaia_engine_cast::cast_module_camera::module_profile(entry)
         };
         // The module countdown this pass opens on (PROT 0922's seat writes
         // read it).
         let countdown_before = self.casting.module_cam.countdown.0;
         // PROT 0916's arm-0 kill roll, drawn once per cast ahead of its
         // director.
-        if entry == legaia_engine_battle_vm::cast_module_camera::ALURU_ENTRY {
+        if entry == legaia_engine_cast::cast_module_camera::ALURU_ENTRY {
             self.draw_aluru_verdict(caster_slot, victim_slot, spell_id);
         }
         let direction = if has_trampoline {
             None
         } else {
-            legaia_engine_battle_vm::cast_module_camera::module_director(entry).map(|direct| {
+            legaia_engine_cast::cast_module_camera::module_director(entry).map(|direct| {
                 let latched = *self
                     .casting
                     .module_cam
@@ -181,7 +181,7 @@ impl World {
             && let Some(d) = direction
             && !d.hold
         {
-            use legaia_engine_battle_vm::cast_module_camera::{SpawnRecord, VIGURO_STAGER_CALLERS};
+            use legaia_engine_cast::cast_module_camera::{SpawnRecord, VIGURO_STAGER_CALLERS};
             for spawn in d.spawns {
                 if let SpawnRecord::Module(va) = spawn.record
                     && let Some(&(record, arm, wait)) =
@@ -197,7 +197,7 @@ impl World {
         // the flash pair, arm 1 shows the creature; arm 2 is the director's
         // pass out of phase 5.
         if entry == 906 {
-            use legaia_engine_battle_vm::cast_module_camera as cam;
+            use legaia_engine_cast::cast_module_camera as cam;
             match cam::gizam_stager_arm_due(ctx.phase, self.casting.module_cam.countdown.0) {
                 Some(0) => {
                     for (t, id) in &cam::GIZAM_STAGER_FLASHES {
@@ -221,8 +221,7 @@ impl World {
         // cut parts. Arm 5's two parts run until they halt.
         if entry == 905
             && direction.is_some_and(|d| !d.hold)
-            && let Some(killed) =
-                legaia_engine_battle_vm::cast_module_camera::vera_arm_kills(ctx.phase)
+            && let Some(killed) = legaia_engine_cast::cast_module_camera::vera_arm_kills(ctx.phase)
             && let Some(scene) = self.casting.active_summon.as_mut()
         {
             for part in &mut scene.parts {
@@ -237,9 +236,9 @@ impl World {
         let phase_in = ctx.phase;
         // A capture-class body's camera arms, on the phase it is about to
         // run (they make no gate of their own: the body's port does).
-        if let Some(direct) = legaia_engine_battle_vm::cast_module_camera::capture_camera_director(
+        if let Some(direct) = legaia_engine_cast::cast_module_camera::capture_camera_director(
             entry,
-            body.unwrap_or(legaia_engine_battle_vm::cast_module_camera::SINGLE_BODY),
+            body.unwrap_or(legaia_engine_cast::cast_module_camera::SINGLE_BODY),
         ) {
             let seats = self.module_cam_seats(caster_slot, victim_slot);
             let mut st = self.module_cam_with_yaw_base();
@@ -275,8 +274,7 @@ impl World {
             // kill-capable hit, and the band's fold owes nothing more.
             let mut stager_hits = Vec::new();
             if passed
-                && phase
-                    == legaia_engine_battle_vm::cast_module_camera::EVIL_SERU_MAGIC_STAGER_HIT_ARM
+                && phase == legaia_engine_cast::cast_module_camera::EVIL_SERU_MAGIC_STAGER_HIT_ARM
             {
                 if let Some(r) =
                     self.run_cast_module_aoe_as(caster_slot, spell_id, AOE_STAGER_WORKING_ARM)
@@ -287,8 +285,7 @@ impl World {
             }
             let mut seats: Vec<ticks::CastActorState> = self.cast_seat_row();
             let mut rolls: Vec<(u8, i32)> = Vec::new();
-            if passed
-                && phase == legaia_engine_battle_vm::cast_module_camera::EVIL_SERU_MAGIC_SWEEP_ARM
+            if passed && phase == legaia_engine_cast::cast_module_camera::EVIL_SERU_MAGIC_SWEEP_ARM
             {
                 // Rolled only for the seats the hit visits, in seat order,
                 // so the shared RNG cursor moves as retail's does.
@@ -335,11 +332,11 @@ impl World {
         // the module countdown: the arm's phase chain runs only on the tick
         // the gate lets through (`cast_module_camera::capture_countdown`).
         let arm_countdown = if capture_arm.is_none() {
-            legaia_engine_battle_vm::cast_module_camera::capture_arm_countdowns(
+            legaia_engine_cast::cast_module_camera::capture_arm_countdowns(
                 entry,
-                body.unwrap_or(legaia_engine_battle_vm::cast_module_camera::SINGLE_BODY),
+                body.unwrap_or(legaia_engine_cast::cast_module_camera::SINGLE_BODY),
             )
-            .and_then(|t| legaia_engine_battle_vm::cast_module_camera::arm_countdown(t, phase_in))
+            .and_then(|t| legaia_engine_cast::cast_module_camera::arm_countdown(t, phase_in))
         } else {
             None
         };
@@ -376,7 +373,7 @@ impl World {
                     self.casting.module_settle_ticks.saturating_add(1);
                 if settled
                     || self.casting.module_settle_ticks
-                        > legaia_engine_battle_vm::cast_fatal_decision::SETTLE_TICK_LIMIT
+                        > legaia_engine_cast::cast_fatal_decision::SETTLE_TICK_LIMIT
                 {
                     self.casting.module_settle_ticks = 0;
                 } else {
@@ -410,9 +407,9 @@ impl World {
         // arm: the calls on the pass that leaves the arm, and those that run
         // on every pass.
         if direction.is_some()
-            && legaia_engine_battle_vm::cast_module_camera::CREATURE_SPAWN_ENTRIES.contains(&entry)
+            && legaia_engine_cast::cast_module_camera::CREATURE_SPAWN_ENTRIES.contains(&entry)
         {
-            use legaia_engine_battle_vm::cast_module_camera::{SpawnTiming, creature_arm_spawns};
+            use legaia_engine_cast::cast_module_camera::{SpawnTiming, creature_arm_spawns};
             if ctx.phase != phase_in {
                 run.spawns = creature_arm_spawns(entry, phase_in, SpawnTiming::Pass);
             }
@@ -620,26 +617,26 @@ impl World {
                 }
                 // --- fourteen arms ---
                 // PROT 0940 / 0941 / 0943 / 0944 / 0950 / 0956 / 0962, ported
-                // in `legaia_engine_battle_vm::cast_arm_ticks`. Three of these bodies
+                // in `legaia_engine_cast::cast_arm_ticks`. Three of these bodies
                 // wear the VA `0x801F6A04` in three different images, which is
                 // why every arm below names its entry.
                 (940, Some(arms::GLARE_DIVIDE_BLIND_TICK)) => {
                     // The body works on retail's first monster seat.
                     let first = self
                         .engine_slot_for_retail_pool(
-                            legaia_engine_battle_vm::cast_module_ticks::FIRST_MONSTER_SEAT,
+                            legaia_engine_cast::cast_module_ticks::FIRST_MONSTER_SEAT,
                         )
-                        .unwrap_or(legaia_engine_battle_vm::cast_module_ticks::FIRST_MONSTER_SEAT);
+                        .unwrap_or(legaia_engine_cast::cast_module_ticks::FIRST_MONSTER_SEAT);
                     let mut seat = self.cast_view(first);
                     let mut ext = self.cast_arm_ext_state(first);
                     let shield_arm = ctx.phase == arms::MYSTIC_SHIELD_ARM;
                     let step = arms::glare_divide_blind_tick(&mut ctx, &mut seat, &mut ext);
                     self.write_cast_view(first, &seat);
                     self.write_cast_arm_ext_state(first, &ext);
-                    if shield_arm {
+                    if shield_arm && !self.mystic_shield_up() {
                         // `_DAT_8007BD84 = FUN_80021B04(..)` - the shield's
-                        // effect handle; the engine carries it as a flag.
-                        self.battle.monster_ai_state.flag_bd84 = 1;
+                        // sphere, seated with its texture scroller.
+                        self.raise_mystic_shield();
                     }
                     Some(step)
                 }
@@ -862,7 +859,7 @@ impl World {
             match entry {
                 // --- player Seru 0903..0908 ---
                 // The first six `0x801CF4EC` arms - the player Seru-magic tick
-                // bodies (`legaia_engine_battle_vm::seru_magic_ticks`). Unlike the
+                // bodies (`legaia_engine_cast::seru_magic_ticks`). Unlike the
                 // summon-creature ticks below, five of the six sweep or
                 // retarget seats other than the caster's own three, so they
                 // take the whole seat row and the run writes it back before
@@ -886,7 +883,7 @@ impl World {
                     let cone_seats: Vec<u8> = if entry == 904
                         && ctx.phase == ticks_a::THEEDER_SWEEP_ARM
                     {
-                        use legaia_engine_battle_vm::seru_magic_ticks::{
+                        use legaia_engine_cast::seru_magic_ticks::{
                             MONSTER_ROW_END, THEEDER_CONE_HALF_WIDTH,
                         };
                         // The ray the sweep arm tests this tick: from the
@@ -973,7 +970,7 @@ impl World {
                                 && let Some(c) = self.casting.module_cam.creature
                             {
                                 run.camera_shot = Some(
-                                    legaia_engine_battle_vm::cast_module_camera::theeder_attack_shot(c),
+                                    legaia_engine_cast::cast_module_camera::theeder_attack_shot(c),
                                 );
                             }
                             tick
@@ -1084,7 +1081,7 @@ impl World {
                     // fold does not own (its heal is the fold's). Once, on
                     // the frame the arm lets the phase through.
                     if e == 919
-                        && phase_before == legaia_engine_battle_vm::seru_magic_ticks::SPOON_HEAL_ARM
+                        && phase_before == legaia_engine_cast::seru_magic_ticks::SPOON_HEAL_ARM
                         && ctx.phase != phase_before
                     {
                         // The views carry this frame's chain writes; seat them
@@ -1099,11 +1096,9 @@ impl World {
                         let cleanse = self.cure_selector(
                             caster_slot,
                             spell_id,
-                            legaia_engine_battle_vm::seru_magic_ticks::ORB_CLEANSE_MIN_LEVEL,
+                            legaia_engine_cast::seru_magic_ticks::ORB_CLEANSE_MIN_LEVEL,
                         );
-                        legaia_engine_battle_vm::seru_magic_ticks::spoon_cure_sweep(
-                            &mut seats, cleanse,
-                        );
+                        legaia_engine_cast::seru_magic_ticks::spoon_cure_sweep(&mut seats, cleanse);
                         self.write_cast_seat_row(&seats);
                         caster = seats.get(r_caster).copied().unwrap_or(caster);
                         victim = seats.get(r_victim).copied().unwrap_or(victim);
@@ -1134,12 +1129,12 @@ impl World {
         // case 6 frames from.
         if run.tick_ported
             && !run.busy
-            && let Some(yaw) = legaia_engine_battle_vm::cast_module_camera::capture_exit_yaw_base(
+            && let Some(yaw) = legaia_engine_cast::cast_module_camera::capture_exit_yaw_base(
                 entry,
                 if has_trampoline {
                     body.unwrap_or_default()
                 } else {
-                    legaia_engine_battle_vm::cast_module_camera::SINGLE_BODY
+                    legaia_engine_cast::cast_module_camera::SINGLE_BODY
                 },
             )
             && let Some(cam) = self.battle.camera.as_mut()
@@ -1168,7 +1163,7 @@ impl World {
         // `0x801F80F0`, 0906 `0x801F76E8`, 0907 `0x801F7F68`, 0908
         // `0x801F82A4`, 0910 `0x801F7BDC`, 0911 `0x801F7FAC`, 0912
         // `0x801F831C`, 0913 `0x801F8608`).
-        if phase_entry == legaia_engine_battle_vm::cast_module_ticks::CHOREOGRAPHY_DONE_PHASE
+        if phase_entry == legaia_engine_cast::cast_module_ticks::CHOREOGRAPHY_DONE_PHASE
             && SERU_EXIT_LOOP_CLEARS.contains(&entry)
             && let Some(a) = self.actors.get_mut(usize::from(seat_slot))
         {
@@ -1193,11 +1188,11 @@ impl World {
         // PROT 0925's outcome arm breaks the creature up on every pass,
         // held or not, ahead of its countdown gate.
         if entry == SPIKEFISH_ENTRY
-            && phase_in == legaia_engine_battle_vm::cast_module_ticks::SPIKEFISH_OUTCOME_ARM
+            && phase_in == legaia_engine_cast::cast_module_ticks::SPIKEFISH_OUTCOME_ARM
             && let Some(a) = self.actors.get_mut(usize::from(seat_slot))
         {
             a.battle.shatter = a.battle.shatter.wrapping_add(
-                legaia_engine_battle_vm::cast_module_ticks::SPIKEFISH_SHATTER_STEP_PER_TICK,
+                legaia_engine_cast::cast_module_ticks::SPIKEFISH_SHATTER_STEP_PER_TICK,
             );
         }
         // PROT 0908's arm 12 shatters the monsters the finisher killed, on
@@ -1237,13 +1232,13 @@ impl World {
         // and arm 3 calls the builder (`jal 0x801F726C` at `0x801F6EF4`)
         // ahead of its own gate, so it draws on every tick the arm runs.
         self.casting.module_beam_live = false;
-        if entry == legaia_engine_battle_vm::cast_module_ticks::CROSS_BEAM_ENTRY {
+        if entry == legaia_engine_cast::cast_module_ticks::CROSS_BEAM_ENTRY {
             if phase_in == 2 && ctx.phase != phase_in {
                 self.casting.module_beam_counter = 0;
             }
             if phase_in == 3 {
                 self.casting.module_beam_counter +=
-                    legaia_engine_battle_vm::cast_module_ticks::CROSS_BEAM_COUNTER_PER_TICK;
+                    legaia_engine_cast::cast_module_ticks::CROSS_BEAM_COUNTER_PER_TICK;
                 self.casting.module_beam_live = true;
             }
         }
@@ -1252,7 +1247,7 @@ impl World {
         // exit seeds the budget, arm 6 drains it `2 * delta` a pass and pins
         // it at `4` on its exit, arm 9 ramps the colour towards red a step
         // a vsync and pins it on its exit, and `0xFF` clears the budget.
-        if entry == legaia_engine_battle_vm::cast_module_camera::SLIPPERY_ENTRY {
+        if entry == legaia_engine_cast::cast_module_camera::SLIPPERY_ENTRY {
             self.slippery_rain_words(phase_in, ctx.phase != phase_in);
         }
         // The arm passed: its re-arm of the countdown word.
@@ -1265,9 +1260,9 @@ impl World {
         // PROT 0925's (the Spikefish flute's) outcome arm: on an ordinary
         // fight it stages the party's flee, and on every fight its round
         // tail moves the turn cursor by the living party
-        // ([`vm::cast_module_ticks::spikefish_round_tail`]).
+        // ([`legaia_engine_cast::cast_module_ticks::spikefish_round_tail`]).
         if entry == SPIKEFISH_ENTRY
-            && phase_in == legaia_engine_battle_vm::cast_module_ticks::SPIKEFISH_OUTCOME_ARM
+            && phase_in == legaia_engine_cast::cast_module_ticks::SPIKEFISH_OUTCOME_ARM
             && ctx.phase != phase_in
         {
             self.spikefish_outcome(&mut ctx);
@@ -1331,12 +1326,12 @@ impl World {
     /// HP / MP write-back is the battle teardown's)
     fn spikefish_outcome(
         &mut self,
-        ctx: &mut legaia_engine_battle_vm::cast_module_ticks::CastModuleCtx,
+        ctx: &mut legaia_engine_cast::cast_module_ticks::CastModuleCtx,
     ) {
         let party_n = usize::from(
             self.party
                 .party_count
-                .min(legaia_engine_battle_vm::cast_module_ticks::FIRST_MONSTER_SEAT),
+                .min(legaia_engine_cast::cast_module_ticks::FIRST_MONSTER_SEAT),
         )
         .min(self.actors.len());
         if !self.battle.no_escape {
@@ -1352,8 +1347,7 @@ impl World {
         let mut party: Vec<_> = (0..party_n as u8)
             .map(|s| self.cast_actor_state(s))
             .collect();
-        let refunds =
-            legaia_engine_battle_vm::cast_module_ticks::spikefish_round_tail(ctx, &mut party);
+        let refunds = legaia_engine_cast::cast_module_ticks::spikefish_round_tail(ctx, &mut party);
         for (a, view) in self.actors.iter_mut().zip(&party) {
             a.battle.init_key = view.init_key;
         }

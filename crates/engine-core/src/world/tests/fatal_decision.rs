@@ -3,8 +3,8 @@
 //! the band seam with the player stopping the wheel.
 
 use super::*;
-use legaia_engine_battle_vm::cast_fatal_decision::{self as fd, FatalOutcome};
 use legaia_engine_battle_vm::status_effects::StatusKind;
+use legaia_engine_cast::cast_fatal_decision::{self as fd, FatalOutcome};
 use legaia_engine_mode::mode::SceneMode;
 
 const VICTIM: u8 = 0;
@@ -135,10 +135,18 @@ fn the_full_heal_cures_and_fills() {
 
 #[test]
 fn the_steal_destroys_a_bag_item_and_the_tithe_takes_a_tenth() {
-    let mut w = fd_world();
-    let _ = w.party.inventory.add(0x0A, 3);
-    // The world's RNG from its default seed: the gate passes and the draw
-    // reaches the one occupied slot inside its `0x400` budget.
+    // The first world seed whose draws pass the gate and reach the one
+    // occupied slot inside the `0x400` budget.
+    let stocked = |seed: u32| {
+        let mut w = fd_world();
+        w.rng_state = seed;
+        let _ = w.party.inventory.add(0x0A, 3);
+        w
+    };
+    let seed = (0..256u32)
+        .find(|&s| stocked(s).apply_fatal_outcome(CASTER, VICTIM, FatalOutcome::StealItem))
+        .expect("some seed passes the steal gate");
+    let mut w = stocked(seed);
     assert!(w.apply_fatal_outcome(CASTER, VICTIM, FatalOutcome::StealItem));
     assert_eq!(w.battle_ctx.message_id, 0x5B);
     assert_eq!(w.party.inventory.get(&0x0A).copied(), Some(2));

@@ -126,12 +126,11 @@ the cheapest place to look for a claim that is still wrong.
 
 ## Field / locomotion
 
-The live hunts here are the dialog font's unmeasured edges ([`dialog-font.md`](../formats/dialog-font.md)).
+The live hunt here is the dialog font's unmeasured edge ([`dialog-font.md`](../formats/dialog-font.md)).
 
 | Thread | Status | What would close it |
 |---|---|---|
-| How wide may an item or spell description line be? | open | The info window is 144 px wide, which bounds the lines by inference only. Reading the width test (or its absence) in the menu-string formatter `FUN_800337B0`, or a capture of the longest retail description drawn in the window, closes it. |
-| Where does the escape-expansion buffer at `0x800740EC` end? | partial (bounded at `0x206` bytes by inference) | The zero-initialised run reaches the next initialised data at `0x800742F2` and no dumped routine addresses inside it. The expansion routine's largest write - the longest escape it can expand, or a write watch while the longest one draws - pins the real end. |
+| Where does the escape-expansion buffer at `0x800740EC` end? | partial (bounded at `0x206` bytes by inference; the code sets no bound) | The zero-initialised run reaches the next initialised data at `0x800742F2` and no dumped routine addresses inside it. The expander `FUN_80036514` has no destination-length test, so the end is a property of the strings, not the code: the longest expansion of any drawn string - a disc census of every drawn string expanded with its longest substitutions, or a write watch while the longest one draws - pins it. |
 
 Answered questions: [settled field / locomotion](re-settled-threads/field.md), [settled text / dialog](re-settled-threads/text-dialog.md); falsified readings: [field / locomotion](re-do-not-re-walk.md#field--locomotion), [menus / UI](re-do-not-re-walk.md#menus--ui).
 
@@ -141,7 +140,6 @@ Answered questions: [settled field / locomotion](re-settled-threads/field.md), [
 |---|---|---|
 | Which call applies Astral Slash's damage? | open | PROT 952's Astral Slash tick (`0x801F6A0C`) calls no damage wrapper and writes no HP; it stages clips (`+0x1DA` / `+0x1DC`) and drives the camera. Play shows the damage respects jewels (a Luminous Jewel halves 1570 to 781). Following the staged clip to the hit event that rolls it - or a write watch on the target's `+0x14C` during the cast - names the site. The module's other respect call (`+0x15B0`, power `0x80`, no reachable in-module entry) is part of the same read ([battle-formulas.md](../subsystems/battle-formulas.md#capture-class-wrappers---fun_801dd4b0--fun_801dd6b4)). |
 | What is left of the juggle window? | partial (the per-frame law is pinned) | Three residuals ([battle-formulas.md](../subsystems/battle-formulas.md#the-juggle-window---what-makes-a-monster-juggleable)): `FUN_80050E00`'s all-non-zero fall-through hands back a load-address-dependent index, reachable only from an attack-band entry's own `+0x1F7` (no reaction entry has such a list); the measured window runs 1-2 ticks past `32 * beat / (speed * rate)` because the cursor's sub-frame carry at the commit is unmodelled; and whether the counter / guard window at `0x8004AFC0..` uses the same beat for a parry is untraced. A capture of an attack-band window, and the disassembly of the commit's carry, close the first two. |
-| What do the monster spell entries' effect descriptors hold? | open | Entry `+0x04` / `+0x08` resolve (in `FUN_800542C8`) to a short per-spell descriptor, head `[00, a, b, b, len, 00 00 00, u32, ...]`; 289 of 1811 entries carry one ([battle-formulas.md](../subsystems/battle-formulas.md#spell-list-record-0x4c)). Finding the reader of the resolved pointer on the cast / effect path names the fields. |
 | What rewrites the prologue's CLUT rows to gold? | open | The CLUT law `L = max(r,g,b) -> (L, max(L-1,0), L>>1)` is capture-pinned over every graded row, but no CPU loop in 0970, 0897 or `SCUS_942.54` matches it, which points at a table or a DMA upload ([cutscene.md](../subsystems/cutscene.md#full-scene-sepia-grade-the-gold-prologue-look)). A VRAM write watch on a graded CLUT row during the `opdeene` load names the writer. |
 
 Answered questions: [settled battle / arts / level-up](re-settled-threads/battle.md), [settled rendering / camera](re-settled-threads/rendering-camera.md), [settled world map](re-settled-threads/world-map.md); falsified readings: [battle](re-do-not-re-walk.md#battle--arts--level-up), [rendering / camera](re-do-not-re-walk.md#rendering--camera).
@@ -160,12 +158,7 @@ Answered questions: [settled title / boot / overlays](re-settled-threads/title-b
 
 ## Containers / data blobs
 
-| Thread | Status | What would close it |
-|---|---|---|
-| What are the bytes past a DATA_FIELD stream's terminator? | open | `asset extract` keeps them as `_trailer.bin` and `FUN_8002541C` stops at the terminator without reading them ([data-field.md](../formats/data-field.md#trailer-data)). A byte-accounting pass over every trailer - zero fill, the neighbour entry's sector tail, or data a reader addresses past the terminator - classifies them; the latter would name a consumer. |
-| Does any scene place an actor whose model lives in another PROT entry? | open | The asset chain resolves these best-effort ([data-field.md](../formats/data-field.md)). Running `engine-scene`'s `npc_catalog` over every scene and listing the placements it resolves from the global model pool rather than the scene's own bundle answers it, and names the carrier each borrowed model comes from. |
-
-Answered questions: [settled measurement + corpus](re-settled-threads/measurement-corpus.md), [settled animation](re-settled-threads/animation.md); falsified readings: [containers / placeholder slots](re-do-not-re-walk.md#containers--placeholder-slots).
+No open threads. Answered questions: [settled measurement + corpus](re-settled-threads/measurement-corpus.md), [settled animation](re-settled-threads/animation.md); falsified readings: [containers / placeholder slots](re-do-not-re-walk.md#containers--placeholder-slots).
 
 ## Measurement + tooling
 

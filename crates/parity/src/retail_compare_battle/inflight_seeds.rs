@@ -347,11 +347,11 @@ impl RetailBattle {
             // The countdown drains `scalar` a vsync; the displayed frame's
             // word was that much higher.
             *c += i32::from(self.display_lag)
-                * legaia_engine_battle_vm::cast_module_camera::MODULE_DRAIN_PER_TICK;
+                * legaia_engine_cast::cast_module_camera::MODULE_DRAIN_PER_TICK;
         }
         if let Some(y) = g.walk_yaw.as_mut() {
             // `6 * scalar` a vsync, taken back no further than the seat.
-            let per_vsync = 6 * legaia_engine_battle_vm::cast_module_camera::MODULE_DRAIN_PER_TICK;
+            let per_vsync = 6 * legaia_engine_cast::cast_module_camera::MODULE_DRAIN_PER_TICK;
             let back = (i32::from(self.display_lag) * per_vsync).min(walk_swing(i32::from(*y)));
             *y = ((i32::from(*y) - back) & 0xFFF) as u16;
         }
@@ -364,7 +364,7 @@ impl RetailBattle {
         // The player summon block is linear: PROT `903 + (id - 0x81)`.
         let entry = u32::from(self.queued_action).wrapping_sub(0x81) + 903;
         let directed = (0x81..=0xA0).contains(&self.queued_action)
-            && legaia_engine_battle_vm::cast_module_camera::module_profile(entry)
+            && legaia_engine_cast::cast_module_camera::module_profile(entry)
                 .is_some_and(|p| p.paces_band());
         let module_phase =
             (directed && (0x35..=0x36).contains(&self.action_state)).then_some(self.module_phase);
@@ -394,7 +394,7 @@ impl RetailBattle {
             .then_some(self.cam_accum);
         // A frame inside the stream poll's arm is placed by the arm alone.
         let stream_wait = module_phase.is_some_and(|p| {
-            legaia_engine_battle_vm::cast_module_camera::stream_poll_arm(entry) == Some(p)
+            legaia_engine_cast::cast_module_camera::stream_poll_arm(entry) == Some(p)
         });
         Some(PhaseGate {
             action_state: self.action_state,

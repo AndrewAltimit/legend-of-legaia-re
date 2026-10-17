@@ -34,6 +34,7 @@ impl Sequencer {
             channels: [ChannelState::default(); CHANNELS],
             active: Vec::new(),
             master_vol: 127,
+            master_vol_dirty: false,
             loop_count: 0,
             voice_prio: [0; crate::spu::NUM_VOICES],
             voice_age: [0; crate::spu::NUM_VOICES],
@@ -48,8 +49,24 @@ impl Sequencer {
     /// `+0x58`/`+0x5A`), 0..=127: folded in per side after the key-on head
     /// chain ([`channel_mix`]). The game's BGM records run at
     /// [`RETAIL_BGM_SEQ_VOL`].
+    ///
+    /// A change re-volumes the notes already sounding, at the next flush:
+    /// retail's set (`FUN_80064890` for a playing slot, and every step of the
+    /// `SsSeqSetVol` slide `FUN_8006320C` / `FUN_8006352C`) runs
+    /// `FUN_80067E9C`, which stores the new `+0x58` / `+0x5A` and then
+    /// recomputes the left / right volume of every voice whose owner key is
+    /// the sequence's, staging them for the vsync flush. A held note under a
+    /// summon duck therefore follows the duck, not just the notes keyed after
+    /// it.
+    ///
+    /// PORT: FUN_80067E9C (the per-voice re-apply loop, via
+    /// [`Self::remix_all`] at the next flush)
     pub fn set_master_vol(&mut self, v: u8) {
-        self.master_vol = v.min(127);
+        let v = v.min(127);
+        if v != self.master_vol {
+            self.master_vol = v;
+            self.master_vol_dirty = true;
+        }
     }
 
     /// Set the external loop fallback: rewinds the event index to `to` when

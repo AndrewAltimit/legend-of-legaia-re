@@ -2,7 +2,7 @@
 --
 -- Per-arm frame gating for the **capture-class** half of the slot-B cast
 -- band - the fourteen trampoline-reached tick bodies of PROT 0940 / 0941 /
--- 0943 / 0944 / 0950 / 0956 / 0962 that `legaia_engine_battle_vm::cast_arm_ticks`
+-- 0943 / 0944 / 0950 / 0956 / 0962 that `legaia_engine_cast::cast_arm_ticks`
 -- ports without their dwell.
 --
 -- The sister probe `autorun_w3a_cast_oracle.lua` measures the player-Seru
@@ -90,7 +90,7 @@ local CAP_DISPATCH   = 0x801F2160   -- FUN_801F2160, one hit per module tick
 local SPELL_TABLE    = 0x800754C8   -- static spell table, 12-byte stride
 
 -- The per-module countdown word each body draws down by the scratchpad frame
--- step. Addresses from `legaia_engine_battle_vm::cast_arm_ticks`' disclosure list;
+-- step. Addresses from `legaia_engine_cast::cast_arm_ticks`' disclosure list;
 -- keyed here by action id so a run needs only LEGAIA_SPELL.
 local MODULE_CD = {
     [0x3C] = 0x801F864C, [0x50] = 0x801F864C, [0xAC] = 0x801F864C, [0xAE] = 0x801F864C,

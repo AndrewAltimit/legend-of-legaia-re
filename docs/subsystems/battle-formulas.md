@@ -558,7 +558,7 @@ damage = atk - def;
 | Input | Source |
 |---|---|
 | `INT` | actor `+0x168` |
-| `HP` | actor `+0x14C`. The summon body's HP / INT are the stats the loader installs on the slot-7 actor from the creature's record (INT = record `+0x18`). |
+| `HP` | actor `+0x14C`. The summon body's HP / INT are the stats `FUN_80054CB0(record, 4)` installs on the slot-7 actor from the cast's own `summon.dat` record, not its `battle_data` twin's ([summon-readef.md](../formats/summon-readef.md#the-stat-head-is-the-summon-body)). |
 | `DEFa`, `DEFb` | defender `+0x15C` (UDF), `+0x160` (LDF) |
 | `power` | `(i16)` word `+0` of the 26-byte move-power record at `0x801F4F5C`, indexed by `map[actor[+0x1DF]]` ([move-power.md](../formats/move-power.md)) |
 | `caster.INT` | the casting party member's `+0x168` |
@@ -587,10 +587,12 @@ Wiring, in `engine-core::world::battle::casting`:
   defender's Spirit stance; so do the two capture-class wrappers, whose own
   `jal 0x801DD864` passes the attacker and defender seats too.
 - **Player Seru-magic casts.** `World::player_summon_predamage` seeds
-  `summon_predamage_lazy` from the namesake creature's `battle_data` record
-  (read from `DiscTables::summon_creatures`, filled at scene entry from the
-  monster archive for every summon), the caster's `battle.accuracy` doubled, the
-  affinity percent inside the roll, and the caster's per-spell magic level.
+  `summon_predamage_lazy` from the summon body on `DiscTables::summon_creatures`
+  (filled at scene entry for every player cast `0x81..=0xA0`, its stats from the
+  cast's `summon.dat` record), the caster's `battle.accuracy` doubled, the
+  affinity percent inside the roll, and the caster's per-spell magic level. The
+  flutes and big summons included: with no body their roll took the MP-scaled
+  placeholder, which a late-game defence floors at 1.
 - **Gating.** Both overrides engage only when their disc tables are installed;
   a disc-free or synthetic battle keeps a placeholder magnitude and an untouched
   RNG stream.
@@ -1240,16 +1242,18 @@ runs at its round boundary ahead of the status tick and the reseed.
 | `+0x4A` u8 | spell count (`magic_count`) |
 | `+0x4C` u32[count] | **block-relative offsets** to spell entries; the loader adds `block_base` |
 | entry `+0x00` u8 | spell / action id, doubling as a category |
-| entry `+0x04`, `+0x08` | **1-based indices** (`0` = none) into the per-block effect-offset table that follows the spell-offset array (word base `magic_count + 0x13`) |
+| entry `+0x04`, `+0x08` | **1-based indices** (`0` = none) into the per-block offsets that follow the spell-offset array (word base `magic_count + 0x13`): the entry's two [clip-morph lanes](../formats/monster-animation.md#clip-morphs-fun_800495c8--fun_80049858) |
 | entry `+0x74` u8 | AGL cost; `0xFF` = never rolled |
 | entry `+0x88` | self-pointer to `entry+0x8C`, set by the loader |
 
 The battle loader `FUN_800542C8` (`800542c8.txt`, lines 633-658) fixes each
 offset to a pointer and resolves the indices: `entry[+0x04] = block[(index +
-magic_count + 0x12)*4] + block_base`. The target is a short per-spell effect /
-animation descriptor (observed head `[00, a, b, b, len, 00 00 00, u32, ...]`),
-not a TMD; its interior fields are open. 289 of 1811 spell entries carry an
-effect index, 24 an aux index.
+magic_count + 0x12)*4] + block_base`. The target is a **clip morph**: four
+envelope keys at `+0x01..=+0x04`, then a VDF-shaped run of per-vertex deltas
+over the monster's own mesh, which the battle draw blends in while the clip
+plays (`FUN_800495C8`) and restores after (`FUN_80049858`) - see
+[`monster-animation.md`](../formats/monster-animation.md#clip-morphs-fun_800495c8--fun_80049858).
+289 of 1811 spell entries carry a `+0x04` lane, 24 a `+0x08` lane.
 
 Id categories: `FUN_80054CB0` (lines 700-727) treats ids `2,3,4,5,0x0B` as
 reaction / affinity markers and writes the matching spell's index into actor
@@ -1852,8 +1856,9 @@ return (seed >> 16) & 0x7FFF            // 0..32767
 ```
 
 `FUN_80056798` holds no arithmetic of its own (`80056798.txt`). There is **one**
-seed, in kernel-managed RAM (not at `0x8007AE5C`, which appears nowhere in the
-dump corpus). The executable carries no `srand` (`A(30h)`) thunk, and every
+seed, the kernel word `0x80009010` (the BIOS ROM's `A(2Fh)` at `0xBFC02200`
+loads and stores it; [memory map](../reference/memory-map.md#kernel-ram-0x80000000-0x8000ffff)),
+not `0x8007AE5C`, which appears nowhere in the dump corpus. The executable carries no `srand` (`A(30h)`) thunk, and every
 `jal 0x80056798` on the disc - SCUS and every overlay - draws the same stream.
 The overlays' own generators (the battle overlay's `FUN_801D0290`, which feeds
 ribbon geometry; the slot machine's pair) are separate words, not reseeds.
@@ -1880,12 +1885,26 @@ divide it as a 15-bit quantity, so the shape matters.
 
 | Rust | Role |
 |---|---|
-| `World::next_rng` | the raw 32-bit LCG state step |
+| `World::next_rng` | the raw 32-bit state step, the BIOS recurrence `s * 0x41C64E6D + 0x3039` (`world_lcg_step`), so a world seeded from a state's `0x80009010` draws the values retail's next draws would |
 | `bios_rand_shape` | `(state >> 16) & 0x7FFF` |
 | `World::next_rand` | the retail draw: next state through `bios_rand_shape` |
 | `world_lcg_step` / `world_rand` | the same step + shape for code holding `World::rng_state` without `&mut World` (`engine-system::rand`, beside `bios_rand_shape`) |
 | `psyq_rand_step`, `BiosRand` | already-shaped generators for minigames and pure kernels with a private seed |
 | `World::tick_battle_pass_draw` | the driver's discarded draw: one on the first tick of every battle frame (`BattleFrameClock`), under every battle owner of the frame; `WorldToggles::battle_pass_rand_draw` turns it off for an A/B |
+
+**Which draws are not on the world stream.** Retail has one `rand()` stream, and
+the overlays' own generators are separate words, not reseeds. The port's
+standing exceptions, each a stand-in for a `jal 0x80056798` that draws a
+private seed instead of the world stream: the battle intro's particle seeder
+(`render_kernels::battle_intro_particles::IntroRng`, its own LCG), the PROT
+0913 Nova whirlwind ring yaws (`nova_column_yaw`, a hash of the ring index) and
+its ring jitter (the `World` cast band, seeded from the settle countdown), the
+scripted-motion channels (`ambient_motion`, one `psyq_rand_step` seed per
+channel), and the opt-in level-up jitter (`LevelUpTracker`). The battle
+overlay's `FUN_801D0290` (`OverlayRng`) is not one of them: retail reseeds it
+from the emitter's parameter block on every call, so it is a shape hash there
+too. Each exception leaves the world stream's position short by its draws; none
+decides anything a battle channel reads.
 
 Every battle-side consumer draws through `World::next_rand`: the battle-action
 host's `rng`, the damage kernels, initiative, escape and flee, the monster
@@ -1956,8 +1975,7 @@ Kernels that live elsewhere: `engine-battle-vm::status_effects` (`toxic_tick_dam
 The page's live hunts are indexed on
 [open-rev-eng-threads.md](../reference/open-rev-eng-threads.md#battle--rendering):
 the three [juggle-window](#the-juggle-window---what-makes-a-monster-juggleable)
-residuals, the interior of the [spell-entry effect descriptor](#spell-list-record-0x4c),
-and the call that applies Astral Slash's damage together with PROT 952's
+residuals and the call that applies Astral Slash's damage together with PROT 952's
 unreachable respect call ([wrappers](#capture-class-wrappers---fun_801dd4b0--fun_801dd6b4)).
 The ability bitfield at record `+0xF4` / `+0xF8` is fully catalogued as the
 64 passive indices of [accessory-passive-table.md](../formats/accessory-passive-table.md#the-64-passive-indices)

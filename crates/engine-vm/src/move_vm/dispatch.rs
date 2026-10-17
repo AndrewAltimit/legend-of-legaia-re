@@ -505,7 +505,8 @@ pub fn step<H: MoveHost + ?Sized>(
             state.field_74 &= !0x4000_0000u32;
             size = 1;
         }
-        // 0x34 - TWEEN_SETUP. size 9. Arm 0x80023B64 (jump-table word
+        // 0x34 - SOUND_EMITTER_SETUP (a render-mode-5 part's cue, voice,
+        // levels and box; see `crate::sfx_emitter`). size 9. Arm 0x80023B64 (jump-table word
         // 0x80010848) stores every operand through `s4 = actor + 0x90`: the
         // `lh` operands go out as sign-extended **words** (`sw`), the `lhu`
         // ones as halfwords. Word stores: op[1] -> +0xAC, op[5] -> +0x9C,

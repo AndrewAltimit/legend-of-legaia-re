@@ -1,6 +1,6 @@
 //! Disc-gated ladder for the **player Seru-magic tick bodies** of action ids
 //! `0x87..=0x8B` (PROT 0909..0913), ported in
-//! `legaia_engine_battle_vm::seru_magic_ticks`.
+//! `legaia_engine_cast::seru_magic_ticks`.
 //!
 //! Why disc-gated when `World::cast_module_for` is arithmetic. Without
 //! `SCUS_942.54` installed the resolver never consults the spell table's
@@ -22,7 +22,7 @@
 //! Skips (and passes) without `LEGAIA_DISC_BIN` / `extracted/`.
 
 use legaia_engine_battle_vm::battle_anim_rate::AnimRate;
-use legaia_engine_battle_vm::seru_magic_ticks as seru;
+use legaia_engine_cast::seru_magic_ticks as seru;
 use legaia_engine_core::world::{Actor, World};
 use legaia_engine_mode::mode::SceneMode;
 use legaia_overlay_images::cast_effect_pool::{CAST_MODULE_PROT_FIRST, CAST_MODULE_PROT_LAST};
@@ -238,7 +238,7 @@ fn every_player_seru_tick_body_walks_its_phase_chain() {
 /// band keeps no clock of its own in its place.
 #[test]
 fn the_viguro_rendezvous_needs_the_stager() {
-    use legaia_engine_battle_vm::cast_module_camera::VIGURO_STAGER_CALLERS;
+    use legaia_engine_cast::cast_module_camera::VIGURO_STAGER_CALLERS;
     let Some(dir) = extracted_dir() else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset or extracted/ incomplete");
         return;

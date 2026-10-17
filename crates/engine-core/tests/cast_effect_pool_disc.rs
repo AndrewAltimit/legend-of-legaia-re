@@ -23,7 +23,7 @@
 //! Skips (and passes) without `LEGAIA_DISC_BIN` / `extracted/`.
 
 use legaia_engine_battle::monster_catalog::{vanilla_formation_table, vanilla_monster_catalog};
-use legaia_engine_battle_vm::cast_module_camera as cmc;
+use legaia_engine_cast::cast_module_camera as cmc;
 use legaia_engine_core::world::{Actor, World};
 use legaia_engine_mode::mode::SceneMode;
 use legaia_engine_system::input::{InputState, PadButton};
@@ -762,7 +762,7 @@ fn every_creature_arm_spawn_names_a_record_of_its_module() {
                 let capture = if timing == cmc::SpawnTiming::Pass {
                     cmc::capture_arm_spawns(entry, phase)
                 } else {
-                    &[]
+                    cmc::capture_arm_spawns_every(entry, phase)
                 };
                 for s in cmc::creature_arm_spawns(entry, phase, timing)
                     .iter()

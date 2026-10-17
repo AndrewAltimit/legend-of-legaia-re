@@ -205,6 +205,9 @@ The crate's remaining modules are what the VMs import; by family:
   `FUN_801D31B0`) and `vdf_morph` (the move-VM actor's morph lanes and
   their ramp envelope; the record walk and weighted-delta blend they feed
   are `legaia_scene_formats::vdf_morph`).
+- **Positional sound emitter** - `sfx_emitter` (the part tick
+  `FUN_80021DF4`'s render-mode-5 arm: level ramp, box falloff against the
+  stored camera focus, raw voice volume, key / volume / release calls).
 - **Field VM leaves** - `field::dispatch_leaves` (the dispatcher's operand
   and table helpers), `field_actor_billboard`, `field_ledge_hop_arc` and
   `vram_rect_copy` (GP0 `0x80`, field-VM sub-op `0x43`/`0x12`): each is a
@@ -213,10 +216,11 @@ The crate's remaining modules are what the VMs import; by family:
 ## Battle VM kernels
 
 The battle action state machine (`battle_action`), the battle formulas,
-the battle camera script, `psx_camera`, the cast-module ticks and most
-battle-overlay leaves live in
+the battle camera script and most battle-overlay leaves live in
 [`legaia-engine-battle-vm`](../engine-battle-vm/README.md)
-(`legaia_engine_battle_vm::battle_action`, ...). This crate does not depend
+(`legaia_engine_battle_vm::battle_action`, ...), the cast-module ticks one
+crate above it in [`legaia-engine-cast`](../engine-cast/README.md), and
+`psx_camera` in [`legaia-engine-camera`](../engine-camera/README.md). This crate does not depend
 on it; neither crate sits below the other.
 
 ## See also

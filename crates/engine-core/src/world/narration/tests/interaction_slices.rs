@@ -326,6 +326,15 @@ fn a_helper_context_parks_on_its_text_and_runs_on_after_the_box() {
         w.system_flag_test(0x0C),
         "dismissing the box resumes the helper past the segment"
     );
+    // The dismissing press's own pager call still draws the box (state `9`
+    // for a byte outside the dispatch table, `0x801D8FE0..0x801D8FF8`);
+    // it is gone by the next.
+    assert!(
+        w.script_dialog_panel()
+            .is_some_and(|p| !p.is_waiting_for_input())
+    );
+    w.set_pad(0);
+    w.step_helper_contexts();
     assert!(w.script_dialog_panel().is_none());
 }
 

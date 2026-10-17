@@ -72,8 +72,18 @@ pub(super) fn run_battle(
     } else {
         &[false, true]
     };
+    // A state's pinned stream first (`BATTLE_RNG_PINS`), then the list.
+    // `LEGAIA_RC_PIN_SEED` stands in for the pin, for a sweep.
+    let pinned = std::env::var("LEGAIA_RC_PIN_SEED")
+        .ok()
+        .and_then(|v| u32::from_str_radix(v.trim().trim_start_matches("0x"), 16).ok())
+        .or_else(|| crate::retail_compare_battle::pinned_seed(&entry.label));
+    let seeds: Vec<u32> = pinned
+        .into_iter()
+        .chain(crate::retail_compare_battle::BATTLE_RNG_SEEDS)
+        .collect();
     'search: for &victims in revive {
-        for &seed in &crate::retail_compare_battle::BATTLE_RNG_SEEDS {
+        for &seed in &seeds {
             let mut run = crate::retail_compare_battle::run_engine_battle(
                 opts.extracted,
                 retail,
@@ -103,9 +113,10 @@ pub(super) fn run_battle(
             if seed_trace() {
                 match &run {
                     Ok(e) => eprintln!(
-                        "[seed] {} seed={seed:#010X} victims={victims} mode={:?} prompt={:?} \
+                        "[seed] {} seed={seed:#010X} victims={victims} end={:#010X} mode={:?} prompt={:?} \
                          surprise={} driven={:?} inflight={:?} age_short={:?} drift={:?}",
                         entry.label,
+                        e.rng_at_end,
                         e.mode,
                         e.prompt_tick,
                         e.surprise_opening,
@@ -306,6 +317,9 @@ pub(super) fn run_battle(
     }
     report.image = image;
     report.detail.extend(det);
+    report
+        .detail
+        .insert("stream".into(), format!("{:#010X}", engine.rng_seed));
     report.score = state_score(&ch);
     report.channels = ch;
 }
@@ -367,6 +381,17 @@ pub(super) fn battle_image(
             legaia_engine_capture::bar_seeds::bar_seeds_to_env(&engine.hp_seed),
         ),
     ];
+    // Each body on the keyframe the capture shows it at.
+    let seeds = battle.engine_clip_cursors();
+    if !seeds.is_empty() {
+        env.push((
+            "LEGAIA_SEAT_BATTLE_CLIPS",
+            legaia_engine_capture::clip_cursors::clip_cursors_to_env(&seeds),
+        ));
+    }
+    if battle.mystic_shield {
+        env.push(("LEGAIA_BATTLE_MYSTIC_SHIELD", "1".to_string()));
+    }
     if !battle.entry_latches.is_empty() {
         env.push((
             "LEGAIA_BATTLE_LATCHES",
@@ -450,7 +475,24 @@ pub(super) fn battle_image(
                 ground.join(",")
             ),
         ));
-        env.push(("LEGAIA_CAPTURE_GATE", gate.to_env()));
+        // On the battle-frame cadence a `0x32` capture's displayed frame is
+        // the pass before the state was entered (`0x29`'s summon-route pass):
+        // the RAM gate holds one whole pass in `0x32`, and the display is two
+        // passes older. A gate on the state cannot name it, so the child
+        // takes the RAM's gate and re-runs to the tick the display lag back
+        // (`LEGAIA_CAPTURE_DISPLAY_LAG`, the retake).
+        let ram_gate = battle.phase_gate();
+        match ram_gate {
+            Some(g)
+                if g.camera_pass
+                    && battle.display_lag > 0
+                    && legaia_engine_session::native::battle_frame_cadence_on() =>
+            {
+                env.push(("LEGAIA_CAPTURE_GATE", g.to_env()));
+                env.push(("LEGAIA_CAPTURE_DISPLAY_LAG", battle.display_lag.to_string()));
+            }
+            _ => env.push(("LEGAIA_CAPTURE_GATE", gate.to_env())),
+        }
         tick += crate::retail_compare_battle::INFLIGHT_DEADLINE;
     }
     // A menu capture or any other action in flight is walked there through

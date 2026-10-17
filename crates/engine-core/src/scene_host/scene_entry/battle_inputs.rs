@@ -51,6 +51,36 @@ impl SceneHost {
         self.monster_archive_cache.clone()
     }
 
+    /// Seat every player cast's summon-body stats from its own `summon.dat`
+    /// actor record (extraction PROT 893) onto
+    /// [`crate::world::DiscTables::summon_creatures`]: over the archive twin's
+    /// stats where one is installed, as a record-only body where none is (the
+    /// flutes and the big summons).
+    ///
+    /// REF: FUN_801F19EC (`FUN_80054CB0(record, 4)` at `0x801F1D1C`)
+    pub(super) fn install_summon_cast_records(&mut self) {
+        use legaia_actor_formats::summon_readef as sr;
+        use legaia_engine_battle::monster_catalog as mc;
+        let Ok(summon_dat) = self.index.entry_bytes(u32::from(sr::SUMMON_PROT_INDEX)) else {
+            return;
+        };
+        for spell_id in sr::PLAYER_CAST_IDS {
+            let Ok(head) = sr::cast_record_stats(&summon_dat, spell_id) else {
+                continue;
+            };
+            let creatures = &mut self.world.tables.summon_creatures;
+            if let Some(def) = creatures.get_mut(&spell_id) {
+                mc::apply_cast_record(def, &head);
+            } else {
+                let name = sr::parse_cast(&summon_dat, spell_id)
+                    .ok()
+                    .and_then(|c| c.attack_name)
+                    .unwrap_or_default();
+                creatures.insert(spell_id, mc::monster_def_from_cast_record(name, &head));
+            }
+        }
+    }
+
     /// Install the sparring-tutorial prompt corpus onto the world from PROT
     /// entry 0967 (the battle-stage slot-B overlay), once per host.
     ///
@@ -293,12 +323,30 @@ impl SceneHost {
             .filter(|(_, a)| a.battle_action_clips.is_none())
             .filter_map(|(i, a)| a.battle_monster_id.map(|id| (i, id)))
             .collect();
-        if pending.is_empty() {
+        // Each monster's clip morphs, the table its entries' `+0x04` /
+        // `+0x08` lane indices address (`FUN_800542C8` resolves them at load).
+        let morph_pending: Vec<(usize, u16)> = self
+            .world
+            .actors
+            .iter()
+            .enumerate()
+            .filter(|(_, a)| a.battle_clip_morphs.is_none())
+            .filter_map(|(i, a)| a.battle_monster_id.map(|id| (i, id)))
+            .collect();
+        if pending.is_empty() && morph_pending.is_empty() {
             return;
         }
         let Some(archive) = self.monster_archive_bytes() else {
             return;
         };
+        for (slot, id) in morph_pending {
+            if let Ok(Some(table)) =
+                legaia_actor_formats::monster_archive::clip_morph_table(&archive, id)
+            {
+                self.world
+                    .set_actor_battle_clip_morphs(slot, Arc::new(table));
+            }
+        }
         for (slot, id) in pending {
             if let Ok(Some(clips)) =
                 legaia_actor_formats::monster_archive::animations_by_entry(&archive, id)

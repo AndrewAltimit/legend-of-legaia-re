@@ -133,9 +133,9 @@ impl World {
     pub(in crate::world) fn stash_cast_steal(
         &mut self,
         caster_slot: u8,
-        outcome: legaia_engine_battle_vm::cast_arm_ticks::StealOutcome,
+        outcome: legaia_engine_cast::cast_arm_ticks::StealOutcome,
     ) {
-        use legaia_engine_battle_vm::cast_arm_ticks::StealOutcome;
+        use legaia_engine_cast::cast_arm_ticks::StealOutcome;
         let Some(m) = usize::from(caster_slot).checked_sub(usize::from(self.party.party_count))
         else {
             return;

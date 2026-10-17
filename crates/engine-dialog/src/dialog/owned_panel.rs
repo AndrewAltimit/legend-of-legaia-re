@@ -221,4 +221,35 @@ impl OwnedDialogPanel {
         panel.seed_box_at_lead(seg_lead);
         panel
     }
+
+    /// The box the pager goes on drawing after the press that left this
+    /// panel: the same rows at the same scroll, with no page mark, no picker
+    /// box and no option hand.
+    ///
+    /// `FUN_801D84D0` is a list-0 actor tick, so it draws every game tick
+    /// whether or not a box is being typed, and its draw gate is the state
+    /// alone: states `1` and `2` skip the window (`j 0x801D9868` at
+    /// `0x801D968C`), every other state but `0x0B` takes the row loop at
+    /// `0x801D9770` with the box flag up (`li s6,0x1`), which frames the box
+    /// (`FUN_8002C69C` at `0x801D99E0`, behind `beq s6,zero` at `0x801D9938`)
+    /// and draws each non-null row of `_DAT_801F3540`. The page mark is drawn
+    /// only in state `0x19` (`0x801D9804..0x801D9858`) and the picker box only
+    /// in the picker states. So the press that dispatches a box (the post-page
+    /// dispatch in `0x19`, or the picker's commit at `0x801D9530..0x801D95A4`)
+    /// draws the box once more in the state it stores (`0`, `3`, `6` or
+    /// `9`), and a `0x24` continuation's state `3` becomes the idle state `4`,
+    /// which keeps the rows (`0x801D8708`) and goes on drawing them until the
+    /// dialog SM loads the next line.
+    pub fn held_after_press(&self) -> Self {
+        let mut held = self.clone();
+        held.picker = None;
+        held.menu_active = false;
+        held.picker_slide = None;
+        held.menu_pending = false;
+        held.waiting_for_input = false;
+        held.press_latch = false;
+        held.cursor_driven = true;
+        held.advance_icon = None;
+        held
+    }
 }

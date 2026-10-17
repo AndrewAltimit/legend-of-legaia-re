@@ -57,13 +57,10 @@ pub(super) fn seed(
     // scene's gated spawns see the saved story state, then the host's own
     // resume path runs (which applies the save again over the landing, and
     // seats the party at the save's position unless a live one is armed).
+    // The save's options words (Field Move among them) come in with it, as
+    // a card load restores them: `jouind`'s timed switch pair is paced for
+    // the anchor's player, who ran.
     session.host.world.load_full(sf.clone());
-    // The save's Field Move option. The engine keeps it as a host setting
-    // rather than save data, so the seed carries it the way the card load
-    // carries it in retail: a timed script (`jouind`'s two-switch gate gives
-    // 50 vsyncs of free walk between the switches) is paced for the player
-    // the anchor recorded, who had Run on.
-    session.host.world.locomotion.run_default = i32_at(&a.sc, SC_FIELD_MOVE) != 0;
     if let Some((x, z)) = a.seat {
         session.host.set_entry_seat(x, z);
     }
@@ -200,4 +197,27 @@ pub(super) fn fight_committed(session: &mut NativeSession, r: Run) -> Run {
         }
     }
     r
+}
+
+/// Print and drain the script contexts the engine's anti-hang timeline cap
+/// ended since the last call (`World::cutscene.capped`), under
+/// `LEGAIA_FGL_CAPS`: the census of shipped records the cap cuts short.
+pub(super) fn note_caps(session: &mut NativeSession) {
+    if session.host.world.cutscene.capped.is_empty() {
+        return;
+    }
+    let caps = std::mem::take(&mut session.host.world.cutscene.capped);
+    if std::env::var_os("LEGAIA_FGL_CAPS").is_some() {
+        for c in caps {
+            eprintln!(
+                "    [cap] {} {} len {:#x} pc {:#06x} op {:#04x} frame {}",
+                c.scene,
+                if c.modal { "timeline" } else { "helper" },
+                c.len,
+                c.pc,
+                c.op,
+                session.frames
+            );
+        }
+    }
 }

@@ -89,19 +89,16 @@ impl World {
             .summon_actor_slot
             .filter(|&s| self.actors.get(s as usize).is_some_and(|a| a.active))
             .and_then(|s| self.actors.get(s as usize))
-            .map(
-                |a| legaia_engine_battle_vm::cast_module_camera::ModuleSeat {
-                    x: a.move_state.world_x,
-                    y: a.move_state.world_y,
-                    z: a.move_state.world_z,
-                    facing: a.battle.facing_angle & 0xFFF,
-                },
-            );
+            .map(|a| legaia_engine_cast::cast_module_camera::ModuleSeat {
+                x: a.move_state.world_x,
+                y: a.move_state.world_y,
+                z: a.move_state.world_z,
+                facing: a.battle.facing_angle & 0xFFF,
+            });
         self.casting.module_cam.creature_live = seat_live;
         self.casting.module_cam.victim_untargetable =
             self.casting.module_cam.victim_slot.is_some_and(|v| {
-                self.cast_view(v).flags
-                    & legaia_engine_battle_vm::cast_module_ticks::FLAG_NON_TARGETABLE
+                self.cast_view(v).flags & legaia_engine_cast::cast_module_ticks::FLAG_NON_TARGETABLE
                     != 0
             });
         self.casting.module_cam.creature_arrived = st.walked;
@@ -127,19 +124,19 @@ impl World {
             a.battle.facing_angle = c.facing;
         }
         // A module whose arms are paced by their own countdown
-        // (`vm::cast_module_camera`) owns the band's length the way retail's
+        // (`legaia_engine_cast::cast_module_camera`) owns the band's length the way retail's
         // does: `0x36` holds on the module's return, and the outcome lands on
         // the module's hit arm rather than on the engine's walk-in.
         let profile = run
             .as_ref()
-            .and_then(|r| legaia_engine_battle_vm::cast_module_camera::module_profile(r.prot_entry))
+            .and_then(|r| legaia_engine_cast::cast_module_camera::module_profile(r.prot_entry))
             .filter(|p| p.paces_band());
         // A module whose director reports its spawn calls seats each record
         // on the pass its arm makes the call, after the arm's own creature
         // placement above (Gimard's arm 3 spawns on the seat it just set).
         let stages_spawns = run
             .as_ref()
-            .and_then(|r| legaia_engine_battle_vm::cast_module_camera::module_profile(r.prot_entry))
+            .and_then(|r| legaia_engine_cast::cast_module_camera::module_profile(r.prot_entry))
             .is_some_and(|p| p.stages_spawns);
         if let Some(r) = run.as_ref().filter(|_| stages_spawns) {
             if let Some(m) = r.vram_move {
@@ -222,7 +219,7 @@ impl World {
         // stager armed is requested as the module reaches it.
         let seat_arm = run
             .as_ref()
-            .and_then(|r| legaia_engine_battle_vm::cast_module_camera::module_profile(r.prot_entry))
+            .and_then(|r| legaia_engine_cast::cast_module_camera::module_profile(r.prot_entry))
             .and_then(|p| p.seat_arm);
         let seat_entry = run.as_ref().map(|r| r.prot_entry);
         if let Some((arm, spell, at)) = self.casting.summon_seat_owed
@@ -254,7 +251,7 @@ impl World {
                 if !stages_spawns {
                     self.spawn_cast_module_fx(st.spell_id, st.spawn);
                 } else if self.cast_module_for(st.spell_id).is_some_and(|e| {
-                    legaia_engine_battle_vm::cast_module_camera::CREATURE_SPAWN_ENTRIES.contains(&e)
+                    legaia_engine_cast::cast_module_camera::CREATURE_SPAWN_ENTRIES.contains(&e)
                 }) {
                     self.spawn_cast_module_stager_records(st.spell_id, st.spawn);
                 }

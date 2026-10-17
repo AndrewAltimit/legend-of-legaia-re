@@ -23,8 +23,8 @@ impl World {
     /// - A clip a held arm staged ([`ModuleCamState::creature_stage`]):
     ///   PROT 0905's arm 8 keeps the creature on its hover clip `2`.
     ///
-    /// [`ModuleCamState::creature_floor_clip`]: legaia_engine_battle_vm::cast_module_camera::ModuleCamState::creature_floor_clip
-    /// [`ModuleCamState::creature_stage`]: legaia_engine_battle_vm::cast_module_camera::ModuleCamState::creature_stage
+    /// [`ModuleCamState::creature_floor_clip`]: legaia_engine_cast::cast_module_camera::ModuleCamState::creature_floor_clip
+    /// [`ModuleCamState::creature_stage`]: legaia_engine_cast::cast_module_camera::ModuleCamState::creature_stage
     pub(in crate::world::battle::cast_band) fn apply_seru_seat_writes(
         &mut self,
         prot_entry: u32,

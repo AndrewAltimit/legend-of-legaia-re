@@ -7,7 +7,12 @@ import re
 from pathlib import Path
 
 from ui_host_drift.roots import REPO
-from ui_host_drift.rows.page_keys import NON_PAD_CODES, PAD_HOST_MARKERS, SITE_ROOT
+from ui_host_drift.rows.page_keys import (
+    GAMEPAD_ADOPTER,
+    NON_PAD_CODES,
+    PAD_HOST_MARKERS,
+    SITE_ROOT,
+)
 from ui_host_drift.rust_text import BLOCK_COMMENT_RE, strip_comments
 
 # `KeyboardEvent` accesses: an event-shaped identifier, not `g.key` on a
@@ -26,6 +31,33 @@ EVENT_CODE_LITERAL_RE = re.compile(
 # through the pad BUTTON, so a bindable code in a set membership test is the
 # same defect wearing a different shape.
 KEY_SET_LITERAL_RE = re.compile(r"\.(?:has|includes)\(\s*['\"]([^'\"]+)['\"]\s*\)")
+
+
+# The controller twin of a keyboard table. A gamepad layout written into a
+# page does not look like a key table either: it is an array of PSX button
+# names indexed by `Gamepad.buttons[i]`. The play page carried one while the
+# native window read no controller at all, so nothing compared it with
+# anything. Four or more quoted button names in one array literal is that
+# shape; the engine serves the real one (`gamepad_layout_json`).
+PAD_BUTTON_NAMES = (
+    "Select|L3|R3|Start|Up|Right|Down|Left|L2|R2|L1|R1|Triangle|Circle|Cross|Square"
+)
+BUTTON_NAME_ARRAY_RE = re.compile(
+    rf"\[\s*(?:['\"](?:{PAD_BUTTON_NAMES})['\"]\s*,\s*){{3,}}['\"](?:{PAD_BUTTON_NAMES})['\"]"
+)
+# Reading the Gamepad API outside the adopter is a second controller reader:
+# it would fold the buttons through whatever it wrote down, not the engine's
+# layout, and skip the focus-loss reset the hosts share.
+GAMEPAD_API_RE = re.compile(r"\bnavigator\.getGamepads\b")
+
+
+def controller_table_hits(text: str, is_adopter: bool) -> list[tuple[int, str]]:
+    """Tier-5 controller detectors over comment-stripped `text`:
+    `(offset, kind)` per hit, `kind` one of `"table"` / `"api"`."""
+    hits = [(m.start(), "table") for m in BUTTON_NAME_ARRAY_RE.finditer(text)]
+    if not is_adopter:
+        hits.extend((m.start(), "api") for m in GAMEPAD_API_RE.finditer(text))
+    return sorted(hits)
 
 
 def bindable_dom_codes() -> set[str]:
@@ -90,6 +122,24 @@ def check_page_key_tables() -> tuple[list[str], int]:
                 f"really is not a pad control - use a key the pad has no "
                 f"button for (NON_PAD_CODES in this gate)."
             )
+        for pos, kind in controller_table_hits(text, path == GAMEPAD_ADOPTER):
+            line = text.count("\n", 0, pos) + 1
+            if kind == "table":
+                problems.append(
+                    f"PAGE CONTROLLER TABLE {rel}:{line}: an array of PSX "
+                    f"button names - a gamepad layout written into the page. "
+                    f"Fold controllers through the engine's layout "
+                    f"(`gamepad_layout_json`, adopted by `site/js/pad-bindings.js`), "
+                    f"the one the native window folds gilrs through."
+                )
+            else:
+                problems.append(
+                    f"PAGE CONTROLLER TABLE {rel}:{line}: reads "
+                    f"`navigator.getGamepads` directly. Read controllers through "
+                    f"`legaiaPollGamepad` / `legaiaGamepadEdges` "
+                    f"(`site/js/pad-bindings.js`), which fold them through the "
+                    f"engine's layout and share the focus-loss reset."
+                )
         codes = bindable_dom_codes()
         for m in KEY_SET_LITERAL_RE.finditer(text):
             code = m.group(1)

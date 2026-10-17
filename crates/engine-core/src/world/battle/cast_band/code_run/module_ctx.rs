@@ -11,7 +11,7 @@ impl World {
     /// what they left (`shiny_refactor_gimard_levelup`).
     pub(in crate::world::battle::cast_band) fn module_cam_with_yaw_base(
         &self,
-    ) -> legaia_engine_battle_vm::cast_module_camera::ModuleCamState {
+    ) -> legaia_engine_cast::cast_module_camera::ModuleCamState {
         let mut st = self.casting.module_cam;
         if let Some(cam) = self.battle.camera.as_ref() {
             st.yaw_base = cam.action_yaw_base();
@@ -23,7 +23,7 @@ impl World {
     /// battle camera's `ctx[+0x6DA]` ([`Self::module_cam_with_yaw_base`]).
     pub(in crate::world::battle::cast_band) fn store_module_cam(
         &mut self,
-        st: legaia_engine_battle_vm::cast_module_camera::ModuleCamState,
+        st: legaia_engine_cast::cast_module_camera::ModuleCamState,
     ) {
         if let Some(cam) = self.battle.camera.as_mut() {
             cam.set_action_yaw_base(st.yaw_base);
@@ -37,21 +37,19 @@ impl World {
         &self,
         caster_slot: u8,
         victim_slot: u8,
-    ) -> legaia_engine_battle_vm::cast_module_camera::ModuleCamSeats {
+    ) -> legaia_engine_cast::cast_module_camera::ModuleCamSeats {
         let seat = |slot: u8| {
             self.actors
                 .get(slot as usize)
-                .map(
-                    |a| legaia_engine_battle_vm::cast_module_camera::ModuleSeat {
-                        x: a.move_state.world_x,
-                        y: a.move_state.world_y,
-                        z: a.move_state.world_z,
-                        facing: a.battle.facing_angle & 0xFFF,
-                    },
-                )
+                .map(|a| legaia_engine_cast::cast_module_camera::ModuleSeat {
+                    x: a.move_state.world_x,
+                    y: a.move_state.world_y,
+                    z: a.move_state.world_z,
+                    facing: a.battle.facing_angle & 0xFFF,
+                })
                 .unwrap_or_default()
         };
-        legaia_engine_battle_vm::cast_module_camera::ModuleCamSeats {
+        legaia_engine_cast::cast_module_camera::ModuleCamSeats {
             caster: seat(caster_slot),
             victim: seat(victim_slot),
             // The SM's post-drain word while it is calling the stager from
@@ -105,11 +103,11 @@ impl World {
     /// sweep's `addiu s4, zero, 0xc` encodes.
     pub(in crate::world) fn cast_module_ctx(
         &self,
-    ) -> legaia_engine_battle_vm::cast_module_ticks::CastModuleCtx {
-        use legaia_engine_battle_vm::cast_module_ticks::FIRST_MONSTER_SEAT;
+    ) -> legaia_engine_cast::cast_module_ticks::CastModuleCtx {
+        use legaia_engine_cast::cast_module_ticks::FIRST_MONSTER_SEAT;
         let table = self.actors.len().min(BATTLE_TABLE_SLOTS);
         let map = self.cast_seat_map();
-        legaia_engine_battle_vm::cast_module_ticks::CastModuleCtx {
+        legaia_engine_cast::cast_module_ticks::CastModuleCtx {
             // Retail's `ctx[+0]` is the **party** count, not the actor count:
             // `0x8004B3F0` loads it as the bound of a loop that turns
             // `DAT_8007BD10[i]` - the present-party char-id list - into a
@@ -160,7 +158,7 @@ impl World {
 
     /// Run the resident module's **code** half for one frame - the band's
     /// **PORT** worklist rows, ported in
-    /// [`legaia_engine_battle_vm::cast_module_ticks`].
+    /// [`legaia_engine_cast::cast_module_ticks`].
     ///
     /// Retail re-enters the paged module every frame through
     /// `FUN_801F1ED4` / `FUN_801F2160` and holds battle phase `0x70` while
@@ -177,14 +175,14 @@ impl World {
     /// half is deliberately *not* re-applied here - the engine folds a cast's
     /// HP outcome once, at [`Self::cast_spell_on_slots_prepaid`], and the
     /// module's own numbers reach that fold as the baked per-hit power
-    /// ([`vm::cast_module_ticks::baked_power_for`], read by
+    /// ([`legaia_engine_cast::cast_module_ticks::baked_power_for`], read by
     /// `capture_bypass_predamage` / `capture_respect_predamage`) rather than
     /// as a second application.
     ///
     /// Returns `None` when no band entry is resident (a disc-free host, or a
     /// spell that names no module).
     /// Whether one seat has settled the way every settle loop in the band
-    /// tests it ([`vm::cast_module_ticks::ChainSettle`]): a live seat once its playing clip
+    /// tests it ([`legaia_engine_cast::cast_module_ticks::ChainSettle`]): a live seat once its playing clip
     /// is back to idle, a dead one once it plays the down clip - or, where
     /// `faded` counts, once its defeat fade has run its colour word out
     /// (retail's prim word `+0x04` at `0`).
@@ -209,22 +207,22 @@ impl World {
         if a.battle.hp != 0 {
             return playing == 0;
         }
-        let downed = playing == legaia_engine_battle_vm::cast_module_ticks::SETTLE_DOWN_CLIP
+        let downed = playing == legaia_engine_cast::cast_module_ticks::SETTLE_DOWN_CLIP
             || (a.battle_pose == Some(legaia_engine_battle_vm::battle_action::Pose::Defeat as u8)
                 && a.battle_animation.as_ref().is_none_or(|p| p.finished()));
         downed || (faded && (a.battle.render_color == 0 || !a.active))
     }
 
-    /// [`Self::chain_seat_settled`] over the seats a [`vm::cast_module_ticks::ChainSettle`]
+    /// [`Self::chain_seat_settled`] over the seats a [`legaia_engine_cast::cast_module_ticks::ChainSettle`]
     /// walks.
     pub(in crate::world::battle::cast_band) fn chain_settled(
         &self,
-        settle: legaia_engine_battle_vm::cast_module_ticks::ChainSettle,
+        settle: legaia_engine_cast::cast_module_ticks::ChainSettle,
         caster: u8,
         victim: u8,
-        ctx: &legaia_engine_battle_vm::cast_module_ticks::CastModuleCtx,
+        ctx: &legaia_engine_cast::cast_module_ticks::CastModuleCtx,
     ) -> bool {
-        use legaia_engine_battle_vm::cast_module_ticks::ChainSettle as S;
+        use legaia_engine_cast::cast_module_ticks::ChainSettle as S;
         let party = 0..usize::from(ctx.party_count);
         let pc = usize::from(self.party.party_count);
         let monsters = pc..pc + usize::from(ctx.monster_count);

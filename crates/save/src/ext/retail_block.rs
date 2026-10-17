@@ -73,6 +73,13 @@ impl SaveFile {
         // the next scene load re-applies (`FUN_8003AEB0` copies the level
         // into the live `_DAT_8007B910`).
         ext_v2.audio_levels = crate::card::read_retail_audio_levels(sc_block);
+        // The options screen's words, which retail's card load restores with
+        // the window: a save made running resumes running. Read only beside a
+        // real audio pair - a block with neither is a free or never-loaded
+        // window, and its zero words are not a setting anyone chose.
+        ext_v2.options = ext_v2
+            .audio_levels
+            .and_then(|_| crate::card::read_retail_options(sc_block));
         // The play clock: retail's `1/60` s counter, which the engine keeps in
         // whole seconds. An engine-authored block's `LGXE` blob carries the
         // exact seconds it wrote and keeps them.
@@ -209,6 +216,9 @@ impl SaveFile {
         }
         if let Some(levels) = self.ext_v2.audio_levels {
             crate::card::write_retail_audio_levels(sc_block, levels)?;
+        }
+        if let Some(options) = self.ext_v2.options {
+            crate::card::write_retail_options(sc_block, options)?;
         }
         // The play clock, so retail's save screen prints the time this save
         // was played for and retail's own clock carries on from it.

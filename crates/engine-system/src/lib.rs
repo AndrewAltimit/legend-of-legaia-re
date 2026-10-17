@@ -17,6 +17,7 @@ pub mod chunk_install;
 pub mod draw_census;
 pub mod fade;
 pub mod fade_ramp;
+pub mod gamepad;
 pub mod input;
 pub mod menu_input;
 pub mod mode_entry_init;

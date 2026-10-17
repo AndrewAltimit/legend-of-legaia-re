@@ -18,6 +18,11 @@ pub(super) const MIN_DISTINCT_TAG: &str = "# soak-min-distinct = ";
 /// the default (`LEGAIA_SOAK_STARVE_FRAMES`): a shorter window is a shorter
 /// replay, and the replay must be judged by the window that made it.
 pub(super) const STARVE_TAG: &str = "# soak-starve-frames = ";
+/// The `battle_endless` threshold a replay was recorded under, when it was
+/// not the default (`LEGAIA_SOAK_BATTLE_FRAMES`): a fight the shorter window
+/// caught may end before the default one would, so the replay is judged by
+/// the window that made it.
+pub(super) const BATTLE_FRAMES_TAG: &str = "# soak-battle-frames = ";
 /// The session configuration a replay was recorded under: `"host"` (the play
 /// hosts' arming, [`Tunables::host_arming`]) or `"bare"`. A replay without
 /// the tag predates the arming and replays bare.
@@ -60,6 +65,9 @@ pub(super) fn replay_text(
     if let Some(n) = env_u64("LEGAIA_SOAK_STARVE_FRAMES") {
         let _ = writeln!(out, "{STARVE_TAG}{n}");
     }
+    if let Some(n) = env_u64("LEGAIA_SOAK_BATTLE_FRAMES") {
+        let _ = writeln!(out, "{BATTLE_FRAMES_TAG}{n}");
+    }
     let arming = if host_arming { "host" } else { "bare" };
     let _ = writeln!(out, "{ARMING_TAG}{arming:?}");
     let _ = writeln!(
@@ -77,6 +85,7 @@ pub(super) struct LoadedReplay {
     pub(super) signature: Option<String>,
     pub(super) min_distinct: Option<usize>,
     pub(super) starve_frames: Option<u64>,
+    pub(super) battle_frames: Option<u64>,
     pub(super) host_arming: bool,
 }
 
@@ -89,6 +98,9 @@ impl LoadedReplay {
         }
         if let Some(n) = self.starve_frames {
             t.starve_frames = n;
+        }
+        if let Some(n) = self.battle_frames {
+            t.battle_frames = n;
         }
         t.host_arming = self.host_arming;
         t
@@ -121,6 +133,7 @@ pub(super) fn load_replay(path: &Path) -> LoadedReplay {
         signature: parse_tag(&text, SIG_TAG),
         min_distinct: parse_tag(&text, MIN_DISTINCT_TAG).and_then(|s| s.parse().ok()),
         starve_frames: parse_tag(&text, STARVE_TAG).and_then(|s| s.parse().ok()),
+        battle_frames: parse_tag(&text, BATTLE_FRAMES_TAG).and_then(|s| s.parse().ok()),
         host_arming: parse_tag(&text, ARMING_TAG).as_deref() == Some("host"),
     }
 }

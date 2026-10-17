@@ -111,12 +111,14 @@ Circle there, `C` / `V` carry Triangle / Square, and WASD doubles the arrows),
 so a key that works in the tab is not necessarily the same button in the
 window. `config show` prints the desktop table, including any rebinding.
 
-The browser play page also reads a gamepad (any controller the browser
-reports with the `standard` mapping), by position: bottom / right / left /
-top face buttons are Cross / Circle / Square / Triangle, bumpers L1 / R1,
-triggers L2 / R2, back / start Select / Start, and both the d-pad and the
-left stick drive the d-pad. Key Config (Select on the Options screen) rebinds keys only. The native window
-reads the keyboard only.
+Both the native window and the browser pages read a gamepad, by position:
+bottom / right / left / top face buttons are Cross / Circle / Square /
+Triangle, bumpers L1 / R1, triggers L2 / R2, back / start Select / Start, and
+both the d-pad and the left stick drive the d-pad. The browser takes any
+controller it reports with the `standard` mapping; the native window takes any
+controller its platform's gamepad backend sees, and works with the keyboard
+alone when none is connected. Key Config (Select on the Options screen) rebinds
+keys only.
 
 **Camera.** Left-mouse drag orbits the camera around your character
 (horizontal) and tilts it (vertical), the wheel zooms in and out, and a

@@ -41,6 +41,7 @@ from ui_host_drift.tiers.page_keys import (
     EVENT_KEY_RE,
     KEY_SET_LITERAL_RE,
     bindable_dom_codes,
+    controller_table_hits,
 )
 from ui_host_drift.tiers.render_kernels import rule_findings
 from ui_host_drift.tiers.screens import is_screen_signature
@@ -52,6 +53,8 @@ def _selftest_page_key_case(src: str) -> bool:
     if EVENT_KEY_RE.search(src):
         return True
     if any(m.group(1) not in NON_PAD_CODES for m in EVENT_CODE_LITERAL_RE.finditer(src)):
+        return True
+    if controller_table_hits(src, False):
         return True
     codes = bindable_dom_codes()
     return any(m.group(1) in codes for m in KEY_SET_LITERAL_RE.finditer(src))

@@ -1820,8 +1820,9 @@ selected id `_DAT_801E46B0` is `<= 0`. Otherwise:
 3. Ink `7`, the description. When the item record's leading byte is `2` and
    the item-effect `+0x03` index is `< 0x40`, the **accessory-passive**
    description (`0x8007625C + index*0x0C`, field `+0x08`) through the
-   word-wrapping renderer `FUN_8003CD00` at `y + 0x0E`; otherwise the item's
-   own `+0x08` string through `FUN_800337B0`.
+   segment printer `FUN_8003CD00` at `y + 0x0E`; otherwise the item's
+   own `+0x08` string through `FUN_800337B0`. Neither wraps or tests a width
+   ([`dialog-font.md`](../formats/dialog-font.md#item-and-spell-descriptions)).
 
 **`FUN_801D603C` - the prize counter's Yes / No confirm.** Two labels from
 rodata (`0x801CEA84`, `0x801CEA8C`) under a heading (`0x801CEAC8`, "Is this

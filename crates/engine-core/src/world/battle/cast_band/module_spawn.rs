@@ -137,7 +137,7 @@ impl World {
     pub(in crate::world) fn module_seats_on_caster(&self, spell_id: u8) -> bool {
         self.cast_module_for(spell_id).is_some_and(|e| {
             module_seat_arm::seat_arm_write(e).is_some()
-                || legaia_engine_battle_vm::cast_module_camera::module_profile(e)
+                || legaia_engine_cast::cast_module_camera::module_profile(e)
                     .is_some_and(|p| p.paces_band())
         })
     }
@@ -246,7 +246,7 @@ impl World {
     ///
     /// This is the **DATA** half of the band's worklist. The **PORT** half -
     /// the six tick bodies and the seven state-touching stagers - is
-    /// [`legaia_engine_battle_vm::cast_module_ticks`], driven from
+    /// [`legaia_engine_cast::cast_module_ticks`], driven from
     /// [`Self::run_cast_module_code`] at this same seam. The **SCOPE-IGNORE**
     /// rows are the six null stagers and the one unreferenced routine; there
     /// is nothing to stage for them either.
@@ -270,7 +270,7 @@ impl World {
         }
         // A module whose body is ported whole seats its own records, each on
         // the pass its arm spawns it.
-        if entry == legaia_engine_battle_vm::cast_fatal_decision::FATAL_DECISION_ENTRY {
+        if entry == legaia_engine_cast::cast_fatal_decision::FATAL_DECISION_ENTRY {
             return false;
         }
         self.casting.active_summon = Some(legaia_engine_effects::summon::SummonScene::spawn_parts(
@@ -287,9 +287,9 @@ impl World {
     /// ones only its part stager
     /// (reached through a part's op-`0x20` call, which the engine does not
     /// run for these modules) seats. The arm-spawned records go on their
-    /// own arms ([`vm::cast_module_camera::creature_arm_spawns`]).
+    /// own arms ([`legaia_engine_cast::cast_module_camera::creature_arm_spawns`]).
     pub(super) fn spawn_cast_module_stager_records(&mut self, spell_id: u8, origin: [i16; 3]) {
-        use legaia_engine_battle_vm::cast_module_camera::{
+        use legaia_engine_cast::cast_module_camera::{
             SpawnRecord, SpawnTiming, creature_arm_spawns,
         };
         const LINK_BASE: u32 = legaia_overlay_images::summon_overlay::SUMMON_OVERLAY_LINK_BASE;
@@ -309,11 +309,9 @@ impl World {
                 [SpawnTiming::Pass, SpawnTiming::Every]
                     .into_iter()
                     .flat_map(move |t| creature_arm_spawns(entry, phase, t).iter())
-                    .chain(
-                        legaia_engine_battle_vm::cast_module_camera::capture_arm_spawns(
-                            entry, phase,
-                        ),
-                    )
+                    .chain(legaia_engine_cast::cast_module_camera::capture_arm_spawns(
+                        entry, phase,
+                    ))
             })
             .filter_map(|s| match s.record {
                 SpawnRecord::Module(va) => Some(va),
@@ -340,7 +338,7 @@ impl World {
     /// Seat the spawn calls one module arm made this pass, each on its own
     /// anchor, into the cast's running scene - the per-arm form of
     /// [`Self::spawn_cast_module_fx`] for a module whose director reports its
-    /// spawns ([`vm::cast_module_camera::ModuleProfile::stages_spawns`]).
+    /// spawns ([`legaia_engine_cast::cast_module_camera::ModuleProfile::stages_spawns`]).
     ///
     /// A record's program is bounded by the next record start, so each one
     /// is parsed against the whole record set of its image: the module's own
@@ -349,16 +347,16 @@ impl World {
     ///
     /// REF: FUN_80021B04 (the spawn calls), FUN_80058490 (the `MoveImage`)
     ///
-    /// [`SpawnRecord::Module`]: vm::cast_module_camera::SpawnRecord::Module
-    /// [`SpawnRecord::BattleProto`]: vm::cast_module_camera::SpawnRecord::BattleProto
+    /// [`SpawnRecord::Module`]: legaia_engine_cast::cast_module_camera::SpawnRecord::Module
+    /// [`SpawnRecord::BattleProto`]: legaia_engine_cast::cast_module_camera::SpawnRecord::BattleProto
     pub(super) fn stage_module_arm_spawns(
         &mut self,
         prot_entry: u32,
-        spawns: &[legaia_engine_battle_vm::cast_module_camera::ModuleSpawn],
-        shot: Option<legaia_engine_battle_vm::cast_module_camera::ModuleShot>,
+        spawns: &[legaia_engine_cast::cast_module_camera::ModuleSpawn],
+        shot: Option<legaia_engine_battle_vm::battle_cam_script::ModuleShot>,
         arm_point: Option<([i16; 3], [i16; 3])>,
     ) {
-        use legaia_engine_battle_vm::cast_module_camera::SpawnRecord;
+        use legaia_engine_cast::cast_module_camera::SpawnRecord;
         use legaia_game_tables::move_power::{self, BATTLE_OVERLAY_BASE};
         const LINK_BASE: u32 = legaia_overlay_images::summon_overlay::SUMMON_OVERLAY_LINK_BASE;
         let creature = self
@@ -371,26 +369,24 @@ impl World {
             .module_cam
             .victim_slot
             .and_then(|s| self.actors.get(usize::from(s)))
-            .map(
-                |a| legaia_engine_battle_vm::cast_module_camera::ModuleSeat {
-                    x: a.move_state.world_x,
-                    y: a.move_state.world_y,
-                    z: a.move_state.world_z,
-                    facing: a.battle.facing_angle & 0xFFF,
-                },
-            );
+            .map(|a| legaia_engine_cast::cast_module_camera::ModuleSeat {
+                x: a.move_state.world_x,
+                y: a.move_state.world_y,
+                z: a.move_state.world_z,
+                facing: a.battle.facing_angle & 0xFFF,
+            });
         let seat_of = |slot: usize| {
-            self.actors.get(slot).map(
-                |a| legaia_engine_battle_vm::cast_module_camera::ModuleSeat {
+            self.actors
+                .get(slot)
+                .map(|a| legaia_engine_cast::cast_module_camera::ModuleSeat {
                     x: a.move_state.world_x,
                     y: a.move_state.world_y,
                     z: a.move_state.world_z,
                     facing: a.battle.facing_angle & 0xFFF,
-                },
-            )
+                })
         };
         let party_count = usize::from(self.party.party_count);
-        let anchor_seats = legaia_engine_battle_vm::cast_module_camera::AnchorSeats {
+        let anchor_seats = legaia_engine_cast::cast_module_camera::AnchorSeats {
             caster: seat_of(usize::from(self.battle_ctx.active_actor)),
             party: std::array::from_fn(|n| {
                 (n < party_count && self.actors.get(n).is_some_and(|a| a.battle.hp != 0))
@@ -401,8 +397,8 @@ impl World {
         };
         for spawn in spawns {
             let point = match spawn.anchor {
-                legaia_engine_battle_vm::cast_module_camera::SpawnAnchor::ArmPoint => arm_point,
-                anchor => legaia_engine_battle_vm::cast_module_camera::spawn_anchor_point_with(
+                legaia_engine_cast::cast_module_camera::SpawnAnchor::ArmPoint => arm_point,
+                anchor => legaia_engine_cast::cast_module_camera::spawn_anchor_point_with(
                     anchor,
                     creature,
                     victim,
@@ -472,7 +468,7 @@ impl World {
                 )
             });
             let first = scene.parts.len();
-            let scale = legaia_engine_battle_vm::cast_module_camera::spawn_anchor_scale(
+            let scale = legaia_engine_cast::cast_module_camera::spawn_anchor_scale(
                 spawn.anchor,
                 shot,
                 anchor_seats,

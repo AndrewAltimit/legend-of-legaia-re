@@ -366,6 +366,66 @@ fn a_retail_saves_audio_levels_are_honoured_on_import() {
     assert_eq!(world.audio.levels, cold);
 }
 
+/// The options screen's words a retail block carries (Field Move at
+/// `0x800846CC`, SC `+0x58C`, and the rest of the window's rows) reach the
+/// world's mirrors on a load, are offered to the host once, and go back out
+/// on a save - into an LGSF file and into a freshly composed retail block.
+#[test]
+fn a_retail_saves_options_are_honoured_on_import() {
+    use legaia_save::card::{self, RetailOptions};
+    let mut block = vec![0u8; card::BLOCK_SIZE];
+    World::new()
+        .save_full()
+        .write_into_retail_sc_block(&mut block)
+        .unwrap();
+    let set = RetailOptions {
+        battle_camera: 2,
+        select_attack: 1,
+        field_move: 1,
+        hp_display: 2,
+        sound: 1,
+        vibration_battles: 1,
+        ..Default::default()
+    };
+    card::write_retail_options(&mut block, set).unwrap();
+    let sf = legaia_save::SaveFile::from_retail_sc_block(&block, 4).unwrap();
+    assert_eq!(sf.ext_v2.options, Some(set));
+
+    let mut world = World::new();
+    assert!(!world.locomotion.run_default);
+    world.load_full(sf);
+    assert!(
+        world.locomotion.run_default,
+        "a save made running resumes running"
+    );
+    assert_eq!(
+        world.toggles.battle_camera,
+        legaia_engine_menus::option_values::BattleCameraOpt::Far
+    );
+    assert_eq!(
+        world.toggles.field_hp_display,
+        legaia_engine_menus::option_values::HpDisplayOpt::DisplayOff
+    );
+    assert_eq!(
+        world.take_loaded_options(),
+        Some(set),
+        "offered to the host"
+    );
+    assert_eq!(world.take_loaded_options(), None, "once");
+
+    let out = world.save_full();
+    assert_eq!(out.ext_v2.options, Some(set));
+    let lgsf = legaia_save::SaveFile::parse(&out.write()).unwrap();
+    assert_eq!(lgsf.ext_v2.options, Some(set));
+    let mut fresh = vec![0u8; card::BLOCK_SIZE];
+    out.write_into_retail_sc_block(&mut fresh).unwrap();
+    assert_eq!(card::read_retail_options(&fresh), Some(set));
+
+    // A live mirror is what a save writes: walking again saves Walk.
+    world.locomotion.run_default = false;
+    assert_eq!(world.save_full().ext_v2.options.unwrap().field_move, 0);
+}
+
 /// A loaded save's accessory passives are live in the field at once: the
 /// derived ability mask is rebuilt from the loaded equipment rather than
 /// left empty until the first battle entry re-derives it.

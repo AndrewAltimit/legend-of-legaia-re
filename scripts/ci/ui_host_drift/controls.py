@@ -139,6 +139,16 @@ SELFTEST_PAGE_KEYS: list[tuple[str, str, bool]] = [
      "if (seenScenes.has('town01')) skip();", False),
     ("testing the pad bit is the fix",
      "const startEdge = (padMaskOf(p) & window.legaiaPadButton('Start')) !== 0;", False),
+    ("a gamepad layout array in a page is a controller table",
+     "const B = ['Cross', 'Circle', 'Square', 'Triangle', 'L1', 'R1'];", True),
+    ("reading the Gamepad API outside the adopter is a second reader",
+     "const pads = navigator.getGamepads();", True),
+    ("an object keyed by button name is a lookup, not a layout",
+     "const FACE_LANES = { Square: 1, Circle: 2, Triangle: 3, Cross: 4 };", False),
+    ("three button names are a short list, not a layout",
+     "const lanes = ['Square', 'Circle', 'Triangle'];", False),
+    ("polling through the adopter is the fix",
+     "const { pressed } = window.legaiaGamepadEdges();", False),
 ]
 
 

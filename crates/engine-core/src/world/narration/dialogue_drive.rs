@@ -70,6 +70,11 @@ impl World {
         // first visit inside the slice below (retail's actor tick runs the
         // dialog SM and then, same visit, the walk kernel).
         self.step_talk_face_ramp(&mut id);
+        // A box held for its press's own frame only (`HeldBox`) is gone by
+        // the next pager call: the idle state after the dispatch clears it.
+        if id.held_box.as_ref().is_some_and(|h| !h.until_next_line) {
+            id.held_box = None;
+        }
 
         // A box is open: tick the typewriter + route input.
         if let Some(panel) = id.panel.as_mut() {
@@ -132,11 +137,18 @@ impl World {
                         Some(t) => id.pc = t,
                         None => id.done = true,
                     }
+                    // The commit's own pager call goes on drawing the prompt's
+                    // box (state `0` / `3` / `6` / `9`), and a `0x24`
+                    // continuation keeps it up through the branch's opcodes.
+                    // REF: FUN_801D84D0 (0x801D9530..0x801D95A4)
+                    let continuation = panel.picker().map(|pk| pk.continuation);
+                    id.held_box = Some(HeldBox::after_press(panel, continuation));
                     id.panel = None;
                 } else if panel.is_done() {
                     // Plain box dismissed: the byte after the box decides
                     // whether the talk goes on (`FUN_80038050`).
                     id.pc = panel.pc;
+                    id.held_box = Some(HeldBox::after_press(panel, post_page_byte(panel)));
                     id.panel = None;
                     end_talk_at_post_box_byte(&mut id);
                 } else if panel.is_waiting_for_input() {
@@ -148,6 +160,7 @@ impl World {
                     panel.advance_page();
                     if panel.is_done() {
                         id.pc = panel.pc;
+                        id.held_box = Some(HeldBox::after_press(panel, post_page_byte(panel)));
                         id.panel = None;
                         end_talk_at_post_box_byte(&mut id);
                     } else {
@@ -246,6 +259,9 @@ impl World {
                         }
                     }
                     id.panel = Some(panel);
+                    // The next line loads into the pager (state `4` -> `5`),
+                    // which ends the held box.
+                    id.held_box = None;
                     break;
                 }
                 // A non-`0x1F` terminator before any box opened: if a prologue

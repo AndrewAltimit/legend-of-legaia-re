@@ -134,7 +134,7 @@ impl World {
         &mut self,
         prot_entry: u32,
         phase: u8,
-        drift: Option<legaia_engine_battle_vm::cast_module_camera::CaptureDrift>,
+        drift: Option<legaia_engine_cast::cast_module_camera::CaptureDrift>,
     ) {
         if prot_entry == 908
             && phase > ZENOIR_TURN_ARM
@@ -209,7 +209,7 @@ impl World {
     /// through its stager `FUN_801F7AF4`, in call order.
     ///
     /// Arms `0` and `1` are the tick body's two phase rendezvous
-    /// ([`legaia_engine_battle_vm::seru_magic_ticks::VIGURO_RENDEZVOUS_PHASES`]):
+    /// ([`legaia_engine_cast::seru_magic_ticks::VIGURO_RENDEZVOUS_PHASES`]):
     /// record `0x801F7E18`, which arm 2 spawns, waits `0x7F` and calls arm
     /// `0` - seating the creature at `(0, 0xC00)` facing `0x800`
     /// (`0x801F7B44..0x801F7B5C`) - and record `0x801F7F20`, which arm 7
@@ -221,10 +221,10 @@ impl World {
     /// REF: FUN_801F7AF4 (PROT 0909's stager, reached through `gp[+0x714]`)
     pub(in crate::world::battle::cast_band) fn run_viguro_stager_calls(
         &mut self,
-        ctx: &mut legaia_engine_battle_vm::cast_module_ticks::CastModuleCtx,
-        seat: &mut legaia_engine_battle_vm::cast_module_ticks::CastActorState,
+        ctx: &mut legaia_engine_cast::cast_module_ticks::CastModuleCtx,
+        seat: &mut legaia_engine_cast::cast_module_ticks::CastActorState,
     ) {
-        use legaia_engine_battle_vm::cast_module_camera::{
+        use legaia_engine_cast::cast_module_camera::{
             ModuleSeat, ModuleSpawn, SpawnAnchor, SpawnRecord,
         };
         let mut calls = std::mem::take(&mut self.casting.module_stager_calls);
@@ -247,7 +247,7 @@ impl World {
         calls.extend(due.into_iter().map(|arm| (arm, Default::default())));
         for (arm, caller) in calls {
             let (pos, rot) = (caller.pos, caller.rot);
-            legaia_engine_battle_vm::cast_module_ticks::viguro_stager(ctx, seat, arm);
+            legaia_engine_cast::cast_module_ticks::viguro_stager(ctx, seat, arm);
             if arm == 0 {
                 self.casting.module_cam.creature = Some(ModuleSeat {
                     x: 0,

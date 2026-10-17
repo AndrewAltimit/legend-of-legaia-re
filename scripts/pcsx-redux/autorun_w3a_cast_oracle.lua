@@ -2,7 +2,7 @@
 --
 -- Retail oracle for one slot-B cast-band body: a per-VSync timeline of the
 -- module phase machine plus every damage-wrapper call and return, so the
--- ported tick bodies (legaia_engine_battle_vm::seru_magic_ticks / _b /
+-- ported tick bodies (legaia_engine_cast::seru_magic_ticks / _b /
 -- cast_arm_ticks / cast_module_ticks) can be checked against retail frame by
 -- frame. The phase dwell counts in timeline.csv ARE the per-arm frame gating
 -- every static read had to disclose as capture-only.

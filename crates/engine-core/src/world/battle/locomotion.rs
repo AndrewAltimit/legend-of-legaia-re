@@ -301,7 +301,7 @@ impl World {
     /// pair (`FUN_800513F0`); the engine's `enter_battle` writes the live
     /// pair from `battle_seats`, so the first battle tick mirrors it back.
     /// `finish_battle` clears the seats so the next battle re-seeds.
-    fn seed_battle_seats(&mut self) {
+    pub(in crate::world) fn seed_battle_seats(&mut self) {
         for a in self.actors.iter_mut() {
             if a.battle.seat.is_none() {
                 a.battle.seat = Some((a.move_state.world_x, a.move_state.world_z));
@@ -388,7 +388,11 @@ impl World {
     pub(in crate::world) fn tick_battle_locomotion(&mut self) {
         use legaia_engine_battle_vm::battle_action::ActionState;
         self.seed_battle_seats();
-        self.refresh_battle_body_pairs();
+        // On retail's cadence the pass took the pairs from the last pass's
+        // pose before its anim advance (`World::refresh_battle_body_pairs`).
+        if !self.toggles.battle_sm_frame_cadence {
+            self.refresh_battle_body_pairs();
+        }
         let Some(state) = ActionState::from_byte(self.battle_ctx.action_state) else {
             return;
         };
@@ -441,11 +445,15 @@ impl World {
     /// at its target's live position, measured against the stale pair -
     /// never came in range.
     ///
-    /// Engine choices, each noted where it differs: the refresh runs at the
-    /// head of the locomotion pass, not at the end of the previous frame's
-    /// draw - the live pairs it reads are the same ones (nothing moves them
-    /// between retail's draw and its next anim tick), only the pose is one
-    /// frame newer. The render scale is the allocator's `0x1000` (no battle
+    /// Engine choices, each noted where it differs: on the per-vsync
+    /// cadence the refresh runs at the head of the locomotion pass, not at
+    /// the end of the previous frame's draw - the live pairs it reads are
+    /// the same ones (nothing moves them between retail's draw and its next
+    /// anim tick), only the pose is one frame newer. On retail's cadence it
+    /// runs ahead of the pass's anim advance, so the pass measures and
+    /// frames the pose the last pass drew, as retail's does (the summon
+    /// close-up's focus is the caster's pair, and read off the new pose it
+    /// led retail's by a pass: `theeder_summon_mid_cast`). The render scale is the allocator's `0x1000` (no battle
     /// path the port models rewrites `+0x72`). The `+0x44` pitch arm
     /// (`0x8004A534..0x8004A5F8`), which only re-derives `z` when a battle
     /// actor carries a pitch, is not taken - the port's battle actors carry

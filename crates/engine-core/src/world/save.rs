@@ -374,6 +374,9 @@ impl World {
                 // Always the live pair: a block composed from scratch must not
                 // read back as the all-zero pair (silence) on retail's load.
                 audio_levels: Some(self.audio.levels),
+                // Always the live words, for the same reason: retail's load
+                // restores them with the window.
+                options: Some(self.retail_options()),
             },
         }
     }
@@ -439,6 +442,43 @@ impl World {
         }
     }
 
+    /// The options screen's nine config words as this session plays them:
+    /// the rows the simulation reads off their live mirrors, the rest as the
+    /// host last pushed them. What [`Self::save_full`] writes.
+    pub fn retail_options(&self) -> legaia_save::card::RetailOptions {
+        legaia_save::card::RetailOptions {
+            battle_camera: self.toggles.battle_camera as u8,
+            select_attack: self.toggles.select_attack as u8,
+            battle_command: self.toggles.battle_command as u8,
+            field_move: u8::from(self.locomotion.run_default),
+            hp_display: self.toggles.field_hp_display as u8,
+            ..self.toggles.retail_options
+        }
+    }
+
+    /// Set the options screen's words and the simulation's mirrors of them.
+    pub fn set_retail_options(&mut self, options: legaia_save::card::RetailOptions) {
+        use legaia_engine_menus::options::{OptionsSetting, OptionsState};
+        let mut o = OptionsState::default();
+        for (s, v) in OptionsSetting::ALL.into_iter().zip(options.to_bytes()) {
+            s.set(&mut o, v);
+        }
+        self.toggles.battle_camera = o.battle_camera;
+        self.toggles.select_attack = o.battle_select_attack;
+        self.toggles.battle_command = o.battle_command;
+        self.locomotion.run_default =
+            o.field_move == legaia_engine_menus::option_values::FieldMoveOpt::Run;
+        self.toggles.field_hp_display = o.field_hp_display;
+        self.toggles.retail_options = options;
+    }
+
+    /// The option words the last save load restored, once: a host adopts
+    /// them into its options (`OptionsPins::adopt_saved`, where a session
+    /// override wins) before it pushes its options back onto the world.
+    pub fn take_loaded_options(&mut self) -> Option<legaia_save::card::RetailOptions> {
+        self.toggles.loaded_options.take()
+    }
+
     /// [`Self::load_full`] past the party, flags and gold.
     fn load_full_tail(&mut self, sf: legaia_save::SaveFile) {
         // The configured audio level and the voice volume ride in the same
@@ -447,6 +487,15 @@ impl World {
         // pair keeps the current one.
         if let Some(levels) = sf.ext_v2.audio_levels {
             self.audio.levels = levels;
+        }
+        // The options screen's words sit in the same window: a save made
+        // running resumes running. The simulation's mirrors take them at
+        // once, so a session with no host options (a headless run) plays the
+        // save's Field Move; a host adopts them into its own options through
+        // `take_loaded_options`, which is where a session override wins.
+        if let Some(options) = sf.ext_v2.options {
+            self.set_retail_options(options);
+            self.toggles.loaded_options = Some(options);
         }
         // The minigame purses and records - retail keeps all of them in the
         // live-state window a save block mirrors (`legaia_save::minigame_save`).
@@ -777,6 +826,17 @@ impl World {
     ///    after the scene loads, and this keeps that tick shut the way the
     ///    record does (`tests/opening_chain_menu_refusal_disc.rs`).
     ///
+    /// 8. No fight is committed ([`Self::field_scripts_held_for_battle`]).
+    ///    Between a `3E FF` (or an encounter roll) and the battle, retail
+    ///    pages the battle-intro overlay (PROT 0979, base `0x801CE818`) over
+    ///    the field overlay's head, which holds `FUN_801D1344` - so neither
+    ///    the pad controller nor its menu accept runs on those frames. The
+    ///    engine keeps ticking the field through the intro, and a Start
+    ///    there opened the pause menu and its Save row onto a save that holds
+    ///    the record's flags past the `3E FF` but not the fight: `jouine`
+    ///    P2[5] commits Cort on arrival, and that save reloaded onto the
+    ///    epilogue band P2[2] with Cort unbeaten.
+    ///
     /// REF: FUN_801D01B0 (`0x801D01F0` engaged bit, `0x801D0250` accept)
     /// REF: FUN_80039B7C (the script runner's engaged-bit raise and clear)
     /// REF: FUN_801D1344 (`0x801D16A8..0x801D16E4`, the pad-controller gates)
@@ -824,6 +884,19 @@ impl World {
             && !self.cutscene_narration_active()
             && self.cutscene.card.is_none()
             && self.field_menu_button_state() == legaia_engine_field::field_state_pick::STATE_NORMAL
+            && !self.field_scripts_held_for_battle()
+    }
+
+    /// Whether a host may write a save of the live session now, outside the
+    /// in-game save screen (the browser page's session export). Retail has
+    /// no such path; its only saves are the save screen's, behind
+    /// [`Self::field_menu_open_allowed`] and the save points' scripts, and
+    /// neither runs between a fight's commit and the fight
+    /// ([`Self::field_scripts_held_for_battle`]). A save taken there is a
+    /// state retail never writes - the flags past the `3E FF` without the
+    /// fight - so a host refuses it until the battle has begun.
+    pub fn host_save_allowed(&self) -> bool {
+        !self.field_scripts_held_for_battle()
     }
 
     /// The handler id the menu button's subsystem actor moves on to.

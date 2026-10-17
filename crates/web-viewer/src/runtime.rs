@@ -381,6 +381,10 @@ pub struct LegaiaRuntime {
     /// native `persist_and_apply_options` leg for leg: apply the live audio
     /// side effects, then write the state out.
     pub(crate) options_state: legaia_engine_menus::options::OptionsState,
+    /// The engine-only knobs the retail box pins for the session
+    /// ([`legaia_engine_menus::options::OptionsPins`]): the store gets them as
+    /// they were before the pin, the native window's rule.
+    pub(crate) options_pins: legaia_engine_menus::options::OptionsPins,
     /// A title -> load score hand-off the page asked for before entering the
     /// save's scene ([`crate::play_bgm`]'s `play_bgm_title_handoff`): run by
     /// the scene entry once the save has landed, or by the next tick when
@@ -479,6 +483,7 @@ impl LegaiaRuntime {
             dev_menu_records: false,
             dev_menu_enabled: false,
             options_state,
+            options_pins: Default::default(),
             live_battles: true,
             pending_card_resume: None,
             battle_bgm: None,

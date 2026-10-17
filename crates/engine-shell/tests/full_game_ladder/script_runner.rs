@@ -102,13 +102,20 @@ pub(super) fn held_pad_poll(session: &NativeSession) -> Option<u16> {
     };
     // The record re-spawns every tick, so between ticks it usually sits on
     // the `2E 13` that raises the re-poll bit, one op ahead of the poll.
-    let pc = if bc.get(pc..pc + 2) == Some(&[0x2E, 0x13]) {
+    let mut pc = if bc.get(pc..pc + 2) == Some(&[0x2E, 0x13]) {
         pc + 2
     } else {
         pc
     };
     if bc.get(pc) != Some(&0x42) || bc.get(pc + 1) != Some(&0x01) {
-        return None;
+        // A modal timeline waiting ahead of its poll: the test runs on the
+        // tick the wait ends, between two of the hand's looks, so the
+        // direction has to be held through the wait.
+        pc = w
+            .cutscene
+            .timeline
+            .as_ref()
+            .and_then(|tl| poll_ahead(&tl.bytecode, tl.pc))?;
     }
     let (d, l, u, r) = (
         PadButton::Down.mask(),
@@ -119,6 +126,39 @@ pub(super) fn held_pad_poll(session: &NativeSession) -> Option<u16> {
     [d, d | l, l, l | u, u, u | r, r, r | d]
         .get(usize::from(*bc.get(pc + 2)?))
         .copied()
+}
+
+/// The held-pad poll (`42 01 <i>`) a timeline at `pc` reaches next with
+/// nothing in between but waits, yields and the flag, move and camera ops
+/// that cannot branch. `jouinb`'s rapids (P2[6..8]) are the case: the ride
+/// loops a lap of walk-to-tile yields on the player (`C7 F8 ..`) with a poll
+/// chain after a yield at each landing - any compass point or Circle jumps
+/// off there - and a hand that held nothing rode lap after lap, about a
+/// thousand frames each, until the ride ended some other way: a crossing
+/// cost the walking budget some 75000 frames.
+pub(super) fn poll_ahead(bc: &[u8], mut pc: usize) -> Option<usize> {
+    use legaia_scene_formats::field_disasm::{FlagKind, InsnInfo, decode};
+    for _ in 0..32 {
+        let insn = decode(bc, pc).ok()?;
+        match insn.info {
+            InsnInfo::CondJmp { mode: 1, op1, .. } if op1 < 8 => return Some(pc),
+            InsnInfo::Nop
+            | InsnInfo::ExecMove { .. }
+            | InsnInfo::MoveTo { .. }
+            | InsnInfo::Yield { .. }
+            | InsnInfo::CamCfg { .. }
+            | InsnInfo::Animate { .. }
+            | InsnInfo::SceneFade { .. }
+            | InsnInfo::Camera { .. }
+            | InsnInfo::WaitFrames { .. }
+            | InsnInfo::ActorCtrl { .. } => {}
+            InsnInfo::LFlag { .. } | InsnInfo::CFlag { .. } => {}
+            InsnInfo::GFlag { kind, .. } if kind != FlagKind::Test => {}
+            _ => return None,
+        }
+        pc += insn.size.max(1);
+    }
+    None
 }
 
 /// The pads a script's leading held-pad poll chain passes, when the pad
@@ -870,6 +910,7 @@ pub(super) fn run(session: &mut NativeSession, budget: usize, stop_on_release: b
         let site = std::env::var_os("LEGAIA_FGL_POS_TRACE").map(|_| park_site(session));
         let roll_before = encounter_roll_state(session);
         let r = session.tick();
+        note_caps(session);
         note_random_roll(session, roll_before);
         if let Some(site) = site {
             let after = player_xz(session);

@@ -28,6 +28,7 @@ pub fn apply_to_world(opts: &OptionsState, world: &mut World) {
     world.terrain.static_window.retail_windowing = opts.retail_static_window;
     world.toggles.view_window_crop = opts.retail_view_window;
     world.toggles.volumetric_fog = opts.volumetric_fog;
+    world.toggles.retail_options = opts.retail_options();
 }
 
 #[cfg(test)]

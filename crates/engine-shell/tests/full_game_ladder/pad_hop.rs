@@ -94,6 +94,19 @@ pub(super) fn pad_hop(
     if let Some(s) = pad_rest(session)? {
         return Ok(s);
     }
+    // A door the run has met a boss behind (`jouine`, whose arrival commits
+    // Cort): the party goes through it ready, and full - the fight starts
+    // the moment the door lands, with no prompt to heal at. Met at half HP
+    // and next to no MP after the walk from the switch pair, Cort won six
+    // times running; met at three fifths, its party-wide cast (about 2500 a
+    // member) dropped two members in its first turn.
+    if continuous::FIGHT_ON_ARRIVAL.with(|f| f.borrow().contains(dest)) {
+        if let Some(s) = pad_ready(session)? {
+            return Ok(s);
+        }
+        pad_field_restore(session, 1000, true);
+        pad_field_heal(session, 1000);
+    }
     let doors = match doors_to(session, graph, dest) {
         Ok(d) => d,
         // A hop no walk-on band carries is taken by talking, as a player does.

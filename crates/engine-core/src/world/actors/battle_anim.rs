@@ -5,6 +5,47 @@ use super::*;
 use legaia_engine_mode::mode::SceneMode;
 
 impl World {
+    /// What a frame of seated clip cursors moves with them, re-derived the
+    /// way the pass that poses the bodies derives it: every body pair
+    /// `+0x3C..+0x40` (the live pair plus the new pose's centroid) and the
+    /// Mystic Shield, which sits on the first monster seat's pair.
+    pub fn settle_seated_clips(&mut self) {
+        self.refresh_battle_body_pairs();
+        if self.mode == SceneMode::Battle {
+            self.tick_mystic_shield();
+        }
+    }
+
+    /// Land battle slot `slot`'s playing clip on the node cursor `+0x68` a
+    /// capture held (12.4 sixteenths of a keyframe), re-posing it there -
+    /// when the slot plays the clip the capture's `+0x1D9` names. Returns
+    /// whether it landed. A capture seat: the replay reaches the capture's
+    /// phase on its own clock, so an idle loop stands at whatever phase that
+    /// clock left it rather than retail's. `cursor` may sit below zero (the
+    /// displayed frame from before the loop's last wrap).
+    pub fn seat_battle_clip_cursor(&mut self, slot: usize, clip: u8, cursor: i32) -> bool {
+        let Some(a) = self.actors.get_mut(slot) else {
+            return false;
+        };
+        if a.battle.current_anim != clip {
+            return false;
+        }
+        let Some(player) = a.battle_animation.as_mut() else {
+            return false;
+        };
+        // Only a looping clip runs free of the phase the seed placed: a
+        // one-shot (a swing, a reaction) started with its action, which the
+        // seed already put where the capture's was. A looping clip wraps
+        // (retail's re-commit zeroes the cursor at the stream's end).
+        if !player.is_looping() {
+            return false;
+        }
+        let total = (player.frame_count() * 16).max(1) as i32;
+        let cursor = cursor.rem_euclid(total);
+        a.pose_frame = Some(player.seat_cursor(cursor as u16));
+        true
+    }
+
     /// Advance the per-object battle animation of every actor carrying one,
     /// folding the result into `pose_frame`. The battle render path then
     /// deforms each actor's mesh through `tmd_to_vram_mesh_posed_rot`. Call once
@@ -13,18 +54,35 @@ impl World {
     /// since battle-init actors keep their `tmd_binding` without the field
     /// `.active` flag.
     pub fn tick_battle_animations(&mut self) {
+        // The vsyncs this pass spans (`World::battle_anim_pass_vsyncs`):
+        // `1` on the per-vsync cadence and from a direct call.
+        let vsyncs = self.battle.anim_pass_vsyncs.max(1);
         // Commit any anim ids the SM staged this frame (idempotent - the
         // step_battle pre-step commit already handled last frame's stages).
-        self.commit_staged_battle_anims();
+        // On retail's cadence the commit follows the advance instead: every
+        // commit `FUN_80047430` makes (the bit-0 commit-now, the bit-1 event
+        // cut, the natural end) sits after the cursor advance
+        // (`0x800478EC..0x80047A44`), and `FUN_8004AD80` zeroes the cursor
+        // (`sh zero,0x68(s5)` at `0x8004B068`), so a clip the SM staged
+        // starts the next pass at its first keyframe.
+        let commit_after = self.toggles.battle_sm_frame_cadence;
+        if !commit_after {
+            self.commit_staged_battle_anims();
+        }
         // Per-clip impact freeze/tint arms + the tint's neutral decay
         // (`FUN_8004CE2C` pass 2 / `FUN_80050120` arm 0) - before the
         // cursor advance so an in-window freeze stops THIS frame's step,
         // like retail's tick order (the maintenance sweep runs off the
-        // XA-template tick ahead of the anim node advance).
-        self.tick_battle_impact_fx();
-        // The same pass's Mystic Shield break (`0x8004D534..0x8004D668`).
+        // XA-template tick ahead of the anim node advance). Their counters
+        // are written in vsyncs, so a pass runs one per vsync it spans.
+        for _ in 0..vsyncs {
+            self.tick_battle_impact_fx();
+        }
+        // The same pass's Mystic Shield pose and break
+        // (`0x8004D534..0x8004D674`): once a pass - it counts nothing, it
+        // seats the sphere and tests the break.
         if self.mode == SceneMode::Battle {
-            self.tick_mystic_shield_break();
+            self.tick_mystic_shield();
         }
         for i in 0..self.actors.len() {
             // Hit-reaction chaining first: a finished reaction clip takes the
@@ -139,7 +197,7 @@ impl World {
                 let rate = actor.battle.anim_rate;
                 let slowed_idle =
                     slowed && actor.battle.current_anim == 0 && actor.battle_reaction.is_none();
-                let pose = player.tick_rated(rate, slowed_idle);
+                let pose = player.tick_rated_vsyncs(rate, slowed_idle, vsyncs);
                 let after = player.current_frame();
                 // The window arm's counter store (`actor+0x21B = +0x176 >> 4`,
                 // `0x800477E8` / `0x8004783C`) - mirrored for the summon
@@ -299,11 +357,29 @@ impl World {
                 self.step_actor_anim_cues(i, frame);
             }
         }
-        // The move-FX streak counter walk (retail `FUN_801E09F8` phase 1):
-        // `ctx[+0x6C6]` falls 4 per frame, shrinking the trail's half-width
-        // and scheduling the afterimage -> ribbon emitter handoff.
-        self.casting.move_fx_streak.tick_counter();
-        self.tick_homing_slots();
+        // The cast tick's effect-child drive. On retail's cadence the cast tick's drive runs with the frame
+        // driver's pass instead (`World::tick_battle_cast_drive`).
+        if !commit_after {
+            self.tick_battle_cast_drive(vsyncs);
+        } else {
+            self.commit_staged_battle_anims();
+        }
+    }
+
+    /// The cast tick's effect-child drive (`FUN_801E09F8`, after its census):
+    /// the move-FX streak's counter walk and the homing slots, once per
+    /// vsync of `vsyncs`. The cast tick is the frame driver's, so on
+    /// retail's cadence it runs on the pass ahead of the action SM; per
+    /// vsync it stays at the anim tick's tail.
+    pub(in crate::world) fn tick_battle_cast_drive(&mut self, vsyncs: u8) {
+        for _ in 0..vsyncs {
+            // The move-FX streak counter walk (retail `FUN_801E09F8` phase
+            // 1): `ctx[+0x6C6]` falls 4 per frame, shrinking the trail's
+            // half-width and scheduling the afterimage -> ribbon emitter
+            // handoff.
+            self.casting.move_fx_streak.tick_counter();
+            self.tick_homing_slots();
+        }
     }
 
     pub fn commit_staged_battle_anims(&mut self) {
@@ -861,6 +937,70 @@ impl World {
     /// [`Actor::battle_action_clips`]). The battle-action SM's `pose()` host
     /// hook then switches `battle_animation` between the idle loop and the
     /// matching action clip. No-ops for out-of-range slots.
+    /// Install monster actor `slot`'s clip-morph table (see
+    /// [`crate::world::Actor::battle_clip_morphs`]).
+    pub fn set_actor_battle_clip_morphs(
+        &mut self,
+        slot: usize,
+        table: std::sync::Arc<Vec<Option<legaia_actor_formats::monster_archive::ClipMorph>>>,
+    ) {
+        if let Some(actor) = self.actors.get_mut(slot) {
+            actor.battle_clip_morphs = Some(table);
+        }
+    }
+
+    /// The clip-morph lanes battle actor `actor_idx`'s playing clip blends
+    /// this frame, with their q12 weights at the clip cursor: the entry's
+    /// `+0x04` lane, then `+0x08`, as `FUN_800495C8` walks them. Only lanes
+    /// with a non-zero weight are returned, so an empty list means the rest
+    /// mesh draws as is.
+    ///
+    /// PORT: FUN_800495C8 (lane walk: `s4` over `entry+4` / `entry+8`,
+    /// `0x80049620..0x80049824`)
+    pub fn battle_clip_morph_lanes(
+        &self,
+        actor_idx: usize,
+    ) -> Vec<(&legaia_actor_formats::monster_archive::ClipMorph, i16)> {
+        let Some(actor) = self.actors.get(actor_idx) else {
+            return Vec::new();
+        };
+        let (Some(player), Some(table)) = (&actor.battle_animation, &actor.battle_clip_morphs)
+        else {
+            return Vec::new();
+        };
+        let phase = player.cursor_sixteenths() as i16;
+        player
+            .morph_lanes()
+            .into_iter()
+            .filter_map(|ix| {
+                let m = table.get((ix as usize).checked_sub(1)?)?.as_ref()?;
+                let w = legaia_actor_formats::monster_archive::clip_morph_weight(m.keys, phase);
+                (w != 0).then_some((m, w))
+            })
+            .collect()
+    }
+
+    /// `tmd` with battle actor `actor_idx`'s active clip morphs blended into
+    /// its vertices ([`Self::battle_clip_morph_lanes`],
+    /// [`legaia_actor_formats::monster_archive::apply_clip_morphs`]) - the
+    /// mesh both play hosts pose and draw this frame. `None` when no lane is
+    /// active, so the caller keeps its rest mesh. The clone is retail's
+    /// save / blend / restore around the draw (`FUN_800495C8` before it,
+    /// `FUN_80049858` after it, `FUN_80048A08`).
+    pub fn battle_morphed_tmd(
+        &self,
+        actor_idx: usize,
+        tmd: &legaia_tmd::Tmd,
+    ) -> Option<legaia_tmd::Tmd> {
+        let lanes = self.battle_clip_morph_lanes(actor_idx);
+        if lanes.is_empty() {
+            return None;
+        }
+        let mut out = tmd.clone();
+        legaia_actor_formats::monster_archive::apply_clip_morphs(&mut out, &lanes);
+        Some(out)
+    }
+
     pub fn set_actor_battle_action_clips(
         &mut self,
         slot: usize,

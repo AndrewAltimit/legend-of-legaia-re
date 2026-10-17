@@ -38,7 +38,8 @@ Analysis: `ui_host_drift.tiers.frame_content`.
 # `BootSession` and tick it, so a call into it is a call both can make.
 # `engine-screens` likewise: the shop-family composition both hosts call.
 # `engine-battle` holds the `World`-free battle kernels,
-# `engine-battle-vm` the battle VM kernels, `engine-effects` the effect
+# `engine-battle-vm` the battle VM kernels, `engine-cast` the cast-module
+# kernels, `engine-effects` the effect
 # kernels and `engine-mode` the mode seat. The hosts name each of these
 # crates directly, so the list is every engine crate a host can call into.
 ENGINE_API_CRATES = (
@@ -56,6 +57,7 @@ ENGINE_API_CRATES = (
     "engine-minigame-scenes",
     "engine-vm",
     "engine-battle-vm",
+    "engine-cast",
     "engine-motion-vm",
     "engine-ui",
     "render-kernels",

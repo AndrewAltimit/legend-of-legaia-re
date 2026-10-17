@@ -190,6 +190,26 @@ impl World {
                 p.anim.rate = rate;
             }
         }
+        // A placement's actor (an NPC, a party member a cutscene poses)
+        // keeps its clip in the world's per-slot cursor, which the record's
+        // `A2 <id> <clip>` binds; the record's `+0x50` is the channel's
+        // script id, as a cross-context target byte resolves it.
+        let slot = self
+            .field_vm
+            .channels
+            .iter()
+            .find(|c| !c.object_bind && usize::from(c.ctx.script_id) == record)
+            .and_then(|c| u8::try_from(c.placement_index).ok());
+        if let Some(c) = slot
+            .and_then(|s| self.npcs.clip_cursors.get_mut(&s))
+            .filter(|c| c.anim_id == clip)
+        {
+            c.cursor = cursor;
+            c.flags = flags;
+            if rate != 0 {
+                c.rate = rate;
+            }
+        }
     }
 
     /// Advance the placed-prop layer one field tick: step the clips, step an
@@ -892,6 +912,16 @@ impl World {
     /// ([`Self::player_move_cue`]).
     ///
     /// REF: FUN_800204F8
+    /// The cursor (`+0x68`) of the clip a script poked on the player
+    /// ([`Self::bind_player_script_clip`]), which the record's `AD F8 08`
+    /// end-latch spin waits on. `None` before any poke.
+    pub fn player_script_clip_cursor(&self) -> Option<i16> {
+        self.props
+            .bank
+            .actor_clip(legaia_engine_scene::field_env::PLAYER_ANCHOR_TARGET)
+            .map(|a| a.cursor)
+    }
+
     pub(crate) fn bind_player_script_clip(&mut self, move_id: u8) {
         let fallback = self.player_clip_frames_hint();
         self.props.bank.bind_actor_clip(

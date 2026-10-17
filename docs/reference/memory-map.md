@@ -57,7 +57,9 @@ flowchart LR
 
 ## Kernel RAM (`0x80000000-0x8000FFFF`)
 
-The first 64 KB belong to the BIOS: the exception vectors (`0x80000080` general exception), the kernel's process / event tables and its own work area. The game reaches the kernel only through the BIOS call vectors (`A0` / `B0` / `C0`), via the PsyQ wrappers linked into `SCUS_942.54`, and no global in this map lives here.
+The first 64 KB belong to the BIOS: the exception vectors (`0x80000080` general exception), the kernel's process / event tables and its own work area. The game reaches the kernel only through the BIOS call vectors (`A0` / `B0` / `C0`), via the PsyQ wrappers linked into `SCUS_942.54`, and no game global lives here.
+
+One kernel word is game-visible state: `0x80009010` is the BIOS `rand()` seed. `A(2Fh)` (`0xBFC02200` in the SCPH-5501 ROM) loads it, multiplies by `0x41C64E6D`, adds `0x3039`, stores it back and returns `(seed >> 16) & 0x7FFF`; `A(30h)` `srand` (`0xBFC02230`) only stores it. Every `jal 0x80056798` in the game draws through it, so a save state's word there is the position of the game's one random stream. Engine `legaia_engine_system::rand::BIOS_RAND_SEED_ADDR`.
 
 ## `SCUS_942.54` image head (`0x80010000-0x80015E8F`)
 

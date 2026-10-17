@@ -157,6 +157,43 @@ impl LegaiaRuntime {
         a.rest_pose.clone()
     }
 
+    /// Battle actor `i`'s object-local positions with the playing clip's
+    /// morph lanes blended in (`World::battle_morphed_tmd`, the port of
+    /// `FUN_800495C8`'s blend before the draw), index-aligned with
+    /// [`Self::play_battle_actor_positions`]: the page poses these instead
+    /// of the uploaded rest positions this frame. Empty while no lane is
+    /// active (the rest positions stand), or for a body with no morph source.
+    pub fn play_battle_actor_morph(&self, i: u32) -> Vec<f32> {
+        let Some(a) = self
+            .battle_render
+            .as_ref()
+            .and_then(|b| b.actors.get(i as usize))
+        else {
+            return Vec::new();
+        };
+        let Some(src) = a.morph_src.as_ref() else {
+            return Vec::new();
+        };
+        let Some(host) = self.scene_host.host() else {
+            return Vec::new();
+        };
+        let Some(tmd) = host.world.battle_morphed_tmd(a.actor_idx, &src.0) else {
+            return Vec::new();
+        };
+        let positions: Vec<f32> = legaia_tmd::mesh::tmd_to_vram_mesh(&tmd, &src.1)
+            .positions
+            .iter()
+            .flatten()
+            .copied()
+            .collect();
+        // The upload is `battle_render_mesh`'s, the same builder over the
+        // same prims; a length mismatch would mis-pose every vertex.
+        if positions.len() != a.mesh.mesh.positions.len() * 3 {
+            return Vec::new();
+        }
+        positions
+    }
+
     /// Battle actor `i`'s body broken by the shatter renderer this frame
     /// (its `+0x1BA` word, `BattleActorDrawPlan::shatter`; kernel
     /// `legaia_render_kernels::shatter`, the native window's shattered

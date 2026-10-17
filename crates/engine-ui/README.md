@@ -4,9 +4,9 @@ Pure, renderer-agnostic UI draw-list builders for the Legaia engine port. The
 wgpu-free draw layer that both the native renderer (`legaia-engine-render`)
 and the browser play page (`legaia-web-viewer`) share. Inside the engine it
 depends on `legaia-render-kernels` and, for the battle HUD model its builders
-project (`battle_party_panel`, `battle_commit_log`, the value readout, the
-Theeder packet), on `legaia-engine-battle-vm`; it links no other kernel crate
-and not `legaia-engine-core`.
+project (`battle_party_panel`, `battle_commit_log`, the value readout), on
+`legaia-engine-battle-vm`, and for the Theeder packet on `legaia-engine-cast`;
+it links no other kernel crate and not `legaia-engine-core`.
 
 ## Scope
 

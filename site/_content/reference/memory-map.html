@@ -165,7 +165,7 @@
 
 <section class="doc-section" id="kernel">
   <h2>Kernel and executable</h2>
-  <p>The first 64 KB belong to the BIOS - exception vectors at <code>0x80000080</code>, the kernel's tables and work area - and the game only reaches them through the BIOS call vectors. <code>SCUS_942.54</code> follows at <code>0x80010000</code>: 24 KB of tables, the code from <code>main()</code> up, then the data segment.</p>
+  <p>The first 64 KB belong to the BIOS - exception vectors at <code>0x80000080</code>, the kernel's tables and work area - and the game only reaches them through the BIOS call vectors. One kernel word is game state all the same: <code>0x80009010</code> is the BIOS <code>rand()</code> seed every random draw in the game steps, so a save state's word there is where the game's one random stream stands. <code>SCUS_942.54</code> follows at <code>0x80010000</code>: 24 KB of tables, the code from <code>main()</code> up, then the data segment.</p>
   <div class="table-wrap" id="scus">
   <table>
     <thead><tr><th>Address</th><th>Type</th><th>Purpose</th></tr></thead>

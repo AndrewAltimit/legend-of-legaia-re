@@ -183,7 +183,7 @@ impl<'a> MoveHost for MoveVmHostImpl<'a> {
         }
         self.world.casting.module_stager_calls.push((
             arg0 as u8,
-            legaia_engine_battle_vm::cast_module_ticks::StagerCaller {
+            legaia_engine_cast::cast_module_ticks::StagerCaller {
                 pos: [state.world_x, state.world_y, state.world_z],
                 rot: [state.render_24, state.render_26, state.render_28],
                 radius_b4: state.actor_u16(0xB4) as i16,

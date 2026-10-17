@@ -158,7 +158,25 @@ pub struct WorldToggles {
     /// at `(2880, 2886)`), with no step left to start another hop. Off is
     /// retail's unguarded hop.
     pub hop_landing_guard: bool,
+    /// The options screen's nine config words as the host last pushed them
+    /// (`crate::options::apply_to_world`) or a save last loaded them. The
+    /// rows the simulation reads have their own mirrors here and on
+    /// `FieldLocomotion::run_default`; this keeps the rest (Sound, the
+    /// vibration rows) so a save carries the whole window, as retail's
+    /// does. See [`crate::world::World::retail_options`].
+    pub retail_options: legaia_save::card::RetailOptions,
+    /// The option words a save load restored that the host has not adopted
+    /// yet ([`crate::world::World::take_loaded_options`]).
+    pub(crate) loaded_options: Option<legaia_save::card::RetailOptions>,
 }
+
+/// The default of [`WorldToggles::battle_sm_frame_cadence`] - the one value
+/// every host starts from: [`WorldToggles::new`], the native session's
+/// environment switch (`legaia_engine_session::native::apply_env_world_toggles`,
+/// which raises or lowers from here) and the browser play page's
+/// `PageToggles` with its "Retail battle cadence" box, which reads the runtime
+/// before its first write.
+pub const DEFAULT_BATTLE_SM_FRAME_CADENCE: bool = false;
 
 impl WorldToggles {
     pub fn new() -> Self {
@@ -177,9 +195,11 @@ impl WorldToggles {
             field_hp_display: legaia_engine_menus::option_values::HpDisplayOpt::Immediate,
             overworld_marker_overlay: false,
             battle_pass_rand_draw: true,
-            battle_sm_frame_cadence: false,
+            battle_sm_frame_cadence: DEFAULT_BATTLE_SM_FRAME_CADENCE,
             arts_saved_list: false,
             hop_landing_guard: true,
+            retail_options: legaia_save::card::RetailOptions::default(),
+            loaded_options: None,
         }
     }
 }
@@ -294,7 +314,10 @@ mod fidelity_tests {
     #[test]
     fn env_switches_default_off_in_the_engine() {
         let t = WorldToggles::new();
-        assert!(!t.battle_sm_frame_cadence);
+        assert_eq!(
+            t.battle_sm_frame_cadence,
+            super::DEFAULT_BATTLE_SM_FRAME_CADENCE
+        );
         assert!(!t.arts_saved_list);
     }
 }

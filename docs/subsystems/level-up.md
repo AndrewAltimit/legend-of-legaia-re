@@ -333,13 +333,15 @@ Kind `0` is jump-table slot `0` at `0x8002C800`, which outsets the caller's rect
 
 ### Level-up flow
 
+The maxima grow on the base window only: growing the live maximum and copying it down bakes an accessory's boost into the base on every level (a Max HP +25% Noa at base 2097 levels to base 2691 that way, not 2167).
+
 After a battle win with `BattleEndCause::MonsterWipe`:
 
 1. The engine calls `World::apply_battle_xp(xp_reward)` (`crates/engine-core/src/world/items_arts/battle_spoils.rs`).
 2. It enumerates the surviving party members (slots whose `BattleActor::hp > 0`), scales the summed reward by 3/4 (`v - (v >> 2)`) and ceiling-divides it among them (`battle_formulas::victory_exp_per_member`). Dead members receive zero XP and leave the divisor.
 3. It calls `LevelUpTracker::grant_xp(char_id, share)` for each survivor.
 4. `grant_xp` accumulates XP and checks the XP table for threshold crossings. A multi-level jump collapses into a single `LevelUpResult` with summed gains.
-5. For each level-up, `LevelUpTracker::apply_to_record(result, record)` bumps `hp_max` and `mp_max`, leaves `hp_cur` and `mp_cur` where the fight left them ([a level-up is not a heal](#a-level-up-is-not-a-heal)), grows the six battle stats in the record-side window (`+0x11C..+0x12D`) and mirrors them into the live window (`+0x110..+0x11B`), matching the applier's write-then-mirror. It writes `result.new_level` to the `+0x130` level byte via `CharacterRecord::set_level`.
+5. For each level-up, `LevelUpTracker::apply_to_record(result, record)` grows the **base** `hp_max` / `mp_max` (`+0x11C` / `+0x11E`, the window the applier's `+0x6E4` / `+0x6E6` name, capped `9999` / `999`), and `apply_battle_xp` then rebuilds the live maxima from it the way the stat aggregator `FUN_80042558` does, equipment boosts included. It leaves `hp_cur` and `mp_cur` where the fight left them ([a level-up is not a heal](#a-level-up-is-not-a-heal)), grows the six battle stats in the record-side window (`+0x11C..+0x12D`) and mirrors them into the live window (`+0x110..+0x11B`), matching the applier's write-then-mirror. It writes `result.new_level` to the `+0x130` level byte via `CharacterRecord::set_level`.
 6. Whether or not a threshold was crossed, `apply_battle_xp` re-stamps the record's cumulative XP (`+0x0`), next-level threshold (`+0x4`, slot-corrected via `threshold_for`) and level byte (`+0x130`).
 7. `BattleEvent::LevelUp { char_id, new_level, hp_gained, mp_gained }` is pushed to `World::pending_battle_events`.
 8. The first character to level takes `World::party.current_level_up_banner`; any others queue behind it in `World::party.pending_level_up_banners`, and `World::tick` promotes the next one when the current banner expires.
