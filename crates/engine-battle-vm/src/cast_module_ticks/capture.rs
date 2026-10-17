@@ -355,6 +355,13 @@ pub const SPIKEFISH_STAGE_ARM: u8 = 5;
 /// ([`spikefish_round_tail`]).
 pub const SPIKEFISH_OUTCOME_ARM: u8 = 8;
 
+/// What PROT 0925's arm 8 adds to the creature's `+0x1BA` on every pass,
+/// held or not: `frame << 3` (`lbu v0,0x7f(s0)` off `0x1F800314`, `sll 3`,
+/// `0x801F7344..0x801F7358`, ahead of the countdown gate at `0x801F7380`) -
+/// one vsync's worth per engine tick. The creature breaks up while the arm
+/// waits out its countdown.
+pub const SPIKEFISH_SHATTER_STEP_PER_TICK: u16 = 1 << 3;
+
 /// PROT 0925's **round tail** - the end of arm 8, run on every fight,
 /// scripted or not (`0x801F79B4..0x801F7A88`):
 ///

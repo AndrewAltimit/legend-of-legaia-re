@@ -14,11 +14,14 @@
 //! the victim's HP, arm `0x13` to break the killed victim up and leave for
 //! `0xFF`, or to hand a damaged one to arm `0x14`.
 //!
+//! The arms' fades are the presentation hook's (`World::fire_cast_presentation`),
+//! fired off the image's decoded call sites on the arm timing this director
+//! paces.
+//!
 //! See `ghidra/scripts/funcs/overlay_summon_aluru_0916_801f69f8.txt`.
 
 use super::body_paced::set_yaw;
 use super::*;
-use crate::battle_action::SummonFadeTemplate;
 
 /// The PROT entry of Aluru's module (`summon_aluru`).
 pub const ALURU_ENTRY: u32 = 916;
@@ -49,53 +52,6 @@ pub const ALURU_SPREAD_END: i32 = 192;
 /// The banner element the kill path raises as it leaves arm `0x13`
 /// (`FUN_801D8DE8(0x5B, 0)` at `0x801F87BC`, also stored to `ctx[+0x18]`).
 pub const ALURU_KILL_BANNER: u8 = 0x5B;
-
-/// The four fades the module spawns (`FUN_80024E80(0x801C9070, 1)`), each
-/// with the template the arm writes first.
-const FADE_ARM_14: [(SummonFadeTemplate, i16); 1] = [(
-    SummonFadeTemplate {
-        kind: 1,
-        duration: 0x3C,
-        start_rgb: [0xE0; 3],
-        end_rgb: [0x80; 3],
-        delay: 0,
-        hold: -1,
-    },
-    1,
-)];
-const FADE_ARM_15: [(SummonFadeTemplate, i16); 1] = [(
-    SummonFadeTemplate {
-        kind: 1,
-        duration: 0x3C,
-        start_rgb: [0x80; 3],
-        end_rgb: [0x100; 3],
-        delay: 0,
-        hold: -1,
-    },
-    1,
-)];
-const FADE_BLAST: [(SummonFadeTemplate, i16); 1] = [(
-    SummonFadeTemplate {
-        kind: 1,
-        duration: 0xC0,
-        start_rgb: [0x7F; 3],
-        end_rgb: [0xC0; 3],
-        delay: 0,
-        hold: -1,
-    },
-    1,
-)];
-const FADE_OUT: [(SummonFadeTemplate, i16); 1] = [(
-    SummonFadeTemplate {
-        kind: 1,
-        duration: 0x1E,
-        start_rgb: [0xC0; 3],
-        end_rgb: [0; 3],
-        delay: 0,
-        hold: 0,
-    },
-    1,
-)];
 
 /// Arm 3's two records (`0x801F7000`, `0x801F7018`), at the arm's point.
 const SPAWNS_ARM_3: [ModuleSpawn; 2] = [
@@ -237,7 +193,7 @@ fn shot(angles: [i16; 2], tr: [i16; 3], focus: [i16; 3], frames: i32) -> ArmDire
 /// [`ALURU_KILL_BANNER`]. The arm `0x14` framing focuses the victim's seat
 /// rather than its `+0x3C` / `+0x40` pair.
 ///
-/// PORT: overlay_summon_aluru_0916_801f69f8 (PROT 0916; the whole phase chain's gates, camera writes, fades, captions, spawns and the band / colour words; arm 0's kill roll is `aluru_kill_verdict`)
+/// PORT: overlay_summon_aluru_0916_801f69f8 (PROT 0916; the whole phase chain's gates, camera writes, captions, spawns and the band / colour words; arm 0's kill roll is `aluru_kill_verdict`)
 pub fn aluru_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) -> ArmDirection {
     let v = seats.victim;
     let h = heading(v, seats.caster).wrapping_add(0x800) & 0xFFF;
@@ -409,7 +365,6 @@ pub fn aluru_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) -
             ArmDirection {
                 spawns: &SPAWNS_ARM_14,
                 arm_point: Some(aluru_front_point(creature)),
-                fades: &FADE_ARM_14,
                 ..ArmDirection::PASS
             }
         }
@@ -418,11 +373,7 @@ pub fn aluru_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) -
                 return ArmDirection::HOLD;
             }
             st.countdown.0 = s * 30;
-            ArmDirection {
-                kills_fades: true,
-                fades: &FADE_ARM_15,
-                ..shot([0, (-f) as i16], [0, 0x3E8, 0], on_creature, 1)
-            }
+            shot([0, (-f) as i16], [0, 0x3E8, 0], on_creature, 1)
         }
         16 => shot([0, (-f) as i16], [0, 0x3E8, 0x1F4], on_victim, 0x1E),
         ALURU_BLAST_ARM => {
@@ -431,16 +382,12 @@ pub fn aluru_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) -
             }
             st.countdown.0 = 0;
             st.band_spread = Some(0);
-            ArmDirection {
-                kills_fades: true,
-                fades: &FADE_BLAST,
-                ..shot(
-                    [0, (-f - 0x400) as i16],
-                    [0, 0x3E8, seats.depth_raw as i16],
-                    on_victim,
-                    1,
-                )
-            }
+            shot(
+                [0, (-f - 0x400) as i16],
+                [0, 0x3E8, seats.depth_raw as i16],
+                on_victim,
+                1,
+            )
         }
         ALURU_HIT_ARM | ALURU_SPREAD_ARM => {
             if phase == ALURU_SPREAD_ARM && kill {
@@ -459,8 +406,6 @@ pub fn aluru_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) -
                 ..ArmDirection::HOLD
             };
             if st.countdown.0 > s * ALURU_SPREAD_END {
-                d.kills_fades = true;
-                d.fades = &FADE_OUT;
                 if kill {
                     next = crate::seru_magic_ticks::SERU_B_DONE_PHASE;
                 } else {

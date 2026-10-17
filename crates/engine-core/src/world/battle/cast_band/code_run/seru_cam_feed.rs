@@ -28,6 +28,7 @@ impl World {
             .actors
             .get(usize::from(caster))
             .map_or(0, |a| a.battle.active_target);
+        st.target_code = Some(code);
         st.target_aim = if code < 8 {
             self.actors.get(usize::from(code)).map(|t| {
                 legaia_engine_battle_vm::battle_target_group::GroupAim {

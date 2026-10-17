@@ -476,16 +476,15 @@ mod capture_hold_tests {
     #[test]
     fn an_unported_tick_body_never_holds_the_phase() {
         let mut world = band_world();
-        // PROT 0914's tick body is one of the band's unported rows. (This
-        // test used to key on PROT 0909, whose tick body is now ported -
-        // `legaia_engine_battle_vm::seru_magic_ticks::viguro_tick` - so keying on
-        // it would have made the assertion vacuous.)
-        assert_eq!(world.cast_module_for(0x8C), Some(914));
-        let run = world.run_cast_module_code(0x8C, 0).unwrap();
+        // PROT 0926 (id `0x98`) is the band's null stub: no tick arm at all.
+        // (This test used to key on PROT 0909 and then 0914, whose chains are
+        // now carried - keying on either would make the assertion vacuous.)
+        assert_eq!(world.cast_module_for(0x98), Some(926));
+        let run = world.run_cast_module_code(0x98, 0).unwrap();
         assert!(run.busy, "the seeded value on its own says 'busy'");
         assert!(!run.tick_ported, "but no tick body ran");
 
-        world.arm_capture_cast_module(0x8C);
+        world.arm_capture_cast_module(0x98);
         assert!(
             !world.capture_stager_tick(),
             "so the band is not held on it"

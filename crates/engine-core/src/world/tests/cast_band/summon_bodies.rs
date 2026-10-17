@@ -118,3 +118,86 @@ fn the_aluru_verdict_skips_the_roll_on_a_scripted_boss() {
     let _ = world.run_cast_module_code(ALURU, world.casting.module_phase);
     assert_eq!(world.rng_state, held, "drawn once per cast");
 }
+
+const JEDO: u8 = 0x9D;
+
+/// Run PROT 0931 from its opening to the end over three living monsters
+/// (engine slots 1..4), returning the peak shatter word per slot.
+fn run_jedo(world: &mut World) -> Vec<u16> {
+    assert_eq!(world.cast_module_for(JEDO), Some(931));
+    let mut peak = vec![0u16; world.actors.len()];
+    for _ in 0..20_000 {
+        let phase = world.casting.module_phase;
+        let Some(run) = world.run_cast_module_code(JEDO, phase) else {
+            break;
+        };
+        for (p, a) in peak.iter_mut().zip(&world.actors) {
+            *p = (*p).max(a.battle.shatter);
+        }
+        if !run.busy {
+            break;
+        }
+    }
+    peak
+}
+
+fn jedo_world() -> World {
+    let mut world = aluru_world(Some(false));
+    for i in 1..4 {
+        world.actors[i].battle_monster_id = Some(1);
+    }
+    world.actors[4].battle_monster_id = None;
+    world
+}
+
+/// On a fight that is not scripted, Jedo's arm 30 breaks every living
+/// monster up and its exit kills them; the band's fold is waived.
+#[test]
+fn jedo_kills_the_living_row_on_an_ordinary_fight() {
+    let mut world = jedo_world();
+    let peak = run_jedo(&mut world);
+    assert_eq!(world.casting.module_phase, 0xFF);
+    for (i, p) in peak.iter().enumerate().take(4).skip(1) {
+        assert_eq!(world.actors[i].battle.hp, 0, "slot {i}");
+        assert!(*p > 0, "slot {i} comes apart");
+    }
+    assert_eq!(world.actors[0].battle.hp, 100, "the caster is spared");
+    assert!(world.casting.module_skips_fold);
+}
+
+/// On a scripted fight the kill never runs: the hit is the band's fold.
+#[test]
+fn jedo_leaves_a_scripted_fight_to_the_fold() {
+    let mut world = jedo_world();
+    world.battle_ctx.scripted_fight = 1;
+    let peak = run_jedo(&mut world);
+    assert_eq!(world.casting.module_phase, 0xFF);
+    for (i, p) in peak.iter().enumerate().take(4).skip(1) {
+        assert_eq!(world.actors[i].battle.hp, 100, "slot {i}");
+        assert_eq!(*p, 0);
+    }
+    assert!(!world.casting.module_skips_fold);
+}
+
+/// Every summon-creature module runs to its done phase through the band
+/// seam with no host feed beyond the test world's.
+#[test]
+fn every_summon_creature_module_runs_to_done() {
+    for id in [
+        0x8Cu8, 0x8D, 0x8E, 0x8F, 0x93, 0x95, 0x9A, 0x9B, 0x9C, 0x9D, 0x9E, 0x9F, 0xA0,
+    ] {
+        let mut world = aluru_world(Some(false));
+        let entry = world.cast_module_for(id).expect("a module");
+        let mut ticks = 0;
+        for _ in 0..20_000 {
+            let phase = world.casting.module_phase;
+            let run = world.run_cast_module_code(id, phase).expect("runs");
+            ticks += 1;
+            if !run.busy {
+                break;
+            }
+        }
+        assert_eq!(world.casting.module_phase, 0xFF, "PROT {entry} id {id:#x}");
+        assert!(ticks > 200, "PROT {entry} lasts {ticks} ticks");
+    }
+}

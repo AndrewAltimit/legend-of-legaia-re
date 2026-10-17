@@ -245,6 +245,11 @@ pub struct ModuleCamState {
     /// a dead victim's playing clip back to `0`, a living one's tint word
     /// `+0x04` cleared.
     pub victim_settled: bool,
+    /// The caster's target code `+0x1DD` as the host last read it: a seat
+    /// below `8`, a group code from `8` (PROT 0914 and 0929 frame a group
+    /// through `FUN_801DCEAC` and a seat otherwise). `None` where the host
+    /// cannot read it.
+    pub target_code: Option<u8>,
 }
 
 /// `FUN_801D5854(7, 6)` out of a module arm: the action SM's own case-6
@@ -313,9 +318,6 @@ pub struct ArmDirection {
     pub end_frame: bool,
     /// The drift the arm wrote straight into the camera globals, if any.
     pub nudge: Option<ModuleNudge>,
-    /// `true` on an arm a camera-only director does not cover: the module
-    /// phase stays where it is and the camera keeps the last framing.
-    pub park: bool,
     /// The `FUN_80021B04` calls the arm made on this pass, in call order.
     pub spawns: &'static [ModuleSpawn],
     /// The point and angle trio the arm built on its stack for a spawn whose
@@ -724,7 +726,6 @@ impl ArmDirection {
         follow: None,
         end_frame: false,
         nudge: None,
-        park: false,
         spawns: &[],
         arm_point: None,
         vram_move: None,
@@ -740,23 +741,6 @@ impl ArmDirection {
         follow: None,
         end_frame: false,
         nudge: None,
-        park: false,
-        spawns: &[],
-        arm_point: None,
-        vram_move: None,
-        caption: None,
-        fades: &[],
-        kills_fades: false,
-        jump: None,
-        drift: None,
-    };
-    pub(super) const PARK: Self = Self {
-        hold: true,
-        shot: None,
-        follow: None,
-        end_frame: false,
-        nudge: None,
-        park: true,
         spawns: &[],
         arm_point: None,
         vram_move: None,
@@ -808,14 +792,19 @@ pub(super) fn focus_on(seat: ModuleSeat) -> [i16; 3] {
 }
 
 mod aluru;
+mod body_kit;
 mod body_paced;
 pub mod capture;
 pub mod capture_countdown;
 pub mod creature;
 mod evil_seru_magic;
 mod freed;
+mod gilium_palma_horn;
+mod gola_mushura_barra;
+mod jedo_iota_mule;
 mod juggernaut;
 mod kemaro;
+mod meta_terra_ozma;
 mod nighto;
 mod nova;
 mod orb;
@@ -831,8 +820,12 @@ pub use capture_countdown::{ArmCountdown, CountdownWrite, arm_countdown, capture
 pub use creature::*;
 pub use evil_seru_magic::*;
 pub use freed::*;
+pub use gilium_palma_horn::*;
+pub use gola_mushura_barra::*;
+pub use jedo_iota_mule::*;
 pub use juggernaut::*;
 pub use kemaro::*;
+pub use meta_terra_ozma::*;
 pub use nighto::*;
 pub use nova::*;
 pub use orb::*;
@@ -860,18 +853,16 @@ pub struct ModuleProfile {
     /// The arms.
     pub direct: ModuleDirector,
     /// The phase arm the module lands its outcome in: once the phase has
-    /// passed it, the hit / restore has been applied. `None` for a
-    /// **camera-only** director - one over a module whose tick body is not
-    /// ported ([`creature`]): it owns the module phase for the arms it
-    /// covers and parks on the first it does not, and the band's length
-    /// stays the engine stager's.
+    /// passed it, the hit / restore has been applied. `None` for a director
+    /// that only arms the camera over arms it does not pace: the band's
+    /// length then stays the engine stager's.
     pub hit_arm: Option<u8>,
     /// The phase arm the module walks its creature in, if it walks one: the
     /// host starts the creature's walk there and reports its arrival back
     /// through [`ModuleCamState::creature_arrived`]. A module with none keeps
     /// its creature where it seated it.
     pub walk_arm: Option<u8>,
-    /// Whether a camera-only director owns the module phase. `false` for a
+    /// Whether the director owns the module phase. `false` for a
     /// director that runs **beside** a ported tick body
     /// ([`ModuleProfile::body_paced`]): it reads the phase the body is
     /// about to run, never holds it, and only arms the camera.
@@ -884,8 +875,7 @@ pub struct ModuleProfile {
     /// The phase arm whose pass seats the creature (`jal 0x801F19EC`,
     /// [`module_seat_arm`]). The host seats it once the module's phase
     /// reaches this arm rather than on the stager's first tick. `None` where
-    /// the module seats it at once, or where a camera-only director parks
-    /// before the arm.
+    /// the module seats it at once.
     pub seat_arm: Option<u8>,
     /// Whether the director **is** the module's phase chain: a module whose
     /// arms are countdown gates and camera writes, with no tick body ported
@@ -978,12 +968,15 @@ pub fn module_profile(prot_entry: u32) -> Option<ModuleProfile> {
             seat_arm: None,
             director_body: false,
         }),
-        // A camera-only director seats on its module's seat arm only where
-        // it reaches it: PROT 0917, 0928, 0929 and 0931's park short of
-        // theirs, so their creature is seated on the stager's first tick.
-        914 => Some(ModuleProfile::camera_only(gola_gola_direct).seated_at(914)),
-        915 => Some(ModuleProfile::camera_only(mushura_direct).seated_at(915)),
-        917 => Some(ModuleProfile::camera_only(barra_direct)),
+        // The summon-creature modules' directors carry their whole phase
+        // chain (`gola_mushura_barra`, `gilium_palma_horn`, `jedo_iota_mule`,
+        // `meta_terra_ozma`): each paces the band and lands the outcome once
+        // the phase passes its hit arm.
+        914 => {
+            Some(ModuleProfile::director_body(gola_gola_direct, GOLA_GOLA_HIT_ARM).seated_at(914))
+        }
+        915 => Some(ModuleProfile::director_body(mushura_direct, MUSHURA_HIT_ARM).seated_at(915)),
+        917 => Some(ModuleProfile::director_body(barra_direct, BARRA_HIT_ARM).seated_at(917)),
         // PROT 0920's arms are countdown gates and camera writes end to end,
         // so its director carries the whole phase chain and paces the band:
         // the rain the draw tick runs between arms 5 and `0xFF` needs the
@@ -991,10 +984,10 @@ pub fn module_profile(prot_entry: u32) -> Option<ModuleProfile> {
         920 => {
             Some(ModuleProfile::director_body(slippery_direct, SLIPPERY_DAMAGE_ARM).seated_at(920))
         }
-        923 => Some(ModuleProfile::camera_only(gilium_direct).seated_at(923)),
-        928 => Some(ModuleProfile::camera_only(palma_direct)),
-        930 => Some(ModuleProfile::camera_only(horn_direct).seated_at(930)),
-        931 => Some(ModuleProfile::camera_only(jedo_direct)),
+        923 => Some(ModuleProfile::director_body(gilium_direct, GILIUM_HIT_ARM).seated_at(923)),
+        928 => Some(ModuleProfile::director_body(palma_direct, PALMA_HIT_ARM).seated_at(928)),
+        930 => Some(ModuleProfile::director_body(horn_direct, HORN_HEAL_ARM).seated_at(930)),
+        931 => Some(ModuleProfile::director_body(jedo_direct, JEDO_HIT_ARM).seated_at(931)),
         // PROT 0916's director carries the whole chain; the damage path's
         // hit lands once the phase passes arm `0x12`, and the kill path's
         // HP store is the host's at arm `0x11`.
@@ -1003,11 +996,11 @@ pub fn module_profile(prot_entry: u32) -> Option<ModuleProfile> {
                 .with_staged_spawns()
                 .seated_at(916),
         ),
-        921 => Some(ModuleProfile::camera_only(iota_direct).seated_at(921)),
-        929 => Some(ModuleProfile::camera_only(mule_direct)),
-        932 => Some(ModuleProfile::camera_only(meta_direct).seated_at(932)),
-        933 => Some(ModuleProfile::camera_only(terra_direct).seated_at(933)),
-        934 => Some(ModuleProfile::camera_only(ozma_direct).seated_at(934)),
+        921 => Some(ModuleProfile::director_body(iota_direct, IOTA_HIT_ARM).seated_at(921)),
+        929 => Some(ModuleProfile::director_body(mule_direct, MULE_HIT_ARM).seated_at(929)),
+        932 => Some(ModuleProfile::director_body(meta_direct, META_HIT_ARM).seated_at(932)),
+        933 => Some(ModuleProfile::director_body(terra_direct, TERRA_HIT_ARM).seated_at(933)),
+        934 => Some(ModuleProfile::director_body(ozma_direct, OZMA_HIT_ARM).seated_at(934)),
         // PROT 0910..0913's tick bodies hold their own arms (countdowns,
         // ramps and seat polls, `crate::seru_magic_ticks`), so each paces the
         // band like PROT 0904's: `0x36` holds on the body, the creature walks
@@ -1043,18 +1036,6 @@ pub fn module_profile(prot_entry: u32) -> Option<ModuleProfile> {
 }
 
 impl ModuleProfile {
-    const fn camera_only(direct: ModuleDirector) -> Self {
-        Self {
-            direct,
-            hit_arm: None,
-            walk_arm: None,
-            owns_phase: true,
-            stages_spawns: false,
-            seat_arm: None,
-            director_body: false,
-        }
-    }
-
     const fn director_body(direct: ModuleDirector, hit_arm: u8) -> Self {
         Self {
             direct,

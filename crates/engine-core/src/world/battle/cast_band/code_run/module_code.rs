@@ -394,21 +394,21 @@ impl World {
         run.fades = direction.map_or(&[], |d| d.fades);
         run.kills_fades = direction.is_some_and(|d| d.kills_fades);
         let held = direction.is_some_and(|d| d.hold) || capture_held;
-        // A camera-only director owns the phase of a module whose tick body
-        // is unported: its pass advances it, and it claims no tick.
-        // A director that carries a whole unported body's phase chain
-        // (`ModuleProfile::director_body`) owns the phase the same way.
+        // A director that owns the phase of a module whose tick body is
+        // unported - one that carries the whole phase chain
+        // (`ModuleProfile::director_body`), or one that only arms the camera
+        // - advances it on its pass and claims no tick.
         let director_body = profile.is_some_and(|p| p.director_body);
-        let camera_only =
+        let owns_chain =
             profile.is_some_and(|p| (!p.paces_band() || p.director_body) && p.owns_phase);
-        if camera_only && !held {
+        if owns_chain && !held {
             ctx.phase = direction
                 .and_then(|d| d.jump)
                 .unwrap_or(ctx.phase.wrapping_add(1));
         }
-        let step = if held && !camera_only {
+        let step = if held && !owns_chain {
             Some(ticks::CastTickStep::Busy)
-        } else if held || camera_only {
+        } else if held || owns_chain {
             None
         } else if has_trampoline {
             match (entry, body) {
@@ -1178,6 +1178,16 @@ impl World {
                 .shatter
                 .wrapping_add(ticks_a::GIMARD_SHATTER_STEP_PER_TICK);
         }
+        // PROT 0925's outcome arm breaks the creature up on every pass,
+        // held or not, ahead of its countdown gate.
+        if entry == SPIKEFISH_ENTRY
+            && phase_in == legaia_engine_battle_vm::cast_module_ticks::SPIKEFISH_OUTCOME_ARM
+            && let Some(a) = self.actors.get_mut(usize::from(seat_slot))
+        {
+            a.battle.shatter = a.battle.shatter.wrapping_add(
+                legaia_engine_battle_vm::cast_module_ticks::SPIKEFISH_SHATTER_STEP_PER_TICK,
+            );
+        }
         // PROT 0908's arm 12 shatters the monsters the finisher killed, on
         // every pass of the arm, held or not (the loop sits ahead of the
         // countdown gate the director runs). Both writes land after the
@@ -1187,10 +1197,16 @@ impl World {
             let latched = self.casting.module_cam.victim_slot.unwrap_or(victim_slot);
             self.zenoir_shatter(latched);
         }
-        // PROT 0916's HP and colour-word stores, after the views' fold-back
-        // like PROT 0908's.
-        if entry == legaia_engine_battle_vm::cast_module_camera::ALURU_ENTRY {
-            self.apply_aluru_writes(phase_in, ctx.phase != phase_in, victim_slot, seat_slot);
+        // The summon-creature directors' HP and colour-word stores, after
+        // the views' fold-back like PROT 0908's.
+        if direction.is_some() && (914..=934).contains(&entry) {
+            self.apply_summon_body_writes(
+                entry,
+                phase_in,
+                ctx.phase != phase_in,
+                victim_slot,
+                seat_slot,
+            );
         }
         // PROT 0948's beam: arm 2 zeroes the builder's counter as it passes,
         // and arm 3 calls the builder (`jal 0x801F726C` at `0x801F6EF4`)
