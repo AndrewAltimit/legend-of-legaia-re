@@ -777,6 +777,17 @@ impl World {
     ///    after the scene loads, and this keeps that tick shut the way the
     ///    record does (`tests/opening_chain_menu_refusal_disc.rs`).
     ///
+    /// 8. No fight is committed ([`Self::field_scripts_held_for_battle`]).
+    ///    Between a `3E FF` (or an encounter roll) and the battle, retail
+    ///    pages the battle-intro overlay (PROT 0979, base `0x801CE818`) over
+    ///    the field overlay's head, which holds `FUN_801D1344` - so neither
+    ///    the pad controller nor its menu accept runs on those frames. The
+    ///    engine keeps ticking the field through the intro, and a Start
+    ///    there opened the pause menu and its Save row onto a save that holds
+    ///    the record's flags past the `3E FF` but not the fight: `jouine`
+    ///    P2[5] commits Cort on arrival, and that save reloaded onto the
+    ///    epilogue band P2[2] with Cort unbeaten.
+    ///
     /// REF: FUN_801D01B0 (`0x801D01F0` engaged bit, `0x801D0250` accept)
     /// REF: FUN_80039B7C (the script runner's engaged-bit raise and clear)
     /// REF: FUN_801D1344 (`0x801D16A8..0x801D16E4`, the pad-controller gates)
@@ -824,6 +835,19 @@ impl World {
             && !self.cutscene_narration_active()
             && self.cutscene.card.is_none()
             && self.field_menu_button_state() == legaia_engine_field::field_state_pick::STATE_NORMAL
+            && !self.field_scripts_held_for_battle()
+    }
+
+    /// Whether a host may write a save of the live session now, outside the
+    /// in-game save screen (the browser page's session export). Retail has
+    /// no such path; its only saves are the save screen's, behind
+    /// [`Self::field_menu_open_allowed`] and the save points' scripts, and
+    /// neither runs between a fight's commit and the fight
+    /// ([`Self::field_scripts_held_for_battle`]). A save taken there is a
+    /// state retail never writes - the flags past the `3E FF` without the
+    /// fight - so a host refuses it until the battle has begun.
+    pub fn host_save_allowed(&self) -> bool {
+        !self.field_scripts_held_for_battle()
     }
 
     /// The handler id the menu button's subsystem actor moves on to.

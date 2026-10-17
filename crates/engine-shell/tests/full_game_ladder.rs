@@ -742,3 +742,71 @@ fn poll_ahead_reaches_a_poll_past_waits() {
     // A flag-bit test (`42 00`) is not a pad poll.
     assert_eq!(poll_ahead(&[0x42, 0x00, 0x05, 0x10, 0x00], 0), None);
 }
+
+/// `jouine`'s arrival record P2[5] commits Cort (`3E FF`) on the way in, and
+/// the field ticks on through the battle intro. On those frames neither the
+/// pause menu (its Save row) nor a host session save may land: a save there
+/// holds the flags past the commit without the fight, and its reload walked
+/// onto the epilogue band P2[2] with Cort unbeaten. Seeded from the
+/// `bio_castle` anchor (`jouind`) and played to `cort_chamber` on the pad,
+/// which reaches it on arrival with the fight still committed; Start is then
+/// pressed on every other frame until the battle begins. Disc-gated.
+#[test]
+fn jouine_cort_commit_refuses_the_menu_and_a_host_save() {
+    let Some(inp) = inputs() else { return };
+    let spine = load_spine();
+    let at = |id: &str| spine.iter().position(|m| m.id == id).expect("spine id");
+    let (from, to) = (&spine[at("bio_castle")], &spine[at("cort_chamber")]);
+    let Some(anchor) = from
+        .anchor
+        .as_ref()
+        .and_then(|r| load_anchor(&inp.library, r).ok())
+    else {
+        eprintln!("[skip] bio_castle anchor not in the library");
+        return;
+    };
+    let index = ProtIndex::open_extracted(&inp.extracted).expect("open ProtIndex");
+    let graph = DiscGraph::build(&index);
+    let opts = live_opts(true);
+    let mut session = open_session(&inp.extracted);
+    seed(&mut session, from, Some(&anchor), &opts).expect("seed bio_castle");
+    PAD_DEADLINE.with(|d| d.set(session.frames + PAD_SEGMENT_FRAMES));
+    PAD_BATTLE_LEFT.with(|l| l.set(PAD_BATTLE_ALLOWANCE));
+    let mut trail = vec![scene_name(&session)];
+    traverse(&mut session, &graph, to, true, &mut trail).expect("reach cort_chamber");
+    PAD_DEADLINE.with(|d| d.set(u64::MAX));
+    assert_eq!(scene_name(&session), "jouine");
+    assert!(
+        session.host.world.field_scripts_held_for_battle(),
+        "the milestone is reached with Cort committed"
+    );
+    let mut held_frames = 0;
+    for f in 0..20_000 {
+        if session.host.world.mode == SceneMode::Battle {
+            break;
+        }
+        let held = session.host.world.field_scripts_held_for_battle();
+        if held {
+            held_frames += 1;
+            assert!(!session.host.world.field_menu_open_allowed(), "frame {f}");
+            assert!(!session.host.world.host_save_allowed(), "frame {f}");
+        }
+        let pad = if f % 2 == 0 {
+            PadButton::Start.mask()
+        } else {
+            0
+        };
+        session.host.world.set_pad(pad);
+        let _ = session.tick();
+        assert!(
+            !(held && session.field_menu.is_some()),
+            "Start opened the pause menu with Cort committed (frame {f})"
+        );
+    }
+    assert!(held_frames > 0);
+    assert_eq!(
+        session.host.world.mode,
+        SceneMode::Battle,
+        "Cort's fight began"
+    );
+}

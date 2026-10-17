@@ -539,7 +539,7 @@ fn part_c_continuous_run() {
                     // the fight were won (`jouine` P2[5] commits Cort, and a
                     // reload from its arrival landed in the epilogue). The
                     // player's last save is still the one before.
-                    if session.host.world.field_scripts_held_for_battle() {
+                    if !session.host.world.host_save_allowed() {
                         FIGHT_ON_ARRIVAL.with(|f| f.borrow_mut().insert(scene_name(&session)));
                         if std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
                             eprintln!(

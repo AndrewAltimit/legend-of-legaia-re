@@ -951,3 +951,32 @@ fn the_menu_accept_honours_retails_pad_controller_gates_and_buzzes_on_the_lock()
     world.cutscene.opening_chain_active = true;
     assert!(!world.field_menu_open_allowed(), "the opening chain");
 }
+
+/// A fight committed and not yet begun (`3E FF`'s latched formation) keeps
+/// the menu accept shut and refuses a host's session save: retail pages the
+/// battle-intro overlay over the frame pump `FUN_801D1344` that holds the
+/// accept, so no save can land between the commit and the fight. A save
+/// there (`jouine` P2[5], Cort committed on arrival) carried the record's
+/// flags past the op without the fight and reloaded past Cort.
+#[test]
+fn a_committed_fight_shuts_the_menu_and_the_host_save() {
+    let mut world = World::new();
+    world.mode = SceneMode::Field;
+    world.install_field_player(0);
+    assert!(world.field_menu_open_allowed(), "control: an idle field");
+    assert!(world.host_save_allowed());
+    world.carriers.pending_battle = Some(21);
+    assert!(world.field_scripts_held_for_battle());
+    assert!(
+        !world.field_menu_open_allowed(),
+        "no accept between commit and fight"
+    );
+    assert!(
+        !world.field_menu_press_denied(),
+        "and no buzz: it never reaches the accept"
+    );
+    assert!(!world.host_save_allowed());
+    world.carriers.pending_battle = None;
+    assert!(world.field_menu_open_allowed());
+    assert!(world.host_save_allowed());
+}
