@@ -259,6 +259,11 @@ one upkeep pass, in this order:
    struck off that visit's list rather than ending the visit: ending it
    there left `rayman2`'s item counter with a purse of 20000 and two
    Healing Flowers bought.
+   A purse that pays for that stock four times over buys up to three
+   stocks, and MP restoratives beside them: past Jette's fortress the run
+   carried 650000 gold through `ropeway` and `station3` with its stock
+   full, met no counter after them, and fought Cort out of an empty bag
+   with Vahn at 22 MP.
 2. **Equipment.** Start, Equip, each member, the Best Equipment row. That row ranks only the four armament slots, so the hand then fills each member's empty Goods slots from the bag, best passive first (HP, attack and arts boosts ahead of guards), never two of one passive on a member and never Rage, Zero Defense, Last Attack or No Escape.
 
    Best Equipment (`FUN_801CF760`) ranks a weapon by its stats alone, and a weapon outside the wearer's class raises the arm command's AP cost ([`arts-command-gauge.md`](../subsystems/arts-command-gauge.md)): the Astral Sword costs Vahn 54 a swing, his nine-command art no longer fits a turn, and Koru (`nilboa` P2[20]) outlasts him. So after the row the hand reads each member's arm cost off its player battle file, the way the battle loader does (`swing_command_costs`), and where a weapon in the bag swings cheaper than the one worn it puts that one on (Start, Equip, the member, the weapon row, the weapon, Yes), the best attack among equally cheap ones.
