@@ -648,9 +648,11 @@ Cort is the case. Its first turn of party-wide damage is about 2500 a member
 Doomsday, as the boss table lists), and a party that walks in from
 `jouind`'s fights at three fifths loses two members to it. The hand then
 spends every turn reviving one member at a quarter HP into Cort's next
-strike, and wipes; the reload's guard against Cort's element (record `+0x1D` = 7) halves the cast,
-which is what wins the second attempt. That is the hand's first sight of the
-fight, not an engine fault the trace shows.
+strike, and wipes. The reload walks in full: the same cast (2700..3100 a
+member on that stream, the guard against Cort's element byte `7` worn or
+not) leaves every member standing, and the bag heals between casts. That
+is the hand's first sight of the fight, not an engine fault the trace
+shows.
 
 ### A later start
 
