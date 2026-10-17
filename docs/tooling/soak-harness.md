@@ -195,7 +195,7 @@ on one frame and neutral on the next.
 | `confined` | from the frame the field hands the player back, 900 direction-held frames, each of the four directions among them, never carry them 48 units |
 | `door_loop` | six scene changes inside 600 frames with no direction pressed between them |
 | `dropped_to_title` | the world mode becomes `Title` without a game over |
-| `unknown_scene` | a transition names a map id with no scene, or a label outside the scene set |
+| `unknown_scene` | a transition names a map id with no scene, or a label outside the scene set - including the run's own start label, which is refused at entry rather than entered as an empty field |
 | `non_finite` | a camera float or the caption alpha is NaN or infinite |
 | `value` | roster HP / MP over max, a live HP / MP maximum that is not the stat aggregator's rebuild of the base window, a level outside `1..=99`, battle HP over max, money out of range, a bag stack over 99, a count on a free slot, or two stacks of one id inside the active window |
 | `unbounded_growth` | an engine queue grows past a cap |

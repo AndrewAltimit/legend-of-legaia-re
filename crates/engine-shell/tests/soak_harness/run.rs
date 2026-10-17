@@ -402,6 +402,26 @@ pub(super) fn run_one(
     let (label, talk_visits) = split_talk(label);
     let (label, round_trip) = split_round_trip(label);
     let (scene, minigame) = split_minigame(label);
+    // A label the scene set does not hold names no scene: entering it by
+    // name loads an empty field (no MAN, no player) that then reads as a
+    // softlock. Report it as the entry failure it is.
+    if !known_scenes.contains(scene) {
+        findings.push(mk(
+            &session,
+            "unknown_scene",
+            0,
+            "enter".into(),
+            format!("{scene:?} is not a scene of the soak's scene set"),
+        ));
+        return RunOutcome {
+            spec: spec.clone(),
+            findings,
+            pads,
+            stats,
+            enter_ok: false,
+            host_arming: t.host_arming,
+        };
+    }
     let entered = catch_unwind(AssertUnwindSafe(|| {
         let r = session.enter_scene_live(scene, &opts);
         if let Some(id) = minigame {
