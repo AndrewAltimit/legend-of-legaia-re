@@ -36,7 +36,7 @@ routine catalogue, and what the Rust port runs. Related pages:
 | Battle context | pointer at `0x8007BD24`; module phase byte `ctx+0x279`, `ctx+0x278`, caster seat `ctx+0x13`, band timer `ctx+0x6D8` |
 | Actor pointer table | `0x801C9370` (`DAT_801C9370`), eight seats: party `0..2`, monsters `3..7`, summon creature seat `7` |
 | Damage wrappers | `FUN_801DD0AC`, `FUN_801DD4B0`, `FUN_801DD6B4` in 0898 |
-| Port | `crates/engine-battle-vm` (`cast_module_ticks`, `cast_arm_ticks`, `seru_magic_ticks`, `cast_module_camera`, `cast_fatal_decision`, `battle_cast_dispatch`, `battle_cast_cue`); band driver `crates/engine-core/src/world/battle/cast_band.rs`; spawn pool `crates/overlay-images/src/cast_effect_pool.rs` |
+| Port | `crates/engine-cast` (`cast_module_ticks`, `cast_arm_ticks`, `seru_magic_ticks`, `cast_module_camera`, `cast_fatal_decision`); `crates/engine-battle-vm` (`battle_cast_dispatch`, `battle_cast_cue`); band driver `crates/engine-core/src/world/battle/cast_band.rs`; spawn pool `crates/overlay-images/src/cast_effect_pool.rs` |
 
 ### The module band
 
@@ -1289,7 +1289,7 @@ Notes on individual arms:
   `0x801F7E34` in front of its roll.
 - **Neither `0x40` (Curse) nor `0x53` (Curse All) has a retail caster.** No
   monster record's `+0x21..+0x23` magic slots name them (disc-gated assertion
-  in `crates/engine-battle-vm/tests/cast_arm_retail_gating.rs`, with Cort's `0x37`
+  in `crates/engine-cast/tests/cast_arm_retail_gating.rs`, with Cort's `0x37`
   as the positive control), and the AI picker's formation switch queues
   neither ([`spell-table.md`](../formats/spell-table.md)). Arm 0 of both
   stages clip `0x0B` on the caster (`sb 0x0B, 0x1DA(s1)` at `0x801F6FBC`;
@@ -1310,7 +1310,7 @@ head over the phase, arms that stage clips and set `+0x21D` rates and
 is therefore data. `cast_module_ticks::chain_bodies` holds one descriptor per
 body, with every arm's landing VA and every stage, rate and wrapper site;
 `run_chain_body` interprets them. The disc-gated
-`crates/engine-battle-vm/tests/cast_chain_bodies_real.rs` re-derives each descriptor
+`crates/engine-cast/tests/cast_chain_bodies_real.rs` re-derives each descriptor
 from the owning image.
 
 Four need more than a descriptor:

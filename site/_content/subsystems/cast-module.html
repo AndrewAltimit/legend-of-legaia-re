@@ -14,7 +14,7 @@
     <dt>Capture dispatch</dt><dd><code>FUN_801F2160</code> through table <code>0x801CF56C</code>, row = the spell record's sub-id</dd>
     <dt>Stager table</dt><dd><code>0x801F6734</code>, 64 words, called by move-VM opcode <code>0x20</code></dd>
     <dt>Phase byte</dt><dd><code>ctx+0x279</code>, a module-local space under the battle state</dd>
-    <dt>Port</dt><dd><code>engine-battle-vm</code> (<code>cast_module_ticks</code>, <code>cast_arm_ticks</code>, <code>seru_magic_ticks</code>, <code>cast_module_camera</code>); spawn pool <code>overlay-images::cast_effect_pool</code></dd>
+    <dt>Port</dt><dd><code>engine-cast</code> (<code>cast_module_ticks</code>, <code>cast_arm_ticks</code>, <code>seru_magic_ticks</code>, <code>cast_module_camera</code>, <code>cast_fatal_decision</code>); <code>engine-battle-vm</code> (<code>battle_cast_dispatch</code>, <code>battle_cast_cue</code>); spawn pool <code>overlay-images::cast_effect_pool</code></dd>
   </dl>
   <div class="table-wrap">
   <table>

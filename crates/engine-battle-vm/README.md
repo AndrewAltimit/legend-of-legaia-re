@@ -1,9 +1,11 @@
 # legaia-engine-battle-vm
 
 The battle-side VM kernels: the per-actor battle action state machine
-(`FUN_801E295C`), the battle formulas, the phase-scripted battle camera, the
-cast-module tick bodies, and the
-battle-overlay leaves around them. Ported from the routines' disassembly like
+(`FUN_801E295C`), the battle formulas, the phase-scripted battle camera, and
+the battle-overlay leaves around them. The slot-B cast / summon module tick
+bodies the action SM pages in sit one crate up, in
+[`legaia-engine-cast`](../engine-cast/README.md), which names this crate and
+is never named by it. Ported from the routines' disassembly like
 the VMs in [`legaia-engine-vm`](../engine-vm/README.md), with no bytes from
 the original executable.
 
@@ -195,11 +197,10 @@ The crate's remaining modules are leaf kernels; by family:
   `battle_gauge_rearm`, `battle_commit_log`, `battle_cursor_pose`,
   `battle_record_writer`, `battle_cue_group`, `move_no_effect_guard` (the
   "No effect." banner).
-- **Casts** - `cast_module_ticks` / `cast_arm_ticks` / `seru_magic_ticks`
-  (the slot-B cast-module tick bodies, PROT 0903..0966, one file per module),
-  `cast_module_camera` (the summon modules' own camera and countdown),
-  `cast_fatal_decision` (PROT 0954), `battle_cast_census`,
-  `battle_cast_cue`, `battle_cast_dispatch`; see
+- **Casts** - `battle_cast_census`, `battle_cast_cue`,
+  `battle_cast_dispatch` (the action SM's side of a cast); the module tick
+  bodies and their camera are
+  [`legaia-engine-cast`](../engine-cast/README.md)'s. See
   [`cast-module.md`](../../docs/subsystems/cast-module.md).
 - **Battle rules leaves** - `seru_side_effect` (the Seru-magic side-effect
   stager), `nested_record_copy`, `rgb_wash_scale` and `bgr555_grey` (the nested

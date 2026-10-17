@@ -216,10 +216,11 @@ The crate's remaining modules are what the VMs import; by family:
 ## Battle VM kernels
 
 The battle action state machine (`battle_action`), the battle formulas,
-the battle camera script, `psx_camera`, the cast-module ticks and most
-battle-overlay leaves live in
+the battle camera script and most battle-overlay leaves live in
 [`legaia-engine-battle-vm`](../engine-battle-vm/README.md)
-(`legaia_engine_battle_vm::battle_action`, ...). This crate does not depend
+(`legaia_engine_battle_vm::battle_action`, ...), the cast-module ticks one
+crate above it in [`legaia-engine-cast`](../engine-cast/README.md), and
+`psx_camera` in [`legaia-engine-camera`](../engine-camera/README.md). This crate does not depend
 on it; neither crate sits below the other.
 
 ## See also

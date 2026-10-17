@@ -54,7 +54,7 @@ One engine runs behind every host. The simulation crates carry no GPU, windowing
 ```mermaid
 flowchart LR
     subgraph sim["Shared simulation"]
-        vm["The ported VMs and World-free kernels:<br/>engine-vm, engine-battle-vm, engine-motion-vm, engine-field, engine-battle, ..."]
+        vm["The ported VMs and World-free kernels:<br/>engine-vm, engine-battle-vm, engine-cast, engine-motion-vm, engine-field, engine-battle, ..."]
         core["engine-core: World, scenes, battle, menus, saves"]
         session["engine-session: per-frame order, BGM director"]
         vm --> core --> session
