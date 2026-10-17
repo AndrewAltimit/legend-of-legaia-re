@@ -365,8 +365,12 @@ impl World {
         let summon = SummonRollActor {
             hp: creature.hp,
             // The summon-roll's "agl" slot is the actor's `+0x168` stat, which
-            // for a monster is record `+0x18` = INT (`MonsterDef::intel`).
-            agl: creature.intel,
+            // for a monster is record `+0x18` = INT, installed under this
+            // fight's boost profile: the seat arm's `FUN_80054CB0` picks it by
+            // `ctx[+0x287]` as for a monster seat. Pinned live: a random-
+            // encounter Gimard cast rolls a body of INT 60 off the record's 48
+            // (`autorun_summon_body_stats.lua`).
+            agl: creature.installed_stats(self.battle.scripted_fight)[4],
             ..Default::default()
         };
         let summon_element = creature.element;

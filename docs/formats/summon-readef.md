@@ -424,7 +424,11 @@ That makes the record the summon body for **every** player cast, and the
 are a different record: Gimard the enemy is HP 99 / INT 16, the Burning Attack
 body HP 192 / INT 48. The flutes and the big summons have no twin, so their
 record is the only source of a body; Terra's Queen Twister record is HP 2176 /
-INT 272. Parser `summon_readef::cast_record_stats`; the disc-gated
+INT 272. Captured live (`scripts/pcsx-redux/autorun_summon_body_stats.lua` on a
+random-encounter Gimard cast): at the slot-7 roll the actor holds HP 192 and
+INT 60 - the record's 48 under the random-encounter profile (`+ INT >> 2`) -
+with UDF / LDF 21 / 25 off the record's 12 / 15 (`x7/4`), against an installed
+record reading 192 / 48. Parser `summon_readef::cast_record_stats`; the disc-gated
 `cast_record_stat_heads_are_their_own_bodies` pins that each base head shares
 its twin's element but not its stats. The engine seats these stats on `DiscTables::summon_creatures` at scene entry
 (`monster_catalog::apply_cast_record`).

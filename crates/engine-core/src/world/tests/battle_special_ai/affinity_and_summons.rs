@@ -459,11 +459,14 @@ fn a_big_summon_rolls_the_summon_branch_from_its_cast_record() {
         "no body: the placeholder path"
     );
 
-    // The body carries the record's installed stats: the scripted boost
-    // profile takes INT x9/8, HP and element straight.
+    // The body carries the record's stats under the fight's boost profile:
+    // INT x5/4 in a random encounter, x9/8 in a scripted one; HP and element
+    // straight.
     let mut world = build(true);
     let def = world.tables.summon_creatures.get(&0x9F).unwrap();
-    assert_eq!((def.hp, def.intel, def.element), (2176, 272 + 34, 3));
+    assert_eq!((def.hp, def.element), (2176, 3));
+    assert_eq!(def.installed_stats(false)[4], 272 + 68);
+    assert_eq!(def.installed_stats(true)[4], 272 + 34);
     // The roll's attacker term is at least the body's HP plus the caster's
     // doubled AGL, against a defender roll this target keeps under 400, so
     // the hit is in the thousands - never the placeholder's floor.
