@@ -137,7 +137,7 @@
           <tr><td><code>FUN_80024CFC</code></td><td>writer</td><td>Pose-output buffer bound on animation transition; seeds the frame counter to 100</td></tr>
           <tr><td><code>FUN_80021DF4</code> arm <code>0x06</code></td><td>writer</td><td>Per-bone interpolated pose bytes, 8-byte-stride bones from <code>+0x0F</code></td></tr>
           <tr><td><code>FUN_8001BE80</code></td><td>reader</td><td>The part's frame-0 entry at <code>ptr + bone*8 + 8</code>: the blend target on a looping clip's last frame</td></tr>
-          <tr><td><code>FUN_800495C8</code></td><td>reader</td><td>Per-bone envelope curve walker at <code>ptr + 4</code></td></tr>
+          <tr><td><code>FUN_800495C8</code></td><td>not this slot</td><td>Battle clip-morph blend: it runs on a battle draw node, whose <code>+0x4C</code> is the playing monster action entry, and reads that entry&rsquo;s <code>+0x04</code> / <code>+0x08</code> lanes (<a href="../formats/monster-animation.html#clip-morphs">clip morphs</a>)</td></tr>
           <tr><td><code>FUN_8003A1E4</code>, <code>FUN_801DE840</code></td><td>readers</td><td>Animation-period u16 at <code>ptr + 2</code></td></tr>
         </tbody>
       </table>

@@ -84,6 +84,7 @@
     <li><strong><code>runtime</code></strong> is the simulation: load a disc, enter a field scene, set the pad word, set the camera azimuth so the D-pad remaps camera-relative, tick a frame, read state. It runs the ported field VM, free movement against the walkability grid, the NPC motion VMs and the dialogue runner.</li>
     <li><strong><code>play</code></strong> is what the page draws: the assembled map, the lead&rsquo;s mesh posed from the world&rsquo;s live pose frame, and the scene&rsquo;s placed NPCs at their live positions.</li>
   </ul>
+  <p>The page hands each animation frame&rsquo;s sim ticks to <code>play_frame_ticks</code> (<code>runtime/frame_ticks.rs</code>), which gives each tick to the owner <code>BootSession::claim_tick</code> names - the field, the pause menu, a shop or name entry - in the order the native window&rsquo;s <code>sim_tick</code> uses. Menus, shops and name entry therefore step on the sim tick, not the display frame, and the whole frame body is compared state by state against the native window in <code>engine-shell/tests/host_frame_parity.rs</code>.</p>
   <p>The map and NPC layers make the native window&rsquo;s exact resolver calls. NPC clip playback runs in <strong>simulation-tick time</strong> - one clip player per placed slot, advanced once per tick - so cadence does not depend on the display&rsquo;s refresh rate and scripted actors perform their cued beats.</p>
 </section>
 
@@ -103,6 +104,8 @@
       <tr><td><code>play_minigames</code>, <code>play_fishing</code></td><td>the in-world minigames reached through the scene&rsquo;s own door warps</td></tr>
       <tr><td><code>boot_title</code>, <code>play_name_entry</code></td><td>the boot title screen and name entry</td></tr>
       <tr><td><code>session_save</code>, <code>cards</code></td><td>session saves and the two memory-card ports</td></tr>
+      <tr><td><code>play_dev_menu</code></td><td>the retail developer menu, behind a session-only checkbox that is never persisted</td></tr>
+      <tr><td><code>play_hotkeys</code></td><td>the native window&rsquo;s option / cheat / camera keys, through the shared <code>engine-session::hotkeys</code> table</td></tr>
     </tbody>
   </table>
   </div>
@@ -118,7 +121,7 @@
     <thead><tr><th>Area</th><th>State against the native window</th></tr></thead>
     <tbody>
       <tr><td>Seru-trade shop screens</td><td>closed: one shared composition</td></tr>
-      <tr><td>Options screen</td><td>half closed: edits persist for the session; a reload starts from defaults</td></tr>
+      <tr><td>Options screen</td><td>closed: edits persist across reloads in <code>localStorage</code>, the browser twin of the native window&rsquo;s <code>legaia-options.toml</code></td></tr>
       <tr><td>Inn prompt</td><td>closed</td></tr>
       <tr><td>Load / Save rows</td><td>closed at the model: this host browses two memory-card ports, the native window writes save files, both from one summary</td></tr>
       <tr><td>In-world minigames</td><td>closed: both hosts enter them from the scene&rsquo;s door warps</td></tr>

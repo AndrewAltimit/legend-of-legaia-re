@@ -157,15 +157,18 @@
       <tr><td>3</td><td>Unlink the child</td></tr>
     </tbody>
   </table>
+  <p>Geometry and speed come from the scene: the roller reads its config block through <code>*0x801C6EA4</code>, the scene reset <code>FUN_8003A024</code> stores <code>0x40 / 8 / 4 / 0</code>, and a seed op overwrites the first three. A <code>4C E8</code> release count is block state too, so it dies with the scene. Every crawl block on the disc runs on a seed op placed immediately before it, or on the one an earlier block of the same scene left:</p>
   <table>
-    <thead><tr><th>Scene</th><th>Enter / exit Y</th><th>Spacing</th><th>Speed</th></tr></thead>
+    <thead><tr><th>Scene</th><th>Seeds (<code>top / slots / divisor</code>), in script order</th></tr></thead>
     <tbody>
-      <tr><td><code>opdeene</code></td><td>~188 / ~64, up to 8 lines visible</td><td>18 px</td><td>0.5 px/frame</td></tr>
-      <tr><td><code>opstati</code>, <code>map01</code></td><td>~203 / 128</td><td>16 px</td><td>0.5 px/frame</td></tr>
-      <tr><td><code>opurud</code></td><td>~187 / 128</td><td>16 px</td><td>1.0 px/frame</td></tr>
+      <tr><td><code>opdeene</code></td><td><code>0x40 / 8 / 4</code> (all three words zero - the defaults) for both blocks</td></tr>
+      <tr><td><code>opstati</code></td><td><code>0x80 / 5 / 5</code>, then <code>0x80 / 5 / 4</code></td></tr>
+      <tr><td><code>opurud</code></td><td><code>0x80 / 4 / 4</code> twice, then <code>0x80 / 4 / 3</code> (the second block reuses the first seed)</td></tr>
+      <tr><td><code>map01</code></td><td><code>0x80 / 5 / 4</code></td></tr>
     </tbody>
   </table>
-  <p>Lines draw centred, all glyphs at once, scrolling upward in a clipped window. The single-line balloon (<code>4C E1</code>, centred at <code>Y = 180</code>, 120-frame timer) is a different op and never carries the crawl. Port <code>CutsceneNarration</code> + <code>RollerParams::for_scene</code>.</p>
+  <p>The line pitch is a fixed 16 (retail <code>addiu s3,s3,0x10</code>). The clock is the adaptive frame step <code>DAT_1F800393</code>: the accumulator gains it each frame and a pixel of climb happens when it reaches the divisor, the remainder dropped. With <code>opdeene</code>'s frame-step floor of 3 (written by its own prescript), divisor 4 climbs a pixel every two frames.</p>
+  <p>Lines draw centred, all glyphs at once, scrolling upward in a clipped window. The single-line balloon (<code>4C E1</code>, centred at <code>Y = 180</code>, 120-frame timer) is a different op and never carries the crawl. Port <code>engine-field::cutscene_narration</code> (<code>CutsceneNarration</code> + <code>RollerSeed</code>).</p>
 
   <h3 id="channels">Per-actor channels</h3>
   <p>Retail spawns one script context per partition-1 placement at scene entry (<code>FUN_8003A1E4</code>); its script id is <code>partition-0 count + placement index</code>, the id space cross-context ops resolve through. The timeline halt-acquires channels <code>0x05..0x0F</code> (a sweep of <code>4C 85</code>), pokes each beat (<code>4C 45</code> param, <code>4B</code> animate, <code>23</code>/<code>A3</code> move), resumes with <code>B2 &lt;id&gt; 0A</code>, and waits at <code>B3 &lt;id&gt; &lt;bit&gt;</code> until the channel's own script raises its completion flag. Even a halted channel keeps animating, because the per-actor anim tick runs independently of the parked script PC.</p>
