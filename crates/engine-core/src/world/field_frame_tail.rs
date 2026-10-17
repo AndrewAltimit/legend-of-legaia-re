@@ -91,11 +91,7 @@ impl World {
         {
             move_fx_cue = self.take_pending_move_fx_cue();
         }
-        // On the battle-frame cadence the pass ran both already
-        // (`World::tick_battle_anim_pass`); the tail routes nothing new.
-        if !self.battle_pass_owns_effects() {
-            self.tick_effect_scene_graphs();
-        }
+        self.tick_effect_scene_graphs();
         let routed_effect_spawns = self.route_battle_effect_spawns();
         let npc_retargets = self.drain_field_anim_cues(scene_bundle, locomotion_bundle, npc_bundle);
         WorldFrameTail {

@@ -238,10 +238,7 @@ impl<S: AudioSink> BootSession<S> {
             }
             log::debug!("battle move-FX cue -> SFX {ring_value:#06x}");
         }
-        // On the battle-frame cadence the battle pass steps them itself.
-        if !self.host.world.battle_pass_owns_effects() {
-            self.host.world.tick_effect_scene_graphs();
-        }
+        self.host.world.tick_effect_scene_graphs();
         ring
     }
 

@@ -1179,8 +1179,14 @@ between holds:
   (`0x801E29E4..0x801E2A24`): `4` at step `3`, not `3`.
 - **Fades and effects step with the pass.** The fade actors drain the step a
   tick (`FUN_80020C14`, `lbu v0,0x393(v0)` at `0x80020C34`), and the effect
-  pool walker runs one sweep per vsync the pass spans, so a flash or a spark
-  stands where the pass left it.
+  pool walker runs one sweep per vsync the pass spans, ahead of the frame
+  driver, so a flash or a spark stands where the pass left it. The walker's
+  one caller is the battle draw tick `FUN_800480D8` (`jal 0x801E0080` at
+  `0x80048128`), which runs after the pass; moved there (with the effect
+  scene-graphs) it lifted the Tail Fire rays (`battle_gimard_tail_fire_a`
+  `.801` to `.816`) and dropped the summons (`nighto_summon_mid_cast` `.984`
+  to `.858`, `swordie_summon_mid_cast` `.937` to `.863`), so a spawn's first
+  sweep is not settled yet and the walker stays ahead of the pass.
 - **A step change re-times the frame it is made in.** The replay's seeded
   step lands on the pass that entered its state, and that pass's frame takes
   the new length under the same id (`BattleFrameClock::retime_frame`). A new
@@ -1205,12 +1211,15 @@ between holds:
   capture's age once the gate holds (`PhaseGate::align_fade`): retail's own
   frame step varies frame to frame, so its flash can sit between two of the
   replay's passes ([retail-compare](../tooling/retail-compare.md#driving-to-the-phase)).
+  A `0x32` capture's displayed frame is the `0x29` pass before the state was
+  entered (its RAM holds one whole pass in `0x32`, the display two passes
+  older), so the image child takes the RAM's gate and re-runs to the tick the
+  display lag back.
 
 Measured with `LEGAIA_BATTLE_FRAME_CADENCE=1` against the per-vsync run of
 the same build, the retail-disc battle rows that rise most are
 `theeder_summon_mid_cast` `image` `.779` to `.900`, `vera_summon_mid_cast`
-`.834` to `.968`, `flute_lippian_midcast` `.740` to `.780`,
-`battle_noa_miracle_art_combo` `.636` to `.665`, `battle_gimard_tail_fire_a`
+`.834` to `.968`, `battle_noa_miracle_art_combo` `.636` to `.665`, `battle_gimard_tail_fire_a`
 `.777` to `.801`, `cort_mystic_shield_mid_cast` `.972` to `.996`, and
 `camera` on `gimard_burning_attack`, `gola_gola_summon_mid_cast` and
 `cort_mystic_shield_mid_cast`. The battle class's image mean is `.881`
@@ -1220,7 +1229,7 @@ against the per-vsync `.887`. Rows still fall, so the toggle stays off:
 |---|---|---|
 | `noa_levelup_fight_pre` | `camera` `.981` to `.944`, `image` `.817` to `.494` | the replayed round draws its rolls at the pass cadence, and on the drive's stream the struck Gobu Gobu takes a knockdown (clips `4` / `5`) where it reeled before; the stream is the seed search's, not retail's |
 | `rim_elm_gimard_victory`, `battle_melee_hit_spark` | `image` `.908` to `.801`, `.692` to `.687` | the RAM phase matches (`camera` `.996`); the displayed frame two passes back frames the swing's clip `0x0F` eight sixteenths on and draws the hit-spark rays a pass younger than retail's |
-| `flute_spikefish_midcast` | `image` `.910` to `.845` | the display gate is the first `0x32` tick, which on the pass cadence is a pass into the summon-route glide; retail's displayed frame is the `0x29` pass before |
+| `flute_lippian_midcast` | `image` `.740` to `.705` | taken the `0x29` pass back (which lifts `flute_spikefish_midcast` from `.910` to `.950`), its summon-route chase frames off retail's: the RAM's ease into the close-up matches (TR z `4279` on both), the pass before it does not |
 | `nivora_duel_pre_plasma_strike`, `nivora_duel_pre_megaton_press` | `image` `.877` to `.815`, `.888` to `.875` | the stage's mist band and ground differ at the Done hold; the clocks behind them are not traced yet |
 | `rim_elm_gimard_seru_capture_before`, `cort_evil_seru_magic_mid_cast`, `battle_gimard_tail_fire_b`, `gimard_summon_start`, `freed_summon_mid_cast`, `juggernaut_summon_mid_cast`, `noa_levelup_banner`, `player_steal_skeleton_banner` | `image` by `.01` to `.035`; `cort_evil_seru_magic_mid_cast` `camera` `1.0` to `.988` | the focus and the caster's pose sit a pass from the per-vsync frame; `gimard_summon_start` holds retail's stored ambient (`48` against the per-vsync `40`, the near colour `0x70` its RAM holds) and still falls on the caster's pose |
 | `cort_evolved_final_crisis_mid_cast`, `nivora_duel_mid_blazing_slash`, `zeto_call_wave_mid_cast` | `camera` `.999` to `.992`, `1.0` to `.995`, `.932` to `.928` image | the capture-module drifts land a few vsyncs off retail's at the gate's countdown |
