@@ -810,3 +810,97 @@ fn jouine_cort_commit_refuses_the_menu_and_a_host_save() {
         "Cort's fight began"
     );
 }
+
+/// `jouinb`'s rapids (P2[6]) loop their lap until the player holds a
+/// direction (or Circle) at a landing: the poll chains `42 01 00..08` at
+/// `0x02A3` / `0x03AC` are the only ways out, and the lap's backward `26` at
+/// `0x03F0` polls the pad, so it is not a wrap. Retail has no cap on a
+/// script context, so a rider who presses nothing rides on; one who holds a
+/// direction jumps off at the next landing. No random encounter rolls on
+/// the way: the ride holds the player's engaged bit. Disc-gated.
+#[test]
+fn jouinb_rapids_ride_until_the_player_jumps_off() {
+    let Some(inp) = inputs() else { return };
+    let ride = |hold: u16| {
+        let mut session = open_session(&inp.extracted);
+        session
+            .enter_scene_live("jouinb", &live_opts(false))
+            .expect("enter jouinb");
+        for _ in 0..60 {
+            session.host.world.set_pad(0);
+            let _ = session.tick();
+        }
+        let (mf, man, _) = scene_man_and_triggers(&session).expect("jouinb MAN");
+        assert!(
+            session
+                .host
+                .world
+                .install_cutscene_timeline_record(&mf, &man, 2, 6, false),
+            "install P2[6]"
+        );
+        let mut moves = 0usize;
+        let mut last = player_xz(&session);
+        let mut frames = 0usize;
+        for f in 0..150_000usize {
+            // The script runner raises the player's engaged bit on every
+            // frame it steps the ride, and the region roll returns on it
+            // (`FUN_801D9E1C`, `encounter.md`'s steps that do not roll).
+            assert_ne!(
+                session.host.world.mode,
+                SceneMode::Battle,
+                "an encounter rolled on the ride (frame {f})"
+            );
+            if !session.host.world.cutscene_timeline_active() {
+                break;
+            }
+            frames = f;
+            // The "dive in?" picker takes its default (Yes); the ride then
+            // holds `hold`.
+            let boxed = session
+                .host
+                .world
+                .cutscene
+                .timeline
+                .as_ref()
+                .is_some_and(|t| t.dialog.is_some());
+            let pad = if boxed {
+                if f % 8 == 0 {
+                    PadButton::Cross.mask()
+                } else {
+                    0
+                }
+            } else {
+                hold
+            };
+            session.host.world.set_pad(pad);
+            let _ = session.tick();
+            let now = player_xz(&session);
+            if now != last {
+                moves += 1;
+                last = now;
+            }
+        }
+        (
+            session.host.world.cutscene_timeline_active(),
+            frames,
+            moves,
+            std::mem::take(&mut session.host.world.cutscene.capped),
+        )
+    };
+    let (riding, frames, moves, capped) = ride(0);
+    assert!(
+        moves > 500,
+        "the ride carried the player ({moves} moves in {frames} frames)"
+    );
+    assert!(
+        capped.is_empty(),
+        "the anti-hang cap cut the ride: {capped:?}"
+    );
+    assert!(riding, "a rider who presses nothing is still on the rapids");
+    let (riding, frames, _, capped) = ride(PadButton::Right.mask());
+    assert!(capped.is_empty(), "{capped:?}");
+    assert!(
+        !riding && frames < 5_000,
+        "holding Right jumps off ({frames} frames)"
+    );
+}

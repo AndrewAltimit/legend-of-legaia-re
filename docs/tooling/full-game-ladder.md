@@ -1591,6 +1591,7 @@ clips and matches the same arts a windowed one does. Beyond that:
 | `LEGAIA_FGL_TRACE=1` | One line per played beat: what ran, how it ended and the flags it set. As `[hop]`, the hop failure that sent the pass to the beats, which the final stall would otherwise hide. A `[battle]` line at each fight's start and end (formation, both sides' HP, the action-SM state). Each pad segment's frames and planner cost. On success, the seated tier's trail, so a pad stall can be read against the route the seated tier took. |
 | `LEGAIA_FGL_TRACE_BATTLE=1` | A `[battle]` line every 1000 ticks. |
 | `LEGAIA_FGL_TRACE_HITS=1` | Each HP change with its actor and action state. |
+| `LEGAIA_FGL_CAPS=1` | Each script context the engine's anti-hang timeline cap ends (`World::cutscene.capped`): scene, modal or helper, record length, PC and opcode. Retail has no such cap, so each line is a record the engine cut short; over both passes there are none. |
 | `LEGAIA_FGL_PAD_DEBUG=1` | In a fight where no foe has lost HP for 6000 ticks, the fighter's pad and the command, spell and item windows' phases every 97 ticks: what a battle that will end `unresolved` was being asked. |
 | `LEGAIA_FGL_SHOP_DEBUG=1` | Each pad edge of a shop screen with the hand's next buy and sale, the screen state, the purse and the bag's heals in Healing Flowers' worth. |
 | `LEGAIA_FGL_HEAL_DEBUG=1` | Each pad edge of the field heal with the Items screen's focus, list rows, usable rows and target rows. |

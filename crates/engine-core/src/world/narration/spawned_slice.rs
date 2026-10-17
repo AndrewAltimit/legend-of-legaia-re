@@ -9,6 +9,19 @@ impl World {
         tl: &mut legaia_engine_field::cutscene_timeline::CutsceneTimeline,
         modal: bool,
     ) -> bool {
+        // The anti-hang cap counts frames on one PC. A context whose PC moves
+        // is playing - retail has no cap on a script context at all, and a
+        // record that loops on the player's input rides on until it comes
+        // (`jouinb`'s rapids, P2[6..8], lap until a direction is held at a
+        // landing; a counter over the whole ride cut it mid-lap and dropped
+        // the rider at the lap's `MoveTo` seat).
+        // The opening chain's generous cap stays a length bound: its legs end
+        // on the hand-off or that cap (`PROLOGUE_TIMELINE_MAX_FRAMES`).
+        let chain = tl.arms_prologue_handoff || self.cutscene.opening_chain_active;
+        if tl.pc != tl.cap_pc && !chain {
+            tl.cap_pc = tl.pc;
+            tl.frames = 0;
+        }
         tl.frames = tl.frames.saturating_add(1);
         tl.stepped = true;
         // The player's poked scene-bank clip plays one engine tick per
