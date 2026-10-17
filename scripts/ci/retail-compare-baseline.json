@@ -1365,7 +1365,7 @@
     "minigame_fishing_pcsx": {
       "bgm": 1.0,
       "camera": 0.988,
-      "flags": 0.999,
+      "flags": 1.0,
       "fog_gate": 1.0,
       "footing": 1.0,
       "inventory": 1.0,

@@ -270,7 +270,7 @@ fn player_summon_cast_matches_the_summon_kernel_composition() {
     struct Lcg(u32);
     impl Lcg {
         fn draw(&mut self) -> u16 {
-            self.0 = self.0.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+            self.0 = legaia_engine_system::rand::world_lcg_step(self.0);
             ((self.0 >> 16) & 0x7fff) as u16
         }
     }

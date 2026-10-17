@@ -307,7 +307,16 @@ engine verdict:
 - **Actor state.** NPC positions, animation phases, open doors and live
   effects are whatever the engine's own entry produces.
 - **Timing.** Retail's frame is one instant; the engine's is a fixed tick
-  after entry. Ambient animation and water CLUT-walk phases cannot be
+  after entry. Two kinds of script history are held through the headless
+  warm-up instead of being run as game time: the field VM's script-counter
+  table (`0x801C6460`, `hold_slot_table`) and, on field and overworld
+  states, the BIOS `rand()` seed `0x80009010` (`hold_rand_seed`), so every
+  warm-up tick draws the value retail's next draw would. `map03`'s cart
+  clock (`P1[0]` `+0x248`) rolls `rand() & 0xFF` against `1` every frame
+  once its counter holds `240`, and `minigame_fishing_pcsx` is captured
+  with the counter there: a warm-up on a free-running stream rolled it,
+  spawned `P2[18]` and flew the cart back (`0x5A3`, `0x467` up, `0x466`
+  down) where retail had not rolled yet. Ambient animation and water CLUT-walk phases cannot be
   phase-aligned. The one phase the channel does align is the field
   party HUD's idle countdown (`_DAT_801F348C`, `FUN_801D0D38`): the settle
   window outlasts the `0x28`-frame near idle, while a card-load state is

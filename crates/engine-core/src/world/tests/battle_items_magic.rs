@@ -627,9 +627,9 @@ fn battle_magic_capture_downs_a_weakened_monster_and_logs_the_id() {
         ..World::default()
     };
     world.mode = SceneMode::Battle;
-    // Seed 6 -> first retail draw `(s' >> 16) & 0x7FFF` = 15623 with
-    // `s' = 6 * 1664525 + 1013904223`, and `15623 % 100 == 23`.
-    world.rng_state = 6;
+    // Seed 83 -> first retail draw `(s' >> 16) & 0x7FFF` = 21323 with
+    // `s' = 83 * 0x41C64E6D + 0x3039`, and `21323 % 100 == 23`.
+    world.rng_state = 83;
     world.actors[1].battle.max_hp = 100;
     world.actors[1].battle.hp = 10; // missing 90
     world.actors[1].battle.liveness = 1;

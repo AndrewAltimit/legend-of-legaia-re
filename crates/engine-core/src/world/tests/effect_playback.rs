@@ -85,18 +85,14 @@ fn world_effect_playback_matches_pool_walker_frame_by_frame() {
         SpriteAtlasEntry,
     };
 
-    /// Mirror of `World::next_rand` (the Numerical Recipes LCG through the
-    /// BIOS `rand()` shape, which the world-side `EffectHostImpl` feeds the
+    /// Mirror of `World::next_rand` (the BIOS `rand()` step and shape,, which the world-side `EffectHostImpl` feeds the
     /// pool), so the direct pool run consumes the identical RNG stream.
     struct LcgHost {
         state: u32,
     }
     impl EffectHost for LcgHost {
         fn next_random(&mut self) -> i32 {
-            self.state = self
-                .state
-                .wrapping_mul(1_664_525)
-                .wrapping_add(1_013_904_223);
+            self.state = legaia_engine_system::rand::world_lcg_step(self.state);
             // The BIOS `rand()` shape the world host hands the walker.
             ((self.state >> 16) & 0x7FFF) as i32
         }

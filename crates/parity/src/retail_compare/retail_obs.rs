@@ -113,6 +113,11 @@ pub struct RetailObs {
     /// handshake's frame count, `jouind`'s spawn delay), and a timer seeded
     /// at `0` instead of its captured count fires on a different frame.
     pub slot_table: Option<[i16; 256]>,
+    /// The BIOS `rand()` seed word (`0x80009010`,
+    /// [`legaia_engine_system::rand::BIOS_RAND_SEED_ADDR`]): the position of
+    /// the one stream every `jal 0x80056798` draws from. Field and overworld
+    /// classes only; a battle drive searches its own streams.
+    pub rand_seed: Option<u32>,
     /// The live mode-3 CLUT-cell cyclers ([`retail_cell_fx`]), handed to the
     /// image child as `LEGAIA_SEAT_CLUT_FX` so the cycled palettes show the
     /// captured phase.
@@ -345,6 +350,8 @@ impl RetailObs {
                 ram.get(lo..lo + 0x200)
                     .map(|b| std::array::from_fn(|i| i16::from_le_bytes([b[i * 2], b[i * 2 + 1]])))
             },
+            rand_seed: matches!(class, StateClass::Field | StateClass::WorldMap)
+                .then(|| rd32(ram, legaia_engine_system::rand::BIOS_RAND_SEED_ADDR) as u32),
         }
     }
 }
@@ -361,6 +368,17 @@ pub(super) const SLOT_TABLE_VA: u32 = 0x801C_6460;
 /// still counting towards (a door-fade handshake 36 frames into its 46, a
 /// spawn delay 24 into its 50) and score that as an engine miss. Holding the
 /// captured counts keeps every timer where retail's was.
+/// Re-assert the capture's `rand()` stream position before a seeding tick,
+/// for the same reason as [`hold_slot_table`]: a field script that rolls
+/// every frame (`map03`'s cart clock, `4E 00 41 01 ..` once its counter
+/// holds `240`) would otherwise roll the warm-up's ticks as game time. Held,
+/// each tick draws the value retail's next draw would.
+pub(crate) fn hold_rand_seed(session: &mut NativeSession, retail: &RetailObs) {
+    if let Some(seed) = retail.rand_seed {
+        session.host.world.rng_state = seed;
+    }
+}
+
 pub(crate) fn hold_slot_table(session: &mut NativeSession, retail: &RetailObs) {
     if let Some(slots) = retail.slot_table {
         session.host.world.field_vm.slot_table = slots;

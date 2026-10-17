@@ -1856,8 +1856,9 @@ return (seed >> 16) & 0x7FFF            // 0..32767
 ```
 
 `FUN_80056798` holds no arithmetic of its own (`80056798.txt`). There is **one**
-seed, in kernel-managed RAM (not at `0x8007AE5C`, which appears nowhere in the
-dump corpus). The executable carries no `srand` (`A(30h)`) thunk, and every
+seed, the kernel word `0x80009010` (the BIOS ROM's `A(2Fh)` at `0xBFC02200`
+loads and stores it; [memory map](../reference/memory-map.md#kernel-ram-0x80000000-0x8000ffff)),
+not `0x8007AE5C`, which appears nowhere in the dump corpus. The executable carries no `srand` (`A(30h)`) thunk, and every
 `jal 0x80056798` on the disc - SCUS and every overlay - draws the same stream.
 The overlays' own generators (the battle overlay's `FUN_801D0290`, which feeds
 ribbon geometry; the slot machine's pair) are separate words, not reseeds.
@@ -1884,7 +1885,7 @@ divide it as a 15-bit quantity, so the shape matters.
 
 | Rust | Role |
 |---|---|
-| `World::next_rng` | the raw 32-bit LCG state step |
+| `World::next_rng` | the raw 32-bit state step, the BIOS recurrence `s * 0x41C64E6D + 0x3039` (`world_lcg_step`), so a world seeded from a state's `0x80009010` draws the values retail's next draws would |
 | `bios_rand_shape` | `(state >> 16) & 0x7FFF` |
 | `World::next_rand` | the retail draw: next state through `bios_rand_shape` |
 | `world_lcg_step` / `world_rand` | the same step + shape for code holding `World::rng_state` without `&mut World` (`engine-system::rand`, beside `bios_rand_shape`) |

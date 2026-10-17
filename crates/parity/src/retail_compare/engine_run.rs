@@ -196,6 +196,7 @@ pub fn run_engine_with(
             session.host.world.input.set_pad(pad);
         }
         hold_slot_table(&mut session, retail);
+        hold_rand_seed(&mut session, retail);
         session.tick()?;
         // The scripted VRAM effects, as both hosts drain them each tick
         // (`BootSession::field_vram_tick`): a cross-context CLUT fade left
