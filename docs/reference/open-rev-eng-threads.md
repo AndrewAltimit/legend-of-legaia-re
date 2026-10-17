@@ -158,12 +158,7 @@ Answered questions: [settled title / boot / overlays](re-settled-threads/title-b
 
 ## Containers / data blobs
 
-| Thread | Status | What would close it |
-|---|---|---|
-| What are the bytes past a DATA_FIELD stream's terminator? | open | `asset extract` keeps them as `_trailer.bin` and `FUN_8002541C` stops at the terminator without reading them ([data-field.md](../formats/data-field.md#trailer-data)). A byte-accounting pass over every trailer - zero fill, the neighbour entry's sector tail, or data a reader addresses past the terminator - classifies them; the latter would name a consumer. |
-| Does any scene place an actor whose model lives in another PROT entry? | open | The asset chain resolves these best-effort ([data-field.md](../formats/data-field.md)). Running `engine-scene`'s `npc_catalog` over every scene and listing the placements it resolves from the global model pool rather than the scene's own bundle answers it, and names the carrier each borrowed model comes from. |
-
-Answered questions: [settled measurement + corpus](re-settled-threads/measurement-corpus.md), [settled animation](re-settled-threads/animation.md); falsified readings: [containers / placeholder slots](re-do-not-re-walk.md#containers--placeholder-slots).
+No open threads. Answered questions: [settled measurement + corpus](re-settled-threads/measurement-corpus.md), [settled animation](re-settled-threads/animation.md); falsified readings: [containers / placeholder slots](re-do-not-re-walk.md#containers--placeholder-slots).
 
 ## Measurement + tooling
 

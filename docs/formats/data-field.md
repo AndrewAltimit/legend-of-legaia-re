@@ -56,7 +56,7 @@ The chunk layouts are **single assets** in the `other5` family (one TIM, one TMD
 
 ## Trailer data
 
-Some entries contain bytes past the streaming terminator. `asset extract` preserves these as `_trailer.bin` next to the extracted chunks. No consumer of the trailer bytes is identified (Unknown). `FUN_8002541C` stops at the terminator and does not read them.
+Every clean stream ends inside the last `0x800`-byte sector of its entry, and the bytes from the terminator to the sector boundary are what `asset extract` keeps as `_trailer.bin`. `FUN_8002541C` stops at the terminator and reads none of them. They are sector fill: over all 34 streams the trailer is shorter than a sector and zero, except in entry 1208, whose fill carries eight bytes of residue at `0xFD70` (`78 FD 00 00 01 00 0D 00` - a word equal to its own offset plus 8, then halfwords `1` and `13`), which nothing is known to read. Pinned by `container-formats`' `data_field_trailer_real` test.
 
 ## Related shapes
 
@@ -140,7 +140,7 @@ Two neighbouring shapes are fully accounted for on their own pages:
 - **The scene texture pack.** A file opening with `0x01059B84` is a `(TIM_LIST << 24) | size` chunk header followed by the `[u32 count][u32 word_offsets]` [pack](pack.md) table of one scene's TIMs. 23 blocks carry such a file, one apiece. It is not a separate "field-pack" format; see [field-pack.md](field-pack.md).
 - **The per-scene asset table.** The walk is positional (`FUN_80020224`, `count` at `+0x00`, 8-byte descriptors from `+0x08`), and the bundle reaches the walker's base by a whole-sector block copy of the entry. `+0x04` is the sum of the descriptor sizes. See [scene-bundles.md](scene-bundles.md#scene_asset_table---count-prefixed-asset-bundle) and [asset-descriptor.md](asset-descriptor.md).
 
-Two questions about the layer are live hunts, indexed on [open-rev-eng-threads.md](../reference/open-rev-eng-threads.md#containers--data-blobs): what the post-terminator [trailer bytes](#trailer-data) are, and whether any scene places an actor whose model lives in another PROT entry (the asset chain in [asset-loader.md](../subsystems/asset-loader.md) resolves those best-effort).
+**Placed actors use their own scene's models.** A MAN placement's model byte below `0xF0` indexes the scene's TMD list and one at or above it a global head slot (the player character pack). Across the 101 CDNAME blocks with a MAN, every placement below `0xF0` resolves into its own block; the only exceptions are 20 placements in `other7`, the unused `koin3` draft, whose model bytes `65..=71` run past its own TMD list ([`scene-names.md`](../reference/scene-names.md)). Pinned by `engine-scene`'s `field_npc_model_source_disc` census.
 
 Every PROT entry classifies to *something* under `categorize`, and about 95% of bytes fall into known classes; [`tooling/byte-accounting.md`](../tooling/byte-accounting.md) tracks the residue per entry.
 

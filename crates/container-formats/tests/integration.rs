@@ -7,5 +7,6 @@
 
 mod bse_bank_real;
 mod bse_bank_tail_real;
+mod data_field_trailer_real;
 mod sound_pack_stream_real;
 mod sound_pack_vab_seq_real;
