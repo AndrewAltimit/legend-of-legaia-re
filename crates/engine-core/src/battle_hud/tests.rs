@@ -744,6 +744,14 @@ fn the_seed_plates_follow_fun_801e6d84() {
         TARGET_PARTY_WIDE,
     );
     assert!(!battle_panels_visible(&w), "spirit returns before the arm");
+    // The plaque keys on the target byte alone: a monster's cast on a
+    // monster (Ultra Charge on its own caster) opens it, a monster's cast on
+    // a party member does not.
+    arm_action(&mut w, 3, ActionCategory::Magic.as_byte(), 3);
+    w.actors[3].battle.params[0] = 0xA5;
+    assert!(battle_target_plaque(&w).is_some(), "monster on monster");
+    arm_action(&mut w, 3, ActionCategory::Magic.as_byte(), 0);
+    assert_eq!(battle_target_plaque(&w), None, "monster on the party");
     arm_action(&mut w, 0, ActionCategory::Magic.as_byte(), 3);
     w.actors[0].battle.params[0] = 0x85;
     assert!(battle_target_plaque(&w).is_some(), "single-target Nighto");

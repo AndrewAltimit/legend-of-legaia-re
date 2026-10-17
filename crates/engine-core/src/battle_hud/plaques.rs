@@ -473,15 +473,20 @@ pub(super) fn seed_plates_reach_the_target_arm(category: u8) -> bool {
 /// also hold record 81.
 pub const ROW_PLATE_SPELL_IDS: [u8; 3] = [0x8D, 0x86, 0x82];
 
-/// The bottom-right target plaque (placement record 81): the monster a
-/// party member's attack is aimed at, with its element badge - or `None`.
+/// The bottom-right target plaque (placement record 81): the monster an
+/// action is aimed at, with its element badge - or `None`.
 ///
 /// The record's `x` is written to right-align the plate's cap at `x = 312`
 /// (`241` for `Gimard` behind its badge, `w = 63`; `245` for `Skeleton A`,
 /// `w = 59`; `249` for `Gobu Gobu`, `w = 55`), it rises from `y = 236` to
 /// `194`, and its name payload carries the `0xCE` badge escape in front of
 /// the name. Live from the strike loop (`0x1E`) through the Done band in
-/// every party-attack capture, absent from every monster-action one. The
+/// every party-attack capture. `FUN_801E6D84` opens it on the target byte
+/// alone (`addiu v0,s2,-0x3; sltiu v0,v0,0x5` at `0x801E6FAC`, no test of
+/// the caster seat), so a monster's action on a monster shows it too: an
+/// evolved Cort's Ultra Charge, aimed at himself, carries his own plaque
+/// (`cort_evolved_ultra_charge_mid_cast`). A monster's action on the party
+/// opens none - its target is below `3`. The
 /// `0x51` teardown wipes it with the rest of the handle list
 /// (`0x801E6170`) and re-spawns it on a closing glide only for a monster
 /// target under categories `1..=3` (`0x801E6314..0x801E6348`), so it is
@@ -514,9 +519,6 @@ pub fn battle_target_plaque(world: &crate::world::World) -> Option<(String, Opti
     }
     let a = world.battle_ctx.active_actor;
     let pc = party_count(world) as u8;
-    if a >= pc {
-        return None;
-    }
     let actor = world.actors.get(a as usize)?;
     let cat = actor.battle.action_category;
     if cat != ActionCategory::Attack.as_byte()
