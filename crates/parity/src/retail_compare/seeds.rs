@@ -380,8 +380,11 @@ pub fn retail_object_models(ram: &[u8]) -> Vec<(u16, i16)> {
 /// swing - which a seat does not replay; the image child writes the cursor
 /// and control word over the matching prop's own on the frame it captures
 /// (`World::seed_object_prop_clip`, which leaves a prop on another clip
-/// alone).
+/// alone). The cursor is the **displayed** frame's: the RAM's taken back by
+/// the display lag's game frames ([`rewind_clip_cursor`]).
 pub fn retail_object_clips(ram: &[u8]) -> Vec<ObjectClipSeed> {
+    let step = crate::retail_compare_battle::frame_step(ram).max(1);
+    let lag_frames = crate::retail_compare_battle::display_lag_vsyncs(ram) / u16::from(step);
     let mut seen = std::collections::BTreeSet::new();
     crate::retail_compare_script::actor_nodes(ram)
         .into_iter()
@@ -392,15 +395,60 @@ pub fn retail_object_clips(ram: &[u8]) -> Vec<ObjectClipSeed> {
                 return None;
             }
             let clip = game_anchors::u16_at(ram, n + 0x5C);
-            (1..0x100).contains(&clip).then(|| ObjectClipSeed {
+            let flags = game_anchors::u16_at(ram, n + 0x62);
+            let rate = game_anchors::i16_at(ram, n + 0x6A);
+            // The bound record's header (`+0x4C`): frame count at `+2`, the
+            // blend gate at `+1` bit 0 and its divisor at `+6`.
+            let rec = game_anchors::u32_at(ram, n + 0x4C);
+            let frames = game_anchors::u16_at(ram, rec + 2);
+            let gated = game_anchors::u8_at(ram, rec + 1) & 1 != 0;
+            let div = game_anchors::u8_at(ram, rec + 6);
+            let per_frame = legaia_engine_vm::actor_tick::clip_step(rate as u16, gated, div);
+            let cursor = rewind_clip_cursor(
+                game_anchors::i16_at(ram, n + 0x68),
+                flags,
+                frames,
+                per_frame.saturating_mul(lag_frames),
+            );
+            (1..0x100).contains(&clip).then_some(ObjectClipSeed {
                 record,
                 clip: clip as u8,
-                cursor: game_anchors::i16_at(ram, n + 0x68),
-                flags: game_anchors::u16_at(ram, n + 0x62),
-                rate: game_anchors::i16_at(ram, n + 0x6A),
+                cursor,
+                flags,
+                rate,
             })
         })
         .collect()
+}
+
+/// A clip cursor `back` units before the capture, as the anim tick
+/// (`FUN_800204F8`) would have stood it: a held clip (`+0x62 & 2`) does not
+/// move; otherwise it steps against its direction (`& 0x80` reverses), and
+/// a cursor taken past the start clamps to it for a one-shot clip
+/// (`& 8`) and wraps by the clip's span (`frames * 16`) for a looping one.
+/// `nilboa`'s Noa loops her clip `45` (eight frames at `8` a game frame) and
+/// the state holds cursor `48` on a step-`2` frame: the displayed frame is
+/// two game frames back, at `32`, and her arms are down there where the
+/// RAM's `48` has them raised.
+pub fn rewind_clip_cursor(cursor: i16, flags: u16, frames: u16, back: u16) -> i16 {
+    use legaia_engine_scene::field_env::{ANIM_CLAMP, ANIM_HOLD, ANIM_REVERSE};
+    if flags & ANIM_HOLD != 0 || back == 0 || frames == 0 {
+        return cursor;
+    }
+    let span = i32::from(frames) * 16;
+    let back = i32::from(back);
+    let c = i32::from(cursor);
+    let c = if flags & ANIM_REVERSE == 0 {
+        c - back
+    } else {
+        c + back
+    };
+    let c = if flags & ANIM_CLAMP != 0 {
+        c.clamp(0, span - 1)
+    } else {
+        c.rem_euclid(span)
+    };
+    c as i16
 }
 
 /// Every placement the ambient motion VM is walking or turning

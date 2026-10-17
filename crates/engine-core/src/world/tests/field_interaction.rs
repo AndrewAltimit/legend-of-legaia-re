@@ -1364,3 +1364,37 @@ fn dialogue_owns_input_covers_both_channels() {
     });
     assert!(w.dialogue_owns_input(), "the simplified request counts too");
 }
+
+/// The capture seed's clip word lands on a placement's actor too - the
+/// per-slot cursor a record's `A2 <id> <clip>` bound, found by the channel
+/// whose script id is the retail record - and only while that slot plays the
+/// seeded clip.
+#[test]
+fn an_object_clip_seed_lands_on_a_placement_actor_on_that_clip() {
+    use legaia_engine_field::field_channels::FieldChannel;
+    use legaia_engine_vm::field::FieldCtx;
+    let mut w = World::new();
+    w.field_vm.channels = vec![FieldChannel {
+        placement_index: 23,
+        ctx: FieldCtx {
+            script_id: 49,
+            ..FieldCtx::default()
+        },
+        record_offset: 0,
+        pc: 0,
+        done: false,
+        object_bind: false,
+    }];
+    w.npcs.clip_cursors.insert(
+        23,
+        legaia_engine_scene::field_env::PropAnim::cross_context(45, 8),
+    );
+    w.seed_object_prop_clip(49, 45, 32, 0x15, 8);
+    let c = w.npcs.clip_cursors[&23];
+    assert_eq!((c.cursor, c.flags, c.rate), (32, 0x15, 8));
+    w.seed_object_prop_clip(49, 44, 96, 0x15, 8);
+    assert_eq!(
+        w.npcs.clip_cursors[&23].cursor, 32,
+        "another clip is left alone"
+    );
+}

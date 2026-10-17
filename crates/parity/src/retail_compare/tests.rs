@@ -209,3 +209,18 @@ fn cell_fx_and_fog_seeds_round_trip_through_their_env_forms() {
     assert_eq!(vram_rects_from_file(&vram_rects_file(&rects)), rects);
     assert!(fog_from_env("1,2,3").is_empty());
 }
+
+/// A clip cursor is taken back by the display lag the way the anim tick
+/// would have stood it: Noa's looping eight-frame clip at `48`, two game
+/// frames of `8` back, shows `32`; a loop wraps by its span, a one-shot
+/// clamps at the start, a held clip and a reversed one keep their rules.
+#[test]
+fn a_clip_cursor_rewinds_to_the_displayed_frame() {
+    use legaia_engine_scene::field_env::{ANIM_CLAMP, ANIM_HOLD, ANIM_REVERSE};
+    assert_eq!(rewind_clip_cursor(48, 0x15, 8, 16), 32);
+    assert_eq!(rewind_clip_cursor(8, 0x15, 8, 16), 120);
+    assert_eq!(rewind_clip_cursor(8, ANIM_CLAMP, 8, 16), 0);
+    assert_eq!(rewind_clip_cursor(48, ANIM_HOLD, 8, 16), 48);
+    assert_eq!(rewind_clip_cursor(48, ANIM_REVERSE, 8, 16), 64);
+    assert_eq!(rewind_clip_cursor(48, 0x15, 8, 0), 48);
+}

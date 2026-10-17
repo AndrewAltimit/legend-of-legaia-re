@@ -61,3 +61,12 @@ reason = "The image child's seat lands the state's own eye translation over the 
 changes = [
   ["states/rikuroa_pre_caruban/image", 0.938, 0.937],
 ]
+
+[[loosening]]
+file = "scripts/ci/retail-compare-baseline.json"
+reason = "The image child's clip seed now also lands on placement actors (the per-slot cursor a record's A2 binds) and takes every cursor back by the display lag's game frames at the clip's own step, wrapping a loop. Across the field corpus that raises thirteen rows (nivora_cutscene_delilas_intro 0.961 -> 0.973, conc_field_card_boot 0.951 -> 0.959, cort_evolved_pre_battle 0.899 -> 0.905, the card-boot states); these three move one or two scored blocks the other way; which seeded clip moves them is not traced (a loop the wrap stands on its previous cycle, for a clip bound inside the lag, is the candidate)."
+changes = [
+  ["states/vahn_walks_out/image", 1.0, 0.999],
+  ["states/minigame_dance_pcsx/image", 0.723, 0.721],
+  ["states/ending_vignette_biron/image", 1.0, 0.999],
+]

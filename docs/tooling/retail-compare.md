@@ -415,7 +415,16 @@ engine verdict:
   `LEGAIA_SEAT_OBJECT_CLIPS`), written over the matching prop's own on the
   frame the child captures (`World::seed_object_prop_clip`). A prop the
   engine holds on another clip is left alone, so the seed never re-binds
-  what the engine's own spawn or script chose.
+  what the engine's own spawn or script chose. A placement's actor takes the
+  same word on the per-slot cursor its record's `A2 <id> <clip>` bound (the
+  channel whose script id is the record), under the same rule, and every
+  cursor is the displayed frame's: the RAM's taken back by the display lag's
+  game frames at the clip's own step (`rewind_clip_cursor`), wrapping a loop
+  and clamping a one-shot. `nivora_cutscene_delilas_intro` is the case: Noa
+  loops clip `45` while her line is up, from the scene bank's record `44`
+  (byte-identical to the clip retail's `+0x4C` points at, so the bank is
+  not what parted the frames), and the state holds cursor `48` on a
+  step-`2` frame. Her arms are raised there and down at the displayed `32`.
 
   So is an ending vignette's photo panel. The vignette record grabs the
   drawn frame into `(512, 0)` (`43 12`) and shows it through the image
