@@ -340,7 +340,7 @@ pub struct BattleState {
     /// are wired: Attack strikes; Arts opens the per-press
     /// [`crate::world::BattleState::arts_input`] (the saved-chain
     /// [`crate::world::BattleState::arts_menu`] is the legacy path, behind
-    /// `LEGAIA_ARTS_SAVED_LIST=1`); Magic / Item open
+    /// `WorldToggles::arts_saved_list`); Magic / Item open
     /// [`crate::world::BattleState::spell_menu`] / [`crate::world::BattleState::item_menu`].
     pub player_driven: bool,
     /// Active command-selection session for the player-driven battle. `Some`
@@ -379,7 +379,7 @@ pub struct BattleState {
     /// party member is entering commands / reviewing / picking the Begin
     /// target; the action SM and [`crate::world::BattleState::command`] are parked
     /// meanwhile. The saved-chain list ([`crate::world::BattleState::arts_menu`]) is the
-    /// legacy path, kept reachable via `LEGAIA_ARTS_SAVED_LIST=1`.
+    /// legacy path, kept reachable via `WorldToggles::arts_saved_list`.
     pub arts_input: Option<legaia_engine_battle::arts_command_input::ArtsCommandInputSession>,
     /// Per-party-slot **swing costs** for the Arts command gauge: the four
     /// `+0x74` AP prices (Left / Right / Down / Up = runtime action slots

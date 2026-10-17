@@ -79,6 +79,7 @@ impl<S: AudioSink> BootSession<S> {
         };
         #[allow(unused_mut)]
         let mut session = Self::from_host(host, scus.as_deref(), cfg, open_audio)?;
+        apply_env_world_toggles(&mut session.host.world.toggles);
         // Demux + decode the arts-voice shout banks (XA2/XA4/XA6) and the
         // SCUS cue tables. Disc-image boots only (channel demux needs the
         // raw CD-XA subheaders). Best-effort - an absent bank leaves arts
@@ -103,6 +104,33 @@ impl<S: AudioSink> BootSession<S> {
             }
         }
         Ok(session)
+    }
+}
+
+/// `LEGAIA_BATTLE_FRAME_CADENCE`: set and not `0`.
+pub fn env_battle_frame_cadence() -> bool {
+    std::env::var_os("LEGAIA_BATTLE_FRAME_CADENCE").is_some_and(|v| v != "0")
+}
+
+/// `LEGAIA_ARTS_SAVED_LIST`: set at all.
+pub fn env_arts_saved_list() -> bool {
+    std::env::var_os("LEGAIA_ARTS_SAVED_LIST").is_some()
+}
+
+/// Raise the gameplay switches a native session takes from the process
+/// environment. The engine itself reads no environment for a gameplay
+/// switch (a `wasm32` build has none, so a switch read there could never be
+/// thrown in the browser); this is the native host's half, and the play
+/// page's twins are `set_battle_frame_cadence` / `set_arts_saved_list`.
+/// Every native session open applies it, so a corpus run's child processes
+/// inherit the switch. Only raises - an unset variable leaves the toggle as
+/// the world built it.
+pub fn apply_env_world_toggles(toggles: &mut legaia_engine_core::world::WorldToggles) {
+    if env_battle_frame_cadence() {
+        toggles.battle_sm_frame_cadence = true;
+    }
+    if env_arts_saved_list() {
+        toggles.arts_saved_list = true;
     }
 }
 

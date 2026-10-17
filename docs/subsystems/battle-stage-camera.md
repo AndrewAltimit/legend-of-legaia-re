@@ -1145,7 +1145,7 @@ captures hold.
 
 The engine runs the SM every vsync by default, with timers draining by one.
 Retail's cadence is in place behind `WorldToggles::battle_sm_frame_cadence`
-(`World::battle_sm_pass_due`, `LEGAIA_BATTLE_FRAME_CADENCE=1`). It runs the
+(`World::battle_sm_pass_due`; a native session raises it from `LEGAIA_BATTLE_FRAME_CADENCE=1`, the play page from its "Retail battle cadence" box). It runs the
 pass and the separation pass on the first tick of each `BattleFrameClock`
 frame with `frame_dt` the step, and these follow it:
 

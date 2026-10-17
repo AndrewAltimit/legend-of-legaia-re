@@ -432,6 +432,10 @@
             <input type="checkbox" id="play-ground-fog" checked> Ground fog
           </label>
           <label class="play-dev-menu"
+                 title="Scene-entry pulse: the rolling vertex-morph envelope over the morph packs retail never arms at entry (the Juggernaut's flesh ground in Rim Elm). On by default, as on the native window; untick for the native --no-entry-pulse, which draws those scenes static as retail does. Takes effect at the next scene entry; Retail-faithful holds it off.">
+            <input type="checkbox" id="play-entry-pulse" checked> Entry pulse
+          </label>
+          <label class="play-dev-menu"
                  title="Retail-faithful for this session (the native --retail): every enhancement off - enhanced lighting and its shadows, ground fog, see-through walls, the scene-entry pulse - and every engine-only option pinned to retail (camera distance, 8-way movement, no flash slew, retail tile windows). Nothing is stored; untick to get your own settings back.">
             <input type="checkbox" id="play-retail-mode"> Retail-faithful
           </label>
@@ -464,6 +468,14 @@
             <label class="play-dev-menu"
                    title="Debug: outline every battle effect sprite so a spawn stays visible when its texture is not resident (the native window's LEGAIA_DIAG_FX). Retail draws no outline.">
               <input type="checkbox" id="play-fx-outline"> Effect outlines
+            </label>
+            <label class="play-dev-menu"
+                   title="Run the battle action state machine once per battle frame, retail's cadence, instead of once per vsync (the native LEGAIA_BATTLE_FRAME_CADENCE=1). The faithful model, staged off on both hosts while the comparison drives are re-tuned.">
+              <input type="checkbox" id="play-battle-frame-cadence"> Retail battle cadence
+            </label>
+            <label class="play-dev-menu"
+                   title="The Arts command opens the port's saved-chain list instead of retail's per-press directional input (the native LEGAIA_ARTS_SAVED_LIST=1). Not retail; Retail-faithful holds it off.">
+              <input type="checkbox" id="play-arts-saved-list"> Saved-chain Arts list
             </label>
             <label title="Walk straight into a minigame from this scene, through the same door warp a casino or arena door arms (the native O / B / M / K keys). Start leaves it.">
               Minigame
@@ -2202,6 +2214,9 @@
   const markersEl = document.getElementById('play-world-map-markers');
   const smartEl = document.getElementById('play-smart-monsters');
   const fxOutlineEl = document.getElementById('play-fx-outline');
+  const entryPulseEl = document.getElementById('play-entry-pulse');
+  const cadenceEl = document.getElementById('play-battle-frame-cadence');
+  const savedListEl = document.getElementById('play-arts-saved-list');
   function rtCall(name, ...args) {
     const rt = window.__playRuntime;
     if (!rt || typeof rt[name] !== 'function') return undefined;
@@ -2219,6 +2234,9 @@
     rtCall('set_smart_monsters', !!smartEl.checked);
     rtCall('set_world_map_markers', !!markersEl.checked);
     rtCall('set_battle_fx_outline', !!fxOutlineEl.checked);
+    rtCall('set_entry_pulse', !!entryPulseEl.checked);
+    rtCall('set_battle_frame_cadence', !!cadenceEl.checked);
+    rtCall('set_arts_saved_list', !!savedListEl.checked);
     rtCall('set_retail_mode', !!retailModeEl.checked);
   }
   let retailSaved = null;
@@ -2257,6 +2275,9 @@
   markersEl.addEventListener('change', () => { rtCall('set_world_map_markers', !!markersEl.checked); canvas.focus(); });
   smartEl.addEventListener('change', () => { rtCall('set_smart_monsters', !!smartEl.checked); canvas.focus(); });
   fxOutlineEl.addEventListener('change', () => { rtCall('set_battle_fx_outline', !!fxOutlineEl.checked); canvas.focus(); });
+  entryPulseEl.addEventListener('change', () => { rtCall('set_entry_pulse', !!entryPulseEl.checked); canvas.focus(); });
+  cadenceEl.addEventListener('change', () => { rtCall('set_battle_frame_cadence', !!cadenceEl.checked); canvas.focus(); });
+  savedListEl.addEventListener('change', () => { rtCall('set_arts_saved_list', !!savedListEl.checked); canvas.focus(); });
   window.__playSyncPageToggles = syncPageToggles;
   window.__playApplyPageToggles = applyPageToggles;
 

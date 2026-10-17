@@ -298,7 +298,7 @@ impl RetailBattle {
         // Only on the SM's retail cadence: on the per-vsync cadence the
         // seed's arm is never walked, so the heading it subtracts reaches no
         // frame and the seat keeps the engine's.
-        if legaia_engine_core::world::WorldToggles::new().battle_sm_frame_cadence
+        if legaia_engine_session::native::env_battle_frame_cadence()
             && matches!(self.seed_plan(), SeedPlan::Action { .. })
             && self.action_state <= 0x14
             && let Some(a) = spent.get_mut(usize::from(engine_seat(

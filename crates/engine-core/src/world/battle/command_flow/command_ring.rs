@@ -218,11 +218,10 @@ impl World {
             Some(Resolution::OpenArtsMenu) => {
                 // Player picked Arts: open the retail-model per-press command
                 // input (`FUN_801D0748` state 0x50). The legacy saved-chain
-                // list stays reachable behind `LEGAIA_ARTS_SAVED_LIST=1`
-                // (`var_os` is a clean `None` on wasm, so the browser always
-                // takes the retail path).
+                // list stays reachable behind `WorldToggles::arts_saved_list`,
+                // which both hosts can raise.
                 self.battle_ctx.active_actor = session.actor;
-                if std::env::var_os("LEGAIA_ARTS_SAVED_LIST").is_some() {
+                if self.toggles.arts_saved_list {
                     let rows = self.build_battle_arts_rows(session.actor);
                     self.battle.arts_menu =
                         Some(legaia_engine_battle::battle_arts::BattleArtsSession::new(
