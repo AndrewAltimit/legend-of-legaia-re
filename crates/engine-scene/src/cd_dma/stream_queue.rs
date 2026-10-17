@@ -8,7 +8,8 @@ use super::*;
 
 /// One entry in the boot-time async streaming load queue built by
 /// [`StreamLoadQueue::enqueue`]. Retail stores an 8-byte descriptor at
-/// `gp+0x1A8 + n*8`: `[u32 prot_idx][u32 byte_offset]`.
+/// `*(gp+0x1A8) + n*8`: `[u32 prot_idx][u32 byte_offset]`. `gp+0x1A8` holds
+/// the table's *pointer* (`lw a0,0x1a8(gp)` at `0x8003DE34`), not the table.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct StreamLoadDescriptor {
     /// PROT entry index queued (retail `desc[0]`, `gp+0x1A8 + n*8 + 0`).
@@ -25,12 +26,19 @@ pub struct StreamLoadDescriptor {
 /// retail routine brackets each append with; hardware side-band, not
 /// modelled here)
 ///
-/// NOT WIRED: nothing enqueues. The queue is fed by the CD-DMA host, and the
-/// only implementor of [`CdDmaHost`] outside this file's tests is
-/// [`ProtCdDmaHost`], which no host crate constructs - every engine host
-/// resolves assets through `Scene` / `SceneAssets` synchronously instead of
-/// through a streaming queue. A host that owns a [`ProtCdDmaHost`] across
-/// frames is the prerequisite. See `docs/tooling/reach-triage.md`.
+/// REPLACED-BY: `crate::scene::ProtIndex` whole-entry reads, through
+/// `Scene` / `SceneAssets` - each load names its PROT entries and reads each
+/// one whole and synchronously, so there is no contiguous multi-entry read
+/// plan to accumulate and no destination cursor to advance.
+///
+/// What the queue computes in retail is a contiguous multi-entry read plan:
+/// which entries, and at what offset of the shared destination each payload
+/// lands (the running cursor). Both halves are discharged by construction in
+/// the port: no read spans entries, and every entry gets its own buffer. This is the same replacement the
+/// rest of this module carries ([`CdDmaHost::prot_one_shot_load`] and the
+/// [`ProtCdDmaHost`] primitives), and [`ProtCdDmaHost`] - the only
+/// non-test implementor of the host that would feed this queue - is
+/// constructed only in tests. See `docs/tooling/reach-triage.md`.
 ///
 /// Retail `FUN_8003DDA0(idx)` appends a load descriptor for PROT entry
 /// `idx` to the queue and advances a running byte cursor by the entry's
@@ -46,7 +54,7 @@ pub struct StreamLoadDescriptor {
 ///   n            = gp+0x8BC                      // queued-entry count
 ///   cursor       = gp+0x984                      // running byte cursor
 ///   gp+0x91C     = 0x78                          // read-wait timeout
-///   desc         = gp+0x1A8 + n*8
+///   desc         = *(gp+0x1A8) + n*8             // table pointer, not inline
 ///   desc[0]      = idx
 ///   desc[1]      = cursor
 ///   gp+0x984     = cursor + (size_sectors << 11) // advance by size*2048
@@ -64,8 +72,8 @@ pub struct StreamLoadDescriptor {
 /// Sony bytes live here. `ghidra/scripts/funcs/8003dda0.txt` is the spec.
 #[derive(Debug, Clone, Default)]
 pub struct StreamLoadQueue {
-    /// The `gp+0x1A8` descriptor table; length is retail's queued-entry
-    /// count `gp+0x8BC`.
+    /// The descriptor table `gp+0x1A8` points at; length is retail's
+    /// queued-entry count `gp+0x8BC`.
     entries: Vec<StreamLoadDescriptor>,
     /// Running byte cursor `gp+0x984` - total bytes queued so far.
     byte_cursor: u32,

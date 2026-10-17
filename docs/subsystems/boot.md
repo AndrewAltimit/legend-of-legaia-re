@@ -660,15 +660,15 @@ enqueue below):
 
 - **`FUN_8003DDA0`** - index-based streaming **enqueue**. Reads the in-RAM TOC:
   `start = toc[idx+2]`, `size_sectors = toc[idx+3] - toc[idx+2]`. It appends an
-  8-byte `(idx, byte_offset)` descriptor to the queue table at
-  `gp+0x1A8 + count*8`, bumps the queued-entry count `gp+0x8BC`, and advances the
+  8-byte `(idx, byte_offset)` descriptor to the queue table that `gp+0x1A8`
+  points at (`*(gp+0x1A8) + count*8`; the word is loaded at `0x8003DE34`), bumps the queued-entry count `gp+0x8BC`, and advances the
   running byte cursor `gp+0x984` by `size_sectors << 11`. Each append is
   bracketed by the XA-control toggles `FUN_8003EE7C` / `FUN_8003DE7C` /
   `FUN_8003ED04`. `see ghidra/scripts/funcs/8003dda0.txt`. Port:
   `cd_dma::StreamLoadQueue` (descriptor table + cursor arithmetic; the XA
-  toggles are left to the hardware side-band). It is tagged `NOT WIRED`: every
-  engine host resolves assets synchronously through `Scene` / `SceneAssets`, so
-  nothing enqueues.
+  toggles are left to the hardware side-band). It carries `REPLACED-BY:`: every
+  engine host reads each PROT entry whole and synchronously through `Scene` /
+  `SceneAssets`, so there is no multi-entry read plan to accumulate.
 - **`FUN_8003DAA8`** - the load-kick / completion driver the queue drains
   through. Reads the in-progress flag `_DAT_8007B876 & 1`, converts the pending
   LBA (`gp+0x97C`) to BCD-MSF via `FUN_8005C42C`, issues the drive read
