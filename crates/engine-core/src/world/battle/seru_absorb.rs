@@ -106,9 +106,12 @@ impl World {
             } else {
                 0
             };
-        if self.next_rand() % 100 >= chance {
+        let roll = self.next_rand() % 100;
+        // The retail-compare seed's landed roll (`forced_absorb`).
+        if roll >= chance && !std::mem::take(&mut self.battle.forced_absorb) {
             return false;
         }
+        self.battle.forced_absorb = false;
         // `FUN_801E91E8` keys its gates and its list off the ACTING slot
         // (`ctx[+0x13]`), which on the arts path is the attacker.
         let acting = self.battle_ctx.active_actor;

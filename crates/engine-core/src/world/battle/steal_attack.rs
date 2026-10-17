@@ -75,7 +75,18 @@ impl World {
             .and_then(|e| self.party.inventory.get(&e.item_id).copied())
             .unwrap_or(0);
         let mut band = self.battle.steal;
-        let spoils = bs::resolve_death_spoils(&mut band, m, &inputs, || self.next_rand(), |_| held);
+        let forced = std::mem::take(&mut self.battle.forced_steal);
+        let spoils = bs::resolve_death_spoils(
+            &mut band,
+            m,
+            &inputs,
+            || {
+                let r = self.next_rand();
+                // The retail-compare seed's landed roll (`forced_steal`).
+                if forced { 0 } else { r }
+            },
+            |_| held,
+        );
         self.battle.steal = band;
         self.raise_death_spoils(spoils);
     }

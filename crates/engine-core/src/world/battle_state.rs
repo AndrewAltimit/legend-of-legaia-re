@@ -428,6 +428,17 @@ pub struct BattleState {
     /// standing,
     /// instead of on a fresh roll. `None` on every ordinary fight.
     pub forced_monster_target: Option<u8>,
+    /// A debug seed that makes the next party killing blow's steal roll
+    /// land - the retail comparison corpus's way into a capture that shows
+    /// the death-spoils caption: the capture holds the outcome of a
+    /// `rand() % 100` the replay's stream does not share. The roll still
+    /// draws, so the stream advances as retail's did. `false` on every
+    /// ordinary fight; consumed (taken) by the roll.
+    pub forced_steal: bool,
+    /// The same seed for a capture whose kill absorbed a Seru (`ctx[+0x269]`
+    /// staged): the next party killing blow's absorb roll lands. Drawn and
+    /// consumed like [`Self::forced_steal`].
+    pub forced_absorb: bool,
     /// The commit log's launch glide - retail's `0x35 + i` clones gliding the
     /// log off the left edge when the member leaves the ring for a sub-screen
     /// and back when they return
@@ -890,6 +901,8 @@ impl BattleState {
             inflight_seed: None,
             forced_monster_cast: None,
             forced_monster_target: None,
+            forced_steal: false,
+            forced_absorb: false,
             commit_log_launch: None,
             action_plaque_glide: None,
             target_plaque_glide: None,

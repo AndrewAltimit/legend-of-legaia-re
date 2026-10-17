@@ -739,6 +739,24 @@ impl BattleDrive {
         {
             seed_entered_arrows(world, seat, &queue);
         }
+        // A capture showing the steal caption holds a landed `rand() % 100`
+        // the replay's stream does not share: the outcome is the capture's,
+        // so it is seeded rather than searched for across streams (a search
+        // let any change to the swing's draws decide whether the phase was
+        // reachable at all).
+        if let Self::Action { seat, steer, .. } = *self
+            && seat < 3
+            && steer.spoils
+        {
+            world.battle.forced_steal = true;
+        }
+        // Likewise the absorb roll of a capture whose kill took a Seru.
+        if let Self::Action { seat, absorbed, .. } = *self
+            && seat < 3
+            && absorbed != 0
+        {
+            world.battle.forced_absorb = true;
+        }
         if let Self::Action { seat, absorbed, .. } = *self
             && absorbed != 0
             && seat < 3

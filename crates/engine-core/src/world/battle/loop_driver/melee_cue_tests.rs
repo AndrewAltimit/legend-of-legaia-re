@@ -546,3 +546,19 @@ fn an_attacker_playing_an_art_bank_clip_is_silent() {
     w.land_melee_hit(0, 1, BASIC_ATTACK_COMMAND, 0, false, true);
     assert!(w.take_sfx_ring_ops().is_empty());
 }
+
+/// The retail-compare seed `forced_absorb` lands the next absorb roll a
+/// capture already shows landed, whatever the replay's stream draws, and
+/// is spent by it.
+#[test]
+fn a_forced_absorb_lands_once() {
+    let mut w = absorb_duel();
+    let id = w.actors[1].battle_monster_id.unwrap();
+    let mut def = w.tables.monster_catalog.get(id).unwrap().clone();
+    def.absorb_chance_pct = 0;
+    w.tables.monster_catalog.insert(def);
+    assert!(!w.roll_seru_absorb(0, 1), "a 0% roll never lands");
+    w.battle.forced_absorb = true;
+    assert!(w.roll_seru_absorb(0, 1), "the seed lands it");
+    assert!(!w.battle.forced_absorb, "and is spent");
+}
