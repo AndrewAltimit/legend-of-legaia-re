@@ -231,6 +231,26 @@ impl World {
         }
     }
 
+    /// PROT 0915's (Mushura) arms 0 and 1 show the latched victim on every
+    /// pass (`sb zero,0x21C` / `sw 0x20080200,0x4` at `0x801F6BB8` /
+    /// `0x801F6CB8`): the band's freeze hid it, and the opening framings are
+    /// on it. The engine's shown word is its resting `0` under a lowered
+    /// flag.
+    pub(in crate::world::battle::cast_band) fn apply_mushura_writes(
+        &mut self,
+        phase_in: u8,
+        victim_slot: u8,
+    ) {
+        if phase_in > 1 {
+            return;
+        }
+        let victim = self.casting.module_cam.victim_slot.unwrap_or(victim_slot);
+        if let Some(a) = self.actors.get_mut(usize::from(victim)) {
+            a.battle.render_flag = 0;
+            a.battle.render_color = 0;
+        }
+    }
+
     /// The engine slots of the seated monsters with HP left.
     fn living_monster_slots(&self) -> Vec<usize> {
         let pc = usize::from(self.party.party_count);

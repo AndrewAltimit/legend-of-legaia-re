@@ -1222,6 +1222,9 @@ impl World {
             if entry == 930 {
                 self.apply_horn_writes(phase_in, ctx.phase != phase_in, seat_slot);
             }
+            if entry == 915 {
+                self.apply_mushura_writes(phase_in, victim_slot);
+            }
             self.apply_summon_pre_hits(
                 entry,
                 phase_in,

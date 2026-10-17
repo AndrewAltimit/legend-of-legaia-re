@@ -2197,7 +2197,13 @@ point and TR z scale (the origin at unit scale). The records only a module's
 own stager seats (reached through a part's op-`0x20` call, which the engine
 does not run for these modules) are seated whole on the stager's first tick.
 
-Horn's seat visibility is carried (`World::apply_horn_writes`): arm 1 shows
+Palma's arm 1 holds on the band timer: retail's arm returns busy on the
+stream request's token `ctx[+0x276]` past most of the sustain
+(`palma_summon_mid_cast` sits there with the timer at 94), and the engine's
+resident stream would otherwise run the arm-3 / 4 sweep a sustain early.
+Mushura's arms 0 and 1 show the latched victim the band's freeze hid
+(`World::apply_mushura_writes`). Horn's seat visibility is carried
+(`World::apply_horn_writes`): arm 1 shows
 the party, arm 3 seats the creature hidden and arm 4 shows it, arm 8 hides
 the party for the rise, and the heal arm `0xA` shows it again and hides the
 creature. Otherwise not carried by any of them: the writes to the other

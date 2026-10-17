@@ -1190,6 +1190,7 @@ impl ModuleProfile {
 /// takes; the engine's stream is resident, so the arm passes at once. A
 /// capture taken on the arm is placed by the arm alone
 /// (`legaia_engine_capture`'s phase gate).
+///
 pub const fn stream_poll_arm(prot_entry: u32) -> Option<u8> {
     match prot_entry {
         910 | 913 => Some(2),
