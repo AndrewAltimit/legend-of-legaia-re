@@ -114,6 +114,12 @@ pub(super) struct Milestone {
     /// anchor does seed, so it starts from the story state the run had.
     #[serde(default = "yes")]
     pub(super) seeds_next: bool,
+    /// The milestone's scene commits a fight as the party arrives (its entry
+    /// record runs `3E FF` before the pad comes back): route knowledge the
+    /// continuous hand walks in ready for, as a player who has read ahead
+    /// does (`continuous::FIGHT_ON_ARRIVAL`).
+    #[serde(default)]
+    pub(super) arrival_fight: bool,
 }
 
 pub(super) fn yes() -> bool {

@@ -301,10 +301,14 @@ one upkeep pass, in this order:
    restoratives it would otherwise carry in.
 
 **At a waypoint** the hand plays the waypoint's story, not this upkeep -
-except that a party walking in with fewer heals than three a member stocks
-up and rests first. `retock`'s beats lead straight into the `jagaroom`
-fight (13245 HP); a party that arrived there with no heal, next to no MP
-and 36000 gold lost it six times.
+except that a party walking in with under half its stock of heals (fewer
+than seven a member) stocks up and rests first. `retock`'s beats lead
+straight into the `jagaroom` fight (13245 HP); a party that arrived there
+with no heal, next to no MP and 36000 gold lost it six times. `son` is the
+dock the boat lands at on the way to `taiku`, the last counter before Zora
+(F9, 22422 HP, a party-wide breath every other round): a party that passed
+it with eight Healing Flowers and 52000 gold fought Zora out of an empty bag
+and lost three times in four.
 
 A talk or a stay that carries the party out of the scene (`dolk2`'s inn
 plays Noa's dream and brings it back) leaves the rest of the pass for the
@@ -361,7 +365,11 @@ caster spends only the MP above three fifths of its pool there - the line
 the bag tops MP up to before a staged fight, so a cast on the road is never
 paid for with a Magic Fruit at the boss's door - and all of it once the bag
 holds no restorative: the run met Koru (`nilboa`) with an empty bag, two
-members near death and every Spoon unspent. A rest is taken for low MP as
+members near death and every Spoon unspent. On the way to a boss an empty
+bag's MP is the boss's, except when a member is under a quarter of its HP:
+the Delilas duels hand `nivora_late` a party with Noa at 1 HP and no bed in
+`nilboa`, and a hand that kept the MP lost Koru's race five times running
+with her down from the first round. A rest is taken for low MP as
 well as low HP (the lower of the two gauges reads against the line): a run
 that reached Nivora's duels with Gala at 54 of 346 MP lost Che's on every
 stream. Before a staged fight it wears what the last chest
@@ -638,7 +646,9 @@ reload of it seated the party on the epilogue's walk-on band
 so the run keeps the save it already had, and a wipe after it reloads that
 earlier save and plays the stretches between again, each as itself, with
 the failing stretch's attempts carried over. The scene is remembered as one
-whose door leads to a boss, and a hop into it goes through ready
+whose door leads to a boss - and the spine marks the one it knows of
+(`arrival_fight = true` on `cort_chamber`), route knowledge like the
+waypoints, so the first visit is ready too - and a hop into it goes through ready
 (`pad_ready`: the last chest's gear on, a rest close by), and then full on
 HP and MP from the bag, since the fight starts as the door lands.
 

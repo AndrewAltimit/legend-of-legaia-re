@@ -128,11 +128,16 @@ enum Want {
     Stack { row: usize, qty: u8 },
 }
 
-/// Does the bag hold fewer HP restoratives than the [`HEAL_RESERVE`] the
-/// hand keeps for each present member (an errand's item aside)?
-pub(super) fn bag_short_of_heals(session: &NativeSession) -> bool {
+/// Does the bag hold fewer HP restoratives than half the [`HEAL_STOCK`] the
+/// hand keeps for each present member? What a waypoint stocks up on: its
+/// counter can be the last before the stretch's boss. `son` is the dock the
+/// boat lands at on the way to `taiku`, and a run that passed through it
+/// with eight Healing Flowers and 52000 gold fought Zora (F9, 22422 HP,
+/// a party-wide breath every other round) out of an empty bag and lost
+/// three times in four.
+pub(super) fn bag_under_half_stock(session: &NativeSession) -> bool {
     let w = &session.host.world;
-    heals_held(w) < HEAL_RESERVE * w.present_party_list().len().clamp(1, 3) as u32
+    heals_held(w) < u32::from(HEAL_STOCK) / 2 * w.present_party_list().len().clamp(1, 3) as u32
 }
 
 /// The HP restoratives in the bag, an errand's item aside.

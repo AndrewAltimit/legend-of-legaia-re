@@ -364,7 +364,18 @@ fn part_c_continuous_run() {
 
     let opts = live_opts(true);
     PLAYS_ON.with(|p| p.set(true));
-    FIGHT_ON_ARRIVAL.with(|f| f.borrow_mut().clear());
+    // The spine's own word for the scenes whose arrival commits a fight;
+    // the run adds any it meets that way ([`FIGHT_ON_ARRIVAL`]).
+    FIGHT_ON_ARRIVAL.with(|f| {
+        let mut f = f.borrow_mut();
+        f.clear();
+        f.extend(
+            spine
+                .iter()
+                .filter(|m| m.arrival_fight)
+                .map(|m| m.scene.clone()),
+        );
+    });
     reset_shopping();
     let mut session = open_session(&inp.extracted);
     // `LEGAIA_FGL_CONTINUOUS_FROM=<milestone>` starts the run at a later

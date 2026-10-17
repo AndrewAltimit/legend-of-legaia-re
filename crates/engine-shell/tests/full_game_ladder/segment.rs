@@ -199,12 +199,14 @@ pub(super) fn traverse(
         if let Some(w) = vias.get(via)
             && *w == cur
         {
-            // A continuous hand that walks into a waypoint with next to
-            // nothing in the bag stocks up before the waypoint's story, as
-            // a player does: `retock`'s beats lead straight into the
-            // `jagaroom` fight (13245 HP), and a party that arrived with no
-            // heal and 36000 gold lost it six times.
-            if upkeep && session.host.world.mode == SceneMode::Field && bag_short_of_heals(session)
+            // A continuous hand that walks into a waypoint with a thin bag
+            // stocks up before the waypoint's story, as a player does:
+            // `retock`'s beats lead straight into the `jagaroom` fight (13245
+            // HP), and a party that arrived with no heal and 36000 gold lost
+            // it six times ([`bag_under_half_stock`]).
+            if upkeep
+                && session.host.world.mode == SceneMode::Field
+                && bag_under_half_stock(session)
             {
                 upkept += 1;
                 if let Some(s) =
