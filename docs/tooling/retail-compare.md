@@ -1322,6 +1322,14 @@ id queued at `+0x1DF`, or on the Done band it hands on to (`0x37` / `0x38`,
 **The seed.** The engine is handed that cast (`World::battle.inflight_seed`,
 target byte `+0x1DD`), dispatched the moment the first command prompt opens:
 
+- the target byte is the one the seed read, not always the capture's. The magic
+  band rewrites a group code in place once one combatant is left on that side:
+  `8` becomes the lone member's slot `ctx[+0x24A] - 1` (`0x801E431C`), `9` the
+  lone monster `ctx[+0x24B]` (`0x801E42D0`). The seed tests the byte once, and a
+  party-wide cast seeded on the slot opens the readout bar, which retail's seed
+  on `8` never does. So an all-allies spell whose byte reads the lone member's
+  slot is replayed on `8` (`seed_target_code`; `evolved_0x91_midcast`, Holy
+  Eyes from a lone Vahn). The `9` arm is replayed as read;
 - the capture's MP charge is credited back, so the band's own debit lands on the
   captured figure;
 - the seed carries every combatant's live `+0x34` / `+0x38` pair

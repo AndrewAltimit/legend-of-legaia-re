@@ -92,7 +92,7 @@ impl RetailBattle {
                 .collect(),
             active_actor,
             queued_action: active.map_or(0, |p| game_anchors::u8_at(ram, p + 0x1DF)),
-            target_code: active.map_or(0, |p| game_anchors::u8_at(ram, p + 0x1DD)),
+            target_code: active.map_or(0, |p| seed_target_code(ram, ctx, p)),
             queued_category: active.map_or(0, |p| game_anchors::u8_at(ram, p + 0x1DE)),
             summon_fade: summon_fade(ram),
             display_lag: display_lag_vsyncs(ram),
@@ -242,3 +242,39 @@ pub(super) const TIMED_MESSAGE_HOLD: u32 = 0x801F_6964;
 pub(super) const TIMED_MESSAGE_WORD: u32 = 0x8007_75B4;
 /// Record `0x51`'s content word, `0x80076C10 + 0x51 * 0x18 + 0x14`.
 pub(super) const TARGET_PLATE_WORD: u32 = 0x8007_73BC;
+
+/// The static spell table's records (`DAT_800754C8`, 12-byte stride); the
+/// target shape is the record's `+2` byte (`docs/formats/spell-table.md`).
+const SPELL_TABLE: u32 = 0x8007_54C8;
+/// Spell target shape bits: ally side, all on that side.
+const SHAPE_ALL_ALLIES: u8 = 0x22;
+
+/// The acting seat's target byte as its action **seed** read it.
+///
+/// The magic band rewrites a group code in place once a lone combatant is
+/// left on that side (`0x801E4298..0x801E4334`): `8` becomes
+/// `ctx[+0x24A] - 1` (`sb t2,0x1dd(s3)` at `0x801E431C`) and `9` becomes
+/// `ctx[+0x24B]` (`0x801E42D0`), the census's sole-survivor latches. A
+/// capture past that point holds the slot, while the replay starts at the
+/// seed, which tests the byte once: a party-wide cast seeded on the slot
+/// opens the target's readout bar, which retail's seed on `8` never does
+/// (`evolved_0x91_midcast`, Holy Eyes from a lone Vahn). So a Magic action
+/// whose spell is all-allies and whose byte is the lone member's slot is
+/// handed back as `8`. The `9` arm is left as read: no capture shows what
+/// an all-enemies replay on the code would change.
+pub(super) fn seed_target_code(ram: &[u8], ctx: u32, actor: u32) -> u8 {
+    let raw = game_anchors::u8_at(ram, actor + 0x1DD);
+    let magic = game_anchors::u8_at(ram, actor + 0x1DE)
+        == legaia_engine_battle_vm::battle_action::ActionCategory::Magic.as_byte();
+    if !magic {
+        return raw;
+    }
+    let spell = u32::from(game_anchors::u8_at(ram, actor + 0x1DF));
+    let shape = game_anchors::u8_at(ram, SPELL_TABLE + spell * 12 + 2);
+    let lone_party = game_anchors::u8_at(ram, ctx + 0x24A);
+    if shape & SHAPE_ALL_ALLIES == SHAPE_ALL_ALLIES && lone_party != 0 && raw == lone_party - 1 {
+        legaia_engine_battle_vm::battle_cue_group::TARGET_PARTY_WIDE
+    } else {
+        raw
+    }
+}
