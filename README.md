@@ -83,7 +83,6 @@ What is still rough:
 - **Parity is measured, not finished.** The [retail comparison corpus](docs/tooling/retail-compare.md) scores the port against retail save states - RAM, camera, and the frame on screen - and ranks where it still differs.
 - **Spell voices are silent.** A cast or summon module's own voice clip is resolved to its `XA` file and channel but not played; the arts shouts and battle stings are the voice clips you hear.
 - **Some sounds are the port's pick.** Where retail's sound-effect id for an event is untraced, the port plays the closest cue and labels it as its own choice ([details](docs/guides/playing-and-viewing.md#5-what-you-hear)).
-- **Native input is keyboard only.** The browser play page reads a gamepad; the native window does not.
 - **USA disc only for the port.** Other regions' discs extract, and an official PAL translation can be lifted into a USA language pack, but the engine and the patcher target `SCUS-94254`.
 - **Library APIs move.** The binaries and file formats are the surface to rely on; the Rust crate APIs change freely.
 - **Open questions remain** in the reverse engineering itself: [open threads](docs/reference/open-rev-eng-threads.md).

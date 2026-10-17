@@ -756,6 +756,14 @@ pub(super) struct PlayWindowApp {
     /// Presses since the last frame, so a key tapped between two redraws
     /// still reaches a tick (the browser page's `pulse` set).
     pub(super) pad_taps: legaia_engine_system::input::PadTapLatch,
+    /// The controller reader (`window::gamepad`); `None` in scripted and
+    /// headless runs, in a build without the `gamepad` feature, and when the
+    /// platform backend did not start.
+    pub(super) gamepad: Option<super::gamepad::GamepadHost>,
+    /// The folded controller word the last poll held, kept apart from the
+    /// keyboard's [`Self::pad`] so a released button never clears a bit a
+    /// key still holds; each tick sees the OR of the two.
+    pub(super) gamepad_held: u16,
     /// Input binding loaded from file (or default).
     pub(super) mapping: legaia_engine_system::input::Mapping,
     /// Physical keys currently held.

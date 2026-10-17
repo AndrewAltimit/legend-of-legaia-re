@@ -168,6 +168,8 @@ impl PlayWindowApp {
             menu_runtime: MenuRuntime::new(save_dir.to_path_buf()),
             prev_pad: 0,
             pad_taps: Default::default(),
+            gamepad: None,
+            gamepad_held: 0,
             tick_no: 0,
             screenshot,
             sweep_next_tick: 0,

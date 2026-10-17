@@ -98,8 +98,14 @@ cargo build --release
 (`Renderer::capture_rgba`) at `--screenshot-tick N` and writes a PNG, then exits -
 no `scrot` screen-scrape. `--pad-script "TICK:BUTTON,..."` injects one-tick pad
 edges keyed on the world-tick counter, replacing `xdotool` for menu navigation.
-A screenshot run ignores host keyboard, mouse and focus events, so a window
-that takes focus on a shared desktop captures the same frame every time.
+A screenshot run ignores host keyboard, mouse and focus events, and opens no
+gamepad, so a window that takes focus on a shared desktop captures the same
+frame every time.
+
+An interactive `play-window` reads every connected gamepad through gilrs
+(`window::gamepad`, default `gamepad` feature; Linux links libudev), folded
+through the shared `legaia_engine_system::gamepad` layout the browser pages
+use. `--no-default-features` builds a keyboard-only window.
 Pair with `mednafen-state vram-dump --display-crop` to diff engine output against
 retail framebuffers.
 

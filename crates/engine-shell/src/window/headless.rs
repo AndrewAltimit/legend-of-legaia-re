@@ -85,6 +85,27 @@ impl HeadlessPlayWindow {
         self.app.run_sim_ticks(ticks);
     }
 
+    /// Hold `word` (a PSX pad word) on the window's controller from the next
+    /// [`Self::controller_frame`] on, installing a scripted controller the
+    /// first time (`window::gamepad`). The frame reads it the way a redraw
+    /// reads a real controller: polled once ahead of the ticks, kept apart
+    /// from the keyboard's word, ORed into every tick.
+    pub fn set_controller(&mut self, word: u16) {
+        self.app
+            .gamepad
+            .get_or_insert_with(super::gamepad::GamepadHost::scripted)
+            .set_scripted(word);
+    }
+
+    /// One display frame with the keyboard holding `pad` and the controller
+    /// polled first, as the redraw orders them (`run_frame_ticks`).
+    pub fn controller_frame(&mut self, pad: u16, ticks: u32) {
+        self.app.pad = pad;
+        self.app.poll_gamepad();
+        self.app.run_sim_ticks(ticks);
+        self.prep();
+    }
+
     /// The frame's draw-path half alone: the steps after the ticks that move
     /// world state.
     pub fn prep(&mut self) {

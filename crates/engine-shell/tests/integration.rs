@@ -15,6 +15,7 @@ mod chapter1_hub_breadth_oracle;
 mod chapter1_hub_depth_oracle;
 mod chapter1_hub_sweep_oracle;
 mod chapter1_spine_oracle;
+mod controller_input;
 mod critical_path_replay;
 mod determinism_j2;
 mod dome_cast_band_ladder;

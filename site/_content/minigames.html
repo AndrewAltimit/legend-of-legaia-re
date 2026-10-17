@@ -1179,6 +1179,7 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
   let simLast = 0;
   function loop() {
     if (api) {
+      pollMgGamepad();
       const now = performance.now();
       let steps = 1;
       if (typeof api.drain_sim_steps === 'function') {
@@ -2319,7 +2320,8 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
    *
    * `legaiaPadKeysFor` closes the other half: the printed labels are derived
    * from the same table by `relabelControls`, so a rebind relabels the page. */
-  const btnOf = (e) => (window.legaiaPadButtonOf ? window.legaiaPadButtonOf(e.code) : '');
+  const btnOf = (e) => e.padButton
+    || (window.legaiaPadButtonOf ? window.legaiaPadButtonOf(e.code) : '');
   /* The three "pad" lanes the dance chart and the Baka exchange are played
    * on, and the fourth Baka move: the face buttons, in retail's own order. */
   const FACE_LANES = { Square: 1, Circle: 2, Triangle: 3, Cross: 4 };
@@ -2333,7 +2335,7 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
   const bakaCameoKey = (e) => BAKA_KEYS[e.code] === 0
     || (btnOf(e) === 'Triangle' && BAKA_KEYS[e.code] === undefined);
 
-  document.addEventListener('keydown', (e) => {
+  function onPadDown(e) {
     if (!api || e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
     const b = btnOf(e);
     const digit = /^Digit([1-9])$/.exec(e.code);
@@ -2430,9 +2432,9 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
       else if (b === 'Circle' || e.code === 'Escape' || e.code === 'Backspace') { e.preventDefault(); muscleKey('back'); }
       else if (b === 'Cross' || b === 'Start') { e.preventDefault(); muscleConfirm(); }
     }
-  });
+  }
 
-  document.addEventListener('keyup', (e) => {
+  function onPadUp(e) {
     if (active === 'baka' && bakaCameoKey(e)) bakaHeld &= ~0x10;
     if (active !== 'fishing') return;
     const b = btnOf(e);
@@ -2441,7 +2443,27 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
     else if (b === 'Left') fishHold &= ~0x8000;
     else if (b === 'Right') fishHold &= ~0x2000;
     else if (b === 'Down') fishHold &= ~0x4000;
+  }
+
+  document.addEventListener('keydown', onPadDown);
+  document.addEventListener('keyup', onPadUp);
+
+  /* A controller drives the same two handlers a key's button does: each
+   * press / release edge of a standard-mapped gamepad (the engine's layout,
+   * `legaia_engine_system::gamepad`, through `legaiaGamepadEdges`) arrives as
+   * an event naming its pad button, so every game here reads it exactly as
+   * it reads the button's bound key. Polled once per display frame, ahead of
+   * the frame's step. */
+  const GAMEPAD_EVENT = (button) => ({
+    padButton: button, code: 'Gamepad:' + button, repeat: false,
+    target: document.body, preventDefault() {},
   });
+  function pollMgGamepad() {
+    if (!window.legaiaGamepadEdges) return;
+    const { pressed, released } = window.legaiaGamepadEdges();
+    for (const b of released) onPadUp(GAMEPAD_EVENT(b));
+    for (const b of pressed) onPadDown(GAMEPAD_EVENT(b));
+  }
 
   /* Rewrite every printed control hint from the engine's binding table, so
    * the page cannot say "Square = A" while the engine binds `A` to Left.

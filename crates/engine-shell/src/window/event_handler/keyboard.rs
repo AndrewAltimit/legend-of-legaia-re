@@ -150,7 +150,7 @@ impl PlayWindowApp {
             if self.pad != prev
                 && let Some(log) = self.record_log.as_mut()
             {
-                log.record_transition(self.session.frames, self.pad);
+                log.record_transition(self.session.frames, self.pad | self.gamepad_held);
             }
         }
     }

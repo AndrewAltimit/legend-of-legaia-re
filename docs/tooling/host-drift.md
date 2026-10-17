@@ -464,6 +464,22 @@ than making it lie. Both live in
 [`site/js/pad-bindings.js`](../../site/js/pad-bindings.js), the one place any
 page adopts the engine's table.
 
+A controller layout written into a page is the same defect for a gamepad, and
+it does not look like a key table either: it is an array of PSX button names
+indexed by `Gamepad.buttons[i]`. The play page carried one while the native
+window read no controller at all, so no file held both columns. Two more rules
+hold it:
+
+- An array literal of four or more quoted PSX button names is a controller
+  table. The layout is served by the engine
+  ([`legaia_engine_system::gamepad`](../../crates/engine-system/src/gamepad.rs)
+  through `gamepad_layout_json`), the table the native window folds gilrs
+  through.
+- `navigator.getGamepads` is read only by `site/js/pad-bindings.js`
+  (`GAMEPAD_ADOPTER`); every page reads controllers through its
+  `legaiaPollGamepad` (a key-set host) or `legaiaGamepadEdges` (a page whose
+  controls are named buttons), which share the focus-loss reset.
+
 There is deliberately **no waiver file** for this tier. A waiver names a
 blocking capability, and no capability is missing here: the table is exported,
 the adoption helper ships, and the answer is always to type the lookup.
@@ -1500,6 +1516,22 @@ the stored option, or clicked for the keys that stand for a page control) and
 its HUD bar for `F1`, through `window.__playHotkeyActions`. The table's test
 holds every key off the bindable set, and a `SIM_PAIRS` row pins both sites
 to the shared calls.
+
+### Controllers
+
+A gamepad binds buttons to buttons by position, so the Key Config table never
+reaches it. One layout, the W3C standard mapping, lives in
+[`legaia_engine_system::gamepad`](../../crates/engine-system/src/gamepad.rs).
+
+| Decision | Kernel | Native | Pages |
+|---|---|---|---|
+| button order, stick dead zone, trigger threshold | `gamepad::STANDARD_BUTTONS`, `STICK_DEAD_ZONE`, `BUTTON_PRESS_THRESHOLD` | gilrs buttons renamed to standard indices (`window::gamepad::standard_index`) | `gamepad_layout_json`, adopted by `pad-bindings.js` |
+| press / release edges, focus-loss reset | `StandardGamepad::update`, `reset` | `poll_gamepad` once per redraw, ahead of the ticks; `Focused(false)` | `legaiaPollGamepad` (play page, title card), `legaiaGamepadEdges` (minigames page) |
+| where the word lands | the tick's pad word | `gamepad_held`, ORed with the keyboard's held word each tick; a press since the last poll goes through `PadTapLatch` | `Gamepad:<Button>` entries in the `held` / `pulse` sets; on the minigames page an edge event naming its button through the key handlers |
+
+Scripted and headless native runs open no controller: the pad word there is
+the script's. The window's `--simple-dialogue` picker moves on the arrow keys
+alone, so a controller does not reach it.
 
 ### Camera
 

@@ -374,6 +374,12 @@ pub(super) fn cmd_play_window_with_record(
         record_to,
     })?;
 
+    // A player's window reads controllers; a scripted capture's pad word
+    // belongs to its script.
+    if app.screenshot.is_none() {
+        app.gamepad = super::gamepad::GamepadHost::open();
+    }
+
     // On demand, not `run_app`: only `run_app_on_demand` clears the exit
     // request a phase-1 movie left on this loop. Through `run_app` the game
     // would see that stale exit and quit on its first iteration.

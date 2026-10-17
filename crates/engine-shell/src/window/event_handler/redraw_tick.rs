@@ -23,7 +23,28 @@ impl PlayWindowApp {
         // world `rand()` stream, used to run here per redraw as well; it is a
         // per-tick session step now - `BootSession::step_field_fog`.)
         let ticks = if self.screenshot.is_some() { 1 } else { ticks };
+        self.poll_gamepad();
         self.run_sim_ticks(ticks);
+    }
+
+    /// Read the controllers once for this display frame (`window::gamepad`):
+    /// adopt the folded word as [`Self::gamepad_held`] and hand every press
+    /// since the last poll to the tap latch, the keyboard's sub-frame rule.
+    /// A change to the combined word is a replay transition, as a key's is.
+    pub(in crate::window) fn poll_gamepad(&mut self) {
+        let Some(gp) = self.gamepad.as_mut() else {
+            return;
+        };
+        let poll = gp.poll();
+        let before = self.pad | self.gamepad_held;
+        self.gamepad_held = poll.edges.held;
+        self.pad_taps.press(poll.edges.pressed | poll.taps);
+        let after = self.pad | self.gamepad_held;
+        if after != before
+            && let Some(log) = self.record_log.as_mut()
+        {
+            log.record_transition(self.session.frames, after);
+        }
     }
 
     /// Run `ticks` sim ticks as one redraw's drain: end a finished windowed
@@ -56,7 +77,9 @@ impl PlayWindowApp {
         // A key tapped between two redraws is set and cleared before any
         // tick samples `pad`; the latch hands it to this frame's first tick
         // as one held tick (`PadTapLatch`, the browser page's `pulse`).
-        let held_pad = self.pad;
+        // The keyboard's held word, plus the controller's (`poll_gamepad`).
+        let key_pad = self.pad;
+        let held_pad = key_pad | self.gamepad_held;
         let first_tick_pad = self.pad_taps.take_frame_word(held_pad);
         let mut first_tick = true;
         for _ in 0..run_ticks {
@@ -78,10 +101,11 @@ impl PlayWindowApp {
             self.sim_tick();
         }
         // The tap was one tick held; the word the key events maintain is
-        // the held set again. The scripted harnesses own the pad word and
-        // press through `handle_key`, so their presses are not taps.
+        // the keyboard's held set again (the controller's word stays in
+        // `gamepad_held`). The scripted harnesses own the pad word and press
+        // through `handle_key`, so their presses are not taps.
         if run_ticks > 0 && self.screenshot.is_none() {
-            self.pad = held_pad;
+            self.pad = key_pad;
         }
         if self.screenshot.is_some() {
             self.pad_taps.clear();

@@ -186,6 +186,17 @@ pub fn pad_buttons_json() -> String {
     format!("{{{body}}}")
 }
 
+/// The controller layout (`legaia_engine_system::gamepad`) as
+/// `{"buttons":[<PSX button name per W3C standard index>],"stick_dead_zone":..,"press_threshold":..}`.
+///
+/// The pages read `navigator.getGamepads()` and fold each standard-mapped
+/// controller through this table, which is the one the native window folds
+/// gilrs through - so a page never writes the button order down itself.
+#[wasm_bindgen]
+pub fn gamepad_layout_json() -> String {
+    legaia_engine_system::gamepad::layout_json()
+}
+
 /// Runtime-method forwarders.
 ///
 /// The free functions above are the real definitions; these exist because a
@@ -203,6 +214,11 @@ impl LegaiaRuntime {
     /// See [`pad_buttons_json`].
     pub fn pad_buttons_json(&self) -> String {
         pad_buttons_json()
+    }
+
+    /// See [`gamepad_layout_json`].
+    pub fn gamepad_layout_json(&self) -> String {
+        gamepad_layout_json()
     }
 
     /// See [`pad_bindings_revision`].

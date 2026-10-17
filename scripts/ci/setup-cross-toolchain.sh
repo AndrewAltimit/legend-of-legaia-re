@@ -164,9 +164,13 @@ if [[ "$TARGET" == "x86_64-unknown-linux-gnu" ]]; then
     ALSA_MIRROR="http://archive.ubuntu.com/ubuntu"
     ALSA_SYSROOT="$CACHE/sysroot-amd64"
     ALSA_PC="$ALSA_SYSROOT/usr/lib/x86_64-linux-gnu/pkgconfig/alsa.pc"
+    # The play window's controller input (gilrs -> libudev-sys) resolves
+    # libudev the same way, so the sysroot carries it beside libasound. A
+    # sysroot built before it was added lacks the .pc and is topped up.
+    UDEV_PC="$ALSA_SYSROOT/usr/lib/x86_64-linux-gnu/pkgconfig/libudev.pc"
 
-    if [[ -f "$ALSA_PC" ]]; then
-        log "amd64 ALSA sysroot already present: $ALSA_SYSROOT"
+    if [[ -f "$ALSA_PC" && -f "$UDEV_PC" ]]; then
+        log "amd64 ALSA + libudev sysroot already present: $ALSA_SYSROOT"
         exit 0
     fi
 
@@ -197,7 +201,7 @@ if [[ "$TARGET" == "x86_64-unknown-linux-gnu" ]]; then
         exit 1
     fi
 
-    for pkg in libasound2-dev libasound2t64; do
+    for pkg in libasound2-dev libasound2t64 libudev-dev libudev1; do
         fn="$(awk -v p="$pkg" '
             /^Package: /   { cur = $2 }
             /^Filename: /  { if (cur == p) { print $2; exit } }
@@ -214,10 +218,12 @@ if [[ "$TARGET" == "x86_64-unknown-linux-gnu" ]]; then
     mkdir -p "$ALSA_SYSROOT"
     for d in "$tmp"/*.deb; do dpkg -x "$d" "$ALSA_SYSROOT"; done
 
-    if [[ ! -f "$ALSA_PC" ]]; then
-        printf '[setup-cross] ERROR: sysroot built but %s is missing\n' "$ALSA_PC" >&2
-        exit 1
-    fi
+    for pc in "$ALSA_PC" "$UDEV_PC"; do
+        if [[ ! -f "$pc" ]]; then
+            printf '[setup-cross] ERROR: sysroot built but %s is missing\n' "$pc" >&2
+            exit 1
+        fi
+    done
     log "amd64 ALSA sysroot ready: $ALSA_SYSROOT"
     exit 0
 fi

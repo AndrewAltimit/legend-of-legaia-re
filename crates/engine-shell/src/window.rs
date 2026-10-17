@@ -47,6 +47,8 @@ mod field_render;
 #[cfg(test)]
 #[path = "window/fog_texture_tests.rs"]
 mod fog_texture_tests;
+#[path = "window/gamepad.rs"]
+mod gamepad;
 #[path = "window/geometry.rs"]
 mod geometry;
 #[path = "window/headless.rs"]
