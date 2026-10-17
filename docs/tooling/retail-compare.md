@@ -2398,37 +2398,37 @@ cursor the way it carries the glide would close it.
 The three `super_queue_replace_*` states are one base capture with a
 RAM-injected action queue, so they carry the same camera words: `ctx[7]` is
 `0x14`, `ctx[+0xD] = 3`, `DAT_8007BD71 = 0xFF`, eye `(0, 972, 2867)` at pitch
-`0x80`. State `0x14` lasts one frame on both sides: its body (`0x801E305C`)
-calls `FUN_801D5854(seat, 6)` and leaves for `0x19` or `0x1E` before it
-returns. So the shot on screen is the one the `0x0C` seed armed, and both
-sides take case 6's in-fight arm. The engine's framing is not the gap. The gap
-is where the glide starts from:
+`0x80`, yaw `3205`. The seed `0x0C` stores the `0x800` rung over the yaw
+counter (`0x801E2CF8`), arms case 6 (`jal 0x801D5854` with `a1 = 6` at
+`0x801E2D50`), and only then stores state `0x14` (`0x801E2F18`) and the
+`0x200` rung (`0x801E2F20`). The capture reads `0x14` with the counter still
+on `0x200`, so `0x14`'s body has not run: the camera is the walker's pass
+after the seed's arm, closing on that arm's endpoint, yaw `4062` =
+`0x800 + 0x800 - actor[+0x46]` (the capture's tween table `ctx[+0x118C]`).
 
-- Retail's depth `2867` is `prescale(0x700)`, exactly one sixth of the way
-  from the arts-entry close-up `prescale(0x600)` toward case 6's
-  `prescale(0xC00)`. The acting member came straight out of its own arts
-  entry. In the engine's round the monster acts first, and the pad drive takes
-  Auto at the attack-mode prompt, so the engine's glide starts from the
-  monster's end-of-action shot.
-- The captured yaw `3205` is mid-glide, not a framing. The capture's tween
-  table (`ctx[+0x118C]`) holds the endpoint `4062` = `0x800 + 0x800 -
-  actor[+0x46]`: the seed pass's `ctx[+0x6DA] = 0x800` with style `3`'s
-  half-turn, armed two frames before the save, which the counter's `0x200`
-  (the Attack branch's store) has not yet re-armed.
+Three things put the engine on the same pass:
 
-Pitch `0x80` already reached and `TR.y = 972` do not fit a single glide step,
-so the capture's own glide history is not fully explained either.
+- **The seed's own shot.** On the per-vsync SM the seed's pass and the
+  `0x14` store land on one tick, and the camera framed the live state. So the
+  seed's shot never reached the camera, and the engine glided toward
+  `0x14`'s `0x200`-rung endpoint (`2561`). The camera now frames the seed's
+  pass as the seed's on both cadences (`World::battle_camera_state`).
+- **The acting seat's heading.** The case-6 arm subtracts the attacker's
+  `+0x46`, which `0x14` recomputes from the target bearing
+  (`0x801E3078..0x801E3088`). Before that store, the heading is the one
+  Vahn's last turn left (`34`), which the replayed prompt does not restore,
+  so the seed stands the seat on it (`RetailBattle::seeded_facing`).
+- **The turn order.** The capture is round `0` (`ctx[+0x28A] = 0`) with
+  both initiative keys `+0x16C` spent, so Gobu Gobu had already dispatched.
+  A replayed swing walks Gobu Gobu about `250` units on and pushes Vahn `164`
+  back, so the spent key is seeded
+  ([above](#combatants-that-had-already-acted)): the monster sits the round
+  out and both stand on retail's ground.
 
-The capture is round `0` (`ctx[+0x28A] = 0`) with both initiative keys
-`+0x16C` spent, so Gobu Gobu had already dispatched in retail - and every
-battle stream puts it ahead of Vahn in the engine too. What parted the two
-sides was that turn played twice: retail stands Gobu Gobu on `(0, 0)` and Vahn
-on `(-7, -338)`, and a replayed swing walks Gobu Gobu about `250` units on and
-pushes Vahn `164` back. With the spent key seeded
-([above](#combatants-that-had-already-acted)) the monster sits the round out,
-both stand on retail's ground, and the focus reads `(-11, -381)` on both
-sides; what is left of the channel is the mid-glide yaw (`3127` against
-`3205`).
+With all three the endpoints agree (`4063` against `4062`), the glide origin
+is aligned ([below](#an-ease-out-camera-carries-its-history)), and the
+`camera` channel reads `1.0`. The frame's residual is the pose of the
+injected swing and the stage.
 
 ### An ease-out camera carries its history
 
