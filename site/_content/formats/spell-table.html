@@ -82,18 +82,18 @@
 
 <section class="doc-section" id="target-shape">
   <h2>Target shape (<code>+2</code>)</h2>
-  <p>Two independent bits: <code>0x02</code> = ally side (clear = enemy side), <code>0x20</code> = every target on that side (clear = single).</p>
+  <p>Two bits, read relative to the caster: <code>0x40</code> = the caster's opponents (clear = its own side), <code>0x20</code> = every target on that side (clear = single). Both target pickers test exactly these: the monster AI branches on <code>byte &amp; 0x60</code> and the player picker on <code>0x40</code> then <code>0x20</code>.</p>
   <table>
   <thead><tr><th>Value</th><th>Shape</th></tr></thead>
   <tbody>
-    <tr><td><code>0x44</code></td><td>one enemy</td></tr>
-    <tr><td><code>0x64</code></td><td>all enemies</td></tr>
-    <tr><td><code>0x06</code></td><td>one ally</td></tr>
-    <tr><td><code>0x26</code></td><td>all allies</td></tr>
-    <tr><td><code>0x04</code></td><td>one enemy (the internal enemy-attack tiers)</td></tr>
+    <tr><td><code>0x44</code></td><td>one opponent</td></tr>
+    <tr><td><code>0x64</code></td><td>all opponents</td></tr>
+    <tr><td><code>0x06</code>, <code>0x04</code></td><td>one ally, or the caster (heals; the monster buff tier)</td></tr>
+    <tr><td><code>0x26</code>, <code>0x24</code></td><td>all allies (group heals; the revive summon Horn)</td></tr>
+    <tr><td><code>0x66</code>, <code>0x46</code></td><td>all / one of the party (the boss specials: Mystic Circle, Final Crisis, Evil Seru Magic, Ultra Charge)</td></tr>
   </tbody>
   </table>
-  <p>One exception: the revive summon Horn ("Resurrector", <code>0x9C</code>) carries an enemy-side <code>0x24</code> even though it revives all allies - the summon projects toward the enemy field and the revive is special-cased by spell id. Decoder <code>SpellEntry::target_shape</code>.</p>
+  <p>Bit <code>0x02</code> is a separate flag, <em>field-castable</em>: the field Magic list greys every spell without it. Read as the side bit it happens to agree on the four player values, and misreads the rest - it would aim Cort's Mystic Circle at Cort himself. Decoder <code>SpellEntry::target_shape</code>.</p>
 </section>
 
 <section class="doc-section" id="cast-classes">

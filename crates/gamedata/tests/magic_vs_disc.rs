@@ -23,14 +23,12 @@
 //! target error - Mushura / "Crazy Driver", whose disc `+2` is `0x44`
 //! single-enemy, not all-enemies - which was corrected to the disc value).
 //!
-//! **Target shape** agrees for every name-join except the one revive Ra-Seru
-//! summon, **Horn / "Resurrector"** (id `0x9c`): its `+2` byte is `0x24`
-//! (enemy-side) even though the effect revives all allies - the summon's
-//! projection plays toward the enemy field while the revive is special-cased by
-//! id. The other six Ra-Seru summons (offensive, all-enemies) carry the correct
-//! enemy-side byte, so this is a per-spell encoding nuance, not a model gap.
-//! The test verifies this exception explicitly so a change on either side
-//! re-trips it.
+//! **Target shape** agrees for every name-join, including the revive Ra-Seru
+//! summon **Horn / "Resurrector"** (id `0x9c`): its `+2` byte is `0x24`, which
+//! the side bit both runtime pickers test (`0x40`, clear = the caster's own
+//! side) reads as all allies. The `0x02`-bit reading once made it the lone
+//! "enemy-side" exception; the test pins Horn explicitly so the case that
+//! told the two readings apart cannot go vacuous.
 //!
 //! Skips silently when `extracted/SCUS_942.54` is missing.
 
@@ -95,8 +93,9 @@ fn curated_magic_mp_and_target_match_the_disc() {
 
     let db = Database::load();
 
-    // The revive Ra-Seru summon Horn / "Resurrector": its `+2` byte is
-    // enemy-side though the effect revives all allies (see the module doc).
+    // The revive Ra-Seru summon Horn / "Resurrector": its `0x24` byte is the
+    // case that separates the side bit `0x40` from the `0x02` correlation
+    // (see the module doc).
     let revive_summon = norm("Horn");
 
     let mut checked = 0usize;
@@ -118,20 +117,12 @@ fn curated_magic_mp_and_target_match_the_disc() {
         }
 
         if key == revive_summon {
-            // Verify the documented exception still holds: curated effect is
-            // ally-side (all allies) but the disc `+2` byte reads enemy-side.
             horn_seen = true;
             assert_eq!(
-                curated_shape(&s.target),
-                Some(SpellTargetShape::AllAllies),
-                "Horn curated target changed; re-confirm the Resurrector exception"
-            );
-            assert_eq!(
                 disc_shape,
-                SpellTargetShape::AllEnemies,
-                "Horn disc target byte changed; re-confirm the Resurrector exception"
+                SpellTargetShape::AllAllies,
+                "Horn's disc `+2` byte no longer reads all allies under the `0x40` side bit"
             );
-            continue;
         }
 
         if let Some(want) = curated_shape(&s.target)
@@ -150,7 +141,7 @@ fn curated_magic_mp_and_target_match_the_disc() {
     );
     assert!(
         horn_seen,
-        "Horn / Resurrector did not name-join; the exception assertion went vacuous"
+        "Horn / Resurrector did not name-join; its side-bit pin went vacuous"
     );
     assert!(
         mp_fail.is_empty(),

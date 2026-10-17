@@ -202,38 +202,46 @@ spells.
 
 ### Target shape (`+2`)
 
-Two independent bits over a side/scope pair:
+Two independent bits over a side/scope pair, read relative to the **caster**:
 
-- bit `0x02` = **ally side** (clear = enemy side; equivalently the low nibble
-  is `_4` for enemy, `_6` for ally)
+- bit `0x40` = the caster's **opponents** (clear = its own side)
 - bit `0x20` = **all** targets on that side (clear = single)
 
-| Value | Shape |
-|---|---|
-| `0x44` | one enemy |
-| `0x64` | all enemies |
-| `0x06` | one ally |
-| `0x26` | all allies |
+| Value | Shape | Carried by |
+|---|---|---|
+| `0x44` | one opponent | single-target player magic, most monster attacks |
+| `0x64` | all opponents | group player magic, the offensive Ra-Seru |
+| `0x06` / `0x04` / `0x00` | one ally, or the caster | heals; the monster buff tier (Power Up `0x52`, White Shield `0x60`, Power Charge `0x72`) |
+| `0x26` / `0x24` | all allies | group heals; the revive Ra-Seru Horn `0x9C` |
+| `0x66` / `0x46` | all / one of the party | the capture-class boss specials (Mystic Circle `0xB7`, Final Crisis `0xB4`, Evil Seru Magic `0xAD`, Ultra Charge `0xA5`) |
 
-(The `0x02` / low-nibble model is a *value correlation*: the runtime target
-picker never tests `0x02`. `FUN_801D0748` reads this byte and tests **`andi
-0x40`** at `0x801D1C50` / `0x801D1C58` (PROT 0898) - the same ladder the
-item-effect descriptors' `+2` bit `0x40` runs at `0x801D18E0` - forking on
-`0x20` into the one-enemy / all-enemies / one-ally / all-allies phases. Both
-readings agree on the four player-block values; the internal enemy-attack tiers
-whose byte is `0x04` never reach the player picker, so the `0x40`-clear reading
-of them is not a contradiction.)
+Both runtime readers test exactly these bits. The monster picker `FUN_801E9FD4`
+loads the byte and branches on `andi 0x60` at `0x801EA5A4`: `0x40` stores
+`rand() % party_count` into `+0x1DD` (`0x801EA8CC..0x801EA918`), `0x60` stores
+`8` (`0x801EA934`), `0x20` stores `9` (`0x801EA8C0`, or the weakened-ally walk
+for a class byte below `2`), and `0x00` takes the weakened-ally walk or the
+caster's own seat (`0x801EA5E4..0x801EA710`). The player picker `FUN_801D0748`
+tests `andi 0x40` at `0x801D1C50` / `0x801D1C58` (PROT 0898) and then `0x20`,
+the same ladder the item-effect descriptors' `+2` bit `0x40` runs at
+`0x801D18E0`.
 
-The model holds across the whole named player block and the six offensive
-Ra-Seru summons. One documented exception: the revive Ra-Seru **Horn /
-"Resurrector"** (`0x9c`) carries an *enemy-side* `+2` byte (`0x24` → all
-enemies) even though its effect revives all allies - the summon's projection
-plays toward the enemy field, and the revive is special-cased by spell id. The
-`legaia-gamedata::magic_vs_disc` oracle joins the curated magic chart to this
-table by name and verifies MP (byte-exact for all 21 Seru + 7 Ra-Seru joins;
-it pinned and corrected one curated target error, Mushura / "Crazy Driver" =
-single-enemy) plus target shape (agreeing everywhere except the Horn
-exception, which it checks explicitly).
+Bit `0x02` is a third, independent flag: **field-castable**. The field Magic
+list's build tests it (`andi v0,v0,0x2` at `0x800311D0`, `FUN_80030628`) and
+greys every row without it ([field menu](../subsystems/field-menu.md)); no
+target picker reads it. It is set on the player block's heals (`0x06` / `0x26`)
+and, harmlessly, on the boss specials, which never reach a player list. Read as
+the side bit, it agrees on the four player-block values and misreads every
+other byte that carries one bit without the other: the boss specials' `0x66` / `0x46` as ally-side (an engine
+seat that took that reading aimed Mystic Circle at Cort himself, where retail's
+capture holds `+0x1DD = 8`), and Horn's `0x24` and the buff tier's `0x04` as
+enemy-side. Horn's byte is therefore not an exception: `0x24` is all allies,
+which is what the revive does (`horn_summon_mid_cast` holds `+0x1DD = 8` on a
+party caster).
+
+The `legaia-gamedata::magic_vs_disc` oracle joins the curated magic chart to
+this table by name and verifies MP (byte-exact for all 21 Seru + 7 Ra-Seru
+joins; it pinned and corrected one curated target error, Mushura / "Crazy
+Driver" = single-enemy) plus target shape, with Horn pinned explicitly.
 
 Decoded by `legaia_game_tables::spell_names::SpellEntry::target_shape`
 (`SpellTargetShape`). The engine sources the player Seru-magic catalog's MP +
