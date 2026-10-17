@@ -185,6 +185,52 @@ impl World {
         }
     }
 
+    /// PROT 0930's (Horn) seat visibility, on the passes that write it: arm
+    /// 1 shows the party (`+0x04 = 0x20080200`, `+0x21C = 0`,
+    /// `0x801F6C78..`), arm 3 seats the creature hidden (`+0x21C = 0xFF`, `+0x04 = 0`,
+    /// `0x801F6E98..`) and arm 4 shows it; arm 8 hides the party
+    /// (`0x801F7428..`); arm `0xA`, the heal, shows the party again and hides
+    /// the creature (`0x801F771C..`); arm `0xB` keeps the creature hidden. The
+    /// engine's shown word is its resting `0` under a lowered flag. Arm 1's
+    /// hide of the monster row is not carried: nothing in the module shows it
+    /// again, and the band's own reset is not modelled.
+    pub(in crate::world::battle::cast_band) fn apply_horn_writes(
+        &mut self,
+        phase_in: u8,
+        passed: bool,
+        seat_slot: u8,
+    ) {
+        use legaia_engine_battle_vm::battle_target_group::RENDER_FLAG_HIDDEN;
+        if !passed {
+            return;
+        }
+        let set = |a: &mut crate::world::Actor, hidden: bool| {
+            a.battle.render_flag = if hidden { RENDER_FLAG_HIDDEN } else { 0 };
+            a.battle.render_color = 0;
+        };
+        let creature = match phase_in {
+            3 | 0xA | 0xB => Some(true),
+            4 => Some(false),
+            _ => None,
+        };
+        if let Some(hidden) = creature
+            && let Some(a) = self.actors.get_mut(usize::from(seat_slot))
+        {
+            set(a, hidden);
+        }
+        let party = match phase_in {
+            1 | 0xA => Some(false),
+            8 => Some(true),
+            _ => None,
+        };
+        if let Some(hidden) = party {
+            let pc = usize::from(self.party.party_count);
+            for a in self.actors.iter_mut().take(pc) {
+                set(a, hidden);
+            }
+        }
+    }
+
     /// The engine slots of the seated monsters with HP left.
     fn living_monster_slots(&self) -> Vec<usize> {
         let pc = usize::from(self.party.party_count);

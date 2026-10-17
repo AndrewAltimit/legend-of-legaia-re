@@ -328,7 +328,39 @@ fn a_dead_idle_monster_enters_the_defeat_fade_and_drains() {
         world.actors[1].battle.render_flag,
         legaia_engine_battle_vm::battle_formulas::STATE_DEFEAT_FADE
     );
-    assert_eq!(world.actors[1].battle.render_color & 0x00FF_FFFF, 0, "the lanes drained");
+    assert_eq!(
+        world.actors[1].battle.render_color & 0x00FF_FFFF,
+        0,
+        "the lanes drained"
+    );
     // A living monster is left alone.
     assert_eq!(world.actors[2].battle.render_flag, 0);
+}
+
+/// Horn hides the party for its rise (arm 8), shows it again and hides the
+/// creature on the heal (arm `0xA`).
+#[test]
+fn horn_hides_and_shows_the_party_around_the_heal() {
+    use legaia_engine_battle_vm::battle_target_group::RENDER_FLAG_HIDDEN;
+    let mut world = aluru_world(Some(false));
+    assert_eq!(world.cast_module_for(0x9C), Some(930));
+    let run_arm = |world: &mut World, arm: u8| {
+        world.casting.module_phase = arm;
+        world.casting.module_cam.countdown.0 = 0;
+        for _ in 0..4 {
+            let phase = world.casting.module_phase;
+            world.run_cast_module_code(0x9C, phase);
+            if world.casting.module_phase != arm {
+                break;
+            }
+        }
+        assert_ne!(world.casting.module_phase, arm, "arm {arm} passed");
+    };
+    run_arm(&mut world, 8);
+    assert_eq!(world.actors[0].battle.render_flag, RENDER_FLAG_HIDDEN);
+    assert!(world.battle_body_hidden(0));
+    run_arm(&mut world, 0xA);
+    assert_eq!(world.actors[0].battle.render_flag, 0);
+    assert!(!world.battle_body_hidden(0));
+    assert!(world.battle_body_hidden(9), "the creature leaves");
 }
