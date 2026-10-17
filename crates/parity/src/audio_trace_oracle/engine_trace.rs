@@ -157,6 +157,65 @@ pub(crate) fn start_bgm_id_directly(
     Ok(())
 }
 
+/// One track on its own: start `bgm_id` against a fresh
+/// [`TraceBgmDirector`] at sequence volume `seq_vol` and sample its SPU for
+/// `frames` 60 Hz frames, with no world tick in between.
+///
+/// `session` only resolves the track's bytes. This is the pinned trace of
+/// [`build_engine_audio_trace`] (`pin_bgm`, which drains and drops the
+/// scene's own BGM events) without the session step, so a corpus sweep can
+/// afford traces long enough to sound every note of a track. `frame` counts
+/// from `0`. `None` when the id resolves to no track.
+///
+/// With `whole_track`, `frames` is a cap: the trace ends
+/// [`WHOLE_TRACK_TAIL_FRAMES`] after the score loops back a second time (or
+/// runs off its end). One pass is not enough: channel state - a pitch-bend
+/// wheel, a pan, a volume - carries across the loop, so the second pass can
+/// key notes the first never did; the third replays the second.
+pub fn build_pinned_track_trace(
+    session: &NativeSession,
+    bgm_id: u16,
+    seq_vol: u8,
+    frames: u64,
+    whole_track: bool,
+) -> Result<Option<Vec<AudioTraceFrame>>> {
+    let mut director = TraceBgmDirector::new();
+    director.master_vol = seq_vol;
+    start_bgm_id_directly(session, &mut director, bgm_id)?;
+    if director.sequencer().is_none() {
+        return Ok(None);
+    }
+    let us_per_frame = 1_000_000.0 / 60.0;
+    let samples_per_frame = (44_100_f64 * (us_per_frame / 1_000_000.0)) as usize;
+    let mut sink = vec![0i16; samples_per_frame * 2];
+    let mut out = Vec::new();
+    let mut end = frames;
+    for f in 0..=frames {
+        if f > end {
+            break;
+        }
+        if f > 0 {
+            director.advance_frame(us_per_frame, &mut sink);
+        }
+        let mut frame = sample_engine_frame(session, director.spu(), director.sequencer());
+        frame.frame = f;
+        out.push(frame);
+        if whole_track
+            && end == frames
+            && director
+                .sequencer()
+                .is_some_and(|s| s.loop_count() > 1 || s.is_finished())
+        {
+            end = (f + WHOLE_TRACK_TAIL_FRAMES).min(frames);
+        }
+    }
+    Ok(Some(out))
+}
+
+/// How long [`build_pinned_track_trace`] keeps sampling after the score
+/// loops: long enough for the last notes' release tails to drain.
+pub const WHOLE_TRACK_TAIL_FRAMES: u64 = 600;
+
 /// Re-exported wrapper for [`crate::pcm_oracle::build_engine_pcm_trace`].
 /// The PCM-trace loop wants the same per-frame voice-activity sampler
 /// but the function is otherwise private to this module.

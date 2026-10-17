@@ -29,9 +29,10 @@ impl<S: AudioSink> AudioDirector<S> {
 
     /// One frame of the duck ramp: step the live level one unit toward the
     /// target (retail `DAT_1F800393` per vsync, the `0x35` / `0x51` arms)
-    /// and re-apply it to the BGM as `master_vol * level / ref` - the
-    /// `FUN_800267A8` -> `SsSeqSetVol` re-apply, which halves the cell into
-    /// the 0..127 volume domain the same way `master_vol` already is.
+    /// and re-apply it to the BGM as the level halved
+    /// ([`legaia_engine_audio::duck::ducked_master_vol`]) - retail's
+    /// `SsSeqSetVol` re-apply, which halves the cell into the 0..127 volume
+    /// domain and re-volumes the notes already sounding.
     ///
     /// A level resting below the reference is re-applied every frame too
     /// ([`legaia_engine_audio::duck::duck_apply`]), so a track started under

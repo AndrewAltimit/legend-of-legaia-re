@@ -28,7 +28,7 @@
 //! REF: FUN_80064090 - the chained-channel restart, ported as
 //! [`crate::seq_events::restart_channel`].
 //! REF: FUN_800683d8 - the channel-volume getter the slides read and cache.
-//! REF: FUN_80067e9c - `_SsSeqNoteOn`, which commits a slide's new volume pair.
+//! REF: FUN_80067e9c - the sequence-volume set, which commits a slide's new volume pair and re-volumes the voices the sequence owns.
 //! REF: FUN_800684cc - the note kill a finished track issues.
 //! REF: FUN_800641ec - `SsSeqRewind`, the bit-`0x4` arm.
 //! REF: FUN_80065bac - the voice flush `SsSeqCalc` runs once per frame.
@@ -526,7 +526,7 @@ impl SlideDir {
 /// What one volume-slide tick asks the caller to commit.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct SlideTick {
-    /// The `(l, r)` pair to hand `_SsSeqNoteOn`, if any.
+    /// The `(l, r)` pair to hand the sequence-volume set `FUN_80067E9C`, if any.
     pub commit: Option<(u16, u16)>,
     /// `true` when the commit is the saturated endpoint and the slide's flag
     /// bit was cleared with it.

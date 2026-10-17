@@ -793,7 +793,7 @@ Legaia statically links Sony's PsyQ **libsnd / SsAPI** sequencer for `.SEQ`-driv
 **Per-frame tick call graph.** The concrete chain behind the prose "hand the
 payload to `FUN_80062340` for playback": `FUN_80062F98` (per-slot fan-out) →
 `FUN_8006320C` / `FUN_8006352C` (the **volume-slide ticks** over
-`_DAT_801CD2C0[slot]` - see below) → `FUN_80067E9C` (`_SsSeqNoteOn`) →
+`_DAT_801CD2C0[slot]` - see below) → `FUN_80067E9C` (the sequence-volume set, [below](#a-sequence-volume-change-re-volumes-the-held-notes)) →
 `FUN_80066308` (note-trigger dispatch; `×0x81` velocity scale, per-slot status
 `_DAT_801CE34x`) → `FUN_80066B00` (voice-allocation scan) → `FUN_80065978`
 (`_SsVoKeyOnDirect`), with `FUN_80065BAC` / `FUN_800675C8` (the voice flush /
@@ -930,7 +930,7 @@ Nothing in the body releases a VAB.
 | Function | Role |
 |---|---|
 | `FUN_80067550(voice, key, vel, ...)` | `_SsVoNoteOn` - the key-on volume chain: `vel × bank_mvol(hdr+0x18) × 0x3FFF / 0x3F01`, then `× prog_mvol(801CE352) × tone_vol(801CE355) / 0x3F01`; seq path folds channel vol L/R (`+0x58/+0x5A`, `/0x7F` per side), then three one-sided pan attenuations (tone pan, prog `mpan`, staged channel pan), a mono fold on `_DAT_801CE330`, and - seq path only, not SFX slot `0x21` - a closing square taper `v²/0x3FFF` per side. Writes `&DAT_801CE080[voice]`, flags `0x7`, active-voice masks `_DAT_801CDB48/4A/4C/4E` + `_DAT_801CE248/24A`. Engine port: `VabBank::fire` (head + pans) and `Sequencer::note_volume` + `sequencer::channel_tail` (channel fold + taper). |
-| `FUN_80067E9C(slot, vol, pan, ...)` | `_SsSeqNoteOn` - iterates `DAT_801CE344`, calls `FUN_80068B98` (the VAB program-change - see the [SsApi seq-management layer](#ssapi-seq-management-layer-above-libspu)), runs the same vol/pan chain as `FUN_80067550`. Sequence-driven keyon. |
+| `FUN_80067E9C(owner, vol_l, vol_r, ...)` | **Sequence-volume set** (the `SsSeqSetVol` core): stores `vol_l` / `vol_r` into the record's `+0x58` / `+0x5A` (clamped `0x7F`), then walks every voice record (`DAT_801CE344` of them) whose owner key `+0x10` equals the sequence's, re-selects its bank (`FUN_80068B98`) and recomputes its left / right volume through the same chain as `FUN_80067550` (with the new sequence volume), staging it at `0x801CE080/82 + voice*16` with flush flags `0x3`. Reached from `SsSeqSetVol` `FUN_80064890` when the slot is playing (flag word `== 1`), from each step of the slide pair `FUN_8006320C` / `FUN_8006352C`, and from the play core. Engine port: `Sequencer::set_master_vol` (re-volume at the next flush). |
 | `FUN_80065978(...)` | `_SsVoKeyOnDirect` - consumes the **already-chosen** voice at `_DAT_801CE362` (the `FUN_80066B00` scan's winner): clears that voice's bit from all 16 silent-history ring words at `_DAT_801CE208`, sets its envelope word to `0x7FFF`, looks up region in `_DAT_801CE334` (stride `0x10`), writes pitch + base note to `&DAT_801CE088 + voice*2`, ORs flags `0x8/0x30` into `&DAT_801CE060`. |
 | `FUN_80066E50(key, fine)` | `_SsPitchFromKey` - indexes 12-entry pitch table `&DAT_8007A940`, octave-shift by `(oct-5)`. Returns 16-bit SPU PITCH register value. |
 | `FUN_80065B88` | `SsResetTranspose` - single-store stub: zeros `_DAT_801CE2E8` (a base-note offset shifted in by `FUN_80065978`). |
@@ -1237,7 +1237,7 @@ So `EON` varies from moment to moment (`0x27DDFF` on a melee hit, `0x07FA7F` mid
 
 Boundaries:
 - Mode selection via `Spu::write_reverb_mode_byte(raw)` matches the libspu byte API (1=Room, 2=StudioA, …, 9=Pipe). Out-of-range bytes fall back to `Off`. This is the engine half of `SpuSetReverbModeParam` (`FUN_8006B1B4`, the 30-attribute commit).
-- The hardware's 39-tap FIR input/output resampler (44.1 kHz ↔ 22.05 kHz) is approximated by decimation + zero-order hold; the tail's character comes from the network, the FIR only affects high-frequency detail.
+- The network runs behind the hardware's 39-tap half-band FIR on both sides (44.1 kHz ↔ 22.05 kHz): the send is low-passed before it is decimated into the tank, and the tank's output is zero-stuffed back up through the same kernel - the centre sample passes through on one phase, the 20 even taps interpolate the other at gain 2. The coefficients are the published hardware-reference table. Plain decimation would fold send content above 11 kHz back into the tank at full level; the FIR takes it out.
 - Output volume (`vLOUT`/`vROUT`) isn't part of the mode preset on hardware (libspu sets it separately via `SpuSetReverbDepth`); the engine installs the measured depth, overridable with `Reverb::set_output_volume`.
 
 ### Voice resampler - 4-point Gaussian interpolation (engine-audio)
@@ -1492,11 +1492,47 @@ order and integer steps (`Sequencer::note_volume`):
 5. the square taper `v * v / 0x3FFF`.
 
 A mid-note CC7 or CC10 re-runs the whole chain for every sounding voice on the
-channel (`remix_channel`), as libsnd's re-key does. Against the mednafen states
-`title_screen_new_game`, `sebucus_overworld_resident` and
-`karisto_overworld_resident`, every sounding BGM voice's pitch, ADSR words,
-left and right volume and reverb send is one the engine programs for the same
-track (`parity/tests/mednafen_voice_parity.rs`).
+channel (`remix_channel`), as libsnd's re-key does.
+
+<a id="a-sequence-volume-change-re-volumes-the-held-notes"></a>
+**A sequence-volume change re-volumes the held notes.** `SsSeqSetVol`
+(`FUN_80064890`) on a playing slot, and every step of its slide, runs
+`FUN_80067E9C`, which writes the new `+0x58` / `+0x5A` and then recomputes
+every voice the sequence owns (`0x80067F4C..0x800683A0`, the loop over the
+`0x801CDB50` records matching the owner key). A note held across a summon duck
+therefore comes down with the duck; it does not keep the volume it keyed at.
+`Sequencer::set_master_vol` does the same at the next flush (`remix_all`).
+
+**What the voices measure.** Every library mednafen state with a sounding
+sequence voice is paired with the engine (`parity/tests/mednafen_voice_parity.rs`):
+the track is read off the state itself - the owner key's sequence record holds
+the score's start at `+0x04`, and the `music_01` entry carrying those bytes
+under the VAB header installed in the note's slot names it (`2044` and `2063`
+share a score, as do `2013` / `2069` and `2068` / `2072`) - and so are the
+sequence volume (`+0x58`) and mono (`_DAT_801CE330`). Over 94 states, field,
+town, battle, summon, minigame, menu and ending, every sounding sequence voice's
+pitch, ADSR words, left and right volume and reverb send is one the engine
+programs for that track at that volume. Two conditions are load-bearing:
+
+- **The engine trace covers the score twice.** Channel state - a bend wheel, a
+  pan, a CC7 - carries across the loop point, so a track's second pass keys
+  notes its first never does (`2009` under `cort_evil_seru_magic_mid_cast`).
+  `build_pinned_track_trace` stops two loops in.
+- **A ramping duck reads one step behind.** In a state captured mid-ramp the
+  voices sit at the record's previous volume (`104` where `+0x58` already
+  reads `103`): the SPU registers trail the staged shadow `FUN_80067E9C`
+  writes by one flush. A ducked record accepts its neighbouring volume; an
+  un-ducked one does not.
+
+**The duck's volume is the level halved.** The same states pin the duck law:
+each playing record's `+0x58` equals the applied audio level `DAT_8007B6EC`
+halved, `105` for `210`, `103` for `207`, `80` for `161`. Every site that turns
+a level into a sequence volume halves the word (`(level << 15) >> 16` in
+`FUN_80019898` / `FUN_8002614C`, `sra 1` in `FUN_80026478` / `FUN_800243F0`),
+so the level loses its low bit first; a `107 * level / 215` scaling floors an
+even level one unit low. Port: `duck::ducked_master_vol`. `DAT_8007B6EC` trails
+the duck cell `_DAT_8007B910` by two or three units in the ramping states; its
+writer is not in the dumped corpus, and the port applies the cell directly.
 
 **Monaural.** libsnd's mono mode (`_DAT_801CE330 == 1`, the options screen's
 "Sound: Monaural") sounds each voice at the larger of its two volumes on both
@@ -2210,7 +2246,7 @@ anything read off a captured envelope.
 | Voice mask + sample start, one frame | mednafen save state (`.mc`) SPU section | music starts at all; master volume; reverb setup | hard floor, weak beyond it |
 | Per-vsync voice state | PCSX-Redux save-state dump per vsync | pitch / ADSR-word vocabulary of the sounding voices | good for register writes, not for envelopes |
 | Key-on census | PCSX-Redux breakpoint on `SpuSetKey` | every note the score keys, with timing | exact |
-| Per-voice programming | mednafen states | pitch, ADSR words, L/R volume, reverb send of each BGM voice | exact per state (`parity/tests/mednafen_voice_parity.rs`) |
+| Per-voice programming | every library mednafen state | pitch, ADSR words, L/R volume, reverb send of each sequence voice; the duck's volume law | exact per state (`parity/tests/mednafen_voice_parity.rs`) |
 
 ### Capture shapes and the trace record
 
@@ -2539,8 +2575,11 @@ census above covers the battle theme's notes once it is playing.
   engine counterpart: the port has no drive to seek.
 - **SPU transfer timing** is not modelled, which is the one-key-on residual on
   `dolk2_market_noa`.
-- **Reverb resampler.** The hardware's 39-tap FIR is approximated by
-  decimation and zero-order hold.
+- **The applied audio level's writer.** `DAT_8007B6EC`, whose halving is the
+  BGM's sequence volume, follows the duck cell `_DAT_8007B910` two or three
+  units behind; no dumped function stores a level into it, and the port
+  applies the cell directly
+  ([above](#a-sequence-volume-change-re-volumes-the-held-notes)).
 - **The Field↔Battle swap** has no retail audio trace
   ([above](#the-fieldbattle-swap-is-not-on-this-axis)).
 - **`.MAP` / `.PCH` / `.spk` / `.pac`** have no retail carrier to decode; the

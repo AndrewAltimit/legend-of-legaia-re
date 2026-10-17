@@ -644,6 +644,55 @@ fn cc7_volume_rederives_the_sounding_voice_through_the_velocity() {
     assert_eq!((spu.voices[v].vol_left, spu.voices[v].vol_right), full);
 }
 
+/// `FUN_80067E9C`, which `SsSeqSetVol` and each step of its slide run,
+/// re-volumes every voice the sequence owns: a note held across a duck
+/// comes down with it at the next flush, and comes back up with it.
+#[test]
+fn sequence_volume_change_revolumes_the_sounding_voice_at_the_flush() {
+    let mut spu = Spu::new();
+    let mut seq = Sequencer::new(synthetic_seq(), one_tone_bank());
+    seq.set_master_vol(RETAIL_BGM_SEQ_VOL);
+    seq.fire_channel(
+        &mut spu,
+        0,
+        ChannelMessage::NoteOn {
+            key: 60,
+            velocity: 100,
+        },
+    );
+    seq.flush_key_ons(&mut spu);
+    let v = seq.active[0].voice as usize;
+    let full = (spu.voices[v].vol_left, spu.voices[v].vol_right);
+    // The chain of the CC7 test above, at sequence volume `sv`.
+    let expect = |sv: i32| {
+        let head = 100 * (127 * 0x3FFF) / 0x3F01;
+        let head = head * 127 * 127 / 0x3F01;
+        let side = head * sv / 127;
+        ((side * side / 0x3FFF) as i16, (side * side / 0x3FFF) as i16)
+    };
+    assert_eq!(full, expect(107));
+
+    // The 75% summon duck's floor: 107 * 161 / 215 = 80.
+    seq.set_master_vol(80);
+    // Nothing moves until the flush.
+    assert_eq!((spu.voices[v].vol_left, spu.voices[v].vol_right), full);
+    let mut spu_ticks = 0;
+    while spu_ticks < FLUSH_SAMPLES {
+        seq.tick_sample(&mut spu);
+        spu_ticks += 1;
+    }
+    assert_eq!(
+        (spu.voices[v].vol_left, spu.voices[v].vol_right),
+        expect(80)
+    );
+    // Restored, no compounding.
+    seq.set_master_vol(RETAIL_BGM_SEQ_VOL);
+    for _ in 0..FLUSH_SAMPLES {
+        seq.tick_sample(&mut spu);
+    }
+    assert_eq!((spu.voices[v].vol_left, spu.voices[v].vol_right), full);
+}
+
 #[test]
 fn cc10_pan_repans_the_sounding_voice() {
     let mut spu = Spu::new();

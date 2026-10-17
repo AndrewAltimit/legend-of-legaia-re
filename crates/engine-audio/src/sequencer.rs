@@ -220,6 +220,9 @@ pub struct Sequencer {
     active: Vec<ActiveNote>,
     /// Master sequencer volume (libsnd `mvol`), 0..=127.
     master_vol: u8,
+    /// [`Self::set_master_vol`] changed the volume since the last flush: the
+    /// flush re-volumes every sounding note ([`Self::remix_all`]).
+    master_vol_dirty: bool,
     /// Monotonic count of loop rewinds. Bumped on every [`Self::rewind_to`],
     /// so an outside observer can detect a loop-back even when the playhead
     /// tick peaks and resets within a single sample (a marker-less EOT whose

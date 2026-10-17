@@ -44,7 +44,8 @@ Part of the [key function directory](../functions.md) - the conventions for read
 | `800641EC` | `SsSeqRewind`-- full slot reset to start of sequence: kills the notes (`FUN_800684CC`), resets the cursor to `+0x4`, raises flag `0x4`. BGM sub-op 2's stop, reached through the `FUN_80064370(id, 0)` shim under `FUN_800266E0`. |
 | `80062410` | `_SsSeqInit` - -EQ-header parser (`'Sp'` magic + version `0x01`). |
 | `80061C68` | `_SsSeqGetVar` - MIDI-style varint delta-time decode. |
-| `80061EDC` / `80067E9C` | `SsSeqSetVol` (per-channel + slot -ol/pan). Clamps `0..0x7F`. |
+| `80061EDC` | `SsSeqSetDecrescendo`-shaped slide install: clamps the target to at most the current volume (`0x80061F3C..0x80061F5C`), installs the slide (`FUN_8006206C`), sets flag `0x20`. |
+| `80067E9C` | Sequence-volume set: stores `+0x58` / `+0x5A` (clamped `0x7F`) and re-volumes every voice the sequence owns through the key-on chain. See [`audio.md`](../../subsystems/audio.md#a-sequence-volume-change-re-volumes-the-held-notes). |
 | `80066E50` / `80067550` |-`_SsPitchFromKey` + `_SsVoNoteOn` - note→pitch table at `_DAT_8007A940` + master×velocity×channel-vol×stereo-pan voice mixer. |
 | `80062AA0` | `SsSetMVol` - packs `[cmd=3, x-0x81, y*0x81]`, calls `FUN_8006BCB4`. |
 | `80068D94` | `SsVabOpenHead` core - validates `pBAV` magic, registers the bank's per-vab table pointers, builds the **program-number → packed-tone-page rank map** into the ProgAtr `+8` reserved words, allocates SPU memory, stashes per-VAG SPU addresses in ProgAtr `+0xC/+0xE`. Consumed by the program-change `FUN_80068B98`. (Earlier `SsSepOpen`/'VAP'-loader reading corrected from the disassembly.) Engine port: `engine-audio::VabBank::upload`. See [`subsystems/audio.md`](../../subsystems/audio.md#ssapi-seq-management-layer-above-libspu). |

@@ -3,9 +3,10 @@
 //!
 //! The action SM sets a target (`ref * 75 / 100` under a summon / capture,
 //! `ref` again in the Done band's `0x51` arm) and the level steps one unit per
-//! vsync toward it; each step re-applies `master_vol * level / ref`, the
-//! `SsSeqSetVol` re-apply that halves the cell into the 0..127 domain the same
-//! way `master_vol` already is.
+//! vsync toward it; each step re-applies the level halved
+//! ([`ducked_master_vol`]), the `SsSeqSetVol` re-apply that takes the cell
+//! into the 0..127 domain - and, through `FUN_80067E9C`, re-volumes the
+//! notes already sounding ([`crate::Sequencer::set_master_vol`]).
 //!
 //! One kernel for both hosts, because the two copies disagreed by omission in
 //! the same place: each re-applied the volume only while the level was
@@ -60,10 +61,25 @@ pub fn step_duck(level: &mut u8, target: u8) -> bool {
     true
 }
 
-/// The sequencer master volume the level stands for: `master * level / ref`,
-/// floored (a "75%" duck hands a 100 master `74`).
+/// The sequencer master volume the level stands for.
+///
+/// Retail does not scale: every site that turns an audio level into a
+/// sequence volume halves the level word (`(level << 15) >> 16`, or a plain
+/// `sra 1` - `FUN_80026478`, `FUN_80019898`, `FUN_800243F0`) and hands the
+/// result to `SsSeqSetVol` as is, which is where the BGM's resting `107`
+/// (`0xD7 >> 1`) comes from. So the level loses its low bit before anything
+/// else: a level of `210` plays at `105`, where `107 * 210 / 215` would floor
+/// to `104`. Across the library's mednafen states taken under a summon duck,
+/// every BGM record's `+0x58` equals the applied level halved.
+///
+/// `master` rescales that for a host whose base volume is not the retail
+/// `107` (`master * (level >> 1) / 107`, floored); at the retail base it is
+/// exactly `level >> 1` (a "75%" duck hands a 107 master `80`, a 100 master
+/// `74`).
 pub fn ducked_master_vol(master: u8, level: u8) -> u8 {
-    (u32::from(master) * u32::from(level) / u32::from(DUCK_LEVEL_REF)).min(127) as u8
+    let half = u32::from(level >> 1);
+    let ref_half = u32::from(DUCK_LEVEL_REF >> 1);
+    (u32::from(master) * half / ref_half).min(127) as u8
 }
 
 /// The volume a host hands the live sequencer this frame, or `None` when
@@ -94,6 +110,25 @@ mod tests {
         // At the reference with no step there is nothing to re-apply.
         assert_eq!(duck_apply(false, 100, DUCK_LEVEL_REF), None);
         assert_eq!(duck_apply(true, 100, DUCK_LEVEL_REF), Some(100));
+    }
+
+    /// The applied level against the BGM record's sequence volume in the
+    /// library's summon-duck mednafen states: retail halves the level, so an
+    /// even level does not lose a unit to a `107 / 215` floor.
+    #[test]
+    fn the_retail_master_is_the_level_halved() {
+        for (level, vol) in [
+            (215, 107),
+            (213, 106),
+            (210, 105),
+            (207, 103),
+            (195, 97),
+            (193, 96),
+            (190, 95),
+            (161, 80),
+        ] {
+            assert_eq!(ducked_master_vol(107, level), vol, "level {level}");
+        }
     }
 
     #[test]
