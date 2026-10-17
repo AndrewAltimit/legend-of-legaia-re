@@ -670,7 +670,12 @@ its tick returns to `0x801F8838`, inside slot B, not to a 0898 arm.
 
 The two bytes bound disjoint halves of `actor_table`:
 
-- **`ctx[+1]` = monster count.** The two party-wipe sweeps read it as the loop
+- **`ctx[+1]` = monster count**, the fight's seated monsters: a downed one
+  stays counted, and an empty slot is none. The port counts the engine slots
+  a monster sits in, not the active ones - a slot an earlier fight left
+  active once held Theeder's and Gizam's arm-14 row poll for good, and the
+  battle entry clears every row past the fight's layout. The two party-wipe
+  sweeps read it as the loop
   bound (`lbu a1,1(ctx)` at `0x8004B10C`, `lbu v0,1(ctx)` at `0x8005039C`) and
   index `actor_table[(i + 3)]` (`addiu v0,v0,3; sll v0,v0,2` at `0x8004B12C` /
   `0x800503B4`), the enemy row.
@@ -2132,25 +2137,43 @@ folds the cast's outcome once the phase passes the hit arm:
 | PROT | Hit arm | Outcome there |
 |---|---|---|
 | 0914 Gola Gola | `0xD` | the living row, `FUN_801DD0AC(0x12, 7)` |
-| 0915 Mushura | `0xC` | the rampage (arm 7's quarter hit cannot kill and is not carried) |
+| 0915 Mushura | `0xC` | the rampage; arm 7 lands a quarter pre-hit on the victim first |
 | 0917 Barra | `0xD` | the dropped target, on landing |
 | 0921 Iota | `10` | the living row |
 | 0923 Gilium | `0x15` | the living row |
-| 0928 Palma | `0x13` | the living row (arm `0xF`'s non-lethal sweep is not carried) |
-| 0929 Mule | `18` | the living row (arm 16's per-pass non-lethal hits are not carried) |
+| 0928 Palma | `0x13` | the living row; arm `0xF` sweeps it once with a pre-hit first |
+| 0929 Mule | `18` | the living row (arm 16's per-pass wave hits are not carried) |
 | 0930 Horn | `0xA` | the party's full heal and status clear (no damage call) |
 | 0931 Jedo | `29` | a scripted fight's row hit; any other fight's kill of every living monster at arm 30's exit |
-| 0932 Meta | `0x15` | the row (arm `0x12`'s non-lethal sweep is not carried) |
-| 0933 Terra | `0x13` | the row (arm `0xC`'s non-lethal sweep is not carried) |
+| 0932 Meta | `0x15` | the row; arm `0x12` sweeps it with a pre-hit first |
+| 0933 Terra | `0x13` | the row; arm `0xC` sweeps it with a pre-hit first |
 | 0934 Ozma | `0x18` | the row (the hit ladder's three earlier hits are not carried) |
+
+A **pre-hit** is the module's own non-lethal hit ahead of the fold: the
+summon branch of `FUN_801DD0AC` rolled per target, clamped to `HP - 1`, with
+the reaction staged in the `OR` form (`World::apply_summon_pre_hits`,
+`seru_magic_ticks::summon_pre_hit`). Mushura's is quartered and floored at
+`1`. Not carried: the per-seat tallies `0x801F6978` / `0x801F6980` the
+quartered roll is checked against, the `0x10` / `0x12` mode the wrapper is
+called with, and Mule's and Ozma's per-pass ladders.
 
 The fades are the presentation hook's, fired off the image's decoded sites
 on the arm timing the director paces ([Presentation calls](#presentation-calls)).
-Arms that wait on a host value read it where the engine feeds one (the
-creature's playing clip, the row and victim settle, the band timer, the cast's
-target group) and pass where it does not: the creature's clip frame
-`+0x68` (Gola Gola arms 4..8, Jedo arm 22), its loop counter held at `0xFF`
-(Gola Gola arm `0xB`, Palma arms 8..`0xA`), its tint word (Mushura arm `0xD`).
+Arms that wait on the creature read what the host feeds: its playing clip,
+its node cursor `+0x68` (Gola Gola arms 4..6 and 8 until it reaches
+`0x100` / `0x200` / `0x300` / `0x200`, Jedo arm 22 until `0x120` - an
+equality in retail, a reach in the port, since the engine's cursor steps in
+its own increments), and its loop counter `+0x21B` off the `0xFF` sentinel
+(Gola Gola arm `0xB`, Palma arms 8..`0xA`: the clip has reached its park).
+The arms that write those words are carried too: the park re-armed (`+0x21B
+= 0xFF`, `+0x176 = 0xFF0`; Gola Gola arms `0xC` and `0xE`, Gilium arms
+9..`0xB`, Palma arms 8 and 9), Palma's cursor put back on keyframe 15
+(`+0x68 = 0xF0`), and Gola Gola's rate ramp (`+0x21D = word >> 4 + 2`). Every
+such wait is bounded (`HOST_WAIT_CAP` passes), so a creature the host stops
+animating cannot hold the band; with no clip fed the wait passes. Mushura
+arm `0xD`'s wait on the creature's tint word `+0x04` passes: the writer that
+drains it is not identified.
+
 Arms that store the camera globals straight (Barra arms 3..6 and `0xC`, Palma
 arms 3 and 4) land each store as a one-frame cut on the origin, the TR z
 through the inverse of the tween's prescale; Meta's arm-6 and Ozma's arms 5..9
@@ -2158,14 +2181,35 @@ TR y stores are not carried. Two module words are modelled on the director's
 `ramp`: Barra's TR z pull and its victim's fall, and Mule's world-anchor Z
 `0x80089120`, which the port otherwise keeps no twin of (from `0`).
 
-Not carried by any of them: the part spawns (the stager seats each module's
-record set on its first tick), the writes to the other seats (the monster
-row's re-seat, hiding, orbits and restore, Mushura's walk and steering, Barra's
+**Spawns.** Each module's `FUN_80021B04` / `FUN_80050ED4` calls are seated on
+the pass their arm makes them (`cast_module_camera::creature_arm_spawns`,
+`ModuleProfile::stages_spawns`), with the record its `a2` names and the
+point, angles and scale its `a0` / `a1` / `a3` carry. The table is read off
+each image's disassembly: a straight-line walk of every arm from its entry
+(the stack trios the prologue zeroes, the halfword stores into them, the
+`lui` / `addiu` of the record), with the loops (Gilium's rings, Meta's ten
+steps, Ozma's columns, Horn's party loop) and the seat-relative points read
+by hand. A few calls run on every pass of their arm, held or not (Mushura's
+rampage, Jedo's sparks, Ozma's flames). Three kinds of point are not carried:
+a `rand()` spread (seated at the spread's centre), a height off the victim's
+`+0x3E` (Barra arm `0xB`, seated at `z = 0`), and Mule arm 17's world-anchor
+point and TR z scale (the origin at unit scale). The records only a module's
+own stager seats (reached through a part's op-`0x20` call, which the engine
+does not run for these modules) are seated whole on the stager's first tick.
+
+Not carried by any of them: the writes to the other seats (the monster row's
+re-seat, hiding, orbits and restore, Mushura's walk and steering, Barra's
 seat swaps and arcs), the stage words `ctx[+0x27A..+0x286]` and the camera
-block `0x80083FF8`, pad rumble, and every hit beyond the one the fold lands.
-Jedo's kill is the host's (`World::apply_summon_body_writes`): on a fight
-that is not scripted arm 29 makes no damage call and arm 30 breaks every
-living monster up and kills it.
+block `0x80083FF8`, and pad rumble. Jedo's kill is the host's
+(`World::apply_summon_body_writes`): on a fight that is not scripted arm 29
+makes no damage call and arm 30 breaks every living monster up and kills it.
+
+**The band lets go of a stalled module.** A module still busy
+`SUMMON_LINGER_STALL_FRAMES` ticks after its outcome is held on a poll the
+engine cannot answer - a dead seat whose defeat fade never runs, so its
+colour word `+0x04` never drains to the zero the row polls wait for - and the
+summon stager's Linger phase ends the band anyway. The bound is twice the
+longest post-hit tail a ported module runs (Palma's settle arm `0xC8`).
 
 ### PROT 0948 (Cross Beam)
 
