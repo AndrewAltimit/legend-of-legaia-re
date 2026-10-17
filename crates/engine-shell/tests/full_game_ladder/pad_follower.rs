@@ -950,7 +950,9 @@ pub(super) fn pad_walk(
         pressed_at = Some((wx, wz));
         session.host.world.set_pad(pad);
         let jump_from = player_xz(session);
-        match session.tick() {
+        let ticked = session.tick();
+        note_caps(session);
+        match ticked {
             Ok(SceneTickEvent::SceneEntered { name }) => return Ok(Walk::Entered(name)),
             Ok(_) => {}
             Err(e) => return Err(format!("tick: {e:#}")),

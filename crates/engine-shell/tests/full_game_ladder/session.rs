@@ -201,3 +201,26 @@ pub(super) fn fight_committed(session: &mut NativeSession, r: Run) -> Run {
     }
     r
 }
+
+/// Print and drain the script contexts the engine's anti-hang timeline cap
+/// ended since the last call (`World::cutscene.capped`), under
+/// `LEGAIA_FGL_CAPS`: the census of shipped records the cap cuts short.
+pub(super) fn note_caps(session: &mut NativeSession) {
+    if session.host.world.cutscene.capped.is_empty() {
+        return;
+    }
+    let caps = std::mem::take(&mut session.host.world.cutscene.capped);
+    if std::env::var_os("LEGAIA_FGL_CAPS").is_some() {
+        for c in caps {
+            eprintln!(
+                "    [cap] {} {} len {:#x} pc {:#06x} op {:#04x} frame {}",
+                c.scene,
+                if c.modal { "timeline" } else { "helper" },
+                c.len,
+                c.pc,
+                c.op,
+                session.frames
+            );
+        }
+    }
+}

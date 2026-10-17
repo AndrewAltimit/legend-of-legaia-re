@@ -910,6 +910,7 @@ pub(super) fn run(session: &mut NativeSession, budget: usize, stop_on_release: b
         let site = std::env::var_os("LEGAIA_FGL_POS_TRACE").map(|_| park_site(session));
         let roll_before = encounter_roll_state(session);
         let r = session.tick();
+        note_caps(session);
         note_random_roll(session, roll_before);
         if let Some(site) = site {
             let after = player_xz(session);

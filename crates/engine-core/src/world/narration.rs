@@ -692,6 +692,24 @@ impl World {
         self.step_helper_contexts();
     }
 
+    /// Record a context the anti-hang cap ended
+    /// ([`crate::world::CutsceneState::capped`]).
+    fn note_capped_timeline(
+        &mut self,
+        tl: &legaia_engine_field::cutscene_timeline::CutsceneTimeline,
+        modal: bool,
+    ) {
+        let cap = crate::world::CappedTimeline {
+            scene: self.active_scene_label.clone(),
+            modal,
+            len: tl.bytecode.len(),
+            pc: tl.pc,
+            op: tl.bytecode.get(tl.pc).copied().unwrap_or(0),
+        };
+        log::warn!("timeline cap ended a record: {cap:?}");
+        self.cutscene.capped.push(cap);
+    }
+
     // REF: FUN_8003BDE0
     pub fn step_cutscene_timeline(&mut self) {
         let Some(mut tl) = self.cutscene.timeline.take() else {
@@ -995,8 +1013,9 @@ impl World {
         } else {
             CUTSCENE_TIMELINE_MAX_FRAMES
         };
-        if tl.frames >= cap {
+        if tl.frames >= cap && !tl.done {
             tl.done = true;
+            self.note_capped_timeline(&tl, true);
         }
         // A record that ends while an NPC turn it armed is still ramping:
         // retail's turn belongs to the NPC's own walk kernel and finishes
@@ -1151,9 +1170,20 @@ impl World {
                     continue;
                 }
             }
-            if self.run_spawned_record_slice(tl, false) && tl.frames >= CUTSCENE_TIMELINE_MAX_FRAMES
+            if self.run_spawned_record_slice(tl, false)
+                && tl.frames >= CUTSCENE_TIMELINE_MAX_FRAMES
+                && !tl.done
             {
                 tl.done = true;
+                let cap = crate::world::CappedTimeline {
+                    scene: self.active_scene_label.clone(),
+                    modal: false,
+                    len: tl.bytecode.len(),
+                    pc: tl.pc,
+                    op: tl.bytecode.get(tl.pc).copied().unwrap_or(0),
+                };
+                log::warn!("timeline cap ended a helper record: {cap:?}");
+                self.cutscene.capped.push(cap);
             }
         }
         self.field_vm.halted_elsewhere.clear();

@@ -102,7 +102,7 @@ pub use audio_state::{
 pub use battle_state::{BattleState, ClipRibbon, INFLIGHT_GROUND_SLOTS, InflightCastSeed};
 pub use cast_fx_state::{CastFxState, PendingBurst};
 pub use config::*;
-pub use cutscene_state::CutsceneState;
+pub use cutscene_state::{CappedTimeline, CutsceneState};
 pub use disc_tables::DiscTables;
 pub use field_locomotion::FieldLocomotion;
 pub use field_npc_state::{FieldFaceRow, FieldNpcState, SPAWN_HEADING};
