@@ -129,9 +129,10 @@ impl ArtsShoutBank {
 
     /// Install the battle's first formation id (`gp+0x9F4`, `0x8007BD0C`).
     /// `None` (the default) never matches [`FORCED_CHANNEL_FORMATION_ID`].
-    /// Neither host installs it yet (the battle-start formation is known to
-    /// `engine-core`'s battle session, not to the audio director that owns
-    /// the bank), so the forced-channel exception is inert on both.
+    /// Both play hosts reach it through one call: the session's battle-event
+    /// step hands the world's formation slot 0 to the director
+    /// (`AudioDirector::set_shout_first_enemy_id`) ahead of the tick's
+    /// shouts.
     pub fn set_first_enemy_id(&mut self, id: Option<u8>) {
         self.first_enemy_id = id;
     }

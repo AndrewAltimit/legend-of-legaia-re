@@ -318,6 +318,10 @@ impl<S: AudioSink> BootSession<S> {
     ) -> u32 {
         use legaia_engine_battle::battle_events::BattleEvent;
         let world = &mut self.host.world;
+        // The shout selector's one formation read (`gp+0x9F4`, formation
+        // slot 0): retail reads the live cell at pick time, so it is handed
+        // over every step rather than latched at battle entry.
+        let first_enemy = world.formation_slot0_monster_id();
         let cues = world.drain_battle_sfx_cues();
         let shouts = world.drain_battle_shout_cues();
         let xa_cues = world.drain_battle_xa_cues();
@@ -356,6 +360,7 @@ impl<S: AudioSink> BootSession<S> {
             );
         }
         bgm.enqueue_battle_cues(&cues, &self.host.index);
+        bgm.set_shout_first_enemy_id(first_enemy);
         for shout in &shouts {
             match bgm.play_art_shout(shout.cslot, shout.action) {
                 Some(ch) => log::debug!(

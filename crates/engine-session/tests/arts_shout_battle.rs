@@ -127,11 +127,35 @@ fn build_world(with_record: bool) -> World {
 fn drive_art_and_collect_shouts(
     w: &mut World,
 ) -> Vec<legaia_engine_battle::battle_events::BattleShoutCue> {
+    drive_art(w)
+}
+
+/// What [`drive_art`] runs against: a bare `World` (cues drained by hand)
+/// or a whole session (cues routed through the audio director).
+trait Rig {
+    fn world(&mut self) -> &mut World;
+    /// After each battle tick: take the tick's shout cues.
+    fn after_tick(&mut self) -> Vec<legaia_engine_battle::battle_events::BattleShoutCue>;
+    /// Once, on the tick the battle comes up.
+    fn on_battle(&mut self) {}
+}
+
+impl Rig for World {
+    fn world(&mut self) -> &mut World {
+        self
+    }
+    fn after_tick(&mut self) -> Vec<legaia_engine_battle::battle_events::BattleShoutCue> {
+        self.drain_battle_shout_cues()
+    }
+}
+
+fn drive_art(rig: &mut dyn Rig) -> Vec<legaia_engine_battle::battle_events::BattleShoutCue> {
     use legaia_engine_menus::battle_input::BattleCommand;
 
     let up = InputState::mask_of([PadButton::Up]);
     let mut entered = false;
     for _ in 0..6000 {
+        let w = rig.world();
         w.set_pad(up);
         w.tick();
         if w.mode == SceneMode::Battle {
@@ -140,6 +164,7 @@ fn drive_art_and_collect_shouts(
         }
     }
     assert!(entered, "walking should trigger Field -> Battle");
+    rig.on_battle();
 
     // Somersault's whole command string is one `Up`.
     let combo = [PadButton::Up, PadButton::Down, PadButton::Up];
@@ -149,6 +174,7 @@ fn drive_art_and_collect_shouts(
     let mut opened_input = false;
     let mut arts_turns = 0usize;
     for _ in 0..4000 {
+        let w = rig.world();
         let pad = if !press {
             0
         } else if let Some(view) = w.arts_input_view() {
@@ -202,11 +228,13 @@ fn drive_art_and_collect_shouts(
         if input_was_open && !w.arts_input_active() {
             arts_turns += 1;
         }
-        shouts.extend(w.drain_battle_shout_cues());
+        shouts.extend(rig.after_tick());
+        let w = rig.world();
         if w.mode == SceneMode::Field && w.battle.last_rewards.is_some() {
             break;
         }
     }
+    let w = rig.world();
     assert!(
         opened_input,
         "the Arts command must open the per-press input session"
@@ -312,5 +340,105 @@ fn art_shout_pcm_lands_in_the_mix_after_the_cd_delay() {
     assert!(
         shouts.is_empty(),
         "a synthetic art without a matched record stays silent: {shouts:?}"
+    );
+}
+
+/// The session rig: the world ticks inside a `BootSession` over the
+/// device-free sink, and each tick's shouts go through
+/// `BootSession::route_battle_audio` - the battle-event step both play hosts
+/// run - so the selector sees what the session hands it.
+struct SessionRig {
+    s: legaia_engine_session::BootSession<legaia_engine_audio::TestAudioSink>,
+    /// Formation slot-0 id written over the live formation as the battle
+    /// comes up (`None` keeps the encounter's own).
+    force_slot0: Option<u16>,
+}
+
+impl Rig for SessionRig {
+    fn world(&mut self) -> &mut World {
+        &mut self.s.host.world
+    }
+    fn after_tick(&mut self) -> Vec<legaia_engine_battle::battle_events::BattleShoutCue> {
+        let cues = self.s.host.world.audio.battle_shout_cues.clone();
+        self.s.route_battle_audio(&[]);
+        assert!(
+            self.s.host.world.audio.battle_shout_cues.is_empty(),
+            "the session step drains the shout queue"
+        );
+        cues
+    }
+    fn on_battle(&mut self) {
+        if let Some(id) = self.force_slot0
+            && let Some(f) = self.s.host.world.battle.active_formation.as_mut()
+            && let Some(slot) = f.slots.first_mut()
+        {
+            slot.monster_id = id;
+        }
+    }
+}
+
+fn session_rig(disc: &std::path::Path, force_slot0: Option<u16>) -> SessionRig {
+    use legaia_engine_audio::{SPU_INTERNAL_RATE, TestAudioSink};
+    let host = legaia_engine_core::scene_host::SceneHost::open_disc(disc).expect("open disc");
+    let cfg = legaia_engine_session::BootConfig {
+        scene: String::new(),
+        enable_audio: true,
+    };
+    let mut s = legaia_engine_session::BootSession::from_host(host, None, &cfg, || {
+        Ok(TestAudioSink::new(SPU_INTERNAL_RATE))
+    })
+    .expect("boot session");
+    let bank = legaia_engine_session::native::read_arts_shout_bank(disc)
+        .expect("arts-voice shout bank stages from the disc");
+    s.bgm.as_mut().expect("audio enabled").set_shout_bank(bank);
+    s.host.world = build_world(true);
+    SessionRig { s, force_slot0 }
+}
+
+/// Retail's one forced-channel exception, end to end through the session
+/// both play hosts run: with formation slot 0 reading `0x4F` (Tetsu, the
+/// sparring tutorial) `FUN_8004C140` plays channel `0xC` whatever it drew
+/// (`lbu v1,0x9f4(gp)` / `li v0,0x4f` / `bne` / `li a1,0xc` at
+/// `0x8004C3FC..0x8004C414`). The session hands the world's formation to the
+/// director every battle-event step; the baseline battle (the encounter's
+/// own formation) plays from the art's pool.
+#[test]
+fn tetsu_formation_forces_shout_channel_twelve_through_the_session() {
+    let Some(disc) = disc_path() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
+        return;
+    };
+    let pool: Vec<u8> = legaia_engine_session::native::read_arts_shout_bank(&disc)
+        .unwrap()
+        .pool(0, 0x27)
+        .unwrap()
+        .to_vec();
+
+    let mut forced = session_rig(&disc, Some(0x4F));
+    let shouts = drive_art(&mut forced);
+    assert_eq!(
+        shouts.len(),
+        1,
+        "one shout cue per executed art: {shouts:?}"
+    );
+    let stats = forced.s.bgm.as_ref().unwrap().xa_stats().clone();
+    eprintln!("[ok] forced: {stats:?}");
+    assert_eq!(stats.shouts_fired, 1, "the shout reached the sink");
+    assert_eq!(
+        stats.last_shout,
+        Some((0, 0x27, legaia_engine_audio::shout::FORCED_CHANNEL)),
+        "formation 0x4F plays channel 0xC"
+    );
+
+    let mut plain = session_rig(&disc, None);
+    let shouts = drive_art(&mut plain);
+    assert_eq!(shouts.len(), 1);
+    let stats = plain.s.bgm.as_ref().unwrap().xa_stats().clone();
+    eprintln!("[ok] baseline: {stats:?}");
+    assert_eq!(stats.shouts_fired, 1, "the shout reached the sink");
+    let (_, _, ch) = stats.last_shout.expect("a shout fired");
+    assert!(
+        pool.contains(&ch),
+        "baseline plays from the pool {pool:?}: {ch}"
     );
 }

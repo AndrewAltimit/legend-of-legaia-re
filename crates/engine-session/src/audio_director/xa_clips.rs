@@ -90,6 +90,19 @@ impl<S: AudioSink> AudioDirector<S> {
         self.shout_bank = Some(bank);
     }
 
+    /// Tell the shout selector the battle's first formation id - the byte
+    /// `gp+0x9F4` (`0x8007BD0C`, formation slot 0) `FUN_8004C140` compares
+    /// with `0x4F` before it plays (`0x8004C404..0x8004C414`); a match
+    /// replaces the drawn channel with `0xC`. The session sets it from the
+    /// world's active formation each battle-event step
+    /// (`BootSession::route_battle_audio`), ahead of the tick's shouts. A
+    /// no-op while no bank is staged.
+    pub fn set_shout_first_enemy_id(&mut self, id: Option<u8>) {
+        if let Some(bank) = self.shout_bank.as_mut() {
+            bank.set_first_enemy_id(id);
+        }
+    }
+
     /// Whether the arts-voice shout bank was staged.
     pub fn has_shout_bank(&self) -> bool {
         self.shout_bank.is_some()
