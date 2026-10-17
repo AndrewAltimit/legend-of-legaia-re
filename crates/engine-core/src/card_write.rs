@@ -199,9 +199,24 @@ mod tests {
         MountedCard::from_bytes(buf, "blank").unwrap()
     }
 
+    /// A save a player can make: one with a party. Retail's New Game seeds
+    /// the records before the first save point, and `MountedCard::save_at`
+    /// refuses a block whose first record is zero (no host resumes a
+    /// party-less world), so a bare `World::new()` is not a save the Load
+    /// path ever reads back.
     fn a_save() -> SaveFile {
         let mut w = crate::world::World::new();
         w.party.money = 1234;
+        let mut vahn = legaia_save::CharacterRecord::zeroed();
+        let mut hms = vahn.hp_mp_sp();
+        hms.hp_max = 180;
+        hms.hp_cur = 180;
+        hms.mp_max = 20;
+        hms.mp_cur = 20;
+        vahn.set_hp_mp_sp(hms);
+        vahn.set_level(1);
+        w.party.roster.members = vec![vahn];
+        w.party.party_count = 1;
         w.save_full()
     }
 
