@@ -66,6 +66,18 @@ pub fn battle_breadcrumb_third_tab(world: &crate::world::World) -> Option<String
 /// read back at `0x801E6178..0x801E61B0`), so they are up through `0x51`.
 const ITEM_PANELS_CLOSE_STATE: u8 = 0x52;
 
+/// Whether action state `s` runs ahead of the Done band's close - every
+/// state below [`ITEM_PANELS_CLOSE_STATE`], and the capture bands
+/// `0x68..=0x71`, whose bytes sit above it but which hand off into the Done
+/// band (`0x70` exits to `0x50`). A Mystic Circle capture holds `0x70` with
+/// the seed opener's panels up (`cort_mystic_circle_mid_cast`, target `8`).
+fn panels_still_open(s: u8) -> bool {
+    use legaia_engine_battle_vm::battle_action::ActionState;
+    s < ITEM_PANELS_CLOSE_STATE
+        || (ActionState::CaptureStart.as_byte()..=ActionState::MagicCaptureFinalize.as_byte())
+            .contains(&s)
+}
+
 /// Are the resting roster panels (records 6 / 78 / 79) on screen this
 /// frame?
 ///
@@ -116,7 +128,7 @@ pub fn battle_panels_visible(world: &crate::world::World) -> bool {
                 let cat = actor.battle.action_category;
                 let party_wide = actor.battle.active_target
                     == legaia_engine_battle_vm::battle_cue_group::TARGET_PARTY_WIDE;
-                let open = s < ITEM_PANELS_CLOSE_STATE;
+                let open = panels_still_open(s);
                 let monster_seed =
                     a >= party_count(world) as u8 && seed_plates_reach_the_target_arm(cat);
                 let item_band =

@@ -730,6 +730,13 @@ fn the_seed_plates_follow_fun_801e6d84() {
         TARGET_PARTY_WIDE,
     );
     assert!(battle_panels_visible(&w), "monster caster, party-wide");
+    // A capture-class special runs its module in the capture band, whose
+    // state bytes sit above the Done band's but which hands off into it
+    // (`0x70` exits to `0x50`): the seed's panels hold through it.
+    for s in 0x6E..=0x71 {
+        w.battle_ctx.action_state = s;
+        assert!(battle_panels_visible(&w), "capture band {s:#x}");
+    }
     arm_action(
         &mut w,
         3,
