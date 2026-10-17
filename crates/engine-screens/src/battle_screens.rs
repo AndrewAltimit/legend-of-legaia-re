@@ -777,6 +777,87 @@ pub fn battle_tutorial_stage_draws(
     out
 }
 
+/// The post-battle report's windows this frame, with the stage transform:
+/// the loss window when `World::battle_defeat_banner` is up, else the spoils
+/// report (`World::battle_spoils_banner`), else nothing.
+fn with_battle_result_windows<T: Default>(
+    world: &World,
+    surface_w: u32,
+    surface_h: u32,
+    f: impl FnOnce(
+        &[legaia_engine_ui::SpoilsWindow],
+        Option<&legaia_engine_ui::BattleSpoilsView<'_>>,
+        (i32, i32),
+        u32,
+    ) -> T,
+) -> T {
+    let (origin, scale) = legaia_engine_ui::pause_menu::stage_transform(surface_w, surface_h);
+    if let Some(defeat) = world.battle_defeat_banner() {
+        let windows =
+            legaia_engine_ui::battle_defeat_windows(defeat.line.as_deref(), defeat.slide_y);
+        return f(&windows, None, origin, scale);
+    }
+    let Some(banner) = world.battle_spoils_banner() else {
+        return T::default();
+    };
+    let leader = world.battle_spoils_leader();
+    let view = legaia_engine_ui::BattleSpoilsView {
+        xp: banner.xp,
+        gold: banner.gold,
+        level_ups: &banner.level_ups,
+        drops: &banner.drops,
+        leader: &leader,
+        subject: banner.subject,
+        slide: banner.slide,
+    };
+    let windows = legaia_engine_ui::battle_spoils_windows(&view);
+    f(&windows, Some(&view), origin, scale)
+}
+
+/// The post-battle report's text, in surface pixels: the loss window's line
+/// (screen element `0x42`) or the spoils report (level-ups, XP / gold, drops).
+/// Empty when neither is up. A host gates it on its own frame owner (the
+/// party-wipe hand-off draws nothing).
+pub fn battle_result_text_draws(
+    world: &World,
+    font: &legaia_font::Font,
+    surface_w: u32,
+    surface_h: u32,
+) -> Vec<TextDraw> {
+    with_battle_result_windows(
+        world,
+        surface_w,
+        surface_h,
+        |windows, view, origin, scale| {
+            let mut draws = match view {
+                Some(view) => legaia_engine_ui::battle_spoils_draws_for(font, view, windows),
+                None => legaia_engine_ui::battle_result_line_draws_for(font, windows),
+            };
+            legaia_engine_ui::scale_stage_text_draws(&mut draws, origin, scale);
+            draws
+        },
+    )
+}
+
+/// The post-battle report's window chrome - the gold nine-slice over the blue
+/// fill, one frame per window - in surface pixels. The loss window shares the
+/// report frame.
+pub fn battle_result_chrome_draws(
+    world: &World,
+    rects: &SaveMenuAtlasRects,
+    surface_w: u32,
+    surface_h: u32,
+) -> Vec<SpriteDraw> {
+    with_battle_result_windows(world, surface_w, surface_h, |windows, _, origin, scale| {
+        windows
+            .iter()
+            .flat_map(|w| {
+                legaia_engine_ui::menu_window_chrome_draws_for(rects, w.rect, origin, scale)
+            })
+            .collect()
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

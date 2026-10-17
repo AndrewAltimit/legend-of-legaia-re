@@ -4,48 +4,27 @@
 use super::*;
 
 impl PlayWindowApp {
-    /// Post-battle spoils panel draws, or empty when the panel is not up.
-    ///
-    /// Reads [`legaia_engine_core::world::World::battle_spoils_banner`] (the
-    /// timer + the name resolution both live in engine-core) and feeds the
-    /// shared `engine-ui` builder, so the browser play page draws the exact
-    /// same panel from the exact same model.
+    /// Post-battle report text - the spoils panel or the loss window - or
+    /// empty when neither is up
+    /// (`legaia_engine_screens::battle_screens::battle_result_text_draws`, the
+    /// browser play page's call too).
     pub(in crate::window) fn battle_spoils_draws(
         &self,
         surface_w: u32,
         surface_h: u32,
     ) -> Vec<TextDraw> {
-        if let Some(defeat) = self.session.host.world.battle_defeat_banner() {
-            let windows =
-                legaia_engine_ui::battle_defeat_windows(defeat.line.as_deref(), defeat.slide_y);
-            let (origin, scale) = self.save_select_stage(surface_w, surface_h);
-            let mut draws = legaia_engine_ui::battle_result_line_draws_for(&self.font, &windows);
-            legaia_engine_ui::scale_stage_text_draws(&mut draws, origin, scale);
-            return draws;
-        }
-        let Some(banner) = self.session.host.world.battle_spoils_banner() else {
-            return Vec::new();
-        };
-        let leader = self.session.host.world.battle_spoils_leader();
-        let view = legaia_engine_ui::BattleSpoilsView {
-            xp: banner.xp,
-            gold: banner.gold,
-            level_ups: &banner.level_ups,
-            drops: &banner.drops,
-            leader: &leader,
-            subject: banner.subject,
-            slide: banner.slide,
-        };
-        let windows = legaia_engine_ui::battle_spoils_windows(&view);
-        let (origin, scale) = self.save_select_stage(surface_w, surface_h);
-        let mut draws = legaia_engine_ui::battle_spoils_draws_for(&self.font, &view, &windows);
-        legaia_engine_ui::scale_stage_text_draws(&mut draws, origin, scale);
-        draws
+        legaia_engine_screens::battle_screens::battle_result_text_draws(
+            &self.session.host.world,
+            &self.font,
+            surface_w,
+            surface_h,
+        )
     }
 
-    /// The post-battle report's window chrome - the gold nine-slice over the
-    /// blue fill, one frame per window the shared builder describes. Rides
-    /// the system-UI atlas slot with the rest of the menu chrome.
+    /// The post-battle report's window chrome
+    /// (`legaia_engine_screens::battle_screens::battle_result_chrome_draws`).
+    /// Rides the system-UI atlas slot with the rest of the menu chrome; empty
+    /// before the atlas is resident.
     pub(in crate::window) fn battle_spoils_chrome_sprite_draws(
         &self,
         surface_w: u32,
@@ -54,36 +33,12 @@ impl PlayWindowApp {
         let Some(rects) = self.save_menu.as_ref().map(|a| &a.rects) else {
             return Vec::new();
         };
-        // The loss window (screen element `0x42`) shares the report frame.
-        if let Some(defeat) = self.session.host.world.battle_defeat_banner() {
-            let (origin, scale) = self.save_select_stage(surface_w, surface_h);
-            return legaia_engine_ui::battle_defeat_windows(defeat.line.as_deref(), defeat.slide_y)
-                .iter()
-                .flat_map(|w| {
-                    legaia_engine_ui::menu_window_chrome_draws_for(rects, w.rect, origin, scale)
-                })
-                .collect();
-        }
-        let Some(banner) = self.session.host.world.battle_spoils_banner() else {
-            return Vec::new();
-        };
-        let leader = self.session.host.world.battle_spoils_leader();
-        let view = legaia_engine_ui::BattleSpoilsView {
-            xp: banner.xp,
-            gold: banner.gold,
-            level_ups: &banner.level_ups,
-            drops: &banner.drops,
-            leader: &leader,
-            subject: banner.subject,
-            slide: banner.slide,
-        };
-        let (origin, scale) = self.save_select_stage(surface_w, surface_h);
-        legaia_engine_ui::battle_spoils_windows(&view)
-            .iter()
-            .flat_map(|w| {
-                legaia_engine_ui::menu_window_chrome_draws_for(rects, w.rect, origin, scale)
-            })
-            .collect()
+        legaia_engine_screens::battle_screens::battle_result_chrome_draws(
+            &self.session.host.world,
+            rects,
+            surface_w,
+            surface_h,
+        )
     }
 
     /// One dim HUD line while the live loop is armed on a scene that cannot

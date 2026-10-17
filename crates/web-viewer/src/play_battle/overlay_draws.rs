@@ -35,33 +35,12 @@ impl LegaiaRuntime {
         let Some(rects) = assets.chrome_rects() else {
             return Vec::new();
         };
-        // The loss window (screen element `0x42`) shares the report frame.
-        if let Some(defeat) = w.battle_defeat_banner() {
-            let (origin, scale) =
-                crate::play_menu::stage_transform(surface_w.max(1), surface_h.max(1));
-            return ui::battle_defeat_windows(defeat.line.as_deref(), defeat.slide_y)
-                .iter()
-                .flat_map(|win| ui::menu_window_chrome_draws_for(rects, win.rect, origin, scale))
-                .collect();
-        }
-        let Some(banner) = w.battle_spoils_banner() else {
-            return Vec::new();
-        };
-        let leader = w.battle_spoils_leader();
-        let view = ui::BattleSpoilsView {
-            xp: banner.xp,
-            gold: banner.gold,
-            level_ups: &banner.level_ups,
-            drops: &banner.drops,
-            leader: &leader,
-            subject: banner.subject,
-            slide: banner.slide,
-        };
-        let (origin, scale) = crate::play_menu::stage_transform(surface_w.max(1), surface_h.max(1));
-        ui::battle_spoils_windows(&view)
-            .iter()
-            .flat_map(|win| ui::menu_window_chrome_draws_for(rects, win.rect, origin, scale))
-            .collect()
+        legaia_engine_screens::battle_screens::battle_result_chrome_draws(
+            w,
+            rects,
+            surface_w.max(1),
+            surface_h.max(1),
+        )
     }
 
     pub(crate) fn post_battle_overlay_draws(
@@ -73,44 +52,22 @@ impl LegaiaRuntime {
         let Some(w) = self.scene_host.host().map(|h| &h.world) else {
             return Vec::new();
         };
-        let font = assets.font_ref();
-        let mut out: Vec<TextDraw> = Vec::new();
-
         // Party wipe owns the frame, and draws nothing on it: retail's next
         // frame after the wipe store is the title overlay fading in, so the
         // hand-off holds the frozen battle frame and adds no chrome. The
         // native host's `boot_ui_draws` arm is silent for the same reason.
         if self.game_over.is_some() {
-            return out;
+            return Vec::new();
         }
-
-        if let Some(defeat) = w.battle_defeat_banner() {
-            let windows = ui::battle_defeat_windows(defeat.line.as_deref(), defeat.slide_y);
-            let (origin, scale) =
-                crate::play_menu::stage_transform(surface_w.max(1), surface_h.max(1));
-            let mut draws = ui::battle_result_line_draws_for(font, &windows);
-            ui::scale_stage_text_draws(&mut draws, origin, scale);
-            out.extend(draws);
-        } else if let Some(banner) = w.battle_spoils_banner() {
-            let leader = w.battle_spoils_leader();
-            let view = ui::BattleSpoilsView {
-                xp: banner.xp,
-                gold: banner.gold,
-                level_ups: &banner.level_ups,
-                drops: &banner.drops,
-                leader: &leader,
-                subject: banner.subject,
-                slide: banner.slide,
-            };
-            let windows = ui::battle_spoils_windows(&view);
-            let (origin, scale) =
-                crate::play_menu::stage_transform(surface_w.max(1), surface_h.max(1));
-            let mut draws = ui::battle_spoils_draws_for(font, &view, &windows);
-            ui::scale_stage_text_draws(&mut draws, origin, scale);
-            out.extend(draws);
-        }
-
-        out
+        // The spoils panel or the loss window, through the shared
+        // composition the native window calls
+        // (`battle_screens::battle_result_text_draws`).
+        legaia_engine_screens::battle_screens::battle_result_text_draws(
+            w,
+            assets.font_ref(),
+            surface_w.max(1),
+            surface_h.max(1),
+        )
     }
 
     /// The **arts command-input** chrome for the browser play page:
