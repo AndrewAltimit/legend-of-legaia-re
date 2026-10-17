@@ -131,3 +131,33 @@ fn venom_and_toxic_scale_both_sides_of_a_swing() {
     // A venomed defender's guard falls to 9/10: more gets through.
     assert!(defended(0x1) > defended(0));
 }
+
+#[test]
+fn safe_escape_triples_a_fleeing_members_guard() {
+    use crate::battle_round::PendingPartyAction;
+    let hit_on_member = |run: bool, safe_escape: bool| {
+        let mut w = duel();
+        w.load_party(legaia_save::Party::zeroed(1));
+        w.party.party_count = 1;
+        w.actors[0].battle.hp = 5000;
+        w.set_battle_defense(0, 30);
+        let rec = &mut w.party.roster.members[0];
+        let mut bits = rec.ability_bits();
+        if safe_escape {
+            // `+0xF8` bit `0x200000`: byte `+0xFA`, bit 5.
+            bits[6] |= 0x20;
+        }
+        rec.set_ability_bits(bits);
+        if run {
+            w.battle.round_flow.pending[0] = Some(PendingPartyAction::Run);
+        }
+        w.land_melee_hit(1, 0, BASIC_ATTACK_COMMAND, 0, false, false);
+        w.actors[0].battle.damage_accum
+    };
+    let plain = hit_on_member(false, false);
+    // Fleeing alone, or the passive alone, changes nothing.
+    assert_eq!(hit_on_member(true, false), plain);
+    assert_eq!(hit_on_member(false, true), plain);
+    // Both: the guard roll is tripled (`0x801ED22C`), so less gets through.
+    assert!(hit_on_member(true, true) < plain);
+}

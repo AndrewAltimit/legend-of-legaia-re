@@ -9,6 +9,11 @@ use super::*;
 /// (`0x801ED0F8..0x801ED104`).
 pub(in crate::world) const ABILITY_F8_ARTS_POWER: u32 = 0x1000;
 
+/// Character-record `+0xF8` bit `0x200000`: accessory passive `0x35` Safe
+/// Escape, the `lui a2,0x20` mask of the melee kernel's fleeing-defender
+/// fold (`0x801ECFF4`).
+pub(in crate::world) const ABILITY_F8_SAFE_ESCAPE: u32 = 0x0020_0000;
+
 impl World {
     /// The engine seat of retail's per-frame damage-kernel call. For every
     /// actor whose committed one-shot clip is in flight, ask the kernel's
@@ -597,7 +602,8 @@ impl World {
         let defense = self.physical_defense_of(target, power_byte);
         // Spirit guard stance on the defender (a party slot that picked
         // Spirit and hasn't started its next turn).
-        let target_guarding = self.battle.guarding.get(target_i).copied().unwrap_or(false);
+        let target_guarding = self.battle.guarding.get(target_i).copied().unwrap_or(false)
+            || self.safe_escape_guards(target);
         let hp = self
             .actors
             .get(attacker_i)
@@ -1031,6 +1037,38 @@ impl World {
             (Some(a), Some(d)) => aff.affinity_pct(a, d).unwrap_or(100),
             _ => 100,
         }
+    }
+
+    /// The melee kernel's Safe Escape fold (`FUN_801EC3E4`
+    /// `0x801ECF74..0x801ED07C`): a **party** defender whose pending
+    /// category is the Run band (`+0x1DE == 5`) has its guard roll tripled
+    /// as the Spirit stance's is, when any member counted by the seated
+    /// party byte `ctx[+0x00]` carries record `+0xF8` bit `0x200000`
+    /// (accessory passive `0x35` Safe Escape). The loop walks every seated
+    /// member's record with no HP test (`0x801ED000..0x801ED04C`); a monster
+    /// defender skips the fold (`sltiu v0,a1,0x3` at `0x801ECF78`).
+    ///
+    /// The engine stamps category `5` on a member only at its dispatch,
+    /// where retail's Run confirm stamps the whole party at commit, so the
+    /// round's pending Run stands in for the byte as well.
+    ///
+    /// PORT: FUN_801EC3E4 (`0x801ECF74..0x801ED07C`, the `s3` count)
+    pub(in crate::world) fn safe_escape_guards(&self, target: u8) -> bool {
+        let party_count = self.party.party_count.clamp(1, 3);
+        if target >= party_count {
+            return false;
+        }
+        let fleeing = self
+            .actors
+            .get(usize::from(target))
+            .is_some_and(|a| a.battle.action_category == 5)
+            || matches!(
+                self.battle.round_flow.pending.get(usize::from(target)),
+                Some(Some(crate::battle_round::PendingPartyAction::Run))
+            );
+        fleeing
+            && (0..usize::from(party_count))
+                .any(|m| self.party_ability_word_f8(m) & ABILITY_F8_SAFE_ESCAPE != 0)
     }
 
     /// A party member's second ability word - the character record's

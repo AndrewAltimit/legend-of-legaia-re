@@ -310,8 +310,16 @@ Venom:  Defense = Defense * 9 / 10        Toxic: Defense = Defense * 7 / 10
 | `def` | defender **UDF** (`+0x15C`) when `(byte - 0x0C) % 10 < 5`, else **LDF** (`+0x160`). A monster's is the record stat after the [battle-load boost](#actor-stat-block--monster-record-mapping); a party member's is record UDF / LDF plus the equipment defence bytes `FUN_80053CB8` folds. | `0x801ECE0C..0x801ECE74` (pick at `0x801ECE14`) |
 | `Rnd(def)` | `def + rand() % ((def>>3) + 1)` | `0x801ED1B0..0x801ED1D0` (`0x801ED1B8`) |
 | Distance | `ctx[+0x6D4]`, see [angle and distance](#angle-and-distance-terms) | `0x801ED1E0..0x801ED220` |
-| Spirit stance | defender `+0x1DE == 4`, or `+0x1DE == 5` (fleeing) while a living party member wears passive `0x35` **Safe Escape** (`+0xF8` bit `0x200000`) | `0x801ECFB8..0x801ED03C`, `0x801ED210..0x801ED230` |
+| Spirit stance | defender `+0x1DE == 4`, or a party defender with `+0x1DE == 5` (fleeing) while a seated party member wears passive `0x35` **Safe Escape** (`+0xF8` bit `0x200000`) | `0x801ECFB8..0x801ED03C`, `0x801ED210..0x801ED230` |
 | Venom / Toxic | defender `+0x16E` bit `0x1` / `0x2` | `0x801ED2B8..0x801ED304` |
+
+The Safe Escape count runs only for a party defender (`sltiu v0,a1,0x3` at
+`0x801ECF78`; a monster defender takes the record-element arm instead) and
+walks the `ctx[+0x00]` seated members' records with no HP test
+(`0x801ED000..0x801ED04C`), so a downed wearer still counts. **Port.**
+`World::safe_escape_guards` folds it into the guard flag `land_melee_hit`
+hands `physical_predamage`; the engine stamps category `5` only at a member's
+dispatch, so the round's pending Run stands in for the byte.
 
 ### Underdog rewrite, chip floor and cap
 
