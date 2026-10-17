@@ -172,6 +172,7 @@
 //! per-entry anchor VA that names each tick.
 
 use crate::battle_damage_wrappers::{WrapperAttacker, WrapperDefender};
+use crate::battle_formulas::vera_heal_amount;
 use crate::cast_module_ticks::{
     ANIM_RATE_NORMAL, CHOREOGRAPHY_DONE_PHASE, CastActorState, CastArmStep, CastDamageShape,
     CastModuleCtx, CastTickStep, CastWrapper, FIRST_MONSTER_SEAT, FLAG_NON_TARGETABLE, SUMMON_SEAT,

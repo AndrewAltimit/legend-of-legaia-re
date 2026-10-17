@@ -222,10 +222,63 @@ pub fn summon_predamage_lazy(
 ///
 /// Only **one** module in the band pages this formula. The band's heals are
 /// PROT 0905 (Vera, this one) and PROT 0911 (Orb), and Orb's is its own
-/// closed form `(magic_level << 6) + 0x1C0` on its tick body
-/// (`crate::seru_magic_ticks::orb_heal_amount`). PROT 0903 / 0910 / 0913
-/// were listed here as heal stagers and are not: all three roll damage
+/// closed form `(magic_level << 6) + 0x1C0` ([`orb_heal_amount`], inline in its
+/// tick body). PROT 0903 / 0910 / 0913 were listed here as heal stagers and are not: all three roll damage
 /// through `FUN_801DD0AC(0x12, 7, seat)`.
 pub fn heal_summon_amount(magic_level: u8) -> u16 {
     ((magic_level as u32) << 5) as u16 + 0xE0
+}
+
+/// The base of PROT 0905's restore (`addiu v0, v0, 0xe0` at `0x801F7C60`).
+pub const VERA_HEAL_BASE: u32 = 0xE0;
+
+/// The per-magic-level step of PROT 0905's restore
+/// (`sll v0, v0, 0x5` at `0x801F7C5C`).
+pub const VERA_HEAL_PER_LEVEL: u32 = 0x20;
+
+/// PROT 0905's restore amount, clamped exactly the way the bytes clamp it.
+///
+/// ```text
+/// want    = magic_level * 0x20 + 0xE0
+/// missing = target[+0x14E] - target[+0x14C]
+/// if (missing < want)            ; SIGNED slt at 0x801F7C6C
+///     if ((missing << 16) == 0) return 0   ; nothing missing -> no restore
+///     want = missing
+/// ```
+pub fn vera_heal_amount(magic_level: u8, hp: u16, max_hp: u16) -> u16 {
+    let want = u32::from(magic_level) * VERA_HEAL_PER_LEVEL + VERA_HEAL_BASE;
+    let missing = i32::from(max_hp).wrapping_sub(i32::from(hp));
+    if missing < want as i32 {
+        if missing as u16 == 0 {
+            return 0;
+        }
+        return missing as u16;
+    }
+    want as u16
+}
+
+/// PROT 0911's inline heal: `(magic_level << 6) + 0x1C0`, i.e.
+/// `level * 64 + 448`.
+///
+/// `magic_level` is **not** a spell-table field. Arm `9` walks the caster's
+/// own character record - `0x80084140 + (0x8007BD10[ctx[+0x13]] - 1) * 0x414`,
+/// the `0x414`-stride live record block `docs/formats/save-record.md`
+/// describes - scanning the 32-entry learned-id list at record `+0x13D` for
+/// `caster[+0x1DF]` and reading the parallel byte at record `+0x161`
+/// (`0x801F7AB4` / `0x801F7AD8` under a `0x80084140` base, so `+0x705` and
+/// `+0x729` from there).
+///
+/// `docs/formats/spell-table.md` records this family's heal as
+/// `(power_byte << 5) + 0xE0`. PROT 0911's shift is `0x6` and its addend
+/// `0x1C0` (`sll v0,v0,0x6` at `0x801F7AE0`, `addiu a3,v0,0x1c0` at
+/// `0x801F7AEC`) - exactly twice the documented amount - so the formula is
+/// per module, not band-wide.
+pub fn orb_heal_amount(magic_level: u8) -> u32 {
+    (u32::from(magic_level) << 6) + 0x1C0
+}
+
+/// PROT 0919's inline heal: `(magic_level << 7) + 0x380` (`sll v0,v0,0x7` at
+/// `0x801F8064`, `addiu a3,v0,0x380` at `0x801F8070`) - twice Orb's.
+pub fn spoon_heal_amount(magic_level: u8) -> u32 {
+    (u32::from(magic_level) << 7) + 0x380
 }

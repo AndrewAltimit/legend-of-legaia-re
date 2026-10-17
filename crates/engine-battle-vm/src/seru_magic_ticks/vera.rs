@@ -34,13 +34,6 @@ pub const VERA_RESTORE_ARM: u8 = 9;
 /// The arm PROT 0905 fades out and latches `0xFF` from (`0x801F8034`).
 pub const VERA_FADE_ARM: u8 = 10;
 
-/// The base of PROT 0905's restore (`addiu v0, v0, 0xe0` at `0x801F7C60`).
-pub const VERA_HEAL_BASE: u32 = 0xE0;
-
-/// The per-magic-level step of PROT 0905's restore
-/// (`sll v0, v0, 0x5` at `0x801F7C5C`).
-pub const VERA_HEAL_PER_LEVEL: u32 = 0x20;
-
 /// The magic level PROT 0905's status cure unlocks at
 /// (`sltiu v0, v0, 0x3; bne` at `0x801F7D5C`).
 pub const VERA_CURE_MIN_LEVEL: u8 = 3;
@@ -139,27 +132,6 @@ pub struct VeraOutcome {
     /// `true` on tier `4`, where the arm also doubled the target's AP gauge
     /// `+0x170` under [`CURE_TIER4_AP_CAP`] ([`cure_tier4_ap`]).
     pub doubled_ap: bool,
-}
-
-/// PROT 0905's restore amount, clamped exactly the way the bytes clamp it.
-///
-/// ```text
-/// want    = magic_level * 0x20 + 0xE0
-/// missing = target[+0x14E] - target[+0x14C]
-/// if (missing < want)            ; SIGNED slt at 0x801F7C6C
-///     if ((missing << 16) == 0) return 0   ; nothing missing -> no restore
-///     want = missing
-/// ```
-pub fn vera_heal_amount(magic_level: u8, hp: u16, max_hp: u16) -> u16 {
-    let want = u32::from(magic_level) * VERA_HEAL_PER_LEVEL + VERA_HEAL_BASE;
-    let missing = i32::from(max_hp).wrapping_sub(i32::from(hp));
-    if missing < want as i32 {
-        if missing as u16 == 0 {
-            return 0;
-        }
-        return missing as u16;
-    }
-    want as u16
 }
 
 /// PROT 0905 (Vera, spell id `0x83`) tick body - 5792 bytes, 1448

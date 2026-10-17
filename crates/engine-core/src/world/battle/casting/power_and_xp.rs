@@ -241,14 +241,14 @@ impl World {
     ///
     /// * **Vera** (`0x83`, PROT 0905 arm 9): `magic_level * 0x20 + 0xE0`,
     ///   clamped to the target's missing HP with retail's own signed compare
-    ///   ([`legaia_engine_battle_vm::seru_magic_ticks::vera_heal_amount`]).
+    ///   ([`legaia_engine_battle_vm::battle_formulas::vera_heal_amount`]).
     /// * **Orb** (`0x89`, PROT 0911 arm 9): `(magic_level << 6) + 0x1C0` -
     ///   exactly twice `spell-table.md`'s band-wide `(power << 5) + 0xE0`, so
     ///   the formula is per module
-    ///   ([`legaia_engine_battle_vm::seru_magic_ticks::orb_heal_amount`]).
+    ///   ([`legaia_engine_battle_vm::battle_formulas::orb_heal_amount`]).
     /// * **Spoon** (`0x91`, PROT 0919 arm 7): `(magic_level << 7) + 0x380`,
     ///   unsigned clamp
-    ///   ([`legaia_engine_battle_vm::seru_magic_ticks::spoon_heal_amount`]).
+    ///   ([`legaia_engine_battle_vm::battle_formulas::spoon_heal_amount`]).
     ///
     /// The magic level is the caster's per-spell byte
     /// ([`Self::caster_magic_power_byte`]), which is the record field both
@@ -275,13 +275,13 @@ impl World {
     ) -> Option<u16> {
         let level = self.caster_magic_power_byte(caster, spell_id);
         match spell_id {
-            VERA_SPELL_ID => Some(legaia_engine_battle_vm::seru_magic_ticks::vera_heal_amount(
+            VERA_SPELL_ID => Some(legaia_engine_battle_vm::battle_formulas::vera_heal_amount(
                 level,
                 target_hp,
                 target_hp_max,
             )),
             ORB_SPELL_ID => {
-                let want = legaia_engine_battle_vm::seru_magic_ticks::orb_heal_amount(level);
+                let want = legaia_engine_battle_vm::battle_formulas::orb_heal_amount(level);
                 // Retail's sweep clamps each seat to its own missing HP before
                 // storing; the fold caps at max HP anyway, so clamping here
                 // only makes the reported amount the restored one.
@@ -291,7 +291,7 @@ impl World {
             // PROT 0919's arm 7: the same unsigned clamp over its own amount
             // (`sltu v0,a0,a3` at `0x801F8078`).
             SPOON_SPELL_ID => {
-                let want = legaia_engine_battle_vm::seru_magic_ticks::spoon_heal_amount(level);
+                let want = legaia_engine_battle_vm::battle_formulas::spoon_heal_amount(level);
                 let missing = u32::from(target_hp_max.saturating_sub(target_hp));
                 Some(want.min(missing).min(u32::from(u16::MAX)) as u16)
             }

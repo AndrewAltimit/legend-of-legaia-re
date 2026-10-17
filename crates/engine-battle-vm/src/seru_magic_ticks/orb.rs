@@ -33,26 +33,6 @@ pub const ORB_CLEANSE_MIN_LEVEL: u8 = 3;
 /// each gated on `0x8007BD10[seat] != 0` (the per-seat character index).
 pub const ORB_PARTY_SEATS: u8 = 3;
 
-/// PROT 0911's inline heal: `(magic_level << 6) + 0x1C0`, i.e.
-/// `level * 64 + 448`.
-///
-/// `magic_level` is **not** a spell-table field. Arm `9` walks the caster's
-/// own character record - `0x80084140 + (0x8007BD10[ctx[+0x13]] - 1) * 0x414`,
-/// the `0x414`-stride live record block `docs/formats/save-record.md`
-/// describes - scanning the 32-entry learned-id list at record `+0x13D` for
-/// `caster[+0x1DF]` and reading the parallel byte at record `+0x161`
-/// (`0x801F7AB4` / `0x801F7AD8` under a `0x80084140` base, so `+0x705` and
-/// `+0x729` from there).
-///
-/// `docs/formats/spell-table.md` records this family's heal as
-/// `(power_byte << 5) + 0xE0`. PROT 0911's shift is `0x6` and its addend
-/// `0x1C0` (`sll v0,v0,0x6` at `0x801F7AE0`, `addiu a3,v0,0x1c0` at
-/// `0x801F7AEC`) - exactly twice the documented amount - so the formula is
-/// per module, not band-wide.
-pub fn orb_heal_amount(magic_level: u8) -> u32 {
-    (u32::from(magic_level) << 6) + 0x1C0
-}
-
 /// The `+0x16E` keep-mask arm `9`'s cleanse ladder applies, selected by the
 /// battle-overlay word at `0x801F6960` (read at `0x801F7BE4`, below this
 /// module's own load base, so it belongs to PROT 0898 rather than to the
@@ -167,7 +147,7 @@ pub const ORB_ARM4_REARM_MUL: i32 = 180;
 /// `4` 100, arm `5` 180, arm `9` 256 and arm `0x0A` 256 - retail's measured
 /// 128 / 103 / 180 / 256 vsyncs.
 ///
-/// `amount` is [`orb_heal_amount`] of the caster's per-magic level, and
+/// `amount` is [`crate::battle_formulas::orb_heal_amount`] of the caster's per-magic level, and
 /// `max_hp` answers `+0x14E` for a seat, neither of which
 /// [`CastActorState`] carries. `cleanse` is the `0x801F6960` selector, or
 /// `None` when the level gate fails.

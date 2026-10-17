@@ -369,14 +369,14 @@ fn a_live_vera_cast_restores_the_module_amount() {
         (
             0x83u8,
             7u8,
-            u32::from(legaia_engine_battle_vm::seru_magic_ticks::vera_heal_amount(
+            u32::from(legaia_engine_battle_vm::battle_formulas::vera_heal_amount(
                 7, 100, 4000,
             )),
         ),
         (
             0x89u8,
             5u8,
-            legaia_engine_battle_vm::seru_magic_ticks::orb_heal_amount(5),
+            legaia_engine_battle_vm::battle_formulas::orb_heal_amount(5),
         ),
     ] {
         let mut w = seat_monster(&rec, false);

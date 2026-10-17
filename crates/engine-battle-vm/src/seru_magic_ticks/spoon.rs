@@ -6,12 +6,6 @@ use super::*;
 /// (`0x801F78A8`; its sweep is `0x801F7F48..0x801F83D8`).
 pub const SPOON_HEAL_ARM: u8 = 7;
 
-/// PROT 0919's inline heal: `(magic_level << 7) + 0x380` (`sll v0,v0,0x7` at
-/// `0x801F8064`, `addiu a3,v0,0x380` at `0x801F8070`) - twice Orb's.
-pub fn spoon_heal_amount(magic_level: u8) -> u32 {
-    (u32::from(magic_level) << 7) + 0x380
-}
-
 /// PROT 0919 (Spoon) arm 7's cure half - the status ladder and the tier-`4`
 /// AP doubling - over party seats `0..3`.
 ///

@@ -354,8 +354,8 @@ pub struct CastModuleCodeRun {
     /// monster seat's record this frame (`+0x1D` / `+0x1C`).
     pub element_change: Option<(u8, u8)>,
     /// The camera shot the module armed this frame
-    /// ([`vm::cast_module_camera::ModuleShot`]).
-    pub camera_shot: Option<legaia_engine_battle_vm::cast_module_camera::ModuleShot>,
+    /// ([`vm::battle_cam_script::ModuleShot`]).
+    pub camera_shot: Option<legaia_engine_battle_vm::battle_cam_script::ModuleShot>,
     /// The case-6 follow the module re-armed this frame
     /// ([`vm::cast_module_camera::ModuleFollow`]).
     pub camera_follow: Option<legaia_engine_battle_vm::cast_module_camera::ModuleFollow>,

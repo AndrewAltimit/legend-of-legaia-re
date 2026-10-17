@@ -18,7 +18,7 @@ impl World {
     /// heal amount is passed as `0`.
     ///
     /// The magnitude is not lost by that: `seru_tick_heal_amount` computes
-    /// `seru_magic_ticks::orb_heal_amount` of the caster's per-spell magic
+    /// `battle_formulas::orb_heal_amount` of the caster's per-spell magic
     /// level (the character record's `+0x161` byte, found by scanning the
     /// learned-id list at `+0x13D`) and overrides the spell catalog's
     /// placeholder inside the fold, so the amount a live Orb restores is

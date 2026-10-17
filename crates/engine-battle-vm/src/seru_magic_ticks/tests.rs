@@ -2,6 +2,7 @@
 //! the band.
 
 use super::*;
+use crate::battle_formulas::{orb_heal_amount, spoon_heal_amount};
 
 mod ids_0x81_0x86;
 mod ids_0x87_0x8b;

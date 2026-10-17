@@ -355,7 +355,7 @@ impl World {
         &mut self,
         prot_entry: u32,
         spawns: &[legaia_engine_battle_vm::cast_module_camera::ModuleSpawn],
-        shot: Option<legaia_engine_battle_vm::cast_module_camera::ModuleShot>,
+        shot: Option<legaia_engine_battle_vm::battle_cam_script::ModuleShot>,
         arm_point: Option<([i16; 3], [i16; 3])>,
     ) {
         use legaia_engine_battle_vm::cast_module_camera::SpawnRecord;

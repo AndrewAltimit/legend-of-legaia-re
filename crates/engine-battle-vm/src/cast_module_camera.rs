@@ -49,8 +49,7 @@
 //! REF: FUN_801D829C (the tween every shot arms), FUN_80019B28 (the headings)
 
 use crate::battle_action::bearing_12bit_approx;
-use crate::battle_cam_script::prescale_tr_z;
-use legaia_engine_camera::projection::BattleCamPose;
+use crate::battle_cam_script::ModuleShot;
 use legaia_engine_system::trig::trig12;
 
 /// `*(0x1F80037D)` in battle - the speed scalar the battle seating seeds
@@ -61,45 +60,6 @@ pub const SPEED_SCALAR: i32 = crate::battle_anim_rate::RATE_NORMAL as i32;
 /// battle frame, and a battle frame spans `delta` vsyncs; the engine ticks
 /// once per vsync, so one tick drains the scalar alone.
 pub const MODULE_DRAIN_PER_TICK: i32 = SPEED_SCALAR;
-
-/// One `FUN_801D829C` call out of a module arm, in retail's own value space.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct ModuleShot {
-    /// `sp+0x20..0x24`: pitch, yaw, roll (12-bit units).
-    pub angles: [i16; 3],
-    /// `sp+0x28..0x2C`: the translation trio, TR z un-prescaled.
-    pub tr: [i16; 3],
-    /// `sp+0x30..0x34`: the focus trio, negated world position.
-    pub focus: [i16; 3],
-    /// `a3`: the tween duration in display frames.
-    pub frames: u16,
-}
-
-impl ModuleShot {
-    /// The shot as the battle camera holds a pose: yaw masked to 12 bits,
-    /// TR z prescaled, the focus un-negated. Returns the raw TR z beside it,
-    /// which is what the tween builder is handed.
-    pub fn pose(&self) -> (BattleCamPose, i32) {
-        let raw_z = i32::from(self.tr[2]);
-        (
-            BattleCamPose {
-                pitch: f32::from(self.angles[0]),
-                yaw: f32::from(self.angles[1] & 0xFFF),
-                tr: [
-                    f32::from(self.tr[0]),
-                    f32::from(self.tr[1]),
-                    prescale_tr_z(raw_z),
-                ],
-                focus: [
-                    -f32::from(self.focus[0]),
-                    -f32::from(self.focus[1]),
-                    -f32::from(self.focus[2]),
-                ],
-            },
-            raw_z,
-        )
-    }
-}
 
 /// A seat's world position and battle heading (`+0x34`, `+0x36`, `+0x38`,
 /// `+0x46`).

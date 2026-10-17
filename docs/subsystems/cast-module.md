@@ -1157,7 +1157,8 @@ confirmed from live RAM: a probe decoding the `jal` in each 16-byte
 Ports: `seru_magic_ticks` (`gimard_tick`, `theeder_tick`, `vera_tick`,
 `gizam_tick`, `nighto_tick`, `zenoir_tick`) and `seru_magic_ticks`
 (`viguro_tick`, `swordie_tick` with `swordie_slash`, `orb_tick`, `freed_tick`,
-`nova_tick`, plus PROT 0919's `spoon_cure_sweep` / `spoon_heal_amount`). The
+`nova_tick`, plus PROT 0919's `spoon_cure_sweep`); the module heal amounts `vera_heal_amount` /
+`orb_heal_amount` / `spoon_heal_amount` are `battle_formulas`'. The
 damage folds once at `World::cast_spell_on_slots_prepaid` with the module's
 magnitudes routed in (Vera's `level * 0x20 + 0xE0`, Orb's
 `(level << 6) + 0x1C0`), so no body applies HP twice.
@@ -2394,8 +2395,8 @@ is the module's, moved with two kernels:
   pass an arm runs (pitch `0x8007B790`, TR x / y / z `0x800840B8` /
   `0x800840BC` / `0x800840C0`), behind the module countdown.
 
-Port: `cast_module_camera` (`ModuleShot`, `ModuleCountdown`, `ModuleFollow`)
-with one director per module. A director runs on the phase the body is about
+Port: `cast_module_camera` (`ModuleCountdown`, `ModuleFollow`; the shot itself,
+`ModuleShot`, is `battle_cam_script`'s) with one director per module. A director runs on the phase the body is about
 to run and withholds the body's pass while an arm's gate holds. The battle
 camera steps the shot (`BattleCamera::arm_module_shot` /
 `arm_module_follow`) on both hosts. A module with no director arms no shot and
