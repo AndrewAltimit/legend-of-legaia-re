@@ -61,6 +61,20 @@ impl World {
     ) -> Vec<legaia_engine_minigames::other_game_overlay::VoiceAttrCue> {
         std::mem::take(&mut self.audio.sfx_voice_keys)
     }
+
+    /// Drain the positional emitters' key / volume / release calls this tick
+    /// ([`crate::world::AudioState::sfx_emitter_ops`]). The audio director
+    /// resolves each cue's descriptor and bank and drives the voices.
+    pub fn take_sfx_emitter_ops(&mut self) -> Vec<legaia_engine_vm::sfx_emitter::EmitterOp> {
+        std::mem::take(&mut self.audio.sfx_emitter_ops)
+    }
+
+    /// Install the camera focus the emitters listen from, as retail stores
+    /// it (`_DAT_80089118` / `_DAT_80089120`, negated). The session writes
+    /// the frame's camera here before the world tick.
+    pub fn set_sound_listener_focus(&mut self, focus_stored_x: i32, focus_stored_z: i32) {
+        self.audio.listener_focus = (focus_stored_x, focus_stored_z);
+    }
 }
 
 #[cfg(test)]

@@ -290,7 +290,16 @@ impl VabBank {
         else {
             return false;
         };
-        self.fire(spu, voice, prog, tone, note, velocity, PitchPath::Sequencer)
+        self.fire(
+            spu,
+            voice,
+            prog,
+            tone,
+            note,
+            velocity,
+            0x40,
+            PitchPath::Sequencer,
+        )
     }
 
     /// Play the tone at an **explicit index** inside `program`, rather than
@@ -321,7 +330,38 @@ impl VabBank {
         let Some(tone) = prog.tones.get(tone_index) else {
             return false;
         };
-        self.fire(spu, voice, prog, tone, note, velocity, PitchPath::Cue)
+        self.fire(spu, voice, prog, tone, note, velocity, 0x40, PitchPath::Cue)
+    }
+
+    /// [`Self::play_tone`] from a cue's **volume pair**, the way `FUN_80065034`
+    /// takes it (`sp+0x58` / `sp+0x5C`): the larger half is the velocity and
+    /// the ratio of the two is a staged pan (`0x80065100..0x80065118`) - `0x40`
+    /// for equal halves, `(r << 6) / l` when the right is smaller,
+    /// `0x7F - (l << 6) / r` when the left is - which the key-on chain
+    /// `FUN_80067550` applies as its third pan stage after the tone and
+    /// program pans. Equal halves (every ring cue) are exactly
+    /// [`Self::play_tone`].
+    ///
+    /// PORT: FUN_80065034 (the volume-pair split)
+    #[allow(clippy::too_many_arguments)]
+    pub fn play_tone_pair(
+        &self,
+        spu: &mut Spu,
+        voice: usize,
+        program: usize,
+        tone_index: usize,
+        note: u8,
+        vol_l: i16,
+        vol_r: i16,
+    ) -> bool {
+        let Some(prog) = self.programs.get(program) else {
+            return false;
+        };
+        let Some(tone) = prog.tones.get(tone_index) else {
+            return false;
+        };
+        let (velocity, pan) = cue_volume_pair(vol_l, vol_r);
+        self.fire(spu, voice, prog, tone, note, velocity, pan, PitchPath::Cue)
     }
 
     /// Configure + key on `voice` for one resolved tone. Shared by
@@ -336,6 +376,7 @@ impl VabBank {
         tone: &legaia_vab::VagAtr,
         note: u8,
         velocity: u8,
+        stage_pan: i32,
         path: PitchPath,
     ) -> bool {
         // tone.vag is 1-based in PSX VAB format. legaia_vab::VabReport's
@@ -369,7 +410,14 @@ impl VabBank {
         // program pan. The channel pan is the sequencer's own source,
         // applied on top by `channel_mix`.
         let (l, r) = pan_split(combined, tone.pan as i32);
-        let (vol_l, vol_r) = pan_attenuate(l, r, prog.mpan as i32);
+        let (l, r) = pan_attenuate(l, r, prog.mpan as i32);
+        // The cue path's third stage: the pan staged from its volume pair
+        // (`0x40`, a no-op, for the sequencer and every equal pair).
+        let (vol_l, vol_r) = if stage_pan == 0x40 {
+            (l, r)
+        } else {
+            pan_attenuate(l, r, stage_pan)
+        };
         {
             let v = &mut spu.voices[voice];
             v.start_addr = vag.addr;
@@ -529,7 +577,16 @@ impl VabBank {
         let Some(tone) = prog.tones.get(tone_index) else {
             return false;
         };
-        self.fire(spu, voice, prog, tone, note, velocity, PitchPath::Sequencer)
+        self.fire(
+            spu,
+            voice,
+            prog,
+            tone,
+            note,
+            velocity,
+            0x40,
+            PitchPath::Sequencer,
+        )
     }
 
     /// The head of `FUN_80067550` for a sequencer note on layer `tone_index`
@@ -684,6 +741,21 @@ fn compute_pitch(note: u8, tone: &VagAtr, path: PitchPath) -> u16 {
 /// scale 836 of the 7724 retail tones would have hit it at full velocity
 /// (census in tests/real_vab_tone_attributes.rs). Widening the volume without
 /// fixing the pan law would have traded a quiet engine for a clipping one.
+/// `FUN_80065034`'s split of a cue's volume pair into the velocity and the
+/// staged pan its key-on chain reads (`DAT_801CE34C` / `DAT_801CE34D`).
+/// Each half is clamped into `0..=127` first, the domain the callers compute.
+pub fn cue_volume_pair(vol_l: i16, vol_r: i16) -> (u8, i32) {
+    let l = i32::from(vol_l).clamp(0, 127);
+    let r = i32::from(vol_r).clamp(0, 127);
+    if l == r {
+        (l as u8, 0x40)
+    } else if r < l {
+        (l as u8, (r << 6) / l)
+    } else {
+        (r as u8, 0x7F - (l << 6) / r)
+    }
+}
+
 fn pan_split(vol: i16, pan: i32) -> (i16, i16) {
     pan_attenuate(vol, vol, pan)
 }
@@ -859,6 +931,17 @@ mod tests {
                 "note {note} center {center} shift {shift} {path:?}"
             );
         }
+    }
+
+    /// `FUN_80065034`'s split of a cue's volume pair.
+    #[test]
+    fn cue_volume_pair_takes_the_larger_half_and_stages_the_ratio_as_pan() {
+        // Equal halves: the volume once, centre pan.
+        assert_eq!(cue_volume_pair(100, 100), (100, 0x40));
+        // Right smaller: `(r << 6) / l`; left smaller: `0x7F - (l << 6) / r`.
+        assert_eq!(cue_volume_pair(100, 50), (100, 32));
+        assert_eq!(cue_volume_pair(50, 100), (100, 0x7F - 32));
+        assert_eq!(cue_volume_pair(0, 0), (0, 0x40));
     }
 
     /// Pan=0 silences right; pan=127 silences left; pan=64 is roughly equal.

@@ -1894,6 +1894,7 @@ dependencies = [
  "legaia-engine-mode",
  "legaia-engine-scene",
  "legaia-engine-system",
+ "legaia-engine-vm",
  "legaia-font",
  "legaia-game-tables",
  "legaia-iso",

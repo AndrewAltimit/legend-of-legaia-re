@@ -103,11 +103,54 @@ Bulk scan finds 1191 `VABp` headers across 239 PROT entries. Multi-bank archives
 
 ## Per-actor sound effects
 
-`FUN_800250D4(sound_id, voice)` is the per-actor SFX trigger called from the actor tick (`FUN_80021DF4`) when `actor[+0xb4] != 0` (one-shot pulse) or `actor[+0xac]` is staged (continuous). It looks up a sound entry at `&DAT_8006F198 + sound_id*8` for `sound_id < 0x200`, or in the runtime-allocated table at `_DAT_8007B8D0` for higher IDs (the `.dpk` consumer's bank). The entry's `byte[3] & 0x1F` is the voice count; the helper then calls `FUN_800653C8` (libSPU `SpuKeyOn`-equivalent) for each of `voice..voice+count-1`.
-
-`actor[+0xac]` (sound ID) and `actor[+0xb0]` (voice) are written by move-VM and field-VM opcodes; the move-VM tick in `FUN_80021DF4` re-fires the SFX whenever the trigger flag at `actor[+0xb4]` is set.
+`FUN_800250D4(sound_id, voice)` **releases** a cue's voices: it resolves the
+descriptor (the static table `&DAT_8006F198 + id*8` below `0x200`, the scene's
+runtime bank `_DAT_8007B8D0` above it) and keys off `voice..voice+count-1`
+through `FUN_800653C8`, whose body is the libsnd voice key-off
+`FUN_80067480(0)` - the same primitive the side-band teardown stops voices
+`0x16` / `0x17` with. Its callers are the part tick `FUN_80021DF4`'s
+render-mode-5 arm, below.
 
 The static `&DAT_8006F198` table is **100 8-byte descriptors** (sound ids `0x00..=0x63`); the `< 0x200` runtime check is a bound, not the size (id `0x64` onward is the `\PSX.EXE` dev-path rodata). Besides `FUN_800250D4` above, the cue-ring drainer `FUN_80016B6C` reads it and programs each voice via `FUN_80065034` (the libsnd `SpuSetVoiceAttr` analogue). Each entry decodes as `[+0 program][+1 tone/region base][+2 note-level][+3 voice-count + sustained bit 0x20][+4 channel]`; full layout + provenance on [`docs/formats/sfx-table.md`](../formats/sfx-table.md). Parser `legaia_game_tables::sfx_table` (disc-decoded, byte-exact vs live save-state RAM); the SPU programming itself is libsnd, outside the port boundary.
+
+<a id="positional-sound-emitters"></a>
+### Positional sound emitters
+
+A part whose `+0x5A` is `5` - seated from a `model_sel = 0x4001` stager record
+(`0x80021D08`) and set up by move-VM op `0x34` - is a looping sound placed in
+the world: a town's river, a waterwheel. `+0xAC` is its cue, `+0xB0` its first
+voice, `+0x90` / `+0x92` its left / right level, and `+0x9C` / `+0xA0` /
+`+0xA4` / `+0xA8` the box it is heard in. Every tick the arm
+(`0x800220D8..0x800226D4`) ramps the levels, tests the stored camera focus
+`_DAT_80089118` / `_DAT_80089120` against the box, scales each level by how
+deep inside the box the focus sits on each axis, and turns it into a **raw
+voice volume**, `((_DAT_80084580 >> 1) * level * falloff >> 7) * scale >> 7`
+clamped `0x3F80` (`scale` the per-row pair at `0x80091658`, `0x80` in every
+captured state). The first tick in range keys the descriptor's voices through
+`FUN_80065034` with that volume `>> 7`; every later tick writes it straight to
+the voices (`FUN_800657D0`), so the register a capture reads is the law, not
+the key-on chain; leaving the box, or the side-band request going unsettled,
+releases them (`FUN_800250D4`). The arm keys only in the field mode and
+behind the settled side-band pair. Port: `engine-vm::sfx_emitter`, ticked from
+`World::tick_ambient_fx` with the focus the camera stored
+(`frame_step::camera_before_world_tick`), its voices driven by
+`AudioDirector::drive_sfx_emitters` on both hosts.
+
+**The cue's volume pair is a velocity and a pan.** `FUN_80065034` takes the
+larger half as the key-on velocity and stages the ratio as a third pan for the
+key-on chain (`0x80065100..0x80065118`): `0x40` for equal halves,
+`(r << 6) / l` or `0x7F - (l << 6) / r` otherwise. The ring and the direct
+keys pass the voice-volume word halved on both sides. Port:
+`VabBank::play_tone_pair`, `vab_bind::cue_volume_pair`.
+
+**Measured.** Every sounding cue voice of every library mednafen state - 61, in
+town, battle and cutscene states - is one the engine programs register
+for register (`parity/tests/mednafen_cue_voice_parity.rs`): the bank matched on
+disc from the voice's VAB slot header, the tone keyed through the cue path, the
+volume from the voice-volume word for a ring cue and from the emitter law over
+the captured part for the 22 emitter voices. A live `town01` session seats the
+captured river emitter - cue `0x200`, `(3968, 1024)`, levels `56 / 56`, box
+`(-10000, 2500, 10000, -2000)` - and keys and drives it.
 
 ## VAB slots - one installer, twelve records
 
@@ -2586,6 +2629,11 @@ census above covers the battle theme's notes once it is playing.
   engine counterpart: the port has no drive to seek.
 - **SPU transfer timing** is not modelled, which is the one-key-on residual on
   `dolk2_market_noa`.
+- **Two emitter inputs are constants.** The per-row scale pair `0x80091658`
+  reads `0x80` in every captured state and has no traced writer, and the port
+  folds mono at mix time (`Spu::mono`, the larger side) where the emitter arm
+  averages the two sides before writing them
+  ([above](#positional-sound-emitters)).
 - **The Field↔Battle swap** has no retail audio trace
   ([above](#the-fieldbattle-swap-is-not-on-this-axis)).
 - **`.MAP` / `.PCH` / `.spk` / `.pac`** have no retail carrier to decode; the

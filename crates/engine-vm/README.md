@@ -205,6 +205,9 @@ The crate's remaining modules are what the VMs import; by family:
   `FUN_801D31B0`) and `vdf_morph` (the move-VM actor's morph lanes and
   their ramp envelope; the record walk and weighted-delta blend they feed
   are `legaia_scene_formats::vdf_morph`).
+- **Positional sound emitter** - `sfx_emitter` (the part tick
+  `FUN_80021DF4`'s render-mode-5 arm: level ramp, box falloff against the
+  stored camera focus, raw voice volume, key / volume / release calls).
 - **Field VM leaves** - `field::dispatch_leaves` (the dispatcher's operand
   and table helpers), `field_actor_billboard`, `field_ledge_hop_arc` and
   `vram_rect_copy` (GP0 `0x80`, field-VM sub-op `0x43`/`0x12`): each is a

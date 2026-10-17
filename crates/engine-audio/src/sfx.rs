@@ -749,19 +749,12 @@ pub struct VoiceAttr {
 }
 
 impl VoiceAttr {
-    /// The single velocity the port keys with: the mean of the volume pair,
-    /// clamped into the `0..=127` domain [`VabBank::play_tone`] takes.
-    ///
-    /// Retail splits the pair into a volume byte and a pan byte
-    /// (`0x80065100..0x80065118`: equal halves store the volume once and pan
-    /// `0x40`, centre; unequal ones divide to derive the pan). The port's
-    /// key-on chain sources its pan from the tone and program instead - the
-    /// same thing every other SFX cue here does - so the pair folds to one
-    /// level, which is exact for the equal-halves case every known caller
-    /// passes.
+    /// The velocity the key-on chain reads: the **larger** half of the
+    /// volume pair (`0x80065100..0x80065118` stores `vol_l`, or `vol_r` when
+    /// it is the bigger one), clamped into `0..=127`. The ratio of the two is
+    /// a staged pan, not folded in here ([`crate::vab_bind::cue_volume_pair`]).
     pub fn velocity(&self) -> u8 {
-        let mean = (i32::from(self.vol_l) + i32::from(self.vol_r)) / 2;
-        mean.clamp(0, 127) as u8
+        crate::vab_bind::cue_volume_pair(self.vol_l, self.vol_r).0
     }
 
     /// Narrow one resolved voice-attr call - the eight arguments retail's
@@ -808,13 +801,14 @@ pub fn key_on_voice_attr(attr: &VoiceAttr, spu: &mut Spu, vab: &VabBank) -> bool
     if usize::from(attr.voice) >= 24 {
         return false;
     }
-    vab.play_tone(
+    vab.play_tone_pair(
         spu,
         usize::from(attr.voice),
         usize::from(attr.program),
         usize::from(attr.tone),
         attr.note,
-        attr.velocity(),
+        attr.vol_l,
+        attr.vol_r,
     )
 }
 
