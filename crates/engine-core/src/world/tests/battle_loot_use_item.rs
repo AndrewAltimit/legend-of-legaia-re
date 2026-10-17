@@ -886,3 +886,45 @@ fn battle_hp_flows_back_to_the_roster_at_teardown() {
     assert_eq!(hms.hp_cur, 37, "battle HP persisted to the roster");
     assert_eq!(hms.mp_cur, 2, "battle MP persisted to the roster");
 }
+
+/// `FUN_801E752C` clears a monster's ticking DoT bit after its one tick when
+/// the fight is scripted (`ctx[+0x287]`, `0x801E7604..0x801E762C` Toxic,
+/// `0x801E769C..0x801E76C4` Venom), and Toxic shadows Venom: a monster
+/// carrying both keeps its Venom. A party seat, or a random encounter,
+/// keeps the status.
+#[test]
+fn a_scripted_fight_monster_takes_one_dot_tick() {
+    use legaia_engine_battle_vm::status_effects::StatusKind;
+    let world_with = |scripted: bool| {
+        let mut world = World::new();
+        world.enter_battle(1, 1); // slot 0 party, slot 1 monster
+        world.battle.scripted_fight = scripted;
+        for slot in 0..2 {
+            world.actors[slot].battle.hp = 1000;
+            world.actors[slot].battle.max_hp = 1600;
+            world
+                .battle
+                .status_effects
+                .apply_with_duration(slot as u8, StatusKind::Toxic, 255);
+        }
+        world
+            .battle
+            .status_effects
+            .apply_with_duration(1, StatusKind::Venom, 255);
+        world.tick_status_effects();
+        world
+    };
+    let w = world_with(true);
+    assert_eq!(w.actors[1].battle.hp, 1000 - 100, "the tick still lands");
+    assert!(!w.battle.status_effects.has(1, StatusKind::Toxic));
+    assert!(w.battle.status_effects.has(1, StatusKind::Venom));
+    assert!(
+        w.battle.status_effects.has(0, StatusKind::Toxic),
+        "party seat keeps it"
+    );
+    let w = world_with(false);
+    assert!(
+        w.battle.status_effects.has(1, StatusKind::Toxic),
+        "random fight keeps it"
+    );
+}

@@ -1154,10 +1154,10 @@ roll alone also appears under the phantom name `overlay_0897_801e23ec`: PROT
 (`InitiativeActor`, `InitiativeAbility`), driven by `World::reseed_initiative`
 (`engine-core::world::battle::initiative`); next actor
 `World::next_combatant_by_initiative` (see
-[turn order](battle-round-loop.md#auto-resolve-vs-player-driven)). The engine
-passes `slowed: false` - its status model does not carry the raw `+0x16E ==
-0x1000` test - so the Slow halving never fires there; the wounded bonus, the
-lockout and the ability arms do. `reseed_initiative` applies the lockout
+[turn order](battle-round-loop.md#auto-resolve-vs-player-driven)). The halving
+reads `World::raw_status_word` against `0x1000` with the same exact compare, so
+it reaches an actor whose word is that bit alone (the Curse store of
+[selector 10](#selector-9---opposed-int-roll-stone)). `reseed_initiative` applies the lockout
 against its own `party_count` boundary because the engine compacts battle
 seating; `apply_side_lockout` keeps retail's fixed `0..=2` / `3..=6` split as
 the test-side reference.
@@ -1531,8 +1531,9 @@ inline twin in `FUN_801EC3E4` (dump lines 2800-2808).
 instructions); called by the round driver `FUN_801D0748` state `0x14`, after
 `FUN_801D88CC` / `FUN_801DA780`. **Port.** `status_effects::toxic_tick_damage`
 / `venom_tick_damage` (module `engine-battle-vm::status_effects`); the roll scales are
-`apply_status_weaken`. The scripted-fight one-tick clear for monsters is not
-modelled.
+`apply_status_weaken`. `World::tick_status_effects` makes the scripted-fight
+clear on a monster seat: the arm that ticked (Toxic ahead of Venom) cures its
+own status.
 
 ### Status application (the art / move record status byte)
 
@@ -1954,10 +1955,9 @@ The ability bitfield at record `+0xF4` / `+0xF8` is fully catalogued as the
 64 passive indices of [accessory-passive-table.md](../formats/accessory-passive-table.md#the-64-passive-indices)
 ([settled](../reference/re-settled-threads/battle.md)).
 
-**Port gaps** (known differences, not reverse-engineering questions): the
-Slow halving of the initiative key (the kernel carries it, but no actor is
-flagged Slow), the scripted-fight one-tick DoT clear for monsters, and Jedo's
-non-scripted effect on the monster seats are not modelled.
+Jedo's non-scripted effect on the monster seats is carried by its summon
+director ([cast-module.md](cast-module.md#summon-creature-directors)); the Slow initiative halving and the
+scripted-fight one-tick DoT clear are modelled.
 
 Not open: "`FUN_801F3894`" (`overlay_0897_801f3894`) is not a fourth caller of the damage chain. Its
 257 instructions are `FUN_801DD0AC`'s byte for byte (the absolute `j
