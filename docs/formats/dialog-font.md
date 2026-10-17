@@ -278,11 +278,21 @@ The derivations are in [`field-menu.md`](../subsystems/field-menu.md#name-column
 
 In battle, the message banner and the formation line draw from pen `(16, 12)` in a box **288 px** wide (the `FUN_801D9D3C` immediates that reproduce placement record 67), and the actor-name plaque at `(8, 8)` sizes itself to the measured name, so neither clips; 288 px is the width that keeps a line inside the frame. The battle-intro enemy labels are clamped to `6 <= x <= 0x13A - width`, so one label can reach 308 px, but they share a row and push apart - see [`battle.md`](../subsystems/battle.md#the-battle-intro-enemy-name-banner). Battle text draws at pad `0`: the plaque's measured interior is exactly `widths[c] + 1` per glyph (27 px for a four-letter party name in the captured states).
 
+### Item and spell descriptions
+
+A description line is drawn in full from the info window's left edge, like every other surface: no routine on its path tests a width.
+
+- **Item info** (window 17). `FUN_801D0F1C` hands the item-table `+8` string to `FUN_800337B0` at `(WX, WY+0x10)` (`0x801D0F94..0x801D0FB8`). `FUN_800337B0` draws a non-empty description through `FUN_8003CD00` (`0x80033818`, and `0x8003388C` on the equipment arm, which then prints its stat block).
+- **Spell info** (window 20). `FUN_801D2E74` draws the `0x80075DB0` description through `FUN_8003CD00` at `(WX, WY+0xE)` (`0x801D3004..0x801D3018`), then "MP Used" at `WY+0x2A` (`0x801D3020`), so two rows fit above it.
+- **`FUN_8003CD00` is not a wrapper.** Its only comparisons are `slt v0,s2,v1` at `0x8003CD50`, which keeps the widest `FUN_80036888` result it returns, and `sltiu v0,v0,0x20` at `0x8003CD68`: a string whose first byte is a `0x1F` lead is drawn as consecutive segments `0xD` lower; any other string is drawn once. Breaks inside a segment are the author's `0x7C` (`0xE` lower, in `FUN_80036888`).
+
+Both windows' content rects are **144 px** (`0x90`) wide from `WX` - the descriptor rects `(14,108,144,40)` and `(14,152,144,52)` in [`field-menu.md`](../subsystems/field-menu.md#window-descriptor-table), and the same `0x90` as the box `FUN_801D0F1C` frames at `(WX, WY+0x38)` - so a description line fits when it measures at most 144 px at pad `0`. The shop's description box `FUN_801D4A80` reaches the same `FUN_800337B0` / `FUN_8003CD00` pair.
+
 The pinned budgets are the table `legaia_font::limits::TEXT_LIMITS`, one `TextLimit` per context with its pad and provenance.
 
 ### Limits of the measurement
 
-Speaker names, the world-map place-name labels, the title and save screens and the minigame HUDs are outside what this page measures. Two edges inside it are live hunts on [open-rev-eng-threads.md](../reference/open-rev-eng-threads.md#field--locomotion): the width of an item or spell **description** line (`FUN_800337B0`, the menu-string formatter; the 144 px info window bounds it only by inference), and the end of the expansion buffer at `0x800740EC` (the zero-initialised run reaches `0x800742F2`, `0x206` bytes, and no dumped routine addresses inside it - an upper bound by inference).
+Speaker names, the world-map place-name labels, the title and save screens and the minigame HUDs are outside what this page measures. One edge inside it is a live hunt on [open-rev-eng-threads.md](../reference/open-rev-eng-threads.md#field--locomotion): the end of the expansion buffer at `0x800740EC`. The expander `FUN_80036514` carries no destination bound (its only compares are the token-class tests, the `0x40` arts-index divide at `0x80036734..0x80036748` and the arts-table walk at `0x8003675C..0x80036798`), so the buffer is as long as the longest expansion a drawn string produces; the zero-initialised run reaches `0x800742F2`, `0x206` bytes, an upper bound by inference.
 
 The text-actor walker `FUN_80031D00` has no escape ops of its own: it walks the drawable list and reads no glyph stream ([falsified](../reference/re-do-not-re-walk.md#menus--ui)).
 

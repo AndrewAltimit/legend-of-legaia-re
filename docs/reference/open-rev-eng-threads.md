@@ -126,12 +126,11 @@ the cheapest place to look for a claim that is still wrong.
 
 ## Field / locomotion
 
-The live hunts here are the dialog font's unmeasured edges ([`dialog-font.md`](../formats/dialog-font.md)).
+The live hunt here is the dialog font's unmeasured edge ([`dialog-font.md`](../formats/dialog-font.md)).
 
 | Thread | Status | What would close it |
 |---|---|---|
-| How wide may an item or spell description line be? | open | The info window is 144 px wide, which bounds the lines by inference only. Reading the width test (or its absence) in the menu-string formatter `FUN_800337B0`, or a capture of the longest retail description drawn in the window, closes it. |
-| Where does the escape-expansion buffer at `0x800740EC` end? | partial (bounded at `0x206` bytes by inference) | The zero-initialised run reaches the next initialised data at `0x800742F2` and no dumped routine addresses inside it. The expansion routine's largest write - the longest escape it can expand, or a write watch while the longest one draws - pins the real end. |
+| Where does the escape-expansion buffer at `0x800740EC` end? | partial (bounded at `0x206` bytes by inference; the code sets no bound) | The zero-initialised run reaches the next initialised data at `0x800742F2` and no dumped routine addresses inside it. The expander `FUN_80036514` has no destination-length test, so the end is a property of the strings, not the code: the longest expansion of any drawn string - a disc census of every drawn string expanded with its longest substitutions, or a write watch while the longest one draws - pins it. |
 
 Answered questions: [settled field / locomotion](re-settled-threads/field.md), [settled text / dialog](re-settled-threads/text-dialog.md); falsified readings: [field / locomotion](re-do-not-re-walk.md#field--locomotion), [menus / UI](re-do-not-re-walk.md#menus--ui).
 

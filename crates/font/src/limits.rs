@@ -130,6 +130,30 @@ pub const TEXT_LIMITS: &[TextLimit] = &[
                      FUN_801DCB60 draws the 2-digit count at WX+0x7C (0x801DCBD4)",
     },
     TextLimit {
+        context: "item_info_description",
+        max_px: 144,
+        max_lines: None,
+        wraps: false,
+        glyph_pad: 0,
+        provenance: "FUN_801D0F1C hands item-table +8 to FUN_800337B0 at \
+                     (WX, WY+0x10) (0x801D0F94..0x801D0FB8), which draws it \
+                     through FUN_8003CD00 (0x80033818 / 0x8003388C); neither \
+                     tests a width. Window 17's content rect is 144 wide \
+                     from WX, the same 0x90 as the box FUN_801D0F1C frames \
+                     at (WX, WY+0x38)",
+    },
+    TextLimit {
+        context: "spell_info_description",
+        max_px: 144,
+        max_lines: Some(2),
+        wraps: false,
+        glyph_pad: 0,
+        provenance: "FUN_801D2E74 draws the 0x80075DB0 description through \
+                     FUN_8003CD00 at (WX, WY+0xE) (0x801D3004..0x801D3018) \
+                     and 'MP Used' at WY+0x2A (0x801D3020), so two 0xE-pitch \
+                     rows fit above it; window 20's content rect is 144 wide",
+    },
+    TextLimit {
         context: "status_magic_name",
         max_px: 104,
         max_lines: Some(1),
