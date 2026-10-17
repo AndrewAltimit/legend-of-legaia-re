@@ -91,11 +91,14 @@ impl RetailBattle {
         let pc = self.party_count.clamp(1, 3);
         self.clip_cursors
             .iter()
-            // The acting seat's clip and its target's reaction run with the
-            // action, which the seed already placed where the capture's
-            // stood.
+            // While an action is in flight (ahead of the Done band
+            // `0x50..=0x5A`), the acting seat's clip and its target's reaction
+            // run with it, and the seed already placed it where the
+            // capture's stood.
             .filter(|&&(slot, ..)| {
-                self.action_state == 0 || (slot != self.active_actor && slot != self.target_code)
+                let in_flight =
+                    self.action_state != 0 && !(0x50..=0x5A).contains(&self.action_state);
+                !in_flight || (slot != self.active_actor && slot != self.target_code)
             })
             .filter_map(|&(slot, clip, cursor)| {
                 let slot = if slot < 3 {
