@@ -359,7 +359,14 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
                 ]
             })
             .unwrap_or([0, 0, 0]);
-        self.world.spawn_cast_module_fx(idx, origin);
+        // A module whose arms' spawns are ported seats them on those arms
+        // inside `0x70` (`cast_module_camera::capture_arm_spawns`), not here.
+        let per_arm = self.world.cast_module_for(idx).is_some_and(|e| {
+            legaia_engine_battle_vm::cast_module_camera::CAPTURE_SPAWN_ENTRIES.contains(&e)
+        });
+        if !per_arm {
+            self.world.spawn_cast_module_fx(idx, origin);
+        }
         // ...and arm the per-frame tick phase `0x70` holds on. Retail's
         // `0x6F` exit zeroes `ctx[+0x279]` (`0x801E5048`) right before it
         // hands over, which is the same reset this does.

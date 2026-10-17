@@ -749,14 +749,25 @@ fn every_creature_arm_spawn_names_a_record_of_its_module() {
     };
     let pool = build_pool(&dir);
     let base = legaia_overlay_images::summon_overlay::SUMMON_OVERLAY_LINK_BASE;
-    for entry in cmc::CREATURE_SPAWN_ENTRIES {
+    for entry in cmc::CREATURE_SPAWN_ENTRIES
+        .into_iter()
+        .chain(cmc::CAPTURE_SPAWN_ENTRIES)
+    {
         let m = pool.module(entry).expect("module loaded");
         let known: std::collections::BTreeSet<u32> =
             m.parts.iter().map(|p| base + p.record_off as u32).collect();
         let mut named = std::collections::BTreeSet::new();
         for phase in 0..=u8::MAX {
             for timing in [cmc::SpawnTiming::Pass, cmc::SpawnTiming::Every] {
-                for s in cmc::creature_arm_spawns(entry, phase, timing) {
+                let capture = if timing == cmc::SpawnTiming::Pass {
+                    cmc::capture_arm_spawns(entry, phase)
+                } else {
+                    &[]
+                };
+                for s in cmc::creature_arm_spawns(entry, phase, timing)
+                    .iter()
+                    .chain(capture)
+                {
                     let cmc::SpawnRecord::Module(va) = s.record else {
                         panic!("PROT {entry} arm {phase:#x}: a module record");
                     };

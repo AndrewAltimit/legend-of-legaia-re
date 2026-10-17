@@ -283,7 +283,8 @@ impl World {
     }
 
     /// Seat, on the stager's first tick, the records of a summon-creature
-    /// module that none of its arms spawns: the ones only its part stager
+    /// (or per-arm capture-class) module that none of its arms spawns: the
+    /// ones only its part stager
     /// (reached through a part's op-`0x20` call, which the engine does not
     /// run for these modules) seats. The arm-spawned records go on their
     /// own arms ([`vm::cast_module_camera::creature_arm_spawns`]).
@@ -308,6 +309,11 @@ impl World {
                 [SpawnTiming::Pass, SpawnTiming::Every]
                     .into_iter()
                     .flat_map(move |t| creature_arm_spawns(entry, phase, t).iter())
+                    .chain(
+                        legaia_engine_battle_vm::cast_module_camera::capture_arm_spawns(
+                            entry, phase,
+                        ),
+                    )
             })
             .filter_map(|s| match s.record {
                 SpawnRecord::Module(va) => Some(va),
