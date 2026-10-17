@@ -70,3 +70,24 @@ changes = [
   ["states/minigame_dance_pcsx/image", 0.723, 0.721],
   ["states/ending_vignette_biron/image", 1.0, 0.999],
 ]
+
+[[loosening]]
+file = "scripts/ci/retail-compare-baseline.json"
+reason = "Bisected to e4aec598f (0.778 at ac5104652, 0.777 from e4aec598f on): that wave ported FUN_801DEA50's floor part (codes 0x81..=0x83, record 0x801F5EB0), the flat ring under Vahn. Retail's state holds the same node (pos (144,0,-1173), scale 0x500, b4/b6 224/320); the engine's sits at (124,0,-1181), scale 1280, b4/b6 168/240 - retail's minus two frames of growth, the displayed frame. Content and phase match; one 8x8 block flips on the ring's edge."
+changes = [
+  ["states/battle_gimard_tail_fire_a/image", 0.778, 0.777],
+]
+
+[[loosening]]
+file = "scripts/ci/retail-compare-baseline.json"
+reason = "Bisected to 17f58ff8a (0.909 at e4aec598f): the only changed block is the damage numeral over Gimard, an 8 before and a 7 after - the swing's rand() damage roll, which moved because wave 5 added draws ahead of it on the replay's pinned stream. The capture's roll is not on that stream either way (its digit reads as neither), so the frame scores whichever value the stream happens to land on."
+changes = [
+  ["states/rim_elm_gimard_victory/image", 0.909, 0.908],
+]
+
+[[loosening]]
+file = "scripts/ci/retail-compare-baseline.json"
+reason = "The battle seed now lands every looping clip on the capture's displayed keyframe (LEGAIA_SEAT_BATTLE_CLIPS), which raised 37 battle frames in the same run (theeder_summon_mid_cast 0.779 -> 0.857, zora_glare_petrify_post 0.706 -> 0.769, arts_bar_offclass_gala_nail 0.931 -> 0.977). Here Noa and Delilas move by under a keyframe and three blocks of the drifting ground mist, which dominates the frame, flip: seated party-only 0.875, monster-only 0.876, neither 0.877."
+changes = [
+  ["states/nivora_duel_pre_plasma_strike/image", 0.877, 0.874],
+]
