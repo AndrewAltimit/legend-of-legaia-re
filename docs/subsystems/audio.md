@@ -1530,9 +1530,20 @@ halved, `105` for `210`, `103` for `207`, `80` for `161`. Every site that turns
 a level into a sequence volume halves the word (`(level << 15) >> 16` in
 `FUN_80019898` / `FUN_8002614C`, `sra 1` in `FUN_80026478` / `FUN_800243F0`),
 so the level loses its low bit first; a `107 * level / 215` scaling floors an
-even level one unit low. Port: `duck::ducked_master_vol`. `DAT_8007B6EC` trails
-the duck cell `_DAT_8007B910` by two or three units in the ramping states; its
-writer is not in the dumped corpus, and the port applies the cell directly.
+even level one unit low. Port: `duck::ducked_master_vol`.
+
+**The BGM plays the level one frame back.** `DAT_8007B6EC` is `gp+0x3D4`, the
+last level applied. The per-frame driver `FUN_8001698C` compares it with the
+duck cell `_DAT_8007B910` (`gp+0x5F8`) at the top of each frame, and on a
+change stores the cell there (`sw a0,0x3d4(gp)` at `0x80016A30`) and calls
+`FUN_8002614C(level >> 1)`, which sets every sound source's sequence volume.
+The action SM steps the cell later in the same frame, so the applied level
+trails it by one frame's step: a PCSX-Redux write watch over a summon
+([`autorun_audio_level_watch.lua`](../../scripts/pcsx-redux/autorun_audio_level_watch.lua))
+logs that one store, once per vsync of the ramp, with `+0x58` following the
+applied word halved; the mednafen summon states, captured where a frame spans
+more than one vsync, read the cell two or three units ahead. Port:
+`AudioDirector::tick_duck` applies the level before it steps it.
 
 **Monaural.** libsnd's mono mode (`_DAT_801CE330 == 1`, the options screen's
 "Sound: Monaural") sounds each voice at the larger of its two volumes on both
@@ -2575,11 +2586,6 @@ census above covers the battle theme's notes once it is playing.
   engine counterpart: the port has no drive to seek.
 - **SPU transfer timing** is not modelled, which is the one-key-on residual on
   `dolk2_market_noa`.
-- **The applied audio level's writer.** `DAT_8007B6EC`, whose halving is the
-  BGM's sequence volume, follows the duck cell `_DAT_8007B910` two or three
-  units behind; no dumped function stores a level into it, and the port
-  applies the cell directly
-  ([above](#a-sequence-volume-change-re-volumes-the-held-notes)).
 - **The Field↔Battle swap** has no retail audio trace
   ([above](#the-fieldbattle-swap-is-not-on-this-axis)).
 - **`.MAP` / `.PCH` / `.spk` / `.pac`** have no retail carrier to decode; the

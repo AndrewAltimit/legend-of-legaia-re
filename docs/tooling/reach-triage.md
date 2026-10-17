@@ -769,9 +769,11 @@ cold-reset leaves that clear the `0x80084140` game-state block - both write
 (`0xD7`) in the un-ducked states and the ducked level in the summon states
 (`161` to `213`, two or three units behind the live duck cell
 `_DAT_8007B910`), and every playing BGM record's sequence volume `+0x58` is
-that word halved (`parity/tests/mednafen_voice_parity.rs`). So it has a writer
-the dumped corpus does not show - not a `lui` + `sw` pair to `-0x4914`, which
-is all that sweep looked for.
+that word halved (`parity/tests/mednafen_voice_parity.rs`). The writer that
+sweep missed is `gp`-relative: `FUN_8001698C` stores the live duck cell into it
+each frame the cell changes (`sw a0,0x3d4(gp)` at `0x80016A30`) and applies it
+halved through `FUN_8002614C`
+([`audio.md`](../subsystems/audio.md#a-sequence-volume-change-re-volumes-the-held-notes)).
 
 The proof that does hold is on the record, not the level: the sound-source
 record sub-op 8 replays carries no stream in any captured state
