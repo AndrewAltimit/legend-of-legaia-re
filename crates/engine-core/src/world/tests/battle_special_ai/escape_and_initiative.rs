@@ -386,3 +386,31 @@ fn the_pre_emptive_escape_latch_lasts_one_round() {
     w.run_round_state_zero();
     assert_eq!(w.battle_formation_latched(), FormationAdvantage::None);
 }
+
+/// `FUN_801DA780` halves a key whose actor's `+0x16E` word is exactly
+/// `0x1000` (`lhu` / `li 0x1000` / `bne` at `0x801DA8F8..0x801DA900`,
+/// `srl 1` at `0x801DA910`): an actor carrying that bit alone rolls into
+/// half the band, and one carrying it beside another bit is untouched.
+#[test]
+fn initiative_halves_a_key_whose_status_word_is_exactly_0x1000() {
+    let key_with = |status: u16| {
+        let mut w = escape_world(40, 40, None);
+        w.party.party_count = 1;
+        w.rng_state = 11;
+        w.actors[0].battle.liveness = 1;
+        w.actors[0].battle.hp = 100;
+        w.actors[0].battle.max_hp = 100;
+        w.battle.speed[0] = 40;
+        w.actors[0].battle.field_flags = status;
+        w.set_battle_formation(legaia_engine_battle_vm::battle_formulas::FormationAdvantage::None);
+        w.reseed_initiative();
+        w.actors[0].battle.init_key
+    };
+    let plain = key_with(0);
+    assert_eq!(key_with(0x1000), plain >> 1);
+    assert_eq!(
+        key_with(0x1000 | 0x1),
+        plain,
+        "not an exact match: no halving"
+    );
+}

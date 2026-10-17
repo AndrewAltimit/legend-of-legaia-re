@@ -3,6 +3,11 @@
 
 use super::*;
 
+/// The `+0x16E` word `FUN_801DA780` halves an initiative key for
+/// (`0x801DA8F8..0x801DA914`): an exact compare, so only an actor whose
+/// whole status word is the `0x1000` bit.
+pub(in crate::world) const INITIATIVE_HALVING_STATUS: u16 = 0x1000;
+
 impl World {
     /// `ctx+0x290` - the formation advantage `FUN_80051D84` rolls at battle
     /// setup, read straight off the battle context the action SM owns.
@@ -161,10 +166,11 @@ impl World {
                 hp: self.actors[i].battle.hp,
                 max_hp: self.actors[i].battle.max_hp,
                 is_party,
-                // Retail reads the Slow status from `actor+0x16E == 0x1000`.
-                // The engine's status model does not carry that word yet, so
-                // no actor is ever flagged Slow here.
-                slowed: false,
+                // `lhu v1,0x16e` / `li v0,0x1000` / `bne` at
+                // `0x801DA8F8..0x801DA900`: the whole word must equal
+                // `0x1000`, so the halving reaches an actor carrying that
+                // bit and nothing else.
+                slowed: self.raw_status_word(i as u8) == INITIATIVE_HALVING_STATUS,
                 // The `+0xF4` ability word only applies to party slots (retail
                 // gates the whole arm on `slot < 3`); monsters pass 0.
                 ability_bits: if is_party {
