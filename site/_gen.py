@@ -91,9 +91,9 @@ TITLE_OVERRIDES: dict[str, str] = {
 DESCRIPTIONS: dict[str, str] = {
     "home": DEFAULT_DESCRIPTION,
     "play": (
-        "Play Legend of Legaia in your browser: an in-progress WebAssembly "
-        "engine port with retail movement, NPC dialogue, menus, and memory-"
-        "card saves, running from your own disc image. Works flat or in VR "
+        "Play Legend of Legaia in your browser, New Game to the credits: a "
+        "WebAssembly engine port with retail movement, NPC dialogue, battles, "
+        "menus, and memory-card saves, running from your own disc image. Works flat or in VR "
         "(WebXR)."
     ),
     "viewer": (
