@@ -73,7 +73,7 @@ The whole game plays, New Game to the ending credits:
 - **Battle.** Random and story encounters into player-driven battles: the command ring, Tactical Arts with Super and Miracle Arts, Seru magic and summons, items, Spirit, running away, then spoils, level-ups and Seru capture.
 - **Menus and towns.** The pause menu and the screens behind it (status, items, magic, equipment, options), shops, inns, the save screen.
 - **Minigames.** Fishing, the casino slot machine, Noa's dance, Baka Fighter and the Muscle Dome, driven by the tables on your disc.
-- **Audio and video.** Music through a from-scratch SPU and sequencer against each scene's own sound bank, sound effects, the CD-XA arts shouts and battle stings, and MDEC cutscenes with synced audio.
+- **Audio and video.** Music through a from-scratch SPU and sequencer against each scene's own sound bank, sound effects, the CD-XA arts shouts, battle stings and Seru cast voices, and MDEC cutscenes with synced audio.
 - **Saves.** The engine's own save files, plus real PSX memory-card images an emulator still accepts.
 - **Tooling.** One-command extraction of the whole disc, the randomizer and content mods, language packs, and reproducible static analysis.
 
@@ -81,7 +81,6 @@ Known gaps:
 
 - **Bug reports help.** If you hit a visual glitch, a mistimed animation or a stuck script, an [issue](https://github.com/AndrewAltimit/legend-of-legaia-re/issues) naming the scene and what you did is the fastest way to a fix.
 - **Frame-for-frame parity is still closing.** The [retail comparison corpus](docs/tooling/retail-compare.md) scores the port against retail save states - RAM, camera, and the frame on screen - and ranks where it still differs.
-- **Spell voices are silent.** A cast or summon module's own voice clip is resolved to its `XA` file and channel but not played; the arts shouts and battle stings are the voice clips you hear.
 - **Some sounds are the port's pick.** Where retail's sound-effect id for an event is untraced, the port plays the closest cue and labels it as its own choice ([details](docs/guides/playing-and-viewing.md#5-what-you-hear)).
 - **USA disc only for the port.** Other regions' discs extract, and an official PAL translation can be lifted into a USA language pack, but the engine and the patcher target `SCUS-94254`.
 - **Open questions remain** in the reverse engineering itself: [open threads](docs/reference/open-rev-eng-threads.md).
