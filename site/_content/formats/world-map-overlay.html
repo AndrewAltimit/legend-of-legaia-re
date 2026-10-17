@@ -243,7 +243,7 @@
           <tr><td><code>FUN_801D6704</code></td><td>Overlay scene loader: installs PROT 0874 section 0 into <code>[0..4]</code> via <code>FUN_80020118</code>, then the scene's own TMD pack via <code>FUN_80020224</code> - the same walk every field scene runs</td></tr>
         </tbody>
       </table>
-      <p>Entries <code>[0..4]</code> are the party character meshes from PROT 0874 section 0 (a 5-TMD pack, LZS at file offset <code>0x20</code>; slots ship with 12 / 12 / 12 / 3 / 2 groups). A settled <code>dolk</code> field snapshot shows 143 installed entries, <code>[5..142]</code> being that scene's field TMD pack; a mid-warp Sebucus snapshot shows 92 with the install still in flight. The dev-tree path <code>data\field\player.lzs</code> maps to PROT 876, which carries a VAB + TIM list + SEQ stream with no TMDs; the SCUS branch that would read it as three LZS descriptors is incompatible with those bytes and is either gated off or dead in retail.</p>
+      <p>Entries <code>[0..4]</code> are the party character meshes from PROT 0874 section 0 (a 5-TMD pack, LZS at file offset <code>0x20</code>; slots ship with 12 / 12 / 12 / 3 / 2 groups). A settled <code>dolk</code> field snapshot shows 143 installed entries, <code>[5..142]</code> being that scene's field TMD pack; a mid-warp Sebucus snapshot shows 92 with the install still in flight. Extraction 874 is raw TOC index <code>0x36C</code> (876), which is what the CDNAME <code>player_data</code> define and the dev-tree path <code>data\field\player.lzs</code> name (<a href="cdname.html#numbering-space">numbering space</a>); <code>FUN_8001E890</code> loads it with <code>li a0,0x36c</code>. Extraction 0876 is a different file (a VAB + TIM list + SEQ stream with no TMDs).</p>
     </div>
   </details>
 </section>
@@ -308,7 +308,7 @@
   <ul class="bullets">
     <li>Which actor plays which clip. The numbers come from each scene&#39;s script, so naming a clip &ldquo;the windmill&rsquo;s spin&rdquo; needs a script pass, not more format work.</li>
     <li>Which caller, if any, selects primitive-handler banks 2 and 3 - candidates are debug render modes, battle reuse of the dispatcher, or cutscenes.</li>
-    <li>The exact indirection that hands the party-mesh bytes to the model-table installer; a write breakpoint on the table&#39;s first entry would settle it.</li>
+    <li>Whether the <code>_DAT_8007B824</code> persistent-slot path is live. <code>FUN_8001F05C</code> case 2 with <code>param_3 == 1</code> is its sole SCUS store and <code>FUN_8001E1B4</code> resets the install cursor from it, but no dumped caller passes <code>1</code>; a write breakpoint on <code>_DAT_8007B824</code> answers it.</li>
   </ul>
 </section>
 
