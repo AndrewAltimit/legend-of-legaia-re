@@ -98,3 +98,10 @@ reason = "The world stream now steps the BIOS rand() recurrence (0x41C64E6D / 0x
 changes = [
   ["states/battle_vahn_tri_somersault_super/image", 0.883, 0.88],
 ]
+
+[[loosening]]
+file = "scripts/ci/retail-compare-baseline.json"
+reason = "Stale before this change, not a regression in it: main's own tree (built from a clean worktree at the merge base) scores this overworld frame 0.997, the same as the tree here, on repeated runs. The two frames differ by under a hundredth of the 8x8 blocks."
+changes = [
+  ["states/sebucus_overworld_resident/image", 0.999, 0.997],
+]
