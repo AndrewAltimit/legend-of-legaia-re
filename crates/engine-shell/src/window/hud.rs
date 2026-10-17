@@ -13,11 +13,6 @@ mod field_party;
 #[path = "hud/text_list.rs"]
 mod text_list;
 
-/// One on-screen sparring-tutorial box with its stage rect `(x, y, w, h)`.
-pub(super) use legaia_engine_screens::battle_screens::TutorialStageBox;
-
-pub(super) use legaia_engine_screens::battle_command::CommandChips;
-
 impl PlayWindowApp {
     /// The field overlay's own stage windows that ride the shop-family
     /// overlay group: the end-of-game records screen, the floor window and
@@ -75,18 +70,7 @@ impl PlayWindowApp {
         &self,
         entry: &'a legaia_engine_menus::name_entry::NameEntry,
     ) -> legaia_engine_ui::NameEntryView<'a> {
-        use legaia_engine_menus::name_entry::GRID;
-        let (grid_cursor, control_cursor) = entry.cursor_cells();
-        legaia_engine_ui::NameEntryView {
-            grid_rows: &GRID,
-            name: &entry.name,
-            default_name: &entry.default_name,
-            grid_cursor,
-            control_cursor,
-            confirming: entry.state == legaia_engine_menus::name_entry::NameEntryState::Confirm,
-            confirm_yes: entry.confirm_yes,
-            caret_on: legaia_engine_menus::name_entry::caret_on(self.session.host.world.frame),
-        }
+        legaia_engine_screens::field_screens::name_entry_view(entry, self.session.host.world.frame)
     }
 
     /// Build the name-entry window chrome + hand cursor sprites (the two

@@ -4,58 +4,22 @@
 use super::*;
 
 impl LegaiaRuntime {
-    /// Every tutorial box on screen with its stage rect
-    /// (`legaia_engine_screens::battle_screens::battle_tutorial_stage_boxes`,
+    /// Tutorial prompt rows and Koru's timed-fight strip in stage pixels
+    /// (`legaia_engine_screens::battle_screens::battle_tutorial_stage_draws`,
     /// the native window's call too).
-    pub(crate) fn battle_tutorial_stage_boxes(
-        &self,
-        font: &legaia_font::Font,
-    ) -> Vec<TutorialStageBox<'_>> {
-        let Some(host) = self.scene_host.host() else {
-            return Vec::new();
-        };
-        legaia_engine_screens::battle_screens::battle_tutorial_stage_boxes(&host.world, font)
-    }
-
-    /// Tutorial prompt rows in stage pixels, at the rect origin on the retail
-    /// 14-px pitch.
     pub(crate) fn battle_tutorial_stage_draws(
         &self,
         font: &legaia_font::Font,
         has_chrome: bool,
     ) -> Vec<TextDraw> {
-        let mut out = Vec::new();
-        for (rect, tbox) in self.battle_tutorial_stage_boxes(font) {
-            out.extend(ui::battle_tutorial_text_draws_for(font, &tbox.text, rect));
-            // Without the system-UI atlas there is no frame and no advance
-            // hand, so keep a plain confirm hint as the only affordance a
-            // waiting box would otherwise have.
-            if tbox.waits_for_input && !has_chrome {
-                let lines = tbox.text.lines().count() as i32;
-                out.extend(ui::text_draws_for(
-                    &font.layout_ascii("Cross=continue"),
-                    (rect.0, rect.1 + lines * 14),
-                    [0.75, 0.75, 0.8, 1.0],
-                ));
-            }
-        }
-        // Koru's timed-fight strip - the same stage-space text-actor family,
-        // one shared builder with the native window.
-        if let Some(strip) = self
-            .scene_host
-            .host()
-            .and_then(|h| legaia_engine_core::world_views::timed_fight::timed_fight_strip(&h.world))
-        {
-            out.extend(ui::timed_fight_strip_text_draws(
-                font,
-                &ui::TimedFightStripView {
-                    label: &strip.label,
-                    turns_left: strip.turns_left,
-                    hp_left: strip.hp_left,
-                },
-            ));
-        }
-        out
+        let Some(host) = self.scene_host.host() else {
+            return Vec::new();
+        };
+        legaia_engine_screens::battle_screens::battle_tutorial_stage_draws(
+            &host.world,
+            font,
+            has_chrome,
+        )
     }
 
     /// Tutorial prompt-box chrome and Koru's timed-fight strip

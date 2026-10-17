@@ -70,103 +70,15 @@ impl PlayWindowApp {
 }
 
 impl PlayWindowApp {
+    /// The live dialog source as a plain-string snapshot
+    /// (`legaia_engine_screens::dialog_screens::dialog_snapshot`, the browser
+    /// page's call too): this window's own typed-out panel first, then the
+    /// script / timeline panel, then the inline field-VM runner.
     pub(in crate::window) fn dialog_snapshot(&self) -> Option<DialogSnapshot> {
-        let to_ascii = |bytes: &[u8]| -> String {
-            bytes
-                .iter()
-                .map(|&b| {
-                    if (0x20..=0x7E).contains(&b) {
-                        b as char
-                    } else {
-                        '?'
-                    }
-                })
-                .collect()
-        };
-        let from_panel = |panel: &legaia_engine_dialog::dialog::OwnedDialogPanel,
-                          require_text: bool|
-         -> Option<DialogSnapshot> {
-            let page = legaia_engine_ui::dialog_page_string(&panel.page_bytes());
-            if require_text && page.is_empty() {
-                return None;
-            }
-            let (options, cursor) = if panel.menu_active() {
-                match panel.picker() {
-                    Some(_) => (
-                        panel.picker_labels().iter().map(|l| to_ascii(l)).collect(),
-                        panel.picker_cursor(),
-                    ),
-                    None => (Vec::new(), 0),
-                }
-            } else {
-                (Vec::new(), 0)
-            };
-            Some(DialogSnapshot {
-                page,
-                scroll_px: panel.scroll_px(),
-                box_rows: panel.box_rows(),
-                options,
-                cursor,
-                picker_rect: panel.picker_rect(),
-                picker_hand: panel.picker_hand_drawn(),
-                hand_bob: panel.picker_hand_bob(),
-                advance_icon: self.session.host.world.page_mark_frame(panel),
-            })
-        };
-        if let Some(panel) = self.active_dialog.as_ref() {
-            return from_panel(panel, false);
-        }
-        if let Some(panel) = self.session.host.world.script_dialog_panel()
-            && let Some(snap) = from_panel(panel, true)
-        {
-            return Some(snap);
-        }
-        if let Some(id) = self.session.host.world.dialog.inline.as_ref()
-            && let Some(panel) = id.panel.as_ref()
-        {
-            return from_panel(panel, true);
-        }
-        None
-    }
-
-    /// Compute the stage-pixel box rects for a dialog snapshot,
-    /// mirroring the pager's traced geometry (`FUN_801D84D0`):
-    ///
-    /// - Main (reading) box: `(0x26, 0x10, 0xF4, lines*0xF - 3)` - the
-    ///   per-frame `FUN_8002C69C` call passes `(ctx+0x12, ctx+0x14,
-    ///   0xF4, lines*0xF + 5 - 8)`, and the live context in the
-    ///   `v0_1_tetsu_dialogue_accept` capture holds `ctx+0x12 = 0x26`,
-    ///   `ctx+0x14 = 0x10` (framebuffer cross-checked: drawn footprint
-    ///   `x 30..289, y 8..65` = this rect inflated by the skin border).
-    ///   Retail anchors the reading box at the TOP of the stage - with
-    ///   or without an option picker.
-    /// - Picker box: the engine's slide rect
-    ///   ([`legaia_engine_dialog::dialog::OwnedDialogPanel::picker_rect`]) -
-    ///   the box on its way in from off screen, then at rest: `0x2A` at the
-    ///   top right `(0xD8, 0x4A, 0x58, 0x1A)`, the N-option lists at
-    ///   `(0x26, 0x94 + ((4-n)*0xF)/2, 0xF4, 0x38 - (4-n)*0xF)`. `None`
-    ///   (no box) on the press's sentinel call.
-    ///
-    /// Rects are the retail centre rects; the border skin the chrome
-    /// pass draws extends ~8 px beyond them on every side
-    /// (`dialog_window_chrome_draws_for`).
-    pub(in crate::window) fn dialog_stage_layout(snap: &DialogSnapshot) -> DialogStageLayout {
-        // Retail's standard reading box is ALWAYS 3 rows tall
-        // (`_DAT_801F2740 = 3` in both box-init arms) regardless of how
-        // much text has typed in; only over-long simplified pages grow
-        // it to a 4th row.
-        let lines = legaia_engine_ui::dialog_reading_box_lines(&snap.page, snap.box_rows);
-        let main_w = 0xF4;
-        let main_h = lines * 0xF - 3;
-        let picker = if snap.options.is_empty() {
-            None
-        } else {
-            snap.picker_rect
-        };
-        DialogStageLayout {
-            main: (0x26, 0x10, main_w, main_h),
-            picker,
-        }
+        legaia_engine_screens::dialog_screens::dialog_snapshot(
+            &self.session.host.world,
+            self.active_dialog.as_ref(),
+        )
     }
 }
 
@@ -249,80 +161,18 @@ impl PlayWindowApp {
         let Some(snap) = self.dialog_snapshot() else {
             return out;
         };
-        let lay = Self::dialog_stage_layout(&snap);
-        out.extend(legaia_engine_ui::dialog_window_chrome_draws_for(
-            &assets.rects,
-            lay.main,
-            stage_origin,
-            stage_scale,
-        ));
-        if let Some(prect) = lay.picker {
-            out.extend(legaia_engine_ui::dialog_window_chrome_draws_for(
+        out.extend(
+            legaia_engine_screens::dialog_screens::dialog_box_chrome_draws(
                 &assets.rects,
-                prect,
+                &snap,
                 stage_origin,
                 stage_scale,
-            ));
-            // Pointing-hand cursor on the selected option row
-            // (FUN_8002B994 kind 0 at box_x-6, box_y + cursor*0xF), drawn
-            // only once the slide rests (count 0).
-            if snap.picker_hand {
-                out.push(legaia_engine_ui::dialog_option_hand_sprite(
-                    &assets.rects,
-                    (prect.0 + snap.hand_bob, prect.1),
-                    snap.cursor,
-                    stage_origin,
-                    stage_scale,
-                ));
-            }
-        } else if let Some(frame) = snap.advance_icon {
-            // The two-frame page mark at the lower-right rim while the
-            // pager waits for confirm (FUN_8002B994 kind 1).
-            out.push(legaia_engine_ui::dialog_page_mark_sprite(
-                legaia_engine_menus::save_menu_atlas::ATLAS_RECT_ADVANCE_ICON
-                    [usize::from(frame) & 1],
-                lay.main,
-                stage_origin,
-                stage_scale,
-            ));
-        }
+            ),
+        );
         out
     }
 }
 
 /// Plain-string view of the live dialog panel shared by the text and
-/// chrome layers (see `PlayWindowApp::dialog_snapshot`).
-pub(in crate::window) struct DialogSnapshot {
-    /// Current typed-out page, `|` (0x7C) separating rows.
-    pub page: String,
-    /// Whole pixels the rows draw above their slots (the pager window's
-    /// scroll, `<= 0`).
-    pub scroll_px: i32,
-    /// The pager window's height in rows (`None` for the plain-MES panel,
-    /// whose box grows with its page); also the text clip band.
-    pub box_rows: Option<usize>,
-    /// Decoded option labels when a picker menu is open (empty
-    /// otherwise).
-    pub options: Vec<String>,
-    /// Selected option row.
-    pub cursor: usize,
-    /// The picker box's rect this frame, from the engine's slide
-    /// (`OwnedDialogPanel::picker_rect`); `None` before it starts.
-    pub picker_rect: Option<(i32, i32, i32, i32)>,
-    /// The option hand is drawn (the slide rests).
-    pub picker_hand: bool,
-    /// The option hand's idle bob (X, stage pixels).
-    pub hand_bob: i32,
-    /// The page mark's strip frame, `None` when the pager draws none (no
-    /// wait, or an automatic press counting down).
-    pub advance_icon: Option<u8>,
-}
-
-/// Stage-pixel dialog box layout (see
-/// `PlayWindowApp::dialog_stage_layout`).
-pub(in crate::window) struct DialogStageLayout {
-    /// Main reading-box rect `(x, y, w, h)`.
-    pub main: (i32, i32, i32, i32),
-    /// Option-picker box rect when a menu is open.
-    pub picker: Option<(i32, i32, i32, i32)>,
-}
+/// chrome layers - the shared `engine-screens` type.
+pub(in crate::window) use legaia_engine_screens::dialog_screens::DialogSnapshot;

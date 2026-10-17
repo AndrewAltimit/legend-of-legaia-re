@@ -1798,6 +1798,7 @@ version = "0.1.0"
 dependencies = [
  "legaia-engine-battle",
  "legaia-engine-core",
+ "legaia-engine-dialog",
  "legaia-engine-effects",
  "legaia-engine-field",
  "legaia-engine-fishing",

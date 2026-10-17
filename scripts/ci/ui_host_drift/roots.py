@@ -35,5 +35,10 @@ SHARED_COMPOSERS: dict[Path, tuple[str, ...]] = {
         "battle_chrome_sprite_draws",
         "field_menu_root_draws",
         "field_menu_sub_draws",
+        "battle_text_draws",
+        "dialog_box_chrome_draws",
+        "dialog_box_text_draws",
+        "field_party_hud_draws",
+        "save_select_overlay_draws",
     ),
 }

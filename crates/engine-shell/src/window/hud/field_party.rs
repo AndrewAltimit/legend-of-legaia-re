@@ -162,7 +162,6 @@ impl PlayWindowApp {
         w: u32,
         h: u32,
     ) -> legaia_engine_ui::BattleHudDraws {
-        use legaia_engine_ui::field_party_hud as fp;
         // Ask the suppress gate on the DRAW path too, not only on the tick.
         // Retail evaluates it once because `FUN_801D0D38` is both halves in
         // one function; the port splits them, and a split decision is only
@@ -178,33 +177,17 @@ impl PlayWindowApp {
         else {
             return Default::default();
         };
-        let rows = legaia_engine_core::world_views::world_map_panel_host::field_party_hud_members(
+        legaia_engine_screens::field_screens::field_party_hud_draws(
             &self.session.host.world,
-        );
-        let members: Vec<fp::FieldHudMember<'_>> = rows
-            .iter()
-            .map(|m| fp::FieldHudMember {
-                name: &m.name,
-                level: m.level,
-                hp: m.hp,
-                hp_max: m.hp_max,
-                mp: m.mp,
-                mp_max: m.mp_max,
-                alive: m.alive,
-            })
-            .collect();
-        let (origin, scale) = self.save_select_stage(w, h);
-        fp::field_party_hud_draws_for(
             &self.font,
-            &fp::FieldPartyHudFrame {
-                members: &members,
-                y: i32::from(y),
+            legaia_engine_screens::field_screens::FieldHudSources {
                 chrome: self.save_menu.as_ref().map(|a| &a.rects),
                 scrim_src: self.save_menu.as_ref().and_then(|a| a.solid),
                 solid_src: self.battle_hud_solid_src(),
-                origin,
-                scale: scale as i32,
             },
+            y,
+            w,
+            h,
         )
     }
 }

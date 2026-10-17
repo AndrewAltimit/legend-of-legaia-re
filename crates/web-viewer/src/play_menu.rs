@@ -79,9 +79,7 @@ use legaia_engine_menus::save_menu_atlas::{SaveMenuAtlas, build_atlas};
 use legaia_engine_menus::save_screen::{SaveCommitKind, SaveRefusal, SaveScreenFlow};
 use legaia_engine_menus::save_select::{SaveRack, SaveSelectSession};
 use legaia_engine_system::input::PadButton;
-use legaia_engine_ui::{
-    self as ui, SaveMenuAtlasRects, SlotGridCell, SlotInfoView, SpriteDraw, TextDraw,
-};
+use legaia_engine_ui::{SaveMenuAtlasRects, SpriteDraw, TextDraw};
 
 use legaia_engine_screens::pause_screens;
 /// Stage origin + integer scale that upscales the 320x240 boot-UI stage to

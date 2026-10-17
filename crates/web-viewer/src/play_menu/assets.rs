@@ -37,12 +37,9 @@ impl PlayMenuAssets {
     pub(crate) fn battle_badges(
         &self,
     ) -> Option<legaia_engine_ui::battle_hud_chrome::BattleBadgeRects> {
-        self.chrome.as_ref().map(
-            |(a, _)| legaia_engine_ui::battle_hud_chrome::BattleBadgeRects {
-                status: a.band_status_badges(),
-                element: a.band_element_badges(),
-            },
-        )
+        self.chrome
+            .as_ref()
+            .map(|(a, _)| legaia_engine_screens::field_screens::battle_badge_rects(a))
     }
 
     /// The disc-parsed menu-overlay window-descriptor table, when it parsed.
@@ -158,7 +155,8 @@ impl LegaiaRuntime {
                                         &mut a, &flame,
                                     );
                                 }
-                                let rects = save_menu_rects(&a);
+                                let rects =
+                                    legaia_engine_screens::field_screens::save_menu_rects(&a);
                                 Some((a, rects))
                             }
                             Err(e) => {
@@ -247,70 +245,5 @@ impl LegaiaRuntime {
     /// without this export leaves the page on its old raw-edge blip.
     pub fn play_menu_blips_inline(&self) -> bool {
         true
-    }
-}
-
-/// Assemble the `SaveMenuAtlasRects` band table from a built [`SaveMenuAtlas`] -
-/// the same field-by-field mapping the native window does at atlas upload.
-fn save_menu_rects(a: &SaveMenuAtlas) -> SaveMenuAtlasRects {
-    SaveMenuAtlasRects {
-        class0_dark: Some(legaia_engine_ui::Class0SkinRects::from_cells(
-            a.band_class0_dark(),
-        )),
-        panel_tl: a.band_panel_tl(),
-        panel_tr: a.band_panel_tr(),
-        panel_bl: a.band_panel_bl(),
-        panel_br: a.band_panel_br(),
-        panel_top: a.band_panel_top(),
-        panel_bot: a.band_panel_bot(),
-        panel_left: a.band_panel_left(),
-        panel_right: a.band_panel_right(),
-        slot1: a.band_slot1(),
-        slot2: a.band_slot2(),
-        cursor: a.band_cursor(),
-        panel_interior: a.band_panel_interior(),
-        panel_filigree: a.band_panel_filigree(),
-        label_lv: a.band_label_lv(),
-        label_hp: a.band_label_hp(),
-        label_mp: a.band_label_mp(),
-        icon_money: a.band_icon_money(),
-        label_time: a.band_label_time(),
-        label_coin: a.band_label_coin(),
-        gauge_cap: a.band_gauge_cap(),
-        gauge_trough: a.band_gauge_trough(),
-        gauge_box: a.band_gauge_box(),
-        gauge_tip: a.band_gauge_tip(),
-        gauge_digits: a.band_gauge_digits(),
-        gauge_100: a.band_gauge_100(),
-        gauge_fill: a.band_gauge_fill(),
-        dialog_fill: a.band_dialog_fill(),
-        icon_weapon: a.band_icon_weapon(),
-        icon_helmet: a.band_icon_helmet(),
-        icon_armor: a.band_icon_armor(),
-        icon_boot: a.band_icon_boot(),
-        icon_goods: a.band_icon_goods(),
-        pager_left: a.band_pager_left(),
-        pager_right: a.band_pager_right(),
-        tab_cap_l: a.band_tab_cap_l(),
-        tab_body: a.band_tab_body(),
-        tab_cap_r: a.band_tab_cap_r(),
-        atr_icons: a.band_atr_icons(),
-        load_empty_frame: Some(a.band_load_empty_frame()),
-        load_portrait_by_char: [
-            a.band_load_portrait(0),
-            a.band_load_portrait(1),
-            a.band_load_portrait(2),
-        ],
-        battle: Some(legaia_engine_ui::BattleChromeRects {
-            panel_bg: a.band_battle_panel_bg(),
-            plate_cap_l: a.band_battle_plate_cap_l(),
-            plate_body: a.band_battle_plate_body(),
-            plate_cap_r: a.band_battle_plate_cap_r(),
-            separator: a.band_battle_separator(),
-            digits: a.band_hud_digits(),
-            cross_out: a.band_cross_out(),
-            rot_stamp: a.band_rot_stamp(),
-            curse_plate: a.band_curse_plate(),
-        }),
     }
 }

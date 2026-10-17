@@ -293,18 +293,6 @@ impl LegaiaRuntime {
             .collect()
     }
 
-    /// Whether a Muscle Dome leg's battle chrome is on screen: the leg is
-    /// open and no hub screen (the first visit, the leg-open ROUND card)
-    /// covers it - the native window's `dome_battle_chrome_up`, off the same
-    /// `HubTimers::covers_leg`.
-    pub(crate) fn dome_battle_chrome_up(&self) -> bool {
-        self.muscle_session().is_some()
-            && !self
-                .scene_host
-                .host()
-                .is_some_and(|h| h.world.minigames.muscle_hub.covers_leg())
-    }
-
     /// The two hub-page TIMs out of the dome data container (extraction
     /// 1220, LZS section 0 = `[12-byte header][TIM][TIM]`), CLUTs as uploaded.
     fn muscle_hub_tims(&self) -> Option<(legaia_tim::Tim, legaia_tim::Tim)> {

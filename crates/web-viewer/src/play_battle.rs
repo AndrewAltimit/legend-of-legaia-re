@@ -38,9 +38,7 @@
 
 use crate::runtime::LegaiaRuntime;
 use legaia_engine_battle::battle_hud_state::DamagePopup;
-use legaia_engine_core::battle_hud::{
-    encounter_banner_enabled, encounter_banner_label, sync_battle_hud_rows,
-};
+use legaia_engine_core::battle_hud::{encounter_banner_label, sync_battle_hud_rows};
 use legaia_engine_mode::mode::SceneMode;
 use legaia_engine_ui::{self as ui, SpriteDraw, TextDraw};
 use legaia_render_kernels::battle_intro::BattleIntro;
@@ -54,9 +52,6 @@ mod test_probes;
 mod tutorial;
 mod value_readout;
 
-/// One on-screen sparring-tutorial box with its stage rect `(x, y, w, h)`.
-pub(crate) use legaia_engine_screens::battle_screens::TutorialStageBox;
-
 /// Frames the encounter-transition banner stays on screen after a
 /// `Field -> Battle` mode change (~1.5 s at the 60 Hz sim tick; the native
 /// window's `ENCOUNTER_BANNER_FRAMES`).
@@ -65,13 +60,6 @@ const ENCOUNTER_BANNER_FRAMES: u16 = 90;
 /// private to that module) - the actor stage the battle view-projection is
 /// built for, so an actor origin has to be scaled before it is projected.
 const BATTLE_WORLD_SCALE_LOCAL: f32 = 4.0;
-
-/// Left margin of the battle command / arts / magic submenus.
-const MENU_X: i32 = 8;
-/// First row Y of the battle command / arts / magic submenus.
-const MENU_Y: i32 = 210;
-
-pub(crate) use legaia_engine_screens::battle_command::CommandChips;
 
 impl LegaiaRuntime {
     /// Arm the live gameplay loop on the freshly-entered scene, the browser

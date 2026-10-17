@@ -29,15 +29,6 @@ impl PlayWindowApp {
 }
 
 impl PlayWindowApp {
-    /// Every tutorial box on screen with its stage rect
-    /// (`battle_screens::battle_tutorial_stage_boxes`).
-    pub(in crate::window) fn battle_tutorial_stage_boxes(&self) -> Vec<TutorialStageBox<'_>> {
-        legaia_engine_screens::battle_screens::battle_tutorial_stage_boxes(
-            &self.session.host.world,
-            &self.font,
-        )
-    }
-
     /// Sparring-tutorial prompt-box chrome and Koru's timed-fight strip
     /// (`battle_screens::battle_tutorial_chrome_draws`), composited in the
     /// shared chrome sprite slot, under the text layer.

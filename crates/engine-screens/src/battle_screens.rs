@@ -481,6 +481,302 @@ pub fn arts_input_chrome_draws(
     out
 }
 
+/// Left margin of the battle submenus' text stand-ins (surface pixels).
+pub const BATTLE_MENU_X: i32 = 8;
+/// First row Y of the battle submenus' text stand-ins (surface pixels).
+pub const BATTLE_MENU_Y: i32 = 210;
+
+const MENU_WHITE: [f32; 4] = [1.0, 1.0, 1.0, 1.0];
+const MENU_DIM: [f32; 4] = [0.7, 0.85, 1.0, 1.0];
+/// Greyed-out row tint (K.O.'d targets, unaffordable spells).
+const MENU_DOWN: [f32; 4] = [0.6, 0.6, 0.6, 1.0];
+const TARGET_HINT: &str = "Left/Right=move  Cross=confirm  Circle=back";
+
+/// The command cluster's chip labels, in stage pixels scaled to the surface.
+fn command_chip_text(
+    world: &World,
+    font: &legaia_font::Font,
+    origin: (i32, i32),
+    scale: u32,
+) -> Vec<TextDraw> {
+    use legaia_engine_ui::battle_command_ui as bcu;
+    let Some((chips, cursor, phase)) = crate::battle_command::battle_command_menu_chips(world)
+    else {
+        return Vec::new();
+    };
+    let views = bcu::command_chip_views(&chips);
+    bcu::battle_command_chip_text(
+        font,
+        &bcu::BattleCommandMenuFrame {
+            chips: &views,
+            cursor,
+            phase,
+            offsets: bh::battle_chip_offsets(world),
+            dpad: bh::battle_chip_dpad_visible(world),
+        },
+        origin,
+        scale,
+    )
+}
+
+/// A picker's target line: the enemy-row plaque rides the HUD builder (empty
+/// here), the ally / sweep states keep a text line, then the key hint.
+fn target_lines(
+    font: &legaia_font::Font,
+    picker: &legaia_engine_battle::target_picker::TargetPickerSession,
+    verb: &str,
+    my: i32,
+) -> Vec<TextDraw> {
+    use legaia_engine_battle::target_picker::{CursorRow, PickerState};
+    use legaia_engine_ui::text_draws_for;
+    let mut out = match enemy_target_strip_draws(picker) {
+        Some(strip) => strip,
+        None => {
+            let line = match picker.state() {
+                PickerState::Cursor {
+                    row: CursorRow::Ally,
+                    slot,
+                } => format!("{verb} -> target P{}", slot + 1),
+                _ => format!("{verb} -> select target"),
+            };
+            text_draws_for(&font.layout_ascii(&line), (BATTLE_MENU_X, my), MENU_WHITE)
+        }
+    };
+    out.extend(text_draws_for(
+        &font.layout_ascii(TARGET_HINT),
+        (BATTLE_MENU_X, my + 14),
+        MENU_DIM,
+    ));
+    out
+}
+
+/// The battle overlay's text list, in surface pixels: in a battle the HUD
+/// frame's text half, the encounter banner (`encounter_label`, a port
+/// diagnostic shown only under `LEGAIA_DIAG_HUD`) and whichever player-driven
+/// submenu owns the frame; in a Muscle Dome leg the HUD text and the command
+/// chips' labels. Empty in every other mode.
+///
+/// The sparring tutorial's boxes are not here - their rects are in the
+/// 320x240 stage, not surface pixels: [`battle_tutorial_stage_draws`].
+pub fn battle_text_draws(
+    inputs: &BattleScreenInputs<'_>,
+    encounter_label: Option<&str>,
+    surface_w: u32,
+    surface_h: u32,
+) -> Vec<TextDraw> {
+    use legaia_engine_ui::text_draws_for;
+    let w = inputs.world;
+    let font = inputs.font;
+    let (origin, scale) = legaia_engine_ui::pause_menu::stage_transform(surface_w, surface_h);
+    // Muscle Dome leg: the battle HUD's text half - the status plate and the
+    // command cluster's labels - fed by the dome session's command flow.
+    if w.mode == SceneMode::MuscleDome {
+        if !dome_battle_chrome_up(w) {
+            return Vec::new();
+        }
+        let mut out = battle_hud_frame_draws(inputs, surface_w, surface_h).text;
+        out.extend(command_chip_text(w, font, origin, scale));
+        return out;
+    }
+    if w.mode != SceneMode::Battle {
+        return Vec::new();
+    }
+    // The retail party strip, the top-left plaque and the floating popups:
+    // the HUD builder's text half (its sprites ride
+    // `battle_chrome_sprite_draws`).
+    let mut out = battle_hud_frame_draws(inputs, surface_w, surface_h).text;
+
+    // Encounter-transition banner: centred "ENCOUNTER!" over the formation
+    // label. A port invention with no retail counterpart - retail's
+    // Field -> Battle edge draws no banner - so it only appears under
+    // `LEGAIA_DIAG_HUD` (`encounter_banner_enabled`).
+    if let Some(label) = encounter_label.filter(|_| bh::encounter_banner_enabled()) {
+        let head_w = font.layout_ascii("ENCOUNTER!").advance_x as i32;
+        let pen = ((surface_w as i32 - head_w) / 2, surface_h as i32 / 4);
+        out.extend(legaia_engine_ui::encounter_banner_draws_for(
+            font, label, pen,
+        ));
+    }
+
+    // Player-driven submenus (opened from the Arts / Magic / Item commands).
+    // Each parks both the SM and the command session while open, so it takes
+    // priority over the command menu. While an in-battle dialogue box owns
+    // the frame (the tutorial text) the menus are hidden - retail shows no
+    // command chrome under it.
+    if w.dialogue_owns_input() {
+        return out;
+    }
+    if w.arts_input_view().is_some() {
+        // Retail-model arts entry: the whole screen is baked art, drawn in
+        // the sprite layer by `arts_input_chrome_draws`, so it puts up no
+        // text. The Begin | Reselect pick is the party's commit confirm (the
+        // command-chip cluster), not a line of this screen.
+        return out;
+    }
+    if let Some(arts) = &w.battle.arts_menu {
+        use legaia_engine_battle::battle_arts::ArtsPhase;
+        let mut my = BATTLE_MENU_Y;
+        match &arts.phase {
+            ArtsPhase::Select { cursor } => {
+                let header = format!("P{} - arts:", arts.actor + 1);
+                out.extend(text_draws_for(
+                    &font.layout_ascii(&header),
+                    (BATTLE_MENU_X, my),
+                    MENU_WHITE,
+                ));
+                my += 16;
+                if arts.arts.is_empty() {
+                    out.extend(text_draws_for(
+                        &font.layout_ascii("  (no saved arts)"),
+                        (BATTLE_MENU_X + 8, my),
+                        MENU_DOWN,
+                    ));
+                }
+                for (i, row) in arts.arts.iter().enumerate() {
+                    let sel = i as u8 == *cursor;
+                    let marker = if sel { ">" } else { " " };
+                    let line = match (row.miracle, row.super_art) {
+                        (Some(name), _) => {
+                            format!("{} {} x{} *{}*", marker, row.name, row.hits(), name)
+                        }
+                        (None, Some(name)) => {
+                            format!("{} {} x{} <{}>", marker, row.name, row.hits(), name)
+                        }
+                        (None, None) => format!("{} {} x{}", marker, row.name, row.hits()),
+                    };
+                    let color = if sel { MENU_WHITE } else { MENU_DIM };
+                    out.extend(text_draws_for(
+                        &font.layout_ascii(&line),
+                        (BATTLE_MENU_X + 8, my),
+                        color,
+                    ));
+                    my += 14;
+                }
+            }
+            ArtsPhase::Targeting { picker, .. } => {
+                out.extend(target_lines(font, picker, "art", my));
+            }
+            _ => {}
+        }
+    } else if let Some(spell) = &w.battle.spell_menu {
+        use legaia_engine_battle::battle_magic::SpellPhase;
+        let mut my = BATTLE_MENU_Y;
+        match &spell.phase {
+            SpellPhase::Select { cursor } => {
+                let header = format!("P{} - magic:", spell.actor + 1);
+                out.extend(text_draws_for(
+                    &font.layout_ascii(&header),
+                    (BATTLE_MENU_X, my),
+                    MENU_WHITE,
+                ));
+                my += 16;
+                if spell.spells.is_empty() {
+                    out.extend(text_draws_for(
+                        &font.layout_ascii("  (no spells)"),
+                        (BATTLE_MENU_X + 8, my),
+                        MENU_DOWN,
+                    ));
+                }
+                for (i, row) in spell.spells.iter().enumerate() {
+                    let sel = i as u8 == *cursor;
+                    let marker = if sel { ">" } else { " " };
+                    let line = format!("{} {} {:>2}MP", marker, row.name, row.mp_cost);
+                    let color = if !row.affordable {
+                        MENU_DOWN
+                    } else if sel {
+                        MENU_WHITE
+                    } else {
+                        MENU_DIM
+                    };
+                    out.extend(text_draws_for(
+                        &font.layout_ascii(&line),
+                        (BATTLE_MENU_X + 8, my),
+                        color,
+                    ));
+                    my += 14;
+                }
+            }
+            SpellPhase::Targeting { picker, .. } => {
+                out.extend(target_lines(font, picker, "cast", my));
+            }
+            _ => {}
+        }
+    } else if w.battle.item_menu.is_some() {
+        // Retail's item window (state 0x3C): the packet-pinned list +
+        // description windows with breadcrumbs and the hand cursor. Text half
+        // here; the window chrome + hand ride `battle_chrome_sprite_draws`.
+        if let Some(model) = w.battle_item_menu_model() {
+            out.extend(crate::with_battle_item_frame(&model, |frame| {
+                legaia_engine_ui::battle_item_ui::battle_item_window_text(
+                    font, frame, origin, scale,
+                )
+            }));
+        }
+    } else if let Some(cmd) = &w.battle.command {
+        use legaia_engine_menus::battle_input::CommandPhase;
+        match &cmd.phase {
+            CommandPhase::RoundPrompt { .. }
+            | CommandPhase::Menu { .. }
+            | CommandPhase::AttackMode { .. }
+            | CommandPhase::CommitConfirm { .. } => {
+                // Retail's command surfaces are clusters of framed chips
+                // around a D-pad glyph, not lists: the round-open
+                // `Begin | Run` pair, the packet-pinned four-arm diamond and
+                // the `Auto | Command` pair on the diamond's own arms. The
+                // plates go out in `battle_chrome_sprite_draws`.
+                out.extend(command_chip_text(w, font, origin, scale));
+            }
+            CommandPhase::Targeting { command, picker } => {
+                out.extend(target_lines(font, picker, command.label(), BATTLE_MENU_Y));
+            }
+            _ => {}
+        }
+    }
+    out
+}
+
+/// The sparring tutorial's prompt rows and Koru's timed-fight strip, in
+/// **stage** pixels (the caller scales them with the rest of its stage
+/// text). `FUN_801F747C` measures the prompt and registers a text actor with
+/// a full rect, so each is a sized window whose frame
+/// [`battle_tutorial_chrome_draws`] draws. Every box of the on-screen group
+/// draws: one retail hook dispatch registers all of its boxes at once.
+///
+/// Without the system-UI atlas (`has_chrome == false`) there is no frame and
+/// no advance hand, so a waiting box keeps a plain confirm hint - a port
+/// affordance with no retail counterpart.
+pub fn battle_tutorial_stage_draws(
+    world: &World,
+    font: &legaia_font::Font,
+    has_chrome: bool,
+) -> Vec<TextDraw> {
+    let mut out = Vec::new();
+    for (rect, tbox) in battle_tutorial_stage_boxes(world, font) {
+        out.extend(legaia_engine_ui::battle_tutorial_text_draws_for(
+            font, &tbox.text, rect,
+        ));
+        if tbox.waits_for_input && !has_chrome {
+            let lines = tbox.text.lines().count() as i32;
+            out.extend(legaia_engine_ui::text_draws_for(
+                &font.layout_ascii("Cross=continue"),
+                (rect.0, rect.1 + lines * 14),
+                MENU_DIM,
+            ));
+        }
+    }
+    if let Some(strip) = legaia_engine_core::world_views::timed_fight::timed_fight_strip(world) {
+        out.extend(legaia_engine_ui::timed_fight_strip_text_draws(
+            font,
+            &legaia_engine_ui::TimedFightStripView {
+                label: &strip.label,
+                turns_left: strip.turns_left,
+                hp_left: strip.hp_left,
+            },
+        ));
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

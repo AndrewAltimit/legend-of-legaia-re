@@ -32,47 +32,6 @@ impl PlayWindowApp {
         }
     }
 
-    /// One battle-HUD frame from the shared builder: the party strip, the
-    /// top-left plaque and the popups
-    /// (`legaia_engine_screens::battle_screens::battle_hud_frame_draws`).
-    ///
-    /// Both halves come from one call so the two host draw slots cannot
-    /// drift: the text half goes into the glyph layer, the sprite half into
-    /// the system-UI atlas layer through `battle_chrome_sprite_draws`.
-    pub(in crate::window) fn battle_hud_frame_draws(
-        &self,
-        w: u32,
-        h: u32,
-    ) -> legaia_engine_ui::BattleHudDraws {
-        legaia_engine_screens::battle_screens::battle_hud_frame_draws(
-            &self.battle_screen_inputs(),
-            w,
-            h,
-        )
-    }
-
-    /// The engine-core battle-item-window projection (shared with the
-    /// browser play page - `World::battle_item_menu_model` owns the gating
-    /// and text resolution; this window only borrows it into the builder's
-    /// frame via [`legaia_engine_screens::with_battle_item_frame`]).
-    pub(in crate::window) fn battle_item_menu_model(
-        &self,
-    ) -> Option<legaia_engine_menus::inventory_use::BattleItemMenuModel> {
-        self.session.host.world.battle_item_menu_model()
-    }
-
-    /// Whether a Muscle Dome leg's battle chrome is on screen (the shared
-    /// gate, `battle_screens::dome_battle_chrome_up`).
-    pub(in crate::window) fn dome_battle_chrome_up(&self) -> bool {
-        legaia_engine_screens::battle_screens::dome_battle_chrome_up(&self.session.host.world)
-    }
-
-    /// The command menu's chips this frame (the shared projection,
-    /// `legaia_engine_screens::battle_command`).
-    pub(in crate::window) fn battle_command_menu_chips(&self) -> Option<CommandChips> {
-        legaia_engine_screens::battle_command::battle_command_menu_chips(&self.session.host.world)
-    }
-
     /// The battle HUD's chrome sprites, the item window's frames and the
     /// command chips, or outside battle the field-side message banner's frame
     /// (`battle_screens::battle_chrome_sprite_draws`). Empty before the atlas

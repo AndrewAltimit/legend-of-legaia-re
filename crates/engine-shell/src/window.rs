@@ -16,7 +16,7 @@ use legaia_engine_render::{
 use legaia_engine_scene::scene::Scene;
 use legaia_engine_scene::scene_resources::{BuildOptions, SceneLoadKind, SceneResources};
 use legaia_engine_session::native::NativeSession;
-use legaia_engine_ui::{TextDraw, encounter_banner_draws_for, text_draws_for};
+use legaia_engine_ui::{TextDraw, text_draws_for};
 use legaia_font::Font;
 use std::path::Path;
 use winit::application::ApplicationHandler;

@@ -212,7 +212,9 @@ projection both hosts share. The gate's `SHARED_COMPOSERS` table names each
 such crate with its entry points, and a builder named in the crate's source is
 credited to exactly the hosts that **call** an entry (`shop_overlay_frame`,
 the battle screens' `battle_hud_frame_draws` / `battle_chrome_sprite_draws`,
-the pause menu's `field_menu_root_draws` / `field_menu_sub_draws`).
+the pause menu's `field_menu_root_draws` / `field_menu_sub_draws`, and the
+battle text list, the dialog box, the field party HUD and the save-select
+screen).
 The credit is per host, not per crate: a host that stops calling the entry
 loses every builder behind it, so a one-host composition still reads as
 `DRIFT`.
@@ -1532,11 +1534,11 @@ screens.
 | shop / prize / inn step | `MenuRuntime::poll_field_overlay` (the open plus the opening tick's no-edge step), `step_field_session` (every later tick; returns the cue), `suspends_field` (an inn is a field dialogue and is not suspended) |
 | shop-family draw | `legaia_engine_screens::shop_overlay_frame`; frame rect from `shop_panel_rows` + `shop_panel_frame_rect`; labels `menu_runtime::shop_root_labels`, `MenuState::item_label` |
 | Seru-trade text | `seru_trade::trade_screen_text` |
-| save-select | `SaveScreenFlow::overlay_model`, `save_select_overlay_draws`, `title_band_sprites` + `TitleBandState` (page backdrop: `boot_title_backdrop_draws_json`) |
+| save-select | `engine-screens::pause_screens::save_select_overlay_draws` over `SaveScreenFlow::overlay_model` and `engine-ui`'s `save_select_overlay_draws`, `title_band_sprites` + `TitleBandState` (page backdrop: `boot_title_backdrop_draws_json`) |
 | Load / New Game | `engine-core::resume` (`resume_card_load`, `enter_new_game`), `TitleSession::for_front_end`, `SceneHost::current_resume` ([`save-screen.md`](../subsystems/save-screen.md#where-a-load-lands-and-when-continue-is-live)) |
 | card write | `engine-core::card_write::write_save_into_card`, `MountedCard::persist` |
 | menu blips | `menu_cues::menu_edge_blip`; a blip is a one-cue batch (`SfxFireBatch::immediate`) and ages no other cue |
-| name entry | `NameEntryInput::from_pad_edge`, `NameEntry::cursor_cells`, `name_entry::caret_on` |
+| name entry | `NameEntryInput::from_pad_edge`; view `engine-screens::field_screens::name_entry_view` (`NameEntry::cursor_cells`, `name_entry::caret_on`) |
 | dev menu | `DevMenuWorldExt::tick_host` (CAMERA row, EQUIP commit), `DevMenuWorldExt::route_sfx` |
 | coin counter (op `0x49` sub-op 6) | `field_submode_screen::coin_counter_lines` through `engine-ui::text_lines::pen_line_draws_for`: the field overlay's entry panel `FUN_801E6F70` (record 10) and confirm panel (record 11) |
 | place-name banner | `engine-core::place_name_banner` from `SceneHost::load_scene` (a text balloon, not the slot-`0x2E` actor whose script `0x801F32B4` only closes panels) |
@@ -1574,6 +1576,7 @@ skips the picker's story baseline, which would otherwise clear system flags
 | object-effect clip (field-VM `4C C2 1`) | `World::object_effect_mesh_clip` ([`renderer.md`](../subsystems/renderer.md#what-a-raised-0x42-draws)) |
 | world-map markers | `legaia_engine_core::world_map_markers` + `screen_prim::world_map_marker_prim` |
 | narration crawl, title card | `cutscene_text_stage_draws` (stage pixels) |
+| dialog reading box (snapshot, layout, both halves) | `engine-screens::dialog_screens`; box height off the pager's row word `_DAT_801F2740` |
 | picker labels, two-line descriptions | `OwnedDialogPanel::picker_labels`; `broken_text_draws_for` (`FUN_80036888` breaks on `0x7C`) |
 
 The site's full-map viewer is a fifth consumer of the same kernels:
@@ -1802,7 +1805,7 @@ Three more surfaces sit outside every tier:
 | body blend | `engine-battle::battle_body_blend` behind `BattleActorDrawPlan::apply_body_blend`; cue precedence `body_cue`, `tint_cue_applies` |
 | target cursor cue | `battle_action::cursor_cue` |
 | monster action-tag clips | `SceneHost::install_battle_monster_action_clips` |
-| HUD frame and chrome, tutorial boxes, arts-input chrome | `engine-screens::battle_screens` (`battle_hud_frame_draws`, `battle_chrome_sprite_draws`, `battle_tutorial_chrome_draws`, `arts_input_chrome_draws`) |
+| HUD frame and chrome, text list, tutorial boxes, arts-input chrome | `engine-screens::battle_screens` (`battle_hud_frame_draws`, `battle_chrome_sprite_draws`, `battle_text_draws`, `battle_tutorial_stage_draws`, `battle_tutorial_chrome_draws`, `arts_input_chrome_draws`) |
 | HUD frame rows | `battle_hud::battle_intro_names`, `battle_commit_log`, `battle_banner_message` (elements `0x59` / `0x65` share the string at `ctx + 0x1F9`; [`battle-action.md`](../subsystems/battle-action.md#the-battle-message-banner-elements-0x59-and-0x65)) |
 | effect spawns | `World::route_battle_effect_spawns`; a `ui_element` raise is a placement index for the HUD spawner `FUN_801D8DE8`, not an effect |
 | effect ribbon (move-VM op `0x42`, `FUN_801CFA48`) | `World::active_effect_ribbons` (`effect_ribbon`); in play the carrier is Gilium's summon (PROT 0923) |

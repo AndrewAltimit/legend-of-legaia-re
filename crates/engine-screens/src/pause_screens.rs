@@ -718,3 +718,80 @@ pub fn arts_editor_draws(
     };
     pause_screen_draws(ctx, PauseScreen::Generic(GenericContent::Arts(args)))
 }
+
+/// The save-select screen, both halves: the engine's overlay sequence
+/// (`SaveScreenFlow::overlay_model`) borrowed into `engine-ui`'s view and
+/// composed by `save_select_overlay_draws`. Serves the boot Continue -> Load
+/// screen and the pause menu's Load / Save rows alike. The text half draws
+/// with or without the system-UI atlas; the sprite half needs it. `None`
+/// when the flow has no overlay for the session.
+pub fn save_select_overlay_draws(
+    flow: &legaia_engine_menus::save_screen::SaveScreenFlow,
+    s: &legaia_engine_menus::save_select::SaveSelectSession,
+    font: &legaia_font::Font,
+    chrome: Option<&ui::SaveMenuAtlasRects>,
+    origin: (i32, i32),
+    scale: u32,
+) -> Option<ui::SaveSelectOverlayDraws> {
+    let m = flow.overlay_model(s)?;
+    let rows: Vec<ui::SaveSelectRow<'_>> = s
+        .slots()
+        .iter()
+        .map(|slot| ui::SaveSelectRow {
+            label: &slot.label,
+            present: slot.present,
+            party_lv: slot.party_lv,
+            play_time_seconds: slot.play_time_seconds,
+            money: slot.money,
+            location: &slot.location,
+        })
+        .collect();
+    let cells: Vec<ui::SlotGridCell> = m
+        .preview
+        .iter()
+        .flat_map(|p| p.cells.iter())
+        .map(|c| ui::SlotGridCell {
+            present: c.present,
+            portrait_char_id: c.portrait_char_id,
+        })
+        .collect();
+    let preview = m.preview.as_ref().map(|p| ui::SaveSelectPreviewView {
+        cells: &cells,
+        cell: p.cell,
+        info: p.info.map(|b| ui::SlotInfoView {
+            slot_no: b.slot.saturating_add(1),
+            location: &b.location,
+            play_time: &p.play_time,
+            leader_name: &b.leader_name,
+            leader_level: b.party_lv,
+            leader_hp: b.leader_hp,
+            leader_mp: b.leader_mp,
+            leader_char_id: b.leader_char_id,
+        }),
+        caption: p.caption,
+        panel_y_offset: p.panel_y_offset,
+    });
+    let view = ui::SaveSelectOverlayView {
+        title: m.title,
+        rows: &rows,
+        cursor: m.cursor,
+        single_pill: m.single_pill,
+        pills: &m.pills,
+        pill_cursor: m.pill_cursor,
+        slide_t: m.slide_t,
+        info_t: m.info_t,
+        now_checking: m.now_checking,
+        banner: m.banner.map(|b| ui::CardBannerView {
+            lines: b.lines,
+            note: b.note,
+            work: b.work,
+            slide_t: b.slide_t,
+            progress_t: b.progress_t,
+        }),
+        preview,
+        confirm: m.confirm,
+    };
+    Some(ui::save_select_overlay_draws(
+        font, chrome, &view, origin, scale,
+    ))
+}
