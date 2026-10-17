@@ -753,18 +753,40 @@ impl World {
         }
         // Whether each actor's reaction channel holds its knockdown entry
         // `+0x1F1` (which is the flinch entry on an actor without one).
-        let on_knockdown: Vec<bool> = (0..self.actors.len())
+        // Per actor: `Some(true)` with the knockdown playing on the reaction
+        // channel, and the cached knockdown entry `+0x1F1` itself.
+        let knockdown: Vec<(bool, Option<u8>)> = (0..self.actors.len())
             .map(|i| {
                 let entry = self.actors[i].battle_reaction_entry;
-                entry.is_some() && entry == self.battle_reaction_map(i).map(|m| m[2])
+                let cached = self.battle_reaction_map(i).map(|m| m[2]);
+                (entry.is_some() && entry == cached, cached)
             })
             .collect();
-        for (a, on_knockdown) in self.actors.iter_mut().zip(on_knockdown) {
+        for (a, (on_knockdown, cached_knockdown)) in self.actors.iter_mut().zip(knockdown) {
             // `+0x22C == 0` (no battle record) skips the slot.
             if !a.active {
                 continue;
             }
             let party = a.battle_monster_id.is_none();
+            // A monster standing dead and idle outside the defeat fade - no
+            // reaction playing, state `0`, its lanes still lit - is a body the
+            // death arm (`0x8004B66C`, the knockdown's natural end on HP 0)
+            // never reached: a hit landed on a seat a module had frozen, a
+            // seat seeded dead from retail RAM. Retail's dead monsters are
+            // always in the fade by then, and every row poll in the cast band
+            // waits on its lanes draining (`+0x04 == 0`), so the engine puts
+            // such a body into the fade rather than let it stand lit for
+            // good.
+            if !party
+                && a.battle.hp == 0
+                && a.battle.render_flag == 0
+                && a.battle_reaction.is_none()
+                && a.battle.current_anim == 0
+                && a.battle.capture_state == 0
+                && a.battle.render_color & 0x00FF_FFFF != 0
+            {
+                a.battle.render_flag = legaia_engine_battle_vm::battle_formulas::STATE_DEFEAT_FADE;
+            }
             let b = &mut a.battle;
             let words = TintWords {
                 color: b.render_color,
@@ -776,10 +798,19 @@ impl World {
             // the reaction channel without re-pointing `current_anim`, so
             // the reaction channel's committed entry stands in for that
             // equality.
+            // A knockdown committed on the action channel - a seat seeded
+            // dead from retail RAM, whose `+0x1D9` already reads the
+            // knockdown entry - compares against the cached `+0x1F1` itself,
+            // as retail's gate does; with the gate fed `0xFF` there such a
+            // body never faded and every row poll over it held for good.
             let fade = FadeInputs {
                 party,
                 committed_anim: b.current_anim,
-                knockdown_entry: if on_knockdown { b.current_anim } else { 0xFF },
+                knockdown_entry: if on_knockdown {
+                    b.current_anim
+                } else {
+                    cached_knockdown.unwrap_or(0xFF)
+                },
                 captured: b.capture_state != 0,
             };
             let (next, fx) = tint_sm_step(b.render_flag, words, fade, 1);

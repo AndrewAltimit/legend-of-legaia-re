@@ -309,3 +309,26 @@ fn theeder_finishes_beside_a_phantom_active_seat() {
     }
     assert!(done, "held at phase {:#x}", world.casting.module_phase);
 }
+
+/// A monster standing dead and idle outside the defeat fade (a hit on a
+/// frozen seat, a seat seeded dead) enters the fade, and its lanes drain -
+/// what every row poll in the band waits on. The seeded `gilium_summon_mid_cast`
+/// run held Gilium's arm `0x16` on such a seat until the stall guard let go.
+#[test]
+fn a_dead_idle_monster_enters_the_defeat_fade_and_drains() {
+    let mut world = module_code_world();
+    world.actors[1].battle_monster_id = Some(1);
+    world.actors[1].battle.hp = 0;
+    world.actors[1].battle.render_flag = 0;
+    world.actors[1].battle.render_color = legaia_engine_battle_vm::battle_formulas::TINT_NEUTRAL;
+    for _ in 0..600 {
+        world.tick_battle_animations();
+    }
+    assert_eq!(
+        world.actors[1].battle.render_flag,
+        legaia_engine_battle_vm::battle_formulas::STATE_DEFEAT_FADE
+    );
+    assert_eq!(world.actors[1].battle.render_color & 0x00FF_FFFF, 0, "the lanes drained");
+    // A living monster is left alone.
+    assert_eq!(world.actors[2].battle.render_flag, 0);
+}
