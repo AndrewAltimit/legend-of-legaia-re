@@ -1402,8 +1402,8 @@ shows.
   module's, so the capture is gated on `ctx[+0x279]` too. A walk arm is gated on
   its entry, not on how far the creature has walked, so a mid-walk capture reads
   its `camera` against the framing the walk starts from.
-- **Camera-only director (the summon creatures).** It does not move the band's
-  length, so its captures stay gated on the flash alone.
+- **Whole-chain director (the summon creatures).** It paces the band like
+  the pacing directors above, so the capture is gated on `ctx[+0x279]` too.
 - **No director.** The module keeps case 6 on the caster through `0x35` /
   `0x36`, and its capture's `camera` reads that gap. PROT 0913 (Nova), whose
   opening arms wait on the creature's CD read, is the one `0x35` capture of that
