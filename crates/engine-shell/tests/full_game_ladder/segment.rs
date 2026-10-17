@@ -238,6 +238,12 @@ pub(super) fn traverse(
                     trail.push(format!("{s}(talk crossing)"));
                     continue;
                 }
+                if let Some(s) = pad_far_bands(session, graph, &cur, trail)
+                    .map_err(|b| format!("in {cur} (via), crossing to a band: {b}"))?
+                {
+                    trail.push(format!("{s}(band crossing)"));
+                    continue;
+                }
                 if scene_name(session) == cur && walking(session) {
                     let goal = vias.get(via).unwrap_or(&target.scene).clone();
                     let out = graph
@@ -551,6 +557,83 @@ pub(super) fn traverse(
         return Ok(());
     }
     Err(format!("gave up after {MAX_HOPS} hops"))
+}
+
+/// Most round trips [`pad_far_bands`] takes in one waypoint.
+const MAX_FAR_BANDS: usize = 3;
+
+/// The continuous hand's story bands in another walk component of a
+/// waypoint: live walk-on records whose body raises a flag the next anchor
+/// carries and the world lacks, standing where the walk cannot reach. A
+/// round trip through a neighbouring scene that lands on a band's side
+/// ([`cross_over`]), then the waypoint's beats again, while such bands
+/// remain. `chitei2`'s Jette fight (P2[13] at (18, 89), `0x4C4`) is reached
+/// only from the side `deroa` P2[3] re-enters at (93, 108), by the car to
+/// (94, 22); the `0x4C8` its aftermath raises opens `map03`'s portal to
+/// `concend`. `Ok(Some(scene))` when it ended outside `cur`.
+fn pad_far_bands(
+    session: &mut NativeSession,
+    graph: &DiscGraph,
+    cur: &str,
+    trail: &mut Vec<String>,
+) -> Result<Option<String>, String> {
+    let trace = std::env::var_os("LEGAIA_FGL_TRACE").is_some();
+    for _ in 0..MAX_FAR_BANDS {
+        if scene_name(session) != cur || !walking(session) {
+            break;
+        }
+        let Some(wanted) = NEXT_ANCHOR_FLAGS.with(|a| a.borrow().clone()) else {
+            break;
+        };
+        let missing: Vec<u16> = wanted
+            .into_iter()
+            .filter(|&f| !session.host.world.system_flag_test(f))
+            .collect();
+        // A boss's band only: the record (or one it spawns) stages a fight.
+        // Crossing to every far band that raises an anchor flag replayed
+        // `uru`'s dream bands out of order and walled off the `urudre1`
+        // door.
+        let Some((mf, man, triggers)) = scene_man_and_triggers(session) else {
+            break;
+        };
+        let boss = |t: &(i16, i16)| {
+            triggers.iter().any(|tr| {
+                tr.gate == 1
+                    && (i16::from(tr.tile_x), i16::from(tr.tile_z)) == *t
+                    && !staged_formation_rows(&mf, &man, 2, usize::from(tr.record)).is_empty()
+            })
+        };
+        let tiles: Vec<(i16, i16)> = reach_flag_bands(session, &missing)
+            .into_iter()
+            .filter(|t| boss(t) && !tiles_in_reach(session, &[*t]))
+            .collect();
+        if tiles.is_empty() {
+            break;
+        }
+        pad_budget(session)?;
+        match cross_over(session, graph, cur, "", &CrossTarget::Tiles(tiles.clone())) {
+            Ok(s) if s == cur => {
+                if trace {
+                    eprintln!("    [far-band] {cur}: crossed toward {tiles:?}");
+                }
+                trail.push(format!("{s}(band crossing)"));
+                let mut log = Vec::new();
+                let left = play_beats(session, &mut log)?;
+                trail.push(format!("[{}]", log.join("; ")));
+                if let Some(s) = left {
+                    return Ok(Some(s));
+                }
+            }
+            Ok(s) => return Ok(Some(s)),
+            Err(why) => {
+                if trace {
+                    eprintln!("    [far-band] {cur}: no way to {tiles:?}: {why}");
+                }
+                break;
+            }
+        }
+    }
+    Ok(None)
 }
 
 pub(super) fn panic_text(p: &(dyn std::any::Any + Send)) -> String {

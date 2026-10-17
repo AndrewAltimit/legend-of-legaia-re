@@ -775,6 +775,66 @@ pub(super) fn object_doors(session: &NativeSession) -> Vec<((i16, i16), Cell)> {
 /// centre and the cell of the last leg's tile. `taiku` P0[6], the lift at
 /// (109, 78), walks the player aboard, rides and walks them off the far
 /// side, each touch the other way (`0x38B`).
+/// Where partition-2 record `global_index` (a spawn's flat index) leaves the
+/// player when it carries them as a ride: its last player reposition (walk
+/// leg, `0x23` MOVE_TO or `4C 51` seat), plus the compass legs after it
+/// (`B7 F8 d n` / `C1 F8 d n`). `chitei2` P2[7] seats the party at (94, 24)
+/// beside the car and walks it two tiles north (`C1 F8 00 84`) to (94, 22);
+/// P2[8] seats it at (100, 102) and walks it two tiles west to (98, 102).
+/// A record that leaves the scene or forks on a story flag or a picker is
+/// not one ride.
+fn spawned_ride_landing(session: &NativeSession, global_index: u8) -> Option<Cell> {
+    use legaia_engine_field::man_field_scripts::{partition_record_span, player_moves_in_region};
+    use legaia_scene_formats::field_disasm::{InsnInfo, LinearWalker};
+    let (mf, man, _) = scene_man_and_triggers(session)?;
+    let base = mf.partitions.first().map_or(0, Vec::len) + mf.partitions.get(1).map_or(0, Vec::len);
+    let rec = usize::from(global_index).checked_sub(base)?;
+    let (start, pc0, len) = partition_record_span(&mf, &man, 2, rec)?;
+    let body = &man[start..start + len];
+    let insns: Vec<_> = LinearWalker::new(body, pc0).map_while(Result::ok).collect();
+    if insns.iter().any(|i| {
+        i.opcode == 0x3F
+            || matches!(
+                i.info,
+                InsnInfo::SystemFlag {
+                    kind: FlagKind::Test,
+                    ..
+                } | InsnInfo::Picker { .. }
+                    | InsnInfo::CondJmp { .. }
+                    | InsnInfo::BBoxTest { .. }
+            )
+    }) {
+        return None;
+    }
+    let last = player_moves_in_region(body, pc0).into_iter().next_back()?;
+    let (mut dx, mut dz) = (0i32, 0i32);
+    for i in insns.iter().filter(|i| i.pc > last.pc) {
+        if matches!(i.opcode, 0x37 | 0x41)
+            && i.extended == Some(0xF8)
+            && let (Some(&d), Some(&n)) = (body.get(i.pc + 2), body.get(i.pc + 3))
+        {
+            let rate = if i.opcode == 0x37 { 0x80 } else { 0x40 };
+            let step = rate * i32::from(n & 0x3F);
+            let signs = COMPASS_AXIS_SIGNS[usize::from(d & 7)];
+            if signs & 1 != 0 {
+                dz += step;
+            }
+            if signs & 2 != 0 {
+                dz -= step;
+            }
+            if signs & 4 != 0 {
+                dx += step;
+            }
+            if signs & 8 != 0 {
+                dx -= step;
+            }
+        }
+    }
+    let x = (i32::from(last.world_x) + dx).clamp(0, 0x3FFF) as i16;
+    let z = (i32::from(last.world_z) + dz).clamp(0, 0x3FFF) as i16;
+    Some(open_landing(&session.host.world, cell_of(x, z)))
+}
+
 pub(super) fn prop_rides(session: &NativeSession) -> Vec<((i16, i16), Cell)> {
     use legaia_scene_formats::field_disasm::{InsnInfo, decode};
     let w = &session.host.world;
@@ -808,7 +868,20 @@ pub(super) fn prop_rides(session: &NativeSession) -> Vec<((i16, i16), Cell)> {
         let mut last = None;
         while seen.insert(pc) {
             let Ok(insn) = decode(body, pc) else { break };
+            // A touch resumes past the yield it parked on.
+            if insn.opcode == 0x21 && pc == prop.parked_pc {
+                pc += 1;
+                continue;
+            }
             if insn.size == 0 || insn.opcode == 0x21 {
+                break;
+            }
+            // A bind record that spawns the ride as a partition-2 record
+            // (`chitei2`'s cars: P0[5] at (100, 102) spawns P2[7], P0[12]
+            // at (94, 24) spawns P2[8]) lands where that record leaves the
+            // player.
+            if let InsnInfo::SpawnRecord { global_index } = insn.info {
+                last = spawned_ride_landing(session, global_index);
                 break;
             }
             // A record that leaves the scene or teleports the player after

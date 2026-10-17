@@ -490,6 +490,14 @@ the bag is short of an errand's copies:
   first contact hands over the chest's own item and raises its
   `0x413..0x41A`; a talk that runs and raises nothing is not crossed to again
   until the bag holds more of the errand's item.
+- **So are a waypoint's boss bands.** A live walk-on band in a waypoint
+  whose record raises a flag the next anchor carries and stages a fight
+  (itself or through a record it spawns), standing outside the player's
+  walk component, is reached the same way, up to three round trips a visit.
+  Any band is too many: crossing to every far band of `uru` replays its
+  dream bands out of order and walls off the `urudre1` door. `chitei2`'s Jette fight (P2[13] at (18, 89), `0x4C4`) lies past
+  the car from the side `deroa` P2[3] re-enters at (93, 108); the `0x4C8`
+  its aftermath raises opens `map03`'s portal to `concend`.
 - **It sells what the party has outgrown.** At any counter, an armament
   piece no present member is better off wearing - worth less, summed over
   its stat bonuses, than what each member who can wear it wears in its slot,
@@ -1608,6 +1616,19 @@ Scene-specific facts the route and the pad hand depend on. Each is a property of
   (109, 78) that joins Zora Castle's east corridor to its south half (the
   way to the west wing's exit band P2[15] after the fight); it runs only
   while `0x38C` is set, and `0x38B` picks the direction.
+- A prop whose bind record spawns the ride as a partition-2 record is a
+  ride to where that record leaves the player: its last reposition (walk
+  leg, `0x23` MOVE_TO or `4C 51` seat) plus the compass legs after it.
+  `chitei2`'s cars are the case: P0[5] at (100, 102) spawns P2[7], which
+  seats the party at (94, 24) inside the far car's box and walks it two
+  tiles north (`C1 F8 00 84`) to (94, 22); P0[12] at (94, 24) spawns P2[8],
+  back to (100, 102) and two tiles west to (98, 102). Neither record tests a
+  flag: the cars run whatever the Rapid Transport switches (`0x4EF` /
+  `0x4F0`) say, which route only `deroa`'s hub. The car is the one way from
+  the side `deroa` P2[3] re-enters at (93, 108) to the column at (94, 5..24),
+  the room behind it and the corridor down to the Jette gate (41, 122). The
+  `.MAP` also carries a kind-0 teleport on the near car's tile to (94, 24),
+  which no walk reaches past the car's box.
 - A pad hop whose walk stalls against the door's own frame (two tiles or
   less short) treats the door as refused and tries the scene's other door
   to the same place, as for a door that turns the walk back.
@@ -1815,3 +1836,14 @@ Scene-specific facts the route and the pad hand depend on. Each is a property of
   starts). A reach beat that clears a flag the live state holds waits while
   another missing reach flag's band is out of reach: P2[11] clears the switch
   flags the `deroa` route needs, so the junction comes first.
+- The Karisto cart runs only from the side it stands on. `station` P1[15]
+  sells the ride east (P2[24], which raises `0x466` and clears `0x467`)
+  only while `0x467` is up, and says no return is scheduled otherwise; only
+  `station3` P2[2] brings it back west. The chapter-3 crash (`station`
+  P2[23]) does not move it, and `station3`'s arrival P2[0] raises `0x466`.
+  After Jette the only way west is `concend` to Drake, and the only ways
+  back east are the cart, the one-shot crash and the one-shot Uru Mais warp
+  (`rikuroa` P2[57], `0x3BC`). The endgame card's anchors carry the cart in
+  the west (`0x467`); the playthrough card's Zora anchor still carries it
+  east (`0x466`). A run whose cart stands east when it reaches Drake has no
+  way back to `map03`.
