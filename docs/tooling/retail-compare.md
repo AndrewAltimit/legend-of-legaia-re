@@ -718,7 +718,7 @@ for a reason that is not a port defect:
 | Step | What is taken from the capture | Engine side / knob |
 |---|---|---|
 | [Enter the fight](#seeding-the-fight) | formation cell, present party, stage variant, keep-object-1 byte | `World::force_encounter`, `LEGAIA_BATTLE_STAGE=variant,keep` |
-| [Pin the stream](#the-stream-at-the-entry) | nothing - retail's RNG state is not in the capture | `LEGAIA_BATTLE_RNG_SEED`, `BATTLE_RNG_SEEDS`, `EncounterState::rng_hold` |
+| [Pin the stream](#the-stream-at-the-entry) | nothing - the capture holds the stream at the capture, not at the entry | `LEGAIA_BATTLE_RNG_SEED`, `BATTLE_RNG_SEEDS`, `EncounterState::rng_hold` |
 | [Match the image child](#the-image-child-plays-the-same-fight) | - | `LEGAIA_BATTLE_SETTLE`, `LEGAIA_BATTLE_BARS`, `BootSession::fog_render_tick` |
 | [Stand the combatants](#where-the-combatants-stand) | live ground `+0x34` / `+0x38`, heading `+0x46`, tint lanes `+0x04` | `RetailBattle::seeded_ground`, the `:x:z[:facing][:d<hex>]` tail of `LEGAIA_BATTLE_BARS` |
 | [Land the HUD](#hud-glides-the-capture-had-landed) | glide records at `ctx[+0x11B4]` | `LEGAIA_SEAT_HUD_GLIDES_LANDED`, `LEGAIA_SEAT_HUD_GLIDES` |
@@ -765,7 +765,17 @@ placed at the capture's phase.
 
 ### The stream at the entry
 
-Retail's RNG state at the instant its fight began is not in the capture. Left
+Retail's RNG state at the instant its fight began is not in the capture. Its
+state at the capture is - the BIOS seed word `0x80009010`
+([battle-formulas](../subsystems/battle-formulas.md#rng-primitive)) - and the
+recurrence steps back exactly, so an entry seed `k` steps before it would
+replay retail's own draws if the drive took exactly `k` draws to the phase.
+No such seed closes: the engine's draw count from the entry to the phase moves
+with the stream it is dealt (`noa_levelup_fight_pre`: `545` to `579` over the
+first seeds, `447` where the swing lands early), and stepping the capture's
+word back by every `k` from `530` to `580` gave no run that drew exactly `k`.
+The engine does not draw what retail drew between the two (the intro hold
+alone parts them), so the capture's word names no entry. Left
 alone, the engine's would be whatever the field settle happened to draw, so
 every channel that rides a draw (a monster's pick and target, the battle
 camera, the frame) would move whenever a field-side port changed how many
@@ -781,6 +791,14 @@ draws it takes.
   the fight is still on, its opening reached a prompt, and the drive or replayed
   cast reached the capture's phase is the one scored. A state no seed satisfies
   keeps the first seed's run, `never reached`.
+- Which stream that is, is a search result, and so is a state's pin
+  (`BATTLE_RNG_PINS`, tried ahead of the list; `LEGAIA_RC_PIN_SEED` stands in
+  for it in a sweep, and the report's `stream` detail names the one used).
+  Moving the world stream onto the BIOS recurrence re-dealt every list seed,
+  and fifteen states whose first reaching stream now framed their phase worse
+  than the corpus held (`noa_levelup_fight_pre` reaching its Done hold `87`
+  ticks late, the camera `0.981` to `0.935`) are pinned to the first stream in
+  list order that reaches the phase with the camera, then the frame, no worse.
 - A capture past the end signal also wants retail's win pose. The results
   sequencer draws it from the stream (`victory_pose_id`), and the results camera
   is that pose's own script (`battle_over_script`). The pose actor's latched

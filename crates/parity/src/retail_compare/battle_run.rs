@@ -72,8 +72,18 @@ pub(super) fn run_battle(
     } else {
         &[false, true]
     };
+    // A state's pinned stream first (`BATTLE_RNG_PINS`), then the list.
+    // `LEGAIA_RC_PIN_SEED` stands in for the pin, for a sweep.
+    let pinned = std::env::var("LEGAIA_RC_PIN_SEED")
+        .ok()
+        .and_then(|v| u32::from_str_radix(v.trim().trim_start_matches("0x"), 16).ok())
+        .or_else(|| crate::retail_compare_battle::pinned_seed(&entry.label));
+    let seeds: Vec<u32> = pinned
+        .into_iter()
+        .chain(crate::retail_compare_battle::BATTLE_RNG_SEEDS)
+        .collect();
     'search: for &victims in revive {
-        for &seed in &crate::retail_compare_battle::BATTLE_RNG_SEEDS {
+        for &seed in &seeds {
             let mut run = crate::retail_compare_battle::run_engine_battle(
                 opts.extracted,
                 retail,
@@ -103,9 +113,10 @@ pub(super) fn run_battle(
             if seed_trace() {
                 match &run {
                     Ok(e) => eprintln!(
-                        "[seed] {} seed={seed:#010X} victims={victims} mode={:?} prompt={:?} \
+                        "[seed] {} seed={seed:#010X} victims={victims} end={:#010X} mode={:?} prompt={:?} \
                          surprise={} driven={:?} inflight={:?} age_short={:?} drift={:?}",
                         entry.label,
+                        e.rng_at_end,
                         e.mode,
                         e.prompt_tick,
                         e.surprise_opening,
@@ -306,6 +317,9 @@ pub(super) fn run_battle(
     }
     report.image = image;
     report.detail.extend(det);
+    report
+        .detail
+        .insert("stream".into(), format!("{:#010X}", engine.rng_seed));
     report.score = state_score(&ch);
     report.channels = ch;
 }

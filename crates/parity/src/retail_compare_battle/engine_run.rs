@@ -32,6 +32,8 @@ pub struct EngineBattle {
     /// The world stream's state at the encounter entry
     /// ([`BATTLE_RNG_SEEDS`]).
     pub rng_seed: u32,
+    /// The world stream's state where the run stopped.
+    pub rng_at_end: u32,
     /// The formation advantage the entry rolled (`ctx+0x290`) was a back
     /// attack or a pre-emptive strike. A capture of a running fight is not
     /// its opening round, so such an opening hands one side a round - the
@@ -683,6 +685,7 @@ pub fn run_engine_battle(
     Ok(EngineBattle {
         hp_seed,
         rng_seed,
+        rng_at_end: world.rng_state,
         surprise_opening,
         age_short,
         scene: session.host.scene.as_ref().map(|s| s.name.clone()),

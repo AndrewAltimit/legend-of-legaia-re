@@ -1892,6 +1892,20 @@ divide it as a 15-bit quantity, so the shape matters.
 | `psyq_rand_step`, `BiosRand` | already-shaped generators for minigames and pure kernels with a private seed |
 | `World::tick_battle_pass_draw` | the driver's discarded draw: one on the first tick of every battle frame (`BattleFrameClock`), under every battle owner of the frame; `WorldToggles::battle_pass_rand_draw` turns it off for an A/B |
 
+**Which draws are not on the world stream.** Retail has one `rand()` stream, and
+the overlays' own generators are separate words, not reseeds. The port's
+standing exceptions, each a stand-in for a `jal 0x80056798` that draws a
+private seed instead of the world stream: the battle intro's particle seeder
+(`render_kernels::battle_intro_particles::IntroRng`, its own LCG), the PROT
+0913 Nova whirlwind ring yaws (`nova_column_yaw`, a hash of the ring index) and
+its ring jitter (the `World` cast band, seeded from the settle countdown), the
+scripted-motion channels (`ambient_motion`, one `psyq_rand_step` seed per
+channel), and the opt-in level-up jitter (`LevelUpTracker`). The battle
+overlay's `FUN_801D0290` (`OverlayRng`) is not one of them: retail reseeds it
+from the emitter's parameter block on every call, so it is a shape hash there
+too. Each exception leaves the world stream's position short by its draws; none
+decides anything a battle channel reads.
+
 Every battle-side consumer draws through `World::next_rand`: the battle-action
 host's `rng`, the damage kernels, initiative, escape and flee, the monster
 action picker and its scripted overrides, the status appliers, the cast and
