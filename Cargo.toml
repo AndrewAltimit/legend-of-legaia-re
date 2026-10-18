@@ -152,6 +152,7 @@ legaia-engine-shell = { path = "crates/engine-shell" }
 legaia-render-kernels = { path = "crates/render-kernels" }
 legaia-engine-ui = { path = "crates/engine-ui" }
 legaia-engine-vm = { path = "crates/engine-vm" }
+legaia-extract = { path = "crates/extract", default-features = false }
 legaia-font = { path = "crates/font", default-features = false }
 legaia-gamedata = { path = "crates/gamedata", default-features = false }
 legaia-iso = { path = "crates/iso", default-features = false }
