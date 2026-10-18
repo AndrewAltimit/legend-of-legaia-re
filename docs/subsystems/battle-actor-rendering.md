@@ -169,6 +169,7 @@ The mesh's primitives are textured through per-prim CBA / TSB. The palette and p
 - A primitive selects its palette by `cba & 0x3F` and samples the page at its per-vertex `(u, v)`. Index 0 (colour `0x0000`) is transparent.
 - The arithmetic is exact: Gimard `0x1E0 + 128*256/2 = 0x41E0`, Tetsu `0x1E0 + 256*256/2 = 0x81E0`, both equal to their pool sizes.
 - The on-disc CBA / TSB are nominal defaults the loader relocates per slot, so the raw pool bytes do not appear verbatim in a battle VRAM dump.
+- The relocation **adds** to them (`0x800555E8..0x80055610`): `slot + 3` to the CBA row (`addu` of `(slot + 3) << 22` into the word whose upper half is the CBA) and `slot + 0x10` to the TSB (the column moves by the slot, `+0x10` raises `tpage_y` to 256). On-disc row `481` / column `5` lands on the monster's own CLUT row and page. The bosses `0xB3..=0xB6` also carry prims on row `482` / column `6`, which land on the boss effect page the loader stages for those ids (CLUT row 485, page `0x16`, `legaia_actor_formats::monster_archive::boss_page`): about half of the evolved Cort's body (2390 of 5007 prims) and Koru's. Port: `monster_archive::relocate_cba` / `relocate_tsb`; overwriting every prim with the slot's own row and page painted those prims from the wrong palette and page.
 
 #### Parser and tools
 

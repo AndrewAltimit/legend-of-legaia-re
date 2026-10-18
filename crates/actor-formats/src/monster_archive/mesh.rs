@@ -108,11 +108,13 @@ impl MonsterMesh {
     /// the standard PSX VRAM texture path renders the monster directly:
     ///
     /// - the CLUT region ([`CLUT_REGION_BYTES`], 15 palettes) is written to
-    ///   VRAM row `484 + slot` at x=0, and every prim's CBA is rewritten to
-    ///   that row by [`relocate_cba`] (the palette index `cba & 0x3F` is kept);
+    ///   VRAM row `484 + slot` at x=0, and every prim's CBA row is moved by
+    ///   `slot + 3` ([`relocate_cba`]: on-disc row `481` lands there);
     /// - the 4bpp page is written at [`monster_page_origin`] (`((5+slot)*64,
-    ///   256)`), and every prim's TSB is rewritten to that texture page by
-    ///   [`relocate_tsb`] (4bpp, `tpage_y = 256`, abr bits preserved).
+    ///   256)`), and every prim's TSB column is moved by `slot` with
+    ///   `tpage_y` raised to 256 ([`relocate_tsb`]: on-disc column `5` lands
+    ///   there). A boss's prims on row `482` / column `6` land on the boss
+    ///   effect page instead ([`super::write_boss_effect_page`]).
     ///
     /// Per-vertex UVs are page-local and left untouched - they resolve
     /// correctly once the page sits at the relocated tpage origin. Returns
@@ -201,23 +203,33 @@ pub fn monster_page_origin(slot: u8) -> (u16, u16) {
     ((MONSTER_PAGE_TPAGE_BASE + slot as u16) * 64, MONSTER_PAGE_Y)
 }
 
-/// Relocate a prim's CBA to battle `slot`: preserve the palette index
-/// (`cba & 0x3F`) but point the CLUT row at `484 + slot` (where
-/// [`MonsterMesh::battle_render_mesh`] writes the palettes).
+/// Relocate a prim's CBA to battle `slot` the way the loader does: it **adds**
+/// `slot + 3` to the CLUT row (`addu v0,v0,t7` at `0x800555FC`, `t7 = (slot +
+/// 3) << 22` on the word whose upper half is the CBA). The on-disc rows are
+/// `481` (the monster's own palettes, which land on `484 + slot`, where
+/// [`MonsterMesh::battle_render_mesh`] writes them) and, for the bosses
+/// `0xB3..=0xB6`, `482` - the boss effect page's CLUT row `485` the loader
+/// stages for those ids ([`super::BOSS_PAGE_CLUT_ROW`]). The palette index
+/// `cba & 0x3F` is untouched.
+///
+/// PORT: FUN_80055468 (`0x800555E8..0x80055610`, the CBA half)
 pub fn relocate_cba(cba: u16, slot: u8) -> u16 {
-    let palette = cba & 0x3F;
-    (monster_clut_row(slot) << 6) | palette
+    cba.wrapping_add((u16::from(slot) + 3) << 6)
 }
 
-/// Relocate a prim's TSB to battle `slot`: a 4bpp page at tpage column
-/// `5 + slot`, `tpage_y = 256`, with the original abr (blend) bits preserved.
-/// Bit 15 (the engine-side semi-transparency enable packed by
-/// `legaia_tmd::mesh::pack_tsb_semi`) also survives the relocation.
+/// Relocate a prim's TSB to battle `slot` the way the loader does: it adds
+/// `slot + 0x10` (`addu v1,v1,t2` at `0x80055600`, `t2 = (slot + 0x10) << 16`
+/// on the word whose upper half is the TSB) - the tpage column moves by the
+/// slot and the `+0x10` raises `tpage_y` to 256. The on-disc columns are `5`
+/// (the monster's own page, [`monster_page_origin`]) and, for the bosses
+/// `0xB3..=0xB6`, `6` - the boss effect page at `(0x180, 0x100)`
+/// ([`super::BOSS_PAGE_RECT`]). Depth and abr bits ride through; bit 15 (the
+/// engine-side semi-transparency enable packed by
+/// `legaia_tmd::mesh::pack_tsb_semi`) is kept out of the add.
+///
+/// PORT: FUN_80055468 (`0x800555E8..0x80055610`, the TSB half)
 pub fn relocate_tsb(tsb: u16, slot: u8) -> u16 {
-    let abr = (tsb >> 5) & 0x3;
-    let tpage_x_field = (MONSTER_PAGE_TPAGE_BASE + slot as u16) & 0xF;
-    // tpage column (bits 0..3); tpage_y=256 -> bit 4; depth bits 7..8 = 0 (4bpp).
-    tpage_x_field | (1 << 4) | (abr << 5) | (tsb & 0x8000)
+    (tsb & 0x8000) | ((tsb & 0x7FFF).wrapping_add(u16::from(slot) + 0x10) & 0x7FFF)
 }
 
 /// Size of the CLUT region at the head of the texture pool: 15 sequential
@@ -343,17 +355,14 @@ mod tests {
         assert!((3..CLUT_REGION_BYTES / 2).all(|i| at(i) == 0));
     }
 
-    /// `relocate_cba` keeps the palette index but re-homes the CLUT row to
-    /// `484 + slot`, matching where `battle_render_mesh` writes the palettes.
+    /// `relocate_cba` adds `slot + 3` to the row: the monster's own on-disc
+    /// row `481` lands on `484 + slot`, where `battle_render_mesh` writes the
+    /// palettes, and a boss's `482` on the boss page's row `485` at slot 0.
     #[test]
-    fn relocate_cba_preserves_palette_and_sets_row() {
+    fn relocate_cba_adds_the_slot_to_the_row() {
         for slot in 0u8..5 {
             for palette in 0u16..15 {
-                // Build an on-disc CBA with that palette and an arbitrary
-                // (to-be-discarded) original row of 256.
-                let on_disc = (256u16 << 6) | palette;
-                let relocated = relocate_cba(on_disc, slot);
-                // Decode the way `Prim::cba_xy` does.
+                let relocated = relocate_cba((481u16 << 6) | palette, slot);
                 assert_eq!(relocated & 0x3F, palette, "palette preserved");
                 assert_eq!(
                     (relocated >> 6) & 0x1FF,
@@ -362,34 +371,35 @@ mod tests {
                 );
             }
         }
+        assert_eq!(relocate_cba((482 << 6) | 9, 0) >> 6, super::super::BOSS_PAGE_CLUT_ROW);
     }
 
-    /// `relocate_tsb` points the page at tpage column `5 + slot`, `tpage_y =
-    /// 256`, 4bpp depth, and preserves the original abr bits.
+    /// `relocate_tsb` adds `slot + 0x10`: column `5` lands on `5 + slot` at
+    /// `tpage_y = 256`, a boss's column `6` on the boss page, and abr, depth
+    /// and the engine's bit 15 ride through.
     #[test]
-    fn relocate_tsb_sets_page_and_keeps_abr() {
+    fn relocate_tsb_adds_the_slot_to_the_page() {
         for slot in 0u8..5 {
             for abr in 0u16..4 {
-                // On-disc TSB with some other column, 8bpp, tpage_y=0.
-                let on_disc = 0x03 | (abr << 5) | (1 << 7);
+                let on_disc = 0x05 | (abr << 5);
                 let relocated = relocate_tsb(on_disc, slot);
-                // Decode the way `Prim::tpage_xy` does.
                 let tpage_x = (relocated & 0xF) * 64;
                 let tpage_y = ((relocated >> 4) & 1) * 256;
-                let depth = (relocated >> 7) & 0x3; // 0 == 4bpp
-                let abr_out = (relocated >> 5) & 0x3;
                 assert_eq!(tpage_x, monster_page_origin(slot).0, "page x = (5+slot)*64");
                 assert_eq!(tpage_y, 256, "tpage_y = 256");
-                assert_eq!(depth, 0, "4bpp depth");
-                assert_eq!(abr_out, abr, "abr preserved");
-                // The engine-side semi-transparency enable (TSB bit 15,
-                // `legaia_tmd::mesh::pack_tsb_semi`) survives relocation.
+                assert_eq!((relocated >> 7) & 0x3, 0, "4bpp depth");
+                assert_eq!((relocated >> 5) & 0x3, abr, "abr preserved");
                 let semi = relocate_tsb(on_disc | 0x8000, slot);
                 assert_eq!(semi & 0x8000, 0x8000, "bit 15 preserved");
                 assert_eq!(semi & 0x7FFF, relocated, "low bits unchanged");
                 assert_eq!(relocated & 0x8000, 0, "bit 15 not invented");
             }
         }
+        let boss = relocate_tsb(0x06, 0);
+        assert_eq!(
+            ((boss & 0xF) * 64, ((boss >> 4) & 1) * 256),
+            (super::super::BOSS_PAGE_RECT.0, super::super::BOSS_PAGE_RECT.1)
+        );
     }
 
     /// The texture page never overlaps any slot's CLUT row: palettes occupy
