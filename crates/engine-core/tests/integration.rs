@@ -65,6 +65,7 @@ mod battle_turn_order;
 mod battle_tutorial_disc;
 mod battle_tutorial_ladder;
 mod battle_tutorial_replay_arm_disc;
+mod battle_variant_draw_disc;
 mod bgm_midscene_change_disc;
 mod bgm_track_word_disc;
 mod camera_zone_ramp_disc;
