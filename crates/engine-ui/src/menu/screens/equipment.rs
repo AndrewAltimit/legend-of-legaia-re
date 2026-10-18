@@ -132,8 +132,6 @@ pub fn equip_screen_draws_for(
     let white: [f32; 4] = MENU_TEXT_WHITE;
     let gold: [f32; 4] = [1.0, 0.85, 0.3, 1.0];
     let dim: [f32; 4] = [0.55, 0.55, 0.55, 1.0];
-    let green: [f32; 4] = [0.5, 1.0, 0.5, 1.0];
-    let red: [f32; 4] = [1.0, 0.55, 0.55, 1.0];
 
     let mut out = Vec::new();
     let str_at = |out: &mut Vec<TextDraw>, s: &str, x: i32, y: i32, c: [f32; 4]| {
@@ -231,14 +229,18 @@ pub fn equip_screen_draws_for(
             ));
             if sr.preview != sr.current {
                 // Retail: up/down arrow glyph FUN_8003C1F8(4|5), CLUT 6
-                // (raised) / 1 (lowered). ASCII stand-in until the arrow
-                // glyphs are ported from the UI-icon atlas.
-                let (glyph, c) = if sr.preview > sr.current {
-                    ("+", green)
+                // (raised) / 1 (lowered), off the menu-glyph page.
+                let (glyph, ink) = if sr.preview > sr.current {
+                    (crate::ARROW_RISE, crate::INK_RISE)
                 } else {
-                    ("-", red)
+                    (crate::ARROW_FALL, crate::INK_FALL)
                 };
-                str_at(&mut out, glyph, mx + 0xe4, y, c);
+                out.extend(crate::menu::equip_stat_compare::compare_arrow_draws(
+                    font,
+                    glyph,
+                    (mx + 0xe4, y),
+                    ink,
+                ));
                 out.extend(num_field_draws(
                     font,
                     sr.preview.min(999) as u64,

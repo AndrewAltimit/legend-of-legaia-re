@@ -26,3 +26,6 @@ legaia-engine-system.workspace = true
 legaia-game-tables.workspace = true
 legaia-minigame-formats.workspace = true
 legaia-render-kernels.workspace = true
+
+[dev-dependencies]
+legaia-save.workspace = true

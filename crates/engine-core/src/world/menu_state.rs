@@ -24,6 +24,12 @@ pub struct MenuState {
     /// without the overlay, and an empty set is what keeps the panels from
     /// drawing invented text.
     pub context_labels: legaia_engine_menus::pause_screens::ContextLockedLabels,
+    /// The shop windows' labels (picker rows, compare notes, quantity
+    /// prompts, recipient rows, sell detail, Point Card toast), read out of
+    /// the same PROT 0899 image ([`legaia_engine_menus::shop::ShopLabels`]).
+    /// Empty on a load without the overlay: the shop then draws no label
+    /// text rather than invented text.
+    pub shop_labels: legaia_engine_menus::shop::ShopLabels,
     /// Window-widget bytecode programs resolved from the menu-overlay
     /// image (PROT 0899) by [`crate::world::World::install_menu_overlay_tables`] -
     /// the disc source the window-script VM (`legaia_engine_vm::run`,
@@ -83,6 +89,7 @@ impl MenuState {
             text: None,
             arrange_rank: None,
             context_labels: Default::default(),
+            shop_labels: Default::default(),
             widget_scripts: None,
             item_category: Vec::new(),
             worldmap_menu: None,

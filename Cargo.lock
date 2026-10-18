@@ -2334,6 +2334,7 @@ dependencies = [
  "legaia-game-tables",
  "legaia-minigame-formats",
  "legaia-render-kernels",
+ "legaia-save",
 ]
 
 [[package]]

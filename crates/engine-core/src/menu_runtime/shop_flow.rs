@@ -177,11 +177,17 @@ impl MenuRuntime {
             return;
         }
         match self.shop_screen_phase() {
-            Some(phase) => self
-                .shop_slides
-                .tick(&legaia_engine_menus::shop::shop_screen_windows(
-                    phase, false,
-                )),
+            Some(phase) => {
+                // The toast changes the set it rides over (the quantity
+                // commit closes the stepper first), but its own frame is laid
+                // by hand over every other window, so it joins no slide.
+                let mut set = legaia_engine_menus::shop::shop_screen_windows(
+                    phase,
+                    self.point_card_toast.is_some(),
+                );
+                set.retain(|&w| w != 31);
+                self.shop_slides.tick(&set);
+            }
             None if self.shop_session.is_some() => self.shop_slides.tick(&[]),
             None => self.shop_slides.reset(),
         }

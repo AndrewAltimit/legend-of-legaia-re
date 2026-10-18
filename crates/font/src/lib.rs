@@ -143,6 +143,12 @@ pub mod sprite_cell_ids {
     /// fixed-width number primitive `FUN_80034B78` blits (menu-glyph page
     /// `(960, 256)`, `uv = (d * 8, 208)`).
     pub const NUMERAL: u16 = 0x100;
+    /// The 8x12 separator glyph `g` (`0..14`) is `SEPARATOR + g` - the cells
+    /// the separator primitive `FUN_8003C1F8` blits, on the numerals' row
+    /// right after the digits (`uv = (0x50 + g * 8, 208)`): `x + - ±`, the
+    /// rise / fall arrows (`4` / `5`), `/ ( ) :`.
+    pub const SEPARATOR: u16 = 0x110;
+    // `SEPARATOR + 13` is the last; `0x11E..` is free.
     /// The list page header's "PAGE" tag (UI-icon `0x76`, 24x8).
     pub const PAGE_TAG: u16 = 0x200;
     /// The page header's 6x8 digit `d` is `PAGE_DIGIT + d` (icons

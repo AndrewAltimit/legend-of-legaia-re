@@ -50,6 +50,14 @@ pub fn shop_screen_windows(phase: ShopScreenPhase, toast: bool) -> Vec<usize> {
         ShopScreenPhase::SellQuantity => vec![33, 32, 38, 39, 37],
     };
     if toast {
+        // The quantity commit closes the stepper before it raises the toast:
+        // `0x801E4ED4` is `04 23` (close window 35), and the toast script
+        // `0x801E4EDC` only opens `0x1F`; the buy list comes back with
+        // `0x801E4E64` after the press. The Retock capture shows the toast
+        // over windows 33 / 32 / 34 / 41 alone.
+        if phase == ShopScreenPhase::BuyQuantity {
+            v.retain(|&w| w != 35);
+        }
         v.push(31);
     }
     v
@@ -134,7 +142,7 @@ impl ShopSlides {
 /// it to `engine-ui`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PartyCompareMember {
-    /// Roster index (`world.party.roster.members[member]`).
+    /// Character id (`world.party.roster.members[member]`).
     pub member: usize,
     /// Display name (character record `+0x2A7`).
     pub name: String,
@@ -152,71 +160,75 @@ pub struct PartyCompareMember {
     pub candidate: Option<[i32; 8]>,
 }
 
-/// Window 41's model for staged item `item_id`: one block per present party
-/// member (at most three), in roster order.
+/// Window 41's model for staged item `item_id`: one block per **present
+/// party** member, in party-list order.
+///
+/// Retail walks `DAT_80084594` rows and resolves each through the party list
+/// at `0x80084598` (`lbu s1,0x458(v0)` at `0x801D4D14`), drawing member `i`
+/// `0x37` lines below member `i - 1`; a character who has not joined has no
+/// block. `present` is that list (`World::present_party_list`), and each id
+/// indexes `members`, the four character records.
 ///
 /// Both blocks are the menu aggregator's ([`crate::pause_screens::menu_stat_block`],
 /// `FUN_801CF5D0` + `FUN_801CF650`): the live one off the record's equip
-/// bytes, the trial one with the staged piece written into the slot its
-/// equip record's category names - the inline trial equip `FUN_801D4C28`
-/// runs. Shared by the buy list, the quantity stepper and the recipient
-/// picker on both hosts, so the three screens cannot disagree about one
-/// member.
+/// bytes, the trial one with the staged piece written into the **record
+/// byte** its equip class names - the inline trial equip `FUN_801D4C28`
+/// runs at `0x801D4DE4..0x801D4E20`: class `(+7 & 0x60) >> 5` maps
+/// weapon to the per-character halfword `DAT_8007B42C` (`2, 3, 2`) and the
+/// other three through `DAT_801E43E8` (head `1`, body `0`, legs `4`). The
+/// record order matters: writing the weapon into byte `0` would displace
+/// the body armour instead of the weapon.
 ///
-/// `members` is the live roster (`World::party.roster.members`) and `table`
-/// the equipment stat table (`World::tables.equipment_table`): the whole
-/// slice of the world the panel reads. engine-core's
-/// `shop::party_compare_members` passes them off a `World`.
+/// The mask test (`+6`, bit `1 << char`) runs for characters `0..=2` only
+/// (`0x801D4E24..0x801D4E9C`); any other id falls through as equippable.
+/// Shared by the buy list, the quantity stepper and the recipient picker on
+/// both hosts, so the three screens cannot disagree about one member.
 ///
 /// REF: FUN_801D4C28
 pub fn party_compare_members_of(
     members: &[legaia_save::CharacterRecord],
+    present: &[u8],
     table: &legaia_engine_battle::battle_stats::EquipmentTable,
     info: Option<&crate::equipment::DiscEquipInfo>,
     item_id: u8,
 ) -> Vec<PartyCompareMember> {
-    use crate::equipment::EquipSlot;
     use legaia_game_tables::equip_stats::EquipSlot as Disc;
     let entry = info.and_then(|i| i.entry(item_id));
-    let slot_idx = entry.map(|e| {
-        match e.category {
-            Disc::Weapon => EquipSlot::Weapon,
-            Disc::Body => EquipSlot::BodyArmor,
-            Disc::Head => EquipSlot::Helmet,
-            Disc::Footwear => EquipSlot::Boot,
-        }
-        .as_index() as usize
-    });
-    members
+    present
         .iter()
-        .take(3)
-        .enumerate()
-        .map(|(i, rec)| {
-            let name = {
-                let n = rec.name();
-                if n.is_empty() {
-                    format!("Member {}", i + 1)
-                } else {
-                    n
-                }
-            };
+        .filter_map(|&ch| {
+            members
+                .get(usize::from(ch))
+                .map(|rec| (usize::from(ch), rec))
+        })
+        .map(|(ch, rec)| {
             let hp_mp = rec.hp_mp_sp();
             let stat = crate::pause_screens::stat_record_from_character(rec);
             let current =
                 crate::pause_screens::menu_stat_block(&stat, table, hp_mp.hp_max, hp_mp.mp_max);
-            let candidate = slot_idx.map(|idx| {
+            let candidate = entry.map(|e| {
+                let byte = match e.category {
+                    Disc::Weapon => crate::equip_session::RETAIL_WEAPON_EQUIP_BYTE
+                        .get(ch)
+                        .map_or(2, |&b| b as usize),
+                    Disc::Head => 1,
+                    Disc::Body => 0,
+                    Disc::Footwear => 4,
+                };
                 let mut trial = stat;
-                if let Some(slot) = trial.equip.get_mut(idx) {
+                if let Some(slot) = trial.equip.get_mut(byte) {
                     *slot = item_id;
                 }
                 crate::pause_screens::menu_stat_block(&trial, table, hp_mp.hp_max, hp_mp.mp_max)
             });
             PartyCompareMember {
-                member: i,
-                name,
+                member: ch,
+                name: rec.name(),
                 already_equipped: item_id != 0 && rec.equipment().slots.contains(&item_id),
-                equippable: entry.is_none()
-                    || info.is_some_and(|inf| inf.can_equip(item_id, i as u8)),
+                equippable: match entry {
+                    None => true,
+                    Some(e) => ch > 2 || e.mask & (1 << ch) != 0,
+                },
                 current,
                 candidate,
             }

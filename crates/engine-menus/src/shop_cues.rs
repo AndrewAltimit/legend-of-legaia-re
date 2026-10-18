@@ -22,23 +22,28 @@ pub fn shop_menu_rows(trading: bool) -> &'static [MenuState] {
 /// The [`MenuState::ShopMenu`] top picker's rows as both play hosts print
 /// them: one `(label, ink)` per [`shop_menu_rows`] entry.
 ///
-/// The ink is retail's root command window (`shop_root_command_rows`,
-/// `FUN_801D4868`): Buy always white, and an empty bag greys **Sell and
-/// Quit together** - the ink global is cleared after the Buy row draws, so
-/// every row below it takes the grey. The engine-only Trade row sits
-/// between Sell and Quit and takes the same rule.
-pub fn shop_root_labels(trading: bool, bag_has_sellable: bool) -> Vec<(&'static str, u8)> {
+/// The labels are retail's own, read out of the menu overlay
+/// ([`crate::shop::ShopLabels::picker`], `0x801CEB94` / `0x801CEB9C` /
+/// `0x801CEBA4`, drawn by `FUN_801D4868`); with no overlay installed they
+/// are empty. The ink is retail's root command window
+/// (`shop_root_command_rows`): Buy always white, and an empty bag greys
+/// **Sell and Quit together** - the ink global is cleared after the Buy row
+/// draws, so every row below it takes the grey. The engine-only Trade row
+/// (the randomizer's Seru trade, no retail string) sits between Sell and
+/// Quit and takes the same rule.
+pub fn shop_root_labels(
+    labels: &crate::shop::ShopLabels,
+    trading: bool,
+    bag_has_sellable: bool,
+) -> Vec<(String, u8)> {
     let ink = crate::shop::shop_root_command_rows((0, 0), 0x4000, bag_has_sellable);
     shop_menu_rows(trading)
         .iter()
         .map(|s| match s {
-            MenuState::ShopBuy => ("Buy", ink[0].ink),
-            MenuState::ShopSell => ("Sell", ink[1].ink),
-            MenuState::ShopTrade => ("Trade Seru", ink[1].ink),
-            // Retail's third row reads "Quit" (overlay rodata `0x801CEBA4`,
-            // drawn by `FUN_801D4868`; capture-confirmed on Retock's Items
-            // Shop).
-            _ => ("Quit", ink[2].ink),
+            MenuState::ShopBuy => (labels.picker[0].plain(), ink[0].ink),
+            MenuState::ShopSell => (labels.picker[1].plain(), ink[1].ink),
+            MenuState::ShopTrade => ("Trade Seru".to_string(), ink[1].ink),
+            _ => (labels.picker[2].plain(), ink[2].ink),
         })
         .collect()
 }

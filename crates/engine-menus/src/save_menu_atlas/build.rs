@@ -367,6 +367,10 @@ pub fn build_atlas(
     })
 }
 
+/// Separator glyph cells [`menu_font_cells`] cuts (`FUN_8003C1F8` ids
+/// `0..14`, through the `.` at `0xD`; the cells past it are blank).
+pub const SEPARATOR_GLYPHS: u32 = 14;
+
 /// The menu sprite cells retail draws in place of font glyphs, decoded off
 /// the disc for [`legaia_font::Font::with_sprite_cells`]:
 ///
@@ -374,6 +378,9 @@ pub fn build_atlas(
 ///   blits (`uv = (d * 8, 208, 8, 12)` on the menu-glyph page, the same
 ///   cells the battle HUD reads - [`add_hud_digit_strip`]); every menu
 ///   price, count, stat and purse reads them, white-palette, tinted per ink;
+/// * the fourteen 8x12 separator glyphs beside them on the same row
+///   (`FUN_8003C1F8`, `uv = (0x50 + g * 8, 208)`): the `/` between two
+///   counts and the stat-compare rise / fall arrows;
 /// * the list kernel `FUN_80032A44`'s pager pieces off the system-UI sheet,
 ///   at their UI-icon records (`0x800732A4 + code * 12`, `+3` CLUT byte,
 ///   `+4..+7` U/V/W/H): the "PAGE" tag (code `0x76`, CLUT 1), the 6x8 page
@@ -411,6 +418,17 @@ pub fn menu_font_cells(
                     w: 8,
                     h: 12,
                     rgba: cut(&rgba, w, (d * 8, 208, 8, 12)),
+                });
+            }
+            // The separator glyphs `FUN_8003C1F8` draws: `uv = (g * 8 +
+            // 0x50, 0xD0, 8, 12)` (`sll a0,a0,0x3` / `addiu a0,a0,0x50` and
+            // `li v0,0xd0` at `0x8003C204..0x8003C218`).
+            for g in 0..SEPARATOR_GLYPHS {
+                cells.push(SpriteCellSrc {
+                    id: ids::SEPARATOR + g as u16,
+                    w: 8,
+                    h: 12,
+                    rgba: cut(&rgba, w, (0x50 + g * 8, 208, 8, 12)),
                 });
             }
         }

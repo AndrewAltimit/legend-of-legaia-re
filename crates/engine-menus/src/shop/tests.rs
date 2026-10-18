@@ -568,3 +568,99 @@ fn sell_detail_panel_with_no_staged_item_still_draws_the_shade_box() {
         assert_eq!(p.shade_box, ((6, 8 + 0x45), (0x90, 0x28)));
     }
 }
+
+/// Window 41's trial equip writes the staged piece into the **record byte**
+/// its class names: the weapon into the per-character halfword's byte
+/// (`2` Vahn, `3` Noa), never byte `0`, which is the body armour. The Retock
+/// Arms Shop capture pins the visible result: hovering a weapon raises ATK by
+/// the weapon difference and leaves UDF / LDF alone.
+#[test]
+fn the_compare_trial_replaces_the_weapon_not_the_armour() {
+    use crate::equipment::{DiscEquipEntry, DiscEquipInfo};
+    use legaia_engine_battle::battle_stats::{EquipmentTable, ItemModifier};
+    use legaia_game_tables::equip_stats::EquipSlot as Disc;
+    use legaia_save::{CharacterRecord, EquipmentSlots};
+    let (armour, vahn_blade, noa_glove, axe) = (0x50, 0x40, 0x42, 0x41);
+    let mut table = EquipmentTable::new();
+    let m = |atk, udf| ItemModifier {
+        atk,
+        udf,
+        ..Default::default()
+    };
+    table.set(armour, m(0, 10));
+    table.set(vahn_blade, m(40, 0));
+    table.set(noa_glove, m(30, 0));
+    table.set(axe, m(53, 0));
+    let info = DiscEquipInfo::from_entries([(
+        axe,
+        DiscEquipEntry {
+            mask: 3,
+            category: Disc::Weapon,
+            is_ra_seru: false,
+            passive_index: None,
+        },
+    )]);
+    let mut vahn = CharacterRecord::zeroed();
+    vahn.set_name("V");
+    vahn.set_equipment(EquipmentSlots {
+        slots: [armour, 0, vahn_blade, 0, 0, 0, 0, 0],
+    });
+    let mut noa = CharacterRecord::zeroed();
+    noa.set_name("N");
+    noa.set_equipment(EquipmentSlots {
+        slots: [armour, 0, 0, noa_glove, 0, 0, 0, 0],
+    });
+    let gala = CharacterRecord::zeroed();
+    let members = [vahn, noa, gala];
+    // The present party in party-list order: Noa leads, Gala is absent.
+    let rows = party_compare_members_of(&members, &[1, 0], &table, Some(&info), axe);
+    let names: Vec<_> = rows.iter().map(|r| (r.member, r.name.as_str())).collect();
+    assert_eq!(names, [(1, "N"), (0, "V")]);
+    const ATK: usize = 3;
+    const UDF: usize = 4;
+    for (row, old_weapon_atk) in rows.iter().zip([30, 40]) {
+        let cand = row.candidate.expect("a weapon has a trial block");
+        assert_eq!(cand[ATK] - row.current[ATK], 53 - old_weapon_atk);
+        assert_eq!(cand[UDF], row.current[UDF], "the armour stays on");
+        assert!(row.equippable);
+    }
+}
+
+/// A member the mask leaves out reads as not equippable; ids past the
+/// three playable characters skip the test, as retail's chain does.
+#[test]
+fn the_compare_mask_covers_three_characters() {
+    use crate::equipment::{DiscEquipEntry, DiscEquipInfo};
+    use legaia_engine_battle::battle_stats::EquipmentTable;
+    use legaia_game_tables::equip_stats::EquipSlot as Disc;
+    let info = DiscEquipInfo::from_entries([(
+        0x41,
+        DiscEquipEntry {
+            mask: 1,
+            category: Disc::Head,
+            is_ra_seru: false,
+            passive_index: None,
+        },
+    )]);
+    let members: Vec<_> = (0..4)
+        .map(|_| legaia_save::CharacterRecord::zeroed())
+        .collect();
+    let rows = party_compare_members_of(
+        &members,
+        &[0, 1, 2, 3],
+        &EquipmentTable::new(),
+        Some(&info),
+        0x41,
+    );
+    let ok: Vec<_> = rows.iter().map(|r| r.equippable).collect();
+    assert_eq!(ok, [true, false, false, true]);
+    assert!(rows.iter().all(|r| r.name.is_empty()), "no invented names");
+}
+
+/// The quantity commit closes the stepper under the Point Card toast.
+#[test]
+fn the_point_card_toast_rides_over_a_closed_stepper() {
+    let w = shop_screen_windows(ShopScreenPhase::BuyQuantity, true);
+    assert_eq!(w, vec![33, 32, 34, 41, 31]);
+    assert!(shop_screen_windows(ShopScreenPhase::BuyQuantity, false).contains(&35));
+}

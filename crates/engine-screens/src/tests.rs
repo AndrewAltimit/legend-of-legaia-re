@@ -86,6 +86,8 @@ fn sell_detail_prices_a_sellable_item() {
     let mut prices = [0u16; 256];
     prices[5] = 200;
     world.shops.item_shop_data = Some(ShopItemData::from_prices(prices));
+    // Synthetic labels: the real ones are the disc's.
+    world.menu.shop_labels.price = legaia_engine_menus::shop::ShopLabel(b"p".to_vec());
     let menu = MenuRuntime::new(std::env::temp_dir());
     let font = legaia_font::Font::placeholder();
     let table = table_with(WIN_SELL_DETAIL, RENDERER_SELL_DETAIL);
@@ -112,7 +114,8 @@ fn sell_detail_prices_a_sellable_item() {
 
 #[test]
 fn sell_detail_marks_an_unpriced_item_unsellable() {
-    let world = World::new();
+    let mut world = World::new();
+    world.menu.shop_labels.cannot_sell = legaia_engine_menus::shop::ShopLabel(b"c".to_vec());
     let menu = MenuRuntime::new(std::env::temp_dir());
     let font = legaia_font::Font::placeholder();
     let table = table_with(WIN_SELL_DETAIL, RENDERER_SELL_DETAIL);
@@ -336,4 +339,149 @@ fn shop_close_slides_out_with_no_closing_text() {
     assert_eq!(out, expected, "the windows slide out in step");
     assert!(menu.shop_session.is_none());
     assert!(!world.shops.shop_open, "the merchant op resumes");
+}
+
+/// The disc's SCUS and menu overlay, or `None` (with a `[skip]` line) when
+/// `LEGAIA_DISC_BIN` is unset - the CLAUDE.md gating.
+fn disc_world() -> Option<World> {
+    use legaia_engine_scene::vfs::Vfs;
+    let Some(path) = std::env::var_os("LEGAIA_DISC_BIN").map(std::path::PathBuf::from) else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return None;
+    };
+    let host = legaia_engine_core::scene_host::SceneHost::open_disc(&path).expect("open disc");
+    let overlay = host
+        .index
+        .entry_bytes_extended(legaia_game_tables::menu_windows::MENU_OVERLAY_PROT_INDEX as u32)
+        .expect("PROT 0899");
+    let scus = legaia_engine_scene::vfs::DiscVfs::open(&path)
+        .expect("disc vfs")
+        .read("SCUS_942.54")
+        .expect("SCUS_942.54");
+    let mut world = World::new();
+    world.install_menu_text(&scus);
+    world.install_menu_overlay_tables(&overlay);
+    let members = ["Ab", "Cd", "Ef"]
+        .iter()
+        .map(|n| {
+            let mut r = legaia_save::CharacterRecord::zeroed();
+            r.set_name(n);
+            r
+        })
+        .collect();
+    world.load_party(legaia_save::Party { members });
+    Some(world)
+}
+
+/// Every shop label the windows print comes off the menu overlay, escapes
+/// and all: the recipient rows are `[0xC1 id] ...` for ids `0..=2` and the
+/// toast heading opens with item `0xFE`'s name token. The assertions are on
+/// shape, not wording - the wording is the disc's.
+#[test]
+fn shop_labels_read_off_the_disc_overlay() {
+    let Some(world) = disc_world() else { return };
+    let l = &world.menu.shop_labels;
+    assert!(l.is_installed());
+    for label in [
+        &l.picker[0],
+        &l.picker[1],
+        &l.picker[2],
+        &l.equipped,
+        &l.cannot_equip,
+        &l.have_head,
+        &l.have_tail,
+        &l.none_held,
+        &l.buy_prompt,
+        &l.bag_row,
+        &l.sell_prompt,
+        &l.price,
+        &l.cannot_sell,
+        &l.point_card_unit,
+    ] {
+        assert!(!label.is_empty() && !label.0.contains(&0xC1));
+    }
+    assert!(l.stat_labels.iter().all(|s| s.plain().len() == 3));
+    assert_ne!(l.equipped, l.cannot_equip);
+    for (id, row) in l.recipient_rows.iter().enumerate() {
+        assert_eq!(
+            &row.0[..2],
+            &[0xC1, id as u8],
+            "row {id} names its own character"
+        );
+        let text = row.text(crate::shop::menu_name_escape(&world));
+        let name = ["Ab", "Cd", "Ef"][id];
+        assert!(
+            text.starts_with(name) && text.len() > name.len(),
+            "{text:?}"
+        );
+    }
+    assert_eq!(&l.point_card_heading.0[..2], &[0xC2, 0xFE]);
+    let heading = l
+        .point_card_heading
+        .text(crate::shop::menu_name_escape(&world));
+    assert!(heading.starts_with(&shop_item_label(&world, 0xFE)));
+}
+
+/// `FUN_800337B0` over the whole item table: every equipment id gets a stat
+/// line of one (weapon) or two pairs whose labels are the disc's, an
+/// undescribed piece prints its slot template with the character escape
+/// patched to a real character, and window 34's draw list carries the stat
+/// line one row under the text.
+#[test]
+fn equipment_detail_lines_come_off_the_disc() {
+    use legaia_engine_menus::shop::{DETAIL_STAT_DY, item_detail_line};
+    let Some(world) = disc_world() else { return };
+    let t = world
+        .menu
+        .text
+        .as_ref()
+        .and_then(|t| t.item_detail.as_ref())
+        .expect("item detail tables");
+    assert!(t.templates[..4].iter().all(|s| s.contains(&0xC1)));
+    assert!(t.templates[4..].iter().all(|s| !s.contains(&0xC1)));
+    assert!(t.stat_labels.iter().all(|s| s.len() == 3));
+    let mut templated = 0;
+    for id in 0..=255u8 {
+        if t.kind[usize::from(id)] != 1 {
+            continue;
+        }
+        let line = item_detail_line(t, id);
+        assert!(matches!(line.stats.len(), 1 | 2), "item {id:#x}");
+        if t.desc[usize::from(id)].is_empty() {
+            templated += 1;
+            if let Some(p) = line.text.iter().position(|&b| b == 0xC1) {
+                assert!(line.text[p + 1] <= 2, "item {id:#x} names a character");
+            }
+        }
+    }
+    assert!(templated > 0, "some equipment is undescribed");
+
+    // One undescribed single-character weapon, drawn.
+    let id = (0..=255u8)
+        .find(|&id| {
+            let i = usize::from(id);
+            t.kind[i] == 1
+                && t.desc[i].is_empty()
+                && t.equip[i].is_some_and(|e| e[7] & 0x60 == 0x40 && e[6] & 7 != 7)
+        })
+        .expect("an undescribed weapon");
+    let menu = MenuRuntime::new(std::env::temp_dir());
+    let font = legaia_font::Font::placeholder();
+    let i = inputs(&world, &menu, &font, None, None, &[]);
+    let draws = crate::shop::item_detail_draws(&i, (100, 50), id);
+    assert!(draws.iter().any(|d| d.dst.1 == 50), "the text row");
+    assert!(
+        draws.iter().any(|d| d.dst.1 == 50 + DETAIL_STAT_DY),
+        "the stat row"
+    );
+}
+
+/// Without the overlay the shop's label-bearing windows print no text of
+/// their own: no invented captions stand in for the disc's.
+#[test]
+fn no_overlay_no_shop_labels() {
+    let world = World::new();
+    let l = &world.menu.shop_labels;
+    assert!(!l.is_installed());
+    assert!(l.bag_row.plain().is_empty() && l.cannot_equip.plain().is_empty());
 }

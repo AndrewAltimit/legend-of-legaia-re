@@ -17,7 +17,16 @@
 //! here would be a drift in one builder rather than between two copies.
 
 use legaia_engine_ui::menu::window_painters::{
-    PainterRect, buy_quantity_draws_for, sell_quantity_draws_for, sell_total_digits,
+    BuyQuantityLabels, PainterRect, buy_quantity_draws_for, sell_quantity_draws_for,
+    sell_total_digits,
+};
+
+/// Synthetic labels: the real strings are the disc's.
+const LABELS: BuyQuantityLabels<'static> = BuyQuantityLabels {
+    have_head: "h",
+    have_tail: ".",
+    none_held: "n",
+    prompt: "p",
 };
 
 /// Window 35's disc rect (`PROT 0899` file `0x15F20 + 35*0x10`).
@@ -59,7 +68,7 @@ fn row_at(draws: &[legaia_engine_ui::TextDraw], y: i32) -> Vec<i32> {
 #[test]
 fn the_buy_window_prints_quantity_over_its_bound() {
     let f = font();
-    let (draws, pic, cur) = buy_quantity_draws_for(&f, BUY_RECT, Some(3), 7, 12, 250);
+    let (draws, pic, cur) = buy_quantity_draws_for(&f, BUY_RECT, LABELS, Some(3), 7, 12, 250);
     assert!(!draws.is_empty(), "the window drew nothing");
     let row = BUY_RECT.y + 0x22;
     let xs = row_at(&draws, row);
@@ -81,7 +90,7 @@ fn the_buy_window_prints_quantity_over_its_bound() {
     // The bound is what prints there, not the unit price: a one-digit bound
     // beside a three-digit price leaves the field's leading cell empty, which
     // a price-printing window could not do.
-    let (single, _, _) = buy_quantity_draws_for(&f, BUY_RECT, Some(3), 7, 9, 250);
+    let (single, _, _) = buy_quantity_draws_for(&f, BUY_RECT, LABELS, Some(3), 7, 9, 250);
     let single = row_at(&single, row);
     assert!(
         single.contains(&(BUY_RECT.x + 0x38)) && !single.contains(&(BUY_RECT.x + 0x30)),
@@ -98,8 +107,8 @@ fn the_buy_window_prints_quantity_over_its_bound() {
 #[test]
 fn the_buy_window_swaps_its_held_line_on_the_none_sentinel() {
     let f = font();
-    let (held, _, _) = buy_quantity_draws_for(&f, BUY_RECT, Some(3), 1, 9, 100);
-    let (none, _, _) = buy_quantity_draws_for(&f, BUY_RECT, None, 1, 9, 100);
+    let (held, _, _) = buy_quantity_draws_for(&f, BUY_RECT, LABELS, Some(3), 1, 9, 100);
+    let (none, _, _) = buy_quantity_draws_for(&f, BUY_RECT, LABELS, None, 1, 9, 100);
     let head = |d: &[legaia_engine_ui::TextDraw]| row_at(d, BUY_RECT.y);
     assert!(
         head(&held).iter().any(|x| *x >= BUY_RECT.x + 0x20),
@@ -126,9 +135,12 @@ fn the_buy_total_field_steps_on_the_unit_price_at_a_fixed_pen() {
     // Both buys print a total whose leading digit sits two cells into the
     // field ("10" in 4 cells, "10000" in 7), so the leading cell is the same
     // x on both and only the trailing edge moves.
-    let cheap = row_at(&buy_quantity_draws_for(&f, BUY_RECT, None, 1, 9, 10).0, row);
+    let cheap = row_at(
+        &buy_quantity_draws_for(&f, BUY_RECT, LABELS, None, 1, 9, 10).0,
+        row,
+    );
     let dear = row_at(
-        &buy_quantity_draws_for(&f, BUY_RECT, None, 1, 9, 10_000).0,
+        &buy_quantity_draws_for(&f, BUY_RECT, LABELS, None, 1, 9, 10_000).0,
         row,
     );
     let pen = BUY_RECT.x + 0x62;
@@ -174,6 +186,6 @@ fn the_sell_window_has_the_early_out_and_the_buy_window_does_not() {
     let f = font();
     let (text, pic, cur) = sell_quantity_draws_for(&f, SELL_RECT, false, "How many?", 1, 9, 10);
     assert!(text.is_empty() && pic.is_none() && cur.is_none());
-    let (text, _, _) = buy_quantity_draws_for(&f, BUY_RECT, None, 1, 1, 0);
+    let (text, _, _) = buy_quantity_draws_for(&f, BUY_RECT, LABELS, None, 1, 1, 0);
     assert!(min_x(&text).is_some(), "the buy window always draws");
 }

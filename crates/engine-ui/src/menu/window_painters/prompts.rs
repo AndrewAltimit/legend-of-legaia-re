@@ -145,22 +145,10 @@ pub fn notify_prompt_draws_for(
 /// Wired: `engine-core::World::point_card` is the counter and
 /// `MenuRuntime::point_card_toast` the beat; both hosts paint this window
 /// while the toast is up, off the same disc-parsed rect as the shop's other
-/// descriptor windows, and both label it with [`POINT_CARD_HEADING`] /
-/// [`POINT_CARD_UNIT_LABEL`] below.
-/// Window 31's heading line. Retail's literal (`0x801CEA40`) opens with the
-/// `0xC2 0xFE` substitution token - item `0xFE`'s name, the Point Card - so
-/// the line reads "Point Card has earned" on screen (Retock shop capture).
-///
-/// Both hosts draw this window, so the label lives beside the builder rather
-/// than once per host - two host-local copies would be a divergence the
-/// drift gate could only catch by pairing them.
-pub const POINT_CARD_HEADING: &str = "Point Card has earned";
-
-/// The unit label window 31 puts `0x40` right of its number field
-/// (`0x801CEA50`), leading space included. Shared for the same reason as
-/// [`POINT_CARD_HEADING`].
-pub const POINT_CARD_UNIT_LABEL: &str = " point(s).";
-
+/// descriptor windows, and both label it with retail's own heading and
+/// unit strings (`0x801CEA40` - whose `0xC2 0xFE` token is item `0xFE`'s
+/// name - and `0x801CEA50`), read off the menu overlay by
+/// `engine-menus::shop::ShopLabels`.
 pub fn amount_prompt_draws_for(
     font: &legaia_font::Font,
     rect: PainterRect,

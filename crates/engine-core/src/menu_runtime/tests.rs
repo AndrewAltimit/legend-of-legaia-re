@@ -3,21 +3,36 @@ use legaia_save::{CharacterRecord, EquipmentSlots, SpellList};
 
 #[test]
 fn an_empty_bag_greys_every_shop_root_row_below_buy() {
-    use legaia_engine_menus::shop::{SHOP_INK_GREY, SHOP_INK_NORMAL};
-    let full = shop_root_labels(false, true);
+    use legaia_engine_menus::shop::{SHOP_INK_GREY, SHOP_INK_NORMAL, ShopLabel, ShopLabels};
+    let labels = ShopLabels {
+        picker: [
+            ShopLabel(b"b".to_vec()),
+            ShopLabel(b"s".to_vec()),
+            ShopLabel(b"q".to_vec()),
+        ],
+        ..Default::default()
+    };
+    let full = shop_root_labels(&labels, false, true);
+    let rows: Vec<_> = full.iter().map(|r| (r.0.as_str(), r.1)).collect();
     assert_eq!(
-        full,
+        rows,
         vec![
-            ("Buy", SHOP_INK_NORMAL),
-            ("Sell", SHOP_INK_NORMAL),
-            ("Quit", SHOP_INK_NORMAL)
+            ("b", SHOP_INK_NORMAL),
+            ("s", SHOP_INK_NORMAL),
+            ("q", SHOP_INK_NORMAL)
         ]
     );
-    let empty = shop_root_labels(true, false);
-    let labels: Vec<_> = empty.iter().map(|r| r.0).collect();
-    assert_eq!(labels, ["Buy", "Sell", "Trade Seru", "Quit"]);
+    let empty = shop_root_labels(&labels, true, false);
+    let names: Vec<_> = empty.iter().map(|r| r.0.as_str()).collect();
+    assert_eq!(names, ["b", "s", "Trade Seru", "q"]);
     assert_eq!(empty[0].1, SHOP_INK_NORMAL);
     assert!(empty[1..].iter().all(|r| r.1 == SHOP_INK_GREY));
+    // Without the overlay the rows carry no invented text.
+    assert!(
+        shop_root_labels(&ShopLabels::default(), false, true)
+            .iter()
+            .all(|r| r.0.is_empty())
+    );
 }
 
 fn world_with_party(n: usize) -> World {
