@@ -8,9 +8,9 @@ choreography and tables, the title and boot screens, the card write flow and
 [`legaia-engine-dialog`](../engine-dialog/README.md). Free of
 wgpu, winit and cpal, so it builds for native and `wasm32` alike.
 
-`legaia-engine-core` owns the composition - `MenuRuntime`, the pause-menu
-dispatch, `World::use_item` and the stepping of the dialog and cutscene
-contexts. Consumers name the modules here directly
+`legaia-engine-menu-runtime` owns the composition - `MenuRuntime`, the
+pause-menu dispatch - and `legaia-engine-core` owns `World::use_item` and
+the stepping of the dialog and cutscene contexts. Consumers name the modules here directly
 (`legaia_engine_menus::items`). Two have an engine-core module of the same
 name beside them (`shop`,
 `pause_screens`): each screen here takes the slice of the world it reads
@@ -70,7 +70,7 @@ link into a dependent crate.
   `MenuWidgetScripts` resolves the window-script VM's programs out of the
   menu-overlay image, and `MenuWidgetState` is the `legaia_engine_vm::Host`
   window-list model the shop open / Sell slide-away programs run against,
-  with engine-core's `MenuRuntime::tick` driving the edges as `FUN_801DAFD4`
+  with engine-menu-runtime's `MenuRuntime::tick` driving the edges as `FUN_801DAFD4`
   does; see [`docs/formats/window-script.md`](../../docs/formats/window-script.md)),
   `menu_open_sequence` (`FUN_801DAD6C`), `menu_cues` (which blip a frame's pad
   edges fire), `menu_glyph_atlas`, `save_menu_atlas` (the shared 256x256

@@ -5,7 +5,7 @@ the UI is a set of windows in the **menu overlay** (PROT 0899, the same image
 that hosts the pause menu and save screen), each shop's stock is a record
 inline in its scene's field-VM script, and prices come from the static item
 table in `SCUS_942.54`. The port runs the same flow on both play hosts through
-`engine-core`'s `MenuRuntime` and one shared screen builder. (An inn is *not*
+`engine-menu-runtime`'s `MenuRuntime` and one shared screen builder. (An inn is *not*
 a menu-overlay session - see [inn.md](inn.md).)
 
 ## At a glance
@@ -19,7 +19,7 @@ a menu-overlay session - see [inn.md](inn.md).)
 | Stack cap | 99 per item id. |
 | Extra purses | The Point Card bank (`_DAT_800845B4`, [below](#point-card)); the casino coin bank belongs to the prize exchange, a separate table. |
 | Where is the text? | Every label is a menu-overlay string, read off the disc at boot ([window text](#window-text)). |
-| Port | `engine-menus::shop` (rules and sessions) + `engine-core`'s `MenuRuntime`, drawn by `legaia_engine_screens::gold_shop_screen` on both hosts. |
+| Port | `engine-menus::shop` (rules and sessions) + `engine-menu-runtime`'s `MenuRuntime`, drawn by `legaia_engine_screens::gold_shop_screen` on both hosts. |
 
 ```mermaid
 stateDiagram-v2
