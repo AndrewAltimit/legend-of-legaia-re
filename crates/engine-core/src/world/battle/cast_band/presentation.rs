@@ -41,6 +41,12 @@
 //! counted as unpaced and its calls are skipped. An arm that cannot hold
 //! (no gate, or no phase write) fires as it runs.
 //!
+//! The stage byte `ctx[+0x278]` an arm stores is state the battle frame's
+//! ambient pass reads (the backdrop pair driven to black at `>= 2`, the
+//! ground grid off on bit 0), so it lands whenever its arm reaches it,
+//! paced or not - except in the modules whose tick ports already store it
+//! (`STAGE_BYTES_PORTED_BY_HAND`).
+//!
 //! The colour wash itself is the dispatchers' tail: once the module's writes
 //! for the tick are in, an armed block (`alpha != 0`) steps its scroll and
 //! draws ([`legaia_render_kernels::cast_colour_wash`]).
@@ -78,6 +84,14 @@ const BODY_PACED: [u32; 4] = [910, 911, 912, 913];
 const FADES_PORTED_BY_HAND: [u32; 3] = [905, 954, 966];
 /// Modules whose CLUT copy a hand port already issues.
 const VRAM_MOVES_PORTED_BY_HAND: [u32; 1] = [903];
+/// Modules whose tick ports (or chain-body tables) store the stage byte
+/// `ctx[+0x278]` themselves. The hook fires after the tick, so a decoded
+/// store would land behind a write the port orders after it in the same
+/// tick (PROT 0923's stager stores `3` once its arm 0 has stored `0`).
+const STAGE_BYTES_PORTED_BY_HAND: [u32; 21] = [
+    903, 904, 906, 907, 908, 909, 910, 911, 912, 913, 918, 922, 923, 925, 927, 942, 954, 959, 961,
+    963, 965,
+];
 
 /// One fade a module arm spawned through the hook: the fade actor, the call
 /// site that spawned it, and the slot the arm parked its pointer in.
@@ -299,6 +313,24 @@ impl World {
                             dst: (dx, dy),
                         });
                     }
+                }
+                // The stage byte `ctx[+0x278]` is state, not a draw: it
+                // lands whenever the arm's own control flow reaches it,
+                // paced or not, and the battle frame's ambient pass reads
+                // it (`World::tick_battle_ambient`).
+                PresentationCall::StageByte { value: Some(v) }
+                    if match timing {
+                        SiteTiming::Pass => passed,
+                        SiteTiming::Hold => !passed,
+                        SiteTiming::Every => true,
+                    } && !STAGE_BYTES_PORTED_BY_HAND.contains(&entry)
+                        && legaia_engine_cast::cast_module_camera::stage_store_runs(
+                            entry,
+                            s.va,
+                            self.casting.capture_spell,
+                        ) =>
+                {
+                    self.casting.module_ctx_278 = v;
                 }
                 PresentationCall::ArmedWash { rgb: Some(rgb) } if each => {
                     self.casting.module_pres.armed_wash = Some(rgb);

@@ -3043,6 +3043,7 @@ instructions before the call:
 | `FUN_80058490` `MoveImage` | the effect-CLUT copy `(0xD0, 0x1DC)` -> `(0xE0, 0x1DC)`, 16x1, rect at `*(0x1F8003A0)` | 7 |
 | PROT 0898 `FUN_801F2410` colour wash | stores into `ctx[+0x27A..+0x286]`, `ctx[+0x32A]`, `ctx[+0x32C]` | 14 |
 | `FUN_801E1D98` streak ribbon | a stack trio anchor and a trail id | 6 |
+| stage byte `ctx[+0x278]` (no call: a `sb` the battle frame's ambient pass `FUN_80050120` reads) | a literal | 45 |
 
 `legaia_overlay_images::cast_presentation::decode` recovers them as data.
 Each tick body opens on a switch over `ctx[+0x279]` - a jump table bounded by
@@ -3147,6 +3148,26 @@ then shows only where it crosses the floor. Seven modules set the band mode (090
 through CLUT `0x7A00` with a sine wobble off two per-line arrays at
 `ctx[+0x32E]` / `ctx[+0x4EE]`. That mode is not ported, and the hook draws
 nothing for it.
+
+**The stage byte.** `ctx[+0x278]` is what darkens the stage under a cast:
+the ambient pass drives the backdrop pair's depth cue to black once the byte
+is `2` or more with the close-up latch `ctx[+0x243]` up, and with bit 0 set it
+freezes the ambient on its floor and takes the ground grid off the screen
+([battle-stage-camera.md](battle-stage-camera.md#near-colour-and-depth-cue)).
+The decoder reads each arm's `sb <literal>,0x278(ctx)` (`StageByte`) and the
+hook stores it on the arm's own timing, paced or not: it is state, not a
+draw. Mystic Circle's arm 0 stores `3` (`0x801F6BA0`) and Horn's arm 0 `2`
+(`0x801F6B54`), the values `cort_mystic_circle_mid_cast` and
+`horn_summon_mid_cast` hold; without them both frames drew the arena where
+retail's stage is black. Two exceptions:
+
+- the modules whose tick ports store the byte themselves (`STAGE_BYTES_PORTED_BY_HAND`): the hook fires after the tick, behind a stager write the port orders after the arm's own (PROT 0923's stager stores `3` once its arm 0 has stored `0`);
+- a store on a choreography branch the action does not take: PROT 0946's `2` at `0x801F6BF8` sits on arm 0's Big Wave branch (the per-seat word set), so Call Wave skips it (`cast_module_camera::stage_store_runs`).
+
+Many bodies never clear the byte. The capture band's `0x71` exit does
+(`sb zero,0x278(v0)` at `0x801E5238`, beside `ctx[+0x243]`), as the summon
+band's `0x37` exit does (`0x801E4E98`); the engine clears its module copy at
+both (`BattleActionHost::capture_band_exit` / `summon_band_exit`).
 
 **The armed wash** only arms a flag the frame's drain clears, so an arm that
 wants it held re-arms it every pass. The drain draws it subtractive (ABR `2`)

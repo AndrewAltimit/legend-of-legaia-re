@@ -303,6 +303,9 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
         self.world.casting.module_ctx_278 = 0;
         self.world.casting.module_caption = None;
     }
+    fn capture_band_exit(&mut self) {
+        self.world.casting.module_ctx_278 = 0;
+    }
     fn camera_frame_height(&mut self, height: i16) {
         self.world.battle.camera_frame_height = height;
         self.world

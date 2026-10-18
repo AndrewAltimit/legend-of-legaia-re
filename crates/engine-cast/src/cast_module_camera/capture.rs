@@ -571,6 +571,21 @@ pub fn mystic_circle_camera(
     }
 }
 
+/// PROT 0946's Big Wave stage store: `sb v0,0x278(a0)` with `v0 = 2` at
+/// `0x801F6BF8`, on arm 0's branch taken while the per-seat word
+/// `0x801CEFE0 + (seat+1)*4` is set (`beq v0,zero,0x801F6C38` at
+/// `0x801F6B00` jumps to Call Wave's path instead). The phase walk places it
+/// on arm 0 whichever branch runs; [`wave_camera`] keys the branch on the
+/// action id, and so does this.
+pub const WAVE_BIG_STAGE_STORE: u32 = 0x801F_6BF8;
+
+/// Whether a stage-byte store the presentation decode placed on a phase arm
+/// runs for `action`: false only for a store on a choreography branch the
+/// action does not take ([`WAVE_BIG_STAGE_STORE`], Big Wave's alone).
+pub fn stage_store_runs(entry: u32, va: u32, action: Option<u8>) -> bool {
+    !(entry == 946 && va == WAVE_BIG_STAGE_STORE && action != Some(0x56))
+}
+
 /// PROT 0946's countdown word (`lui 0x801F` / `+0x7F20`).
 pub const WAVE_COUNTDOWN: u32 = 0x801F_7F20;
 

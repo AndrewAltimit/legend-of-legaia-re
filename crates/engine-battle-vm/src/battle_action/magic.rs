@@ -594,6 +594,7 @@ pub(super) fn magic_capture_finalize<H: BattleActionHost + ?Sized>(
     // base one step above the floor.
     ctx.gauge_rearm_latch = 0;
     ctx.summon_staging_a = 0;
+    host.capture_band_exit();
     ctx.ambient_base = crate::battle_ground_grid::AMBIENT_BASE_CAST_EXIT;
     transition(ctx, ActionState::DoneCleanup)
 }

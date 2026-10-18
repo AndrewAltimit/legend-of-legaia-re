@@ -13,6 +13,7 @@
 //! | `FUN_801E1D98` | `(&vec3, trail)` | the chained streak ribbon's anchor and trail id |
 //! | `FUN_80058490` | `(&rect, x, y)` | a `MoveImage` whose rect the arm builds at the packet cursor `*(0x1F8003A0)` |
 //! | `FUN_801F2410` (0898) | none - the dispatchers' tail | the arm stores the wash parameters into `ctx[+0x27A..+0x286]` / `ctx[+0x32A..+0x32C]` |
+//! | `FUN_80050120` | none - the battle frame's ambient pass | the arm stores the stage byte `ctx[+0x278]`, which darkens the backdrop pair and takes the ground grid off the screen |
 //!
 //! Each of those is a call (or a store) whose arguments are literals the arm
 //! computes in a few straight-line instructions, so the wiring is **data**:
@@ -75,6 +76,10 @@ pub const FADE_TEMPLATE_WORDS: usize = 13;
 pub const BATTLE_CTX_PTR: u32 = 0x8007_BD24;
 /// The module phase byte `ctx[+0x279]`.
 pub const PHASE_OFFSET: u16 = 0x279;
+/// The stage byte `ctx[+0x278]`: the battle frame's ambient pass
+/// `FUN_80050120` reads it to drive the backdrop pair to black (`>= 2`) and to
+/// freeze the ambient with the ground grid off (bit 0).
+pub const STAGE_BYTE_OFFSET: u16 = 0x278;
 /// First and last `ctx` byte of the colour-wash parameter block
 /// (`ctx[+0x27A]` alpha .. `ctx[+0x286]`).
 pub const WASH_FIELDS: std::ops::RangeInclusive<u16> = 0x27A..=0x286;
@@ -198,6 +203,8 @@ pub enum PresentationCall {
         width: u8,
         store: Option<WashStore>,
     },
+    /// `sb rt, 0x278(ctx)`: the stage byte, the literal when it folded.
+    StageByte { value: Option<u8> },
 }
 
 /// One decoded site.
@@ -1217,6 +1224,13 @@ fn site_call(i: &Ins, t_before: &Tracker, t_call: &Tracker) -> Option<Presentati
             _ => {}
         }
     }
+    if i.op() == 0x28 && i.imm() == STAGE_BYTE_OFFSET && matches!(t_before.r[i.rs()], V::Ctx) {
+        let value = match t_before.r[i.rt()] {
+            V::C(c) => Some(c as u8),
+            _ => None,
+        };
+        return Some(PresentationCall::StageByte { value });
+    }
     if matches!(i.op(), 0x28 | 0x29 | 0x2B) && matches!(t_before.r[i.rs()], V::Ctx) {
         let field = i.imm();
         if !is_wash_field(field) {
@@ -1311,8 +1325,9 @@ fn candidate_sites(img: &Image, lo: u32, hi: u32) -> BTreeSet<u32> {
     while va < hi {
         if let Some(i) = img.ins(va) {
             let call = i.is_jal() && SITE_CALLS.contains(&i.jump_target());
-            let store =
-                matches!(i.op(), 0x28 | 0x29 | 0x2B) && is_wash_field(i.imm()) && i.rs() != 29;
+            let store = (matches!(i.op(), 0x28 | 0x29 | 0x2B) && is_wash_field(i.imm())
+                || i.op() == 0x28 && i.imm() == STAGE_BYTE_OFFSET)
+                && i.rs() != 29;
             // A handle parked from `$v0`, or a flag-word store (a kill).
             let handle = i.op() == 0x2B && i.rs() != 29 && (i.rt() == 2 || i.imm() == 0x10);
             if call || store || handle {
