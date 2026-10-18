@@ -606,7 +606,8 @@ impl BattleCamera {
             self.pose.pitch = nearest(self.pose.pitch, live.pitch);
             mask |= 1;
         }
-        if ang(target.yaw, end.yaw) <= ALIGN_ANGLE_TOLERANCE {
+        let yaw_exact = ang(target.yaw, end.yaw) <= ALIGN_ANGLE_TOLERANCE;
+        if yaw_exact {
             self.pose.yaw = nearest(self.pose.yaw, live.yaw);
             mask |= 2;
         } else if ang(target.yaw, end.yaw) <= ALIGN_YAW_EASE_BAND
@@ -630,6 +631,22 @@ impl BattleCamera {
                 mask |= 2;
             }
         }
+        // A yaw whose endpoint agrees to the unit has just taken retail's
+        // live value - retail's point in its ease. The focus endpoint is a
+        // midpoint of body pairs, which a replay lands within a few steps of
+        // and not on; left on the engine's own glide it would draw the
+        // focus at another point of the ease than the yaw. Over the same
+        // bodies (the yaw tier's focus band) retail's live focus still stood
+        // `live - end` short of its endpoint - how far its ease had come from
+        // a start no word records - so the engine's is put that far short of
+        // its own, and the channel reads the endpoints' difference
+        // (`player_steal_skeleton_pre`: yaw `3239` four passes into its ease
+        // onto `2358`, the case-7 focus `110` / `122` short of an endpoint
+        // the engine's lands `16` off, where the engine's own glide had
+        // closed to `20` short).
+        let same_framing = yaw_exact
+            && (target.focus[0] - end.focus[0]).abs() + (target.focus[2] - end.focus[2]).abs()
+                <= ALIGN_FOCUS_EASE_BAND;
         for k in 0..3 {
             if (target.tr[k] - end.tr[k]).abs() <= ALIGN_TR_TOLERANCE {
                 self.pose.tr[k] = live.tr[k];
@@ -637,6 +654,9 @@ impl BattleCamera {
             }
             if (target.focus[k] - end.focus[k]).abs() <= ALIGN_FOCUS_TOLERANCE {
                 self.pose.focus[k] = live.focus[k];
+                mask |= 32 << k;
+            } else if same_framing && self.is_gliding() {
+                self.pose.focus[k] = target.focus[k] + (live.focus[k] - end.focus[k]);
                 mask |= 32 << k;
             }
         }
