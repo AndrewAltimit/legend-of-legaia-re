@@ -175,17 +175,24 @@
    out of the picture's letterbox: it is never drawn over the picture. */
 .play-screen:fullscreen {
   display: flex; flex-direction: column; align-items: center; justify-content: center;
-  background: #05070c;
+  background: #000;
   --play-fs-cap: 0px;
+  /* a few pixels of black margin round the picture on every side */
+  --play-fs-pad: 4px;
 }
 .play-screen:fullscreen:has(> .play-mg-caption:not([hidden])) { --play-fs-cap: 4.4rem; }
-.play-screen:fullscreen::backdrop { background: #05070c; }
+.play-screen:fullscreen::backdrop { background: #000; }
 .play-viewport .play-screen:fullscreen > .play-canvas-wrap,
 .play-viewport .play-screen:fullscreen > .play-mg-caption {
   flex: none; margin: 0;
   /* the viewport-height width cap must not shrink fullscreen */
-  width: min(100vw, calc((100vh - var(--play-fs-cap)) * 4 / 3)); max-width: none;
+  width: min(calc(100vw - 2 * var(--play-fs-pad)),
+             calc((100vh - var(--play-fs-cap) - 2 * var(--play-fs-pad)) * 4 / 3));
+  max-width: none;
 }
+/* No focus border in fullscreen: the accent outline framed the picture. */
+.play-screen:fullscreen .play-canvas,
+.play-screen:fullscreen .play-canvas:focus { border-color: transparent; }
 /* The reserved height holds three unwrapped rows, which is every game's most
    on a landscape screen. A narrow portrait screen wraps them; it also has
    letterbox to spare under the picture, so the strip may grow there. */
