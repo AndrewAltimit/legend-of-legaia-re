@@ -203,6 +203,26 @@ fn a_painted_screen_emits_draws() {
     );
 }
 
+/// The engine asks the installer kernel which op-`0x49` rows are menu
+/// presses; `engine-field`, which sits below `engine-core` and cannot call it,
+/// keeps the answer as a constant for its MAN scanners. The two must agree on
+/// every byte the operand can hold.
+#[test]
+fn the_menu_press_rows_are_the_installer_kernels_answer() {
+    use legaia_engine_field::man_field_scripts::OP49_PARK_PRESERVING_SUB_OPS;
+    for k in 0..=u8::MAX {
+        assert_eq!(
+            op49_sub_op_is_menu_press(k),
+            OP49_PARK_PRESERVING_SUB_OPS.contains(&k),
+            "sub-op {k:#04x}"
+        );
+        // A menu press opens no submode screen, and nothing else is both.
+        if op49_sub_op_is_menu_press(k) {
+            assert_eq!(slot_for_op49_sub_op(k), None);
+        }
+    }
+}
+
 #[test]
 fn dedicated_sub_ops_keep_their_own_paths() {
     for s in OP49_DEDICATED_SUB_OPS {

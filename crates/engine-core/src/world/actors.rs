@@ -445,10 +445,11 @@ impl World {
     /// `0x801D056C`.
     ///
     /// Ported from the selector at `0x801D0334..0x801D03E0`, in the order
-    /// retail tests it: forced-slow wins outright (its arm `j`s past
-    /// everything else), otherwise run vs walk. The debug-turbo arm
-    /// ([`crate::world::config::FIELD_BASE_STEP_DEBUG_TURBO`]) is recorded but
-    /// never taken - see its doc comment for the three gates.
+    /// retail tests it: forced-slow wins over run (its arm `j`s from
+    /// `0x801D0350` to `0x801D03A4`, past the run test), otherwise run vs
+    /// walk; then the debug-turbo test at `0x801D03A8..0x801D03DC` runs on
+    /// every path and overwrites whatever was chosen
+    /// ([`crate::world::config::FIELD_BASE_STEP_DEBUG_TURBO`]).
     ///
     /// The forced-slow arm's byte `_DAT_8007B6A8` is the per-scene MAN flag
     /// [`legaia_engine_menus::party_state::PartyState::scene_save_allowed`] (`FUN_8003AEB0` copies
@@ -460,13 +461,62 @@ impl World {
     ///
     /// PORT: FUN_801d01b0 (base-step selector)
     pub fn field_base_step(&self) -> i32 {
-        if self.locomotion.forced_slow || self.party.scene_save_allowed {
-            return crate::world::config::FIELD_BASE_STEP_FORCED_SLOW;
+        let step = if self.locomotion.forced_slow || self.party.scene_save_allowed {
+            crate::world::config::FIELD_BASE_STEP_FORCED_SLOW
+        } else if self.field_run_active() {
+            crate::world::config::FIELD_BASE_STEP_RUN
+        } else {
+            crate::world::config::FIELD_BASE_STEP
+        };
+        if self.field_debug_turbo_held() {
+            return crate::world::config::FIELD_BASE_STEP_DEBUG_TURBO;
         }
-        if self.field_run_active() {
-            return crate::world::config::FIELD_BASE_STEP_RUN;
-        }
-        crate::world::config::FIELD_BASE_STEP
+        step
+    }
+
+    /// The debug-turbo gate at `0x801D03A8..0x801D03D4`: three `beq ... zero`
+    /// tests that must all fall through to reach `li s4,0x18`.
+    ///
+    /// ```text
+    /// 801d03a8  lw   v0,-0x4674(v0)   ; _DAT_8007B98C, the debug-mode word
+    /// 801d03b0  beq  v0,zero,0x801d03e0
+    /// 801d03b8  lw   v0,-0x4798(v0)   ; _DAT_8007B868, the dev word
+    /// 801d03c0  beq  v0,zero,0x801d03e0
+    /// 801d03c8  lw   v0,-0x47b0(v0)   ; _DAT_8007B850, the held pad
+    /// 801d03d0  andi v0,v0,0x80       ; packed 0x80 = Square
+    /// 801d03d4  beq  v0,zero,0x801d03e4
+    /// 801d03dc  li   s4,0x18
+    /// ```
+    ///
+    /// Each global reads the engine's mirror of it: the debug-mode word is
+    /// [`Self::debug_mode_word_set`], the dev word `_DAT_8007B868` is
+    /// [`crate::world::AudioState::dual_mode_gate`] (the one `World` field
+    /// every other port of that word reads), and the held pad is the input
+    /// word in retail's packed layout. Retail boots the dev word to zero and
+    /// only ever clears it, so on a retail disc the arm is unreachable even
+    /// with the debug-mode byte poked - and the port takes it exactly when
+    /// both mirrors are set, which no shipped host does.
+    pub(crate) fn field_debug_turbo_held(&self) -> bool {
+        const PACKED_SQUARE: u16 = 0x80;
+        self.debug_mode_word_set()
+            && self.audio.dual_mode_gate != 0
+            && legaia_engine_field::world_map_panel_host::packed_pad(self.input.pad())
+                & PACKED_SQUARE
+                != 0
+    }
+
+    /// The engine's mirror of the debug-mode word `_DAT_8007B98C`.
+    ///
+    /// The port carries that word on the overworld controller
+    /// ([`legaia_engine_field::world_map::WorldMapController::debug_enabled`],
+    /// the gate the top-view toggle and the panel chords read, armed only by a
+    /// scene picked by name). Outside a kingdom map there is no controller and
+    /// the word reads as retail's zero.
+    pub(crate) fn debug_mode_word_set(&self) -> bool {
+        self.world_map
+            .ctrl
+            .as_ref()
+            .is_some_and(|c| c.debug_enabled)
     }
 
     /// Recompute [`crate::world::FieldLocomotion::actor_moving`] by diffing every tracked

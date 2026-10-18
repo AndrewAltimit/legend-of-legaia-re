@@ -79,16 +79,34 @@
 //! two. This routine only writes them; which screen reads them is not traced
 //! here.
 //!
-//! # NOT WIRED
+//! # Wiring
 //!
-//! No engine caller for this module's kernels. The installer's load-bearing
-//! decision - default handler `7`, then the `0x801F33A4` sub-op table read - is
-//! ported a second time where the engine needs it, in `engine-core`'s
-//! `field_submode_screen` (the `-1`-row arm that turns an op-`0x49` park into a
-//! scripted menu press) and `World::field_menu_button_state` (which runs the
-//! state pick with handler `7`). The context-flag, pad-latch, roster-cell and
-//! cursor-home writes have no engine reader: the engine models neither the
-//! submode context `*_DAT_801C6EA4` nor the field-context flag word.
+//! The installer's load-bearing decision - default handler `7`, then the
+//! `0x801F33A4` sub-op table read - is [`installer_entry`], and the engine
+//! makes that decision by calling it: `engine-core`'s
+//! `field_submode_screen::installed_handler` runs it for every op-`0x49`
+//! sub-op, and its two readers are `slot_for_op49_sub_op` (which screen the
+//! field VM host's `op49_menu_request` opens) and `op49_sub_op_is_menu_press`
+//! (whether `World::scripted_menu_open_pending` turns the park into a scripted
+//! menu press, which both play hosts poll). [`STATE_PICK_HANDLER`] is also
+//! the handler `World::field_menu_button_state` hands the state pick.
+//!
+//! Only the handler is consumed. The other writes the same routine makes -
+//! the context flag bits, the pad latch, the masked byte pair, the current
+//! member, the submode-state rewind, the saved handler, the cursor home and
+//! the roster cells - land in state the engine does not model as retail
+//! does: the submode context `*_DAT_801C6EA4`, the pad latch
+//! `_DAT_1F800394` and the submode state `DAT_801F2734`. Each kernel that
+//! computes one of them says so on its own item.
+//!
+//! The player flag bit [`CTX_SUBMODE_BUSY`] is the one write with an engine
+//! reader in waiting: `0x80000` in the player's `+0x10` word is the engaged
+//! bit the engine carries as `move_state.flags & 0x0008_0000`, which the
+//! overworld walk gate and the field party readout's rearm term
+//! (`field_hud_rearm_held`) already read and the incense notice already
+//! raises. Raising it here as well would change both gates for as long as a
+//! submode screen is open, and the engine has no capture of that window to
+//! check the change against, so it waits for one.
 
 /// Field-context flag bit the enter path raises (`ctx[+0x10] |= 0x80000`) -
 /// the "a modal submode owns input" marker the close path clears.
@@ -127,6 +145,13 @@ pub struct EnterContext {
 
 /// Apply the enter path's context writes.
 ///
+/// PORT: FUN_801F1278 (context-flag, pad-latch and scroll writes)
+///
+/// NOT WIRED: nothing applies the result. The flag word is the player's
+/// `+0x10` (see the module's wiring note on [`CTX_SUBMODE_BUSY`]), and the
+/// pad latch `_DAT_1F800394` and the scroll halfword `ctx[+0x5C]` have no
+/// engine mirror; a model of the submode context is the prerequisite.
+///
 /// The `scroll` term is the one place the disassembly and a casual reading of
 /// the C part ways: the `+ 2` addend is not a literal, it is a **re-read of
 /// `_DAT_8007BDD8`** three instructions after that word was stored as `2`
@@ -145,6 +170,12 @@ pub fn enter_context(flags_before: u32, pad_before: u32, scroll_base: u16) -> En
 
 /// The `0x8E`/`0x8F` byte pair saved, forced to `0xFF`, and restored around the
 /// roster-seed call `FUN_801D9E1C`.
+///
+/// PORT: FUN_801F1278 (the `+0x8E` / `+0x8F` mask round trip)
+///
+/// NOT WIRED: the engine has no port of the refresh `FUN_801D9E1C` it
+/// brackets, so there is no call to mask the pair around; the round trip is
+/// net-transparent to every reader outside that call.
 ///
 /// Two independent bytes, each stashed in its own register and put back after
 /// the call - so whatever `FUN_801D9E1C` does with them, the enter path is
@@ -168,6 +199,12 @@ impl MaskedBytes {
 }
 
 /// Resolve the "current member" byte `DAT_8007B469` against the live roster.
+///
+/// PORT: FUN_801F1278 (the `_DAT_8007B469` re-resolve)
+///
+/// NOT WIRED: the engine keeps no current-member byte for the submode
+/// screens; the hub's per-entry code at the same address is published by
+/// its own painter path. A submode-context model is the prerequisite.
 ///
 /// Retail scans the roster ids at `DAT_80084598..` for a match; if the scan runs
 /// off the end (including the `count == 0` case, where the loop is skipped and
@@ -266,6 +303,12 @@ pub fn installer_entry(caller_handler: u16, roster: &[u8], remap: Option<i8>) ->
 }
 
 /// Should the submode state be rewound to `1` on this entry?
+///
+/// PORT: FUN_801F1278 (the `DAT_801F2734` rewind)
+///
+/// NOT WIRED: the engine does not model the submode state word
+/// `DAT_801F2734`; each submode screen opens fresh through
+/// `World::open_field_submode_screen`.
 ///
 /// Retail rewinds `DAT_801F2734` from `4` or `7` only - any other state is left
 /// alone, which is what lets a re-arm resume mid-flow.

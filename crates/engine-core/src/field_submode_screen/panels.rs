@@ -178,22 +178,58 @@ pub const COIN_PANEL_WINDOW: usize = hub::window::TWO_OPTION;
 /// keeps them out of the dispatcher.
 pub const OP49_DEDICATED_SUB_OPS: [u8; 4] = [0, 3, 5, 7];
 
-use legaia_engine_field::man_field_scripts::OP49_PARK_PRESERVING_SUB_OPS;
+use legaia_engine_field::field_subsystem_enter::{STATE_PICK_HANDLER, installer_entry};
+
+/// The handler id the subsystem actor's enter half `FUN_801F1278` leaves in
+/// `+0x50` for an op-`0x49` sub-op: [`STATE_PICK_HANDLER`] unless the sub-op's
+/// byte in [`hub::OP49_SUBOP_SLOTS`] (`0x801F33A4`) names a screen. `None`
+/// for a sub-op past the table, which the op's own range test refuses before
+/// it arms.
+///
+/// This is the one place the engine makes that decision, and it makes it by
+/// running the installer kernel itself
+/// ([`legaia_engine_field::field_subsystem_enter::installer_entry`]) rather
+/// than a second reading of the table. Only the handler is read: the caller's
+/// saved handler, the cursor home and the roster cells the same call computes
+/// land in the submode context `*_DAT_801C6EA4`, which the engine does not
+/// model.
+fn installed_handler(sub_op: u8) -> Option<u16> {
+    let &remap = hub::OP49_SUBOP_SLOTS.get(usize::from(sub_op))?;
+    Some(installer_entry(0, &[], Some(remap)).handler)
+}
 
 /// The handler slot an op-`0x49` sub-op opens.
 ///
-/// This is retail's own selection: the 14-byte table
-/// [`legaia_engine_field::submode_hub_actors::OP49_SUBOP_SLOTS`] at `0x801F33A4`,
-/// which the submode enter half indexes with the parked operand's first byte.
-/// The engine previously had no mapping and opened the close tick for every
-/// sub-op, so every screen but the three dedicated ones closed itself
-/// immediately instead of running - the script unparked, but nothing drew.
+/// This is retail's own selection: the enter half installs the state pick,
+/// then overwrites it with the 14-byte table
+/// [`legaia_engine_field::submode_hub_actors::OP49_SUBOP_SLOTS`] at
+/// `0x801F33A4` unless the row is `-1` ([`installed_handler`]). The engine
+/// previously had no mapping and opened the close tick for every sub-op, so
+/// every screen but the three dedicated ones closed itself immediately
+/// instead of running - the script unparked, but nothing drew.
+///
+/// `None` for the sub-ops the engine routes through dedicated host paths
+/// ([`OP49_DEDICATED_SUB_OPS`]) and for a row whose state pick stands - a
+/// scripted menu press ([`op49_sub_op_is_menu_press`]), which opens the
+/// pause menu instead of a submode screen.
 pub fn slot_for_op49_sub_op(sub_op: u8) -> Option<u16> {
-    if OP49_DEDICATED_SUB_OPS.contains(&sub_op) || OP49_PARK_PRESERVING_SUB_OPS.contains(&sub_op) {
+    if OP49_DEDICATED_SUB_OPS.contains(&sub_op) {
         return None;
     }
-    // Every `-1` row is in one of the two sets above, so the fallback only
-    // answers a sub-op past the table (`>= 0x0E`, which the op's own range
-    // test refuses before it arms): the close tick unparks it.
-    Some(hub::slot_for_sub_op(sub_op).unwrap_or(slot::CLOSE_TICK))
+    match installed_handler(sub_op) {
+        // Past the table: the close tick unparks it.
+        None => Some(slot::CLOSE_TICK),
+        Some(STATE_PICK_HANDLER) => None,
+        Some(handler) => Some(handler),
+    }
+}
+
+/// Whether an op-`0x49` sub-op is a **scripted menu-button press**: no
+/// dedicated host path, and the enter half leaves the state pick
+/// `FUN_801F1F4C` installed, which with a park live picks the pause-menu
+/// session. Retail's rows of that shape are sub-op `1` (a save point) and
+/// `0x0D`.
+pub fn op49_sub_op_is_menu_press(sub_op: u8) -> bool {
+    !OP49_DEDICATED_SUB_OPS.contains(&sub_op)
+        && installed_handler(sub_op) == Some(STATE_PICK_HANDLER)
 }

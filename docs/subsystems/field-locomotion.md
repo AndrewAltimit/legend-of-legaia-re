@@ -201,7 +201,11 @@ A reference scan needs the base-plus-displacement walk to see it: `0x800846DC` i
 
 **Engine port.** `World::field_base_step` (the selector) over `World::field_run_active` (the XOR), with the four base-step constants in `engine-core::world::config`. The option arrives as `World::locomotion.run_default` (hosts mirror `OptionsState::field_move`); the button as `World::locomotion.run_button_held`, latched inside `World::set_pad`. The latch mask `World::locomotion.run_button_mask` defaults to `FIELD_RUN_BUTTON_MASK_DEFAULT` = the retail pair (`FIELD_RUN_BUTTON_MASK_RETAIL`, `Cross | R1`) plus Square; Square is retail's debug-turbo bit `0x80`, kept as a convenience run key.
 
-A host wanting the retail set exactly assigns `FIELD_RUN_BUTTON_MASK_RETAIL`; `the_default_run_button_is_the_retail_pair` in `engine-core`'s locomotion tests pins the default. `_DAT_8007B6A8` is `World::party.scene_save_allowed`; `World::locomotion.forced_slow` forces the slow arm for tests and debug drivers. The turbo arm is recorded as a constant and never taken. Which key is "R1" is a host binding (`legaia-engine config set --binding W=R1`).
+A host wanting the retail set exactly assigns `FIELD_RUN_BUTTON_MASK_RETAIL`; `the_default_run_button_is_the_retail_pair` in `engine-core`'s locomotion tests pins the default. `_DAT_8007B6A8` is `World::party.scene_save_allowed`; `World::locomotion.forced_slow` forces the slow arm for tests and debug drivers.
+
+The turbo arm is `World::field_debug_turbo_held`, which reads the engine's mirror of each global: the debug-mode word `_DAT_8007B98C` is the overworld controller's `debug_enabled` (the same mirror the menu button's state pick reads; zero outside a kingdom map), the dev word `_DAT_8007B868` is `World::audio.dual_mode_gate`, and the pad bit is the packed held word. Retail boots `_DAT_8007B868` to zero and only ever clears it ([`world-map.md`](world-map.md)), so the turbo is unreachable on a retail disc even with the debug-mode byte poked, and no shipped host sets both mirrors; `debug_turbo_moves_the_player_on_the_frame_tick` pins the arm when they are set.
+
+Which key is "R1" is a host binding (`legaia-engine config set --binding W=R1`).
 
 ### The clip base and the settle tail
 

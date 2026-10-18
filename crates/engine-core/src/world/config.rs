@@ -66,7 +66,7 @@ pub const FIELD_RUN_BUTTON_MASK_RETAIL: u16 = legaia_engine_system::input::PadBu
 /// as an alternate.
 ///
 /// Square is not retail's - it is the *debug turbo* bit (`_DAT_8007B850 &
-/// 0x80`, the arm at `0x801D03DC` that the port records and never takes) and
+/// 0x80`, the arm at `0x801D03DC`, gated off by two debug words on retail) and
 /// it was for a while the port's only run binding, which is the divergence
 /// this default removes. It stays in the mask so a player who learned the
 /// port's binding keeps it; a host that wants the retail button set exactly
@@ -95,11 +95,11 @@ pub(crate) const FIELD_BASE_STEP_RUN: i32 = 0xc;
 pub(crate) const FIELD_BASE_STEP_FORCED_SLOW: i32 = 5;
 /// Debug turbo base step (retail `0x801D03DC`: `addiu $s4, $zero, 0x18`).
 ///
-/// NOT WIRED: gated in retail on three conditions - `_DAT_8007B98C != 0`,
-/// `_DAT_8007B868 != 0`, and held-pad bit `_DAT_8007B850 & 0x80` - and it
-/// overwrites whatever the run arm chose. The port has no equivalent of the
-/// first two globals, so the constant is recorded and the arm is not taken.
-#[allow(dead_code)]
+/// Taken when the debug-mode word `_DAT_8007B98C`, the dev word
+/// `_DAT_8007B868` and held-pad bit `_DAT_8007B850 & 0x80` (Square) are all
+/// set, and it overwrites whatever the forced-slow or run arm chose. The gate
+/// is [`crate::world::World::field_debug_turbo_held`]; on a retail disc the dev
+/// word is never non-zero, so neither retail nor a shipped host takes it.
 pub(crate) const FIELD_BASE_STEP_DEBUG_TURBO: i32 = 0x18;
 /// The frame step `DAT_1F800393` retail runs the kingdom world maps at: three
 /// vsyncs per game frame, measured off the state-poll `dt` rows of every

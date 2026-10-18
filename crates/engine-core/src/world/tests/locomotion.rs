@@ -667,6 +667,72 @@ fn forced_slow_cannot_be_run_out_of() {
     }
 }
 
+/// The debug turbo (`0x801D03A8..0x801D03DC`): all three gates or nothing,
+/// and when it fires it overwrites the forced-slow and run arms alike.
+#[test]
+fn debug_turbo_needs_both_debug_words_and_square() {
+    use legaia_engine_field::world_map::WorldMapController;
+
+    let square = input::PadButton::Square.mask();
+    let arm = |debug: bool, dev: i32, pad: u16| {
+        let mut world = World::new();
+        world.world_map.ctrl = Some(WorldMapController {
+            debug_enabled: debug,
+            ..WorldMapController::default()
+        });
+        world.audio.dual_mode_gate = dev;
+        world.set_pad(pad);
+        world
+    };
+
+    // Each gate alone off -> no turbo. Square is also a run alternate, so
+    // the step it falls back to is the run step.
+    assert_eq!(arm(false, 1, square).field_base_step(), 0xc);
+    assert_eq!(arm(true, 0, square).field_base_step(), 0xc);
+    assert_eq!(arm(true, 1, 0).field_base_step(), 8);
+    // Retail's dev word is the gate a retail disc never opens.
+    assert_eq!(arm(true, 0, square).field_base_step(), 0xc);
+
+    // All three -> 0x18, over walk, run and forced slow.
+    assert_eq!(arm(true, 1, square).field_base_step(), 0x18);
+    let mut world = arm(true, 1, square);
+    world.locomotion.forced_slow = true;
+    assert_eq!(
+        world.field_base_step(),
+        0x18,
+        "the turbo test runs after the forced-slow jump"
+    );
+    world.locomotion.run_default = true;
+    assert_eq!(world.field_base_step(), 0x18);
+}
+
+/// The turbo reaches the player through the frame tick: one field tick with
+/// Up + Square moves `0x18` units where the same press without the dev word
+/// moves the run step's `0xc`.
+#[test]
+fn debug_turbo_moves_the_player_on_the_frame_tick() {
+    use legaia_engine_field::world_map::WorldMapController;
+
+    let step = |dev: i32| {
+        let mut world = World::new();
+        world.mode = SceneMode::Field;
+        world.install_field_player(0);
+        world.actors[0].move_state.world_x = 200;
+        world.actors[0].move_state.world_z = 200;
+        // The debug-mode word's mirror lives on the overworld controller.
+        world.world_map.ctrl = Some(WorldMapController {
+            debug_enabled: true,
+            ..WorldMapController::default()
+        });
+        world.audio.dual_mode_gate = dev;
+        world.set_pad(input::PadButton::Up.mask() | input::PadButton::Square.mask());
+        let _ = world.tick();
+        world.actors[0].move_state.world_z - 200
+    };
+    assert_eq!(step(0), 0xc, "retail dev word clear: the run step");
+    assert_eq!(step(1), 0x18, "both debug words set: the turbo step");
+}
+
 #[test]
 fn set_pad_latches_the_run_button() {
     let mut world = World::new();
