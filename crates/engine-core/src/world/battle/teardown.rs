@@ -180,6 +180,14 @@ impl World {
             .level_up_lines
             .as_ref()?
             .get(usize::from(mask).checked_sub(1)?)?;
+        Some(self.expand_name_escapes(raw))
+    }
+
+    /// A dialog line as display text: printable ASCII as itself, each
+    /// `0xC1 k` name escape spliced with roster record `k`'s name (`0x63` =
+    /// the party leader), every other `0xC0..=0xCF` escape dropped with its
+    /// operand.
+    pub(in crate::world) fn expand_name_escapes(&self, raw: &[u8]) -> String {
         let mut out = String::new();
         let mut i = 0;
         while i < raw.len() {
@@ -210,7 +218,7 @@ impl World {
             }
             i += 1;
         }
-        Some(out)
+        out
     }
 
     /// The battle exit's party loop, run on every exit before the party's

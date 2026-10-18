@@ -371,7 +371,10 @@ mod tests {
                 );
             }
         }
-        assert_eq!(relocate_cba((482 << 6) | 9, 0) >> 6, super::super::BOSS_PAGE_CLUT_ROW);
+        assert_eq!(
+            relocate_cba((482 << 6) | 9, 0) >> 6,
+            super::super::BOSS_PAGE_CLUT_ROW
+        );
     }
 
     /// `relocate_tsb` adds `slot + 0x10`: column `5` lands on `5 + slot` at
@@ -398,7 +401,10 @@ mod tests {
         let boss = relocate_tsb(0x06, 0);
         assert_eq!(
             ((boss & 0xF) * 64, ((boss >> 4) & 1) * 256),
-            (super::super::BOSS_PAGE_RECT.0, super::super::BOSS_PAGE_RECT.1)
+            (
+                super::super::BOSS_PAGE_RECT.0,
+                super::super::BOSS_PAGE_RECT.1
+            )
         );
     }
 

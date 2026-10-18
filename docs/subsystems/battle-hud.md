@@ -1043,6 +1043,15 @@ the class-0 frame's 8 pixels, with the caption on the pen. Port:
 `BattleHudFrame::message_bar` draws `class0_frame_draws_at` on the bar's name
 pen; while it is up neither the bar nor the target plaque on that row draws.
 
+Glare (PROT 0940, body `0x801F69F8`) raises the same element with its own
+line: the module image's `0xC1 k` " has turned to stone." for the petrified
+party seat's character (`0x801F85E8` / `0x801F8600` / `0x801F8618`, picked
+on `0x8007BD10[seat]` at `0x801F70F0..0x801F7170`), or "Nothing happened."
+(`0x801F8630`) for a failed roll, a guarded seat or a monster seat, pointed
+into record `0x5B`'s content word `0x800774AC` before
+`FUN_801D8DE8(0x5B, 0)`. Port: `World::raise_glare_caption`, on the steal
+caption's seat (`zora_glare_petrify_post`).
+
 ### The battle-intro enemy-name banner
 
 The banner that names the enemies while a battle opens is **not** a placement

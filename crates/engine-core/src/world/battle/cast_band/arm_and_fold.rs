@@ -347,6 +347,12 @@ impl World {
                     .and_then(|_| self.monster_cast_def(pc.spell_id))
             });
         let Some(def) = def else {
+            // A status-only body still resolves its status: Glare's PROT
+            // 0940 body rolls Stone on its victim and raises its caption
+            // (`0x801F6F9C..0x801F719C`) with no damage site to seed a fold.
+            if pc.caster >= self.party.party_count {
+                self.apply_enemy_agl_status(pc.caster, pc.spell_id, &pc.targets);
+            }
             return;
         };
         let hit_fx_start = self.battle.hit_fx.len();
