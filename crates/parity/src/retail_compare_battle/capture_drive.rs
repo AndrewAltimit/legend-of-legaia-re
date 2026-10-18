@@ -95,9 +95,18 @@ impl RetailBattle {
             // `0x50..=0x5A`), the acting seat's clip and its target's reaction
             // run with it, and the seed already placed it where the
             // capture's stood.
+            //
+            // Not yet, though, on the seed's own passes: the seed `0x0C` and
+            // an Attack arm `0x14` whose body has not run (the yaw counter
+            // still on the seed's `0x200` rung, [`tween_passes_back`]) have
+            // staged no clip - `0x14` stages the approach - so both bodies
+            // still sway on the idle loops the replay reaches on its own
+            // clock (`super_queue_replace_*`).
             .filter(|&&(slot, ..)| {
+                let staged = !(self.action_state == 0x0C
+                    || self.action_state == 0x14 && self.walk_yaw_base == 0x200);
                 let in_flight =
-                    self.action_state != 0 && !(0x50..=0x5A).contains(&self.action_state);
+                    self.action_state != 0 && staged && !(0x50..=0x5A).contains(&self.action_state);
                 !in_flight || (slot != self.active_actor && slot != self.target_code)
             })
             .filter_map(|&(slot, clip, cursor)| {
