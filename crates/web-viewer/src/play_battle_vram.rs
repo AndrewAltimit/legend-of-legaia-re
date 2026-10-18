@@ -44,7 +44,6 @@
 
 use wasm_bindgen::prelude::*;
 
-use legaia_actor_formats::face_anim::FaceTracks;
 use legaia_engine_mode::mode::SceneMode;
 use legaia_engine_session::battle_vram::BattleFaceTables;
 
@@ -269,7 +268,7 @@ impl LegaiaRuntime {
         else {
             return Vec::new();
         };
-        let has_active = |t: &FaceTracks| {
+        let has_active = |t: &legaia_actor_formats::face_anim::FaceTracks| {
             t.eyes.iter().any(|r| r.end != 0) || t.mouth.iter().any(|r| r.end != 0)
         };
         let base = legaia_actor_formats::battle_char_assembly::ART_ANIM_ID_BASE as usize;
