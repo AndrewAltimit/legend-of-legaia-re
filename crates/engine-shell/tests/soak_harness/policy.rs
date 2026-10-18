@@ -79,6 +79,24 @@ pub(super) fn picker_open(s: &NativeSession) -> bool {
             .is_some_and(|p| p.menu_active())
 }
 
+/// Whether an open picker takes Up / Down and confirm this frame: its slide
+/// has come to rest (`OwnedDialogPanel::picker_takes_input`). A press while
+/// the box still slides in moves nothing, so a plan of Down taps spent then
+/// lands short of the row it was rolled for.
+pub(super) fn picker_ready(s: &NativeSession) -> bool {
+    let w = &s.host.world;
+    w.cutscene
+        .timeline
+        .iter()
+        .chain(w.field_vm.helper_contexts.iter())
+        .any(|c| c.dialog.as_ref().is_some_and(|d| d.picker_takes_input()))
+        || w.dialog
+            .inline
+            .as_ref()
+            .and_then(|d| d.panel.as_ref())
+            .is_some_and(|p| p.picker_takes_input())
+}
+
 /// The face button a field-VM context is polling the **held** pad for, when
 /// one sits on op `0x42` mode 1 with a face-button selector (`8` Circle,
 /// `9` Cross, `10` Square, `11` Triangle) or on the `4A` wait right ahead of
@@ -273,6 +291,15 @@ impl Policy {
                 // its last option ("Nothing in particular.") then reads as
                 // one that cannot be left.
                 if picker_open(s) && self.rng.chance(85) {
+                    // Wait out the slide: the plan's taps count only once
+                    // the cursor moves. Spent during the slide, they biased
+                    // every pick toward the first rows, and a quiz whose one
+                    // way on is its third answer (`cave01`'s "Seru and
+                    // human") or a talk whose way out is its last option
+                    // (`town01`'s Tetsu) read as starved.
+                    if !picker_ready(s) {
+                        return 0;
+                    }
                     let downs = *self.picker_downs.get_or_insert_with(|| self.rng.below(6));
                     let pad = self.tap(if downs == 0 {
                         b(PadButton::Cross)
