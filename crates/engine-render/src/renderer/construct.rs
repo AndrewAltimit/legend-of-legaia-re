@@ -276,6 +276,7 @@ impl Renderer {
             shadow_uniforms_bg: std::cell::RefCell::new(shadow_pass.uniforms_bg),
             shadow_uniforms_capacity: std::cell::Cell::new(shadow_pass.initial_capacity),
             screen_overlay_pipeline: overlay.pipeline,
+            screen_overlay_semi_opaque_pipeline: overlay.semi_opaque_pipeline,
             screen_overlay_blend_pipelines: overlay.blend_pipelines,
             screen_overlay_vbuf: std::cell::RefCell::new(overlay.vbuf),
             screen_overlay_ibuf: std::cell::RefCell::new(overlay.ibuf),

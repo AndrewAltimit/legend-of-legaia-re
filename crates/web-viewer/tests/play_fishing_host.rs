@@ -186,12 +186,19 @@ fn pad_word_and_tick_frame_drive_the_cast() {
         Some(casts + 1),
         "the landing increments the persistent cast counter"
     );
-    // The catch HUD is up once a cast is out, so its bars channel is live.
+    // The catch HUD is up once a cast is out. With the disc's sprite table
+    // decoded its gauge fills are screen primitives of the sprite pass (drawn
+    // over the frames, as retail orders them), so the JS `bars` fallback
+    // channel stays empty and the frame carries screen prims instead.
     let hud: serde_json::Value =
         serde_json::from_str(&rt.play_fishing_hud_json(960, 720)).expect("hud json");
     assert!(
-        !hud["bars"].as_array().expect("bars array").is_empty(),
-        "the catch HUD's bars must resolve while a line is out: {hud}"
+        hud["bars"].as_array().expect("bars array").is_empty(),
+        "the sprite pass owns the gauge fills: {hud}"
+    );
+    assert!(
+        rt.play_screen_prim_count() > 0,
+        "the catch HUD's sprites and fills compose as screen prims"
     );
     // Holding Cross reels the line in: the record shortens frame by frame.
     let record = state(&rt)["record"].as_i64().expect("record");

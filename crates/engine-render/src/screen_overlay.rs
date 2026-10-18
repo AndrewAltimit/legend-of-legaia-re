@@ -20,7 +20,8 @@
 //! buffer plus a list of [`DrawRun`](legaia_render_kernels::screen_prim::DrawRun)s (contiguous quads sharing a blend class).
 //! [`crate::Renderer`] uploads that geometry once per frame and issues one draw
 //! per run, selecting the opaque pipeline or the matching per-ABR blend
-//! pipeline. Textured quads sample the shared PSX VRAM texture with the same
+//! pipeline; a semi run is drawn twice, its STP-clear texels solid and then
+//! the rest blended, which is the PSX per-texel rule. Textured quads sample the shared PSX VRAM texture with the same
 //! 4/8/15-bpp + CLUT decode the 3D VRAM-mesh shader uses.
 //!
 //! # Two things about how this reaches a frame

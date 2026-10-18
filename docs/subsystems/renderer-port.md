@@ -235,9 +235,15 @@ walk - farthest bucket first, later-submitted-first within a bucket (the
 same convention as `psx_blend::sort_blend_list`). `build_geometry` emits a
 flat NDC vertex/index buffer plus a run list coalesced by blend class, which
 the renderer uploads once per frame and draws one indexed run at a time
-(opaque pipeline or the matching per-ABR blend pipeline). A semi-transparent
-prim is treated as fully blended (no per-texel STP split yet - faithful for
-the additive afterimage trail and flat quads; documented in the module).
+(opaque pipeline or the matching per-ABR blend pipeline). Semi-transparency
+is per texel, as on the GPU: a semi run draws twice, its textured prims'
+STP-clear texels solid through `fs_semi_opaque` and then the STP-set texels
+plus every pixel of its untextured prims through the blend pipeline. The play
+page's screen-prim pass (`u_stp_pass`) and the CPU twin
+`screen_prim_raster` apply the same rule. Blending every texel instead is
+visible: the fishing HUD draws an additive `m` glyph under its LINE plate,
+which retail's all-STP-clear palette hides and a whole-quad blend shows
+through the digits.
 
 The corner projection itself is ported in [`billboard`](../../crates/render-kernels/src/billboard.rs)
 (`FUN_800195a8`): `project_billboard` transforms a center point to view

@@ -293,6 +293,9 @@ pub struct Renderer {
     /// `POLY_FT4` textured quads + flat quads in NDC, ordering-table order,
     /// per-ABR semi-transparency. Opaque pipeline (replace).
     pub(super) screen_overlay_pipeline: wgpu::RenderPipeline,
+    /// The opaque half of a semi-transparent screen-overlay run: its textured
+    /// prims' STP-clear texels (`fs_semi_opaque`).
+    pub(super) screen_overlay_semi_opaque_pipeline: wgpu::RenderPipeline,
     /// Per-ABR-mode blend pipelines for the screen-overlay pass (mode 0..=3).
     pub(super) screen_overlay_blend_pipelines: [wgpu::RenderPipeline; 4],
     /// Per-frame screen-overlay vertex/index buffers, grown geometrically on

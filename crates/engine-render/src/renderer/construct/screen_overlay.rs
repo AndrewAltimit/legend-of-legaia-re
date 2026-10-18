@@ -6,6 +6,8 @@ use super::*;
 /// The overlay pipelines and their quad buffers.
 pub(super) struct ScreenOverlayParts {
     pub(super) pipeline: wgpu::RenderPipeline,
+    /// The opaque half of a semi-transparent run (`fs_semi_opaque`).
+    pub(super) semi_opaque_pipeline: wgpu::RenderPipeline,
     pub(super) blend_pipelines: [wgpu::RenderPipeline; 4],
     pub(super) vbuf: wgpu::Buffer,
     pub(super) ibuf: wgpu::Buffer,
@@ -76,41 +78,48 @@ pub(super) fn build_screen_overlay(
         step_mode: wgpu::VertexStepMode::Vertex,
         attributes: &screen_overlay_attributes,
     };
-    let screen_overlay_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-        label: Some("legaia screen overlay pipeline"),
-        layout: Some(&screen_overlay_pipeline_layout),
-        vertex: wgpu::VertexState {
-            module: &screen_overlay_shader,
-            entry_point: Some("vs_main"),
-            buffers: std::slice::from_ref(&screen_overlay_vertex_layout),
-            compilation_options: Default::default(),
-        },
-        fragment: Some(wgpu::FragmentState {
-            module: &screen_overlay_shader,
-            entry_point: Some("fs_opaque"),
-            targets: &[Some(wgpu::ColorTargetState {
-                format: view_format,
-                blend: Some(wgpu::BlendState::ALPHA_BLENDING),
-                write_mask: wgpu::ColorWrites::ALL,
-            })],
-            compilation_options: Default::default(),
-        }),
-        primitive: wgpu::PrimitiveState {
-            topology: wgpu::PrimitiveTopology::TriangleList,
-            cull_mode: None,
-            ..Default::default()
-        },
-        depth_stencil: Some(wgpu::DepthStencilState {
-            format: DEPTH_FORMAT,
-            depth_write_enabled: false,
-            depth_compare: wgpu::CompareFunction::GreaterEqual,
-            stencil: wgpu::StencilState::default(),
-            bias: wgpu::DepthBiasState::default(),
-        }),
-        multisample: wgpu::MultisampleState::default(),
-        multiview: None,
-        cache: None,
-    });
+    let opaque_pipeline = |label: &str, entry: &str| {
+        device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some(label),
+            layout: Some(&screen_overlay_pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &screen_overlay_shader,
+                entry_point: Some("vs_main"),
+                buffers: std::slice::from_ref(&screen_overlay_vertex_layout),
+                compilation_options: Default::default(),
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &screen_overlay_shader,
+                entry_point: Some(entry),
+                targets: &[Some(wgpu::ColorTargetState {
+                    format: view_format,
+                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+                compilation_options: Default::default(),
+            }),
+            primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::TriangleList,
+                cull_mode: None,
+                ..Default::default()
+            },
+            depth_stencil: Some(wgpu::DepthStencilState {
+                format: DEPTH_FORMAT,
+                depth_write_enabled: false,
+                depth_compare: wgpu::CompareFunction::GreaterEqual,
+                stencil: wgpu::StencilState::default(),
+                bias: wgpu::DepthBiasState::default(),
+            }),
+            multisample: wgpu::MultisampleState::default(),
+            multiview: None,
+            cache: None,
+        })
+    };
+    let screen_overlay_pipeline = opaque_pipeline("legaia screen overlay pipeline", "fs_opaque");
+    let screen_overlay_semi_opaque_pipeline = opaque_pipeline(
+        "legaia screen overlay semi opaque pipeline",
+        "fs_semi_opaque",
+    );
     let screen_overlay_blend_pipelines = blend::blend_pipelines(
         device,
         view_format,
@@ -136,6 +145,7 @@ pub(super) fn build_screen_overlay(
     });
     ScreenOverlayParts {
         pipeline: screen_overlay_pipeline,
+        semi_opaque_pipeline: screen_overlay_semi_opaque_pipeline,
         blend_pipelines: screen_overlay_blend_pipelines,
         vbuf: screen_overlay_vbuf,
         ibuf: screen_overlay_ibuf,

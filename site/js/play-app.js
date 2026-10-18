@@ -136,6 +136,12 @@ in float v_log_depth;
 out vec4 o_color;
 
 uniform vec3 u_log_depth;
+/* Which half of a semi-transparent run this draw is (PSX semi-transparency
+ * is per texel: inside an ABE prim only the STP-set texels blend, an
+ * STP-clear texel draws opaque; an untextured ABE prim blends every pixel).
+ * 0 = an opaque run, everything draws; 1 = the semi run's opaque half, only
+ * the textured prims' STP-clear texels; 2 = its blend half, the rest. */
+uniform int u_stp_pass;
 
 vec4 bgr555_to_rgba(uint c) {
   float r = float(c & 31u) / 31.0;
@@ -193,9 +199,12 @@ void main() {
   if ((v_flags & 1u) != 0u) {
     uint word = fetch_vram_word(v_uv, v_cba_tsb.x, v_cba_tsb.y);
     if (word == 0u) discard;
+    bool stp = (word & 0x8000u) != 0u;
+    if ((u_stp_pass == 1 && stp) || (u_stp_pass == 2 && !stp)) discard;
     vec4 texel = bgr555_to_rgba(word);
     o_color = vec4(psxTextureBlend(texel.rgb, v_color.rgb), v_color.a * texel.a);
   } else {
+    if (u_stp_pass == 1) discard;
     o_color = v_color;
   }
 }
@@ -241,6 +250,7 @@ void main() { o_color = texture(u_layer, v_uv); }
       this.program = compileScreenPrimProgram(gl);
       this.locVram = gl.getUniformLocation(this.program, 'u_vram');
       this.locLogDepth = gl.getUniformLocation(this.program, 'u_log_depth');
+      this.locStpPass = gl.getUniformLocation(this.program, 'u_stp_pass');
       this.vao = gl.createVertexArray();
       this.vbo = gl.createBuffer();
       this.ibo = gl.createBuffer();
@@ -324,10 +334,17 @@ void main() { o_color = texture(u_layer, v_uv); }
         if (!count) continue;
         if (code === 0) {
           if (blendOn) { gl.disable(gl.BLEND); blendOn = false; }
+          gl.uniform1i(this.locStpPass, 0);
         } else {
-          if (!blendOn) { gl.enable(gl.BLEND); blendOn = true; }
+          /* A semi run draws twice: its STP-clear texels solid, then the
+           * blend for the rest (the native renderer's draw_runs). */
+          if (blendOn) { gl.disable(gl.BLEND); blendOn = false; }
+          gl.uniform1i(this.locStpPass, 1);
+          gl.drawElements(gl.TRIANGLES, count, gl.UNSIGNED_INT, start * 4);
+          gl.enable(gl.BLEND); blendOn = true;
           /* One ABR table on this page, and it lives in webgl-tmd.js. */
           this.renderer._setSemiBlend((code - 1) & 3);
+          gl.uniform1i(this.locStpPass, 2);
         }
         gl.drawElements(gl.TRIANGLES, count, gl.UNSIGNED_INT, start * 4);
       }

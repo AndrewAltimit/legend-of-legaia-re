@@ -7,7 +7,10 @@
 /// a `/128` modulation factor for textured quads and a straight `/255`
 /// colour for flat quads. The opaque entry (`fs_opaque`) writes solid; the
 /// blend entries (`fs_blend` / `fs_blend_quarter`) feed the per-ABR
-/// fixed-function [`crate::psx_blend::blend_state`].
+/// fixed-function [`crate::psx_blend::blend_state`]. A semi-transparent run
+/// draws twice, as the VRAM-mesh path does: `fs_semi_opaque` writes its
+/// textured prims' STP-clear texels solid, then the blend entries take the
+/// STP-set texels and every pixel of its untextured prims.
 pub(crate) const SCREEN_OVERLAY_SHADER_SRC: &str = r#"
 @group(0) @binding(0) var t_vram: texture_2d<u32>;
 
@@ -124,17 +127,42 @@ fn fs_opaque(in: VsOut) -> @location(0) vec4<f32> {
     return overlay_color(in);
 }
 
+// The STP bit of a textured fragment's VRAM word. A semi-transparent PSX
+// prim blends only the texels whose STP bit is set; an STP-clear texel of the
+// same prim draws opaque. An untextured semi prim blends every pixel.
+fn texel_stp(in: VsOut) -> bool {
+    return (fetch_vram_word(in.uv, in.cba_tsb.x, in.cba_tsb.y) & 0x8000u) != 0u;
+}
+
+// The opaque half of a semi-transparent run (drawn through the opaque
+// pipeline, before the blend half): the STP-clear texels of its textured
+// prims. Untextured semi prims and STP-set texels belong to the blend half.
+@fragment
+fn fs_semi_opaque(in: VsOut) -> @location(0) vec4<f32> {
+    if (in.flags & 1u) == 0u || texel_stp(in) {
+        discard;
+    }
+    return overlay_color(in);
+}
+
 // Blend entries: emit the foreground F; the per-ABR fixed-function blend
 // state combines it with the framebuffer B. Mode 3 (`B + 0.25*F`) has no
-// fixed-function factor, so `fs_blend_quarter` pre-scales F by 0.25.
+// fixed-function factor, so `fs_blend_quarter` pre-scales F by 0.25. A
+// textured prim's STP-clear texels were drawn by `fs_semi_opaque`.
 @fragment
 fn fs_blend(in: VsOut) -> @location(0) vec4<f32> {
+    if (in.flags & 1u) != 0u && !texel_stp(in) {
+        discard;
+    }
     let c = overlay_color(in);
     return vec4<f32>(c.rgb, 1.0);
 }
 
 @fragment
 fn fs_blend_quarter(in: VsOut) -> @location(0) vec4<f32> {
+    if (in.flags & 1u) != 0u && !texel_stp(in) {
+        discard;
+    }
     let c = overlay_color(in);
     return vec4<f32>(c.rgb * 0.25, 1.0);
 }

@@ -77,6 +77,7 @@ pub(super) struct Harness {
     device: wgpu::Device,
     queue: wgpu::Queue,
     opaque: wgpu::RenderPipeline,
+    semi_opaque: wgpu::RenderPipeline,
     blend: [wgpu::RenderPipeline; 4],
     vram_bg: wgpu::BindGroup,
     color_tex: wgpu::Texture,
@@ -272,6 +273,7 @@ pub(super) fn build_harness_with(
         })
     };
     let opaque = mk("fs_opaque", Some(wgpu::BlendState::ALPHA_BLENDING));
+    let semi_opaque = mk("fs_semi_opaque", Some(wgpu::BlendState::ALPHA_BLENDING));
     let blend: [wgpu::RenderPipeline; 4] = std::array::from_fn(|m| {
         let entry = if crate::psx_blend::src_shader_scale(m as u8) == 1.0 {
             "fs_blend"
@@ -297,7 +299,7 @@ pub(super) fn build_harness_with(
         view_formats: &[],
     });
     let mut words = vec![0u16; 64 * 64];
-    words[5 * 64 + 5] = texel; // STP implied by non-zero
+    words[5 * 64 + 5] = texel;
     queue.write_texture(
         wgpu::TexelCopyTextureInfo {
             texture: &vram,
@@ -360,6 +362,7 @@ pub(super) fn build_harness_with(
         device,
         queue,
         opaque,
+        semi_opaque,
         blend,
         vram_bg,
         color_tex,
@@ -452,12 +455,19 @@ pub(super) fn render_frame_rgba(h: &Harness, prims: &[ScreenPrim], clear: [f64; 
         if let Some((vbuf, ibuf)) = &buffers {
             rp.set_vertex_buffer(0, vbuf.slice(..));
             rp.set_index_buffer(ibuf.slice(..), wgpu::IndexFormat::Uint32);
+            // The renderer's `draw_runs`: a semi run draws its STP-clear
+            // texels solid, then blends the rest.
             for run in &geo.runs {
+                let range = run.index_start..run.index_start + run.index_count;
                 match run.class {
                     BlendClass::Opaque => rp.set_pipeline(&h.opaque),
-                    BlendClass::Semi(m) => rp.set_pipeline(&h.blend[(m & 3) as usize]),
+                    BlendClass::Semi(m) => {
+                        rp.set_pipeline(&h.semi_opaque);
+                        rp.draw_indexed(range.clone(), 0, 0..1);
+                        rp.set_pipeline(&h.blend[(m & 3) as usize]);
+                    }
                 }
-                rp.draw_indexed(run.index_start..run.index_start + run.index_count, 0, 0..1);
+                rp.draw_indexed(range, 0, 0..1);
             }
         }
     }
@@ -583,4 +593,43 @@ fn screen_overlay_pipeline_draws_on_gpu() {
         blended[0] > bg[0] + 40,
         "additive blend should brighten red: bg={bg:?} blended={blended:?}"
     );
+}
+
+#[test]
+fn a_semi_textured_quad_blends_only_its_stp_texels_on_gpu() {
+    // PSX semi-transparency is per texel: inside an ABE prim an STP-clear
+    // texel draws opaque and only an STP-set one blends. The fishing HUD's
+    // stray `m` glyph under the LINE plate is what showed the single-pass
+    // overlay blending every texel.
+    let quad = ScreenPrim::Textured(ScreenQuad {
+        xy: [
+            (0, 0),
+            (TARGET as i16, 0),
+            (0, TARGET as i16),
+            (TARGET as i16, TARGET as i16),
+        ],
+        uv: [(5, 5); 4],
+        clut: 0,
+        tpage: (2 << 7) | (1 << 5), // 15bpp, ABR 1 (additive)
+        color: 0x0080_8080,
+        gouraud: None,
+        semi_transparent: true,
+        ot_index: 10,
+        depth: None,
+    });
+    let blue = [0.0, 0.0, 1.0, 1.0];
+    for (texel, blends) in [(0x001Fu16, false), (0x801F, true)] {
+        let Some((device, queue)) = headless_device() else {
+            eprintln!("no GPU adapter; skipping");
+            return;
+        };
+        let h = build_harness_with(device, queue, wgpu::TextureFormat::Rgba8Unorm, texel);
+        let px = render_center_pixel(&h, std::slice::from_ref(&quad), blue);
+        assert!(px[0] > 200, "red texel drawn ({texel:#06x}): {px:?}");
+        if blends {
+            assert!(px[2] > 200, "STP-set texel adds over the blue: {px:?}");
+        } else {
+            assert!(px[2] < 40, "STP-clear texel draws opaque: {px:?}");
+        }
+    }
 }

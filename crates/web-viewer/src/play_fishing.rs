@@ -33,16 +33,14 @@
 //! window's `window/hud.rs` calls, with the same blind sprite atlas, because
 //! the fishing sprite page is the one undecoded asset in the chain.
 //!
-//! # The gauge fills: one geometry, two carriers
+//! # The gauge fills
 //!
-//! With a blind atlas and no solid texel, `fishing_hud_draws_for` drops every
-//! glyph and every bar fill. The gauges are the functional part of the tension
-//! tug-of-war, so both play hosts fill them from the same resolved frames
-//! ([`legaia_engine_ui::HudDraw::resolve_bar`], the `FUN_801d1870` /
-//! `FUN_801d1a90` geometry): the native window hands the shared consumer its
-//! font's solid texel as `solid_src`, this host emits the frames as a third
-//! `bars` channel for the page to fill as rects. Text comes from the shared
-//! consumer on both.
+//! With the sprite table decoded, the fills are screen primitives of the
+//! shared sprite pass ([`legaia_engine_ui::fishing::sprite::fishing_hud_sprite_prims`],
+//! at the `FUN_801d1870` / `FUN_801d1a90` fill rect and drawn over the frames
+//! as retail's ordering table does), on this host and the native window
+//! alike. Only without the table does this host emit the resolved frames as a
+//! `bars` channel for the page to fill as rects.
 
 use crate::runtime::LegaiaRuntime;
 use legaia_engine_fishing::fishing::{PondPhase, PondSession, TENSION_MAX};
@@ -401,7 +399,7 @@ impl LegaiaRuntime {
     /// native window calls. With the sprite table decoded the plates, digits
     /// and gauge caps are screen primitives ([`Self::fishing_hud_sprite_prims`])
     /// and this carries the captions and counts. `bars` carries the resolved
-    /// gauge frames the blind atlas cannot fill; see the module note.
+    /// gauge frames only when there is no sprite pass; see the module note.
     pub fn play_fishing_hud_json(&mut self, surface_w: u32, surface_h: u32) -> String {
         if !self.play_fishing_active() {
             return CLOSED.to_string();
@@ -410,22 +408,26 @@ impl LegaiaRuntime {
             return CLOSED.to_string();
         }
         let items = self.fishing_hud_items();
-        let bars = bar_json(&items);
         let Some(assets) = self.menu_assets.as_ref() else {
             return CLOSED.to_string();
         };
         let font = assets.font_ref();
         // The retail persistent + catch rows through the shared consumer.
-        // With the sprite table decoded, the plates, digits and gauge caps
-        // are screen primitives (`fishing_hud_sprite_prims`) and this keeps
-        // the captions and counts. The fills differ in carrier only: the
-        // native window stretches its font's solid texel through
-        // `solid_src`, this page leaves it `None` and fills the same resolved
-        // frames from `bars` in JS.
+        // With the sprite table decoded, the plates, digits, gauge caps and
+        // gauge fills are screen primitives (`fishing_hud_sprite_prims`) and
+        // this keeps the captions and counts. Without it the fills fall back
+        // to `bars`, filled in JS.
         let sprites_drawn = self
             .scene_host
             .host()
             .is_some_and(|h| h.world.minigames.fishing_sprites.is_some());
+        // The sprite pass draws the fills itself, over the frames, so `bars`
+        // is only the fallback for a page without the sprite table.
+        let bars = if sprites_drawn {
+            Vec::new()
+        } else {
+            bar_json(&items)
+        };
         let atlas = FishingHudAtlas {
             solid_src: None,
             glyph_src: &|_| None,

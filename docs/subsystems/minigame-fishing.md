@@ -878,7 +878,15 @@ The session seeds from the persistent words the world keeps between sessions (`W
 
 **HUD consumer.** `fishing_hud_draws_for` (in [`engine-ui::fishing::hud`](../../crates/engine-ui/src/fishing/hud.rs)) renders the `HudDraw` list - the fishing sibling of `battle_hud_draws_for`. It draws `Number` and `Count` items through the ported digit field as font-atlas text, resolves `Caption` items against host-supplied strings (read from the disc by `legaia_minigame_formats::fishing_captions`), resolves `Glyph` ids and gauge fills through a host-supplied atlas lookup, and routes `Bar` / `PowerBar` through `bar_frame` / `power_bar_frame`. An id the host cannot place is dropped.
 
-The sprite half - the HI SCORE / POINT plates, gauge labels and caps, banners, score digits - goes through `engine-ui::fishing::sprite`. The native window and the browser play page draw the quads in their screen-primitive pass; the minigames page rasterises them over its pond VRAM (`screen_prim_raster::rasterize_rgba_overlay`) onto its HUD canvas. With the table decoded, `FishingHudAtlas::sprites_drawn` leaves the text consumer the captions, the lure count and the gauge fills; the native window fills the gauges from its font's solid texel and the play page from the `bars` payload.
+The sprite half - the HI SCORE / POINT plates, gauge labels and caps, banners, score digits - goes through `engine-ui::fishing::sprite`. The native window and the browser play page draw the quads in their screen-primitive pass; the minigames page rasterises them over its pond VRAM (`screen_prim_raster::rasterize_rgba_overlay`) onto its HUD canvas.
+
+With the table decoded, `FishingHudAtlas::sprites_drawn` leaves the text consumer only the captions and the lure count.
+The gauge fills are sprite-pass primitives too, at the rect the bar helpers write (`BarFrame::fill_rect`: `x + 8`, `y + 5..y + 11` horizontally; `x + 5..x + 11` up from the bottom cap vertically). Both helpers `AddPrim` the fill ahead of the frame glyphs into the same bucket, so the fill draws over the frame.
+Retail textures it from a resident system page (`tpage 0x1F`, CLUT `0x7F84`) the pond VRAM does not hold, so the port fills it flat in the frame's fill colour. The text consumer's `solid_src` fill and the play page's `bars` payload remain only for a host without the table.
+
+**The HUD palette is STP-clear.** Every HUD record is a semi-transparent (`ABR 1`) `POLY_GT4`, but the `(16, 503)` and `(0, 503)` palettes carry no STP bit, so on the GPU every texel draws opaque.
+The catch HUD depends on it: `FUN_801d1580` also draws the lone `m` glyph (record `0x10`) at `(0x114, 0x30)`, straddling the units digit and the LINE plate's baked-in point. Retail's ordering walk draws it first and the plate's opaque band over it, so it never shows.
+A renderer that blends every texel of a semi prim puts a stray `m` through the readout (`22m4 m` for `22.4 m`). The screen-prim passes split a semi prim per texel for that reason ([renderer-port](renderer-port.md)).
 
 ## Open
 
