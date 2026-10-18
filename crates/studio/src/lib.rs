@@ -11,6 +11,7 @@
 pub mod actors;
 pub mod analyze;
 pub mod app;
+pub mod arts;
 pub mod export;
 pub mod extract_job;
 pub mod library;
@@ -178,7 +179,7 @@ impl Studio {
         std::thread::spawn(move || {
             let index = lib.entries[pos].index;
             let bytes = lib.entry_bytes(pos).unwrap_or_default();
-            let _ = tx.send(analyze::analyze(pos, index, bytes));
+            let _ = tx.send(analyze::analyze(pos, index, bytes, lib.text_codec()));
         });
         self.analyzing = Some((pos, rx));
     }
@@ -194,7 +195,12 @@ impl Studio {
             .get(pos)
             .ok_or_else(|| anyhow::anyhow!("no entry {pos}"))?
             .index;
-        let a = Arc::new(analyze::analyze(pos, index, lib.entry_bytes(pos)?));
+        let a = Arc::new(analyze::analyze(
+            pos,
+            index,
+            lib.entry_bytes(pos)?,
+            lib.text_codec(),
+        ));
         self.selected = Some(pos);
         self.analysis = Some(Arc::clone(&a));
         self.analyzing = None;

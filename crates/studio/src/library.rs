@@ -46,6 +46,9 @@ pub struct Library {
     pub iso_files: Vec<IsoFile>,
     /// `"NTSC-U (SCUS_942.54)"`-style line from `SYSTEM.CNF`, when present.
     pub region: Option<String>,
+    /// The boot executable's name (`SCUS_942.54`, `SCES_019.44`, ...), from
+    /// `SYSTEM.CNF` or, for a folder, the executable sitting in it.
+    pub exe: Option<String>,
     /// The archive, held as the engine's own index so scene builds
     /// (`legaia_engine_scene`) read from the same single copy of `PROT.DAT`.
     pub index: Arc<ProtIndex>,
@@ -80,6 +83,27 @@ pub fn validate(path: &Path) -> Result<Source> {
         );
     }
     Ok(Source::Disc(bin))
+}
+
+/// The USA boot executable.
+pub const USA_EXE: &str = "SCUS_942.54";
+
+/// The boot executable in an extracted folder (`SCUS_942.54`,
+/// `SCES_019.44`, ...): the file named like a PlayStation product code.
+fn folder_executable(dir: &Path) -> Option<String> {
+    let mut names: Vec<String> = std::fs::read_dir(dir)
+        .ok()?
+        .filter_map(|e| e.ok()?.file_name().into_string().ok())
+        .filter(|n| {
+            let b = n.as_bytes();
+            b.len() == 11
+                && b[4] == b'_'
+                && b[8] == b'.'
+                && b[..4].iter().all(u8::is_ascii_uppercase)
+        })
+        .collect();
+    names.sort();
+    names.into_iter().next()
 }
 
 fn read_iso_file(disc: &mut RawDisc, f: &IsoFile) -> Result<Vec<u8>> {
@@ -119,8 +143,11 @@ impl Library {
         let cdname = cdname_text
             .as_deref()
             .and_then(|t| cdname::parse_str(t).ok());
-        let region = legaia_extract::disc_region(bin)
+        let detected = legaia_extract::disc_region(bin);
+        let region = detected
+            .as_ref()
             .map(|d| format!("{} ({})", d.region.name(), d.executable));
+        let exe = detected.map(|d| d.executable);
         let index = ProtIndex::from_bytes(prot_bytes, cdname_text.as_deref())
             .context("parsing the PROT.DAT TOC")?;
         Ok(Self {
@@ -129,6 +156,7 @@ impl Library {
             cdname,
             iso_files,
             region,
+            exe,
             index: Arc::new(index),
         })
     }
@@ -142,6 +170,7 @@ impl Library {
             cdname,
             iso_files: Vec::new(),
             region: None,
+            exe: folder_executable(dir),
             index: Arc::new(index),
         })
     }
@@ -159,18 +188,43 @@ impl Library {
     /// The boot executable (`SCUS_942.54` on the USA disc): its static
     /// tables carry the item and equipment names.
     pub fn executable(&self) -> Result<Vec<u8>> {
-        const NAME: &str = "SCUS_942.54";
+        let name = self.exe.as_deref().unwrap_or(USA_EXE);
         match &self.source {
             Source::Extracted(dir) => {
-                std::fs::read(dir.join(NAME)).with_context(|| format!("reading {NAME}"))
+                std::fs::read(dir.join(name)).with_context(|| format!("reading {name}"))
             }
             Source::Disc(_) => {
                 let f = self
                     .iso_files
                     .iter()
-                    .find(|f| f.path.eq_ignore_ascii_case(NAME))
-                    .with_context(|| format!("no {NAME} on the disc"))?;
+                    .find(|f| f.path.eq_ignore_ascii_case(name))
+                    .with_context(|| format!("no {name} on the disc"))?;
                 self.iso_file_bytes(f)
+            }
+        }
+    }
+
+    /// `true` for the USA build (or an unknown one), the build whose
+    /// executable the static-table readers address.
+    pub fn is_usa(&self) -> bool {
+        self.exe.as_deref().is_none_or(|e| e == USA_EXE)
+    }
+
+    /// The dialog text codec of this build, chosen the way
+    /// `legaia_translate::build::detect` chooses it: Shift-JIS on a Japanese
+    /// executable, Latin otherwise, with the high accented cells read as
+    /// letters on every Latin build except the USA one.
+    pub fn text_codec(&self) -> legaia_translate::build::TextCodec {
+        use legaia_translate::build::TextCodec;
+        let exe = self.exe.as_deref().unwrap_or(USA_EXE);
+        if ["SCPS", "SLPS", "SCPM", "PAPX"]
+            .iter()
+            .any(|p| exe.starts_with(p))
+        {
+            TextCodec::ShiftJis
+        } else {
+            TextCodec::Latin {
+                allow_high: exe != USA_EXE,
             }
         }
     }

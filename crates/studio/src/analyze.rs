@@ -7,6 +7,7 @@ use std::sync::Arc;
 
 use legaia_container_formats::{StreamChunk, parse_streaming, tim_scan, tmd_scan};
 use legaia_disc_audit::categorize::{self, Class};
+use legaia_translate::build::TextCodec;
 
 /// Where a sub-asset's bytes live: straight in the entry, or inside one of
 /// its LZS-decompressed sections.
@@ -72,7 +73,8 @@ pub struct MesRef {
     pub offset: usize,
     pub len: usize,
     pub format: &'static str,
-    /// One rendered line per message (Compact layout only).
+    /// One rendered text per message (Compact layout) or per text-bearing
+    /// record (Records layout).
     pub messages: Vec<String>,
     pub records: usize,
 }
@@ -138,8 +140,10 @@ impl Analysis {
     }
 }
 
-/// Analyse one entry's bytes.
-pub fn analyze(pos: usize, index: u32, bytes: Vec<u8>) -> Analysis {
+/// Analyse one entry's bytes. `codec` is the disc build's dialog codec
+/// ([`crate::Library::text_codec`]).
+pub fn analyze(pos: usize, index: u32, bytes: Vec<u8>, codec: TextCodec) -> Analysis {
+    let high = matches!(codec, TextCodec::Latin { allow_high: true });
     let buf = bytes.as_slice();
     let class = categorize::classify(buf).class;
 
@@ -246,7 +250,8 @@ pub fn analyze(pos: usize, index: u32, bytes: Vec<u8>) -> Analysis {
     let mut mes = Vec::new();
     // The Records layout has no magic, so a whole-entry match is trusted only
     // for the Compact layout; a MES-typed chunk is trusted either way.
-    if let Some(m) = mes_at(buf, None, 0).filter(|m| m.format == legaia_mes::Format::Compact.name())
+    if let Some(m) =
+        mes_at(buf, None, 0, codec).filter(|m| m.format == legaia_mes::Format::Compact.name())
     {
         mes.push(m);
     }
@@ -256,15 +261,14 @@ pub fn analyze(pos: usize, index: u32, bytes: Vec<u8>) -> Analysis {
         }
         let start = c.header_offset + 4;
         let end = (start + c.size as usize).min(buf.len());
-        if let Some(m) = mes_at(&buf[start..end], Some(i), start) {
+        if let Some(m) = mes_at(&buf[start..end], Some(i), start, codec) {
             mes.push(m);
         }
     }
 
     // Field dialog lives in the scene MAN script, not in MES blobs (scene
     // bundles carry an empty MES stub); read it the way `legaia-patcher
-    // translate export` does.
-    let codec = legaia_translate::build::TextCodec::Latin { allow_high: false };
+    // translate export` does, with the build's own codec.
     let mut dialog: Vec<DialogLine> = Vec::new();
     if let Some(man) = legaia_translate::export::SceneManText::locate(buf) {
         dialog.extend(
@@ -273,7 +277,7 @@ pub fn analyze(pos: usize, index: u32, bytes: Vec<u8>) -> Analysis {
                 .map(|l| DialogLine {
                     from_man: true,
                     offset: l.off,
-                    text: l.source,
+                    text: render_cells(&l.source, high),
                 }),
         );
     }
@@ -283,7 +287,7 @@ pub fn analyze(pos: usize, index: u32, bytes: Vec<u8>) -> Analysis {
             .map(|l| DialogLine {
                 from_man: false,
                 offset: l.off,
-                text: l.source,
+                text: render_cells(&l.source, high),
             }),
     );
 
@@ -318,11 +322,22 @@ pub fn analyze(pos: usize, index: u32, bytes: Vec<u8>) -> Analysis {
 }
 
 /// A MES blob at the start of `buf`, with its messages rendered.
-fn mes_at(buf: &[u8], chunk: Option<usize>, offset: usize) -> Option<MesRef> {
+///
+/// A Compact blob is read message by message through its offset table
+/// (`legaia_mes::interp`). A Records blob has no per-message table (its
+/// record structure is unknown, `docs/formats/mes.md`), so its text is the
+/// `0x1F`-led dialog segments inside each record, found by the translation
+/// scanner (`legaia_translate::segments::scan_ext`) and shown one message per
+/// record.
+fn mes_at(buf: &[u8], chunk: Option<usize>, offset: usize, codec: TextCodec) -> Option<MesRef> {
     let blob = legaia_mes::parse(buf).ok()?;
-    let messages = legaia_mes::interp::extract_all_messages(buf)
-        .map(|all| all.iter().map(|ev| render_message(ev)).collect())
-        .unwrap_or_default();
+    let high = matches!(codec, TextCodec::Latin { allow_high: true });
+    let messages = match &blob.records {
+        Some(records) => records_text(buf, records, high),
+        None => legaia_mes::interp::extract_all_messages(buf)
+            .map(|all| all.iter().map(|ev| render_message(ev, high)).collect())
+            .unwrap_or_default(),
+    };
     Some(MesRef {
         chunk,
         offset,
@@ -333,17 +348,83 @@ fn mes_at(buf: &[u8], chunk: Option<usize>, offset: usize) -> Option<MesRef> {
     })
 }
 
+/// The text of a Records-layout blob: per record (marker to next marker),
+/// its dialog segments in the language-pack markup, joined by line breaks.
+/// Records without text are skipped.
+fn records_text(buf: &[u8], records: &[legaia_mes::RecordBoundary], high: bool) -> Vec<String> {
+    let mut out = Vec::new();
+    for (i, r) in records.iter().enumerate() {
+        let end = records.get(i + 1).map_or(buf.len(), |n| n.offset);
+        let Some(rec) = buf.get(r.offset..end) else {
+            continue;
+        };
+        let lines: Vec<String> = legaia_translate::segments::scan_ext(rec, high)
+            .into_iter()
+            .map(|s| {
+                let text = legaia_translate::markup::decode(&rec[s.text_off..s.text_off + s.len]);
+                render_cells(&text, high).replace('|', "\n")
+            })
+            .collect();
+        if !lines.is_empty() {
+            out.push(format!("[record @0x{:X}]\n{}", r.offset, lines.join("\n")));
+        }
+    }
+    out
+}
+
+/// Replace the `{xx}` escapes of the accented Latin cells with the letters
+/// they draw (`{82}` -> `é`), using the one cell table every translation
+/// tool reads (`legaia_font::latin`). Only on a build whose font draws those
+/// cells as letters (`high`); the USA font keeps other symbols there, so
+/// its escapes stay as they are. Two-byte control tokens (`{c1:00}`) are
+/// untouched.
+pub fn render_cells(markup: &str, high: bool) -> String {
+    if !high || !markup.contains('{') {
+        return markup.to_string();
+    }
+    let chars: Vec<char> = markup.chars().collect();
+    let mut out = String::with_capacity(markup.len());
+    let mut i = 0;
+    while i < chars.len() {
+        if chars[i] == '{'
+            && let [h1, h2, '}', ..] = &chars[i + 1..]
+            && let (Some(a), Some(b)) = (h1.to_digit(16), h2.to_digit(16))
+            && let Some(ch) = cell_char(((a << 4) | b) as u8)
+        {
+            out.push(ch);
+            i += 4;
+            continue;
+        }
+        out.push(chars[i]);
+        i += 1;
+    }
+    out
+}
+
+/// The letter an accented Latin cell draws, if the layout names one.
+fn cell_char(byte: u8) -> Option<char> {
+    if byte < 0x80 || legaia_translate::markup::is_two_byte_op(byte) {
+        return None;
+    }
+    legaia_font::latin::cell_for_byte(byte).and_then(|c| c.ch)
+}
+
 /// Render one message's events as readable text: `0x20..=0x7E` glyph cells
 /// are ASCII (the dialog font's layout, `docs/formats/dialog-font.md`),
-/// `|` is the in-game line break, and everything else is a bracketed tag.
-pub fn render_message(events: &[legaia_mes::interp::MesEvent]) -> String {
+/// `|` is the in-game line break, the accented Latin cells are their letters
+/// on a build that draws them (`high`), and everything else is a bracketed
+/// tag.
+pub fn render_message(events: &[legaia_mes::interp::MesEvent], high: bool) -> String {
     use legaia_mes::interp::{MesEvent, SubstituteKind};
     let mut out = String::new();
     for ev in events {
         match ev {
             MesEvent::Glyph(b'|') => out.push('\n'),
             MesEvent::Glyph(g @ 0x20..=0x7E) => out.push(*g as char),
-            MesEvent::Glyph(g) => out.push_str(&format!("{{{g:02x}}}")),
+            MesEvent::Glyph(g) => match cell_char(*g).filter(|_| high) {
+                Some(ch) => out.push(ch),
+                None => out.push_str(&format!("{{{g:02x}}}")),
+            },
             MesEvent::WideGlyph(op, arg) => out.push_str(&format!("{{{op:02x}:{arg:02x}}}")),
             MesEvent::Substitute { kind, arg } => {
                 let tag = match kind {
@@ -363,4 +444,39 @@ pub fn render_message(events: &[legaia_mes::interp::MesEvent]) -> String {
         }
     }
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn accent_cells_render_only_on_a_build_that_draws_them() {
+        let m = "r{82}colte {c1:00}|f{88}te";
+        assert_eq!(render_cells(m, true), "récolte {c1:00}|fête");
+        assert_eq!(render_cells(m, false), m);
+        // A control token's operand is never mistaken for a cell.
+        assert_eq!(render_cells("{cf:82}", true), "{cf:82}");
+    }
+
+    #[test]
+    fn records_blob_text_comes_from_its_segments() {
+        let mut blob = Vec::new();
+        for text in [
+            &b"Hello there, friend."[..],
+            b"The second r\x82cord is here.",
+        ] {
+            blob.extend_from_slice(&[0x44, 0x78, 0, 0]);
+            blob.push(0x1F);
+            blob.extend_from_slice(text);
+            blob.push(0x00);
+        }
+        blob.extend_from_slice(&[0x44, 0x78, 0x44, 0x78, 0x44, 0x78]);
+        let codec = TextCodec::Latin { allow_high: true };
+        let m = mes_at(&blob, Some(0), 0, codec).expect("records blob");
+        assert_eq!(m.format, "records");
+        assert_eq!(m.messages.len(), 2, "{:?}", m.messages);
+        assert!(m.messages[0].ends_with("Hello there, friend."));
+        assert!(m.messages[1].ends_with("The second récord is here."));
+    }
 }

@@ -66,19 +66,60 @@ impl Actor {
 #[derive(Debug, Clone)]
 pub struct MonsterRow {
     pub id: u16,
+    /// The name as the battle font draws it ([`display_name`]).
     pub name: String,
+    /// The element badge the name plaque wears, by name (`Fire`, ...).
+    pub badge: Option<&'static str>,
     pub hp: u16,
+}
+
+/// The element badges of the name plaque, in escape-letter order (`^A` ..
+/// `^H`, `docs/subsystems/battle-actor-rendering.md`).
+pub const BADGE_NAMES: [&str; 8] = [
+    "Fire", "Thunder", "Wind", "Water", "Earth", "Light", "Dark", "Evil",
+];
+
+/// A monster name as the game draws it. The archive names are ASCII bytes
+/// read through the dialog font, whose cells do not all draw their ASCII
+/// character: cell `0x24` (`$`) draws the level mark ([`level_mark`]), so
+/// the variant suffix `Gilium $3` reads `Gilium Lv3`, and cell `0x2A` (`*`)
+/// draws a multiplication sign. The leading `^X` element escape is already
+/// split off into the record's badge by the archive reader.
+pub fn display_name(raw: &str, level_mark: &str) -> String {
+    let mut out = String::with_capacity(raw.len() + 2);
+    for c in raw.chars() {
+        match c {
+            '$' => out.push_str(level_mark),
+            '*' => out.push('\u{00D7}'),
+            c => out.push(c),
+        }
+    }
+    out
+}
+
+/// What font cell `0x24` draws on build `exe`: `Lv` on the USA, German and
+/// Italian pages, `Nv` (niveau) on the French one - the one cell the three
+/// PAL font pages differ in (`docs/formats/dialog-font.md`).
+pub fn level_mark(exe: Option<&str>) -> &'static str {
+    match exe {
+        Some("SCES_019.44") => "Nv",
+        _ => "Lv",
+    }
 }
 
 /// Every populated monster record, by archive id.
 pub fn monster_rows(lib: &Library) -> Result<Vec<MonsterRow>> {
     let entry = entry(lib, MONSTER_ARCHIVE_ENTRY)?;
+    let mark = level_mark(lib.exe.as_deref());
     Ok(monster_archive::records(&entry)?
         .into_iter()
         .filter(|r| !r.name.trim().is_empty())
         .map(|r| MonsterRow {
             id: r.id,
-            name: r.name,
+            name: display_name(&r.name, mark),
+            badge: r
+                .plaque_badge
+                .and_then(|b| BADGE_NAMES.get(b as usize).copied()),
             hp: r.hp,
         })
         .collect())
@@ -89,7 +130,7 @@ pub fn monster(lib: &Library, id: u16) -> Result<Actor> {
     let entry = entry(lib, MONSTER_ARCHIVE_ENTRY)?;
     let mesh = monster_archive::mesh(&entry, id)?.ok_or_else(|| anyhow!("slot {id} is empty"))?;
     let name = monster_archive::record(&entry, id)?
-        .map(|r| r.name)
+        .map(|r| display_name(&r.name, level_mark(lib.exe.as_deref())))
         .filter(|n| !n.trim().is_empty())
         .unwrap_or_else(|| format!("monster {id}"));
     let mut vram = legaia_tim::Vram::new();
@@ -135,7 +176,9 @@ pub struct CharacterCatalog {
 /// The four party members' section catalogs, with item names from the boot
 /// executable when it can be read.
 pub fn character_catalogs(lib: &Library) -> Result<Vec<CharacterCatalog>> {
-    let scus = lib.executable().ok();
+    // The table readers address the USA executable; another build keeps
+    // the numeric labels.
+    let scus = lib.is_usa().then(|| lib.executable().ok()).flatten();
     let names = scus.as_deref().and_then(ItemNameTable::from_scus);
     let stats = scus.as_deref().and_then(EquipStatTable::from_scus);
     let mut out = Vec::new();
@@ -171,23 +214,59 @@ pub fn character(lib: &Library, cslot: usize, equipped: [u8; bca::SECTION_COUNT]
         bail!("no party slot {cslot}");
     }
     let raw = entry(lib, loadout::PLAYER_FILE_BASE + cslot as u32)?;
-    let c = loadout::build(&raw, cslot, equipped, false, &[]).map_err(|e| anyhow!(e))?;
+    let (arts, arts_note) = character_arts(lib, &raw, cslot);
+    let c = loadout::build(&raw, cslot, equipped, false, &arts).map_err(|e| anyhow!(e))?;
     let model = Model::from_mesh(c.mesh, c.object_ids, None).context("assembled mesh is empty")?;
     let clips = c
         .clips
         .iter()
-        .filter_map(|k| Clip::from_anim(k.label.clone(), &k.anim))
+        .filter_map(|k| Clip::from_anim(clip_label(k), &k.anim))
         .collect();
+    let mut notes = c.notes;
+    notes.extend(arts_note);
     let mut actor = Actor {
         label: loadout::CHARACTER_LABELS[cslot].to_string(),
         model,
         vram: c.vram,
         clips,
-        notes: c.notes,
+        notes,
     };
     actor.pose(0, 0);
     actor.model.refit();
     Ok(actor)
+}
+
+/// The clip list label: the action slot's role, the swing direction, or the
+/// art's curated name with its kind, cost and input.
+fn clip_label(k: &loadout::EquippedClip) -> String {
+    match (&k.art, k.kind) {
+        (Some(a), _) => format!(
+            "Art: {} ({}, {} AP, {})",
+            k.label,
+            a.kind,
+            a.ap,
+            crate::arts::arrows(&a.directions)
+        ),
+        (None, loadout::ClipKind::Swing) => format!("Swing: {}", k.label),
+        (None, _) => k.label.clone(),
+    }
+}
+
+/// Party member `cslot`'s Tactical Arts clips ([`crate::arts`]), or none
+/// plus a note saying why.
+fn character_arts(
+    lib: &Library,
+    player: &[u8],
+    cslot: usize,
+) -> (Vec<loadout::ArtClip>, Option<String>) {
+    let readef = match entry(lib, crate::arts::READEF_ENTRY) {
+        Ok(b) => b,
+        Err(e) => return (Vec::new(), Some(format!("Tactical Arts: {e:#}"))),
+    };
+    match crate::arts::art_clips(player, &readef, cslot) {
+        Ok(a) => (a, None),
+        Err(e) => (Vec::new(), Some(format!("Tactical Arts: {e}"))),
+    }
 }
 
 fn entry(lib: &Library, index: u32) -> Result<Vec<u8>> {
@@ -213,13 +292,17 @@ pub fn character_glb(
 ) -> Result<Vec<u8>> {
     use legaia_actor_formats::character_gltf::{CharacterClip, build_character_glb};
     let raw = entry(lib, loadout::PLAYER_FILE_BASE + cslot as u32)?;
-    let c = loadout::build(&raw, cslot, equipped, false, &[]).map_err(|e| anyhow!(e))?;
+    let (arts, _) = character_arts(lib, &raw, cslot);
+    let c = loadout::build(&raw, cslot, equipped, false, &arts).map_err(|e| anyhow!(e))?;
     let clips: Vec<CharacterClip<'_>> = c
         .clips
         .iter()
         .filter(|k| k.anim.frame_count > 0)
         .map(|k| CharacterClip {
-            name: k.label.clone(),
+            name: match k.kind {
+                loadout::ClipKind::Art => format!("art_{}", k.label),
+                _ => k.label.clone(),
+            },
             fps: k.anim.rate.max(1) as f32 * 7.5,
             anim: &k.anim,
         })
@@ -235,4 +318,19 @@ pub fn character_label(cslot: usize) -> String {
         .get(cslot)
         .map(|s| s.to_ascii_lowercase())
         .unwrap_or_else(|| format!("party{cslot}"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn names_read_the_way_the_font_draws_them() {
+        let usa = level_mark(Some("SCUS_942.54"));
+        assert_eq!(display_name("Gilium $3", usa), "Gilium Lv3");
+        let fr = level_mark(Some("SCES_019.44"));
+        assert_eq!(display_name("Gimard $2", fr), "Gimard Nv2");
+        assert_eq!(display_name("Killer Bee * 2", usa), "Killer Bee \u{d7} 2");
+        assert_eq!(display_name("Gola Gola", usa), "Gola Gola");
+    }
 }

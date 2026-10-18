@@ -113,10 +113,17 @@ impl App {
                                 for r in rows.iter().filter(|r| {
                                     f.is_empty()
                                         || r.name.to_ascii_lowercase().contains(&f)
+                                        || r.badge.is_some_and(|b| b.eq_ignore_ascii_case(&f))
                                         || r.id.to_string() == f
                                 }) {
                                     let sel = st.pick == Some(Pick::Monster(r.id));
-                                    let text = format!("{:3}  {:<20} HP {}", r.id, r.name, r.hp);
+                                    let text = format!(
+                                        "{:3}  {:<16} {:<7} HP {}",
+                                        r.id,
+                                        r.name,
+                                        r.badge.unwrap_or(""),
+                                        r.hp
+                                    );
                                     if ui
                                         .selectable_label(sel, RichText::new(text).monospace())
                                         .clicked()

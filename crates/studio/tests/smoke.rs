@@ -168,6 +168,14 @@ fn real_disc_battle_actors_and_scene_textures() {
     // Monsters: named rows, a textured, posed mesh with clips.
     let rows = legaia_studio::actors::monster_rows(&lib).expect("monster rows");
     assert!(rows.len() > 100, "monster archive rows: {}", rows.len());
+    // Names read as the font draws them: the `$N` variant suffix is the
+    // level mark, and the element escape is a badge, not text.
+    assert!(rows.iter().any(|r| r.name.ends_with(" Lv2")));
+    assert!(
+        rows.iter()
+            .all(|r| !r.name.contains('$') && !r.name.contains('^'))
+    );
+    assert!(rows.iter().any(|r| r.badge == Some("Fire")));
     let m = legaia_studio::actors::monster(&lib, rows[0].id).expect("first monster");
     assert!(!m.clips.is_empty(), "{} has clips", m.label);
     let img = raster::render(
@@ -192,6 +200,15 @@ fn real_disc_battle_actors_and_scene_textures() {
         assert_eq!(c.sections.len(), 5, "{}: five equipment sections", c.name);
         let a = legaia_studio::actors::character(&lib, c.cslot, [0; 5]).expect("assemble");
         assert!(!a.clips.is_empty(), "{}: clip bank", c.name);
+        // Vahn, Noa and Gala carry their Tactical Arts as named clips.
+        let arts = a
+            .clips
+            .iter()
+            .filter(|k| k.label.starts_with("Art: "))
+            .count();
+        if c.cslot < 3 {
+            assert!(arts >= 15, "{}: {arts} art clips", c.name);
+        }
         let img = raster::render(
             &a.model,
             &a.vram,
@@ -211,6 +228,14 @@ fn real_disc_battle_actors_and_scene_textures() {
     assert!(a.tims.is_empty() && !a.tmds.is_empty());
     let sv = legaia_studio::scene_vram::build(&lib, 4, a.class).expect("scene vram");
     assert!(sv.tims > 0, "scene {} uploaded TIMs", sv.scene);
+    // The play host's two layers: the field-character atlas and the
+    // effect-texture pool.
+    assert_eq!(sv.layers.len(), 2, "{:?}", sv.layers);
+    assert!(
+        sv.layers.iter().all(|l| !l.contains("skipped")),
+        "{:?}",
+        sv.layers
+    );
     let model = Model::from_tmd(a.tmd_bytes(&a.tmds[0])).unwrap();
     let own = raster::render(
         &model,

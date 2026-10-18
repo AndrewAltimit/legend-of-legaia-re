@@ -936,17 +936,22 @@ impl App {
             )
             .on_hover_text(
                 "The VRAM the engine builds for this entry's CDNAME scene: every TIM of the block, \
-                 the shared init_data / player_data blocks and the system-UI bundle",
+                 the shared init_data / player_data blocks, the system-UI bundle, and the \
+                 field-character atlas and effect-texture pool the play host adds",
             );
             match (&scene, &status) {
                 (Some((_, v)), _) => {
                     ui.label(
                         RichText::new(format!(
-                            "{:?} load: {} TIMs ({} shared)",
-                            v.kind, v.tims, v.shared_tims
+                            "{:?} load: {} TIMs ({} shared) + {} host layers",
+                            v.kind,
+                            v.tims,
+                            v.shared_tims,
+                            v.layers.len()
                         ))
                         .weak(),
-                    );
+                    )
+                    .on_hover_text(v.layers.join("\n"));
                 }
                 (None, Some(e)) if mv.source == TexSource::Scene => {
                     ui.spinner();
@@ -1110,78 +1115,93 @@ impl App {
             ui.label("No dialog text or MES blobs in this entry.");
             return;
         }
-        egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
-            if !a.dialog.is_empty() {
-                ui.horizontal(|ui| {
-                    ui.label(
-                        RichText::new(format!("{} dialog lines", a.dialog.len())).strong(),
-                    );
-                    ui.label(
-                        RichText::new("language-pack markup: | = line break, {c1:00} = a name")
-                            .weak(),
-                    );
-                    if ui.small_button("Save text...").clicked() {
-                        let name = format!("{}_dialog.txt", lib.stem(a.index));
-                        if let Some(out) = self.export_target(&name, "txt") {
-                            let body: String = a
-                                .dialog
-                                .iter()
-                                .map(|l| {
-                                    let space = if l.from_man { "man" } else { "raw" };
-                                    format!("{space}:0x{:X}\t{}\n", l.offset, l.text)
-                                })
-                                .collect();
-                            let res = export::bytes(body.as_bytes(), &out);
-                            self.report("text", res, &out);
+        egui::ScrollArea::vertical()
+            .auto_shrink([false, false])
+            .show(ui, |ui| {
+                if !a.dialog.is_empty() {
+                    ui.horizontal(|ui| {
+                        ui.label(
+                            RichText::new(format!("{} dialog lines", a.dialog.len())).strong(),
+                        );
+                        ui.label(
+                            RichText::new("language-pack markup: | = line break, {c1:00} = a name")
+                                .weak(),
+                        );
+                        if ui.small_button("Save text...").clicked() {
+                            let name = format!("{}_dialog.txt", lib.stem(a.index));
+                            if let Some(out) = self.export_target(&name, "txt") {
+                                let body: String = a
+                                    .dialog
+                                    .iter()
+                                    .map(|l| {
+                                        let space = if l.from_man { "man" } else { "raw" };
+                                        format!("{space}:0x{:X}\t{}\n", l.offset, l.text)
+                                    })
+                                    .collect();
+                                let res = export::bytes(body.as_bytes(), &out);
+                                self.report("text", res, &out);
+                            }
                         }
-                    }
-                });
-                egui::Grid::new("dialog").striped(true).num_columns(2).show(ui, |ui| {
-                    for l in &a.dialog {
-                        let space = if l.from_man { "man" } else { "raw" };
-                        ui.monospace(format!("{space}:0x{:05X}", l.offset));
-                        ui.label(l.text.replace('|', "\n"));
-                        ui.end_row();
-                    }
-                });
-                ui.separator();
-            }
-            for (k, m) in a.mes.iter().enumerate() {
-                let place = match m.chunk {
-                    Some(c) => format!("chunk {c}"),
-                    None => "whole entry".into(),
-                };
-                ui.horizontal(|ui| {
-                    ui.label(RichText::new(format!("MES {k}: {} layout, {place}, 0x{:X}", m.format, m.offset)).strong());
-                    if ui.small_button("Save text...").clicked() {
-                        let name = format!("{}_mes{k}.txt", lib.stem(a.index));
-                        if let Some(out) = self.export_target(&name, "txt") {
-                            let body: String = m
-                                .messages
-                                .iter()
-                                .enumerate()
-                                .map(|(i, s)| format!("[{i}]\n{s}\n\n"))
-                                .collect();
-                            let res = export::bytes(body.as_bytes(), &out);
-                            self.report("text", res, &out);
-                        }
-                    }
-                });
-                if m.messages.is_empty() {
-                    ui.label(format!(
-                        "{} record boundaries; per-message text is decoded for the Compact layout only.",
-                        m.records
-                    ));
-                }
-                for (i, s) in m.messages.iter().enumerate() {
-                    ui.horizontal_wrapped(|ui| {
-                        ui.monospace(format!("{i:3}"));
-                        ui.label(RichText::new(s).monospace());
                     });
+                    egui::Grid::new("dialog")
+                        .striped(true)
+                        .num_columns(2)
+                        .show(ui, |ui| {
+                            for l in &a.dialog {
+                                let space = if l.from_man { "man" } else { "raw" };
+                                ui.monospace(format!("{space}:0x{:05X}", l.offset));
+                                ui.label(l.text.replace('|', "\n"));
+                                ui.end_row();
+                            }
+                        });
+                    ui.separator();
                 }
-                ui.separator();
-            }
-        });
+                for (k, m) in a.mes.iter().enumerate() {
+                    let place = match m.chunk {
+                        Some(c) => format!("chunk {c}"),
+                        None => "whole entry".into(),
+                    };
+                    ui.horizontal(|ui| {
+                        ui.label(
+                            RichText::new(format!(
+                                "MES {k}: {} layout, {place}, 0x{:X}",
+                                m.format, m.offset
+                            ))
+                            .strong(),
+                        );
+                        if ui.small_button("Save text...").clicked() {
+                            let name = format!("{}_mes{k}.txt", lib.stem(a.index));
+                            if let Some(out) = self.export_target(&name, "txt") {
+                                let body: String = m
+                                    .messages
+                                    .iter()
+                                    .enumerate()
+                                    .map(|(i, s)| format!("[{i}]\n{s}\n\n"))
+                                    .collect();
+                                let res = export::bytes(body.as_bytes(), &out);
+                                self.report("text", res, &out);
+                            }
+                        }
+                    });
+                    if m.messages.is_empty() {
+                        ui.label(if m.records > 0 {
+                            format!(
+                                "{} records, none carrying a 0x1F-led text segment.",
+                                m.records
+                            )
+                        } else {
+                            "No messages decode from this blob.".to_string()
+                        });
+                    }
+                    for (i, s) in m.messages.iter().enumerate() {
+                        ui.horizontal_wrapped(|ui| {
+                            ui.monospace(format!("{i:3}"));
+                            ui.label(RichText::new(s).monospace());
+                        });
+                    }
+                    ui.separator();
+                }
+            });
     }
 
     fn extract_panel(&mut self, ui: &mut egui::Ui) {
