@@ -14,7 +14,30 @@ use legaia_studio::Studio;
 use legaia_studio::app::{App, Automation};
 use legaia_studio::settings::Settings;
 
+const HELP: &str = "\
+legaia-studio - browse, preview and extract the assets on your Legend of Legaia disc
+
+Usage: legaia-studio [DISC.bin | DISC.cue | EXTRACTED_FOLDER]
+
+Starts the desktop app. The optional path is opened at start; otherwise the
+last disc or folder is reopened. No game data is included: the app reads only
+the disc image you choose.
+";
+
 fn main() -> eframe::Result {
+    // The two flags every binary in the release answers. On Windows this is
+    // a GUI-subsystem program, so they print only when a console is attached.
+    match std::env::args().nth(1).as_deref() {
+        Some("--version" | "-V") => {
+            println!("legaia-studio {}", env!("CARGO_PKG_VERSION"));
+            return Ok(());
+        }
+        Some("--help" | "-h") => {
+            print!("{HELP}");
+            return Ok(());
+        }
+        _ => {}
+    }
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
     let initial = std::env::args_os()
         .nth(1)

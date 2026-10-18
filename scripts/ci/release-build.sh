@@ -20,7 +20,7 @@
 # directory so it never explodes over the user's cwd. Inside: the binaries,
 # both licenses, a generated README-PLAY.txt (how to start the game) and
 # README.txt (every tool), and on macOS a "Legend of Legaia.app" wrapper
-# around legaia-engine.
+# around legaia-engine plus a "Legaia Studio.app" around legaia-studio.
 #
 # Runs on Linux (the self-hosted runner) and on macOS (a GitHub-hosted
 # runner, for universal-apple-darwin). Kept to bash 3.2 + BSD userland on
@@ -58,7 +58,7 @@ CLI_BINS=(
     gamedata-tool legaia-extract legaia-patcher lzs-decode mdec mdt
     mednafen-state mes prot-extract save-tool seq tim tmd vab xa
 )
-GUI_BINS=(legaia-engine asset-viewer)
+GUI_BINS=(legaia-engine asset-viewer legaia-studio)
 
 # Oldest glibc the cross-built x86_64 Linux binaries must run against.
 # 2.28 == Debian 10 / RHEL 8 / Ubuntu 18.10 and newer.
@@ -194,8 +194,9 @@ done
 # the ordinary terminal contract), so a double-click on it opens a console
 # window. The double-click entry is the GUI-subsystem stub legaia-launch,
 # shipped under the name a player looks for; it starts legaia-engine.exe with
-# no console. Assert the subsystem from the PE header (2 = Windows GUI, 3 =
-# console) so a build change cannot quietly bring the console back.
+# no console. legaia-studio.exe has no command-line contract, so it is a GUI
+# program itself. Assert the subsystems from the PE header (2 = Windows GUI,
+# 3 = console) so a build change cannot quietly bring a console back.
 if [[ "$TARGET" == *-windows-* ]]; then
     mv "$STAGE/legaia-launch.exe" "$STAGE/Legend of Legaia.exe"
     pe_subsystem() {
@@ -211,12 +212,13 @@ PY
     if command -v python3 >/dev/null 2>&1; then
         gui="$(pe_subsystem "$STAGE/Legend of Legaia.exe")"
         cli="$(pe_subsystem "$STAGE/legaia-engine.exe")"
-        if [[ "$gui" != 2 || "$cli" != 3 ]]; then
-            printf '[release-build] ERROR: PE subsystems wrong: launcher=%s (want 2), engine=%s (want 3)\n' \
-                "$gui" "$cli" >&2
+        studio="$(pe_subsystem "$STAGE/legaia-studio.exe")"
+        if [[ "$gui" != 2 || "$cli" != 3 || "$studio" != 2 ]]; then
+            printf '[release-build] ERROR: PE subsystems wrong: launcher=%s (want 2), engine=%s (want 3), studio=%s (want 2)\n' \
+                "$gui" "$cli" "$studio" >&2
             exit 1
         fi
-        log "PE subsystems hold: Legend of Legaia.exe = GUI, legaia-engine.exe = console"
+        log "PE subsystems hold: Legend of Legaia.exe + legaia-studio.exe = GUI, legaia-engine.exe = console"
     fi
 fi
 
@@ -242,31 +244,36 @@ fi
 HOST_TRIPLE="$(rustc -vV | awk '/^host: /{print $2}')"
 if [[ "$TARGET" == "$HOST_TRIPLE" || "$BUILD_MODE" == "universal" ]]; then
     log "smoke: $("$STAGE/legaia-engine${BIN_EXT}" --version)"
+    log "smoke: $("$STAGE/legaia-studio${BIN_EXT}" --version)"
 fi
 
-# macOS: a minimal .app around legaia-engine, so Finder users double-click
-# an app rather than a terminal binary. Started without arguments, the
-# engine runs its launcher (asks for the disc once, then boots the game).
-if [[ "$TARGET" == *-apple-darwin ]]; then
-    APP="$STAGE/Legend of Legaia.app"
-    mkdir -p "$APP/Contents/MacOS"
-    cp "$STAGE/legaia-engine" "$APP/Contents/MacOS/legaia-engine"
+# macOS: a minimal .app around each GUI program, so Finder users double-click
+# an app rather than a terminal binary. Started without arguments, the engine
+# runs its launcher (asks for the disc once, then boots the game) and
+# legaia-studio opens its browser window.
+#
+#   make_app <bundle name> <executable> <bundle id suffix>
+make_app() {
+    local name="$1" exe="$2" id="$3"
+    local app="$STAGE/${name}.app"
+    mkdir -p "$app/Contents/MacOS"
+    cp "$STAGE/$exe" "$app/Contents/MacOS/$exe"
     # CFBundleVersion must be dot-separated integers; a prerelease tag's
     # suffix (0.2.0-rc1) stays in the display string only.
-    BUNDLE_VERSION="${VERSION%%-*}"
-    cat > "$APP/Contents/Info.plist" <<PLIST
+    local bundle_version="${VERSION%%-*}"
+    cat > "$app/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
     <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
-    <key>CFBundleName</key><string>Legend of Legaia</string>
-    <key>CFBundleDisplayName</key><string>Legend of Legaia</string>
-    <key>CFBundleIdentifier</key><string>io.github.andrewaltimit.legaia-engine</string>
-    <key>CFBundleExecutable</key><string>legaia-engine</string>
+    <key>CFBundleName</key><string>${name}</string>
+    <key>CFBundleDisplayName</key><string>${name}</string>
+    <key>CFBundleIdentifier</key><string>io.github.andrewaltimit.${id}</string>
+    <key>CFBundleExecutable</key><string>${exe}</string>
     <key>CFBundlePackageType</key><string>APPL</string>
     <key>CFBundleShortVersionString</key><string>${VERSION}</string>
-    <key>CFBundleVersion</key><string>${BUNDLE_VERSION}</string>
+    <key>CFBundleVersion</key><string>${bundle_version}</string>
     <key>LSMinimumSystemVersion</key><string>${MACOSX_DEPLOYMENT_TARGET}</string>
     <key>NSHighResolutionCapable</key><true/>
 </dict>
@@ -275,12 +282,17 @@ PLIST
     # Ad-hoc signature: no Apple identity, but a consistent bundle seal, which
     # arm64 macOS requires before it will run the app at all.
     if command -v plutil >/dev/null 2>&1; then
-        plutil -lint "$APP/Contents/Info.plist"
+        plutil -lint "$app/Contents/Info.plist"
     fi
     if command -v codesign >/dev/null 2>&1; then
-        codesign --force --deep --sign - "$APP"
-        codesign --verify --deep --strict "$APP"
+        codesign --force --deep --sign - "$app"
+        codesign --verify --deep --strict "$app"
     fi
+}
+
+if [[ "$TARGET" == *-apple-darwin ]]; then
+    make_app "Legend of Legaia" legaia-engine legaia-engine
+    make_app "Legaia Studio" legaia-studio legaia-studio
 fi
 
 cp LICENSE "$STAGE/LICENSE"
@@ -326,6 +338,22 @@ cp LICENSE-MIT "$STAGE/LICENSE-MIT"
     printf 'command line: legaia-engine play-window --help\n\n'
     printf 'Guide: https://github.com/%s/blob/main/docs/guides/playing-and-viewing.md\n' \
         "${GITHUB_REPOSITORY:-AndrewAltimit/legend-of-legaia-re}"
+    printf '\nTO BROWSE AND EXTRACT THE GAME'"'"'S ASSETS\n\n'
+    case "$TARGET" in
+        *-windows-*)
+            printf '    Double-click legaia-studio.exe.\n\n' ;;
+        *-apple-darwin)
+            printf '    Double-click "Legaia Studio.app" (or run ./legaia-studio); the\n'
+            printf '    first-open steps above apply to it too.\n\n' ;;
+        *)
+            printf '    Run ./legaia-studio (or double-click it in your file manager).\n\n' ;;
+    esac
+    printf 'Legaia Studio opens the same disc image and lets you browse every\n'
+    printf 'archive entry, preview textures, 3D models, sound banks, music and\n'
+    printf 'dialog text, export them (PNG, OBJ / glTF, WAV), or unpack the whole\n'
+    printf 'disc into a folder of your choice. Guide:\n'
+    printf 'https://github.com/%s/blob/main/docs/guides/extracting-assets.md\n' \
+        "${GITHUB_REPOSITORY:-AndrewAltimit/legend-of-legaia-re}"
     printf '\nThe other binaries in this folder are modding and reverse-engineering\n'
     printf 'tools; README.txt lists them.\n'
 } > "$STAGE/README-PLAY.txt"
@@ -339,8 +367,8 @@ cp LICENSE-MIT "$STAGE/LICENSE-MIT"
     printf 'They ship NO game data. Every tool here reads a disc image that\n'
     printf 'you supply yourself; none is included or redistributed.\n\n'
     printf 'To PLAY, see README-PLAY.txt: start legaia-engine with no arguments.\n\n'
-    printf 'To extract assets, start with legaia-extract, which drives the whole\n'
-    printf 'disc pipeline:\n\n'
+    printf 'To browse and extract assets without a terminal, start legaia-studio.\n'
+    printf 'On the command line, legaia-extract drives the whole disc pipeline:\n\n'
     printf '    ./legaia-extract "/path/to/your/disc.bin" --out extracted\n\n'
     printf 'The tools in this archive (%d), one line each:\n\n' "${#BINS[@]}"
     printf 'Extract + convert\n'
@@ -365,6 +393,7 @@ cp LICENSE-MIT "$STAGE/LICENSE-MIT"
     if [[ "$TARGET" == *-windows-* ]]; then
         printf '    Legend of Legaia.exe  double-click entry: legaia-engine without a console\n'
     fi
+    printf '    legaia-studio   desktop app: browse, preview and export assets, extract the disc\n'
     printf '    asset-viewer    windowed viewer: textures, meshes, audio, scenes\n'
     printf 'Mod + translate\n'
     printf '    legaia-patcher    disc patcher: randomizer, "translate" language packs, manual edits\n'
@@ -384,8 +413,9 @@ cp LICENSE-MIT "$STAGE/LICENSE-MIT"
     printf 'Licensed MIT OR Unlicense - see LICENSE and LICENSE-MIT.\n'
     if [[ "$TARGET" == "x86_64-unknown-linux-gnu" ]]; then
         printf '\nRequires glibc %s or newer.\n' "$GLIBC_PIN"
-        printf 'legaia-engine and asset-viewer need ALSA (libasound.so.2) at\n'
-        printf 'runtime; every mainstream desktop Linux already ships it.\n'
+        printf 'legaia-engine, asset-viewer and legaia-studio need ALSA\n'
+        printf '(libasound.so.2) at runtime; every mainstream desktop Linux already\n'
+        printf 'ships it. legaia-studio also needs OpenGL (libGL / libEGL).\n'
     fi
 } > "$STAGE/README.txt"
 
