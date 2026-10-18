@@ -611,12 +611,21 @@ window.MgMuscle = (function () {
       artsBanner = null;
       banner = null;
       /* Retail contest entry: the black "Welcome to the Muscle Dome!" card,
-       * then straight into round 1's command menu. Skippable. */
+       * then straight into round 1's command menu. Skippable. Only a
+       * contest's FIRST leg opens on it: the arena keeps hub state 0 only
+       * while the decoded round is zero (FUN_801CEA6C, `beqz` at
+       * 0x801CECE8), so a later leg goes from the INTERVAL screen straight
+       * to its ROUND card - the engine's `muscle_first_visit_owed`, the rule
+       * the play hosts' hub applies. */
+      let owed = true;
+      if (typeof api.muscle_first_visit_owed === 'function') {
+        try { owed = !!api.muscle_first_visit_owed(); } catch (e) { owed = true; }
+      }
       mode = 'intro';
       introT = 0;
       /* The live first visit (the play hosts' `FirstVisitHub`): a press ends
        * a card hold early and the announcer lines play. */
-      introLive = !!(api && api.muscle_first_visit_reset && api.muscle_first_visit_step);
+      introLive = owed && !!(api && api.muscle_first_visit_reset && api.muscle_first_visit_step);
       if (introLive) { try { api.muscle_first_visit_reset(); } catch (e) { introLive = false; } }
       introPress = false;
       introFvOk = false;
@@ -627,6 +636,7 @@ window.MgMuscle = (function () {
       pennantFx = [];
       confirmSel = 0;
       legCaption = '';
+      if (!owed) beginSelect();
       return true;
     }
 

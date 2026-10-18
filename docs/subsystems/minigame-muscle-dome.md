@@ -352,6 +352,8 @@ Both volume slots are `(_DAT_80084580 << 0xf) >> 0x10` - the **voice/SFX volume 
 
 A survived leg with the course not exhausted never leaves the arena: the battle exits to mode `0x18`, the re-entered hub runs `0x0A..0x0C` and `0x14..0x16`, and the end of state `0x16` starts the next fight itself.
 
+The first visit (states `0..=6`) plays once per contest. `FUN_801CEA6C` seeds the hub state `0` at `0x801CECA4` and keeps it only while the decoded round `DAT_801D1A94` is zero (`beqz a1, 0x801CEE90` at `0x801CECE8`); a reported leg has already stepped the word, so no later entry gets there. Port: `DomeContest::opens_on_first_visit`, read by `HubTimers` and by the minigames page (`muscle_first_visit_owed`).
+
 In the port the in-world dome's decided leg closes on Cross through `World::tick_muscle_dome`, which reports it and asks `leg_boundary_raises_interval`. A continuing contest sets `MinigameState::muscle_hub_between_legs` and keeps `SceneMode::MuscleDome` with no leg open; every other leg settles and hands the field back. `HubTimers` raises `HubTimersFrame::next_leg` once its INTERVAL and backdrop arms have drained, answered by `World::begin_next_muscle_leg`, which stages the next fight through the same mode-24 drain the arena door uses without re-arming the round trip.
 
 While the hub owns the frame neither host draws the field or battle chrome, and a decided leg puts no text up. Start between legs is the give-up arm (the contest ends and the tally is void). Locked by `engine-core/tests/muscle_contest_world.rs` and `web-viewer/tests/play_ringside_still_disc.rs`.

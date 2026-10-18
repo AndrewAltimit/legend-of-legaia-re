@@ -153,3 +153,24 @@ fn leaving_the_interval_screen_stages_the_next_leg_not_the_next_turn() {
         "leaving the INTERVAL screen continues the ladder run. Arm was:\n{arm}"
     );
 }
+
+/// The page's leg opener plays the hub's first visit only when the engine
+/// says a first visit is owed: between legs it used to call `start` with
+/// `continueRun` and replay the Welcome intro before every fight.
+#[test]
+fn a_continued_contest_does_not_replay_the_intro() {
+    let src = page_source();
+    let body = function_body(&src, "start");
+    assert!(
+        body.contains("api.muscle_first_visit_owed()"),
+        "`start` asks the engine whether the intro is owed"
+    );
+    assert!(
+        body.contains("introLive = owed &&"),
+        "the live first visit is armed only when owed"
+    );
+    assert!(
+        body.contains("if (!owed) beginSelect();"),
+        "a later leg opens straight on its ROUND card"
+    );
+}

@@ -649,9 +649,13 @@ impl HubTimers {
         if leg_open && !self.prev_leg_open {
             // Once per leg: not again after a re-entered hub's own card.
             let raise = leg_open_raises_round_card(self.card_round.take(), round);
-            if contest_open && !self.prev_contest_open {
-                // A fresh contest opens on the hub's first visit, whose own
-                // arms end in the ROUND card.
+            if world
+                .contest
+                .is_some_and(crate::muscle_dome::DomeContest::opens_on_first_visit)
+            {
+                // A contest's first leg opens on the hub's first visit, whose
+                // own arms end in the ROUND card; no later leg does
+                // (`DomeContest::opens_on_first_visit`).
                 self.first_visit = Some(FirstVisitHub::new());
             } else if raise {
                 self.round_banner = Some((round, crate::muscle_dome::HubScreen::opponent_card()));
@@ -1031,6 +1035,74 @@ mod tests {
         // Arm `0x0A` does not read the pad.
         let (_, _, in_fade) = roll(&|f| if f == 0 { 0x40 } else { 0 });
         assert!(!in_fade, "the fade-in arm carries no pad test");
+    }
+
+    /// A course run through three fights shows the first visit (the
+    /// Welcome strip, title zoom and course card) once, ahead of the first
+    /// fight; the later two open off the INTERVAL screen on the re-entered
+    /// hub's ROUND card. Retail keeps hub state `0` only while the decoded
+    /// round is zero (`FUN_801CEA6C`, `beqz` at `0x801CECE8`).
+    #[test]
+    fn a_course_shows_the_first_visit_once_across_its_fights() {
+        use crate::muscle_dome::{
+            COURSE_COUNT, ContestFlags, ContestState, DomeContest, LegReport, MAX_ROUNDS_PER_COURSE,
+        };
+        let flags = ContestFlags::default();
+        let mut contest = DomeContest::enter(
+            &flags,
+            [8, 8, 13],
+            [[10; MAX_ROUNDS_PER_COURSE]; COURSE_COUNT],
+        );
+        let mut t = HubTimers::default();
+        let (mut visits, mut was_visit) = (0, false);
+        let (mut cards, mut was_card) = (0, false);
+        let mut step = |t: &mut HubTimers, c: &DomeContest, leg_open: bool, between: bool| {
+            let frame = t.tick(
+                HubTickInputs {
+                    leg_open,
+                    contest: Some(c),
+                    ringside_still: Some(PROT_INDEX_DEFAULT),
+                    between_legs: between,
+                },
+                0,
+                200,
+            );
+            let visit = t.first_visit.is_some();
+            visits += usize::from(visit && !was_visit);
+            was_visit = visit;
+            let card = t.round_banner.is_some()
+                || t.backdrop.is_some_and(|b| b.card_brightness().is_some());
+            cards += usize::from(card && !was_card);
+            was_card = card;
+            frame.next_leg
+        };
+        for fight in 0..3 {
+            // The fight: the hub screens over its opening play out first.
+            let mut opened = 0;
+            while opened < 30 {
+                step(&mut t, &contest, true, false);
+                if !t.covers_leg() {
+                    opened += 1;
+                }
+            }
+            contest.finish_leg(
+                LegReport {
+                    survived: true,
+                    outcome: 0,
+                    turns_taken: 2,
+                },
+                100,
+                &flags,
+            );
+            while contest.state() != ContestState::Fight {
+                contest.advance();
+            }
+            // Between fights: INTERVAL, then the hub hands the next one off.
+            let handed_off = (0..4000).any(|_| step(&mut t, &contest, false, true));
+            assert!(handed_off, "fight {fight}: the hub hands the next one off");
+        }
+        assert_eq!(visits, 1, "the Welcome intro plays once per contest");
+        assert_eq!(cards, 3, "each later fight opens on one ROUND card");
     }
 
     #[test]
