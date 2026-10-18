@@ -671,15 +671,25 @@ fn part_c_continuous_run() {
     if from_id.is_some() || until.is_some() {
         return;
     }
+    // A dealt hand is scored against its own row of the seed set when the
+    // baseline has one, and against the default stream's score otherwise.
+    let baseline = read_baseline();
+    let seed_key = rng_seed_override().map(|s| format!("seed_{s}"));
     eprintln!("# paste into scripts/replays/full_game_baseline.toml when the score rises:");
-    eprintln!("[continuous]");
-    eprintln!("reached = {reached_count}");
-
-    let want = read_baseline()
-        .continuous
-        .get("reached")
-        .copied()
-        .unwrap_or(0);
+    let want = match &seed_key {
+        Some(key) => {
+            eprintln!("[continuous_seeds]");
+            eprintln!("{key} = {reached_count}");
+            baseline.continuous_seeds.get(key).copied()
+        }
+        None => {
+            eprintln!("[continuous]");
+            eprintln!("reached = {reached_count}");
+            None
+        }
+    }
+    .or_else(|| baseline.continuous.get("reached").copied())
+    .unwrap_or(0);
     assert!(
         reached_count >= want,
         "continuous run reached {reached_count} milestone(s), baseline {want}: {}",

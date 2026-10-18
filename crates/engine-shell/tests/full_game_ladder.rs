@@ -170,6 +170,10 @@ struct Baseline {
     /// Part C: milestones one continuous New Game reaches.
     #[serde(default)]
     continuous: BTreeMap<String, usize>,
+    /// Part C under `LEGAIA_FGL_RNG_SEED=<n>`: the same score on another
+    /// hand of the rand stream, keyed `seed_<n>` (decimal).
+    #[serde(default)]
+    continuous_seeds: BTreeMap<String, usize>,
 }
 
 fn read_baseline() -> Baseline {
