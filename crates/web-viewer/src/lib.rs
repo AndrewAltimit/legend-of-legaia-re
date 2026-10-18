@@ -83,7 +83,6 @@ use legaia_container_formats::tim_scan;
 use legaia_disc_audit::categorize::{Class, classify};
 use legaia_disc_audit::tim_catalog;
 use legaia_disc_audit::tim_deep_catalog;
-use legaia_game_tables::worldmap_menu;
 use wasm_bindgen::Clamped;
 use wasm_bindgen::prelude::*;
 use web_sys::{CanvasRenderingContext2d, HtmlCanvasElement, ImageData};
@@ -267,10 +266,6 @@ pub struct LegaiaViewer {
     /// alongside the landmark pack by `set_scene_kingdom` when present;
     /// consumed by the `continent_pack_*` accessors.
     continent: Option<KingdomPack>,
-    /// World-map landmark menu (16 names + ~20 placement records) parsed from
-    /// `SCUS_942.54` at load time. Only populated when a full disc image is
-    /// loaded (raw PROT.DAT / single TIM paths leave this `None`).
-    worldmap_menu: Option<worldmap_menu::WorldmapMenu>,
     /// Fog LUT bytes extracted from SCUS at load time. 4 KiB (2048 u16
     /// entries) - the shared depth-cue ramp the world-map overlay leaves
     /// at `0x801F7644..0x801F8690` consult on every vertex. None when

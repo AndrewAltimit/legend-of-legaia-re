@@ -72,26 +72,6 @@
   </div>
 </section>
 
-<section class="doc-section" id="quick-travel">
-  <h2>Quick-travel menu (whole of Legaia)</h2>
-  <p>
-    Late in the game the party can jump between places they have already visited from a menu drawn
-    over a map of the whole world. This is that menu's map, with its markers placed exactly where
-    the game draws them.
-  </p>
-  <p class="hint" style="margin: 0 0 0.6rem 0;">Coordinates are the in-game menu's screen space. Hover a dot for the name and the destination scene id. Load a disc above to populate.</p>
-  <div class="wo-layout">
-    <div>
-      <canvas id="wo-qt-canvas" width="600" height="450" class="viewer-canvas" aria-label="Quick-travel menu map"></canvas>
-      <div id="wo-qt-hover" class="wo-hover-2d">&nbsp;</div>
-    </div>
-    <aside class="wo-side">
-      <h3>Landmarks (16)</h3>
-      <ul id="wo-qt-namelist" class="wo-name-list" style="max-height: 420px;"></ul>
-    </aside>
-  </div>
-</section>
-
 <details class="about-data" id="about-this-view">
   <summary>How to read this view - modes, toggles, export, VR</summary>
   <div class="about-body">
@@ -134,14 +114,6 @@
       WebXR - a diorama you lean over, or standing on the terrain at human scale
       (<a href="subsystems/vr-mode.html">VR mode</a>). It needs Chrome or Edge with SteamVR as the
       active OpenXR runtime and a secure context; if it can't start, the button explains what's missing.
-    </p>
-    <h3>Where the quick-travel data comes from</h3>
-    <p>
-      The game's executable carries a fixed 16-entry list of landmark names and marker positions -
-      the data the world-map menu draws when the player opens it. One place name actually lives in
-      three separate places on the disc (this menu, the world-map label table, and each scene's
-      banner), and the 16 here are only the ones the menu has room for. Both tables are decoded
-      straight from your disc on this page.
     </p>
   </div>
 </details>
@@ -263,10 +235,6 @@
   display: block;
   touch-action: manipulation;
 }
-/* The quick-travel map draws at its 600x450 attribute size; without a CSS cap
-   that intrinsic width is what a phone gets laid out to. Hit-testing already
-   scales by `canvas.width / rect.width`, so shrinking it costs nothing. */
-#wo-qt-canvas { max-width: 100%; height: auto; }
 .wo-side dl {
   display: grid; grid-template-columns: auto 1fr;
   gap: 0.2rem 0.6rem;
@@ -326,7 +294,6 @@
 <script src="js/webgl-tmd-frame-state.js"></script>
 <script src="js/webgl-tmd-assembled-scene.js"></script>
 <script src="js/world-overview-kingdoms.js"></script>
-<script src="js/world-overview-quick-travel.js"></script>
 <script src="js/world-overview-minimap.js"></script>
 <script src="js/world-overview-ground.js"></script>
 <script src="js/world-overview-app.js"></script>

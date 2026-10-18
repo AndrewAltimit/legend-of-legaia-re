@@ -16,8 +16,6 @@
   } = window.LegaiaWorldOverviewKingdoms;
   /* ---------- Top-down map (world-overview-minimap.js) ---------------- */
   const { createMinimap, classifyGround } = window.LegaiaWorldOverviewMinimap;
-  /* ---------- Quick-travel menu panel (world-overview-quick-travel.js) -- */
-  const { renderQuickTravel } = window.LegaiaWorldOverviewQuickTravel;
   /* ---------- Ground sampler + camera framing (world-overview-ground.js) */
   const { buildSampler, frameCamera } = window.LegaiaWorldOverviewGround;
 
@@ -671,16 +669,6 @@
         }
       } catch (err) {
         console.warn('fog_lut_bytes:', err);
-      }
-      /* Populate the whole-Legaia quick-travel section from SCUS data
-       * the viewer parsed during load_disc(). Failures are silent: the
-       * section just stays in its "load a disc" state. */
-      try {
-        const json = viewer.worldmap_menu_json();
-        const menu = JSON.parse(json);
-        if (menu) renderQuickTravel(menu);
-      } catch (e) {
-        console.warn('worldmap_menu_json:', e);
       }
       $prev.disabled = false;
       $next.disabled = false;
