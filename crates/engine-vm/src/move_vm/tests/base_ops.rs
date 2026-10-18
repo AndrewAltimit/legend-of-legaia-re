@@ -515,6 +515,22 @@ fn draw_channels_integrate_in_modes_2_and_6_only() {
     assert_eq!(s.actor_u16(0xC8), 8);
 }
 
+/// Op `0x1C` (`0x8002366C..0x8002367C`) stores `op[1] << 3` at `+0xCA`
+/// (`sh v0,0x4a(s1)`, `s1 = actor + 0x80`), the length channel's rate, and
+/// the part tick grows `+0xC8` off it: PROT 0946's Call Wave rays `1C 0C`.
+#[test]
+fn op1c_rate_drives_the_length_channel() {
+    let mut host = TestHost::default();
+    let mut state = ActorState::new();
+    let bc = program(&[0x1C, 0x000C]);
+    assert_eq!(step(&mut host, &mut state, &bc), StepResult::Advance);
+    assert_eq!(state.pc, 2);
+    assert_eq!(state.actor_u16(0xCA), 0x60);
+    state.move_submode = 2;
+    integrate_draw_channels(&mut state, 64);
+    assert_eq!(state.actor_u16(0xC8), 0x60);
+}
+
 /// Op `0x3C` (`0x80023CA4`) seats a keyframe pose: mode `6`, the cursor
 /// cleared, each part's six operands as both current and target keyframe.
 /// Op `0x3D` (`0x80023D64`) sets the cursor rate `+0xD0`, latches the PC at

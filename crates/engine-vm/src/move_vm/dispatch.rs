@@ -299,9 +299,14 @@ pub fn step<H: MoveHost + ?Sized>(
                 return StepResult::Advance;
             }
         }
-        // 0x1C - write field_ca = op[1] << 3.
+        // 0x1C - `+0xCA = op[1] << 3` (`sh v0,0x4a(s1)` at `0x8002367C`,
+        // `s1 = actor + 0x80`): the rate the part tick steps the `+0xC8`
+        // length channel by (`integrate_draw_channels`). It is a slot of the
+        // `+0xAC` window like the other rates; a private field that nothing
+        // read left every op-`0x1C` beam at length zero (PROT 0946's Call
+        // Wave rays `0x801F7970`).
         0x1C => {
-            state.field_ca = (read(1) as i16).wrapping_shl(3) as u16;
+            state.set_actor_u16(0xCA, (read(1) as i16).wrapping_shl(3) as u16);
             size = 2;
         }
         // 0x1D - global write.

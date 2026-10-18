@@ -154,8 +154,6 @@ pub struct ActorState {
     /// `0x1C + 2*i`), which reads as "the opcode ran" while the data
     /// went nowhere.
     pub anim_block: AnimBlock,
-    /// `+0xCA` - duration slot (op 0x1C, `v << 3`).
-    pub field_ca: u16,
     /// The keyframe-pose block ops `0x3C` / `0x3D` keep behind the heap
     /// pointer `+0x4C`: one entry per model-list part, six halfwords of the
     /// current keyframe then six of the target (`[cur; 6] ++ [tgt; 6]`,
