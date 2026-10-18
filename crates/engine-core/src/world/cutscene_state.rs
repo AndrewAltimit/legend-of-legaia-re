@@ -30,7 +30,7 @@ pub struct CutsceneState {
     pub return_mode: Option<SceneMode>,
     /// The `fmv_id` whose playback just ended, parked here by
     /// [`crate::world::World::finish_cutscene`] for exactly one drain by
-    /// [`crate::scene_host::SceneHost::apply_pending_fmv_handoff`].
+    /// [`legaia_engine_scene_host::scene_host::SceneHost::apply_pending_fmv_handoff`].
     ///
     /// Retail's post-play control transfer is not a world-only decision - the
     /// [`FmvHandoff::Field`](legaia_engine_system::movie::cutscene::FmvHandoff::Field) arm loads a
@@ -38,7 +38,7 @@ pub struct CutsceneState {
     /// records "an FMV finished, and which one" and the scene host performs
     /// the transfer. Draining it is a `take`: the transfer runs once however
     /// many hosts poll.
-    pub(crate) finished_fmv: Option<i16>,
+    pub finished_fmv: Option<i16>,
     /// Live **element channel** - the field-overlay plain-template pool the
     /// ambient emitter (`FUN_801D6058`) runs on. See
     /// [`crate::world::cutscene_elements`].
@@ -63,7 +63,7 @@ pub struct CutsceneState {
     /// The crawl config block (`*0x801C6EA4 +0x4C..+0x52`) the next roller
     /// reads: the scene reset's values until a timeline `CC F8 E8` seed op
     /// overwrites them. See [`legaia_engine_field::cutscene_narration::RollerSeed`].
-    pub(crate) narration_seed: legaia_engine_field::cutscene_narration::RollerSeed,
+    pub narration_seed: legaia_engine_field::cutscene_narration::RollerSeed,
     /// Active opening-cutscene timeline executor, or `None` when no cutscene
     /// timeline is running. Installed by
     /// [`crate::world::World::load_cutscene_timeline_from_man`] (the `opdeene` opening
@@ -140,7 +140,7 @@ pub struct CutsceneState {
     /// retail's - so the caption reads as a deliberate pause, not a freeze,
     /// even when the second crawl block is still frames away. Reset on scene
     /// entry; never re-shows once the hold elapses (the gap continues hidden).
-    pub(crate) caption_shown_frames: u32,
+    pub caption_shown_frames: u32,
     /// `true` while the New-Game opening cutscene chain is playing (from the
     /// `opdeene` entry through its `opstati` / `opurud` / world-map fly-in
     /// legs, until `town01` is entered). While set, a confirm press with the
@@ -158,7 +158,7 @@ pub struct CutsceneState {
     /// the prologue scene. Any other entry drops it: only the engine's
     /// fallback (`town01` when `opdeene` will not load) enters another scene
     /// straight off a New Game, and retail never does.
-    pub(crate) new_game_entry_seat: Option<(i16, i16)>,
+    pub new_game_entry_seat: Option<(i16, i16)>,
     /// Every script context the anti-hang frame cap ended
     /// ([`crate::world::CappedTimeline`]): a diagnostic, since retail has no
     /// such cap and each entry is a record the engine cut short.

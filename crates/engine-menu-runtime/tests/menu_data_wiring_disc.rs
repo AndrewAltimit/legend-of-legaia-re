@@ -17,10 +17,10 @@
 //! the installed table against a direct parse. Skips + passes when
 //! `LEGAIA_DISC_BIN` is absent.
 
-use legaia_engine_core::scene_host::SceneHost;
 use legaia_engine_core::world::World;
 use legaia_engine_menus::menu_item_category::{CATEGORY_MATCH_SCORE, category_check};
 use legaia_engine_scene::vfs::Vfs;
+use legaia_engine_scene_host::scene_host::SceneHost;
 use std::path::PathBuf;
 
 fn disc_path() -> Option<PathBuf> {

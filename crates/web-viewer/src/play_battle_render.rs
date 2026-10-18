@@ -418,7 +418,7 @@ impl LegaiaRuntime {
                 });
             // Every slot but 1 is the baked shell; slot 1 is the spun copy
             // (`SceneHost::battle_stage_layers`, the native window's split).
-            let layers = legaia_engine_core::scene_host::BattleStageLayers::split(&objects);
+            let layers = legaia_engine_scene_host::scene_host::BattleStageLayers::split(&objects);
             backdrop = stage_shell_mesh(tmd, raw, *second, &layers.fixed);
             backdrop_spun = stage_slot_mesh(tmd, raw, &layers.spun);
             shell = Some(WebStageShell {
@@ -587,7 +587,7 @@ impl LegaiaRuntime {
         if objects == sh.objects {
             return;
         }
-        let layers = legaia_engine_core::scene_host::BattleStageLayers::split(&objects);
+        let layers = legaia_engine_scene_host::scene_host::BattleStageLayers::split(&objects);
         br.backdrop = stage_shell_mesh(&sh.tmd, &sh.raw, sh.second, &layers.fixed);
         br.backdrop_spun = stage_slot_mesh(&sh.tmd, &sh.raw, &layers.spun);
         sh.objects = objects;

@@ -82,7 +82,7 @@ neighbourhood read. Every finding below was checked that way.
 ## Cross-validation
 
 The camera lane's per-arm instrument
-(`crates/engine-core/tests/field_camera_zone_arms_disc.rs`) counts four `0x4C`
+(`crates/engine-scene-host/tests/field_camera_zone_arms_disc.rs`) counts four `0x4C`
 arms over the same corpus with no coherence gate, and its four figures are the
 census's `total` exactly: `[4C 38]` 250, `[4C 39]` 323, `[4C C4]` 44, `[4C 3E]`
 5. For the two rare arms the scene counts agree as well - `[4C C4]` in two

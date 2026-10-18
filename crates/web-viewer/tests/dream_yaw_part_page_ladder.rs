@@ -7,7 +7,7 @@
 //! `legaia_render_kernels::gte::camera_view_rotation`) therefore runs only for a
 //! word that skips pitch or roll and keeps yaw, and one word on the disc does:
 //! `urudre1` stager record 14's `0x0080`
-//! (`engine-core/tests/move_ctrl52_census_disc.rs` pins that census).
+//! (`engine-scene-host/tests/move_ctrl52_census_disc.rs` pins that census).
 //!
 //! The route is the scene's own content. `urudre1` is Vahn's dream of Rim Elm
 //! at Uru Mais; its walk-on band at tile `(97, 10)` starts cutscene record

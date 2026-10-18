@@ -69,13 +69,13 @@ pub struct DiscTables {
     /// (`crate::world::World::enemy_move_predamage`); when `None` (disc-free /
     /// synthetic battles) that path falls back to the MP-scaled placeholder, so
     /// the RNG stream and determinism trace are unchanged. Installed lazily from
-    /// the disc by [`crate::scene_host::SceneHost`].
+    /// the disc by [`legaia_engine_scene_host::scene_host::SceneHost`].
     pub move_power: Option<legaia_engine_battle::move_power::MovePowerCatalog>,
     /// Raw bytes of the battle-action overlay (PROT 0898) the [`move_power`]
     /// catalog was parsed from, retained so the move-FX render path can read the
     /// `0x801f6324` prototype records' move-VM bytecode (the catalog holds only
     /// the parsed tables). Installed alongside [`move_power`] by
-    /// [`crate::scene_host::SceneHost`]; `None` in disc-free battles (move FX simply
+    /// [`legaia_engine_scene_host::scene_host::SceneHost`]; `None` in disc-free battles (move FX simply
     /// don't spawn). `Arc` so cloning `World` stays cheap.
     pub move_power_overlay: Option<Arc<[u8]>>,
     /// The disc's own `SCUS_942.54`, kept for the move-VM records the
@@ -87,14 +87,14 @@ pub struct DiscTables {
     pub scus: Option<Arc<[u8]>>,
     /// Each player summon cast's attack name - the `rec[0]` string of its
     /// `summon.dat` (PROT 0893) actor record, the text a summon module's
-    /// caption arm prints. Installed by [`crate::scene_host::SceneHost`] with the
+    /// caption arm prints. Installed by [`legaia_engine_scene_host::scene_host::SceneHost`] with the
     /// cast-effect pool; empty disc-free.
-    pub(crate) summon_attack_names: Arc<std::collections::BTreeMap<u8, String>>,
+    pub summon_attack_names: Arc<std::collections::BTreeMap<u8, String>>,
     /// `summon.dat` (PROT 0893) itself, for the texture slots a player
     /// summon's cast streams into the battle VRAM
     /// ([`crate::battle_sideband_textures::record_cast_sideband_textures`]).
     /// Installed with [`Self::summon_attack_names`]; `None` disc-free.
-    pub(crate) summon_dat: Option<Arc<[u8]>>,
+    pub summon_dat: Option<Arc<[u8]>>,
     /// The battle **VDF** morph pack `vdf.dat` (PROT 0872, the
     /// `[u32 count][u32 offsets[count]][bodies]` layout of a scene's VDF).
     /// Battle init loads it through the asset dispatcher's VDF case and
@@ -111,13 +111,13 @@ pub struct DiscTables {
     /// `None` (disc-free / synthetic battles) keeps the neutral 100% multiplier,
     /// so the damage and determinism trace are unchanged. Installed lazily from
     /// the same PROT 0898 overlay as [`crate::world::DiscTables::move_power`] by
-    /// [`crate::scene_host::SceneHost`].
+    /// [`legaia_engine_scene_host::scene_host::SceneHost`].
     pub element_affinity: Option<legaia_game_tables::element_affinity::ElementAffinity>,
     /// Per-character battle-camera height table
     /// ([`legaia_game_tables::battle_camera_table`], runtime VA `0x801F4D2C`) - the
     /// `TR.y` the submenu close-up framing (`FUN_801D5854` case `0`) reads for
     /// whichever character is acting. Installed from the same PROT 0898
-    /// overlay as [`crate::world::DiscTables::move_power`] by [`crate::scene_host::SceneHost`]; `None`
+    /// overlay as [`crate::world::DiscTables::move_power`] by [`legaia_engine_scene_host::scene_host::SceneHost`]; `None`
     /// on disc-free hosts, which leaves the camera on its single traced
     /// fallback height so an unpinned character frames like the measured case
     /// instead of jumping.
@@ -130,19 +130,19 @@ pub struct DiscTables {
     ///
     /// Sibling static data in the same PROT 0898 overlay as
     /// [`crate::world::DiscTables::move_power`], installed by
-    /// [`crate::scene_host::SceneHost`]. `None` on a disc-free host, which is the
+    /// [`legaia_engine_scene_host::scene_host::SceneHost`]. `None` on a disc-free host, which is the
     /// gate that keeps the stager
     /// ([`crate::world::World::stage_seru_side_effect`]) from running at
     /// all - so a synthetic battle stages nothing and draws no `rand()`.
-    pub(crate) seru_side_effects: Option<legaia_game_tables::seru_side_effect::SeruSideEffectTable>,
+    pub seru_side_effects: Option<legaia_game_tables::seru_side_effect::SeruSideEffectTable>,
     /// The Seru-absorb banner's caption pieces (PROT 0898 `0x801F4DFC` /
     /// `0x801F4C28`), installed with the move-power table. `None` on a
     /// disc-free host, where the banner shows the Seru's name alone.
-    pub(crate) absorb_caption: Option<legaia_game_tables::absorb_caption::AbsorbCaption>,
+    pub absorb_caption: Option<legaia_game_tables::absorb_caption::AbsorbCaption>,
     /// The loss window's two text pieces (PROT 0898 `0x801F4C78` /
     /// `0x801F4C94`), installed with the move-power table. `None` on a
     /// disc-free host, where the loss window opens empty.
-    pub(crate) defeat_text: Option<legaia_engine_battle_vm::battle_party_panel::DefeatText>,
+    pub defeat_text: Option<legaia_engine_battle_vm::battle_party_panel::DefeatText>,
     /// Player Seru spell id (`0x81..=0x8B`) -> the **summon creature's**
     /// record element (`+0x1D`), the byte the side-effect stager switches on
     /// and the affinity scale reads as the attacker element.
@@ -153,7 +153,7 @@ pub struct DiscTables {
     /// own monsters, so a summon creature is absent from it in almost every
     /// fight, and a catalog-by-name lookup answers `None` there. Empty on a
     /// disc-free host.
-    pub(crate) summon_elements: std::collections::HashMap<u8, u8>,
+    pub summon_elements: std::collections::HashMap<u8, u8>,
     /// Player Seru spell id (`0x81..=0x8B`) -> the **summon creature's** whole
     /// record, as the catalog would hold it: the summon body the damage roll
     /// reads its HP / INT / element from (`World::summon_creature_def`).

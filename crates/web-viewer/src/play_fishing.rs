@@ -89,7 +89,7 @@ impl LegaiaRuntime {
 
     /// The fishing venue's actor-side frame - the browser twin of the native
     /// window's `tick_fishing_actors`, through the same engine kernel
-    /// ([`legaia_engine_core::fishing_venue::tick_fishing_venue_on_host`]):
+    /// ([`legaia_engine_scene_host::fishing_venue::tick_fishing_venue_on_host`]):
     /// the wander fish and its retarget ripple, the floor solve, the reeling
     /// line and its catch bursts, the sub-screen sway, and the venue camera
     /// writes, applied here to this page's engine camera. The ripples and
@@ -98,7 +98,7 @@ impl LegaiaRuntime {
         let Some((host, camera)) = self.scene_host.host_cam_mut() else {
             return;
         };
-        let writes = legaia_engine_core::fishing_venue::tick_fishing_venue_on_host(host);
+        let writes = legaia_engine_scene_host::fishing_venue::tick_fishing_venue_on_host(host);
         writes.apply(camera);
     }
 

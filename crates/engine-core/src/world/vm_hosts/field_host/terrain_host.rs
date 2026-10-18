@@ -52,7 +52,7 @@ impl<'a> FieldTerrainHost for FieldHostImpl<'a> {
     /// the whole nibble-9 family: retail writes `-words[i]` into
     /// `0x1F800314 + 0x48 + i*2` (and `words[i]` into the MAN-header mirror
     /// at `_DAT_8007B898 + 2`), which is the same array
-    /// [`crate::scene_host::SceneHost`] seeds from the MAN header's sixteen
+    /// [`legaia_engine_scene_host::scene_host::SceneHost`] seeds from the MAN header's sixteen
     /// **negated** shorts on scene entry. `jou`'s entry script installs the
     /// linear ramp `i * 0x20` here and then sets rungs `4..` oscillating -
     /// the undulating organic floor.

@@ -11,8 +11,8 @@
 
 use std::path::PathBuf;
 
-use legaia_engine_core::scene_host::SceneHost;
 use legaia_engine_scene::scene::is_world_map_scene;
+use legaia_engine_scene_host::scene_host::SceneHost;
 
 /// CBA word for the ocean CLUT at VRAM `(0, 506)`: `(506 << 6) | (0 >> 4)`.
 const OCEAN_CLUT_CBA: u16 = 0x7E80;

@@ -1007,7 +1007,7 @@ impl World {
     /// player mesh: a change raises
     /// [`crate::world::FieldLocomotion::player_rig_dirty`], and both play
     /// hosts drain it ([`Self::take_player_rig_change`]) and rebuild the rig
-    /// from [`crate::scene_host::SceneHost::player_rig_mesh`].
+    /// from [`legaia_engine_scene_host::scene_host::SceneHost::player_rig_mesh`].
     ///
     /// REF: FUN_80024E08 (the re-stage; the port for a placement is
     /// `FieldHostImpl::set_actor_model`), FUN_8003C83C
@@ -1023,7 +1023,7 @@ impl World {
 
     /// Take the "the player's model changed" signal. A host that sees `true`
     /// rebuilds the player's rig from
-    /// [`crate::scene_host::SceneHost::player_rig_mesh`].
+    /// [`legaia_engine_scene_host::scene_host::SceneHost::player_rig_mesh`].
     ///
     /// Two things raise it: a mid-scene `CC F8 50` re-stage, and any change
     /// of the resolved [`Self::player_rig_source`] since the last drain - the

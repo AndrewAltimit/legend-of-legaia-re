@@ -17,7 +17,7 @@ so the inn you reach in game is the retail script, not an engine routine.
 | What restores the party? | Three `4C 82 <slot>` ops, one per party slot, in the same record. |
 | Port entry | `World::trigger_field_interact` -> `step_inline_dialogue` -> `legaia_engine_vm::field::step`. |
 | Cost scanner | `legaia_scene_formats::inn_costs`, run at scene load into `SceneHost::scene_inn_cost`. |
-| Oracles | `crates/engine-core/tests/inn_stay_field_vm_disc.rs`, `crates/scene-formats/tests/inn_costs_disc.rs`, `crates/engine-core/tests/inn_cost_scene_disc.rs` (all disc-gated). |
+| Oracles | `crates/engine-core/tests/inn_stay_field_vm_disc.rs`, `crates/scene-formats/tests/inn_costs_disc.rs`, `crates/engine-menu-runtime/tests/inn_cost_scene_disc.rs` (all disc-gated). |
 
 ```mermaid
 flowchart TD

@@ -287,7 +287,7 @@ them.
 Port: `ProtIndex::battle_stage_entry_for_scene`, consumed by the one stage
 resolver both hosts run on the battle edge
 (`engine-session::battle_stage::resolve_battle_stage`). Tests
-`crates/engine-core/tests/battle_stage_entries_real.rs` (disc) and
+`crates/engine-scene-host/tests/battle_stage_entries_real.rs` (disc) and
 `crates/parity/tests/battle_stage_live.rs` (save library).
 
 <a id="backdrop-shell---two-copies-of-one-mesh"></a>
@@ -337,7 +337,7 @@ untextured pipeline; the browser page uses the single
 halves take the same second-copy transform (`ColorMesh::append_scaled` mirrors
 the textured builder's, winding reversal included). Guard:
 `the_backdrop_shells_untextured_half_is_a_double_digit_share` in
-`crates/engine-core/tests/battle_stage_entries_real.rs`.
+`crates/engine-scene-host/tests/battle_stage_entries_real.rs`.
 
 #### Shared VRAM across a bundle's stage streams
 
@@ -526,7 +526,7 @@ depth-tested mesh draws the same band once the arc stands where retail's
 does.
 
 The spin is `World::tick_battle_backdrop_spin` (once a battle frame) and
-`legaia_engine_core::scene_host::backdrop_slot_1_basis`; both play hosts draw
+`legaia_engine_scene_host::scene_host::backdrop_slot_1_basis`; both play hosts draw
 slot 1 as one unbaked copy, twice a frame, under that basis
 (`SceneHost::battle_stage_layers`).
 

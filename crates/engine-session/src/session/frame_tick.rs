@@ -124,7 +124,7 @@ impl<S: AudioSink> BootSession<S> {
         // A scene-local id loads retail's fallback track, as the op-0x35
         // route does, so a card load whose save carries one restores a track
         // rather than silence.
-        let bank_id = legaia_engine_core::scene_host::bgm_bank_id(bgm_id);
+        let bank_id = legaia_engine_scene_host::scene_host::bgm_bank_id(bgm_id);
         let Ok(Some(entry)) = self.host.music_bank_entry_bytes(bank_id) else {
             return false;
         };
@@ -228,14 +228,14 @@ impl<S: AudioSink> BootSession<S> {
     /// calls this rather than the bare host kernel; the render-side rebuild
     /// stays with the caller, keyed on [`FmvHandoffOutcome::Entered`].
     ///
-    /// [`FmvHandoffOutcome::Entered`]: legaia_engine_core::scene_host::FmvHandoffOutcome::Entered
+    /// [`FmvHandoffOutcome::Entered`]: legaia_engine_scene_host::scene_host::FmvHandoffOutcome::Entered
     pub fn apply_pending_fmv_handoff(
         &mut self,
-    ) -> Option<legaia_engine_core::scene_host::FmvHandoffOutcome> {
+    ) -> Option<legaia_engine_scene_host::scene_host::FmvHandoffOutcome> {
         let outcome = self.host.apply_pending_fmv_handoff()?;
         if matches!(
             outcome,
-            legaia_engine_core::scene_host::FmvHandoffOutcome::Entered { .. }
+            legaia_engine_scene_host::scene_host::FmvHandoffOutcome::Entered { .. }
         ) {
             // Field entry resets the camera globals (`FUN_80025C24`) and
             // kills any mover in flight, so the movie's trigger scene cannot

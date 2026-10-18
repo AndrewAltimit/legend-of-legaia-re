@@ -197,8 +197,8 @@ impl<S: AudioSink> BootSession<S> {
     ///
     /// No input: retail's wipe arm offers the player nothing.
     pub fn step_party_wipe_hold(&mut self, hold: &mut GameOverSession) -> bool {
-        use legaia_engine_core::scene_host::BgmDirector;
         use legaia_engine_menus::game_over::GameOverOutcome;
+        use legaia_engine_scene_host::scene_host::BgmDirector;
         hold.tick();
         if hold.outcome() != Some(GameOverOutcome::ReturnToTitle) {
             return false;

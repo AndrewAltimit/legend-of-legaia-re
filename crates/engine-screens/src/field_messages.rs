@@ -27,9 +27,9 @@
 //! `FUN_801F1E48` folds does not depend on the string - and prints its line
 //! when it resolves from the field overlay.
 
-use legaia_engine_core::scene_host::SceneHost;
 use legaia_engine_core::world::World;
 use legaia_engine_dialog::dialog::OwnedDialogPanel;
+use legaia_engine_scene_host::scene_host::SceneHost;
 use legaia_engine_ui::{self as ui, SaveMenuAtlasRects, SpriteDraw, TextDraw};
 
 use crate::dialog_screens::{self, DialogSnapshot};

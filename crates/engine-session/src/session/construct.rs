@@ -144,7 +144,7 @@ impl<S: AudioSink> BootSession<S> {
                     // No scene bank is staged: retail loads a bank only with
                     // its track, into the one BGM slot, and a scene-local id
                     // plays a global fallback track
-                    // (`legaia_engine_core::scene_host::SCENE_LOCAL_BGM_FALLBACK_ID`).
+                    // (`legaia_engine_scene_host::scene_host::SCENE_LOCAL_BGM_FALLBACK_ID`).
                     let mut director = AudioDirector::new(audio.clone());
                     // Decode the static SFX descriptor bank from the same
                     // executable once; it names the program/tone/voice-count

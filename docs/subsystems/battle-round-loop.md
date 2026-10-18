@@ -88,7 +88,7 @@ The tracker's trigger branch is destructive: it draws RNG, latches the anti-repe
 - `World::on_field_step` re-installs a bare bracket (`World::install_encounter_bracket`) when the session is missing (`World::begin_new_game` clears it).
 - Every remaining way a roll can fail to become a battle logs at error: an unregistered formation in `begin_encounter_battle`, a scripted arm with no session, and a table / def id mismatch caught at `install_man_encounter`.
 
-The MAN formation-row index the roll produces and the `World::tables.formation_table` key the battle load resolves are pinned equal across the scene corpus by [`scene_encounter_formations_disc.rs`](../../crates/engine-core/tests/scene_encounter_formations_disc.rs), which also carries the New-Game-reset regression.
+The MAN formation-row index the roll produces and the `World::tables.formation_table` key the battle load resolves are pinned equal across the scene corpus by [`scene_encounter_formations_disc.rs`](../../crates/engine-scene-host/tests/scene_encounter_formations_disc.rs), which also carries the New-Game-reset regression.
 
 `World::force_encounter(row)` arms a named row through the same bracket. It is the engine side of `play-window --battle` ([playing-and-viewing.md](../guides/playing-and-viewing.md#getting-into-a-battle-on-purpose)) and does not shortcut into `enter_battle_from_formation`, so the harness exercises the path it verifies.
 
@@ -120,7 +120,7 @@ So the formation is the scene's own MAN encounter-section row, selected by index
 - The battle enters through the same immediate latch the field-carrier SM uses - no field step, no synthetic boss formation id.
 - Boss-stager placements are derived from the MAN at scene entry (`man_field_scripts::boss_stager_placements` in `crates/engine-field` -> `World::install_boss_stagers_from_man`): the `3E FF` site, the park-gate flag and the station tile all decode from the record's bytes. They run on approach / interact via `World::run_boss_stager_record`.
 
-Oracles: [`organic_zeto_encounter_disc.rs`](../../crates/engine-core/tests/organic_zeto_encounter_disc.rs), [`organic_beat_records_disc.rs`](../../crates/engine-core/tests/organic_beat_records_disc.rs).
+Oracles: [`organic_zeto_encounter_disc.rs`](../../crates/engine-scene-host/tests/organic_zeto_encounter_disc.rs), [`organic_beat_records_disc.rs`](../../crates/engine-scene-host/tests/organic_beat_records_disc.rs).
 
 #### `DAT_8007b7fc` is a writer-less debug forced-battle id
 
@@ -165,7 +165,7 @@ Per frame:
 - **Return** (`World::finish_battle`). See [what `finish_battle` does](#battle-end-both-hosts). When a BGM swap was active, `World::restore_field_bgm` queues a `FieldEvent::Bgm{sub_op: 1}` for the stashed field track, or a stop (sub-op 4) if none was playing at encounter start.
 - **Post-battle script re-entry** (`SceneHost::tick`). Retail reloads the field scene after every battle, re-running the scene-entry system script `P1[0]` (`FUN_8003ab2c`). The host mirrors that on the `Battle -> Field` mode edge (`Scene::field_man_entry_script` -> `World::load_field_script_at`).
 
-The re-run is what dispatches post-battle beat records. Rikuroa's `P1[0]` tests the transient staged marker `0x289` (SET by the stager `P1[3]`'s own `52 89` bytes before the battle) and issues the op-`0x44` spawn of the post-victory record `P2[50]` through the C1-gated dispatch, whose script bytes SET the progression gate `0x142`. No engine code writes the gate flag or the marker; both land from record execution. Oracle: `engine-core/tests/organic_beat_records_disc.rs`.
+The re-run is what dispatches post-battle beat records. Rikuroa's `P1[0]` tests the transient staged marker `0x289` (SET by the stager `P1[3]`'s own `52 89` bytes before the battle) and issues the op-`0x44` spawn of the post-victory record `P2[50]` through the C1-gated dispatch, whose script bytes SET the progression gate `0x142`. No engine code writes the gate flag or the marker; both land from record execution. Oracle: `engine-scene-host/tests/organic_beat_records_disc.rs`.
 
 Integration test: `crates/engine-core/tests/live_loop_tick.rs` drives boot -> walk -> encounter -> victory -> return through `tick` alone.
 

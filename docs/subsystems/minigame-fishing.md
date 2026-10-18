@@ -868,7 +868,7 @@ The session seeds from the persistent words the world keeps between sessions (`W
 
 **Events and cues.** Each frame's session events (`World::minigames.fishing_events`) seed both hosts' banner one-shots and queue the hook / celebration cues. The overlay's runtime-bank cues are direct ring stores, resolved through the venue scene's bundle (the fishing init loads no `efect.dat`): `0x204` into slot 2 at the lure landing, `0x206` into slot 0 on a purchase, and the rod creak `0x201` into slot 1. The port raises all three.
 
-**Actor-side frame.** Both play hosts run the overlay's actor frame through one kernel, `engine-core::fishing_venue::tick_fishing_venue_on_host` (actors on `World::minigames.fishing_venue`); each host's `tick_fishing_actors` is that call plus applying the returned venue-camera writes to its own engine camera. It covers:
+**Actor-side frame.** Both play hosts run the overlay's actor frame through one kernel, `engine-scene-host::fishing_venue::tick_fishing_venue_on_host` (actors on `World::minigames.fishing_venue`); each host's `tick_fishing_actors` is that call plus applying the returned venue-camera writes to its own engine camera. It covers:
 
 - the lead angler (`FishWander`, spawned by `fishing_venue::lead_spawn`), aimed by the held D-pad while the cast is idle, spawning the rolled ripple (`fishing_chrome::ripple_spawn`) into the shared minigame effect pool (`minigame_fx`, on `World::minigames.fx`);
 - the venue floor solve: the pond `.MAP`'s extended footprint is read at entry (the `_DAT_1F8003EC` buffer) and the actor settles onto it each frame through `fishing_chrome::float_actor_tick` -> `minigame_floor::ground_height`;

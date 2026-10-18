@@ -584,7 +584,7 @@ approach with three `4C 70` paints, then branches on system flags `327` / `321`:
 - Carrier: `town0c` holds the paint sequence twice (entry script `P1[0]` and `P0[20]`); `town01` holds
   it only in `P0[20]`. Applying nibble-7 deltas from entry scripts alone leaves `town01`'s gate sealed
   in every story state.
-- Pinned by `crates/engine-core/tests/south_gate_disc.rs`; the pad-driven exit is a rung of
+- Pinned by `crates/engine-scene-host/tests/south_gate_disc.rs`; the pad-driven exit is a rung of
   `crates/engine-shell/tests/critical_path_replay.rs`.
 
 Owning page:

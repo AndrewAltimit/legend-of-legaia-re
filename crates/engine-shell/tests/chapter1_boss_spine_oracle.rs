@@ -42,7 +42,7 @@
 //! execution lands `0x142`, and a separate leg proves a post-victory
 //! revisit installs no stager. No engine stamp remains anywhere in the
 //! chain. (The organic first-arrival flag `0x2FB` chain is covered by
-//! `engine-core/tests/organic_beat_records_disc.rs`; Part C seeds `0x2FB`
+//! `engine-scene-host/tests/organic_beat_records_disc.rs`; Part C seeds `0x2FB`
 //! for isolation.)
 //!
 //! (Two earlier readings are retired: a Part C that armed **Zeto** (75)
@@ -68,10 +68,10 @@
 
 use std::path::PathBuf;
 
-use legaia_engine_core::scene_host::{SceneHost, SceneTickEvent};
 use legaia_engine_field::world_map_entity_config::WorldMapEntityConfig;
 use legaia_engine_mode::mode::SceneMode;
 use legaia_engine_scene::scene::{ProtIndex, Scene};
+use legaia_engine_scene_host::scene_host::{SceneHost, SceneTickEvent};
 
 fn extracted_dir() -> Option<PathBuf> {
     for c in ["extracted", "../extracted", "../../extracted"] {

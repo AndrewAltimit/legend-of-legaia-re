@@ -30,7 +30,7 @@ impl LegaiaRuntime {
         // The title theme hands the score to the field: stop it so the
         // prologue's own BGM (or its scripted silence) owns the audio.
         if let Some(d) = self.scene_host.director_mut() {
-            use legaia_engine_core::scene_host::BgmDirector;
+            use legaia_engine_scene_host::scene_host::BgmDirector;
             d.stop();
         }
         let Some(host) = self.scene_host.host_mut() else {
@@ -144,7 +144,7 @@ impl LegaiaRuntime {
         // latch, so the scene's own op-`0x35` start is honoured (and re-stages
         // its track's bank) even if it names the track already playing. No
         // scene bank is staged: retail loads a bank only with its track
-        // (`legaia_engine_core::scene_host::SCENE_LOCAL_BGM_FALLBACK_ID`).
+        // (`legaia_engine_scene_host::scene_host::SCENE_LOCAL_BGM_FALLBACK_ID`).
         // New scene -> drop any SFX cues still queued for the old one (the
         // native boot's `clear_sfx` on scene entry).
         self.on_scene_change_audio();

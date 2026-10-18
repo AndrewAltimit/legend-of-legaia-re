@@ -1139,7 +1139,7 @@ timeline holds on the wait until the cap completes the record, and the
 record's tail never runs - `garmel` P2[12] stages record 2 with
 `B4 1D 30 01`, parks on `4C C6 0A 00`, and lost its `3E FF 09` Zeto fight
 that way. The disc-gated test
-`crates/engine-core/tests/system_flag_wait_raisers_disc.rs` pins the raiser
+`crates/engine-scene-host/tests/system_flag_wait_raisers_disc.rs` pins the raiser
 census, `town01` record 10's raise, and that every partition-2 wait a
 cold-entered timeline reaches is passed under the tail.
 

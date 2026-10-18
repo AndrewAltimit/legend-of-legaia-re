@@ -245,7 +245,7 @@ pub struct FieldNpcState {
     pub object_pack_slots: std::collections::BTreeMap<u16, Vec<usize>>,
     /// Placement slots whose morph deltas moved since a host last drained
     /// them ([`crate::world::World::take_npc_morph_dirty`]).
-    pub(crate) morph_dirty: std::collections::BTreeSet<u8>,
+    pub morph_dirty: std::collections::BTreeSet<u8>,
     /// The move id each NPC's clip player last took from a single-move cue
     /// (`(1, id, [])` - a `+0x5C` write), keyed by placement slot: retail's
     /// `actor+0x5E`, the "clip now playing" half of the move-table
@@ -257,7 +257,7 @@ pub struct FieldNpcState {
     /// Written when [`crate::world::World::drain_field_anim_cues`] hands a
     /// cue to the hosts; an op-`0x4B` sequence cue removes the entry, since
     /// what then plays is not one move. Cleared with the cue queue.
-    pub(crate) clip_current: std::collections::HashMap<u8, u8>,
+    pub clip_current: std::collections::HashMap<u8, u8>,
     /// Each animated NPC actor's live clip cursor (`actor+0x68`) under its
     /// own `+0x62` control word, keyed by placement slot. The hosts own the
     /// decoded clip frames ([`legaia_engine_field::field_anim::FieldClipPlayer`]) but not
@@ -287,7 +287,7 @@ pub struct FieldNpcState {
     /// by placement slot - the count the hosts cut its mesh to. A re-target
     /// to a clip of another count is refused
     /// ([`crate::world::World::drain_field_anim_cues`]).
-    pub(crate) clip_bones: std::collections::HashMap<u8, usize>,
+    pub clip_bones: std::collections::HashMap<u8, usize>,
     /// The Y of each field NPC on the **glide** height arm, keyed by
     /// placement slot: retail's `+0x16` while the actor's flag word carries
     /// `0x2000`, which `FUN_8003BC08` steps toward the floor by at most

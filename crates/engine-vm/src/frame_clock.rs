@@ -18,7 +18,7 @@ pub struct FrameClock {
     /// `_DAT_8007B9D8`. Live poll baselines: field/town scenes run at `2`
     /// (30 fps) and the overworld kingdom scenes (`mapNN`) at `3` (20 fps) -
     /// the engine pins those per-scene values on entry
-    /// (`legaia_engine_core::scene_host::SceneHost::enter_field_scene`) rather than modelling
+    /// (`legaia_engine_scene_host::scene_host::SceneHost::enter_field_scene`) rather than modelling
     /// the load-adaptive writer. Consumed by everything that advances
     /// per-game-tick in vsync units - the scripted CLUT fades
     /// (`World::step_clut_fx`) and the shell's CLUT-cycle cadence.

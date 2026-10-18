@@ -271,7 +271,7 @@ solo-party capture they occupy `DAT_8007C018[3..32]`; the library base is
 - Gimard's flame is `DAT_8007C018[26]` in that capture = pack entry 23
   ([`battle-action.md`](../subsystems/battle-action.md#seru-magic-summon-overlay-dispatch)).
 - The engine loads the library at scene entry
-  (`engine-core::scene_host::seed_effect_model_library_from_etmd`) into
+  (`engine-scene-host::scene_host::seed_effect_model_library_from_etmd`) into
   `World::global_tmd_pool[3..=32]`, overwriting the two field-pack tail slots
   as retail's battle init does. `GIMARD_TAIL_FIRE_MODEL_INDEX = 26`.
 - None of the five TMDs of extraction 0874 §0 are resident in main RAM during
@@ -281,7 +281,7 @@ solo-party capture they occupy `DAT_8007C018[3..32]`; the library base is
   Its smallest TMD (2 objects / 18 verts / 25 prims) bakes
   `cba=0x778E@(224,478)` / `tsb=0x001D@(832,256)` and looks flame-like; the
   engine keeps it only as a preview fallback
-  (`engine-core::scene_host::ETMD_TAIL_FIRE_MODEL_INDEX`).
+  (`engine-scene-host::scene_host::ETMD_TAIL_FIRE_MODEL_INDEX`).
 
 #### How the Gimard flame renders
 

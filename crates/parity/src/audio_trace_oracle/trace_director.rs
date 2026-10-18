@@ -11,7 +11,7 @@ use super::*;
 /// the same three things the cpal director owns behind its `AudioOut` - the
 /// [`Spu`], the active [`VabBank`], and the attached [`Sequencer`] - so the
 /// two start paths can be written identically. The trace loop calls
-/// [`legaia_engine_core::scene_host::SceneHost::route_bgm_events`] after each
+/// [`legaia_engine_scene_host::scene_host::SceneHost::route_bgm_events`] after each
 /// `tick` to deliver field-VM op `0x35` events.
 ///
 /// **Both start paths are modelled.** [`BgmDirector::start`] plays a

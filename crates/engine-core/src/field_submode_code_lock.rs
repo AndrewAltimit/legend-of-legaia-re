@@ -6,7 +6,6 @@
 //! off the parked operand and the header string off the user's disc.
 
 use legaia_engine_field::code_lock_actor::CODE_LEN;
-use legaia_engine_field::field_overlay::field_overlay_cstr;
 use legaia_engine_field::field_submode_code_lock::*;
 use legaia_engine_field::field_submode_flag_window::FlagWindowLine;
 
@@ -29,25 +28,6 @@ impl crate::world::World {
             return Vec::new();
         }
         code_lock_lines(header, &s.code_lock.entered, s.code_lock.index)
-    }
-}
-
-impl crate::scene_host::SceneHost {
-    /// [`crate::world::World::code_lock_lines`] with the header read off the
-    /// user's disc (the field overlay, extraction entry `0897`). The native
-    /// window and the browser play page both draw this.
-    pub fn code_lock_lines(&self) -> Vec<FlagWindowLine> {
-        let s = &self.world.field_vm.submode_screen;
-        if !s.is_open() || s.actor.state != CODE_LOCK_SLOT {
-            return Vec::new();
-        }
-        let header = self
-            .index
-            .entry_bytes(crate::incense_notice::FIELD_OVERLAY_PROT_INDEX)
-            .ok()
-            .and_then(|b| field_overlay_cstr(&b, CODE_LOCK_HEADER_VA).map(<[u8]>::to_vec))
-            .unwrap_or_default();
-        self.world.code_lock_lines(&header)
     }
 }
 

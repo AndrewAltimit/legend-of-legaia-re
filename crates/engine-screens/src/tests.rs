@@ -349,7 +349,8 @@ fn disc_world() -> Option<World> {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
         return None;
     };
-    let host = legaia_engine_core::scene_host::SceneHost::open_disc(&path).expect("open disc");
+    let host =
+        legaia_engine_scene_host::scene_host::SceneHost::open_disc(&path).expect("open disc");
     let overlay = host
         .index
         .entry_bytes_extended(legaia_game_tables::menu_windows::MENU_OVERLAY_PROT_INDEX as u32)

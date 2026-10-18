@@ -962,7 +962,7 @@ impl World {
         panel.set_window_format(usize::from(rows), instant);
     }
 
-    pub(crate) fn dialog_substitutions(
+    pub fn dialog_substitutions(
         &self,
         record: &[u8],
     ) -> Option<legaia_engine_dialog::dialog::PanelSubstitutions> {

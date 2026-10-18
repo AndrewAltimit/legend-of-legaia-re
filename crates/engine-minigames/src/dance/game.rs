@@ -420,7 +420,7 @@ impl DanceGame {
     /// gauges and beat tracks are not drawn at all, even in the versus modes.
     ///
     /// The output is pinned non-vacuous against a real overlay by
-    /// `engine-core/tests/dance_minigame_real.rs`.
+    /// `engine-scene-host/tests/dance_minigame_real.rs`.
     pub fn hud_draws(&self, rival_hud: bool) -> Vec<DanceHudDraw> {
         dance_hud_draws(
             self.mode.value(),

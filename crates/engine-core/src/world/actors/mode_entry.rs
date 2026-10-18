@@ -419,7 +419,7 @@ impl World {
     /// `0x80084548` (+ spawn/door word `0x80084540`), e.g. `town01` triggers
     /// fmv 1 and lands in `town0b`. That transfer needs the host's asset
     /// index, so this parks the finished id in [`crate::world::CutsceneState::finished_fmv`] and
-    /// [`crate::scene_host::SceneHost::apply_pending_fmv_handoff`] performs it -
+    /// [`legaia_engine_scene_host::scene_host::SceneHost::apply_pending_fmv_handoff`] performs it -
     /// one drain, whichever host polls.
     // REF: FUN_801CEA3C
     pub fn finish_cutscene(&mut self) {
@@ -436,7 +436,7 @@ impl World {
     /// The world half of the post-play hand-off: a host with no scene loader
     /// (a headless world test, the `sim-trace` emitter) can consume the edge
     /// without one, and the scene host's
-    /// [`apply_pending_fmv_handoff`](crate::scene_host::SceneHost::apply_pending_fmv_handoff)
+    /// [`apply_pending_fmv_handoff`](legaia_engine_scene_host::scene_host::SceneHost::apply_pending_fmv_handoff)
     /// is the only production caller. `take` semantics are what stop two
     /// hosts - or one host polling twice - from transferring control twice.
     pub fn take_finished_fmv(&mut self) -> Option<i16> {

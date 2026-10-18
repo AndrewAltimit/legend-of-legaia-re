@@ -560,7 +560,7 @@ The port runs the menu as a two-level session owned by
 | Open gate (mode test + engaged bit; `SceneMode::Field` and `WorldMap`) | `World::field_menu_open_allowed`, called by `BootSession::press_field_menu`; `open_field_menu` re-checks the engaged bit |
 | Save / Load row gates | `World::install_scene_save_permission` seeds `party.scene_save_allowed`; sampled with `World::menu_entry_context_kind` into `field_menu::FieldMenuGate` |
 | Root list | `engine-menus::field_menu::FieldMenuSession`; `pause_screens::root_menu_confirm_route` decides both row ink and advance-vs-buzz, over `ROOT_MENU_ROUTES` |
-| Sub-screen | `engine-core::field_menu_dispatch::FieldMenuSubsession`; a confirm suspends the root (`FieldMenuPhase::Suspended { row }`) until the sub-screen ends and `apply_*_outcome` runs |
+| Sub-screen | `engine-menu-runtime::field_menu_dispatch::FieldMenuSubsession`; a confirm suspends the root (`FieldMenuPhase::Suspended { row }`) until the sub-screen ends and `apply_*_outcome` runs |
 | Persistence | a finished Save / Load leaves a `save_screen::SaveCommit` on `BootSession::last_save_commit`; the host owns the bytes behind the `SaveRack` |
 | Descriptor rects with pinned fallback | `engine-ui::pause_menu::MenuRects` (`MENU_WINDOW_FALLBACK`) |
 | Window set, tab painter, draw order, 320x240 stage scale | `engine-ui::pause_menu::pause_screen_draws` + `stage_transform` |
@@ -1313,7 +1313,7 @@ the group flow via `spell_targets_group` over
 `SpellTarget::retail_target_flag_bits`), projected by
 `pause_screens::magic_screen_model` and drawn by
 `engine-ui::magic_screen_draws_for` / `magic_screen_sprites_for`. Greying and
-confirm refusal use `engine-core::menu_validator::spell_affects_anyone` and
+confirm refusal use `engine-menu-runtime::menu_validator::spell_affects_anyone` and
 the discounted cost; `field_menu_dispatch::apply_spell_outcome` debits the
 discounted cost once, applies every grant of a group cast
 (`SpellOutcome::MultiHeal`), and runs the leveling arm through the shared

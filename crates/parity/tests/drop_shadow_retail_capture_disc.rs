@@ -272,7 +272,7 @@ fn check(label: &str, overworld: bool) {
 /// underlay) equal the retail state's VRAM word for word.
 #[test]
 fn drop_shadow_blob_is_resident_in_the_scene_vram() {
-    use legaia_engine_core::scene_host::SceneHost;
+    use legaia_engine_scene_host::scene_host::SceneHost;
     if std::env::var_os("LEGAIA_DISC_BIN").is_none() {
         eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated convention)");
         return;

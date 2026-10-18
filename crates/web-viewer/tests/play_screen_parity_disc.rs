@@ -17,7 +17,7 @@
 
 #![cfg(not(target_arch = "wasm32"))]
 
-use legaia_engine_core::scene_host::SceneHost;
+use legaia_engine_scene_host::scene_host::SceneHost;
 use legaia_web_viewer::play::build_field_render;
 use legaia_web_viewer::runtime::LegaiaRuntime;
 

@@ -2,9 +2,11 @@
 
 Where the engine's kernels meet. This crate owns `World` - the one struct
 that holds a running game - and everything that has to read or write it: the
-VM host implementations, the scene host that ticks a loaded scene, the battle
-loop, the menu runtime and the save round-trip. It draws nothing and plays
-nothing.
+VM host implementations, the tick, the battle loop and the save round-trip.
+It draws nothing and plays nothing. The two layers that drive a `World` from
+outside sit directly above it: the scene host
+([`engine-scene-host`](../engine-scene-host/README.md)) and the pause-menu
+runtime ([`engine-menu-runtime`](../engine-menu-runtime/README.md)).
 
 ## What lives here
 
@@ -19,14 +21,16 @@ nothing.
 - **The VM hosts.** Each interpreter in `engine-vm`, `engine-motion-vm` and
   `engine-battle-vm` reaches the game through a host trait; this crate
   implements those traits over `World`.
-- **The scene host.** `SceneHost` owns the `World` and the `ProtIndex`,
-  enters scenes, ticks them and drains the queues a tick fills: door warps,
-  BGM routing through `BgmDirector`, the FMV hand-off.
+- **The `World` half of scene flow.** New Game seeding (`new_game`), the
+  live-loop arming (`live_loop`), the place-name banner, the player-rig source
+  (`World::player_rig_source`) and the constants the scene host and the tick
+  share (`world::EFFECT_MODEL_LIBRARY_BASE`, `world::BGM_SUB_OP_ENGINE_STOP`).
+  `SceneHost`, which owns the `World` and the `ProtIndex` and enters and
+  ticks scenes, is `engine-scene-host`.
 - **The stateful side of battle and minigames.** The round loop, the
-  command flow and the minigame sessions' entry points. The pause-menu
-  runtime that edits the world from the menu is
-  [`engine-menu-runtime`](../engine-menu-runtime/README.md), above this crate. The minigame venues and surfaces they drive, and the minigame
-  seat itself (`MinigameState`), are `engine-minigame-scenes`.
+  command flow, the battle HUD state and the minigame sessions' entry points.
+  The minigame venues and surfaces they drive, and the minigame seat itself
+  (`MinigameState`), are `engine-minigame-scenes`.
 - **Saves.** `World::save_full` / `load_full` over the LGSF container in
   `legaia-save`, and the retail memory-card write.
 - **Scene staging.** The scene questions that take simulation state: which
@@ -58,8 +62,10 @@ crate. Paths name the owning crate - nothing is re-exported.
 - **No renderer, window or audio device.** No `wgpu`, `winit` or `cpal`, and
   none of `engine-render`, `engine-audio`, `engine-ui` or `engine-screens`.
   That is what lets the browser play page run this crate unchanged.
-- **Nothing above it.** `engine-menu-runtime`, `engine-session`, `parity`
-  and the hosts depend on this crate, never the reverse.
+- **Nothing above it.** `engine-scene-host`, `engine-menu-runtime`,
+  `engine-session`, `parity` and the hosts depend on this crate, never the
+  reverse. A `World` field the scene host seeds at scene entry is `pub` for
+  that reason; the scene host is not named here.
 - **No patcher or emulator crate in the library.** The patcher and the
   save-state readers appear only under `[dev-dependencies]`, for the
   disc-gated runtime oracles.
@@ -70,7 +76,8 @@ crate. Paths name the owning crate - nothing is re-exported.
 engine-shell / web-viewer / asset-viewer      hosts
 engine-session, engine-screens, parity        host-shared top
 engine-menu-runtime                           the pause menu over World
-engine-core                                   World, scene host, battle loop
+engine-scene-host                             SceneHost, resume, live preview
+engine-core                                   World, the tick, battle loop
 engine-minigame-scenes                        minigame venues + surfaces
 engine-scene, engine-* kernels, render-kernels   World-free rules + scene loading
 format crates                                 typed disc data

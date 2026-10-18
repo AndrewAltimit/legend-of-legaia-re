@@ -104,7 +104,7 @@ script (`DAT_801E4E54`) on the Sell transition - the transitions retail's
 picker dispatcher `FUN_801DAFD4` drives ([shop.md](shop.md)) - through
 `legaia_engine_vm::run` over the `MenuWidgetState` window-list host.
 Disc-gated pins: `crates/game-tables/tests/widget_script_real.rs`,
-`crates/engine-core/tests/menu_widget_scripts_real.rs`.
+`crates/engine-menu-runtime/tests/menu_widget_scripts_real.rs`.
 
 ## Why it's separate from the field VM
 

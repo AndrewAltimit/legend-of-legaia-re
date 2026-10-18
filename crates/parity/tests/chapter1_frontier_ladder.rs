@@ -125,10 +125,10 @@
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::path::PathBuf;
 
-use legaia_engine_core::scene_host::{SceneHost, SceneTickEvent};
 use legaia_engine_field::man_field_scripts::{overworld_portal_sites, scene_destinations};
 use legaia_engine_mode::mode::SceneMode;
 use legaia_engine_scene::scene::{DefaultMapIdResolver, ProtIndex, Scene, is_world_map_scene};
+use legaia_engine_scene_host::scene_host::{SceneHost, SceneTickEvent};
 use legaia_engine_system::input::PadButton;
 use legaia_scene_formats::man_section::{ManFile, parse as parse_man};
 

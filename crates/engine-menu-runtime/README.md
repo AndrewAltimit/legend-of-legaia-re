@@ -27,7 +27,8 @@ sub-session from the world, and writes each outcome back.
 engine-shell / web-viewer                       hosts
 engine-session, engine-screens, parity          host-shared top
 engine-menu-runtime                             the pause menu over World
-engine-core                                     World, scene host, battle loop
+engine-scene-host                               SceneHost, resume, live preview
+engine-core                                     World, the tick, battle loop
 engine-menus, engine-* kernels                  World-free rules
 ```
 

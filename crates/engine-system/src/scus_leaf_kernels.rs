@@ -17,7 +17,7 @@
 //! field VM's own op `0x36` sub-`4` and op `0x35` sub-`5` bodies
 //! (`legaia_engine_core::world::vm_hosts`), and the scene control-block reset
 //! (its body over a `World` is `legaia_engine_core::scus_leaf_kernels`) runs
-//! from `legaia_engine_core::scene_host::SceneHost::load_scene`. The other four carry
+//! from `legaia_engine_scene_host::scene_host::SceneHost::load_scene`. The other four carry
 //! their `PORT` tag and their own per-item wiring disclosure on the item:
 //! [`init_identity_index_list`], [`StagedCharacterSelector::set_pair`],
 //! [`seed_boot_offset_table`] and [`text_line_count`].

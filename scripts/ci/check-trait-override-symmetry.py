@@ -94,8 +94,12 @@ except ModuleNotFoundError:  # Python < 3.11
 
 REPO = Path(__file__).resolve().parent.parent.parent
 CORE_SRC = REPO / "crates" / "engine-core" / "src"
-# Kernel crates under engine-core whose traits engine-core implements.
+# Kernel crates under engine-core whose traits engine-core implements, and
+# the crates split out above it whose traits the hosts implement (the scene
+# host's `BgmDirector` and `CardLoadHost`).
 SPLIT_SRCS = [
+    REPO / "crates" / "engine-scene-host" / "src",
+    REPO / "crates" / "engine-menu-runtime" / "src",
     REPO / "crates" / "engine-field" / "src",
     REPO / "crates" / "engine-scene" / "src",
     REPO / "crates" / "engine-menus" / "src",

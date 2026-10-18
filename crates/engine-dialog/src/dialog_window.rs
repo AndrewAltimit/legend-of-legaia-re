@@ -41,7 +41,7 @@
 //! of it: a two-row page, a page whose third row scrolls in unprompted, the
 //! carried rows scrolled away before each wait, and - with confirm taps
 //! injected - the `0x25` latch, state `0x0D` and the faster scrolls.
-//! `crates/engine-core/tests/dialog_window_disc.rs` replays both traces
+//! `crates/engine-scene-host/tests/dialog_window_disc.rs` replays both traces
 //! against the engine.
 
 use crate::dialog_pacing::{PagerCall, TypewriterPacer};

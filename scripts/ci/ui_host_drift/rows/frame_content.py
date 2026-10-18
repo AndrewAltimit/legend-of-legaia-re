@@ -45,6 +45,7 @@ Analysis: `ui_host_drift.tiers.frame_content`.
 ENGINE_API_CRATES = (
     "engine-core",
     "engine-menu-runtime",
+    "engine-scene-host",
     "engine-battle",
     "engine-effects",
     "engine-field",

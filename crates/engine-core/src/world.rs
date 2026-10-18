@@ -88,6 +88,7 @@ mod field_terrain;
 mod field_vm_state;
 mod frame_step_floor;
 mod menu_state;
+mod player_rig;
 mod screen_fx_state;
 mod state;
 mod types;
@@ -96,8 +97,9 @@ mod world_toggles;
 
 pub use ambient_fx_state::{AmbientFxState, FrameGrab, SeededVramRect};
 pub use audio_state::{
-    ARENA_SIDE_BAND_REQUEST, AudioState, FIELD_INIT_SIDE_BAND_REQUEST, SIDE_BAND_PARK,
-    SideBandBank, VAB_01_RAW_BASE, runtime_sfx_descriptor_in, side_band_bank_for_request,
+    ARENA_SIDE_BAND_REQUEST, AudioState, BGM_SUB_OP_ENGINE_STOP, FIELD_INIT_SIDE_BAND_REQUEST,
+    SIDE_BAND_PARK, SideBandBank, VAB_01_RAW_BASE, runtime_sfx_descriptor_in,
+    side_band_bank_for_request,
 };
 pub use battle_state::{BattleState, ClipRibbon, INFLIGHT_GROUND_SLOTS, InflightCastSeed};
 pub use cast_fx_state::{CastFxState, PendingBurst};
@@ -128,6 +130,7 @@ use legaia_engine_system::sound_state::SfxRingOp;
 use legaia_engine_system::story_flag_state::StoryFlagState;
 use legaia_engine_vm::frame_clock::FrameClock;
 pub use menu_state::MenuState;
+pub use player_rig::PlayerRigSource;
 pub use screen_fx_state::{ClearColourRamp, ScreenFrame, ScreenFxState};
 pub use state::*;
 pub use types::*;
@@ -164,8 +167,8 @@ pub use battle::{AutoComboInputs, AutoComboState};
 pub use battle::{CASTER_STAGE_TICK_LIMIT, CasterStagePhase, CasterStageRun};
 mod effects;
 pub use effects::{
-    ClutBlendFx, ClutCellFx, ClutCellFxPhase, DEBUG_EFFECT_LIFETIME_FRAMES, MAX_DEBUG_EFFECTS,
-    ScriptVramMove,
+    ClutBlendFx, ClutCellFx, ClutCellFxPhase, DEBUG_EFFECT_LIFETIME_FRAMES,
+    EFFECT_MODEL_LIBRARY_BASE, MAX_DEBUG_EFFECTS, ScriptVramMove,
 };
 mod encounters;
 pub use encounters::FieldBossStager;
@@ -177,6 +180,7 @@ mod field_hud;
 pub(crate) mod field_xa;
 pub use field_elevation::{CELL_ELEVATION_OVERRIDE, ElevationOverride};
 pub use field_hud::PassiveHudPoints;
+pub use field_xa::{scene_minigame_door_xa_prestage, scene_xa_prestage};
 mod field_loop;
 mod field_movement;
 pub mod field_npc_cull;

@@ -532,7 +532,7 @@ A sweep reaches the action SM as retail's target-group code, not a sentinel: the
 
 `engine-menus::battle_input` carries the three phases (`CommandPhase::RoundPrompt`
 / `Menu` / `AttackMode`) and `engine-ui::battle_command_ui::ChipPhase` the
-seating for each; `engine-core::disc_readers::battle_open` composes the banner and
+seating for each; `engine-scene-host::disc_readers::battle_open` composes the banner and
 `World::raise_battle_open_banner` queues it onto the shared battle message box
 (retail's `ctx[+0x6B2]` surface). The round-scoped prompt is armed from
 `World::arm_round_open_prompt`, keyed on the flow byte parking at
@@ -842,9 +842,9 @@ and the box first appears on the next walk.
 Engine port: [`engine-battle::battle_tutorial`](../../crates/engine-battle/src/battle_tutorial.rs).
 The prompt **text is Sony data living in the overlay**, so the port commits only
 the string *addresses* and reads the text off the user's own disc at runtime
-(`BattleTutorialScript::from_overlay`, fed by `engine-core::disc_readers::battle_tutorial::script_from_prot`) - the same rule the item /
+(`BattleTutorialScript::from_overlay`, fed by `engine-scene-host::disc_readers::battle_tutorial::script_from_prot`) - the same rule the item /
 spell / dialog parsers follow. Disc-gated oracle
-`crates/engine-core/tests/battle_tutorial_disc.rs`.
+`crates/engine-scene-host/tests/battle_tutorial_disc.rs`.
 
 **One dispatch's boxes share the frame.** Each box the handler emits is its
 own registered text actor, so a two-box hook - the lesson intro at the top

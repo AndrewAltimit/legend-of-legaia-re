@@ -24,8 +24,9 @@ const DANCE_SUB_ID: u8 = 6;
 
 fn session() -> Option<BootSession<TestAudioSink>> {
     let disc = std::env::var_os("LEGAIA_DISC_BIN")?;
-    let host = legaia_engine_core::scene_host::SceneHost::open_disc(std::path::Path::new(&disc))
-        .expect("open disc");
+    let host =
+        legaia_engine_scene_host::scene_host::SceneHost::open_disc(std::path::Path::new(&disc))
+            .expect("open disc");
     Some(
         BootSession::from_host(host, None, &BootConfig::default(), || {
             Ok(TestAudioSink::new(SPU_INTERNAL_RATE))

@@ -76,7 +76,7 @@
 //!
 //! The opcode ships at **17 sites in 5 scenes** (`balden`, `balden2`,
 //! `garmel`, `jagaroom`, `juui2`), all in partition 1 record 0 of a scene MAN;
-//! the census lives in `engine-core/tests/field_actor_spawn_disc_e2e.rs` and
+//! the census lives in `engine-scene-host/tests/field_actor_spawn_disc_e2e.rs` and
 //! is written up in
 //! [`script-vm-menuctrl.md`](../../../docs/subsystems/script-vm-menuctrl.md#where-0x4c-0xd8-occurs-on-the-disc).
 //! `FieldActorSpawnHost::spawn_morph_actor` is the live engine hook for it.
@@ -351,7 +351,7 @@ pub struct MorphWeightActor {
 /// sites across `balden` / `balden2` / `garmel` / `jagaroom` / `juui2`
 /// resolve to a block whose leading count word is `1`, each naming group `0`
 /// (the census is `morph_weight_disc_blocks_are_single_record` in
-/// `engine-core/tests/field_actor_spawn_disc_e2e.rs`). So the pitch
+/// `engine-scene-host/tests/field_actor_spawn_disc_e2e.rs`). So the pitch
 /// disagreement is real in the bytes and unobservable in the shipped game;
 /// no reading of it is load-bearing, and none is invented here.
 pub fn rest_pose_snapshot(block: &[u8], groups: &[&[u8]]) -> Vec<u8> {

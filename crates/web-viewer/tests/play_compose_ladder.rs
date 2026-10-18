@@ -863,7 +863,7 @@ fn rung10_overworld(rt: &mut LegaiaRuntime, tally: &mut Tally) -> Result<(), Str
     }
     // Walk a few tiles of overworld. Up, not Down: the entry seat sits half a
     // sub-cell north of a `.MAP` wall, so a Down hold only turns the player
-    // (`engine-core/tests/map01_overworld_walk_disc.rs`). The check is on the
+    // (`engine-scene-host/tests/map01_overworld_walk_disc.rs`). The check is on the
     // position, not the whole transform, so a turn in place does not pass.
     let start = rt.player_transform();
     rt.set_pad(PadButton::Up.mask());

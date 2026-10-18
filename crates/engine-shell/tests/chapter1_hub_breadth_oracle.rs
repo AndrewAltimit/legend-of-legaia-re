@@ -73,7 +73,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 
-use legaia_engine_core::scene_host::{SceneHost, SceneTickEvent};
 use legaia_engine_field::man_field_scripts::{
     FlagBank, overworld_portal_sites, partition_record_span, partition2_record_gates,
     scene_destinations, walk_partition_gflag_sites,
@@ -83,6 +82,7 @@ use legaia_engine_mode::mode::SceneMode;
 use legaia_engine_scene::man_census::system_flag_census;
 use legaia_engine_scene::scene::{ProtIndex, Scene};
 use legaia_engine_scene::scene_bundle::{extract_man_payload, find_bundle};
+use legaia_engine_scene_host::scene_host::{SceneHost, SceneTickEvent};
 use legaia_scene_formats::field_disasm::{FlagKind, InsnInfo, LinearWalker, scene_change_name};
 
 // ---------------------------------------------------------------------

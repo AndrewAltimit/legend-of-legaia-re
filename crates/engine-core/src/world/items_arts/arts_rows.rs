@@ -7,7 +7,7 @@ impl World {
     /// Resolve a party slot to the [`legaia_art::Character`] whose art tables
     /// apply. Party slots 0/1/2 are Vahn/Noa/Gala; out-of-range slots (story
     /// guests, monsters) fall back to Vahn so the lookup never panics.
-    pub(crate) fn caster_character(&self, slot: u8) -> legaia_art::Character {
+    pub fn caster_character(&self, slot: u8) -> legaia_art::Character {
         legaia_engine_battle::battle_arts::character_for_slot(slot)
     }
 

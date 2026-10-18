@@ -190,7 +190,7 @@ impl PlayWindowApp {
             log::info!("cutscene: {outcome}");
             if matches!(
                 outcome,
-                legaia_engine_core::scene_host::FmvHandoffOutcome::Entered { .. }
+                legaia_engine_scene_host::scene_host::FmvHandoffOutcome::Entered { .. }
             ) {
                 self.rebuild_scene_render_state();
             }

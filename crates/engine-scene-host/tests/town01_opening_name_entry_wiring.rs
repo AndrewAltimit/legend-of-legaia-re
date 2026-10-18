@@ -1,0 +1,208 @@
+//! Disc-gated integration: the `town01` opening cutscene timeline drives the
+//! name-entry overlay open at its pinned op-`0x49` STATE_RESUME, suspends while
+//! the player names the lead, then resumes - mirroring retail.
+//!
+//! Exercises the wiring end to end:
+//! 1. entering `town01` via the new-game prologue hand-off installs the opening
+//!    cutscene timeline (`World::install_town01_opening_timeline`, gated on
+//!    `entering_town01_opening`);
+//! 2. ticking the world runs the timeline through the establishing camera sweep
+//!    (it steps past the `0x4C` script-alloc parks) until it reaches the pinned
+//!    op-`0x49` at body offset `0x02c6`, where it opens name entry and parks;
+//! 3. the timeline is frozen while name entry is open, then resumes (and the
+//!    cutscene camera reverts) once the player commits a name.
+//!
+//! Skip-passes without disc data / extracted assets (CLAUDE.md convention).
+
+use legaia_engine_core::world::World;
+use legaia_engine_menus::name_entry::{NameEntryInput, NameEntryState};
+use legaia_engine_scene_host::scene_host::SceneHost;
+use std::path::PathBuf;
+
+fn extracted_dir() -> Option<PathBuf> {
+    for c in ["extracted", "../extracted", "../../extracted"] {
+        let d = PathBuf::from(c);
+        if d.join("PROT.DAT").exists() && d.join("CDNAME.TXT").exists() {
+            return Some(d);
+        }
+    }
+    None
+}
+
+/// Body offset of the name-entry STATE_RESUME the timeline must park on.
+const NAME_ENTRY_OP49_OFFSET: usize = 0x02c6;
+
+#[test]
+fn town01_opening_timeline_opens_name_entry_at_op49() {
+    if std::env::var_os("LEGAIA_DISC_BIN").is_none() {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated convention)");
+        return;
+    }
+    let Some(extracted) = extracted_dir() else {
+        eprintln!("[skip] extracted/ missing - run `legaia-extract` first");
+        return;
+    };
+
+    let mut host = SceneHost::open_extracted(&extracted).expect("open SceneHost");
+
+    // Simulate the opdeene→town01 prologue hand-off: the flag `take_prologue_handoff`
+    // would set, telling the town01 entry to install the opening timeline.
+    host.world.cutscene.entering_town01_opening = true;
+    host.enter_field_scene(legaia_game_tables::new_game::OPENING_SCENE, 0)
+        .expect("enter town01");
+
+    // 1. The opening timeline installed and is armed to open name entry; the
+    //    one-shot entry flag was consumed.
+    assert!(
+        host.world.cutscene_timeline_active(),
+        "town01 opening timeline installs on the prologue hand-off"
+    );
+    assert!(
+        host.world.cutscene.prologue_naming_pending,
+        "the timeline is armed to open name entry at its op-0x49"
+    );
+    assert!(
+        !host.world.cutscene.entering_town01_opening,
+        "the one-shot opening flag is consumed by the entry"
+    );
+    assert!(
+        !host.world.name_entry_active(),
+        "name entry is NOT open at scene entry - it opens when the timeline reaches op-0x49"
+    );
+
+    // 2. Tick until the timeline reaches its op-0x49 and opens name entry.
+    let mut ticks = 0u32;
+    while !host.world.name_entry_active() && ticks < 4000 {
+        host.world.tick();
+        ticks += 1;
+    }
+    assert!(
+        host.world.name_entry_active(),
+        "the timeline opens name entry within the establishing sweep (ticked {ticks})"
+    );
+    assert!(
+        ticks > 1,
+        "name entry opens partway through the opening (after camera/wait beats), not instantly"
+    );
+    assert!(
+        host.world.cutscene.prologue_naming_armed,
+        "the op-0x49 host hook armed the name-entry handoff"
+    );
+    // The timeline is parked exactly on the pinned op-0x49 (body 0x02c6).
+    let parked_pc = host.world.cutscene.timeline.as_ref().map(|t| t.pc);
+    assert_eq!(
+        parked_pc,
+        Some(NAME_ENTRY_OP49_OFFSET),
+        "the timeline is suspended on the pinned name-entry STATE_RESUME"
+    );
+    eprintln!("[town01] name entry opened by timeline op-0x49 at tick {ticks}");
+
+    // 3. The timeline is frozen while name entry is open: ticking does not
+    //    advance its frame counter or PC.
+    let frames_before = host.world.cutscene.timeline.as_ref().map(|t| t.frames);
+    for _ in 0..30 {
+        host.world.tick();
+    }
+    assert!(
+        host.world.name_entry_active(),
+        "name entry stays open while the player has not committed"
+    );
+    assert_eq!(
+        host.world.cutscene.timeline.as_ref().map(|t| t.frames),
+        frames_before,
+        "the timeline is frozen (no frame-cap progress) while name entry is up"
+    );
+    assert_eq!(
+        host.world.cutscene.timeline.as_ref().map(|t| t.pc),
+        Some(NAME_ENTRY_OP49_OFFSET),
+        "the timeline stays parked on the op-0x49 while name entry is up"
+    );
+
+    // 4. Commit a name: type one glyph (so the name is non-empty), then go to
+    //    End → confirm opens on No (retail) → Up to Yes → confirm.
+    host.world.party.name_entry.as_mut().unwrap().cursor = 0; // 'A'
+    host.world.step_name_entry(NameEntryInput {
+        confirm: true,
+        ..Default::default()
+    });
+    let end = legaia_engine_menus::name_entry::CONTROL_ANCHORS[2];
+    host.world.party.name_entry.as_mut().unwrap().cursor = end;
+    host.world.step_name_entry(NameEntryInput {
+        confirm: true,
+        ..Default::default()
+    });
+    assert_eq!(
+        host.world.party.name_entry.as_ref().unwrap().state,
+        NameEntryState::Confirm,
+        "End opens the Yes/No confirm"
+    );
+    assert!(
+        !host.world.party.name_entry.as_ref().unwrap().confirm_yes,
+        "the confirm prompt opens with the hand on No (retail default)"
+    );
+    host.world.step_name_entry(NameEntryInput {
+        up: true,
+        ..Default::default()
+    });
+    let committed = host.world.step_name_entry(NameEntryInput {
+        confirm: true,
+        ..Default::default()
+    });
+    assert!(committed, "Yes commits and closes name entry");
+    assert!(!host.world.name_entry_active());
+    assert!(
+        !host.world.party_name(0).is_empty(),
+        "the committed lead name persists"
+    );
+
+    // 5. The timeline resumes (op-0x49 now Done) and eventually completes,
+    //    dropping itself so the view reverts from the cutscene camera.
+    host.world.locomotion.player_move_cues.clear();
+    let mut more = 0u32;
+    while host.world.cutscene.timeline.is_some() && more < 12000 {
+        tick_pressing_through_dialogs(&mut host.world, more);
+        more += 1;
+    }
+    let parked = host.world.cutscene.timeline.as_ref().map(|t| {
+        let end = (t.pc + 12).min(t.bytecode.len());
+        (t.pc, t.frames, t.bytecode[t.pc.min(end)..end].to_vec())
+    });
+    assert!(
+        host.world.cutscene.timeline.is_none(),
+        "the opening timeline completes after naming and is dropped (ticked {more} more); \
+         still parked at (pc, frames, bytes) = {parked:02x?}"
+    );
+    // The post-confirm beats run the player's scripted animation: the MAN
+    // record's `A2 F8 30` (+0x030B) then `A2 F8 31` (+0x0352) ExecMoves -
+    // the retail anim cue the recomp trace pinned to scene-ANM records
+    // 47/48. The world surfaces them as player move cues in order.
+    let cues = &host.world.locomotion.player_move_cues;
+    let pos48 = cues.iter().position(|&m| m == 48);
+    let pos49 = cues.iter().position(|&m| m == 49);
+    assert!(
+        pos48.is_some() && pos49.is_some(),
+        "the resumed timeline cues ExecMove 48 then 49 on the player (got {cues:?})"
+    );
+    assert!(pos48 < pos49, "ExecMove 48 precedes 49 (got {cues:?})");
+    // Sanity: the record index constant matches the disc invariant.
+    assert_eq!(World::TOWN01_OPENING_TIMELINE_RECORD, 3);
+}
+
+/// Press confirm on alternate ticks while the timeline is parked on an inline
+/// dialog box - what a player does, and what a headless run cannot do by
+/// itself. Retail's opening parks on the elder's first line after naming; the
+/// anti-hang cap used to skip the whole conversation instead, which is not a
+/// completion, it is a hang recovery.
+fn tick_pressing_through_dialogs(world: &mut legaia_engine_core::world::World, tick: u32) {
+    let parked = world
+        .cutscene
+        .timeline
+        .as_ref()
+        .is_some_and(|t| t.dialog.is_some());
+    if parked && tick.is_multiple_of(2) {
+        world.set_pad(legaia_engine_system::input::PadButton::Cross.mask());
+    } else {
+        world.set_pad(0);
+    }
+    world.tick();
+}

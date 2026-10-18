@@ -216,7 +216,7 @@ impl World {
     /// The backdrop draw's slot-1 Y angle this frame, in 4096ths of a turn
     /// ([`Self::tick_battle_backdrop_spin`]). Both battle hosts turn their
     /// slot-1 backdrop draws by it through
-    /// [`crate::scene_host::backdrop_slot_1_basis`].
+    /// [`legaia_engine_scene_host::scene_host::backdrop_slot_1_basis`].
     pub fn battle_backdrop_slot_1_yaw(&self) -> u16 {
         self.battle.backdrop_slot_1_yaw
     }

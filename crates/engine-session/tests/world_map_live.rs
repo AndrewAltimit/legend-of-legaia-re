@@ -348,9 +348,9 @@ fn overworld_scenes_load_nonempty_walkability_grid() {
 /// it", driving the real `SceneHost::tick` transition handler.
 #[test]
 fn world_map_scene_transition_auto_enters_world_map() {
-    use legaia_engine_core::scene_host::SceneTickEvent;
     use legaia_engine_mode::mode::SceneMode;
     use legaia_engine_scene::scene::VecMapIdResolver;
+    use legaia_engine_scene_host::scene_host::SceneTickEvent;
 
     if std::env::var_os("LEGAIA_DISC_BIN").is_none() {
         eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated convention)");

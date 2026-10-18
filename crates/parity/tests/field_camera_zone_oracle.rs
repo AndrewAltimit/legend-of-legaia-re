@@ -36,11 +36,11 @@
 
 use std::path::{Path, PathBuf};
 
-use legaia_engine_core::scene_host::SceneHost;
 use legaia_engine_field::camera::Camera;
 use legaia_engine_field::camera_zone::{
     CameraZoneConfig, ComposeInputs, atan_q11, compose, sqrt0_lut,
 };
+use legaia_engine_scene_host::scene_host::SceneHost;
 use legaia_mednafen::SaveState;
 use legaia_ram_image::ScenarioManifest;
 use legaia_ram_image::game_anchors;
@@ -411,7 +411,7 @@ fn every_walkable_state_frames_through_the_zone_camera() {
             // A zone miss the port cannot reproduce by querying, because
             // retail did not query here either. Retail's block is loaded by a
             // script arm, the player seat, or the flag-gated per-frame path
-            // (see `crates/engine-core/tests/field_camera_zone_arms_disc.rs`);
+            // (see `crates/engine-scene-host/tests/field_camera_zone_arms_disc.rs`);
             // a state whose block decodes from a record in this scene's own
             // table, while the query at the state's own tile does not select
             // it, is a block retail loaded at some earlier tile and never

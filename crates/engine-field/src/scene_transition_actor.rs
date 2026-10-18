@@ -297,7 +297,7 @@ impl HeldTransition {
 /// Retail's scene-change packet spawns the actor and returns; the departing
 /// scene keeps running under it while state 0 seeds the [`TRANSITION_COUNTDOWN`]
 /// and state 4 waits for it to go negative, and only then does MAIN INIT
-/// load the destination. `legaia_engine_core::scene_host::SceneHost::tick` parks every
+/// load the destination. `legaia_engine_scene_host::scene_host::SceneHost::tick` parks every
 /// transition here, ticks the actor once per world tick with the frame step,
 /// and commits the switch on the tick the actor writes the mode-2 hand-off.
 /// While a hold is parked the departing scene's player is engaged

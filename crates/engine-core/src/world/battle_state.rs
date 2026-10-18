@@ -551,7 +551,7 @@ pub struct BattleState {
     /// the arrival's hand-back rebind
     /// ([`legaia_engine_battle::battle_stage_module::StageEffect::RebindBackdrop`]). Both
     /// hosts build the stage shell from
-    /// [`crate::scene_host::SceneHost::battle_stage_object_indices`], which reads
+    /// [`legaia_engine_scene_host::scene_host::SceneHost::battle_stage_object_indices`], which reads
     /// it; reset at battle entry.
     pub backdrop_rebound: bool,
     /// The sparring fight's first round start is waiting on the battle open
@@ -638,7 +638,7 @@ pub struct BattleState {
     /// The player's **Auto** attack: the per-fighter flag, the round-start
     /// pool-arm queues and their disc inputs
     /// ([`crate::world::AutoComboState`]).
-    pub(crate) auto_combo: crate::world::AutoComboState,
+    pub auto_combo: crate::world::AutoComboState,
     /// The phase-scripted battle camera's state
     /// (`legaia_engine_battle_vm::battle_cam_script::BattleCamera`), stepped by
     /// `World::tick_battle_camera` from `World::tick` for every host; `None`
@@ -848,7 +848,7 @@ pub struct BattleState {
     /// Bumped by every [`crate::world::World::enter_battle`]: the identity of
     /// the fight in progress. Per-battle work that lives outside the world -
     /// the scene host's party battle-form install
-    /// ([`crate::scene_host::SceneHost::ensure_battle_party_forms`]) - keys on it,
+    /// ([`legaia_engine_scene_host::scene_host::SceneHost::ensure_battle_party_forms`]) - keys on it,
     /// so two fights with no field tick between them still install twice.
     /// Not a retail word.
     pub entry_serial: u32,

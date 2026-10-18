@@ -11,7 +11,7 @@
 ///
 /// The world's frame runs it over [`FieldTerrain::floor_tier_bobs`]; a
 /// whole-map viewer runs it over the oscillators each room's own entry block
-/// spawned ([`crate::scene_live::LiveScene`]), so every room animates on the
+/// spawned ([`legaia_engine_scene_host::scene_live::LiveScene`]), so every room animates on the
 /// one kernel.
 pub fn step_floor_ladder(
     bobs: &mut [legaia_engine_field::field_actor_timers::FloorTierBob],
@@ -70,7 +70,7 @@ pub struct FieldTerrain {
     /// The 16-entry floor-height LUT the collision grid's low nibble indexes
     /// (retail `DAT_1F80035C`, filled from the MAN header by `FUN_8003AEB0` as
     /// 16 negated `s16` elevation tiers). Resolved per-scene into here from
-    /// [`crate::scene_host::SceneAssets::field_floor_height_lut`]; consumed by
+    /// [`legaia_engine_scene_host::scene_host::SceneAssets::field_floor_height_lut`]; consumed by
     /// [`crate::world::World::sample_field_floor_height`] (the port of `FUN_80019278`). All
     /// zero until a field scene supplies it.
     pub floor_height_lut: [i16; 16],

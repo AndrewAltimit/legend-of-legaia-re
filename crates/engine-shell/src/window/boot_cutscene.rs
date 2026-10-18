@@ -4,7 +4,7 @@ use super::*;
 use legaia_engine_audio::AudioSink;
 // `NativeAudioDirector::stop` is a `BgmDirector` trait item; the title/boot
 // hand-offs below stop the score through it.
-use legaia_engine_core::scene_host::BgmDirector as _;
+use legaia_engine_scene_host::scene_host::BgmDirector as _;
 
 /// What [`PlayWindowApp::service_title_attract`] wants done with the title
 /// screen's attract hand-off this frame.
@@ -173,7 +173,7 @@ impl PlayWindowApp {
     /// ([`legaia_engine_session::native::NativeSession::current_resume`]). A
     /// **Load** resumes through [`legaia_engine_session::native::NativeSession::resume_save`],
     /// the landing order the browser page's `play_resume_save` shares
-    /// (`legaia_engine_core::resume::land_save`): the save's own scene - retail
+    /// (`legaia_engine_scene_host::resume::land_save`): the save's own scene - retail
     /// resumes a save where it was written - else the scene already running,
     /// never a New Game. The world is hydrated after the entry, so the field
     /// VM's first tick sees the saved story state in the saved scene. Returns

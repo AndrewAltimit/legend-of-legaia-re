@@ -67,7 +67,7 @@
 //! # Who issues it
 //!
 //! Nothing on the disc, as far as the per-scene carriers go: the disc-gated
-//! census `crates/engine-core/tests/move_ext_strip_census_disc.rs` walks
+//! census `crates/engine-scene-host/tests/move_ext_strip_census_disc.rs` walks
 //! every CDNAME scene's prescript stager records through the move-VM decoder
 //! and scans every PROT entry's type-`0x05` MOVE slot, and finds no
 //! `0x2F 0x2C` instruction in either, while sub-ops `0x2B` and `0x2D` do

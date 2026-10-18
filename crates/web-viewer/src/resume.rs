@@ -1,5 +1,5 @@
 //! The play page's resume and New Game entries: the browser half of
-//! [`legaia_engine_core::resume`], paired with the native
+//! [`legaia_engine_scene_host::resume`], paired with the native
 //! `BootSession::resume_save` / `BootSession::start_new_game`.
 //!
 //! The page used to choreograph both in `play.html` callbacks - enter the
@@ -11,15 +11,17 @@
 //! the page makes one call:
 //!
 //! - [`LegaiaRuntime::play_resume_save`] lands the parked save through
-//!   [`legaia_engine_core::resume::land_save`] (the saved scene, else the
+//!   [`legaia_engine_scene_host::resume::land_save`] (the saved scene, else the
 //!   running scene, else the opening town - never a New Game);
 //! - [`LegaiaRuntime::play_new_game`] seeds the New Game slate and enters the
-//!   opening through [`legaia_engine_core::resume::enter_new_game`].
+//!   opening through [`legaia_engine_scene_host::resume::enter_new_game`].
 //!
 //! Both return the landing as JSON; the page rebuilds its render state when
 //! `entered` is set and otherwise leaves the scene it has up.
 
-use legaia_engine_core::resume::{CardLoadHost, ResumeLanding, enter_new_game, resume_card_load};
+use legaia_engine_scene_host::resume::{
+    CardLoadHost, ResumeLanding, enter_new_game, resume_card_load,
+};
 use legaia_save::SaveFile;
 use wasm_bindgen::prelude::*;
 
@@ -101,7 +103,7 @@ impl LegaiaRuntime {
 }
 
 /// The play page's half of a card load
-/// ([`legaia_engine_core::resume::resume_card_load`]).
+/// ([`legaia_engine_scene_host::resume::resume_card_load`]).
 struct PageCardLoad<'a>(&'a mut LegaiaRuntime);
 
 impl CardLoadHost for PageCardLoad<'_> {

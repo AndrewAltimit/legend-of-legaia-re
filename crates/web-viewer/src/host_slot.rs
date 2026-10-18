@@ -9,10 +9,10 @@
 //! disjoint from the runtime's other fields.
 
 use crate::play_sfx::PageDirector;
-use legaia_engine_core::scene_host::SceneHost;
 use legaia_engine_core::world::World;
 use legaia_engine_field::camera::Camera;
 use legaia_engine_mode::mode::ModeSeat;
+use legaia_engine_scene_host::scene_host::SceneHost;
 use legaia_engine_session::BootConfig;
 
 /// The engine session the page runs, over the page's audio output.

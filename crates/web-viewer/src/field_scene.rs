@@ -55,13 +55,13 @@ pub struct FieldScenePack {
     /// (or when the scene has none).
     pub anim: Option<FieldSceneAnim>,
     /// The scene running live and headless
-    /// ([`legaia_engine_core::scene_live::LiveScene`]): its world drives the
+    /// ([`legaia_engine_scene_host::scene_live::LiveScene`]): its world drives the
     /// floor-height ladder, the placed-prop clips, the ambient move-VM tree
     /// and the scripted VRAM effects exactly as the play hosts' world does.
     /// The overworld runs live too (its actors play the kingdom slot-4
     /// clips). `None` until [`LegaiaViewer::field_scene_anim_init`], or when
     /// the host refuses the scene.
-    pub live: Option<Box<legaia_engine_core::scene_live::LiveScene>>,
+    pub live: Option<Box<legaia_engine_scene_host::scene_live::LiveScene>>,
     /// The scene's ANM bundle - the clips placed props pose from.
     pub scene_anm: Option<legaia_actor_formats::player_anm::PlayerAnmBundle>,
     /// The live ladders (the live room's, then every other room's) the
@@ -95,7 +95,7 @@ pub struct FieldScenePack {
 /// effects - are the world's, stepped through
 /// `World::step_field_vram_effects` by whichever host owns the world (the
 /// play runtime's scene host, the map viewer's
-/// [`legaia_engine_core::scene_live::LiveScene`]).
+/// [`legaia_engine_scene_host::scene_live::LiveScene`]).
 pub struct FieldSceneAnim {
     /// The CLUT-walk shimmer (the slot-5 / type-6 walker or the legacy
     /// ocean-head fallback), stepped by the one engine kernel the native
@@ -172,7 +172,7 @@ pub fn build_field_scene_anim(
 }
 
 /// Enter the pack's scene live and headless
-/// ([`legaia_engine_core::scene_live::LiveScene`]), resolve the pose banks its
+/// ([`legaia_engine_scene_host::scene_live::LiveScene`]), resolve the pose banks its
 /// props and actors use, build the actor layer over the live world, and
 /// install the CLUT walker into the VRAM the page draws. The live scene is
 /// `None` only for a scene the host refuses: a kingdom overworld map runs
@@ -200,7 +200,7 @@ pub fn build_field_scene_live(index: Arc<ProtIndex>, pack: &mut FieldScenePack) 
         .entry_bytes(legaia_actor_formats::character_pack::PROT_ENTRY_INDEX)
         .ok()
         .and_then(|b| legaia_actor_formats::character_pack::field_locomotion_anm(&b).ok());
-    pack.live = legaia_engine_core::scene_live::LiveScene::enter(index.clone(), &pack.name)
+    pack.live = legaia_engine_scene_host::scene_live::LiveScene::enter(index.clone(), &pack.name)
         .map_err(|e| console_log(&format!("field scene {}: not live: {e}", pack.name)))
         .ok()
         .map(Box::new);
@@ -681,7 +681,7 @@ impl LegaiaViewer {
     /// Start the loaded field scene's animation: the bundle's type-6
     /// CLUT-walk table (water / waterfall shimmer) and the scene itself,
     /// entered live and headless through the engine's scene host
-    /// ([`legaia_engine_core::scene_live::LiveScene`]) - whose world runs the
+    /// ([`legaia_engine_scene_host::scene_live::LiveScene`]) - whose world runs the
     /// scene's scripts, so the floor-height ladder, placed-prop clips,
     /// ambient move-VM tree and scripted VRAM effects move as they do on the
     /// play hosts. Returns a JSON status
@@ -1327,7 +1327,7 @@ impl LegaiaViewer {
         &self,
     ) -> Option<(
         &crate::field_actors::FieldActors,
-        &legaia_engine_core::scene_host::SceneHost,
+        &legaia_engine_scene_host::scene_host::SceneHost,
         crate::field_actors::ActorBanks<'_>,
     )> {
         let p = self.field_scene.as_ref()?;

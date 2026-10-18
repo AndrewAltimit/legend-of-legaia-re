@@ -12,7 +12,7 @@ over its `AudioOut`); a `wasm32` build never links cpal.
   one over the native cpal output from an extracted tree or a disc image;
   `BootSession::from_host` builds one over any `SceneHost` and the disc's
   `SCUS_942.54` bytes, for a host that assembled its scene host in memory.
-- [`AudioDirector`](src/audio_director.rs) - the `legaia_engine_core::scene_host::BgmDirector`
+- [`AudioDirector`](src/audio_director.rs) - the `legaia_engine_scene_host::scene_host::BgmDirector`
   that turns field-VM BGM events into sequencers and fires SFX cues, VAB
   slot residency and the battle duck, generic over the audio output
   (`legaia_engine_audio::AudioSink`). It keeps a record of every command a

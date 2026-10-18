@@ -1016,7 +1016,7 @@ flowchart LR
 
 NEW GAME boots **`opdeene`** (CDNAME/PROT #748) and the opening chains through **five scenes
 with zero input** (pinned by a PCSX-Redux cold-boot pixel capture; disc-gated oracle
-`crates/engine-core/tests/opening_full_chain_e2e.rs`):
+`crates/engine-scene-host/tests/opening_full_chain_e2e.rs`):
 
 | Scene | Content | Opening record + how it spawns |
 |---|---|---|
@@ -1237,7 +1237,7 @@ The block ends when the retired count reaches the page count: the roller clears 
 vsyncs: `World::tick` is one retail vsync and hands it `display_frame_step`, and the roller
 runs one pass of the handler per `frame_step` vsyncs (the cadence it was opened at), adding that
 step to its accumulator the way retail adds `DAT_1F800393`. Disc-gated
-`crates/engine-core/tests/opdeene_narration_playback.rs` cold-boots `opdeene` and drives the
+`crates/engine-scene-host/tests/opdeene_narration_playback.rs` cold-boots `opdeene` and drives the
 crawl blocks to completion; `opening_full_chain_e2e.rs` asserts the block cadence across all
 five scenes.
 
@@ -1279,7 +1279,7 @@ fades `caption_alpha` in after the first crawl block scrolls out
 (`World::cutscene.narration_seq == 1` and narration inactive) and back out after a ~2 s hold
 (`CAPTION_HOLD_FRAMES`) or when the second crawl opens, whichever comes first. The host uploads
 the image once as a sprite atlas and emits one centered, alpha-tinted `SpriteDraw`. Disc-gated
-oracle: `crates/engine-core/tests/opdeene_caption_playback.rs`.
+oracle: `crates/engine-scene-host/tests/opdeene_caption_playback.rs`.
 
 ### Timeline execution model (Ghidra-traced)
 
@@ -1547,7 +1547,7 @@ tick steps the cursor once a game frame by `rate * step`: the opening record's f
 flat 5 hold `27` / `57` / `27` / `60` vsyncs in retail and `30` / `60` / `29` / `60` in the engine.
 
 The disc-gated oracle
-[`opening_chain_wall_time`](../../crates/engine-core/tests/opening_chain_wall_time.rs) pins the
+[`opening_chain_wall_time`](../../crates/engine-scene-host/tests/opening_chain_wall_time.rs) pins the
 result against a headless capture of retail playing the same zero-input chain, per leg and for
 the whole chain.
 
@@ -1805,7 +1805,7 @@ spawned alongside a cutscene timeline in
   (`World::npcs.anim_cues`, `record = anim id - 1`, the same rule as the placement anim byte).
 - Channels are cutscene-scoped: they drop when the timeline completes.
 
-Disc-gated `crates/engine-core/tests/opdeene_field_channels.rs` cold-boots `opdeene`, asserts 13
+Disc-gated `crates/engine-scene-host/tests/opdeene_field_channels.rs` cold-boots `opdeene`, asserts 13
 channels spawn with the right ids, and observes them execute, raise animate cues and take
 timeline pokes.
 

@@ -6,7 +6,6 @@
 //! picker's flag writes to the world and reads the legend strings off the
 //! user's disc.
 
-use legaia_engine_field::field_overlay::field_overlay_cstr;
 use legaia_engine_field::field_submode_flag_window::*;
 use legaia_engine_field::world_map_panel_actors::FlagWindowDescriptor;
 
@@ -60,34 +59,6 @@ impl crate::world::World {
             return Vec::new();
         }
         flag_window_lines(&s.flag_window, self.flag_window_descriptor(), legend)
-    }
-}
-
-impl crate::scene_host::SceneHost {
-    /// [`crate::world::World::flag_window_lines`] with the legend read off the
-    /// user's disc (the field overlay, extraction entry `0897`). The native
-    /// window and the browser play page both draw this.
-    pub fn flag_window_lines(&self) -> Vec<FlagWindowLine> {
-        let s = &self.world.field_vm.submode_screen;
-        if !s.is_open() || !s.installed_windows.contains(&FLAG_WINDOW_RECORD) {
-            return Vec::new();
-        }
-        let bytes = self
-            .index
-            .entry_bytes(crate::incense_notice::FIELD_OVERLAY_PROT_INDEX)
-            .ok();
-        let read = |va: u32| -> Vec<u8> {
-            bytes
-                .as_deref()
-                .and_then(|b| field_overlay_cstr(b, va))
-                .map(<[u8]>::to_vec)
-                .unwrap_or_default()
-        };
-        let (a, b) = (
-            read(FLAG_WINDOW_LEGEND_VAS[0]),
-            read(FLAG_WINDOW_LEGEND_VAS[1]),
-        );
-        self.world.flag_window_lines([&a, &b])
     }
 }
 

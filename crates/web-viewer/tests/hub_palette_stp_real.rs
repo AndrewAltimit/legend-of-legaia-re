@@ -25,7 +25,7 @@ use legaia_render_kernels::screen_prim::{PaletteStp, palette_stp};
 
 fn hub() -> Option<(Vec<u8>, Vec<u8>)> {
     let disc = std::env::var_os("LEGAIA_DISC_BIN")?;
-    let host = legaia_engine_core::scene_host::SceneHost::open_disc(&disc).ok()?;
+    let host = legaia_engine_scene_host::scene_host::SceneHost::open_disc(&disc).ok()?;
     let arena = host
         .index
         .entry_bytes_extended(legaia_engine_minigames::muscle_dome::ARENA_OVERLAY_PROT_INDEX as u32)

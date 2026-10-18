@@ -1,0 +1,130 @@
+//! Disc-gated: the opening prologue's per-actor field-VM channels spawn and
+//! execute - the vignette mechanism.
+//!
+//! Cold-boots `opdeene` live through `SceneHost` and asserts:
+//!
+//! 1. entering `opdeene` (which installs the cutscene timeline) spawns one
+//!    channel per partition-1 placement record, with the retail script-id
+//!    rule `partition-0 count + record index` (`FUN_8003A1E4`);
+//! 2. no placement channel's own script runs past the spawn pre-run: retail
+//!    runs a placement context only while a touch holds its `+0x10 & 0x100`
+//!    up (`FUN_8003BC08`), and a timeline poke does not raise it;
+//! 3. the timeline's op-`0x4B` pokes arm the poked actors' VDF morph lanes
+//!    (`World::npcs.morphs`) - the arm writes the `+0xB0` sub-entry bytes and
+//!    ramp velocities, never a clip, so it raises no clip re-target cue;
+//! 4. the timeline's cross-context pokes reach channel contexts (some
+//!    channel's flag word / local flags / position differs from spawn state).
+//!
+//! Skip-passes without disc data / extracted assets (CLAUDE.md convention).
+
+use legaia_engine_scene_host::scene_host::SceneHost;
+use std::path::PathBuf;
+
+fn extracted_dir() -> Option<PathBuf> {
+    for c in ["extracted", "../extracted", "../../extracted"] {
+        let d = PathBuf::from(c);
+        if d.join("PROT.DAT").exists() && d.join("CDNAME.TXT").exists() {
+            return Some(d);
+        }
+    }
+    None
+}
+
+#[test]
+fn opdeene_channels_spawn_and_execute() {
+    if std::env::var_os("LEGAIA_DISC_BIN").is_none() {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated convention)");
+        return;
+    }
+    let Some(extracted) = extracted_dir() else {
+        eprintln!("[skip] extracted/ missing - run `legaia-extract` first");
+        return;
+    };
+
+    let cutscene = legaia_game_tables::new_game::OPENING_CUTSCENE_SCENE;
+    let mut host = SceneHost::open_extracted(&extracted).expect("open SceneHost");
+    host.enter_field_scene(cutscene, 0).expect("enter opdeene");
+
+    // 1. Channels spawned alongside the timeline, one per placement, with the
+    //    retail script-id rule.
+    assert!(
+        host.world.cutscene_timeline_active(),
+        "entering opdeene installs the cutscene timeline"
+    );
+    let n = host.world.field_vm.channels.len();
+    assert!(n > 0, "opdeene spawns per-actor channels");
+    let spawn_state: Vec<_> = host
+        .world
+        .field_vm
+        .channels
+        .iter()
+        .map(|c| {
+            (
+                c.pc,
+                c.ctx.flags,
+                c.ctx.local_flags,
+                c.ctx.world_x,
+                c.ctx.world_z,
+            )
+        })
+        .collect();
+    // Placement channels only: `.MAP` object-bind channels (flat record ids,
+    // retail `FUN_8003A55C`) ride alongside and may carry ids < N0.
+    for c in host
+        .world
+        .field_vm
+        .channels
+        .iter()
+        .filter(|c| !c.object_bind)
+    {
+        assert!(
+            c.ctx.script_id >= 4,
+            "script id = partition-0 count + record index (opdeene P0 count is 3, records 1..)"
+        );
+    }
+    eprintln!(
+        "[opdeene] {n} channels spawned, script ids {:?}",
+        host.world
+            .field_vm
+            .channels
+            .iter()
+            .map(|c| c.ctx.script_id)
+            .collect::<Vec<_>>()
+    );
+
+    // 2..4. Tick through the prologue and observe channel activity.
+    let mut any_advanced = false;
+    let mut any_poked = false;
+    let mut morph_count = 0usize;
+    for _ in 0..2000 {
+        if !host.world.cutscene_timeline_active() {
+            break;
+        }
+        let _ = host.world.tick();
+        morph_count = morph_count.max(host.world.npcs.morphs.len());
+        for (c, s) in host.world.field_vm.channels.iter().zip(&spawn_state) {
+            if c.pc != s.0 {
+                any_advanced = true;
+            }
+            if (c.ctx.flags, c.ctx.local_flags, c.ctx.world_x, c.ctx.world_z)
+                != (s.1, s.2, s.3, s.4)
+            {
+                any_poked = true;
+            }
+        }
+    }
+
+    assert!(
+        !any_advanced,
+        "no placement channel runs its own script outside the spawn pre-run"
+    );
+    assert!(
+        any_poked,
+        "at least one channel context changed state (timeline pokes / own script effects land)"
+    );
+    eprintln!("[opdeene] channels poked; morph-armed actors = {morph_count}");
+    assert!(
+        morph_count > 0,
+        "the timeline's op-0x4B pokes arm the poked actors' morph lanes"
+    );
+}

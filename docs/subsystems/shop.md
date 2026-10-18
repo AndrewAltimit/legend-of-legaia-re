@@ -472,7 +472,7 @@ empty sentinel is id `0` ([inventory.md](inventory.md)), so the first probe is
 card's exclusive stock: a record padded with three template ids loses nothing
 without the card, and a shorter-padded one withholds two or three items. Across
 the disc's shop records, the ones carrying a band are the ones a card-less
-party sees shortened (`crates/engine-core/tests/shop_catalog_disc.rs` pins that
+party sees shortened (`crates/engine-scene-host/tests/shop_catalog_disc.rs` pins that
 the card-less list is always the card list minus its band).
 
 Retail confirms the gate. `scripts/pcsx-redux/autorun_shop_buy_list.lua`

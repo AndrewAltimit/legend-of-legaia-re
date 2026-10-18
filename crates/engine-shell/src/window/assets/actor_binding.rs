@@ -55,7 +55,7 @@ impl PlayWindowApp {
     /// with its locomotion clips - at the uploaded mesh.
     pub(super) fn upload_player_rig(
         &mut self,
-        player_rig: Option<legaia_engine_core::scene_host::PlayerRigMesh>,
+        player_rig: Option<legaia_engine_scene_host::scene_host::PlayerRigMesh>,
     ) {
         let world = &mut self.session.host.world;
         self.player_color_draw = None;

@@ -70,7 +70,7 @@ pub fn scene_destinations(man_file: &ManFile, man: &[u8]) -> Vec<SceneDestinatio
 ///
 /// See `crate::world_map_entity_config::WorldMapEntityConfig::OverworldPortal` (the runtime
 /// entity this seeds) and the drain in
-/// `legaia_engine_core::scene_host::SceneHost::tick`.
+/// `legaia_engine_scene_host::scene_host::SceneHost::tick`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OverworldPortalSite {
     /// Overworld trigger tile X the player walks onto (the `.MAP` kind-1

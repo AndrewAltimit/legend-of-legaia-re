@@ -85,7 +85,7 @@ impl<S: AudioSink> AudioDirector<S> {
 
     /// Replace the active VAB bank. Engines call this once per scene after
     /// resolving the scene's primary VAB entry through
-    /// [`legaia_engine_core::scene_host::SceneHost::scene_vab_bytes`]; the bank
+    /// [`legaia_engine_scene_host::scene_host::SceneHost::scene_vab_bytes`]; the bank
     /// is uploaded into the SPU and stored here for subsequent SEQ starts.
     pub fn set_bank(&mut self, bank: VabBank) {
         // A tail borrower the new bank's samples reach is gone with it; one

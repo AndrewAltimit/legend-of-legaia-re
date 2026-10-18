@@ -22,7 +22,7 @@ pub struct World {
     /// [`legaia_engine_vm::effect_vm::EffectCatalog::from_pack1_bytes`].
     /// An empty catalog is safe - `BattleHostImpl::ui_element` spawns
     /// nothing until a real catalog is wired. Set via
-    /// [`crate::scene_host::SceneHost::set_effect_catalog`].
+    /// [`legaia_engine_scene_host::scene_host::SceneHost::set_effect_catalog`].
     pub effect_catalog: vm::effect_vm::EffectCatalog,
     /// Dev-spawned synthetic effects ([`World::spawn_debug_effect`] /
     /// [`World::spawn_debug_effect_model`]) - engine-side visualization
@@ -108,14 +108,14 @@ pub struct World {
     pub field_vm: FieldVmState,
 
     /// Pending field-VM scene transition (`scene_transition(map_id)` was
-    /// called this frame). Drained by [`crate::scene_host::SceneHost::tick`]:
+    /// called this frame). Drained by [`legaia_engine_scene_host::scene_host::SceneHost::tick`]:
     /// when `Some(map_id)`, the host resolves the map id to a scene name,
     /// loads it, and reinitialises the field VM. `None` between transitions.
     pub pending_scene_transition: Option<u8>,
 
     /// Pending **named** scene transition (field-VM op `0x3F`, the named
     /// scene-change). When `Some`, the op carried the destination scene name
-    /// inline (no map-id resolver needed); [`crate::scene_host::SceneHost::tick`]
+    /// inline (no map-id resolver needed); [`legaia_engine_scene_host::scene_host::SceneHost::tick`]
     /// drains it and loads that scene directly. Fields: `(scene, entry_x,
     /// entry_z)` - the entry-tile bytes are kept for future destination
     /// spawn-point wiring. `None` between transitions.
@@ -123,7 +123,7 @@ pub struct World {
 
     /// A scene change parked behind the streaming actor's `0x46`-frame
     /// countdown (`FUN_80021934`); the departing scene keeps ticking until
-    /// [`crate::scene_host::SceneHost::tick`] commits it. `None` between
+    /// [`legaia_engine_scene_host::scene_host::SceneHost::tick`] commits it. `None` between
     /// transitions.
     pub scene_transition_hold:
         Option<legaia_engine_field::scene_transition_actor::SceneTransitionHold>,
@@ -222,7 +222,7 @@ pub struct World {
     ///
     /// `None` when no scene is loaded or the scene carries no VDF chunk
     /// (most utility / cutscene scenes don't). Populated by
-    /// [`crate::scene_host::SceneHost::enter_field_scene`] from the first
+    /// [`legaia_engine_scene_host::scene_host::SceneHost::enter_field_scene`] from the first
     /// asset-type-7 chunk found in the scene's streaming entries.
     pub vdf_buffer: Option<Vec<u8>>,
 
@@ -232,7 +232,7 @@ pub struct World {
     /// `None` at indices the active loader chain hasn't populated; the
     /// vector grows on demand through [`Self::set_global_tmd`].
     ///
-    /// Seeded by [`crate::scene_host::SceneHost::enter_field_scene`] with the
+    /// Seeded by [`legaia_engine_scene_host::scene_host::SceneHost::enter_field_scene`] with the
     /// 5 character-mesh TMDs from PROT 0874 section 0 (byte-equal to a
     /// Drake post-warp RAM snapshot). Producers of the
     /// other 138 kingdom-derived entries are not yet pinned; those slots
@@ -259,7 +259,7 @@ pub struct World {
     /// The current field scene's **model bank**: pool slots
     /// `legaia_engine_scene::model_bank::SCENE_BANK_BASE..` of retail `DAT_8007C018`, in
     /// registration order (index `i` = pool slot `5 + i`). Installed by
-    /// [`crate::scene_host::SceneHost::enter_field_scene`] from its
+    /// [`legaia_engine_scene_host::scene_host::SceneHost::enter_field_scene`] from its
     /// [`legaia_engine_scene::model_bank::SceneModelBank`]; read by
     /// [`Self::field_pool_tmd`]. Distinct from [`Self::global_tmd_pool`],
     /// which the engine seeds with the battle effect-model library - the two

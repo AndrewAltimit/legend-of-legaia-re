@@ -517,7 +517,7 @@ impl PlayWindowApp {
             // new scene's geometry/VRAM replace the old one's -
             // without this the world model swaps under the OLD
             // scene's meshes.
-            Ok(legaia_engine_core::scene_host::SceneTickEvent::SceneEntered { name }) => {
+            Ok(legaia_engine_scene_host::scene_host::SceneTickEvent::SceneEntered { name }) => {
                 log::info!("play-window: scene transition -> '{name}'");
                 self.rebuild_scene_render_state();
             }

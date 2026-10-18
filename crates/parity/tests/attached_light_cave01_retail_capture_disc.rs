@@ -25,8 +25,8 @@
 //! Disc- and capture-gated: skip-passes without `LEGAIA_DISC_BIN`,
 //! `extracted/`, or the save library directory.
 
-use legaia_engine_core::scene_host::SceneHost;
 use legaia_engine_field::field_script_actor_state::ScriptActorRef;
+use legaia_engine_scene_host::scene_host::SceneHost;
 use std::path::PathBuf;
 
 /// `cave01_attached_light` (retail SCUS).

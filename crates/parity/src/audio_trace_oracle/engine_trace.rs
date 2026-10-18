@@ -13,7 +13,7 @@ use super::*;
 ///
 /// The field VM drives BGM playback through the director: after each
 /// [`NativeSession::tick`] we call
-/// [`legaia_engine_core::scene_host::SceneHost::route_bgm_events`] to deliver
+/// [`legaia_engine_scene_host::scene_host::SceneHost::route_bgm_events`] to deliver
 /// op `0x35` events. `opts.bgm_id` is a manual boot-time start that fires
 /// before the main loop - useful for scenes whose prescripts don't kick
 /// off audio.
@@ -137,7 +137,7 @@ pub(crate) fn enter_scene_for_trace(session: &mut NativeSession, scene: &str) ->
     Ok(())
 }
 
-/// Resolve `bgm_id` the way [`legaia_engine_core::scene_host::SceneHost::route_bgm_events`]
+/// Resolve `bgm_id` the way [`legaia_engine_scene_host::scene_host::SceneHost::route_bgm_events`]
 /// resolves an op-`0x35` start and hand it to `director`: a scene-local id
 /// plays against the staged scene bank, a global-pool id (`>= 2000`) brings
 /// its own VAB. The manual `--bgm-id` override took only the first of those

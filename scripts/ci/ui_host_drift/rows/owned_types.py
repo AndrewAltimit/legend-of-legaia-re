@@ -58,7 +58,7 @@ OWNED_TYPES: list[dict[str, object]] = [
     },
     {
         "type": "SceneHost",
-        "defined_in": "crates/engine-core/src/scene_host.rs",
+        "defined_in": "crates/engine-scene-host/src/scene_host.rs",
         "why": "the scene host is what drains the per-frame queues the field "
         "VM fills - the minigame door warp, the staged menu warp, the BGM "
         "route. A host that keeps a bare `World` instead reaches the same "

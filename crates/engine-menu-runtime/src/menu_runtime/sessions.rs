@@ -160,7 +160,7 @@ impl MenuRuntime {
 
     /// Open the inn prompt with the **current scene's scripted cost** - the
     /// op-`0x4E` gold-gate literal scanned from the scene MAN at load
-    /// ([`legaia_engine_core::scene_host::SceneHost::scene_inn_cost`]). Installs the session
+    /// ([`legaia_engine_scene_host::scene_host::SceneHost::scene_inn_cost`]). Installs the session
     /// and enters `InnConfirm` at the Yes slot, mirroring the
     /// [`Self::open_shop_buy`] field-trigger entry shape. Returns the
     /// resolved cost, or `None` (no session installed, state untouched)
@@ -168,7 +168,7 @@ impl MenuRuntime {
     /// have no gate + debit pair in their scripts.
     pub fn open_scene_inn(
         &mut self,
-        host: &legaia_engine_core::scene_host::SceneHost,
+        host: &legaia_engine_scene_host::scene_host::SceneHost,
     ) -> Option<u32> {
         let cost = host.scene_inn_cost()?;
         self.inn_session = Some(InnSession::new(cost));

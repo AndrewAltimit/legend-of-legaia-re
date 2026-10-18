@@ -12,10 +12,10 @@
 use crate::cli::ConfigCmd;
 use crate::{AudioTraceArgs, ModeTraceArgs, PcmTraceArgs, VramOracleArgs, decode_str_frame_count};
 use anyhow::{Context, Result};
-use legaia_engine_core::scene_host::SceneTickEvent;
 use legaia_engine_scene::scene::{ProtIndex, Scene};
 use legaia_engine_scene::scene_assets::SceneAssets;
 use legaia_engine_scene::scene_resources::SceneResources;
+use legaia_engine_scene_host::scene_host::SceneTickEvent;
 use legaia_engine_session::mode_trace::ModeTraceFrame;
 use legaia_engine_shell::replay::ReplayFile;
 use legaia_parity::audio_trace_oracle::{

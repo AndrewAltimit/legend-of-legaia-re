@@ -377,7 +377,6 @@ mod spirit_gauge;
 mod summon_final_heal;
 mod system_bbox_target;
 mod take_item;
-mod three_tunnels_swap_redress_disc;
 mod tile_board;
 mod worldmap;
 

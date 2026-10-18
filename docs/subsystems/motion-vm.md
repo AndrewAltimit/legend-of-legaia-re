@@ -426,7 +426,7 @@ position write-through, and no heading derivation (facings come from
 
 **A placement's own `0x4C 0x51` ops are not a route.** Each is an instant seat (the op writes `+0x14`/`+0x18` outright), and a record carries one per story-flag branch, so the entry pre-run's executed branch is the whole of their effect.
 Looping the seats as a patrol walks an NPC between story stations retail never connects: town01's gate guards (placements 32 and 33, beside the exit to the world map) stand on their seats in every catalogued town01 field-run state, across both emulators and the whole chapter, while the ambient-stream wanderers beside them move.
-A villager's free-roam movement is its [tail-section-1 stream](#the-walk-half---the-directional-steps-and-the-aabb-wander) and nothing else. `man_field_scripts::placement_motion_route` still decodes the seats, but nothing in the live path reads it (only its tests do); glide pace comes from `placement_glide_speed` below. Disc oracle: [`field_npc_motion_disc.rs`](../../crates/engine-core/tests/field_npc_motion_disc.rs) (town01's guards hold still; across every field scene, nothing without a walking ambient stream moves in free roam).
+A villager's free-roam movement is its [tail-section-1 stream](#the-walk-half---the-directional-steps-and-the-aabb-wander) and nothing else. `man_field_scripts::placement_motion_route` still decodes the seats, but nothing in the live path reads it (only its tests do); glide pace comes from `placement_glide_speed` below. Disc oracle: [`field_npc_motion_disc.rs`](../../crates/engine-scene-host/tests/field_npc_motion_disc.rs) (town01's guards hold still; across every field scene, nothing without a walking ambient stream moves in free roam).
 
 - **Not interaction-prologue `0x4C 0x51`s.** When the field-VM dialogue runner executes an NPC's record and the prologue hits a `0x4C 0x51` with the NPC arm, the host hook (`vm_hosts::FieldHostImpl::run_to_tile`) seats the actor on the tile, exactly as the entry pre-run and a spawned-record poke do: the case-5 sub-1 body stores the tile into `+0x14` / `+0x18` (`0x801E1880`, `0x801E1898`) and the LUT heading into `+0x26` (`0x801E1900`) and arms no walk kernel.
 - **Window-script VM `slide_to`** (ops `0x01` / `0x02`, retail `FUN_800357fc`): on the field-actor demo host, `World::start_actor_motion` records the glide target and steps the actor's sprite position toward it through the same pursue kernel (`World::tick_actor_motions`). The snap ops (`0x09` / `0x0A`, `FUN_800358c0`) write the position directly.
@@ -747,7 +747,7 @@ tile retires its wander on the first tick and the villager silently never
 moves.
 
 Disc oracle:
-[`crates/engine-core/tests/field_npc_ambient_wander_disc.rs`](../../crates/engine-core/tests/field_npc_ambient_wander_disc.rs).
+[`crates/engine-scene-host/tests/field_npc_ambient_wander_disc.rs`](../../crates/engine-scene-host/tests/field_npc_ambient_wander_disc.rs).
 
 ### The ambient VM's own facing ops
 
@@ -1267,7 +1267,7 @@ and it is what both hosts resolve a live op-`0x0E` re-bind through -
 bytes. Disc-gated oracles:
 [`model_bank_disc.rs`](../../crates/engine-scene/tests/model_bank_disc.rs) for
 the bank against the `DAT_8007B774` counter, and
-[`model_rebind_live_disc.rs`](../../crates/engine-core/tests/model_rebind_live_disc.rs)
+[`model_rebind_live_disc.rs`](../../crates/engine-scene-host/tests/model_rebind_live_disc.rs)
 for every authored operand in `koin3` resolving to a parseable mesh.
 
 ### Op `0x0F` - the tile teleport

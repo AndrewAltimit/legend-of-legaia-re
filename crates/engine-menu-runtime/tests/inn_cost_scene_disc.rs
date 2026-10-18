@@ -11,9 +11,9 @@
 //! so no inn session opens). Skips without `LEGAIA_DISC_BIN` (CLAUDE.md
 //! convention).
 
-use legaia_engine_core::scene_host::SceneHost;
 use legaia_engine_menu_runtime::menu_runtime::MenuRuntime;
 use legaia_engine_menus::menu::MenuState;
+use legaia_engine_scene_host::scene_host::SceneHost;
 use std::path::PathBuf;
 
 fn disc_path() -> Option<PathBuf> {

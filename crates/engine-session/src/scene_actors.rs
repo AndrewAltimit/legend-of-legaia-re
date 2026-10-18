@@ -21,10 +21,10 @@
 use std::collections::BTreeMap;
 
 use legaia_actor_formats::player_anm::PlayerAnmBundle;
-use legaia_engine_core::scene_host::SceneHost;
 use legaia_engine_field::field_anim::{FieldClipPlayer, FieldPlayerAnim};
 use legaia_engine_mode::mode::SceneMode;
 use legaia_engine_scene::npc_catalog::{NpcCatalog, catalog_scene_npcs, scene_anm_bundle};
+use legaia_engine_scene_host::scene_host::SceneHost;
 
 /// What [`bind_scene_actors`] resolved, for a host's draw half.
 pub struct SceneActorBinding {

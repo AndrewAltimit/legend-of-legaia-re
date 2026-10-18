@@ -41,7 +41,7 @@ pub(super) fn stage_shell_meshes(
 
 /// One copy of the given backdrop objects, textured and untextured halves -
 /// the mesh of a slot the backdrop draw transforms per frame, so nothing is
-/// baked in ([`legaia_engine_core::scene_host::BattleStageLayers`]).
+/// baked in ([`legaia_engine_scene_host::scene_host::BattleStageLayers`]).
 pub(super) fn stage_slot_meshes(
     tmd: &legaia_tmd::Tmd,
     raw: &[u8],

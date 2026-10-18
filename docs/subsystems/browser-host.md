@@ -232,7 +232,7 @@ over the GL view) blits the quads with a per-quad multiply tint.
 
 The top-level command list plus the Items / Magic / Equip / Status / Options
 sub-screens all run the real
-`legaia_engine_core::field_menu_dispatch::FieldMenuSubsession` the native
+`legaia_engine_menu_runtime::field_menu_dispatch::FieldMenuSubsession` the native
 `play-window` builds - the disc equipment / spell / item catalogs are installed
 on the host world at `load_disc` - and render through the exact same
 `legaia-engine-ui` draw builders (`inventory_use_draws_for` /
@@ -246,7 +246,7 @@ card-read beat, and the card's fifteen blocks then come up as retail's 5x3
 portrait grid with the focused block's info panel sliding up beneath it. Load
 lifts that block into the live world and parks it; the page then lands it with
 one call, `play_resume_save` (`resume.rs`, over the shared
-`engine-core::resume::land_save`: the saved scene, else the running scene,
+`engine-scene-host::resume::land_save`: the saved scene, else the running scene,
 else the opening town - never a New Game); Save raises the
 overwrite prompt and writes the session into the card image. The block-grid
 cursor is this crate's, not the session's - `SelectPhase::SlotPreview` ignores
@@ -362,7 +362,7 @@ A field-VM op-`0x49` sub-0 merchant record opens the retail gold shop, and the
 post-battle level-up / Seru-capture banners draw over the live field. Both are
 the one composition the native window calls,
 `legaia_engine_screens::shop_overlay_frame`, driven by the real
-`legaia_engine_core::menu_runtime::MenuRuntime`; `play_overlay_draws_json`
+`legaia_engine_menu_runtime::menu_runtime::MenuRuntime`; `play_overlay_draws_json`
 serves the quads. The screen steps per sim tick, from the page's tick loop:
 the shared tick claim lets a shop or the prize exchange take the tick (one
 `play_shop_input` step) and holds the pad neutral under an inn, and
@@ -717,7 +717,7 @@ Rim Elm windmill); the ambient move-VM tree and scripted CLUT effects write
 VRAM; VDF morphs move vertices.
 
 So `field_scene_anim_init` enters the scene **live and headless** through
-`engine-core::scene_live::LiveScene` - an ordinary `SceneHost` entered the
+`engine-scene-host::scene_live::LiveScene` - an ordinary `SceneHost` entered the
 way the play pages' scene picker enters it, ticked once per retail vsync
 with no pad, never following the scene out (a door or scripted battle
 re-enters it; repeated exits stop the ticking). The page reads that world

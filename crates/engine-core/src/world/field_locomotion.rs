@@ -220,7 +220,7 @@ pub struct FieldLocomotion {
     /// will: the snap otherwise runs only on a committed step, and retail's
     /// every-frame glide carries the player on a script-animated floor
     /// (`jouina`'s pulsing path) whether or not they walk.
-    pub(crate) ladder_seen: [i16; 16],
+    pub ladder_seen: [i16; 16],
     /// The ledge hop [`crate::world::World::try_field_ledge_hop`] posted this frame, if any
     /// (retail hands the same triple to `FUN_801d2404`). `None` on every
     /// frame that did not start a hop.
@@ -263,17 +263,17 @@ pub struct FieldLocomotion {
     /// scene's own ANM bundle (retail `*(0x8007B888)`), indexed by record:
     /// [`legaia_engine_vm::actor_tick::clip_end_ticks`] of the record's frame count at
     /// its own step ([`legaia_engine_vm::actor_tick::clip_step`] - the gated records
-    /// play slower). Seeded by [`crate::scene_host::SceneHost::load_scene`]; read
+    /// play slower). Seeded by [`legaia_engine_scene_host::scene_host::SceneHost::load_scene`]; read
     /// by the cutscene timeline to time the end latch of a scene-bank clip it
     /// pokes onto the player without a host-owned clip player. Empty when the
     /// scene carries no bundle; `0` for a record with no frames.
-    pub(crate) scene_clip_ticks: Vec<u32>,
+    pub scene_clip_ticks: Vec<u32>,
     /// `(frame count, blend gate, step divisor)` of every record of the same
     /// bundle - header `b`, `a` high-byte bit 0, `flag` low byte - indexed
     /// like [`Self::scene_clip_ticks`]: what the world binds an NPC's clip
     /// cursor from when a script pokes a scene-bank clip onto it
     /// (`World::bind_npc_scene_clip`).
-    pub(crate) scene_clip_meta: Vec<(u16, bool, u8)>,
+    pub scene_clip_meta: Vec<(u16, bool, u8)>,
     /// The clip base `_DAT_8007BDD8`: the 1-based slot inside the leader's
     /// seven-record locomotion bank the settle tail strides into the player's
     /// clip id. Written by the pad step (idle `2` / walk `1` / run `3`, or
@@ -312,7 +312,7 @@ pub struct FieldLocomotion {
     /// entry. The drain reports a change whenever the live source differs
     /// from it, so a roster op that changes the lead mid-scene rebuilds the
     /// rig the same way a `CC F8 50` does.
-    pub(crate) player_rig_bound: Option<crate::scene_host::PlayerRigSource>,
+    pub(crate) player_rig_bound: Option<crate::world::PlayerRigSource>,
     /// The kind-0 warp's globals `_DAT_8007B6B0` (timer), `_DAT_8007B6B4`
     /// (post-warp pad hold) and the destination pair - see
     /// [`legaia_engine_field::field_warp_tile`].

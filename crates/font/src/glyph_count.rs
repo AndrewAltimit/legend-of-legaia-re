@@ -111,7 +111,7 @@ fn string_units(s: &[u8]) -> u32 {
 /// it through `World::step_inline_dialogue`, the cutscene timeline's dialog
 /// park and the prop-interaction box. A PCSX-Redux trace of a town01
 /// conversation pins the counts and the per-vsync timeline
-/// (`crates/engine-core/tests/dialog_typewriter_pacing_disc.rs`).
+/// (`crates/engine-scene-host/tests/dialog_typewriter_pacing_disc.rs`).
 pub fn typewriter_glyph_count(text: &[u8], expand: Option<&Expander<'_>>) -> GlyphCount {
     let at = |k: usize| text.get(k).copied().unwrap_or(0);
     let mut out = GlyphCount::default();

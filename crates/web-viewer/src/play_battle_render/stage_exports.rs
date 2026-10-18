@@ -147,7 +147,7 @@ impl LegaiaRuntime {
     /// then copy B, 16 column-major floats each: the slot's Y angle
     /// (`World::battle_backdrop_slot_1_yaw`, wound by `FUN_80046A20`) under
     /// each copy's transform
-    /// (`legaia_engine_core::scene_host::backdrop_slot_1_basis`, the per-object
+    /// (`legaia_engine_scene_host::scene_host::backdrop_slot_1_basis`, the per-object
     /// turn of `FUN_8001ADA4`'s backdrop arm) - the native window's two
     /// draws, with the page's stage Y flip composed on. Empty outside a fight
     /// with a spun slot.
@@ -161,7 +161,8 @@ impl LegaiaRuntime {
         let yaw = host.world.battle_backdrop_slot_1_yaw();
         let mut out = Vec::with_capacity(32);
         for copy_b in [false, true] {
-            let r = legaia_engine_core::scene_host::backdrop_slot_1_basis(sh.second, yaw, copy_b);
+            let r =
+                legaia_engine_scene_host::scene_host::backdrop_slot_1_basis(sh.second, yaw, copy_b);
             // The page's stage model is the Y flip (`placementModelScaledY`
             // at unit scale - the shell's own placement), so each model is
             // `flip * basis`: row 1 negated.

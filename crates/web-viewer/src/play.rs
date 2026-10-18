@@ -1,7 +1,7 @@
 //! Browser **play** surface: the render half of [`crate::runtime::LegaiaRuntime`].
 //!
 //! [`crate::runtime`] owns the simulation (a real
-//! [`legaia_engine_core::scene_host::SceneHost`]: field VM, locomotion + collision,
+//! [`legaia_engine_scene_host::scene_host::SceneHost`]: field VM, locomotion + collision,
 //! NPC motion, dialogue). This module is what the page draws: the assembled
 //! static map, the posed player, and the scene's posed NPCs - all resolved
 //! against the **same** [`legaia_engine_scene::scene_resources::SceneResources`]

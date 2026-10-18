@@ -243,7 +243,7 @@ A `4C C2` aimed at the player (`CC F8 C2`, five of the 50 sites, in `uru2`,
 `rugi` and `noaru`) runs on the same player stand-in context the `CC F8 40`
 scale op uses (`field_step_routed`) and lands in
 `FieldVmState::player_field_42`, so the player's draws clip on both hosts
-too. Disc-gated test: `crates/engine-core/tests/object_effect_row_disc.rs`.
+too. Disc-gated test: `crates/engine-scene-host/tests/object_effect_row_disc.rs`.
 
 One known difference: the effect transform leaves out the side buffer's look
 turn (`4C 45`,
@@ -1255,7 +1255,7 @@ battle-effect parts, `0x100` / `0x180` on field and overworld parts, and the
 Over every op-`0x15` site in the scenes' stager records and the slot-B spawn
 records the words are `0x20`, `0x80`, `0x100`, `0x180`, `0x300`, `0x380`,
 `0x400`, `0x500`, `0x580` and `0x780`
-(`crates/engine-core/tests/move_ctrl52_census_disc.rs`). The lone `0x80` -
+(`crates/engine-scene-host/tests/move_ctrl52_census_disc.rs`). The lone `0x80` -
 pitch skipped, yaw and roll kept - is `urudre1` stager record 14's, past an
 ext `0x37` branch that jumps the record's first `HALT`, so a walk that stops
 at the first `HALT` misses it. It is live content: `urudre1` is Vahn's dream
@@ -1623,7 +1623,7 @@ the GPU reads only the entries at the prim's own `CBA`. `MissingClut`, which
 reads exactly that window, is the sound test. Scenes do pack rows that
 densely - every primitive of `town0b`'s placed house at tile `(37, 42)`
 samples row 491 - and
-`crates/engine-core/tests/scene_clut_row_packing_disc.rs` asserts both that
+`crates/engine-scene-host/tests/scene_clut_row_packing_disc.rs` asserts both that
 the house keeps its prims and that the row is packed past 256 pixels.
 
 ### Engine-side targeted upload + shared blocks
@@ -1760,7 +1760,7 @@ off the object-bind channels once the prologues have run
 rotation through `field_env::placed_render_scales`; a zero scale stays the
 story-hidden gate's business. The scale is baked with the scene's draw
 lists, so a script that ramps it mid-scene is not followed. Pinned by
-`crates/engine-core/tests/field_object_render_scale_disc.rs`.
+`crates/engine-scene-host/tests/field_object_render_scale_disc.rs`.
 
 **A placed object draws at its actor's angles.** The scene-init sweep copies
 the record's `+0x08 / +0x0A / +0x0C` into the actor's `+0x24 / +0x26 / +0x28`
@@ -2109,7 +2109,7 @@ the port's per-actor pass draws a slot only through
 `World::actor_slot_drawn` (bound **and** active). In `uru` the scene pack's
 sky and cliff geometry wraps the origin, so drawing unspawned slots fills the
 frame. Pinned by
-`crates/engine-core/tests/field_unspawned_actor_draw_disc.rs`.
+`crates/engine-scene-host/tests/field_unspawned_actor_draw_disc.rs`.
 
 **The site play page** (`site/js/play-view-frame.js`) applies the same crop and
 actor cull and adds nothing: `OCCLUDER_CULL = false`. A per-body occlusion

@@ -1,6 +1,6 @@
 //! Top-level engine boot session.
 //!
-//! Composes the per-crate primitives ([`legaia_engine_core::scene_host::SceneHost`],
+//! Composes the per-crate primitives ([`legaia_engine_scene_host::scene_host::SceneHost`],
 //! [`legaia_engine_field::camera::Camera`], the BGM director from
 //! [`crate::audio_director::AudioDirector`]) into one struct the binary drives per
 //! frame. Mirrors the retail boot flow:
@@ -20,7 +20,6 @@ use std::sync::Arc;
 use anyhow::{Context, Result};
 use legaia_engine_audio::AudioSink;
 use legaia_engine_battle::magic_xp::SpellLevelNotice;
-use legaia_engine_core::scene_host::{BgmDirector, SceneHost, SceneTickEvent};
 use legaia_engine_field::camera::Camera;
 use legaia_engine_menu_runtime::field_menu_dispatch::{
     FieldMenuSubsession, SubsessionHandoff, finish_subsession, tick_open_subsession, tick_root_list,
@@ -31,6 +30,7 @@ use legaia_engine_menus::save_screen::{SaveCommit, SaveScreenFlow};
 use legaia_engine_menus::save_select::{SaveRack, SlotSnapshot};
 use legaia_engine_mode::mode::SceneMode;
 use legaia_engine_scene::scene::DefaultMapIdResolver;
+use legaia_engine_scene_host::scene_host::{BgmDirector, SceneHost, SceneTickEvent};
 use legaia_engine_system::input::PadButton;
 
 use crate::audio_director::AudioDirector;

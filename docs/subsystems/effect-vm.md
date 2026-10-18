@@ -365,7 +365,7 @@ case -> index -> entry map is in
 
 ### Effect-model library
 
-`engine-core::scene_host::seed_effect_model_library_from_etmd` reads extraction
+`engine-scene-host::scene_host::seed_effect_model_library_from_etmd` reads extraction
 0871 (`etmd.dat`, raw index `0x369`) at scene entry: an uncompressed 30-entry
 `container-formats::pack` of Legaia TMDs spanning the entry's *extended* footprint. It
 registers all 30 into `World::global_tmd_pool[3..=32]`, the same
