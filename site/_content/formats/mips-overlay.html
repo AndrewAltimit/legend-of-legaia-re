@@ -7,7 +7,7 @@
 <section class="doc-section" id="at-a-glance">
   <h2>At a glance</h2>
   <dl class="kv">
-    <dt>In the game</dt><dd>The specialised code behind cutscenes, the world map, menu screens and minigames - loaded when that mode starts, gone when it ends. Every loading pause between modes is an overlay swap.</dd>
+    <dt>In the game</dt><dd>Mostly battle code: the <code>0903..=0966</code> band is the 64 slot-B cast / summon modules, one per special attack, paged in when that attack is cast; <code>0968</code> / <code>0969</code> are the two boss-stage modules.</dd>
     <dt>Magic / marker</dt><dd>No header - the blob begins with a MIPS function prologue (<code>addiu sp, sp, -X</code> = <code>0x27BDFFxx</code>)</dd>
     <dt>Lives in</dt><dd><a href="prot.html">PROT.DAT</a> entries in the <code>0901..=0969</code> range (extraction index), 14-37 KB each; loads into the overlay window <code>0x801C0000..0x80200000</code></dd>
     <dt>Parser</dt><dd><code>legaia_overlay_images::mips_overlay::detect</code> (<code>crates/overlay-images/src/mips_overlay.rs</code>); category <code>mips_overlay</code> in the categorize pipeline</dd>
@@ -58,7 +58,7 @@ if let Some(m) = mips_overlay::detect(buf) {
   <ul class="bullets">
     <li><strong>Range.</strong> Every match is in the <code>0901..=0969</code> extraction range, 14 KB to 37 KB, with one 163 KB outlier at <code>0969_xxx_dat.BIN</code>.</li>
     <li><strong>Load base.</strong> The overlay window is <code>0x801C0000..0x80200000</code>; each blob loads at a fixed offset inside it, determined by the asset chain that pulls it in. Recovered bases are committed in <code>crates/asset/data/static-overlays.toml</code>.</li>
-    <li><strong>Likely jobs.</strong> From size and the <code>xxx_dat</code> clustering: cutscenes, world map, menu screens, minigames, and per-scene special code that does not fit in the main town-field overlay.</li>
+    <li><strong>What the band holds.</strong> The <code>0903..=0966</code> entries are the 64 slot-B cast / summon images, each one special attack's stager (<a href="slot-b-module-layout.html">slot-B module layout</a>, <a href="../subsystems/cast-module.html">cast modules</a>); <code>0968</code> / <code>0969</code> are the two boss-stage modules (<a href="../subsystems/battle.html">battle</a>). Entries that lead with a pointer table instead of a prologue are covered by the <a href="overlay-ptr-table.html">sister detector</a>.</li>
     <li><strong>Importing.</strong> Once a base is known, <a href="../tooling/overlay-capture.html"><code>scripts/ghidra-analysis/bulk-import-overlays.sh</code></a> loads the blob into Ghidra (the disassembler this project uses) at that base.</li>
   </ul>
 </section>
