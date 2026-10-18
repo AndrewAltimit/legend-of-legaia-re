@@ -603,8 +603,6 @@ pub(super) fn assemble_play_window(launch: PlayWindowLaunch<'_>) -> Result<PlayW
         save_dir,
         extracted_root,
         disc,
-        dyn_shadows: fidelity.dyn_shadows,
-        occlusion_fade: fidelity.occlusion_fade,
     });
     app.apply_launch_options(fidelity);
     // The spell / seru display names off the boot SCUS, for the shop's Trade

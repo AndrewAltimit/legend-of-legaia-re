@@ -387,7 +387,7 @@
             <input type="checkbox" id="play-dev-menu"> Dev menu
           </label>
           <label class="play-dev-menu"
-                 title="Dissolve walls and roofs between the camera and your character to a see-through dither so you can always spot yourself (the native window's default-on occlusion-fade enhancement; retail relies on authored camera framing instead). Presentation only - the simulation never changes.">
+                 title="Dissolve walls and roofs between the camera and your character to a see-through dither so you can always spot yourself (the native window's default-on occlusion-fade enhancement, F4 on both, persisted; retail relies on authored camera framing instead). Presentation only - the simulation never changes.">
             <input type="checkbox" id="play-see-through" checked> See-through walls
           </label>
           <label class="play-dev-menu"
@@ -403,7 +403,7 @@
             <input type="checkbox" id="play-dyn-light"> Enhanced lighting
           </label>
           <label class="play-dev-menu"
-                 title="Lamp shadows: each of enhanced lighting's point lights casts soft shadows from the geometry around it (the native window's Y toggle). Inert while enhanced lighting is off. Presentation only.">
+                 title="Lamp shadows: each of enhanced lighting's point lights casts soft shadows from the geometry around it (the native window's Y toggle, persisted). Inert while enhanced lighting is off. Presentation only.">
             <input type="checkbox" id="play-dyn-shadows" checked> Lamp shadows
           </label>
           <label class="play-dev-menu"
@@ -424,7 +424,7 @@
             <input type="checkbox" id="play-entry-pulse" checked> Entry pulse
           </label>
           <label class="play-dev-menu"
-                 title="Retail-faithful for this session (the native --retail): every enhancement off - enhanced lighting and its shadows, ground fog, see-through walls, the scene-entry pulse - and every engine-only option pinned to retail (camera distance, 8-way movement, no flash slew, retail tile windows). Nothing is stored; untick to get your own settings back.">
+                 title="Retail-faithful for this session (the native --retail): every enhancement off - the scene-entry pulse off and every engine-only option pinned to retail (enhanced lighting and its shadows, ground fog, see-through walls, camera distance, 8-way movement, no flash slew, retail tile windows). Nothing is stored; untick to get your own settings back.">
             <input type="checkbox" id="play-retail-mode"> Retail-faithful
           </label>
           <label class="play-dev-menu"
@@ -2179,10 +2179,16 @@
   /* Camera-occlusion fade ("See-through walls") - default ON, matching the
    * native play-window. Pure presentation (a fragment-shader dither around
    * the character when geometry buries it); PlayView stages the per-frame
-   * focus, so unchecking simply stops staging it. Re-applied on every view
-   * rebuild since the checkbox may have been toggled between scenes. */
+   * focus, so unchecking simply stops staging it. The persisted engine
+   * option `occlusion_fade` (the native window's `F4` reads the same one);
+   * the box reflects it once a runtime is up (`syncRenderToggles`).
+   * Re-applied on every view rebuild. */
   const seeThroughEl = document.getElementById('play-see-through');
   function applySeeThrough() {
+    const rt = window.__playRuntime;
+    if (rt && typeof rt.set_occlusion_fade === 'function') {
+      try { rt.set_occlusion_fade(!!seeThroughEl.checked); } catch (e) {}
+    }
     if (view) view.setOcclusionFade(!!seeThroughEl.checked);
   }
   seeThroughEl.addEventListener('change', () => { applySeeThrough(); canvas.focus(); });
@@ -2190,9 +2196,9 @@
 
   /* The native window's render toggles: PSX rasterisation
    * (LEGAIA_PSX_RENDER, session-only) and enhanced lighting (`I` + `F8`'s
-   * time of day, both persisted engine options - the boxes reflect the
-   * stored values once a runtime is up). Presentation only; re-applied on
-   * every view rebuild. */
+   * time of day + `Y`'s lamp shadows, all persisted engine options - the
+   * boxes reflect the stored values once a runtime is up). Presentation
+   * only; re-applied on every view rebuild. */
   const psxRenderEl = document.getElementById('play-psx-render');
   const dynLightEl = document.getElementById('play-dyn-light');
   const timeOfDayEl = document.getElementById('play-time-of-day');
@@ -2203,6 +2209,7 @@
       try {
         rt.set_enhanced_lighting(!!dynLightEl.checked);
         timeOfDayEl.value = rt.set_lighting_time_of_day(timeOfDayEl.value);
+        if (typeof rt.set_light_shadows === 'function') rt.set_light_shadows(!!dynShadowsEl.checked);
       } catch (e) {}
     }
     if (!view) return;
@@ -2216,6 +2223,8 @@
       try {
         dynLightEl.checked = !!rt.enhanced_lighting();
         timeOfDayEl.value = rt.lighting_time_of_day();
+        if (typeof rt.light_shadows === 'function') dynShadowsEl.checked = !!rt.light_shadows();
+        if (typeof rt.occlusion_fade === 'function') seeThroughEl.checked = !!rt.occlusion_fade();
       } catch (e) {}
     }
   }
@@ -2310,7 +2319,6 @@
     rtCall('set_arts_saved_list', !!savedListEl.checked);
     rtCall('set_retail_mode', !!retailModeEl.checked);
   }
-  let retailSaved = null;
   retailModeEl.addEventListener('change', () => {
     const on = !!retailModeEl.checked;
     rtCall('set_retail_mode', on);
@@ -2320,17 +2328,9 @@
     syncPreciseMove();
     syncCameraDistance();
     syncPageToggles();
-    /* The page-side enhancements retail has no counterpart for: off while
-     * the mode holds, back to what they were when it is lifted. */
-    if (on) {
-      retailSaved = { shadows: dynShadowsEl.checked, seeThrough: seeThroughEl.checked };
-      dynShadowsEl.checked = false;
-      seeThroughEl.checked = false;
-    } else if (retailSaved) {
-      dynShadowsEl.checked = retailSaved.shadows;
-      seeThroughEl.checked = retailSaved.seeThrough;
-      retailSaved = null;
-    }
+    /* Lamp shadows and see-through walls are engine options the pin covers
+     * too (`OptionsState::pin_retail`), so the sync above has already put
+     * their boxes where the mode wants them; push them to the view. */
     applySeeThrough();
     applyRenderToggles();
     canvas.focus();
@@ -2564,13 +2564,13 @@
   window.__playHotkeyActions = {
     diag_rows: () => { if (hudEl) hudEl.style.display = hudEl.style.display === 'none' ? '' : 'none'; },
     audio_mute: () => {},
-    occlusion_fade: () => { seeThroughEl.checked = !seeThroughEl.checked; applySeeThrough(); },
+    occlusion_fade: () => { syncRenderToggles(); applySeeThrough(); },
     cheat_max_ap: () => document.getElementById('play-cheat-max-ap').click(),
     cheat_encounters: () => cheatNoEncEl.click(),
     time_of_day: () => { syncRenderToggles(); applyRenderToggles(); },
     volumetric_fog: () => syncGroundFog(),
     enhanced_lighting: () => { syncRenderToggles(); applyRenderToggles(); },
-    light_shadows: () => { dynShadowsEl.checked = !dynShadowsEl.checked; applyRenderToggles(); },
+    light_shadows: () => { syncRenderToggles(); applyRenderToggles(); },
     camera_distance: () => syncCameraDistance(),
     precise_movement: () => syncPreciseMove(),
   };

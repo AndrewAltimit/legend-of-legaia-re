@@ -33,7 +33,7 @@ pub enum HostHotkey {
     AudioMute,
     /// `F3`: the debug orbit vantage.
     DebugCamera,
-    /// `F4`: the camera-occlusion fade enhancement.
+    /// `F4`: the camera-occlusion fade enhancement ([`OptionsState::occlusion_fade`]).
     OcclusionFade,
     /// `F6`: cheat - fill the party's AP gauge.
     CheatMaxAp,
@@ -45,7 +45,7 @@ pub enum HostHotkey {
     VolumetricFog,
     /// `I`: the enhanced-lighting enhancement.
     EnhancedLighting,
-    /// `Y`: the enhanced-lighting lamp shadows.
+    /// `Y`: the enhanced-lighting lamp shadows ([`OptionsState::light_shadows`]).
     LightShadows,
     /// `T`: cycle the follow camera's distance preset.
     CameraDistance,
@@ -178,12 +178,12 @@ pub fn apply_options_hotkey(opts: &mut OptionsState, hotkey: HostHotkey) -> bool
             opts.cycle_camera_distance();
         }
         HostHotkey::PreciseMovement => opts.precise_movement = !opts.precise_movement,
+        HostHotkey::OcclusionFade => opts.occlusion_fade = !opts.occlusion_fade,
+        HostHotkey::LightShadows => opts.light_shadows = !opts.light_shadows,
         HostHotkey::DiagRows
         | HostHotkey::DebugCamera
-        | HostHotkey::OcclusionFade
         | HostHotkey::CheatMaxAp
-        | HostHotkey::CheatEncounters
-        | HostHotkey::LightShadows => return false,
+        | HostHotkey::CheatEncounters => return false,
     }
     true
 }
@@ -230,8 +230,14 @@ mod tests {
         let dist = o.camera_distance;
         assert!(apply_options_hotkey(&mut o, HostHotkey::CameraDistance));
         assert_ne!(o.camera_distance, dist);
+        // The render enhancements are options too, so a key and the page's
+        // box edit one persisted value on both hosts.
+        assert!(apply_options_hotkey(&mut o, HostHotkey::OcclusionFade));
+        assert!(!o.occlusion_fade);
+        assert!(apply_options_hotkey(&mut o, HostHotkey::LightShadows));
+        assert!(!o.light_shadows);
         let before = o.clone();
-        assert!(!apply_options_hotkey(&mut o, HostHotkey::OcclusionFade));
+        assert!(!apply_options_hotkey(&mut o, HostHotkey::DebugCamera));
         assert_eq!(o, before);
     }
 }

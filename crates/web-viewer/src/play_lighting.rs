@@ -140,6 +140,39 @@ impl LegaiaRuntime {
         self.options_state.enhanced_lighting
     }
 
+    /// Turn the enhanced point lights' shadows on / off (the page's "Lamp
+    /// shadows" box, `Y` on both hosts), persisted with the other options
+    /// (`OptionsState::light_shadows`, the value the native window's
+    /// renderer reads).
+    pub fn set_light_shadows(&mut self, on: bool) {
+        if self.options_state.light_shadows != on {
+            self.options_state.light_shadows = on;
+            self.persist_and_apply_options();
+        }
+    }
+
+    /// Whether lamp shadows are on - the persisted option the page's box
+    /// reflects.
+    pub fn light_shadows(&self) -> bool {
+        self.options_state.light_shadows
+    }
+
+    /// Turn the camera-occlusion fade on / off (the page's "See-through
+    /// walls" box, `F4` on both hosts), persisted with the other options
+    /// (`OptionsState::occlusion_fade`).
+    pub fn set_occlusion_fade(&mut self, on: bool) {
+        if self.options_state.occlusion_fade != on {
+            self.options_state.occlusion_fade = on;
+            self.persist_and_apply_options();
+        }
+    }
+
+    /// Whether the camera-occlusion fade is on - the persisted option the
+    /// page's box reflects.
+    pub fn occlusion_fade(&self) -> bool {
+        self.options_state.occlusion_fade
+    }
+
     /// Set the time of day (`auto` / `day` / `dusk` / `night` - the native
     /// window's `F8` cycle), persisted. Returns the name now in effect (an
     /// unknown name reads as `auto`).

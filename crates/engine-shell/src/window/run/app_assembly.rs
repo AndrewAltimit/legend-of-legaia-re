@@ -24,8 +24,6 @@ pub(super) struct WindowParts<'a> {
     pub(super) save_dir: &'a Path,
     pub(super) extracted_root: &'a Path,
     pub(super) disc: Option<&'a Path>,
-    pub(super) dyn_shadows: bool,
-    pub(super) occlusion_fade: bool,
 }
 
 impl PlayWindowApp {
@@ -50,8 +48,6 @@ impl PlayWindowApp {
             save_dir,
             extracted_root,
             disc,
-            dyn_shadows,
-            occlusion_fade,
         } = parts;
         PlayWindowApp {
             session,
@@ -215,8 +211,6 @@ impl PlayWindowApp {
             // Resolved against the persisted option right below, once the
             // options file has loaded.
             dynamic_lighting: false,
-            dyn_shadows,
-            occlusion_fade,
             psx_render: std::env::var_os("LEGAIA_PSX_RENDER").is_some(),
             field_occluders: Default::default(),
             occl_fade_strength: std::cell::Cell::new(Default::default()),
@@ -275,6 +269,23 @@ impl PlayWindowApp {
                 legaia_engine_menus::options::options_pin::VOLUMETRIC_FOG,
             );
             self.options_state.volumetric_fog = false;
+        }
+        // `--no-dyn-shadows` / `--no-occlusion-fade`: the same session-only
+        // pin over the persisted render options the `Y` / `F4` keys and the
+        // page's boxes edit.
+        if !fidelity.dyn_shadows {
+            self.options_pins.pin(
+                &self.options_state,
+                legaia_engine_menus::options::options_pin::LIGHT_SHADOWS,
+            );
+            self.options_state.light_shadows = false;
+        }
+        if !fidelity.occlusion_fade {
+            self.options_pins.pin(
+                &self.options_state,
+                legaia_engine_menus::options::options_pin::OCCLUSION_FADE,
+            );
+            self.options_state.occlusion_fade = false;
         }
         // `LEGAIA_BATTLE_CAMERA_OPTION=<0|1|2>`: the retail-compare image
         // child plays the capture's own Battle Camera word (`0x800846C0`).

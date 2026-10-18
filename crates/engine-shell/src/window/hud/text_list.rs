@@ -94,8 +94,12 @@ impl PlayWindowApp {
                 format!(
                     "  light {} {} (I/F8){}",
                     self.options_state.lighting_time_of_day,
-                    if self.dyn_shadows { "+shadows" } else { "" },
-                    if self.dyn_shadows {
+                    if self.options_state.light_shadows {
+                        "+shadows"
+                    } else {
+                        ""
+                    },
+                    if self.options_state.light_shadows {
                         ""
                     } else {
                         " shadows off (Y)"
@@ -114,7 +118,7 @@ impl PlayWindowApp {
             };
             // Camera-occlusion fade is default-on; flag the non-default state
             // (`F4` toggles) so a "why is the wall solid again" session sees it.
-            let occl_str = if self.occlusion_fade {
+            let occl_str = if self.options_state.occlusion_fade {
                 ""
             } else {
                 "  occl-fade off (F4)"

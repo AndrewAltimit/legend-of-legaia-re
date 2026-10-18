@@ -140,15 +140,16 @@ impl LegaiaRuntime {
     /// Retail-faithful mode, the native `--retail`: pin every persisted
     /// engine-only option to its retail value (`OptionsState::pin_retail`:
     /// retail camera distance, 8-way movement, no photosensitivity slew,
-    /// retail tile windows, no fog, no enhanced lighting) and turn the
+    /// retail tile windows, no fog, no enhanced lighting or lamp shadows, no
+    /// occlusion fade) and turn the
     /// scene-entry pulse off, for this session only. The pinned knobs never
     /// reach the store (`OptionsPins::persistable`: the page's render boxes
     /// re-apply the pinned values on every scene rebuild, and one such write
     /// used to bake the pin into the store); every other row the player
     /// edits while the mode holds is saved, as natively. Off gives the
-    /// pinned knobs back their pre-pin values. The page's own render
-    /// switches (lighting, lamp shadows, fog, occlusion fade) are its
-    /// checkboxes, which the page sets beside this call.
+    /// pinned knobs back their pre-pin values. The page's render boxes
+    /// (lighting, lamp shadows, fog, see-through walls) mirror the pinned
+    /// options back after this call.
     pub fn set_retail_mode(&mut self, on: bool) {
         if self.page_toggles.retail == on {
             return;

@@ -887,26 +887,6 @@ pub(super) struct PlayWindowApp {
     /// the HUD status line. Default `false` = the faithful pixel-identical
     /// render.
     pub(super) dynamic_lighting: bool,
-    /// **Shadows** of the dynamic-lighting enhancement's per-scene point
-    /// lights (candle / wall-light sources derived from the scene's emissive
-    /// prims, [`legaia_engine_render::scene_lights`]): per-light PCF shadow
-    /// maps. Off leaves the lamps lighting the scene, unshadowed - the play
-    /// page's "Lamp shadows" box means the same. Default `true`, but only effective
-    /// while `dynamic_lighting` is on; disable with `--no-dyn-shadows`, or
-    /// toggle at runtime with the `Y` key. Mirrored into the renderer via
-    /// [`legaia_engine_render::Renderer::set_dyn_shadows`].
-    pub(super) dyn_shadows: bool,
-    /// Camera-occlusion fade ENHANCEMENT (see-through walls): field scene
-    /// geometry between the camera and the player dissolves to a
-    /// screen-door dither in a circle around the character, so the
-    /// character is always at least partly visible. Default `true`
-    /// (clearly the better play experience); disable with
-    /// `--no-occlusion-fade`, or toggle at runtime with the `F4` key.
-    /// Mirrored into the renderer via
-    /// [`legaia_engine_render::Renderer::set_occlusion_fade`]; the
-    /// per-frame focus is staged by the redraw pass in field free-roam
-    /// only, so cutscene / battle / world-map framing is untouched.
-    pub(super) occlusion_fade: bool,
     /// Start in PSX-faithful rasterisation (`--psx-render` or
     /// `LEGAIA_PSX_RENDER=1`), applied to the renderer once it opens.
     pub(super) psx_render: bool,

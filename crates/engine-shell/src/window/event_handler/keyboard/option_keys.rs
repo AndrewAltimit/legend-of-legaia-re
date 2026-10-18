@@ -122,15 +122,17 @@ impl PlayWindowApp {
     /// lights cast (the `--no-dyn-shadows` flag's runtime twin). Shadows
     /// only - the lamps keep lighting the scene, unshadowed, which is
     /// what the play page's "Lamp shadows" box does too. Only visible
-    /// while dynamic lighting (`I`) is on. Pure renderer state, like `I`.
+    /// while dynamic lighting (`I`) is on. The persisted
+    /// `OptionsState::light_shadows`, flipped by the shared edit and pushed
+    /// into the renderer by the options apply.
     fn key_light_shadows(&mut self) {
-        self.dyn_shadows = !self.dyn_shadows;
-        if let Some(r) = self.win.renderer.as_ref() {
-            r.set_dyn_shadows(self.dyn_shadows);
-        }
         log::info!(
             "render: scene light-source shadows {}{}",
-            if self.dyn_shadows { "ON" } else { "off" },
+            if self.options_state.light_shadows {
+                "ON"
+            } else {
+                "off"
+            },
             if self.dynamic_lighting {
                 ""
             } else {
@@ -152,14 +154,14 @@ impl PlayWindowApp {
     /// `D = Right` on the desktop build could not walk right - the hotkey
     /// arm consumes the event and returns before the pad mapping runs. The
     /// shared table's own test holds every hotkey off the bindable set.
+    ///
+    /// The persisted `OptionsState::occlusion_fade` (the page's
+    /// "See-through walls" box), flipped by the shared edit and pushed into
+    /// the renderer by the options apply.
     fn key_occlusion_fade(&mut self) {
-        self.occlusion_fade = !self.occlusion_fade;
-        if let Some(r) = self.win.renderer.as_ref() {
-            r.set_occlusion_fade(self.occlusion_fade);
-        }
         log::info!(
             "render: camera-occlusion fade {}",
-            if self.occlusion_fade {
+            if self.options_state.occlusion_fade {
                 "ON (see-through walls - enhancement)"
             } else {
                 "off (retail authored framing)"
