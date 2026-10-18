@@ -46,9 +46,20 @@ pub fn fallback_panel_draws(
     // `gold_shop_screen` while the session lasts) and fades, and a closing
     // menu prints no line. The diagnostic `[SHOP - DONE]` / `[CLOSING]`
     // rows below were text the game never shows.
+    //
+    // The inn's rest beat draws nothing either. Retail's rest is the
+    // innkeeper's own field-VM record (`retock` partition 1): the thank-you
+    // and good-night boxes, then `35` BGM release, `34 01` colour fade, `4A`
+    // wait, `36` rest cue, `4A` wait, the three `4C 82 <slot>` restores, the
+    // fade back and the good-morning box - no caption over the fade. The
+    // port's `InnSleep` beat used to print `Resting...` (and, once the commit
+    // had cleared the session, the `[INN - RESTING]` stand-in).
     if matches!(
         state,
-        Some(MenuState::ShopExit) | Some(MenuState::Closing) | Some(MenuState::Deactivate)
+        Some(MenuState::ShopExit)
+            | Some(MenuState::InnSleep)
+            | Some(MenuState::Closing)
+            | Some(MenuState::Deactivate)
     ) {
         return out;
     }
@@ -94,7 +105,6 @@ pub fn fallback_panel_draws(
                     SHOP_PEN,
                 )
             }
-            Some(MenuState::InnSleep) => label_draws(font, "Resting..."),
             _ => label_draws(font, &format!("[{}]", menu.current_label())),
         };
         return out;

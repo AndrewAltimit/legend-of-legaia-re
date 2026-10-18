@@ -184,21 +184,56 @@ fn no_panel_no_frame() {
     assert!(shop_overlay_frame(&i, 960, 720).is_empty());
 }
 
+/// The inn's rest beat prints no caption. Retail's rest is the innkeeper's
+/// field-VM record - text boxes, then a colour fade, the rest cue and the
+/// restores with nothing drawn over the fade. The port's `InnSleep` beat
+/// used to print `Resting...`, and the `[INN - RESTING]` stand-in once the
+/// commit had cleared the session.
 #[test]
-fn inn_sleep_caption_uses_the_menu_ink() {
-    let world = World::new();
+fn inn_rest_frames_draw_no_caption() {
+    use legaia_engine_menus::menu::MenuInput;
+    let mut world = World::new();
+    world.party.money = 50;
     let mut menu = MenuRuntime::new(std::env::temp_dir());
+    menu.open_inn(10);
+    menu.ctx.state = MenuState::InnConfirm.as_byte();
+    let font = legaia_font::Font::placeholder();
+    let chrome = chrome_rects();
+    // The confirm draws its prompt; the Yes commits into the rest beat.
+    let i = inputs(&world, &menu, &font, None, Some(&chrome), &[]);
+    assert!(!fallback_panel_draws(&i, 960, 720).panel.is_empty());
+    menu.tick(
+        &mut world,
+        MenuInput {
+            cross: true,
+            ..Default::default()
+        },
+    );
+    assert_eq!(menu.ctx_state(), MenuState::InnSleep.as_byte());
+    let mut rest_frames = 0;
+    let mut ticks = 0;
+    while menu.is_open() {
+        let i = inputs(&world, &menu, &font, None, Some(&chrome), &[]);
+        let f = shop_overlay_frame(&i, 960, 720);
+        assert!(
+            f.is_empty(),
+            "the rest beat drew on state {:#x}: {:?}",
+            menu.ctx_state(),
+            f.stage_texts.len()
+        );
+        if menu.ctx_state() == MenuState::InnSleep.as_byte() {
+            rest_frames += 1;
+        }
+        menu.tick(&mut world, MenuInput::default());
+        ticks += 1;
+        assert!(ticks < 200, "the rest never closed");
+    }
+    assert!(rest_frames > 0, "the rest beat was never seen");
+    // With the session still installed the beat is just as empty.
     menu.open_inn(30);
     menu.ctx.state = MenuState::InnSleep.as_byte();
-    let font = legaia_font::Font::placeholder();
-    let i = inputs(&world, &menu, &font, None, None, &[]);
-    let panel = fallback_panel_draws(&i, 960, 720).panel;
-    assert!(!panel.is_empty());
-    assert!(
-        panel
-            .iter()
-            .all(|d| d.color == legaia_engine_ui::MENU_TEXT_WHITE)
-    );
+    let i = inputs(&world, &menu, &font, None, Some(&chrome), &[]);
+    assert!(fallback_panel_draws(&i, 960, 720).panel.is_empty());
 }
 
 /// A merchant's shop opened the way both hosts open one: armed on the
