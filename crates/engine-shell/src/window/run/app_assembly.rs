@@ -127,6 +127,7 @@ impl PlayWindowApp {
             baka_gpu: None,
             muscle_surface: Default::default(),
             muscle_gpu: None,
+            muscle_mesh_key: None,
             fishing_surface: Default::default(),
             fishing_gpu: None,
             slot_cabinet_assets: None,

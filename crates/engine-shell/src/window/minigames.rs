@@ -21,6 +21,19 @@ mod slot_machine;
 /// the lead); the browser play page seats the same.
 pub(super) const MUSCLE_DOME_CHAR_SLOT: u32 = 0;
 
+/// The vertex streams a posed surface mesh was last uploaded from: equal
+/// streams mean the GPU buffers already hold this frame's mesh.
+#[derive(Debug, Clone, PartialEq)]
+pub(super) struct MeshKey {
+    pub(super) positions: Vec<[f32; 3]>,
+    pub(super) uvs: Vec<[u8; 2]>,
+    pub(super) cba_tsb: Vec<[u16; 2]>,
+    pub(super) colors: Vec<[u8; 3]>,
+    pub(super) flat_rgba: Vec<u8>,
+    pub(super) textured_indices: Vec<u32>,
+    pub(super) untextured_indices: Vec<u32>,
+}
+
 pub(super) struct BakaDuelGpu {
     pub(super) generation: u32,
     pub(super) vram: UploadedVram,

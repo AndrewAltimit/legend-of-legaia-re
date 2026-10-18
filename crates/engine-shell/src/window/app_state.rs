@@ -637,6 +637,9 @@ pub(super) struct PlayWindowApp {
     pub(super) muscle_surface: legaia_engine_minigame_scenes::muscle_dome_scene::MuscleDomeSurface,
     /// The dome surface on the GPU while a dome session is live.
     pub(super) muscle_gpu: Option<minigames::BakaDuelGpu>,
+    /// The posed dome mesh `muscle_gpu` holds, so a frame whose pose did
+    /// not move reuses the GPU buffers instead of building new ones.
+    pub(super) muscle_mesh_key: Option<minigames::MeshKey>,
     /// The fishing pond surface (`legaia_engine_minigame_scenes::fishing_scene`) and its
     /// GPU copy while a fishing session is up.
     pub(super) fishing_surface: legaia_engine_minigame_scenes::fishing_scene::FishingSurface,
