@@ -378,12 +378,10 @@
           <span><b>SFX</b> <span id="hud-sfx">-</span></span>
         </div>
         <div class="play-btn-row">
-          <button id="play-pause" type="button">Pause</button>
-          <button id="play-step" type="button">Step 1 frame</button>
           <button id="play-recenter" type="button">Reset camera</button>
           <button id="play-fishing" type="button"
                   title="Start the fishing minigame here (X casts and locks the power, Z and V reel)">Fish here</button>
-          <button id="play-fullscreen" type="button" title="Present the viewport full screen (Esc to exit)">&#9974; Fullscreen</button>
+          <button id="play-fullscreen" class="btn-accent" type="button" title="Present the viewport full screen (Esc to exit)">&#9974; Fullscreen</button>
           <label class="play-volume" title="Scene BGM output gain (the engine's SPU mixer runs into a WebAudio GainNode)">
             &#9834; <input type="range" id="play-volume" min="0" max="10" step="0.5" value="1">
             <span id="play-volume-value">1x</span>
@@ -2102,15 +2100,6 @@
   canvas.addEventListener('focus', hideVeil);
   canvas.addEventListener('blur', showVeil);
 
-  const pauseBtn = document.getElementById('play-pause');
-  pauseBtn.addEventListener('click', () => {
-    if (!view) return;
-    view.setPaused(!view.paused);
-    pauseBtn.textContent = view.paused ? 'Resume' : 'Pause';
-  });
-  document.getElementById('play-step').addEventListener('click', () => {
-    if (view) view.step();
-  });
   document.getElementById('play-recenter').addEventListener('click', () => {
     if (!view) return;
     view.cam.yaw = 0;

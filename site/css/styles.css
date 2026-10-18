@@ -3468,6 +3468,25 @@ kbd {
 .btn-ghost:hover { border-color: var(--border-hi); color: var(--text-bright); text-decoration: none; }
 .cta-tertiary { font-weight: 600; font-size: 0.85rem; }
 
+/* Accent action button: downloads (.glb, .tmd, PNG) and the play page's
+   Fullscreen. Filled with the accent so the one action a panel exists for
+   stands out from its row of toggles. `:root` lifts the selector to (0,2,0)
+   so it outranks the page-local `.x-controls button` rules (0,1,1) that the
+   pages' own <style> blocks declare after this sheet. */
+:root .btn-accent {
+  background: var(--acc-fill); border-color: var(--acc-fill); color: #fff;
+  font-weight: 600; opacity: 1;
+  box-shadow: 0 2px 10px var(--accent-line);
+}
+:root .btn-accent:hover:not(:disabled) {
+  background: var(--acc-fill); border-color: var(--acc-fill); color: #fff;
+  filter: brightness(1.12);
+}
+:root .btn-accent:focus-visible { outline: 2px solid var(--text-bright); outline-offset: 2px; }
+:root .btn-accent:disabled, :root .btn-accent[disabled] {
+  opacity: 0.45; box-shadow: none; filter: none; cursor: not-allowed;
+}
+
 .hero-media { position: relative; min-height: 320px; border-left: 1px solid var(--line-soft); background: #0b0e13; }
 .hero-media video, .hero-media img.poster {
   position: absolute; inset: 0;

@@ -299,8 +299,8 @@ canvas.char-viewer-canvas:active { cursor: grabbing; }
 
         <div class="char-section-label">Download</div>
         <div class="char-controls">
-          <button id="char-glb-btn" type="button" title="Download this character as a textured glTF model with the form's real animation clips baked in (battle: the action bank, the weapon swings and every Tactical Art; field: the party walk/idle locomotion bank; Baka Fighter: the 9-record battle bank)">⬇ .glb</button>
-          <button id="char-tmd-btn" type="button" title="Download the (possibly equipment-patched) Legaia TMD body">⬇ .tmd</button>
+          <button id="char-glb-btn" class="btn-accent" type="button" title="Download this character as a textured glTF model with the form's real animation clips baked in (battle: the action bank, the weapon swings and every Tactical Art; field: the party walk/idle locomotion bank; Baka Fighter: the 9-record battle bank)">⬇ .glb</button>
+          <button id="char-tmd-btn" class="btn-accent" type="button" title="Download the (possibly equipment-patched) Legaia TMD body">⬇ .tmd</button>
         </div>
 
         <div class="char-section-label">Animation</div>
@@ -878,8 +878,8 @@ canvas.char-viewer-canvas:active { cursor: grabbing; }
       return `<div class="char-item-row">
         <b>${escapeHtml(name)}${tags ? ' <i>' + tags + '</i>' : ''}</b>
         <div class="char-item-btns">
-          <button class="char-equip-btn" data-item-only-section="${it.section}" ${canAlone ? '' : 'disabled'} title="Download just this piece - no limb, no skin, no unchanged default geometry; the grip is bridged where two shaft ends face each other. An opinionated cut, not a disc fact (${escapeHtml(ISOLATION_MODE_NOTE[iso ? iso.mode : ''] || '')})">⬇ alone</button>
-          <button class="char-equip-btn" data-item-section="${it.section}" title="Download this piece plus the limb it sits on, as named nodes in one glTF file - the exact palette cut, for the record (${escapeHtml(it.describe || it.class)})">⬇ + limb</button>
+          <button class="char-equip-btn btn-accent" data-item-only-section="${it.section}" ${canAlone ? '' : 'disabled'} title="Download just this piece - no limb, no skin, no unchanged default geometry; the grip is bridged where two shaft ends face each other. An opinionated cut, not a disc fact (${escapeHtml(ISOLATION_MODE_NOTE[iso ? iso.mode : ''] || '')})">⬇ alone</button>
+          <button class="char-equip-btn btn-accent" data-item-section="${it.section}" title="Download this piece plus the limb it sits on, as named nodes in one glTF file - the exact palette cut, for the record (${escapeHtml(it.describe || it.class)})">⬇ + limb</button>
           <button class="char-equip-btn${previewing ? ' is-active' : ''}" data-item-preview-section="${it.section}" ${canAlone ? '' : 'disabled'} title="Show only what the alone download will contain">${previewing ? '● previewing' : '○ preview'}</button>
         </div>
       </div>`;
@@ -972,7 +972,7 @@ canvas.char-viewer-canvas:active { cursor: grabbing; }
           <canvas class="char-item-thumb${cached ? '' : ' is-pending'}" width="${CARD_PX}" height="${CARD_PX}"></canvas>
           <span class="char-item-name">${escapeHtml(it.name || ('id ' + it.id))}</span>
           <span class="char-item-tags"></span>
-          <button class="char-item-dl" type="button" data-dl-section="${sec.index}" data-dl-id="${it.id}" title="Download this piece alone as .glb (grip repaired where it can be)">⬇</button>
+          <button class="char-item-dl btn-accent" type="button" data-dl-section="${sec.index}" data-dl-id="${it.id}" title="Download this piece alone as .glb (grip repaired where it can be)">⬇</button>
         </div>`;
       }));
       const wornHere = equipIds[sec.index]

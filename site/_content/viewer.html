@@ -172,7 +172,7 @@
       <button id="autorotate-btn" title="Toggle auto-rotate (space)">⏸ stop spin</button>
       <button id="reset-btn" title="Reset camera (R or double-click)">⟲ reset</button>
       <button id="fullscene-btn" style="display: none;" title="Assemble the whole scene: every environment mesh placed at its authored world position, plus the ground">⛰ full map</button>
-      <button id="export-glb-btn" style="display: none;" title="Download the current 3D view (single mesh or assembled full map) as a binary glTF .glb with textures baked from VRAM. Opens in Blender, three.js, or any glTF viewer.">&#11015; .glb</button>
+      <button id="export-glb-btn" class="btn-accent" style="display: none;" title="Download the current 3D view (single mesh or assembled full map) as a binary glTF .glb with textures baked from VRAM. Opens in Blender, three.js, or any glTF viewer.">&#11015; .glb</button>
       <span class="viewer-info" id="viewer-info"></span>
     </div>
 
@@ -244,7 +244,7 @@
         <label style="font-size: 0.82rem; color: var(--text-dim);">Palette
           <select id="cat-clut" title="Palette variant" style="background: var(--bg-code); color: var(--text); border: 1px solid var(--border); padding: 0.2rem;"></select>
         </label>
-        <button id="cat-png" type="button" title="Download this texture (current palette) as a PNG">&#11015; PNG</button>
+        <button id="cat-png" class="btn-accent" type="button" title="Download this texture (current palette) as a PNG">&#11015; PNG</button>
         <span class="viewer-info" id="cat-info"></span>
       </div>
       <ul class="hint" id="cat-notes" style="margin: 0 0 0.5rem 1.1rem; padding: 0;"></ul>
@@ -270,7 +270,7 @@
         <label style="font-size: 0.82rem; color: var(--text-dim);">Palette
           <select id="deep-cat-clut" title="Palette variant" style="background: var(--bg-code); color: var(--text); border: 1px solid var(--border); padding: 0.2rem;"></select>
         </label>
-        <button id="deep-cat-png" type="button" title="Download this texture (current palette) as a PNG">&#11015; PNG</button>
+        <button id="deep-cat-png" class="btn-accent" type="button" title="Download this texture (current palette) as a PNG">&#11015; PNG</button>
         <span class="viewer-info" id="deep-cat-info"></span>
       </div>
       <ul class="hint" id="deep-cat-notes" style="margin: 0 0 0.5rem 1.1rem; padding: 0;"></ul>
