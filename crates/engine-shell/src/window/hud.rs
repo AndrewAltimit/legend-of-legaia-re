@@ -44,22 +44,6 @@ impl PlayWindowApp {
         ));
         stage
     }
-
-    /// Snapshot the live dialog source (simplified panel, cutscene
-    /// timeline, or inline field-VM runner) into plain strings the
-    /// text and chrome layers both consume. `None` when no box is
-    /// open this frame.
-    /// The tile board's quit-prompt geometry while its walk SM sits in the
-    /// prompt state, `None` otherwise.
-    fn tile_board_prompt_layout(&self) -> Option<legaia_engine_ui::TileBoardPromptLayout> {
-        self.session.host.world.tile_board_prompt_cursor()?;
-        let (frame, rows, cursor_x) = legaia_engine_minigames::tile_board::prompt_layout();
-        Some(legaia_engine_ui::TileBoardPromptLayout {
-            frame,
-            rows,
-            cursor_x,
-        })
-    }
 }
 
 impl PlayWindowApp {

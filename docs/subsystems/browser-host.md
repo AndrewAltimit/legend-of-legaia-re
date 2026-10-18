@@ -120,7 +120,10 @@ top of the 320x240 stage, picker `(0x26, 0x94 + ((4-n)*0xF)/2, ...)`, text
 pen at the box origin with 15-px row pitch in the staged CLUT-7 white, the
 chrome via `legaia_engine_ui::dialog_window_chrome_draws_for` (fill at
 centre+4, border ring at centre+8) and the option / page-advance hand
-sprites. The page's DOM text box remains only as a fallback for a cached
+sprites. The same channel carries the `4C E1` balloon, the map display's
+labels, the tile-board prompt and the Incense notice; the whole layer is
+`legaia_engine_screens::field_messages::field_message_frame`, the native
+window's composition too. The page's DOM text box remains only as a fallback for a cached
 WASM without this API.
 
 ## Opening prologue chain (`play_cutscene`)

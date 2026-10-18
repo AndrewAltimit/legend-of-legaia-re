@@ -1627,6 +1627,7 @@ skips the picker's story baseline, which would otherwise clear system flags
 | world-map markers | `legaia_engine_core::world_map_markers` + `screen_prim::world_map_marker_prim` |
 | narration crawl, title card | `cutscene_text_stage_draws` (stage pixels) |
 | dialog reading box (snapshot, layout, both halves) | `engine-screens::dialog_screens`; box height off the pager's row word `_DAT_801F2740` |
+| field message layer (balloon, map labels, tile-board prompt, Incense notice, reading box: order and gates) | `engine-screens::field_messages::field_message_frame`; balloon width `commit_text_balloon_measure` |
 | picker labels, two-line descriptions | `OwnedDialogPanel::picker_labels`; `broken_text_draws_for` (`FUN_80036888` breaks on `0x7C`) |
 
 The site's full-map viewer is a fifth consumer of the same kernels:

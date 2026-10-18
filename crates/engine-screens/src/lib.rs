@@ -28,6 +28,7 @@ pub mod battle_command;
 mod battle_item;
 pub mod dev_menu;
 pub mod field_frame;
+pub mod field_messages;
 mod fishing;
 mod inventory_use;
 pub mod minigame_hud;

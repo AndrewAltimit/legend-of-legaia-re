@@ -645,7 +645,7 @@ reason = "The window's own typed-out dialog panel, used only while `World::toggl
 host = "native"
 kernel = "sync_text_balloon"
 host_only = true
-reason = "Commits the `4C E1` balloon's measured width while `self` is still mutable, because the window's draw passes take `&self`. The page measures in its own draw builder, which has no such split."
+reason = "Commits the `4C E1` balloon's measured width while `self` is still mutable, because the window's draw passes take `&self`. Both hosts commit through the one kernel `legaia_engine_screens::field_messages::commit_text_balloon_measure`: the window here, the page at the head of its draw export (`play_dialog_draws_json`), which has no such split. Both then draw the balloon through the shared `field_message_frame`."
 
 [[frame_kernel]]
 host = "web"
