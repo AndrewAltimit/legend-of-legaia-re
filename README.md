@@ -4,6 +4,8 @@
 
 **Project site:** [andrewaltimit.github.io/legend-of-legaia-re](https://andrewaltimit.github.io/legend-of-legaia-re/) - play, browse and patch in the browser, nothing to install.
 
+[![The port in motion: Rim Elm, the world map, Sol Tower, a Gimard summon in battle, a shop, Noa's dance, the slot machine and the Muscle Dome](site/assets/hero-montage.webp)](https://andrewaltimit.github.io/legend-of-legaia-re/)
+
 https://github.com/user-attachments/assets/aff19b4f-312c-44e2-bd44-3e6d99de2b03
 
 The engine booting a real scene, plus the asset viewers. ([direct link](site/assets/legend-of-legaia-re-demo.mp4))
@@ -110,6 +112,10 @@ cd legaia-tools-<version>-x86_64-unknown-linux-gnu
 ```
 
 Every archive carries every tool. `README-PLAY.txt` inside covers first launch, including the macOS Gatekeeper prompt; [`docs/tooling/releases.md`](docs/tooling/releases.md) covers what is in an archive and how it is built. The engine and `asset-viewer` want a GPU and, on Linux, ALSA.
+
+Every archive also carries **Legaia Studio** (`legaia-studio`), a desktop app for the asset side: open your disc image, browse the archive by scene, preview textures, models, characters, monsters, audio, dialog and movies, and export them, or run the full extraction with a progress bar ([`crates/studio`](crates/studio/README.md)).
+
+![Legaia Studio previewing Gimard Lv3's textured battle model beside the monster list](site/assets/legaia-studio.jpg)
 
 ### Build from source
 
