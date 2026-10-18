@@ -225,6 +225,23 @@ fn a_clip_cursor_rewinds_to_the_displayed_frame() {
     assert_eq!(rewind_clip_cursor(48, 0x15, 8, 0), 48);
 }
 
+/// A walker is seated where the displayed frame drew it: `rikuroa`'s Caruban
+/// stands at `Z = 9792` in the RAM, began the tick at `9760` (`+0x20`, the
+/// tick iterator's pre-tick copy), and the frame two ticks back shows `9728`.
+/// A still walker keeps its seat.
+#[test]
+fn a_walker_is_seated_at_the_displayed_frame() {
+    assert_eq!(
+        walker_displayed_seat((9152, 9792), (9152, 9760), DISPLAY_LAG_FRAMES),
+        (9152, 9728)
+    );
+    assert_eq!(
+        walker_displayed_seat((100, -40), (100, -40), DISPLAY_LAG_FRAMES),
+        (100, -40)
+    );
+    assert_eq!(walker_displayed_seat((10, 20), (12, 18), 0), (10, 20));
+}
+
 /// A cycler's cell is read off the older frame's packet buffer (the one
 /// `gp+0x434` does not name), first copy from its base, and not off the
 /// buffer the newest frame built.

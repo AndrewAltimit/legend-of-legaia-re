@@ -429,12 +429,18 @@ engine verdict:
 
   So are the ambient walkers - every placement the facing channel counts as
   `ambient` ([below](#the-facing-channel)). Where a wanderer stands and which
-  way it faces is its `rand()` picks since the entry, so the state's live
-  seat (`+0x14` / `+0x18`, heading `+0x26`, `retail_walkers`) goes to the
-  child as `LEGAIA_SEAT_WALKERS` and stands the walker there on the frame it
-  captures, motion channel included (`World::seed_ambient_walker`). The
-  displayed frame is two game frames older, so a walker caught mid-step can
-  still sit a few units off its drawn place. The headless seed stands the
+  way it faces is its `rand()` picks since the entry, so the state's seat
+  (heading `+0x26`, `retail_walkers`) goes to the child as
+  `LEGAIA_SEAT_WALKERS` and stands the walker there on the frame it
+  captures, motion channel included (`World::seed_ambient_walker`). The seat
+  is the displayed frame's, two game frames older than `+0x14` / `+0x18`:
+  the tick iterator `FUN_8002519C` copies `+0x14` to `+0x1C` and `+0x18` to
+  `+0x20` before each node's tick (`0x800251D4..0x800251F0`), so the pair is
+  where the walker stood when the RAM's tick began, and the seat steps back
+  twice by that one tick's move (`walker_displayed_seat`; a still walker
+  keeps its place). `rikuroa_pre_caruban`'s Caruban walks `+32` Z a tick:
+  seated at the RAM's `9792` it drew about eight pixels right of retail's
+  frame, which shows `9728`. The headless seed stands the
   same walkers - engaged ones too - at the resume tick, before a talk is
   engaged, because the talk snap turns a placement to the bearing from its
   own seat: `town01_npc16_dialogue_first_page`'s `P1[16]` had wandered off

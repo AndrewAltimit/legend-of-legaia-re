@@ -452,9 +452,12 @@ pub fn rewind_clip_cursor(cursor: i16, flags: u16, frames: u16, back: u16) -> i1
 }
 
 /// Every placement the ambient motion VM is walking or turning
-/// ([`retail_ambient_heading`]), at its live seat - the `rand()` history
-/// the facing channel does not score, which the image child stands where
-/// retail's frame shows it (`World::seed_ambient_walker`).
+/// ([`retail_ambient_heading`]), at its **displayed** seat - the `rand()`
+/// history the facing channel does not score, which the image child stands
+/// where retail's frame shows it (`World::seed_ambient_walker`).
+///
+/// The RAM's `+0x14` / `+0x18` is the newest tick's; the frame on the TV is
+/// [`DISPLAY_LAG_FRAMES`] older ([`walker_displayed_seat`]).
 pub fn retail_walkers(ram: &[u8]) -> Vec<WalkerSeed> {
     let player = game_anchors::player_ptr(ram);
     let mut seen = std::collections::BTreeSet::new();
@@ -464,14 +467,43 @@ pub fn retail_walkers(ram: &[u8]) -> Vec<WalkerSeed> {
         .filter(|&n| retail_stream_turns(ram, n))
         .filter_map(|n| {
             let flat = game_anchors::u16_at(ram, n + 0x50);
+            let (x, z) = walker_displayed_seat(
+                (
+                    game_anchors::i16_at(ram, n + 0x14),
+                    game_anchors::i16_at(ram, n + 0x18),
+                ),
+                (
+                    game_anchors::i16_at(ram, n + 0x1C),
+                    game_anchors::i16_at(ram, n + 0x20),
+                ),
+                DISPLAY_LAG_FRAMES,
+            );
             seen.insert(flat).then(|| WalkerSeed {
                 flat,
-                x: game_anchors::i16_at(ram, n + 0x14),
-                z: game_anchors::i16_at(ram, n + 0x18),
+                x,
+                z,
                 heading: game_anchors::u16_at(ram, n + 0x26) & 0x0FFF,
             })
         })
         .collect()
+}
+
+/// Where a walker stood `lag` game frames before the RAM's tick.
+///
+/// The actor-list tick iterator `FUN_8002519C` copies each node's `+0x14`
+/// word (X and Y) to `+0x1C` and its `+0x18` (Z) to `+0x20` before it calls
+/// the node's tick (`0x800251D4..0x800251F0`), so `+0x1C` / `+0x20` is where
+/// the walker stood when this tick began - the seat the previous frame drew
+/// it at - and `pos - prev` is one tick's step. The frame before that is
+/// taken back by the same step, which holds for a walk at constant speed
+/// and is the one extrapolation here. A walker standing still has
+/// `prev == pos` and keeps its seat.
+pub fn walker_displayed_seat(pos: (i16, i16), prev: (i16, i16), lag: i32) -> (i16, i16) {
+    let back = |p: i16, q: i16| {
+        let step = i32::from(p) - i32::from(q);
+        (i32::from(p) - step * lag).clamp(i32::from(i16::MIN), i32::from(i16::MAX)) as i16
+    };
+    (back(pos.0, prev.0), back(pos.1, prev.1))
 }
 
 /// Every field-actor-ticked node whose envelope is up (`+0x10 & 0x1000`)
