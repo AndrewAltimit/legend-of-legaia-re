@@ -193,6 +193,7 @@ impl PlayWindowApp {
         for (name, scene) in [
             ("summon", w.casting.active_summon.as_ref()),
             ("move_fx", w.casting.active_move_fx.as_ref()),
+            ("mystic_shield", w.casting.mystic_shield_fx.as_ref()),
         ] {
             for p in scene
                 .iter()

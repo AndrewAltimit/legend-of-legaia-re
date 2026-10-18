@@ -190,6 +190,16 @@ pub struct CastFxState {
     /// [`crate::world::World::capture_stager_tick`] reports "not busy" - which is what a
     /// disc-free host, or any cast that is not capture-class, sees.
     pub(crate) capture_spell: Option<u8>,
+    /// The caster's point the pager read for a capture module whose records
+    /// go in whole, seated on the band's first `0x70` tick
+    /// ([`crate::world::World::capture_stager_tick`]): the module's arms
+    /// spawn them, and the first arm runs on the first `0x70` frame, never
+    /// through `0x6E` / `0x6F`.
+    pub(crate) capture_fx_pending: Option<[i16; 3]>,
+    /// A capture body's own pass counter (PROT 0940's `0x801F8650`): bumped
+    /// once a pass by the arms that spawn on it
+    /// ([`legaia_engine_cast::cast_module_camera::capture_arm_counted`]).
+    pub(crate) module_pass_counter: u32,
     /// The caster's clip stages the resident capture-class body owes and its
     /// port does not write ([`legaia_engine_cast::cast_module_ticks::CAPTURE_CASTER_STAGES`]),
     /// replayed at the head of the band by
@@ -359,6 +369,8 @@ impl CastFxState {
             module_cam: Default::default(),
             module_pres: Default::default(),
             capture_spell: None,
+            capture_fx_pending: None,
+            module_pass_counter: 0,
             caster_stages: None,
             pending_move_fx_spawn: None,
             active_move_fx: None,

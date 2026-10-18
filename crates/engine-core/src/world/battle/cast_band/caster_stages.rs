@@ -36,6 +36,10 @@ impl World {
         let Some(spell_id) = self.casting.capture_spell else {
             return false;
         };
+        // The records the pager noted go in on the band's first tick.
+        if let Some(origin) = self.casting.capture_fx_pending.take() {
+            self.spawn_cast_module_fx(spell_id, origin);
+        }
         // The caster's own stages the body's port does not write: the
         // wind-up plays first, the module's arms run with the caster on its
         // park, and the close releases the park once they are done.
@@ -102,11 +106,35 @@ impl World {
                     Some(([0; 3], [0, 0, roll])),
                 );
             }
+            // An arm that spawns on the passes its body's own frame counter
+            // picks (PROT 0940's sparks), the counter read before its bump.
+            if opens_pass && let Some(c) = cmc::capture_arm_counted(run.prot_entry, arm) {
+                let n = self.casting.module_pass_counter;
+                if let Some((id, mask)) = c.effect
+                    && n & mask == 0
+                    && let Some(a) = self.actors.get(usize::from(self.battle_ctx.active_actor))
+                {
+                    let pos = [
+                        a.move_state.world_x,
+                        a.move_state.world_y,
+                        a.move_state.world_z,
+                    ];
+                    let facing = a.battle.facing_angle;
+                    self.try_spawn_effect(id, pos, facing);
+                }
+                if n & c.mask == 0 {
+                    self.stage_module_arm_spawns(run.prot_entry, c.spawns, run.camera_shot, None);
+                }
+                self.casting.module_pass_counter = n.wrapping_add(1);
+            }
             if run.phase != arm || !run.busy {
                 if cmc::capture_arm_flushes_pool(run.prot_entry, arm) {
                     self.flush_module_part_pool();
                 }
-                let spawns = cmc::capture_arm_spawns(run.prot_entry, arm);
+                if cmc::capture_arm_resets_pass_counter(run.prot_entry, arm) {
+                    self.casting.module_pass_counter = 0;
+                }
+                let spawns = cmc::capture_arm_spawns_for(run.prot_entry, arm, spell_id);
                 if !spawns.is_empty() {
                     self.stage_module_arm_spawns(run.prot_entry, spawns, run.camera_shot, None);
                 }
@@ -153,6 +181,7 @@ impl World {
         self.casting.module_swordie = Default::default();
         self.casting.module_rain = Default::default();
         self.casting.module_settle_countdown = 0;
+        self.casting.module_pass_counter = 0;
         self.casting.module_cam = Default::default();
         self.casting.module_pres = Default::default();
         self.casting.module_beam_counter = 0;

@@ -1,8 +1,9 @@
-//! The op-`0x20` stagers of two capture-class cells whose parts call back
-//! into their module: PROT 0938 (Chaos Breath / Mystic Circle) and PROT 0962
-//! (the Blade Breath cell, whose `0xA5` body is Cort's Ultra Charge). Each
-//! seats more records off the calling part, the shape
-//! [`super::stager_spawns`] documents for the summon band.
+//! The op-`0x20` stagers of the capture-class cells whose parts call back
+//! into their module: PROT 0938 (Chaos Breath / Mystic Circle), PROT 0946
+//! (Zeto's Call Wave / Big Wave) and PROT 0962 (the Blade Breath cell, whose
+//! `0xA5` body is Cort's Ultra Charge). Each seats more records off the
+//! calling part, the shape [`super::stager_spawns`] documents for the summon
+//! band.
 
 use super::stager_spawns::{StagerCaller, StagerSpawn};
 
@@ -74,6 +75,64 @@ pub fn blade_breath_cell_stager_spawns(arm: u8, caller: StagerCaller) -> Vec<Sta
     }
 }
 
+/// PROT 0946's wave record the stager's arm 1 seats.
+pub const CALL_WAVE_WAVE_RECORD: u32 = 0x801F_7BF8;
+/// The handle table `0x801F7F30` arm 1 fills: sixteen slots, and arm 1 seats
+/// only into a null one (`0x801F7894..0x801F78A8`). Nothing in the body
+/// clears a slot as its part dies, so a cast seats sixteen waves at most.
+pub const CALL_WAVE_WAVE_SLOTS: usize = 16;
+
+/// PROT 0946's stager `FUN_801F76C4`, reached through `gp[+0x714]` from its
+/// parts' op `0x20` (`a1` the arm):
+///
+/// | Arm | Caller | Seats |
+/// |---:|---|---|
+/// | 0 | `0x801F78CC`, every eleven frames (Call Wave) | `0x801F7928`, `0x801F79C0`, `0x801F7A08` on the caller (`0x801F76F8..0x801F7744`), then eight rays `0x801F7970`, ray `k` stored after its seat `+0x54 = k + r % 3`, `+0x84 = r % 256 - 0x80`, `+0xBA = r % 128`, `+0xB6 = r % 256 + 0x1000`, `+0x28 = 0x200 k + r % 512 - 0x100`, one `rand()` each in that order (`0x801F774C..0x801F7840`) |
+/// | 1 | `0x801F7C44`, every five frames (Big Wave) | while the phase `ctx[+0x279]` is below `7`, one wave `0x801F7BF8` into the first null slot of the handle table ([`CALL_WAVE_WAVE_SLOTS`]), none once it is full (`0x801F7870..0x801F78AC`) |
+///
+/// Every call is `FUN_80021B04(caller + 0x14, caller + 0x24, record, 0x1000)`.
+/// `rand()` is `FUN_80056798`, never negative, so each `%` is the plain
+/// remainder the arm's `mult` / shift sequences compute.
+///
+/// PORT: FUN_801F76C4 (PROT 0946 stager)
+pub fn call_wave_stager_spawns(
+    arm: u8,
+    caller: StagerCaller,
+    phase: u8,
+    waves_seated: usize,
+    rand: &mut dyn FnMut() -> u32,
+) -> Vec<StagerSpawn> {
+    match arm {
+        0 => {
+            let mut out: Vec<StagerSpawn> = [0x801F_7928, 0x801F_79C0, 0x801F_7A08]
+                .into_iter()
+                .map(|r| on_caller(r, caller, 0x1000))
+                .collect();
+            for k in 0..8u16 {
+                let mut s = on_caller(0x801F_7970, caller, 0x1000);
+                let wait = k + (rand() % 3) as u16;
+                let lean = (rand() % 256) as i32 - 0x80;
+                let ba = (rand() % 128) as u16;
+                let b6 = (rand() % 256) as u16 + 0x1000;
+                let roll = (i32::from(k) << 9) + (rand() % 512) as i32 - 0x100;
+                s.pokes = vec![
+                    (0x54, wait),
+                    (0x84, lean as u16),
+                    (0xBA, ba),
+                    (0xB6, b6),
+                    (0x28, roll as u16),
+                ];
+                out.push(s);
+            }
+            out
+        }
+        1 if phase < 7 && waves_seated < CALL_WAVE_WAVE_SLOTS => {
+            vec![on_caller(CALL_WAVE_WAVE_RECORD, caller, 0x1000)]
+        }
+        _ => Vec::new(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -101,5 +160,36 @@ mod tests {
         let recs: Vec<u32> = s.iter().map(|x| x.record).collect();
         assert_eq!(recs, [0x801F_86D4, 0x801F_8720, 0x801F_88FC]);
         assert!(blade_breath_cell_stager_spawns(0, StagerCaller::default()).is_empty());
+    }
+
+    #[test]
+    fn call_wave_rays_take_five_draws_each() {
+        let mut n = 0u32;
+        let mut rand = || {
+            n += 1;
+            n * 0x101
+        };
+        let s = call_wave_stager_spawns(0, StagerCaller::default(), 0, 0, &mut rand);
+        assert_eq!(s.len(), 11);
+        // Ray 0's draws are 0x101, 0x202, 0x303, 0x404, 0x505.
+        assert_eq!(
+            s[3].pokes,
+            vec![
+                (0x54, (0x101 % 3) as u16),
+                (0x84, (0x202 % 256 - 0x80) as u16),
+                (0xBA, (0x303 % 128) as u16),
+                (0xB6, (0x404 % 256 + 0x1000) as u16),
+                (0x28, (0x505 % 512 - 0x100) as u16),
+            ]
+        );
+    }
+
+    #[test]
+    fn call_wave_waves_stop_at_phase_seven_or_a_full_table() {
+        let mut rand = || 0;
+        let c = StagerCaller::default();
+        assert_eq!(call_wave_stager_spawns(1, c, 6, 15, &mut rand).len(), 1);
+        assert!(call_wave_stager_spawns(1, c, 7, 0, &mut rand).is_empty());
+        assert!(call_wave_stager_spawns(1, c, 0, 16, &mut rand).is_empty());
     }
 }

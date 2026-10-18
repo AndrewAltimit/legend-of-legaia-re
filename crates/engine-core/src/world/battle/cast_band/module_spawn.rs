@@ -386,8 +386,17 @@ impl World {
                 })
         };
         let party_count = usize::from(self.party.party_count);
+        let caster_slot = usize::from(self.battle_ctx.active_actor);
         let anchor_seats = legaia_engine_cast::cast_module_camera::AnchorSeats {
-            caster: seat_of(usize::from(self.battle_ctx.active_actor)),
+            caster: seat_of(caster_slot),
+            caster_body: self.battle_display_trio(caster_slot).and_then(|p| {
+                Some(legaia_engine_cast::cast_module_camera::ModuleSeat {
+                    x: p[0] as i16,
+                    y: p[1] as i16,
+                    z: p[2] as i16,
+                    facing: self.actors.get(caster_slot)?.battle.facing_angle & 0xFFF,
+                })
+            }),
             party: std::array::from_fn(|n| {
                 (n < party_count && self.actors.get(n).is_some_and(|a| a.battle.hp != 0))
                     .then(|| seat_of(n))

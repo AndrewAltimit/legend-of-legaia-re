@@ -418,6 +418,10 @@ pub enum SpawnAnchor {
     /// copied off the caster, `-0x3E8` stored over the height
     /// (`0x801F6C14..0x801F6C74`).
     Caster { y: i16 },
+    /// The caster seat's display trio `+0x3C..+0x40` (the live pair plus the
+    /// pose centroid) on its angle trio `+0x44`: `a0 = caster + 0x3C`,
+    /// `a1 = caster + 0x44`. PROT 0946's Call Wave arm 0 (`0x801F6C38`).
+    CasterBody,
     /// The arm's shot focus turned back into a world point at the literal
     /// height `y`, turned to the creature's facing plus `yaw`: PROT 0911 arm
     /// 9 negates the `FUN_801DCEAC` centroid it framed (`0x801F7968..
@@ -513,6 +517,8 @@ pub enum HeadingBase {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct AnchorSeats {
     pub caster: Option<ModuleSeat>,
+    /// The caster's display trio `+0x3C..+0x40`, facing its `+0x46`.
+    pub caster_body: Option<ModuleSeat>,
     pub party: [Option<ModuleSeat>; 3],
     /// The framing depth `ctx[+0x6D0]`, the scale PROT 0913 passes.
     pub depth: i16,
@@ -549,6 +555,7 @@ pub fn spawn_anchor_point_with(
             let c = seats.caster?;
             ([c.x, y, c.z], [0, c.facing as i16, 0])
         }
+        SpawnAnchor::CasterBody => seat_at(seats.caster_body?),
         SpawnAnchor::ShotPointFacing { y, yaw } => {
             let s = shot?;
             let f = creature.map_or(0, |c| c.facing as i16);

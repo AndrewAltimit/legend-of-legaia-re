@@ -2468,25 +2468,37 @@ frames differently until a director models the read.
 
 <a id="capture-band-spawns"></a>
 
-The capture band's pager (`0x6E`) seats a module's whole record set at the
-caster as it pages the module in. Three bodies instead seat their spawn calls
-on the passes their arms make them inside `0x70`
-(`cast_module_camera::capture_arm_spawns`, keyed on the module and the body
-the trampoline picks, `capture_spawns_per_arm`); the pager placement drew
-their records a phase band early, ran each program to its end before the arm
-that seats it, and drew a cell's other bodies' records beside them:
+The capture band's pager (`0x6E`) only streams the module image in: nothing
+of the module is on screen through `0x6E` / `0x6F`
+(`che_delilas_megaton_press_mid_cast` holds `0x6F` with no part alive). A
+module whose arms are not ported seats its whole record set at the caster on
+the band's first `0x70` tick, where its first arm runs
+(`CastFxState::capture_fx_pending`); seated at the pager, the records drew
+through the fade and ran out before the arms that seat them. Five bodies
+instead seat their spawn calls on the passes their arms make them inside
+`0x70` (`cast_module_camera::capture_arm_spawns`, keyed on the module and the
+body the trampoline picks, `capture_spawns_per_arm`), which also keeps a
+cell's other bodies' records off the screen:
 
 | Module, body | Arms that seat | Stager (op `0x20`) |
 |---|---|---|
 | 0966 Evil Seru Magic, `0x801F6A74` | 46 calls at literal points over arms 2, 4, 10, 23, 26 | not ported: the records only it seats go in as the body first ticks |
 | 0938 Mystic Circle (`0xB7`), `0x801F69EC` | arm 0 the circle `0x801F7D5C` and the ray caller `0x801F7DC4`; arm 1 `0x801F7FE8` on the countdown's expiry; arms 2 and 3 on the caster, each pass flushing the part pool first (`jal 0x80050E74`) | `FUN_801F7AB8`: arm 2 seats a ray `0x801F7DF4` on the caller, which `0x801F7DC4` calls every eleven frames |
 | 0962 Ultra Charge (`0xA5`), `0x801F69D8` | arm 0 the ring caller `0x801F86B8` on the caster and three camera-locked discs; arm 1 one ray `0x801F876C` on **every** pass, rolled `rand() % 0x1000` about Z (`capture_arm_spawns_every`) | `FUN_801F813C`: arm 2 seats three rings on the caller, which `0x801F86B8` calls every fifteen frames |
+| 0940 Mystic Shield (`0xAC`), `0x801F7240` | arm 1 `0x801F82D4` and arm 3 four records on the caster as each passes; arm 2 every eighth pass `0x801F8370` and every fourth an `efect.dat` effect `3`, arms 4 and 5 every eighth pass `0x801F84EC`, off the body's pass counter `0x801F8650` (`capture_arm_counted`); arm 4 the [sphere](#the-mystic-shield-effect); arm 7 flushes the pool | `FUN_801F82CC` is a bare `jr ra` |
+| 0946 Call Wave (`0x55`) / Big Wave (`0x56`), `0x801F69FC` | Call Wave's arm 0 the ray caller `0x801F78CC` on the caster's `+0x3C`; Big Wave's arm 4 the wave caller `0x801F7C44`, arm 5 nine records, arm 6 four, after halting every handle it keeps (`capture_arm_spawns_for` keys arm 0 on the action) | `FUN_801F76C4`: arm 0 three rings and eight rays `0x801F7970` with per-ray `rand()` waits, leans, lengths and rolls; arm 1 one wave `0x801F7BF8` into a sixteen-slot handle table while the phase is below `7` |
 
-The two ported stagers run off the parts' own calls
-(`chaos_breath_cell_stager_spawns`, `blade_breath_cell_stager_spawns`, via
-`World::run_part_stager_calls`) and only for the body above; the cells' other
-bodies (Chaos Breath, the rest of the Blade Breath cell) keep the pager
-placement.
+The ported stagers run off the parts' own calls
+(`chaos_breath_cell_stager_spawns`, `call_wave_stager_spawns`,
+`blade_breath_cell_stager_spawns`, via `World::run_part_stager_calls`) and
+only for the bodies above; the cells' other bodies (Chaos Breath, Glare and
+the rest of their cells) keep the whole-set placement. Big Wave's arm 6 also
+ORs `0x20` into `+0x52` of the first two records it seats
+(`0x801F7204..0x801F723C`), a bit the engine does not model.
+
+The Call Wave rays grow their length channel `+0xC8` off the rate op `0x1C`
+stores at `+0xCA` ([move-vm.md](move-vm.md#opcode-reference)); with the rate
+kept in a field nothing read, they had drawn at length zero.
 
 **A pass is a battle frame, not a tick.** Ultra Charge's arm 1 seats its ray
 once per pass of the body, and the frame driver re-enters the body once per
@@ -2802,7 +2814,7 @@ through one `World` seam, so a live cast reaches every routine below.
 |---|---|---|
 | Spawn pool | `legaia_overlay_images::cast_effect_pool` (`crates/overlay-images`) | indexes all 64 entries by PROT number; parses each image's spawn records with `summon_overlay::parse`, which scans `jal FUN_80021B04` and `jal FUN_80050ED4` sites and follows each `a2`. Built once by the scene host (`ensure_cast_effect_pool`); a host with no disc holds none |
 | Dispatch key | `battle_cast_dispatch` | the two dispatchers answer with the emitter VA and band entry: `FUN_801F1ED4` row `id - 0x81` = PROT `903 + row`, `FUN_801F2160` row `sub_id` = PROT `935 + sub_id`. `World::cast_module_for` picks on the record's `+0` class byte |
-| Staging | `World::spawn_cast_module_fx` | seats the module's records as a move-VM scene (`SummonScene`) at the two seams retail uses: the capture band's pager (`load_capture_archive`, the `0x6E` arm) and the summon stager's first tick (`0x801E4B1C`) |
+| Staging | `World::spawn_cast_module_fx` | seats the module's records as a move-VM scene (`SummonScene`) where each band's module first runs: the capture band's first `0x70` tick (noted by the pager `load_capture_archive`, the `0x6E` arm) and the summon stager's first tick (`0x801E4B1C`) |
 | Code | `cast_module_ticks`, `cast_arm_ticks`, `seru_magic_ticks`, `cast_fatal_decision` | one function per VA: dispatch bound, simulation-state writes, damage step (baked power, wrapper, clamp shape, `+0x10` accumulate, HP write, reaction stage, anim-rate write) and phase advance. `World::run_cast_module_code` drives them from the stager tick the action SM calls at states `0x34` / `0x35` / `0x36`, and from the capture band's `0x70` |
 | Camera and gates | `cast_module_camera` | [directors](#the-module-owns-the-camera) and countdown tables |
 | Damage | `World::cast_spell_on_slots_prepaid`, `World::run_cast_module_aoe` | the [one-owner rule](#one-owner-per-hit) |
