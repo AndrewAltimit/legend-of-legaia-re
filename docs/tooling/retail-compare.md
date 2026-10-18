@@ -2224,6 +2224,24 @@ that accepts it at six drops every `FT3` in the list - this state's own list
 holds 172. Decoded at seven the family matches triangle for triangle: retail
 `55`, the port `54` front-facing of `128`.
 
+### Stacked shells the coplanar pass lifts
+
+The same state's strand shell also draws about seven pixels above retail's.
+`jouine`'s room is five placed objects on one origin: records `0`, `2`, `3`
+(twice) and `14` all stand at `(3136, 0, 3136)` with `+0x16 = 0`, and in the RAM they
+share one view translation (`+0x2C..+0x34`), so retail draws every shell from
+the same point. The port's cross-draw coplanar pass
+(`legaia_engine_scene::coplanar_draws`) finds the strand shell (record `14`,
+model `1`) coplanar with the wall shells on every facet family, lifts it a
+rank along each family's normal, and sums the lifts: each lift points up
+(`lift_dir`), so around a closed ring the horizontal parts cancel and the
+vertical ones add, to `(-2.0, -15.9, -1.9)` world units. A translation cannot
+separate two concentric shells on every facet at once, so the sum only moves
+the image. With the lifts off this frame reads `0.909` against `0.905`, the
+rest of the residual being sampling: the wall vertices match retail's packets
+to about a pixel. Separating stacked shells by depth rather than by moving
+them is renderer work on both hosts, and the pass is unchanged.
+
 ### One glide frame ahead, or a few frames into an arrival
 
 These field states miss retail for timing the seed does not replay, not for
