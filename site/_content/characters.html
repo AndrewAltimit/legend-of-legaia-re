@@ -223,6 +223,7 @@ canvas.char-viewer-canvas:active { cursor: grabbing; }
 <script src="js/rom-cache.js"></script>
 <script src="js/disc-info.js"></script>
 <script src="js/load-progress.js"></script>
+<script src="js/item-thumbs.js"></script>
 -->
 <header class="page-header">
   <div class="breadcrumb"><a href="index.html">home</a> · characters</div>
@@ -891,40 +892,15 @@ canvas.char-viewer-canvas:active { cursor: grabbing; }
   // Card thumbnails are software-rendered in WASM (`equipment_item_card_*`),
   // one build per (character, section, id) - about the cost of one loadout
   // assembly each - so they are produced through a queue that yields to the
-  // main viewer between cards, and cached for the session.
-  const cardCache = new Map();   // key -> { json, pixels(Uint8ClampedArray), size }
+  // main viewer between cards, and cached for the session. The renderer,
+  // queue and cache are js/item-thumbs.js, shared with the shops page.
   const CARD_PX = 96;
-  let cardQueue = [];            // [{ cslot, section, id }]
-  let cardQueueToken = 0;        // bumped per render; a stale pump stops
-  const cardKey = (cslot, section, id) => `${cslot}:${section}:${id}`;
-
-  function ensureCard(cslot, section, id) {
-    const key = cardKey(cslot, section, id);
-    if (cardCache.has(key)) return cardCache.get(key);
-    if (!viewer || typeof viewer.equipment_item_card_json !== 'function') return null;
-    let json = null;
-    try { json = JSON.parse(viewer.equipment_item_card_json(cslot, section, id)); } catch (e) { json = null; }
-    let pixels = null;
-    if (json && json.ok) {
-      const px = viewer.equipment_item_card_pixels(CARD_PX);
-      if (px && px.length === CARD_PX * CARD_PX * 4) pixels = new Uint8ClampedArray(px);
-    }
-    const entry = { json, pixels, size: CARD_PX };
-    cardCache.set(key, entry);
-    return entry;
-  }
+  const thumbs = new window.ItemThumbs(() => viewer, { size: CARD_PX });
+  const ensureCard = (cslot, section, id) => thumbs.ensure(cslot, section, id);
 
   function paintCard(cardEl, entry) {
-    const cv = cardEl.querySelector('canvas.char-item-thumb');
     const tags = cardEl.querySelector('.char-item-tags');
-    if (cv && entry && entry.pixels) {
-      const ctx = cv.getContext('2d');
-      ctx.putImageData(new ImageData(entry.pixels, entry.size, entry.size), 0, 0);
-      cv.classList.remove('is-pending');
-    } else if (cv) {
-      cv.classList.remove('is-pending');
-      cv.title = 'this piece did not assemble on its own';
-    }
+    thumbs.paint(cardEl.querySelector('canvas.char-item-thumb'), entry);
     if (tags && entry && entry.json && entry.json.ok) {
       const j = entry.json;
       tags.innerHTML = isoTags(j.isolation) || `<span title="${escapeHtml(j.describe || '')}">${escapeHtml(j.class)}</span>`;
@@ -934,26 +910,12 @@ canvas.char-viewer-canvas:active { cursor: grabbing; }
     }
   }
 
-  function pumpCardQueue(token) {
-    if (token !== cardQueueToken) return;
-    const next = cardQueue.shift();
-    if (!next) return;
-    const cardEl = equipPanelEl.querySelector(`.char-item-card[data-section="${next.section}"][data-id="${next.id}"]`);
-    if (cardEl) {
-      const entry = ensureCard(next.cslot, next.section, next.id);
-      paintCard(cardEl, entry);
-    }
-    // Yield: let the orbit view draw a frame between cards.
-    setTimeout(() => pumpCardQueue(token), 0);
-  }
-
   function renderEquipPanel() {
     const meta = equipSlotMeta();
     if (!isEquipLoadoutForm(curForm) || !meta) {
       equipPanelEl.style.display = 'none';
       equipPanelEl.innerHTML = '';
-      cardQueueToken++;
-      cardQueue = [];
+      thumbs.cancel();
       return;
     }
     equipPanelEl.style.display = '';
@@ -964,8 +926,7 @@ canvas.char-viewer-canvas:active { cursor: grabbing; }
         <div class="char-item-card is-none${equipIds[sec.index] === 0 ? ' is-active' : ''}" data-section="${sec.index}" data-id="0" title="The section's unequipped default">
           <span class="char-item-name">none</span>
         </div>`].concat(sec.items.map(it => {
-        const key = cardKey(cslot, sec.index, it.id);
-        const cached = cardCache.get(key);
+        const cached = thumbs.cached(cslot, sec.index, it.id);
         const active = equipIds[sec.index] === it.id;
         return `
         <div class="char-item-card${active ? ' is-active' : ''}" data-section="${sec.index}" data-id="${it.id}">
@@ -989,19 +950,21 @@ canvas.char-viewer-canvas:active { cursor: grabbing; }
         <span>every piece the disc offers ${escapeHtml(meta.label)}, each drawn on its own · click to put on, Download to save it alone</span>
         <button class="char-equip-btn" id="char-panel-strip" type="button"${worn ? '' : ' disabled'}>strip all</button>
       </div>` + slots;
-    // Paint cached cards now; queue the rest.
-    cardQueueToken++;
-    const token = cardQueueToken;
-    cardQueue = [];
+    // Paint cached cards now; queue the rest. The equipment panel is
+    // rebuilt whole, so a pending job always looks its card up afresh.
+    thumbs.cancel();
     for (const sec of meta.sections) {
       for (const it of sec.items) {
-        const cardEl = equipPanelEl.querySelector(`.char-item-card[data-section="${sec.index}"][data-id="${it.id}"]`);
-        const cached = cardCache.get(cardKey(cslot, sec.index, it.id));
+        const sel = `.char-item-card[data-section="${sec.index}"][data-id="${it.id}"]`;
+        const cached = thumbs.cached(cslot, sec.index, it.id);
+        const cardEl = equipPanelEl.querySelector(sel);
         if (cached && cardEl) paintCard(cardEl, cached);
-        else cardQueue.push({ cslot, section: sec.index, id: it.id });
+        else thumbs.enqueue({ cslot, section: sec.index, id: it.id, done: (entry) => {
+          const el = equipPanelEl.querySelector(sel);
+          if (el) paintCard(el, entry);
+        } });
       }
     }
-    if (cardQueue.length) setTimeout(() => pumpCardQueue(token), 0);
   }
 
   // The raw `.tmd` download hands back the model's **on-disc** blob, and the
@@ -1984,7 +1947,7 @@ canvas.char-viewer-canvas:active { cursor: grabbing; }
       prog.indeterminate('Parsing PROT.DAT…');
       await prog.paint();
       viewer.load_disc(buf);
-      cardCache.clear();
+      thumbs.clear();
 
       prog.indeterminate('Decoding character pack…');
       await prog.paint();

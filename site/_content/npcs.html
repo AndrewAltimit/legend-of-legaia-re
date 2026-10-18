@@ -192,6 +192,7 @@ canvas.npc-canvas:active { cursor: grabbing; }
 <script src="js/webgl-tmd-assembled-scene.js"></script>
 <!-- Posed single-model orbit view, shared with the characters page. -->
 <script src="js/mesh-view.js"></script>
+<script src="js/field-npc-model.js"></script>
 <script>
 /* ------------------------------------------------------------------
  * NPC catalog.
@@ -326,20 +327,6 @@ canvas.npc-canvas:active { cursor: grabbing; }
     renderGrid();
     wrap.style.display = '';
 
-    try {
-      viewer.field_npc_mesh(i);
-    } catch (err) {
-      sceneStat.textContent = `Couldn't build that model: ${err.message || err}`;
-      return;
-    }
-    const positions = viewer.field_npc_mesh_positions();
-    const indices   = viewer.field_npc_mesh_indices();
-    if (!positions.length || !indices.length) {
-      nameEl.textContent = labelFor(n);
-      statsEl.innerHTML = '<b>No renderable geometry</b> - this actor\'s model has no drawable primitives.';
-      return;
-    }
-
     if (!meshView) {
       /* Field models are authored facing +Z (away from the default camera), so
        * the stock orbit start would open on the back of every NPC's head. Spin
@@ -357,52 +344,29 @@ canvas.npc-canvas:active { cursor: grabbing; }
        * a point). Not used by page code. */
       window.__npcMeshView = meshView;
     }
-    /* Every NPC in a scene samples the same field VRAM the map does. */
-    meshView.uploadVram(viewer.field_scene_vram_bytes());
-    const flat = viewer.field_npc_mesh_flat_rgba();
-    meshView.setMesh(
-      positions,
-      viewer.field_npc_mesh_uvs(),
-      viewer.field_npc_mesh_cba_tsb(),
-      indices,
-      viewer.field_npc_mesh_bounds(),
-      viewer.field_npc_mesh_object_ids(),
-      flat.length ? flat : null,
-    );
-
-    /* Pose it. A multi-part model MUST be posed or it draws as a heap - the
-     * catalog only lists actors we can pose, so this always resolves for
-     * them. Single-part models need no pose. */
-    let posed = false;
-    if (n.anim > 0 && catalog.anm_prot != null) {
-      const rec = n.anim - 1;
-      const dims = viewer.player_anm_record_dims(catalog.anm_prot, rec);
-      const boneCount = dims[0] | 0;
-      const frameCount = dims[1] | 0;
-      if (frameCount > 0) {
-        /* Pad the clip out to the TMD's object count: objects the clip doesn't
-         * animate get an identity transform and stay at their model-local
-         * origin, rather than being collapsed. */
-        const partCount = Math.max(n.nobj, boneCount);
-        const frames = viewer.player_anm_record_pose_frames(catalog.anm_prot, rec, n.nobj);
-        if (frames.length >= frameCount * partCount * 6) {
-          meshView.setAnimation({ partCount, frameCount, frames });
-          posed = true;
-          frameSlider.max = frameCount - 1;
-          frameSlider.value = 0;
-          frameOut.textContent = `frame 1/${frameCount}`;
-          anmNote.textContent = frameCount > 1
-            ? `${frameCount} frames, ${boneCount} moving parts - the actor's real in-game clip.`
-            : 'A single-frame clip: this actor only ever holds its rest pose.';
-          meshView.setPlaying(frameCount > 1);
-          playBtn.textContent = frameCount > 1 ? '⏸ pause' : '▶ play';
-          playBtn.disabled = frameCount < 2;
-          frameSlider.disabled = frameCount < 2;
-        }
-      }
+    /* Build + pose through the helper the shops page shares
+     * (js/field-npc-model.js). */
+    const r = window.FieldNpcModel.show(meshView, viewer, catalog, n);
+    if (!r.ok) {
+      nameEl.textContent = labelFor(n);
+      statsEl.innerHTML = `<b>No renderable geometry</b> - ${escapeHtml(r.why || 'nothing to draw')}.`;
+      return;
+    }
+    const posed = r.posed;
+    if (posed) {
+      const frameCount = r.frameCount;
+      frameSlider.max = frameCount - 1;
+      frameSlider.value = 0;
+      frameOut.textContent = `frame 1/${frameCount}`;
+      anmNote.textContent = frameCount > 1
+        ? `${frameCount} frames, ${r.boneCount} moving parts - the actor's real in-game clip.`
+        : 'A single-frame clip: this actor only ever holds its rest pose.';
+      meshView.setPlaying(frameCount > 1);
+      playBtn.textContent = frameCount > 1 ? '⏸ pause' : '▶ play';
+      playBtn.disabled = frameCount < 2;
+      frameSlider.disabled = frameCount < 2;
     }
     if (!posed) {
-      meshView.setAnimation(null);
       frameSlider.max = 0;
       frameSlider.value = 0;
       frameSlider.disabled = true;

@@ -792,6 +792,26 @@ instead of the scene's and are routed to the characters page
 (`special_count`). Off-map "hidden" spawns are script-gated story actors,
 fully resolvable, so they *are* listed - flagged `conditional`.
 
+## Shop vendors (`shop_vendors`)
+
+`scene_shop_vendors_json()` ties each gold shop of the scene loaded by
+`set_scene_npcs` to the actor that opens it. A shop is an op-`0x49` record
+inline in the MAN's script bytes ([shop.md](shop.md)), and the MAN's three
+record partitions tile its data region with contiguous script records, so
+the record whose span holds the shop's `count` byte is the one that issues
+it. A partition-1 record at index `>= 1` is a placement, and its index is the
+catalog's `slot`; the JSON carries that catalog index as `npc`, or a `why`
+when the owner is the scene controller (partition 1, record 0), a
+partition-0 / partition-2 record, or an actor the curated catalog withholds.
+Across the disc every gold shop the `asset shop-stock` scan finds ties to a
+catalogued merchant except the Ancient Wind Cave's four, which sit in
+partition-0 records (disc-gated test:
+`crates/web-viewer/tests/shop_vendors_real.rs`). The shops page loads each
+town's shop scenes, poses every vendor into one WebGL canvas through the NPC
+page's poser (`site/js/field-npc-model.js`) and copies each out as a still
+(`MeshView.snapshot`); its item renders reuse the characters page's cards
+through `site/js/item-thumbs.js`.
+
 ## Tactical Arts viewer (`arts_view`)
 
 `LegaiaArts` drives `site/arts.html`'s interactive half: click an art card,

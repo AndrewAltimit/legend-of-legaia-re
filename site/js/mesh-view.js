@@ -407,6 +407,24 @@
       this._raf = requestAnimationFrame(this._loop);
     }
 
+    /* Draw the current model once at the default camera (or `yaw`) and copy
+     * the frame into a 2D `target` canvas - a posed still, so a page with
+     * several models can show them all from one WebGL context. The copy runs
+     * in the same task as the draw, while the drawing buffer is still valid. */
+    snapshot(target, yaw) {
+      if (!target || !this.indexCount) return false;
+      const c = this.canvas;
+      const w = target.width, h = target.height;
+      if (c.width !== w || c.height !== h) { c.width = w; c.height = h; }
+      this.renderer.render(
+        yaw != null ? yaw : this.defaultCam.yaw, this.defaultCam.pitch,
+        this.defaultCam.distance, 0, 0, this.center, this.radius);
+      const ctx = target.getContext('2d');
+      ctx.clearRect(0, 0, w, h);
+      ctx.drawImage(c, 0, 0, w, h);
+      return true;
+    }
+
     dispose() {
       if (this._raf) cancelAnimationFrame(this._raf);
       this._raf = 0;

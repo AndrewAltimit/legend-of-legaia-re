@@ -906,6 +906,30 @@ def build_gamedata_json() -> tuple[dict, dict]:
         "Conkram":              "conc",      # past Conkram (banner "Conkram (Past)")
     }
 
+    # Town -> every scene whose MAN carries one of that town's op-0x49 gold
+    # shop records, from the disc-wide `asset shop-stock` scan. It differs
+    # from TOWN_TO_SCENE where a town's merchants live in a story-phase or
+    # interior variant (Rim Elm's are town0b / town0c / town0d, not town01).
+    # The shops page loads these scenes from the visitor's disc to find the
+    # actor that opens each shop. A town absent here has no record the scan
+    # finds, and the page says so instead of drawing a vendor.
+    TOWN_SHOP_SCENES = {
+        "Rim Elm":           ["town0b", "town0c", "town0d"],
+        "Hunter's Spring":   ["izumi"],
+        "Biron Monastery":   ["bylon"],
+        "Wind Cave":         ["jiji"],
+        "Jeremi":            ["geremi"],
+        "Vidna":             ["balden"],
+        "Octam":             ["ropeway"],
+        "Underground Octam": ["rayman2"],
+        "Ratayu":            ["retock"],
+        "Karisto Station":   ["station3"],
+        "Sol":               ["koin2", "koin4"],
+        "Buma":              ["bubu1"],
+        "Soren Camp":        ["son"],
+        "Conkram":           ["conc", "conc3"],
+    }
+
     shops_raw = _load_toml("shops.toml").get("shop", [])
     casino_raw = _load_toml("casino.toml")
     slot_prizes = casino_raw.get("slot_prize", [])
@@ -978,6 +1002,7 @@ def build_gamedata_json() -> tuple[dict, dict]:
             {
                 "name":        town,
                 "scene_label": TOWN_TO_SCENE.get(town),
+                "shop_scenes": TOWN_SHOP_SCENES.get(town, []),
                 "shops":       shops_list,
                 "casino":      casino_by_town.get(town, []),
                 "fishing":     fishing_by_town.get(town, []),
