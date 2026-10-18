@@ -387,8 +387,9 @@ fn the_hud_driver_and_emitter_produce_real_draws_off_the_disc() {
 
     // The full HUD quad frame (the play window's per-frame list) carries the
     // box frames plus the gauge readout pair; a zero score draws one `0`
-    // digit (the number renderer seeds its units slot, `0x801D3358`), and so
-    // does the zero gauge counter beside the `Lv.` pair.
+    // digit (the number renderer seeds its units slot, `0x801D3358`). The
+    // gauge is the `Lv.` pair alone (`FUN_801d3e28`'s two emits): no
+    // style-B counter beside it, which once drew a stray `0` mid-track.
     // Plus the human's beat track (`FUN_801D2524`): the arrow and caps, the
     // clipped notes and body, the stock markers (submission order).
     let frame = game.hud_draw_quads(false);
@@ -401,8 +402,15 @@ fn the_hud_driver_and_emitter_produce_real_draws_off_the_disc() {
     );
     assert_eq!(
         frame.len(),
-        3 + 3 + 2 + 1 + track.len(),
-        "three box frames + three `0` scores + the Lv. pair + the `0` counter + the beat track"
+        3 + 3 + 2 + track.len(),
+        "three box frames + three `0` scores + the Lv. pair + the beat track"
+    );
+    let narrow = game.widget(0x21).expect("widget 0x21 decodes").0;
+    assert!(
+        !frame
+            .iter()
+            .any(|q| q.uv[0].1 == narrow.v && q.clut == narrow.clut),
+        "no style-B counter digit (widget 0x21) in the HUD frame"
     );
     // Body and notes stay inside the track's [x, x + 0x50) draw area.
     assert!(

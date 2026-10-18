@@ -543,8 +543,8 @@ impl DanceGame {
     /// The full per-frame HUD **quad** list, in retail's emission order: per
     /// [`DanceGame::hud_draws`] element, the style-A digit run for each score
     /// readout, the score-box frame for each box ([`DanceGame::hud_quads`]'s
-    /// quad), and the `Lv.` label + digit pair (with the style-B narrow gauge
-    /// counter beside it) for each gauge readout. This is the textured-quad
+    /// quad), the `Lv.` label + digit pair for each gauge readout, and each
+    /// beat track ([`DanceGame::beat_track_quads`]). This is the textured-quad
     /// half of the HUD driver frame; which glyph each quad samples is carried
     /// in its patched `uv`, so a host without the dance sprite page resident
     /// still receives the retail geometry + gouraud colours.
@@ -582,8 +582,13 @@ impl DanceGame {
                     }
                 }
                 DanceHudDraw::Gauge { x, y, value, .. } => {
+                    // `FUN_801d3e28` is two emits and nothing more: widget 6
+                    // at `(x, y)` (`jal 0x801d2f38` at `0x801D3E88`) and
+                    // widget 7 at `(x + 8, y)` (`0x801D3EA0`). No number
+                    // run: the style-B counter this arm once appended put a
+                    // narrow `0` on the human's beat track (its units slot
+                    // lands at `x + 0x18 + 7 * 8`, mid-track).
                     out.extend(self.gauge_readout_quads(value, x, y));
-                    out.extend(self.number_quads(true, value, x + 0x18, y));
                 }
                 DanceHudDraw::BeatTrack { slot, x, y } => {
                     out.extend(self.beat_track_quads(slot, x, y));

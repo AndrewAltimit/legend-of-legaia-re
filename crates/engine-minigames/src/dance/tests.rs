@@ -1209,6 +1209,48 @@ fn hud_digits_are_emitted_before_their_score_boxes() {
     );
 }
 
+/// The groove gauge is `FUN_801d3e28`'s two emits - the `Lv.` label (widget
+/// 6) and its level digit (widget 7) - and nothing else. The frame once
+/// appended a style-B number run (widget `0x21`) for the raw gauge value,
+/// whose units digit landed in the middle of the human's beat track as a
+/// stray narrow `0` that retail never draws: style B's only caller is the
+/// free-play counter in the beat-clock SM (`0x801CF5E8`), not the gauge.
+#[test]
+fn the_gauge_readout_draws_no_number_run_over_the_beat_track() {
+    use legaia_minigame_formats::dance_art::DanceWidget;
+    let mut g = game();
+    g.widgets = (0..=0x21u8)
+        .map(|i| {
+            (
+                DanceWidget {
+                    scale: 0x1000,
+                    tpage: 0x0008,
+                    clut: 0x7D00,
+                    u: 0,
+                    v: i,
+                    w: 8,
+                    h: 8,
+                    rgb_top: [0x80; 3],
+                    rgb_bottom: [0x80; 3],
+                    semi: 0,
+                },
+                0,
+            )
+        })
+        .collect();
+    for gauge in [0u32, 1250, 2999] {
+        g.dancers[0].gauge = gauge;
+        let quads = g.hud_draw_quads(false);
+        let src = |q: &DanceHudQuad| u32::from(q.uv[0].1);
+        assert!(
+            quads.iter().all(|q| src(q) != 0x21),
+            "gauge {gauge}: no style-B counter digit in the HUD frame"
+        );
+        assert_eq!(quads.iter().filter(|q| src(q) == 6).count(), 1);
+        assert_eq!(quads.iter().filter(|q| src(q) == 7).count(), 1);
+    }
+}
+
 /// The human's award sounds are `FUN_801d1af4`'s dancer-0 arm: a miss stores
 /// `0x210`, a closed chain keys a random sting, a landed groovy move keys
 /// the fixed sting and stores its lane's tier cue, and an unlanded one is
