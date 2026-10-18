@@ -22,7 +22,7 @@ runtime, and writes only into folders the user chooses.
 | Text | Field dialog read out of the scene MAN script and raw carriers the way `legaia-patcher translate export` reads it, in the language-pack markup; Compact-layout MES messages; text export. |
 | Hex | A virtualised hex / ASCII dump of the whole entry. |
 | Characters & monsters | The four party members assembled from their player files (PROT 863..866) with a per-section equipment picker named from the executable's item table, and the monster archive (PROT 867) listed by name; every battle animation clip plays or steps frame by frame; animated `.glb` export. |
-| Extract | The full `legaia-extract` pipeline (`legaia_extract::run`) on a worker thread into a chosen folder, with the CLI's skip options, a progress bar, a log and Cancel. |
+| Extract | The full `legaia-extract` pipeline (`legaia_extract::run`) on a worker thread into a chosen folder, with the CLI's skip options, a progress bar, a log and Cancel; *Export all textures* adds the every-TIM sweep (`--all-textures`: `tim_scan/` as `asset tim-scan` + `tim convert-dir` write it). |
 
 ## How it is built
 

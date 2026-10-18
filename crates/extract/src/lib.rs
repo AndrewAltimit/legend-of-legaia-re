@@ -24,8 +24,10 @@ use legaia_iso::{
 use legaia_prot::{archive::Archive, cdname};
 use rayon::prelude::*;
 
-/// Number of numbered pipeline steps (verification is step 0, unnumbered).
-pub const STEP_COUNT: usize = 8;
+/// Number of pipeline steps a [`Reporter`] can see: verification is step 0,
+/// the eight standard steps are 1..=8, and the optional every-texture sweep
+/// ([`Options::all_textures`]) is step 9.
+pub const STEP_COUNT: usize = 9;
 
 /// What to run. Mirrors the `legaia-extract` flags one for one.
 #[derive(Debug, Clone, Default)]
@@ -39,6 +41,10 @@ pub struct Options {
     pub skip_xa: bool,
     pub skip_catalog: bool,
     pub skip_font: bool,
+    /// Also sweep every PROT entry for TIMs (raw and inside LZS sections)
+    /// and write each as `.tim` + `.png` under `tim_scan/` - what
+    /// `asset tim-scan` followed by `tim convert-dir` produce.
+    pub all_textures: bool,
     /// Report one [`Reporter::detail`] line per file written.
     pub verbose: bool,
 }
@@ -98,6 +104,8 @@ pub struct Summary {
     pub wavs: usize,
     pub catalog_tims: (usize, usize),
     pub font_written: bool,
+    /// TIMs written by the every-texture sweep (`(tims, pngs)`).
+    pub all_textures: (usize, usize),
 }
 
 /// Run the whole pipeline. Fails fast (before any hashing) when `opts.bin`
@@ -234,6 +242,20 @@ pub fn run(opts: &Options, r: &dyn Reporter) -> Result<Summary> {
         }
     }
 
+    if opts.all_textures {
+        check(r)?;
+        r.step(9, "every texture → PNG");
+        r.log("extra: every TIM in every PROT entry → tim_scan/ (.tim + .png)");
+        let dir = out.join("tim_scan");
+        sum.all_textures = step_all_textures(&prot_dir, &dir, opts.verbose, r)?;
+        r.log(&format!(
+            "  {} TIMs ({} PNGs) written under {}",
+            sum.all_textures.0,
+            sum.all_textures.1,
+            dir.display()
+        ));
+    }
+
     r.log("done");
     let o = out.display();
     r.log(&format!(
@@ -242,6 +264,80 @@ pub fn run(opts: &Options, r: &dyn Reporter) -> Result<Summary> {
          PNG with `tim convert-dir {o}/tim_scan`"
     ));
     Ok(sum)
+}
+
+/// The every-texture sweep: [`legaia_container_formats::tim_scan`] over each
+/// PROT entry (raw bytes and LZS sections), each hit written as
+/// `<entry>/<raw|lzsN>_off<HEX6>_<W>x<H>_<BPP>bpp.tim` - the layout and names
+/// `asset tim-scan --out` uses - plus a `.png` next to it decoded with CLUT 0,
+/// as `tim convert-dir` writes. Returns `(tims, pngs)`.
+fn step_all_textures(
+    prot_dir: &Path,
+    out: &Path,
+    verbose: bool,
+    r: &dyn Reporter,
+) -> Result<(usize, usize)> {
+    use legaia_container_formats::tim_scan;
+    let paths = bin_files(prot_dir)?;
+    let total = paths.len();
+    std::fs::create_dir_all(out)?;
+    let done = AtomicUsize::new(0);
+    let tims = AtomicUsize::new(0);
+    let pngs = AtomicUsize::new(0);
+    paths.par_iter().for_each(|(path, name)| {
+        if r.cancelled() {
+            return;
+        }
+        r.progress(done.fetch_add(1, Ordering::Relaxed) + 1, total);
+        let Ok(raw) = std::fs::read(path) else {
+            return;
+        };
+        let scan = tim_scan::scan_entry(&raw);
+        if scan.hits.is_empty() {
+            return;
+        }
+        let entry_dir = out.join(name.trim_end_matches(".BIN"));
+        if std::fs::create_dir_all(&entry_dir).is_err() {
+            return;
+        }
+        for (src, hit) in &scan.hits {
+            let (buf, label) = match src {
+                tim_scan::Source::Raw => (raw.as_slice(), "raw".to_string()),
+                tim_scan::Source::Lzs(idx) => match scan.lzs_sections.get(*idx) {
+                    Some(sec) => (sec.as_slice(), format!("lzs{idx}")),
+                    None => continue,
+                },
+            };
+            let end = (hit.offset + hit.byte_len).min(buf.len());
+            let slab = &buf[hit.offset..end];
+            let stem = format!(
+                "{}_off{:06X}_{}x{}_{}bpp",
+                label, hit.offset, hit.width, hit.height, hit.bpp
+            );
+            let tim_path = entry_dir.join(format!("{stem}.tim"));
+            if std::fs::write(&tim_path, slab).is_err() {
+                continue;
+            }
+            tims.fetch_add(1, Ordering::Relaxed);
+            let Ok(tim) = legaia_tim::parse(slab) else {
+                continue;
+            };
+            let (w, h) = (tim.pixel_width(), tim.pixel_height());
+            if w == 0 || h == 0 {
+                continue;
+            }
+            if let Ok(rgba) = legaia_tim::decode_rgba8(&tim, 0)
+                && legaia_tim::write_png(&tim_path.with_extension("png"), w, h, &rgba).is_ok()
+            {
+                pngs.fetch_add(1, Ordering::Relaxed);
+                if verbose {
+                    r.detail(&format!("    [tim] {}", tim_path.display()));
+                }
+            }
+        }
+    });
+    check(r)?;
+    Ok((tims.load(Ordering::Relaxed), pngs.load(Ordering::Relaxed)))
 }
 
 /// Step 8: build the `font/` artifact set (atlas + sheet PNGs, widths CSV,

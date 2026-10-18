@@ -57,6 +57,8 @@ Extract tab.
 #   --skip-font      skip writing the extracted/font/ artifacts
 #   --skip-catalog   skip writing the TIM-catalog TSVs
 #   --skip-verify    skip the input SHA-256 check
+#   --all-textures   also write every TIM (raw + LZS) as .tim + .png under
+#                    tim_scan/ - `asset tim-scan` + `tim convert-dir` in one step
 #   -v, --verbose    per-file output
 ```
 

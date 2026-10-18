@@ -46,6 +46,11 @@ struct Cli {
     /// asset-viewer load text from).
     #[arg(long)]
     skip_font: bool,
+    /// Also write every TIM in every PROT entry (raw and LZS-compressed) as
+    /// `.tim` + `.png` under `tim_scan/` - `asset tim-scan` + `tim
+    /// convert-dir` in one step.
+    #[arg(long)]
+    all_textures: bool,
     /// Print one line per file written.
     #[arg(short, long)]
     verbose: bool,
@@ -87,6 +92,7 @@ fn main() -> Result<()> {
         skip_xa: cli.skip_xa,
         skip_catalog: cli.skip_catalog,
         skip_font: cli.skip_font,
+        all_textures: cli.all_textures,
         verbose: cli.verbose,
     };
     legaia_extract::run(&opts, &Print)?;

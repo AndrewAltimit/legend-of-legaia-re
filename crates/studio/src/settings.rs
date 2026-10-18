@@ -21,6 +21,8 @@ pub struct Settings {
     pub skip_xa: bool,
     pub skip_catalog: bool,
     pub skip_font: bool,
+    /// Extract tab: also export every texture as PNG.
+    pub all_textures: bool,
 }
 
 impl Settings {

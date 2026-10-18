@@ -21,7 +21,12 @@ The release archive's `legaia-studio` (`legaia-studio.exe` on Windows,
 5. **Extract** the whole disc: switch to *Extract*, choose an output folder,
    tick the same skip options the command line offers, and start. The tab
    shows progress and the log and can be cancelled; the folder it writes is
-   exactly what the `legaia-extract` command below produces.
+   exactly what the `legaia-extract` command below produces. Tick *Export
+   all textures as PNG* to also get every texture on the disc as a PNG under
+   `tim_scan/` (the same files as the two-command chain in the next section).
+6. **Characters & monsters**: the party in their battle form with any
+   equipment, and every monster by name, each with its battle animations;
+   export them as animated `.glb`.
 
 The app ships no game data and uploads nothing; it reads the disc you choose
 and writes only where you tell it. Details: [`crates/studio`](../../crates/studio/README.md).
@@ -43,6 +48,8 @@ directory - run from the same place each time.
 
 The bulk texture path is a two-command chain: sweep every PROT entry for TIM
 images (raw and inside LZS compression), then convert the hits.
+`legaia-extract --all-textures` (or the Studio's *Export all textures* box)
+runs both as one step and writes the same tree.
 
 ```bash
 ./asset tim-scan extracted/PROT --out extracted/tim_scan

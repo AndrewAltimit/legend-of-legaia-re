@@ -366,6 +366,7 @@ impl App {
             skip_xa: s.skip_xa,
             skip_catalog: s.skip_catalog,
             skip_font: s.skip_font,
+            all_textures: s.all_textures,
             verbose: false,
         };
         self.studio.save_settings();
@@ -1240,6 +1241,10 @@ impl App {
                             "Skip TIM catalog TSVs (--skip-catalog)",
                         );
                         ui.checkbox(&mut s.skip_font, "Skip dialog font (--skip-font)");
+                    ui.checkbox(
+                        &mut s.all_textures,
+                        "Export all textures as PNG: every TIM, raw and compressed, into tim_scan/ (--all-textures)",
+                    );
                     });
                 });
                 ui.end_row();
@@ -1279,8 +1284,20 @@ impl App {
                 p.total
             ),
             Some(Outcome::Done(s)) => format!(
-                "Done: {} disc files, {} PROT entries, {} streams, {} PNGs, {} WAVs",
-                s.iso_files, s.prot_entries, s.streams, s.pngs, s.wavs
+                "Done: {} disc files, {} PROT entries, {} streams, {} PNGs, {} WAVs{}",
+                s.iso_files,
+                s.prot_entries,
+                s.streams,
+                s.pngs,
+                s.wavs,
+                if s.all_textures.0 > 0 {
+                    format!(
+                        ", {} textures -> {} PNGs in tim_scan/",
+                        s.all_textures.0, s.all_textures.1
+                    )
+                } else {
+                    String::new()
+                }
             ),
             Some(Outcome::Cancelled) => "Cancelled".into(),
             Some(Outcome::Failed(e)) => format!("Failed: {e}"),
