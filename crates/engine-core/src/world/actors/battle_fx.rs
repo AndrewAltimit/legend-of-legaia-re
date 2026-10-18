@@ -380,19 +380,73 @@ impl World {
                     .map(|f| f.ghost_eligible)
                     .unwrap_or(false)
             });
+            // The walk re-runs the mesh-variant swap per ghost with that
+            // ghost's historical entry and cursor, into the live table
+            // (`0x800494E0..0x80049504`); a scratch copy carries the writes
+            // from ghost to ghost.
+            let mut table = actor.battle_model_table.clone();
             for p in plans {
                 let Some(f) = hist.get(p.depth.saturating_sub(1)) else {
                     continue;
                 };
+                let drawn = ghost_model_step(&mut table, f);
                 out.push(BattleGhostDraw {
                     actor_slot: i as u8,
                     pos: f.pos,
                     pose: f.pose.clone(),
                     color: p.color,
+                    drawn,
                 });
             }
         }
         out
+    }
+
+    /// The objects actor `i`'s live body draws this frame, indexed by TMD
+    /// object; `None` draws every object.
+    ///
+    /// The draw tick `FUN_800480D8` runs the after-image walk
+    /// (`jal 0x80049348` at `0x80048254`) before the live draw pass
+    /// (`0x800482E0` / `0x800482F8`), and the walk's per-ghost swap writes the
+    /// **live** model table without restoring it - only the node's entry
+    /// `+0x4C` and cursor `+0x68` come back (`0x80049558` / `0x80049568`). So
+    /// on a frame that draws ghosts the live body draws the table the last
+    /// ghost left, over the live stream's channels.
+    // REF: FUN_800480D8, FUN_80049348
+    pub fn battle_live_drawn_objects(&self, i: usize) -> Option<Vec<bool>> {
+        use legaia_engine_battle::battle_afterimage as ai;
+        let actor = self.actors.get(i)?;
+        let mut table = actor.battle_model_table.clone()?;
+        let hist = &actor.battle_pose_history;
+        let monster = actor.battle_monster_id.is_some();
+        let plans = ai::plan_ghosts(actor.battle.anim_rate.get(), monster, [0; 3], |depth| {
+            hist.get(depth.saturating_sub(1))
+                .map(|f| f.ghost_eligible)
+                .unwrap_or(false)
+        });
+        if plans.is_empty() {
+            return actor.battle_drawn_objects.clone();
+        }
+        for p in &plans {
+            if let Some(f) = hist.get(p.depth.saturating_sub(1))
+                && f.variant_track.stream_parts != 0
+            {
+                table.step(
+                    &f.variant_track.windows,
+                    f.frame,
+                    f.variant_track.stream_parts,
+                );
+            }
+        }
+        let parts = actor
+            .battle_animation
+            .as_ref()
+            .map(|p| p.variant_track().stream_parts)
+            .unwrap_or(0);
+        if parts == 0 {
+            return None;
+        }
+        Some(table.drawn_objects(usize::from(parts)))
     }
 
     /// Arm the retail **impact tint triple** on `target`: `+0x04 = impact
@@ -1158,4 +1212,20 @@ impl World {
             None => PARTY_BODY_RADIUS,
         }
     }
+}
+
+/// One ghost's re-run of the mesh-variant swap (`FUN_80049348` ->
+/// `FUN_8004CCD4`) into the walk's running table, and the objects that
+/// ghost's draw pass then draws over its own stream's channels.
+fn ghost_model_step(
+    table: &mut Option<legaia_engine_battle::battle_attach_swap::BattleModelTable>,
+    f: &crate::world::BattleGhostFrame,
+) -> Option<Vec<bool>> {
+    let t = table.as_mut()?;
+    let parts = f.variant_track.stream_parts;
+    if parts == 0 {
+        return None;
+    }
+    t.step(&f.variant_track.windows, f.frame, parts);
+    Some(t.drawn_objects(usize::from(parts)))
 }

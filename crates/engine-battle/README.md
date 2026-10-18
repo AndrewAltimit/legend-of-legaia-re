@@ -75,6 +75,7 @@ resolve a link into a dependent crate.
 
 - `battle_anim` - per-actor battle clip playback.
 - `battle_afterimage` - Super / Miracle Art after-image ghosts.
+- `battle_attach_swap` - the per-channel model table of a party seat and the mesh-variant swap (`FUN_8004CCD4`) that rewrites it; the battle draw set.
 - `battle_body_blend` - whole-mesh semi-transparency.
 - `battle_effect_clut` / `battle_status_clut` - the effect palette stage and
   the status recolour pass of `FUN_8004CE2C`.

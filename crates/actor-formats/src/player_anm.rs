@@ -459,6 +459,7 @@ impl PlayerAnmBundle {
             frames.push(parts);
         }
         Some(crate::monster_archive::MonsterAnimation {
+            variant_track: Default::default(),
             action_id: index as u8,
             rate: 2,
             attach_key: 0,

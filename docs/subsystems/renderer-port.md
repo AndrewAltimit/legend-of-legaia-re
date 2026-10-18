@@ -425,8 +425,7 @@ live pose on every cache hit and logs any mismatch, which is what pins the
 
 A family of modules ports SCUS passes that *decide* what the draw path does
 rather than emit geometry. Each is pure and unit-tested, and none is called by
-a host: `attach_swap` carries a `NOT WIRED` disclosure naming the destination
-it is missing, and the rest carry `REPLACED-BY` naming the engine mechanism
+a host: they carry `REPLACED-BY` naming the engine mechanism
 that does the routine's job (or, for `battle_on_screen`, that nothing on the
 disc references it).
 
@@ -435,10 +434,6 @@ disc references it).
   the rule [`renderer.md`](renderer.md) records as
   replacing the falsified positional one) and reports whether a `0x9C`-byte
   render node must be allocated.
-- [`attach_swap`](../../crates/engine-render/src/attach_swap.rs) (`FUN_8004ccd4`) - picks default vs
-  variant equipment mesh per attach-bone channel from the playing entry's
-  `+0xA4` frame windows, with the part-count-mismatch escape. Layout in
-  [`battle-data-pack.md`](../formats/battle-data-pack.md).
 - [`battle_on_screen`](../../crates/engine-render/src/battle_on_screen.rs) (`FUN_8005126C`) - re-anchors
   a battle sprite on its seat actor and tests the projected box's horizontal
   span against `[0, 0x140]`. Horizontal only: retail reads the X of two

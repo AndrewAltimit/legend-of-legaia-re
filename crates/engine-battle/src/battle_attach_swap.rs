@@ -1,18 +1,19 @@
 //! Battle **equipment mesh-variant swap** - the per-frame pass that decides
 //! which TMD object sits in each of a party character's two attach-bone
-//! animation channels.
+//! animation channels - and the per-channel model table it writes.
 //!
 //! PORT: FUN_8004ccd4
 //!
-//! NOT WIRED: the destination does not exist yet. Retail writes object pointers
-//! into the render node's per-channel model table (`*(node + 0x44) + 4 +
-//! channel*4`) - the array the battle draw pass hands to the TMD renderer once
-//! per animation channel. The engine's battle render path draws an assembled
-//! whole-character mesh (`legaia_actor_formats::battle_char_assembly`) and has no
-//! per-channel model table to write into, so there is no slice to pass. What
-//! closes the gap is the battle draw path keeping the assembled pieces as
-//! **channels** rather than one merged mesh; then [`resolve_attach_swap`] fills
-//! the table verbatim.
+//! Retail writes object pointers into the render node's per-channel model
+//! table (`*(node + 0x44) + 4 + channel*4`), the array the battle draw pass
+//! `FUN_80048A08` hands to the TMD renderer once per animation channel, for as
+//! many channels as the playing stream has parts. [`BattleModelTable`] is that
+//! table for one party seat, as object indices into the assembled battle TMD:
+//! the identity at registration, re-written by [`resolve_attach_swap`] every
+//! anim tick, and read back as the set of objects the draw pass draws
+//! ([`BattleModelTable::drawn_objects`]). The world keeps one per party seat
+//! (`Actor::battle_model_table` in `legaia-engine-core`) and both play hosts
+//! draw only the objects it names.
 //!
 //! REF: FUN_80048a08 - the battle draw pass that reads the table this fills.
 //! REF: FUN_8004c7b4 - the facial animator, called immediately before this from
@@ -20,7 +21,9 @@
 //! REF: FUN_80049348 - the arts after-image renderer, which re-runs this pass
 //! per ghost with that ghost's historical cursor + entry.
 //! REF: FUN_800513f0 - the registration pass that snapshots the pair table
-//! ([`AttachPairs`]) at battle load.
+//! ([`AttachPairs::from_assembly`]) at battle load.
+//! REF: FUN_80053898 - the assembly post-pass that sorts the variants to the
+//! end of the object table and records the pinned ordinal.
 //!
 //! # The shape of the decision
 //!
@@ -70,7 +73,7 @@ pub struct AttachPair {
 }
 
 /// The per-slot snapshot the pass reads.
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct AttachPairs {
     /// The two pairs, in ordinal order.
     pub pairs: [AttachPair; ATTACH_PAIRS],
@@ -148,6 +151,105 @@ impl AttachSwap {
     }
 }
 
+impl AttachPairs {
+    /// The battle-load snapshot `FUN_800513F0` takes for a party slot, from
+    /// the assembled blob's tag tables (`0x80051614..0x800516BC`): with
+    /// `nobj` objects, pair `k`'s channel is the attach-bone side-table byte
+    /// `blob[nobj + k]`, its default the model-table entry at that channel
+    /// (the bone's own object), its variant the entry at `nobj - 2 + k` (the
+    /// `0xFF` surplus the post-pass sorted last).
+    ///
+    /// `attach_bones` is that side table (`AssembledCharacter::attach_bones`
+    /// in `legaia-actor-formats`) and `pinned_ordinal` the post-pass's ctx
+    /// `+0x240` byte. Object handles are object indices. `None` when the
+    /// assembly carries fewer than two variants: retail reads the two
+    /// side-table bytes unconditionally, and with one missing it would
+    /// install a stale byte's object - the engine declines instead and draws
+    /// the identity table.
+    pub fn from_assembly(nobj: usize, attach_bones: &[u8], pinned_ordinal: u8) -> Option<Self> {
+        if attach_bones.len() < ATTACH_PAIRS || nobj < ATTACH_PAIRS {
+            return None;
+        }
+        let pairs = std::array::from_fn(|k| AttachPair {
+            channel: attach_bones[k],
+            default_object: u32::from(attach_bones[k]),
+            variant_object: (nobj - ATTACH_PAIRS + k) as u32,
+        });
+        Some(Self {
+            pairs,
+            pinned_ordinal,
+        })
+    }
+}
+
+/// Split an entry's eight `+0xA4` bytes into the four windows
+/// [`resolve_attach_swap`] tests, in `[pair0_w0, pair0_w1, pair1_w0,
+/// pair1_w1]` order.
+pub fn windows_from_entry(bytes: &[u8; 8]) -> [AttachWindow; ATTACH_PAIRS * WINDOWS_PER_PAIR] {
+    std::array::from_fn(|w| AttachWindow {
+        start: bytes[w * 2],
+        end: bytes[w * 2 + 1],
+    })
+}
+
+/// One party seat's per-channel model table (`*(node + 0x44) + 4`) plus the
+/// battle-load snapshot that rewrites it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BattleModelTable {
+    /// Object index per channel. Starts as the identity - registration lays
+    /// the TMD's objects out in order - and keeps whatever the last pass
+    /// stored: the extra-channel escape rewrites only the pinned pair's
+    /// channel, so the other pair's channel holds its previous object.
+    pub table: Vec<u32>,
+    /// The two attach pairs and the pinned ordinal.
+    pub pairs: AttachPairs,
+    /// Part count of the seat's idle stream (`**(ctx_slot) + 0xAC`) - the
+    /// escape's comparand.
+    pub idle_parts: u8,
+}
+
+impl BattleModelTable {
+    /// The registration-time table for an `nobj`-object mesh.
+    pub fn new(nobj: usize, pairs: AttachPairs, idle_parts: u8) -> Self {
+        Self {
+            table: (0..nobj as u32).collect(),
+            pairs,
+            idle_parts,
+        }
+    }
+
+    /// Run `FUN_8004CCD4` for one anim tick and store its writes.
+    ///
+    /// * `windows` - the playing entry's `+0xA4` bytes.
+    /// * `frame` - the playing clip's whole-keyframe cursor (`node[+0x68]`
+    ///   sign-extended and `>> 4`).
+    /// * `playing_parts` - the playing stream's own part count.
+    pub fn step(&mut self, windows: &[u8; 8], frame: i16, playing_parts: u8) -> AttachSwap {
+        let swap = resolve_attach_swap(
+            &self.pairs,
+            &windows_from_entry(windows),
+            frame,
+            playing_parts,
+            self.idle_parts,
+        );
+        swap.apply(&mut self.table);
+        swap
+    }
+
+    /// Which objects the draw pass `FUN_80048A08` draws this frame: the
+    /// table's entries for channels `0..playing_parts`
+    /// (`while (c < **(entry + 0x88))`). Indexed by object.
+    pub fn drawn_objects(&self, playing_parts: usize) -> Vec<bool> {
+        let mut drawn = vec![false; self.table.len()];
+        for &o in self.table.iter().take(playing_parts) {
+            if let Some(d) = drawn.get_mut(o as usize) {
+                *d = true;
+            }
+        }
+        drawn
+    }
+}
+
 /// Resolve one party slot's attach channels for one animation frame.
 ///
 /// * `pairs` - the battle-load snapshot for this slot.
@@ -212,9 +314,85 @@ pub fn resolve_attach_swap(
     out
 }
 
+/// The battle TMD as the draw pass sees it this frame: a copy whose objects
+/// outside `drawn` carry no primitives, so a mesh builder emits nothing for
+/// them while every object keeps its index (and so its pose channel).
+/// Objects past the end of `drawn` are kept.
+pub fn mask_tmd(tmd: &legaia_tmd::Tmd, drawn: &[bool]) -> legaia_tmd::Tmd {
+    let mut out = tmd.clone();
+    for (o, &d) in out.objects.iter_mut().zip(drawn) {
+        if !d {
+            o.primitives_byte_size = 0;
+            o.header.n_primitive = 0;
+            o.claimed_n_primitive = 0;
+        }
+    }
+    out
+}
+
+/// The objects `drawn` leaves out, as object indices - the browser page's
+/// per-frame hide list.
+pub fn hidden_objects(drawn: &[bool]) -> Vec<u32> {
+    drawn
+        .iter()
+        .enumerate()
+        .filter(|(_, d)| !**d)
+        .map(|(o, _)| o as u32)
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn from_assembly_reads_the_side_table_and_the_sorted_variants() {
+        // 16 bones + one 0xFE extra + two 0xFF variants = 19 objects.
+        let p = AttachPairs::from_assembly(19, &[9, 13], 2).unwrap();
+        assert_eq!(p.pairs[0].channel, 9);
+        assert_eq!(p.pairs[0].default_object, 9);
+        assert_eq!(p.pairs[0].variant_object, 17);
+        assert_eq!(p.pairs[1].channel, 13);
+        assert_eq!(p.pairs[1].default_object, 13);
+        assert_eq!(p.pairs[1].variant_object, 18);
+        assert_eq!(p.pinned_ordinal, 2);
+        assert!(AttachPairs::from_assembly(17, &[9], 0).is_none());
+    }
+
+    #[test]
+    fn model_table_draws_the_streams_channels_and_swaps_in_the_variant() {
+        let pairs = AttachPairs::from_assembly(19, &[9, 13], 0).unwrap();
+        let mut t = BattleModelTable::new(19, pairs, 16);
+        // Idle (16 parts, no windows): the bones only.
+        t.step(&[0; 8], 0, 16);
+        let d = t.drawn_objects(16);
+        assert!(d[..16].iter().all(|&x| x));
+        assert!(!d[16] && !d[17] && !d[18]);
+        // A window over frame 5 on pair 0: channel 9 draws variant 17.
+        t.step(&[3, 47, 0, 0, 0, 0, 0, 0], 5, 16);
+        let d = t.drawn_objects(16);
+        assert!(!d[9] && d[17]);
+        assert_eq!(hidden_objects(&d), vec![9, 16, 18]);
+        // Out of the window the default comes back.
+        t.step(&[3, 47, 0, 0, 0, 0, 0, 0], 50, 16);
+        assert!(t.drawn_objects(16)[9]);
+    }
+
+    #[test]
+    fn escape_draws_the_extra_channel_and_keeps_the_other_pair() {
+        let pairs = AttachPairs::from_assembly(19, &[9, 13], 1).unwrap();
+        let mut t = BattleModelTable::new(19, pairs, 16);
+        // Pair 1 in a window first, then a 17-part swing: the escape only
+        // rewrites the pinned pair 0's channel; pair 1 keeps its variant.
+        t.step(&[0, 0, 0, 0, 0, 9, 0, 0], 4, 16);
+        assert_eq!(t.table[13], 18);
+        t.step(&[0; 8], 4, 17);
+        assert_eq!(t.table[9], 17);
+        assert_eq!(t.table[13], 18);
+        let d = t.drawn_objects(17);
+        assert!(d[16], "the 0xFE extra draws on the surplus channel");
+        assert!(d[17] && d[18] && !d[9] && !d[13]);
+    }
 
     fn pairs(pinned: u8) -> AttachPairs {
         AttachPairs {

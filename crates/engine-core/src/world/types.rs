@@ -351,6 +351,12 @@ pub struct BattleGhostFrame {
     /// engine equivalent of retail's cursor-underflow stop
     /// (`FUN_80048310` rewinds within the current clip only).
     pub clip_key: u8,
+    /// The playing entry's variant-swap tail that frame (retail's `+0x234`
+    /// entry ring) and its whole-keyframe cursor (the `+0x17A` ring): the
+    /// arguments the after-image walk `FUN_80049348` re-runs the mesh-variant
+    /// swap `FUN_8004CCD4` with for this frame's ghost.
+    pub variant_track: legaia_actor_formats::monster_archive::VariantTrack,
+    pub frame: i16,
 }
 
 /// One planned weapon-trail draw, resolved by
@@ -382,6 +388,10 @@ pub struct BattleGhostDraw {
     pub pos: [i32; 3],
     pub pose: PoseFrame,
     pub color: [u8; 3],
+    /// The objects this ghost draws, indexed by TMD object: the model table
+    /// after the walk's re-run of the mesh-variant swap for the ghost's own
+    /// frame. `None` draws every object (a seat with no model table).
+    pub drawn: Option<Vec<bool>>,
 }
 
 /// Per-actor record held by the world. Composes the per-VM state structs.
@@ -535,6 +545,21 @@ pub struct Actor {
     /// battle tick advances it into `pose_frame`. Mutually exclusive with
     /// `active_animation` (field ANM) on a given actor.
     pub battle_animation: Option<legaia_engine_battle::battle_anim::MonsterAnimPlayer>,
+
+    /// A party seat's per-channel model table - the render node's
+    /// `*(node + 0x44) + 4` array the mesh-variant swap `FUN_8004CCD4`
+    /// rewrites every anim tick and the draw pass `FUN_80048A08` reads once
+    /// per channel. Installed with the assembled battle form
+    /// ([`crate::battle_party_form`]); `None` for monsters, summons, a PROT
+    /// 1204 fallback form and Terra (whose seat the retail pass skips).
+    pub battle_model_table: Option<legaia_engine_battle::battle_attach_swap::BattleModelTable>,
+
+    /// The objects the battle draw pass draws this frame, indexed by TMD
+    /// object: the model table's entries for the playing stream's channels
+    /// ([`legaia_engine_battle::battle_attach_swap::BattleModelTable::drawn_objects`]).
+    /// Refreshed with every battle pose. `None` draws every object - the
+    /// rule for an actor with no model table.
+    pub battle_drawn_objects: Option<Vec<bool>>,
 
     /// Per-slot battle action clips for this actor (the player files'
     /// `record[0]` action streams, expanded so channel `i` drives TMD object

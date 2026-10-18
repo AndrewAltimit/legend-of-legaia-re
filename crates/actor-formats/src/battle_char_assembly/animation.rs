@@ -149,6 +149,8 @@ pub fn battle_animations(file: &[u8]) -> Result<Vec<crate::monster_archive::Mons
         ) {
             anim.solo_flag = solo_flag;
             anim.impact_class = impact_class;
+            anim.variant_track.windows =
+                crate::monster_archive::VariantTrack::windows_at(&block, entry_off);
             out.push(anim);
         }
     }
@@ -194,6 +196,8 @@ pub fn idle_battle_animation(
     .map(|mut anim| {
         anim.solo_flag = solo_flag;
         anim.impact_class = impact_class;
+        anim.variant_track.windows =
+            crate::monster_archive::VariantTrack::windows_at(&block, entry_off);
         anim
     }))
 }

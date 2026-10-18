@@ -340,11 +340,22 @@ impl PlayWindowApp {
                 // Rest pose: frame 0 of the assembled mesh's own idle stream
                 // (the combat stance retail holds at battle start), or the
                 // PROT 1203 bank's idle record for a fallback.
+                // The registration-time model table draws the idle stream's
+                // channels: the skeleton bones, no surplus extras, no
+                // variants (`FUN_80048A08`; the per-frame posed rebuild
+                // re-reads the live table).
+                let masked = form.model_table.as_ref().map(|t| {
+                    legaia_engine_battle::battle_attach_swap::mask_tmd(
+                        &form.tmd,
+                        &t.drawn_objects(usize::from(t.idle_parts)),
+                    )
+                });
+                let rest_tmd = masked.as_ref().unwrap_or(&form.tmd);
                 let vmesh = if form.rest_pose.is_empty() {
-                    legaia_tmd::mesh::tmd_to_vram_mesh(&form.tmd, &form.tmd_bytes)
+                    legaia_tmd::mesh::tmd_to_vram_mesh(rest_tmd, &form.tmd_bytes)
                 } else {
                     legaia_tmd::mesh::tmd_to_vram_mesh_posed_rot(
-                        &form.tmd,
+                        rest_tmd,
                         &form.tmd_bytes,
                         &form.rest_pose,
                     )

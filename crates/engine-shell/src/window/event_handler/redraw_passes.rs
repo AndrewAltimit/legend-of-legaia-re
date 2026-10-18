@@ -314,6 +314,13 @@ impl PlayWindowApp {
         input: &legaia_render_kernels::shatter::ShatterInput,
     ) -> Option<UploadedVramMesh> {
         let (tmd, raw) = self.scene_tmd_data.get(tmd_idx)?;
+        let masked = self
+            .session
+            .host
+            .world
+            .battle_live_drawn_objects(ai)
+            .map(|d| legaia_engine_battle::battle_attach_swap::mask_tmd(tmd, &d));
+        let tmd = masked.as_ref().unwrap_or(tmd);
         let (mut local, object_ids) = legaia_tmd::mesh::tmd_to_vram_mesh_with_object_ids(tmd, raw);
         if actor.battle_animation.is_some() {
             self.session
@@ -452,6 +459,17 @@ impl PlayWindowApp {
             // a blended clone, the rest TMD stays untouched.
             let morphed = self.session.host.world.battle_morphed_tmd(ai, tmd);
             let tmd = morphed.as_ref().unwrap_or(tmd);
+            // A party seat draws the objects its per-channel model table
+            // names for the playing stream's channels (`FUN_80048A08` after
+            // the mesh-variant swap `FUN_8004CCD4`); the browser page's twin
+            // is `play_battle_actor_hidden`.
+            let masked = self
+                .session
+                .host
+                .world
+                .battle_live_drawn_objects(ai)
+                .map(|d| legaia_engine_battle::battle_attach_swap::mask_tmd(tmd, &d));
+            let tmd = masked.as_ref().unwrap_or(tmd);
             let mut vmesh = if actor.battle_animation.is_some() || player_slot == Some(ai as u8) {
                 legaia_tmd::mesh::tmd_to_vram_mesh_posed_rot(tmd, raw, &pose.bone_outputs)
             } else {
@@ -1249,6 +1267,13 @@ impl PlayWindowApp {
             let Some((tmd, raw)) = self.scene_tmd_data.get(tmd_idx) else {
                 continue;
             };
+            // The ghost's own re-run of the mesh-variant swap
+            // (`FUN_80049348` -> `FUN_8004CCD4`).
+            let masked = g
+                .drawn
+                .as_deref()
+                .map(|d| legaia_engine_battle::battle_attach_swap::mask_tmd(tmd, d));
+            let tmd = masked.as_ref().unwrap_or(tmd);
             let mut vmesh =
                 legaia_tmd::mesh::tmd_to_vram_mesh_posed_rot(tmd, raw, &g.pose.bone_outputs);
             if vmesh.indices.is_empty() {

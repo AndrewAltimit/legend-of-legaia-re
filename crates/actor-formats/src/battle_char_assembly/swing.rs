@@ -102,14 +102,16 @@ fn parse_action_entry(
         .get(off + crate::monster_archive::ATTACH_KEY_OFFSET)
         .copied()
         .unwrap_or(0);
-    crate::monster_archive::parse_animation_stream(
+    let mut anim = crate::monster_archive::parse_animation_stream(
         block,
         action_id,
         rate,
         attach_key,
         off + PLAYER_ANIM_STREAM_OFFSET,
         crate::monster_archive::effect_script_head(block, off),
-    )
+    )?;
+    anim.variant_track.windows = crate::monster_archive::VariantTrack::windows_at(block, off);
+    Some(anim)
 }
 
 /// Decode the **weapon-swing animations** the battle loader splices into the

@@ -12,6 +12,37 @@
     BATTLE_FX_MODEL_BASE, BATTLE_MESH_BASE, BATTLE_BACKDROP_SPUN_MESH,
   } = window.LegaiaPlayShared;
 
+  /* Collapse the vertices of the objects a battle body leaves out this frame
+   * to a point - the page's not-drawn convention. The list is the engine's:
+   * the objects the per-channel model table does not name for the playing
+   * stream's channels (FUN_80048A08 after the mesh-variant swap
+   * FUN_8004CCD4). Returns whether anything was hidden. */
+  function hideObjects(out, objectIds, hidden) {
+    if (!hidden || !hidden.length) return false;
+    const set = new Set(hidden);
+    for (let v = 0; v < objectIds.length; v++) {
+      if (set.has(objectIds[v])) {
+        out[v * 3] = 0;
+        out[v * 3 + 1] = 0;
+        out[v * 3 + 2] = 0;
+      }
+    }
+    return true;
+  }
+
+  /* The engine's hide list for battle mesh `i` (or its ghost `g`); empty on
+   * a cached WASM without the export. */
+  function hiddenOf(rt, i, g) {
+    try {
+      if (g === undefined) {
+        return (typeof rt.play_battle_actor_hidden === 'function')
+          ? rt.play_battle_actor_hidden(i) : null;
+      }
+      return (typeof rt.play_battle_actor_ghost_hidden === 'function')
+        ? rt.play_battle_actor_ghost_hidden(i, g) : null;
+    } catch (e) { return null; }
+  }
+
   window.LegaiaUtil.installMethods(window.PlayView, class {
 
     /* ---------- battle 3D scene ---------- */
@@ -208,13 +239,19 @@
             const m = rt.play_battle_actor_morph(i);
             if (m.length === a.base.length) src = m;
           }
+          const hidden = hiddenOf(rt, i);
           if (pose.length) {
             poseInto(a.out, src, a.objectIds, pose, pose.length / 6, 0);
+            hideObjects(a.out, a.objectIds, hidden);
+            this.renderer.updateSceneMeshPositions(a.meshId, a.out);
+          } else if (hidden && hidden.length) {
+            a.out.set(src);
+            hideObjects(a.out, a.objectIds, hidden);
             this.renderer.updateSceneMeshPositions(a.meshId, a.out);
           } else if (src !== a.base || a.morphed) {
             this.renderer.updateSceneMeshPositions(a.meshId, src);
           }
-          a.morphed = src !== a.base;
+          a.morphed = src !== a.base || !!(hidden && hidden.length && !pose.length);
         }
         /* Rot limb dimming (FUN_80048A08's per-object colour rule): re-send
          * the actor's packet colours only when the engine's dimmed set
@@ -265,6 +302,7 @@
             const pose = rt.play_battle_actor_pose(i);
             if (pose.length) {
               poseInto(a.shard.out, sp, a.shard.objectIds, pose, pose.length / 6, 0);
+              hideObjects(a.shard.out, a.shard.objectIds, hiddenOf(rt, i));
               this.renderer.updateSceneMeshPositions(a.shard.meshId, a.shard.out);
             } else {
               this.renderer.updateSceneMeshPositions(a.shard.meshId, sp);
@@ -322,6 +360,7 @@
             const pose = rt.play_battle_actor_ghost_pose(i, g);
             if (!pose.length) continue;
             poseInto(a.out, a.base, a.objectIds, pose, pose.length / 6, 0);
+            hideObjects(a.out, a.objectIds, hiddenOf(rt, i, g));
             this.renderer.updateSceneMeshPositions(a.ghostMeshIds[g], a.out);
             const j = g * STRIDE;
             draws.push({
@@ -510,6 +549,7 @@
           const pose = rt.play_battle_actor_pose(i);
           if (pose.length) {
             poseInto(rec.out, rec.base, rec.objectIds, pose, pose.length / 6, 0);
+            hideObjects(rec.out, rec.objectIds, hiddenOf(rt, i));
             this.renderer.updateSceneMeshPositions(meshId, rec.out);
           }
         }

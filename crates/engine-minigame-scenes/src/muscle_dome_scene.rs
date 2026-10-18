@@ -113,6 +113,7 @@ mod tests {
     #[test]
     fn monster_clip_pick_prefers_the_close_in_attack() {
         let mk = |t: u8| MonsterAnimation {
+            variant_track: Default::default(),
             action_id: t,
             rate: 1,
             attach_key: 0,

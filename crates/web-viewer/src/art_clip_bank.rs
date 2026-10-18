@@ -165,6 +165,7 @@ pub(crate) fn chain_of<R: BankRecord>(bank: &[R], first: usize) -> Vec<usize> {
 fn concat(segments: &[MonsterAnimation]) -> Option<MonsterAnimation> {
     let first = segments.first()?;
     let mut out = MonsterAnimation {
+        variant_track: Default::default(),
         action_id: first.action_id,
         attach_key: first.attach_key,
         solo_flag: first.solo_flag,
@@ -327,6 +328,7 @@ mod tests {
     #[test]
     fn concat_sums_frames_and_keeps_the_first_rate() {
         let seg = |rate: u8, n: usize| MonsterAnimation {
+            variant_track: Default::default(),
             action_id: 0x1C,
             attach_key: 0,
             solo_flag: 0,

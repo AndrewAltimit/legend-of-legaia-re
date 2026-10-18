@@ -20,6 +20,7 @@ pub mod arts_command_input;
 pub mod battle_afterimage;
 pub mod battle_anim;
 pub mod battle_arts;
+pub mod battle_attach_swap;
 pub mod battle_body_blend;
 pub mod battle_effect_clut;
 pub mod battle_events;

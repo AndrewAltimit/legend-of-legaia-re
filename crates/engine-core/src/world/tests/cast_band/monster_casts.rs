@@ -15,6 +15,7 @@ fn a_monster_cast_plays_the_tag_0x23_entry_its_magic_slot_walks_to() {
     use std::sync::Arc;
     let clip = |tag: u8| {
         Some(MonsterAnimation {
+            variant_track: Default::default(),
             action_id: tag,
             rate: 1,
             attach_key: 0,

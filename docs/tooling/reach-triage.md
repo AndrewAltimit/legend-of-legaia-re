@@ -1242,11 +1242,8 @@ reach it. The `strv2_decode` module states the same prerequisite chain.
 
 ### engine-render
 
-| module | n | bucket | reach | addresses |
-|---|---|---|---|---|
-| `attach_swap.rs` | 1 | (c) | disclosed | `8004ccd4` |
-
-One row is left and the `lib.rs` pair is not it. `80034e4c` and `8003c1f8`
+No row. The mesh-variant swap (`8004ccd4`) that was the last one moved to
+`engine-battle::battle_attach_swap`, where the battle anim tick runs it. `80034e4c` and `8003c1f8`
 are module-scope tags whose real bodies are the `engine-ui` menu-ink and
 sprite builders - the zero-padded decimal field and the
 separator glyph - and both are entered, by the dev menu's records page and by
