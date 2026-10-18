@@ -1338,8 +1338,9 @@ The hit on every chain body is the fold's; the descriptor records the site
 without applying it. Two runner rules:
 
 1. **Caster stages.** A body with a `CAPTURE_CASTER_STAGES` row has its
-   caster clips replayed ahead of its arms, each to its clip's end, so the
-   runner does not stage those literals again.
+   caster clips staged by the band - ahead of its arms, or on the pass of the
+   arm the row places them in (PROT 0961's arm 1) - so the runner does not
+   stage those literals again.
 2. **Rates.** A `+0x21D` store is carried only when the body itself returns
    the actor to rate `8`. PROT 0942's `0xAA`, 0960's `0xA6`, 0961 and 0963
    leave their caster slowed or frozen and rely on a reset outside the module.
@@ -2852,7 +2853,15 @@ damage and the victim's reaction but not the body's
 `sb <literal>,0x1DA(<caster>)` sites. `CAPTURE_CASTER_STAGES` lists, per such
 body, the literals the caster is staged with and their sites;
 `World::capture_stager_tick` replays them at the head of phase `0x70`, each to
-its clip's end, before the module's arms run. Bodies whose ports stage the
+its clip's end, before the module's arms run. A row that places its stores in
+their arms (`CasterStageRow::arms`) is staged instead on the tick that arm
+passes, and the arms run on while the clip plays - no module waits on the
+caster there. PROT 0938's Mystic Circle (`0x801F6CCC`) and PROT 0961
+(`0x801F6D58` / `0x801F6DE8`) store theirs in arm 1, behind its countdown
+gate, so Cort holds his idle through arm 1: the
+`cort_mystic_circle_mid_cast` and `cort_evolved_final_crisis_mid_cast`
+captures both read `+0x1D9 = 0` in arm 1, and the engine's caster body pair
+now lands on retail's (`(11, 1040)` and `(23, 953)`). Bodies whose ports stage the
 caster are not in it, nor are bodies that stage nothing on the caster in
 retail (`CAPTURE_BODIES_WITHOUT_CASTER_STAGE`). The table and the three clip
 routes a monster cast can take are on

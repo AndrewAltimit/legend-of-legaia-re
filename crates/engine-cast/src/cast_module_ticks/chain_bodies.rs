@@ -49,8 +49,10 @@
 //!
 //! **The caster's literal stages belong to the band's pre-pass** where one
 //! exists. A body with a row in [`CAPTURE_CASTER_STAGES`] has its caster
-//! clips replayed at the head of phase `0x70`, each to its clip's end
-//! (`World::capture_stager_tick`); the runner walks one arm per tick, so
+//! clips staged by the band (`World::capture_stager_tick`): at the head of
+//! phase `0x70`, each to its clip's end, or on the pass of the arm the row
+//! places them in ([`CasterStageRow::arms`], PROT 0961's arm 1); the runner
+//! walks one arm per tick, so
 //! re-staging the same literals here would restart the wind-up and cut it
 //! off a few ticks later. For those bodies the runner leaves every caster
 //! stage to the pre-pass ([`ChainBody::caster_stages_replayed`]); the

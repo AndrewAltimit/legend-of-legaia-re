@@ -80,6 +80,9 @@ impl World {
             self.casting.capture_spell = None;
             return false;
         };
+        if run.phase != arm || !run.busy {
+            self.stage_caster_on_arm_pass(arm);
+        }
         // A module whose arms' spawns are ported seats each on the pass
         // its arm makes the call.
         if per_arm == Some(run.prot_entry) {
@@ -210,27 +213,37 @@ impl World {
             legaia_engine_cast::cast_module_ticks::capture_body_approaches(entry, spell_id)
                 .then_some(actor.battle.active_target)
                 .filter(|&t| t < 8 && usize::from(t) < self.actors.len() && t != slot);
-        let clips: Vec<u8> = legaia_engine_cast::cast_module_ticks::capture_caster_stages(
+        let staged = legaia_engine_cast::cast_module_ticks::capture_caster_stages(
             entry,
             spell_id,
             seat_monster,
             self.battle_first_monster_byte(),
         )
-        .unwrap_or_default()
-        .into_iter()
-        .filter(|&c| {
-            installed
-                .get(usize::from(c))
-                .is_some_and(|c| c.as_ref().is_some_and(|c| c.frame_count > 0))
-        })
-        .collect();
+        .unwrap_or_default();
+        let arms =
+            legaia_engine_cast::cast_module_ticks::capture_caster_stage_arms(entry, spell_id)
+                .filter(|a| a.len() == staged.len());
+        let (clips, at_arms): (Vec<u8>, Vec<u8>) = staged
+            .into_iter()
+            .enumerate()
+            .filter(|&(_, c)| {
+                installed
+                    .get(usize::from(c))
+                    .is_some_and(|c| c.as_ref().is_some_and(|c| c.frame_count > 0))
+            })
+            .map(|(i, c)| (c, arms.map_or(u8::MAX, |a| a[i])))
+            .unzip();
+        let placed = arms.is_some();
         (!clips.is_empty() || approach.is_some()).then_some(CasterStageRun {
             slot,
             clips,
+            at_arms: if placed { at_arms } else { Vec::new() },
             cursor: 0,
             approach,
             phase: if approach.is_some() {
                 CasterStagePhase::Approach
+            } else if placed {
+                CasterStagePhase::Module
             } else {
                 CasterStagePhase::Staging
             },
@@ -273,7 +286,7 @@ impl World {
                     if a.battle.queued_anim == CAPTURE_WALK_ENTRY {
                         a.battle.queued_anim = 0;
                     }
-                    if run.clips.is_empty() {
+                    if run.clips.is_empty() || !run.at_arms.is_empty() {
                         run.phase = CasterStagePhase::Module;
                         self.casting.caster_stages = Some(run);
                         return CasterStageGate::RunModule;
@@ -331,6 +344,30 @@ impl World {
         };
         self.casting.caster_stages = Some(run);
         gate
+    }
+
+    /// The module's arm `arm` passed this tick: stage the caster clips the
+    /// body stores in that arm ([`CasterStageRun::at_arms`]). Each goes in
+    /// behind whatever the caster plays, its park released, and the arms run
+    /// on while it plays - the module stages and moves on in the same pass.
+    fn stage_caster_on_arm_pass(&mut self, arm: u8) {
+        let Some(run) = self.casting.caster_stages.as_mut() else {
+            return;
+        };
+        if run.phase != CasterStagePhase::Module || run.at_arms.is_empty() {
+            return;
+        }
+        let Some(i) = run.at_arms.iter().position(|&a| a == arm) else {
+            return;
+        };
+        let (slot, clip) = (run.slot, run.clips[i]);
+        run.cursor = i;
+        if let Some(a) = self.actors.get_mut(usize::from(slot)) {
+            if let Some(p) = a.battle_animation.as_mut() {
+                p.release_loop_window();
+            }
+            a.battle.queued_anim = clip;
+        }
     }
 
     /// The module reported done: release the caster's park and stage idle

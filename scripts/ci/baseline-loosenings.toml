@@ -119,3 +119,10 @@ reason = "Move-VM op 0x1C now stores its length-channel rate at +0xCA (0x8002367
 changes = [
   ["states/zeto_call_wave_mid_cast/image", 0.932, 0.929],
 ]
+
+[[loosening]]
+file = "scripts/ci/retail-compare-baseline.json"
+reason = "PROT 0961 stages Cort's clip 6 in arm 1 behind its countdown gate (sb at 0x801F6D58 after bgtz at 0x801F6D28), and the state is in arm 1 with +0x1D9 = 0; the band replayed the clip at its head and held the arms for it, so the engine drew the cast pose and the score had the 56-tick hold aging the module's records out before the capture. With the stage on the arm's pass Cort's body pair lands on retail's (23, 953) exactly. The records are still all seated on the band's first tick (retail seats one, 0x801F7AB4 via 0x801F6C64, in arm 0 and the rest from arm 2 on), so their light rays now show where retail's frame has none: the drop is that unported per-arm seating, uncovered."
+changes = [
+  ["states/cort_evolved_final_crisis_mid_cast/image", 0.629, 0.476],
+]
