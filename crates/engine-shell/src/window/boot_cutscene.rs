@@ -1049,51 +1049,35 @@ impl PlayWindowApp {
         }
     }
 
-    /// Drain world field events and route them to whichever subsystem
-    /// owns them. Currently:
-    /// - [`FieldEvent::ActorSpawned`]: when the actor carries a non-`None`
-    ///   `Actor::tmd_ref` (the `0x4C 0xD8` synchronous-spawn path), queue
-    ///   the slot in [`Self::pending_dynamic_mesh_slots`] so the next
-    ///   render pass uploads its mesh. ActorSpawned events without a
-    ///   `tmd_ref` (the `0x4C 0x80` halt-acquire-gated bytecode-only
-    ///   path) are dropped silently here - those actors have no visual
-    ///   in this renderer until their bytecode runs.
-    /// - All other events: not relevant to the play-window renderer yet,
-    ///   surfaced via the HUD log instead by callers that want them.
+    /// Drain world field events: a late BGM route, then the shared drain
+    /// (`World::drain_spawned_mesh_slots`, the page's step too) queueing
+    /// each script-spawned actor with a TMD reference in
+    /// [`Self::pending_dynamic_mesh_slots`] for the next render pass's
+    /// mesh upload.
     pub(super) fn drain_and_route_field_events(&mut self) {
-        use legaia_engine_field::field_events::FieldEvent;
         // Route any BGM event the frame's own steps raised after the session
         // tick's routing pass - a dance song ending on its own
         // (`World::exit_dance` -> `restore_minigame_bgm`), a minigame swap -
         // before the drain below drops every non-spawn event. Without this the
         // hall's track restart was thrown away here and the chart loop played
         // on over the field. The browser page makes the same second pass
-        // (`route_bgm_wasm` ahead of `drain_and_route_field_events_web`).
+        // (`route_bgm` ahead of its own `drain_and_route_field_events`).
         if let Some(bgm) = self.session.bgm.as_mut()
             && let Err(e) = self.session.host.route_bgm_events(bgm)
         {
             log::error!("late BGM route: {e:#}");
         }
-        let world = &mut self.session.host.world;
-        let events = world.drain_field_events();
-        // `ActorSpawned` is the only variant this drain answers, and there is
-        // deliberately no `CameraConfigure` arm: `Camera::route_camera_events`
-        // has already consumed every one off the world queue during the
-        // session tick and does not restore it, so an arm here could never
-        // fire. The `apply == 0` snap beats are banked on the camera instead
+        // `ActorSpawned` is the only variant the shared drain answers, and
+        // there is deliberately no `CameraConfigure` arm: the session tick's
+        // `Camera::route_camera_events` has already consumed every one off
+        // the world queue and does not restore it. The `apply == 0` snap
+        // beats are banked on the camera instead
         // (`Camera::take_camera_snap_beats`, replayed by
         // `frame_step::CutsceneGlide::advance`).
-        for ev in events {
-            if let FieldEvent::ActorSpawned { slot, .. } = ev {
-                let has_tmd = world
-                    .actors
-                    .get(slot as usize)
-                    .is_some_and(|a| a.tmd_ref.is_some());
-                if has_tmd {
-                    self.pending_dynamic_mesh_slots.push(slot);
-                }
-            }
-        }
+        self.session
+            .host
+            .world
+            .drain_spawned_mesh_slots(&mut self.pending_dynamic_mesh_slots);
     }
 
     /// Start windowed cutscene playback when the world has flipped into

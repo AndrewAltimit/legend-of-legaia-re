@@ -97,6 +97,35 @@ impl World {
         std::mem::take(&mut self.pending_field_events)
     }
 
+    /// The play hosts' end-of-frame field-event drain: empty
+    /// [`Self::pending_field_events`] and queue, onto `pending`, every
+    /// [`FieldEvent::ActorSpawned`] slot whose actor carries a TMD reference
+    /// (the `0x4C 0xD8` synchronous-spawn path), once per slot. A host
+    /// uploads each queued slot's mesh on its next render pass.
+    ///
+    /// Every other event is dropped: by the time a host drains, the session
+    /// tick has already routed what it answers (BGM, the camera configure
+    /// beats), and the rest is presentation each host reads off the world's
+    /// own state. A spawn without a TMD reference (the `0x4C 0x80`
+    /// bytecode-only path) has no mesh to upload until its bytecode runs.
+    ///
+    /// One body for both hosts: the native window's copy used to queue a
+    /// slot twice when two spawns of it landed in one queue, while the
+    /// page's deduplicated.
+    pub fn drain_spawned_mesh_slots(&mut self, pending: &mut Vec<u8>) {
+        for ev in self.drain_field_events() {
+            if let FieldEvent::ActorSpawned { slot, .. } = ev {
+                let has_tmd = self
+                    .actors
+                    .get(slot as usize)
+                    .is_some_and(|a| a.tmd_ref.is_some());
+                if has_tmd && !pending.contains(&slot) {
+                    pending.push(slot);
+                }
+            }
+        }
+    }
+
     /// Drain queued actor-spawn requests emitted by field-VM op `0x4C 0x80`.
     /// Each entry is the variable-length bytecode stream for one child
     /// actor. Engines route these into their actor pool.

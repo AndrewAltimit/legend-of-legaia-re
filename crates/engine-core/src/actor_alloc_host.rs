@@ -521,4 +521,33 @@ mod tests {
         assert_eq!(MOVE_SPAWN_POOL_A, 0x8007_062C);
         assert_eq!(MOVE_SPAWN_POOL_B, 0x8007_C350);
     }
+
+    /// The hosts' end-of-frame drain queues a spawned slot only when its
+    /// actor carries a TMD, once per slot, and empties the event queue.
+    #[test]
+    fn drain_spawned_mesh_slots_queues_tmd_spawns_once() {
+        use legaia_engine_field::field_events::FieldEvent;
+        let mut w = make_world();
+        w.actors[3].tmd_ref = Some(make_stub_global_tmd());
+        let spawned = |slot| FieldEvent::ActorSpawned {
+            slot,
+            kind: 0,
+            variant: 0,
+            record: Vec::new(),
+        };
+        w.pending_field_events.push(spawned(3));
+        w.pending_field_events.push(spawned(4));
+        w.pending_field_events.push(spawned(3));
+        let mut pending = vec![];
+        w.drain_spawned_mesh_slots(&mut pending);
+        assert_eq!(pending, vec![3]);
+        assert!(w.pending_field_events.is_empty());
+        w.pending_field_events.push(spawned(3));
+        w.drain_spawned_mesh_slots(&mut pending);
+        assert_eq!(
+            pending,
+            vec![3],
+            "a slot already queued is not queued again"
+        );
+    }
 }

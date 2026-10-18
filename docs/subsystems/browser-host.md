@@ -599,9 +599,10 @@ against the page's field view-projection in page space), and actors a scene
 script spawns with a TMD (`FieldEvent::ActorSpawned`) get their rest-pose
 mesh uploaded and drawn from the live actor transform. The field party HUD
 reads the lead's projected stage-Y off the same view-projection. The page
-also drains every remaining field-VM event each tick, the twin of the native
-`drain_and_route_field_events` - `World::pending_field_events` is only ever
-emptied by a consumer.
+also drains every remaining field-VM event each tick through the one kernel
+the native window runs, `World::drain_spawned_mesh_slots`, in a step named as
+the window's (`drain_and_route_field_events`) - `World::pending_field_events`
+is only ever emptied by a consumer.
 
 The menu rows have the same two sources the native window has, and exactly one
 draws at a time: with PROT 0888 resolved the title TIM's own NEW GAME /

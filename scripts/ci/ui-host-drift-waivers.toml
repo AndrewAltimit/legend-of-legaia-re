@@ -417,7 +417,7 @@ scene state that does not exist yet, and the page's overlay draws the title /
 disc chooser rather than any of their outputs.
 """
 skips = [
-    "drain_and_route_field_events_web",
+    "drain_and_route_field_events",
     "drive_npc_clips",
     "poll_field_shop",
     "poll_game_over",
@@ -449,7 +449,7 @@ that calls `tick_frame` while the prompt is up runs nothing - no stray pad
 edge reaches the prompt, and nothing behind it advances.
 """
 skips = [
-    "drain_and_route_field_events_web",
+    "drain_and_route_field_events",
     "drive_npc_clips",
     "poll_field_shop",
     "poll_game_over",
@@ -480,7 +480,7 @@ movie that finishes this frame falls through, as the native window's finish
 is drained before it counts ticks.
 """
 skips = [
-    "drain_and_route_field_events_web",
+    "drain_and_route_field_events",
     "drive_npc_clips",
     "poll_field_shop",
     "poll_game_over",
@@ -561,7 +561,7 @@ is where that is recorded.
 """
 skips = [
     "audio_director",
-    "drain_and_route_field_events_web",
+    "drain_and_route_field_events",
     "drive_npc_clips",
     "poll_field_shop",
     "poll_game_over",
@@ -587,11 +587,6 @@ skips = [
 native = "apply_world_clut_fx"
 web = "step_field_vram_fx"
 reason = "Both drain the world's banked CLUT-cell effects and ambient palette cyclers against the host's CPU VRAM through the one frame-tail kernel `World::step_field_vram_effects`."
-
-[[frame_kernel]]
-native = "drain_and_route_field_events"
-web = "drain_and_route_field_events_web"
-reason = "The same drain of `World::pending_field_events`; the `_web` suffix is the browser's copy, not a different step."
 
 [[frame_kernel]]
 native = "drain_and_log_battle_events"
