@@ -2474,7 +2474,7 @@ of the module is on screen through `0x6E` / `0x6F`
 module whose arms are not ported seats its whole record set at the caster on
 the band's first `0x70` tick, where its first arm runs
 (`CastFxState::capture_fx_pending`); seated at the pager, the records drew
-through the fade and ran out before the arms that seat them. Five bodies
+through the fade and ran out before the arms that seat them. Six bodies
 instead seat their spawn calls on the passes their arms make them inside
 `0x70` (`cast_module_camera::capture_arm_spawns`, keyed on the module and the
 body the trampoline picks, `capture_spawns_per_arm`), which also keeps a
@@ -2486,12 +2486,14 @@ cell's other bodies' records off the screen:
 | 0938 Mystic Circle (`0xB7`), `0x801F69EC` | arm 0 the circle `0x801F7D5C` and the ray caller `0x801F7DC4`; arm 1 `0x801F7FE8` on the countdown's expiry; arms 2 and 3 on the caster, each pass flushing the part pool first (`jal 0x80050E74`) | `FUN_801F7AB8`: arm 2 seats a ray `0x801F7DF4` on the caller, which `0x801F7DC4` calls every eleven frames |
 | 0962 Ultra Charge (`0xA5`), `0x801F69D8` | arm 0 the ring caller `0x801F86B8` on the caster and three camera-locked discs; arm 1 one ray `0x801F876C` on **every** pass, rolled `rand() % 0x1000` about Z (`capture_arm_spawns_every`) | `FUN_801F813C`: arm 2 seats three rings on the caller, which `0x801F86B8` calls every fifteen frames |
 | 0940 Mystic Shield (`0xAC`), `0x801F7240` | arm 1 `0x801F82D4` and arm 3 four records on the caster as each passes; arm 2 every eighth pass `0x801F8370` and every fourth an `efect.dat` effect `3`, arms 4 and 5 every eighth pass `0x801F84EC`, off the body's pass counter `0x801F8650` (`capture_arm_counted`); arm 4 the [sphere](#the-mystic-shield-effect); arm 7 flushes the pool | `FUN_801F82CC` is a bare `jr ra` |
+| 0944 Guilty Cross (`0x37`), `0x801F6A04` | arm 1 two camera-locked records on the zeroed stack trios; arm 2, after flushing the pool, three on the victim, the third `0x801F81E8` then stored `+0x16 = -0x1200`, `+0x42 = 1` (`capture_spawn_pokes`); arm 3 three on the victim as the hit lands; arm 4 flushes the pool | `FUN_801F7F2C`: arm 0 `0x801F7FE8`, arm 1 `0x801F8244` and `0x801F8290`, arm 2 `0x801F8290`, each at the caller's scale; the arm-3 record `0x801F8210` calls arms 1 and 2 |
 | 0946 Call Wave (`0x55`) / Big Wave (`0x56`), `0x801F69FC` | Call Wave's arm 0 the ray caller `0x801F78CC` on the caster's `+0x3C`; Big Wave's arm 4 the wave caller `0x801F7C44`, arm 5 nine records, arm 6 four, after halting every handle it keeps (`capture_arm_spawns_for` keys arm 0 on the action) | `FUN_801F76C4`: arm 0 three rings and eight rays `0x801F7970` with per-ray `rand()` waits, leans, lengths and rolls; arm 1 one wave `0x801F7BF8` into a sixteen-slot handle table while the phase is below `7` |
 
 The ported stagers run off the parts' own calls
-(`chaos_breath_cell_stager_spawns`, `call_wave_stager_spawns`,
-`blade_breath_cell_stager_spawns`, via `World::run_part_stager_calls`) and
-only for the bodies above; the cells' other bodies (Chaos Breath, Glare and
+(`chaos_breath_cell_stager_spawns`, `guilty_cross_cell_stager_spawns`,
+`call_wave_stager_spawns`, `blade_breath_cell_stager_spawns`, via
+`World::run_part_stager_calls`) and
+only for the bodies above; the cells' other bodies (Chaos Breath, Glare, Curse All and
 the rest of their cells) keep the whole-set placement. Big Wave's arm 6 also
 ORs `0x20` into `+0x52` of the first two records it seats
 (`0x801F7204..0x801F723C`), a bit the engine does not model.

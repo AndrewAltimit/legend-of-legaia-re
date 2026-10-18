@@ -535,9 +535,39 @@ const E946_6: [ModuleSpawn; 4] = [
     spawn(0x801F7EA0, CASTER),
 ];
 
+// PROT 0944's `0x37` body `FUN_801F6A04` (Cort's Guilty Cross), six arms.
+// See `ghidra/scripts/funcs/overlay_cast_guilty_cross_0944_801f6a04.txt`.
+// 0x801F6D48 / 0x801F6D60, on the countdown's expiry, on the zeroed stack
+// trios: both records open on a `WORLD_SET` and lock to the camera.
+const E944_1: [ModuleSpawn; 2] = [spawn(0x801F8098, ZEROED), spawn(0x801F80F0, ZEROED)];
+// 0x801F6F84..0x801F6FB4, on the victim's `+0x34` / `+0x44`, after the arm
+// flushes the pool (`0x801F6E50`); the third is lifted ([`capture_spawn_pokes`]).
+const E944_2: [ModuleSpawn; 3] = [
+    spawn(0x801F8148, SpawnAnchor::Victim),
+    spawn(0x801F8198, SpawnAnchor::Victim),
+    spawn(0x801F81E8, SpawnAnchor::Victim),
+];
+// 0x801F71F8..0x801F7228, on the victim, as the hit lands.
+const E944_3: [ModuleSpawn; 3] = [
+    spawn(0x801F8210, SpawnAnchor::Victim),
+    spawn(0x801F82E0, SpawnAnchor::Victim),
+    spawn(0x801F8320, SpawnAnchor::Victim),
+];
+
 /// The capture-class entries whose spawns are seated per arm instead of by
 /// the pager.
-pub const CAPTURE_SPAWN_ENTRIES: [u32; 5] = [938, 940, 946, 962, 966];
+pub const CAPTURE_SPAWN_ENTRIES: [u32; 6] = [938, 940, 944, 946, 962, 966];
+
+/// Halfword stores a capture arm makes into a part it has just seated, as
+/// `(actor offset, value)`, applied after the part's seat run: PROT 0944's
+/// arm 2 parks the handle of `0x801F81E8` at `0x801F836C` and stores
+/// `+0x16 = -0x1200`, `+0x42 = 1` (`0x801F6FBC..0x801F6FD0`).
+pub fn capture_spawn_pokes(prot_entry: u32, record: u32) -> &'static [(u16, u16)] {
+    match (prot_entry, record) {
+        (944, 0x801F_81E8) => &[(0x16, 0xEE00), (0x42, 1)],
+        _ => &[],
+    }
+}
 
 /// A capture arm's spawn made on a pass counted by the body's own frame
 /// counter: PROT 0940's word `0x801F8650`, which arms 2, 4 and 5 read and
@@ -593,6 +623,7 @@ pub fn capture_spawns_per_arm(prot_entry: u32, body: Option<u32>) -> bool {
     match prot_entry {
         938 => body == Some(0x801F_69EC),
         940 => body == Some(0x801F_7240),
+        944 => body == Some(0x801F_6A04),
         946 => true,
         962 => body == Some(0x801F_69D8),
         966 => true,
@@ -603,14 +634,18 @@ pub fn capture_spawns_per_arm(prot_entry: u32, body: Option<u32>) -> bool {
 /// The capture-class arms that flush the part pool (`jal 0x80050E74`) on
 /// their pass, ahead of their own spawns: every part the module seated
 /// through `FUN_80050ED4` gets its halt bit. PROT 0938's arms 2 and 3
-/// (`0x801F6DE4`, `0x801F6FA4`) and PROT 0940's arm 7 (`0x801F7870`).
+/// (`0x801F6DE4`, `0x801F6FA4`), PROT 0940's arm 7 (`0x801F7870`) and
+/// PROT 0944's arms 2 and 4 (`0x801F6E50`, `0x801F7268`).
 ///
 /// PROT 0946's arm 6 is the same reach by another route: it sets the halt
 /// bit on every word of its handle table `0x801F7F30` (`0x801F7174..
 /// 0x801F71A8`), which holds the stager's waves, the wave caller and arm 5's
 /// nine records - every part a Big Wave cast has seated.
 pub fn capture_arm_flushes_pool(prot_entry: u32, phase: u8) -> bool {
-    matches!((prot_entry, phase), (938, 2 | 3) | (940, 7) | (946, 6))
+    matches!(
+        (prot_entry, phase),
+        (938, 2 | 3) | (940, 7) | (944, 2 | 4) | (946, 6)
+    )
 }
 
 /// The spawn calls capture-class module `prot_entry`'s arm `phase` makes on
@@ -641,6 +676,9 @@ pub fn capture_arm_spawns(prot_entry: u32, phase: u8) -> &'static [ModuleSpawn] 
     match (prot_entry, phase) {
         (940, 1) => &E940_1,
         (940, 3) => &E940_3,
+        (944, 1) => &E944_1,
+        (944, 2) => &E944_2,
+        (944, 3) => &E944_3,
         (946, 0) => &E946_0_CALL,
         (946, 4) => &E946_4,
         (946, 5) => &E946_5,

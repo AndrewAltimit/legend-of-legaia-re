@@ -116,14 +116,19 @@ pub struct SummonPartRuntime {
 
 impl SummonPartRuntime {
     /// Store halfword `value` at actor offset `off` - the offsets a stager
-    /// arm writes into a part it seated: `+0x28` (roll), `+0x54` (wait),
+    /// arm writes into a part it seated: `+0x14..+0x18` (position), `+0x28`
+    /// (roll), `+0x42`, `+0x54` (wait),
     /// `+0x84`, `+0x98` (speed) and the `+0x9C..` block.
     pub fn poke(&mut self, off: u16, value: u16) {
         let s = &mut self.state;
         match off {
+            0x14 => s.world_x = value as i16,
+            0x16 => s.world_y = value as i16,
+            0x18 => s.world_z = value as i16,
             0x24 => s.render_24 = value as i16,
             0x26 => s.render_26 = value as i16,
             0x28 => s.render_28 = value as i16,
+            0x42 => s.field_42 = value,
             0x54 => s.wait_timer = value as i16,
             0x80 => s.anim_80 = value as i16,
             0x82 => s.anim_82 = value as i16,

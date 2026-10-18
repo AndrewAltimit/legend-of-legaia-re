@@ -486,8 +486,11 @@ impl World {
             // Each part keeps the record it was spawned from, the handle a
             // later arm kills it by (`ori 0x8` into the actor's flag word).
             if let SpawnRecord::Module(va) = spawn.record {
+                let pokes =
+                    legaia_engine_cast::cast_module_camera::capture_spawn_pokes(prot_entry, va);
                 for part in &mut scene.parts[first..] {
                     part.tag.get_or_insert(va);
+                    part.seat_pokes.extend_from_slice(pokes);
                 }
                 // A seated stager-calling record makes its own call, so the
                 // clock kept in its place stops.

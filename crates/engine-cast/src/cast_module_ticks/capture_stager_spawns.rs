@@ -1,6 +1,7 @@
 //! The op-`0x20` stagers of the capture-class cells whose parts call back
-//! into their module: PROT 0938 (Chaos Breath / Mystic Circle), PROT 0946
-//! (Zeto's Call Wave / Big Wave) and PROT 0962 (the Blade Breath cell, whose
+//! into their module: PROT 0938 (Chaos Breath / Mystic Circle), PROT 0944
+//! (Guilty Cross / Curse All), PROT 0946 (Zeto's Call Wave / Big Wave) and
+//! PROT 0962 (the Blade Breath cell, whose
 //! `0xA5` body is Cort's Ultra Charge). Each seats more records off the
 //! calling part, the shape [`super::stager_spawns`] documents for the summon
 //! band.
@@ -71,6 +72,33 @@ pub fn blade_breath_cell_stager_spawns(arm: u8, caller: StagerCaller) -> Vec<Sta
             .into_iter()
             .map(|r| on_caller(r, caller, 0x1000))
             .collect(),
+        _ => Vec::new(),
+    }
+}
+
+/// PROT 0944's stager `FUN_801F7F2C`, reached through `gp[+0x714]` from its
+/// parts' op `0x20`:
+///
+/// | Arm | Seats |
+/// |---:|---|
+/// | 0 | `0x801F7FE8` (`FUN_80021B04`, `0x801F7F80`) |
+/// | 1 | `0x801F8244`, then falls into arm 2's call (`0x801F7FA0..0x801F7FB8`) |
+/// | 2 | `0x801F8290` |
+///
+/// Every call sits on the caller's `+0x14` / `+0x24` and forwards its `+0x72`
+/// as the scale. Guilty Cross's arm-3 record `0x801F8210` calls arms 1 and 2
+/// in a loop.
+///
+/// PORT: FUN_801F7F2C (PROT 0944 stager)
+pub fn guilty_cross_cell_stager_spawns(arm: u8, caller: StagerCaller) -> Vec<StagerSpawn> {
+    let scale = caller.scale;
+    match arm {
+        0 => vec![on_caller(0x801F_7FE8, caller, scale)],
+        1 => vec![
+            on_caller(0x801F_8244, caller, scale),
+            on_caller(0x801F_8290, caller, scale),
+        ],
+        2 => vec![on_caller(0x801F_8290, caller, scale)],
         _ => Vec::new(),
     }
 }
