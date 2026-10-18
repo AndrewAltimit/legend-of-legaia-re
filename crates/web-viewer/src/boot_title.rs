@@ -356,6 +356,34 @@ impl LegaiaRuntime {
         self.boot_title_backdrop = None;
     }
 
+    /// Tear down every start in flight before the page begins another one: a
+    /// scene picked while a New Game is on its logos, title card or opening,
+    /// or a New Game pressed over a running scene. Drops the logo and title
+    /// sessions (and the Continue backdrop), abandons a live opening chain,
+    /// ends an armed or open movie on the audio side and drops its slot - so
+    /// no post-movie hand-off enters the opening's next leg - and stops the
+    /// score with any pending title -> load hand-off. The start that follows
+    /// brings up its own music. A pause-menu row the title handed off to is
+    /// the page's to close (`play_menu_close`).
+    pub fn play_cancel_start(&mut self) {
+        self.boot_logos = None;
+        self.boot_title_close();
+        let _ = self.play_abandon_opening_chain();
+        // A world parked under a story movie leaves the mode without its
+        // hand-off: the finished id is drained here, not by the next tick.
+        if let Some(host) = self.scene_host.host_mut() {
+            host.world.finish_cutscene();
+            let _ = host.world.take_finished_fmv();
+        }
+        self.fmv_end_audio();
+        self.fmv.clear();
+        self.bgm_handoff_pending = false;
+        if let Some(d) = self.scene_host.director_mut() {
+            use legaia_engine_core::scene_host::BgmDirector;
+            d.stop();
+        }
+    }
+
     /// Start the **publisher-logo** boot phase - the stage retail plays
     /// before the title card (PROT 0895's own sequencer, `FUN_801CEFD4`:
     /// SCEA, then Contrail, then PROKION, each with its own fade-in / hold /

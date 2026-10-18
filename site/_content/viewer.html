@@ -1237,15 +1237,22 @@
       if (count > 0) {
         allEntries = JSON.parse(viewer.entry_list_json());
 
-        /* Honour ?scene=<label> deep-links from the world / shops pages. */
+        /* Honour ?scene=<label> deep-links from the world / shops pages,
+         * and ?prot=<extraction index> from the disc map. */
         const params = new URLSearchParams(location.search);
         const wantScene = params.get('scene');
+        const wantProt = parseInt(params.get('prot') || '', 10);
+        const protSlot = Number.isNaN(wantProt) ? -1
+          : allEntries.findIndex(e => e.prot_index === wantProt);
 
         rebuildList();
 
-        /* If a deep-link scene was requested, snap to its first PROT
-         * entry that's actually viewable. */
-        if (wantScene && scenes.length > 0) {
+        /* A ?prot= entry with no viewable asset falls through to the
+         * scene / default snap below. */
+        if (protSlot >= 0) {
+          prepareEntrySwitch();
+          viewer.set_slot(protSlot);
+        } else if (wantScene && scenes.length > 0) {
           const hit = scenes.find(s => s.label === wantScene);
           if (hit) {
             const slot = allEntries.findIndex(e =>

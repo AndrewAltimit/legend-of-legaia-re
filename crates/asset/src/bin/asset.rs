@@ -15,6 +15,8 @@ mod catalogs;
 mod cli_args;
 #[path = "asset/cli_io.rs"]
 mod cli_io;
+#[path = "asset/disc_map.rs"]
+mod disc_map;
 #[path = "asset/dispatch.rs"]
 mod dispatch;
 #[path = "asset/field_census.rs"]
@@ -143,6 +145,7 @@ fn main() -> Result<()> {
     reset_sigpipe();
     match Cli::parse().cmd {
         Cmd::Describe { input, count } => describe(&input, count),
+        Cmd::DiscMap { disc, out } => disc_map::disc_map_cmd(&disc, out.as_deref()),
         Cmd::Account {
             input,
             prot_dir,

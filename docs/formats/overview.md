@@ -4,7 +4,7 @@ Byte-level specifications for every format on the Legend of Legaia disc. Each pa
 
 **Read the page for a format before writing a parser against it.** Several of these look like their standard PlayStation counterparts and are not: the TMD mesh variant uses its own magic and primitive grouping, the SEQ meta-event encoding omits MIDI's length field, and the same pack layout appears under three names.
 
-New here? [`../overview.md`](../overview.md) covers the project as a whole; this page is the index into the formats.
+New here? [`../overview.md`](../overview.md) covers the project as a whole; this page is the index into the formats. The site's [disc map](https://andrewaltimit.github.io/legend-of-legaia-re/disc-map.html) draws the whole disc as nested boxes - each ISO9660 file and each `PROT.DAT` entry sized by its sector count, coloured by format family and linked to its page here. Its data is `site/disc-map.json`, layout metadata only, written by `asset disc-map <disc.bin> --out site/disc-map.json`.
 
 ## How the layers nest
 
@@ -87,7 +87,7 @@ A page may mix levels, and the better ones rate per field rather than per page: 
 
 ### One pack, two readers
 
-There is **one** pack format. [`pack.md`](pack.md) reads it at offset 0 (the bare form). [`tim-pack.md`](tim-pack.md) reads it four bytes in, past a `(TIM_LIST << 24) | size` chunk header - which is what its `word_index * 4 + 4` member offset and its `marker == 0x01` test both encode. The "field-pack" is that same chunk header on a scene's texture pack. `categorize` classifies an entry by which form it is (`data_field_streaming` for chunk-headered carriers, `pack` for bare ones), so the `field_pack` and `tim_pack` classes are empty against the retail disc. The effect bundle (`0x02018B0C`, [`effect.md`](effect.md)) is unrelated to all three.
+There is **one** pack format. [`pack.md`](pack.md) reads it at offset 0 (the bare form). [`tim-pack.md`](tim-pack.md) reads it four bytes in, past a `(TIM_LIST << 24) | size` chunk header - which is what its `word_index * 4 + 4` member offset and its `marker == 0x01` test both encode. The "field-pack" is that same chunk header on a scene's texture pack. `categorize` classifies an entry by which form it is (`data_field_streaming` for chunk-headered carriers, `pack` for bare ones), so the `field_pack` and `tim_pack` classes are empty against the retail disc. The former effect bundle (`0x02018B0C`, [`effect.md`](effect.md)) is the same misreading on a type-`0x02` chunk: a pack of 29 TMDs.
 
 ## Sub-asset formats
 
@@ -121,7 +121,7 @@ There is **one** pack format. [`pack.md`](pack.md) reads it at offset 0 (the bar
 | [Encounter record](encounter.md) | Confirmed | `[3 reserved][count][monster_ids]` at `actor[+0x94]`, plus the MAN camera-region table and visible-tile window. |
 | [MAN relocation](man-relocation.md) | Confirmed | What must be fixed up when a record inside a decompressed MAN changes size. |
 | [World-map slot 4](world-map-overlay.md) | Confirmed | Slot 4 of each kingdom bundle (PROT 0086 / 0245 / 0392): the world-map scene's ANM animation bank. |
-| [Effect bundles](effect.md) | Confirmed | The on-disc bundle (magic `0x02018B0C`) and the `efect.dat` runtime 2-pack. |
+| [Effect bundles](effect.md) | Confirmed | The `efect.dat` runtime 2-pack; the `0x02018B0C` "bundle" is a TMD-pack chunk header. |
 | [summon.dat / readef.DAT](summon-readef.md) | Confirmed | Battle side-band streaming slots (extraction 893 / 894): CLUT rows, texture pages, summon actor records. |
 | [STR FMV table](str-fmv-table.md) | Confirmed | Movie dispatch table at `0x801D0A6C`: 23 slots of 32 bytes, nine retail `fmv_id`s. |
 | [Per-scene primitive scratch](navmesh.md) | Inferred | **Negative finding.** `0x80108EA4..0x80109550` is rendering scratch, not a navmesh. |

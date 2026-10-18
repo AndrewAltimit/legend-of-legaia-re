@@ -1646,7 +1646,9 @@ boot-then-scene order:
    TOC entries 0/1 (20 + 1 members, including six bare
    `(960, 456..462, 256, 1)` row-patch members that overlay the atlas image)
    with the flat-strip CLUT semantics of the per-TIM uploader
-   `FUN_800198E0`. Row layout:
+   `FUN_800198E0`. Only raw entry 0 is uploaded
+   (`upload_boot_resident_to_vram`): raw entry 1 is the GAME OVER overlay's page
+   ([`boot.md`](boot.md#the-loader-fun_801cecd0)). Row layout:
    [`npc-palette.md`](../formats/npc-palette.md#boot-resident-strip-band-rows-510511).
 2. **The shared CDNAME blocks**
    [`FIELD_SHARED_BLOCKS`](../../crates/engine-scene/src/scene_resources.rs)

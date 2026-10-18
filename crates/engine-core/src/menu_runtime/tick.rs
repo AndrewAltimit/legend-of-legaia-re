@@ -50,11 +50,16 @@ impl MenuRuntime {
         // tick; the post-`step` call below catches in-menu transitions.
         self.sync_widget_choreo(world);
         self.ui_frames = self.ui_frames.wrapping_add(1);
-        self.tick_shop_slides();
-        self.ui_cue = None;
+        // Age first, then slide: the tick whose age ends the fade is the
+        // tick the windows leave their park edges. Stepped the other way
+        // round, the first frame past the fade found no slide yet and the
+        // screen drew every window at home before the slide-in started from
+        // off screen - the open played twice.
         if self.shop_session.is_some() || self.prize_session.is_some() {
             self.shop_age = self.shop_age.saturating_add(1);
         }
+        self.tick_shop_slides();
+        self.ui_cue = None;
         if self.prize_session.is_some() {
             self.tick_prize(world, input);
             return MenuTickEvent::Stepped;
@@ -133,6 +138,13 @@ impl MenuRuntime {
             point_card_toast: &mut self.point_card_toast,
         };
         step(&mut host, &mut self.ctx, input);
+        // The shop teardown beat is over (its windows have slid out): the
+        // session goes now, not on the beat's entry.
+        if list_state_before == Some(MenuState::ShopExit)
+            && MenuState::from_byte(self.ctx.state) != Some(MenuState::ShopExit)
+        {
+            self.shop_session = None;
+        }
         self.ui_cue = list_state_before.and_then(|state| {
             shop_ui_cue(
                 state,

@@ -77,31 +77,19 @@
 
 /* Stage: canvas + side rail. */
 .play-stage { display: grid; grid-template-columns: 1fr 320px; gap: 1rem; align-items: start; }
-/* Sticky viewport: the canvas column pins under the fixed topbar while the
-   page scrolls to the rail cards and the prose, so the running game never
-   leaves the screen. The stick happens on the grid ITEM (not the canvas
-   wrap): its grid row is as tall as the taller rail column, and that
-   surplus is the sticky travel. A sticky grid item can never leave its own
-   grid row, so once the stage is revealed the page's about-prose is moved
-   INTO the rail column (see `showStage()`) - anything left below the stage
-   is scroll the canvas cannot follow. The wrap's width is capped by the
-   viewport height (4:3, minus room for the HUD + button rows) so the
-   pinned column always fits on screen - a wide-but-short window gets a
-   smaller centred canvas instead of one that scrolls off the bottom. */
-.play-viewport {
-  position: sticky;
-  top: calc(var(--topbar-h) + 0.5rem);
-  max-height: calc(100vh - var(--topbar-h) - 1rem);
-}
+/* The canvas column scrolls with the page: the cheats, battle tools and
+   button rows under the canvas sit in the same column, and a column pinned
+   under the topbar would hold them below the fold for good once a
+   <details> opens past the window height. The wrap's width is capped by the
+   viewport height (4:3, minus room for the HUD + button rows) so the canvas
+   and its first button row fit on screen at once - a wide-but-short window
+   gets a smaller centred canvas instead of one taller than the window. */
 .play-viewport .play-canvas-wrap {
   max-width: max(320px, calc((100vh - var(--topbar-h) - 9rem) * 4 / 3));
   margin-inline: auto;
 }
-/* Single column: pinning the canvas would hold it on top of the rail cards
-   below it, so the sticky behaviour is desktop-only. */
 @media (max-width: 980px) {
   .play-stage { grid-template-columns: 1fr; }
-  .play-viewport { position: static; max-height: none; }
   .play-viewport .play-canvas-wrap { max-width: none; margin-inline: 0; }
 }
 
@@ -162,9 +150,9 @@
 .play-mg-caption.is-empty { visibility: hidden; }
 .play-mg-line.is-bright { color: var(--text-bright); }
 .play-mg-line span + span::before { content: "\00b7"; margin: 0 0.5em; color: var(--text-dim); }
-/* Pinned column only (the single-column layout below 981px lets the canvas
-   run full width): the strip takes its height out of the canvas, not out of
-   the button rows, because the pinned column has to fit the window - and it
+/* Two-column layout only (the single-column layout below 981px lets the
+   canvas run full width): the strip takes its height out of the canvas, not
+   out of the button rows, so canvas and strip still fit the window - and it
    keeps the canvas's width so the two read as one block. */
 @media (min-width: 981px) {
   .play-viewport:has(.play-mg-caption:not([hidden])) .play-canvas-wrap,
@@ -195,7 +183,7 @@
 .play-viewport .play-screen:fullscreen > .play-canvas-wrap,
 .play-viewport .play-screen:fullscreen > .play-mg-caption {
   flex: none; margin: 0;
-  /* the sticky-column width cap must not shrink fullscreen */
+  /* the viewport-height width cap must not shrink fullscreen */
   width: min(100vw, calc((100vh - var(--play-fs-cap)) * 4 / 3)); max-width: none;
 }
 /* The reserved height holds three unwrapped rows, which is every game's most
@@ -801,20 +789,12 @@
   const searchEl  = document.getElementById('play-scene-search');
   const keysEl    = document.getElementById('play-keys');
 
-  /* Reveal the stage grid. On first reveal, move the about-prose into the
-   * rail column: the sticky viewport is a grid item and can never scroll
-   * past its own grid row, so any content left BELOW the stage is page
-   * scroll the pinned canvas cannot follow (it slid partly off-screen at
-   * short window heights, and entirely once the details opened). In the
-   * rail column the prose adds to the row height instead - the canvas
-   * stays pinned for the whole read. Before a disc loads the stage is
-   * hidden and the prose keeps its normal full-width spot. */
+  /* Reveal the stage grid. The about-prose keeps its full-width spot below
+   * the stage: the canvas column scrolls with the page, so nothing below the
+   * stage is out of reach. */
   function showStage() {
     if (stageEl.style.display === 'grid') return;
     stageEl.style.display = 'grid';
-    const det  = document.querySelector('details.about-data');
-    const rail = stageEl.querySelector('.play-rail');
-    if (det && rail && det.parentElement !== rail) rail.appendChild(det);
   }
 
   const hud = {
@@ -837,6 +817,37 @@
   /* Re-entrancy + rapid-failure guards for the recovery path. */
   let recovering = false;
   let recoveryTimes = [];
+
+  /* One start at a time. Every user-initiated start - a New Game, a scene
+   * picked from the list, a save imported over the title - bumps the
+   * generation and tears down what the previous start left in flight: the
+   * boot title's own rAF + key loop (`cancelBootTitle`, set while it runs),
+   * the page's movie overlay, and on the engine side the logo / title
+   * sessions, a live opening chain, an armed movie and the score
+   * (`play_cancel_start`). A continuation that captured an older generation
+   * (the title loop's next frame, its outcome) bails instead of starting a
+   * second session over the new one. */
+  let startGen = 0;
+  let cancelBootTitle = null;
+  function supersedeStarts() {
+    startGen++;
+    if (cancelBootTitle) {
+      const cancel = cancelBootTitle;
+      cancelBootTitle = null;
+      try { cancel(); } catch (e) { console.warn('cancel boot title', e); }
+    }
+    if (window.LegaiaPlayFmv && typeof window.LegaiaPlayFmv.teardown === 'function') {
+      try { window.LegaiaPlayFmv.teardown(); } catch (e) {}
+    }
+    if (runtime) {
+      try {
+        if (typeof runtime.play_cancel_start === 'function') runtime.play_cancel_start();
+        else if (typeof runtime.boot_title_close === 'function') runtime.boot_title_close();
+      } catch (e) { console.warn('cancel start', e); }
+    }
+    window.__playStartGen = startGen;
+    return startGen;
+  }
 
   /* The scene the disc's new-game table names as the opening (Rim Elm). Kept in
    * sync with `legaia_game_tables::new_game::OPENING_SCENE`. */
@@ -898,7 +909,14 @@
        * Continue and Options are live rows: the engine routes them to the
        * retail save-select and options screens (the shared pause-menu rows),
        * and a Continue that loads a card block ends the title with
-       * 'loaded'. What happens next is the engine's (`onTitleOutcome`). */
+       * 'loaded'. What happens next is the engine's (`onTitleOutcome`).
+       *
+       * A New Game supersedes whatever started before it: the running
+       * scene's loop stops (the title owns the screen until its outcome
+       * enters the opening) and any start still in flight is torn down. */
+      if (!runtime) return;
+      supersedeStarts();
+      if (view) { try { view.stop(); } catch (e) {} }
       runBootTitle(onTitleOutcome);
     } else {
       /* The scene list lives inside #play-stage, which starts hidden. Reveal
@@ -1020,6 +1038,9 @@
    * resume gate. */
   function enter(label) {
     if (!runtime) return;
+    /* A picked scene cancels a New Game in flight - its logos, title card,
+     * opening chain, movie and title theme - before the scene starts. */
+    supersedeStarts();
     active = label;
     enterWith(label, (v) => v.enter(label));
   }
@@ -1027,6 +1048,10 @@
   /* Land the save a Load / import parked in the engine. */
   function resumeLoadedSave() {
     if (!runtime) return;
+    /* A save imported from the bar while the boot title is still up replaces
+     * that New Game. (The title's own Continue finishes the title first, so
+     * nothing is live by the time it lands here.) */
+    if (cancelBootTitle) supersedeStarts();
     enterWith('the saved scene', (v) => {
       const r = v.resumeSave();
       if (r.landing === 'nowhere') throw new Error('no scene could be entered for this save');
@@ -1158,6 +1183,16 @@
    * `pad_bindings_json`), so a rebind reaches the title card too. */
   function runBootTitle(then) {
     if (!runtime) { then('new_game'); return; }
+    /* A second title over a live one (a party wipe's, a New Game's) replaces
+     * it: the old loop must not keep stepping the session or deliver its
+     * outcome. The generation this title answers to is the current one; a
+     * later start bumps it and the loop below bails. */
+    if (cancelBootTitle) {
+      const prev = cancelBootTitle;
+      cancelBootTitle = null;
+      try { prev(); } catch (e) {}
+    }
+    const gen = startGen;
     const PAD = window.legaiaAdoptPadBindings
       ? window.legaiaAdoptPadBindings(runtime)
       : null;
@@ -1231,16 +1266,35 @@
     const pulse = new Set();
     const onKey = (e) => {
       if (!PAD || PAD[e.code] === undefined) return;
+      /* Typing in the scene search (or any field) is not a pad press. */
+      const t = e.target;
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT')) return;
       e.preventDefault();
       pulse.add(e.code);
     };
     window.addEventListener('keydown', onKey);
     canvas.focus();
-    const finish = (outcome) => {
+    let torn = false;
+    const teardownTitle = () => {
+      if (torn) return;
+      torn = true;
       if (bootTitleRAF) cancelAnimationFrame(bootTitleRAF);
       bootTitleRAF = 0;
       window.removeEventListener('keydown', onKey);
       ctx.clearRect(0, 0, menuCanvas.width, menuCanvas.height);
+      if (cancelBootTitle === cancelThis) cancelBootTitle = null;
+    };
+    /* Superseded (`supersedeStarts`): tear down without an outcome. A
+     * Continue / Options row the title handed off to closes with it. */
+    const cancelThis = () => {
+      const wasHandoff = !torn && handoff;
+      teardownTitle();
+      if (wasHandoff) { try { runtime.play_menu_close(); } catch (e) {} }
+    };
+    cancelBootTitle = cancelThis;
+    const finish = (outcome) => {
+      teardownTitle();
+      if (gen !== startGen) return;   /* a newer start owns the page */
       try { then(outcome); } catch (e) { console.warn('boot title -> then', e); }
     };
     /* Chrome blitter for the Continue / Options sub-screens: they are the
@@ -1289,6 +1343,8 @@
       try { return runtime.play_drain_sim_steps(dt); } catch (e) { return 1; }
     };
     const frame = () => {
+      if (torn) return;
+      if (gen !== startGen) { cancelThis(); return; }
       bootTitleRAF = requestAnimationFrame(frame);
       /* A gamepad's press edges reach the title card the way a key's do. */
       if (window.legaiaPollGamepad) window.legaiaPollGamepad(titleHeld, pulse);

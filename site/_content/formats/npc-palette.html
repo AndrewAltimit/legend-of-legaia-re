@@ -152,7 +152,7 @@
     <div class="disclosure-body">
       <p>The bundle lives at raw TOC entry 0 (CDNAME <code>init_data</code>, <code>PROT.DAT</code> sectors 3..55
       - the region the extraction index space skips, since extraction entry 0 is raw entry 2); a second
-      single-TIM pack sits at raw entry 1. Parser <code>legaia_ui_formats::system_ui_bundle</code> reads both packs
+      single-TIM pack at raw entry 1 is the GAME OVER overlay's, not boot-resident. Parser <code>legaia_ui_formats::system_ui_bundle</code> reads both packs
       straight out of <code>PROT.DAT</code> and reproduces the full upload (<code>legaia_ui_formats::interior_page</code>
       is the atlas-only reader). The pack's six 532-byte non-TIM members are bare <strong>row patches</strong> -
       <code>[u32, u32]</code> preamble + TIM-style <code>[u32 bnum][u16 x,y,w,h]</code> blocks declaring

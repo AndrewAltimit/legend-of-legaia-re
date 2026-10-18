@@ -41,6 +41,17 @@ pub fn fallback_panel_draws(
     }
     let font = inputs.font;
     let state = MenuState::from_byte(menu.ctx_state());
+    // The teardown beats draw nothing: retail's shop exit sub-screen
+    // (`FUN_801DD12C`) only slides its windows out (drawn by
+    // `gold_shop_screen` while the session lasts) and fades, and a closing
+    // menu prints no line. The diagnostic `[SHOP - DONE]` / `[CLOSING]`
+    // rows below were text the game never shows.
+    if matches!(
+        state,
+        Some(MenuState::ShopExit) | Some(MenuState::Closing) | Some(MenuState::Deactivate)
+    ) {
+        return out;
+    }
     let cursor = menu.cursor() as usize;
     if let Some(shop) = menu.shop_session.as_ref() {
         let (origin, scale) = ui::pause_menu::stage_transform(surface_w, surface_h);

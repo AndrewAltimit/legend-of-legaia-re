@@ -42,7 +42,7 @@ flowchart TD
 | Per-entry classification and the type-byte dispatch | `disc-audit`, `container-formats` | [`formats/asset-type.md`](formats/asset-type.md) |
 | Streaming containers and packs | `container-formats`, `prot` | [`formats/data-field.md`](formats/data-field.md), [`formats/pack.md`](formats/pack.md), [`formats/tim-pack.md`](formats/tim-pack.md) |
 | Per-scene bundles: meshes, textures, sound, scripts, tables | `scene-formats` | [`formats/scene-bundles.md`](formats/scene-bundles.md) |
-| Effect bundles (magic `0x02018B0C`) | `container-formats` | [`formats/effect.md`](formats/effect.md) |
+| Effect 2-pack (`efect.dat`) and the `0x02018B0C` TMD-pack chunk | `container-formats` | [`formats/effect.md`](formats/effect.md) |
 | Runtime code overlays | `overlay-images` | [`formats/mips-overlay.md`](formats/mips-overlay.md), [`tooling/static-overlay-pipeline.md`](tooling/static-overlay-pipeline.md) |
 | Sound-driver outputs (`.MAP` / `.PCH` / `.spk` / `.dpk`) and VAB banks | `container-formats`, `vab` | [`formats/sound-driver.md`](formats/sound-driver.md), [`formats/vab.md`](formats/vab.md) |
 | Sub-assets: textures, meshes, sound banks, music, dialog, animation | `tim`, `tmd`, `vab`, `seq`, `mes`, `anm`, `mdt` | The per-format pages under [`formats/`](formats/overview.md) |

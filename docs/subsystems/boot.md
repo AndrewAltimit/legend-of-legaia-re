@@ -718,15 +718,35 @@ the summon-render flag `DAT_8007B6A8` into a work word, picks param `6` when set
 and `5` otherwise, skips the load when that overlay is already resident, and
 clears its one-frame suppression word unconditionally on the way out.
 
-### Pre-`init_data` system-UI gap (menu-glyph atlas + boot cursors)
+### Raw TOC entries 0 and 1 (`init_data`, `gameover_data`)
 
-A 236 KB / 118-sector region sits **between the TOC and the first indexed
-entry**: the TOC ends at `PROT.DAT` offset `0x1800` (3 sectors) and the first
-indexed payload (`init_data`) starts at `0x3C800` (sector 121). No per-entry
-extraction covers it.
+A 236 KB / 118-sector region sits **between the TOC and extraction entry 0**:
+the TOC ends at `PROT.DAT` offset `0x1800` (3 sectors) and extraction entry 0
+starts at `0x3C800` (sector 121). The extraction index space skips it, but the
+TOC does not. It is **raw TOC entries 0 and 1**, the two rows `FUN_8003E8A8`
+resolves for index `0` and `1`, and they are exactly CDNAME's two head defines,
+`init_data 0` and `gameover_data 1`:
 
-It is a packed bundle of system-UI TIMs, all 4bpp + CLUT (colour look-up
-table), targeting the right-hand "system UI" region of VRAM (`fb_x >= 640`):
+| Raw index | Sectors | `PROT.DAT` bytes | CDNAME | Dev-tree file | Retail loader |
+|---|---|---|---|---|---|
+| 0 | 3..55 | `0x01800..0x1B800` | `init_data` | `h:\prot\field\init\init.pak` | `FUN_801CECD0` (PROT 0895), boot |
+| 1 | 55..121 | `0x1B800..0x3C800` | `gameover_data` | `h:\prot\field\gameover\gameover.pak` | the GAME OVER overlay init (PROT 0902) |
+| 2 | 121.. | `0x3C800..` | (none; extraction `0000`) | `h:\prot\field\title\title.pak` | `FUN_801CECD0` (PROT 0895), boot |
+
+Each dev-tree name is the operand of the dev branch of one `_DAT_8007B8C2` gate
+whose retail branch loads the raw index beside it into the same buffer
+([loader](#the-loader-fun_801cecd0)). The extraction filename `0000_init_data`
+is the +2 label shift ([`cdname.md`](../formats/cdname.md#numbering-space)):
+`init_data`'s own bytes are raw entry 0, and extraction entry 0 is the retail
+twin of `title.pak`.
+
+Raw entry 0 is one `TIM_LIST` chunk of 20 members, all 4bpp + CLUT (colour
+look-up table) except six row-patch records, targeting the right-hand "system
+UI" region of VRAM (`fb_x >= 896`). Raw entry 1 is a one-member `TIM_LIST`
+chunk (the `(640,0)` page below) followed by a TMD chunk; extraction entry 0
+carries the same TMD byte-for-byte after its own two-TIM pack. Member layout,
+including the six row-patch records at `0x1A018..0x1AA7C`:
+[`tim-pack.md`](../formats/tim-pack.md#boot-resident-system-ui-instance-raw-toc-entries-0-and-1).
 
 | PROT.DAT offset | TIM dims | VRAM target | Purpose |
 |---|---|---|---|
@@ -744,7 +764,7 @@ table), targeting the right-hand "system UI" region of VRAM (`fb_x >= 640`):
 | `0x1AD50` | 16×16 | `(980,256)` 4×16 | cursor part |
 | `0x1AE10` | 16×16 | `(984,256)` 4×16 | cursor part |
 | `0x1AED0` | 32×32 | `(976,272)` 8×32 | cursor |
-| `0x1B80C` | 256×256 | `(640,0)` 64×256 | system sprite sheet |
+| `0x1B80C` | 256×256 | `(640,0)` 64×256 | raw entry 1: the GAME OVER page (256-entry CLUT on row 480) |
 
 - **`0x018E0`, battle-chrome widget page.** The blue / gold chip + plate
   3-slice art, D-pad glyph, AP-plate pieces, HP/MP badges and status words. Its
@@ -754,6 +774,53 @@ table), targeting the right-hand "system UI" region of VRAM (`fb_x >= 640`):
 - **`0x07F40`, ASCII battle font.** 16×16 cells, drawn as 14×15 sprites through
   the menu-glyph atlas CLUT bank's sub-palette 13 at `(208,510)`; chip labels and
   battle captions.
+- **`0x1B80C`, the GAME OVER page.** Not boot-resident. Its pixels are
+  mostly index-15 fill, and over 98 retail field, battle and menu save states
+  none holds its 15 non-zero row-480 CLUT entries and at most 19 of its 2053
+  non-fill pixel words sit at `(640,0)` - coincidence level. The port's scene
+  VRAM pre-pass uploads raw entry 0 only
+  (`SystemUiBundle::upload_boot_resident_to_vram`).
+
+#### The loader (`FUN_801CECD0`)
+
+Raw entry 0 is read and uploaded by the boot image `init.pak` (PROT 0895), not
+by `SCUS_942.54`. `FUN_801CECD0` is the `+0x08` tick of the first boot actor
+`FUN_801CE9C0` spawns ([logo sequencer](#the-logo-sequencer)): a switch on the
+actor's `+0x1A` state through the 21-word jump table at `0x801CE890`, its work
+buffer at actor `+0x48` (`s4`). Every load arm is a `_DAT_8007B8C2` gate (`!= 0`
+retail) between the retail index read and the dev host-file open `FUN_8003E6BC`.
+Read from `ghidra/scripts/funcs/overlay_boot_init_pak_0895_801cecd0.txt`:
+
+| Arm | Entry | What it does |
+|---|---|---|
+| 0 | `0x801CED24` | allocate `0x32000` bytes into `+0x48`; unless `_DAT_80078868` is set, stream raw `0x366` (extraction 868, the slot-0 system SFX bank) through `FUN_8001FC00` |
+| 1 | `0x801CED70` | once `FUN_8003DE7C(1)` reports the drive idle, install it with `FUN_8001E54C(0, buf, 0x32000)` |
+| 2 | `0x801CED98` | retail `FUN_8003EB98(0, buf, 1)` - **raw entry 0** (`clear a0` at `0x801CEDA8`, the call at `0x801CEEF8`); dev `init.pak` |
+| 3 | `0x801CEDCC` | when the permit word `0x801F3EA4` is up and the drive idle, walk the buffer's DATA_FIELD chunks and hand every `TIM_LIST` member to `FUN_800198E0` (`0x801CEE2C`); clears the permit either way |
+| 4 | `0x801CEE8C` | `FUN_8001ED60()` - the party field data (raw `0x36C`) load and checksum |
+| 5, 7 | `0x801CEE9C` | wait for the drive |
+| 6 | `0x801CEEB4` | allocate a second `0x32000` buffer into `0x801F3EBC`; retail `FUN_8003EB98(2, buf, 1)` (`li a0,0x2` at `0x801CEEF0`) - **extraction entry 0**; dev `title.pak` |
+| 8 | `0x801CEF08` | retail `FUN_8003E8A8(0x37D, 1)` + one-sector `FUN_8003E800` - the head of `monster.snd` (extraction 891); dev `h:\mpack\monster.snd` |
+| 9 | `0x801CEF68` | `FUN_8001A8B0` copies its `0x400`-byte bank index to `0x801C8980` ([`vab.md`](../formats/vab.md#the-multi-bank-archive-monstersnd)); state `0x14` |
+| 10..19 | `0x801CEFB0` | nothing |
+| 20 | `0x801CEF94` | raise actor `+0x10` bit 3 and `0x801F3EB0` bit 0 (done) |
+
+The permit `0x801F3EA4` is a handshake with the sequencer: `FUN_801CEFD4`
+stores it raised at `0x801CF160` and polls it back to zero at `0x801CF184`, and
+the boot loop `FUN_801CE9C0` raises it at `0x801CEC28` while `0x801F3EB0` bit 1
+is set, so the upload happens on a frame one of them grants. Nothing in PROT
+0895 or `SCUS_942.54` reads `0x801F3EBC` back (`lui` / `addiu` pair scan).
+
+Raw entry 1 has its own loader. The GAME OVER overlay's init (PROT 0902, slot-A
+base `0x801CE818`, file `+0x2C`) allocates `0x32000` bytes and, behind the same
+gate, calls `FUN_8003EB98(1, buf, 1)` (`li a0,0x1` at `0x801CE948`, the call at
+`0x801CE94C`); its dev branch opens `h:\prot\field\gameover\gameover.pak`. The
+walk after it uploads type-0 TIMs and type-1 `TIM_LIST` members through
+`FUN_800198E0`. A sweep of every `jal` to `FUN_8003EB98` / `FUN_8003E8A8` /
+`FUN_8003DDA0` in `SCUS_942.54` and all PROT entries for an `a0` literal in its
+straight-line window finds `1` only here; the 0895 arm-2 call is invisible to
+that sweep (its `a0` is set in a branch delay slot and the `jal` reached by a
+`j`), so the sweep bounds the literal call sites, not the computed ones.
 
 #### Menu-glyph atlas
 
@@ -782,17 +849,6 @@ to a stencil (pixel index 0 → transparent, 1..15 → opaque white) and applies
 **Extraction.** `legaia_ui_formats::menu_glyph_atlas::extract_from_prot_dat(&prot_dat)`
 returns the 33312-byte slice; the engine reads it through
 `ProtIndex::prot_dat_raw_bytes(byte_offset, len)`.
-
-#### Loader pathway (hypothesis)
-
-These TIMs land in main RAM at `0x80105000..0x80110200`, well below the overlay
-window, so they are shared static assets loaded once at boot before any overlay.
-The loader is **not pinned**; the likely candidate is the CD-DMA primitive
-`FUN_8005D9A0` driven from the SCUS boot sequence. It is not the path the title
-overlay takes (that is the ordinary overlay loader in mode 22's init).
-Confirming it needs a write-breakpoint capture over that RAM range on cold boot,
-in the manner of
-[`autorun_title_overlay_writer_hunt.lua`](../../scripts/pcsx-redux/autorun_title_overlay_writer_hunt.lua).
 
 ### Title-overlay source on disc
 
@@ -1311,8 +1367,9 @@ resolve to the same absolute `PROT.DAT` offset (LBA 38009 + `0x228`); they name
 other entries only under the superseded over-reading entry size. A byte scan for
 the TIM's header signature across the archive returns one hit, inside 0890's own
 73 sectors ([`formats/prot.md`](../formats/prot.md)). The dev string
-`h:\prot\field\title\title.pak` in `init.pak` is only a debug-print referent;
-SCUS does not contain `title.pak`, and the entry is reached by integer constant.
+`h:\prot\field\title\title.pak` in `init.pak` names a different entry: it is the
+dev-branch operand of `FUN_801CECD0`'s arm 6, whose retail branch reads
+extraction entry 0 ([loader](#the-loader-fun_801cecd0)), not 0890.
 
 The image is a **sprite sheet**; retail composes the screen from sub-rects
 rather than blitting the full quad:
@@ -1594,10 +1651,14 @@ slot B - so it is a disc fact, independent of the mode-16 call.
   this entry's frame is `0x230`; the base rests on jal recovery plus the
   string-anchor cross-check.
 
-**Where the dev-tree `title.pak` went.** It is split across two retail entries,
-both confirmed by fingerprinting RAM TIMs of the `title_screen_new_game` save
-state against the PROT corpus: the title wordmark TIM is in **PROT 0890**, and
-the options / config-menu bundle is **PROT 0899** (`xxx_dat`). Entry 0899 opens
+**Where the dev-tree `title.pak` went.** The file itself is extraction entry 0
+(raw TOC index 2): `FUN_801CECD0` loads that index on the retail branch of the
+gate whose dev branch opens `title.pak` ([loader](#the-loader-fun_801cecd0)). It
+holds two TIMs (images `(704,0)` and `(704,256)`) and a TMD. The title *screen*
+the overlay draws comes from elsewhere, both confirmed by fingerprinting RAM
+TIMs of the `title_screen_new_game` save state against the PROT corpus: the
+title wordmark TIM is in **PROT 0890**, and the options / config-menu bundle is
+**PROT 0899** (`xxx_dat`). Entry 0899 opens
 with the config-menu string pool - `Display Off` / `Gradual` / `Immediate` /
 `Field HP Display` / `Encounters` / `Battles` / `Vibration Off` / `On` /
 `Dual Shock` / `Voices Off` / `On` / `Battle Camera` / `Monaural` / `Stereo` /

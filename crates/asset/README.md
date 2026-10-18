@@ -34,6 +34,7 @@ asset scan             <PROT dir>         # entries that fully decode as player.
 asset stream / scan-stream                # streaming-container chunk list / PROT-wide sweep
 asset categorize       <PROT dir> [--cdname <CDNAME.TXT>]   # e.g. extracted/PROT
 asset account          <entry.BIN|index> [--funcs <dir>] [--depth N] [--json]
+asset disc-map         <disc.bin> [--out <f.json>]   # layout metadata for the site's disc map (site/disc-map.json)
 asset find-overlay     <PROT dir>         # MIPS-code candidate scan
 asset overlay          list|extract|verify|ghidra|scan|find-sig|generate   # static overlay pipeline
 asset tim-scan         <PROT dir>         # locate embedded TIMs (per-entry, lenient)

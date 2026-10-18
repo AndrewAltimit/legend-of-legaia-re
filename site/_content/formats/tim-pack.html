@@ -8,7 +8,7 @@
   <h2>At a glance</h2>
   <dl class="kv">
     <dt>What it really is</dt><dd>chunk header <code>(0x01 &lt;&lt; 24) | payload_len</code> + an <a href="pack.html">container-formats::pack</a> of TIMs</dd>
-    <dt>Where on disc</dt><dd>each scene's texture pack at raw-TOC <code>+4</code> of its CDNAME block; raw TOC entries 0 and 1 (the boot-UI bundle)</dd>
+    <dt>Where on disc</dt><dd>each scene's texture pack at raw-TOC <code>+4</code> of its CDNAME block; raw TOC entries 0 and 1 (boot system UI, GAME OVER page)</dd>
     <dt>Offset math</dt><dd><code>byte_offset = word_index * 4 + 4</code></dd>
     <dt>Parser</dt><dd><code>legaia_prot::timpack</code> (<code>is_tim_pack</code>, <code>detected_ext</code>); boot bundle <code>legaia_ui_formats::system_ui_bundle</code></dd>
     <dt>Confidence</dt><dd>Confirmed - retail uploader traced, layout pinned on the real disc</dd>
@@ -34,8 +34,8 @@
 </section>
 
 <section class="doc-section" id="boot-resident-system-ui-instance-raw-toc-entries-0-and-1">
-  <h2>The boot-resident system-UI bundle (raw TOC entries 0 and 1)</h2>
-  <p>The two entries at the head of <code>PROT.DAT</code>'s TOC are both TIM-packs. They sit in the region the extraction index space skips - the game's own TOC counts entries 2 higher than this project's extraction, so raw entry <code>p + 2</code> = extraction entry <code>p</code> (see <a href="prot.html#in-ram-toc">PROT TOC</a>). Together they are the <strong>system-UI bundle</strong>: the cursors, menu glyphs and sprite sheets uploaded once at boot and never evicted, resident in video memory from the title screen through every scene and mode.</p>
+  <h2>Raw TOC entries 0 and 1: the boot system UI and the GAME OVER page</h2>
+  <p>The two entries at the head of <code>PROT.DAT</code>'s TOC are both TIM-packs. They sit in the region the extraction index space skips - the game's own TOC counts entries 2 higher than this project's extraction, so raw entry <code>p + 2</code> = extraction entry <code>p</code> (see <a href="prot.html#in-ram-toc">PROT TOC</a>). They are CDNAME's two head names, and they have different loaders. Raw entry 0 (<code>init_data</code>) is the <strong>system UI</strong>: the cursors, menu glyphs and sprite sheets that the boot image <code>init.pak</code> (PROT 0895) uploads once and never evicts, resident in video memory from the title screen through every scene and mode. Raw entry 1 (<code>gameover_data</code>) belongs to the GAME OVER screen and only that overlay loads it (<a href="../subsystems/boot-internals.html#system-ui-gap">loaders</a>).</p>
   <p class="hint">The coordinates below are framebuffer positions in the PSX's 1024&times;512 video memory (VRAM), where images and palettes both live as pixels. A CLUT is such a palette: a 16- or 256-colour lookup table stored as a row of framebuffer pixels.</p>
   <p>Raw entry 0 (sectors 3..55) declares 20 members:</p>
   <table>
@@ -51,13 +51,13 @@
       <tr><td><code>0x1AC90..0x1AED0</code></td><td>four cursor-part TIMs</td><td>images at <code>(976,256..)</code></td></tr>
     </tbody>
   </table>
-  <p>Raw entry 1's single TIM is a UI page at image <code>(640,0)</code> with a 256-entry CLUT declared <code>(0,480,256,1)</code>.</p>
-  <p>Because the bundle never leaves VRAM, field environment meshes can reference palette cells on row 510 that no scene TIM ever uploads (<code>town01</code> env slots 21/26/74, <code>rikuroa</code> slots 50/51/63). In the port, the scene VRAM pre-pass uploads the bundle the same way (<code>SceneResources</code> with <code>BuildOptions::system_ui</code>), byte-exact against retail VRAM.</p>
+  <p>Raw entry 1's single TIM is the GAME OVER page at image <code>(640,0)</code> with a 256-entry CLUT declared <code>(0,480,256,1)</code>, followed by a pack of 29 TMDs. No retail field, battle or menu save state holds its palette.</p>
+  <p>Because the bundle never leaves VRAM, field environment meshes can reference palette cells on row 510 that no scene TIM ever uploads (<code>town01</code> env slots 21/26/74, <code>rikuroa</code> slots 50/51/63). In the port, the scene VRAM pre-pass uploads raw entry 0 the same way (<code>SceneResources</code> with <code>BuildOptions::system_ui</code>, through <code>upload_boot_resident_to_vram</code>), byte-exact against retail VRAM, and leaves raw entry 1 out.</p>
   <details class="disclosure" id="deviating-shapes">
     <summary>Two member shapes that deviate from a plain TIM list</summary>
     <div class="disclosure-body">
       <ul class="bullets">
-        <li><strong>Flat-strip CLUT upload.</strong> The retail per-TIM uploader writes every member TIM's CLUT block as a flattened <code>(clut_x, clut_y, w*h, 1)</code> strip, NOT the declared <code>w &times; h</code> rect - which for the row-510/511 banks would overflow VRAM at <code>y &gt;= 512</code>. The bundle's strips populate CLUT rows 510/511 (<code>fb_x</code> 0..320) plus the <code>(896, 498..=501)</code> / <code>(976, 304..=307)</code> side cells and raw entry 1's row-480 strip. See <a href="npc-palette.html">npc-palette</a> for the row layout and capture evidence.</li>
+        <li><strong>Flat-strip CLUT upload.</strong> The retail per-TIM uploader writes every member TIM's CLUT block as a flattened <code>(clut_x, clut_y, w*h, 1)</code> strip, NOT the declared <code>w &times; h</code> rect - which for the row-510/511 banks would overflow VRAM at <code>y &gt;= 512</code>. The bundle's strips populate CLUT rows 510/511 (<code>fb_x</code> 0..320) plus the <code>(896, 498..=501)</code> / <code>(976, 304..=307)</code> side cells; raw entry 1's row-480 strip lands only when the GAME OVER overlay loads it. See <a href="npc-palette.html">npc-palette</a> for the row layout and capture evidence.</li>
         <li><strong>Row-patch members.</strong> Six members carry no TIM magic: an 8-byte preamble followed by a bare TIM-style image block <code>[u32 bnum][u16 x][u16 y][u16 w][u16 h]</code> + halfword data (<code>bnum = 12 + w*h*2</code>). All six declare <code>(960, y, 256, 1)</code> for <code>y &isin; {456, 457, 458, 460, 461, 462}</code> - single rows patched over the atlas image, VRAM-edge-clipped to the visible 64 words. Live captures hold exactly these bytes over the disc atlas at those rows, in every phase.</li>
       </ul>
     </div>

@@ -1,0 +1,202 @@
+<!--HEAD: <style>
+/* Family colours: categorical slots in a fixed order, stepped per theme.
+ * Dark is the site default; the light block restates them. Neutrals (iso,
+ * filler, unknown) are greys so the eight hues stay for content. */
+.dm-root {
+  --dm-scene:   #3987e5;
+  --dm-audio:   #d95926;
+  --dm-model:   #199e70;
+  --dm-code:    #c98500;
+  --dm-texture: #d55181;
+  --dm-movie:   #3f9a3f;
+  --dm-effect:  #9085e9;
+  --dm-system:  #e66767;
+  --dm-archive: #7f8aa0;
+  --dm-iso:     #4a5161;
+  --dm-filler:  #343a46;
+  --dm-unknown: #666e7d;
+  --dm-gap:     var(--bg);
+}
+:root[data-theme="light"] .dm-root {
+  --dm-scene:   #2a78d6;
+  --dm-audio:   #eb6834;
+  --dm-model:   #1baf7a;
+  --dm-code:    #eda100;
+  --dm-texture: #e87ba4;
+  --dm-movie:   #008300;
+  --dm-effect:  #6250d6;
+  --dm-system:  #e34948;
+  --dm-archive: #8792a6;
+  --dm-iso:     #aab2bf;
+  --dm-filler:  #d4d9e1;
+  --dm-unknown: #9aa2ae;
+}
+
+.dm-root { display: flex; flex-direction: column; gap: 0.75rem; }
+.dm-toolbar {
+  display: flex; flex-wrap: wrap; gap: 0.5rem 0.9rem; align-items: center;
+  justify-content: space-between;
+}
+.dm-crumbs {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 0.15rem 0.35rem;
+  font-family: var(--font-mono); font-size: 0.82rem; min-width: 0;
+}
+.dm-crumbs button {
+  background: none; border: 1px solid transparent; color: var(--accent);
+  font: inherit; padding: 0.1rem 0.3rem; border-radius: 3px; cursor: pointer;
+}
+.dm-crumbs button:hover { border-color: var(--accent-line); }
+.dm-crumbs button[aria-current="true"] { color: var(--text-bright); cursor: default; }
+.dm-crumbs .dm-sep { color: var(--text-dim); }
+.dm-search {
+  background: var(--bg-code); color: var(--text); border: 1px solid var(--border);
+  padding: 0.35rem 0.55rem; font: inherit; font-size: 0.84rem; border-radius: 3px;
+  width: 17rem; max-width: 100%;
+}
+.dm-body {
+  display: grid; grid-template-columns: minmax(0, 1fr) 19rem; gap: 0.9rem; align-items: start;
+}
+@media (max-width: 980px) { .dm-body { grid-template-columns: minmax(0, 1fr); } }
+.dm-stage { position: relative; min-width: 0; }
+svg.dm-svg {
+  display: block; width: 100%; height: auto; max-width: 100%;
+  background: var(--bg-code); border: 1px solid var(--border); border-radius: 4px;
+  touch-action: manipulation; user-select: none;
+}
+.dm-svg rect.dm-leaf { stroke: var(--dm-gap); stroke-width: 1; cursor: pointer; }
+.dm-svg rect.dm-leaf:hover, .dm-svg rect.dm-leaf.is-hot { stroke: var(--text-bright); stroke-width: 2; }
+.dm-svg rect.dm-leaf.is-sel { stroke: var(--text-bright); stroke-width: 2.5; }
+.dm-svg rect.dm-group { fill: var(--bg-card); stroke: var(--border-hi); stroke-width: 1; cursor: zoom-in; }
+.dm-svg rect.dm-group:hover { stroke: var(--accent); }
+.dm-svg text { pointer-events: none; font-family: var(--font-mono); }
+.dm-svg text.dm-glabel { fill: var(--text-muted); font-size: 11px; }
+.dm-svg text.dm-glabel tspan.dm-gsize { fill: var(--text-dim); }
+.dm-svg text.dm-llabel { font-size: 10.5px; }
+.dm-svg .is-dim { opacity: 0.18; }
+.dm-tip {
+  position: absolute; pointer-events: none; z-index: 5; max-width: 19rem;
+  background: var(--bg-raised); border: 1px solid var(--border-hi); border-radius: 4px;
+  box-shadow: 0 6px 18px var(--shadow); padding: 0.45rem 0.6rem;
+  font-family: var(--font-mono); font-size: 0.76rem; color: var(--text); line-height: 1.45;
+}
+.dm-tip b { color: var(--text-bright); }
+.dm-tip .dm-k { color: var(--text-dim); }
+.dm-hint { color: var(--text-dim); font-size: 0.8rem; margin-top: 0.35rem; }
+
+.dm-side { display: flex; flex-direction: column; gap: 0.75rem; min-width: 0; }
+.dm-card {
+  background: var(--bg-card); border: 1px solid var(--border); border-radius: 4px;
+  padding: 0.7rem 0.8rem; min-width: 0;
+}
+.dm-card h3 {
+  font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.06em;
+  color: var(--text-dim); margin: 0 0 0.45rem; font-weight: 600;
+}
+.dm-detail-title { color: var(--text-bright); font-family: var(--font-mono); font-size: 0.95rem; overflow-wrap: anywhere; }
+.dm-detail-what { color: var(--text-muted); font-size: 0.84rem; margin: 0.15rem 0 0.5rem; }
+dl.dm-kv { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 0.15rem 0.7rem; font-size: 0.8rem; }
+dl.dm-kv dt { color: var(--text-dim); font-family: var(--font-mono); }
+dl.dm-kv dd { margin: 0; font-family: var(--font-mono); color: var(--text); overflow-wrap: anywhere; }
+.dm-links { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 0.6rem; }
+.dm-links a, .dm-links button {
+  font-family: var(--font-mono); font-size: 0.76rem; text-decoration: none;
+  border: 1px solid var(--border-hi); border-radius: 3px; padding: 0.22rem 0.5rem;
+  color: var(--text); background: var(--bg-card-hi); cursor: pointer;
+}
+.dm-links a:hover, .dm-links button:hover { border-color: var(--accent); color: var(--text-bright); }
+.dm-legend { display: flex; flex-direction: column; gap: 0.12rem; }
+.dm-legend button {
+  display: grid; grid-template-columns: 0.85rem minmax(0, 1fr) auto; gap: 0.5rem; align-items: center;
+  background: none; border: 1px solid transparent; border-radius: 3px; padding: 0.18rem 0.3rem;
+  font: inherit; font-size: 0.8rem; color: var(--text); text-align: left; cursor: pointer; width: 100%;
+}
+.dm-legend button:hover { border-color: var(--border-hi); }
+.dm-legend button[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-soft); }
+.dm-legend button.is-empty { opacity: 0.45; }
+.dm-sw { width: 0.85rem; height: 0.85rem; border-radius: 2px; border: 1px solid var(--border-hi); }
+.dm-legend .dm-pct { color: var(--text-dim); font-family: var(--font-mono); font-size: 0.74rem; }
+.dm-list { display: flex; flex-direction: column; gap: 0.05rem; max-height: 17rem; overflow-y: auto; }
+.dm-list button {
+  display: grid; grid-template-columns: 0.6rem minmax(0, 1fr) auto; gap: 0.45rem; align-items: center;
+  background: none; border: 1px solid transparent; border-radius: 3px; padding: 0.16rem 0.3rem;
+  font-family: var(--font-mono); font-size: 0.76rem; color: var(--text-muted); text-align: left; cursor: pointer; width: 100%;
+}
+.dm-list button:hover { border-color: var(--border-hi); color: var(--text-bright); }
+.dm-list .dm-sw { width: 0.6rem; height: 0.6rem; }
+.dm-list .dm-n { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dm-list .dm-s { color: var(--text-dim); }
+.dm-status { color: var(--text-dim); font-family: var(--font-mono); font-size: 0.8rem; }
+</style>
+<script src="js/disc-map.js"></script>
+-->
+<header class="page-header">
+  <div class="breadcrumb"><a href="index.html">home</a> &middot; disc map</div>
+  <h1>Disc map</h1>
+  <p class="lede">
+    Every sector of the Legend of Legaia disc, laid out as nested boxes. Each box is one region of
+    the image, sized by its sector count: the ISO9660 files, then inside <code>PROT.DAT</code> its
+    1233 entries grouped by CDNAME block and coloured by the format each one parses as. Hover a box
+    to see what it is and where it is documented; click to zoom in.
+  </p>
+</header>
+
+<section class="doc-section breakout" id="map">
+  <div class="dm-root" id="dm-root">
+    <div class="dm-toolbar">
+      <nav class="dm-crumbs" id="dm-crumbs" aria-label="Zoom path"></nav>
+      <input type="search" class="dm-search" id="dm-search" placeholder="Search: name, class, index, block&hellip;" autocomplete="off" aria-label="Search the disc map">
+    </div>
+    <div class="dm-body">
+      <div class="dm-stage" id="dm-stage">
+        <svg class="dm-svg" id="dm-svg" role="img" aria-label="Treemap of the disc's sectors"></svg>
+        <div class="dm-tip" id="dm-tip" hidden></div>
+        <p class="dm-hint" id="dm-hint">Click a box to zoom into it; the path above zooms back out. Escape also steps out one level.</p>
+      </div>
+      <aside class="dm-side">
+        <div class="dm-card" id="dm-detail">
+          <h3>Selected</h3>
+          <div class="dm-status" id="dm-status">Loading disc-map.json&hellip;</div>
+        </div>
+        <div class="dm-card">
+          <h3>Format families in this view</h3>
+          <div class="dm-legend" id="dm-legend"></div>
+        </div>
+        <div class="dm-card">
+          <h3 id="dm-list-title">Largest boxes in this view</h3>
+          <div class="dm-list" id="dm-list"></div>
+        </div>
+      </aside>
+    </div>
+  </div>
+</section>
+
+<section class="doc-section" id="about">
+  <h2>What the boxes are</h2>
+  <p>
+    The outer square is the whole Mode 2/2352 image, one unit of area per 2048-byte sector. Its
+    children are the ISO9660 directory extents and files in disc order: the boot configuration,
+    the <code>SCUS_942.54</code> executable, <code>CDNAME.TXT</code>, the <code>PROT.DAT</code>
+    asset archive, the CD-XA audio streams, the STR movies and the <code>DMY.DAT</code> fixture
+    archive, plus the system area ahead of the volume descriptors and any sectors no directory
+    record claims. See <a href="formats/disc.html">disc geometry</a>.
+  </p>
+  <p>
+    Inside <code>PROT.DAT</code>, the first boxes are the header and TOC and the two raw TOC rows
+    below extraction entry 0; the rest are the 1233 TOC entries, each sized by the sector gap to the
+    next entry (<a href="formats/prot.html">PROT.DAT TOC</a>), grouped by the
+    <a href="formats/cdname.html">CDNAME block</a> they belong to. An entry's index is its
+    extraction index - the <code>NNNN</code> in <code>extracted/PROT/NNNN_*.BIN</code> - and its
+    block is resolved in the raw-TOC frame, two rows ahead.
+  </p>
+  <p>
+    An entry's colour is the format family of the class the workspace categoriser assigns its bytes
+    (<code>legaia_disc_audit::categorize</code>). That says what an entry <em>is</em>, not how much
+    of it a parser consumes - <a href="tooling/byte-accounting.html">byte accounting</a> answers
+    that. Grey boxes are padding, filler slots and entries no named detector claims yet.
+  </p>
+  <p>
+    The map is drawn from <code>disc-map.json</code>, layout metadata only - names, LBAs, sector
+    counts and class names, no disc bytes - written by <code>asset disc-map &lt;disc.bin&gt; --out
+    site/disc-map.json</code>.
+  </p>
+</section>

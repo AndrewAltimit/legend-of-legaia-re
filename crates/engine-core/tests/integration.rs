@@ -122,6 +122,7 @@ mod field_camera_zone_arms_disc;
 mod field_chest_lid_disc;
 mod field_cold_spawn_disc;
 mod field_dialog_smoke;
+mod field_door_recentre_disc;
 mod field_floor_wave;
 mod field_ground_wave_disc;
 mod field_interact_dialogue_disc;

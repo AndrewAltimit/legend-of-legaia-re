@@ -149,7 +149,22 @@ The port runs it from the merchant open (`MenuRuntime::shop_fade_level`, a
 subtractive full-screen quad over the frozen field on both hosts) and starts
 the slides when it lands. Retail then holds black for about fifty frames while
 the menu overlay loads before the windows move; that load wait is not
-reproduced.
+reproduced. The slides are stepped on the tick after the fade ends, so the
+first window frame is already one step in from the park edge; no frame shows
+the set at home before it slides.
+
+**Leaving.** Quit (picker row 2) and a cancel on the picker both set
+sub-screen `0` (`0x801DB1AC`), which is `FUN_801DD12C`: on its first frame it
+hands the widget VM the close-all script `0x801E4A78` (`[05]`), so every
+window slides back out to its park edge; it then waits for the widget VM to
+go idle (`_DAT_8007BB80 == 0`, `0x801DD17C`) before it starts the fade
+(`DAT_801E46A0 = 0xF2`, session state `3`, `0x801DD18C..0x801DD19C`). The exit
+draws **no text** of its own; whatever line follows is the merchant's script
+resuming past op `0x49`. The port's `ShopExit` beat is that sub-screen: it
+holds for `SHOP_SLIDE_FRAMES` with the session (and so the windows' content)
+still up while `ShopSlides` steps every window out, and the session is dropped
+on the way out of the beat. Neither host draws a caption on `ShopExit`,
+`Closing` or `Deactivate`.
 
 **After a quantity screen** the hand returns to the list row it left - the
 kind-4 list keeps its selection behind the stepper - clamped to the rebuilt
@@ -627,9 +642,9 @@ ShopBuy/ShopSell --Cross--> ShopQuantity --Cross--> ShopConfirm --Cross--> ShopB
 Triangle from the buy or sell list returns to the top shop menu
 (`ShopMenu`), and only Triangle there leaves, through the transient
 `ShopExit` screen. `ShopExit` is auto-advancing: on entry it fires its
-one-shot commit (clears the session via `MenuRuntimeHost::commit` / `cancel`),
-holds for the render layer's fade (`transient_hold_frames`), then routes to the
-menu's `Closing` state. The same routing drives the inn (`InnConfirm` Yes →
+one-shot commit (clears the trade and recipient sessions), holds while the
+windows slide out (`transient_hold_frames`, [above](#screen-composition)), then
+routes to the menu's `Closing` state, dropping the shop session as it leaves. The same routing drives the inn (`InnConfirm` Yes →
 transient `InnSleep` fade → close; No → close).
 
 ## Gold-shop stock source

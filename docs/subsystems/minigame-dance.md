@@ -624,7 +624,7 @@ The ABR rate folds into the texpage attribute as `tpage + abr * 0x20`, so `abr =
 - **`tpage = 0x0008`** (31 rows): the 4bpp page at `(512, 0)` under the 256-entry CLUT strip at `(0, 500)`. Each widget CLUT id `0x7D00 + n` indexes a 16-colour column of it. Supplier: PROT 1230, of which exactly one member targets that origin and carries the strip as its CLUT block.
 - **`tpage = 0x001F`** (records `27` / `28` / `29`): the 4bpp page at `(960, 256)`, CLUT ids `0x443D` / `0x447D` / `0x44BD`, `0x10 x 0x10` cells at `u = 0x40` / `0x50` / `0x60`. These rows are drawn: the GPU control-register snapshot of a parked dance state reads `tex_page = (960, 256)`.
 
-The `(960, 256)` page is not in any PROT entry. It is boot-resident system UI, uploaded from the unindexed head gap of `PROT.DAT` that [`boot.md`](boot.md#pre-init_data-system-ui-gap-menu-glyph-atlas--boot-cursors) catalogues:
+The `(960, 256)` page is in no extraction entry. It is boot-resident system UI, uploaded from raw TOC entry 0 (`init_data`, the head region the extraction index skips) that [`boot.md`](boot.md#raw-toc-entries-0-and-1-init_data-gameover_data) catalogues:
 
 - `PROT.DAT[0x11218]` - the **menu-glyph atlas**, image origin `(960, 256)`, `64 x 256` halfwords. That rect is texpage `0x001F`.
 - `PROT.DAT[0x1AED0]` - image origin `(976, 272)`, `8 x 32` halfwords, one of the four cursor-part TIMs that patch sub-rects of the atlas page. The three CLUT ids decode to `(976, 272)` / `(976, 273)` / `(976, 274)` (column `61 * 16 = 976`, rows `272..274`): the first three rows of that patch, read as palettes.
