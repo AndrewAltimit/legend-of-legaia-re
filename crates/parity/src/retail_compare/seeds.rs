@@ -687,26 +687,29 @@ const PACKET_BUFFER_INDEX: u32 = 0x8007_B74C;
 /// subtracts the used bytes from).
 const PACKET_BUFFER_SIZE: u32 = 0x8007_B9CC;
 
-/// The CLUT-cell texels the **displayed** frame drew with, one rect per live
-/// mode-3 cycler ([`retail_cell_fx`]).
+/// The CLUT-cell texels of the **older** frame a state still holds, one rect
+/// per live mode-3 cycler ([`retail_cell_fx`]): one game frame newer than
+/// the frame on screen, and the nearest record of it left in RAM.
 ///
 /// `FUN_80019D50` does not write VRAM directly: it builds the repacked row as
 /// a `[x, y, w, h]` rect followed by the texels at the packet cursor
 /// `*(0x1F8003A0)`, bumps the cursor past them (`0x80019DA0..0x80019DD4`)
 /// and hands the block to `LoadImage` (`0x8001A004..0x8001A030`). The cursor
-/// allocates from the frame's own packet buffer, so every built frame keeps
-/// its cell uploads beside its primitives until the buffer comes round
-/// again. The frame on screen is the one built in the *other* buffer
-/// (`gp+0x434 ^ 1`), two game frames behind the RAM; its uploads are the
-/// first copy of each rect from that buffer's base, since that frame
-/// allocated contiguously from there and overwrote anything older below its
-/// end. A cycler is taken only when it had armed (`+0x9C > 1`) by the
-/// displayed frame, so `+0x9C` must be past that by the display lag.
+/// allocates from the frame's own packet buffer, so the two built frames a
+/// state holds keep their cell uploads beside their primitives: the newest
+/// in buffer `gp+0x434`, which VRAM matches, and the one before it in the
+/// other buffer, the first copy of each rect from that buffer's base (that
+/// frame allocated contiguously from there and overwrote anything older
+/// below its end). The frame on screen is one older again - the summon law
+/// of [`crate::retail_compare_battle::display_lag_vsyncs`] - and its buffer
+/// has been reused, so its own uploads are gone.
 ///
-/// The cycler's adds in RAM are the frame after: a strobe record re-keys
-/// `+0x94` between frames (`koin3`'s dance-floor rows), so seeding the RAM's
-/// adds draws a phase retail's frame never showed.
-pub fn retail_displayed_cell_rects(ram: &[u8]) -> Vec<SeededVramRect> {
+/// The RAM's adds are the newest frame's or, where the move program re-keys
+/// them after the upload, the next one's: `koin3`'s dance-floor and cone rows
+/// re-key `+0x90..+0x94` between frames, so seeding the RAM's adds draws a
+/// phase two or three frames from the one on screen. A cycler is taken only
+/// when it had armed (`+0x9C > 1`) by the older frame.
+pub fn retail_older_buffer_cell_rects(ram: &[u8]) -> Vec<SeededVramRect> {
     let index = game_anchors::i16_at(ram, PACKET_BUFFER_INDEX);
     if !(0..=1).contains(&index) {
         return Vec::new();

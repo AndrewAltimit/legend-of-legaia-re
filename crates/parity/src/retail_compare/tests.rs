@@ -225,11 +225,11 @@ fn a_clip_cursor_rewinds_to_the_displayed_frame() {
     assert_eq!(rewind_clip_cursor(48, 0x15, 8, 0), 48);
 }
 
-/// A cycler's cell is read off the displayed frame's packet buffer (the one
+/// A cycler's cell is read off the older frame's packet buffer (the one
 /// `gp+0x434` does not name), first copy from its base, and not off the
-/// buffer the RAM's frame built.
+/// buffer the newest frame built.
 #[test]
-fn displayed_cell_rects_come_from_the_other_packet_buffer() {
+fn older_buffer_cell_rects_come_from_the_other_packet_buffer() {
     let mut ram = vec![0u8; 0x20_0000];
     let put32 = |ram: &mut Vec<u8>, va: u32, v: u32| {
         let o = (va & 0x1F_FFFF) as usize;
@@ -239,7 +239,7 @@ fn displayed_cell_rects_come_from_the_other_packet_buffer() {
         let o = (va & 0x1F_FFFF) as usize;
         ram[o..o + 2].copy_from_slice(&v.to_le_bytes());
     };
-    // Two buffers; the RAM's frame built buffer 1, so buffer 0 is on screen.
+    // Two buffers; the newest frame built buffer 1, the one before it 0.
     put32(&mut ram, 0x8007_B728, 0x8010_0000);
     put32(&mut ram, 0x8007_B72C, 0x8012_0000);
     put32(&mut ram, 0x8007_B9CC, 0x1_0000);
@@ -262,10 +262,10 @@ fn displayed_cell_rects_come_from_the_other_packet_buffer() {
     block(&mut ram, 0x8010_8000, 0x7777, 0x7777);
     block(&mut ram, 0x8012_0020, 0x3333, 0x4444);
     assert_eq!(
-        retail_displayed_cell_rects(&ram),
+        retail_older_buffer_cell_rects(&ram),
         vec![((16, 507, 2, 1), vec![0x1111, 0x2222])]
     );
-    // Armed inside the lag: the displayed frame had not uploaded it.
+    // Armed inside the lag: the older frame had not uploaded it.
     put16(&mut ram, node + 0x9C, 3);
-    assert!(retail_displayed_cell_rects(&ram).is_empty());
+    assert!(retail_older_buffer_cell_rects(&ram).is_empty());
 }

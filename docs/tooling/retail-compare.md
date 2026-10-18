@@ -344,20 +344,30 @@ engine verdict:
   walls hue-cycle through green, and `cort_evolved_pre_battle` had scored
   its walls by the luck of the phase.
 
-  Those adds are the RAM's frame, two frames after the one on screen, and a
-  strobe record re-keys them between frames. So the child also gets the
-  cells as the **displayed** frame uploaded them (`retail_displayed_cell_rects`,
-  in the `LEGAIA_SEAT_VRAM_RECTS` file, written after the engine's cycler
-  output). `FUN_80019D50` builds each repacked row as a `[x, y, w, h]` block
-  at the packet cursor `*(0x1F8003A0)` (`0x80019DA0..0x80019DD4`) and
-  `LoadImage`s it from there (`0x8001A004..0x8001A030`), so a built frame
-  keeps its uploads in its own packet buffer (`DAT_8007B728[gp+0x434]`). The
-  displayed frame is the one built in the other buffer, and its copy of a
-  rect is the first one from that buffer's base. `minigame_dance_pcsx` is the
-  case: its frame's display list holds the `141`-grey push of the displayed
-  wait at the head of buffer `0` with the cycler rows right behind it, while
-  buffer `1` and VRAM hold the next frame's strobe, black at the spotlight
-  cones' CLUT `(32, 507)` where the displayed frame drew them lit.
+  Those adds are the newest frame's, or the next one's where the move
+  program re-keys them after the upload, and a strobe record re-keys them
+  every frame or two. The frame on screen is two frames older and its own
+  uploads are gone, so the child also gets the nearest record left: the
+  cells as the frame **after** the displayed one uploaded them
+  (`retail_older_buffer_cell_rects`, in the `LEGAIA_SEAT_VRAM_RECTS` file,
+  written after the engine's cycler output). `FUN_80019D50` builds each
+  repacked row as a `[x, y, w, h]` block at the packet cursor
+  `*(0x1F8003A0)` (`0x80019DA0..0x80019DD4`) and `LoadImage`s it from there
+  (`0x8001A004..0x8001A030`), so each of the two frames a state holds keeps
+  its uploads in its own packet buffer (`DAT_8007B728[gp+0x434]` for the
+  newest, which VRAM matches, the other for the one before). It is one frame
+  off by construction, which is the limit it leaves.
+
+  `minigame_dance_pcsx` measures all three. Its newest buffer holds the fade
+  push at grey `170`, the older one at `141` with the cycler rows right
+  behind it, and the displayed framebuffer reads `28` greys (one `3`-vsync
+  step of the fade) brighter than the other framebuffer, which the older
+  buffer's ordering table draws: the push on screen is `113`. The newest
+  frame's cells are black at the spotlight cones' CLUT `(32, 507)` where the
+  older frame's are lit. Of its 21 cyclers, 13 reproduce the newest upload
+  from the RAM's adds through the engine's kernel; the other eight reproduce
+  neither buffer's from them - a re-key after the upload, or a kernel
+  difference this measurement does not separate.
 
   So is the fog pool. Where its sheets have drifted to and how old they
   are is the `rand()` stream's history since the entry, which no seed
