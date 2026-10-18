@@ -142,3 +142,12 @@ changes = [
   ["states/terra_party_battle/image", 0.993, 0.992],
   ["states/zeto_call_wave_mid_cast/image", 0.918, 0.917],
 ]
+
+[[loosening]]
+file = "scripts/ci/retail-compare-baseline.json"
+reason = "The overlay now tints with retail's 5-bit modulation (ui_tint). In each of these frames a panel or plate texel that was a grid step bright now reads retail's value exactly (noa_levelup_banner's strip interior (19, 25, 108) -> retail's (16, 24, 107)), and the one block it moves across the threshold holds a glyph or effect that sits at a different pixel than retail's (block (29, 22) went 23.9 -> 24.1 of a 24 limit). The two delilas rows are patched-disc states, a cast effect behind the strip. The same run cut every menu state's error by 2-2.6 (menu_options 2.91 -> 0.33) and raised seven frames."
+changes = [
+  ["states/delilas_gi_spirit_artifact/image", 0.74, 0.738],
+  ["states/delilas_gi_spirit_streaks_v2/image", 0.861, 0.859],
+  ["states/noa_levelup_banner/image", 0.962, 0.961],
+]
