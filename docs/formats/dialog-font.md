@@ -32,6 +32,13 @@ The glyph tile-page is a plain PSX TIM at **`PROT.DAT` file offset `0x7F40`**: a
 `(0, 510)`. The font page uses only three palette indices: `0` = transparent
 background, `14` = the `(32,32,32)` drop-shadow, `15` = the glyph fill.
 
+On screen the shadow is a fixed `(33, 33, 33)` whatever the ink, and the ink
+of dialogue, menu text and every battle caption is the tier-7 grey
+`(206, 206, 206)`. The engine's stencil atlas whitewashes the fill and stores
+the shadow as `legaia_font::FONT_SHADOW_TEXEL` (`41`): its shader multiplies the
+whole texel by the ink, and `41` is the grey that lands on `33` under the
+tier-7 ink.
+
 This means the font is decodable **straight from the disc, no save state
 required** - `legaia_font::Font::from_disc_tim_and_scus` reads this TIM plus the
 SCUS width table and produces the same whitewashed atlas the save-state

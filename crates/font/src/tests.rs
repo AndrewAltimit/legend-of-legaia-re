@@ -331,7 +331,10 @@ fn from_disc_tim_and_scus_stencils_and_reads_widths() {
         font.atlas_rgba()[o..o + 4].try_into().unwrap()
     };
     assert_eq!(at(ox, oy), [255, 255, 255, 255]);
-    assert_eq!(at(ox + 1, oy), [32, 32, 32, 255]);
+    assert_eq!(
+        at(ox + 1, oy),
+        [FONT_SHADOW_TEXEL, FONT_SHADOW_TEXEL, FONT_SHADOW_TEXEL, 255]
+    );
 }
 
 /// Byte-exact parity oracle: the font decoded straight from the disc
@@ -372,4 +375,15 @@ fn disc_font_matches_extracted_artifacts() {
             "advance for byte 0x{c:02X} diverges"
         );
     }
+}
+
+/// Retail's text shadow is a fixed `(33, 33, 33)` and its ink the tier-7
+/// grey `206` (`v0_1_tetsu_dialogue_accept`, `menu_status_field`); the shader
+/// multiplies the texel by the ink, so the stored shadow must land on `33`
+/// under that ink - `32` drew it at `26`.
+#[test]
+fn shadow_texel_lands_on_retails_shadow_under_the_tier_7_ink() {
+    let ink = 206.0f32 / 255.0;
+    let drawn = (f32::from(FONT_SHADOW_TEXEL) * ink).round() as u8;
+    assert_eq!(drawn, 33);
 }
