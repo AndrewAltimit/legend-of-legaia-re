@@ -956,14 +956,10 @@
       modesEl.style.display = 'grid';
       window.__playRuntime = runtime;
       if (typeof window.__playApplyDevMenu === 'function') window.__playApplyDevMenu();
-      /* The precise-movement box reflects the engine's persisted option;
-       * the battle tools are session-only and start at the engine defaults. */
-      if (typeof window.__playSyncPreciseMove === 'function') window.__playSyncPreciseMove();
-      if (typeof window.__playSyncGroundFog === 'function') window.__playSyncGroundFog();
-      if (typeof window.__playSyncRenderToggles === 'function') window.__playSyncRenderToggles();
-      if (typeof window.__playSyncCameraDistance === 'function') window.__playSyncCameraDistance();
-      if (typeof window.__playApplyPageToggles === 'function') window.__playApplyPageToggles();
-      if (typeof window.__playSyncPageToggles === 'function') window.__playSyncPageToggles();
+      /* The option boxes reflect the engine's persisted options - after the
+       * page's session switches (Retail-faithful pins them) are applied; the
+       * battle tools are session-only and start at the engine defaults. */
+      if (typeof window.__playSyncAfterRuntime === 'function') window.__playSyncAfterRuntime(false);
       setSaveUi(true);
       /* A fresh runtime has an empty rack: mount the browser card (and any
        * card the player picked) before anything can open a save screen. */
@@ -1490,10 +1486,8 @@
       window.__playRuntime = runtime;
       remountCards();
       if (typeof window.__playApplyDevMenu === 'function') window.__playApplyDevMenu();
-      if (typeof window.__playApplyPreciseMove === 'function') window.__playApplyPreciseMove();
-      if (typeof window.__playApplyGroundFog === 'function') window.__playApplyGroundFog();
       if (typeof window.__playApplyBattleTools === 'function') window.__playApplyBattleTools();
-      if (typeof window.__playApplyPageToggles === 'function') window.__playApplyPageToggles();
+      if (typeof window.__playSyncAfterRuntime === 'function') window.__playSyncAfterRuntime(true);
       installXaBanks();
 
       /* Too many failures in a short window -> the scene itself is the problem;
@@ -2351,6 +2345,32 @@
   savedListEl.addEventListener('change', () => { rtCall('set_arts_saved_list', !!savedListEl.checked); canvas.focus(); });
   window.__playSyncPageToggles = syncPageToggles;
   window.__playApplyPageToggles = applyPageToggles;
+
+  /* After a runtime is built (disc load) or rebuilt (trap recovery): the
+   * page's session switches go first, because Retail-faithful pins the
+   * engine options - every box mirrored before that would show the stored
+   * values the pin has just overridden. Then every box mirrors the engine.
+   * `reapply` (recovery) first re-sends the boxes' session edits to the
+   * fresh runtime, except while Retail-faithful holds: the boxes then show
+   * the pinned values, and writing them would persist retail over the
+   * player's own settings. */
+  function syncAfterRuntime(reapply) {
+    if (reapply && !retailModeEl.checked) {
+      applyPreciseMove();
+      applyGroundFog();
+    }
+    applyPageToggles();
+    syncPreciseMove();
+    syncGroundFog();
+    syncRenderToggles();
+    syncCameraDistance();
+    syncPageToggles();
+    if (reapply) {
+      applySeeThrough();
+      applyRenderToggles();
+    }
+  }
+  window.__playSyncAfterRuntime = syncAfterRuntime;
 
   /* Learn spell / story flag - the native --learn-spell / --set-flag. */
   const parseId = (text) => {
