@@ -161,9 +161,74 @@ pub fn call_wave_stager_spawns(
     }
 }
 
+/// PROT 0961's stager `FUN_801F78A4` (row `0x20 + 26` of `0x801F6734`),
+/// reached through `gp[+0x714]` from its parts' op `0x20`:
+///
+/// | Arm | Seats |
+/// |---:|---|
+/// | 0 | `0x801F7AD0`, `0x801F7B1C` (`0x801F7914`, `0x801F7A30`) |
+/// | 1 | `0x801F7DB0` (`0x801F7A30`) |
+/// | 2 | `0x801F7DF4`, `0x801F7E38`, then four `0x801F7E80`, part `k` stored after its seat `+0x54 = 8 k + r % 32`, `+0x84 = r % 256 - 0x80`, `+0xBA = r % 128`, `+0xB6 = r % 256 + 0x800`, `+0x28 = r % 4096`, one `rand()` each in that order (`0x801F7944..0x801F79F4`) |
+/// | 3 | `0x801F8234`, `0x801F8278` (`0x801F7A18`, `0x801F7A30`) |
+///
+/// Every call is `FUN_80050ED4(caller + 0x14, caller + 0x24, record,
+/// 0x1000)`.
+///
+/// PORT: FUN_801F78A4 (PROT 0961 stager)
+pub fn dead_end_crisis_stager_spawns(
+    arm: u8,
+    caller: StagerCaller,
+    rand: &mut dyn FnMut() -> u32,
+) -> Vec<StagerSpawn> {
+    let at = |r: u32| on_caller(r, caller, 0x1000);
+    match arm {
+        0 => vec![at(0x801F_7AD0), at(0x801F_7B1C)],
+        1 => vec![at(0x801F_7DB0)],
+        2 => {
+            let mut out = vec![at(0x801F_7DF4), at(0x801F_7E38)];
+            for k in 0..4u16 {
+                let mut s = at(0x801F_7E80);
+                let wait = (k << 3) + (rand() % 32) as u16;
+                let lean = (rand() % 256) as i32 - 0x80;
+                let ba = (rand() % 128) as u16;
+                let b6 = (rand() % 256) as u16 + 0x800;
+                let roll = (rand() % 4096) as u16;
+                s.pokes = vec![
+                    (0x54, wait),
+                    (0x84, lean as u16),
+                    (0xBA, ba),
+                    (0xB6, b6),
+                    (0x28, roll),
+                ];
+                out.push(s);
+            }
+            out
+        }
+        3 => vec![at(0x801F_8234), at(0x801F_8278)],
+        _ => Vec::new(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn dead_end_crisis_arm_two_pokes_four_shards() {
+        let mut n = 0u32;
+        let mut rand = || {
+            n += 1;
+            n * 0x123
+        };
+        let s = dead_end_crisis_stager_spawns(2, StagerCaller::default(), &mut rand);
+        assert_eq!(s.len(), 6);
+        assert_eq!(n, 20, "five draws per shard");
+        assert!(s[2..].iter().all(|x| x.record == 0x801F_7E80));
+        // Shard 1: draws 6..=10.
+        assert_eq!(s[3].pokes[0], (0x54, 8 + (6 * 0x123) % 32));
+        assert_eq!(s[3].pokes[3], (0xB6, ((9 * 0x123) % 256 + 0x800) as u16));
+        assert_eq!(s[3].pokes[4], (0x28, 10 * 0x123));
+    }
 
     #[test]
     fn mystic_circle_fan_turns_by_a_sixteenth() {

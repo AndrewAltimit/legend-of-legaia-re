@@ -137,7 +137,12 @@ impl World {
                 if cmc::capture_arm_resets_pass_counter(run.prot_entry, arm) {
                     self.casting.module_pass_counter = 0;
                 }
-                let spawns = cmc::capture_arm_spawns_for(run.prot_entry, arm, spell_id);
+                let spawns = cmc::capture_arm_spawns_in(
+                    run.prot_entry,
+                    arm,
+                    spell_id,
+                    self.battle_first_monster_byte(),
+                );
                 if !spawns.is_empty() {
                     self.stage_module_arm_spawns(run.prot_entry, spawns, run.camera_shot, None);
                 }

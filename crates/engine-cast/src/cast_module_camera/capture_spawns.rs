@@ -554,9 +554,59 @@ const E944_3: [ModuleSpawn; 3] = [
     spawn(0x801F8320, SpawnAnchor::Victim),
 ];
 
+// PROT 0961's body `FUN_801F69D8` (Final Crisis / Dead End Crisis), three
+// arms. See `ghidra/scripts/funcs/overlay_cast_dead_end_crisis_0961_801f69d8.txt`.
+// 0x801F6C64, arm 0: on the caster's `+0x34` / `+0x44`.
+const E961_0: [ModuleSpawn; 1] = [spawn(0x801F7AB4, SpawnAnchor::Caster { y: 0 })];
+/// The point PROT 0961's arms 2 and 3 seat on: the caster's trio, lowered
+/// `0x200` on height and depth when the first formation monster is `0xB5`
+/// (`bne v0,s6` at `0x801F6F54`, `bne v1,v0` at `0x801F7168`).
+const E961_LOWERED: SpawnAnchor = SpawnAnchor::CasterShifted {
+    dy: -0x200,
+    dz: -0x200,
+};
+const E961_LEVEL: SpawnAnchor = SpawnAnchor::CasterShifted { dy: 0, dz: 0 };
+const E961_2_RECORDS: [u32; 3] = [0x801F7CA0, 0x801F7D00, 0x801F7D60];
+const E961_3_RECORDS: [u32; 11] = [
+    0x801F7EDC, 0x801F7F30, 0x801F7F84, 0x801F7FD8, 0x801F8048, 0x801F802C, 0x801F8094, 0x801F80FC,
+    0x801F8164, 0x801F81B0, 0x801F81FC,
+];
+const fn e961(records: [u32; 3], anchor: SpawnAnchor) -> [ModuleSpawn; 3] {
+    [
+        spawn(records[0], anchor),
+        spawn(records[1], anchor),
+        spawn(records[2], anchor),
+    ]
+}
+const fn e961_3(anchor: SpawnAnchor) -> [ModuleSpawn; 11] {
+    let r = E961_3_RECORDS;
+    [
+        spawn(r[0], anchor),
+        spawn(r[1], anchor),
+        spawn(r[2], anchor),
+        spawn(r[3], anchor),
+        spawn(r[4], anchor),
+        spawn(r[5], anchor),
+        spawn(r[6], anchor),
+        spawn(r[7], anchor),
+        spawn(r[8], anchor),
+        spawn(r[9], anchor),
+        spawn(r[10], anchor),
+    ]
+}
+// 0x801F6F88..0x801F6FB8, arm 2's pass.
+const E961_2: [ModuleSpawn; 3] = e961(E961_2_RECORDS, E961_LOWERED);
+const E961_2_LEVEL: [ModuleSpawn; 3] = e961(E961_2_RECORDS, E961_LEVEL);
+// 0x801F719C..0x801F728C, arm 3's pass, after its pool flush (`0x801F7134`).
+const E961_3: [ModuleSpawn; 11] = e961_3(E961_LOWERED);
+const E961_3_LEVEL: [ModuleSpawn; 11] = e961_3(E961_LEVEL);
+/// The first formation monster PROT 0961's arms 2 and 3 lower their point
+/// for.
+const E961_LOWERED_FORMATION: u8 = 0xB5;
+
 /// The capture-class entries whose spawns are seated per arm instead of by
 /// the pager.
-pub const CAPTURE_SPAWN_ENTRIES: [u32; 6] = [938, 940, 944, 946, 962, 966];
+pub const CAPTURE_SPAWN_ENTRIES: [u32; 7] = [938, 940, 944, 946, 961, 962, 966];
 
 /// Halfword stores a capture arm makes into a part it has just seated, as
 /// `(actor offset, value)`, applied after the part's seat run: PROT 0944's
@@ -625,6 +675,7 @@ pub fn capture_spawns_per_arm(prot_entry: u32, body: Option<u32>) -> bool {
         940 => body == Some(0x801F_7240),
         944 => body == Some(0x801F_6A04),
         946 => true,
+        961 => true,
         962 => body == Some(0x801F_69D8),
         966 => true,
         _ => false,
@@ -644,7 +695,7 @@ pub fn capture_spawns_per_arm(prot_entry: u32, body: Option<u32>) -> bool {
 pub fn capture_arm_flushes_pool(prot_entry: u32, phase: u8) -> bool {
     matches!(
         (prot_entry, phase),
-        (938, 2 | 3) | (940, 7) | (944, 2 | 4) | (946, 6)
+        (938, 2 | 3) | (940, 7) | (944, 2 | 4) | (946, 6) | (961, 1 | 3 | 5)
     )
 }
 
@@ -669,6 +720,22 @@ pub fn capture_arm_spawns_for(prot_entry: u32, phase: u8, action: u8) -> &'stati
     }
 }
 
+/// [`capture_arm_spawns_for`] in a battle whose first formation monster is
+/// `first_monster` (`0x8007BD0C`): PROT 0961's arms 2 and 3 seat level with
+/// the caster outside the evolved Cort's formation.
+pub fn capture_arm_spawns_in(
+    prot_entry: u32,
+    phase: u8,
+    action: u8,
+    first_monster: u8,
+) -> &'static [ModuleSpawn] {
+    match (prot_entry, phase) {
+        (961, 2) if first_monster != E961_LOWERED_FORMATION => &E961_2_LEVEL,
+        (961, 3) if first_monster != E961_LOWERED_FORMATION => &E961_3_LEVEL,
+        _ => capture_arm_spawns_for(prot_entry, phase, action),
+    }
+}
+
 /// The spawn calls capture-class module `prot_entry`'s arm `phase` makes on
 /// its pass; empty for an arm that makes none. A call one action's branch
 /// alone makes is listed ([`capture_arm_spawns_for`] filters it).
@@ -687,6 +754,9 @@ pub fn capture_arm_spawns(prot_entry: u32, phase: u8) -> &'static [ModuleSpawn] 
         (938, 1) => &E938_1,
         (938, 2) => &E938_2,
         (938, 3) => &E938_3,
+        (961, 0) => &E961_0,
+        (961, 2) => &E961_2,
+        (961, 3) => &E961_3,
         (962, 0) => &E962_0,
         (966, 2) => &E966_2,
         (966, 4) => &E966_4,

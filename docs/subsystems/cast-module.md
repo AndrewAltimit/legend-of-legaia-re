@@ -2475,7 +2475,7 @@ of the module is on screen through `0x6E` / `0x6F`
 module whose arms are not ported seats its whole record set at the caster on
 the band's first `0x70` tick, where its first arm runs
 (`CastFxState::capture_fx_pending`); seated at the pager, the records drew
-through the fade and ran out before the arms that seat them. Six bodies
+through the fade and ran out before the arms that seat them. Seven bodies
 instead seat their spawn calls on the passes their arms make them inside
 `0x70` (`cast_module_camera::capture_arm_spawns`, keyed on the module and the
 body the trampoline picks, `capture_spawns_per_arm`), which also keeps a
@@ -2489,10 +2489,12 @@ cell's other bodies' records off the screen:
 | 0940 Mystic Shield (`0xAC`), `0x801F7240` | arm 1 `0x801F82D4` and arm 3 four records on the caster as each passes; arm 2 every eighth pass `0x801F8370` and every fourth an `efect.dat` effect `3`, arms 4 and 5 every eighth pass `0x801F84EC`, off the body's pass counter `0x801F8650` (`capture_arm_counted`); arm 4 the [sphere](#the-mystic-shield-effect); arm 7 flushes the pool | `FUN_801F82CC` is a bare `jr ra` |
 | 0944 Guilty Cross (`0x37`), `0x801F6A04` | arm 1 two camera-locked records on the zeroed stack trios; arm 2, after flushing the pool, three on the victim, the third `0x801F81E8` then stored `+0x16 = -0x1200`, `+0x42 = 1` (`capture_spawn_pokes`); arm 3 three on the victim as the hit lands; arm 4 flushes the pool | `FUN_801F7F2C`: arm 0 `0x801F7FE8`, arm 1 `0x801F8244` and `0x801F8290`, arm 2 `0x801F8290`, each at the caller's scale; the arm-3 record `0x801F8210` calls arms 1 and 2 |
 | 0946 Call Wave (`0x55`) / Big Wave (`0x56`), `0x801F69FC` | Call Wave's arm 0 the ray caller `0x801F78CC` on the caster's `+0x3C`; Big Wave's arm 4 the wave caller `0x801F7C44`, arm 5 nine records, arm 6 four, after halting every handle it keeps (`capture_arm_spawns_for` keys arm 0 on the action) | `FUN_801F76C4`: arm 0 three rings and eight rays `0x801F7970` with per-ray `rand()` waits, leans, lengths and rolls; arm 1 one wave `0x801F7BF8` into a sixteen-slot handle table while the phase is below `7` |
+| 0961 Final Crisis / Dead End Crisis (`0xB4` / `0xA1`), `0x801F69D8` | arm 0 `0x801F7AB4` on the caster; arm 2 three records and arm 3, after flushing the pool, eleven, all on the caster's trio lowered `0x200` on height and depth in the evolved Cort's formation (`CasterShifted`, `capture_arm_spawns_in`); arms 1, 3 and 5 flush the pool on their pass | `FUN_801F78A4`: arm 0 `0x801F7AD0` and `0x801F7B1C`, arm 1 `0x801F7DB0`, arm 2 two records then four shards `0x801F7E80` with five `rand()` pokes each, arm 3 `0x801F8234` and `0x801F8278` |
 
 The ported stagers run off the parts' own calls
 (`chaos_breath_cell_stager_spawns`, `guilty_cross_cell_stager_spawns`,
-`call_wave_stager_spawns`, `blade_breath_cell_stager_spawns`, via
+`call_wave_stager_spawns`, `blade_breath_cell_stager_spawns`,
+`dead_end_crisis_stager_spawns`, via
 `World::run_part_stager_calls`) and
 only for the bodies above; the cells' other bodies (Chaos Breath, Glare, Curse All and
 the rest of their cells) keep the whole-set placement. Big Wave's arm 6 also
