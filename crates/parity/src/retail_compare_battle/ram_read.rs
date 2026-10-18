@@ -232,6 +232,7 @@ impl RetailBattle {
                     in_ram(p).then(|| game_anchors::u16_at(ram, p + 0x46) & 0xFFF)
                 })
                 .collect(),
+            turn_owner: game_anchors::u8_at(ram, ctx + NEXT_ACTOR),
             init_keys: (0..8u32)
                 .map(|slot| {
                     let p = game_anchors::u32_at(ram, ACTOR_TABLE + slot * 4);
