@@ -112,3 +112,10 @@ reason = "The battle draw now draws only the objects the seat's per-channel mode
 changes = [
   ["states/noa_levelup_fight_pre/image", 0.833, 0.832],
 ]
+
+[[loosening]]
+file = "scripts/ci/retail-compare-baseline.json"
+reason = "Move-VM op 0x1C now stores its length-channel rate at +0xCA (0x8002367C), where the beam builder reads it; the port had stored it to a field nothing read, so every op-0x1C beam stayed at zero length and Call Wave's red rays never drew. They draw now, but their angles come from rand(), so the thin lines land on different 8x8 blocks than retail's. The same lane raised six cast frames (horn_summon_mid_cast 0.541 -> 0.966)."
+changes = [
+  ["states/zeto_call_wave_mid_cast/image", 0.932, 0.929],
+]
