@@ -35,7 +35,7 @@
 use legaia_engine_core::dev_menu_host::DevMenuWorldExt;
 use legaia_engine_menus::dev_menu_host::{DevMenuSession, DevPage};
 use legaia_engine_screens::dev_menu::{
-    DEV_RECORDS_PEN, RECORDS_TOGGLE, dev_menu_list_draws, dev_records_model, records_view,
+    DEV_RECORDS_PEN, RECORDS_TOGGLE, dev_menu_list_draws, records_draws_for_world,
 };
 use legaia_engine_system::pad::retail_packed;
 use legaia_engine_ui::{self as ui, TextDraw};
@@ -95,7 +95,7 @@ impl LegaiaRuntime {
     }
 
     /// The records screen (`FUN_801ED710`) at `pen`, retail stage pixels -
-    /// the browser twin of the native `records_draws_at`, shared by the dev
+    /// the native `records_draws_at`'s builder (`records_draws_for_world`), shared by the dev
     /// Records page and the end-of-game soft reset
     /// (`World::soft_reset_records_pen`).
     pub(crate) fn records_draws_at(
@@ -106,17 +106,7 @@ impl LegaiaRuntime {
         let Some(scene) = self.scene_host.host() else {
             return Vec::new();
         };
-        let world = &scene.world;
-        let records: Vec<&[u8]> = world
-            .party
-            .roster
-            .members
-            .iter()
-            .take(3)
-            .map(|m| m.raw.as_slice())
-            .collect();
-        let model = dev_records_model(&records, world.clock.play_time_seconds);
-        ui::records_screen_draws_for(font, &records_view(&model), pen)
+        records_draws_for_world(&scene.world, font, pen)
     }
 }
 

@@ -1208,13 +1208,14 @@ SIM_PAIRS: list[dict[str, object]] = [
         "`records_screen`) and its one view projection (`records_view`). "
         "Each host used to carry its own copy of both; a host that reads the "
         "record fields itself, or skips the clamp, shows different numbers "
-        "for the same save",
+        "for the same save. Both now take the whole screen from one builder, "
+        "`records_draws_for_world` (the roster walk, the model, the view)",
         "sites": {
             "native": (NATIVE_DEV_MENU, "records_draws_at"),
             "web": (WEB_PLAY_DEV_MENU, "records_draws_at"),
         },
         "mode": "symbols_all",
-        "symbols": ["dev_records_model", "records_view"],
+        "symbols": ["records_draws_for_world"],
     },
     {
         "what": "play clock - the H:MM:SS box the pause menu draws reads "
