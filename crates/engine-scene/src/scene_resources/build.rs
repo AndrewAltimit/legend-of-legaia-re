@@ -526,8 +526,10 @@ impl SceneResources {
         // hue-ramp was painted here unconditionally; that paint was from
         // an unknown scene and over-rendered every town.
 
-        // Boot-resident system-UI bundle (raw PROT TOC entries 0/1): retail
-        // uploads it at boot, BEFORE any scene load, and never evicts it.
+        // Boot-resident system UI (raw PROT TOC entry 0, `init_data`): retail
+        // uploads it at boot (`FUN_801CECD0`, PROT 0895), BEFORE any scene
+        // load, and never evicts it. Raw entry 1 is the GAME OVER overlay's
+        // page and is not part of the boot image, so it stays out.
         // The bundle's own members upload in pack order into a fresh VRAM
         // (last-write-wins, `FUN_800198E0` LoadImage semantics: image at
         // declared rect + flat-strip CLUT), then that boot image is layered
@@ -537,7 +539,7 @@ impl SceneResources {
         // sample them (town01 env slots 21/26/74, rikuroa slots 50/51/63).
         if let Some(bundle) = options.system_ui {
             let mut boot = Vram::new();
-            bundle.upload_to_vram(&mut boot);
+            bundle.upload_boot_resident_to_vram(&mut boot);
             vram.underlay(&boot);
         }
 

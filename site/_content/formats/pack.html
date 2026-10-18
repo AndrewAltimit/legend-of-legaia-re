@@ -87,7 +87,7 @@
       <tr><td>member <code>i</code></td><td><code>4 + word_offset[i] &times; 4</code></td><td><code>word_index[i] &times; 4 + 4</code> - the same byte</td></tr>
     </tbody>
   </table>
-  <p>Use <code>legaia_container_formats::pack</code> on a pack that starts at offset 0 (a chunk payload), and <code>prot::timpack</code> - or skip the 4-byte header first - on a whole chunk. <code>legaia_scene_formats::field_pack::scene_pack</code> locates the chunk-headered scene pack inside a CDNAME block. The <a href="effect.html">effect bundle</a> (<code>0x02018B0C</code>) is a genuinely different layout.</p>
+  <p>Use <code>legaia_container_formats::pack</code> on a pack that starts at offset 0 (a chunk payload), and <code>prot::timpack</code> - or skip the 4-byte header first - on a whole chunk. <code>legaia_scene_formats::field_pack::scene_pack</code> locates the chunk-headered scene pack inside a CDNAME block. The former <a href="effect.html">effect bundle</a> (<code>0x02018B0C</code>) is not a different layout: it is this pack behind a type-<code>0x02</code> chunk header, carrying 29 TMDs.</p>
 </section>
 
 <section class="doc-section" id="how-we-know">

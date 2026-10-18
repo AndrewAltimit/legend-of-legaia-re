@@ -192,8 +192,8 @@ pub fn assemble_field_scene_with(
     } else {
         SceneLoadKind::Field
     };
-    // Boot-resident system-UI bundle (raw PROT TOC entries 0/1): layers
-    // under the scene build so the row-510 strip CLUT + (960,256)
+    // Boot-resident system UI (raw PROT TOC entry 0 of the 0/1 bundle):
+    // layers under the scene build so the row-510 strip CLUT + (960,256)
     // menu-glyph atlas the env meshes sample (town01 slots 21/26/74,
     // rikuroa slots 50/51/63) are resident here too.
     let system_ui = index.system_ui_bundle().ok();

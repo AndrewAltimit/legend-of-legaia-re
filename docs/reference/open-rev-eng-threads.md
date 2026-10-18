@@ -68,6 +68,17 @@ Readings a re-audit against the disassembly or a capture overturned. They are
 listed here as well as in the registers, because a claim that was wrong once is
 the cheapest place to look for a claim that is still wrong.
 
+- **The "pre-`init_data` gap" is `init_data`, and only half of it boots.**
+  Raw TOC entries 0 and 1 are CDNAME's `init_data` and `gameover_data`.
+  `init.pak`'s `FUN_801CECD0` reads raw 0 and uploads it; raw 1 is the GAME
+  OVER overlay's load, so the port no longer puts it in every scene's VRAM.
+  The `title.pak` dev string is a load operand whose retail twin is
+  extraction entry 0 ([settled](re-settled-threads/title-boot-overlays.md),
+  [falsified](re-do-not-re-walk.md#title--boot--overlays)).
+- **The `0x02018B0C` "effect bundle" is a pack of 29 TMDs.** The word is a
+  type-`0x02` chunk header and its "schema offsets" are the pack's word
+  offsets; the GAME OVER overlay registers the meshes
+  ([falsified](re-do-not-re-walk.md#containers--placeholder-slots)).
 - **A save point opens the pause menu by itself.** Op `0x49`'s `-1` rows
   (sub-ops `1` and `0x0D`) are a scripted menu-button press: the enter half
   stores handler `7` before it reads the table, so the "the park simply
@@ -150,11 +161,7 @@ No open threads. Answered questions: [settled audio](re-settled-threads/audio.md
 
 ## Title / boot / overlays
 
-| Thread | Status | What would close it |
-|---|---|---|
-| Which routine uploads the system-UI TIMs in `PROT.DAT`'s pre-`init_data` gap? | open | The 118-sector gap between the TOC and `init_data` holds the boot-resident UI TIMs - the dialog font at `0x7F40`, the menu-glyph atlas at `0x11218`, the battle-chrome page - and no PROT entry covers it ([boot.md](../subsystems/boot.md#pre-init_data-system-ui-gap-menu-glyph-atlas--boot-cursors)). The likely path is the CD-DMA primitive `FUN_8005D9A0` from the SCUS boot sequence; a read watch on the gap's sectors (or a VRAM write watch on `(896, 0)`) during a cold boot names the caller. |
-
-Answered questions: [settled title / boot / overlays](re-settled-threads/title-boot-overlays.md); falsified readings: [title / boot / overlays](re-do-not-re-walk.md#title--boot--overlays), [no overlay function lives below `0x801CE818`](re-do-not-re-walk.md#no-overlay-function-lives-below-0x801ce818).
+No open threads. Answered questions: [settled title / boot / overlays](re-settled-threads/title-boot-overlays.md); falsified readings: [title / boot / overlays](re-do-not-re-walk.md#title--boot--overlays), [no overlay function lives below `0x801CE818`](re-do-not-re-walk.md#no-overlay-function-lives-below-0x801ce818).
 
 ## Containers / data blobs
 

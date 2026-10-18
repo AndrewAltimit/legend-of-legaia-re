@@ -652,7 +652,7 @@ The four command anchors run through the plate law (`plate = (rec.x - 8, rec.y -
 
 | Chrome | Page / CLUT | Piece rects (texels) | Disc source |
 |---|---|---|---|
-| Chip / plate 3-slice art | `(896,256)`; row 511 sub-pal 4 (blue) / 12 (gold) | caps `(208,v)` / `(216,v)` 8×20, body `(192,v)` 16×20; blue `v=0`, gold `v=64` | boot-gap TIM `PROT.DAT 0x18E0` ([`boot.md`](boot.md#pre-init_data-system-ui-gap-menu-glyph-atlas--boot-cursors)) |
+| Chip / plate 3-slice art | `(896,256)`; row 511 sub-pal 4 (blue) / 12 (gold) | caps `(208,v)` / `(216,v)` 8×20, body `(192,v)` 16×20; blue `v=0`, gold `v=64` | boot-gap TIM `PROT.DAT 0x18E0` ([`boot.md`](boot.md#raw-toc-entries-0-and-1-init_data-gameover_data)) |
 | D-pad glyph | `(896,256)`; sub-pal 7 | `(0,112)` 16×16, drawn 15×15 | same TIM |
 | AP plate | `(896,256)`; sub-pals 4 + 1 | label `(128,64)` 24×16, trough `(128,80)` 56×16, end box `(176,64)` 16×16, cap `(184,80)` 8×16; drawn at `(208..312, 172)`; "100" numeral tile `(64,136)` 16×6 (sub-pal 1) | same TIM |
 | Status plate row | `(896,256)`; sub-pals 4 / 1 / 5 | plate slices at `y=188`, HP badge `(208,86)` 16×10 at `(80,194)`, MP badge `(224,86)` at `(192,194)`, `/` separator `(96,64)` 8×16 | same TIM |

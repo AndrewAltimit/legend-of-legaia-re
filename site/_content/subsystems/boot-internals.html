@@ -256,8 +256,19 @@
       <p>Three sources (<code>0888 @ 0x1AA28</code>, <code>0889 @ 0x19A28</code>, <code>0890 @ 0x14228</code>) all land on the same absolute <code>PROT.DAT</code> offset; they looked like three entries only under the pre-correction entry size. A header-signature scan across the archive returns one hit, inside 0890.</p>
     </div>
   </details>
-  <h3 id="system-ui-gap">System-UI textures in the pre-entry gap</h3>
-  <p>A 118-sector region between the TOC (ends at <code>0x1800</code>) and the first indexed entry (<code>0x3C800</code>, sector 121) holds the small-caps menu font, the boot cursor and a few sprite strips - all 4-bpp TIMs targeting the bottom-right corner of VRAM. No per-entry extractor visits it.</p>
+  <h3 id="system-ui-gap">System-UI textures: raw TOC entries 0 and 1</h3>
+  <p>A 118-sector region between the TOC (ends at <code>0x1800</code>) and extraction entry 0 (<code>0x3C800</code>, sector 121) is skipped by the extraction index, but not by the TOC: it is <strong>raw TOC entries 0 and 1</strong>, which are exactly CDNAME's two head names, <code>init_data</code> and <code>gameover_data</code>. They have different loaders.</p>
+  <div class="table-wrap">
+  <table class="data-table">
+    <thead><tr><th>Raw index</th><th>CDNAME</th><th>Dev-tree file</th><th>Loaded by</th></tr></thead>
+    <tbody>
+      <tr><td>0 (sectors 3..55)</td><td><code>init_data</code></td><td><code>init\init.pak</code></td><td>the boot image (PROT 0895), state machine <code>FUN_801CECD0</code> arm 2; arm 3 uploads every TIM</td></tr>
+      <tr><td>1 (sectors 55..121)</td><td><code>gameover_data</code></td><td><code>gameover\gameover.pak</code></td><td>the GAME OVER overlay (PROT 0902) only</td></tr>
+      <tr><td>2 (extraction <code>0000</code>)</td><td>-</td><td><code>title\title.pak</code></td><td>the boot image, arm 6</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>Each dev-tree name is the operand of the developer-build branch of a load whose retail branch reads the raw index beside it, so the pairing is read straight off the instructions. Raw entry 0 holds the small-caps menu font, the boot cursor and a few sprite strips - 4-bpp TIMs targeting the bottom-right corner of VRAM. Raw entry 1's one page (<code>0x1B80C</code>) is the GAME OVER screen's, and no retail field, battle or menu save state holds its palette; the port's scene upload leaves it out.</p>
   <div class="table-wrap">
   <table class="data-table">
     <thead><tr><th>PROT.DAT offset</th><th>Dims</th><th>VRAM target</th><th>Purpose</th></tr></thead>
@@ -268,7 +279,7 @@
       <tr><td><code>0x10178</code></td><td>256&times;32</td><td>(896, 448)</td><td>AP / status-icon strip</td></tr>
       <tr><td><code>0x11218</code></td><td>256&times;256</td><td>(960, 256)</td><td><strong>menu-glyph small-caps font</strong></td></tr>
       <tr><td><code>0x19438</code></td><td>240&times;24</td><td>(960, 400)</td><td>UI sprite strip</td></tr>
-      <tr><td><code>0x1B80C</code></td><td>256&times;256</td><td>(640, 0)</td><td>system sprite sheet</td></tr>
+      <tr><td><code>0x1B80C</code></td><td>256&times;256</td><td>(640, 0)</td><td>raw entry 1: the GAME OVER page</td></tr>
     </tbody>
   </table>
   </div>
@@ -293,6 +304,7 @@
       <tr><td>field INIT / scene init</td><td><code>FUN_80025B64</code> / <code>FUN_801D6704</code></td><td>loads 0897, reads the scene id, writes mode 3</td></tr>
       <tr><td>intro skip</td><td><code>FUN_801D1344</code> / <code>FUN_8001FD44</code></td><td>flag-and-pad-gated one-shot; name packet to <code>town01</code></td></tr>
       <tr><td>menu-glyph atlas</td><td>RAM <code>0x80106478</code></td><td>byte-matches PROT.DAT <code>0x11218</code></td></tr>
+      <tr><td>system-UI loader</td><td><code>FUN_801CECD0</code> (PROT 0895)</td><td><code>FUN_8003EB98(0, buf, 1)</code> at <code>0x801CEDA8</code> / <code>0x801CEEF8</code>, then a <code>TIM_LIST</code> walk into <code>FUN_800198E0</code></td></tr>
     </tbody>
   </table>
   </div>

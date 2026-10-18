@@ -1,30 +1,44 @@
-//! Boot-resident **system-UI TIM bundle** - the `prot::timpack`s at **raw
-//! PROT TOC entries 0 and 1**.
+//! The two `prot::timpack`s at **raw PROT TOC entries 0 and 1** - the
+//! region extraction filenames never visit.
 //!
 //! `PROT.DAT`'s data region starts at the sector the first TOC word names
 //! (retail: sector 3), but the extraction index space starts at raw entry 2
-//! (`init_data`; see [`docs/formats/prot.md`]). Raw entries 0 and 1 - the
-//! region extraction filenames never visit - are two standalone TIM-packs
-//! ([`docs/formats/tim-pack.md`]) carrying the boot-time system UI: the
-//! menu-glyph / interior-page atlas (`PROT.DAT[0x11218]`, image `(960,256)`
-//! 64x256), the system-UI sprite sheet (`0x018E0`, image `(896,256)`
-//! 64x192), the boot cursor / icon parts, and (raw entry 1) a single UI
-//! page at image `(640,0)` with a 256-entry row-480 CLUT.
+//! (see [`docs/formats/prot.md`]). Raw entries 0 and 1 are the CDNAME heads
+//! `init_data 0` and `gameover_data 1`: two standalone TIM-packs
+//! ([`docs/formats/tim-pack.md`]) with **different loaders**.
+//!
+//! - **Raw entry 0 (`init_data`) is the boot-resident system UI.** The boot
+//!   asset-load state machine `FUN_801CECD0` (PROT 0895, `init.pak`) reads
+//!   it with `FUN_8003EB98(0, buf, 1)` and its next arm uploads every
+//!   `TIM_LIST` member through `FUN_800198E0`. It carries the menu-glyph /
+//!   interior-page atlas (`PROT.DAT[0x11218]`, image `(960,256)` 64x256),
+//!   the system-UI sprite sheet (`0x018E0`, image `(896,256)` 64x192) and
+//!   the boot cursor / icon parts.
+//! - **Raw entry 1 (`gameover_data`) is the GAME OVER screen's art.** Only
+//!   the game-over overlay (PROT 0902) loads it, with
+//!   `FUN_8003EB98(1, buf, 1)`: a single page at image `(640,0)` with a
+//!   256-entry row-480 CLUT, then a TMD chunk this module does not read.
+//!   No retail field, battle or menu capture holds it.
+//!
+//! The arm table is in `docs/subsystems/boot.md` (the pre-`init_data`
+//! section). [`SystemUiBundle::upload_boot_resident_to_vram`] is the boot
+//! upload (raw entry 0 only); [`SystemUiBundle::upload_to_vram`] uploads
+//! both entries, for tools that want every member's palette in place.
 //!
 //! The retail per-TIM uploader `FUN_800198E0` (see
 //! `ghidra/scripts/funcs/800198e0.txt`) walks the pack members in table
 //! order and uploads each TIM's image block at its declared rect and its
 //! CLUT block as a **flattened strip** - `LoadImage(rect = {clut_x, clut_y,
 //! w*h, 1})`, NOT the declared `w x h` rectangle (which for the row-510/511
-//! banks would overflow VRAM at y >= 512). The strips populate VRAM CLUT
-//! rows 510/511 (plus the `(896, 498..=501)` and `(976, 304..=307)` side
-//! cells and the raw-entry-1 row-480 strip); the images populate the
-//! `x >= 896` texture-page band + the `(640,0)` page. All of it is uploaded
-//! once at boot - resident from the title screen through every scene/mode,
-//! never evicted - which is why field env meshes can reference CBA cells on
-//! row 510 (`town01` env slots 21/26/74, `rikuroa` slots 50/51/63: CBA
-//! `(64,510)`, texpage `(960,256)`) that no scene TIM ever uploads. See
-//! [`docs/formats/npc-palette.md`] "Boot-resident strip band".
+//! banks would overflow VRAM at y >= 512). Raw entry 0's strips populate
+//! VRAM CLUT rows 510/511 (plus the `(896, 498..=501)` and
+//! `(976, 304..=307)` side cells); its images populate the `x >= 896`
+//! texture-page band. Uploaded once at boot and never evicted, it is
+//! resident from the title screen through every scene/mode, which is why
+//! field env meshes can reference CBA cells on row 510 (`town01` env slots
+//! 21/26/74, `rikuroa` slots 50/51/63: CBA `(64,510)`, texpage `(960,256)`)
+//! that no scene TIM ever uploads. See [`docs/formats/npc-palette.md`]
+//! "Boot-resident strip band".
 //!
 //! Later pack members legitimately overwrite earlier ones: the sprite strip
 //! at `0x19438` and the cursor parts at `0x19490..` land inside the
@@ -152,13 +166,40 @@ impl SystemUiBundle {
     /// last-write-wins, matching the retail per-TIM `LoadImage` sequence
     /// (later members overwrite - e.g. the cursor parts over the atlas
     /// image, the 256-entry atlas strip over the 16-entry member-3 strip).
+    ///
+    /// This uploads **both** raw entries. A scene's VRAM pre-pass wants
+    /// [`Self::upload_boot_resident_to_vram`] instead.
     pub fn upload_to_vram(&self, vram: &mut Vram) {
+        self.upload_members(vram, RAW_ENTRY_COUNT as u8);
+    }
+
+    /// Upload only what retail's **boot** leaves resident: raw entry 0
+    /// (`init_data`), the pack `FUN_801CECD0` reads with
+    /// `FUN_8003EB98(0, buf, 1)` (`0x801CEDA8` / `0x801CEEF8`) and uploads
+    /// in its next arm. Raw entry 1 is the GAME OVER overlay's own load
+    /// (PROT 0902, `FUN_8003EB98(1, ..)` at `0x801CE94C`), so a scene's
+    /// VRAM pre-pass must not carry it.
+    pub fn upload_boot_resident_to_vram(&self, vram: &mut Vram) {
+        self.upload_members(vram, 1);
+    }
+
+    /// Upload the members whose raw entry is below `entry_limit`, in pack
+    /// order.
+    fn upload_members(&self, vram: &mut Vram, entry_limit: u8) {
         // Walk TIM + row-patch members merged back into pack-member order
         // (raw entry, then member index) so the layering matches the
         // retail sequence: atlas (member 8), sprite strip (9), row
         // patches (10..15), cursor parts (16..19).
-        let mut ti = self.tims.iter().peekable();
-        let mut pi = self.row_patches.iter().peekable();
+        let mut ti = self
+            .tims
+            .iter()
+            .filter(|m| m.raw_entry < entry_limit)
+            .peekable();
+        let mut pi = self
+            .row_patches
+            .iter()
+            .filter(|p| p.raw_entry < entry_limit)
+            .peekable();
         loop {
             let t_key = ti.peek().map(|m| (m.raw_entry, m.member));
             let p_key = pi.peek().map(|p| (p.raw_entry, p.member));
@@ -459,6 +500,16 @@ mod tests {
         // LATER pack member, so it wins the pack-order layering.
         assert_eq!(vram.pixel(960, 456), 0x1111);
         assert_eq!(vram.pixel(963, 456), 0x4444);
+
+        // The boot upload leaves raw entry 1 (the GAME OVER page) out and
+        // is otherwise the same image.
+        let mut boot = Vram::new();
+        bundle.upload_boot_resident_to_vram(&mut boot);
+        assert_eq!(boot.pixel(0, 480), 0, "no row-480 strip at boot");
+        assert_eq!(boot.pixel(640, 0), 0, "no (640,0) page at boot");
+        assert_eq!(boot.pixel(0, 510), vram.pixel(0, 510));
+        assert_eq!(boot.pixel(960, 300), vram.pixel(960, 300));
+        assert_eq!(boot.pixel(960, 456), 0x1111);
     }
 
     #[test]

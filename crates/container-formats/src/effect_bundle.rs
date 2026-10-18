@@ -1,11 +1,25 @@
-//! Effect-bundle container - a magic-prefixed sub-region embedded inside a
-//! larger PROT entry, carrying the resident battle-effect master TMD.
+//! Detector for the word `0x02018B0C` - historically read as an
+//! "effect-bundle" magic. **It is not a magic and the region is not an
+//! effect format.** The word is a DATA_FIELD chunk header,
+//! `(0x02 << 24) | 0x018B0C`: asset type `0x02` (TMD pack) with a
+//! `0x018B0C`-byte payload, and the payload is an ordinary
+//! [`crate::pack`] of 29 Legaia TMDs. The names below map onto the pack:
+//! [`HEADER_A`] is the pack's `count` (29), [`HEADER_B`] its first word
+//! offset (`0x1E` = member 0 right after the table), and the 28-entry
+//! "offset table" is `word_offsets[1..29]` - word offsets, which is why
+//! they never lined up with the sub-TMDs as byte offsets. Every member
+//! opens with the TMD magic `0x80000002`. See
+//! `docs/formats/effect.md#on-disc-effect-bundle-magic-0x02018b0c`.
 //!
 //! ## Where it lives
 //!
-//! One entry on the retail disc carries it: **`0000_init_data`**, magic at
-//! file offset `0x10270` behind a `0xFF`-fill preamble. The magic occurs
-//! nowhere else in `PROT.DAT`, raw or through any embedded LZS stream.
+//! Two byte-identical copies in `PROT.DAT`: raw TOC entry 1
+//! (`gameover_data`, `PROT.DAT` `0x23A2C`, outside the extraction index
+//! space) and extraction entry **`0000_init_data`** at file offset
+//! `0x10270`, behind a two-TIM `TIM_LIST` chunk whose mostly-`0xFF`
+//! pixels read as a "preamble". The GAME OVER overlay (PROT 0902)
+//! registers the raw-entry-1 copy's members through `FUN_80026B4C`; no
+//! battle-effect code reads either copy.
 //!
 //! **Trap: not the `befect_data` cluster.** The `efect.dat` (PROT 0873) /
 //! `etmd.dat` (0871) reading is falsified - those entries do not contain
@@ -16,26 +30,21 @@
 //!
 //! ## Format
 //!
-//! A 4-byte magic word followed by two header u32s (constants in every
-//! observed file) and a fixed 28-entry ascending offset table:
+//! What the detector matches, with the pack reading beside each field:
 //!
 //! ```text
-//! [file start]
-//!   ...preamble (variable size; the 0xFF-fill allocator slot table)...
-//!   [u32 LE = MAGIC = 0x02018B0C]
-//!   [u32 LE = HEADER_A = 0x0000001D]   ; constant across all observed bundles
-//!   [u32 LE = HEADER_B = 0x0000001E]   ; constant across all observed bundles
-//!   [28 × u32 LE - offset table, ascending, anchored 0x17F4 .. 0x404D]
-//!   [asset region - packed Legaia TMD primitive groups + TIM textures]
-//! [file end]
+//!   [u32 LE = MAGIC = 0x02018B0C]      ; chunk header: type 0x02, len 0x018B0C
+//!   [u32 LE = HEADER_A = 0x0000001D]   ; pack count = 29
+//!   [u32 LE = HEADER_B = 0x0000001E]   ; word_offsets[0] (member 0 at +0x78)
+//!   [28 x u32 LE, 0x17F4 .. 0x404D]    ; word_offsets[1..29]
+//!   [29 Legaia TMDs]
 //! ```
 //!
-//! The 28 offsets run `0x17F4` through `0x404D`. They are abstract
-//! sub-record offsets - not file offsets - describing a fixed effect-record
-//! schema the runtime fills in. This mirrors the field-pack pattern in
-//! [`legaia_scene_formats::field_pack`]. With a single retail carrier the values are a
-//! measurement of that carrier, so [`SCHEMA_FIRST`] / [`SCHEMA_LAST`] are
-//! detector anchors rather than a cross-bundle invariant.
+//! This is the same misreading as the former "field-pack magic"
+//! `0x01059B84` (a `TIM_LIST` chunk header; see
+//! [`legaia_scene_formats::field_pack`]). [`SCHEMA_FIRST`] /
+//! [`SCHEMA_LAST`] are detector anchors on the one TMD pack, not a format
+//! invariant.
 //!
 //! ## What this gives us
 //!
@@ -48,15 +57,11 @@
 //!   bundles through this parser instead of falling through to the
 //!   stage-geometry / TIM-pack heuristics.
 //!
-//! ## What this doesn't (yet) do
+//! ## What this doesn't do
 //!
-//! - Interpret the asset region. The first asset record after the offset
-//!   table is a single Legaia TMD (magic `0x80000002`) covering many
-//!   primitive groups; the 28 schema offsets index into its primitive
-//!   data. Walking individual effect primitives requires the per-mode
-//!   descriptor table at `DAT_8007326c` - see `legaia_tmd::legaia_prims`.
-//! - Map each schema slot to a named effect. The runtime correspondence
-//!   (effect ID → slot index) lives in code that hasn't been traced yet.
+//! - Parse the members. Read the payload (chunk `+4`) with
+//!   [`crate::pack`] and each member with `legaia_tmd::parse`; the slot
+//!   "sizes" here are differences of word offsets, so multiply by four.
 
 use serde::Serialize;
 

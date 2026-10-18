@@ -149,7 +149,8 @@ CLUTs of the boot-resident **system-UI TIM bundle**, not scene data.
 The bundle is the `prot::timpack` at **raw PROT TOC entry 0**
 (CDNAME `init_data`; on-disc `PROT.DAT` sectors 3..55 - the region the
 extraction index space skips, since extraction entry 0 is raw entry 2;
-a second single-TIM pack sits at raw entry 1). The retail per-TIM
+a second single-TIM pack at raw entry 1, `gameover_data`, is the GAME
+OVER overlay's and is not boot-resident). The retail per-TIM
 uploader `FUN_800198E0` uploads **every** TIM's CLUT block as a
 `w*h × 1` strip at the block's declared origin (the rect
 `(clut_x, clut_y, w*h, 1)` is built inline before the `LoadImage`

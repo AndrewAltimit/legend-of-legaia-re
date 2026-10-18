@@ -16,7 +16,7 @@ type-specific handler; the payload is LZS-compressed (`FUN_8001A55C`, via
 | `parse_player_lzs`, `walk_descriptor_pairs`, `validate` | The `player.lzs`-style descriptor-table container. |
 | `parse_streaming`, `parse_streaming_with` | The DATA_FIELD chunk-stream walker. See [`data-field.md`](../../docs/formats/data-field.md). |
 | `pack` | The pack a streaming chunk carries (`u32 count`, `u32 word_offsets[count]`). See [`pack.md`](../../docs/formats/pack.md). |
-| `effect_bundle` | The on-disc effect bundle - magic `0x02018B0C`. See [`effect.md`](../../docs/formats/effect.md). |
+| `effect_bundle` | Detector for the word `0x02018B0C`, once read as an effect-bundle magic: a type-`0x02` DATA_FIELD chunk header on a `pack` of 29 TMDs. See [`effect.md`](../../docs/formats/effect.md#on-disc-effect-bundle-magic-0x02018b0c). |
 | `efect_pack` | The *runtime* `efect.dat` 2-pack (`[u32 pack0_off][u32 pack1_off][sprite atlas][pack0][pack1]`), recognised on the pack tables' own self-consistency. Distinct from `effect_bundle`; see [`docs/formats/effect.md`](../../docs/formats/effect.md). |
 | `data_field_truncated` | Retired class (produced by nothing): its one hit, 0892, is a `pack` of two TIMs whose header words the streaming reader took for chunk headers, and the three entries once named as members are ordinary four-chunk bundles. Pinned at zero in the validation suite. |
 | `anm_detect` | On-disc ANM (asset type 0x06) shape check wrapping `legaia_anm::parse`. |

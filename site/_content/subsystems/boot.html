@@ -189,9 +189,9 @@
   <ul class="bullets">
     <li><strong>Publisher logos - PROT 0895 <code>init.pak</code>.</strong> Four uncompressed TIMs (PROKION, Contrail, &ldquo;SCEA Presents&rdquo;, an epilepsy warning) played by the bundle&rsquo;s own sequencer in the order SCEA, Contrail, PROKION. The fade is not alpha: the quads are opaque and the sequencer scales their vertex colour, so the PSX texture blend <code>texel &times; colour / 128</code> darkens them to black. The warning is uploaded and <strong>never drawn</strong> - its sprite descriptor is the one no emit call passes.</li>
     <li><strong>Title wordmark - PROT 0890.</strong> One 256&times;256 sheet holds the orb, wordmark, Press Start prompt, copyright lines and the NEW GAME / CONTINUE footer; retail samples it in bands, and a demo-build label on the sheet is never drawn.</li>
-    <li><strong>System-UI textures - in no entry at all.</strong> A 118-sector gap between the TOC and the first indexed entry holds the menu font, the boot cursor and several sprite sheets.</li>
+    <li><strong>System-UI textures - raw TOC entry 0, <code>init_data</code>.</strong> The 118 sectors between the TOC and extraction entry 0 are two TOC entries the extraction index skips: <code>init_data</code> (the menu font, the boot cursor and several sprite sheets, which <code>init.pak</code> loads and uploads) and <code>gameover_data</code> (the GAME OVER screen's art).</li>
   </ul>
-  <p>Per-logo offsets, quad rectangles and pacing; the wordmark's source rectangles; the gap's seven TIMs: <a href="boot-internals.html#boot-art">internals</a>. The <a href="../play.html">play page</a> and the native window both run the logo stage ahead of the title card.</p>
+  <p>Per-logo offsets, quad rectangles and pacing; the wordmark's source rectangles; the two head entries' TIMs and loaders: <a href="boot-internals.html#boot-art">internals</a>. The <a href="../play.html">play page</a> and the native window both run the logo stage ahead of the title card.</p>
 </section>
 
 <section class="doc-section" id="debug-flags">

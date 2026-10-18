@@ -36,8 +36,11 @@ The `+4` is the chunk header. A [pack](pack.md) counts its offsets from the coun
 
 The two entries in `PROT.DAT`'s TOC head - **raw TOC entries 0 and 1**, the region the
 extraction index space skips (extraction entry `p` = raw entry `p + 2`; see
-[prot.md](prot.md)) - are both TIM-packs. Together they are the **boot-resident
-system-UI bundle**: raw entry 0 (sectors 3..55) declares 20 members, raw entry 1 one.
+[prot.md](prot.md)) - are both TIM-packs, and they are CDNAME's two head defines.
+Raw entry 0 (`init_data`, sectors 3..55) declares 20 members and is the **boot-resident
+system UI**; raw entry 1 (`gameover_data`, sectors 55..121) declares one, a TMD chunk
+follows it, and it is the GAME OVER screen's, loaded only by that overlay. The two
+loaders are in [boot.md](../subsystems/boot.md#the-loader-fun_801cecd0).
 Parser: `legaia_ui_formats::system_ui_bundle`; disc pins in `crates/ui-formats/tests/system_ui_bundle_real.rs`.
 
 Raw entry 0's members, in table order: the boot cursor (`PROT.DAT[0x01858]`), the
@@ -67,12 +70,15 @@ Two member shapes deviate from a plain TIM list:
   VRAM-edge-clipped to the visible 64 words. Live captures hold exactly these bytes over
   the disc atlas at those rows, in every phase.
 
-The whole bundle is uploaded once at boot and never evicted - resident from the title
-screen through every scene/mode. That is why field env meshes can reference CBA cells
-on row 510 (`town01` env slots 21/26/74, `rikuroa` slots 50/51/63: CBA `(64,510)`,
-texpage `(960,256)`) that no scene TIM ever uploads; the engine mirrors the upload in
-its scene VRAM pre-pass (`SceneResources::build_targeted_with_options` +
-`BuildOptions::system_ui`), byte-exact under the VRAM static-mask parity oracle.
+Raw entry 0 is uploaded once at boot (`FUN_801CECD0`, PROT 0895) and never evicted -
+resident from the title screen through every scene/mode. That is why field env meshes
+can reference CBA cells on row 510 (`town01` env slots 21/26/74, `rikuroa` slots
+50/51/63: CBA `(64,510)`, texpage `(960,256)`) that no scene TIM ever uploads; the
+engine mirrors the upload in its scene VRAM pre-pass
+(`SceneResources::build_targeted_with_options` + `BuildOptions::system_ui`, through
+`SystemUiBundle::upload_boot_resident_to_vram`), byte-exact under the VRAM static-mask
+parity oracle. Raw entry 1 is not part of that upload: the boot loader never reads it,
+and no retail field, battle or menu save state holds its row-480 CLUT.
 
 ## See also
 

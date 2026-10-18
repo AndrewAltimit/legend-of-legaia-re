@@ -88,11 +88,12 @@ pub struct BuildOptions<'a> {
     /// [`crate::scene::ProtIndex::system_ui_bundle`]). When set, the build
     /// layers its `FUN_800198E0`-style upload (image at declared rect,
     /// CLUT as a flattened strip) **underneath** the scene's VRAM: retail
-    /// uploads the bundle once at boot - before any scene load - and never
+    /// uploads raw entry 0 once at boot - before any scene load - and never
     /// evicts it, so it is resident in every scene/mode (rows 510/511
     /// strips, the `x >= 896` UI texture band, the menu-glyph atlas at
     /// `(960,256)` that town/dungeon env meshes sample via CBA
-    /// `(64,510)`). `None` skips the layer (legacy behaviour). Default
+    /// `(64,510)`). Raw entry 1 (the GAME OVER page) is left out, as at
+    /// retail boot. `None` skips the layer (legacy behaviour). Default
     /// `None`.
     pub system_ui: Option<&'a legaia_ui_formats::system_ui_bundle::SystemUiBundle>,
 }

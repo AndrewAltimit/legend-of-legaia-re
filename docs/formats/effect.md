@@ -3,10 +3,11 @@
 Two unrelated formats carry the "effect" name. The one battle code uses is the
 **runtime 2-pack** `data\battle\efect.dat` (extraction entry 0873): a sprite
 atlas, a pack of sprite animations and a pack of effect scripts that together
-drive the 2D billboard effects (hit sparks, element puffs, bursts). The other
-is an **on-disc bundle** with magic `0x02018B0C`, found in exactly one PROT
-entry. This page also maps the four-file `befect_data` cluster that `efect.dat`
-belongs to, since the effect textures, the 3D effect-model library and the
+drive the 2D billboard effects (hit sparks, element puffs, bursts). The other,
+the "on-disc bundle" with magic `0x02018B0C`, is not an effect format: the word
+is a DATA_FIELD chunk header on a pack of 29 TMDs that the GAME OVER overlay
+registers ([below](#on-disc-effect-bundle-magic-0x02018b0c)). This page also
+maps the four-file `befect_data` cluster that `efect.dat` belongs to, since the effect textures, the 3D effect-model library and the
 battle numeral sheet all live there.
 
 ## At a glance
@@ -17,7 +18,7 @@ battle numeral sheet all live there.
 | `befect_data` cluster | extraction 0870..0873 (`etim` / `etmd` / `vdf` / `efect`) | `legaia_actor_formats::befect_cluster`, CLI `asset befect-cluster` |
 | Runtime effect pool | `_DAT_8007BD30`, 5008 bytes | [`effect-vm.md`](../subsystems/effect-vm.md) |
 | Consumers | `FUN_801DE914` / `FUN_801DFDF8` / `FUN_801E0088`, battle overlay PROT 0898 | - |
-| On-disc bundle `0x02018B0C` | `0000_init_data` only | `legaia_container_formats::effect_bundle` |
+| "Bundle" `0x02018B0C` (a TMD-pack chunk header) | raw TOC entry 1 + extraction `0000` | `legaia_container_formats::pack` (detector `effect_bundle`) |
 
 ```mermaid
 flowchart TD
@@ -503,33 +504,36 @@ slot-0 CLUT + texture page ↔ VRAM `(0,488)` / `(512,0)`). Format and parser
 
 ## On-disc effect bundle (magic `0x02018B0C`)
 
-A scan of the PROT corpus finds this format in exactly one entry,
-`0000_init_data` (engine bootstrap data). Confidence: header and table
-**Confirmed** on that one carrier; the meaning of the offsets is **Unknown**.
+**`0x02018B0C` is not a magic and this is not an effect bundle.** It is a
+[DATA_FIELD](data-field.md) chunk header, `(0x02 << 24) | payload_len`: asset
+type `0x02` ([TMD pack](asset-type.md)) with a `0x018B0C`-byte payload, and the
+payload is an ordinary [`container-formats::pack`](pack.md) of 29 Legaia TMDs.
+Its "header" fields are the pack's own words:
 
-Offsets are relative to the magic, which follows a variable-size preamble in
-the file (`effect_bundle::detect` reports `magic_offset`).
-
-| Offset | Size | Field | Value |
+| Offset | Size | What the bundle reading called it | What it is |
 |---|---|---|---|
-| `+0` | u32 | magic | `0x02018B0C` |
-| `+4` | u32 | `HEADER_A` | `0x0000001D` = 29: 1 master TMD + up to 28 sub-effect slots |
-| `+8` | u32 | `HEADER_B` | `0x0000001E` = `HEADER_A + 1` |
-| `+12` | 28 × u32 | offset table | strictly ascending, below |
-| after | - | asset region | begins with a master Legaia TMD |
+| `+0` | u32 | magic `0x02018B0C` | chunk header: type `0x02`, length `0x018B0C` |
+| `+4` | u32 | `HEADER_A` = `0x1D` | pack `count` = 29 |
+| `+8` | u32 | `HEADER_B` = `0x1E` | `word_offsets[0]` = `0x1E`: member 0 begins at pack `+0x78`, right after the table |
+| `+12` | 28 × u32 | an offset table that "does not align with sub-TMDs" | `word_offsets[1..29]`, `0x17F4..0x404D`; times four they land on 28 more TMD headers |
 
-```
-0x17F4, 0x1832, 0x198F, 0x1B9B, 0x1D75, 0x1EFD, 0x20BB, 0x224B,
-0x2438, 0x260B, 0x26DD, 0x27C3, 0x2982, 0x2AA1, 0x2C44, 0x2D9F,
-0x2F77, 0x30E6, 0x3300, 0x34BE, 0x36BE, 0x3805, 0x39B6, 0x3AB4,
-0x3C4A, 0x3E23, 0x3F78, 0x404D
-```
+All 29 members open with the Legaia TMD magic `0x80000002`; member 0 is the
+382-vertex, 760-primitive mesh the bundle reading called the master TMD. The
+offsets "did not align" only because they were read as byte offsets.
 
-Slot sizes are `offset[i+1] - offset[i]`; the 28th slot's size depends on the
-asset-region layout. The master TMD at `assets_start` carries 1 object, 382
-verts, 760 normals, 760 primitives. The 28 offsets do not align with file
-positions of sub-TMDs. What they index is not traced: no consumer has been
-reached.
+Two copies sit in `PROT.DAT`, identical byte for byte: raw TOC entry 1
+(`gameover_data`, `PROT.DAT` `0x23A2C`), after a one-TIM `TIM_LIST` chunk, and
+extraction entry 0 (`0x10270` in the entry, `PROT.DAT` `0x4CA70`), after a
+two-TIM one; the `0xFF`-fill "preamble" is those TIMs' pixels. The raw-entry-1
+copy has a consumer: the GAME OVER overlay (PROT 0902) walks that entry's
+chunks and hands each type-`0x02` member to the TMD registrar `FUN_80026B4C`
+(`jal` at `0x801CEA20`). No battle-effect code reads either copy. The loaders
+are in [boot.md](../subsystems/boot.md#the-loader-fun_801cecd0).
+
+`legaia_container_formats::effect_bundle` still detects the chunk by those
+words (`effect_bundle::detect` reports `magic_offset`, the chunk header's
+position); `legaia_container_formats::pack` over the payload is the reading
+that holds.
 
 ```rust
 use legaia_container_formats::effect_bundle;
@@ -549,9 +553,11 @@ Implementation: `crates/container-formats/src/effect_bundle.rs`.
 
 <a id="the-0x01059b84-word-is-not-this-bundles-sibling-magic"></a>
 
-`0x01059B84` is not a magic. It is a [DATA_FIELD](data-field.md) chunk header,
-`(TIM_LIST << 24) | payload_len`, on `town01`'s texture pack (payload length
-`0x059B84`). See [`field-pack.md`](field-pack.md).
+`0x01059B84` is not a magic either, and for the same reason: it is a
+[DATA_FIELD](data-field.md) chunk header, `(TIM_LIST << 24) | payload_len`, on
+`town01`'s texture pack (payload length `0x059B84`). See
+[`field-pack.md`](field-pack.md). The two words are siblings only in that
+both are chunk headers read as magics.
 
 ## See also
 
