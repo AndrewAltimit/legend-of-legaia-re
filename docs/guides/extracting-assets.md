@@ -1,5 +1,33 @@
 # Extracting assets: step-by-step scenarios
 
+## Without a terminal: Legaia Studio
+
+The release archive's `legaia-studio` (`legaia-studio.exe` on Windows,
+`Legaia Studio.app` on macOS) does the common cases with buttons:
+
+1. **Open** your disc image - the `.bin` of a Mode2/2352 dump, or its `.cue` -
+   with *Open disc image...*, by typing its path, or by dropping it on the
+   window. A folder `legaia-extract` already wrote opens too. The app checks
+   the image before loading and reopens it next time.
+2. **Browse** the archive on the left: entries grouped under their CDNAME
+   names, each with its category and size. Filter by name, index or category.
+3. **Preview** the selected entry: *Textures* (with a palette slider - try a
+   few rows before deciding a texture is broken), *3D model* (drag to orbit,
+   scroll to zoom), *Audio* (play samples, play a sequence with a sound bank),
+   *Text* (scene dialog and MES messages), *Hex*.
+4. **Export** what you are looking at: PNG, OBJ or textured glTF (`.glb`),
+   WAV, the dialog as text, or the raw entry bytes. *Disc files* at the bottom
+   of the list saves any file of the disc's own file system.
+5. **Extract** the whole disc: switch to *Extract*, choose an output folder,
+   tick the same skip options the command line offers, and start. The tab
+   shows progress and the log and can be cancelled; the folder it writes is
+   exactly what the `legaia-extract` command below produces.
+
+The app ships no game data and uploads nothing; it reads the disc you choose
+and writes only where you tell it. Details: [`crates/studio`](../../crates/studio/README.md).
+
+## On the command line
+
 Every scenario below assumes the one-shot pipeline has run
 ([getting-started.md](getting-started.md)):
 
