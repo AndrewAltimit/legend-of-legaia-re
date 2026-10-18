@@ -69,6 +69,7 @@ members = [
     "crates/parity",
     "crates/engine-shell",
     "crates/asset-viewer",
+    "crates/studio",
     "crates/web-viewer",
 ]
 
@@ -86,6 +87,11 @@ clap = { version = "4", features = ["derive"] }
 console_error_panic_hook = "0.1"
 cpal = "0.15"
 dirs = "6"
+# The desktop GUI toolkit for legaia-studio. Glow (OpenGL) backend only: no
+# egui release builds against the workspace's wgpu 26 (0.32 pins wgpu 25,
+# 0.33 pins wgpu 27), so the glow backend is what keeps a second wgpu out of
+# the tree. Its winit is the workspace's 0.30.
+eframe = { version = "0.33", default-features = false, features = ["glow", "default_fonts", "wayland", "x11"] }
 encoding_rs = "0.8"
 env_logger = "0.11"
 flate2 = "1"

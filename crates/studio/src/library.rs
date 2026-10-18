@@ -1,0 +1,193 @@
+//! The opened source: a disc image or an extracted folder, reduced to the
+//! `PROT.DAT` archive, its CDNAME name map and (for a disc) the ISO9660
+//! file list.
+
+use std::path::{Path, PathBuf};
+use std::sync::Mutex;
+
+use anyhow::{Context, Result, bail};
+use legaia_iso::iso9660;
+use legaia_iso::raw::{RawDisc, USER_DATA_SIZE};
+use legaia_prot::archive::{Archive, Entry};
+use legaia_prot::cdname::{self, IndexMap};
+
+/// What the user opened.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Source {
+    /// A raw Mode2/2352 disc image (the `.bin`; a `.cue` is resolved to it).
+    Disc(PathBuf),
+    /// A `legaia-extract` / `disc-extract` output folder holding `PROT.DAT`.
+    Extracted(PathBuf),
+}
+
+impl Source {
+    pub fn path(&self) -> &Path {
+        match self {
+            Source::Disc(p) | Source::Extracted(p) => p,
+        }
+    }
+}
+
+/// One ISO9660 file on the disc.
+#[derive(Debug, Clone)]
+pub struct IsoFile {
+    pub path: String,
+    pub lba: u32,
+    pub size: u32,
+}
+
+/// A loaded source, ready to browse.
+pub struct Library {
+    pub source: Source,
+    pub entries: Vec<Entry>,
+    pub cdname: Option<IndexMap>,
+    /// Empty for an extracted folder.
+    pub iso_files: Vec<IsoFile>,
+    /// `"NTSC-U (SCUS_942.54)"`-style line from `SYSTEM.CNF`, when present.
+    pub region: Option<String>,
+    archive: Mutex<Archive>,
+}
+
+/// Check that `path` is something [`Library::open`] can read, without
+/// loading it: a directory with a `PROT.DAT`, or a Mode2/2352 image (or a
+/// `.cue` naming one) whose ISO9660 tree has `PROT.DAT`.
+pub fn validate(path: &Path) -> Result<Source> {
+    if path.is_dir() {
+        if !path.join("PROT.DAT").is_file() {
+            bail!(
+                "{} has no PROT.DAT - pick a disc image or a legaia-extract output folder",
+                path.display()
+            );
+        }
+        return Ok(Source::Extracted(path.to_path_buf()));
+    }
+    let bin = legaia_iso::raw::resolve_disc_path(path)
+        .with_context(|| format!("resolving {}", path.display()))?;
+    let mut disc = RawDisc::open(&bin)
+        .with_context(|| format!("{} is not a Mode2/2352 disc image", bin.display()))?;
+    let vol = iso9660::read_volume(&mut disc).context("reading the ISO9660 volume")?;
+    let files = iso9660::walk_files(&mut disc, &vol.root).context("walking the ISO9660 tree")?;
+    if !files
+        .iter()
+        .any(|(p, _)| p.eq_ignore_ascii_case("PROT.DAT"))
+    {
+        bail!(
+            "{} has no PROT.DAT - this is not a Legend of Legaia disc",
+            bin.display()
+        );
+    }
+    Ok(Source::Disc(bin))
+}
+
+fn read_iso_file(disc: &mut RawDisc, f: &IsoFile) -> Result<Vec<u8>> {
+    let mut buf = Vec::new();
+    disc.read_user_data(f.lba, f.size.div_ceil(USER_DATA_SIZE as u32), &mut buf)?;
+    buf.truncate(f.size as usize);
+    Ok(buf)
+}
+
+impl Library {
+    /// Validate and load `path` (disc image, `.cue`, or extracted folder).
+    pub fn open(path: &Path) -> Result<Self> {
+        match validate(path)? {
+            Source::Disc(bin) => Self::open_disc(&bin),
+            Source::Extracted(dir) => Self::open_extracted(&dir),
+        }
+    }
+
+    fn open_disc(bin: &Path) -> Result<Self> {
+        let mut disc = RawDisc::open(bin)?;
+        let vol = iso9660::read_volume(&mut disc)?;
+        let iso_files: Vec<IsoFile> = iso9660::walk_files(&mut disc, &vol.root)?
+            .into_iter()
+            .map(|(path, e)| IsoFile {
+                path,
+                lba: e.lba,
+                size: e.size,
+            })
+            .collect();
+        let find = |name: &str| iso_files.iter().find(|f| f.path.eq_ignore_ascii_case(name));
+        let prot = find("PROT.DAT").context("no PROT.DAT on the disc")?.clone();
+        let prot_bytes = read_iso_file(&mut disc, &prot).context("reading PROT.DAT")?;
+        let cdname = match find("CDNAME.TXT").cloned() {
+            Some(f) => {
+                let text = read_iso_file(&mut disc, &f)?;
+                cdname::parse_str(&String::from_utf8_lossy(&text)).ok()
+            }
+            None => None,
+        };
+        let region = legaia_extract::disc_region(bin)
+            .map(|d| format!("{} ({})", d.region.name(), d.executable));
+        let archive = Archive::from_bytes(prot_bytes).context("parsing the PROT.DAT TOC")?;
+        Ok(Self {
+            source: Source::Disc(bin.to_path_buf()),
+            entries: archive.entries.clone(),
+            cdname,
+            iso_files,
+            region,
+            archive: Mutex::new(archive),
+        })
+    }
+
+    fn open_extracted(dir: &Path) -> Result<Self> {
+        let archive = Archive::open(&dir.join("PROT.DAT")).context("parsing the PROT.DAT TOC")?;
+        let cdname_path = dir.join("CDNAME.TXT");
+        let cdname = cdname_path
+            .is_file()
+            .then(|| cdname::parse(&cdname_path).ok())
+            .flatten();
+        Ok(Self {
+            source: Source::Extracted(dir.to_path_buf()),
+            entries: archive.entries.clone(),
+            cdname,
+            iso_files: Vec::new(),
+            region: None,
+            archive: Mutex::new(archive),
+        })
+    }
+
+    /// The bytes of PROT entry at position `pos` in [`Self::entries`].
+    pub fn entry_bytes(&self, pos: usize) -> Result<Vec<u8>> {
+        let entry = self.entries.get(pos).context("entry out of range")?;
+        let mut out = Vec::new();
+        self.archive
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .read_entry(entry, &mut out)?;
+        Ok(out)
+    }
+
+    /// Position in [`Self::entries`] of the entry with PROT index `index`.
+    pub fn position_of(&self, index: u32) -> Option<usize> {
+        self.entries.iter().position(|e| e.index == index)
+    }
+
+    /// File stem the extractor gives this entry (`0865_battle_data`).
+    pub fn stem(&self, index: u32) -> String {
+        legaia_extract::entry_stem(self.cdname.as_ref(), index)
+    }
+
+    /// The CDNAME block label as the extracted filenames carry it.
+    pub fn label(&self, index: u32) -> Option<&str> {
+        self.cdname
+            .as_ref()
+            .and_then(|m| cdname::block_for(m, index))
+    }
+
+    /// The CDNAME block that retail-semantically covers this entry (the
+    /// `#define` numbers are raw-TOC indices, two above extraction indices).
+    pub fn retail_block(&self, index: u32) -> Option<&str> {
+        self.cdname
+            .as_ref()
+            .and_then(|m| cdname::block_for_extraction_index(m, index))
+    }
+
+    /// Read a whole ISO9660 file (disc sources only).
+    pub fn iso_file_bytes(&self, f: &IsoFile) -> Result<Vec<u8>> {
+        let Source::Disc(bin) = &self.source else {
+            bail!("not a disc source");
+        };
+        let mut disc = RawDisc::open(bin)?;
+        read_iso_file(&mut disc, f)
+    }
+}

@@ -1,0 +1,40 @@
+[package]
+name = "legaia-studio"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Desktop GUI for browsing, previewing and extracting Legend of Legaia disc assets"
+
+[lib]
+name = "legaia_studio"
+path = "src/lib.rs"
+
+[[bin]]
+name = "legaia-studio"
+path = "src/main.rs"
+
+[dependencies]
+anyhow.workspace = true
+dirs.workspace = true
+eframe.workspace = true
+log.workspace = true
+env_logger.workspace = true
+rayon.workspace = true
+rfd.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+legaia-actor-formats.workspace = true
+legaia-container-formats.workspace = true
+legaia-disc-audit.workspace = true
+legaia-engine-audio.workspace = true
+legaia-extract.workspace = true
+legaia-iso.workspace = true
+legaia-lzs.workspace = true
+legaia-mes.workspace = true
+legaia-prot.workspace = true
+legaia-scene-formats.workspace = true
+legaia-seq.workspace = true
+legaia-tim.workspace = true
+legaia-tmd.workspace = true
+legaia-translate.workspace = true
+legaia-vab.workspace = true
