@@ -40,6 +40,10 @@ pub struct PageToggles {
     /// saved-chain list instead of retail's per-press input
     /// (`WorldToggles::arts_saved_list`). Off by default.
     pub arts_saved_list: bool,
+    /// Retail's 5-bit texture modulation on the overlay's tinted atlases
+    /// (the native `Renderer::set_ui_psx_tint`). On by default: it is retail
+    /// behaviour.
+    pub ui_psx_tint: bool,
 }
 
 impl Default for PageToggles {
@@ -51,6 +55,7 @@ impl Default for PageToggles {
             entry_pulse: true,
             battle_frame_cadence: legaia_engine_core::world::DEFAULT_BATTLE_SM_FRAME_CADENCE,
             arts_saved_list: false,
+            ui_psx_tint: true,
         }
     }
 }
@@ -202,6 +207,34 @@ impl LegaiaRuntime {
     }
 }
 
+#[wasm_bindgen]
+impl LegaiaRuntime {
+    /// Tint the overlay the way retail's GPU does (the default) or with the
+    /// plain 8-bit multiply - the native window's `Renderer::set_ui_psx_tint`.
+    /// The page's atlas blitter reads it through [`Self::psx_tint_atlas`].
+    pub fn set_ui_psx_tint(&mut self, on: bool) {
+        self.page_toggles.ui_psx_tint = on;
+    }
+
+    /// Whether [`Self::set_ui_psx_tint`] is on.
+    pub fn ui_psx_tint(&self) -> bool {
+        self.page_toggles.ui_psx_tint
+    }
+
+    /// One tinted copy of an overlay atlas (RGBA8): every texel through
+    /// `legaia_render_kernels::ui_tint::tint_texel` - retail's 5-bit
+    /// modulation (unless [`Self::set_ui_psx_tint`] turned it off) and the
+    /// font CLUTs' own shadow under each ink. The same kernel the native text
+    /// shader's WGSL is generated from; the page caches one copy per tint.
+    pub fn psx_tint_atlas(&self, rgba: &[u8], r: f32, g: f32, b: f32) -> Vec<u8> {
+        legaia_render_kernels::ui_tint::tint_atlas_rgb(
+            rgba,
+            [r, g, b],
+            self.page_toggles.ui_psx_tint,
+        )
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -263,5 +296,28 @@ mod tests {
             page.contains("cadenceEl.checked = !!c"),
             "the box no longer reads the runtime's default"
         );
+    }
+
+    /// The page tints its overlay atlases through the shared kernel: 5-bit
+    /// by default, a font shadow takes its ink's CLUT entry, and the switch
+    /// falls back to the plain multiply - the native shader's twin.
+    #[test]
+    fn the_page_tints_atlases_like_the_native_overlay() {
+        use legaia_render_kernels::ui_tint::ink_component;
+        let mut rt = LegaiaRuntime::new();
+        assert!(rt.ui_psx_tint(), "retail tint is the default");
+        let gold = [28u8, 21, 0].map(ink_component);
+        let shadow = [41, 41, 41, legaia_font::FONT_SHADOW_ALPHA];
+        // A whitewashed fill, a font shadow, a band-grey patch texel.
+        let atlas = [[255, 255, 255, 255], shadow, [156, 140, 123, 255]].concat();
+        let out = rt.psx_tint_atlas(&atlas, gold[0], gold[1], gold[2]);
+        assert_eq!(&out[0..4], &[231, 173, 0, 255]);
+        assert_eq!(&out[4..8], &[66, 66, 33, 255]);
+        let grey = 97.0 / 128.0;
+        let out = rt.psx_tint_atlas(&atlas, grey, grey, grey);
+        assert_eq!(&out[8..12], &[115, 99, 90, 255]);
+        rt.set_ui_psx_tint(false);
+        let out = rt.psx_tint_atlas(&atlas, grey, grey, grey);
+        assert_eq!(&out[8..12], &[118, 106, 93, 255]);
     }
 }

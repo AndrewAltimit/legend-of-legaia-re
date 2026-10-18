@@ -1,9 +1,25 @@
 //! The text / sprite overlay shader.
 
 /// 2D text shader: pre-converted NDC positions + atlas UVs + per-vertex
-/// RGBA tint. The fragment multiplies the tint with the sampled atlas
-/// texel; the alpha-blend pipeline handles final compositing.
-pub(crate) const TEXT_SHADER_SRC: &str = r#"
+/// RGBA tint. The fragment tints the sampled atlas texel through
+/// `ui_tint` - retail's 5-bit texture modulation and the font CLUTs' own
+/// shadow colours, generated from `legaia_render_kernels::ui_tint` - and the
+/// alpha-blend pipeline handles final compositing.
+///
+/// `UI_QUANTIZE` is a pipeline-overridable constant: `true` (the default,
+/// retail) truncates every tinted texel to the 5-bit grid, `false` keeps the
+/// plain 8-bit multiply (`Renderer::set_ui_psx_tint`).
+pub(crate) fn text_shader_src() -> String {
+    format!(
+        "{}\n{}",
+        legaia_render_kernels::ui_tint::wgsl_ui_tint(),
+        TEXT_SHADER_BODY
+    )
+}
+
+const TEXT_SHADER_BODY: &str = r#"
+override UI_QUANTIZE: bool = true;
+
 struct VsOut {
     @builtin(position) clip_pos: vec4<f32>,
     @location(0) uv: vec2<f32>,
@@ -29,7 +45,8 @@ fn vs_main(
 @fragment
 fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     let texel = textureSample(t_atlas, s_atlas, in.uv);
-    return vec4<f32>(in.color.rgb * texel.rgb, in.color.a * texel.a);
+    let tinted = ui_tint(texel, in.color.rgb, UI_QUANTIZE);
+    return vec4<f32>(tinted.rgb, in.color.a * tinted.a);
 }
 
 // PSX semi-transparent quads (`OverlayBlendSpan`): the foreground F is the
@@ -42,7 +59,8 @@ fn blend_color(in: VsOut, scale: f32) -> vec4<f32> {
     if (texel.a < 0.5) {
         discard;
     }
-    return vec4<f32>(in.color.rgb * texel.rgb * scale, 1.0);
+    let tinted = ui_tint(texel, in.color.rgb, UI_QUANTIZE);
+    return vec4<f32>(tinted.rgb * scale, 1.0);
 }
 
 @fragment

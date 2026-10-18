@@ -1258,7 +1258,7 @@
       if (fontBlit) return fontBlit;
       try {
         const fd = runtime.play_menu_font_dims();
-        if (fd[0] > 0) fontBlit = new window.LegaiaAtlasBlitter(runtime.play_menu_font_rgba(), fd[0], fd[1]);
+        if (fd[0] > 0) fontBlit = new window.LegaiaAtlasBlitter(runtime.play_menu_font_rgba(), fd[0], fd[1], window.LegaiaAtlasBlitter.tinterFor(runtime));
       } catch (e) { console.warn('boot title font', e); }
       return fontBlit;
     };
@@ -1315,7 +1315,7 @@
         if (runtime.play_menu_has_chrome()) {
           const cd = runtime.play_menu_chrome_dims();
           if (cd[0] > 0)
-            chromeBlit = new window.LegaiaAtlasBlitter(runtime.play_menu_chrome_rgba(), cd[0], cd[1]);
+            chromeBlit = new window.LegaiaAtlasBlitter(runtime.play_menu_chrome_rgba(), cd[0], cd[1], window.LegaiaAtlasBlitter.tinterFor(runtime));
         }
       } catch (e) { console.warn('boot title chrome', e); }
       return chromeBlit;

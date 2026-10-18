@@ -541,13 +541,20 @@ fn blit_text(
                     continue;
                 }
                 let a_i = ((tv * aw + tu) * 4) as usize;
-                let a = atlas[a_i + 3] as f32 / 255.0 * d.color[3];
+                // The shared overlay tint: retail's 5-bit modulation and the
+                // font CLUTs' own shadows (`ui_tint`), as both play hosts draw.
+                let tinted = legaia_render_kernels::ui_tint::tint_texel(
+                    [atlas[a_i], atlas[a_i + 1], atlas[a_i + 2], atlas[a_i + 3]],
+                    [d.color[0], d.color[1], d.color[2]],
+                    true,
+                );
+                let a = tinted[3] as f32 / 255.0 * d.color[3];
                 if a <= 0.0 {
                     continue;
                 }
                 let o = ((y as u32 * w + x as u32) * 4) as usize;
                 for k in 0..3 {
-                    let src = atlas[a_i + k] as f32 * d.color[k];
+                    let src = f32::from(tinted[k]);
                     px[o + k] = (px[o + k] as f32 * (1.0 - a) + src * a) as u8;
                 }
             }

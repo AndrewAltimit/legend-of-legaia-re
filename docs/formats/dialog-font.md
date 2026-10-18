@@ -32,12 +32,30 @@ The glyph tile-page is a plain PSX TIM at **`PROT.DAT` file offset `0x7F40`**: a
 `(0, 510)`. The font page uses only three palette indices: `0` = transparent
 background, `14` = the `(32,32,32)` drop-shadow, `15` = the glyph fill.
 
-On screen the shadow is a fixed `(33, 33, 33)` whatever the ink, and the ink
-of dialogue, menu text and every battle caption is the tier-7 grey
-`(206, 206, 206)`. The engine's stencil atlas whitewashes the fill and stores
-the shadow as `legaia_font::FONT_SHADOW_TEXEL` (`41`): its shader multiplies the
-whole texel by the ink, and `41` is the grey that lands on `33` under the
-tier-7 ink.
+A text ink is a CLUT pick (`DAT_8007B454`, CLUT `(96 + 16 * ink, 510)`), and
+each of those CLUTs carries its own shadow in entry 14 beside the fill in
+entry 15, so the shadow changes with the ink. Read off a retail frame's VRAM
+(5-bit):
+
+| Ink | Fill (entry 15) | Shadow (entry 14) | Where |
+|---|---|---|---|
+| 0 | `(16, 16, 16)` | `(4, 4, 4)` | a list's unfocused rows |
+| 1 | `(13, 13, 28)` | `(3, 3, 5)` | |
+| 2 | `(28, 4, 0)` | `(8, 4, 4)` | the downed / 0-HP tier |
+| 3 | `(28, 13, 28)` | `(8, 2, 8)` | the status-lock tier |
+| 4 | `(13, 27, 13)` | `(3, 8, 3)` | skill passives, `MP Used` |
+| 5 | `(8, 27, 27)` | `(4, 8, 8)` | teal labels (options' Dual Shock rows) |
+| 6 | `(28, 21, 0)` | `(8, 8, 4)` | gold values, the caution tier |
+| 7 | `(25, 25, 25)` | `(4, 4, 4)` | dialogue, menu text, every battle caption |
+| 8 | `(25, 25, 25)` | `(14, 14, 14)` | |
+| 9 | `(27, 11, 0)` | `(8, 6, 3)` | the danger tier |
+
+The engine's stencil atlas whitewashes the fill and marks each shadow texel
+with alpha `legaia_font::FONT_SHADOW_ALPHA`; the overlay tint
+(`legaia_render_kernels::ui_tint`) draws a marked texel under a known ink as
+that ink's own entry 14, and under any other tint as the opaque grey
+`FONT_SHADOW_TEXEL`. Ink 8 shares ink 7's fill and is not in the table: an
+engine ink of that grey is ink 7.
 
 This means the font is decodable **straight from the disc, no save state
 required** - `legaia_font::Font::from_disc_tim_and_scus` reads this TIM plus the

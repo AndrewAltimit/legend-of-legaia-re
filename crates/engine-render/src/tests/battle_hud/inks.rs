@@ -59,7 +59,8 @@ fn battle_hud_caution_mp_uses_the_caution_tint_not_the_row_color() {
     // amber. The old magnitude line here (`G > 0.9`) encoded the port's
     // brighter approximation, not a measurement.
     let caution = gauge_fill_color(6);
-    assert_eq!(caution, [0.902, 0.675, 0.0, 1.0]);
+    // On the 5-bit grid: entry 15 is `(28, 21, 0)`.
+    assert_eq!(caution.map(|c| (c * 31.0).round() as u8), [28, 21, 0, 31]);
     assert!(
         draws.iter().any(|d| d.src != SOLID && d.color == caution),
         "caution MP should produce an amber-tinted glyph"

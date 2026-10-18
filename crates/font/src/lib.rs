@@ -34,8 +34,8 @@ pub mod measure;
 #[cfg(test)]
 mod tests;
 
-pub use disc_source::FONT_SHADOW_TEXEL;
 use disc_source::*;
+pub use disc_source::{FONT_SHADOW_ALPHA, FONT_SHADOW_TEXEL};
 pub use escape_table::{EscapeEntry, EscapeTable};
 use extracted_dir::{decode_atlas_png, parse_widths_csv};
 pub use extracted_dir::{export_extracted_font_dir, extracted_font_dir};
@@ -243,6 +243,9 @@ impl Font {
             px[0] = v;
             px[1] = v;
             px[2] = v;
+            if v != 0xFF {
+                px[3] = FONT_SHADOW_ALPHA;
+            }
         }
         Ok(Self {
             widths,

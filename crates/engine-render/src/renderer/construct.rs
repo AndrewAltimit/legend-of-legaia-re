@@ -229,6 +229,7 @@ impl Renderer {
             blend_list: std::cell::RefCell::new(Vec::new()),
             depth_view,
             psx_mode: std::cell::Cell::new(false),
+            ui_psx_tint: std::cell::Cell::new(true),
             vram_upload_counter: std::cell::Cell::new(0),
             tex_window: std::cell::Cell::new([0; 4]),
             draw_clips: std::cell::RefCell::new((Vec::new(), Vec::new())),

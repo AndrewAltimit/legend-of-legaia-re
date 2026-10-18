@@ -281,7 +281,7 @@ impl Renderer {
         rp.set_bind_group(0, &overlay.atlas.bind_group, &[]);
         for (start, n, abr) in OverlayBlendSpan::segments(overlay.blend, count) {
             match abr {
-                None => rp.set_pipeline(&self.text_pipeline),
+                None => rp.set_pipeline(&self.text_pipeline[usize::from(self.ui_psx_tint.get())]),
                 Some(mode) => {
                     let c = psx_blend::MODE0_BLEND_CONSTANT;
                     rp.set_blend_constant(wgpu::Color {
@@ -290,7 +290,10 @@ impl Renderer {
                         b: c,
                         a: c,
                     });
-                    rp.set_pipeline(&self.text_blend_pipelines[mode as usize]);
+                    rp.set_pipeline(
+                        &self.text_blend_pipelines[usize::from(self.ui_psx_tint.get())]
+                            [mode as usize],
+                    );
                 }
             }
             let first = (base_quad + start) * 6;

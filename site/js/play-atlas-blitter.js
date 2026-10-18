@@ -19,18 +19,49 @@
    * white (`(1,1,1)`), so plain chrome blits straight through, while the
    * whitewashed font atlas takes the ink colour and the navy filigree takes its
    * darkening tint. Multiplied full-atlas copies are cached per colour, so the
-   * per-quad cost is a single `drawImage`. */
+   * per-quad cost is a single `drawImage`.
+   *
+   * `tinter` (optional, `AtlasBlitter.tinterFor(runtime)`) builds each tinted
+   * copy through the engine's shared overlay kernel instead of a canvas
+   * multiply: retail's 5-bit modulation and the font CLUTs' own shadow under
+   * each ink (`legaia_render_kernels::ui_tint`, the same law the native text
+   * shader runs). Without it - an older wasm bundle - the canvas multiply
+   * stands in. */
   class AtlasBlitter {
-    constructor(rgba, w, h) {
+    constructor(rgba, w, h, tinter) {
       this.w = w; this.h = h;
+      this.rgba = new Uint8Array(rgba);
+      this.tinter = typeof tinter === 'function' ? tinter : null;
       this.base = document.createElement('canvas');
       this.base.width = w; this.base.height = h;
       const bctx = this.base.getContext('2d');
       bctx.putImageData(new ImageData(new Uint8ClampedArray(rgba), w, h), 0, 0);
       this.cache = new Map();
     }
+    /* A tinter over the runtime's `psx_tint_atlas`, or null when the loaded
+     * bundle predates it. */
+    static tinterFor(rt) {
+      if (!rt || typeof rt.psx_tint_atlas !== 'function') return null;
+      return (rgba, r, g, b) => rt.psx_tint_atlas(rgba, r, g, b);
+    }
+    /* Forget the tinted copies (after the runtime's tint mode changed). */
+    invalidate() { this.cache.clear(); }
     _tinted(col) {
       const r = Math.round(col[0] * 255), g = Math.round(col[1] * 255), b = Math.round(col[2] * 255);
+      if (this.tinter) {
+        /* Keyed on the tint as given: an ink is stored on the 5-bit grid, and
+         * rounding it to 8 bits first would lose what the kernel reads. */
+        const key = col[0] + ',' + col[1] + ',' + col[2];
+        let cv = this.cache.get(key);
+        if (cv) return cv;
+        const out = this.tinter(this.rgba, col[0], col[1], col[2]);
+        cv = document.createElement('canvas');
+        cv.width = this.w; cv.height = this.h;
+        cv.getContext('2d').putImageData(
+          new ImageData(new Uint8ClampedArray(out), this.w, this.h), 0, 0);
+        this.cache.set(key, cv);
+        return cv;
+      }
       if (r === 255 && g === 255 && b === 255) return this.base;   /* identity multiply */
       const key = (r << 16) | (g << 8) | b;
       let cv = this.cache.get(key);

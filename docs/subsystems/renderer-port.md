@@ -183,6 +183,15 @@ ordering table and the wgpu renderer draws via `RenderTarget::ScreenOverlay`.
 
 ## Screen-space overlay pass
 
+**The tint is retail's, 5-bit.** The text / sprite shader tints every quad
+through `ui_tint` - WGSL generated from `legaia_render_kernels::ui_tint`, the
+same kernel the browser page tints its atlas copies with: the texel truncated
+to 5 bits, times the colour, truncated again (`(T5 * C) >> 7`), and a font
+drop shadow under a known ink drawn as that ink's own CLUT entry rather than a
+multiply of the fill ([dialog font](../formats/dialog-font.md)). The
+truncation is the pipeline-overridable `UI_QUANTIZE`; the renderer keeps both
+pipeline sets and `Renderer::set_ui_psx_tint` picks one, retail by default.
+
 [`screen_overlay`](../../crates/engine-render/src/screen_overlay.rs) is the render capability behind
 `RenderTarget::ScreenOverlay`: a `ScreenPrim` is either a textured
 `POLY_FT4` (`ScreenQuad` - four screen corners + UV/CLUT/texpage + a 24-bit

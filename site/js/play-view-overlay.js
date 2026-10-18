@@ -47,14 +47,14 @@
         if (!(fd && fd.length === 2 && fd[0] > 0 && fd[1] > 0)) return;
         if (!this._menuFont) {
           const rgba = rt.play_menu_font_rgba();
-          if (rgba && rgba.length) this._menuFont = new AtlasBlitter(rgba, fd[0], fd[1]);
+          if (rgba && rgba.length) this._menuFont = new AtlasBlitter(rgba, fd[0], fd[1], AtlasBlitter.tinterFor(rt));
         }
         if (!this._menuChrome) {
           if (rt.play_menu_has_chrome()) {
             const cd = rt.play_menu_chrome_dims();
             const rgba = rt.play_menu_chrome_rgba();
             if (cd && cd.length === 2 && cd[0] > 0 && rgba && rgba.length) {
-              this._menuChrome = new AtlasBlitter(rgba, cd[0], cd[1]);
+              this._menuChrome = new AtlasBlitter(rgba, cd[0], cd[1], AtlasBlitter.tinterFor(rt));
             } else {
               this._menuChrome = null;
             }

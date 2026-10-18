@@ -95,10 +95,11 @@ pub struct Renderer {
     pub(super) lines_pipeline: wgpu::RenderPipeline,
     /// Text pipeline: 2D textured quads, alpha-blended, no depth. Group 0
     /// binds a sampled font atlas. Used for HUD / debug / dialog overlays.
-    pub(super) text_pipeline: wgpu::RenderPipeline,
+    /// Indexed by [`Self::ui_psx_tint`] (`[smooth, retail]`).
+    pub(super) text_pipeline: [wgpu::RenderPipeline; 2],
     /// The text pipeline's quads through each PSX ABR equation, indexed by
-    /// mode (`OverlayBlendSpan`).
-    pub(super) text_blend_pipelines: [wgpu::RenderPipeline; 4],
+    /// [`Self::ui_psx_tint`] then mode (`OverlayBlendSpan`).
+    pub(super) text_blend_pipelines: [[wgpu::RenderPipeline; 4]; 2],
     /// Bind-group layout for the font-atlas texture binding (group 0 of
     /// [`Self::text_pipeline`]). Reused when uploading new atlases.
     pub(super) text_atlas_bgl: wgpu::BindGroupLayout,
@@ -132,6 +133,9 @@ pub struct Renderer {
     /// positions to reproduce the GTE's per-vertex sub-pixel-truncation
     /// "vertex jitter." Default `false` for clean smooth rendering.
     pub(super) psx_mode: std::cell::Cell<bool>,
+    /// Retail's 5-bit texture modulation on the 2D overlay
+    /// ([`Self::set_ui_psx_tint`]). Default `true`.
+    pub(super) ui_psx_tint: std::cell::Cell<bool>,
     /// Count of [`Self::upload_vram`] calls; stamps each [`UploadedVram`]
     /// with a strictly-increasing generation (see
     /// [`UploadedVram::generation`]).
@@ -336,6 +340,21 @@ impl Renderer {
     /// Read current PSX-mode flag.
     pub fn psx_mode(&self) -> bool {
         self.psx_mode.get()
+    }
+
+    /// Tint the 2D overlay (menus, HUD, dialogue, every text and sprite
+    /// quad) the way retail's GPU does: the tinted texel truncated to the
+    /// 5-bit grid (`legaia_render_kernels::ui_tint::modulate5`). Default
+    /// `true` - it is retail behaviour; `false` keeps the plain 8-bit
+    /// multiply, up to a grid step brighter. The font CLUTs' own shadow
+    /// colours apply either way.
+    pub fn set_ui_psx_tint(&self, enable: bool) {
+        self.ui_psx_tint.set(enable);
+    }
+
+    /// Read the overlay tint mode ([`Self::set_ui_psx_tint`]).
+    pub fn ui_psx_tint(&self) -> bool {
+        self.ui_psx_tint.get()
     }
 
     /// Toggle PSX semi-transparency (ABE) blending on the VRAM / colour mesh

@@ -390,6 +390,18 @@ battle banners' kernel `battle_hud_chrome::class0_fill_draws_at` over
 `SaveMenuAtlasRects::panel_filigree`. The save / load screen keeps the
 gradient-baked `panel_interior` variant.
 
+The band grey modulates the patch the way every textured primitive is
+modulated: the 5-bit texel times the colour word, truncated, `(T5 * C) >> 7`.
+The result sits on the 5-bit grid, a grid step below an 8-bit multiply where
+the product's fraction is large - `menu_options_field` reads `(16, 24, 123)`
+where an 8-bit multiply drew `(21, 29, 125)`. Both play hosts tint their
+overlay through `legaia_render_kernels::ui_tint` (the native text shader's
+WGSL is generated from it, the browser's tinted atlases come from it through
+the wasm runtime), retail's 5-bit law by default and the plain multiply behind
+`Renderer::set_ui_psx_tint(false)` / `set_ui_psx_tint(false)` on the page.
+The engine's text inks are stored on the 5-bit grid (`T / 31`) so the law
+lands each on its CLUT entry exactly.
+
 ## Draw primitives + CLUT staging
 
 | tag | function | signature | notes |

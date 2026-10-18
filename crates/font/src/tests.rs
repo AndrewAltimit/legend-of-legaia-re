@@ -333,7 +333,12 @@ fn from_disc_tim_and_scus_stencils_and_reads_widths() {
     assert_eq!(at(ox, oy), [255, 255, 255, 255]);
     assert_eq!(
         at(ox + 1, oy),
-        [FONT_SHADOW_TEXEL, FONT_SHADOW_TEXEL, FONT_SHADOW_TEXEL, 255]
+        [
+            FONT_SHADOW_TEXEL,
+            FONT_SHADOW_TEXEL,
+            FONT_SHADOW_TEXEL,
+            FONT_SHADOW_ALPHA
+        ]
     );
 }
 

@@ -303,10 +303,16 @@ pub fn atlas_opaque_texel(rgba: &[u8], width: u32, height: u32) -> Option<(u32, 
 /// down".
 pub fn gauge_fill_color(idx: u8) -> [f32; 4] {
     match idx {
-        2 => [0.902, 0.125, 0.0, 1.0],
-        3 => [0.902, 0.416, 0.902, 1.0],
-        6 => [0.902, 0.675, 0.0, 1.0],
-        9 => [0.871, 0.353, 0.0, 1.0],
+        // Each tier's entry 15 on the 5-bit grid (the CLUT is 5-bit).
+        2 => crate::MENU_TEXT_RED,
+        3 => [
+            legaia_render_kernels::ui_tint::ink_component(28),
+            legaia_render_kernels::ui_tint::ink_component(13),
+            legaia_render_kernels::ui_tint::ink_component(28),
+            1.0,
+        ],
+        6 => crate::MENU_TEXT_GOLD,
+        9 => crate::MENU_TEXT_ORANGE,
         _ => READOUT_NORMAL,
     }
 }

@@ -2805,6 +2805,7 @@ dependencies = [
  "legaia-actor-formats",
  "legaia-engine-camera",
  "legaia-engine-vm",
+ "legaia-font",
  "legaia-overlay-images",
  "legaia-scene-formats",
  "legaia-tim",
