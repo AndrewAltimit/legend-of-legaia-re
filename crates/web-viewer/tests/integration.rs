@@ -32,6 +32,7 @@ mod field_npc_catalog;
 mod field_scene_anim;
 mod field_scene_assembly;
 mod field_scene_blend;
+mod field_scene_light;
 mod fishing_banner_ladder;
 mod fishing_line_hosts;
 mod fog_page_prims;

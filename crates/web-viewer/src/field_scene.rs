@@ -226,6 +226,69 @@ pub fn build_field_scene_live(index: Arc<ProtIndex>, pack: &mut FieldScenePack) 
 }
 
 impl FieldScenePack {
+    /// The field light the light-source rows shade through: the live
+    /// world's (what the scene's own `4C 8A` set - every Rim Elm variant's
+    /// `P1[0]` sets a white back colour on its first tick), else the scene
+    /// loader's reset ([`FieldLight::SCENE_LOAD`]).
+    ///
+    /// [`FieldLight::SCENE_LOAD`]: legaia_render_kernels::field_light::FieldLight::SCENE_LOAD
+    pub fn field_light(&self) -> legaia_render_kernels::field_light::FieldLight {
+        self.live.as_ref().map_or(
+            legaia_render_kernels::field_light::FieldLight::SCENE_LOAD,
+            |l| l.host.world.presentation.field_light,
+        )
+    }
+
+    /// Env-pack slot `slot` - posed at frame 0 of scene ANM record
+    /// `anim_id - 1` when `anim_id` is non-zero - with its light-source rows
+    /// shaded under [`Self::field_light`] for a draw at the record angles
+    /// `rot` (`legaia_engine_field::field_lit_mesh`, the play hosts'
+    /// kernel). Returns the mesh, its hybrid flat-colour stream and whether
+    /// it carries lit rows at all.
+    pub fn lit_env_mesh(
+        &self,
+        slot: usize,
+        anim_id: u32,
+        rot: [u16; 3],
+    ) -> Result<(legaia_tmd::mesh::VramMesh, Vec<u8>, bool), String> {
+        let Some(&res_idx) = self.env_tmds.get(slot) else {
+            return Err(format!("slot {slot} >= count {}", self.env_tmds.len()));
+        };
+        let rtmd = &self.res.tmds[res_idx];
+        let offsets = (anim_id != 0)
+            .then(|| {
+                self.scene_anm.as_ref().and_then(|b| {
+                    legaia_engine_scene::field_env::posed_prop_offsets(
+                        b,
+                        anim_id.min(u8::MAX as u32) as u8,
+                        legaia_engine_scene::field_env::PropPoseKey::REST,
+                        rtmd.tmd.objects.len(),
+                    )
+                })
+            })
+            .flatten();
+        let (mut mesh, mut flat, lit) = match &offsets {
+            Some(o) => {
+                legaia_engine_scene::scene_assembly::build_hybrid_env_mesh_posed_lit(rtmd, o)
+            }
+            None => {
+                legaia_engine_scene::scene_assembly::build_hybrid_env_mesh_lit(rtmd, &self.res.vram)
+            }
+        };
+        let has_lit = legaia_engine_field::field_lit_mesh::has_lit_rows(&lit);
+        if has_lit {
+            let rot = legaia_engine_field::field_lit_mesh::draw_rotation(rot[0], rot[1], rot[2]);
+            legaia_engine_field::field_lit_mesh::shade_lit_rows_rgba(
+                &mut mesh.colors,
+                &mut flat,
+                &lit,
+                &self.field_light(),
+                &rot,
+            );
+        }
+        Ok((mesh, flat, has_lit))
+    }
+
     /// The VRAM the page draws: the live scene host's when the scene runs
     /// live - it carries what the world uploads at entry (the party /
     /// global-pool actors' pages) and is what the world's VRAM effects write -
@@ -816,55 +879,32 @@ impl LegaiaViewer {
         let f = self.field_scene.as_mut().ok_or_else(|| {
             JsValue::from_str("field_scene_mesh_posed_lit: no field scene loaded")
         })?;
-        let s = slot as usize;
-        let Some(&res_idx) = f.env_tmds.get(s) else {
-            return Err(JsValue::from_str(&format!(
-                "field_scene_mesh_posed_lit: slot {s} >= count {}",
-                f.env_tmds.len()
-            )));
-        };
-        let light = f.live.as_ref().map_or(
-            legaia_render_kernels::field_light::FieldLight::SCENE_LOAD,
-            |l| l.host.world.presentation.field_light,
-        );
-        let rtmd = &f.res.tmds[res_idx];
-        let offsets = (anim_id != 0)
-            .then(|| {
-                f.scene_anm.as_ref().and_then(|b| {
-                    legaia_engine_scene::field_env::posed_prop_offsets(
-                        b,
-                        anim_id.min(u8::MAX as u32) as u8,
-                        legaia_engine_scene::field_env::PropPoseKey::REST,
-                        rtmd.tmd.objects.len(),
-                    )
-                })
-            })
-            .flatten();
-        let (mut mesh, mut flat, lit) = match &offsets {
-            Some(o) => {
-                legaia_engine_scene::scene_assembly::build_hybrid_env_mesh_posed_lit(rtmd, o)
-            }
-            None => {
-                legaia_engine_scene::scene_assembly::build_hybrid_env_mesh_lit(rtmd, &f.res.vram)
-            }
-        };
-        let has_lit = legaia_engine_field::field_lit_mesh::has_lit_rows(&lit);
-        if has_lit {
-            let rot = legaia_engine_field::field_lit_mesh::draw_rotation(
-                rot_x as u16,
-                rot_y as u16,
-                rot_z as u16,
-            );
-            legaia_engine_field::field_lit_mesh::shade_lit_rows_rgba(
-                &mut mesh.colors,
-                &mut flat,
-                &lit,
-                &light,
-                &rot,
-            );
-        }
+        let (mesh, flat, has_lit) = f
+            .lit_env_mesh(
+                slot as usize,
+                anim_id,
+                [rot_x as u16, rot_y as u16, rot_z as u16],
+            )
+            .map_err(|e| JsValue::from_str(&format!("field_scene_mesh_posed_lit: {e}")))?;
         f.cur = Some((usize::MAX, mesh, flat));
         Ok(has_lit)
+    }
+
+    /// The live field light as one comparable key (angles + back colour):
+    /// the page re-shades its lit copies when it changes - the scene's own
+    /// `4C 8A` lands on its first tick, after the copies were first built.
+    /// The play runtime's `field_light_key` twin.
+    pub fn field_scene_light_key(&self) -> String {
+        self.field_scene
+            .as_ref()
+            .map(|f| {
+                let l = f.field_light();
+                format!(
+                    "{},{},{},{},{},{}",
+                    l.angles[0], l.angles[1], l.angles[2], l.back[0], l.back[1], l.back[2]
+                )
+            })
+            .unwrap_or_default()
     }
 
     /// Whether env-pack slot `slot` carries light-source rows.
