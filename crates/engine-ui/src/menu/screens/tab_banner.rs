@@ -44,7 +44,9 @@ pub fn tab_banner_draws(
     push(rects.tab_cap_l, wx - 8, y);
     let (bx, by, bw, bh) = rects.tab_body;
     let mut x = wx;
-    while x < wx + content_w {
+    // A zero-width body cell (an atlas without the tab plaque) would never
+    // advance `x`: the loop pushed draws until memory ran out.
+    while bw > 0 && x < wx + content_w {
         let this_w = (wx + content_w - x).min(bw as i32);
         push((bx, by, this_w as u32, bh), x, y);
         x += this_w;
@@ -127,5 +129,15 @@ mod tab_label_tests {
             items.iter().map(|d| d.src).collect::<Vec<_>>(),
             magic.iter().map(|d| d.src).collect::<Vec<_>>()
         );
+    }
+
+    /// An atlas with no tab plaque (every rect zero, as `Default` builds)
+    /// still terminates: the body loop used to spin on a zero-width cell,
+    /// appending draws until the process ran out of memory.
+    #[test]
+    fn zero_width_body_cell_draws_only_the_caps() {
+        let rects = SaveMenuAtlasRects::default();
+        let draws = tab_banner_draws(&rects, (40, 20), 96, (0, 0), 2);
+        assert_eq!(draws.len(), 2);
     }
 }
