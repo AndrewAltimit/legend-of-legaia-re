@@ -130,3 +130,15 @@ changes = [
   ["states/zeto_call_wave_mid_cast/image", 0.929, 0.918],
   ["states/zeto_call_wave_mid_cast/image", 0.932, 0.918],
 ]
+
+[[loosening]]
+file = "scripts/ci/retail-compare-baseline.json"
+reason = "Text now drawn in retail's exact inks (battle captions and numeral cells at the tier-7 206 / 33 instead of 255 or 166 / 27, font shadow 33 instead of 26). Every text pixel these four frames carry now matches retail's, but each sits in an 8x8 block whose background differs (sebucus's horizon row, a cast effect behind a move name, a monster behind the strip), and the corrected glyphs moved the block mean across the threshold the other way. The same run raised eleven frames and cut every menu state's error (menu_status 0.994 -> 0.997). The two shiny_refactor rows are patched-disc states that read 0.847 / 0.999 on this machine before the change too, with identical frames before and after; the committed values were another machine's."
+changes = [
+  ["states/gimard_burning_attack/image", 0.57, 0.569],
+  ["states/sebucus_overworld_resident/image", 0.997, 0.995],
+  ["states/shiny_refactor_gimard_levelup/image", 0.854, 0.847],
+  ["states/shiny_refactor_gimard_plus35/camera", 1.0, 0.999],
+  ["states/terra_party_battle/image", 0.993, 0.992],
+  ["states/zeto_call_wave_mid_cast/image", 0.918, 0.917],
+]
