@@ -311,10 +311,26 @@ pub fn gauge_fill_color(idx: u8) -> [f32; 4] {
     }
 }
 
-/// Retail's "normal" readout colour - `(205, 205, 205)`, entry 15 of the
-/// tier-7 CLUT. It is also the colour every **name** on the battle strip is
-/// drawn in, downed members included; see [`gauge_fill_color`].
-pub const READOUT_NORMAL: [f32; 4] = [0.804, 0.804, 0.804, 1.0];
+/// Retail's "normal" readout colour - entry 15 of the tier-7 CLUT, the 5-bit
+/// `25` that a retail frame shows as `(206, 206, 206)`. It is also the colour
+/// every **name** and caption on the battle screen is drawn in, downed
+/// members included; see [`gauge_fill_color`]. The same ink as the menus'
+/// [`MENU_TEXT_WHITE`](crate::MENU_TEXT_WHITE): one CLUT.
+pub const READOUT_NORMAL: [f32; 4] = crate::MENU_TEXT_WHITE;
+
+/// The modulation that draws a **numeral cell** in `ink`.
+///
+/// The 8x12 numeral cells and the battle strip's `/` are decoded under the
+/// tier-7 CLUT (sub-palette 13, `legaia_ui_formats::title_pak::MENU_GLYPH_ATLAS_TEXT_CLUT_ROW`),
+/// so their texels already carry that CLUT's ink and outline. Retail picks a
+/// tier by selecting another CLUT, not by modulating, so the normal tier
+/// draws them unmodulated; another tier scales the baked ink onto its own.
+/// Multiplying the cell by the ink itself drew the normal readout at
+/// `206 * 206 / 255 = 166` with a `27` outline where retail shows `206` / `33`.
+pub fn numeral_cell_tint(ink: [f32; 4]) -> [f32; 4] {
+    let base = READOUT_NORMAL;
+    [ink[0] / base[0], ink[1] / base[1], ink[2] / base[2], ink[3]]
+}
 
 /// Everything one battle-HUD frame draws, plus the chrome inputs the
 /// retail-shaped strip needs. Bundled so [`battle_hud_draws_for`] stays under
@@ -506,4 +522,54 @@ pub fn diag_hud_enabled() -> bool {
     std::env::var("LEGAIA_DIAG_HUD")
         .map(|v| !v.is_empty() && v != "0")
         .unwrap_or(false)
+}
+
+#[cfg(test)]
+mod ink_tests {
+    use super::*;
+
+    /// Retail's battle and menu text is CLUT-7 grey on screen, `206`, never
+    /// white (`rim_elm_gimard_victory`'s plaques, `v0_1_battle_command_submenu`'s
+    /// chips, `menu_equipment_field`'s rows).
+    #[test]
+    fn the_normal_ink_is_the_tier_7_grey() {
+        assert_eq!(READOUT_NORMAL, crate::MENU_TEXT_WHITE);
+        assert_eq!((READOUT_NORMAL[0] * 255.0).round() as u8, 206);
+        assert_eq!(crate::battle_command_ui::LABEL_INK, READOUT_NORMAL);
+    }
+
+    /// A numeral cell is decoded under the tier-7 CLUT, so the normal tier
+    /// draws it unmodulated, and another tier lands its own entry-15 ink on
+    /// the baked `206`.
+    #[test]
+    fn numeral_cells_draw_the_normal_tier_unmodulated() {
+        assert_eq!(numeral_cell_tint(READOUT_NORMAL), [1.0; 4]);
+        let gold = gauge_fill_color(6);
+        let t = numeral_cell_tint(gold);
+        for k in 0..3 {
+            assert!((t[k] * READOUT_NORMAL[k] - gold[k]).abs() < 1e-6);
+        }
+        assert_eq!(t[3], gold[3]);
+    }
+
+    /// Every caption the battle builder lays out - the actor plaque and the
+    /// move name here - carries the tier-7 ink, not white.
+    #[test]
+    fn battle_captions_draw_in_the_tier_7_ink() {
+        let font = legaia_font::synthetic_for_tests();
+        let draws = battle_hud_draws_for(
+            &font,
+            &BattleHudFrame {
+                surface: (320, 240),
+                plaque: Some("Vahn"),
+                move_name: Some("Somersault"),
+                ..Default::default()
+            },
+            (0, 0),
+        );
+        assert!(!draws.text.is_empty());
+        for d in &draws.text {
+            assert_eq!(d.color, READOUT_NORMAL, "{d:?}");
+        }
+    }
 }

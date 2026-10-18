@@ -66,7 +66,8 @@ pub fn numeral_cell_draws(
         return vec![TextDraw {
             dst: (pen.0, pen.1, c.w, c.h),
             src: (c.atlas_x, c.atlas_y, c.w, c.h),
-            color,
+            // The cell is decoded under the ink-7 CLUT already.
+            color: numeral_cell_tint(color),
         }];
     }
     text_draws_for(&font.layout_ascii(&ch.to_string()), pen, color)

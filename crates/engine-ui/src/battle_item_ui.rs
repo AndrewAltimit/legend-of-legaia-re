@@ -354,7 +354,16 @@ pub fn battle_item_window_text(
         .into_iter()
         .zip(crumb_layout(font, frame.actor_name, third))
     {
-        emit(&mut out, font, label, pen, white, stage_origin, scale);
+        // The breadcrumb tabs are the plaque's gold plates, inked like it.
+        emit(
+            &mut out,
+            font,
+            label,
+            pen,
+            crate::READOUT_NORMAL,
+            stage_origin,
+            scale,
+        );
     }
 
     match frame.targets {

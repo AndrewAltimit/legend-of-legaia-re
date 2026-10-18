@@ -57,6 +57,11 @@ pub fn battle_hud_draws_for(
     const MBAR_H: i32 = 3;
 
     let white: [f32; 4] = [1.0, 1.0, 1.0, 1.0];
+    // Glyph ink of every battle caption - the plaques, the tabs, the move
+    // name and the message bar. Retail draws them all through the font's
+    // tier-7 CLUT, whose entry 15 is `(206, 206, 206)` on screen, not white:
+    // `white` stays the neutral modulation of the textured sprites.
+    let ink: [f32; 4] = READOUT_NORMAL;
     let monster: [f32; 4] = [1.0, 0.7, 0.7, 1.0];
     let dim: [f32; 4] = [0.5, 0.5, 0.5, 1.0];
     let red: [f32; 4] = [1.0, 0.4, 0.4, 1.0];
@@ -206,7 +211,7 @@ pub fn battle_hud_draws_for(
                         b.separator.3 * scale as u32,
                     ),
                     src: b.separator,
-                    color: c,
+                    color: numeral_cell_tint(c),
                 }),
                 None => stage_text(text, font, "/", x, y + 4, c),
             }
@@ -247,7 +252,7 @@ pub fn battle_hud_draws_for(
                         src.3 * scale as u32,
                     ),
                     src,
-                    color: c,
+                    color: numeral_cell_tint(c),
                 }),
                 None => {
                     let glyph = [ch];
@@ -735,7 +740,7 @@ pub fn battle_hud_draws_for(
                 BEGIN_TAB_LABEL,
                 BEGIN_TAB_X + tab_dx + PLATE_CAP_W,
                 BEGIN_TAB_Y + tab_dy + PLAQUE_CONTENT_DY,
-                white,
+                ink,
             );
             PLAQUE_BEHIND_TAB_X
         } else {
@@ -759,7 +764,7 @@ pub fn battle_hud_draws_for(
         if let Some(src) = badge {
             stage_sprite(&mut sprites, src, content_x, content_y);
         }
-        stage_text(&mut text, font, name, content_x + lead, content_y, white);
+        stage_text(&mut text, font, name, content_x + lead, content_y, ink);
         // The chosen arm's chip rests at `width(name) + 0x54`: content
         // `0x54 - 0x44 = 16` px past the plaque's own content run, i.e. its
         // plate starts where the plaque's right cap ends.
@@ -782,7 +787,7 @@ pub fn battle_hud_draws_for(
                 label,
                 tab_x + PLATE_CAP_W,
                 PLAQUE_Y + PLAQUE_CONTENT_DY,
-                white,
+                ink,
             );
         }
     }
@@ -798,7 +803,7 @@ pub fn battle_hud_draws_for(
         let name_w = font.layout_ascii(name).advance_x as i32;
         let lead = name.as_bytes()[0];
         let x = i32::from(crate::battle_name_banner::banner_x(name_w, lead, 0));
-        stage_text(&mut text, font, name, x, MOVE_NAME_Y, white);
+        stage_text(&mut text, font, name, x, MOVE_NAME_Y, ink);
     }
 
     // ---- The target plaque ----
@@ -829,7 +834,7 @@ pub fn battle_hud_draws_for(
         if let Some(src) = badge {
             stage_sprite(&mut sprites, src, content_x, content_y);
         }
-        stage_text(&mut text, font, name, content_x + lead, content_y, white);
+        stage_text(&mut text, font, name, content_x + lead, content_y, ink);
     }
 
     // ---- The target-select plaque ----
@@ -863,7 +868,7 @@ pub fn battle_hud_draws_for(
         if let Some(src) = badge {
             stage_sprite(&mut sprites, src, x, y - 2);
         }
-        stage_text(&mut text, font, name, x + lead, y - 2, white);
+        stage_text(&mut text, font, name, x + lead, y - 2, ink);
     }
 
     // ---- The commit log ----
@@ -965,7 +970,7 @@ pub fn battle_hud_draws_for(
                 _ => b'?',
             })
             .collect();
-        let mut draws = text_draws_for(&font.layout(&bytes), BAR_NAME, white);
+        let mut draws = text_draws_for(&font.layout(&bytes), BAR_NAME, ink);
         scale_stage_text_draws(&mut draws, origin, scale as u32);
         text.extend(draws);
     }

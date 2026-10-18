@@ -1931,6 +1931,17 @@ numerals on CLUT `(128, 510)`, all three names on `(208, 510)`):
 
 Port: `engine-ui::gauge_fill_color` + `READOUT_NORMAL`.
 
+The tier-7 CLUT is also the ink of every battle caption - the actor and
+target plaques, the breadcrumb tabs, the command chips, the move name and the
+message bar - and of the menus' body text: a retail frame shows its 5-bit `25`
+as `(206, 206, 206)`, never white. The 8x12 numeral cells and the strip's `/`
+sprite are decoded under this same CLUT (sub-palette 13), so they already
+carry its ink and its `(33, 33, 33)` outline. A tier is a CLUT pick, not a
+modulation: the port draws a cell unmodulated on the normal tier and scales
+the baked ink onto another tier's (`engine-ui::numeral_cell_tint`).
+Multiplying the cell by the ink drew it a second time, at `166` over a `27`
+outline.
+
 ### Status-element badge on the roster panel
 
 `FUN_8002C2E4` draws one element per panel, and its two arms share a seat. The

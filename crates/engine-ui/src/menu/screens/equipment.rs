@@ -127,7 +127,9 @@ pub fn equip_screen_draws_for(
     list_pen: (i32, i32),
     main_pen: (i32, i32),
 ) -> Vec<TextDraw> {
-    let white: [f32; 4] = [1.0, 1.0, 1.0, 1.0];
+    // CLUT 7, the ink every row below stages: `(206, 206, 206)` on retail's
+    // screen (`menu_equipment_field`), not white.
+    let white: [f32; 4] = MENU_TEXT_WHITE;
     let gold: [f32; 4] = [1.0, 0.85, 0.3, 1.0];
     let dim: [f32; 4] = [0.55, 0.55, 0.55, 1.0];
     let green: [f32; 4] = [0.5, 1.0, 0.5, 1.0];
