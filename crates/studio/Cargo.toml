@@ -24,6 +24,7 @@ rfd.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 legaia-actor-formats.workspace = true
+legaia-art.workspace = true
 legaia-container-formats.workspace = true
 legaia-disc-audit.workspace = true
 legaia-engine-audio.workspace = true

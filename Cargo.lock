@@ -1719,9 +1719,12 @@ name = "legaia-actor-formats"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "legaia-art",
  "legaia-bytes",
  "legaia-container-formats",
+ "legaia-font",
  "legaia-game-tables",
+ "legaia-iso",
  "legaia-lzs",
  "legaia-prot",
  "legaia-tim",
@@ -2525,6 +2528,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "legaia-bytes",
+ "legaia-font",
  "legaia-overlay-images",
  "legaia-prot",
  "serde",
@@ -2854,6 +2858,7 @@ dependencies = [
  "eframe",
  "env_logger",
  "legaia-actor-formats",
+ "legaia-art",
  "legaia-container-formats",
  "legaia-disc-audit",
  "legaia-engine-audio",

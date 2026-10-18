@@ -459,6 +459,18 @@ fn resolve_effect_offset(block: &[u8], magic_count: u8, index: Option<u32>) -> O
     Some(off)
 }
 
+/// The character a monster-name byte stands for: printable ASCII as
+/// itself, a high byte as the accented letter its dialog-font cell draws
+/// (`legaia_font::latin`, the PAL layout: `0x82` = `é`), anything else
+/// `None`. The USA names are pure ASCII, so they read exactly as before.
+fn name_char(b: u8) -> Option<char> {
+    match b {
+        0x20..=0x7E => Some(b as char),
+        0x80..=0xFF => legaia_font::latin::cell_for_byte(b).and_then(|c| c.ch),
+        _ => None,
+    }
+}
+
 /// Read a NUL-terminated monster name at `off` and clean it to a display
 /// string, alongside the **element-badge index** the name's leading caret
 /// escape names (or `None` when it carries none).
@@ -485,9 +497,11 @@ fn read_name(block: &[u8], off: usize) -> Option<(String, Option<u8>)> {
     if raw.is_empty() || raw.len() > 32 {
         return None;
     }
-    // The names are plain printable ASCII (caret escapes, `$`, letters,
-    // digits, spaces). Reject anything else as a filler / non-name slot.
-    if !raw.iter().all(|&b| (0x20..0x7F).contains(&b)) {
+    // The names are printable ASCII (caret escapes, `$`, letters, digits,
+    // spaces) plus, on the French, German and Italian discs, the accented
+    // Latin cells of the dialog font (`Mouche Mal{82}fique`). Reject any
+    // other byte as a filler / non-name slot.
+    if !raw.iter().all(|&b| name_char(b).is_some()) {
         return None;
     }
     // Strip `^X` caret color-escape pairs.
@@ -498,7 +512,9 @@ fn read_name(block: &[u8], off: usize) -> Option<(String, Option<u8>)> {
             i += 2;
             continue;
         }
-        out.push(raw[i] as char);
+        if let Some(c) = name_char(raw[i]) {
+            out.push(c);
+        }
         i += 1;
     }
     let name = out.trim().to_string();

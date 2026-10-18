@@ -150,7 +150,9 @@ The name carries a two-byte **element-icon escape**: a `^` + letter prefix (`^A 
 |---|---|---|---|---|---|---|---|---|
 | Element | Fire | Thunder | Wind | Water | Earth | Light | Dark | Evil |
 
-That is the icon-glyph row `0x1D..0x24` in the same order - not the element-id order of the [`+0x1D` element byte](battle.md#monster-record-source-layout). Every carrying monster's letter agrees with its element byte; `^H` maps to element byte `7`, the no-affinity id whose matrix row and column are all-100. Only 64 of the 186 populated records carry an escape. Counts per letter: [`battle-hud.md`](battle-hud.md#the-element-badges-and-their-per-badge-palette). Boss-tier `$2` / `$3` name suffixes are literal ASCII, not markup.
+That is the icon-glyph row `0x1D..0x24` in the same order - not the element-id order of the [`+0x1D` element byte](battle.md#monster-record-source-layout). Every carrying monster's letter agrees with its element byte; `^H` maps to element byte `7`, the no-affinity id whose matrix row and column are all-100. Only 64 of the 186 populated records carry an escape. Counts per letter: [`battle-hud.md`](battle-hud.md#the-element-badges-and-their-per-badge-palette). Boss-tier `$2` / `$3` name suffixes are literal ASCII, not markup; the font draws cell `0x24` as the level mark ([`dialog-font.md`](../formats/dialog-font.md)).
+
+The USA names are printable ASCII. The French, German and Italian archives also spell names with the font's accented Latin cells (bytes above `0x7E`); `monster_archive`'s name reader decodes those through `legaia_font::latin`, so every build populates the same ids.
 
 #### Texture pool (record `+0x08`)
 
