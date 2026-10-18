@@ -61,36 +61,7 @@ pub(crate) struct PosedPropDraw {
     pub cull_radius: u8,
 }
 
-/// Per-party-member battle facial-animation state: the member's per-action
-/// face tracks (entry `+0x8C` eyes / `+0x98` mouth, indexed by the playing
-/// clip's `action_id`) plus the last applied stamp set, so the VRAM is only
-/// re-uploaded when the stamped face actually changes. See
-/// `legaia_actor_formats::face_anim` / `tick_battle_face_stamps`.
-pub(super) struct BattleMemberFace {
-    /// World actor slot (= present-party band ordinal, 0..3).
-    pub(super) actor_slot: usize,
-    /// Character index (0 Vahn / 1 Noa / 2 Gala; Terra never gets an entry -
-    /// the retail animator skips char 3).
-    pub(super) char_index: usize,
-    /// Face tracks indexed by action slot (record[0] entries + the
-    /// equipment-spliced swing slots 0xC..0xF).
-    pub(super) tracks: Vec<Option<legaia_actor_formats::face_anim::FaceTracks>>,
-    /// Face tracks of the art-bank records' embedded entries, indexed by
-    /// bank record (= playing clip `action_id - 0x10`). Retail reads these
-    /// through the `FUN_8004AD80`-installed entry pointer (bank record
-    /// `+0x24`), i.e. record `+0xB0` eyes / `+0xBC` mouth - the mid-battle
-    /// art-strike faces.
-    pub(super) art_tracks: Vec<Option<legaia_actor_formats::face_anim::FaceTracks>>,
-    /// Stamp set applied on the previous frame (`None` = nothing applied
-    /// yet, force the first stamp).
-    pub(super) last_stamps: Option<Vec<legaia_actor_formats::face_anim::FaceStamp>>,
-    /// Victory-window frame counter - the engine's per-member equivalent
-    /// of the retail global `gp+0x9EA` (reset to 0 when the win pose is
-    /// staged, advanced per frame; the stamp pass halves it). `Some`
-    /// while the member's mouth-override window is open, `None` outside
-    /// it.
-    pub(super) art_counter: Option<u16>,
-}
+pub(super) use legaia_engine_session::battle_vram::BattleMemberFace;
 
 /// Windowed in-flow cutscene playback state: the decoded STR frames the
 /// field VM's FMV-trigger op resolved to, plus the current frame cursor and
@@ -610,21 +581,14 @@ pub(super) struct PlayWindowApp {
     /// Per-member battle facial-animation state (face tracks + last stamp
     /// set), populated by `enter_battle_render` for each assembled party
     /// member whose band pixels are the real texture-pool uploads. Driven
-    /// per tick by `tick_battle_face_stamps`; cleared on battle exit.
+    /// per tick by `tick_battle_vram_restamps`; cleared on battle exit.
     pub(super) battle_faces: Vec<BattleMemberFace>,
-    /// The static SCUS face-frame tables (`legaia_actor_formats::face_anim`),
-    /// lazily read from the boot source's `SCUS_942.54` on first battle
-    /// entry. `None` after a failed attempt (disc-free runs) - facial
+    /// The static SCUS face-frame and victory-mouth tables, lazily read from
+    /// the boot source's `SCUS_942.54` on first battle entry
+    /// (`legaia_engine_session::battle_vram::BattleFaceTables`, the page's
+    /// too). Unavailable after a failed attempt (disc-free runs) - facial
     /// animation is skipped.
-    pub(super) face_tables: Option<legaia_actor_formats::face_anim::FaceFrameTables>,
-    /// The static SCUS victory-window mouth-override table (the
-    /// `0x80077E80` per-(char, staged-id) tracks), loaded alongside
-    /// `face_tables`. `None` skips the override (the entry tracks still
-    /// animate).
-    pub(super) art_mouth_tables: Option<legaia_actor_formats::face_anim::ArtMouthTables>,
-    /// Whether the lazy `face_tables` load already ran (so a missing
-    /// executable is only probed once).
-    pub(super) face_tables_attempted: bool,
+    pub(super) battle_face_tables: legaia_engine_session::battle_vram::BattleFaceTables,
     /// The opt-in developer menu (`LEGAIA_DEV_MENU=1`), created on the first
     /// ticked frame. `None` on every default run, which is what keeps the
     /// dev screen out of a player build.

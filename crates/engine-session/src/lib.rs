@@ -8,6 +8,8 @@
 //! - [`battle_fx`] - the move-FX spawn-to-sound step.
 //! - [`battle_stage`] - a battle's stage, resolved on the battle edge, and the
 //!   world state it leaves (stage class, fog cap, monster texture slots).
+//! - [`battle_vram`] - the battle VRAM's per-tick re-stamps: facial animation,
+//!   the status / effect CLUT steps, the stage module's moves.
 //! - [`audio_director`] - the BGM / SFX / CD-XA director over an `AudioSink`.
 //! - [`scene_actors`] - the scene-entry actor binding both hosts run before
 //!   building meshes (the lead's locomotion clips, NPC clip cursors, floor
@@ -26,6 +28,7 @@
 pub mod audio_director;
 pub mod battle_fx;
 pub mod battle_stage;
+pub mod battle_vram;
 pub mod host_trace;
 pub mod hotkeys;
 pub mod mode_trace;

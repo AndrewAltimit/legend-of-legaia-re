@@ -1,11 +1,11 @@
 //! Mid-battle VRAM re-upload channel for the play page.
 //!
-//! The native window re-stamps the battle VRAM every battle tick
-//! (`window/battle.rs`: `tick_battle_face_stamps`, `tick_battle_status_clut`,
-//! `tick_battle_effect_clut`) and its renderer samples the live texture. The
-//! page uploads its battle VRAM once per fight (`play_battle_generation`), so
-//! those three stamps never reached the screen here. This module is the
-//! channel that closes that: the drains run in
+//! Both play hosts re-stamp the battle VRAM every battle tick through the
+//! shared steps (`legaia_engine_session::battle_vram`: `stamp_battle_faces`,
+//! `step_battle_vram_edits`); the native window re-uploads its texture
+//! inline. The page uploads its battle VRAM once per fight
+//! (`play_battle_generation`), so this module is the channel that carries a
+//! re-stamp to the screen: the steps run in
 //! [`LegaiaRuntime::tick_battle_vram_channel`] against the battle VRAM copy
 //! [`crate::play_battle_render::BattleRender`] owns, and the page re-uploads
 //! it when [`LegaiaRuntime::play_battle_vram_take_dirty`] reports a change.
@@ -44,36 +44,13 @@
 
 use wasm_bindgen::prelude::*;
 
-use legaia_actor_formats::face_anim::{ArtMouthTables, FaceFrameTables, FaceStamp, FaceTracks};
+use legaia_actor_formats::face_anim::FaceTracks;
 use legaia_engine_mode::mode::SceneMode;
+use legaia_engine_session::battle_vram::BattleFaceTables;
 
 use crate::runtime::LegaiaRuntime;
 
-/// One party member's facial-animation state for the current fight - the
-/// browser twin of the native `BattleMemberFace`.
-#[derive(Debug, Clone)]
-pub(crate) struct BattleMemberFace {
-    /// World actor slot (= present-party band ordinal, 0..3).
-    pub(crate) actor_slot: usize,
-    /// Character index (0 Vahn / 1 Noa / 2 Gala; Terra never gets an entry -
-    /// the retail animator skips char 3).
-    pub(crate) char_index: usize,
-    /// Face tracks indexed by action slot (record[0] entries + the
-    /// equipment-spliced swing slots 0xC..0xF).
-    pub(crate) tracks: Vec<Option<FaceTracks>>,
-    /// Face tracks of the art-bank records' embedded entries, indexed by
-    /// bank record (= playing clip `action_id - 0x10`). Retail reads these
-    /// through the `FUN_8004AD80`-installed entry pointer (bank record
-    /// `+0x24`), i.e. record `+0xB0` eyes / `+0xBC` mouth.
-    pub(crate) art_tracks: Vec<Option<FaceTracks>>,
-    /// The stamp set the last pass issued; a frame whose set is identical
-    /// re-issues nothing (retail re-issues identical `MoveImage`s every
-    /// frame; the visible result is the same).
-    pub(crate) last_stamps: Option<Vec<FaceStamp>>,
-    /// The member's victory-window frame counter (`gp+0x9EA` mirror):
-    /// `Some` while the override window is open, reset when it closes.
-    pub(crate) art_counter: Option<u16>,
-}
+pub(crate) use legaia_engine_session::battle_vram::BattleMemberFace;
 
 /// Per-fight state of the re-upload channel.
 #[derive(Default)]
@@ -87,28 +64,17 @@ pub(crate) struct BattleVramChannel {
     /// first sees a new one is the entry tick, whose full upload the page
     /// already does on the generation edge.
     last_generation: Option<u32>,
-    /// The static `SCUS_942.54` face-frame tables (`FaceFrameTables`), read
-    /// once per page load off the runtime's kept executable bytes. `None`
-    /// on a PROT.DAT-only load - faces stay neutral then, exactly like the
-    /// native window without a readable SCUS.
-    face_tables: Option<FaceFrameTables>,
-    /// The victory-window mouth-override table (`0x80077E80`).
-    art_mouth_tables: Option<ArtMouthTables>,
-    /// Whether the SCUS probe ran (a failed one is remembered so it runs
-    /// once).
-    face_tables_attempted: bool,
+    /// The static `SCUS_942.54` face-frame and victory-mouth tables, read
+    /// once per page load off the runtime's kept executable bytes. Empty on a
+    /// PROT.DAT-only load - faces stay neutral then, exactly like the native
+    /// window without a readable SCUS.
+    face_tables: BattleFaceTables,
 }
 
 impl BattleVramChannel {
     /// Lazily parse the SCUS face tables off the kept executable bytes.
     fn load_face_tables(&mut self, scus: Option<&[u8]>) {
-        if self.face_tables_attempted {
-            return;
-        }
-        self.face_tables_attempted = true;
-        self.face_tables = scus.and_then(FaceFrameTables::from_scus);
-        self.art_mouth_tables = scus.and_then(ArtMouthTables::from_scus);
-        if self.face_tables.is_none() {
+        if self.face_tables.load(scus) {
             crate::console_log(
                 "play battle: SCUS face-frame tables unavailable - battle faces stay neutral",
             );
@@ -154,9 +120,7 @@ impl LegaiaRuntime {
             self.battle_vram.last_generation = generation;
             self.battle_vram.serial = self.battle_vram.serial.wrapping_add(1);
         }
-        self.tick_battle_face_stamps_web();
-        self.tick_battle_status_clut_web();
-        self.tick_battle_effect_clut_web();
+        self.tick_battle_vram_restamps();
         self.tick_battle_stage_shell_web();
         if entry_tick {
             // The page uploads the whole battle VRAM on the generation edge
@@ -166,164 +130,31 @@ impl LegaiaRuntime {
         }
     }
 
-    /// Per-frame facial animator: for every registered party member, stamp
-    /// the playing clip's current eye + mouth face frame onto the band's
-    /// live face rows. The port of the native `tick_battle_face_stamps`
-    /// onto the page's battle VRAM copy; the GPU upload becomes the dirty
-    /// flag.
-    // PORT: FUN_80047430 (facial-animator dispatch): per visible party
-    // node, call the stamp pass with (band slot, char index, cursor
-    // keyframes, playing action entry), skipping char 3 (Terra) and bands
-    // >= 3. The stamp-selection half is `FaceFrameTables::stamps_with_art_window`
-    // (PORT: FUN_8004C7B4 in legaia_actor_formats::face_anim).
-    fn tick_battle_face_stamps_web(&mut self) {
-        use legaia_actor_formats::face_anim::{ART_BAND_FIRST, ART_BAND_LAST, ArtMouthOverride};
-        use legaia_engine_battle_vm::battle_action::BattleEndCause;
-        let Some(host) = self.scene_host.host() else {
-            return;
-        };
-        let Some(br) = self.battle_render.as_mut() else {
-            return;
-        };
-        if br.faces.is_empty() {
-            return;
-        }
+    /// The battle VRAM's re-stamps against the page's copy, through the steps
+    /// the native window runs (`legaia_engine_session::battle_vram`): the
+    /// facial animation, then the status CLUT recolour, the effect CLUT
+    /// stages and the stage module's queued `MoveImage`s. A moved texel
+    /// becomes the dirty flag.
+    fn tick_battle_vram_restamps(&mut self) {
+        use legaia_engine_session::battle_vram::{stamp_battle_faces, step_battle_vram_edits};
         self.battle_vram.load_face_tables(self.scus.as_deref());
-        let Some(tables) = self.battle_vram.face_tables.as_ref() else {
-            return;
-        };
-        let art_tables = self.battle_vram.art_mouth_tables.as_ref();
-        let world = &host.world;
-        // Retail gate 1 of the victory-window mouth override: the
-        // battle-end signal `DAT_8007BD71 == 0xFE` raised by a monster
-        // wipe (the SM `0x5A` arm; the engine mirror is the
-        // `BattleActionHost::battle_end` latch). Gates 2/3 - the victory
-        // sequencer's phase halfword `ctx+0x6CE != 0` and the celebration
-        // flag `DAT_8007BD60 & 0x80` (which the party-wipe path clears) -
-        // are the retail victory presentation's internal progress flags;
-        // the engine has no victory sequencer, so "the won battle is
-        // still on screen" stands in for them. Escapes also raise 0xFE
-        // but never set the celebration flag, so they stay excluded.
-        let victory_window = world.battle.end == Some(BattleEndCause::MonsterWipe);
-        let mut changed = false;
-        for mf in &mut br.faces {
-            let Some(actor) = world.actors.get(mf.actor_slot) else {
-                continue;
-            };
-            // No player yet = the rest pose: behaves like clip frame 0 of
-            // the (track-less) idle, i.e. the neutral face.
-            let (action_id, frame) = actor
-                .battle_animation
-                .as_ref()
-                .map(|p| (p.action_id(), p.current_frame()))
-                .unwrap_or((0, 0));
-            // Track source. Staged ids >= 0x10 are art-bank clips: retail
-            // materializes bank record `id - 0x10` and installs its
-            // embedded entry (record +0x24) as the action-table pointer
-            // (FUN_8004AD80), so the animator reads THAT entry's tracks
-            // (record +0xB0 eyes / +0xBC mouth). Below the art base, the
-            // playing clip's action slot picks the record[0] / swing entry.
-            let tracks = if action_id
-                >= legaia_actor_formats::battle_char_assembly::ART_ANIM_ID_BASE
-            {
-                mf.art_tracks
-                    .get(
-                        (action_id - legaia_actor_formats::battle_char_assembly::ART_ANIM_ID_BASE)
-                            as usize,
-                    )
-                    .and_then(|t| t.as_ref())
-            } else {
-                mf.tracks.get(action_id as usize).and_then(|t| t.as_ref())
-            };
-            // Retail gate 4: the member's last-staged anim id
-            // (`actor[+0x1DB]`; the engine's art-bank clips carry it as
-            // their `action_id`) sits in the dynamic-art-slot band
-            // `0x11..=0x18`. Open the override window, clocking the
-            // member's `gp+0x9EA` mirror from 0; closed, the counter
-            // resets.
-            let art_mouth = if victory_window
-                && (ART_BAND_FIRST..=ART_BAND_LAST).contains(&action_id)
-                && let Some(track) = art_tables.and_then(|t| t.track(mf.char_index, action_id))
-            {
-                let counter = mf.art_counter.unwrap_or(0);
-                mf.art_counter = Some(counter.saturating_add(1));
-                Some(ArtMouthOverride { track, counter })
-            } else {
-                mf.art_counter = None;
-                None
-            };
-            // The retail mouth-neutral gate: character-record word `+0xF8`
-            // bit 0x2000 = ability bitfield (`+0xF4`) bit 45 (passive 0x2D
-            // Rage, Evil Medallion). Read it off the occupying character's
-            // rebuilt ability bytes (byte 5 bit 0x20).
-            let force_neutral_mouth = world
-                .party
-                .roster
-                .members
-                .get(world.party_roster_slot(mf.actor_slot))
-                .map(|m| m.ability_bits()[5] & 0x20 != 0)
-                .unwrap_or(false);
-            let stamps = tables.stamps_with_art_window(
-                mf.char_index,
-                mf.actor_slot,
-                tracks,
-                frame,
-                art_mouth,
-                force_neutral_mouth,
-            );
-            if mf.last_stamps.as_deref() != Some(&stamps) {
-                for s in &stamps {
-                    br.vram
-                        .move_image(s.src_x, s.src_y, s.w, s.h, s.dst_x, s.dst_y);
-                }
-                mf.last_stamps = Some(stamps);
-                changed = true;
-            }
-        }
-        if changed {
-            self.battle_vram.mark_dirty();
-        }
-    }
-
-    /// Status CLUT recolour - the fourth pass of `FUN_8004CE2C`. An actor
-    /// whose Stone latch fired this frame has its party CLUT row
-    /// (`481 + slot`) restaged grey from the pristine palette copy
-    /// ([`legaia_engine_battle::battle_status_clut`]); the latch itself is
-    /// armed inside `BattleHud::sync_status`, which the battle tick already
-    /// runs once per slot per frame on this host.
-    fn tick_battle_status_clut_web(&mut self) {
-        if !self.battle_hud.status_clut.armed() {
-            return;
-        }
-        let Some(br) = self.battle_render.as_mut() else {
-            return;
-        };
-        if self.battle_hud.status_clut.step(&mut br.vram) {
-            self.battle_vram.mark_dirty();
-        }
-    }
-
-    /// Effect **CLUT stages** - the palette arm of the action-effect script's
-    /// table form (`FUN_801DEA50`, `0x801df0dc..0x801df134`). Each queued
-    /// `0x801F6418` byte is a VRAM source x whose sixteen entries move onto
-    /// `(224, 476)`, recolouring whatever the spawned move-FX prototype draws
-    /// ([`legaia_engine_battle::battle_effect_clut`]). Drains unconditionally
-    /// so the queue cannot accumulate across a battle.
-    fn tick_battle_effect_clut_web(&mut self) {
         let Some(host) = self.scene_host.host_mut() else {
             return;
         };
-        let stages = host.world.drain_battle_clut_stages();
-        if stages.is_empty() {
-            return;
-        }
-        let Some(br) = self.battle_render.as_mut() else {
-            return;
-        };
         let mut dirty = false;
-        for x in stages {
-            dirty |= legaia_engine_battle::battle_effect_clut::stage_effect_clut(&mut br.vram, x);
+        if let Some(br) = self.battle_render.as_mut() {
+            dirty |= stamp_battle_faces(
+                &host.world,
+                &self.battle_vram.face_tables,
+                &mut br.faces,
+                &mut br.vram,
+            );
         }
+        dirty |= step_battle_vram_edits(
+            &mut host.world,
+            &mut self.battle_hud.status_clut,
+            self.battle_render.as_mut().map(|br| &mut br.vram),
+        );
         if dirty {
             self.battle_vram.mark_dirty();
         }
@@ -516,7 +347,7 @@ impl LegaiaRuntime {
     /// tables are unavailable or no member is registered.
     pub fn debug_battle_face_regions(&mut self) -> Vec<u16> {
         self.battle_vram.load_face_tables(self.scus.as_deref());
-        let Some(tables) = self.battle_vram.face_tables.as_ref() else {
+        let Some(tables) = self.battle_vram.face_tables.face() else {
             return Vec::new();
         };
         let Some(br) = self.battle_render.as_ref() else {

@@ -64,7 +64,7 @@
 //! page does not upload while a battle is on screen).
 //!
 //! The mid-battle VRAM re-stamps - the per-tick facial animation
-//! (`tick_battle_face_stamps`), the status CLUT recolour
+//! (`legaia_engine_session::battle_vram::stamp_battle_faces`), the status CLUT recolour
 //! (`engine-battle::battle_status_clut`, `FUN_8004CE2C` pass 4) and the effect
 //! CLUT stage (`engine-battle::battle_effect_clut`, `FUN_801DEA50`'s palette
 //! arm) - run here through [`crate::play_battle_vram`] against the
@@ -517,14 +517,12 @@ impl LegaiaRuntime {
                     // (`tick_battle_vram_channel`) re-stamps the current
                     // eye/mouth frame onto the band's live face rows.
                     if let Some(tracks) = form.face_tracks.clone() {
-                        party_faces.push(crate::play_battle_vram::BattleMemberFace {
-                            actor_slot: form.member,
-                            char_index: form.cslot,
+                        party_faces.push(crate::play_battle_vram::BattleMemberFace::new(
+                            form.member,
+                            form.cslot,
                             tracks,
-                            art_tracks: form.art_face_tracks.clone(),
-                            last_stamps: None,
-                            art_counter: None,
-                        });
+                            form.art_face_tracks.clone(),
+                        ));
                     }
                 }
             }
@@ -577,13 +575,11 @@ impl LegaiaRuntime {
         let Some(host) = self.scene_host.host_mut() else {
             return;
         };
+        // The stage module's VRAM edit is the shared re-stamp step's
+        // (`step_battle_vram_edits`); this is the mesh half.
         let Some(br) = self.battle_render.as_mut() else {
-            host.world.discard_battle_vram_edits();
             return;
         };
-        if host.world.apply_battle_vram_moves(&mut br.vram) {
-            self.battle_vram.mark_dirty();
-        }
         let Some(sh) = br.shell.as_mut() else {
             return;
         };

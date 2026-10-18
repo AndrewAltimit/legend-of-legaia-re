@@ -622,9 +622,7 @@ impl PlayWindowApp {
         // advanced by `World::tick`'s Battle arm, which every host
         // reaches - ticking them again here would run them at 2x.
         if self.session.host.world.mode == SceneMode::Battle {
-            self.tick_battle_face_stamps();
-            self.tick_battle_status_clut();
-            self.tick_battle_effect_clut();
+            self.tick_battle_vram_restamps();
             self.tick_battle_stage_shell();
         }
         // World-map ocean shimmer: cycle the 13-frame CLUT animation
