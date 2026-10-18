@@ -307,6 +307,12 @@ pub struct FieldLocomotion {
     /// [`crate::world::World::take_player_rig_change`]. Scene entry lowers it,
     /// because every host builds the rig afresh on entry anyway.
     pub(crate) player_rig_dirty: bool,
+    /// The rig source ([`crate::world::World::player_rig_source`]) as of the
+    /// last [`crate::world::World::take_player_rig_change`] drain or scene
+    /// entry. The drain reports a change whenever the live source differs
+    /// from it, so a roster op that changes the lead mid-scene rebuilds the
+    /// rig the same way a `CC F8 50` does.
+    pub(crate) player_rig_bound: Option<crate::scene_host::PlayerRigSource>,
     /// The kind-0 warp's globals `_DAT_8007B6B0` (timer), `_DAT_8007B6B4`
     /// (post-warp pad hold) and the destination pair - see
     /// [`legaia_engine_field::field_warp_tile`].
@@ -352,6 +358,7 @@ impl FieldLocomotion {
             clip_override: 0,
             player_live_model: None,
             player_rig_dirty: false,
+            player_rig_bound: None,
             warp: legaia_engine_field::field_warp_tile::WarpTimer::default(),
             warp_fade_in_in: None,
             arrival_facing: 0,

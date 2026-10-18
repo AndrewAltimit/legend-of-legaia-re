@@ -148,4 +148,36 @@ mod tests {
             }
         );
     }
+
+    /// A roster op that moves the lead mid-scene (`cave01`'s
+    /// `3D 00 3D 01 3D 02 3C 01`) re-sources the rig, so the hosts have to
+    /// hear about it the way they hear about a `CC F8 50`.
+    #[test]
+    fn a_lead_change_signals_a_rig_rebuild() {
+        let mut w = crate::world::World::default();
+        w.party.active_party = vec![0, 1, 2];
+        w.reset_field_warp_and_clip();
+        // Off the map a lead move waits for the return.
+        w.party.active_party = vec![1];
+        assert!(!w.take_player_rig_change(), "a battle's composition");
+        w.party.active_party = vec![0, 1, 2];
+        w.mode = legaia_engine_mode::mode::SceneMode::Field;
+        assert!(!w.take_player_rig_change(), "entry built Vahn's rig");
+        w.party.active_party = vec![1];
+        assert!(w.take_player_rig_change(), "Noa now leads");
+        assert!(!w.take_player_rig_change(), "once");
+        assert_eq!(
+            w.player_rig_source(),
+            PlayerRigSource::PartySlot {
+                slot: 1,
+                model_id: None
+            }
+        );
+        // A re-staged model owns the mesh: the lead moving under it changes
+        // nothing the rig is built from.
+        w.field_player_set_model(0x26);
+        assert!(w.take_player_rig_change());
+        w.party.active_party = vec![2];
+        assert!(!w.take_player_rig_change());
+    }
 }

@@ -76,6 +76,7 @@ mod cast_band_ladder;
 mod cast_effect_pool_disc;
 mod cast_module_bodies_ladder;
 mod cast_voice_head_cue_disc;
+mod cave01_naming_lead_mesh_disc;
 mod chapter2_sebucus_hub_sweep_disc;
 mod chapter2_sebucus_spine_oracle;
 mod chapter3_karisto_spine_oracle;

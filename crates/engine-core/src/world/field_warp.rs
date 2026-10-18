@@ -207,6 +207,7 @@ impl World {
         self.locomotion.clip_override = 0;
         self.locomotion.player_live_model = None;
         self.locomotion.player_rig_dirty = false;
+        self.locomotion.player_rig_bound = Some(self.player_rig_source());
     }
 }
 

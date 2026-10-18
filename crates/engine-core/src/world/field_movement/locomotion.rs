@@ -1021,11 +1021,35 @@ impl World {
         true
     }
 
-    /// Take the "the player's model changed" signal a mid-scene `CC F8 50`
-    /// raises. A host that sees `true` rebuilds the player's rig from
+    /// Take the "the player's model changed" signal. A host that sees `true`
+    /// rebuilds the player's rig from
     /// [`crate::scene_host::SceneHost::player_rig_mesh`].
+    ///
+    /// Two things raise it: a mid-scene `CC F8 50` re-stage, and any change
+    /// of the resolved [`Self::player_rig_source`] since the last drain - the
+    /// roster ops `0x3C` / `0x3D` and `4C 01` move the lead, and retail's
+    /// player body follows the lead (the leader swap `FUN_801D27E0` swaps the
+    /// visible lead by writing only `_DAT_8007B8F8` / `0x80084597..98`,
+    /// `0x801D2AEC..0x801D2B08`, with no mesh store). `cave01`'s entry script
+    /// is the case that needs it: `3D 00 3D 01 3D 02 3C 01` leaves Noa alone
+    /// in the party for the cutscene that names her, after the hosts built
+    /// the rig from the picker's Vahn lead.
+    ///
+    /// Only a field or kingdom map, where the player's rig is drawn, reports
+    /// a lead move; one made off the map (a battle's composition) is seen on
+    /// the first drain back on it.
     pub fn take_player_rig_change(&mut self) -> bool {
-        std::mem::take(&mut self.locomotion.player_rig_dirty)
+        let mut moved = false;
+        if matches!(
+            self.mode,
+            legaia_engine_mode::mode::SceneMode::Field
+                | legaia_engine_mode::mode::SceneMode::WorldMap
+        ) {
+            let source = self.player_rig_source();
+            moved = self.locomotion.player_rig_bound != Some(source);
+            self.locomotion.player_rig_bound = Some(source);
+        }
+        std::mem::take(&mut self.locomotion.player_rig_dirty) || moved
     }
 
     /// The scene-record one-shot a script ExecMove on the player

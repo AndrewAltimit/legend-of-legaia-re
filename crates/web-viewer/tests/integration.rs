@@ -58,6 +58,7 @@ mod play_audio_parity;
 mod play_baka_ladder_host;
 mod play_boot_tables_parity;
 mod play_camera_parity_disc;
+mod play_cave01_naming_disc;
 mod play_compass_disc;
 mod play_compose_ladder;
 mod play_fishing_host;
