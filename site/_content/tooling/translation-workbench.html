@@ -1,4 +1,4 @@
-<header class="page-header">
+<header class="page-header wb-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">tooling</a> &middot; Translation workbench</div>
   <h1>Translation workbench</h1>
   <p class="lede">Edit a Legend of Legaia language pack against your own disc, and see how much room every line has while you type. Everything runs in this tab as WebAssembly - the disc never leaves your machine and nothing is uploaded. To patch a disc with the finished pack, use the <a href="rom-patcher.html">ROM patcher</a>.</p>
@@ -7,16 +7,12 @@
 <section class="doc-section" id="workbench">
   <div class="wb">
 
-    <div class="wb-warn"><strong>Your working pack holds the game's text from your disc.</strong> Keep it to yourself. Share only the <em>shareable pack</em>, which holds your translations and disc coordinates and nothing else.
-      <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip"><p>The English beside each line is read from the disc you load here. It is shown to you, saved only in this browser, and written only into the <em>working</em> pack you download.</p><p>The shareable pack drops every English line and every context note, so it can be posted. More: <a href="../guides/translating.html#pack-shapes">working pack and shareable pack</a>.</p></span></span>
-    </div>
-
-    <div class="wb-top">
-      <label class="wb-field">
+    <div class="wb-toolbar">
+      <label class="wb-tool">
         <span class="wb-label">Disc image (<code>.bin</code>, Mode 2/2352)</span>
         <input type="file" id="wb-file" accept=".bin,application/octet-stream">
       </label>
-      <div class="wb-field">
+      <div class="wb-tool">
         <span class="wb-label">Pack
           <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip"><p>Start from a published pack, from a <code>.yaml</code> of your own (a working or a shareable pack), or from nothing. Whatever you load is laid onto your disc's own export, so every line shows its English and its room.</p><p>Lines whose keys your disc does not carry are counted and dropped.</p></span></span>
         </span>
@@ -36,137 +32,178 @@
       </div>
     </div>
 
+    <div class="wb-warn"><strong>Your working pack holds the game's text from your disc.</strong> Keep it to yourself; share only the <em>shareable pack</em>.
+      <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip"><p>The English beside each line is read from the disc you load here. It is shown to you, saved only in this browser, and written only into the <em>working</em> pack you download.</p><p>The shareable pack holds your translations and disc coordinates and nothing else: it drops every English line and every context note, so it can be posted. More: <a href="../guides/translating.html#pack-shapes">working pack and shareable pack</a>.</p></span></span>
+    </div>
+
     <div id="wb-resume" class="wb-resume" hidden></div>
     <div id="wb-status" class="wb-status" role="status"></div>
 
     <div id="wb-main" hidden>
-      <div class="wb-meta-row">
-        <label class="wb-field wb-field-sm"><span class="wb-label">Language code</span><input type="text" id="wb-lang" size="8" maxlength="16" placeholder="fr"></label>
-        <label class="wb-field"><span class="wb-label">Contributors (comma-separated)</span><input type="text" id="wb-contrib"></label>
-      </div>
-      <div class="wb-accents" id="accents">
-        <div class="wb-field">
-          <span class="wb-label">Accents
-            <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip"><p>The USA disc's font draws plain letters only, so every accented letter needs a decision. <strong>Report them</strong> marks each one until you fix it. <strong>Fold to plain letters</strong> writes <code>Epee</code> for <code>Épée</code> when the pack is applied. <strong>Draw them</strong> adds accented letters to the game font when the pack is applied, built from your disc's own letters, so <code>Épée</code> shows as typed.</p><p>The choice is saved in the pack (its <code>accents:</code> line), so the ROM patcher and the command-line tool apply it the same way. Letters with no glyph even in the accent font (Polish <code>ł</code>, for one) always fold; Cyrillic, Greek and CJK cannot be drawn at all. Details: <a href="../guides/translating.html#accents">accents and special characters</a>.</p></span></span>
-          </span>
-          <select id="wb-accent-mode" aria-label="How accents reach the disc">
-            <option value="strict">Report them (fix by hand)</option>
-            <option value="fold">Fold to plain letters</option>
-            <option value="font">Draw them (accent font)</option>
-          </select>
-          <div id="wb-accent-note" class="wb-note"></div>
+      <div class="wb-toolbar wb-toolbar-pack">
+        <label class="wb-tool wb-tool-sm"><span class="wb-label">Language code</span><input type="text" id="wb-lang" size="8" maxlength="16" placeholder="fr"></label>
+        <label class="wb-tool wb-tool-grow"><span class="wb-label">Contributors (comma-separated)</span><input type="text" id="wb-contrib"></label>
+        <div class="wb-actions">
+          <button type="button" id="wb-dl-working" class="wb-button wb-button-ghost">Download working pack</button>
+          <button type="button" id="wb-dl-share" class="wb-button">Download shareable pack</button>
+          <button type="button" id="wb-check" class="wb-button wb-button-ghost">Check against my disc</button>
+          <label class="wb-check-row"><input type="checkbox" id="wb-relayout">
+            <span>Give translated dialog more room
+              <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip"><p>The ROM patcher option of the same name. A scene whose translated dialog no longer compresses into its space gets extra 2048-byte sectors instead of having lines put back in English. The check runs the same way when this is ticked.</p><p>It only helps a scene with a line longer than its own slot. Details: <a href="../guides/translating.html#more-room">giving dialog more room</a>.</p></span></span>
+            </span>
+          </label>
+          <button type="button" id="wb-issues" class="wb-button wb-button-ghost" hidden>Download skipped lines (.csv)</button>
         </div>
-        <div class="wb-field wb-pal-field">
-          <span class="wb-label">Characters <select id="wb-pal-lang" aria-label="Palette language"></select></span>
-          <div id="wb-palette" class="wb-palette" role="toolbar" aria-label="Insert a character into the translation you are editing"></div>
-        </div>
-        <div class="wb-field wb-sym-field">
-          <span class="wb-label">Symbols
-            <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip"><p>The buttons and icons the game draws inside text, as your disc draws them. Click one to insert its token where your cursor is; the previews show the icon in place.</p><p>A pack writes a symbol as <code>{ce:NN}</code>, the form the export uses. You may also type its name instead, such as <code>{btn:x}</code> or <code>{icon:fire}</code> (hover a symbol to see its name): it imports as the same bytes. Full list: <a href="../guides/translating.html#buttons-and-icons">buttons and icons</a>.</p></span></span>
-          </span>
-          <div id="wb-symbols" class="wb-palette wb-symbols" role="toolbar" aria-label="Insert a button or icon symbol into the translation you are editing"></div>
-        </div>
-        <div id="wb-char-stats" class="wb-char-stats" role="status"></div>
-      </div>
-      <div class="wb-actions">
-        <button type="button" id="wb-dl-working" class="wb-button wb-button-ghost">Download working pack</button>
-        <button type="button" id="wb-dl-share" class="wb-button">Download shareable pack</button>
-        <span class="wb-sep"></span>
-        <button type="button" id="wb-check" class="wb-button wb-button-ghost">Check against my disc</button>
-        <label class="wb-check-row"><input type="checkbox" id="wb-relayout">
-          <span>Give translated dialog more room
-            <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip"><p>The ROM patcher option of the same name. A scene whose translated dialog no longer compresses into its space gets extra 2048-byte sectors instead of having lines put back in English. The check runs the same way when this is ticked.</p><p>It only helps a scene with a line longer than its own slot. Details: <a href="../guides/translating.html#more-room">giving dialog more room</a>.</p></span></span>
-          </span>
-        </label>
-        <button type="button" id="wb-issues" class="wb-button wb-button-ghost" hidden>Download skipped lines (.csv)</button>
       </div>
       <div id="wb-check-status" class="wb-status"></div>
 
-      <h2 id="space">Space
-        <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip"><p>Where the room is, measured on your disc by the same code the patch runs. Click a row to list its lines in the editor.</p><p>Names share free bytes per table region; menu labels have fixed slots; each scene's dialog must compress back into the space it had. Reference: <a href="translation.html">space and budgets</a>.</p></span></span>
-      </h2>
-      <div class="wb-dash">
-        <div class="wb-card">
-          <h3>Coverage</h3>
-          <table class="wb-table" id="wb-coverage"></table>
-          <h3>Room per category
-            <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip"><p>How much a longer translation can take beyond each string's own slot, in bytes. "Free" is what the patch frees by packing the English tighter; "spare" is room reserved for translation that no mod ever writes (the menu overlay's spare bytes). With a checked pack, "left" is what your pack leaves.</p><p>Hover a row for where the strings live and what else uses the same room. Reference: <a href="translation.html">space and budgets</a>.</p></span></span>
-          </h3>
-          <table class="wb-table" id="wb-categories"></table>
+      <details class="wb-fold" id="space">
+        <summary>Space and budgets <span id="wb-space-sum" class="wb-fold-sum"></span>
+          <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip"><p>Where the room is, measured on your disc by the same code the patch runs. Click a row to list its lines in the editor.</p><p>Names share free bytes per table region; menu labels have fixed slots; each scene's dialog must compress back into the space it had. Reference: <a href="translation.html">space and budgets</a>.</p></span></span>
+        </summary>
+        <div class="wb-dash">
+          <div class="wb-card">
+            <h3>Coverage</h3>
+            <table class="wb-table" id="wb-coverage"></table>
+            <h3>Room per category
+              <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip"><p>How much a longer translation can take beyond each string's own slot, in bytes. "Free" is what the patch frees by packing the English tighter; "spare" is room reserved for translation that no mod ever writes (the menu overlay's spare bytes). With a checked pack, "left" is what your pack leaves.</p><p>Hover a row for where the strings live and what else uses the same room. Reference: <a href="translation.html">space and budgets</a>.</p></span></span>
+            </h3>
+            <table class="wb-table" id="wb-categories"></table>
+          </div>
+          <div class="wb-card">
+            <h3>Name tables <span class="wb-legend"><i class="k-en"></i>English <i class="k-pack"></i>your pack <i class="k-free"></i>free</span></h3>
+            <div id="wb-regions" class="wb-bars"></div>
+            <h3>Monster names</h3>
+            <div id="wb-monsters" class="wb-kv"></div>
+            <h3>Menu and system labels</h3>
+            <div id="wb-pools" class="wb-bars"></div>
+          </div>
+          <div class="wb-card wb-card-wide">
+            <h3>Scenes, fullest first
+              <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip"><p>Each scene's dialog is stored compressed, and on the USA disc it has no spare room: the translated scene must compress to no more than the English did. The meter is the compressed size against that space.</p><p>A scene that does not fit gets some of its longest lines put back in English ("rolled back"). Shorten lines in that scene, or tick "Give translated dialog more room". The meter updates a moment after you edit one of its lines.</p></span></span>
+            </h3>
+            <div id="wb-scenes"></div>
+          </div>
         </div>
-        <div class="wb-card">
-          <h3>Name tables <span class="wb-legend"><i class="k-en"></i>English <i class="k-pack"></i>your pack <i class="k-free"></i>free</span></h3>
-          <div id="wb-regions" class="wb-bars"></div>
-          <h3>Monster names</h3>
-          <div id="wb-monsters" class="wb-kv"></div>
-          <h3>Menu and system labels</h3>
-          <div id="wb-pools" class="wb-bars"></div>
-        </div>
-        <div class="wb-card wb-card-wide">
-          <h3>Scenes, fullest first
-            <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip"><p>Each scene's dialog is stored compressed, and on the USA disc it has no spare room: the translated scene must compress to no more than the English did. The meter is the compressed size against that space.</p><p>A scene that does not fit gets some of its longest lines put back in English ("rolled back"). Shorten lines in that scene, or tick "Give translated dialog more room". The meter updates a moment after you edit one of its lines.</p></span></span>
-          </h3>
-          <div id="wb-scenes"></div>
-        </div>
-      </div>
+      </details>
 
-      <h2 id="editor">Editor
-        <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip"><p>Each row shows the English, your translation, its size in bytes against its room, and the line drawn in the game's own font with the width it has on screen. Dialog lines are grouped into the boxes the game shows (up to three rows per box).</p><p>Markup such as <code>{c2:79}</code> (an item name) and <code>|</code> (a line break) is explained in the <a href="../guides/translating.html#markup">markup reference</a>. Your edits save in this browser as you type.</p></span></span>
-      </h2>
-      <div class="wb-filters">
-        <select id="wb-f-section" aria-label="Section"></select>
-        <select id="wb-f-status" aria-label="Status">
-          <option value="">Any status</option>
-          <option value="untranslated">Untranslated</option>
-          <option value="translated">Translated</option>
-          <option value="fits">Fits</option>
-          <option value="too_long">Too long</option>
-          <option value="rolled_back">Will roll back</option>
-          <option value="not_encodable">Not encodable</option>
-          <option value="chars">Has accents or undrawable characters</option>
-          <option value="too_wide">Too wide on screen</option>
-        </select>
-        <input type="search" id="wb-f-search" placeholder="Search English, translation or key" aria-label="Search">
-        <span id="wb-f-group" class="wb-chip" hidden></span>
+      <div class="wb-work" id="editor">
+        <div class="wb-listpane">
+          <div class="wb-filters">
+            <select id="wb-f-section" aria-label="Section"></select>
+            <select id="wb-f-status" aria-label="Status">
+              <option value="">Any status</option>
+              <option value="untranslated">Untranslated</option>
+              <option value="translated">Translated</option>
+              <option value="fits">Fits</option>
+              <option value="too_long">Too long</option>
+              <option value="rolled_back">Will roll back</option>
+              <option value="not_encodable">Not encodable</option>
+              <option value="chars">Has accents or undrawable characters</option>
+              <option value="too_wide">Too wide on screen</option>
+            </select>
+            <input type="search" id="wb-f-search" placeholder="Search English, translation or key" aria-label="Search">
+            <span id="wb-f-group" class="wb-chip" hidden></span>
+          </div>
+          <div class="wb-progress" id="wb-progress" role="status"></div>
+          <div id="wb-char-stats" class="wb-char-stats" role="status"></div>
+          <div id="wb-list" class="wb-list" role="listbox" aria-label="Lines to translate"></div>
+          <div class="wb-pager" id="wb-pager"></div>
+        </div>
+
+        <div class="wb-edpane" id="wb-ed" aria-label="Line editor">
+          <div class="wb-ed-nav">
+            <button type="button" class="wb-mini" id="wb-prev" title="Previous line (Alt+Up)">&uarr; Previous</button>
+            <button type="button" class="wb-mini" id="wb-next" title="Next line (Ctrl+Enter or Alt+Down)">Next &darr;</button>
+            <span id="wb-ed-pos" class="wb-ed-pos"></span>
+            <span class="wb-ed-keys">Ctrl+Enter / Alt+&darr; next, Alt+&uarr; previous
+              <span class="info-tip tip-align-right" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip"><p>The English, your translation, its size in bytes against its room, and the line drawn in the game's own font with the width it has on screen. A dialog line shows the other rows of its box (up to three rows); click one to edit it.</p><p>Markup such as <code>{c2:79}</code> (an item name) and <code>|</code> (a line break) is explained in the <a href="../guides/translating.html#markup">markup reference</a>. Your edits save in this browser as you type.</p></span></span>
+            </span>
+          </div>
+          <div id="wb-ed-empty" class="wb-empty">Pick a line from the list to translate it.</div>
+          <div id="wb-ed-body" class="wb-row" hidden>
+            <div class="wb-row-head" id="wb-ed-head"></div>
+            <div class="wb-src" id="wb-ed-src"></div>
+            <div class="wb-boxrows" id="wb-ed-box"></div>
+            <div class="wb-edit">
+              <textarea id="wb-ed-input" rows="2" spellcheck="true" aria-label="Translation"></textarea>
+              <div class="wb-info"><span class="wb-room"></span><span class="wb-out"></span><span class="wb-width"></span></div>
+              <div class="wb-errs"></div>
+            </div>
+
+            <div class="wb-keys">
+              <div class="wb-keys-row">
+                <span class="wb-label wb-label-inline">Characters <select id="wb-pal-lang" aria-label="Palette language"></select></span>
+                <span class="wb-label wb-label-inline">Accents
+                  <select id="wb-accent-mode" aria-label="How accents reach the disc">
+                    <option value="strict">Report them (fix by hand)</option>
+                    <option value="fold">Fold to plain letters</option>
+                    <option value="font">Draw them (accent font)</option>
+                  </select>
+                  <span class="info-tip tip-align-right" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip"><p id="wb-accent-note"></p><p>The USA disc's font draws plain letters only, so every accented letter needs a decision. <strong>Report them</strong> marks each one until you fix it. <strong>Fold to plain letters</strong> writes <code>Epee</code> for <code>Épée</code> when the pack is applied. <strong>Draw them</strong> adds accented letters to the game font when the pack is applied, built from your disc's own letters, so <code>Épée</code> shows as typed.</p><p>The choice is saved in the pack (its <code>accents:</code> line), so the ROM patcher and the command-line tool apply it the same way. Letters with no glyph even in the accent font (Polish <code>ł</code>, for one) always fold; Cyrillic, Greek and CJK cannot be drawn at all. Details: <a href="../guides/translating.html#accents">accents and special characters</a>.</p></span></span>
+                </span>
+              </div>
+              <div id="wb-palette" class="wb-palette" role="toolbar" aria-label="Insert a character into the translation you are editing"></div>
+              <div class="wb-sym-field">
+                <span class="wb-label wb-label-inline">Symbols
+                  <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip"><p>The buttons and icons the game draws inside text, as your disc draws them. Click one to insert its token where your cursor is; the previews show the icon in place.</p><p>A pack writes a symbol as <code>{ce:NN}</code>, the form the export uses. You may also type its name instead, such as <code>{btn:x}</code> or <code>{icon:fire}</code> (hover a symbol to see its name): it imports as the same bytes. Full list: <a href="../guides/translating.html#buttons-and-icons">buttons and icons</a>.</p></span></span>
+                </span>
+                <div id="wb-symbols" class="wb-palette wb-symbols" role="toolbar" aria-label="Insert a button or icon symbol into the translation you are editing"></div>
+              </div>
+            </div>
+
+            <div class="wb-preview"><canvas></canvas><span class="wb-info wb-pv-note"></span></div>
+          </div>
+        </div>
       </div>
-      <div class="wb-pager" id="wb-pager-top"></div>
-      <div id="wb-list" class="wb-list"></div>
-      <div class="wb-pager" id="wb-pager-bottom"></div>
     </div>
   </div>
 </section>
 
 <style>
   .wb { max-width: none; }
-  .wb-warn { margin: 0 0 1rem; padding: 0.7rem 0.9rem; border: 1px solid var(--warn); border-left-width: 4px; border-radius: 6px; background: var(--warn-soft); color: var(--text); font-size: 0.92em; }
-  .wb-top { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(22rem, 100%), 1fr)); gap: 0.4rem 1.4rem; }
-  .wb-field { display: block; margin: 0.5rem 0; min-width: 0; }
-  .wb-field-sm { flex: 0 0 auto; }
-  .wb-label { display: block; font-weight: 600; margin-bottom: 0.25rem; }
-  .wb input[type=text], .wb input[type=search], .wb select, .wb textarea { max-width: 100%; padding: 0.4rem 0.55rem; background: var(--bg-code); color: var(--text); border: 1px solid var(--border); border-radius: 5px; font: inherit; }
+  .wb-header { margin-bottom: 0.6rem; }
+  .wb-header .lede { margin-bottom: 0; }
+  .wb-warn { margin: 0.4rem 0; padding: 0.35rem 0.7rem; border: 1px solid var(--warn); border-left-width: 4px; border-radius: 6px; background: var(--warn-soft); color: var(--text); font-size: 0.86em; }
+  .wb-toolbar { display: flex; flex-wrap: wrap; gap: 0.3rem 1.2rem; align-items: flex-start; }
+  .wb-toolbar-pack { align-items: end; margin: 0.2rem 0 0.3rem; padding: 0.45rem 0.7rem; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-card); }
+  .wb-tool { display: block; margin: 0.25rem 0; min-width: 0; }
+  .wb-tool-sm { flex: 0 0 auto; }
+  .wb-tool-grow { flex: 1 1 12rem; }
+  .wb-tool-grow input[type=text] { width: 100%; }
+  .wb-label { display: block; font-weight: 600; font-size: 0.86em; margin-bottom: 0.15rem; }
+  .wb-label-inline { display: inline-flex; align-items: center; gap: 0.35rem; margin: 0; }
+  .wb-label-inline select { font-weight: 400; padding: 0.12rem 0.35rem; font-size: 0.95em; }
+  .wb input[type=text], .wb input[type=search], .wb select, .wb textarea { max-width: 100%; padding: 0.3rem 0.5rem; background: var(--bg-code); color: var(--text); border: 1px solid var(--border); border-radius: 5px; font: inherit; }
   .wb input[type=file] { color: var(--text-muted); max-width: 100%; }
   .wb-inline { display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center; }
-  .wb-meta-row { display: flex; flex-wrap: wrap; gap: 0 1rem; align-items: end; }
-  .wb-meta-row .wb-field:last-child { flex: 1 1 16rem; }
-  .wb-meta-row input[type=text] { width: 100%; }
-  .wb-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; margin: 0.6rem 0; }
-  .wb-sep { flex: 0 0 0.6rem; }
-  .wb-button { padding: 0.5rem 1rem; font: inherit; font-weight: 600; cursor: pointer; background: var(--accent); color: #06231f; border: 1px solid var(--accent); border-radius: 6px; }
+  .wb-actions { display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center; margin: 0.25rem 0; }
+  .wb-button { padding: 0.35rem 0.8rem; font: inherit; font-size: 0.92em; font-weight: 600; cursor: pointer; background: var(--accent); color: #06231f; border: 1px solid var(--accent); border-radius: 6px; }
   .wb-button:hover { background: var(--accent-hi); }
   .wb-button:disabled { opacity: 0.6; cursor: progress; }
   .wb-button-ghost { background: transparent; color: var(--text); border-color: var(--border); }
   .wb-button-ghost:hover { background: var(--bg-card-hi); border-color: var(--border-hi); }
   .wb-file-button { display: inline-block; }
-  .wb-check-row { display: inline-flex; gap: 0.4rem; align-items: center; font-size: 0.92em; }
-  .wb-status { margin: 0.5rem 0; font-family: var(--font-mono); font-size: 0.86em; white-space: pre-wrap; color: var(--text-muted); }
+  .wb-check-row { display: inline-flex; gap: 0.4rem; align-items: center; font-size: 0.88em; }
+  .wb-status { margin: 0.3rem 0; font-family: var(--font-mono); font-size: 0.84em; white-space: pre-wrap; color: var(--text-muted); }
+  .wb-status:empty { display: none; }
   .wb-status.is-ok { color: var(--ok); }
   .wb-status.is-err { color: var(--open); }
-  .wb-resume { margin: 0.6rem 0; padding: 0.6rem 0.8rem; border: 1px solid var(--accent-line); border-radius: 6px; background: var(--accent-soft); display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; }
+  .wb-resume { margin: 0.4rem 0; padding: 0.5rem 0.8rem; border: 1px solid var(--accent-line); border-radius: 6px; background: var(--accent-soft); display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; }
   .wb-resume[hidden] { display: none; }
-  .wb h2 { margin-top: 1.6rem; }
   .wb h3 { font-size: 0.95em; margin: 0.2rem 0 0.5rem; color: var(--text-bright); }
+
+  /* Space dashboard: collapsed by default so the editor sits in view. */
+  .wb-fold { margin: 0.3rem 0 0.5rem; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-card); }
+  .wb-fold > summary { cursor: pointer; padding: 0.4rem 0.8rem; font-weight: 600; font-size: 0.92em; color: var(--text-bright); list-style: none; }
+  .wb-fold > summary::-webkit-details-marker { display: none; }
+  .wb-fold > summary::before { content: "+ "; color: var(--accent); font-weight: 700; }
+  .wb-fold[open] > summary::before { content: "\2212 "; }
+  .wb-fold[open] > summary { border-bottom: 1px solid var(--border); }
+  .wb-fold-sum { font-weight: 400; color: var(--text-dim); margin-left: 0.4rem; }
+  .wb-fold > .wb-dash { padding: 0.7rem; }
   .wb-dash { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(24rem, 100%), 1fr)); gap: 0.9rem; }
-  .wb-card { min-width: 0; padding: 0.8rem 0.9rem; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-card); }
+  .wb-card { min-width: 0; padding: 0.8rem 0.9rem; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-raised); }
   .wb-card-wide { grid-column: 1 / -1; }
   .wb-table { width: 100%; border-collapse: collapse; font-size: 0.86em; }
   .wb-table td, .wb-table th { padding: 0.22rem 0.4rem; border-bottom: 1px solid var(--line-soft); text-align: left; vertical-align: middle; }
@@ -196,58 +233,109 @@
   .wb-bad { color: var(--open); }
   .wb-okc { color: var(--ok); }
   .wb-warnc { color: var(--warn); }
-  .wb-filters { display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center; margin: 0.4rem 0; }
-  .wb-filters input[type=search] { flex: 1 1 14rem; min-width: 0; }
-  .wb-chip { display: inline-flex; align-items: center; gap: 0.4rem; padding: 0.2rem 0.6rem; border: 1px solid var(--accent); border-radius: 999px; background: var(--accent-soft); color: var(--accent-hi); font-size: 0.85em; }
+
+  /* Working area: the line list and the editor share one screen. Both panes
+     scroll on their own, so the editor (and its palettes) never leaves view. */
+  .wb-work { display: grid; grid-template-columns: minmax(18rem, 2fr) minmax(0, 3fr); gap: 0.7rem; height: calc(100vh - var(--topbar-h) - 1.2rem); min-height: 30rem; scroll-margin-top: calc(var(--topbar-h) - 1rem); }
+  .wb-listpane, .wb-edpane { min-width: 0; min-height: 0; display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-card); }
+  .wb-listpane { padding: 0.45rem 0.5rem 0.3rem; }
+  .wb-edpane { padding: 0.5rem 0.7rem; overflow: auto; }
+  .wb-filters { display: flex; flex-wrap: wrap; gap: 0.3rem; align-items: center; margin: 0 0 0.3rem; }
+  .wb-filters select { flex: 1 1 8rem; min-width: 0; font-size: 0.88em; }
+  .wb-filters input[type=search] { flex: 1 1 100%; min-width: 0; font-size: 0.88em; }
+  .wb-chip { display: inline-flex; align-items: center; gap: 0.4rem; padding: 0.15rem 0.6rem; border: 1px solid var(--accent); border-radius: 999px; background: var(--accent-soft); color: var(--accent-hi); font-size: 0.82em; }
   .wb-chip button { background: none; border: none; color: inherit; cursor: pointer; font: inherit; padding: 0; }
   .wb-chip[hidden] { display: none; }
-  .wb-pager { display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center; margin: 0.5rem 0; font-size: 0.88em; color: var(--text-dim); }
-  .wb-pager button { padding: 0.2rem 0.6rem; font: inherit; color: var(--text); background: var(--bg-code); border: 1px solid var(--border); border-radius: 5px; cursor: pointer; }
+  .wb-progress { display: flex; align-items: center; gap: 0.5rem; font-size: 0.8em; color: var(--text-dim); margin-bottom: 0.2rem; }
+  .wb-progress .wb-meter { flex: 1 1 auto; height: 0.5rem; min-width: 3rem; }
+  .wb-char-stats { font-size: 0.78em; color: var(--text-muted); margin-bottom: 0.25rem; }
+  .wb-char-stats:empty { display: none; }
+  .wb-list { flex: 1 1 auto; min-height: 0; overflow: auto; display: flex; flex-direction: column; gap: 1px; border-top: 1px solid var(--line-soft); padding-top: 0.2rem; }
+  .wb-group-head { position: sticky; top: 0; z-index: 1; padding: 0.25rem 0.3rem 0.15rem; font-weight: 700; font-size: 0.8em; color: var(--accent-hi); background: var(--bg-card); }
+  .wb-li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 0 0.5rem; align-items: center; width: 100%; padding: 0.22rem 0.45rem; text-align: left; font: inherit; font-size: 0.84em; color: var(--text); background: transparent; border: none; border-left: 3px solid var(--border-hi); border-radius: 3px; cursor: pointer; }
+  .wb-li:hover { background: var(--bg-card-hi); }
+  .wb-li.is-active { background: var(--accent-soft); outline: 1px solid var(--accent-line); outline-offset: -1px; }
+  .wb-li.in-box { margin-left: 0.6rem; width: calc(100% - 0.6rem); }
+  .wb-li.box-start { margin-top: 0.2rem; }
+  .wb-li-en, .wb-li-tr { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+  .wb-li-en { color: var(--text-muted); font-family: var(--font-mono); font-size: 0.92em; }
+  .wb-li-tr { color: var(--text-bright); font-family: var(--font-mono); font-size: 0.92em; }
+  .wb-li-tr.is-empty { color: var(--text-dim); font-style: italic; font-family: inherit; }
+  .wb-li-n { grid-row: 1 / span 2; grid-column: 2; font-size: 0.85em; color: var(--text-dim); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .wb-li.st-fits { border-left-color: var(--ok); }
+  .wb-li.st-too_long, .wb-li.st-rolled_back, .wb-li.st-not_encodable { border-left-color: var(--open); }
+  .wb-li.st-too_wide, .wb-li.st-undrawable { border-left-color: var(--warn); }
+  .wb-pager { display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center; justify-content: space-between; margin: 0.3rem 0 0; font-size: 0.8em; color: var(--text-dim); }
+  .wb-pager button { padding: 0.12rem 0.55rem; font: inherit; color: var(--text); background: var(--bg-code); border: 1px solid var(--border); border-radius: 5px; cursor: pointer; }
   .wb-pager button:disabled { opacity: 0.4; cursor: default; }
-  .wb-list { display: flex; flex-direction: column; gap: 0.35rem; }
-  .wb-group-head { margin: 0.8rem 0 0.1rem; font-weight: 700; font-size: 0.9em; color: var(--accent-hi); }
-  .wb-box { border: 1px solid var(--border); border-radius: 8px; background: var(--bg-raised); padding: 0.3rem; display: flex; flex-direction: column; gap: 0.3rem; }
-  .wb-box-head { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 0.5rem; font-size: 0.78em; color: var(--text-dim); padding: 0 0.3rem; }
-  .wb-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 0.3rem 0.8rem; padding: 0.45rem 0.6rem; border: 1px solid var(--border); border-left: 3px solid var(--border-hi); border-radius: 6px; background: var(--bg-card); }
+
+  .wb-ed-nav { display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center; margin-bottom: 0.4rem; font-size: 0.82em; }
+  .wb-ed-pos { color: var(--text-dim); font-variant-numeric: tabular-nums; }
+  .wb-ed-keys { margin-left: auto; color: var(--text-dim); font-size: 0.92em; }
+  .wb-row { display: flex; flex-direction: column; gap: 0.35rem; padding: 0.45rem 0.6rem; border: 1px solid var(--border); border-left: 3px solid var(--border-hi); border-radius: 6px; background: var(--bg-raised); }
+  .wb-row[hidden] { display: none; }
   .wb-row.st-fits { border-left-color: var(--ok); }
   .wb-row.st-too_long, .wb-row.st-rolled_back, .wb-row.st-not_encodable { border-left-color: var(--open); }
-  .wb-row.st-too_wide { border-left-color: var(--warn); }
-  .wb-row-head { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 0.2rem 0.7rem; font-size: 0.78em; color: var(--text-dim); }
+  .wb-row.st-too_wide, .wb-row.st-undrawable { border-left-color: var(--warn); }
+  .wb-row-head { display: flex; flex-wrap: wrap; gap: 0.2rem 0.7rem; font-size: 0.76em; color: var(--text-dim); }
   .wb-row-head code { color: var(--text-muted); }
-  .wb-src { font-family: var(--font-mono); font-size: 0.86em; color: var(--text-muted); white-space: pre-wrap; overflow-wrap: anywhere; min-width: 0; }
+  .wb-src { font-family: var(--font-mono); font-size: 0.9em; color: var(--text-bright); white-space: pre-wrap; overflow-wrap: anywhere; min-width: 0; padding: 0.3rem 0.45rem; background: var(--bg-code); border-radius: 4px; }
+  .wb-boxrows { display: flex; flex-direction: column; gap: 1px; font-family: var(--font-mono); font-size: 0.78em; }
+  .wb-boxrows:empty { display: none; }
+  .wb-boxrow { display: grid; grid-template-columns: 3.2rem minmax(0, 1fr) minmax(0, 1fr); gap: 0.5rem; padding: 0.1rem 0.35rem; text-align: left; font: inherit; color: var(--text-muted); background: transparent; border: none; border-radius: 3px; cursor: pointer; }
+  .wb-boxrow:hover { background: var(--bg-card-hi); }
+  .wb-boxrow.is-active { color: var(--text-bright); background: var(--accent-soft); cursor: default; }
+  .wb-boxrow > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+  .wb-boxrow > span:first-child { color: var(--text-dim); font-family: var(--font-body, inherit); }
   .wb-edit { min-width: 0; }
-  .wb-edit textarea { width: 100%; min-height: 2.3rem; font-family: var(--font-mono); font-size: 0.86em; resize: vertical; }
+  .wb-edit textarea { width: 100%; min-height: 2.6rem; font-family: var(--font-mono); font-size: 0.95em; resize: vertical; }
+  .wb-edit textarea:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
   .wb-info { display: flex; flex-wrap: wrap; gap: 0.2rem 0.8rem; font-size: 0.78em; color: var(--text-dim); margin-top: 0.15rem; }
   .wb-marked { font-family: var(--font-mono); font-size: 0.86em; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--text-muted); margin-top: 0.2rem; }
   .wb-marked mark { background: var(--open); color: var(--text-bright); border-radius: 2px; }
   .wb-marked mark.m-warn { background: var(--warn); color: #1d1500; }
   .wb-marked mark.m-fold { background: var(--accent-soft); color: var(--text-bright); outline: 1px solid var(--accent-line); }
-  .wb-row.st-undrawable { border-left-color: var(--warn); }
   .wb-fixes { display: inline-flex; flex-wrap: wrap; gap: 0.3rem; }
   .wb-fixes button, .wb-mini { padding: 0.1rem 0.5rem; font: inherit; font-size: 0.95em; color: var(--text); background: var(--bg-code); border: 1px solid var(--border); border-radius: 4px; cursor: pointer; }
-  .wb-fixes button:hover { border-color: var(--accent); }
+  .wb-fixes button:hover, .wb-mini:hover { border-color: var(--accent); }
+  .wb-mini:disabled { opacity: 0.4; cursor: default; }
   .wb-reasons { margin: 0.15rem 0 0 1.1rem; padding: 0; font-size: 0.78em; color: var(--text-dim); }
-  .wb-accents { display: grid; grid-template-columns: minmax(0, 20rem) minmax(0, 1fr); gap: 0.2rem 1.2rem; margin: 0.4rem 0 0.2rem; padding: 0.6rem 0.8rem; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-card); }
-  .wb-pal-field .wb-label select { margin-left: 0.4rem; font-weight: 400; padding: 0.15rem 0.35rem; }
-  .wb-palette { display: flex; flex-wrap: wrap; gap: 0.25rem; }
-  .wb-pal-key { min-width: 2rem; padding: 0.25rem 0.4rem; font: inherit; font-size: 1.05em; color: var(--text-muted); background: var(--bg-code); border: 1px dashed var(--border-hi); border-radius: 5px; cursor: pointer; }
+  .wb-errs:empty { display: none; }
+
+  /* Palettes sit straight under the input they type into. */
+  .wb-keys { display: flex; flex-direction: column; gap: 0.3rem; padding: 0.35rem 0.45rem; border: 1px solid var(--line-soft); border-radius: 6px; background: var(--bg-card); }
+  .wb-keys-row { display: flex; flex-wrap: wrap; gap: 0.3rem 1rem; align-items: center; justify-content: space-between; font-size: 0.86em; }
+  .wb-palette { display: flex; flex-wrap: wrap; gap: 0.2rem; }
+  .wb-pal-key { min-width: 1.8rem; padding: 0.12rem 0.3rem; font: inherit; font-size: 1em; color: var(--text-muted); background: var(--bg-code); border: 1px dashed var(--border-hi); border-radius: 4px; cursor: pointer; }
   .wb-pal-key.is-drawn { color: var(--text-bright); border-style: solid; border-color: var(--accent-line); }
   .wb-pal-key:hover, .wb-pal-key:focus-visible { border-color: var(--accent); }
-  .wb-sym-field { grid-column: 1 / -1; }
-  .wb-symbols { display: grid; grid-template-columns: repeat(auto-fill, minmax(4.2rem, 1fr)); gap: 0.3rem; }
-  .wb-sym-key { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.2rem; min-height: 3.1rem; padding: 0.3rem 0.3rem 0.2rem; font: inherit; font-size: 0.8em; color: var(--text-muted); background: var(--bg-code); border: 1px solid var(--border-hi); border-radius: 5px; cursor: pointer; }
+  .wb-sym-field { display: flex; flex-direction: column; gap: 0.2rem; font-size: 0.86em; }
+  .wb-sym-field[hidden] { display: none; }
+  .wb-symbols { display: grid; grid-template-columns: repeat(auto-fill, minmax(2.6rem, 1fr)); gap: 0.2rem; }
+  .wb-sym-key { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.1rem; min-height: 2.3rem; padding: 0.15rem 0.15rem 0.05rem; font: inherit; font-size: 0.82em; color: var(--text-muted); background: var(--bg-code); border: 1px solid var(--border-hi); border-radius: 4px; cursor: pointer; }
+  .wb-sym-key code { font-size: 0.85em; }
   .wb-sym-key canvas { display: block; max-width: 100%; image-rendering: pixelated; background: #101848; border-radius: 2px; }
   .wb-sym-key:hover, .wb-sym-key:focus-visible { border-color: var(--accent); color: var(--text-bright); }
-  .wb-char-stats { grid-column: 1 / -1; font-size: 0.86em; color: var(--text-muted); }
-  .wb-preview { display: flex; flex-direction: column; align-items: flex-start; gap: 0.15rem; margin-top: 0.35rem; min-width: 0; }
+  .wb-preview { display: flex; flex-direction: column; align-items: flex-start; gap: 0.15rem; min-width: 0; }
   .wb-preview canvas { display: block; image-rendering: pixelated; max-width: 100%; min-width: 0; height: auto; border-radius: 3px; }
   .wb-empty { color: var(--text-dim); font-style: italic; padding: 0.6rem 0; }
+  .wb-empty[hidden] { display: none; }
+
+  /* Narrow: stack the panes; the list keeps a bounded height of its own so
+     the editor and its palettes stay a short scroll away. */
+  @media (max-width: 68rem) {
+    .wb-work { grid-template-columns: minmax(0, 1fr); height: auto; min-height: 0; }
+    .wb-listpane { height: 46vh; min-height: 16rem; }
+    .wb-edpane { overflow: visible; }
+  }
   @media (max-width: 44rem) {
-    .wb-row { grid-template-columns: minmax(0, 1fr); }
-    .wb-accents { grid-template-columns: minmax(0, 1fr); }
     .wb-table .wb-cov-meter { display: none; }
     .wb-bar { grid-template-columns: minmax(0, 1fr) auto; }
     .wb-bar .wb-meter { grid-column: 1 / -1; grid-row: 2; }
+    .wb-ed-keys { display: none; }
+    .wb-boxrow { grid-template-columns: 2.6rem minmax(0, 1fr); }
+    .wb-boxrow > span:nth-child(2) { display: none; }
+    .wb-symbols { grid-auto-flow: column; grid-template-columns: none; grid-template-rows: repeat(2, auto); grid-auto-columns: 2.6rem; overflow-x: auto; padding-bottom: 0.2rem; }
   }
 
   /* Info tooltips: a "?" bead that opens a popover on hover, keyboard focus,
@@ -257,6 +345,7 @@
   .tip-pop { text-transform: none; letter-spacing: normal; display: none; position: absolute; z-index: 40; top: calc(100% + 0.5rem); left: 50%; transform: translateX(-50%); width: min(34rem, 86vw); padding: 0.8rem 1rem; background: var(--bg-raised); border: 1px solid var(--border-hi); border-radius: 7px; box-shadow: 0 8px 26px rgba(0, 0, 0, 0.45); color: var(--text-muted); font-size: 0.86rem; font-weight: 400; font-style: normal; line-height: 1.55; text-align: left; cursor: auto; white-space: normal; }
   .tip-pop p { margin: 0 0 0.6rem; }
   .tip-pop p:last-child { margin-bottom: 0; }
+  .tip-pop p:empty { display: none; }
   .info-tip:hover > .tip-pop, .info-tip:focus-visible > .tip-pop, .info-tip.is-open > .tip-pop { display: block; }
   .info-tip.tip-align-right > .tip-pop { left: auto; right: -0.6rem; transform: none; }
   .info-tip.tip-align-left > .tip-pop { left: -0.6rem; right: auto; transform: none; }
