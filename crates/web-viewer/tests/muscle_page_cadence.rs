@@ -174,3 +174,33 @@ fn a_continued_contest_does_not_replay_the_intro() {
         "a later leg opens straight on its ROUND card"
     );
 }
+
+/// The hub screens' per-frame canvas work stays on the GPU: the first
+/// visit's subtractive shade and the fade modulation of a dimmed hub sprite
+/// read no pixels back. A `getImageData` per frame there (a GPU sync on an
+/// accelerated canvas) is what held the dome page's first visit at ~45 ms a
+/// frame and its INTERVAL screen at ~290 ms, so the page fell below the
+/// 60 Hz it is stepped at and the dome played in slow motion.
+#[test]
+fn the_hub_shade_and_fades_read_no_pixels_back() {
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .unwrap()
+        .parent()
+        .unwrap()
+        .join("site")
+        .join("js")
+        .join("site-util.js");
+    let src = std::fs::read_to_string(&path).unwrap();
+    for name in ["subtractShade", "dimmedSprite"] {
+        let body = function_body(&src, name);
+        assert!(
+            !body.contains("getImageData"),
+            "`{name}` reads the canvas back"
+        );
+    }
+    assert!(
+        function_body(&src, "modulatedSprite").contains("perSrc.get(key)"),
+        "a modulated sprite is memoised across frames"
+    );
+}
