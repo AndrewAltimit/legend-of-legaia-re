@@ -121,7 +121,7 @@ Both paths end in an already-documented reader; neither needs a field-pack parse
 
 Nothing else picks the mode: it comes out of the scene's own asset table. The
 [asset-type dispatcher](asset-type.md) `FUN_8001F05C` handles type bytes `0x0A` / `0x0F`
-/ `0x14` by returning `(descriptor_low_byte) + (case << 8)` and nothing else
+/ `0x14` by returning `case << 8` (`andi` of the still-zero accumulator `s4`, plus the case) and nothing else
 (`8001f574`, `8001f60c`, `8001f658`). `FUN_80020224` ORs every descriptor's return into
 its status word, and the field init shifts that right by 8 and hands it to
 `FUN_8002541C` (`801d6bf8`: `sra s1, s4, 0x8`, then `jal 0x8002541c`). So a `Flag(0x14)`

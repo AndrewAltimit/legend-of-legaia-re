@@ -4,6 +4,39 @@
 from pathlib import Path
 
 
+# Anchor classes. Every anchor lands in exactly one; `anchor_class` is the one
+# place the partition is defined, so the report sections and the summary
+# counts cannot disagree about where a row went.
+LIVE = "live"
+STALE = "stale"
+TAGGED_PERMISSIVE_ONLY = "tagged-permissive-only"
+DISCLOSED = "disclosed"
+REPLACED = "replaced"
+UNDISCLOSED = "undisclosed"
+
+
+def anchor_class(a: dict) -> str:
+    """The one audit class an anchor belongs to.
+
+    A tagged anchor is read against BOTH graphs. Strict-live means the tag is
+    stale (or the strict graph invented an edge); permissive-dead means the
+    disclosure is confirmed. The third case - permissive-live, strict-dead - is
+    the graphs disagreeing, and it has its own class: before it did, a tagged
+    anchor in that state passed every section's filter test by failing it, and
+    vanished from the report and from the summary's anchor counts alike.
+    """
+    tagged = bool(a["not_wired_tag"] or a["replaced_tag"])
+    if not tagged:
+        return LIVE if a["live"] else UNDISCLOSED
+    if a["live_strict"]:
+        return STALE
+    if a["live"]:
+        return TAGGED_PERMISSIVE_ONLY
+    # `collect_port_anchors` already resolved precedence, so the two tags are
+    # exclusive here.
+    return REPLACED if a["replaced_tag"] else DISCLOSED
+
+
 def render_live_audit(rows: list[dict], out_path: Path | None) -> str:
     """The `--live-audit` report: every ported address that is not reachable.
 
@@ -26,18 +59,14 @@ def render_live_audit(rows: list[dict], out_path: Path | None) -> str:
     pairs = [
         (r, a) for r in rows if r["ported"] and r["live_known"] for a in r["anchors"]
     ]
-    stale = [
-        (r, a)
-        for r, a in pairs
-        if a["live_strict"] and (a["not_wired_tag"] or a["replaced_tag"])
-    ]
-    undisclosed = [
-        (r, a)
-        for r, a in pairs
-        if not a["live"] and not a["not_wired_tag"] and not a["replaced_tag"]
-    ]
-    disclosed = [(r, a) for r, a in pairs if not a["live"] and a["not_wired_tag"]]
-    replaced = [(r, a) for r, a in pairs if not a["live"] and a["replaced_tag"]]
+    by_class: dict[str, list[tuple[dict, dict]]] = {}
+    for r, a in pairs:
+        by_class.setdefault(anchor_class(a), []).append((r, a))
+    stale = by_class.get(STALE, [])
+    undisclosed = by_class.get(UNDISCLOSED, [])
+    disclosed = by_class.get(DISCLOSED, [])
+    replaced = by_class.get(REPLACED, [])
+    permissive_only = by_class.get(TAGGED_PERMISSIVE_ONLY, [])
 
     def table(
         title: str,
@@ -66,6 +95,10 @@ def render_live_audit(rows: list[dict], out_path: Path | None) -> str:
                 # sentence: that is the claim, and the paragraph that follows
                 # it belongs at the file:line the row already names.
                 text = " ".join(a.get("replaced_by", "").split())
+                if not text and a.get("not_wired_tag"):
+                    # A mixed section: a `NOT WIRED:` row names no mechanism,
+                    # and an empty cell would read as a bare `REPLACED-BY:`.
+                    text = "(`NOT WIRED:` - no replacement claimed)"
                 cut = text.find(". ")
                 if cut > 0:
                     text = text[: cut + 1]
@@ -115,6 +148,19 @@ def render_live_audit(rows: list[dict], out_path: Path | None) -> str:
         "Disclosed inert ports",
         disclosed,
         "Not reachable, and the source says so. The declared wiring worklist.",
+    )
+    lines += table(
+        "Tagged, live only on the permissive graph",
+        permissive_only,
+        "Carrying a `NOT WIRED:` or `REPLACED-BY:` tag, reachable on the "
+        "permissive graph and inert on the receiver-gated one. The two graphs "
+        "disagree, so the audit can neither confirm the disclosure nor call it "
+        "stale: the permissive edge is usually a name collision, and the row "
+        "is a disclosed gap (or a replacement) until a reader shows otherwise. "
+        "Without this section these anchors fell into no class at all - not "
+        "inert, so absent from the worklist; not strict-live, so absent from "
+        "the stale list.",
+        mechanism=True,
     )
     lines += table(
         "Infra-replaced ports",

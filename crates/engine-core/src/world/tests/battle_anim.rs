@@ -7,6 +7,7 @@ use legaia_engine_mode::mode::SceneMode;
 fn pose_test_clip(action_id: u8, frames: usize, tx: i16) -> MonsterAnimation {
     use legaia_actor_formats::monster_archive::PartPose;
     MonsterAnimation {
+        variant_track: Default::default(),
         action_id,
         rate: 2,
         attach_key: 0,
@@ -779,6 +780,7 @@ fn trail_test_clip(attach_key: u8, frames: usize) -> MonsterAnimation {
     use legaia_actor_formats::monster_archive::PartPose;
     let parts = 16usize;
     MonsterAnimation {
+        variant_track: Default::default(),
         action_id: 0xC,
         rate: 2,
         attach_key,
@@ -1206,6 +1208,7 @@ fn end_step_clip(action_id: u8, tz0: i16, tz1: i16, end_step: i16) -> MonsterAni
         }]
     };
     MonsterAnimation {
+        variant_track: Default::default(),
         action_id,
         rate: 2,
         attach_key: 0,

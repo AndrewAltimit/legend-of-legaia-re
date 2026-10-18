@@ -690,12 +690,15 @@
       <a href="subsystems/audio.html">sound chip and sequencer</a>, off your disc's own instrument
       bank and score. Browsers require a click first; picking a scene or clicking the canvas
       enables it.</li>
-    <li><strong>Battles - as an overlay.</strong> Walking a wilderness scene rolls the disc's own
+    <li><strong>Battles.</strong> Walking a wilderness scene rolls the disc's own
       step-driven encounters, and the fight that opens is the ported
-      <a href="subsystems/battle.html">battle engine</a>: real formations, real
+      <a href="subsystems/battle.html">battle engine</a> on its own 3D stage: the monster meshes,
+      the party's dressed battle forms and the arena dome, posed by the same battle state machine
+      the native window runs (<a href="subsystems/battle-actor-rendering.html">battle rendering</a>).
+      Real formations, real
       <a href="subsystems/battle-formulas.html">damage formulas</a>, player-driven turns - pick a
       command, a target, an art, a spell or an item from the same menus the native window draws,
-      over an HP/MP/AP readout with damage popups. Win and you are back on the field with XP,
+      over the battle HUD with damage numerals. Win and you are back on the field with XP,
       gold and drops. Towns have no encounter table and stay peaceful.</li>
     <li><strong>Fishing.</strong> <em>Fish here</em> starts the minigame on the spot - the same
       retail loop the <a href="minigames.html">minigames page</a> runs, with your points, casts
@@ -704,32 +707,28 @@
     <li><strong>The overworld.</strong> Picking a kingdom map walks it with the world-map
       controller: step-driven encounters, ports and town doors
       (<a href="subsystems/world-map.html">world map</a>).</li>
+    <li><strong>Movies.</strong> The FMVs play in the tab off your disc, with their XA
+      soundtrack on the engine's mixer, wherever the game's script arms one
+      (<a href="subsystems/cutscene.html">cutscenes</a>).</li>
+    <li><strong>Inns.</strong> Each inn is the innkeeper's own script, run by the field VM: the
+      offer, the gold check, the rest fade and the restore are the retail record
+      (<a href="subsystems/inn.html">inn</a>).</li>
+    <li><strong>Minigames.</strong> The slot machine, Baka Fighter, the Muscle Dome and the dance
+      floor open from their own doors and cabinets, run by the engine and drawn from your disc;
+      the Muscle Dome fights under the battle screen's chips and plates. Start leaves any
+      minigame from anywhere.</li>
   </ul>
   <h3>Not here yet</h3>
   <ul>
-    <li><strong>The battle's 3D layer.</strong> Monster meshes, the party's dressed battle forms
-      and the arena backdrop draw only in the native window; the browser fight is the overlay
-      above, with the field scene still rendering behind it. The models themselves are on the
-      <a href="monsters.html">enemy</a> and <a href="characters.html">character</a> pages.</li>
-    <li><strong>Movies.</strong> The prologue's rendered tableaux and narration play here, but
-      the pre-title FMV and any other STR movie run only in the native window, so a movie beat is
-      skipped. The <a href="media.html">media browser</a> plays every movie on its own.</li>
-    <li><strong>The inn.</strong> Its state is ported, but no scene opens an inn session on
-      either host yet.</li>
-    <li><strong>The minigames' full chrome.</strong> The slot machine, Baka Fighter, the Muscle
-      Dome and the dance floor open from their own doors and cabinets here, run by the engine
-      and drawn from your disc, but the Muscle Dome fights under a text read-out rather than
-      the battle screen's chips and plates - the native window draws it the same way. The
-      <a href="minigames.html">minigames page</a> plays the dome with the full battle chrome.
-      Start leaves any minigame from anywhere.</li>
-    <li><strong>The overworld's placed figures.</strong> Each town, port and encounter zone
-      on a kingdom map draws as a coloured post rather than its retail model, on both hosts,
-      and the posts show through mountains in front of them. The
+    <li><strong>The overworld's placed figures.</strong> Retail binds each world-map placement
+      to its own actor model, and which model is still open, so neither host draws one. The
+      <em>Overworld markers</em> box shows each town, port and encounter zone as a coloured
+      post instead, depth-tested against the terrain. The
       <a href="world-overview.html">world overview</a> shows the continents.</li>
   </ul>
   <p class="hint">
-    Some scenes frame better than others: retail hand-authors a camera per scene, while this page
-    runs one generic camera plus see-through walls for whatever blocks the view. In caves the
+    The camera is retail's follow camera, framed per scene from the scene's own camera-region
+    records, with see-through walls for whatever blocks the view. In caves the
     floor sampler can disagree with the visible ground - tracked with the
     <a href="reference/open-rev-eng-threads.html">open questions</a>.
   </p>

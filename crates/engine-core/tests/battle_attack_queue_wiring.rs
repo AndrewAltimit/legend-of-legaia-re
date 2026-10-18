@@ -257,6 +257,7 @@ fn stub_clip(action_id: u8) -> MonsterAnimation {
         tz: 0,
     };
     MonsterAnimation {
+        variant_track: Default::default(),
         action_id,
         rate: 1,
         attach_key: 0,

@@ -159,7 +159,7 @@
       <tr><td>FUN_80024E80</td><td>Screen-fade primitive spawn</td></tr>
       <tr><td>FUN_80026B4C / FUN_800268DC</td><td>TMD validate + register into <code>DAT_8007C018</code>; group-descriptor fixup</td></tr>
       <tr><td>FUN_8002C69C</td><td>HUD / menu / dialog sprite-batch POLY_FT4 emitter</td></tr>
-      <tr><td>FUN_801F69D8</td><td>World-map top-view tile-visibility dispatcher (overlay)</td></tr>
+      <tr><td>FUN_801F69D8</td><td>World-map decoration cell sweep: the per-cell mesh emitter (PROT 0901)</td></tr>
       <tr><td>FUN_801D8280</td><td><code>DAT_8007C018</code> table walker (overlay)</td></tr>
       <tr><td>0x8007C018 (data)</td><td>Global TMD pointer table; counters <code>0x8007B774</code> / <code>0x8007BB38</code> (<a href="../formats/world-map-overlay.html#dat-8007c018">world-map overlay</a>)</td></tr>
       <tr><td>DAT_8007326C (data)</td><td>Per-mode primitive descriptor table</td></tr>
@@ -170,7 +170,7 @@
     <summary>Deep dive: dispatch details</summary>
     <div class="disclosure-body">
       <ul class="bullets">
-        <li>Case 5 of <code>FUN_8001ADA4</code> dispatches each TMD to <code>FUN_8002735C</code> when actor <code>+0x42</code> is non-zero, <code>FUN_80029888</code> (env-mapped) when only <code>+0x7A</code> is, else <code>FUN_80043390</code> (textured) - the measured leaf. Case <code>0xB</code> banks <code>acc += DAT_1F800393</code> and fires a 16&times;1 <code>MoveImage</code> per kingdom slot-5 table entry when <code>acc &gt;= hold</code>.</li>
+        <li>Case 5 of <code>FUN_8001ADA4</code> dispatches each TMD to <code>FUN_8002735C</code> when actor <code>+0x42</code> is non-zero, <code>FUN_80029888</code> (the shatter renderer) when only <code>+0x7A</code> is, else <code>FUN_80043390</code> (textured) - the measured leaf. Case <code>0xB</code> banks <code>acc += DAT_1F800393</code> and fires a 16&times;1 <code>MoveImage</code> per kingdom slot-5 table entry when <code>acc &gt;= hold</code>.</li>
         <li><code>FUN_80043390</code> picks its table on <code>_DAT_1F800394 &amp; 1</code>; the overlay variant routes every prim through the fog leaves at <code>0x801F7644..0x801F8690</code> - the bulk continent emit path.</li>
         <li><code>FUN_80024E80(fade_template, mode)</code> allocates from pool <code>&amp;DAT_80070674</code> via <code>FUN_80020DE0</code>, stores <code>mode</code> at <code>actor[+0x18]</code>, loads the ramp via <code>FUN_80020B00</code>. The battle-action SM uses it for the summon backdrop fade (state <code>0x33</code>) and the escape white-out (state <code>0x66</code>).</li>
         <li><code>FUN_80026B4C</code> stores at <code>DAT_8007C018[DAT_8007B774++]</code>; reached from <code>FUN_8001F05C</code> cases 2 and 9. <code>FUN_800268DC</code> builds the <code>+0xC</code> descriptor array (0x1C stride).</li>
@@ -187,7 +187,7 @@
     <tbody>
       <tr><td>FUN_801E295C</td><td>Battle action state machine (16 KB)</td></tr>
       <tr><td>FUN_801D0748</td><td>Battle round driver: the round state machine every battle runs, Muscle Dome included - its one call site is the SCUS battle frame driver; sub-states <code>0x1E</code> / <code>0x32</code> / <code>0x6E</code> / <code>0xFE</code></td></tr>
-      <tr><td>FUN_801D388C</td><td>Battle animation dispatcher (switch on animation type)</td></tr>
+      <tr><td>FUN_801D388C</td><td>Battle presentation-step driver: HUD sprite layout + the per-step sub-draw script (switch on step)</td></tr>
       <tr><td>FUN_801D5854</td><td>Per-pose camera / presentation driver (the anim system is <code>FUN_80047430</code> &rarr; <code>FUN_8004AD80</code> &rarr; <code>FUN_8004998C</code>)</td></tr>
       <tr><td>FUN_801D8DE8</td><td>HUD element renderer, 80-entry element table; shared with Muscle Dome</td></tr>
       <tr><td>FUN_801DA6B4</td><td>Actor display-state controller (opacity, pose flags)</td></tr>
@@ -197,7 +197,7 @@
       <tr><td>FUN_80020050</td><td>Flame / effect-texture atlas loader (PROT 870 into VRAM) - separate from the bundle loader</td></tr>
       <tr><td>FUN_8004E2F0</td><td>Range / line-of-sight</td></tr>
       <tr><td>FUN_80054CB0</td><td>Monster init (applies the battle-load stat boost)</td></tr>
-      <tr><td>FUN_80042558</td><td>Per-frame stat aggregator</td></tr>
+      <tr><td>FUN_80042558</td><td>Stat aggregator + accessory-passive assembler (event-driven, not per-frame)</td></tr>
       <tr><td>FUN_8003FB10 / FUN_800431D0</td><td>Action validator / ability-bitmask read</td></tr>
       <tr><td>FUN_8002CDD0 / FUN_8002C2E4 / FUN_8002C488</td><td>Status-HUD panel / per-member row / icon drawer; <code>FUN_8002C2E4</code> pins the status bitfield at record <code>+0x12E</code></td></tr>
       <tr><td>0x801C9370 (data)</td><td>8-actor pointer table (party 0-2, monsters 3-7); HP at <code>+0x14C</code></td></tr>

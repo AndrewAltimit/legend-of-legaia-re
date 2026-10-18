@@ -37,6 +37,7 @@
 
 pub mod arts_table;
 pub mod arts_voice;
+pub mod clip_ladder;
 pub mod hyper_fanfare;
 pub mod miracle;
 pub mod parse;

@@ -197,7 +197,7 @@
       <tr><td>Directory walk</td><td><code>FUN_801E1208</code></td><td>15-entry table at <code>0x801F32A8</code>, 16-byte <code>strncmp</code> against the regional prefix; class-then-budget order.</td><td>menu overlay dump</td></tr>
       <tr><td>Checksum</td><td><code>FUN_801E38D8</code></td><td>Sums <code>0x7FF</code> words; compose buffer <code>0x801E7120</code>, read buffer <code>0x801E5120</code>.</td><td>menu overlay dump</td></tr>
       <tr><td>List navigator</td><td><code>FUN_801D688C</code></td><td>Packed cursor (low 12 bits index, high nibble flags); cues <code>0x36</code> / <code>0x37</code> / <code>0x21</code>.</td><td><code>overlay_save_ui_select_801d688c.txt</code></td></tr>
-      <tr><td>Draw-list pins</td><td>PCSX-Redux state, GP0 scan</td><td>Sprite sources, CLUT rows, panel rects; VRAM dump + <code>PROT.DAT</code> signature grep.</td><td><code>scan_panel_prims.py</code>, <code>scan_textured_quads.py</code></td></tr>
+      <tr><td>Draw-list pins</td><td>PCSX-Redux state, GP0 scan</td><td>Sprite sources, CLUT rows, panel rects; VRAM dump + <code>PROT.DAT</code> signature grep.</td><td><code>scan_panel_prims.py</code>, <code>scan_panel_rects.py</code></td></tr>
       <tr><td>Block layout</td><td>real <code>.mcr</code> saves vs RAM dumps</td><td>The <code>0x200 + (addr &minus; 0x80084340)</code> mapping.</td><td><code>crates/save</code> tests</td></tr>
     </tbody>
   </table>

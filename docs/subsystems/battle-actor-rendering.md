@@ -84,8 +84,17 @@ The party draws the **battle-form meshes**, built per character the way the reta
 The battle TMD is a set of object-local pieces (head, torso, limbs), not one pre-assembled mesh. The pieces are socketed with the character's own idle keyframe stream from `record[0]` of the same player file (`battle_char_assembly::idle_battle_animation`): the monster-format `[parts][frames][9-byte TRS]` stream at action entry `+0xAC`, where `parts` = skeleton bones. See [`battle-data-pack.md` § Battle animations](../formats/battle-data-pack.md#battle-animations-record0).
 
 - Frame 0 is the combat-stance rest pose, applied `R*v + T` per object (`tmd_to_vram_mesh_posed_rot`). The clip then loops through the same `MonsterAnimPlayer` the enemies use.
-- Channel `i` drives object `i` directly (post-sort object index == bone tag).
-- `expand_animation_for_objects` duplicates each `200+` equipment extra's **attach-bone** channel onto it (the assembler's `anm_bones` map), so duplicate weapon / Ra-Seru pieces coincide with their attach piece.
+- Channel `i` drives object `i` directly (post-sort object index == bone tag), for every channel the stream carries - so on a surplus-channel swing the `0xFE` extras sorted after the bones take their own channels.
+- `expand_animation_for_objects` gives each object past the stream's part count its **attach-bone** channel (the assembler's `anm_bones` map): the `200+` variants are only ever drawn in that channel.
+
+#### Model table
+
+Retail draws a party body channel by channel: `FUN_80048A08` draws as many channels as the playing stream has parts, each with the object the render node's per-channel table (`*(node+0x44)+4`) holds. The table is the identity at registration; every anim tick the mesh-variant swap `FUN_8004CCD4` writes each attach-bone channel's default or `0xFF` variant from the entry's `+0xA4` windows ([`battle-data-pack.md`](../formats/battle-data-pack.md#equipment-variant-track-entry-0xa4--fun_8004ccd4)).
+
+- The port keeps the table per party seat (`Actor::battle_model_table`, kernel `engine-battle::battle_attach_swap`) and steps it with every battle pose; `World::battle_live_drawn_objects` is the drawn set, folded with the after-image walk's per-ghost re-runs.
+- The native window masks the TMD before the posed rebuild (`battle_attach_swap::mask_tmd`); the browser page collapses the hidden objects' vertices after posing (`play_battle_actor_hidden`, `play_battle_actor_ghost_hidden`).
+- An idle body therefore draws its bones only: no `0xFE` extra, no `0xFF` duplicate z-fighting its host. Noa's windowed arts and swings swap her attach piece for its alternate-vertex variant; Noa's `0x1E` band and Gala's high Ozma tiers draw their extra on its own channel during the 17-part swings.
+- The Rot limb dimming tests the draw pass's channel counter (`s3`, compared against the `0x80077998` ranges at `0x80048C64..0x80048D5C` and stepped at `0x80049024`), not the object, so a variant dims with the channel it is drawn in: both hosts map objects through `World::battle_live_object_channels` before applying the plan.
 - The PROT 1203 ANM (`other5`) is not this pose source. Its banks (Vahn @ 0 / Noa @ 9 / Gala @ 18) are authored against PROT 1204's own object order, which differs from the assembled tag order, so it is the rest pose of the **1204 fallback mesh only** (identity object→bone).
 
 Pinned live and cross-pipeline in `crates/parity/tests/battle_party_pose_live.rs`.
@@ -141,7 +150,9 @@ The name carries a two-byte **element-icon escape**: a `^` + letter prefix (`^A 
 |---|---|---|---|---|---|---|---|---|
 | Element | Fire | Thunder | Wind | Water | Earth | Light | Dark | Evil |
 
-That is the icon-glyph row `0x1D..0x24` in the same order - not the element-id order of the [`+0x1D` element byte](battle.md#monster-record-source-layout). Every carrying monster's letter agrees with its element byte; `^H` maps to element byte `7`, the no-affinity id whose matrix row and column are all-100. Only 64 of the 186 populated records carry an escape. Counts per letter: [`battle-hud.md`](battle-hud.md#the-element-badges-and-their-per-badge-palette). Boss-tier `$2` / `$3` name suffixes are literal ASCII, not markup.
+That is the icon-glyph row `0x1D..0x24` in the same order - not the element-id order of the [`+0x1D` element byte](battle.md#monster-record-source-layout). Every carrying monster's letter agrees with its element byte; `^H` maps to element byte `7`, the no-affinity id whose matrix row and column are all-100. Only 64 of the 186 populated records carry an escape. Counts per letter: [`battle-hud.md`](battle-hud.md#the-element-badges-and-their-per-badge-palette). Boss-tier `$2` / `$3` name suffixes are literal ASCII, not markup; the font draws cell `0x24` as the level mark ([`dialog-font.md`](../formats/dialog-font.md)).
+
+The USA names are printable ASCII. The French, German and Italian archives also spell names with the font's accented Latin cells (bytes above `0x7E`); `monster_archive`'s name reader decodes those through `legaia_font::latin`, so every build populates the same ids.
 
 #### Texture pool (record `+0x08`)
 
@@ -158,6 +169,7 @@ The mesh's primitives are textured through per-prim CBA / TSB. The palette and p
 - A primitive selects its palette by `cba & 0x3F` and samples the page at its per-vertex `(u, v)`. Index 0 (colour `0x0000`) is transparent.
 - The arithmetic is exact: Gimard `0x1E0 + 128*256/2 = 0x41E0`, Tetsu `0x1E0 + 256*256/2 = 0x81E0`, both equal to their pool sizes.
 - The on-disc CBA / TSB are nominal defaults the loader relocates per slot, so the raw pool bytes do not appear verbatim in a battle VRAM dump.
+- The relocation **adds** to them (`0x800555E8..0x80055610`): `slot + 3` to the CBA row (`addu` of `(slot + 3) << 22` into the word whose upper half is the CBA) and `slot + 0x10` to the TSB (the column moves by the slot, `+0x10` raises `tpage_y` to 256). On-disc row `481` / column `5` lands on the monster's own CLUT row and page. The bosses `0xB3..=0xB6` also carry prims on row `482` / column `6`, which land on the boss effect page the loader stages for those ids (CLUT row 485, page `0x16`, `legaia_actor_formats::monster_archive::boss_page`): about half of the evolved Cort's body (2390 of 5007 prims) and Koru's. Port: `monster_archive::relocate_cba` / `relocate_tsb`; overwriting every prim with the slot's own row and page painted those prims from the wrong palette and page.
 
 #### Parser and tools
 

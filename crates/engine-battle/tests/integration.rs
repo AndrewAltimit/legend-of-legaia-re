@@ -6,6 +6,7 @@
 //! `cargo test -p legaia-engine-battle --test integration <name>::`.
 
 mod battle_afterimage_gate_real;
+mod battle_attach_swap_real;
 mod battle_seats_disc;
 mod encounter_man_real;
 mod move_power_table_disc;

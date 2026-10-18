@@ -39,7 +39,12 @@ these WAVs are reference-quality. Non-4-bit channels are skipped with a
 warning rather than mis-decoded (the NA corpus is entirely 4-bit).
 
 Each stage is implemented in its own crate; this one wires them
-together with a clap CLI and a SHA-256 check on the input.
+together with a SHA-256 check on the input. The wiring is the crate's
+library (`legaia_extract::run`, reporting through a `Reporter` that can also
+cancel between units of work); the `legaia-extract` binary is a clap front
+end over it, behind the default `cli` feature, and
+[`legaia-studio`](../studio/README.md) drives the same pipeline from its
+Extract tab.
 
 ## Usage
 
@@ -52,6 +57,8 @@ together with a clap CLI and a SHA-256 check on the input.
 #   --skip-font      skip writing the extracted/font/ artifacts
 #   --skip-catalog   skip writing the TIM-catalog TSVs
 #   --skip-verify    skip the input SHA-256 check
+#   --all-textures   also write every TIM (raw + LZS) as .tim + .png under
+#                    tim_scan/ - `asset tim-scan` + `tim convert-dir` in one step
 #   -v, --verbose    per-file output
 ```
 

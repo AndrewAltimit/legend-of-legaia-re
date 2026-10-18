@@ -271,6 +271,8 @@ impl World {
             .copied()
             .unwrap_or(0);
         let pc = self.party.party_count;
+        // The party seat Glare turned to stone, for its caption.
+        let mut petrified = None;
         for &t in targets {
             // Retail's `sltiu v0,s0,0x3` party gate (both arms).
             if t >= pc {
@@ -296,10 +298,51 @@ impl World {
                 continue;
             }
             self.battle.status_effects.apply(t, kind);
+            petrified = petrified.or((kind == StatusKind::Stone).then_some(t));
             if kind == StatusKind::Stone {
                 self.stone_cancels_queued_action(t);
             }
         }
+        if move_id == GLARE_ID {
+            self.raise_glare_caption(petrified);
+        }
+    }
+
+    /// Glare's bottom-bar caption (HUD element `0x5B`), raised by the PROT
+    /// 0940 body `0x801F69F8` as it resolves: a party seat turned to stone
+    /// gets its character's line - `0x801F85E8` / `0x801F8600` /
+    /// `0x801F8618` for character ids 1 / 2 / 3 (`0x8007BD10[seat]`,
+    /// `0x801F70F0..0x801F7170`), each `0xC1 k` " has turned to stone." -
+    /// and anything else (a failed roll, a Stone or Master Guard bearer, a
+    /// monster seat) gets `0x801F8630`, "Nothing happened." (`0x801F7174..
+    /// 0x801F7184`). Both raise through `FUN_801D8DE8(0x5B, 0)` with the
+    /// record's content word `0x800774AC` pointed at the string, and mark
+    /// `ctx[+0x18] = 0x5B` (`0x801F7188..0x801F719C`). The line is read
+    /// off the resident module image, its name escapes spliced with the
+    /// roster's names; it rides the steal caption's seat and closes the
+    /// same way.
+    ///
+    /// PORT: FUN_801F69F8 (PROT 0940; the caption raise)
+    fn raise_glare_caption(&mut self, petrified: Option<u8>) {
+        const NOTHING_HAPPENED: u32 = 0x801F_8630;
+        const TURNED_TO_STONE: [u32; 3] = [0x801F_85E8, 0x801F_8600, 0x801F_8618];
+        let va = match petrified {
+            None => Some(NOTHING_HAPPENED),
+            Some(seat) => TURNED_TO_STONE
+                .get(self.party_roster_slot(usize::from(seat)))
+                .copied(),
+        };
+        let Some(raw) = va.and_then(|va| {
+            let module = self.casting.effect_pool.as_ref()?.module(GLARE_ENTRY)?;
+            module_line(&module.bytes, va)
+        }) else {
+            return;
+        };
+        let text = self.expand_name_escapes(&raw);
+        self.battle.steal_caption = Some(legaia_engine_battle::battle_steal::StealCaption {
+            text,
+            owner: self.battle_ctx.active_actor,
+        });
     }
 
     /// The two stores the class-9 (Stone) arm makes **after** the bit, and
@@ -410,5 +453,42 @@ impl World {
             .statuses(slot)
             .iter()
             .any(|s| s.kind == legaia_engine_battle_vm::status_effects::StatusKind::Confuse)
+    }
+}
+
+/// Glare's action id.
+const GLARE_ID: u8 = 0x3C;
+/// The module Glare's body lives in (PROT 0940).
+const GLARE_ENTRY: u32 = 940;
+
+/// A zero-terminated line out of a slot-B module image at `va`, with the
+/// dialog escapes `0xC0..=0xCF` taken as two bytes (their operand may be
+/// `0`: `0xC1 0x00` names the first party member).
+fn module_line(image: &[u8], va: u32) -> Option<Vec<u8>> {
+    let off = va.checked_sub(legaia_overlay_images::summon_overlay::SUMMON_OVERLAY_LINK_BASE)?;
+    let tail = image.get(off as usize..)?;
+    let mut i = 0;
+    while i < tail.len() && tail[i] != 0 {
+        i += if (0xC0..=0xCF).contains(&tail[i]) {
+            2
+        } else {
+            1
+        };
+    }
+    Some(tail[..i.min(tail.len())].to_vec())
+}
+
+#[cfg(test)]
+mod glare_caption_tests {
+    use super::module_line;
+
+    /// `0xC1 0x00` is one escape, not a terminator.
+    #[test]
+    fn a_name_escape_with_a_zero_operand_does_not_end_the_line() {
+        let base = legaia_overlay_images::summon_overlay::SUMMON_OVERLAY_LINK_BASE;
+        let mut img = vec![0u8; 4];
+        img.extend_from_slice(b"\xC1\x00 has turned to stone.\0tail");
+        let line = module_line(&img, base + 4).unwrap();
+        assert_eq!(line, b"\xC1\x00 has turned to stone.");
     }
 }

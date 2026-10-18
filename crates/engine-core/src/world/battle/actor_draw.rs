@@ -565,9 +565,17 @@ impl World {
         let Some(plan) = self.battle_limb_dim_plan(actor_idx, tmd.objects.len()) else {
             return false;
         };
-        let ids = legaia_tmd::mesh::tmd_to_vram_mesh_with_object_ids(tmd, raw).1;
+        let mut ids = legaia_tmd::mesh::tmd_to_vram_mesh_with_object_ids(tmd, raw).1;
         if ids.len() != colors.len() {
             return false;
+        }
+        // The rule tests the draw pass's channel counter, so an object
+        // drawn in another object's channel (an equipment variant) dims
+        // with that channel.
+        if let Some(ch) = self.battle_live_object_channels(actor_idx) {
+            for id in &mut ids {
+                *id = ch.get(*id as usize).copied().unwrap_or(*id);
+            }
         }
         plan.apply_rgb(colors, &ids);
         true

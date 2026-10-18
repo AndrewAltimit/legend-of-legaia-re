@@ -922,6 +922,7 @@ fn orb_anchors_resolve_like_the_arms_build_them() {
     };
     let seats = AnchorSeats {
         caster: Some(caster),
+        caster_body: None,
         party: [Some(caster), None, None],
         depth: 0xC00,
     };

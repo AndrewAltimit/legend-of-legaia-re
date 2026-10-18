@@ -19,6 +19,7 @@ Hosts and tests name the modules here directly
 | `muscle_ringside` | The Muscle Dome contest hub's screens (`FUN_801CF870`): the first-visit strip, the ROUND card, the INTERVAL tally and its cue ring, the ringside-still backdrop, and `HubTimers`, which steps them off a `HubTickInputs`. |
 | `prize_exchange` | The casino prize-exchange sub-screen `0x20`: the menu overlay's prize table, its 4-state browse / confirm / commit machine, and `apply_redeem` over any bag implementing `RedeemBag`. See [`shop.md`](../../docs/subsystems/shop.md). |
 | `tile_board` | The op-`0x49` tile board: cell codes, header, walk state machine, fades, prompt. See [`tile-board.md`](../../docs/subsystems/tile-board.md). |
+| `tile_board_state` | The tile board's state as one unit held on the composite `World`. |
 
 The fishing minigame (`PondSession`, its actors, the venue chrome and the hub
 screen) is a sibling crate, [`legaia-engine-fishing`](../engine-fishing/README.md);

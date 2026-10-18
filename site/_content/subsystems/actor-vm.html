@@ -134,10 +134,10 @@
         <thead><tr><th>Routine</th><th>Role</th><th>Payload / access</th></tr></thead>
         <tbody>
           <tr><td><code>FUN_801D77F4</code></td><td>writer + one-shot reader</td><td>VDF body (<code>[u32 record_count]</code> then 12-byte records); walked at spawn to size the vertex pool and copy vertices from the indexed TMD groups</td></tr>
-          <tr><td><code>FUN_80024CFC</code></td><td>writer</td><td>Pose-output buffer bound on animation transition; seeds the frame counter to 100</td></tr>
+          <tr><td><code>FUN_80024CFC</code></td><td>writer</td><td>CLUT-walk spawner: binds an entry of the type-6 CLUT-walk table (<code>_DAT_8007B7C8 + table[id]</code>) with walker state <code>actor[+0x56] = 0xB</code>, and seeds the frame counter to 100</td></tr>
           <tr><td><code>FUN_80021DF4</code> arm <code>0x06</code></td><td>writer</td><td>Per-bone interpolated pose bytes, 8-byte-stride bones from <code>+0x0F</code></td></tr>
           <tr><td><code>FUN_8001BE80</code></td><td>reader</td><td>The part's frame-0 entry at <code>ptr + bone*8 + 8</code>: the blend target on a looping clip's last frame</td></tr>
-          <tr><td><code>FUN_800495C8</code></td><td>reader</td><td>Per-bone envelope curve walker at <code>ptr + 4</code></td></tr>
+          <tr><td><code>FUN_800495C8</code></td><td>not this slot</td><td>Battle clip-morph blend: it runs on a battle draw node, whose <code>+0x4C</code> is the playing monster action entry, and reads that entry&rsquo;s <code>+0x04</code> / <code>+0x08</code> lanes (<a href="../formats/monster-animation.html#clip-morphs">clip morphs</a>)</td></tr>
           <tr><td><code>FUN_8003A1E4</code>, <code>FUN_801DE840</code></td><td>readers</td><td>Animation-period u16 at <code>ptr + 2</code></td></tr>
         </tbody>
       </table>
@@ -163,7 +163,7 @@
       <tr><td>Window-script driver</td><td><code>FUN_801D6628</code></td><td>13-entry jump table at <code>0x801CED70</code>; 4-byte stride; descriptor-table base <code>0x801E4738</code></td><td><code>overlay_menu_801d6628.txt</code></td></tr>
       <tr><td>Window helpers</td><td><code>FUN_80035334 / 800326AC / 800357FC / 800358C0 / 80035978 / 80035A4C / 800319A8</code></td><td>Lookup, create, start-slide, snap, begin-close, close-all, destroy</td><td><code>funcs/800357fc.txt</code> and siblings</td></tr>
       <tr><td>Anim / physics tick</td><td><code>FUN_80021DF4</code></td><td>Dispatch-byte ladder (never tests 1); per-arm side-effect order; envelope caps</td><td><code>ghidra/scripts/funcs/80021df4.txt</code></td></tr>
-      <tr><td>Keyframe registrar</td><td><code>FUN_80024CFC</code></td><td>Binds the pose buffer at <code>+0x4C</code>, seeds the frame counter</td><td><code>80024cfc.txt</code></td></tr>
+      <tr><td>CLUT-walk spawner</td><td><code>FUN_80024CFC</code></td><td>Binds a CLUT-walk table entry at <code>+0x4C</code> on the ambient palette walkers it allocates, seeds the frame counter</td><td><code>80024cfc.txt</code></td></tr>
       <tr><td>VDF spawn walker</td><td><code>FUN_801D77F4</code></td><td>Record-count-first body layout; one-shot spawn consumption</td><td>field overlay dump</td></tr>
       <tr><td>Live captures</td><td>actor pool <code>0x801C9594..</code></td><td>Dispatch byte and record pointer flip together across idle vs art-strike saves</td><td>mednafen state diffs</td></tr>
     </tbody>

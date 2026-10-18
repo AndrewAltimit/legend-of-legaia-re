@@ -13,7 +13,9 @@ path = "src/lib.rs"
 [dependencies]
 anyhow.workspace = true
 legaia-bytes.workspace = true
+legaia-art.workspace = true
 legaia-container-formats.workspace = true
+legaia-font.workspace = true
 legaia-game-tables.workspace = true
 legaia-lzs.workspace = true
 legaia-prot.workspace = true
@@ -27,3 +29,6 @@ toml.workspace = true
 [[test]]
 name = "integration"
 path = "tests/integration.rs"
+
+[dev-dependencies]
+legaia-iso.workspace = true

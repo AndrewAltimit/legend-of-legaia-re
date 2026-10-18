@@ -303,6 +303,9 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
         self.world.casting.module_ctx_278 = 0;
         self.world.casting.module_caption = None;
     }
+    fn capture_band_exit(&mut self) {
+        self.world.casting.module_ctx_278 = 0;
+    }
     fn camera_frame_height(&mut self, height: i16) {
         self.world.battle.camera_frame_height = height;
         self.world
@@ -334,11 +337,11 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
     ///
     /// `idx` is the acting actor's `params[0]`, i.e. the queued action id - the
     /// same value retail indexes the spell table with to reach `+1`. So this is
-    /// the seam where the module becomes resident, and it is where the engine
-    /// stages that module's spawn records: `spawn_cast_module_fx` resolves the
-    /// id through `FUN_801F2160`'s `935 + sub_id` row and seats the records at
-    /// the caster. The paging *event* still goes to the host, which owns the
-    /// capture archive itself.
+    /// the seam where the module becomes resident. The engine notes the
+    /// caster's point here and seats the module's spawn records there on the
+    /// band's first `0x70` tick (`spawn_cast_module_fx` resolves the id
+    /// through `FUN_801F2160`'s `935 + sub_id` row). The paging *event* still
+    /// goes to the host, which owns the capture archive itself.
     ///
     /// REF: FUN_8003EC70 (the pager this seam stands for; the pool holds the
     /// band's records instead of streaming one image)
@@ -360,9 +363,13 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
             })
             .unwrap_or([0, 0, 0]);
         // A module whose arms' spawns are ported seats them on those arms
-        // inside `0x70` (`cast_module_camera::capture_arm_spawns`), not here.
+        // inside `0x70` (`cast_module_camera::capture_arm_spawns`). The rest
+        // go in whole on the band's first `0x70` tick, where the body's first
+        // arm runs: the pager only streams the image, so nothing of the
+        // module is on screen through `0x6E` / `0x6F`
+        // (`che_delilas_megaton_press_mid_cast` holds `0x6F` with none).
         if self.world.capture_per_arm_entry(idx).is_none() {
-            self.world.spawn_cast_module_fx(idx, origin);
+            self.world.casting.capture_fx_pending = Some(origin);
         }
         // ...and arm the per-frame tick phase `0x70` holds on. Retail's
         // `0x6F` exit zeroes `ctx[+0x279]` (`0x801E5048`) right before it

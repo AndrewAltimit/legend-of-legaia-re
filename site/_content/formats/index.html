@@ -69,7 +69,7 @@
     </a>
     <a class="card" id="asset-type" href="asset-type.html">
       <div class="card-title"><span>Asset type dispatcher</span> <span class="tag tag-done">Confirmed</span></div>
-      <div class="card-body">How the game knows what a loaded blob is: an 8-bit type byte (0=TIM, 2=TMD, 4=MES, 6=ANM, 7=VDF, 8=SIN, 9=TMD2, B=MOVE2) routes it to a handler and decides LZS-vs-raw. The type names come from the developers' own error strings.</div>
+      <div class="card-body">How the game knows what a loaded blob is: an 8-bit type byte (0=TIM, 2=TMD, 4=MES, 5=MOVE, 6=ANM, 7=VDF, 8=SIN, 9=TMD2, B=MOVE2 - the clips ride MOVE, the "ANM" slot holds a CLUT-walk table) routes it to a handler and decides LZS-vs-raw. The type names come from the developers' own error strings.</div>
     </a>
     <a class="card" href="asset-descriptor.html">
       <div class="card-title"><span>Asset descriptor format</span> <span class="tag tag-done">Confirmed</span></div>
@@ -144,7 +144,7 @@
     </a>
     <a class="card" id="mdt" href="mdt.html">
       <div class="card-title"><span>MDT - move tables</span> <span class="tag tag-done">Confirmed</span></div>
-      <div class="card-body">Tactical Arts move records - the fighting-combo system's data. The runtime <code>MOVE</code> base is sourced per scene from a CDNAME slot, not from one boot-time PROT entry.</div>
+      <div class="card-body">The per-scene <code>MOVE</code> buffer the script VM's <code>0x22 EXEC_MOVE</code> plays from - by its bytes the scene's ANM clip bank. Sourced per scene from a CDNAME slot, not from one boot-time PROT entry.</div>
     </a>
     <a class="card" id="move-power" href="move-power.html">
       <div class="card-title"><span>Move-power table</span> <span class="tag tag-done">Confirmed</span></div>
@@ -183,7 +183,7 @@
     </a>
     <a class="card" href="item-effect-table.html">
       <div class="card-title"><span>Item-effect table</span> <span class="tag tag-done">Confirmed</span></div>
-      <div class="card-body">What each usable item does: 130 4-byte descriptors - effect class, tier, party / field / battle usability flags. Literal restore amounts live in overlays, not here.</div>
+      <div class="card-body">What each usable item does: 130 4-byte descriptors - effect class, tier, party / field / battle usability flags. Literal HP / MP restore amounts are a separate tier-indexed table beside it; stat-up magnitudes are handler immediates.</div>
     </a>
     <a class="card" href="equipment-table.html">
       <div class="card-title"><span>Equipment stat-bonus table</span> <span class="tag tag-done">Confirmed</span></div>

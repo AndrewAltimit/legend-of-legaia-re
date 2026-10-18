@@ -8,6 +8,7 @@ use legaia_engine_battle_vm::battle_action::ActorFlags;
 fn clip(action_id: u8) -> MonsterAnimation {
     use legaia_actor_formats::monster_archive::PartPose;
     MonsterAnimation {
+        variant_track: Default::default(),
         action_id,
         rate: 2,
         attach_key: 0,

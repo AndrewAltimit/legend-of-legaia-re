@@ -5,6 +5,7 @@ use legaia_engine_battle::battle_anim::MonsterAnimPlayer;
 /// A one-part, two-frame clip whose entry head carries `impact_class`.
 fn clip(impact_class: u8) -> MonsterAnimation {
     MonsterAnimation {
+        variant_track: Default::default(),
         action_id: 0xC,
         rate: 2,
         attach_key: 0,

@@ -291,6 +291,48 @@ fn spent_combatants_keep_their_heading_until_the_strike_commits() {
     assert_eq!(b.seeded_facing()[2], None);
 }
 
+/// A counterattack capture - a party seat's strike loop inside a monster's
+/// turn (`ctx[+0x274]`) - sits out every other living combatant, the live
+/// keys included: they rank behind the turn the round has reached.
+#[test]
+fn a_counter_capture_sits_out_the_live_keys_too() {
+    let mut ram = vec![0u8; 0x20_0000];
+    let ctx = 0x800E_B654;
+    put32(&mut ram, BATTLE_CTX, ctx);
+    put8(&mut ram, ctx, 1);
+    put8(&mut ram, ctx + 1, 2);
+    put8(&mut ram, ctx + 6, 0xFF);
+    put8(&mut ram, ctx + 7, 0x1E);
+    put8(&mut ram, ctx + 0x274, 3);
+    put8(&mut ram, FORMATION_CELL, 0xA1);
+    put8(&mut ram, FORMATION_CELL + 1, 0xA1);
+    for (slot, base, key) in [
+        (0u32, 0x800E_C9E8u32, 0u16),
+        (3, 0x800E_D000, 0),
+        (4, 0x800E_D800, 235),
+    ] {
+        put32(&mut ram, ACTOR_TABLE + slot * 4, base);
+        put16(&mut ram, base + 0x14C, 50);
+        put16(&mut ram, base + 0x14E, 50);
+        put16(&mut ram, base + 0x16C, key);
+        put8(&mut ram, base + 0x1DE, 3);
+    }
+    let mut b = RetailBattle::from_ram(&ram).expect("seedable");
+    assert_eq!(b.turn_owner, 3);
+    assert!(b.counter_capture());
+    let spent = b.engine_spent_keys();
+    assert!(!spent[0], "the counterer keeps its turn");
+    assert!(
+        spent[1] && spent[2],
+        "the turn owner and the live key behind it"
+    );
+    // The member's own turn: a live key keeps its engine key.
+    b.turn_owner = 0;
+    assert!(!b.counter_capture());
+    let spent = b.engine_spent_keys();
+    assert!(spent[1] && !spent[2]);
+}
+
 /// The walk back to the displayed frame stops at the pass that armed the
 /// live tween: a capture on `0x14` with the yaw counter still on the seed's
 /// `0x200` rung is the walker pass right after the seed's own arm.

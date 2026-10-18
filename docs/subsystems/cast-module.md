@@ -1338,8 +1338,9 @@ The hit on every chain body is the fold's; the descriptor records the site
 without applying it. Two runner rules:
 
 1. **Caster stages.** A body with a `CAPTURE_CASTER_STAGES` row has its
-   caster clips replayed ahead of its arms, each to its clip's end, so the
-   runner does not stage those literals again.
+   caster clips staged by the band - ahead of its arms, or on the pass of the
+   arm the row places them in (PROT 0961's arm 1) - so the runner does not
+   stage those literals again.
 2. **Rates.** A `+0x21D` store is carried only when the body itself returns
    the actor to rate `8`. PROT 0942's `0xAA`, 0960's `0xA6`, 0961 and 0963
    leave their caster slowed or frozen and rely on a reset outside the module.
@@ -2468,25 +2469,61 @@ frames differently until a director models the read.
 
 <a id="capture-band-spawns"></a>
 
-The capture band's pager (`0x6E`) seats a module's whole record set at the
-caster as it pages the module in. Three bodies instead seat their spawn calls
-on the passes their arms make them inside `0x70`
-(`cast_module_camera::capture_arm_spawns`, keyed on the module and the body
-the trampoline picks, `capture_spawns_per_arm`); the pager placement drew
-their records a phase band early, ran each program to its end before the arm
-that seats it, and drew a cell's other bodies' records beside them:
+The capture band's pager (`0x6E`) only streams the module image in: nothing
+of the module is on screen through `0x6E` / `0x6F`
+(`che_delilas_megaton_press_mid_cast` holds `0x6F` with no part alive). A
+module whose arms are not ported seats its whole record set at the caster on
+the band's first `0x70` tick, where its first arm runs
+(`CastFxState::capture_fx_pending`); seated at the pager, the records drew
+through the fade and ran out before the arms that seat them. Seven bodies
+instead seat their spawn calls on the passes their arms make them inside
+`0x70` (`cast_module_camera::capture_arm_spawns`, keyed on the module and the
+body the trampoline picks, `capture_spawns_per_arm`), which also keeps a
+cell's other bodies' records off the screen:
 
 | Module, body | Arms that seat | Stager (op `0x20`) |
 |---|---|---|
 | 0966 Evil Seru Magic, `0x801F6A74` | 46 calls at literal points over arms 2, 4, 10, 23, 26 | not ported: the records only it seats go in as the body first ticks |
 | 0938 Mystic Circle (`0xB7`), `0x801F69EC` | arm 0 the circle `0x801F7D5C` and the ray caller `0x801F7DC4`; arm 1 `0x801F7FE8` on the countdown's expiry; arms 2 and 3 on the caster, each pass flushing the part pool first (`jal 0x80050E74`) | `FUN_801F7AB8`: arm 2 seats a ray `0x801F7DF4` on the caller, which `0x801F7DC4` calls every eleven frames |
 | 0962 Ultra Charge (`0xA5`), `0x801F69D8` | arm 0 the ring caller `0x801F86B8` on the caster and three camera-locked discs; arm 1 one ray `0x801F876C` on **every** pass, rolled `rand() % 0x1000` about Z (`capture_arm_spawns_every`) | `FUN_801F813C`: arm 2 seats three rings on the caller, which `0x801F86B8` calls every fifteen frames |
+| 0940 Mystic Shield (`0xAC`), `0x801F7240` | arm 1 `0x801F82D4` and arm 3 four records on the caster as each passes; arm 2 every eighth pass `0x801F8370` and every fourth an `efect.dat` effect `3`, arms 4 and 5 every eighth pass `0x801F84EC`, off the body's pass counter `0x801F8650` (`capture_arm_counted`); arm 4 the [sphere](#the-mystic-shield-effect); arm 7 flushes the pool | `FUN_801F82CC` is a bare `jr ra` |
+| 0944 Guilty Cross (`0x37`), `0x801F6A04` | arm 1 two camera-locked records on the zeroed stack trios; arm 2, after flushing the pool, three on the victim, the third `0x801F81E8` then stored `+0x16 = -0x1200`, `+0x42 = 1` (`capture_spawn_pokes`); arm 3 three on the victim as the hit lands; arm 4 flushes the pool | `FUN_801F7F2C`: arm 0 `0x801F7FE8`, arm 1 `0x801F8244` and `0x801F8290`, arm 2 `0x801F8290`, each at the caller's scale; the arm-3 record `0x801F8210` calls arms 1 and 2 |
+| 0946 Call Wave (`0x55`) / Big Wave (`0x56`), `0x801F69FC` | Call Wave's arm 0 the ray caller `0x801F78CC` on the caster's `+0x3C`; Big Wave's arm 4 the wave caller `0x801F7C44`, arm 5 nine records, arm 6 four, after halting every handle it keeps (`capture_arm_spawns_for` keys arm 0 on the action) | `FUN_801F76C4`: arm 0 three rings and eight rays `0x801F7970` with per-ray `rand()` waits, leans, lengths and rolls; arm 1 one wave `0x801F7BF8` into a sixteen-slot handle table while the phase is below `7` |
+| 0961 Final Crisis / Dead End Crisis (`0xB4` / `0xA1`), `0x801F69D8` | arm 0 `0x801F7AB4` on the caster; arm 2 three records and arm 3, after flushing the pool, eleven, all on the caster's trio lowered `0x200` on height and depth in the evolved Cort's formation (`CasterShifted`, `capture_arm_spawns_in`); arms 1, 3 and 5 flush the pool on their pass | `FUN_801F78A4`: arm 0 `0x801F7AD0` and `0x801F7B1C`, arm 1 `0x801F7DB0`, arm 2 two records then four shards `0x801F7E80` with five `rand()` pokes each, arm 3 `0x801F8234` and `0x801F8278` |
 
-The two ported stagers run off the parts' own calls
-(`chaos_breath_cell_stager_spawns`, `blade_breath_cell_stager_spawns`, via
-`World::run_part_stager_calls`) and only for the body above; the cells' other
-bodies (Chaos Breath, the rest of the Blade Breath cell) keep the pager
-placement.
+The ported stagers run off the parts' own calls
+(`chaos_breath_cell_stager_spawns`, `guilty_cross_cell_stager_spawns`,
+`call_wave_stager_spawns`, `blade_breath_cell_stager_spawns`,
+`dead_end_crisis_stager_spawns`, via
+`World::run_part_stager_calls`) and
+only for the bodies above; the cells' other bodies (Chaos Breath, Glare, Curse All and
+the rest of their cells) keep the whole-set placement. Big Wave's arm 6 also
+ORs `0x20` into `+0x52` of the first two records it seats
+(`0x801F7204..0x801F723C`), a bit the engine does not model.
+
+The Call Wave rays grow their length channel `+0xC8` off the rate op `0x1C`
+stores at `+0xCA` ([move-vm.md](move-vm.md#opcode-reference)); with the rate
+kept in a field nothing read, they had drawn at length zero.
+
+**A pass is a battle frame, not a tick.** Ultra Charge's arm 1 seats its ray
+once per pass of the body, and the frame driver re-enters the body once per
+`VSync(step)`. The engine ticks the module on every display tick, so it seats
+the ray on the tick that opens a battle frame (`BattleFrameClock`); seated on
+every tick, `cort_evolved_ultra_charge_mid_cast` drew 127 live rays where the
+state holds 33. The state's consecutive rays stand four vsyncs apart (their
+waits differ by `32`, eight a vsync): that pass runs past its step, an
+overrun the engine's two-vsync default does not reproduce, so the engine
+holds about twice retail's count.
+
+The same holds for an arm's **hand-over**. An arm that finishes stores the
+next phase and returns, so the next arm runs on the next pass - a battle
+frame later. On the per-vsync cadence the engine enters the module every
+tick, so a run of arms that each finish on their first pass (Big Wave's
+arm 0 cut, `0x801F6B08..0x801F6C34`, then arm 4's pan,
+`0x801F6E90..0x801F6F2C`) would walk one arm a vsync. `World::module_pass`
+holds the band after a hand-over until the tick that opens the next battle
+frame; the arms keep their one-vsync drains, so an arm's own span is
+unchanged. On retail's cadence the pass is already a frame.
 
 ### The Mystic Shield effect
 
@@ -2792,7 +2829,7 @@ through one `World` seam, so a live cast reaches every routine below.
 |---|---|---|
 | Spawn pool | `legaia_overlay_images::cast_effect_pool` (`crates/overlay-images`) | indexes all 64 entries by PROT number; parses each image's spawn records with `summon_overlay::parse`, which scans `jal FUN_80021B04` and `jal FUN_80050ED4` sites and follows each `a2`. Built once by the scene host (`ensure_cast_effect_pool`); a host with no disc holds none |
 | Dispatch key | `battle_cast_dispatch` | the two dispatchers answer with the emitter VA and band entry: `FUN_801F1ED4` row `id - 0x81` = PROT `903 + row`, `FUN_801F2160` row `sub_id` = PROT `935 + sub_id`. `World::cast_module_for` picks on the record's `+0` class byte |
-| Staging | `World::spawn_cast_module_fx` | seats the module's records as a move-VM scene (`SummonScene`) at the two seams retail uses: the capture band's pager (`load_capture_archive`, the `0x6E` arm) and the summon stager's first tick (`0x801E4B1C`) |
+| Staging | `World::spawn_cast_module_fx` | seats the module's records as a move-VM scene (`SummonScene`) where each band's module first runs: the capture band's first `0x70` tick (noted by the pager `load_capture_archive`, the `0x6E` arm) and the summon stager's first tick (`0x801E4B1C`) |
 | Code | `cast_module_ticks`, `cast_arm_ticks`, `seru_magic_ticks`, `cast_fatal_decision` | one function per VA: dispatch bound, simulation-state writes, damage step (baked power, wrapper, clamp shape, `+0x10` accumulate, HP write, reaction stage, anim-rate write) and phase advance. `World::run_cast_module_code` drives them from the stager tick the action SM calls at states `0x34` / `0x35` / `0x36`, and from the capture band's `0x70` |
 | Camera and gates | `cast_module_camera` | [directors](#the-module-owns-the-camera) and countdown tables |
 | Damage | `World::cast_spell_on_slots_prepaid`, `World::run_cast_module_aoe` | the [one-owner rule](#one-owner-per-hit) |
@@ -2828,7 +2865,15 @@ damage and the victim's reaction but not the body's
 `sb <literal>,0x1DA(<caster>)` sites. `CAPTURE_CASTER_STAGES` lists, per such
 body, the literals the caster is staged with and their sites;
 `World::capture_stager_tick` replays them at the head of phase `0x70`, each to
-its clip's end, before the module's arms run. Bodies whose ports stage the
+its clip's end, before the module's arms run. A row that places its stores in
+their arms (`CasterStageRow::arms`) is staged instead on the tick that arm
+passes, and the arms run on while the clip plays - no module waits on the
+caster there. PROT 0938's Mystic Circle (`0x801F6CCC`) and PROT 0961
+(`0x801F6D58` / `0x801F6DE8`) store theirs in arm 1, behind its countdown
+gate, so Cort holds his idle through arm 1: the
+`cort_mystic_circle_mid_cast` and `cort_evolved_final_crisis_mid_cast`
+captures both read `+0x1D9 = 0` in arm 1, and the engine's caster body pair
+now lands on retail's (`(11, 1040)` and `(23, 953)`). Bodies whose ports stage the
 caster are not in it, nor are bodies that stage nothing on the caster in
 retail (`CAPTURE_BODIES_WITHOUT_CASTER_STAGE`). The table and the three clip
 routes a monster cast can take are on
@@ -3043,6 +3088,7 @@ instructions before the call:
 | `FUN_80058490` `MoveImage` | the effect-CLUT copy `(0xD0, 0x1DC)` -> `(0xE0, 0x1DC)`, 16x1, rect at `*(0x1F8003A0)` | 7 |
 | PROT 0898 `FUN_801F2410` colour wash | stores into `ctx[+0x27A..+0x286]`, `ctx[+0x32A]`, `ctx[+0x32C]` | 14 |
 | `FUN_801E1D98` streak ribbon | a stack trio anchor and a trail id | 6 |
+| stage byte `ctx[+0x278]` (no call: a `sb` the battle frame's ambient pass `FUN_80050120` reads) | a literal | 45 |
 
 `legaia_overlay_images::cast_presentation::decode` recovers them as data.
 Each tick body opens on a switch over `ctx[+0x279]` - a jump table bounded by
@@ -3147,6 +3193,26 @@ then shows only where it crosses the floor. Seven modules set the band mode (090
 through CLUT `0x7A00` with a sine wobble off two per-line arrays at
 `ctx[+0x32E]` / `ctx[+0x4EE]`. That mode is not ported, and the hook draws
 nothing for it.
+
+**The stage byte.** `ctx[+0x278]` is what darkens the stage under a cast:
+the ambient pass drives the backdrop pair's depth cue to black once the byte
+is `2` or more with the close-up latch `ctx[+0x243]` up, and with bit 0 set it
+freezes the ambient on its floor and takes the ground grid off the screen
+([battle-stage-camera.md](battle-stage-camera.md#near-colour-and-depth-cue)).
+The decoder reads each arm's `sb <literal>,0x278(ctx)` (`StageByte`) and the
+hook stores it on the arm's own timing, paced or not: it is state, not a
+draw. Mystic Circle's arm 0 stores `3` (`0x801F6BA0`) and Horn's arm 0 `2`
+(`0x801F6B54`), the values `cort_mystic_circle_mid_cast` and
+`horn_summon_mid_cast` hold; without them both frames drew the arena where
+retail's stage is black. Two exceptions:
+
+- the modules whose tick ports store the byte themselves (`STAGE_BYTES_PORTED_BY_HAND`): the hook fires after the tick, behind a stager write the port orders after the arm's own (PROT 0923's stager stores `3` once its arm 0 has stored `0`);
+- a store on a choreography branch the action does not take: PROT 0946's `2` at `0x801F6BF8` sits on arm 0's Big Wave branch (the per-seat word set), so Call Wave skips it (`cast_module_camera::stage_store_runs`).
+
+Many bodies never clear the byte. The capture band's `0x71` exit does
+(`sb zero,0x278(v0)` at `0x801E5238`, beside `ctx[+0x243]`), as the summon
+band's `0x37` exit does (`0x801E4E98`); the engine clears its module copy at
+both (`BattleActionHost::capture_band_exit` / `summon_band_exit`).
 
 **The armed wash** only arms a flag the frame's drain clears, so an arm that
 wants it held re-arms it every pass. The drain draws it subtractive (ABR `2`)

@@ -142,6 +142,7 @@ pub fn rebuild_base_slot(
                     _ => vec![clip.frames[clip.frames.len() - 1].clone()],
                 };
                 let cyc_anim = legaia_actor_formats::monster_archive::MonsterAnimation {
+                    variant_track: Default::default(),
                     frame_count: cycle_frames.len(),
                     frames: cycle_frames,
                     ..clip.clone()

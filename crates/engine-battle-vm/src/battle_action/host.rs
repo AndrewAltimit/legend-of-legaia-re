@@ -152,6 +152,14 @@ pub trait BattleActionHost {
     /// module half holds nothing to clear.
     fn summon_band_exit(&mut self) {}
 
+    /// The capture band's `0x71` exit: it clears `ctx[+0x278]`
+    /// (`sb zero,0x278(v0)` at `0x801E5238`) beside the close-up latch
+    /// `ctx[+0x243]`. The slot-B module writes the same byte (a capture body's
+    /// stage store, Mystic Circle's `3` at `0x801F6BA0`) into the copy the host
+    /// keeps, and many bodies never clear it themselves. Default no-op: a host
+    /// with no module half holds nothing to clear.
+    fn capture_band_exit(&mut self) {}
+
     /// Equivalent of `FUN_801EED1C` - party setup hook (called for actors
     /// with slot < 3). Default no-op.
     fn party_setup(&mut self, _actor_slot: u8) {}

@@ -583,6 +583,7 @@ fn parse_part_entry(pool: &[u8], entry_off: usize) -> Option<MonsterAnimation> {
     }
     let head_end = (entry_off + PART_HEAD_BYTES).min(pool.len());
     Some(MonsterAnimation {
+        variant_track: Default::default(),
         action_id,
         rate,
         // Summon actor-pool entries share the action-entry head family, so

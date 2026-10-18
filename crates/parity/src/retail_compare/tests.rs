@@ -224,3 +224,65 @@ fn a_clip_cursor_rewinds_to_the_displayed_frame() {
     assert_eq!(rewind_clip_cursor(48, ANIM_REVERSE, 8, 16), 64);
     assert_eq!(rewind_clip_cursor(48, 0x15, 8, 0), 48);
 }
+
+/// A walker is seated where the displayed frame drew it: `rikuroa`'s Caruban
+/// stands at `Z = 9792` in the RAM, began the tick at `9760` (`+0x20`, the
+/// tick iterator's pre-tick copy), and the frame two ticks back shows `9728`.
+/// A still walker keeps its seat.
+#[test]
+fn a_walker_is_seated_at_the_displayed_frame() {
+    assert_eq!(
+        walker_displayed_seat((9152, 9792), (9152, 9760), DISPLAY_LAG_FRAMES),
+        (9152, 9728)
+    );
+    assert_eq!(
+        walker_displayed_seat((100, -40), (100, -40), DISPLAY_LAG_FRAMES),
+        (100, -40)
+    );
+    assert_eq!(walker_displayed_seat((10, 20), (12, 18), 0), (10, 20));
+}
+
+/// A cycler's cell is read off the older frame's packet buffer (the one
+/// `gp+0x434` does not name), first copy from its base, and not off the
+/// buffer the newest frame built.
+#[test]
+fn older_buffer_cell_rects_come_from_the_other_packet_buffer() {
+    let mut ram = vec![0u8; 0x20_0000];
+    let put32 = |ram: &mut Vec<u8>, va: u32, v: u32| {
+        let o = (va & 0x1F_FFFF) as usize;
+        ram[o..o + 4].copy_from_slice(&v.to_le_bytes());
+    };
+    let put16 = |ram: &mut Vec<u8>, va: u32, v: u16| {
+        let o = (va & 0x1F_FFFF) as usize;
+        ram[o..o + 2].copy_from_slice(&v.to_le_bytes());
+    };
+    // Two buffers; the newest frame built buffer 1, the one before it 0.
+    put32(&mut ram, 0x8007_B728, 0x8010_0000);
+    put32(&mut ram, 0x8007_B72C, 0x8012_0000);
+    put32(&mut ram, 0x8007_B9CC, 0x1_0000);
+    put16(&mut ram, 0x8007_B74C, 1);
+    // One live mode-3 cycler on the first actor list.
+    let node = 0x8009_0000;
+    put32(&mut ram, 0x8007_C34C, node);
+    put32(&mut ram, node + 0x0C, 0x8002_1DF4);
+    put16(&mut ram, node + 0x5A, 3);
+    put16(&mut ram, node + 0x9C, 1000);
+    for (i, v) in [16u16, 507, 2, 1].into_iter().enumerate() {
+        put16(&mut ram, node + 0xA0 + 2 * i as u32, v);
+    }
+    let block = |ram: &mut Vec<u8>, at: u32, a: u16, b: u16| {
+        for (i, v) in [16u16, 507, 2, 1, a, b].into_iter().enumerate() {
+            put16(ram, at + 2 * i as u32, v);
+        }
+    };
+    block(&mut ram, 0x8010_0020, 0x1111, 0x2222);
+    block(&mut ram, 0x8010_8000, 0x7777, 0x7777);
+    block(&mut ram, 0x8012_0020, 0x3333, 0x4444);
+    assert_eq!(
+        retail_older_buffer_cell_rects(&ram),
+        vec![((16, 507, 2, 1), vec![0x1111, 0x2222])]
+    );
+    // Armed inside the lag: the older frame had not uploaded it.
+    put16(&mut ram, node + 0x9C, 3);
+    assert!(retail_older_buffer_cell_rects(&ram).is_empty());
+}

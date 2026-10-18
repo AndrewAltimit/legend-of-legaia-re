@@ -232,6 +232,11 @@ pub struct CasterStageRun {
     pub slot: u8,
     /// The clips to stage, in order.
     pub clips: Vec<u8>,
+    /// The module arm whose pass stages each clip, parallel to
+    /// [`Self::clips`] - empty when the clips replay at the head of the band
+    /// ([`legaia_engine_cast::cast_module_ticks::capture_caster_stage_arms`]).
+    /// A placed clip does not hold the band: the arms run on while it plays.
+    pub at_arms: Vec<u8>,
     /// Index of the clip being staged / waited on.
     pub cursor: usize,
     /// The seat the caster walks into reach of before the first stage

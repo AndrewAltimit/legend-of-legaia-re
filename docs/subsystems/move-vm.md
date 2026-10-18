@@ -23,7 +23,7 @@ operand widths by a factor of two.
 | Battle escape | op `0x17` -> `FUN_801F30C4`, battle overlay (PROT 0898) only |
 | Slot-B hook | op `0x20` -> indirect call through `gp[+0x714]` (`0x8007BA2C`) |
 | Buffer base / PC | `actor[+0x48]` / `actor[+0x70]` (i16, u16 units) |
-| Buffer setup | `FUN_800204F8` (`EXEC_MOVE`), `FUN_80021B04` (part seater), `FUN_800252EC` (prescript installer) |
+| Buffer setup | `FUN_80021B04` (part seater), `FUN_800252EC` (prescript installer) |
 | Per-frame caller | part tick `FUN_80021DF4` (`ghidra/scripts/funcs/80021df4.txt`); one-shot at spawn from `FUN_80021B04` |
 | Port | [`legaia_engine_vm::move_vm`](../../crates/engine-vm/src/move_vm.rs) (`step`, `run_until_break`, `actor_tick`, `MoveHost`); part tick blocks in `engine-effects::part_motion`; field host in `engine-core::world::ambient` |
 
@@ -43,20 +43,19 @@ orientation; the per-VM pages carry the detail.
 
 How the move VM wires to the others:
 
-- Field VM op `0x22` `EXEC_MOVE` calls `FUN_800204F8`, which finds the move record for `move_id` and stages it into the actor at `actor[+0x48]` (buffer base) / `actor[+0x70]` (PC).
+- Field VM op `0x22` `EXEC_MOVE` is **not** a move-VM entry. It calls `FUN_800204F8`, the ANM clip driver, which writes only the clip fields (`+0x4C` clip pointer, `+0x56`, `+0x5E`, `+0x62`, `+0x68` frame cursor) and never `actor[+0x48]` / `actor[+0x70]`; the MOVE buffer `_DAT_8007B888` it reads is the scene's ANM clip bank ([`mdt.md`](../formats/mdt.md)).
 - The part tick (`FUN_80021DF4`, per frame) and the part seater (`FUN_80021B04`, one-shot) both call `FUN_80023070(actor)` to step the buffer.
 - Op `0x2F` calls `FUN_801D362C(actor, opcode_ptr)` at a fixed VA. The dispatcher exists **only in the field overlay (0897)**, so `0x2F` is a field-resident-only opcode ([residency evidence](move-vm-overlay-ext.md#overlay-residency---one-copy-in-the-field-overlay-only)).
 
 ### Move-buffer record sources
 
-The move buffer is seated from one of three record tables, all in the **same
+The move buffer is seated from one of two record tables, both in the **same
 record format**: `[i16 model_sel][u16 reserved][move-VM bytecode]`. `model_sel`
 is `-1` for a transform node, `0x4000` / `0x4001` for a render-mode node, and
 `>= 0` for a library mesh. Bytecode ends at op `0x08` Halt.
 
-1. **`FUN_800204F8`** - the `EXEC_MOVE` path: a per-actor move record from the runtime root (`_DAT_8007B888` MOVE / `_DAT_8007B840` MOVE2). Per-actor offsets are baked in at setup time.
-2. **Per-summon stagers** - `FUN_80021B04` spawns parts from a stager overlay's records (see [`formats/effect.md`](../formats/effect.md), `legaia_overlay_images::summon_overlay`).
-3. **Per-scene prescript stager table** - the `scene_event_scripts` / `scene_v12_table` prescript: a `[u16 count][u16 offsets]` table of these records, loaded into `_DAT_8007b8d0`. The field VM installs a record by id via **`FUN_800252EC`** (`record = _DAT_8007b8d0 + offsets[id]`) -> `FUN_80021B04` -> this VM. See [`formats/scene-bundles.md`](../formats/scene-bundles.md#scene_event_scripts---prescript-only) (parser `legaia_scene_formats::scene_event_scripts::move_stager_records`).
+1. **Per-summon stagers** - `FUN_80021B04` spawns parts from a stager overlay's records (see [`formats/effect.md`](../formats/effect.md), `legaia_overlay_images::summon_overlay`).
+2. **Per-scene prescript stager table** - the `scene_event_scripts` / `scene_v12_table` prescript: a `[u16 count][u16 offsets]` table of these records, loaded into `_DAT_8007b8d0`. The field VM installs a record by id via **`FUN_800252EC`** (`record = _DAT_8007b8d0 + offsets[id]`) -> `FUN_80021B04` -> this VM. See [`formats/scene-bundles.md`](../formats/scene-bundles.md#scene_event_scripts---prescript-only) (parser `legaia_scene_formats::scene_event_scripts::move_stager_records`).
 
 ## Fetch / dispatch loop
 
@@ -772,13 +771,13 @@ where four more addresses in this band are resolved the same way).
 
 ## Related crates
 
-- **`crates/mdt`** parses the [MDT format](../formats/mdt.md). The per-frame data inside an MDT record is the move-VM bytecode this VM consumes.
+- **`crates/mdt`** parses the [MDT format](../formats/mdt.md), retail's "MOVE" buffer - the scene's ANM clip bank, which this VM does not read despite the shared label.
 - **`crates/engine-vm`** holds the port in `move_vm.rs` and `move_vm/` (`dispatch`, `ext`, `host`, `spawn`, `state`, `color`). `run_until_break` adds a per-frame opcode budget that retail does not have.
 - **`crates/engine-effects`** holds the part-tick blocks, the summon driver, the draw-kind-4 emitters and the screen widgets.
 
 ## See also
 
-[Move table (MDT)](../formats/mdt.md) ·
+[MOVE buffer (MDT)](../formats/mdt.md) ·
 [Overlay extension sub-ops](move-vm-overlay-ext.md) ·
 [Effect VM](effect-vm.md) ·
 [Field ambient FX](field-ambient-fx.md) ·

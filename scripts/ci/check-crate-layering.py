@@ -28,7 +28,7 @@ REPO = Path(__file__).resolve().parent.parent.parent
 TABLE = Path(__file__).resolve().parent / "crate-layering.toml"
 
 # Engine-layer crates that are not named `engine-*`.
-ENGINE_LAYER_EXTRA = {"render-kernels", "parity", "asset-viewer", "web-viewer"}
+ENGINE_LAYER_EXTRA = {"render-kernels", "parity", "asset-viewer", "studio", "web-viewer"}
 
 
 def is_engine_layer(crate: str) -> bool:

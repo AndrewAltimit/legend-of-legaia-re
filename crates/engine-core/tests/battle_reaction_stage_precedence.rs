@@ -24,6 +24,7 @@ use legaia_engine_core::world::World;
 /// identify which clip is playing from the posed output.
 fn clip(action_id: u8, frames: usize, tx: i16) -> MonsterAnimation {
     MonsterAnimation {
+        variant_track: Default::default(),
         action_id,
         rate: 2,
         attach_key: 0,

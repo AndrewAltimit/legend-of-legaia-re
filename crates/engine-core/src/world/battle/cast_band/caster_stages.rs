@@ -36,6 +36,10 @@ impl World {
         let Some(spell_id) = self.casting.capture_spell else {
             return false;
         };
+        // The records the pager noted go in on the band's first tick.
+        if let Some(origin) = self.casting.capture_fx_pending.take() {
+            self.spawn_cast_module_fx(spell_id, origin);
+        }
         // The caster's own stages the body's port does not write: the
         // wind-up plays first, the module's arms run with the caster on its
         // park, and the close releases the park once they are done.
@@ -76,14 +80,27 @@ impl World {
             self.casting.capture_spell = None;
             return false;
         };
+        if run.phase != arm || !run.busy {
+            self.stage_caster_on_arm_pass(arm);
+        }
         // A module whose arms' spawns are ported seats each on the pass
         // its arm makes the call.
         if per_arm == Some(run.prot_entry) {
             use legaia_engine_cast::cast_module_camera as cmc;
             // An arm that seats on every pass (PROT 0962's rays): the roll
-            // is `rand() % 0x1000` over the zeroed stack trio's `z`.
+            // is `rand() % 0x1000` over the zeroed stack trio's `z`. A pass
+            // is one battle frame - the frame driver re-enters the module
+            // once per `VSync(step)` - while the module here runs on every
+            // display tick, so the call is made on the tick that opens a
+            // battle frame. Seated per tick, `cort_evolved_ultra_charge_mid_cast`
+            // held 127 live rays against retail's 33.
             let every = cmc::capture_arm_spawns_every(run.prot_entry, arm);
-            if !every.is_empty() {
+            let opens_pass = self
+                .battle
+                .frame_clock
+                .ticks_into_frame(self.clock.display_frames)
+                == 0;
+            if !every.is_empty() && opens_pass {
                 let roll = (self.next_rand() % 0x1000) as i16;
                 self.stage_module_arm_spawns(
                     run.prot_entry,
@@ -92,11 +109,40 @@ impl World {
                     Some(([0; 3], [0, 0, roll])),
                 );
             }
+            // An arm that spawns on the passes its body's own frame counter
+            // picks (PROT 0940's sparks), the counter read before its bump.
+            if opens_pass && let Some(c) = cmc::capture_arm_counted(run.prot_entry, arm) {
+                let n = self.casting.module_pass_counter;
+                if let Some((id, mask)) = c.effect
+                    && n & mask == 0
+                    && let Some(a) = self.actors.get(usize::from(self.battle_ctx.active_actor))
+                {
+                    let pos = [
+                        a.move_state.world_x,
+                        a.move_state.world_y,
+                        a.move_state.world_z,
+                    ];
+                    let facing = a.battle.facing_angle;
+                    self.try_spawn_effect(id, pos, facing);
+                }
+                if n & c.mask == 0 {
+                    self.stage_module_arm_spawns(run.prot_entry, c.spawns, run.camera_shot, None);
+                }
+                self.casting.module_pass_counter = n.wrapping_add(1);
+            }
             if run.phase != arm || !run.busy {
                 if cmc::capture_arm_flushes_pool(run.prot_entry, arm) {
                     self.flush_module_part_pool();
                 }
-                let spawns = cmc::capture_arm_spawns(run.prot_entry, arm);
+                if cmc::capture_arm_resets_pass_counter(run.prot_entry, arm) {
+                    self.casting.module_pass_counter = 0;
+                }
+                let spawns = cmc::capture_arm_spawns_in(
+                    run.prot_entry,
+                    arm,
+                    spell_id,
+                    self.battle_first_monster_byte(),
+                );
                 if !spawns.is_empty() {
                     self.stage_module_arm_spawns(run.prot_entry, spawns, run.camera_shot, None);
                 }
@@ -143,6 +189,8 @@ impl World {
         self.casting.module_swordie = Default::default();
         self.casting.module_rain = Default::default();
         self.casting.module_settle_countdown = 0;
+        self.casting.module_pass_counter = 0;
+        self.casting.module_handover_waits = false;
         self.casting.module_cam = Default::default();
         self.casting.module_pres = Default::default();
         self.casting.module_beam_counter = 0;
@@ -171,27 +219,37 @@ impl World {
             legaia_engine_cast::cast_module_ticks::capture_body_approaches(entry, spell_id)
                 .then_some(actor.battle.active_target)
                 .filter(|&t| t < 8 && usize::from(t) < self.actors.len() && t != slot);
-        let clips: Vec<u8> = legaia_engine_cast::cast_module_ticks::capture_caster_stages(
+        let staged = legaia_engine_cast::cast_module_ticks::capture_caster_stages(
             entry,
             spell_id,
             seat_monster,
             self.battle_first_monster_byte(),
         )
-        .unwrap_or_default()
-        .into_iter()
-        .filter(|&c| {
-            installed
-                .get(usize::from(c))
-                .is_some_and(|c| c.as_ref().is_some_and(|c| c.frame_count > 0))
-        })
-        .collect();
+        .unwrap_or_default();
+        let arms =
+            legaia_engine_cast::cast_module_ticks::capture_caster_stage_arms(entry, spell_id)
+                .filter(|a| a.len() == staged.len());
+        let (clips, at_arms): (Vec<u8>, Vec<u8>) = staged
+            .into_iter()
+            .enumerate()
+            .filter(|&(_, c)| {
+                installed
+                    .get(usize::from(c))
+                    .is_some_and(|c| c.as_ref().is_some_and(|c| c.frame_count > 0))
+            })
+            .map(|(i, c)| (c, arms.map_or(u8::MAX, |a| a[i])))
+            .unzip();
+        let placed = arms.is_some();
         (!clips.is_empty() || approach.is_some()).then_some(CasterStageRun {
             slot,
             clips,
+            at_arms: if placed { at_arms } else { Vec::new() },
             cursor: 0,
             approach,
             phase: if approach.is_some() {
                 CasterStagePhase::Approach
+            } else if placed {
+                CasterStagePhase::Module
             } else {
                 CasterStagePhase::Staging
             },
@@ -234,7 +292,7 @@ impl World {
                     if a.battle.queued_anim == CAPTURE_WALK_ENTRY {
                         a.battle.queued_anim = 0;
                     }
-                    if run.clips.is_empty() {
+                    if run.clips.is_empty() || !run.at_arms.is_empty() {
                         run.phase = CasterStagePhase::Module;
                         self.casting.caster_stages = Some(run);
                         return CasterStageGate::RunModule;
@@ -292,6 +350,30 @@ impl World {
         };
         self.casting.caster_stages = Some(run);
         gate
+    }
+
+    /// The module's arm `arm` passed this tick: stage the caster clips the
+    /// body stores in that arm ([`CasterStageRun::at_arms`]). Each goes in
+    /// behind whatever the caster plays, its park released, and the arms run
+    /// on while it plays - the module stages and moves on in the same pass.
+    fn stage_caster_on_arm_pass(&mut self, arm: u8) {
+        let Some(run) = self.casting.caster_stages.as_mut() else {
+            return;
+        };
+        if run.phase != CasterStagePhase::Module || run.at_arms.is_empty() {
+            return;
+        }
+        let Some(i) = run.at_arms.iter().position(|&a| a == arm) else {
+            return;
+        };
+        let (slot, clip) = (run.slot, run.clips[i]);
+        run.cursor = i;
+        if let Some(a) = self.actors.get_mut(usize::from(slot)) {
+            if let Some(p) = a.battle_animation.as_mut() {
+                p.release_loop_window();
+            }
+            a.battle.queued_anim = clip;
+        }
     }
 
     /// The module reported done: release the caster's park and stage idle

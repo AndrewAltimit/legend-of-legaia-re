@@ -278,6 +278,42 @@ fn glide_origin_alignment_takes_only_agreeing_components() {
     assert_eq!(got.focus, [at.focus[0], 5.0, 6.0]);
 }
 
+/// With the yaw on retail's endpoint, a focus endpoint a few units off
+/// takes retail's point in the ease: the engine's focus stands as far short
+/// of its own endpoint as retail's live focus stood from its. An endpoint
+/// off the same bodies' band, or a landed glide, keeps the engine's own.
+#[test]
+fn glide_origin_alignment_carries_the_focus_phase_under_an_exact_yaw() {
+    let mut cam = BattleCamera::new(BattleCamPhase::Menu, 0);
+    cam.set_phase(BattleCamPhase::Action);
+    steps(&mut cam, 1);
+    assert!(cam.is_gliding());
+    let target = cam.glide_target();
+    let mut end = target;
+    end.focus[0] -= 16.0;
+    end.focus[2] -= 17.0;
+    let mut live = end;
+    live.yaw = (end.yaw + 881.0).rem_euclid(4096.0);
+    live.focus[0] = end.focus[0] - 110.0;
+    live.focus[2] = end.focus[2] - 122.0;
+    let mask = cam.align_glide_origin(live, end);
+    assert_eq!(mask & 0xA0, 0xA0, "focus x and z carried");
+    let got = cam.pose();
+    assert_eq!(got.focus[0], target.focus[0] - 110.0);
+    assert_eq!(got.focus[2], target.focus[2] - 122.0);
+
+    // A yaw endpoint off by more than the tolerance leaves the focus alone.
+    let mut cam = BattleCamera::new(BattleCamPhase::Menu, 0);
+    cam.set_phase(BattleCamPhase::Action);
+    steps(&mut cam, 1);
+    let before = cam.pose();
+    let mut off = end;
+    off.yaw = (cam.glide_target().yaw + 30.0).rem_euclid(4096.0);
+    let mask = cam.align_glide_origin(live, off);
+    assert_eq!(mask & 0xA0, 0);
+    assert_eq!(cam.pose().focus, before.focus);
+}
+
 /// **The resting yaw is the free-running orbit, not a captured
 /// constant.** Five retail battle save states caught at the identical
 /// framing - `ctx[7] == 0x00`, pitch `32`, `TR (0, 1280, 7680)`, focus at

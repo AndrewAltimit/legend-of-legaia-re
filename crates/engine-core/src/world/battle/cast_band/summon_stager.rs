@@ -38,6 +38,7 @@ impl World {
         // module phase `ctx+0x279` before the first tick.
         self.casting.module_phase = 0;
         self.casting.module_ctx_278 = 0;
+        self.casting.module_handover_waits = false;
         // A new cast re-arms the Nighto verdict; the roll happens on the first
         // tick of the module, the way retail's arm 0 draws it. The ring sweep
         // starts from zero for the same reason.

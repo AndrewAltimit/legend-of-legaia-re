@@ -157,6 +157,30 @@ impl LegaiaRuntime {
         a.rest_pose.clone()
     }
 
+    /// Battle actor `i`'s **hidden objects** this frame, as TMD object
+    /// indices: the objects its per-channel model table does not name for
+    /// the playing stream's channels (`World::battle_live_drawn_objects` -
+    /// the draw pass `FUN_80048A08` after the mesh-variant swap
+    /// `FUN_8004CCD4`). The page collapses their vertices after posing.
+    /// Empty for an actor with no model table (monsters, summons, a
+    /// fallback form) - every object draws. The native window's twin masks
+    /// the TMD in `build_posed_actor_overrides`.
+    pub fn play_battle_actor_hidden(&self, i: u32) -> Vec<u32> {
+        let (Some(br), Some(host)) = (self.battle_render.as_ref(), self.scene_host.host()) else {
+            return Vec::new();
+        };
+        let Some(a) = br.actors.get(i as usize) else {
+            return Vec::new();
+        };
+        if a.object_ids.is_empty() {
+            return Vec::new();
+        }
+        host.world
+            .battle_live_drawn_objects(a.actor_idx)
+            .map(|d| legaia_engine_battle::battle_attach_swap::hidden_objects(&d))
+            .unwrap_or_default()
+    }
+
     /// Battle actor `i`'s object-local positions with the playing clip's
     /// morph lanes blended in (`World::battle_morphed_tmd`, the port of
     /// `FUN_800495C8`'s blend before the draw), index-aligned with
@@ -317,6 +341,26 @@ impl LegaiaRuntime {
             ]);
         }
         out
+    }
+
+    /// Ghost `g` of battle actor `i`'s hidden objects - the ghost's own
+    /// re-run of the mesh-variant swap (`FUN_80049348` -> `FUN_8004CCD4`),
+    /// in the [`Self::play_battle_actor_hidden`] shape.
+    pub fn play_battle_actor_ghost_hidden(&self, i: u32, g: u32) -> Vec<u32> {
+        let (Some(br), Some(host)) = (self.battle_render.as_ref(), self.scene_host.host()) else {
+            return Vec::new();
+        };
+        let Some(a) = br.actors.get(i as usize) else {
+            return Vec::new();
+        };
+        host.world
+            .battle_ghost_draws()
+            .into_iter()
+            .filter(|d| d.actor_slot as usize == a.actor_idx)
+            .nth(g as usize)
+            .and_then(|d| d.drawn)
+            .map(|d| legaia_engine_battle::battle_attach_swap::hidden_objects(&d))
+            .unwrap_or_default()
     }
 
     /// Ghost `g` of battle actor `i`'s pose, in the

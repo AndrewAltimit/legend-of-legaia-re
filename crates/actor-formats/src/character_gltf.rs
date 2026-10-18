@@ -455,6 +455,7 @@ mod tests {
 
     fn clip(frames: usize) -> MonsterAnimation {
         MonsterAnimation {
+            variant_track: Default::default(),
             action_id: 0,
             rate: 2,
             attach_key: 0,

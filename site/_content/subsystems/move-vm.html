@@ -11,7 +11,7 @@
     <dt>Opcodes</dt><dd>71 (<code>0x00..0x46</code>), plus 61 field-overlay sub-ops behind op <code>0x2F</code></dd>
     <dt>Program</dt><dd>Move buffer at <code>actor+0x48</code>, program counter at <code>actor+0x70</code></dd>
     <dt>Operand width</dt><dd><strong>u16 stream</strong> - the PC and every size count in 16-bit units, not bytes</dd>
-    <dt>Fed by</dt><dd>Field-VM op <code>0x22 EXEC_MOVE</code>, the summon / cast stagers, and the per-scene prescript stager table; the record format is shared by all three</dd>
+    <dt>Fed by</dt><dd>The summon / cast stagers and the per-scene prescript stager table; both share one record format. Field-VM op <code>0x22 EXEC_MOVE</code> is not a source: it drives an ANM clip, not this buffer</dd>
     <dt>In the port</dt><dd><code>engine-vm::move_vm</code>, host callbacks via the <code>MoveHost</code> trait</dd>
     <dt>Confidence</dt><dd>Confirmed - per-case disassembly (<a href="#how-we-know">how we know</a>)</dd>
   </dl>
@@ -37,17 +37,14 @@
 <section class="doc-section" id="signature">
   <h2>How a frame runs</h2>
   <figure class="diagram">
-    <svg viewBox="0 0 860 360" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Three sources seat a move record into an actor's move buffer: field-VM op 0x22, the summon and cast stagers, and the per-scene prescript table. Each frame the actor tick runs the move VM, which reads the u16 opcode at the PC, dispatches it and adds its size, looping until HALT, a wait, or an opcode of 0x47 or more ends it. Three opcodes escape to other code: 0x2F to the field overlay's 61 sub-ops, 0x17 to the battle overlay, and 0x20 to the slot-B module hook.">
+    <svg viewBox="0 0 860 360" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Two sources seat a move record into an actor's move buffer: the summon and cast stagers, and the per-scene prescript table. Each frame the actor tick runs the move VM, which reads the u16 opcode at the PC, dispatches it and adds its size, looping until HALT, a wait, or an opcode of 0x47 or more ends it. Three opcodes escape to other code: 0x2F to the field overlay's 61 sub-ops, 0x17 to the battle overlay, and 0x20 to the slot-B module hook.">
       <defs><marker id="mvm-ah" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
-      <rect x="20" y="20" width="220" height="52" rx="4" class="dg-node"/>
-      <text x="130" y="42" class="dg-label">field op 0x22 EXEC_MOVE</text><text x="130" y="60" class="dg-sub">per-actor move tables</text>
       <rect x="20" y="86" width="220" height="52" rx="4" class="dg-node"/>
       <text x="130" y="108" class="dg-label">summon / cast stagers</text><text x="130" y="126" class="dg-sub">part actors from overlays</text>
       <rect x="20" y="152" width="220" height="52" rx="4" class="dg-node"/>
       <text x="130" y="174" class="dg-label">scene prescript table</text><text x="130" y="192" class="dg-sub">ambient props, field FX</text>
       <rect x="310" y="86" width="210" height="52" rx="4" class="dg-node-accent"/>
       <text x="415" y="108" class="dg-label">move buffer</text><text x="415" y="126" class="dg-sub">+0x48 base, +0x70 PC</text>
-      <path class="dg-edge" d="M240 46 L275 46 L275 106 L308 106" marker-end="url(#mvm-ah)"/>
       <path class="dg-edge" d="M240 112 L308 112" marker-end="url(#mvm-ah)"/>
       <path class="dg-edge" d="M240 178 L275 178 L275 118 L308 118" marker-end="url(#mvm-ah)"/>
 
@@ -158,8 +155,8 @@
     <tbody>
       <tr><td>Dispatcher</td><td><code>FUN_80023070</code></td><td>u16 PC at <code>+0x70</code>, JT at <code>0x80010778</code>, the <code>&lt; 0x47</code> bound, the loop-exit ops</td><td><code>ghidra/scripts/funcs/80023070.txt</code></td></tr>
       <tr><td>Actor tick</td><td><code>FUN_80021DF4</code></td><td>Per-frame entry, wait-timer countdown</td><td><code>80021df4.txt</code></td></tr>
-      <tr><td>Move stager</td><td><code>FUN_800204F8</code></td><td>How field-VM op <code>0x22</code> resolves a move id into buffer + PC</td><td><code>800204f8.txt</code></td></tr>
-      <tr><td>Prescript stager</td><td><code>FUN_800252EC</code> &rarr; <code>FUN_80021B04</code></td><td>The third record source; spawn with an immediate first step</td><td><code>800252ec.txt</code></td></tr>
+      <tr><td>Clip driver</td><td><code>FUN_800204F8</code></td><td>Field-VM op <code>0x22</code>'s callee stores only the ANM clip fields (<code>+0x4C</code> / <code>+0x56</code> / <code>+0x5E</code> / <code>+0x62</code> / <code>+0x68</code>), never <code>+0x48</code> / <code>+0x70</code>: not a move-buffer source</td><td><code>800204f8.txt</code></td></tr>
+      <tr><td>Prescript stager</td><td><code>FUN_800252EC</code> &rarr; <code>FUN_80021B04</code></td><td>The second record source; spawn with an immediate first step</td><td><code>800252ec.txt</code></td></tr>
       <tr><td>Field extension</td><td><code>FUN_801D362C</code></td><td>61-entry JT at <code>0x801CE868</code>; bounds check; per-arm widths in delay slots; field overlay only</td><td><code>overlay_0897_801d362c.txt</code></td></tr>
       <tr><td>HSV pair</td><td><code>FUN_8001A78C</code> / <code>FUN_8001A8DC</code></td><td>The RGB&harr;HSV algorithms the colour ramps call</td><td><code>8001a78c.txt</code></td></tr>
       <tr><td>Widget family</td><td><code>FUN_801F7A9C..FUN_801F8A34</code></td><td>Four widget kinds, spawn APIs, shared interpolator; static decode of PROT 0900 at link base <code>0x801F69D8</code></td><td><code>overlay_0900</code> dumps</td></tr>

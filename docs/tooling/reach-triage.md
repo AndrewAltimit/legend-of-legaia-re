@@ -941,7 +941,7 @@ blocks a (b) row, or the disclosure state of a (c) row.
 | `incense_window.rs` | 1 | (c) | disclosed | `80046870` |
 | `battle_stream_slot.rs` | 2 | (c) | disclosed | `80055b4c` `801f17f8` |
 | `field_actor_timers.rs` | 1 | (d), no carrier | the three-axis tween `EasedMove::step`, whose only spawn is field-VM `0x43 09` (`tween_actor_position`, retail `FUN_801DE698`'s one caller). The [op census](#the-op-census-names-both-carriers) counts **zero** `43 09` occurrences disc-wide, clean or total, so no shipped script reaches it. Its sibling, the cinematic wipe `801dd784` (`0x43 0C`), has carriers and is entered | `801dd4c4` |
-| `field_subsystem_enter.rs` | 1 | (c) | disclosed | `801f1278` |
+| `field_subsystem_enter.rs` | 1 | wired, context writes (c) | the handler decision is `installer_entry`, which `engine-core`'s `field_submode_screen::installed_handler` calls on every op-`0x49` arm and every scripted-menu-press test; the context-write kernels beside it (`enter_context`, `MaskedBytes`, `resolve_current_member`, `rearm_state`) carry their own disclosures | `801f1278` |
 | `field_passive_hud.rs` | 1 | (b), **converted** | `passive_badge_page` equips a badge-bit accessory through the Equip screen by pad and requires the badge against the same menu walk with nothing seeded. The gate it closes: a party member holding one of the six HUD-badge ability bits. `hud_anchor_offsets` is reached only through `World::passive_hud_points`, itself behind `World::passive_hud_active()`, and a cold-start party holds none of the six - so the badge column never anchors and the offsets never resolve. A card load now re-derives the mask from the loaded equipment (it used to stay empty until a battle entry), so a library save whose party wears one of the six converts the row; the played-through card the page ladders use wears none | `801d095c` |
 | `actor_node_pool.rs` | 4 | (c) | disclosed. Read with the note below: whether these are measured at all moves with the ladder set, so the verdict rests on the caller scan | `800203ec` `80020424` `80020454` `800204a4` |
 | `clut_fade_actor.rs` | 1 | (c) | undisclosed, same trio - and the coverage side cannot corroborate it, because no binary in the union carries the file (the report's *not observable* set) | `801e4d8c` |
@@ -1143,14 +1143,15 @@ five `battle_intro.rs` styles; `native_minigame_ladder` took the
 `menu_depth_ladder` took the special-use confirms, the item target panel,
 the entry-context pair, the spell-level notice and the title/save screens.
 
-`801d5510`'s host column has now been wrong twice, and the second correction
+`801d5510`'s host column has been wrong twice, and the second correction
 is a wire rather than a re-reading. It first named a fixture that could not
-exist: `shop_buy_quantity_panel` had exactly one caller in the workspace -
-`web-viewer::play_shop::buy_quantity_panel_draws` - while the native window's
-descriptor draw path painted windows 32 / 33 / 34 / 37 and carried no buy-side
-block at all, so no native ladder could reach it however it drove the shop.
-The missing native window-35 painter that column called for is written, so the
-kernel is a both-hosts panel now and the row is a reach gap rather than a host
+exist: the buy-quantity panel had exactly one caller in the workspace, in the
+browser host, while the native window's descriptor draw path painted windows
+32 / 33 / 34 / 37 and carried no buy-side block at all, so no native ladder
+could reach it however it drove the shop. The kernel is now
+`engine-ui::menu::window_painters::buy_quantity_draws_for`
+(window 35), called from the one shared shop compositor in `engine-screens::shop`,
+so it is a both-hosts panel and the row is a reach gap rather than a host
 gap: what enters it is either host driven to the buy-quantity phase. Its
 `engine-core` session siblings `801db7f4` / `801dbd94` are the same gap one
 layer down and sit in the engine-core tables above.
@@ -1242,11 +1243,8 @@ reach it. The `strv2_decode` module states the same prerequisite chain.
 
 ### engine-render
 
-| module | n | bucket | reach | addresses |
-|---|---|---|---|---|
-| `attach_swap.rs` | 1 | (c) | disclosed | `8004ccd4` |
-
-One row is left and the `lib.rs` pair is not it. `80034e4c` and `8003c1f8`
+No row. The mesh-variant swap (`8004ccd4`) that was the last one moved to
+`engine-battle::battle_attach_swap`, where the battle anim tick runs it. `80034e4c` and `8003c1f8`
 are module-scope tags whose real bodies are the `engine-ui` menu-ink and
 sprite builders - the zero-padded decimal field and the
 separator glyph - and both are entered, by the dev menu's records page and by

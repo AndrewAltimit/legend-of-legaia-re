@@ -60,9 +60,9 @@ cross-compiles - including the x86_64 Linux one.
 | Target | Toolchain | Contents |
 |---|---|---|
 | `aarch64-unknown-linux-gnu` | Native | Every workspace binary |
-| `x86_64-pc-windows-gnu` | mingw-w64 cross | Every workspace binary, plus `Legend of Legaia.exe` |
+| `x86_64-pc-windows-gnu` | mingw-w64 cross | Every workspace binary, plus `Legend of Legaia.exe`; `legaia-studio.exe` is a GUI-subsystem program |
 | `x86_64-unknown-linux-gnu` | `cargo-zigbuild` cross + amd64 ALSA / libudev sysroot, glibc pinned to 2.28 | Every workspace binary |
-| `universal-apple-darwin` | Native on a macOS runner: `aarch64-apple-darwin` + `x86_64-apple-darwin`, fused by `lipo` | Every workspace binary, plus `Legend of Legaia.app` |
+| `universal-apple-darwin` | Native on a macOS runner: `aarch64-apple-darwin` + `x86_64-apple-darwin`, fused by `lipo` | Every workspace binary, plus `Legend of Legaia.app` and `Legaia Studio.app` |
 
 The per-target binary list is declared explicitly in `release-build.sh`, and
 the script fails if an expected binary is missing from the build output, so a
@@ -82,7 +82,8 @@ cpal's macOS backend is CoreAudio, so there is no ALSA question here.
 The archive additionally carries `Legend of Legaia.app`, a minimal bundle
 (an `Info.plist` and a copy of `legaia-engine`) so a Finder user double-clicks
 an app. Started without arguments the engine runs its launcher, which needs no
-terminal. `CFBundleVersion` takes the version with any prerelease suffix cut
+terminal. `Legaia Studio.app` wraps `legaia-studio` the same way; one
+`make_app` helper in the script builds, lints and signs both. `CFBundleVersion` takes the version with any prerelease suffix cut
 (macOS wants dot-separated integers there); `CFBundleShortVersionString` keeps
 the full string. The script lints the `Info.plist` with `plutil` and verifies
 the seal with `codesign --verify --deep --strict` after signing, so a malformed
@@ -124,10 +125,35 @@ console for it), it calls `FreeConsole` and starts the game child with
 `LEGAIA_KEEP_CONSOLE` keeps the console for debugging. Started from a
 terminal, the console is shared and stays.
 
-`release-build.sh` reads the PE optional header of both staged files and fails
+`release-build.sh` reads the PE optional header of the staged files and fails
 unless the stub is subsystem 2 (Windows GUI) and the engine subsystem 3
 (console), so a build change cannot quietly bring the console back or take the
-terminal away.
+terminal away. The same check holds `legaia-studio.exe` at subsystem 2 (see
+below).
+
+### Legaia Studio
+
+`legaia-studio` ([`crates/studio`](../../crates/studio/README.md)) is the
+desktop asset browser and extractor, the archive's entry point for a user who
+does not want a terminal. It ships on every target and differs from the other
+GUI binaries in three ways the pipeline accounts for:
+
+- **No console on Windows.** It has no command-line contract (one optional
+  path to open, plus `--version` / `--help`), so unlike the engine it is a
+  `windows`-subsystem program itself (`#![cfg_attr(windows,
+  windows_subsystem = "windows")]`) and needs no launcher stub. Its
+  `--version` prints only when a console is attached.
+- **OpenGL, not wgpu.** It draws through `eframe` on the glow backend, because
+  no egui release builds against the workspace's wgpu 26. On Linux it opens
+  libGL / libEGL and X11 / Wayland at runtime (dlopen), so the cross builds
+  need nothing beyond the ALSA sysroot the engine already uses; on Windows it
+  imports only system DLLs (`opengl32.dll` among them).
+- **Its own bundle on macOS.** `Legaia Studio.app` sits beside `Legend of
+  Legaia.app`; Gatekeeper's first-launch confirmation applies to it the same
+  way.
+
+`README-PLAY.txt` carries a "browse and extract" section that points at it,
+and the release smoke-runs `legaia-studio --version` next to the engine's.
 
 ### Why Windows is `-gnu` rather than `-msvc`
 
@@ -222,7 +248,7 @@ SHA256SUMS
 Every archive contains a single top-level
 `legaia-tools-<version>-<target>/` directory - extracting one never scatters
 files across the working directory. Inside it: the binaries, `LICENSE` and
-`LICENSE-MIT` (the project is `MIT OR Unlicense`), and two generated text
+`LICENSE-MIT` (the project is `MIT OR Unlicense`), and three generated text
 files:
 
 - `README-PLAY.txt` - the file a player needs: start `legaia-engine` (or the
@@ -230,11 +256,43 @@ files:
   image once, and play. It restates that no game data is included and where
   settings and saves live. The launcher itself is described in
   [`playing-and-viewing.md`](../guides/playing-and-viewing.md#0-the-launcher).
+  It also points asset users at Legaia Studio and the extraction guide.
 - `README.txt` - the target, every binary present with a one-line role, and
   the same bring-your-own-disc rule.
+- `THIRD-PARTY-LICENSES.txt` - the license texts and notices of every crate
+  the binaries link (see below).
 
-A build smoke-runs `legaia-engine --version` from the staged archive
-whenever the build host can execute it (the native Linux row and the
+### Third-party notices
+
+Most of the linked crates' licenses (MIT, Apache-2.0, BSL-1.0, Zlib,
+Unicode-3.0, the OFL / Ubuntu font licenses of egui's bundled fonts, ...)
+require their notice to travel with the binary.
+[`scripts/ci/third-party-licenses.py`](../../scripts/ci/third-party-licenses.py)
+writes the file at staging time from the crates themselves:
+
+- **Which crates.** The closure of every workspace package that builds a
+  binary over normal dependency edges, from `cargo tree --workspace -e normal
+  --target <triple>` (both slices for the universal macOS row), so features
+  resolve exactly as in the release build and build-only or dev-only crates
+  are left out. `cargo metadata`'s own resolve is not used for the set: it
+  lists optional dependencies no feature enables (eframe's unused wgpu
+  backend).
+- **Which texts.** The license files each crate ships (`LICENSE*`,
+  `COPYING*`, `NOTICE*`, `COPYRIGHT*`, the manifest's `license-file`, and
+  notices below the root such as a font's licence next to the font). An OR
+  expression is satisfied by a branch the crate ships text for; when a crate
+  ships none, the Apache-2.0 text (no copyright holder in its wording) or a
+  canonical template (MIT, BSL-1.0, Zlib) is borrowed rather than another
+  crate's copyright line. Public-domain dedications (CC0-1.0) need no text.
+- **Shape.** Each distinct text once, with every crate that carries it listed
+  above it, after a crate / version / license / repository table.
+
+The script exits non-zero when a linked crate declares no license or an id
+has no text anywhere, which fails the release. It needs only `cargo` and the
+Python 3 standard library.
+
+A build smoke-runs `legaia-engine --version` and `legaia-studio --version`
+from the staged archive whenever the build host can execute it (the native Linux row and the
 universal macOS row), so a binary that cannot start fails the release rather
 than a user.
 

@@ -153,4 +153,23 @@ fn decode_every_module() {
         rect: [Some(0xD0), Some(0x1DC), Some(16), Some(1)],
         dst: [Some(0xE0), Some(0x1DC)],
     }));
+    // The stage byte `ctx[+0x278]`, against the retail states that hold it:
+    // `cort_mystic_circle_mid_cast` reads `3` (PROT 0938's `0xB7` arm 0,
+    // `0x801F6BA0`), `horn_summon_mid_cast` `2` in arm 2 (PROT 0930's arm 0,
+    // `0x801F6B54`; arm 7 stores `3` in a `jal` delay slot, `0x801F73CC`),
+    // `zeto_big_wave_mid_cast` `2` (PROT 0946's arm 0, `0x801F6BF8`).
+    let stage = |entry: u32, va: u32| {
+        by_entry[&entry].sites.iter().find_map(|s| match s.call {
+            PresentationCall::StageByte { value } if s.va == va => Some((s.arm, value)),
+            _ => None,
+        })
+    };
+    assert_eq!(stage(938, 0x801F_6BA0), Some((0, Some(3))));
+    assert_eq!(stage(930, 0x801F_6B54), Some((0, Some(2))));
+    assert_eq!(stage(930, 0x801F_73CC), Some((7, Some(3))));
+    assert_eq!(stage(946, 0x801F_6BF8), Some((0, Some(2))));
+    // A tick port that writes the byte by hand agrees with the decode:
+    // Gimard's cut and tunnel (`GIMARD_CUT_CTX_278` / `GIMARD_TUNNEL_CTX_278`).
+    assert_eq!(stage(903, 0x801F_6F2C), Some((4, Some(3))));
+    assert_eq!(stage(903, 0x801F_7170), Some((6, Some(2))));
 }

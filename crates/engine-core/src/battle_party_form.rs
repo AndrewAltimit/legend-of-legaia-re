@@ -289,6 +289,12 @@ pub struct PartyBattleForm {
     pub face_tracks: Option<Vec<Option<FaceTracks>>>,
     /// The art bank records' embedded-entry face tracks.
     pub art_face_tracks: Vec<Option<FaceTracks>>,
+    /// The seat's per-channel model table as `FUN_800513F0` registers it:
+    /// identity over the assembled objects plus the two attach pairs and the
+    /// pinned ordinal the mesh-variant swap reads. `None` on a fallback form,
+    /// for Terra (the swap skips her seat), and for an assembly with fewer
+    /// than two variants.
+    pub model_table: Option<legaia_engine_battle::battle_attach_swap::BattleModelTable>,
 }
 
 /// Build member `member`'s battle form: the retail assembly out of the
@@ -452,6 +458,26 @@ fn assemble(
                 .collect()
         })
         .unwrap_or_default();
+    // The registration snapshot (`FUN_800513F0` `0x80051614..0x800516BC`)
+    // and the per-channel model table it indexes. Retail runs the swap for
+    // party render slots whose character is not Terra (`FUN_80047430`
+    // `0x80047FD8`: `li v0,0x3; beq s6,v0`).
+    let model_table = (cslot != 3)
+        .then(|| {
+            legaia_engine_battle::battle_attach_swap::AttachPairs::from_assembly(
+                asm.bone_tags.len(),
+                &asm.attach_bones,
+                asm.pinned_pair,
+            )
+        })
+        .flatten()
+        .map(|pairs| {
+            legaia_engine_battle::battle_attach_swap::BattleModelTable::new(
+                asm.bone_tags.len(),
+                pairs,
+                idle.variant_track.stream_parts,
+            )
+        });
     let face_tracks = (real_band
         && cslot < legaia_actor_formats::face_anim::FACE_CHAR_COUNT
         && member < legaia_actor_formats::face_anim::FACE_SLOT_COUNT)
@@ -469,6 +495,7 @@ fn assemble(
         art_records,
         face_tracks,
         art_face_tracks,
+        model_table,
     };
     Some((form, real_band))
 }
@@ -515,6 +542,7 @@ fn fallback(
         art_records: Vec::new(),
         face_tracks: None,
         art_face_tracks: Vec::new(),
+        model_table: None,
     })
 }
 
@@ -647,6 +675,16 @@ impl crate::world::World {
         }
         if let Some(character) = art_character(form.cslot) {
             self.install_art_bank_records(character, &form.art_records);
+        }
+        // The seat's model table, fresh per fight (retail registers the
+        // node and snapshots the pairs at every battle load). The draw set
+        // starts as the idle stream's channels until the first pose.
+        if let Some(a) = self.actors.get_mut(member) {
+            a.battle_model_table = form.model_table.clone();
+            a.battle_drawn_objects = form
+                .model_table
+                .as_ref()
+                .map(|t| t.drawn_objects(usize::from(t.idle_parts)));
         }
     }
 

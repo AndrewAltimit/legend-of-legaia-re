@@ -201,7 +201,7 @@
         <tbody>
           <tr><td>0</td><td><code>_DAT_801C6EA4[+0x20]</code></td><td>Encounter / formation tables.</td></tr>
           <tr><td>1</td><td><code>_DAT_801C6EA4[+0x00]</code></td><td>Scripted-motion VM bytecode (<a href="../subsystems/motion-vm.html">motion VM</a>).</td></tr>
-          <tr><td>2</td><td><code>_DAT_801C6EA0</code></td><td>Carries the scene's banner <a href="place-names.html">place name</a>; rest open.</td></tr>
+          <tr><td>2</td><td><code>_DAT_801C6EA0</code></td><td>The scene's display name, a NUL-terminated string (the entry banner and save-screen <a href="place-names.html">place name</a>).</td></tr>
           <tr><td>3</td><td><code>_DAT_801C6EA4[+0x04]</code></td><td><a href="#camera-region-table">Camera-region table</a>.</td></tr>
           <tr><td>4</td><td><code>DAT_80073ED8</code></td><td>Open; byte <code>+3</code> copied to <code>DAT_80073EDC</code>, zero detaches the pointer.</td></tr>
           <tr><td>5</td><td><code>DAT_80073EE0</code></td><td>Terminator (kingdom MANs trail their world-map label table after it).</td></tr>
@@ -305,7 +305,8 @@
     <div class="disclosure-body">
       <ul class="bullets">
         <li><strong>Per-opcode header encoding.</strong> Each inline install opcode packs its first 3 bytes differently; a per-case decode is needed to read a window as "encounter from script X at PC Y".</li>
-        <li><strong>MAN sections 1, 2, 4.</strong> Offsets and lengths are pinned in all 80 bundles; interior layouts beyond what is noted above are open.</li>
+        <li><strong>MAN section 4.</strong> Its offset and length are pinned in all 80 bundles, but the interior layout behind <code>DAT_80073ED8</code> is open. (Section 1 is the motion-VM script table, decoder <code>legaia_scene_formats::man_motion</code>; section 2 is the scene display name.)</li>
+        <li><strong>Region bytes.</strong> Region byte <code>+5</code>, and the region bytes past <code>+8</code>.</li>
         <li><strong>Mid-armed capture.</strong> No save state catches an entity with <code>+0x94</code> armed in the one-frame window between roll and copy.</li>
       </ul>
     </div>

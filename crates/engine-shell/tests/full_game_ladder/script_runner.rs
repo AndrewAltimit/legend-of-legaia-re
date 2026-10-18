@@ -269,7 +269,8 @@ pub(super) fn picker_pad(session: &NativeSession) -> Option<u16> {
     if !takes {
         return Some(0);
     }
-    let want = split_stay_option(session)
+    let want = ride_option(session)
+        .or_else(|| split_stay_option(session))
         .or_else(|| beat_progress_option(session))
         .or_else(|| (visit == 1).then(|| wanted_flag_option(session)).flatten())
         .or_else(|| open_way_option(session))
@@ -557,6 +558,51 @@ pub(super) fn open_way_option(session: &NativeSession) -> Option<usize> {
     {
         eprintln!(
             "      [pick] {} picker: option {k} opens the way",
+            scene_name(session)
+        );
+    }
+    pick
+}
+
+thread_local! {
+    /// Set while the pad hand rides a lift out of a pocket
+    /// ([`super::crossings::ride_out`]): a picker met then is the car's
+    /// "ride?".
+    pub(super) static RIDING: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// While the hand rides a lift ([`RIDING`]), the answer that boards: the one
+/// option whose branch does not just step the player back off the band.
+/// `jouinb`'s lifts (P2[6] / P2[7] / P2[8]) ask before they move; their No
+/// is a walk leg of one to three tiles off the band (`(26, 65)` to
+/// `(27, 68)`, `(91, 44)` to `(92, 43)`), and their Yes walks the party into
+/// the car and rides it to the floor the car flags `0x450` / `0x461` pick -
+/// a branch the flag walk often cannot follow, so the refusal is what it
+/// recognises.
+pub(super) fn ride_option(session: &NativeSession) -> Option<usize> {
+    if !RIDING.with(std::cell::Cell::get) {
+        return None;
+    }
+    let (count, targets, bc) = open_picker(session)?;
+    let w = &session.host.world;
+    let (px, pz) = player_xz(session);
+    let tile = dispatch_tile(px, pz);
+    let rides: Vec<usize> = (0..count.min(4))
+        .filter(|&k| {
+            !flag_path_landing_with(&|f| w.system_flag_test(f), &bc, targets[k], Some(tile))
+                .is_some_and(|c| {
+                    let (cx, cz) = cell_center(c);
+                    let (lx, lz) = dispatch_tile(cx, cz);
+                    (lx - tile.0).abs() + (lz - tile.1).abs() <= 5
+                })
+        })
+        .collect();
+    let pick = (count >= 2 && rides.len() == 1).then(|| rides[0]);
+    if let Some(k) = pick
+        && std::env::var_os("LEGAIA_FGL_TRACE").is_some()
+    {
+        eprintln!(
+            "      [pick] {} picker: option {k} boards the lift",
             scene_name(session)
         );
     }

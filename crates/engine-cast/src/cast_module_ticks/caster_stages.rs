@@ -13,8 +13,15 @@
 //! The per-body ports in this crate carry the phase walk, the damage and the
 //! victim's reaction, but for the bodies below none of the caster stage
 //! sites: without these rows a monster's special plays its whole band on the
-//! idle loop. The engine replays the listed stages, each to its clip's end,
-//! at the head of the band (`World::capture_stager_tick`).
+//! idle loop. Where a row places its stores in their arms
+//! ([`CasterStageRow::arms`]) the engine stages each clip on the tick that
+//! arm passes and the arms run on while it plays, as the module does - it
+//! never waits on the caster's clip there. The other rows replay their
+//! stages, each to its clip's end, at the head of the band
+//! (`World::capture_stager_tick`), holding the arms until they are done:
+//! for a store behind a later arm's countdown that plays the clip too early
+//! (Cort's Mystic Circle and Final Crisis drew the cast pose a whole arm
+//! ahead of retail's idle).
 //!
 //! What this table does **not** carry, and why:
 //!
@@ -70,6 +77,12 @@ pub struct CasterStageRow {
     /// Retail walks the caster into reach before the first stage (see the
     /// module doc).
     pub approach: bool,
+    /// The module arm (`ctx[+0x279]`) whose pass stages each clip, parallel
+    /// to the clip list, where the store has been placed in its arm: the
+    /// body stages the clip on the tick that arm's gate lets it through and
+    /// runs its arms on without waiting for the clip. `None` replays the
+    /// clips at the head of the band, ahead of the arms.
+    pub arms: Option<&'static [u8]>,
 }
 
 /// Every capture-class body whose port does not stage the caster.
@@ -80,6 +93,7 @@ pub const CAPTURE_CASTER_STAGES: &[CasterStageRow] = &[
         action_ids: &[],
         rule: CasterClipRule::Fixed(&[0x09]),
         approach: false,
+        arms: None,
     },
     // PROT 0936 Hyper Crush: `0x0D` at `0x801F6BA0`, then `0x0B` at `0x801F6EB0`.
     CasterStageRow {
@@ -87,6 +101,7 @@ pub const CAPTURE_CASTER_STAGES: &[CasterStageRow] = &[
         action_ids: &[],
         rule: CasterClipRule::Fixed(&[0x0D, 0x0B]),
         approach: false,
+        arms: None,
     },
     // PROT 0937 Hyper Lightning: `0x0D` at `0x801F6B38`, then `0x0C` at `0x801F6E80`.
     CasterStageRow {
@@ -94,14 +109,19 @@ pub const CAPTURE_CASTER_STAGES: &[CasterStageRow] = &[
         action_ids: &[],
         rule: CasterClipRule::Fixed(&[0x0D, 0x0C]),
         approach: false,
+        arms: None,
     },
     // PROT 0938 `0xB7` (`0x801F69EC`, Mystic Circle): `li v0,0x7;
-    // sb v0,0x1da(s4)` at `0x801F6CCC`.
+    // sb v0,0x1da(s4)` at `0x801F6CCC`, in arm 1 (table word 1,
+    // `0x801F6C00`) behind its countdown gate (`bgtz v0,0x801F7240` at
+    // `0x801F6CA4`): the clip goes in as arm 1 passes, with the drift and the
+    // spawns of arm 2 already running.
     CasterStageRow {
         prot_entry: 938,
         action_ids: &[0xB7],
         rule: CasterClipRule::Fixed(&[0x07]),
         approach: false,
+        arms: Some(&[1]),
     },
     // PROT 0939 Spore Gas: `li v1,0xa; sb v1,0x1da(s2)` at `0x801F6C54`.
     CasterStageRow {
@@ -109,6 +129,7 @@ pub const CAPTURE_CASTER_STAGES: &[CasterStageRow] = &[
         action_ids: &[],
         rule: CasterClipRule::Fixed(&[0x0A]),
         approach: false,
+        arms: None,
     },
     // PROT 0940 `0x3C`: `0x8007BD0C[seat - 3] == 0xA9` stages `9`
     // (`0x801F6B44`), anything else `8` (`0x801F6B64`).
@@ -121,6 +142,7 @@ pub const CAPTURE_CASTER_STAGES: &[CasterStageRow] = &[
             miss: 0x08,
         },
         approach: false,
+        arms: None,
     },
     // PROT 0947 V-Windhash: `li v0,0xa; sb v0,0x1da(s2)` at `0x801F6B20`.
     CasterStageRow {
@@ -128,6 +150,7 @@ pub const CAPTURE_CASTER_STAGES: &[CasterStageRow] = &[
         action_ids: &[],
         rule: CasterClipRule::Fixed(&[0x0A]),
         approach: false,
+        arms: None,
     },
     // PROT 0948 Cross Beam: `li v0,0x8; sb v0,0x1da(s3)` at `0x801F6AD0`.
     CasterStageRow {
@@ -135,6 +158,7 @@ pub const CAPTURE_CASTER_STAGES: &[CasterStageRow] = &[
         action_ids: &[],
         rule: CasterClipRule::Fixed(&[0x08]),
         approach: false,
+        arms: None,
     },
     // PROT 0951 `0x36` (`0x801F6A20`): walk, then `8` at `0x801F6D64`.
     CasterStageRow {
@@ -142,6 +166,7 @@ pub const CAPTURE_CASTER_STAGES: &[CasterStageRow] = &[
         action_ids: &[0x36],
         rule: CasterClipRule::Fixed(&[0x08]),
         approach: true,
+        arms: None,
     },
     // PROT 0951 `0x5B` (`0x801F77E8`): walk, then `9` at `0x801F7B6C`.
     CasterStageRow {
@@ -149,6 +174,7 @@ pub const CAPTURE_CASTER_STAGES: &[CasterStageRow] = &[
         action_ids: &[0x5B],
         rule: CasterClipRule::Fixed(&[0x09]),
         approach: true,
+        arms: None,
     },
     // PROT 0952 `0x5C` (`0x801F7118`): walk, then `9` at `0x801F7494` and
     // `0x0A` at `0x801F7538`.
@@ -157,6 +183,7 @@ pub const CAPTURE_CASTER_STAGES: &[CasterStageRow] = &[
         action_ids: &[0x5C],
         rule: CasterClipRule::Fixed(&[0x09, 0x0A]),
         approach: true,
+        arms: None,
     },
     // PROT 0953 Terio Punch: `li v1,0xa; sb v1,0x1da(s4)` at `0x801F6CAC` -
     // on the punch branch only, the one the caster's latch selects and the
@@ -166,6 +193,7 @@ pub const CAPTURE_CASTER_STAGES: &[CasterStageRow] = &[
         action_ids: &[0x5D],
         rule: CasterClipRule::Fixed(&[0x0A]),
         approach: false,
+        arms: None,
     },
     // PROT 0955 `0x6F` (`0x801F7FA4`): walk, then `7` at `0x801F826C`.
     CasterStageRow {
@@ -173,6 +201,7 @@ pub const CAPTURE_CASTER_STAGES: &[CasterStageRow] = &[
         action_ids: &[0x6F],
         rule: CasterClipRule::Fixed(&[0x07]),
         approach: true,
+        arms: None,
     },
     // PROT 0955 `0x70` (`0x801F767C`): `8` at `0x801F79FC`.
     CasterStageRow {
@@ -180,6 +209,7 @@ pub const CAPTURE_CASTER_STAGES: &[CasterStageRow] = &[
         action_ids: &[0x70],
         rule: CasterClipRule::Fixed(&[0x08]),
         approach: false,
+        arms: None,
     },
     // PROT 0955 `0x72` (`0x801F7158`): `0x0A` at `0x801F72AC`.
     CasterStageRow {
@@ -187,6 +217,7 @@ pub const CAPTURE_CASTER_STAGES: &[CasterStageRow] = &[
         action_ids: &[0x72],
         rule: CasterClipRule::Fixed(&[0x0A]),
         approach: false,
+        arms: None,
     },
     // PROT 0957 `0x77` (`0x801F6A14`): `0x0A` at `0x801F6C50`.
     CasterStageRow {
@@ -194,6 +225,7 @@ pub const CAPTURE_CASTER_STAGES: &[CasterStageRow] = &[
         action_ids: &[0x77],
         rule: CasterClipRule::Fixed(&[0x0A]),
         approach: false,
+        arms: None,
     },
     // PROT 0957 `0x76` (`0x801F798C`): `9` at `0x801F7CF8`.
     CasterStageRow {
@@ -201,6 +233,7 @@ pub const CAPTURE_CASTER_STAGES: &[CasterStageRow] = &[
         action_ids: &[0x76],
         rule: CasterClipRule::Fixed(&[0x09]),
         approach: false,
+        arms: None,
     },
     // PROT 0960 `0xA6` (`0x801F69D8`, Neo Star Slash): `li v0,0xa;
     // sb v0,0x1da(s4)` at `0x801F6B98`.
@@ -209,9 +242,12 @@ pub const CAPTURE_CASTER_STAGES: &[CasterStageRow] = &[
         action_ids: &[0xA6],
         rule: CasterClipRule::Fixed(&[0x0A]),
         approach: false,
+        arms: None,
     },
     // PROT 0961 `0xA1` / `0xB4`: first monster `0xB5` stages `6`
-    // (`0x801F6D58`), anything else `8` (`0x801F6DE8`).
+    // (`0x801F6D58`), anything else `8` (`0x801F6DE8`) - both in arm 1
+    // (`0x801F6C8C`), behind its countdown gate (`bgtz v1,0x801F7870` at
+    // `0x801F6D28`).
     CasterStageRow {
         prot_entry: 961,
         action_ids: &[0xA1, 0xB4],
@@ -221,6 +257,7 @@ pub const CAPTURE_CASTER_STAGES: &[CasterStageRow] = &[
             miss: 0x08,
         },
         approach: false,
+        arms: Some(&[1]),
     },
     // PROT 0962 `0xA5` (`0x801F69D8`): first monster `0xB5` stages `6`
     // (`0x801F6AEC`), anything else `7` (`0x801F6B00`).
@@ -233,6 +270,7 @@ pub const CAPTURE_CASTER_STAGES: &[CasterStageRow] = &[
             miss: 0x07,
         },
         approach: false,
+        arms: None,
     },
     // PROT 0963 Genocidal Cannon `0xB3`: `8` at `0x801F6EC8`.
     CasterStageRow {
@@ -240,6 +278,7 @@ pub const CAPTURE_CASTER_STAGES: &[CasterStageRow] = &[
         action_ids: &[0xB3],
         rule: CasterClipRule::Fixed(&[0x08]),
         approach: false,
+        arms: None,
     },
     // PROT 0965 Doomsday `0xB6`: `7` at `0x801F6B30`.
     CasterStageRow {
@@ -247,6 +286,7 @@ pub const CAPTURE_CASTER_STAGES: &[CasterStageRow] = &[
         action_ids: &[0xB6],
         rule: CasterClipRule::Fixed(&[0x07]),
         approach: false,
+        arms: None,
     },
     // PROT 0966 Evil Seru Magic has no row: its body's port stages the
     // caster itself (`li v0,0x6; sb v0,0x1da(s2)` at `0x801F6DE4`, arm 1;
@@ -339,6 +379,20 @@ pub fn capture_body_approaches(prot_entry: u32, action_id: u8) -> bool {
             .any(|r| r.approach && matches(r.prot_entry, r.action_ids))
 }
 
+/// The module arm whose pass stages each of the clips
+/// [`capture_caster_stages`] returns for the same cast, where the rows place
+/// them ([`CasterStageRow::arms`]); `None` for a body whose clips replay at
+/// the head of the band.
+pub fn capture_caster_stage_arms(prot_entry: u32, action_id: u8) -> Option<&'static [u8]> {
+    CAPTURE_CASTER_STAGES
+        .iter()
+        .find(|r| {
+            r.prot_entry == prot_entry
+                && (r.action_ids.is_empty() || r.action_ids.contains(&action_id))
+        })?
+        .arms
+}
+
 /// The caster clips a capture-class cast of `action_id` through PROT
 /// `prot_entry` stages, in order, for a caster seat whose monster id is
 /// `seat_monster` in a battle whose first monster is `first_monster`.
@@ -385,6 +439,15 @@ mod caster_stage_tests {
         assert_eq!(capture_caster_stages(940, 0x3C, 0x83, 0), Some(vec![8]));
         assert_eq!(capture_caster_stages(961, 0xB4, 0, 0xB5), Some(vec![6]));
         assert_eq!(capture_caster_stages(961, 0xA1, 0, 0xA1), Some(vec![8]));
+        // The rows placed in their arms.
+        assert_eq!(capture_caster_stage_arms(938, 0xB7), Some(&[1u8][..]));
+        assert_eq!(capture_caster_stage_arms(961, 0xB4), Some(&[1u8][..]));
+        assert_eq!(capture_caster_stage_arms(937, 0x4C), None);
+        for r in CAPTURE_CASTER_STAGES {
+            if let (Some(arms), CasterClipRule::Fixed(clips)) = (r.arms, r.rule) {
+                assert_eq!(arms.len(), clips.len(), "PROT {}", r.prot_entry);
+            }
+        }
         // Bodies that stage nothing on the caster.
         assert_eq!(capture_caster_stages(945, 0x54, 0, 0), None);
         assert_eq!(capture_caster_stages(946, 0x56, 0, 0), None);

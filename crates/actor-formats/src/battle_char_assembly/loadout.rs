@@ -133,9 +133,7 @@ pub struct ArtClipMeta {
 
 /// One curated art resolved to its on-disc keyframes, **unexpanded** (raw
 /// bank part layout - [`build`] re-indexes per assembled object with
-/// [`bca::expand_animation_for_objects`]). The resolution ladder that fills
-/// this (curated name -> bank record, via `legaia_gamedata`) lives with the
-/// host; this is the data the loadout consumes.
+/// [`bca::expand_animation_for_objects`]), filled by [`decode_art_clips`].
 #[derive(Clone)]
 pub struct ArtClip {
     /// The curated display name (arts table).
@@ -152,6 +150,87 @@ pub struct ArtClip {
     pub segments: usize,
     /// The concatenated keyframe stream (first segment's rate byte).
     pub anim: MonsterAnimation,
+}
+
+impl legaia_art::clip_ladder::BankRecord for bca::ArtAnimRecord {
+    fn anim_id(&self) -> u8 {
+        self.anim_id
+    }
+    fn name(&self) -> &str {
+        &self.name
+    }
+    fn combo(&self) -> &[u8] {
+        &self.combo
+    }
+}
+
+/// Concatenate a chain's decoded segments into one clip. Segments share the
+/// rig width; the clip takes the first segment's rate byte and identity.
+fn concat_segments(segments: &[MonsterAnimation]) -> Option<MonsterAnimation> {
+    let mut out = segments.first()?.clone();
+    out.frames = segments
+        .iter()
+        .flat_map(|s| s.frames.iter().cloned())
+        .collect();
+    out.frame_count = out.frames.len();
+    Some(out)
+}
+
+/// Decode character `cslot`'s Tactical Arts as named clips, one per
+/// `curated` art in its order (the curated arts table, mapped by the
+/// caller). `player` is the character's player file
+/// ([`PLAYER_FILE_BASE`]` + cslot`) and `readef` is `readef.DAT` (PROT 894)
+/// with the art `"ME"` keyframe archives. Each art is resolved to its bank
+/// record and chain with [`legaia_art::clip_ladder::plan_clips`]; an art
+/// whose keyframes do not decode is left out rather than invented. An
+/// unreadable player file or art bank is an error.
+///
+/// The decode is per character, not per loadout: an art clip is a
+/// whole-body stream independent of what the character wears, so a caller
+/// caches the result and [`build`] re-expands it per assembled object.
+pub fn decode_art_clips(
+    player: &[u8],
+    readef: &[u8],
+    cslot: usize,
+    curated: &[legaia_art::clip_ladder::CuratedArt],
+) -> Result<Vec<ArtClip>, String> {
+    let record0 = bca::decode_record0(player).map_err(|e| format!("record[0]: {e:#}"))?;
+    let bank = bca::art_animation_bank(&record0).map_err(|e| format!("art bank: {e:#}"))?;
+    let main = bca::art_me_archive(readef, cslot, false).ok();
+    let base = bca::art_me_archive(readef, cslot, true).ok();
+    // Decode each bank record once (segments are shared between chains).
+    let decoded: Vec<Option<MonsterAnimation>> = bank
+        .iter()
+        .map(|rec| {
+            let archive = if rec.uses_base_archive() {
+                base.as_ref()
+            } else {
+                main.as_ref()
+            };
+            archive
+                .and_then(|a| bca::art_animation(rec, a).ok())
+                .filter(|a| a.frame_count > 0)
+        })
+        .collect();
+    let plan = legaia_art::clip_ladder::plan_clips(&bank, curated, |i| decoded[i].is_some());
+    Ok(plan
+        .into_iter()
+        .filter_map(|p| {
+            let segments: Vec<MonsterAnimation> =
+                p.chain.iter().filter_map(|&i| decoded[i].clone()).collect();
+            let anim = concat_segments(&segments)?;
+            let art = &curated[p.art];
+            Some(ArtClip {
+                name: art.name.clone(),
+                kind: art.kind,
+                ap: art.ap,
+                directions: art.directions.clone(),
+                anim_id: bank[p.first].anim_id,
+                segments: segments.len(),
+                anim,
+            })
+        })
+        .collect())
 }
 
 /// One separated item of the current loadout.

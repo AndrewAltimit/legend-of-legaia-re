@@ -496,6 +496,17 @@ pub(super) fn traverse(
                         if std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
                             eprintln!("    [cross] {e}; {why}");
                         }
+                        // A lift the planner does not route through may be
+                        // the pocket's way out (`crossings::ride_out`).
+                        let rides = crossed
+                            .entry((cur.clone(), String::from("<ride>")))
+                            .or_insert(0);
+                        *rides += 1;
+                        if *rides <= MAX_CROSS_OVERS && ride_out(session) {
+                            trail.push(format!("{cur}(ride)"));
+                            crossed.remove(&(cur.clone(), goal.clone()));
+                            continue;
+                        }
                         // Try the scene's beats next, as for any failed hop.
                         beaten.remove(&cur);
                         crossed.insert((cur.clone(), goal.clone()), MAX_CROSS_OVERS);
@@ -535,6 +546,19 @@ pub(super) fn traverse(
                         trail.push(format!("{s}(beat)"));
                     }
                     continue;
+                }
+                // The beats left the party in a pocket a lift serves: ride
+                // it out and try the hop again (`crossings::ride_out`).
+                if pad && e.contains("no walkable path") {
+                    let rides = crossed
+                        .entry((cur.clone(), String::from("<ride>")))
+                        .or_insert(0);
+                    *rides += 1;
+                    if *rides <= MAX_CROSS_OVERS && ride_out(session) {
+                        trail.push(format!("{cur}(ride)"));
+                        crossed.remove(&(cur.clone(), goal.clone()));
+                        continue;
+                    }
                 }
                 // The beats did not open the hop either: the edge is one
                 // the story no longer takes (a one-shot transport - `station`

@@ -1028,6 +1028,14 @@ the bit (`31 1D`) and park at `700` in their spawn prologue, and the collapse
 beat (P2[17]) seats them at the foot of the escape stairs with `A3` and tweens
 the slot to `0` over 21..27 frames.
 
+The arm sits ahead of both floor arms (`0x8003BC50..0x8003BC64`), so the held
+height follows the actor wherever it moves. `rikuroa`'s Caruban (`P1[9]`)
+raises the bit and parks at `540` in its prologue (`31 1D`,
+`4C 42 1C 02 00 00`), then its motion stream walks it: retail holds it at
+`Y = -540` on whatever tile it reaches. The port's placement NPCs take the arm
+in `World::tick_field_npc_heights` from their context's flag word and `+0x8E`,
+which both play hosts read through `World::field_npc_render_y`.
+
 #### `4C 45`: the 11-byte form
 
 `[4C, 0x45, b1, w94_lo, w94_hi, w96_lo, w96_hi, w98_lo, w98_hi, ticks_lo, ticks_hi]`.

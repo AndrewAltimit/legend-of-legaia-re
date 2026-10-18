@@ -1,5 +1,51 @@
 # Extracting assets: step-by-step scenarios
 
+## Without a terminal: Legaia Studio
+
+The release archive's `legaia-studio` (`legaia-studio.exe` on Windows,
+`Legaia Studio.app` on macOS) does the common cases with buttons:
+
+1. **Open** your disc image - the `.bin` of a Mode2/2352 dump, or its `.cue` -
+   with *Open disc image...*, by typing its path, or by dropping it on the
+   window. A folder `legaia-extract` already wrote opens too. The app checks
+   the image before loading and reopens it next time.
+2. **Browse** the archive on the left: entries grouped under their CDNAME
+   names, each with its category and size. The search (Ctrl+F) matches every
+   word you type against the CDNAME name, the category and the index
+   (`town tmd` finds the town meshes); the arrow keys, Page Up / Down, Home
+   and End walk the list.
+3. **Preview** the selected entry: *Textures* (with a palette slider - try a
+   few rows before deciding a texture is broken), *3D model* (drag to orbit,
+   scroll to zoom; *scene* textures a mesh against the VRAM its scene
+   builds), *Audio* (play samples, play a sequence with a sound bank),
+   *Text* (scene dialog and MES messages, with the accented letters of the
+   French, German and Italian discs), *Hex*.
+4. **Export** what you are looking at: PNG, OBJ or textured glTF (`.glb`),
+   WAV, the dialog as text, or the raw entry bytes. *Disc files* at the bottom
+   of the list saves any file of the disc's own file system.
+5. **Extract** the whole disc: switch to *Extract*, choose an output folder,
+   tick the same skip options the command line offers, and start. The tab
+   shows progress and the log and can be cancelled; the folder it writes is
+   exactly what the `legaia-extract` command below produces. Tick *Export
+   all textures as PNG* to also get every texture on the disc as a PNG under
+   `tim_scan/` (the same files as the two-command chain in the next section).
+6. **Characters & monsters**: the party in their battle form with any
+   equipment, and every monster by name (`Gimard Lv2`, with its element
+   badge), each with its battle animations - for Vahn, Noa and Gala also
+   every Tactical Art by name; export them as animated `.glb`.
+7. **Movies & voice**: the disc's six movies, played with their
+   soundtrack or stepped frame by frame (PNG export), and the CD-XA audio
+   files channel by channel (play, WAV export). These read raw CD sectors,
+   so they need the disc image rather than an extracted folder.
+
+The window remembers its size and the view you left it on. *About* shows
+the version and where the third-party license notices
+(`THIRD-PARTY-LICENSES.txt`) sit. The app ships no game data and uploads
+nothing; it reads the disc you choose and writes only where you tell it.
+Details: [`crates/studio`](../../crates/studio/README.md).
+
+## On the command line
+
 Every scenario below assumes the one-shot pipeline has run
 ([getting-started.md](getting-started.md)):
 
@@ -15,6 +61,8 @@ directory - run from the same place each time.
 
 The bulk texture path is a two-command chain: sweep every PROT entry for TIM
 images (raw and inside LZS compression), then convert the hits.
+`legaia-extract --all-textures` (or the Studio's *Export all textures* box)
+runs both as one step and writes the same tree.
 
 ```bash
 ./asset tim-scan extracted/PROT --out extracted/tim_scan

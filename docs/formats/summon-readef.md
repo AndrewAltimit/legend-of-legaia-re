@@ -358,9 +358,10 @@ adds the buffer base to each):
                              in the corpus passes the magic check)
 +0x08  u32  texture-pool offset
 +0x0C  ..   monster-record-shaped stat head (same offsets as the
-            [monster archive record](../subsystems/battle-formulas.md):
-            +0x0C "HP" = the attack's power stat feeding the summon
-            damage roll, +0x18 INT, ...)
+            [monster archive record](../subsystems/battle-formulas.md)):
+            the summon body's stats, copied into battle actor slot 7
+            (+0x0C HP, +0x18 INT, ...; the damage roll reads that slot -
+            see "The stat head is the summon body" below)
 +0x1D  u8   ELEMENT of the cast (0=earth 1=water 2=fire 3=wind
             4=thunder 5=light 6=dark 7=none)
 +0x4A  u8   part count

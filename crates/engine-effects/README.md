@@ -43,6 +43,8 @@ link into a dependent crate.
   sprites, panels, letterbox) the field VM drives.
 - `object_effect` - the `0x80083FF8` object-effect table.
 - `part_motion` - a move-VM part's motion block between steps.
+- `part_shatter` - the shatter gate on an effect part's model draw
+  (`FUN_8001ADA4`'s `+0x7A` test into the shatter renderer `FUN_80029888`).
 
 ## See also
 

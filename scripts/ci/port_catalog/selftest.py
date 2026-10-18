@@ -286,6 +286,45 @@ def run_selftest() -> int:
         not REPLACED_BY_RE.search("/// the node pool is REPLACED-BY: a Vec"),
     )
 
+    # The audit partition: every (tag, permissive, strict) combination lands
+    # in exactly one class. The permissive-live / strict-dead tagged case is
+    # the one that used to land in none, which emptied the declared wiring
+    # worklist while the tree still carried disclosures.
+    from port_catalog.render.live_audit import (
+        DISCLOSED,
+        LIVE,
+        REPLACED,
+        STALE,
+        TAGGED_PERMISSIVE_ONLY,
+        UNDISCLOSED,
+        anchor_class,
+    )
+
+    def cls(nw: bool, rb: bool, live: bool, strict: bool) -> str:
+        return anchor_class(
+            {
+                "not_wired_tag": nw,
+                "replaced_tag": rb,
+                "live": live,
+                "live_strict": strict,
+            }
+        )
+
+    check("untagged live anchor is live", cls(False, False, True, True) == LIVE)
+    check(
+        "untagged permissive-only anchor is live (the floor)",
+        cls(False, False, True, False) == LIVE,
+    )
+    check("untagged dead anchor is a gap", cls(False, False, False, False) == UNDISCLOSED)
+    check("tagged strict-live anchor is stale", cls(True, False, True, True) == STALE)
+    check(
+        "tagged permissive-only anchor has its own class",
+        cls(True, False, True, False) == TAGGED_PERMISSIVE_ONLY
+        and cls(False, True, True, False) == TAGGED_PERMISSIVE_ONLY,
+    )
+    check("NOT WIRED dead anchor is disclosed", cls(True, False, False, False) == DISCLOSED)
+    check("REPLACED-BY dead anchor is replaced", cls(False, True, False, False) == REPLACED)
+
     # The shared marker reader ships its own cases; run them here so the one
     # `--selftest` invocation covers the reader every tag-reading gate uses.
     # A tag whose address list wraps is the case that used to lose addresses.

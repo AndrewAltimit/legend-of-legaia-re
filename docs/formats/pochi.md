@@ -63,7 +63,7 @@ whole sector accounts structurally and none of it ranks as work.
 
 These slots cluster at fixed *offsets within their CDNAME block* - typically positions 2, 4, 5, 6 inside a scene's reserved 6-8-slot block. Each scene reserves N PROT slots for asset variants, but most scenes only fill some; unused slots get pochi-filled.
 
-Some scene blocks are almost entirely pochi. The `edstati3` block (likely "ending station 3", possibly cut content) has 36 of ~38 pochi entries.
+Some scene blocks are almost entirely pochi. The `edstati3` block (the ending's station-gondola scene, [`scene-names.md`](../reference/scene-names.md)) has 36 of ~38 pochi entries.
 
 ## How to handle
 

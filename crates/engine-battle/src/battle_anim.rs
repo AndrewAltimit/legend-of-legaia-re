@@ -67,6 +67,10 @@ pub struct MonsterAnimPlayer {
     /// `FUN_801EC3E4` reads off the acting actor's committed record and
     /// stamps onto the struck actor (`World::arm_impact_tint`).
     impact_class: u8,
+    /// The entry tail the mesh-variant swap reads
+    /// ([`MonsterAnimation::variant_track`]): the stream's own part count and
+    /// the `+0xA4` windows.
+    variant_track: legaia_actor_formats::monster_archive::VariantTrack,
     /// 8.8 fixed-point frame cursor (integer part = keyframe index).
     phase: u32,
     /// Phase units added per [`tick`](Self::tick). Seeded from the clip's
@@ -245,6 +249,7 @@ impl MonsterAnimPlayer {
             attach_key: anim.attach_key,
             solo_flag: anim.solo_flag,
             impact_class: anim.impact_class,
+            variant_track: anim.variant_track,
             phase: 0,
             step: step_for_rate(anim.rate),
             looping: true,
@@ -420,6 +425,12 @@ impl MonsterAnimPlayer {
     /// field docs). `0` = a landed hit from this clip tints nothing.
     pub fn impact_class(&self) -> u8 {
         self.impact_class
+    }
+
+    /// The playing clip's entry tail for the mesh-variant swap
+    /// (`FUN_8004CCD4`): stream part count + `+0xA4` windows.
+    pub fn variant_track(&self) -> legaia_actor_formats::monster_archive::VariantTrack {
+        self.variant_track
     }
 
     /// The cursor in retail's own 12.4 fixed-point unit (sixteenths of a
@@ -661,6 +672,7 @@ mod tests {
         // One part, two frames: frame0 at rest, frame1 translated +100 on X and
         // rotated a quarter turn (1024 = 4096/4) about Z.
         MonsterAnimation {
+            variant_track: Default::default(),
             action_id: 0,
             rate: 2,
             attach_key: 0,
@@ -693,6 +705,7 @@ mod tests {
     #[test]
     fn new_rejects_degenerate() {
         let a = MonsterAnimation {
+            variant_track: Default::default(),
             action_id: 0,
             rate: 2,
             attach_key: 0,
@@ -737,6 +750,7 @@ mod tests {
         // 3840 -> 256 is a +512 wrap (through 0), not a -3584 sweep. Halfway
         // should land near the wrap midpoint (4096/0), not near 2048.
         let anim = MonsterAnimation {
+            variant_track: Default::default(),
             action_id: 0,
             rate: 2,
             attach_key: 0,
@@ -781,6 +795,7 @@ mod one_shot_tests {
 
     fn clip(frames: usize) -> MonsterAnimation {
         MonsterAnimation {
+            variant_track: Default::default(),
             action_id: 8,
             rate: 2,
             attach_key: 0,

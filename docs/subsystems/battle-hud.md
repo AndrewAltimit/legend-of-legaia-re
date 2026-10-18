@@ -494,7 +494,7 @@ Which seat is on screen is per record, so "mode 0" means *appear* for the bar
 and *unfold* for a chip. The port's `SubdrawStep::shows` reads it as "seat B is
 the on-screen one", which holds for every record the battle HUD draws.
 
-The steps the menu SM runs (`engine-core::battle_hud::subdraw_steps` /
+The steps the menu SM runs (`engine-battle::battle_hud_state::subdraw_steps` /
 `placement_record`):
 
 | Transition | Step | Panels 6/78/79 | Bar 7 | Tab 1 + plaque 26 | AP plate 82 |
@@ -1042,6 +1042,15 @@ the gold border over `(8, 184)..(312, 212)`, the pen `(16, 192)` inflated by
 the class-0 frame's 8 pixels, with the caption on the pen. Port:
 `BattleHudFrame::message_bar` draws `class0_frame_draws_at` on the bar's name
 pen; while it is up neither the bar nor the target plaque on that row draws.
+
+Glare (PROT 0940, body `0x801F69F8`) raises the same element with its own
+line: the module image's `0xC1 k` " has turned to stone." for the petrified
+party seat's character (`0x801F85E8` / `0x801F8600` / `0x801F8618`, picked
+on `0x8007BD10[seat]` at `0x801F70F0..0x801F7170`), or "Nothing happened."
+(`0x801F8630`) for a failed roll, a guarded seat or a monster seat, pointed
+into record `0x5B`'s content word `0x800774AC` before
+`FUN_801D8DE8(0x5B, 0)`. Port: `World::raise_glare_caption`, on the steal
+caption's seat (`zora_glare_petrify_post`).
 
 ### The battle-intro enemy-name banner
 

@@ -75,7 +75,7 @@
   <table>
     <thead><tr><th>Key</th><th>Toggle</th><th>Default</th></tr></thead>
     <tbody>
-      <tr><td><kbd>T</kbd></td><td>Cycle the coarse camera-distance preset</td><td>retail</td></tr>
+      <tr><td><kbd>T</kbd></td><td>Cycle the camera-distance preset: retail, far (1.35x), farther (1.8x)</td><td>far, remembered</td></tr>
       <tr><td><kbd>R</kbd></td><td>Precise free-angle movement</td><td>off (retail-style movement)</td></tr>
       <tr><td><kbd>I</kbd></td><td>Enhanced lighting: a time-of-day mood, real lights at the scene's lamps and glowing props, the Genesis Tree glowing. Off is the game's own baked shading.</td><td>on, remembered</td></tr>
       <tr><td><kbd>F8</kbd></td><td>Time of day for enhanced lighting: auto, day, dusk, night</td><td>auto</td></tr>
@@ -87,6 +87,7 @@
       <tr><td><kbd>F3</kbd></td><td>Wide debug orbit camera instead of the field camera</td><td>off</td></tr>
     </tbody>
   </table>
+  <p><code>--retail</code> starts a session with every enhancement off and the remembered engine-only options (camera distance, movement mode, the photosensitivity guard) at their retail values, writing nothing back to the options file - the one switch for a retail-faithful run.</p>
   <p class="hint">Window toggles and pad bindings cannot collide: a window key is handled <em>before</em> the pad lookup, so one parked on a bindable key would delete that button from the keyboard. Every toggle therefore lives on an F-key or a letter outside the bindable vocabulary (the key table above plus <kbd>C</kbd>, <kbd>V</kbd>, <kbd>D</kbd>, <kbd>E</kbd>).</p>
   <details class="disclosure">
     <summary>Development hand-triggers</summary>
@@ -197,8 +198,8 @@
     </tbody>
   </table>
   <p>While a minigame is up, the port's own status readout and key hints (which button attacks, how to quit) sit <strong>outside</strong> the game picture, so the game's own chrome never covers them: in the window's title bar in <code>play-window</code>, and in the strip under the canvas on the browser play page, fullscreen included.</p>
-  <p>The browser play page carries the fishing entry as a <strong>Fish here</strong> button under the canvas. Cross casts and reels, Square reels harder, Cross recasts once a catch resolves. Points bank into the world's persistent pool, so they survive leaving and re-entering, and the prize-exchange rows come off the same overlay with retail availability gating.</p>
-  <p class="hint">One HUD caveat that looks like a bug and is not: the fishing sprite page is the one asset in that chain nobody has decoded, so both hosts draw the HUD's digit and caption rows from the dialog font. The captions are English placeholders at the retail pen positions, so a long one can overlap the count beside it.</p>
+  <p>The browser play page carries the fishing entry as a <strong>Fish here</strong> button under the canvas. Circle casts and locks the power meter, Cross reels, Square reels harder (the port's choice; retail casts on Cross or Square). Points bank into the world's persistent pool, so they survive leaving and re-entering, and the prize-exchange rows come off the same overlay with retail availability gating.</p>
+  <p class="hint">The fishing HUD is the venue's own: its plates, digits, gauges and banners are records of the overlay's sprite table drawn out of the venue's HUD texture page, and the lure and count captions are read off your disc.</p>
   <div class="see-also">
     <span class="see-also-label">Reference</span>
     <a href="../minigames.html">Playable minigames</a>

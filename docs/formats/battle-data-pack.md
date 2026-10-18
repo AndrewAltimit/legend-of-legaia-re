@@ -1016,9 +1016,16 @@ re-asserts the defaults every frame. The extra-channel escape fires exactly wher
 tiers (16/17-part swings vs 15 bones). Decomps `8004ccd4.txt`, `80047430.txt`, `80049348.txt`,
 `800536bc.txt`, `80053898.txt`, `800513f0.txt`, `80048a08.txt`.
 
-**Port.** The decision is ported as a pure kernel, `legaia_engine_render::attach_swap`
-(`resolve_attach_swap`), and is not wired into the battle draw path: the engine draws an assembled
-whole-character mesh and keeps no per-channel model table to write into.
+**Port.** `legaia_engine_battle::battle_attach_swap` holds the decision (`resolve_attach_swap`)
+and the table it writes (`BattleModelTable`: object index per channel, identity at registration,
+pairs from `AttachPairs::from_assembly`, pinned ordinal = `AssembledCharacter::pinned_pair`). Each
+decoded clip carries its entry tail as `MonsterAnimation::variant_track` (stream part count +
+`+0xA4` bytes). The world steps a party seat's table on every battle pose and both play hosts draw
+only the objects it names for the playing stream's channels (`World::battle_live_drawn_objects`),
+which also hides the `0xFE` extras outside surplus-channel streams. The after-image walk re-runs
+the swap per ghost into the live table, so on a ghosted frame the live body draws the table the last
+ghost left (`FUN_800480D8` calls the walk before the live draw and nothing restores the table). Disc
+sweep: `crates/engine-battle/tests/battle_attach_swap_real.rs`.
 
 **What this costs anything that rewrites a section's objects.** The `0xFF` variant replaces the
 hand, in the hand's own channel, for the frames a window covers. A rebuild that leaves the surplus

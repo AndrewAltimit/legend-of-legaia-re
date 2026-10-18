@@ -109,6 +109,47 @@ pub struct MonsterAnimation {
     /// the stepper then finds no records and does nothing, and every
     /// accessor answers `None`.
     pub effect_script: Vec<u8>,
+    /// The entry tail the battle mesh-variant swap reads (`FUN_8004CCD4`):
+    /// the stream's own part count and the `+0xA4` variant windows. See
+    /// [`VariantTrack`].
+    pub variant_track: VariantTrack,
+}
+
+/// Offset of the equipment-variant window track inside a player-file action
+/// entry (`+0xA4..+0xAC`): two `[start, end]` frame-window byte pairs per
+/// attach pair (`docs/formats/battle-data-pack.md` § Equipment-variant track).
+pub const ENTRY_VARIANT_WINDOWS_OFFSET: usize = 0xA4;
+/// Length of the variant window track (2 pairs x 2 windows x 2 bytes).
+pub const ENTRY_VARIANT_WINDOWS_LEN: usize = 8;
+
+/// What the battle mesh-variant swap `FUN_8004CCD4` and the draw pass
+/// `FUN_80048A08` read off a playing entry besides its keyframes.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct VariantTrack {
+    /// The keyframe stream's **own** part count - the first byte at
+    /// `*(entry + 0x88)`. The draw pass draws exactly this many channels,
+    /// and the swap's extra-channel escape compares it against the idle
+    /// stream's. It survives a per-object expansion that grows
+    /// [`MonsterAnimation::part_count`]. `0` = not recorded (a synthetic
+    /// clip), which never takes the escape.
+    pub stream_parts: u8,
+    /// Entry `+0xA4..+0xAC`, verbatim: `[pair0 w0 start, end, pair0 w1
+    /// start, end, pair1 w0 start, end, pair1 w1 start, end]`. All zero on a
+    /// clip with no such entry tail (monster archive entries, Vahn / Gala /
+    /// Terra's records).
+    pub windows: [u8; ENTRY_VARIANT_WINDOWS_LEN],
+}
+
+impl VariantTrack {
+    /// Read the window track at `entry_off + 0xA4` of `block`, all zero when
+    /// the block is too short.
+    pub fn windows_at(block: &[u8], entry_off: usize) -> [u8; ENTRY_VARIANT_WINDOWS_LEN] {
+        let o = entry_off + ENTRY_VARIANT_WINDOWS_OFFSET;
+        block
+            .get(o..o + ENTRY_VARIANT_WINDOWS_LEN)
+            .and_then(|b| b.try_into().ok())
+            .unwrap_or_default()
+    }
 }
 
 /// Offset of the per-hit **power run** inside a per-action entry
@@ -360,6 +401,10 @@ pub fn parse_animation_stream(
         frame_count,
         frames,
         effect_script,
+        variant_track: VariantTrack {
+            stream_parts: part_count.min(u8::MAX as usize) as u8,
+            windows: [0; ENTRY_VARIANT_WINDOWS_LEN],
+        },
     })
 }
 

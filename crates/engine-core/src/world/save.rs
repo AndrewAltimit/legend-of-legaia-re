@@ -643,7 +643,7 @@ impl World {
         let Some(kind) = self.field_vm.submode_screen.park_sub_op else {
             return false;
         };
-        if legaia_engine_field::man_field_scripts::OP49_PARK_PRESERVING_SUB_OPS.contains(&kind) {
+        if crate::field_submode_screen::op49_sub_op_is_menu_press(kind) {
             self.field_vm.submode_screen.done = true;
         }
         self.clear_op49_park();
@@ -917,11 +917,7 @@ impl World {
     /// `legaia_engine_field::field_state_pick::state_pick`)
     pub fn field_menu_button_state(&self) -> u16 {
         use legaia_engine_field::field_state_pick::{StatePickInputs, state_pick};
-        let debug = self
-            .world_map
-            .ctrl
-            .as_ref()
-            .is_some_and(|c| c.debug_enabled);
+        let debug = self.debug_mode_word_set();
         let inputs = StatePickInputs {
             script_resume_slot: u32::from(self.field_vm.submode_screen.park_sub_op.is_some()),
             debug_mode: u32::from(debug),

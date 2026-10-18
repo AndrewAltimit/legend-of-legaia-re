@@ -4,7 +4,7 @@ The engine is a from-scratch Rust port of Legend of Legaia (NA, `SCUS-94254`). Y
 
 Most of the game works on both hosts: the title and opening, field and town scenes with their event scripts and dialogue, the world map, battles with Tactical Arts and Seru magic, the pause menu and shops, the five minigames, sequenced music and sound effects, FMV movies, and saves (the engine's own format and real memory-card blocks).
 
-The rough edge is parity detail: residual differences against retail frames and RAM are measured and ranked by the [retail comparison corpus](../tooling/retail-compare.md). The [full-game ladder](../tooling/full-game-ladder.md) clears every story segment from a retail save at its milestone, and one New Game played straight through on pad input, reloading only its own saves after a wipe, reaches the credits as well - the ladder's [continuous run](../tooling/full-game-ladder.md#the-continuous-run), measured on several dealt hands of the rand stream; a different deal meets different fights, so that figure is a ratchet, not a guarantee. A cast or summon module's voice clip is also resolved but not yet played.
+The rough edge is parity detail: residual differences against retail frames and RAM are measured and ranked by the [retail comparison corpus](../tooling/retail-compare.md). The [full-game ladder](../tooling/full-game-ladder.md) clears every story segment from a retail save at its milestone, and one New Game played straight through on pad input, reloading only its own saves after a wipe, reaches the credits as well - the ladder's [continuous run](../tooling/full-game-ladder.md#the-continuous-run), measured on several dealt hands of the rand stream; a different deal meets different fights, so that figure is a ratchet, not a guarantee.
 
 The code is written from the project's own reverse-engineering record - Ghidra disassembly dumps and live emulator probes - not translated from the executable. See [Legal posture](#legal-posture).
 
@@ -165,7 +165,7 @@ Internal dependencies as declared in each crate's `Cargo.toml`. "Format-family c
 | `delilas-challenge` | `code-hooks`, `disc-patch`, `game-tables`, `scene-formats`, `lzs`, `mes` | The Delilas Challenge dome course and custom items. |
 | `patcher` | the eight above + format-family and parser crates | The `legaia-patcher` CLI. |
 | `engine-system` | `cheats`, `gamedata` | Input, fades, streaming, sound state. |
-| `engine-mode` | `engine-system`, `bytes` | The game-mode seat. |
+| `engine-mode` | `engine-system`, `game-tables`, `bytes` | The game-mode seat. |
 | `engine-dialog` | `font`, `mes` | Dialog pager, dialog window, text balloon. |
 | `engine-camera` | `engine-system` | The shared GTE camera: build, projection, mover, shake, camera-relative glide. |
 | `engine-battle-vm` | `engine-camera`, `engine-system`, `actor-formats`, `game-tables`, `overlay-images`, `scene-formats`, `art` | Battle action SM, formulas, battle camera script, battle-overlay leaves. |
@@ -175,7 +175,7 @@ Internal dependencies as declared in each crate's `Cargo.toml`. "Format-family c
 | `engine-battle` | `engine-battle-vm`, `engine-system`, `render-kernels`, `actor-formats`, `game-tables`, `scene-formats`, `ui-formats`, `art`, `anm`, `save`, `tim`, `tmd`, `bytes` | `World`-free battle kernels. |
 | `render-kernels` | `engine-camera`, `engine-vm`, `actor-formats`, `overlay-images`, `scene-formats`, `tim`, `tmd` | GTE math, screen prims, VRAM capture, effect emitters, the battle-intro model; no wgpu. |
 | `engine-effects` | `engine-battle-vm`, `engine-system`, `engine-vm`, `render-kernels`, `actor-formats`, `overlay-images`, `tmd` | Effect kernels. |
-| `engine-field` | `engine-mode`, `engine-motion-vm`, `engine-dialog`, `engine-camera`, `engine-system`, `engine-vm`, `render-kernels`, `actor-formats`, `overlay-images`, `scene-formats`, `anm`, `mes`, `save`, `tmd` | Field kernels: actor programs, camera, cue routers. |
+| `engine-field` | `engine-mode`, `engine-motion-vm`, `engine-dialog`, `engine-camera`, `engine-system`, `engine-vm`, `render-kernels`, `actor-formats`, `minigame-formats`, `overlay-images`, `scene-formats`, `anm`, `mes`, `save`, `tmd` | Field kernels: actor programs, camera, cue routers. |
 | `engine-fishing` | `engine-field`, `engine-system`, `render-kernels`, `game-tables`, `minigame-formats`, `scene-formats`, `tmd` | Fishing rules engine. |
 | `engine-minigames` | `engine-field`, `engine-battle-vm`, `engine-camera`, `engine-system`, `engine-vm`, `render-kernels`, `actor-formats`, `game-tables`, `minigame-formats`, `scene-formats`, `save` | Minigame rules engines. |
 | `engine-menus` | `engine-minigames`, `engine-field`, `engine-dialog`, `engine-battle`, `engine-battle-vm`, `engine-system`, `engine-vm`, `actor-formats`, `game-tables`, `minigame-formats`, `scene-formats`, `ui-formats`, `art`, `font`, `save`, `tim` | Menu, title and memory-card front end. |

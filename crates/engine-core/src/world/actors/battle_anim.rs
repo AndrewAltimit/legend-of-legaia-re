@@ -43,6 +43,12 @@ impl World {
         let total = (player.frame_count() * 16).max(1) as i32;
         let cursor = cursor.rem_euclid(total);
         a.pose_frame = Some(player.seat_cursor(cursor as u16));
+        step_model_table(
+            &mut a.battle_model_table,
+            &mut a.battle_drawn_objects,
+            player.variant_track(),
+            player.current_frame(),
+        );
         true
     }
 
@@ -279,11 +285,23 @@ impl World {
                     ],
                     ghost_eligible,
                     clip_key,
+                    variant_track: player.variant_track(),
+                    frame: after,
                 });
                 actor
                     .battle_pose_history
                     .truncate(legaia_engine_battle::battle_afterimage::HISTORY_DEPTH);
                 actor.pose_frame = Some(pose);
+                // The mesh-variant swap, run off the same node cursor right
+                // after the facial animator at the end of the tick
+                // (`FUN_80047430` `0x80048010..0x80048030`, frame argument
+                // `(node[+0x68] << 16) >> 20`).
+                step_model_table(
+                    &mut actor.battle_model_table,
+                    &mut actor.battle_drawn_objects,
+                    player.variant_track(),
+                    after,
+                );
                 // The loop-window rewind (`0x800477EC..0x80047878`) re-arms
                 // the effect script only for a party seat playing the art
                 // slot `0x11` whose latched id `+0x1DB` is `0x2B` or above
@@ -1133,4 +1151,24 @@ impl World {
             actor.pose_frame = None;
         }
     }
+}
+
+/// One `FUN_8004CCD4` pass over a party seat's model table, then the draw
+/// set the draw pass `FUN_80048A08` reads off it for the playing stream's
+/// channels. A seat with no table, or a clip that records no stream part
+/// count (a synthetic clip), draws every object.
+// REF: FUN_80048A08 (the draw count: `c < **(entry + 0x88)`)
+fn step_model_table(
+    table: &mut Option<legaia_engine_battle::battle_attach_swap::BattleModelTable>,
+    drawn: &mut Option<Vec<bool>>,
+    track: legaia_actor_formats::monster_archive::VariantTrack,
+    frame: i16,
+) {
+    *drawn = match table.as_mut() {
+        Some(t) if track.stream_parts != 0 => {
+            t.step(&track.windows, frame, track.stream_parts);
+            Some(t.drawn_objects(usize::from(track.stream_parts)))
+        }
+        _ => None,
+    };
 }

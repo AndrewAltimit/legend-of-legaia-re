@@ -219,7 +219,7 @@ Two things the axis structurally cannot see, both of which make a *live* verdict
 
 ### The audit
 
-`--live-audit` writes `target/port-catalog/live-audit.md`, comparing the reachability verdict against the class markers written in the source. Four sections, in the order they want acting on:
+`--live-audit` writes `target/port-catalog/live-audit.md`, comparing the reachability verdict against the class markers written in the source. Five sections, in the order they want acting on:
 
 | Section | Meaning |
 |---|---|
@@ -227,6 +227,9 @@ Two things the axis structurally cannot see, both of which make a *live* verdict
 | Undisclosed inert ports | Unreachable, no tag. Either a wiring gap or a missing disclosure - the reason this mode exists. |
 | Disclosed inert ports | Unreachable, `NOT WIRED:` present. The declared wiring worklist, working as intended. |
 | Infra-replaced ports | Unreachable, `REPLACED-BY:` present. Not a worklist - each row prints the mechanism it names, so the exemption can be argued with. |
+| Tagged, live only on the permissive graph | A `NOT WIRED:` or `REPLACED-BY:` anchor that the permissive graph reaches and the receiver-gated one does not. The graphs disagree, so the tag is neither confirmed nor stale; the permissive edge is usually a name collision. |
+
+Every anchor lands in exactly one section, and the summary's anchor lines count the same partition (`anchor_class` in [`render/live_audit.py`](../../scripts/ci/port_catalog/render/live_audit.py) is the one definition). The fifth section exists because the other four were written as independent filters: *disclosed* and *replaced* asked "permissive-dead", *stale* asked "strict-live", and a tagged anchor that is permissive-live but strict-dead satisfied neither, so it appeared nowhere - not in the report and not in any summary count. Under those filters the declared wiring worklist can read zero while the tree still carries `NOT WIRED:` disclosures, each kept permissively live by a module scope or a method-name collision.
 
 The summary block splits the same way: under `ported, NOT live (inert)` sit `of which infra-replaced` and `wiring worklist (inert, a host is owed)`. The second is the number to steer by; `scripts/ci/update-progress-metrics.py` feeds it, not the raw inert count, into the site's wiring track.
 

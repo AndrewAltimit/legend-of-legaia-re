@@ -215,6 +215,7 @@ impl RetailBattle {
         }
         let pc = usize::from(self.party_count);
         let acting = usize::from(engine_seat(self.active_actor, self.party_count));
+        let counter = self.counter_capture();
         for (s, o) in out.iter_mut().enumerate() {
             let pool = if s < pc { s } else { 3 + (s - pc) };
             let alive = if s < pc {
@@ -223,9 +224,25 @@ impl RetailBattle {
                 self.monsters.get(s - pc).copied().flatten()
             }
             .is_some_and(|c| c.hp != 0);
-            *o = s != acting && alive && self.init_keys.get(pool).copied().flatten() == Some(0);
+            *o = s != acting
+                && alive
+                && (counter || self.init_keys.get(pool).copied().flatten() == Some(0));
         }
         out
+    }
+
+    /// Whether the capture is a party member's counterattack: its attack
+    /// band runs on a party seat while the turn ([`Self::turn_owner`]) is a
+    /// monster's. The round has then reached that monster's turn, so every
+    /// combatant still holding a live key ranks behind it and had not acted
+    /// by the capture either - and the drive reaches the counterer's strike
+    /// loop through the member's own turn, not the monster's. Every living
+    /// combatant but the counterer sits the replayed round out
+    /// ([`Self::engine_spent_keys`]): left with its key, the third monster of
+    /// `battle_vahn_tri_somersault_super` (`+0x16C` `235`) walked some `600`
+    /// units off the ground retail holds it on before Vahn's turn came up.
+    pub fn counter_capture(&self) -> bool {
+        self.active_actor < 3 && self.turn_owner >= 3 && (0x14..=0x20).contains(&self.action_state)
     }
 
     /// Whether the acting seat has committed a strike onto its target this

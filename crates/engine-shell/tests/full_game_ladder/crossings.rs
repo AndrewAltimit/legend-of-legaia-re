@@ -117,6 +117,124 @@ pub(super) fn reach_beat_waits(
     })
 }
 
+/// The walk-on bands of the loaded scene that are **lifts**: a gate-passing
+/// partition-2 record that asks first (a two-way picker), arcs the player
+/// (op `0x43` on the `0xF8` channel), and is laid on bands more than sixteen
+/// tiles apart - one car serving several landings. `jouinb`'s P2[6] /
+/// P2[7] / P2[8] are this class: each asks "ride?" and carries the party to
+/// the landing its car flags (`0x450` / `0x461`) pick. The planner does not
+/// route through them - where a car stands is story state the walk cannot
+/// read ahead - so a party a ride set down in a pocket whose only exit is
+/// the same lift's band is left there by every plan.
+pub(super) fn ride_bands(session: &NativeSession) -> Vec<(i16, i16)> {
+    use legaia_engine_field::man_field_scripts::{partition_record_span, partition2_record_gates};
+    use legaia_scene_formats::field_disasm::{ActorCtrlKind, InsnInfo, LinearWalker};
+    let Some((mf, man, triggers)) = scene_man_and_triggers(session) else {
+        return Vec::new();
+    };
+    let w = &session.host.world;
+    let mut by_record: BTreeMap<usize, Vec<(i16, i16)>> = BTreeMap::new();
+    for t in triggers.iter().filter(|t| t.gate == 1) {
+        by_record
+            .entry(usize::from(t.record))
+            .or_default()
+            .push((i16::from(t.tile_x), i16::from(t.tile_z)));
+    }
+    let mut out = Vec::new();
+    for (r, tiles) in by_record {
+        let pass = partition2_record_gates(&mf, &man, r)
+            .is_some_and(|(c1, c2)| w.p2_record_gates_pass(&c1, &c2));
+        let Some((start, pc0, len)) = partition_record_span(&mf, &man, 2, r) else {
+            continue;
+        };
+        if !pass {
+            continue;
+        }
+        let spread = tiles.iter().any(|a| {
+            tiles
+                .iter()
+                .any(|b| i32::from((a.0 - b.0).abs()) + i32::from((a.1 - b.1).abs()) > 16)
+        });
+        let body = &man[start..start + len];
+        let insns: Vec<_> = LinearWalker::new(body, pc0).map_while(Result::ok).collect();
+        let asks = insns
+            .iter()
+            .any(|i| matches!(i.info, InsnInfo::Picker { count: 2, .. }));
+        let arcs = insns.iter().any(|i| {
+            i.extended == Some(0xF8)
+                && matches!(
+                    i.info,
+                    InsnInfo::ActorCtrl {
+                        kind: ActorCtrlKind::ArcJump { .. },
+                        ..
+                    }
+                )
+        });
+        if spread && asks && arcs {
+            out.extend(tiles);
+        }
+    }
+    out
+}
+
+/// Ride out of the walk component the party stands in: step onto the
+/// nearest reachable [`ride_bands`] tile and let the lift carry the party.
+/// `true` when a ride set the party down more than eight tiles off.
+pub(super) fn ride_out(session: &mut NativeSession) -> bool {
+    let (x, z) = player_xz(session);
+    let here = dispatch_tile(x, z);
+    let all = ride_bands(session);
+    let mut bands: Vec<(i16, i16)> = all
+        .iter()
+        .copied()
+        .filter(|&b| tiles_in_reach(session, &[b]))
+        .collect();
+    if std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
+        eprintln!(
+            "    [ride] {} from {here:?}: ride bands {all:?}, in reach {bands:?}",
+            scene_name(session)
+        );
+    }
+    bands.sort_by_key(|&(bx, bz)| (i32::from(bx) - here.0).abs() + (i32::from(bz) - here.1).abs());
+    for (bx, bz) in bands {
+        // Up to the band's side, then one press onto it and no further: a
+        // walk that kept its goal after the car set the party down walked
+        // straight onto the far landing's band and rode back.
+        let avoid = pad_avoid(session, None);
+        let Some(side) = beside(session, (bx, bz))
+            .into_iter()
+            .find(|&s| matches!(pad_walk(session, s, &avoid, 0), Ok(Walk::Arrived)))
+        else {
+            continue;
+        };
+        for _ in 0..60 {
+            if on_tile(session, (bx, bz)) {
+                break;
+            }
+            let p = pad_for_step(session, bx - side.0, bz - side.1);
+            session.host.world.set_pad(p);
+            let _ = session.tick();
+        }
+        session.host.world.set_pad(0);
+        RIDING.with(|r| r.set(true));
+        let _ = run_while_moving(session, DEEP_EXIT_TICKS);
+        RIDING.with(|r| r.set(false));
+        let (x, z) = player_xz(session);
+        let now = dispatch_tile(x, z);
+        let moved = (now.0 - here.0).abs() + (now.1 - here.1).abs() > 8;
+        if std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
+            eprintln!(
+                "    [ride] {} band ({bx}, {bz}) from {here:?}: now {now:?}",
+                scene_name(session)
+            );
+        }
+        if moved {
+            return true;
+        }
+    }
+    false
+}
+
 /// The band tiles of the live walk-on records of the loaded scene whose own
 /// body sets one of `flags` - the beats a milestone's missing reach flags
 /// wait on (`chitei2` P2[3], the junction's north-south band, sets `0x3C8`).

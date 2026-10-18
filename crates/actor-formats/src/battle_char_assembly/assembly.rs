@@ -110,6 +110,14 @@ pub struct AssembledCharacter {
     pub section_of: Vec<u8>,
     /// The descriptor entries the five sections came from.
     pub sections: [Record; SECTION_COUNT],
+    /// The **pinned** attach pair's 1-based ordinal, `0` for none: the byte
+    /// the post-pass `FUN_80053898` stores to battle ctx `+0x240 + slot` on
+    /// each `0xFE` surplus it retags - the count of `0xFF` surpluses seen
+    /// before it, i.e. the ordinal of the variant pair that `0xFE` extra's
+    /// own section contributed. The mesh-variant swap `FUN_8004CCD4` never
+    /// window-tests that pair and force-installs its variant on a
+    /// surplus-channel stream.
+    pub pinned_pair: u8,
 }
 
 impl AssembledCharacter {
@@ -247,22 +255,24 @@ pub fn assemble_character(
     // objects (0xFF -> 200,201,..., 0xFE -> 100,101,...) and records each
     // 0xFF extra's attach bone (= the previous object's bone id); second
     // pass selection-sorts the object table by tag so the skeleton bones
-    // come first (ascending) and the equipment extras land last. (Retail
-    // additionally mirrors the 0xFE count into the battle context at
-    // +0x240 + slot - engine-context, not part of the mesh.)
+    // come first (ascending) and the equipment extras land last. The
+    // ctx +0x240 + slot byte it also writes is `pinned_pair`.
     let mut attach_bones = Vec::new();
     let mut ff_seen = 0u8;
     let mut fe_seen = 0u8;
+    let mut pinned_pair = 0u8;
     for i in 0..tags.len() {
         match tags[i] {
+            0xFE => {
+                // `sb t1,0x240(v0)` at `0x800538F0`: the 0xFF count so far.
+                pinned_pair = ff_seen;
+                tags[i] = 100 + fe_seen;
+                fe_seen += 1;
+            }
             0xFF => {
                 attach_bones.push(tags[i - 1]);
                 tags[i] = 200 + ff_seen;
                 ff_seen += 1;
-            }
-            0xFE => {
-                tags[i] = 100 + fe_seen;
-                fe_seen += 1;
             }
             _ => {}
         }
@@ -306,6 +316,7 @@ pub fn assemble_character(
         anm_bones,
         section_of,
         sections: records,
+        pinned_pair,
     })
 }
 

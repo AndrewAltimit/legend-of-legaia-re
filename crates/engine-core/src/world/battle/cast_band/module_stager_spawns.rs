@@ -1,13 +1,15 @@
 //! The op-`0x20` calls a module's own parts make into its stager, for the
 //! modules whose stager arms only seat more records: PROT 0905 (Vera), 0906
 //! (Gizam), 0907 (Nighto), 0908 (Zenoir), 0910 (Swordie), 0911 (Orb), 0912
-//! (Freed) and 0913 (Nova). PROT 0909's stager also steps the module's
-//! phase and runs through [`World::run_viguro_stager_calls`].
+//! (Freed) and 0913 (Nova), and the capture cells PROT 0938, 0944, 0946, 0961 and 0962
+//! (PROT 0940's stager is a bare `jr ra`). PROT 0909's stager also steps the
+//! module's phase and runs through [`World::run_viguro_stager_calls`].
 
 use super::*;
 use legaia_engine_cast::cast_module_ticks::{
-    FREED_STAGER_FADE, StagerSpawn, blade_breath_cell_stager_spawns,
-    chaos_breath_cell_stager_spawns, freed_stager_spawns, gizam_stager_spawns,
+    CALL_WAVE_WAVE_RECORD, FREED_STAGER_FADE, StagerSpawn, blade_breath_cell_stager_spawns,
+    call_wave_stager_spawns, chaos_breath_cell_stager_spawns, dead_end_crisis_stager_spawns,
+    freed_stager_spawns, gizam_stager_spawns, guilty_cross_cell_stager_spawns,
     nighto_stager_spawns, nova_stager_spawns, orb_stager_spawns, swordie_stager_spawns,
     vera_stager_spawns, zenoir_stager_spawns,
 };
@@ -18,7 +20,7 @@ impl World {
     pub(in crate::world::battle::cast_band) fn runs_part_stager_calls(entry: u32) -> bool {
         matches!(
             entry,
-            905 | 906 | 907 | 908 | 910 | 911 | 912 | 913 | 938 | 962
+            905 | 906 | 907 | 908 | 910 | 911 | 912 | 913 | 938 | 940 | 944 | 946 | 961 | 962
         )
     }
 
@@ -42,7 +44,7 @@ impl World {
         // A capture cell's stager runs only for the body whose arms seat
         // per arm; its other bodies keep the pager's whole-set placement,
         // which already holds the records the stager would seat.
-        if matches!(entry, 938 | 962)
+        if matches!(entry, 938 | 940 | 944 | 962)
             && self
                 .casting
                 .capture_spell
@@ -94,6 +96,15 @@ impl World {
             {
                 glow.state.world_y = legaia_engine_cast::cast_module_ticks::VERA_SPARK_HEIGHT;
             }
+            // PROT 0946's arm 1 fills a sixteen-slot handle table nothing
+            // empties during the cast: the waves this cast has seated.
+            let waves = self.casting.active_summon.as_ref().map_or(0, |sc| {
+                sc.parts
+                    .iter()
+                    .filter(|p| p.tag == Some(CALL_WAVE_WAVE_RECORD))
+                    .count()
+            });
+            let phase = self.casting.module_phase;
             let mut rand = || self.next_rand();
             let spawns = match entry {
                 906 => gizam_stager_spawns(arm, caller, body, &mut rand),
@@ -105,6 +116,11 @@ impl World {
                 913 => nova_stager_spawns(arm, caller),
                 912 => freed_stager_spawns(arm, caller, &mut rand),
                 938 => chaos_breath_cell_stager_spawns(arm, caller),
+                // PROT 0940's stager `FUN_801F82CC` is a bare `jr ra`.
+                940 => Vec::new(),
+                944 => guilty_cross_cell_stager_spawns(arm, caller),
+                946 => call_wave_stager_spawns(arm, caller, phase, waves, &mut rand),
+                961 => dead_end_crisis_stager_spawns(arm, caller, &mut rand),
                 962 => blade_breath_cell_stager_spawns(arm, caller),
                 _ => Vec::new(),
             };

@@ -93,6 +93,7 @@ fn the_hit_that_lands_the_total_rolls_the_absorb() {
 fn seat_reaction_clips(w: &mut World, getup: bool) {
     use legaia_actor_formats::monster_archive::{MonsterAnimation, PartPose};
     let clip = |action_id: u8| MonsterAnimation {
+        variant_track: Default::default(),
         action_id,
         rate: 2,
         attach_key: 0,
@@ -348,6 +349,7 @@ fn play_clip_with_beat(w: &mut World, slot: usize, first_beat: u8) {
     let mut head = vec![0u8; legaia_actor_formats::monster_archive::EFFECT_SCRIPT_HEAD_BYTES];
     head[0x10] = first_beat;
     let clip = MonsterAnimation {
+        variant_track: Default::default(),
         action_id: 2,
         rate: 2,
         attach_key: 0,

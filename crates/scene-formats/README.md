@@ -46,6 +46,7 @@ Entry points, CLI subcommands (`asset ...` is the binary in
 | `clut_walk` | The type-6 CLUT-walk `MoveImage` walker table + its parked source strips. Not kingdom-only: `from_scene_bundle` / `scene_park_strips` resolve any bundle's slot by type byte (12 carriers, incl. 9 water/waterfall field scenes - [`field-ambient-fx.md`](../../docs/subsystems/field-ambient-fx.md)). |
 | `place_names` | The two **MAN-resident** place-name carriers `worldmap_menu` is not: section 2 = the scene's display name (the on-entry banner, `_DAT_801C6EA0`), and the section-5 trailer = the 29-record world-map location table the label pass walks (`DAT_80073EE0`, region + map x/y + discovery flag + name). See [`place-names.md`](../../docs/formats/place-names.md). |
 | `man_motion` | The motion-VM (`FUN_80038158`) script table, MAN tail-section 1. |
+| `encounter_record` | The encounter record `FUN_801DA51C` reads at `actor[+0x94]` (`[3 reserved][count][monster_ids]`): the trailing operand bytes of the field-VM install op. See [`encounter.md`](../../docs/formats/encounter.md). |
 
 ### Field-VM disassembler (`field_disasm`)
 

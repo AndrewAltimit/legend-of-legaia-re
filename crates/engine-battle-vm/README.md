@@ -209,4 +209,5 @@ The crate's remaining modules are leaf kernels; by family:
   `battle_damage_wrappers` (`FUN_801DD4B0` / `FUN_801DD6B4`),
   `battle_target_group` (`FUN_801DCEAC`), `battle_separation`,
   `battle_stream_slot` (the `summon.dat` / `readef.DAT`
-  streaming transfer).
+  streaming transfer), `battle_slot` (retail's fixed actor-pool numbering -
+  monster `k` at pool slot `3 + k` - against the engine's compact seating).

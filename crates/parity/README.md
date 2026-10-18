@@ -39,6 +39,13 @@ mode) compares against a snapshot lifted from a mednafen `.mc{slot}` save:
   **retail** units (PSX 12-bit angles, retail world units), so
   `scripts/recomp/trace_diff.py` can align the two timelines. See
   [`docs/tooling/recomp-differential.md`](../../docs/tooling/recomp-differential.md).
+- [`cast_sequence`](src/cast_sequence.rs) - one cast scored against retail
+  frame by frame, behind `legaia-engine cast-sequence-score`
+  ([`docs/tooling/cast-sequence-oracle.md`](../../docs/tooling/cast-sequence-oracle.md)).
+
+[`capture_observations`](src/capture_observations.rs) codifies byte-level
+findings from `mednafen-state diff` pairs as pinned offsets the tests assert
+against.
 
 Both audio oracles take the same cold scene-entry sequence the playable hosts
 take - free-roam story staging, then `enter_field_live`, then a director that

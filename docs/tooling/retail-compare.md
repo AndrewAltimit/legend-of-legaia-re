@@ -344,6 +344,31 @@ engine verdict:
   walls hue-cycle through green, and `cort_evolved_pre_battle` had scored
   its walls by the luck of the phase.
 
+  Those adds are the newest frame's, or the next one's where the move
+  program re-keys them after the upload, and a strobe record re-keys them
+  every frame or two. The frame on screen is two frames older and its own
+  uploads are gone, so the child also gets the nearest record left: the
+  cells as the frame **after** the displayed one uploaded them
+  (`retail_older_buffer_cell_rects`, in the `LEGAIA_SEAT_VRAM_RECTS` file,
+  written after the engine's cycler output). `FUN_80019D50` builds each
+  repacked row as a `[x, y, w, h]` block at the packet cursor
+  `*(0x1F8003A0)` (`0x80019DA0..0x80019DD4`) and `LoadImage`s it from there
+  (`0x8001A004..0x8001A030`), so each of the two frames a state holds keeps
+  its uploads in its own packet buffer (`DAT_8007B728[gp+0x434]` for the
+  newest, which VRAM matches, the other for the one before). It is one frame
+  off by construction, which is the limit it leaves.
+
+  `minigame_dance_pcsx` measures all three. Its newest buffer holds the fade
+  push at grey `170`, the older one at `141` with the cycler rows right
+  behind it, and the displayed framebuffer reads `28` greys (one `3`-vsync
+  step of the fade) brighter than the other framebuffer, which the older
+  buffer's ordering table draws: the push on screen is `113`. The newest
+  frame's cells are black at the spotlight cones' CLUT `(32, 507)` where the
+  older frame's are lit. Of its 21 cyclers, 13 reproduce the newest upload
+  from the RAM's adds through the engine's kernel; the other eight reproduce
+  neither buffer's from them - a re-key after the upload, or a kernel
+  difference this measurement does not separate.
+
   So is the fog pool. Where its sheets have drifted to and how old they
   are is the `rand()` stream's history since the entry, which no seed
   replays; the image child installs the state's own live records (pool
@@ -404,12 +429,18 @@ engine verdict:
 
   So are the ambient walkers - every placement the facing channel counts as
   `ambient` ([below](#the-facing-channel)). Where a wanderer stands and which
-  way it faces is its `rand()` picks since the entry, so the state's live
-  seat (`+0x14` / `+0x18`, heading `+0x26`, `retail_walkers`) goes to the
-  child as `LEGAIA_SEAT_WALKERS` and stands the walker there on the frame it
-  captures, motion channel included (`World::seed_ambient_walker`). The
-  displayed frame is two game frames older, so a walker caught mid-step can
-  still sit a few units off its drawn place. The headless seed stands the
+  way it faces is its `rand()` picks since the entry, so the state's seat
+  (heading `+0x26`, `retail_walkers`) goes to the child as
+  `LEGAIA_SEAT_WALKERS` and stands the walker there on the frame it
+  captures, motion channel included (`World::seed_ambient_walker`). The seat
+  is the displayed frame's, two game frames older than `+0x14` / `+0x18`:
+  the tick iterator `FUN_8002519C` copies `+0x14` to `+0x1C` and `+0x18` to
+  `+0x20` before each node's tick (`0x800251D4..0x800251F0`), so the pair is
+  where the walker stood when the RAM's tick began, and the seat steps back
+  twice by that one tick's move (`walker_displayed_seat`; a still walker
+  keeps its place). `rikuroa_pre_caruban`'s Caruban walks `+32` Z a tick:
+  seated at the RAM's `9792` it drew about eight pixels right of retail's
+  frame, which shows `9728`. The headless seed stands the
   same walkers - engaged ones too - at the resume tick, before a talk is
   engaged, because the talk snap turns a placement to the bearing from its
   own seat: `town01_npc16_dialogue_first_page`'s `P1[16]` had wandered off
@@ -533,7 +564,7 @@ The frame is gated two game frames earlier than the RAM. The field
 double-buffers exactly as the battle does
 ([below](#replayed-casts)): the display scans out the frame built two
 frames before the one the RAM holds, so the image child's gate takes
-`2 * step` vsyncs off the retail wait (`ScriptGate::displayed_from_retail`,
+`2 * step` vsyncs off the retail wait (`parity::retail_compare_script::displayed_script_gate_from_retail`,
 the step rebuilt from the frame-duration history). The state channels keep
 the RAM's wait. `minigame_dance_pcsx` is parked `21` vsyncs into the wait
 after `34 01 FF FF FF 1E`, a subtractive white walk-in (`27` vsyncs once a
@@ -1024,7 +1055,11 @@ the same clip and the clip loops. Left on the replay's clock: a one-shot,
 which started with its action, and - while an action is in flight, ahead of
 the Done band `0x50..=0x5A` - the acting seat and its target, whose clips run
 with the action the seed has already placed (seated, Zeto's parked Big Wave clip cost
-`zeto_big_wave_mid_cast` `0.03`).
+`zeto_big_wave_mid_cast` `0.03`). The action's own clips start with the
+approach `0x14` stages, so on the seed's own passes - the seed `0x0C`, and an
+Attack arm `0x14` whose body has not run (the yaw counter still on the seed's
+`0x200` rung) - both bodies still sway on their idle loops and are seated
+too (`super_queue_replace_*` `image` `.926` to `.938`).
 
 ### Rewards already granted
 
@@ -1380,6 +1415,23 @@ an orbit clock. `evil_medallion_rage_battle` is one.
 - **Zeto's waves.** The forced cast is armed but never consumed inside the
   budget - the monster pick that would take it is not reached on Zeto's seat -
   so `0x70` is not reached. Why is open.
+- **An Auto pick's queue.** `noa_levelup_fight_pre`'s Noa holds the
+  committed queue `0D 0C 0F 0F` over a record band of `0F 0F 0F 0F`: no
+  input confirm wrote it back (`FUN_801DA59C`, `0x801D22BC`), so the round
+  start's Auto pool arm (`FUN_801F0450`) built it from weighted `rand()`
+  picks. Landed on those bytes, the replay strikes three times before Gobu
+  Gobu's knockdown (`9`, `19`, `31` accumulated) where retail's frame shows
+  `2 HIT`, `TOTAL 19`, and both bodies stand further off retail's ground
+  (`image` `.832` to `.759`), so the drive keeps the engine's own picks. Why
+  retail's strike loop ends after the second hit is open.
+- **A frame older than the surface.** `arts_input_start_gala_nail` sits in
+  the arts entry `0x50` with all thirteen HUD glide records at `elapsed`
+  `0` against a display lag of six vsyncs: the entry opened on the
+  capture's own pass, and the frame on screen is the Auto / Command prompt
+  `0x78`, with retail's member close-up already landed. Driven to the
+  prompt instead, the engine frames the prompt's target (case `1` on the
+  member's `+0x1DD`) rather than the close-up (`image` `.866` to `.255`),
+  so the drive keeps the entry's frame until that framing is settled.
 - **Seat and timing.** A pick no seed reproduces (a monster's plain strike on a
   given seat) can run out of budget or end the fight first.
 - **A fading body retail does not draw.** `player_steal_skeleton_banner` holds
@@ -2193,6 +2245,24 @@ that accepts it at six drops every `FT3` in the list - this state's own list
 holds 172. Decoded at seven the family matches triangle for triangle: retail
 `55`, the port `54` front-facing of `128`.
 
+### Stacked shells the coplanar pass lifts
+
+The same state's strand shell also draws about seven pixels above retail's.
+`jouine`'s room is five placed objects on one origin: records `0`, `2`, `3`
+(twice) and `14` all stand at `(3136, 0, 3136)` with `+0x16 = 0`, and in the RAM they
+share one view translation (`+0x2C..+0x34`), so retail draws every shell from
+the same point. The port's cross-draw coplanar pass
+(`legaia_engine_scene::coplanar_draws`) finds the strand shell (record `14`,
+model `1`) coplanar with the wall shells on every facet family, lifts it a
+rank along each family's normal, and sums the lifts: each lift points up
+(`lift_dir`), so around a closed ring the horizontal parts cancel and the
+vertical ones add, to `(-2.0, -15.9, -1.9)` world units. A translation cannot
+separate two concentric shells on every facet at once, so the sum only moves
+the image. With the lifts off this frame reads `0.909` against `0.905`, the
+rest of the residual being sampling: the wall vertices match retail's packets
+to about a pixel. Separating stacked shells by depth rather than by moving
+them is renderer work on both hosts, and the pass is unchanged.
+
 ### One glide frame ahead, or a few frames into an arrival
 
 These field states miss retail for timing the seed does not replay, not for
@@ -2572,6 +2642,22 @@ same side, and an engine glide that has landed, keep the engine's own yaw.
 `rim_elm_gimard_victory` is the case: its endpoints stand `24` apart, retail
 `27` under its own and the engine `97` over.
 
+The focus follows the yaw's phase. A yaw whose endpoint agrees to the unit
+takes retail's live value - retail's point in its ease - and a focus
+endpoint a few units off (a midpoint of body pairs a replay lands within a
+step of) would otherwise draw at another point of the ease than the yaw.
+Over the same bodies (the yaw tier's focus band) each such focus component
+is put as far short of the engine's endpoint as retail's live focus stood
+from its, while the engine glides. `player_steal_skeleton_pre` is the case:
+yaw `3239` four passes into its ease onto `2358`, the case-7 focus `110` /
+`122` short of an endpoint the engine's lands `16` off, where the engine's
+own glide had closed to `20` short (`camera` `.976` to `1.0`, `image` `.786`
+to `.929`; `battle_noa_miracle_art_combo`'s displayed frame `.644` to
+`.782`). Under a yaw that is itself only within the ease band, the focus
+keeps the engine's own: carried there, `rim_elm_gimard_victory` (focus
+endpoints `102` apart), `rim_elm_gimard_seru_capture_before` and
+`battle_melee_hit_spark` all fell.
+
 The yaw counter `ctx[+0x6DA]` is aligned the same way, as the clock it is.
 The action SM's prologue adds `max(1, 4 * frame_step / 3)` to it every pass
 (`0x801E29E4..0x801E2A24`), from whichever rung of the per-action ladder the
@@ -2707,12 +2793,20 @@ every pass, so it moves with the phase of both clips):
   seeding limit.
 - **A counter is the round's last turn.**
   `battle_vahn_tri_somersault_super` is Vahn's Super Art played as a
-  counterattack on a monster's swing. The capture holds every key spent but
-  the third monster's, so the round it replays is that monster's turn alone:
-  it strikes Vahn, the counter fires, and the case-7 two-shot reads retail's
-  yaw `799` and its focus to nine units. Played with every key live, the
-  drive waited many rounds for a counter on the capture's seat and cursor
-  and took one off another monster on the far side of the party.
+  counterattack on a monster's swing. The drive reaches the counterer's
+  strike loop through Vahn's own turn, with every spent key sat out, and the
+  case-7 two-shot reads retail's yaw `799` and its focus to nine units.
+  Played with every key live, the drive waited many rounds for a counter on
+  the capture's seat and cursor and took one off another monster on the far
+  side of the party. The third monster's key is not spent (`+0x16C` `235`),
+  but the turn the round has reached is the second monster's: inside a
+  party seat's attack band `ctx[+0x274]` still names the monster whose
+  swing the counter answers (`4` here, where a member's own turn reads its
+  own seat). Every combatant still holding a live key ranks behind that
+  turn and had not acted by the capture, so a counter capture sits out
+  every living combatant but the counterer (`RetailBattle::counter_capture`).
+  Left with its key, the third monster walked some `600` units off retail's
+  ground before Vahn's turn came up (`image` `.880` to `.927`).
 - **A numeral that sank instead of rising.** Retail's floating value rises
   `3/2` of its ring timer above the struck actor's display trio
   (`FUN_801DF6B8`, `0x801DF780..0x801DF7B4`), toward `-Y`. The hosts project
@@ -2835,10 +2929,12 @@ every pass, so it moves with the phase of both clips):
   skeleton, or before the separation pass moved them - and the capture
   does not say which; nothing re-tests the pair inside the loop. The engine's check runs against the idle pose the seed stands
   the skeleton in (`359`), fails, and its walk clip takes one step, `42`
-  units, before the strike loop. From the nearer ground the strike band's
-  heading is `463` against `484` and the case-7 yaw endpoint twenty units
-  off, outside the origin alignment, so the channel scores the ease's
-  start.
+  units, before the strike loop. The case-7 yaw endpoint still lands on
+  retail's (`2356` against `2358`); what the nearer ground moves is the
+  focus endpoint, `16` units off, which takes the yaw's phase
+  ([above](#an-ease-out-camera-carries-its-history)). What the frame still
+  shows is the skeleton drawn solid where retail's near-camera ghost pass
+  fades it.
 - **A pose two frames on.** `battle_noa_miracle_art_combo`'s case-7 focus
   is the midpoint of two body pairs, and at the capture's accumulator
   (`72`, nine vsyncs after the swing clip's commit) retail's Noa reads body

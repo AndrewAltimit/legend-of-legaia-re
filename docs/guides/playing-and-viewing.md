@@ -10,7 +10,7 @@ There are two ways to play, and they run the same engine:
 
 | Host | Start it | Input | Notes |
 |---|---|---|---|
-| Native window | `./legaia-engine` ([the launcher](#0-the-launcher)), or `play-window` | Keyboard | wgpu renderer; every flag on this page |
+| Native window | `./legaia-engine` ([the launcher](#0-the-launcher)), or `play-window` | Keyboard or gamepad | wgpu renderer; every flag on this page |
 | Browser play page | The project site's play page, or [a local build](#10-run-the-browser-version-locally) | Keyboard or gamepad | Nothing to install; also runs in VR over WebXR |
 
 On this page:

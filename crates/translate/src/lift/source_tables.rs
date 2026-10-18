@@ -122,7 +122,12 @@ pub fn source_build_for_exe(exe: &str) -> Option<SourceBuild> {
             "fr",
             "France (PAL)",
             SourceBases::Pinned(PalBases {
-                table_bases: [0x8007_4C4C, 0x8007_5DA8, 0x8007_67A4, 0x8007_6B3C],
+                table_bases: [
+                    item_names::PAL_TABLE_VAS[0].1,
+                    0x8007_5DA8,
+                    0x8007_67A4,
+                    0x8007_6B3C,
+                ],
                 party_base: 0x8007_9508,
             }),
         )),
@@ -130,7 +135,12 @@ pub fn source_build_for_exe(exe: &str) -> Option<SourceBuild> {
             "de",
             "Germany (PAL)",
             SourceBases::Pinned(PalBases {
-                table_bases: [0x8007_5360, 0x8007_64BC, 0x8007_6EB8, 0x8007_7250],
+                table_bases: [
+                    item_names::PAL_TABLE_VAS[1].1,
+                    0x8007_64BC,
+                    0x8007_6EB8,
+                    0x8007_7250,
+                ],
                 party_base: 0x8007_9C78,
             }),
         )),
@@ -138,7 +148,12 @@ pub fn source_build_for_exe(exe: &str) -> Option<SourceBuild> {
             "it",
             "Italy (PAL)",
             SourceBases::Pinned(PalBases {
-                table_bases: [0x8007_5130, 0x8007_628C, 0x8007_6C88, 0x8007_7020],
+                table_bases: [
+                    item_names::PAL_TABLE_VAS[2].1,
+                    0x8007_628C,
+                    0x8007_6C88,
+                    0x8007_7020,
+                ],
                 party_base: 0x8007_9A14,
             }),
         )),

@@ -24,7 +24,7 @@ depends on it. Hosts, tools and tests name its modules directly
 | `field_ground` | The walk-ground heightfield as a render mesh: positions (static and live-wave), indices, flat refs, the visible-tile crop of the index list. |
 | `field_occlusion` | The camera-occlusion fade's visibility gate: a per-triangle eye-to-player ray-cast over the assembled static scene (`FieldOccluders`), and the strength ramp. Its arming terms over a `World` are `engine-core::field_occlusion`. |
 | `scene_assembly` | The full static scene assembly kernel (`AssembledScene`, `assemble_field_scene_with`) and the hybrid textured / vertex-colour mesh builders. |
-| `man_field_scripts` | A scene's MAN carriers and the scene-name entry points of the censuses whose decoders are `legaia_engine_field::man_field_scripts`. |
+| `man_census` | A scene's MAN carriers and the scene-name entry points of the censuses whose decoders are `legaia_engine_field::man_field_scripts`. |
 | `clut_walk_anim` | The CLUT-walk shimmer: installs a scene's walker table and steps it over a VRAM. |
 | `cutscene_caption` | The opening's baked caption TIM, decoded to RGBA. |
 | `cd_dma` / `overlay_loader` / `stream_file` | The CD streaming reader host traits, the `ProtIndex`-backed host, the overlay loaders and the dual-mode stream-file API. |

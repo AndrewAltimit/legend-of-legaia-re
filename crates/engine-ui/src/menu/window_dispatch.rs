@@ -60,10 +60,12 @@
 //!
 //! Two shop renderers are deliberately absent: `FUN_801D5510` (window 35,
 //! buy quantity) and `FUN_801D5AE8` (window 39, item detail / sell). Their
-//! ports are `engine-core::world_views::shop::{shop_buy_quantity_panel,
-//! shop_sell_detail_panel}`, which return field *pens* rather than draw
-//! lists, so this crate has no painter to name for them and listing them
-//! would make [`menu_window_painters`] claim windows it cannot paint.
+//! ports are [`crate::menu::window_painters::buy_quantity_draws_for`] and
+//! `engine-menus::shop::shop_sell_detail_panel` (which returns field *pens*
+//! rather than draw lists). Neither is a [`MenuWindowPainter`] variant: the
+//! shared shop compositor in `engine-screens::shop` calls both, filtered on
+//! the descriptor's `renderer_va`, so listing them here would make
+//! [`menu_window_painters`] claim windows its dispatch does not paint.
 
 use legaia_game_tables::menu_windows::{MenuWindowDescriptor, MenuWindowTable};
 

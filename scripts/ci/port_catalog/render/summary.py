@@ -39,24 +39,31 @@ def summarize(rows: list[dict]) -> str:
         n_inert = len(ported_rows) - n_live
         n_replaced = sum(1 for r in ported_rows if not r["live"] and r["replaced_tag"])
         pairs = [(r, a) for r in ported_rows for a in r["anchors"]]
-        n_a_live = sum(1 for _, a in pairs if a["live"])
-        n_a_replaced = sum(1 for _, a in pairs if not a["live"] and a["replaced_tag"])
-        n_a_disclosed = sum(
-            1 for _, a in pairs if not a["live"] and a["not_wired_tag"]
+        from port_catalog.render.live_audit import (
+            DISCLOSED,
+            LIVE,
+            REPLACED,
+            STALE,
+            TAGGED_PERMISSIVE_ONLY,
+            UNDISCLOSED,
+            anchor_class,
         )
-        n_a_undisclosed = sum(
-            1
-            for _, a in pairs
-            if not a["live"] and not a["not_wired_tag"] and not a["replaced_tag"]
-        )
+
+        # One partition, the same one the audit report's sections use: every
+        # anchor is counted on exactly one line below.
+        counts: dict[str, int] = {}
+        for _, a in pairs:
+            c = anchor_class(a)
+            counts[c] = counts.get(c, 0) + 1
+        n_a_live = counts.get(LIVE, 0)
+        n_a_replaced = counts.get(REPLACED, 0)
+        n_a_disclosed = counts.get(DISCLOSED, 0)
+        n_a_undisclosed = counts.get(UNDISCLOSED, 0)
         # Stale-tag is the one question read off the receiver-gated graph:
         # a spurious edge here manufactures a false accusation against a
         # correct disclosure. See build_rust_graph.
-        n_stale = sum(
-            1
-            for _, a in pairs
-            if a["live_strict"] and (a["not_wired_tag"] or a["replaced_tag"])
-        )
+        n_stale = counts.get(STALE, 0)
+        n_a_split = counts.get(TAGGED_PERMISSIVE_ONLY, 0)
         live_block = [
             "",
             f"ported + live  (reachable from a host root)     : {n_live}",
@@ -65,11 +72,12 @@ def summarize(rows: list[dict]) -> str:
             f"  wiring worklist (inert, a host is owed)       : {n_inert - n_replaced}",
             "",
             f"PORT tag sites (anchors)                        : {len(pairs)}",
-            f"  live                                          : {n_a_live}",
+            f"  live (untagged)                               : {n_a_live}",
             f"  inert, `NOT WIRED:` tag present               : {n_a_disclosed}",
             f"  inert, `REPLACED-BY:` (no host is owed)       : {n_a_replaced}",
             f"  inert, no tag  -> disclosure gap              : {n_a_undisclosed}",
             f"  tagged NOT WIRED / REPLACED-BY but live       : {n_stale}",
+            f"  tagged, live on the permissive graph only     : {n_a_split}",
         ]
     return "\n".join(
         [

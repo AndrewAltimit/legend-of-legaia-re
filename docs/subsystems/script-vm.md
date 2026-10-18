@@ -53,7 +53,7 @@ One row per opcode byte. "Enc" is the non-extended encoding (the cross-context f
 | Op | Name | Enc | Effect | Detail |
 |---|---|---|---|---|
 | `0x21` | (stop marker) | 1 | PC += 1; an executed `0x21` ends the runner's slice and the interaction. | [markers](#shared-nop-cluster) |
-| `0x22` | `EXEC_MOVE` | `22 move_id` | Start move-table playback (an animation clip) on the context. | [0x22-0x26](#0x22-0x26-action--control-flow) |
+| `0x22` | `EXEC_MOVE` | `22 move_id` | Start an animation clip from the scene's clip bank on the context. | [0x22-0x26](#0x22-0x26-action--control-flow) |
 | `0x23` | `MOVE_TO` | `23 x z` | Teleport the context to a tile. | [0x22-0x26](#0x22-0x26-action--control-flow) |
 | `0x24` / `0x25` | (spawn-section marker) | 1 | PC += 1; a record opening on one gets its spawn section pre-run at scene load. | [markers](#shared-nop-cluster) |
 | `0x26` | `JMP_REL` | `26 lo hi` | Unconditional relative jump (16-bit wrap). | [0x22-0x26](#0x22-0x26-action--control-flow) |
@@ -571,7 +571,7 @@ like `0x24` / `0x25`.
 
 | Op | Mnemonic | Encoding | Effect |
 |---|---|---|---|
-| 0x22 | `EXEC_MOVE` | `[22, move_id]` | Schedule move-table playback on the current ctx. Sets `ctx[+0x5C] = move_id`, `ctx[+0x5E] = 0xFFFE`, then calls `func_0x800204F8(ctx)` - the **move-table consumer** that [`crates/mdt`](../formats/mdt.md) targets. Player path has special cases around `+0x10` bit 0x1000000 (move chaining) and `move_id == 99` (auto-cancel). |
+| 0x22 | `EXEC_MOVE` | `[22, move_id]` | Schedule move-table playback on the current ctx. Sets `ctx[+0x5C] = move_id`, `ctx[+0x5E] = 0xFFFE`, then calls `func_0x800204F8(ctx)` - the **clip driver** that binds clip `move_id` from the scene's ANM clip bank (`_DAT_8007B888`, retail's "MOVE" buffer; [`mdt.md`](../formats/mdt.md), [`anm.md`](../formats/anm.md#binding-a-clip)), not move-VM bytecode. Player path has special cases around `+0x10` bit 0x1000000 (move chaining) and `move_id == 99` (auto-cancel). |
 | 0x23 | `MOVE_TO` | `[23, x_byte, z_byte]` | Teleport ctx to grid position. World coords: `(b & 0x7F) * 0x80 + 0x40`, plus 0x40 if high bit set. Player path also calls `func_0x80017EC8` (camera/scroll). NPC path sets `+0x8C/+0x8D` facing, calls `FUN_801D81E0` and `FUN_801D79E8` (the per-actor visibility cull, [motion-vm.md](motion-vm.md)). PC += 3. |
 | 0x26 | `JMP_REL` | `[26, lo, hi]` | Relative jump: `PC = pc_offset + 1 + (lo + hi*0x100)`. Unconditional. |
 
@@ -2990,7 +2990,7 @@ into.
 
 - [`crates/engine-vm`](../../crates/engine-vm/src/field.rs) - the port. `legaia_engine_vm::field::step` executes one instruction per call and returns a `StepResult` (`Advance` / `Yield` / `Halt`); side effects go through the `FieldHost` trait, implemented in `engine-core` (`world/vm_hosts/field_host.rs`) - see [§ Host surface](#host-surface). The per-frame runners, the dialogue SM and the cutscene timeline that drive it live in `engine-core`, `engine-field` and `engine-dialog`.
 - [`crates/asset`](../../crates/asset/README.md) - `legaia_scene_formats::field_disasm`, the static decoder ([below](#disassembler-tool-asset-field-disasm)), and `man_section` / `man_edit`, the MAN parser and relocator.
-- [`crates/mdt`](../formats/mdt.md) - opcode `0x22` `EXEC_MOVE` drives the move-table consumer at `FUN_800204F8`. Move IDs in scripts feed straight into the .mdt parsers.
+- [`mdt.md`](../formats/mdt.md) - opcode `0x22` `EXEC_MOVE` drives the clip driver `FUN_800204F8` over the scene's clip bank (retail's "MOVE" buffer); the script's id is the clip id.
 - [`crates/mes`](../formats/mes.md) - parses the inline `0x1F` / glyph text stream that field dialogue shows (see [§ Field dialogue](#field-dialogue-has-no-opcode)).
 - [`crates/anm`](../formats/anm.md) - opcode `0x34` sub-op 3 spawns an effect record through `func_0x800252EC`; the buffer's offset-table layout matches the ANM container shape.
 

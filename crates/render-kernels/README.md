@@ -36,6 +36,16 @@ or cpal, so it builds for native and `wasm32` alike.
   TMD prim handler behind `FUN_80043390` runs before it links a packet.
 - `cast_beam` - PROT 0948's Cross Beam packets (`FUN_801F726C`): the two
   sine-swept screen-space beams the cast module's tick draws.
+- `cast_aluru` - PROT 0916's light bands: the four full-width
+  semi-transparent gradient quads its tick body draws while the blast lands.
+- `cast_colour_wash` - PROT 0898's cast colour wash (`FUN_801F2410`): the
+  full-screen gradient backdrop the two cast dispatchers draw while a module
+  has armed it.
+- `cast_rain` - PROT 0920's Deadly Rain (Slippery, `FUN_801F7B88`): the
+  per-frame rain routine and the streak packets it builds.
+- `cast_swordie` - PROT 0910's screen-space packets (`FUN_801F7C18` /
+  `FUN_801F7DD0`): the two panels that slide apart along a diagonal cut, and
+  the slash streak down the cut.
 - `gte` - fixed-point GTE arithmetic (`q3.12` rotation, `q19.12`
   translation, the UNR divide, NCLIP/AVSZ, register-transfer + memory ops,
   the from-scratch `psx_sin` / `psx_cos` trig LUT).
@@ -59,12 +69,19 @@ or cpal, so it builds for native and `wasm32` alike.
   and flies from the burst centre, with the flag rows' shrink, hold and sweep
   fronts. Both play hosts draw battle bodies and field NPCs through it
   ([renderer.md](../../docs/subsystems/renderer.md#the-shatter-renderer-fun_80029888--fun_80029dd8)).
+- `fog_volume` - volumetric ground fog, an enhancement (not retail): a
+  drifting mist bank over the misty scenes that the moving characters part.
 
 ## Draw-prep kernels
 
 - `gte::divide` - the GTE's Unsigned Newton-Raphson perspective divide.
 - `field_light` - the field's GTE light matrix, colour matrix and back colour.
 - `world_map_sky` - the overworld sky band (`FUN_801F73E4`).
+- `overworld_curvature` - the overworld's screen-Y curvature table
+  (`FUN_800271A8` into `_DAT_8007BB04`), indexed by view depth and added to a
+  vertex's `SY` so the continent bends over the horizon.
+- `drop_shadow` - the field actor drop shadow (`FUN_8001C394`) drawn under
+  every seated actor whose flag word carries a shadow class bit.
 - `prim_dispatch` - the per-prim renderer dispatch `FUN_80043390`.
 - `sprite_arm` - the move-VM actor's draw words: `ColourWord` and the
   `0x4000` sprite arm's quad (`FUN_8002A5A4`).

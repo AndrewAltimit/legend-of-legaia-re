@@ -187,6 +187,66 @@ impl PlayWindowApp {
             w.presentation.fade.as_ref().map(|f| f.age_vsyncs()),
         );
         eprintln!("capture camera: {:?}", w.battle_cam_pose());
+        for (rgb, abr, ot) in w.screen_fade_draws() {
+            eprintln!("capture fade: rgb {rgb:06X} abr {abr} ot {ot}");
+        }
+        // Every live cast-scene part's draw state, in the retail actor
+        // layout's offsets, to read beside a state's own `FUN_80021DF4`
+        // nodes.
+        let scenes = [
+            ("summon", w.casting.active_summon.as_ref()),
+            ("move_fx", w.casting.active_move_fx.as_ref()),
+            ("mystic_shield", w.casting.mystic_shield_fx.as_ref()),
+        ]
+        .into_iter()
+        .map(|(n, s)| (n, s.into_iter().collect::<Vec<_>>()))
+        .chain(std::iter::once((
+            "action_fx",
+            w.casting.active_action_fx.iter().collect(),
+        )));
+        for (name, scene) in scenes {
+            for p in scene
+                .iter()
+                .flat_map(|s| s.parts.iter())
+                .filter(|p| !p.finished)
+            {
+                let s = &p.state;
+                eprintln!(
+                    "capture part {name}: tag {:?} sel {} pos [{}, {}, {}] rot [{}, {}, {}] \
+                     52 {:#x} 56 {} 72 {:#x} 74 {:08X} 78 {:#x} 9e {:#x} 9c {} b4.. {:?} c0.. {:?} wait {} \
+                     src {}",
+                    p.tag.map(|t| format!("{t:08X}")),
+                    p.model_sel,
+                    s.world_x,
+                    s.world_y,
+                    s.world_z,
+                    s.render_24,
+                    s.render_26,
+                    s.render_28,
+                    s.field_52,
+                    s.actor_u16(0x56),
+                    s.field_72,
+                    s.field_74,
+                    s.field_78,
+                    s.actor_u16(0x9E),
+                    s.actor_u16(0x9C) as i16,
+                    (0xB4..0xC0)
+                        .step_by(2)
+                        .map(|o| s.actor_u16(o) as i16)
+                        .collect::<Vec<_>>(),
+                    (0xC0..0xCC)
+                        .step_by(2)
+                        .map(|o| s.actor_u16(o) as i16)
+                        .collect::<Vec<_>>(),
+                    s.wait_timer,
+                    (0x9C..0xCC)
+                        .step_by(2)
+                        .map(|o| format!("{:04x}", s.actor_u16(o)))
+                        .collect::<Vec<_>>()
+                        .join(" "),
+                );
+            }
+        }
         for (i, a) in w.actors.iter().enumerate().take(8) {
             eprintln!(
                 "capture actor {i}: clip {:#04x} cursor {:?} body {:?} pose {}",

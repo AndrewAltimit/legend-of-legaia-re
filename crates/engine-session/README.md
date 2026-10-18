@@ -26,6 +26,10 @@ over its `AudioOut`); a `wasm32` build never links cpal.
   and the world state it leaves (stage class, fog stage cap, monster texture
   slots), and the summon creature's seat; both hosts' battle builds read the
   result.
+- [`battle_fx`](src/battle_fx.rs) - the battle presentation decisions both
+  hosts take in their per-tick effect step: `spawn_pending_move_fx` seats a
+  pending move effect and resolves its sound cue through the retail dispatch
+  decode.
 - [`xa_banks`](src/xa_banks.rs) - the CD-XA voice banks' staging: which
   files the arts shouts and the battle one-shot clips come from, and how a
   file's demuxed channels become bank entries. The native boot reads the

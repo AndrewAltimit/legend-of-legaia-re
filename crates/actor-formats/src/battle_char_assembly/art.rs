@@ -120,6 +120,10 @@ pub struct ArtAnimRecord {
     /// this entry, so the per-frame effect-script walker (`FUN_801DEA50`)
     /// reads these records.
     pub effect_script: Vec<u8>,
+    /// The embedded entry's equipment-variant windows (`+0xA4..+0xAC`), the
+    /// track `FUN_8004CCD4` tests while this art plays (see
+    /// [`crate::monster_archive::VariantTrack`]). Live only in Noa's bank.
+    pub variant_windows: [u8; crate::monster_archive::ENTRY_VARIANT_WINDOWS_LEN],
 }
 
 impl ArtAnimRecord {
@@ -194,6 +198,10 @@ pub fn art_animation_bank(record0: &[u8]) -> Result<Vec<ArtAnimRecord>> {
             impact_class: entry[0x7A],
             entry_offset: base + ART_ENTRY_OFFSET,
             effect_script: crate::monster_archive::effect_script_head(rec, ART_ENTRY_OFFSET),
+            variant_windows: crate::monster_archive::VariantTrack::windows_at(
+                rec,
+                ART_ENTRY_OFFSET,
+            ),
         });
     }
     Ok(out)
@@ -257,30 +265,46 @@ pub fn art_animation(
     // its `+0x77` attach key: the hit routine reads both off the acting
     // actor's committed record.
     anim.impact_class = record.impact_class;
+    anim.variant_track.windows = record.variant_windows;
     Ok(anim)
 }
 
-/// Re-index an animation's pose channels **per assembled object**: output
-/// part `i` is input part `anm_bones[i]` (each equipment extra duplicates
-/// its attach bone's channel), so `frames[f][obj]` can drive TMD object
-/// `obj` directly through the engine's posed-mesh builders. Channels
-/// referencing a part the stream doesn't carry come out as the identity
+/// Re-index an animation's pose channels **per assembled object**, so
+/// `frames[f][obj]` can drive TMD object `obj` directly through the engine's
+/// posed-mesh builders.
+///
+/// Retail's draw pass `FUN_80048A08` draws channel `c` (for every `c` below
+/// the stream's own part count) with the object the render node's model table
+/// holds at `c`, posed by stream channel `c`. That table is the identity at
+/// registration, so object `i` below the stream's part count takes channel
+/// `i`: the skeleton bones, and on a surplus-channel swing the `0xFE` extras
+/// that sort directly after them (Noa's 17-part `0x1E` band, Gala's high Ozma
+/// tiers). An object at or past the part count is not drawn by this stream
+/// except as an equipment variant swapped into its attach bone's channel
+/// (`FUN_8004CCD4`), so it takes `anm_bones[i]` - the channel it would be
+/// drawn in. Channels the stream does not carry come out as the identity
 /// pose.
 pub fn expand_animation_for_objects(
     anim: &crate::monster_archive::MonsterAnimation,
     anm_bones: &[u8],
 ) -> crate::monster_archive::MonsterAnimation {
+    let parts = anim.part_count;
     let frames: Vec<Vec<crate::monster_archive::PartPose>> = anim
         .frames
         .iter()
         .map(|frame| {
             anm_bones
                 .iter()
-                .map(|&b| frame.get(b as usize).copied().unwrap_or_default())
+                .enumerate()
+                .map(|(i, &b)| {
+                    let ch = if i < parts { i } else { b as usize };
+                    frame.get(ch).copied().unwrap_or_default()
+                })
                 .collect()
         })
         .collect();
     crate::monster_archive::MonsterAnimation {
+        variant_track: anim.variant_track,
         action_id: anim.action_id,
         attach_key: anim.attach_key,
         solo_flag: anim.solo_flag,

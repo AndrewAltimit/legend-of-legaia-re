@@ -449,6 +449,12 @@ pub struct RetailBattle {
     /// (`sh zero,0x16c(s3)` at `0x801E2CDC`), so a living combatant reading
     /// `0` has already acted in the capture's round.
     pub init_keys: Vec<Option<u16>>,
+    /// `ctx[+0x274]` as read: the actor the initiative pick `FUN_801DABA4`
+    /// handed the turn to. Inside a party member's attack band it names that
+    /// member, except on a counterattack, where it still names the monster
+    /// whose swing the counter answers (`battle_vahn_tri_somersault_super`:
+    /// Vahn's strike loop on seat `0`, the turn seat `4`'s).
+    pub turn_owner: u8,
     /// Each pool slot's status word `+0x16E` (the ailment bits the tint
     /// pass colours a body by - `0x1` Venom `0xFF2020`, `0x2` Toxic, ...,
     /// [`legaia_engine_battle_vm::status_effects::display_flags`]), `None` for an

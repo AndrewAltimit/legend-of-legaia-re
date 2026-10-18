@@ -487,9 +487,182 @@ const E938_3: [ModuleSpawn; 4] = [
     spawn(0x801F7F10, SpawnAnchor::Caster { y: 0 }),
 ];
 
+// PROT 0940's `0xAC` body `FUN_801F7240` (Cort's Mystic Shield), eight arms
+// off the head table; every call is `FUN_80050ED4(caster + 0x34, caster +
+// 0x44, record, 0x1000)`.
+// See `ghidra/scripts/funcs/overlay_cast_glare_divide_0940_801f7240.txt`.
+const CASTER: SpawnAnchor = SpawnAnchor::Caster { y: 0 };
+// 0x801F73B4, on the countdown's expiry.
+const E940_1: [ModuleSpawn; 1] = [spawn(0x801F82D4, CASTER)];
+// 0x801F7514..0x801F755C, on the countdown's expiry.
+const E940_3: [ModuleSpawn; 4] = [
+    spawn(0x801F8530, CASTER),
+    spawn(0x801F83B4, CASTER),
+    spawn(0x801F841C, CASTER),
+    spawn(0x801F8484, CASTER),
+];
+// 0x801F748C: arm 2's sparks, every eighth pass.
+const E940_2_COUNTED: [ModuleSpawn; 1] = [spawn(0x801F8370, CASTER)];
+// 0x801F7628 / 0x801F778C: arms 4 and 5, every eighth pass.
+const E940_45_COUNTED: [ModuleSpawn; 1] = [spawn(0x801F84EC, CASTER)];
+
+// PROT 0946's one tick body `FUN_801F69FC` (Zeto's Call Wave `0x55` and Big
+// Wave `0x56`; [`super::wave_camera`] has the arms). Big Wave's calls sit on
+// the caster's `+0x34` / `+0x44`, Call Wave's one on its `+0x3C` / `+0x44`.
+// See `ghidra/scripts/funcs/overlay_cast_call_wave_0946_801f69fc.txt`.
+// 0x801F6C48: Call Wave's arm 0 branch, the stager caller.
+const E946_0_CALL: [ModuleSpawn; 1] = [spawn(0x801F78CC, SpawnAnchor::CasterBody)];
+// 0x801F6F1C: Big Wave's wave caller.
+const E946_4: [ModuleSpawn; 1] = [spawn(0x801F7C44, CASTER)];
+// 0x801F6F90..0x801F7074, on the countdown's expiry.
+const E946_5: [ModuleSpawn; 9] = [
+    spawn(0x801F7A50, CASTER),
+    spawn(0x801F7AC4, CASTER),
+    spawn(0x801F7B60, CASTER),
+    spawn(0x801F7BAC, CASTER),
+    spawn(0x801F7C84, CASTER),
+    spawn(0x801F7CDC, CASTER),
+    spawn(0x801F7D34, CASTER),
+    spawn(0x801F7AA8, CASTER),
+    spawn(0x801F7B0C, CASTER),
+];
+// 0x801F71E8..0x801F7250, on the countdown's expiry, after the arm sets the
+// halt bit on every handle it keeps (`0x801F7174..0x801F71A8`).
+const E946_6: [ModuleSpawn; 4] = [
+    spawn(0x801F7D84, CASTER),
+    spawn(0x801F7E4C, CASTER),
+    spawn(0x801F7DE8, CASTER),
+    spawn(0x801F7EA0, CASTER),
+];
+
+// PROT 0944's `0x37` body `FUN_801F6A04` (Cort's Guilty Cross), six arms.
+// See `ghidra/scripts/funcs/overlay_cast_guilty_cross_0944_801f6a04.txt`.
+// 0x801F6D48 / 0x801F6D60, on the countdown's expiry, on the zeroed stack
+// trios: both records open on a `WORLD_SET` and lock to the camera.
+const E944_1: [ModuleSpawn; 2] = [spawn(0x801F8098, ZEROED), spawn(0x801F80F0, ZEROED)];
+// 0x801F6F84..0x801F6FB4, on the victim's `+0x34` / `+0x44`, after the arm
+// flushes the pool (`0x801F6E50`); the third is lifted ([`capture_spawn_pokes`]).
+const E944_2: [ModuleSpawn; 3] = [
+    spawn(0x801F8148, SpawnAnchor::Victim),
+    spawn(0x801F8198, SpawnAnchor::Victim),
+    spawn(0x801F81E8, SpawnAnchor::Victim),
+];
+// 0x801F71F8..0x801F7228, on the victim, as the hit lands.
+const E944_3: [ModuleSpawn; 3] = [
+    spawn(0x801F8210, SpawnAnchor::Victim),
+    spawn(0x801F82E0, SpawnAnchor::Victim),
+    spawn(0x801F8320, SpawnAnchor::Victim),
+];
+
+// PROT 0961's body `FUN_801F69D8` (Final Crisis / Dead End Crisis), three
+// arms. See `ghidra/scripts/funcs/overlay_cast_dead_end_crisis_0961_801f69d8.txt`.
+// 0x801F6C64, arm 0: on the caster's `+0x34` / `+0x44`.
+const E961_0: [ModuleSpawn; 1] = [spawn(0x801F7AB4, SpawnAnchor::Caster { y: 0 })];
+/// The point PROT 0961's arms 2 and 3 seat on: the caster's trio, lowered
+/// `0x200` on height and depth when the first formation monster is `0xB5`
+/// (`bne v0,s6` at `0x801F6F54`, `bne v1,v0` at `0x801F7168`).
+const E961_LOWERED: SpawnAnchor = SpawnAnchor::CasterShifted {
+    dy: -0x200,
+    dz: -0x200,
+};
+const E961_LEVEL: SpawnAnchor = SpawnAnchor::CasterShifted { dy: 0, dz: 0 };
+const E961_2_RECORDS: [u32; 3] = [0x801F7CA0, 0x801F7D00, 0x801F7D60];
+const E961_3_RECORDS: [u32; 11] = [
+    0x801F7EDC, 0x801F7F30, 0x801F7F84, 0x801F7FD8, 0x801F8048, 0x801F802C, 0x801F8094, 0x801F80FC,
+    0x801F8164, 0x801F81B0, 0x801F81FC,
+];
+const fn e961(records: [u32; 3], anchor: SpawnAnchor) -> [ModuleSpawn; 3] {
+    [
+        spawn(records[0], anchor),
+        spawn(records[1], anchor),
+        spawn(records[2], anchor),
+    ]
+}
+const fn e961_3(anchor: SpawnAnchor) -> [ModuleSpawn; 11] {
+    let r = E961_3_RECORDS;
+    [
+        spawn(r[0], anchor),
+        spawn(r[1], anchor),
+        spawn(r[2], anchor),
+        spawn(r[3], anchor),
+        spawn(r[4], anchor),
+        spawn(r[5], anchor),
+        spawn(r[6], anchor),
+        spawn(r[7], anchor),
+        spawn(r[8], anchor),
+        spawn(r[9], anchor),
+        spawn(r[10], anchor),
+    ]
+}
+// 0x801F6F88..0x801F6FB8, arm 2's pass.
+const E961_2: [ModuleSpawn; 3] = e961(E961_2_RECORDS, E961_LOWERED);
+const E961_2_LEVEL: [ModuleSpawn; 3] = e961(E961_2_RECORDS, E961_LEVEL);
+// 0x801F719C..0x801F728C, arm 3's pass, after its pool flush (`0x801F7134`).
+const E961_3: [ModuleSpawn; 11] = e961_3(E961_LOWERED);
+const E961_3_LEVEL: [ModuleSpawn; 11] = e961_3(E961_LEVEL);
+/// The first formation monster PROT 0961's arms 2 and 3 lower their point
+/// for.
+const E961_LOWERED_FORMATION: u8 = 0xB5;
+
 /// The capture-class entries whose spawns are seated per arm instead of by
 /// the pager.
-pub const CAPTURE_SPAWN_ENTRIES: [u32; 3] = [938, 962, 966];
+pub const CAPTURE_SPAWN_ENTRIES: [u32; 7] = [938, 940, 944, 946, 961, 962, 966];
+
+/// Halfword stores a capture arm makes into a part it has just seated, as
+/// `(actor offset, value)`, applied after the part's seat run: PROT 0944's
+/// arm 2 parks the handle of `0x801F81E8` at `0x801F836C` and stores
+/// `+0x16 = -0x1200`, `+0x42 = 1` (`0x801F6FBC..0x801F6FD0`).
+pub fn capture_spawn_pokes(prot_entry: u32, record: u32) -> &'static [(u16, u16)] {
+    match (prot_entry, record) {
+        (944, 0x801F_81E8) => &[(0x16, 0xEE00), (0x42, 1)],
+        _ => &[],
+    }
+}
+
+/// A capture arm's spawn made on a pass counted by the body's own frame
+/// counter: PROT 0940's word `0x801F8650`, which arms 2, 4 and 5 read and
+/// bump once a pass and arms 1 and 3 zero as they pass
+/// ([`capture_arm_resets_pass_counter`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CountedArmSpawns {
+    /// The spawns go in on a pass whose counter, read before the bump, has
+    /// none of these bits set.
+    pub mask: u32,
+    pub spawns: &'static [ModuleSpawn],
+    /// An `efect.dat` pool spawn `FUN_801DFDF0(id, caster + 0x34, caster[+0x46])`
+    /// made the same way, `(id, mask)`.
+    pub effect: Option<(u8, u32)>,
+}
+
+/// The counted spawns capture-class module `prot_entry`'s arm `phase` makes
+/// on every pass, held or not:
+///
+/// | Arm | Counter test | Calls |
+/// |---:|---|---|
+/// | 0940 2 | `& 3`, then `& 7` (`0x801F7440` / `0x801F7470`) | effect `3` on the caster (`0x801F7460`); `0x801F8370` |
+/// | 0940 4, 5 | `& 7` (`0x801F75A4` / `0x801F7708`) | `0x801F84EC` |
+pub fn capture_arm_counted(prot_entry: u32, phase: u8) -> Option<CountedArmSpawns> {
+    match (prot_entry, phase) {
+        (940, 2) => Some(CountedArmSpawns {
+            mask: 7,
+            spawns: &E940_2_COUNTED,
+            effect: Some((3, 3)),
+        }),
+        (940, 4 | 5) => Some(CountedArmSpawns {
+            mask: 7,
+            spawns: &E940_45_COUNTED,
+            effect: None,
+        }),
+        _ => None,
+    }
+}
+
+/// Whether capture-class module `prot_entry`'s arm `phase` zeroes the body's
+/// frame counter as it passes: PROT 0940's arms 1 and 3
+/// (`sw zero,-0x79B0` at `0x801F73A8` / `0x801F7568`).
+pub fn capture_arm_resets_pass_counter(prot_entry: u32, phase: u8) -> bool {
+    matches!((prot_entry, phase), (940, 1 | 3))
+}
 
 /// Whether the body `body` of capture-class module `prot_entry` (the
 /// trampoline's pick for the queued action, [`crate::cast_module_ticks::capture_tick_body`])
@@ -499,6 +672,10 @@ pub const CAPTURE_SPAWN_ENTRIES: [u32; 3] = [938, 962, 966];
 pub fn capture_spawns_per_arm(prot_entry: u32, body: Option<u32>) -> bool {
     match prot_entry {
         938 => body == Some(0x801F_69EC),
+        940 => body == Some(0x801F_7240),
+        944 => body == Some(0x801F_6A04),
+        946 => true,
+        961 => true,
         962 => body == Some(0x801F_69D8),
         966 => true,
         _ => false,
@@ -508,9 +685,18 @@ pub fn capture_spawns_per_arm(prot_entry: u32, body: Option<u32>) -> bool {
 /// The capture-class arms that flush the part pool (`jal 0x80050E74`) on
 /// their pass, ahead of their own spawns: every part the module seated
 /// through `FUN_80050ED4` gets its halt bit. PROT 0938's arms 2 and 3
-/// (`0x801F6DE4`, `0x801F6FA4`).
+/// (`0x801F6DE4`, `0x801F6FA4`), PROT 0940's arm 7 (`0x801F7870`) and
+/// PROT 0944's arms 2 and 4 (`0x801F6E50`, `0x801F7268`).
+///
+/// PROT 0946's arm 6 is the same reach by another route: it sets the halt
+/// bit on every word of its handle table `0x801F7F30` (`0x801F7174..
+/// 0x801F71A8`), which holds the stager's waves, the wave caller and arm 5's
+/// nine records - every part a Big Wave cast has seated.
 pub fn capture_arm_flushes_pool(prot_entry: u32, phase: u8) -> bool {
-    matches!((prot_entry, phase), (938, 2 | 3))
+    matches!(
+        (prot_entry, phase),
+        (938, 2 | 3) | (940, 7) | (944, 2 | 4) | (946, 6) | (961, 1 | 3 | 5)
+    )
 }
 
 /// The spawn calls capture-class module `prot_entry`'s arm `phase` makes on
@@ -523,14 +709,54 @@ pub fn capture_arm_spawns_every(prot_entry: u32, phase: u8) -> &'static [ModuleS
     }
 }
 
+/// [`capture_arm_spawns`] for the action the cast runs: PROT 0946's arm 0
+/// seats its stager caller on Call Wave's branch only (Big Wave's,
+/// `0x801F6B08..0x801F6C34`, seats nothing), the branch
+/// [`super::wave_camera`] keys on the action id.
+pub fn capture_arm_spawns_for(prot_entry: u32, phase: u8, action: u8) -> &'static [ModuleSpawn] {
+    match (prot_entry, phase) {
+        (946, 0) if action == 0x56 => &[],
+        _ => capture_arm_spawns(prot_entry, phase),
+    }
+}
+
+/// [`capture_arm_spawns_for`] in a battle whose first formation monster is
+/// `first_monster` (`0x8007BD0C`): PROT 0961's arms 2 and 3 seat level with
+/// the caster outside the evolved Cort's formation.
+pub fn capture_arm_spawns_in(
+    prot_entry: u32,
+    phase: u8,
+    action: u8,
+    first_monster: u8,
+) -> &'static [ModuleSpawn] {
+    match (prot_entry, phase) {
+        (961, 2) if first_monster != E961_LOWERED_FORMATION => &E961_2_LEVEL,
+        (961, 3) if first_monster != E961_LOWERED_FORMATION => &E961_3_LEVEL,
+        _ => capture_arm_spawns_for(prot_entry, phase, action),
+    }
+}
+
 /// The spawn calls capture-class module `prot_entry`'s arm `phase` makes on
-/// its pass; empty for an arm that makes none.
+/// its pass; empty for an arm that makes none. A call one action's branch
+/// alone makes is listed ([`capture_arm_spawns_for`] filters it).
 pub fn capture_arm_spawns(prot_entry: u32, phase: u8) -> &'static [ModuleSpawn] {
     match (prot_entry, phase) {
+        (940, 1) => &E940_1,
+        (940, 3) => &E940_3,
+        (944, 1) => &E944_1,
+        (944, 2) => &E944_2,
+        (944, 3) => &E944_3,
+        (946, 0) => &E946_0_CALL,
+        (946, 4) => &E946_4,
+        (946, 5) => &E946_5,
+        (946, 6) => &E946_6,
         (938, 0) => &E938_0,
         (938, 1) => &E938_1,
         (938, 2) => &E938_2,
         (938, 3) => &E938_3,
+        (961, 0) => &E961_0,
+        (961, 2) => &E961_2,
+        (961, 3) => &E961_3,
         (962, 0) => &E962_0,
         (966, 2) => &E966_2,
         (966, 4) => &E966_4,

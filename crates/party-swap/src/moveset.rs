@@ -276,6 +276,7 @@ mod tests {
 
     fn anim(tag: u8) -> MonsterAnimation {
         MonsterAnimation {
+            variant_track: Default::default(),
             action_id: tag,
             rate: 2,
             attach_key: 0,

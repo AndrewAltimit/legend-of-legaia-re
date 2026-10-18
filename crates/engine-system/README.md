@@ -63,6 +63,9 @@ code spans, since rustdoc cannot resolve a link into a dependent crate.
   sound-source arm, the sound-stream request pair, the scene control block's
   reset values, the boot offset table, the identity index-list init and the
   dialog line count). The reset's body over a `World` is in `engine-core`.
+- **Story flags** - `story_flag_state` (the retail system / story flag
+  arrays and the story-flag bit image the scripts test and set, held as one
+  unit on `World`).
 - **RAM + frame census** - `ram_map` (the registry of well-known PSX RAM
   cells the cheat applier targets) and `draw_census` (a per-draw census of a
   host's frame keyed the way a retail display list is). The codified

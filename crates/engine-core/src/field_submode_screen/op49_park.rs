@@ -2,7 +2,6 @@
 //! and the board entries the parked instruction carries.
 
 use super::*;
-use legaia_engine_field::man_field_scripts::OP49_PARK_PRESERVING_SUB_OPS;
 
 impl World {
     /// Which field-VM context is stepping right now - the owner an op-`0x49`
@@ -77,8 +76,7 @@ impl World {
     /// REF: FUN_801F1F4C, FUN_801ED308, FUN_80020DE0
     pub fn scripted_menu_open_pending(&self) -> bool {
         let s = &self.field_vm.submode_screen;
-        s.park_sub_op
-            .is_some_and(|k| OP49_PARK_PRESERVING_SUB_OPS.contains(&k))
+        s.park_sub_op.is_some_and(op49_sub_op_is_menu_press)
             && !s.scripted_menu_opened
             && self.scene_mode_takes_menu_open()
             && self.cutscene.card.is_none()
