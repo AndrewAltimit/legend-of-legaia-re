@@ -13,7 +13,7 @@ use std::path::Path;
 
 use anyhow::{Context, Result};
 use legaia_iso::raw::{RawDisc, USER_DATA_SIZE};
-use legaia_mdec::str_av::{StrAv, StrAvDemuxer};
+use legaia_mdec::str_av::{StrAudio, StrAv, StrAvDemuxer};
 use legaia_xa::demux::ChannelStream;
 use legaia_xa::{BitsPerSample, Channels, DecodeOptions};
 
@@ -120,7 +120,38 @@ pub fn str_movie(bin: &Path, f: &IsoFile) -> Result<StrAv> {
     Ok(demux.finish())
 }
 
+/// A movie soundtrack from `secs` in: the interleaved PCM from the sample
+/// frame at that time (rounded down to a whole L/R pair), empty past the
+/// end. What a movie resumed from a paused frame plays.
+pub fn soundtrack_from(audio: &StrAudio, secs: f64) -> Vec<i16> {
+    let ch = audio.channels.n() as usize;
+    let frame = (secs.max(0.0) * audio.sample_rate as f64) as usize;
+    audio.pcm.get(frame * ch..).unwrap_or(&[]).to_vec()
+}
+
 /// Write `pcm` as a 16-bit WAV.
 pub fn write_wav(path: &Path, pcm: &[i16], channels: Channels, rate: u32) -> Result<()> {
     legaia_xa::write_wav(path, pcm, channels, rate)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_resumed_soundtrack_starts_on_a_whole_sample_frame() {
+        // 10 stereo frames at 10 Hz: frame k is (2k, 2k+1).
+        let audio = StrAudio {
+            pcm: (0..20).collect(),
+            sample_rate: 10,
+            channels: Channels::Stereo,
+            file_no: 1,
+            ch_no: 0,
+        };
+        assert_eq!(soundtrack_from(&audio, 0.0), audio.pcm);
+        // 0.35 s = frame 3.5 -> frame 3, starting on its left sample.
+        assert_eq!(soundtrack_from(&audio, 0.35)[..2], [6, 7]);
+        assert_eq!(soundtrack_from(&audio, 0.35).len(), 14);
+        assert!(soundtrack_from(&audio, 5.0).is_empty());
+    }
 }

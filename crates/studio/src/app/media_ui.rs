@@ -333,12 +333,10 @@ impl App {
             let st = &mut self.media;
             st.playing = true;
             st.since = Some((Instant::now(), from));
-            // The soundtrack starts at frame 0 only; a resumed movie plays
-            // silent from where it was paused.
-            if from == 0
-                && let Some(a) = &m.audio
+            // The soundtrack resumes at the sample the starting frame shows.
+            if let Some(a) = &m.audio
                 && let Err(e) = self.player.play_stream(
-                    a.pcm.clone(),
+                    media::soundtrack_from(a, from as f64 * period),
                     a.sample_rate,
                     a.channels,
                     format!("{sel} soundtrack"),
@@ -351,10 +349,12 @@ impl App {
         if st.playing {
             let (t0, from) = st.since.unwrap_or((Instant::now(), 0));
             // Pace by the soundtrack's own clock when it is playing, the
-            // way the engine's movie player locks frames to the XA cursor.
-            let secs = match (from, self.player.stream_secs()) {
-                (0, Some(s)) => s,
-                _ => from as f64 * period + t0.elapsed().as_secs_f64(),
+            // way the engine's movie player locks frames to the XA cursor;
+            // the stream started at the starting frame's time.
+            let start = from as f64 * period;
+            let secs = match self.player.stream_secs() {
+                Some(s) => start + s,
+                None => start + t0.elapsed().as_secs_f64(),
             };
             let f = (secs / period) as usize;
             if f >= n {

@@ -21,8 +21,8 @@ runtime, and writes only into folders the user chooses.
 | Audio | VAB banks (spans resolved through the DATA_FIELD body chunk) with per-sample play and WAV export; SEQ playback on the `legaia-engine-audio` SPU + sequencer with a chosen bank. |
 | Text | Field dialog read out of the scene MAN script and raw carriers the way `legaia-patcher translate export` reads it, in the language-pack markup and with the build's own codec (accented cells shown as letters on the PAL builds, `legaia_font::latin`); MES messages (Compact: per offset-table message; Records: the `0x1F`-led segments of each record); text export. |
 | Hex | A virtualised hex / ASCII dump of the whole entry. |
-| Characters & monsters | The four party members assembled from their player files (PROT 863..866) with a per-section equipment picker named from the executable's item table, and the monster archive (PROT 867) listed by name as the font draws it, with its element badge; every battle animation clip, and for Vahn, Noa and Gala every Tactical Art by name, plays or steps frame by frame; animated `.glb` export. |
-| Movies & voice | The STR movies (`MOV/*.STR`): frames decoded on demand (Iki MDEC), played paced by their XA soundtrack's clock, PNG frame export; the CD-XA files (`XA/*.XA`) demultiplexed per `(file, channel)` and decoded at their subheader rate, with play and WAV export. Disc images only. |
+| Characters & monsters | The four party members assembled from their player files (PROT 863..866) with a per-section equipment picker named from the build's own executable (`ItemNameTable::from_exe`: the USA table or the French, German or Italian one, accents kept), and the monster archive (PROT 867) listed by name as the font draws it, with its element badge; every battle animation clip, and for Vahn, Noa and Gala every Tactical Art by name, plays or steps frame by frame; animated `.glb` export. |
+| Movies & voice | The STR movies (`MOV/*.STR`): frames decoded on demand (Iki MDEC), played paced by their XA soundtrack's clock (a movie resumed from a paused frame resumes its soundtrack at that frame's sample), PNG frame export; the CD-XA files (`XA/*.XA`) demultiplexed per `(file, channel)` and decoded at their subheader rate, with play and WAV export. Disc images only. |
 | About | Version, license, where `THIRD-PARTY-LICENSES.txt` sits (beside the binary, or beside the macOS `.app`), the keyboard shortcuts. |
 | Extract | The full `legaia-extract` pipeline (`legaia_extract::run`) on a worker thread into a chosen folder, with the CLI's skip options, a progress bar, a log and Cancel; *Export all textures* adds the every-TIM sweep (`--all-textures`: `tim_scan/` as `asset tim-scan` + `tim convert-dir` write it). |
 
@@ -49,9 +49,10 @@ runtime, and writes only into folders the user chooses.
 - **Actors** are `legaia_actor_formats` end to end (`actors`):
   `battle_char_assembly::loadout::build` gives a character's assembled mesh,
   its VRAM band and its clip bank (record[0] actions, the equipment-spliced
-  swings, and the Tactical Arts `arts` resolves from the art bank and the
-  `readef.DAT` ME archives to curated names with the same ladder as the
-  site's characters page, `crates/web-viewer/src/art_clip_bank.rs`);
+  swings, and the Tactical Arts `loadout::decode_art_clips` resolves from
+  the art bank and the `readef.DAT` ME archives to curated names through
+  `legaia_art::clip_ladder`, the same call the site's characters page
+  makes);
   `monster_archive` gives a monster's mesh, its
   texture pool placed as battle slot 0, and its action clips. A monster name
   is shown as the font draws it: cell `0x24` (`$`) is the level mark (`Lv`,
