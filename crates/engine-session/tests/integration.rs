@@ -37,6 +37,7 @@ mod tetsu_spar_picker_disc;
 mod tetsu_spar_somersault;
 mod tile_board_draw_live;
 mod training_battle;
+mod world_map_battle_return_camera;
 mod world_map_camera_offset_oracle;
 mod world_map_door_encounter_disc;
 mod world_map_fog_oracle;

@@ -124,10 +124,22 @@ pub fn camera_before_world_tick(
 /// The camera's half of a world tick, after it: fold this tick's op-`0x45`
 /// events into the controller, advance the retail camera globals, and on a
 /// scene entry reset them (`FUN_80025C24`) so the departing scene's shot
-/// cannot leak into the next.
+/// cannot leak into the next - and on a battle's return to the field, which
+/// retail runs through the same field init.
 ///
-/// REF: FUN_80025C24
+/// REF: FUN_80025C24, FUN_801D6704
 pub fn camera_after_world_tick(camera: &mut Camera, world: &mut World, scene_entered: bool) {
+    // A battle that returned to the field / overworld this tick re-enters
+    // field mode in retail, whose init runs the same reset (`FUN_801D6704`
+    // -> `FUN_80025C24` at `0x801D698C`). It runs ahead of this tick's camera
+    // step so the arrival snap it arms lands on the first field frame: the
+    // camera ticked through the fight with the party's battle seat as its
+    // follow target, and the overworld's standing-player ease would
+    // otherwise hold that focus (clamped to the region corner) until the
+    // player moved.
+    if world.take_field_camera_reseat() {
+        camera.reset_globals_for_scene_entry();
+    }
     camera.route_camera_events(world);
     camera.tick_on_stream(world);
     if scene_entered {

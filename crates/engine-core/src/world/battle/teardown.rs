@@ -518,6 +518,25 @@ impl World {
         // step on the next field tick.
         self.terrain.last_tile = None;
         self.terrain.step_tile = None;
+        // The field init the battle exit re-enters (`FUN_801D6704`) re-centres
+        // the camera window on the saved player tile on the back-from-battle
+        // word (`_DAT_8007B8B8 == 2`, `0x801D6E0C..0x801D6ECC`, `FUN_80017DD4`
+        // at `pos >> 7`) after its unconditional camera reset `FUN_80025C24`
+        // (`0x801D698C`). The window half is the world's; the camera half is
+        // the host camera's, which takes the latch in
+        // `frame_step::camera_after_world_tick`.
+        if matches!(self.mode, SceneMode::Field | SceneMode::WorldMap) {
+            self.recentre_field_window_on_player();
+            self.battle.field_camera_reseat = true;
+        }
+    }
+
+    /// Take the battle exit's camera re-seat latch
+    /// ([`crate::world::BattleState::field_camera_reseat`]): `true` once per
+    /// return to the field or the overworld, on the tick
+    /// [`Self::finish_battle`] restored it.
+    pub fn take_field_camera_reseat(&mut self) -> bool {
+        std::mem::take(&mut self.battle.field_camera_reseat)
     }
 
     /// Complete the field restore [`Self::finish_battle`]'s party-wipe arm
