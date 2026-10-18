@@ -4,7 +4,7 @@
 
 **Project site:** [andrewaltimit.github.io/legend-of-legaia-re](https://andrewaltimit.github.io/legend-of-legaia-re/) - play, browse and patch in the browser, nothing to install.
 
-[![The port in motion: Rim Elm, the world map, Sol Tower, a Gimard summon in battle, a shop, Noa's dance, the slot machine and the Muscle Dome](site/assets/hero-montage.webp)](https://andrewaltimit.github.io/legend-of-legaia-re/)
+[![The port in motion: Rim Elm, the world map, Sol Tower, a Gimard summon in battle, a shop, Noa's dance, the slot machine, the Muscle Dome and the opening movie](site/assets/hero-montage.webp)](https://andrewaltimit.github.io/legend-of-legaia-re/)
 
 https://github.com/user-attachments/assets/aff19b4f-312c-44e2-bd44-3e6d99de2b03
 
