@@ -169,7 +169,8 @@ pub fn equip_screen_draws_for(
         str_at(
             &mut out,
             "Best Equipment",
-            mx + 0x10,
+            // The literal is `"@Best Equipment"`: the blank lead costs a pad.
+            mx + 0x10 + crate::menu::window_painters::menu_string_lead(font),
             my,
             // CLUT 7 like the slot rows: the hand marks the row, the tint only
             // backs the text-cursor fallback.

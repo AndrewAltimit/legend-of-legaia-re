@@ -24,7 +24,26 @@ pub fn title_tab_draws_for(
     label: &str,
 ) -> Vec<TextDraw> {
     let l = font.layout_ascii(label);
-    text_draws_for(&l, (rect.x, rect.y), MENU_TEXT_WHITE)
+    text_draws_for(
+        &l,
+        (rect.x + menu_string_lead(font), rect.y),
+        MENU_TEXT_WHITE,
+    )
+}
+
+/// The byte every menu-overlay literal opens with.
+///
+/// The menu overlay's strings are stored behind a leading `@`
+/// (`"@Equip"`, `"@Best Equipment"`, `"@Use"`, ... in PROT 0899's data
+/// segment). `@` is a blank cell of width `0`, so `FUN_80036888` draws
+/// nothing for it and only advances the pen by the glyph pad: every such
+/// label sits one pixel right of its pen on a retail frame
+/// (`menu_equipment_field`'s `Equip` and `Best Equipment`).
+pub const MENU_STRING_LEAD: u8 = b'@';
+
+/// The pen advance [`MENU_STRING_LEAD`] costs a menu-overlay literal.
+pub fn menu_string_lead(font: &legaia_font::Font) -> i32 {
+    font.advance_of(MENU_STRING_LEAD) as i32
 }
 
 /// Window 33: the same single label, but sourced from a live record.

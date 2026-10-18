@@ -90,16 +90,29 @@ pub fn tab_label_draws(font: &legaia_font::Font, label: &str, pen: (i32, i32)) -
 mod tab_label_tests {
     use super::*;
 
-    /// The label lands at the window content origin with no offset of
-    /// its own - the plaque is positioned around it, not the other way
-    /// round.
+    /// The label is drawn from the window content origin - the plaque is
+    /// positioned around it, not the other way round - and its first
+    /// visible glyph sits one glyph pad right of it: the retail literal is
+    /// `"@Status"`, whose blank `@` costs only the pad.
     #[test]
-    fn label_starts_at_the_content_origin() {
+    fn label_starts_one_lead_past_the_content_origin() {
         let font = legaia_font::synthetic_for_tests();
         let draws = tab_label_draws(&font, "Status", (90, 16));
         assert!(!draws.is_empty());
-        assert_eq!(draws[0].dst.0, 90);
+        let lead = crate::menu::window_painters::menu_string_lead(&font);
+        assert_eq!(draws[0].dst.0, 90 + lead);
         assert_eq!(draws[0].dst.1, 16);
+    }
+
+    /// On the retail font the lead is exactly one pixel: `@` is width `0`.
+    #[test]
+    fn the_lead_is_one_pixel_on_the_retail_widths() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../extracted");
+        let Ok(font) = legaia_font::Font::load_from_extracted(&root) else {
+            eprintln!("[skip] extracted font missing");
+            return;
+        };
+        assert_eq!(crate::menu::window_painters::menu_string_lead(&font), 1);
     }
 
     /// All five tabs ink white (retail staging index 7); none of them

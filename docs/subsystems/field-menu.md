@@ -408,6 +408,15 @@ halfword is `index + 0x7f86`. Only the string primitive reads it (at
 from `gp+0x13c` - so a write just before an ICO / NUM draw is staging the
 *next* string.
 
+The menu overlay's own literals open with `@` (`"@Equip"`, `"@Status"`,
+`"@Best Equipment"`, `"@Use"`, `"@Yes"`, ... in PROT 0899's data segment;
+`FUN_801DCA94` passes `0x801CE9E0`, which reads `@Equip`). `@` is a blank
+cell of width `0`, so STR draws nothing for it and advances the pen by the
+glyph pad alone: each such label's first glyph lands one pixel right of the
+pen its caller passes. Strings from SCUS tables (item, spell and character
+names) carry no lead. Port: `engine-ui::menu::window_painters::menu_string_lead`,
+taken by the title tabs and the Equip screen's `Best Equipment` header.
+
 ### Ink CLUT rows
 
 The staged index selects a 16-colour CLUT at VRAM `(16*(6+index), 510)`. The
