@@ -303,22 +303,24 @@ impl LegaiaRuntime {
     /// Continue / Retry / Quit panel growing back. Routing matches the native
     /// window's `BootUiState::GameOver` arm exactly - one destination.
     pub fn game_over_input(&mut self, _edge: u16) -> String {
-        use legaia_engine_menus::game_over::GameOverOutcome;
-        let Some(session) = self.game_over.as_mut() else {
+        let Some(hold) = self.game_over.as_mut() else {
             return String::new();
         };
-        session.tick();
-        let Some(GameOverOutcome::ReturnToTitle) = session.outcome() else {
-            return String::new();
+        // The session's step, the native window's too: the deferred field
+        // restore (the hold froze the battle frame) and the battle track
+        // stopped on the resolving frame. Without a session the hold has no
+        // world to resolve and simply ends.
+        let resolved = match self.scene_host.session_mut() {
+            Some(s) => s.step_party_wipe_hold(hold),
+            None => {
+                hold.tick();
+                hold.outcome().is_some()
+            }
         };
-        self.game_over = None;
-        if let Some(h) = self.scene_host.host_mut() {
-            h.world.game_over = false;
-            // The wipe teardown defers the actor-table restore + mode flip so
-            // the hold shows the frozen battle frame; complete it here or the
-            // world stays parked in Battle mode with the field return pending.
-            h.world.resolve_game_over_hold();
+        if !resolved {
+            return String::new();
         }
+        self.game_over = None;
         "quit".to_string()
     }
 }

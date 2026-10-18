@@ -1174,13 +1174,16 @@ SIM_PAIRS: list[dict[str, object]] = [
         "`(1, false)` while the native window drew it from a live cursor - "
         "two pictures of a menu that never existed. Pairing the routing "
         "sites, not the draw sites, is what keeps a second destination from "
-        "reappearing on one host only",
+        "reappearing on one host only. The hold's resolve is one session "
+        "step (`BootSession::step_party_wipe_hold`: the deferred field "
+        "restore and the battle track stopped), so neither host spells the "
+        "outcome itself",
         "sites": {
             "native": (NATIVE_BOOT_CUTSCENE, "tick_boot_ui"),
             "web": (WEB_PLAY_BATTLE_SESSION_EXPORTS, "game_over_input"),
         },
         "mode": "symbols_all",
-        "symbols": ["GameOverOutcome::ReturnToTitle"],
+        "symbols": ["step_party_wipe_hold"],
     },
     {
         "what": "dev-menu tick - both hosts drive the shared `DevMenuSession` "

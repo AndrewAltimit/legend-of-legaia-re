@@ -747,27 +747,14 @@ impl PlayWindowApp {
                 true
             }
             BootUiState::GameOver(session) => {
-                use legaia_engine_menus::game_over::GameOverOutcome;
                 // No input arm: retail's wipe path offers the player nothing.
                 // It stores `game_mode = 0x16` + `_DAT_8007BB00 = 1`
                 // (`FUN_8003AEB0` `0x8003B5D0` / `0x8003B5E0`) and the title
-                // overlay takes the screen. The hold below stands in for the
-                // menu-overlay stream retail spends that window on.
-                session.tick();
-                if let Some(GameOverOutcome::ReturnToTitle) = session.outcome() {
-                    // The hold froze the world mid-battle (`finish_battle`
-                    // deferred the field restore so the final battle frame
-                    // stayed up). Complete the deferred restore before the
-                    // title takes the screen, so Continue / New Game starts
-                    // from a field-shaped world.
-                    self.session.host.world.resolve_game_over_hold();
-                    // The wipe left the battle track running; the title
-                    // overlay owns the screen now, so swap the score with
-                    // it. Stop first so a failed title-theme start leaves
-                    // silence rather than the stale battle BGM.
-                    if let Some(bgm) = self.session.bgm.as_mut() {
-                        bgm.stop();
-                    }
+                // overlay takes the screen. The hold stands in for the
+                // menu-overlay stream retail spends that window on; its
+                // resolve (the deferred field restore, the battle track
+                // stopped) is the session's step, the page's too.
+                if self.session.step_party_wipe_hold(session) {
                     self.boot_ui = BootUiState::Title(title_session(
                         rack_has_save(self.card_ports()),
                         self.session.mode_seat.title_row(),
