@@ -558,6 +558,8 @@ pub(super) fn fight_battle(session: &mut NativeSession) -> Option<Run> {
     };
     let mut foe_prev = foe_hp(session);
     let mut foe_dropped_at = 0usize;
+    // Whether the foe has Stoned a party member this battle.
+    let mut stoned_seen = false;
     let mut spent = 0usize;
     for t in 0..BATTLE_TICKS_CAP {
         spent = t;
@@ -758,6 +760,8 @@ pub(super) fn fight_battle(session: &mut NativeSession) -> Option<Run> {
             eprintln!("    [battle] t={t}: {}", battle_snapshot(session));
         }
         let w = &session.host.world;
+        let n_party = w.party.party_count.clamp(1, 3) as usize;
+        stoned_seen |= (0..n_party).any(|i| stoned(w, i));
         if w.game_over_hold || w.game_over {
             if trace {
                 eprintln!("    [battle] wiped after {t} ticks");
@@ -769,8 +773,21 @@ pub(super) fn fight_battle(session: &mut NativeSession) -> Option<Run> {
             if trace {
                 eprintln!("    [battle] lost to a boss of element {boss_element:?}");
             }
+            // A boss that Stoned a member beat the party with the stone, not
+            // its element: Zora's Glare petrifies one member a cast, and the
+            // `0x5A` wipe scan counts a Stoned member as down, so a party
+            // with HP to spare (Noa at 661 beside two statues) still wipes.
+            // The reload wears the guard against that instead.
             if boss_element.is_some() {
-                LOST_TO_ELEMENT.with(|l| l.set(boss_element));
+                let key = if stoned_seen {
+                    Some(STONE_GUARD_KEY)
+                } else {
+                    boss_element
+                };
+                if trace {
+                    eprintln!("    [battle] guard to wear on the reload: {key:?}");
+                }
+                LOST_TO_ELEMENT.with(|l| l.set(key));
             }
             let aoe = AOE_HIT.with(std::cell::Cell::get);
             if let Some(id) = boss

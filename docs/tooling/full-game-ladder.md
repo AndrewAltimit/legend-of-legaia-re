@@ -836,6 +836,21 @@ biggest-hit-seen larger than a member's whole HP when it sizes "in danger":
 holding everyone near full against a hit no heal outlasts had the guarded
 hand spending most turns on items.
 
+A boss that **Stoned** a member is guarded against the stone instead of its
+element. Zora (`taiku`, monster 169) alternates Darkness Typhoon with Glare,
+whose opposed INT roll petrifies one member a cast
+([battle-formulas.md](../subsystems/battle-formulas.md#selector-9---opposed-int-roll-stone)),
+and the `0x5A` wipe scan counts a Stoned member as down: the party wipes
+with HP to spare once the last member standing is turned (Noa at 661 beside
+two statues). The reload wears Stone Guard (passive `0x1A`, Stone Amulet;
+Master Guard, the Wonder Amulet, counts too) in the third Goods slot. The
+fighter also treats a member that cannot take its turn (Numb, Sleep, Stone,
+Faint) as out of the round: it is neither the "weaker healer" a group heal
+is left to nor a heal target - the hand once left Spoon to a Stoned Gala
+for two rounds while Typhoon took Vahn and Noa from 791 and 717. From the
+seed-5 run's own `zora_castle` checkpoint the stretch clears on 9 of 9
+dealt streams (14 reloads) where it cleared on 6 of 9 (32 reloads) before.
+
 Guarded, the hand still beats Songi only about half the time. The losses
 are the cannon phase: below half HP Songi arms its party-wide cast
 (`monster_ai`'s `0xB3` arm, on a physical-strike turn) and every turn after

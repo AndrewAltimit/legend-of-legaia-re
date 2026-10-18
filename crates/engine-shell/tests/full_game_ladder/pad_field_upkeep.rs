@@ -568,7 +568,28 @@ thread_local! {
 /// tests (`FUN_801DDB30`; Ebony Jewel, Dark Stone and Dark Talisman for
 /// Dark). Elements past 6 have no guard.
 pub(super) fn guard_passive(element: u8) -> Option<u8> {
+    if element == STONE_GUARD_KEY {
+        return Some(STONE_GUARD);
+    }
     (element <= 6).then_some(0x1D + element)
+}
+
+/// The [`LOST_TO_ELEMENT`] value a wipe records when the boss Stoned a
+/// member (`+0x16E & 4`, which the `0x5A` wipe scan counts as down): the
+/// reload then wears [`STONE_GUARD`] rather than the boss's element guard.
+/// Above every element byte (`0..=7`).
+pub(super) const STONE_GUARD_KEY: u8 = 0x80;
+
+/// Stone Guard, the accessory passive that nullifies Stone (Stone Amulet;
+/// `docs/formats/accessory-passive-table.md`, mask `0xFFFB`).
+pub(super) const STONE_GUARD: u8 = 0x1A;
+
+/// Master Guard (Wonder Amulet) nullifies every status, Stone included.
+const MASTER_GUARD: u8 = 0x1C;
+
+/// Does a worn or carried passive answer the guard `want`?
+fn guards(passive: Option<u8>, want: u8) -> bool {
+    passive == Some(want) || (want == STONE_GUARD && passive == Some(MASTER_GUARD))
 }
 
 /// The Goods slot a guard goes into: the third (engine slot 7), the way a
@@ -586,7 +607,7 @@ pub(super) fn guard_item_for(w: &legaia_engine_core::world::World, element: u8) 
         .inventory
         .iter()
         .filter(|&(&id, &qty)| {
-            qty > 0 && w.tables.accessory_passives.passive_index(id) == Some(want)
+            qty > 0 && guards(w.tables.accessory_passives.passive_index(id), want)
         })
         .max_by_key(|&(&id, &qty)| (qty, std::cmp::Reverse(id)))
         .map(|(&id, _)| id)
@@ -602,7 +623,7 @@ pub(super) fn unguarded_members(w: &legaia_engine_core::world::World, element: u
         .filter(|&s| {
             w.party.roster.members.get(usize::from(s)).is_some_and(|m| {
                 !m.equipment().slots[5..].iter().any(|&id| {
-                    id != 0 && w.tables.accessory_passives.passive_index(id) == Some(want)
+                    id != 0 && guards(w.tables.accessory_passives.passive_index(id), want)
                 })
             })
         })
