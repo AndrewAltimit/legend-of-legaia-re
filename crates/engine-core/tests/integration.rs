@@ -200,6 +200,7 @@ mod map01_clut_fx_disc;
 mod map01_flyin_camera;
 mod map01_overworld_walk_disc;
 mod map03_conditional_walls_disc;
+mod map03_floating_castle_disc;
 mod map_display_disc;
 mod menu_data_wiring;
 mod menu_data_wiring_disc;

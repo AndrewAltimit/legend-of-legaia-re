@@ -851,9 +851,15 @@ impl World {
                 // variant flies it back and raises `0x467` / drops `0x466`,
                 // the flags `station` P1[15] sells the ride on. Without the
                 // tick the cart never returned.
+                // The driver's height arm (`0x8003BC3C..0x8003BCF4`) runs on
+                // the overworld too - `FUN_8003BC08` has no world-map gate.
+                // Without it every placement snaps to the floor sample, so
+                // `map03`'s floating castle (P1[1]: `31 1D` + `4C 42 84 03`,
+                // `+0x16 = -(+0x8E)` = 900 up) drifts along the ground.
                 // REF: FUN_8003BC08, FUN_80038158
                 if actor_tick_fired {
                     self.tick_field_npc_ambient();
+                    self.tick_field_npc_heights();
                 }
                 // The per-actor anim tick: the overworld's MAN actors play
                 // the kingdom bundle's slot-4 clips through `FUN_800204F8`

@@ -2262,6 +2262,20 @@ on `World::object_live_models` (the table op `0x0E` writes) and the seat on
 `World::object_draw_displacements`; the native landmark pass and the browser
 page's overworld placements both draw a landmark's first stamp from the two.
 
+**An overworld MAN actor's height is the actor driver's, as in a field.**
+`FUN_8003BC08` runs its height arm (`0x8003BC3C..0x8003BCF4`) on every
+mode-3 actor with no world-map gate: a culled actor (`+0x10 & 2`) keeps its
+Y, one carrying `0x20000000` takes `+0x16 = -(+0x8E)`, and the rest snap or
+glide to the floor sample `FUN_80019278`. Zora's Floating Castle is `map03`
+`P1[1]`: its prologue picks one of four seats on the story word
+`0x56D..0x570`, raises the bit (`31 1D`) and sets `+0x8E = 900`
+(`4C 42 84 03`), and its motion stream drifts it across the kingdom; a retail
+`map03` capture holds the actor (pool model 49) at `(8256, -900, 6304)`. The
+Karisto cart (`map02` `P1[3..5]`, `map03` `P1[3]` / `P1[4]`) holds `228` the
+same way. The port runs `World::tick_field_npc_heights` on the world-map tick
+as the field tick does; disc-gated
+`crates/engine-core/tests/map03_floating_castle_disc.rs`.
+
 ### Placing the continent terrain (engine port)
 
 #### The ground is a heightfield
