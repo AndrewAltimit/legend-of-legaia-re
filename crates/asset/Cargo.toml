@@ -30,6 +30,7 @@ legaia-bytes.workspace = true
 legaia-container-formats.workspace = true
 legaia-disc-audit.workspace = true
 legaia-game-tables.workspace = true
+legaia-iso.workspace = true
 legaia-lzs.workspace = true
 legaia-minigame-formats.workspace = true
 legaia-overlay-images.workspace = true

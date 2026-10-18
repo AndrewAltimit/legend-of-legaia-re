@@ -77,6 +77,7 @@ TITLE_OVERRIDES: dict[str, str] = {
     "minigames": "Play Legend of Legaia Minigames in the Browser",
     "world": "Legend of Legaia World Guide - Towns, Enemies, Shops & Fishing",
     "world-overview": "Legend of Legaia World Map in 3D - WebGL Viewer",
+    "disc-map": "Legend of Legaia Disc Map - Every Sector, File and PROT.DAT Entry",
     "shops": "Legend of Legaia Shops & Vendors - Full Inventories and Prices",
     "arts": "Legend of Legaia Tactical Arts List - Inputs, AP & Damage",
     "magic": "Legend of Legaia Seru Magic & Summons - Every Cast in 3D",
@@ -135,6 +136,11 @@ DESCRIPTIONS: dict[str, str] = {
         "town, and field scene rendered in WebGL from your own disc image, "
         "with VR support."
     ),
+    "disc-map": (
+        "An interactive map of the Legend of Legaia disc: every ISO9660 file and "
+        "every PROT.DAT entry as nested boxes sized by sector count, coloured by "
+        "format and linked to its format documentation."
+    ),
     "shops": (
         "Every shop and vendor in Legend of Legaia with full inventories and "
         "prices, joined from the game's own item, weapon, and armor tables."
@@ -192,7 +198,7 @@ DESCRIPTIONS: dict[str, str] = {
 # they get WebApplication JSON-LD and og:type=website.
 APP_PAGE_KEYS: set[str] = {
     "play", "viewer", "media", "minigames", "monsters", "characters",
-    "npcs", "world-overview", "tooling/rom-patcher",
+    "npcs", "world-overview", "disc-map", "tooling/rom-patcher",
     "tooling/translation-workbench",
 }
 
@@ -384,6 +390,7 @@ WIDE_PAGES: set[str] = {
     "viewer",
     "media",
     "world-overview",
+    "disc-map",
     "reference/music-tracks",
     "reference/scene-names",
     "tooling/rom-patcher",
@@ -394,6 +401,7 @@ WIDE_PAGES: set[str] = {
 # docs column and its reading measure; only a `section.doc-section.breakout`
 # spans the wide column. See "Column width policy" in css/styles.css.
 PROSE_WIDE_PAGES: set[str] = {
+    "disc-map",
     "reference/music-tracks",
     "reference/scene-names",
 }
@@ -529,6 +537,7 @@ PAGES: list[tuple[str, str, str, str]] = [
     ("characters.html",            "Characters (WASM)",             "characters",                 "characters.html"),
     ("npcs.html",                  "NPCs (WASM)",                   "npcs",                       "npcs.html"),
     ("world-overview.html",        "World overview",                "world-overview",             "world-overview.html"),
+    ("disc-map.html",              "Disc map",                      "disc-map",                   "disc-map.html"),
     # depth = 1
     # User guides (release-binary walkthroughs, mirrored from docs/guides/)
     ("guides/getting-started.html", "Getting started (release tools)", "guides/getting-started",     "guides/getting-started.html"),

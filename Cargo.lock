@@ -1782,6 +1782,7 @@ dependencies = [
  "legaia-container-formats",
  "legaia-disc-audit",
  "legaia-game-tables",
+ "legaia-iso",
  "legaia-lzs",
  "legaia-minigame-formats",
  "legaia-overlay-images",

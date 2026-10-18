@@ -186,6 +186,7 @@ The format-aware extractor:
 
 ```bash
 asset categorize     <DIR> [--out categorize.json]    # per-class breakdown
+asset disc-map       <disc.bin> [--out f.json]        # layout map (files, PROT entries, classes) for site/disc-map.json
 asset extract        <file> --out <out_dir>           # streaming-format chunks → individual files
 asset stream         <file>                           # walk DATA_FIELD chunks, no extraction
 asset describe       <file>                           # container TOC (player.lzs-style descriptor header)

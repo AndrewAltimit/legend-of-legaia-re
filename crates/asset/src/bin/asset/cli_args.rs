@@ -1115,6 +1115,20 @@ pub(super) enum Cmd {
         #[arg(long)]
         json: bool,
     },
+
+    /// Write the disc's layout map: every ISO9660 file and directory extent
+    /// with its LBA range, and inside PROT.DAT every entry with its CDNAME
+    /// block, sector range and `categorize` format class.
+    ///
+    /// Layout metadata only - names, LBAs, sizes, classes; no asset bytes.
+    /// Feeds the static site's disc-map page (`site/disc-map.json`).
+    DiscMap {
+        /// Raw Mode2/2352 disc image (`.bin`).
+        disc: PathBuf,
+        /// JSON output path; stdout when omitted.
+        #[arg(short, long)]
+        out: Option<PathBuf>,
+    },
 }
 
 #[derive(Subcommand)]

@@ -4,7 +4,7 @@ Byte-level specifications for every format on the Legend of Legaia disc. Each pa
 
 **Read the page for a format before writing a parser against it.** Several of these look like their standard PlayStation counterparts and are not: the TMD mesh variant uses its own magic and primitive grouping, the SEQ meta-event encoding omits MIDI's length field, and the same pack layout appears under three names.
 
-New here? [`../overview.md`](../overview.md) covers the project as a whole; this page is the index into the formats.
+New here? [`../overview.md`](../overview.md) covers the project as a whole; this page is the index into the formats. The site's [disc map](https://andrewaltimit.github.io/legend-of-legaia-re/disc-map.html) draws the whole disc as nested boxes - each ISO9660 file and each `PROT.DAT` entry sized by its sector count, coloured by format family and linked to its page here. Its data is `site/disc-map.json`, layout metadata only, written by `asset disc-map <disc.bin> --out site/disc-map.json`.
 
 ## How the layers nest
 
