@@ -319,3 +319,50 @@ fn real_disc_search_and_streamed_media() {
         .expect("frame decodes");
     assert_eq!(rgba.len(), (w * h * 4) as usize);
 }
+
+/// Equipment names come from the opened build's own executable: the USA
+/// read through `from_exe` is the same table as `from_scus`, and a PAL disc
+/// (`LEGAIA_PAL_DISC_BIN`, optional) names its items, accents included.
+#[test]
+fn equipment_names_per_build() {
+    use legaia_game_tables::item_names::ItemNameTable;
+    let Some(bin) = disc() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN not set; skipping equipment-name test");
+        return;
+    };
+    let usa = legaia_studio::Library::open(&bin).expect("load USA disc");
+    let scus = usa.executable().expect("SCUS");
+    assert_eq!(
+        ItemNameTable::from_exe(&scus, "SCUS_942.54"),
+        ItemNameTable::from_scus(&scus)
+    );
+    let Some(pal) = std::env::var_os("LEGAIA_PAL_DISC_BIN")
+        .filter(|v| !v.is_empty())
+        .map(PathBuf::from)
+    else {
+        eprintln!("[skip] LEGAIA_PAL_DISC_BIN not set; USA half only");
+        return;
+    };
+    // The same options go unnamed on both builds (the table's empty slots).
+    let unnamed = |lib: &legaia_studio::Library| -> Vec<String> {
+        legaia_studio::actors::character_catalogs(lib)
+            .expect("catalogs")
+            .iter()
+            .flat_map(|c| c.sections.iter().flat_map(|(_, ids)| ids.iter()))
+            .filter(|(id, n)| *id != 0 && n.starts_with("id "))
+            .map(|(_, n)| n.clone())
+            .collect()
+    };
+    let lib = legaia_studio::Library::open(&pal).expect("load PAL disc");
+    assert_eq!(
+        unnamed(&lib),
+        unnamed(&usa),
+        "PAL options named as on the USA disc"
+    );
+    let exe = lib.executable().expect("PAL executable");
+    let table = ItemNameTable::from_exe(&exe, lib.exe.as_deref().unwrap()).expect("PAL table");
+    assert!(
+        (0..=255u8).any(|i| table.name(i).is_some_and(|n| !n.is_ascii())),
+        "some PAL item name carries an accented letter"
+    );
+}

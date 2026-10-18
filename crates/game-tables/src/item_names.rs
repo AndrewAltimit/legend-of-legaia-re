@@ -43,6 +43,32 @@ pub const RECORD_STRIDE: usize = 0x0C;
 /// Number of item ids the table covers (`0x00..=0xFF`).
 pub const ITEM_COUNT: usize = 256;
 
+/// The USA boot executable.
+pub const USA_EXE: &str = "SCUS_942.54";
+
+/// The item table's base on the measured PAL builds (French, German,
+/// Italian). The pointer-table region drifts per language, so these are
+/// located, not shift-computed (`docs/tooling/pal-localizations.md`); the
+/// translation lift pins the same bases.
+pub const PAL_TABLE_VAS: [(&str, u32); 3] = [
+    ("SCES_019.44", 0x8007_4C4C),
+    ("SCES_019.45", 0x8007_5360),
+    ("SCES_019.46", 0x8007_5130),
+];
+
+/// The item table's base on build `exe` (its boot executable's name):
+/// [`TABLE_VA`] on the USA build, [`PAL_TABLE_VAS`] on the measured PAL
+/// ones, `None` otherwise.
+pub fn table_va_for_exe(exe: &str) -> Option<u32> {
+    if exe == USA_EXE {
+        return Some(TABLE_VA);
+    }
+    PAL_TABLE_VAS
+        .iter()
+        .find(|(name, _)| *name == exe)
+        .map(|&(_, va)| va)
+}
+
 /// PSX-EXE `t_addr` -> file-offset resolver. `SCUS_942.54` loads its data
 /// segment at `t_addr` from file offset `0x800`. (Same shape as the resolver
 /// in `legaia_art::arts_table`; kept local so this crate has no art dep.)
@@ -71,11 +97,23 @@ impl ExeMap {
     }
 }
 
+/// The character a string byte draws: printable ASCII as itself, and with
+/// `accents` (a PAL executable) a high byte as the accented letter its font
+/// cell draws (`legaia_font::latin`). Other bytes are dropped. The USA read
+/// keeps `accents` off, so its strings are exactly the printable ASCII.
+fn glyph_char(b: u8, accents: bool) -> Option<char> {
+    match b {
+        0x20..=0x7E => Some(b as char),
+        0x80..=0xFF if accents => legaia_font::latin::cell_for_byte(b).and_then(|c| c.ch),
+        _ => None,
+    }
+}
+
 /// Read an item name string at `va`, stripping MES control prefixes (`0xCE XX`
 /// colour controls, the leading `0x01` icon escape, any other control byte)
 /// and trimming surrounding whitespace. Returns `None` if the pointer is out
 /// of range or the decoded name is empty.
-fn read_name(scus: &[u8], map: &ExeMap, va: u32) -> Option<String> {
+fn read_name(scus: &[u8], map: &ExeMap, va: u32, accents: bool) -> Option<String> {
     let start = map.off(va)?;
     let mut out = String::new();
     let mut i = start;
@@ -92,8 +130,8 @@ fn read_name(scus: &[u8], map: &ExeMap, va: u32) -> Option<String> {
             }
             continue;
         }
-        if (0x20..0x7F).contains(&b) {
-            out.push(b as char);
+        if let Some(c) = glyph_char(b, accents) {
+            out.push(c);
         }
         i += 1;
     }
@@ -107,7 +145,7 @@ fn read_name(scus: &[u8], map: &ExeMap, va: u32) -> Option<String> {
 /// resets"; descriptions are the only item-table strings that use it).
 ///
 /// REF: FUN_801d0f1c (description draw at `WY + 0x10`, staged CLUT 7).
-fn read_desc(scus: &[u8], map: &ExeMap, va: u32) -> Option<String> {
+fn read_desc(scus: &[u8], map: &ExeMap, va: u32, accents: bool) -> Option<String> {
     let start = map.off(va)?;
     let mut out = String::new();
     let mut i = start;
@@ -128,8 +166,8 @@ fn read_desc(scus: &[u8], map: &ExeMap, va: u32) -> Option<String> {
             }
             continue;
         }
-        if (0x20..0x7F).contains(&b) {
-            out.push(b as char);
+        if let Some(c) = glyph_char(b, accents) {
+            out.push(c);
         }
         i += 1;
     }
@@ -207,15 +245,28 @@ impl ItemNameTable {
     /// Parse the item-name table out of a `SCUS_942.54` image. Returns `None`
     /// if the image isn't a PSX-EXE or the table address is out of range.
     pub fn from_scus(scus: &[u8]) -> Option<Self> {
+        Self::read(scus, TABLE_VA, false)
+    }
+
+    /// Parse the table out of the boot executable named `exe_name`
+    /// (`SCUS_942.54`, or one of the measured PAL builds of
+    /// [`table_va_for_exe`]). The PAL strings keep their accented letters.
+    /// `None` for a build whose table base is not known.
+    pub fn from_exe(exe: &[u8], exe_name: &str) -> Option<Self> {
+        let va = table_va_for_exe(exe_name)?;
+        Self::read(exe, va, exe_name != USA_EXE)
+    }
+
+    fn read(scus: &[u8], table_va: u32, accents: bool) -> Option<Self> {
         let map = ExeMap::parse(scus)?;
         let mut names = Vec::with_capacity(ITEM_COUNT);
         let mut descs = Vec::with_capacity(ITEM_COUNT);
         for id in 0..ITEM_COUNT {
-            let rec = map.off(TABLE_VA + (id * RECORD_STRIDE) as u32)?;
+            let rec = map.off(table_va + (id * RECORD_STRIDE) as u32)?;
             let name_ptr = u32::from_le_bytes(scus.get(rec..rec + 4)?.try_into().ok()?);
             let desc_ptr = u32::from_le_bytes(scus.get(rec + 4..rec + 8)?.try_into().ok()?);
-            names.push(read_name(scus, &map, name_ptr));
-            descs.push(read_desc(scus, &map, desc_ptr));
+            names.push(read_name(scus, &map, name_ptr, accents));
+            descs.push(read_desc(scus, &map, desc_ptr, accents));
         }
         Some(Self { names, descs })
     }
@@ -352,7 +403,7 @@ mod tests {
         assert_eq!(off1, table_off + RECORD_STRIDE);
         // Reading the name at that pointer reproduces the table value.
         assert_eq!(
-            read_name(&scus, &ExeMap::parse(&scus).unwrap(), ptr1).as_deref(),
+            read_name(&scus, &ExeMap::parse(&scus).unwrap(), ptr1, false).as_deref(),
             Some("Healing Berry")
         );
         // A non-EXE input yields None.

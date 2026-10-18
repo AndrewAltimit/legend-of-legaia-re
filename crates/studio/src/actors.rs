@@ -176,11 +176,22 @@ pub struct CharacterCatalog {
 /// The four party members' section catalogs, with item names from the boot
 /// executable when it can be read.
 pub fn character_catalogs(lib: &Library) -> Result<Vec<CharacterCatalog>> {
-    // The table readers address the USA executable; another build keeps
-    // the numeric labels.
-    let scus = lib.is_usa().then(|| lib.executable().ok()).flatten();
-    let names = scus.as_deref().and_then(ItemNameTable::from_scus);
-    let stats = scus.as_deref().and_then(EquipStatTable::from_scus);
+    // Item names come from the build's own executable (the USA table or a
+    // measured PAL one, `item_names::table_va_for_exe`). The equipment stat
+    // table (section labels) is read on the USA build only.
+    let exe = lib.executable().ok();
+    let exe_name = lib
+        .exe
+        .clone()
+        .unwrap_or_else(|| crate::library::USA_EXE.to_string());
+    let mark = level_mark(lib.exe.as_deref());
+    let names = exe
+        .as_deref()
+        .and_then(|b| ItemNameTable::from_exe(b, &exe_name));
+    let stats = exe
+        .as_deref()
+        .filter(|_| lib.is_usa())
+        .and_then(EquipStatTable::from_scus);
     let mut out = Vec::new();
     for (cslot, name) in loadout::CHARACTER_LABELS.iter().enumerate() {
         let raw = entry(lib, loadout::PLAYER_FILE_BASE + cslot as u32)?;
@@ -194,7 +205,8 @@ pub fn character_catalogs(lib: &Library) -> Result<Vec<CharacterCatalog>> {
                 let mut ids = vec![(0u8, "(default)".to_string())];
                 ids.extend(c.ids.iter().filter_map(|&id| {
                     let id = u8::try_from(id).ok()?;
-                    Some((id, loadout::item_display_name(id as u32, names.as_ref())))
+                    let name = loadout::item_display_name(id as u32, names.as_ref());
+                    Some((id, display_name(&name, mark)))
                 }));
                 (label, ids)
             })

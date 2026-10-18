@@ -68,6 +68,13 @@ to the [arts-name table](art-data.md#arts-name-table-dat_80075ec4) resolver in
 item names; the disc-gated `item_names_real` test pins a span of ids against the
 real executable.
 
+The French, German and Italian executables carry the same table at a base that
+drifts per language (`0x80074C4C`, `0x80075360`, `0x80075130` for
+`SCES_019.44/45/46`, the bases the translation lift pins).
+`ItemNameTable::from_exe` reads a build by its executable's name
+(`item_names::table_va_for_exe`) and keeps the accented letters of a PAL
+string through the font's Latin cell layout; the USA read stays plain ASCII.
+
 ## See also
 
 - [Item-effect descriptor table](item-effect-table.md) - the sibling table this id space indexes into for effect class / targeting / usability.
