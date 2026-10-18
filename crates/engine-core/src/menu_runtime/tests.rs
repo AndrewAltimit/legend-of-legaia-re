@@ -917,17 +917,22 @@ fn shop_triangle_from_list_tears_down_session_and_closes() {
     assert_eq!(runtime.ctx.state, MenuState::ShopMenu.as_byte());
     runtime.tick(&mut world, triangle());
     assert_eq!(runtime.ctx.state, MenuState::ShopExit.as_byte());
-    // ShopExit fires its one-shot commit (clears the session) then holds.
+    // ShopExit holds while the windows slide out (retail's exit sub-screen
+    // waits on the close-all script), with the session they draw from
+    // still up.
+    let hold = legaia_engine_menus::shop::SHOP_SLIDE_FRAMES;
+    for _ in 0..hold - 1 {
+        runtime.tick(&mut world, MenuInput::default());
+        assert_eq!(runtime.ctx.state, MenuState::ShopExit.as_byte());
+        assert!(runtime.shop_session.is_some(), "windows still sliding out");
+    }
+    // Then closes, and the session goes with the beat.
     runtime.tick(&mut world, MenuInput::default());
+    assert_eq!(runtime.ctx.state, MenuState::Closing.as_byte());
     assert!(
         runtime.shop_session.is_none(),
         "session cleared on teardown"
     );
-    // Holds, then closes.
-    for _ in 0..8 {
-        runtime.tick(&mut world, MenuInput::default());
-    }
-    assert_eq!(runtime.ctx.state, MenuState::Closing.as_byte());
 }
 
 #[test]

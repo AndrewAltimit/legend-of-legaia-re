@@ -476,14 +476,23 @@ pub fn gold_shop_screen(
 ) -> Option<ss::ShopScreenDraws> {
     use legaia_engine_menus::shop::ShopScreenPhase as P;
     let menu = inputs.menu;
-    let phase = menu.shop_screen_phase()?;
+    let state = MenuState::from_byte(menu.ctx_state());
+    // The exit beat (`ShopExit`, retail's sub-screen 0 `FUN_801DD12C`) is
+    // the root screen's windows sliding out under the close-all script
+    // `0x801E4A78` - left only from the root picker, so its content is the
+    // root's. Nothing else draws on it: retail prints no closing line.
+    let exiting = state == Some(MenuState::ShopExit);
+    let phase = match menu.shop_screen_phase() {
+        Some(p) => p,
+        None if exiting => P::Root,
+        None => return None,
+    };
     // The field is still fading to black: no window is up yet.
     if menu.shop_fade_level().is_some() {
         return Some(Default::default());
     }
     let shop = menu.shop_session.as_ref()?;
     let world = inputs.world;
-    let state = MenuState::from_byte(menu.ctx_state());
     let cursor = menu.cursor() as usize;
     // The windows on screen this frame with their slide progress
     // (`ShopSlides`, stepped by the menu tick): the phase's set plus any
@@ -491,6 +500,10 @@ pub fn gold_shop_screen(
     // after the markers of the windows it covers.
     let mut slides = menu.shop_slides();
     if slides.is_empty() {
+        if exiting {
+            // Every window has left.
+            return Some(Default::default());
+        }
         slides = legaia_engine_menus::shop::shop_screen_windows(phase, false)
             .into_iter()
             .map(|id| (id, legaia_engine_menus::shop::SHOP_SLIDE_FRAMES))
@@ -520,7 +533,9 @@ pub fn gold_shop_screen(
     );
     let picker = ss::ShopPickerView {
         rows: &picker_rows,
-        cursor: (phase == P::Root).then_some(cursor),
+        // The picker's own dispatcher (`FUN_801DAFD4`) no longer runs once
+        // the exit sub-screen has the pad; the hand leaves with the input.
+        cursor: (phase == P::Root && !exiting).then_some(cursor),
     };
 
     // Window 40 / 38 - the list for this phase.

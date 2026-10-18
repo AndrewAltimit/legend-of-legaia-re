@@ -292,6 +292,17 @@ impl MenuRuntimeHost<'_> {
 }
 
 impl<'a> MenuHost for MenuRuntimeHost<'a> {
+    /// The shop teardown holds for the windows' slide out
+    /// ([`legaia_engine_menus::shop::SHOP_SLIDE_FRAMES`]): retail's exit
+    /// sub-screen waits on the widget VM going idle (`_DAT_8007BB80 == 0`,
+    /// `0x801DD17C`) before it starts the fade.
+    fn transient_hold_frames(&self, state: MenuState) -> u16 {
+        match state {
+            MenuState::ShopExit => u16::from(legaia_engine_menus::shop::SHOP_SLIDE_FRAMES),
+            _ => 8,
+        }
+    }
+
     fn screen_item_count(&self, state: MenuState) -> u8 {
         match state {
             MenuState::StatusTop => 8, // Character / Equip / Items / Magic / Arts / Config / Save / Load
@@ -427,9 +438,13 @@ impl<'a> MenuHost for MenuRuntimeHost<'a> {
             // and reseeds when the play-time bucket has advanced); slot 1 = No.
             MenuState::ShopTradeConfirm if slot == 0 => self.commit_shop_trade_confirm(),
             // Transient teardown screen reached by routing out of the shop
-            // menu (Triangle) - clears the sessions as the menu closes.
+            // menu (Quit / Triangle). Retail's exit sub-screen
+            // (`FUN_801DD12C`, sub-screen 0) runs the close-all widget script
+            // `0x801E4A78` and waits for the windows to finish sliding out
+            // before it fades, so the shop session - which the window draws
+            // read - outlives this beat: `MenuRuntime::tick` drops it on the
+            // way out of `ShopExit`.
             MenuState::ShopExit => {
-                *self.shop_session = None;
                 *self.trade_session = None;
                 *self.recipient_session = None;
             }
