@@ -120,7 +120,7 @@ fn real_disc_lists_prot_entries_and_previews() {
         "the rasteriser drew something"
     );
     export::tmd_obj(&a, &t, &out.join("m.obj")).unwrap();
-    export::tmd_glb(&a, &t, &out.join("m.glb")).unwrap();
+    export::tmd_glb(&a, &t, None, &out.join("m.glb")).unwrap();
     assert_eq!(&std::fs::read(out.join("m.glb")).unwrap()[..4], b"glTF");
 
     let a = s.select_blocking(vab.expect("a VAB entry")).unwrap();
@@ -150,4 +150,87 @@ fn real_disc_extraction_cancels() {
     job.cancel();
     assert_eq!(job.join(), Some(Outcome::Cancelled));
     let _ = std::fs::remove_dir_all(&out);
+}
+
+#[test]
+fn real_disc_battle_actors_and_scene_textures() {
+    let Some(bin) = disc() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN not set; skipping studio actor test");
+        return;
+    };
+    let out = scratch("actors");
+    let mut s = Studio::new(Some(out.join("settings.json")));
+    s.open_blocking(&bin).expect("load disc");
+    let lib = s.library.clone().unwrap();
+    let bg = [30u8, 32, 36, 255];
+    let drawn = |rgba: &[u8]| rgba.as_chunks::<4>().0.iter().filter(|p| **p != bg).count();
+
+    // Monsters: named rows, a textured, posed mesh with clips.
+    let rows = legaia_studio::actors::monster_rows(&lib).expect("monster rows");
+    assert!(rows.len() > 100, "monster archive rows: {}", rows.len());
+    let m = legaia_studio::actors::monster(&lib, rows[0].id).expect("first monster");
+    assert!(!m.clips.is_empty(), "{} has clips", m.label);
+    let img = raster::render(
+        &m.model,
+        &m.vram,
+        Camera::default(),
+        Shading::Textured,
+        200,
+        200,
+    );
+    assert!(drawn(&img) > 500, "{} drew textured pixels", m.label);
+    let _ = legaia_tim::write_png(&out.join("monster.png"), 200, 200, &img);
+    let glb = legaia_studio::actors::monster_glb(&lib, rows[0].id).expect("monster glb");
+    assert_eq!(&glb[..4], b"glTF");
+    let glb = legaia_studio::actors::character_glb(&lib, 0, [0; 5]).expect("character glb");
+    assert_eq!(&glb[..4], b"glTF");
+
+    // Party: every character assembles with its default loadout.
+    let cats = legaia_studio::actors::character_catalogs(&lib).expect("catalogs");
+    assert_eq!(cats.len(), 4);
+    for c in &cats {
+        assert_eq!(c.sections.len(), 5, "{}: five equipment sections", c.name);
+        let a = legaia_studio::actors::character(&lib, c.cslot, [0; 5]).expect("assemble");
+        assert!(!a.clips.is_empty(), "{}: clip bank", c.name);
+        let img = raster::render(
+            &a.model,
+            &a.vram,
+            Camera::default(),
+            Shading::Textured,
+            200,
+            200,
+        );
+        assert!(drawn(&img) > 500, "{} drew textured pixels", c.name);
+        let _ = legaia_tim::write_png(&out.join(format!("{}.png", c.name)), 200, 200, &img);
+    }
+
+    // Scene context: town01's environment pack (entry 4) holds no TIMs of
+    // its own; the scene VRAM textures it.
+    let pos = lib.position_of(4).unwrap();
+    let a = s.select_blocking(pos).unwrap();
+    assert!(a.tims.is_empty() && !a.tmds.is_empty());
+    let sv = legaia_studio::scene_vram::build(&lib, 4, a.class).expect("scene vram");
+    assert!(sv.tims > 0, "scene {} uploaded TIMs", sv.scene);
+    let model = Model::from_tmd(a.tmd_bytes(&a.tmds[0])).unwrap();
+    let own = raster::render(
+        &model,
+        &a.vram(),
+        Camera::default(),
+        Shading::Textured,
+        200,
+        200,
+    );
+    let scene = raster::render(
+        &model,
+        &sv.vram,
+        Camera::default(),
+        Shading::Textured,
+        200,
+        200,
+    );
+    assert!(
+        drawn(&scene) > drawn(&own),
+        "scene VRAM textures more of the mesh"
+    );
+    let _ = legaia_tim::write_png(&out.join("scene.png"), 200, 200, &scene);
 }

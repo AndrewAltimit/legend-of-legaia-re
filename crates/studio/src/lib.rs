@@ -8,6 +8,7 @@
 //! command line does. Nothing from the disc is bundled: the app reads the
 //! image the user picks, at runtime.
 
+pub mod actors;
 pub mod analyze;
 pub mod app;
 pub mod export;
@@ -15,6 +16,7 @@ pub mod extract_job;
 pub mod library;
 pub mod player;
 pub mod raster;
+pub mod scene_vram;
 pub mod settings;
 
 use std::path::{Path, PathBuf};

@@ -3,12 +3,13 @@
 //! file list.
 
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
+use std::sync::Arc;
 
 use anyhow::{Context, Result, bail};
+use legaia_engine_scene::scene::ProtIndex;
 use legaia_iso::iso9660;
 use legaia_iso::raw::{RawDisc, USER_DATA_SIZE};
-use legaia_prot::archive::{Archive, Entry};
+use legaia_prot::archive::Entry;
 use legaia_prot::cdname::{self, IndexMap};
 
 /// What the user opened.
@@ -45,7 +46,9 @@ pub struct Library {
     pub iso_files: Vec<IsoFile>,
     /// `"NTSC-U (SCUS_942.54)"`-style line from `SYSTEM.CNF`, when present.
     pub region: Option<String>,
-    archive: Mutex<Archive>,
+    /// The archive, held as the engine's own index so scene builds
+    /// (`legaia_engine_scene`) read from the same single copy of `PROT.DAT`.
+    pub index: Arc<ProtIndex>,
 }
 
 /// Check that `path` is something [`Library::open`] can read, without
@@ -109,52 +112,67 @@ impl Library {
         let find = |name: &str| iso_files.iter().find(|f| f.path.eq_ignore_ascii_case(name));
         let prot = find("PROT.DAT").context("no PROT.DAT on the disc")?.clone();
         let prot_bytes = read_iso_file(&mut disc, &prot).context("reading PROT.DAT")?;
-        let cdname = match find("CDNAME.TXT").cloned() {
-            Some(f) => {
-                let text = read_iso_file(&mut disc, &f)?;
-                cdname::parse_str(&String::from_utf8_lossy(&text)).ok()
-            }
+        let cdname_text = match find("CDNAME.TXT").cloned() {
+            Some(f) => Some(String::from_utf8_lossy(&read_iso_file(&mut disc, &f)?).into_owned()),
             None => None,
         };
+        let cdname = cdname_text
+            .as_deref()
+            .and_then(|t| cdname::parse_str(t).ok());
         let region = legaia_extract::disc_region(bin)
             .map(|d| format!("{} ({})", d.region.name(), d.executable));
-        let archive = Archive::from_bytes(prot_bytes).context("parsing the PROT.DAT TOC")?;
+        let index = ProtIndex::from_bytes(prot_bytes, cdname_text.as_deref())
+            .context("parsing the PROT.DAT TOC")?;
         Ok(Self {
             source: Source::Disc(bin.to_path_buf()),
-            entries: archive.entries.clone(),
+            entries: index.entries().to_vec(),
             cdname,
             iso_files,
             region,
-            archive: Mutex::new(archive),
+            index: Arc::new(index),
         })
     }
 
     fn open_extracted(dir: &Path) -> Result<Self> {
-        let archive = Archive::open(&dir.join("PROT.DAT")).context("parsing the PROT.DAT TOC")?;
-        let cdname_path = dir.join("CDNAME.TXT");
-        let cdname = cdname_path
-            .is_file()
-            .then(|| cdname::parse(&cdname_path).ok())
-            .flatten();
+        let index = ProtIndex::open_extracted(dir).context("parsing the PROT.DAT TOC")?;
+        let cdname = index.cdname_map().cloned();
         Ok(Self {
             source: Source::Extracted(dir.to_path_buf()),
-            entries: archive.entries.clone(),
+            entries: index.entries().to_vec(),
             cdname,
             iso_files: Vec::new(),
             region: None,
-            archive: Mutex::new(archive),
+            index: Arc::new(index),
         })
     }
 
     /// The bytes of PROT entry at position `pos` in [`Self::entries`].
     pub fn entry_bytes(&self, pos: usize) -> Result<Vec<u8>> {
         let entry = self.entries.get(pos).context("entry out of range")?;
-        let mut out = Vec::new();
-        self.archive
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .read_entry(entry, &mut out)?;
-        Ok(out)
+        // A raw read, not `ProtIndex::entry_bytes`: that one caches every
+        // entry it returns, and browsing (plus the background classifier)
+        // would end up holding a second copy of the whole archive.
+        self.index
+            .prot_dat_raw_bytes(entry.byte_offset, entry.size_bytes as usize)
+    }
+
+    /// The boot executable (`SCUS_942.54` on the USA disc): its static
+    /// tables carry the item and equipment names.
+    pub fn executable(&self) -> Result<Vec<u8>> {
+        const NAME: &str = "SCUS_942.54";
+        match &self.source {
+            Source::Extracted(dir) => {
+                std::fs::read(dir.join(NAME)).with_context(|| format!("reading {NAME}"))
+            }
+            Source::Disc(_) => {
+                let f = self
+                    .iso_files
+                    .iter()
+                    .find(|f| f.path.eq_ignore_ascii_case(NAME))
+                    .with_context(|| format!("no {NAME} on the disc"))?;
+                self.iso_file_bytes(f)
+            }
+        }
     }
 
     /// Position in [`Self::entries`] of the entry with PROT index `index`.

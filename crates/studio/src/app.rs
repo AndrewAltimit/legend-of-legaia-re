@@ -1,19 +1,27 @@
 //! The egui front end over [`Studio`].
 
+mod actors_ui;
+mod viewport;
+
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::sync::mpsc::Receiver;
 
 use eframe::egui::{self, Color32, ColorImage, RichText, TextureHandle, TextureOptions};
 
 use crate::analyze::Analysis;
 use crate::extract_job::{ExtractJob, Outcome};
 use crate::player::Player;
-use crate::raster::{self, Camera, Model, Shading};
+use crate::raster::{Model, Shading};
+use crate::scene_vram::SceneVram;
 use crate::{Source, Studio, export};
+use viewport::Viewport;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Mode {
     Browse,
+    Actors,
     Extract,
 }
 
@@ -79,6 +87,9 @@ pub struct Automation {
     /// `LEGAIA_STUDIO_EXPORT_DIR`: export without a save dialog, into this
     /// folder.
     pub export_dir: Option<PathBuf>,
+    /// `LEGAIA_STUDIO_ACTOR`: open the Actors view on `monster:<id>`,
+    /// `char:<slot>` (0 Vahn .. 3 Terra), optionally `@<clip>:<frame>`.
+    pub actor: Option<String>,
 }
 
 impl Automation {
@@ -92,18 +103,35 @@ impl Automation {
             extract_to: path("LEGAIA_STUDIO_EXTRACT_TO"),
             screenshot: path("LEGAIA_STUDIO_SCREENSHOT"),
             export_dir: path("LEGAIA_STUDIO_EXPORT_DIR"),
+            actor: std::env::var("LEGAIA_STUDIO_ACTOR").ok(),
         }
     }
+}
+
+/// Which VRAM image the entry model view samples.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TexSource {
+    /// Only the TIMs inside the selected entry.
+    Entry,
+    /// The VRAM the engine builds for the entry's scene (CDNAME block).
+    Scene,
 }
 
 struct ModelView {
     key: (usize, usize),
     model: Option<Model>,
-    vram: legaia_tim::Vram,
-    cam: Camera,
-    shading: Shading,
-    rendered: Option<(Camera, Shading, [usize; 2])>,
-    tex: Option<TextureHandle>,
+    entry_vram: legaia_tim::Vram,
+    source: TexSource,
+    /// The scene-cache key the view last drew with (`None` = entry VRAM).
+    drawn_with: Option<String>,
+    view: Viewport,
+}
+
+/// A scene VRAM build: in flight on a worker, or done.
+enum SceneSlot {
+    Building(Receiver<Result<SceneVram, String>>),
+    Ready(Arc<SceneVram>),
+    Failed(String),
 }
 
 pub struct App {
@@ -121,6 +149,9 @@ pub struct App {
     // Model tab.
     tmd_sel: usize,
     model: Option<ModelView>,
+    /// Scene VRAM images by `block:kind`, built on demand.
+    scenes: HashMap<String, SceneSlot>,
+    actors: actors_ui::ActorsState,
     /// Entry the browser should expand and scroll to on its next frame.
     reveal: Option<usize>,
     // Audio tab.
@@ -168,6 +199,8 @@ impl App {
             tim_tex: None,
             tmd_sel: 0,
             model: None,
+            scenes: HashMap::new(),
+            actors: actors_ui::ActorsState::default(),
             reveal: None,
             vab_sel: 0,
             seq_loop: false,
@@ -183,9 +216,14 @@ impl App {
         if let Some(t) = app.auto.tab.clone() {
             if t.eq_ignore_ascii_case("extract") {
                 app.mode = Mode::Extract;
+            } else if t.eq_ignore_ascii_case("actors") {
+                app.mode = Mode::Actors;
             } else if let Some(tab) = Tab::parse(&t) {
                 app.tab = tab;
             }
+        }
+        if app.auto.actor.is_some() {
+            app.mode = Mode::Actors;
         }
         if let Some(dir) = app.auto.extract_to.clone() {
             app.out_text = dir.display().to_string();
@@ -342,6 +380,7 @@ impl App {
             ui.heading("Legaia Studio");
             ui.separator();
             ui.selectable_value(&mut self.mode, Mode::Browse, "Browse");
+            ui.selectable_value(&mut self.mode, Mode::Actors, "Characters & monsters");
             ui.selectable_value(&mut self.mode, Mode::Extract, "Extract");
             ui.separator();
             if ui.button("Open disc image...").clicked()
@@ -746,13 +785,69 @@ impl App {
         }
     }
 
-    fn model_tab(&mut self, ui: &mut egui::Ui, lib: &crate::Library, a: &Analysis) {
+    /// The scene VRAM for entry `a`, starting its build if needed. `Err`
+    /// carries a status line (building / failed / no scene).
+    fn scene_vram(
+        &mut self,
+        lib: &Arc<crate::Library>,
+        a: &Analysis,
+    ) -> Result<(String, Arc<SceneVram>), String> {
+        let Some(name) = lib.retail_block(a.index).map(str::to_string) else {
+            return Err("this entry belongs to no CDNAME scene".into());
+        };
+        let kind = crate::scene_vram::load_kind(&name, a.class);
+        let key = format!("{name}:{kind:?}");
+        let slot = self.scenes.entry(key.clone()).or_insert_with(|| {
+            let (tx, rx) = std::sync::mpsc::channel();
+            let lib = Arc::clone(lib);
+            let (index, class) = (a.index, a.class);
+            std::thread::spawn(move || {
+                let _ = tx.send(
+                    crate::scene_vram::build(&lib, index, class).map_err(|e| format!("{e:#}")),
+                );
+            });
+            SceneSlot::Building(rx)
+        });
+        if let SceneSlot::Building(rx) = slot
+            && let Ok(res) = rx.try_recv()
+        {
+            *slot = match res {
+                Ok(v) => SceneSlot::Ready(Arc::new(v)),
+                Err(e) => SceneSlot::Failed(e),
+            };
+        }
+        match slot {
+            SceneSlot::Ready(v) => Ok((key, Arc::clone(v))),
+            SceneSlot::Building(_) => Err(format!("building scene {name} ({kind:?} load)...")),
+            SceneSlot::Failed(e) => Err(format!("scene {name}: {e}")),
+        }
+    }
+
+    fn model_tab(&mut self, ui: &mut egui::Ui, lib: &Arc<crate::Library>, a: &Analysis) {
         if a.tmds.is_empty() {
             ui.label("No TMD meshes in this entry.");
             return;
         }
         self.tmd_sel = self.tmd_sel.min(a.tmds.len() - 1);
         let t = a.tmds[self.tmd_sel].clone();
+        let key = (a.pos, self.tmd_sel);
+        if self.model.as_ref().map(|m| m.key) != Some(key) {
+            // Textures inside the entry: show those. None: the mesh samples
+            // pages another entry of its scene uploads, so start there.
+            let source = if a.tims.is_empty() {
+                TexSource::Scene
+            } else {
+                TexSource::Entry
+            };
+            self.model = Some(ModelView {
+                key,
+                model: Model::from_tmd(a.tmd_bytes(&t)),
+                entry_vram: a.vram(),
+                source,
+                drawn_with: None,
+                view: Viewport::new(Shading::Textured),
+            });
+        }
         ui.horizontal(|ui| {
             egui::ComboBox::from_id_salt("tmd")
                 .selected_text(format!("TMD #{}", self.tmd_sel))
@@ -768,32 +863,20 @@ impl App {
                                 t.objects,
                                 t.verts,
                                 t.prims,
-                                if t.scene_stream { " (scene stream)" } else { "" }
+                                if t.scene_stream {
+                                    " (scene stream)"
+                                } else {
+                                    ""
+                                }
                             ),
                         );
                     }
                 });
-            let key = (a.pos, self.tmd_sel);
-            if self.model.as_ref().map(|m| m.key) != Some(key) {
-                let has_tex = !a.tims.is_empty();
-                self.model = Some(ModelView {
-                    key,
-                    model: Model::from_tmd(a.tmd_bytes(&t)),
-                    vram: a.vram(),
-                    cam: Camera::default(),
-                    shading: if has_tex { Shading::Textured } else { Shading::Lit },
-                    rendered: None,
-                    tex: None,
-                });
-            }
             if let Some(mv) = &mut self.model {
-                ui.selectable_value(&mut mv.shading, Shading::Textured, "Textured (retail shading)")
-                    .on_hover_text("texel x colour / 128 from this entry's own TIMs; textures living in other entries show as gaps");
-                ui.selectable_value(&mut mv.shading, Shading::Lit, "Untextured + viewer light")
-                    .on_hover_text("A viewer aid with a fixed light - not how retail shades");
-                if ui.button("Reset view").clicked() {
-                    mv.cam = Camera::default();
-                }
+                mv.view.controls(
+                    ui,
+                    "texel x colour / 128, sampled from the chosen VRAM image",
+                );
                 if let Some(m) = &mv.model {
                     ui.label(format!("{} triangles", m.triangles()));
                 }
@@ -808,54 +891,83 @@ impl App {
             }
             if ui.button("Export glTF (.glb)...").clicked() {
                 let name = format!("{}_tmd{:02}.glb", lib.stem(a.index), self.tmd_sel);
+                let scene = match self.model.as_ref().map(|m| m.source) {
+                    Some(TexSource::Scene) => self.scene_vram(lib, a).ok().map(|(_, v)| v),
+                    _ => None,
+                };
                 if let Some(out) = self.export_target(&name, "glb") {
-                    let res = export::tmd_glb(a, &t, &out);
+                    let res = export::tmd_glb(a, &t, scene.as_ref().map(|v| &v.vram), &out);
                     self.report("glTF", res, &out);
                 }
             }
         });
-        ui.label(RichText::new("Drag to orbit, scroll to zoom.").weak());
+        let mut status = None;
+        let scene = if self
+            .model
+            .as_ref()
+            .is_some_and(|m| m.source == TexSource::Scene)
+        {
+            match self.scene_vram(lib, a) {
+                Ok(v) => Some(v),
+                Err(e) => {
+                    ui.ctx()
+                        .request_repaint_after(std::time::Duration::from_millis(100));
+                    status = Some(e);
+                    None
+                }
+            }
+        } else {
+            None
+        };
         let Some(mv) = &mut self.model else { return };
+        ui.horizontal(|ui| {
+            ui.label("Textures:");
+            ui.selectable_value(
+                &mut mv.source,
+                TexSource::Entry,
+                format!("this entry ({} TIM)", a.tims.len()),
+            )
+            .on_hover_text("Only the TIMs stored inside the selected entry");
+            ui.selectable_value(
+                &mut mv.source,
+                TexSource::Scene,
+                format!("scene {}", lib.retail_block(a.index).unwrap_or("-")),
+            )
+            .on_hover_text(
+                "The VRAM the engine builds for this entry's CDNAME scene: every TIM of the block, \
+                 the shared init_data / player_data blocks and the system-UI bundle",
+            );
+            match (&scene, &status) {
+                (Some((_, v)), _) => {
+                    ui.label(
+                        RichText::new(format!(
+                            "{:?} load: {} TIMs ({} shared)",
+                            v.kind, v.tims, v.shared_tims
+                        ))
+                        .weak(),
+                    );
+                }
+                (None, Some(e)) if mv.source == TexSource::Scene => {
+                    ui.spinner();
+                    ui.label(RichText::new(e).weak());
+                }
+                _ => {}
+            }
+            ui.label(RichText::new("Drag to orbit, scroll to zoom.").weak());
+        });
         let Some(model) = &mv.model else {
             ui.colored_label(Color32::LIGHT_RED, "This TMD has no drawable triangles.");
             return;
         };
-        let avail = ui.available_size();
-        let (rect, resp) = ui.allocate_exact_size(avail, egui::Sense::drag());
-        if resp.dragged() {
-            let d = resp.drag_delta();
-            mv.cam.yaw += d.x * 0.01;
-            mv.cam.pitch = (mv.cam.pitch - d.y * 0.01).clamp(-1.5, 1.5);
+        let (vram, with) = match (&scene, mv.source) {
+            (Some((k, v)), TexSource::Scene) => (&v.vram, Some(k.clone())),
+            _ => (&mv.entry_vram, None),
+        };
+        if mv.drawn_with != with {
+            mv.drawn_with = with;
+            mv.view.version += 1;
         }
-        if resp.hovered() {
-            let scroll = ui.input(|i| i.smooth_scroll_delta.y);
-            if scroll != 0.0 {
-                mv.cam.zoom = (mv.cam.zoom * (1.0 - scroll * 0.002)).clamp(0.1, 10.0);
-            }
-        }
-        let ppp = ui.ctx().pixels_per_point();
-        let px = [
-            ((rect.width() * ppp) as usize).clamp(16, 1600),
-            ((rect.height() * ppp) as usize).clamp(16, 1200),
-        ];
-        let state = (mv.cam, mv.shading, px);
-        if mv.rendered != Some(state) || mv.tex.is_none() {
-            let rgba = raster::render(model, &mv.vram, mv.cam, mv.shading, px[0], px[1]);
-            let img = ColorImage::from_rgba_unmultiplied(px, &rgba);
-            match &mut mv.tex {
-                Some(t) => t.set(img, TextureOptions::LINEAR),
-                None => mv.tex = Some(ui.ctx().load_texture("tmd", img, TextureOptions::LINEAR)),
-            }
-            mv.rendered = Some(state);
-        }
-        if let Some(tex) = &mv.tex {
-            ui.painter().image(
-                tex.id(),
-                rect,
-                egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
-                Color32::WHITE,
-            );
-        }
+        mv.view.show(ui, model, vram);
     }
 
     fn audio(&mut self, ui: &mut egui::Ui, lib: &crate::Library, a: &Analysis) {
@@ -1236,6 +1348,7 @@ impl eframe::App for App {
                     .show(ctx, |ui| self.browser(ui));
                 egui::CentralPanel::default().show(ctx, |ui| self.preview(ui));
             }
+            Mode::Actors => self.actors_mode(ctx),
             Mode::Extract => {
                 egui::CentralPanel::default().show(ctx, |ui| self.extract_panel(ui));
             }

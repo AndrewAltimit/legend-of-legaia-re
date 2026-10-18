@@ -12,7 +12,12 @@ use legaia_tim::Vram;
 
 /// A triangulated TMD ready to draw.
 pub struct Model {
+    /// Drawn positions: the rest pose, or the last [`Model::pose`].
     pub positions: Vec<[f32; 3]>,
+    /// TMD-local rest positions.
+    pub rest: Vec<[f32; 3]>,
+    /// The TMD object (= animation part) each vertex belongs to.
+    pub object_ids: Vec<u32>,
     pub uvs: Vec<[u8; 2]>,
     pub cba_tsb: Vec<[u16; 2]>,
     /// Texture-modulation colour (`0x80` = neutral) for textured vertices.
@@ -20,7 +25,6 @@ pub struct Model {
     /// Per-vertex fill colour for untextured prims.
     pub fill: Vec<[u8; 3]>,
     pub textured: Vec<u8>,
-    pub normals: Vec<[f32; 3]>,
     pub indices: Vec<u32>,
     pub center: [f32; 3],
     pub radius: f32,
@@ -31,51 +35,105 @@ impl Model {
     /// triangles.
     pub fn from_tmd(bytes: &[u8]) -> Option<Self> {
         let tmd = legaia_tmd::parse(bytes).ok()?;
-        let (mesh, _obj, shading) = legaia_tmd::mesh::tmd_to_vram_mesh_field_hybrid(&tmd, bytes);
+        let (mesh, obj, shading) = legaia_tmd::mesh::tmd_to_vram_mesh_field_hybrid(&tmd, bytes);
+        Self::from_mesh(mesh, obj, Some(shading))
+    }
+
+    /// Build from a VRAM mesh the actor decoders produced (every prim
+    /// textured unless `shading` says otherwise).
+    pub fn from_mesh(
+        mesh: legaia_tmd::mesh::VramMesh,
+        object_ids: Vec<u32>,
+        shading: Option<legaia_tmd::mesh::VertexShading>,
+    ) -> Option<Self> {
         if mesh.indices.len() < 3 || mesh.positions.is_empty() {
             return None;
         }
-        let mut lo = [f32::MAX; 3];
-        let mut hi = [f32::MIN; 3];
-        for p in &mesh.positions {
-            for k in 0..3 {
-                lo[k] = lo[k].min(p[k]);
-                hi[k] = hi[k].max(p[k]);
-            }
-        }
-        let center = [
-            (lo[0] + hi[0]) * 0.5,
-            (lo[1] + hi[1]) * 0.5,
-            (lo[2] + hi[2]) * 0.5,
-        ];
-        let radius = mesh
-            .positions
-            .iter()
-            .map(|p| {
-                let d = [p[0] - center[0], p[1] - center[1], p[2] - center[2]];
-                (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt()
-            })
-            .fold(1.0f32, f32::max);
         let n = mesh.positions.len();
         let pad = |v: Vec<[u8; 3]>, d: [u8; 3]| {
             let mut v = v;
             v.resize(n, d);
             v
         };
-        let mut textured = shading.textured;
+        let (fill, mut textured) = match shading {
+            Some(s) => (s.colors, s.textured),
+            None => (Vec::new(), vec![1; n]),
+        };
         textured.resize(n, 1);
-        Some(Self {
+        let mut object_ids = object_ids;
+        object_ids.resize(n, 0);
+        let mut m = Self {
             modulation: pad(mesh.colors, [0x80; 3]),
-            fill: pad(shading.colors, [0xC0; 3]),
+            fill: pad(fill, [0xC0; 3]),
             textured,
+            rest: mesh.positions.clone(),
             positions: mesh.positions,
+            object_ids,
             uvs: mesh.uvs,
             cba_tsb: mesh.cba_tsb,
-            normals: mesh.normals,
             indices: mesh.indices,
-            center,
-            radius,
-        })
+            center: [0.0; 3],
+            radius: 1.0,
+        };
+        m.refit();
+        Some(m)
+    }
+
+    /// Re-centre the camera target on the current positions.
+    pub fn refit(&mut self) {
+        let mut lo = [f32::MAX; 3];
+        let mut hi = [f32::MIN; 3];
+        for p in &self.positions {
+            for k in 0..3 {
+                lo[k] = lo[k].min(p[k]);
+                hi[k] = hi[k].max(p[k]);
+            }
+        }
+        let c = [
+            (lo[0] + hi[0]) * 0.5,
+            (lo[1] + hi[1]) * 0.5,
+            (lo[2] + hi[2]) * 0.5,
+        ];
+        self.center = c;
+        self.radius = self
+            .positions
+            .iter()
+            .map(|p| {
+                let d = [p[0] - c[0], p[1] - c[1], p[2] - c[2]];
+                (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt()
+            })
+            .fold(1.0f32, f32::max);
+    }
+
+    /// Pose every object by its part's rigid transform: the PSX
+    /// `Rz * Ry * Rx` rotation about the object origin, then the
+    /// translation - the per-object assembly `FUN_8004998C` applies and
+    /// `legaia_tmd::mesh::tmd_to_vram_mesh_posed_rot` mirrors. Objects past
+    /// the end of `parts` stay at rest.
+    pub fn pose(&mut self, parts: &[legaia_actor_formats::monster_archive::PartPose]) {
+        const A2R: f32 = std::f32::consts::TAU / 4096.0;
+        let trig: Vec<([f32; 3], [f32; 6])> = parts
+            .iter()
+            .map(|p| {
+                let (sx, cx) = (p.rx as f32 * A2R).sin_cos();
+                let (sy, cy) = (p.ry as f32 * A2R).sin_cos();
+                let (sz, cz) = (p.rz as f32 * A2R).sin_cos();
+                (
+                    [p.tx as f32, p.ty as f32, p.tz as f32],
+                    [cx, sx, cy, sy, cz, sz],
+                )
+            })
+            .collect();
+        for (i, v) in self.rest.iter().enumerate() {
+            let o = self.object_ids.get(i).copied().unwrap_or(0) as usize;
+            self.positions[i] = match trig.get(o) {
+                Some((t, [cx, sx, cy, sy, cz, sz])) => {
+                    let r = legaia_tmd::mesh::rot_zyx(*v, *cx, *sx, *cy, *sy, *cz, *sz);
+                    [r[0] + t[0], r[1] + t[1], r[2] + t[2]]
+                }
+                None => *v,
+            };
+        }
     }
 
     pub fn triangles(&self) -> usize {
@@ -242,12 +300,21 @@ pub fn render(
         let tex =
             model.textured.get(i[0]).copied().unwrap_or(0) != 0 && shading == Shading::Textured;
         let lit = if shading == Shading::Lit {
-            let n = model
-                .normals
-                .get(i[0])
-                .copied()
-                .map(view_normal)
-                .unwrap_or([0.0, 0.0, -1.0]);
+            // Face normal of the drawn (posed) triangle, in view space.
+            let p = [
+                model.positions[i[0]],
+                model.positions[i[1]],
+                model.positions[i[2]],
+            ];
+            let a = [p[1][0] - p[0][0], p[1][1] - p[0][1], p[1][2] - p[0][2]];
+            let b = [p[2][0] - p[0][0], p[2][1] - p[0][1], p[2][2] - p[0][2]];
+            let n = [
+                a[1] * b[2] - a[2] * b[1],
+                a[2] * b[0] - a[0] * b[2],
+                a[0] * b[1] - a[1] * b[0],
+            ];
+            let len = (n[0] * n[0] + n[1] * n[1] + n[2] * n[2]).sqrt().max(1e-6);
+            let n = view_normal([n[0] / len, n[1] / len, n[2] / len]);
             let d = (n[0] * light[0] + n[1] * light[1] + n[2] * light[2]).abs();
             0.35 + 0.65 * d
         } else {

@@ -47,9 +47,15 @@ pub fn tmd_obj(a: &Analysis, t: &TmdRef, out: &Path) -> Result<()> {
     std::fs::write(out, s).with_context(|| format!("write {}", out.display()))
 }
 
-/// Textured `.glb`: the mesh plus an atlas baked from the entry's own TIMs.
-/// 1 PSX unit exports as 1 cm.
-pub fn tmd_glb(a: &Analysis, t: &TmdRef, out: &Path) -> Result<()> {
+/// Textured `.glb`: the mesh plus an atlas baked from `vram` - the scene's
+/// VRAM image when given, else the entry's own TIMs. 1 PSX unit exports as
+/// 1 cm.
+pub fn tmd_glb(
+    a: &Analysis,
+    t: &TmdRef,
+    vram: Option<&legaia_tim::Vram>,
+    out: &Path,
+) -> Result<()> {
     use legaia_actor_formats::scene_gltf::{SceneInstance, SceneMesh, build_scene_glb};
     let bytes = a.tmd_bytes(t);
     let tmd = legaia_tmd::parse(bytes).context("TMD parse")?;
@@ -81,8 +87,15 @@ pub fn tmd_glb(a: &Analysis, t: &TmdRef, out: &Path) -> Result<()> {
         rotation: None,
         scale: 0.01,
     };
-    let vram = a.vram();
-    let glb = build_scene_glb(&scene_mesh.name.clone(), &[scene_mesh], &[inst], &vram)
+    let own;
+    let vram = match vram {
+        Some(v) => v,
+        None => {
+            own = a.vram();
+            &own
+        }
+    };
+    let glb = build_scene_glb(&scene_mesh.name.clone(), &[scene_mesh], &[inst], vram)
         .context("mesh has no triangles to export")?;
     std::fs::write(out, glb).with_context(|| format!("write {}", out.display()))
 }
