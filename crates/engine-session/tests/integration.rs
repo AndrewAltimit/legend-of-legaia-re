@@ -6,6 +6,7 @@
 //! `cargo test -p legaia-engine-session --test integration <name>::`.
 
 mod arts_shout_battle;
+mod attack_arm_arts_entry;
 mod battle_effect_teardown_disc;
 mod battle_item_use_presentation;
 mod battle_monster_bank_cue;

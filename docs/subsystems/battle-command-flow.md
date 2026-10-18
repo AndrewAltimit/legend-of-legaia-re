@@ -548,7 +548,22 @@ spatial, mirroring retail's own per-arm dispatch: on the ring Up commits
 left chip and Right the right chip (`battle_input::pair_seat`). Cross
 additionally commits whatever the cursor rests on - the route a scripted
 harness that cannot aim a direction drives - and Circle keeps its back-out /
-outright-`Run` roles. `engine-shell`'s
+outright-`Run` roles.
+
+Every surface's cursor opens on its **Left** chip, because that is the arm
+retail's confirm mask takes. Under the default directional entry the confirm
+falls into the Left arm's test: on the ring at `0x801D152C..0x801D1540` (after
+Up and Right, before Down), so Cross on the ring is `Attack`; on the
+attack-mode prompt at `0x801D1774..0x801D1794`, so Cross there is `Auto`.
+Under the cross-button entry the highlight word `ctx[+0x880]` rests on the
+same arm (`0x8000`, from `0x801D0ECC` and `FUN_801D388C`'s `0x801D4C74`).
+So a player who presses Cross straight through a fight, or presses Left
+twice, commits a plain attack, and the arts entry never opens: only the
+prompt's Right arm (`andi v0,s2,0x2000` at `0x801D1728`) stores `0x50`. The
+same holds in the sparring fight, since 967's `0x78` hook (`0x801F6D30`)
+only queues boxes. Disc oracle:
+`crates/engine-session/tests/attack_arm_arts_entry.rs`, which runs the
+town01 fight with and without the tutorial. `engine-shell`'s
 `direction_presses_land_on_the_chip_drawn_on_that_side` holds the map equal to
 the drawn seating.
 
