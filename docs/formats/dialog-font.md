@@ -335,7 +335,7 @@ Retail text hardly reaches either half. In the USA text export, high cell bytes 
 
 ### The PAL page
 
-The official French, German and Italian discs carry the font TIM at the same `PROT.DAT` offset (member 3 of the same boot pack), but it is a different, smaller drawing of every glyph, ASCII included; the three PAL pages differ from each other only in `0x24`. Their high cells follow CP437 for `0x80..=0xA5`, add `ª º ¿ ¡` at `0xA6 0xA7 0xA8 0xAD`, and draw accented capitals and `ß` at `0xB5..=0xB7` (`Á Â À`) and in `0xD3..=0xEB`, mostly at their CP850 positions (`Ë È Í Ì Ó ß Ô Ò Ú Û Ù`); `Ê`, `Î` and `Ï` sit at `0xD5`, `0xDD` and `0xDF` instead.
+The official French, German and Italian discs carry the font TIM at the same `PROT.DAT` offset (member 3 of the same boot pack), but it is a different, smaller drawing of every glyph, ASCII included; the three PAL pages differ from each other only in `0x24`. That cell is the level mark the monster archive's `$N` variant suffix draws (`Gimard $2`): `Lv` on the USA, German and Italian pages, `Nv` on the French one. Their high cells follow CP437 for `0x80..=0xA5`, add `ª º ¿ ¡` at `0xA6 0xA7 0xA8 0xAD`, and draw accented capitals and `ß` at `0xB5..=0xB7` (`Á Â À`) and in `0xD3..=0xEB`, mostly at their CP850 positions (`Ë È Í Ì Ó ß Ô Ò Ú Û Ù`); `Ê`, `Î` and `Ï` sit at `0xD5`, `0xDD` and `0xDF` instead.
 PAL text writes `Î` as `0xD7` and `°` as `0xF8`, both cells the PAL page leaves as a placeholder box labelled with the cell's own hex, and retail PAL draws that box: no PAL executable remaps either byte ([below](#the-pal-renderer)). The page draws `œ` at `0x9C` and `Œ` at `0x9D`.
 
 ### The PAL renderer
