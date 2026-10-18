@@ -536,6 +536,10 @@ mod ink_tests {
         assert_eq!(READOUT_NORMAL, crate::MENU_TEXT_WHITE);
         assert_eq!((READOUT_NORMAL[0] * 255.0).round() as u8, 206);
         assert_eq!(crate::battle_command_ui::LABEL_INK, READOUT_NORMAL);
+        // The options screen stages the same three CLUT rows as every menu.
+        assert_eq!(crate::OPTIONS_INK_WHITE, crate::MENU_TEXT_WHITE);
+        assert_eq!(crate::OPTIONS_INK_GOLD, crate::MENU_TEXT_GOLD);
+        assert_eq!(crate::OPTIONS_INK_TEAL, crate::MENU_TEXT_TEAL);
     }
 
     /// A numeral cell is decoded under the tier-7 CLUT, so the normal tier
