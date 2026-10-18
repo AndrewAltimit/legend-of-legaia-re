@@ -248,7 +248,7 @@ SHA256SUMS
 Every archive contains a single top-level
 `legaia-tools-<version>-<target>/` directory - extracting one never scatters
 files across the working directory. Inside it: the binaries, `LICENSE` and
-`LICENSE-MIT` (the project is `MIT OR Unlicense`), and two generated text
+`LICENSE-MIT` (the project is `MIT OR Unlicense`), and three generated text
 files:
 
 - `README-PLAY.txt` - the file a player needs: start `legaia-engine` (or the
@@ -259,6 +259,37 @@ files:
   It also points asset users at Legaia Studio and the extraction guide.
 - `README.txt` - the target, every binary present with a one-line role, and
   the same bring-your-own-disc rule.
+- `THIRD-PARTY-LICENSES.txt` - the license texts and notices of every crate
+  the binaries link (see below).
+
+### Third-party notices
+
+Most of the linked crates' licenses (MIT, Apache-2.0, BSL-1.0, Zlib,
+Unicode-3.0, the OFL / Ubuntu font licenses of egui's bundled fonts, ...)
+require their notice to travel with the binary.
+[`scripts/ci/third-party-licenses.py`](../../scripts/ci/third-party-licenses.py)
+writes the file at staging time from the crates themselves:
+
+- **Which crates.** The closure of every workspace package that builds a
+  binary over normal dependency edges, from `cargo tree --workspace -e normal
+  --target <triple>` (both slices for the universal macOS row), so features
+  resolve exactly as in the release build and build-only or dev-only crates
+  are left out. `cargo metadata`'s own resolve is not used for the set: it
+  lists optional dependencies no feature enables (eframe's unused wgpu
+  backend).
+- **Which texts.** The license files each crate ships (`LICENSE*`,
+  `COPYING*`, `NOTICE*`, `COPYRIGHT*`, the manifest's `license-file`, and
+  notices below the root such as a font's licence next to the font). An OR
+  expression is satisfied by a branch the crate ships text for; when a crate
+  ships none, the Apache-2.0 text (no copyright holder in its wording) or a
+  canonical template (MIT, BSL-1.0, Zlib) is borrowed rather than another
+  crate's copyright line. Public-domain dedications (CC0-1.0) need no text.
+- **Shape.** Each distinct text once, with every crate that carries it listed
+  above it, after a crate / version / license / repository table.
+
+The script exits non-zero when a linked crate declares no license or an id
+has no text anywhere, which fails the release. It needs only `cargo` and the
+Python 3 standard library.
 
 A build smoke-runs `legaia-engine --version` and `legaia-studio --version`
 from the staged archive whenever the build host can execute it (the native Linux row and the

@@ -18,7 +18,8 @@
 #
 # The archive holds a single top-level legaia-tools-<version>-<target>/
 # directory so it never explodes over the user's cwd. Inside: the binaries,
-# both licenses, a generated README-PLAY.txt (how to start the game) and
+# both licenses, THIRD-PARTY-LICENSES.txt (the notices of every crate the
+# binaries link, see third-party-licenses.py), a generated README-PLAY.txt (how to start the game) and
 # README.txt (every tool), and on macOS a "Legend of Legaia.app" wrapper
 # around legaia-engine plus a "Legaia Studio.app" around legaia-studio.
 #
@@ -298,6 +299,19 @@ fi
 cp LICENSE "$STAGE/LICENSE"
 cp LICENSE-MIT "$STAGE/LICENSE-MIT"
 
+# The third-party notices: every crate the shipped binaries link, resolved
+# for this target (both slices for the universal macOS archive), with the
+# license texts the crates themselves carry. Fails the release when a linked
+# crate has no license or no text can be found for one of its ids.
+case "$TARGET" in
+    universal-apple-darwin)
+        LICENSE_TARGETS=(--target aarch64-apple-darwin --target x86_64-apple-darwin) ;;
+    *)
+        LICENSE_TARGETS=(--target "$TARGET") ;;
+esac
+python3 scripts/ci/third-party-licenses.py "${LICENSE_TARGETS[@]}" \
+    --out "$STAGE/THIRD-PARTY-LICENSES.txt"
+
 # The one file a player needs: how to start the game.
 {
     printf 'Legend of Legaia - engine port\n'
@@ -411,6 +425,8 @@ cp LICENSE-MIT "$STAGE/LICENSE-MIT"
     printf 'Verify this archive against the SHA256SUMS file on the release page:\n'
     printf '    sha256sum -c SHA256SUMS --ignore-missing\n\n'
     printf 'Licensed MIT OR Unlicense - see LICENSE and LICENSE-MIT.\n'
+    printf 'The binaries link third-party crates; their licenses and notices are\n'
+    printf 'in THIRD-PARTY-LICENSES.txt.\n'
     if [[ "$TARGET" == "x86_64-unknown-linux-gnu" ]]; then
         printf '\nRequires glibc %s or newer.\n' "$GLIBC_PIN"
         printf 'legaia-engine, asset-viewer and legaia-studio need ALSA\n'
