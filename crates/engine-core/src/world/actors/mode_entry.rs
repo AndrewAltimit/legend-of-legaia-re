@@ -257,6 +257,18 @@ impl World {
         self.battle.backdrop_cue = 0;
         self.battle.ground_grid_drawn = true;
         self.battle.end = None;
+        // The end-of-battle marker starts clear: battle init stores zero to
+        // `DAT_8007BD71` (`sb zero` at `0x80056014`), the byte whose `0xFE`
+        // hands the battle frame to the results sequencer. A sequencer the
+        // previous fight left mid-way (a host that left the battle before its
+        // exit fade, then started another) otherwise owns the new fight from
+        // its first frame: no round prompt, no command session, and the
+        // fight ends when the stale sequence does. The rewards latch and the
+        // result windows' raise belong to the same sequence.
+        // REF: FUN_80055B6C
+        self.battle.victory = None;
+        self.battle.loot_applied = false;
+        self.battle.result_windows_glide = None;
         // Effect pool is reused across scenes - reset to a fresh instance
         // (per-battle the head/free-list rebuilds from scratch). This is
         // retail's battle-loader init call (stage `0xE`, `0x80052670`): a

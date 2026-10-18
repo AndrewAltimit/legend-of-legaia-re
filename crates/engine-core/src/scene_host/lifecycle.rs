@@ -131,6 +131,10 @@ impl SceneHost {
         // engines drive via [`SceneHost::release_sustained_sfx`] directly).
         // REF: FUN_80017910, FUN_8001DCF8, FUN_8004AD80
         self.release_sustained_sfx();
+        // A scene load that lands while a battle is still up (a host's scene
+        // picker, a debug seat) abandons that battle first, so its results
+        // sequencer and field snapshot cannot ride into the next fight.
+        self.world.abandon_live_battle();
         // Scene-to-scene teardown sweep over the actor pool. Retail's field
         // initialiser `FUN_801D6704` runs `FUN_801D7518` once per actor list
         // on a **warp** entry (`_DAT_8007B8B8 == 2`) and not on a cold one -

@@ -580,6 +580,8 @@ impl World {
     // REF: FUN_800560B4
     // REF: FUN_8004F0E8
     pub fn begin_new_game(&mut self) {
+        // A New Game started over a live battle leaves that battle first.
+        self.abandon_live_battle();
         self.flags.story_flags = 0;
         self.flags.story_flag_bits.clear();
         // A NEW GAME is the opening chain, not a free-roam picker visit: the

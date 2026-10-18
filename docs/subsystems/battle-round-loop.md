@@ -347,6 +347,13 @@ Port: the two defeat pieces are read off PROT 0898 (`battle_party_panel::DefeatT
 - It ends the encounter session's battle (grace + suppression), restores the `field_return` snapshot and flips `mode` to `Field`.
 - **The field camera re-seats on the player**, as a scene entry does. Retail leaves the battle through MAIN INIT back into field mode 3, whose init `FUN_801D6704` runs the camera reset `FUN_80025C24` unconditionally (`0x801D698C`) and, on the back-from-battle word `_DAT_8007B8B8 == 2`, re-centres the window on the saved player tile (`0x801D6E0C..0x801D6ECC`, `FUN_80017DD4`). The port keeps the scene resident and reports no scene entry, so `finish_battle` runs `World::recentre_field_window_on_player` and raises a latch that `frame_step::camera_after_world_tick` takes ahead of the camera step. Without it the camera kept the focus it had pinned onto the party's battle seat, clamped to the region box's corner, until the player moved.
 
+### A battle left before its exit
+
+Retail leaves a battle only through `finish_battle`'s path. The port's hosts can leave one early: a scene picker, a debug seat, or a test that runs several fights on one runtime. Two resets keep such a battle out of the next one:
+
+- **Battle entry clears the results sequencer.** Battle init `FUN_80055B6C` stores zero to the end-of-battle marker `DAT_8007BD71` (`0x80056014`), the byte whose `0xFE` gives the battle frame to the results sequencer. `World::enter_battle` clears `World::battle.victory` to match, along with its rewards latch and result-window glide. If the sequence survived, it owned the new fight from its first frame: no round prompt and no command session, and the fight ended when the stale sequence did.
+- **A scene load or New Game abandons a live battle** (`World::abandon_live_battle`, called from `SceneHost::load_scene` and `World::begin_new_game`). This is a port-only path. It drops the sequencer, the command sessions, the battle effects and the fade, and restores the field actor snapshot. It stores no outcome: no loot, no return flags and no HP persisted.
+
 ### Battle rewards composite
 
 `World::apply_battle_loot(formation, catalog) -> BattleRewards` (`crates/engine-core/src/world/items_arts/battle_spoils.rs`) turns a defeated formation into its side-effects:

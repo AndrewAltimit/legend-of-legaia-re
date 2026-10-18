@@ -567,6 +567,71 @@ impl World {
         self.terrain.step_tile = None;
     }
 
+    /// Abandon a battle that is still live when the world is sent somewhere
+    /// else - a scene load, a New Game - without it having ended.
+    ///
+    /// Retail has no such path: the battle overlay leaves only through its
+    /// exit (MAIN INIT's back-from-battle arm, [`Self::finish_battle`]). The
+    /// port's hosts can (a scene picker, a debug seat, a test driving several
+    /// fights on one runtime), and a battle left up carried its results
+    /// sequencer, command sessions and field snapshot into whatever came
+    /// next. This drops them with no outcome: no loot, no story-flag stores,
+    /// no HP persisted - the fight did not happen. A pending game-over hold
+    /// resolves first, which is the same field restore. No-op when no battle
+    /// is live.
+    pub fn abandon_live_battle(&mut self) {
+        if self.game_over_hold {
+            self.resolve_game_over_hold();
+        }
+        if !matches!(self.mode, SceneMode::Battle) && self.battle.victory.is_none() {
+            return;
+        }
+        self.battle.victory = None;
+        self.battle.end = None;
+        self.battle.loot_applied = false;
+        self.battle.spoils_frames = 0;
+        self.battle.result_windows_glide = None;
+        self.battle.inflight_seed = None;
+        self.battle.active_formation = None;
+        self.battle.command = None;
+        self.battle.item_menu = None;
+        self.battle.spell_menu = None;
+        self.battle.arts_menu = None;
+        self.battle.arts_input = None;
+        self.battle.hit_fx.clear();
+        self.battle.hit_events.clear();
+        self.battle.clut_stages.clear();
+        self.battle.effect_spawns.clear();
+        self.audio.battle_sfx_cues.clear();
+        self.audio.battle_shout_cues.clear();
+        self.audio.battle_bgm_active = false;
+        self.audio.field_bgm_resume = None;
+        self.presentation.fade = None;
+        self.presentation.module_fades.clear();
+        self.casting.module_pres = Default::default();
+        let buffs = std::mem::take(&mut self.battle.buffs);
+        for b in buffs {
+            self.add_to_buff_scalar(b.slot, b.stat, -b.applied_delta);
+        }
+        self.teardown_battle_effects();
+        if let Some(active) = self.battle.solo_spar_restore.take() {
+            self.party.active_party = active;
+        }
+        if let Some(ret) = self.field_return.take() {
+            self.actors = ret.actors;
+            self.player_actor_slot = ret.player_actor_slot;
+            self.party.party_count = ret.party_count;
+            self.resync_party_actors_from_roster();
+        }
+        for a in self.actors.iter_mut() {
+            a.battle.seat = None;
+        }
+        self.mode = self.battle.return_mode;
+        self.battle.return_mode = SceneMode::Field;
+        self.terrain.last_tile = None;
+        self.terrain.step_tile = None;
+    }
+
     /// Active enemy actors in the current battle as `(actor_index,
     /// monster_id, battle_slot)`, where `battle_slot` is the 0-based monster
     /// index the battle texture loader keys VRAM placement on (feed it to
