@@ -10,6 +10,14 @@
 //! `_DAT_1F800393 * 6` per tick). The snap needs no state -
 //! [`World::field_npc_render_y`] samples the floor under the NPC every time a
 //! host places it - so this pass keeps only the glide's.
+//!
+//! Ahead of both floor arms, a placement whose `+0x10` carries `0x20000000`
+//! takes `+0x16 = -(+0x8E)` outright (`0x8003BC50..0x8003BC64`, the store at
+//! `0x8003BCF4`), wherever it stands. A script raises the bit with `31 1D`
+//! and writes `+0x8E` with `4C 42` (the immediate arm also writes `+0x16`
+//! once): `rikuroa`'s Caruban (`P1[9]`) parks at `540` in its prologue and
+//! hovers there while its motion stream walks it, which a floor sample at
+//! the walked tile would put back on the ground.
 
 use super::World;
 use legaia_engine_field::motion_pause::MOVING_CLASS;
@@ -59,7 +67,8 @@ impl World {
                 .ambient
                 .get(&slot)
                 .map(|c| (c.vm.actor_flags, c.vm.move_pair.unwrap_or(0)));
-            let flags = self.field_channel_flags(slot) | channel.map_or(0, |c| c.0) | MOVING_CLASS;
+            let (ctx_flags, field_8e) = self.field_channel_flags_and_8e(slot);
+            let flags = ctx_flags | channel.map_or(0, |c| c.0) | MOVING_CLASS;
             let flags = if self.field_npc_culled(x, z) {
                 flags | 2
             } else {
@@ -68,7 +77,7 @@ impl World {
             let plan = field_actor_plan(FieldActorInputs {
                 lifetime: channel.map_or(0, |c| c.1),
                 flags,
-                field_8e: 0,
+                field_8e,
                 path_target_present: false,
                 scripted_present: channel.is_some(),
                 ambient_gate: false,
@@ -87,9 +96,11 @@ impl World {
                 }
                 // A dead actor (`+0x5C < 0`) keeps whatever Y it had.
                 FieldActorHeight::Hold => {}
-                // The snap - and the `0x20000000` mirror, whose `+0x8E`
-                // source no field NPC publishes - fall back to the floor.
-                FieldActorHeight::SnapToFloor | FieldActorHeight::Mirror(_) => {
+                // The script-held height: `-(+0x8E)`, not a floor sample.
+                FieldActorHeight::Mirror(y) => {
+                    self.npcs.glide_y.insert(slot, y);
+                }
+                FieldActorHeight::SnapToFloor => {
                     self.npcs.glide_y.remove(&slot);
                 }
             }
@@ -179,5 +190,39 @@ mod tests {
         w.npcs.ambient.get_mut(&5).unwrap().vm.actor_flags = MOVING_CLASS;
         w.tick_field_npc_heights();
         assert_eq!(w.field_npc_render_y(5, x, z), -200);
+    }
+
+    /// A placement whose context carries `0x20000000` stands at `-(+0x8E)`
+    /// wherever it walks, and falls back to the floor once the bit drops
+    /// (`rikuroa`'s Caruban: `31 1D`, `4C 42 1C 02 00 00`).
+    #[test]
+    fn the_mirror_bit_holds_the_script_height_wherever_the_npc_walks() {
+        let mut w = stepped_world(-200);
+        let z = 2 * 128 + 64;
+        w.npcs.positions.insert(4, (2 * 128 + 64, z));
+        w.field_vm
+            .channels
+            .push(legaia_engine_field::field_channels::FieldChannel {
+                placement_index: 4,
+                ctx: legaia_engine_vm::field::FieldCtx {
+                    flags: 0x2000_0000,
+                    field_8e: 540,
+                    ..Default::default()
+                },
+                record_offset: 0,
+                pc: 0,
+                done: false,
+                object_bind: false,
+            });
+        w.tick_field_npc_heights();
+        assert_eq!(w.field_npc_render_y(4, 2 * 128 + 64, z), -540);
+        // Walked onto the raised tier: still the script's height.
+        let nx = 6 * 128 + 64;
+        w.npcs.positions.insert(4, (nx, z));
+        w.tick_field_npc_heights();
+        assert_eq!(w.field_npc_render_y(4, nx, z), -540);
+        w.field_vm.channels[0].ctx.flags = 0;
+        w.tick_field_npc_heights();
+        assert_eq!(w.field_npc_render_y(4, nx, z), -200);
     }
 }

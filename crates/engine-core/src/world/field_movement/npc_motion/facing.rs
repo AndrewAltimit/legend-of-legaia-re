@@ -52,11 +52,17 @@ impl World {
     ///
     /// REF: FUN_8003A1E4 (per-placement context), FUN_801DE840 (op 0x31)
     pub fn field_channel_flags(&self, slot: u8) -> u32 {
+        self.field_channel_flags_and_8e(slot).0
+    }
+
+    /// [`Self::field_channel_flags`] with the context's `+0x8E`, the height
+    /// the `0x20000000` arm of `FUN_8003BC08` mirrors into `+0x16`.
+    pub fn field_channel_flags_and_8e(&self, slot: u8) -> (u32, i16) {
         self.field_vm
             .channels
             .iter()
             .find(|c| !c.object_bind && c.placement_index == slot as usize)
-            .map_or(0, |c| c.ctx.flags)
+            .map_or((0, 0), |c| (c.ctx.flags, c.ctx.field_8e))
     }
 
     /// Gated on the placement's live class word - see the body.
