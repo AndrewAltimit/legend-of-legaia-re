@@ -559,6 +559,16 @@ Cross skips, and the quads come out of the shared
 window draws through, so the 640x480 boot stage letterboxes identically on
 both. The title theme starts when the card comes up, not under the logos.
 
+One start owns the page at a time. Every user-initiated start - New Game, a
+scene picked from the list, a save imported over a live title - bumps a page
+start generation and calls `play_cancel_start` first, which drops the logo and
+title sessions, abandons a live opening chain, ends an armed movie without
+its post-movie hand-off and stops the score; the page side cancels the boot
+controller's own loop and the movie overlay. A title loop or outcome that
+captured an older generation bails, so a scene picked during the title card is
+never replaced by the New Game it interrupted, and a New Game over a running
+scene stops that scene's loop until its own outcome enters the opening.
+
 ## In-world minigames (`play_minigames`)
 
 The casino slots, Muscle Dome, Baka Fighter and dance-hall sessions install
