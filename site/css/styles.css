@@ -3504,8 +3504,15 @@ kbd {
   text-align: center;
   pointer-events: none;
 }
+.hero-media .caption a { color: #e6ebf3; pointer-events: auto; }
+/* The still stands in for the gameplay loop only under reduced motion. */
+.hero-media img.poster { display: none; }
+@media (prefers-reduced-motion: reduce) {
+  .hero-media video.hero-loop { display: none; }
+  .hero-media img.poster { display: block; }
+}
 
-/* Disc slot: THE prominent global "insert your .bin" affordance. One place,
+/* Disc slot:THE prominent global "insert your .bin" affordance. One place,
    instead of a NEEDS-DISC label repeated on every tile. */
 .disc-slot {
   margin-top: 0.9rem;

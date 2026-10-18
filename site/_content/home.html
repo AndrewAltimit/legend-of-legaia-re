@@ -33,12 +33,18 @@
     </span>
   </div>
   <div class="hero-media">
-    <video controls preload="none" playsinline poster="img/tiles/hero.jpg">
-      <source src="assets/legend-of-legaia-re-demo.mp4" type="video/mp4">
-      Your browser does not support embedded video.
-      <a href="assets/legend-of-legaia-re-demo.mp4">Download the demo video</a>.
+    <!-- A silent gameplay loop; under prefers-reduced-motion the CSS swaps it
+         for the still poster below and main.js pauses it. -->
+    <video class="hero-loop" autoplay loop muted playsinline preload="auto"
+           width="960" height="720" poster="img/tiles/hero.jpg"
+           aria-label="The port in motion: Rim Elm, the world map, Sol Tower, a battle with a Gimard summon, a shop, Noa's dance, the slot machine and the Muscle Dome">
+      <source src="assets/hero-montage.webm" type="video/webm">
+      <source src="assets/hero-montage.mp4" type="video/mp4">
     </video>
-    <div class="caption">2-minute demo &mdash; the engine running real scenes</div>
+    <img class="poster" src="img/tiles/hero.jpg" width="960" height="720"
+         alt="Vahn walking through Rim Elm">
+    <div class="caption">The port, running real scenes &mdash;
+      <a href="assets/legend-of-legaia-re-demo.mp4">Watch the 2-minute demo</a></div>
   </div>
 </div>
 
@@ -88,10 +94,10 @@
     <div class="tiles">
       <a class="tile lg" href="play.html">
         <div class="collage">
-          <div class="cell main"><img src="img/tiles/play-main.jpg" alt="The engine rendering Rim Elm - Vahn near the windmills" loading="lazy"></div>
+          <div class="cell main"><img src="img/tiles/play-main.jpg" alt="Vahn walking through Rim Elm past the Genesis Tree" loading="lazy"></div>
           <div class="side">
-            <div class="cell"><img src="img/tiles/play-side1.jpg" alt="The name-entry screen" loading="lazy"></div>
-            <div class="cell"><img src="img/tiles/play-side2.jpg" alt="The opening prologue" loading="lazy"></div>
+            <div class="cell"><img src="img/tiles/play-side1.jpg" alt="A battle: the Seru Gimard casting Burning Attack" loading="lazy"></div>
+            <div class="cell"><img src="img/tiles/play-side2.jpg" alt="The Sebucus Islands world map under drifting mist" loading="lazy"></div>
           </div>
           <span class="glyph"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="8" width="18" height="9" rx="4.5"/><path d="M8 11v3M6.5 12.5h3"/><circle cx="15.5" cy="11.5" r="0.9"/><circle cx="17.8" cy="13.4" r="0.9"/></svg></span>
         </div>
@@ -102,10 +108,10 @@
       </a>
       <a class="tile lg" href="minigames.html">
         <div class="collage">
-          <div class="cell main"><img src="img/tiles/mg-main.jpg" alt="Noa's dance minigame" loading="lazy"></div>
+          <div class="cell main"><img src="img/tiles/mg-main.jpg" alt="Noa's dance minigame on the Sol Tower dance floor" loading="lazy"></div>
           <div class="side">
-            <div class="cell"><img src="img/tiles/mg-side1.jpg" alt="The casino slot machine" loading="lazy"></div>
-            <div class="cell"><img src="img/tiles/mg-side2.jpg" alt="The fishing minigame" loading="lazy"></div>
+            <div class="cell"><img src="img/tiles/mg-side1.jpg" alt="The Wild Card slot machine" loading="lazy"></div>
+            <div class="cell"><img src="img/tiles/mg-side2.jpg" alt="Fishing: Vahn casting with the power meter up" loading="lazy"></div>
           </div>
           <span class="glyph"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="5" width="5" height="14" rx="1"/><rect x="9.5" y="5" width="5" height="14" rx="1"/><rect x="15.5" y="5" width="5" height="14" rx="1"/><circle cx="6" cy="9.5" r="1"/><circle cx="12" cy="13" r="1"/><circle cx="18" cy="10.5" r="1"/></svg></span>
         </div>
