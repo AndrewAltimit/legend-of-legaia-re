@@ -420,6 +420,9 @@ impl RetailObs {
             if let Some(p) = self.panel {
                 self.scroll_rects.extend(panel_source_rects(&p, v));
             }
+            // The cycled CLUT cells as the displayed frame uploaded them,
+            // written after the engine's own cycler output.
+            self.scroll_rects.extend(retail_displayed_cell_rects(ram));
         }
     }
 

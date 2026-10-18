@@ -676,6 +676,94 @@ pub fn retail_cell_fx(ram: &[u8]) -> Vec<legaia_engine_field::clut_cell_fx::Clut
         .collect()
 }
 
+/// The GPU packet buffers' bases, `DAT_8007B728[2]`, indexed by the buffer
+/// index `gp+0x434` (`FUN_80016444` prints the bytes used as
+/// `_DAT_1F8003A0 - DAT_8007B728[gp+0x434]`, `0x80016890..0x800168B4`).
+const PACKET_BUFFER_BASES: u32 = 0x8007_B728;
+/// The buffer index `gp+0x434` (`gp = 0x8007B318`): the buffer the frame
+/// last built allocated from.
+const PACKET_BUFFER_INDEX: u32 = 0x8007_B74C;
+/// The packet buffer's size `_DAT_8007B9CC` (the bound the same print
+/// subtracts the used bytes from).
+const PACKET_BUFFER_SIZE: u32 = 0x8007_B9CC;
+
+/// The CLUT-cell texels the **displayed** frame drew with, one rect per live
+/// mode-3 cycler ([`retail_cell_fx`]).
+///
+/// `FUN_80019D50` does not write VRAM directly: it builds the repacked row as
+/// a `[x, y, w, h]` rect followed by the texels at the packet cursor
+/// `*(0x1F8003A0)`, bumps the cursor past them (`0x80019DA0..0x80019DD4`)
+/// and hands the block to `LoadImage` (`0x8001A004..0x8001A030`). The cursor
+/// allocates from the frame's own packet buffer, so every built frame keeps
+/// its cell uploads beside its primitives until the buffer comes round
+/// again. The frame on screen is the one built in the *other* buffer
+/// (`gp+0x434 ^ 1`), two game frames behind the RAM; its uploads are the
+/// first copy of each rect from that buffer's base, since that frame
+/// allocated contiguously from there and overwrote anything older below its
+/// end. A cycler is taken only when it had armed (`+0x9C > 1`) by the
+/// displayed frame, so `+0x9C` must be past that by the display lag.
+///
+/// The cycler's adds in RAM are the frame after: a strobe record re-keys
+/// `+0x94` between frames (`koin3`'s dance-floor rows), so seeding the RAM's
+/// adds draws a phase retail's frame never showed.
+pub fn retail_displayed_cell_rects(ram: &[u8]) -> Vec<SeededVramRect> {
+    let index = game_anchors::i16_at(ram, PACKET_BUFFER_INDEX);
+    if !(0..=1).contains(&index) {
+        return Vec::new();
+    }
+    let base = game_anchors::u32_at(ram, PACKET_BUFFER_BASES + 4 * (index as u32 ^ 1));
+    let size = game_anchors::u32_at(ram, PACKET_BUFFER_SIZE).min(0x8_0000);
+    if !(0x8000_0000..0x8020_0000).contains(&base) {
+        return Vec::new();
+    }
+    let lo = (base & 0x1F_FFFF) as usize;
+    let hi = (lo + size as usize).min(ram.len());
+    let window = &ram[lo.min(hi)..hi];
+    let mut out: Vec<SeededVramRect> = Vec::new();
+    for n in crate::retail_compare_script::actor_nodes(ram) {
+        if game_anchors::u32_at(ram, n + 0x0C) != PART_TICK
+            || game_anchors::i16_at(ram, n + 0x5A) != 3
+            || i32::from(game_anchors::i16_at(ram, n + 0x9C)) <= 1 + DISPLAY_LAG_FRAMES
+        {
+            continue;
+        }
+        let rect = (
+            game_anchors::u16_at(ram, n + 0xA0),
+            game_anchors::u16_at(ram, n + 0xA2),
+            game_anchors::u16_at(ram, n + 0xA4),
+            game_anchors::u16_at(ram, n + 0xA6),
+        );
+        let (_, _, w, h) = rect;
+        if w == 0 || h == 0 || w > 256 || h > 64 || out.iter().any(|(r, _)| *r == rect) {
+            continue;
+        }
+        let header: Vec<u8> = [rect.0, rect.1, rect.2, rect.3]
+            .iter()
+            .flat_map(|v| v.to_le_bytes())
+            .collect();
+        let count = usize::from(w) * usize::from(h);
+        let Some(at) = window
+            .windows(header.len())
+            .enumerate()
+            .find(|(i, win)| i % 2 == 0 && *win == header.as_slice())
+            .map(|(i, _)| i)
+        else {
+            continue;
+        };
+        let Some(bytes) = window.get(at + 8..at + 8 + count * 2) else {
+            continue;
+        };
+        let texels = bytes
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .map(|c| u16::from_le_bytes(*c))
+            .collect();
+        out.push((rect, texels));
+    }
+    out
+}
+
 /// A menu-class capture the seed can reproduce: a pause-menu screen, named
 /// by the root row whose confirm opens it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
