@@ -104,7 +104,7 @@ There is **one** pack format. [`pack.md`](pack.md) reads it at offset 0 (the bar
 | [Monster animation](monster-animation.md) | Confirmed | Per-object rigid-transform keyframes inside the monster archive (PROT 867), one stream per action. |
 | [Player-character meshes](character-mesh.md) | Confirmed | Field form in PROT 0874; battle form assembled per character from equipment sections. |
 | [Player battle files](battle-data-pack.md) | Confirmed | `data\battle\PLAYER1..4` (extraction 863..866): header, LZS record 0 (action table, art-animation bank), equip-slot table, per-slot mesh / texture streams. |
-| [MDT move table](mdt.md) | Confirmed | Tactical Arts move tables; two on-disc layouts the consumer accepts. |
+| [MDT move table](mdt.md) | Confirmed | Retail's "MOVE" buffer: the scene's ANM clip bank, addressed by clip id. |
 | [Art data](art-data.md) | Inferred | Per-character art records: Action Constants, command sequences, power byte, Miracle / Super Art triggers. |
 | [Headerless 16bpp stills](ringside-still.md) | Confirmed | Extraction 1221 / 1222: raw BGR555 uploaded to VRAM `(384, 0)`, the Muscle Dome ringside reaction. |
 | [Save-slot portraits](save-icon.md) | Confirmed | Sixteen 16x16 tiles interleaved across a 256x16 4bpp strip; tile N is save N+1's card icon. |
@@ -139,7 +139,7 @@ Tables that live in `SCUS_942.54` rodata or in an overlay's data segment. They a
 |---|---|---|---|
 | [Spell table](spell-table.md) | Confirmed | SCUS `DAT_800754C8` | MP cost, target and name per spell id; 12-byte stride. |
 | [Item-name table](item-table.md) | Confirmed | SCUS `PTR_DAT_8007436C` | 256 ids, 12-byte stride. The id space drops, steals and equipment all index. |
-| [Item-effect descriptors](item-effect-table.md) | Confirmed | SCUS `DAT_800752C0` | 130 records: effect class, tier, usability flags. Restore amounts are overlay-resident. |
+| [Item-effect descriptors](item-effect-table.md) | Confirmed | SCUS `DAT_800752C0` | 130 records: effect class, tier, usability flags. Restore amounts are the separate static heal-amount table. |
 | [Equipment stat bonuses](equipment-table.md) | Confirmed | SCUS `DAT_80074F68` | Per-equip stat bonuses, character mask, slot type, Ra-Seru flag; 8-byte stride. |
 | [Accessory passives](accessory-passive-table.md) | Confirmed | SCUS `0x8007625C` | 64-slot index space feeding the ability bitfield `char+0xF4`. |
 | [Steal table](steal-table.md) | Confirmed | SCUS `DAT_80077828` | Per-monster `[chance, item]` - chance first, the reverse of the drop fields. |

@@ -1,8 +1,8 @@
-# MDT - move tables (Tactical Arts)
+# MDT - the "MOVE" buffer (the scene's animation clip bank)
 
-A move table is a per-scene buffer of **move records**: short bytecode programs that pose and animate an actor, addressed by a move id. The buffer opens with a table of byte offsets, one per id, and each record is a small header followed by per-frame data. The per-frame data is bytecode for the [move VM](../subsystems/move-vm.md) (`FUN_80023070`, 71 opcodes).
+The buffer retail labels **MOVE** (`_DAT_8007B888`, asset type `0x05`, allocated with the `move_malloc_err` string) is the scene's **ANM clip bank**: the container is the [ANM](anm.md) container and each record is one keyframe clip, addressed by a clip id. The label is the only "move" about it - it is not move-VM bytecode and not a Tactical Arts table. A capture byte-match of the live buffer against the scene bundle's type-`0x05` payload pins this ([anm.md](anm.md#disc-source---per-scene-anm-bundle)).
 
-The consumer is `FUN_800204F8`, the same function the [script VM](../subsystems/script-vm.md) opcode `0x22` `EXEC_MOVE` invokes. Implementation: [`crates/mdt`](../../crates/mdt/README.md).
+The consumer is `FUN_800204F8`, the per-frame clip driver the actor tick `FUN_80021DF4` calls and the [script VM](../subsystems/script-vm.md) opcode `0x22` `EXEC_MOVE` invokes: it binds the clip pointer at `actor[+0x4C]` and advances the frame cursor `actor[+0x68]` ([anm.md](anm.md#binding-a-clip)). Implementation: [`crates/mdt`](../../crates/mdt/README.md) (the offset-table reader); the record layout is decoded by `legaia_actor_formats::player_anm`.
 
 ## Layout the consumer reads
 
@@ -20,22 +20,22 @@ buf  (MOVE: _DAT_8007B888, MOVE2: _DAT_8007B840)
 | Offset | Size | Field | Meaning | Confidence |
 |---|---|---|---|---|
 | `buf + id*4` | u32 | `offset_table[id]` | Byte offset of the record for `move_id & 0x3FF`; `0` means no record | Confirmed |
-| `rec + 0x00` | u8 | reserved | | Unknown |
+| `rec + 0x00` | u8 | bone count | Animated TMD objects ([anm.md](anm.md)) | Confirmed |
 | `rec + 0x01` | u8 | `flags` | Bit 0 = use the frame divisor | Confirmed |
 | `rec + 0x02` | u16 | `max_position_x16` | Clamps the playhead at `(this * 16) - 1` | Confirmed |
 | `rec + 0x04` | u16 | reserved | | Unknown |
 | `rec + 0x06` | u8 | `divisor` | Consulted only when `flags & 1` | Confirmed |
-| `rec + 0x07` | about `max_position_x16 * 16` | per-frame data | Move-VM bytecode | Inferred (size) |
+| `rec + 0x08` | `8 * bones * frames` | per-frame data | One 8-byte bone entry per object per frame ([anm.md](anm.md)) | Confirmed |
 
 The consumer masks the id to 10 bits, so the table is *addressable* up to 1024 entries. Real tables are much shorter - see the caveat below.
 
 Routing: if actor flag bit `0x01000000` is set, the base is `_DAT_8007B75C`. Otherwise `MOVE` serves `move_id < 0x400` and `MOVE2` serves `move_id >= 0x400`.
 
-Per frame, `FUN_800204F8` clamps `actor[0x68]` (the playhead) to `[0, max_position_x16 * 16)`, advances it by `actor[0x6A]` (frame delta), optionally divided by `record[6]`, and reads the per-frame data into the per-actor animation state.
+Per frame, `FUN_800204F8` clamps `actor[0x68]` (the playhead) to `[0, max_position_x16 * 16)`, advances it by `actor[0x6A]` (frame delta), optionally divided by `record[6]`, and the actor's pose is built from the clip's bone entries at `frame = cursor >> 4`.
 
 ## The `move_program_no` name is not this format
 
-The CDNAME define `move_program_no` covers **extraction 0970..0971**: a `\DATA\MOV*.STR` FMV program/path table plus debug strings. It names **MOV**ie program numbers ([str-fmv-table.md](str-fmv-table.md)), not Tactical-Arts moves.
+The CDNAME define `move_program_no` covers **extraction 0970..0971**: a `\DATA\MOV*.STR` FMV program/path table plus debug strings. It names **MOV**ie program numbers ([str-fmv-table.md](str-fmv-table.md)), not this buffer.
 
 The extraction files *labelled* `0972` / `0973` `move_program_no.BIN` are not move tables either. Under the [+2 filename-numbering shift](cdname.md#numbering-space) they sit in the `other_game` block: 0972 is the **fishing minigame overlay** (dev `other1`) and 0973 is the 1-sector `OTHER2` dev module. A "flat 128-byte record array" reading of them is a loose parse of overlay code and data.
 
@@ -95,6 +95,5 @@ mdt slots    <PATH> --limit 8              # decode as offset-table layout
 
 ## See also
 
-- [`subsystems/move-vm.md`](../subsystems/move-vm.md) - the move-table opcode VM that runs these bytecode streams.
-- [Art records](art-data.md) - the per-character art-record layer above the move tables.
-- [`subsystems/battle-action.md`](../subsystems/battle-action.md) - the battle action state machine that drives the moves.
+- [ANM animation container](anm.md) - the record layout, the frame cursor and the clip driver.
+- [`subsystems/move-vm.md`](../subsystems/move-vm.md) - the move VM, a different subsystem despite the shared "move" label.

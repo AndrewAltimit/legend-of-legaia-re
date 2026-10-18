@@ -155,7 +155,7 @@ Reverse-engineering aids (useful once you go deeper):
 | `asset field-disasm` | Field/event-VM script disassembler over `PROT.DAT` (a subcommand of `asset`). |
 | `mes` | MES dialog-container inspector (for readable game text, use `legaia-patcher translate export` instead). |
 | `anm` | ANM animation-container inspector. |
-| `mdt` | Move-table (Tactical Arts) layout classifier. |
+| `mdt` | Layout classifier for retail's "MOVE" buffer (the scene's animation clip bank). |
 | `art` | Tactical Arts tables: action constants, arts names, Super/Miracle Art triggers. |
 | `mednafen-state` | Mednafen save-state inspector: RAM diffs, VRAM dumps, SPU snapshots. |
 | `pcsxr-state` | PCSX-Redux save-state reader: scene, game mode and player position; RAM windows; VRAM. |

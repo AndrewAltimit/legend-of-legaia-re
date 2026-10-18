@@ -294,7 +294,7 @@ Per-mesh world placement and mesh selection come from the field map's object tab
 
 ### A `Flag` descriptor streams an extra file
 
-Types `0x0A` / `0x0F` / `0x14` allocate nothing and parse nothing. The [dispatcher](asset-type.md) returns `(descriptor_low_byte) + (case << 8)` and exits (`FUN_8001F05C` at `8001f574` / `8001f60c` / `8001f658`). `FUN_80020224` ORs every descriptor's return into its status word; the field init shifts that right by 8 and calls `FUN_8002541C` with it (`801d6bf8` `sra s1, s4, 0x8`). `FUN_8002541C` then loads one more file through `FUN_800255B8`, chosen by mode:
+Types `0x0A` / `0x0F` / `0x14` allocate nothing and parse nothing. The [dispatcher](asset-type.md) returns `case << 8` (the accumulator `s4` is still zero) and exits (`FUN_8001F05C` at `8001f574` / `8001f60c` / `8001f658`). `FUN_80020224` ORs every descriptor's return into its status word; the field init shifts that right by 8 and calls `FUN_8002541C` with it (`801d6bf8` `sra s1, s4, 0x8`). `FUN_8002541C` then loads one more file through `FUN_800255B8`, chosen by mode:
 
 | Mode | Path |
 |---|---|

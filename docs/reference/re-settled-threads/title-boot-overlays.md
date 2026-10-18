@@ -189,7 +189,8 @@ palette-space collapse, not a depth cue.
   three into `_DAT_801C6EA4` (`sh` at `0x801E34B0` / `34B4` / `34BC`): `+0x4C` window top Y,
   `+0x4E` visible line count, `+0x50` scroll-cadence divisor. `word3` selects seed / pause /
   resume / kill and is never stored. Not op0 `0x88`, which writes `_DAT_80084628/...`.
-  `RollerParams::for_scene` derives from the scene bytecode.
+  `RollerSeed::config_op_before` (`crates/engine-field/src/cutscene_narration.rs`) reads it
+  off the scene's timeline bytecode.
 - **Caption.** *"It was the Seru."* is not text: a pre-rendered 112×32 4bpp TIM (two CLUT
   palettes = the fade steps) in PROT 0749 (`opdeene`) at LZS-decoded offset `0x01EC30`, VRAM
   `fb=(384,0)`, drawn as a screen-space textured quad. Every UI text/image draw path fires zero

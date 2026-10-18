@@ -772,13 +772,13 @@ where four more addresses in this band are resolved the same way).
 
 ## Related crates
 
-- **`crates/mdt`** parses the [MDT format](../formats/mdt.md). The per-frame data inside an MDT record is the move-VM bytecode this VM consumes.
+- **`crates/mdt`** parses the [MDT format](../formats/mdt.md), retail's "MOVE" buffer - the scene's ANM clip bank, which this VM does not read despite the shared label.
 - **`crates/engine-vm`** holds the port in `move_vm.rs` and `move_vm/` (`dispatch`, `ext`, `host`, `spawn`, `state`, `color`). `run_until_break` adds a per-frame opcode budget that retail does not have.
 - **`crates/engine-effects`** holds the part-tick blocks, the summon driver, the draw-kind-4 emitters and the screen widgets.
 
 ## See also
 
-[Move table (MDT)](../formats/mdt.md) ·
+[MOVE buffer (MDT)](../formats/mdt.md) ·
 [Overlay extension sub-ops](move-vm-overlay-ext.md) ·
 [Effect VM](effect-vm.md) ·
 [Field ambient FX](field-ambient-fx.md) ·
