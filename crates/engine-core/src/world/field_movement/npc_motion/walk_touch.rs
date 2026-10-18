@@ -180,6 +180,21 @@ impl World {
                         actor.move_state.render_26 = heading;
                     }
                 }
+                // The player arm's camera re-centre, which the record's `0x23`
+                // (and the `4C 51` form) makes whenever its target actor is
+                // the player context: `FUN_80017EC8(op[0] & 0x7F, op[1] &
+                // 0x7F, ..)` at `0x801DEC9C` (`0x801E1A58` for `4C 51`). It
+                // re-latches the region box on the landing tile and re-plans
+                // the windowed static-object list - without it a door out of
+                // a house keeps the interior's box, and under retail
+                // windowing every window-owned placement outside it (geremi's
+                // street slabs) stays hidden. The operand tile is `(world -
+                // 0x40) >> 7` of the decoded seat, as in the VM's own arm.
+                // REF: FUN_80017EC8
+                self.recentre_field_window(
+                    (i32::from(world_x) - 0x40) >> 7,
+                    (i32::from(world_z) - 0x40) >> 7,
+                );
                 self.pending_field_events.push(FieldEvent::MoveTo {
                     world_x: world_x as u16,
                     world_z: world_z as u16,
