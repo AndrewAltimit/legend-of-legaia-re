@@ -893,6 +893,36 @@ same guard retry - once, from the same seed - and reports it as `seated
 `progresses` and `pad` tiers together, and any change to how long a battle
 action runs moved it.
 
+### Lifts that ask first
+
+Past Songi the same segment crosses `jouinb`, whose floors join through
+three lifts: P2[6], P2[7] and P2[8], each one partition-2 record laid on
+bands more than sixteen tiles apart. Stepped on, a lift asks "ride?" (a
+two-way picker); Yes walks the party into the car and rides it to the
+landing the car flags `0x450` / `0x461` pick, and No walks the party a tile
+or three back off the band. The planner does not route through a lift,
+since where the car stands is story state the walk cannot read ahead, so
+the hand rides one only when a beat or a walk steps on its band.
+
+A walk-beat onto P2[8]'s west band at (46, 99) can ride the party to the
+east pocket around (108..113, 110..114). The pocket's only way out is the
+same lift's band at (108, 111), so every later plan from there fails with
+`no walkable path`. When a hop fails that way and the scene's crossings
+and beats have not opened it, the hand rides out (`crossings::ride_out`):
+it walks to the nearest reachable lift band's side, presses onto it once,
+and answers the picker with the option that does not just step it back
+(`script_runner::ride_option`, live only during that ride). It then tries
+the hop again, up to `MAX_CROSS_OVERS` times per scene. Pressing once and
+no further matters: a walk that kept its goal after the car set the party
+down walked straight onto the far landing's band and rode back.
+
+Whether a beat reaches the pocket at all depends on the dealt stream (the
+walks and fights before it), so this stall comes and goes with any change
+to battle timing. Over the default stream and `LEGAIA_FGL_RNG_SEED` 1..32,
+the stranded hand lost `noaru_valley -> bio_castle`'s `pad` tier on 10 to
+13 of the 33, a different set whenever battle timing moved; riding out, it
+loses none.
+
 ## Seeding
 
 The seed goes through the host's own resume path,
