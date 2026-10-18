@@ -33,6 +33,7 @@ mod save_roundtrip_library;
 mod scene_encounter_rollable;
 mod sfx_cue_resident_bank;
 mod sfx_shared_region;
+mod taiku_security_door_camera;
 mod tetsu_spar_picker_disc;
 mod tetsu_spar_somersault;
 mod tile_board_draw_live;

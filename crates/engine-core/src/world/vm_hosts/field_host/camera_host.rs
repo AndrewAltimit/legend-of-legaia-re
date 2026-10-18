@@ -64,6 +64,19 @@ impl<'a> FieldCameraHost for FieldHostImpl<'a> {
         // APPLY composes the follow pose and glides to it over the trigger's
         // frames, or snaps (killing the mover) on a zero trigger.
         self.world.camera.state.glide_frames = i32::from(apply_trigger.max(0));
+        // The arm composes the player's zone shot INTO the staging block the
+        // beats wrote (`jal 0x801DAB90` at `0x801DF228`, `a1 = 0x801C6EA8`)
+        // before committing it (`jal 0x801DE084` at `0x801DF27C`), so the
+        // scripted shot no longer exists after APPLY: the staging block and
+        // the globals the mover glides both hold the follow pose. Drop the
+        // port's mirror of the staged slots with it. Kept, it went on
+        // claiming the frame (`camera_view::cutscene_owns_camera`) for the
+        // rest of the scene: the release glide rendered the frozen door shot
+        // and cut, and every later camera-less record (`taiku`'s P2[0] /
+        // P2[1] bulkhead toggles beside the P2[4] security doors) flashed it
+        // back up.
+        // REF: FUN_801DE840 (`0x801DF210..0x801DF288`), FUN_801DAB90
+        self.world.camera.state.params.clear();
         self.world
             .pending_field_events
             .push(FieldEvent::CameraApply {

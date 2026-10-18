@@ -1136,7 +1136,12 @@ through `FUN_8003D254`. No camera mode changes and nothing latches: the follow
 ease keeps running from the player's handler afterwards. APPLY is therefore how
 a script releases a shot it staged, and scenes such as `rugi` run it from a
 looping record every frame, which pins the camera on the composed follow pose.
-The engine ports it as `Camera::apply_follow_shot`. Reading APPLY as "commit
+The engine ports it as `Camera::apply_follow_shot`. Because the compose
+overwrites the staging block, no scripted shot survives APPLY, and the port
+drops its mirror of the staged slots (`camera.state.params`) there too: kept,
+it handed the frame back to the stale shot through the release glide and on
+every later camera-less record of the scene (`taiku` P2[4]'s security-door
+shot reappearing on the P2[0] / P2[1] bulkhead toggles). Reading APPLY as "commit
 the staged shot and go cinematic" freezes such a scene's camera on the
 terrain-less fallback pose (`H = 512`, the zone-miss depth) instead of the
 region's own shot.
