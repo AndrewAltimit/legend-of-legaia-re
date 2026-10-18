@@ -190,8 +190,6 @@ fn play_segment(
     // whatever the sector-granular seek overshot.
     let seek = player.seek_sector_offset().max(0) as u32;
     let mut out = Played::default();
-    let decoder = MdecDecoder::new(slot.width, slot.height);
-
     let mut i = seek;
     let end = (seek + sector_budget).min(total);
     while i < end {
@@ -199,17 +197,6 @@ fn play_segment(
             break;
         };
         i += 1;
-        // Retail's frame poll re-programs the decode rects from the *sector
-        // header's* dimensions every frame, so a slot/movie disagreement is
-        // resolved in the movie's favour. `StFrame` does not carry them (the
-        // port's own disclosed gap), so the header is read here.
-        if u16::from_le_bytes([sector[2], sector[3]]) == 0x8001 {
-            let w = u16::from_le_bytes([sector[0x10], sector[0x11]]);
-            let h = u16::from_le_bytes([sector[0x12], sector[0x13]]);
-            if w != 0 && h != 0 {
-                player.env_mut().apply_frame_dimensions(w, h);
-            }
-        }
         let step = player.deliver_sector(&sector);
         match step.status {
             StStatus::NotForStream => out.non_video += 1,
@@ -225,12 +212,14 @@ fn play_segment(
                         out.reached_end = true;
                     }
                     if out.decoded < decode_budget {
-                        let rgba = decoder
+                        // Decode at the pumped frame's sector-header size:
+                        // the slot says 320x240, every retail movie is 320x224.
+                        let rgba = MdecDecoder::new(frame.width, frame.height)
                             .decode_frame(&frame.bitstream)
                             .unwrap_or_else(|e| panic!("frame {}: {e}", frame.frame_number));
                         assert_eq!(
                             rgba.len(),
-                            slot.width as usize * slot.height as usize * 4,
+                            frame.width as usize * frame.height as usize * 4,
                             "frame {}: wrong RGBA length",
                             frame.frame_number
                         );

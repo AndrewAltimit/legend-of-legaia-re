@@ -356,7 +356,11 @@ Four details the port pins that the loop's shape alone does not show:
   and height (`+0x1E` / `+0x26`), plus the slice rect's height (`+0x32`). The slice rect's
   *width* at `+0x30` is left alone - it is the fixed macroblock-column stride. The slot's `+0x18`
   / `+0x1C` only seed `FUN_801CF8B0`, so a table that disagrees with the movie loses from the
-  first frame onward.
+  first frame onward. Every retail slot does disagree: the slots say 320x240 and all six
+  `MV*.STR` are 320x224. The port's ring slot keeps the header's dimensions, `StrPlayer::next_frame`
+  applies them and hands them over on `PumpedFrame::width` / `height`, and a consumer decodes at
+  that size - an Iki frame decoded at the slot's 240 lines still fills a full-length buffer, with
+  its column-major macroblocks skewed across the picture.
 
 Three ping-pongs run at different rates: the **MDEC code buffers** (`ctx+0x00` / `+0x04`) flip
 once per frame, the **frame rects** (`ctx+0x18` / `+0x20`) once per frame buffer, and the

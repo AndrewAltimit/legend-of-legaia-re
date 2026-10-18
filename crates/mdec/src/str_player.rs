@@ -383,16 +383,10 @@ impl DecodeEnv {
     /// printed disassembly consumes it - there is no call between the stores
     /// and the return - so it is not reproduced here.
     // PORT: FUN_801cf740
-    // Not on the *frame path*, but not an inert port either - `mdec str-plan`
-    // calls this from `fn main` with the dimensions read straight off the first
-    // sector header, which is how a slot/movie disagreement becomes visible
-    // while the ring still drops them. What the frame path lacks is an
-    // argument: `StrPlayer::next_frame` has nothing to pass, because
-    // `crate::st_ring::StFrame` does not carry the per-frame dimensions -
-    // `StRing` parses the header's `+0x10` / `+0x12` and drops them, keeping
-    // only the frame number and the bitstream length - so the rects keep
-    // `DecodeEnv::init`'s slot-derived size for the whole segment. Closing that
-    // is one field pair on `StFrame` plus the `deliver_sector` capture.
+    // On the frame path: `StrPlayer::next_frame` applies the dimensions the
+    // ring slot carries (`crate::st_ring::StFrame::width` / `height`, the
+    // header's `+0x10` / `+0x12`) to every frame it pumps, so a slot/movie
+    // disagreement resolves in the movie's favour as it does in retail.
     pub fn apply_frame_dimensions(&mut self, width: u16, height: u16) {
         let w = vram_units(i32::from(width), self.colour) as i16;
         let h = height as i16;
@@ -508,6 +502,12 @@ pub struct PumpedFrame {
     pub code_buf: usize,
     /// Which decoder the frame goes to.
     pub bitstream_kind: Bitstream,
+    /// Frame width in pixels from the sector header. Decode with this, not
+    /// the dispatch slot's `+0x18`: every retail movie is 320x224 while the
+    /// slots that play them say 320x240.
+    pub width: u32,
+    /// Frame height in pixels from the sector header.
+    pub height: u32,
     /// This frame reached the slot's `end_frame`, so the play loop will exit
     /// after displaying it.
     pub is_last: bool,
@@ -661,6 +661,14 @@ impl StrPlayer {
         if is_last {
             self.end_latch = true;
         }
+        // The frame poll re-programs the decode rects from the header's
+        // dimensions every frame (`FUN_801CF740`).
+        let (width, height) = if frame.width != 0 && frame.height != 0 {
+            self.env.apply_frame_dimensions(frame.width, frame.height);
+            (u32::from(frame.width), u32::from(frame.height))
+        } else {
+            (self.slot.width, self.slot.height)
+        };
         self.env.code_buf = usize::from(self.env.code_buf == 0);
         let bitstream = self.frame_bytes(&frame);
         self.ring.free_ring(frame.slot);
@@ -669,6 +677,8 @@ impl StrPlayer {
             frame_number: frame.frame_number,
             code_buf: self.env.code_buf,
             bitstream_kind: self.bitstream,
+            width,
+            height,
             is_last,
         })
     }
