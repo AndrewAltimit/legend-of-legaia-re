@@ -6,10 +6,10 @@ use super::*;
 // Builders
 // ---------------------------------------------------------------------------
 
-/// Resolve the slot of the active leader. Falls back to slot 0 when no
-/// leader is set or when the roster is empty.
+/// Resolve the slot of the active leader ([`World::field_leader`]: the
+/// leader word, else the party's head, else slot 0).
 pub fn active_leader_slot(world: &World) -> u8 {
-    world.party.party_leader_slot.unwrap_or_default()
+    world.field_leader()
 }
 
 /// Build a [`StatusSnapshot`] for every member of the **present party**

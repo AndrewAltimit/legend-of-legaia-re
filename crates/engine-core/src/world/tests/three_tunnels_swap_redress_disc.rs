@@ -135,3 +135,65 @@ fn a_leader_swap_redresses_the_three_tunnels_for_the_incoming_ravine() {
     );
     assert_eq!(boulders(&host), BOULDER_SPAWN.map(Some));
 }
+
+/// The swap hands the player object to the incoming member, so the body the
+/// hosts draw has to follow: `FUN_801D27E0` writes the leader word
+/// `_DAT_8007B8F8` / `0x80084597` and the collapsed list's entry
+/// (`0x801D2AEC..0x801D2B08`) and stores nothing to the player's mesh. The
+/// port's rig used to read the battle composition's head, which the swap
+/// never touches, so every member walked the ravines in Vahn's body.
+#[test]
+fn a_leader_swap_puts_the_incoming_member_in_the_players_body() {
+    let Some(dir) = extracted_dir() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset or extracted/ incomplete");
+        return;
+    };
+    let index = Arc::new(
+        legaia_engine_scene::scene::ProtIndex::open_extracted(&dir).expect("open extracted"),
+    );
+    let scene = legaia_engine_scene::scene::Scene::load(&index, "nilboa").expect("nilboa");
+    let man = scene
+        .field_man_payload(&index)
+        .expect("payload")
+        .expect("nilboa MAN");
+    let mf = legaia_scene_formats::man_section::parse(&man).expect("parse MAN");
+
+    let mut host = crate::scene_host::SceneHost::new(index);
+    host.world.load_party(legaia_save::Party::zeroed(3));
+    host.enter_field_scene("nilboa", 0).expect("enter nilboa");
+    tick_pressing(&mut host, 30);
+    assert!(host.world.install_gated_p2_record(&mf, &man, 0), "P2[0]");
+    let mut armed = None;
+    for t in 0..30_000 {
+        tick_pressing(&mut host, 1);
+        if armed.is_none() && host.world.dialog.three_actor_talk.is_some() {
+            armed = Some(t);
+        }
+        if armed.is_some_and(|a| t > a + 600) && !host.world.cutscene_timeline_active() {
+            break;
+        }
+    }
+    assert!(
+        host.world.dialog.three_actor_talk.is_some(),
+        "the talk armed"
+    );
+    // The hosts drain the signal every frame; settle it on the arm-time rig.
+    host.world.take_player_rig_change();
+    let body =
+        |host: &crate::scene_host::SceneHost| host.player_rig_mesh().and_then(|m| m.party_slot);
+    assert_eq!(body(&host), Some(0), "Vahn leads into the split");
+
+    for want in [1u8, 2, 0] {
+        assert_eq!(swap(&mut host), Some(want));
+        assert_eq!(host.world.field_leader(), want);
+        assert!(
+            host.world.take_player_rig_change(),
+            "the swap to {want} signals a rig rebuild"
+        );
+        assert_eq!(
+            body(&host),
+            Some(usize::from(want)),
+            "the player's body is member {want}'s field form"
+        );
+    }
+}

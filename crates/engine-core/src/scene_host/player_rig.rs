@@ -47,7 +47,7 @@ impl crate::world::World {
     /// REF: FUN_80024E08 (the re-stage), FUN_8003A1E4 (the shared `0xF0`
     /// split, ported as `resolve_model_id`)
     pub fn player_rig_source(&self) -> PlayerRigSource {
-        let lead = self.party.active_party.first().copied().unwrap_or(0) as usize;
+        let lead = usize::from(self.field_leader());
         let Some(id) = self.locomotion.player_live_model else {
             return PlayerRigSource::PartySlot {
                 slot: lead,
@@ -179,5 +179,33 @@ mod tests {
         assert!(w.take_player_rig_change());
         w.party.active_party = vec![2];
         assert!(!w.take_player_rig_change());
+    }
+
+    /// The rig follows the leader word, not the list head: op `4C 01`
+    /// (`0x801E0C70..0x801E0C88`) writes only the leader cells, and a
+    /// three-actor-talk swap leaves the battle composition alone.
+    #[test]
+    fn the_rig_follows_the_leader_word() {
+        let mut w = crate::world::World {
+            mode: legaia_engine_mode::mode::SceneMode::Field,
+            ..Default::default()
+        };
+        w.party.active_party = vec![0, 1, 2];
+        assert_eq!(w.field_leader(), 0, "no leader yet: the head");
+        w.reset_field_warp_and_clip();
+        w.party.party_leader_slot = Some(1);
+        assert!(w.take_player_rig_change(), "Noa leads the same party");
+        assert_eq!(
+            w.player_rig_source(),
+            PlayerRigSource::PartySlot {
+                slot: 1,
+                model_id: None
+            }
+        );
+        // A composition installed around the party ops that drops the
+        // leader: the head stands in.
+        w.party.active_party = vec![2];
+        w.party.party_actor_slots = vec![Some(2)];
+        assert_eq!(w.field_leader(), 2);
     }
 }

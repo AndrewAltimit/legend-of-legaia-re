@@ -418,7 +418,7 @@ impl LegaiaRuntime {
         if !matches!(host.world.mode, SceneMode::Field | SceneMode::WorldMap) {
             return;
         }
-        let roster_lead = host.world.party.active_party.first().copied().unwrap_or(0) as usize;
+        let roster_lead = usize::from(host.world.field_leader());
         // The lead's field form, or the model a `CC F8 50` re-staged the
         // player onto - one resolution for both hosts
         // (`SceneHost::player_rig_mesh`).

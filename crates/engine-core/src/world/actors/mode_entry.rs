@@ -19,6 +19,40 @@ impl World {
             .unwrap_or(member)
     }
 
+    /// The field **leader** - retail's leader word `_DAT_8007B8F8` (mirrored
+    /// in `0x80084597`), the character the player object is: its field form
+    /// is the player's body and its locomotion bank the player's clips.
+    ///
+    /// Retail keeps the leader apart from the member list. Op `4C 0x`
+    /// (`0x801E0C70..0x801E0C88`) writes only the two leader cells, and the
+    /// three-actor talk's leader swap (`FUN_801D27E0`, `0x801D2AEC..
+    /// 0x801D2B08`) writes them plus the collapsed list's one entry - with no
+    /// store to the player object's mesh, so the body follows this word.
+    /// Ops `0x3C` / `0x3D` re-point it at the list head when the count lands
+    /// on 1 or the leader was removed.
+    ///
+    /// [`legaia_engine_menus::party_state::PartyState::party_leader_slot`] is
+    /// that word; it is unset until a party op, a save or a leader write
+    /// installs one, and then the battle composition's head stands in. A
+    /// leader that names nobody in the party (an engine-side composition
+    /// install that did not go through the party ops) yields to the head too.
+    ///
+    /// Every reader of "who leads" asks this, so the rig, the clips and the
+    /// talk's swap scan cannot disagree.
+    pub fn field_leader(&self) -> u8 {
+        let head = self.party.active_party.first().copied();
+        match self.party.party_leader_slot {
+            Some(l)
+                if head.is_none()
+                    || self.party.active_party.contains(&l)
+                    || self.party.party_actor_slots.contains(&Some(l)) =>
+            {
+                l
+            }
+            _ => head.unwrap_or(0),
+        }
+    }
+
     /// The field party list - retail's `0x80084598` member ids for
     /// `DAT_80084594` entries - as the field VM's party ops see it.
     ///

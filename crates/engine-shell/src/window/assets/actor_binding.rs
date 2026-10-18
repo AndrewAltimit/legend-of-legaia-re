@@ -68,7 +68,7 @@ impl PlayWindowApp {
         if matches!(world.mode, SceneMode::Field | SceneMode::WorldMap)
             && let Some(pslot) = world.player_actor_slot
         {
-            let roster_lead = world.party.active_party.first().copied().unwrap_or(0) as usize;
+            let roster_lead = usize::from(world.field_leader());
             if let Some(g) = player_rig {
                 // The party locomotion ANM bundle (PROT 0874 §1; idle = bank
                 // slot 1, walk = bank slot 0, both pinned live - see

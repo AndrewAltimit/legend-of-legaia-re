@@ -156,7 +156,7 @@ pub fn bind_lead_rig(host: &mut SceneHost, locomotion_anm: Option<&PlayerAnmBund
     {
         world.set_actor_tmd_binding(pslot as usize, pslot as usize);
     }
-    let roster_lead = world.party.active_party.first().copied().unwrap_or(0) as usize;
+    let roster_lead = usize::from(world.field_leader());
     let anim = locomotion_anm
         .filter(|_| roster_lead <= 2)
         .and_then(|bundle| FieldPlayerAnim::from_locomotion_bank(bundle, roster_lead));

@@ -94,7 +94,7 @@ impl World {
         } else {
             false
         };
-        let leader = self.party.party_leader_slot.unwrap_or(0).min(2);
+        let leader = self.field_leader().min(2);
         let swap_world = LeaderSwapWorld {
             leader,
             // Host substitution for the retail suppressor pair

@@ -411,6 +411,10 @@ impl World {
             }
         } else {
             self.party.active_party.clear();
+            // No composition, so no leader word either: a leader left from
+            // the session before the load would otherwise keep leading
+            // (`World::field_leader`) and dress the player in its body.
+            self.party.party_leader_slot = None;
         }
         self.load_story_flags(&sf);
         self.party.money = sf.ext.money;
