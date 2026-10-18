@@ -365,7 +365,6 @@
         <div class="play-hud">
           <span><b>Scene</b> <span id="hud-scene">-</span></span>
           <span><b>Mode</b> <span id="hud-mode">-</span></span>
-          <span><b>Frame</b> <span id="hud-frame">0</span></span>
           <span><b>FPS</b> <span id="hud-fps">0</span></span>
           <span><b>Pos</b> <span id="hud-pos">-</span></span>
           <span><b>NPCs</b> <span id="hud-npcs">0</span></span>
@@ -800,7 +799,6 @@
   const hud = {
     scene: document.getElementById('hud-scene'),
     mode:  document.getElementById('hud-mode'),
-    frame: document.getElementById('hud-frame'),
     fps:   document.getElementById('hud-fps'),
     pos:   document.getElementById('hud-pos'),
     npcs:  document.getElementById('hud-npcs'),
@@ -1525,7 +1523,6 @@
   function onState(st, fps) {
     hud.scene.textContent = st.scene || '-';
     hud.mode.textContent  = st.mode;
-    hud.frame.textContent = st.frame;
     hud.fps.textContent   = fps;
     hud.npcs.textContent  = st.npcs;
     hud.pos.textContent = st.player
