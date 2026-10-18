@@ -2515,6 +2515,16 @@ waits differ by `32`, eight a vsync): that pass runs past its step, an
 overrun the engine's two-vsync default does not reproduce, so the engine
 holds about twice retail's count.
 
+The same holds for an arm's **hand-over**. An arm that finishes stores the
+next phase and returns, so the next arm runs on the next pass - a battle
+frame later. On the per-vsync cadence the engine enters the module every
+tick, so a run of arms that each finish on their first pass (Big Wave's
+arm 0 cut, `0x801F6B08..0x801F6C34`, then arm 4's pan,
+`0x801F6E90..0x801F6F2C`) would walk one arm a vsync. `World::module_pass`
+holds the band after a hand-over until the tick that opens the next battle
+frame; the arms keep their one-vsync drains, so an arm's own span is
+unchanged. On retail's cadence the pass is already a frame.
+
 ### The Mystic Shield effect
 
 <a id="the-mystic-shield-effect"></a>

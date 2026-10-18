@@ -200,6 +200,10 @@ pub struct CastFxState {
     /// once a pass by the arms that spawn on it
     /// ([`legaia_engine_cast::cast_module_camera::capture_arm_counted`]).
     pub(crate) module_pass_counter: u32,
+    /// On the per-vsync cadence: the module's last tick handed its phase
+    /// over, and the next arm waits for the tick that opens the next battle
+    /// frame ([`crate::world::World::module_pass`]).
+    pub(crate) module_handover_waits: bool,
     /// The caster's clip stages the resident capture-class body owes and its
     /// port does not write ([`legaia_engine_cast::cast_module_ticks::CAPTURE_CASTER_STAGES`]),
     /// replayed at the head of the band by
@@ -371,6 +375,7 @@ impl CastFxState {
             capture_spell: None,
             capture_fx_pending: None,
             module_pass_counter: 0,
+            module_handover_waits: false,
             caster_stages: None,
             pending_move_fx_spawn: None,
             active_move_fx: None,

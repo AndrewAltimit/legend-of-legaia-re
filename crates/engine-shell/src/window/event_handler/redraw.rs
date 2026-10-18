@@ -193,11 +193,18 @@ impl PlayWindowApp {
         // Every live cast-scene part's draw state, in the retail actor
         // layout's offsets, to read beside a state's own `FUN_80021DF4`
         // nodes.
-        for (name, scene) in [
+        let scenes = [
             ("summon", w.casting.active_summon.as_ref()),
             ("move_fx", w.casting.active_move_fx.as_ref()),
             ("mystic_shield", w.casting.mystic_shield_fx.as_ref()),
-        ] {
+        ]
+        .into_iter()
+        .map(|(n, s)| (n, s.into_iter().collect::<Vec<_>>()))
+        .chain(std::iter::once((
+            "action_fx",
+            w.casting.active_action_fx.iter().collect(),
+        )));
+        for (name, scene) in scenes {
             for p in scene
                 .iter()
                 .flat_map(|s| s.parts.iter())

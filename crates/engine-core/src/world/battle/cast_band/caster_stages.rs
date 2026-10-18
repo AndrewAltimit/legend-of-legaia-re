@@ -190,6 +190,7 @@ impl World {
         self.casting.module_rain = Default::default();
         self.casting.module_settle_countdown = 0;
         self.casting.module_pass_counter = 0;
+        self.casting.module_handover_waits = false;
         self.casting.module_cam = Default::default();
         self.casting.module_pres = Default::default();
         self.casting.module_beam_counter = 0;

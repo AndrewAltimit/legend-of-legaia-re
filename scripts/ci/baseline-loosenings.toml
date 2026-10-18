@@ -119,3 +119,14 @@ reason = "Move-VM op 0x1C now stores its length-channel rate at +0xCA (0x8002367
 changes = [
   ["states/zeto_call_wave_mid_cast/image", 0.932, 0.929],
 ]
+
+[[loosening]]
+file = "scripts/ci/retail-compare-baseline.json"
+reason = "A cast module's arm that hands over now leaves the next arm to the next battle frame on the per-vsync cadence (World::module_pass): retail enters the module once a pass, so arms that finish on their first pass (Big Wave's arm 0 cut 0x801F6B08, arm 4 pan 0x801F6E90) follow a frame apart, not a vsync apart. Each band's timeline shifts by up to a tick per hand-over against the capture gates, which moves Gimard's yaw drift and Vera's yaw at the gate and the rand() draws Call Wave's rays take their angles from; Horn's frame moves by a few blocks with its band's timing. The same run raised vera_summon_mid_cast image 0.835 -> 0.969, cort_mystic_shield_mid_cast 0.972 -> 0.992, zeto_big_wave_mid_cast 0.496 -> 0.520, gimard_burning_attack image 0.541 -> 0.570 and five camera channels."
+changes = [
+  ["states/gimard_burning_attack/camera", 0.989, 0.96],
+  ["states/horn_summon_mid_cast/image", 0.966, 0.963],
+  ["states/vera_summon_mid_cast/camera", 0.994, 0.99],
+  ["states/zeto_call_wave_mid_cast/image", 0.929, 0.918],
+  ["states/zeto_call_wave_mid_cast/image", 0.932, 0.918],
+]

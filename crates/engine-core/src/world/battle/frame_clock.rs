@@ -383,12 +383,31 @@ impl World {
     /// are written in one-vsync units (`MODULE_DRAIN_PER_TICK`, a drift of
     /// `k`), so a pass runs `delta` of them - the same drain, drift and spin
     /// as one `delta`-scaled call - and stops on the tick an arm hands over,
-    /// so the next arm starts on the next pass as retail's does. On the
-    /// per-vsync cadence the pass is one tick.
+    /// so the next arm starts on the next pass as retail's does.
+    ///
+    /// On the per-vsync cadence the pass is one tick, but an arm that hands
+    /// over still leaves the next arm to the next **battle frame**: the
+    /// module is entered once a frame, so an arm that finishes on one pass
+    /// (Big Wave's arm 0 cut, then arm 4's pan, `0x801F6B08..0x801F6C34`,
+    /// `0x801F6E90..0x801F6F2C`) is followed by the next arm a frame later,
+    /// never a vsync later. The band holds on the ticks between; the arms
+    /// keep their one-vsync drains, so an arm's span is unchanged.
     pub(in crate::world) fn module_pass(&mut self, tick: fn(&mut World) -> bool) -> bool {
-        let delta = if self.toggles.battle_sm_frame_cadence {
+        let cadence = self.toggles.battle_sm_frame_cadence;
+        let delta = if cadence {
             self.battle_frame_step().max(1)
         } else {
+            if self.casting.module_handover_waits {
+                if self
+                    .battle
+                    .frame_clock
+                    .ticks_into_frame(self.clock.display_frames)
+                    != 0
+                {
+                    return true;
+                }
+                self.casting.module_handover_waits = false;
+            }
             1
         };
         let mut live = false;
@@ -396,6 +415,9 @@ impl World {
             let phase = self.casting.module_phase;
             live = tick(self);
             if !live || self.casting.module_phase != phase {
+                if !cadence && live && self.casting.module_phase != phase {
+                    self.casting.module_handover_waits = true;
+                }
                 break;
             }
         }
@@ -500,6 +522,50 @@ mod tests {
         w.battle.backdrop_slot_1_yaw = 0;
         w.module_pass(count);
         assert_eq!(w.battle.backdrop_slot_1_yaw, 1);
+    }
+
+    /// On the per-vsync cadence an arm that hands over leaves the next arm
+    /// to the tick that opens the next battle frame: the band holds on the
+    /// ticks between without entering the module.
+    #[test]
+    fn a_per_vsync_handover_waits_for_the_next_battle_frame() {
+        fn hand_over(w: &mut World) -> bool {
+            w.battle.backdrop_slot_1_yaw += 1;
+            w.casting.module_phase = w.casting.module_phase.wrapping_add(1);
+            true
+        }
+        let mut w = World::new();
+        w.toggles.battle_sm_frame_cadence = false;
+        w.set_battle_frame_step(2);
+        let mut entered = Vec::new();
+        for _ in 0..6 {
+            w.battle.backdrop_slot_1_yaw = 0;
+            assert!(w.module_pass(hand_over));
+            entered.push((
+                w.battle
+                    .frame_clock
+                    .ticks_into_frame(w.clock.display_frames),
+                w.battle.backdrop_slot_1_yaw,
+            ));
+            w.clock.display_frames += 1;
+        }
+        // Entered on the first tick, then only on the ticks that open a
+        // frame.
+        let opened: Vec<u64> = entered
+            .iter()
+            .skip(1)
+            .filter(|e| e.1 == 1)
+            .map(|e| e.0)
+            .collect();
+        assert!(
+            !opened.is_empty() && opened.iter().all(|&t| t == 0),
+            "{entered:?}"
+        );
+        assert_eq!(
+            entered.iter().filter(|e| e.1 == 1).count(),
+            3,
+            "{entered:?}"
+        );
     }
 
     #[test]
