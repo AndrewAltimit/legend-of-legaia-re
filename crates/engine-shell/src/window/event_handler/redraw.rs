@@ -187,6 +187,9 @@ impl PlayWindowApp {
             w.presentation.fade.as_ref().map(|f| f.age_vsyncs()),
         );
         eprintln!("capture camera: {:?}", w.battle_cam_pose());
+        for (rgb, abr, ot) in w.screen_fade_draws() {
+            eprintln!("capture fade: rgb {rgb:06X} abr {abr} ot {ot}");
+        }
         // Every live cast-scene part's draw state, in the retail actor
         // layout's offsets, to read beside a state's own `FUN_80021DF4`
         // nodes.
