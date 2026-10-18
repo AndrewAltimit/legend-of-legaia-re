@@ -1211,7 +1211,7 @@ reference TIMs sitting in other PROT entries.
 |---|---|
 | [`nav_disc`](../../crates/web-viewer/src/nav_disc.rs) / [`inspect`](../../crates/web-viewer/src/inspect.rs) / [`viewer_render`](../../crates/web-viewer/src/viewer_render.rs) | `LegaiaViewer`'s disc load + entry navigation, the entry inspector's exports, and its internal render helpers. |
 | [`scene_geom`](../../crates/web-viewer/src/scene_geom.rs) | Kingdom / walk-ground / continent / ocean / slot-4 geometry exports behind the world-overview pages. |
-| [`fog_lut`](../../crates/web-viewer/src/fog_lut.rs) | Static locator for the world-map distance-cue fog LUT. |
+| [`world_mist`](../../crates/web-viewer/src/world_mist.rs) | The kingdom MAN's fog-region table and the fog sheet art, for the world overview's Mist overlay. |
 | [`sentinel_placements`](../../crates/web-viewer/src/sentinel_placements.rs) | Cross-references a save state's live world-map actors against the disc's MAN placement records. |
 | [`prot_locate`](../../crates/web-viewer/src/prot_locate.rs) | `PROT.DAT` offset to owning-entry lookup, the browser twin of `prot-extract locate`. |
 | [`player_anm`](../../crates/web-viewer/src/player_anm.rs) | Player-ANM corpus + record decode exports. |

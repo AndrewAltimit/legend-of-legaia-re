@@ -2950,9 +2950,11 @@ per-frame render context:
 | `-0x2bc` | Pointer to a per-Z LUT (2-byte entries, indexed by `Z >> 5`) whose entry is shifted **left by 16** and added to each vertex `SXY` word - i.e. a per-vertex **screen-Y nudge**, not an RGB tint (`0x801F776C..0x801F7794`). |
 | `+0x90`  | Z shift exponent (controls how aggressively far-plane Z compresses). |
 
-The per-slot disassembly and the WebGL port of this pass are in
-[`world-overview-viewer.md`](world-overview-viewer.md); how the walk view
-feeds `IR0` is under [ground texturing](#ground-texturing).
+The `-0x2bc` table is the curvature buffer `FUN_800271A8` builds
+([renderer](renderer.md#the-overworld-curvature-table-fun_800271a8)), not a
+fog ramp. How the walk view feeds `IR0` is under
+[ground texturing](#ground-texturing); the world-overview page's stand-in for
+that cue is in [`world-overview-viewer.md`](world-overview-viewer.md#distance-haze).
 
 ### Per-frame render-pass iterator - `FUN_8002519c`
 

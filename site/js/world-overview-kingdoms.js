@@ -1,7 +1,8 @@
 /* world-overview-kingdoms.js - per-kingdom data for the world-overview page.
  *
- * The PROT range, camera anchors, top-view framing, fog tint and unplaced-
- * landmark footprint of each of the three kingdoms, plus the fog defaults.
+ * The PROT range, camera anchors, top-view framing, walk-camera depth
+ * terms, Mist script state and unplaced-landmark footprint of each of the
+ * three kingdoms.
  * Data only. Published as
  * window.LegaiaWorldOverviewKingdoms.
  *
@@ -56,22 +57,32 @@
     ground_tile: 1200,
     unknown:    600,
   };
-  /* Per-kingdom baseline fog tint (BGR555 -> linear RGB). Used as the
-   * fragment shader's fallback when a captured LUT entry is zero, so the
-   * "fog" toggle still produces a kingdom-flavoured gradient before the
-   * user supplies fog_probe.lut.bin. The values are mid-tier samples of
-   * each kingdom's dev-menu top-view sky colour. */
-  const KINGDOM_FOG_TINT = {
-    drake:   { r: 0.18, g: 0.22, b: 0.34 },
-    sebucus: { r: 0.16, g: 0.26, b: 0.32 },
-    karisto: { r: 0.26, g: 0.20, b: 0.22 },
+  /* The walk-view camera each kingdom's zone record composes, read off the
+   * resident overworld states (docs/subsystems/world-map.md#walk-view-camera-retail-model-ram-pinned):
+   * pitch (4096 = full turn) and the eye trio's Z (TRZ). The distance haze
+   * stands SZ in as eyeZ + 6 * cos(pitch) * distance - the 6x world scale
+   * of the base matrix DAT_8007BF10 times the pitch's forward component. */
+  const KINGDOM_WALK_EYE = {
+    drake:   { pitch: 370, eyeZ: 8875 },
+    sebucus: { pitch: 360, eyeZ: 9139 },
+    karisto: { pitch: 476, eyeZ: 11041 },
   };
-  /* Initial fog defaults: matches the retail probe shape (Z_far = Z >> 5
-   * over a ~16384-unit reference). Overwritten when the user uploads a
-   * fog_probe.lut.bin via the fog-LUT picker. */
-  const DEFAULT_FOG_PARAMS = { enable: 0, zShift: 5, farRef: 12000, color: null };
+  /* The Mist as each kingdom shows it before any area's Mist lifts. Each
+   * fog region draws while its story flag is clear (op 4C C1 rewrites the
+   * enable byte from the flag's inverse); `flagsSet` are the region flags
+   * the kingdom's own scene system script (MAN P1[0]) sets before that
+   * rewrite on a first arrival: map02 sets 0x51B unless 0x1D5 is set,
+   * map03 sets 0x526 unless 0x36F is set. `yControl` is the control word
+   * the same script hands op 4C 49 (sub 9) - the camera vertical offset
+   * the fog heights are measured against is that word less the player's
+   * floor height (map01 60, map02 128, map03 152). */
+  const KINGDOM_MIST = {
+    drake:   { flagsSet: [],      yControl: 60 },
+    sebucus: { flagsSet: [0x51B], yControl: 128 },
+    karisto: { flagsSet: [0x526], yControl: 152 },
+  };
   window.LegaiaWorldOverviewKingdoms = {
     KINGDOM_PROT, KINGDOM_CAM, KINGDOM_TOPVIEW_CAM, UNPLACED_TARGET_FOOTPRINT,
-    KINGDOM_FOG_TINT, DEFAULT_FOG_PARAMS,
+    KINGDOM_WALK_EYE, KINGDOM_MIST,
   };
 })();

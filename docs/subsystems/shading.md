@@ -214,8 +214,9 @@ unchanged). Scenes that do use it:
 - **The opening prologue** stages a view-depth `IR0` ramp that crushes far
   blue ([`renderer.md`](renderer.md#full-scene-colour-grade),
   [`cutscene.md`](cutscene.md#full-scene-sepia-grade-the-gold-prologue-look)).
-- **The world map** reads a per-Z fog LUT out of `SCUS_942.54`
-  ([`world-overview-viewer.md`](world-overview-viewer.md)).
+- **The world map** cues the walk-view ground toward `0x100` and each
+  decoration toward `0xD0` by depth
+  ([`world-map.md`](world-map.md#ground-texturing)).
 - **Battles** cue the procedural ground grid and every actor
   (next section).
 

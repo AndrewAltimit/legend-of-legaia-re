@@ -34,7 +34,6 @@ impl LegaiaViewer {
             clut_idx: 0,
             kingdom: None,
             continent: None,
-            fog_lut: None,
             item_names: None,
             spell_names: None,
             steal_table: None,
@@ -69,7 +68,6 @@ impl LegaiaViewer {
         self.viewable.clear();
         self.current = 0;
 
-        self.fog_lut = None;
         self.item_names = None;
         self.spell_names = None;
         self.steal_table = None;
@@ -100,20 +98,6 @@ impl LegaiaViewer {
                 extracted.len() / 1024 / 1024
             ));
             if let Some(scus) = extract_scus(&bytes) {
-                // Locate the world-map fog LUT - same bytes the runtime
-                // consults on every vertex. The viewer auto-uploads
-                // these to the GL renderer so the user doesn't need to
-                // drop a separate fog_probe.lut.bin file.
-                if let Some(lut) = fog_lut::find(&scus) {
-                    self.fog_lut = Some(lut.to_vec());
-                    console_log(&format!(
-                        "Extracted fog LUT from SCUS ({} bytes, {} entries)",
-                        lut.len(),
-                        lut.len() / 2
-                    ));
-                } else {
-                    console_log("fog_lut::find skipped: no LUT signature in SCUS");
-                }
                 // Decode the item-name table so the enemy table can show drop
                 // names instead of raw ids. Silent on failure (regional build
                 // with a different table address) - the page falls back to ids.

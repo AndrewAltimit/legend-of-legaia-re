@@ -11,7 +11,7 @@
   <input type="file" id="wo-disc-file" accept=".bin,.dat"
          style="background: var(--bg-card); color: var(--text); border: 1px solid var(--border); padding: 0.5rem; font-family: var(--font-mono); font-size: 0.85rem;">
   <div class="viewer-status" id="wo-status">No disc loaded. Pick a disc image (<code>.bin</code> Mode2/2352 or <code>PROT.DAT</code>) and the assembled scene renders immediately.</div>
-  <div class="viewer-status" id="wo-fog-lut-status" style="font-size: 0.78rem;">Fog LUT: not yet loaded (auto-extracts from <code>SCUS_942.54</code> on disc load).</div>
+  <div class="viewer-status" id="wo-mist-status" style="font-size: 0.78rem;">Mist: load a disc to read each kingdom's fog regions.</div>
 </div>
 
 <section class="doc-section" id="viewer">
@@ -39,8 +39,11 @@
         <label style="margin-left:0.5rem" id="wo-normalize-unplaced-wrap" title="Scale and centre each unplaced mesh to a sensible size for the layout grid.">
           <input type="checkbox" id="wo-normalize-unplaced" checked> normalize unplaced
         </label>
-        <label style="margin-left:0.5rem" id="wo-fog-wrap" title="Enable the distance-cue fog post-process - the same far-haze tint the retail world map draws.">
-          <input type="checkbox" id="wo-fog-enable"> fog
+        <label style="margin-left:0.5rem" id="wo-mist-wrap" title="Draw the Mist the way the game draws it on the world map: drifting additive cloud sheets spawned inside the kingdom's fog regions (read from your disc), shown as the kingdom looks before any area's Mist is lifted. The game only keeps the sheets around the party; here the same density covers the whole continent.">
+          <input type="checkbox" id="wo-mist-enable"> Mist
+        </label>
+        <label style="margin-left:0.5rem" id="wo-haze-wrap" title="Distance haze: the walk view's depth cue, which brightens far ground toward white (and far trees toward light grey) the deeper it sits from the camera. Measured here as if the party stood at the centre of the view. This is the far-distance fade, not the story's Mist.">
+          <input type="checkbox" id="wo-haze-enable"> distance haze
         </label>
         <label style="margin-left:0.5rem" id="wo-ocean-wrap" title="Render the ocean backdrop plane beyond the continent. The 13-frame wave animation is a palette cycle inside video memory (the retail mechanism), so terrain water keeps shimmering even with this off.">
           <input type="checkbox" id="wo-ocean-enable" checked> ocean
@@ -88,7 +91,8 @@
       <li><strong>Assembled scene</strong> draws the mesh pack at the world coordinates the bundle's placement data ("MAN") gives it. <strong>Mesh inspector</strong> browses the same pack one mesh at a time.</li>
       <li><strong>show unplaced meshes</strong> lays out every mesh the placement table never uses, sorted into best-guess classes - the leftovers and one-offs in the pack.</li>
       <li><strong>terrain</strong> and <strong>landmarks + trees</strong> toggle the two layers of the walk view: the continent ground, and everything standing on it.</li>
-      <li><strong>ocean</strong> plays the disc's wave animation, a 13-frame palette cycle. <strong>fog</strong> approximates the retail distance-cue haze from a table read out of the executable.</li>
+      <li><strong>ocean</strong> plays the disc's wave animation, a 13-frame palette cycle. <strong>distance haze</strong> is the walk view's depth cue - far ground brightens toward white, far trees toward light grey - measured as if the party stood at the centre of the view.</li>
+      <li><strong>Mist</strong> draws the story's Mist the way the game draws it on the world map: drifting cloud sheets inside the kingdom's fog regions, as they stand before any area's Mist is lifted. The game keeps the sheets near the party only; this view spreads the same density over the whole continent.</li>
       <li><strong>lock to retail top-view</strong> flattens the camera to the straight-down view the game's own debug menu uses.</li>
     </ul>
     <p>
@@ -296,4 +300,5 @@
 <script src="js/world-overview-kingdoms.js"></script>
 <script src="js/world-overview-minimap.js"></script>
 <script src="js/world-overview-ground.js"></script>
+<script src="js/world-overview-mist.js"></script>
 <script src="js/world-overview-app.js"></script>

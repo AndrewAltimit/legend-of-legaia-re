@@ -18,7 +18,6 @@ pub mod equipment_view;
 mod field_actors;
 pub mod field_npc;
 pub mod field_scene;
-pub mod fog_lut;
 mod host_slot;
 mod inspect;
 pub mod minigames;
@@ -77,6 +76,7 @@ pub mod texture_registry;
 pub mod tmd3d;
 pub mod translate_workbench;
 mod viewer_render;
+mod world_mist;
 
 use disc::{EntryMeta, extract_prot_dat, extract_scus, parse_prot_toc};
 use legaia_container_formats::tim_scan;
@@ -266,12 +266,6 @@ pub struct LegaiaViewer {
     /// alongside the landmark pack by `set_scene_kingdom` when present;
     /// consumed by the `continent_pack_*` accessors.
     continent: Option<KingdomPack>,
-    /// Fog LUT bytes extracted from SCUS at load time. 4 KiB (2048 u16
-    /// entries) - the shared depth-cue ramp the world-map overlay leaves
-    /// at `0x801F7644..0x801F8690` consult on every vertex. None when
-    /// the SCUS extract or LUT scan didn't surface a match (raw
-    /// PROT.DAT load, regional variant, modded disc).
-    fog_lut: Option<Vec<u8>>,
     /// Item-name table (`PTR_DAT_8007436C`) decoded from `SCUS_942.54` at
     /// load time. Resolves a monster record's raw `drop_item` id into a
     /// readable name for the enemy table. `None` on raw PROT.DAT loads (no

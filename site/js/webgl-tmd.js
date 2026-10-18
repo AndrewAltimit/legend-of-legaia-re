@@ -24,7 +24,7 @@
  *   r.render(yaw, pitch, center, radius);
  *   r.uploadSceneMesh(meshId, positions, uvs, cbaTsb, indices, flatRgba?);
  *   r.getMeshAabb(meshId);   // null until uploadSceneMesh has run
- *   r.uploadFogLut(u16Array, params);                          // optional
+ *   r.setDistanceHaze({ enable, eyeZ, scale });               // optional
  *   r.renderAssembled(placements, worldExtent, cam);
  *   r.dispose();
  *
@@ -44,6 +44,8 @@
  *              browser cannot drift from the native `fx_cam * model`.
  *     decoCue - overworld decoration: stage retail's per-object cue
  *              (overworldDecorationCue) from the draw origin's depth.
+ *     hazeDeco - world-overview decoration stamp: under setDistanceHaze it
+ *              takes one IR0 from its origin and hazes toward 0xD0.
  *     nclip  - per-draw NCLIP word (setNclipCull's encoding) overriding the
  *              frame's for this draw only - the battle bodies' single-sided
  *              rule (BattleActorDrawPlan::nclip_mode) over the both-sided
@@ -53,13 +55,11 @@
  *              The engine's `DrawCue` seam: the battle ground grid's per-stage
  *              far colour and the target-select cursor tint both ride it.
  *
- * Fog parameters (uploadFogLut(lut, { enable, zShift, color, farRef })):
- *   lut     - 512-entry Uint16Array, BGR555 entries indexed by Z >> 5.
- *   enable  - non-zero enables the fog post-process (matches retail's
- *             gp-0x2D1 & 0x10 gate).
- *   zShift  - exponent used to compute Z_far = Z >> zShift (retail gp+0x90).
- *   color   - { r, g, b } in 0..1 floats; mid-distance tint baseline.
- *   farRef  - 0..16383 reference Z for the far plane (retail gp-0x2E0).
+ * Distance haze (setDistanceHaze({ enable, origin, eyeZ, scale })), the world
+ * overview's stand-in for the overworld walk view's depth cue:
+ *   enable  - draw it (renderAssembled only; every other page leaves it off).
+ *   origin  - [x, y, z] virtual walk focus; the camera centre when omitted.
+ *   eyeZ    - the walk eye's TRZ; scale - SZ per world unit of XZ distance.
  */
 
 /* The overworld decoration cells' depth cue - the page twin of
@@ -154,12 +154,12 @@ class TmdRenderer {
     this.locVram    = gl.getUniformLocation(this.program, 'u_vram');
     this.locNoDisc  = gl.getUniformLocation(this.program, 'u_no_discard');
     this.locSemiPass = gl.getUniformLocation(this.program, 'u_semi_pass');
-    this.locFogLut  = gl.getUniformLocation(this.program, 'u_fog_lut');
-    this.locFogEnableFs = gl.getUniformLocation(this.program, 'u_fog_enable');
-    this.locFogColor    = gl.getUniformLocation(this.program, 'u_fog_color');
+    this.locFogEnable   = gl.getUniformLocation(this.program, 'u_fog_enable');
     this.locFogOrigin   = gl.getUniformLocation(this.program, 'u_fog_origin');
-    this.locFogFarRef   = gl.getUniformLocation(this.program, 'u_fog_far_ref');
-    this.locFogZShift   = gl.getUniformLocation(this.program, 'u_fog_z_shift');
+    this.locHazeEyeZ    = gl.getUniformLocation(this.program, 'u_haze_eye_z');
+    this.locHazeScale   = gl.getUniformLocation(this.program, 'u_haze_scale');
+    this.locHazeIr0     = gl.getUniformLocation(this.program, 'u_haze_ir0');
+    this.locHazeFar     = gl.getUniformLocation(this.program, 'u_haze_far');
     this.locUseFlatColors = gl.getUniformLocation(this.program, 'u_use_flat_colors');
     this.locGhost   = gl.getUniformLocation(this.program, 'u_ghost');
     this.locGrade   = gl.getUniformLocation(this.program, 'u_grade');
@@ -360,7 +360,6 @@ class TmdRenderer {
     this.flatBuf = gl.createBuffer();
     this.idxBuf = gl.createBuffer();
     this.tex    = gl.createTexture();
-    this.fogTex = gl.createTexture();
     /* Per-mesh GL state for the assembled (multi-mesh world) path. Indexed
      * by a caller-supplied meshId (typically the kingdom pack slot). Each
      * entry holds its own VAO + buffers so we can switch meshes cheaply
@@ -388,30 +387,8 @@ class TmdRenderer {
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
 
-    /* Fog LUT texture: 512x1 R16UI; entries are PSX BGR555 packets. */
-    gl.bindTexture(gl.TEXTURE_2D, this.fogTex);
-    gl.texStorage2D(gl.TEXTURE_2D, 1, gl.R16UI, FOG_LUT_SIZE, 1);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-    /* Seed with a neutral grey ramp (BGR555 == 0) so a fog draw before
-     * the first uploadFogLut still produces u_fog_color-blended output. */
-    {
-      const zeros = new Uint16Array(FOG_LUT_SIZE);
-      gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
-      gl.texSubImage2D(
-        gl.TEXTURE_2D, 0, 0, 0, FOG_LUT_SIZE, 1,
-        gl.RED_INTEGER, gl.UNSIGNED_SHORT, zeros,
-      );
-    }
-    this.fogParams = {
-      enable: 0,
-      zShift: 5,
-      color: { r: 0.18, g: 0.20, b: 0.32 },
-      farRef: 16384.0,
-      origin: [0, 0, 0],
-    };
+    /* Distance haze (setDistanceHaze); off on every page by default. */
+    this.hazeParams = { enable: 0, origin: null, eyeZ: 0, scale: 0 };
 
     /* Ocean plane: 4bpp indexed texture sampled with a 16-entry CLUT
      * that gets swapped every animation frame. The plane lives at
@@ -428,6 +405,8 @@ class TmdRenderer {
     this.locOceanTextured   = gl.getUniformLocation(this.oceanProgram, 'u_ocean_textured');
     this.locOceanSampleSize = gl.getUniformLocation(this.oceanProgram, 'u_ocean_sample_size');
     this.locOceanShade      = gl.getUniformLocation(this.oceanProgram, 'u_shade');
+    this.locOceanHaze       = gl.getUniformLocation(this.oceanProgram, 'u_haze');
+    this.locOceanHazeOrigin = gl.getUniformLocation(this.oceanProgram, 'u_haze_origin');
     this.locOceanPos        = gl.getAttribLocation(this.oceanProgram, 'a_position');
     this.locOceanUv         = gl.getAttribLocation(this.oceanProgram, 'a_uv_world');
     this.oceanVao           = gl.createVertexArray();
