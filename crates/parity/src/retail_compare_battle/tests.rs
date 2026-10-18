@@ -322,7 +322,10 @@ fn a_counter_capture_sits_out_the_live_keys_too() {
     assert!(b.counter_capture());
     let spent = b.engine_spent_keys();
     assert!(!spent[0], "the counterer keeps its turn");
-    assert!(spent[1] && spent[2], "the turn owner and the live key behind it");
+    assert!(
+        spent[1] && spent[2],
+        "the turn owner and the live key behind it"
+    );
     // The member's own turn: a live key keeps its engine key.
     b.turn_owner = 0;
     assert!(!b.counter_capture());
