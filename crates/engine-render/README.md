@@ -63,6 +63,30 @@ The [`window`](src/window.rs) module is the shared winit + wgpu app scaffold
 (`EngineWindow`: open, resize, fixed-step tick pacing) that `asset-viewer` and
 `engine-shell` both build on.
 
+## Modules
+
+Beyond `window`, `screen_overlay` and `psx_blend` above:
+
+- `actor_bind` - the actor render binding (`FUN_80020F88`): mesh-pool index
+  off the placement record, and the render node the draw path walks.
+- `actor_cull` - the field collision broad phase (`FUN_801CF754`): the
+  per-frame candidate list the contact probes walk, not a render cull.
+- `battle_intro` - the renderer-bound half of the field-to-battle transition
+  emitter; the wgpu-free half is `legaia_render_kernels::battle_intro`.
+- `battle_on_screen` - the battle on-screen test (`FUN_8005126C`): re-anchor
+  a sprite on its seat actor and test its billboard box against the screen.
+- `gte_trace` - GTE (cop2) trace capture + replay harness.
+- `mode_transition` - the game-mode-entry prologue (`FUN_80016230`): frame
+  pacing reset, overlay-cache check, stashing the field state a mode clobbers.
+- `dyn_light` / `scene_lights` - the enhanced-lighting shading law's WGSL
+  twin and the per-scene point lights' renderer half (not retail).
+- `occlusion_fade` - the camera-occlusion fade's renderer side (not retail).
+- `profile` - the opt-in per-frame timing breakdown.
+- `psx_dither` - CPU mirror of the WGSL 24-to-15-bit ordered dither.
+- `psx_light` - the GPU texture-blend modulation and GTE depth cue as CPU
+  kernels.
+- `shaders` (private) - the WGSL sources for every pipeline.
+
 ## What it must not depend on
 
 `engine-core`, the session and the hosts. The renderer sits on `engine-ui`

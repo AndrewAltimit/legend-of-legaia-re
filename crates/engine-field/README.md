@@ -44,7 +44,9 @@ a dependent crate.
   tween, `FUN_80031AE4`).
 - **Camera** - `camera_zone` (the camera-region record loader, the composer
   and the per-frame ease), `camera_ease` (the vertical-offset ease) and
-  `register_ramp` (op `0x43` sub-3..6 camera-register zone ramp).
+  `register_ramp` (op `0x43` sub-3..6 camera-register zone ramp), and
+  `camera_rig` (the `World`-held rig state: saved camera snapshot, scene
+  offset + ease, shake amplitude, the zone-ramp register file).
 - **Player** - `field_anim` (the party locomotion clip player over PROT 0874
   §1) and `walk_regen` (`FUN_801D0B90`, the walk-regen accessory passives).
 - **Scene flow** - `scene_transition_actor` (the transition streaming actor),
@@ -80,7 +82,7 @@ a dependent crate.
   placement classification and carrier derivation (`FieldCarrierConfig`),
   NPC motion legs and the walk-step speed ladder, scene-change triggers,
   and the system-flag / op-`0x49` window / motion-flag censuses over a set
-  of MAN carriers. Engine-core's `man_field_scripts` holds the carrier
+  of MAN carriers. `engine-scene::man_census` holds the carrier
   resolution off a loaded `Scene` and the censuses' scene-name entry points.
 - **Overworld** - `world_map` (`WorldMapController`, which drives
   `SceneMode::WorldMap`, and the entry fade) and `world_map_panel_host` (the
@@ -91,6 +93,8 @@ a dependent crate.
   HUD queries that read the world (the suppress gate, the view mode, the
   rearm term, the present-party rows); see
   [`docs/subsystems/world-map.md`](../../docs/subsystems/world-map.md#the-panel-actor-state-machines).
+  `map_display` is the L1 map display (game mode `0x0D`, PROT 0981): the
+  top-down survey screen with a label over every discovered place.
 
 - **Field-overlay kernels** -
   `field_regions` (the `.MAP` region-table scan and zone queries),
@@ -108,10 +112,22 @@ a dependent crate.
 - **World map** - `world_map_entity` (the entity state machine
   `FUN_801DA51C`), `world_map_dim`, `world_map_horizon`,
   `travel_art_actor` (Riremito and Rula) and `world_map_markers` (the port's
-  kind-coded entity / player markers and their screen quads; not retail).
+  kind-coded entity / player markers and their screen quads; not retail),
+  `world_map_entity_config` (each on-map entity's role and the
+  encounter-zone countdown that state machine acts on) and
+  `field_carrier_state` (the same `FUN_801DA51C` machines ticked as field-scene
+  carrier entities, with their battle / engage handoffs).
 - **Script contexts** - `inline_dialogue` (the resumable state of an actor's
   inline interaction script) and `cutscene_timeline` (the spawned
   partition-2 record context); both hold a `legaia-engine-dialog` panel.
+  `field_channels` holds the per-actor field-VM channels (each MAN
+  partition-1 placement record spawned as its own script context,
+  `FUN_8003A1E4`); `dialog_state` the simplified dialog panel, the inline
+  dialogue runner and the interact / talk latches; `field_script_actor_state`
+  the pool actors the field VM spawns onto a target (the op `0x43` arc jump,
+  the op `0x34` attached light); `move_vm_globals` the move VM's per-actor
+  bytecode and buffer pools, shared predicate / counter / slot-table words,
+  scratchpad ramp targets and per-tick outcomes.
 
 ## The larger modules
 

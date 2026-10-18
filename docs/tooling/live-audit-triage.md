@@ -1133,8 +1133,11 @@ the fields by category, so the player sees the wrong rows today.
   sweep finds 815 `jal` sites, all in the summon / cast band and the script-VM
   and world-map spawn paths. Calling it from inside an opcode arm would invert
   the retail relationship, so "no opcode arm calls it" is the correct state,
-  not the gap. The gap is that `SummonRuntime::seed_part` seats parts directly
-  into its own `Vec` and no host constructs a `SummonRuntime` at all.
+  not the gap. The port's summon scene does not route through it either:
+  `SummonScene::spawn_parts` / `push_parts_scaled` seat parts directly into
+  their own `Vec` through the private `seed_part` helper in
+  `engine-effects/src/summon/scene.rs`, and `engine-core`'s effect and cast-band
+  paths are what construct a `SummonScene`.
 
 #### `pool_ops`: two of four are duplicates of a live picker, two are not
 

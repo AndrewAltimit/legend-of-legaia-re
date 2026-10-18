@@ -1143,14 +1143,15 @@ five `battle_intro.rs` styles; `native_minigame_ladder` took the
 `menu_depth_ladder` took the special-use confirms, the item target panel,
 the entry-context pair, the spell-level notice and the title/save screens.
 
-`801d5510`'s host column has now been wrong twice, and the second correction
+`801d5510`'s host column has been wrong twice, and the second correction
 is a wire rather than a re-reading. It first named a fixture that could not
-exist: `shop_buy_quantity_panel` had exactly one caller in the workspace -
-`web-viewer::play_shop::buy_quantity_panel_draws` - while the native window's
-descriptor draw path painted windows 32 / 33 / 34 / 37 and carried no buy-side
-block at all, so no native ladder could reach it however it drove the shop.
-The missing native window-35 painter that column called for is written, so the
-kernel is a both-hosts panel now and the row is a reach gap rather than a host
+exist: the buy-quantity panel had exactly one caller in the workspace, in the
+browser host, while the native window's descriptor draw path painted windows
+32 / 33 / 34 / 37 and carried no buy-side block at all, so no native ladder
+could reach it however it drove the shop. The kernel is now
+`engine-ui::menu::window_painters::buy_quantity_draws_for`
+(window 35), called from the one shared shop compositor in `engine-screens::shop`,
+so it is a both-hosts panel and the row is a reach gap rather than a host
 gap: what enters it is either host driven to the buy-quantity phase. Its
 `engine-core` session siblings `801db7f4` / `801dbd94` are the same gap one
 layer down and sit in the engine-core tables above.

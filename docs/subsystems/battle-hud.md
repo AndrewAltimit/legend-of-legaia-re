@@ -494,7 +494,7 @@ Which seat is on screen is per record, so "mode 0" means *appear* for the bar
 and *unfold* for a chip. The port's `SubdrawStep::shows` reads it as "seat B is
 the on-screen one", which holds for every record the battle HUD draws.
 
-The steps the menu SM runs (`engine-core::battle_hud::subdraw_steps` /
+The steps the menu SM runs (`engine-battle::battle_hud_state::subdraw_steps` /
 `placement_record`):
 
 | Transition | Step | Panels 6/78/79 | Bar 7 | Tab 1 + plaque 26 | AP plate 82 |

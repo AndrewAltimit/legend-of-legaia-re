@@ -558,7 +558,7 @@ The frame is gated two game frames earlier than the RAM. The field
 double-buffers exactly as the battle does
 ([below](#replayed-casts)): the display scans out the frame built two
 frames before the one the RAM holds, so the image child's gate takes
-`2 * step` vsyncs off the retail wait (`ScriptGate::displayed_from_retail`,
+`2 * step` vsyncs off the retail wait (`parity::retail_compare_script::displayed_script_gate_from_retail`,
 the step rebuilt from the frame-duration history). The state channels keep
 the RAM's wait. `minigame_dance_pcsx` is parked `21` vsyncs into the wait
 after `34 01 FF FF FF 1E`, a subtractive white walk-in (`27` vsyncs once a

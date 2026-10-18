@@ -81,6 +81,9 @@ resolve a link into a dependent crate.
   the status recolour pass of `FUN_8004CE2C`.
 - `battle_sideband` - the side-band tick keyed on the battle stage id
   (sparring caption, Cort's two boss-stage modules).
+- `battle_stage_module` - those two boss-stage modules for the Cort fight:
+  PROT 0968 (arrival) and PROT 0969 (form transition), one phase machine on
+  `ctx[+0x289]` driving the first monster seat.
 - `battle_tutorial` - the sparring-tutorial prompt machine of the stage
   overlay (PROT 967): the `(flow state, lesson)` dispatch, the box styles and
   rects, and the prompt corpus parser `BattleTutorialScript::from_overlay`.
@@ -95,6 +98,16 @@ resolve a link into a dependent crate.
   CD-busy fallback ring cue. It emits `AnimCueEmit` decisions; engine-core's battle
   actor tick (`world::actors`) drains them into the SFX ring.
 - `sfx_cue` - cue id to the 4-slot pending ring / XA clip (`FUN_8004FE5C`).
+
+**State held on `World`**
+
+- `battle_hud_state` - the battle HUD model: per-slot HP / MP / AP / status
+  rows, the damage-popup ring, event log and combo readout, plus the
+  per-phase sub-draw steps (`subdraw_steps`, `placement_record`).
+- `encounter_state` - the per-scene encounter session, the scripted-encounter
+  arm and the roll gates.
+- `seru_state` - Seru capture + magic-learning state: capture log and
+  registry, this battle's captures, shiny rolls and magic level-ups.
 
 ## See also
 
