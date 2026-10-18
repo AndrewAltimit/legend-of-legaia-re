@@ -81,9 +81,19 @@ impl World {
         if per_arm == Some(run.prot_entry) {
             use legaia_engine_cast::cast_module_camera as cmc;
             // An arm that seats on every pass (PROT 0962's rays): the roll
-            // is `rand() % 0x1000` over the zeroed stack trio's `z`.
+            // is `rand() % 0x1000` over the zeroed stack trio's `z`. A pass
+            // is one battle frame - the frame driver re-enters the module
+            // once per `VSync(step)` - while the module here runs on every
+            // display tick, so the call is made on the tick that opens a
+            // battle frame. Seated per tick, `cort_evolved_ultra_charge_mid_cast`
+            // held 127 live rays against retail's 33.
             let every = cmc::capture_arm_spawns_every(run.prot_entry, arm);
-            if !every.is_empty() {
+            let opens_pass = self
+                .battle
+                .frame_clock
+                .ticks_into_frame(self.clock.display_frames)
+                == 0;
+            if !every.is_empty() && opens_pass {
                 let roll = (self.next_rand() % 0x1000) as i16;
                 self.stage_module_arm_spawns(
                     run.prot_entry,

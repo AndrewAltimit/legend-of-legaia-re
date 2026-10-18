@@ -2488,6 +2488,16 @@ The two ported stagers run off the parts' own calls
 bodies (Chaos Breath, the rest of the Blade Breath cell) keep the pager
 placement.
 
+**A pass is a battle frame, not a tick.** Ultra Charge's arm 1 seats its ray
+once per pass of the body, and the frame driver re-enters the body once per
+`VSync(step)`. The engine ticks the module on every display tick, so it seats
+the ray on the tick that opens a battle frame (`BattleFrameClock`); seated on
+every tick, `cort_evolved_ultra_charge_mid_cast` drew 127 live rays where the
+state holds 33. The state's consecutive rays stand four vsyncs apart (their
+waits differ by `32`, eight a vsync): that pass runs past its step, an
+overrun the engine's two-vsync default does not reproduce, so the engine
+holds about twice retail's count.
+
 ### The Mystic Shield effect
 
 <a id="the-mystic-shield-effect"></a>
