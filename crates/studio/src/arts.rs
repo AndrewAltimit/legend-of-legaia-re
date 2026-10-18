@@ -174,18 +174,21 @@ pub fn art_clips(player: &[u8], readef: &[u8], cslot: usize) -> Result<Vec<ArtCl
     Ok(out)
 }
 
-/// The arrow form of an art's input (`1=L 2=R 3=D 4=U`).
+/// An art's input as direction letters (`1=L 2=R 3=D 4=U`), e.g.
+/// `L U U U U D R`. Letters rather than arrows: egui's bundled fonts carry
+/// no arrow glyphs.
 pub fn arrows(directions: &[u8]) -> String {
     directions
         .iter()
         .map(|d| match d {
-            1 => '\u{2190}',
-            2 => '\u{2192}',
-            3 => '\u{2193}',
-            4 => '\u{2191}',
-            _ => '?',
+            1 => "L",
+            2 => "R",
+            3 => "D",
+            4 => "U",
+            _ => "?",
         })
-        .collect()
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 fn gamedata() -> &'static legaia_gamedata::Database {

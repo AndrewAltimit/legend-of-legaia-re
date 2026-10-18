@@ -46,10 +46,17 @@ fn main() -> eframe::Result {
         .or_else(|| std::env::var_os("LEGAIA_STUDIO_OPEN").map(PathBuf::from));
     let studio = Studio::new(Settings::default_path());
     let auto = Automation::from_env();
+    // The size the window had when it last closed (the settings file).
+    let size = studio
+        .settings
+        .window_size
+        .filter(|[w, h]| w.is_finite() && h.is_finite())
+        .map(|[w, h]| [w.max(720.0), h.max(480.0)])
+        .unwrap_or([1280.0, 820.0]);
     let mut viewport = eframe::egui::ViewportBuilder::default()
         .with_title("Legaia Studio")
         .with_app_id("legaia-studio")
-        .with_inner_size([1280.0, 820.0])
+        .with_inner_size(size)
         .with_min_inner_size([720.0, 480.0])
         .with_drag_and_drop(true);
     if auto.screenshot.is_some() {

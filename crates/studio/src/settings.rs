@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Settings {
     /// The disc image or extracted folder opened last.
@@ -23,6 +23,12 @@ pub struct Settings {
     pub skip_font: bool,
     /// Extract tab: also export every texture as PNG.
     pub all_textures: bool,
+    /// The window's inner size (logical points) when it last closed.
+    pub window_size: Option<[f32; 2]>,
+    /// The view (`browse`, `actors`, `media`, `extract`) and preview tab
+    /// (`overview`, `textures`, ...) open when the app last closed.
+    pub mode: Option<String>,
+    pub tab: Option<String>,
 }
 
 impl Settings {

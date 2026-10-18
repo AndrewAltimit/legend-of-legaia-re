@@ -57,6 +57,28 @@ impl Player {
         Ok(())
     }
 
+    /// Play streamed PCM (an XA channel or a movie soundtrack) on the
+    /// mixer's XA voice, the one the engine streams CD audio through. Unlike
+    /// [`Self::play_pcm`] it takes stereo and any length.
+    pub fn play_stream(
+        &mut self,
+        pcm: Vec<i16>,
+        rate: u32,
+        channels: legaia_xa::Channels,
+        label: String,
+    ) -> Result<()> {
+        self.stop();
+        self.out()?.play_xa(pcm, rate, channels, false, 0x4000);
+        self.now_playing = Some(label);
+        Ok(())
+    }
+
+    /// Seconds into the playing stream ([`Self::play_stream`]), the clock a
+    /// movie preview paces its frames by.
+    pub fn stream_secs(&self) -> Option<f64> {
+        self.out.as_ref()?.xa_cursor_secs()
+    }
+
     /// `(tick, bpm, finished)` of the playing SEQ.
     pub fn seq_progress(&self) -> Option<(u64, f32, bool)> {
         let p = self.out.as_ref()?.sequencer_progress()?;
@@ -66,6 +88,7 @@ impl Player {
     pub fn stop(&mut self) {
         if let Some(out) = &self.out {
             out.detach_sequencer();
+            out.stop_xa();
             out.stop();
         }
         self.now_playing = None;

@@ -1,6 +1,7 @@
 //! The egui front end over [`Studio`].
 
 mod actors_ui;
+mod media_ui;
 mod viewport;
 
 use std::collections::HashMap;
@@ -22,7 +23,28 @@ use viewport::Viewport;
 pub enum Mode {
     Browse,
     Actors,
+    Media,
     Extract,
+}
+
+impl Mode {
+    const ALL: [Mode; 4] = [Mode::Browse, Mode::Actors, Mode::Media, Mode::Extract];
+
+    /// The settings / `LEGAIA_STUDIO_TAB` spelling.
+    fn key(self) -> &'static str {
+        match self {
+            Mode::Browse => "browse",
+            Mode::Actors => "actors",
+            Mode::Media => "media",
+            Mode::Extract => "extract",
+        }
+    }
+
+    fn parse(s: &str) -> Option<Mode> {
+        Mode::ALL
+            .into_iter()
+            .find(|m| m.key().eq_ignore_ascii_case(s.trim()))
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -56,15 +78,22 @@ impl Tab {
         }
     }
 
-    fn parse(s: &str) -> Option<Tab> {
-        let s = s.to_ascii_lowercase();
-        let key = |t: Tab| match t {
+    /// The settings / `LEGAIA_STUDIO_TAB` spelling.
+    fn key(self) -> &'static str {
+        match self {
+            Tab::Overview => "overview",
+            Tab::Textures => "textures",
             Tab::Model => "model",
-            other => other.name(),
-        };
+            Tab::Audio => "audio",
+            Tab::Text => "text",
+            Tab::Hex => "hex",
+        }
+    }
+
+    fn parse(s: &str) -> Option<Tab> {
         Tab::ALL
             .into_iter()
-            .find(|&t| key(t).eq_ignore_ascii_case(&s))
+            .find(|&t| t.key().eq_ignore_ascii_case(s.trim()))
     }
 }
 
@@ -90,6 +119,11 @@ pub struct Automation {
     /// `LEGAIA_STUDIO_ACTOR`: open the Actors view on `monster:<id>`,
     /// `char:<slot>` (0 Vahn .. 3 Terra), optionally `@<clip>:<frame>`.
     pub actor: Option<String>,
+    /// `LEGAIA_STUDIO_MEDIA`: open the Movies & voice view on this ISO path
+    /// (`MOV/MV1.STR`), optionally `@<frame>`.
+    pub media: Option<String>,
+    /// `LEGAIA_STUDIO_SEARCH`: start with this text in the archive search.
+    pub search: Option<String>,
 }
 
 impl Automation {
@@ -104,6 +138,8 @@ impl Automation {
             screenshot: path("LEGAIA_STUDIO_SCREENSHOT"),
             export_dir: path("LEGAIA_STUDIO_EXPORT_DIR"),
             actor: std::env::var("LEGAIA_STUDIO_ACTOR").ok(),
+            media: std::env::var("LEGAIA_STUDIO_MEDIA").ok(),
+            search: std::env::var("LEGAIA_STUDIO_SEARCH").ok(),
         }
     }
 }
@@ -138,6 +174,9 @@ pub struct App {
     pub studio: Studio,
     mode: Mode,
     tab: Tab,
+    about_open: bool,
+    /// The window's inner size, tracked for the settings file.
+    window_size: Option<[f32; 2]>,
     path_text: String,
     filter: String,
     class_filter: Option<String>,
@@ -152,6 +191,7 @@ pub struct App {
     /// Scene VRAM images by `block:kind`, built on demand.
     scenes: HashMap<String, SceneSlot>,
     actors: actors_ui::ActorsState,
+    media: media_ui::MediaState,
     /// Entry the browser should expand and scroll to on its next frame.
     reveal: Option<usize>,
     // Audio tab.
@@ -186,10 +226,25 @@ impl App {
             .as_ref()
             .map(|p| p.display().to_string())
             .unwrap_or_default();
+        // The view and tab open when the app last closed.
+        let mode = studio
+            .settings
+            .mode
+            .as_deref()
+            .and_then(Mode::parse)
+            .unwrap_or(Mode::Browse);
+        let tab = studio
+            .settings
+            .tab
+            .as_deref()
+            .and_then(Tab::parse)
+            .unwrap_or(Tab::Overview);
         let mut app = Self {
             studio,
-            mode: Mode::Browse,
-            tab: Tab::Overview,
+            mode,
+            tab,
+            about_open: false,
+            window_size: None,
             path_text,
             filter: String::new(),
             class_filter: None,
@@ -201,6 +256,7 @@ impl App {
             model: None,
             scenes: HashMap::new(),
             actors: actors_ui::ActorsState::default(),
+            media: media_ui::MediaState::default(),
             reveal: None,
             vab_sel: 0,
             seq_loop: false,
@@ -214,16 +270,23 @@ impl App {
             screenshot_requested: false,
         };
         if let Some(t) = app.auto.tab.clone() {
-            if t.eq_ignore_ascii_case("extract") {
-                app.mode = Mode::Extract;
-            } else if t.eq_ignore_ascii_case("actors") {
-                app.mode = Mode::Actors;
+            if t.eq_ignore_ascii_case("about") {
+                app.about_open = true;
+            } else if let Some(m) = Mode::parse(&t) {
+                app.mode = m;
             } else if let Some(tab) = Tab::parse(&t) {
+                app.mode = Mode::Browse;
                 app.tab = tab;
             }
         }
         if app.auto.actor.is_some() {
             app.mode = Mode::Actors;
+        }
+        if app.auto.media.is_some() {
+            app.mode = Mode::Media;
+        }
+        if let Some(q) = app.auto.search.clone() {
+            app.filter = q;
         }
         if let Some(dir) = app.auto.extract_to.clone() {
             app.out_text = dir.display().to_string();
@@ -307,7 +370,8 @@ impl App {
         let analysed = self.auto.select.is_none() || self.studio.analysis.is_some();
         let extracted = self.auto.extract_to.is_none()
             || self.job.as_ref().is_some_and(|j| j.outcome().is_some());
-        let idle = loaded && analysed && extracted && !self.studio.is_analyzing();
+        let idle =
+            loaded && analysed && extracted && !self.studio.is_analyzing() && !self.media.busy();
         if !idle && self.studio.error.is_none() {
             self.settle_since = None;
             ctx.request_repaint();
@@ -382,9 +446,20 @@ impl App {
             ui.separator();
             ui.selectable_value(&mut self.mode, Mode::Browse, "Browse");
             ui.selectable_value(&mut self.mode, Mode::Actors, "Characters & monsters");
+            ui.selectable_value(&mut self.mode, Mode::Media, "Movies & voice");
             ui.selectable_value(&mut self.mode, Mode::Extract, "Extract");
             ui.separator();
-            if ui.button("Open disc image...").clicked()
+            let ctrl_o = ui.input_mut(|i| {
+                i.consume_shortcut(&egui::KeyboardShortcut::new(
+                    egui::Modifiers::COMMAND,
+                    egui::Key::O,
+                ))
+            });
+            if (ui
+                .button("Open disc image...")
+                .on_hover_text("Ctrl+O")
+                .clicked()
+                || ctrl_o)
                 && let Some(p) = rfd::FileDialog::new()
                     .set_title("Choose your Legend of Legaia disc image")
                     .add_filter("PlayStation disc image", &["bin", "cue", "BIN", "CUE"])
@@ -399,6 +474,11 @@ impl App {
             {
                 self.open_path(&p);
             }
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if ui.button("About").clicked() {
+                    self.about_open = !self.about_open;
+                }
+            });
         });
         ui.horizontal(|ui| {
             ui.label("Path:");
@@ -456,8 +536,22 @@ impl App {
             return;
         };
         ui.horizontal(|ui| {
-            ui.label("Filter:");
-            ui.add(egui::TextEdit::singleline(&mut self.filter).hint_text("name or index"));
+            ui.label("Search:");
+            let resp = ui.add(
+                egui::TextEdit::singleline(&mut self.filter)
+                    .hint_text("CDNAME name, category or index (Ctrl+F)"),
+            );
+            if ui.input_mut(|i| {
+                i.consume_shortcut(&egui::KeyboardShortcut::new(
+                    egui::Modifiers::COMMAND,
+                    egui::Key::F,
+                ))
+            }) {
+                resp.request_focus();
+            }
+            if resp.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+                self.filter.clear();
+            }
         });
         let mut classes: Vec<&'static str> = (0..lib.entries.len())
             .filter_map(|p| self.studio.class_of(p).map(|c| c.name()))
@@ -473,9 +567,11 @@ impl App {
                 }
             });
         ui.separator();
-        let filter = self.filter.to_ascii_lowercase();
+        let filter = self.filter.trim().to_string();
         let mut clicked = None;
         let mut iso_save: Option<crate::library::IsoFile> = None;
+        // Every row the search shows, in disc order: what the arrow keys walk.
+        let mut visible: Vec<usize> = Vec::new();
         egui::ScrollArea::vertical()
             .auto_shrink([false, false])
             .show(ui, |ui| {
@@ -486,22 +582,18 @@ impl App {
                         .iter()
                         .copied()
                         .filter(|&pos| {
-                            let e = &lib.entries[pos];
-                            let text_ok = filter.is_empty()
-                                || block.name.to_ascii_lowercase().contains(&filter)
-                                || format!("{:04}", e.index).contains(&filter);
-                            let class_ok = match &self.class_filter {
-                                None => true,
-                                Some(c) => {
-                                    self.studio.class_of(pos).map(|k| k.name()) == Some(c.as_str())
-                                }
-                            };
-                            text_ok && class_ok
+                            self.studio.entry_matches(
+                                pos,
+                                &block.name,
+                                &filter,
+                                self.class_filter.as_deref(),
+                            )
                         })
                         .collect();
                     if rows.is_empty() {
                         continue;
                     }
+                    visible.extend_from_slice(&rows);
                     let first = lib.entries[rows[0]].index;
                     let open = (!filter.is_empty() || self.class_filter.is_some())
                         .then_some(true)
@@ -562,6 +654,41 @@ impl App {
         self.reveal = None;
         if let Some(pos) = clicked {
             self.select(pos);
+        }
+        // Keyboard: with no text field focused, the arrows, Page Up / Down,
+        // Home and End walk the rows the search shows, opening a block and
+        // scrolling to the entry as they go.
+        let typing = ui.ctx().wants_keyboard_input();
+        if !typing && !visible.is_empty() {
+            let cur = self
+                .studio
+                .selected
+                .and_then(|s| visible.iter().position(|&p| p == s));
+            let last = visible.len() - 1;
+            let step = ui.input(|i| {
+                if i.key_pressed(egui::Key::ArrowDown) {
+                    Some(cur.map_or(0, |c| (c + 1).min(last)))
+                } else if i.key_pressed(egui::Key::ArrowUp) {
+                    Some(cur.map_or(0, |c| c.saturating_sub(1)))
+                } else if i.key_pressed(egui::Key::PageDown) {
+                    Some(cur.map_or(0, |c| (c + 20).min(last)))
+                } else if i.key_pressed(egui::Key::PageUp) {
+                    Some(cur.map_or(0, |c| c.saturating_sub(20)))
+                } else if i.key_pressed(egui::Key::Home) {
+                    Some(0)
+                } else if i.key_pressed(egui::Key::End) {
+                    Some(last)
+                } else {
+                    None
+                }
+            });
+            if let Some(k) = step
+                && Some(k) != cur
+            {
+                let pos = visible[k];
+                self.select(pos);
+                self.reveal = Some(pos);
+            }
         }
         if let Some(f) = iso_save {
             let name = f.path.rsplit('/').next().unwrap_or(&f.path).to_string();
@@ -1375,7 +1502,11 @@ impl eframe::App for App {
         }
         self.run_automation(ctx);
 
+        if let Some(r) = ctx.input(|i| i.viewport().inner_rect) {
+            self.window_size = Some([r.width(), r.height()]);
+        }
         egui::TopBottomPanel::top("top").show(ctx, |ui| self.top_bar(ui));
+        self.about_window(ctx);
         match self.mode {
             Mode::Browse => {
                 egui::SidePanel::left("browser")
@@ -1386,6 +1517,7 @@ impl eframe::App for App {
                 egui::CentralPanel::default().show(ctx, |ui| self.preview(ui));
             }
             Mode::Actors => self.actors_mode(ctx),
+            Mode::Media => self.media_mode(ctx),
             Mode::Extract => {
                 egui::CentralPanel::default().show(ctx, |ui| self.extract_panel(ui));
             }
@@ -1394,11 +1526,86 @@ impl eframe::App for App {
 
     fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
         self.player.stop();
+        let s = &mut self.studio.settings;
+        s.mode = Some(self.mode.key().to_string());
+        s.tab = Some(self.tab.key().to_string());
+        if let Some(size) = self.window_size {
+            s.window_size = Some(size);
+        }
         self.studio.save_settings();
         if let Some(job) = &mut self.job {
             job.cancel();
             job.join();
         }
+    }
+}
+
+/// `THIRD-PARTY-LICENSES.txt` where the release archives put it
+/// (`docs/tooling/releases.md`): beside the binary, or beside the macOS
+/// `.app` bundle the binary sits three folders inside.
+fn third_party_licenses() -> Option<PathBuf> {
+    let exe = std::env::current_exe().ok()?;
+    exe.ancestors()
+        .skip(1)
+        .take(4)
+        .map(|d| d.join("THIRD-PARTY-LICENSES.txt"))
+        .find(|p| p.is_file())
+}
+
+impl App {
+    fn about_window(&mut self, ctx: &egui::Context) {
+        let mut open = self.about_open;
+        egui::Window::new("About Legaia Studio")
+            .open(&mut open)
+            .collapsible(false)
+            .resizable(false)
+            .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
+            .show(ctx, |ui| {
+                ui.heading(format!("Legaia Studio {}", env!("CARGO_PKG_VERSION")));
+                ui.label(
+                    "Browse, preview and extract the assets on your own Legend of Legaia disc.",
+                );
+                ui.add_space(6.0);
+                ui.label(format!("License: {}", env!("CARGO_PKG_LICENSE")));
+                ui.label(
+                    "The third-party crates this program is built from keep their own \
+                     licenses; their texts and notices ship in THIRD-PARTY-LICENSES.txt \
+                     next to the program.",
+                );
+                match third_party_licenses() {
+                    Some(p) => {
+                        ui.horizontal(|ui| {
+                            ui.monospace(p.display().to_string());
+                            if ui.small_button("Copy path").clicked() {
+                                ui.ctx().copy_text(p.display().to_string());
+                            }
+                        });
+                    }
+                    None => {
+                        ui.label(
+                            RichText::new(
+                                "(not found beside this binary - it is part of every release \
+                                 archive; a source build can generate it with \
+                                 scripts/ci/third-party-licenses.py)",
+                            )
+                            .weak(),
+                        );
+                    }
+                }
+                ui.add_space(6.0);
+                ui.label(
+                    RichText::new(
+                        "No game data ships with this program; it reads only the disc image you \
+                         choose, and writes only into folders you pick.",
+                    )
+                    .weak(),
+                );
+                ui.add_space(6.0);
+                ui.label(RichText::new("Keyboard").strong());
+                ui.label("Ctrl+O open a disc image  -  Ctrl+F search the archive");
+                ui.label("Up / Down, Page Up / Down, Home / End walk the archive tree");
+            });
+        self.about_open = open;
     }
 }
 

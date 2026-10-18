@@ -259,3 +259,63 @@ fn real_disc_battle_actors_and_scene_textures() {
     );
     let _ = legaia_tim::write_png(&out.join("scene.png"), 200, 200, &scene);
 }
+
+#[test]
+fn real_disc_search_and_streamed_media() {
+    let Some(bin) = disc() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN not set; skipping studio media test");
+        return;
+    };
+    let out = scratch("media");
+    let mut s = Studio::new(Some(out.join("settings.json")));
+    s.open_blocking(&bin).expect("load disc");
+    let lib = s.library.clone().unwrap();
+
+    // Search: CDNAME label, retail block and index forms all match.
+    let pos = lib.position_of(865).unwrap();
+    let block = lib.label(865).unwrap().to_string();
+    for q in ["865", "0865", "0x361", "battle", "BATTLE 865"] {
+        assert!(s.entry_matches(pos, &block, q, None), "query {q:?}");
+    }
+    assert!(!s.entry_matches(pos, &block, "town01", None));
+
+    // CD-XA: the first file's channels decode at their own subheader rate.
+    let xa = lib
+        .iso_files
+        .iter()
+        .find(|f| {
+            legaia_studio::media::kind_of(&f.path) == Some(legaia_studio::media::MediaKind::Xa)
+        })
+        .expect("an XA file");
+    let chans = legaia_studio::media::xa_channels(&bin, xa).expect("demux");
+    assert!(!chans.is_empty(), "{} has channels", xa.path);
+    let t = legaia_studio::media::decode_channel(&chans[0]).expect("decode");
+    assert!(t.duration_secs() > 1.0 && t.pcm.iter().any(|&s| s != 0));
+    legaia_studio::media::write_wav(&out.join("xa.wav"), &t.pcm, t.channels, t.sample_rate)
+        .expect("wav");
+
+    // STR: the smallest movie assembles frames that decode, at 15 fps, with
+    // a soundtrack.
+    let mv = lib
+        .iso_files
+        .iter()
+        .filter(|f| {
+            legaia_studio::media::kind_of(&f.path) == Some(legaia_studio::media::MediaKind::Str)
+        })
+        .min_by_key(|f| f.size)
+        .expect("a movie");
+    let m = legaia_studio::media::str_movie(&bin, mv).expect("demux movie");
+    assert!(
+        m.frames.len() > 30,
+        "{}: {} frames",
+        mv.path,
+        m.frames.len()
+    );
+    assert!((m.frame_period_secs() - 1.0 / 15.0).abs() < 1e-3);
+    assert!(m.audio.is_some(), "{} soundtrack", mv.path);
+    let (w, h) = m.size();
+    let rgba = m.frames[m.frames.len() / 2]
+        .decode_rgba()
+        .expect("frame decodes");
+    assert_eq!(rgba.len(), (w * h * 4) as usize);
+}

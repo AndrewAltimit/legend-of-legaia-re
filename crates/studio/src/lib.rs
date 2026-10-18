@@ -15,6 +15,7 @@ pub mod arts;
 pub mod export;
 pub mod extract_job;
 pub mod library;
+pub mod media;
 pub mod player;
 pub mod raster;
 pub mod scene_vram;
@@ -242,6 +243,38 @@ impl Studio {
             .get(pos)
             .copied()
             .flatten()
+    }
+
+    /// Whether entry `pos` (in a block labelled `block`) passes the browser's
+    /// search. Every whitespace-separated term of `query` must match, case
+    /// blind, one of: the CDNAME label the filenames carry, the retail
+    /// CDNAME block (the two differ by the +2 index shift), the entry's
+    /// category, or its PROT index (`865`, `0865` or `0x361`). `class`, when
+    /// set, also requires that exact category.
+    pub fn entry_matches(&self, pos: usize, block: &str, query: &str, class: Option<&str>) -> bool {
+        let Some(lib) = &self.library else {
+            return false;
+        };
+        let Some(e) = lib.entries.get(pos) else {
+            return false;
+        };
+        let cat = self.class_of(pos).map(|c| c.name());
+        if class.is_some_and(|c| cat != Some(c)) {
+            return false;
+        }
+        let retail = lib.retail_block(e.index).unwrap_or("");
+        let index_texts = [
+            e.index.to_string(),
+            format!("{:04}", e.index),
+            format!("0x{:x}", e.index),
+        ];
+        query.split_whitespace().all(|term| {
+            let t = term.to_ascii_lowercase();
+            block.to_ascii_lowercase().contains(&t)
+                || retail.to_ascii_lowercase().contains(&t)
+                || cat.is_some_and(|c| c.contains(&t))
+                || index_texts.iter().any(|s| s.contains(&t))
+        })
     }
 
     /// How many entries the background pass has classified.
