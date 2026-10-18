@@ -79,22 +79,30 @@ pub(super) fn picker_open(s: &NativeSession) -> bool {
             .is_some_and(|p| p.menu_active())
 }
 
-/// Whether an open picker takes Up / Down and confirm this frame: its slide
-/// has come to rest (`OwnedDialogPanel::picker_takes_input`). A press while
-/// the box still slides in moves nothing, so a plan of Down taps spent then
-/// lands short of the row it was rolled for.
-pub(super) fn picker_ready(s: &NativeSession) -> bool {
+/// The open picker that takes Up / Down and confirm this frame, as
+/// `(open byte offset, option count)`: its slide has come to rest
+/// (`OwnedDialogPanel::picker_takes_input`). A press while the box still
+/// slides in moves nothing, so a plan of Down taps spent then lands short of
+/// the row it was rolled for.
+pub(super) fn picker_ready(s: &NativeSession) -> Option<(usize, usize)> {
     let w = &s.host.world;
+    let ready = |p: &legaia_engine_dialog::dialog::OwnedDialogPanel| {
+        p.picker_takes_input()
+            .then(|| p.picker().map(|k| (k.open, k.n)))
+            .flatten()
+    };
     w.cutscene
         .timeline
         .iter()
         .chain(w.field_vm.helper_contexts.iter())
-        .any(|c| c.dialog.as_ref().is_some_and(|d| d.picker_takes_input()))
-        || w.dialog
-            .inline
-            .as_ref()
-            .and_then(|d| d.panel.as_ref())
-            .is_some_and(|p| p.picker_takes_input())
+        .find_map(|c| c.dialog.as_ref().and_then(ready))
+        .or_else(|| {
+            w.dialog
+                .inline
+                .as_ref()
+                .and_then(|d| d.panel.as_ref())
+                .and_then(ready)
+        })
 }
 
 /// The face button a field-VM context is polling the **held** pad for, when
@@ -170,6 +178,10 @@ pub(super) struct Policy {
     pub(super) last: u16,
     /// An open picker's plan: this many Down taps, then the confirm.
     pub(super) picker_downs: Option<u32>,
+    /// Plans made at each picker (keyed by its open byte offset): the row a
+    /// plan aims at steps on by one per visit from a random first row, so a
+    /// picker that is asked again gets every answer within `n` visits.
+    pub(super) picker_visits: HashMap<usize, (u32, u32)>,
 }
 
 impl Policy {
@@ -184,6 +196,7 @@ impl Policy {
             chaos_left: 0,
             last: 0,
             picker_downs: None,
+            picker_visits: HashMap::new(),
         }
     }
 
@@ -297,10 +310,26 @@ impl Policy {
                     // way on is its third answer (`cave01`'s "Seru and
                     // human") or a talk whose way out is its last option
                     // (`town01`'s Tetsu) read as starved.
-                    if !picker_ready(s) {
+                    let Some((open, n)) = picker_ready(s) else {
                         return 0;
-                    }
-                    let downs = *self.picker_downs.get_or_insert_with(|| self.rng.below(6));
+                    };
+                    // A quiz asks again after a wrong answer (`cave01`'s Mist
+                    // question loops on three of its four), and a fresh roll
+                    // each time can miss the one way on for the whole starve
+                    // window: aim each visit's plan one row on from the last.
+                    let downs = match self.picker_downs {
+                        Some(d) => d,
+                        None => {
+                            let n = n.max(1) as u32;
+                            let roll = self.rng.below(n);
+                            let (first, visits) =
+                                self.picker_visits.entry(open).or_insert((roll, 0));
+                            let row = (*first + *visits) % n;
+                            *visits += 1;
+                            self.picker_downs = Some(row);
+                            row
+                        }
+                    };
                     let pad = self.tap(if downs == 0 {
                         b(PadButton::Cross)
                     } else {
