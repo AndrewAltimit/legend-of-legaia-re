@@ -67,6 +67,15 @@ pub struct FogVolume {
     regions_dirty: bool,
     /// The current field scene's interior walk areas ([`InteriorTracker`]).
     pub interiors: InteriorTracker,
+    /// The field scene's ground coverage field ([`FogGround`]), with the
+    /// CDNAME label it was built for: the sheet mesh lies on its floor and
+    /// spills off its rims. Used only while that label is [`Self::scene`];
+    /// without one the bank lies on the walk grid as before.
+    ground_field: Option<(String, FogGround)>,
+    /// [`FogGround::texels`] of [`Self::ground_field`], and the generation
+    /// the hosts re-upload them on.
+    ground_texels: Vec<u8>,
+    ground_tex_gen: u32,
 }
 
 /// How much bank the field tile `(tile_x, tile_z)` may carry under the
@@ -90,6 +99,25 @@ pub fn region_weight(regions: &[FogRegion], tile_x: i32, tile_z: i32) -> f32 {
         Some(r) if r.enabled => 1.0,
         _ => 0.0,
     }
+}
+
+/// How many tiles past a fog-region box the bank still lies when the scene
+/// has a ground field ([`region_weight_near`]).
+pub const REGION_REACH_TILES: i32 = 3;
+
+/// [`region_weight`] at the best tile within `reach` tiles (Chebyshev) of
+/// `(tile_x, tile_z)`.
+pub fn region_weight_near(regions: &[FogRegion], tile_x: i32, tile_z: i32, reach: i32) -> f32 {
+    let mut best = 0.0f32;
+    for dz in -reach..=reach {
+        for dx in -reach..=reach {
+            best = best.max(region_weight(regions, tile_x + dx, tile_z + dz));
+            if best >= 1.0 {
+                return best;
+            }
+        }
+    }
+    best
 }
 
 impl Default for FogVolume {
@@ -122,6 +150,9 @@ impl FogVolume {
             regions: Vec::new(),
             regions_dirty: false,
             interiors: InteriorTracker::default(),
+            ground_field: None,
+            ground_texels: Vec::new(),
+            ground_tex_gen: 0,
         }
     }
 
@@ -134,12 +165,39 @@ impl FogVolume {
         self.seated = false;
     }
 
-    /// Full reset - what the toggle going off leaves behind.
+    /// Full reset - what the toggle going off leaves behind. The scene's
+    /// ground field survives: it is scene data, built once at load, and the
+    /// toggle coming back on in the same scene needs it.
     pub fn reset(&mut self) {
         *self = Self {
             ground_gen: self.ground_gen.wrapping_add(1),
+            ground_field: self.ground_field.take(),
+            ground_texels: std::mem::take(&mut self.ground_texels),
+            ground_tex_gen: self.ground_tex_gen.wrapping_add(1),
             ..Self::new()
         };
+    }
+
+    /// Install the ground coverage field the host built for field scene
+    /// `scene` at load ([`FogGround`]), or `None` to fall back to the walk
+    /// grid. The sheet mesh re-samples on the next step.
+    pub fn set_ground_field(&mut self, scene: &str, field: Option<FogGround>) {
+        self.ground_texels = field.as_ref().map(FogGround::texels).unwrap_or_default();
+        self.ground_field = field.map(|f| (scene.trim().to_ascii_lowercase(), f));
+        self.ground_tex_gen = self.ground_tex_gen.wrapping_add(1);
+        self.regions_dirty = true;
+    }
+
+    /// The installed ground field, when it belongs to the current scene and
+    /// the bank is in field space.
+    pub fn ground_field(&self) -> Option<&FogGround> {
+        if self.space != FogSpace::Field {
+            return None;
+        }
+        self.ground_field
+            .as_ref()
+            .filter(|(label, _)| label.as_str() == self.scene.trim().to_ascii_lowercase())
+            .map(|(_, f)| f)
     }
 
     /// Install the field scene's live fog-region table ([`region_weight`]).
@@ -154,11 +212,14 @@ impl FogVolume {
     }
 
     /// Switch coordinate space (field <-> battle). The disturbances of one
-    /// space mean nothing in the other, so the grid restarts.
+    /// space mean nothing in the other, so the grid restarts, and the bank
+    /// eases in from nothing under the new space's profile rather than
+    /// popping from the old one's density to the new one's.
     pub fn set_space(&mut self, space: FogSpace) {
         if self.space != space {
             self.space = space;
             self.clear_field();
+            self.strength = 0.0;
         }
     }
 
@@ -245,42 +306,112 @@ impl FogVolume {
     }
 
     /// Re-sample every sheet-mesh vertex's floor height.
+    ///
+    /// With a [`FogGround`] for the scene, a vertex takes the drawn floor's
+    /// height ([`FogGround::sheet_at`]); past a rim it takes the falling
+    /// spill sheet, and beyond the spill's reach it carries no bank. The
+    /// floor-step test then runs over floor vertices only, so the spill's
+    /// fall is not read as a cliff face.
     pub fn resample_ground(&mut self, floor: impl Fn(f32, f32) -> f32) {
         let mc = self.space.mesh_cell();
         let n = MESH_DIM + 1;
+        let field = self.ground_field().cloned();
+        // Per vertex: `None` = walk grid (no field), else the field's verdict.
+        let mut points: Vec<Option<Option<FogSheetPoint>>> = Vec::with_capacity(n * n);
+        let mut rim_tiles: Vec<[i32; 2]> = Vec::with_capacity(n * n);
         for z in 0..n {
             for x in 0..n {
                 let wx = (self.mesh_origin[0] + x as i32) as f32 * mc;
                 let wz = (self.mesh_origin[1] + z as i32) as f32 * mc;
-                self.ground[z * n + x] = floor(wx, wz);
+                let tile = [
+                    self.mesh_origin[0] + x as i32,
+                    self.mesh_origin[1] + z as i32,
+                ];
+                match &field {
+                    Some(f) => {
+                        let p = f.sheet_at(wx, wz);
+                        self.ground[z * n + x] = p.map_or_else(|| floor(wx, wz), |p| p.y);
+                        // A spill vertex takes its rim's fog region.
+                        let rim_tile = match (p, f.rim_of(wx, wz)) {
+                            (Some(p), Some(r)) if p.spill => {
+                                let c = f.centre_of(r);
+                                [(c[0] / mc).round() as i32, (c[1] / mc).round() as i32]
+                            }
+                            _ => tile,
+                        };
+                        rim_tiles.push(rim_tile);
+                        points.push(Some(p));
+                    }
+                    None => {
+                        self.ground[z * n + x] = floor(wx, wz);
+                        rim_tiles.push(tile);
+                        points.push(None);
+                    }
+                }
             }
         }
         for z in 0..n {
             for x in 0..n {
-                let h = self.ground[z * n + x];
+                let i = z * n + x;
+                let h = self.ground[i];
+                let region = match self.space {
+                    // One sheet-mesh quad is one 128-unit tile, so vertex
+                    // `(x, z)` sits on the corner of tile `mesh_origin + (x,
+                    // z)` - the point retail seats a particle spawned there.
+                    // With a ground field the table is read a couple of
+                    // tiles wide: retail's boxes stop short of a floor's
+                    // rim (`teien`'s parapet), and the bank must reach the
+                    // rim it spills over.
+                    FogSpace::Field if field.is_some() => region_weight_near(
+                        &self.regions,
+                        rim_tiles[i][0],
+                        rim_tiles[i][1],
+                        REGION_REACH_TILES,
+                    ),
+                    FogSpace::Field => {
+                        region_weight(&self.regions, rim_tiles[i][0], rim_tiles[i][1])
+                    }
+                    FogSpace::Battle => 1.0,
+                };
+                let (spill, cover) = match points[i] {
+                    None => (false, 1.0),
+                    Some(None) => (false, 0.0),
+                    Some(Some(p)) => (p.spill, p.weight),
+                };
+                if spill {
+                    self.ground_weight[i] = cover * region;
+                    continue;
+                }
                 let mut step = 0.0f32;
+                let mut lip = false;
                 for dz in -1i32..=1 {
                     for dx in -1i32..=1 {
                         let (nx, nz) = (x as i32 + dx, z as i32 + dz);
                         if nx < 0 || nz < 0 || nx >= n as i32 || nz >= n as i32 {
                             continue;
                         }
-                        step = step.max((self.ground[nz as usize * n + nx as usize] - h).abs());
+                        let j = nz as usize * n + nx as usize;
+                        // Floor neighbours only: a spill or bankless vertex
+                        // beside this one is not a step in the floor.
+                        if matches!(points[j], Some(Some(p)) if p.spill) {
+                            lip = true;
+                            continue;
+                        }
+                        if matches!(points[j], Some(None)) {
+                            continue;
+                        }
+                        step = step.max((self.ground[j] - h).abs());
                     }
                 }
+                // The rim vertex a spill leaves from carries the bank over
+                // the lip whatever the floor does under it (a bevelled
+                // edge would otherwise read as a cliff and open a gap
+                // between the bank and its spill).
+                if lip {
+                    step = 0.0;
+                }
                 let t = ((step - FLOOR_STEP_LO) / (FLOOR_STEP_HI - FLOOR_STEP_LO)).clamp(0.0, 1.0);
-                let region = match self.space {
-                    // One sheet-mesh quad is one 128-unit tile, so vertex
-                    // `(x, z)` sits on the corner of tile `mesh_origin + (x,
-                    // z)` - the point retail seats a particle spawned there.
-                    FogSpace::Field => region_weight(
-                        &self.regions,
-                        self.mesh_origin[0] + x as i32,
-                        self.mesh_origin[1] + z as i32,
-                    ),
-                    FogSpace::Battle => 1.0,
-                };
-                self.ground_weight[z * n + x] = (1.0 - t * t * (3.0 - 2.0 * t)) * region;
+                self.ground_weight[i] = (1.0 - t * t * (3.0 - 2.0 * t)) * region * cover;
             }
         }
         self.regions_dirty = false;
@@ -509,6 +640,14 @@ impl FogVolume {
             height: style.height * self.space.height_scale(),
             drift: self.drift,
             ticks: self.ticks,
+            ground_tex: self.ground_field().map(|f| FogGroundFrame {
+                origin: f.origin,
+                extent: [f.w as f32 * f.cell, f.h as f32 * f.cell],
+                w: f.w as u32,
+                h: f.h as u32,
+                texels: &self.ground_texels,
+                ground_gen: self.ground_tex_gen,
+            }),
         })
     }
 }

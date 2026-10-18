@@ -181,6 +181,40 @@ afterimage_screen_quad` lifts it into a `ScreenPrim` that the
 [`screen_overlay`](../../crates/engine-render/src/screen_overlay.rs) pass links into the screen-space
 ordering table and the wgpu renderer draws via `RenderTarget::ScreenOverlay`.
 
+## Volumetric ground fog (enhancement, NOT retail)
+
+`Renderer::set_fog_volume` stages one frame's mist bank
+(`render-kernels::fog_volume`, simulated by the `World`); `None` draws
+nothing and, if the pass was never built, costs nothing. The pass
+(`renderer/fog_volume.rs`) draws twelve instanced horizontal sheets over a
+48 x 48 quad mesh between the two halves of the scene pass, depth-tested
+against the scene and reading its depth for a soft intersection. The browser
+play page draws the same frame through `site/js/webgl-fog-volume.js`, a GLSL
+transcription. The simulation, the scene styles and the shading recipe are
+on [renderer.md](renderer.md#volumetric-ground-fog-enhancement).
+
+**Ground field.** Each field scene's `FogGround`
+(`engine-scene::fog_ground::build_for_scene`, built once at scene load by
+both hosts over their static draw lists) puts the sheet mesh on the drawn
+floor and stops it over open air, so a tower top such as `teien` no longer
+carries a flat bank across the sky around it. Past a rim the mesh keeps
+going as a falling, thinning spill sheet draped over whatever stands below
+the rim. The field also reaches the shader as an RGBA8 texture at binding 3
+(coverage, spill, flow; at most 256 x 256 texels of 64 world units, uploaded
+only when its generation changes): it fades the bank across the floor's edge
+at fragment resolution and draws the spill as mist advected outward and down
+by the frame's spill phase. A frame without a field binds one full-coverage
+texel, which is the bank as it was before.
+
+**Battle profile.** `fog_volume::BATTLE_FOG` sets a battle's bank to a third
+of the field opacity and an ankle-high depth, so the stage floor stays
+readable; a field-to-battle switch eases it in from zero instead of popping.
+
+**Cost.** The field is CPU work at scene load only: one rasterisation of
+the static triangles plus two nearest-site sweeps over at most 65,536
+cells. Per frame the pass adds one texture sample per sheet fragment, four
+more only on spill fragments, and nothing on the CPU.
+
 ## Screen-space overlay pass
 
 **The tint is retail's, 5-bit.** The text / sprite shader tints every quad

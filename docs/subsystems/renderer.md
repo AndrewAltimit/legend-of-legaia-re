@@ -2880,6 +2880,46 @@ vertex carries a floor weight that falls to zero when it steps more than
 `FLOOR_STEP_HI` to any neighbour (`FogVolume::ground_weight`). The world map,
 the boot UI, the minigame venues and a VR session draw no bank.
 
+**On the drawn ground, spilling off its rims.** The walk grid covers the
+whole `0x80 x 0x80` tile map, so on its own it cannot say where the floor
+ends: `teien` (the Sky Gardens, a tower top ringed by open sky) reads as one
+floor out to the map's edge, and the bank used to lie flat across the empty
+air. Each field scene therefore carries a **ground coverage field**
+([`fog_volume::FogGround`](../../crates/render-kernels/src/fog_volume/ground.rs),
+built at scene load by
+[`engine-scene::fog_ground`](../../crates/engine-scene/src/fog_ground.rs),
+which both play hosts call over the same static draw lists their occluder
+set uses):
+
+- **Rasterised from what is drawn.** Every static terrain and placement
+  triangle - blended and cutout prims included, which the occluder set drops
+  - and every walk-heightfield triangle facing within about 50 degrees of
+  level writes its height at each 64-unit cell centre it covers. A surface
+  more than `ROOF_CLEARANCE` above the walk floor under it is a roof, hedge
+  top or canopy: solid, but not floor. Of the rest the highest wins.
+- **Open air is what reaches the border.** The solid cells are closed by
+  one cell (a seam is not a crack), then the empty cells are flood-filled
+  from the field's border. Enclosed pockets - a hedge maze's tops, a roof, a
+  pit - stay covered at the nearest floor's height, so the bank runs on
+  through them and the scene's own depth hides it there; only the open air
+  outside the floor is uncovered.
+- **Distances.** A two-pass nearest-site sweep gives each cell its signed
+  distance to the edge and, off the floor, the floor cell it is nearest.
+
+The sheet mesh lies on the field's floor height where there is one, so the
+bank follows terraces the walk grid does not author. Past a rim, within
+`SPILL_REACH`, a vertex takes its rim's height lowered by `spill_drop` (a
+fall that starts level and steepens) at `spill_weight` (thinning to nothing
+at the reach), exempt from the floor-step test and carrying its rim's fog
+region; further out it carries no bank. The field also travels as a small
+RGBA8 texture (`FogGround::texels`: coverage, spill, flow), uploaded once per
+scene: the shaders fade the bank across `EDGE_SOFT` either side of the edge
+at fragment resolution, and on the spill draw streaks stretched along the
+flow direction (the texture's distance gradient) and advected outward and
+down by the frame's spill phase, also exempting it from the slope fade. A
+frame without a field (battle, or a host that built none) binds one
+full-coverage texel and draws the bank as before.
+
 **Reading scene depth differs per host.** The native renderer splits its
 scene pass around a fog pass that attaches the depth target read-only and
 samples it as a texture (the target carries `TEXTURE_BINDING` and is stored
@@ -2890,9 +2930,17 @@ format is probed once; a driver that refuses the copy draws without the
 fade), and on frames drawn with log-of-w depth the sheets write and test
 that encoding. Its pass is `site/js/webgl-fog-volume.js`, a GLSL
 transcription that reads its numbers from the frame header
-(`fog_volume::FogSpace::shader_constants`, `FogSpace::soft_distance`). A
-battle's bank is denser, deeper and drawn with a higher gain, because its
-low, close framing looks through it at a grazing angle.
+(`fog_volume::FogSpace::shader_constants`, `FogSpace::soft_distance`).
+
+**A battle takes a thin, low profile** (`fog_volume::BATTLE_FOG`, the one
+parameter set both hosts read through `FogSpace` and the frame header): a
+third of the field style's opacity at the field's sheet gain, and a bank no
+deeper in stage units than the style's field height - against fighters that
+stand about 2.5 times taller in stage units, an ankle-high haze that leaves
+the stage floor readable. The noise scales still follow the arena's size. A
+change of space restarts the bank from zero strength, so the field-to-battle
+cut (and the way back) eases the new profile in over the style fade instead
+of popping from one density to the other.
 
 **Brightness follows the scene.** The style's colour keeps its hue but is
 dimmed until its luma sits at most `FOG_LUMA_FLOOR + FOG_LUMA_OVER_SCENE *

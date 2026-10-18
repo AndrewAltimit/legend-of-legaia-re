@@ -29,6 +29,10 @@ pub struct FogVolumeFrame<'a> {
     /// Accumulated drift (world units) - the noise offset.
     pub drift: [f32; 2],
     pub ticks: u32,
+    /// The scene's ground coverage field ([`FogGround::texels`]), `None` in
+    /// battle and in a field scene the host built none for - the shaders
+    /// then read full coverage everywhere, the bank as it was before.
+    pub ground_tex: Option<FogGroundFrame<'a>>,
 }
 
 /// Index layout of [`FogVolumeFrame::header`] - the browser page reads the
@@ -57,8 +61,32 @@ pub mod header {
     pub const SHADER_CONSTANTS: usize = 18;
     /// `super::FogSpace::soft_distance`.
     pub const SOFT_DISTANCE: usize = 22;
-    pub const LEN: usize = 23;
+    /// The spill streaks' flow phase (`super::FogVolumeFrame::spill_phase`):
+    /// noise cells travelled since the clock last wrapped.
+    pub const SPILL_PHASE: usize = 23;
+    /// The ground field texture's world rect (`super::FogGroundFrame`):
+    /// corner X / Z and span X / Z. A zero span = no field.
+    pub const GROUND_TEX_ORIGIN_X: usize = 24;
+    pub const GROUND_TEX_ORIGIN_Z: usize = 25;
+    pub const GROUND_TEX_EXTENT_X: usize = 26;
+    pub const GROUND_TEX_EXTENT_Z: usize = 27;
+    /// Texels per side, and the generation to re-upload them on.
+    pub const GROUND_TEX_W: usize = 28;
+    pub const GROUND_TEX_H: usize = 29;
+    pub const GROUND_TEX_GEN: usize = 30;
+    pub const LEN: usize = 31;
 }
+
+/// The texture a host binds when the frame has no ground field: one texel
+/// of full coverage and no spill ([`FogGround::texels`] channel layout).
+pub const FOG_GROUND_NONE_TEXEL: [u8; 4] = [255, 0, 0, 255];
+
+/// Ticks for a spill streak to travel one noise cell outward and down.
+pub const SPILL_FLOW_TICKS: u32 = 240;
+
+/// The tick clock's wrap for [`header::SPILL_PHASE`]: a multiple of
+/// the spill streaks' period ([`SPILL_FLOW_TICKS`]), so the wrap is seamless.
+pub const SPILL_TICK_WRAP: u32 = SPILL_FLOW_TICKS * 1000;
 
 /// Horizontal sheets the bank is drawn as.
 pub const FOG_LAYERS: u32 = 12;
@@ -91,7 +119,41 @@ impl FogVolumeFrame<'_> {
         h[header::SHADER_CONSTANTS..header::SHADER_CONSTANTS + 4]
             .copy_from_slice(&self.space.shader_constants());
         h[header::SOFT_DISTANCE] = self.space.soft_distance();
+        h[header::SPILL_PHASE] = self.spill_phase();
+        if let Some(g) = &self.ground_tex {
+            h[header::GROUND_TEX_ORIGIN_X] = g.origin[0];
+            h[header::GROUND_TEX_ORIGIN_Z] = g.origin[1];
+            h[header::GROUND_TEX_EXTENT_X] = g.extent[0];
+            h[header::GROUND_TEX_EXTENT_Z] = g.extent[1];
+            h[header::GROUND_TEX_W] = g.w as f32;
+            h[header::GROUND_TEX_H] = g.h as f32;
+            h[header::GROUND_TEX_GEN] = g.ground_gen as f32;
+        }
         h
+    }
+
+    /// The spill streaks' flow phase: noise cells a streak has travelled
+    /// outward and down, one per [`SPILL_FLOW_TICKS`]. Taken off the tick
+    /// clock wrapped at [`SPILL_TICK_WRAP`], so it stays exact in an `f32`
+    /// uniform and the wrap lands on a whole cell (seamless).
+    pub fn spill_phase(&self) -> f32 {
+        (self.ticks % SPILL_TICK_WRAP) as f32 / SPILL_FLOW_TICKS as f32
+    }
+
+    /// The ground field texture's world rect as the shaders take it:
+    /// `[origin_x, origin_z, 1 / extent_x, 1 / extent_z]`, all zero without
+    /// a field (every fragment then samples the one full-coverage texel of
+    /// [`FOG_GROUND_NONE_TEXEL`]).
+    pub fn ground_uv_rect(&self) -> [f32; 4] {
+        match &self.ground_tex {
+            Some(g) if g.extent[0] > 0.0 && g.extent[1] > 0.0 => [
+                g.origin[0],
+                g.origin[1],
+                1.0 / g.extent[0],
+                1.0 / g.extent[1],
+            ],
+            _ => [0.0; 4],
+        }
     }
 
     /// The sheet mesh's vertices, `[x, floor_y, z, floor_weight]` per vertex

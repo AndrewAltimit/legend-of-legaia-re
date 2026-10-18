@@ -23,7 +23,7 @@ mod uploaded;
 #[cfg(test)]
 pub(crate) use construct::choose_surface_format;
 use depth::*;
-pub use fog_volume::FogVolumeDraw;
+pub use fog_volume::{FogGroundTexture, FogVolumeDraw};
 pub(crate) use letterbox::letterbox_scale;
 pub use render::CaptureImage;
 pub use state::*;

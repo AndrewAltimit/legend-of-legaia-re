@@ -214,6 +214,21 @@ impl LegaiaRuntime {
             &host.world.object_render_scales(),
             &|r, x, z| host.world.object_floor_follow_y(&follow, r, x, z),
         ));
+        // Volumetric fog: where the ground is, so the bank lies on it and
+        // spills off its rims - the call the native window makes at its
+        // scene load (`install_fog_ground`), over the same static draws.
+        if let Some(host) = self.scene_host.host_mut()
+            && let (Some(scene), Some(res)) = (host.scene.as_ref(), host.resources.as_ref())
+            && let Some(fr) = self.field.as_ref()
+        {
+            let field = legaia_engine_scene::fog_ground::build_for_scene(
+                &[&fr.terrain, &fr.placements],
+                res,
+                scene,
+                &host.index,
+            );
+            host.world.fog_volume.set_ground_field(&scene.name, field);
+        }
         // The scene's actors, bound to the world by the step the native
         // window runs too (`scene_actors::bind_scene_actors`): the lead's
         // locomotion clips, the NPC clip cursors, the floor snap. It hands

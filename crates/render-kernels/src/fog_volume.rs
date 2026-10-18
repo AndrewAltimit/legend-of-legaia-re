@@ -44,6 +44,9 @@
 //! (see [`FOG_SHADER_CONSTANTS`]).
 
 mod frame;
+mod ground;
+#[cfg(test)]
+mod ground_tests;
 mod interior;
 mod luminance;
 mod region;
@@ -53,6 +56,7 @@ mod tests;
 mod volume;
 
 pub use frame::*;
+pub use ground::*;
 pub use interior::*;
 pub use luminance::*;
 pub use region::*;

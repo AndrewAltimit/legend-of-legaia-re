@@ -1,9 +1,9 @@
 /* Volumetric ground fog on the play page - the browser twin of the native
  * renderer's `fog_volume` pass (crates/engine-render/src/renderer/
  * fog_volume.rs). An ENHANCEMENT, not retail: the bank is simulated by the
- * engine (crates/engine-core/src/fog_volume.rs, stepped inside World::tick)
- * and handed over each frame through four wasm exports; this file only
- * draws it.
+ * engine (crates/render-kernels/src/fog_volume.rs, stepped inside
+ * World::tick) and handed over each frame through five wasm exports; this
+ * file only draws it.
  *
  * The bank is a stack of horizontal alpha-blended sheets over the walk
  * ground, depth-tested against the scene already in the framebuffer and
@@ -12,7 +12,12 @@
  * native WGSL - keep the two in step. The recipe's numbers (noise scales,
  * sheet gain, profile exponent) come from the frame header, not from here.
  *
- * Header layout: legaia_engine_core::fog_volume::header. */
+ * The scene's ground coverage field (fog_volume::FogGround) arrives as an
+ * RGBA8 texture - coverage, spill, flow - so the bank lies on the drawn
+ * floor and spills off its rims; without one (battle, an older bundle) the
+ * pass binds a single full-coverage texel and draws the bank as before.
+ *
+ * Header layout: legaia_render_kernels::fog_volume::header. */
 (function () {
   'use strict';
 
@@ -23,7 +28,13 @@
     COLOR_R: 8, COLOR_G: 9, COLOR_B: 10, OPACITY: 11,
     HEIGHT: 12, LAYERS: 13, DRIFT_X: 14, DRIFT_Z: 15,
     GROUND_GEN: 16, SPACE: 17, SHADER_CONSTANTS: 18, SOFT_DISTANCE: 22, LEN: 23,
+    /* The ground-field tail (absent from a header shorter than FULL_LEN). */
+    SPILL_PHASE: 23, GROUND_TEX_ORIGIN_X: 24, GROUND_TEX_ORIGIN_Z: 25,
+    GROUND_TEX_EXTENT_X: 26, GROUND_TEX_EXTENT_Z: 27, GROUND_TEX_W: 28,
+    GROUND_TEX_H: 29, GROUND_TEX_GEN: 30, FULL_LEN: 31,
   };
+  /* fog_volume::FOG_GROUND_NONE_TEXEL: full coverage, no spill. */
+  const GROUND_NONE = new Uint8Array([255, 0, 0, 255]);
 
   const VS = `#version 300 es
 precision highp float;
@@ -71,7 +82,10 @@ uniform vec4 u_color;
 uniform vec4 u_params;
 uniform vec4 u_consts;
 uniform vec4 u_depth;
+uniform vec4 u_ground;
+uniform float u_spill_phase;
 uniform sampler2D u_dens;
+uniform sampler2D u_gtex;
 uniform highp sampler2D u_scene_depth;
 in vec2 v_xz;
 in float v_layer;
@@ -149,7 +163,33 @@ void main() {
   vec3 nrm = cross(dFdx(v_world), dFdy(v_world));
   float flat_ = abs(nrm.y) / max(length(nrm), 1.0e-6);
   float level = smoothstep(0.55, 0.85, flat_);
-  float a = u_color.a * d * crest * profile * edge * soft * level * v_floor_w * u_consts.z / u_params.y;
+  /* Ground field: full bank on the floor, a soft fade over its edge, and
+   * past a rim the spill - streaks flowing outward and down the falling
+   * sheet, thinning with the fall. */
+  vec2 guv = (v_xz - u_ground.xy) * u_ground.zw;
+  vec4 g = textureLod(u_gtex, guv, 0.0);
+  float ground_a = g.r;
+  if (g.g > 0.0) {
+    vec2 e = u_ground.zw * 64.0;
+    float fx = textureLod(u_gtex, guv + vec2(e.x, 0.0), 0.0).b
+      - textureLod(u_gtex, guv - vec2(e.x, 0.0), 0.0).b;
+    float fz = textureLod(u_gtex, guv + vec2(0.0, e.y), 0.0).b
+      - textureLod(u_gtex, guv - vec2(0.0, e.y), 0.0).b;
+    float glen = length(vec2(fx, fz));
+    vec2 dir = glen > 1.0e-4 ? vec2(fx, fz) / glen : vec2(1.0, 0.0);
+    float across = dot(v_xz, vec2(-dir.y, dir.x)) * u_consts.x * 1.3;
+    float fall = g.b * 3.0 - u_spill_phase;
+    float sn = 0.6 * fog_noise(vec2(across, fall))
+      + 0.4 * fog_noise(vec2(across * 2.3 + 5.1, fall * 1.7 + 2.3));
+    /* Billowed by the bank's own structure, so it reads as mist tumbling
+     * over the lip rather than straight streaks. */
+    float streak = smoothstep(0.2, 0.75, sn * 0.65 + f * 0.45);
+    ground_a = max(ground_a, g.g * streak);
+    /* The spill sheet falls steeply on purpose: exempt it from the
+     * cliff-face fade. */
+    level = mix(level, 1.0, clamp(g.g * 4.0, 0.0, 1.0) * (1.0 - g.r));
+  }
+  float a = u_color.a * d * crest * profile * edge * soft * level * ground_a * v_floor_w * u_consts.z / u_params.y;
   vec3 rgb = u_color.rgb * (0.75 + 0.5 * f);
   o_color = vec4(rgb, clamp(a, 0.0, 1.0));
 }`;
@@ -207,6 +247,9 @@ void main() {
         depth: gl.getUniformLocation(prog, 'u_depth'),
         logDepth: gl.getUniformLocation(prog, 'u_log_depth'),
         dens: gl.getUniformLocation(prog, 'u_dens'),
+        ground: gl.getUniformLocation(prog, 'u_ground'),
+        spillPhase: gl.getUniformLocation(prog, 'u_spill_phase'),
+        gtex: gl.getUniformLocation(prog, 'u_gtex'),
         sceneDepth: gl.getUniformLocation(prog, 'u_scene_depth'),
       };
       this.vao = gl.createVertexArray();
@@ -216,6 +259,10 @@ void main() {
       this.groundGen = null;
       this.tex = gl.createTexture();
       this.texDim = 0;
+      /* The ground coverage field; `groundTexGen` is the header generation
+       * last uploaded (`-1` = the full-coverage texel, `null` = nothing). */
+      this.gtex = gl.createTexture();
+      this.groundTexGen = null;
       /* Scene-depth copy for the soft intersection: the default framebuffer's
        * depth cannot be sampled, so it is blitted into a depth texture each
        * frame. `null` until first use, `false` once the copy proved
@@ -323,6 +370,34 @@ void main() {
         gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, dim, dim, gl.RED, gl.UNSIGNED_BYTE, dens);
       }
 
+      /* The ground coverage field: re-uploaded only when its generation
+       * changes; a frame without one binds the full-coverage texel. */
+      const hasGround = h.length >= H.FULL_LEN && h[H.GROUND_TEX_W] > 0
+        && h[H.GROUND_TEX_EXTENT_X] > 0 && h[H.GROUND_TEX_EXTENT_Z] > 0;
+      const wantGen = hasGround ? h[H.GROUND_TEX_GEN] : -1;
+      if (this.groundTexGen !== wantGen) {
+        let gw = 1, gh = 1, texels = GROUND_NONE;
+        if (hasGround) {
+          const t = rt.play_fog_volume_ground ? rt.play_fog_volume_ground() : null;
+          const w = h[H.GROUND_TEX_W] | 0, hh = h[H.GROUND_TEX_H] | 0;
+          if (t && t.length === w * hh * 4) { gw = w; gh = hh; texels = t; }
+        }
+        gl.activeTexture(gl.TEXTURE2);
+        gl.bindTexture(gl.TEXTURE_2D, this.gtex);
+        gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, gw, gh, 0, gl.RGBA, gl.UNSIGNED_BYTE, texels);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+        gl.activeTexture(gl.TEXTURE0);
+        this.groundTexGen = wantGen;
+        this.groundRect = (hasGround && gw > 1)
+          ? [h[H.GROUND_TEX_ORIGIN_X], h[H.GROUND_TEX_ORIGIN_Z],
+            1 / h[H.GROUND_TEX_EXTENT_X], 1 / h[H.GROUND_TEX_EXTENT_Z]]
+          : [0, 0, 0, 0];
+      }
+
       /* The bank's space -> the page's Y-up draw frame: the field world is
        * retail Y-down (one Y negation, the per-model flip every field
        * placement carries); the battle stage is raw units under the stage's
@@ -356,6 +431,12 @@ void main() {
       gl.uniform2f(this.loc.logDepth, logDepth ? 1 : 0, LOG_RANGE);
       gl.uniform4f(this.loc.depth, A, B, Math.max(h[H.SOFT_DISTANCE] || 0, 1e-3), depthTex ? 1 : 0);
       gl.uniform1i(this.loc.dens, 0);
+      const gr = this.groundRect || [0, 0, 0, 0];
+      gl.uniform4f(this.loc.ground, gr[0], gr[1], gr[2], gr[3]);
+      gl.uniform1f(this.loc.spillPhase, h.length >= H.FULL_LEN ? h[H.SPILL_PHASE] : 0);
+      gl.activeTexture(gl.TEXTURE2);
+      gl.bindTexture(gl.TEXTURE_2D, this.gtex);
+      gl.uniform1i(this.loc.gtex, 2);
       gl.activeTexture(gl.TEXTURE1);
       gl.bindTexture(gl.TEXTURE_2D, depthTex || null);
       gl.uniform1i(this.loc.sceneDepth, 1);
@@ -384,6 +465,7 @@ void main() {
       gl.deleteBuffer(this.ibuf);
       gl.deleteVertexArray(this.vao);
       gl.deleteTexture(this.tex);
+      gl.deleteTexture(this.gtex);
       if (this.depthCopy) {
         gl.deleteFramebuffer(this.depthCopy.fbo);
         gl.deleteTexture(this.depthCopy.tex);

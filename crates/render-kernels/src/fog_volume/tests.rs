@@ -389,3 +389,32 @@ fn regions_mask_the_sheet_mesh_and_a_change_resamples_it() {
     f.recentre([0.0, 0.0], flat);
     assert!(all(&f));
 }
+
+#[test]
+fn a_battle_bank_is_thin_and_low_and_eases_in() {
+    // The battle profile: at most a third of the field's opacity and gain,
+    // no deeper than the field style's height.
+    let field = FogSpace::Field;
+    let battle = FogSpace::Battle;
+    assert!(battle.density_scale() <= field.density_scale() / 3.0 + 1.0e-6);
+    assert!(battle.shader_constants()[2] <= field.shader_constants()[2]);
+    assert!(battle.height_scale() <= 1.0);
+
+    // Field -> battle: the bank restarts from nothing under the new profile
+    // instead of carrying the field strength over (no pop).
+    let mut f = raised();
+    f.step([0.0, 0.0], &[], flat);
+    let field_opacity = f.frame(None, None).unwrap().opacity;
+    f.set_space(FogSpace::Battle);
+    assert_eq!(f.strength, 0.0);
+    f.set_style(Some(POOL_STYLE));
+    f.step([0.0, 0.0], &[], flat);
+    let first = f.frame(None, None).unwrap().opacity;
+    assert!(first > 0.0 && first < 0.05 * field_opacity, "{first}");
+    for _ in 0..200 {
+        f.set_style(Some(POOL_STYLE));
+        f.step([0.0, 0.0], &[], flat);
+    }
+    let settled = f.frame(None, None).unwrap().opacity;
+    assert!((settled - field_opacity * BATTLE_FOG.density).abs() < 1.0e-4);
+}

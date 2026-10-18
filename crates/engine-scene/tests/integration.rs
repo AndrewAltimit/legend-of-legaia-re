@@ -30,6 +30,7 @@ mod field_occlusion_gate_disc;
 mod field_prop_pose_sampler_disc;
 mod field_text_free_spawn_touch_disc;
 mod field_view_window_disc;
+mod fog_ground_disc;
 mod goods_candidates_disc;
 mod growth_curve_disc;
 mod item_effect_flags_disc;

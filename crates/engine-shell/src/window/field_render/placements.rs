@@ -295,6 +295,34 @@ impl PlayWindowApp {
         }
         occ
     }
+
+    /// Build the volumetric fog's ground coverage field from the same static
+    /// draw list and hand it to the world's bank
+    /// (`legaia_engine_scene::fog_ground`) - the browser play page makes the
+    /// same call at its scene load. Rebuilt per scene load.
+    pub(in crate::window) fn install_fog_ground(&mut self, res: &SceneResources) {
+        let started = std::time::Instant::now();
+        let draws = self.static_env_draws(res);
+        let host = &mut self.session.host;
+        let field = host.scene.as_ref().and_then(|scene| {
+            legaia_engine_scene::fog_ground::build_for_scene(&[&draws], res, scene, &host.index)
+        });
+        let label = host
+            .scene
+            .as_ref()
+            .map(|s| s.name.clone())
+            .unwrap_or_default();
+        if let Some(f) = &field {
+            log::info!(
+                "play-window: fog ground field {}x{} cells, {} on the floor ({:.1} ms)",
+                f.w,
+                f.h,
+                f.covered_count(),
+                started.elapsed().as_secs_f64() * 1000.0
+            );
+        }
+        host.world.fog_volume.set_ground_field(&label, field);
+    }
 }
 
 impl PlayWindowApp {
