@@ -584,7 +584,7 @@
     const visible = soundTestEntries.filter(e => soundTestMatches(e, q));
     const playable = soundTestEntries.filter(e => e.playable).length;
     bgmSummary.textContent =
-      `${visible.length} of ${soundTestEntries.length} tracks &middot; ${playable} playable on this disc`;
+      `${visible.length} of ${soundTestEntries.length} tracks \u00b7 ${playable} playable on this disc`;
     soundTestList.innerHTML = visible.map(e => {
       const title = e.title || e.debug_id || '(unnamed)';
       const sub = [];
