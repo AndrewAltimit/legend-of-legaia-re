@@ -105,3 +105,10 @@ reason = "Stale before this change, not a regression in it: main's own tree (bui
 changes = [
   ["states/sebucus_overworld_resident/image", 0.999, 0.997],
 ]
+
+[[loosening]]
+file = "scripts/ci/retail-compare-baseline.json"
+reason = "The battle draw now draws only the objects the seat's per-channel model table names (FUN_80048A08's channel loop after the mesh-variant swap FUN_8004CCD4). On Noa's idle loop that drops her 0xFF variant, which on her assemblies is an alternate-vertex copy of her attach piece the engine used to draw on top of it; retail's idle never draws it. The variant's few pixels sat over a region retail fills with a different pose of the same limb (the frame's pose residual), so removing them loses nine pixels of chance agreement. The same run raised 16 other battle frames."
+changes = [
+  ["states/noa_levelup_fight_pre/image", 0.833, 0.832],
+]
