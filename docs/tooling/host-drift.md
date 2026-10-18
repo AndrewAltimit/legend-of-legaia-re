@@ -252,10 +252,11 @@ That is not a hypothetical. The shop's two *pens-returning* windows are both in
 this class, because a kernel that hands back pens rather than a draw list has
 no `engine-ui` builder to be enumerated:
 
-* window 35, the buy-quantity readout
-  (`engine-core::world_views::shop::shop_buy_quantity_panel`, `FUN_801D5510`) - it drew on
+* window 35, the buy-quantity readout (`FUN_801D5510`) - it drew on
   the browser page alone, so a native-window buyer sized a stack with no held
-  count, no unit price and no running total on screen.
+  count, no unit price and no running total on screen. Its port is the
+  `engine-ui` builder `buy_quantity_draws_for` (called from
+  `engine-screens::shop`), so tier 1 does enumerate it.
 * window 39, the sell-list item detail
   (`engine-menus::shop::shop_sell_detail_panel`, `FUN_801D5AE8`) - likewise, so
   a native-window seller picked a row with no name, no description, no price
@@ -274,7 +275,7 @@ the shop's window-39 painter reads on both hosts.
 The general shape: **tier 1 is silent about every screen whose content kernel
 is not an `engine-ui` builder.** A cheap sweep that finds them is "public
 content-shaped `fn` in `engine-core` / `engine-vm` named by exactly one host's
-sources" - both shop windows surface on it. Read the hits, though, rather than
+sources" - window 39 surfaces on it. Read the hits, though, rather than
 counting them: most one-host kernels are correct, because the minigame pages
 and the native minigame screens are genuinely different screen sets.
 
