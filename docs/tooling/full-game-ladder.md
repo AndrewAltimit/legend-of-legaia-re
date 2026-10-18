@@ -710,12 +710,34 @@ cargo test -p legaia-engine-shell --profile release-test \
 |---|---|
 | `LEGAIA_FGL_ONLY=<id>,...` | Runs only the segments ending at those milestones, and does not assert the baseline. |
 | `LEGAIA_FGL_NO_PAD=1` | Skips the pad tier. |
-| `LEGAIA_FGL_RNG_SEED=<u32>` | Re-seeds the world rand stream once a pad segment is seeded, dealing it another hand. Part C takes it at its New Game (or the checkpoint it resumes) and mixes it into each wipe reload. |
+| `LEGAIA_FGL_RNG_SEED=<u32>` | Re-seeds the world rand stream once a pad segment is seeded, dealing it another hand. Part C takes it at its New Game (or the checkpoint it resumes) and mixes it into each wipe reload, and asserts the baseline's `[continuous_seeds]` row `seed_<n>` when it has one (see [the seed set](#the-seed-set)). |
 | `LEGAIA_FGL_SEATED_RNG_SEED=<u32>` | The same for the seated pass - how a seated boss fight is checked across streams. |
 | `LEGAIA_FGL_CONTINUOUS_FROM=<id>` | Starts part C at that milestone, seeded once from its retail anchor and never again, and does not assert the baseline. A probe for a later stretch's carried state; the party it sets out with is retail's, so it is not the continuous score. |
 | `LEGAIA_FGL_CHECKPOINT_DIR=<dir>` | Part C keeps the engine's own save at each milestone it reaches in that directory (`<id>.lgsf`, with the scene, rand stream and learned exchange rate beside it). The saves hold disc-derived state: keep the directory under `target/`. |
 | `LEGAIA_FGL_CONTINUOUS_RESUME=<id>` | Starts part C at that milestone from the save an earlier run kept there, and does not assert the baseline. The party is the run's own; the picker rotation and the shopping memory start fresh, so a stall it shows is confirmed on the full run. |
 | `LEGAIA_FGL_CONTINUOUS_UNTIL=<id>` | Ends part C once it reaches that milestone, and does not assert the baseline: with `LEGAIA_FGL_CONTINUOUS_RESUME` and a spread of `LEGAIA_FGL_RNG_SEED` values, how often one stretch clears. |
+
+### The seed set
+
+One stream's part C score can rest on a fight the hand only won by the
+deal: a change that shifts one draw re-deals every later encounter and boss
+turn. `[continuous_seeds]` in the baseline records the score on other
+streams, one row per `LEGAIA_FGL_RNG_SEED` value, and a dealt run asserts
+its own row `>=` (a seed with no row falls back to `[continuous] reached`).
+Each run is a full New Game, about twenty minutes, so the set is run one
+seed at a time:
+
+```bash
+for s in 3 4 5 6 7 8 9; do
+  LEGAIA_FGL_RNG_SEED=$s cargo test -p legaia-engine-shell --profile release-test \
+    --test integration full_game_ladder::continuous:: -- --nocapture --test-threads 1
+done
+```
+
+Zora (`taiku`) is where the set was fragile: seed 5 stopped there at 26
+before the fighter learned to guard against Stone
+([the boss section](#a-boss-the-anchors-party-cannot-outlast)). Cort takes a
+second attempt on most streams, as the Cort notes above describe.
 
 The ratchet asserts every per-segment tier, both headline counts and the tier sum `>=` the baseline. Raise the baseline in a reviewed edit from the block the run prints; never lower it to make a red run green. The trace and debug switches are under [Diagnostics](#diagnostics).
 
