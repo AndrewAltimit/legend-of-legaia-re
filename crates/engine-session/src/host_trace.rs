@@ -136,7 +136,7 @@ pub struct OverlayTrace {
 /// [`sample`], plus the host's menu-overlay screen.
 pub fn sample_with_overlay<S: AudioSink>(
     session: &BootSession<S>,
-    menu: &legaia_engine_core::menu_runtime::MenuRuntime,
+    menu: &legaia_engine_menu_runtime::menu_runtime::MenuRuntime,
 ) -> HostTraceFrame {
     let mut f = sample(session);
     f.overlay = Some(OverlayTrace {

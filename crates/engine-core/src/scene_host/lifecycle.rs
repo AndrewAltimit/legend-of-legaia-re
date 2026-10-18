@@ -335,8 +335,8 @@ impl SceneHost {
     /// site (sub-op-10 u32 sites are the casino counters). `None` when the
     /// scene has no scripted charge: free rests (Rim Elm's bed, Biron) have
     /// no gate + debit pair at all. Feed this to
-    /// [`crate::menu_runtime::MenuRuntime::open_inn`] (or call
-    /// [`crate::menu_runtime::MenuRuntime::open_scene_inn`], which resolves
+    /// [`legaia_engine_menu_runtime::menu_runtime::MenuRuntime::open_inn`] (or call
+    /// [`legaia_engine_menu_runtime::menu_runtime::MenuRuntime::open_scene_inn`], which resolves
     /// it for you) when the scene's innkeeper dialogue hands off to the
     /// inn prompt.
     pub fn scene_inn_cost(&self) -> Option<u32> {

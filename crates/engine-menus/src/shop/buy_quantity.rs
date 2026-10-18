@@ -54,7 +54,7 @@ pub enum BuyListRoute {
 /// `slt gold, price` + buzz at `0x801db314..0x801db328`, the kind
 /// dispatch at `0x801db334..0x801db364`)
 ///
-/// Wired: `legaia_engine_core::menu_runtime`'s `ShopBuy` commit + route override run
+/// Wired: `legaia_engine_menu_runtime::menu_runtime`'s `ShopBuy` commit + route override run
 /// this dispatch on every confirmed buy row (kind byte off the on-disc
 /// item-effect tables, `World::tables.item_effects`). `Refused` is the retail
 /// list-level refusal beat (the hand stays on the row); `RecipientPicker`

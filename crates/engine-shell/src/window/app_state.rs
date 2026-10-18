@@ -763,7 +763,7 @@ pub(super) struct PlayWindowApp {
     pub(super) pending_key_name: Option<&'static str>,
     /// Menu runtime - drives shop / inn / status screens. Ticked per frame
     /// when `is_open()`; renders shop overlay via `shop_draws_for`.
-    pub(super) menu_runtime: legaia_engine_core::menu_runtime::MenuRuntime,
+    pub(super) menu_runtime: legaia_engine_menu_runtime::menu_runtime::MenuRuntime,
     /// Pad state from the previous frame - used to compute newly-pressed bits
     /// for boot-UI edge detection.
     pub(super) prev_pad: u16,
@@ -1004,7 +1004,7 @@ pub(super) enum BootUiState {
     /// sub instead of the menu and the menu sits in `Suspended`
     /// underneath.
     FieldMenu {
-        sub: Option<legaia_engine_core::field_menu_dispatch::FieldMenuSubsession>,
+        sub: Option<legaia_engine_menu_runtime::field_menu_dispatch::FieldMenuSubsession>,
     },
     /// Game-over panel is active after a party wipe.
     #[allow(dead_code)]

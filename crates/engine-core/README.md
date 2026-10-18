@@ -22,9 +22,10 @@ nothing.
 - **The scene host.** `SceneHost` owns the `World` and the `ProtIndex`,
   enters scenes, ticks them and drains the queues a tick fills: door warps,
   BGM routing through `BgmDirector`, the FMV hand-off.
-- **The stateful side of battle, menus and minigames.** The round loop, the
-  command flow, the pause-menu runtime and the minigame sessions' entry
-  points. The minigame venues and surfaces they drive, and the minigame
+- **The stateful side of battle and minigames.** The round loop, the
+  command flow and the minigame sessions' entry points. The pause-menu
+  runtime that edits the world from the menu is
+  [`engine-menu-runtime`](../engine-menu-runtime/README.md), above this crate. The minigame venues and surfaces they drive, and the minigame
   seat itself (`MinigameState`), are `engine-minigame-scenes`.
 - **Saves.** `World::save_full` / `load_full` over the LGSF container in
   `legaia-save`, and the retail memory-card write.
@@ -57,8 +58,8 @@ crate. Paths name the owning crate - nothing is re-exported.
 - **No renderer, window or audio device.** No `wgpu`, `winit` or `cpal`, and
   none of `engine-render`, `engine-audio`, `engine-ui` or `engine-screens`.
   That is what lets the browser play page run this crate unchanged.
-- **Nothing above it.** `engine-session`, `parity` and the hosts depend on
-  this crate, never the reverse.
+- **Nothing above it.** `engine-menu-runtime`, `engine-session`, `parity`
+  and the hosts depend on this crate, never the reverse.
 - **No patcher or emulator crate in the library.** The patcher and the
   save-state readers appear only under `[dev-dependencies]`, for the
   disc-gated runtime oracles.
@@ -68,6 +69,7 @@ crate. Paths name the owning crate - nothing is re-exported.
 ```text
 engine-shell / web-viewer / asset-viewer      hosts
 engine-session, engine-screens, parity        host-shared top
+engine-menu-runtime                           the pause menu over World
 engine-core                                   World, scene host, battle loop
 engine-minigame-scenes                        minigame venues + surfaces
 engine-scene, engine-* kernels, render-kernels   World-free rules + scene loading

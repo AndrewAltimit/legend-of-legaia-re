@@ -53,7 +53,7 @@ pub(super) fn drive_pause_menu(
     session: &mut NativeSession,
     menu: &RetailMenu,
 ) -> Result<Option<u8>> {
-    use legaia_engine_core::field_menu_dispatch::FieldMenuSubsession;
+    use legaia_engine_menu_runtime::field_menu_dispatch::FieldMenuSubsession;
     use legaia_engine_menus::equip_session::EquipState;
     let presses = pause_menu_presses(menu);
     for t in 0..=pause_menu_drive_ticks(menu) {

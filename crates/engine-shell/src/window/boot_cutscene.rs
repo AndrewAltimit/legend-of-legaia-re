@@ -47,7 +47,7 @@ impl PlayWindowApp {
     /// bytes - `disk_port_blocks` turns a port number into fifteen block
     /// snapshots, the same shape the browser's card rack hands over.
     fn service_save_flow(&mut self, edge: u16) -> u16 {
-        use legaia_engine_core::field_menu_dispatch::FieldMenuSubsession;
+        use legaia_engine_menu_runtime::field_menu_dispatch::FieldMenuSubsession;
         let session = match &self.boot_ui {
             BootUiState::SaveSelect(s) => Some(s),
             BootUiState::FieldMenu {
@@ -588,7 +588,7 @@ impl PlayWindowApp {
                 true
             }
             BootUiState::FieldMenu { sub } => {
-                use legaia_engine_core::field_menu_dispatch::{
+                use legaia_engine_menu_runtime::field_menu_dispatch::{
                     FieldMenuSubsession, SubsessionHandoff, finish_subsession,
                     tick_open_subsession, tick_root_list,
                 };
@@ -869,7 +869,7 @@ impl PlayWindowApp {
         &mut self,
         row: legaia_engine_menus::field_menu::FieldMenuRow,
     ) -> bool {
-        use legaia_engine_core::field_menu_dispatch::FieldMenuSubsession;
+        use legaia_engine_menu_runtime::field_menu_dispatch::FieldMenuSubsession;
         use legaia_engine_menus::field_menu::{FieldMenuInput, FieldMenuPhase};
         self.session.open_field_menu();
         let Some(menu) = self.session.field_menu.as_mut() else {
@@ -998,7 +998,7 @@ impl PlayWindowApp {
                 self.save_select_overlay(s, surface_w, surface_h).texts
             }
             BootUiState::FieldMenu { sub } => {
-                use legaia_engine_core::field_menu_dispatch::FieldMenuSubsession;
+                use legaia_engine_menu_runtime::field_menu_dispatch::FieldMenuSubsession;
                 // The kind-0x0D pair replaces the root list rather than
                 // overlaying it: both sub-screens hand the widget VM a
                 // script that opens with `05 00` (close every window) and

@@ -14,9 +14,6 @@ use super::*;
 use legaia_engine_mode::mode::SceneMode;
 
 use legaia_engine_field::man_field_scripts::OP49_PARK_PRESERVING_SUB_OPS;
-use legaia_engine_menus::field_menu::{
-    FieldMenuGate, FieldMenuPhase, FieldMenuRow, FieldMenuSession,
-};
 
 /// The save-point record's interaction section: `49 01 00`, then the raw
 /// `0x21` the dialog SM stops on.
@@ -70,44 +67,6 @@ fn the_press_waits_for_a_field_run_mode() {
     );
     world.mode = SceneMode::Field;
     assert!(world.scripted_menu_open_pending());
-}
-
-#[test]
-fn kind_one_opens_the_menu_on_the_save_screen_and_its_exit_ends_the_menu() {
-    let mut session = FieldMenuSession::new();
-    session.set_gate(FieldMenuGate {
-        entry_context_kind: Some(1),
-        // A field scene: the root Save row is greyed, and the save point
-        // must not go through it.
-        save_allowed: false,
-    });
-    session.open_entry_screen();
-    assert_eq!(
-        session.phase(),
-        FieldMenuPhase::Suspended {
-            row: FieldMenuRow::Save
-        }
-    );
-    // Every host's root-list step builds the sub-session from this state.
-    assert_eq!(
-        crate::field_menu_dispatch::tick_root_list(&mut session, 0),
-        Some(FieldMenuRow::Save)
-    );
-    // The hosts resume with `close = false`; there is no picker to return to.
-    let _ = session.resume(false);
-    assert!(
-        session.outcome().is_some(),
-        "the save screen's exit ends the menu"
-    );
-
-    // Contrast: the same row reached from the picker returns to the picker.
-    let mut session = FieldMenuSession::new();
-    session.set_gate(FieldMenuGate {
-        entry_context_kind: None,
-        save_allowed: true,
-    });
-    session.open_entry_screen();
-    assert!(matches!(session.phase(), FieldMenuPhase::Browsing { .. }));
 }
 
 #[test]

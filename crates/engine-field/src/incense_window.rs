@@ -50,7 +50,7 @@ pub const COOLDOWN_MAX: i32 = 0x100;
 ///
 // PORT: FUN_80046870
 //
-// WIRED: `legaia_engine_core::field_menu_dispatch::apply_pause_items_outcome`
+// WIRED: `legaia_engine_menu_runtime::field_menu_dispatch::apply_pause_items_outcome`
 // tops up `FieldLocomotion::walk_regen_window` once per Incense confirm the
 // pause Items screen committed; both play hosts apply the finished screen
 // through it.

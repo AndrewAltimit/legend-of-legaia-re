@@ -51,7 +51,7 @@ pub struct FieldLocomotion {
     pub walk_regen_steps: i32,
     /// The **Incense window** (retail `_DAT_8007B600`), counted in walk-regen
     /// ticks: the pause Items Incense confirm tops it up by `0x40` (cap
-    /// `0x100`, `crate::field_menu_dispatch::apply_pause_items_outcome`), the
+    /// `0x100`, `legaia_engine_menu_runtime::field_menu_dispatch::apply_pause_items_outcome`), the
     /// walk-regen tick drains it by one, and the field region encounter roll
     /// skips while it is non-zero - on the field and on the overworld alike,
     /// since both run the field overlay's walk tick. On its zero edge retail

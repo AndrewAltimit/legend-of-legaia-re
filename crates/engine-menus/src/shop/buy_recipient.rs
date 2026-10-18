@@ -60,7 +60,7 @@ enum BuyRecipientPhase {
 /// and - only when the accrual ran - hold a toast for a button press
 /// (SFX `0x20`) before returning to the buy list.
 ///
-/// Wired: `legaia_engine_core::menu_runtime::MenuRuntime` opens this session from the
+/// Wired: `legaia_engine_menu_runtime::menu_runtime::MenuRuntime` opens this session from the
 /// buy list's `RecipientPicker` route and drives it in `tick` (the browser
 /// play page enables the flow via `retail_equipment_buy` and draws windows
 /// 36 / 25 / 41 over the parked list). The Point Card gate stays closed -

@@ -153,7 +153,7 @@ pub fn expand_notify_lines(
 /// The window-8 notification beat: a pause-menu item use taught `art_id` to
 /// roster slot `character` (retail's `FUN_80035C00(slot, art)` pair), with
 /// the disc template already patched and expanded. Held by
-/// `legaia_engine_core::menu_runtime::MenuRuntime` until a confirm / cancel press.
+/// `legaia_engine_menu_runtime::menu_runtime::MenuRuntime` until a confirm / cancel press.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ArtLearnedNotice {
     /// Roster slot that learned the art (retail `_DAT_8007BB70`).

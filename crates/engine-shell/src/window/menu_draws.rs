@@ -50,7 +50,7 @@ impl PlayWindowApp {
     }
 
     /// Window 7 - the spell level-up notice, drawn while
-    /// [`legaia_engine_core::menu_runtime::MenuRuntime`] holds the beat a
+    /// [`legaia_engine_menu_runtime::menu_runtime::MenuRuntime`] holds the beat a
     /// leveled menu cast armed (`apply_spell_outcome` ->
     /// `arm_spell_level_notice`). Retail's cast sub-screens hand the widget
     /// VM the one-command script `0x801E4D50` / `0x801E4D78` (`[open window
@@ -106,7 +106,7 @@ impl PlayWindowApp {
     /// the boot Continue -> Load screen, and so is handled by its caller.
     pub(super) fn field_menu_sub_draws(
         &self,
-        sub: &legaia_engine_core::field_menu_dispatch::FieldMenuSubsession,
+        sub: &legaia_engine_menu_runtime::field_menu_dispatch::FieldMenuSubsession,
         surface_w: u32,
         surface_h: u32,
     ) -> PauseMenuDraws {

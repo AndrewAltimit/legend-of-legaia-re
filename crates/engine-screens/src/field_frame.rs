@@ -75,7 +75,7 @@ pub fn field_scene_lights(
 pub fn frame_clear_color(
     world: &legaia_engine_core::world::World,
     boot_ui: bool,
-    menu: &legaia_engine_core::menu_runtime::MenuRuntime,
+    menu: &legaia_engine_menu_runtime::menu_runtime::MenuRuntime,
     stage_battle: bool,
 ) -> [f32; 4] {
     legaia_engine_ui::battle_stage_clear::scene_clear(

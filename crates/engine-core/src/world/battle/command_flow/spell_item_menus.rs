@@ -129,7 +129,7 @@ impl World {
         use legaia_engine_menus::inventory_use::{
             InventoryContext, InventoryUseSession, TargetRow,
         };
-        let names = crate::field_menu_dispatch::roster_names(self);
+        let names = self.party.roster_names();
         let items: Vec<u8> = self
             .party
             .inventory

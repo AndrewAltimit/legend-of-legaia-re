@@ -15,7 +15,7 @@ pub struct MenuState {
     /// overlay (PROT 0899 VA `0x801E4A88`,
     /// [`legaia_engine_menus::menu_arrange::parse_arrange_rank_table`]). `None` on a
     /// load without the overlay - Arrange then falls back to id order.
-    pub(crate) arrange_rank: Option<legaia_engine_menus::menu_arrange::ArrangeRankTable>,
+    pub arrange_rank: Option<legaia_engine_menus::menu_arrange::ArrangeRankTable>,
     /// Labels for the two entry-context screens the pause menu opens under
     /// kind [`legaia_engine_menus::pause_screens::ROOT_MENU_CONTEXT_LOCKED`] - the notice
     /// panel's lines (window `6`) and the ready check's headings (window
@@ -79,7 +79,7 @@ pub struct MenuState {
     pub notify_template: Option<Vec<u8>>,
     /// A pause-menu item use taught an art: the window-8 notice waiting for
     /// a host to park it on its menu runtime
-    /// (`crate::field_menu_dispatch::apply_inventory_outcome` fills it).
+    /// (`legaia_engine_menu_runtime::field_menu_dispatch::apply_inventory_outcome` fills it).
     pub pending_art_notice: Option<legaia_engine_menus::pause_screens::ArtLearnedNotice>,
 }
 

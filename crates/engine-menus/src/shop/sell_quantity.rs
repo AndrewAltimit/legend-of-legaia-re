@@ -33,7 +33,7 @@ pub fn apply_sale_gold(gold: i32, credit: i32) -> i32 {
 ///
 /// The engine reaches the same rule without this helper: its shop lists run
 /// on one flat cursor whose page is derived from it, and
-/// `legaia_engine_core::menu_runtime::MenuRuntime` returns the hand to its row after a
+/// `legaia_engine_menu_runtime::menu_runtime::MenuRuntime` returns the hand to its row after a
 /// sale clamped to the rebuilt list - a lone last-page row that is sold away
 /// leaves the cursor on the new last row, one page back, which is exactly the
 /// `(selected, scroll_top)` step this function makes on the paged pair.
@@ -105,7 +105,7 @@ enum SellQtyPhase {
 /// the shop root instead of the sell list.
 ///
 /// Wired: [`QuantityPicker`] installs this session the moment the sell list
-/// stages a stack, and `legaia_engine_core::menu_runtime::MenuRuntime` hands it the pad
+/// stages a stack, and `legaia_engine_menu_runtime::menu_runtime::MenuRuntime` hands it the pad
 /// for the whole screen - so both hosts step one number in place and draw
 /// window 37 (`engine-ui`'s `sell_quantity_draws_for`) over the parked list, with no
 /// Yes/No screen between the stepper and the sale.

@@ -163,7 +163,7 @@ pub(super) fn pad_field_restore(session: &mut NativeSession, threshold: u32, mp:
             matches!(effect, ItemEffect::Heal { .. } | ItemEffect::HealAll)
         }
     };
-    use legaia_engine_core::field_menu_dispatch::FieldMenuSubsession;
+    use legaia_engine_menu_runtime::field_menu_dispatch::FieldMenuSubsession;
     use legaia_engine_menus::field_menu::FieldMenuRow;
     use legaia_engine_menus::inventory_use::InventoryUseState;
     use legaia_engine_menus::items::ItemEffect;
@@ -435,7 +435,7 @@ pub(super) fn pad_field_spell_heal(
     threshold: u32,
     keep_half: bool,
 ) -> usize {
-    use legaia_engine_core::field_menu_dispatch::FieldMenuSubsession;
+    use legaia_engine_menu_runtime::field_menu_dispatch::FieldMenuSubsession;
     use legaia_engine_menus::field_menu::{FieldMenuPhase, FieldMenuRow};
     use legaia_engine_menus::spell_menu::SpellMenuPhase;
     if !walking(session) || !released(session) || party_hp_permille(session) >= threshold {
@@ -638,7 +638,7 @@ pub(super) fn unguarded_members(w: &legaia_engine_core::world::World, element: u
 /// (`FUN_801E5A08`'s port), so the bag gives up the item and takes back the
 /// one it replaced. Returns how many members it equipped.
 pub(super) fn pad_equip_guard(session: &mut NativeSession, element: u8) -> usize {
-    use legaia_engine_core::field_menu_dispatch::FieldMenuSubsession;
+    use legaia_engine_menu_runtime::field_menu_dispatch::FieldMenuSubsession;
     use legaia_engine_menus::equip_session::{EquipState, browse_row_for_slot};
     use legaia_engine_menus::field_menu::{FieldMenuPhase, FieldMenuRow};
     let Some(item) = guard_item_for(&session.host.world, element) else {
@@ -762,7 +762,7 @@ pub(super) fn pad_equip_guard(session: &mut NativeSession, element: u8) -> usize
 /// back out. Once for each present member, and only when the bag holds
 /// equipment at all. Returns how many members' equipment changed.
 pub(super) fn pad_equip_best(session: &mut NativeSession) -> usize {
-    use legaia_engine_core::field_menu_dispatch::FieldMenuSubsession;
+    use legaia_engine_menu_runtime::field_menu_dispatch::FieldMenuSubsession;
     use legaia_engine_menus::equip_session::{EquipState, SLOT_BROWSE_BEST_ROW};
     use legaia_engine_menus::field_menu::{FieldMenuPhase, FieldMenuRow};
     let worn = |s: &NativeSession| -> Vec<[u8; 8]> {
@@ -980,7 +980,7 @@ fn specialty_pick(session: &NativeSession, member: u8) -> Option<u8> {
 /// weapon to swing in the bag, best stats among equals, Yes. Returns how
 /// many members it re-armed.
 pub(super) fn pad_equip_specialty(session: &mut NativeSession) -> usize {
-    use legaia_engine_core::field_menu_dispatch::FieldMenuSubsession;
+    use legaia_engine_menu_runtime::field_menu_dispatch::FieldMenuSubsession;
     use legaia_engine_menus::equip_session::{EquipState, browse_row_for_slot};
     use legaia_engine_menus::equipment::EquipSlot;
     use legaia_engine_menus::field_menu::{FieldMenuPhase, FieldMenuRow};
@@ -1216,7 +1216,7 @@ fn worn_passives(w: &legaia_engine_core::world::World, m: u8) -> Vec<u8> {
 /// the Goods row, the accessory, Yes. A slot already worn is left alone, and
 /// a member never wears two of one passive. Returns how many it put on.
 pub(super) fn pad_equip_goods(session: &mut NativeSession) -> usize {
-    use legaia_engine_core::field_menu_dispatch::FieldMenuSubsession;
+    use legaia_engine_menu_runtime::field_menu_dispatch::FieldMenuSubsession;
     use legaia_engine_menus::equip_session::{EquipState, browse_row_for_slot};
     use legaia_engine_menus::field_menu::{FieldMenuPhase, FieldMenuRow};
     let mut skipped: HashSet<(u8, u8)> = HashSet::new();
@@ -1426,7 +1426,7 @@ pub(super) fn pad_ready(session: &mut NativeSession) -> Result<Option<String>, S
 /// all, whatever the rand stream deals (see `field-menu.md`, the Incense
 /// route `FUN_801D8D94`). Returns whether one was used.
 pub(super) fn pad_field_repel(session: &mut NativeSession, threshold: u32) -> bool {
-    use legaia_engine_core::field_menu_dispatch::FieldMenuSubsession;
+    use legaia_engine_menu_runtime::field_menu_dispatch::FieldMenuSubsession;
     use legaia_engine_menus::field_menu::FieldMenuRow;
     use legaia_engine_menus::inventory_use::InventoryUseState;
     use legaia_engine_menus::pause_screens::{INCENSE_ITEM_ID, PauseItemsFocus};

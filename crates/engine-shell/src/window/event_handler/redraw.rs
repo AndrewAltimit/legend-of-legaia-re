@@ -589,7 +589,7 @@ impl PlayWindowApp {
 /// counter left suspended. A free function over the two fields it touches, so
 /// the frozen-field arm and the frame tail share it.
 pub(super) fn tick_menu_runtime_session(
-    menu: &mut legaia_engine_core::menu_runtime::MenuRuntime,
+    menu: &mut legaia_engine_menu_runtime::menu_runtime::MenuRuntime,
     world: &mut legaia_engine_core::world::World,
     pressed_edge: u16,
 ) -> Option<u8> {

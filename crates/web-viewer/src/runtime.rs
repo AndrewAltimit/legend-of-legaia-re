@@ -24,9 +24,9 @@
 use legaia_engine_audio::AudioSink;
 #[cfg(target_arch = "wasm32")]
 use legaia_engine_audio::WebAudioOut;
-use legaia_engine_core::menu_runtime::MenuRuntime;
 use legaia_engine_core::scene_host::{SceneHost, SceneTickEvent};
 use legaia_engine_core::world::World;
+use legaia_engine_menu_runtime::menu_runtime::MenuRuntime;
 use legaia_engine_menus::menu::{MenuInput, open as menu_open};
 use legaia_engine_mode::mode::SceneMode;
 use wasm_bindgen::prelude::*;
@@ -617,7 +617,7 @@ impl LegaiaRuntime {
 
     /// The page's menu-overlay screen (shop, prize exchange, inn) - read-only,
     /// for the same native tests. Not a wasm export.
-    pub fn debug_menu_runtime(&self) -> &legaia_engine_core::menu_runtime::MenuRuntime {
+    pub fn debug_menu_runtime(&self) -> &legaia_engine_menu_runtime::menu_runtime::MenuRuntime {
         &self.menu
     }
 

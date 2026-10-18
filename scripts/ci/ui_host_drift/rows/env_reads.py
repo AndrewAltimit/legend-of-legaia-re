@@ -32,6 +32,7 @@ ENV_KERNEL_ROOTS = [
         "engine-cast",
         "engine-camera",
         "engine-core",
+        "engine-menu-runtime",
         "engine-dialog",
         "engine-effects",
         "engine-field",

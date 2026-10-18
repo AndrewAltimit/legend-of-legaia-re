@@ -698,7 +698,7 @@ impl World {
     /// `0x801dbac8..0x801dbb4c`: the `0xCCCCCCCD` reciprocal divide, the
     /// `mult` by the quantity, and the `0x0098967F` clamp)
     ///
-    /// Wired: `crate::menu_runtime`'s `ShopConfirm` buy commit and the
+    /// Wired: `legaia_engine_menu_runtime::menu_runtime`'s `ShopConfirm` buy commit and the
     /// buy-recipient picker's two purchase arms both call it, and each then
     /// arms the window-31 toast when it returns `Some`.
     pub fn credit_point_card(&mut self, price: u16, qty: i32) -> Option<i32> {

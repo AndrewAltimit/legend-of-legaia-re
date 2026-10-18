@@ -226,7 +226,7 @@ impl<S: AudioSink> BootSession<S> {
     /// its draw pass reads. Returns whether a screen opened.
     pub fn poll_field_overlay(
         &mut self,
-        menu: &mut legaia_engine_core::menu_runtime::MenuRuntime,
+        menu: &mut legaia_engine_menu_runtime::menu_runtime::MenuRuntime,
     ) -> bool {
         let Some(cue) = menu.poll_field_overlay(&mut self.host.world) else {
             return false;

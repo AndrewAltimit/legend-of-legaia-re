@@ -73,7 +73,7 @@
 
 use super::*;
 use crate::runtime::LegaiaRuntime;
-use legaia_engine_core::field_menu_dispatch::{self, FieldMenuSubsession};
+use legaia_engine_menu_runtime::field_menu_dispatch::{self, FieldMenuSubsession};
 use legaia_engine_menus::field_menu::{FieldMenuOutcome, FieldMenuRow, FieldMenuSession};
 use legaia_engine_menus::save_menu_atlas::{SaveMenuAtlas, build_atlas};
 use legaia_engine_menus::save_screen::{SaveCommitKind, SaveRefusal, SaveScreenFlow};

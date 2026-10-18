@@ -54,6 +54,7 @@ HOTKEY_SOURCES = [
 # browser hosts share, and the browser hosts themselves.
 SHARED_CALLER_ROOTS = [
     REPO / "crates" / "engine-core" / "src",
+    REPO / "crates" / "engine-menu-runtime" / "src",
     REPO / "crates" / "engine-minigames" / "src",
     REPO / "crates" / "engine-fishing" / "src",
     REPO / "crates" / "engine-effects" / "src",

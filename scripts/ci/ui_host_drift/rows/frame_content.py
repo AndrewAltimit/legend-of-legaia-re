@@ -44,6 +44,7 @@ Analysis: `ui_host_drift.tiers.frame_content`.
 # crates directly, so the list is every engine crate a host can call into.
 ENGINE_API_CRATES = (
     "engine-core",
+    "engine-menu-runtime",
     "engine-battle",
     "engine-effects",
     "engine-field",

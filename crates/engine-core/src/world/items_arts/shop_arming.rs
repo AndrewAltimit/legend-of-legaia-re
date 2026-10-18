@@ -43,7 +43,7 @@ impl World {
     ///
     /// This is the bridge from the disc-sourced per-scene stock to the menu
     /// runtime: a host installs the returned session via
-    /// [`crate::menu_runtime::MenuRuntime::open_shop`] when the player triggers
+    /// [`legaia_engine_menu_runtime::menu_runtime::MenuRuntime::open_shop`] when the player triggers
     /// the scene's merchant (field-VM op `0x49`).
     pub fn scene_shop_session(&self, idx: usize) -> Option<legaia_engine_menus::shop::ShopSession> {
         let shop = self.shops.scene_shops.get(idx)?;

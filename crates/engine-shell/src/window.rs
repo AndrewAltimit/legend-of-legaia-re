@@ -6,7 +6,7 @@ use crate::replay::{PadEvent, ReplayFile, ReplayMeta};
 use anyhow::{Context, Result};
 use glam::{Mat4, Vec3, Vec4};
 use legaia_engine_audio::AudioSink;
-use legaia_engine_core::menu_runtime::MenuRuntime;
+use legaia_engine_menu_runtime::menu_runtime::MenuRuntime;
 use legaia_engine_mode::mode::SceneMode;
 use legaia_engine_render::{
     CaptureImage, ColorSceneDraw, RenderTarget, Scene as RenderScene, SceneDraw, TextOverlay,

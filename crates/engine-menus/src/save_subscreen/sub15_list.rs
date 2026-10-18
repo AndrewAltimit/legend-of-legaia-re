@@ -96,7 +96,7 @@ pub fn sub15_list_source(step: u8) -> Sub15ListSource {
 ///
 /// PORT: FUN_801DA2A0 (`0x801DA550..0x801DA64C`)
 ///
-/// Wired through `legaia_engine_core::field_menu_dispatch::apply_list_order_outcome`,
+/// Wired through `legaia_engine_menu_runtime::field_menu_dispatch::apply_list_order_outcome`,
 /// which re-derives the live length from the record before it replays the
 /// page's exchanges - the record is the authority on how long the list is,
 /// and the Ra-Seru gate is why a caster with spells can still report none.
@@ -182,7 +182,7 @@ pub fn sub15_frame(step: u8, len: u8) -> Sub15Frame {
 ///
 /// Wired: the page ([`crate::list_order::ListOrderSession`]) records each
 /// exchange it makes and
-/// `legaia_engine_core::field_menu_dispatch::apply_list_order_outcome` replays them
+/// `legaia_engine_menu_runtime::field_menu_dispatch::apply_list_order_outcome` replays them
 /// here against the character's own bytes when the page closes. The page
 /// permutes a copy so a cancelled visit changes nothing; this is the only
 /// thing that touches the record.

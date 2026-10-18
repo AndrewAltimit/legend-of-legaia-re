@@ -75,7 +75,7 @@
 //! `legaia_engine_session::BootSession::open_field_menu` writes
 //! `SceneMode::Menu` and enters `GameMode::CardInit` through the mode seat -
 //! which stages no overlay request in the port's model - then
-//! `legaia_engine_core::field_menu_dispatch::FieldMenuSubsession::build` opens the Save /
+//! `legaia_engine_menu_runtime::field_menu_dispatch::FieldMenuSubsession::build` opens the Save /
 //! Load row as a `legaia_engine_menus::save_select::SaveSelectSession` on the same running
 //! field session, and `legaia_engine_menus::save_screen::SaveScreenFlow` runs the card
 //! half around it. Both shipped hosts own that flow, and `field_menu_resume`
@@ -214,7 +214,7 @@ impl FieldSaveScreenActor {
     /// `legaia_engine_session::BootSession::open_field_menu` performs the mode
     /// bounce (`SceneMode::Menu` plus `ModeSeat::enter(GameMode::CardInit)`,
     /// which stages no overlay request),
-    /// `legaia_engine_core::field_menu_dispatch::FieldMenuSubsession::build` opens the
+    /// `legaia_engine_menu_runtime::field_menu_dispatch::FieldMenuSubsession::build` opens the
     /// Save / Load row onto the running field session, and
     /// `legaia_engine_menus::save_screen::SaveScreenFlow` runs the card half. No code
     /// overlay is paged, so there is nothing for the eleven states to

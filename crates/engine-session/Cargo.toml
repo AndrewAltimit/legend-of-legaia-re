@@ -25,6 +25,7 @@ legaia-tmd.workspace = true
 legaia-art.workspace = true
 legaia-engine-audio.workspace = true
 legaia-engine-core.workspace = true
+legaia-engine-menu-runtime.workspace = true
 legaia-engine-scene.workspace = true
 legaia-font.workspace = true
 legaia-iso.workspace = true

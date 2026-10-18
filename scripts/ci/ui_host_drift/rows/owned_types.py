@@ -66,7 +66,7 @@ OWNED_TYPES: list[dict[str, object]] = [
     },
     {
         "type": "MenuRuntime",
-        "defined_in": "crates/engine-core/src/menu_runtime.rs",
+        "defined_in": "crates/engine-menu-runtime/src/menu_runtime.rs",
         "why": "the save/load menu's disk-facing runtime. A host that opens "
         "the pause menu without one has the screens and no slot state behind "
         "them",

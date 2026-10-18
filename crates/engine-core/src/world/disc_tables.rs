@@ -190,7 +190,7 @@ pub struct DiscTables {
     /// byte, and the item-detail window reads `+5`. Install via
     /// [`crate::world::World::set_equip_stats`]; `None` on a disc-free load,
     /// where the Throw Out list simply dims nothing.
-    pub(crate) equip_stats: Option<legaia_game_tables::equip_stats::EquipStatTable>,
+    pub equip_stats: Option<legaia_game_tables::equip_stats::EquipStatTable>,
     /// Accessory ("Goods") passive-effect catalog: item id → passive index +
     /// per-index party-wide scope, decoded from the executable. Empty by
     /// default; install via [`crate::world::World::set_accessory_passives`].

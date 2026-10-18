@@ -124,7 +124,7 @@ fn world_summary(stdout: &str) -> String {
 /// or half the party fails here even if the field names move.
 #[test]
 fn a_card_block_loads_the_same_world_as_the_save_directory() {
-    use legaia_engine_core::menu_runtime::SAVE_EXT;
+    use legaia_engine_menu_runtime::menu_runtime::SAVE_EXT;
     let dir = tempfile::tempdir().unwrap();
     let card = write_card(dir.path(), "player.mcr", &synthetic_card(CLAIMED_BLOCK));
     std::fs::write(
@@ -241,7 +241,7 @@ fn an_unclaimed_block_is_not_a_save() {
 /// save-directory round trip it has always been.
 #[test]
 fn without_a_card_the_save_directory_path_is_unchanged() {
-    use legaia_engine_core::menu_runtime::SAVE_EXT;
+    use legaia_engine_menu_runtime::menu_runtime::SAVE_EXT;
     let dir = tempfile::tempdir().unwrap();
     std::fs::write(
         dir.path().join(format!("slot_00.{SAVE_EXT}")),

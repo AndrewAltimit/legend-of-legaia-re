@@ -280,7 +280,8 @@ The edges among the engine's kernel crates are a committed table (`scripts/ci/cr
 
 | Crate | Binary | Scope |
 |---|---|---|
-| [`crates/engine-core`](crates/engine-core/README.md) | - | The renderer-free simulation half: `World`, the scene host (`scene_host::SceneHost`) that ticks a loaded scene, battle loop, menu runtime, LGSF saves, and the `World` entry points of the sessions that live in the kernel crates below it. |
+| [`crates/engine-core`](crates/engine-core/README.md) | - | The renderer-free simulation half: `World`, the scene host (`scene_host::SceneHost`) that ticks a loaded scene, battle loop, LGSF saves, and the `World` entry points of the sessions that live in the kernel crates below it. |
+| [`crates/engine-menu-runtime`](crates/engine-menu-runtime/README.md) | - | The pause menu over a running `World`: `MenuRuntime` (save slots, shop and inn flow, notices), the field-menu sub-session dispatcher, the out-of-battle action validator host. Above `engine-core`. |
 | [`crates/engine-scene`](crates/engine-scene/README.md) | - | The disc-facing half below `engine-core`: `Scene` / `ProtIndex` scene resolution, `SceneResources` / `SceneAssets` loading, the model bank, the environment draw resolver and assembly kernel, the visible-tile crop, ground-mesh and occlusion-gate kernels, the `Vfs` backends, the CD streaming host traits, the NPC catalog. Names no `World`. |
 | [`crates/engine-battle`](crates/engine-battle/README.md) | - | The battle kernels that never touch `World`: monster AI, spoils, AP gauge, stats, catalogs, encounters, level-up, Seru learning, arts tracking, the sparring-tutorial prompt machine, per-frame animation passes. |
 | [`crates/engine-minigames`](crates/engine-minigames/README.md) | - | The minigame rules engines (slot machine, Baka Fighter, dance, prize exchange, Muscle Dome ladder and contest hub), with no world, scene or renderer. Fishing is `engine-fishing`. |

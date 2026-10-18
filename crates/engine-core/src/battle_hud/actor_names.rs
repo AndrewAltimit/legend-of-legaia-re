@@ -14,7 +14,7 @@ pub(super) fn party_count(world: &crate::world::World) -> usize {
 
 /// A party member's display name by battle ordinal.
 pub(super) fn party_member_name(world: &crate::world::World, slot: u8) -> String {
-    let names = crate::field_menu_dispatch::roster_names(world);
+    let names = world.party.roster_names();
     names
         .get(world.party_roster_slot(slot as usize))
         .filter(|n| !n.is_empty())

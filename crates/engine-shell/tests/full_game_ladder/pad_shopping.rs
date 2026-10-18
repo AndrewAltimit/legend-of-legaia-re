@@ -11,7 +11,7 @@
 
 use super::*;
 
-use legaia_engine_core::menu_runtime::MenuRuntime;
+use legaia_engine_menu_runtime::menu_runtime::MenuRuntime;
 use legaia_engine_menus::menu::MenuState;
 
 thread_local! {

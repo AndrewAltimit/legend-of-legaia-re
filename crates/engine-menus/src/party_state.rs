@@ -181,6 +181,34 @@ impl PartyState {
     }
 }
 
+impl PartyState {
+    /// The display name of each roster record, in roster order.
+    ///
+    /// Retail draws a character's name from the record itself (`+0x2A7`, the
+    /// name the player typed at the naming screen), never from a fixed table -
+    /// so a save whose Vahn was renamed shows the new name on every menu and
+    /// battle panel. The port's copy of that field is
+    /// [`PartyState::party_names`], which a card load fills from the records
+    /// and a New Game seeds with the template names; a slot it has no name for
+    /// falls back to the canonical one.
+    pub fn roster_names(&self) -> Vec<String> {
+        let canonical = ["Vahn", "Noa", "Gala"];
+        self.roster
+            .members
+            .iter()
+            .enumerate()
+            .map(|(i, _)| {
+                self.party_names
+                    .get(i)
+                    .filter(|n| !n.is_empty())
+                    .cloned()
+                    .or_else(|| canonical.get(i).map(|s| (*s).to_string()))
+                    .unwrap_or_else(|| format!("Slot {i}"))
+            })
+            .collect()
+    }
+}
+
 impl Default for PartyState {
     fn default() -> Self {
         Self::new()

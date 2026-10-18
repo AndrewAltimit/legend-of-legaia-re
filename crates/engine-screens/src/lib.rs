@@ -18,8 +18,8 @@
 //! passed.
 
 use legaia_engine_core::field_submode_screen::SubmodeLine;
-use legaia_engine_core::menu_runtime::MenuRuntime;
 use legaia_engine_core::world::World;
+use legaia_engine_menu_runtime::menu_runtime::MenuRuntime;
 use legaia_engine_ui::{SaveMenuAtlasRects, SpriteDraw, TextDraw};
 use legaia_game_tables::menu_windows::MenuWindowTable;
 

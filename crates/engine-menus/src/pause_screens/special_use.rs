@@ -315,7 +315,7 @@ impl SpecialUseSession {
     /// 2..3 of `FUN_801D8B90`.
     ///
     /// Reached from the Use list: [`special_use_route_for_item`] routes bag id
-    /// `0x89` here, `legaia_engine_core::field_menu_dispatch::build_pause_items_session`
+    /// `0x89` here, `legaia_engine_menu_runtime::field_menu_dispatch::build_pause_items_session`
     /// fills the rows from the disc placement table, and
     /// [`items_screen_model`] projects them through the shared list channel so
     /// both hosts draw the screen with the list renderer they already call.

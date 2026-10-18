@@ -37,8 +37,8 @@ use crate::{
     WIN_ITEM_INFO, WIN_POINT_CARD, WIN_PURSE, WIN_SELL_DETAIL, WIN_SELL_QUANTITY, WIN_VENDOR_PLATE,
     shop_item_description, shop_item_label,
 };
-use legaia_engine_core::menu_runtime::MenuRuntime;
 use legaia_engine_core::world::World;
+use legaia_engine_menu_runtime::menu_runtime::MenuRuntime;
 use legaia_engine_menus::menu::MenuState;
 use legaia_engine_menus::shop::ShopSession;
 use legaia_engine_ui::menu::window_painters::{

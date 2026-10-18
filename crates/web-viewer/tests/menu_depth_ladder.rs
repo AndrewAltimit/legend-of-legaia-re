@@ -82,14 +82,14 @@ fn overlay_quads(rt: &mut LegaiaRuntime) -> usize {
 
 /// Tick the shop with an idle pad until a screen's opening has played out.
 /// A merchant open fades the field to black over
-/// [`SHOP_FADE_FRAMES`](legaia_engine_core::menu_runtime::SHOP_FADE_FRAMES)
+/// [`SHOP_FADE_FRAMES`](legaia_engine_menu_runtime::menu_runtime::SHOP_FADE_FRAMES)
 /// with no window up - the overlay draws nothing but the fade prim - and
 /// every screen's incoming windows then slide in from their park edges over
 /// [`SHOP_SLIDE_FRAMES`](legaia_engine_menus::shop::SHOP_SLIDE_FRAMES)
 /// (retail's per-vsync captures). A composition read before that is a read
 /// of the fade, not of the screen.
 fn settle_shop(rt: &mut LegaiaRuntime) {
-    let frames = legaia_engine_core::menu_runtime::SHOP_FADE_FRAMES as usize
+    let frames = legaia_engine_menu_runtime::menu_runtime::SHOP_FADE_FRAMES as usize
         + usize::from(legaia_engine_menus::shop::SHOP_SLIDE_FRAMES)
         + 2;
     for _ in 0..frames {
