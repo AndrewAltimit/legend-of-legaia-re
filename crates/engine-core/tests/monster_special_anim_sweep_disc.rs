@@ -221,6 +221,7 @@ fn setup(
     entry: &[u8],
     scus: &[u8],
     id: u16,
+    spell: u8,
 ) -> Option<(World, usize, Vec<Option<MonsterAnimation>>)> {
     let cat = catalog_from_monster_archive(entry, &[id]);
     cat.get(id)?;
@@ -264,6 +265,23 @@ fn setup(
     let mut table = FormationTable::new();
     table.insert(FormationDef::new(1, vec![FormationSlot::new(id)]));
     w.set_formation_table(table, cat);
+    // Retail's battle loader stages the record's action entries with the
+    // monster at load, before the first pick reads their tags (the clip walk
+    // in `FUN_801E9FD4`, `0x801EA4A4..0x801EA548`). A synthetic fight skips
+    // the intro, so the battle-entry tick already runs the monster's first
+    // turn: the seat carries the clips before the fight, and the entry keeps
+    // them for a seat that already holds this monster.
+    let arc = std::sync::Arc::new(clips.clone());
+    let seat = usize::from(w.party.party_count);
+    w.actors[seat].battle_monster_id = Some(id);
+    w.set_actor_battle_action_clips(seat, arc.clone());
+    // The seeded cast is armed before the fight, as the play host's
+    // `LEGAIA_BATTLE_MONSTER_CAST` seam arms it, so the monster's first pick
+    // is the cast. A pick the AI made on its own is a draw off the world
+    // stream (`FUN_801E9FD4`'s magic roll, then its once-per-pass flee
+    // checkpoint `FUN_801EC0DC`): whether that turn struck, cast something
+    // else or fled the fight would be the seed's outcome, not the cast's.
+    w.battle.forced_monster_cast = Some((seat as u8, spell));
     w.mode = SceneMode::Field;
     if !w.trigger_scripted_battle(1) {
         return None;
@@ -277,21 +295,22 @@ fn setup(
     if w.mode != SceneMode::Battle {
         return None;
     }
-    let arc = std::sync::Arc::new(clips.clone());
-    let mut seat = None;
+    if w.actors[seat].battle_monster_id != Some(id) {
+        return None;
+    }
     for slot in 0..w.actors.len() {
         if w.actors[slot].battle_monster_id == Some(id) {
-            w.set_actor_battle_action_clips(slot, arc.clone());
-            seat.get_or_insert(slot);
+            if slot != seat {
+                w.set_actor_battle_action_clips(slot, arc.clone());
+            }
             // The caster must outlive the party's turns until its seeded
-            // cast comes round: a strike already armed before the sweep
-            // takes over now plays its swing clips, which gives the party a
-            // full round to fell a small record (`0x0A`'s 99 HP) first.
+            // cast comes round, which gives the party a round to fell a
+            // small record (`0x0A`'s 99 HP) first.
             w.actors[slot].battle.hp = 9999;
             w.actors[slot].battle.max_hp = 9999;
         }
     }
-    Some((w, seat?, clips))
+    Some((w, seat, clips))
 }
 
 fn cast(
@@ -300,8 +319,7 @@ fn cast(
     id: u16,
     spell: u8,
 ) -> Option<(CastTrace, Vec<Option<MonsterAnimation>>)> {
-    let (mut w, seat, clips) = setup(entry, scus, id)?;
-    w.battle.forced_monster_cast = Some((seat as u8, spell));
+    let (mut w, seat, clips) = setup(entry, scus, id, spell)?;
     let mut t = CastTrace {
         idles_in_retail: w.cast_module_for(spell).is_some_and(|entry| {
             legaia_engine_cast::cast_module_ticks::capture_body_idles_caster(entry, spell)
@@ -309,10 +327,6 @@ fn cast(
         ..CastTrace::default()
     };
     let mut last = w.actors[seat].battle.current_anim;
-    // A synthetic fight skips the battle intro, so the monster can already be
-    // mid-action (armed before its clips were installed) when the sweep takes
-    // over; that action is not the seeded one. Only an action that *starts*
-    // under observation counts.
     t.approaches = w.cast_module_for(spell).is_some_and(|entry| {
         legaia_engine_cast::cast_module_ticks::capture_body_approaches(entry, spell)
     });
@@ -339,7 +353,9 @@ fn cast(
     });
     let party_hp = |w: &World| -> u32 { (0..3).map(|i| u32::from(w.actors[i].battle.hp)).sum() };
     let mut hp_at_start = party_hp(&w);
-    let mut acting = usize::from(w.battle_ctx.active_actor) == seat;
+    // The battle-entry tick armed the seeded cast as the monster's first
+    // turn (`setup`), so the action the sweep watches start is that cast.
+    let mut acting = false;
     for _ in 0..8000 {
         // The player's half of the band: PROT 0954's wheel spins until the
         // confirm button stops it, so the sweep taps it through `0x70` (no
