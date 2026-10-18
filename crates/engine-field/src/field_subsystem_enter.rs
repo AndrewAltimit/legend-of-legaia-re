@@ -92,26 +92,51 @@
 //! the handler `World::field_menu_button_state` hands the state pick.
 //!
 //! Only the handler is consumed. The other writes the same routine makes -
-//! the context flag bits, the pad latch, the masked byte pair, the current
+//! the player flag bits, the pad latch, the masked byte pair, the current
 //! member, the submode-state rewind, the saved handler, the cursor home and
-//! the roster cells - land in state the engine does not model as retail
-//! does: the submode context `*_DAT_801C6EA4`, the pad latch
-//! `_DAT_1F800394` and the submode state `DAT_801F2734`. Each kernel that
-//! computes one of them says so on its own item.
+//! the roster cells - land in state the engine mirrors only in part: of the
+//! submode context `*_DAT_801C6EA4` it keeps the dispatcher's fields, the
+//! submode state `DAT_801F2734` never reaches the values the rewind tests,
+//! and the pad latch `_DAT_1F800394` has no mirror. Each kernel that computes
+//! one of them says so on its own item.
 //!
 //! The player flag bit [`CTX_SUBMODE_BUSY`] is the one write with an engine
-//! reader in waiting: `0x80000` in the player's `+0x10` word is the engaged
-//! bit the engine carries as `move_state.flags & 0x0008_0000`, which the
-//! overworld walk gate and the field party readout's rearm term
+//! reader in waiting: `0x80000` in the player's `+0x10` word (the routine
+//! loads the player as `*(0x8007C348 + 0x1C)`, `0x801F12AC..0x801F12C4`) is
+//! the engaged bit the engine carries as `move_state.flags & 0x0008_0000`,
+//! which the overworld walk gate and the field party readout's rearm term
 //! (`field_hud_rearm_held`) already read and the incense notice already
-//! raises. Raising it here as well would change both gates for as long as a
-//! submode screen is open, and the engine has no capture of that window to
-//! check the change against, so it waits for one.
+//! raises. Mirroring it would not change what either reader sees, which is
+//! why the submode context stays unmodelled:
+//!
+//! - **Its window is already modal.** The bit is up from this routine to the
+//!   dispatcher's retire (`FUN_801F159C`, `&= 0xFFF7FFFF` at
+//!   `0x801F1690..0x801F16A4`), the frames a submode screen owns the pad.
+//!   Its reader there is the walk gate (`FUN_801D1344` skips the pad
+//!   controller `FUN_801D01B0` at `0x801D1694`), and a screen is opened
+//!   either by the menu button, whose session both play hosts run modally
+//!   (and suppress the party readout under), or by a script parked on op
+//!   `0x49`, the case below.
+//! - **On a script's park the script runner owns it.** The dispatcher clears
+//!   the bit only when no op-`0x49` park is pending (`_DAT_8007B450 == 0`);
+//!   with one it writes the park's Done and leaves the bit up. A park armed
+//!   from a spawned record keeps the bit raised every frame through the
+//!   script runner `FUN_80039B7C` regardless, which the engine reads as
+//!   `World::script_context_engages_player`.
+//! - **The pause menu is not resident beside the readout.** The menu
+//!   overlay (PROT 0899) loads over the field overlay at `0x801CE818`
+//!   (`crates/asset/data/static-overlays.toml`), so the readout's painter
+//!   `FUN_801D0D38` is not there to read the bit while the menu is up.
+//!
+//! What is not traced is which write drops the bit after a park armed by a
+//! per-tick field script (not a spawned record) closes with `_DAT_8007B450`
+//! non-zero; modelling the context would need that clearer first.
 
-/// Field-context flag bit the enter path raises (`ctx[+0x10] |= 0x80000`) -
-/// the "a modal submode owns input" marker the close path clears.
+/// Player flag bit the enter path raises (`player[+0x10] |= 0x80000`, the
+/// player loaded as `*(0x8007C348 + 0x1C)`) - the engaged bit the close path
+/// clears.
 pub const CTX_SUBMODE_BUSY: u32 = 0x0008_0000;
-/// Second field-context flag bit raised on the way in (`|= 0x1000000`).
+/// Second player flag bit raised on the way in (`player[+0x10] |= 0x1000000`).
 pub const CTX_SUBSYSTEM_ACTIVE: u32 = 0x0100_0000;
 /// Pad-latch bit cleared and then re-set around the roster seed
 /// (`_DAT_1F800394 & ~0x8000`, then `| 0x8000`).
@@ -134,12 +159,13 @@ pub const REMAP_NONE: i8 = -1;
 /// apply them without re-deriving the bit names.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct EnterContext {
-    /// `ctx[+0x10]` after both flag bits are OR'd in.
+    /// The player's `+0x10` after both flag bits are OR'd in.
     pub flags: u32,
     /// `_DAT_1F800394` after the clear-then-set round trip.
     pub pad_latch: u32,
-    /// `ctx[+0x5C]` - a scroll or timing value, `_DAT_8007B8F8 * 7` plus the
-    /// submode kind word the same code just set to `2`.
+    /// The player's `+0x5C` (`sh v0,0x5c(a0)` at `0x801F133C`) -
+    /// `_DAT_8007B8F8 * 7` plus the submode kind word the same code just set
+    /// to `2`.
     pub scroll: i16,
 }
 
@@ -148,9 +174,9 @@ pub struct EnterContext {
 /// PORT: FUN_801F1278 (context-flag, pad-latch and scroll writes)
 ///
 /// NOT WIRED: nothing applies the result. The flag word is the player's
-/// `+0x10` (see the module's wiring note on [`CTX_SUBMODE_BUSY`]), and the
-/// pad latch `_DAT_1F800394` and the scroll halfword `ctx[+0x5C]` have no
-/// engine mirror; a model of the submode context is the prerequisite.
+/// `+0x10`, whose engaged bit changes nothing either reader sees (the
+/// module's wiring note); the pad latch `_DAT_1F800394` and the player's
+/// `+0x5C` have no engine mirror.
 ///
 /// The `scroll` term is the one place the disassembly and a casual reading of
 /// the C part ways: the `+ 2` addend is not a literal, it is a **re-read of
@@ -202,9 +228,10 @@ impl MaskedBytes {
 ///
 /// PORT: FUN_801F1278 (the `_DAT_8007B469` re-resolve)
 ///
-/// NOT WIRED: the engine keeps no current-member byte for the submode
-/// screens; the hub's per-entry code at the same address is published by
-/// its own painter path. A submode-context model is the prerequisite.
+/// NOT WIRED: the engine keeps no current-member byte `_DAT_8007B469` for
+/// the submode screens, and no reader of it after this store is traced; the
+/// hub's per-entry code at the same address is published by its own painter
+/// path.
 ///
 /// Retail scans the roster ids at `DAT_80084598..` for a match; if the scan runs
 /// off the end (including the `count == 0` case, where the loop is skipped and
@@ -306,12 +333,15 @@ pub fn installer_entry(caller_handler: u16, roster: &[u8], remap: Option<i8>) ->
 ///
 /// PORT: FUN_801F1278 (the `DAT_801F2734` rewind)
 ///
-/// NOT WIRED: the engine does not model the submode state word
-/// `DAT_801F2734`; each submode screen opens fresh through
-/// `World::open_field_submode_screen`.
+/// NOT WIRED: the engine carries the word (`World::field_vm.submode_context`
+/// word `0`, seeded `1` on every MAN load) but no engine path ever stores `4`
+/// or `7` in it, and which retail code does is not traced - so the rewind
+/// would only ever see `1`. Wiring it waits for the writer of those states.
 ///
 /// Retail rewinds `DAT_801F2734` from `4` or `7` only - any other state is left
-/// alone, which is what lets a re-arm resume mid-flow.
+/// alone, which is what lets a re-arm resume mid-flow - and only on the park
+/// arm: the test at `0x801F1434..0x801F144C` runs when the op-`0x49` operand
+/// `_DAT_8007B450` is a live pointer (neither `0` nor the consumed `1`).
 pub fn rearm_state(state: u32) -> u32 {
     if REARM_STATES.contains(&state) {
         1

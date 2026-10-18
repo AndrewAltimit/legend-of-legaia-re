@@ -191,8 +191,9 @@ use legaia_engine_field::field_subsystem_enter::{STATE_PICK_HANDLER, installer_e
 /// ([`legaia_engine_field::field_subsystem_enter::installer_entry`]) rather
 /// than a second reading of the table. Only the handler is read: the caller's
 /// saved handler, the cursor home and the roster cells the same call computes
-/// land in the submode context `*_DAT_801C6EA4`, which the engine does not
-/// model.
+/// land in the submode context `*_DAT_801C6EA4`, of which the engine mirrors
+/// only the fields the dispatcher reads (`SubmodeScreen::cursor`, seeded by
+/// `World::open_field_submode_screen`).
 fn installed_handler(sub_op: u8) -> Option<u16> {
     let &remap = hub::OP49_SUBOP_SLOTS.get(usize::from(sub_op))?;
     Some(installer_entry(0, &[], Some(remap)).handler)
