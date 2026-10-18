@@ -725,7 +725,7 @@ The pennant has no cost special-case. `FUN_801D388C` case `0xB` (called from `FU
 | `0x801D3D40`, `0x801D3D48` | clear the seat-mode byte; 24-frame glide, then `FUN_801D8DE8(0x20 + n, 0)` spawns it |
 | `0x801D3D68..0x801D3D74` | advance the cursor by the command's own `+0x74` cost |
 
-The cursor `ctx[+0x6D8]` is seeded to `16` on the gauge build (`0x801D3A3C` / `0x801D3A44`). So pennant `n` sits at `x = 16 + sum(cost of 0..n-1)`, is `cost(n) - 6` wide, and lands on `y = 192`; the captured `x = 7` is the left diamond cap at `16 - 9`. The bar record `0x0F` is anchored at `16` and `pool - 6` wide, so a 100-AP pool spans `0..128`.
+The cursor `ctx[+0x6D8]` is seeded to `16` on the gauge build (`0x801D3A3C` / `0x801D3A44`). So pennant `n` sits at `x = 16 + sum(cost of 0..n-1)`, is `cost(n) - 6` wide, and lands on `y = 192`; the captured `x = 7` is the left diamond cap at `16 - 9`. The bar record `0x0F` is anchored at `16` and `pool - 6` wide, so a 100-AP pool spans `0..128`. Its style `5` is widget record `0x05`, class 3 with tile-set `0`, whose caps are the bar's own end pieces (`0x80073A60`): `FUN_8002C69C` seats the arrow at `pen + w` but tiles the body over `w + 8` (`addiu a0,t2,0x8` at `0x8002E934`), so the trough runs eight pixels under the arrow, to the diamond's centre, and draws beneath it (port `arts_input::BAR_BODY_UNDER_ARROW`).
 
 The spawn anchor is the pressed chip, not the fighter: nothing on the path reads an actor screen position. `FUN_801D9BBC` is the per-frame stepper; registration is `FUN_801D8DE8` -> `FUN_801DB7B0`, which takes the glide start from the just-created node (`0x801DB7FC` / `0x801DB810`) and its target from the record's other seat.
 
