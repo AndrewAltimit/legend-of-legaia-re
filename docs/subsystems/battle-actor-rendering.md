@@ -94,7 +94,7 @@ Retail draws a party body channel by channel: `FUN_80048A08` draws as many chann
 - The port keeps the table per party seat (`Actor::battle_model_table`, kernel `engine-battle::battle_attach_swap`) and steps it with every battle pose; `World::battle_live_drawn_objects` is the drawn set, folded with the after-image walk's per-ghost re-runs.
 - The native window masks the TMD before the posed rebuild (`battle_attach_swap::mask_tmd`); the browser page collapses the hidden objects' vertices after posing (`play_battle_actor_hidden`, `play_battle_actor_ghost_hidden`).
 - An idle body therefore draws its bones only: no `0xFE` extra, no `0xFF` duplicate z-fighting its host. Noa's windowed arts and swings swap her attach piece for its alternate-vertex variant; Noa's `0x1E` band and Gala's high Ozma tiers draw their extra on its own channel during the 17-part swings.
-- Open: the Rot limb dimming (`FUN_80048A08`'s per-channel rule) is applied per object in the port, so a variant drawn in a dimmed channel keeps its colour.
+- The Rot limb dimming tests the draw pass's channel counter (`s3`, compared against the `0x80077998` ranges at `0x80048C64..0x80048D5C` and stepped at `0x80049024`), not the object, so a variant dims with the channel it is drawn in: both hosts map objects through `World::battle_live_object_channels` before applying the plan.
 - The PROT 1203 ANM (`other5`) is not this pose source. Its banks (Vahn @ 0 / Noa @ 9 / Gala @ 18) are authored against PROT 1204's own object order, which differs from the assembled tag order, so it is the rest pose of the **1204 fallback mesh only** (identity object→bone).
 
 Pinned live and cross-pipeline in `crates/parity/tests/battle_party_pose_live.rs`.

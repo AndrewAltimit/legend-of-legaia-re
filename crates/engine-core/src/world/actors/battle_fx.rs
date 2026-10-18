@@ -414,6 +414,51 @@ impl World {
     /// ghost left, over the live stream's channels.
     // REF: FUN_800480D8, FUN_80049348
     pub fn battle_live_drawn_objects(&self, i: usize) -> Option<Vec<bool>> {
+        let actor = self.actors.get(i)?;
+        let (table, ghosted) = self.battle_live_model_table(i)?;
+        if !ghosted {
+            return actor.battle_drawn_objects.clone();
+        }
+        let parts = actor
+            .battle_animation
+            .as_ref()
+            .map(|p| p.variant_track().stream_parts)
+            .unwrap_or(0);
+        if parts == 0 {
+            return None;
+        }
+        Some(table.drawn_objects(usize::from(parts)))
+    }
+
+    /// The channel each TMD object of actor `i`'s live body is drawn in
+    /// (indexed by object), off the same live table as
+    /// [`Self::battle_live_drawn_objects`]: a variant swapped into an
+    /// attach-bone channel answers that channel. The draw pass's per-channel
+    /// rules (the Rot limb dimming tests the channel counter
+    /// `FUN_80048A08` loops on) read objects through this. `None` for an
+    /// actor with no model table, whose objects are their own channels.
+    pub fn battle_live_object_channels(&self, i: usize) -> Option<Vec<u32>> {
+        let (table, _) = self.battle_live_model_table(i)?;
+        let mut out: Vec<u32> = (0..table.table.len() as u32).collect();
+        // Earlier channels win, as the draw pass meets them first; an
+        // object no channel names keeps its own index (it is not drawn).
+        for (c, &o) in table.table.iter().enumerate().rev() {
+            if let Some(slot) = out.get_mut(o as usize) {
+                *slot = c as u32;
+            }
+        }
+        Some(out)
+    }
+
+    /// Actor `i`'s model table as the live draw reads it, and whether the
+    /// after-image walk re-ran the swap into it this frame.
+    fn battle_live_model_table(
+        &self,
+        i: usize,
+    ) -> Option<(
+        legaia_engine_battle::battle_attach_swap::BattleModelTable,
+        bool,
+    )> {
         use legaia_engine_battle::battle_afterimage as ai;
         let actor = self.actors.get(i)?;
         let mut table = actor.battle_model_table.clone()?;
@@ -424,9 +469,6 @@ impl World {
                 .map(|f| f.ghost_eligible)
                 .unwrap_or(false)
         });
-        if plans.is_empty() {
-            return actor.battle_drawn_objects.clone();
-        }
         for p in &plans {
             if let Some(f) = hist.get(p.depth.saturating_sub(1))
                 && f.variant_track.stream_parts != 0
@@ -438,15 +480,7 @@ impl World {
                 );
             }
         }
-        let parts = actor
-            .battle_animation
-            .as_ref()
-            .map(|p| p.variant_track().stream_parts)
-            .unwrap_or(0);
-        if parts == 0 {
-            return None;
-        }
-        Some(table.drawn_objects(usize::from(parts)))
+        Some((table, !plans.is_empty()))
     }
 
     /// Arm the retail **impact tint triple** on `target`: `+0x04 = impact
