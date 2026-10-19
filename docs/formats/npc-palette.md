@@ -80,6 +80,12 @@ does not overwrite a non-zero halfword from an earlier upload. The
 net effect is the union of every contributing TIM's non-zero slots -
 for town01, slots 0..14, a fully populated palette row.
 
+The merge applies among the scene's own TIMs only. The shared `init_data`
+block's TIMs form a lower layer, and a scene CLUT's zeros replace their words
+as `LoadImage` would; see
+[`renderer.md`](../subsystems/renderer.md#engine-side-targeted-upload--shared-blocks)
+for the row-484 case that rule settles.
+
 Without merge semantics, the partial TIMs' trailing zeros clobber the
 full TIMs' slots 8..14 and the town01 prim keep-ratio collapses from
 99.3% to 78.6% (the four "field intersection" NPC TMDs lose their

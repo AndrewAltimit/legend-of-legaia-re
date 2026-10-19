@@ -1683,7 +1683,7 @@ and
 bytes the current meshes sample, which keeps the prim filter and the uploaded
 set consistent. The retail field loader DMAs **every** scene TIM. The VRAM
 parity oracle reproduces live VRAM, so `BuildOptions { upload_all_tims: true }`
-switches `build_targeted` to `build_vram_full_from_buffers`: every parseable
+switches `build_targeted` to `build_vram_full_layered`: every parseable
 collected TIM is written to its header destination - images first as
 sequential DMA, then CLUTs with merge-zeros to preserve the row-479 palette
 split. On `town01` that takes oracle coverage from about 4% (targeted) to
@@ -1699,6 +1699,23 @@ CLUT's entry 0: on `map03` the row-484 slot at `x = 240` (the trees' base
 quads) keeps `0x8023`, an opaque near-black, where retail holds `0x0000`.
 Both hosts build the overworld VRAM through this kernel. Test:
 `engine-core/tests/world_map_kingdom_clut_overwrite.rs`.
+
+**The merge stops at the shared-block layer.** The shared blocks' TIMs
+(`init_data`) are uploaded before the scene's own and stand for content
+resident before the scene loads, so the build hands them to
+`build_vram_targeted_layered` / `build_vram_full_layered` as a lower layer. A
+scene CLUT block replaces every lower-layer word it covers, `0x0000` entries
+included, as `LoadImage` does; scene CLUT blocks still merge among themselves,
+and a zero never overwrites a cell the scene layer already owns. Without the
+split, `init_data`'s 256-wide row-484 CLUT survived under the scene palettes'
+transparent entries: in `tower` (Sky Gardens Tower) the foliage CLUTs at
+`(192, 484)` and `(208, 484)` kept `0x8023` and the vine and grass cutouts drew
+on dark-brown cards. The same row-484 class reached about thirty field scenes
+(`town01`, `cave01`, `tunnelb`, `rayman`, `nilboa`, `bylon` among them, and
+row 485 on `dolk` / `ropeway`). On the four with a retail state in the library
+(`town01`, `dolk2`, `tunnelb`, `cave01`) every word the split changes now
+equals retail's VRAM and none did before. Both hosts build field VRAM through
+this kernel. Test: `engine-core/tests/scene_clut_over_shared_layer.rs`.
 
 #### Field static-object placement (town01)
 

@@ -270,6 +270,23 @@ pub fn build_vram_targeted_from_buffers<'a, I>(
 where
     I: IntoIterator<Item = &'a [u8]>,
 {
+    build_vram_targeted_layered(tim_bufs, 0, needs)
+}
+
+/// [`build_vram_targeted_from_buffers`] over two DMA layers: the first
+/// `base_len` buffers are a **lower layer** - blocks resident before the
+/// scene loads, such as the shared `init_data` block's TIMs - and the rest are
+/// the scene's own. See [`LayerMask`] for what the split changes: a scene
+/// CLUT block replaces every lower-layer word it covers, its `0x0000` entries
+/// included, while scene CLUT blocks still merge among themselves.
+pub fn build_vram_targeted_layered<'a, I>(
+    tim_bufs: I,
+    base_len: usize,
+    needs: &[PrimTarget],
+) -> (Vram, VramUploadStats)
+where
+    I: IntoIterator<Item = &'a [u8]>,
+{
     let mut vram = Vram::new();
     let mut stats = VramUploadStats::default();
     if needs.is_empty() {
@@ -287,14 +304,17 @@ where
         return (vram, stats);
     }
 
-    // Materialise once so we can do two passes over the same set.
-    let parsed: Vec<legaia_tim::Tim> = tim_bufs
+    // Materialise once so we can do two passes over the same set. Each TIM
+    // keeps whether it belongs to the lower layer (its position among the
+    // input buffers, counted before parse failures drop any).
+    let (parsed, upper): (Vec<legaia_tim::Tim>, Vec<bool>) = tim_bufs
         .into_iter()
-        .filter_map(|buf| {
+        .enumerate()
+        .filter_map(|(i, buf)| {
             stats.total_tims += 1;
-            legaia_tim::parse(buf).ok()
+            legaia_tim::parse(buf).ok().map(|tim| (tim, i >= base_len))
         })
-        .collect();
+        .unzip();
 
     // Pre-compute decisions per TIM so the stats reflect what actually
     // happens after both passes, not the intermediate state.
@@ -318,10 +338,14 @@ where
         })
         .collect();
 
+    let mut layer = LayerMask::new();
     // Pass 1: image blocks.
-    for (tim, &(upload_image, _)) in parsed.iter().zip(&decisions) {
+    for ((tim, &(upload_image, _)), &up) in parsed.iter().zip(&decisions).zip(&upper) {
         if upload_image {
             vram.upload_tim_partial(tim, true, false);
+            if up {
+                layer.mark_image(tim);
+            }
         }
     }
     // Pass 2: CLUT blocks with merge-zeros semantics. Always last so
@@ -333,10 +357,11 @@ where
     // empty, producing the union of all per-TIM contributions. See the
     // `town01` regression: 7 row-479 TIMs in entries 6..9 split into
     // "full" (slots 0..14) and "partial" (slots 0..7) - the last-write-
-    // wins ordering would drop slots 8..14 entirely.
-    for (tim, &(_, upload_clut)) in parsed.iter().zip(&decisions) {
+    // wins ordering would drop slots 8..14 entirely. The merge stops at
+    // the layer boundary ([`LayerMask`]).
+    for ((tim, &(_, upload_clut)), &up) in parsed.iter().zip(&decisions).zip(&upper) {
         if upload_clut {
-            vram.upload_tim_partial_opts(tim, false, true, true);
+            upload_clut_layered(&mut vram, tim, up, &mut layer);
         }
     }
 
@@ -373,23 +398,37 @@ pub fn build_vram_full_from_buffers<'a, I>(tim_bufs: I) -> (Vram, VramUploadStat
 where
     I: IntoIterator<Item = &'a [u8]>,
 {
+    build_vram_full_layered(tim_bufs, 0)
+}
+
+/// [`build_vram_full_from_buffers`] over two DMA layers, the first `base_len`
+/// buffers below the rest - the same split as [`build_vram_targeted_layered`].
+pub fn build_vram_full_layered<'a, I>(tim_bufs: I, base_len: usize) -> (Vram, VramUploadStats)
+where
+    I: IntoIterator<Item = &'a [u8]>,
+{
     let mut vram = Vram::new();
     let mut stats = VramUploadStats::default();
-    let parsed: Vec<legaia_tim::Tim> = tim_bufs
+    let (parsed, upper): (Vec<legaia_tim::Tim>, Vec<bool>) = tim_bufs
         .into_iter()
-        .filter_map(|buf| {
+        .enumerate()
+        .filter_map(|(i, buf)| {
             stats.total_tims += 1;
-            legaia_tim::parse(buf).ok()
+            legaia_tim::parse(buf).ok().map(|tim| (tim, i >= base_len))
         })
-        .collect();
+        .unzip();
+    let mut layer = LayerMask::new();
     // Pass 1: image blocks.
-    for tim in &parsed {
+    for (tim, &up) in parsed.iter().zip(&upper) {
         vram.upload_tim_partial(tim, true, false);
+        if up {
+            layer.mark_image(tim);
+        }
     }
-    // Pass 2: CLUT blocks last, with merge-zeros semantics.
-    for tim in &parsed {
+    // Pass 2: CLUT blocks last, with merge-zeros semantics within a layer.
+    for (tim, &up) in parsed.iter().zip(&upper) {
         if tim.clut.is_some() {
-            vram.upload_tim_partial_opts(tim, false, true, true);
+            upload_clut_layered(&mut vram, tim, up, &mut layer);
         }
     }
     for tim in &parsed {
@@ -401,6 +440,74 @@ where
         }
     }
     (vram, stats)
+}
+
+/// The cells the **upper** (scene) DMA layer has written so far, for the
+/// layered builders' CLUT pass.
+///
+/// Merge-zeros exists for the scene's own over-collected TIMs: several of them
+/// fill different slots of one CLUT row and leave the rest `0x0000` on disc, and
+/// the union is what the meshes need. It must not reach across to a block that
+/// was resident before the scene loaded. Retail uploads the scene's TIMs with
+/// `LoadImage`, which replaces every word of the rect, zeros included, so a
+/// scene CLUT's transparent entry 0 lands as `0x0000` whatever the boot image
+/// held there. Merging across the boundary kept the shared `init_data` TIM's
+/// 256-wide `(0, 484)` row under `tower`'s foliage CLUTs - `0x8023` at
+/// `(192, 484)` and `(208, 484)`, an opaque near-black - and every vine and
+/// grass quad drew its cutout background as a dark-brown card.
+///
+/// So a scene CLUT halfword lands unless it is `0x0000` **and** the scene layer
+/// already owns the cell (an earlier scene CLUT's colour, or a scene image).
+/// Lower-layer CLUT blocks keep the plain merge among themselves.
+struct LayerMask(Vec<bool>);
+
+impl LayerMask {
+    fn new() -> Self {
+        Self(vec![false; legaia_tim::VRAM_PIXELS])
+    }
+
+    fn mark_image(&mut self, tim: &legaia_tim::Tim) {
+        let img = &tim.image;
+        for y in
+            img.fb_y as usize..(img.fb_y as usize + img.h as usize).min(legaia_tim::VRAM_HEIGHT)
+        {
+            for x in img.fb_x as usize
+                ..(img.fb_x as usize + img.fb_w as usize).min(legaia_tim::VRAM_WIDTH)
+            {
+                self.0[y * legaia_tim::VRAM_WIDTH + x] = true;
+            }
+        }
+    }
+}
+
+/// Write one TIM's CLUT block as a linear run along its row (the layout
+/// [`Vram::upload_tim_partial_opts`] documents), with the layer rule of
+/// [`LayerMask`]. `upper` is whether the TIM belongs to the scene layer.
+fn upload_clut_layered(vram: &mut Vram, tim: &legaia_tim::Tim, upper: bool, layer: &mut LayerMask) {
+    if !upper {
+        vram.upload_tim_partial_opts(tim, false, true, true);
+        return;
+    }
+    let Some(clut) = tim.clut.as_ref() else {
+        return;
+    };
+    let y = clut.fb_y as usize;
+    if y >= legaia_tim::VRAM_HEIGHT {
+        return;
+    }
+    let run = usize::from(clut.w.saturating_mul(clut.h));
+    for (i, &val) in clut.entries.iter().take(run).enumerate() {
+        let x = clut.fb_x as usize + i;
+        if x >= legaia_tim::VRAM_WIDTH {
+            break;
+        }
+        let cell = y * legaia_tim::VRAM_WIDTH + x;
+        if val == 0 && layer.0[cell] {
+            continue;
+        }
+        vram.write_clut_row(x as u16, y as u16, &val.to_le_bytes());
+        layer.0[cell] = true;
+    }
 }
 
 /// Internal helper used by both [`build_vram_from_dirs`] and the
@@ -561,5 +668,69 @@ mod tests {
             0x1000,
             "CLUT row must not be suppressed by an unrelated page collision"
         );
+    }
+
+    /// [`tim_4bpp_at`] with the CLUT's first `zeros` entries `0x0000` - a
+    /// cutout palette (entry 0 transparent) or a partial row.
+    fn tim_4bpp_zero_head(
+        img_x: u16,
+        img_y: u16,
+        clut_x: u16,
+        clut_y: u16,
+        zeros: usize,
+    ) -> Vec<u8> {
+        let mut buf = tim_4bpp_at(img_x, img_y, clut_x, clut_y);
+        for i in 0..zeros {
+            buf[20 + 2 * i..22 + 2 * i].copy_from_slice(&0u16.to_le_bytes());
+        }
+        buf
+    }
+
+    /// A scene CLUT's `0x0000` entry replaces a lower-layer word (the shared
+    /// block's row resident before the scene loads), as `LoadImage` does: the
+    /// `tower` foliage CLUTs' transparent entry 0 over `init_data`'s `(0, 484)`
+    /// row. Two scene CLUTs on one row still merge.
+    #[test]
+    fn layered_scene_clut_zero_replaces_lower_layer_word() {
+        let shared = tim_4bpp_at(/*img*/ 500, 0, /*clut*/ 0, 484);
+        let scene_cutout = tim_4bpp_zero_head(/*img*/ 600, 0, /*clut*/ 0, 484, 1);
+        let needs = [PrimTarget {
+            clut: (0, 484, 16, 1),
+            page: (600, 0, 1, 1),
+        }];
+        let bufs = [shared.as_slice(), scene_cutout.as_slice()];
+
+        let (merged, _) = build_vram_targeted_from_buffers(bufs, &needs);
+        assert_eq!(
+            merged.pixel(0, 484),
+            0x1000,
+            "one layer: the plain merge keeps the word"
+        );
+
+        let (layered, _) = build_vram_targeted_layered(bufs, 1, &needs);
+        assert_eq!(
+            layered.pixel(0, 484),
+            0,
+            "scene entry 0 lands transparent over the lower layer"
+        );
+        assert!(layered.is_written(0, 484));
+        assert_eq!(layered.pixel(1, 484), 0x1001);
+
+        let (full, _) = build_vram_full_layered(bufs, 1);
+        assert_eq!(full.pixel(0, 484), 0);
+
+        // Within the scene layer the merge still unions partial rows.
+        let scene_full = tim_4bpp_at(/*img*/ 700, 0, /*clut*/ 0, 484);
+        let scene_partial = tim_4bpp_zero_head(/*img*/ 600, 0, /*clut*/ 0, 484, 4);
+        let (merged_scene, _) = build_vram_targeted_layered(
+            [
+                shared.as_slice(),
+                scene_full.as_slice(),
+                scene_partial.as_slice(),
+            ],
+            1,
+            &needs,
+        );
+        assert_eq!(merged_scene.pixel(3, 484), 0x1003);
     }
 }

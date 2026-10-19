@@ -457,15 +457,21 @@ impl SceneResources {
         );
         let tim_count = tim_bufs.len();
 
+        // The shared blocks' TIMs are the lower DMA layer: resident before the
+        // scene loads, so a scene CLUT replaces their words outright, its
+        // transparent `0x0000` entries included (`LayerMask` in
+        // `legaia_tmd::vram_targeted`).
         let (mut vram, upload_stats) = if options.upload_all_tims {
             // Parity-oracle path: DMA-every-TIM, like the retail field loader.
-            legaia_tmd::vram_targeted::build_vram_full_from_buffers(
+            legaia_tmd::vram_targeted::build_vram_full_layered(
                 tim_bufs.iter().map(|v| v.as_slice()),
+                shared_tim_count,
             )
         } else {
             // Render path: only the subset a mesh prim samples.
-            legaia_tmd::vram_targeted::build_vram_targeted_from_buffers(
+            legaia_tmd::vram_targeted::build_vram_targeted_layered(
                 tim_bufs.iter().map(|v| v.as_slice()),
+                shared_tim_count,
                 &needs,
             )
         };
