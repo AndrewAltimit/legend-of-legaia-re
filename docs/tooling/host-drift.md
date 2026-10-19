@@ -1309,7 +1309,7 @@ decidable per instance, not from a source pattern.
 |---|---|---|
 | **Same layout, different letterforms.** A shared layout is not a shared draw. | Battle numerals: VRAM cells natively, dialog font on the page. | `engine-ui::battle_numerals` + the fifth tier-7 rule. |
 | **Same override set, different bodies.** | Two `BgmDirector`s disagreed on the duplicate-start guard, master volume and the pause gate. | One body: `engine-session`'s `AudioDirector`. |
-| **A law written twice in two shading languages.** | See [shading](#the-two-hosts-do-not-share-a-shading-law). | Only a rendered frame from each host compares them. |
+| **A law written twice in two shading languages.** | See [shading](#the-two-hosts-do-not-share-a-shading-law). | The field mesh law is evaluated on both texts by `engine-render`'s `shading_law_parity` test; the other shader pairs only by a rendered frame from each host. |
 | **A draw list that carries half a mesh.** | A surface running `tmd_to_vram_mesh` alone drops every untextured prim. | Assert the **untextured corner count**, never the total. |
 | **Length parity is not coverage.** | A white `a_flat_rgba` stream has the right length. | Assert content. |
 | **Two hosts agreeing on a wrong law.** | Both laid the crawl out in surface pixels with 1x glyphs. | Only a retail frame flags it. |
@@ -1342,7 +1342,7 @@ reverse-engineering questions, so they are not on
 
 | Difference | State |
 |---|---|
-| shading law | One law in WGSL and GLSL; nothing pairs the shader bodies. See [shading](#the-two-hosts-do-not-share-a-shading-law). |
+| shading law | One law in WGSL and GLSL. The field mesh pipelines are paired by evaluation (`shading_law_parity`); the overworld, effect-clip and fog-volume shader pairs are not. See [shading](#the-two-hosts-do-not-share-a-shading-law). |
 | battle body blend | Native keys the posed override by TMD index (two bodies sharing a TMD share one); the page orders blend passes per mesh, not per prim. |
 | lit rows under the palette collapse | Not drift: both hosts run a lit row's shaded colour through the prologue's packet sepia, which the light kernel's output never meets in retail. See [light-source rows](#light-source-rows-in-a-graded-scene). |
 | cheats | One `WorldCheats::cheat_*` call each. Every listed cheat is a launch switch natively and a runtime control on the page (`F6` / `F7` are runtime on both, through the [hotkey table](#host-hotkeys)); a GameShark file is a launch switch natively and pasted text on the page (`cheat_apply_codes`). |
@@ -1783,6 +1783,25 @@ GLSL on the other, written separately. The law is in
 `texel * packet_colour / 128` through the depth cue, an untextured prim is its
 packet colour, and neither applies a light source. Both hosts implement it; the
 browser has no light uniform left.
+
+**The field mesh law is paired by evaluation, not by text.**
+`crates/engine-render/src/tests/shading_law_parity.rs` parses the native
+VRAM-mesh and colour-mesh WGSL and the page's fragment shader (its JS template
+resolved against the file's own constants) into naga IR and runs both on the
+CPU (`tests/shader_eval.rs`, an interpreter over that IR) over one grid: CLUT
+words through a row the prologue's palette law reaches and one it does not,
+packet colours around the `0x80` neutral, both prim families, the opaque pass
+and each ABR mode's blend pass composited through each host's blend table, the
+grade, the palette collapse, the view-depth cue ramp and the dither over a 4x4
+block. The outputs must agree; under the dither a value exactly on a 5-bit
+boundary may land one step apart, because the native law divides the colour
+byte by 128 and the page multiplies the normalised colour by 255 / 128, and
+those flips are counted and bounded. The page's ABR table
+(`_setSemiBlend`) is pinned as text beside the arithmetic the test gives it.
+The first run of it found one real difference: the native blend pass applied
+mode 3's quarter before the target saturated the foreground, so an over-unity
+graded colour added more than `0.25`; it now saturates first, as the page's
+constant-alpha factor does.
 
 `a_flat_rgba` means the prim's packet colour everywhere, with alpha as the job:
 

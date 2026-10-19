@@ -16,3 +16,7 @@ mod sprite_blend;
 mod text_overlay;
 mod title_save_screen;
 mod vram_capture_gpu;
+// --- lane B ---
+mod shader_eval;
+mod shading_law_parity;
+// --- end lane B ---
