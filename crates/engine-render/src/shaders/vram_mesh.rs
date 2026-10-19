@@ -511,7 +511,11 @@ fn blend_pass_color(in: VsOut, front_facing: bool, f_scale: f32) -> vec4<f32> {
         dyn_far(psx_modulate(color.rgb, u.depth_cue.rgb * 255.0), u.light_dir, u.light_color),
         ir0,
     );
-    return vec4<f32>(cued * f_scale, 1.0);
+    // Saturate before the mode-3 pre-scale: the target clamps the
+    // foreground before the blend equation reads it, and the quarter must
+    // apply to that saturated value (`B + 0.25 * F`), as it does on the
+    // browser play page where the 0.25 is a blend factor.
+    return vec4<f32>(clamp(cued, vec3<f32>(0.0), vec3<f32>(1.0)) * f_scale, 1.0);
 }
 
 @fragment

@@ -214,7 +214,8 @@ fn blend_pass_color(in: VsOut, front_facing: bool, f_scale: f32) -> vec4<f32> {
     }
     let cued = psx_depth_cue(graded, dyn_far(u.depth_cue.rgb, u.light_dir, u.light_color), ir0);
     let rgb = psx_dither(cued, in.clip_pos.xy, u.psx_params.w);
-    return vec4<f32>(rgb * f_scale, 1.0);
+    // Saturate before the mode-3 pre-scale (see the VRAM-mesh blend pass).
+    return vec4<f32>(clamp(rgb, vec3<f32>(0.0), vec3<f32>(1.0)) * f_scale, 1.0);
 }
 
 @fragment
