@@ -92,6 +92,9 @@ pub struct BakaDuelAssets {
     /// cabinet's and the round chrome's quads index
     /// ([`legaia_engine_minigames::baka_fighter_chrome::hud_widget_quads`]).
     pub hud_widgets: Vec<bo::BakaHudWidget>,
+    /// The duel HUD's VITAL bar frame cells (`0x801DBC34`), which
+    /// [`legaia_engine_minigames::baka_cabinet::duel_hud_packets`] lays out.
+    pub bar_frame: Vec<bo::BakaBarFrameCell>,
     /// The stage pack's TMDs `1` and `2` - the impact pair's mesh parts
     /// ([`legaia_engine_minigames::baka_impact_fx`] template B), by `model - 1`.
     pub impact_models: [Option<(legaia_tmd::Tmd, Vec<u8>)>; 2],
@@ -131,6 +134,9 @@ impl BakaDuelAssets {
         {
             out.blit_rects = bo::parse_blit_rects(&img).unwrap_or_default();
             out.hud_widgets = bo::parse_baka_hud(&img).unwrap_or_default();
+            out.bar_frame = bo::parse_baka_bar_frame(&img)
+                .map(|c| c.to_vec())
+                .unwrap_or_default();
         }
         let party_slots =
             read_prot(legaia_actor_formats::battle_char_pack::PROT_ENTRY_INDEX as usize)
@@ -1040,6 +1046,30 @@ impl BakaDuelSurface {
             &assets.hud_widgets,
             &fight.chrome_frame().draws,
             &fight.cabinet_cells(),
+        )
+    }
+
+    /// This frame's duel HUD packets for `fight`
+    /// ([`legaia_engine_minigames::baka_cabinet::duel_hud_packets`] over the
+    /// HUD frame the cabinet built, `FUN_801d2afc`): the VITAL bars and
+    /// frames, combo counters, round pips, attack icons, the top strip and
+    /// the high score. Empty on a frame the cabinet drew no HUD (outside the
+    /// duel band) and while the art is not resident.
+    pub fn duel_hud_packets(
+        &self,
+        fight: &BakaFight,
+    ) -> Vec<legaia_engine_minigames::baka_cabinet::DuelHudPacket> {
+        if !self.hud_art_resident() {
+            return Vec::new();
+        }
+        let (Some(assets), Some(hud)) = (self.assets.as_ref(), fight.cabinet_frame().hud.as_ref())
+        else {
+            return Vec::new();
+        };
+        legaia_engine_minigames::baka_cabinet::duel_hud_packets(
+            hud,
+            &assets.hud_widgets,
+            &assets.bar_frame,
         )
     }
 

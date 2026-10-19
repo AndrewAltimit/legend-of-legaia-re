@@ -136,6 +136,33 @@ SIM_PAIRS: list[dict[str, object]] = [
         "mode": "symbols_all",
         "symbols": ["sound_baka_announcer"],
     },
+    # --- lane H ---
+    {
+        "what": "Baka Fighter screen layer, native vs play page - both hosts "
+        "drew only the cabinet's and round chrome's widget quads, and the duel "
+        "HUD renderer `FUN_801d2afc` (VITAL bars and frames, combo, pips, "
+        "attack icons, the STAGE strip) reached neither: a duel showed a lone "
+        "font round digit. Both build the layer through "
+        "`minigame_hud::baka_screen_prims`",
+        "sites": {
+            "native": ("crates/engine-shell/src/window/minigames/baka_fighter.rs", "baka_hud_prims"),
+            "web": ("crates/web-viewer/src/play_minigame_arena.rs", "baka_hud_prims"),
+        },
+        "mode": "symbols_all",
+        "symbols": ["baka_screen_prims"],
+    },
+    {
+        "what": "Baka Fighter font digits, native vs play page - the round "
+        "digit stands down once the duel HUD's own STAGE cells draw. Both "
+        "place the digits through `minigame_hud::baka_digit_placements`",
+        "sites": {
+            "native": ("crates/engine-shell/src/window/hud/text_list.rs", "build_hud"),
+            "web": ("crates/web-viewer/src/play_minigame_arena.rs", "baka_hud_text_draws"),
+        },
+        "mode": "symbols_all",
+        "symbols": ["baka_digit_placements"],
+    },
+    # --- end lane H ---
     {
         "what": "scene-hidden lead, native vs play page - the opening "
         "prologue (`opdeene`) installs a free-roam lead at the cold spawn "

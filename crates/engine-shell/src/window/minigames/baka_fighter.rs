@@ -82,12 +82,12 @@ impl PlayWindowApp {
             && self.baka_surface.hud_art_resident()
     }
 
-    /// The Baka cabinet's and round chrome's widgets as screen-space PSX
-    /// primitives against the duel VRAM: the shared quad kernel
-    /// (`BakaDuelSurface::hud_quads`, the retail emitter `FUN_801d5ed0`)
-    /// through the shared builder (`baka_strips::baka_hud_prims`) - the
-    /// browser play page makes the same two calls. Empty unless
-    /// [`Self::baka_hud_art_drawn`].
+    /// The Baka Fighter screen layer as screen-space PSX primitives against
+    /// the duel VRAM: the duel HUD (`FUN_801d2afc` - bars, pips, combo,
+    /// attack icons, the STAGE strip) and the cabinet's and round chrome's
+    /// widgets (`FUN_801d5ed0`), through the one shared builder
+    /// (`minigame_hud::baka_screen_prims`) the browser play page calls too.
+    /// Empty unless [`Self::baka_hud_art_drawn`].
     pub(in crate::window) fn baka_hud_prims(
         &self,
     ) -> Vec<legaia_render_kernels::screen_prim::ScreenPrim> {
@@ -97,7 +97,7 @@ impl PlayWindowApp {
         let Some(f) = self.session.host.world.minigames.baka_fighter.as_ref() else {
             return Vec::new();
         };
-        legaia_engine_screens::minigame_hud::baka_hud_prims(&self.baka_surface.hud_quads(f))
+        legaia_engine_screens::minigame_hud::baka_screen_prims(&self.baka_surface, f)
     }
 
     /// PROT 0976's HUD widget table in its loaded form, or `None` when the

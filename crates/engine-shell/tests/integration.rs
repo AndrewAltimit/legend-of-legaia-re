@@ -40,3 +40,5 @@ mod v0_1_playthrough;
 mod world_map_camera_remap;
 // --- lane K ---
 mod casino_seat_round_trip;
+// --- lane H ---
+mod baka_seat_duel_hud;

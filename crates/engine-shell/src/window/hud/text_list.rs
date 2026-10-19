@@ -545,26 +545,18 @@ impl PlayWindowApp {
         if self.session.host.world.mode == SceneMode::BakaFighter
             && let Some(f) = &self.session.host.world.minigames.baka_fighter
         {
-            // The duel's three number drawers, at their ported cell layouts:
-            // the one-glyph round digit, the 8 px right-aligned score field,
-            // and the 0x10 px "GET COIN" numeral strip for the prize. The
-            // placement is `baka_fighter_chrome::hud_digit_placements` and
-            // the glyph quads are `baka_strips` - both shared with the
-            // browser play page, which printed a summary line here instead.
-            // The HUD widget descriptors these cells patch (`DAT_801d7160`)
-            // index a sprite page no host uploads, so each cell draws as a
-            // font glyph at its ported x: the layout is retail's, the glyph
-            // source is not.
-            // The attract card and the player select draw no duel HUD
-            // (`baka_cabinet::draws_hud` is false across the front end).
-            let placed = if f.cabinet().front_end() {
-                Vec::new()
-            } else {
-                legaia_engine_minigames::baka_fighter_chrome::hud_digit_placements(
-                    f.round() as i32,
-                    f.tally().map(|t| (t.total(), t.gold_remaining())),
-                )
-            };
+            // The tally's number drawers as font glyphs at their ported cell
+            // layouts (the 8 px right-aligned score field and the 0x10 px
+            // "GET COIN" strip), plus the one-glyph round digit on a frame
+            // without the duel HUD's art: placement
+            // `minigame_hud::baka_digit_placements`, glyph quads
+            // `baka_strips` - both shared with the browser play page. With
+            // the art resident the duel HUD's own STAGE cells draw in the
+            // prim pass (`baka_hud_prims`).
+            let placed = legaia_engine_screens::minigame_hud::baka_digit_placements(
+                f,
+                self.baka_hud_art_drawn(),
+            );
             // The placements are 320x240 stage cells, like the rows above:
             // drawn raw they sat top-left at a fraction of the page's size.
             let mut cells = legaia_engine_ui::baka_strips::baka_digit_strip_draws_for(
