@@ -1,0 +1,3985 @@
+{
+ "generated_by": "scripts/ci/gen-crate-map.py",
+ "tracks": [
+  {
+   "id": "engine",
+   "title": "Engine",
+   "blurb": "The from-scratch Rust port: simulation, rendering, audio and the hosts that run it."
+  },
+  {
+   "id": "preservation",
+   "title": "Preservation",
+   "blurb": "Reading the disc: the archive, the formats and the tools that extract and document every asset."
+  },
+  {
+   "id": "patcher",
+   "title": "Patcher",
+   "blurb": "Writing the disc: randomizer, translation packs, content mods and MIPS code hooks."
+  },
+  {
+   "id": "tooling",
+   "title": "Research tooling",
+   "blurb": "Measuring the port against retail: save-state readers, parity oracles and curated reference labels."
+  }
+ ],
+ "bands": [
+  {
+   "id": "hosts",
+   "title": "Hosts and front ends",
+   "blurb": "The programs people run. Each one is a thin shell over the crates below.",
+   "rows": [
+    {
+     "label": "",
+     "crates": [
+      "engine-shell",
+      "web-viewer",
+      "asset-viewer",
+      "studio",
+      "patcher",
+      "extract",
+      "asset"
+     ]
+    }
+   ]
+  },
+  {
+   "id": "top",
+   "title": "Session, presentation, tools",
+   "blurb": "What both play hosts share above the simulation: the game session, the screens, the renderer and the audio stack; plus the tools that step a World from outside.",
+   "rows": [
+    {
+     "label": "",
+     "crates": [
+      "engine-session",
+      "engine-screens",
+      "engine-render",
+      "engine-audio",
+      "engine-export",
+      "parity",
+      "engine-capture"
+     ]
+    }
+   ]
+  },
+  {
+   "id": "drivers",
+   "title": "World drivers",
+   "blurb": "Layers that hold a running World from outside: scene entry and tick, the pause menu, the battle HUD's reads, the cheats.",
+   "rows": [
+    {
+     "label": "",
+     "crates": [
+      "engine-scene-host",
+      "engine-menu-runtime",
+      "engine-battle-hud",
+      "engine-cheats"
+     ]
+    }
+   ]
+  },
+  {
+   "id": "core",
+   "title": "Simulation",
+   "blurb": "engine-core owns World and its tick, and implements each VM's Host trait. Everything below it names no World.",
+   "rows": [
+    {
+     "label": "",
+     "crates": [
+      "engine-core"
+     ]
+    }
+   ]
+  },
+  {
+   "id": "kernels",
+   "title": "World-free kernels",
+   "blurb": "The ported VMs and rules engines, ranked by the committed layering table: a kernel depends only on kernels of a lower rank.",
+   "rows": [
+    {
+     "label": "rank 6",
+     "crates": [
+      "engine-minigame-scenes"
+     ]
+    },
+    {
+     "label": "rank 5",
+     "crates": [
+      "engine-menus"
+     ]
+    },
+    {
+     "label": "rank 4",
+     "crates": [
+      "engine-fishing",
+      "engine-minigames",
+      "engine-scene",
+      "engine-ui"
+     ]
+    },
+    {
+     "label": "rank 3",
+     "crates": [
+      "engine-battle",
+      "engine-cast",
+      "engine-effects",
+      "engine-field"
+     ]
+    },
+    {
+     "label": "rank 2",
+     "crates": [
+      "engine-battle-vm",
+      "render-kernels"
+     ]
+    },
+    {
+     "label": "rank 1",
+     "crates": [
+      "engine-camera",
+      "engine-mode",
+      "engine-motion-vm"
+     ]
+    },
+    {
+     "label": "rank 0",
+     "crates": [
+      "engine-dialog",
+      "engine-system",
+      "engine-vm"
+     ]
+    }
+   ]
+  },
+  {
+   "id": "libraries",
+   "title": "Patcher and capture libraries",
+   "blurb": "The disc-writing layers under legaia-patcher, and the emulator save-state readers under the parity oracles.",
+   "rows": [
+    {
+     "label": "",
+     "crates": [
+      "disc-patch",
+      "translate",
+      "code-hooks",
+      "arts-patch",
+      "texture-replace",
+      "party-swap",
+      "delilas-party",
+      "delilas-challenge",
+      "ram-image",
+      "mednafen",
+      "pcsx-redux"
+     ]
+    }
+   ]
+  },
+  {
+   "id": "families",
+   "title": "Format families",
+   "blurb": "The Legaia-specific layer over the parsers: containers, scenes, actors, minigames, the 2D interface, the static tables, code overlays.",
+   "rows": [
+    {
+     "label": "",
+     "crates": [
+      "container-formats",
+      "scene-formats",
+      "actor-formats",
+      "minigame-formats",
+      "ui-formats",
+      "game-tables",
+      "overlay-images",
+      "disc-audit"
+     ]
+    }
+   ]
+  },
+  {
+   "id": "leaves",
+   "title": "Disc and per-format parsers",
+   "blurb": "The foundation: sector reader, the PROT archive, LZS, and one small crate per file format.",
+   "rows": [
+    {
+     "label": "",
+     "crates": [
+      "iso",
+      "prot",
+      "lzs",
+      "bytes",
+      "tim",
+      "tmd",
+      "vab",
+      "seq",
+      "xa",
+      "mdec",
+      "mes",
+      "anm",
+      "mdt",
+      "art",
+      "font",
+      "save",
+      "gamedata",
+      "cheats"
+     ]
+    }
+   ]
+  }
+ ],
+ "crates": {
+  "actor-formats": {
+   "package": "legaia-actor-formats",
+   "deps": [
+    "art",
+    "bytes",
+    "container-formats",
+    "font",
+    "game-tables",
+    "lzs",
+    "prot",
+    "tim",
+    "tmd"
+   ],
+   "dev_deps": [
+    "iso"
+   ],
+   "bins": [],
+   "lib": true,
+   "modules": [
+    "battle_char_assembly",
+    "battle_char_pack",
+    "battle_char_palette",
+    "battle_data_pack",
+    "battle_texture_catalog",
+    "befect_cluster",
+    "character_gltf",
+    "character_pack",
+    "face_anim",
+    "field_char_textures",
+    "gltf_color",
+    "me_archive",
+    "mesh_raster",
+    "monster_archive",
+    "monster_gltf",
+    "monster_model",
+    "player_anm",
+    "player_file_annex",
+    "scene_gltf",
+    "summon_creatures",
+    "summon_readef"
+   ],
+   "band": "families",
+   "track": "preservation",
+   "scope": "Character and monster model formats, their animation and glTF export: the monster archive, player battle files + equipment assembly, <code>\"ME\"</code> archives, face animation, battle textures / palettes, the summon side-band, the field character pack and its animation bundle, the <code>.glb</code> builders.",
+   "dependents": [
+    "asset",
+    "code-hooks",
+    "delilas-party",
+    "disc-audit",
+    "disc-patch",
+    "engine-battle",
+    "engine-battle-vm",
+    "engine-core",
+    "engine-effects",
+    "engine-export",
+    "engine-field",
+    "engine-menus",
+    "engine-minigame-scenes",
+    "engine-minigames",
+    "engine-scene",
+    "engine-scene-host",
+    "engine-session",
+    "engine-shell",
+    "mednafen",
+    "party-swap",
+    "patcher",
+    "render-kernels",
+    "studio",
+    "texture-replace",
+    "translate",
+    "web-viewer"
+   ],
+   "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/actor-formats/README.md"
+  },
+  "anm": {
+   "package": "legaia-anm",
+   "deps": [],
+   "dev_deps": [],
+   "bins": [
+    "anm"
+   ],
+   "lib": true,
+   "modules": [
+    "player"
+   ],
+   "band": "leaves",
+   "track": "preservation",
+   "scope": "ANM animation container parser.",
+   "dependents": [
+    "container-formats",
+    "disc-audit",
+    "engine-battle",
+    "engine-core",
+    "engine-field",
+    "engine-scene",
+    "engine-vm"
+   ],
+   "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/anm/README.md"
+  },
+  "art": {
+   "package": "legaia-art",
+   "deps": [],
+   "dev_deps": [
+    "iso"
+   ],
+   "bins": [
+    "art"
+   ],
+   "lib": true,
+   "modules": [
+    "arts_table",
+    "arts_voice",
+    "clip_ladder",
+    "hyper_fanfare",
+    "miracle",
+    "parse",
+    "power",
+    "queue",
+    "recognize",
+    "record",
+    "super_art",
+    "tables",
+    "tokenize"
+   ],
+   "band": "leaves",
+   "track": "preservation",
+   "scope": "Tactical Arts data: ActionConstants, per-character art tables, Miracle / Super Art trigger matchers, the arts name and voice tables, and the byte-exact retail arts tokenizer.",
+   "dependents": [
+    "actor-formats",
+    "arts-patch",
+    "delilas-party",
+    "engine-battle",
+    "engine-battle-hud",
+    "engine-battle-vm",
+    "engine-capture",
+    "engine-core",
+    "engine-menu-runtime",
+    "engine-menus",
+    "engine-scene-host",
+    "engine-session",
+    "engine-shell",
+    "parity",
+    "patcher",
+    "studio",
+    "translate",
+    "web-viewer"
+   ],
+   "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/art/README.md"
+  },
+  "arts-patch": {
+   "package": "legaia-arts-patch",
+   "deps": [
+    "art",
+    "code-hooks",
+    "disc-patch",
+    "game-tables",
+    "iso",
+    "lzs"
+   ],
+   "dev_deps": [],
+   "bins": [],
+   "lib": true,
+   "modules": [
+    "arts",
+    "arts_ap_grant",
+    "arts_power",
+    "oscillating_ap",
+    "super_art_list",
+    "super_art_menu",
+    "super_art_power"
+   ],
+   "band": "libraries",
+   "track": "patcher",
+   "scope": "The patcher's Tactical Arts layer: combo randomizer, chain-art and Super Art power, the per-art AP override and oscillating-AP hooks, and the Super Art list on the battle move list and the Status page.",
+   "dependents": [
+    "delilas-party",
+    "patcher",
+    "web-viewer"
+   ],
+   "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/arts-patch/README.md"
+  },
+  "asset": {
+   "package": "legaia-asset",
+   "deps": [
+    "actor-formats",
+    "bytes",
+    "container-formats",
+    "disc-audit",
+    "game-tables",
+    "iso",
+    "lzs",
+    "minigame-formats",
+    "overlay-images",
+    "prot",
+    "scene-formats",
+    "tim",
+    "tmd"
+   ],
+   "dev_deps": [],
+   "bins": [
+    "asset"
+   ],
+   "lib": false,
+   "modules": [],
+   "band": "hosts",
+   "track": "preservation",
+   "scope": "The <code>asset</code> command-line tool over the format crates. Binary only: no library target, defines no format.",
+   "dependents": [],
+   "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/asset/README.md"
+  },
+  "asset-viewer": {
+   "package": "legaia-asset-viewer",
+   "deps": [
+    "container-formats",
+    "disc-audit",
+    "engine-audio",
+    "engine-battle-vm",
+    "engine-core",
+    "engine-dialog",
+    "engine-field",
+    "engine-mode",
+    "engine-render",
+    "engine-scene",
+    "engine-system",
+    "engine-ui",
+    "engine-vm",
+    "font",
+    "mes",
+    "prot",
+    "scene-formats",
+    "seq",
+    "tim",
+    "tmd",
+    "ui-formats",
+    "vab"
+   ],
+   "dev_deps": [],
+   "bins": [
+    "asset-viewer"
+   ],
+   "lib": false,
+   "modules": [],
+   "band": "hosts",
+   "track": "engine",
+   "scope": "Combined viewer: TIM, TMD, VAB, SEQ, stage geometry, PROT browser, scene-bundle presets, <code>save-icons</code> sheet, dialog box, field-VM scene runner with dialog rendering, battle-scene SM driver, and <code>world</code> (the <code>engine-core</code> composite ticking over a CDNAME scene).",
+   "dependents": [],
+   "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/asset-viewer/README.md"
+  },
+  "bytes": {
+   "package": "legaia-bytes",
+   "deps": [],
+   "dev_deps": [],
+   "bins": [],
+   "lib": true,
+   "modules": [],
+   "band": "leaves",
+   "track": "preservation",
+   "scope": "Checked little-endian byte readers. The leaf under the format stack, but <strong>not</strong> yet universal: the format-family, engine and patcher crates depend on it, while the older per-format crates hand-roll their reads.",
+   "dependents": [
+    "actor-formats",
+    "asset",
+    "container-formats",
+    "disc-audit",
+    "engine-battle",
+    "engine-mode",
+    "game-tables",
+    "overlay-images",
+    "parity",
+    "party-swap",
+    "patcher",
+    "scene-formats"
+   ],
+   "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/bytes/README.md"
+  },
+  "cheats": {
+   "package": "legaia-cheats",
+   "deps": [],
+   "dev_deps": [],
+   "bins": [
+    "cheat-tool"
+   ],
+   "lib": true,
+   "modules": [
+    "classify",
+    "code_lines",
+    "gs_text",
+    "mednafen_cht",
+    "taxonomy"
+   ],
+   "band": "leaves",
+   "track": "tooling",
+   "scope": "Parser + classifier for third-party GameShark / Pro-Action-Replay cheat databases. Classifies codes by the RAM region they target; the pinned offsets (character record, inventory, battle actor, story flags) ground-truth the binary records. See <code>docs/reference/cheats.md</code>.",
+   "dependents": [
+    "engine-cheats",
+    "engine-system",
+    "mednafen"
+   ],
+   "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/cheats/README.md"
+  },
+  "code-hooks": {
+   "package": "legaia-code-hooks",
+   "deps": [
+    "actor-formats",
+    "game-tables"
+   ],
+   "dev_deps": [],
+   "bins": [],
+   "lib": true,
+   "modules": [
+    "approach_fix",
+    "arenas",
+    "bonus_drop",
+    "enemy_hp_bar",
+    "flee_exp",
+    "jewel_fix",
+    "mips",
+    "mips_sim",
+    "seru_overlay",
+    "seru_trade",
+    "shiny_seru"
+   ],
+   "band": "libraries",
+   "track": "patcher",
+   "scope": "The patcher's MIPS toolkit: instruction encoders + R3000 test simulator, the shared injection-arena map (<code>arenas</code>), and the hook mods that are only a plan over those (shiny Seru, Seru-trade overlay, enemy HP bar, bonus drop, flee EXP, softlock fixes). Opens no disc.",
+   "dependents": [
+    "arts-patch",
+    "delilas-challenge",
+    "delilas-party",
+    "patcher",
+    "web-viewer"
+   ],
+   "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/code-hooks/README.md"
+  },
+  "container-formats": {
+   "package": "legaia-container-formats",
+   "deps": [
+    "anm",
+    "bytes",
+    "lzs",
+    "tim",
+    "tmd"
+   ],
+   "dev_deps": [
+    "prot",
+    "seq",
+    "vab"
+   ],
+   "bins": [],
+   "lib": true,
+   "modules": [
+    "anm_detect",
+    "bse_bank",
+    "data_field_truncated",
+    "efect_pack",
+    "effect_bundle",
+    "pack",
+    "scene_vab_stream",
+    "sound_pack",
+    "tim_scan",
+    "tmd_scan",
+    "tmd_size_prefix",
+    "vab_multi_bank"
+   ],
+   "band": "families",
+   "track": "preservation",
+   "scope": "The container layer: asset-type dispatcher, descriptor, DATA_FIELD streaming, the pack format, the container-level detectors, the TIM / TMD scanners, and the sound containers (sound pack, VAB-prefixed stream, multi-bank VAB archive, <code>bse.dat</code> SFX descriptor bank). The bottom of the format stack.",
+   "dependents": [
+    "actor-formats",
+    "asset",
+    "asset-viewer",
+    "disc-audit",
+    "engine-minigame-scenes",
+    "engine-scene",
+    "engine-scene-host",
+    "engine-session",
+    "engine-shell",
+    "extract",
+    "minigame-formats",
+    "party-swap",
+    "patcher",
+    "scene-formats",
+    "studio",
+    "translate",
+    "ui-formats",
+    "web-viewer"
+   ],
+   "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/container-formats/README.md"
+  },
+  "delilas-challenge": {
+   "package": "legaia-delilas-challenge",
+   "deps": [
+    "code-hooks",
+    "disc-patch",
+    "game-tables",
+    "lzs",
+    "mes",
+    "scene-formats"
+   ],
+   "dev_deps": [],
+   "bins": [],
+   "lib": true,
+   "modules": [
+    "custom_items",
+    "dome",
+    "enrollment"
+   ],
+   "band": "libraries",
+   "track": "patcher",
+   "scope": "The Delilas Challenge: the Muscle Dome course (<code>dome</code>), its <code>koin1</code> enrollment script (<code>enrollment</code>) and the three custom items. A separate feature from the party swap; sequenced onto a disc by the patcher's <code>apply</code> layer.",
+   "dependents": [
+    "patcher",
+    "web-viewer"
+   ],
+   "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/delilas-challenge/README.md"
+  },
+  "delilas-party": {
+   "package": "legaia-delilas-party",
+   "deps": [
+    "actor-formats",
+    "art",
+    "arts-patch",
+    "code-hooks",
+    "disc-patch",
+    "game-tables",
+    "lzs",
+    "party-swap",
+    "texture-replace",
+    "translate",
+    "vab",
+    "xa"
+   ],
+   "dev_deps": [],
+   "bins": [],
+   "lib": true,
+   "modules": [
+    "delilas_cast",
+    "delilas_effects",
+    "delilas_party",
+    "delilas_signature_attack",
+    "delilas_voice",
+    "delilas_voice_fx",
+    "delilas_xa_voice",
+    "enemy_anim_mirror",
+    "nivora_field"
+   ],
+   "band": "libraries",
+   "track": "patcher",
+   "scope": "The play-as-Delilas mod above the <code>party-swap</code> kernels: the orchestrator that writes the swapped battle and field models onto a disc, plus the arts reskin, movesets, signature attacks and their cast route, effects, voices and the duel field scene.",
+   "dependents": [
+    "patcher",
+    "web-viewer"
+   ],
+   "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/delilas-party/README.md"
+  },
+  "disc-audit": {
+   "package": "legaia-disc-audit",
+   "deps": [
+    "actor-formats",
+    "anm",
+    "bytes",
+    "container-formats",
+    "game-tables",
+    "lzs",
+    "mdec",
+    "mes",
+    "minigame-formats",
+    "overlay-images",
+    "prot",
+    "scene-formats",
+    "tim",
+    "ui-formats",
+    "vab"
+   ],
+   "dev_deps": [
+    "mdt",
+    "save",
+    "seq",
+    "tmd"
+   ],
+   "bins": [],
+   "lib": true,
+   "modules": [
+    "battle_jump_tables",
+    "byte_account",
+    "categorize",
+    "field_probe_tables",
+    "formation_census",
+    "inherited_tail",
+    "other3_roster",
+    "switch_tables",
+    "tim_catalog",
+    "tim_deep_catalog",
+    "tim_labels"
+   ],
+   "band": "families",
+   "track": "preservation",
+   "scope": "Tooling that measures the disc rather than parsing one format: <code>byte_account</code>, <code>categorize</code>, the TIM catalogs, overlay table censuses. Sits on every format crate.",
+   "dependents": [
+    "asset",
+    "asset-viewer",
+    "engine-scene",
+    "extract",
+    "studio",
+    "texture-replace",
+    "web-viewer"
+   ],
+   "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/disc-audit/README.md"
+  },
+  "disc-patch": {
+   "package": "legaia-disc-patch",
+   "deps": [
+    "actor-formats",
+    "iso",
+    "lzs",
+    "prot",
+    "scene-formats"
+   ],
+   "dev_deps": [],
+   "bins": [],
+   "lib": true,
+   "modules": [
+    "disc",
+    "field_script",
+    "monster",
+    "ppf",
+    "rng",
+    "space_ledger"
+   ],
+   "band": "libraries",
+   "track": "patcher",
+   "scope": "The patcher's foundation: <code>DiscPatcher</code> same-size PROT edits with EDC/ECC re-encode, PPF 3.0 writer, the SCUS / overlay free-space ledger, MAN and monster-slot re-pack, the seeded <code>rng</code>. Depends on no other patcher crate.",
+   "dependents": [
+    "arts-patch",
+    "delilas-challenge",
+    "delilas-party",
+    "patcher",
+    "texture-replace",
+    "translate",
+    "web-viewer"
+   ],
+   "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/disc-patch/README.md"
+  },
+  "engine-audio": {
+   "package": "legaia-engine-audio",
+   "deps": [
+    "prot",
+    "seq",
+    "vab",
+    "xa"
+   ],
+   "dev_deps": [
+    "game-tables"
+   ],
+   "bins": [
+    "note-trace"
+   ],
+   "lib": true,
+   "modules": [
+    "battle_voice",
+    "bgm_tail",
+    "duck",
+    "footstep",
+    "note_trace",
+    "seq_calc",
+    "seq_events",
+    "seq_slots",
+    "sequencer",
+    "sfx",
+    "sfx_ring",
+    "shout",
+    "sink",
+    "spu",
+    "spu_layout",
+    "test_sink",
+    "vab_bind",
+    "xa_clip_bank",
+    "xa_transport"
+   ],
+   "band": "top",
+   "track": "engine",
+   "scope": "cpal-backed audio mixer + from-scratch SPU + SsAPI-shape SEQ sequencer; BGM cross-fade + volume ramp; <code>audio-webaudio</code> feature adds <code>WebAudioOut</code> (<code>ScriptProcessorNode</code>-based) for WASM targets.",
+   "dependents": [
+    "asset-viewer",
+    "engine-session",
+    "engine-shell",
+    "parity",
+    "studio",
+    "web-viewer"
+   ],
+   "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/engine-audio/README.md"
+  },
+  "engine-battle": {
+   "package": "legaia-engine-battle",
+   "deps": [
+    "actor-formats",
+    "anm",
+    "art",
+    "bytes",
+    "engine-battle-vm",
+    "engine-system",
+    "game-tables",
+    "render-kernels",
+    "save",
+    "scene-formats",
+    "tim",
+    "tmd",
+    "ui-formats"
+   ],
+   "dev_deps": [
+    "lzs",
+    "overlay-images"
+   ],
+   "bins": [],
+   "lib": true,
+   "modules": [
+    "accessory_passives",
+    "anim_cue",
+    "ap_gauge",
+    "art_strike",
+    "arts_command_input",
+    "battle_afterimage",
+    "battle_anim",
+    "battle_arts",
+    "battle_attach_swap",
+    "battle_body_blend",
+    "battle_effect_clut",
+    "battle_events",
+    "battle_hud_state",
+    "battle_magic",
+    "battle_return_flags",
+    "battle_seats",
+    "battle_sideband",
+    "battle_stage_module",
+    "battle_stats",
+    "battle_status_clut",
+    "battle_steal",
+    "battle_tutorial",
+    "encounter",
+    "encounter_formation",
+    "encounter_man",
+    "encounter_registry",
+    "encounter_state",
+    "levelup",
+    "magic_xp",
+    "monster_ai",
+    "monster_catalog",
+    "move_power",
+    "region_encounter",
+    "retail_magic",
+    "seru_learning",
+    "seru_state",
+    "seru_stats",
+    "seru_trade",
+    "sfx_cue",
+    "spells",
+    "tactical_arts",
+    "tactical_arts_editor",
+    "target_picker",
+    "victory"
+   ],
+   "band": "kernels",
+   "track": "engine",
+   "rank": 3,
+   "role": "World-free battle kernels",
+   "scope": "The battle kernels that never touch <code>World</code>: monster AI, spoils, AP gauge, stats, catalogs, encounters, level-up, Seru learning, arts tracking, the sparring-tutorial prompt machine, per-frame animation passes.",
+   "dependents": [
+    "engine-battle-hud",
+    "engine-capture",
+    "engine-cheats",
+    "engine-core",
+    "engine-menu-runtime",
+    "engine-menus",
+    "engine-minigame-scenes",
+    "engine-scene-host",
+    "engine-screens",
+    "engine-session",
+    "engine-shell",
+    "parity",
+    "web-viewer"
+   ],
+   "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/engine-battle/README.md"
+  },
+  "engine-battle-hud": {
+   "package": "legaia-engine-battle-hud",
+   "deps": [
+    "art",
+    "engine-battle",
+    "engine-battle-vm",
+    "engine-cast",
+    "engine-core",
+    "engine-menus",
+    "engine-mode",
+    "font",
+    "ui-formats"
+   ],
+   "dev_deps": [
+    "actor-formats",
+    "engine-system",
+    "save"
+   ],
+   "bins": [],
+   "lib": true,
+   "modules": [],
+   "band": "drivers",
+   "track": "engine",
+   "scope": "The battle HUD's reads of a running <code>World</code>: the phase word, command chips, commit log, plaques and glides, banners, badges, and the <code>BattleHud</code> row sync both hosts and <code>engine-screens</code> draw from. Above <code>engine-core</code>.",
+   "dependents": [
+    "engine-screens",
+    "engine-shell",
+    "parity",
+    "web-viewer"
+   ],
+   "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/engine-battle-hud/README.md"
+  },
+  "engine-battle-vm": {
+   "package": "legaia-engine-battle-vm",
+   "deps": [
+    "actor-formats",
+    "art",
+    "engine-camera",
+    "engine-system",
+    "game-tables",
+    "overlay-images",
+    "scene-formats"
+   ],
+   "dev_deps": [
+    "prot"
+   ],
+   "bins": [],
+   "lib": true,
+   "modules": [
+    "battle_action",
+    "battle_actor_draw",
+    "battle_actor_tick",
+    "battle_actor_tint",
+    "battle_anim_rate",
+    "battle_approach",
+    "battle_arts_auto_combo",
+    "battle_attack_camera",
+    "battle_cam_script",
+    "battle_cast_census",
+    "battle_cast_cue",
+    "battle_cast_dispatch",
+    "battle_commit_log",
+    "battle_cue_group",
+    "battle_cursor_pose",
+    "battle_damage_wrappers",
+    "battle_formulas",
+    "battle_gauge",
+    "battle_gauge_rearm",
+    "battle_ground_grid",
+    "battle_hp_bar",
+    "battle_impact_fx",
+    "battle_party_panel",
+    "battle_pose_blend",
+    "battle_record_writer",
+    "battle_separation",
+    "battle_slot",
+    "battle_stream_slot",
+    "battle_target_group",
+    "battle_value_readout",
+    "bgr555_grey",
+    "mes_escape_append",
+    "move_no_effect_guard",
+    "nested_record_copy",
+    "panel_backread_loader",
+    "rgb_wash_scale",
+    "seru_side_effect",
+    "status_effects"
+   ],
+   "band": "kernels",
+   "track": "engine",
+   "rank": 2,
+   "role": "battle action SM, formulas, battle camera script, battle-overlay leaves",
+   "scope": "The battle-side VM kernels: battle action SM (<code>FUN_801E295C</code>), <code>battle_formulas</code>, status effects, the battle camera script, battle-overlay leaves.",
+   "dependents": [
+    "asset-viewer",
+    "engine-battle",
+    "engine-battle-hud",
+    "engine-capture",
+    "engine-cast",
+    "engine-cheats",
+    "engine-core",
+    "engine-effects",
+    "engine-menu-runtime",
+    "engine-menus",
+    "engine-minigame-scenes",
+    "engine-minigames",
+    "engine-scene-host",
+    "engine-screens",
+    "engine-session",
+    "engine-shell",
+    "engine-ui",
+    "parity",
+    "web-viewer"
+   ],
+   "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/engine-battle-vm/README.md"
+  },
+  "engine-camera": {
+   "package": "legaia-engine-camera",
+   "deps": [
+    "engine-system"
+   ],
+   "dev_deps": [],
+   "bins": [],
+   "lib": true,
+   "modules": [
+    "battle_camera",
+    "camera_mover",
+    "camera_rel_actor",
+    "camera_rel_glide",
+    "projection",
+    "psx_camera",
+    "retail_cam"
+   ],
+   "band": "kernels",
+   "track": "engine",
+   "rank": 1,
+   "role": "the shared GTE camera: build, projection, mover, shake, camera-relative glide",
+   "scope": "The shared retail GTE camera below the battle VM, the field and the draw kernels: <code>psx_camera</code> build + projection, <code>BattleCamPose</code> and the GTE constants, the op-<code>0x45</code> mover, tween + shake, the camera-relative glide.",
+   "dependents": [
+    "engine-battle-vm",
+    "engine-capture",
+    "engine-cast",
+    "engine-core",
+    "engine-field",
+    "engine-minigame-scenes",
+    "engine-minigames",
+    "engine-render",
+    "engine-shell",
+    "parity",
+    "render-kernels",
+    "web-viewer"
+   ],
+   "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/engine-camera/README.md"
+  },
+  "engine-capture": {
+   "package": "legaia-engine-capture",
+   "deps": [
+    "art",
+    "engine-battle",
+    "engine-battle-vm",
+    "engine-camera",
+    "engine-cast",
+    "engine-core",
+    "engine-dialog",
+    "engine-effects",
+    "engine-field",
+    "engine-menus",
+    "engine-mode",
+    "engine-scene-host",
+    "engine-system",
+    "save",
+    "scene-formats"
+   ],
+   "dev_deps": [],
+   "bins": [],
+   "lib": true,
+   "modules": [
+    "bar_seeds",
+    "battle_drive",
+    "camera_align",
+    "clip_cursors",
+    "field_seeds",
+    "formation_cell",
+    "hud_glide",
+    "phase_gate",
+    "script_gate"
+   ],
+   "band": "top",
+   "track": "tooling",
+   "scope": "Standing the engine where a retail capture stood: the seed records, phase gates and pad drives, with their environment form in both directions. <code>parity</code> derives them from retail RAM, the <code>play-window</code> capture child reads them back; no RAM or save-state reader.",
+   "dependents": [
+    "engine-shell",
+    "parity"
+   ],
+   "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/engine-capture/README.md"
+  },
+  "engine-cast": {
+   "package": "legaia-engine-cast",
+   "deps": [
+    "engine-battle-vm",
+    "engine-camera",
+    "engine-system",
+    "game-tables",
+    "overlay-images"
+   ],
+   "dev_deps": [
+    "actor-formats",
+    "prot"
+   ],
+   "bins": [],
+   "lib": true,
+   "modules": [
+    "cast_arm_ticks",
+    "cast_fatal_decision",
+    "cast_module_camera",
+    "cast_module_ticks",
+    "seru_magic_ticks"
+   ],
+   "band": "kernels",
+   "track": "engine",
+   "rank": 3,
+   "role": "slot-B cast / summon module ticks, their camera and countdown, cast-arm kernels",
+   "scope": "The slot-B cast / summon modules (PROT 0903..0966): tick bodies, each module's own camera and countdown, the cast-arm kernels. <code>World</code>-free, one rank above <code>engine-battle-vm</code>, which never names it.",
+   "dependents": [
+    "engine-battle-hud",
+    "engine-capture",
+    "engine-core",
+    "engine-ui",
+    "parity"
+   ],
+   "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/engine-cast/README.md"
+  },
+  "engine-cheats": {
+   "package": "legaia-engine-cheats",
+   "deps": [
+    "cheats",
+    "engine-battle",
+    "engine-battle-vm",
+    "engine-core",
+    "engine-menus",
+    "engine-system",
+    "game-tables",
+    "save"
+   ],
+   "dev_deps": [
+    "art",
+    "engine-fishing"
+   ],
+   "bins": [],
+   "lib": true,
+   "modules": [
+    "cheat_applier",
+    "cheats"
+   ],
+   "band": "drivers",
+   "track": "engine",
+   "scope": "Cheats applied to a running <code>World</code>: the one player cheat list both play hosts expose (<code>PlayerCheat</code> through the <code>WorldCheats</code> extension trait) and the GameShark code applier behind <code>--cheat-file</code>. Above <code>engine-core</code>.",
+   "dependents": [
+    "engine-shell",
+    "web-viewer"
+   ],
+   "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/engine-cheats/README.md"
+  },
+  "engine-core": {
+   "package": "legaia-engine-core",
+   "deps": [
+    "actor-formats",
+    "anm",
+    "art",
+    "engine-battle",
+    "engine-battle-vm",
+    "engine-camera",
+    "engine-cast",
+    "engine-dialog",
+    "engine-effects",
+    "engine-field",
+    "engine-fishing",
+    "engine-menus",
+    "engine-minigame-scenes",
+    "engine-minigames",
+    "engine-mode",
+    "engine-motion-vm",
+    "engine-scene",
+    "engine-system",
+    "engine-vm",
+    "game-tables",
+    "mes",
+    "minigame-formats",
+    "overlay-images",
+    "prot",
+    "render-kernels",
+    "save",
+    "scene-formats",
+    "tim",
+    "tmd",
+    "ui-formats"
+   ],
+   "dev_deps": [
+    "container-formats",
+    "lzs"
+   ],
+   "bins": [],
+   "lib": true,
+   "modules": [
+    "actor_alloc_host",
+    "battle_cam_inputs",
+    "battle_party_form",
+    "battle_round",
+    "battle_sideband_textures",
+    "camera_view",
+    "dance_venue",
+    "field_view_window",
+    "fishing_exchange_input",
+    "frame_step",
+    "live_loop",
+    "move_buffer_host",
+    "new_game",
+    "options",
+    "scene_staging",
+    "scus_leaf_kernels",
+    "world",
+    "world_map_markers",
+    "world_views",
+    "casino_coin_bank",
+    "field_submode_code_lock",
+    "field_submode_flag_window",
+    "field_submode_screen",
+    "incense_notice"
+   ],
+   "band": "core",
+   "track": "engine",
+   "scope": "The renderer-free simulation half: <code>World</code> and its tick, the frame-step rules, battle loop, New Game seeding, LGSF saves, and the <code>World</code> entry points of the sessions that live in the kernel crates below it.",
+   "dependents": [
+    "asset-viewer",
+    "engine-battle-hud",
+    "engine-capture",
+    "engine-cheats",
+    "engine-export",
+    "engine-menu-runtime",
+    "engine-scene-host",
+    "engine-screens",
+    "engine-session",
+    "engine-shell",
+    "parity",
+    "web-viewer"
+   ],
+   "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/engine-core/README.md"
+  },
+  "engine-dialog": {
+   "package": "legaia-engine-dialog",
+   "deps": [
+    "font",
+    "mes"
+   ],
+   "dev_deps": [],
+   "bins": [],
+   "lib": true,
+   "modules": [
+    "cursor_sprite",
+    "dialog",
+    "dialog_pacing",
+    "dialog_picker_slide",
+    "dialog_window",
+    "text_balloon"
+   ],
+   "band": "kernels",
+   "track": "engine",
+   "rank": 0,
+   "role": "dialog pager and text balloon",
+   "scope": "The <code>World</code>-free dialog layer below <code>engine-field</code> and <code>engine-menus</code>: dialog pager (panel, row window, typewriter pacing, picker slide) and text balloon.",
+   "dependents": [
+    "asset-viewer",
+    "engine-capture",
+    "engine-core",
+    "engine-field",
+    "engine-menus",
+    "engine-scene",
+    "engine-scene-host",
+    "engine-screens",
+    "engine-shell",
+    "parity",
+    "web-viewer"
+   ],
+   "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/engine-dialog/README.md"
+  },
+  "engine-effects": {
+   "package": "legaia-engine-effects",
+   "deps": [
+    "actor-formats",
+    "engine-battle-vm",
+    "engine-system",
+    "engine-vm",
+    "overlay-images",
+    "render-kernels",
+    "tmd"
+   ],
+   "dev_deps": [
+    "prot",
+    "tim"
+   ],
+   "bins": [],
+   "lib": true,
+   "modules": [
+    "action_effect_script",
+    "effect_default_arm",
+    "effect_ribbon",
+    "effect_sprite_arm",
+    "object_effect",
+    "part_motion",
+    "part_shatter",
+    "screen_fx",
+    "summon"
+   ],
+   "band": "kernels",
+   "track": "engine",
+   "rank": 3,
+   "role": "World-free effect kernels",
+   "scope": "The <code>World</code>-free effect kernels: action effect scripts, ribbon and render-mode-4 emitters, summon scene-graph driver, PROT-0900 screen effects, object effects.",
+   "dependents": [
+    "engine-capture",
+    "engine-core",
+    "engine-scene-host",
+    "engine-screens",
+    "engine-session",
+    "engine-shell",
+    "parity",
+    "web-viewer"
+   ],
+   "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/engine-effects/README.md"
+  },
+  "engine-export": {
+   "package": "legaia-engine-export",
+   "deps": [
+    "actor-formats",
+    "engine-core",
+    "engine-field",
+    "engine-scene",
+    "engine-vm",
+    "game-tables",
+    "scene-formats",
+    "tim",
+    "tmd"
+   ],
+   "dev_deps": [],
+   "bins": [],
+   "lib": true,
+   "modules": [
+    "glb_export"
+   ],
+   "band": "top",
+   "track": "engine",
+   "scope": "The <code>.glb</code> world exporter behind <code>legaia-engine export-glb</code> (<code>glb_export</code>): world / NPC / animated-prop / item / party <code>.glb</code>s, traversal data and manifests. Above <code>engine-core</code> - it steps a scratch <code>World</code>; no play host links it.",
+   "dependents": [
+    "engine-shell"
+   ],
+   "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/engine-export/README.md"
+  },
+  "engine-field": {
+   "package": "legaia-engine-field",
+   "deps": [
+    "actor-formats",
+    "anm",
+    "engine-camera",
+    "engine-dialog",
+    "engine-mode",
+    "engine-motion-vm",
+    "engine-system",
+    "engine-vm",
+    "mes",
+    "minigame-formats",
+    "overlay-images",
+    "render-kernels",
+    "save",
+    "scene-formats",
+    "tmd"
+   ],
+   "dev_deps": [
+    "lzs"
+   ],
+   "bins": [],
+   "lib": true,
+   "modules": [
+    "actor_colour_tween",
+    "actor_handler",
+    "actor_look",
+    "ambient_emitter",
+    "camera",
+    "camera_ease",
+    "camera_frame",
+    "camera_rig",
+    "camera_zone",
+    "clut_cell_fx",
+    "clut_fade_actor",
+    "clut_fx",
+    "code_lock_actor",
+    "cutscene_narration",
+    "cutscene_timeline",
+    "dance_marker",
+    "dev_equip_commit",
+    "dev_menu_adjust",
+    "dev_menu_flags",
+    "dev_menu_leaves",
+    "dialog_state",
+    "escape_timer",
+    "field_actor_clone",
+    "field_actor_program",
+    "field_actor_reflect",
+    "field_actor_timers",
+    "field_anim",
+    "field_audio_release",
+    "field_carrier_state",
+    "field_channels",
+    "field_events",
+    "field_lit_mesh",
+    "field_overlay",
+    "field_passive_hud",
+    "field_player_clip",
+    "field_regions",
+    "field_save_screen_actor",
+    "field_script_actor_state",
+    "field_state_pick",
+    "field_submode",
+    "field_submode_code_lock",
+    "field_submode_flag_window",
+    "field_subsystem_enter",
+    "field_warp_tile",
+    "float_tween",
+    "fog_particles",
+    "incense_window",
+    "inline_dialogue",
+    "leader_swap",
+    "man_field_scripts",
+    "map_display",
+    "minigame_floor",
+    "morph_weight_apply",
+    "motion_pause",
+    "move_vm_globals",
+    "overworld_draw_order",
+    "overworld_ground_cue",
+    "packet_color",
+    "pooled_actor_seed",
+    "primitive_colour_grade",
+    "register_ramp",
+    "save_screen_spawn",
+    "scene_transition_actor",
+    "scene_transition_sweep",
+    "submode_hub_actors",
+    "travel_art_actor",
+    "vdf_pulse",
+    "walk_regen",
+    "world_map",
+    "world_map_dim",
+    "world_map_entity",
+    "world_map_entity_config",
+    "world_map_horizon",
+    "world_map_markers",
+    "world_map_panel",
+    "world_map_panel_actors",
+    "world_map_panel_host"
+   ],
+   "band": "kernels",
+   "track": "engine",
+   "rank": 3,
+   "role": "World-free field kernels",
+   "scope": "The <code>World</code>-free field kernels: actor programs and per-actor field-overlay bodies, region queries and the shared minigame floor (<code>minigame_floor</code>, <code>dance_marker</code>), follow-camera parameters and eases, player clip playback, op-<code>0x49</code> submode and its hub actors, panel windows and dev-menu leaves, world-map controller + entity SM (<code>FUN_801DA51C</code>), inline-dialogue / cutscene-timeline context state, CLUT effects, the fog particle pool, MAN field-script decoders, field camera (<code>CameraWorld</code>).",
+   "dependents": [
+    "asset-viewer",
+    "engine-capture",
+    "engine-core",
+    "engine-export",
+    "engine-fishing",
+    "engine-menu-runtime",
+    "engine-menus",
+    "engine-minigame-scenes",
+    "engine-minigames",
+    "engine-scene",
+    "engine-scene-host",
+    "engine-screens",
+    "engine-session",
+    "engine-shell",
+    "parity",
+    "web-viewer"
+   ],
+   "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/engine-field/README.md"
+  },
+  "engine-fishing": {
+   "package": "legaia-engine-fishing",
+   "deps": [
+    "engine-field",
+    "engine-system",
+    "game-tables",
+    "minigame-formats",
+    "render-kernels",
+    "scene-formats",
+    "tmd"
+   ],
+   "dev_deps": [],
+   "bins": [],
+   "lib": true,
+   "modules": [
+    "fishing",
+    "fishing_actors",
+    "fishing_chrome",
+    "fishing_hub"
+   ],
+   "band": "kernels",
+   "track": "engine",
+   "rank": 4,
+   "role": "fishing rules engine",
+   "scope": "The fishing rules engine, a sibling of <code>engine-minigames</code>: <code>PondSession</code>, the rod / lure / line actors, venue chrome and hub screen. The minigame floor it stands on is <code>engine-field</code>'s.",
+   "dependents": [
+    "engine-core",
+    "engine-minigame-scenes",
+    "engine-scene-host",
+    "engine-screens",
+    "engine-shell",
+    "web-viewer"
+   ],
+   "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/engine-fishing/README.md"
+  },
+  "engine-menu-runtime": {
+   "package": "legaia-engine-menu-runtime",
+   "deps": [
+    "art",
+    "engine-battle",
+    "engine-battle-vm",
+    "engine-core",
+    "engine-field",
+    "engine-menus",
+    "engine-minigames",
+    "engine-scene",
+    "engine-scene-host",
+    "engine-system",
+    "game-tables",
+    "save",
+    "ui-formats"
+   ],
+   "dev_deps": [
+    "engine-mode",
+    "engine-vm",
+    "prot"
+   ],
+   "bins": [],
+   "lib": true,
+   "modules": [
+    "card_write",
+    "dev_menu_host",
+    "field_menu_dispatch",
+    "menu_runtime",
+    "menu_validator"
+   ],
+   "band": "drivers",
+   "track": "engine",
+   "scope": "The pause menu over a running <code>World</code>: <code>MenuRuntime</code> (save slots, shop and inn flow, notices), the field-menu sub-session dispatcher, the out-of-battle action validator host, the memory-card Save writer, the dev menu's <code>World</code> seam. Above <code>engine-core</code>.",
+   "dependents": [
+    "engine-screens",
+    "engine-session",
+    "engine-shell",
+    "parity",
+    "web-viewer"
+   ],
+   "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/engine-menu-runtime/README.md"
+  },
+  "engine-menus": {
+   "package": "legaia-engine-menus",
+   "deps": [
+    "actor-formats",
+    "art",
+    "engine-battle",
+    "engine-battle-vm",
+    "engine-dialog",
+    "engine-field",
+    "engine-minigames",
+    "engine-system",
+    "engine-vm",
+    "font",
+    "game-tables",
+    "minigame-formats",
+    "save",
+    "scene-formats",
+    "tim",
+    "ui-formats"
+   ],
+   "dev_deps": [
+    "prot"
+   ],
+   "bins": [],
+   "lib": true,
+   "modules": [
+    "battle_flow",
+    "battle_input",
+    "battle_open",
+    "card_bu_io",
+    "card_flow",
+    "debug_char_editor",
+    "dev_menu_host",
+    "equip_session",
+    "equipment",
+    "field_menu",
+    "game_over",
+    "gameover_banner",
+    "inn",
+    "inventory_use",
+    "item_bag",
+    "items",
+    "key_rebind",
+    "list_order",
+    "menu",
+    "menu_arrange",
+    "menu_cues",
+    "menu_glyph_atlas",
+    "menu_item_category",
+    "menu_list_rows",
+    "menu_open_sequence",
+    "menu_widget",
+    "muscle_dome_session",
+    "name_entry",
+    "option_values",
+    "options",
+    "party_state",
+    "pause_screens",
+    "publisher_logos",
+    "save_menu_atlas",
+    "save_screen",
+    "save_select",
+    "save_subscreen",
+    "shop",
+    "shop_catalog",
+    "shop_cues",
+    "shop_state",
+    "spell_menu",
+    "spell_party_broadcast",
+    "status_screen",
+    "timed_fight",
+    "title",
+    "title_overlay",
+    "title_prim",
+    "title_screen_atlas"
+   ],
+   "band": "kernels",
+   "track": "engine",
+   "rank": 5,
+   "role": "menu, title and memory-card front end",
+   "scope": "The <code>World</code>-free menu front end: item / equipment catalogs, inventory-use and spell-menu sessions, list-row model, window-widget host, title + boot screens, memory-card flow, inn, item bag + equip session, save / status / pause / shop screens, the options state + screen session, the battle command-flow byte, Muscle Dome loadout. The dialog layer is <code>engine-dialog</code>.",
+   "dependents": [
+    "engine-battle-hud",
+    "engine-capture",
+    "engine-cheats",
+    "engine-core",
+    "engine-menu-runtime",
+    "engine-minigame-scenes",
+    "engine-scene-host",
+    "engine-screens",
+    "engine-session",
+    "engine-shell",
+    "parity",
+    "web-viewer"
+   ],
+   "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/engine-menus/README.md"
+  },
+  "engine-minigame-scenes": {
+   "package": "legaia-engine-minigame-scenes",
+   "deps": [
+    "actor-formats",
+    "container-formats",
+    "engine-battle",
+    "engine-battle-vm",
+    "engine-camera",
+    "engine-field",
+    "engine-fishing",
+    "engine-menus",
+    "engine-minigames",
+    "engine-mode",
+    "engine-scene",
+    "engine-system",
+    "engine-vm",
+    "game-tables",
+    "minigame-formats",
+    "overlay-images",
+    "prot",
+    "render-kernels",
+    "scene-formats",
+    "tim",
+    "tmd"
+   ],
+   "dev_deps": [],
+   "bins": [],
+   "lib": true,
+   "modules": [
+    "baka_duel_scene",
+    "dance_cast_scene",
+    "dance_hud_art",
+    "dance_venue",
+    "fishing_rod",
+    "fishing_scene",
+    "fishing_venue",
+    "minigame_state",
+    "minigame_status",
+    "muscle_dome_scene"
+   ],
+   "band": "kernels",
+   "track": "engine",
+   "rank": 6,
+   "role": "the minigames' 3D scene surfaces, venues and the World's minigame seat",
+   "scope": "The minigames' 3D scene surfaces and venues (Baka Fighter duel, Muscle Dome arena, dance hall, fishing venue) and <code>MinigameState</code>, the <code>World</code>'s minigame seat.",
+   "dependents": [
+    "engine-core",
+    "engine-scene-host",
+    "engine-screens",
+    "engine-session",
+    "engine-shell",
+    "web-viewer"
+   ],
+   "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/engine-minigame-scenes/README.md"
+  },
+  "engine-minigames": {
+   "package": "legaia-engine-minigames",
+   "deps": [
+    "actor-formats",
+    "engine-battle-vm",
+    "engine-camera",
+    "engine-field",
+    "engine-system",
+    "engine-vm",
+    "game-tables",
+    "minigame-formats",
+    "render-kernels",
+    "save",
+    "scene-formats"
+   ],
+   "dev_deps": [],
+   "bins": [],
+   "lib": true,
+   "modules": [
+    "baka_cabinet",
+    "baka_duel",
+    "baka_fighter",
+    "baka_fighter_chrome",
+    "baka_impact_fx",
+    "dance",
+    "dance_tutorial",
+    "minigame_actor",
+    "minigame_fx",
+    "muscle_dome",
+    "muscle_ringside",
+    "other_game_overlay",
+    "prize_exchange",
+    "slot_machine",
+    "tile_board",
+    "tile_board_state"
+   ],
+   "band": "kernels",
+   "track": "engine",
+   "rank": 4,
+   "role": "minigame rules engines",
+   "scope": "The minigame rules engines (slot machine, Baka Fighter, dance, prize exchange, Muscle Dome ladder and contest hub), with no world, scene or renderer. Fishing is <code>engine-fishing</code>.",
+   "dependents": [
+    "engine-core",
+    "engine-menu-runtime",
+    "engine-menus",
+    "engine-minigame-scenes",
+    "engine-scene-host",
+    "engine-screens",
+    "engine-shell",
+    "web-viewer"
+   ],
+   "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/engine-minigames/README.md"
+  },
+  "engine-mode": {
+   "package": "legaia-engine-mode",
+   "deps": [
+    "bytes",
+    "engine-system",
+    "game-tables"
+   ],
+   "dev_deps": [
+    "minigame-formats"
+   ],
+   "bins": [],
+   "lib": true,
+   "modules": [
+    "card_request",
+    "minigame_entry",
+    "mode",
+    "sfx_residency"
+   ],
+   "band": "kernels",
+   "track": "engine",
+   "rank": 1,
+   "role": "game-mode seat and the 28-mode driver",
+   "scope": "The game-mode seat below <code>engine-field</code>: <code>GameMode</code> / <code>SceneMode</code>, the 28-mode driver and its stages (<code>ModeSeat</code>, <code>ModeWorld</code>), minigame entry, the CARD request leaf.",
+   "dependents": [
+    "asset-viewer",
+    "engine-battle-hud",
+    "engine-capture",
+    "engine-core",
+    "engine-field",
+    "engine-minigame-scenes",
+    "engine-scene-host",
+    "engine-screens",
+    "engine-session",
+    "engine-shell",
+    "parity",
+    "web-viewer"
+   ],
+   "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/engine-mode/README.md"
+  },
+  "engine-motion-vm": {
+   "package": "legaia-engine-motion-vm",
+   "deps": [
+    "engine-system",
+    "scene-formats"
+   ],
+   "dev_deps": [
+    "container-formats",
+    "lzs"
+   ],
+   "bins": [],
+   "lib": true,
+   "modules": [
+    "ambient_motion",
+    "ambient_motion_ops",
+    "motion_vm"
+   ],
+   "band": "kernels",
+   "track": "engine",
+   "rank": 1,
+   "role": "the two per-actor motion VMs",
+   "scope": "The two per-actor motion VMs: <code>motion_vm</code> (<code>FUN_8003774C</code>, pursue / patrol / face-target) and <code>ambient_motion</code> (<code>FUN_80038158</code>, scripted motion over MAN tail-section 1).",
+   "dependents": [
+    "engine-core",
+    "engine-field"
+   ],
+   "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/engine-motion-vm/README.md"
+  },
+  "engine-render": {
+   "package": "legaia-engine-render",
+   "deps": [
+    "engine-camera",
+    "engine-ui",
+    "font",
+    "render-kernels",
+    "tim"
+   ],
+   "dev_deps": [
+    "engine-vm",
+    "overlay-images",
+    "prot"
+   ],
+   "bins": [],
+   "lib": true,
+   "modules": [
+    "actor_bind",
+    "actor_cull",
+    "battle_intro",
+    "battle_on_screen",
+    "gte_trace",
+    "mode_transition",
+    "window",
+    "dyn_light",
+    "occlusion_fade",
+    "profile",
+    "psx_blend",
+    "psx_dither",
+    "psx_light",
+    "scene_lights",
+    "screen_overlay"
+   ],
+   "band": "top",
+   "track": "engine",
+   "scope": "winit 0.30 + wgpu 26; software PSX VRAM (1024×512 R16Uint, per-prim CBA/TSB + CLUT decode in fragment shader); text overlay via the <code>legaia-font</code> atlas.",
+   "dependents": [
+    "asset-viewer",
+    "engine-shell"
+   ],
+   "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/engine-render/README.md"
+  },
+  "engine-scene": {
+   "package": "legaia-engine-scene",
+   "deps": [
+    "actor-formats",
+    "anm",
+    "container-formats",
+    "disc-audit",
+    "engine-dialog",
+    "engine-field",
+    "engine-system",
+    "engine-vm",
+    "game-tables",
+    "iso",
+    "lzs",
+    "mdt",
+    "mes",
+    "overlay-images",
+    "prot",
+    "render-kernels",
+    "scene-formats",
+    "seq",
+    "tim",
+    "tmd",
+    "ui-formats",
+    "vab"
+   ],
+   "dev_deps": [
+    "engine-battle",
+    "engine-menus",
+    "engine-mode",
+    "minigame-formats"
+   ],
+   "bins": [],
+   "lib": true,
+   "modules": [
+    "battle_overlay_readers",
+    "cd_dma",
+    "clut_walk_anim",
+    "coplanar_draws",
+    "cutscene_caption",
+    "field_env",
+    "field_ground",
+    "field_occlusion",
+    "field_view_window",
+    "fog_ground",
+    "man_census",
+    "model_bank",
+    "npc_catalog",
+    "overlay_loader",
+    "scene",
+    "scene_assembly",
+    "scene_assets",
+    "scene_bundle",
+    "scene_resources",
+    "stream_file",
+    "vfs"
+   ],
+   "band": "kernels",
+   "track": "engine",
+   "rank": 4,
+   "role": "scene resolution and loading, environment draws, virtual filesystem",
+   "scope": "The disc-facing half below <code>engine-core</code>: <code>Scene</code> / <code>ProtIndex</code> scene resolution, <code>SceneResources</code> / <code>SceneAssets</code> loading, the model bank, the environment draw resolver and assembly kernel, the visible-tile crop, ground-mesh and occlusion-gate kernels, the <code>Vfs</code> backends, the CD streaming host traits, the NPC catalog. Names no <code>World</code>.",
+   "dependents": [
+    "asset-viewer",
+    "engine-core",
+    "engine-export",
+    "engine-menu-runtime",
+    "engine-minigame-scenes",
+    "engine-scene-host",
+    "engine-screens",
+    "engine-session",
+    "engine-shell",
+    "parity",
+    "studio",
+    "web-viewer"
+   ],
+   "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/engine-scene/README.md"
+  },
+  "engine-scene-host": {
+   "package": "legaia-engine-scene-host",
+   "deps": [
+    "actor-formats",
+    "art",
+    "container-formats",
+    "engine-battle",
+    "engine-battle-vm",
+    "engine-core",
+    "engine-dialog",
+    "engine-effects",
+    "engine-field",
+    "engine-fishing",
+    "engine-menus",
+    "engine-minigame-scenes",
+    "engine-minigames",
+    "engine-mode",
+    "engine-scene",
+    "engine-system",
+    "engine-vm",
+    "game-tables",
+    "minigame-formats",
+    "overlay-images",
+    "prot",
+    "render-kernels",
+    "save",
+    "scene-formats",
+    "tim",
+    "tmd"
+   ],
+   "dev_deps": [
+    "disc-audit",
+    "engine-battle-hud",
+    "engine-camera",
+    "font",
+    "gamedata",
+    "lzs",
+    "mdt",
+    "mes",
+    "seq",
+    "ui-formats",
+    "vab"
+   ],
+   "bins": [],
+   "lib": true,
+   "modules": [
+    "disc_readers",
+    "fishing_venue",
+    "place_name_banner",
+    "resume",
+    "scene_host",
+    "scene_live"
+   ],
+   "band": "drivers",
+   "track": "engine",
+   "scope": "<code>scene_host::SceneHost</code>, the owner of a running <code>World</code> and the disc index: scene entry and tick, BGM routing, the FMV hand-off; save resume / New Game landing, the headless live-scene preview. Above <code>engine-core</code>.",
+   "dependents": [
+    "engine-capture",
+    "engine-menu-runtime",
+    "engine-screens",
+    "engine-session",
+    "engine-shell",
+    "parity",
+    "web-viewer"
+   ],
+   "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/engine-scene-host/README.md"
+  },
+  "engine-screens": {
+   "package": "legaia-engine-screens",
+   "deps": [
+    "engine-battle",
+    "engine-battle-hud",
+    "engine-battle-vm",
+    "engine-core",
+    "engine-dialog",
+    "engine-effects",
+    "engine-field",
+    "engine-fishing",
+    "engine-menu-runtime",
+    "engine-menus",
+    "engine-minigame-scenes",
+    "engine-minigames",
+    "engine-mode",
+    "engine-scene",
+    "engine-scene-host",
+    "engine-system",
+    "engine-ui",
+    "font",
+    "game-tables",
+    "minigame-formats",
+    "render-kernels"
+   ],
+   "dev_deps": [
+    "save"
+   ],
+   "bins": [],
+   "lib": true,
+   "modules": [
+    "battle_command",
+    "battle_value_readout",
+    "dev_menu",
+    "field_frame",
+    "field_messages",
+    "field_occlusion",
+    "world_map_labels",
+    "minigame_hud",
+    "screen_layers",
+    "battle_screens",
+    "dialog_screens",
+    "field_screens",
+    "pause_screens"
+   ],
+   "band": "top",
+   "track": "engine",
+   "scope": "The shop / prize-exchange / inn / banner screens both play hosts draw: projects engine-core state into engine-ui builders once (<code>shop_overlay_frame</code>); hosts keep only input assembly, stage scale and upload.",
+   "dependents": [
+    "engine-shell",
+    "web-viewer"
+   ],
+   "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/engine-screens/README.md"
+  },
+  "engine-session": {
+   "package": "legaia-engine-session",
+   "deps": [
+    "actor-formats",
+    "art",
+    "container-formats",
+    "engine-audio",
+    "engine-battle",
+    "engine-battle-vm",
+    "engine-core",
+    "engine-effects",
+    "engine-field",
+    "engine-menu-runtime",
+    "engine-menus",
+    "engine-minigame-scenes",
+    "engine-mode",
+    "engine-scene",
+    "engine-scene-host",
+    "engine-system",
+    "engine-vm",
+    "font",
+    "game-tables",
+    "iso",
+    "render-kernels",
+    "save",
+    "scene-formats",
+    "seq",
+    "tim",
+    "tmd",
+    "vab",
+    "xa"
+   ],
+   "dev_deps": [
+    "engine-cheats",
+    "engine-minigames",
+    "lzs",
+    "mes",
+    "minigame-formats",
+    "prot"
+   ],
+   "bins": [],
+   "lib": true,
+   "modules": [
+    "audio_director",
+    "battle_fx",
+    "battle_stage",
+    "battle_vram",
+    "host_trace",
+    "hotkeys",
+    "mode_trace",
+    "native",
+    "scene_actors",
+    "session",
+    "xa_banks"
+   ],
+   "band": "top",
+   "track": "engine",
+   "scope": "The game session both play hosts run: <code>BootSession</code> (scene host + per-frame order) and the <code>AudioDirector</code>, generic over the audio output (<code>AudioSink</code>). No wgpu / winit, so it builds for <code>wasm32</code>; the native file-system policy (open from a path, CD-XA off a disc image) is its <code>native</code> module.",
+   "dependents": [
+    "engine-shell",
+    "parity",
+    "web-viewer"
+   ],
+   "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/engine-session/README.md"
+  },
+  "engine-shell": {
+   "package": "legaia-engine-shell",
+   "deps": [
+    "actor-formats",
+    "art",
+    "container-formats",
+    "engine-audio",
+    "engine-battle",
+    "engine-battle-hud",
+    "engine-battle-vm",
+    "engine-camera",
+    "engine-capture",
+    "engine-cheats",
+    "engine-core",
+    "engine-dialog",
+    "engine-effects",
+    "engine-export",
+    "engine-field",
+    "engine-fishing",
+    "engine-menu-runtime",
+    "engine-menus",
+    "engine-minigame-scenes",
+    "engine-minigames",
+    "engine-mode",
+    "engine-render",
+    "engine-scene",
+    "engine-scene-host",
+    "engine-screens",
+    "engine-session",
+    "engine-system",
+    "engine-ui",
+    "font",
+    "game-tables",
+    "iso",
+    "mdec",
+    "mednafen",
+    "minigame-formats",
+    "overlay-images",
+    "parity",
+    "prot",
+    "ram-image",
+    "render-kernels",
+    "save",
+    "scene-formats",
+    "seq",
+    "tim",
+    "tmd",
+    "ui-formats",
+    "vab",
+    "xa"
+   ],
+   "dev_deps": [
+    "pcsx-redux",
+    "web-viewer"
+   ],
+   "bins": [
+    "legaia-engine",
+    "legaia-launch"
+   ],
+   "lib": true,
+   "modules": [
+    "cutscene_av",
+    "host_setup",
+    "launcher",
+    "replay",
+    "scenarios",
+    "window",
+    "xa_clip"
+   ],
+   "band": "hosts",
+   "track": "engine",
+   "scope": "Top-level native driver: <code>play</code> / <code>play-window</code>, <code>save</code> / <code>load</code>, <code>play-str</code>, <code>record</code> / <code>replay</code>, <code>config</code>, and the parity-oracle subcommands; <code>--help</code> groups every one.",
+   "dependents": [],
+   "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/engine-shell/README.md"
+  },
+  "engine-system": {
+   "package": "legaia-engine-system",
+   "deps": [
+    "cheats",
+    "gamedata"
+   ],
+   "dev_deps": [
+    "game-tables"
+   ],
+   "bins": [],
+   "lib": true,
+   "modules": [
+    "chunk_install",
+    "draw_census",
+    "fade",
+    "fade_ramp",
+    "gamepad",
+    "input",
+    "menu_input",
+    "mode_entry_init",
+    "movie",
+    "music_labels",
+    "pad",
+    "pause_wipe",
+    "ram_map",
+    "rand",
+    "retail_pad",
+    "rotation_lut",
+    "scene_name_sync",
+    "scus_leaf_kernels",
+    "sound_state",
+    "story_flag_state",
+    "sustained_sfx",
+    "trig"
+   ],
+   "band": "kernels",
+   "track": "engine",
+   "rank": 0,
+   "role": "pad input, BIOS rand, fades, FMV, sound state, RAM-cell map",
+   "scope": "The <code>World</code>-free runtime system at the bottom of the engine stack: pad words + pad input + retail pad pump, menu cursor primitive, BIOS <code>rand</code>, stream chunk installer, the FMV modules (<code>movie/</code>), sound state, the SCUS leaf kernels, fades, mode-entry initialisers, RAM-cell map.",
+   "dependents": [
+    "asset-viewer",
+    "engine-battle",
+    "engine-battle-vm",
+    "engine-camera",
+    "engine-capture",
+    "engine-cast",
+    "engine-cheats",
+    "engine-core",
+    "engine-effects",
+    "engine-field",
+    "engine-fishing",
+    "engine-menu-runtime",
+    "engine-menus",
+    "engine-minigame-scenes",
+    "engine-minigames",
+    "engine-mode",
+    "engine-motion-vm",
+    "engine-scene",
+    "engine-scene-host",
+    "engine-screens",
+    "engine-session",
+    "engine-shell",
+    "parity",
+    "web-viewer"
+   ],
+   "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/engine-system/README.md"
+  },
+  "engine-ui": {
+   "package": "legaia-engine-ui",
+   "deps": [
+    "engine-battle-vm",
+    "engine-cast",
+    "font",
+    "game-tables",
+    "minigame-formats",
+    "render-kernels",
+    "tim",
+    "ui-formats"
+   ],
+   "dev_deps": [
+    "engine-camera",
+    "engine-field",
+    "mednafen",
+    "ram-image"
+   ],
+   "bins": [],
+   "lib": true,
+   "modules": [
+    "arts_input",
+    "baka_strips",
+    "battle_chrome",
+    "battle_command_ui",
+    "battle_hud_chrome",
+    "battle_item_ui",
+    "battle_name_banner",
+    "battle_numerals",
+    "battle_stage_clear",
+    "boot_logos",
+    "cast_theeder",
+    "dance",
+    "field_party_hud",
+    "fishing",
+    "menu",
+    "minigame_fx",
+    "muscle_dome_hud",
+    "pause_menu",
+    "prize_exchange",
+    "ringside_backdrop",
+    "shop_screen",
+    "slot_cabinet",
+    "slot_paylines",
+    "text_lines"
+   ],
+   "band": "kernels",
+   "track": "engine",
+   "rank": 4,
+   "role": "renderer-agnostic draw-list builders",
+   "scope": "Renderer-agnostic UI draw-list builders over the wgpu-free kernels of <code>render-kernels</code> and the battle HUD model in <code>engine-battle-vm</code> - the draw layer both the native renderer and the browser play page use.",
+   "dependents": [
+    "asset-viewer",
+    "engine-render",
+    "engine-screens",
+    "engine-shell",
+    "parity",
+    "web-viewer"
+   ],
+   "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/engine-ui/README.md"
+  },
+  "engine-vm": {
+   "package": "legaia-engine-vm",
+   "deps": [
+    "anm",
+    "minigame-formats",
+    "scene-formats"
+   ],
+   "dev_deps": [
+    "game-tables",
+    "prot"
+   ],
+   "bins": [],
+   "lib": true,
+   "modules": [
+    "actor_alloc",
+    "actor_node_pool",
+    "actor_tick",
+    "anim_vm",
+    "battle_burst",
+    "block_copy_32",
+    "effect_vm",
+    "field",
+    "field_actor_billboard",
+    "field_ledge_hop_arc",
+    "frame_clock",
+    "move_buffer",
+    "move_ext_strip",
+    "move_vm",
+    "move_vm_overlay_ext",
+    "sfx_emitter",
+    "u16_list_append",
+    "vdf_morph",
+    "vram_rect_copy"
+   ],
+   "band": "kernels",
+   "track": "engine",
+   "rank": 0,
+   "role": "window-widget, field, move and effect VMs, the actor tick",
+   "scope": "The VMs and what they import: window-widget (actor), field, effect and move VMs, <code>anim_vm</code>, actor allocator + tick. Depends on no engine crate. The battle VM kernels are <code>engine-battle-vm</code>, the motion VMs <code>engine-motion-vm</code> - siblings, not layers under it - and the field-VM disassembler is <code>scene-formats::field_disasm</code>.",
+   "dependents": [
+    "asset-viewer",
+    "engine-core",
+    "engine-effects",
+    "engine-export",
+    "engine-field",
+    "engine-menus",
+    "engine-minigame-scenes",
+    "engine-minigames",
+    "engine-scene",
+    "engine-scene-host",
+    "engine-session",
+    "parity",
+    "render-kernels",
+    "web-viewer"
+   ],
+   "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/engine-vm/README.md"
+  },
+  "extract": {
+   "package": "legaia-extract",
+   "deps": [
+    "container-formats",
+    "disc-audit",
+    "font",
+    "iso",
+    "prot",
+    "tim",
+    "xa"
+   ],
+   "dev_deps": [
+    "lzs",
+    "scene-formats",
+    "tmd"
+   ],
+   "bins": [
+    "legaia-extract"
+   ],
+   "lib": true,
+   "modules": [],
+   "band": "hosts",
+   "track": "preservation",
+   "scope": "Top-level pipeline driver: disc → PROT → categorize → streaming sub-asset extract → PNG. The pipeline is a library (<code>legaia_extract::run</code>, progress + cancel reporter); the binary is its CLI.",
+   "dependents": [
+    "studio"
+   ],
+   "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/extract/README.md"
+  },
+  "font": {
+   "package": "legaia-font",
+   "deps": [],
+   "dev_deps": [],
+   "bins": [
+    "font-extract"
+   ],
+   "lib": true,
+   "modules": [
+    "accent_font",
+    "builtin",
+    "escape_icons",
+    "glyph_count",
+    "latin",
+    "limits",
+    "measure",
+    "sprite_cell_ids"
+   ],
+   "band": "leaves",
+   "track": "preservation",
+   "scope": "Proportional dialog font: extracts width table + 4bpp atlas from <code>SCUS_942.54</code> + a mednafen save state, exposes a layout API for engine consumers.",
+   "dependents": [
+    "actor-formats",
+    "asset-viewer",
+    "engine-battle-hud",
+    "engine-dialog",
+    "engine-menus",
+    "engine-render",
+    "engine-screens",
+    "engine-session",
+    "engine-shell",
+    "engine-ui",
+    "extract",
+    "game-tables",
+    "render-kernels",
+    "studio",
+    "translate",
+    "web-viewer"
+   ],
+   "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/font/README.md"
+  },
+  "game-tables": {
+   "package": "legaia-game-tables",
+   "deps": [
+    "bytes",
+    "font",
+    "overlay-images"
+   ],
+   "dev_deps": [
+    "prot"
+   ],
+   "bins": [],
+   "lib": true,
+   "modules": [
+    "absorb_caption",
+    "accessory_passive",
+    "battle_attack_camera_table",
+    "battle_camera_table",
+    "element_affinity",
+    "equip_stats",
+    "fmv_dispatch",
+    "item_effect",
+    "item_names",
+    "level_up_tables",
+    "menu_windows",
+    "mode_table",
+    "move_power",
+    "new_game",
+    "seru_side_effect",
+    "seru_trade",
+    "sfx_table",
+    "spell_anim_pairs",
+    "spell_names",
+    "steal_table",
+    "str_fmv_table",
+    "victory_pose",
+    "widget_script",
+    "worldmap_menu",
+    "xa_cue_table"
+   ],
+   "band": "families",
+   "track": "preservation",
+   "scope": "The static data tables parsed straight out of <code>SCUS_942.54</code> and the overlay images (items, equipment, spells, level-up, steal, element affinity, move power, menu window descriptors and scripts, mode / FMV / SFX / XA tables).",
+   "dependents": [
+    "actor-formats",
+    "arts-patch",
+    "asset",
+    "code-hooks",
+    "delilas-challenge",
+    "delilas-party",
+    "disc-audit",
+    "engine-battle",
+    "engine-battle-vm",
+    "engine-cast",
+    "engine-cheats",
+    "engine-core",
+    "engine-export",
+    "engine-fishing",
+    "engine-menu-runtime",
+    "engine-menus",
+    "engine-minigame-scenes",
+    "engine-minigames",
+    "engine-mode",
+    "engine-scene",
+    "engine-scene-host",
+    "engine-screens",
+    "engine-session",
+    "engine-shell",
+    "engine-ui",
+    "patcher",
+    "studio",
+    "texture-replace",
+    "translate",
+    "web-viewer"
+   ],
+   "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/game-tables/README.md"
+  },
+  "gamedata": {
+   "package": "legaia-gamedata",
+   "deps": [],
+   "dev_deps": [
+    "actor-formats",
+    "art",
+    "game-tables",
+    "scene-formats"
+   ],
+   "bins": [
+    "gamedata-tool"
+   ],
+   "lib": true,
+   "modules": [
+    "magic_leveling"
+   ],
+   "band": "leaves",
+   "track": "tooling",
+   "scope": "Curated game-data tables (arts, magic, items, weapons, armor, accessories, enemies, shops, casino, fishing, music tracks, scene names) mined from public walkthroughs; the music and scene-name tables contributed by Stann0x. These are <strong>ground-truth labels</strong> for the binary records under RE, not disc data. See <code>docs/reference/gamedata.md</code>.",
+   "dependents": [
+    "engine-system",
+    "patcher",
+    "studio",
+    "web-viewer"
+   ],
+   "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/gamedata/README.md"
+  },
+  "iso": {
+   "package": "legaia-iso",
+   "deps": [],
+   "dev_deps": [],
+   "bins": [
+    "disc-extract"
+   ],
+   "lib": true,
+   "modules": [
+    "iso9660",
+    "raw",
+    "region",
+    "relayout",
+    "write"
+   ],
+   "band": "leaves",
+   "track": "preservation",
+   "scope": "PSX Mode2/2352 disc reader, ISO9660 walker, <strong>sector write-back</strong> (<code>write</code> module: EDC/ECC re-encode + <code>patch_file_logical</code>; <code>iso9660::find_file_in_image</code>).",
+   "dependents": [
+    "arts-patch",
+    "asset",
+    "disc-patch",
+    "engine-scene",
+    "engine-session",
+    "engine-shell",
+    "extract",
+    "patcher",
+    "studio",
+    "texture-replace",
+    "web-viewer",
+    "xa"
+   ],
+   "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/iso/README.md"
+  },
+  "lzs": {
+   "package": "legaia-lzs",
+   "deps": [],
+   "dev_deps": [],
+   "bins": [
+    "lzs-decode"
+   ],
+   "lib": true,
+   "modules": [],
+   "band": "leaves",
+   "track": "preservation",
+   "scope": "Legaia LZS decoder (reversed from <code>FUN_8001a55c</code>) + <code>compress</code> / <code>compress_optimal</code> re-packers (lazy-matching and shortest-encoding LZSS the retail decoder accepts; for editing assets).",
+   "dependents": [
+    "actor-formats",
+    "arts-patch",
+    "asset",
+    "container-formats",
+    "delilas-challenge",
+    "delilas-party",
+    "disc-audit",
+    "disc-patch",
+    "engine-scene",
+    "minigame-formats",
+    "overlay-images",
+    "party-swap",
+    "patcher",
+    "scene-formats",
+    "studio",
+    "texture-replace",
+    "translate",
+    "web-viewer"
+   ],
+   "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/lzs/README.md"
+  },
+  "mdec": {
+   "package": "legaia-mdec",
+   "deps": [
+    "xa"
+   ],
+   "dev_deps": [
+    "iso",
+    "prot"
+   ],
+   "bins": [
+    "mdec"
+   ],
+   "lib": true,
+   "modules": [
+    "st_ring",
+    "str_av",
+    "str_player",
+    "str_sector",
+    "strv2_decode",
+    "strv2_table"
+   ],
+   "band": "leaves",
+   "track": "preservation",
+   "scope": "PSX MDEC from-scratch decoder. Legaia movies are the <strong>Iki</strong> bitstream, <strong>not STRv2</strong> - that's the thing to know before debugging a garbled frame. Frame → RGBA8 via the PSX AC VLC table, 8-point IDCT, YCbCr→RGB; <code>StrFrameAssembler</code> handles multi-sector STR video frames.",
+   "dependents": [
+    "disc-audit",
+    "engine-shell",
+    "studio",
+    "web-viewer"
+   ],
+   "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/mdec/README.md"
+  },
+  "mdt": {
+   "package": "legaia-mdt",
+   "deps": [],
+   "dev_deps": [],
+   "bins": [
+    "mdt"
+   ],
+   "lib": true,
+   "modules": [],
+   "band": "leaves",
+   "track": "preservation",
+   "scope": "Reader for retail's \"MOVE\" buffer (the scene's ANM clip bank) and its offset-table layout classifier.",
+   "dependents": [
+    "engine-scene"
+   ],
+   "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/mdt/README.md"
+  },
+  "mednafen": {
+   "package": "legaia-mednafen",
+   "deps": [
+    "actor-formats",
+    "cheats",
+    "ram-image"
+   ],
+   "dev_deps": [
+    "overlay-images",
+    "prot"
+   ],
+   "bins": [
+    "mednafen-state"
+   ],
+   "lib": true,
+   "modules": [
+    "container",
+    "gpu",
+    "psx",
+    "spu"
+   ],
+   "band": "libraries",
+   "track": "tooling",
+   "scope": "Mednafen save-state parser + watchpoint-equivalent automation (pairwise main-RAM diff, write-transition bisection, scenario manifest <code>scripts/scenarios.toml</code>). <code>gpu</code>/<code>vram-dump</code> decode the VRAM blob and <code>spu</code> exposes <code>PsxSpu</code> - the retail sides of the engine's VRAM and audio parity oracles.",
+   "dependents": [
+    "engine-shell",
+    "parity",
+    "web-viewer"
+   ],
+   "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/mednafen/README.md"
+  },
+  "mes": {
+   "package": "legaia-mes",
+   "deps": [],
+   "dev_deps": [],
+   "bins": [
+    "mes"
+   ],
+   "lib": true,
+   "modules": [
+    "dialog_box",
+    "interp",
+    "picker",
+    "compact"
+   ],
+   "band": "leaves",
+   "track": "preservation",
+   "scope": "MES dialog container parser (Compact + Records).",
+   "dependents": [
+    "asset-viewer",
+    "delilas-challenge",
+    "disc-audit",
+    "engine-core",
+    "engine-dialog",
+    "engine-field",
+    "engine-scene",
+    "studio",
+    "web-viewer"
+   ],
+   "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/mes/README.md"
+  },
+  "minigame-formats": {
+   "package": "legaia-minigame-formats",
+   "deps": [
+    "container-formats",
+    "lzs",
+    "prot",
+    "tim",
+    "tmd",
+    "vab"
+   ],
+   "dev_deps": [
+    "actor-formats",
+    "game-tables",
+    "overlay-images"
+   ],
+   "bins": [],
+   "lib": true,
+   "modules": [
+    "baka_opponents",
+    "dance_art",
+    "dance_cast",
+    "dance_chart",
+    "fishing_captions",
+    "fishing_exchange",
+    "fishing_species",
+    "fishing_sprites",
+    "minigame_art",
+    "minigame_sfx",
+    "minigame_slot_scene",
+    "muscle_dome",
+    "ringside_still",
+    "slot_payout"
+   ],
+   "band": "families",
+   "track": "preservation",
+   "scope": "The minigames' disc data: fishing, slot machine, dance, Baka Fighter and Muscle Dome tables, art packs, the slot machine's 3D scene, the runtime cue bank.",
+   "dependents": [
+    "asset",
+    "disc-audit",
+    "engine-core",
+    "engine-field",
+    "engine-fishing",
+    "engine-menus",
+    "engine-minigame-scenes",
+    "engine-minigames",
+    "engine-scene-host",
+    "engine-screens",
+    "engine-shell",
+    "engine-ui",
+    "engine-vm",
+    "patcher",
+    "web-viewer"
+   ],
+   "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/minigame-formats/README.md"
+  },
+  "overlay-images": {
+   "package": "legaia-overlay-images",
+   "deps": [
+    "bytes",
+    "lzs"
+   ],
+   "dev_deps": [
+    "container-formats",
+    "prot"
+   ],
+   "bins": [],
+   "lib": true,
+   "modules": [
+    "boot_overlay",
+    "cast_effect_pool",
+    "cast_presentation",
+    "mips_overlay",
+    "overlay_ptr_table",
+    "slot_b_module",
+    "static_overlay",
+    "summon_overlay"
+   ],
+   "band": "families",
+   "track": "preservation",
+   "scope": "The code-overlay image formats: MIPS-overlay and pointer-table detectors, the static-overlay extraction map, the slot-B cast / summon module layout, spawn records and effect-part pool. Data tables resident in an overlay live in <code>game-tables</code>.",
+   "dependents": [
+    "asset",
+    "disc-audit",
+    "engine-battle-vm",
+    "engine-cast",
+    "engine-core",
+    "engine-effects",
+    "engine-field",
+    "engine-minigame-scenes",
+    "engine-scene",
+    "engine-scene-host",
+    "engine-shell",
+    "game-tables",
+    "render-kernels",
+    "scene-formats",
+    "web-viewer"
+   ],
+   "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/overlay-images/README.md"
+  },
+  "parity": {
+   "package": "legaia-parity",
+   "deps": [
+    "art",
+    "bytes",
+    "engine-audio",
+    "engine-battle",
+    "engine-battle-hud",
+    "engine-battle-vm",
+    "engine-camera",
+    "engine-capture",
+    "engine-cast",
+    "engine-core",
+    "engine-dialog",
+    "engine-effects",
+    "engine-field",
+    "engine-menu-runtime",
+    "engine-menus",
+    "engine-mode",
+    "engine-scene",
+    "engine-scene-host",
+    "engine-session",
+    "engine-system",
+    "engine-ui",
+    "engine-vm",
+    "mednafen",
+    "pcsx-redux",
+    "prot",
+    "ram-image",
+    "save",
+    "scene-formats",
+    "seq",
+    "tim",
+    "vab"
+   ],
+   "dev_deps": [
+    "actor-formats",
+    "arts-patch",
+    "disc-patch",
+    "game-tables",
+    "iso",
+    "lzs",
+    "mdec",
+    "overlay-images",
+    "patcher",
+    "render-kernels",
+    "tmd",
+    "ui-formats"
+   ],
+   "bins": [],
+   "lib": true,
+   "modules": [
+    "audio_trace_oracle",
+    "capture_observations",
+    "cast_sequence",
+    "mode_trace_oracle",
+    "pcm_oracle",
+    "retail_compare",
+    "retail_compare_battle",
+    "retail_compare_cli",
+    "retail_compare_image",
+    "retail_compare_script",
+    "sim_trace",
+    "vram_oracle"
+   ],
+   "band": "top",
+   "track": "tooling",
+   "scope": "The engine measured against retail: the VRAM / mode / audio / PCM oracles, the recomp differential's <code>sim_trace</code>, and the retail comparison corpus (<code>retail_compare*</code>). Drives the native session (<code>engine-session::native</code>); tool code no play host links.",
+   "dependents": [
+    "engine-shell"
+   ],
+   "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/parity/README.md"
+  },
+  "party-swap": {
+   "package": "legaia-party-swap",
+   "deps": [
+    "actor-formats",
+    "bytes",
+    "container-formats",
+    "lzs",
+    "tim",
+    "tmd"
+   ],
+   "dev_deps": [],
+   "bins": [],
+   "lib": true,
+   "modules": [
+    "cast_stage",
+    "enemy_anim",
+    "event_field",
+    "fieldize",
+    "moveset",
+    "nivora_field",
+    "playerize",
+    "weapon_fuse",
+    "winpose"
+   ],
+   "band": "libraries",
+   "track": "patcher",
+   "scope": "The Party / Delilas battle-model swap kernels (rig permutation, pivot-anchored rest-pose bake, field form, win poses, movesets, enemy-anim remap) as pure transforms with no disc I/O; the disc writes are <code>delilas-party</code>'s.",
+   "dependents": [
+    "delilas-party",
+    "patcher"
+   ],
+   "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/party-swap/README.md"
+  },
+  "patcher": {
+   "package": "legaia-patcher",
+   "deps": [
+    "actor-formats",
+    "art",
+    "arts-patch",
+    "bytes",
+    "code-hooks",
+    "container-formats",
+    "delilas-challenge",
+    "delilas-party",
+    "disc-patch",
+    "game-tables",
+    "gamedata",
+    "iso",
+    "lzs",
+    "minigame-formats",
+    "party-swap",
+    "prot",
+    "scene-formats",
+    "texture-replace",
+    "tim",
+    "tmd",
+    "translate",
+    "ui-formats"
+   ],
+   "dev_deps": [
+    "disc-audit",
+    "font",
+    "mes",
+    "vab",
+    "xa"
+   ],
+   "bins": [
+    "legaia-patcher"
+   ],
+   "lib": true,
+   "modules": [
+    "apply",
+    "arts_name_fix",
+    "attack_count",
+    "casino",
+    "charm_fix",
+    "chest",
+    "damage_ap",
+    "door",
+    "drops",
+    "earth_egg",
+    "element_affinity",
+    "encounter",
+    "enemy_ally",
+    "equip_bonus",
+    "equip_hand_frame",
+    "equip_mask",
+    "equip_transplant",
+    "equipment",
+    "fishing_price",
+    "fortress_encounter_fix",
+    "house_door",
+    "item_name",
+    "item_price",
+    "items",
+    "kingdom",
+    "location_name",
+    "map_door",
+    "monster_class",
+    "monster_stats",
+    "move_power",
+    "rewards",
+    "shop",
+    "spell_cost",
+    "spirit_ap",
+    "starting_bag",
+    "starting_items",
+    "starting_level",
+    "steal",
+    "super_arts_pack",
+    "unused",
+    "weapon_specialty"
+   ],
+   "band": "hosts",
+   "track": "patcher",
+   "scope": "Disc-patching toolkit for a user-supplied <code>.bin</code> (in-place PROT edits, MAN relocation, PPF output): randomizer, translation packs, manual edits, MIPS code hooks. Reference: <code>randomizer.md</code>. No Sony bytes.",
+   "dependents": [
+    "web-viewer"
+   ],
+   "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/patcher/README.md"
+  },
+  "pcsx-redux": {
+   "package": "legaia-pcsx-redux",
+   "deps": [
+    "ram-image"
+   ],
+   "dev_deps": [
+    "mednafen"
+   ],
+   "bins": [
+    "pcsxr-state"
+   ],
+   "lib": true,
+   "modules": [
+    "gpu"
+   ],
+   "band": "libraries",
+   "track": "tooling",
+   "scope": "PCSX-Redux save-state (<code>.sstate</code>) main-RAM reader, exposing <code>main_ram()</code> + VA readers + <code>scene_name()</code>/<code>game_mode()</code>/<code>player_pos()</code>; the CLI mirrors <code>mednafen-state</code>'s <code>extract</code> so scripts treat both emulators' states interchangeably. The bridge that feeds the cataloged playthrough anchors (<code>s1..s5</code>) into the engine's disc-gated field/opening oracles.",
+   "dependents": [
+    "parity"
+   ],
+   "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/pcsx-redux/README.md"
+  },
+  "prot": {
+   "package": "legaia-prot",
+   "deps": [],
+   "dev_deps": [],
+   "bins": [
+    "prot-extract"
+   ],
+   "lib": true,
+   "modules": [
+    "archive",
+    "cdname",
+    "locate",
+    "region",
+    "runtime_toc",
+    "tiling",
+    "timpack"
+   ],
+   "band": "leaves",
+   "track": "preservation",
+   "scope": "PROT.DAT / DMY.DAT TOC, CDNAME map, standalone TIM-pack.",
+   "dependents": [
+    "actor-formats",
+    "asset",
+    "asset-viewer",
+    "disc-audit",
+    "disc-patch",
+    "engine-audio",
+    "engine-core",
+    "engine-minigame-scenes",
+    "engine-scene",
+    "engine-scene-host",
+    "engine-shell",
+    "extract",
+    "minigame-formats",
+    "parity",
+    "patcher",
+    "studio",
+    "translate",
+    "ui-formats",
+    "web-viewer"
+   ],
+   "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/prot/README.md"
+  },
+  "ram-image": {
+   "package": "legaia-ram-image",
+   "deps": [],
+   "dev_deps": [],
+   "bins": [],
+   "lib": true,
+   "modules": [
+    "bisect",
+    "diff",
+    "extract",
+    "game_anchors",
+    "prim_dispatch",
+    "prim_pool",
+    "scenarios",
+    "source_hunt"
+   ],
+   "band": "libraries",
+   "track": "tooling",
+   "scope": "Emulator-neutral analysis of a PSX main-RAM image: anchor-based RAM extraction, the game's globals (<code>game_anchors</code>), pairwise diff, write-transition bisection, primitive-pool decode, the scenario manifest. Both save-state readers sit on it.",
+   "dependents": [
+    "engine-shell",
+    "mednafen",
+    "parity",
+    "pcsx-redux",
+    "web-viewer"
+   ],
+   "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/ram-image/README.md"
+  },
+  "render-kernels": {
+   "package": "legaia-render-kernels",
+   "deps": [
+    "actor-formats",
+    "engine-camera",
+    "engine-vm",
+    "font",
+    "overlay-images",
+    "scene-formats",
+    "tim",
+    "tmd"
+   ],
+   "dev_deps": [],
+   "bins": [],
+   "lib": true,
+   "modules": [
+    "afterimage",
+    "battle_intro",
+    "battle_intro_particles",
+    "battle_intro_styles",
+    "battle_intro_swirl",
+    "battle_intro_tiles",
+    "battle_intro_transition",
+    "battle_trail",
+    "billboard",
+    "bloom",
+    "cast_aluru",
+    "cast_beam",
+    "cast_colour_wash",
+    "cast_rain",
+    "cast_swordie",
+    "display_mirror",
+    "drop_shadow",
+    "effect_billboard",
+    "field_light",
+    "fog_volume",
+    "gte",
+    "move_strip",
+    "overworld_curvature",
+    "prim_dispatch",
+    "prim_near_reject",
+    "scene_lighting",
+    "screen_prim",
+    "screen_prim_raster",
+    "shatter",
+    "shutter_bars",
+    "sprite_arm",
+    "streak_pass",
+    "ui_tint",
+    "vram_capture",
+    "world_map_sky"
+   ],
+   "band": "kernels",
+   "track": "engine",
+   "rank": 2,
+   "role": "GTE math, screen prims, VRAM capture, effect emitters, the battle-intro model; no wgpu",
+   "scope": "The wgpu-free render kernels both hosts share: GTE math, <code>screen_prim</code> + its CPU rasteriser, <code>vram_capture</code>, the effect emitters, the battle-intro model + emitter, enhanced <code>scene_lighting</code>.",
+   "dependents": [
+    "engine-battle",
+    "engine-core",
+    "engine-effects",
+    "engine-field",
+    "engine-fishing",
+    "engine-minigame-scenes",
+    "engine-minigames",
+    "engine-render",
+    "engine-scene",
+    "engine-scene-host",
+    "engine-screens",
+    "engine-session",
+    "engine-shell",
+    "engine-ui",
+    "web-viewer"
+   ],
+   "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/render-kernels/README.md"
+  },
+  "save": {
+   "package": "legaia-save",
+   "deps": [],
+   "dev_deps": [],
+   "bins": [
+    "save-tool"
+   ],
+   "lib": true,
+   "modules": [
+    "card",
+    "character",
+    "emu",
+    "ext",
+    "minigame_save",
+    "retail_inventory"
+   ],
+   "band": "leaves",
+   "track": "preservation",
+   "scope": "Per-character record schema (typed accessors + round-trip parse/write for the 0x414-byte record) plus a PSX memory-card walker. <code>Party::from_retail_sc_block</code> lifts a real SC block into a typed <code>Party</code>; <code>SaveExt</code> / <code>SaveFile</code> (LGSF) cover full engine save round-trips.",
+   "dependents": [
+    "engine-battle",
+    "engine-capture",
+    "engine-cheats",
+    "engine-core",
+    "engine-field",
+    "engine-menu-runtime",
+    "engine-menus",
+    "engine-minigames",
+    "engine-scene-host",
+    "engine-session",
+    "engine-shell",
+    "parity",
+    "web-viewer"
+   ],
+   "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/save/README.md"
+  },
+  "scene-formats": {
+   "package": "legaia-scene-formats",
+   "deps": [
+    "bytes",
+    "container-formats",
+    "lzs",
+    "overlay-images",
+    "tim",
+    "tmd"
+   ],
+   "dev_deps": [
+    "game-tables",
+    "prot"
+   ],
+   "bins": [],
+   "lib": true,
+   "modules": [
+    "battle_backdrop",
+    "clut_walk",
+    "cutscene_text",
+    "encounter_record",
+    "field_disasm",
+    "field_map",
+    "field_objects",
+    "field_pack",
+    "inn_costs",
+    "kingdom_bundle",
+    "man_edit",
+    "man_motion",
+    "man_section",
+    "ocean",
+    "place_names",
+    "scene_asset_table",
+    "scene_event_scripts",
+    "scene_scripted_asset_table",
+    "scene_tmd_stream",
+    "scene_v12_table",
+    "scene_vdf",
+    "shop_stock",
+    "stage_geom",
+    "vdf_morph",
+    "world_map_overlay"
+   ],
+   "band": "families",
+   "track": "preservation",
+   "scope": "What a field or world-map scene is built from: scene bundle shapes, MAN sections and editing, the side-effect-free field-VM disassembler <code>field_disasm</code>, field objects and maps, shop stock, place names, kingdom bundle, stage geometry.",
+   "dependents": [
+    "asset",
+    "asset-viewer",
+    "delilas-challenge",
+    "disc-audit",
+    "disc-patch",
+    "engine-battle",
+    "engine-battle-vm",
+    "engine-capture",
+    "engine-core",
+    "engine-export",
+    "engine-field",
+    "engine-fishing",
+    "engine-menus",
+    "engine-minigame-scenes",
+    "engine-minigames",
+    "engine-motion-vm",
+    "engine-scene",
+    "engine-scene-host",
+    "engine-session",
+    "engine-shell",
+    "engine-vm",
+    "parity",
+    "patcher",
+    "render-kernels",
+    "studio",
+    "translate",
+    "web-viewer"
+   ],
+   "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/scene-formats/README.md"
+  },
+  "seq": {
+   "package": "legaia-seq",
+   "deps": [],
+   "dev_deps": [],
+   "bins": [
+    "seq"
+   ],
+   "lib": true,
+   "modules": [],
+   "band": "leaves",
+   "track": "preservation",
+   "scope": "PsyQ SEQ parser + CLI inspector.",
+   "dependents": [
+    "asset-viewer",
+    "engine-audio",
+    "engine-scene",
+    "engine-session",
+    "engine-shell",
+    "parity",
+    "studio",
+    "web-viewer"
+   ],
+   "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/seq/README.md"
+  },
+  "studio": {
+   "package": "legaia-studio",
+   "deps": [
+    "actor-formats",
+    "art",
+    "container-formats",
+    "disc-audit",
+    "engine-audio",
+    "engine-scene",
+    "extract",
+    "font",
+    "game-tables",
+    "gamedata",
+    "iso",
+    "lzs",
+    "mdec",
+    "mes",
+    "prot",
+    "scene-formats",
+    "seq",
+    "tim",
+    "tmd",
+    "translate",
+    "vab",
+    "xa"
+   ],
+   "dev_deps": [],
+   "bins": [
+    "legaia-studio"
+   ],
+   "lib": true,
+   "modules": [
+    "actors",
+    "analyze",
+    "app",
+    "arts",
+    "export",
+    "extract_job",
+    "launch",
+    "library",
+    "media",
+    "player",
+    "raster",
+    "scene_vram",
+    "settings"
+   ],
+   "band": "hosts",
+   "track": "preservation",
+   "scope": "Desktop GUI (eframe/egui, glow backend) for non-terminal users: open a disc image, browse PROT by CDNAME block, preview TIM / TMD / VAB / SEQ / dialog / hex, export PNG / OBJ / glb / WAV, run the full extraction with progress and cancel. Ships in every release archive.",
+   "dependents": [],
+   "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/studio/README.md"
+  },
+  "texture-replace": {
+   "package": "legaia-texture-replace",
+   "deps": [
+    "actor-formats",
+    "disc-audit",
+    "disc-patch",
+    "game-tables",
+    "iso",
+    "lzs",
+    "tim",
+    "ui-formats"
+   ],
+   "dev_deps": [],
+   "bins": [],
+   "lib": true,
+   "modules": [
+    "battle_texture",
+    "monster_texture",
+    "save_icon",
+    "texture",
+    "texture_palettes"
+   ],
+   "band": "libraries",
+   "track": "patcher",
+   "scope": "Image replacement modules (scene TIMs + palette contexts, party battle art, monster skins, save-slot portraits): decode, re-encode against the retail palettes and budget, write through <code>DiscPatcher</code>.",
+   "dependents": [
+    "delilas-party",
+    "patcher",
+    "web-viewer"
+   ],
+   "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/texture-replace/README.md"
+  },
+  "tim": {
+   "package": "legaia-tim",
+   "deps": [],
+   "dev_deps": [],
+   "bins": [
+    "tim"
+   ],
+   "lib": true,
+   "modules": [
+    "encode",
+    "multi_palette",
+    "vram"
+   ],
+   "band": "leaves",
+   "track": "preservation",
+   "scope": "PSX TIM parser + PNG exporter + PNG-to-TIM encoder (texture replacement).",
+   "dependents": [
+    "actor-formats",
+    "asset",
+    "asset-viewer",
+    "container-formats",
+    "disc-audit",
+    "engine-battle",
+    "engine-core",
+    "engine-export",
+    "engine-menus",
+    "engine-minigame-scenes",
+    "engine-render",
+    "engine-scene",
+    "engine-scene-host",
+    "engine-session",
+    "engine-shell",
+    "engine-ui",
+    "extract",
+    "minigame-formats",
+    "parity",
+    "party-swap",
+    "patcher",
+    "render-kernels",
+    "scene-formats",
+    "studio",
+    "texture-replace",
+    "tmd",
+    "ui-formats",
+    "web-viewer"
+   ],
+   "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/tim/README.md"
+  },
+  "tmd": {
+   "package": "legaia-tmd",
+   "deps": [
+    "tim"
+   ],
+   "dev_deps": [],
+   "bins": [
+    "tmd"
+   ],
+   "lib": true,
+   "modules": [
+    "descriptor",
+    "encode",
+    "legaia_prim_probe",
+    "legaia_prims",
+    "mesh",
+    "vram_targeted"
+   ],
+   "band": "leaves",
+   "track": "preservation",
+   "scope": "Legaia TMD parser + primitive walker + OBJ-with-faces export.",
+   "dependents": [
+    "actor-formats",
+    "asset",
+    "asset-viewer",
+    "container-formats",
+    "engine-battle",
+    "engine-core",
+    "engine-effects",
+    "engine-export",
+    "engine-field",
+    "engine-fishing",
+    "engine-minigame-scenes",
+    "engine-scene",
+    "engine-scene-host",
+    "engine-session",
+    "engine-shell",
+    "minigame-formats",
+    "party-swap",
+    "patcher",
+    "render-kernels",
+    "scene-formats",
+    "studio",
+    "web-viewer"
+   ],
+   "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/tmd/README.md"
+  },
+  "translate": {
+   "package": "legaia-translate",
+   "deps": [
+    "actor-formats",
+    "art",
+    "container-formats",
+    "disc-patch",
+    "font",
+    "game-tables",
+    "lzs",
+    "prot",
+    "scene-formats"
+   ],
+   "dev_deps": [],
+   "bins": [],
+   "lib": true,
+   "modules": [
+    "accents",
+    "build",
+    "code_refs",
+    "code_strings",
+    "coverage",
+    "diff",
+    "export",
+    "fit",
+    "import",
+    "lift",
+    "markup",
+    "monster_names",
+    "name_pool",
+    "pack",
+    "refpair",
+    "segments",
+    "sjis",
+    "space",
+    "stream_man",
+    "symbols",
+    "ui"
+   ],
+   "band": "libraries",
+   "track": "patcher",
+   "scope": "The language-pack pipeline behind <code>legaia-patcher translate</code>: pack schema + markup, export / import, string relocation, other-build alignment and the PAL lift.",
+   "dependents": [
+    "delilas-party",
+    "patcher",
+    "studio",
+    "web-viewer"
+   ],
+   "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/translate/README.md"
+  },
+  "ui-formats": {
+   "package": "legaia-ui-formats",
+   "deps": [
+    "container-formats",
+    "prot",
+    "tim"
+   ],
+   "dev_deps": [
+    "game-tables"
+   ],
+   "bins": [],
+   "lib": true,
+   "modules": [
+    "battle_ui_strings",
+    "init_pak",
+    "interior_page",
+    "menu_glyph_atlas",
+    "save_icon",
+    "screen_elements",
+    "system_ui_bundle",
+    "tim_palette_context",
+    "title_pak",
+    "ui_widgets"
+   ],
+   "band": "families",
+   "track": "preservation",
+   "scope": "The 2D interface formats: title and system-UI packs, menu glyph atlas, save-slot portraits, the screen-element and widget-class tables, battle label strings, palette contexts.",
+   "dependents": [
+    "asset-viewer",
+    "disc-audit",
+    "engine-battle",
+    "engine-battle-hud",
+    "engine-core",
+    "engine-menu-runtime",
+    "engine-menus",
+    "engine-scene",
+    "engine-shell",
+    "engine-ui",
+    "patcher",
+    "texture-replace",
+    "web-viewer"
+   ],
+   "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/ui-formats/README.md"
+  },
+  "vab": {
+   "package": "legaia-vab",
+   "deps": [],
+   "dev_deps": [
+    "xa"
+   ],
+   "bins": [
+    "vab"
+   ],
+   "lib": true,
+   "modules": [],
+   "band": "leaves",
+   "track": "preservation",
+   "scope": "VAB sound bank extractor + SPU-ADPCM decoder. Three entry points, and picking the wrong one is a silent defect: <code>parse</code> for a bank at a known offset, <code>parse_in_stream</code> for one inside a DATA_FIELD stream, <code>vag_body_origin_at</code> for the body chunk.",
+   "dependents": [
+    "asset-viewer",
+    "delilas-party",
+    "disc-audit",
+    "engine-audio",
+    "engine-scene",
+    "engine-session",
+    "engine-shell",
+    "minigame-formats",
+    "parity",
+    "studio",
+    "web-viewer"
+   ],
+   "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/vab/README.md"
+  },
+  "web-viewer": {
+   "package": "legaia-web-viewer",
+   "deps": [
+    "actor-formats",
+    "art",
+    "arts-patch",
+    "code-hooks",
+    "container-formats",
+    "delilas-challenge",
+    "delilas-party",
+    "disc-audit",
+    "disc-patch",
+    "engine-audio",
+    "engine-battle",
+    "engine-battle-hud",
+    "engine-battle-vm",
+    "engine-camera",
+    "engine-cheats",
+    "engine-core",
+    "engine-dialog",
+    "engine-effects",
+    "engine-field",
+    "engine-fishing",
+    "engine-menu-runtime",
+    "engine-menus",
+    "engine-minigame-scenes",
+    "engine-minigames",
+    "engine-mode",
+    "engine-scene",
+    "engine-scene-host",
+    "engine-screens",
+    "engine-session",
+    "engine-system",
+    "engine-ui",
+    "engine-vm",
+    "font",
+    "game-tables",
+    "gamedata",
+    "iso",
+    "lzs",
+    "mdec",
+    "mednafen",
+    "mes",
+    "minigame-formats",
+    "overlay-images",
+    "patcher",
+    "prot",
+    "ram-image",
+    "render-kernels",
+    "save",
+    "scene-formats",
+    "seq",
+    "texture-replace",
+    "tim",
+    "tmd",
+    "translate",
+    "ui-formats",
+    "vab",
+    "xa"
+   ],
+   "dev_deps": [],
+   "bins": [],
+   "lib": true,
+   "modules": [
+    "arts_view",
+    "audio",
+    "boot_title",
+    "cards",
+    "disc",
+    "equipment_view",
+    "field_npc",
+    "field_scene",
+    "minigames",
+    "pad_bindings",
+    "play",
+    "play_battle",
+    "play_battle_audio",
+    "play_battle_body_blend",
+    "play_battle_fx",
+    "play_battle_limb_dim",
+    "play_battle_render",
+    "play_battle_vram",
+    "play_bgm",
+    "play_camera",
+    "play_cheats",
+    "play_cutscene",
+    "play_dance_art",
+    "play_dev_menu",
+    "play_dialog",
+    "play_field_fx",
+    "play_field_hud",
+    "play_fishing",
+    "play_fmv",
+    "play_fog_volume",
+    "play_frame_step",
+    "play_host_parity",
+    "play_hotkeys",
+    "play_lighting",
+    "play_menu",
+    "play_minigame_arena",
+    "play_minigame_slots",
+    "play_minigames",
+    "play_name_entry",
+    "play_sfx",
+    "play_shop",
+    "play_tile_board",
+    "play_toggles",
+    "play_world_map_markers",
+    "play_xa",
+    "player_anm",
+    "resume",
+    "rom_patcher",
+    "runtime",
+    "sentinel_placements",
+    "session_save",
+    "sfx_view",
+    "shop_vendors",
+    "shop_items",
+    "summon_view",
+    "texture_pack",
+    "texture_registry",
+    "tmd3d",
+    "translate_workbench"
+   ],
+   "band": "hosts",
+   "track": "engine",
+   "scope": "WASM target serving three products: the asset inspectors (disc browser, viewers, <code>.glb</code> export), the play / minigames runtime (the browser hosts of the port), and the client-side ROM patcher (nothing is uploaded).",
+   "dependents": [],
+   "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/web-viewer/README.md"
+  },
+  "xa": {
+   "package": "legaia-xa",
+   "deps": [
+    "iso"
+   ],
+   "dev_deps": [],
+   "bins": [
+    "xa"
+   ],
+   "lib": true,
+   "modules": [
+    "demux",
+    "encode"
+   ],
+   "band": "leaves",
+   "track": "preservation",
+   "scope": "XA-ADPCM decoder + WAV exporter.",
+   "dependents": [
+    "delilas-party",
+    "engine-audio",
+    "engine-session",
+    "engine-shell",
+    "extract",
+    "mdec",
+    "studio",
+    "web-viewer"
+   ],
+   "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/xa/README.md"
+  }
+ },
+ "couplings": [
+  {
+   "from": "engine-minigames",
+   "to": "engine-battle-vm",
+   "items": [
+    "panel_backread_loader::backread_texture_variant"
+   ],
+   "reason": "the ringside still the contest hub keeps resident is picked by the battle panel back-read loader; battle_formulas is the Muscle Dome's by role"
+  },
+  {
+   "from": "engine-battle",
+   "to": "render-kernels",
+   "items": [
+    "battle_intro_styles::INTRO_DURATION_FRAMES"
+   ],
+   "reason": "the encounter session's default transition length is the battle-intro model's, which sits with its draw half"
+  },
+  {
+   "from": "engine-menus",
+   "to": "engine-field",
+   "items": [
+    "dev_equip_commit",
+    "dev_menu_leaves",
+    "dev_menu_adjust",
+    "dev_menu_flags",
+    "world_map_panel::{SFX_CURSOR_MOVE, dev_menu_action}",
+    "incense_window::top_up_cooldown"
+   ],
+   "reason": "the equip commit and the dev menu's row kernels are field-overlay dev-menu bodies; the pause menu's equip session and the dev menu screen share them"
+  },
+  {
+   "from": "engine-fishing",
+   "to": "engine-field",
+   "items": [
+    "minigame_floor",
+    "field_regions"
+   ],
+   "reason": "the fishing venue stands on the shared minigame floor, a field .MAP walk grid with tile triggers read through the field's region queries"
+  },
+  {
+   "from": "engine-minigames",
+   "to": "engine-field",
+   "items": [
+    "dance_marker"
+   ],
+   "reason": "the dance floor's step markers are tile actors the shared minigame floor spawns from the field .MAP's tile triggers"
+  },
+  {
+   "from": "engine-ui",
+   "to": "engine-battle-vm",
+   "items": [
+    "battle_party_panel",
+    "battle_commit_log",
+    "panel_backread_loader",
+    "battle_value_readout",
+    "battle_action::FlashQuad"
+   ],
+   "reason": "the battle HUD model and the numeral readout the draw-list builders project are defined with the battle kernels that fill them"
+  },
+  {
+   "from": "engine-ui",
+   "to": "engine-cast",
+   "items": [
+    "seru_magic_ticks::TheederPacket"
+   ],
+   "reason": "the Theeder packet the cast draw-list builder projects is defined with the PROT 0904 tick body that fills it"
+  }
+ ],
+ "hosts": [
+  {
+   "name": "Native play-window",
+   "crate": "engine-shell",
+   "how": "legaia-engine play-window: winit + wgpu + cpal, ticking engine-session's BootSession."
+  },
+  {
+   "name": "Browser play page",
+   "crate": "web-viewer",
+   "how": "The same BootSession compiled to WebAssembly; site/js/play-app.js draws it through WebGL and WebAudio."
+  },
+  {
+   "name": "Browser minigames page",
+   "crate": "web-viewer",
+   "how": "Drives the World-free minigame rules engines directly; it holds no World."
+  }
+ ],
+ "walk": [
+  {
+   "title": "Your disc image",
+   "crates": [
+    "iso"
+   ],
+   "text": "A CD is a run of 2352-byte Mode 2 sectors. iso strips the sync, header and error-correction bytes and walks the ISO9660 directory to PROT.DAT, the executable, the movies and the XA streams."
+  },
+  {
+   "title": "PROT.DAT",
+   "crates": [
+    "prot"
+   ],
+   "text": "Almost every asset is one entry of PROT.DAT. prot reads its table of contents (an entry's size is the gap to the next entry) and names entries from CDNAME.TXT."
+  },
+  {
+   "title": "LZS",
+   "crates": [
+    "lzs"
+   ],
+   "text": "Many entries are LZS-compressed with a 4 KB ring buffer. Decoding never fails on its own, so every caller magic-checks the decoded bytes."
+  },
+  {
+   "title": "Scene bundle",
+   "crates": [
+    "container-formats",
+    "scene-formats",
+    "tim",
+    "tmd"
+   ],
+   "text": "A scene is a bundle of DATA_FIELD chunks and packs: the MAN script and map, TIM textures, TMD meshes. The format families split it; the per-format crates decode each piece."
+  },
+  {
+   "title": "SceneResources",
+   "crates": [
+    "engine-scene"
+   ],
+   "text": "engine-scene resolves a CDNAME scene to its PROT entries and loads what it is built from - SceneResources, SceneAssets, the model bank, behind a virtual filesystem that reads a disc image or extracted files alike."
+  },
+  {
+   "title": "World tick",
+   "crates": [
+    "engine-core",
+    "engine-vm",
+    "engine-field",
+    "engine-motion-vm"
+   ],
+   "text": "engine-core's World ticks the ported VMs: the field VM runs the scene's own script, the per-actor tick steps the move VM, the motion VMs walk NPCs and the camera."
+  },
+  {
+   "title": "Scene host and session",
+   "crates": [
+    "engine-scene-host",
+    "engine-session"
+   ],
+   "text": "SceneHost enters and ticks the scene, routes BGM and hands off to movies; BootSession fixes the per-frame order both play hosts share."
+  },
+  {
+   "title": "Render kernels",
+   "crates": [
+    "render-kernels",
+    "engine-ui"
+   ],
+   "text": "The wgpu-free half of drawing: GTE math, screen primitives, effect emitters and the UI draw-list builders. Both hosts call the same kernels."
+  },
+  {
+   "title": "Pixels",
+   "crates": [
+    "engine-render",
+    "engine-shell",
+    "web-viewer"
+   ],
+   "text": "Natively, engine-render draws into a software PSX VRAM through wgpu inside play-window. In the browser, web-viewer hands the same frame to WebGL on the play page."
+  }
+ ]
+}

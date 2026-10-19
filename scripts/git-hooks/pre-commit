@@ -248,6 +248,20 @@ if command -v python3 >/dev/null 2>&1 \
     fi
 fi
 
+# --- lane A2 ---
+# Crate map freshness. site/crate-map.json, the README's crate and pipeline
+# SVGs and its generated layer list are build outputs of the workspace itself
+# (manifests, lib.rs modules, CLAUDE.md's crate tables, the layering table).
+# Pure Python over committed files, milliseconds, no disc data - so it fails.
+if command -v python3 >/dev/null 2>&1 \
+    && [[ -f "scripts/ci/gen-crate-map.py" ]]; then
+    printf '[pre-commit] crate map freshness\n'
+    if ! python3 scripts/ci/gen-crate-map.py --check; then
+        printf '[pre-commit] run python3 scripts/ci/gen-crate-map.py and stage the result (or LEGAIA_SKIP_PRECOMMIT=1 to bypass)\n' >&2
+        exit 1
+    fi
+fi
+
 # Disc-denominated coverage ratchet. Unlike the port catalog, whose denominator
 # is the set of addresses this project cites, this measures against the game's
 # own bytes -- so it can notice a subsystem nobody has cited. It is a RATCHET:
