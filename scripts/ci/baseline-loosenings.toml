@@ -151,3 +151,13 @@ changes = [
   ["states/delilas_gi_spirit_streaks_v2/image", 0.861, 0.859],
   ["states/noa_levelup_banner/image", 0.962, 0.961],
 ]
+
+[[loosening]]
+file = "scripts/ci/retail-compare-baseline.json"
+reason = "The arts after-image ghosts now stand at retail's ring depth (slot depth * frame_step on the per-vsync cadence, slot 0 the live frame; FUN_80049348 0x80049454..0x800494A0) and turn by the body's live facing in the native host. Both Tail Fire captures draw Gimard's two ghosts in retail too (FT4 packets at (79, 79, 47) and (63, 63, 31) on CLUT 0x7900/0x7901, ring ids 0x11), but the engine's Gimard stands off retail's body (the hit rays run on the engine's own clock), so the ghosts that now trail at retail's depth land a few blocks off retail's. The two delilas rows are patched-disc party-swap states with a cast effect behind the ghosts. The same run raised cort_guilty_cross_mid_cast 0.772 -> 0.838 and battle_melee_hit_spark 0.713 -> 0.720."
+changes = [
+  ["states/battle_gimard_tail_fire_a/image", 0.804, 0.801],
+  ["states/battle_gimard_tail_fire_b/image", 0.805, 0.804],
+  ["states/delilas_gi_spirit_distortion_v3/image", 0.723, 0.718],
+  ["states/delilas_gi_spirit_streaks_v2/image", 0.859, 0.856],
+]
