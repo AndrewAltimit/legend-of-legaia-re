@@ -28,6 +28,7 @@
      Disclosure      details.disclosure > summary + .disclosure-body
      Link row        .see-also > .see-also-label + links
      Command         .cli > code   (copy button attached by main.js)
+     Screenshot      figure.screenshot > img + figcaption; .shot-pair of two
 
    Colour: never write a literal colour on a content page or in a doc SVG.
    Use the custom properties below - the light theme restates all of them.
@@ -4114,6 +4115,42 @@ details.about-data > .about-body > h3:first-child { margin-top: 0.6rem; }
 /* Left-aligned label variants, for text that starts at a node's edge. */
 :is(figure.diagram, figure.pipeline) .dg-label.dg-start,
 :is(figure.diagram, figure.pipeline) .dg-sub.dg-start { text-anchor: start; }
+
+/* figure.screenshot - a captured image of an app (Legaia Studio, the native
+   window) with a caption. The frame and caption take their colours from the
+   site tokens; the image itself is a picture of the app and is not themed.
+   .shot-pair lays two screenshots side by side and stacks them on a phone. */
+figure.screenshot {
+  margin: 1.5rem 0;
+  border: 1px solid var(--border);
+  background: var(--bg-raised);
+  border-radius: 6px;
+  padding: 0.5rem;
+}
+figure.screenshot img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: 3px;
+}
+figure.screenshot figcaption {
+  margin-top: 0.5rem;
+  padding: 0.4rem 0.25rem 0.1rem;
+  border-top: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  line-height: 1.5;
+}
+.shot-pair {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+  margin: 1.5rem 0;
+}
+.shot-pair figure.screenshot { margin: 0; }
+@media (max-width: 620px) {
+  .shot-pair { grid-template-columns: minmax(0, 1fr); }
+}
 
 .steps {
   display: flex;

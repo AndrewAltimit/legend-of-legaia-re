@@ -6,17 +6,8 @@
 
 <section class="doc-section" id="studio">
   <h2>Without a terminal: Legaia Studio</h2>
-  <p>The release archive's <code>legaia-studio</code> (<code>legaia-studio.exe</code> on Windows, <code>Legaia Studio.app</code> on macOS) does the common cases with buttons.</p>
-  <ol>
-    <li><strong>Open</strong> your disc image (the <code>.bin</code> of a Mode2/2352 dump, or its <code>.cue</code>) with <em>Open disc image...</em>, by typing its path, or by dropping it on the window. A folder <code>legaia-extract</code> already wrote opens too, and the last disc reopens next time. <em>Recent</em> in the top bar (and the start screen, when nothing is open) lists the last eight discs and folders you opened; <em>x</em> takes one off the list, and one that has been moved or deleted drops off by itself.</li>
-    <li><strong>Browse</strong> the archive: entries grouped under their CDNAME names and the place each scene is (<code>town01 - Rim Elm</code>). The search (<kbd>Ctrl</kbd>+<kbd>F</kbd>) matches every word against the name, the place, the category and the index, so <code>rim elm</code> finds every Rim Elm scene.</li>
-    <li><strong>Preview</strong> textures (with a palette slider), 3D models, audio, text and hex, and <strong>export</strong> PNG, OBJ, textured <code>.glb</code>, WAV or the raw bytes. <em>Show folder</em> on the status line opens where an export went.</li>
-    <li><strong>Extract</strong> the whole disc from the <em>Extract</em> tab, with progress, cancel and <em>Open output folder</em> at the end. It writes exactly what the <code>legaia-extract</code> command produces.</li>
-    <li><strong>Characters &amp; monsters</strong> and <strong>Movies &amp; voice</strong> show the party, every monster with its animations, the movies and the CD-XA audio, each exportable.</li>
-    <li><strong>Play</strong> starts the game (<code>legaia-engine</code>, shipped in the same folder) on the open disc at the title screen, with the same saves and settings as starting it directly. It needs the USA disc image; hovering a disabled button says why. The disc is remembered for the game too: starting it later by double-clicking goes straight to the title screen instead of asking for the disc.</li>
-  </ol>
-  <p>Messages on the status line under the path: a confirmation (an export written, the game started) clears itself after a few seconds; an error stays until you press <em>Dismiss</em>, and <em>Copy</em> puts its text on the clipboard for a bug report. <em>View</em> chooses a light or dark theme (or follows the desktop) and zooms the whole window, as do <kbd>Ctrl</kbd>+<kbd>=</kbd> / <kbd>Ctrl</kbd>+<kbd>-</kbd> / <kbd>Ctrl</kbd>+<kbd>0</kbd>; both are remembered.</p>
-  <p class="hint"><kbd>F1</kbd> opens About. Studio ships no game data and uploads nothing: it reads the disc you choose and writes only where you tell it.</p>
+  <p>The release archive's <code>legaia-studio</code> (<code>legaia-studio.exe</code> on Windows, <code>Legaia Studio.app</code> on macOS) does the common cases of this page with buttons: open your disc image, browse and search the archive by place name, preview textures, 3D models, audio and dialog, export PNG, OBJ, textured <code>.glb</code> or WAV, view the party and every monster with their animations, play the movies and voice audio, and run the whole-disc extraction from its <em>Extract</em> tab - which writes exactly what the <code>legaia-extract</code> command below produces. Its <em>Play</em> button starts the game on the disc it has open.</p>
+  <p><a href="desktop-apps.html#studio">Desktop apps: Legaia Studio</a> walks through it with screenshots, including the download and the first start on each system. Studio ships no game data and uploads nothing: it reads the disc you choose and writes only where you tell it. The rest of this page is the command-line route, one scenario per asset type.</p>
 </section>
 
 <section class="doc-section" id="at-a-glance">

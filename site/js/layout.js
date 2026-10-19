@@ -52,6 +52,7 @@ const NAV = [
     title: 'Guides',
     items: [
       { href: 'guides/getting-started.html',         text: 'Getting started',          key: 'guides/getting-started' },
+      { href: 'guides/desktop-apps.html',            text: 'Desktop apps',             key: 'guides/desktop-apps' },
       { href: 'guides/extracting-assets.html',       text: 'Extracting assets',        key: 'guides/extracting-assets' },
       { href: 'guides/playing-and-viewing.html',     text: 'Playing + viewing',        key: 'guides/playing-and-viewing' },
       { href: 'guides/modding-and-translation.html', text: 'Modding + translation',    key: 'guides/modding-and-translation' },
