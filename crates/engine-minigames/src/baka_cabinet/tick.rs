@@ -355,15 +355,18 @@ impl BakaCabinet {
         }
         self.shake = shake_decay(self.shake, step);
         if f.draw_hud && !self.suppress_scene {
-            let hud = hud_frame(
-                input.hp,
-                [input.player_round_wins, input.opponent_round_wins],
-                input.win_target,
-                input.combo_taken,
-                self.stage_display + 1,
-                self.high_score,
-                self.max_streak,
-            );
+            let hud = hud_frame(&HudInput {
+                hp: input.hp,
+                round_wins: [input.player_round_wins, input.opponent_round_wins],
+                win_target: input.win_target,
+                combo_taken: input.combo_taken,
+                chosen_type: input.chosen_type,
+                type_hold: input.type_hold,
+                stage_display: self.stage_display + 1,
+                high_score: self.high_score,
+                latch: self.max_streak,
+                blink: self.blink,
+            });
             self.max_streak = hud.max_streak;
             f.hud = Some(hud);
         }

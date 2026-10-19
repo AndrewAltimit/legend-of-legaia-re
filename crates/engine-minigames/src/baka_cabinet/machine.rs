@@ -84,6 +84,10 @@ pub struct CabinetInput {
     pub hp: [i32; 2],
     /// Per-slot consecutive-hits-taken counters, for the HUD pass.
     pub combo_taken: [i32; 2],
+    /// Per-slot chosen attack type (block `+0x24`), for the HUD's icons.
+    pub chosen_type: [i32; 2],
+    /// Per-slot held-type timer (block `+0x8C`), for the lit icon's flash.
+    pub type_hold: [i32; 2],
     /// The round's result clock runs: the fight resolution SM's condition
     /// for advancing the round timer `DAT_801DBF88` this frame
     /// (`FUN_801D3468`, `0x801D3614..0x801D3668`) - either fighter's

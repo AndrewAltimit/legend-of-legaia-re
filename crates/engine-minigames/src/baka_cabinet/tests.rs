@@ -202,15 +202,25 @@ fn pip_rows_grow_toward_each_other() {
 }
 
 #[test]
-fn combo_level_dips_then_snaps_back() {
-    assert_eq!(combo_counter_level(0), 0xF0);
-    assert_eq!(combo_counter_level(3), 0xF0);
-    assert_eq!(combo_counter_level(4), 0xE0);
-    assert_eq!(combo_counter_level(5), 0xD0);
-    assert_eq!(combo_counter_level(6), 0xC0);
-    // From 7 the `10 - combo < 4` test fires and it is full again.
-    assert_eq!(combo_counter_level(7), 0xF0);
-    assert_eq!(combo_counter_level(50), 0xF0);
+fn lit_icon_level_dips_then_snaps_back() {
+    assert_eq!(icon_lit_level(0), 0xF0);
+    assert_eq!(icon_lit_level(3), 0xF0);
+    assert_eq!(icon_lit_level(4), 0xE0);
+    assert_eq!(icon_lit_level(5), 0xD0);
+    assert_eq!(icon_lit_level(6), 0xC0);
+    // From 7 the `10 - t < 4` test fires and it is full again.
+    assert_eq!(icon_lit_level(7), 0xF0);
+    assert_eq!(icon_lit_level(50), 0xF0);
+}
+
+#[test]
+fn only_the_chosen_row_lights_and_each_side_reads_its_own_block() {
+    let l = attack_icon_levels([2, 0], [5, 9]);
+    assert_eq!(l[0], [HUD_CELL_LEVEL, 0xD0, HUD_CELL_LEVEL]);
+    assert_eq!(l[1], [HUD_CELL_LEVEL; 3], "type 0 lights nothing");
+    let special = attack_icon_levels([4, 1], [0, 0]);
+    assert_eq!(special[0], [HUD_CELL_LEVEL; 3], "the special has no row");
+    assert_eq!(special[1][0], 0xF0);
 }
 
 #[test]
@@ -221,14 +231,27 @@ fn stage_digits_split_at_ten() {
 }
 
 #[test]
-fn high_score_place_count_carries_retails_off_by_one() {
+fn high_score_reads_left_aligned_at_0x28_bar_the_all_nines_quirk() {
     assert_eq!(high_score_x(0), None);
-    // 9 measures as two places because the test is against `10^k - 1`.
-    assert_eq!(high_score_places(9), 2);
-    assert_eq!(high_score_places(10), 2);
-    assert_eq!(high_score_places(99), 3);
-    assert_eq!(high_score_places(1), 1);
-    assert_eq!(high_score_x(1), Some(0x28 - 8));
+    // The leading digit of a d-digit score sits in field cell 8 - d, so the
+    // field origin `0x28 - cell * 8` puts it on 0x28.
+    assert_eq!(high_score_places(1), 7);
+    assert_eq!(high_score_places(10), 6);
+    assert_eq!(high_score_places(12_345), 3);
+    for score in [1, 10, 12_345, 4_000_000] {
+        let x0 = high_score_x(score).unwrap();
+        let lead = crate::baka_fighter::right_aligned_number_cells(score)[0];
+        assert_eq!(x0 + lead.x_offset, 0x28, "score {score}");
+    }
+    // The `10^k - 1` test passes one power early on all nines, which puts
+    // the readout one cell right of 0x28.
+    assert_eq!(high_score_places(9), 6);
+    assert_eq!(high_score_places(99), 5);
+    let x0 = high_score_x(9).unwrap();
+    assert_eq!(
+        x0 + crate::baka_fighter::right_aligned_number_cells(9)[0].x_offset,
+        0x30
+    );
 }
 
 #[test]
@@ -563,6 +586,8 @@ fn the_hud_pass_runs_only_in_the_duel_band() {
         frame_step: 1,
         hp: [FULL_HP, FULL_HP / 2],
         combo_taken: [1, 4],
+        chosen_type: [3, 0],
+        type_hold: [5, 0],
         win_target: 2,
         ..Default::default()
     };
@@ -571,7 +596,9 @@ fn the_hud_pass_runs_only_in_the_duel_band() {
     let hud = f.hud.expect("the duel draws the HUD");
     assert_eq!(hud.bars[0].x1 - hud.bars[0].x0, 0x64);
     // Crossed sides: index 0 shows slot 1's streak.
-    assert_eq!(hud.combo_level[0], combo_counter_level(4));
+    assert_eq!(hud.combo, [4, 1]);
+    // The icons are not crossed: slot 0's type 3 lights its own third row.
+    assert_eq!(hud.icons[0][2], icon_lit_level(5));
     assert_eq!(hud.max_streak, 4);
 
     // The attract card draws neither.
@@ -604,4 +631,107 @@ fn the_epilogue_draw_gates_are_narrower_than_the_state_list() {
             assert!(draws_arena(s), "{s:#x} draws a HUD over no arena");
         }
     }
+}
+
+fn hud_widget_table() -> Vec<legaia_minigame_formats::baka_opponents::BakaHudWidget> {
+    (0..0x30u8)
+        .map(|i| legaia_minigame_formats::baka_opponents::BakaHudWidget {
+            scale: 0x1000,
+            texpage: 5,
+            clut: 0x7D80 + u16::from(i),
+            u: i,
+            v: 0x40,
+            w: 8,
+            h: 8,
+            rgb_top: [0x80; 3],
+            semi: 0,
+            rgb_bottom: [0x80; 3],
+            abr: 0,
+        })
+        .collect()
+}
+
+/// The duel HUD's packets come out in the renderer's link order: bars, the
+/// two three-cell frames, the combo digits + "HIT!", the pips, the icon
+/// columns, then the emitter's PRESS SELECT / STAGE / digit widgets.
+#[test]
+fn duel_hud_packets_follow_the_renderers_link_order() {
+    use legaia_minigame_formats::baka_opponents::BakaBarFrameCell;
+    let hud = hud_frame(&HudInput {
+        hp: [FULL_HP, FULL_HP],
+        round_wins: [1, 0],
+        win_target: 2,
+        combo_taken: [0, 12],
+        chosen_type: [1, 0],
+        type_hold: [0, 0],
+        stage_display: 3,
+        high_score: 0,
+        latch: 0,
+        blink: 0x10,
+    });
+    let cell = BakaBarFrameCell {
+        width: 8,
+        uv: [(0, 0), (7, 0), (0, 15), (7, 15)],
+    };
+    let p = duel_hud_packets(&hud, &hud_widget_table(), &[cell; 3]);
+    let cells: Vec<(&crate::baka_fighter::HudWidgetQuad, u32)> = p
+        .iter()
+        .filter_map(|p| match p {
+            DuelHudPacket::Cell { quad, ot } => Some((quad, *ot)),
+            DuelHudPacket::Bar { .. } => None,
+        })
+        .collect();
+    assert!(matches!(p[0], DuelHudPacket::Bar { slot: 0, .. }));
+    assert!(matches!(p[1], DuelHudPacket::Bar { slot: 1, .. }));
+    // Six frame cells, then side 0's combo "12" (two digits) + HIT; side 1
+    // took no hits, so draws no counter.
+    assert_eq!(cells[0].0.x0, VITAL_FRAME_X[0]);
+    assert_eq!(cells[3].0.x0, VITAL_FRAME_X[1]);
+    let (units, tens, hit) = (cells[6].0, cells[7].0, cells[8].0);
+    assert_eq!((units.x0, units.uv[0]), (0x30, (2 * 16, 0x20)));
+    assert_eq!((tens.x0, tens.uv[0]), (0x20, (16, 0x20)));
+    assert_eq!((hit.x0, hit.x1, hit.clut), (0x40, 0x5F, DUEL_HUD_CLUT_HIT));
+    // Pips: two per side, the player's first filled.
+    assert_eq!(cells[9].0.uv[0], (PIP_U_FILLED, 0));
+    assert_eq!(cells[10].0.uv[0], (PIP_U_EMPTY, 0));
+    // Icons: six cells, side 0's row 0 lit (type 1).
+    let icons = &cells[13..19];
+    assert_eq!(icons[0].0.rgb_top, [0xF0; 3]);
+    assert_eq!(icons[1].0.rgb_top, [HUD_CELL_LEVEL; 3]);
+    assert_eq!(icons[3].0.x0, ICON_X[1]);
+    assert!(cells[..19].iter().all(|(_, ot)| *ot == DUEL_HUD_OT));
+    // Then PRESS SELECT (lit by the blink bit), STAGE, and the stage digit
+    // through widget 0x13 paged to `3 * 8`, all at the emitter's bucket.
+    let tail = &cells[19..];
+    assert_eq!(tail.len(), 3);
+    assert_eq!(tail[0].0.clut, 0x7D80 + u16::from(WIDGET_PRESS_SELECT));
+    assert_eq!(tail[1].0.clut, 0x7D80 + u16::from(WIDGET_STAGE));
+    assert_eq!(tail[2].0.uv[0], (3 * 8, 0x40));
+    assert!(tail.iter().all(|(_, ot)| *ot == WIDGET_OT));
+}
+
+/// The high score draws through widget 0x13 with the number drawer's forced
+/// CLUT, left-aligned on 0x28 at y 0x36.
+#[test]
+fn duel_hud_high_score_cells_start_on_0x28() {
+    let hud = hud_frame(&HudInput {
+        win_target: 2,
+        stage_display: 1,
+        high_score: 1234,
+        ..Default::default()
+    });
+    let p = duel_hud_packets(&hud, &hud_widget_table(), &[]);
+    let digits: Vec<_> = p
+        .iter()
+        .filter_map(|p| match p {
+            DuelHudPacket::Cell { quad, .. } if quad.clut == NUMBER_CLUT => Some(*quad),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(digits.len(), 4);
+    // Centred 8x8 cells: x0 = centre - 4.
+    assert_eq!(digits[0].x0 + 4, 0x28);
+    assert_eq!(digits[0].uv[0].0, 8);
+    assert_eq!(digits[3].x0 + 4, 0x28 + 3 * 8);
+    assert_eq!(digits[0].y0 + 4, HIGH_SCORE_Y);
 }

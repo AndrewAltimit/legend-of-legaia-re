@@ -349,6 +349,11 @@ impl BakaFight {
                 self.commit(s, pick);
             }
         }
+        // The held-type timer the HUD's lit attack icon flashes off
+        // (block `+0x8C`), after this frame's commits as in retail's tick.
+        for fs in &mut self.f {
+            fs.step_hold(frame_step);
+        }
 
         // The strike clocks (retail's per-fighter combat tick, which runs
         // before the resolution SM reads the `+0x0C` words it leaves).

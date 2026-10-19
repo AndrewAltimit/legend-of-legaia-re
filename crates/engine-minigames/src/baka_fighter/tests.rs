@@ -509,12 +509,25 @@ fn the_duel_ticks_the_cabinet_shell_and_its_hud() {
     assert_eq!(hud.bars[0].x1 - hud.bars[0].x0, 0x64);
     assert_eq!(hud.bars[1].x1 - hud.bars[1].x0, 0x64);
     // The crossed combo sides put slot 1's streak on the player's counter.
-    assert_eq!(
-        hud.combo_level[0],
-        crate::baka_cabinet::combo_counter_level(5)
-    );
+    assert_eq!(hud.combo[0], 5);
     // The pip rows are sized by the best-of-3 target.
     assert_eq!(hud.pips[0].len(), ROUND_WIN_TARGET as usize);
+}
+
+#[test]
+fn a_commit_zeroes_the_held_type_timer_and_holding_advances_it() {
+    let mut f = fight();
+    assert!(f.choose(0, BakaAttack::B));
+    f.tick(1);
+    assert_eq!(f.f[0].hold, 0, "the commit's frame zeroes after the add");
+    f.tick(1);
+    f.tick(1);
+    assert_eq!(f.f[0].hold, 2);
+    // The next frame's HUD lights row 1 (type B) off the timer.
+    f.tick(1);
+    let hud = f.cabinet_frame().hud.as_ref().expect("duel HUD");
+    assert_eq!(hud.icons[0][1], crate::baka_cabinet::icon_lit_level(2));
+    assert_eq!(hud.icons[0][0], crate::baka_cabinet::HUD_CELL_LEVEL);
 }
 
 #[test]
