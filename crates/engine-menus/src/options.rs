@@ -162,7 +162,8 @@ pub struct OptionsState {
     /// Volumetric ground fog (engine-only, non-retail): a low drifting mist
     /// bank over the scenes that read as misty or night, parted by the
     /// characters walking through it ([`legaia_render_kernels::fog_volume`]). Mirrors into
-    /// `legaia_engine_core::world::WorldToggles::volumetric_fog`. **Default on**; off is
+    /// `legaia_engine_core::world::WorldToggles::volumetric_fog`. **Default off**
+    /// while the look matures (`F9` / the page's box turns it on); off is
     /// the frame without the feature, pixel for pixel. Presentation only -
     /// the bank reads the actors and never writes back.
     pub volumetric_fog: bool,
@@ -216,7 +217,7 @@ impl Default for OptionsState {
             reduce_flashing: true,
             retail_static_window: true,
             retail_view_window: true,
-            volumetric_fog: true,
+            volumetric_fog: false,
             enhanced_lighting: true,
             lighting_time_of_day: "auto".to_string(),
             light_shadows: true,
@@ -1286,7 +1287,6 @@ mod tests {
             [
                 "camera_distance",
                 "reduce_flashing",
-                "volumetric_fog",
                 "enhanced_lighting",
                 "light_shadows",
                 "occlusion_fade"
@@ -1295,6 +1295,7 @@ mod tests {
         o.precise_movement = true;
         o.retail_static_window = false;
         o.retail_view_window = false;
+        o.volumetric_fog = true;
         assert_eq!(o.retail_deviations().len(), 9);
         let rows = (o.battle_camera, o.field_move, o.audio);
         o.pin_retail();

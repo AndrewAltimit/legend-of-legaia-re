@@ -1199,14 +1199,15 @@ pub(crate) enum Cmd {
         /// the `F4` key.
         #[arg(long, default_value_t = false)]
         no_occlusion_fade: bool,
-        /// Disable the volumetric ground-fog ENHANCEMENT for this session.
-        /// By default, scenes that read as misty or night (Rim Elm under
-        /// the Mist, Drake Castle, the Voz forests, the Ravine, and any field
-        /// scene whose retail fog pool is live) carry a low drifting mist
-        /// bank that the characters part as they walk through it, and a
-        /// battle inherits its field scene's bank. Pure presentation - the
-        /// bank reads the actors and never writes back. Toggle (and persist)
-        /// at runtime with the `F9` key.
+        /// Disable the volumetric ground-fog ENHANCEMENT for this session,
+        /// whatever the options file says. Off by default; with it on,
+        /// scenes that read as misty or night (Rim Elm under the Mist, Drake
+        /// Castle, the Voz forests, the Ravine, and any field scene whose
+        /// retail fog pool is live) carry a low drifting mist bank that the
+        /// characters part as they walk through it, and a battle inherits
+        /// its field scene's bank. Pure presentation - the bank reads the
+        /// actors and never writes back. Toggle (and persist) at runtime
+        /// with the `F9` key.
         #[arg(long, default_value_t = false)]
         no_volumetric_fog: bool,
         /// Start in PSX-faithful rasterisation: sub-pixel vertex jitter and
