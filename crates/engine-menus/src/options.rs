@@ -257,6 +257,27 @@ impl OptionsState {
         self.bloom = false;
     }
 
+    // --- lane Q ---
+    /// Put every presentation knob back at its shipped default - the play
+    /// page's **Reset to defaults** in its Visual enhancements panel. Covers
+    /// exactly the knobs that panel groups: enhanced lighting and its time of
+    /// day, lamp shadows, bloom, ground fog, the occlusion fade, the
+    /// camera-distance preset and the two retail tile windows. Movement,
+    /// flash guard, audio and the retail options-screen rows are not
+    /// presentation and keep the player's values.
+    pub fn reset_visual_enhancements(&mut self) {
+        let d = OptionsState::default();
+        self.camera_distance = d.camera_distance;
+        self.retail_static_window = d.retail_static_window;
+        self.retail_view_window = d.retail_view_window;
+        self.volumetric_fog = d.volumetric_fog;
+        self.enhanced_lighting = d.enhanced_lighting;
+        self.lighting_time_of_day = d.lighting_time_of_day;
+        self.light_shadows = d.light_shadows;
+        self.occlusion_fade = d.occlusion_fade;
+        self.bloom = d.bloom;
+    }
+
     /// The options screen's rows as the config words a save block carries.
     pub fn retail_options(&self) -> legaia_save::card::RetailOptions {
         let mut b = [0u8; 9];
@@ -1421,6 +1442,31 @@ mod tests {
         assert!(!rows[6].teal);
         assert!(rows[7].teal && rows[8].teal && rows[9].teal);
         assert_eq!(rows[7].value, Some("Vibration On"));
+    }
+
+    #[test]
+    fn reset_visual_enhancements_restores_presentation_defaults_only() {
+        let mut o = OptionsState::default();
+        o.pin_retail();
+        o.bloom = true;
+        o.volumetric_fog = true;
+        o.lighting_time_of_day = "night".to_string();
+        o.precise_movement = true;
+        o.bgm_volume = 3;
+        o.reset_visual_enhancements();
+        let d = OptionsState::default();
+        assert_eq!(o.enhanced_lighting, d.enhanced_lighting);
+        assert_eq!(o.lighting_time_of_day, d.lighting_time_of_day);
+        assert_eq!(o.light_shadows, d.light_shadows);
+        assert_eq!(o.bloom, d.bloom);
+        assert_eq!(o.volumetric_fog, d.volumetric_fog);
+        assert_eq!(o.occlusion_fade, d.occlusion_fade);
+        assert_eq!(o.camera_distance, d.camera_distance);
+        assert_eq!(o.retail_view_window, d.retail_view_window);
+        assert_eq!(o.retail_static_window, d.retail_static_window);
+        assert!(o.precise_movement, "movement is not a visual knob");
+        assert_eq!(o.bgm_volume, 3, "audio is not a visual knob");
+        assert!(!o.reduce_flashing, "the flash guard keeps its value");
     }
 
     #[test]

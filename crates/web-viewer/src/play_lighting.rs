@@ -188,6 +188,17 @@ impl LegaiaRuntime {
         self.options_state.bloom
     }
 
+    // --- lane Q ---
+    /// The Visual enhancements panel's **Reset to defaults**: every
+    /// presentation knob back at its shipped default
+    /// (`OptionsState::reset_visual_enhancements`), persisted. The page
+    /// releases Retail-faithful first, so the reset lands on the player's
+    /// own settings rather than under a session pin.
+    pub fn reset_visual_options(&mut self) {
+        self.options_state.reset_visual_enhancements();
+        self.persist_and_apply_options();
+    }
+
     /// This frame's bloom response `[threshold, knee, intensity]`
     /// (`legaia_render_kernels::bloom::BloomParams::for_frame`): enhanced
     /// lighting's mood while it is on, daylight's otherwise - the value the
