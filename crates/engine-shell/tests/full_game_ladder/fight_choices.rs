@@ -731,35 +731,80 @@ pub(super) fn heal_spell_reserve(w: &legaia_engine_core::world::World, actor: u8
         .map_or(0, |(_, cost)| cost * 2)
 }
 
-/// The element-affinity percent a Seru-magic cast lands with on the first
-/// standing foe: `matrix[summon creature element][foe element]`
-/// (`FUN_801dd864`), the attacker element being the summoned creature's
-/// record `+0x1D`, not the caster's. `100` when either element is unknown.
+/// The element-affinity percent a Seru-magic cast lands with:
+/// `matrix[summon creature element][foe element]` (`FUN_801dd864`), the
+/// attacker element being the summoned creature's record `+0x1D`, not the
+/// caster's. The segmented hands read the first standing foe, the one the
+/// target cursor opens on; the continuous hand aims ([`aimed_foe`]), so it
+/// reads the best standing foe. `100` when either element is unknown.
 pub(super) fn spell_affinity_pct(w: &legaia_engine_core::world::World, spell_id: u8) -> u32 {
     let n = w.party.party_count.clamp(1, 3) as usize;
+    let mut foes = (n..w.actors.len()).filter(|&i| w.actors[i].battle.hp > 0);
+    if continuous::PLAYS_ON.with(std::cell::Cell::get) {
+        foes.map(|i| spell_affinity_on(w, spell_id, i))
+            .max()
+            .unwrap_or(100)
+    } else {
+        foes.next()
+            .map_or(100, |i| spell_affinity_on(w, spell_id, i))
+    }
+}
+
+/// [`spell_affinity_pct`] against the foe at actor index `foe`.
+pub(super) fn spell_affinity_on(
+    w: &legaia_engine_core::world::World,
+    spell_id: u8,
+    foe: usize,
+) -> u32 {
     let Some(aff) = w.tables.element_affinity.as_ref() else {
         return 100;
     };
     let Some(atk) = w.tables.summon_creatures.get(&spell_id).map(|d| d.element) else {
         return 100;
     };
-    let Some(def) = w
-        .actors
-        .iter()
-        .skip(n)
-        .find(|a| a.battle.hp > 0)
-        .and_then(|a| {
-            a.battle_element.or_else(|| {
-                w.tables
-                    .monster_catalog
-                    .get(a.battle_monster_id?)
-                    .map(|d| d.element)
-            })
+    let Some(def) = w.actors.get(foe).and_then(|a| {
+        a.battle_element.or_else(|| {
+            w.tables
+                .monster_catalog
+                .get(a.battle_monster_id?)
+                .map(|d| d.element)
         })
-    else {
+    }) else {
         return 100;
     };
     u32::from(aff.affinity_pct(atk, def).unwrap_or(100))
+}
+
+/// The monster row (`0..5`, actor `party_count + row`) the continuous hand
+/// aims a single-foe strike or cast at, or `None` to take the cursor where
+/// it opens (the segmented hands always do).
+///
+/// A cast goes to the standing foe it lands hardest on (the element
+/// matrix, [`spell_affinity_on`]); a strike, and a tie, to the standing foe
+/// with the least HP left - a foe killed a round sooner takes no more turns.
+/// Stepping the cursor there drives the picker's Left / Right arm, retail's
+/// angular attack-target ring (`FUN_801D8A88` -> `FUN_801D8D00`), which a
+/// hand that only confirms the opening slot never reaches.
+pub(super) fn aimed_foe(w: &legaia_engine_core::world::World, spell: Option<u8>) -> Option<u8> {
+    if !continuous::PLAYS_ON.with(std::cell::Cell::get) {
+        return None;
+    }
+    let n = w.party.party_count.clamp(1, 3) as usize;
+    (0..5u8)
+        .filter(|&r| {
+            w.actors
+                .get(n + usize::from(r))
+                .is_some_and(|a| a.battle.hp > 0 && a.battle.max_hp > 0)
+        })
+        .max_by_key(|&r| {
+            let i = n + usize::from(r);
+            let pct = spell.map_or(100, |id| spell_affinity_on(w, id, i));
+            (
+                pct,
+                std::cmp::Reverse(w.actors[i].battle.hp),
+                std::cmp::Reverse(r),
+            )
+        })
 }
 
 thread_local! {

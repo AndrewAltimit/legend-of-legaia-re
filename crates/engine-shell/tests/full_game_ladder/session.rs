@@ -20,6 +20,12 @@ pub(super) fn open_session(extracted: &Path) -> NativeSession {
     // record's flag writes, branches and scene changes. `NativeSession` leaves
     // it off; without it a conversation only types its first text segment.
     session.host.world.toggles.use_vm_dialogue = true;
+    // `LEGAIA_FGL_PIN_RETAIL=1`: every fidelity toggle at retail's value
+    // (`WorldToggles::pin_retail`), so the run measures the retail-faithful
+    // mode - the ledge-hop landing guard off among them.
+    if std::env::var_os("LEGAIA_FGL_PIN_RETAIL").is_some_and(|v| v != "0") {
+        session.host.world.toggles.pin_retail();
+    }
     session
 }
 

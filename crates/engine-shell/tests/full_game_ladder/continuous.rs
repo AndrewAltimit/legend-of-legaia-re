@@ -667,6 +667,11 @@ fn part_c_continuous_run() {
     if let Some(s) = &stall {
         eprintln!("[stall] {s}");
     }
+    let (steps, aimed) = super::fight_turn::AIM_TALLY.with(std::cell::Cell::take);
+    let (struck, missed) = super::fight_turn::AIM_DISPATCH.with(std::cell::Cell::take);
+    eprintln!(
+        "[aim] {steps} frame(s) asking the target cursor to step, {aimed} commit(s) aimed off the opening foe; {struck} strike(s) dispatched, {missed} at another foe than the one confirmed"
+    );
     eprintln!();
     if from_id.is_some() || until.is_some() {
         return;
