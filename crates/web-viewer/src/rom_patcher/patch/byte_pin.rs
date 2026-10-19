@@ -196,12 +196,12 @@ const PINS: &[(&str, &str, &str)] = &[
     ),
     (
         "party",
-        "ca223fbfe4637c27d5d3b45e5aaef92b0d700b9fa425bb4453db9771581927ef",
+        "d296295ad2040947d9a1da7cd9290f26f28c609738abdb5ea2417fe940de2a0d",
         "cd094185039698c08415cc157948d48f212a73f7749ddf7a6f0fe9276e4c3699",
     ),
     (
         "party_arena_taken",
-        "a2afb150239ed1b6cfdce6741d539708a3e76654d20851e717fc979c10255a3f",
+        "3e90183f0610ad62d02c55273b798eb95b88fb1b4959f38432a62baa960d9bf2",
         "0aecfc7b4d11bacdc2a9ac4aa2aa10b869f7364f45f868a821abd2c1238507b3",
     ),
     (
