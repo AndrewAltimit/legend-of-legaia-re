@@ -18,10 +18,14 @@
 //! - **Coverage**: a signed distance to the floor's edge ([`FogGround::dist`],
 //!   positive on the floor), which the shaders turn into a soft fade so the
 //!   bank thins out over a rim instead of hovering over nothing.
-//! - **Spill**: just past a rim the sheet mesh keeps going but **falls**
-//!   ([`spill_drop`]), and the shaders draw those fragments as streaks
-//!   flowing outward and down - fog pouring off the edge, thinning with
-//!   depth ([`SPILL_REACH`]).
+//! - **Spill**: just past a rim the sheet mesh keeps going but **falls**,
+//!   almost straight down the wall face ([`spill_drop`], [`SPILL_REACH`]),
+//!   and the shaders break those fragments into slow tendrils pouring off
+//!   the edge, thinning and parting as they fall.
+//! - **Haze**: further out the mesh lies as a faint, thick, flat layer far
+//!   below the rim ([`HAZE_DEPTH`], [`haze_weight`]) - the misty void a
+//!   tower top looks out over, so the fall does not end on nothing. It lies
+//!   only where nothing is drawn above it, never on a floor.
 //!
 //! Nothing here is retail; see the module above.
 
@@ -40,10 +44,21 @@ pub const FLOOR_MIN_UP: f32 = 0.64;
 /// roof, canopy or overhang, not floor (retail Y-down, so "above" is a
 /// smaller Y).
 pub const ROOF_CLEARANCE: f32 = 96.0;
-/// How far past a rim the spill reaches, world units.
-pub const SPILL_REACH: f32 = 384.0;
+/// How far past a rim the spill reaches, world units. Short against
+/// [`SPILL_DEPTH`]: the curtain falls nearly straight down the wall face,
+/// with only a slight outward bow over the lip.
+pub const SPILL_REACH: f32 = 256.0;
 /// How far the spill has fallen at [`SPILL_REACH`], world units.
-pub const SPILL_DEPTH: f32 = 1100.0;
+pub const SPILL_DEPTH: f32 = 1400.0;
+/// How far below its rim the distant haze layer lies, world units.
+pub const HAZE_DEPTH: f32 = 1900.0;
+/// Distance past the rim (world units) where the haze is at its thickest.
+pub const HAZE_PEAK: f32 = 1000.0;
+/// Distance past the rim (world units) beyond which there is no haze.
+pub const HAZE_REACH: f32 = 3200.0;
+/// The haze's share of the bank at its thickest: a faint layer, not a
+/// second bank.
+pub const HAZE_WEIGHT: f32 = 0.45;
 /// How far above a surface below the rim the spill sheet stays when it
 /// drapes over it, world units.
 pub const SPILL_CLEARANCE: f32 = 24.0;
@@ -53,7 +68,9 @@ pub const EDGE_SOFT: f32 = 96.0;
 
 /// How far below its rim the spill sheet lies at `out` world units past the
 /// edge: a fall that starts level (the bank first slides over the lip) and
-/// steepens - `SPILL_DEPTH * (out / SPILL_REACH)^2`.
+/// steepens - `SPILL_DEPTH * (out / SPILL_REACH)^1.5`. With the reach short
+/// against the depth, past the first sheet-mesh quad it is a near-vertical
+/// curtain.
 pub fn spill_drop(out: f32) -> f32 {
     let t = (out / SPILL_REACH).clamp(0.0, 1.0);
     SPILL_DEPTH * t * t.sqrt()
@@ -65,6 +82,15 @@ pub fn spill_drop(out: f32) -> f32 {
 pub fn spill_weight(out: f32) -> f32 {
     let t = (out / SPILL_REACH).clamp(0.0, 1.0);
     1.0 - t * t.sqrt()
+}
+
+/// The distant haze's share of the bank at `out` world units past the rim
+/// (`0..=HAZE_WEIGHT`): nothing within the spill's reach, rising to its
+/// thickest at [`HAZE_PEAK`] and fading out by [`HAZE_REACH`].
+pub fn haze_weight(out: f32) -> f32 {
+    let rise = smooth01((out - SPILL_REACH) / (HAZE_PEAK - SPILL_REACH));
+    let fall = smooth01((out - HAZE_PEAK) / (HAZE_REACH - HAZE_PEAK));
+    HAZE_WEIGHT * rise * (1.0 - fall)
 }
 
 /// Collects floor candidates per cell from triangles, then resolves them into
@@ -439,7 +465,12 @@ impl FogGround {
     ///   mean height of the covered ones at full weight;
     /// - within [`SPILL_REACH`] past a rim, the rim's height lowered by
     ///   [`spill_drop`] at [`spill_weight`];
-    /// - further out, `None` (no bank).
+    /// - further out, the distant haze: [`HAZE_DEPTH`] below the rim at
+    ///   [`haze_weight`], weight `0` where something drawn stands above
+    ///   that plane (the haze never lies on a lower roof or hillside);
+    /// - with no floor at all, `None` (no bank). Past the field's edge,
+    ///   where nothing is drawn, the haze continues off the nearest border
+    ///   cell's rim.
     pub fn sheet_at(&self, x: f32, z: f32) -> Option<FogSheetPoint> {
         let gx = ((x - self.origin[0]) / self.cell - 0.5).floor() as i32;
         let gz = ((z - self.origin[1]) / self.cell - 0.5).floor() as i32;
@@ -460,30 +491,56 @@ impl FogGround {
                 y: sum / n as f32,
                 weight: 1.0,
                 spill: false,
+                haze: false,
             });
         }
-        let r = self.rim_of(x, z)?;
-        let out = -self.dist_at(x, z);
-        if out >= SPILL_REACH {
-            return None;
-        }
-        // Drape over whatever stands below the rim (a tower's flared flank,
-        // a ledge): never deeper than just above the highest drawn surface
-        // in the four cells around the point, never above the rim.
+        let (r, out) = match self.cell_index(x, z) {
+            Some(_) => (self.rim_of(x, z)?, -self.dist_at(x, z)),
+            // Beyond the field nothing is drawn: the nearest border cell's
+            // rim, that far further out (the haze reaches past the field).
+            None => {
+                let cx = ((x - self.origin[0]) / self.cell).floor();
+                let cz = ((z - self.origin[1]) / self.cell).floor();
+                let cx = cx.clamp(0.0, self.w as f32 - 1.0) as usize;
+                let cz = cz.clamp(0.0, self.h as f32 - 1.0) as usize;
+                let i = cz * self.w + cx;
+                let r = self.rim[i];
+                if r == u32::MAX {
+                    return None;
+                }
+                let c = self.centre_of(i);
+                let extra = ((x - c[0]).powi(2) + (z - c[1]).powi(2)).sqrt();
+                (r as usize, (-self.dist[i]).max(0.0) + extra)
+            }
+        };
         let rim_y = self.height[r];
-        let mut y = rim_y + spill_drop(out);
+        // The highest drawn surface in the four cells around the point.
+        let mut top = f32::INFINITY;
         for (dx, dz) in [(0, 0), (1, 0), (0, 1), (1, 1)] {
             let (cx, cz) = (gx + dx, gz + dz);
             if cx < 0 || cz < 0 || cx >= self.w as i32 || cz >= self.h as i32 {
                 continue;
             }
-            let top = self.top[cz as usize * self.w + cx as usize];
-            y = y.min(top - SPILL_CLEARANCE);
+            top = top.min(self.top[cz as usize * self.w + cx as usize]);
         }
+        if out >= SPILL_REACH {
+            let y = rim_y + HAZE_DEPTH;
+            return Some(FogSheetPoint {
+                y,
+                weight: if top < y { 0.0 } else { haze_weight(out) },
+                spill: true,
+                haze: true,
+            });
+        }
+        // Drape over whatever stands below the rim (a tower's flared flank,
+        // a ledge): never deeper than just above the highest drawn surface
+        // in the four cells around the point, never above the rim.
+        let y = (rim_y + spill_drop(out)).min(top - SPILL_CLEARANCE);
         Some(FogSheetPoint {
             y: y.max(rim_y),
             weight: spill_weight(out),
             spill: true,
+            haze: false,
         })
     }
 
@@ -527,9 +584,13 @@ pub struct FogSheetPoint {
     pub y: f32,
     /// Bank the sheet may carry here, `0..=1`.
     pub weight: f32,
-    /// Past a rim: the sheet is falling, so it is exempt from the floor-step
-    /// test that keeps sheets off cliff faces.
+    /// Past a rim: the sheet is falling (or is the haze far below), so it is
+    /// exempt from the floor-step test that keeps sheets off cliff faces.
     pub spill: bool,
+    /// The distant haze layer rather than the bank or its spill: the hosts
+    /// draw it as a faint, thick, slow layer ([`FogVolume::ground_weight`]
+    /// carries it as a negative weight).
+    pub haze: bool,
 }
 
 /// The per-frame view of a [`FogGround`] the hosts upload: the texture rect

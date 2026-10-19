@@ -38,7 +38,7 @@ pub struct FogVolumeDraw<'a> {
     pub mesh_cell: f32,
     pub mesh_dim: u32,
     /// `(mesh_dim + 1)²` vertices of `[x, floor_y, z, floor_weight]`,
-    /// row-major - uploaded
+    /// row-major (a negative weight marks the distant haze layer) - uploaded
     /// only when `ground_gen` changes.
     pub mesh_positions: &'a [f32],
     pub ground_gen: u32,
@@ -59,6 +59,11 @@ pub struct FogVolumeDraw<'a> {
     /// The spill streaks' flow phase
     /// (`legaia_render_kernels::fog_volume::FogVolumeFrame::spill_phase`).
     pub spill_phase: f32,
+    /// The spill and distant-haze shading constants
+    /// (`legaia_render_kernels::fog_volume::FOG_SPILL_CONSTANTS` /
+    /// `FOG_HAZE_CONSTANTS`).
+    pub spill_constants: [f32; 4],
+    pub haze_constants: [f32; 4],
     /// The scene's ground coverage field, `None` for full coverage (battle,
     /// or a field scene without one).
     pub ground: Option<FogGroundTexture<'a>>,
@@ -106,6 +111,8 @@ struct FogU {
     consts: vec4<f32>,
     depth: vec4<f32>,
     ground: vec4<f32>,
+    spill: vec4<f32>,
+    haze: vec4<f32>,
 };
 @group(0) @binding(0) var<uniform> u: FogU;
 @group(0) @binding(1) var dens: texture_2d<f32>;
@@ -120,22 +127,68 @@ struct VOut {
     @location(2) clip_w: f32,
     @location(3) world: vec3<f32>,
     @location(4) floor_w: f32,
+    @location(5) haze: f32,
+    @location(6) view: vec3<f32>,
 };
+
+// The spill's outward direction at ground-texture UV `guv`: the gradient of
+// the flow channel (distance past the rim), +X where it is flat.
+fn spill_dir(guv: vec2<f32>) -> vec2<f32> {
+    let e = u.ground.zw * 64.0;
+    let fx = textureSampleLevel(gtex, samp, guv + vec2<f32>(e.x, 0.0), 0.0).b
+        - textureSampleLevel(gtex, samp, guv - vec2<f32>(e.x, 0.0), 0.0).b;
+    let fz = textureSampleLevel(gtex, samp, guv + vec2<f32>(0.0, e.y), 0.0).b
+        - textureSampleLevel(gtex, samp, guv - vec2<f32>(0.0, e.y), 0.0).b;
+    let glen = length(vec2<f32>(fx, fz));
+    if (glen > 1.0e-4) {
+        return vec2<f32>(fx, fz) / glen;
+    }
+    return vec2<f32>(1.0, 0.0);
+}
+
+// The camera's position in the bank's space: the one point the matrix
+// sends to clip x = y = w = 0 (every view ray passes through it).
+fn eye_of(m: mat4x4<f32>) -> vec3<f32> {
+    let r0 = vec4<f32>(m[0].x, m[1].x, m[2].x, m[3].x);
+    let r1 = vec4<f32>(m[0].y, m[1].y, m[2].y, m[3].y);
+    let r3 = vec4<f32>(m[0].w, m[1].w, m[2].w, m[3].w);
+    let c01 = cross(r0.xyz, r1.xyz);
+    let c13 = cross(r1.xyz, r3.xyz);
+    let c30 = cross(r3.xyz, r0.xyz);
+    let det = dot(r0.xyz, c13);
+    if (abs(det) < 1.0e-12) {
+        return vec3<f32>(0.0);
+    }
+    return -(r0.w * c13 + r1.w * c30 + r3.w * c01) / det;
+}
 
 @vertex
 fn vs_main(@location(0) p: vec4<f32>, @builtin(instance_index) inst: u32) -> VOut {
     let s = (f32(inst) + 0.5) / u.params.y;
     // Sheets packed toward the floor (quadratic spacing); retail Y-down,
-    // so they stack upward from just above it.
+    // so they stack upward from just above it. A negative weight marks the
+    // distant haze layer, whose stack is deeper.
     let t = s * s;
-    let y = p.y - 2.0 - t * u.params.x;
+    let haze = select(0.0, 1.0, p.w < 0.0);
+    let y = p.y - 2.0 - t * u.params.x * mix(1.0, u.haze.x, haze);
+    // On the spill's near-vertical curtain a vertical stack slides the
+    // sheets along themselves; spread them outward instead, so the fall
+    // is a slab with depth rather than one bright plane seen edge-on.
+    var xz = p.xz;
+    let guv = (p.xz - u.ground.xy) * u.ground.zw;
+    let gv = textureSampleLevel(gtex, samp, guv, 0.0);
+    if (gv.g > 0.0 && haze == 0.0) {
+        xz = xz + spill_dir(guv) * (s * u.spill.w * min(gv.g * 4.0, 1.0));
+    }
     var o: VOut;
-    o.pos = u.m * vec4<f32>(p.x, y, p.z, 1.0);
+    o.pos = u.m * vec4<f32>(xz.x, y, xz.y, 1.0);
     o.xz = p.xz;
     o.layer = t;
     o.clip_w = o.pos.w;
-    o.world = vec3<f32>(p.x, y, p.z);
-    o.floor_w = p.w;
+    o.world = vec3<f32>(xz.x, y, xz.y);
+    o.view = o.world - eye_of(u.m);
+    o.floor_w = abs(p.w);
+    o.haze = haze;
     return o;
 }
 
@@ -211,37 +264,62 @@ fn fs_main(in: VOut) -> @location(0) vec4<f32> {
     let flat_ = abs(nrm.y) / max(length(nrm), 1.0e-6);
     var level = smoothstep(0.55, 0.85, flat_);
     // Ground field: full bank on the floor, a soft fade over its edge, and
-    // past a rim the spill - streaks flowing outward and down the falling
-    // sheet, thinning with the fall.
+    // past a rim the spill - slow tendrils pouring down the falling sheet,
+    // parting and thinning with the fall.
     let guv = (in.xz - u.ground.xy) * u.ground.zw;
     let g = textureSampleLevel(gtex, samp, guv, 0.0);
     var ground_a = g.r;
     if (g.g > 0.0) {
-        let e = u.ground.zw * 64.0;
-        let fx = textureSampleLevel(gtex, samp, guv + vec2<f32>(e.x, 0.0), 0.0).b
-            - textureSampleLevel(gtex, samp, guv - vec2<f32>(e.x, 0.0), 0.0).b;
-        let fz = textureSampleLevel(gtex, samp, guv + vec2<f32>(0.0, e.y), 0.0).b
-            - textureSampleLevel(gtex, samp, guv - vec2<f32>(0.0, e.y), 0.0).b;
-        let glen = length(vec2<f32>(fx, fz));
-        var dir = vec2<f32>(1.0, 0.0);
-        if (glen > 1.0e-4) {
-            dir = vec2<f32>(fx, fz) / glen;
-        }
-        let across = dot(in.xz, vec2<f32>(-dir.y, dir.x)) * u.consts.x * 1.3;
-        let fall = g.b * 3.0 - u.depth.w;
-        let sn = 0.6 * fog_noise(vec2<f32>(across, fall))
-            + 0.4 * fog_noise(vec2<f32>(across * 2.3 + 5.1, fall * 1.7 + 2.3));
-        // Billowed by the bank's own structure, so it reads as mist
-        // tumbling over the lip rather than straight streaks.
-        let streak = smoothstep(0.2, 0.75, sn * 0.65 + f * 0.45);
-        ground_a = max(ground_a, g.g * streak);
+        let dir = spill_dir(guv);
+        // World units along the rim, and of drop below it (the
+        // `spill_drop` curve over the flow coordinate).
+        let along = dot(in.xz, vec2<f32>(-dir.y, dir.x));
+        let fall01 = g.b * sqrt(g.b);
+        let fall = fall01 * u.spill.y;
+        let ph = u.depth.w;
+        // Pour mask: long stretches of rim pour, others barely do; it
+        // evolves in place rather than scrolling.
+        let m = fog_noise(vec2<f32>(along * u.spill.z + 4.7, ph * 0.05 + 1.3));
+        let pour = 0.12 + 0.88 * smoothstep(0.32, 0.62, m);
+        // Tendrils: narrow along the rim, long down the fall, swaying
+        // slowly; the second octave flows at its own rate so the pattern
+        // changes as it falls.
+        let sway = (fog_noise(vec2<f32>(fall * 0.6 - ph * 0.4, along * u.spill.z * 2.0 + 9.1)) - 0.5) * 1.8;
+        // Each sheet of the slab a little apart, so the layers do not
+        // repeat one pattern.
+        let ta = along * u.spill.x + sway + sqrt(t) * 0.9;
+        let tn = 0.65 * fog_noise(vec2<f32>(ta, fall - ph))
+            + 0.35 * fog_noise(vec2<f32>(ta * 2.1 + 3.3, fall * 1.7 - ph * 1.35 + 5.2));
+        // High-frequency erosion: only matters near the threshold, so it
+        // rags each tendril's edges and leaves its core.
+        let er = fog_noise(vec2<f32>(along * u.spill.x * 4.3 + 1.9, fall * 5.0 - ph * 2.3)) - 0.5;
+        let th = 0.34 + 0.24 * fall01;
+        let tendril = smoothstep(th, th + 0.3, tn + er * 0.3);
+        // Puffs: the tendrils fall as clumps with thin gaps between them,
+        // not as unbroken lines.
+        let puff = smoothstep(0.3, 0.7, fog_noise(vec2<f32>(along * u.spill.z * 3.7 + 2.0, fall * 1.3 - ph * 0.8 + 6.1)));
+        let spill = 1.4 * g.g * pour * tendril * (0.45 + 0.55 * puff) * (0.35 + 0.65 * f);
+        ground_a = max(ground_a * pour * (0.4 + 0.6 * tendril), spill);
         // The spill sheet falls steeply on purpose: exempt it from the
-        // cliff-face fade.
-        level = mix(level, 1.0, clamp(g.g * 4.0, 0.0, 1.0) * (1.0 - g.r));
+        // cliff-face fade, but thin a sheet seen edge-on, where each layer
+        // of the slab would draw as one bright line.
+        let facing = abs(dot(nrm, in.view)) / max(length(nrm) * length(in.view), 1.0e-6);
+        level = mix(level, smoothstep(0.1, 0.45, facing), clamp(g.g * 4.0, 0.0, 1.0) * (1.0 - g.r));
     }
     let a = u.color.a * d * crest * profile * edge * soft * level * ground_a * in.floor_w * u.consts.z / u.params.y;
-    let rgb = u.color.rgb * (0.75 + 0.5 * f);
-    return vec4<f32>(rgb, clamp(a, 0.0, 1.0));
+    // The distant haze: broad, soft banks drifting slower than the bank,
+    // thickest mid-stack, faint.
+    var haze_a = 0.0;
+    if (in.haze > 0.0) {
+        let hq = (in.xz - u.params.zw * u.haze.w) * u.haze.z;
+        let hn = 0.6 * fog_noise(hq + vec2<f32>(t * 0.9, 2.3))
+            + 0.4 * fog_noise(hq * 2.3 + vec2<f32>(7.7, t * 1.7));
+        let bank = smoothstep(0.25, 0.8, hn);
+        let hp = 4.0 * t * (1.0 - t);
+        haze_a = u.color.a * u.haze.y * bank * hp * edge * soft * in.floor_w * in.haze * u.consts.z / u.params.y;
+    }
+    let rgb = u.color.rgb * mix(0.75 + 0.5 * f, 0.9, in.haze);
+    return vec4<f32>(rgb, clamp(a * (1.0 - in.haze) + haze_a, 0.0, 1.0));
 }
 "#;
 
@@ -257,6 +335,8 @@ struct FogUniforms {
     consts: [f32; 4],
     depth: [f32; 4],
     ground: [f32; 4],
+    spill: [f32; 4],
+    haze: [f32; 4],
 }
 
 /// The pass's GPU resources.
@@ -317,13 +397,13 @@ impl FogVolumePass {
                 },
                 wgpu::BindGroupLayoutEntry {
                     binding: 2,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
                     ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
                     count: None,
                 },
                 wgpu::BindGroupLayoutEntry {
                     binding: 3,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
                     ty: wgpu::BindingType::Texture {
                         sample_type: wgpu::TextureSampleType::Float { filterable: true },
                         view_dimension: wgpu::TextureViewDimension::D2,
@@ -619,6 +699,8 @@ impl FogVolumePass {
             consts: d.shader_constants,
             depth: [a, b, d.soft_distance.max(1.0e-3), d.spill_phase],
             ground: d.ground.as_ref().map_or([0.0; 4], |g| g.uv_rect),
+            spill: d.spill_constants,
+            haze: d.haze_constants,
         };
         queue.write_buffer(&self.ubuf, 0, bytemuck::cast_slice(&[u]));
         self.layers = d.layers;
@@ -757,10 +839,10 @@ mod tests {
     }
 
     /// The uniform block is the size the WGSL struct declares
-    /// (a mat4 and seven vec4s).
+    /// (a mat4 and nine vec4s).
     #[test]
     fn uniform_block_matches_the_wgsl_struct() {
-        assert_eq!(std::mem::size_of::<FogUniforms>(), 64 + 7 * 16);
+        assert_eq!(std::mem::size_of::<FogUniforms>(), 64 + 9 * 16);
     }
 
     #[test]

@@ -107,6 +107,8 @@ impl PlayWindowApp {
             shader_constants: f.space.shader_constants(),
             soft_distance: f.space.soft_distance(),
             spill_phase: f.spill_phase(),
+            spill_constants: legaia_render_kernels::fog_volume::FOG_SPILL_CONSTANTS,
+            haze_constants: legaia_render_kernels::fog_volume::FOG_HAZE_CONSTANTS,
             ground: f
                 .ground_tex
                 .as_ref()

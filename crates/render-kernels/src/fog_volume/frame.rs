@@ -18,7 +18,8 @@ pub struct FogVolumeFrame<'a> {
     pub mesh_cell: f32,
     /// `(MESH_DIM + 1)²` floor heights, retail Y-down, row-major.
     pub ground: &'a [f32],
-    /// `(MESH_DIM + 1)²` per-vertex floor weights ([`FogVolume::ground_weight`]).
+    /// `(MESH_DIM + 1)²` per-vertex floor weights ([`FogVolume::ground_weight`]:
+    /// negative on the distant haze layer).
     pub ground_weight: &'a [f32],
     pub ground_gen: u32,
     /// Framebuffer-space colour, tint applied.
@@ -74,15 +75,21 @@ pub mod header {
     pub const GROUND_TEX_W: usize = 28;
     pub const GROUND_TEX_H: usize = 29;
     pub const GROUND_TEX_GEN: usize = 30;
-    pub const LEN: usize = 31;
+    /// `super::FOG_SPILL_CONSTANTS` start here (four values).
+    pub const SPILL_CONSTANTS: usize = 31;
+    /// `super::FOG_HAZE_CONSTANTS` start here (four values).
+    pub const HAZE_CONSTANTS: usize = 35;
+    pub const LEN: usize = 39;
 }
 
 /// The texture a host binds when the frame has no ground field: one texel
 /// of full coverage and no spill ([`FogGround::texels`] channel layout).
 pub const FOG_GROUND_NONE_TEXEL: [u8; 4] = [255, 0, 0, 255];
 
-/// Ticks for a spill streak to travel one noise cell outward and down.
-pub const SPILL_FLOW_TICKS: u32 = 240;
+/// Ticks for a spill tendril to travel one noise cell down the fall: a
+/// slow pour - with [`FOG_SPILL_CONSTANTS`]' fall scale, one cell is 520
+/// units of drop, so about ten seconds at sixty ticks a second.
+pub const SPILL_FLOW_TICKS: u32 = 600;
 
 /// The tick clock's wrap for [`header::SPILL_PHASE`]: a multiple of
 /// the spill streaks' period ([`SPILL_FLOW_TICKS`]), so the wrap is seamless.
@@ -120,6 +127,9 @@ impl FogVolumeFrame<'_> {
             .copy_from_slice(&self.space.shader_constants());
         h[header::SOFT_DISTANCE] = self.space.soft_distance();
         h[header::SPILL_PHASE] = self.spill_phase();
+        h[header::SPILL_CONSTANTS..header::SPILL_CONSTANTS + 4]
+            .copy_from_slice(&FOG_SPILL_CONSTANTS);
+        h[header::HAZE_CONSTANTS..header::HAZE_CONSTANTS + 4].copy_from_slice(&FOG_HAZE_CONSTANTS);
         if let Some(g) = &self.ground_tex {
             h[header::GROUND_TEX_ORIGIN_X] = g.origin[0];
             h[header::GROUND_TEX_ORIGIN_Z] = g.origin[1];
@@ -132,8 +142,8 @@ impl FogVolumeFrame<'_> {
         h
     }
 
-    /// The spill streaks' flow phase: noise cells a streak has travelled
-    /// outward and down, one per [`SPILL_FLOW_TICKS`]. Taken off the tick
+    /// The spill tendrils' flow phase: noise cells a tendril has travelled
+    /// down the fall, one per [`SPILL_FLOW_TICKS`]. Taken off the tick
     /// clock wrapped at [`SPILL_TICK_WRAP`], so it stays exact in an `f32`
     /// uniform and the wrap lands on a whole cell (seamless).
     pub fn spill_phase(&self) -> f32 {
@@ -157,7 +167,8 @@ impl FogVolumeFrame<'_> {
     }
 
     /// The sheet mesh's vertices, `[x, floor_y, z, floor_weight]` per vertex
-    /// in row-major order (retail Y-down) - what both hosts upload when
+    /// in row-major order (retail Y-down; a negative weight marks the
+    /// distant haze layer) - what both hosts upload when
     /// [`Self::ground_gen`] changes.
     pub fn mesh_positions(&self) -> Vec<f32> {
         let n = MESH_DIM + 1;

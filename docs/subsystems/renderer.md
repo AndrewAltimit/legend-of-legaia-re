@@ -2908,17 +2908,44 @@ set uses):
 
 The sheet mesh lies on the field's floor height where there is one, so the
 bank follows terraces the walk grid does not author. Past a rim, within
-`SPILL_REACH`, a vertex takes its rim's height lowered by `spill_drop` (a
-fall that starts level and steepens) at `spill_weight` (thinning to nothing
-at the reach), exempt from the floor-step test and carrying its rim's fog
-region; further out it carries no bank. The field also travels as a small
-RGBA8 texture (`FogGround::texels`: coverage, spill, flow), uploaded once per
-scene: the shaders fade the bank across `EDGE_SOFT` either side of the edge
-at fragment resolution, and on the spill draw streaks stretched along the
-flow direction (the texture's distance gradient) and advected outward and
-down by the frame's spill phase, also exempting it from the slope fade. A
-frame without a field (battle, or a host that built none) binds one
-full-coverage texel and draws the bank as before.
+`SPILL_REACH`, a vertex takes its rim's height lowered by `spill_drop` at
+`spill_weight` (thinning to nothing at the reach), exempt from the floor-step
+test and carrying its rim's fog region. The reach is short against
+`SPILL_DEPTH`, so past a slight bow over the lip the curtain falls almost
+straight down, hugging the wall face. Further out, to `HAZE_REACH`, a vertex
+lies `HAZE_DEPTH` below its rim at `haze_weight` - nothing next to the rim,
+thickest at `HAZE_PEAK` - and zero wherever something drawn stands above that
+plane, so it never lies on a lower roof or slope; past the field's edge it
+continues off the nearest border cell's rim. The mesh carries a haze vertex
+as a **negative** weight, which is how the shaders tell the two apart.
+
+The field also travels as a small RGBA8 texture (`FogGround::texels`:
+coverage, spill, flow), uploaded once per scene: the shaders fade the bank
+across `EDGE_SOFT` either side of the edge at fragment resolution. On the
+spill they draw falling fog rather than a sheet, from
+`fog_volume::FOG_SPILL_CONSTANTS`:
+
+- **Pour mask.** A low-frequency noise along the rim (the coordinate across
+  the flow direction, the texture's distance gradient) decides which
+  stretches pour and which barely do; it evolves in place, it does not scroll.
+- **Tendrils.** Noise narrow along the rim and long down the fall, swaying
+  slowly, thresholded higher the further it has fallen so the tendrils part
+  and thin; a high-frequency erosion term near the threshold rags their
+  edges, and a second noise breaks them into falling puffs.
+- **Slow.** The fall coordinate scrolls one noise cell per
+  `SPILL_FLOW_TICKS`; the second octave and the puffs move at their own
+  rates, so the pattern changes as it falls.
+- **A slab, not a plane.** The vertex stage spreads the sheets outward down
+  the curtain (`FOG_SPILL_CONSTANTS[3]` world units) instead of stacking
+  them upward, and a sheet seen edge-on fades by its facing to the eye (the
+  eye recovered from the matrix), so a curtain seen from the side is not a
+  stack of bright lines.
+
+The haze draws as broad, soft banks (`FOG_HAZE_CONSTANTS`): a stack several
+times the bank's height, thickest mid-stack, drifting slower than the bank,
+at a faint gain. A frame without a field (battle, or a host that built none)
+binds one full-coverage texel, carries no haze vertex, and draws the bank as
+before.
 
 **Reading scene depth differs per host.** The native renderer splits its
 scene pass around a fog pass that attaches the depth target read-only and

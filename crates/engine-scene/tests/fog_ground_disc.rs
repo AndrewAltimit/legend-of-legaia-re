@@ -12,7 +12,7 @@ use legaia_engine_scene::scene::{ProtIndex, Scene};
 use legaia_engine_scene::scene_resources::{
     BuildOptions, FIELD_SHARED_BLOCKS, SceneLoadKind, SceneResources,
 };
-use legaia_render_kernels::fog_volume::FogGround;
+use legaia_render_kernels::fog_volume::{FogGround, HAZE_WEIGHT};
 
 fn extracted_dir() -> Option<PathBuf> {
     for c in ["extracted", "../extracted", "../../extracted"] {
@@ -122,12 +122,27 @@ fn sky_gardens_has_open_air_around_the_tower_top() {
         let (x, z) = tile(42, tz);
         assert!(f.covered_at(x, z), "tower top at tile (42,{tz})");
     }
-    // Open air all round, well clear of the rim: no bank at all.
+    // Open air all round, well clear of the rim: no bank, at most the
+    // faint distant haze far below the tower top.
+    let top_y = f.height[f.cell_index(cx, cz).unwrap()];
     for (tx, tz) in [(18, 40), (68, 40), (42, 16), (42, 66)] {
         let (x, z) = tile(tx, tz);
         assert!(!f.covered_at(x, z), "open air at tile ({tx},{tz})");
-        assert!(f.sheet_at(x, z).is_none(), "no bank at tile ({tx},{tz})");
+        assert!(
+            f.sheet_at(x, z)
+                .is_none_or(|p| p.haze && p.weight <= HAZE_WEIGHT && p.y > top_y + 1000.0),
+            "no bank at tile ({tx},{tz})"
+        );
     }
+    // The void around the tower carries the haze somewhere.
+    let hazy = (0..f.h)
+        .flat_map(|z| (0..f.w).map(move |x| (x, z)))
+        .filter(|&(x, z)| {
+            let [px, pz] = f.centre_of(z * f.w + x);
+            f.sheet_at(px, pz).is_some_and(|p| p.haze && p.weight > 0.1)
+        })
+        .count();
+    assert!(hazy > 200, "{hazy} hazy cells");
     // Just past the west rim the bank spills: below its rim, thinning.
     let rim_x = (0..96)
         .map(|k| (k * 64) as f32 + 32.0)

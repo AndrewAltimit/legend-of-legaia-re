@@ -33,7 +33,8 @@ pub struct FogVolume {
     pub mesh_origin: [i32; 2],
     /// Floor height per sheet-mesh vertex (retail Y-down), row-major.
     pub ground: Vec<f32>,
-    /// Per sheet-mesh vertex, how much bank it may carry (`0..=1`): `0` where
+    /// Per sheet-mesh vertex, how much bank it may carry (`0..=1`, negated
+    /// on a vertex of the distant haze layer - [`FogSheetPoint::haze`]): `0` where
     /// the floor steps by more than [`FLOOR_STEP_HI`] to a neighbour, so the
     /// sheets never stand up as fins down a cliff or wall between two floor
     /// tiers - the bank lies on floors only.
@@ -373,13 +374,16 @@ impl FogVolume {
                     }
                     FogSpace::Battle => 1.0,
                 };
-                let (spill, cover) = match points[i] {
-                    None => (false, 1.0),
-                    Some(None) => (false, 0.0),
-                    Some(Some(p)) => (p.spill, p.weight),
+                let (spill, haze, cover) = match points[i] {
+                    None => (false, false, 1.0),
+                    Some(None) => (false, false, 0.0),
+                    Some(Some(p)) => (p.spill, p.haze, p.weight),
                 };
                 if spill {
-                    self.ground_weight[i] = cover * region;
+                    // The distant haze rides the same mesh, flagged by its
+                    // sign so the shaders draw it as its own faint layer.
+                    let w = cover * region;
+                    self.ground_weight[i] = if haze { -w } else { w };
                     continue;
                 }
                 let mut step = 0.0f32;

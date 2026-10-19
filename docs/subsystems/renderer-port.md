@@ -198,13 +198,18 @@ on [renderer.md](renderer.md#volumetric-ground-fog-enhancement).
 both hosts over their static draw lists) puts the sheet mesh on the drawn
 floor and stops it over open air, so a tower top such as `teien` no longer
 carries a flat bank across the sky around it. Past a rim the mesh keeps
-going as a falling, thinning spill sheet draped over whatever stands below
-the rim. The field also reaches the shader as an RGBA8 texture at binding 3
+going as a near-vertical spill curtain hugging the wall face, then, further
+out and far below the rim, as a faint distant haze layer (a negative mesh
+weight) that lies only where nothing drawn stands above it. The field also
+reaches the shader as an RGBA8 texture at binding 3, visible to both stages
 (coverage, spill, flow; at most 256 x 256 texels of 64 world units, uploaded
 only when its generation changes): it fades the bank across the floor's edge
-at fragment resolution and draws the spill as mist advected outward and down
-by the frame's spill phase. A frame without a field binds one full-coverage
-texel, which is the bank as it was before.
+at fragment resolution, and breaks the spill into slow, falling tendrils
+with gaps - a pour mask along the rim, eroded tendrils, puffs - spread
+outward as a slab, with the constants in the frame header
+(`FOG_SPILL_CONSTANTS`, `FOG_HAZE_CONSTANTS`). A frame without a field binds
+one full-coverage texel, which is the bank as it was before. The recipe is
+on [renderer.md](renderer.md#volumetric-ground-fog-enhancement).
 
 **Battle profile.** `fog_volume::BATTLE_FOG` sets a battle's bank to a third
 of the field opacity and an ankle-high depth, so the stage floor stays
@@ -212,8 +217,9 @@ readable; a field-to-battle switch eases it in from zero instead of popping.
 
 **Cost.** The field is CPU work at scene load only: one rasterisation of
 the static triangles plus two nearest-site sweeps over at most 65,536
-cells. Per frame the pass adds one texture sample per sheet fragment, four
-more only on spill fragments, and nothing on the CPU.
+cells. Per frame the pass adds one texture sample per sheet fragment and
+per vertex (four more on spill vertices and fragments), a handful of noise
+evaluations on spill and haze fragments, and nothing on the CPU.
 
 ## Screen-space overlay pass
 

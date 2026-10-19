@@ -71,8 +71,8 @@ fn the_sheet_lies_on_the_floor_and_falls_off_the_rim() {
 
     // Just past the rim: spill, a little lower (Y-down: larger), most of
     // the bank still with it.
-    let lip = f.sheet_at(1024.0 - 96.0, 1536.0).unwrap();
-    assert!(lip.spill);
+    let lip = f.sheet_at(1024.0 - 64.0, 1536.0).unwrap();
+    assert!(lip.spill && !lip.haze);
     assert!(
         lip.y > -200.0 && lip.y < -200.0 + 0.2 * SPILL_DEPTH,
         "{lip:?}"
@@ -80,15 +80,70 @@ fn the_sheet_lies_on_the_floor_and_falls_off_the_rim() {
     assert!(lip.weight > 0.4, "{lip:?}");
 
     // Further out: lower and thinner.
-    let deep = f.sheet_at(1024.0 - 320.0, 1536.0).unwrap();
+    let deep = f.sheet_at(1024.0 - 200.0, 1536.0).unwrap();
     assert!(
-        deep.spill && deep.y > lip.y && deep.weight < lip.weight,
+        deep.spill && !deep.haze && deep.y > lip.y && deep.weight < lip.weight,
         "{deep:?}"
     );
+    // The fall is near-vertical: most of the depth inside the short reach.
+    assert!(deep.y - -200.0 > 0.5 * SPILL_DEPTH, "{deep:?}");
 
-    // Past the reach: no bank at all.
-    assert!(f.sheet_at(1024.0 - SPILL_REACH - 128.0, 1536.0).is_none());
-    assert!(f.sheet_at(100.0, 100.0).is_none());
+    // Past the reach: the faint distant haze, flat far below the rim.
+    let near = f.sheet_at(1024.0 - SPILL_REACH - 128.0, 1536.0).unwrap();
+    let far = f.sheet_at(100.0, 100.0).unwrap();
+    for p in [near, far] {
+        assert!(p.haze && p.spill, "{p:?}");
+        assert_eq!(p.y, -200.0 + HAZE_DEPTH);
+        assert!(p.weight <= HAZE_WEIGHT, "{p:?}");
+    }
+    assert!(near.weight < far.weight, "{near:?} {far:?}");
+
+    // Past the field's edge: still the haze, off the nearest rim.
+    let beyond = f.sheet_at(-500.0, 1536.0).unwrap();
+    assert!(beyond.haze && beyond.y == -200.0 + HAZE_DEPTH, "{beyond:?}");
+    assert!(
+        (beyond.weight - haze_weight(1524.0)).abs() < 0.05,
+        "{beyond:?}"
+    );
+    // A field with no floor carries nothing anywhere.
+    let empty = field(&[], [0.0, 0.0], [512.0, 512.0], None);
+    assert!(empty.sheet_at(100.0, 100.0).is_none());
+    assert!(empty.sheet_at(-900.0, 100.0).is_none());
+}
+
+#[test]
+fn the_haze_rises_peaks_and_fades_with_distance() {
+    assert_eq!(haze_weight(0.0), 0.0);
+    assert_eq!(haze_weight(SPILL_REACH), 0.0);
+    assert!((haze_weight(HAZE_PEAK) - HAZE_WEIGHT).abs() < 1.0e-6);
+    assert_eq!(haze_weight(HAZE_REACH), 0.0);
+    let mut last = 0.0;
+    for k in 0..=16 {
+        let out = SPILL_REACH + (HAZE_PEAK - SPILL_REACH) * k as f32 / 16.0;
+        let w = haze_weight(out);
+        assert!(w >= last, "rising at {out}: {w} after {last}");
+        last = w;
+    }
+}
+
+#[test]
+fn the_haze_never_lies_on_a_surface_above_it() {
+    // A low ledge 600 below the plateau, out to the west: the haze plane
+    // (HAZE_DEPTH below the rim) lies under it, so it carries no haze there.
+    let mut tris = square([1024.0, 1024.0], [2048.0, 2048.0], -200.0).to_vec();
+    // Steep wall faces only (not floor), so the ledge is drawn but solid
+    // ground does not grow under it.
+    let ledge_y = -200.0 + 600.0;
+    tris.push([
+        [200.0, ledge_y, 1400.0],
+        [600.0, ledge_y, 1400.0],
+        [400.0, ledge_y + 400.0, 1400.0],
+    ]);
+    let f = field(&tris, [0.0, 0.0], [3072.0, 3072.0], None);
+    let under = f.sheet_at(400.0, 1400.0).unwrap();
+    assert!(under.haze && under.weight == 0.0, "{under:?}");
+    let clear = f.sheet_at(400.0, 2600.0).unwrap();
+    assert!(clear.haze && clear.weight > 0.0, "{clear:?}");
 }
 
 #[test]
@@ -197,8 +252,13 @@ fn the_bank_lies_on_the_field_and_spills_off_it() {
     assert_eq!((y, w), (-200.0, 1.0), "on the plateau");
     let (y, w) = vert(1024.0 - 128.0, 1536.0);
     assert!(y > -200.0 && w > 0.2, "spilling off the west rim: {y} {w}");
-    let (_, w) = vert(128.0, 128.0);
-    assert_eq!(w, 0.0, "nothing over the open air");
+    // Far out over the open air only the faint haze, far below the rim,
+    // flagged by a negative weight.
+    let (y, w) = vert(128.0, 128.0);
+    assert!(w < 0.0 && -w <= HAZE_WEIGHT, "haze over the open air: {w}");
+    assert_eq!(y, -200.0 + HAZE_DEPTH);
+    let f = v.frame(None, None).unwrap();
+    assert!(f.mesh_positions().chunks(4).any(|p| p[3] < 0.0));
 
     // The frame carries the texture; the toggle's reset keeps the field.
     let f = v.frame(None, None).unwrap();
@@ -231,3 +291,25 @@ fn without_a_field_the_bank_is_unchanged() {
     assert!(f.ground_tex.is_none());
     assert_eq!(f.ground_uv_rect(), [0.0; 4]);
 }
+
+#[test]
+fn the_header_carries_the_spill_and_haze_constants() {
+    let mut v = FogVolume::new();
+    v.set_style(Some(POOL_STYLE));
+    v.strength = 1.0;
+    v.set_ground_field("", Some(plateau()));
+    v.recentre([1536.0, 1536.0], |_, _| 0.0);
+    let h = v.frame(None, None).unwrap().header();
+    assert_eq!(h.len(), header::LEN);
+    let s = header::SPILL_CONSTANTS;
+    assert_eq!(h[s..s + 4], FOG_SPILL_CONSTANTS);
+    let z = header::HAZE_CONSTANTS;
+    assert_eq!(h[z..z + 4], FOG_HAZE_CONSTANTS);
+}
+
+// The curtain falls near-vertically (deep against a short reach), slowly (a
+// tendril crosses one noise cell in seconds, not fractions of one), and the
+// haze is a faint, thick layer.
+const _: () = assert!(SPILL_DEPTH > 4.0 * SPILL_REACH);
+const _: () = assert!(SPILL_FLOW_TICKS >= 300);
+const _: () = assert!(FOG_HAZE_CONSTANTS[0] > 1.0 && HAZE_WEIGHT < 0.5);
