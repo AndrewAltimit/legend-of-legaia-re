@@ -385,6 +385,8 @@ python3 scripts/ci/third-party-licenses.py "${LICENSE_TARGETS[@]}" \
     printf 'starting the game directly afterwards does not ask for it. Guide:\n'
     printf 'https://github.com/%s/blob/main/docs/guides/extracting-assets.md\n' \
         "${GITHUB_REPOSITORY:-AndrewAltimit/legend-of-legaia-re}"
+    printf '\nBoth apps, with screenshots:\n'
+    printf 'https://andrewaltimit.github.io/legend-of-legaia-re/guides/desktop-apps.html\n'
     printf '\nThe other binaries in this folder are modding and reverse-engineering\n'
     printf 'tools; README.txt lists them.\n'
 } > "$STAGE/README-PLAY.txt"

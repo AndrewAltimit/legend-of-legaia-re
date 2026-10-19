@@ -109,7 +109,7 @@ cd legaia-tools-<version>-x86_64-unknown-linux-gnu
 
 Every archive carries every tool. `README-PLAY.txt` inside covers first launch, including the macOS Gatekeeper prompt; [`docs/tooling/releases.md`](docs/tooling/releases.md) covers what is in an archive and how it is built. The engine and `asset-viewer` want a GPU and, on Linux, ALSA.
 
-Every archive also carries **Legaia Studio** (`legaia-studio`), a desktop app for the asset side: open your disc image, browse the archive by scene, preview textures, models, characters, monsters, audio, dialog and movies, and export them, or run the full extraction with a progress bar ([`crates/studio`](crates/studio/README.md)).
+Every archive also carries **Legaia Studio** (`legaia-studio`), a desktop app for the asset side: open your disc image, browse the archive by scene, preview textures, models, characters, monsters, audio, dialog and movies, and export them, or run the full extraction with a progress bar ([`crates/studio`](crates/studio/README.md)). The site's [desktop apps guide](https://andrewaltimit.github.io/legend-of-legaia-re/guides/desktop-apps.html) walks through downloading, the first start on each system, Studio and the native port, with screenshots.
 
 ![Legaia Studio previewing Gimard Lv3's textured battle model beside the monster list](site/assets/legaia-studio.jpg)
 

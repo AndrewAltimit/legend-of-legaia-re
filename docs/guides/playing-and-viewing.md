@@ -32,6 +32,10 @@ directory) produced by `legaia-extract`
 
 ## 0. The launcher
 
+The project site's [desktop apps guide](https://andrewaltimit.github.io/legend-of-legaia-re/guides/desktop-apps.html) covers the download, the
+first start past SmartScreen or Gatekeeper, the controls and the toggles with
+screenshots; this page is the full reference.
+
 Started with **no subcommand** - a double-click, a desktop shortcut, the macOS
 app - `legaia-engine` runs a small launcher instead of printing help:
 

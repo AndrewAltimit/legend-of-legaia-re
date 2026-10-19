@@ -63,7 +63,8 @@ The window remembers its size and the view you left it on. *About* (F1) shows
 the version and where the third-party license notices
 (`THIRD-PARTY-LICENSES.txt`) sit. The app ships no game data and uploads
 nothing; it reads the disc you choose and writes only where you tell it.
-Details: [`crates/studio`](../../crates/studio/README.md).
+Details: [`crates/studio`](../../crates/studio/README.md); a walkthrough with
+screenshots is the project site's [desktop apps guide](https://andrewaltimit.github.io/legend-of-legaia-re/guides/desktop-apps.html).
 
 ## On the command line
 
