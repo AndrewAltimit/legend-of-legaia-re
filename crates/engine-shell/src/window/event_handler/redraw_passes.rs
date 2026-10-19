@@ -1316,11 +1316,18 @@ impl PlayWindowApp {
                     // Same placement law as the live battle body
                     // (`actor_model`'s battle arm), at the ghost's own
                     // historical position.
-                    let rot = if actor.battle_monster_id.is_some() {
-                        Mat4::from_rotation_y(std::f32::consts::PI)
-                    } else {
-                        Mat4::IDENTITY
-                    };
+                    // The ring holds no rotation: the walk draws every ghost
+                    // through the live node's rotation trio (`FUN_80049348`
+                    // swaps only the position, cursor and clip record), so
+                    // a ghost turns by the body's live facing `+0x46` as
+                    // the body does (`actor_model`'s battle arm). A fixed
+                    // half-turn swung Cort's Guilty Cross ghosts `0xED`
+                    // off his `0x8ED` facing, and their claws out past the
+                    // body's.
+                    let rot = Mat4::from_rotation_y(
+                        f32::from(actor.battle.facing_angle & 0xFFF) / 4096.0
+                            * std::f32::consts::TAU,
+                    );
                     // In the placement frame (`T(F pos)`, the live body's
                     // law): the eye the draw pushes about is read off the
                     // camera in that frame too.

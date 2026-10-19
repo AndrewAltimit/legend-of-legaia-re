@@ -1087,8 +1087,11 @@ every natural end ([battle-actor-rendering](../subsystems/battle-actor-rendering
 with `+0x1D9 = 8`. The bar seed lands its HP at zero without the fall that
 leads there, so the body stood on its idle and the cursor seed, which lands
 only on the clip a body plays, never applied: `zora_glare_petrify_pre`'s Noa
-stood behind Vahn where retail's kneels. A clip seed of `8` on a party member
-at zero HP commits the kneel first. The member also sits out every replayed
+stood behind Vahn where retail's kneels. The bar seed now puts a party member
+it lands at zero HP on the kneel (`World::seat_downed_kneel`), on the headless
+side as in the child, and a clip seed of `8` lands its cursor. The kneel's pose
+centroid moves the body pair the framings read: Noa's stands at `(920, -461)`,
+retail's `(920, -463)`, where her idle stood at `(803, -313)`. The member also sits out every replayed
 round, so the heading its fall left it on is seeded with its ground pair, as
 a spent combatant's is (`RetailBattle::seeded_facing`): Noa's kneel faces
 `3723`, and drawn along the engine's `0` it spread across the frame.

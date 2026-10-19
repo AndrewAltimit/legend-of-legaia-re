@@ -4,6 +4,12 @@
 use super::*;
 use legaia_engine_mode::mode::SceneMode;
 
+/// Slots the per-actor pose ring keeps: retail's 32-frame ring
+/// ([`legaia_engine_battle::battle_afterimage::HISTORY_DEPTH`]) at up to
+/// four vsyncs a frame, since the per-vsync cadence pushes a slot a vsync
+/// (`World::ghost_ring_slots_per_frame`).
+const BATTLE_POSE_HISTORY_SLOTS: usize = legaia_engine_battle::battle_afterimage::HISTORY_DEPTH * 4;
+
 impl World {
     /// What a frame of seated clip cursors moves with them, re-derived the
     /// way the pass that poses the bodies derives it: every body pair
@@ -14,6 +20,33 @@ impl World {
         if self.mode == SceneMode::Battle {
             self.tick_mystic_shield();
         }
+    }
+
+    /// Put a party member at zero HP on its downed kneel - entry `8`, which
+    /// re-commits itself at every natural end
+    /// ([`crate::world::battle::clip_ladder::PARTY_DOWNED_LOOP_ENTRY`]) - when
+    /// it is not there already. A seat that lands a member's HP at zero
+    /// skips the knockdown chain (`4 -> 7 -> 8`) that leads there, and a
+    /// capture of a downed member holds `+0x1D9 = +0x1DA = 8`. Returns
+    /// whether the member kneels. A no-op for a monster or a living member.
+    pub fn seat_downed_kneel(&mut self, slot: usize) -> bool {
+        use crate::world::battle::clip_ladder::PARTY_DOWNED_LOOP_ENTRY;
+        let Some(a) = self.actors.get(slot) else {
+            return false;
+        };
+        if a.battle_monster_id.is_some() || a.battle.hp != 0 {
+            return false;
+        }
+        if a.battle_reaction == Some(PARTY_DOWNED_LOOP_ENTRY) {
+            return true;
+        }
+        let kneels = self.commit_battle_reaction_entry(slot, PARTY_DOWNED_LOOP_ENTRY);
+        if kneels {
+            // The kneel's pose centroid moves the body pair `+0x3C..+0x40`
+            // the framings and the range law read.
+            self.refresh_battle_body_pairs();
+        }
+        kneels
     }
 
     /// Land battle slot `slot`'s playing clip on the node cursor `+0x68` a
@@ -34,14 +67,7 @@ impl World {
                 .actors
                 .get(slot)
                 .is_some_and(|a| a.battle_monster_id.is_none() && a.battle.hp == 0);
-        if downed
-            && self.actors[slot].battle_reaction
-                != Some(crate::world::battle::clip_ladder::PARTY_DOWNED_LOOP_ENTRY)
-            && !self.commit_battle_reaction_entry(
-                slot,
-                crate::world::battle::clip_ladder::PARTY_DOWNED_LOOP_ENTRY,
-            )
-        {
+        if downed && !self.seat_downed_kneel(slot) {
             return false;
         }
         let Some(a) = self.actors.get_mut(slot) else {
@@ -311,7 +337,7 @@ impl World {
                 });
                 actor
                     .battle_pose_history
-                    .truncate(legaia_engine_battle::battle_afterimage::HISTORY_DEPTH);
+                    .truncate(BATTLE_POSE_HISTORY_SLOTS);
                 actor.pose_frame = Some(pose);
                 // The mesh-variant swap, run off the same node cursor right
                 // after the facial animator at the end of the tick

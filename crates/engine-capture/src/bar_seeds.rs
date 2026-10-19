@@ -93,6 +93,11 @@ pub fn apply_bar_seeds(world: &mut legaia_engine_core::world::World, seeds: &[Ba
         if s.spent_key {
             a.battle.init_key = 0;
         }
+        // A party member seeded down kneels, as the capture's does: the
+        // seat skips the fall that leads there.
+        if s.hp == 0 && s.defeat_lanes.is_none() {
+            world.seat_downed_kneel(usize::from(s.slot));
+        }
         if s.status != 0 {
             seed_status(world, s.slot, s.status);
         }
