@@ -128,8 +128,9 @@ keys only.
 
 **Camera.** Left-mouse drag orbits the camera around your character
 (horizontal) and tilts it (vertical), the wheel zooms in and out, and a
-double-click puts the framing back to retail. All three are locked while a
-cutscene has the camera.
+double-click puts the framing back to retail, centred on the party (the
+browser play page's **Reset camera** button does the same, and also leaves the
+`F3` debug vantage). All three are locked while a cutscene has the camera.
 
 **Window toggles.** These are the port's enhancements and conveniences; each
 enhancement has a retail-faithful off position

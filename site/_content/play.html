@@ -2108,11 +2108,12 @@
   canvas.addEventListener('focus', hideVeil);
   canvas.addEventListener('blur', showVeil);
 
+  /* Reset camera: the view's shared reset (`resetCamera`, which drives the
+   * engine's `Camera::recenter_follow` - the native double-click's kernel). */
   document.getElementById('play-recenter').addEventListener('click', () => {
     if (!view) return;
-    view.cam.yaw = 0;
-    view.cam.pitch = 0.62;
-    view.cam.halfWidth = view.cam.halfHeight = 520;
+    view.resetCamera();
+    canvas.focus();
   });
 
   /* BGM volume. The engine's SPU mixer feeds a WebAudio `GainNode` inside

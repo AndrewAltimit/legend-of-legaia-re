@@ -557,10 +557,22 @@ impl LegaiaRuntime {
         self.scene_host.camera().manual_zoom
     }
 
-    /// Put orbit, tilt and zoom back at their retail-identical defaults
-    /// ([`legaia_engine_field::camera::Camera::reset_follow_knobs`]).
-    pub fn play_camera_reset_framing(&mut self) {
-        self.scene_host.camera_mut().reset_follow_knobs();
+    /// The page's **Reset camera** button and canvas double-click: the
+    /// follow camera back at the retail framing on the current lead, through
+    /// the kernel the native window's double-click calls
+    /// ([`legaia_engine_field::camera::Camera::recenter_follow`]). Orbit,
+    /// tilt and zoom go to identity in any mode; in free roam a scripted
+    /// shot left holding the focus is released too, which is what the
+    /// knob-only reset could not undo. Returns whether the free-roam half
+    /// ran (`false` while a cutscene, battle or the world map owns the shot).
+    pub fn play_camera_reset_framing(&mut self) -> bool {
+        match self.scene_host.host_cam_mut() {
+            Some((h, camera)) => camera.recenter_follow(&h.world),
+            None => {
+                self.scene_host.camera_mut().reset_follow_knobs();
+                false
+            }
+        }
     }
 
     /// Cycle the camera-distance preset (retail -> far -> farther), the

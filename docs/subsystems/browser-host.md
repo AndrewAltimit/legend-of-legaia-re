@@ -199,8 +199,13 @@ occlusion fade ray-casts from; `play_camera_orbit_by` / `play_camera_tilt_by`
 (`Camera::manual_orbit` / `manual_tilt` / `manual_zoom`) through the engine's
 cutscene-gated setters - the same fields the native window's left-mouse drag
 and wheel write, so the movement compass tracks the view on both hosts and a
-scripted shot is locked on both. `play_camera_reset_framing` is the
-double-click; `play_camera_set_orbit` remains for the `F3` hand-off. A
+scripted shot is locked on both. `play_camera_reset_framing` is the Reset
+camera button and the canvas double-click: it runs `Camera::recenter_follow`,
+the kernel the native double-click calls, which zeroes the three knobs in any
+mode and, in free roam, also releases a scripted shot that never handed the
+focus back, so the follow camera re-pins to the lead. The page side
+(`resetCamera`) also drops the `F3` vantage. `play_camera_set_orbit` remains
+for the `F3` hand-off. A
 direct entry through `enter_field` runs `Camera::reset_for_scene_entry` (the
 native `enter_field_live` is the paired site), and the page's picker calls
 `play_abandon_opening_chain` first so a scene picked mid-opening is that

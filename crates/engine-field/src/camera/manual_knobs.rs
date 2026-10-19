@@ -114,4 +114,41 @@ impl Camera {
         self.manual_tilt = 0.0;
         self.manual_zoom = 1.0;
     }
+
+    /// The **reset camera** control both play hosts carry (the page's
+    /// button and canvas double-click, the native window's double-click):
+    /// put the view back at the retail framing on the current lead.
+    ///
+    /// Always zeroes the user's knobs ([`Self::reset_follow_knobs`]), in any
+    /// mode, so a drag left over from the field cannot greet the player when
+    /// a fight or the world map hands the camera back. In free roam
+    /// ([`Self::follow_knobs_live`]) it also releases a scripted shot the
+    /// scene left holding the focus: an op-`0x45` beat with no hand-back
+    /// keeps `script_owns_focus` latched, and the follow camera never
+    /// re-pins the focus to the party until the next scene entry. The glide
+    /// in flight, the cinematic angles and the latch go, and the zone
+    /// camera's snap is armed so the composed follow pose lands on the next
+    /// tick. While a cutscene owns the camera only the knobs reset - the
+    /// shot is the script's. Returns whether the free-roam half ran.
+    pub fn recenter_follow<W: CameraWorld + ?Sized>(&mut self, world: &W) -> bool {
+        self.reset_follow_knobs();
+        if !self.follow_knobs_live(world) {
+            return false;
+        }
+        self.mode = CameraMode::Follow;
+        self.yaw = 0.0;
+        self.pitch = 0.0;
+        self.roll = 0.0;
+        self.mover = None;
+        self.script_owns_focus = false;
+        self.zone.snap_pending = true;
+        self.zone.prev_player = None;
+        true
+    }
+
+    /// Whether a scripted shot holds the focus (the op-`0x45` latch the
+    /// follow camera yields to), for a host's diagnostics and tests.
+    pub fn script_owns_focus(&self) -> bool {
+        self.script_owns_focus
+    }
 }
