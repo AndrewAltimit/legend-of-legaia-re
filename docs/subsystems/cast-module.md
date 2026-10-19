@@ -778,6 +778,26 @@ magic level `3`, PROT 0905 restored `320` (`3 * 0x20 + 0xE0`) into a seat on
 read off the same casts: `0x81` 10, `0x82` 24, `0x83` 6, `0x85` 13, `0x86` 36,
 `0x88` 32, `0x89` 18.
 
+### Astral Slash rolls no wrapper
+
+<a id="astral-slash-rolls-no-wrapper"></a>
+
+PROT 0952's `0xB8` body (`0x801F6A0C`) has no damage site. Arm 2 stages clip
+`0x0A` on the caster and parks the battle's strike cursor (`ctx[+0x15] = 0xFF`,
+`0x801F6E74..0x801F6E78`), and the damage is the melee kernel's: the anim tick
+`FUN_80047430` calls `FUN_801EC3E4` on the playing entry every frame
+(`0x800478A0`), and Gaza's entry `0x0A` carries four beats (`14 15 16 17`) with
+power bytes `0D 0E 0F 10`. Four melee hits accumulate and, the cursor parked,
+the total lands in live HP on the fourth beat. The guard ladder is the kernel's
+inlined copy, keyed on the attacking monster's element, so a Luminous Jewel
+halves the cast against light-element Gaza
+([melee ladder](battle-formulas.md#underdog-rewrite-chip-floor-and-cap)).
+
+**Port.** `World::run_cast_module_code` parks the caster's strike index on arm
+2 and marks the band's fold as owed nothing (`module_skips_fold`), so the
+cast's outcome is the hits `World::tick_battle_hit_events` lands off the
+staged clip. Disc oracle: `engine-core/tests/astral_slash_clip_damage_disc.rs`.
+
 ### The three clamp shapes
 
 <a id="the-three-clamp-shapes"></a>
@@ -1048,7 +1068,7 @@ Verdicts:
 | `801F81DC` | 951 (`cast_chaos_flare`) | spawn stager, 4 spawn calls | DATA |
 | `801F81DC` | 910 (`summon_swordie`) | per-slash damage applier, three `jal`s from the tick; rolls `FUN_801DD0AC(0x12, 7)`, run-time cap, writes HP `+0x14C`, `+0x1DA`, `+0x1DC` | PORT |
 | `801F8EAC` | 904 (`summon_theeder`) | spawn stager, 1 spawn call (residue in 908, 910) | DATA |
-| `801F6A0C` | 952 (`cast_bloody_horns`) | cast tick body (`0xB8`, Astral Slash), 5 phase arms; writes `+0x1DA`, `+0x1DC`, anim rate `+0x21D`, `ctx+0x279` | PORT |
+| `801F6A0C` | 952 (`cast_bloody_horns`) | cast tick body (`0xB8`, Astral Slash), 5 phase arms; writes `+0x1DA`, `+0x1DC`, anim rate `+0x21D`, `ctx+0x279`, strike cursor `ctx+0x15`; no damage site ([below](#astral-slash-rolls-no-wrapper)) | PORT |
 | `801F6DD8` | 958 (`cast_blazing_slash`) | cast tick body via the trampoline; damage roll (bypass); writes HP `+0x14C`, `+0x1DA`, `+0x1DC`, `ctx+0x278` | PORT |
 | `801F6EDC` | 945 (`cast_water_column`) | cast tick body via the trampoline; damage roll (resist); writes HP `+0x14C`, status `+0x16E`, `+0x1DA`, `+0x1DC` | PORT |
 | `801F7F2C` | 944 (`cast_guilty_cross`) | spawn stager, 3 spawn calls (residue in 945) | DATA |

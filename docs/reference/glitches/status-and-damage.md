@@ -380,10 +380,14 @@ Break on `0x801DDBD4` as each attack lands and read `a3`: it is `1` for the seve
 `0` for any other enemy cast, for example Neo Star Slash from the same module as Plasma Strike. In
 play, a matching jewel leaves the seven unchanged and halves the others.
 
-### Open questions
+### Astral Slash is a melee hit
 
-- Astral Slash `0xB8` shares PROT 0952 with Bloody Horns, and its routine (`0x801F6A0C`) calls
-  none of the three wrappers. Where its damage is applied is not traced.
+Astral Slash `0xB8` shares PROT 0952 with Bloody Horns, and its routine (`0x801F6A0C`) calls none
+of the three wrappers. It stages clip `0x0A` on Gaza and the ordinary melee kernel rolls that clip's
+four beats, so a matching jewel halves it through the kernel's own copy of the guard block, keyed
+on Gaza's light element ([battle-formulas.md](../../subsystems/battle-formulas.md#capture-class-wrappers---fun_801dd4b0--fun_801dd6b4),
+repo doc). The same block covers every plain monster swing: an elemental monster's ordinary attack
+is halved by the matching jewel too.
 
 ## Bosses on the USA disc cannot have ATK, INT or DEF lowered
 

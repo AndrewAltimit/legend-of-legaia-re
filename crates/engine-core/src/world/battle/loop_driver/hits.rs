@@ -645,12 +645,26 @@ impl World {
             let attacker_is_party = attacker < self.party.party_count;
             let target_is_party = target < self.party.party_count;
             let defender_resist = self.defender_resist(target);
+            // The melee kernel's inlined ladder (`0x801ED5CC..0x801EDA00`)
+            // runs for a party defender struck by a monster seat
+            // (`sltiu v0,v1,0x3` / `sltiu v0,a1,0x3` at `0x801ED5CC` /
+            // `0x801ED5D8`) and keys every arm on the **attacking monster's
+            // record element**, read record-direct (`lbu v1,0x1d(v0)` off
+            // `0x801C9348[attacker - 3]`, e.g. `0x801ED640`, `0x801ED9E0`):
+            // an Earth Jewel halves an earth monster's swing, and All Guard
+            // takes its `3/4` unless that element is `7`. A party attacker
+            // never reaches the ladder, so its element is moot.
+            let attacker_element = if attacker_is_party {
+                7
+            } else {
+                self.monster_seat_element(attacker_i).unwrap_or(7)
+            };
             raw = legaia_engine_battle_vm::battle_formulas::damage_finish(
                 &legaia_engine_battle_vm::battle_formulas::DamageFinish {
                     predamage: u32::from(raw),
                     attacker_slot: if attacker_is_party { 0 } else { 3 },
                     defender_slot: if target_is_party { 0 } else { 3 },
-                    attacker_element: 7, // basic attack is non-elemental
+                    attacker_element,
                     defender_resist,
                     defender_guarding: false,
                     enemy_defender_halve: self.mystic_shield_up(),

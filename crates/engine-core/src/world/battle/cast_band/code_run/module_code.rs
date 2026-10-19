@@ -425,6 +425,24 @@ impl World {
                     Some(ticks::blazing_slash_tick(&mut ctx, &mut victim, None))
                 }
                 (952, Some(ticks::ASTRAL_SLASH_TICK)) => {
+                    // The body has no damage site in any arm. Astral Slash's
+                    // damage is the clip arm 2 stages on the caster (Gaza's
+                    // archive entry `0x0A`: power bytes `0D 0E 0F 10`, beats
+                    // `14 15 16 17`), rolled hit by hit by the melee kernel
+                    // the anim tick calls (`FUN_80047430` -> `FUN_801EC3E4`,
+                    // `World::tick_battle_hit_events`) and landed on the
+                    // band's exit. The generic fold would roll a wrapper on
+                    // top of that total.
+                    self.casting.module_skips_fold = true;
+                    // Arm 2's `ctx[+0x15] = 0xFF`: the kernel's apply gate
+                    // reads the parked cursor, so the total lands on the
+                    // clip's last beat.
+                    if ctx.phase == ticks::ASTRAL_SLASH_STRIKE_PARK_ARM
+                        && let Some(a) = self.actors.get_mut(usize::from(caster_slot))
+                    {
+                        a.battle.strike_index =
+                            legaia_engine_battle_vm::battle_action::STRIKE_CURSOR_PARKED;
+                    }
                     Some(ticks::astral_slash_tick(&mut ctx, &mut caster, &mut victim))
                 }
                 (945, Some(ticks::WATER_COLUMN_TICK)) => {

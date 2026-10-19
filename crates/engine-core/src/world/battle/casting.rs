@@ -29,7 +29,9 @@ mod spell_resolution;
 /// Bull Charge, Blazing Slash, Megaton Press, Plasma Strike. Spells that share
 /// one of those modules but whose dispatched tick either carries no damage call
 /// or calls the respecting wrapper - Curse All `0x53`, Astral Slash `0xB8`,
-/// Neo Star Slash `0xA6` - are deliberately **not** here.
+/// Neo Star Slash `0xA6` - are deliberately **not** here. Astral Slash rolls
+/// no wrapper at all: its damage is the staged clip's melee hits, and the
+/// band's fold skips it (`World::run_cast_module_code`).
 ///
 /// This is retail behaviour and therefore the engine's baseline; making these
 /// casts respect guards is the opt-in `--jewel-fix` disc patch, not a default.

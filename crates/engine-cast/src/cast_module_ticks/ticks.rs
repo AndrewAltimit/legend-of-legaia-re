@@ -134,13 +134,25 @@ pub const ASTRAL_SLASH_TERMINAL_ARM: u8 = 4;
 /// at `0x801F6D88`).
 pub const ASTRAL_SLASH_ARM2_CLIP: u8 = 0x0A;
 
+/// The PROT 0952 arm that parks the battle's strike cursor: arm 2 stores
+/// `ctx[+0x15] = 0xFF` (`li v0,0xff` / `sb v0,0x15(v1)` at
+/// `0x801F6E74..0x801F6E78`) as it stages clip `0x0A`. With the cursor
+/// parked, the melee kernel `FUN_801EC3E4` writes the accumulated total into
+/// live HP on the clip's last listed beat (`0x801EE9A4..0x801EE9EC`), so the
+/// cast's damage lands mid-swing, not at the band's exit.
+pub const ASTRAL_SLASH_STRIKE_PARK_ARM: u8 = 2;
+
 /// PROT 0952 (Astral Slash) tick body.
 ///
 /// Five phase arms behind `sltiu v1, 5` through the head table at
 /// `0x801F69D8` (arm targets `0x801F6AC4`, `6C28`, `6D08`, `6E98`, `6FF4`).
-/// It carries **no** damage-wrapper call at all; its whole simulation
-/// footprint is staging and the phase walk, all through `$s4 = ctx + 0x279`
-/// materialised at `0x801F6AA0`:
+/// It carries **no** damage-wrapper call and no HP store: the cast's damage
+/// is the clip arm 2 stages, rolled by the melee kernel `FUN_801EC3E4` on
+/// each of its beats (the host's job - `World::tick_battle_hit_events`), with
+/// the strike cursor arm 2 parks ([`ASTRAL_SLASH_STRIKE_PARK_ARM`]) landing
+/// the total on the last one. Its simulation footprint here is staging and
+/// the phase walk, all through `$s4 = ctx + 0x279` materialised at
+/// `0x801F6AA0`:
 ///
 /// * arms `0..=3` each advance the phase exactly once (arm 0 has two
 ///   alternative advance sites on branches of the same arm);
