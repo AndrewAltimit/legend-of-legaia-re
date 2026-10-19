@@ -20,7 +20,12 @@ nothing. This crate is the projection between them for:
   chrome, loose pens without);
 - the **fishing HUD banner step** (`fishing_banner_frame`): the pond session's
   events seed the one-shot timers and the tick's draws come back for a draw
-  pass that cannot advance them;
+  pass that cannot advance them; the **fishing HUD draw list**
+  (`fishing_hud_items`: persistent rows, catch HUD, result plate, banners)
+  and the **rod and line** screen prims (`fishing_line_screen_prims`);
+- the **battle value readout's layout** (`battle_value_readout_layout`): the
+  combo cluster and the newest numeral per struck actor, seated through the
+  host's camera;
 - smaller projections each host used to carry a copy of: the battle item
   window's frame (`with_battle_item_frame`), the command-menu chip cluster
   (`battle_command`), the inventory item-use screen
@@ -82,5 +87,6 @@ each host that calls one of the crate's entries (`shop_overlay_frame`,
 `battle_hud_frame_draws`, `battle_chrome_sprite_draws`,
 `field_menu_root_draws`, `field_menu_sub_draws`, `battle_text_draws`,
 `dialog_box_chrome_draws`, `dialog_box_text_draws`, `field_party_hud_draws`,
-`save_select_overlay_draws`;
+`save_select_overlay_draws`, `battle_value_readout_layout`,
+`fishing_hud_items`, `fishing_line_screen_prims`;
 [`host-drift.md`](../../docs/tooling/host-drift.md)).

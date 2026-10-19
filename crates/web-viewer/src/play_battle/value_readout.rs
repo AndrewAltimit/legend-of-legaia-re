@@ -13,81 +13,41 @@ impl LegaiaRuntime {
     /// layers so the frame and the rows cannot disagree - the native window's
     /// `battle_tutorial_stage_rect` twin.
     /// This frame's value readout, laid out in 320x240 **stage** pixels: the
-    /// combo counter cluster and one run of digit cells per live damage
-    /// popup, seated over the struck actor.
+    /// combo counter cluster and the digit cells of every struck actor's run
+    /// (`legaia_engine_screens::battle_value_readout`, the layout the native
+    /// window runs too).
     ///
     /// Shared by the retail-art path (`battle_value_readout_prims`) and the
     /// font fallback below so the two cannot seat the same number
-    /// differently. Layout is `legaia_engine_battle_vm::battle_value_readout`, the
-    /// same kernel the native window runs.
-    ///
-    /// Only the newest popup per actor contributes: retail's readout is a
-    /// per-slot value window, and two runs centred on one point interleave
-    /// unreadably.
+    /// differently.
     ///
     /// The projection uses the **stage** aspect (`4:3`), not the canvas
     /// aspect: the cells are authored in the 320x240 stage the host then
     /// letterboxes, which is the aspect `battle_fx_screen_prims` already
-    /// projects its trail and streak packets with.
+    /// projects its trail and streak packets with. The camera is the
+    /// engine's (`World::battle_cam_pose`, stepped by `World::tick`), so the
+    /// layout needs no render build: a fight whose render did not build still
+    /// draws its numbers through the font fallback.
     fn battle_value_readout_layout(
         &self,
     ) -> Option<(
         Option<legaia_engine_battle_vm::battle_value_readout::ComboCluster>,
         Vec<legaia_engine_battle_vm::battle_value_readout::ValueCell>,
     )> {
-        use legaia_engine_battle_vm::battle_value_readout as vr;
-        if self.battle_hud.popups.is_empty() && self.battle_hud.combo.is_none() {
-            return None;
-        }
         let world = &self.scene_host.host()?.world;
-        // The camera is the engine's (`World::battle_cam_pose`, stepped by
-        // `World::tick`), so the layout needs no render build. It used to
-        // read `play_battle_camera_vp`, which answers empty without a battle
-        // render - the very frames the font fallback exists for - so a fight
-        // whose render did not build drew no numbers at all.
-        if world.mode != legaia_engine_mode::mode::SceneMode::Battle {
-            return None;
-        }
         let vp = legaia_engine_camera::projection::battle_vp(
             &self.battle_cam_pose(),
             BATTLE_WORLD_SCALE_LOCAL,
             4.0 / 3.0,
         );
-        let cluster = self
-            .battle_hud
-            .combo
-            .as_ref()
-            .map(|c| vr::combo_cluster(c.style, c.hits, c.total, c.slide()));
-        let mut newest: Vec<&legaia_engine_battle::battle_hud_state::DamagePopup> = Vec::new();
-        for p in &self.battle_hud.popups {
-            if p.status.is_some() {
-                continue;
-            }
-            match newest.iter_mut().find(|q| q.slot == p.slot) {
-                Some(q) if q.frames_remaining >= p.frames_remaining => {}
-                Some(q) => *q = p,
-                None => newest.push(p),
-            }
-        }
-        // Seated the way retail's renderer `FUN_801DF6B8` seats them: a
-        // view-space square over the struck actor's display trio, rising and
-        // growing with the ring timer (`battle_numerals::popup_value_cells`,
-        // the kernel the native window seats through too).
-        let mut cells = Vec::new();
-        for p in newest {
-            let Some(trio) = world.battle_display_trio(usize::from(p.slot)) else {
-                continue;
-            };
-            let age = p.frames_total.saturating_sub(p.frames_remaining);
-            cells.extend(legaia_engine_ui::battle_numerals::popup_value_cells(
+        let (cluster, runs) =
+            legaia_engine_screens::battle_value_readout::battle_value_readout_layout(
+                world,
+                &self.battle_hud,
                 &vp,
                 BATTLE_WORLD_SCALE_LOCAL,
-                trio,
-                p.amount,
-                age,
-            ));
-        }
-        Some((cluster, cells))
+            )?;
+        Some((cluster, runs.into_iter().flatten().collect()))
     }
 
     /// Is the battle effect atlas's glyph page resident in the VRAM texture

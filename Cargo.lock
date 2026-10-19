@@ -2416,6 +2416,7 @@ version = "0.1.0"
 dependencies = [
  "legaia-engine-battle",
  "legaia-engine-battle-hud",
+ "legaia-engine-battle-vm",
  "legaia-engine-core",
  "legaia-engine-dialog",
  "legaia-engine-effects",
