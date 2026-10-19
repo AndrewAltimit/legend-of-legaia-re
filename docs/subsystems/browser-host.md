@@ -916,7 +916,11 @@ summary's per-item `isolation` object and the glTF root name carry the mode,
 the kept / dropped primitive counts and whether a rule hand-checked the
 record, and the grip repair's `bridges` / `bridged_triangles`
 (`equip_repair` lofts a tube between the two shaft rims a welded weapon
-leaves where the fist hid the haft; the root name says `grip inferred`).
+leaves where the fist hid the haft; the root name says `grip inferred`)
+and `skin_masked_primitives` (kept primitives whose painted skin
+`equip_skin_mask` made transparent: their `cba_tsb` points at a masked
+15-bit copy inside `equipped_vram_bytes()`, so the preview needs no
+extra upload).
 The `equipped_item_only_{positions,uvs,cba_tsb,indices,object_ids,flat_rgba,bounds}(section)`
 family is that same repaired geometry as mesh streams, parallel to the
 `equipped_mesh_*` set, so the page's preview toggle draws exactly what the

@@ -12,6 +12,7 @@ mod battle_data_pack_real;
 mod battle_pose_orientation_real;
 mod befect_cluster_real;
 mod character_pack_real;
+mod equip_alone_skin_real;
 mod equip_isolate_real;
 mod equip_item_real;
 mod equip_repair_real;

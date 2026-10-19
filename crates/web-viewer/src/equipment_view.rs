@@ -350,6 +350,9 @@ impl LegaiaViewer {
                         // other to bridge).
                         "bridges": it.alone.bridges.len(),
                         "bridged_triangles": it.alone.bridged_triangles(),
+                        // Kept primitives whose painted skin the texel
+                        // mask made transparent.
+                        "skin_masked_primitives": it.alone.skin_mask.masked_primitives,
                     },
                 })
             })
@@ -760,6 +763,7 @@ impl LegaiaViewer {
                 "note": it.isolation.note,
                 "bridges": it.alone.bridges.len(),
                 "bridged_triangles": it.alone.bridged_triangles(),
+                "skin_masked_primitives": it.alone.skin_mask.masked_primitives,
             },
             "alone_triangles": it.alone.mesh.indices.len() / 3,
         })
