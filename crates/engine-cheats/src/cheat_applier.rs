@@ -13,8 +13,8 @@
 //! to apply codes that follow a conditional gate unconditionally
 //! (useful for "Save Anywhere", "Status Modifier Menu", etc.).
 
-use crate::world::World;
 use legaia_cheats::{CheatCode, Database};
+use legaia_engine_core::world::World;
 use legaia_engine_system::ram_map::{CellTarget, RamCell, WorldField, build_registry};
 use std::collections::HashMap;
 

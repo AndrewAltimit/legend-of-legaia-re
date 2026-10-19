@@ -1260,7 +1260,7 @@ reference TIMs sitting in other PROT entries.
 | [`host_slot`](../../crates/web-viewer/src/host_slot.rs) | The page's slot for its `BootSession` over `play_sfx::PageSink`; every page module reaches the scene host through it. |
 | [`play_hotkeys`](../../crates/web-viewer/src/play_hotkeys.rs) | `play_host_hotkey`: the native window's option / cheat / camera keys, resolved through the shared `engine-session::hotkeys` table; the page half is `window.__playHotkeyActions` in `play.html`. |
 | [`play_lighting`](../../crates/web-viewer/src/play_lighting.rs) / [`play_fog_volume`](../../crates/web-viewer/src/play_fog_volume.rs) | The enhanced-lighting and volumetric-fog enhancements (twins of the native `I` / `F8` and `F9`), from the shared engine-side sources. |
-| [`play_cheats`](../../crates/web-viewer/src/play_cheats.rs) | The play page's Cheats panel, thin bindings over `engine-core::cheats`. |
+| [`play_cheats`](../../crates/web-viewer/src/play_cheats.rs) | The play page's Cheats panel, thin bindings over `engine-cheats::cheats`. |
 | [`play_toggles`](../../crates/web-viewer/src/play_toggles.rs) | Runtime twins of native launch switches: `--retail` (session-only `OptionsState::pin_retail`; the store is not written while it holds), `--set-flag`, `LEGAIA_SMART_MONSTERS`, `LEGAIA_WORLD_MAP_MARKERS`. |
 | [`audio_api`](../../crates/web-viewer/src/audio_api.rs) | `LegaiaAudio`, the media page's audio bindings. |
 | [`play_host_parity`](../../crates/web-viewer/src/play_host_parity.rs) | Read-only probes over the live `World` for the tests pairing this host against the native window; not wasm exports. |

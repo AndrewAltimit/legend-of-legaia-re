@@ -290,7 +290,7 @@ Both hosts reach the same seed, `World::seed_picker_party`.
 
 ### Cheats
 
-Both hosts carry the same cheats, all written by `legaia_engine_core::cheats`
+Both hosts carry the same cheats, all written by `legaia_engine_cheats::cheats`
 so the state they leave is one a playthrough could reach:
 
 | Cheat | Native | Effect |

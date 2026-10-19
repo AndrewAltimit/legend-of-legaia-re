@@ -11,8 +11,8 @@
 //!   by [`World::install_retail_progression_tables`]) and the record's XP,
 //!   next-level threshold and displayed level all agree. **Lowering** a level
 //!   re-derives the character from its New Game template
-//!   ([`crate::new_game::starting_record`]) plus the growth for the levels it
-//!   keeps ([`World::cheat_rebuild_level`]) - growth is not reversible, so the
+//!   ([`legaia_engine_core::new_game::starting_record`]) plus the growth for the levels it
+//!   keeps ([`WorldCheats::cheat_rebuild_level`]) - growth is not reversible, so the
 //!   only honest way down is to replay it from level 1.
 //! * **Seru magic** goes through retail's learn edge
 //!   ([`legaia_engine_battle::magic_xp::learn_spell_prepend`], `FUN_801E92DC`) and the
@@ -26,12 +26,12 @@
 //!   they stack to 99 and land inside the installed active window, so a full
 //!   window refuses rather than writing past it.
 //! * **Gold** and **coins** clamp to the purses' retail ceilings
-//!   ([`legaia_engine_menus::shop::GOLD_CAP`], [`crate::casino_coin_bank::COIN_BANK_CEILING`]).
+//!   ([`legaia_engine_menus::shop::GOLD_CAP`], [`legaia_engine_core::casino_coin_bank::COIN_BANK_CEILING`]).
 //!
 //! Hosts own only the controls; this module owns every write.
 
-use crate::world::World;
 use legaia_engine_battle::levelup::{LevelUpTracker, MAX_LEVEL, MAX_PARTY};
+use legaia_engine_core::world::World;
 use legaia_game_tables::new_game::{StartingChar, StartingParty};
 
 /// The Spirit (AP) gauge ceiling - the value
@@ -137,10 +137,128 @@ pub fn resolve_item<'a>(query: &str, names: impl IntoIterator<Item = (u8, &'a st
     }
 }
 
-impl World {
+/// The cheats as methods on [`World`]: bring the trait into scope
+/// (`use legaia_engine_cheats::cheats::WorldCheats`) and call them on the
+/// host's world. Every write goes through the engine's own rules (the
+/// module docs list which); hosts own only the controls.
+pub trait WorldCheats {
     /// The `(id, name)` pairs of the installed item-name table (empty when no
     /// executable was readable) - what [`resolve_item`] matches against.
-    pub fn item_name_pairs(&self) -> Vec<(u8, String)> {
+    fn item_name_pairs(&self) -> Vec<(u8, String)>;
+
+    /// Raise roster slot `roster_slot`'s character to `level` (clamped to
+    /// `1..=99`) by granting the XP that reaches it, with the retail stat
+    /// growth applied. Returns the level the character is at afterwards, or
+    /// `None` when the slot holds no character (no record, or a zeroed one).
+    /// A target at or below the current level changes nothing.
+    fn cheat_set_level(&mut self, roster_slot: usize, level: u8) -> Option<u8>;
+
+    /// [`Self::cheat_set_level`] over every present party member. Returns
+    /// `(roster slot, level after)` per member that holds a character.
+    fn cheat_set_party_level(&mut self, level: u8) -> Vec<(u8, u8)>;
+
+    /// Set the gold purse, clamped to `0..=`[`legaia_engine_menus::shop::GOLD_CAP`].
+    /// Returns the purse afterwards.
+    fn cheat_set_gold(&mut self, gold: i64) -> i32;
+
+    /// Set the casino coin bank, clamped to
+    /// [`legaia_engine_core::casino_coin_bank::COIN_BANK_CEILING`]. Returns the bank
+    /// afterwards.
+    fn cheat_set_coins(&mut self, coins: u64) -> u32;
+
+    /// Add `qty` of item `id` through the bag's retail add helper. `None` for
+    /// id `0`.
+    fn cheat_give_item(&mut self, id: u8, qty: u8) -> Option<ItemGrant>;
+
+    /// Restore every roster member's HP and MP to their maxima (reviving the
+    /// fallen) and refresh the live battle mirrors, so it works mid-fight too.
+    fn cheat_restore_party(&mut self);
+
+    /// [`Self::cheat_set_level`] for a level that may go **down**: when
+    /// `level` is below the current one and `template` (this character's New
+    /// Game template row) is given, rebuild through
+    /// [`Self::cheat_rebuild_level`]; otherwise raise as usual.
+    fn cheat_change_level(
+        &mut self,
+        roster_slot: usize,
+        level: u8,
+        template: Option<&StartingChar>,
+    ) -> Option<u8>;
+
+    /// Re-derive roster slot `roster_slot` at `level` from its New Game
+    /// template: the record's stat block is reset to `template`'s seed
+    /// ([`legaia_engine_core::new_game::starting_record`]), the tracker drops to level 1
+    /// with 0 XP, and the XP that reaches `level` is granted back through the
+    /// tracker - so the stats are the template plus the retail growth for
+    /// exactly the levels kept. Permanent stat-up items and other off-curve
+    /// stat edits are lost. Current HP / MP / AP are kept, clamped to the new
+    /// maxima. Equipment, spells, arts and the name are untouched.
+    fn cheat_rebuild_level(
+        &mut self,
+        roster_slot: usize,
+        level: u8,
+        template: &StartingChar,
+    ) -> Option<u8>;
+
+    /// [`Self::cheat_change_level`] over every present party member, each
+    /// rebuilt from its own row of `templates` (indexed by roster slot) when
+    /// lowering. Without templates a level only goes up. Returns `(roster
+    /// slot, level after)` per member that holds a character.
+    fn cheat_set_party_level_with(
+        &mut self,
+        level: u8,
+        templates: Option<&StartingParty>,
+    ) -> Vec<(u8, u8)>;
+
+    /// Fill every present member's AP (Spirit) gauge to [`AP_GAUGE_MAX`]: the
+    /// record's `+0x10E` (what the field Status page shows and the next
+    /// battle seeds from) and, in battle, the actor's live gauge - so the
+    /// Spirit / Super-Art command opens at once. Returns how many members
+    /// were filled.
+    fn cheat_max_ap(&mut self) -> usize;
+
+    /// The Seru-magic ids [`Self::cheat_grant_seru`] teaches roster slot
+    /// `slot`: the 21 player Seru plus [`summon_spells_for`]. With the executable's spell-name table installed, ids it
+    /// does not name are left out.
+    fn cheat_seru_spells_for(&self, slot: usize) -> Vec<u8>;
+
+    /// Teach every present member all of its Seru magic
+    /// ([`Self::cheat_seru_spells_for`]) and set **every** listed spell's
+    /// level to `level` (clamped `1..=`[`SERU_LEVEL_MAX`]). Learning goes
+    /// through retail's prepend (`FUN_801E92DC`) plus the capture log, so
+    /// the field and battle Magic lists pick the spells up at once; each
+    /// spell's XP is set just past the threshold its level crossed, so the
+    /// next level-up check stays coherent.
+    fn cheat_grant_seru(&mut self, level: u8) -> Vec<SeruGrant>;
+
+    /// Teach every present member every art the executable's arts table
+    /// lists for it (Miracle Art included), through retail's ordered
+    /// learned-art insert into the record's `+0x185` list and the
+    /// [`legaia_engine_battle::tactical_arts::TacticalArtsTracker`] beside it. Returns
+    /// `(roster slot, arts newly learned, arts known)`; empty without the
+    /// table (a disc-free build).
+    fn cheat_learn_all_arts(&mut self) -> Vec<(u8, u8, u8)>;
+
+    /// Raise every held stack to 99 and add 99 of every usable consumable
+    /// (an item-effect descriptor with the field or battle usability bit)
+    /// through the bag's retail add helper, so nothing lands outside the
+    /// active window. Key items and equipment are not added - a key item a
+    /// story gate tests could open it early. Returns the stacks touched.
+    fn cheat_max_items(&mut self) -> usize;
+
+    /// Random encounters on / off - the field roll the live loop runs
+    /// ([`legaia_engine_core::world::WorldToggles::live_gameplay_loop`]). Scripted and
+    /// boss fights are not affected: the battle side never reads the flag.
+    fn cheat_set_random_encounters(&mut self, on: bool);
+
+    /// Apply one [`PlayerCheat`] and return the one-line outcome both hosts
+    /// show (the page's status line, the native log). `templates` is the
+    /// executable's New Game party, which a lowered level is rebuilt from.
+    fn apply_cheat(&mut self, cheat: &PlayerCheat, templates: Option<&StartingParty>) -> String;
+}
+
+impl WorldCheats for World {
+    fn item_name_pairs(&self) -> Vec<(u8, String)> {
         let Some(t) = self.menu.text.as_ref().and_then(|t| t.item_names.as_ref()) else {
             return Vec::new();
         };
@@ -149,12 +267,7 @@ impl World {
             .collect()
     }
 
-    /// Raise roster slot `roster_slot`'s character to `level` (clamped to
-    /// `1..=99`) by granting the XP that reaches it, with the retail stat
-    /// growth applied. Returns the level the character is at afterwards, or
-    /// `None` when the slot holds no character (no record, or a zeroed one).
-    /// A target at or below the current level changes nothing.
-    pub fn cheat_set_level(&mut self, roster_slot: usize, level: u8) -> Option<u8> {
+    fn cheat_set_level(&mut self, roster_slot: usize, level: u8) -> Option<u8> {
         if roster_slot >= MAX_PARTY {
             return None;
         }
@@ -198,31 +311,23 @@ impl World {
         Some(cur)
     }
 
-    /// [`Self::cheat_set_level`] over every present party member. Returns
-    /// `(roster slot, level after)` per member that holds a character.
-    pub fn cheat_set_party_level(&mut self, level: u8) -> Vec<(u8, u8)> {
+    fn cheat_set_party_level(&mut self, level: u8) -> Vec<(u8, u8)> {
         self.cheat_set_party_level_with(level, None)
     }
 
-    /// Set the gold purse, clamped to `0..=`[`legaia_engine_menus::shop::GOLD_CAP`].
-    /// Returns the purse afterwards.
-    pub fn cheat_set_gold(&mut self, gold: i64) -> i32 {
+    fn cheat_set_gold(&mut self, gold: i64) -> i32 {
         self.party.money = gold.clamp(0, i64::from(legaia_engine_menus::shop::GOLD_CAP)) as i32;
         self.party.money
     }
 
-    /// Set the casino coin bank, clamped to
-    /// [`crate::casino_coin_bank::COIN_BANK_CEILING`]. Returns the bank
-    /// afterwards.
-    pub fn cheat_set_coins(&mut self, coins: u64) -> u32 {
-        self.minigames.casino_coins =
-            coins.min(u64::from(crate::casino_coin_bank::COIN_BANK_CEILING)) as u32;
+    fn cheat_set_coins(&mut self, coins: u64) -> u32 {
+        self.minigames.casino_coins = coins.min(u64::from(
+            legaia_engine_core::casino_coin_bank::COIN_BANK_CEILING,
+        )) as u32;
         self.minigames.casino_coins
     }
 
-    /// Add `qty` of item `id` through the bag's retail add helper. `None` for
-    /// id `0`.
-    pub fn cheat_give_item(&mut self, id: u8, qty: u8) -> Option<ItemGrant> {
+    fn cheat_give_item(&mut self, id: u8, qty: u8) -> Option<ItemGrant> {
         if id == 0 {
             return None;
         }
@@ -238,9 +343,7 @@ impl World {
         })
     }
 
-    /// Restore every roster member's HP and MP to their maxima (reviving the
-    /// fallen) and refresh the live battle mirrors, so it works mid-fight too.
-    pub fn cheat_restore_party(&mut self) {
+    fn cheat_restore_party(&mut self) {
         for rec in self.party.roster.members.iter_mut() {
             let mut hms = rec.hp_mp_sp();
             if hms.hp_max == 0 {
@@ -253,11 +356,7 @@ impl World {
         self.mirror_party_records_to_actors();
     }
 
-    /// [`Self::cheat_set_level`] for a level that may go **down**: when
-    /// `level` is below the current one and `template` (this character's New
-    /// Game template row) is given, rebuild through
-    /// [`Self::cheat_rebuild_level`]; otherwise raise as usual.
-    pub fn cheat_change_level(
+    fn cheat_change_level(
         &mut self,
         roster_slot: usize,
         level: u8,
@@ -272,15 +371,7 @@ impl World {
         }
     }
 
-    /// Re-derive roster slot `roster_slot` at `level` from its New Game
-    /// template: the record's stat block is reset to `template`'s seed
-    /// ([`crate::new_game::starting_record`]), the tracker drops to level 1
-    /// with 0 XP, and the XP that reaches `level` is granted back through the
-    /// tracker - so the stats are the template plus the retail growth for
-    /// exactly the levels kept. Permanent stat-up items and other off-curve
-    /// stat edits are lost. Current HP / MP / AP are kept, clamped to the new
-    /// maxima. Equipment, spells, arts and the name are untouched.
-    pub fn cheat_rebuild_level(
+    fn cheat_rebuild_level(
         &mut self,
         roster_slot: usize,
         level: u8,
@@ -294,7 +385,7 @@ impl World {
         if old.hp_max == 0 {
             return None;
         }
-        let fresh = crate::new_game::starting_record(template);
+        let fresh = legaia_engine_core::new_game::starting_record(template);
         let mut hms = fresh.hp_mp_sp();
         hms.hp_cur = old.hp_cur;
         hms.mp_cur = old.mp_cur;
@@ -319,11 +410,7 @@ impl World {
         Some(got)
     }
 
-    /// [`Self::cheat_change_level`] over every present party member, each
-    /// rebuilt from its own row of `templates` (indexed by roster slot) when
-    /// lowering. Without templates a level only goes up. Returns `(roster
-    /// slot, level after)` per member that holds a character.
-    pub fn cheat_set_party_level_with(
+    fn cheat_set_party_level_with(
         &mut self,
         level: u8,
         templates: Option<&StartingParty>,
@@ -337,12 +424,7 @@ impl World {
             .collect()
     }
 
-    /// Fill every present member's AP (Spirit) gauge to [`AP_GAUGE_MAX`]: the
-    /// record's `+0x10E` (what the field Status page shows and the next
-    /// battle seeds from) and, in battle, the actor's live gauge - so the
-    /// Spirit / Super-Art command opens at once. Returns how many members
-    /// were filled.
-    pub fn cheat_max_ap(&mut self) -> usize {
+    fn cheat_max_ap(&mut self) -> usize {
         let mut n = 0;
         for (member, rslot) in self.present_roster_slots().into_iter().enumerate() {
             let Some(rec) = self.party.roster.members.get_mut(rslot) else {
@@ -362,10 +444,7 @@ impl World {
         n
     }
 
-    /// The Seru-magic ids [`Self::cheat_grant_seru`] teaches roster slot
-    /// `slot`: the 21 player Seru plus [`summon_spells_for`]. With the executable's spell-name table installed, ids it
-    /// does not name are left out.
-    pub fn cheat_seru_spells_for(&self, slot: usize) -> Vec<u8> {
+    fn cheat_seru_spells_for(&self, slot: usize) -> Vec<u8> {
         let names = self.menu.text.as_ref().and_then(|t| t.spell_names.as_ref());
         SERU_SPELL_IDS
             .chain(summon_spells_for(slot))
@@ -373,14 +452,7 @@ impl World {
             .collect()
     }
 
-    /// Teach every present member all of its Seru magic
-    /// ([`Self::cheat_seru_spells_for`]) and set **every** listed spell's
-    /// level to `level` (clamped `1..=`[`SERU_LEVEL_MAX`]). Learning goes
-    /// through retail's prepend (`FUN_801E92DC`) plus the capture log, so
-    /// the field and battle Magic lists pick the spells up at once; each
-    /// spell's XP is set just past the threshold its level crossed, so the
-    /// next level-up check stays coherent.
-    pub fn cheat_grant_seru(&mut self, level: u8) -> Vec<SeruGrant> {
+    fn cheat_grant_seru(&mut self, level: u8) -> Vec<SeruGrant> {
         let level = level.clamp(1, SERU_LEVEL_MAX);
         let thresholds = self.tables.magic_xp_thresholds;
         let mut out = Vec::new();
@@ -439,13 +511,7 @@ impl World {
         out
     }
 
-    /// Teach every present member every art the executable's arts table
-    /// lists for it (Miracle Art included), through retail's ordered
-    /// learned-art insert into the record's `+0x185` list and the
-    /// [`legaia_engine_battle::tactical_arts::TacticalArtsTracker`] beside it. Returns
-    /// `(roster slot, arts newly learned, arts known)`; empty without the
-    /// table (a disc-free build).
-    pub fn cheat_learn_all_arts(&mut self) -> Vec<(u8, u8, u8)> {
+    fn cheat_learn_all_arts(&mut self) -> Vec<(u8, u8, u8)> {
         let Some(table) = self.menu.text.as_ref().and_then(|t| t.arts.clone()) else {
             return Vec::new();
         };
@@ -478,12 +544,7 @@ impl World {
         out
     }
 
-    /// Raise every held stack to 99 and add 99 of every usable consumable
-    /// (an item-effect descriptor with the field or battle usability bit)
-    /// through the bag's retail add helper, so nothing lands outside the
-    /// active window. Key items and equipment are not added - a key item a
-    /// story gate tests could open it early. Returns the stacks touched.
-    pub fn cheat_max_items(&mut self) -> usize {
+    fn cheat_max_items(&mut self) -> usize {
         let mut ids: Vec<u8> = self.party.inventory.iter().map(|(&id, _)| id).collect();
         if let Some(t) = self.tables.item_effects.as_ref() {
             ids.extend(
@@ -506,142 +567,11 @@ impl World {
         touched
     }
 
-    /// Random encounters on / off - the field roll the live loop runs
-    /// ([`crate::world::WorldToggles::live_gameplay_loop`]). Scripted and
-    /// boss fights are not affected: the battle side never reads the flag.
-    pub fn cheat_set_random_encounters(&mut self, on: bool) {
+    fn cheat_set_random_encounters(&mut self, on: bool) {
         self.toggles.live_gameplay_loop = on;
     }
 
-    /// Roster slots of the present party, in battle order.
-    fn present_roster_slots(&self) -> Vec<usize> {
-        (0..usize::from(self.party.party_count.min(3)))
-            .map(|m| self.party_roster_slot(m))
-            .collect()
-    }
-
-    /// Copy every present member's record HP / MP (current and max) onto its
-    /// battle actor, so a record edit shows mid-fight.
-    fn mirror_party_records_to_actors(&mut self) {
-        for (member, rslot) in self.present_roster_slots().into_iter().enumerate() {
-            let Some(hms) = self.party.roster.members.get(rslot).map(|r| r.hp_mp_sp()) else {
-                continue;
-            };
-            if let Some(a) = self.actors.get_mut(member) {
-                a.battle.hp = hms.hp_cur;
-                a.battle.max_hp = hms.hp_max;
-                a.battle.mp = hms.mp_cur;
-                a.battle.liveness = u16::from(hms.hp_cur > 0);
-            }
-        }
-    }
-
-    /// After a record edit: re-fold the stats into the battle mirrors and
-    /// carry each present member's new maxima onto its actor. Current HP / MP
-    /// are left alone (a level-up is not a heal).
-    fn resync_party_after_cheat(&mut self) {
-        for member in 0..usize::from(self.party.party_count.min(3)) {
-            let rslot = self.party_roster_slot(member);
-            let Some(hms) = self.party.roster.members.get(rslot).map(|r| r.hp_mp_sp()) else {
-                continue;
-            };
-            if let Some(a) = self.actors.get_mut(member) {
-                a.battle.max_hp = hms.hp_max;
-            }
-        }
-        self.seed_party_battle_stats();
-    }
-}
-
-/// One player cheat - the **one list** both play hosts expose. The native
-/// window maps its `--cheat-*` flags (and `F6` / `F7`) onto these, the play
-/// page's Cheats panel maps its buttons onto the same values, and both run
-/// them through [`World::apply_cheat`], so neither host owns a cheat the
-/// other lacks or words its outcome differently.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum PlayerCheat {
-    /// Every present member to this level (retail growth; lowering rebuilds
-    /// from the New Game template).
-    PartyLevel(u8),
-    /// HP / MP refilled and the fallen revived, mid-battle included.
-    Restore,
-    /// Every present member's AP (Spirit) gauge to [`AP_GAUGE_MAX`].
-    MaxAp,
-    /// All Seru magic at this level (1..=9).
-    GrantSeru(u8),
-    /// Every art in each member's list.
-    LearnAllArts,
-    /// Every held stack and usable consumable to 99.
-    MaxItems,
-    /// The gold purse (clamped).
-    Gold(i64),
-    /// The casino coin bank (clamped).
-    Coins(u64),
-    /// Add `qty` of the item `query` names (id, `0x`-hex id or name).
-    GiveItem { query: String, qty: u8 },
-    /// Random encounters on (`true`) / off.
-    RandomEncounters(bool),
-}
-
-/// The cheat list as `(key, label)` rows, in panel order: the native flag is
-/// `--cheat-<key>`, the page's control carries the label. A host test pins
-/// that each row has a control on both hosts.
-pub const PLAYER_CHEAT_LIST: [(&str, &str); 10] = [
-    ("level", "Level"),
-    ("restore", "Restore HP/MP"),
-    ("max-ap", "Max AP"),
-    ("seru", "Grant Seru"),
-    ("arts", "Learn all arts"),
-    ("max-items", "Max items"),
-    ("gold", "Gold"),
-    ("coins", "Coins"),
-    ("item", "Item"),
-    ("encounters", "No encounters"),
-];
-
-impl PlayerCheat {
-    /// The [`PLAYER_CHEAT_LIST`] key of this cheat.
-    pub fn key(&self) -> &'static str {
-        match self {
-            PlayerCheat::PartyLevel(_) => "level",
-            PlayerCheat::Restore => "restore",
-            PlayerCheat::MaxAp => "max-ap",
-            PlayerCheat::GrantSeru(_) => "seru",
-            PlayerCheat::LearnAllArts => "arts",
-            PlayerCheat::MaxItems => "max-items",
-            PlayerCheat::Gold(_) => "gold",
-            PlayerCheat::Coins(_) => "coins",
-            PlayerCheat::GiveItem { .. } => "item",
-            PlayerCheat::RandomEncounters(_) => "encounters",
-        }
-    }
-
-    /// Parse an `ITEM[:QTY]` spec (QTY defaults to 1; `-` / `_` read as
-    /// spaces, so `healing-leaf:5` names "Healing Leaf").
-    pub fn give_item_spec(spec: &str) -> PlayerCheat {
-        let (query, qty) = match spec.rsplit_once(':') {
-            Some((q, n)) => match n.trim().parse::<u8>() {
-                Ok(qty) => (q, qty),
-                Err(_) => (spec, 1),
-            },
-            None => (spec, 1),
-        };
-        PlayerCheat::GiveItem {
-            query: query.replace(['-', '_'], " "),
-            qty,
-        }
-    }
-}
-
-impl World {
-    /// Apply one [`PlayerCheat`] and return the one-line outcome both hosts
-    /// show (the page's status line, the native log). `templates` is the
-    /// executable's New Game party, which a lowered level is rebuilt from.
-    pub fn apply_cheat(
-        &mut self,
-        cheat: &PlayerCheat,
-        templates: Option<&StartingParty>,
-    ) -> String {
+    fn apply_cheat(&mut self, cheat: &PlayerCheat, templates: Option<&StartingParty>) -> String {
         match cheat {
             PlayerCheat::PartyLevel(level) => {
                 let got = self.cheat_set_party_level_with(*level, templates);
@@ -725,6 +655,136 @@ impl World {
                     "Random encounters off.".to_string()
                 }
             }
+        }
+    }
+}
+
+/// The party re-sync steps the cheats share; private to this module.
+trait CheatPartySync {
+    /// Roster slots of the present party, in battle order.
+    fn present_roster_slots(&self) -> Vec<usize>;
+
+    /// Copy every present member's record HP / MP (current and max) onto its
+    /// battle actor, so a record edit shows mid-fight.
+    fn mirror_party_records_to_actors(&mut self);
+
+    /// After a record edit: re-fold the stats into the battle mirrors and
+    /// carry each present member's new maxima onto its actor. Current HP / MP
+    /// are left alone (a level-up is not a heal).
+    fn resync_party_after_cheat(&mut self);
+}
+
+impl CheatPartySync for World {
+    fn present_roster_slots(&self) -> Vec<usize> {
+        (0..usize::from(self.party.party_count.min(3)))
+            .map(|m| self.party_roster_slot(m))
+            .collect()
+    }
+
+    fn mirror_party_records_to_actors(&mut self) {
+        for (member, rslot) in self.present_roster_slots().into_iter().enumerate() {
+            let Some(hms) = self.party.roster.members.get(rslot).map(|r| r.hp_mp_sp()) else {
+                continue;
+            };
+            if let Some(a) = self.actors.get_mut(member) {
+                a.battle.hp = hms.hp_cur;
+                a.battle.max_hp = hms.hp_max;
+                a.battle.mp = hms.mp_cur;
+                a.battle.liveness = u16::from(hms.hp_cur > 0);
+            }
+        }
+    }
+
+    fn resync_party_after_cheat(&mut self) {
+        for member in 0..usize::from(self.party.party_count.min(3)) {
+            let rslot = self.party_roster_slot(member);
+            let Some(hms) = self.party.roster.members.get(rslot).map(|r| r.hp_mp_sp()) else {
+                continue;
+            };
+            if let Some(a) = self.actors.get_mut(member) {
+                a.battle.max_hp = hms.hp_max;
+            }
+        }
+        self.seed_party_battle_stats();
+    }
+}
+
+/// One player cheat - the **one list** both play hosts expose. The native
+/// window maps its `--cheat-*` flags (and `F6` / `F7`) onto these, the play
+/// page's Cheats panel maps its buttons onto the same values, and both run
+/// them through [`WorldCheats::apply_cheat`], so neither host owns a cheat the
+/// other lacks or words its outcome differently.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PlayerCheat {
+    /// Every present member to this level (retail growth; lowering rebuilds
+    /// from the New Game template).
+    PartyLevel(u8),
+    /// HP / MP refilled and the fallen revived, mid-battle included.
+    Restore,
+    /// Every present member's AP (Spirit) gauge to [`AP_GAUGE_MAX`].
+    MaxAp,
+    /// All Seru magic at this level (1..=9).
+    GrantSeru(u8),
+    /// Every art in each member's list.
+    LearnAllArts,
+    /// Every held stack and usable consumable to 99.
+    MaxItems,
+    /// The gold purse (clamped).
+    Gold(i64),
+    /// The casino coin bank (clamped).
+    Coins(u64),
+    /// Add `qty` of the item `query` names (id, `0x`-hex id or name).
+    GiveItem { query: String, qty: u8 },
+    /// Random encounters on (`true`) / off.
+    RandomEncounters(bool),
+}
+
+/// The cheat list as `(key, label)` rows, in panel order: the native flag is
+/// `--cheat-<key>`, the page's control carries the label. A host test pins
+/// that each row has a control on both hosts.
+pub const PLAYER_CHEAT_LIST: [(&str, &str); 10] = [
+    ("level", "Level"),
+    ("restore", "Restore HP/MP"),
+    ("max-ap", "Max AP"),
+    ("seru", "Grant Seru"),
+    ("arts", "Learn all arts"),
+    ("max-items", "Max items"),
+    ("gold", "Gold"),
+    ("coins", "Coins"),
+    ("item", "Item"),
+    ("encounters", "No encounters"),
+];
+
+impl PlayerCheat {
+    /// The [`PLAYER_CHEAT_LIST`] key of this cheat.
+    pub fn key(&self) -> &'static str {
+        match self {
+            PlayerCheat::PartyLevel(_) => "level",
+            PlayerCheat::Restore => "restore",
+            PlayerCheat::MaxAp => "max-ap",
+            PlayerCheat::GrantSeru(_) => "seru",
+            PlayerCheat::LearnAllArts => "arts",
+            PlayerCheat::MaxItems => "max-items",
+            PlayerCheat::Gold(_) => "gold",
+            PlayerCheat::Coins(_) => "coins",
+            PlayerCheat::GiveItem { .. } => "item",
+            PlayerCheat::RandomEncounters(_) => "encounters",
+        }
+    }
+
+    /// Parse an `ITEM[:QTY]` spec (QTY defaults to 1; `-` / `_` read as
+    /// spaces, so `healing-leaf:5` names "Healing Leaf").
+    pub fn give_item_spec(spec: &str) -> PlayerCheat {
+        let (query, qty) = match spec.rsplit_once(':') {
+            Some((q, n)) => match n.trim().parse::<u8>() {
+                Ok(qty) => (q, qty),
+                Err(_) => (spec, 1),
+            },
+            None => (spec, 1),
+        };
+        PlayerCheat::GiveItem {
+            query: query.replace(['-', '_'], " "),
+            qty,
         }
     }
 }
@@ -876,7 +936,7 @@ mod tests {
         assert_eq!(w.cheat_set_coins(500), 500);
         assert_eq!(
             w.cheat_set_coins(u64::MAX),
-            crate::casino_coin_bank::COIN_BANK_CEILING
+            legaia_engine_core::casino_coin_bank::COIN_BANK_CEILING
         );
     }
 

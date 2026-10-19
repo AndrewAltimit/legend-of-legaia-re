@@ -11,8 +11,6 @@ pub mod battle_party_form;
 pub mod battle_round;
 pub mod battle_sideband_textures;
 pub mod camera_view;
-pub mod cheat_applier;
-pub mod cheats;
 pub mod dance_venue;
 pub mod dev_menu_host;
 pub mod field_occlusion;

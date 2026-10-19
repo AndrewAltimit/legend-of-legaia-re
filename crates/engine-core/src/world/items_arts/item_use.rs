@@ -632,7 +632,7 @@ impl World {
     /// Rebuild roster record `rslot`'s live HP / MP maxima from its base
     /// window ([`Self::rebuild_record_live_hp_mp`]) and carry them to the
     /// member's battle actor.
-    pub(crate) fn rebuild_live_hp_mp(&mut self, rslot: usize) {
+    pub fn rebuild_live_hp_mp(&mut self, rslot: usize) {
         self.rebuild_record_live_hp_mp(rslot);
         self.mirror_roster_hp_mp(rslot);
     }

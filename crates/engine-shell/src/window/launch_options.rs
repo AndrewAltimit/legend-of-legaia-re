@@ -3,6 +3,7 @@
 //! and the key-name tables the scripts and bindings are spelled in.
 
 use super::*;
+use legaia_engine_cheats::cheats::WorldCheats;
 
 /// The launch's fidelity switches: which of the port's enhancements this
 /// session runs with. One value, so "retail-faithful" has one definition on
@@ -288,8 +289,8 @@ pub struct DebugSeeds {
 /// The `--cheat-*` operands - the native twin of the browser play page's
 /// Cheats panel (its "No encounters" switch is `--no-live-loop` here, and
 /// `F7` at runtime). Both hosts build the shared
-/// `legaia_engine_core::cheats::PlayerCheat` list and apply it through
-/// `World::apply_cheat`.
+/// `legaia_engine_cheats::cheats::PlayerCheat` list and apply it through
+/// `WorldCheats::apply_cheat`.
 #[derive(Debug, Default, Clone)]
 pub struct PlayCheats {
     pub level: Option<u8>,
@@ -308,10 +309,10 @@ pub struct PlayCheats {
 
 impl PlayCheats {
     /// The requested cheats as the shared list
-    /// ([`legaia_engine_core::cheats::PlayerCheat`]) - the values the play
+    /// ([`legaia_engine_cheats::cheats::PlayerCheat`]) - the values the play
     /// page's Cheats panel builds, in panel order.
-    pub fn list(&self) -> Vec<legaia_engine_core::cheats::PlayerCheat> {
-        use legaia_engine_core::cheats::PlayerCheat;
+    pub fn list(&self) -> Vec<legaia_engine_cheats::cheats::PlayerCheat> {
+        use legaia_engine_cheats::cheats::PlayerCheat;
         let mut out = Vec::new();
         out.extend(self.level.map(PlayerCheat::PartyLevel));
         if self.restore {
@@ -334,7 +335,7 @@ impl PlayCheats {
     }
 
     /// Apply every requested cheat to `world` through
-    /// `World::apply_cheat`, logging each outcome line. `templates` is the
+    /// `WorldCheats::apply_cheat`, logging each outcome line. `templates` is the
     /// executable's New Game party template, which a level below the current
     /// one is rebuilt from.
     pub(crate) fn apply(
@@ -742,7 +743,7 @@ mod cheat_list_host_tests {
     fn every_listed_cheat_has_a_control_on_both_hosts() {
         let cli = include_str!("../bin/legaia-engine/cli.rs");
         let page = include_str!("../../../../site/_content/play.html");
-        for (key, _) in legaia_engine_core::cheats::PLAYER_CHEAT_LIST {
+        for (key, _) in legaia_engine_cheats::cheats::PLAYER_CHEAT_LIST {
             if key == "encounters" {
                 assert!(cli.contains("no_live_loop"));
                 assert!(page.contains("play-cheat-no-encounters"));

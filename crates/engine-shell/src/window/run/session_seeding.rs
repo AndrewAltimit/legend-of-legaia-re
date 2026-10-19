@@ -7,7 +7,7 @@ use super::*;
 
 /// Parse a GameShark `.gs.txt` or Mednafen `.cht` cheat file and
 /// apply every entry to `world` through the
-/// [`legaia_engine_core::cheat_applier`] registry. Logs per-entry
+/// [`legaia_engine_cheats::cheat_applier`] registry. Logs per-entry
 /// status to stderr.
 pub(super) fn apply_cheat_file(
     world: &mut legaia_engine_core::world::World,
@@ -18,7 +18,7 @@ pub(super) fn apply_cheat_file(
         std::fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
     // The extension decides; a file with neither says which by its text -
     // the same sniff the play page's pasted code list goes through.
-    use legaia_engine_core::cheat_applier::{CheatTextFormat, apply_text};
+    use legaia_engine_cheats::cheat_applier::{CheatTextFormat, apply_text};
     let format = match path.extension().and_then(|s| s.to_str()) {
         Some(e) if e.eq_ignore_ascii_case("cht") => CheatTextFormat::MednafenCht,
         _ => CheatTextFormat::sniff(&text),

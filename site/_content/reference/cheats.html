@@ -10,7 +10,7 @@
     <dt>Where</dt><dd><code>data/cheats/legaia-ntsc-u.gs.txt</code> (GameShark text) and <code>data/cheats/legaia-ntsc-u.cht</code> (Mednafen) - committed; labelled <code>(address, value)</code> pairs only, no Sony bytes</dd>
     <dt>Region</dt><dd>NTSC-U (<code>SCUS_942.54</code>)</dd>
     <dt>Parser</dt><dd><code>crates/cheats</code> (<code>legaia_cheats</code>) + the <code>cheat-tool</code> CLI</dd>
-    <dt>Applier</dt><dd><code>legaia-engine play-window --cheat-file</code> via <code>engine_core::cheat_applier</code></dd>
+    <dt>Applier</dt><dd><code>legaia-engine play-window --cheat-file</code> via <code>engine_cheats::cheat_applier</code></dd>
     <dt>Pins</dt><dd>Character record, inventory, battle actor, script-VM globals, camera, minigame scratch, four code-patch sites</dd>
     <dt>Used by</dt><dd><a href="../formats/save-record.html">Save record</a>, <a href="memory-map.html">RAM map</a>, <a href="../subsystems/inventory.html">Inventory</a>, <a href="../subsystems/battle.html">Battle</a></dd>
   </dl>

@@ -17,7 +17,6 @@ legaia-engine-scene.workspace = true
 legaia-render-kernels.workspace = true
 legaia-engine-battle-vm.workspace = true
 legaia-engine-cast.workspace = true
-anyhow.workspace = true
 glam.workspace = true
 log.workspace = true
 legaia-engine-effects.workspace = true
@@ -35,7 +34,6 @@ legaia-tmd.workspace = true
 legaia-anm.workspace = true
 legaia-art.workspace = true
 legaia-save.workspace = true
-legaia-cheats.workspace = true
 legaia-actor-formats.workspace = true
 legaia-engine-dialog.workspace = true
 legaia-engine-motion-vm.workspace = true
@@ -47,6 +45,8 @@ legaia-ui-formats.workspace = true
 legaia-engine-fishing.workspace = true
 
 [dev-dependencies]
+# Named only by the examples' error plumbing.
+anyhow.workspace = true
 # Named only by tests: format crates the disc-gated chains walk directly.
 legaia-container-formats.workspace = true
 legaia-lzs.workspace = true

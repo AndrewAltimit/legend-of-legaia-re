@@ -915,7 +915,7 @@ pub(crate) enum Cmd {
         cutscene_map: Option<PathBuf>,
         /// Optional GameShark `.gs.txt` or Mednafen `.cht` cheat file.
         /// Each entry is parsed and applied once at boot through the
-        /// `legaia_engine_core::cheat_applier` registry. Per-entry
+        /// `legaia_engine_cheats::cheat_applier` registry. Per-entry
         /// status is logged to stderr. Conditional codes (`D0`/`E0`)
         /// are treated as always-true unless `--cheat-strict` is set.
         #[arg(long)]
@@ -1146,7 +1146,7 @@ pub(crate) enum Cmd {
         /// Cheat: set every present party member to this level (1..=99)
         /// once the scene is entered, through the level-up tracker so the
         /// gains are the retail per-character stat growth
-        /// (`legaia_engine_core::cheats`, the same mutation the browser play
+        /// (`legaia_engine_cheats::cheats`, the same mutation the browser play
         /// page's Cheats panel makes). Raising grants the XP; lowering
         /// rebuilds each character from the executable's New Game template
         /// plus the growth for the levels it keeps.

@@ -2060,6 +2060,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "legaia-engine-cheats"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "legaia-art",
+ "legaia-cheats",
+ "legaia-engine-battle",
+ "legaia-engine-battle-vm",
+ "legaia-engine-core",
+ "legaia-engine-fishing",
+ "legaia-engine-menus",
+ "legaia-engine-system",
+ "legaia-game-tables",
+ "legaia-save",
+]
+
+[[package]]
 name = "legaia-engine-core"
 version = "0.1.0"
 dependencies = [
@@ -2068,7 +2085,6 @@ dependencies = [
  "legaia-actor-formats",
  "legaia-anm",
  "legaia-art",
- "legaia-cheats",
  "legaia-container-formats",
  "legaia-engine-battle",
  "legaia-engine-battle-vm",
@@ -2432,6 +2448,7 @@ dependencies = [
  "legaia-engine-audio",
  "legaia-engine-battle",
  "legaia-engine-battle-vm",
+ "legaia-engine-cheats",
  "legaia-engine-core",
  "legaia-engine-effects",
  "legaia-engine-field",
@@ -2482,6 +2499,7 @@ dependencies = [
  "legaia-engine-battle-vm",
  "legaia-engine-camera",
  "legaia-engine-capture",
+ "legaia-engine-cheats",
  "legaia-engine-core",
  "legaia-engine-dialog",
  "legaia-engine-effects",
@@ -3084,6 +3102,7 @@ dependencies = [
  "legaia-engine-battle-hud",
  "legaia-engine-battle-vm",
  "legaia-engine-camera",
+ "legaia-engine-cheats",
  "legaia-engine-core",
  "legaia-engine-dialog",
  "legaia-engine-effects",

@@ -45,7 +45,7 @@ cheat-tool offset-table <PATH>     # Markdown offset table for docs/reference/ch
 ```
 
 The runtime cheat applier wired into `legaia-engine play-window
---cheat-file <PATH>` lives in `legaia_engine_core::cheat_applier`
+--cheat-file <PATH>` lives in `legaia_engine_cheats::cheat_applier`
 and uses this crate plus the `ram_map` registry to dispatch each
 write to the appropriate engine cell.
 

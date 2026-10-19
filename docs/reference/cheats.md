@@ -241,7 +241,7 @@ call-site hint that an address-reference query does not surface.
 
 `legaia-engine play-window --cheat-file <PATH>` parses the file via
 `legaia_cheats`, applies every entry **once at boot** via
-`legaia_engine_core::cheat_applier::apply`, and dispatches each
+`legaia_engine_cheats::cheat_applier::apply`, and dispatches each
 write through the `ram_map` registry to the appropriate `World` /
 `CharacterRecord` field. Conditional codes are treated as
 always-true by default (use `--cheat-strict` to honour them, which

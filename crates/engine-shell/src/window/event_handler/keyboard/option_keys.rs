@@ -9,6 +9,7 @@
 //! [`legaia_engine_session::hotkeys::apply_options_hotkey`].
 
 use super::super::super::*;
+use legaia_engine_cheats::cheats::WorldCheats;
 use legaia_engine_session::hotkeys::{HostHotkey, apply_options_hotkey};
 
 impl PlayWindowApp {
@@ -195,7 +196,7 @@ impl PlayWindowApp {
             .session
             .host
             .world
-            .apply_cheat(&legaia_engine_core::cheats::PlayerCheat::MaxAp, None);
+            .apply_cheat(&legaia_engine_cheats::cheats::PlayerCheat::MaxAp, None);
         log::info!("cheat: {line}");
     }
 
@@ -205,7 +206,7 @@ impl PlayWindowApp {
         let world = &mut self.session.host.world;
         let on = !world.toggles.live_gameplay_loop;
         world.apply_cheat(
-            &legaia_engine_core::cheats::PlayerCheat::RandomEncounters(on),
+            &legaia_engine_cheats::cheats::PlayerCheat::RandomEncounters(on),
             None,
         );
         // The choice outlives this scene: the live-loop arming a card
