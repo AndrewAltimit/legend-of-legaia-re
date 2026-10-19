@@ -75,6 +75,18 @@ fn check_aimed_dispatch(w: &legaia_engine_core::world::World) {
         if !w.actors.get(foe).is_some_and(|a| a.battle.hp > 0) {
             continue;
         }
+        // A confused member's strike is retargeted at the dispatch
+        // (`FUN_801E7320` rewrites `+0x1DD`; `World::maybe_confuse_retarget`).
+        let statuses: Vec<_> = w
+            .battle
+            .status_effects
+            .statuses(m as u8)
+            .iter()
+            .map(|s| s.kind)
+            .collect();
+        if statuses.contains(&legaia_engine_battle_vm::status_effects::StatusKind::Confuse) {
+            continue;
+        }
         let got = w.actors[m].battle.active_target;
         let miss = usize::from(got) != foe;
         AIM_DISPATCH.with(|t| {
@@ -83,7 +95,7 @@ fn check_aimed_dispatch(w: &legaia_engine_core::world::World) {
         });
         if miss {
             eprintln!(
-                "    [aim] member {m} confirmed foe row {row} (actor {foe}), dispatched at actor {got}"
+                "    [aim] member {m} confirmed foe row {row} (actor {foe}), dispatched at actor {got}; statuses {statuses:?}"
             );
         }
     }

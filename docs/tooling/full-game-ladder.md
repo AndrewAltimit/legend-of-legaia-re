@@ -395,7 +395,7 @@ underneath: a strike confirmed on a foe must dispatch
 the cursor, the commit and the actor's target byte `+0x1DD` are three writes
 of one value. Each strike that dispatched elsewhere prints its member, the
 foe confirmed and the actor struck; a foe that fell first is the dead-target
-redirect's (`FUN_801DB124`) and is not counted.
+redirect's (`FUN_801DB124`), and a confused member's strike is retargeted at the dispatch (`FUN_801E7320`); neither is counted.
 
 **Its bag is for the fights.** On the road a party of two or more spends a
 restorative only under 45%, a lone member under 65%; it does not open the
