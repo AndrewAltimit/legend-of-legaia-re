@@ -541,25 +541,6 @@
         return;
       }
 
-      /* Field-to-battle transition capture: every intro style textures its
-       * geometry with the field frame the player was just looking at, so on
-       * the frame the emitter arms, read back the frame drawn above
-       * (readPixels hands rows bottom-up; the engine's blit flips them) and
-       * re-upload the VRAM texture immediately - this same frame's strips
-       * sample the capture, not stale texels. One-shot per transition; the
-       * curtain's per-frame intermediate afterwards rides the ordinary
-       * field_vram_take_dirty re-upload. */
-      if (!skipDraw && typeof rt.play_intro_wants_capture === 'function' &&
-          rt.play_intro_wants_capture()) {
-        try {
-          const gl = this.renderer.gl;
-          const cw = gl.drawingBufferWidth, ch = gl.drawingBufferHeight;
-          const buf = new Uint8Array(cw * ch * 4);
-          gl.readPixels(0, 0, cw, ch, gl.RGBA, gl.UNSIGNED_BYTE, buf);
-          rt.play_intro_land_capture(buf, cw, ch);
-          this.renderer.uploadVram(rt.field_vram_bytes());
-        } catch (e) { /* presentation-only; keep playing without the capture */ }
-      }
       /* A field-VM `43 12` copy that reads the display framebuffer (the
        * ending vignettes' photo grab into VRAM (512, 0)) waits on the drawn
        * frame: read it back and land it; the next field-VRAM pass runs the
@@ -618,6 +599,32 @@
       if (!skipDraw) this._drawOverlay();
       /* ... and the screen primitives that cover it. */
       this._drawScreenPrimsOver();
+
+      /* Field-to-battle transition capture: every intro style textures its
+       * geometry with the field frame the player was just looking at, so on
+       * the frame the emitter arms, read back the FINISHED frame - after the
+       * 3D pass, the volumetric fog, both screen-prim lists (the fog-pool
+       * particles, drop shadows, light pools, fades) - and land it. The
+       * engine composes that frame without the transition's own layer
+       * (`tick_battle_intro`), so what is read is the field as shown, every
+       * enhancement included, the native window's capture target. Read
+       * earlier, straight after the 3D pass, the capture dropped the fog
+       * and every screen layer. readPixels hands rows bottom-up; the
+       * engine's blit flips them. The VRAM texture re-uploads at once so
+       * the next frame's strips sample the capture, not stale texels.
+       * One-shot per transition; the curtain's per-frame intermediate
+       * afterwards rides the ordinary field_vram_take_dirty re-upload. */
+      if (!skipDraw && typeof rt.play_intro_wants_capture === 'function' &&
+          rt.play_intro_wants_capture()) {
+        try {
+          const gl = this.renderer.gl;
+          const cw = gl.drawingBufferWidth, ch = gl.drawingBufferHeight;
+          const buf = new Uint8Array(cw * ch * 4);
+          gl.readPixels(0, 0, cw, ch, gl.RGBA, gl.UNSIGNED_BYTE, buf);
+          rt.play_intro_land_capture(buf, cw, ch);
+          this.renderer.uploadVram(rt.field_vram_bytes());
+        } catch (e) { /* presentation-only; keep playing without the capture */ }
+      }
     }
 
     /* One frame of the screen-space PSX primitive pass.

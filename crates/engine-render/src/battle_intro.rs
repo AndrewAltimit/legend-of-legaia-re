@@ -6,11 +6,13 @@
 //! it.
 //!
 //! What cannot move is the way the native window obtains the field frame the
-//! styles sample: [`update_field_capture`] re-renders the scene offscreen
-//! through [`crate::Renderer::capture_rgba`] and hands the readback to the
-//! shared [`BattleIntro::land_capture_rgba`] /
-//! [`BattleIntro::refresh_captured_page`] pair. (The play page's equivalent
-//! is a `gl.readPixels` of its own drawn frame - each host owns its readback,
+//! styles sample: [`update_field_capture`] re-renders the host's frame
+//! offscreen through [`crate::Renderer::capture_scene_rgba`] and hands the
+//! readback to the shared [`BattleIntro::land_capture_rgba`] /
+//! [`BattleIntro::refresh_captured_page`] pair. The target is the one the
+//! host presents - its screen layers and every enhancement pass included -
+//! less the transition's own primitives. (The play page's equivalent is a
+//! `gl.readPixels` of its own finished frame - each host owns its readback,
 //! neither owns the emitter.)
 
 use legaia_render_kernels::battle_intro::*;

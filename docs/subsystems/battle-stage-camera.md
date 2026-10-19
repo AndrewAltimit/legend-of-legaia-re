@@ -1351,13 +1351,35 @@ The simulation kernels are in `crates/engine-battle-vm`. The packet builders
 are `render-kernels::battle_intro` (`crates/render-kernels/src/battle_intro.rs`). `BattleIntro`
 holds the style's working set between frames and synchronises its clock from
 the live transition entity. The one-shot field frame capture lands the drawn
-field in the texture pages each style's packets name (`Renderer::capture_rgba`
+field in the texture pages each style's packets name (`Renderer::capture_scene_rgba`
 -> `land_capture_rgba` on the native window, `gl.readPixels` ->
 `play_intro_land_capture` on the page). The emitted `ScreenPrim`s composite
 over the scene: through `RenderTarget::SceneWithScreenPrims` natively, through
 the page's screen-prim pass in the browser. The hosts differ only in how the
 captured frame is read back
 ([`host-drift.md`](../tooling/host-drift.md#screen-space-psx-primitives-across-the-two-hosts)).
+
+### What the capture holds
+
+Retail's intro copies the displayed framebuffer, so the capture is the frame
+the player was looking at, not a re-render of the field geometry alone. Both
+hosts capture their **finished** frame on the tick the emitter arms: the 3D
+pass with every enhancement it runs (enhanced lighting under the chosen time
+of day, the volumetric ground fog, the occlusion fade, the glow sprites) and
+both screen-primitive lists (the fog-pool particles, the actor drop shadows,
+the attached-light pools, the fades). Only the transition's own layer is left
+out - its backdrop and strips sample the capture rather than belong to it.
+The native window composes its screen layers a second time without the
+transition list and reads that target back (`render_scene_frame`); the page
+composes the arming tick without the transition list (`tick_battle_intro`)
+and reads its frame back after the last screen-prim pass. With every
+enhancement off the capture is the faithful frame the window presents on that
+tick. A capture of the bare scene - the 3D pass alone - dropped all of the
+screen layers, retail's fog-pool particles and drop shadows among them, and
+on the page also the volumetric fog, which draws after the 3D pass.
+`LEGAIA_DIAG_INTRO_CAPTURE=<png>` writes the native capture out, and
+`LEGAIA_BATTLE_ARM_TICK=<n>` holds a `--battle` arm until world tick `n` so
+the capture follows frames the window has already drawn.
 
 Per-style packet detail - what each emitter builds, the dispatcher flag decode,
 and the two nuances the port leaves un-carried - is on

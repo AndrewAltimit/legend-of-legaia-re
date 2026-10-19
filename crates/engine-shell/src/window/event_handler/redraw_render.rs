@@ -244,12 +244,44 @@ impl PlayWindowApp {
         // On the frame the transition arms, land the field frame in the
         // software VRAM the intro strips texture themselves with, and draw
         // the rest of this frame against that page. Retail gets it for
-        // free - on the console the framebuffer *is* VRAM - so the port
-        // re-renders this scene offscreen and blits the readback in.
+        // free - on the console the framebuffer *is* VRAM, and the intro
+        // copies the displayed frame. The port's equivalent is the frame
+        // this host presents: the scene with every screen layer composited
+        // (the fog-pool particles, the drop shadows, the attached-light
+        // pools, the fades) and every enhancement pass the scene target runs
+        // (enhanced lighting and its time of day, the volumetric fog, the
+        // occlusion fade, the glow). Only the transition's own primitives
+        // are left out of the capture - they are what the capture feeds,
+        // not what the player was looking at. So the screen layers are
+        // composed once without them, and that target is the one read back.
+        // Capturing the bare `Scene` here dropped every composited layer.
+        let capture_frame = battle_intro.as_ref().is_some_and(|i| i.needs_capture());
+        let capture_layers = capture_frame.then(|| {
+            self.build_screen_prims(
+                Vec::new(),
+                field_fog_prims.clone(),
+                move_strip_prims.clone(),
+                slot_prims.clone(),
+                fishing_line_prims.clone(),
+                fx_cam,
+            )
+        });
+        let (screen_prims, light_prims) = self.build_screen_prims(
+            battle_intro_prims,
+            field_fog_prims,
+            move_strip_prims,
+            slot_prims,
+            fishing_line_prims,
+            fx_cam,
+        );
+        let capture_target = capture_layers
+            .as_ref()
+            .map(|(over, under)| present_target(&scene, over, under))
+            .unwrap_or(RenderTarget::Scene(&scene));
         if let Some(v) = Self::capture_battle_intro_frame(
             battle_intro.as_mut(),
             r,
-            &scene,
+            capture_target,
             self.cpu_vram_base.as_ref(),
         ) {
             // Keep the captured page GPU-resident for the whole
@@ -281,14 +313,6 @@ impl PlayWindowApp {
                 Err(e) => log::error!("play-window: framebuffer grab: {e:#}"),
             }
         }
-        let (screen_prims, light_prims) = self.build_screen_prims(
-            battle_intro_prims,
-            field_fog_prims,
-            move_strip_prims,
-            slot_prims,
-            fishing_line_prims,
-            fx_cam,
-        );
         let target = |scene| present_target(scene, &screen_prims, &light_prims);
         redraw_present::capture_sweep_frame(
             r,

@@ -352,8 +352,11 @@ working set, advances it off the transition entity's own clock, and emits
 lives in [`legaia-render-kernels`](../../crates/render-kernels/src/battle_intro.rs) - both hosts arm it -
 and [`src/battle_intro.rs`](../../crates/engine-render/src/battle_intro.rs) here holds the
 one renderer-bound wrapper, `update_field_capture`, which turns
-`Renderer::capture_rgba` output into the emitter's `land_capture_rgba` /
-`refresh_captured_page` calls.
+`Renderer::capture_scene_rgba` output into the emitter's `land_capture_rgba` /
+`refresh_captured_page` calls. The target it reads back is the caller's: the
+play window hands it the frame it presents, screen layers and enhancement
+passes included, less the transition's own primitives
+([what the capture holds](battle-stage-camera.md#what-the-capture-holds)).
 
 All five styles tick and all five emit: `emit_particle_field` (both particle
 arms) plus `emit_spinup_ring`, `emit_tile`, `emit_swirl_band`, and

@@ -123,7 +123,7 @@
 
 <section class="doc-section" id="capture">
   <h2>Landing a frame back in VRAM</h2>
-  <p>The renderer only ever pushed the software page <em>to</em> the GPU. The capture path is the missing direction: it quantises a readback to 15-bit colour and writes it into a rect of the CPU-side page, so the result is visible to every reader of that page. The field-to-battle transition needs it - the tile shatter and the curtain sample the field frame that was on screen when the encounter fired.</p>
+  <p>The renderer only ever pushed the software page <em>to</em> the GPU. The capture path is the missing direction: it quantises a readback to 15-bit colour and writes it into a rect of the CPU-side page, so the result is visible to every reader of that page. The field-to-battle transition needs it - the tile shatter and the curtain sample the field frame that was on screen when the encounter fired. The frame read back is the one the window presents, screen layers and enhancement passes included, less the transition&rsquo;s own primitives.</p>
   <p>Two retail nuances are stated rather than hidden: the transition&rsquo;s depth-cue bank has no channel in the overlay, and retail <em>subtracts</em> from the display buffer each frame instead of clearing it, so its strips leave fading trails where the port&rsquo;s leave black.</p>
 </section>
 

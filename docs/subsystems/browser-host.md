@@ -289,7 +289,9 @@ swirl) draw in the browser. `tick_battle_intro` tracks the encounter session's
 `Transition` phase and caches the frame's ordered geometry for the page's
 screen-prim pass (`play_screen_prim_*`); the one per-host step is the field
 frame readback - the page answers `play_intro_wants_capture` with a
-`gl.readPixels` of its own drawn frame into `play_intro_land_capture`, and
+`gl.readPixels` of its finished frame (after the volumetric fog and both
+screen-prim lists; the arming tick composes no transition layer) into
+`play_intro_land_capture`, and
 `field_vram_bytes` serves the emitter's captured VRAM clone for the length of
 the window.
 
