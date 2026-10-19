@@ -1462,9 +1462,18 @@ the framebuffer is VRAM; the port's frame lives in a GPU attachment, so the
 copy waits on a frame-grab handshake (`World::framebuffer_grab_pending` /
 `land_framebuffer`, `crate::world::FrameGrab`): a play host reads its drawn
 frame back into the display page (`legaia_render_kernels::vram_capture::land_display_frame`),
-and the next drain (`World::apply_vram_rect_copies`) runs the copy. Both play
-hosts take part; a host that cannot read back leaves the handshake off and
-the copy runs at once.
+and the next drain (`World::apply_vram_rect_copies`) runs the copy. The frame
+read back is the finished one, as the console's copy reads the displayed
+framebuffer: the native window re-renders the target it presents (screen
+layers and enhancement passes included), the browser page reads its canvas
+after the volumetric fog and both screen-prim passes. One layer is left out of
+that frame: anything textured from the copy's own destination
+(`World::framebuffer_grab_dests`, filtered in the shared
+`screen_layers::compose_screen_prims`). On the console the copy runs in the
+frame it is queued, before the image panel over `(512, 0)` draws; here it
+waits for the readback, so the panel would draw the stale destination and be
+read back into its own photo. Both play hosts take part; a host that cannot
+read back leaves the handshake off and the copy runs at once.
 
 ### 0x44-0x4F (record-spawn / camera / render / state / move-block)
 

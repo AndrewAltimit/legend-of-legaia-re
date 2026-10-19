@@ -541,30 +541,6 @@
         return;
       }
 
-      /* A field-VM `43 12` copy that reads the display framebuffer (the
-       * ending vignettes' photo grab into VRAM (512, 0)) waits on the drawn
-       * frame: read it back and land it; the next field-VRAM pass runs the
-       * copy and the ordinary dirty re-upload carries it. The native
-       * window's twin is its redraw's `framebuffer_grab_pending` block. */
-      if (!skipDraw && typeof rt.play_frame_grab_pending === 'function' &&
-          rt.play_frame_grab_pending()) {
-        try {
-          /* Read the PSX display rect, not the canvas: the largest centred
-           * 4:3 rect of the drawing buffer, which is the 320 x 240 screen the
-           * engine projects onto. A canvas that is not 4:3 (fullscreen, a
-           * resized window) would otherwise squash or widen the photo; read
-           * this way both hosts land the same texels. */
-          const gl = this.renderer.gl;
-          const bw = gl.drawingBufferWidth, bh = gl.drawingBufferHeight;
-          const cw = Math.min(bw, Math.floor(bh * 4 / 3));
-          const ch = Math.min(bh, Math.floor(cw * 3 / 4));
-          const x0 = Math.floor((bw - cw) / 2), y0 = Math.floor((bh - ch) / 2);
-          const buf = new Uint8Array(cw * ch * 4);
-          gl.readPixels(x0, y0, cw, ch, gl.RGBA, gl.UNSIGNED_BYTE, buf);
-          rt.play_land_frame_grab(buf, cw, ch);
-        } catch (e) { /* presentation-only */ }
-      }
-
       /* Screen-space PSX primitives over the finished 3D frame: the
        * field-to-battle transition's five style bodies + backdrop + fade,
        * emitted by the shared `legaia_render_kernels::battle_intro` and ordered by
@@ -624,6 +600,32 @@
           rt.play_intro_land_capture(buf, cw, ch);
           this.renderer.uploadVram(rt.field_vram_bytes());
         } catch (e) { /* presentation-only; keep playing without the capture */ }
+      }
+      /* A field-VM `43 12` copy that reads the display framebuffer (the
+       * ending vignettes' photo grab into VRAM (512, 0)) waits on the drawn
+       * frame: read back the FINISHED frame - after the volumetric fog and
+       * both screen-prim lists, as retail's copy reads what is displayed -
+       * and land it; the next field-VRAM pass runs the copy and the
+       * ordinary dirty re-upload carries it. The native window's twin is
+       * its redraw's `framebuffer_grab_pending` block, which reads its
+       * presented target. */
+      if (!skipDraw && typeof rt.play_frame_grab_pending === 'function' &&
+          rt.play_frame_grab_pending()) {
+        try {
+          /* Read the PSX display rect, not the canvas: the largest centred
+           * 4:3 rect of the drawing buffer, which is the 320 x 240 screen the
+           * engine projects onto. A canvas that is not 4:3 (fullscreen, a
+           * resized window) would otherwise squash or widen the photo; read
+           * this way both hosts land the same texels. */
+          const gl = this.renderer.gl;
+          const bw = gl.drawingBufferWidth, bh = gl.drawingBufferHeight;
+          const cw = Math.min(bw, Math.floor(bh * 4 / 3));
+          const ch = Math.min(bh, Math.floor(cw * 3 / 4));
+          const x0 = Math.floor((bw - cw) / 2), y0 = Math.floor((bh - ch) / 2);
+          const buf = new Uint8Array(cw * ch * 4);
+          gl.readPixels(x0, y0, cw, ch, gl.RGBA, gl.UNSIGNED_BYTE, buf);
+          rt.play_land_frame_grab(buf, cw, ch);
+        } catch (e) { /* presentation-only */ }
       }
     }
 

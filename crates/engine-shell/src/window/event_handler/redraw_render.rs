@@ -299,11 +299,14 @@ impl PlayWindowApp {
         // this frame: land it in the CPU VRAM's display page, and the
         // next drain (`apply_world_clut_fx`) runs the copy. Shared
         // handshake `World::framebuffer_grab_pending`; the browser page
-        // lands its own frame through `play_land_frame_grab`.
+        // lands its own frame through `play_land_frame_grab`. Retail's
+        // copy reads the displayed framebuffer, so what lands is the frame
+        // this redraw presents - its screen layers and every enhancement
+        // pass included - not the bare 3D pass.
         if self.session.host.world.framebuffer_grab_pending()
             && let Some(base) = self.cpu_vram_base.as_mut()
         {
-            match r.capture_scene_rgba(legaia_engine_render::RenderTarget::Scene(&scene)) {
+            match r.capture_scene_rgba(present_target(&scene, &screen_prims, &light_prims)) {
                 Ok(img) => {
                     legaia_render_kernels::vram_capture::land_display_frame(
                         &img.rgba, img.width, img.height, base,

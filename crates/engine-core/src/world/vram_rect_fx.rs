@@ -134,6 +134,26 @@ impl World {
         g.enabled && !g.landed && self.ambient.vram_rect_copies.iter().any(reads_framebuffer)
     }
 
+    /// The VRAM rects `(x, y, w, h)` the pending framebuffer copies will
+    /// write - empty unless [`Self::framebuffer_grab_pending`].
+    ///
+    /// On the console the copy runs in the frame it is queued, before
+    /// anything sampling its destination draws; here it waits for the host's
+    /// readback. A screen primitive textured from one of these rects would
+    /// sample the stale destination and then be read back into the copy's own
+    /// source, so a host leaves such primitives out of the grabbed frame.
+    pub fn framebuffer_grab_dests(&self) -> Vec<(u16, u16, u16, u16)> {
+        if !self.framebuffer_grab_pending() {
+            return Vec::new();
+        }
+        self.ambient
+            .vram_rect_copies
+            .iter()
+            .filter(|c| reads_framebuffer(c))
+            .map(|c| (c.dst_x as u16, c.dst_y as u16, c.w as u16, c.h as u16))
+            .collect()
+    }
+
     /// The host has written its frame into the display rect: the held
     /// framebuffer copies run on the next drain.
     pub fn land_framebuffer(&mut self) {
@@ -237,6 +257,23 @@ mod tests {
         // The landing is spent on the copy it fed.
         w.queue_vram_rect_copies(&[call((0, 0), (1, 1), (513, 0))]);
         assert!(w.framebuffer_grab_pending());
+    }
+
+    /// The grab's destinations are named while it waits - the vignette's
+    /// `(512, 0, 320, 224)` - and only then: a copy elsewhere is not one, and
+    /// a landed frame clears them.
+    #[test]
+    fn a_waiting_grab_names_its_destination() {
+        let mut w = World::new();
+        w.enable_frame_grab(true);
+        assert!(w.framebuffer_grab_dests().is_empty());
+        w.queue_vram_rect_copies(&[
+            call((0, 0), (320, 224), (512, 0)),
+            call((600, 300), (1, 1), (700, 300)),
+        ]);
+        assert_eq!(w.framebuffer_grab_dests(), vec![(512, 0, 320, 224)]);
+        w.land_framebuffer();
+        assert!(w.framebuffer_grab_dests().is_empty());
     }
 
     /// The VM hands the arm's two-page split through as two calls; both land.

@@ -387,8 +387,9 @@ impl LegaiaRuntime {
 
     /// Whether a field-VM `43 12` copy is waiting on the drawn frame
     /// (`World::framebuffer_grab_pending` - the ending vignettes' photo
-    /// grab). The page answers like the transition capture: read back the
-    /// field 3D pass and hand it to [`Self::play_land_frame_grab`].
+    /// grab). The page answers like the transition capture: read back its
+    /// finished frame (after the volumetric fog and both screen-prim lists)
+    /// and hand it to [`Self::play_land_frame_grab`].
     pub fn play_frame_grab_pending(&self) -> bool {
         self.scene_host
             .host()

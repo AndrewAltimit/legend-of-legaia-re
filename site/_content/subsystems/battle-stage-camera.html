@@ -107,6 +107,7 @@
   </div>
   <p>The transition runs 132 display frames, 252 for the swirl. Every battle entry rides it: the field step roll, a scripted fight, and a world-map contact. The scripted-fight bit of the per-battle flags selects the spin-up style. The curtain is a render-to-texture whose row pass is the only part that reaches the screen.</p>
   <p>The capture is the frame the player was looking at, as retail&rsquo;s copy of the displayed framebuffer is. Both hosts read back their finished frame on the tick the transition arms: the 3D pass with every enhancement on it (the lighting and its time of day, the ground fog, the see-through walls, the glow) plus the screen layers over it (retail&rsquo;s fog-pool particles, the drop shadows, the light pools, the fades). Only the transition&rsquo;s own layer is left out, since it is drawn from the capture. With the enhancements off, the capture is the faithful frame.</p>
+  <p>The frame lands where the console puts it: retail draws a 224-row area from VRAM row 4 and copies the display from row 0, so every style&rsquo;s texture coordinates expect drawn row <em>d</em> at <code>v = d + 4</code>, with the rows around the frame cleared to transparent. Landing the port&rsquo;s frame at <code>v = 0</code> started the shatter four rows high and left a band of garbage across the bottom rows, where the tile grid&rsquo;s wrapped last row showed through below retail&rsquo;s 224 rows.</p>
 </section>
 
 <section class="doc-section" id="see-also">
