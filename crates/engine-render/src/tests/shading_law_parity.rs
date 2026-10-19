@@ -18,211 +18,43 @@
 //! multiplies the normalised colour by 255 / 128), and those are counted
 //! and bounded.
 //!
+//! The native side is the scene pipelines (the real point-light and
+//! occlusion layer); with that block zeroed they are the single-mesh
+//! pipelines exactly. A second grid raises the enhancement layer at its
+//! enabled settings (both hosts default it on): the key light, screen pool,
+//! ambient floor, emissive gain, window glow and two point lights (shadows
+//! off - each host samples maps rendered under its own clip conventions), the
+//! occlusion fade's screen-door decision, and the object-effect clip through
+//! the native f16 packing. Each host stages it in its own frame: the page's
+//! world is `(x, -y, z)` and its fade pixels count rows from the bottom.
+//!
 //! Out of the grid: the constant depth cue (`MeshUniforms.depth_cue.a`
 //! with the ramp off - no production caller stages it, and the page has no
-//! such arm), and the opt-in enhancements (dynamic light, occlusion fade,
-//! point lights), which evaluate as their identities here.
+//! such arm).
 
-use crate::shaders::{COLOR_MESH_SHADER_SRC, VRAM_MESH_SHADER_SRC, compose_psx_shader};
+use crate::shaders::{
+    COLOR_MESH_SHADER_SRC, VRAM_MESH_SHADER_SRC, compose_psx_shader, compose_scene_lit_shader,
+};
 use std::collections::HashMap;
 
-fn page_shader_js() -> String {
-    let p = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../site/js/webgl-shaders.js");
-    std::fs::read_to_string(&p).unwrap_or_else(|e| panic!("read {}: {e}", p.display()))
-}
+use super::page_glsl::{es300_to_450, js_consts, parse_wgsl, site_js, template};
 
-/// The JS constants a shader template interpolates: numbers, number arrays
-/// and nested template strings, keyed by name.
-#[derive(Debug, Clone)]
-enum JsConst {
-    Num(f64),
-    Arr(Vec<f64>),
-    Template(String),
-}
-
-fn js_consts(js: &str) -> HashMap<String, JsConst> {
-    let mut out = HashMap::new();
-    let mut rest = js;
-    while let Some(i) = rest.find("\nconst ") {
-        rest = &rest[i + 7..];
-        let Some(eq) = rest.find(" = ") else { break };
-        let name = rest[..eq].trim().to_string();
-        if !name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
-            continue;
-        }
-        let val = &rest[eq + 3..];
-        if let Some(body) = val.strip_prefix('`') {
-            let end = body.find('`').expect("template end");
-            out.insert(name, JsConst::Template(body[..end].to_string()));
-        } else if let Some(body) = val.strip_prefix('[') {
-            let end = body.find(']').expect("array end");
-            let nums = body[..end]
-                .split(',')
-                .map(str::trim)
-                .filter(|s| !s.is_empty())
-                .map(|s| s.parse::<f64>().unwrap_or_else(|_| panic!("{name}: {s}")))
-                .collect();
-            out.insert(name, JsConst::Arr(nums));
-        } else {
-            let end = val.find(';').unwrap_or(val.len());
-            if let Ok(v) = val[..end].trim().parse::<f64>() {
-                out.insert(name, JsConst::Num(v));
-            }
-        }
-    }
-    out
-}
-
-/// `glslFloat` from webgl-shaders.js: integers print with `.0`.
-fn glsl_float(x: f64) -> String {
-    if x.fract() == 0.0 {
-        format!("{x:.1}")
-    } else {
-        format!("{x}")
-    }
-}
-
-/// Resolve every `${...}` in a template against the file's constants. Only
-/// the interpolation forms the shaders use are understood; anything else
-/// fails, so a new form needs this resolver taught it.
-fn resolve_template(t: &str, consts: &HashMap<String, JsConst>) -> String {
-    let mut out = String::new();
-    let mut rest = t;
-    while let Some(i) = rest.find("${") {
-        out.push_str(&rest[..i]);
-        let end = rest[i..].find('}').expect("interpolation end") + i;
-        let expr = rest[i + 2..end].trim();
-        let num = |n: &str| match consts.get(n) {
-            Some(JsConst::Num(v)) => *v,
-            other => panic!("`{n}` is not a numeric constant: {other:?}"),
-        };
-        let arr = |n: &str| match consts.get(n) {
-            Some(JsConst::Arr(v)) => v.clone(),
-            other => panic!("`{n}` is not an array constant: {other:?}"),
-        };
-        let text = if let Some(n) = expr.strip_suffix(".map(glslFloat).join(', ')") {
-            arr(n)
-                .into_iter()
-                .map(glsl_float)
-                .collect::<Vec<_>>()
-                .join(", ")
-        } else if let Some(inner) = expr
-            .strip_prefix("glslFloat(")
-            .and_then(|s| s.strip_suffix(')'))
-        {
-            if let Some((n, idx)) = inner.split_once('[') {
-                let idx: usize = idx.trim_end_matches(']').parse().unwrap();
-                glsl_float(arr(n)[idx])
-            } else {
-                glsl_float(num(inner))
-            }
-        } else {
-            match consts.get(expr) {
-                Some(JsConst::Template(s)) => resolve_template(s, consts),
-                other => panic!("unsupported interpolation `{expr}`: {other:?}"),
-            }
-        };
-        out.push_str(&text);
-        rest = &rest[end + 1..];
-    }
-    out.push_str(rest);
-    out
-}
-
-/// Rewrite a GLSL ES 3.00 fragment shader into the Vulkan-flavoured GLSL 4.50
-/// naga's front end reads, without touching a line of the shading law: the
-/// version line, precision statements, loose uniforms gathered into one block,
-/// opaque uniforms and stage I/O given explicit bindings.
-fn es300_to_450(src: &str) -> String {
-    let mut block = Vec::new();
-    let mut body = Vec::new();
-    let (mut loc_in, mut binding) = (0u32, 0u32);
-    // naga reads no combined image-samplers: each one becomes a texture and
-    // a sampler, recombined at its call sites.
-    let mut combined: Vec<(String, &'static str)> = Vec::new();
-    for line in src.lines() {
-        let t = line.trim_start();
-        if t.starts_with("#version") {
-            continue;
-        }
-        if t.starts_with("precision ") {
-            continue;
-        }
-        if let Some(decl) = t.strip_prefix("uniform ") {
-            let decl = decl.trim_start_matches("highp ");
-            if decl.contains("sampler") {
-                let mut it = decl.trim_end_matches(';').split_whitespace();
-                let (ty, name) = (it.next().unwrap(), it.next().unwrap());
-                let (tex, samp, comb) = match ty {
-                    "usampler2D" => ("utexture2D", "sampler", "usampler2D"),
-                    "sampler2D" => ("texture2D", "sampler", "sampler2D"),
-                    "sampler2DArrayShadow" => {
-                        ("texture2DArray", "samplerShadow", "sampler2DArrayShadow")
-                    }
-                    other => panic!("unmapped opaque uniform type {other}"),
-                };
-                body.push(format!(
-                    "layout(set = 1, binding = {binding}) uniform {tex} {name};"
-                ));
-                body.push(format!(
-                    "layout(set = 1, binding = {}) uniform {samp} {name}_s;",
-                    binding + 1
-                ));
-                binding += 2;
-                combined.push((name.to_string(), comb));
-            } else {
-                block.push(format!("    {decl}"));
-            }
-            continue;
-        }
-        let is_in = t.starts_with("in ") || t.starts_with("flat in ");
-        if is_in {
-            body.push(format!("layout(location = {loc_in}) {t}"));
-            loc_in += 1;
-            continue;
-        }
-        if t.starts_with("out vec4 ") {
-            body.push(format!("layout(location = 0) {t}"));
-            continue;
-        }
-        let mut l = line.to_string();
-        for (name, comb) in &combined {
-            l = l.replace(&format!("({name},"), &format!("({comb}({name}, {name}_s),"));
-        }
-        body.push(l);
-    }
-    format!(
-        "#version 450 core\nlayout(set = 0, binding = 0, std140) uniform PageUniforms {{\n{}\n}};\n{}\n",
-        block.join("\n"),
-        body.join("\n")
-    )
-}
-
-fn page_fragment_glsl() -> String {
-    let js = page_shader_js();
-    let consts = js_consts(&js);
-    let fs = match consts.get("FS_SRC") {
-        Some(JsConst::Template(s)) => s.clone(),
-        _ => panic!("FS_SRC template not found"),
-    };
-    es300_to_450(&resolve_template(&fs, &consts))
+/// The page's one field-mesh fragment shader (`FS_SRC`), materialised.
+pub(super) fn page_fragment_glsl() -> String {
+    let consts = js_consts(&site_js("webgl-shaders.js"));
+    es300_to_450(&template(&consts, "FS_SRC"))
 }
 
 fn parse_glsl(src: &str) -> naga::Module {
-    let mut fe = naga::front::glsl::Frontend::default();
-    let opts = naga::front::glsl::Options::from(naga::ShaderStage::Fragment);
-    fe.parse(&opts, src)
-        .unwrap_or_else(|e| panic!("page GLSL does not parse:\n{}", e.emit_to_string(src)))
-}
-
-fn parse_wgsl(src: &str) -> naga::Module {
-    naga::front::wgsl::parse_str(src).unwrap_or_else(|e| panic!("{}", e.emit_to_string(src)))
+    super::page_glsl::parse_glsl(src, naga::ShaderStage::Fragment)
 }
 
 #[test]
 fn both_shader_texts_parse() {
     let _ = parse_wgsl(&compose_psx_shader(VRAM_MESH_SHADER_SRC));
     let _ = parse_wgsl(&compose_psx_shader(COLOR_MESH_SHADER_SRC));
+    let _ = parse_wgsl(&compose_scene_lit_shader(VRAM_MESH_SHADER_SRC));
+    let _ = parse_wgsl(&compose_scene_lit_shader(COLOR_MESH_SHADER_SRC));
     let _ = parse_glsl(&page_fragment_glsl());
 }
 
@@ -244,6 +76,39 @@ struct SceneState {
     /// DPCS far colour, display 0..1.
     far: [f32; 3],
     dither: bool,
+    /// The enhancement layer this frame stages, or none (the faithful path).
+    enh: Option<&'static Enhance>,
+}
+
+/// One frame's enhancement layer, in the engine's (retail Y-down) frame -
+/// what `scene_lighting::LightingMood::uniforms`, the scene-light pick, the
+/// occlusion fade and the object-effect clip hand each host.
+#[derive(Debug)]
+struct Enhance {
+    /// Key light direction (unit), key colour x strength, pool weight.
+    key_dir: [f32; 3],
+    key_rgb: [f32; 3],
+    pool: f32,
+    /// Ambient floor and emissive gain.
+    ambient: [f32; 3],
+    emissive: f32,
+    /// The mood's window glow.
+    window: f32,
+    /// Point lights: world position, radius, gain colour (shadows off).
+    lights: &'static [([f32; 3], f32, [f32; 3])],
+    occl: Option<Occl>,
+    /// The object-effect clip `lo <= m . p <= hi`, mesh space.
+    clip: Option<([f32; 3], f32, f32)>,
+}
+
+/// The occlusion fade's staging, in top-down framebuffer pixels.
+#[derive(Debug, Clone, Copy)]
+struct Occl {
+    focus: [f32; 2],
+    focus_z: f32,
+    strength: f32,
+    radius: f32,
+    feet: Option<[f32; 2]>,
 }
 
 /// The textured CLUT rows the grid draws through: 480 is inside the rect
@@ -313,7 +178,26 @@ struct Fragment {
     /// `None` for the opaque pass; `Some(abr)` for the blend pass of a
     /// semi-transparent prim drawn with ABR mode `abr`.
     blend: Option<u8>,
+    geo: Geometry,
 }
+
+/// Where a fragment sits, for the enhancement layer: its world position
+/// (retail frame), its mesh-space position with the surface's screen
+/// gradients (top-down rows), and its smoothed vertex normal (zero = none).
+#[derive(Clone, Copy, Debug)]
+struct Geometry {
+    world: [f32; 3],
+    pos: [f32; 3],
+    dpos: ([f32; 3], [f32; 3]),
+    normal: [f32; 3],
+}
+
+const NO_GEOMETRY: Geometry = Geometry {
+    world: [0.0; 3],
+    pos: [0.0; 3],
+    dpos: ([1.0, 0.0, 0.0], [0.0, 0.0, 1.0]),
+    normal: [0.0; 3],
+};
 
 /// The fragment's output, `None` when it is discarded. Clamped to the
 /// framebuffer's 0..1, which is what either host's target stores.
@@ -347,8 +231,10 @@ fn run_native(m: &mut Machine<'_>, scene: &SceneState, frag: &Fragment) -> Out {
     m.set_uniform("grade", Val::f(&scene.grade));
     m.set_uniform("palette", Val::f(&scene.palette));
     m.set_uniform("cue_ramp", Val::f(&ramp));
-    // Cull off, the semi-blend split on (the faithful two-pass draw).
-    m.set_uniform("flags", Val::f(&[0.0, 1.0, 0.0, 0.0]));
+    stage_native_enhancements(m, scene.enh);
+    let g = &frag.geo;
+    m.gradients
+        .insert("world_pos".into(), (g.dpos.0.to_vec(), g.dpos.1.to_vec()));
     // The renderer's per-ABR blend pipelines pick the entry by the mode's
     // foreground pre-scale (`psx_blend::src_shader_scale`).
     let entry = match frag.blend {
@@ -372,6 +258,9 @@ fn run_native(m: &mut Machine<'_>, scene: &SceneState, frag: &Fragment) -> Out {
     let rgb = frag.colour.map(f32::from);
     let mut vals: HashMap<&str, Val> = HashMap::new();
     vals.insert("clip_pos", clip);
+    vals.insert("world_pos", Val::f(&g.pos));
+    vals.insert("world_w", Val::f(&g.world));
+    vals.insert("normal", Val::f(&g.normal));
     match frag.tex {
         Some((cba, tsb, u)) => {
             vals.insert("uv_affine", Val::f(&[u as f32 + 0.25, 0.25]));
@@ -392,6 +281,181 @@ fn run_native(m: &mut Machine<'_>, scene: &SceneState, frag: &Fragment) -> Out {
         .map(|v| clamp_out(&v.expect("fragment colour")))
 }
 
+/// The enhancement layer as the native renderer stages it: the mood on
+/// `MeshUniforms.light_dir` / `light_color` and the scene-lights block, the
+/// lights with their shadows off, the occlusion fade on `flags.z` and the
+/// scene-lights block, the clip packed into `tex_window` lanes 1..3.
+fn stage_native_enhancements(m: &mut Machine<'_>, enh: Option<&Enhance>) {
+    let zero4 = Val::f(&[0.0; 4]);
+    let light = |p: [f32; 3], r: f32, c: [f32; 3]| {
+        Val::Struct(vec![
+            Val::f(&[p[0], p[1], p[2], r]),
+            Val::f(&[c[0], c[1], c[2], 0.0]),
+            Val::Arr(vec![Val::f(&[0.0; 4]); 4]),
+        ])
+    };
+    let mut lights = vec![light([0.0; 3], 0.0, [0.0; 3]); 8];
+    let Some(e) = enh else {
+        m.set_uniform("flags", Val::f(&[0.0, 1.0, 0.0, 0.0]));
+        m.set_uniform("light_dir", zero4.clone());
+        m.set_uniform("light_color", zero4.clone());
+        m.set_uniform("ambient", zero4.clone());
+        m.set_uniform("params", zero4.clone());
+        m.set_uniform("occl_focus", zero4.clone());
+        m.set_uniform("occl_params", zero4.clone());
+        m.set_uniform("occl_lift", zero4);
+        m.set_uniform("lights", Val::Arr(lights));
+        m.set_uniform("tex_window", Val::u(&[0; 4]));
+        return;
+    };
+    m.set_uniform(
+        "light_dir",
+        Val::f(&[e.key_dir[0], e.key_dir[1], e.key_dir[2], 1.0]),
+    );
+    m.set_uniform(
+        "light_color",
+        Val::f(&[e.key_rgb[0], e.key_rgb[1], e.key_rgb[2], e.pool]),
+    );
+    m.set_uniform(
+        "ambient",
+        Val::f(&[e.ambient[0], e.ambient[1], e.ambient[2], e.emissive]),
+    );
+    m.set_uniform(
+        "params",
+        Val::f(&[e.lights.len() as f32, 0.0, 0.0, e.window]),
+    );
+    for (i, (p, r, c)) in e.lights.iter().enumerate() {
+        lights[i] = light(*p, *r, *c);
+    }
+    m.set_uniform("lights", Val::Arr(lights));
+    match e.occl {
+        Some(o) => {
+            m.set_uniform("flags", Val::f(&[0.0, 1.0, 1.0, 0.0]));
+            m.set_uniform(
+                "occl_focus",
+                Val::f(&[o.focus[0], o.focus[1], o.focus_z, o.strength]),
+            );
+            m.set_uniform("occl_params", Val::f(&occl_params(o)));
+            let lift = match o.feet {
+                Some(f) => {
+                    let a = crate::occlusion_fade::lift_axis(f, o.focus);
+                    [f[0], f[1], a[0], a[1]]
+                }
+                None => [0.0; 4],
+            };
+            m.set_uniform("occl_lift", Val::f(&lift));
+        }
+        None => {
+            m.set_uniform("flags", Val::f(&[0.0, 1.0, 0.0, 0.0]));
+            m.set_uniform("occl_focus", zero4.clone());
+            m.set_uniform("occl_params", zero4.clone());
+            m.set_uniform("occl_lift", zero4);
+        }
+    }
+    let clip = e
+        .clip
+        .map(|(mm, lo, hi)| crate::renderer::DrawClip { m: mm, lo, hi });
+    let w = crate::renderer::pack_draw_clip(clip);
+    m.set_uniform("tex_window", Val::u(&[0, w[0], w[1], w[2]]));
+}
+
+/// `(radius_px, min_keep, depth_margin, feather_px)` - the staged
+/// `occlusion_fade` constants both hosts send.
+fn occl_params(o: Occl) -> [f32; 4] {
+    use crate::occlusion_fade as of;
+    [
+        o.radius,
+        of::OCCL_MIN_KEEP,
+        of::OCCL_DEPTH_MARGIN,
+        of::feather_px(o.radius),
+    ]
+}
+
+/// The same layer as the play page stages it (`webgl-tmd-frame-state.js`):
+/// positions in its (x, -y, z) frame, the fade's pixels in `gl_FragCoord`
+/// space (rows from the bottom, so the lift axis's y negated), the clip as
+/// plain floats.
+fn stage_page_enhancements(m: &mut Machine<'_>, enh: Option<&Enhance>) {
+    let zero4 = Val::f(&[0.0; 4]);
+    let mut pr = vec![Val::f(&[0.0; 4]); 8];
+    let mut col = vec![Val::f(&[0.0; 4]); 8];
+    m.set_uniform("u_shadow", zero4.clone());
+    let Some(e) = enh else {
+        m.set_uniform("u_dyn_dir", zero4.clone());
+        m.set_uniform("u_dyn_color", zero4.clone());
+        m.set_uniform("u_dyn_ambient", zero4.clone());
+        m.set_uniform("u_dyn_window", Val::f(&[0.0]));
+        m.set_uniform("u_light_count", Val::I(vec![0]));
+        m.set_uniform("u_light_pr", Val::Arr(pr));
+        m.set_uniform("u_light_col", Val::Arr(col));
+        m.set_uniform("u_occl_allow", Val::I(vec![0]));
+        m.set_uniform("u_occl_focus", zero4.clone());
+        m.set_uniform("u_occl_params", zero4.clone());
+        m.set_uniform("u_occl_lift", zero4.clone());
+        m.set_uniform("u_eclip_m", zero4);
+        m.set_uniform("u_eclip_b", Val::f(&[0.0; 2]));
+        return;
+    };
+    m.set_uniform(
+        "u_dyn_dir",
+        Val::f(&[e.key_dir[0], e.key_dir[1], e.key_dir[2], 1.0]),
+    );
+    m.set_uniform(
+        "u_dyn_color",
+        Val::f(&[e.key_rgb[0], e.key_rgb[1], e.key_rgb[2], e.pool]),
+    );
+    m.set_uniform(
+        "u_dyn_ambient",
+        Val::f(&[e.ambient[0], e.ambient[1], e.ambient[2], e.emissive]),
+    );
+    m.set_uniform("u_dyn_window", Val::f(&[e.window]));
+    m.set_uniform("u_light_count", Val::I(vec![e.lights.len() as i32]));
+    for (i, (p, r, c)) in e.lights.iter().enumerate() {
+        pr[i] = Val::f(&[p[0], -p[1], p[2], *r]);
+        col[i] = Val::f(&[c[0], c[1], c[2], 0.0]);
+    }
+    m.set_uniform("u_light_pr", Val::Arr(pr));
+    m.set_uniform("u_light_col", Val::Arr(col));
+    match e.occl {
+        Some(o) => {
+            m.set_uniform("u_occl_allow", Val::I(vec![1]));
+            m.set_uniform(
+                "u_occl_focus",
+                Val::f(&[o.focus[0], STAGE_H - o.focus[1], o.focus_z, o.strength]),
+            );
+            m.set_uniform("u_occl_params", Val::f(&occl_params(o)));
+            let lift = match o.feet {
+                Some(f) => {
+                    let fg = [f[0], STAGE_H - f[1]];
+                    let cg = [o.focus[0], STAGE_H - o.focus[1]];
+                    // `occlLiftAxis` (webgl-shaders.js) is
+                    // `occlusion_fade::lift_axis` over the GL-space points.
+                    let a = crate::occlusion_fade::lift_axis(fg, cg);
+                    [fg[0], fg[1], a[0], a[1]]
+                }
+                None => [0.0; 4],
+            };
+            m.set_uniform("u_occl_lift", Val::f(&lift));
+        }
+        None => {
+            m.set_uniform("u_occl_allow", Val::I(vec![0]));
+            m.set_uniform("u_occl_focus", zero4.clone());
+            m.set_uniform("u_occl_params", zero4.clone());
+            m.set_uniform("u_occl_lift", zero4.clone());
+        }
+    }
+    match e.clip {
+        Some((mm, lo, hi)) => {
+            m.set_uniform("u_eclip_m", Val::f(&[mm[0], mm[1], mm[2], 1.0]));
+            m.set_uniform("u_eclip_b", Val::f(&[lo, hi]));
+        }
+        None => {
+            m.set_uniform("u_eclip_m", zero4);
+            m.set_uniform("u_eclip_b", Val::f(&[0.0; 2]));
+        }
+    }
+}
+
 /// The browser play page: its one fragment shader, both prim families, with
 /// the uniforms `TmdRenderer` stages for `scene`.
 fn run_page(m: &mut Machine<'_>, scene: &SceneState, frag: &Fragment) -> Out {
@@ -410,6 +474,18 @@ fn run_page(m: &mut Machine<'_>, scene: &SceneState, frag: &Fragment) -> Out {
     m.set_uniform("u_semi_pass", Val::I(vec![i32::from(frag.blend.is_some())]));
     m.set_uniform("u_use_flat_colors", Val::I(vec![1]));
     m.set_uniform("u_pair_front", Val::I(vec![1]));
+    stage_page_enhancements(m, scene.enh);
+    let g = &frag.geo;
+    // The page frame is (x, -y, z), and GL counts rows from the bottom, so
+    // its y screen gradient is the native one negated.
+    let flip = |v: [f32; 3]| [v[0], -v[1], v[2]];
+    m.gradients.insert(
+        "v_obj_pos".into(),
+        (g.dpos.0.to_vec(), g.dpos.1.map(|x| -x).to_vec()),
+    );
+    m.set_global("v_obj_pos", Val::f(&g.pos));
+    m.set_global("v_normal", Val::f(&g.normal));
+    m.set_global("v_world", Val::f(&flip(g.world)));
     let rgb = frag.colour.map(|c| f32::from(c) / 255.0);
     let (uv, cba_tsb, flag) = match frag.tex {
         Some((cba, tsb, u)) => ([u as f32 + 0.25, 0.25], [cba, tsb], 1.0),
@@ -449,6 +525,7 @@ fn scenes() -> Vec<SceneState> {
         ramp: None,
         far: [0.0; 3],
         dither: false,
+        enh: None,
     };
     let grade = [1.15, 0.9, 0.55, 0.7];
     let ramp = Some([200.0, 2200.0, 0.85]);
@@ -500,6 +577,12 @@ const PASSES: [(u32, Option<u8>); 6] = [
     (ABE, Some(2)),
     (ABE, Some(3)),
 ];
+
+/// The CLUT-index stride of the textured grid: every 19th of the page's
+/// 256 texels in a debug build, every 7th under an optimised test profile
+/// (`release-test`), where the interpreter runs fast enough for the full
+/// density.
+const TEXEL_STEP: usize = if cfg!(debug_assertions) { 19 } else { 7 };
 
 /// View depths: inside the ramp's near plane, mid-ramp, past its far end.
 const DEPTHS: [f32; 3] = [100.0, 1200.0, 5000.0];
@@ -630,13 +713,15 @@ struct Tally {
 }
 
 fn compare(frags: &[Fragment]) -> Tally {
-    compare_against(frags, &page_fragment_glsl())
+    compare_against(frags, &page_fragment_glsl(), &scenes())
 }
 
-fn compare_against(frags: &[Fragment], page_glsl: &str) -> Tally {
+fn compare_against(frags: &[Fragment], page_glsl: &str, scenes: &[SceneState]) -> Tally {
     let v = std::rc::Rc::new(vram());
-    let native_tex = parse_wgsl(&compose_psx_shader(VRAM_MESH_SHADER_SRC));
-    let native_flat = parse_wgsl(&compose_psx_shader(COLOR_MESH_SHADER_SRC));
+    // The scene pipelines (the real point-light / occlusion layer): with the
+    // enhancement block zeroed they are the single-mesh pipelines exactly.
+    let native_tex = parse_wgsl(&compose_scene_lit_shader(VRAM_MESH_SHADER_SRC));
+    let native_flat = parse_wgsl(&compose_scene_lit_shader(COLOR_MESH_SHADER_SRC));
     let page = parse_glsl(page_glsl);
     let mut mt = Machine::new(&native_tex, fetcher(v.clone()));
     let mut mf = Machine::new(&native_flat, fetcher(v.clone()));
@@ -646,14 +731,14 @@ fn compare_against(frags: &[Fragment], page_glsl: &str) -> Tally {
         dither_steps: 0,
         diffs: Vec::new(),
     };
-    for scene in scenes() {
+    for scene in scenes {
         for frag in frags {
             let native = if frag.tex.is_some() {
-                run_native(&mut mt, &scene, frag)
+                run_native(&mut mt, scene, frag)
             } else {
-                run_native(&mut mf, &scene, frag)
+                run_native(&mut mf, scene, frag)
             };
-            let page = run_page(&mut mp, &scene, frag);
+            let page = run_page(&mut mp, scene, frag);
             // A blend-pass fragment reaches the framebuffer through its ABR
             // equation, so compare the composites over a set of backbuffer
             // values; an opaque fragment is the stored colour itself.
@@ -724,7 +809,7 @@ fn textured_fragments_shade_identically_on_both_hosts() {
             {
                 for (k, colour) in COLOURS.iter().enumerate() {
                     for (d, view_z) in DEPTHS.iter().enumerate() {
-                        for u in (0..256u32).step_by(19) {
+                        for u in (0..256u32).step_by(TEXEL_STEP) {
                             let px = ((u + k as u32) % 4, (u / 4 + d as u32) % 4);
                             frags.push(Fragment {
                                 tex: Some((row << 6, TSB_8BPP | abe, u)),
@@ -733,6 +818,7 @@ fn textured_fragments_shade_identically_on_both_hosts() {
                                 px: (16 + px.0, 32 + px.1),
                                 view_z: *view_z,
                                 blend,
+                                geo: NO_GEOMETRY,
                             });
                         }
                     }
@@ -761,6 +847,7 @@ fn untextured_fragments_shade_identically_on_both_hosts() {
                             px: (40 + p % 4, 60 + p / 4),
                             view_z,
                             blend,
+                            geo: NO_GEOMETRY,
                         });
                     }
                 }
@@ -787,6 +874,7 @@ fn a_changed_page_law_is_caught() {
                     px: (p % 4, p / 4),
                     view_z: 1200.0,
                     blend: None,
+                    geo: NO_GEOMETRY,
                 })
             })
         })
@@ -795,10 +883,229 @@ fn a_changed_page_law_is_caught() {
     let modulate = "(255.0 / 128.0)";
     assert!(law.contains(modulate));
     let off_by_one = law.replacen(modulate, "(255.0 / 127.0)", 1);
-    assert!(!compare_against(&frags, &off_by_one).diffs.is_empty());
+    assert!(
+        !compare_against(&frags, &off_by_one, &scenes())
+            .diffs
+            .is_empty()
+    );
     let dm = "float dm[16] = float[16](-4.0, 0.0,";
     assert!(law.contains(dm), "dither matrix spelling");
     let moved = law.replacen(dm, "float dm[16] = float[16](4.0, 0.0,", 1);
-    let t = compare_against(&frags, &moved);
+    let t = compare_against(&frags, &moved, &scenes());
     assert!(!t.diffs.is_empty() || t.dither_steps > 0);
+}
+
+// ---- the enhancement layer at its enabled settings ----
+
+/// Two point lights the enhancement grid shades under, in the retail frame.
+const LIGHTS: [([f32; 3], f32, [f32; 3]); 2] = [
+    ([100.0, -200.0, 300.0], 400.0, [0.8, 0.6, 0.3]),
+    ([-150.0, -50.0, -100.0], 250.0, [0.2, 0.3, 0.9]),
+];
+
+/// The default-on mood: key light, screen pool, ambient floor, emissive
+/// gain, window glow and two lamps.
+const ENH_LIGHT: Enhance = Enhance {
+    key_dir: [0.299_342_5, -0.798_246_7, 0.498_904_2],
+    key_rgb: [0.9, 0.85, 0.7],
+    pool: 0.35,
+    ambient: [0.55, 0.55, 0.6],
+    emissive: 1.15,
+    window: 0.6,
+    lights: &LIGHTS,
+    occl: None,
+    clip: None,
+};
+
+static ENH_LIGHT_S: Enhance = ENH_LIGHT;
+
+/// The mood with the occlusion fade raised around a player at the stage
+/// centre, at full strength and mid-ease, feet below the centre.
+static ENH_FADE_FULL: Enhance = Enhance {
+    occl: Some(Occl {
+        focus: [160.0, 120.0],
+        focus_z: 800.0,
+        strength: 1.0,
+        radius: 60.0,
+        feet: Some([160.0, 165.0]),
+    }),
+    ..ENH_LIGHT
+};
+static ENH_FADE_HALF: Enhance = Enhance {
+    occl: Some(Occl {
+        focus: [160.0, 120.0],
+        focus_z: 800.0,
+        strength: 0.5,
+        radius: 60.0,
+        feet: None,
+    }),
+    ..ENH_LIGHT
+};
+
+/// The object-effect clip, along mesh Y and along a tilted axis whose terms
+/// do not survive the native f16 packing exactly.
+static ENH_CLIP_Y: Enhance = Enhance {
+    clip: Some(([0.0, 1.0, 0.0], -50.0, 40.0)),
+    ..ENH_LIGHT
+};
+static ENH_CLIP_TILT: Enhance = Enhance {
+    clip: Some(([0.3, 0.9, 0.1], -33.3, 21.7)),
+    ..ENH_LIGHT
+};
+
+fn enh_scene(enh: &'static Enhance, dither: bool) -> SceneState {
+    SceneState {
+        grade: [1.0, 1.0, 1.0, 0.0],
+        palette: [1.0, 1.0, 1.0, 0.0],
+        ramp: None,
+        far: [0.0; 3],
+        dither,
+        enh: Some(enh),
+    }
+}
+
+/// The engine's prim flag bits on `tsb` / `blend`: emissive (13) and window
+/// (12).
+const EMISSIVE: u32 = 0x2000;
+const WINDOW: u32 = 0x1000;
+
+const NORMALS: [[f32; 3]; 4] = [
+    [0.0, 0.0, 0.0],
+    [0.0, -1.0, 0.0],
+    [0.580_381_9, -0.580_381_9, 0.483_651_6],
+    [1.0, 0.0, 0.0],
+];
+
+const WORLDS: [[f32; 3]; 4] = [
+    [0.0, 0.0, 0.0],
+    [120.0, -150.0, 280.0],
+    [-100.0, -60.0, -80.0],
+    [500.0, 0.0, 500.0],
+];
+
+/// Lit fragments of both families: every normal (none, up, tilted, side) at
+/// world points inside, between and outside the two lamps, plain, emissive
+/// and window prims, across the screen pool.
+fn lit_fragments() -> Vec<Fragment> {
+    let mut out = Vec::new();
+    for (k, colour) in [[0x80, 0x80, 0x80], [0xC0, 0x60, 0x20], [0x10, 0x20, 0x60]]
+        .into_iter()
+        .enumerate()
+    {
+        for normal in NORMALS {
+            for world in WORLDS {
+                for flags in [0, EMISSIVE, WINDOW] {
+                    let geo = Geometry {
+                        world,
+                        pos: world,
+                        dpos: ([0.8, 0.1, 0.0], [0.0, 0.3, 0.9]),
+                        normal,
+                    };
+                    for (i, u) in [5u32, 40, 120, 200].into_iter().enumerate() {
+                        let px = [(20, 20), (160, 108), (90, 200), (300, 30)][(i + k) % 4];
+                        out.push(Fragment {
+                            tex: Some((CLUT_ROWS[1] << 6, TSB_8BPP | flags, u)),
+                            flat_bits: 0,
+                            colour,
+                            px,
+                            view_z: 900.0,
+                            blend: None,
+                            geo,
+                        });
+                    }
+                    out.push(Fragment {
+                        tex: None,
+                        flat_bits: flags,
+                        colour,
+                        px: (160, 108),
+                        view_z: 900.0,
+                        blend: None,
+                        geo,
+                    });
+                }
+            }
+        }
+    }
+    out
+}
+
+/// Dynamic light, the window glow and the point lights at their enabled
+/// settings: the same fragments through both hosts.
+#[test]
+fn the_enhanced_lighting_shades_identically_on_both_hosts() {
+    let frags = lit_fragments();
+    let scenes = [
+        enh_scene(&ENH_LIGHT_S, false),
+        enh_scene(&ENH_LIGHT_S, true),
+    ];
+    report(&compare_against(&frags, &page_fragment_glsl(), &scenes));
+}
+
+/// The occlusion fade: fragments inside, on the feather of and outside the
+/// fade circle, above and below the feet line, nearer and farther than the
+/// player, at full and half strength - the screen-door decision must agree
+/// pixel for pixel, which pins the Bayer matrix's row order too.
+#[test]
+fn the_occlusion_fade_discards_the_same_fragments_on_both_hosts() {
+    let mut frags = Vec::new();
+    for y in [60u32, 90, 105, 118, 119, 120, 121, 135, 160, 166, 175, 200] {
+        for x in [100u32, 125, 140, 150, 158, 159, 160, 161, 175, 195, 230] {
+            for view_z in [300.0, 790.0, 1200.0] {
+                frags.push(Fragment {
+                    tex: Some((CLUT_ROWS[1] << 6, TSB_8BPP, 40)),
+                    flat_bits: 0,
+                    colour: [0x80, 0x80, 0x80],
+                    px: (x, y),
+                    view_z,
+                    blend: None,
+                    geo: NO_GEOMETRY,
+                });
+            }
+        }
+    }
+    let scenes = [
+        enh_scene(&ENH_FADE_FULL, false),
+        enh_scene(&ENH_FADE_HALF, false),
+    ];
+    report(&compare_against(&frags, &page_fragment_glsl(), &scenes));
+}
+
+/// The object-effect clip on both families: mesh points either side of and
+/// on each bound, along a clean axis and a tilted one.
+#[test]
+fn the_effect_clip_keeps_the_same_fragments_on_both_hosts() {
+    let mut frags = Vec::new();
+    for y in [
+        -80.0, -50.5, -50.0, -49.5, -33.0, 0.0, 21.0, 22.5, 39.5, 40.0, 40.5, 80.0,
+    ] {
+        for x in [-40.0, 0.0, 35.0] {
+            let geo = Geometry {
+                pos: [x, y, 10.0],
+                ..NO_GEOMETRY
+            };
+            frags.push(Fragment {
+                tex: Some((CLUT_ROWS[1] << 6, TSB_8BPP, 40)),
+                flat_bits: 0,
+                colour: [0x80, 0x80, 0x80],
+                px: (40, 40),
+                view_z: 900.0,
+                blend: None,
+                geo,
+            });
+            frags.push(Fragment {
+                tex: None,
+                flat_bits: 0,
+                colour: [0x80, 0x80, 0x80],
+                px: (40, 40),
+                view_z: 900.0,
+                blend: None,
+                geo,
+            });
+        }
+    }
+    let scenes = [
+        enh_scene(&ENH_CLIP_Y, false),
+        enh_scene(&ENH_CLIP_TILT, false),
+    ];
+    report(&compare_against(&frags, &page_fragment_glsl(), &scenes));
 }

@@ -1,18 +1,19 @@
-//! A small interpreter over naga IR, for the shading-law parity test.
+//! A small interpreter over naga IR, for the host shader-parity tests.
 //!
-//! Both play hosts' fragment shaders are parsed into naga's IR (WGSL for the
-//! native renderer, GLSL for the browser play page) and run here on the CPU,
-//! so one set of inputs can be pushed through both texts and the outputs
-//! compared. It covers the IR a fragment shader of this repo uses - scalar
-//! and vector arithmetic, arrays, structs, locals, loops, calls, `discard`,
-//! texel fetches through a host-supplied VRAM - and panics, naming the
-//! construct, on anything else, so a shader that grows a new construct
-//! fails loudly rather than evaluating wrongly.
+//! Both play hosts' shaders are parsed into naga's IR (WGSL for the native
+//! renderer, GLSL for the browser play page) and run here on the CPU, so one
+//! set of inputs can be pushed through both texts and the outputs compared.
+//! It covers the IR the vertex and fragment shaders of this repo use -
+//! scalar, vector and matrix arithmetic, arrays, structs, locals, loops,
+//! calls, `discard`, texel loads and filtered / comparison samples through
+//! host-supplied mocks, and screen-space derivatives of stage inputs off
+//! host-supplied gradients - and panics, naming the construct, on anything
+//! else, so a shader that grows a new construct fails loudly rather than
+//! evaluating wrongly.
 //!
-//! What it does not model: derivatives (they evaluate to zero - only the
-//! opt-in enhanced lighting reads them), filtered or shadow sampling, and
-//! GPU float rounding. The comparison is of the two shading laws as
-//! written, evaluated with the same arithmetic.
+//! What it does not model: GPU float rounding and real texture filtering (a
+//! test's mock decides what a sample returns). The comparison is of the two
+//! laws as written, evaluated with the same arithmetic.
 
 use naga::{
     Arena, BinaryOperator as Bo, Expression as E, Function, Handle, Literal, MathFunction as Mf,
@@ -110,17 +111,36 @@ enum Flow {
 /// One texel fetch: `(global name, x, y, layer)` -> the `vec4<u32>` it loads.
 pub type ImageFetch = dyn Fn(&str, i32, i32) -> [u32; 4];
 
+/// One float texel load (a sampled-float or depth image): `(global name, x,
+/// y)` -> the texel; a depth image reads lane 0.
+pub type FloatFetch = dyn Fn(&str, i32, i32) -> [f32; 4];
+
+/// One filtered sample: `(image global name, uv, array layer, depth
+/// reference)` -> the sampled value; a comparison sample reads lane 0 as its
+/// 0..1 visibility. The host's mock decides what filtering means.
+pub type SampleFn = dyn Fn(&str, [f32; 2], Option<i32>, Option<f32>) -> [f32; 4];
+
 /// A module plus its global state.
 pub struct Machine<'m> {
     pub module: &'m Module,
     pub globals: Vec<Val>,
     fetch: Box<ImageFetch>,
+    /// Float texel loads; unset, a float load panics.
+    pub fetch_f: Option<Box<FloatFetch>>,
+    /// Filtered samples; unset, a sample panics.
+    pub sample: Option<Box<SampleFn>>,
+    /// Screen-space derivatives of named inputs (a WGSL entry argument's
+    /// struct member, or a GLSL stage-input global): `name -> (d/dx, d/dy)`.
+    /// A derivative of anything else panics, and so does one of an input
+    /// with no entry here.
+    pub gradients: HashMap<String, (Vec<f32>, Vec<f32>)>,
 }
 
 struct Frame {
     exprs: Vec<Option<Val>>,
     locals: Vec<Val>,
     args: Vec<Val>,
+    arg_types: Vec<Handle<naga::Type>>,
 }
 
 impl<'m> Machine<'m> {
@@ -129,6 +149,9 @@ impl<'m> Machine<'m> {
             module,
             globals: Vec::new(),
             fetch,
+            fetch_f: None,
+            sample: None,
+            gradients: HashMap::new(),
         };
         let mut globals = Vec::new();
         for (_, g) in module.global_variables.iter() {
@@ -241,6 +264,7 @@ impl<'m> Machine<'m> {
             exprs: vec![None; self.module.global_expressions.len()],
             locals: Vec::new(),
             args: Vec::new(),
+            arg_types: Vec::new(),
         };
         self.eval(&self.module.global_expressions, &mut frame, h)
     }
@@ -251,6 +275,7 @@ impl<'m> Machine<'m> {
             exprs: vec![None; f.expressions.len()],
             locals: Vec::new(),
             args,
+            arg_types: f.arguments.iter().map(|a| a.ty).collect(),
         };
         for (_, l) in f.local_variables.iter() {
             let v = match l.init {
@@ -435,6 +460,27 @@ impl<'m> Machine<'m> {
         v
     }
 
+    /// The stage input a derivative is taken of.
+    fn input_name(&self, arena: &Arena<E>, frame: &Frame, h: Handle<E>) -> String {
+        match &arena[h] {
+            E::Load { pointer } => match &arena[*pointer] {
+                E::GlobalVariable(g) => self.module.global_variables[*g]
+                    .name
+                    .clone()
+                    .unwrap_or_default(),
+                other => panic!("derivative of a load through {other:?}"),
+            },
+            E::AccessIndex { base, index } => match &arena[*base] {
+                E::FunctionArgument(a) => {
+                    let names = self.struct_member_names(frame.arg_types[*a as usize]);
+                    names[*index as usize].clone()
+                }
+                other => panic!("derivative of a member of {other:?}"),
+            },
+            other => panic!("derivative of {other:?}"),
+        }
+    }
+
     fn eval(&self, arena: &Arena<E>, frame: &mut Frame, h: Handle<E>) -> Val {
         if let Some(v) = &frame.exprs[h.index()] {
             return v.clone();
@@ -512,11 +558,69 @@ impl<'m> Machine<'m> {
                     Val::U(v) => (v[0] as i32, v[1] as i32),
                     other => panic!("image coordinate {other:?}"),
                 };
+                let var = &self.module.global_variables[g];
+                let name = var.name.clone().unwrap_or_default();
+                match &self.module.types[var.ty].inner {
+                    TypeInner::Image {
+                        class:
+                            naga::ImageClass::Sampled {
+                                kind: ScalarKind::Uint,
+                                ..
+                            },
+                        ..
+                    } => Val::U((self.fetch)(&name, x, y).to_vec()),
+                    TypeInner::Image {
+                        class:
+                            naga::ImageClass::Sampled {
+                                kind: ScalarKind::Float,
+                                ..
+                            },
+                        ..
+                    } => Val::F(self.fetch_f.as_ref().expect("float fetch")(&name, x, y).to_vec()),
+                    TypeInner::Image {
+                        class: naga::ImageClass::Depth { .. },
+                        ..
+                    } => Val::F(vec![
+                        self.fetch_f.as_ref().expect("float fetch")(&name, x, y)[0],
+                    ]),
+                    other => panic!("image load from {other:?}"),
+                }
+            }
+            E::ImageSample {
+                image,
+                coordinate,
+                array_index,
+                depth_ref,
+                gather,
+                offset,
+                ..
+            } => {
+                assert!(
+                    gather.is_none() && offset.is_none(),
+                    "gather / offset sample"
+                );
+                let Val::Resource(g) = self.eval(arena, frame, *image) else {
+                    panic!("sample from a non-resource")
+                };
                 let name = self.module.global_variables[g]
                     .name
                     .clone()
                     .unwrap_or_default();
-                Val::U((self.fetch)(&name, x, y).to_vec())
+                let uv = self.eval(arena, frame, *coordinate);
+                let uv = [uv.floats()[0], uv.floats()[1]];
+                let layer = array_index.map(|h| match self.eval(arena, frame, h) {
+                    Val::I(v) => v[0],
+                    Val::U(v) => v[0] as i32,
+                    Val::F(v) => v[0] as i32,
+                    other => panic!("array index {other:?}"),
+                });
+                let dref = depth_ref.map(|h| self.eval(arena, frame, h).floats()[0]);
+                let r = self.sample.as_ref().expect("sampler")(&name, uv, layer, dref);
+                if dref.is_some() {
+                    Val::F(vec![r[0]])
+                } else {
+                    Val::F(r.to_vec())
+                }
             }
             E::Unary { op, expr } => {
                 let v = self.eval(arena, frame, *expr);
@@ -552,9 +656,19 @@ impl<'m> Machine<'m> {
                     other => panic!("select on {other:?}"),
                 }
             }
-            E::Derivative { expr, .. } => {
-                let v = self.eval(arena, frame, *expr);
-                Val::F(vec![0.0; v.len()])
+            E::Derivative { axis, expr, .. } => {
+                let name = self.input_name(arena, frame, *expr);
+                let (dx, dy) = self
+                    .gradients
+                    .get(&name)
+                    .unwrap_or_else(|| panic!("no gradient for input `{name}`"));
+                Val::F(match axis {
+                    naga::DerivativeAxis::X => dx.clone(),
+                    naga::DerivativeAxis::Y => dy.clone(),
+                    naga::DerivativeAxis::Width => {
+                        dx.iter().zip(dy).map(|(a, b)| a.abs() + b.abs()).collect()
+                    }
+                })
             }
             E::Relational { fun, argument } => {
                 let v = self.eval(arena, frame, *argument);
@@ -676,7 +790,42 @@ macro_rules! lanes {
     };
 }
 
+/// A matrix value: its columns, all float vectors.
+fn columns(v: &Val) -> Option<Vec<Vec<f32>>> {
+    match v {
+        Val::Arr(cols) if !cols.is_empty() && cols.iter().all(|c| matches!(c, Val::F(_))) => {
+            Some(cols.iter().map(|c| c.floats().to_vec()).collect())
+        }
+        _ => None,
+    }
+}
+
+fn mat_vec(m: &[Vec<f32>], v: &[f32]) -> Vec<f32> {
+    (0..m[0].len())
+        .map(|r| m.iter().zip(v).map(|(col, x)| col[r] * x).sum())
+        .collect()
+}
+
 fn binary(op: Bo, a: Val, b: Val) -> Val {
+    if op == Bo::Multiply {
+        match (columns(&a), columns(&b)) {
+            (Some(m), None) if matches!(b, Val::F(_)) && b.len() == m.len() => {
+                return Val::F(mat_vec(&m, b.floats()));
+            }
+            (Some(m), Some(n)) => {
+                return Val::Arr(n.iter().map(|c| Val::F(mat_vec(&m, c))).collect());
+            }
+            (None, Some(m)) if matches!(a, Val::F(_)) => {
+                let v = a.floats();
+                return Val::F(
+                    m.iter()
+                        .map(|c| c.iter().zip(v).map(|(x, y)| x * y).sum())
+                        .collect(),
+                );
+            }
+            _ => {}
+        }
+    }
     let n = a.len().max(b.len());
     let (a, b) = (widen(a, n), widen(b, n));
     match (a, b) {

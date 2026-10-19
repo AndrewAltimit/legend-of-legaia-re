@@ -1309,7 +1309,7 @@ decidable per instance, not from a source pattern.
 |---|---|---|
 | **Same layout, different letterforms.** A shared layout is not a shared draw. | Battle numerals: VRAM cells natively, dialog font on the page. | `engine-ui::battle_numerals` + the fifth tier-7 rule. |
 | **Same override set, different bodies.** | Two `BgmDirector`s disagreed on the duplicate-start guard, master volume and the pause gate. | One body: `engine-session`'s `AudioDirector`. |
-| **A law written twice in two shading languages.** | See [shading](#the-two-hosts-do-not-share-a-shading-law). | The field mesh law is evaluated on both texts by `engine-render`'s `shading_law_parity` test; the other shader pairs only by a rendered frame from each host. |
+| **A law written twice in two shading languages.** | See [shading](#the-two-hosts-do-not-share-a-shading-law). | The field mesh, its vertex stage, the enhancement layer and the fog sheets are evaluated on both texts by `engine-render`'s parity tests; the shadow maps only by a rendered frame from each host. |
 | **A draw list that carries half a mesh.** | A surface running `tmd_to_vram_mesh` alone drops every untextured prim. | Assert the **untextured corner count**, never the total. |
 | **Length parity is not coverage.** | A white `a_flat_rgba` stream has the right length. | Assert content. |
 | **Two hosts agreeing on a wrong law.** | Both laid the crawl out in surface pixels with 1x glyphs. | Only a retail frame flags it. |
@@ -1342,7 +1342,7 @@ reverse-engineering questions, so they are not on
 
 | Difference | State |
 |---|---|
-| shading law | One law in WGSL and GLSL. The field mesh pipelines are paired by evaluation (`shading_law_parity`); the overworld, effect-clip and fog-volume shader pairs are not. See [shading](#the-two-hosts-do-not-share-a-shading-law). |
+| shading law | One law in WGSL and GLSL, paired by evaluation for the field mesh's both stages, its enhancement layer and the fog sheets' fragment stage. Unpaired: the point lights' shadow-map sampling, the fog sheets' vertex stage, clip depth. See [shading](#the-two-hosts-do-not-share-a-shading-law). |
 | battle body blend | Native keys the posed override by TMD index (two bodies sharing a TMD share one); the page orders blend passes per mesh, not per prim. |
 | lit rows under the palette collapse | Not drift: both hosts run a lit row's shaded colour through the prologue's packet sepia, which the light kernel's output never meets in retail. See [light-source rows](#light-source-rows-in-a-graded-scene). |
 | cheats | One `WorldCheats::cheat_*` call each. Every listed cheat is a launch switch natively and a runtime control on the page (`F6` / `F7` are runtime on both, through the [hotkey table](#host-hotkeys)); a GameShark file is a launch switch natively and pasted text on the page (`cheat_apply_codes`). |
@@ -1823,18 +1823,35 @@ Traps in that stream, each of which has fired:
 - **Assert content, not length.** A hand-written white stream satisfies
   `len == n * 4`; the per-body tests are in `muscle_web_real.rs`.
 
-Shader pairs with no gate between them: the overworld curvature
-(`overworld_curve_clip` / `overworldCurve`), the continent's flat bucket depth
-(`overworld_flat_depth` / `overworldFlatDepth`), the ground depth cue
-(`overworld_ground_cue` / `overworldGroundCue`,
-[`overworld_ground_cue`](../../crates/engine-field/src/overworld_ground_cue.rs)),
-the PSX snap and dither (`psx_snap_clip` / `psxSnapClip`, `psx_dither`), the
-effect clip (`EFFECT_CLIP_WGSL` / `u_eclip_m`, `u_eclip_b`) and the fog-volume
-body. The CPU kernels they mirror are pinned against retail
-(`overworld_curvature`, `overworld_draw_order`); the WGSL side is GPU-tested,
-and the ground cue's GLSL twin has a shape-matched host-free check
-(`overworld_ground_cue_glsl`). An edit to one shader is carried to the other by
-hand.
+The same evaluation pairs the rest of the field shader surface, each test
+beside the first in `crates/engine-render/src/tests/`:
+
+- **The vertex stage** (`vertex_law_parity`): the VRAM-mesh and colour-mesh
+  `vs_main` against the page's `VS_SRC` - the overworld curvature
+  (`overworld_curve_clip` / `overworldCurve`), the continent's flat bucket
+  and ground depth cue (`overworld_flat_depth`, `overworld_ground_cue` and
+  their GLSL twins), the PSX snap (`psx_snap_clip` / `psxSnapClip`) and the
+  per-primitive near reject - on clip `x`, `y`, `w`, the packet colour and the
+  reject decision. Clip `z` is not compared: the hosts encode depth
+  differently by design.
+- **The enhancement layer at its enabled settings** (in `shading_law_parity`):
+  the key light, screen pool, ambient floor, emissive gain, window glow and
+  point lights (shadows off) through the native scene pipelines, the
+  occlusion fade's screen-door decision pixel for pixel, and the object-effect
+  clip through the native f16 packing.
+- **The fog sheets' fragment stage** (`fog_volume_parity`): `FOG_SHADER_SRC`
+  against the page's `webgl-fog-volume.js` over analytic textures, with the
+  soft intersection read back through native reverse-Z and both of the page's
+  depth encodings.
+
+Running them found four more real differences, each fixed on the side that
+departed: the native colour mesh never applied the PSX snap and the native
+snap divided by a non-positive `w`; the page's point lights dotted a
+retail-frame normal with a page-frame direction, and its occlusion fade read
+the Bayer matrix bottom-up. What stays unpaired: the point lights'
+shadow-map sampling (each host renders its maps under its own clip
+conventions, so a mock would have to reimplement both light projections), the
+fog sheets' vertex stage, and anything that only moves clip `z`.
 
 **Enhanced lighting** is one source, `legaia_render_kernels::scene_lighting`: the
 same `tag_emissive_*` calls, emitter clustering, `nearest_lights` pick around

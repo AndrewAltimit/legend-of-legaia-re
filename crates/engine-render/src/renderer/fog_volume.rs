@@ -101,7 +101,7 @@ fn mesh_indices(dim: u32) -> Vec<u32> {
 
 /// WGSL for the fog sheets. The GLSL twin lives in
 /// `site/js/webgl-fog-volume.js`; keep the two in step.
-pub(super) const FOG_SHADER_SRC: &str = r#"
+pub(crate) const FOG_SHADER_SRC: &str = r#"
 struct FogU {
     m: mat4x4<f32>,
     sim: vec4<f32>,

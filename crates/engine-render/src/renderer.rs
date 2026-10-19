@@ -24,6 +24,9 @@ mod uploaded;
 pub(crate) use construct::choose_surface_format;
 use depth::*;
 pub use fog_volume::{FogGroundTexture, FogVolumeDraw};
+// The fog sheets' WGSL, for the host-parity test that evaluates it.
+#[cfg(test)]
+pub(crate) use fog_volume::FOG_SHADER_SRC;
 pub(crate) use letterbox::letterbox_scale;
 pub use render::CaptureImage;
 pub use state::*;
