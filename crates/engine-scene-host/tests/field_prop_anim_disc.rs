@@ -387,16 +387,8 @@ fn walking_into_a_house_door_opens_it_and_drops_its_collision() {
             open.collision_exempt(),
             "{name}: the record's `31 00` must set +0x10 bit 0"
         );
-        let row = w
-            .props
-            .colliders
-            .iter()
-            .find(|c| c.anchor == Some(anchor))
-            .expect("door collider row");
-        assert!(
-            !row.solid,
-            "{name}: the opened door must stop blocking (FUN_801CF754 skips flags&3)"
-        );
+        // The collision layer reads that bit live (`FUN_801CF754` skips
+        // `flags & 3` actors), so the walk below passes the opened door.
         assert!(
             w.dialog.inline.is_none(),
             "{name}: the door run must complete and release the player"

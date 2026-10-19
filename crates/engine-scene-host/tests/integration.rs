@@ -162,3 +162,5 @@ mod world_frame_tail_ladder;
 mod world_map_menu_gate;
 mod world_map_player_anim_disc;
 mod world_map_slot4_resources;
+// --- lane E ---
+mod tower_elevator_doors_disc;
