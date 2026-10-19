@@ -145,7 +145,8 @@ enhancement has a retail-faithful off position
 | `F1` | The engine's diagnostic text rows | off | - |
 
 In the native window each press shows the toggle's new state at the bottom
-left for a moment (*Ground fog: off*). A key that only acts while you walk
+left for a moment (*Ground fog: off*); holding a key toggles once, not
+repeatedly. A key that only acts while you walk
 around (`F3`, `T`, `R`) says so when pressed on the title screen or in a menu.
 `F12` (or `?`) opens a panel listing every toggle key with its current state;
 press it again to close it.

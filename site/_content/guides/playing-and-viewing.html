@@ -68,7 +68,7 @@
       <tr><td><kbd>RShift</kbd></td><td>Select</td></tr>
     </tbody>
   </table>
-  <p><kbd>Esc</kbd> twice quits: the first press only shows <em>Press Esc again to quit</em> at the top of the window, and a second press within three seconds closes it, so a stray press never loses unsaved progress. The <a href="../play.html">browser play page</a> ships a <em>different</em> default layout (<kbd>X</kbd> is Circle there, <kbd>C</kbd> / <kbd>V</kbd> carry Triangle / Square, and WASD doubles the arrows), so a key that works in the tab is not necessarily the same button in the window. <code>config show</code> prints the desktop table, including any rebinding.</p>
+  <p><kbd>Esc</kbd> twice quits: the first press only shows <em>Press Esc again to quit</em> at the bottom left of the window, and a second press within three seconds closes it, so a stray press never loses unsaved progress. The <a href="../play.html">browser play page</a> ships a <em>different</em> default layout (<kbd>X</kbd> is Circle there, <kbd>C</kbd> / <kbd>V</kbd> carry Triangle / Square, and WASD doubles the arrows), so a key that works in the tab is not necessarily the same button in the window. <code>config show</code> prints the desktop table, including any rebinding.</p>
   <p><strong>Gamepads.</strong> The native window, the browser play page and the minigames page all read a gamepad, by position: bottom / right / left / top face buttons are Cross / Circle / Square / Triangle, bumpers L1 / R1, triggers L2 / R2, back / start Select / Start, and both the d-pad and the left stick drive the d-pad. The browser takes any controller it reports with the <code>standard</code> mapping; the native window takes any controller its platform's gamepad backend sees. Key Config (Select on the Options screen) rebinds keys only.</p>
   <h3>Camera and window toggles</h3>
   <p>Left-mouse drag orbits the camera around your character (horizontal) and tilts it (vertical), the wheel zooms, and a double-click puts the framing back to retail - all three are locked while a cutscene has the camera.</p>
@@ -87,6 +87,7 @@
       <tr><td><kbd>F3</kbd></td><td>Wide debug orbit camera instead of the field camera</td><td>off</td></tr>
     </tbody>
   </table>
+  <p>In the native window each press shows the toggle's new state at the bottom left for a moment (<em>Ground fog: off</em>); holding a key toggles once, not repeatedly. A key that only acts while you walk around (<kbd>F3</kbd>, <kbd>T</kbd>, <kbd>R</kbd>) says so when pressed on the title screen or in a menu. <kbd>F12</kbd> (or <kbd>?</kbd>) opens a panel listing every toggle key with its current state; press it again to close it.</p>
   <p><code>--retail</code> starts a session with every enhancement off and the remembered engine-only options (camera distance, movement mode, the photosensitivity guard) at their retail values, writing nothing back to the options file - the one switch for a retail-faithful run.</p>
   <p class="hint">Window toggles and pad bindings cannot collide: a window key is handled <em>before</em> the pad lookup, so one parked on a bindable key would delete that button from the keyboard. Every toggle therefore lives on an F-key or a letter outside the bindable vocabulary (the key table above plus <kbd>C</kbd>, <kbd>V</kbd>, <kbd>D</kbd>, <kbd>E</kbd>).</p>
   <details class="disclosure">
@@ -253,7 +254,7 @@
   <table>
     <thead><tr><th>Command</th><th>Shows</th></tr></thead>
     <tbody>
-      <tr><td><code>./asset-viewer prot extracted/PROT.DAT --cdname extracted/CDNAME.TXT</code></td><td>The archive browser</td></tr>
+      <tr><td><code>./asset-viewer</code></td><td>The archive browser</td></tr>
       <tr><td><code>./asset-viewer tim extracted/tim_scan/&lt;entry&gt;/&lt;tim-file&gt;</code></td><td>One texture</td></tr>
       <tr><td><code>./asset-viewer tmd extracted/tmd_scan</code></td><td>Every mesh in a directory, one at a time</td></tr>
       <tr><td><code>./asset-viewer vab extracted/PROT/&lt;entry&gt;.BIN --sample 0</code></td><td>One sample from a sound bank</td></tr>
@@ -261,6 +262,7 @@
     </tbody>
   </table>
   </div>
+  <p>Started with no view named (a double-click), <code>asset-viewer</code> opens the archive browser on the <code>extracted/PROT.DAT</code> in the current folder or beside the program; with none there it says how to make one and points at <code>legaia-studio</code>. The browser takes entry names from the <code>CDNAME.TXT</code> beside <code>PROT.DAT</code> unless <code>--cdname</code> names another.</p>
   <p>The scene name is a positional argument here, not a <code>--scene</code> flag (<code>field</code>, <code>world</code> and <code>dialog</code> all take their subject that way).</p>
   <p>In the PROT browser: <kbd>N</kbd> / <kbd>P</kbd> = next/prev entry, <kbd>PgDn</kbd> / <kbd>PgUp</kbd> = jump 10, <kbd>Esc</kbd> = quit; each entry's format is auto-detected and the first viewable sub-asset is shown. <code>tmd</code> pointed at a directory walks every mesh with the same keys. The <code>tim</code> subcommand also takes <code>extracted/PROT.DAT</code> itself with <code>--offset</code>/<code>--clut</code> for the system-UI textures that live outside any TOC entry.</p>
   <div class="see-also">

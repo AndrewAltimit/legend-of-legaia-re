@@ -18,7 +18,11 @@ impl PlayWindowApp {
     /// winit names `KeyCode` variants after the W3C `KeyboardEvent.code`
     /// values, so the variant's `Debug` name is the code the shared table is
     /// keyed by.
-    pub(super) fn option_key(&mut self, code: KeyCode, state: ElementState) -> bool {
+    ///
+    /// A held key's auto-repeat (`repeat`) is taken and ignored: only the
+    /// leading edge toggles, or holding `F9` would flicker the fog on and
+    /// off.
+    pub(super) fn option_key(&mut self, code: KeyCode, state: ElementState, repeat: bool) -> bool {
         if state != ElementState::Pressed {
             return false;
         }
@@ -37,6 +41,9 @@ impl PlayWindowApp {
             // than leave the press looking dead.
             self.show_notice(legaia_engine_session::hotkeys::refused_notice(hotkey));
             return false;
+        }
+        if repeat {
+            return true;
         }
         if hotkey == HostHotkey::EnhancedLighting {
             // A launch switch (`--dynamic-lighting` / `--no-dynamic-lighting`)

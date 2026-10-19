@@ -63,10 +63,13 @@ impl PlayWindowApp {
     /// sitting on a bound key deletes that button from the keyboard (see
     /// `keycode_to_name`).
     pub(in crate::window) fn handle_key(&mut self, code: KeyCode, state: ElementState) {
+        // Read before the latch records this press: a press of a key that
+        // is already down is the OS auto-repeat, not a new press.
+        let repeat = state == ElementState::Pressed && self.keys_down.contains(&code);
         self.latch_key_name(code, state);
         if self.debug_spawn_key(code, state)
             || self.minigame_key(code, state)
-            || self.option_key(code, state)
+            || self.option_key(code, state, repeat)
             || self.help_key(code, state)
             || self.key_name_entry(code, state)
         {
