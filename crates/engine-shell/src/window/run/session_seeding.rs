@@ -801,6 +801,40 @@ pub(super) fn arm_launch_battle(
                 session.host.world.set_active_party(slots);
             }
         }
+        // `LEGAIA_BATTLE_ARM_TICK=N`: hold the arm until world tick `N`, so
+        // the encounter opens out of a field the window has already drawn
+        // (the intro's capture is then of a frame the player saw, which a
+        // boot-time arm - capturing the very first frame - cannot show).
+        if let Some(tick) = std::env::var("LEGAIA_BATTLE_ARM_TICK")
+            .ok()
+            .and_then(|s| s.trim().parse::<u64>().ok())
+            .filter(|&t| t > 0)
+        {
+            log::info!("play-window: --battle {spec} held until tick {tick}");
+            if let Ok(mut slot) = DEFERRED_BATTLE.lock() {
+                *slot = Some((tick, spec.to_string()));
+            }
+            return;
+        }
         arm_requested_battle(session, spec);
+    }
+}
+
+/// The `--battle` arm `LEGAIA_BATTLE_ARM_TICK` is holding: `(tick, spec)`.
+static DEFERRED_BATTLE: std::sync::Mutex<Option<(u64, String)>> = std::sync::Mutex::new(None);
+
+/// Arm a held `--battle` once the world reaches its tick
+/// (`LEGAIA_BATTLE_ARM_TICK`). A no-op on every other tick and in every run
+/// that holds none.
+pub(in crate::window) fn fire_deferred_battle(session: &mut NativeSession, tick_no: u64) {
+    let due = DEFERRED_BATTLE
+        .lock()
+        .ok()
+        .and_then(|mut slot| match slot.as_ref() {
+            Some((t, _)) if tick_no >= *t => slot.take(),
+            _ => None,
+        });
+    if let Some((_, spec)) = due {
+        arm_requested_battle(session, &spec);
     }
 }

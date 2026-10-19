@@ -166,6 +166,7 @@ impl PlayWindowApp {
     /// reads this body (with the step helpers below spliced in) as the
     /// native frame path and checks each arm's skipped kernels.
     fn sim_tick(&mut self) -> bool {
+        crate::window::run::fire_deferred_battle(&mut self.session, self.tick_no);
         self.inject_scripted_tick_input();
         // Party wipe: the world raises `game_over` when a battle resolves to
         // `BattleEndCause::PartyWipe`. The probe starts the return-to-title
