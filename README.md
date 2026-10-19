@@ -4,7 +4,7 @@
 
 **Project site:** [andrewaltimit.github.io/legend-of-legaia-re](https://andrewaltimit.github.io/legend-of-legaia-re/) - play, browse and patch in the browser, nothing to install.
 
-[![The port in motion: Rim Elm, the world map, Sol Tower, a Gimard summon in battle, a shop, Noa's dance, the slot machine, the Muscle Dome and the opening movie](site/assets/hero-montage.webp)](https://andrewaltimit.github.io/legend-of-legaia-re/)
+[![The port in motion: Rim Elm at dusk, the world map, a swirl into a boss battle, the transport system in Jette's Fortress, a Gimard summon, sparring with Tetsu, Noa's dance, a scatter into battle, the Caruban fight and the Genesis Tree revival, the slot machine, fishing, Baka Fighter and the opening movie](site/assets/hero-montage.webp)](https://andrewaltimit.github.io/legend-of-legaia-re/)
 
 This repository is code and documentation only. **You bring the disc**: nothing Sony owns is committed or distributed, and everything browser-side reads your image locally in the tab - it is never uploaded. See [You bring the disc](#you-bring-the-disc).
 
