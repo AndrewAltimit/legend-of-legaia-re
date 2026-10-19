@@ -3,7 +3,7 @@
 
 use anyhow::{Context, Result, bail};
 
-use crate::battle_data_pack::{BattleDataPack, decode_record};
+use crate::battle_data_pack::{BattleDataPack, DecodedEntry, decode_record};
 
 use super::assembly::select_sections;
 use super::{SECTION_COUNT, read_u32};
@@ -23,6 +23,17 @@ pub const RUNTIME_TEXPAGE_BASE: u16 = 0x18;
 /// pages, `0x15`/`0x16`, so this is a faithful per-page remap: `+3` on the
 /// texpage index for slot 0).
 pub const AUTHORING_FIRST_TEXPAGE: u16 = 0x15;
+
+/// Word offset of the texture block (`[u0 v0 cba][u1 v1 tsb]...`) inside a
+/// primitive, indexed by the group header's `flags >> 1`: the static byte
+/// table `DAT_80078C38` `FUN_80053A28` reads (`lbu` at `0x80078C38 +
+/// (header_word >> 17)`). Rows `0x08..=0x0F` (the light-source-lit and
+/// untextured rows) put the block at word 0, the baked-colour textured rows
+/// after their colour words: one for a flat `Ft3` / `Ft4`, three / four for
+/// a gouraud `Gt3` / `Gt4`. Entries past `0x13` are the bytes of the next
+/// table, never reached by a player-file group.
+pub const RELOCATION_TEXBLOCK_WORDS: [u8; 0x14] =
+    [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 3, 4];
 
 /// Relocate an assembled battle TMD's texture addressing into party slot
 /// `slot`'s runtime VRAM band, in place. Retail runs this pass at battle
@@ -44,8 +55,9 @@ pub const AUTHORING_FIRST_TEXPAGE: u16 = 0x15;
 /// Untextured groups (`F*`/`G*`) carry no texture block and are left
 /// untouched. Returns the number of primitives rewritten.
 // PORT: FUN_80053a28 - the per-slot TSB/CBA relocation loop (walks each
-// object's primitive groups, gated on the group mode byte's TME bit;
-// CBA word & 0x803fffff | (0x1e1+slot)<<22, TSB word & 0xffe0ffff |
+// object's primitive groups, gated on the group mode byte's TME bit; the
+// block sits DAT_80078C38[flags >> 1] words into each primitive; CBA word
+// & 0x803fffff | (0x1e1+slot)<<22, TSB word & 0xffe0ffff |
 // (slot*2 + (page==0x15 ? 0x18 : 0x19))<<16).
 // REF: FUN_800513F0 - the battle scene-loader state that calls it per
 // party slot right after registering the assembled blob.
@@ -53,7 +65,10 @@ pub fn relocate_tsb_cba(tmd_bytes: &mut [u8], slot: u8) -> Result<usize> {
     let tmd = legaia_tmd::parse(tmd_bytes).context("parse assembled TMD for relocation")?;
     // Collect each textured prim's texture-block start first (immutable
     // walk), then rewrite. The block is `[u0, v0, cba, u1, v1, tsb, ...]`
-    // ending at the descriptor's vertex-index offset.
+    // at the retail table's word offset - not `vertex_offset - block_len`,
+    // which only holds for the baked-colour rows and, on a lit row
+    // (block at word 0), rewrote the TSB as a CBA and the pad as a TSB,
+    // leaving the primitive on the authoring page and CLUT row 480.
     let mut blocks: Vec<usize> = Vec::new();
     for obj in &tmd.objects {
         let groups = legaia_tmd::legaia_prims::iter_groups(
@@ -67,16 +82,12 @@ pub fn relocate_tsb_cba(tmd_bytes: &mut [u8], slot: u8) -> Result<usize> {
             if group.header.mode & 0x04 == 0 {
                 continue;
             }
-            let Some(vert_off) = legaia_tmd::legaia_prims::vertex_offset_bytes(group.header.flags)
+            let Some(&words) = RELOCATION_TEXBLOCK_WORDS.get(usize::from(group.header.flags >> 1))
             else {
                 continue;
             };
-            let block_len = 4 + group.header.n_vertices() * 2;
-            if vert_off < block_len {
-                continue;
-            }
             for prim in &group.prims {
-                blocks.push(prim.bytes_offset + vert_off - block_len);
+                blocks.push(prim.bytes_offset + usize::from(words) * 4);
             }
         }
     }
@@ -485,6 +496,10 @@ pub fn section_texture_upload(
 /// `equipped` is the char record's `+0x196..+0x19A` bytes; `party_slot`
 /// is the character's 0-based ordinal among the *present* battle party
 /// (the band selector - not the character id).
+///
+/// One departure from retail: a record whose texture pool was stripped
+/// uploads the pool it was cut from instead of nothing
+/// ([`stripped_pool_donor`]).
 pub fn character_texture_uploads(
     file: &[u8],
     pack: &BattleDataPack,
@@ -496,11 +511,92 @@ pub fn character_texture_uploads(
     for (i, rec) in records.iter().enumerate() {
         let entry = decode_record(file, pack, rec.index)
             .with_context(|| format!("decode section {i} (id {:#x})", rec.id))?;
-        if let Some(upload) = section_texture_upload(&entry.bytes, i, party_slot)
-            .with_context(|| format!("section {i} (id {:#x})", rec.id))?
+        let mut upload = section_texture_upload(&entry.bytes, i, party_slot)
+            .with_context(|| format!("section {i} (id {:#x})", rec.id))?;
+        if upload.is_none()
+            && let Some(donor) = stripped_pool_donor(file, pack, &entry)?
         {
-            out.push(upload);
+            upload = section_texture_upload(&donor.bytes, i, party_slot)
+                .with_context(|| format!("section {i} donor id {:#x}", donor.record.id))?;
         }
+        out.extend(upload);
     }
     Ok(out)
+}
+
+/// The record an unflagged section record's texture pool was cut from, when
+/// it was cut from one.
+///
+/// Noa's file carries a Force Blade (`0x25`) record that is her Short Sword
+/// (`0x24`) record up to its pool - same attach list and TMD, same pool
+/// offset at `+0x0C`, one swing-record byte apart - with the upload flag at
+/// `+0x12` cleared and the decode ending exactly at that pool offset: the
+/// pool was removed, not left dead. Retail never
+/// reaches it (the SCUS equipment table's character mask makes the Force
+/// Blade Vahn's alone); if it did, `FUN_80052FA0` would upload nothing and
+/// the blade would sample whatever its section's band rect last held - in a
+/// fresh VRAM the transparent word, so the blade draws nothing at all.
+///
+/// The port gives it the pool its TMD was authored against: a flagged record
+/// of the same section with the same pool offset, a byte-identical loader frame
+/// and TMD, and a decode that runs past that offset. `Ok(None)` for every other
+/// record - an ordinary unflagged section, whose meshes sample the rects the
+/// other blocks fill.
+pub fn stripped_pool_donor(
+    file: &[u8],
+    pack: &BattleDataPack,
+    entry: &DecodedEntry,
+) -> Result<Option<DecodedEntry>> {
+    let pool = read_u32(&entry.bytes, 0xC)? as usize;
+    if section_upload_flag(&entry.bytes) != 0 || pool == 0 || entry.bytes.len() > pool {
+        return Ok(None);
+    }
+    let Some(geometry) = section_geometry(&entry.bytes) else {
+        return Ok(None);
+    };
+    let section = section_of_record(pack, entry.record.index);
+    for rec in &pack.records {
+        if rec.index == entry.record.index || section_of_record(pack, rec.index) != section {
+            continue;
+        }
+        let Ok(cand) = decode_record(file, pack, rec.index) else {
+            continue;
+        };
+        if section_upload_flag(&cand.bytes) != 0
+            && read_u32(&cand.bytes, 0xC).ok() == Some(pool as u32)
+            && cand.bytes.len() > pool
+            && section_geometry(&cand.bytes) == Some(geometry)
+        {
+            return Ok(Some(cand));
+        }
+    }
+    Ok(None)
+}
+
+/// A decoded section's loader frame through the end of its TMD: the attach
+/// list and the whole mesh (`frame_off = u32 +0x00`, TMD at frame `+0x0C`,
+/// `data_size` words-copied span at frame `+0x08`). The swing record that
+/// follows is not compared - two records drawing one mesh may still swing
+/// differently.
+fn section_geometry(decoded: &[u8]) -> Option<&[u8]> {
+    let frame = read_u32(decoded, 0).ok()? as usize;
+    let size = read_u32(decoded, frame.checked_add(8)?).ok()? as usize;
+    decoded.get(frame..frame.checked_add(0xC)?.checked_add(size)?)
+}
+
+/// The upload flag halfword at a decoded section's `+0x12` (`0` when short).
+fn section_upload_flag(decoded: &[u8]) -> u16 {
+    decoded
+        .get(0x12..0x14)
+        .map_or(0, |b| u16::from_le_bytes([b[0], b[1]]))
+}
+
+/// The equipment section a descriptor record belongs to: the number of
+/// `id = 0` separators before it (a separator closes its own section).
+fn section_of_record(pack: &BattleDataPack, index: usize) -> usize {
+    pack.records
+        .iter()
+        .take_while(|r| r.index < index)
+        .filter(|r| r.id == 0)
+        .count()
 }

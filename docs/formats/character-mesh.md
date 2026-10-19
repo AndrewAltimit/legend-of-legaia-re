@@ -678,6 +678,17 @@ groups, gated on the group mode byte's TME (textured) bit:
 | CBA | `& 0x803FFFFF \| (0x1E1 + slot) << 22` - CLUT row `481 + slot` | column + high bit |
 | TSB | `& 0xFFE0FFFF`, texpage index = `0x18 + 2*slot` if the authoring page is `0x15`, else `0x19 + 2*slot` | ABR / depth bits |
 
+The texture block (`[u0 v0 CBA][u1 v1 TSB]...`) is found at a word offset
+read from the static byte table `DAT_80078C38`, indexed by the group header's
+`flags >> 1`: word `0` for the light-source rows (flags `0x10..=0x17`, whose
+block leads the packet, normals trailing the vertices), word `1` for a
+baked-colour flat `Ft3` / `Ft4`, words `3` / `4` for a gouraud `Gt3` / `Gt4`.
+It is not `vertex_offset - block_len`: that holds for the baked rows only, and
+on a lit row it rewrites the TSB as a CBA and the pad as a TSB, leaving the
+primitive on the authoring page and row 480 where nothing is uploaded. The
+only lit rows across the four player files are Gala's Ra-Seru Ozma `$7`
+(`0x19`): 72 primitives in its two `100+` extras.
+
 The assembled player-file meshes all author at texpages `0x15` / `0x16` =
 `(320, 256)` / `(384, 256)` and CLUT row 480, so on them the pass is a uniform
 `+3` texpage / `+0x40` CLUT-id rewrite. Port:

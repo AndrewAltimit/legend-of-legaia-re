@@ -16,6 +16,7 @@ mod equip_alone_skin_real;
 mod equip_isolate_real;
 mod equip_item_real;
 mod equip_repair_real;
+mod equip_texture_coverage_real;
 mod face_anim_real;
 mod field_char_textures_real;
 mod lzs_compress_roundtrip_real;

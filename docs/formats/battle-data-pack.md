@@ -1200,6 +1200,19 @@ precisely the pages and CLUT row the registration-time mesh relocation `FUN_8005
 ([`character-mesh.md` § Battle render](character-mesh.md#battle-render-load-time-tsbcba-relocation)).
 Unflagged sections upload nothing; their band area keeps whatever the other blocks wrote.
 
+**One unflagged record is a stripped pool, not an empty one.** Noa's Force Blade (`0x25`, section
+3) is her Short Sword (`0x24`) record up to the pool: same attach list and TMD, same pool offset at
+`+0x0C`, one swing-record byte apart, with the flag at `+0x12` cleared and the decode ending exactly
+at that pool offset. Its blade primitives sample section 3's rect and CLUT column 12, which only
+that missing pool fills, so under retail's loader the blade draws whatever the rect last held - in a
+fresh VRAM nothing at all, in the item-alone cut, the item-plus-limb cut and the assembled model
+alike. Retail never reaches the record: the [equipment table](equipment-table.md) mask makes the
+Force Blade Vahn's alone. The port uploads the Short Sword's pool for it
+(`battle_char_assembly::stripped_pool_donor`, called from `character_texture_uploads`): a flagged
+record of the same section with an identical loader frame, TMD and pool offset. It is the only such
+record in the four files (`crates/actor-formats/tests/equip_texture_coverage_real.rs`, which also
+checks that no textured primitive of any of the 132 records samples only unwritten VRAM).
+
 **Validation** (disc + save-library gated `parity/tests/battle_char_texture_live.rs`):
 decoding the player files with the live party ids (`DAT_8007BD10`) and equipped item ids (char
 record `+0x196`) and comparing every block against captured battle VRAM reproduces the bands at

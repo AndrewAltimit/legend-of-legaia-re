@@ -378,6 +378,49 @@ fn placement_rects_tile_each_band_exactly() {
     assert!(cover.iter().all(|&c| c == 1), "band tiled exactly once");
 }
 
+/// A light-source row keeps its texture block at word 0 (`DAT_80078C38`),
+/// ahead of the normal and vertex indices; the relocation must rewrite it
+/// there and leave the index words alone. The packet mirrors Gala's lit
+/// Ra-Seru extras (flags `0x11`, mode `0x24`, 20-byte prims).
+#[test]
+fn relocate_rewrites_a_lit_row_at_word_zero() {
+    let mut buf = Vec::new();
+    buf.extend_from_slice(&0x8000_0002u32.to_le_bytes());
+    buf.extend_from_slice(&0u32.to_le_bytes());
+    buf.extend_from_slice(&1u32.to_le_bytes());
+    let prim_top = OBJ_ENTRY_BYTES;
+    let prim_size = 8 + 2 * 20 + 4;
+    let vert_top = prim_top + prim_size;
+    for w in [vert_top as u32, 3, 0, 0, prim_top as u32, 1, 0] {
+        buf.extend_from_slice(&w.to_le_bytes());
+    }
+    buf.extend_from_slice(&[0x01, 0x00, 0x11, 0x00, 0x07, 0x05, 0x00, 0x24]);
+    let prim = buf.len();
+    buf.extend_from_slice(&[11, 178]);
+    buf.extend_from_slice(&0x780Cu16.to_le_bytes()); // row 480, col 12
+    buf.extend_from_slice(&[5, 175]);
+    buf.extend_from_slice(&0x0036u16.to_le_bytes()); // page 0x16, abr 1
+    buf.extend_from_slice(&[17, 171, 0, 0]); // u2 v2 + pad
+    buf.extend_from_slice(&0u16.to_le_bytes()); // normal index
+    for idx in [0u16, 8, 16] {
+        buf.extend_from_slice(&idx.to_le_bytes());
+    }
+    buf.resize(buf.len() + 20, 0); // footer slot
+    buf.extend_from_slice(&0u32.to_le_bytes());
+    buf.resize(buf.len() + 3 * 8, 0);
+    let tail: Vec<u8> = buf[prim + 10..prim + 20].to_vec();
+    assert_eq!(relocate_tsb_cba(&mut buf, 2).expect("relocate"), 1);
+    let cba = u16::from_le_bytes([buf[prim + 2], buf[prim + 3]]);
+    let tsb = u16::from_le_bytes([buf[prim + 6], buf[prim + 7]]);
+    assert_eq!(cba, (483 << 6) | 12, "CLUT row 483, column kept");
+    assert_eq!(tsb, 0x0020 | 0x1D, "slot 2's second page, ABR kept");
+    assert_eq!(
+        &buf[prim + 10..prim + 20],
+        &tail[..],
+        "index words untouched"
+    );
+}
+
 #[test]
 fn relocate_leaves_untextured_groups_alone() {
     let (mut buf, _, f3_payload) = synthetic_tmd();
