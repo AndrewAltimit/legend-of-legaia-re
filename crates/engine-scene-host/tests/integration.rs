@@ -94,6 +94,9 @@ mod move_ctrl52_census_disc;
 mod move_ext_strip_census_disc;
 mod move_op03_census_disc;
 mod muscle_contest_real;
+// --- lane D2 ---
+mod muscle_dome_choreo_real;
+// --- end lane D2 ---
 mod muscle_dome_lead_max_hp_disc;
 mod muscle_dome_minigame_real;
 mod muscle_dome_scene_real;

@@ -491,7 +491,7 @@ Not established: whether the live `koin1` scene geometry also present in those f
 
 ### Drawing the arena in the port
 
-- **One surface for every host.** `engine-minigame-scenes::muscle_dome_scene::MuscleDomeSurface` seats the ladder's current rung, loads the bodies and the merged VRAM once per seated pair, replays a resolved turn's plays as swings (the defender flinching on a connecting one), holds the loser's knockdown when the leg settles, and hands hosts one view-projection (`DomeCamera::vp_raw`). The native window, the browser play page and the minigames page (`muscle_surface_*`) all draw it. The choreography clock is the port's, not a retail track.
+- **One surface for every host.** `engine-minigame-scenes::muscle_dome_scene::MuscleDomeSurface` seats the ladder's current rung, loads the bodies and the merged VRAM once per seated pair, poses both bodies off the session's play-out choreography ([below](#the-play-out-is-the-battles)), and hands hosts one view-projection (`DomeCamera::vp_raw`). The native window, the browser play page and the minigames page (`muscle_surface_*`) all draw it.
 - **Minigames page panel.** The ring + ground grid come through `legaia_web_viewer` (`muscle_arena_*` / `muscle_vram`), the lamp glows through the renderer's two-pass PSX blend (`site/js/minigame-muscle.js`, `semiTwoPass`), and the object-1 decal is omitted (`muscle_arena_hybrid` filters it).
 - **Browser play page.** It draws the surface through the WebGL renderer's single-mesh path (`TmdRenderer.render`) on the program the field pass just used, so every scene-pass uniform that path does not own (NCLIP rejection word, prologue grade, palette collapse, depth cue) is staged to its identity there - uniforms persist on a shared program.
 - **Packet colour.** Shell, fighter and monster upload their prims' baked packet colour on `a_flat_rgba`, because the page shades the retail way (`texel * colour / 128`, no light source). The dome's packet colours run well under the neutral `0x80` (much of the shell near `0x60`); a missing colour stream reads as over-lit, not unlit. `legaia_web_viewer::packet_color` splits textured (modulation off the mesh) from untextured (fill off the shading).
@@ -1028,7 +1028,8 @@ The port models the same two layers and shares every rule between the native `pl
 | Leg session | `engine-menus::muscle_dome_session` (`session.rs`) | `MuscleDomeSession`: deal, budget-gated commit, queue, tokenizer, cast, KO-only ending |
 | Command flow | `engine-menus::muscle_dome_session` (`menu.rs`, `ring.rs`, `loadout.rs`) | `DomeMenu`, `DomeRing`, `ChipMark`, `DomeMagic`, `art_catalog_for`; world loadout via `engine-core::world_views::muscle_dome::magic_loadout_for` |
 | World | `engine-core` (`world/frame_tick/minigame_sessions/muscle_dome.rs`, `scene/host/minigame_warp.rs`) | `SceneMode::MuscleDome`, `World::enter_muscle_dome` / `tick_muscle_dome` / `leave_muscle_dome` / `report_muscle_leg` / `settle_muscle_contest` |
-| 3D surface | `engine-minigame-scenes::muscle_dome_scene` | `MuscleDomeSurface`, `arena_ring`, `DomeCamera`, `turn_timeline` |
+| Play-out | `engine-menus::muscle_dome_session::choreo` | `DomeChoreo`, `ChoreoBody`: clips at the battle rate, range-law approach, root motion, reaction pick |
+| 3D surface | `engine-minigame-scenes::muscle_dome_scene` | `MuscleDomeSurface`, `arena_ring`, `DomeCamera` |
 | Minigames page | `web-viewer::minigames_muscle` | `muscle_*` wasm bindings; `site/js/minigame-muscle.js` |
 
 **Entry.** Both play hosts enter through the mode-24 door warp (the `koin1` arena door, or the native window's `M` key, which requests the same warp). The warp opens the contest off the party's unlock flags (`DomeContest::from_overlay`), resolves `(course, round)` through `parse_course_ladder` to a monster id, reads that monster's PROT 867 record for the stat block, and installs the lead's art catalog, magic loadout and the battle-theme swap. The minigames page fills a foe picker from the ladder (`muscle_course_ladder_json`, `muscle_start_vs`) or runs a contest (`muscle_contest_*`). Stand-in fighter / opponent constants survive only as the fallback for a disc whose ladder or archive does not decode.
@@ -1057,7 +1058,21 @@ The port models the same two layers and shares every rule between the native `pl
 
 `DomeCamera::vp_raw` projects the script's pose through `battle_vp`; all three hosts upload that one matrix. The minigames page names its selection screen with `MuscleDomeSurface::set_select_framing` and times its hit numerals off `muscle_surface_beat_json`. The case-6 depth is `FUN_801F0348` over the seated monster's size class, the close-up height the character's `0x801F4D2C` row.
 
-**Playback.** The port resolves a turn in one tick, so the action band has a stand-in: after `Resolve` the leg holds at `TurnOver` for the surface's replay (`muscle_dome_scene::turn_playback_ticks`, one play every `PLAY_CADENCE_TICKS`; `World::muscle_playback_frames`). One schedule, `turn_timeline`, feeds the surface, the hold and the tally: the leg's first acting play walks its attacker in on its walk clip (tag `1`), each play swings, and each attacker's string closes on the done band's `0x3C`-frame tail; the knockdown lands on the play that ends the leg.
+<a id="the-play-out-is-the-battles"></a>
+
+**Playback.** The port resolves a turn's damage in one tick, then acts the turn out on the battle's own kernels (`muscle_dome_session::choreo::DomeChoreo`, owned by the session and stepped once a tick by whichever host owns it: `World::tick_muscle_dome`, or the minigames page's frame). The leg holds at `TurnOver` until the play-out ends (`World::muscle_playback_running`).
+
+| Piece | Retail | Port |
+|---|---|---|
+| Clip rate | `FUN_80047430` advances the 12.4 cursor `dt * actor[+0x21D] * entry[+0x78] >> 1` a frame: `rate / 4` keyframes a vsync at the normal `+0x21D = 8` | `MonsterAnimPlayer::tick_rated` at the normal rate, as `World::tick_battle_animations` |
+| Approach | state `0x14` stages the walk (party slot `1`; a monster's first tag-`0x20` entry, else tag `1`) and `0x19` polls `FUN_8004E2F0` until it reads `0`; the clip's root speed moves the body | the walk's `+0x0C` speed (fallback `20` at scale `8`) along the facing until `motion::range_metric` reads `0` over the attacker's live pair and the target's body pair |
+| Swing travel | positive `+0x0C` speed only while out of range; the `+0x0E` end step at the natural end | the same two terms |
+| Hit | the hit event fires on the swing entry's `+0x10` event-frame list ([`monster-animation.md`](../formats/monster-animation.md#event-frame-list-entry-0x100x13); that it is the contact frame is Inferred) | the defender reacts on the first event frame (the clip's midpoint if it lists none) |
+| Reaction | `FUN_801EC3E4`: `+0x1EF` / `+0x1F0` by `(byte - 0x0C) % 10 < 5`; `+0x1F1` on the killing hit, or on a string's closing hit when the survivor carries a get-up and the string totals more than a quarter of its maximum or leaves it under a quarter; get-up `+0x1F2` after | the same pick; a negative `+0x0C` reaction slides the defender back |
+| Done band | `0x50` seeds `ctx[+0x6D8] = 0x3C`, `0x51` counts it down | `DONE_TAIL_TICKS = 0x3C` after each attacker's string |
+| Walk home | none | none: the next string starts where the last left the pair |
+
+The reaction map is the installers': the party's fixed slots `[2, 3, 4, 5]` (`FUN_80053CB8`), a monster's last-match scan of tags `2..=5` with the knockdown falling back to the first flinch (`FUN_80054CB0`). Both play hosts install the bodies on the arena-door path (`SceneHost::dome_choreo_bodies`), the minigames page when it starts a leg. A session with no bodies installed acts the turn out on a fixed clip-less schedule (`choreo::turn_timeline`: a 48-tick approach on the leg's first turn, 34 ticks a swing, the `0x3C` tail) with nothing moving. Pinned by `crates/engine-menus/src/muscle_dome_session/choreo.rs` (unit) and `engine-scene-host/tests/muscle_dome_choreo_real.rs` (every ladder rung closes to the range law and lands its hit).
 
 The HUD kernels read the hold as an action frame (`battle_hud::battle_hud_phase`): the acting side's plaque holds the top-left seat and the running tally of the side acting (`World::muscle_playback_tally`) rides the status caption as text - the dome VRAM carries no `(448, 0)` page for the `etim` TOTAL cells.
 
@@ -1068,7 +1083,7 @@ The HUD kernels read the hold as an action frame (`battle_hud::battle_hud_phase`
 - The ring's **Item** arm always refuses (the session carries no bag). **Spirit** commits an empty string.
 - The **Ra-Seru list** is a row of the status caption (`engine-minigame-scenes::minigame_status::muscle_status_rows`), shown outside the game picture - the native title bar, the play page's strip under the canvas; its window's pieces are not pinned.
 - **Run** ends the leg on the press; the escape roll is not modelled.
-- The approach length and per-swing cadence are the port's clock, not retail's root-motion arithmetic.
+- The opponent's swings cycle the picker's strike candidates (entries tagged `0x0C..=0x1F` with a `+0x74` AGL cost other than `0xFF`, the set `FUN_801E9FD4`'s physical branch budgets) over its committed directions; retail draws them through the AGL budget (`enemy_action_budget`) and the per-monster AI.
 
 **Tests.** `engine-scene-host/tests/muscle_dome_minigame_real.rs` (real deck + real swing costs drive a leg to a decision), `dome_leg_ends_on_ko_real.rs` (the arena's sole game-mode write is `BattleInit`; the formation cell's only writer is the arena; the ladder tops out below the timed fight's id), `muscle_contest_real.rs` / `muscle_contest_world.rs`, `muscle_hub_tally_cues_disc.rs`, `muscle_dome_lead_max_hp_disc.rs`, and `web-viewer/tests/dome_ladder_and_hub_real.rs` (29 real monster records, round counts agree with the score table, every hub draw row's cited call site still holds a `jal` to its emitter).
 

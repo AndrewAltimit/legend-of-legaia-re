@@ -160,6 +160,19 @@ impl LegaiaMinigames {
             hp,
             seed,
         ));
+        // The bodies the play-out moves, as the play hosts' arena door
+        // installs them (`SceneHost::dome_choreo_bodies`).
+        let bodies = self.muscle_player_file(char_slot as u32).and_then(|raw| {
+            let archive = entry_bytes(&self.prot, &self.entries, 867)?;
+            use legaia_engine_menus::muscle_dome_session::choreo::ChoreoBody;
+            Some([
+                ChoreoBody::fighter(raw, char_slot as u32)?,
+                ChoreoBody::monster(archive, monster_id)?,
+            ])
+        });
+        if let Some(bodies) = bodies {
+            session.install_choreo(bodies);
+        }
         self.muscle = Some(MuscleContest {
             session,
             fighters: [player, opponent],

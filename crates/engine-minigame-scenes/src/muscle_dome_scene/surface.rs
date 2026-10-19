@@ -3,8 +3,9 @@
 use super::*;
 use legaia_engine_battle_vm::battle_cam_script as cam;
 use legaia_engine_camera::projection;
+use legaia_engine_menus::muscle_dome_session::choreo::{Beat, BeatKind};
 use legaia_engine_menus::muscle_dome_session::{MuscleDomeSession, MusclePhase};
-use legaia_engine_minigames::muscle_dome::{DomeContest, DomePlay};
+use legaia_engine_minigames::muscle_dome::DomeContest;
 use std::sync::Arc;
 
 /// The dome's camera: one pose of the battle camera script, projected the
@@ -67,13 +68,10 @@ pub struct MuscleDomeSurface {
     scene: Option<MuscleDomeScene>,
     generation: u32,
     tick: u32,
-    act: [Option<Act>; 2],
-    /// The resolved turn playing out, if any.
-    playback: Option<Playback>,
-    /// Each body's floor position `(x, z)`, raw battle units.
-    pos: [[f32; 2]; 2],
-    /// The session turn last seen, so a fresh leg re-seats the pair.
+    /// The session turn last seen, so a fresh leg re-creates the camera.
     last_turn: Option<u32>,
+    /// The beat the last frame filmed, for [`Self::playback_beat`].
+    beat: Option<(Beat, u32)>,
     /// The battle camera script's state for this leg.
     camera: Option<cam::BattleCamera>,
     /// The Battle Camera option word `0x800846C0`
@@ -98,26 +96,6 @@ pub enum SelectFraming {
     /// The `Auto | Command` prompt and its cursor: case 1, turned toward
     /// the opponent.
     Target,
-}
-
-/// A resolved turn being played out on the surface.
-#[derive(Debug, Clone)]
-struct Playback {
-    start: u32,
-    plays: Vec<DomePlay>,
-    closes_in: bool,
-    /// The approach's start and stop points, fixed on its first tick.
-    walk: Option<([f32; 2], [f32; 2])>,
-}
-
-impl Playback {
-    fn elapsed(&self, tick: u32) -> u32 {
-        tick.wrapping_sub(self.start)
-    }
-
-    fn beat(&self, tick: u32) -> Option<Beat> {
-        beat_at(&self.plays, self.closes_in, self.elapsed(tick))
-    }
 }
 
 impl MuscleDomeSurface {
@@ -213,17 +191,13 @@ impl MuscleDomeSurface {
         }
         let assets = self.assets.clone()?;
         if self.last_turn.is_some_and(|t| session.turn() < t) {
-            // A new leg against the same opponent: back to the seats.
+            // A new leg against the same opponent: a fresh camera.
             self.reseat();
         }
-        // A turn resolved since the last frame: its plays act out. Keyed on
-        // the turn counter rather than on a `Resolve` frame, because a host
-        // that resolves inside one call (the minigames page) never shows the
-        // surface one.
-        let resolved = self.last_turn.is_some_and(|t| session.turn() > t);
         self.last_turn = Some(session.turn());
-        self.step(session, &assets, resolved);
-        self.pose(&assets);
+        self.tick = self.tick.wrapping_add(1);
+        self.beat = session.choreo().beat();
+        self.pose(session, &assets);
         self.drive_camera(session, &assets);
         self.scene.as_ref()
     }
@@ -236,13 +210,11 @@ impl MuscleDomeSurface {
         self.select_framing = framing;
     }
 
-    /// The playback beat on screen now, and the ticks into it - the schedule
-    /// a host that times its own play-out readouts follows
-    /// ([`turn_timeline`]).
+    /// The play-out beat the last frame filmed, and the ticks into it - the
+    /// schedule a host that times its own play-out readouts follows
+    /// (`muscle_dome_session::choreo`).
     pub fn playback_beat(&self) -> Option<(Beat, u32)> {
-        let pb = self.playback.as_ref()?;
-        let beat = pb.beat(self.tick)?;
-        Some((beat, pb.elapsed(self.tick) - beat.start))
+        self.beat
     }
 
     /// The Battle Camera option the framings run under (`0x800846C0`:
@@ -252,12 +224,9 @@ impl MuscleDomeSurface {
         self.camera_option = option;
     }
 
-    /// Back to leg open: both bodies on their seats, idling, the camera
-    /// re-created on its next drive.
+    /// Back to leg open: the camera re-created on its next drive.
     fn reseat(&mut self) {
-        self.act = [None; 2];
-        self.playback = None;
-        self.pos = [seat_xz(0), seat_xz(1)];
+        self.beat = None;
         self.camera = None;
     }
 
@@ -269,83 +238,14 @@ impl MuscleDomeSurface {
         self.last_turn = None;
     }
 
-    /// The choreography: a resolved turn (the session leaving `Resolve`)
-    /// starts its [`turn_timeline`]; each tick plays the beat it is on - the
-    /// closing walk, a swing with the defender's flinch (its knockdown on
-    /// the play that ends the leg), the done tail.
-    fn step(&mut self, session: &MuscleDomeSession, assets: &MuscleDomeAssets, resolved: bool) {
-        self.tick = self.tick.wrapping_add(1);
-        let tick = self.tick;
-        if resolved {
-            self.playback = Some(Playback {
-                start: tick,
-                plays: session.last_turn_plays().to_vec(),
-                closes_in: session.last_turn_closes_in(),
-                walk: None,
-            });
-        }
-        let Some(pb) = self.playback.as_mut() else {
-            return;
-        };
-        let Some(beat) = pb.beat(tick) else {
-            self.playback = None;
-            return;
-        };
-        let at = pb.elapsed(tick) - beat.start;
-        let a = beat.attacker;
-        let d = a ^ 1;
-        match beat.kind {
-            BeatKind::Approach => {
-                let pos = self.pos;
-                let (from, to) = *pb.walk.get_or_insert_with(|| {
-                    let from = pos[a];
-                    let (dx, dz) = (pos[d][0] - from[0], pos[d][1] - from[1]);
-                    let len = (dx * dx + dz * dz).sqrt().max(1e-3);
-                    let stop = (len - assets.reach()).max(0.0) / len;
-                    (from, [from[0] + dx * stop, from[1] + dz * stop])
-                });
-                let t = (at + 1) as f32 / beat.len.max(1) as f32;
-                self.pos[a] = [
-                    from[0] + (to[0] - from[0]) * t,
-                    from[1] + (to[1] - from[1]) * t,
-                ];
-                if at == 0 {
-                    self.act[a] = Some(Act {
-                        kind: ClipKind::Walk,
-                        start: tick,
-                        looped: true,
-                        hold: false,
-                    });
-                }
-                if at + 1 == beat.len {
-                    self.act[a] = Some(Act::idle(tick));
-                }
-            }
-            BeatKind::Swing => {
-                let play = pb.plays[beat.play];
-                if at == 0 {
-                    self.act[a] = Some(Act {
-                        kind: ClipKind::Swing(play.cmd),
-                        start: tick,
-                        looped: false,
-                        hold: false,
-                    });
-                }
-                if at == FLINCH_DELAY_TICKS && play.damage > 0 {
-                    let down = play.hp_after.get(d).is_some_and(|&hp| hp <= 0);
-                    self.act[d] = Some(Act {
-                        kind: if down { ClipKind::Ko } else { ClipKind::Hit },
-                        start: tick,
-                        looped: false,
-                        hold: down,
-                    });
-                }
-            }
-            BeatKind::Done => {}
-        }
+    /// Body `i`'s floor position and heading: the session's choreography,
+    /// or the seat.
+    fn place(session: &MuscleDomeSession, i: usize) -> ([f32; 2], u16) {
+        let c = session.choreo();
+        (c.position(i), c.facing(i))
     }
 
-    fn pose(&mut self, assets: &MuscleDomeAssets) {
+    fn pose(&mut self, session: &MuscleDomeSession, assets: &MuscleDomeAssets) {
         let scene = self.scene.get_or_insert_with(|| {
             let mut m = empty_mesh();
             let mut flat = Vec::new();
@@ -379,43 +279,58 @@ impl MuscleDomeSurface {
                 bases,
             }
         });
-        for (i, (body, facing)) in assets.bodies.iter().zip(FACINGS).enumerate() {
-            let mut act = self.act[i].unwrap_or(Act::idle(self.tick));
-            let elapsed = self.tick.wrapping_sub(act.start);
-            let mut clip = clip_for(&body.clips, act.kind);
-            let mut frame = (elapsed * clip.rate / 16) as usize;
-            if act.looped {
-                frame %= clip.frame_count().max(1);
-            } else if frame >= clip.frame_count() {
-                if act.hold {
-                    frame = clip.frame_count().saturating_sub(1);
-                } else {
-                    act = Act::idle(self.tick);
-                    clip = &body.clips.idle;
-                    frame = 0;
-                }
-            }
-            self.act[i] = Some(act);
+        let choreo = session.choreo();
+        for (i, body) in assets.bodies.iter().enumerate() {
+            let (pos, facing) = Self::place(session, i);
+            let yaw = f32::from(facing) / 4096.0 * std::f32::consts::TAU;
+            let place = [pos[0], yaw, pos[1]];
             let base = scene.bases[i];
             let n = body.mesh.positions.len();
-            let yaw = facing as f32 / 4096.0 * std::f32::consts::TAU;
-            pose_into(
-                &mut scene.positions[base..base + n],
-                &body.mesh.positions,
-                &body.oids,
-                clip,
-                frame,
-                [self.pos[i][0], yaw, self.pos[i][1]],
-            );
+            let out = &mut scene.positions[base..base + n];
+            match choreo.pose(i) {
+                // The battle anim player's decoded pose.
+                Some(parts) => {
+                    let keys: Vec<[i32; 6]> = parts
+                        .iter()
+                        .map(|(t, r)| {
+                            [
+                                i32::from(t[0]),
+                                i32::from(t[1]),
+                                i32::from(t[2]),
+                                i32::from(r[0]),
+                                i32::from(r[1]),
+                                i32::from(r[2]),
+                            ]
+                        })
+                        .collect();
+                    pose_into(out, &body.mesh.positions, &body.oids, &keys, place);
+                }
+                // No choreography installed: the idle loop at the seat.
+                None => {
+                    let f = body.idle.frame_at(self.tick);
+                    pose_into(
+                        out,
+                        &body.mesh.positions,
+                        &body.oids,
+                        &body.idle.frames[f],
+                        place,
+                    );
+                }
+            }
         }
     }
 
     /// One battle-camera actor record for body `i`.
-    fn cam_actor(&self, i: usize, assets: &MuscleDomeAssets) -> cam::BattleCamActor {
+    fn cam_actor(
+        session: &MuscleDomeSession,
+        i: usize,
+        assets: &MuscleDomeAssets,
+    ) -> cam::BattleCamActor {
         let char_id = assets.key.1 as u8 + 1;
+        let (pos, facing) = Self::place(session, i);
         cam::BattleCamActor {
-            facing: FACINGS[i],
-            world: [self.pos[i][0], 0.0, self.pos[i][1]],
+            facing: i32::from(facing),
+            world: [pos[0], 0.0, pos[1]],
             height: (i == 0)
                 .then(|| {
                     assets
@@ -434,10 +349,10 @@ impl MuscleDomeSurface {
     fn drive_camera(&mut self, session: &MuscleDomeSession, assets: &MuscleDomeAssets) {
         use legaia_engine_menus::battle_input::CommandPhase;
         use legaia_engine_menus::muscle_dome_session::DomeMenu;
-        let beat = self.playback.as_ref().and_then(|p| p.beat(self.tick));
+        let beat = self.beat.map(|(b, _)| b);
         let acting = beat.map_or(0, |b| b.attacker);
         let target = acting ^ 1;
-        let monster_pos = self.pos[1];
+        let monster_pos = Self::place(session, 1).0;
         // (phase, the action-SM state its arm sits in, the cursor)
         let (phase, action_state, cursor) = match (beat, session.phase()) {
             (Some(b), _) => match b.kind {
@@ -512,13 +427,14 @@ impl MuscleDomeSurface {
             |_| assets.size_class,
         );
         let mut formation = None;
-        for p in &self.pos {
+        for i in 0..2 {
+            let p = Self::place(session, i).0;
             cam::FormationBox::extend(&mut formation, p[0], p[1]);
         }
-        let t = self.cam_actor(target, assets);
+        let t = Self::cam_actor(session, target, assets);
         let inputs = cam::BattleCamInputs {
             phase,
-            acting: Some(self.cam_actor(acting, assets)),
+            acting: Some(Self::cam_actor(session, acting, assets)),
             target: Some(cam::PostActionTarget {
                 world: t.world,
                 display_y: 0.0,

@@ -93,6 +93,7 @@
 #[cfg(test)]
 use legaia_game_tables::move_power;
 
+pub mod choreo;
 mod loadout;
 mod menu;
 mod ring;
