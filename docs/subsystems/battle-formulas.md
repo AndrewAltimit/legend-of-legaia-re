@@ -391,7 +391,8 @@ clip the actor is playing.
 ```text
 // FUN_80047430, every actor every frame, 0x80047E1C..0x80047E54
 frame = cursor >> 4                               // node+0x68 is a 12.4 clip cursor
-idx   = FUN_80050E00(record + 0x10)               // 0 unless +0x11..+0x13 are ALL non-zero
+idx   = FUN_80050E00(record + 0x10)               // 0 unless +0x11..+0x13 are ALL non-zero;
+                                                  // then (record + 0x13) & 0xFF, a load-address byte
 actor[+0x1F7] = (frame < record[0x10 + idx]) ? 1 : 0
 
 // FUN_801EC3E4

@@ -139,13 +139,29 @@ pub fn hit_event_admits(
     })
 }
 
+/// The beat a **four-slot** event list resolves to in the port:
+/// [`FOUR_SLOT_GATE_FRAME`] = `0`.
+///
+/// With `+0x11..+0x13` all non-zero, `FUN_80050E00` falls out of its loop
+/// with `v0 = a0 + 3` (the `addu v0,v1,a0` in the `bne` delay slot at
+/// `0x80050E20`), so the tick indexes the list with the low byte of
+/// `entry + 0x13` and reads `entry[0x10 + idx]`. Every action entry sits on a
+/// word boundary of a word-aligned block, so `idx` is one of the 64 values
+/// `0x13 + 4k` and the read lands on the high byte of a head word or, past
+/// `0x7C`, inside the animation stream. Which one is set by where the battle
+/// heap put the monster block, which no disc byte fixes. The two fights
+/// measured from save states both read `0`: Lu Delilas's entry `0x0C` at
+/// `0x800B5D2C` (idx `0x3F`, `entry[0x4F]`) and the Terra fight's tag-`0x11`
+/// entry at `0x800B7740` (idx `0x53`, `entry[0x63]`). The port takes that
+/// measured `0` for both consumers: the juggle window is down and the
+/// event-path commit is due two frames in.
+pub const FOUR_SLOT_GATE_FRAME: u8 = 0;
+
 /// The beat the tick's two `FUN_80050E00` consumers resolve from an entry's
 /// event list: `entry[0x10]` whenever any of `+0x11..+0x13` is zero, and
-/// `None` for the four-slot list, where retail's return register carries a
-/// load-address-dependent pointer byte instead (see
-/// `docs/formats/monster-animation.md` § Event-frame list). Only
-/// attack-band entries carry a four-slot list; for those the port treats
-/// the gate as unresolvable and leaves the clip to its natural end.
+/// [`FOUR_SLOT_GATE_FRAME`] for the four-slot list, whose retail index is a
+/// load-address byte (see `docs/formats/monster-animation.md` § Event-frame
+/// list). Only attack-band entries carry a four-slot list.
 ///
 /// PORT: FUN_80050E00 (as consumed by `FUN_80047430` at `0x8004791C` /
 /// `0x80047E30`)
@@ -153,7 +169,7 @@ pub fn event_commit_gate_frame(event_frames: &[u8; 4]) -> Option<u8> {
     if event_frames[1..].contains(&0) {
         Some(event_frames[0])
     } else {
-        None
+        Some(FOUR_SLOT_GATE_FRAME)
     }
 }
 
@@ -350,12 +366,17 @@ mod tests {
         assert_eq!(event_commit_gate_frame(&[6, 0, 0, 0]), Some(6));
         assert_eq!(event_commit_gate_frame(&[4, 9, 0, 0]), Some(4));
         assert_eq!(event_commit_gate_frame(&[0, 0, 0, 0]), Some(0));
-        assert_eq!(event_commit_gate_frame(&[4, 9, 14, 20]), None);
+        // Four slots: the measured load-address read, `0`.
+        assert_eq!(event_commit_gate_frame(&[4, 9, 14, 20]), Some(0));
         // The cut waits two frames past the gate, and a set lock blocks it.
         assert!(!event_commit_due(&[6, 0, 0, 0], 0, 8));
         assert!(event_commit_due(&[6, 0, 0, 0], 0, 9));
         assert!(!event_commit_due(&[6, 0, 0, 0], 1, 30));
-        assert!(!event_commit_due(&[4, 9, 14, 20], 0, 30));
+        // ... so a four-slot clip with a byte staged behind it is cut two
+        // frames in, as the measured fights' `entry[0x10 + idx] = 0` does.
+        assert!(!event_commit_due(&[4, 9, 14, 20], 0, 2));
+        assert!(event_commit_due(&[4, 9, 14, 20], 0, 3));
+        assert!(!event_commit_due(&[4, 9, 14, 20], 1, 30));
     }
 
     #[test]
