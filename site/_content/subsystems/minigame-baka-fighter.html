@@ -125,6 +125,17 @@ critical pending on the winner:  dmg = power &lt;&lt; 7</code></pre>
   </ul>
 </section>
 
+<section class="doc-section" id="duel-hud">
+  <h2>The duel HUD</h2>
+  <p>One renderer draws it every frame of the duel: the two VITAL bars in their three-cell frames, the round-win pips, the attack-icon columns, the "HIT!" counters, and the top strip with the STAGE number and the blinking PRESS SELECT TO MENU prompt. Its own pieces sort one layer under the round banners, so a ROUND or FIGHT! card always draws over it.</p>
+  <ul>
+    <li><strong>The bars are textured.</strong> Each samples a tiny grey patch of a system texture page, so its red comes out a shade darker than its vertex colour: 160 for a vertex red of 188, as a retail capture measures.</li>
+    <li><strong>The counters are crossed.</strong> Each side shows the other fighter's hits-taken count, which is the streak that side is landing.</li>
+    <li><strong>The lit icon flashes.</strong> The row of the attack a fighter just chose brightens, dims for three frames, then brightens again, off a timer the combat tick runs from the commit.</li>
+  </ul>
+  <p>Both play hosts draw this layer through one shared builder, whether the duel opened from a Sol Tower cabinet seat or from the launcher. Before that builder existed, a seated duel showed a lone round digit: the HUD model was ported and built every frame, but neither host drew it.</p>
+</section>
+
 <section class="doc-section" id="shared">
   <h2>Shared with the Muscle Dome</h2>
   <p>The 24-instruction tally drain scaler here and the one in the <a href="minigame-muscle-dome.html">Muscle Dome</a> hub are the same routine linked into two overlays; only the pair of instructions that loads its bypass flag differs.</p>

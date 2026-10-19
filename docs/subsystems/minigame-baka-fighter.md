@@ -715,17 +715,18 @@ Parser `legaia_minigame_formats::baka_opponents::parse_baka_hud`. Ports in `engi
 
 ### Duel HUD (`FUN_801D2AFC`)
 
-Drawn per frame on the retail 320x240 frame, from the per-fighter block `&DAT_801DBFBC[slot * 0xA8]` (HP at `+0x08`, combo at `+0x8C`):
+Drawn per frame on the retail 320x240 frame, from the per-fighter block `&DAT_801DBFBC[slot * 0xA8]`. The renderer builds its own packets and links them at `*(0x1F8003F4) + 0x14` (bucket 5); its four widget calls go through the emitter's bucket 3, so the round chrome draws over the whole HUD. In link order:
 
-- **VITAL fill bars** - raw `POLY_GT4`s, y `0x26..0x2B`, one pixel per 32 HP. The player's is right-anchored at x `0x89` and fills leftward; the opponent's is left-anchored at `0xB8` and fills rightward. The gouraud runs `(0xBC, hp >> 5, 0)` at the far end to `(0xBC, 0, 0)` at the anchor - the bar reddens toward the anchor and dims as HP drops.
-- **Bar frames** - 3 `POLY_FT4` cells per side (texpage 5 = `(320, 0)`, CLUT `0x7D80`, colour `0x808080`), laid left to right from x `0x1C` / `0xB0`, y `0x20..0x30`. The cells come from a 16-byte-stride table at `0x801DBC34` (`+0` screen width, `+8..+0xF` the four corner UVs), initialised data that only the HUD renderer reads. It holds an 8-wide cap, a 100-wide body stretched from 8 texels, and an 8-wide cap: a 116-pixel frame round the 100-pixel bar. Both land in one OT bucket with the frames linked after the bars, so the bars draw over them. Parser `legaia_minigame_formats::baka_opponents::parse_baka_bar_frame`, layout `baka_cabinet::vital_frame_cells`.
+- **VITAL fill bars** - one `POLY_GT4` per side, y `0x26..0x2B`, one pixel per 32 HP (block `+0x08`). The player's is right-anchored at x `0x89` and fills leftward; the opponent's is left-anchored at `0xB8` and fills rightward. The gouraud runs `(0xBC, hp >> 5, 0)` at the far end to `(0xBC, 0, 0)` at the anchor. The packet is textured: it samples the resident system patch at texpage `0x1F`, `uv (0, 0xF0)..(2, 0xF2)`, CLUT `0x7F84` (BGR555 grey `14`, the patch the effect ribbon and the save screen's progress fill also sample), so the drawn red is `(14 * 0xBC) >> 7` = `160`, the value a retail duel capture measures.
+- **Bar frames** - 3 `POLY_FT4` cells per side (texpage 5 = `(320, 0)`, CLUT `0x7D80`, colour `0x808080`), laid left to right from x `0x1C` / `0xB0`, y `0x20..0x30`. The cells come from a 16-byte-stride table at `0x801DBC34` (`+0` screen width, `+8..+0xF` the four corner UVs), initialised data that only the HUD renderer reads. It holds an 8-wide cap, a 100-wide body stretched from 8 texels, and an 8-wide cap: a 116-pixel frame round the 100-pixel bar. The frames are linked after the bars into the same bucket, so the bars draw over them. Parser `legaia_minigame_formats::baka_opponents::parse_baka_bar_frame`, layout `baka_cabinet::vital_frame_cells`.
 - **No "VITAL" label.** The duel HUD draws only widgets `0x12` and `0x14` plus digits. Widget `0x18` (the 32x8 VITAL cell) is drawn elsewhere, at `(0x5B, 0x60)` (`0x801D2450`, inside the tally `FUN_801D239C`).
-- **Round-win pips** - 16x16 cells at `u = 0x30` (filled) / `0x40` (empty), `v = 0` on the `(320, 0)` page; player at `x = 0x70 + i*16`, opponent at `0xC0 - i*16`, y `0x30`; `DAT_801DBED0` pips per side.
-- **Combo counters** - digit cells `(digit*16, 0x20)` and the "HIT!" label cell `(0, 0x10)` (32x16), y `0x40`, descending from x `0x30` / `0x100`, flashing as the count grows. The sides are **crossed**: the `(uVar8 & 1)` fold draws the *opponent's* hits-taken counter on the player's side (your streak) and vice versa.
-- **Attack-icon columns** - the three 16x16 cells `(i*16, 0x30)` at x `0x20` / `0x110`, y `0x60 + i*16`; the row matching the fighter's current action index (record `+0x24`) brightens with the combo count.
-- **Top strip** - the "STAGE" label (widget `0x12`) at `(0x30, 0x1E)` with the stage number through the 8 px digit drawer - ones at x `0x48`, tens at `0x40` only from stage 10 (`0x801D32B4` / `0x801D32F8`) - and "PRESS SELECT TO MENU" (widget `0x14`) at `(0xEA, 0x1E)`.
+- **Combo counters** - per side, only while the count is non-zero: digit cells `(digit*16, 0x20)` 16x16 via CLUT `0x7D82`, descending 16 px from x `0x30` / `0x100`, then the "HIT!" cell `(0, 0x10)` 32x16 via `0x7D81` 16 px right of that start; y `0x40`, colour `0x808080`. The sides are **crossed**: the `(s + 1) & 1` fold (`0x801D2DFC`) draws slot 1's hits-taken counter (block `+0x30`) on the player's side - the streak the player is landing - and vice versa.
+- **Round-win pips** - 16x16 cells at `u = 0x30` (filled) / `0x40` (empty), `v = 0`, CLUT `0x7D80`; player at `x = 0x70 + i*16`, opponent at `0xC0 - i*16`, y `0x30`; `DAT_801DBED0` pips per side, filled while `i` is below the side's round wins (block `+0x34`).
+- **Attack-icon columns** - the three 16x16 cells `(i*16, 0x30)` via CLUT `0x7D83` at x `0x20` / `0x110`, y `0x60 + i*16`. Each side reads its **own** block: row `chosen type - 1` (block `+0x24`) takes a level off the held-type timer (block `+0x8C`), the others stay at `0x808080`. The timer clamps to 12; `<= 3` and `>= 7` draw `0xF0`, `4..=6` dip to `(10 - t) * 16 + 0x80`, so a fresh commit flashes. The combat tick `FUN_801D3F44` adds the frame step to the timer while the type is `1..=3`, zeroes it otherwise, and a commit zeroes it after the add (`0x801D4448..0x801D44CC`).
+- **Top strip** - "PRESS SELECT TO MENU" (widget `0x14`) at `(0xEA, 0x1E)`, at `0x80` while bit 4 of the blink phase `DAT_801DC12C` is set and `0x40` otherwise; the "STAGE" label (widget `0x12`) at `(0x30, 0x1E)`; the stage number `DAT_801DC110 + 1` through the 8 px digit drawer `FUN_801D69E4` - ones at x `0x48`, tens at `0x40` only from stage 10 (`0x801D32B4` / `0x801D32F8`).
+- **High score** - `DAT_801DBEE4` through `FUN_801D6A18(x0, 0x36, score, 0xA0, 0)` (widget `0x13`, CLUT forced to `0x7D87`, an eight-cell right-aligned field 8 px a cell), skipped at zero. `x0 = 0x28 - n * 8`, where `n` starts at 8 and drops once for every `k` in `0..=7` with `score >= 10^k - 1`; the leading digit therefore lands on `0x28` - the readout is left-aligned there - except on an all-nines score, which the `- 1` shifts one cell right.
 
-The renderer also shows the round timer digits (`DAT_801DC110`) and the running high score (`DAT_801DBEE4`), and latches the running-max combo `DAT_801DBEC8` once per frame ([Score-bonus tables](#score-bonus-tables)). Port: `baka_cabinet::hud_frame`.
+The renderer also latches the running-max combo `DAT_801DBEC8` once per frame ([Score-bonus tables](#score-bonus-tables)). Port: `baka_cabinet::hud_frame` (the frame model, built in the cabinet's epilogue) and `baka_cabinet::duel_hud_packets` (the packets, in link order).
 
 ### The round-result banners
 
@@ -823,14 +824,14 @@ Port: `BakaScoreTables::from_overlay` reads both tables out of a loaded PROT 097
 
 ### HUD in the port
 
-`BakaChrome` emits one `ChromeDraw` per call of the retail emitter, carrying the same `(widget, x, y, brightness, size)` tuple, plus whichever announcer line fired (`BakaFight::chrome_frame`). The cabinet emits its own cells the same way (`BakaFight::cabinet_cells`).
+`BakaChrome` emits one `ChromeDraw` per call of the retail emitter, carrying the same `(widget, x, y, brightness, size)` tuple, plus whichever announcer line fired (`BakaFight::chrome_frame`). The cabinet emits its own cells the same way (`BakaFight::cabinet_cells`), and its epilogue builds the duel HUD's frame model (`CabinetFrame::hud`).
 
 | Host | Widgets | Fallback |
 |---|---|---|
-| native play window, browser play page | `BakaDuelSurface::hud_quads` runs every cabinet cell and every `ChromeDraw` through `hud_widget_quad` (glyph draws paged through `glyph_u` on a copy of widget 5); `engine-ui::baka_strips::baka_hud_prims` links them at OT bucket `3` as screen primitives against the duel VRAM, which carries the PROT 1203 pages (`BakaDuelAssets::vram`) | font labels (`chrome_labels`, `choice_sheet_labels`, drawn by `baka_widget_label_draws_for`) on a frame whose HUD art is not resident (`hud_art_resident`) |
-| minigames page | widget corners and inclusive UV spans from `baka_hud_quad_json`, drawn with the sheet art; chrome from `baka_chrome_json`; bar frames from `baka_bar_frame_json` | page-drawn banners only for a run with no engine chrome |
+| native play window, browser play page | one builder, `engine-screens::minigame_hud::baka_screen_prims`: the duel HUD's packets (`BakaDuelSurface::duel_hud_packets`) at bucket 5 - the bars as untextured gouraud quads carrying the texel-modulated colours (`engine-ui::baka_strips::baka_bar_prim`), the cells as textured quads - then every cabinet cell and `ChromeDraw` through `hud_widget_quad` at bucket 3, all against the duel VRAM, which carries the PROT 1203 pages (`BakaDuelAssets::vram`) | font labels (`chrome_labels`, `choice_sheet_labels`, drawn by `baka_widget_label_draws_for`) on a frame whose HUD art is not resident (`hud_art_resident`) |
+| minigames page | the duel HUD drawn page-side off `baka_state_json`; widget corners and inclusive UV spans from `baka_hud_quad_json`, drawn with the sheet art; chrome from `baka_chrome_json`; bar frames from `baka_bar_frame_json` | page-drawn banners only for a run with no engine chrome |
 
-The duel HUD's digit strips are still font glyphs at the ported pens on the play hosts (`baka_fighter_chrome::hud_digit_placements`, `engine-ui::baka_strips::baka_digit_strip_draws_for`): the layout is retail's, the glyph source is not.
+Both play hosts also share the font-digit placement (`minigame_hud::baka_digit_placements`): the tally's score and "GET COIN" strips draw as font glyphs at the ported pens, and the one-glyph round digit draws only on a frame without the HUD art, since the duel HUD's STAGE strip carries the number otherwise. `check-ui-host-drift.py` pins both calls on both hosts.
 
 The chrome's announcer line plays through each play host's CD-XA clip path. The minigames page decodes every line the chrome can start (`baka_fighter_chrome::announcer_xa_prestage`, `XA32` / `XA33`) at disc load and plays them through the same XA output (`baka_xa_state_json` reports staged and fired lines).
 
@@ -928,7 +929,7 @@ All addresses are overlay-resident globals. The fighter cluster sits around `0x8
 | `+0x34` `DAT_801DBFF0` | round-win count; `DAT_801DC098` is the opponent's |
 | `+0x38` `DAT_801DBFF4` | accumulator the impact spawn zeroes |
 | `+0x88` `DAT_801DC044` | CPU pattern cursor |
-| `+0x8C` `DAT_801DC048` | read by the HUD as the combo counter; also described as a hold timer for the chosen type |
+| `+0x8C` `DAT_801DC048` | held-type timer: frames since the chosen type (`1..=3`) was committed; the HUD's lit attack icon flashes off it |
 | `+0x90` | clip cursor before the last step |
 | `+0x94` `DAT_801DC050` | roster id (indexes the pattern table) |
 | `+0x98` `DAT_801DC054` | sub-keyframe last landed |
@@ -975,7 +976,7 @@ All addresses are overlay-resident globals. The fighter cluster sits around `0x8
 | `FUN_801D487C` | CPU move picker |
 | `FUN_801D0FE4` | match-over check; seeds round-start clips; loads the rung prize. An entry inside the cabinet SM's body (its dump repeats the cabinet's disassembly) |
 | `FUN_801D0748` | stage advance + wrap; likewise an address inside the cabinet SM's extent |
-| `FUN_801D2AFC` | HUD renderer (port `baka_cabinet::hud_frame`) |
+| `FUN_801D2AFC` | HUD renderer (port `baka_cabinet::hud_frame`, `duel_hud_packets`) |
 | `FUN_801D239C` | score tally |
 | `FUN_801D2A28` | per-exchange score accumulator |
 | `FUN_801D6710` | tally drain step |
@@ -1151,11 +1152,15 @@ The minigames page hands the duel its held Triangle (`baka_set_held_pad`) for th
 
 - Exchange recovery is immediate: `BakaFight::end_exchange` clears both fighters' exchange state where retail sequences the recovery through the per-action keyframes. Cooldowns pace re-entry.
 - The result banners' lifetime is the round-over hold, not the retail spawn template ([above](#the-round-result-banners)).
-- The play hosts draw the duel HUD's digit strips as font glyphs ([HUD in the port](#hud-in-the-port)).
+- The play hosts draw the tally's digit strips as font glyphs ([HUD in the port](#hud-in-the-port)).
+- The VITAL bars draw untextured with the system texel's grey folded into their colours; the duel VRAM does not carry texpage `0x1F`.
+- The minigames page draws the duel HUD page-side rather than through `baka_screen_prims`.
 - The drop shadow `FUN_801D6BB8` is not drawn.
 - The developer menu, keyframe editor and slot helpers are not ported (`REPLACED-BY:` tags); the action-table dump is.
 
-**Tests.** World-level oracles in `crates/engine-core/tests/`: `baka_tally_world.rs` (disc-free: the tally, the accumulator and the return warp), `baka_front_end_world.rs`, `baka_ladder_world.rs`, and the disc-gated `baka_minigame_real.rs` (counter-play through the world tick beats a real ladder opponent and banks the parsed prize), `baka_duel_scene_real.rs`, `baka_impact_fx_real.rs`. Format and export oracles: `crates/minigame-formats/tests/baka_opponents_real.rs`, `crates/minigame-formats/tests/baka_presentation_real.rs`, and `crates/web-viewer/tests/baka_presentation_wasm_api.rs` (`a_cabinet_run_banks_the_rung_prize_on_pay_out`).
+**Tests.** World-level oracles in `crates/engine-core/tests/`: `baka_tally_world.rs` (disc-free: the tally, the accumulator and the return warp), `baka_front_end_world.rs`, `baka_ladder_world.rs`, and the disc-gated `baka_minigame_real.rs` (counter-play through the world tick beats a real ladder opponent and banks the parsed prize), `baka_duel_scene_real.rs`, `baka_impact_fx_real.rs`.
+
+`crates/engine-shell/tests/baka_seat_duel_hud.rs` seats the player at a `koin1` cabinet, plays into the duel band and asserts the shared builder emits the bars and the renderer's cells against the disc's art. Format and export oracles: `crates/minigame-formats/tests/baka_opponents_real.rs`, `crates/minigame-formats/tests/baka_presentation_real.rs`, and `crates/web-viewer/tests/baka_presentation_wasm_api.rs` (`a_cabinet_run_banks_the_rung_prize_on_pay_out`).
 
 ## See also
 
