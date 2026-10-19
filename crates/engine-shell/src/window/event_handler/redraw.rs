@@ -249,8 +249,10 @@ impl PlayWindowApp {
         }
         for (i, a) in w.actors.iter().enumerate().take(8) {
             eprintln!(
-                "capture actor {i}: clip {:#04x} cursor {:?} body {:?} pose {}",
+                "capture actor {i}: clip {:#04x} reaction {:?} entry {:?} cursor {:?} body {:?} pose {}",
                 a.battle.current_anim,
+                a.battle_reaction,
+                a.battle_reaction_entry,
                 a.battle_animation.as_ref().map(|p| p.cursor_sixteenths()),
                 a.battle.seat,
                 a.pose_frame.is_some(),

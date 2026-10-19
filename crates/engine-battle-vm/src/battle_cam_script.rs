@@ -236,6 +236,7 @@ use legaia_engine_camera::projection::*;
 
 pub use action::*;
 pub use camera::*;
+pub use camera_step::action_yaw_pass_increment;
 pub use entry_sweep::*;
 pub use module_shot::*;
 pub use phase::*;

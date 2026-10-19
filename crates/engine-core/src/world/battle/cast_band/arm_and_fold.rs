@@ -237,12 +237,43 @@ impl World {
         // The flight has already drawn the move's lists on its way; every
         // per-target fold finds them held, not just the first.
         self.casting.homing_holds_lists = Some(caster);
+        let stoned = self.actor_is_petrified(target);
         self.fold_cast(one);
+        // The hit arm turns its victim to face the caster unless it stands
+        // Stoned (`+0x16E & 4`, `0x801E19FC..0x801E1A08`):
+        // `FUN_80019B28(victim[+0x38], victim[+0x34], caster[+0x38],
+        // caster[+0x34])` stored to the victim's `+0x46`
+        // (`0x801E1A20..0x801E1A54`), the caster being `ctx[+0x13]`
+        // (`0x801E1850`). Live pairs at both ends, unlike the melee strike's
+        // body-pair turn. `battle_gimard_tail_fire_*`'s Vahn reads `4068`
+        // turned onto Gimard.
+        if !stoned {
+            self.turn_victim_to_caster(target, caster);
+        }
         if pc.targets.is_empty() {
             self.casting.homing_holds_lists = None;
         } else {
             self.casting.pending_cast = Some(pc);
         }
+    }
+
+    /// Turn battle slot `victim` to face `caster` along the two live pairs
+    /// `+0x34` / `+0x38` - the homing hit arm's turn
+    /// (`FUN_801E09F8`, `0x801E1A20..0x801E1A54`).
+    fn turn_victim_to_caster(&mut self, victim: u8, caster: u8) {
+        let (Some(v), Some(c)) = (
+            self.actors.get(usize::from(victim)),
+            self.actors.get(usize::from(caster)),
+        ) else {
+            return;
+        };
+        let facing = legaia_engine_battle_vm::battle_action::bearing_12bit_approx(
+            v.move_state.world_z,
+            v.move_state.world_x,
+            c.move_state.world_z,
+            c.move_state.world_x,
+        ) & 0xFFF;
+        self.actors[usize::from(victim)].battle.facing_angle = facing;
     }
 
     /// Whether the owed cast's outcome is its homing flight's to land: a

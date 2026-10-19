@@ -374,7 +374,18 @@ pub(crate) fn capture_yaw_done(
     let Some(yaw) = yaw else {
         return true;
     };
-    let want = i32::from(yaw) - i32::from(capture_ramp_left(world, height) / 16);
+    // Per display frame the ramp falls `16 * step` and the counter climbs
+    // `4 * step / 3` (`action_yaw_pass_increment`): `16` depth units a
+    // counter unit at step `2`, `12` at step `3`.
+    let step = world
+        .battle
+        .camera
+        .as_ref()
+        .map_or(2, |c| c.frame_step())
+        .max(1);
+    let per_unit = (16 * u16::from(step))
+        / legaia_engine_battle_vm::battle_cam_script::action_yaw_pass_increment(step).max(1);
+    let want = i32::from(yaw) - i32::from(capture_ramp_left(world, height) / per_unit.max(1));
     world
         .battle
         .camera
