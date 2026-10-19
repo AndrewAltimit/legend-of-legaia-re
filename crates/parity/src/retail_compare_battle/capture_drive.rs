@@ -102,12 +102,18 @@ impl RetailBattle {
             // staged no clip - `0x14` stages the approach - so both bodies
             // still sway on the idle loops the replay reaches on its own
             // clock (`super_queue_replace_*`).
-            .filter(|&&(slot, ..)| {
+            //
+            // A body the action left on its idle loop (clip `0`) is the
+            // exception: nothing the replay stages moves that cursor, which is
+            // time since the loop began - `zeto_big_wave_mid_cast`'s caster
+            // idles through PROT 0946's capture band, a close-up in which the
+            // loop's sway is most of the frame.
+            .filter(|&&(slot, clip, _)| {
                 let staged = !(self.action_state == 0x0C
                     || self.action_state == 0x14 && self.walk_yaw_base == 0x200);
                 let in_flight =
                     self.action_state != 0 && staged && !(0x50..=0x5A).contains(&self.action_state);
-                !in_flight || (slot != self.active_actor && slot != self.target_code)
+                !in_flight || clip == 0 || (slot != self.active_actor && slot != self.target_code)
             })
             .filter_map(|&(slot, clip, cursor)| {
                 let slot = if slot < 3 {

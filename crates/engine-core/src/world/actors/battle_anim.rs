@@ -24,10 +24,30 @@ impl World {
     /// clock left it rather than retail's. `cursor` may sit below zero (the
     /// displayed frame from before the loop's last wrap).
     pub fn seat_battle_clip_cursor(&mut self, slot: usize, clip: u8, cursor: i32) -> bool {
+        // A party member the capture holds downed plays entry `8`, the kneel
+        // that re-commits itself at every natural end
+        // ([`crate::world::battle::clip_ladder::PARTY_DOWNED_LOOP_ENTRY`]).
+        // A seat lands its HP at zero without the fall that led there, so
+        // the body would stand on its idle: put it on the kneel first.
+        let downed = clip == crate::world::battle::clip_ladder::PARTY_DOWNED_LOOP_ENTRY
+            && self
+                .actors
+                .get(slot)
+                .is_some_and(|a| a.battle_monster_id.is_none() && a.battle.hp == 0);
+        if downed
+            && self.actors[slot].battle_reaction
+                != Some(crate::world::battle::clip_ladder::PARTY_DOWNED_LOOP_ENTRY)
+            && !self.commit_battle_reaction_entry(
+                slot,
+                crate::world::battle::clip_ladder::PARTY_DOWNED_LOOP_ENTRY,
+            )
+        {
+            return false;
+        }
         let Some(a) = self.actors.get_mut(slot) else {
             return false;
         };
-        if a.battle.current_anim != clip {
+        if !downed && a.battle.current_anim != clip {
             return false;
         }
         let Some(player) = a.battle_animation.as_mut() else {
@@ -36,8 +56,9 @@ impl World {
         // Only a looping clip runs free of the phase the seed placed: a
         // one-shot (a swing, a reaction) started with its action, which the
         // seed already put where the capture's was. A looping clip wraps
-        // (retail's re-commit zeroes the cursor at the stream's end).
-        if !player.is_looping() {
+        // (retail's re-commit zeroes the cursor at the stream's end), and so
+        // does the self-re-committing kneel.
+        if !player.is_looping() && !downed {
             return false;
         }
         let total = (player.frame_count() * 16).max(1) as i32;
