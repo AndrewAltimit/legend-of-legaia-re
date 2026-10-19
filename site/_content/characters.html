@@ -177,8 +177,8 @@ canvas.char-viewer-canvas:active { cursor: grabbing; }
 .char-item-dl {
   position: absolute; top: 0.25rem; right: 0.25rem;
   background: var(--bg-code); color: var(--text-muted); border: 1px solid var(--border);
-  font-family: var(--font-mono); font-size: 0.7rem; padding: 0.05rem 0.3rem; cursor: pointer;
-  border-radius: 3px; opacity: 0.75;
+  font-family: var(--font-mono); font-size: 0.8rem; line-height: 1; padding: 0.15rem 0.3rem; cursor: pointer;
+  min-width: 1.3rem; text-align: center; border-radius: 3px; opacity: 0.75;
 }
 .char-item-dl:hover { border-color: var(--accent); color: var(--text); opacity: 1; }
 .char-item-dl[disabled] { opacity: 0.3; cursor: not-allowed; }
@@ -934,7 +934,7 @@ canvas.char-viewer-canvas:active { cursor: grabbing; }
           <canvas class="char-item-thumb${cached ? '' : ' is-pending'}" width="${CARD_PX}" height="${CARD_PX}"></canvas>
           <span class="char-item-name">${escapeHtml(it.name || ('id ' + it.id))}</span>
           <span class="char-item-tags"></span>
-          <button class="char-item-dl btn-accent" type="button" data-dl-section="${sec.index}" data-dl-id="${it.id}" title="Download this piece alone as .glb (grip repaired where it can be)">Download</button>
+          <button class="char-item-dl btn-accent" type="button" data-dl-section="${sec.index}" data-dl-id="${it.id}" title="Download this piece alone as .glb (grip repaired where it can be)" aria-label="Download this piece alone as .glb">&#8595;</button>
         </div>`;
       }));
       const wornHere = equipIds[sec.index]
@@ -948,7 +948,7 @@ canvas.char-viewer-canvas:active { cursor: grabbing; }
     }).join('');
     equipPanelEl.innerHTML = `<div class="char-equip-panel-head">
         <h3>Equipment</h3>
-        <span>every piece the disc offers ${escapeHtml(meta.label)}, each drawn on its own · click to put on, Download to save it alone</span>
+        <span>every piece the disc offers ${escapeHtml(meta.label)}, each drawn on its own · click to put on, &#8595; to save it alone</span>
         <button class="char-equip-btn" id="char-panel-strip" type="button"${worn ? '' : ' disabled'}>strip all</button>
       </div>` + slots;
     // Paint cached cards now; queue the rest. The equipment panel is
