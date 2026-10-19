@@ -24,14 +24,19 @@ use legaia_render_kernels::battle_intro::*;
 /// [`BattleIntro::refresh_captured_page`] advances the curtain's CPU two-pass
 /// composition. Returns `Some(page)` on any frame whose contents changed -
 /// the capture frame for every style, and every frame for the curtain.
+///
+/// `on_capture` sees the readback on the one frame it is taken (the
+/// `LEGAIA_DIAG_INTRO_CAPTURE` dump hangs off it).
 pub fn update_field_capture<'a>(
     intro: &'a mut BattleIntro,
     renderer: &crate::Renderer,
     target: crate::RenderTarget<'_>,
     base: &legaia_tim::Vram,
+    on_capture: impl FnOnce(&crate::CaptureImage),
 ) -> anyhow::Result<Option<&'a legaia_tim::Vram>> {
     if intro.needs_capture() {
         let img = renderer.capture_scene_rgba(target)?;
+        on_capture(&img);
         intro.land_capture_rgba(&img.rgba, img.width, img.height, base);
     }
     Ok(intro.refresh_captured_page())

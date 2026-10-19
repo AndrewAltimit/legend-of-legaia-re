@@ -168,6 +168,16 @@ impl PlayWindowApp {
             renderer,
             legaia_engine_render::RenderTarget::Scene(scene),
             base,
+            |img| {
+                // `LEGAIA_DIAG_INTRO_CAPTURE=<png>`: the frame the intro
+                // landed, as read back - what its styles will sample.
+                if let Some(path) = std::env::var_os("LEGAIA_DIAG_INTRO_CAPTURE") {
+                    let path = std::path::PathBuf::from(path);
+                    if let Err(e) = write_capture_png(&path, img) {
+                        log::error!("play-window: intro capture dump: {e:#}");
+                    }
+                }
+            },
         ) {
             Ok(Some(p)) => p,
             Ok(None) => return None,
