@@ -3,6 +3,7 @@
 //! mapping.
 
 use super::super::*;
+use crate::window::app_state::escape_quits;
 
 #[path = "keyboard/debug_spawn_keys.rs"]
 mod debug_spawn_keys;
@@ -18,13 +19,29 @@ impl PlayWindowApp {
         code: KeyCode,
         state: ElementState,
     ) {
-        if matches!(code, KeyCode::Escape) && state == ElementState::Pressed {
-            if let Some(log) = self.record_log.as_mut()
-                && let Err(e) = log.flush()
-            {
-                log::error!("record: flush on Escape failed: {e:#}");
+        if matches!(code, KeyCode::Escape) {
+            // Held keys repeat as a stream of `Pressed` events; only the
+            // leading edge counts, or holding Escape would confirm itself.
+            match state {
+                ElementState::Released => {
+                    self.keys_down.remove(&code);
+                }
+                ElementState::Pressed if self.keys_down.insert(code) => {
+                    let now = std::time::Instant::now();
+                    if escape_quits(self.quit_prompt, now) {
+                        if let Some(log) = self.record_log.as_mut()
+                            && let Err(e) = log.flush()
+                        {
+                            log::error!("record: flush on Escape failed: {e:#}");
+                        }
+                        evl.exit();
+                    } else {
+                        log::info!("Escape: press it again to quit");
+                        self.quit_prompt = Some(now);
+                    }
+                }
+                ElementState::Pressed => {}
             }
-            evl.exit();
             return;
         }
         self.handle_key(code, state);
@@ -116,5 +133,24 @@ impl PlayWindowApp {
                 log.record_transition(self.session.frames, self.pad | self.gamepad_held);
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::window::app_state::QUIT_CONFIRM_WINDOW;
+    use std::time::{Duration, Instant};
+
+    #[test]
+    fn escape_quits_only_on_a_second_press_inside_the_window() {
+        let t0 = Instant::now();
+        assert!(!escape_quits(None, t0));
+        assert!(escape_quits(Some(t0), t0 + Duration::from_secs(1)));
+        assert!(escape_quits(Some(t0), t0 + QUIT_CONFIRM_WINDOW));
+        assert!(!escape_quits(
+            Some(t0),
+            t0 + QUIT_CONFIRM_WINDOW + Duration::from_millis(1)
+        ));
     }
 }

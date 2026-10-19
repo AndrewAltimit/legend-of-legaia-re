@@ -24,6 +24,25 @@ impl PlayWindowApp {
         d
     }
 
+    /// The "press Escape again" line while a first `Escape` is waiting
+    /// for its confirmation (`handle_keyboard`). Window chrome, not game
+    /// surface: retail has no quit key.
+    fn quit_prompt_draws(&self, w: u32, h: u32) -> Vec<TextDraw> {
+        let armed = self
+            .quit_prompt
+            .is_some_and(|t| t.elapsed() <= crate::window::app_state::QUIT_CONFIRM_WINDOW);
+        if !armed {
+            return Vec::new();
+        }
+        self.stage_status_row(
+            "Press Esc again to quit",
+            (8, 4),
+            [1.0, 0.9, 0.5, 1.0],
+            w,
+            h,
+        )
+    }
+
     /// The HUD text list for one frame. `screens` is this frame's
     /// shop-family overlay ([`Self::shop_overlay_frame`]), built once by the
     /// caller so the chrome sprite pass reads the same composition.
@@ -40,7 +59,9 @@ impl PlayWindowApp {
         // Boot UI is fullscreen - when active, suppress every other HUD layer
         // and just render the active panel (title screen / save-select).
         if self.boot_ui.is_active() {
-            return self.boot_ui_draws(w, h);
+            let mut d = self.boot_ui_draws(w, h);
+            d.extend(self.quit_prompt_draws(w, h));
+            return d;
         }
         let white = [1.0f32, 1.0, 1.0, 1.0];
         let dim = [0.7f32, 0.85, 1.0, 1.0];
@@ -633,6 +654,7 @@ impl PlayWindowApp {
             legaia_engine_ui::scale_stage_text_draws(&mut dev, stage_origin, stage_scale);
             out.extend(dev);
         }
+        out.extend(self.quit_prompt_draws(w, h));
         out
     }
 }

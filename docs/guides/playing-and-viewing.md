@@ -106,7 +106,9 @@ Keyboard defaults are arrows = D-pad, then:
 | `Enter`, `Space` | Start |
 | `RShift` | Select |
 
-`Esc` quits. The browser play page ships a *different* default layout (`X` is
+`Esc` twice quits: the first press only shows *Press Esc again to quit* at
+the top of the window, and a second press within three seconds closes it,
+so a stray press does not lose an unsaved game. The browser play page ships a *different* default layout (`X` is
 Circle there, `C` / `V` carry Triangle / Square, and WASD doubles the arrows),
 so a key that works in the tab is not necessarily the same button in the
 window. `config show` prints the desktop table, including any rebinding.
@@ -416,7 +418,7 @@ pad button names (`Cross`, `Circle`, `Start`, `L1`).
 
 `record` is `play-window` plus input capture into a small `j-replay-v1` TOML
 file. The file is checkpointed to disk about once a second and finalized on
-window close (`Esc`), so an interrupted session still yields a valid file up
+window close (`Esc` twice, or the window's close button), so an interrupted session still yields a valid file up
 to the last checkpoint. `replay` runs it back headless and deterministic - the
 same file always produces a bit-identical engine trace, and it needs no disc
 at all. Details: [determinism-replay.md](../tooling/determinism-replay.md).

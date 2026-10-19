@@ -347,9 +347,23 @@ python3 scripts/ci/third-party-licenses.py "${LICENSE_TARGETS[@]}" \
     # shellcheck disable=SC2088 # a literal ~ for the reader, not an expansion
     printf '~/.local/share/legaia-engine; on Windows %%APPDATA%%\\legaia-engine;\n'
     printf 'on macOS ~/Library/Application Support/legaia-engine).\n\n'
-    printf 'Controls: arrows = D-pad, Z = Cross, S = Circle, A = Triangle,\n'
-    printf 'X = Square, Enter = Start, Esc = quit. Every play option is on the\n'
-    printf 'command line: legaia-engine play-window --help\n\n'
+    printf 'CONTROLS (keyboard; a gamepad works too, by button position)\n\n'
+    printf '    Arrow keys     D-pad\n'
+    printf '    Z / S / A / X  Cross / Circle / Triangle / Square\n'
+    printf '    Q / W          L1 / R1\n'
+    printf '    1 / 2          L2 / R2\n'
+    printf '    Enter, Space   Start\n'
+    printf '    Right Shift    Select\n'
+    printf '    Esc twice      quit (one press only asks; save in the game first)\n\n'
+    printf 'Key Config on the in-game Options screen rebinds the keys.\n\n'
+    printf 'Display and sound toggles:\n\n'
+    printf '    I    enhanced lighting        F8   lighting time of day\n'
+    printf '    F4   see-through walls        F9   ground fog\n'
+    printf '    T    camera distance          R    free-angle movement\n'
+    printf '    F2   mute\n\n'
+    printf 'Mouse: drag to turn the camera, wheel to zoom, double-click to reset.\n'
+    printf 'Every play option is on the command line:\n'
+    printf '    legaia-engine play-window --help\n\n'
     printf 'Guide: https://github.com/%s/blob/main/docs/guides/playing-and-viewing.md\n' \
         "${GITHUB_REPOSITORY:-AndrewAltimit/legend-of-legaia-re}"
     printf '\nTO BROWSE AND EXTRACT THE GAME'"'"'S ASSETS\n\n'
@@ -365,7 +379,8 @@ python3 scripts/ci/third-party-licenses.py "${LICENSE_TARGETS[@]}" \
     printf 'Legaia Studio opens the same disc image and lets you browse every\n'
     printf 'archive entry, preview textures, 3D models, sound banks, music and\n'
     printf 'dialog text, export them (PNG, OBJ / glTF, WAV), or unpack the whole\n'
-    printf 'disc into a folder of your choice. Guide:\n'
+    printf 'disc into a folder of your choice. Its Play button starts the game\n'
+    printf 'on the disc you have open. Guide:\n'
     printf 'https://github.com/%s/blob/main/docs/guides/extracting-assets.md\n' \
         "${GITHUB_REPOSITORY:-AndrewAltimit/legend-of-legaia-re}"
     printf '\nThe other binaries in this folder are modding and reverse-engineering\n'
