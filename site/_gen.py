@@ -177,6 +177,11 @@ DESCRIPTIONS: dict[str, str] = {
         "sectors to a running from-scratch engine: formats, parsers, "
         "subsystems, and the WASM port."
     ),
+    "crates": (
+        "An interactive map of the Legend of Legaia RE workspace: every crate "
+        "in its layer, what it uses and what uses it, and the path a scene "
+        "takes from disc sectors to pixels in the native and browser hosts."
+    ),
     "guides/vrchat-world": (
         "Turn a Legend of Legaia town into a private VRChat world: export any "
         "scene from your own disc as glTF, then build it in Unity with the "
@@ -408,6 +413,7 @@ WIDE_PAGES: set[str] = {
 # docs column and its reading measure; only a `section.doc-section.breakout`
 # spans the wide column. See "Column width policy" in css/styles.css.
 PROSE_WIDE_PAGES: set[str] = {
+    "crates",
     "disc-map",
     "reference/music-tracks",
     "reference/scene-names",
@@ -531,6 +537,7 @@ PAGES: list[tuple[str, str, str, str]] = [
     # depth = 0 (root)
     ("index.html",                 "Home",                          "home",                       "home.html"),
     ("architecture.html",          "How the layers stack",          "architecture",               "architecture.html"),
+    ("crates.html",                "Crate map",                     "crates",                     "crates.html"),
     ("quickstart.html",            "Quick start",                   "quickstart",                 "quickstart.html"),
     ("play.html",                  "Play the port (WASM)",          "play",                       "play.html"),
     ("viewer.html",                "Asset viewer (WASM)",           "viewer",                     "viewer.html"),

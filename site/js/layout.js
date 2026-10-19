@@ -44,6 +44,7 @@ const NAV = [
     items: [
       { href: 'index.html',                     text: 'Home',                     key: 'home' },
       { href: 'architecture.html',              text: 'How it stacks',            key: 'architecture' },
+      { href: 'crates.html',                    text: 'Crate map',                key: 'crates' },
       { href: 'quickstart.html',                text: 'Quick start',              key: 'quickstart' },
     ],
   },
