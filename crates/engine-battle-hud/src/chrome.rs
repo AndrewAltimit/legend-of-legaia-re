@@ -15,7 +15,7 @@ use super::*;
 /// The arts-entry screen (`0x50`, step 9: `01/3 .. 1A/3`) keeps both, with
 /// the `Attack` tab after them ([`battle_breadcrumb_third_tab`]) - the
 /// `arts_bar_*` captures read `Begin | Vahn | Attack` over the chips.
-pub fn battle_begin_tab_visible(world: &crate::world::World) -> bool {
+pub fn battle_begin_tab_visible(world: &legaia_engine_core::world::World) -> bool {
     matches!(
         battle_command_surface(world),
         Some(
@@ -42,7 +42,7 @@ pub fn battle_begin_tab_visible(world: &crate::world::World) -> bool {
 /// `x = width(name) + 0x54` (`0x801D39A0..0x801D39AC` for `0x0D`,
 /// `0x801D3968..0x801D3974` for `0x0E`), i.e. abutting the plaque. The item
 /// window draws its own trail (record `0x0C`), so it is not named here.
-pub fn battle_breadcrumb_third_tab(world: &crate::world::World) -> Option<String> {
+pub fn battle_breadcrumb_third_tab(world: &legaia_engine_core::world::World) -> Option<String> {
     use legaia_engine_menus::battle_input::BattleCommand;
     match battle_command_surface(world)? {
         CommandSurface::AttackMode
@@ -104,8 +104,8 @@ fn panels_still_open(s: u8) -> bool {
 /// arm 9's pass (`FUN_801D8DE8(6, 0)` and `(0x4E + i, 0)`, then
 /// `ctx[+0x18] = 6`, `0x801F7E64..0x801F7ED4`) puts them up under the heal,
 /// and the Done hold closes them like the others
-/// ([`crate::world::BattleState::module_panels_glide`]).
-pub fn battle_panels_visible(world: &crate::world::World) -> bool {
+/// ([`legaia_engine_core::world::BattleState::module_panels_glide`]).
+pub fn battle_panels_visible(world: &legaia_engine_core::world::World) -> bool {
     match battle_hud_phase(world) {
         BattleHudPhase::RoundPrompt => true,
         // The ring parks the panels on a glide (step 1's `06/1 4E/1 4F/1`):
@@ -164,7 +164,7 @@ pub fn battle_panels_visible(world: &crate::world::World) -> bool {
 /// `element -> caret index` is `[4, 3, 0, 2, 1, 5, 6, 7]`). A party member
 /// gets no badge either way - the captured plaques that carry one are the
 /// monster frames (`Gimard`), and the party ones (`Vahn`, `Noa`) do not.
-pub fn battle_plaque_element_badge(world: &crate::world::World) -> Option<u8> {
+pub fn battle_plaque_element_badge(world: &legaia_engine_core::world::World) -> Option<u8> {
     // A dome plaque's slot is a fighter seat, not a battle actor.
     if world.mode == legaia_engine_mode::mode::SceneMode::MuscleDome {
         return None;
@@ -219,7 +219,7 @@ pub fn encounter_banner_enabled() -> bool {
 /// The banner itself is a port invention - retail shows nothing on the
 /// `Field -> Battle` edge - so hosts arm it only when
 /// [`encounter_banner_enabled`] says so.
-pub fn encounter_banner_label(world: &crate::world::World) -> String {
+pub fn encounter_banner_label(world: &legaia_engine_core::world::World) -> String {
     let pc = (world.party.party_count.clamp(1, 3) as usize).min(world.actors.len());
     // `World::actors` is the fixed 64-slot table, not a battle-sized list;
     // a formation seats at most 5 monsters directly after the party
@@ -253,7 +253,7 @@ pub fn encounter_banner_label(world: &crate::world::World) -> String {
 ///
 /// 1. the **battle message banner** - screen element `0x59` (a Seru absorbed
 ///    on a killing blow) or `0x65` (a Seru spell's magic level went up), live
-///    from its raise to its unload ([`crate::world::BattleMessageBanner`]).
+///    from its raise to its unload ([`legaia_engine_core::world::BattleMessageBanner`]).
 ///    Battle mode only: the Done band retires it, and a line a battle left
 ///    standing must not follow the party back into the field;
 /// 2. the post-battle **level-up** line;
@@ -272,7 +272,7 @@ pub fn encounter_banner_label(world: &crate::world::World) -> String {
 /// Before this read existed each host carried a copy of sources 2 and 3 and
 /// neither drew source 1, so no host ever showed the absorb or magic-level
 /// line.
-pub fn battle_banner_message(world: &crate::world::World) -> Option<String> {
+pub fn battle_banner_message(world: &legaia_engine_core::world::World) -> Option<String> {
     if world.mode == legaia_engine_mode::mode::SceneMode::Battle
         && let Some(b) = &world.battle.message_banner
     {

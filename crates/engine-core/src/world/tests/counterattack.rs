@@ -4,7 +4,7 @@
 
 use super::*;
 use crate::battle_round::PendingPartyAction;
-use legaia_engine_battle_vm::battle_action::{ActionState, BattleActionHost};
+use legaia_engine_battle_vm::battle_action::BattleActionHost;
 use legaia_engine_mode::mode::SceneMode;
 
 /// Vahn (seat 0) committed a strike on the monster in seat 1, wearing the
@@ -55,37 +55,6 @@ fn the_picker_arms_the_counter_latch_on_half_its_coins() {
         world.roll_counterattack(1, 0);
         assert_eq!(world.battle_ctx.counter_pending, 0, "the turn is spent");
     }
-}
-
-/// The swap through the world host: the latch on the monster's first strike
-/// frame hands the loop to Vahn, whose committed strike is built and
-/// retired, aimed back at the monster; the target plaque is cleared.
-#[test]
-fn the_strike_loop_hands_the_monsters_strike_to_the_counterer() {
-    let mut world = counter_world(true);
-    world.actors[1].battle.action_category = 3;
-    world.actors[1].battle.active_target = 0;
-    world.actors[1].battle.params[0] = 0x05;
-    world.battle_ctx.active_actor = 1;
-    world.battle_ctx.action_state = ActionState::AttackChain.as_byte();
-    world.battle_ctx.counter_pending = 1;
-    world.step_battle();
-    assert_eq!(world.battle_ctx.active_actor, 0, "Vahn counters");
-    assert_eq!(world.battle_ctx.counter_pending, 0);
-    assert!(
-        world.battle.round_flow.pending[0].is_none(),
-        "the counter is Vahn's turn"
-    );
-    assert_eq!(world.actors[0].battle.active_target, 1);
-    assert_eq!(world.actors[0].battle.init_key, 0);
-    assert_ne!(world.actors[0].battle.queued_anim, 0, "Vahn's first swing");
-    assert!(world.battle.target_plate_cleared);
-    assert_eq!(crate::battle_hud::battle_target_plaque(&world), None);
-    // The HUD stays the monster's seed's: the bar for its target (Vahn),
-    // and no combo cluster (`battle_vahn_tri_somersault_super`).
-    assert_eq!(world.battle.counter_hud, Some(0));
-    assert_eq!(crate::battle_hud::battle_combo_style(&world), None);
-    assert_eq!(crate::battle_hud::battle_readout_bar_slot(&world), Some(0));
 }
 
 /// Without a committed attack there is nothing to counter with.

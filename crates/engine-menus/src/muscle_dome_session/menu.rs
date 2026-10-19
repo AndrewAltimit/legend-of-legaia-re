@@ -12,7 +12,7 @@
 //! [`DomeMenu`] holds whichever of them owns the pad, so a dome selection is
 //! driven by the same step functions a battle selection is - and the HUD
 //! projects it through the same chip clusters and arts-input chrome
-//! (`legaia_engine_core::battle_hud::battle_command_chips`,
+//! (`legaia_engine_battle_hud::battle_command_chips`,
 //! `legaia_engine_core::world::World::arts_input_view`).
 //!
 //! What the session itself still owns is the dome bookkeeping those screens

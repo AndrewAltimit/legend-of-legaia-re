@@ -1,7 +1,7 @@
 //! The battle command menu's chip cluster for one frame, projected off the
 //! world onto the leaf UI crate's types.
 
-use legaia_engine_core::battle_hud::{battle_chip_highlight, battle_command_chips};
+use legaia_engine_battle_hud::{battle_chip_highlight, battle_command_chips};
 use legaia_engine_core::world::World;
 use legaia_engine_menus::battle_input::CommandChipPhase;
 use legaia_engine_ui::battle_command_ui::ChipPhase;

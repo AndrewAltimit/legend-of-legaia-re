@@ -334,7 +334,7 @@ pub(super) fn run_drive(
                     .camera
                     .as_ref()
                     .map(|c| (c.close_up_accum(), c.is_gliding())),
-                legaia_engine_core::battle_hud::battle_action_plaque_dy(world),
+                legaia_engine_battle_hud::battle_action_plaque_dy(world),
                 world
                     .actors
                     .iter()

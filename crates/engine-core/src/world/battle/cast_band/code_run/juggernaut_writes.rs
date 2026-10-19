@@ -268,7 +268,7 @@ impl World {
     /// copy the effect pool holds. `None` disc-free.
     ///
     /// [`ModuleCaption::ModuleString`]: legaia_engine_cast::cast_module_camera::ModuleCaption::ModuleString
-    pub(crate) fn cast_module_string(&self, spell_id: u8, va: u32) -> Option<String> {
+    pub fn cast_module_string(&self, spell_id: u8, va: u32) -> Option<String> {
         const LINK_BASE: u32 = legaia_overlay_images::summon_overlay::SUMMON_OVERLAY_LINK_BASE;
         let entry = self.cast_module_for(spell_id)?;
         let module = self.casting.effect_pool.as_ref()?.module(entry)?;

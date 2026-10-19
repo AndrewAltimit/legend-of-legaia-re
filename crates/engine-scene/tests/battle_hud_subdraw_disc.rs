@@ -1,7 +1,7 @@
 //! The battle HUD's per-phase rule against the disc's own sub-draw script
 //! table.
 //!
-//! `engine-core::battle_hud`'s predicates (`battle_panels_visible`,
+//! `engine-battle-hud`'s predicates (`battle_panels_visible`,
 //! `battle_readout_bar_slot`, `battle_begin_tab_visible`,
 //! `battle_ring_ap_plate_value`, ...) encode which retained text actors
 //! retail's menu SM leaves on screen after each `ctx[+0x06]` transition.

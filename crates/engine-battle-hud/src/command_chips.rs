@@ -20,7 +20,10 @@ use legaia_engine_menus::battle_input::{BattleCommandChips, CommandChipPhase};
 /// `engine-ui::battle_command_ui::BattleCommandMenuFrame::cursor`.
 ///
 /// REF: FUN_801D0748
-pub fn battle_chip_highlight(world: &crate::world::World, cursor: usize) -> Option<usize> {
+pub fn battle_chip_highlight(
+    world: &legaia_engine_core::world::World,
+    cursor: usize,
+) -> Option<usize> {
     use legaia_engine_menus::option_values::BattleCommandOpt;
     (world.toggles.battle_command == BattleCommandOpt::CrossButton).then_some(cursor)
 }
@@ -32,7 +35,9 @@ pub fn battle_chip_highlight(world: &crate::world::World, cursor: usize) -> Opti
 /// the menu is up or what its right arm says: the ring's element chip is
 /// [`battle_magic_chip`] - the member's Ra-Seru name or `-` - not a fixed
 /// word.
-pub fn battle_command_chips(world: &crate::world::World) -> Option<BattleCommandChips> {
+pub fn battle_command_chips(
+    world: &legaia_engine_core::world::World,
+) -> Option<BattleCommandChips> {
     use legaia_engine_menus::battle_input::{
         AttackMode, BattleCommand, CommandPhase, CommitChoice, RoundChoice,
     };
@@ -124,7 +129,9 @@ pub fn battle_command_chips(world: &crate::world::World) -> Option<BattleCommand
 /// sources - the ring's right arm is the lead's Ra-Seru name (or `-` for a
 /// fighter carrying none, `FUN_801D8DE8` record `0xA`), and the confirm pair
 /// is the disc's `Begin` / `Reselect`.
-pub(super) fn dome_command_chips(world: &crate::world::World) -> Option<BattleCommandChips> {
+pub(super) fn dome_command_chips(
+    world: &legaia_engine_core::world::World,
+) -> Option<BattleCommandChips> {
     use legaia_engine_menus::battle_input::{BattleCommand, CommitChoice};
     use legaia_ui_formats::battle_ui_strings::BattleUiLabel;
     let s = world.minigames.muscle_dome.as_ref()?;
@@ -185,10 +192,10 @@ use legaia_engine_battle_vm::battle_commit_log::{CommitLogRow, CommitLogTarget};
 /// the ring's `Attack` chip. Which chip record an Item or magic commit logs,
 /// and whether an Item row carries a target, is inferred from the ring's
 /// arm order (records `0x0C` / `0x0E`), not read off a commit arm.
-pub fn battle_commit_log(world: &crate::world::World) -> Vec<CommitLogRow> {
-    use crate::battle_round::{PendingPartyAction, RoundPhase};
+pub fn battle_commit_log(world: &legaia_engine_core::world::World) -> Vec<CommitLogRow> {
     use legaia_engine_battle::target_picker::CursorRow;
     use legaia_engine_battle_vm::battle_commit_log as log;
+    use legaia_engine_core::battle_round::{PendingPartyAction, RoundPhase};
     use legaia_engine_menus::battle_input::CommandPhase;
     use legaia_ui_formats::battle_ui_strings::BattleUiLabel;
     if world.mode != legaia_engine_mode::mode::SceneMode::Battle
@@ -295,14 +302,14 @@ pub fn battle_commit_log(world: &crate::world::World) -> Vec<CommitLogRow> {
 /// `TOTAL` (`player_steal_skeleton_banner`), a cast, item or spirit action
 /// shows `DAMAGE` (`battle_gimard_tail_fire_a`). Capture-graded: the two
 /// styles are read off those frames' display lists, not off a dispatch.
-pub fn battle_combo_style(world: &crate::world::World) -> Option<ComboStyle> {
+pub fn battle_combo_style(world: &legaia_engine_core::world::World) -> Option<ComboStyle> {
     use legaia_engine_battle_vm::battle_action::ActionCategory;
     // The dome's play-out tally rides the status rows, not the battle
     // popup stream this cluster counts.
     if battle_hud_phase(world) != BattleHudPhase::Action
         || world.mode == legaia_engine_mode::mode::SceneMode::MuscleDome
         // A counterattack's strikes run under the monster's seeded HUD,
-        // which opened no cluster ([`crate::world::BattleState::counter_hud`]).
+        // which opened no cluster ([`legaia_engine_core::world::BattleState::counter_hud`]).
         || world.battle.counter_hud.is_some()
     {
         return None;

@@ -6,7 +6,7 @@ use super::*;
 
 /// The equipment-slot index the Ra-Seru gate reads: `+0x199` for every
 /// character but Noa, whose arm reads `+0x198`. Same pair
-/// `legaia_engine_core::battle_hud::battle_member_has_raseru` carries - kept here as
+/// `legaia_engine_battle_hud::battle_member_has_raseru` carries - kept here as
 /// its roster-slot twin, because a dome fighter has no battle ordinal until
 /// the leg hands off to the battle.
 ///

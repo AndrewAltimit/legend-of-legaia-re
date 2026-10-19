@@ -27,7 +27,7 @@
 # loop on `enter_field` (`arm_live_battles`, the browser twin of
 # `BootSession::enter_field_live`), `tick_battle_presentation` folds battle
 # events + refreshes the HUD through the shared
-# `engine_core::battle_hud::sync_battle_hud_rows`, and
+# `engine_battle_hud::sync_battle_hud_rows`, and
 # `play_overlay_draws_json` composites the HUD rows, the ENCOUNTER! banner
 # and the player-driven command menus over the running scene. Both builders
 # now paint on both hosts.

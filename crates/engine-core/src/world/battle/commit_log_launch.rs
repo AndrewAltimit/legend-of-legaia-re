@@ -56,7 +56,7 @@ impl World {
     /// settled inbound launch retires - the log is back at rest; a settled
     /// outbound one stays, which keeps the log hidden until the member
     /// returns to the ring or commits.
-    pub(in crate::world) fn step_commit_log_launch(&mut self) {
+    pub fn step_commit_log_launch(&mut self) {
         let step = BATTLE_PASS_STEP_PER_TICK;
         if let Some(l) = self.battle.commit_log_launch.as_mut() {
             l.step(step);
@@ -69,7 +69,7 @@ impl World {
     /// Note a HUD element raise for the two action plates that glide in:
     /// `FUN_801D8DE8(0x44 | 0x51, 0)` from the action seed's banner plan
     /// starts that plate's glide from seat A.
-    pub(crate) fn note_action_plate_raise(&mut self, element: u8, mode: u8) {
+    pub fn note_action_plate_raise(&mut self, element: u8, mode: u8) {
         use legaia_engine_battle_vm::battle_commit_log::LogLaunch;
         use legaia_engine_battle_vm::battle_cue_group::{HUD_CASTER_BANNER, HUD_TARGET_BANNER};
         if mode & 1 != 0 {
@@ -118,7 +118,7 @@ impl World {
     /// `ctx[+0] - 1`, then `ctx[+0x18] = 6` (`0x801F7E64..0x801F7ED4`). Each
     /// record spawns at seat A and glides to seat B
     /// ([`crate::world::BattleState::module_panels_glide`]).
-    pub(crate) fn raise_module_roster_panels(&mut self) {
+    pub fn raise_module_roster_panels(&mut self) {
         use legaia_engine_battle_vm::battle_commit_log::LogLaunch;
         self.battle.module_panels_glide = Some(LogLaunch::new(false));
     }
@@ -143,14 +143,14 @@ impl World {
 
     /// Start the round prompt's open glide: sub-draw step 0 spawning its
     /// five records at seat A ([`crate::world::BattleState::round_prompt_glide`]).
-    pub(crate) fn start_round_prompt_glide(&mut self) {
+    pub fn start_round_prompt_glide(&mut self) {
         use legaia_engine_battle_vm::battle_commit_log::LogLaunch;
         self.battle.round_prompt_glide = Some(LogLaunch::new(false));
     }
 
     /// Start the ring's open glide: sub-draw step 1 spawning its twelve
     /// records ([`crate::world::BattleState::ring_open_glide`]).
-    pub(crate) fn start_ring_open_glide(&mut self) {
+    pub fn start_ring_open_glide(&mut self) {
         use legaia_engine_battle_vm::battle_commit_log::LogLaunch;
         self.battle.ring_open_glide = Some(LogLaunch::new(false));
     }
@@ -251,7 +251,7 @@ impl World {
     /// which the round reset seeds to [`Self::GLIDE_BLOCKING_FLAG`].
     ///
     /// PORT: FUN_801D9BBC (the return value)
-    pub(crate) fn step_action_plate_glides(&mut self) {
+    pub fn step_action_plate_glides(&mut self) {
         let step = BATTLE_PASS_STEP_PER_TICK;
         let mut ret = 0u8;
         for g in [
@@ -284,7 +284,7 @@ impl World {
     /// round reset (`li v0,0x1` / `sb v0,0x1b(a0)` at
     /// `0x801D88FC..0x801D8900`). The arts entry's own spawns clear it
     /// around their `FUN_801D8DE8` call (`0x801D3D40`) and restore it.
-    pub(crate) const GLIDE_BLOCKING_FLAG: u8 = 1;
+    pub const GLIDE_BLOCKING_FLAG: u8 = 1;
 
     /// A press is parked only while the stepper's return is under this
     /// (`sltiu v0,s0,0x6` at `0x801D0B3C` / `0x801D0B58`): the last passes

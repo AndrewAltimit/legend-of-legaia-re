@@ -370,7 +370,7 @@ pub struct CommandChipView<'a> {
 /// Borrow a host's owned `(label, enabled)` chip list as the views the
 /// cluster builders take. The labels are owned because the ring's element
 /// chip is the member's Ra-Seru name off the disc (or `-`), not a fixed
-/// word (`engine-core::battle_hud::battle_command_chips`).
+/// word (`engine-battle-hud::battle_command_chips`).
 pub fn command_chip_views(chips: &[(String, bool)]) -> Vec<CommandChipView<'_>> {
     chips
         .iter()
@@ -396,13 +396,13 @@ pub struct BattleCommandMenuFrame<'a> {
     pub phase: ChipPhase,
     /// Each chip's offset from its seat this frame, in chip order - the
     /// open glide of a cluster whose records spawn at seat A
-    /// (`engine-core::battle_hud::battle_chip_offsets`: the round prompt's
+    /// (`engine-battle-hud::battle_chip_offsets`: the round prompt's
     /// `Begin` and `Run` unfold from the cluster centre). Zero at rest.
     pub offsets: [(i32, i32); 4],
     /// Draw the D-pad glyph. The menu SM leaves before its state arm - the
     /// glyph's emitter - while any widget glide is in flight, so a cluster
     /// still unfolding shows none
-    /// (`engine-core::battle_hud::battle_chip_dpad_visible`).
+    /// (`engine-battle-hud::battle_chip_dpad_visible`).
     pub dpad: bool,
 }
 

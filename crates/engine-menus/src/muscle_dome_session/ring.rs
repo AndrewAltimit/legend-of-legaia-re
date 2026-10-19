@@ -169,7 +169,7 @@ impl ChipMark {
 /// per battle, the **status** is per actor, and the Ra-Seru marker is the
 /// per-member gate `ctx[+0x25F + member]` the party battle-actor init writes
 /// (`FUN_80053CB8`, mirrored by
-/// `legaia_engine_core::battle_hud::battle_member_has_raseru`).
+/// `legaia_engine_battle_hud::battle_member_has_raseru`).
 ///
 /// A missing Ra-Seru is **not** a mark: the chip's label becomes a lone `-`
 /// (`FUN_801D8DE8` record `0xA`) and the arm refuses silently. Only the

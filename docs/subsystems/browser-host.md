@@ -275,7 +275,7 @@ out). Walking rolls the scene MAN's own step-driven encounter table, the world
 flips `Field -> Battle`, and the whole fight runs in `engine-core` (turn SM,
 player-driven command / arts / magic / item menus, damage formulas, loot).
 This module is presentation only: it folds battle events and strike FX into
-the shared `BattleHud` model via `engine_core::battle_hud::sync_battle_hud_rows`
+the shared `BattleHud` model via `engine_battle_hud::sync_battle_hud_rows`
 (the same fold the native window uses), arms the ENCOUNTER! banner on the mode
 edge, and mirrors the native window's battle HUD block - `battle_hud_draws_for`
 rows (retail HP/MP colour law), `encounter_banner_draws_for`, and the submenu

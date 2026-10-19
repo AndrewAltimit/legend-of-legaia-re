@@ -1,7 +1,7 @@
 //! The battle-intro enemy-name banner: flow `0x0A` seeds the `ctx[+0x6D6]`
 //! hold, the labels are one per monster group, and `0x0B` sweeps them.
 
-use super::*;
+use legaia_engine_core::world::*;
 use legaia_engine_mode::mode::SceneMode;
 
 fn intro_world() -> World {
@@ -28,7 +28,7 @@ fn intro_world() -> World {
 #[test]
 fn a_run_of_three_reads_as_one_label_with_the_composers_suffix() {
     let world = intro_world();
-    let rows = crate::battle_hud::battle_enemy_target_rows(&world);
+    let rows = legaia_engine_battle_hud::battle_enemy_target_rows(&world);
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].label, "Killer Bee * 3");
 }
@@ -72,20 +72,20 @@ fn the_labels_never_share_a_frame_with_a_command_surface() {
     let mut world = intro_world();
     world.arm_battle_intro_names();
     assert_eq!(
-        crate::battle_hud::battle_intro_names(&world, &font).len(),
+        legaia_engine_battle_hud::battle_intro_names(&world, &font).len(),
         1,
         "the labels are up through the hold"
     );
     world.battle.command = Some(BattleCommandSession::new_round_open(0, 0, false));
     assert_eq!(
-        crate::battle_hud::battle_intro_names(&world, &font).len(),
+        legaia_engine_battle_hud::battle_intro_names(&world, &font).len(),
         1,
         "the round prompt is the port's documented overlap"
     );
     world.battle.command = Some(BattleCommandSession::new(0, 0));
-    assert!(crate::battle_hud::battle_intro_names(&world, &font).is_empty());
+    assert!(legaia_engine_battle_hud::battle_intro_names(&world, &font).is_empty());
     world.battle.command = Some(BattleCommandSession::new_commit_confirm(0, 0));
-    assert!(crate::battle_hud::battle_intro_names(&world, &font).is_empty());
+    assert!(legaia_engine_battle_hud::battle_intro_names(&world, &font).is_empty());
 }
 
 /// A dome leg opens the same way: the opponent's name over its seat for the
@@ -104,21 +104,21 @@ fn a_dome_leg_opens_on_the_opponents_name() {
     let mut world = World::new();
     world.clock.frame_step = 1;
     world.enter_muscle_dome(s);
-    let names = crate::battle_hud::battle_intro_names(&world, &font);
+    let names = legaia_engine_battle_hud::battle_intro_names(&world, &font);
     assert_eq!(names.len(), 1);
     assert_eq!(names[0].0, "Red Piura");
     assert_eq!(
-        crate::battle_hud::battle_hud_phase(&world),
-        crate::battle_hud::BattleHudPhase::Idle,
+        legaia_engine_battle_hud::battle_hud_phase(&world),
+        legaia_engine_battle_hud::BattleHudPhase::Idle,
         "no chips under the banner"
     );
     for _ in 0..0x5A {
         let _ = world.tick();
     }
-    assert!(crate::battle_hud::battle_intro_names(&world, &font).is_empty());
+    assert!(legaia_engine_battle_hud::battle_intro_names(&world, &font).is_empty());
     assert_eq!(
-        crate::battle_hud::battle_hud_phase(&world),
-        crate::battle_hud::BattleHudPhase::RoundPrompt
+        legaia_engine_battle_hud::battle_hud_phase(&world),
+        legaia_engine_battle_hud::BattleHudPhase::RoundPrompt
     );
 }
 
@@ -143,10 +143,10 @@ fn the_names_wait_out_the_entry_sweep() {
         world.battle.intro_names_frames, 0x5A,
         "held under the sweep"
     );
-    assert!(crate::battle_hud::battle_intro_names(&world, &font).is_empty());
+    assert!(legaia_engine_battle_hud::battle_intro_names(&world, &font).is_empty());
     world.battle.camera = None;
     assert_eq!(
-        crate::battle_hud::battle_intro_names(&world, &font).len(),
+        legaia_engine_battle_hud::battle_intro_names(&world, &font).len(),
         1
     );
 }

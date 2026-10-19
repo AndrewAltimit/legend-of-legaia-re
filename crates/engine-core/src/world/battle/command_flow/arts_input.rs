@@ -202,7 +202,7 @@ impl World {
 
     /// The `+0x16E` status word of the member the command ring is open for,
     /// `None` without a command session. The ring's Rot / Curse marks read
-    /// it (`crate::battle_hud::battle_ring_marks`), as its refusals do
+    /// it (`legaia_engine_battle_hud::battle_ring_marks`), as its refusals do
     /// ([`ring_arm_refused`]).
     pub fn battle_command_status_word(&self) -> Option<u16> {
         let cmd = self.battle.command.as_ref()?;

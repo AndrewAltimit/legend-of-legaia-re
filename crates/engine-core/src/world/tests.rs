@@ -382,5 +382,4 @@ mod worldmap;
 
 mod battle_auto_attack;
 mod battle_formation_span;
-mod battle_intro_names;
 mod battle_target_ring;

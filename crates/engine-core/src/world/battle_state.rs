@@ -54,7 +54,7 @@ pub struct BattleState {
     /// monster `0xAF`; the formation roll raises it for the Rim Elm ambush
     /// (see [`legaia_engine_battle_vm::battle_formulas::battle_init_special_word`] /
     /// [`legaia_engine_battle_vm::battle_formulas::formation_roll_special_word`]). Read by the Ra-Seru
-    /// chip ([`crate::battle_hud::battle_magic_chip`]) and its arm
+    /// chip (`legaia_engine_battle_hud::battle_magic_chip`) and its arm
     /// (`World::tick_battle_command`). Every `!= 0` reader - the gold, EXP,
     /// drop, steal, capture, spell-XP and monster-flee gates - reads it through
     /// [`crate::world::World::special_battle_word`], together with the arena's.
@@ -308,15 +308,15 @@ pub struct BattleState {
     /// at battle load beside [`Self::monster_ai_state`].
     pub steal: legaia_engine_battle::battle_steal::StealBand,
     /// The death-spoils caption on screen (HUD element `0x5B`), if any.
-    pub(crate) steal_caption: Option<legaia_engine_battle::battle_steal::StealCaption>,
+    pub steal_caption: Option<legaia_engine_battle::battle_steal::StealCaption>,
     /// The party art-name label (element `0x4C`, records 76 / 77) has been
     /// taken down: the commit that replaces a party member's art clip on
     /// dynamic slot `0x11` destroys widget `0x21`
     /// (`FUN_8004AD80` `0x8004AE70..0x8004AEAC`), and the next art
     /// constant's commit opens it again (`0x8004BC34..0x8004BC40`).
-    /// [`crate::battle_hud::battle_move_name`] answers `None` for a party
+    /// `legaia_engine_battle_hud::battle_move_name` answers `None` for a party
     /// attack while it is set.
-    pub(crate) move_label_closed: bool,
+    pub move_label_closed: bool,
     /// The field-to-battle transition entity, live only while the encounter
     /// session sits in [`legaia_engine_battle::encounter::EncounterPhase::Transition`].
     /// `None` outside that window.
@@ -444,31 +444,31 @@ pub struct BattleState {
     /// and back when they return
     /// ([`legaia_engine_battle_vm::battle_commit_log::LogLaunch`]). `None` while the
     /// log rests; cleared by a commit (the next member's row lands fresh).
-    pub(crate) commit_log_launch: Option<legaia_engine_battle_vm::battle_commit_log::LogLaunch>,
+    pub commit_log_launch: Option<legaia_engine_battle_vm::battle_commit_log::LogLaunch>,
     /// The action plates' raise glides: the actor-name plaque (record `0x44`)
     /// and the target plaque (record `0x51`), each opened by the action
     /// seed's `FUN_801E6D84` with `FUN_801D8DE8(id, 0)` - spawned at seat A
     /// off screen and stepped onto seat B by `FUN_801D9BBC` over the same
     /// `ctx[+0x1C]` frames as every tracked widget. `None` until the first
     /// raise; a settled glide draws at rest
-    /// ([`crate::battle_hud::battle_action_plaque_dy`]).
-    pub(crate) action_plaque_glide: Option<legaia_engine_battle_vm::battle_commit_log::LogLaunch>,
+    /// (`legaia_engine_battle_hud::battle_action_plaque_dy`).
+    pub action_plaque_glide: Option<legaia_engine_battle_vm::battle_commit_log::LogLaunch>,
     /// The target plaque's raise glide - see [`Self::action_plaque_glide`].
-    pub(crate) target_plaque_glide: Option<legaia_engine_battle_vm::battle_commit_log::LogLaunch>,
+    pub target_plaque_glide: Option<legaia_engine_battle_vm::battle_commit_log::LogLaunch>,
     /// The active-actor bar's raise glide (placement record 7, `(16, 234)`
     /// -> `(16, 192)`), started where retail opens the record with mode `0`:
     /// the action seed for a party target (`0x801E2F24..0x801E2F44`) and
     /// the item pre-arm for a party actor (`0x801E3DA0..0x801E3DC0`)
-    /// ([`crate::battle_hud::battle_readout_bar_dy`]).
-    pub(crate) readout_bar_glide: Option<legaia_engine_battle_vm::battle_commit_log::LogLaunch>,
+    /// (`legaia_engine_battle_hud::battle_readout_bar_dy`).
+    pub readout_bar_glide: Option<legaia_engine_battle_vm::battle_commit_log::LogLaunch>,
     /// The roster panels' raise glide when a cast module raises them
     /// itself: PROT 0911 (Orb) arm 9's pass calls `FUN_801D8DE8(6, 0)`, then
     /// `(0x4E + i, 0)` for each further member, and stores `ctx[+0x18] = 6`
     /// for the Done hold's close (`0x801F7E64..0x801F7ED4`). Mode `0`: the
     /// panels rise from seat A to seat B (`y = 236 -> 170`) and take the
     /// readout bar's seat. Cleared by the next action's seed
-    /// ([`crate::battle_hud::battle_panels_visible`]).
-    pub(crate) module_panels_glide: Option<legaia_engine_battle_vm::battle_commit_log::LogLaunch>,
+    /// (`legaia_engine_battle_hud::battle_panels_visible`).
+    pub module_panels_glide: Option<legaia_engine_battle_vm::battle_commit_log::LogLaunch>,
     /// The round prompt's open glide. The menu SM's round-start arm runs
     /// sub-draw step 0 (`FUN_801D388C(0)` at `0x801D0EE4`), whose five pairs
     /// are all mode `0`: `Begin` (record 0), `Run` (record 3) and the three
@@ -476,9 +476,9 @@ pub struct BattleState {
     /// `FUN_801D9BBC` walks each to seat B over the same `0x10` vsyncs - the
     /// chips unfold from the cluster centre, the panels rise from under the
     /// screen. `None` before a round's first prompt
-    /// ([`crate::battle_hud::battle_round_prompt_panels_dy`],
-    /// [`crate::battle_hud::battle_chip_offsets`]).
-    pub(crate) round_prompt_glide: Option<legaia_engine_battle_vm::battle_commit_log::LogLaunch>,
+    /// (`legaia_engine_battle_hud::battle_round_prompt_panels_dy`,
+    /// `legaia_engine_battle_hud::battle_chip_offsets`).
+    pub round_prompt_glide: Option<legaia_engine_battle_vm::battle_commit_log::LogLaunch>,
     /// The ring's open glide. The round prompt's confirm arm runs sub-draw
     /// step 1 (`FUN_801D388C(1)` at `0x801D109C`), whose twelve pairs are
     /// `09/0 0A/0 08/0 0B/0 01/0 05/0 06/1 4E/1 4F/1 07/0 1A/0 52/0`: the
@@ -487,26 +487,26 @@ pub struct BattleState {
     /// the roster panels sink (mode `1`, seat B to seat A), the bar rises,
     /// the plaque drops in behind the tab and the AP plate slides in - all
     /// on the one sixteen-vsync step. `None` before a round's first ring
-    /// (the `battle_hud::battle_ring_*` helpers and the plate offsets).
-    pub(crate) ring_open_glide: Option<legaia_engine_battle_vm::battle_commit_log::LogLaunch>,
+    /// (the `legaia_engine_battle_hud::battle_ring_*` helpers and the plate offsets).
+    pub ring_open_glide: Option<legaia_engine_battle_vm::battle_commit_log::LogLaunch>,
     /// What the glide stepper returned on this tick's pass - retail's `s0`
     /// at `0x801D0B34`, the value the menu SM leaves in `ctx[+0x6B2]`.
     /// Non-zero while a tracked glide is in flight and on the pass it lands;
     /// the menu SM dispatches no state while it is
     /// (`World::battle_command_glide_gate`).
-    pub(crate) widget_glide_return: u8,
+    pub widget_glide_return: u8,
     /// `ctx[+0x6B2]`: the last non-zero stepper return, which costs a staged
     /// battle (stage id non-zero) one more undispatched pass.
     pub(crate) widget_glide_latch: u8,
     /// `ctx[+0x884]`: the press parked while the stepper's return was under
     /// `World::GLIDE_PAD_BUFFER_BELOW`, handed to the first dispatched pass
     /// that reads no press of its own.
-    pub(crate) command_pad_buffer: Option<legaia_engine_menus::battle_input::BattleCommandInput>,
+    pub command_pad_buffer: Option<legaia_engine_menus::battle_input::BattleCommandInput>,
     /// The result windows' raise glide: the results frame spawns the report
     /// (`0x41`) or loss (`0x42`) window and the level-up window
     /// (`0x44 + mask`) at their seat A, off screen, and `FUN_801D9BBC` walks
     /// them to seat B over the same `0x10` frames as the action plates
-    /// ([`crate::battle_hud::battle_result_windows_dy`]).
+    /// ([`Self::result_windows_dy`]).
     pub(crate) result_windows_glide: Option<legaia_engine_battle_vm::battle_commit_log::LogLaunch>,
     /// The target plaque's content word was cleared: the strike loop's
     /// counterattack swap zeroes record `0x51`'s string and width
@@ -522,7 +522,7 @@ pub struct BattleState {
     /// (`FUN_801D8DE8(0x51, 1)` at `0x801E6344`). So past the teardown the
     /// plaque is either sliding out ([`Self::target_plaque_glide`], a
     /// closing launch) or gone. Cleared by the next action seed's raise.
-    pub(crate) action_hud_wiped: bool,
+    pub action_hud_wiped: bool,
     /// The counterer whose strikes the counterattack swap is running, while
     /// the HUD still holds the elements the **monster's** action seed opened.
     /// The swap runs no seed pass, so retail keeps the readout bar the
@@ -627,13 +627,13 @@ pub struct BattleState {
     /// The arrival's boss-name banner, `(text, pen x, pen y)` - up from its
     /// phase 5 until the round opens (retail's text actor, swept by flow
     /// state `0x0B`'s `FUN_800355F0`). Measured by the host's font, so the
-    /// pen x is filled in by `battle_hud::battle_stage_banner`.
+    /// pen x is filled in by `legaia_engine_battle_hud::battle_stage_banner`.
     pub stage_banner: Option<String>,
     /// Frames the battle-**intro** enemy-name banner has left - retail's
     /// `ctx[+0x6D6]` intro timer, which flow state `0x0A` seeds at `0x5A`
     /// (`0x78` with a formation advantage, `0x801D0E14..0x801D0E38`) and which
     /// drains by the frame step until `0x0B` sweeps the labels away. `0`
-    /// = no banner. See `battle_hud::battle_intro_names`.
+    /// = no banner. See `legaia_engine_battle_hud::battle_intro_names`.
     pub intro_names_frames: u16,
     /// The player's **Auto** attack: the per-fighter flag, the round-start
     /// pool-arm queues and their disc inputs
@@ -993,7 +993,33 @@ impl BattleState {
             entry_serial: 0,
         }
     }
+
+    /// The special-battle word's Ra-Seru bit is up for this battle (the Rim
+    /// Elm ambush, monster `0xAF`; see [`Self::special_word`]). The command
+    /// ring refuses the Ra-Seru press on it and the battle HUD greys and
+    /// crosses out the chip.
+    pub fn raseru_forbidden(&self) -> bool {
+        self.special_word & legaia_engine_battle_vm::battle_formulas::SPECIAL_RASERU_FORBIDDEN != 0
+    }
+
+    /// How far the level-up window and the report (or loss) window sit below
+    /// their rest rows this frame, `(level_up, report)`: the raise glide the
+    /// results frame starts ([`Self::result_windows_glide`]).
+    pub fn result_windows_dy(&self) -> (i32, i32) {
+        use legaia_engine_battle_vm::battle_commit_log::LogLaunch;
+        let g = self.result_windows_glide.as_ref();
+        let (a, b) = LEVEL_UP_WINDOW_SEATS_Y;
+        let (c, d) = REPORT_WINDOW_SEATS_Y;
+        (LogLaunch::seat_dy(g, a, b), LogLaunch::seat_dy(g, c, d))
+    }
 }
+
+/// Seat A / seat B rows of the level-up window (records `0x45..=0x4B`:
+/// `y = -24` -> `14`) and of the report / loss window (`0x41` / `0x42`:
+/// `236` -> `160`), off the placement table.
+const LEVEL_UP_WINDOW_SEATS_Y: (i32, i32) = (-24, 14);
+
+const REPORT_WINDOW_SEATS_Y: (i32, i32) = (236, 160);
 
 impl Default for BattleState {
     fn default() -> Self {

@@ -66,7 +66,7 @@ impl World {
     /// (v0.1: a physical Attack) and clear the session so the SM resumes.
     /// On an abort (no valid target) it falls back to the first living monster
     /// so the loop never deadlocks.
-    pub(in crate::world) fn tick_battle_command(&mut self) {
+    pub fn tick_battle_command(&mut self) {
         use crate::battle_round::PendingPartyAction;
         use legaia_engine_battle::target_picker::CursorRow;
         use legaia_engine_menus::battle_input::{BattleCommandInput, CommandPhase, Resolution};
@@ -241,7 +241,7 @@ impl World {
                 // REF: FUN_801D0748 (states 0x28 / 0x78 into 0x3C / 0x46 / 0x50)
                 self.sync_battle_flow(None);
             }
-            Some(Resolution::OpenSpellMenu) if crate::battle_hud::battle_raseru_forbidden(self) => {
+            Some(Resolution::OpenSpellMenu) if self.battle.raseru_forbidden() => {
                 // The special word forbids the Ra-Seru chip: retail's arm
                 // returns without committing (`0x801D1448..0x801D1454`), so
                 // the ring stays up.

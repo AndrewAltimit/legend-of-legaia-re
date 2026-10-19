@@ -96,22 +96,6 @@ fn a_wandered_formation_is_squashed_to_the_frame() {
     assert_eq!(z[0] + z[1], 0, "recentred: {z:?}");
 }
 
-/// The intro label for a monster group sits over the group's seat:
-/// `(x >> 3) - width / 2 + 0xA0`, off the monster actor's world X.
-#[test]
-fn intro_labels_sit_over_their_monsters() {
-    let mut world = World::new();
-    seat_monsters(&mut world, 3, &[4, 7, 9]);
-    let rows = crate::battle_hud::battle_enemy_target_rows(&world);
-    let xs: Vec<i16> = rows.iter().map(|r| r.x).collect();
-    // The three normal-family seats: -600, 0, 600.
-    assert_eq!(xs, vec![-600, 0, 600]);
-    let mut rows = rows;
-    legaia_engine_battle::target_picker::layout_enemy_menu_rows(&mut rows, |_| 0);
-    let placed: Vec<i16> = rows.iter().map(|r| r.x).collect();
-    assert_eq!(placed, vec![0xA0 - 75, 0xA0, 0xA0 + 75]);
-}
-
 /// A scripted fight seats its monsters on the alternate family: three
 /// monsters read `(0, 900) (-600, 700) (600, 700)` instead of the normal
 /// row.

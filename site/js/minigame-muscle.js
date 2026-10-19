@@ -1468,7 +1468,7 @@ window.MgMuscle = (function () {
      * bar's row (188) during playback - the battle's target plaque
      * (placement record 81), which rises to the status plate's own row and
      * takes it over while the fighter is the one attacking (captured at the
-     * HYPER ARTS!! moment; `engine-core::battle_hud::battle_target_plaque`).
+     * HYPER ARTS!! moment; `engine-battle-hud::battle_target_plaque`).
      * The playback seat used to be a fitted y=168, which put the plate
      * under the TOTAL tally row (value cells at y=168..183). */
     function drawFoeChip(state, y) {

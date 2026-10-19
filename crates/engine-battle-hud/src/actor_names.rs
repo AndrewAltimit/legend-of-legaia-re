@@ -3,7 +3,7 @@
 use super::*;
 
 /// Seated party count, clamped to the actor table.
-pub(super) fn party_count(world: &crate::world::World) -> usize {
+pub(super) fn party_count(world: &legaia_engine_core::world::World) -> usize {
     // A dome leg seats the lead fighter alone, and no battle actor table
     // backs it.
     if world.mode == legaia_engine_mode::mode::SceneMode::MuscleDome {
@@ -13,7 +13,7 @@ pub(super) fn party_count(world: &crate::world::World) -> usize {
 }
 
 /// A party member's display name by battle ordinal.
-pub(super) fn party_member_name(world: &crate::world::World, slot: u8) -> String {
+pub(super) fn party_member_name(world: &legaia_engine_core::world::World, slot: u8) -> String {
     let names = world.party.roster_names();
     names
         .get(world.party_roster_slot(slot as usize))
@@ -23,7 +23,7 @@ pub(super) fn party_member_name(world: &crate::world::World, slot: u8) -> String
 }
 
 /// A monster's catalog name by actor slot.
-pub(super) fn monster_name(world: &crate::world::World, slot: u8) -> String {
+pub(super) fn monster_name(world: &legaia_engine_core::world::World, slot: u8) -> String {
     let pc = party_count(world);
     let catalog = |s: usize| -> Option<String> {
         world
@@ -54,7 +54,7 @@ pub(super) fn monster_name(world: &crate::world::World, slot: u8) -> String {
 }
 
 /// Any actor's display name by slot.
-pub(super) fn actor_name(world: &crate::world::World, slot: u8) -> String {
+pub(super) fn actor_name(world: &legaia_engine_core::world::World, slot: u8) -> String {
     if (slot as usize) < party_count(world) {
         party_member_name(world, slot)
     } else {
@@ -75,7 +75,7 @@ pub(super) fn actor_name(world: &crate::world::World, slot: u8) -> String {
 /// skips the `(0x44, 1)` close because no plaque was opened for it). The
 /// captures agree - `Vahn` behind the tab in the ring, `Vahn` / `Gimard` /
 /// `Zora` at `(16, 12)` through their actions, nothing at `0x1E` or `0x0A`.
-pub fn battle_active_actor(world: &crate::world::World) -> Option<(u8, String)> {
+pub fn battle_active_actor(world: &legaia_engine_core::world::World) -> Option<(u8, String)> {
     match battle_hud_phase(world) {
         BattleHudPhase::Idle | BattleHudPhase::RoundPrompt => None,
         BattleHudPhase::CommandEntry => {

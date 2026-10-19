@@ -40,7 +40,6 @@ mod battle_loop_wiring;
 mod battle_member_step_back;
 mod battle_open_flow;
 mod battle_physical_damage;
-mod battle_plaque_badge_census_disc;
 mod battle_player_driven;
 mod battle_reaction_stage_precedence;
 mod battle_real_data_chain;

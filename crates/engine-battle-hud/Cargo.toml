@@ -1,0 +1,31 @@
+[package]
+name = "legaia-engine-battle-hud"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+# tests/integration.rs gathers every tests/*.rs into one binary.
+autotests = false
+
+[lib]
+name = "legaia_engine_battle_hud"
+path = "src/lib.rs"
+
+[dependencies]
+legaia-engine-core.workspace = true
+legaia-engine-battle.workspace = true
+legaia-engine-battle-vm.workspace = true
+legaia-engine-cast.workspace = true
+legaia-engine-menus.workspace = true
+legaia-engine-mode.workspace = true
+legaia-art.workspace = true
+legaia-font.workspace = true
+legaia-ui-formats.workspace = true
+
+[dev-dependencies]
+legaia-actor-formats.workspace = true
+legaia-engine-system.workspace = true
+legaia-save.workspace = true
+
+[[test]]
+name = "integration"
+path = "tests/integration.rs"

@@ -62,7 +62,7 @@
 //! record the ring's step 1 opens) for the member the cursor names. So this
 //! module draws **only the breadcrumb trail** at target select; the strip
 //! itself is `battle_hud_draws_for`'s bar, fed by
-//! `engine-core::battle_hud::battle_readout_bar_slot`
+//! `engine-battle-hud::battle_readout_bar_slot`
 //! (`CommandSurface::ItemTarget`), which is what keeps the blue plate and
 //! the sprite label widgets - not a menu-window skin and text stand-ins -
 //! on the row. The `TARGET_*` constants stay as the capture's record, held

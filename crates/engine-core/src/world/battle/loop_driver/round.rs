@@ -378,7 +378,7 @@ impl World {
     /// and begins the round at once, with no confirm.
     ///
     /// PORT: FUN_801D0748 (the commit idiom; `0x32`'s run confirm)
-    pub(in crate::world) fn commit_party_command(
+    pub fn commit_party_command(
         &mut self,
         actor: u8,
         action: crate::battle_round::PendingPartyAction,

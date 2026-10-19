@@ -53,7 +53,7 @@ pub struct DiscTables {
     /// the running `mp` value (not the cap); the cap lives on the
     /// character record at `+0x140`. Engines populate this from the
     /// character record at battle init.
-    pub(crate) character_max_mp: Vec<u16>,
+    pub character_max_mp: Vec<u16>,
     /// Optional formation table - engines install this at boot via
     /// [`crate::world::World::set_formation_table`] so triggered encounters can resolve
     /// their `formation_id` into concrete monster slot definitions.

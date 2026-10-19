@@ -144,8 +144,10 @@ fn fight(inp: &Inputs, steal_bit: bool) -> Outcome {
     let mut caption = None;
     for _ in 0..60_000 {
         w.tick();
-        if caption.is_none() {
-            caption = legaia_engine_core::battle_hud::battle_message_bar(&w);
+        // The message bar's line (`battle_message_bar` in
+        // legaia-engine-battle-hud): the steal caption while in battle.
+        if caption.is_none() && w.mode == SceneMode::Battle {
+            caption = w.battle.steal_caption.as_ref().map(|c| c.text.clone());
         }
         if w.mode != SceneMode::Battle {
             break;

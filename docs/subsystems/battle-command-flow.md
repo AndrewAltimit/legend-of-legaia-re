@@ -436,7 +436,7 @@ The capture `party_basic_attack_vs_gobu_gobu` (solo Vahn at `0x6E`,
 **Port.** `legaia_engine_battle_vm::battle_commit_log` stages the rows over a
 scratch placement array (`stage_commit_row`, with `FUN_801D5718` as
 `battle_cursor_pose::element_placement_land` and `FUN_801D57E8` for the
-all-target labels); `engine-core::battle_hud::battle_commit_log` lists the
+all-target labels); `engine-battle-hud::battle_commit_log` lists the
 members the cursor has walked past - all of them once `0x6E` is up - from
 `RoundFlow::pending`; and `engine-ui`'s battle HUD builder draws each element
 as a gold plate (kind `2`) with its text at the pen `(x, y - 2)`. Both hosts

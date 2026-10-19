@@ -6,8 +6,8 @@ use legaia_engine_menus::battle_input::CommandChipPhase;
 /// dead slot must contribute nothing (retail's zero id).
 #[test]
 fn enemy_target_rows_collapse_runs_and_skip_dead_slots() {
-    use crate::world::{Actor, World};
     use legaia_engine_battle::monster_catalog::MonsterDef;
+    use legaia_engine_core::world::{Actor, World};
     let mut w = World::new();
     while w.actors.len() < 8 {
         w.actors.push(Actor::default());
@@ -52,7 +52,7 @@ fn enemy_target_rows_collapse_runs_and_skip_dead_slots() {
 /// frame and never shown.
 #[test]
 fn sync_reads_ramped_display_hp_not_live_hp() {
-    use crate::world::{Actor, World};
+    use legaia_engine_core::world::{Actor, World};
     let mut w = World::new();
     while w.actors.len() < 4 {
         w.actors.push(Actor::default());
@@ -84,9 +84,9 @@ fn sync_reads_ramped_display_hp_not_live_hp() {
 // The per-phase rule (retail's sub-draw script + action-SM seed arms)
 // ------------------------------------------------------------------
 
-fn battle_world(party: u8) -> crate::world::World {
-    use crate::world::{Actor, World};
+fn battle_world(party: u8) -> legaia_engine_core::world::World {
     use legaia_engine_battle::monster_catalog::MonsterDef;
+    use legaia_engine_core::world::{Actor, World};
     use legaia_engine_mode::mode::SceneMode;
     let mut w = World::new();
     while w.actors.len() < 8 {
@@ -493,7 +493,7 @@ fn item_window_shows_panels_and_its_target_step_shows_the_pointed_bar() {
     );
 }
 
-fn arm_action(w: &mut crate::world::World, actor: u8, category: u8, target: u8) {
+fn arm_action(w: &mut legaia_engine_core::world::World, actor: u8, category: u8, target: u8) {
     w.battle.command = None;
     w.battle_ctx.active_actor = actor;
     w.battle_ctx.action_state = 0x20;

@@ -48,7 +48,7 @@
 //! # Wiring
 //!
 //! Live on both hosts through the battle HUD's drawn bars.
-//! `engine-core::battle_hud::BattleSlotHud::gauge_fill_indices` calls
+//! `engine-battle-hud::BattleSlotHud::gauge_fill_indices` calls
 //! [`gauge_colors`] per slot each frame (fed the **displayed** ramping HP,
 //! the same `+0x172` field retail's death arm keys on), the index rides
 //! `SlotView::hp_fill` / `mp_fill` into `engine-ui`'s

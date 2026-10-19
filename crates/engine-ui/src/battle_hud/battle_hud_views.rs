@@ -366,7 +366,7 @@ pub struct BattleHudFrame<'a> {
     /// actor's** name in a framed plaque at the top-left corner - "Vahn"
     /// while Vahn's item lands (`captures/tetsu_idle`), "Tetsu" through the
     /// enemy's rush - so hosts pass
-    /// `engine-core::battle_hud::battle_plaque_label`. The plaque *skin* is
+    /// `engine-battle-hud::battle_plaque_label`. The plaque *skin* is
     /// not yet pinned; the label draws as clean text at the plaque's
     /// captured text inset until it is.
     pub plaque: Option<&'a str>,
@@ -392,33 +392,33 @@ pub struct BattleHudFrame<'a> {
     /// frame - retail's `06/1 4E/1 4F/1`, which sends the cluster to
     /// `y = 236` under the 228-line display window. The engine stage is 240
     /// lines, so the builder emits no panel draws instead. Hosts pass the
-    /// inverse of `engine-core::battle_hud::battle_panels_visible`, which
+    /// inverse of `engine-battle-hud::battle_panels_visible`, which
     /// carries the per-phase rule (up at the round prompt and while an item
     /// / magic window is browsed, parked by the ring and every action but a
     /// party-wide one).
     pub panels_parked: bool,
     /// Rows the roster panels sit below their rest seat this frame, while
     /// the round prompt's open glide raises them from seat A
-    /// (`engine-core::battle_hud::battle_round_prompt_panels_dy`): records
+    /// (`engine-battle-hud::battle_round_prompt_panels_dy`): records
     /// 6 / `0x4E` / `0x4F` spawn at `y = 236` and walk to `170`. `0` at
     /// rest.
     pub panels_dy: i32,
     /// The `Begin` breadcrumb tab is up at `(16, 12)` and the plaque sits
     /// behind it at `(68, 12)` - retail's placement records 1 and 26, the
     /// shape every command-entry step from the ring on carries
-    /// (`engine-core::battle_hud::battle_begin_tab_visible`). Without it the
+    /// (`engine-battle-hud::battle_begin_tab_visible`). Without it the
     /// plaque takes its action seat `(16, 12)` (record 68).
     pub begin_tab: bool,
     /// The `Begin` tab's offset from its seat while it walks there from the
     /// round prompt's `Begin` seat, as the ring opens
-    /// (`engine-core::battle_hud::battle_begin_tab_offset`). `(0, 0)` at
+    /// (`engine-battle-hud::battle_begin_tab_offset`). `(0, 0)` at
     /// rest.
     pub begin_tab_offset: (i32, i32),
     /// The third breadcrumb tab behind `Begin | <name>` - the chosen ring
     /// arm's chip glided onto the trail (record `0x0D` `Attack` from the
     /// attack-mode prompt through the arts entry, record `0x0E` the Ra-Seru
     /// name through the spell window;
-    /// `engine-core::battle_hud::battle_breadcrumb_third_tab`). Drawn only
+    /// `engine-battle-hud::battle_breadcrumb_third_tab`). Drawn only
     /// with [`Self::begin_tab`], abutting the plaque's right cap.
     pub third_tab: Option<&'a str>,
     /// The art / spell / item name retail draws under the action
@@ -430,14 +430,14 @@ pub struct BattleHudFrame<'a> {
     /// plate whose right cap ends at `x = 312`, on the bar's row.
     pub target_plaque: Option<(&'a str, Option<u8>)>,
     /// The actor-name plaque's offset below its rest seat while its raise
-    /// glide runs (`engine-core::battle_hud::battle_action_plaque_dy`):
+    /// glide runs (`engine-battle-hud::battle_action_plaque_dy`):
     /// negative from the seed's raise until it lands. `0` at rest.
     pub plaque_dy: i32,
     /// The target plaque's offset below its rest seat while its raise glide
-    /// runs (`engine-core::battle_hud::battle_target_plaque_dy`).
+    /// runs (`engine-battle-hud::battle_target_plaque_dy`).
     pub target_plaque_dy: i32,
     /// The active-actor bar's offset below its rest seat while its raise
-    /// glide runs (`engine-core::battle_hud::battle_readout_bar_dy`):
+    /// glide runs (`engine-battle-hud::battle_readout_bar_dy`):
     /// positive from the seed's raise until it lands. `0` at rest.
     pub bar_dy: i32,
     /// The **target-select** plaque (placement record `0x29`): the monster
@@ -446,11 +446,11 @@ pub struct BattleHudFrame<'a> {
     /// pulled left to end by `0x130`, row `162`
     /// (`crate::battle_chrome::target_select_plaque_x`). `None`
     /// unless a picker's cursor sits on the enemy row
-    /// (`engine-core::battle_hud::battle_target_select_plaque`).
+    /// (`engine-battle-hud::battle_target_select_plaque`).
     pub target_select: Option<(&'a str, Option<u8>)>,
     /// The full-width message bar (HUD element `0x5B`, placement record 91 -
     /// `(16, 236)` sliding to `(16, 194)`, width 288): the steal / stolen-item
-    /// caption `engine-core::battle_hud::battle_message_bar` names. It takes
+    /// caption `engine-battle-hud::battle_message_bar` names. It takes
     /// the active-actor bar's own seat, so while it is up neither that bar
     /// nor the target plaque on the same row draws
     /// (`player_steal_skeleton_banner` shows the caption alone on the row).
@@ -461,7 +461,7 @@ pub struct BattleHudFrame<'a> {
     /// so it needs [`Self::chrome`].
     pub ap_plate_value: Option<u8>,
     /// How far right of its seat the AP plate sits while it slides in with
-    /// the ring (`engine-core::battle_hud::battle_ring_ap_plate_dx`). `0` at
+    /// the ring (`engine-battle-hud::battle_ring_ap_plate_dx`). `0` at
     /// rest.
     pub ap_plate_dx: i32,
     /// Stage rect (`x, y, w, h`) of a box the **host** draws on top of the
@@ -483,21 +483,21 @@ pub struct BattleHudFrame<'a> {
     /// `None` (the default) leaves both surfaces alone.
     pub host_box: Option<(i32, i32, i32, i32)>,
     /// Actor-table slot of the actor the frame belongs to
-    /// (`engine-core::battle_hud::battle_active_actor`). When it names a live
+    /// (`engine-battle-hud::battle_active_actor`). When it names a live
     /// party member, retail replaces that member's resting panel readout with
     /// the full-width active-actor bar; hosts also pass the same actor's name
     /// as [`Self::plaque`].
     pub active_slot: Option<u8>,
     /// The **commit log** - one row per member who has committed a command
-    /// this round (`engine-core::battle_hud::battle_commit_log`), laid out by
+    /// this round (`engine-battle-hud::battle_commit_log`), laid out by
     /// `legaia_engine_battle_vm::battle_commit_log` and drawn as gold plates.
     pub commit_log: &'a [legaia_engine_battle_vm::battle_commit_log::CommitLogRow],
     /// The battle-intro enemy-name labels, `(label, pen x)`, pen y
-    /// [`BATTLE_INTRO_NAME_Y`] (`engine-core::battle_hud::battle_intro_names`,
+    /// [`BATTLE_INTRO_NAME_Y`] (`engine-battle-hud::battle_intro_names`,
     /// retail `FUN_801D9D3C`). Empty outside the intro timer.
     pub intro_names: &'a [(String, i32)],
     /// The boss-name banner a battle-stage module raises, `(label, pen x,
-    /// pen y)` (`engine-core::battle_hud::battle_stage_banner`, PROT 0968's
+    /// pen y)` (`engine-battle-hud::battle_stage_banner`, PROT 0968's
     /// phase 5): a bare text actor, no frame. `None` outside it.
     pub stage_banner: Option<(&'a str, i32, i32)>,
     /// Diagnostic readout ([`diag_hud_enabled`]): the engine's debug rows -

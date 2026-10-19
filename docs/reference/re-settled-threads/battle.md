@@ -570,7 +570,7 @@ on the owning page:
   members: `0` in the sparring fight, `1` for Vahn from the Meta capture on, `0` for Noa beside Terra,
   all `1` at the level-99 Rage state.
 
-Port: `engine-core::battle_hud::battle_magic_chip`.
+Port: `engine-battle-hud::battle_magic_chip`.
 
 ### The combo counter's glide is placement record 80's
 

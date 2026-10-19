@@ -363,6 +363,17 @@ impl LogLaunch {
         self.elapsed >= self.total
     }
 
+    /// Where a plate gliding from `seat_a` to `seat_b` on `glide` sits
+    /// relative to its rest seat: `FUN_801D9BBC`'s linear step
+    /// (`a + (b - a) * elapsed / total`, snapped once settled), less
+    /// `seat_b`. `0` with no glide recorded or once it has settled.
+    pub fn seat_dy(glide: Option<&Self>, seat_a: i32, seat_b: i32) -> i32 {
+        let Some(g) = glide.filter(|g| !g.settled()) else {
+            return 0;
+        };
+        (seat_a - seat_b) - (seat_a - seat_b) * i32::from(g.elapsed) / i32::from(g.total.max(1))
+    }
+
     /// One frame of `FUN_801D9BBC` for this record:
     ///
     /// ```text

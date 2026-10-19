@@ -5,11 +5,11 @@ use legaia_render_kernels::battle_intro::BattleIntro;
 use legaia_render_kernels::screen_prim::ScreenPrim;
 
 // The battle-HUD row fold and the encounter-banner label are shared with the
-// browser play page: both live in `legaia_engine_core::battle_hud` and each
+// browser play page: both live in `legaia_engine_battle_hud` and each
 // host projects the resulting `BattleHud` into its own renderer's view types.
 // Re-exported here so the window modules (and their wiring tests) keep their
 // `battle::` paths.
-pub(super) use legaia_engine_core::battle_hud::{encounter_banner_label, sync_battle_hud_rows};
+pub(super) use legaia_engine_battle_hud::{encounter_banner_label, sync_battle_hud_rows};
 
 #[path = "battle/intro.rs"]
 mod intro;

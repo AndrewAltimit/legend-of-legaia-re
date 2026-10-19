@@ -55,6 +55,7 @@ members = [
     "crates/engine-capture",
     "crates/engine-core",
     "crates/engine-menu-runtime",
+    "crates/engine-battle-hud",
     "crates/engine-scene-host",
     "crates/engine-effects",
     "crates/engine-fishing",
@@ -141,6 +142,7 @@ legaia-engine-capture = { path = "crates/engine-capture" }
 legaia-engine-cast = { path = "crates/engine-cast" }
 legaia-engine-core = { path = "crates/engine-core" }
 legaia-engine-menu-runtime = { path = "crates/engine-menu-runtime" }
+legaia-engine-battle-hud = { path = "crates/engine-battle-hud" }
 legaia-engine-scene-host = { path = "crates/engine-scene-host" }
 legaia-engine-effects = { path = "crates/engine-effects" }
 legaia-engine-export = { path = "crates/engine-export" }

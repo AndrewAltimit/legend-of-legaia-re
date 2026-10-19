@@ -25,7 +25,7 @@
 
 use legaia_actor_formats::monster_archive;
 use legaia_engine_battle::monster_catalog::monster_def_from_record;
-use legaia_engine_core::battle_hud::{BATTLE_PLAQUE_BADGE_COUNT, ELEMENT_TO_PLAQUE_BADGE};
+use legaia_engine_battle_hud::{BATTLE_PLAQUE_BADGE_COUNT, ELEMENT_TO_PLAQUE_BADGE};
 use std::path::PathBuf;
 
 fn entry_867() -> Option<Vec<u8>> {

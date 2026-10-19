@@ -4,8 +4,6 @@
 //! them, and the next turn's arts entry opens on the extended gauge.
 
 use super::*;
-use crate::battle_hud::battle_readout_bar_slot;
-use legaia_engine_battle_vm::battle_action::ActionState;
 use legaia_engine_menus::battle_input::{BattleCommandSession, CommandPhase};
 use legaia_engine_mode::mode::SceneMode;
 use legaia_engine_system::input::PadButton;
@@ -41,48 +39,6 @@ fn commit_spirit_and_begin(world: &mut World) {
     world.set_pad(PadButton::Cross.mask());
     world.tick_battle_command();
     world.set_pad(0);
-}
-
-#[test]
-fn a_spirit_turn_draws_a_growing_ap_bar_and_no_readout_bar() {
-    let mut world = spirit_world();
-    assert!(
-        world.spirit_gauge_view().is_none(),
-        "nothing before the turn"
-    );
-    commit_spirit_and_begin(&mut world);
-
-    let mut bars = Vec::new();
-    let mut plates = Vec::new();
-    for _ in 0..3000 {
-        world.tick();
-        let s = world.battle_ctx.action_state;
-        if world.battle_ctx.active_actor == 0
-            && (ActionState::SpiritArtsEntry.as_byte()..=ActionState::SpiritArtsFlush.as_byte())
-                .contains(&s)
-        {
-            let view = world
-                .spirit_gauge_view()
-                .expect("the Spirit band carries the AP bar + plate");
-            assert!(view.pennants.is_empty() && !view.chips_visible());
-            bars.push(view.pool_max);
-            plates.push(view.plate_value);
-            assert_eq!(
-                battle_readout_bar_slot(&world),
-                None,
-                "the Spirit arm raises no readout bar over the gauge"
-            );
-        }
-        if world.battle_ctx.action_state == ActionState::DoneCleanup.as_byte() && !bars.is_empty() {
-            break;
-        }
-    }
-    assert!(!bars.is_empty(), "the Spirit band ran");
-    assert_eq!(bars.first().copied(), Some(194), "opens on the live gauge");
-    // 194 * 7 / 5 + 8 = 279: the bar grows to the extended gauge.
-    assert_eq!(bars.last().copied(), Some(279));
-    assert!(bars.windows(2).all(|w| w[1] >= w[0]));
-    assert_eq!(plates.last().copied(), Some(0x20), "the plate climbs +0x20");
 }
 
 #[test]

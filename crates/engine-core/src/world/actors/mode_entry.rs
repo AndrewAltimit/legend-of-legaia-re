@@ -185,7 +185,7 @@ impl World {
         // The magic-level-up queue is a per-battle oracle record, not a host
         // hand-off: the banner the level-up raises is the battle message
         // banner (`raise_magic_level_banner`, screen element `0x65`), which
-        // both hosts draw through `battle_hud::battle_banner_message`. No
+        // both hosts draw through `legaia_engine_battle_hud::battle_banner_message`. No
         // host drains the queue, so it is bounded here - one battle's events
         // at most - instead of growing for the whole session.
         self.seru.magic_level_ups.clear();

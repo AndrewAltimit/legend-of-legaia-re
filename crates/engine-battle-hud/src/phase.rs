@@ -59,7 +59,7 @@ pub fn battle_action_in_flight(state: u8) -> bool {
 /// An open submenu or arts-entry session wins over the command session's
 /// own phase (retail's windows are states below the ring), and the command
 /// session wins over the action SM (it opens between actions).
-pub fn battle_hud_phase(world: &crate::world::World) -> BattleHudPhase {
+pub fn battle_hud_phase(world: &legaia_engine_core::world::World) -> BattleHudPhase {
     use legaia_engine_menus::battle_input::CommandPhase;
     if world.mode == legaia_engine_mode::mode::SceneMode::MuscleDome {
         // A dome leg is a battle whose only command surfaces are the
@@ -167,7 +167,7 @@ pub enum CommandSurface {
 
 /// The surface owning this frame, or `None` outside
 /// [`BattleHudPhase::CommandEntry`].
-pub fn battle_command_surface(world: &crate::world::World) -> Option<CommandSurface> {
+pub fn battle_command_surface(world: &legaia_engine_core::world::World) -> Option<CommandSurface> {
     use legaia_engine_battle::target_picker::{CursorRow, PickerState};
     use legaia_engine_menus::battle_input::CommandPhase;
     if battle_hud_phase(world) != BattleHudPhase::CommandEntry {
@@ -228,7 +228,7 @@ pub fn battle_command_surface(world: &crate::world::World) -> Option<CommandSurf
 }
 
 /// The party member entering a command while a command surface is up.
-pub(super) fn command_entry_actor(world: &crate::world::World) -> Option<u8> {
+pub(super) fn command_entry_actor(world: &legaia_engine_core::world::World) -> Option<u8> {
     // The dome fields one fighter, seated at ordinal 0.
     if world.mode == legaia_engine_mode::mode::SceneMode::MuscleDome {
         return world.minigames.muscle_dome.as_ref().map(|_| 0);

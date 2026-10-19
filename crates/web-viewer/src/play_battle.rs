@@ -16,7 +16,7 @@
 //!   arm the ENCOUNTER! banner on the `Field -> Battle` edge, fold battle
 //!   events, feed strike FX into the damage-popup model, refresh the
 //!   per-slot rows through the **shared**
-//!   [`legaia_engine_core::battle_hud::sync_battle_hud_rows`] fold.
+//!   [`legaia_engine_battle_hud::sync_battle_hud_rows`] fold.
 //! * [`LegaiaRuntime::battle_overlay_draws`] mirrors the native window's
 //!   battle HUD block (`window/hud.rs`): the shared
 //!   [`legaia_engine_ui::battle_hud_draws_for`] rows (carrying the retail
@@ -38,7 +38,7 @@
 
 use crate::runtime::LegaiaRuntime;
 use legaia_engine_battle::battle_hud_state::DamagePopup;
-use legaia_engine_core::battle_hud::{encounter_banner_label, sync_battle_hud_rows};
+use legaia_engine_battle_hud::{encounter_banner_label, sync_battle_hud_rows};
 use legaia_engine_mode::mode::SceneMode;
 use legaia_engine_ui::{self as ui, SpriteDraw, TextDraw};
 use legaia_render_kernels::battle_intro::BattleIntro;

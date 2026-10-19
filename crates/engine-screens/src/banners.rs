@@ -9,7 +9,7 @@ use legaia_engine_ui::{self as ui, TextDraw};
 ///
 /// With the system-UI chrome loaded the message rides retail's framed
 /// top-of-screen banner (the widget the `noa_levelup_banner` capture
-/// pinned), read through `engine-core::battle_hud::battle_banner_message`.
+/// pinned), read through `engine-battle-hud::battle_banner_message`.
 /// The two framed paths are mutually exclusive by mode: in battle
 /// `battle_hud_draws_for` already emitted the banner (and yielded the
 /// plaque's seat to it), so this returns nothing; outside battle the rows
@@ -23,7 +23,7 @@ pub fn banner_stage_draws(inputs: &ScreenInputs<'_>) -> Vec<TextDraw> {
     let font = inputs.font;
     let mut out = Vec::new();
     if inputs.chrome.is_some()
-        && let Some(message) = legaia_engine_core::battle_hud::battle_banner_message(world)
+        && let Some(message) = legaia_engine_battle_hud::battle_banner_message(world)
     {
         if world.mode != SceneMode::Battle {
             out.extend(ui::battle_hud_chrome::message_banner_text_draws_for(

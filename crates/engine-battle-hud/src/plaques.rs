@@ -4,6 +4,7 @@
 //! marks.
 
 use super::*;
+use legaia_engine_battle_vm::battle_commit_log::LogLaunch;
 use legaia_engine_menus::battle_input::CommandChipPhase;
 
 /// The party member whose full-width readout bar (placement record 7) is
@@ -25,7 +26,7 @@ use legaia_engine_menus::battle_input::CommandChipPhase;
 ///   acting member when that member is a party slot. A Spirit action never
 ///   reaches `0x3C` - its seed arm goes straight to `0x46` - and raises the
 ///   AP bar + plate pair instead, so it has no readout bar.
-pub fn battle_readout_bar_slot(world: &crate::world::World) -> Option<u8> {
+pub fn battle_readout_bar_slot(world: &legaia_engine_core::world::World) -> Option<u8> {
     use legaia_engine_battle_vm::battle_action::ActionCategory;
     let pc = party_count(world) as u8;
     match battle_hud_phase(world) {
@@ -45,7 +46,7 @@ pub fn battle_readout_bar_slot(world: &crate::world::World) -> Option<u8> {
                 .and_then(|(attacker, _)| (attacker == 1).then_some(0))
         }
         // The counterattack swap keeps the bar the monster's seed raised for
-        // its target - the counterer ([`crate::world::BattleState::counter_hud`]).
+        // its target - the counterer ([`legaia_engine_core::world::BattleState::counter_hud`]).
         BattleHudPhase::Action if world.battle.counter_hud.is_some() => {
             world.battle.counter_hud.filter(|s| *s < pc)
         }
@@ -75,7 +76,7 @@ pub fn battle_readout_bar_slot(world: &crate::world::World) -> Option<u8> {
                 // The Spirit arm (`0x801E2F54..0x801E3024`) sends category
                 // `4` straight to `0x46` and jumps past both record-7 opens:
                 // it raises the AP bar (`0x0F`) and the AP plate (`0x52`)
-                // instead ([`crate::world::World::spirit_gauge_view`]). The
+                // instead ([`legaia_engine_core::world::World::spirit_gauge_view`]). The
                 // retail Spirit captures carry no readout bar.
                 None
             } else if cat == ActionCategory::Item.as_byte() {
@@ -96,7 +97,7 @@ pub fn battle_readout_bar_slot(world: &crate::world::World) -> Option<u8> {
 /// own copy in the port. `FUN_801D8DE8` case `0x52` (`0x801D9028`) reads
 /// the acting member's actor `+0x170` - the Spirit gauge, `0` for a level-1
 /// Vahn in the sparring fight's `v0_1_battle_command_submenu` frame.
-pub fn battle_ring_ap_plate_value(world: &crate::world::World) -> Option<u8> {
+pub fn battle_ring_ap_plate_value(world: &legaia_engine_core::world::World) -> Option<u8> {
     if battle_command_surface(world) != Some(CommandSurface::Ring) {
         return None;
     }
@@ -125,7 +126,7 @@ pub fn battle_ring_ap_plate_value(world: &crate::world::World) -> Option<u8> {
 ///   `FUN_801D8DE8(0x4C, 0)` (`0x801E4430..0x801E4458`), behind a seat test
 ///   that skips the block for a party caster;
 /// * an item names the item (the `0x3C` arm's `(0x4C, 0)` at `0x801E3DC8`).
-pub fn battle_move_name(world: &crate::world::World) -> Option<String> {
+pub fn battle_move_name(world: &legaia_engine_core::world::World) -> Option<String> {
     use legaia_engine_battle_vm::battle_action::ActionCategory;
     // A dome play-out has no battle-action record behind it to name.
     if battle_hud_phase(world) != BattleHudPhase::Action
@@ -205,25 +206,11 @@ pub fn battle_move_name(world: &crate::world::World) -> Option<String> {
 /// ([`legaia_engine_battle::battle_steal`]). Composed at the death commit from the
 /// templates on the user's executable, and held for the rest of the action
 /// that raised it.
-pub fn battle_message_bar(world: &crate::world::World) -> Option<String> {
+pub fn battle_message_bar(world: &legaia_engine_core::world::World) -> Option<String> {
     if world.mode != legaia_engine_mode::mode::SceneMode::Battle {
         return None;
     }
     world.battle.steal_caption.as_ref().map(|c| c.text.clone())
-}
-
-/// Where a gliding plate sits relative to its rest seat: `FUN_801D9BBC`'s
-/// linear step from `seat_a` to `seat_b` (`a + (b - a) * elapsed / total`,
-/// snapped once settled), less `seat_b`. `0` with no glide recorded.
-pub(super) fn plate_glide_dy(
-    glide: Option<&legaia_engine_battle_vm::battle_commit_log::LogLaunch>,
-    seat_a: i32,
-    seat_b: i32,
-) -> i32 {
-    let Some(g) = glide.filter(|g| !g.settled()) else {
-        return 0;
-    };
-    (seat_a - seat_b) - (seat_a - seat_b) * i32::from(g.elapsed) / i32::from(g.total.max(1))
 }
 
 /// Seat A / seat B rows of a roster panel (records 6 / `0x4E` / `0x4F`:
@@ -237,7 +224,7 @@ pub(super) const ROUND_PROMPT_CHIP_SEATS_X: [(i32, i32); 2] = [(142, 104), (142,
 
 /// The round prompt's open glide while the prompt is what the frame draws.
 fn round_prompt_glide(
-    world: &crate::world::World,
+    world: &legaia_engine_core::world::World,
 ) -> Option<&legaia_engine_battle_vm::battle_commit_log::LogLaunch> {
     (world.mode == legaia_engine_mode::mode::SceneMode::Battle
         && battle_hud_phase(world) == BattleHudPhase::RoundPrompt)
@@ -246,9 +233,9 @@ fn round_prompt_glide(
 }
 
 /// The ring's open glide while the ring is what the frame draws
-/// ([`crate::world::BattleState::ring_open_glide`]), still in flight.
+/// ([`legaia_engine_core::world::BattleState::ring_open_glide`]), still in flight.
 pub(super) fn ring_open_glide(
-    world: &crate::world::World,
+    world: &legaia_engine_core::world::World,
 ) -> Option<&legaia_engine_battle_vm::battle_commit_log::LogLaunch> {
     (world.mode == legaia_engine_mode::mode::SceneMode::Battle
         && battle_command_surface(world) == Some(CommandSurface::Ring))
@@ -280,13 +267,13 @@ pub(super) const RING_AP_PLATE_SEATS_X: (i32, i32) = (328, 208);
 
 /// How far the roster panels sit below their rest row this frame: the rise
 /// sub-draw step 0 starts when a round's prompt opens
-/// ([`crate::world::BattleState::round_prompt_glide`]), and the sink step 1
+/// ([`legaia_engine_core::world::BattleState::round_prompt_glide`]), and the sink step 1
 /// runs as the ring opens (`06/1 4E/1 4F/1`: seat B back down to seat A,
-/// [`crate::world::BattleState::ring_open_glide`]), and the rise a cast
+/// [`legaia_engine_core::world::BattleState::ring_open_glide`]), and the rise a cast
 /// module's own raise runs in an action
-/// ([`crate::world::BattleState::module_panels_glide`]). `0` once landed and
+/// ([`legaia_engine_core::world::BattleState::module_panels_glide`]). `0` once landed and
 /// on every other surface that shows the panels.
-pub fn battle_round_prompt_panels_dy(world: &crate::world::World) -> i32 {
+pub fn battle_round_prompt_panels_dy(world: &legaia_engine_core::world::World) -> i32 {
     let (a, b) = ROSTER_PANEL_SEATS_Y;
     if let Some(g) = ring_open_glide(world) {
         return (a - b) * i32::from(g.elapsed) / i32::from(g.total.max(1));
@@ -294,41 +281,41 @@ pub fn battle_round_prompt_panels_dy(world: &crate::world::World) -> i32 {
     if battle_hud_phase(world) == BattleHudPhase::Action
         && let Some(g) = world.battle.module_panels_glide.as_ref()
     {
-        return plate_glide_dy(Some(g), a, b);
+        return LogLaunch::seat_dy(Some(g), a, b);
     }
-    plate_glide_dy(round_prompt_glide(world), a, b)
+    LogLaunch::seat_dy(round_prompt_glide(world), a, b)
 }
 
 /// Each command chip's offset from its rest seat this frame, in chip order:
 /// the round prompt's `Begin` and `Run` unfolding from the cluster centre,
 /// and the ring's four arms sliding in from the right. Zero on every other
 /// cluster and once the glide has landed.
-pub fn battle_chip_offsets(world: &crate::world::World) -> [(i32, i32); 4] {
+pub fn battle_chip_offsets(world: &legaia_engine_core::world::World) -> [(i32, i32); 4] {
     let mut out = [(0, 0); 4];
     if let Some(g) = ring_open_glide(world) {
         let (a, b) = RING_ARM_SEATS_X;
-        return [(plate_glide_dy(Some(g), a, b), 0); 4];
+        return [(LogLaunch::seat_dy(Some(g), a, b), 0); 4];
     }
     let g = round_prompt_glide(world);
     for (o, (a, b)) in out.iter_mut().zip(ROUND_PROMPT_CHIP_SEATS_X) {
-        o.0 = plate_glide_dy(g, a, b);
+        o.0 = LogLaunch::seat_dy(g, a, b);
     }
     out
 }
 
 /// The `Begin` tab's offset from its seat this frame: record 1 walking from
 /// the round prompt's `Begin` seat as the ring opens. `(0, 0)` at rest.
-pub fn battle_begin_tab_offset(world: &crate::world::World) -> (i32, i32) {
+pub fn battle_begin_tab_offset(world: &legaia_engine_core::world::World) -> (i32, i32) {
     let g = ring_open_glide(world);
     let ((ax, ay), (bx, by)) = BEGIN_TAB_SEATS;
-    (plate_glide_dy(g, ax, bx), plate_glide_dy(g, ay, by))
+    (LogLaunch::seat_dy(g, ax, bx), LogLaunch::seat_dy(g, ay, by))
 }
 
 /// How far right of its seat the ring's AP plate sits this frame: record
 /// `0x52` sliding in as the ring opens. `0` at rest.
-pub fn battle_ring_ap_plate_dx(world: &crate::world::World) -> i32 {
+pub fn battle_ring_ap_plate_dx(world: &legaia_engine_core::world::World) -> i32 {
     let (a, b) = RING_AP_PLATE_SEATS_X;
-    plate_glide_dy(ring_open_glide(world), a, b)
+    LogLaunch::seat_dy(ring_open_glide(world), a, b)
 }
 
 /// Whether the command cluster's D-pad glyph draws this frame. The menu
@@ -349,7 +336,7 @@ pub fn battle_ring_ap_plate_dx(world: &crate::world::World) -> i32 {
 /// first draws on the pass after.
 ///
 /// REF: FUN_801D0748, FUN_801DB8F4
-pub fn battle_chip_dpad_visible(world: &crate::world::World) -> bool {
+pub fn battle_chip_dpad_visible(world: &legaia_engine_core::world::World) -> bool {
     if ring_open_glide(world).is_some() {
         return false;
     }
@@ -359,23 +346,6 @@ pub fn battle_chip_dpad_visible(world: &crate::world::World) -> bool {
     !ring_landing
         && round_prompt_glide(world)
             .is_none_or(|g| g.settled() && world.battle.widget_glide_return == 0)
-}
-
-/// Seat A / seat B rows of the level-up window (records `0x45..=0x4B`:
-/// `y = -24` -> `14`) and of the report / loss window (`0x41` / `0x42`:
-/// `236` -> `160`), off the placement table.
-pub(super) const LEVEL_UP_WINDOW_SEATS_Y: (i32, i32) = (-24, 14);
-
-pub(super) const REPORT_WINDOW_SEATS_Y: (i32, i32) = (236, 160);
-
-/// How far the level-up window and the report (or loss) window sit below
-/// their rest rows this frame, `(level_up, report)`: the raise glide the
-/// results frame starts ([`crate::world::BattleState::result_windows_glide`]).
-pub fn battle_result_windows_dy(world: &crate::world::World) -> (i32, i32) {
-    let g = world.battle.result_windows_glide.as_ref();
-    let (a, b) = LEVEL_UP_WINDOW_SEATS_Y;
-    let (c, d) = REPORT_WINDOW_SEATS_Y;
-    (plate_glide_dy(g, a, b), plate_glide_dy(g, c, d))
 }
 
 /// Seat A / seat B rows of the actor-name plaque (record `0x44`: `(16,
@@ -397,12 +367,12 @@ pub(super) const TARGET_PLAQUE_SEATS_Y: (i32, i32) = (236, 194);
 /// shows no plaque, and one taken half a glide later shows it half in.
 /// On the command ring the plaque is a different record (`0x1A`, behind the
 /// `Begin` tab), which drops in from the same parked row as the ring opens
-/// ([`crate::world::BattleState::ring_open_glide`]); every later
+/// ([`legaia_engine_core::world::BattleState::ring_open_glide`]); every later
 /// command-entry step snaps it and this is `0`.
-pub fn battle_action_plaque_dy(world: &crate::world::World) -> i32 {
+pub fn battle_action_plaque_dy(world: &legaia_engine_core::world::World) -> i32 {
     if let Some(g) = ring_open_glide(world) {
         let (a, b) = TAB_PLAQUE_SEATS_Y;
-        return plate_glide_dy(Some(g), a, b);
+        return LogLaunch::seat_dy(Some(g), a, b);
     }
     if battle_hud_phase(world) != BattleHudPhase::Action
         || world.mode != legaia_engine_mode::mode::SceneMode::Battle
@@ -410,13 +380,13 @@ pub fn battle_action_plaque_dy(world: &crate::world::World) -> i32 {
         return 0;
     }
     let (a, b) = ACTION_PLAQUE_SEATS_Y;
-    plate_glide_dy(world.battle.action_plaque_glide.as_ref(), a, b)
+    LogLaunch::seat_dy(world.battle.action_plaque_glide.as_ref(), a, b)
 }
 
 /// How far the target plaque sits below its rest seat this frame - the
 /// same raise glide as [`battle_action_plaque_dy`], on record `0x51`, from
 /// below the bottom edge.
-pub fn battle_target_plaque_dy(world: &crate::world::World) -> i32 {
+pub fn battle_target_plaque_dy(world: &legaia_engine_core::world::World) -> i32 {
     if world.mode != legaia_engine_mode::mode::SceneMode::Battle {
         return 0;
     }
@@ -425,7 +395,7 @@ pub fn battle_target_plaque_dy(world: &crate::world::World) -> i32 {
         // The teardown's closing launch (mode `1`): seat B back down to
         // seat A.
         Some(g) if g.inbound => (a - b) * i32::from(g.elapsed) / i32::from(g.total.max(1)),
-        g => plate_glide_dy(g, a, b),
+        g => LogLaunch::seat_dy(g, a, b),
     }
 }
 
@@ -435,14 +405,14 @@ pub(super) const READOUT_BAR_SEATS_Y: (i32, i32) = (234, 192);
 
 /// How far the active-actor bar sits below its rest seat this frame - the
 /// raise glide record 7 runs when the action seed (or the item pre-arm)
-/// opens it ([`crate::world::BattleState::readout_bar_glide`]), and the same
+/// opens it ([`legaia_engine_core::world::BattleState::readout_bar_glide`]), and the same
 /// rise as the ring opens (step 1's `07/0`,
-/// [`crate::world::BattleState::ring_open_glide`]). `0` on every other
+/// [`legaia_engine_core::world::BattleState::ring_open_glide`]). `0` on every other
 /// command-entry step, which snaps the bar.
-pub fn battle_readout_bar_dy(world: &crate::world::World) -> i32 {
+pub fn battle_readout_bar_dy(world: &legaia_engine_core::world::World) -> i32 {
     if let Some(g) = ring_open_glide(world) {
         let (a, b) = RING_BAR_SEATS_Y;
-        return plate_glide_dy(Some(g), a, b);
+        return LogLaunch::seat_dy(Some(g), a, b);
     }
     if battle_hud_phase(world) != BattleHudPhase::Action
         || world.mode != legaia_engine_mode::mode::SceneMode::Battle
@@ -450,7 +420,7 @@ pub fn battle_readout_bar_dy(world: &crate::world::World) -> i32 {
         return 0;
     }
     let (a, b) = READOUT_BAR_SEATS_Y;
-    plate_glide_dy(world.battle.readout_bar_glide.as_ref(), a, b)
+    LogLaunch::seat_dy(world.battle.readout_bar_glide.as_ref(), a, b)
 }
 
 /// Whether `FUN_801E6D84`'s target arm runs for this category: it returns
@@ -491,13 +461,15 @@ pub const ROW_PLATE_SPELL_IDS: [u8; 3] = [0x8D, 0x86, 0x82];
 /// (`0x801E6170`) and re-spawns it on a closing glide only for a monster
 /// target under categories `1..=3` (`0x801E6314..0x801E6348`), so it is
 /// gone sixteen vsyncs into the teardown at the latest.
-pub fn battle_target_plaque(world: &crate::world::World) -> Option<(String, Option<u8>)> {
+pub fn battle_target_plaque(
+    world: &legaia_engine_core::world::World,
+) -> Option<(String, Option<u8>)> {
     use legaia_engine_battle_vm::battle_action::ActionCategory;
     if battle_hud_phase(world) != BattleHudPhase::Action || world.battle.target_plate_cleared {
         return None;
     }
     // Past the Done band's teardown the plaque is its closing glide or
-    // nothing ([`crate::world::BattleState::action_hud_wiped`]):
+    // nothing ([`legaia_engine_core::world::BattleState::action_hud_wiped`]):
     // `rim_elm_gimard_seru_capture_after`, held in `0x52` behind the capture
     // banner, shows none.
     if world.battle.action_hud_wiped
@@ -561,7 +533,9 @@ pub fn battle_target_plaque(world: &crate::world::World) -> Option<(String, Opti
 /// own cursor. Seat law: `legaia_engine_ui::battle_chrome::target_select_plaque_x`.
 ///
 /// REF: FUN_801D5854 (`0x801D5B28..0x801D5BAC`)
-pub fn battle_target_select_plaque(world: &crate::world::World) -> Option<(String, Option<u8>)> {
+pub fn battle_target_select_plaque(
+    world: &legaia_engine_core::world::World,
+) -> Option<(String, Option<u8>)> {
     use legaia_engine_battle::target_picker::{CursorRow, PickerState, TargetPickerSession};
     let b = &world.battle;
     let picker: Option<&TargetPickerSession> = b
@@ -614,7 +588,10 @@ pub fn battle_target_select_plaque(world: &crate::world::World) -> Option<(Strin
 /// selector [`battle_plaque_element_badge`] reads. Indexing the strip with
 /// the record's `+0x1D` element byte drew Gimard (element `2`) under the
 /// wind plate, and badged monsters whose names carry no escape.
-pub(super) fn monster_element_badge(world: &crate::world::World, slot: u8) -> Option<u8> {
+pub(super) fn monster_element_badge(
+    world: &legaia_engine_core::world::World,
+    slot: u8,
+) -> Option<u8> {
     let actor = world.actors.get(slot as usize)?;
     let def = world.tables.monster_catalog.get(actor.battle_monster_id?)?;
     def.plaque_badge
@@ -646,7 +623,7 @@ pub(super) const CHAR_ID_NOA: u8 = 2;
 /// `rim_elm_gimard_seru_capture_after` on, all three at
 /// `evil_medallion_rage_battle`) and `0` for the sparring fight, for Noa in
 /// `terra_party_battle` and for the zeroed `zora_glare` party.
-pub fn battle_member_has_raseru(world: &crate::world::World, ordinal: u8) -> bool {
+pub fn battle_member_has_raseru(world: &legaia_engine_core::world::World, ordinal: u8) -> bool {
     let roster = world.party_roster_slot(ordinal as usize);
     let char_id = roster as u8 + 1;
     let slot = if char_id == CHAR_ID_NOA {
@@ -679,9 +656,9 @@ pub fn battle_member_has_raseru(world: &crate::world::World, ordinal: u8) -> boo
 /// keeps the name, crosses the chip out (`FUN_801DBC30(0xF8, 0x42)` at
 /// `0x801D12F0`, [`battle_magic_chip_mark`]) and refuses the arm
 /// (`0x801D1448..0x801D1454`).
-pub fn battle_magic_chip(world: &crate::world::World, ordinal: u8) -> (String, bool) {
+pub fn battle_magic_chip(world: &legaia_engine_core::world::World, ordinal: u8) -> (String, bool) {
     let has_raseru = battle_member_has_raseru(world, ordinal);
-    let forbidden = battle_raseru_forbidden(world);
+    let forbidden = world.battle.raseru_forbidden();
     let roster = world.party_roster_slot(ordinal as usize);
     let char_id = roster as u8 + 1;
     let idx = if has_raseru && (1..=3).contains(&char_id) {
@@ -707,13 +684,6 @@ pub fn battle_magic_chip(world: &crate::world::World, ordinal: u8) -> (String, b
     (label, has_raseru && !forbidden)
 }
 
-/// The special-battle word's Ra-Seru bit is up for this battle (the Rim Elm
-/// ambush, monster `0xAF`; see [`crate::world::BattleState::special_word`]).
-pub fn battle_raseru_forbidden(world: &crate::world::World) -> bool {
-    world.battle.special_word & legaia_engine_battle_vm::battle_formulas::SPECIAL_RASERU_FORBIDDEN
-        != 0
-}
-
 /// The mark the Ra-Seru chip wears in a regular battle: the red cross-out
 /// ([`legaia_engine_menus::muscle_dome_session::ChipMark::Forbidden`], `FUN_801DBC30`) while the
 /// special word forbids it, else none. The phase-`0x28` arm draws the mark
@@ -722,9 +692,11 @@ pub fn battle_raseru_forbidden(world: &crate::world::World) -> bool {
 /// REF: FUN_801D0748 (the mark test; the draw-side port is
 /// [`battle_raseru_cross_out`])
 pub fn battle_magic_chip_mark(
-    world: &crate::world::World,
+    world: &legaia_engine_core::world::World,
 ) -> Option<legaia_engine_menus::muscle_dome_session::ChipMark> {
-    battle_raseru_forbidden(world)
+    world
+        .battle
+        .raseru_forbidden()
         .then_some(legaia_engine_menus::muscle_dome_session::ChipMark::Forbidden)
 }
 
@@ -742,7 +714,7 @@ pub fn battle_magic_chip_mark(
 /// `save_menu_atlas::add_cross_out_mark` bakes from the effect page.
 ///
 /// PORT: FUN_801D0748 (phase-`0x28` arm, the `0x200` cross-out at `0x801D12DC..0x801D12F4`)
-pub fn battle_raseru_cross_out(world: &crate::world::World) -> bool {
+pub fn battle_raseru_cross_out(world: &legaia_engine_core::world::World) -> bool {
     battle_magic_chip_mark(world).is_some()
         && battle_command_chips(world).is_some_and(|c| c.phase == CommandChipPhase::CommandRing)
 }
@@ -757,8 +729,8 @@ pub fn battle_raseru_cross_out(world: &crate::world::World) -> bool {
 /// stamps Rot on the Attack chip (`FUN_801DBD04(0xA0, 0x42)`) and its
 /// `+0x16E & 0x1000` lays the Curse plate on the Magic chip
 /// (`FUN_801DBEC4(0xF8, 0x42)`). The two status tests are the ones the ring
-/// refuses a press on (`crate::world` `ring_arm_refused`); the member word is
-/// [`crate::world::World::battle_command_status_word`], the same composed
+/// refuses a press on (`legaia_engine_core::world` `ring_arm_refused`); the member word is
+/// [`legaia_engine_core::world::World::battle_command_status_word`], the same composed
 /// word the refusal reads.
 ///
 /// Both play hosts pass this to `engine-ui`'s
@@ -768,7 +740,7 @@ pub fn battle_raseru_cross_out(world: &crate::world::World) -> bool {
 ///
 /// PORT: FUN_801D0748 (phase-`0x28` arm, the four ring marks at `0x801D12C0..0x801D1360`)
 pub fn battle_ring_marks(
-    world: &crate::world::World,
+    world: &legaia_engine_core::world::World,
 ) -> legaia_engine_battle_vm::battle_party_panel::RingMarks {
     if !battle_command_chips(world).is_some_and(|c| c.phase == CommandChipPhase::CommandRing) {
         return legaia_engine_battle_vm::battle_party_panel::RingMarks::default();

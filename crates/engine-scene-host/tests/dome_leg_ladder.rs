@@ -366,7 +366,7 @@ fn a_resolved_turn_holds_for_its_playback_and_tallies_it() {
     assert!(attacker <= 1);
     // The play-out is an action frame to the shared HUD kernels both hosts
     // read: the command cluster is down and the acting side's plaque is up.
-    use legaia_engine_core::battle_hud as bh;
+    use legaia_engine_battle_hud as bh;
     assert_eq!(bh::battle_hud_phase(&w), bh::BattleHudPhase::Action);
     if attacker == 0 {
         assert!(

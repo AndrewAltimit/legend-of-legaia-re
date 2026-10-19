@@ -17,8 +17,9 @@
 # the layer: any kernel crate may depend on them, and none of them may depend
 # on an engine-layer crate.
 #
-# An engine-layer crate with no row here (engine-core, the session, the
-# screens, the renderer, the audio stack, the hosts) is above the kernels. It
+# An engine-layer crate with no row here (engine-core, the battle HUD reads,
+# the session, the screens, the renderer, the audio stack, the hosts) is above
+# the kernels. It
 # may depend on anything, and no kernel crate may depend on it.
 #
 # Rank is derived, not written: a crate's rank is one more than the highest

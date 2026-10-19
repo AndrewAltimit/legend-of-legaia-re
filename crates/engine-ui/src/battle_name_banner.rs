@@ -27,7 +27,7 @@
 //! # Wiring
 //!
 //! [`banner_x`] is live: `battle_hud::battle_hud_draws_for` centres the
-//! move-name label with it whenever `engine-core::battle_hud::battle_move_name`
+//! move-name label with it whenever `engine-battle-hud::battle_move_name`
 //! names one, on the pen row the retail placement records pin. The row is
 //! not this routine's - it belongs to the two placement records the X is
 //! written into: `0x80076C10 + 76 * 0x18` and `+ 77 * 0x18` (the four
@@ -96,7 +96,7 @@ pub const CHARACTER_NAME_OFFSET: usize = 0x2A7;
 ///
 /// REPLACED-BY: `legaia_art::arts_table::parse_from_scus`, which decodes the
 /// same static table `DAT_80075EC4` into the typed arts catalog, and
-/// `engine-core::battle_hud::battle_move_name`, which is where the live
+/// `engine-battle-hud::battle_move_name`, which is where the live
 /// banner label comes from on both hosts. No host is owed a call.
 ///
 /// This routine's whole product is a **record index into the raw table** -

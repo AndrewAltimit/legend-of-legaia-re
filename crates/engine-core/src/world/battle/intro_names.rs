@@ -3,7 +3,7 @@
 //! `FUN_801D9D3C` and seeds the intro timer `ctx[+0x6D6]`, and state `0x0B`
 //! drains it by the frame step until it expires and `FUN_800355F0` sweeps
 //! every text actor away. The labels themselves are built per frame by
-//! `battle_hud::battle_intro_names`; this module owns the timer.
+//! `legaia_engine_battle_hud::battle_intro_names`; this module owns the timer.
 //!
 //! The one arm that skips the composer: a formation whose first monster id
 //! byte (`0x8007BD0C`) is `0xB5` stores flow `0x0C` directly and draws no
@@ -29,7 +29,7 @@ pub const INTRO_NAMELESS_MONSTER: u16 = 0xB5;
 impl World {
     /// Seed the intro banner's timer at battle open. Must run before the
     /// formation arm clears `ctx[+0x290]`, which it reads.
-    pub(in crate::world) fn arm_battle_intro_names(&mut self) {
+    pub fn arm_battle_intro_names(&mut self) {
         let first = self
             .actors
             .get(usize::from(self.party.party_count.clamp(1, 3)))
@@ -64,7 +64,7 @@ impl World {
     /// vsync tick ([`super::commit_log_launch::BATTLE_PASS_STEP_PER_TICK`]).
     /// The timer holds while the entry sweep runs
     /// ([`Self::battle_entry_sweeping`]).
-    pub(in crate::world) fn step_battle_intro_names(&mut self) {
+    pub fn step_battle_intro_names(&mut self) {
         if self.battle_entry_sweeping() {
             return;
         }

@@ -62,6 +62,7 @@ flowchart BT
     CORE["engine-core<br/>World"]
     SH["engine-scene-host<br/>SceneHost"]
     MR["engine-menu-runtime<br/>MenuRuntime"]
+    BHUD["engine-battle-hud<br/>HUD reads"]
     EUI["engine-ui"]
     EREN["engine-render<br/>wgpu"]
     EAUD["engine-audio<br/>SPU + sequencer"]
@@ -110,10 +111,13 @@ flowchart BT
     EAUD --> FMT
     SH --> CORE
     MR --> SH
+    BHUD --> CORE
     SESS --> MR
     SESS --> EAUD
     SCR --> MR
     SCR --> EUI
+    SCR --> BHUD
+    PAR --> BHUD
     PAR --> SESS
     SHELL --> PAR
     SHELL --> SCR
@@ -135,6 +139,7 @@ The shape to read off it:
 - **`engine-core` is where they meet.** It owns `World` and implements the per-VM `Host` traits. A module there that shares its name with a kernel module (`shop`, `dance`, `tile_board`, `mode`, `camera`, ...) holds only the functions that read a `World` or a `Scene`; the rules are in the kernel crate.
 - **Presentation is a separate branch.** `render-kernels` -> `engine-ui` -> `engine-render` and `engine-audio` do not depend on `engine-core`; the hosts compose them with it. `render-kernels` is also what the effect, field and minigame kernels link for GTE math.
 - **Two layers drive a `World` from outside, directly above `engine-core`.** `engine-scene-host` holds `SceneHost` (scene entry and tick, BGM routing, the FMV hand-off, save resume, the live-scene preview); `engine-menu-runtime` holds the pause menu over the world (`MenuRuntime`, the field-menu dispatcher). Nothing in `engine-core` names either, so a `World` change rebuilds them but a scene-host or menu change does not rebuild the simulation. The `World` fields the scene entry seeds are `pub` for that reason.
+- **The battle HUD's reads of `World` are their own crate above `engine-core`.** `engine-battle-hud` answers what the in-battle screen shows off the battle state (phase word, command chips, commit log, plaques and their glides, banners, badges) and fills the `BattleHud` model. The simulation names none of it: the two battle-screen facts the battle loop decides on, the Ra-Seru refusal and the result windows' raise glide, are `BattleState` methods in `engine-core`, over the glide step `LogLaunch::seat_dy` in `engine-battle-vm` that both sides share.
 - **`engine-session` and `engine-screens` are the host-shared top.** `BootSession` (scene host + per-frame order + BGM director) and the shop-family screens are written once and ticked by both play hosts.
 - **`engine-export` is a tool layer above `engine-core`, not a host layer.** The `.glb` world exporter steps a scratch `World` to bake animation and traversal data, so it needs the simulation; nothing in the simulation needs it, and only the native binary links it.
 
@@ -188,17 +193,18 @@ Internal dependencies as declared in each crate's `Cargo.toml`. "Format-family c
 | `engine-scene` | `engine-field`, `engine-dialog`, `engine-system`, `engine-vm`, `render-kernels`, `disc-audit` + the format-family and parser crates | Scene resolution and loading, environment draws, virtual filesystem; no `World`. |
 | `engine-core` | `engine-scene`, every `engine-*` kernel crate above, `render-kernels` + the format-family and parser crates | `World`, the tick, battle loop, saves. |
 | `engine-scene-host` | `engine-core`, `engine-scene`, the kernel crates it enters scenes through + format-family and parser crates | `SceneHost`: scene entry and tick, BGM routing, resume, live preview. |
-| `engine-menu-runtime` | `engine-scene-host`, `engine-core`, `engine-menus`, `engine-battle`, `engine-battle-vm`, `engine-field`, `engine-minigames`, `engine-system`, `art`, `game-tables`, `save` | The pause menu over `World`. |
+| `engine-menu-runtime` | `engine-scene-host`, `engine-core`, `engine-scene`, `engine-menus`, `engine-battle`, `engine-battle-vm`, `engine-field`, `engine-minigames`, `engine-system`, `art`, `game-tables`, `save`, `ui-formats` | The pause menu over `World`, the memory-card Save writer. |
+| `engine-battle-hud` | `engine-core`, `engine-battle`, `engine-battle-vm`, `engine-cast`, `engine-menus`, `engine-mode`, `art`, `font`, `ui-formats` | The battle HUD's reads of `World`. |
 | `engine-ui` | `render-kernels`, `engine-battle-vm`, `engine-cast`, `game-tables`, `minigame-formats`, `ui-formats`, `tim`, `font` | Draw-list builders; no wgpu. |
 | `engine-render` | `engine-ui`, `render-kernels`, `engine-camera`, `tim`, `font` | wgpu renderer. |
 | `engine-audio` | `xa`, `vab`, `seq`, `prot` | SPU model, sequencer, output backends. |
 | `engine-session` | `engine-menu-runtime`, `engine-scene-host`, `engine-core`, `engine-scene`, `engine-audio`, `engine-menus`, `engine-minigame-scenes`, `engine-battle`, `engine-field`, `engine-mode`, `engine-system` + format-family and parser crates | `BootSession` + BGM director; no wgpu or winit. |
-| `engine-screens` | `engine-menu-runtime`, `engine-scene-host`, `engine-core`, `engine-scene`, `engine-ui`, `engine-battle`, `engine-dialog`, `engine-effects`, `engine-field`, `engine-fishing`, `engine-menus`, `engine-minigame-scenes`, `engine-minigames`, `engine-mode`, `engine-system`, `render-kernels`, `game-tables`, `minigame-formats`, `font` | The screens both hosts draw: shop family, battle HUD, pause menu, dialog box. |
+| `engine-screens` | `engine-battle-hud`, `engine-menu-runtime`, `engine-scene-host`, `engine-core`, `engine-scene`, `engine-ui`, `engine-battle`, `engine-dialog`, `engine-effects`, `engine-field`, `engine-fishing`, `engine-menus`, `engine-minigame-scenes`, `engine-minigames`, `engine-mode`, `engine-system`, `render-kernels`, `game-tables`, `minigame-formats`, `font` | The screens both hosts draw: shop family, battle HUD, pause menu, dialog box. |
 | `engine-export` | `engine-core`, `engine-scene`, `engine-field`, `engine-vm`, `actor-formats`, `game-tables`, `scene-formats`, `tim`, `tmd` | The `.glb` world exporter behind `export-glb`. |
 | `engine-capture` | `engine-scene-host`, `engine-core`, `engine-battle`, `engine-battle-vm`, `engine-camera`, `engine-cast`, `engine-dialog`, `engine-effects`, `engine-field`, `engine-menus`, `engine-mode`, `engine-system`, `art`, `save`, `scene-formats` | Capture seeds, gates and pad drives shared by `parity` and the native capture child. |
-| `parity` | `engine-capture`, `engine-session`, `engine-menu-runtime`, `engine-scene-host`, `engine-core`, `engine-scene`, `engine-audio`, `engine-ui`, the kernel crates it measures, `mednafen`, `pcsx-redux`, `ram-image` + parser crates | Parity oracles + retail comparison. |
-| `engine-shell` | `parity`, `engine-capture`, `engine-session`, `engine-screens`, `engine-export`, `engine-menu-runtime`, `engine-scene-host`, `engine-core`, `engine-scene`, `engine-render`, `engine-ui`, `engine-audio`, the kernel crates + format-family and parser crates | The native host. |
-| `web-viewer` | `engine-session`, `engine-screens`, `engine-menu-runtime`, `engine-scene-host`, `engine-core`, `engine-scene`, `engine-ui`, `engine-audio`, the kernel crates, `patcher` and its layer crates + format-family and parser crates | The browser hosts and site tools. |
+| `parity` | `engine-capture`, `engine-battle-hud`, `engine-session`, `engine-menu-runtime`, `engine-scene-host`, `engine-core`, `engine-scene`, `engine-audio`, `engine-ui`, the kernel crates it measures, `mednafen`, `pcsx-redux`, `ram-image` + parser crates | Parity oracles + retail comparison. |
+| `engine-shell` | `parity`, `engine-capture`, `engine-session`, `engine-screens`, `engine-battle-hud`, `engine-export`, `engine-menu-runtime`, `engine-scene-host`, `engine-core`, `engine-scene`, `engine-render`, `engine-ui`, `engine-audio`, the kernel crates + format-family and parser crates | The native host. |
+| `web-viewer` | `engine-session`, `engine-screens`, `engine-battle-hud`, `engine-menu-runtime`, `engine-scene-host`, `engine-core`, `engine-scene`, `engine-ui`, `engine-audio`, the kernel crates, `patcher` and its layer crates + format-family and parser crates | The browser hosts and site tools. |
 | `asset-viewer` | `engine-core`, `engine-scene`, `engine-vm`, `engine-battle-vm`, `engine-dialog`, `engine-field`, `engine-mode`, `engine-system`, `engine-ui`, `engine-render`, `engine-audio`, `disc-audit` + format-family and parser crates | Standalone asset viewer. |
 
 ### The layering gate

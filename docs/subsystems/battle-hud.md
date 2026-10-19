@@ -26,7 +26,7 @@ same surface on both hosts from one shared builder.
 | Sprite emitters | `FUN_8002C488` (one sprite), `FUN_8002C69C` (sized widget), `FUN_8002BDC4` (window fill) |
 | Retained handle list | `ctx[+0x1074]`, forty handles; glide slots `ctx[+0x11B4 + slot * 0xC]` |
 | Art | resident system-UI TIM `PROT.DAT` `0x18E0` -> VRAM page `(896, 256)`, CLUT row 511; menu-glyph atlas page `(896, 0)`, CLUT row 510 |
-| Port | model `engine-core::battle_hud`, draw builder `engine-ui::battle_hud::battle_hud_draws_for`, pins `engine-ui::battle_chrome` |
+| Port | model `engine-battle-hud`, draw builder `engine-ui::battle_hud::battle_hud_draws_for`, pins `engine-ui::battle_chrome` |
 
 Every HUD element, with its art, placement record, retail draw routine and port module:
 
@@ -246,7 +246,7 @@ glides that arm's chip onto the trail as a third tab abutting the plaque, at
 
 Both `0x0D` and `0x0E` carry interior `w = 0x30`; the `arts_bar_*` captures
 read `Begin | Vahn | Attack` over the direction chips. Port:
-`engine-core::battle_hud::battle_breadcrumb_third_tab`, drawn by
+`engine-battle-hud::battle_breadcrumb_third_tab`, drawn by
 `engine-ui::battle_hud` on both hosts.
 
 <a id="the-party-status-readout---and-it-has-no-gauge"></a>
@@ -716,7 +716,7 @@ The port's party band is the field actor table, which a scene script can blank
 (`opurud` resets slots 1 / 2), so its battle entry re-seats the three values
 off the roster (`World::seed_party_battle_hp_from_records`).
 
-**Port.** `engine-core::battle_hud` carries the rule as predicates
+**Port.** `engine-battle-hud` carries the rule as predicates
 (`battle_panels_visible`, `battle_readout_bar_slot`, `battle_begin_tab_visible`,
 `battle_ring_ap_plate_value`, `battle_move_name`, `battle_target_plaque`,
 `battle_combo_style`, `battle_magic_chip`) and decodes the table itself
@@ -1146,7 +1146,7 @@ the text-actor list empty. What carries the fight from there is
 Every spawn is node kind 0, style 3. After the second run's teardown the round
 prompt builds `Begin` / `Run` on ids `3` and `4`.
 
-**Port.** `engine-core::battle_hud::battle_intro_names` builds the labels (the
+**Port.** `engine-battle-hud::battle_intro_names` builds the labels (the
 grouping and run suffix of `target_picker::enemy_menu_rows`, the layout of
 `target_picker::layout_enemy_menu_rows`), measured with the host's
 `legaia-font` and reading `+0x34` off the live actor position.
@@ -1502,7 +1502,7 @@ see [Arts presentation](battle-actor-rendering.md#arts-presentation-slow-motion-
 <a id="battle-hud-model"></a>
 ## Engine port: the battle HUD model
 
-[`engine-core::battle_hud`](../../crates/engine-core/src/battle_hud.rs) is the
+[`engine-battle-hud`](../../crates/engine-battle-hud/src/lib.rs) is the
 renderer-agnostic UI state for the in-battle screen: per-slot HP / MP / AP and
 status state plus a queue of damage popups and battle-event log lines.
 `engine-ui::battle_hud::battle_hud_draws_for` turns one `BattleHudFrame` into

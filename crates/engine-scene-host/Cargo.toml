@@ -41,6 +41,7 @@ anyhow.workspace = true
 log.workspace = true
 
 [dev-dependencies]
+legaia-engine-battle-hud.workspace = true
 # Named only by tests: crates the disc-gated chains walk directly.
 legaia-engine-camera.workspace = true
 legaia-disc-audit.workspace = true

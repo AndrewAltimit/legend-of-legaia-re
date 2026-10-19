@@ -11,7 +11,7 @@
 //! stage transform's surface, and the upload.
 
 use legaia_engine_battle::battle_hud_state::BattleHud;
-use legaia_engine_core::battle_hud as bh;
+use legaia_engine_battle_hud as bh;
 use legaia_engine_core::world::World;
 use legaia_engine_menus::battle_flow::ActiveTutorialBox;
 use legaia_engine_mode::mode::SceneMode;
@@ -138,7 +138,7 @@ pub fn dome_battle_chrome_up(world: &World) -> bool {
 }
 
 /// The message holding retail's top-of-screen banner this frame, if any
-/// ([`legaia_engine_core::battle_hud::battle_banner_message`]: the absorb /
+/// ([`legaia_engine_battle_hud::battle_banner_message`]: the absorb /
 /// magic-level element line, then level-up, then Seru capture).
 ///
 /// `None` without the system-UI atlas: there is no frame to put a message in,

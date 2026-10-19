@@ -187,7 +187,7 @@ impl LabelState {
     /// 36, 138, 144, 3)` - a 138x144 box parked one screen to the left, the
     /// arts-list window the Triangle page slides in. The party bar and the
     /// roster panels are placement records 7 and 6 / 78 / 79, opened by the
-    /// sub-draw script through `FUN_801D8DE8` (`engine-core::battle_hud`).
+    /// sub-draw script through `FUN_801D8DE8` (`engine-battle-hud`).
     ///
     /// PORT: FUN_801DBB8C
     pub const fn opened(handle: u32) -> Self {
