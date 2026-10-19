@@ -1011,6 +1011,11 @@ def build_gamedata_json() -> tuple[dict, dict]:
                 "name":        town,
                 "scene_label": TOWN_TO_SCENE.get(town),
                 "shop_scenes": TOWN_SHOP_SCENES.get(town, []),
+                # Display name per shop scene, for the map pane's scene tabs.
+                "shop_scene_names": {
+                    s["label"]: s["display"] for s in CDNAME_SCENES
+                    if s["label"] in TOWN_SHOP_SCENES.get(town, [])
+                },
                 "shops":       shops_list,
                 "casino":      casino_by_town.get(town, []),
                 "fishing":     fishing_by_town.get(town, []),

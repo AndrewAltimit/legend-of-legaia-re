@@ -3,7 +3,7 @@
  * Model frames keep a dark ground in both themes, like the game palette
  * chips: the renderer clears to the game's own night blue. */
 .vendor-head.has-portrait { align-items: center; justify-content: flex-start; gap: 0.75rem; }
-.vendor-head-text { display: flex; flex-direction: column; gap: 0.15rem; min-width: 0; }
+.vendor-head-text { display: flex; flex-direction: column; gap: 0.15rem; min-width: 0; flex: 1; }
 .vendor-portrait {
   flex: 0 0 auto; width: 88px; height: 88px; position: relative;
   border: 1px solid var(--border); border-radius: 4px; overflow: hidden;
@@ -27,29 +27,199 @@
 }
 .vendor-plate { font-family: var(--font-mono); font-size: 0.7rem; color: var(--text-muted); }
 
-/* Item renders: a thumbnail column once a disc is loaded. Every row carries
- * the cell (empty for consumables and key items) so the columns stay
- * aligned. */
-.shop-middle.has-thumbs .ship-item {
-  grid-template-columns: 40px 5.5rem minmax(0, 1fr) auto;
-  align-items: center;
+/* Vendor number: the same badge marks the vendor on the map. */
+.vendor-title { display: flex; align-items: center; gap: 0.45rem; min-width: 0; }
+.vendor-num {
+  flex: 0 0 auto; width: 1.35rem; height: 1.35rem; border-radius: 50%;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-family: var(--font-mono); font-size: 0.72rem; font-weight: 700;
+  background: #ffc940; color: #1a1300; border: 2px solid #1a1300;
 }
+.vendor-num.is-unplaced { background: var(--bg-code); color: var(--text-dim); border-color: var(--border); }
+.vendor { transition: box-shadow var(--transition); }
+.vendor.is-hot { box-shadow: inset 3px 0 0 var(--accent-line); }
+.vendor.is-target { box-shadow: inset 3px 0 0 #ffc940; }
+.vendor.is-target .vendor-num { box-shadow: 0 0 0 3px rgba(255, 201, 64, 0.45); }
+.vendor-locate {
+  margin-left: auto; flex: 0 0 auto; display: inline-flex; align-items: center; gap: 0.25rem;
+  font-family: var(--font-mono); font-size: 0.68rem; color: var(--accent);
+  background: transparent; border: 1px solid var(--accent-line); border-radius: 3px;
+  padding: 0.1rem 0.4rem; cursor: pointer;
+}
+.vendor-locate:hover, .vendor-locate:focus-visible { background: var(--accent-soft); }
+.vendor-locate svg { width: 0.8rem; height: 0.8rem; }
+
+/* Item rows: each is a disclosure button; one row at a time opens its
+ * detail panel in place. */
+.shop-middle .ship-item { display: block; padding: 0; cursor: default; }
+.shop-middle .ship-item:hover { background: transparent; }
+.ship-row {
+  display: grid; grid-template-columns: 5.5rem minmax(0, 1fr) auto auto;
+  gap: 0.5rem; align-items: center; width: 100%;
+  padding: 0.3rem 0.45rem; border: 0; border-radius: 2px;
+  background: transparent; color: inherit; font: inherit; font-size: 0.82rem;
+  text-align: left; cursor: pointer;
+  transition: background var(--transition);
+}
+.ship-row:hover { background: var(--bg-raised); }
+.ship-row:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.ship-item.is-open > .ship-row { background: var(--accent-soft); }
+.ship-chev {
+  width: 0.7rem; height: 0.7rem; color: var(--text-dim);
+  transition: transform var(--transition);
+}
+.ship-item.is-open .ship-chev { transform: rotate(90deg); color: var(--accent); }
+.shop-middle.has-thumbs .ship-row { grid-template-columns: 40px 5.5rem minmax(0, 1fr) auto auto; }
 .ship-thumb {
   width: 40px; height: 40px; display: block; border-radius: 3px;
   image-rendering: pixelated;
 }
 canvas.ship-thumb { background: radial-gradient(circle at 50% 45%, #232832 0%, #12151b 100%); }
 canvas.ship-thumb.is-pending { opacity: 0.35; }
-.detail-render { display: flex; gap: 0.7rem; align-items: center; margin: 0.2rem 0 0.7rem; }
-.detail-render canvas {
-  width: 96px; height: 96px; flex: 0 0 auto; border-radius: 4px;
-  background: radial-gradient(circle at 50% 45%, #232832 0%, #12151b 100%);
-  image-rendering: pixelated;
+
+/* The open item stacks its model over its stats in a narrow middle column
+ * and sets them side by side once the column has room for both. */
+.shop-middle { container-type: inline-size; }
+.ship-detail {
+  margin: 0.15rem 0 0.6rem; padding: 0.75rem 0.85rem 0.85rem;
+  border: 1px solid var(--accent-line); border-radius: 4px; background: var(--bg);
+  display: grid; grid-template-columns: minmax(0, 1fr); gap: 0.85rem;
 }
-.detail-render canvas.is-pending { opacity: 0.35; }
-.detail-render-note { color: var(--text-dim); font-size: 0.76rem; line-height: 1.45; }
+@container (min-width: 640px) {
+  .ship-detail.has-3d { grid-template-columns: minmax(220px, 280px) minmax(0, 1fr); }
+  .ship-detail.has-3d .ship-3d { align-self: start; }
+}
+.ship-3d {
+  position: relative; width: 100%; max-width: 300px; aspect-ratio: 1 / 1;
+  border-radius: 4px; overflow: hidden; justify-self: center;
+  background: radial-gradient(circle at 50% 45%, #232832 0%, #0f1217 100%);
+}
+.ship-3d canvas { display: block; width: 100%; height: 100%; touch-action: none; cursor: grab; }
+.ship-3d-note {
+  position: absolute; left: 0; right: 0; bottom: 0; padding: 0.25rem 0.4rem;
+  background: rgba(8, 10, 14, 0.7); color: #c9d1d9;
+  font-family: var(--font-mono); font-size: 0.62rem; line-height: 1.35; pointer-events: none;
+}
+.ship-3d.is-busy::after {
+  content: 'building model…'; position: absolute; inset: 0; display: flex;
+  align-items: center; justify-content: center; color: #9aa3b2;
+  font-family: var(--font-mono); font-size: 0.72rem;
+}
+.ship-3d.ship-3d-empty {
+  aspect-ratio: auto; max-width: none; justify-self: stretch; min-height: 0; margin-top: 0.7rem;
+  border: 1px dashed var(--border); background: var(--bg-card);
+  color: var(--text-dim);
+  display: flex; align-items: center; justify-content: center; text-align: center;
+  font-size: 0.76rem; line-height: 1.45; padding: 0.55rem 0.8rem;
+}
+.stat-grid {
+  display: grid; grid-template-columns: max-content minmax(0, 1fr);
+  gap: 0.3rem 0.8rem; margin: 0.45rem 0 0; font-size: 0.84rem;
+}
+.stat-grid dt {
+  font-family: var(--font-mono); font-size: 0.68rem; letter-spacing: 0.05em;
+  text-transform: uppercase; color: var(--text-dim); padding-top: 0.15rem;
+}
+.stat-grid dd { margin: 0; color: var(--text); min-width: 0; }
+.stat-bars { display: flex; flex-wrap: wrap; gap: 0.3rem; }
+.stat-pill {
+  font-family: var(--font-mono); font-size: 0.76rem; padding: 0.05rem 0.4rem;
+  border: 1px solid var(--border); border-radius: 3px; background: var(--bg-card);
+  white-space: nowrap;
+}
+.stat-pill b { color: var(--text-bright); font-weight: 600; }
+.stat-pill.is-off { color: var(--text-dim); text-decoration: line-through; }
+.stat-src { color: var(--text-dim); font-size: 0.72rem; font-family: var(--font-mono); }
+.stat-desc { color: var(--text-muted); margin: 0.35rem 0 0; font-size: 0.84rem; }
+
+/* Map pane. The map itself is a render of the game scene, so it keeps a
+ * dark ground in both themes; the pins use the vendor badge colour. */
+@media (min-width: 1281px) {
+  .shop-map { position: sticky; top: calc(var(--topbar-h) + 0.75rem); }
+}
+.map-head {
+  display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;
+  padding: 0.5rem 0.75rem; border-bottom: 1px solid var(--border); background: var(--bg-raised);
+}
+.map-head .shop-pane-title { padding: 0; border: 0; background: transparent; }
+.map-scene-name { font-size: 0.86rem; color: var(--text); font-weight: 600; }
+.map-tabs { display: flex; flex-wrap: wrap; gap: 0.3rem; width: 100%; }
+.map-tab {
+  font-family: var(--font-mono); font-size: 0.7rem; padding: 0.15rem 0.45rem;
+  border: 1px solid var(--border); border-radius: 3px; background: var(--bg-card);
+  color: var(--text-muted); cursor: pointer;
+}
+.map-tab[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
+.map-stage {
+  position: relative; width: 100%; aspect-ratio: 1 / 1; overflow: hidden;
+  background: radial-gradient(circle at 50% 40%, #171b24 0%, #0a0c10 100%);
+}
+@media (max-width: 1280px) { .map-stage { aspect-ratio: 16 / 10; } }
+@media (max-width: 720px)  { .map-stage { aspect-ratio: 1 / 1; } }
+.map-stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.map-pins { position: absolute; inset: 0; pointer-events: none; }
+.map-pin {
+  position: absolute; left: 0; top: 0; pointer-events: auto;
+  width: 1.7rem; height: 1.7rem; margin: -0.85rem 0 0 -0.85rem; padding: 0;
+  border-radius: 50%; border: 2px solid #1a1300; background: #ffc940; color: #1a1300;
+  font: 700 0.8rem/1 var(--font-mono); cursor: pointer;
+  box-shadow: 0 0 0 3px rgba(255, 201, 64, 0.35), 0 2px 6px rgba(0, 0, 0, 0.6);
+  transition: box-shadow 0.15s ease, transform 0.15s ease;
+}
+.map-pin::before {
+  content: ''; position: absolute; inset: -9px; border-radius: 50%;
+  border: 2px solid rgba(255, 201, 64, 0.85); opacity: 0; pointer-events: none;
+}
+.map-pin.is-hot, .map-pin:hover, .map-pin:focus-visible {
+  box-shadow: 0 0 0 5px rgba(255, 201, 64, 0.55), 0 0 18px 6px rgba(255, 201, 64, 0.55);
+  outline: none; z-index: 2;
+}
+.map-pin.is-sel { background: #fff3c4; z-index: 3; box-shadow: 0 0 0 5px rgba(255, 201, 64, 0.7), 0 0 22px 8px rgba(255, 201, 64, 0.6); }
+.map-pin.is-sel::before { animation: map-ping 1.6s ease-out infinite; }
+.map-pin.is-away { border-style: dashed; background: #b9a46a; }
+@keyframes map-ping {
+  0%   { transform: scale(0.6); opacity: 0.95; }
+  100% { transform: scale(1.9); opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .map-pin.is-sel::before { animation: none; opacity: 0.9; }
+}
+.map-pin-label {
+  position: absolute; left: 50%; top: calc(100% + 4px); transform: translateX(-50%);
+  white-space: nowrap; pointer-events: none;
+  font: 600 0.66rem/1.2 var(--font-mono); color: #fff;
+  background: rgba(8, 10, 14, 0.82); border: 1px solid rgba(255, 201, 64, 0.6);
+  border-radius: 3px; padding: 0.08rem 0.3rem;
+}
+.map-pin.is-sel .map-pin-label, .map-pin.is-hot .map-pin-label { border-color: #ffc940; font-size: 0.72rem; }
+.map-tools { position: absolute; right: 0.5rem; top: 0.5rem; display: flex; flex-direction: column; gap: 0.3rem; }
+.map-tool {
+  width: 1.9rem; height: 1.9rem; border-radius: 4px; cursor: pointer;
+  border: 1px solid rgba(255, 255, 255, 0.25); background: rgba(8, 10, 14, 0.75);
+  color: #e8ebf1; font: 600 1rem/1 var(--font-mono);
+}
+.map-tool:hover, .map-tool:focus-visible { border-color: #ffc940; outline: none; }
+.map-tool svg { width: 1rem; height: 1rem; vertical-align: middle; }
+.map-tools[hidden], .map-hint[hidden], .map-empty[hidden], .map-tabs:empty { display: none; }
+.map-empty {
+  position: absolute; inset: 0; display: flex; flex-direction: column; gap: 0.5rem;
+  align-items: center; justify-content: center; text-align: center; padding: 1.2rem;
+  color: #aab2c0; font-size: 0.86rem; line-height: 1.5;
+}
+.map-empty svg { width: 2.6rem; height: 2.6rem; color: #ffc940; opacity: 0.85; }
+.map-empty strong { color: #e8ebf1; }
+.map-hint { padding: 0.45rem 0.75rem; font-size: 0.72rem; color: var(--text-dim); border-top: 1px solid var(--border); }
+.map-legend { list-style: none; margin: 0; padding: 0.35rem 0.5rem 0.6rem; border-top: 1px solid var(--border); }
+.map-legend li { margin: 0; }
+.map-legend button {
+  display: grid; grid-template-columns: 1.35rem minmax(0, 1fr); gap: 0.5rem; align-items: start;
+  width: 100%; padding: 0.3rem 0.3rem; border: 0; border-radius: 3px; background: transparent;
+  color: var(--text); font: inherit; font-size: 0.8rem; text-align: left; cursor: pointer;
+}
+.map-legend button:hover, .map-legend button:focus-visible, .map-legend button.is-hot { background: var(--accent-soft); outline: none; }
+.map-legend .lg-sub { display: block; color: var(--text-dim); font-size: 0.7rem; font-family: var(--font-mono); }
 .shop-status { color: var(--text-dim); font-family: var(--font-mono); font-size: 0.82rem; }
-#shop-npc-stage { display: none; }
+#shop-npc-stage, #shop-item-stage { display: none; }
 </style>
 <script src="js/rom-cache.js"></script>
 <script src="js/disc-info.js"></script>
@@ -61,16 +231,17 @@ canvas.ship-thumb.is-pending { opacity: 0.35; }
   <h1>Shops &amp; vendors</h1>
   <p class="lede">
     Every merchant in the game and everything they sell - browsable by town, with each item's price,
-    category and what it actually does. No disc image needed; click any item for its detail panel.
-    Load your own disc and each vendor's window also shows the shopkeeper's field model, and every
-    weapon and piece of armour gets a render of its own.
+    who can equip it and what it actually does. No disc image needed; click any item to open its
+    stats. Load your own disc and the map beside the list shows the town itself with every vendor
+    marked, each vendor's window shows the shopkeeper's field model, and weapons and armour open
+    into a 3D model you can turn.
   </p>
 </header>
 
 <div class="disc-bar">
   <label for="shop-file">Disc (optional):</label>
   <input type="file" id="shop-file" accept=".bin">
-  <span class="shop-status" id="shop-status"><span id="shop-status-text">No disc loaded - the inventories below are complete without one. Load a <code>.bin</code> Mode2/2352 image to add the shopkeepers' models and the equipment renders. Nothing is uploaded.</span></span>
+  <span class="shop-status" id="shop-status"><span id="shop-status-text">No disc loaded - the inventories below are complete without one. Load a <code>.bin</code> Mode2/2352 image to add the town maps, the shopkeepers' models and the equipment models. Nothing is uploaded.</span></span>
 </div>
 
 <section class="doc-section" id="browser">
@@ -82,7 +253,7 @@ canvas.ship-thumb.is-pending { opacity: 0.35; }
       <ul class="shop-list" id="shop-town-list"></ul>
     </aside>
 
-    <!-- Column 2: vendors + inventory of the selected town -->
+    <!-- Column 2: vendors + inventory of the selected town; items expand in place -->
     <div class="shop-middle" id="shop-middle">
       <header class="shop-mid-head">
         <div class="shop-pane-title" id="shop-town-name">Select a town</div>
@@ -91,24 +262,40 @@ canvas.ship-thumb.is-pending { opacity: 0.35; }
       <div class="shop-vendors" id="shop-vendors"></div>
     </div>
 
-    <!-- Column 3: item detail panel -->
-    <aside class="shop-detail" id="shop-detail" aria-label="Selected item">
-      <div class="shop-pane-title">Item detail</div>
-      <div class="shop-detail-body" id="shop-detail-body">
-        <p style="color: var(--text-dim); font-size: 0.88rem;">Click any item in the inventory to see its effect, price, category, and the data anchor used to cross-validate the binary record.</p>
+    <!-- Column 3: the town map with every vendor marked -->
+    <aside class="shop-map" id="shop-map" aria-label="Town map">
+      <div class="map-head">
+        <span class="shop-pane-title">Map</span>
+        <span class="map-scene-name" id="shop-map-scene"></span>
+        <div class="map-tabs" id="shop-map-tabs" role="group" aria-label="Scene"></div>
       </div>
+      <div class="map-stage" id="shop-map-stage">
+        <canvas id="shop-map-canvas" width="460" height="460"></canvas>
+        <div class="map-pins" id="shop-map-pins"></div>
+        <div class="map-tools" id="shop-map-tools" hidden>
+          <button type="button" class="map-tool" data-tool="in" aria-label="Zoom in">+</button>
+          <button type="button" class="map-tool" data-tool="out" aria-label="Zoom out">&minus;</button>
+          <button type="button" class="map-tool" data-tool="fit" aria-label="Fit the vendors in view"><svg viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M2 6V2h4M10 2h4v4M14 10v4h-4M6 14H2v-4"/></svg></button>
+        </div>
+        <div class="map-empty" id="shop-map-empty"></div>
+      </div>
+      <div class="map-hint" id="shop-map-hint" hidden>Drag to pan, scroll to zoom, right-drag or shift-drag to tilt. Click a marker to jump to that vendor.</div>
+      <ul class="map-legend" id="shop-map-legend" aria-label="Vendors"></ul>
     </aside>
   </div>
-  <!-- The one WebGL canvas: parked here until it moves into a vendor window. -->
+  <!-- WebGL canvases parked here until they move into a vendor window / an open item. -->
   <div id="shop-npc-stage"><canvas id="shop-npc-canvas" width="264" height="264"></canvas></div>
+  <div id="shop-item-stage"><canvas id="shop-item-canvas" width="300" height="300" aria-label="3D model of the item; drag to turn it"></canvas></div>
   <p class="hint">
     <strong>How to read it:</strong> pick a town on the left; the middle column lists each vendor in
-    it. A shop's stock changes as the story moves on, so some vendors appear more than once with a
-    <em>phase</em> note. <strong>NEW</strong> marks items a walkthrough singles out as first
+    it, numbered as on the map. Click an item to open its stats - buy and sell price, the bonuses
+    it gives, who can equip it and any effect or passive - and click it again (or another item) to
+    close it. A shop's stock changes as the story moves on, so some vendors appear more than once
+    with a <em>phase</em> note. <strong>NEW</strong> marks items a walkthrough singles out as first
     available there. Casino and fishing prize counters sit under the shops: they charge coins or
-    points instead of gold. With a disc loaded, the vendor window draws the actor whose script
-    opens that shop; click a portrait to spin it. Add <code>?town=Rim+Elm</code> to the URL to open
-    on a town.
+    points instead of gold. With a disc loaded, hovering a vendor lights its marker, the map's
+    markers jump to their vendor, and a vendor's portrait spins when clicked. Add
+    <code>?town=Rim+Elm</code> to the URL to open on a town.
   </p>
 </section>
 
@@ -120,7 +307,9 @@ canvas.ship-thumb.is-pending { opacity: 0.35; }
     game-data tables</a>, mined from public walkthroughs. They are the <strong>ground truth</strong>
     the reverse engineering checks itself against: on the disc a shop is just a list of item ids
     and prices, and a trustworthy human-readable table is what confirms a decoded record. Each
-    item's panel names the table row it validates.
+    item's panel names the table row it validates. With a disc loaded, the panel also shows what
+    the executable says about the same item - its record in the item, equipment, item-effect and
+    passive tables - so the two can be read side by side.
   </p>
 
 <section class="doc-section" id="from-disc">
@@ -149,13 +338,16 @@ asset shop-stock --prot extracted/PROT.DAT --scus extracted/SCUS_942.54 \
     few with no error.
   </p>
   <p>
-    The record is also how a vendor is tied to a face. The bytes that hold a shop sit inside one
-    script record of the scene, and for a merchant that record is the placed actor the player talks
-    to - the same placement the <a href="npcs.html">NPCs page</a> draws. With a disc loaded, this
-    page loads each town's shop scenes, finds the record around every shop instruction, and draws
-    that actor in the vendor's window. A few shops have no actor of their own (the Ancient Wind
+    The record is also how a vendor is tied to a face and to a place. The bytes that hold a shop
+    sit inside one script record of the scene, and for a merchant that record is the placed actor
+    the player talks to - the same placement the <a href="npcs.html">NPCs page</a> draws. With a
+    disc loaded, this page loads each town's shop scenes, finds the record around every shop
+    instruction, draws that actor in the vendor's window, and marks where it stands on the map: the
+    map is the scene assembled and run live by the engine's own loaders (the
+    <a href="world.html">game-world page's</a> map view), and each marker follows the actor's
+    position in that running scene. A few shops have no actor of their own (the Ancient Wind
     Cave's are opened from a scene script record), and a few the scan does not find at all; their
-    window says so instead.
+    window and their map entry say so instead.
   </p>
   <p>
     The same applies to inns: there is no inn price table either - each inn's charge is a literal
@@ -182,6 +374,7 @@ asset shop-stock --prot extracted/PROT.DAT --scus extracted/SCUS_942.54 \
     <a href="formats/item-table.html">Item table</a>
     <a href="formats/item-effect-table.html">Item effects</a>
     <a href="formats/equipment-table.html">Equipment table</a>
+    <a href="formats/accessory-passive-table.html">Accessory passives</a>
     <a href="formats/save-record.html">Character save record</a>
     <a href="reference/gamedata.html">Curated game data</a>
     <a href="tooling/rom-patcher.html">ROM patcher (shop shuffle)</a>
@@ -199,23 +392,28 @@ asset shop-stock --prot extracted/PROT.DAT --scus extracted/SCUS_942.54 \
 <!-- Posed single-model orbit view + field-NPC poser, shared with the NPCs page. -->
 <script src="js/mesh-view.js"></script>
 <script src="js/field-npc-model.js"></script>
+<!-- Assembled live scene + its actor layer, shared with the game-world page. -->
+<script src="js/field-actors.js"></script>
+<script src="js/field-scene-view.js"></script>
 <script>
 /* ------------------------------------------------------------------
  * Shops page: three-pane interactive browser.
  *   1) Towns list (clicks select)
- *   2) Vendors + inventory of the selected town
- *   3) Per-item detail panel
+ *   2) Vendors + inventory of the selected town; an item opens its stats
+ *      in place (one at a time)
+ *   3) The town map, every vendor marked
  *
  * shops.json shape (see site/_gen.py:build_gamedata_json):
  *   { towns: [
  *       { name, scene_label, shop_scenes: [label, ...],
+ *         shop_scene_names: { label: display name },
  *         shops:   [ { name, merchant, phase, featured, items: [...] } ],
  *         casino:  [ { kind:"slot",    cost_coins,   item } ],
  *         fishing: [ { kind:"fishing", cost_points, notes, item } ]
  *       }, ...
  *     ] }
  *
- * With a disc loaded, two layers go on top, both read from the visitor's
+ * With a disc loaded, four layers go on top, all read from the visitor's
  * own disc in the browser:
  *
  *   - Vendor models. A shop is an op-0x49 record inline in a scene's field
@@ -225,9 +423,19 @@ asset shop-stock --prot extracted/PROT.DAT --scus extracted/SCUS_942.54 \
  *     is loaded once, every vendor actor in it is posed into the one WebGL
  *     canvas and copied out as a still; the walkthrough's vendor is matched
  *     to the disc record by stock. The vendor you click goes live.
- *   - Item renders. Weapons and armour are equipment-section geometry in
- *     the party's battle files; js/item-thumbs.js draws the item alone (the
- *     same cards the characters page shows), lazily as rows scroll in.
+ *   - The map. The vendor's scene is assembled and entered live through
+ *     `FieldSceneView` (the game-world page's map view: `set_scene_field` +
+ *     `field_scene_anim_init`). Its actor layer is the scene's MAN
+ *     placements; a vendor's marker follows the actor whose MAN record
+ *     (partition 1, index = slot) holds the shop, read each frame from
+ *     `field_scene_npc_draw_poses()` and projected through the map camera.
+ *   - Item records. `shop_item_records_json()` joins the executable's item,
+ *     equipment, item-effect and passive tables per item id.
+ *   - Item models. Weapons and armour are equipment-section geometry in the
+ *     party's battle files. Rows get the characters page's cards
+ *     (js/item-thumbs.js); an open item draws the item-alone mesh in a
+ *     MeshView (`set_equipped_character` + `equipped_item_only_*`), posed
+ *     at frame 0 of the character's first clip.
  * ------------------------------------------------------------------ */
 (async function () {
   const $towns   = document.getElementById('shop-town-list');
@@ -235,13 +443,23 @@ asset shop-stock --prot extracted/PROT.DAT --scus extracted/SCUS_942.54 \
   const $middle  = document.getElementById('shop-middle');
   const $title   = document.getElementById('shop-town-name');
   const $meta    = document.getElementById('shop-town-meta');
-  const $detail  = document.getElementById('shop-detail-body');
   const $status  = document.getElementById('shop-status');
   const $statusText = document.getElementById('shop-status-text');
   const $file    = document.getElementById('shop-file');
   const $stage   = document.getElementById('shop-npc-stage');
   const npcCanvas = document.getElementById('shop-npc-canvas');
-  if (!$towns || !$vendors || !$detail) return;
+  const $itemStage = document.getElementById('shop-item-stage');
+  const itemCanvas = document.getElementById('shop-item-canvas');
+  const $mapStage  = document.getElementById('shop-map-stage');
+  const mapCanvas  = document.getElementById('shop-map-canvas');
+  const $mapPins   = document.getElementById('shop-map-pins');
+  const $mapEmpty  = document.getElementById('shop-map-empty');
+  const $mapTabs   = document.getElementById('shop-map-tabs');
+  const $mapScene  = document.getElementById('shop-map-scene');
+  const $mapLegend = document.getElementById('shop-map-legend');
+  const $mapTools  = document.getElementById('shop-map-tools');
+  const $mapHint   = document.getElementById('shop-map-hint');
+  if (!$towns || !$vendors || !$mapStage) return;
 
   let payload = null;
   try {
@@ -265,6 +483,10 @@ asset shop-stock --prot extracted/PROT.DAT --scus extracted/SCUS_942.54 \
     accessory: 'accessories.toml',
     unknown:   '(none)',
   };
+  /* Equip-mask bits of the equipment record (+6): bit 1 Vahn, 2 Noa, 4 Gala. */
+  const PARTY = ['Vahn', 'Noa', 'Gala'];
+  const PIN_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 21s-7-6.2-7-11.5A7 7 0 0 1 19 9.5C19 14.8 12 21 12 21z"/><circle cx="12" cy="9.5" r="2.5"/></svg>';
+  const CHEV_SVG = '<svg class="ship-chev" viewBox="0 0 10 10" aria-hidden="true"><path d="M3 1.5 7 5 3 8.5" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>';
 
   /* ---------------- disc-backed state ---------------- */
 
@@ -272,17 +494,23 @@ asset shop-stock --prot extracted/PROT.DAT --scus extracted/SCUS_942.54 \
   let meshView = null;
   let thumbs = null;
   let equipByName = null;     /* normalised item name -> [{cslot, label, section, id}] */
+  let discItems = null;       /* normalised item name -> shop_item_records_json row */
   let curTownIdx = -1;
   let resolveToken = 0;
   let liveVendor = null;      /* { town, idx } of the vendor drawn live */
-  let loadedScene = null;     /* scene the WASM field state holds */
+  let loadedScene = null;     /* scene the WASM NPC state holds */
   const townVendors = new Map();  /* town name -> per-shop [{ state, ... }] */
+  let openKey = null;         /* `${vidx}|${item key}` of the open row */
+  let itemView = null;        /* MeshView over #shop-item-canvas */
 
   const THUMB_PX = 96;
   const STILL_PX = 176;
   const NPC_CAM = { yaw: Math.PI + 0.35, pitch: 0.12, distance: 2.1, autoRotate: true };
 
   const norm = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
+  const gold = (n) => `${Number(n).toLocaleString()} G`;
+  const curTown = () => payload.towns[curTownIdx];
+  const sceneName = (t, label) => (t.shop_scene_names && t.shop_scene_names[label]) || label;
 
   /* Which character's battle file to draw an item from: the walkthrough's
    * best-fit wearer when it carries the piece, else the first that does. */
@@ -297,16 +525,6 @@ asset shop-stock --prot extracted/PROT.DAT --scus extracted/SCUS_942.54 \
 
   function paintThumbKey(key, entry) {
     $middle.querySelectorAll(`canvas[data-thumb="${key}"]`).forEach(cv => thumbs.paint(cv, entry));
-    $detail.querySelectorAll(`canvas[data-thumb="${key}"]`).forEach(cv => {
-      thumbs.paint(cv, entry);
-      const note = $detail.querySelector('.detail-render-note');
-      if (note && entry && entry.json && entry.json.ok) {
-        note.textContent = `Drawn on its own from ${entry.json.character}'s battle model, at rest: `
-          + `the piece is ${entry.json.describe || entry.json.class}.`;
-      } else if (note) {
-        note.textContent = 'This piece did not come away from the battle model on its own.';
-      }
-    });
   }
 
   function thumbJob(ref) {
@@ -314,45 +532,251 @@ asset shop-stock --prot extracted/PROT.DAT --scus extracted/SCUS_942.54 \
     return { cslot: ref.cslot, section: ref.section, id: ref.id, done: (e) => paintThumbKey(key, e) };
   }
 
-  /* ---------------- detail panel ---------------- */
+  /* ---------------- item detail (expanded row) ---------------- */
 
-  function renderDetail(item, ctx) {
+  /* Every other place the item is sold, for the "also sold" line. */
+  function alsoSold(item, here) {
+    const out = [];
+    for (const t of payload.towns) {
+      for (const s of t.shops) {
+        if (t.name === here.town && s.name === here.shopName) continue;
+        if (s.items.some(i => i.key === item.key)) out.push(s.name && s.name !== '(shop)' ? `${t.name} (${s.name})` : t.name);
+      }
+    }
+    return [...new Set(out)];
+  }
+
+  function pill(label, value, off) {
+    return `<span class="stat-pill${off ? ' is-off' : ''}">${escapeHtml(label)} <b>${escapeHtml(value)}</b></span>`;
+  }
+
+  function whoCanEquip(item, rec) {
+    if (rec && rec.equip) {
+      const m = rec.equip.mask;
+      const names = PARTY.filter((_, b) => m & (1 << b));
+      return {
+        html: `<div class="stat-bars">${PARTY.map((n, b) => pill(n, m & (1 << b) ? 'yes' : 'no', !(m & (1 << b)))).join('')}</div>`,
+        src: 'disc: equipment record +6',
+        names,
+      };
+    }
+    if (item._kind === 'weapon') {
+      const all = [item.equip_best, ...(item.equip_others || [])].filter(Boolean);
+      if (!all.length) return null;
+      return { html: escapeHtml(all.join(', ')) + (item.equip_best ? ` <span class="stat-src">(best fit: ${escapeHtml(item.equip_best)})</span>` : ''), src: 'weapons.toml' };
+    }
+    if (item._kind === 'armor' && item.equip) {
+      return { html: escapeHtml(item.equip), src: 'armor.toml' };
+    }
+    return null;
+  }
+
+  function effectText(e) {
+    const parts = [];
+    if (e.restore && typeof e.restore === 'object' && e.restore.hp != null) parts.push(`restores ${e.restore.hp} HP`);
+    else if (e.restore && typeof e.restore === 'object' && e.restore.mp != null) parts.push(`restores ${e.restore.mp} MP`);
+    else if (e.restore === 'max') parts.push(e.category === 'revive' ? 'revives' : 'restores to full');
+    if (e.stat && e.stat.permanent) parts.push('permanently ' + e.stat.permanent.map(c => `${c.stat} +${c.delta} (cap ${c.cap})`).join(', '));
+    if (e.stat && e.stat.buff_one_battle) parts.push(`raises ${e.stat.buff_one_battle.join(', ')} by 20% for one battle`);
+    if (e.stat && e.stat.action_gauge) parts.push('extends the action gauge');
+    if (!parts.length) parts.push(e.category.replace(/_/g, ' '));
+    const where = [e.field ? 'field' : null, e.battle ? 'battle' : null].filter(Boolean);
+    const target = e.all_party ? 'whole party' : 'one character';
+    return `${parts.join('; ')} · ${target} · usable in ${where.length ? where.join(' and ') : 'neither menu'}`;
+  }
+
+  function detailHtml(item, ctx) {
     const kind = item._kind || 'unknown';
-    const kindLabel = KIND_LABELS[kind] || kind;
-    const table     = KIND_TABLE[kind] || '?';
+    const rec = discItems ? discItems.get(norm(item.name)) : null;
+    const rows = [];
 
-    // Build a flat field list. Skip noise.
-    const skip = new Set(['_kind', 'key', 'name', 'effect', 'missing']);
-    const fields = Object.keys(item)
-      .filter(k => !skip.has(k) && item[k] !== null && item[k] !== undefined && item[k] !== '')
-      .map(k => `<tr><td class="kfn">${escapeHtml(k)}</td><td>${escapeHtml(item[k])}</td></tr>`).join('');
-
-    const ctxLine = ctx
-      ? `<div class="detail-ctx">Sold by <strong>${escapeHtml(ctx.shopName)}</strong> in <strong>${escapeHtml(ctx.town)}</strong>${ctx.phase ? ` &middot; <em>${escapeHtml(ctx.phase)}</em>` : ''}${ctx.merchant ? ` &middot; merchant ${escapeHtml(ctx.merchant)}` : ''}</div>` : '';
-
-    const ref = equipRef(item);
-    let render = '';
-    if (ref) {
-      const key = window.ItemThumbs.key(ref.cslot, ref.section, ref.id);
-      render = `<div class="detail-render">
-        <canvas class="is-pending" width="${THUMB_PX}" height="${THUMB_PX}" data-thumb="${key}"></canvas>
-        <span class="detail-render-note">Rendering from ${escapeHtml(ref.label)}'s battle model…</span>
-      </div>`;
+    /* Price: the walkthrough's, and the executable's when they differ. */
+    const price = rec && rec.price != null ? rec.price : item.price;
+    if (ctx.cost) {
+      rows.push(['Cost', escapeHtml(ctx.cost)]);
+    }
+    if (price != null && price > 0) {
+      const mismatch = rec && item.price != null && rec.price !== item.price
+        ? ` <span class="stat-src">(walkthrough: ${gold(item.price)})</span>` : '';
+      rows.push(['Price', `<div class="stat-bars">${pill('Buy', gold(price))}${pill('Sell', gold(Math.floor(price / 2)))}</div>${mismatch}`]);
+    } else if (!ctx.cost) {
+      rows.push(['Price', '<span class="stat-src">not for sale in gold (prize or quest item); cannot be sold</span>']);
     }
 
-    $detail.innerHTML = `
-      <div class="detail-kind detail-kind-${kind}">${kindLabel}</div>
-      <h3 class="detail-name">${escapeHtml(item.name)}${item.missing ? ' <span class="tag tag-stub">missing</span>' : ''}</h3>
-      ${render}
-      ${item.effect ? `<p class="detail-effect">${escapeHtml(item.effect)}</p>` : ''}
-      ${ctxLine}
-      <div class="detail-anchor">
-        <span class="detail-anchor-label">Data anchor</span>
-        <code>${escapeHtml(table)}</code> &middot; key <code>${escapeHtml(item.key)}</code>
+    /* Equipment bonuses. */
+    if (rec && rec.equip) {
+      const q = rec.equip;
+      const bonus = [['ATK', q.atk], ['UDF', q.udf], ['LDF', q.ldf], ['SPD', q.spd], ['INT', q.int]]
+        .filter(([, v]) => v).map(([k, v]) => pill(k, `+${v}`)).join('');
+      rows.push(['Slot', `${escapeHtml(q.slot)}${q.ra_seru ? ' · Ra-Seru' : ''}`]);
+      rows.push(['Bonus', bonus ? `<div class="stat-bars">${bonus}</div>` : '<span class="stat-src">no stat bonus</span>']);
+    } else if (kind === 'weapon' && item.attack != null) {
+      rows.push(['Bonus', `<div class="stat-bars">${pill('ATK', `+${item.attack}`)}</div>`]);
+    } else if (kind === 'armor') {
+      if (item.slot) rows.push(['Slot', escapeHtml(item.slot)]);
+      const b = [['UDF', item.udf], ['LDF', item.ldf]].filter(([, v]) => v != null).map(([k, v]) => pill(k, `+${v}`)).join('');
+      if (b) rows.push(['Bonus', `<div class="stat-bars">${b}</div>`]);
+    }
+
+    const who = whoCanEquip(item, rec);
+    if (who) rows.push(['Equips', `${who.html} <div class="stat-src">${escapeHtml(who.src)}</div>`]);
+
+    /* Consumable effect. */
+    if (rec && rec.effect) {
+      rows.push(['Effect', `${escapeHtml(effectText(rec.effect))} <div class="stat-src">disc: item-effect class ${rec.effect.class}, tier ${rec.effect.tier}</div>`]);
+    }
+
+    /* Passive the equipped piece grants. */
+    if (rec && rec.passive) {
+      const p = rec.passive;
+      const boosts = (p.boosts || []).map(b => pill(b.stat, `+${b.pct}%`)).join('');
+      rows.push(['Passive', `<strong>${escapeHtml(p.name || `passive ${p.index}`)}</strong>${p.party_wide ? ' · whole party' : ''}`
+        + (p.description ? `<div class="stat-desc">${escapeHtml(p.description.replace(/\|/g, ' '))}</div>` : '')
+        + (boosts ? `<div class="stat-bars" style="margin-top:0.3rem">${boosts}</div>` : '')
+        + `<div class="stat-src">disc: passive 0x${p.index.toString(16).padStart(2, '0')}</div>`]);
+    } else if (kind === 'accessory' && (item.effect_class || item.status || item.element)) {
+      const bits = [item.effect_class && item.effect_class.replace(/_/g, ' '),
+        item.effect_value != null ? `${item.effect_value}` : null,
+        item.element ? `element: ${item.element}` : null,
+        item.status ? `status: ${item.status}` : null].filter(Boolean);
+      rows.push(['Passive', `${escapeHtml(bits.join(' · '))} <div class="stat-src">accessories.toml</div>`]);
+    }
+
+    const also = alsoSold(item, ctx);
+    if (also.length) rows.push(['Also sold', escapeHtml(also.slice(0, 6).join(' · ') + (also.length > 6 ? ` · +${also.length - 6} more` : ''))]);
+
+    rows.push(['Data', `<code>${escapeHtml(KIND_TABLE[kind] || '?')}</code> key <code>${escapeHtml(item.key)}</code>`
+      + (rec ? ` · disc item id <code>0x${rec.id.toString(16).padStart(2, '0')}</code>` : '')]);
+
+    const ctxLine = `Sold by <strong>${escapeHtml(ctx.shopName)}</strong> in <strong>${escapeHtml(ctx.town)}</strong>`
+      + (ctx.phase ? ` &middot; <em>${escapeHtml(ctx.phase)}</em>` : '')
+      + (ctx.merchant ? ` &middot; merchant ${escapeHtml(ctx.merchant)}` : '');
+
+    /* The 3D pane: an equipment model with a disc, else a word on why not. */
+    let pane = '', paneNote = '';
+    const ref = equipRef(item);
+    if (ref) {
+      pane = `<div class="ship-3d is-busy" data-ref="${ref.cslot}:${ref.section}:${ref.id}"></div>`;
+    } else if (kind === 'weapon' || kind === 'armor') {
+      paneNote = `<div class="ship-3d ship-3d-empty">${viewer
+        ? 'This piece is not in the party\'s battle files under this name, so there is no model to draw.'
+        : 'Load your disc above to turn this piece in 3D.'}</div>`;
+    }
+
+    /* The item table's line is the in-game help text for a usable item;
+     * for equipment it is a menu label ("Best:", "Accessory"). */
+    const flavour = (rec && rec.effect && rec.desc) ? rec.desc.replace(/\|/g, ' ') : null;
+    return `<div class="ship-detail${pane ? ' has-3d' : ''}">
+      ${pane}
+      <div>
+        <div class="detail-kind detail-kind-${kind}">${escapeHtml(KIND_LABELS[kind] || kind)}</div>
+        <h3 class="detail-name">${escapeHtml(item.name)}${item.missing ? ' <span class="tag tag-stub">missing</span>' : ''}</h3>
+        ${item.effect ? `<p class="detail-effect">${escapeHtml(item.effect)}</p>` : ''}
+        ${flavour && flavour !== item.effect ? `<p class="stat-desc">In game: “${escapeHtml(flavour)}”</p>` : ''}
+        <div class="detail-ctx">${ctxLine}</div>
+        <dl class="stat-grid">${rows.map(([k, v]) => `<dt>${escapeHtml(k)}</dt><dd>${v}</dd>`).join('')}</dl>
+        ${paneNote}
       </div>
-      ${fields ? `<table class="detail-fields"><tbody>${fields}</tbody></table>` : ''}
-    `;
-    if (ref) thumbs.enqueue(thumbJob(ref), true);
+    </div>`;
+  }
+
+  /* Draw an open equipment row's item-alone mesh into the shared item
+   * canvas: the character wearing exactly that piece, cut to the piece,
+   * posed at frame 0 of the first clip (without a pose the object-local
+   * parts collapse onto the origin). */
+  async function mountItem3d(slotEl) {
+    const [cslot, section, id] = slotEl.dataset.ref.split(':').map(Number);
+    slotEl.appendChild(itemCanvas);
+    await new Promise(r => setTimeout(r, 16));
+    if (!slotEl.isConnected) return;
+    let note = '';
+    try {
+      const ids = [0, 0, 0, 0, 0];
+      ids[section] = id;
+      const sum = JSON.parse(viewer.set_equipped_character(cslot, Uint8Array.from(ids), false));
+      if (!sum || !sum.ok) throw new Error(sum ? sum.why : 'did not assemble');
+      const pos = viewer.equipped_item_only_positions(section);
+      const idx = viewer.equipped_item_only_indices(section);
+      if (!pos.length || !idx.length) throw new Error('the piece did not come away from the model on its own');
+      if (!itemView) itemView = new window.MeshView(itemCanvas, { cam: { yaw: 0.6, pitch: 0.15, distance: 2.4, autoRotate: true } });
+      itemView.uploadVram(viewer.equipped_vram_bytes());
+      const uv = viewer.equipped_item_only_uvs(section);
+      const uv8 = new Uint8Array(uv.length);
+      for (let i = 0; i < uv.length; i++) uv8[i] = uv[i] & 0xFF;
+      const oids = viewer.equipped_item_only_object_ids(section);
+      const flat = viewer.equipped_item_only_flat_rgba(section);
+      itemView.setMesh(Float32Array.from(pos), uv8,
+        Uint16Array.from(viewer.equipped_item_only_cba_tsb(section)), Uint32Array.from(idx),
+        viewer.equipped_item_only_bounds(section),
+        oids.length ? Uint32Array.from(oids) : null, flat.length ? Uint8Array.from(flat) : null);
+      const clip = (sum.clips || []).find(c => c.frames > 0);
+      if (clip) {
+        const k = sum.clips.indexOf(clip);
+        const frames = viewer.equipped_pose_frames(k);
+        if (frames.length) {
+          itemView.setAnimation({ partCount: sum.part_count | 0, frameCount: clip.frames | 0, frames: Int32Array.from(frames) });
+          itemView.setFrame(0);
+        }
+      }
+      itemView.resetView();
+      itemView.setSpin(true);
+      note = `${(idx.length / 3) | 0} triangles, cut from ${['Vahn', 'Noa', 'Gala', 'Terra'][cslot] || 'the'}'s battle model · drag to turn`;
+    } catch (err) {
+      console.warn('[shops] item model:', err);
+      slotEl.classList.add('ship-3d-empty');
+      $itemStage.appendChild(itemCanvas);
+      slotEl.textContent = `No model: ${err.message || err}.`;
+    }
+    slotEl.classList.remove('is-busy');
+    if (note) {
+      const n = document.createElement('div');
+      n.className = 'ship-3d-note';
+      n.textContent = note;
+      slotEl.appendChild(n);
+    }
+  }
+
+  /* Find the item record a row stands for. */
+  function rowItem(t, vidx, key, group) {
+    if (group === 'shop' && t.shops[vidx]) {
+      const s = t.shops[vidx];
+      const it = s.items.find(i => i.key === key);
+      if (it) return { it, ctx: { town: t.name, shopName: s.name, phase: s.phase, merchant: s.merchant } };
+    }
+    if (group === 'casino') {
+      const p = t.casino.find(p => p.item.key === key);
+      if (p) return { it: p.item, ctx: { town: t.name, shopName: 'Slot prizes', cost: `${p.cost_coins.toLocaleString()} casino coins` } };
+    }
+    if (group === 'fishing') {
+      const p = t.fishing.find(p => p.item.key === key);
+      if (p) return { it: p.item, ctx: { town: t.name, shopName: 'Fishing prizes', cost: `${p.cost_points.toLocaleString()} fishing points${p.notes ? ` (${p.notes})` : ''}` } };
+    }
+    return null;
+  }
+
+  function closeOpenRow() {
+    const li = $vendors.querySelector('.ship-item.is-open');
+    if (!li) return;
+    li.classList.remove('is-open');
+    const btn = li.querySelector('.ship-row');
+    if (btn) btn.setAttribute('aria-expanded', 'false');
+    const panel = li.querySelector('.ship-detail-wrap');
+    if (panel) { panel.hidden = true; panel.innerHTML = ''; }
+    $itemStage.appendChild(itemCanvas);
+  }
+
+  function openRow(li) {
+    const t = curTown();
+    const r = rowItem(t, Number(li.dataset.vidx), li.dataset.key, li.dataset.group);
+    if (!r) return;
+    li.classList.add('is-open');
+    li.querySelector('.ship-row').setAttribute('aria-expanded', 'true');
+    const panel = li.querySelector('.ship-detail-wrap');
+    panel.innerHTML = detailHtml(r.it, r.ctx);
+    panel.hidden = false;
+    openKey = `${li.dataset.group}|${li.dataset.vidx}|${li.dataset.key}`;
+    const slot = panel.querySelector('.ship-3d[data-ref]');
+    if (slot && viewer) mountItem3d(slot);
   }
 
   /* ---------------- inventory lists ---------------- */
@@ -363,7 +787,23 @@ asset shop-stock --prot extracted/PROT.DAT --scus extracted/SCUS_942.54 \
     if (!ref) return '<span class="ship-thumb" aria-hidden="true"></span>';
     const key = window.ItemThumbs.key(ref.cslot, ref.section, ref.id);
     const cached = thumbs.cached(ref.cslot, ref.section, ref.id);
-    return `<canvas class="ship-thumb${cached ? '' : ' is-pending'}" width="${THUMB_PX}" height="${THUMB_PX}" data-thumb="${key}" title="${escapeHtml(item.name)}, drawn from ${escapeHtml(ref.label)}'s battle model"></canvas>`;
+    return `<canvas class="ship-thumb${cached ? '' : ' is-pending'}" width="${THUMB_PX}" height="${THUMB_PX}" data-thumb="${key}" aria-hidden="true"></canvas>`;
+  }
+
+  let rowSeq = 0;
+  function itemRow(it, group, vidx, kindLabel, priceText, nameExtra, featured) {
+    const id = `ship-det-${++rowSeq}`;
+    return `<li class="ship-item ship-item-${it._kind || 'unknown'} ship-item-${group}${featured ? ' ship-item-featured' : ''}"
+               data-key="${escapeHtml(it.key)}" data-group="${group}" data-vidx="${vidx}">
+      <button type="button" class="ship-row" aria-expanded="false" aria-controls="${id}">
+        ${thumbCell(it)}
+        <span class="ship-kind">${escapeHtml(kindLabel)}</span>
+        <span class="ship-name">${escapeHtml(it.name)}${nameExtra || ''}</span>
+        <span class="ship-price">${priceText}</span>
+        ${CHEV_SVG}
+      </button>
+      <div class="ship-detail-wrap" id="${id}" hidden></div>
+    </li>`;
   }
 
   function portraitHtml(townName, idx) {
@@ -381,19 +821,22 @@ asset shop-stock --prot extracted/PROT.DAT --scus extracted/SCUS_942.54 \
     return `<div class="vendor-portrait${live ? ' is-live' : ''}" data-vidx="${idx}" title="${escapeHtml(r.tip)}"><canvas class="vendor-still" width="${STILL_PX}" height="${STILL_PX}"></canvas>${tag}</div>`;
   }
 
+  /* Where vendor `idx` stands, once its town is resolved on the disc:
+   * `{ scene, slot, spawn }`, or null. */
+  function vendorPlace(townName, idx) {
+    const rows = townVendors.get(townName);
+    const r = rows && rows[idx];
+    return r && r.place ? r.place : null;
+  }
+
   function renderShopItems(shop, town, idx) {
     const rows = shop.items.map(it => {
-      const price = it.price != null ? `${it.price.toLocaleString()} G`
+      const price = it.price != null ? gold(it.price)
                   : it.attack ? `ATK ${it.attack}`
                   : '';
       const featured = shop.featured && shop.featured.includes(it.key);
-      return `<li class="ship-item ship-item-${it._kind || 'unknown'} ${featured ? 'ship-item-featured' : ''}"
-                 data-key="${escapeHtml(it.key)}">
-        ${thumbCell(it)}
-        <span class="ship-kind">${(KIND_LABELS[it._kind] || 'Unknown').toUpperCase()}</span>
-        <span class="ship-name">${escapeHtml(it.name)}${featured ? ' <span class="ship-new">NEW</span>' : ''}</span>
-        <span class="ship-price">${price}</span>
-      </li>`;
+      return itemRow(it, 'shop', idx, (KIND_LABELS[it._kind] || 'Unknown').toUpperCase(), price,
+        featured ? ' <span class="ship-new">NEW</span>' : '', featured);
     }).join('');
 
     const meta = [];
@@ -401,12 +844,20 @@ asset shop-stock --prot extracted/PROT.DAT --scus extracted/SCUS_942.54 \
     if (shop.phase)    meta.push(`<em>${escapeHtml(shop.phase)}</em>`);
     const metaLine = meta.length ? `<div class="vendor-meta">${meta.join(' &middot; ')}</div>` : '';
     const portrait = portraitHtml(town, idx);
+    const place = vendorPlace(town, idx);
+    const placed = !viewer || !!place;
+    const locate = place
+      ? `<button type="button" class="vendor-locate" data-vidx="${idx}" aria-label="Show ${escapeHtml(shop.name)} on the map">${PIN_SVG}map</button>` : '';
 
     return `<section class="vendor" data-vidx="${idx}">
       <header class="vendor-head${portrait ? ' has-portrait' : ''}">
         ${portrait}
         <div class="vendor-head-text">
-          <h4>${escapeHtml(shop.name)}</h4>
+          <div class="vendor-title">
+            <span class="vendor-num${placed ? '' : ' is-unplaced'}" aria-hidden="true">${idx + 1}</span>
+            <h4>${escapeHtml(shop.name)}</h4>
+            ${locate}
+          </div>
           ${metaLine}
         </div>
       </header>
@@ -414,30 +865,19 @@ asset shop-stock --prot extracted/PROT.DAT --scus extracted/SCUS_942.54 \
     </section>`;
   }
 
-  function renderCasinoItems(prizes, town) {
+  function renderCasinoItems(prizes) {
     if (!prizes.length) return '';
-    const rows = prizes.map(p => `
-      <li class="ship-item ship-item-${p.item._kind || 'unknown'} ship-item-casino" data-key="${escapeHtml(p.item.key)}">
-        ${thumbCell(p.item)}
-        <span class="ship-kind">SLOT</span>
-        <span class="ship-name">${escapeHtml(p.item.name)}</span>
-        <span class="ship-price">${p.cost_coins.toLocaleString()} coins</span>
-      </li>`).join('');
+    const rows = prizes.map(p => itemRow(p.item, 'casino', -1, 'SLOT', `${p.cost_coins.toLocaleString()} coins`)).join('');
     return `<section class="vendor vendor-casino">
       <header class="vendor-head"><h4>Slot prizes</h4>
         <div class="vendor-meta">Pay coins won on the slot machine</div></header>
       <ul class="ship-list">${rows}</ul></section>`;
   }
 
-  function renderFishingItems(prizes, town) {
+  function renderFishingItems(prizes) {
     if (!prizes.length) return '';
-    const rows = prizes.map(p => `
-      <li class="ship-item ship-item-${p.item._kind || 'unknown'} ship-item-fishing" data-key="${escapeHtml(p.item.key)}">
-        ${thumbCell(p.item)}
-        <span class="ship-kind">FISH</span>
-        <span class="ship-name">${escapeHtml(p.item.name)}${p.notes ? ' <span class="ship-new">*</span>' : ''}</span>
-        <span class="ship-price">${p.cost_points.toLocaleString()} pts</span>
-      </li>`).join('');
+    const rows = prizes.map(p => itemRow(p.item, 'fishing', -1, 'FISH', `${p.cost_points.toLocaleString()} pts`,
+      p.notes ? ' <span class="ship-new">*</span>' : '')).join('');
     return `<section class="vendor vendor-fishing">
       <header class="vendor-head"><h4>Fishing prizes</h4>
         <div class="vendor-meta">Spend points at the pond store</div></header>
@@ -476,15 +916,24 @@ asset shop-stock --prot extracted/PROT.DAT --scus extracted/SCUS_942.54 \
   }
 
   function renderTownBody(t) {
-    /* Park the live canvas before the list is rebuilt under it. */
+    /* Park the shared canvases before the list is rebuilt under them. */
     $stage.appendChild(npcCanvas);
+    $itemStage.appendChild(itemCanvas);
     $middle.classList.toggle('has-thumbs', !!equipByName);
     $vendors.innerHTML = [
       ...t.shops.map((s, i) => renderShopItems(s, t.name, i)),
-      renderCasinoItems(t.casino,   t.name),
-      renderFishingItems(t.fishing, t.name),
+      renderCasinoItems(t.casino),
+      renderFishingItems(t.fishing),
     ].join('');
     hydrateVendors(t);
+    /* Re-open the row that was open before the rebuild. */
+    if (openKey) {
+      const [group, vidx, key] = openKey.split('|');
+      const li = Array.from($vendors.querySelectorAll('.ship-item'))
+        .find(el => el.dataset.group === group && el.dataset.vidx === vidx && el.dataset.key === key);
+      if (li) openRow(li); else openKey = null;
+    }
+    markVendors();
   }
 
   function townMeta(t, extra) {
@@ -500,50 +949,390 @@ asset shop-stock --prot extracted/PROT.DAT --scus extracted/SCUS_942.54 \
   function selectTown(idx) {
     const t = payload.towns[idx];
     if (!t) return;
+    if (idx !== curTownIdx) { openKey = null; selVidx = -1; hotVidx = -1; }
     curTownIdx = idx;
     $towns.querySelectorAll('li').forEach((li, i) => li.classList.toggle('active', i === idx));
     $title.textContent = t.name;
     townMeta(t);
     renderTownBody(t);
+    renderMapPane();
     if (viewer) resolveTown(t);
   }
 
-  // Item clicks (delegated: the list is rebuilt whole per town).
+  /* Row / portrait / locate clicks (delegated: the list is rebuilt whole per town). */
   $vendors.addEventListener('click', (ev) => {
     const portrait = ev.target.closest('.vendor-portrait');
     if (portrait) {
-      const t = payload.towns[curTownIdx];
+      const t = curTown();
       const idx = Number(portrait.dataset.vidx);
       const rows = t && townVendors.get(t.name);
       const isLive = liveVendor && liveVendor.town === t.name && liveVendor.idx === idx;
       if (!isLive && rows && rows[idx] && rows[idx].state === 'ok') goLive(t, idx);
       return;
     }
-    const li = ev.target.closest('.ship-item');
-    if (!li) return;
-    const t = payload.towns[curTownIdx];
-    if (!t) return;
-    const key = li.dataset.key;
-    const vendorSection = li.closest('.vendor');
-    const shopName = vendorSection?.querySelector('h4')?.textContent || '';
-    // The item record: the clicked vendor's own list first.
-    let it = null, shop = null;
-    const vidx = vendorSection && vendorSection.dataset.vidx != null ? Number(vendorSection.dataset.vidx) : -1;
-    if (vidx >= 0 && t.shops[vidx]) {
-      const hit = t.shops[vidx].items.find(i => i.key === key);
-      if (hit) { it = hit; shop = t.shops[vidx]; }
-    }
-    if (!it) for (const p of t.casino)  if (p.item.key === key) { it = p.item; shop = { name: 'Slot prize' }; break; }
-    if (!it) for (const p of t.fishing) if (p.item.key === key) { it = p.item; shop = { name: 'Fishing prize' }; break; }
-    if (!it) return;
-    renderDetail(it, {
-      town: t.name,
-      shopName: shop?.name || shopName,
-      phase: shop?.phase || null,
-      merchant: shop?.merchant || null,
+    const loc = ev.target.closest('.vendor-locate');
+    if (loc) { selectVendor(Number(loc.dataset.vidx), { scroll: false, focusMap: true }); return; }
+    const btn = ev.target.closest('.ship-row');
+    if (!btn) return;
+    const li = btn.closest('.ship-item');
+    const wasOpen = li.classList.contains('is-open');
+    closeOpenRow();
+    openKey = null;
+    if (!wasOpen) openRow(li);
+    const vidx = Number(li.dataset.vidx);
+    if (vidx >= 0) selectVendor(vidx, { scroll: false });
+  });
+  $vendors.addEventListener('mouseover', (ev) => {
+    const v = ev.target.closest('.vendor[data-vidx]');
+    setHot(v ? Number(v.dataset.vidx) : -1);
+  });
+  $vendors.addEventListener('mouseleave', () => setHot(-1));
+  $vendors.addEventListener('focusin', (ev) => {
+    const v = ev.target.closest('.vendor[data-vidx]');
+    if (v) setHot(Number(v.dataset.vidx));
+  });
+
+  /* ---------------- the map ---------------- */
+
+  let mapView = null;
+  let mapScene = null;        /* label the map shows */
+  let mapLoading = null;      /* label being loaded */
+  let mapSlotToActor = null;  /* MAN slot -> live actor catalog index */
+  let mapRaf = 0;
+  let hotVidx = -1;
+  let selVidx = -1;
+  let mapToken = 0;
+
+  /* A vendor's name for the map: the walkthrough's, or the disc record's
+   * plate where the walkthrough has none. */
+  function vendorLabel(t, i) {
+    const n = t.shops[i].name;
+    const r = (townVendors.get(t.name) || [])[i];
+    return (!n || n === '(shop)') && r && r.plate ? r.plate : n;
+  }
+
+  /* Vendors of the current town standing in `scene`. */
+  function vendorsIn(t, scene) {
+    const out = [];
+    t.shops.forEach((s, i) => {
+      const p = vendorPlace(t.name, i);
+      if (p && p.scene === scene) out.push(i);
     });
-    $vendors.querySelectorAll('.ship-item.selected').forEach(el => el.classList.remove('selected'));
-    li.classList.add('selected');
+    return out;
+  }
+
+  /* The scene the map opens on: the one holding most of the town's
+   * vendors (first in the town's scene order on a tie). */
+  function defaultScene(t) {
+    let best = null, n = 0;
+    for (const s of t.shop_scenes || []) {
+      /* A vendor standing on its spawn tile outweighs a script-gated one. */
+      const k = vendorsIn(t, s).reduce((a, i) => a + (vendorPlace(t.name, i).parked ? 1 : 2), 0);
+      if (k > n) { best = s; n = k; }
+    }
+    return best;
+  }
+
+  function setHot(vidx) {
+    if (vidx === hotVidx) return;
+    hotVidx = vidx;
+    markVendors();
+  }
+
+  function markVendors() {
+    $vendors.querySelectorAll('.vendor[data-vidx]').forEach(el => {
+      const i = Number(el.dataset.vidx);
+      el.classList.toggle('is-hot', i === hotVidx);
+      el.classList.toggle('is-target', i === selVidx);
+    });
+    $mapPins.querySelectorAll('.map-pin').forEach(el => {
+      const i = Number(el.dataset.vidx);
+      el.classList.toggle('is-hot', i === hotVidx);
+      el.classList.toggle('is-sel', i === selVidx);
+    });
+    $mapLegend.querySelectorAll('button[data-vidx]').forEach(el => {
+      el.classList.toggle('is-hot', Number(el.dataset.vidx) === hotVidx);
+    });
+  }
+
+  /* Select vendor `vidx`: highlight it in the list and on the map, opening
+   * its scene on the map when it stands in another one. */
+  function selectVendor(vidx, opts) {
+    const o = opts || {};
+    const t = curTown();
+    selVidx = vidx;
+    markVendors();
+    const p = vendorPlace(t.name, vidx);
+    if (p && viewer) {
+      if (p.scene !== mapScene) showMapScene(t, p.scene, vidx);
+      else if (o.focusMap) centerOnVendor(vidx);
+    }
+    if (o.scroll) {
+      const sec = $vendors.querySelector(`.vendor[data-vidx="${vidx}"]`);
+      if (sec) {
+        sec.scrollIntoView({ block: 'start', behavior: 'smooth' });
+        const head = sec.querySelector('.ship-row');
+        if (head) head.focus({ preventScroll: true });
+      }
+    }
+  }
+
+  function renderLegend(t) {
+    const rows = t.shops.map((s, i) => {
+      let sub;
+      const p = vendorPlace(t.name, i);
+      const r = (townVendors.get(t.name) || [])[i];
+      if (!viewer) sub = s.phase || '';
+      else if (!r) sub = 'finding on your disc…';
+      else if (p) sub = sceneName(t, p.scene) + (p.scene === mapScene ? '' : ' - click to open');
+      else sub = `not on a map: ${r.mapWhy || r.why || 'no placed actor'}`;
+      const cls = (!viewer || p) ? '' : ' is-unplaced';
+      return `<li><button type="button" data-vidx="${i}"><span class="vendor-num${cls}" aria-hidden="true">${i + 1}</span>`
+        + `<span>${escapeHtml(vendorLabel(t, i))}<span class="lg-sub">${escapeHtml(sub)}</span></span></button></li>`;
+    });
+    $mapLegend.innerHTML = rows.join('');
+    markVendors();
+  }
+  $mapLegend.addEventListener('click', (ev) => {
+    const b = ev.target.closest('button[data-vidx]');
+    if (b) selectVendor(Number(b.dataset.vidx), { scroll: true, focusMap: true });
+  });
+  $mapLegend.addEventListener('mouseover', (ev) => {
+    const b = ev.target.closest('button[data-vidx]');
+    setHot(b ? Number(b.dataset.vidx) : -1);
+  });
+  $mapLegend.addEventListener('mouseleave', () => setHot(-1));
+
+  function renderTabs(t) {
+    const scenes = viewer ? (t.shop_scenes || []).filter(s => vendorsIn(t, s).length) : [];
+    $mapTabs.innerHTML = scenes.length > 1
+      ? scenes.map(s => `<button type="button" class="map-tab" data-scene="${escapeHtml(s)}" aria-pressed="${s === mapScene}">${escapeHtml(sceneName(t, s))}</button>`).join('')
+      : '';
+  }
+  $mapTabs.addEventListener('click', (ev) => {
+    const b = ev.target.closest('.map-tab');
+    if (b) showMapScene(curTown(), b.dataset.scene);
+  });
+
+  function setEmpty(html) {
+    $mapEmpty.innerHTML = html;
+    $mapEmpty.hidden = !html;
+    mapCanvas.style.visibility = html ? 'hidden' : 'visible';
+    $mapTools.hidden = !!html;
+    $mapHint.hidden = !!html;
+    if (html) $mapPins.innerHTML = '';
+  }
+
+  /* The map pane for the current town, before or without the scene render. */
+  function renderMapPane() {
+    const t = curTown();
+    if (!t) return;
+    renderLegend(t);
+    renderTabs(t);
+    const scenes = (t.shop_scenes || []).map(s => sceneName(t, s));
+    if (!viewer) {
+      stopMap();
+      mapScene = null;
+      $mapScene.textContent = t.name;
+      setEmpty(`${PIN_SVG}<div><strong>Load your disc to see the map.</strong><br>`
+        + (scenes.length
+          ? `${escapeHtml(t.name)}'s vendors stand in ${escapeHtml(scenes.join(', '))}. With your disc, that scene is drawn here from the game's own data with every vendor marked.`
+          : `The disc-wide shop scan finds no shop record in ${escapeHtml(t.name)}'s scenes, so there is no map position to show.`)
+        + '</div>');
+      return;
+    }
+    if (!(t.shop_scenes || []).length) {
+      stopMap();
+      mapScene = null;
+      $mapScene.textContent = t.name;
+      setEmpty(`<div><strong>No map for ${escapeHtml(t.name)}.</strong><br>The disc-wide shop scan finds no shop record in this town's scenes, so none of its vendors can be placed.</div>`);
+    } else if (!townVendors.has(t.name)) {
+      $mapScene.textContent = t.name;
+      setEmpty('<div>Finding the vendors on your disc…</div>');
+    }
+  }
+
+  function stopMap() {
+    if (mapRaf) cancelAnimationFrame(mapRaf);
+    mapRaf = 0;
+    if (mapView) mapView.stop();
+  }
+
+  /* Each vendor's world position this frame: the live actor's draw pose
+   * when the running scene shows it, else its MAN spawn tile on the
+   * scene's built-up floor height. */
+  function pinWorld(t, vidx, poses) {
+    const p = vendorPlace(t.name, vidx);
+    if (!p || !p.spawn) return null;
+    const ai = mapSlotToActor ? mapSlotToActor.get(p.slot) : undefined;
+    if (ai !== undefined && poses && (ai + 1) * 8 <= poses.length && poses[ai * 8]) {
+      const x = poses[ai * 8 + 1], z = poses[ai * 8 + 3];
+      /* The running scene shows the actor at its counter: follow it. */
+      if (Math.abs(x - p.spawn.x) < 384 && Math.abs(z - p.spawn.z) < 384) {
+        return { x, y: poses[ai * 8 + 2] + 90, z, away: false };
+      }
+    }
+    return { x: p.spawn.x, y: seatY(p) + 90, z: p.spawn.z, away: true };
+  }
+
+  /* Floor height under a seat the running scene does not show: the nearest
+   * placed object's (a placement's world Y is the floor tier it stands on). */
+  function seatY(p) {
+    if (p._yScene === mapScene) return p._y;
+    let best = Infinity, y = mapView.spawn ? mapView.spawn.y : 0;
+    for (const d of mapView.draws || []) {
+      const dd = Math.abs(d.x - p.spawn.x) + Math.abs(d.z - p.spawn.z);
+      if (dd < best) { best = dd; y = d.y; }
+    }
+    p._yScene = mapScene;
+    p._y = y;
+    return y;
+  }
+
+  function project(vp, w, h, x, y, z) {
+    const cx = vp[0] * x + vp[4] * y + vp[8] * z + vp[12];
+    const cy = vp[1] * x + vp[5] * y + vp[9] * z + vp[13];
+    const cw = vp[3] * x + vp[7] * y + vp[11] * z + vp[15];
+    if (cw <= 1e-6) return null;
+    return { x: (cx / cw * 0.5 + 0.5) * w, y: (0.5 - cy / cw * 0.5) * h };
+  }
+
+  /* Place the pins over the canvas: one per vendor in the shown scene. */
+  function buildPins(t) {
+    const ids = vendorsIn(t, mapScene);
+    /* One actor can open several shops (Biron's dealers branch into two
+     * stocks): its pins fan out side by side instead of stacking. */
+    const seen = new Map();
+    $mapPins.innerHTML = ids.map(i => {
+      const slot = vendorPlace(t.name, i).slot;
+      const k = seen.get(slot) || 0;
+      seen.set(slot, k + 1);
+      return `<button type="button" class="map-pin" data-vidx="${i}" data-fan="${k}" aria-label="${escapeHtml(vendorLabel(t, i))} (vendor ${i + 1})">${i + 1}<span class="map-pin-label">${escapeHtml(vendorLabel(t, i))}</span></button>`;
+    }).join('');
+    markVendors();
+  }
+  $mapPins.addEventListener('click', (ev) => {
+    const b = ev.target.closest('.map-pin');
+    if (b) selectVendor(Number(b.dataset.vidx), { scroll: true });
+  });
+  $mapPins.addEventListener('mouseover', (ev) => {
+    const b = ev.target.closest('.map-pin');
+    setHot(b ? Number(b.dataset.vidx) : -1);
+  });
+  $mapPins.addEventListener('mouseleave', () => setHot(-1));
+
+  function sizeMapCanvas() {
+    const w = Math.max(1, Math.round(mapCanvas.clientWidth));
+    const h = Math.max(1, Math.round(mapCanvas.clientHeight));
+    if (mapCanvas.width !== w || mapCanvas.height !== h) { mapCanvas.width = w; mapCanvas.height = h; }
+  }
+
+  function mapTick() {
+    mapRaf = 0;
+    const t = curTown();
+    if (!mapView || !mapView.state || !t) return;
+    sizeMapCanvas();
+    const poses = typeof viewer.field_scene_npc_draw_poses === 'function' ? viewer.field_scene_npc_draw_poses() : null;
+    const vp = buildWorldOrbitVp(mapCanvas.width, mapCanvas.height, mapView.ext, mapView.cam);
+    const sx = mapCanvas.clientWidth / mapCanvas.width;
+    const sy = mapCanvas.clientHeight / mapCanvas.height;
+    $mapPins.querySelectorAll('.map-pin').forEach(el => {
+      const w = pinWorld(t, Number(el.dataset.vidx), poses);
+      const s = w && project(vp, mapCanvas.width, mapCanvas.height, w.x, w.y, w.z);
+      if (!s) { el.style.display = 'none'; return; }
+      el.style.display = '';
+      const fan = Number(el.dataset.fan || 0) * 30;
+      el.style.transform = `translate(${(s.x * sx + fan).toFixed(1)}px, ${(s.y * sy).toFixed(1)}px)`;
+      el.classList.toggle('is-away', w.away);
+      el.title = w.away
+        ? `${t.shops[Number(el.dataset.vidx)].name}: its script seats it here in the story state the shop opens in (the map runs another state)`
+        : t.shops[Number(el.dataset.vidx)].name;
+    });
+    mapRaf = requestAnimationFrame(mapTick);
+  }
+
+  /* Frame the camera on the vendors: a short tilt over the box around
+   * them, never wider than the whole scene. */
+  function fitVendors(t) {
+    if (!mapView || !mapView.state) return;
+    const ids = vendorsIn(t, mapScene);
+    const pts = ids.map(i => vendorPlace(t.name, i).spawn).filter(Boolean);
+    const cam = mapView.cam;
+    const full = mapView._fullCam || (mapView._fullCam = Object.assign({}, cam));
+    cam.yaw = 0;
+    cam.pitch = 0.45;
+    if (!pts.length) { Object.assign(cam, full, { pitch: 0.45 }); return; }
+    let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
+    for (const p of pts) { x0 = Math.min(x0, p.x); x1 = Math.max(x1, p.x); z0 = Math.min(z0, p.z); z1 = Math.max(z1, p.z); }
+    cam.centerX = (x0 + x1) / 2;
+    cam.centerZ = (z0 + z1) / 2;
+    const half = Math.max((x1 - x0) / 2, (z1 - z0) / 2) + 1100;
+    const cap = Math.max(full.halfWidth, full.halfHeight);
+    cam.halfWidth = cam.halfHeight = Math.max(1300, Math.min(half, cap));
+  }
+
+  function centerOnVendor(vidx) {
+    const t = curTown();
+    const p = vendorPlace(t.name, vidx);
+    if (!p || !p.spawn || !mapView) return;
+    mapView.cam.centerX = p.spawn.x;
+    mapView.cam.centerZ = p.spawn.z;
+  }
+
+  /* Assemble `scene` into the map and mark the town's vendors in it. */
+  async function showMapScene(t, scene, focusVidx) {
+    if (!viewer || !scene) return;
+    if (scene === mapScene && mapView && mapView.state) {
+      if (focusVidx != null) centerOnVendor(focusVidx);
+      return;
+    }
+    const token = ++mapToken;
+    mapLoading = scene;
+    stopMap();
+    $mapScene.textContent = sceneName(t, scene);
+    setEmpty(`<div>Assembling ${escapeHtml(sceneName(t, scene))} from your disc…</div>`);
+    await new Promise(r => setTimeout(r, 30));
+    if (token !== mapToken) return;
+    try {
+      if (!mapView) {
+        mapView = new window.FieldSceneView(viewer, mapCanvas, { minHalf: 300, maxHalf: 20000 });
+        window.__shopMap = mapView;   /* headless-verification hook */
+      }
+      sizeMapCanvas();
+      mapView._fullCam = null;
+      mapView.load(scene);
+      mapView._fullCam = Object.assign({}, mapView.cam);
+      mapSlotToActor = new Map();
+      if (typeof viewer.field_scene_npc_catalog_json === 'function') {
+        const cat = JSON.parse(viewer.field_scene_npc_catalog_json() || 'null');
+        for (const n of (cat && cat.npcs) || []) mapSlotToActor.set(n.slot, n.i);
+      }
+    } catch (err) {
+      console.warn('[shops] map:', err);
+      mapScene = null;
+      mapLoading = null;
+      setEmpty(`<div><strong>This scene did not assemble.</strong><br>${escapeHtml(err.message || err)}</div>`);
+      return;
+    }
+    if (token !== mapToken || curTown() !== t) return;
+    mapScene = scene;
+    mapLoading = null;
+    setEmpty('');
+    renderTabs(t);
+    renderLegend(t);
+    buildPins(t);
+    fitVendors(t);
+    if (focusVidx != null) centerOnVendor(focusVidx);
+    mapTick();
+  }
+
+  $mapTools.addEventListener('click', (ev) => {
+    const b = ev.target.closest('.map-tool');
+    if (!b || !mapView) return;
+    const c = mapView.cam;
+    if (b.dataset.tool === 'in')  { c.halfWidth *= 0.75; c.halfHeight *= 0.75; }
+    if (b.dataset.tool === 'out') { c.halfWidth /= 0.75; c.halfHeight /= 0.75; }
+    if (b.dataset.tool === 'fit') fitVendors(curTown());
   });
 
   /* ---------------- vendor resolution ---------------- */
@@ -574,9 +1363,27 @@ asset shop-stock --prot extracted/PROT.DAT --scus extracted/SCUS_942.54 \
     return both / Math.max(want.size, have.size);
   }
 
+  /* Where a disc shop record's actor stands: a partition-1 placement
+   * (index >= 1) is a MAN-placed actor; anything else has no position. */
+  function placeOf(r) {
+    if (r.rec.partition !== 1 || !(r.rec.record > 0)) return null;
+    /* `seat` is where the shopkeeper stands while the shop is open: its
+     * spawn prologue's story-flag arms often park it off-map in one state
+     * and run it to its counter in another, so the header tile alone is not
+     * it (`shop_vendors::vendor_seat`). `parked` = the scene's opening
+     * state (the catalog's fresh-game spawn) does not show it there. */
+    const src = r.npc || (r.catalogAll ? r.catalogAll.find(n => n.slot === r.rec.record) : null);
+    const seat = Array.isArray(r.rec.seat) ? { x: r.rec.seat[0], z: r.rec.seat[1] } : null;
+    return {
+      scene: r.scene, slot: r.rec.record, spawn: seat,
+      parked: !src || src.conditional || !seat || src.x !== seat.x || src.z !== seat.z,
+    };
+  }
+
   async function resolveTown(t) {
     if (townVendors.has(t.name)) {
       if (!liveVendor || liveVendor.town !== t.name) pickDefaultLive(t);
+      showMapScene(t, defaultScene(t));
       return;
     }
     const token = ++resolveToken;
@@ -585,8 +1392,10 @@ asset shop-stock --prot extracted/PROT.DAT --scus extracted/SCUS_942.54 \
       townVendors.set(t.name, t.shops.map(() => ({
         state: 'missing',
         why: 'The disc-wide shop scan finds no shop record in this town\'s scenes, so there is no actor to tie this vendor to.',
+        mapWhy: 'no shop record in this town\'s scenes',
       })));
       renderTownBody(t);
+      renderMapPane();
       return;
     }
     townMeta(t, 'finding vendors on your disc…');
@@ -622,7 +1431,7 @@ asset shop-stock --prot extracted/PROT.DAT --scus extracted/SCUS_942.54 \
             }
           }
         }
-        records.push({ scene, rec, npc, still, catalog });
+        records.push({ scene, rec, npc, still, catalog, catalogAll: catalog ? catalog.npcs : null });
       }
       await paint();
     }
@@ -643,24 +1452,34 @@ asset shop-stock --prot extracted/PROT.DAT --scus extracted/SCUS_942.54 \
         }
       });
       if (best == null || bestScore < 0.4) {
-        return { state: 'missing', why: 'No shop record in this town\'s scenes sells this stock, so the vendor cannot be tied to an actor on the disc.' };
+        return {
+          state: 'missing',
+          why: 'No shop record in this town\'s scenes sells this stock, so the vendor cannot be tied to an actor on the disc.',
+          mapWhy: 'no shop record on the disc sells this stock',
+        };
       }
       used.add(best);
       const r = records[best];
+      const place = placeOf(r);
       const where = `record ${r.rec.record} of ${r.scene}'s script`;
       if (!r.npc || !r.still) {
-        return { state: 'missing', why: `The disc's "${r.rec.name}" shop (${where}) is ${r.rec.why || 'not drawable'}.`, plate: r.rec.name };
+        return { state: 'missing', why: `The disc's "${r.rec.name}" shop (${where}) is ${r.rec.why || 'not drawable'}.`, plate: r.rec.name, place, mapWhy: r.rec.why };
       }
       return {
-        state: 'ok', scene: r.scene, npc: r.npc, catalog: r.catalog, still: r.still, plate: r.rec.name,
+        state: 'ok', scene: r.scene, npc: r.npc, catalog: r.catalog, still: r.still, plate: r.rec.name, place,
         tip: `The actor whose script opens the "${r.rec.name}" shop: placement ${r.npc.slot} in ${r.scene}, model ${r.npc.model}. Click to spin it.`,
       };
     });
     townVendors.set(t.name, rows);
     const tied = rows.filter(r => r.state === 'ok').length;
-    if (curTownIdx >= 0 && payload.towns[curTownIdx] === t) {
-      townMeta(t, `${tied} of ${rows.length} vendor${rows.length === 1 ? '' : 's'} found on your disc`);
+    const placed = rows.filter(r => r.place).length;
+    if (curTown() === t) {
+      townMeta(t, `${tied} of ${rows.length} vendor${rows.length === 1 ? '' : 's'} found on your disc, ${placed} on the map`);
       pickDefaultLive(t);
+      renderMapPane();
+      const scene = defaultScene(t);
+      if (scene) showMapScene(t, scene);
+      else setEmpty(`<div><strong>No vendor of ${escapeHtml(t.name)} has a place on a map.</strong><br>Their shops are opened from scene script records, not from a placed actor.</div>`);
     }
   }
 
@@ -689,7 +1508,7 @@ asset shop-stock --prot extracted/PROT.DAT --scus extracted/SCUS_942.54 \
       return;
     }
     liveVendor = { town: t.name, idx };
-    if (curTownIdx >= 0 && payload.towns[curTownIdx] === t) renderTownBody(t);
+    if (curTown() === t) renderTownBody(t);
   }
 
   /* ---------------- disc load ---------------- */
@@ -709,6 +1528,8 @@ asset shop-stock --prot extracted/PROT.DAT --scus extracted/SCUS_942.54 \
       townVendors.clear();
       liveVendor = null;
       loadedScene = null;
+      mapScene = null;
+      if (mapView) { mapView.dispose(); mapView = null; }
       if (typeof viewer.scene_shop_vendors_json !== 'function') {
         prog.fail('This build of the viewer predates the shop-vendor lookup; the static tables still work.');
         viewer = null;
@@ -734,9 +1555,18 @@ asset shop-stock --prot extracted/PROT.DAT --scus extracted/SCUS_942.54 \
       } catch (e) {
         console.debug('[shops] equipment pack absent:', e);
       }
+      discItems = null;
+      if (typeof viewer.shop_item_records_json === 'function') {
+        try {
+          const rows = JSON.parse(viewer.shop_item_records_json());
+          if (rows.length) discItems = new Map(rows.map(r => [norm(r.name), r]));
+        } catch (e) {
+          console.debug('[shops] item records absent:', e);
+        }
+      }
       prog.done('Ready.');
-      $statusText.textContent = `Disc: ${f.name} - vendor models and equipment renders added. Click a vendor's portrait to spin it.`;
-      window.__shopState = { townVendors, equipByName };   /* headless-verification hook */
+      $statusText.textContent = `Disc: ${f.name} - town maps, vendor models, item records and equipment models added.`;
+      window.__shopState = { townVendors, equipByName, discItems };   /* headless-verification hook */
       if (curTownIdx >= 0) selectTown(curTownIdx);
     } catch (err) {
       prog.fail(`Failed to decode: ${err.message || err}`);

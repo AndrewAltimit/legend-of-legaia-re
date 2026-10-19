@@ -2206,18 +2206,30 @@ kbd {
 
 .shop-browser {
   display: grid;
-  grid-template-columns: 240px minmax(0, 1fr) minmax(320px, 420px);
+  grid-template-columns: 220px minmax(0, 1fr) minmax(340px, 460px);
+  grid-template-areas: "towns middle map";
   gap: 1rem;
   margin: 1rem 0 1.5rem;
   min-height: 540px;
+  align-items: start;
 }
+.shop-towns  { grid-area: towns; align-self: stretch; }
+.shop-middle { grid-area: middle; align-self: stretch; }
+.shop-map    { grid-area: map; }
 
+/* The map rides beside the vendor list on a wide screen, sits above it on a
+ * medium one, and stacks between the town list and the vendors on a phone. */
 @media (max-width: 1280px) {
-  .shop-browser { grid-template-columns: 220px minmax(0, 1fr); }
-  .shop-detail  { grid-column: 1 / -1; }
+  .shop-browser {
+    grid-template-columns: 200px minmax(0, 1fr);
+    grid-template-areas: "towns map" "towns middle";
+  }
 }
 @media (max-width: 720px) {
-  .shop-browser { grid-template-columns: 1fr; }
+  .shop-browser {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: "towns" "map" "middle";
+  }
   .shop-towns   { max-height: 220px; }
 }
 
@@ -2234,7 +2246,7 @@ kbd {
 
 .shop-towns,
 .shop-middle,
-.shop-detail {
+.shop-map {
   background: var(--bg-card);
   border: 1px solid var(--border);
   border-radius: 4px;
@@ -2396,11 +2408,6 @@ kbd {
 }
 .ship-item-featured .ship-name { color: var(--accent); font-weight: 500; }
 
-.shop-detail-body {
-  padding: 0.85rem 0.95rem 1rem;
-  overflow-y: auto;
-  flex: 1;
-}
 .detail-kind {
   font-family: var(--font-mono);
   font-size: 0.66rem;
