@@ -30,7 +30,7 @@
 //! - the same page retail draws off a save that never incremented them.
 
 use super::*;
-use legaia_engine_core::dev_menu_host::DevMenuWorldExt;
+use legaia_engine_menu_runtime::dev_menu_host::DevMenuWorldExt;
 use legaia_engine_menus::dev_menu_host::{DevMenuSession, DevPage};
 use legaia_engine_screens::dev_menu::{
     DEV_RECORDS_PEN, RECORDS_TOGGLE, dev_menu_list_draws, records_draws_for_world,

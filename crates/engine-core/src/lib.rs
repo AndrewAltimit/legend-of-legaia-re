@@ -12,7 +12,6 @@ pub mod battle_round;
 pub mod battle_sideband_textures;
 pub mod camera_view;
 pub mod dance_venue;
-pub mod dev_menu_host;
 pub mod field_occlusion;
 pub mod field_view_window;
 pub mod fishing_exchange_input;

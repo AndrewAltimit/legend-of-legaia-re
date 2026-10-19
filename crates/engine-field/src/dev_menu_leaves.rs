@@ -41,7 +41,7 @@
 //!
 //! - **`FUN_801EAD98` / `FUN_801ECA08`** (row model, formatter, panel sizer,
 //!   list-picker cursor + draw gate) are hosted by the engine's dev-menu
-//!   screen `legaia_engine_core::dev_menu_host`. That screen carries the row
+//!   screen `legaia_engine_menu_runtime::dev_menu_host`. That screen carries the row
 //!   subset whose backing state the engine owns, and it maps each of its rows
 //!   onto retail's own index space ([`DevMenuRow::from_index`]) so the label /
 //!   `CLOSED` decision, the row formatter, the panel geometry, the cursor step

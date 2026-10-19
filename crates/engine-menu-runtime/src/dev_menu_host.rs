@@ -16,13 +16,13 @@ pub trait DevMenuWorldExt {
     /// One frame of the screen against a live world and its camera.
     fn tick_host(
         &mut self,
-        world: &mut crate::world::World,
+        world: &mut legaia_engine_core::world::World,
         camera: &mut legaia_engine_field::camera::Camera,
         pad_edge: u16,
         pad_held: u16,
     ) -> Option<Option<EquipCommit>>;
     /// Hand the cues raised since the last call to `world`'s SFX ring.
-    fn route_sfx(&mut self, world: &mut crate::world::World) -> Vec<u8>;
+    fn route_sfx(&mut self, world: &mut legaia_engine_core::world::World) -> Vec<u8>;
 }
 
 impl DevMenuWorldExt for DevMenuSession {
@@ -45,7 +45,7 @@ impl DevMenuWorldExt for DevMenuSession {
     /// [`Self::pending_sfx`]. Both hosts carried this arm verbatim.
     fn tick_host(
         &mut self,
-        world: &mut crate::world::World,
+        world: &mut legaia_engine_core::world::World,
         camera: &mut legaia_engine_field::camera::Camera,
         pad_edge: u16,
         pad_held: u16,
@@ -92,10 +92,10 @@ impl DevMenuWorldExt for DevMenuSession {
     /// cursor move (`li a0,0x21` in the delay slot of each arm of
     /// `FUN_801E9DC8`) and the confirm row's `0x25` (`0x801D7270` in
     /// `FUN_801D6E18`) - which is the field SFX-ring producer
-    /// [`crate::world::World::push_sfx_cue`] ports. Both hosts replay that
+    /// [`legaia_engine_core::world::World::push_sfx_cue`] ports. Both hosts replay that
     /// ring, so routing here is what makes the menu audible on both; each
     /// host used to drain the queue and drop it.
-    fn route_sfx(&mut self, world: &mut crate::world::World) -> Vec<u8> {
+    fn route_sfx(&mut self, world: &mut legaia_engine_core::world::World) -> Vec<u8> {
         let cues = self.drain_sfx();
         for &cue in &cues {
             world.push_sfx_cue(i16::from(cue));
@@ -126,7 +126,7 @@ mod tests {
     fn dev_menu_cues_route_onto_the_world_sfx_ring() {
         let mut s = DevMenuSession::new();
         let mut r = records();
-        let mut w = crate::world::World::default();
+        let mut w = legaia_engine_core::world::World::default();
         drive(&mut s, &mut r, PACK_DOWN, 0);
         assert_eq!(s.route_sfx(&mut w), vec![SFX_CURSOR_MOVE as u8]);
         assert_eq!(
@@ -142,7 +142,7 @@ mod tests {
     /// horizontal edge, and `tick_host` carries the switch onto the camera.
     #[test]
     fn the_camera_row_switches_the_follow_camera() {
-        let mut w = crate::world::World::new();
+        let mut w = legaia_engine_core::world::World::new();
         let mut cam = legaia_engine_field::camera::Camera::default();
         assert!(cam.zone.follow_enabled, "retail boots the switch on");
         let mut s = DevMenuSession::new();
@@ -169,7 +169,7 @@ mod tests {
     /// `tick_host` loads the world's published region box into the readout.
     #[test]
     fn tick_host_loads_the_world_region_box() {
-        let mut w = crate::world::World::new();
+        let mut w = legaia_engine_core::world::World::new();
         let mut cam = legaia_engine_field::camera::Camera::default();
         w.terrain.region_attributes.box_bytes = [0x10, 0x20, 0x30, 0x40];
         let mut s = DevMenuSession::new();

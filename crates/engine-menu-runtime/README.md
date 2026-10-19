@@ -25,6 +25,10 @@ sub-session from the world, and writes each outcome back.
   directory claim (`write_save_into_card`). It reads no `World`; it sits here
   because it reads the disc through `ProtIndex` and is the card side of the
   save-slot directory above.
+- **`dev_menu_host`** - the developer menu's `World` seam
+  (`DevMenuWorldExt` on `engine-menus`' `DevMenuSession`): one frame of the
+  screen against the live world and its camera, and its cues routed onto the
+  world's SFX ring. Both hosts' dev menus call it.
 - **`menu_validator`** - the out-of-battle host of the action validator
   `FUN_8003FB10` (`RosterValidator`, over the roster records) and the Magic
   screen's "would this spell do anything" question (`spell_affects_anyone`).
