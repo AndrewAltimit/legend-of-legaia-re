@@ -24,6 +24,7 @@
   <h2>Getting there</h2>
   <p>The door is the <strong>mode-24 minigame warp</strong>: field-VM op <code>0x3E</code> with <code>op0 = 104</code> (sub-id 4) sets game mode <code>0x18</code> and loads the overlay. It is the ordinary scene-backup, overlay-load, return-to-field sequence, so the game returns to the exact field state it suspended. The mechanism is on the <a href="script-vm.html">field / event VM</a> page.</p>
   <p>The three casino cabinets are interchangeable doors behind an entry gate and a one-coin fee. A fourth site on an overworld map is dev residue: a bare record with nothing but the warp, in a slot no reachable script spawns.</p>
+  <p><strong>The seat is choreographed by the cabinet&rsquo;s own script.</strong> The interaction walks the player onto the stool tile, turns them to the machine, plays the sit clip, takes the fee and washes the screen to black (a subtractive white held at full) before the warp. A second pass after the warp clears the wash and stands the player up; the scene&rsquo;s system script starts it once the field is back, off a per-cabinet flag the seat raised. The port runs both passes on both play hosts, and draws no field wash over the duel itself.</p>
 </section>
 
 <section class="doc-section" id="exchange">

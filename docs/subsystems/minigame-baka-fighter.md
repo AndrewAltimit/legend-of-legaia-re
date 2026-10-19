@@ -39,6 +39,33 @@ A disc-wide walk of every scene MAN finds four sites: the three interchangeable 
 
 The `koin1` doors sit behind an entry gate: an `0x4E` inventory compare and a one-coin `0x4C 0xE5` debit before the fade and the warp. Failing it skips the warp.
 
+### The seat and the return pass
+
+All six `koin1` cabinet records (P1[51..=53] here, P1[54..=56] the [slot machine](minigame-slot-machine.md#entry-from-the-field)) share one choreography. The interaction pass runs from `+0x19` to the raw `0x21` at `+0x78`:
+
+| Offset | Bytes | Effect |
+|---|---|---|
+| `+0x19` | `54 33` (`54 B6` at a slot) | raise the seat flag: `0x433..0x435` Baka, `0x4B6..0x4B8` slot, one per cabinet |
+| `+0x20` | `A2 F8 04` | the player's walk clip |
+| `+0x2C` | `C7 F8 <tx> <tz> 33` | op `0x47` walk-to-tile on the player: onto the stool, record parked until the player lands |
+| `+0x37` | `B8 F8 8<d> 17` | op `0x38` turn on the player to compass `d` over 23 frames, record parked |
+| `+0x47` | `A2 F8 05` | the sit clip |
+| `+0x57` | `4E ..` / `4C E5 ..` | the coin gate and fee |
+| `+0x65` | `34 01 FF FF FF 1E 00` | op `0x34`: a white wash on blend `2` (subtractive), held at full - the screen goes black |
+| `+0x72` | `3E 68 ..` | the door warp |
+
+`FUN_8003C83C` resolves the `0xF8` target byte to the player, so the walk and the turn move the **player**, and only a player target parks the calling record (`0x801DF034..0x801DF044` for the walk, `0x801DEEFC` for the turn). The walk target is the `0x47` arm's decode (`0x80037B84..0x80037C04` in `FUN_8003774C`): `tile * 0x80 + 0x40`, or `+ 0x80` when the operand's high bit is set. The `baka_fighter_entry_pretransition` capture (Vahn taking the P1[52] seat) holds the player at `(2752, 5952)`, P1[52]'s `C7 F8 15 2E 33` tile.
+
+The pass after the `0x21` (`+0x79`) walks the wash out (`34 01 FF FF FF 00 00`), clears it (`34 01 00 00 00 1E 00`), stands the player up and glides them off the stool (`C1 F8 04 C2`). Nothing in the record reaches it: the scene's system script `P1[0]` loops on the six seat flags (`+0x12D..+0x175`), clears the one it finds and raises bit 8 on that cabinet's actor (`B1 3F..44 08`), which re-engages the record from its parked cursor once the field is back.
+
+The port runs both halves through the field-VM talk runner (`engine-core` `step_inline_dialogue`), shared by both play hosts:
+
+- The walk and turn on the player are `World::arm_talk_player_leg` / `World::step_talk_player_legs`, the walk on `step_player_walk_leg` (the one the prop runner and cutscene timeline use). Pinned by `crates/engine-core/tests/casino_seat_disc.rs`.
+- The `0x21` after a door warp ends the pass (`InlineDialogue::spawned`), leaving the cursor at `+0x79` for the engagement. Read as a prologue that never reached its box, it fell back to the record's first text segment - the refusal line - over a field still under the wash.
+- `World::screen_tint_pushes` emits no field colour push in a minigame mode, as in a battle: the mode-24 entry streams the minigame's overlay over the field overlay that runs the tween. Pushed, the wash drew the whole duel black under the screen-space HUD.
+
+Both are pinned through the seat, not a launcher, by `crates/engine-shell/tests/casino_seat_round_trip.rs`.
+
 **The state machines have no `jal` callers.** The minigame is two-stage. The sub-id-4 init `FUN_801CF00C` spawns the actor prototype at `0x801D75DC`, whose `+0x08` tick word is the cabinet SM `FUN_801CF388`. That SM spawns the prototype at `0x801D75F4`, whose tick word is the round SM `FUN_801D3468`. Both run through `jalr actor[+0x0C]` in the pool walk `FUN_8002519C`.
 
 ### Actor prototypes
