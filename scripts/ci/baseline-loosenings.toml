@@ -161,3 +161,10 @@ changes = [
   ["states/delilas_gi_spirit_distortion_v3/image", 0.723, 0.718],
   ["states/delilas_gi_spirit_streaks_v2/image", 0.859, 0.856],
 ]
+
+[[loosening]]
+file = "scripts/ci/retail-compare-baseline.json"
+reason = "A monster cast's homing hit now turns its victim onto the caster (FUN_801E09F8, 0x801E1A10..0x801E1A54). Both Tail Fire captures hold the struck Vahn at heading 4068; the engine's read 0 and now reads 4068, with his body pair within six units of retail's. battle_gimard_tail_fire_a rises 0.801 -> 0.808, past its pre-ghost 0.804. In _b the turned body is Vahn on his knockdown (entry 4 from +0x1F1, cursor 68 against retail's 72), and the frame keeps a pose difference the heading does not cause: retail's Vahn stands upright mid-fall where the engine's lies sprawled, so the turn moves which of the fire blob's blocks that body covers. The rest of the full battle set did not move."
+changes = [
+  ["states/battle_gimard_tail_fire_b/image", 0.805, 0.782],
+]
