@@ -372,7 +372,8 @@ admits; a committed Art clip (`+0x1D9 > 0x10`) takes the `0x11` all-slots arm.
 RNG draws follow retail call order: attack roll, guard roll, then the rewrite
 draw and the chip-floor draw only when those arms fire. `damage_finish`'s post
 stages (equipment resists, the zeroed-hit floor, the cap) run on top by
-default; `--no-damage-finish` keeps the flat path, and the finisher supplies no
+default, on the uncapped excess (`physical_excess`) so the guard halve comes
+before the 9999 cap as at `0x801EDA00`; `--no-damage-finish` keeps the flat path, and the finisher supplies no
 guard halve because the Spirit stance is already the Defense triple. The
 `legaia_actor_formats::monster_archive` accessors (`attack()` / `defense_high()` /
 `defense_low()`) and `engine-core`'s `monster_def_from_record` follow the ATK /

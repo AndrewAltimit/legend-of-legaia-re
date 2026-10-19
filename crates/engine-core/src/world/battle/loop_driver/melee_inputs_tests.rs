@@ -215,3 +215,35 @@ fn all_guard_takes_three_quarters_of_an_elemental_monsters_swing() {
     let neutral = monster_swing_on_member(7, 0, 0);
     assert_eq!(monster_swing_on_member(7, 0, ALL_GUARD), neutral);
 }
+
+/// The guard ladder halves the excess **before** the `Defense + 9999` cap
+/// (`0x801ED5CC..0x801EDA00`, then the cap at `0x801EDA00`): a guarded
+/// swing whose excess is still above 9999 after the halve lands the full
+/// cap, not half of it.
+#[test]
+fn the_guard_ladder_runs_before_the_damage_cap() {
+    const EARTH_GUARD: u32 = 0x2000_0000;
+    let strike = |guard: u32| {
+        let mut w = duel();
+        w.load_party(legaia_save::Party::zeroed(1));
+        w.party.party_count = 1;
+        w.actors[0].battle.hp = 5000;
+        w.set_battle_defense(0, 0);
+        w.set_battle_attack(1, 60000);
+        w.actors[1].battle_element = Some(0);
+        let rec = &mut w.party.roster.members[0];
+        let mut bits = rec.ability_bits();
+        for (i, b) in guard.to_le_bytes().into_iter().enumerate() {
+            bits[i] |= b;
+        }
+        rec.set_ability_bits(bits);
+        w.land_melee_hit(1, 0, BASIC_ATTACK_COMMAND, 0, false, false);
+        w.actors[0].battle.damage_accum
+    };
+    assert_eq!(strike(0), 9999);
+    assert_eq!(
+        strike(EARTH_GUARD),
+        9999,
+        "halved excess still clears the cap"
+    );
+}

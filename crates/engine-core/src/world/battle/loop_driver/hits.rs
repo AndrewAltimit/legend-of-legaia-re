@@ -629,10 +629,15 @@ impl World {
             attack_ramp,
             guard_ramp,
         };
-        let mut raw =
-            legaia_engine_battle_vm::battle_formulas::physical_predamage(&hit_inputs, &mut || {
+        // The uncapped excess: retail's guard ladder runs on it before the
+        // `Defense + 9999` cap (`0x801EDA00`), so the cap is applied after
+        // the finisher's stages below, not inside the roll.
+        let excess =
+            legaia_engine_battle_vm::battle_formulas::physical_excess(&hit_inputs, &mut || {
                 self.next_rand() as u16
             });
+        let mut raw =
+            excess.min(legaia_engine_battle_vm::battle_formulas::PHYSICAL_DAMAGE_CAP) as u16;
         if self.toggles.use_damage_finish {
             // The finisher's *post* stages only: the defender's equipment
             // elemental-guard / All-Guard ladder, the 9999 cap and the
@@ -661,7 +666,8 @@ impl World {
             };
             raw = legaia_engine_battle_vm::battle_formulas::damage_finish(
                 &legaia_engine_battle_vm::battle_formulas::DamageFinish {
-                    predamage: u32::from(raw),
+                    // The finisher's last stage is the 9999 cap.
+                    predamage: excess,
                     attacker_slot: if attacker_is_party { 0 } else { 3 },
                     defender_slot: if target_is_party { 0 } else { 3 },
                     attacker_element,
