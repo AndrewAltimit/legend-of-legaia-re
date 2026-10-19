@@ -91,30 +91,6 @@ struct VsOut {
     @location(5) world_w: vec3<f32>,
 };
 
-// Snap a clip-space x/y to the nearest integer pixel of a viewport sized
-// (vp_w, vp_h). Returns the snapped clip position with z/w preserved. This
-// is the GTE-style "vertex jitter" that gives PSX rendering its
-// characteristic shimmer on slow-moving geometry.
-fn psx_snap_clip(clip: vec4<f32>, vp_w: f32, vp_h: f32) -> vec4<f32> {
-    if vp_w <= 0.0 || vp_h <= 0.0 {
-        return clip;
-    }
-    // NDC after perspective divide.
-    let ndc_x = clip.x / clip.w;
-    let ndc_y = clip.y / clip.w;
-    // Pixel coords (NDC -> [0, vp]).
-    let px = (ndc_x * 0.5 + 0.5) * vp_w;
-    let py = (ndc_y * 0.5 + 0.5) * vp_h;
-    // Snap to nearest integer pixel.
-    let snapped_x = floor(px + 0.5);
-    let snapped_y = floor(py + 0.5);
-    // Back to NDC.
-    let nx = (snapped_x / vp_w) * 2.0 - 1.0;
-    let ny = (snapped_y / vp_h) * 2.0 - 1.0;
-    // Re-multiply by w to rebuild clip space.
-    return vec4<f32>(nx * clip.w, ny * clip.w, clip.z, clip.w);
-}
-
 // `z = a * w + b` of `m`'s depth row over its `w` row, read the way
 // `legaia_engine_field::overworld_draw_order::depth_affine` reads it: the
 // column with the largest `w` weight gives `a`, the translation column `b`.

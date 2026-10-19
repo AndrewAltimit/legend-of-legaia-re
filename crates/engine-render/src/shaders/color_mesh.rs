@@ -74,6 +74,11 @@ fn vs_main(
 ) -> VsOut {
     var out: VsOut;
     out.clip_pos = overworld_curve_clip(u.mvp * vec4<f32>(position, 1.0), u.flags.w);
+    // The PSX vertex snap, after the bend, as the VRAM mesh takes it: the
+    // GTE hands an untextured prim integer screen coordinates too.
+    if u.psx_params.z >= 0.5 {
+        out.clip_pos = psx_snap_clip(out.clip_pos, u.psx_params.x, u.psx_params.y);
+    }
     if prim_near_rejected(u.mvp, prim_c0, prim_c1, prim_c2, prim_c3) {
         out.clip_pos = PRIM_REJECTED_CLIP;
     }
