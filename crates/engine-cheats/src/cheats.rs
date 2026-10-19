@@ -655,6 +655,14 @@ impl WorldCheats for World {
                     "Random encounters off.".to_string()
                 }
             }
+            PlayerCheat::WalkThroughWalls(on) => {
+                self.locomotion.walk_through_walls = *on;
+                if *on {
+                    "Walking through walls.".to_string()
+                } else {
+                    "Walls are solid again.".to_string()
+                }
+            }
         }
     }
 }
@@ -737,12 +745,16 @@ pub enum PlayerCheat {
     GiveItem { query: String, qty: u8 },
     /// Random encounters on (`true`) / off.
     RandomEncounters(bool),
+    /// Walk through walls on (`true`) / off: the field and overworld walk
+    /// ignores walls, bodies and props
+    /// (`legaia_engine_core::world::FieldLocomotion::walk_through_walls`).
+    WalkThroughWalls(bool),
 }
 
 /// The cheat list as `(key, label)` rows, in panel order: the native flag is
 /// `--cheat-<key>`, the page's control carries the label. A host test pins
 /// that each row has a control on both hosts.
-pub const PLAYER_CHEAT_LIST: [(&str, &str); 10] = [
+pub const PLAYER_CHEAT_LIST: [(&str, &str); 11] = [
     ("level", "Level"),
     ("restore", "Restore HP/MP"),
     ("max-ap", "Max AP"),
@@ -753,6 +765,7 @@ pub const PLAYER_CHEAT_LIST: [(&str, &str); 10] = [
     ("coins", "Coins"),
     ("item", "Item"),
     ("encounters", "No encounters"),
+    ("noclip", "Walk through walls"),
 ];
 
 impl PlayerCheat {
@@ -769,6 +782,7 @@ impl PlayerCheat {
             PlayerCheat::Coins(_) => "coins",
             PlayerCheat::GiveItem { .. } => "item",
             PlayerCheat::RandomEncounters(_) => "encounters",
+            PlayerCheat::WalkThroughWalls(_) => "noclip",
         }
     }
 
@@ -828,6 +842,7 @@ mod tests {
             PlayerCheat::Coins(1),
             PlayerCheat::give_item_spec("healing-leaf:5"),
             PlayerCheat::RandomEncounters(false),
+            PlayerCheat::WalkThroughWalls(true),
         ];
         let keys: Vec<&str> = cheats.iter().map(PlayerCheat::key).collect();
         let listed: Vec<&str> = PLAYER_CHEAT_LIST.iter().map(|(k, _)| *k).collect();

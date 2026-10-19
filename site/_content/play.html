@@ -521,6 +521,9 @@
             <label title="The same switch as Battle tools &rarr; No encounters: random encounters off, story and boss fights still happen.">
               <input type="checkbox" id="play-cheat-no-encounters"> No encounters
             </label>
+            <label title="Walk through walls, people and props on the field and the world map. Doors still open when you walk into them.">
+              <input type="checkbox" id="play-cheat-noclip"> Walk through walls
+            </label>
           </div>
           <div class="play-btn-row">
             <label title="Gold (capped at 9,999,999).">
@@ -2483,6 +2486,11 @@
   function syncCheats() {
     const st = cheatState();
     if (!st) { cheatPartyEl.textContent = 'Load a disc and pick a scene first.'; return; }
+    // A fresh runtime (a new disc or scene) starts with walls solid; keep
+    // the box's word.
+    if (cheatNoclipEl.checked) {
+      try { window.__playRuntime.cheat_apply('noclip', 1, ''); } catch (e) { /* no runtime */ }
+    }
     const who = (st.party || []).map((m) =>
       `${m.name} Lv ${m.level} - HP ${m.hp}/${m.hp_max}, MP ${m.mp}/${m.mp_max}, AP ${m.ap}`);
     cheatPartyEl.textContent = (who.length ? who.join(' · ') : 'No party.')
@@ -2521,6 +2529,10 @@
   });
   noEncEl.addEventListener('change', () => { cheatNoEncEl.checked = noEncEl.checked; });
   const cheat = (rt, key, n, text) => rt.cheat_apply(key, n || 0, text || '');
+  const cheatNoclipEl = document.getElementById('play-cheat-noclip');
+  cheatNoclipEl.addEventListener('change', () => {
+    runCheat((rt) => cheat(rt, 'noclip', cheatNoclipEl.checked ? 1 : 0));
+  });
   document.getElementById('play-cheat-max-ap').addEventListener('click', () => {
     runCheat((rt) => cheat(rt, 'max-ap'));
   });

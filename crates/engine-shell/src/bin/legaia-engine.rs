@@ -366,6 +366,7 @@ fn main() -> Result<()> {
             cheat_seru,
             cheat_arts,
             cheat_max_items,
+            cheat_noclip,
         } => cmd_play_window(
             &scene,
             &extracted_root,
@@ -433,6 +434,7 @@ fn main() -> Result<()> {
                     seru_level: cheat_seru,
                     arts: cheat_arts,
                     max_items: cheat_max_items,
+                    noclip: cheat_noclip,
                 },
             ),
         ),

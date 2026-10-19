@@ -305,6 +305,8 @@ pub struct PlayCheats {
     pub seru_level: Option<u8>,
     pub arts: bool,
     pub max_items: bool,
+    /// `--cheat-noclip`: walk through walls.
+    pub noclip: bool,
 }
 
 impl PlayCheats {
@@ -327,6 +329,9 @@ impl PlayCheats {
         }
         if self.max_items {
             out.push(PlayerCheat::MaxItems);
+        }
+        if self.noclip {
+            out.push(PlayerCheat::WalkThroughWalls(true));
         }
         out.extend(self.gold.map(|g| PlayerCheat::Gold(i64::from(g))));
         out.extend(self.coins.map(|c| PlayerCheat::Coins(u64::from(c))));

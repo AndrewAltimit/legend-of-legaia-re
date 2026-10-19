@@ -41,6 +41,11 @@ pub struct FieldLocomotion {
     /// retail-faithful wall standoff. Validated against the wall-press
     /// captures by `parity/tests/field_collision_discriminator.rs`.
     pub leading_edge_wall_probes: bool,
+    /// The walk-through-walls cheat (`PlayerCheat::WalkThroughWalls`): the
+    /// pad step commits every axis whatever the collision grid, a body or a
+    /// placed prop says. Props are still probed, so a door the player walks
+    /// into still posts its touch. Off by default and never retail.
+    pub walk_through_walls: bool,
     /// Accumulated walked amount the field walk-regen tick drains (retail
     /// `_DAT_801F2274`). [`crate::world::World::step_field_locomotion`] bumps it on every
     /// retail frame whose locomotion step actually committed;
@@ -329,6 +334,7 @@ impl FieldLocomotion {
             follow_terrain_height: false,
             player_anim: None,
             leading_edge_wall_probes: false,
+            walk_through_walls: false,
             walk_regen_steps: 0,
             walk_regen_window: 0,
             incense_notice: None,

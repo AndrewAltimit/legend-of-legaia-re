@@ -1185,6 +1185,10 @@ pub(crate) enum Cmd {
         /// (key items and equipment are left alone).
         #[arg(long)]
         cheat_max_items: bool,
+        /// Cheat: walk through walls - the field and overworld walk ignores
+        /// walls, bodies and props (doors still trigger when walked into).
+        #[arg(long)]
+        cheat_noclip: bool,
         /// Disable the camera-occlusion fade ENHANCEMENT (see-through
         /// walls). By default, field scene geometry between the camera and
         /// the player dissolves to a screen-door dither in a circle around

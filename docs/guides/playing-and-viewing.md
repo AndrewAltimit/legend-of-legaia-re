@@ -315,6 +315,7 @@ so the state they leave is one a playthrough could reach:
 | Learn all arts | `--cheat-arts` | Every art in the member's list, Hyper and Miracle Arts included. |
 | Max items | `--cheat-max-items` | Every held item and every usable consumable to 99. Key items and equipment are left alone, so no story gate opens early. |
 | No encounters | `--no-live-loop`, `F7` | Random encounters off; story and boss fights still happen. |
+| Walk through walls | `--cheat-noclip` | The field and world-map walk ignores walls, people and props; a door you walk into still opens. |
 | Gold | `--cheat-gold N` | Sets the purse, capped at 9,999,999. |
 | Coins | `--cheat-coins N` | Sets the casino coin bank, capped at 9,999,999. |
 | Item | `--cheat-item ITEM[:QTY]` | Adds through the bag's own add helper: stacks cap at 99, a full bag refuses. `ITEM` is an id or a name (`healing-leaf:5`). Repeatable. |
