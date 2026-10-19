@@ -70,14 +70,18 @@ fn the_sheet_lies_on_the_floor_and_falls_off_the_rim() {
     assert_eq!((on.y, on.weight, on.spill), (-200.0, 1.0, false));
 
     // Just past the rim: spill, a little lower (Y-down: larger), most of
-    // the bank still with it.
+    // the spill's share of the bank still with it - and never more than
+    // that share.
     let lip = f.sheet_at(1024.0 - 64.0, 1536.0).unwrap();
     assert!(lip.spill && !lip.haze);
     assert!(
         lip.y > -200.0 && lip.y < -200.0 + 0.2 * SPILL_DEPTH,
         "{lip:?}"
     );
-    assert!(lip.weight > 0.4, "{lip:?}");
+    assert!(
+        lip.weight > 0.8 * SPILL_SHARE && lip.weight <= SPILL_SHARE,
+        "{lip:?}"
+    );
 
     // Further out: lower and thinner.
     let deep = f.sheet_at(1024.0 - 200.0, 1536.0).unwrap();
@@ -251,7 +255,10 @@ fn the_bank_lies_on_the_field_and_spills_off_it() {
     let (y, w) = vert(1536.0, 1536.0);
     assert_eq!((y, w), (-200.0, 1.0), "on the plateau");
     let (y, w) = vert(1024.0 - 128.0, 1536.0);
-    assert!(y > -200.0 && w > 0.2, "spilling off the west rim: {y} {w}");
+    assert!(
+        y > -200.0 && w > 0.6 * SPILL_SHARE && w <= SPILL_SHARE,
+        "spilling off the west rim: {y} {w}"
+    );
     // Far out over the open air only the faint haze, far below the rim,
     // flagged by a negative weight.
     let (y, w) = vert(128.0, 128.0);
@@ -313,3 +320,21 @@ fn the_header_carries_the_spill_and_haze_constants() {
 const _: () = assert!(SPILL_DEPTH > 4.0 * SPILL_REACH);
 const _: () = assert!(SPILL_FLOW_TICKS >= 300);
 const _: () = assert!(FOG_HAZE_CONSTANTS[0] > 1.0 && HAZE_WEIGHT < 0.5);
+// What pours over an edge is a wisp, not a second bank.
+const _: () = assert!(SPILL_SHARE <= 0.34 && HAZE_WEIGHT <= SPILL_SHARE);
+
+#[test]
+fn a_see_through_sheet_is_floor_only_when_level_and_never_a_wall() {
+    // A level water sheet over an empty cell: floor.
+    let mut b = FogGroundBuilder::new([0.0, 0.0], [512.0, 512.0]);
+    b.add_see_through(&[[0.0, -50.0, 0.0], [512.0, -50.0, 0.0], [0.0, -50.0, 512.0]]);
+    let g = b.finish(|_, _| None);
+    assert!(g.covered_at(100.0, 100.0));
+    // A veil hung across the air at 45 degrees: no floor, and nothing the
+    // spill drapes over.
+    let mut b = FogGroundBuilder::new([0.0, 0.0], [512.0, 512.0]);
+    b.add_see_through(&[[0.0, 0.0, 0.0], [512.0, 0.0, 0.0], [0.0, -512.0, 512.0]]);
+    let g = b.finish(|_, _| None);
+    assert_eq!(g.covered_count(), 0);
+    assert!(g.top.iter().all(|t| t.is_infinite()));
+}

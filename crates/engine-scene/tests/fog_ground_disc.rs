@@ -76,7 +76,7 @@ fn scene_field(index: &Arc<ProtIndex>, name: &str) -> (FogGround, Vec<u8>) {
     let binds = scene.field_object_binds(index).ok().flatten();
     let (placements, _) =
         field_env::resolve_placed_env_draws(&env_tmds, &placements_rec, floor_lut, binds.as_ref());
-    let field = fog_ground::build_for_scene(&[&terrain, &placements], &res, &scene, index)
+    let field = fog_ground::build_for_scene(&terrain, &placements, &[], &res, &scene, index)
         .expect("a field scene builds a field");
     let grid = scene
         .field_collision_grid(index)

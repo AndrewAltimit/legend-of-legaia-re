@@ -198,9 +198,21 @@ on [renderer.md](renderer.md#volumetric-ground-fog-enhancement).
 both hosts over their static draw lists) puts the sheet mesh on the drawn
 floor and stops it over open air, so a tower top such as `teien` no longer
 carries a flat bank across the sky around it. Past a rim the mesh keeps
-going as a near-vertical spill curtain hugging the wall face, then, further
-out and far below the rim, as a faint distant haze layer (a negative mesh
-weight) that lies only where nothing drawn stands above it. The field also
+going as a near-vertical spill curtain hugging the wall face, carrying a
+third of the bank (`SPILL_SHARE`), then, further out and far below the rim,
+as a faint distant haze layer (a negative mesh weight) that lies only where
+nothing drawn stands above it.
+
+The field is built from what is on screen, not from what the data holds
+(`fog_ground::FogSurfaces`): the placed objects a script hid or scaled to
+nothing are left out and the rest are taken at their render scale, as the
+hosts draw them; a prim whose texels are almost all the transparent word
+(`SURFACE_MIN_OPACITY`) is not a surface; and a semi-transparent prim is
+floor only where it lies level (a pond, not a mist veil hung across a
+corridor) and is never a wall the spill drapes over. The bank's movers
+follow the same rule: a field channel that draws nothing (render scale
+`0`, the off-map hide box, a flag word that opts out of the drop shadow)
+does not part it. The field also
 reaches the shader as an RGBA8 texture at binding 3, visible to both stages
 (coverage, spill, flow; at most 256 x 256 texels of 64 world units, uploaded
 only when its generation changes): it fades the bank across the floor's edge

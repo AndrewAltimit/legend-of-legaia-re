@@ -4,10 +4,16 @@
 //! Nothing here is retail - see [`legaia_render_kernels::fog_volume`]. The population that
 //! parts the bank is the one that casts a drop shadow
 //! ([`World::field_drop_shadows`]): the player and every placed field
-//! channel with a position, plus every active body in battle.
+//! channel the hosts draw, plus every active body in battle. A channel that
+//! draws nothing - an interaction marker at render scale `0`, a body parked
+//! in the off-map hide box, one whose flag word opts out of the shadow -
+//! leaves the bank alone: a hole carved round nothing on screen reads as
+//! fog wrapping a phantom.
 
+use super::drop_shadow_render::PLACEMENT_CLASS_BIT;
 use super::*;
 use legaia_engine_mode::mode::SceneMode;
+use legaia_render_kernels::drop_shadow::casts_shadow;
 use legaia_render_kernels::fog_volume::{FogMover, FogSpace, FogVolumeFrame, scene_style};
 
 /// Mover keys: the player, field channels by placement slot, battle bodies
@@ -77,7 +83,10 @@ impl World {
                         .get(&slot)
                         .copied()
                         .unwrap_or((c.ctx.world_x as i16, c.ctx.world_z as i16));
-                    if x == hide && z == hide {
+                    if x == hide && z == hide
+                        || self.field_npc_render_scale(usize::from(slot)) == Some(0)
+                        || !casts_shadow(c.ctx.flags | PLACEMENT_CLASS_BIT)
+                    {
                         continue;
                     }
                     let key = KEY_CHANNEL + u32::from(slot);

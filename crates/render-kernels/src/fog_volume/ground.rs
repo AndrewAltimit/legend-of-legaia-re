@@ -40,6 +40,9 @@ const BORDER_CELLS: usize = 4;
 /// Steepest triangle that still counts as floor: `|n.y| / |n|` at or above
 /// this (about 50 degrees from level).
 pub const FLOOR_MIN_UP: f32 = 0.64;
+/// Steepest see-through surface that still counts as floor
+/// ([`FogGroundBuilder::add_see_through`]): about 14 degrees from level.
+pub const LEVEL_MIN_UP: f32 = 0.97;
 /// A surface more than this far **above** the walk floor at its cell is a
 /// roof, canopy or overhang, not floor (retail Y-down, so "above" is a
 /// smaller Y).
@@ -58,7 +61,11 @@ pub const HAZE_PEAK: f32 = 1000.0;
 pub const HAZE_REACH: f32 = 3200.0;
 /// The haze's share of the bank at its thickest: a faint layer, not a
 /// second bank.
-pub const HAZE_WEIGHT: f32 = 0.45;
+pub const HAZE_WEIGHT: f32 = 0.15;
+/// The spill's share of the bank at the lip: the curtain pouring off a rim
+/// carries a third of the bank on the floor behind it, so the edge reads as
+/// a wisp going over rather than a second bank hung down the wall.
+pub const SPILL_SHARE: f32 = 1.0 / 3.0;
 /// How far above a surface below the rim the spill sheet stays when it
 /// drapes over it, world units.
 pub const SPILL_CLEARANCE: f32 = 24.0;
@@ -157,6 +164,19 @@ impl FogGroundBuilder {
     /// candidate, if the triangle faces up or down steeply enough to be floor
     /// (either winding - the disc meshes and the heightfield wind opposite).
     pub fn add_triangle(&mut self, t: &[[f32; 3]; 3]) {
+        self.add_surface(t, FLOOR_MIN_UP, true);
+    }
+
+    /// A see-through surface (a blended pond or a mist veil): a floor
+    /// candidate only when it lies level ([`LEVEL_MIN_UP`] - a water sheet,
+    /// not a veil hung across a corridor), and never something the spill
+    /// drapes over. The bank lies on what reads as ground on screen, and a
+    /// translucent sheet the eye looks straight through is not a wall.
+    pub fn add_see_through(&mut self, t: &[[f32; 3]; 3]) {
+        self.add_surface(t, LEVEL_MIN_UP, false);
+    }
+
+    fn add_surface(&mut self, t: &[[f32; 3]; 3], min_up: f32, solid: bool) {
         let [a, b, c] = *t;
         let e1 = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
         let e2 = [c[0] - a[0], c[1] - a[1], c[2] - a[2]];
@@ -169,8 +189,10 @@ impl FogGroundBuilder {
         if len <= 1.0e-6 {
             return;
         }
-        self.mark_top(t);
-        if n[1].abs() < FLOOR_MIN_UP * len {
+        if solid {
+            self.mark_top(t);
+        }
+        if n[1].abs() < min_up * len {
             return;
         }
         // XZ barycentrics.
@@ -464,7 +486,7 @@ impl FogGround {
     /// - on the floor (any of the four cells around the point covered), the
     ///   mean height of the covered ones at full weight;
     /// - within [`SPILL_REACH`] past a rim, the rim's height lowered by
-    ///   [`spill_drop`] at [`spill_weight`];
+    ///   [`spill_drop`] at [`spill_weight`] times [`SPILL_SHARE`];
     /// - further out, the distant haze: [`HAZE_DEPTH`] below the rim at
     ///   [`haze_weight`], weight `0` where something drawn stands above
     ///   that plane (the haze never lies on a lower roof or hillside);
@@ -538,7 +560,7 @@ impl FogGround {
         let y = (rim_y + spill_drop(out)).min(top - SPILL_CLEARANCE);
         Some(FogSheetPoint {
             y: y.max(rim_y),
-            weight: spill_weight(out),
+            weight: spill_weight(out) * SPILL_SHARE,
             spill: true,
             haze: false,
         })
