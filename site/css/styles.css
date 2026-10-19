@@ -3495,19 +3495,6 @@ kbd {
   object-fit: cover;
   object-position: 70% 40%;
 }
-.hero-media .caption {
-  /* margin: 0 overrides the site-wide .caption top margin, which pushed the
-     overlay down and left a strip of un-darkened video above it. */
-  position: absolute; left: 0; right: 0; top: 0; margin: 0;
-  padding: 0.65rem 1.2rem 1.4rem;
-  background: linear-gradient(to bottom, rgba(10, 12, 16, 0.8), transparent);
-  font-family: var(--font-mono);
-  font-size: 0.72rem;
-  color: #b9c2d2;
-  text-align: center;
-  pointer-events: none;
-}
-.hero-media .caption a { color: #e6ebf3; pointer-events: auto; }
 /* The still stands in for the gameplay loop only under reduced motion. */
 .hero-media img.poster { display: none; }
 @media (prefers-reduced-motion: reduce) {
