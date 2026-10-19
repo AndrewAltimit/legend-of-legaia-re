@@ -819,6 +819,35 @@ page's poser (`site/js/field-npc-model.js`) and copies each out as a still
 (`MeshView.snapshot`); its item renders reuse the characters page's cards
 through `site/js/item-thumbs.js`.
 
+The shops page's map pane is the game-world page's map view
+(`FieldSceneView` over `set_scene_field` + `field_scene_anim_init`) on the
+scene that holds the town's vendors. A vendor is placed through the same
+record the model comes from: its shop's owning record is partition 1,
+index `slot >= 1`, so the marker follows the live actor layer's entry with
+that `slot` (`field_scene_npc_catalog_json`), reading its position each frame
+from `field_scene_npc_draw_poses()` and projecting it through the map camera
+(`buildWorldOrbitVp`). Many shopkeepers are flag-dispatched spawns: the
+header tile is the off-map hide box or a staging square, and the spawn
+prologue's story-flag arms park the actor in one state and run it to its
+counter in another. So each vendor record also carries a `seat`
+(`shop_vendors::vendor_seat`): the first non-parked target of
+`placement_spawn_relocation` with every flag set, then with every flag
+clear, else the header tile. The marker follows the live actor while the
+running scene shows it at that seat, and sits on the seat otherwise (drawn
+dashed: the map runs another story state). A shop owned by a partition-0
+record (the Ancient Wind Cave's) has no actor and so no marker.
+
+`shop_item_records_json()` (`shop_items`) is the open item's disc side: per
+named item id, the item record's `kind` and price (sell is half), the
+equipment stat-bonus record (slot, INT / ATK / UDF / LDF / SPD, equip mask,
+Ra-Seru flag), the consumable's effect descriptor with its restore amount or
+stat effect, and the passive an equipped piece grants with its stat boosts -
+the `game-tables` parsers joined, decoded once at `load_disc` (disc-gated
+test: `crates/web-viewer/tests/shop_items_real.rs`). An open weapon or armour
+row draws the item-alone mesh (`set_equipped_character` with only that
+section filled, then `equipped_item_only_*`) in a `MeshView`, posed at frame
+0 of the character's first clip.
+
 ## Tactical Arts viewer (`arts_view`)
 
 `LegaiaArts` drives `site/arts.html`'s interactive half: click an art card,
@@ -1242,6 +1271,7 @@ reference TIMs sitting in other PROT entries.
 |---|---|
 | [`nav_disc`](../../crates/web-viewer/src/nav_disc.rs) / [`inspect`](../../crates/web-viewer/src/inspect.rs) / [`viewer_render`](../../crates/web-viewer/src/viewer_render.rs) | `LegaiaViewer`'s disc load + entry navigation, the entry inspector's exports, and its internal render helpers. |
 | [`scene_geom`](../../crates/web-viewer/src/scene_geom.rs) | Kingdom / walk-ground / continent / ocean / slot-4 geometry exports behind the world-overview pages. |
+| [`shop_items`](../../crates/web-viewer/src/shop_items.rs) | `shop_item_records_json`: per-item SCUS records (item, equipment, effect, passive) for the shops page's open item. |
 | [`world_mist`](../../crates/web-viewer/src/world_mist.rs) | The kingdom MAN's fog-region table and the fog sheet art, for the world overview's Mist overlay. |
 | [`sentinel_placements`](../../crates/web-viewer/src/sentinel_placements.rs) | Cross-references a save state's live world-map actors against the disc's MAN placement records. |
 | [`prot_locate`](../../crates/web-viewer/src/prot_locate.rs) | `PROT.DAT` offset to owning-entry lookup, the browser twin of `prot-extract locate`. |

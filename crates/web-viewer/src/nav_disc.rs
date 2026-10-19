@@ -52,6 +52,7 @@ impl LegaiaViewer {
             cdname_text: None,
             scene_export: None,
             equip_stats: None,
+            shop_item_records: None,
             equipped: None,
             item_card: None,
             art_clips: std::collections::HashMap::new(),
@@ -84,6 +85,7 @@ impl LegaiaViewer {
         self.prot_index = None;
         self.cdname_text = None;
         self.equip_stats = None;
+        self.shop_item_records = None;
         self.equipped = None;
         self.item_card = None;
         self.art_clips.clear();
@@ -123,6 +125,7 @@ impl LegaiaViewer {
                     self.sheet_regions =
                         Some(legaia_ui_formats::tim_palette_context::sheet_palette_regions(&table));
                 }
+                self.shop_item_records = crate::shop_items::item_records_json(&scus);
                 if let Some(table) =
                     legaia_game_tables::equip_stats::EquipStatTable::from_scus(&scus)
                 {

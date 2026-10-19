@@ -34,6 +34,7 @@ fn shop_sites_resolve_to_catalogued_vendors() {
     let index = ProtIndex::from_bytes(prot, Some(&cdname)).expect("ProtIndex");
 
     let (mut total, mut tied) = (0usize, 0usize);
+    let (mut placeable, mut seated) = (0usize, 0usize);
     for &name in SCENES {
         let pack = build_field_scene(&index, name).unwrap_or_else(|e| panic!("{name}: {e}"));
         let npcs = build_npc_catalog(&index, name, &pack).unwrap_or_else(|e| panic!("{name}: {e}"));
@@ -51,6 +52,19 @@ fn shop_sites_resolve_to_catalogued_vendors() {
             if npc.is_some() {
                 tied += 1;
             }
+            // Every shop a placed actor opens has a station on the map: the
+            // seat the shops page marks it at (`vendor_seat`).
+            if matches!(v.owner, Some((1, slot)) if slot > 0) {
+                placeable += 1;
+                if let Some((x, z)) = v.seat {
+                    seated += 1;
+                    assert!(
+                        (0..16320).contains(&x) && (0..16320).contains(&z),
+                        "{name} {:?}: seat ({x}, {z}) off the grid",
+                        v.name
+                    );
+                }
+            }
             eprintln!(
                 "{name}: {:?} owner {:?} npc {:?} model {:?} stock {}",
                 v.name,
@@ -66,6 +80,8 @@ fn shop_sites_resolve_to_catalogued_vendors() {
         }
     }
     eprintln!("{tied}/{total} shops tied to a catalogued actor");
+    eprintln!("{seated}/{placeable} placed-actor shops have a seat");
+    assert_eq!(seated, placeable, "a placed-actor shop has no seat");
     assert!(
         tied * 10 >= total * 8,
         "only {tied}/{total} shops tie to an actor"

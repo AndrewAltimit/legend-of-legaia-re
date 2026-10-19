@@ -71,6 +71,8 @@ pub mod sentinel_placements;
 pub mod session_save;
 pub mod sfx_view;
 pub mod shop_vendors;
+// --- lane P ---
+pub mod shop_items;
 pub mod summon_view;
 pub mod texture_pack;
 pub mod texture_registry;
@@ -360,6 +362,11 @@ pub struct LegaiaViewer {
     /// slot byte to label a player file's five sections, which are **not** in
     /// the same order for every character. `None` on raw PROT.DAT loads.
     equip_stats: Option<legaia_game_tables::equip_stats::EquipStatTable>,
+    // --- lane P ---
+    /// Every named item's stat record as JSON ([`shop_items`]), joined from
+    /// the SCUS item / equipment / effect / passive tables at load time for
+    /// the shops page. `None` on raw PROT.DAT loads.
+    shop_item_records: Option<String>,
     /// The battle model the equipment viewer currently shows: one character
     /// assembled at one loadout, with its band VRAM, clip bank and diff
     /// against the unequipped default. See [`equipment_view`].
