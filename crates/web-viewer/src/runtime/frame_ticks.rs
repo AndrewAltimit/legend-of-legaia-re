@@ -30,6 +30,16 @@ pub struct FrameTicksReport {
     /// and the doors the field walked through. The page rebuilds its scene
     /// geometry for the last.
     pub scenes: Vec<String>,
+    /// The lead's rig was rebuilt during the frame
+    /// (`World::take_player_rig_change`: `cave01`'s entry script swapping
+    /// the party to Noa, a `CC F8 50` re-stage). The page uploads the player's geometry once at scene
+    /// build and only re-poses it per frame, so a mid-scene rig swap must
+    /// re-upload indices, UVs and texture words too: re-posing the old
+    /// mesh's index buffer with the new mesh's vertices drew Noa's naming
+    /// prompt over a scrambled Vahn. The native window re-uploads in
+    /// `rebind_live_npc_models` on the same signal. A frame that also
+    /// entered a scene is covered by the scene rebuild.
+    pub player_rig_rebuilt: bool,
     /// The party-wipe hold returned to the title this frame (the title theme
     /// is already started).
     pub quit: bool,
@@ -48,6 +58,7 @@ impl LegaiaRuntime {
     ) -> Result<FrameTicksReport, String> {
         let mut r = FrameTicksReport::default();
         let mut edge = edge;
+        let rig_gen = self.player_rig_gen;
         for s in 0..steps {
             r.ticks = s + 1;
             // The tick's owner, in the order both play hosts share
@@ -144,6 +155,7 @@ impl LegaiaRuntime {
                 r.scenes.push(entered);
             }
         }
+        r.player_rig_rebuilt = self.player_rig_gen != rig_gen;
         Ok(r)
     }
 }
@@ -163,6 +175,7 @@ impl LegaiaRuntime {
             "menu_opened": r.menu_opened,
             "name_committed": r.name_committed,
             "scenes": r.scenes,
+            "player_rig_rebuilt": r.player_rig_rebuilt,
             "quit": r.quit,
         })
         .to_string())

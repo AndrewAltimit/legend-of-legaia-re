@@ -66,6 +66,13 @@
           this._onEngineTrap('scene rebuild', e);
           return false;
         }
+      } else if (r.player_rig_rebuilt) {
+        /* The lead's rig swapped mid-scene (cave01 hands the party to
+         * Noa): re-upload its whole geometry, not just the pose. */
+        try { this._uploadPlayer(); } catch (e) {
+          this._onEngineTrap('player rig upload', e);
+          return false;
+        }
       }
       /* The party wipe returned to the title (the engine started the title
        * theme): hand back to the page, which re-runs the boot title. */

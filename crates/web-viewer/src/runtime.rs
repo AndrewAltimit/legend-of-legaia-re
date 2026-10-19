@@ -67,6 +67,11 @@ pub struct LegaiaRuntime {
     pub(crate) field: Option<FieldRender>,
     /// Lead party member's field-form mesh.
     pub(crate) player: Option<PlayerRig>,
+    /// Bumped each time [`Self::player`] is rebuilt. A mid-scene rebuild
+    /// (a lead change, a `CC F8 50` re-stage) swaps the mesh's topology, so
+    /// the page must re-upload the whole geometry, not just the per-frame
+    /// posed positions (`FrameTicksReport::player_rig_rebuilt`).
+    pub(crate) player_rig_gen: u32,
     /// The tile-board actor mesh staged for upload, one slot at a time
     /// (`crate::play_tile_board`). Board cells all draw the same handful of
     /// template meshes, so the page uploads each slot once per scene.
@@ -427,6 +432,7 @@ impl LegaiaRuntime {
             }),
             field: None,
             player: None,
+            player_rig_gen: 0,
             tile_mesh: None,
             actors: Default::default(),
             scene_anm: None,

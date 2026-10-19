@@ -239,16 +239,7 @@
       this._objectTintsLive = false;
 
       /* Player: geometry once, positions re-uploaded per frame from the pose. */
-      if (rt.player_has_mesh()) {
-        const base = rt.player_mesh_positions();
-        const idx = rt.player_mesh_indices();
-        if (base.length && idx.length) {
-          const flat = rt.player_mesh_flat_rgba();
-          this.renderer.uploadSceneMesh(PLAYER_MESH_ID, base, rt.player_mesh_uvs(),
-            rt.player_mesh_cba_tsb(), idx, flat.length ? flat : null);
-          this.player = { verts: base.length / 3 };
-        }
-      }
+      this._uploadPlayer();
 
       /* NPCs: the scene's MAN placements. Upload EVERY placement, parked
        * ones included, and let the per-frame draw skip anyone whose live
@@ -278,6 +269,24 @@
      * Teardown (the script closing the board) empties both lists, so a second
      * board in the same scene re-uploads rather than drawing the first one's
      * meshes at the new cells. */
+    /* Upload the lead's rig geometry. Runs at scene build, and again when
+     * the engine reports a mid-scene rig rebuild (`player_rig_rebuilt`: a
+     * lead change, a `CC F8 50` re-stage) - the per-frame pose only
+     * replaces positions, so a new rig needs its indices / UVs / texture
+     * words too. The native window re-uploads on the same signal. */
+    _uploadPlayer() {
+      const rt = this.rt;
+      this.player = null;
+      if (!rt.player_has_mesh()) return;
+      const base = rt.player_mesh_positions();
+      const idx = rt.player_mesh_indices();
+      if (!base.length || !idx.length) return;
+      const flat = rt.player_mesh_flat_rgba();
+      this.renderer.uploadSceneMesh(PLAYER_MESH_ID, base, rt.player_mesh_uvs(),
+        rt.player_mesh_cba_tsb(), idx, flat.length ? flat : null);
+      this.player = { verts: base.length / 3 };
+    }
+
     _syncTileBoard(rt) {
       const owned = rt.play_tile_actor_slots();
       if (!owned.length) {

@@ -480,5 +480,6 @@ impl LegaiaRuntime {
             flat,
             posed,
         });
+        self.player_rig_gen = self.player_rig_gen.wrapping_add(1);
     }
 }
