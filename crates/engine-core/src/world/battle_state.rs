@@ -501,7 +501,7 @@ pub struct BattleState {
     /// `ctx[+0x884]`: the press parked while the stepper's return was under
     /// `World::GLIDE_PAD_BUFFER_BELOW`, handed to the first dispatched pass
     /// that reads no press of its own.
-    pub command_pad_buffer: Option<legaia_engine_menus::battle_input::BattleCommandInput>,
+    pub(crate) command_pad_buffer: Option<legaia_engine_menus::battle_input::BattleCommandInput>,
     /// The result windows' raise glide: the results frame spawns the report
     /// (`0x41`) or loss (`0x42`) window and the level-up window
     /// (`0x44 + mask`) at their seat A, off screen, and `FUN_801D9BBC` walks

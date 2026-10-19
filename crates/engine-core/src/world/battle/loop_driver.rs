@@ -228,7 +228,7 @@ impl World {
         }
     }
 
-    pub fn live_battle_tick(&mut self) -> Option<StepOutcome> {
+    pub(in crate::world) fn live_battle_tick(&mut self) -> Option<StepOutcome> {
         use legaia_engine_battle_vm::battle_action::{ActionState, ActorFlags};
 
         // A party wipe with the scripted-loss latch clear has left battle:

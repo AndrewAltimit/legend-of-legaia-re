@@ -66,7 +66,7 @@ impl World {
     /// (v0.1: a physical Attack) and clear the session so the SM resumes.
     /// On an abort (no valid target) it falls back to the first living monster
     /// so the loop never deadlocks.
-    pub fn tick_battle_command(&mut self) {
+    pub(in crate::world) fn tick_battle_command(&mut self) {
         use crate::battle_round::PendingPartyAction;
         use legaia_engine_battle::target_picker::CursorRow;
         use legaia_engine_menus::battle_input::{BattleCommandInput, CommandPhase, Resolution};

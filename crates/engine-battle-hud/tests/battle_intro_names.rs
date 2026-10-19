@@ -1,6 +1,7 @@
 //! The battle-intro enemy-name banner: flow `0x0A` seeds the `ctx[+0x6D6]`
 //! hold, the labels are one per monster group, and `0x0B` sweeps them.
 
+use legaia_engine_core::world::test_drivers::BattleTestDrivers;
 use legaia_engine_core::world::*;
 use legaia_engine_mode::mode::SceneMode;
 

@@ -10,6 +10,12 @@ autotests = false
 name = "legaia_engine_core"
 path = "src/lib.rs"
 
+[features]
+# Re-exposes the battle loop's internal glide and command steps
+# (`world::test_drivers`) for the battle-HUD crate's tests. Off in every
+# library build.
+test-drivers = []
+
 [dependencies]
 legaia-engine-camera.workspace = true
 legaia-engine-mode.workspace = true

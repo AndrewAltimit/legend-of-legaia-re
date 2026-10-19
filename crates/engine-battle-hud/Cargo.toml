@@ -22,6 +22,9 @@ legaia-font.workspace = true
 legaia-ui-formats.workspace = true
 
 [dev-dependencies]
+# The tests step the battle loop's glide and command state machines a
+# frame at a time (`world::test_drivers`).
+legaia-engine-core = { workspace = true, features = ["test-drivers"] }
 legaia-actor-formats.workspace = true
 legaia-engine-system.workspace = true
 legaia-save.workspace = true

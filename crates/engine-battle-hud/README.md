@@ -42,8 +42,12 @@ results banners carry the windows' raise glide). The glide arithmetic both
 sides share is `LogLaunch::seat_dy` in `engine-battle-vm`.
 
 The battle-state fields the reads take are `pub` on `BattleState` for this
-reason, and so are the glide and command drivers the tests step
-(`tick_battle_command`, `step_action_plate_glides`, ...).
+reason. The glide and command steps the tests drive a frame at a time
+(`tick_battle_command`, `step_action_plate_glides`, ...) stay internal to
+`engine-core`; the tests reach them through
+`engine-core::world::test_drivers::BattleTestDrivers`, which exists only
+under engine-core's `test-drivers` feature, enabled by this crate's
+`[dev-dependencies]` alone.
 
 ## Tests
 

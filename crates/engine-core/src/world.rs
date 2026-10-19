@@ -219,3 +219,7 @@ mod worldmap;
 
 #[cfg(test)]
 mod tests;
+
+// The battle-screen steps exposed to test crates above this one (`test-drivers`).
+#[cfg(feature = "test-drivers")]
+pub mod test_drivers;

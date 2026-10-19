@@ -9,6 +9,7 @@
 //! read only the `World` stay in engine-core's `world::tests::round_prompt_gate`.
 
 use legaia_engine_battle_hud::battle_chip_dpad_visible;
+use legaia_engine_core::world::test_drivers::BattleTestDrivers;
 use legaia_engine_core::world::*;
 use legaia_engine_menus::battle_input::{BattleCommandSession, CommandPhase};
 use legaia_engine_mode::mode::SceneMode;
@@ -57,7 +58,7 @@ fn an_early_press_is_dropped() {
     tick(&mut world, 0);
     tick(&mut world, PadButton::Left.mask());
     assert!(on_prompt(&world), "no state dispatched under the glide");
-    assert!(world.battle.command_pad_buffer.is_none());
+    assert!(world.command_pad_buffer().is_none());
     for _ in 0..30 {
         tick(&mut world, 0);
     }

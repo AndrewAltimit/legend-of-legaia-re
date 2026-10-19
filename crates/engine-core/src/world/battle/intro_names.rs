@@ -29,7 +29,7 @@ pub const INTRO_NAMELESS_MONSTER: u16 = 0xB5;
 impl World {
     /// Seed the intro banner's timer at battle open. Must run before the
     /// formation arm clears `ctx[+0x290]`, which it reads.
-    pub fn arm_battle_intro_names(&mut self) {
+    pub(in crate::world) fn arm_battle_intro_names(&mut self) {
         let first = self
             .actors
             .get(usize::from(self.party.party_count.clamp(1, 3)))
@@ -64,7 +64,7 @@ impl World {
     /// vsync tick ([`super::commit_log_launch::BATTLE_PASS_STEP_PER_TICK`]).
     /// The timer holds while the entry sweep runs
     /// ([`Self::battle_entry_sweeping`]).
-    pub fn step_battle_intro_names(&mut self) {
+    pub(in crate::world) fn step_battle_intro_names(&mut self) {
         if self.battle_entry_sweeping() {
             return;
         }
