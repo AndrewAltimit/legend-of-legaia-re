@@ -1809,6 +1809,27 @@ and every retail capture holds its actor at the `-480` floor tier. Both hosts
 re-seat such draws through `field_env::follow_floor_placed_draws` over
 `World::object_floor_follow_records` when they bake the placed layer.
 
+**A scripted height is absolute, not a lift.** The same sweep stores the seat
+`ladder[nibble] + y_off` in the actor's `+0x16` (`0x8003A62C..0x8003A64C`),
+so every later write to `+0x16` replaces it: op `4C 42`'s immediate mirror
+(`world_y = -value`) and the actor tick's `+0x10 & 0x20000000` arm, which
+stores `-(+0x8E)` ahead of both floor arms (`0x8003BC50..0x8003BC64`) and
+leaves a law object whose script never writes `+0x8E` at `Y = 0` (the bind
+clears the slot, `0x8003A8D4`). The port seats each object-bind context's Y
+from its first object (`man_field_scripts::object_script_bind_heights`,
+`World::set_object_bind_heights`), and `World::object_draw_displacements`
+reports the actor's Y **less that seat**, since both hosts add the
+displacement to a draw that already stands on it. `suimon`'s water is the
+case: partition-0 records 5..9 raise `31 1D` and park `+0x8E` at
+`260..338`, so the sheet under the sluice and the channel upstream of it run
+inside the ditch, between the bed (rung 4, `-128`) and the banks (rung 12,
+`-384`). Measured as a lift from the `-320` seat, the channel stood level
+with the gate's lintel. The same rule moves the law objects of `concnow`
+(records 13 / 17 / 37), `jou` (7 / 8), `deroa` (5), `jagaroom` (18),
+`taiku` (19) and `station` (31); `chitei2`'s boulder and `doman`'s record 5
+sit on a zero seat and do not move. Disc-gated:
+`crates/engine-scene-host/tests/object_seat_height_disc.rs`.
+
 #### CLUT-trace + VRAM-oracle diagnostics
 
 Every tool here works straight off `PROT.DAT` + `CDNAME.TXT` (extracted root

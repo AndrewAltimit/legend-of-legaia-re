@@ -1022,8 +1022,10 @@ tween writes the slot and nothing else; the `world_y = -value` mirror is the
 immediate arm's. An actor carrying `+0x10 & 0x20000000` takes
 `+0x16 = -(+0x8E)` every frame in the per-actor tick's height arm
 (`FUN_8003BC08`, [motion-vm.md](motion-vm.md)) instead of the ground sample.
-A `.MAP` placed object is drawn at its actor, so this is how a script lifts or
-drops scenery: `chitei2`'s boulder pieces (partition-0 records 28..30) raise
+A `.MAP` placed object is drawn at its actor, and the height is absolute (not
+an offset from the object's `.MAP` seat - see
+[renderer.md](renderer.md#field-static-object-placement-town01)), so this is how a script
+lifts or drops scenery: `chitei2`'s boulder pieces (partition-0 records 28..30) raise
 the bit (`31 1D`) and park at `700` in their spawn prologue, and the collapse
 beat (P2[17]) seats them at the foot of the escape stairs with `A3` and tweens
 the slot to `0` over 21..27 frames.
