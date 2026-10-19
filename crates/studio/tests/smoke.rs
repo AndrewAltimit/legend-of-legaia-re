@@ -77,6 +77,11 @@ fn real_disc_lists_prot_entries_and_previews() {
         1233
     );
     assert_eq!(s.settings.last_source.as_deref(), Some(bin.as_path()));
+    assert_eq!(
+        s.settings.recent.first(),
+        Some(&bin),
+        "opened disc is recent"
+    );
 
     // One entry of each preview kind, found by class / content.
     let mut tim = None;

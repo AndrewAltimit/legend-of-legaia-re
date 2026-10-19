@@ -46,6 +46,46 @@ pub fn engine_data_dir() -> Option<PathBuf> {
         .or_else(|| dirs::data_dir().map(|d| d.join("legaia-engine")))
 }
 
+/// The engine's launcher settings file, `launcher.toml` in its config
+/// folder: `$LEGAIA_ENGINE_CONFIG_DIR`, else `<platform config
+/// dir>/legaia-engine` (`legaia_engine_shell::launcher::settings_path`).
+pub fn engine_launcher_settings() -> Option<PathBuf> {
+    std::env::var_os("LEGAIA_ENGINE_CONFIG_DIR")
+        .filter(|v| !v.is_empty())
+        .map(PathBuf::from)
+        .or_else(|| dirs::config_dir().map(|d| d.join("legaia-engine")))
+        .map(|d| d.join("launcher.toml"))
+}
+
+/// Record `disc` as the disc the game boots, the way the engine's own disc
+/// picker does (`launcher::remember`): the `disc` key of `settings`, so a
+/// later double-click on the game starts on it without asking. Only that
+/// key is written; any other key in the file is kept as it was. A file that
+/// exists but does not parse is left alone (the game re-asks for the disc
+/// in that case anyway) and reported as an error.
+pub fn record_disc_for_engine(settings: &Path, disc: &Path) -> anyhow::Result<()> {
+    use anyhow::Context;
+    let mut table = match std::fs::read_to_string(settings) {
+        Ok(text) => text
+            .parse::<toml::Table>()
+            .with_context(|| format!("{} does not parse; left as it is", settings.display()))?,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => toml::Table::new(),
+        Err(e) => return Err(e).with_context(|| format!("reading {}", settings.display())),
+    };
+    let disc = disc
+        .to_str()
+        .with_context(|| format!("{} is not valid UTF-8", disc.display()))?;
+    if table.get("disc").and_then(|v| v.as_str()) == Some(disc) {
+        return Ok(());
+    }
+    table.insert("disc".into(), toml::Value::String(disc.to_string()));
+    if let Some(dir) = settings.parent() {
+        std::fs::create_dir_all(dir).with_context(|| format!("creating {}", dir.display()))?;
+    }
+    std::fs::write(settings, toml::to_string(&table)?)
+        .with_context(|| format!("writing {}", settings.display()))
+}
+
 /// The log file a Studio-started game writes into.
 pub const GAME_LOG: &str = "legaia-studio-game.log";
 
@@ -243,6 +283,30 @@ mod tests {
         );
         assert!(text.contains(&format!("cwd {}", data.display())), "{text}");
         assert_eq!(log_tail(&log, 1), vec!["boom".to_string()]);
+    }
+
+    /// The engine's launcher file gains the disc and keeps every other key;
+    /// a file that does not parse is not overwritten.
+    #[test]
+    fn records_the_disc_for_the_engine_without_clobbering() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("cfg").join("launcher.toml");
+        record_disc_for_engine(&file, Path::new("/g/Legaia.cue")).unwrap();
+        let t: toml::Table = std::fs::read_to_string(&file).unwrap().parse().unwrap();
+        assert_eq!(t["disc"].as_str(), Some("/g/Legaia.cue"));
+        std::fs::write(
+            &file,
+            "disc = \"/old.bin\"\nfuture_key = 7\n[extra]\nx = true\n",
+        )
+        .unwrap();
+        record_disc_for_engine(&file, Path::new("/g/new.bin")).unwrap();
+        let t: toml::Table = std::fs::read_to_string(&file).unwrap().parse().unwrap();
+        assert_eq!(t["disc"].as_str(), Some("/g/new.bin"));
+        assert_eq!(t["future_key"].as_integer(), Some(7));
+        assert_eq!(t["extra"]["x"].as_bool(), Some(true));
+        std::fs::write(&file, "not = = toml").unwrap();
+        assert!(record_disc_for_engine(&file, Path::new("/g/new.bin")).is_err());
+        assert_eq!(std::fs::read_to_string(&file).unwrap(), "not = = toml");
     }
 
     #[test]

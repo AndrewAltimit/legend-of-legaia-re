@@ -5,7 +5,7 @@ use std::sync::Arc;
 use std::sync::mpsc::{Receiver, channel};
 use std::time::Instant;
 
-use eframe::egui::{self, Color32, ColorImage, RichText, TextureHandle, TextureOptions};
+use eframe::egui::{self, ColorImage, RichText, TextureHandle, TextureOptions};
 use legaia_mdec::str_av::StrAv;
 
 use super::App;
@@ -203,7 +203,7 @@ impl App {
             };
             match view {
                 View::Failed(e) => {
-                    ui.colored_label(Color32::LIGHT_RED, e);
+                    ui.colored_label(ui.visuals().error_fg_color, e);
                 }
                 View::Xa(tracks) => self.xa_tracks(ui, &sel, &tracks),
                 View::Str(m) => self.str_view(ui, &sel, &m),
@@ -399,7 +399,10 @@ impl App {
                 ui.image((tex.id(), size * scale));
             }
             None => {
-                ui.colored_label(Color32::LIGHT_RED, format!("frame {frame} does not decode"));
+                ui.colored_label(
+                    ui.visuals().error_fg_color,
+                    format!("frame {frame} does not decode"),
+                );
             }
         }
     }

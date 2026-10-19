@@ -147,6 +147,10 @@ impl Automation {
     }
 }
 
+/// How long an informational status line ("... written to ...") stays up.
+/// Errors stay until dismissed.
+const STATUS_TTL: std::time::Duration = std::time::Duration::from_secs(8);
+
 /// Which VRAM image the entry model view samples.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum TexSource {
@@ -211,6 +215,11 @@ pub struct App {
     /// The folder the last export or extraction wrote into, for the
     /// status line's *Show folder* button.
     last_written: Option<PathBuf>,
+    /// The informational status text last seen and when it appeared (or
+    /// was last hovered): it clears itself after [`STATUS_TTL`].
+    status_seen: Option<(String, std::time::Instant)>,
+    /// Theme and zoom from the settings have been pushed into egui.
+    appearance_applied: bool,
     // Automation.
     auto: Automation,
     auto_selected: bool,
@@ -222,6 +231,10 @@ pub struct App {
 impl App {
     pub fn new(studio: Studio, initial: Option<PathBuf>, auto: Automation) -> Self {
         let mut studio = studio;
+        // Recent entries whose disc or folder has gone are dropped at start.
+        if studio.settings.prune_recent() {
+            studio.save_settings();
+        }
         let open = initial.or_else(|| studio.settings.last_source.clone().filter(|p| p.exists()));
         let path_text = open
             .as_ref()
@@ -278,6 +291,8 @@ impl App {
                 .and_then(|exe| crate::launch::find_engine(&exe)),
             game: None,
             last_written: None,
+            status_seen: None,
+            appearance_applied: false,
             auto,
             auto_selected: false,
             auto_extract_started: false,
@@ -390,9 +405,15 @@ impl App {
         let Some(shot) = self.auto.screenshot.clone() else {
             return;
         };
-        let loaded = self.studio.library.is_some() && self.studio.loading().is_none();
-        let analysed = self.auto.select.is_none() || self.studio.analysis.is_some();
+        // Settled once no load is in flight. With nothing to open (no path
+        // given, no last disc) that is the first frame: the welcome screen
+        // is the state to capture. The selection and extraction steps only
+        // wait when there is a library for them to act on.
+        let loaded = self.studio.loading().is_none();
+        let has_lib = self.studio.library.is_some();
+        let analysed = self.auto.select.is_none() || !has_lib || self.studio.analysis.is_some();
         let extracted = self.auto.extract_to.is_none()
+            || !has_lib
             || self.job.as_ref().is_some_and(|j| j.outcome().is_some());
         let idle =
             loaded && analysed && extracted && !self.studio.is_analyzing() && !self.media.busy();
@@ -498,12 +519,23 @@ impl App {
             {
                 self.open_path(&p);
             }
+            ui.add_enabled_ui(!self.studio.settings.recent.is_empty(), |ui| {
+                ui.menu_button("Recent", |ui| {
+                    if let Some(p) = self.recent_list(ui) {
+                        ui.close();
+                        self.open_path(&p);
+                    }
+                })
+                .response
+                .on_disabled_hover_text("Discs and folders you open are listed here.");
+            });
             ui.separator();
             self.play_button(ui);
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 if ui.button("About").on_hover_text("F1").clicked() {
                     self.about_open = !self.about_open;
                 }
+                ui.menu_button("View", |ui| self.view_menu(ui));
             });
         });
         ui.horizontal(|ui| {
@@ -551,14 +583,37 @@ impl App {
         });
         let mut dismiss = false;
         let mut show: Option<PathBuf> = None;
+        // An informational line clears itself after `STATUS_TTL` (the clock
+        // restarts while the pointer is on it); an error stays until it is
+        // dismissed, and can be copied for a bug report.
+        let now = std::time::Instant::now();
+        match &self.studio.status {
+            Some(s) if self.status_seen.as_ref().is_none_or(|(seen, _)| seen != s) => {
+                self.status_seen = Some((s.clone(), now));
+            }
+            None => self.status_seen = None,
+            _ => {}
+        }
         if let Some(e) = &self.studio.error {
             ui.horizontal(|ui| {
-                ui.colored_label(Color32::from_rgb(230, 110, 100), e);
+                ui.colored_label(ui.visuals().error_fg_color, e);
+                if ui
+                    .small_button("Copy")
+                    .on_hover_text("Copy this message to the clipboard")
+                    .clicked()
+                {
+                    ui.ctx().copy_text(e.clone());
+                }
                 dismiss = ui.small_button("Dismiss").clicked();
             });
         } else if let Some(s) = &self.studio.status {
-            ui.horizontal(|ui| {
-                ui.colored_label(Color32::from_rgb(140, 200, 140), s);
+            let green = if ui.visuals().dark_mode {
+                Color32::from_rgb(140, 200, 140)
+            } else {
+                Color32::from_rgb(30, 120, 40)
+            };
+            let row = ui.horizontal(|ui| {
+                ui.colored_label(green, s);
                 if let Some(dir) = &self.last_written
                     && ui
                         .small_button("Show folder")
@@ -569,13 +624,115 @@ impl App {
                 }
                 dismiss = ui.small_button("Dismiss").clicked();
             });
+            if let Some((_, at)) = &mut self.status_seen {
+                if row.response.contains_pointer() {
+                    *at = now;
+                }
+                let left = STATUS_TTL.saturating_sub(now.duration_since(*at));
+                if left.is_zero() {
+                    dismiss = true;
+                } else {
+                    ui.ctx().request_repaint_after(left);
+                }
+            }
         }
         if dismiss {
             self.studio.error = None;
             self.studio.status = None;
+            self.status_seen = None;
         }
         if let Some(dir) = show {
             self.show_folder(&dir);
+        }
+    }
+
+    /// The recent discs and folders, newest first, each with a remove
+    /// button; the one clicked to open, if any. Entries whose path has gone
+    /// since start-up are dropped as the list is drawn.
+    fn recent_list(&mut self, ui: &mut egui::Ui) -> Option<PathBuf> {
+        if self.studio.settings.prune_recent() {
+            self.studio.save_settings();
+        }
+        let mut open = None;
+        let mut forget = None;
+        for p in &self.studio.settings.recent {
+            let kind = if p.is_dir() { "folder" } else { "disc" };
+            let name = p
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_else(|| p.display().to_string());
+            ui.horizontal(|ui| {
+                if ui
+                    .small_button("x")
+                    .on_hover_text("Remove from this list (the file is not touched)")
+                    .clicked()
+                {
+                    forget = Some(p.clone());
+                }
+                let current = self
+                    .studio
+                    .library
+                    .as_ref()
+                    .is_some_and(|_| self.studio.settings.last_source.as_ref() == Some(p));
+                let text = format!("{name}  ({kind})");
+                if ui
+                    .add(egui::Button::selectable(current, text))
+                    .on_hover_text(p.display().to_string())
+                    .clicked()
+                {
+                    open = Some(p.clone());
+                }
+                if let Some(dir) = p.parent() {
+                    ui.label(RichText::new(dir.display().to_string()).weak());
+                }
+            });
+        }
+        if let Some(p) = forget {
+            self.studio.settings.forget_recent(&p);
+            self.studio.save_settings();
+        }
+        if !self.studio.settings.recent.is_empty() {
+            ui.separator();
+            if ui.button("Clear list").clicked() {
+                self.studio.settings.recent.clear();
+                self.studio.save_settings();
+            }
+        }
+        open
+    }
+
+    /// The View menu: theme and UI zoom, both remembered.
+    fn view_menu(&mut self, ui: &mut egui::Ui) {
+        ui.label(RichText::new("Theme").strong());
+        let mut theme = self.studio.settings.theme;
+        for t in crate::settings::Theme::ALL {
+            ui.radio_value(&mut theme, t, t.name());
+        }
+        if theme != self.studio.settings.theme {
+            self.studio.settings.theme = theme;
+            ui.ctx().set_theme(theme_preference(theme));
+            self.studio.save_settings();
+        }
+        ui.separator();
+        ui.label(RichText::new(format!("Zoom ({:.0}%)", ui.ctx().zoom_factor() * 100.0)).strong());
+        egui::gui_zoom::zoom_menu_buttons(ui);
+    }
+
+    /// Push the remembered theme and zoom into egui once, then keep the
+    /// settings in step with zoom changes (the keyboard shortcuts egui
+    /// handles itself, and the View menu).
+    fn sync_appearance(&mut self, ctx: &egui::Context) {
+        let s = &mut self.studio.settings;
+        if !self.appearance_applied {
+            self.appearance_applied = true;
+            ctx.set_theme(theme_preference(s.theme));
+            ctx.set_zoom_factor(crate::settings::sane_zoom(s.zoom));
+            return;
+        }
+        let z = ctx.zoom_factor();
+        if (z - crate::settings::sane_zoom(s.zoom)).abs() > 1e-3 {
+            s.zoom = (z.is_finite() && (z - 1.0).abs() > 1e-3).then_some(z);
+            self.studio.save_settings();
         }
     }
 
@@ -645,6 +802,21 @@ impl App {
                     self.studio.error = None;
                     self.last_written = None;
                     self.game = Some(g);
+                    // Remember the disc for the game itself, so starting it
+                    // directly later does not ask for it again. The path as
+                    // chosen (a `.cue` stays a `.cue`), like its own picker.
+                    let chosen = self
+                        .studio
+                        .settings
+                        .last_source
+                        .clone()
+                        .filter(|p| p.is_file())
+                        .unwrap_or(bin);
+                    if let Some(file) = crate::launch::engine_launcher_settings()
+                        && let Err(e) = crate::launch::record_disc_for_engine(&file, &chosen)
+                    {
+                        log::warn!("not recording the disc for the game: {e:#}");
+                    }
                 }
                 Err(e) => self.studio.error = Some(format!("Could not start the game: {e:#}")),
             }
@@ -850,6 +1022,13 @@ impl App {
     fn preview(&mut self, ui: &mut egui::Ui) {
         let Some(lib) = self.studio.library.clone() else {
             welcome(ui);
+            if !self.studio.settings.recent.is_empty() {
+                ui.add_space(12.0);
+                ui.label(RichText::new("Open again").strong());
+                if let Some(p) = self.recent_list(ui) {
+                    self.open_path(&p);
+                }
+            }
             return;
         };
         let Some(pos) = self.studio.selected else {
@@ -1052,7 +1231,7 @@ impl App {
                 }
                 Ok(_) => None,
                 Err(e) => {
-                    ui.colored_label(Color32::LIGHT_RED, format!("{e:#}"));
+                    ui.colored_label(ui.visuals().error_fg_color, format!("{e:#}"));
                     None
                 }
             };
@@ -1248,7 +1427,10 @@ impl App {
             ui.label(RichText::new("Drag to orbit, scroll to zoom.").weak());
         });
         let Some(model) = &mv.model else {
-            ui.colored_label(Color32::LIGHT_RED, "This TMD has no drawable triangles.");
+            ui.colored_label(
+                ui.visuals().error_fg_color,
+                "This TMD has no drawable triangles.",
+            );
             return;
         };
         let (vram, with) = match (&scene, mv.source) {
@@ -1516,7 +1698,7 @@ impl App {
                 match &disc {
                     Some(p) => ui.monospace(p.display().to_string()),
                     None => ui.colored_label(
-                        Color32::LIGHT_RED,
+                        ui.visuals().error_fg_color,
                         "open a disc image first (Browse > Open disc image)",
                     ),
                 };
@@ -1655,6 +1837,7 @@ impl App {
 
 impl eframe::App for App {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        self.sync_appearance(ctx);
         if self.studio.poll() {
             ctx.request_repaint();
         }
@@ -1683,7 +1866,11 @@ impl eframe::App for App {
         }
 
         if let Some(r) = ctx.input(|i| i.viewport().inner_rect) {
-            self.window_size = Some([r.width(), r.height()]);
+            // egui points include the UI zoom; the viewport's inner size at
+            // start does not, so store the unzoomed size or a zoomed window
+            // would shrink on every start.
+            let z = ctx.zoom_factor();
+            self.window_size = Some([r.width() * z, r.height() * z]);
         }
         egui::TopBottomPanel::top("top").show(ctx, |ui| self.top_bar(ui));
         self.about_window(ctx);
@@ -1784,8 +1971,17 @@ impl App {
                 ui.label(RichText::new("Keyboard").strong());
                 ui.label("Ctrl+O open a disc image  -  Ctrl+F search the archive  -  F1 this box");
                 ui.label("Up / Down, Page Up / Down, Home / End walk the archive tree");
+                ui.label("Ctrl+= / Ctrl+- / Ctrl+0 zoom in, out, reset (also under View)");
             });
         self.about_open = open;
+    }
+}
+
+fn theme_preference(t: crate::settings::Theme) -> egui::ThemePreference {
+    match t {
+        crate::settings::Theme::System => egui::ThemePreference::System,
+        crate::settings::Theme::Light => egui::ThemePreference::Light,
+        crate::settings::Theme::Dark => egui::ThemePreference::Dark,
     }
 }
 

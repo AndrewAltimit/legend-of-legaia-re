@@ -158,6 +158,7 @@ impl Studio {
         self.analysis = None;
         self.analyzing = None;
         self.settings.last_source = Some(path.to_path_buf());
+        self.settings.remember_recent(path);
         self.save_settings();
         let classes = Arc::new(Mutex::new(vec![None; lib.entries.len()]));
         self.classes = Arc::clone(&classes);

@@ -23,6 +23,7 @@ rayon.workspace = true
 rfd.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+toml = { workspace = true, features = ["display"] }
 legaia-actor-formats.workspace = true
 legaia-art.workspace = true
 legaia-container-formats.workspace = true

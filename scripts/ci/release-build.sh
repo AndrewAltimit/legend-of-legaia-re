@@ -381,7 +381,8 @@ python3 scripts/ci/third-party-licenses.py "${LICENSE_TARGETS[@]}" \
     printf 'archive entry, preview textures, 3D models, sound banks, music and\n'
     printf 'dialog text, export them (PNG, OBJ / glTF, WAV), or unpack the whole\n'
     printf 'disc into a folder of your choice. Its Play button starts the game\n'
-    printf 'on the disc you have open. Guide:\n'
+    printf 'on the disc you have open and remembers that disc for the game, so\n'
+    printf 'starting the game directly afterwards does not ask for it. Guide:\n'
     printf 'https://github.com/%s/blob/main/docs/guides/extracting-assets.md\n' \
         "${GITHUB_REPOSITORY:-AndrewAltimit/legend-of-legaia-re}"
     printf '\nThe other binaries in this folder are modding and reverse-engineering\n'

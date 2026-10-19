@@ -13,7 +13,7 @@ runtime, and writes only into folders the user chooses.
 
 | Area | What the user gets |
 |---|---|
-| Open | A native file dialog (or a typed path, or a file dropped on the window) for a `.bin` / `.cue` disc image or a `legaia-extract` output folder. The image is validated (Mode2/2352, ISO9660, `PROT.DAT` present) before loading; the last choice is reopened on the next start. |
+| Open | A native file dialog (or a typed path, or a file dropped on the window) for a `.bin` / `.cue` disc image or a `legaia-extract` output folder. The image is validated (Mode2/2352, ISO9660, `PROT.DAT` present) before loading; the last choice is reopened on the next start. *Recent* (and the start screen) lists up to eight recent sources, newest first (`Settings::remember_recent`); gone paths are pruned, and each has a remove button. |
 | Browse | The `PROT.DAT` entries grouped under their CDNAME block names and the scene's display name (`place_name`, from `legaia_gamedata`'s scene table), each with its category (`legaia_disc_audit::categorize`, classified in the background) and size; a search whose every term must match the CDNAME label, the place name, the retail block, the category or the index (`Studio::entry_matches`), plus a category filter; arrow / Page / Home / End keys walk the visible rows; the disc's ISO9660 files with a save button. A preview tab the entry has nothing for shows its Overview. |
 | Overview | PROT index, the filename label and the retail CDNAME block (the two differ by the +2 index shift, [`cdname.md`](../../docs/formats/cdname.md)), location in `PROT.DAT`, the DATA_FIELD chunk list, raw `.BIN` export. |
 | Textures | Every TIM in the entry, raw or inside an LZS section (`tim_scan`), with a CLUT slider and zoom; PNG export of one or all. |
@@ -23,7 +23,9 @@ runtime, and writes only into folders the user chooses.
 | Hex | A virtualised hex / ASCII dump of the whole entry. |
 | Characters & monsters | The four party members assembled from their player files (PROT 863..866) with a per-section equipment picker named from the build's own executable (`ItemNameTable::from_exe`: the USA table or the French, German or Italian one, accents kept), and the monster archive (PROT 867) listed by name as the font draws it, with its element badge; every battle animation clip, and for Vahn, Noa and Gala every Tactical Art by name, plays or steps frame by frame; animated `.glb` export. |
 | Movies & voice | The STR movies (`MOV/*.STR`): frames decoded on demand (Iki MDEC), played paced by their XA soundtrack's clock (a movie resumed from a paused frame resumes its soundtrack at that frame's sample), PNG frame export; the CD-XA files (`XA/*.XA`) demultiplexed per `(file, channel)` and decoded at their subheader rate, with play and WAV export. Disc images only. |
-| Play | Starts `legaia-engine` (found beside this binary, or beside the macOS `.app`) as `play-window --disc <bin> --boot-ui` on the open USA disc, in the engine's per-user data folder, so saves and settings are shared with a game started directly (`launch`). Its output goes to `legaia-studio-game.log` there; a failed exit puts the log's last lines on the error line. Disabled with the reason on hover for an extracted folder, another region's disc, or a missing engine. |
+| Play | Starts `legaia-engine` (found beside this binary, or beside the macOS `.app`) as `play-window --disc <bin> --boot-ui` on the open USA disc, in the engine's per-user data folder, so saves and settings are shared with a game started directly (`launch`). Its output goes to `legaia-studio-game.log` there; a failed exit puts the log's last lines on the error line. A start also writes the disc into the engine's `launcher.toml` (`record_disc_for_engine`: the `disc` key only, other keys kept), so the game started directly boots it without its picker. Disabled with the reason on hover for an extracted folder, another region's disc, or a missing engine. |
+| Status line | A confirmation clears itself after a few seconds (the clock restarts while the pointer is on it); an error stays, with *Copy* and *Dismiss*. |
+| View | Light, dark or follow-system theme, and the UI zoom (also Ctrl+= / Ctrl+- / Ctrl+0); both remembered. |
 | About | Version, license, where `THIRD-PARTY-LICENSES.txt` sits (beside the binary, or beside the macOS `.app`), the keyboard shortcuts. |
 | Extract | The full `legaia-extract` pipeline (`legaia_extract::run`) on a worker thread into a chosen folder, with the CLI's skip options, a progress bar, a log, Cancel and *Open output folder*; the output folder defaults to one beside the disc image; *Export all textures* adds the every-TIM sweep (`--all-textures`: `tim_scan/` as `asset tim-scan` + `tim convert-dir` write it). |
 
@@ -88,13 +90,15 @@ cargo run -p legaia-studio --release
 legaia-studio "/path/to/Legend of Legaia (USA).bin"     # open at start
 ```
 
-Settings (last disc, output and export folders, extract options, window
-size, the view and preview tab last open) live in
+Settings (last disc, the recent list, output and export folders, extract
+options, window size, the view and preview tab last open, theme and zoom)
+live in
 `legaia-studio/settings.json` under the per-user config folder.
 
 Keyboard: Ctrl+O opens a disc image, Ctrl+F focuses the archive search
-(Escape clears it), F1 toggles the About box, and Up / Down, Page Up / Down, Home / End walk the
-archive rows the search shows, opening blocks as they go.
+(Escape clears it), F1 toggles the About box, Ctrl+= / Ctrl+- / Ctrl+0 zoom,
+and Up / Down, Page Up / Down, Home / End walk the archive rows the search
+shows, opening blocks as they go.
 
 ### Scripted runs
 
@@ -109,7 +113,7 @@ These environment variables drive a run without a person at the keyboard
 | `LEGAIA_STUDIO_SEARCH` | Start with this text in the archive search. |
 | `LEGAIA_STUDIO_MEDIA` | Open *Movies & voice* on an ISO path (`MOV/MV1.STR`, `XA/XA14.XA`), a movie optionally at `@<frame>`. |
 | `LEGAIA_STUDIO_EXTRACT_TO` | Start an extraction into this folder. |
-| `LEGAIA_STUDIO_SCREENSHOT` | Save a PNG of the window once settled (after the extraction, if one runs), then quit. |
+| `LEGAIA_STUDIO_SCREENSHOT` | Save a PNG of the window once settled (after the extraction, if one runs), then quit. With nothing to open it captures the start screen. |
 | `LEGAIA_STUDIO_EXPORT_DIR` | Export buttons write here instead of opening a save dialog. |
 | `LEGAIA_STUDIO_ACTOR` | Open *Characters & monsters* on `char:<slot>` (0 Vahn .. 3 Terra) or `monster:<id>`, optionally posed `@<clip>:<frame>`. |
 | `LEGAIA_STUDIO_PLAY` | Press *Play* once the disc has loaded. |
