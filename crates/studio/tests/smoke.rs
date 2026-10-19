@@ -278,6 +278,12 @@ fn real_disc_search_and_streamed_media() {
         assert!(s.entry_matches(pos, &block, q, None), "query {q:?}");
     }
     assert!(!s.entry_matches(pos, &block, "town01", None));
+    // A scene's display name finds its block: "rim elm" is town01.
+    let town = lib.position_of(5).unwrap();
+    let town_block = lib.label(5).unwrap().to_string();
+    assert_eq!(legaia_studio::place_name(&town_block), Some("Rim Elm"));
+    assert!(s.entry_matches(town, &town_block, "rim elm", None));
+    assert!(!s.entry_matches(pos, &block, "rim elm", None));
 
     // CD-XA: the first file's channels decode at their own subheader rate.
     let xa = lib

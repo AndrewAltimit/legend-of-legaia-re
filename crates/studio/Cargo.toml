@@ -45,3 +45,6 @@ legaia-tmd.workspace = true
 legaia-translate.workspace = true
 legaia-vab.workspace = true
 legaia-xa.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

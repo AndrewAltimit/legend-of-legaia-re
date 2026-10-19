@@ -67,7 +67,7 @@ pub fn arrows(directions: &[u8]) -> String {
         .join(" ")
 }
 
-fn gamedata() -> &'static legaia_gamedata::Database {
+pub(crate) fn gamedata() -> &'static legaia_gamedata::Database {
     static DB: std::sync::OnceLock<legaia_gamedata::Database> = std::sync::OnceLock::new();
     DB.get_or_init(legaia_gamedata::Database::load)
 }

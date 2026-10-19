@@ -10,10 +10,11 @@ The release archive's `legaia-studio` (`legaia-studio.exe` on Windows,
    window. A folder `legaia-extract` already wrote opens too. The app checks
    the image before loading and reopens it next time.
 2. **Browse** the archive on the left: entries grouped under their CDNAME
-   names, each with its category and size. The search (Ctrl+F) matches every
-   word you type against the CDNAME name, the category and the index
-   (`town tmd` finds the town meshes); the arrow keys, Page Up / Down, Home
-   and End walk the list.
+   names and the place each scene is (`town01 - Rim Elm`), each entry with
+   its category and size. The search (Ctrl+F) matches every word you type
+   against the CDNAME name, the place name, the category and the index
+   (`town tmd` finds the town meshes, `rim elm` every Rim Elm scene); the
+   arrow keys, Page Up / Down, Home and End walk the list.
 3. **Preview** the selected entry: *Textures* (with a palette slider - try a
    few rows before deciding a texture is broken), *3D model* (drag to orbit,
    scroll to zoom; *scene* textures a mesh against the VRAM its scene
@@ -22,10 +23,12 @@ The release archive's `legaia-studio` (`legaia-studio.exe` on Windows,
    French, German and Italian discs), *Hex*.
 4. **Export** what you are looking at: PNG, OBJ or textured glTF (`.glb`),
    WAV, the dialog as text, or the raw entry bytes. *Disc files* at the bottom
-   of the list saves any file of the disc's own file system.
-5. **Extract** the whole disc: switch to *Extract*, choose an output folder,
-   tick the same skip options the command line offers, and start. The tab
-   shows progress and the log and can be cancelled; the folder it writes is
+   of the list saves any file of the disc's own file system. After an export,
+   *Show folder* on the status line opens the folder it went to.
+5. **Extract** the whole disc: switch to *Extract*, choose an output folder
+   (it proposes one beside the disc image), tick the same skip options the
+   command line offers, and start. The tab shows progress and the log, can be
+   cancelled, and offers *Open output folder* when it ends; the folder it writes is
    exactly what the `legaia-extract` command below produces. Tick *Export
    all textures as PNG* to also get every texture on the disc as a PNG under
    `tim_scan/` (the same files as the two-command chain in the next section).
@@ -38,7 +41,14 @@ The release archive's `legaia-studio` (`legaia-studio.exe` on Windows,
    files channel by channel (play, WAV export). These read raw CD sectors,
    so they need the disc image rather than an extracted folder.
 
-The window remembers its size and the view you left it on. *About* shows
+8. **Play**: the button in the top bar starts the game (`legaia-engine`,
+   which ships in the same folder) on the open disc, at the title screen.
+   Saves, key bindings and options are the same ones the game uses when you
+   start it directly. It needs the USA disc image; when it is unavailable,
+   hovering over it says why. If the game stops with an error, the status line
+   shows the end of its log and where the full log is.
+
+The window remembers its size and the view you left it on. *About* (F1) shows
 the version and where the third-party license notices
 (`THIRD-PARTY-LICENSES.txt`) sit. The app ships no game data and uploads
 nothing; it reads the disc you choose and writes only where you tell it.
