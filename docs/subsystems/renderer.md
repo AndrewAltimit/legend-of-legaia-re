@@ -2934,7 +2934,13 @@ spill they draw falling fog rather than a sheet, from
   slowly, thresholded higher the further it has fallen so the tendrils part
   and thin; a high-frequency erosion term near the threshold rags their
   edges, and a second noise breaks them into falling puffs.
-- **Slow.** The fall coordinate scrolls one noise cell per
+- **Even along a diagonal rim.** The flow direction is the gradient of the
+  field's edge distance, which comes from cell centres and so steps once
+  per cell along a rim diagonal to the grid; the field smooths that
+  distance about the rim (three box passes) before the shaders or the
+  sheet mesh read it, or the curtain pinches into a row of V's, one per
+  cell step.
+- **Unhurried.** The fall coordinate scrolls one noise cell per
   `SPILL_FLOW_TICKS`; the second octave and the puffs move at their own
   rates, so the pattern changes as it falls.
 - **A slab, not a plane.** The vertex stage spreads the sheets outward down

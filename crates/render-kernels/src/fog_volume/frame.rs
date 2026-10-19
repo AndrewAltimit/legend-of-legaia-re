@@ -86,10 +86,10 @@ pub mod header {
 /// of full coverage and no spill ([`FogGround::texels`] channel layout).
 pub const FOG_GROUND_NONE_TEXEL: [u8; 4] = [255, 0, 0, 255];
 
-/// Ticks for a spill tendril to travel one noise cell down the fall: a
-/// slow pour - with [`FOG_SPILL_CONSTANTS`]' fall scale, one cell is 520
-/// units of drop, so about ten seconds at sixty ticks a second.
-pub const SPILL_FLOW_TICKS: u32 = 600;
+/// Ticks for a spill tendril to travel one noise cell down the fall: an
+/// unhurried pour - with [`FOG_SPILL_CONSTANTS`]' fall scale, one cell is
+/// 520 units of drop, so about five seconds at sixty ticks a second.
+pub const SPILL_FLOW_TICKS: u32 = 300;
 
 /// The tick clock's wrap for [`header::SPILL_PHASE`]: a multiple of
 /// the spill streaks' period ([`SPILL_FLOW_TICKS`]), so the wrap is seamless.
