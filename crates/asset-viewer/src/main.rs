@@ -91,8 +91,57 @@ use crate::world_app::run_world;
         by `font-extract --disc <bin>`."
 )]
 struct Args {
+    /// The view to open. With none (a double-click), the viewer browses the
+    /// `extracted/PROT.DAT` it finds beside it, or says how to get one.
     #[command(subcommand)]
-    cmd: Cmd,
+    cmd: Option<Cmd>,
+}
+
+/// What a start with no subcommand says when there is no extraction to
+/// browse: a double-click lands here, so it names the next step instead of
+/// printing usage.
+const NO_EXTRACTION: &str = "\
+asset-viewer shows the files legaia-extract writes; it does not read a disc
+image by itself, and no extracted/PROT.DAT was found beside it.
+
+  - To browse your disc with buttons, start legaia-studio instead.
+  - To use this viewer, unpack the disc first:
+        legaia-extract \"<your disc.bin>\" --out extracted
+    then start asset-viewer from the folder holding \"extracted\" (it opens
+    extracted/PROT.DAT), or run `asset-viewer --help` for every view.
+";
+
+/// The archive a start with no subcommand browses: `extracted/PROT.DAT` (or
+/// a `PROT.DAT`) in the current folder, else `extracted/PROT.DAT` beside the
+/// binary.
+fn default_prot_dat() -> Option<PathBuf> {
+    let mut candidates = vec![
+        PathBuf::from("extracted").join("PROT.DAT"),
+        PathBuf::from("PROT.DAT"),
+    ];
+    if let Some(dir) = std::env::current_exe()
+        .ok()
+        .and_then(|e| e.parent().map(|d| d.to_path_buf()))
+    {
+        candidates.push(dir.join("extracted").join("PROT.DAT"));
+    }
+    candidates.into_iter().find(|p| p.is_file())
+}
+
+/// On Windows a double-clicked console program's window closes the moment
+/// it exits, taking the message with it: wait for Enter first.
+fn pause_if_double_clicked(double_clicked: bool) {
+    #[cfg(windows)]
+    {
+        use std::io::IsTerminal;
+        if double_clicked && std::io::stdin().is_terminal() {
+            eprintln!("\nPress Enter to close.");
+            let mut line = String::new();
+            let _ = std::io::stdin().read_line(&mut line);
+        }
+    }
+    #[cfg(not(windows))]
+    let _ = double_clicked;
 }
 
 #[derive(Subcommand, Debug)]
@@ -178,7 +227,8 @@ enum Cmd {
     /// Browse every entry in a PROT.DAT archive.
     Prot {
         prot_dat: PathBuf,
-        /// CDNAME.TXT for nicer entry titles. Optional.
+        /// CDNAME.TXT for nicer entry titles. Defaults to the CDNAME.TXT
+        /// beside PROT_DAT, when there is one.
         #[arg(long)]
         cdname: Option<PathBuf>,
         /// `SCUS_942.54` to read the per-stage battle-backdrop mirror
@@ -399,10 +449,52 @@ fn reset_sigpipe() {
     }
 }
 
-fn main() -> Result<()> {
+fn main() -> std::process::ExitCode {
     reset_sigpipe();
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
     let args = Args::parse();
+    let double_clicked = args.cmd.is_none();
+    let cmd = match args.cmd {
+        Some(c) => c,
+        None => match default_prot_dat() {
+            Some(prot_dat) => {
+                log::info!(
+                    "no view named: browsing {} (asset-viewer --help lists the others)",
+                    prot_dat.display()
+                );
+                Cmd::Prot {
+                    prot_dat,
+                    cdname: None,
+                    scus: None,
+                    start: 0,
+                }
+            }
+            None => {
+                eprint!("{NO_EXTRACTION}");
+                pause_if_double_clicked(true);
+                return std::process::ExitCode::FAILURE;
+            }
+        },
+    };
+    // One line per failure, the cause chain inline, rather than the
+    // `Debug` rendering a `Result`-returning `main` prints.
+    match run(cmd) {
+        Ok(()) => std::process::ExitCode::SUCCESS,
+        Err(e) => {
+            eprintln!("asset-viewer: {e:#}");
+            pause_if_double_clicked(double_clicked);
+            std::process::ExitCode::FAILURE
+        }
+    }
+}
+
+/// The chosen view, under the name the dispatch below reads it by.
+struct CmdArgs {
+    cmd: Cmd,
+}
+
+fn run(cmd: Cmd) -> Result<()> {
+    let args = CmdArgs { cmd };
 
     if let Cmd::Seq {
         seq,
@@ -752,7 +844,13 @@ fn main() -> Result<()> {
             let cdname = if let Some(p) = cdname_path {
                 Some(cdname::parse(&p).with_context(|| format!("parse {}", p.display()))?)
             } else {
-                None
+                // `legaia-extract` writes CDNAME.TXT beside PROT.DAT; use it
+                // for the entry names when it is there.
+                prot_dat
+                    .parent()
+                    .map(|d| d.join("CDNAME.TXT"))
+                    .filter(|p| p.is_file())
+                    .and_then(|p| cdname::parse(&p).ok())
             };
             let backdrop_mirror = load_backdrop_mirror_table(scus.as_deref(), &prot_dat);
             log::info!(
@@ -811,7 +909,11 @@ fn main() -> Result<()> {
         browser,
         mesh_browser,
         stage_browser,
+        fatal: None,
     };
     event_loop.run_app(&mut app).context("run event loop")?;
-    Ok(())
+    match app.fatal {
+        Some(e) => Err(e),
+        None => Ok(()),
+    }
 }

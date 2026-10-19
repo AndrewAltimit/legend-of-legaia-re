@@ -42,6 +42,9 @@ pub(crate) struct App {
     pub(crate) mesh_browser: Option<MeshBrowser>,
     /// Stage-geometry directory-walk state. None for single-file `stage` mode.
     pub(crate) stage_browser: Option<StageBrowser>,
+    /// Why the window could not start (no window, no usable GPU adapter):
+    /// `main` reports it once the event loop has exited.
+    pub(crate) fatal: Option<anyhow::Error>,
 }
 
 /// Directory walk for the `stage <DIR>` mode. Holds the list of files that
@@ -206,8 +209,8 @@ impl App {
         let mut buf = Vec::new();
         let display = match b.archive.read_entry(&entry, &mut buf) {
             Ok(()) => display_for_prot_entry(&name, &buf, second_copy)
-                .unwrap_or_else(|| Display::empty(format!("{} (read failed)", name))),
-            Err(e) => Display::empty(format!("{} (io error: {e})", name)),
+                .unwrap_or_else(|| Display::empty(format!("{} (nothing to show)", name))),
+            Err(e) => Display::empty(format!("{} (could not read the entry: {e:#})", name)),
         };
         b.current = cursor;
         b.last_count = count;
@@ -273,7 +276,7 @@ impl App {
                 }
             }
             Err(e) => Display::empty(format!(
-                "STAGE [{}/{}] {} (load failed: {e})",
+                "STAGE [{}/{}] {} (load failed: {e:#})",
                 idx,
                 total,
                 short_path(&path),
@@ -364,7 +367,7 @@ impl App {
                 }
             }
             Err(e) => Display::empty(format!(
-                "TMD [{}/{}] {} (load failed: {e})",
+                "TMD [{}/{}] {} (load failed: {e:#})",
                 idx,
                 total,
                 short_path(&path),
@@ -382,10 +385,28 @@ impl ApplicationHandler for App {
         let attrs = WindowAttributes::default()
             .with_title("legaia asset viewer")
             .with_inner_size(winit::dpi::LogicalSize::new(1024, 768));
-        let window = Arc::new(event_loop.create_window(attrs).expect("create window"));
+        // A failure here (no display, no GPU adapter the renderer can use)
+        // ends the run with a sentence instead of a panic backtrace.
+        let window = match event_loop.create_window(attrs) {
+            Ok(w) => Arc::new(w),
+            Err(e) => {
+                self.fatal = Some(anyhow::anyhow!("could not open a window: {e}"));
+                event_loop.exit();
+                return;
+            }
+        };
         let size = window.inner_size();
-        let renderer =
-            Renderer::new(window.clone(), size.width, size.height).expect("create renderer");
+        let renderer = match Renderer::new(window.clone(), size.width, size.height) {
+            Ok(r) => r,
+            Err(e) => {
+                self.fatal = Some(anyhow::anyhow!(
+                    "could not start the renderer ({e:#}); the viewer needs a graphics \
+                     driver with Vulkan, Metal, DirectX 12 or OpenGL support"
+                ));
+                event_loop.exit();
+                return;
+            }
+        };
         self.window = Some(window);
         self.renderer = Some(renderer);
         // Audio is best-effort: if no device is available the viewer still

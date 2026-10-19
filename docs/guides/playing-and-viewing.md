@@ -441,7 +441,8 @@ dialog font at `extracted/font/`, which the pipeline writes by default (or
 `font-extract --disc` rebuilds).
 
 ```bash
-./asset-viewer prot extracted/PROT.DAT --cdname extracted/CDNAME.TXT   # archive browser
+./asset-viewer                                                         # archive browser on ./extracted
+./asset-viewer prot extracted/PROT.DAT                                 # the same, named explicitly
 ./asset-viewer tim  extracted/tim_scan/<entry>/<tim-file>              # one texture
 ./asset-viewer tmd  extracted/tmd_scan                                 # cycle 3D meshes
 ./asset-viewer vab  extracted/PROT/<entry>.BIN --sample 0              # play a sample
@@ -449,7 +450,12 @@ dialog font at `extracted/font/`, which the pipeline writes by default (or
 ```
 
 The scene name is a positional argument here, not a `--scene` flag (`field`,
-`world` and `dialog` all take their subject that way).
+`world` and `dialog` all take their subject that way). Started with no view
+named (a double-click), `asset-viewer` opens the archive browser on the
+`extracted/PROT.DAT` in the current folder or beside the program; with none
+there it says how to make one and points at `legaia-studio`. The browser takes
+entry names from the `CDNAME.TXT` beside `PROT.DAT` unless `--cdname` names
+another.
 
 In the PROT browser: `N` / `P` = next/prev entry, `PgDn` / `PgUp` = jump 10,
 `Esc` = quit; each entry's format is auto-detected and the first viewable

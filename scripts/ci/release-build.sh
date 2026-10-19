@@ -425,7 +425,8 @@ python3 scripts/ci/third-party-licenses.py "${LICENSE_TARGETS[@]}" \
         printf '    Legend of Legaia.exe  double-click entry: legaia-engine without a console\n'
     fi
     printf '    legaia-studio   desktop app: browse, preview and export assets, extract the disc\n'
-    printf '    asset-viewer    windowed viewer: textures, meshes, audio, scenes\n'
+    printf '    asset-viewer    windowed viewer over legaia-extract output (textures, meshes,\n'
+    printf '                    audio, scenes); with no arguments it browses ./extracted\n'
     printf 'Mod + translate\n'
     printf '    legaia-patcher    disc patcher: randomizer, "translate" language packs, manual edits\n'
     printf '    save-tool       memory-card and save-file inspector\n'
