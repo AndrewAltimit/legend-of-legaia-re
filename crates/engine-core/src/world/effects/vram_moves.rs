@@ -85,7 +85,11 @@ impl World {
         for fx in std::mem::take(&mut self.battle.vram_scrolls) {
             scrolled |= super::super::ambient::apply_scroll_fx(vram, &fx);
         }
-        moved || loaded || scrolled
+        // Capture alignment (empty outside a retail-compare child): a
+        // retail state's live scroller rects, written after the engine's own
+        // rotations as the field VRAM pass writes them.
+        let seeded = self.apply_vram_rect_seed(vram);
+        moved || loaded || scrolled || seeded
     }
 
     /// The mode-4 render tail of the part tick for every live part of an
