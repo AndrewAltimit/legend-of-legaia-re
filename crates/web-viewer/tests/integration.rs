@@ -49,6 +49,7 @@ mod muscle_first_visit_live;
 mod muscle_page_cadence;
 mod muscle_web_real;
 mod new_game_flow_parity;
+mod occlusion_fade_page;
 mod ocean_assets;
 mod overworld_decoration_cue_js;
 mod overworld_ground_cue_glsl;

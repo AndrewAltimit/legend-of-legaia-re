@@ -179,7 +179,12 @@ Two things the browser host has to do that the native one gets for free:
 - **Framing.** The page frames every field / overworld / cutscene shot with the
   ENGINE camera (`play_camera`, below), so the vantage is retail's rather than
   the page's own. The camera-occlusion fade dissolves whatever geometry sits
-  between that lens and the character; nothing is culled.
+  between that lens and the character; nothing is culled. One export,
+  `play_occlusion_fade`, runs the fade's whole frame (arming, gate, ramp); it
+  folds the engine-owned screens (pause menu, a menu-runtime screen) into the
+  arming term itself, so the page passes only its own vantage terms. The call
+  sits inside the frame's `try`, so a throw there costs the fade silently -
+  `tests/occlusion_fade_page.rs` pins that its arguments are declared.
 
 ## The camera (`play_camera`)
 

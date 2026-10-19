@@ -274,13 +274,21 @@
        * when a focus is to be staged. The centre is the point the gate
        * tested (`field_occlusion::player_body_centre`); the feet anchor the
        * feet-line rule. A bundle predating the export draws no fade. */
+      /* The screen term is the page's own screens only - it has none left;
+       * the pause menu, a shop / inn / exchange and the naming prompt are
+       * engine state the export folds in itself. A throw here is logged
+       * once: this `try` once swallowed a ReferenceError every frame, and
+       * the fade silently never staged. */
       if (typeof rt.play_occlusion_fade === 'function') {
         let f = null;
         try {
           const eye = this._eye();
           f = rt.play_occlusion_fade(eye[0], -eye[1], eye[2], !!this.occlusionFade,
-            !!(fpLive || this.debugCamera), !!(menuOpen || shopOpen || namingOpen));
-        } catch (_) { f = null; }
+            !!(fpLive || this.debugCamera), false);
+        } catch (e) {
+          f = null;
+          if (!this._occlWarned) { this._occlWarned = true; console.warn('occlusion fade', e); }
+        }
         if (f && f.length >= 7) {
           this.renderer.setOcclusionFocus([f[1], f[2], f[3]], f[0], [f[4], f[5], f[6]]);
         }

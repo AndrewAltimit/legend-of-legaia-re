@@ -1330,6 +1330,24 @@ mod tests {
         assert_eq!(back, opts);
     }
 
+    /// The two render enhancements that became options late: on by default,
+    /// and an options file written before they existed reads them as on, not
+    /// as `false` - an old store must not silently switch see-through walls
+    /// or lamp shadows off.
+    #[test]
+    fn occlusion_fade_and_light_shadows_default_on_and_survive_old_files() {
+        let opts = OptionsState::default();
+        assert!(opts.occlusion_fade && opts.light_shadows);
+        let old: OptionsState =
+            toml::from_str("muted = true\nvolumetric_fog = false\nenhanced_lighting = true\n")
+                .unwrap();
+        assert!(old.occlusion_fade && old.light_shadows && old.muted && !old.volumetric_fog);
+        let mut off = opts.clone();
+        off.occlusion_fade = false;
+        let back: OptionsState = toml::from_str(&toml::to_string(&off).unwrap()).unwrap();
+        assert!(!back.occlusion_fade, "an explicit off persists");
+    }
+
     #[test]
     fn rows_match_retail_display_order() {
         let rows = OptionsState::default().rows();
