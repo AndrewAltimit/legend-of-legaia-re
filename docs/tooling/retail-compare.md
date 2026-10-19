@@ -1813,12 +1813,18 @@ Its misses fall into two shapes:
   which entered the town before the conversation, still has them parked.
   `nivora_cutscene_delilas_intro` misses the same way. The flags channel
   reads the bitmap now, not at entry, so it cannot see this.
-- **Half-tile drift from the spawn.** A handful of placements stand 64 units
-  (half a tile) off their MAN spawn in retail on one or both axes - `izumi`
-  flat 6, `kor5` flat 14, `ropeway` flats 46 / 50, `dolk` / `dolk2` and
-  `town0c` - where the engine stands on the spawn byte exactly as
-  `FUN_8003A1E4` decodes it. Whatever moves them after the spawn is not
-  traced.
+- **A cutscene's closing placement.** A handful of placements stand 64
+  units (half a tile) off their MAN spawn in retail - `izumi` flat 6, `kor5`
+  flat 14, `ropeway` flats 46 / 50, `dolk` / `dolk2` and `town0c` - where the
+  engine stands on the spawn byte exactly as `FUN_8003A1E4` decodes it
+  (`(b & 0x7F) * 0x80 + 0x40`, `+ 0x80` with bit 7, `0x8003A330..0x8003A384`).
+  `kor5` flat 14 (Old Deez) is a script's doing: the cutscene `P2[3]` walks
+  him off and puts him back with `A3 0E 20 5D` (`+0x115E`, tile `(32, 93)` =
+  `(4160, 11968)`), not on his spawn byte `0xDC` (`11904`), then latches
+  `0x43A` (`+0x14CB`). A later entry, retail's or the engine's, runs no
+  `P2[3]` and spawns him on `0xDC`; the two `kor5` states were captured in the
+  visit the cutscene ran in. `kor5_field_card_boot`, before it, scores him
+  exact. The other placements' movers are not traced.
 
 ## The image channel
 
