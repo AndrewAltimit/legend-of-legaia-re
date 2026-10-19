@@ -160,9 +160,14 @@ pub fn emit_tile(rec: &crate::battle_intro_tiles::TileRecord, prims: &mut Vec<Sc
         let p: [ProjCorner; 4] =
             std::array::from_fn(|i| project_intro_corner(&rot, tr, q.corners[i]));
         let grey = u32::from(q.grey);
+        let uv = if q.tpage == crate::battle_intro_tiles::SHADE_TPAGE {
+            q.uv
+        } else {
+            unwrap_bottom_edge_v(q.uv)
+        };
         push_ft4_quad(
             &p,
-            q.uv,
+            uv,
             q.clut,
             q.tpage,
             grey << 16 | grey << 8 | grey,
@@ -171,6 +176,33 @@ pub fn emit_tile(rec: &crate::battle_intro_tiles::TileRecord, prims: &mut Vec<Sc
             prims,
         );
     }
+}
+
+/// The bottom tile row's `v` without the byte wrap.
+///
+/// The seeder stores `v = (y + 0x800) >> 4` with `sb` (`0x801D0AC0`), so the
+/// grid's bottom edge (`y = 0x800`, `v = 0x100`) is stored as `0`, and a
+/// bottom-row tile's texture runs from `v = 240` back down to `0` across it -
+/// a squashed, upside-down copy of the page. Retail never shows that at rest:
+/// the bottom row starts on screen row `236`, below its `224`-row draw area.
+/// The port draws a `240`-row frame, so its last rows would show it (the
+/// band under every intro frame). Here a corner at `v = 0` on a face whose
+/// other corners sit in the page's lower half is read as the `0x100` it was
+/// computed as, saturated to `0xFF` - one texel short over sixteen rows - so
+/// the bottom row samples the frame's last rows as every other row samples
+/// its own.
+///
+/// PORT: the one departure from `FUN_801D081C`'s stored bytes, confined to
+/// faces whose `v` straddles the wrap - only the bottom tile row's.
+pub(super) fn unwrap_bottom_edge_v(mut uv: [(u8, u8); 4]) -> [(u8, u8); 4] {
+    if uv.iter().any(|&(_, v)| v >= 0x80) {
+        for c in &mut uv {
+            if c.1 == 0 {
+                c.1 = 0xFF;
+            }
+        }
+    }
+    uv
 }
 
 /// Backface handling of one dispatched packet - the dispatcher's NCLIP mask.
@@ -227,4 +259,25 @@ pub(super) fn push_ft4_quad(
         depth: None,
     }));
     true
+}
+
+#[cfg(test)]
+mod tests {
+    use super::unwrap_bottom_edge_v;
+
+    /// The bottom tile row's stored bytes (`v = 240` top, `0` bottom - the
+    /// `0x100` the seeder's `sb` wrapped) read as `240..=255`; every other
+    /// row, the top row's genuine `v = 0` included, is untouched.
+    #[test]
+    fn only_the_wrapped_bottom_edge_unwraps() {
+        let bottom = [(0, 240), (20, 240), (0, 0), (20, 0)];
+        assert_eq!(
+            unwrap_bottom_edge_v(bottom),
+            [(0, 240), (20, 240), (0, 255), (20, 255)]
+        );
+        let top = [(0, 0), (20, 0), (0, 16), (20, 16)];
+        assert_eq!(unwrap_bottom_edge_v(top), top);
+        let middle = [(0, 112), (20, 112), (0, 128), (20, 128)];
+        assert_eq!(unwrap_bottom_edge_v(middle), middle);
+    }
 }

@@ -341,6 +341,11 @@ transition's texture-page words decode to, each spanning VRAM columns
 `320..=639` on its own row. Only **`FIELD_CAPTURE_COLS` is a capture
 destination**: the rows rect is the intermediate the curtain's column pass
 renders into every frame, and no style samples it from the capture.
+Inside the columns page the frame lands four rows down
+(`FIELD_CAPTURE_LAND`, retail's drawn-row-to-`v` offset) and the rows around
+it are cleared to transparent (`FIELD_CAPTURE_CLEARS`), as the transition
+init does
+([where the capture lands](battle-stage-camera.md#where-the-capture-lands-in-the-page)).
 
 ## Field-to-battle transition emitter
 

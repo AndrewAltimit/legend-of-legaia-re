@@ -4,7 +4,8 @@ use super::*;
 use crate::battle_intro_transition::IntroQuad;
 use crate::screen_prim::{ScreenPrim, ScreenQuad};
 use crate::vram_capture::{
-    FIELD_CAPTURE_COLS, FIELD_CAPTURE_ROWS, PSX_SCREEN_HEIGHT, PSX_SCREEN_WIDTH, VramRect,
+    FIELD_CAPTURE_PAGE, FIELD_CAPTURE_ROWS, FIELD_CAPTURE_V_OFFSET, PSX_SCREEN_HEIGHT,
+    PSX_SCREEN_WIDTH, VramRect,
 };
 use legaia_tim::Vram;
 
@@ -100,7 +101,7 @@ impl BattleIntro {
             blit_intro_quad(
                 q,
                 &self.capture_src,
-                FIELD_CAPTURE_COLS,
+                FIELD_CAPTURE_PAGE,
                 rect,
                 &mut self.intermediate,
             );
@@ -131,11 +132,14 @@ impl BattleIntro {
     /// down (the wash is re-armed on every frame including the first).
     pub(super) fn update_curtain_display_trail(&mut self) {
         let (w, h) = (PSX_SCREEN_WIDTH as usize, PSX_SCREEN_HEIGHT as usize);
-        if self.capture_src.len() < w * h {
+        if self.capture_src.len() < (usize::from(FIELD_CAPTURE_V_OFFSET) + h) * w {
             return;
         }
         if self.display_accum.len() != w * h {
-            self.display_accum = self.capture_src.clone();
+            // The display is in drawn rows; the page holds drawn row `d` at
+            // `v = d + FIELD_CAPTURE_V_OFFSET`.
+            let skip = usize::from(FIELD_CAPTURE_V_OFFSET) * w;
+            self.display_accum = self.capture_src[skip..skip + w * h].to_vec();
         }
         decay_15bpp(&mut self.display_accum, CURTAIN_DISPLAY_DECAY_5);
         if let Some(page) = self.captured.as_mut() {
@@ -195,14 +199,15 @@ impl BattleIntro {
     }
 }
 
-/// Lift [`FIELD_CAPTURE_COLS`] out of `page` as a flat halfword image.
+/// Lift [`FIELD_CAPTURE_PAGE`] - the column rect and the rows below it a
+/// texel coordinate can still name - out of `page` as a flat halfword image.
 ///
-/// The curtain's column pass samples that rect while writing
+/// The curtain's column pass samples that page while writing
 /// [`FIELD_CAPTURE_ROWS`] of the same page, which a borrow cannot express - and
 /// the source never changes after the one-shot capture, so a copy is also the
 /// cheaper answer.
 pub(super) fn lift_capture_src(page: &Vram) -> Vec<u16> {
-    let src = FIELD_CAPTURE_COLS;
+    let src = FIELD_CAPTURE_PAGE;
     (0..src.h as usize)
         .flat_map(|y| (0..src.w as usize).map(move |x| (src.x as usize + x, src.y as usize + y)))
         .map(|(x, y)| page.pixel(x, y))

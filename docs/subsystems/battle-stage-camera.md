@@ -1381,6 +1381,42 @@ on the page also the volumetric fog, which draws after the 3D pass.
 `LEGAIA_BATTLE_ARM_TICK=<n>` holds a `--battle` arm until world tick `n` so
 the capture follows frames the window has already drawn.
 
+### Where the capture lands in the page
+
+Retail's field draws a `224`-row area starting at VRAM row `4`
+(`FUN_8001DAF8(0x140)` installs both draw environments at `y = 4` and
+`y = 0xF4`), and the transition init (`FUN_801CE8CC`) copies `0xE8` display
+rows from row `0` - `MoveImage` at `0x801CEBC8`, `StoreImage`, the mask-bit
+loop, `LoadImage(320, 256, 320, 232)` at `0x801CEC4C` - then clears three rects
+to `0x0000`: `(320, 256, 320, 4)`, `(320, 484, 320, 28)` and
+`(640, 256, 16, 256)`. So drawn row `d` sits at page `v = d + 4`, and every
+style's texel coordinates are authored against that: the particle grids
+seed `v` from `4`, and the tile grid's projection puts its top edge four
+rows above the screen. A live shatter state's VRAM shows the layout exactly
+(`v 0..=3` and `v >= 228` zero, `v 4..=227` all mask-set;
+`scripts/pcsx-redux/autorun_tile_shatter_page.lua`).
+
+The port lands its frame at the same offset (`vram_capture::FIELD_CAPTURE_LAND`)
+and clears the same rects around it (`FIELD_CAPTURE_CLEARS`), except that it
+lands all `240` rows it draws (`v 4..=243`) where retail lands `224`. Two
+consequences follow from the console's layout:
+
+- The tile shatter and the particle styles start on the field as it was;
+  landing at `v = 0` put their first frame four rows high.
+- The curtain's column record (descriptor `2`, `v0 = 0`, `h = 240`) samples
+  from `v = 0`, so its identity frame is the field four rows *down* over four
+  black rows, on the console as in the port.
+
+The bottom tile row is the one place the port departs from the stored bytes.
+The seeder stores `v = (y + 0x800) >> 4` with `sb` (`0x801D0AC0`), so the
+grid's bottom edge (`v = 0x100`) wraps to `0` and a bottom-row tile maps
+`v = 240` down to `0` - a squashed, inverted copy of the page. On the console
+that row starts on screen row `236`, under the `224`-row draw area, so it is
+never seen at rest. The port's frame is `240` rows tall, and the wrap showed
+as a band of garbage across its last rows on every shatter frame;
+`battle_intro::emit_tile` reads a wrapped bottom edge as `0xFF`
+(`unwrap_bottom_edge_v`).
+
 Per-style packet detail - what each emitter builds, the dispatcher flag decode,
 and the two nuances the port leaves un-carried - is on
 [`cutscene.md`](cutscene.md#per-style-emitters-render-track-gtegpu).

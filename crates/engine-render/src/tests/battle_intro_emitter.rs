@@ -28,7 +28,7 @@ use legaia_render_kernels::battle_intro_styles::{CURTAIN_COLS, CURTAIN_ROWS, Int
 use legaia_render_kernels::battle_intro_swirl::SwirlTrig;
 use legaia_render_kernels::screen_prim::ScreenPrim;
 use legaia_render_kernels::vram_capture::{
-    CaptureOpts, FIELD_CAPTURE_COLS, FIELD_CAPTURE_ROWS, PSX_SCREEN_HEIGHT, PSX_SCREEN_WIDTH,
+    CaptureOpts, FIELD_CAPTURE_LAND, FIELD_CAPTURE_ROWS, PSX_SCREEN_HEIGHT, PSX_SCREEN_WIDTH,
     blit_rgba_into_vram,
 };
 use legaia_tim::Vram;
@@ -179,7 +179,7 @@ fn expected_frame() -> Vec<u8> {
 }
 
 /// The page the one-shot capture leaves behind: the field frame in
-/// [`FIELD_CAPTURE_COLS`] and nothing in [`FIELD_CAPTURE_ROWS`], because the
+/// [`FIELD_CAPTURE_LAND`] (four rows into the column page) and nothing in [`FIELD_CAPTURE_ROWS`], because the
 /// rows rect is the intermediate the curtain's column pass renders each frame.
 fn vram_with_capture() -> Vram {
     let mut vram = Vram::new();
@@ -189,7 +189,7 @@ fn vram_with_capture() -> Vram {
         PSX_SCREEN_WIDTH as u32,
         PSX_SCREEN_HEIGHT as u32,
         &mut vram,
-        FIELD_CAPTURE_COLS,
+        FIELD_CAPTURE_LAND,
         CaptureOpts { set_mask_bit: true },
     );
     vram
@@ -1123,7 +1123,25 @@ fn the_curtain_redraws_the_captured_field_frame_and_then_opens_it() {
         return;
     };
     let (w, h_px) = (PSX_SCREEN_WIDTH as usize, PSX_SCREEN_HEIGHT as usize);
-    let source = expected_frame();
+    // Retail's column record samples `v = 0..240` of a page whose drawn row
+    // `d` sits at `v = d + 4` (`FIELD_CAPTURE_V_OFFSET`), so the identity
+    // curtain shows the field four rows down, over the intermediate's opaque
+    // black start - the console's own picture, not a port slip.
+    let off = usize::from(legaia_render_kernels::vram_capture::FIELD_CAPTURE_V_OFFSET);
+    let field = expected_frame();
+    let source: Vec<u8> = (0..h_px)
+        .flat_map(|y| {
+            let field = &field;
+            (0..w).flat_map(move |x| {
+                if y < off {
+                    [0, 0, 0, 0xFF]
+                } else {
+                    let o = ((y - off) * w + x) * 4;
+                    [field[o], field[o + 1], field[o + 2], 0xFF]
+                }
+            })
+        })
+        .collect();
     let mut it = intro(IntroStyle::Curtain, 400);
 
     // Both passes, in retail's order. The capture lands in the columns rect
@@ -1215,7 +1233,9 @@ fn the_curtain_redraws_the_captured_field_frame_and_then_opens_it() {
 mod capture_rects {
     use legaia_render_kernels::battle_intro::{TILE_SHADE_PAGE, capture_rects_for};
     use legaia_render_kernels::battle_intro_styles::IntroStyle;
-    use legaia_render_kernels::vram_capture::{FIELD_CAPTURE_COLS, FIELD_CAPTURE_ROWS, VramRect};
+    use legaia_render_kernels::vram_capture::{
+        FIELD_CAPTURE_COLS, FIELD_CAPTURE_LAND, FIELD_CAPTURE_ROWS, VramRect,
+    };
 
     /// Halfword-rect overlap, the relation that makes the clobber a clobber.
     fn overlaps(a: VramRect, b: VramRect) -> bool {
@@ -1237,7 +1257,7 @@ mod capture_rects {
     #[test]
     fn tile_shatter_captures_columns_only() {
         let rects = capture_rects_for(IntroStyle::TileShatter);
-        assert_eq!(rects, [FIELD_CAPTURE_COLS]);
+        assert_eq!(rects, [FIELD_CAPTURE_LAND]);
         assert!(
             !rects.iter().any(|r| overlaps(*r, TILE_SHADE_PAGE)),
             "the tile style must not blit over its own shade page"
@@ -1251,7 +1271,7 @@ mod capture_rects {
         // runs under `SetDrawArea(320, 0, 320, 240)` and renders it, every
         // frame. Blitting the capture into it would be overwritten by the
         // first column strip.
-        assert_eq!(capture_rects_for(IntroStyle::Curtain), [FIELD_CAPTURE_COLS]);
+        assert_eq!(capture_rects_for(IntroStyle::Curtain), [FIELD_CAPTURE_LAND]);
     }
 
     #[test]
@@ -1264,7 +1284,7 @@ mod capture_rects {
             IntroStyle::SpinUpParticles,
             IntroStyle::Swirl,
         ] {
-            assert_eq!(capture_rects_for(s), [FIELD_CAPTURE_COLS]);
+            assert_eq!(capture_rects_for(s), [FIELD_CAPTURE_LAND]);
         }
         // The page decode behind that claim: 15bpp texpage x/y from the TSB.
         for tpage in [0x135u16, 0x139, 0x115, 0x117] {
@@ -1448,7 +1468,11 @@ mod curtain_accumulation {
             .iter()
             .map(|q| q.verts[0].y)
             .collect();
-        let gap_y = (0..PSX_SCREEN_HEIGHT as i16)
+        // Below the four rows the identity frame paints black: retail's
+        // column record samples from `v = 0`, four rows above the drawn
+        // frame (`FIELD_CAPTURE_V_OFFSET`), so those rows carry no field.
+        let off = legaia_render_kernels::vram_capture::FIELD_CAPTURE_V_OFFSET as i16;
+        let gap_y = (off..PSX_SCREEN_HEIGHT as i16)
             .find(|y| !landed.contains(y))
             .expect("some scanline must be a gap at clock 28");
         // That scanline of the model is its frame-1 content one more wash step

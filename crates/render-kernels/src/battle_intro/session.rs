@@ -9,7 +9,7 @@ use crate::battle_intro_tiles as tiles;
 use crate::battle_intro_tiles::TileGrid;
 use crate::battle_intro_transition::IntroQuad;
 use crate::screen_prim::ScreenPrim;
-use crate::vram_capture::CaptureOpts;
+use crate::vram_capture::{CaptureOpts, FIELD_CAPTURE_CLEARS};
 use legaia_tim::Vram;
 
 /// The per-style working set, one variant per [`IntroStyle`].
@@ -73,8 +73,9 @@ pub struct BattleIntro {
     /// transition draws against. `None` = no disc access; the shade faces
     /// then sample whatever the base page holds.
     shade_pack: Option<legaia_actor_formats::field_char_textures::FieldCharTextures>,
-    /// The captured frame lifted out of [`FIELD_CAPTURE_COLS`] as a plain
-    /// `320 x 240` halfword image, so the curtain's column pass can sample it
+    /// The captured page lifted out of
+    /// [`crate::vram_capture::FIELD_CAPTURE_PAGE`] as a plain `320 x 256`
+    /// halfword image (the frame sits four rows down in it), so the curtain's column pass can sample it
     /// while the same page is being written. Empty for every other style.
     pub(super) capture_src: Vec<u16>,
     /// This frame's **column**-pass quads, held between [`BattleIntro::tick`]
@@ -283,8 +284,10 @@ impl BattleIntro {
 
     /// Land the one-shot field-frame capture: blit the drawn frame (an RGBA8
     /// readback, any resolution - it is point-sampled down) into the rects
-    /// [`capture_rects_for`] names - [`FIELD_CAPTURE_COLS`] for every style,
-    /// since no style samples the rows rect (see the module docs). The mask
+    /// [`capture_rects_for`] names - [`crate::vram_capture::FIELD_CAPTURE_LAND`]
+    /// inside the column page for every style, since no style samples the
+    /// rows rect (see the module docs) - after clearing the page around it as
+    /// retail's init does ([`FIELD_CAPTURE_CLEARS`]). The mask
     /// bit is set so a black field pixel samples as opaque black rather than
     /// as a transparent hole.
     ///
@@ -324,6 +327,15 @@ impl BattleIntro {
         };
         let page = self.captured.insert(base.clone());
         let opts = CaptureOpts { set_mask_bit: true };
+        // Retail's init clears the page around its capture to `0x0000`
+        // (transparent): the rows above the frame, the rows below it and the
+        // strip past the right edge (`FIELD_CAPTURE_CLEARS`). A texel
+        // coordinate that reaches past the frame then reads as a hole, not as
+        // whatever the scene left in VRAM there.
+        for r in FIELD_CAPTURE_CLEARS {
+            let zeros = vec![0u8; usize::from(r.w) * usize::from(r.h) * 2];
+            page.write_block(r.x, r.y, r.w, r.h, &zeros);
+        }
         for rect in capture_rects_for(style) {
             crate::vram_capture::blit_rgba_into_vram(rgba, width, height, page, *rect, opts);
         }
@@ -441,7 +453,8 @@ mod capture_landing_tests {
         }
         let red = 0x8000 | 0x1F;
         let blue = 0x8000 | (0x1F << 10);
-        let (x, y) = (FIELD_CAPTURE_COLS.x as usize, FIELD_CAPTURE_COLS.y as usize);
+        let land = crate::vram_capture::FIELD_CAPTURE_LAND;
+        let (x, y) = (land.x as usize, land.y as usize);
 
         let mut plain = bare_intro(IntroStyle::ScatterParticles);
         plain.land_capture_rgba(&rgba, 2, 2, &Vram::new());
@@ -456,6 +469,47 @@ mod capture_landing_tests {
         let page = flipped.captured_vram().expect("capture landed");
         assert_eq!(page.pixel(x, y), blue, "flipped: bottom row first");
         assert_eq!(page.pixel(x, y + 239), red, "flipped: top row last");
+    }
+
+    /// The page around the frame is retail's: drawn row `d` at
+    /// `v = d + 4`, and the rows above and below it, plus the strip past the
+    /// right edge, cleared to transparent `0x0000` whatever the scene's VRAM
+    /// held there - the layout a live retail shatter state's VRAM shows
+    /// (`v 0..=3` and `v >= 228` zero, `v 4..=227` all mask-set).
+    #[test]
+    fn the_capture_lands_four_rows_down_and_clears_around_it() {
+        use crate::vram_capture::{FIELD_CAPTURE_PAGE, FIELD_CAPTURE_V_OFFSET};
+        // A white 320x240 frame over a base page full of non-zero junk.
+        let rgba = vec![0xFFu8; 320 * 240 * 4];
+        let mut base = Vram::new();
+        let junk = vec![0x55u8; 1024 * 512 * 2];
+        base.write_block(0, 0, 1024, 512, &junk);
+        let mut intro = bare_intro(IntroStyle::TileShatter);
+        intro.land_capture_rgba(&rgba, 320, 240, &base);
+        let page = intro.captured_vram().expect("capture landed");
+        let (px, py) = (FIELD_CAPTURE_PAGE.x as usize, FIELD_CAPTURE_PAGE.y as usize);
+        let off = usize::from(FIELD_CAPTURE_V_OFFSET);
+        for x in [0usize, 160, 319] {
+            for v in 0..off {
+                assert_eq!(page.pixel(px + x, py + v), 0, "v {v} above the frame");
+            }
+            assert_eq!(page.pixel(px + x, py + off), 0xFFFF, "drawn row 0 at v 4");
+            assert_eq!(
+                page.pixel(px + x, py + off + 239),
+                0xFFFF,
+                "drawn row 239 at v 243"
+            );
+            for v in off + 240..256 {
+                assert_eq!(page.pixel(px + x, py + v), 0, "v {v} below the frame");
+            }
+        }
+        for y in [256usize, 400, 511] {
+            for x in 640..656 {
+                assert_eq!(page.pixel(x, y), 0, "the x = 640 strip");
+            }
+        }
+        // Outside the cleared rects the base page survives.
+        assert_eq!(page.pixel(656, 300), 0x5555);
     }
 
     /// The capture is a one-shot and `refresh_captured_page` reports the
