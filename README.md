@@ -6,10 +6,6 @@
 
 [![The port in motion: Rim Elm, the world map, Sol Tower, a Gimard summon in battle, a shop, Noa's dance, the slot machine, the Muscle Dome and the opening movie](site/assets/hero-montage.webp)](https://andrewaltimit.github.io/legend-of-legaia-re/)
 
-https://github.com/user-attachments/assets/aff19b4f-312c-44e2-bd44-3e6d99de2b03
-
-The engine booting a real scene, plus the asset viewers. ([direct link](site/assets/legend-of-legaia-re-demo.mp4))
-
 This repository is code and documentation only. **You bring the disc**: nothing Sony owns is committed or distributed, and everything browser-side reads your image locally in the tab - it is never uploaded. See [You bring the disc](#you-bring-the-disc).
 
 ## What you can do with it
