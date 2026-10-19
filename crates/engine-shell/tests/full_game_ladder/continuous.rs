@@ -53,6 +53,19 @@ thread_local! {
     /// ([`pad_ready`]), as a player who met the boss at that door does.
     pub(super) static FIGHT_ON_ARRIVAL: std::cell::RefCell<BTreeSet<String>> =
         const { std::cell::RefCell::new(BTreeSet::new()) };
+    /// The flags the order-checked anchors up to [`LEVEL_LOOKAHEAD`]
+    /// milestones ahead carry between them: a chest whose flag is among
+    /// them is one the retail run had opened by then, and the beats pass
+    /// opens it where it stands ([`chest_ahead`]).
+    pub(super) static CHESTS_AHEAD: std::cell::RefCell<BTreeSet<u16>> =
+        const { std::cell::RefCell::new(BTreeSet::new()) };
+}
+
+/// Whether the continuous hand opens a chest that sets `flag`: the retail
+/// run had it open within [`LEVEL_LOOKAHEAD`] milestones ([`CHESTS_AHEAD`]).
+/// The segmented hands play to the next anchor only.
+pub(super) fn chest_ahead(flag: u16) -> bool {
+    PLAYS_ON.with(std::cell::Cell::get) && CHESTS_AHEAD.with(|c| c.borrow().contains(&flag))
 }
 
 /// Holds [`SAVING_FOR_BOSS`] for a scope and puts back what was there.
@@ -463,6 +476,17 @@ fn part_c_continuous_run() {
         });
         PLAYED_AHEAD.with(|a| *a.borrow_mut() = played);
         NEXT_ANCHOR_FLAGS.with(|a| *a.borrow_mut() = anchor_flags[i + 1].clone());
+        CHESTS_AHEAD.with(|c| {
+            let mut c = c.borrow_mut();
+            c.clear();
+            for k in i + 1..=(i + LEVEL_LOOKAHEAD).min(spine.len() - 1) {
+                if spine[k].order_check
+                    && let Some(f) = &anchor_flags[k]
+                {
+                    c.extend(f.iter().copied());
+                }
+            }
+        });
         // The story items the stretch consumes ([`stretch_errands`]): what
         // its waypoints' and milestone scene's records take from the bag on
         // the way to a flag the next anchor carries.
@@ -657,6 +681,7 @@ fn part_c_continuous_run() {
     STRETCH_FRAMES.with(|f| f.set(PAD_SEGMENT_FRAMES));
     TARGET_LEVELS.with(|t| t.borrow_mut().clear());
     PLAYED_AHEAD.with(|a| *a.borrow_mut() = None);
+    CHESTS_AHEAD.with(|c| c.borrow_mut().clear());
     reset_errands();
     let denom = spine.len() - 1 - start;
     eprintln!();
@@ -668,6 +693,15 @@ fn part_c_continuous_run() {
         eprintln!("[stall] {s}");
     }
     let (steps, aimed) = super::fight_turn::AIM_TALLY.with(std::cell::Cell::take);
+    {
+        let w = &session.host.world;
+        eprintln!(
+            "[point card] held {}, bank {}, toast edges {}",
+            w.point_card_held(),
+            w.minigames.point_card,
+            super::pad_shopping::POINT_TOASTS.with(std::cell::Cell::take)
+        );
+    }
     let (struck, missed) = super::fight_turn::AIM_DISPATCH.with(std::cell::Cell::take);
     eprintln!(
         "[aim] {steps} frame(s) asking the target cursor to step, {aimed} commit(s) aimed off the opening foe; {struck} strike(s) dispatched, {missed} at another foe than the one confirmed"

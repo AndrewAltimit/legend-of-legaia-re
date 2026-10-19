@@ -511,12 +511,24 @@ fn sale_row(w: &legaia_engine_core::world::World, sell: &BTreeSet<u8>) -> Option
         .position(|r| !r.dim && r.count > 0 && sell.contains(&r.id))
 }
 
+thread_local! {
+    /// Shop edges the hand spent dismissing the Point Card toast
+    /// ([`shop_edge`]) over a run.
+    pub(super) static POINT_TOASTS: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
+}
+
 /// One pad edge for the open shop screen. `sell` holds the bag items the
 /// hand sells first ([`surplus_gear`]): Sell, the row, the whole stack.
 fn shop_edge(menu: &MenuRuntime, w: &legaia_engine_core::world::World, sell: &BTreeSet<u8>) -> u16 {
     // The casino prize counter: the hand looks and leaves.
     if menu.prize_session.is_some() {
         return CANCEL;
+    }
+    // A buy made holding the Point Card parks on the card's toast (window
+    // 31, `FUN_801DB7F4` case 4) until a confirm or a cancel.
+    if menu.point_card_toast().is_some() {
+        POINT_TOASTS.with(|n| n.set(n.get() + 1));
+        return PadButton::Cross.mask();
     }
     let sale = sale_row(w, sell);
     if let Some(q) = menu.quantity_view()

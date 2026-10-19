@@ -1017,6 +1017,20 @@ pub(super) fn prop_beats(
 ) -> Vec<PropBeat> {
     use legaia_engine_field::man_field_scripts::{FlagBank, walk_partition_gflag_sites};
     let w = &session.host.world;
+    // A placed chest (a partition-0 record that gives an item) the retail
+    // run had opened a few milestones on is opened where the continuous
+    // hand stands: the Point Card (`town0c` / `town0d` P0[17], `0x10F`)
+    // lies in Rim Elm and is first held at Mt. Rikuroa, and without it no
+    // shop visit ever credits the card's points.
+    let gives_item = |part: usize, rec: usize| {
+        use legaia_engine_field::man_field_scripts::partition_record_span;
+        use legaia_scene_formats::field_disasm::{InsnInfo, LinearWalker};
+        partition_record_span(mf, man, part, rec).is_some_and(|(start, pc0, len)| {
+            LinearWalker::new(&man[start..start + len], pc0)
+                .flatten()
+                .any(|i| matches!(i.info, InsnInfo::GiveItem { .. }))
+        })
+    };
     let wanted = |part: usize| -> BTreeSet<usize> {
         walk_partition_gflag_sites(mf, man, part)
             .iter()
@@ -1027,7 +1041,10 @@ pub(super) fn prop_beats(
                     && !s.text_alias
                     && !s.debug_menu
                     && !w.system_flag_test(s.flag)
-                    && next_anchor_has(s.flag)
+                    && (next_anchor_has(s.flag)
+                        || part == 0
+                            && continuous::chest_ahead(s.flag)
+                            && gives_item(part, s.record))
             })
             .map(|s| s.record)
             .collect()

@@ -214,6 +214,9 @@ continuous run is the only pass in which those writes are load-bearing:
   back to the same counter later. The picker's rows are the present party
   in party-list order (`FUN_801DB380`), and the talk parks on the shop op
   until the screen closes, then resumes past it.
+- **The Point Card.** A run that opens Rim Elm's chest buys with the card
+  held from chapter 1 on, so every purchase runs the accrual and the toast
+  ([below](#how-the-continuous-hand-plays)).
 - **Captured Seru.** A party that fights learns Seru magic and casts it, in
   rounds where another member's strike may land first: a cast queued at a
   monster that has since died goes through the turn picker's dead-target
@@ -341,6 +344,18 @@ Rogue's tower, Jette's fortress and Cort (`chitei2`, 50000 HP), and its
 boss band is already down when the run arrives: a party that left it at
 level 35 lost to Cort six times, one trained there to 41 beat him first
 time.
+
+**It opens the chests the retail run opened.** A placed chest (a
+partition-0 record that gives an item) whose flag an order-checked anchor
+up to five milestones ahead carries is a beat wherever the run stands,
+not only when the next anchor carries it. The Point Card is the case:
+`town0c` / `town0d` P0[17] (`0x10F`) lies in Rim Elm, and the playthrough
+first holds it at Mt. Rikuroa, past every visit the next-anchor rule makes
+there. Holding it, every buy credits the card's points
+(`World::credit_point_card`, `FUN_801DB7F4`'s accrual arm) and parks the
+shop on the card's toast (window 31) until a confirm, which the hand
+presses. The run's `[point card]` line prints whether the card is held,
+the bank and the toast edges pressed.
 
 **Which beats it plays** is still the next anchor's flags. One exception:
 standing early in the scene of the milestone after next, it plays toward
