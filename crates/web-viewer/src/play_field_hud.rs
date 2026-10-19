@@ -56,43 +56,21 @@ impl LegaiaRuntime {
     }
 
     /// Advance the HUD's idle countdown one frame.
+    ///
+    /// Reached only from `tick_frame`'s session arm, so a scene host is
+    /// always up; with none there is no field to read a HUD over.
     pub(crate) fn tick_field_party_hud(&mut self) {
-        let scene = self
-            .scene_host
-            .host()
-            .and_then(|h| h.scene.as_ref().map(|s| s.name.clone()));
-        if scene != self.field_party_hud_scene {
-            self.field_party_hud_scene = scene;
-            self.field_party_hud.rearm();
-        }
-        // Retail's player-engaged rearm term, the one the native window asks
-        // too: a script or conversation that holds the player restarts the
-        // idle countdown every frame.
-        let held = self.scene_host.host().is_some_and(|h| {
-            legaia_engine_core::world_views::world_map_panel_host::field_hud_rearm_held(&h.world)
-        });
-        // Asked one frame late, as retail's routine reads it
-        // (`FieldPartyHud::rearm_term`).
-        if self.field_party_hud.rearm_term(held) {
-            self.field_party_hud.rearm();
-        }
-        let suppressed = self.field_party_hud_suppressed();
-        let (view_mode, pad, player_pos) = match self.scene_host.host() {
-            Some(h) => {
-                let w = &h.world;
-                (
-                    // The Field HP Display option (`_DAT_800845C4`), the
-                    // one engine read the native window shares.
-                    legaia_engine_core::world_views::world_map_panel_host::field_hud_view_mode(w),
-                    legaia_engine_field::world_map_panel_host::packed_pad(w.input.pad()),
-                    w.player_actor_slot
-                        .map(usize::from)
-                        .and_then(|s| w.actors.get(s))
-                        .map(|a| (a.move_state.world_x, a.move_state.world_z)),
-                )
-            }
-            None => (0, 0, None),
+        // Retail's scene-change and player-engaged rearm terms, the step the
+        // native window runs too.
+        let Some(h) = self.scene_host.host() else {
+            return;
         };
+        legaia_engine_screens::field_screens::field_party_hud_rearm(
+            &mut self.field_party_hud,
+            &mut self.field_party_hud_scene,
+            h,
+        );
+        let suppressed = self.field_party_hud_suppressed();
         // The page reports the lead's projected stage-Y off its own
         // view-projection each frame (`set_field_player_screen_y`); until it
         // has, the stand-in keeps the kernel's `None` meaning "staged load
@@ -105,8 +83,14 @@ impl LegaiaRuntime {
         } else {
             Some(ui::field_party_hud::NO_PROJECTION_STAND_IN)
         };
-        self.field_party_hud
-            .tick(suppressed, view_mode, pad, player_pos, 1, projected_y);
+        if let Some(h) = self.scene_host.host() {
+            legaia_engine_screens::field_screens::field_party_hud_tick(
+                &mut self.field_party_hud,
+                &h.world,
+                suppressed,
+                projected_y,
+            );
+        }
     }
 
     /// Resolve this frame's **passive-ability badge column** into

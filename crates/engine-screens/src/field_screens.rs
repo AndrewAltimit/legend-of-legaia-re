@@ -226,3 +226,55 @@ pub fn passive_hud_text_draws(
     }
     out
 }
+
+/// The field party HUD's rearm terms for this frame, the first half of its
+/// per-frame step on both play hosts.
+///
+/// A scene change is retail's rearm condition (its own arm includes "the
+/// staged scene load is still pending"): without it the stationary compare
+/// would run against the previous scene's coordinates and pop the readout up
+/// mid-transition. `scene_latch` is the host's record of the scene the HUD
+/// last ran in. Then retail's player-engaged term: a script or conversation
+/// that holds the player restarts the idle countdown every frame, read a
+/// frame late, the order retail's actor lists run in
+/// (`FieldPartyHud::rearm_term`).
+pub fn field_party_hud_rearm(
+    hud: &mut legaia_engine_field::world_map_panel_host::FieldPartyHud,
+    scene_latch: &mut Option<String>,
+    host: &legaia_engine_scene_host::scene_host::SceneHost,
+) {
+    let scene = host.scene.as_ref().map(|s| s.name.clone());
+    if scene != *scene_latch {
+        *scene_latch = scene;
+        hud.rearm();
+    }
+    let held =
+        legaia_engine_core::world_views::world_map_panel_host::field_hud_rearm_held(&host.world);
+    if hud.rearm_term(held) {
+        hud.rearm();
+    }
+}
+
+/// One frame of the field party HUD's decision kernel, the second half of
+/// its per-frame step on both play hosts: the Field HP Display option
+/// (`_DAT_800845C4`, not a camera mode), the suppress mask over the **packed**
+/// d-pad of the word the world was handed this tick (`World::input` - not a
+/// host's held keys, which would keep the HUD hidden while the world itself
+/// was fed a neutral pad), the player's position for the stationary compare,
+/// and the host's `suppressed` answer and projected stage `y`.
+pub fn field_party_hud_tick(
+    hud: &mut legaia_engine_field::world_map_panel_host::FieldPartyHud,
+    world: &World,
+    suppressed: bool,
+    projected_y: Option<i16>,
+) {
+    let view_mode =
+        legaia_engine_core::world_views::world_map_panel_host::field_hud_view_mode(world);
+    let pad = legaia_engine_field::world_map_panel_host::packed_pad(world.input.pad());
+    let player_pos = world
+        .player_actor_slot
+        .map(usize::from)
+        .and_then(|s| world.actors.get(s))
+        .map(|a| (a.move_state.world_x, a.move_state.world_z));
+    hud.tick(suppressed, view_mode, pad, player_pos, 1, projected_y);
+}

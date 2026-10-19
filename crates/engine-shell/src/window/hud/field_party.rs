@@ -66,25 +66,13 @@ impl PlayWindowApp {
     /// Runs in the mutation phase beside the other per-frame syncs; the draw
     /// pass reads the decision back off the driver.
     pub(in crate::window) fn tick_field_party_hud(&mut self) {
-        // A scene change is retail's rearm condition (its own arm includes
-        // "the staged scene load is still pending"), and without it the
-        // stationary compare would run against the previous scene's
-        // coordinates and pop the HUD up mid-transition.
-        let scene = self.session.host.scene.as_ref().map(|s| s.name.clone());
-        if scene != self.field_party_hud_scene {
-            self.field_party_hud_scene = scene;
-            self.field_party_hud.rearm();
-        }
-        // Retail's player-engaged rearm term: a script or conversation that
-        // holds the player restarts the idle countdown every frame - read
-        // a frame late, the order retail's actor lists run in
-        // (`FieldPartyHud::rearm_term`).
-        let held = legaia_engine_core::world_views::world_map_panel_host::field_hud_rearm_held(
-            &self.session.host.world,
+        // Retail's scene-change and player-engaged rearm terms, the step
+        // the browser play page runs too.
+        legaia_engine_screens::field_screens::field_party_hud_rearm(
+            &mut self.field_party_hud,
+            &mut self.field_party_hud_scene,
+            &self.session.host,
         );
-        if self.field_party_hud.rearm_term(held) {
-            self.field_party_hud.rearm();
-        }
         // A capture taken where a gate is met (a script or battle phase)
         // has no tick to phase-align to: `capture_tick` is only its
         // deadline. A retail countdown of `0` there is a drawn readout, so
@@ -117,26 +105,12 @@ impl PlayWindowApp {
         } else {
             self.field_hud_projected_player_y()
         };
-        let world = &self.session.host.world;
-        // `_DAT_800845C4` is the options screen's Field HP Display row
-        // (Immediate / Gradual / Display Off), not a camera mode - the one
-        // engine read both hosts share.
-        let view_mode =
-            legaia_engine_core::world_views::world_map_panel_host::field_hud_view_mode(world);
-        let player_pos = world
-            .player_actor_slot
-            .map(usize::from)
-            .and_then(|s| world.actors.get(s))
-            .map(|a| (a.move_state.world_x, a.move_state.world_z));
-        // The suppress mask is the PACKED d-pad, so the raw word has to be
-        // converted or nothing ever suppresses. The word is the one the
-        // world was handed this tick (`World::input`), as on the browser
-        // page - not the window's held keys, which keep the HUD hidden while
-        // the world itself was fed a neutral pad (a shop, the narration
-        // crawl, a locked cutscene).
-        let pad = legaia_engine_field::world_map_panel_host::packed_pad(world.input.pad());
-        self.field_party_hud
-            .tick(suppressed, view_mode, pad, player_pos, 1, projected_y);
+        legaia_engine_screens::field_screens::field_party_hud_tick(
+            &mut self.field_party_hud,
+            &self.session.host.world,
+            suppressed,
+            projected_y,
+        );
         // The overworld's idle (`0xA0`) outlasts the run before the capture
         // tick, so the rearm hold above cannot reach a short retail
         // countdown on its own: clamp the running countdown as well.
