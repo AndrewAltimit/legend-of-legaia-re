@@ -68,7 +68,7 @@
       <tr><td><kbd>RShift</kbd></td><td>Select</td></tr>
     </tbody>
   </table>
-  <p><kbd>Esc</kbd> quits. The <a href="../play.html">browser play page</a> ships a <em>different</em> default layout (<kbd>X</kbd> is Circle there, <kbd>C</kbd> / <kbd>V</kbd> carry Triangle / Square, and WASD doubles the arrows), so a key that works in the tab is not necessarily the same button in the window. <code>config show</code> prints the desktop table, including any rebinding.</p>
+  <p><kbd>Esc</kbd> twice quits: the first press only shows <em>Press Esc again to quit</em> at the top of the window, and a second press within three seconds closes it, so a stray press never loses unsaved progress. The <a href="../play.html">browser play page</a> ships a <em>different</em> default layout (<kbd>X</kbd> is Circle there, <kbd>C</kbd> / <kbd>V</kbd> carry Triangle / Square, and WASD doubles the arrows), so a key that works in the tab is not necessarily the same button in the window. <code>config show</code> prints the desktop table, including any rebinding.</p>
   <p><strong>Gamepads.</strong> The native window, the browser play page and the minigames page all read a gamepad, by position: bottom / right / left / top face buttons are Cross / Circle / Square / Triangle, bumpers L1 / R1, triggers L2 / R2, back / start Select / Start, and both the d-pad and the left stick drive the d-pad. The browser takes any controller it reports with the <code>standard</code> mapping; the native window takes any controller its platform's gamepad backend sees. Key Config (Select on the Options screen) rebinds keys only.</p>
   <h3>Camera and window toggles</h3>
   <p>Left-mouse drag orbits the camera around your character (horizontal) and tilts it (vertical), the wheel zooms, and a double-click puts the framing back to retail - all three are locked while a cutscene has the camera.</p>
@@ -238,7 +238,7 @@
   <h2>7 &middot; Record and replay a session</h2>
   <div class="cli"><code>./legaia-engine record --disc "/path/to/disc.bin" --out session.toml</code></div>
   <div class="cli"><code>./legaia-engine replay --input session.toml</code></div>
-  <p><code>record</code> is <code>play-window</code> plus input capture into a small <code>j-replay-v1</code> TOML file. The file is checkpointed to disk about once a second and finalized on window close (<kbd>Esc</kbd>), so an interrupted session still yields a valid file up to the last checkpoint. <code>replay</code> runs it back headless and deterministic - the same file always produces a bit-identical engine trace, and it needs no disc at all.</p>
+  <p><code>record</code> is <code>play-window</code> plus input capture into a small <code>j-replay-v1</code> TOML file. The file is checkpointed to disk about once a second and finalized on window close (<kbd>Esc</kbd> twice, or the window's close button), so an interrupted session still yields a valid file up to the last checkpoint. <code>replay</code> runs it back headless and deterministic - the same file always produces a bit-identical engine trace, and it needs no disc at all.</p>
   <p><code>legaia-engine --help</code> lists many more subcommands; its <code>COMMAND GROUPS</code> footer separates the player-facing ones above from the development diagnostics (parity oracles, synthetic state drivers) you can ignore.</p>
   <div class="see-also">
     <span class="see-also-label">Reference</span>

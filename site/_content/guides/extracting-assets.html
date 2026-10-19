@@ -4,12 +4,27 @@
   <p class="lede">The disc is a sealed box of textures, meshes, music, voice lines and movies, each in a PlayStation-era format no modern program opens. This page turns each of them into something you can look at or listen to - PNG, OBJ, Blender-ready glTF, WAV, frame sequences - one scenario at a time, with the exact commands. Everything runs against your own disc image or the <code>extracted/</code> tree it produces.</p>
 </header>
 
+<section class="doc-section" id="studio">
+  <h2>Without a terminal: Legaia Studio</h2>
+  <p>The release archive's <code>legaia-studio</code> (<code>legaia-studio.exe</code> on Windows, <code>Legaia Studio.app</code> on macOS) does the common cases with buttons.</p>
+  <ol>
+    <li><strong>Open</strong> your disc image (the <code>.bin</code> of a Mode2/2352 dump, or its <code>.cue</code>) with <em>Open disc image...</em>, by typing its path, or by dropping it on the window. A folder <code>legaia-extract</code> already wrote opens too, and the last disc reopens next time.</li>
+    <li><strong>Browse</strong> the archive: entries grouped under their CDNAME names and the place each scene is (<code>town01 - Rim Elm</code>). The search (<kbd>Ctrl</kbd>+<kbd>F</kbd>) matches every word against the name, the place, the category and the index, so <code>rim elm</code> finds every Rim Elm scene.</li>
+    <li><strong>Preview</strong> textures (with a palette slider), 3D models, audio, text and hex, and <strong>export</strong> PNG, OBJ, textured <code>.glb</code>, WAV or the raw bytes. <em>Show folder</em> on the status line opens where an export went.</li>
+    <li><strong>Extract</strong> the whole disc from the <em>Extract</em> tab, with progress, cancel and <em>Open output folder</em> at the end. It writes exactly what the <code>legaia-extract</code> command produces.</li>
+    <li><strong>Characters &amp; monsters</strong> and <strong>Movies &amp; voice</strong> show the party, every monster with its animations, the movies and the CD-XA audio, each exportable.</li>
+    <li><strong>Play</strong> starts the game (<code>legaia-engine</code>, shipped in the same folder) on the open disc at the title screen, with the same saves and settings as starting it directly. It needs the USA disc image; hovering a disabled button says why.</li>
+  </ol>
+  <p class="hint"><kbd>F1</kbd> opens About. Studio ships no game data and uploads nothing: it reads the disc you choose and writes only where you tell it.</p>
+</section>
+
 <section class="doc-section" id="at-a-glance">
   <h2>At a glance</h2>
   <p>Pick the scenario that matches what you want out of the disc. Each is two or three commands.</p>
   <table>
     <thead><tr><th>I want...</th><th>Tool</th><th>Scenario</th></tr></thead>
     <tbody>
+      <tr><td>Browse, preview and export with buttons</td><td><code>legaia-studio</code></td><td><a href="#studio">Legaia Studio</a></td></tr>
       <tr><td>Textures as PNG</td><td><code>asset tim-scan</code> + <code>tim convert-dir</code></td><td><a href="#textures">Textures</a></td></tr>
       <tr><td>Field / battle meshes as OBJ</td><td><code>asset tmd-scan</code> + <code>tmd dump-obj</code></td><td><a href="#models">3D models</a></td></tr>
       <tr><td>A monster with its animations, in Blender</td><td><code>asset monster-archive --glb</code></td><td><a href="#monsters-gltf">Monsters</a></td></tr>
