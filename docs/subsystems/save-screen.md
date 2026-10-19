@@ -30,7 +30,7 @@ portrait sheet on [`save-icon.md`](../formats/save-icon.md).
 | Card drivers | `FUN_801DAE24` (load, `0x18`) / `FUN_801DAEF4` (save, `0x19`) over `FUN_801DD35C` | `SaveScreenFlow` + `SaveSelectSession` |
 | Card I/O | `FUN_801E3294` (libcd machine), `FUN_801E13B8` (op sequencer), the `bu` wrappers | `CardIoMachine`; block I/O is `legaia_save`'s synchronous card layer |
 | Directory walk | `FUN_801E3AF0` / `FUN_801E3BA0` / `FUN_801E1208` | `card_directory_scan` / `card_free_blocks` / `classify_card_directory` |
-| Block compose | `FUN_801E1934`: memset, copy `0x1A18` live bytes, checksum at `+0x1FFC` | `engine-core::card_write::write_save_into_card` over `legaia_save` |
+| Block compose | `FUN_801E1934`: memset, copy `0x1A18` live bytes, checksum at `+0x1FFC` | `engine-menu-runtime::card_write::write_save_into_card` over `legaia_save` |
 | Checksum | `FUN_801E38D8` | `save_block_checksum`, `legaia_save::card::sc_block_checksum_valid` |
 | Drawing | `FUN_801E1C1C`, `FUN_801E36C4`, `FUN_801E06C0`, `FUN_801E08D8` | `engine-ui::title_save` (`save_select_overlay_draws`) |
 
@@ -361,7 +361,7 @@ position it is standing on and lets the BIOS place the file in whatever block
 is free, so a real card can hold `-03` in block 1 and `-00` in block 2. That
 number keys `FUN_801E1208`'s class array and is what the block's title digits
 spell. Retail never reconciles the spaces; a host that addresses a **block**
-must. `engine-core::card_write::card_save_index` keeps a claimed block's
+must. `engine-menu-runtime::card_write::card_save_index` keeps a claimed block's
 existing number (an overwrite does not re-claim the directory frame) and
 otherwise picks a number no file on the card uses, read out of
 `classify_card_directory` - two files with one number are not representable
@@ -572,7 +572,7 @@ host drives them, by design: both card backends are synchronous (the browser
 rack patches the container bytes, the native window mounts a real `.mcr` with
 `play-window --card` and writes the image file back), so there is no
 asynchronous BIOS beat to sequence. Both writes go through one kernel,
-[`engine-core::card_write::write_save_into_card`](../../crates/engine-core/src/card_write.rs).
+[`engine-menu-runtime::card_write::write_save_into_card`](../../crates/engine-menu-runtime/src/card_write.rs).
 `FUN_801E1114` is ported as `save_select::card_frame_tick`, which
 `SaveScreenFlow` runs every frame; its rebuild arm is never taken, because the
 port commits a save in one call and raises no commit phase.
@@ -987,7 +987,7 @@ The **resume point** has its own writer,
 CDNAME label NUL-padded to `0x10` bytes at `0x408` and the banner name to
 `0x24` bytes at `0x200`, the same two copies retail's compose makes. The
 engine-ext and block-identity writers are the other siblings.
-`engine-core::card_write::write_save_into_card` applies all of them for both
+`engine-menu-runtime::card_write::write_save_into_card` applies all of them for both
 hosts: save number, payload, engine ext, resume fields, block identity,
 directory claim.
 

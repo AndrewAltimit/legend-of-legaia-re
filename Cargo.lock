@@ -2179,6 +2179,7 @@ dependencies = [
  "legaia-game-tables",
  "legaia-prot",
  "legaia-save",
+ "legaia-ui-formats",
  "tempfile",
 ]
 

@@ -205,7 +205,7 @@ mod tests {
     /// party-less world), so a bare `World::new()` is not a save the Load
     /// path ever reads back.
     fn a_save() -> SaveFile {
-        let mut w = crate::world::World::new();
+        let mut w = legaia_engine_core::world::World::new();
         w.party.money = 1234;
         let mut vahn = legaia_save::CharacterRecord::zeroed();
         let mut hms = vahn.hp_mp_sp();

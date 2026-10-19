@@ -116,7 +116,7 @@ impl LegaiaRuntime {
     /// Write the live session into `block` of the card in rack slot `slot`.
     ///
     /// The bytes are decided by the shared kernel
-    /// [`legaia_engine_core::card_write::write_save_into_card`] - the same one
+    /// [`legaia_engine_menu_runtime::card_write::write_save_into_card`] - the same one
     /// the native window's `--card` port writes through - and stamped **in
     /// place**, so every byte outside the block is the player's own card. The
     /// card is left dirty for the page to export.
@@ -129,7 +129,7 @@ impl LegaiaRuntime {
             .get_mut(slot)
             .and_then(|c| c.as_mut())
             .ok_or_else(|| format!("no memory card in slot {}", slot + 1))?;
-        let wrote = legaia_engine_core::card_write::write_save_into_card(
+        let wrote = legaia_engine_menu_runtime::card_write::write_save_into_card(
             card_slot,
             block,
             &sf,
@@ -961,7 +961,13 @@ mod cross_host {
     ) {
         let sf = s.host.world.save_full();
         let resume = s.current_resume();
-        legaia_engine_core::card_write::write_save_into_card(card, 1, &sf, &resume, Some(index))
-            .expect("native: save");
+        legaia_engine_menu_runtime::card_write::write_save_into_card(
+            card,
+            1,
+            &sf,
+            &resume,
+            Some(index),
+        )
+        .expect("native: save");
     }
 }

@@ -30,7 +30,7 @@
 
 use std::path::{Path, PathBuf};
 
-use legaia_engine_core::card_write::write_save_into_card;
+use legaia_engine_menu_runtime::card_write::write_save_into_card;
 use legaia_engine_mode::mode::SceneMode;
 use legaia_engine_session::native::NativeSession;
 use legaia_engine_session::session::{BootConfig, FieldLiveOpts};
