@@ -126,7 +126,8 @@ pub struct InlineDialogue {
     /// so the record holds at its PC until the leg's terminal frame clears
     /// the bit (`FUN_8003774C`, `0x80038004`).
     pub own_turn: Option<u8>,
-    /// This pass has spawned a record (an own-context op `0x44`). A raw
+    /// This pass has spawned a record (an own-context op `0x44`) or armed a
+    /// mode-24 door warp (`3E` with `op0 >= 100`). A raw
     /// `0x21` after that is the conversation's real end, not a prologue that
     /// failed to reach its box: the talk's effect was the spawn. `vozz`
     /// P1[7], the Genesis Tree, spawns the P2[13] approach and ends on

@@ -297,7 +297,20 @@ impl World {
             } else {
                 None
             };
-            if b == 0x44 {
+            // A record spawn (`44`) or a mode-24 door warp (`3E` with
+            // `op0 >= 100`) is the pass's effect: the raw `0x21` after it is
+            // the real end, never a prologue that failed to reach its box.
+            // Each casino seat (`koin1` P1[51..=56]) warps with no box and
+            // parks on the `21` at `+0x78`; the system script's loop then
+            // re-engages it (`B1 3F..44 08` off flags `0x433..0x435` /
+            // `0x4B6..0x4B8`), resuming at `+0x79`: the wash clear
+            // (`34 01 FF FF FF 00 00`, `34 01 00 00 00 1E 00`) and the
+            // stand-up. Falling back to the first segment there opened the
+            // cabinet's refusal line over a field still under the
+            // subtractive white wash - a black screen behind a "You don't
+            // have any tokens" box after every exit.
+            if b == 0x44 || (b == 0x3E && id.bytecode.get(id.pc + 1).is_some_and(|&op0| op0 >= 100))
+            {
                 id.spawned = true;
             }
             // Inside a halt window the player carries `0x400`, and the
