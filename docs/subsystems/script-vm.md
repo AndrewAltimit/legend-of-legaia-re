@@ -346,6 +346,11 @@ the objects' actors, whose anim tick and draw read them on the next frame; the
 engine routes a system-script `MOVE_TO` to any resolved channel and the
 clip-control writes (`AB` / `AC <id> <bit>`, `CC <id> 35` / `36`) to a resolved
 object's channel and its prop clip (`World::step_field_cross_context_actor_op`).
+A touched object's own record reaches its neighbours the same way: `tower`'s
+lift records open and close the partner lift's door one floor away with
+`AC <id> 07` / `AB <id> 03` / `B1 <id> 00`, and the prop runner steps those
+words on the partner prop (`World::cross_context_object_prop`; see
+[`field-locomotion.md`](field-locomotion.md#prop-door-rides)).
 
 The player is one more target of the same resolve: `FUN_8003C83C(0xF8)`
 returns the player object `*0x8007C364`, so a system-script `A3 F8 <x> <z>`
