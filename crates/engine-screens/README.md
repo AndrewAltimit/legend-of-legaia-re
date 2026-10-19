@@ -50,6 +50,10 @@ nothing. This crate is the projection between them for:
 - the **field message layer** (`field_messages`): the text balloon, the map
   display's labels, the tile-board prompt, the Incense notice and the reading
   box, in one order under one set of gates;
+- the **map display's reads of the world** (`world_map_labels`): the L1
+  display's discovered place labels, compass marks and mini-map panel prims,
+  projected off the world-map camera, which `field_messages` and
+  `screen_layers` draw;
 - the **field-side projections** (`field_screens`): the save-menu atlas'
   band table and badge cells, the name-entry view, the field party HUD;
 - the **frame's field decisions** (`field_frame`): the enhanced scene lights

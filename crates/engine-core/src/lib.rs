@@ -23,7 +23,6 @@ pub mod options;
 pub mod scene_staging;
 pub mod scus_leaf_kernels;
 pub mod world;
-pub mod world_map_labels;
 pub mod world_map_markers;
 pub mod world_views;
 

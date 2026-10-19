@@ -3,6 +3,8 @@ name = "legaia-engine-screens"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+# tests/integration.rs gathers every tests/*.rs into one binary.
+autotests = false
 
 [lib]
 name = "legaia_engine_screens"
@@ -33,3 +35,7 @@ legaia-render-kernels.workspace = true
 
 [dev-dependencies]
 legaia-save.workspace = true
+
+[[test]]
+name = "integration"
+path = "tests/integration.rs"

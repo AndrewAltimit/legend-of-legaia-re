@@ -2,7 +2,7 @@
 //! draw half of PROT 0981's label pass, shared by both hosts.
 //!
 //! The gate and the projection live in `engine-core`
-//! (`legaia_engine_core::world_map_labels`) and arrive here as
+//! (`legaia_engine_screens::world_map_labels`) and arrive here as
 //! `(name, sx, sy)` triples in 320x240 stage pixels. Per label retail makes
 //! three calls (`0x801CF3E4..0x801CF424`):
 //!

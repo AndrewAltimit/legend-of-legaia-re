@@ -209,7 +209,7 @@ impl World {
     /// spawner, which sits past the `0x4000` bytes PROT 0981 replaces.
     ///
     /// REF: FUN_80025F2C (the mode-`0x0D` handler), FUN_801D58F0
-    pub(crate) fn tick_map_display(&mut self) {
+    pub fn tick_map_display(&mut self) {
         use legaia_engine_field::map_display::EXIT_FADE;
         use legaia_engine_field::world_map_panel_host::packed_pad;
         let raw_held = self.input.pad();

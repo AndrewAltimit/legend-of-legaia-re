@@ -18,11 +18,11 @@
 
 use std::path::PathBuf;
 
-use legaia_engine_core::world_map_labels::{
-    map_display_compass_marks, map_display_labels_now, map_display_prims,
-};
 use legaia_engine_field::map_display::MODE_INTERACTIVE;
 use legaia_engine_scene_host::scene_host::SceneHost;
+use legaia_engine_screens::world_map_labels::{
+    map_display_compass_marks, map_display_labels_now, map_display_prims,
+};
 use legaia_engine_system::input::PadButton;
 
 fn extracted_dir() -> Option<PathBuf> {

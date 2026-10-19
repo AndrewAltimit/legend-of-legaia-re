@@ -188,9 +188,7 @@ pub fn compose_screen_prims(
     under.extend(screen_fx_prims(world));
     // The overworld map display's mini-map panel (bucket 1, the text's own:
     // the compass letters the hosts' text layer draws sit on its plates).
-    under.extend(legaia_engine_core::world_map_labels::map_display_prims(
-        world,
-    ));
+    under.extend(crate::world_map_labels::map_display_prims(world));
     if menu.covers_field() {
         under.clear();
     }
