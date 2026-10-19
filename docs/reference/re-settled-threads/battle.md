@@ -253,7 +253,7 @@ Threads whose answer needs more than a table cell. Every other thread is a row o
 | Monster mesh + texture pool | resolved | `capture` | [details ↓](#monster-mesh--texture-pool) |
 | Terra slot-3 / story-flag overlap | resolved | `capture` | [details ↓](#terra-slot-3--story-flag-overlap) |
 | Battle party mesh pack `other5` = **PROT 1204** (battle form; Baka Fighter reuses it) | resolved (empirical) | `capture` | [details ↓](#battle-party-meshes--assembled-from-the-player-battle-files-prot-1204--baka-fighter--default-equipment-sibling) |
-| MP-cost ability-bit priority (half vs quarter) | resolved (dump-confirmed) | `disassembly` | [details ↓](#mp-cost-ability-bit-priority-half-vs-quarter) |
+| MP-cost ability-bit priority (half vs quarter) | resolved (re-read against the instructions) | `disassembly` | [details ↓](#mp-cost-ability-bit-priority-half-vs-quarter) |
 | Scripted Tetsu encounter → Battle (v0.1 oracle Battle leg) | resolved | `capture` | All three inputs derive from disc bytes: the formation-row selection is the standard scripted-battle op `3E FF 04` in `P1[10]` (same case-`0x3E` install arm as Zeto/Caruban; row 4 = lone Tetsu), the sparring-partner reposition is `P1[10]`'s `4C 51 15 0E 07 22` NpcRun→tile `(21,14)` = `RIM_ELM_SPARRING_CARRIER_TUTORIAL_POS` exactly, and the spar Yes/No is a MES-embedded option picker (`0x29` open + N×2 signed relative-jump table, handler `FUN_80038050`; port `legaia_mes::Picker::jump_target` + `InlineDialogueRunner::last_choice`), not a field-VM opcode. [details ↓](#scripted-tetsu-encounter--battle-v01-oracle-battle-leg) |
 | Battle stage backdrop: which `scene_tmd_stream` a scene fights in | resolved | `capture` | A scene bundle carries one stage stream per sub-area, and the battle's is not uniformly the block's first - `map01` uses bundle slot 5 (entry 88), Rim Elm `town01` slot 6 (entry **7**). Engine `ProtIndex::battle_stage_entry_for_scene`. [details ↓](../../subsystems/battle.md#which-stage-stream-a-scene-fights-in) |
 | Battle stage backdrop: is the authored half completed, and how | resolved (two actors; per-stage transform; object 1 dropped) | `capture` + `disassembly` | `FUN_800513F0` allocates **two** actors from one shell TMD (`0x80051A7C..0x80051AC0`, `ctx+0x106C` / `+0x1070`), both drawn. Copy B takes a half turn (`0x80051BC0`) unless the stage is on the `DAT_80078B50` table (`0x80051BCC..0x80051C18`), which mirrors it in X instead (`0x80051CC4..0x80051CE4`). Live in 15 battle saves: both pointers distinct, the split matching the table every time. Not "drawn once, so nothing completes it" ([re-do-not-re-walk.md](../re-do-not-re-walk.md#the-backdrop-shell-is-drawn-once-so-no-completion-exists)). [details ↓](../../subsystems/battle.md#backdrop-shell---two-copies-of-one-mesh). |
@@ -1549,16 +1549,19 @@ Port: the summon band (`engine-battle-vm::battle_action::summon`), the stager an
 
 ### The fade actor's hold word
 
-*Status:* resolved
+*Status:* resolved. Evidence: `disassembly`, re-read against the listing.
 
 A hold of `-1` means **hold the landed colour until the actor is killed** (`FUN_80020C14`,
 `80020c14.txt`).
 
-- After the duration goes negative the tick sets `actor[+0x62] |= 0x100`, then
-  `lh v0,0x1e(a1); bltz v0,0x80020cd4`: a negative hold skips the countdown and the tick goes on
-  ramping and drawing.
-- A non-negative hold counts down and, on expiry, sets `actor[+0x10] |= 8` (finished) and returns
-  `-1` (draw nothing).
+- `a1 = actor + 0x7C`, so the start delay is `+0x98`, the hold `+0x9A` and the duration `+0x9C`.
+  While the delay is positive the tick returns `-1` (`0x80020C28..0x80020C54`).
+- After the duration goes negative the tick sets `actor[+0x62] |= 0x100` (`0x80020C88`), then
+  `lh v0,0x1e(a1); bltz v0,0x80020cd4` (`0x80020C90..0x80020C98`): a negative hold skips the
+  countdown and the tick goes on ramping and drawing.
+- A non-negative hold counts down by the frame step and, once it is no longer positive
+  (`bgtz` at `0x80020CB4`), sets `actor[+0x10] |= 8` (finished, `0x80020CC4`) and returns `-1`
+  (draw nothing).
 - Consequences: the escape white-out persists until the battle unloads; the summon flash-in persists
   until `0x34` kills it.
 - Port: `engine-system::fade::FadeState::step`.
@@ -2025,10 +2028,13 @@ Owning pages: [`battle-data-pack.md`](../../formats/battle-data-pack.md),
 
 ### MP-cost ability-bit priority (half vs quarter)
 
-*Status:* resolved (dump-confirmed)
+*Status:* resolved. Evidence: `disassembly`, re-read against the listing.
 
 Half wins over quarter, and both subtract a right-shifted copy rather than floor-divide
-(`overlay_battle_action_801e295c.txt`).
+(`overlay_battle_action_801e295c.txt`). The bits are the caster record's `+0xF4` word
+(`lw v1,0x6bc(v0)` off `0x80084140`, `0x801E4560` / `0x801E3D04`); the shift sits in each
+branch's delay slot (`srl v0,s0,0x1` at `0x801E4570`, `srl v0,s0,0x2` at `0x801E457C`), so the
+no-bit path's `beq` to `0x801E4584` jumps the one `subu s0,s0,v0` at `0x801E4580`.
 
 - The block is inlined twice, byte-identical: `0x801E4568` in state `0x28` (right after that state's
   capture-archive `jal 0x8003EC70` at `0x801E44EC`) and `0x801E3D0C` in state `0x3C` (right after
