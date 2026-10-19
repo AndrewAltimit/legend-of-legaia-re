@@ -59,7 +59,7 @@ pub enum WorldMapEntityConfig {
         /// The partition-2 record the entrance's walk-on trigger names - the
         /// script retail runs on the crossing. The transition drain replays
         /// the flag operations that open it
-        /// (`legaia_engine_core::place_name_banner::record_leading_flag_writes`).
+        /// (`legaia_engine_scene_host::place_name_banner::record_leading_flag_writes`).
         /// With [`Self::OverworldPortal::object`] set it is instead the
         /// **flat** MAN record a `.MAP` object bind names.
         record: u8,

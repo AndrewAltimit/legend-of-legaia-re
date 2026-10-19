@@ -54,6 +54,7 @@
 //! operations that open the record ([`record_leading_flag_writes`]) before it
 //! loads the destination.
 
+use legaia_engine_core::world::World;
 use legaia_engine_dialog::text_balloon::TextBalloon;
 
 /// System-flag index that arms the banner (`0x80085758` bit `0x20`,
@@ -65,7 +66,7 @@ pub const PLACE_NAME_BANNER_FLAG: u16 = 2;
 /// `name` is the section-2 body up to its NUL; `armed` is system flag
 /// [`PLACE_NAME_BANNER_FLAG`]. Retail tests the name's first byte before the
 /// flag, and spawns only when both hold. The caller clears the flag
-/// unconditionally afterwards (see [`crate::world::World::man_load_place_name_banner`]).
+/// unconditionally afterwards (see [`man_load_place_name_banner`]).
 ///
 /// PORT: FUN_8003AEB0 (`0x8003BB40..0x8003BBC0`, the inlined `FUN_8003C764`
 /// spawn with a zero parent link)
@@ -185,39 +186,36 @@ pub fn record_leading_flag_writes(
     out
 }
 
-impl crate::world::World {
-    /// The MAN loader's banner tail: seat the place-name balloon when system
-    /// flag [`PLACE_NAME_BANNER_FLAG`] is armed and the scene has a name,
-    /// then clear the flag. Returns `true` when a balloon was seated.
-    ///
-    /// A seated banner replaces any live balloon, as retail's handler kills
-    /// its predecessor on its first tick.
-    ///
-    /// PORT: FUN_8003AEB0 (`0x8003BB40..0x8003BBDC`)
-    ///
-    /// Wired: `SceneHost::load_scene` calls this right after
-    /// [`Self::man_load_actor_reset`], the same order the loader runs the
-    /// resume programs (`0x8003BAF0`) and then this tail. Both play hosts
-    /// enter scenes through `SceneHost`, and both draw
-    /// `World::cutscene.text_balloon` through `legaia_engine_ui`'s
-    /// `text_balloon_*_draws_for`.
-    pub fn man_load_place_name_banner(&mut self, name: &[u8]) -> bool {
-        let armed = self.system_flag_test(PLACE_NAME_BANNER_FLAG);
-        let banner = man_load_banner(name, armed);
-        let seated = banner.is_some();
-        if let Some(b) = banner {
-            self.cutscene.text_balloon = Some(b);
-        }
-        // `andi v1,v1,0xdf` at 0x8003BBD4 - reached from every path.
-        self.system_flag_clear(PLACE_NAME_BANNER_FLAG);
-        seated
+/// The MAN loader's banner tail: seat the place-name balloon when system
+/// flag [`PLACE_NAME_BANNER_FLAG`] is armed and the scene has a name,
+/// then clear the flag. Returns `true` when a balloon was seated.
+///
+/// A seated banner replaces any live balloon, as retail's handler kills
+/// its predecessor on its first tick.
+///
+/// PORT: FUN_8003AEB0 (`0x8003BB40..0x8003BBDC`)
+///
+/// Wired: `SceneHost::load_scene` calls this right after
+/// `World::man_load_actor_reset`, the same order the loader runs the
+/// resume programs (`0x8003BAF0`) and then this tail. Both play hosts
+/// enter scenes through `SceneHost`, and both draw
+/// `World::cutscene.text_balloon` through `legaia_engine_ui`'s
+/// `text_balloon_*_draws_for`.
+pub fn man_load_place_name_banner(world: &mut World, name: &[u8]) -> bool {
+    let armed = world.system_flag_test(PLACE_NAME_BANNER_FLAG);
+    let banner = man_load_banner(name, armed);
+    let seated = banner.is_some();
+    if let Some(b) = banner {
+        world.cutscene.text_balloon = Some(b);
     }
+    // `andi v1,v1,0xdf` at 0x8003BBD4 - reached from every path.
+    world.system_flag_clear(PLACE_NAME_BANNER_FLAG);
+    seated
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::world::World;
     use legaia_engine_dialog::text_balloon::{BALLOON_TOTAL, BALLOON_Y, BalloonTick};
 
     #[test]
@@ -241,21 +239,21 @@ mod tests {
     fn the_flag_is_cleared_on_every_path() {
         let mut w = World::new();
         w.system_flag_set(PLACE_NAME_BANNER_FLAG);
-        assert!(w.man_load_place_name_banner(b"Sol"));
+        assert!(man_load_place_name_banner(&mut w, b"Sol"));
         assert!(!w.system_flag_test(PLACE_NAME_BANNER_FLAG));
         assert_eq!(w.cutscene.text_balloon.as_ref().unwrap().text, b"Sol");
 
         // Armed, but the scene has no name: still cleared, nothing seated.
         let mut w = World::new();
         w.system_flag_set(PLACE_NAME_BANNER_FLAG);
-        assert!(!w.man_load_place_name_banner(b""));
+        assert!(!man_load_place_name_banner(&mut w, b""));
         assert!(!w.system_flag_test(PLACE_NAME_BANNER_FLAG));
         assert!(w.cutscene.text_balloon.is_none());
 
         // Not armed: a live balloon is left alone.
         let mut w = World::new();
         w.cutscene.text_balloon = Some(TextBalloon::spawn(b"caption"));
-        assert!(!w.man_load_place_name_banner(b"Sol"));
+        assert!(!man_load_place_name_banner(&mut w, b"Sol"));
         assert_eq!(w.cutscene.text_balloon.as_ref().unwrap().text, b"caption");
     }
 

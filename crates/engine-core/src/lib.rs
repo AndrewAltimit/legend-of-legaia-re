@@ -20,7 +20,6 @@ pub mod live_loop;
 pub mod move_buffer_host;
 pub mod new_game;
 pub mod options;
-pub mod place_name_banner;
 pub mod scene_staging;
 pub mod scus_leaf_kernels;
 pub mod world;

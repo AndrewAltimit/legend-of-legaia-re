@@ -2,7 +2,7 @@
 //!
 //! `FUN_8003AEB0`'s tail seats a `4C E1` text balloon carrying the scene MAN's
 //! section-2 name when system flag 2 is armed, and clears the flag either way
-//! (`legaia_engine_core::place_name_banner`). This drives the real loader path,
+//! (`legaia_engine_scene_host::place_name_banner`). This drives the real loader path,
 //! `SceneHost::load_scene`, over every CDNAME scene with the flag armed and
 //! asserts the balloon carries exactly the section-2 bytes, then pins the
 //! disarmed case and pins which scene scripts raise the flag: the three
@@ -12,12 +12,12 @@
 
 use std::path::PathBuf;
 
-use legaia_engine_core::place_name_banner::{
-    PLACE_NAME_BANNER_FLAG, man_scene_name_bytes, record_leading_flag_writes,
-};
 use legaia_engine_field::man_field_scripts::{FlagBank, walk_partition_gflag_sites};
 use legaia_engine_field::world_map_entity_config::WorldMapEntityConfig;
 use legaia_engine_scene::scene::{ProtIndex, Scene};
+use legaia_engine_scene_host::place_name_banner::{
+    PLACE_NAME_BANNER_FLAG, man_scene_name_bytes, record_leading_flag_writes,
+};
 use legaia_engine_scene_host::scene_host::SceneHost;
 
 fn extracted_dir() -> Option<PathBuf> {

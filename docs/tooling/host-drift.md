@@ -1591,7 +1591,7 @@ screens.
 | name entry | `NameEntryInput::from_pad_edge`; view `engine-screens::field_screens::name_entry_view` (`NameEntry::cursor_cells`, `name_entry::caret_on`) |
 | dev menu | `DevMenuWorldExt::tick_host` (CAMERA row, EQUIP commit), `DevMenuWorldExt::route_sfx` |
 | coin counter (op `0x49` sub-op 6) | `field_submode_screen::coin_counter_lines` through `engine-ui::text_lines::pen_line_draws_for`: the field overlay's entry panel `FUN_801E6F70` (record 10) and confirm panel (record 11) |
-| place-name banner | `engine-core::place_name_banner` from `SceneHost::load_scene` (a text balloon, not the slot-`0x2E` actor whose script `0x801F32B4` only closes panels) |
+| place-name banner | `engine-scene-host::place_name_banner` from `SceneHost::load_scene` (a text balloon, not the slot-`0x2E` actor whose script `0x801F32B4` only closes panels) |
 | minigame purses in a save | `World::save_full` / `load_full`, `LGSF` block `LGX7` ([`save-screen.md`](../subsystems/save-screen.md#the-minigame-purses-are-live-state-words-too)) |
 
 Shop windows 35 and 39 are the tier-1 denominator case

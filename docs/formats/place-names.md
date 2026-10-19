@@ -141,7 +141,7 @@ announces the place.
 **The body is not padded**: it is exactly `strlen + 1` bytes, so a longer name
 needs the section resized. See [editing notes](#editing-notes).
 
-The engine port is `engine-core::place_name_banner`, called from
+The engine port is `engine-scene-host::place_name_banner`, called from
 `SceneHost::load_scene` right after the MAN loader's actor work; both hosts
 draw the result through the shared balloon builders
 (`engine-ui::text_balloon_box`). The engine's overworld entrances do not run

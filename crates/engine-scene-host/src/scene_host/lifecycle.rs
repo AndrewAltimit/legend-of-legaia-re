@@ -255,13 +255,13 @@ impl SceneHost {
         // balloon carrying the MAN's section-2 name, seated when system flag
         // 2 is armed, and the flag cleared either way.
         // PORT: FUN_8003AEB0 (live wiring; kernel =
-        //       `legaia_engine_core::place_name_banner::man_load_banner`)
+        //       `crate::place_name_banner::man_load_banner`)
         let banner_name = self
             .field_man_cache
             .as_ref()
-            .map(|man| legaia_engine_core::place_name_banner::man_scene_name_bytes(man))
+            .map(|man| crate::place_name_banner::man_scene_name_bytes(man))
             .unwrap_or_default();
-        self.world.man_load_place_name_banner(&banner_name);
+        crate::place_name_banner::man_load_place_name_banner(&mut self.world, &banner_name);
         // The loader also installs the section-5 trailer pointer
         // `DAT_80073EE0` - on a kingdom map, the location table the map
         // display labels.

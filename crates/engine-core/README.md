@@ -22,7 +22,7 @@ runtime ([`engine-menu-runtime`](../engine-menu-runtime/README.md)).
   `engine-battle-vm` reaches the game through a host trait; this crate
   implements those traits over `World`.
 - **The `World` half of scene flow.** New Game seeding (`new_game`), the
-  live-loop arming (`live_loop`), the place-name banner, the player-rig source
+  live-loop arming (`live_loop`), the player-rig source
   (`World::player_rig_source`) and the constants the scene host and the tick
   share (`world::EFFECT_MODEL_LIBRARY_BASE`, `world::BGM_SUB_OP_ENGINE_STOP`).
   `SceneHost`, which owns the `World` and the `ProtIndex` and enters and

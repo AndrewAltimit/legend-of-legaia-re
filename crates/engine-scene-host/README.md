@@ -28,13 +28,18 @@ scene, tick it, drain what the tick queued.
   scene entry (the battle tutorial script, the field MAN encounter table).
 - **`fishing_venue`** - the fishing venue's floor and per-frame tick read off
   the host's world and loaded scene.
+- **`place_name_banner`** - the MAN loader's place-name balloon
+  (`FUN_8003AEB0`'s tail): the scene name off the MAN, the banner seated when
+  `PLACE_NAME_BANNER_FLAG` is armed, the flag cleared, and the leading flag writes
+  a scene-entry record makes. Its only callers are this crate's scene load
+  and entry tick.
 
 ## The split line
 
 A rule that reads or writes `World` without the loaded scene or the disc
 index stays in `engine-core`: the tick, the frame-step rules
 (`engine-core::frame_step`), New Game seeding (`engine-core::new_game`), the
-place-name banner, the player-rig source (`World::player_rig_source`). What
+player-rig source (`World::player_rig_source`). What
 this crate adds is the part only the scene's owner can do - reading the disc
 at entry, swapping scenes, handing events to the host's audio. The `World`
 fields it seeds at entry are public for that reason.
