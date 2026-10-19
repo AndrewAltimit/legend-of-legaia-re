@@ -30,6 +30,7 @@ pub const CHANNELS: &[&str] = &[
     "footing",
     "camera",
     "facing",
+    "npcs",
     "bgm",
     "fog_gate",
     "view_window",
@@ -307,6 +308,66 @@ pub(crate) fn facing_score(retail: &RetailObs, engine: &EngineObs) -> Option<(f6
     ))
 }
 
+/// The `npcs` channel: where each placement stands. Every retail node the
+/// engine holds a placement for (matched by flat index, as the facing
+/// channel does) and that no ambient motion stream is walking scores:
+///
+/// * `0` when one side has it on the off-map park seat and the other draws
+///   it - an NPC retail hid that the engine shows, or the reverse;
+/// * nothing when both park it;
+/// * otherwise its `(X, Z)` distance, 1 within 8 units, 0 at 128.
+///
+/// The facing channel only scores a placement within 96 units of its seat,
+/// so without this channel a placement in the wrong place, or one the
+/// engine draws while retail has parked it, scored nowhere.
+pub(crate) fn npc_seat_score(retail: &RetailObs, engine: &EngineObs) -> Option<(f64, String)> {
+    let hide = legaia_engine_field::man_field_scripts::FIELD_OFFMAP_HIDE_XZ;
+    // Retail parks at the seat itself or one tile short of it on an axis.
+    let parked = |x: i16, z: i16| x >= hide - 64 && z >= hide - 64;
+    let mut parts = Vec::new();
+    let mut miss = Vec::new();
+    for a in &retail.actor_facings {
+        if a.ambient {
+            continue;
+        }
+        let Some(&(_, ex, ez)) = engine.npc_facings.get(&a.flat) else {
+            continue;
+        };
+        let (rp, ep) = (parked(a.x, a.z), parked(ex, ez));
+        let score = match (rp, ep) {
+            (true, true) => continue,
+            (true, false) | (false, true) => 0.0,
+            (false, false) => {
+                let dx = f64::from(i32::from(ex) - i32::from(a.x));
+                let dz = f64::from(i32::from(ez) - i32::from(a.z));
+                falloff((dx * dx + dz * dz).sqrt(), 8.0, 128.0)
+            }
+        };
+        if score < 1.0 {
+            miss.push(format!(
+                "flat {} model {} r=({}, {}){} e=({}, {}){}",
+                a.flat,
+                a.model,
+                a.x,
+                a.z,
+                if rp { " parked" } else { "" },
+                ex,
+                ez,
+                if ep { " parked" } else { "" }
+            ));
+        }
+        parts.push(score);
+    }
+    if parts.is_empty() {
+        return None;
+    }
+    let n = parts.len();
+    Some((
+        parts.iter().sum::<f64>() / n as f64,
+        format!("{n} placements scored; misses: [{}]", miss.join("; ")),
+    ))
+}
+
 /// The camera channel: mean of pitch, yaw (wrapped), `H` and the three eye
 /// words, each on its own falloff.
 pub(crate) fn camera_score(r: &CameraObs, e: &CameraObs) -> (f64, String) {
@@ -358,6 +419,11 @@ pub fn compare(
         && let Some((score, detail)) = facing_score(retail, engine)
     {
         put("facing", score, detail);
+    }
+    if retail.class == StateClass::Field
+        && let Some((score, detail)) = npc_seat_score(retail, engine)
+    {
+        put("npcs", score, detail);
     }
     let scene_ok = engine.scene.as_deref() == Some(retail.scene.as_str());
     put(

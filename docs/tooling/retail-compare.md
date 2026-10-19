@@ -1708,6 +1708,7 @@ measured channels.
 | `footing` | engine floor sample at retail's `(X, Z)` vs retail's footing: 1 within 2, 0 at 128 (field and overworld classes; not scored while a script holds retail's player height, [below](#a-script-held-height-is-not-a-footing)) |
 | `camera` | mean of eight parts: pitch and yaw (1 within 16, 0 at 256, wrapped), `H` (1 within 4, 0 at 128), each eye word and each focus word (1 within 16, 0 at 1024) |
 | `facing` | field class only: mean over the player and every placement standing on its retail seat, each heading 1 within 32, 0 at 512, wrapped ([below](#the-facing-channel)) |
+| `npcs` | field class only: mean over every placement retail draws or parks that no ambient stream walks: 0 when one side parks it on the off-map seat and the other draws it, else its `(X, Z)` distance, 1 within 8, 0 at 128 ([below](#the-npcs-channel)) |
 | `bgm` | 1 when the engine's track-select word (`SceneHost::bgm_track_word`, the park sentinel `0x1000` included) equals retail's; the detail marks a held track on either side ([below](#a-held-track)) |
 | `fog_gate` | 1 when the engine's fog-pool gate equals retail's |
 | `view_window` | field class only: fraction of the four visible-tile window bytes equal to the zone camera's, or to the form the decoration pass clips them to at the engine's focus - a capture can land inside the pass ([encounter](../formats/encounter.md#the-window-is-not-cleared-with-the-scene)) |
@@ -1790,6 +1791,34 @@ landed when the gate samples it. The eight vsyncs left are the end-latch spins
 on flat 5 (`AD 05 08` after clips `8`, `9` and `8` reversed: `27`, `57` and
 `27` vsyncs in retail, `30`, `60` and `29` in the engine), which the actor's
 clip tick paces rather than the wait.
+
+### The npcs channel
+
+The facing channel only scores a placement within 96 units of its retail
+seat, so a placement standing in the wrong place, or one the engine draws
+while retail has it parked on the off-map seat (`16320, 16320`, or one tile
+short of it on an axis), was scored nowhere. This channel scores where each
+placement stands, matched by the same flat index, with ambient walkers left
+out for the same reason as there. The detail lists every miss with both
+positions and which side parks it.
+
+Its misses fall into two shapes:
+
+- **A record that ran on other flags.** A placement's record places it at
+  scene entry from the story flags of that moment (`town01` `P1[33]`: a
+  `4C 51` per flag arm, none for the parked case). The seed enters the scene
+  with the capture's flags, which can be later ones: in
+  `town01_tetsu_topic_prompt` the engine takes `P1[33]`'s `0x226`-set arm and
+  draws flats 69 / 70 at `(12608, 1728)` / `(12608, 1984)`, while retail,
+  which entered the town before the conversation, still has them parked.
+  `nivora_cutscene_delilas_intro` misses the same way. The flags channel
+  reads the bitmap now, not at entry, so it cannot see this.
+- **Half-tile drift from the spawn.** A handful of placements stand 64 units
+  (half a tile) off their MAN spawn in retail on one or both axes - `izumi`
+  flat 6, `kor5` flat 14, `ropeway` flats 46 / 50, `dolk` / `dolk2` and
+  `town0c` - where the engine stands on the spawn byte exactly as
+  `FUN_8003A1E4` decodes it. Whatever moves them after the spawn is not
+  traced.
 
 ## The image channel
 
