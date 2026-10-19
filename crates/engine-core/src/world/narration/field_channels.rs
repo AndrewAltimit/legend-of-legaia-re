@@ -145,10 +145,16 @@ impl World {
     /// boulder beat (P2[17]) seats them at the foot of the escape stairs and
     /// ramps them down to the floor.
     ///
-    /// The bind seats the actor at Y `0`, so `dy` is the actor's Y itself;
-    /// hosts add the displacement to the placement's own transform. Parked
-    /// objects ([`Self::hidden_object_records`]) and unmoved ones are not
-    /// listed.
+    /// The bind seats the actor at its `.MAP` seat Y (`ladder[nibble] +
+    /// y_off`, [`Self::set_object_bind_heights`]) and every height write is
+    /// absolute, so `dy` is the actor's Y **less that seat**; hosts add the
+    /// displacement to the placement's own transform, which already stands
+    /// at the seat. Reading the actor's Y as the displacement itself counted
+    /// the seat twice: `suimon`'s water channel (partition-0 records 5..9,
+    /// `31 1D` + `4C 42 <260..338>`) sits on the `-320` seat and drew a
+    /// further `260..338` units up, level with the gate's lintel instead of
+    /// the channel. Parked objects ([`Self::hidden_object_records`]) and
+    /// unmoved ones are not listed.
     // REF: FUN_8001ADA4 (case 5 draws at the actor position), FUN_8003A55C
     pub fn object_draw_displacements(&self) -> std::collections::HashMap<usize, [i32; 3]> {
         let hide = legaia_engine_field::man_field_scripts::FIELD_OFFMAP_HIDE_XZ as u16;
@@ -164,9 +170,15 @@ impl World {
             .filter(|c| c.object_bind && !(c.ctx.world_x == hide && c.ctx.world_z == hide))
             .filter_map(|c| {
                 let (sx, sz) = *seeds.get(&c.placement_index)?;
+                let sy = self
+                    .field_vm
+                    .object_channel_heights
+                    .get(&c.placement_index)
+                    .copied()
+                    .unwrap_or(0);
                 let d = [
                     i32::from(c.ctx.world_x as i16) - i32::from(sx),
-                    i32::from(c.ctx.world_y as i16),
+                    i32::from(c.ctx.world_y as i16) - i32::from(sy),
                     i32::from(c.ctx.world_z as i16) - i32::from(sz),
                 ];
                 (d != [0, 0, 0]).then_some((c.placement_index, d))
@@ -182,9 +194,18 @@ impl World {
         self.field_vm.object_channel_rots = rots;
     }
 
+    /// Record the scene's object-bind seat heights
+    /// ([`legaia_engine_field::man_field_scripts::object_script_bind_heights`]).
+    /// Call before [`Self::seed_object_channels`], which seats each
+    /// context's Y from them.
+    pub fn set_object_bind_heights(&mut self, heights: std::collections::HashMap<usize, i16>) {
+        self.field_vm.object_channel_heights = heights;
+    }
+
     /// Seed each object-bind context's `+0x24 / +0x26 / +0x28` from its
-    /// object's `.MAP` angles, as `FUN_8003A55C` seeds the actor: a later
-    /// op `0x38` or `4C 48` turns it from there.
+    /// object's `.MAP` angles and its `+0x16` from the object's seat Y, as
+    /// `FUN_8003A55C` seeds the actor: a later op `0x38` or `4C 48` turns it
+    /// from there, and a height write replaces the Y outright.
     // REF: FUN_8003A55C
     pub(crate) fn seat_object_channel_rots(
         &self,
@@ -195,6 +216,11 @@ impl World {
                 c.ctx.field_24 = rx as i16;
                 c.ctx.field_26 = ry;
                 c.ctx.field_28 = rz as i16;
+            }
+            // The seat's Y (`+0x16`), so a later height write lands as the
+            // absolute Y it is in retail.
+            if let Some(&y) = self.field_vm.object_channel_heights.get(&c.placement_index) {
+                c.ctx.world_y = y as u16;
             }
         }
     }
@@ -246,6 +272,13 @@ impl World {
     /// The bind-time `.MAP` angles of object-bind record `record`.
     pub fn object_bind_rot(&self, record: usize) -> Option<[u16; 3]> {
         self.field_vm.object_channel_rots.get(&record).copied()
+    }
+
+    /// The bind-time seat Y (`ladder[nibble] + y_off`, retail Y-down) of
+    /// object-bind record `record` - the Y its draw displacement is measured
+    /// from ([`Self::object_draw_displacements`]).
+    pub fn object_bind_height(&self, record: usize) -> Option<i16> {
+        self.field_vm.object_channel_heights.get(&record).copied()
     }
 
     /// Retail's spawn-install prologue pre-run: `FUN_8003A1E4` runs each

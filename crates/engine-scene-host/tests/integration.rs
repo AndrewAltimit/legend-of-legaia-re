@@ -103,6 +103,7 @@ mod npc_morph_placement_disc;
 mod npc_morph_rikuroa_disc;
 mod object_effect_row_disc;
 mod object_grid_refresh_disc;
+mod object_seat_height_disc;
 mod opdeene_caption_playback;
 mod opdeene_field_channels;
 mod opdeene_narration_playback;

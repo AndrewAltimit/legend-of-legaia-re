@@ -942,6 +942,21 @@ impl SceneHost {
                             })
                             .unwrap_or_default(),
                     );
+                    // Each bind's seat Y (`ladder[nibble] + y_off`), against
+                    // the ladder the scene installed above: a height write
+                    // on the actor is absolute, and the draw measures it
+                    // from here (`World::object_draw_displacements`).
+                    let ladder = self.world.terrain.floor_height_lut;
+                    self.world.set_object_bind_heights(
+                        map_bytes
+                            .as_deref()
+                            .map(|map| {
+                                legaia_engine_field::man_field_scripts::object_script_bind_heights(
+                                    map, &triggers, &ladder,
+                                )
+                            })
+                            .unwrap_or_default(),
+                    );
                     self.world
                         .seed_object_channels(&man_file, &man_bytes, &object_binds);
                     // Boss-stager placements (chapter-1: Mt. Rikuroa's Caruban

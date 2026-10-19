@@ -135,6 +135,12 @@ pub struct FieldVmState {
     /// [`crate::world::World::object_draw_turns`] measures a script's turn
     /// against it.
     pub(crate) object_channel_rots: std::collections::HashMap<usize, [u16; 3]>,
+    /// Bind-time Y of each object-bind context, by flat record
+    /// ([`legaia_engine_field::man_field_scripts::object_script_bind_heights`]):
+    /// the `ladder[nibble] + y_off` `FUN_8003A55C` seats the actor's `+0x16`
+    /// at. [`crate::world::World::object_draw_displacements`] measures a
+    /// script's height write against it.
+    pub(crate) object_channel_heights: std::collections::HashMap<usize, i16>,
     /// Live op-`4C 42` `+0x8E` ramps on object-bind actors
     /// ([`crate::world::ObjectSlotRamp`]), stepped by the per-actor tick.
     pub object_slot_ramps: Vec<crate::world::ObjectSlotRamp>,
@@ -209,6 +215,7 @@ impl FieldVmState {
             dialog_claims: 0,
             object_channel_binds: Vec::new(),
             object_channel_rots: Default::default(),
+            object_channel_heights: Default::default(),
             object_slot_ramps: Vec::new(),
             actor_tints: std::collections::HashMap::new(),
             pending_record_spawns: Vec::new(),
