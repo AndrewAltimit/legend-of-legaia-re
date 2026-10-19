@@ -103,17 +103,22 @@ impl RetailBattle {
             // still sway on the idle loops the replay reaches on its own
             // clock (`super_queue_replace_*`).
             //
-            // A body the action left on its idle loop (clip `0`) is the
-            // exception: nothing the replay stages moves that cursor, which is
-            // time since the loop began - `zeto_big_wave_mid_cast`'s caster
-            // idles through PROT 0946's capture band, a close-up in which the
-            // loop's sway is most of the frame.
+            // The capture-class band `0x6F..=0x71` is the exception for a
+            // body it leaves on its idle loop (clip `0`): the slot-B module
+            // there runs its own countdown and stages no clip on either seat,
+            // so that cursor is time since the loop began -
+            // `zeto_big_wave_mid_cast`'s caster idles through PROT 0946's band
+            // in a close-up the loop's sway fills. Elsewhere an idle seat in
+            // flight may have just come off the action's own clip.
             .filter(|&&(slot, clip, _)| {
                 let staged = !(self.action_state == 0x0C
                     || self.action_state == 0x14 && self.walk_yaw_base == 0x200);
                 let in_flight =
                     self.action_state != 0 && staged && !(0x50..=0x5A).contains(&self.action_state);
-                !in_flight || clip == 0 || (slot != self.active_actor && slot != self.target_code)
+                let capture_band_idle = clip == 0 && (0x6F..=0x71).contains(&self.action_state);
+                !in_flight
+                    || capture_band_idle
+                    || (slot != self.active_actor && slot != self.target_code)
             })
             .filter_map(|&(slot, clip, cursor)| {
                 let slot = if slot < 3 {

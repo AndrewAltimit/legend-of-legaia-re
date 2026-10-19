@@ -1034,6 +1034,20 @@ the bars - the headless seed directly, the image child through
 `LEGAIA_BATTLE_MYSTIC_SHIELD=1`. `cort_guilty_cross_mid_cast` and
 `cort_mystic_circle_mid_cast` are the two.
 
+The sphere's texture is a page its second part, the render-mode-4 scroller
+`0x80078720`, rolls one row at a time, so where the page stands is time since
+the shield went up - the earlier turn the replay never runs. Raised on the
+first battle tick, the engine's page stood a pure rotation of `212` rows off
+retail's on `cort_guilty_cross_mid_cast`, with the CLUT at `(0, 485)`
+byte-identical, and the sphere's bands fell where retail's had none. The
+image child therefore takes every live battle scroller's rect as the
+displayed frame held it, through the same `LEGAIA_SEAT_VRAM_RECTS` file the
+field child uses ([the seeding model](#the-seeding-model)), written after the
+battle VRAM pass's own rotations (`World::apply_battle_vram_moves`). The two
+shield frames read `.772` and `.986` seated so, `.387` and `.630` without;
+`gimard_burning_attack`'s fire tunnel, a scroller of PROT 0903's, rose from
+`.569` to `.786` on the same seed.
+
 ### The keyframe each body stands on
 
 A looping clip - every idle stance - is a clock of its own, and the replay
@@ -1054,12 +1068,30 @@ child lands each slot on that cursor on the capture frame
 the same clip and the clip loops. Left on the replay's clock: a one-shot,
 which started with its action, and - while an action is in flight, ahead of
 the Done band `0x50..=0x5A` - the acting seat and its target, whose clips run
-with the action the seed has already placed (seated, Zeto's parked Big Wave clip cost
-`zeto_big_wave_mid_cast` `0.03`). The action's own clips start with the
+with the action the seed has already placed. The capture-class band
+`0x6F..=0x71` seats them all the same while they idle (clip `0`): its slot-B
+module paces itself on its own countdown and stages no clip on either seat, so
+the loop's cursor is time since the loop began. `zeto_big_wave_mid_cast`'s
+caster idles through PROT 0946's band in a close-up the sway fills, and seated
+on retail's cursor the frame reads `.959` against `.520`. Outside the band an
+idle seat in flight may have just come off the action's own clip - seating it
+cost a block each on `nivora_duel_mid_blazing_slash`,
+`player_steal_skeleton_banner` and `vera_summon_mid_cast`. The action's own clips start with the
 approach `0x14` stages, so on the seed's own passes - the seed `0x0C`, and an
 Attack arm `0x14` whose body has not run (the yaw counter still on the seed's
 `0x200` rung) - both bodies still sway on their idle loops and are seated
 too (`super_queue_replace_*` `image` `.926` to `.938`).
+
+A downed party member holds entry `8`, the kneel that re-commits itself at
+every natural end ([battle-actor-rendering](../subsystems/battle-actor-rendering.md#the-commits-clip-tag-ladder)),
+with `+0x1D9 = 8`. The bar seed lands its HP at zero without the fall that
+leads there, so the body stood on its idle and the cursor seed, which lands
+only on the clip a body plays, never applied: `zora_glare_petrify_pre`'s Noa
+stood behind Vahn where retail's kneels. A clip seed of `8` on a party member
+at zero HP commits the kneel first. The member also sits out every replayed
+round, so the heading its fall left it on is seeded with its ground pair, as
+a spent combatant's is (`RetailBattle::seeded_facing`): Noa's kneel faces
+`3723`, and drawn along the engine's `0` it spread across the frame.
 
 ### Rewards already granted
 
