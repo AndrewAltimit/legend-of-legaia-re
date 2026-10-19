@@ -1076,7 +1076,16 @@ caster idles through PROT 0946's band in a close-up the sway fills, and seated
 on retail's cursor the frame reads `.959` against `.520`. Outside the band an
 idle seat in flight may have just come off the action's own clip - seating it
 cost a block each on `nivora_duel_mid_blazing_slash`,
-`player_steal_skeleton_banner` and `vera_summon_mid_cast`. The action's own clips start with the
+`player_steal_skeleton_banner` and `vera_summon_mid_cast`. A party target
+already on its reaction (`2`, `3`, `4`, `5` or `0x0B`) is seated too, on the
+reaction channel it plays: the reaction starts on the hit, which the replay
+lands on its own clock, and a knockdown carries the whole body in the two game
+frames the display lags the RAM by. `battle_gimard_tail_fire_b`'s Vahn reads
+knockdown cursor `72` in the RAM and `56` on the displayed frame; retail's own
+RAM-frame ordering table already draws him sprawled (his packets at screen
+rows `126..174`) where the frame on screen shows him upright mid-fall. Seated
+on `56` the frame reads `.809` against `.782`. A displayed cursor below zero
+predates the hit and is left alone. The action's own clips start with the
 approach `0x14` stages, so on the seed's own passes - the seed `0x0C`, and an
 Attack arm `0x14` whose body has not run (the yaw counter still on the seed's
 `0x200` rung) - both bodies still sway on their idle loops and are seated

@@ -421,4 +421,10 @@ fn a_downed_member_keeps_its_heading_and_the_capture_band_seats_idle_loops() {
         vec![1],
         "outside it the action's seats keep the replay's"
     );
+    // A party target already on its reaction is seated on the displayed
+    // frame; one whose displayed frame predates the hit is not.
+    b.clip_cursors = vec![(0, 4, 56), (1, 8, 108), (3, 0, 52)];
+    assert_eq!(seats(&b), vec![0, 1], "the struck member's knockdown");
+    b.clip_cursors = vec![(0, 4, -8)];
+    assert!(seats(&b).is_empty(), "before the hit");
 }

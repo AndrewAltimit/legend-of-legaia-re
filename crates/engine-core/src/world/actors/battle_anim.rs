@@ -73,7 +73,11 @@ impl World {
         let Some(a) = self.actors.get_mut(slot) else {
             return false;
         };
-        if !downed && a.battle.current_anim != clip {
+        // A struck body plays its reaction entry on the reaction channel
+        // (`+0x1D9` holds the committed entry, `World::commit_battle_reaction_entry`):
+        // the capture's `+0x1D9` names it, not the staged-anim id.
+        let reacting = !downed && a.battle_reaction_entry == Some(clip);
+        if !downed && !reacting && a.battle.current_anim != clip {
             return false;
         }
         let Some(player) = a.battle_animation.as_mut() else {
@@ -84,7 +88,14 @@ impl World {
         // seed already put where the capture's was. A looping clip wraps
         // (retail's re-commit zeroes the cursor at the stream's end), and so
         // does the self-re-committing kneel.
-        if !player.is_looping() && !downed {
+        //
+        // A reaction is the one one-shot seated: it starts on the hit, which
+        // the replay lands on its own clock, and the frame on screen is two
+        // game frames older than the RAM's cursor - a knockdown moves the
+        // whole body in that time (`battle_gimard_tail_fire_b`'s Vahn, still
+        // upright mid-fall on the displayed frame at `72` less two frames'
+        // advance, sprawled on the RAM's).
+        if !player.is_looping() && !downed && !reacting {
             return false;
         }
         let total = (player.frame_count() * 16).max(1) as i32;

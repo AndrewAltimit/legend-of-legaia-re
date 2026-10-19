@@ -1455,3 +1455,23 @@ fn a_member_seated_down_kneels_on_entry_8() {
     assert_eq!(world.actors[0].battle_reaction, Some(8));
     assert!(world.seat_downed_kneel(0), "already kneeling");
 }
+
+/// A struck body's reaction - a one-shot on the reaction channel - takes the
+/// capture's cursor when the capture names that entry.
+#[test]
+fn a_reaction_entry_takes_the_capture_cursor() {
+    let mut world = pose_test_world();
+    let mut clips: Vec<Option<MonsterAnimation>> = vec![None; 22];
+    clips[0] = Some(pose_test_clip(0, 2, 0));
+    clips[4] = Some(pose_test_clip(4, 12, 0));
+    world.set_actor_battle_action_clips(0, std::sync::Arc::new(clips));
+    world.actors[0].battle.hp = 50;
+    assert!(world.commit_battle_reaction_entry(0, 4));
+    assert!(!world.seat_battle_clip_cursor(0, 2, 40), "another entry");
+    assert!(world.seat_battle_clip_cursor(0, 4, 40));
+    let cursor = world.actors[0]
+        .battle_animation
+        .as_ref()
+        .map(|p| p.cursor_sixteenths());
+    assert_eq!(cursor, Some(40));
+}
