@@ -33,19 +33,18 @@
 //! REF: FUN_801d4868
 
 use crate::{
-    RENDERER_BUY_QUANTITY, RENDERER_SELL_DETAIL, SELL_DETAIL_CANNOT_SELL, SELL_DETAIL_PRICE_LABEL,
-    ScreenInputs, WIN_BUY_QUANTITY, WIN_EQUIP_TARGET, WIN_ITEM_INFO, WIN_POINT_CARD, WIN_PURSE,
-    WIN_SELL_DETAIL, WIN_SELL_QUANTITY, WIN_VENDOR_PLATE, shop_item_description, shop_item_label,
+    RENDERER_BUY_QUANTITY, RENDERER_SELL_DETAIL, ScreenInputs, WIN_BUY_QUANTITY, WIN_EQUIP_TARGET,
+    WIN_ITEM_INFO, WIN_POINT_CARD, WIN_PURSE, WIN_SELL_DETAIL, WIN_SELL_QUANTITY, WIN_VENDOR_PLATE,
+    shop_item_description, shop_item_label,
 };
-use legaia_engine_core::menu_runtime::MenuRuntime;
 use legaia_engine_core::world::World;
+use legaia_engine_menu_runtime::menu_runtime::MenuRuntime;
 use legaia_engine_menus::menu::MenuState;
 use legaia_engine_menus::shop::ShopSession;
 use legaia_engine_ui::menu::window_painters::{
-    POINT_CARD_HEADING, POINT_CARD_UNIT_LABEL, PainterPictogram, PainterRect, PainterSprite,
-    SELL_QUANTITY_HEADING, amount_prompt_draws_for, buy_quantity_draws_for,
-    counter_panel_draws_for, item_description_draws_for, record_title_tab_draws_for,
-    sell_quantity_draws_for,
+    BuyQuantityLabels, PainterPictogram, PainterRect, PainterSprite, amount_prompt_draws_for,
+    buy_quantity_draws_for, counter_panel_draws_for, item_description_draws_for,
+    record_title_tab_draws_for, sell_quantity_draws_for,
 };
 use legaia_engine_ui::{self as ui, TextDraw, shop_screen as ss};
 use legaia_game_tables::menu_windows::MenuWindowTable;
@@ -94,6 +93,82 @@ pub fn shop_vendor_name<'w>(world: &'w World, shop: &ShopSession) -> Option<&'w 
         .or_else(|| shops.first().filter(|_| shops.len() == 1))
         .map(|s| s.name.as_str())
         .filter(|n| !n.is_empty())
+}
+
+/// The names the menu string primitive's escapes resolve against
+/// (`FUN_80036888`): `0xC1 n` is character `n`'s record name (`+0x2A7`),
+/// `0xC2 n` / `0xC4 n` item `n`'s name.
+pub fn menu_name_escape(world: &World) -> impl Fn(u8, u8) -> Option<String> + '_ {
+    move |esc, op| match esc {
+        0xC1 => world
+            .party
+            .roster
+            .members
+            .get(usize::from(op))
+            .map(|r| r.name())
+            .filter(|n| !n.is_empty()),
+        0xC2 | 0xC4 => Some(shop_item_label(world, op)),
+        _ => None,
+    }
+}
+
+/// The detail line window 34 prints under the item's name, at `pen` (the
+/// window's `WX + 8, WY + 0xE`).
+///
+/// An accessory with a passive prints the passive's description
+/// (`FUN_801D4A80`'s kind-`2` arm, `0x801D4B6C..0x801D4BC4`); everything
+/// else goes through the item-detail printer `FUN_800337B0`
+/// ([`legaia_engine_menus::shop::item_detail_line`]): the description - or,
+/// for undescribed equipment, its slot template - with its icon and name
+/// escapes, then equipment's stat line one row down.
+pub fn item_detail_draws(inputs: &ScreenInputs<'_>, pen: (i32, i32), id: u8) -> Vec<TextDraw> {
+    use legaia_engine_menus::shop::{DETAIL_STAT_DY, expand_name_escapes_bytes, item_detail_line};
+    let world = inputs.world;
+    let font = inputs.font;
+    let mut out = Vec::new();
+    let text = world.menu.text.as_ref();
+    let passive = text.and_then(|t| t.item_passive_text(id));
+    let Some(tables) = text
+        .and_then(|t| t.item_detail.as_ref())
+        .filter(|_| passive.is_none())
+    else {
+        let desc = shop_item_description(world, id);
+        if !desc.is_empty() {
+            out.extend(
+                legaia_engine_ui::menu::window_painters::broken_text_draws_for(
+                    font,
+                    &desc,
+                    pen,
+                    ui::MENU_TEXT_WHITE,
+                ),
+            );
+        }
+        return out;
+    };
+    let line = item_detail_line(tables, id);
+    let bytes = expand_name_escapes_bytes(&line.text, menu_name_escape(world));
+    out.extend(ui::text_draws_for(
+        &font.layout(&bytes),
+        pen,
+        ui::MENU_TEXT_WHITE,
+    ));
+    let y = pen.1 + DETAIL_STAT_DY;
+    for st in &line.stats {
+        let label = tables.stat_labels.get(st.label).map_or("", String::as_str);
+        out.extend(ui::text_draws_for(
+            &font.layout_ascii(label),
+            (pen.0 + st.label_dx, y),
+            ui::MENU_TEXT_WHITE,
+        ));
+        out.extend(ss::shop_digit_field_draws(
+            font,
+            u32::from(st.value),
+            (pen.0 + st.value_dx, y),
+            3,
+            ui::MENU_TEXT_WHITE,
+        ));
+    }
+    out
 }
 
 /// The item retail's staged-id word `DAT_801E46B0` would hold: the hovered
@@ -179,14 +254,18 @@ pub fn shop_window_draws(
             .find(|(i, _)| *i == id)
             .map(|(_, q)| *q)
             .unwrap_or(0);
+        let rect = ui::painter_rect(d);
         out.extend(item_description_draws_for(
             font,
-            ui::painter_rect(d),
+            rect,
             staged.is_some(),
             &shop_item_label(world, id),
             owned,
-            &shop_item_description(world, id),
+            "",
         ));
+        if staged.is_some() {
+            out.extend(item_detail_draws(inputs, (rect.x + 8, rect.y + 0xE), id));
+        }
     }
     if selling_list {
         let (text, pic) = sell_detail_window_draws(inputs, table, staged);
@@ -210,7 +289,7 @@ pub fn shop_window_draws(
             font,
             ui::painter_rect(d),
             true,
-            SELL_QUANTITY_HEADING,
+            &world.menu.shop_labels.sell_prompt.plain(),
             u32::from(view.quantity),
             u32::from(view.max),
             u32::from(view.price),
@@ -219,7 +298,14 @@ pub fn shop_window_draws(
         pics.extend(pic);
         marks.extend(cur);
     }
-    if let Some(view) = quantity.filter(|v| v.buying)
+    // Under the Point Card toast the stepper has been closed (`04 23`): its
+    // content rides window 35 out and is gone once the window has left.
+    let stepper_up = menu.point_card_toast().is_none()
+        || menu
+            .shop_slides()
+            .iter()
+            .any(|(id, _)| *id == WIN_BUY_QUANTITY);
+    if let Some(view) = quantity.filter(|v| v.buying && stepper_up)
         && let Some(d) = table
             .window(WIN_BUY_QUANTITY)
             .filter(|d| d.renderer_va == RENDERER_BUY_QUANTITY)
@@ -228,9 +314,22 @@ pub fn shop_window_draws(
             .iter()
             .find(|(i, _)| *i == view.item_id)
             .map(|(_, q)| u32::from(*q));
+        let l = &world.menu.shop_labels;
+        let (have_head, have_tail, none_held, prompt) = (
+            l.have_head.plain(),
+            l.have_tail.plain(),
+            l.none_held.plain(),
+            l.buy_prompt.plain(),
+        );
         let (text, pic, cur) = buy_quantity_draws_for(
             font,
             ui::painter_rect(d),
+            BuyQuantityLabels {
+                have_head: &have_head,
+                have_tail: &have_tail,
+                none_held: &none_held,
+                prompt: &prompt,
+            },
             held,
             u32::from(view.quantity),
             u32::from(view.max),
@@ -251,12 +350,13 @@ pub fn shop_window_draws(
             ui::painter_at(table, WIN_POINT_CARD, ui::MenuWindowPainter::AmountPrompt)
     {
         let rect = ui::painter_rect(d);
+        let labels = &world.menu.shop_labels;
         let (text, cur) = amount_prompt_draws_for(
             font,
             rect,
-            POINT_CARD_HEADING,
+            &labels.point_card_heading.text(menu_name_escape(world)),
             world.minigames.point_card.max(0) as u64,
-            POINT_CARD_UNIT_LABEL,
+            &labels.point_card_unit.plain(),
         );
         draws.toast_texts.extend(text);
         draws.toast_marks.push(cur);
@@ -367,7 +467,7 @@ pub fn sell_detail_window_draws(
         Some(row) => {
             text(
                 &mut out,
-                SELL_DETAIL_PRICE_LABEL,
+                &world.menu.shop_labels.price.plain(),
                 row.label_pen,
                 ui::MENU_TEXT_TEAL,
             );
@@ -382,7 +482,7 @@ pub fn sell_detail_window_draws(
         }
         None => text(
             &mut out,
-            SELL_DETAIL_CANNOT_SELL,
+            &world.menu.shop_labels.cannot_sell.plain(),
             panel.cannot_sell_pen,
             ui::MENU_TEXT_ORANGE,
         ),
@@ -425,16 +525,28 @@ pub fn recipient_window_draws(inputs: &ScreenInputs<'_>) -> (Vec<TextDraw>, Vec<
         inputs.menu.equip_info.as_ref(),
         session.item_id,
     );
-    // The picker's rows are the present party in party-list order, the
-    // compare model is per character record.
-    let present = inputs.world.present_party_list();
-    let rows: Vec<ui::RecipientMemberView<'_>> = present
+    // The picker's rows are the present party in party-list order, and so
+    // is the compare model; each row prints its character's own string
+    // (`FUN_801D56FC` picks it by character id, none for id 3).
+    let labels = &inputs.world.menu.shop_labels;
+    let row_labels: Vec<String> = members
         .iter()
+        .map(|m| {
+            u8::try_from(m.member)
+                .ok()
+                .and_then(|ch| labels.recipient_row(ch))
+                .map(|l| l.text(menu_name_escape(inputs.world)))
+                .unwrap_or_default()
+        })
+        .collect();
+    let rows: Vec<ui::RecipientMemberView<'_>> = members
+        .iter()
+        .zip(row_labels.iter())
         .take(session.can_equip.len())
-        .filter_map(|&ch| members.get(usize::from(ch)))
         .enumerate()
-        .map(|(i, m)| ui::RecipientMemberView {
+        .map(|(i, (m, row_label))| ui::RecipientMemberView {
             name: m.name.as_str(),
+            row_label: row_label.as_str(),
             equippable: session.can_equip.get(i).copied().unwrap_or(false),
             already_equipped: m.already_equipped,
             current: Default::default(),
@@ -452,8 +564,10 @@ pub fn recipient_window_draws(inputs: &ScreenInputs<'_>) -> (Vec<TextDraw>, Vec<
         .map(|(d, _)| ui::painter_rect(d)),
         party_compare: None,
     };
+    let heading = labels.bag_row.plain();
     let view = ui::RecipientPickerView {
-        heading: ui::RECIPIENT_HEADING,
+        heading: &heading,
+        compare_labels: Default::default(),
         cursor: session.cursor,
         members: &rows,
         staged_category: ui::CATEGORY_DEFAULT,
@@ -528,6 +642,7 @@ pub fn gold_shop_screen(
 
     // Window 42 - the picker, with the hand only while it has the pad.
     let picker_rows = legaia_engine_menus::shop_cues::shop_root_labels(
+        &world.menu.shop_labels,
         world.seru_trade_enabled(),
         !bag.is_empty(),
     );
@@ -642,11 +757,19 @@ pub fn gold_shop_screen(
         })
         .collect();
 
+    let l = &world.menu.shop_labels;
+    let (equipped, cannot_equip) = (l.equipped.plain(), l.cannot_equip.plain());
+    let stats = l.stat_labels.clone().map(|s| s.plain());
     let view = ss::ShopScreenView {
         windows: &windows,
         picker: Some(picker),
         list: Some(list),
         party: &party,
+        compare_labels: ss::ShopCompareLabels {
+            equipped: &equipped,
+            cannot_equip: &cannot_equip,
+            stats: [&stats[0], &stats[1], &stats[2]],
+        },
     };
     let mut out = ss::shop_screen_draws(&ctx, &view);
 

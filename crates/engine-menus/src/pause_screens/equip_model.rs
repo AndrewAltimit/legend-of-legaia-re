@@ -245,7 +245,7 @@ pub fn menu_stat_block(
 /// menu, and the session recomputes with live status modifiers on commit.
 ///
 /// `text` resolves an item id's display name / description / passive lines -
-/// `legaia_engine_core::field_menu_dispatch::item_display_text` against the live world.
+/// `legaia_engine_menu_runtime::field_menu_dispatch::item_display_text` against the live world.
 /// Passing `None` leaves every item spelled as its raw id, which is what a
 /// disc-free test wants and what the screen showed on both hosts for as long
 /// as the resolver lived inside the Items screen's own session builder.

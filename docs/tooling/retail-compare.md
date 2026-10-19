@@ -1692,7 +1692,7 @@ party (`DAT_80084594` over `0x80084598`,
 every roster record - the New Game template seeds all four records, so a
 roster walk listed Noa, Gala and Terra beside a Vahn still travelling alone.
 Each row's name is the record's own `+0x2A7` display name
-(`field_menu_dispatch::roster_names`), so a save with a renamed hero shows
+(`PartyState::roster_names`), so a save with a renamed hero shows
 that name, as retail does.
 
 ## Channels

@@ -15,7 +15,7 @@ pub struct MenuState {
     /// overlay (PROT 0899 VA `0x801E4A88`,
     /// [`legaia_engine_menus::menu_arrange::parse_arrange_rank_table`]). `None` on a
     /// load without the overlay - Arrange then falls back to id order.
-    pub(crate) arrange_rank: Option<legaia_engine_menus::menu_arrange::ArrangeRankTable>,
+    pub arrange_rank: Option<legaia_engine_menus::menu_arrange::ArrangeRankTable>,
     /// Labels for the two entry-context screens the pause menu opens under
     /// kind [`legaia_engine_menus::pause_screens::ROOT_MENU_CONTEXT_LOCKED`] - the notice
     /// panel's lines (window `6`) and the ready check's headings (window
@@ -24,6 +24,12 @@ pub struct MenuState {
     /// without the overlay, and an empty set is what keeps the panels from
     /// drawing invented text.
     pub context_labels: legaia_engine_menus::pause_screens::ContextLockedLabels,
+    /// The shop windows' labels (picker rows, compare notes, quantity
+    /// prompts, recipient rows, sell detail, Point Card toast), read out of
+    /// the same PROT 0899 image ([`legaia_engine_menus::shop::ShopLabels`]).
+    /// Empty on a load without the overlay: the shop then draws no label
+    /// text rather than invented text.
+    pub shop_labels: legaia_engine_menus::shop::ShopLabels,
     /// Window-widget bytecode programs resolved from the menu-overlay
     /// image (PROT 0899) by [`crate::world::World::install_menu_overlay_tables`] -
     /// the disc source the window-script VM (`legaia_engine_vm::run`,
@@ -73,7 +79,7 @@ pub struct MenuState {
     pub notify_template: Option<Vec<u8>>,
     /// A pause-menu item use taught an art: the window-8 notice waiting for
     /// a host to park it on its menu runtime
-    /// (`crate::field_menu_dispatch::apply_inventory_outcome` fills it).
+    /// (`legaia_engine_menu_runtime::field_menu_dispatch::apply_inventory_outcome` fills it).
     pub pending_art_notice: Option<legaia_engine_menus::pause_screens::ArtLearnedNotice>,
 }
 
@@ -83,6 +89,7 @@ impl MenuState {
             text: None,
             arrange_rank: None,
             context_labels: Default::default(),
+            shop_labels: Default::default(),
             widget_scripts: None,
             item_category: Vec::new(),
             worldmap_menu: None,

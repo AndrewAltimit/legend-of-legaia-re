@@ -108,7 +108,7 @@ impl ShopInventory {
 }
 
 /// Mutable session state for an open shop interaction. Installed on
-/// `legaia_engine_core::menu_runtime::MenuRuntime` by `open_shop` before the menu VM
+/// `legaia_engine_menu_runtime::menu_runtime::MenuRuntime` by `open_shop` before the menu VM
 /// enters `ShopBuy`.
 #[derive(Debug, Clone)]
 pub struct ShopSession {

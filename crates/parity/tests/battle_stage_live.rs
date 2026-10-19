@@ -21,9 +21,9 @@
 //! `saves/library` are all present.
 use std::path::{Path, PathBuf};
 
-use legaia_engine_core::scene_host::SceneHost;
 use legaia_engine_scene::overlay_loader::battle_stage_overlay_entry;
 use legaia_engine_scene::scene::ProtIndex;
+use legaia_engine_scene_host::scene_host::SceneHost;
 use legaia_mednafen::SaveState;
 use legaia_ram_image::ScenarioManifest;
 

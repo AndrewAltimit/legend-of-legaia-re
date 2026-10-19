@@ -613,8 +613,14 @@ fn equip_screen_draws_slot_rows_at_retail_offsets() {
         EQUIP_MAIN_PEN,
     );
     let (mx, my) = EQUIP_MAIN_PEN;
-    // Header glyphs start at (mx+0x10, my).
-    assert!(draws.iter().any(|d| d.dst.0 == mx + 0x10 && d.dst.1 == my));
+    // Header glyphs start one lead past (mx+0x10, my): the literal is
+    // `"@Best Equipment"`.
+    let lead = legaia_engine_ui::menu::window_painters::menu_string_lead(&font);
+    assert!(
+        draws
+            .iter()
+            .any(|d| d.dst.0 == mx + 0x10 + lead && d.dst.1 == my)
+    );
     // Slot 0's item name at (mx+0x20, my+0xE).
     assert!(
         draws

@@ -14,13 +14,13 @@
 //!
 //! [`fishing_hud_sprite_prims`] takes the same [`HudDraw`] list the text
 //! consumer ([`crate::fishing_hud_draws_for`]) does and covers the items that
-//! are sprites in retail: glyphs, numbers and the bar frames. A host drawing
+//! are sprites in retail: glyphs, numbers, the bar frames and their fills. A host drawing
 //! these sets [`crate::FishingHudAtlas::sprites_drawn`] so the text consumer
 //! leaves those items to them.
 
 use crate::{BarAxis, HudDraw, number_digit_cells};
 use legaia_minigame_formats::fishing_sprites::FishingSprite;
-use legaia_render_kernels::screen_prim::{ScreenPrim, ScreenQuad};
+use legaia_render_kernels::screen_prim::{FlatQuad, ScreenPrim, ScreenQuad};
 
 /// The ordering-table bucket every HUD sprite links at: `_DAT_801D9158`,
 /// which the driver's setup state stores as `3` (`0x801CF114`) and the digit
@@ -183,8 +183,9 @@ pub fn fishing_large_digit(
 /// [`HudDraw::Number`] digit (the small-digit emitter at 1.0, the style the
 /// HUD rows use) and every bar frame (start cap, body stretched by
 /// [`crate::BarFrame::body_scale`] along the bar's axis, end cap, at
-/// [`crate::BAR_FRAME_BRIGHTNESS`]), in emission order. Captions, counts and
-/// the bar fills stay with the text consumer. Ids the table does not hold are
+/// [`crate::BAR_FRAME_BRIGHTNESS`]) preceded by its fill quad
+/// ([`crate::BarFrame::fill_rect`]), in emission order. Captions and counts
+/// stay with the text consumer. Ids the table does not hold are
 /// skipped.
 pub fn fishing_hud_sprite_prims(items: &[HudDraw], table: &[FishingSprite]) -> Vec<ScreenPrim> {
     const ONE: i32 = 0x1000;
@@ -233,6 +234,24 @@ pub fn fishing_hud_sprite_prims(items: &[HudDraw], table: &[FishingSprite]) -> V
                 let Some(frame) = item.resolve_bar() else {
                     continue;
                 };
+                // The fill quad first: the bar helpers `AddPrim` it ahead of
+                // the frame glyphs, so it draws over them. Retail textures it
+                // from a resident system page the pond VRAM does not carry;
+                // the port fills it flat in the frame's own fill colour.
+                if let (Some((r, g, b)), Some((x0, y0, x1, y1))) =
+                    (frame.fill_rgb, frame.fill_rect())
+                {
+                    let p = |a: i32, b: i32| (a as i16, b as i16);
+                    out.push(ScreenPrim::Flat(FlatQuad {
+                        xy: [p(x0, y0), p(x1, y0), p(x0, y1), p(x1, y1)],
+                        color: [r, g, b, 0xFF],
+                        gouraud: None,
+                        semi_transparent: false,
+                        abr_mode: 0,
+                        ot_index: FISHING_SPRITE_OT,
+                        depth: None,
+                    }));
+                }
                 for (i, (&id, &(gx, gy))) in
                     frame.glyphs.iter().zip(frame.positions.iter()).enumerate()
                 {
@@ -383,5 +402,96 @@ mod tests {
         // One plate and two digits.
         assert_eq!(fishing_hud_sprite_prims(&items, &table).len(), 3);
         assert!(fishing_hud_sprite_prims(&items, &[]).is_empty());
+    }
+
+    #[test]
+    fn the_line_readout_lays_out_as_retails_display_list() {
+        // The record shapes the LINE row uses: small digit 8x16, the LINE
+        // plate 104x16 (its own `.` and `m` baked in), and the lone 16x16
+        // `m` glyph `FUN_801d1580` also draws at 0x114.
+        let mut table = vec![rec(); 29];
+        table[FISHING_SMALL_DIGIT_ID as usize].w = 8;
+        table[0x10].w = 16;
+        // A 28.9 m readout: `(1780 - 300) * 100 >> 9` = 289.
+        let items = crate::catch_hud_draws(&crate::CatchHudState {
+            record: 1780,
+            ..Default::default()
+        });
+        let line_row: Vec<ScreenPrim> = fishing_hud_sprite_prims(&items, &table)
+            .into_iter()
+            .filter(|p| quad(*p).xy[0].1 == 0x30)
+            .collect();
+        let spans: Vec<(i16, i16)> = line_row
+            .iter()
+            .map(|p| (quad(*p).xy[0].0, quad(*p).xy[1].0))
+            .collect();
+        // The packets a retail capture of this row holds, in submission
+        // order: `2`, `8`, `9`, the plate, the lone `m`.
+        assert_eq!(
+            spans,
+            vec![(266, 274), (274, 282), (288, 296), (212, 316), (276, 292)]
+        );
+        // The digits advance by their own 8 px width and never overlap; the
+        // tenths cell leaves the plate's baked-in point a 6 px gap.
+        let digits = &spans[..3];
+        for pair in digits.windows(2) {
+            assert!(pair[1].0 >= pair[0].1, "digit cells overlap: {pair:?}");
+        }
+        assert_eq!(digits[1].0 - digits[0].0, 8);
+        // Ordering-table walk (LIFO within the bucket): the `m` glyph is
+        // drawn first, the plate over it, the digits last. With the venue's
+        // STP-clear palette the plate's band hides the glyph entirely, which
+        // is why retail shows `28.9 m` and not a stray `m` through the `8`.
+        let order = legaia_render_kernels::screen_prim::order_primitives(&line_row);
+        assert_eq!(order, vec![4, 3, 2, 1, 0]);
+    }
+
+    #[test]
+    fn a_gauge_fill_is_retails_inset_rect_and_draws_over_its_frame() {
+        let table = vec![rec(); 29];
+        // The power bar at its retail pen (`0x120, 0x40`, 12 segments), half
+        // full: the fill grows up from the bottom cap at y = 0x40 + 12*8 + 8.
+        let items = [HudDraw::PowerBar {
+            x: 0x120,
+            y: 0x40,
+            power: 0x800,
+            step: 12,
+        }];
+        let prims = fishing_hud_sprite_prims(&items, &table);
+        assert_eq!(prims.len(), 4, "fill + cap/body/cap");
+        let ScreenPrim::Flat(fill) = prims[0] else {
+            panic!("the fill is submitted first, as an untextured quad");
+        };
+        let end = 0x40 + 12 * 8 + 8;
+        assert_eq!(
+            (fill.xy[0], fill.xy[3]),
+            ((0x125, end - 48), (0x12B, end)),
+            "x + 5 ..= x + 11, from the bottom cap up by the fill"
+        );
+        // Submitted first in the frame's bucket, so it is walked last.
+        let order = legaia_render_kernels::screen_prim::order_primitives(&prims);
+        assert_eq!(order.last(), Some(&0));
+
+        // The horizontal bar: an inset strip past the start cap.
+        let h = HudDraw::Bar {
+            style: 0,
+            x: 0x10,
+            y: 0x90,
+            value: 0x1000,
+            step: 10,
+        };
+        let ScreenPrim::Flat(hf) = fishing_hud_sprite_prims(&[h], &table)[0] else {
+            panic!("fill first");
+        };
+        assert_eq!((hf.xy[0], hf.xy[3]), ((0x18, 0x95), (0x18 + 80, 0x9B)));
+        // An empty bar emits only its frame.
+        let empty = HudDraw::Bar {
+            style: 0,
+            x: 0x10,
+            y: 0x90,
+            value: 0,
+            step: 10,
+        };
+        assert_eq!(fishing_hud_sprite_prims(&[empty], &table).len(), 3);
     }
 }

@@ -55,3 +55,35 @@ fn the_live_first_visit_skips_on_a_press_and_plays_its_announcer() {
     eprintln!("first visit: {idle} ticks idle, {pressed} pressing");
     assert!(pressed < idle, "a press ends the card holds early");
 }
+
+/// Only a contest's first leg is owed the first visit: once a leg has been
+/// reported the page's next leg opens on its ROUND card, as the play hosts'
+/// hub does (`DomeContest::opens_on_first_visit`). A settled run owes it
+/// again - the next contest is a fresh arena entry.
+#[test]
+fn the_first_visit_is_owed_once_per_contest() {
+    let Some(mut mg) = loaded() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
+        return;
+    };
+    eprintln!("[ran] muscle first visit owed once");
+    assert!(mg.muscle_first_visit_owed(), "no contest open yet");
+    assert!(mg.muscle_contest_start(0b001, 0b111));
+    assert!(mg.muscle_first_visit_owed(), "the first fight opens on it");
+    for fight in 1..=2 {
+        assert!(mg.muscle_report_leg(true, 0, 2, 100, 0b001, 0b111) >= 0);
+        assert!(
+            mg.muscle_leg_shows_interval(),
+            "fight {fight}: the run continues"
+        );
+        assert!(
+            !mg.muscle_first_visit_owed(),
+            "fight {}: a later fight does not replay the intro",
+            fight + 1
+        );
+    }
+    // Losing ends the run; the next contest is a fresh entry.
+    mg.muscle_report_leg(false, 0, 2, 100, 0b001, 0b111);
+    assert!(mg.muscle_contest_settle(0b001, 0b111, false));
+    assert!(mg.muscle_first_visit_owed());
+}

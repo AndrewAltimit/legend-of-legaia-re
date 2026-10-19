@@ -2022,6 +2022,7 @@ dependencies = [
  "legaia-engine-field",
  "legaia-engine-menus",
  "legaia-engine-mode",
+ "legaia-engine-scene-host",
  "legaia-engine-system",
  "legaia-save",
  "legaia-scene-formats",
@@ -2051,7 +2052,6 @@ dependencies = [
  "legaia-art",
  "legaia-cheats",
  "legaia-container-formats",
- "legaia-disc-audit",
  "legaia-engine-battle",
  "legaia-engine-battle-vm",
  "legaia-engine-camera",
@@ -2070,9 +2070,7 @@ dependencies = [
  "legaia-engine-vm",
  "legaia-font",
  "legaia-game-tables",
- "legaia-gamedata",
  "legaia-lzs",
- "legaia-mdt",
  "legaia-mes",
  "legaia-minigame-formats",
  "legaia-overlay-images",
@@ -2080,13 +2078,10 @@ dependencies = [
  "legaia-render-kernels",
  "legaia-save",
  "legaia-scene-formats",
- "legaia-seq",
  "legaia-tim",
  "legaia-tmd",
  "legaia-ui-formats",
- "legaia-vab",
  "log",
- "tempfile",
 ]
 
 [[package]]
@@ -2162,6 +2157,29 @@ dependencies = [
  "legaia-render-kernels",
  "legaia-scene-formats",
  "legaia-tmd",
+]
+
+[[package]]
+name = "legaia-engine-menu-runtime"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "legaia-art",
+ "legaia-engine-battle",
+ "legaia-engine-battle-vm",
+ "legaia-engine-core",
+ "legaia-engine-field",
+ "legaia-engine-menus",
+ "legaia-engine-minigames",
+ "legaia-engine-mode",
+ "legaia-engine-scene",
+ "legaia-engine-scene-host",
+ "legaia-engine-system",
+ "legaia-engine-vm",
+ "legaia-game-tables",
+ "legaia-prot",
+ "legaia-save",
+ "tempfile",
 ]
 
 [[package]]
@@ -2314,10 +2332,17 @@ dependencies = [
 ]
 
 [[package]]
-name = "legaia-engine-screens"
+name = "legaia-engine-scene-host"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
+ "legaia-actor-formats",
+ "legaia-art",
+ "legaia-container-formats",
+ "legaia-disc-audit",
  "legaia-engine-battle",
+ "legaia-engine-battle-vm",
+ "legaia-engine-camera",
  "legaia-engine-core",
  "legaia-engine-dialog",
  "legaia-engine-effects",
@@ -2329,11 +2354,51 @@ dependencies = [
  "legaia-engine-mode",
  "legaia-engine-scene",
  "legaia-engine-system",
+ "legaia-engine-vm",
+ "legaia-font",
+ "legaia-game-tables",
+ "legaia-gamedata",
+ "legaia-lzs",
+ "legaia-mdt",
+ "legaia-mes",
+ "legaia-minigame-formats",
+ "legaia-overlay-images",
+ "legaia-prot",
+ "legaia-render-kernels",
+ "legaia-save",
+ "legaia-scene-formats",
+ "legaia-seq",
+ "legaia-tim",
+ "legaia-tmd",
+ "legaia-ui-formats",
+ "legaia-vab",
+ "log",
+]
+
+[[package]]
+name = "legaia-engine-screens"
+version = "0.1.0"
+dependencies = [
+ "legaia-engine-battle",
+ "legaia-engine-core",
+ "legaia-engine-dialog",
+ "legaia-engine-effects",
+ "legaia-engine-field",
+ "legaia-engine-fishing",
+ "legaia-engine-menu-runtime",
+ "legaia-engine-menus",
+ "legaia-engine-minigame-scenes",
+ "legaia-engine-minigames",
+ "legaia-engine-mode",
+ "legaia-engine-scene",
+ "legaia-engine-scene-host",
+ "legaia-engine-system",
  "legaia-engine-ui",
  "legaia-font",
  "legaia-game-tables",
  "legaia-minigame-formats",
  "legaia-render-kernels",
+ "legaia-save",
 ]
 
 [[package]]
@@ -2350,11 +2415,13 @@ dependencies = [
  "legaia-engine-core",
  "legaia-engine-effects",
  "legaia-engine-field",
+ "legaia-engine-menu-runtime",
  "legaia-engine-menus",
  "legaia-engine-minigame-scenes",
  "legaia-engine-minigames",
  "legaia-engine-mode",
  "legaia-engine-scene",
+ "legaia-engine-scene-host",
  "legaia-engine-system",
  "legaia-engine-vm",
  "legaia-font",
@@ -2400,12 +2467,14 @@ dependencies = [
  "legaia-engine-export",
  "legaia-engine-field",
  "legaia-engine-fishing",
+ "legaia-engine-menu-runtime",
  "legaia-engine-menus",
  "legaia-engine-minigame-scenes",
  "legaia-engine-minigames",
  "legaia-engine-mode",
  "legaia-engine-render",
  "legaia-engine-scene",
+ "legaia-engine-scene-host",
  "legaia-engine-screens",
  "legaia-engine-session",
  "legaia-engine-system",
@@ -2677,9 +2746,11 @@ dependencies = [
  "legaia-engine-dialog",
  "legaia-engine-effects",
  "legaia-engine-field",
+ "legaia-engine-menu-runtime",
  "legaia-engine-menus",
  "legaia-engine-mode",
  "legaia-engine-scene",
+ "legaia-engine-scene-host",
  "legaia-engine-session",
  "legaia-engine-system",
  "legaia-engine-ui",
@@ -2805,6 +2876,7 @@ dependencies = [
  "legaia-actor-formats",
  "legaia-engine-camera",
  "legaia-engine-vm",
+ "legaia-font",
  "legaia-overlay-images",
  "legaia-scene-formats",
  "legaia-tim",
@@ -2994,11 +3066,13 @@ dependencies = [
  "legaia-engine-effects",
  "legaia-engine-field",
  "legaia-engine-fishing",
+ "legaia-engine-menu-runtime",
  "legaia-engine-menus",
  "legaia-engine-minigame-scenes",
  "legaia-engine-minigames",
  "legaia-engine-mode",
  "legaia-engine-scene",
+ "legaia-engine-scene-host",
  "legaia-engine-screens",
  "legaia-engine-session",
  "legaia-engine-system",

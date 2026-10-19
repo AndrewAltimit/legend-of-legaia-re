@@ -231,7 +231,7 @@ impl ScriptGate {
     /// installed.
     pub fn drive_resume(
         &self,
-        host: &mut legaia_engine_core::scene_host::SceneHost,
+        host: &mut legaia_engine_scene_host::scene_host::SceneHost,
         tick: u64,
     ) -> bool {
         if self.resumed_early.get() {
@@ -581,7 +581,7 @@ pub const SCRIPT_RESUME_TICK: u64 = crate::SETTLE_TICKS;
 /// ([`legaia_engine_field::man_field_scripts::walk_spawn_scores`]), are
 /// replayed first. Returns `true` when a context was installed.
 pub fn resume_record(
-    host: &mut legaia_engine_core::scene_host::SceneHost,
+    host: &mut legaia_engine_scene_host::scene_host::SceneHost,
     gate: &ScriptGate,
 ) -> bool {
     if let Some(c) = gate.context(&host.world) {

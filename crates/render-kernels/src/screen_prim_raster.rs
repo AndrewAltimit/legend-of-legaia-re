@@ -7,8 +7,9 @@
 //! per quad (`v0 v1 v2` + `v1 v2 v3`), affine UV and colour interpolation,
 //! the VRAM texel fetch through the texpage's colour depth and the CLUT, a
 //! `0x0000` texel discarded, the 5-bit [`psx_texture_blend`] modulation, and
-//! the four ABR equations applied to the whole quad of a semi-transparent
-//! run. It is a presentation path for a page, not a parity oracle for the
+//! the four ABR equations applied to a semi-transparent prim's pixels - every
+//! pixel of an untextured one, only the STP-set texels of a textured one (an
+//! STP-clear texel draws opaque, as on the GPU). It is a presentation path for a page, not a parity oracle for the
 //! GPU: edge coverage is pixel-centre sampling rather than the PSX fill rule.
 
 use crate::screen_prim::{
@@ -155,11 +156,17 @@ fn rasterize(prims: &[ScreenPrim], vram: &[u16], w: u32, h: u32, overlay: bool) 
                     }
                     let lerp = |p: f32, q: f32, r: f32| wa * p + wb * q + wc * r;
                     let col: [f32; 3] = core::array::from_fn(|k| lerp(a.c[k], b.c[k], c.c[k]));
+                    // Whether this pixel blends: an untextured semi prim
+                    // blends every pixel, a textured one only the texels
+                    // whose STP bit (15) is set - an STP-clear texel draws
+                    // opaque inside a semi-transparent prim.
+                    let mut blends = semi;
                     let front = if textured {
                         let word = fetch(vram, lerp(a.u, b.u, c.u), lerp(a.v, b.v, c.v), cba, tsb);
                         if word == 0 {
                             continue;
                         }
+                        blends = semi && word & 0x8000 != 0;
                         let t5 = [word & 31, (word >> 5) & 31, (word >> 10) & 31];
                         core::array::from_fn(|k| {
                             let c8 = col[k].round().clamp(0.0, 255.0) as u8;
@@ -170,7 +177,7 @@ fn rasterize(prims: &[ScreenPrim], vram: &[u16], w: u32, h: u32, overlay: bool) 
                     };
                     covered[y * w + x] = true;
                     let dst = &mut px[y * w + x];
-                    *dst = if semi {
+                    *dst = if blends {
                         core::array::from_fn(|k| blend(dst[k], front[k], abr))
                     } else {
                         front
@@ -239,5 +246,40 @@ mod tests {
         let img = rasterize_rgba(&[q], &vram, 320, 240);
         assert_eq!(&img[0..3], &[255, 255, 255]);
         assert_eq!(&img[4..7], &[0, 0, 0]);
+    }
+
+    #[test]
+    fn a_semi_textured_quad_blends_only_its_stp_texels() {
+        // The fishing HUD's case: an additive (ABR 1) sprite whose CLUT
+        // entries are all STP-clear draws opaque over what is under it, so a
+        // glyph under the LINE plate stays hidden. Only an STP-set texel adds.
+        let mut vram = vec![0u16; VRAM_W * VRAM_H];
+        vram[0] = 0x0010; // dim red, STP clear -> replaces
+        vram[1] = 0x8010; // dim red, STP set -> adds
+        let under = ScreenPrim::Flat(FlatQuad {
+            xy: [(0, 0), (2, 0), (0, 1), (2, 1)],
+            color: [0, 0, 248, 255],
+            gouraud: None,
+            semi_transparent: false,
+            abr_mode: 0,
+            ot_index: 1,
+            depth: None,
+        });
+        let over = ScreenPrim::Textured(ScreenQuad {
+            xy: [(0, 0), (2, 0), (0, 1), (2, 1)],
+            uv: [(0, 0), (2, 0), (0, 1), (2, 1)],
+            clut: 0,
+            tpage: (2 << 7) | (1 << 5),
+            color: 0x0080_8080,
+            gouraud: None,
+            semi_transparent: true,
+            ot_index: 0,
+            depth: None,
+        });
+        let img = rasterize_rgba(&[under, over], &vram, 320, 240);
+        let red = (16.0f32 / 31.0 * 255.0).round() as u8;
+        assert_eq!(&img[0..3], &[red, 0, 0], "STP-clear texel draws opaque");
+        assert_eq!(img[4], red, "STP-set texel adds its red");
+        assert!(img[6] > 200, "and keeps the blue under it");
     }
 }

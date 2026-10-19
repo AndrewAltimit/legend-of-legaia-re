@@ -48,7 +48,10 @@ WAIVED = {
     ("webgl-shaders.js", "SHADOW_FS_SRC"): "the point-light shadow pass draws "
     "into each light's own depth layer, never the scene's buffer, and nothing "
     "compares its depth against log2(w)",
-    ("webgl-prim-replay.js", "FS_REPLAY"): "no page loads webgl-prim-replay.js; "
+    ("world-overview-mist.js", "FS"): "the world overview's Mist sheets test "
+    "against `renderAssembled`'s scene, and that page never turns log depth on "
+    "(`setLogDepth` is the play page's), so its buffer holds rasterised depth",
+    ("webgl-prim-replay.js", "FS_REPLAY"):"no page loads webgl-prim-replay.js; "
     "it draws into its own context",
     ("play-app.js", "FS_LAYER"): "the text-layer composite "
     "(`ScreenPrimPass.drawLayer`) draws with the depth test disabled and the "

@@ -256,8 +256,8 @@ finish*. A failed delivery clears the key so a retry still gets through.
 
 The reproduction is a control pair, not a screenshot: with a warm cache, pick
 the file again, click **New game** as soon as the boot modes appear, and read
-the HUD ten seconds later. Re-picking gives `hud-frame=0`; skipping the re-pick,
-same profile and same timing, boots to `opdeene`.
+the HUD ten seconds later. Re-picking leaves the HUD's Scene at `-` (the engine
+never ticked); skipping the re-pick, same profile and same timing, boots to `opdeene`.
 
 ## The 3D pages are WebGL2-only, and they now say so
 

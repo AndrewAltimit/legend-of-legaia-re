@@ -128,8 +128,8 @@ fn every_field_handoff_scene_enters() {
 /// transfers, every later call reports nothing.
 #[test]
 fn the_handoff_transfers_once_however_many_hosts_poll() {
-    use legaia_engine_core::scene_host::FmvHandoffOutcome;
     use legaia_engine_mode::mode::SceneMode;
+    use legaia_engine_scene_host::scene_host::FmvHandoffOutcome;
 
     if std::env::var_os("LEGAIA_DISC_BIN").is_none() {
         eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated convention)");

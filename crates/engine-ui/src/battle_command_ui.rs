@@ -411,8 +411,11 @@ pub struct BattleCommandMenuFrame<'a> {
 /// unavailable chips all carry it.
 pub const CHIP_COLOR: [f32; 4] = [1.0, 1.0, 1.0, 1.0];
 /// Label ink of every chip, the `-` of an unavailable command included:
-/// one glyph palette for the whole cluster.
-pub const LABEL_INK: [f32; 4] = [1.0, 1.0, 1.0, 1.0];
+/// one glyph palette for the whole cluster - the font's tier-7 CLUT, whose
+/// ink reads `(206, 206, 206)` on retail's screen
+/// (`v0_1_battle_command_submenu`'s `Item` / `Attack` / `Spirit`), the
+/// battle strip's [`READOUT_NORMAL`](crate::READOUT_NORMAL).
+pub const LABEL_INK: [f32; 4] = crate::READOUT_NORMAL;
 
 // --------------------------------------------------------------- builders
 

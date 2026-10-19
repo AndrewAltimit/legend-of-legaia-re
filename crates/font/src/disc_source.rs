@@ -15,6 +15,22 @@ pub(super) const SCUS_LOAD_ADDR_FALLBACK: u32 = 0x8001_0000;
 /// `texel.rgb * tint` shader can reach any retail ink colour).
 pub(super) const FONT_SHADOW_INDEX: u8 = 14;
 
+/// The drop-shadow texel's grey, stored against the ink retail draws text in.
+///
+/// Retail's shadow is a fixed CLUT entry, the 5-bit `4` a frame shows as
+/// `(33, 33, 33)`, whatever the fill ink; the engine's shader multiplies the
+/// whole texel by the ink. Retail's text ink is the tier-7 grey `206` almost
+/// everywhere (dialogue, menus, every battle caption), so the shadow texel is
+/// stored as `33 * 255 / 206`: under that ink it lands on retail's `33`. A
+/// stored `32` drew every shadow at `26`.
+pub const FONT_SHADOW_TEXEL: u8 = 41;
+
+/// The alpha a drop-shadow texel carries instead of `255`: the mark the
+/// overlay tint reads to give a shadow its own ink's CLUT entry rather than a
+/// multiply of the fill ink (`legaia_render_kernels::ui_tint`). A tint that
+/// reads no mark draws it as an opaque [`FONT_SHADOW_TEXEL`] like before.
+pub const FONT_SHADOW_ALPHA: u8 = 254;
+
 /// Decode the 4bpp dialog-font TIM (`font_tim` starting at the TIM magic) into
 /// a 256×256 row-major indexed buffer (one byte per pixel, 0..=15). Validates
 /// the header + the framebuffer `(896, 0)` so a wrong slice fails loudly rather
@@ -83,7 +99,7 @@ pub(super) fn decode_font_tim(font_tim: &[u8]) -> Result<Vec<u8>> {
 /// atlas [`Font`] expects, as a whitewashed stencil: cell `c` lives in the page
 /// at `U = (c & 0x0F) * 16`, `V = (c & 0xF0) - 0x20` (`docs/formats/dialog-font.md`),
 /// and its upper-left 14×15 pixels copy to `glyph_origin(c)`. Index 0 → fully
-/// transparent, [`FONT_SHADOW_INDEX`] → the `(32,32,32)` drop shadow, every
+/// transparent, [`FONT_SHADOW_INDEX`] → the [`FONT_SHADOW_TEXEL`] drop shadow, every
 /// other index → pure white fill.
 pub(super) fn pack_stencil_atlas(indexed: &[u8]) -> Vec<u8> {
     const PAGE: usize = 256;
@@ -104,7 +120,12 @@ pub(super) fn pack_stencil_atlas(indexed: &[u8]) -> Vec<u8> {
                 let idx = indexed[(src_v + gy) * PAGE + (src_u + gx)];
                 let px = match idx {
                     0 => [0, 0, 0, 0],
-                    FONT_SHADOW_INDEX => [32, 32, 32, 255],
+                    FONT_SHADOW_INDEX => [
+                        FONT_SHADOW_TEXEL,
+                        FONT_SHADOW_TEXEL,
+                        FONT_SHADOW_TEXEL,
+                        FONT_SHADOW_ALPHA,
+                    ],
                     _ => [255, 255, 255, 255],
                 };
                 let dx = ox as usize + gx;
@@ -221,11 +242,16 @@ pub(super) fn font_tim_clut_and_pixels(font_tim: &[u8]) -> Result<([u16; 16], &[
 }
 
 /// Stencil colour for a 4bpp palette index: transparent background, the
-/// `(32,32,32)` drop shadow, or pure-white fill (see [`pack_stencil_atlas`]).
+/// [`FONT_SHADOW_TEXEL`] drop shadow, or pure-white fill (see [`pack_stencil_atlas`]).
 pub(super) fn stencil_rgba(idx: u8) -> [u8; 4] {
     match idx {
         0 => [0, 0, 0, 0],
-        FONT_SHADOW_INDEX => [32, 32, 32, 255],
+        FONT_SHADOW_INDEX => [
+            FONT_SHADOW_TEXEL,
+            FONT_SHADOW_TEXEL,
+            FONT_SHADOW_TEXEL,
+            FONT_SHADOW_ALPHA,
+        ],
         _ => [255, 255, 255, 255],
     }
 }

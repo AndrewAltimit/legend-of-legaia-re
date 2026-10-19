@@ -30,9 +30,9 @@
 
 use std::collections::{BTreeMap, HashSet, VecDeque};
 
-use legaia_engine_core::scene_host::SceneHost;
 use legaia_engine_field::world_map_entity_config::WorldMapEntityConfig;
 use legaia_engine_mode::mode::SceneMode;
+use legaia_engine_scene_host::scene_host::SceneHost;
 
 const TILE: i16 = 128;
 const SUBCELL: i16 = 32;

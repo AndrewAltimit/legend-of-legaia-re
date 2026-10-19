@@ -174,8 +174,8 @@ pub(crate) fn cmd_save(
     slot: u8,
     party_size: usize,
 ) -> Result<()> {
-    use legaia_engine_core::menu_runtime::MenuRuntime;
     use legaia_engine_core::world::World;
+    use legaia_engine_menu_runtime::menu_runtime::MenuRuntime;
     use legaia_save::{CharacterRecord, Party};
 
     let _ = (extracted_root, disc);
@@ -258,8 +258,8 @@ pub(crate) fn cmd_load(
     card: Option<&std::path::Path>,
     block: Option<u8>,
 ) -> Result<()> {
-    use legaia_engine_core::menu_runtime::MenuRuntime;
     use legaia_engine_core::world::World;
+    use legaia_engine_menu_runtime::menu_runtime::MenuRuntime;
 
     let mut world = World::default();
     // One summary line whichever carrier the save came out of: the save

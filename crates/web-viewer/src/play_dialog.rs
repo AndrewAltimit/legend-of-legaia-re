@@ -10,9 +10,10 @@
 //! ([`crate::play_menu`]) - the page blits them over the live (NOT frozen)
 //! field, exactly as retail draws the box over the running scene.
 //!
-//! The snapshot, the layout and both halves of the box are
-//! `legaia_engine_screens::dialog_screens`, the native window's calls too.
-//! Geometry mirrors the traced pager (`FUN_801D84D0`):
+//! The whole channel - the box, the `4C E1` balloon, the map display's
+//! labels, the tile-board prompt and the Incense notice - is composed by
+//! `legaia_engine_screens::field_messages`, the native window's call too, so
+//! the two hosts stack and gate it the same way. Geometry mirrors the traced pager (`FUN_801D84D0`):
 //!
 //! - Main (reading) box centre rect `(0x26, 0x10, 0xF4, lines*0xF - 3)`,
 //!   anchored at the TOP of the 320x240 stage; `lines` is the pager's window
@@ -36,183 +37,61 @@
 
 use super::*;
 use crate::runtime::LegaiaRuntime;
-use legaia_engine_screens::dialog_screens::{self, DialogSnapshot};
-use legaia_engine_ui::{self as ui, SpriteDraw, TextDraw};
-
-/// What one frame's `4C E1` balloon needs to draw: the page bytes, the centred
-/// text pen, and the window rect - all in 320x240 stage pixels.
-type TextBalloonPlacement = (Vec<u8>, (i32, i32), (i32, i32, i32, i32));
-
-impl LegaiaRuntime {
-    /// Snapshot the live dialog source
-    /// (`legaia_engine_screens::dialog_screens::dialog_snapshot`). The web
-    /// host runs with `use_vm_dialogue` armed and has no typed-out panel of
-    /// its own, so the sources are the cutscene-timeline segment and the
-    /// inline-script field-VM runner.
-    fn dialog_snapshot(&self) -> Option<DialogSnapshot> {
-        legaia_engine_screens::dialog_screens::dialog_snapshot(&self.scene_host.host()?.world, None)
-    }
-
-    /// Measure the live `4C E1` balloon in the host font, commit the width to
-    /// the engine, and return `(page bytes, pen, frame rect)` for the draw -
-    /// or `None` when no balloon is drawable this frame.
-    ///
-    /// The measurement round-trip is the whole reason the record's `x`
-    /// existed as an `Option`: retail measures inside the spawner, the engine
-    /// cannot, so the draw layer measures and hands the width back
-    /// ([`legaia_engine_core::world::World::commit_text_balloon_width`]). The
-    /// startup band is excluded by `text_balloon_drawing`, matching the
-    /// handler's `timer < 1` arm, which draws nothing.
-    fn take_text_balloon_placement(&mut self) -> Option<TextBalloonPlacement> {
-        let text = self
-            .scene_host
-            .host()?
-            .world
-            .text_balloon_drawing()?
-            .to_vec();
-        let width = ui::text_balloon_text_width(self.menu_assets.as_ref()?.font_ref(), &text);
-        let host = self.scene_host.host_mut()?;
-        let rect = host.world.cutscene.text_balloon.as_ref()?.frame_rect();
-        let pen = host.world.commit_text_balloon_width(width)?;
-        Some((text, pen, rect))
-    }
-}
+use legaia_engine_screens::field_messages as fm;
+use legaia_engine_ui as ui;
 
 #[wasm_bindgen]
 impl LegaiaRuntime {
-    /// Draw lists for the retail dialog reading box over a `surface_w` x
-    /// `surface_h` canvas. Same shape as
+    /// Draw lists for the field message layer over a `surface_w` x
+    /// `surface_h` canvas: the `4C E1` balloon, the map display's labels,
+    /// the tile-board prompt, the Incense notice and the retail dialog
+    /// reading box, composed by
+    /// [`legaia_engine_screens::field_messages::field_message_frame`] (the
+    /// native window's call too). Same shape as
     /// [`Self::play_menu_draws_json`]: `{ "open", "sprites", "texts" }` -
     /// `sprites` sample the chrome atlas, `texts` the font atlas (upload both
     /// via the `play_menu_*` atlas accessors; this call builds the shared
-    /// assets on first use). `open` is `false` when no box is up this frame.
+    /// assets on first use). `open` is `false` when nothing is up this frame.
     ///
     /// Unlike the pause menu the field keeps running underneath - retail
     /// draws the reading box over the live scene.
     pub fn play_dialog_draws_json(&mut self, surface_w: u32, surface_h: u32) -> String {
         const CLOSED: &str = r#"{"open":false,"sprites":[],"texts":[]}"#;
-        let has_balloon = self
-            .scene_host
-            .host()
-            .is_some_and(|h| h.world.text_balloon_drawing().is_some());
-        // The tile board's quit prompt (walk-SM state 5) draws in this
-        // channel too - the native window puts it beside the balloon.
-        let prompt = self.scene_host.host().and_then(|h| {
-            let cursor = h.world.tile_board_prompt_cursor()?;
-            Some((cursor, h.tile_board_prompt_lines()?))
-        });
-        // The Incense wear-off notice (`FUN_801F1E48`) shares the channel.
-        let notice = self.scene_host.host().and_then(|h| h.incense_notice_line());
-        // The overworld map display's place labels and compass letters
-        // (PROT 0981's label pass) share it as well.
-        let (map_labels, map_marks) = self
-            .scene_host
-            .host()
-            .map(|h| {
-                (
-                    legaia_engine_core::world_map_labels::map_display_labels_now(&h.world),
-                    legaia_engine_core::world_map_labels::map_display_compass_marks(&h.world),
-                )
-            })
-            .unwrap_or_default();
-        let has_map = !map_labels.is_empty() || !map_marks.is_empty();
-        if (self.dialog_snapshot().is_none()
-            && !has_balloon
-            && prompt.is_none()
-            && notice.is_none()
-            && !has_map)
-            || !self.ensure_menu_assets()
+        if self.scene_host.host().is_none() || !self.ensure_menu_assets() {
+            return CLOSED.to_string();
+        }
+        // The balloon's width is measured in the host font and handed back
+        // to the engine before the draw (retail measures at spawn, inside
+        // `FUN_8003C764`).
+        if let (Some(assets), Some(host)) = (self.menu_assets.as_ref(), self.scene_host.host_mut())
         {
-            return CLOSED.to_string();
+            fm::commit_text_balloon_measure(&mut host.world, assets.font_ref());
         }
-        // The `4C E1` balloon: measure the line in the host font, hand the
-        // width back to the engine (retail measures at spawn, inside
-        // `FUN_8003C764`), and keep the pen + frame rect the engine derives.
-        let balloon = self.take_text_balloon_placement();
-        let snap = self.dialog_snapshot();
-        let Some(assets) = self.menu_assets.as_ref() else {
+        let (Some(assets), Some(host)) = (self.menu_assets.as_ref(), self.scene_host.host()) else {
             return CLOSED.to_string();
         };
-        let (origin, scale) = crate::play_menu::stage_transform(surface_w.max(1), surface_h.max(1));
-        let has_chrome = assets.chrome_rects().is_some();
-        let font = assets.font_ref();
-
-        let mut sprites: Vec<SpriteDraw> = Vec::new();
-        let mut texts: Vec<TextDraw> = Vec::new();
-        if let Some((text, pen, rect)) = balloon.as_ref() {
-            if let Some(rects) = assets.chrome_rects() {
-                sprites.extend(ui::text_balloon_chrome_draws_for(
-                    rects, *rect, origin, scale,
-                ));
-            }
-            texts.extend(ui::text_balloon_text_draws_for(font, text, *pen));
+        let (surface_w, surface_h) = (surface_w.max(1), surface_h.max(1));
+        // The page runs with `use_vm_dialogue` armed and has no typed-out
+        // panel of its own.
+        let frame = fm::field_message_frame(
+            &fm::FieldMessageInputs {
+                host,
+                host_panel: None,
+                font: assets.font_ref(),
+                chrome: assets.chrome_rects(),
+            },
+            surface_w,
+            surface_h,
+        );
+        if frame.is_empty() {
+            return CLOSED.to_string();
         }
-        if let Some((cursor, lines)) = prompt.as_ref() {
-            let (frame, rows, cursor_x) = legaia_engine_minigames::tile_board::prompt_layout();
-            let lay = ui::TileBoardPromptLayout {
-                frame,
-                rows,
-                cursor_x,
-            };
-            if let Some(rects) = assets.chrome_rects() {
-                sprites.extend(ui::tile_board_prompt_sprites_for(
-                    rects, &lay, *cursor, origin, scale,
-                ));
-            }
-            texts.extend(ui::tile_board_prompt_text_draws_for(font, &lay, lines));
-        }
-        if let Some(line) = notice.as_ref() {
-            if let Some(rects) = assets.chrome_rects() {
-                sprites.extend(ui::incense_notice_sprites_for(
-                    rects,
-                    legaia_engine_core::incense_notice::notice_frame_rect(),
-                    origin,
-                    scale,
-                ));
-            }
-            texts.extend(ui::incense_notice_text_draws_for(
-                font,
-                legaia_engine_core::incense_notice::notice_text_pen(),
-                line,
-            ));
-        }
-        if has_map {
-            let rows: Vec<ui::MapLabelDraw<'_>> = map_labels
-                .iter()
-                .map(|l| (l.name.as_slice(), l.sx, l.sy))
-                .collect();
-            if let Some(rects) = assets.chrome_rects() {
-                sprites.extend(ui::map_label_chrome_draws_for(
-                    rects, font, &rows, origin, scale,
-                ));
-            }
-            texts.extend(ui::map_label_text_draws_for(font, &rows));
-            texts.extend(ui::map_compass_text_draws_for(font, &map_marks));
-        }
-
-        let Some(snap) = snap else {
-            // Balloon only - no reading box up this frame.
-            ui::scale_stage_text_draws(&mut texts, origin, scale);
-            return serde_json::json!({
-                "open": !texts.is_empty() || !sprites.is_empty(),
-                "sprites": sprites.iter().map(crate::play_menu::quad_json).collect::<Vec<_>>(),
-                "texts": texts.iter().map(crate::play_menu::quad_json).collect::<Vec<_>>(),
-            })
-            .to_string();
-        };
-        if let Some(rects) = assets.chrome_rects() {
-            sprites.extend(dialog_screens::dialog_box_chrome_draws(
-                rects, &snap, origin, scale,
-            ));
-        }
-        texts.extend(dialog_screens::dialog_box_text_draws(
-            font, &snap, has_chrome,
-        ));
+        let (origin, scale) = crate::play_menu::stage_transform(surface_w, surface_h);
+        let mut texts = frame.stage_texts;
         ui::scale_stage_text_draws(&mut texts, origin, scale);
-
         serde_json::json!({
             "open": true,
-            "sprites": sprites.iter().map(crate::play_menu::quad_json).collect::<Vec<_>>(),
+            "sprites": frame.sprites.iter().map(crate::play_menu::quad_json).collect::<Vec<_>>(),
             "texts": texts.iter().map(crate::play_menu::quad_json).collect::<Vec<_>>(),
         })
         .to_string()

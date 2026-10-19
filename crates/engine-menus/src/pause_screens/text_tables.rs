@@ -22,6 +22,10 @@ pub struct MenuTextTables {
     /// The report window's drop line template, raw MES bytes
     /// ([`legaia_ui_formats::screen_elements::drop_line_template`]).
     pub drop_line: Option<Vec<u8>>,
+    /// The item-detail printer's tables (`FUN_800337B0`): raw descriptions,
+    /// the equipment slot templates and stat labels, per-id kind and bonus
+    /// record ([`crate::shop::ItemDetailTables`]).
+    pub item_detail: Option<crate::shop::ItemDetailTables>,
 }
 
 impl MenuTextTables {
@@ -42,6 +46,7 @@ impl MenuTextTables {
                 })
                 .collect(),
             drop_line: legaia_ui_formats::screen_elements::drop_line_template(scus),
+            item_detail: crate::shop::ItemDetailTables::from_scus(scus),
         }
     }
 

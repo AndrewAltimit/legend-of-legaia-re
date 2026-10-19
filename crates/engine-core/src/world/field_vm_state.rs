@@ -60,7 +60,7 @@ pub struct FieldVmState {
     pub free_roam_staging: bool,
     /// [`legaia_engine_vm::frame_clock::FrameClock::display_frames`] at the most recent free-roam staging / scene
     /// entry - the base of the entry window the pause-drop measures against.
-    pub(crate) free_roam_entry_frame: u64,
+    pub free_roam_entry_frame: u64,
     /// Per-actor field-VM channels: one spawned context per MAN partition-1
     /// placement record, mirroring the retail per-record spawn
     /// (`FUN_8003A1E4`). Spawned alongside a cutscene timeline
@@ -78,7 +78,7 @@ pub struct FieldVmState {
     /// retail always sees every actor - still finds the other channels.
     /// Empty outside a stepping pass. Read it through
     /// [`crate::world::World::channel_view`], never directly.
-    pub(crate) stepping_view: Vec<legaia_engine_field::field_channels::FieldChannel>,
+    pub stepping_view: Vec<legaia_engine_field::field_channels::FieldChannel>,
     /// The MAN payload the channels' bytecode slices from (each channel's
     /// buffer base is its `record_offset` into this).
     pub channels_man: Option<std::sync::Arc<Vec<u8>>>,
@@ -137,12 +137,11 @@ pub struct FieldVmState {
     pub(crate) object_channel_rots: std::collections::HashMap<usize, [u16; 3]>,
     /// Live op-`4C 42` `+0x8E` ramps on object-bind actors
     /// ([`crate::world::ObjectSlotRamp`]), stepped by the per-actor tick.
-    pub(crate) object_slot_ramps: Vec<crate::world::ObjectSlotRamp>,
+    pub object_slot_ramps: Vec<crate::world::ObjectSlotRamp>,
     /// Op-`4C 81` draw tints on the player, field NPCs and objects another
     /// script tinted ([`crate::world::ActorTint`]), stepped by the per-actor
     /// tick. Scene-scoped: retail re-spawns every actor on a scene load.
-    pub(crate) actor_tints:
-        std::collections::HashMap<crate::world::ActorTintKey, crate::world::ActorTint>,
+    pub actor_tints: std::collections::HashMap<crate::world::ActorTintKey, crate::world::ActorTint>,
     /// Pending field-VM op-`0x44` SPAWN_RECORD requests: the GLOBAL record
     /// indices whose partition-2 records should spawn as new contexts.
     /// Recorded by the host hook (the VM borrow precludes resolving the MAN
@@ -184,7 +183,7 @@ pub struct FieldVmState {
     /// `CC F8 C2 <b>` writes through [`super::vm_hosts`]' player routing -
     /// the player is no placement channel, so it needs its own home.
     /// Cleared on scene entry with the actor tints.
-    pub(crate) player_field_42: u16,
+    pub player_field_42: u16,
 }
 
 impl FieldVmState {

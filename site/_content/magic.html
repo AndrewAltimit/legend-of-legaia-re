@@ -97,8 +97,8 @@ body.magic-live .magic-status-idle { display: none; }
     <label class="magic-fit-label" title="Off: frame the summon's own body and follow it, so the creature fills the canvas - a part thrown far from the body (Meta's sword) may sit outside the frame. On: fit the whole cast, so everything stays visible at the cost of drawing the body small, because these casts travel a long way.">
       <input type="checkbox" id="magic-fit-toggle"> frame the whole cast
     </label>
-    <button id="magic-glb-btn" type="button" disabled
-            title="Download the selected cast's summon model with every phase clip baked in as named glTF animations - the real model, textures and on-disc keyframes, ready for Blender or three.js. Baked entirely in your browser; nothing is uploaded. Needs a loaded disc and a selected cast.">&#11015; .glb with the cast animations</button>
+    <button id="magic-glb-btn" class="btn-accent" type="button" disabled
+            title="Download the selected cast's summon model with every phase clip baked in as named glTF animations - the real model, textures and on-disc keyframes, ready for Blender or three.js. Baked entirely in your browser; nothing is uploaded. Needs a loaded disc and a selected cast.">Download .glb with the cast animations</button>
   </div>
   <div class="magic-stage" id="magic-stage" hidden>
     <canvas id="magic-canvas" class="magic-canvas" width="720" height="440"></canvas>

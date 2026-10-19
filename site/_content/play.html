@@ -175,17 +175,24 @@
    out of the picture's letterbox: it is never drawn over the picture. */
 .play-screen:fullscreen {
   display: flex; flex-direction: column; align-items: center; justify-content: center;
-  background: #05070c;
+  background: #000;
   --play-fs-cap: 0px;
+  /* a few pixels of black margin round the picture on every side */
+  --play-fs-pad: 4px;
 }
 .play-screen:fullscreen:has(> .play-mg-caption:not([hidden])) { --play-fs-cap: 4.4rem; }
-.play-screen:fullscreen::backdrop { background: #05070c; }
+.play-screen:fullscreen::backdrop { background: #000; }
 .play-viewport .play-screen:fullscreen > .play-canvas-wrap,
 .play-viewport .play-screen:fullscreen > .play-mg-caption {
   flex: none; margin: 0;
   /* the viewport-height width cap must not shrink fullscreen */
-  width: min(100vw, calc((100vh - var(--play-fs-cap)) * 4 / 3)); max-width: none;
+  width: min(calc(100vw - 2 * var(--play-fs-pad)),
+             calc((100vh - var(--play-fs-cap) - 2 * var(--play-fs-pad)) * 4 / 3));
+  max-width: none;
 }
+/* No focus border in fullscreen: the accent outline framed the picture. */
+.play-screen:fullscreen .play-canvas,
+.play-screen:fullscreen .play-canvas:focus { border-color: transparent; }
 /* The reserved height holds three unwrapped rows, which is every game's most
    on a landscape screen. A narrow portrait screen wraps them; it also has
    letterbox to spare under the picture, so the strip may grow there. */
@@ -365,19 +372,16 @@
         <div class="play-hud">
           <span><b>Scene</b> <span id="hud-scene">-</span></span>
           <span><b>Mode</b> <span id="hud-mode">-</span></span>
-          <span><b>Frame</b> <span id="hud-frame">0</span></span>
           <span><b>FPS</b> <span id="hud-fps">0</span></span>
           <span><b>Pos</b> <span id="hud-pos">-</span></span>
           <span><b>NPCs</b> <span id="hud-npcs">0</span></span>
           <span><b>SFX</b> <span id="hud-sfx">-</span></span>
         </div>
         <div class="play-btn-row">
-          <button id="play-pause" type="button">Pause</button>
-          <button id="play-step" type="button">Step 1 frame</button>
           <button id="play-recenter" type="button">Reset camera</button>
           <button id="play-fishing" type="button"
                   title="Start the fishing minigame here (X casts and locks the power, Z and V reel)">Fish here</button>
-          <button id="play-fullscreen" type="button" title="Present the viewport full screen (Esc to exit)">&#9974; Fullscreen</button>
+          <button id="play-fullscreen" class="btn-accent" type="button" title="Present the viewport full screen (Esc to exit)">&#9974; Fullscreen</button>
           <label class="play-volume" title="Scene BGM output gain (the engine's SPU mixer runs into a WebAudio GainNode)">
             &#9834; <input type="range" id="play-volume" min="0" max="10" step="0.5" value="1">
             <span id="play-volume-value">1x</span>
@@ -387,7 +391,7 @@
             <input type="checkbox" id="play-dev-menu"> Dev menu
           </label>
           <label class="play-dev-menu"
-                 title="Dissolve walls and roofs between the camera and your character to a see-through dither so you can always spot yourself (the native window's default-on occlusion-fade enhancement; retail relies on authored camera framing instead). Presentation only - the simulation never changes.">
+                 title="Dissolve walls and roofs between the camera and your character to a see-through dither so you can always spot yourself (the native window's default-on occlusion-fade enhancement, F4 on both, persisted; retail relies on authored camera framing instead). Presentation only - the simulation never changes.">
             <input type="checkbox" id="play-see-through" checked> See-through walls
           </label>
           <label class="play-dev-menu"
@@ -403,7 +407,7 @@
             <input type="checkbox" id="play-dyn-light"> Enhanced lighting
           </label>
           <label class="play-dev-menu"
-                 title="Lamp shadows: each of enhanced lighting's point lights casts soft shadows from the geometry around it (the native window's Y toggle). Inert while enhanced lighting is off. Presentation only.">
+                 title="Lamp shadows: each of enhanced lighting's point lights casts soft shadows from the geometry around it (the native window's Y toggle, persisted). Inert while enhanced lighting is off. Presentation only.">
             <input type="checkbox" id="play-dyn-shadows" checked> Lamp shadows
           </label>
           <label class="play-dev-menu"
@@ -424,7 +428,7 @@
             <input type="checkbox" id="play-entry-pulse" checked> Entry pulse
           </label>
           <label class="play-dev-menu"
-                 title="Retail-faithful for this session (the native --retail): every enhancement off - enhanced lighting and its shadows, ground fog, see-through walls, the scene-entry pulse - and every engine-only option pinned to retail (camera distance, 8-way movement, no flash slew, retail tile windows). Nothing is stored; untick to get your own settings back.">
+                 title="Retail-faithful for this session (the native --retail): every enhancement off - the scene-entry pulse off and every engine-only option pinned to retail (enhanced lighting and its shadows, ground fog, see-through walls, camera distance, 8-way movement, no flash slew, retail tile windows). Nothing is stored; untick to get your own settings back.">
             <input type="checkbox" id="play-retail-mode"> Retail-faithful
           </label>
           <label class="play-dev-menu"
@@ -800,7 +804,6 @@
   const hud = {
     scene: document.getElementById('hud-scene'),
     mode:  document.getElementById('hud-mode'),
-    frame: document.getElementById('hud-frame'),
     fps:   document.getElementById('hud-fps'),
     pos:   document.getElementById('hud-pos'),
     npcs:  document.getElementById('hud-npcs'),
@@ -956,14 +959,10 @@
       modesEl.style.display = 'grid';
       window.__playRuntime = runtime;
       if (typeof window.__playApplyDevMenu === 'function') window.__playApplyDevMenu();
-      /* The precise-movement box reflects the engine's persisted option;
-       * the battle tools are session-only and start at the engine defaults. */
-      if (typeof window.__playSyncPreciseMove === 'function') window.__playSyncPreciseMove();
-      if (typeof window.__playSyncGroundFog === 'function') window.__playSyncGroundFog();
-      if (typeof window.__playSyncRenderToggles === 'function') window.__playSyncRenderToggles();
-      if (typeof window.__playSyncCameraDistance === 'function') window.__playSyncCameraDistance();
-      if (typeof window.__playApplyPageToggles === 'function') window.__playApplyPageToggles();
-      if (typeof window.__playSyncPageToggles === 'function') window.__playSyncPageToggles();
+      /* The option boxes reflect the engine's persisted options - after the
+       * page's session switches (Retail-faithful pins them) are applied; the
+       * battle tools are session-only and start at the engine defaults. */
+      if (typeof window.__playSyncAfterRuntime === 'function') window.__playSyncAfterRuntime(false);
       setSaveUi(true);
       /* A fresh runtime has an empty rack: mount the browser card (and any
        * card the player picked) before anything can open a save screen. */
@@ -1259,7 +1258,7 @@
       if (fontBlit) return fontBlit;
       try {
         const fd = runtime.play_menu_font_dims();
-        if (fd[0] > 0) fontBlit = new window.LegaiaAtlasBlitter(runtime.play_menu_font_rgba(), fd[0], fd[1]);
+        if (fd[0] > 0) fontBlit = new window.LegaiaAtlasBlitter(runtime.play_menu_font_rgba(), fd[0], fd[1], window.LegaiaAtlasBlitter.tinterFor(runtime));
       } catch (e) { console.warn('boot title font', e); }
       return fontBlit;
     };
@@ -1316,7 +1315,7 @@
         if (runtime.play_menu_has_chrome()) {
           const cd = runtime.play_menu_chrome_dims();
           if (cd[0] > 0)
-            chromeBlit = new window.LegaiaAtlasBlitter(runtime.play_menu_chrome_rgba(), cd[0], cd[1]);
+            chromeBlit = new window.LegaiaAtlasBlitter(runtime.play_menu_chrome_rgba(), cd[0], cd[1], window.LegaiaAtlasBlitter.tinterFor(runtime));
         }
       } catch (e) { console.warn('boot title chrome', e); }
       return chromeBlit;
@@ -1490,10 +1489,8 @@
       window.__playRuntime = runtime;
       remountCards();
       if (typeof window.__playApplyDevMenu === 'function') window.__playApplyDevMenu();
-      if (typeof window.__playApplyPreciseMove === 'function') window.__playApplyPreciseMove();
-      if (typeof window.__playApplyGroundFog === 'function') window.__playApplyGroundFog();
       if (typeof window.__playApplyBattleTools === 'function') window.__playApplyBattleTools();
-      if (typeof window.__playApplyPageToggles === 'function') window.__playApplyPageToggles();
+      if (typeof window.__playSyncAfterRuntime === 'function') window.__playSyncAfterRuntime(true);
       installXaBanks();
 
       /* Too many failures in a short window -> the scene itself is the problem;
@@ -1531,7 +1528,6 @@
   function onState(st, fps) {
     hud.scene.textContent = st.scene || '-';
     hud.mode.textContent  = st.mode;
-    hud.frame.textContent = st.frame;
     hud.fps.textContent   = fps;
     hud.npcs.textContent  = st.npcs;
     hud.pos.textContent = st.player
@@ -2104,15 +2100,6 @@
   canvas.addEventListener('focus', hideVeil);
   canvas.addEventListener('blur', showVeil);
 
-  const pauseBtn = document.getElementById('play-pause');
-  pauseBtn.addEventListener('click', () => {
-    if (!view) return;
-    view.setPaused(!view.paused);
-    pauseBtn.textContent = view.paused ? 'Resume' : 'Pause';
-  });
-  document.getElementById('play-step').addEventListener('click', () => {
-    if (view) view.step();
-  });
   document.getElementById('play-recenter').addEventListener('click', () => {
     if (!view) return;
     view.cam.yaw = 0;
@@ -2179,10 +2166,16 @@
   /* Camera-occlusion fade ("See-through walls") - default ON, matching the
    * native play-window. Pure presentation (a fragment-shader dither around
    * the character when geometry buries it); PlayView stages the per-frame
-   * focus, so unchecking simply stops staging it. Re-applied on every view
-   * rebuild since the checkbox may have been toggled between scenes. */
+   * focus, so unchecking simply stops staging it. The persisted engine
+   * option `occlusion_fade` (the native window's `F4` reads the same one);
+   * the box reflects it once a runtime is up (`syncRenderToggles`).
+   * Re-applied on every view rebuild. */
   const seeThroughEl = document.getElementById('play-see-through');
   function applySeeThrough() {
+    const rt = window.__playRuntime;
+    if (rt && typeof rt.set_occlusion_fade === 'function') {
+      try { rt.set_occlusion_fade(!!seeThroughEl.checked); } catch (e) {}
+    }
     if (view) view.setOcclusionFade(!!seeThroughEl.checked);
   }
   seeThroughEl.addEventListener('change', () => { applySeeThrough(); canvas.focus(); });
@@ -2190,9 +2183,9 @@
 
   /* The native window's render toggles: PSX rasterisation
    * (LEGAIA_PSX_RENDER, session-only) and enhanced lighting (`I` + `F8`'s
-   * time of day, both persisted engine options - the boxes reflect the
-   * stored values once a runtime is up). Presentation only; re-applied on
-   * every view rebuild. */
+   * time of day + `Y`'s lamp shadows, all persisted engine options - the
+   * boxes reflect the stored values once a runtime is up). Presentation
+   * only; re-applied on every view rebuild. */
   const psxRenderEl = document.getElementById('play-psx-render');
   const dynLightEl = document.getElementById('play-dyn-light');
   const timeOfDayEl = document.getElementById('play-time-of-day');
@@ -2203,6 +2196,7 @@
       try {
         rt.set_enhanced_lighting(!!dynLightEl.checked);
         timeOfDayEl.value = rt.set_lighting_time_of_day(timeOfDayEl.value);
+        if (typeof rt.set_light_shadows === 'function') rt.set_light_shadows(!!dynShadowsEl.checked);
       } catch (e) {}
     }
     if (!view) return;
@@ -2216,6 +2210,8 @@
       try {
         dynLightEl.checked = !!rt.enhanced_lighting();
         timeOfDayEl.value = rt.lighting_time_of_day();
+        if (typeof rt.light_shadows === 'function') dynShadowsEl.checked = !!rt.light_shadows();
+        if (typeof rt.occlusion_fade === 'function') seeThroughEl.checked = !!rt.occlusion_fade();
       } catch (e) {}
     }
   }
@@ -2310,7 +2306,6 @@
     rtCall('set_arts_saved_list', !!savedListEl.checked);
     rtCall('set_retail_mode', !!retailModeEl.checked);
   }
-  let retailSaved = null;
   retailModeEl.addEventListener('change', () => {
     const on = !!retailModeEl.checked;
     rtCall('set_retail_mode', on);
@@ -2320,17 +2315,9 @@
     syncPreciseMove();
     syncCameraDistance();
     syncPageToggles();
-    /* The page-side enhancements retail has no counterpart for: off while
-     * the mode holds, back to what they were when it is lifted. */
-    if (on) {
-      retailSaved = { shadows: dynShadowsEl.checked, seeThrough: seeThroughEl.checked };
-      dynShadowsEl.checked = false;
-      seeThroughEl.checked = false;
-    } else if (retailSaved) {
-      dynShadowsEl.checked = retailSaved.shadows;
-      seeThroughEl.checked = retailSaved.seeThrough;
-      retailSaved = null;
-    }
+    /* Lamp shadows and see-through walls are engine options the pin covers
+     * too (`OptionsState::pin_retail`), so the sync above has already put
+     * their boxes where the mode wants them; push them to the view. */
     applySeeThrough();
     applyRenderToggles();
     canvas.focus();
@@ -2351,6 +2338,32 @@
   savedListEl.addEventListener('change', () => { rtCall('set_arts_saved_list', !!savedListEl.checked); canvas.focus(); });
   window.__playSyncPageToggles = syncPageToggles;
   window.__playApplyPageToggles = applyPageToggles;
+
+  /* After a runtime is built (disc load) or rebuilt (trap recovery): the
+   * page's session switches go first, because Retail-faithful pins the
+   * engine options - every box mirrored before that would show the stored
+   * values the pin has just overridden. Then every box mirrors the engine.
+   * `reapply` (recovery) first re-sends the boxes' session edits to the
+   * fresh runtime, except while Retail-faithful holds: the boxes then show
+   * the pinned values, and writing them would persist retail over the
+   * player's own settings. */
+  function syncAfterRuntime(reapply) {
+    if (reapply && !retailModeEl.checked) {
+      applyPreciseMove();
+      applyGroundFog();
+    }
+    applyPageToggles();
+    syncPreciseMove();
+    syncGroundFog();
+    syncRenderToggles();
+    syncCameraDistance();
+    syncPageToggles();
+    if (reapply) {
+      applySeeThrough();
+      applyRenderToggles();
+    }
+  }
+  window.__playSyncAfterRuntime = syncAfterRuntime;
 
   /* Learn spell / story flag - the native --learn-spell / --set-flag. */
   const parseId = (text) => {
@@ -2564,13 +2577,13 @@
   window.__playHotkeyActions = {
     diag_rows: () => { if (hudEl) hudEl.style.display = hudEl.style.display === 'none' ? '' : 'none'; },
     audio_mute: () => {},
-    occlusion_fade: () => { seeThroughEl.checked = !seeThroughEl.checked; applySeeThrough(); },
+    occlusion_fade: () => { syncRenderToggles(); applySeeThrough(); },
     cheat_max_ap: () => document.getElementById('play-cheat-max-ap').click(),
     cheat_encounters: () => cheatNoEncEl.click(),
     time_of_day: () => { syncRenderToggles(); applyRenderToggles(); },
     volumetric_fog: () => syncGroundFog(),
     enhanced_lighting: () => { syncRenderToggles(); applyRenderToggles(); },
-    light_shadows: () => { dynShadowsEl.checked = !dynShadowsEl.checked; applyRenderToggles(); },
+    light_shadows: () => { syncRenderToggles(); applyRenderToggles(); },
     camera_distance: () => syncCameraDistance(),
     precise_movement: () => syncPreciseMove(),
   };

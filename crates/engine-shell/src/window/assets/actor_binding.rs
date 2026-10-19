@@ -55,7 +55,7 @@ impl PlayWindowApp {
     /// with its locomotion clips - at the uploaded mesh.
     pub(super) fn upload_player_rig(
         &mut self,
-        player_rig: Option<legaia_engine_core::scene_host::PlayerRigMesh>,
+        player_rig: Option<legaia_engine_scene_host::scene_host::PlayerRigMesh>,
     ) {
         let world = &mut self.session.host.world;
         self.player_color_draw = None;
@@ -68,7 +68,7 @@ impl PlayWindowApp {
         if matches!(world.mode, SceneMode::Field | SceneMode::WorldMap)
             && let Some(pslot) = world.player_actor_slot
         {
-            let roster_lead = world.party.active_party.first().copied().unwrap_or(0) as usize;
+            let roster_lead = usize::from(world.field_leader());
             if let Some(g) = player_rig {
                 // The party locomotion ANM bundle (PROT 0874 §1; idle = bank
                 // slot 1, walk = bank slot 0, both pinned live - see

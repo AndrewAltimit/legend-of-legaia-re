@@ -6,6 +6,7 @@
 //! `cargo test -p legaia-engine-session --test integration <name>::`.
 
 mod arts_shout_battle;
+mod attack_arm_arts_entry;
 mod battle_effect_teardown_disc;
 mod battle_item_use_presentation;
 mod battle_monster_bank_cue;
@@ -32,10 +33,12 @@ mod save_roundtrip_library;
 mod scene_encounter_rollable;
 mod sfx_cue_resident_bank;
 mod sfx_shared_region;
+mod taiku_security_door_camera;
 mod tetsu_spar_picker_disc;
 mod tetsu_spar_somersault;
 mod tile_board_draw_live;
 mod training_battle;
+mod world_map_battle_return_camera;
 mod world_map_camera_offset_oracle;
 mod world_map_door_encounter_disc;
 mod world_map_fog_oracle;

@@ -1,0 +1,52 @@
+# legaia-engine-menu-runtime
+
+The pause menu over a running `World`. `engine-menus` holds the menu rules and
+screens and names no `World`; `engine-core` holds the `World` they edit. This
+crate is the seam between them: it owns the menu's runtime state, builds each
+sub-session from the world, and writes each outcome back.
+
+## What lives here
+
+- **`menu_runtime`** - `MenuRuntime`, the host of the `engine-menus` menu state
+  machine: the save-slot directory and its disk round-trip (`SAVE_EXT`), the
+  shop flow, the inn sessions (including `open_scene_inn`, which reads the
+  scene's inn cost off the `SceneHost`), the level-up and art-learned notices,
+  and the `MenuHost` implementation the state machine calls back into.
+- **`field_menu_dispatch`** - the pause menu's seven rows routed to their
+  sub-sessions (`FieldMenuSubsession`): the session builders that read the
+  world (status snapshots, the Items bag, equipment, the spell list, the arts
+  editor, the options screen, the warp list), the per-frame root-list step,
+  and the outcome appliers that write each result back to the world.
+- **`menu_validator`** - the out-of-battle host of the action validator
+  `FUN_8003FB10` (`RosterValidator`, over the roster records) and the Magic
+  screen's "would this spell do anything" question (`spell_affects_anyone`).
+
+## Place in the layering
+
+```text
+engine-shell / web-viewer                       hosts
+engine-session, engine-screens, parity          host-shared top
+engine-menu-runtime                             the pause menu over World
+engine-scene-host                               SceneHost, resume, live preview
+engine-core                                     World, the tick, battle loop
+engine-menus, engine-* kernels                  World-free rules
+```
+
+Nothing below it names it: `World` holds no menu runtime, and the one fact the
+battle HUD and the world-map panel read from the menu side, the roster's
+display names, is `PartyState::roster_names` in `engine-menus`. The hosts and
+`engine-screens` hold a `MenuRuntime` beside their `SceneHost`.
+
+## Tests
+
+`tests/*.rs` build as one `integration` binary; select a file by module path
+(`cargo test -p legaia-engine-menu-runtime --test integration foo::`). Tests
+that read a disc skip and pass when `LEGAIA_DISC_BIN` is unset.
+
+## Where the behaviour is documented
+
+| Topic | Page |
+|---|---|
+| Pause menu, window table, panels | [`field-menu.md`](../../docs/subsystems/field-menu.md) |
+| Shop, inn, save screen | [`shop.md`](../../docs/subsystems/shop.md), [`inn.md`](../../docs/subsystems/inn.md), [`save-screen.md`](../../docs/subsystems/save-screen.md) |
+| The item bag the Items row edits | [`inventory.md`](../../docs/subsystems/inventory.md) |

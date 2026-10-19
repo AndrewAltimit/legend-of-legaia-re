@@ -458,8 +458,8 @@ pub struct DanceHudQuadView {
     pub tpage: u16,
 }
 
-/// The dance HUD's textured quads (score boxes, digit runs, `Lv.` labels and
-/// gauge counters - `DanceGame::hud_draw_quads`) as screen-space PSX
+/// The dance HUD's textured quads (score boxes, digit runs, `Lv.` gauges and
+/// beat tracks - `DanceGame::hud_draw_quads`) as screen-space PSX
 /// primitives on the staged HUD page: each one a `POLY_GT4` with its
 /// top / bottom colour pair, linked at the bucket the whole HUD shares
 /// ([`COUNTIN_OT`]). The caller draws them only while the page is resident

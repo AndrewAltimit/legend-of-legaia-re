@@ -17,7 +17,7 @@ so the inn you reach in game is the retail script, not an engine routine.
 | What restores the party? | Three `4C 82 <slot>` ops, one per party slot, in the same record. |
 | Port entry | `World::trigger_field_interact` -> `step_inline_dialogue` -> `legaia_engine_vm::field::step`. |
 | Cost scanner | `legaia_scene_formats::inn_costs`, run at scene load into `SceneHost::scene_inn_cost`. |
-| Oracles | `crates/engine-core/tests/inn_stay_field_vm_disc.rs`, `crates/scene-formats/tests/inn_costs_disc.rs`, `crates/engine-core/tests/inn_cost_scene_disc.rs` (all disc-gated). |
+| Oracles | `crates/engine-core/tests/inn_stay_field_vm_disc.rs`, `crates/scene-formats/tests/inn_costs_disc.rs`, `crates/engine-menu-runtime/tests/inn_cost_scene_disc.rs` (all disc-gated). |
 
 ```mermaid
 flowchart TD
@@ -89,9 +89,16 @@ A2 F8 <clip>  AC F8 08  AD F8 08    ; play a player clip, clear its end
 4E <pp> 30 <cost u16> <skip u16>    ; if gold < cost, skip to the refusal line
 3A <sext24(-cost)>                  ; take the money
 1F <thank-you> 00 1F <good night> 00
-35 / 34 / 4A / 36                   ; BGM release, fade, waits, cue
+35 / 34 01 / 4A / 36 / 4A           ; BGM release, colour fade, wait,
+                                    ;   rest cue, wait
 4C 82 00  4C 82 01  4C 82 02        ; the restore, one op per party slot
+36 FFFF / 35 / 34 00 / 4A           ; cue stop, BGM resume, fade back
+1F <good morning> 00
 ```
+
+Nothing but the record's own text boxes is drawn during a stay: the rest
+itself is the fade, the cue and the waits, with no caption over the dark
+screen.
 
 The **no**-jump target runs its own clip beat and lands on the decline line;
 the gate's skip target lands on the can't-afford line. Both are inside the
@@ -201,7 +208,7 @@ one, both hosts draw it through the shared fallback panel
 | Phase | Sub-screen | Description |
 |---|---|---|
 | Cost prompt | `InnConfirm` | Shows the cost for one night and a Yes / No cursor. |
-| Rest fade | `InnSleep` | Transient screen that plays the rest fade after a Yes. |
+| Rest beat | `InnSleep` | Transient hold after a Yes. Draws nothing: retail's rest prints no caption over its fade. |
 | Commit | - | Deducts gold, restores all active party members' HP / MP. |
 | Exit | - | Returns to field without resting on No or insufficient gold. |
 

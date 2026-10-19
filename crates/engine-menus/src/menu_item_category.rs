@@ -130,7 +130,7 @@ pub fn parse_category_table(overlay: &[u8]) -> Result<Vec<CategoryEntry>> {
 // party slot being edited. A build without the overlay leaves the table empty
 // and every score `0` - the routine's own empty-table arm, which is why the
 // regression that pins this
-// (`crates/engine-core/tests/menu_data_wiring.rs`) scores the *picked
+// (`crates/engine-menu-runtime/tests/menu_data_wiring.rs`) scores the *picked
 // weapon* against that arm as its baseline rather than asserting the check ran.
 pub fn category_check(table: &[CategoryEntry], char_index: u32, item_id: u8, group: u32) -> u32 {
     let shift = char_index.wrapping_add(group.wrapping_mul(4)) & 0x1F;

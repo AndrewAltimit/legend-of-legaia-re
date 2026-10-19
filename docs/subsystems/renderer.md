@@ -243,7 +243,7 @@ A `4C C2` aimed at the player (`CC F8 C2`, five of the 50 sites, in `uru2`,
 `rugi` and `noaru`) runs on the same player stand-in context the `CC F8 40`
 scale op uses (`field_step_routed`) and lands in
 `FieldVmState::player_field_42`, so the player's draws clip on both hosts
-too. Disc-gated test: `crates/engine-core/tests/object_effect_row_disc.rs`.
+too. Disc-gated test: `crates/engine-scene-host/tests/object_effect_row_disc.rs`.
 
 One known difference: the effect transform leaves out the side buffer's look
 turn (`4C 45`,
@@ -1255,7 +1255,7 @@ battle-effect parts, `0x100` / `0x180` on field and overworld parts, and the
 Over every op-`0x15` site in the scenes' stager records and the slot-B spawn
 records the words are `0x20`, `0x80`, `0x100`, `0x180`, `0x300`, `0x380`,
 `0x400`, `0x500`, `0x580` and `0x780`
-(`crates/engine-core/tests/move_ctrl52_census_disc.rs`). The lone `0x80` -
+(`crates/engine-scene-host/tests/move_ctrl52_census_disc.rs`). The lone `0x80` -
 pitch skipped, yaw and roll kept - is `urudre1` stager record 14's, past an
 ext `0x37` branch that jumps the record's first `HALT`, so a walk that stops
 at the first `HALT` misses it. It is live content: `urudre1` is Vahn's dream
@@ -1623,7 +1623,7 @@ the GPU reads only the entries at the prim's own `CBA`. `MissingClut`, which
 reads exactly that window, is the sound test. Scenes do pack rows that
 densely - every primitive of `town0b`'s placed house at tile `(37, 42)`
 samples row 491 - and
-`crates/engine-core/tests/scene_clut_row_packing_disc.rs` asserts both that
+`crates/engine-scene-host/tests/scene_clut_row_packing_disc.rs` asserts both that
 the house keeps its prims and that the row is packed past 256 pixels.
 
 ### Engine-side targeted upload + shared blocks
@@ -1760,7 +1760,7 @@ off the object-bind channels once the prologues have run
 rotation through `field_env::placed_render_scales`; a zero scale stays the
 story-hidden gate's business. The scale is baked with the scene's draw
 lists, so a script that ramps it mid-scene is not followed. Pinned by
-`crates/engine-core/tests/field_object_render_scale_disc.rs`.
+`crates/engine-scene-host/tests/field_object_render_scale_disc.rs`.
 
 **A placed object draws at its actor's angles.** The scene-init sweep copies
 the record's `+0x08 / +0x0A / +0x0C` into the actor's `+0x24 / +0x26 / +0x28`
@@ -2109,7 +2109,7 @@ the port's per-actor pass draws a slot only through
 `World::actor_slot_drawn` (bound **and** active). In `uru` the scene pack's
 sky and cliff geometry wraps the origin, so drawing unspawned slots fills the
 frame. Pinned by
-`crates/engine-core/tests/field_unspawned_actor_draw_disc.rs`.
+`crates/engine-scene-host/tests/field_unspawned_actor_draw_disc.rs`.
 
 **The site play page** (`site/js/play-view-frame.js`) applies the same crop and
 actor cull and adds nothing: `OCCLUDER_CULL = false`. A per-body occlusion
@@ -2880,6 +2880,73 @@ vertex carries a floor weight that falls to zero when it steps more than
 `FLOOR_STEP_HI` to any neighbour (`FogVolume::ground_weight`). The world map,
 the boot UI, the minigame venues and a VR session draw no bank.
 
+**On the drawn ground, spilling off its rims.** The walk grid covers the
+whole `0x80 x 0x80` tile map, so on its own it cannot say where the floor
+ends: `teien` (the Sky Gardens, a tower top ringed by open sky) reads as one
+floor out to the map's edge, and the bank used to lie flat across the empty
+air. Each field scene therefore carries a **ground coverage field**
+([`fog_volume::FogGround`](../../crates/render-kernels/src/fog_volume/ground.rs),
+built at scene load by
+[`engine-scene::fog_ground`](../../crates/engine-scene/src/fog_ground.rs),
+which both play hosts call over the same static draw lists their occluder
+set uses):
+
+- **Rasterised from what is drawn.** Every static terrain and placement
+  triangle - blended and cutout prims included, which the occluder set drops
+  - and every walk-heightfield triangle facing within about 50 degrees of
+  level writes its height at each 64-unit cell centre it covers. A surface
+  more than `ROOF_CLEARANCE` above the walk floor under it is a roof, hedge
+  top or canopy: solid, but not floor. Of the rest the highest wins.
+- **Open air is what reaches the border.** The solid cells are closed by
+  one cell (a seam is not a crack), then the empty cells are flood-filled
+  from the field's border. Enclosed pockets - a hedge maze's tops, a roof, a
+  pit - stay covered at the nearest floor's height, so the bank runs on
+  through them and the scene's own depth hides it there; only the open air
+  outside the floor is uncovered.
+- **Distances.** A two-pass nearest-site sweep gives each cell its signed
+  distance to the edge and, off the floor, the floor cell it is nearest.
+
+The sheet mesh lies on the field's floor height where there is one, so the
+bank follows terraces the walk grid does not author. Past a rim, within
+`SPILL_REACH`, a vertex takes its rim's height lowered by `spill_drop` at
+`spill_weight` (thinning to nothing at the reach), exempt from the floor-step
+test and carrying its rim's fog region. The reach is short against
+`SPILL_DEPTH`, so past a slight bow over the lip the curtain falls almost
+straight down, hugging the wall face. Further out, to `HAZE_REACH`, a vertex
+lies `HAZE_DEPTH` below its rim at `haze_weight` - nothing next to the rim,
+thickest at `HAZE_PEAK` - and zero wherever something drawn stands above that
+plane, so it never lies on a lower roof or slope; past the field's edge it
+continues off the nearest border cell's rim. The mesh carries a haze vertex
+as a **negative** weight, which is how the shaders tell the two apart.
+
+The field also travels as a small RGBA8 texture (`FogGround::texels`:
+coverage, spill, flow), uploaded once per scene: the shaders fade the bank
+across `EDGE_SOFT` either side of the edge at fragment resolution. On the
+spill they draw falling fog rather than a sheet, from
+`fog_volume::FOG_SPILL_CONSTANTS`:
+
+- **Pour mask.** A low-frequency noise along the rim (the coordinate across
+  the flow direction, the texture's distance gradient) decides which
+  stretches pour and which barely do; it evolves in place, it does not scroll.
+- **Tendrils.** Noise narrow along the rim and long down the fall, swaying
+  slowly, thresholded higher the further it has fallen so the tendrils part
+  and thin; a high-frequency erosion term near the threshold rags their
+  edges, and a second noise breaks them into falling puffs.
+- **Slow.** The fall coordinate scrolls one noise cell per
+  `SPILL_FLOW_TICKS`; the second octave and the puffs move at their own
+  rates, so the pattern changes as it falls.
+- **A slab, not a plane.** The vertex stage spreads the sheets outward down
+  the curtain (`FOG_SPILL_CONSTANTS[3]` world units) instead of stacking
+  them upward, and a sheet seen edge-on fades by its facing to the eye (the
+  eye recovered from the matrix), so a curtain seen from the side is not a
+  stack of bright lines.
+
+The haze draws as broad, soft banks (`FOG_HAZE_CONSTANTS`): a stack several
+times the bank's height, thickest mid-stack, drifting slower than the bank,
+at a faint gain. A frame without a field (battle, or a host that built none)
+binds one full-coverage texel, carries no haze vertex, and draws the bank as
+before.
+
 **Reading scene depth differs per host.** The native renderer splits its
 scene pass around a fog pass that attaches the depth target read-only and
 samples it as a texture (the target carries `TEXTURE_BINDING` and is stored
@@ -2890,9 +2957,17 @@ format is probed once; a driver that refuses the copy draws without the
 fade), and on frames drawn with log-of-w depth the sheets write and test
 that encoding. Its pass is `site/js/webgl-fog-volume.js`, a GLSL
 transcription that reads its numbers from the frame header
-(`fog_volume::FogSpace::shader_constants`, `FogSpace::soft_distance`). A
-battle's bank is denser, deeper and drawn with a higher gain, because its
-low, close framing looks through it at a grazing angle.
+(`fog_volume::FogSpace::shader_constants`, `FogSpace::soft_distance`).
+
+**A battle takes a thin, low profile** (`fog_volume::BATTLE_FOG`, the one
+parameter set both hosts read through `FogSpace` and the frame header): a
+third of the field style's opacity at the field's sheet gain, and a bank no
+deeper in stage units than the style's field height - against fighters that
+stand about 2.5 times taller in stage units, an ankle-high haze that leaves
+the stage floor readable. The noise scales still follow the arena's size. A
+change of space restarts the bank from zero strength, so the field-to-battle
+cut (and the way back) eases the new profile in over the style fade instead
+of popping from one density to the other.
 
 **Brightness follows the scene.** The style's colour keeps its hue but is
 dimmed until its luma sits at most `FOG_LUMA_FLOOR + FOG_LUMA_OVER_SCENE *

@@ -110,6 +110,12 @@ impl World {
         if labels.is_installed() {
             self.menu.context_labels = labels;
         }
+        // The shop windows' label strings live in the same pool
+        // (`FUN_801D4868` .. `FUN_801DCE20` load them by VA).
+        let shop = legaia_engine_menus::shop::ShopLabels::from_menu_overlay(overlay);
+        if shop.is_installed() {
+            self.menu.shop_labels = shop;
+        }
         // The notify window's message template (`0x801E4700`) - window 8,
         // the art-learned notice a Hyper-Art book raises.
         if let Some(t) =

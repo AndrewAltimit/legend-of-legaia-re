@@ -11,7 +11,7 @@ use std::path::Path;
 
 use anyhow::{Context, Result};
 use legaia_engine_audio::{AudioOut, AudioSink};
-use legaia_engine_core::scene_host::SceneHost;
+use legaia_engine_scene_host::scene_host::SceneHost;
 
 use crate::audio_director::AudioDirector;
 use crate::session::{BootConfig, BootSession};

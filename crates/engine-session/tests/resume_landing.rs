@@ -1,6 +1,6 @@
 //! Pins the native half of the shared resume / New Game entry
 //! (`NativeSession::resume_save` / `NativeSession::start_new_game`, both over
-//! `legaia_engine_core::resume`). The browser page's `play_resume_save` /
+//! `legaia_engine_scene_host::resume`). The browser page's `play_resume_save` /
 //! `play_new_game` pin the same landings in `crates/web-viewer/src/resume.rs`.
 //!
 //! Skip-passes without disc data / extracted assets (the `LEGAIA_DISC_BIN`
@@ -8,7 +8,7 @@
 
 use std::path::PathBuf;
 
-use legaia_engine_core::resume::ResumeLanding;
+use legaia_engine_scene_host::resume::ResumeLanding;
 use legaia_engine_session::native::NativeSession;
 use legaia_engine_session::session::{BootConfig, FieldLiveOpts};
 

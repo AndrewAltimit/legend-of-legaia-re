@@ -6,7 +6,7 @@ use crate::replay::{PadEvent, ReplayFile, ReplayMeta};
 use anyhow::{Context, Result};
 use glam::{Mat4, Vec3, Vec4};
 use legaia_engine_audio::AudioSink;
-use legaia_engine_core::menu_runtime::MenuRuntime;
+use legaia_engine_menu_runtime::menu_runtime::MenuRuntime;
 use legaia_engine_mode::mode::SceneMode;
 use legaia_engine_render::{
     CaptureImage, ColorSceneDraw, RenderTarget, Scene as RenderScene, SceneDraw, TextOverlay,
@@ -190,6 +190,14 @@ impl PlayWindowApp {
             // Engine-only BGM / SFX bus levels (config file only); the
             // default level is unity, the retail mix.
             audio.set_bus_volumes(self.options_state.bgm_volume, self.options_state.sfx_volume);
+        }
+        // The two render enhancements that are pure renderer state: lamp
+        // shadows (`Y`) and the camera-occlusion fade (`F4`). Persisted
+        // options, the same ones the page's boxes edit; the renderer opening
+        // later stages them itself (`resumed`).
+        if let Some(r) = self.win.renderer.as_ref() {
+            r.set_dyn_shadows(self.options_state.light_shadows);
+            r.set_occlusion_fade(self.options_state.occlusion_fade);
         }
     }
 }

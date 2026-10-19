@@ -33,7 +33,7 @@ use super::*;
 use legaia_engine_core::dev_menu_host::DevMenuWorldExt;
 use legaia_engine_menus::dev_menu_host::{DevMenuSession, DevPage};
 use legaia_engine_screens::dev_menu::{
-    DEV_RECORDS_PEN, RECORDS_TOGGLE, dev_menu_list_draws, dev_records_model, records_view,
+    DEV_RECORDS_PEN, RECORDS_TOGGLE, dev_menu_list_draws, records_draws_for_world,
 };
 use legaia_engine_system::pad::retail_packed;
 
@@ -104,32 +104,15 @@ impl PlayWindowApp {
     }
 
     /// Build the battle-records page for the live world.
-    ///
-    /// Per-character counters come off the first three roster records - the
-    /// three columns retail's own loops walk (`s2 < 3` from record slot 0) -
-    /// and the play clock is the world's own second counter scaled back to
-    /// retail's 1/60 s tick. Everything past that (the display caps, the
-    /// H:MM:SS split, the treasure percentage) is the ported model.
     fn build_dev_records_draws(&self) -> Vec<legaia_engine_ui::TextDraw> {
         self.records_draws_at(DEV_RECORDS_PEN)
     }
 
     /// The records screen (`FUN_801ED710`) at `pen`, retail stage pixels -
-    /// the dev Records page and the end-of-game soft reset
-    /// (`World::soft_reset_records_pen`) draw the same screen at different
-    /// origins.
+    /// the dev Records page and the end-of-game soft reset - through the
+    /// builder the page calls too (`records_draws_for_world`).
     pub(super) fn records_draws_at(&self, pen: (i32, i32)) -> Vec<legaia_engine_ui::TextDraw> {
-        let world = &self.session.host.world;
-        let records: Vec<&[u8]> = world
-            .party
-            .roster
-            .members
-            .iter()
-            .take(3)
-            .map(|m| m.raw.as_slice())
-            .collect();
-        let model = dev_records_model(&records, world.clock.play_time_seconds);
-        legaia_engine_ui::records_screen_draws_for(&self.font, &records_view(&model), pen)
+        records_draws_for_world(&self.session.host.world, &self.font, pen)
     }
 }
 

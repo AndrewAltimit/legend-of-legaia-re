@@ -153,3 +153,54 @@ fn leaving_the_interval_screen_stages_the_next_leg_not_the_next_turn() {
         "leaving the INTERVAL screen continues the ladder run. Arm was:\n{arm}"
     );
 }
+
+/// The page's leg opener plays the hub's first visit only when the engine
+/// says a first visit is owed: between legs it used to call `start` with
+/// `continueRun` and replay the Welcome intro before every fight.
+#[test]
+fn a_continued_contest_does_not_replay_the_intro() {
+    let src = page_source();
+    let body = function_body(&src, "start");
+    assert!(
+        body.contains("api.muscle_first_visit_owed()"),
+        "`start` asks the engine whether the intro is owed"
+    );
+    assert!(
+        body.contains("introLive = owed &&"),
+        "the live first visit is armed only when owed"
+    );
+    assert!(
+        body.contains("if (!owed) beginSelect();"),
+        "a later leg opens straight on its ROUND card"
+    );
+}
+
+/// The hub screens' per-frame canvas work stays on the GPU: the first
+/// visit's subtractive shade and the fade modulation of a dimmed hub sprite
+/// read no pixels back. A `getImageData` per frame there (a GPU sync on an
+/// accelerated canvas) is what held the dome page's first visit at ~45 ms a
+/// frame and its INTERVAL screen at ~290 ms, so the page fell below the
+/// 60 Hz it is stepped at and the dome played in slow motion.
+#[test]
+fn the_hub_shade_and_fades_read_no_pixels_back() {
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .unwrap()
+        .parent()
+        .unwrap()
+        .join("site")
+        .join("js")
+        .join("site-util.js");
+    let src = std::fs::read_to_string(&path).unwrap();
+    for name in ["subtractShade", "dimmedSprite"] {
+        let body = function_body(&src, name);
+        assert!(
+            !body.contains("getImageData"),
+            "`{name}` reads the canvas back"
+        );
+    }
+    assert!(
+        function_body(&src, "modulatedSprite").contains("perSrc.get(key)"),
+        "a modulated sprite is memoised across frames"
+    );
+}

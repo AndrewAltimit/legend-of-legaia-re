@@ -424,7 +424,7 @@ So sub-ops `0x2B` (set) and `0x2D` (add), which write `slab+0x18..+0x1E`, set
 a box size and a wobble, not UV bounds.
 
 **Nothing on the disc issues `0x2C`.** The disc-gated census
-`crates/engine-core/tests/move_ext_strip_census_disc.rs` walks every CDNAME
+`crates/engine-scene-host/tests/move_ext_strip_census_disc.rs` walks every CDNAME
 scene's prescript stager records through the move-VM decoder (the carrier the
 field VM installs through `FUN_800252EC`) and scans every PROT entry's
 type-`0x05` MOVE slot for the aligned `[0x002F, 0x002C]` pair. It decodes

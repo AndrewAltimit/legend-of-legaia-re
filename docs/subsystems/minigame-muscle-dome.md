@@ -352,6 +352,8 @@ Both volume slots are `(_DAT_80084580 << 0xf) >> 0x10` - the **voice/SFX volume 
 
 A survived leg with the course not exhausted never leaves the arena: the battle exits to mode `0x18`, the re-entered hub runs `0x0A..0x0C` and `0x14..0x16`, and the end of state `0x16` starts the next fight itself.
 
+The first visit (states `0..=6`) plays once per contest. `FUN_801CEA6C` seeds the hub state `0` at `0x801CECA4` and keeps it only while the decoded round `DAT_801D1A94` is zero (`beqz a1, 0x801CEE90` at `0x801CECE8`); a reported leg has already stepped the word, so no later entry gets there. Port: `DomeContest::opens_on_first_visit`, read by `HubTimers` and by the minigames page (`muscle_first_visit_owed`).
+
 In the port the in-world dome's decided leg closes on Cross through `World::tick_muscle_dome`, which reports it and asks `leg_boundary_raises_interval`. A continuing contest sets `MinigameState::muscle_hub_between_legs` and keeps `SceneMode::MuscleDome` with no leg open; every other leg settles and hands the field back. `HubTimers` raises `HubTimersFrame::next_leg` once its INTERVAL and backdrop arms have drained, answered by `World::begin_next_muscle_leg`, which stages the next fight through the same mode-24 drain the arena door uses without re-arming the round trip.
 
 While the hub owns the frame neither host draws the field or battle chrome, and a decided leg puts no text up. Start between legs is the give-up arm (the contest ends and the tally is void). Locked by `engine-core/tests/muscle_contest_world.rs` and `web-viewer/tests/play_ringside_still_disc.rs`.
@@ -610,7 +612,7 @@ Its numeric work is four `func_0x8003563c` registrations at `0x801D959C..0x801D9
 Per-frame helpers the driver also calls:
 
 - `FUN_801D3444` - a 0..`0xC` meter counter `DAT_801F4E0A`, ramped up by the frame delta while `ctx+6 == 0x50` and an enable flag is set, drained otherwise, mapped to a bar Y of `counter * 160 / 12 - 0x92`. Port: `muscle_dome::time_meter_step`, ticked by the session.
-- `FUN_801D9BBC` - advances every active sprite handle (`ctx+0x1074[]`, up to `0x28`) one linear-ease step toward its target over a per-handle frame count (`ctx+0x11B4 + i*0xC` records: total / elapsed frames + target / start positions; arrival snaps and deactivates). Port: `muscle_dome::SpriteGlide::step`. The kernel has **no producer** in the engine - no host spawns the pennant / chip sprites this table animates; its contract is pinned by `crates/engine-core/tests/dome_leg_ladder.rs`.
+- `FUN_801D9BBC` - advances every active sprite handle (`ctx+0x1074[]`, up to `0x28`) one linear-ease step toward its target over a per-handle frame count (`ctx+0x11B4 + i*0xC` records: total / elapsed frames + target / start positions; arrival snaps and deactivates). Port: `muscle_dome::SpriteGlide::step`. The kernel has **no producer** in the engine - no host spawns the pennant / chip sprites this table animates; its contract is pinned by `crates/engine-scene-host/tests/dome_leg_ladder.rs`.
 
 ## Retail presentation
 
@@ -725,7 +727,7 @@ The pennant has no cost special-case. `FUN_801D388C` case `0xB` (called from `FU
 | `0x801D3D40`, `0x801D3D48` | clear the seat-mode byte; 24-frame glide, then `FUN_801D8DE8(0x20 + n, 0)` spawns it |
 | `0x801D3D68..0x801D3D74` | advance the cursor by the command's own `+0x74` cost |
 
-The cursor `ctx[+0x6D8]` is seeded to `16` on the gauge build (`0x801D3A3C` / `0x801D3A44`). So pennant `n` sits at `x = 16 + sum(cost of 0..n-1)`, is `cost(n) - 6` wide, and lands on `y = 192`; the captured `x = 7` is the left diamond cap at `16 - 9`. The bar record `0x0F` is anchored at `16` and `pool - 6` wide, so a 100-AP pool spans `0..128`.
+The cursor `ctx[+0x6D8]` is seeded to `16` on the gauge build (`0x801D3A3C` / `0x801D3A44`). So pennant `n` sits at `x = 16 + sum(cost of 0..n-1)`, is `cost(n) - 6` wide, and lands on `y = 192`; the captured `x = 7` is the left diamond cap at `16 - 9`. The bar record `0x0F` is anchored at `16` and `pool - 6` wide, so a 100-AP pool spans `0..128`. Its style `5` is widget record `0x05`, class 3 with tile-set `0`, whose caps are the bar's own end pieces (`0x80073A60`): `FUN_8002C69C` seats the arrow at `pen + w` but tiles the body over `w + 8` (`addiu a0,t2,0x8` at `0x8002E934`), so the trough runs eight pixels under the arrow, to the diamond's centre, and draws beneath it (port `arts_input::BAR_BODY_UNDER_ARROW`).
 
 The spawn anchor is the pressed chip, not the fighter: nothing on the path reads an actor screen position. `FUN_801D9BBC` is the per-frame stepper; registration is `FUN_801D8DE8` -> `FUN_801DB7B0`, which takes the glide start from the just-created node (`0x801DB7FC` / `0x801DB810`) and its target from the record's other seat.
 
@@ -1068,7 +1070,7 @@ The HUD kernels read the hold as an action frame (`battle_hud::battle_hud_phase`
 - **Run** ends the leg on the press; the escape roll is not modelled.
 - The approach length and per-swing cadence are the port's clock, not retail's root-motion arithmetic.
 
-**Tests.** `engine-core/tests/muscle_dome_minigame_real.rs` (real deck + real swing costs drive a leg to a decision), `dome_leg_ends_on_ko_real.rs` (the arena's sole game-mode write is `BattleInit`; the formation cell's only writer is the arena; the ladder tops out below the timed fight's id), `muscle_contest_real.rs` / `muscle_contest_world.rs`, `muscle_hub_tally_cues_disc.rs`, `muscle_dome_lead_max_hp_disc.rs`, and `web-viewer/tests/dome_ladder_and_hub_real.rs` (29 real monster records, round counts agree with the score table, every hub draw row's cited call site still holds a `jal` to its emitter).
+**Tests.** `engine-scene-host/tests/muscle_dome_minigame_real.rs` (real deck + real swing costs drive a leg to a decision), `dome_leg_ends_on_ko_real.rs` (the arena's sole game-mode write is `BattleInit`; the formation cell's only writer is the arena; the ladder tops out below the timed fight's id), `muscle_contest_real.rs` / `muscle_contest_world.rs`, `muscle_hub_tally_cues_disc.rs`, `muscle_dome_lead_max_hp_disc.rs`, and `web-viewer/tests/dome_ladder_and_hub_real.rs` (29 real monster records, round counts agree with the score table, every hub draw row's cited call site still holds a `jal` to its emitter).
 
 ## Open
 

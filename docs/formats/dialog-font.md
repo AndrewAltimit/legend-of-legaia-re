@@ -32,6 +32,31 @@ The glyph tile-page is a plain PSX TIM at **`PROT.DAT` file offset `0x7F40`**: a
 `(0, 510)`. The font page uses only three palette indices: `0` = transparent
 background, `14` = the `(32,32,32)` drop-shadow, `15` = the glyph fill.
 
+A text ink is a CLUT pick (`DAT_8007B454`, CLUT `(96 + 16 * ink, 510)`), and
+each of those CLUTs carries its own shadow in entry 14 beside the fill in
+entry 15, so the shadow changes with the ink. Read off a retail frame's VRAM
+(5-bit):
+
+| Ink | Fill (entry 15) | Shadow (entry 14) | Where |
+|---|---|---|---|
+| 0 | `(16, 16, 16)` | `(4, 4, 4)` | a list's unfocused rows |
+| 1 | `(13, 13, 28)` | `(3, 3, 5)` | |
+| 2 | `(28, 4, 0)` | `(8, 4, 4)` | the downed / 0-HP tier |
+| 3 | `(28, 13, 28)` | `(8, 2, 8)` | the status-lock tier |
+| 4 | `(13, 27, 13)` | `(3, 8, 3)` | skill passives, `MP Used` |
+| 5 | `(8, 27, 27)` | `(4, 8, 8)` | teal labels (options' Dual Shock rows) |
+| 6 | `(28, 21, 0)` | `(8, 8, 4)` | gold values, the caution tier |
+| 7 | `(25, 25, 25)` | `(4, 4, 4)` | dialogue, menu text, every battle caption |
+| 8 | `(25, 25, 25)` | `(14, 14, 14)` | |
+| 9 | `(27, 11, 0)` | `(8, 6, 3)` | the danger tier |
+
+The engine's stencil atlas whitewashes the fill and marks each shadow texel
+with alpha `legaia_font::FONT_SHADOW_ALPHA`; the overlay tint
+(`legaia_render_kernels::ui_tint`) draws a marked texel under a known ink as
+that ink's own entry 14, and under any other tint as the opaque grey
+`FONT_SHADOW_TEXEL`. Ink 8 shares ink 7's fill and is not in the table: an
+engine ink of that grey is ink 7.
+
 This means the font is decodable **straight from the disc, no save state
 required** - `legaia_font::Font::from_disc_tim_and_scus` reads this TIM plus the
 SCUS width table and produces the same whitewashed atlas the save-state
@@ -244,7 +269,7 @@ The pager `FUN_801D84D0` runs once per game tick, every `DAT_1F800393` vsyncs (`
 
 A PCSX-Redux trace of `town01` placement `P1[16]`'s conversation (`scripts/pcsx-redux/autorun_dialog_typewriter_trace.lua`, one CSV row per vsync of those words) shows exactly this: the counter runs `1, 3, 5, ...` on a box's first row and `2, 4, 6, ...` after a finish, a count-25 row finishes on the call whose counter would be 27 and holds `36` for one call, and a count-11 row holds `92`, then `28`, then `0`.
 
-The engine types every pager page this way (`crates/engine-dialog`): `legaia_engine_dialog::dialog::OwnedDialogPanel` counts each row with `legaia_font::typewriter_glyph_count` and `legaia_engine_dialog::dialog_pacing` runs the gate, one pager call every `frame_step` ticks, on the path both play hosts drive. `crates/engine-core/tests/dialog_typewriter_pacing_disc.rs` pins the traced row counts and the first box's per-vsync counter and hold against the engine.
+The engine types every pager page this way (`crates/engine-dialog`): `legaia_engine_dialog::dialog::OwnedDialogPanel` counts each row with `legaia_font::typewriter_glyph_count` and `legaia_engine_dialog::dialog_pacing` runs the gate, one pager call every `frame_step` ticks, on the path both play hosts drive. `crates/engine-scene-host/tests/dialog_typewriter_pacing_disc.rs` pins the traced row counts and the first box's per-vsync counter and hold against the engine.
 
 The rows the counter types into belong to a scrolling window, not a page buffer: a page turn keeps the previous page's rows and types beneath them, a line after a full window scrolls it a row with no button press, and a confirm press while a row types or holds sets the skip latch `_DAT_801F2750 = 0x25` and completes the page (state `0x0D`, `0x801D89B8..0x801D8A04`; `0x801D86BC` for the hold). The states and the trace that pins them are in [`mes.md` § Row window and scrolling](mes.md#row-window-and-scrolling); the engine's port is `legaia_engine_dialog::dialog_window`, and both hosts draw its rows through `legaia_engine_ui::dialog_reading_box_text_draws_for`, offset by the scroll and clipped to the box's rows band.
 

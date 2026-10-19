@@ -379,7 +379,7 @@ impl LegaiaRuntime {
         self.fmv.clear();
         self.bgm_handoff_pending = false;
         if let Some(d) = self.scene_host.director_mut() {
-            use legaia_engine_core::scene_host::BgmDirector;
+            use legaia_engine_scene_host::scene_host::BgmDirector;
             d.stop();
         }
     }

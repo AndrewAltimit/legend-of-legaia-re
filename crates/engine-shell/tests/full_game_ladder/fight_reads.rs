@@ -586,6 +586,31 @@ pub(super) fn is_party_heal_spell(
     }))
 }
 
+/// Can party slot `i` take a turn: standing, and under no status that
+/// blocks the turn (Numb, Sleep, Stone, Faint: the `0xF84` group the
+/// selectable scans skip). A Stoned member keeps its HP for the rest of the
+/// battle and is counted as down by the `0x5A` wipe scan
+/// (`docs/subsystems/battle-round-loop.md`), so it neither acts nor needs
+/// a heal.
+pub(super) fn can_act(w: &legaia_engine_core::world::World, i: usize) -> bool {
+    w.actors.get(i).is_some_and(|a| a.battle.hp > 0)
+        && !w
+            .battle
+            .status_effects
+            .statuses(i as u8)
+            .iter()
+            .any(|s| s.kind.blocks_actions())
+}
+
+/// Is party slot `i` Stoned: invulnerable, out of the fight, and down to the
+/// wipe scan.
+pub(super) fn stoned(w: &legaia_engine_core::world::World, i: usize) -> bool {
+    w.battle.status_effects.has(
+        i as u8,
+        legaia_engine_battle_vm::status_effects::StatusKind::Stone,
+    )
+}
+
 /// The healing spell worth casting now in a fight that forbids running: the
 /// one `actor` knows and can pay for that restores the most.
 ///
@@ -639,7 +664,7 @@ pub(super) fn spell_heal(w: &legaia_engine_core::world::World, actor: u8) -> Opt
     // group heal leaves nobody swinging, and against a barrage that is every
     // round (`noaru`'s Songi: Noa and Gala cast Spoon side by side for nine
     // rounds with Vahn down and its HP untouched, until the battle stalled).
-    let standing = (0..n).filter(|&i| w.actors[i].battle.hp > 0).count();
+    let standing = (0..n).filter(|&i| can_act(w, i)).count();
     if queued == 1 && standing < 3 {
         return None;
     }
@@ -655,7 +680,7 @@ pub(super) fn spell_heal(w: &legaia_engine_core::world::World, actor: u8) -> Opt
         } else {
             (aoe + aoe / 4).min(max * 95 / 100)
         };
-        hp[i] > 0 && (hp[i] * 5 < max * 3 || hp[i] <= hit)
+        hp[i] > 0 && !stoned(w, i) && (hp[i] * 5 < max * 3 || hp[i] <= hit)
     };
     if duel {
         if !low(usize::from(actor)) {
@@ -698,8 +723,12 @@ pub(super) fn spell_heal(w: &legaia_engine_core::world::World, actor: u8) -> Opt
             };
             let mine = best(usize::from(actor));
             let weaker_healer = (0..n).any(|j| {
+                // A member that cannot take its turn casts nothing: Gala
+                // Stoned by Zora's Glare was the "weaker healer" both other
+                // members left the Spoon to, and Darkness Typhoon wiped
+                // them at 791 and 717 HP with 99 MP in Vahn's pool.
                 j != usize::from(actor)
-                    && w.actors[j].battle.hp > 0
+                    && can_act(w, j)
                     && w.battle
                         .round_flow
                         .pending

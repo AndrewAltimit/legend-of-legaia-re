@@ -168,7 +168,11 @@ pub(super) fn wanted_item(
     // window is open, and the target cursor refuses a heal on it (the
     // confirm bounces): it is not a heal target until it stands.
     let danger = |i: usize| {
-        hp[i] > 0 && w.actors[i].battle.hp > 0 && hp[i] < limit(i) && !covered.contains(&i)
+        hp[i] > 0
+            && w.actors[i].battle.hp > 0
+            && !stoned(w, i)
+            && hp[i] < limit(i)
+            && !covered.contains(&i)
     };
     let dead: Vec<usize> = (0..n)
         .filter(|&i| hp[i] == 0 && !covered.contains(&i))

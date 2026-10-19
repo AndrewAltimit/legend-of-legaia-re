@@ -181,6 +181,18 @@ pub struct OptionsState {
     /// names; an unknown name reads as `auto`). `F8` in `play-window`, the
     /// page's selector.
     pub lighting_time_of_day: String,
+    /// Lamp shadows (engine-only, non-retail): the PCF shadow maps the
+    /// enhanced-lighting point lights cast (`Renderer::set_dyn_shadows` on
+    /// the native window, the page's "Lamp shadows" box; `Y` on both).
+    /// **Default on**. Shadows only - off, the lamps still light the scene -
+    /// and inert while [`Self::enhanced_lighting`] is off. Pure presentation.
+    pub light_shadows: bool,
+    /// Camera-occlusion fade (engine-only, non-retail): geometry that
+    /// completely hides the player from the camera dissolves to a
+    /// screen-door dither around them (`Renderer::set_occlusion_fade`, the
+    /// page's "See-through walls" box; `F4` on both). **Default on**; off is
+    /// retail's authored framing. Pure presentation.
+    pub occlusion_fade: bool,
 }
 
 impl Default for OptionsState {
@@ -207,6 +219,8 @@ impl Default for OptionsState {
             volumetric_fog: true,
             enhanced_lighting: true,
             lighting_time_of_day: "auto".to_string(),
+            light_shadows: true,
+            occlusion_fade: true,
         }
     }
 }
@@ -228,6 +242,8 @@ impl OptionsState {
         self.retail_view_window = true;
         self.volumetric_fog = false;
         self.enhanced_lighting = false;
+        self.light_shadows = false;
+        self.occlusion_fade = false;
     }
 
     /// The options screen's rows as the config words a save block carries.
@@ -240,7 +256,7 @@ impl OptionsState {
     }
 
     /// Copy the knobs in `knobs` ([`OptionsPins`] bits) from `from`.
-    fn take_knobs(&mut self, from: &OptionsState, knobs: u16) {
+    fn take_knobs(&mut self, from: &OptionsState, knobs: u32) {
         use options_pin::*;
         for s in OptionsSetting::ALL {
             if knobs & s.pin_bit() != 0 {
@@ -268,6 +284,12 @@ impl OptionsState {
         if knobs & ENHANCED_LIGHTING != 0 {
             self.enhanced_lighting = from.enhanced_lighting;
         }
+        if knobs & LIGHT_SHADOWS != 0 {
+            self.light_shadows = from.light_shadows;
+        }
+        if knobs & OCCLUSION_FADE != 0 {
+            self.occlusion_fade = from.occlusion_fade;
+        }
     }
 
     /// The engine-only knobs currently off their retail value, by field
@@ -294,6 +316,12 @@ impl OptionsState {
         }
         if self.enhanced_lighting {
             out.push("enhanced_lighting");
+        }
+        if self.light_shadows {
+            out.push("light_shadows");
+        }
+        if self.occlusion_fade {
+            out.push("occlusion_fade");
         }
         out
     }
@@ -365,7 +393,7 @@ impl OptionsSetting {
     ];
 
     /// This row's [`OptionsPins`] bit ([`options_pin::ROW_FIRST`] shifted by its index).
-    pub fn pin_bit(self) -> u16 {
+    pub fn pin_bit(self) -> u32 {
         let i = Self::ALL.iter().position(|&s| s == self).unwrap_or(0);
         options_pin::ROW_FIRST << i
     }
@@ -1054,33 +1082,39 @@ impl OptionsState {
 /// The engine-only knobs a session can pin, as [`OptionsPins`] bits.
 pub mod options_pin {
     /// `camera_distance`.
-    pub const CAMERA_DISTANCE: u16 = 1 << 0;
+    pub const CAMERA_DISTANCE: u32 = 1 << 0;
     /// `precise_movement`.
-    pub const PRECISE_MOVEMENT: u16 = 1 << 1;
+    pub const PRECISE_MOVEMENT: u32 = 1 << 1;
     /// `reduce_flashing`.
-    pub const REDUCE_FLASHING: u16 = 1 << 2;
+    pub const REDUCE_FLASHING: u32 = 1 << 2;
     /// `retail_static_window`.
-    pub const STATIC_WINDOW: u16 = 1 << 3;
+    pub const STATIC_WINDOW: u32 = 1 << 3;
     /// `retail_view_window`.
-    pub const VIEW_WINDOW: u16 = 1 << 4;
+    pub const VIEW_WINDOW: u32 = 1 << 4;
     /// `volumetric_fog`.
-    pub const VOLUMETRIC_FOG: u16 = 1 << 5;
+    pub const VOLUMETRIC_FOG: u32 = 1 << 5;
     /// `enhanced_lighting`.
-    pub const ENHANCED_LIGHTING: u16 = 1 << 6;
+    pub const ENHANCED_LIGHTING: u32 = 1 << 6;
+    /// `light_shadows`.
+    pub const LIGHT_SHADOWS: u32 = 1 << 7;
+    /// `occlusion_fade`.
+    pub const OCCLUSION_FADE: u32 = 1 << 8;
     /// The first retail-row bit: row `i` of
     /// [`super::OptionsSetting::ALL`] is `ROW_FIRST << i`
     /// ([`super::OptionsSetting::pin_bit`]). A host pins a row it overrides
     /// for the session - the retail-compare child's Battle Camera word - so
     /// neither the options file nor a loaded save moves it.
-    pub const ROW_FIRST: u16 = 1 << 7;
+    pub const ROW_FIRST: u32 = 1 << 9;
     /// Every knob [`super::OptionsState::pin_retail`] writes.
-    pub const RETAIL: u16 = CAMERA_DISTANCE
+    pub const RETAIL: u32 = CAMERA_DISTANCE
         | PRECISE_MOVEMENT
         | REDUCE_FLASHING
         | STATIC_WINDOW
         | VIEW_WINDOW
         | VOLUMETRIC_FOG
-        | ENHANCED_LIGHTING;
+        | ENHANCED_LIGHTING
+        | LIGHT_SHADOWS
+        | OCCLUSION_FADE;
 }
 
 /// Session-only overrides of persisted options, and what to persist under
@@ -1098,14 +1132,14 @@ pub struct OptionsPins {
     /// The pinned knobs' values before their pin.
     stored: OptionsState,
     /// Which knobs are pinned ([`options_pin`] bits).
-    knobs: u16,
+    knobs: u32,
 }
 
 impl OptionsPins {
     /// Pin `knobs` of `live` for this session: remember their current values
     /// (a knob already pinned keeps its first value). Call before writing the
     /// override into `live`.
-    pub fn pin(&mut self, live: &OptionsState, knobs: u16) {
+    pub fn pin(&mut self, live: &OptionsState, knobs: u32) {
         let fresh = knobs & !self.knobs;
         self.stored.take_knobs(live, fresh);
         self.knobs |= knobs;
@@ -1147,7 +1181,7 @@ impl OptionsPins {
         }
         let rows = OptionsSetting::ALL
             .iter()
-            .fold(0u16, |m, s| m | s.pin_bit());
+            .fold(0u32, |m, s| m | s.pin_bit());
         live.take_knobs(&from, rows & !self.knobs);
         self.stored.take_knobs(&from, rows & self.knobs);
         *live != before
@@ -1253,13 +1287,15 @@ mod tests {
                 "camera_distance",
                 "reduce_flashing",
                 "volumetric_fog",
-                "enhanced_lighting"
+                "enhanced_lighting",
+                "light_shadows",
+                "occlusion_fade"
             ]
         );
         o.precise_movement = true;
         o.retail_static_window = false;
         o.retail_view_window = false;
-        assert_eq!(o.retail_deviations().len(), 7);
+        assert_eq!(o.retail_deviations().len(), 9);
         let rows = (o.battle_camera, o.field_move, o.audio);
         o.pin_retail();
         assert!(o.retail_deviations().is_empty());
@@ -1292,6 +1328,24 @@ mod tests {
         assert!(old.enhanced_lighting && old.muted);
         let back: OptionsState = toml::from_str(&toml::to_string(&opts).unwrap()).unwrap();
         assert_eq!(back, opts);
+    }
+
+    /// The two render enhancements that became options late: on by default,
+    /// and an options file written before they existed reads them as on, not
+    /// as `false` - an old store must not silently switch see-through walls
+    /// or lamp shadows off.
+    #[test]
+    fn occlusion_fade_and_light_shadows_default_on_and_survive_old_files() {
+        let opts = OptionsState::default();
+        assert!(opts.occlusion_fade && opts.light_shadows);
+        let old: OptionsState =
+            toml::from_str("muted = true\nvolumetric_fog = false\nenhanced_lighting = true\n")
+                .unwrap();
+        assert!(old.occlusion_fade && old.light_shadows && old.muted && !old.volumetric_fog);
+        let mut off = opts.clone();
+        off.occlusion_fade = false;
+        let back: OptionsState = toml::from_str(&toml::to_string(&off).unwrap()).unwrap();
+        assert!(!back.occlusion_fade, "an explicit off persists");
     }
 
     #[test]

@@ -272,8 +272,9 @@ impl<'m> DrawCtx<'_, 'm> {
                 max_ir0: w,
             });
             for copy_b in [false, true] {
-                let rows =
-                    legaia_engine_core::scene_host::backdrop_slot_1_basis(*second, yaw, copy_b);
+                let rows = legaia_engine_scene_host::scene_host::backdrop_slot_1_basis(
+                    *second, yaw, copy_b,
+                );
                 let basis = Mat4::from_mat3(glam::Mat3::from_cols_array_2d(&rows).transpose());
                 let mvp = cam * PlayWindowApp::battle_stage_model() * basis;
                 if let Some(mesh) = app.battle_stage_spun_mesh.and_then(|i| store.meshes.get(i)) {

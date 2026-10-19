@@ -53,13 +53,13 @@ pub struct OptionsPopupDraw<'a> {
     pub cursor: u8,
 }
 
-/// Retail menu ink 7 (labels), sampled from the options-screen VRAM
-/// capture.
-pub const OPTIONS_INK_WHITE: [f32; 4] = [0.81, 0.81, 0.81, 1.0];
-/// Retail menu ink 6 (the gold value column).
-pub const OPTIONS_INK_GOLD: [f32; 4] = [0.91, 0.68, 0.0, 1.0];
-/// Retail menu ink 5 (the teal Dual Shock sub-row labels).
-pub const OPTIONS_INK_TEAL: [f32; 4] = [0.26, 0.87, 0.87, 1.0];
+/// Retail menu ink 7 (labels): the one tier-7 ink every menu stages,
+/// `(206, 206, 206)` on the `menu_options_field` frame.
+pub const OPTIONS_INK_WHITE: [f32; 4] = crate::MENU_TEXT_WHITE;
+/// Retail menu ink 6 (the gold value column), `(231, 173, 0)` on screen.
+pub const OPTIONS_INK_GOLD: [f32; 4] = crate::MENU_TEXT_GOLD;
+/// Retail menu ink 5 (the teal Dual Shock sub-row labels), `(66, 222, 222)`.
+pub const OPTIONS_INK_TEAL: [f32; 4] = crate::MENU_TEXT_TEAL;
 
 /// Build [`TextDraw`]s for the options screen.
 ///

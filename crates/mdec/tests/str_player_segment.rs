@@ -166,6 +166,22 @@ fn multi_sector_frames_reassemble_in_the_ring() {
 }
 
 #[test]
+fn pumped_frames_carry_the_sector_header_size_not_the_slot_size() {
+    // Every retail dispatch slot says 320x240 while every retail movie is
+    // 320x224; decoding at the slot's size skews the macroblock grid. The
+    // pump hands the header's size over and re-programs the decode rects with
+    // it, as the frame poll `FUN_801CF740` does.
+    let mut sector = video_sector(1, 0, 1, 1);
+    sector[0x12..0x14].copy_from_slice(&224u16.to_le_bytes());
+    let mut player = StrPlayer::open(FmvSlot::whole_file(320, 240), Bitstream::Iki);
+    player.deliver_sector(&sector);
+    let frame = player.next_frame().expect("one complete frame");
+    assert_eq!((frame.width, frame.height), (320, 224));
+    assert_eq!(player.env().frame_buf[0].h, 224);
+    assert_eq!(player.env().frame_buf[1].h, 224);
+}
+
+#[test]
 fn the_mv3_segment_seeks_match_the_retail_frame_ranges() {
     // The four `MV3.STR` cutscenes, as the dispatch table encodes them.
     for (start, sectors) in [(1u32, 0i32), (0xE2, 2250), (0x1A5, 4200), (0x27C, 6350)] {

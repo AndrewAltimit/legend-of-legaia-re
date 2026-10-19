@@ -31,7 +31,7 @@ pub(super) fn quantity_step(pressed: u16, qty: i32, max: i32) -> Option<i32> {
 ///
 /// Retail runs them as two sibling menu-overlay sub-screens over a parked
 /// list; the engine runs them as one `Option` on
-/// `legaia_engine_core::menu_runtime::MenuRuntime` that takes the pad while it is
+/// `legaia_engine_menu_runtime::menu_runtime::MenuRuntime` that takes the pad while it is
 /// `Some`, exactly as the buy-recipient picker does. Both hosts read the
 /// same accessors for the window they draw, so the screen is one
 /// interaction on one bound with one pad decode.

@@ -135,7 +135,7 @@ pub fn field_hud_rearm_held(world: &crate::world::World) -> bool {
 /// works after the first battle is worse than none.
 pub fn field_party_hud_members(world: &crate::world::World) -> Vec<FieldHudMemberData> {
     let count = (world.party.party_count as usize).min(3);
-    let fallback = crate::field_menu_dispatch::roster_names(world);
+    let fallback = world.party.roster_names();
     (0..count)
         .filter_map(|ordinal| {
             let slot = world.party_roster_slot(ordinal);

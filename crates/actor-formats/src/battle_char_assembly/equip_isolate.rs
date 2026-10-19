@@ -37,6 +37,13 @@
 //! Vahn's Meta $7..$9 and Noa's Terra $4..$6, where the fist otherwise stays
 //! in the item.
 //!
+//! A keep forced by object, column or `whole` mode still drops a primitive
+//! that passes the skin tests (the rule names the item's material, not the
+//! flesh painted with it); only an explicit `"tag:ordinal"` keep is absolute.
+//! Skin painted *inside* a kept primitive is cut out at texel level by
+//! [`equip_skin_mask`](super::equip_skin_mask), on the mesh
+//! [`item_mesh_with_prims`] hands back.
+//!
 //! What the heuristic cannot know, the table says: a circlet's four
 //! primitives that happen to sample hair-coloured texels, a hair strand
 //! authored into a robe object. Every override names its record and says
@@ -343,6 +350,13 @@ pub fn skin_colours(bare: &AssembledCharacter, bare_tmd: &Tmd, bare_vram: &Vram)
     set
 }
 
+/// [`skin_colours`] dilated by the own-skin match radius - the set the
+/// isolation and the texel mask ([`equip_skin_mask`](super::equip_skin_mask))
+/// both read "the character's own flesh" from.
+pub fn own_skin_set(bare: &AssembledCharacter, bare_tmd: &Tmd, bare_vram: &Vram) -> HashSet<u16> {
+    dilate(&skin_colours(bare, bare_tmd, bare_vram), OWN_SKIN_RADIUS)
+}
+
 /// Whether `word` is within one 5-bit step per channel of a colour in `set`.
 pub fn near(set: &HashSet<u16>, word: u16) -> bool {
     near_within(set, word, 1)
@@ -446,6 +460,17 @@ impl IsolatedItem {
 /// its preview and its thumbnail all share - and the one
 /// [`equip_repair`](super::equip_repair) fills the grip of.
 pub fn item_mesh(tmd: &Tmd, blob: &[u8], item: &IsolatedItem) -> (VramMesh, Vec<u32>) {
+    let (mesh, ids, _) = item_mesh_with_prims(tmd, blob, item);
+    (mesh, ids)
+}
+
+/// [`item_mesh`] plus, per vertex, the `(object, ordinal)` primitive it came
+/// from - what [`equip_skin_mask`](super::equip_skin_mask) groups by.
+pub fn item_mesh_with_prims(
+    tmd: &Tmd,
+    blob: &[u8],
+    item: &IsolatedItem,
+) -> (VramMesh, Vec<u32>, Vec<(u32, u32)>) {
     let (full, ids, prims) = legaia_tmd::mesh::tmd_to_vram_mesh_with_prim_ids(tmd, blob);
     let mut mesh = VramMesh {
         positions: Vec::new(),
@@ -456,6 +481,7 @@ pub fn item_mesh(tmd: &Tmd, blob: &[u8], item: &IsolatedItem) -> (VramMesh, Vec<
         colors: Vec::new(),
     };
     let mut out_ids: Vec<u32> = Vec::new();
+    let mut out_prims: Vec<(u32, u32)> = Vec::new();
     let mut remap = vec![u32::MAX; full.positions.len()];
     for v in 0..full.positions.len() {
         if !item.claims(ids[v] as usize, prims[v]) {
@@ -470,6 +496,7 @@ pub fn item_mesh(tmd: &Tmd, blob: &[u8], item: &IsolatedItem) -> (VramMesh, Vec<
         mesh.colors
             .push(full.colors.get(v).copied().unwrap_or([0x80; 3]));
         out_ids.push(ids[v]);
+        out_prims.push((ids[v], prims[v]));
     }
     for tri in full.indices.as_chunks::<3>().0 {
         let m = [
@@ -481,7 +508,7 @@ pub fn item_mesh(tmd: &Tmd, blob: &[u8], item: &IsolatedItem) -> (VramMesh, Vec<
             mesh.indices.extend_from_slice(&m);
         }
     }
-    (mesh, out_ids)
+    (mesh, out_ids, out_prims)
 }
 
 /// Everything the isolation needs about the two assemblies.
@@ -568,10 +595,7 @@ pub fn isolate_item(inp: &IsolationInputs<'_>, rule: Option<&RecordRule>) -> Iso
         );
     }
 
-    let own_skin = dilate(
-        &skin_colours(inp.bare, inp.bare_tmd, inp.bare_vram),
-        OWN_SKIN_RADIUS,
-    );
+    let own_skin = own_skin_set(inp.bare, inp.bare_tmd, inp.bare_vram);
 
     // Bare head material, for `drop_hair`: every object the bare assembly's
     // section 1 (headgear) default spliced in.
@@ -617,31 +641,36 @@ pub fn isolate_item(inp: &IsolationInputs<'_>, rule: Option<&RecordRule>) -> Iso
         };
         for p in object_prim_refs(inp.equipped_tmd, &inp.equipped.tmd, ei) {
             // 1. Explicit primitive, 2. whole object, 3. palette column, 4. mode.
-            let decision = forced
+            // A keep by object, column or `whole` mode still leaves the
+            // character's flesh behind: those overrides say "this object /
+            // column is the item", not "this skin is".
+            let tex = prim_texels(&p, inp.vram);
+            let skin = fraction(&tex, skin_like);
+            let own = fraction(&tex, |w| own_skin.contains(&w));
+            let flesh = skin >= SKIN_MATCH || own >= OWN_SKIN_MATCH;
+            let explicit = forced
                 .iter()
                 .find(|(t, ord, _)| *t == tag && *ord == p.ordinal)
-                .map(|(_, _, k)| *k)
-                .or_else(|| {
-                    let r = rule?;
-                    if r.keep_objects.contains(&tag) {
-                        Some(true)
-                    } else if r.drop_objects.contains(&tag) {
-                        Some(false)
-                    } else if r.keep_columns.contains(&p.column) {
-                        Some(true)
-                    } else if r.drop_columns.contains(&p.column) {
-                        Some(false)
-                    } else {
-                        None
-                    }
-                })
-                .unwrap_or_else(|| match mode {
-                    IsolationMode::Whole => true,
+                .map(|(_, _, k)| *k);
+            let by_rule = rule.and_then(|r| {
+                if r.keep_objects.contains(&tag) {
+                    Some(true)
+                } else if r.drop_objects.contains(&tag) {
+                    Some(false)
+                } else if r.keep_columns.contains(&p.column) {
+                    Some(true)
+                } else if r.drop_columns.contains(&p.column) {
+                    Some(false)
+                } else {
+                    None
+                }
+            });
+            let decision = explicit.unwrap_or_else(|| match by_rule {
+                Some(keep) => keep && !flesh,
+                None => match mode {
+                    IsolationMode::Whole => !flesh,
                     IsolationMode::Palette => inp.partition.claims(ei, p.cba),
                     IsolationMode::ColourDiff | IsolationMode::Identity => {
-                        let tex = prim_texels(&p, inp.vram);
-                        let skin = fraction(&tex, skin_like);
-                        let own = fraction(&tex, |w| own_skin.contains(&w));
                         let set: Option<&HashSet<u16>> = if mode == IsolationMode::Identity {
                             let mut key: Vec<(i16, i16, i16)> = p
                                 .corners
@@ -662,12 +691,10 @@ pub fn isolate_item(inp: &IsolationInputs<'_>, rule: Option<&RecordRule>) -> Iso
                         } else {
                             fraction(&tex, |w| head_colours.contains(&w))
                         };
-                        matched < BODY_MATCH
-                            && skin < SKIN_MATCH
-                            && own < OWN_SKIN_MATCH
-                            && hair < BODY_MATCH
+                        matched < BODY_MATCH && !flesh && hair < BODY_MATCH
                     }
-                });
+                },
+            });
             if decision {
                 keep.insert((ei, p.ordinal));
                 kept += 1;

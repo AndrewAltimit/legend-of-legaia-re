@@ -417,7 +417,7 @@ scene state that does not exist yet, and the page's overlay draws the title /
 disc chooser rather than any of their outputs.
 """
 skips = [
-    "drain_and_route_field_events_web",
+    "drain_and_route_field_events",
     "drive_npc_clips",
     "poll_field_shop",
     "poll_game_over",
@@ -449,7 +449,7 @@ that calls `tick_frame` while the prompt is up runs nothing - no stray pad
 edge reaches the prompt, and nothing behind it advances.
 """
 skips = [
-    "drain_and_route_field_events_web",
+    "drain_and_route_field_events",
     "drive_npc_clips",
     "poll_field_shop",
     "poll_game_over",
@@ -480,7 +480,7 @@ movie that finishes this frame falls through, as the native window's finish
 is drained before it counts ticks.
 """
 skips = [
-    "drain_and_route_field_events_web",
+    "drain_and_route_field_events",
     "drive_npc_clips",
     "poll_field_shop",
     "poll_game_over",
@@ -561,7 +561,7 @@ is where that is recorded.
 """
 skips = [
     "audio_director",
-    "drain_and_route_field_events_web",
+    "drain_and_route_field_events",
     "drive_npc_clips",
     "poll_field_shop",
     "poll_game_over",
@@ -587,11 +587,6 @@ skips = [
 native = "apply_world_clut_fx"
 web = "step_field_vram_fx"
 reason = "Both drain the world's banked CLUT-cell effects and ambient palette cyclers against the host's CPU VRAM through the one frame-tail kernel `World::step_field_vram_effects`."
-
-[[frame_kernel]]
-native = "drain_and_route_field_events"
-web = "drain_and_route_field_events_web"
-reason = "The same drain of `World::pending_field_events`; the `_web` suffix is the browser's copy, not a different step."
 
 [[frame_kernel]]
 native = "drain_and_log_battle_events"
@@ -650,7 +645,7 @@ reason = "The window's own typed-out dialog panel, used only while `World::toggl
 host = "native"
 kernel = "sync_text_balloon"
 host_only = true
-reason = "Commits the `4C E1` balloon's measured width while `self` is still mutable, because the window's draw passes take `&self`. The page measures in its own draw builder, which has no such split."
+reason = "Commits the `4C E1` balloon's measured width while `self` is still mutable, because the window's draw passes take `&self`. Both hosts commit through the one kernel `legaia_engine_screens::field_messages::commit_text_balloon_measure`: the window here, the page at the head of its draw export (`play_dialog_draws_json`), which has no such split. Both then draw the balloon through the shared `field_message_frame`."
 
 [[frame_kernel]]
 host = "web"
@@ -693,7 +688,7 @@ reason = "Builds the page's audio director on first use (off wasm; on wasm once 
 native = "drain_and_log_battle_events"
 web = "tick_battle_presentation"
 native_only = ["tick"]
-web_only = ["action_id", "apply_battle_vram_moves", "armed", "battle_monster_slots", "battle_party_forms", "battle_stage_object_indices", "clear_popups", "current_frame", "discard_battle_vram_edits", "drain_battle_clut_stages", "ensure_battle_party_forms", "entry_bytes_extended", "monster_tex_slots_used", "party_roster_slot", "release_summon_seat", "replay", "reset", "stage_battle_world", "stage_effect_clut", "tmd_bytes", "upload_flame_atlas_into_vram"]
+web_only = ["armed", "battle_monster_slots", "battle_party_forms", "battle_stage_object_indices", "clear_popups", "ensure_battle_party_forms", "entry_bytes_extended", "monster_tex_slots_used", "release_summon_seat", "replay", "reset", "stage_battle_world", "tmd_bytes", "upload_flame_atlas_into_vram"]
 reason = """
 The audio half is one session step on both hosts
 (`BootSession::route_battle_audio`: the duck target, the strike / cast cues,
@@ -706,21 +701,21 @@ The web-only list is where the code sits, not whether the host does it. The
 page folds its whole battle presentation frame into this one named step: the
 battle edge's world half (`battle_stage::stage_battle_world`: the stage
 resolve, its class, the fog's stage cap and the monster battle forms, pinned
-by a SIM_PAIRS row), the atlas upload, the party forms' read-back, the CLUT
-stage drain and the popup retire. The native window does that same work spread
+by a SIM_PAIRS row), the atlas upload, the party forms' read-back and the
+popup retire. The battle VRAM re-stamps (faces, status and effect CLUTs, the
+stage module's moves) are one session step on both hosts
+(`battle_vram::stamp_battle_faces` / `step_battle_vram_edits`), so they list
+on neither side. The native window does that same work spread
 across its draw section and window/battle.rs (`sync_battle_render` runs the
 edge step) rather than inside the kernel its frame path names. Checked name by
-name: every presentation call has a call site in the native sources. The arena object list and the Cort hand-back ground blank are
-the engine's own `SceneHost::battle_stage_object_indices` /
-`World::apply_battle_vram_moves`, which the window reaches from its
+name: every presentation call has a call site in the native sources. The arena object list is the engine's own
+`SceneHost::battle_stage_object_indices`, which the window reaches from its
 stage-rebuild path; the party forms are built by
 `SceneHost::ensure_battle_party_forms` from `SceneHost::tick` for every
 session, and both hosts call it again before their render build and replay its
 VRAM writes with `replay`. `entry_bytes_extended` is the page reading the
 monster archive off PROT inside this step; the window reads it from its
-cached copy. `discard_battle_vram_edits` is the page
-dropping queued battle VRAM edits when it holds no battle VRAM image; the
-window does the same in `tick_battle_stage_shell`.
+cached copy.
 """
 
 [[frame_content]]
@@ -729,13 +724,6 @@ web = "drive_npc_clips"
 native_only = []
 web_only = ["take_npc_morph_dirty"]
 reason = "The cue drain is one engine kernel on both hosts, and so is the tick's step of the NPC clip players that follows it (`engine-session`'s `step_npc_clip_players`: the per-tick `World::field_npc_clips_advance` gate, then each slot posed off the world-owned cursor or free-run one frame), so neither lists on either side. `take_npc_morph_dirty` (op-`0x4B` NPC morphs) is drained here on the page into a per-slot generation, and natively in `take_npc_morph_rebuilds` ahead of the redraw's renderer borrow, where it evicts that same pose cache; both stage through `World::npc_morphed_tmd`."
-
-[[frame_content]]
-native = "tick_dev_menu"
-web = "tick_dev_menu"
-native_only = ["records_screen_draws_for"]
-web_only = []
-reason = "The dev menu Records page, built on opposite sides of the frame. Both hosts ship it - the page has `dev_records_draws` / `dev_records_model` behind the same Square toggle, pinned to the native model by a SIM_PAIRS row - and both resolve its rows through `records_screen_draws_for`. The native window caches its whole dev-menu draw list at tick time, so the builder sits inside this kernel; the page builds its list in the draw pass (`play_dev_menu_draws_json`), where it holds the surface size the stage transform needs. Same shape as the `tick_field_party_hud` row: one screen, one builder, two sides of the wasm boundary."
 
 [[frame_content]]
 native = "tick_field_party_hud"

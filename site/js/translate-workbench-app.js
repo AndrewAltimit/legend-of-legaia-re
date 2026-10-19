@@ -132,11 +132,13 @@ const S = {
   report: null,       // last full check
   filter: { section: '', status: '', q: '', group: '', groupLabel: '' },
   page: 0,
-  pageSize: 40,
+  pageSize: 100,
   filtered: [],
   accents: '',        // the pack's accent mode: '' (strict), 'fold', 'font'
   accentInfo: null,   // {disc_font, preview, palette} from the session
   lastTa: null,       // the textarea the palette inserts into
+  cur: null,          // index into `entries` of the line in the editor
+  indexOf: new Map(), // key -> index into `entries`
 };
 
 function setStatus(msg, kind) {
@@ -348,18 +350,48 @@ function drawPreview(e, canvas, note) {
 }
 
 // --- Editor rendering ------------------------------------------------------------
-function rowHtml(e, i) {
+// The page has one editor (`#wb-ed-body`) and a dense list of every filtered
+// line beside it; picking a list row loads that line into the editor. The
+// editor's info line, marks and preview use the same classes the per-row
+// layout used, so `updateRowEl` serves it unchanged.
+function sizeText(e) {
+  const filled = e.t && e.t.trim();
+  if (!filled) return `${e.room}`;
+  return `${e.len == null ? '?' : e.len}/${e.room}`;
+}
+
+function liHtml(e, i, inBox, boxStart) {
   const st = statusOf(e);
-  const lim = e.lim ? (LIMIT_LABELS[e.lim] || e.lim) : '';
-  return `<div class="wb-row st-${st}" data-i="${i}">
-    <div class="wb-row-head"><code>${esc(e.k)}</code>${e.c ? `<span>${esc(e.c)}</span>` : ''}<span>${esc(SECTION_LABELS[e.s] || e.s)}</span>${lim ? `<span>shown on: ${esc(lim)}</span>` : ''}</div>
-    <div class="wb-src">${esc(e.src)}</div>
-    <div class="wb-edit"><textarea rows="1" spellcheck="true" aria-label="Translation of ${esc(e.k)}">${esc(e.t)}</textarea>
-      <div class="wb-info"><span class="wb-room">${esc(roomText(e))}</span><span class="wb-out">${outcomeText(e)}</span><span class="wb-width">${widthText(e, e.t && e.t.trim() ? e.px : e.spx)}</span></div>
-      <div class="wb-errs">${markedText(e)}</div>
-      <div class="wb-preview"><canvas></canvas><span class="wb-info wb-pv-note"></span></div>
-    </div>
-  </div>`;
+  const filled = e.t && e.t.trim();
+  const cls = `wb-li st-${st}${i === S.cur ? ' is-active' : ''}${inBox ? ' in-box' : ''}${boxStart ? ' box-start' : ''}`;
+  return `<button type="button" class="${cls}" data-i="${i}" role="option" aria-selected="${i === S.cur}" title="${esc(e.k)}">
+    <span class="wb-li-en">${esc(e.src)}</span>
+    <span class="wb-li-n">${esc(sizeText(e))}</span>
+    <span class="wb-li-tr${filled ? '' : ' is-empty'}">${filled ? esc(e.t) : 'untranslated'}</span>
+  </button>`;
+}
+
+function updateLi(i) {
+  const el = $('wb-list').querySelector(`.wb-li[data-i="${i}"]`);
+  if (!el) return;
+  const e = S.entries[i];
+  const filled = e.t && e.t.trim();
+  el.classList.remove(...Array.from(el.classList).filter((c) => c.startsWith('st-')));
+  el.classList.add(`st-${statusOf(e)}`);
+  el.querySelector('.wb-li-n').textContent = sizeText(e);
+  const tr = el.querySelector('.wb-li-tr');
+  tr.textContent = filled ? e.t : 'untranslated';
+  tr.classList.toggle('is-empty', !filled);
+}
+
+// Bring a row into the list's own view. Not `scrollIntoView`: that also
+// scrolls the page, which pulls the editor out from under the translator.
+function scrollListTo(li) {
+  const list = $('wb-list');
+  const head = 26; // the sticky group heading over the top rows
+  const top = li.offsetTop - list.offsetTop;
+  if (top - head < list.scrollTop) list.scrollTop = Math.max(0, top - head);
+  else if (top + li.offsetHeight > list.scrollTop + list.clientHeight) list.scrollTop = top + li.offsetHeight - list.clientHeight;
 }
 
 function renderList() {
@@ -372,42 +404,102 @@ function renderList() {
   let html = '';
   let group = null;
   let box = null;
-  let open = false;
   for (const idx of slice) {
     const e = S.entries[idx];
     const g = e.s === 'scene_dialog' || e.s === 'inline_text' ? (e.g || e.c) : e.s;
     if (g !== group) {
-      if (open) { html += '</div>'; open = false; }
       group = g;
       box = null;
       html += `<div class="wb-group-head">${esc(groupLabel(e))}</div>`;
     }
-    if (e.box != null) {
-      if (e.box !== box) {
-        if (open) html += '</div>';
-        box = e.box;
-        const rows = (S.byBox.get(box) || []).length;
-        html += `<div class="wb-box"><div class="wb-box-head"><span>box of ${rows} row${rows === 1 ? '' : 's'}</span></div>`;
-        open = true;
-      }
-    } else if (open) {
-      html += '</div>';
-      open = false;
-    }
-    html += rowHtml(e, idx);
+    const inBox = e.box != null && (S.byBox.get(e.box) || []).length > 1;
+    const boxStart = inBox && e.box !== box;
+    box = e.box != null ? e.box : null;
+    html += liHtml(e, idx, inBox, boxStart);
   }
-  if (open) html += '</div>';
   list.innerHTML = html || '<div class="wb-empty">No lines match these filters.</div>';
-  for (const el of list.querySelectorAll('.wb-row')) {
-    const e = S.entries[+el.dataset.i];
-    drawPreview(e, el.querySelector('canvas'), el.querySelector('.wb-pv-note'));
-    autoGrow(el.querySelector('textarea'));
-  }
   const pager = `<button type="button" data-p="prev" ${S.page === 0 ? 'disabled' : ''}>Previous</button>
     <span>${n ? `${start + 1}-${Math.min(n, start + S.pageSize)} of ${n} lines` : '0 lines'} (page ${S.page + 1} / ${pages})</span>
     <button type="button" data-p="next" ${S.page >= pages - 1 ? 'disabled' : ''}>Next</button>`;
-  $('wb-pager-top').innerHTML = pager;
-  $('wb-pager-bottom').innerHTML = pager;
+  $('wb-pager').innerHTML = pager;
+  list.scrollTop = 0;
+  const act = list.querySelector('.wb-li.is-active');
+  if (act) scrollListTo(act);
+}
+
+// Load line `i` (an index into S.entries) into the editor.
+function selectLine(i, opts) {
+  const o = opts || {};
+  const prev = S.cur;
+  S.cur = i;
+  for (const el of $('wb-list').querySelectorAll('.wb-li.is-active')) {
+    el.classList.remove('is-active');
+    el.setAttribute('aria-selected', 'false');
+  }
+  const body = $('wb-ed-body');
+  const ta = $('wb-ed-input');
+  if (i == null || !S.entries[i]) {
+    S.cur = null;
+    body.hidden = true;
+    $('wb-ed-empty').hidden = false;
+    updatePos();
+    return;
+  }
+  const e = S.entries[i];
+  const li = $('wb-list').querySelector(`.wb-li[data-i="${i}"]`);
+  if (li) {
+    li.classList.add('is-active');
+    li.setAttribute('aria-selected', 'true');
+    scrollListTo(li);
+  }
+  $('wb-ed-empty').hidden = true;
+  body.hidden = false;
+  const lim = e.lim ? (LIMIT_LABELS[e.lim] || e.lim) : '';
+  $('wb-ed-head').innerHTML = `<code>${esc(e.k)}</code>${e.c ? `<span>${esc(e.c)}</span>` : ''}<span>${esc(SECTION_LABELS[e.s] || e.s)}</span>${lim ? `<span>shown on: ${esc(lim)}</span>` : ''}`;
+  $('wb-ed-src').textContent = e.src;
+  ta.setAttribute('aria-label', `Translation of ${e.k}`);
+  if (prev !== i || ta.value !== (e.t || '')) ta.value = e.t || '';
+  renderBoxRows(e);
+  updateRowEl(body, e, true);
+  autoGrow(ta);
+  updatePos();
+  if (o.focus) {
+    ta.focus({ preventScroll: true });
+    ta.selectionStart = ta.selectionEnd = ta.value.length;
+  }
+  if (o.reveal && window.matchMedia('(max-width: 68rem)').matches) {
+    $('wb-ed').scrollIntoView({ block: 'start', behavior: 'smooth' });
+  }
+}
+
+function updatePos() {
+  const pos = S.cur == null ? -1 : S.filtered.indexOf(S.cur);
+  $('wb-ed-pos').textContent = pos >= 0 ? `line ${pos + 1} of ${S.filtered.length}` : (S.cur != null ? 'not in the current filter' : '');
+  $('wb-prev').disabled = pos <= 0;
+  $('wb-next').disabled = pos < 0 ? !S.filtered.length : pos >= S.filtered.length - 1;
+}
+
+// The other rows of a dialog box, as context: each one picks that row.
+function renderBoxRows(e) {
+  const el = $('wb-ed-box');
+  const rows = e.box != null ? (S.byBox.get(e.box) || []) : [];
+  if (rows.length < 2) { el.innerHTML = ''; return; }
+  el.innerHTML = rows.map((x, n) => {
+    const filled = x.t && x.t.trim();
+    return `<button type="button" class="wb-boxrow${x === e ? ' is-active' : ''}" data-i="${S.indexOf.get(x.k)}" title="${esc(x.k)}"><span>row ${n + 1}</span><span>${esc(x.src)}</span><span>${filled ? esc(x.t) : '-'}</span></button>`;
+  }).join('');
+}
+
+// Step through the filtered lines, across pages.
+function stepLine(dir) {
+  if (!S.filtered.length) return;
+  let pos = S.cur == null ? -1 : S.filtered.indexOf(S.cur);
+  if (pos < 0) pos = S.page * S.pageSize - (dir > 0 ? 1 : -1);
+  const next = Math.max(0, Math.min(S.filtered.length - 1, pos + dir));
+  const page = Math.floor(next / S.pageSize);
+  S.cur = S.filtered[next];
+  if (page !== S.page) { S.page = page; renderList(); }
+  selectLine(S.filtered[next], { focus: true });
 }
 
 function groupLabel(e) {
@@ -420,14 +512,20 @@ function groupLabel(e) {
 function autoGrow(ta) {
   if (!ta) return;
   ta.style.height = 'auto';
-  ta.style.height = Math.min(ta.scrollHeight + 2, 240) + 'px';
+  ta.style.height = Math.min(ta.scrollHeight + 2, 180) + 'px';
 }
 
 function refilter(resetPage) {
   S.filtered = [];
   for (let i = 0; i < S.entries.length; i++) if (matches(S.entries[i])) S.filtered.push(i);
   if (resetPage) S.page = 0;
+  // Keep the line being edited when it survives the filter; otherwise the
+  // editor moves to the first line of the page.
+  const keep = S.cur != null && S.filtered.includes(S.cur);
+  if (keep && resetPage) S.page = Math.floor(S.filtered.indexOf(S.cur) / S.pageSize);
   renderList();
+  if (keep) selectLine(S.cur);
+  else selectLine(S.filtered.length ? S.filtered[S.page * S.pageSize] : null);
   const chip = $('wb-f-group');
   if (S.filter.group) {
     chip.hidden = false;
@@ -443,7 +541,12 @@ function focusGroup(group, label) {
   S.filter.section = '';
   $('wb-f-section').value = '';
   refilter(true);
-  $('editor').scrollIntoView({ behavior: 'smooth' });
+  revealWork();
+}
+
+// Scroll the list + editor into view (together they fill one screen).
+function revealWork() {
+  $('editor').scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 // --- Dashboard -------------------------------------------------------------------
@@ -473,6 +576,17 @@ function renderCoverage() {
       <td class="num ${r.bad ? 'wb-bad' : ''}">${r.bad || ''}</td></tr>`;
   }
   $('wb-coverage').innerHTML = html;
+  renderProgress(rows);
+}
+
+// The list pane's progress line and the collapsed dashboard's summary.
+function renderProgress(rows) {
+  let total = 0, filled = 0, bad = 0;
+  for (const r of rows.values()) { total += r.total; filled += r.filled; bad += r.bad; }
+  const pct = total ? ((filled / total) * 100).toFixed(1) : '0.0';
+  const probs = bad ? `, <span class="wb-bad">${bad} with problems</span>` : '';
+  $('wb-progress').innerHTML = `<span>${filled} / ${total} translated (${pct}%)${probs}</span>${meter(0, filled, total, false)}`;
+  $('wb-space-sum').textContent = `- coverage per section, name tables, label pools, scenes fullest first`;
 }
 
 function renderRegions() {
@@ -655,7 +769,7 @@ function renderPalette() {
 // hex token the export writes; the name alias is shown as a hint.
 function renderSymbols() {
   const el = $('wb-symbols');
-  const field = el.closest('.wb-field');
+  const field = el.closest('.wb-sym-field');
   if (!S.wb || typeof S.wb.symbols !== 'function') { field.hidden = true; return; }
   let syms = [];
   try { syms = Array.from(S.wb.symbols()); } catch (e) { syms = []; }
@@ -721,15 +835,15 @@ function insertChar(ch) {
   ta.dispatchEvent(new Event('input', { bubbles: true }));
 }
 
-function applyFix(el, e, fix) {
+function applyFix(e, fix) {
   if (fix === 'font') { setAccentMode('font'); return; }
   const mod = wasmMod;
   if (!mod) return;
   const text = fix === 'fold' ? mod.fold_line(e.t || '') : mod.cells_line(e.t || '');
-  const ta = el.querySelector('textarea');
+  const ta = $('wb-ed-input');
   ta.value = text;
   autoGrow(ta);
-  onEdit(el, e, text);
+  onEdit(e, text);
 }
 
 // --- Fast paths after edits ------------------------------------------------------
@@ -802,9 +916,10 @@ function scheduleDash() {
   dashTimer = setTimeout(() => { renderCoverage(); renderMonsters(); renderCharStats(); }, 500);
 }
 
-// Re-draw the info line + preview of every row on the page (after a fit).
+// Re-draw every list row's status and the editor (after a fit).
 function refreshVisibleRows() {
-  for (const el of $('wb-list').querySelectorAll('.wb-row')) updateRowEl(el, S.entries[+el.dataset.i], false);
+  for (const el of $('wb-list').querySelectorAll('.wb-li')) updateLi(+el.dataset.i);
+  if (S.cur != null) updateRowEl($('wb-ed-body'), S.entries[S.cur], false);
 }
 
 function updateRowEl(el, e, redraw) {
@@ -813,23 +928,18 @@ function updateRowEl(el, e, redraw) {
   el.querySelector('.wb-out').innerHTML = outcomeText(e);
   el.querySelector('.wb-width').innerHTML = widthText(e, e.t && e.t.trim() ? e.px : e.spx);
   el.querySelector('.wb-errs').innerHTML = markedText(e);
-  if (redraw) drawPreview(e, el.querySelector('canvas'), el.querySelector('.wb-pv-note'));
+  if (redraw) drawPreview(e, el.querySelector('.wb-preview canvas'), el.querySelector('.wb-pv-note'));
 }
 
-function onEdit(el, e, text) {
+function onEdit(e, text) {
   e.t = text;
   let c = null;
   try { c = JSON.parse(S.wb.set_translation(e.k, text)); } catch (err) { console.warn(err); }
   applyCheck(e, c);
   if (!text.trim()) S.outcome.delete(e.k);
-  updateRowEl(el, e, true);
-  // The other rows of the same dialog box draw this line in their preview.
-  if (e.box != null) {
-    for (const other of $('wb-list').querySelectorAll('.wb-row')) {
-      const o = S.entries[+other.dataset.i];
-      if (o !== e && o.box === e.box) drawPreview(o, other.querySelector('canvas'), other.querySelector('.wb-pv-note'));
-    }
-  }
+  updateRowEl($('wb-ed-body'), e, true);
+  updateLi(S.indexOf.get(e.k));
+  if (e.box != null) renderBoxRows(e);
   const p = protOf(e.k);
   if (p && p.kind === 'man') scheduleSceneFit(p.prot);
   if (e.k.startsWith('scus:')) scheduleNamesFit();
@@ -844,6 +954,8 @@ function ingestEntries() {
   S.limits = new Map(data.limits.map((l) => [l.context, l]));
   S.byKey = new Map();
   S.byBox = new Map();
+  S.indexOf = new Map();
+  S.entries.forEach((e, i) => S.indexOf.set(e.k, i));
   for (const e of S.entries) {
     S.byKey.set(e.k, e);
     if (e.box != null) {
@@ -858,6 +970,7 @@ function ingestEntries() {
   S.sceneFit.clear();
   S.report = null;
   S.regions = null;
+  S.cur = null;
   $('wb-issues').hidden = true;
   setCheckStatus('');
 }
@@ -869,7 +982,7 @@ function fillSectionFilter() {
     seen.map((s) => `<option value="${esc(s)}">${esc(SECTION_LABELS[s] || s)}</option>`).join('');
 }
 
-async function afterPackChange(msg) {
+async function afterPackChange(msg, reveal) {
   ingestEntries();
   applyNamesFit();
   fillSectionFilter();
@@ -881,6 +994,7 @@ async function afterPackChange(msg) {
   setStatus(msg, 'ok');
   const filled = S.entries.some((e) => e.t && e.t.trim());
   if (filled) await runCheck(true);
+  if (reveal) revealWork();
 }
 
 async function openDisc(file) {
@@ -927,7 +1041,7 @@ async function offerResume() {
     box.hidden = true;
     try {
       const k = S.wb.load_translations(saved.json);
-      await afterPackChange(`Resumed ${k} line(s) of your ${info.language} pack.`);
+      await afterPackChange(`Resumed ${k} line(s) of your ${info.language} pack.`, true);
     } catch (e) {
       setStatus('Error: ' + (e && e.message ? e.message : e), 'err');
     }
@@ -947,7 +1061,7 @@ async function loadPackText(yaml, label) {
     $('wb-resume').hidden = true;
     let msg = `${label}: ${r.merged} line(s) loaded (${r.language}).`;
     if (r.unknown) msg += ` ${r.unknown} line(s) are keyed to text your disc does not carry and were dropped.`;
-    await afterPackChange(msg);
+    await afterPackChange(msg, true);
     scheduleSave();
   } catch (e) {
     setStatus('Error: ' + (e && e.message ? e.message : e), 'err');
@@ -1075,7 +1189,7 @@ function init() {
     if (!S.wb) { setStatus('Choose your disc image first.', 'err'); return; }
     const lang = languageOf();
     S.wb.start_fresh(lang);
-    await afterPackChange(`Started an empty ${lang} pack. Set the language code above.`);
+    await afterPackChange(`Started an empty ${lang} pack. Set the language code above.`, true);
     $('wb-lang').value = lang === 'xx' ? '' : lang;
   });
 
@@ -1118,15 +1232,13 @@ function init() {
     if (ev.target.closest('button')) { S.filter.group = ''; refilter(true); }
   });
 
-  const pagerClick = (ev) => {
+  $('wb-pager').addEventListener('click', (ev) => {
     const b = ev.target.closest('button[data-p]');
     if (!b) return;
     S.page += b.dataset.p === 'next' ? 1 : -1;
     renderList();
-    if (ev.currentTarget.id === 'wb-pager-bottom') $('wb-list').scrollIntoView();
-  };
-  $('wb-pager-top').addEventListener('click', pagerClick);
-  $('wb-pager-bottom').addEventListener('click', pagerClick);
+    selectLine(S.filtered[S.page * S.pageSize]);
+  });
 
   $('wb-accent-mode').addEventListener('change', (ev) => setAccentMode(ev.target.value));
   $('wb-pal-lang').addEventListener('change', renderPalette);
@@ -1156,26 +1268,43 @@ function init() {
     S.filter.status = 'chars';
     $('wb-f-status').value = 'chars';
     refilter(true);
-    $('editor').scrollIntoView({ behavior: 'smooth' });
+    revealWork();
   });
-  $('wb-list').addEventListener('focusin', (ev) => {
-    const ta = ev.target.closest('textarea');
-    if (ta) S.lastTa = ta;
-  });
+  const ta = $('wb-ed-input');
+  S.lastTa = ta;
   $('wb-list').addEventListener('click', (ev) => {
-    const b = ev.target.closest('button[data-fix]');
-    if (!b) return;
-    const el = b.closest('.wb-row');
-    applyFix(el, S.entries[+el.dataset.i], b.dataset.fix);
+    const li = ev.target.closest('.wb-li');
+    if (li) selectLine(+li.dataset.i, { focus: true, reveal: true });
   });
-
-  $('wb-list').addEventListener('input', (ev) => {
-    const ta = ev.target.closest('textarea');
-    if (!ta) return;
-    const el = ta.closest('.wb-row');
-    const e = S.entries[+el.dataset.i];
+  $('wb-ed-box').addEventListener('click', (ev) => {
+    const b = ev.target.closest('.wb-boxrow');
+    if (b && !b.classList.contains('is-active')) selectLine(+b.dataset.i, { focus: true });
+  });
+  $('wb-ed-body').addEventListener('click', (ev) => {
+    const b = ev.target.closest('button[data-fix]');
+    if (b && S.cur != null) applyFix(S.entries[S.cur], b.dataset.fix);
+  });
+  ta.addEventListener('input', () => {
+    if (S.cur == null) return;
     autoGrow(ta);
-    onEdit(el, e, ta.value);
+    onEdit(S.entries[S.cur], ta.value);
+  });
+  $('wb-prev').addEventListener('click', () => stepLine(-1));
+  $('wb-next').addEventListener('click', () => stepLine(1));
+  // Ctrl+Enter / Alt+Down: next line; Ctrl+Shift+Enter / Alt+Up: previous.
+  // Bound on the document so they also work with focus in the list or on a
+  // palette key, but only while the workbench is open.
+  document.addEventListener('keydown', (ev) => {
+    if ($('wb-main').hidden || ev.defaultPrevented) return;
+    let dir = 0;
+    if (ev.key === 'Enter' && (ev.ctrlKey || ev.metaKey)) dir = ev.shiftKey ? -1 : 1;
+    else if (ev.altKey && !ev.ctrlKey && !ev.metaKey && ev.key === 'ArrowDown') dir = 1;
+    else if (ev.altKey && !ev.ctrlKey && !ev.metaKey && ev.key === 'ArrowUp') dir = -1;
+    if (!dir) return;
+    const t = ev.target;
+    if (t !== ta && !(t.closest && t.closest('.wb-work'))) return;
+    ev.preventDefault();
+    stepLine(dir);
   });
 
   // Dashboard rows filter the editor.

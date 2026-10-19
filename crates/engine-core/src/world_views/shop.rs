@@ -23,6 +23,7 @@ pub fn party_compare_members(
 ) -> Vec<PartyCompareMember> {
     party_compare_members_of(
         &world.party.roster.members,
+        &world.present_party_list(),
         &world.tables.equipment_table,
         info,
         item_id,

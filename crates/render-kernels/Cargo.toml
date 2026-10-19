@@ -13,6 +13,7 @@ legaia-engine-camera.workspace = true
 bytemuck.workspace = true
 glam.workspace = true
 legaia-engine-vm.workspace = true
+legaia-font.workspace = true
 legaia-tim.workspace = true
 legaia-tmd.workspace = true
 legaia-scene-formats.workspace = true

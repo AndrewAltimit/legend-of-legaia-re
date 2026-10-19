@@ -710,12 +710,34 @@ cargo test -p legaia-engine-shell --profile release-test \
 |---|---|
 | `LEGAIA_FGL_ONLY=<id>,...` | Runs only the segments ending at those milestones, and does not assert the baseline. |
 | `LEGAIA_FGL_NO_PAD=1` | Skips the pad tier. |
-| `LEGAIA_FGL_RNG_SEED=<u32>` | Re-seeds the world rand stream once a pad segment is seeded, dealing it another hand. Part C takes it at its New Game (or the checkpoint it resumes) and mixes it into each wipe reload. |
+| `LEGAIA_FGL_RNG_SEED=<u32>` | Re-seeds the world rand stream once a pad segment is seeded, dealing it another hand. Part C takes it at its New Game (or the checkpoint it resumes) and mixes it into each wipe reload, and asserts the baseline's `[continuous_seeds]` row `seed_<n>` when it has one (see [the seed set](#the-seed-set)). |
 | `LEGAIA_FGL_SEATED_RNG_SEED=<u32>` | The same for the seated pass - how a seated boss fight is checked across streams. |
 | `LEGAIA_FGL_CONTINUOUS_FROM=<id>` | Starts part C at that milestone, seeded once from its retail anchor and never again, and does not assert the baseline. A probe for a later stretch's carried state; the party it sets out with is retail's, so it is not the continuous score. |
 | `LEGAIA_FGL_CHECKPOINT_DIR=<dir>` | Part C keeps the engine's own save at each milestone it reaches in that directory (`<id>.lgsf`, with the scene, rand stream and learned exchange rate beside it). The saves hold disc-derived state: keep the directory under `target/`. |
 | `LEGAIA_FGL_CONTINUOUS_RESUME=<id>` | Starts part C at that milestone from the save an earlier run kept there, and does not assert the baseline. The party is the run's own; the picker rotation and the shopping memory start fresh, so a stall it shows is confirmed on the full run. |
 | `LEGAIA_FGL_CONTINUOUS_UNTIL=<id>` | Ends part C once it reaches that milestone, and does not assert the baseline: with `LEGAIA_FGL_CONTINUOUS_RESUME` and a spread of `LEGAIA_FGL_RNG_SEED` values, how often one stretch clears. |
+
+### The seed set
+
+One stream's part C score can rest on a fight the hand only won by the
+deal: a change that shifts one draw re-deals every later encounter and boss
+turn. `[continuous_seeds]` in the baseline records the score on other
+streams, one row per `LEGAIA_FGL_RNG_SEED` value, and a dealt run asserts
+its own row `>=` (a seed with no row falls back to `[continuous] reached`).
+Each run is a full New Game, about twenty minutes, so the set is run one
+seed at a time:
+
+```bash
+for s in 3 4 5 6 7 8 9; do
+  LEGAIA_FGL_RNG_SEED=$s cargo test -p legaia-engine-shell --profile release-test \
+    --test integration full_game_ladder::continuous:: -- --nocapture --test-threads 1
+done
+```
+
+Zora (`taiku`) is where the set was fragile: seed 5 stopped there at 26
+before the fighter learned to guard against Stone
+([the boss section](#a-boss-the-anchors-party-cannot-outlast)). Cort takes a
+second attempt on most streams, as the Cort notes above describe.
 
 The ratchet asserts every per-segment tier, both headline counts and the tier sum `>=` the baseline. Raise the baseline in a reviewed edit from the block the run prints; never lower it to make a red run green. The trace and debug switches are under [Diagnostics](#diagnostics).
 
@@ -835,6 +857,21 @@ The strike combo still drops a full member, so the heal arm ignores a
 biggest-hit-seen larger than a member's whole HP when it sizes "in danger":
 holding everyone near full against a hit no heal outlasts had the guarded
 hand spending most turns on items.
+
+A boss that **Stoned** a member is guarded against the stone instead of its
+element. Zora (`taiku`, monster 169) alternates Darkness Typhoon with Glare,
+whose opposed INT roll petrifies one member a cast
+([battle-formulas.md](../subsystems/battle-formulas.md#selector-9---opposed-int-roll-stone)),
+and the `0x5A` wipe scan counts a Stoned member as down: the party wipes
+with HP to spare once the last member standing is turned (Noa at 661 beside
+two statues). The reload wears Stone Guard (passive `0x1A`, Stone Amulet;
+Master Guard, the Wonder Amulet, counts too) in the third Goods slot. The
+fighter also treats a member that cannot take its turn (Numb, Sleep, Stone,
+Faint) as out of the round: it is neither the "weaker healer" a group heal
+is left to nor a heal target - the hand once left Spoon to a Stoned Gala
+for two rounds while Typhoon took Vahn and Noa from 791 and 717. From the
+seed-5 run's own `zora_castle` checkpoint the stretch clears on 9 of 9
+dealt streams (14 reloads) where it cleared on 6 of 9 (32 reloads) before.
 
 Guarded, the hand still beats Songi only about half the time. The losses
 are the cannon phase: below half HP Songi arms its party-wide cast

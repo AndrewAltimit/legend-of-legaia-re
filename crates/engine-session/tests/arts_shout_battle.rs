@@ -379,7 +379,7 @@ impl Rig for SessionRig {
 
 fn session_rig(disc: &std::path::Path, force_slot0: Option<u16>) -> SessionRig {
     use legaia_engine_audio::{SPU_INTERNAL_RATE, TestAudioSink};
-    let host = legaia_engine_core::scene_host::SceneHost::open_disc(disc).expect("open disc");
+    let host = legaia_engine_scene_host::scene_host::SceneHost::open_disc(disc).expect("open disc");
     let cfg = legaia_engine_session::BootConfig {
         scene: String::new(),
         enable_audio: true,

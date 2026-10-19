@@ -76,8 +76,8 @@ pub struct FishingHudAtlas<'a> {
     /// The host draws the sprite half of this list itself, as screen
     /// primitives over the venue's HUD page
     /// ([`crate::fishing::sprite::fishing_hud_sprite_prims`]): numbers,
-    /// glyphs and bar frames are then left out here, and only the captions,
-    /// counts and bar fills come back as quads.
+    /// glyphs, bar frames and bar fills are then left out here, and only the
+    /// captions and counts come back as quads.
     pub sprites_drawn: bool,
 }
 
@@ -119,8 +119,11 @@ pub(super) fn bar_frame_draws(
             });
         }
     }
+    // With the sprite pass up the fill is its prim (drawn over the frame, as
+    // retail's ordering does); only a text-only host fills here.
     if let (Some((r, g, b)), Some(solid)) = (frame.fill_rgb, atlas.solid_src)
         && frame.fill_len > 0
+        && !atlas.sprites_drawn
     {
         let color = [r as f32 / 255.0, g as f32 / 255.0, b as f32 / 255.0, 1.0];
         let thick = atlas.bar_thickness;

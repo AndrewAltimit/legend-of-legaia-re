@@ -53,7 +53,7 @@
 
 use std::path::PathBuf;
 
-use legaia_engine_core::field_menu_dispatch::FieldMenuSubsession;
+use legaia_engine_menu_runtime::field_menu_dispatch::FieldMenuSubsession;
 use legaia_engine_menus::field_menu::{FieldMenuPhase, FieldMenuRow};
 use legaia_engine_mode::mode::SceneMode;
 use legaia_engine_session::native::NativeSession;
@@ -191,7 +191,8 @@ fn the_magic_list_build_asks_the_broadcast_about_every_learned_spell() {
     let Some(mut s) = booted(&[SPELL], &[]) else {
         return;
     };
-    let decided = legaia_engine_core::menu_validator::spell_affects_anyone(&s.host.world, SPELL);
+    let decided =
+        legaia_engine_menu_runtime::menu_validator::spell_affects_anyone(&s.host.world, SPELL);
     assert!(
         decided.is_some(),
         "the boot hook did not install the disc spell table - the relevance probe has no data"

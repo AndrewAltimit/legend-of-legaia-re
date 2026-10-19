@@ -19,6 +19,40 @@ impl World {
             .unwrap_or(member)
     }
 
+    /// The field **leader** - retail's leader word `_DAT_8007B8F8` (mirrored
+    /// in `0x80084597`), the character the player object is: its field form
+    /// is the player's body and its locomotion bank the player's clips.
+    ///
+    /// Retail keeps the leader apart from the member list. Op `4C 0x`
+    /// (`0x801E0C70..0x801E0C88`) writes only the two leader cells, and the
+    /// three-actor talk's leader swap (`FUN_801D27E0`, `0x801D2AEC..
+    /// 0x801D2B08`) writes them plus the collapsed list's one entry - with no
+    /// store to the player object's mesh, so the body follows this word.
+    /// Ops `0x3C` / `0x3D` re-point it at the list head when the count lands
+    /// on 1 or the leader was removed.
+    ///
+    /// [`legaia_engine_menus::party_state::PartyState::party_leader_slot`] is
+    /// that word; it is unset until a party op, a save or a leader write
+    /// installs one, and then the battle composition's head stands in. A
+    /// leader that names nobody in the party (an engine-side composition
+    /// install that did not go through the party ops) yields to the head too.
+    ///
+    /// Every reader of "who leads" asks this, so the rig, the clips and the
+    /// talk's swap scan cannot disagree.
+    pub fn field_leader(&self) -> u8 {
+        let head = self.party.active_party.first().copied();
+        match self.party.party_leader_slot {
+            Some(l)
+                if head.is_none()
+                    || self.party.active_party.contains(&l)
+                    || self.party.party_actor_slots.contains(&Some(l)) =>
+            {
+                l
+            }
+            _ => head.unwrap_or(0),
+        }
+    }
+
     /// The field party list - retail's `0x80084598` member ids for
     /// `DAT_80084594` entries - as the field VM's party ops see it.
     ///
@@ -223,6 +257,18 @@ impl World {
         self.battle.backdrop_cue = 0;
         self.battle.ground_grid_drawn = true;
         self.battle.end = None;
+        // The end-of-battle marker starts clear: battle init stores zero to
+        // `DAT_8007BD71` (`sb zero` at `0x80056014`), the byte whose `0xFE`
+        // hands the battle frame to the results sequencer. A sequencer the
+        // previous fight left mid-way (a host that left the battle before its
+        // exit fade, then started another) otherwise owns the new fight from
+        // its first frame: no round prompt, no command session, and the
+        // fight ends when the stale sequence does. The rewards latch and the
+        // result windows' raise belong to the same sequence.
+        // REF: FUN_80055B6C
+        self.battle.victory = None;
+        self.battle.loot_applied = false;
+        self.battle.result_windows_glide = None;
         // Effect pool is reused across scenes - reset to a fresh instance
         // (per-battle the head/free-list rebuilds from scratch). This is
         // retail's battle-loader init call (stage `0xE`, `0x80052670`): a
@@ -373,7 +419,7 @@ impl World {
     /// `0x80084548` (+ spawn/door word `0x80084540`), e.g. `town01` triggers
     /// fmv 1 and lands in `town0b`. That transfer needs the host's asset
     /// index, so this parks the finished id in [`crate::world::CutsceneState::finished_fmv`] and
-    /// [`crate::scene_host::SceneHost::apply_pending_fmv_handoff`] performs it -
+    /// [`legaia_engine_scene_host::scene_host::SceneHost::apply_pending_fmv_handoff`] performs it -
     /// one drain, whichever host polls.
     // REF: FUN_801CEA3C
     pub fn finish_cutscene(&mut self) {
@@ -390,7 +436,7 @@ impl World {
     /// The world half of the post-play hand-off: a host with no scene loader
     /// (a headless world test, the `sim-trace` emitter) can consume the edge
     /// without one, and the scene host's
-    /// [`apply_pending_fmv_handoff`](crate::scene_host::SceneHost::apply_pending_fmv_handoff)
+    /// [`apply_pending_fmv_handoff`](legaia_engine_scene_host::scene_host::SceneHost::apply_pending_fmv_handoff)
     /// is the only production caller. `take` semantics are what stop two
     /// hosts - or one host polling twice - from transferring control twice.
     pub fn take_finished_fmv(&mut self) -> Option<i16> {

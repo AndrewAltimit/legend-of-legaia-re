@@ -390,6 +390,18 @@ battle banners' kernel `battle_hud_chrome::class0_fill_draws_at` over
 `SaveMenuAtlasRects::panel_filigree`. The save / load screen keeps the
 gradient-baked `panel_interior` variant.
 
+The band grey modulates the patch the way every textured primitive is
+modulated: the 5-bit texel times the colour word, truncated, `(T5 * C) >> 7`.
+The result sits on the 5-bit grid, a grid step below an 8-bit multiply where
+the product's fraction is large - `menu_options_field` reads `(16, 24, 123)`
+where an 8-bit multiply drew `(21, 29, 125)`. Both play hosts tint their
+overlay through `legaia_render_kernels::ui_tint` (the native text shader's
+WGSL is generated from it, the browser's tinted atlases come from it through
+the wasm runtime), retail's 5-bit law by default and the plain multiply behind
+`Renderer::set_ui_psx_tint(false)` / `set_ui_psx_tint(false)` on the page.
+The engine's text inks are stored on the 5-bit grid (`T / 31`) so the law
+lands each on its CLUT entry exactly.
+
 ## Draw primitives + CLUT staging
 
 | tag | function | signature | notes |
@@ -407,6 +419,15 @@ halfword is `index + 0x7f86`. Only the string primitive reads it (at
 `80036b74`) - icons take their CLUT from the `0x800732a4` record and numbers
 from `gp+0x13c` - so a write just before an ICO / NUM draw is staging the
 *next* string.
+
+The menu overlay's own literals open with `@` (`"@Equip"`, `"@Status"`,
+`"@Best Equipment"`, `"@Use"`, `"@Yes"`, ... in PROT 0899's data segment;
+`FUN_801DCA94` passes `0x801CE9E0`, which reads `@Equip`). `@` is a blank
+cell of width `0`, so STR draws nothing for it and advances the pen by the
+glyph pad alone: each such label's first glyph lands one pixel right of the
+pen its caller passes. Strings from SCUS tables (item, spell and character
+names) carry no lead. Port: `engine-ui::menu::window_painters::menu_string_lead`,
+taken by the title tabs and the Equip screen's `Best Equipment` header.
 
 ### Ink CLUT rows
 
@@ -539,7 +560,7 @@ The port runs the menu as a two-level session owned by
 | Open gate (mode test + engaged bit; `SceneMode::Field` and `WorldMap`) | `World::field_menu_open_allowed`, called by `BootSession::press_field_menu`; `open_field_menu` re-checks the engaged bit |
 | Save / Load row gates | `World::install_scene_save_permission` seeds `party.scene_save_allowed`; sampled with `World::menu_entry_context_kind` into `field_menu::FieldMenuGate` |
 | Root list | `engine-menus::field_menu::FieldMenuSession`; `pause_screens::root_menu_confirm_route` decides both row ink and advance-vs-buzz, over `ROOT_MENU_ROUTES` |
-| Sub-screen | `engine-core::field_menu_dispatch::FieldMenuSubsession`; a confirm suspends the root (`FieldMenuPhase::Suspended { row }`) until the sub-screen ends and `apply_*_outcome` runs |
+| Sub-screen | `engine-menu-runtime::field_menu_dispatch::FieldMenuSubsession`; a confirm suspends the root (`FieldMenuPhase::Suspended { row }`) until the sub-screen ends and `apply_*_outcome` runs |
 | Persistence | a finished Save / Load leaves a `save_screen::SaveCommit` on `BootSession::last_save_commit`; the host owns the bytes behind the `SaveRack` |
 | Descriptor rects with pinned fallback | `engine-ui::pause_menu::MenuRects` (`MENU_WINDOW_FALLBACK`) |
 | Window set, tab painter, draw order, 320x240 stage scale | `engine-ui::pause_menu::pause_screen_draws` + `stage_transform` |
@@ -1292,7 +1313,7 @@ the group flow via `spell_targets_group` over
 `SpellTarget::retail_target_flag_bits`), projected by
 `pause_screens::magic_screen_model` and drawn by
 `engine-ui::magic_screen_draws_for` / `magic_screen_sprites_for`. Greying and
-confirm refusal use `engine-core::menu_validator::spell_affects_anyone` and
+confirm refusal use `engine-menu-runtime::menu_validator::spell_affects_anyone` and
 the discounted cost; `field_menu_dispatch::apply_spell_outcome` debits the
 discounted cost once, applies every grant of a group cast
 (`SpellOutcome::MultiHeal`), and runs the leveling arm through the shared
@@ -1930,6 +1951,17 @@ numerals on CLUT `(128, 510)`, all three names on `(208, 510)`):
   the MP tier.
 
 Port: `engine-ui::gauge_fill_color` + `READOUT_NORMAL`.
+
+The tier-7 CLUT is also the ink of every battle caption - the actor and
+target plaques, the breadcrumb tabs, the command chips, the move name and the
+message bar - and of the menus' body text: a retail frame shows its 5-bit `25`
+as `(206, 206, 206)`, never white. The 8x12 numeral cells and the strip's `/`
+sprite are decoded under this same CLUT (sub-palette 13), so they already
+carry its ink and its `(33, 33, 33)` outline. A tier is a CLUT pick, not a
+modulation: the port draws a cell unmodulated on the normal tier and scales
+the baked ink onto another tier's (`engine-ui::numeral_cell_tint`).
+Multiplying the cell by the ink drew it a second time, at `166` over a `27`
+outline.
 
 ### Status-element badge on the roster panel
 

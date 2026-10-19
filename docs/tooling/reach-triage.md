@@ -743,7 +743,7 @@ say so in their own doc blocks. Read the converted row as reach, and the host
 gap as still owed.
 
 Five rows left this table through the scene-session ladder
-(`crates/engine-core/tests/scene_bgm_transition_ladder.rs`): the four BGM
+(`crates/engine-scene-host/tests/scene_bgm_transition_ladder.rs`): the four BGM
 plumbing addresses (`80019898` `800266e0` `80026520` `800243f0`) and the
 scripted CLUT-cell cross-fade arm (`801e4c58`). The BGM four needed a
 `BgmDirector` more than they needed a scene - see the structural exclusion
@@ -1302,7 +1302,7 @@ real overlay bytes) resolves them, and `MenuRuntime::tick` feeds them into
 `legaia_engine_vm::run` over the `engine-menus::menu_widget` window-list host
 on the shop picker entry / Sell transition edges - the transitions retail's
 `FUN_801DAFD4` drives. Disc-gated pins:
-`crates/engine-core/tests/menu_widget_scripts_real.rs`.
+`crates/engine-menu-runtime/tests/menu_widget_scripts_real.rs`.
 
 What stays true from the old verdict: `World::run_actor_bytecode`
 (`crates/engine-core/src/world/effects/vm_entry.rs`), the field-actor host, is still

@@ -377,7 +377,7 @@ gates and projects the labels and builds the panel's primitives, which ride
 the shared screen-primitive list (`engine-screens::screen_layers`); the names,
 their boxes and the compass letters are `engine-ui::map_label_*`, which each
 host calls from its text and chrome passes. Disc pin:
-`crates/engine-core/tests/map_display_disc.rs`.
+`crates/engine-scene-host/tests/map_display_disc.rs`.
 
 Not ported: the player's **map pointer**. Mode `1` spawns it through
 `FUN_80021B04` at the player's position with the move-VM program at
@@ -1414,7 +1414,7 @@ descending to pitch `355` / eye trio `(412, -2336, 12384)`, confirmed against
 a per-frame RAM capture of the live camera globals. The player / entity marker
 overlay is hidden while it runs. A beat record without camera beats (the
 mist-wall bands) keeps the walk camera. Pin:
-`engine-core/tests/map01_flyin_camera.rs`.
+`engine-scene-host/tests/map01_flyin_camera.rs`.
 
 ### Overworld walk speed and clip
 
@@ -1447,7 +1447,7 @@ selector (`World::field_base_step`, reading `_DAT_8007B6A8` as
 `World::party.scene_save_allowed`), the clip-base store, the settle's clip
 tail, the system channel's idle store and the clip advance into the player's
 `pose_frame`. Both hosts draw the player at `World::player_render_scale`. Pin:
-`engine-core/tests/world_map_player_anim_disc.rs` (130 units over 39 ticks).
+`engine-scene-host/tests/world_map_player_anim_disc.rs` (130 units over 39 ticks).
 
 **Displacement over time.** The port ticks once per vsync. At `dt = 1` the
 3-unit step would round up to `4` every tick, 20% faster than retail's `10`
@@ -1711,7 +1711,7 @@ The overworld shares game mode `0x03` with towns, so retail distinguishes it
 by the loaded scene; the engine uses
 [`is_world_map_scene`](../../crates/engine-scene/src/scene.rs) (the three
 kingdom `mapNN` labels). When a scene transition resolves to an overworld
-scene, [`SceneHost::tick`](../../crates/engine-core/src/scene_host.rs) routes it
+scene, [`SceneHost::tick`](../../crates/engine-scene-host/src/scene_host.rs) routes it
 through `SceneHost::enter_world_map_scene`: `enter_field_scene` (resources,
 walkability grid, player), then the region-keyed encounter table from the
 scene's MAN, the typed entities, and the switch into `SceneMode::WorldMap`.
@@ -1826,7 +1826,7 @@ The two directions of a hop are **different mechanisms**. Field -> overworld
 is the walk-on tile trigger -> `P2` record -> `0x3F` path
 (`SceneHost::dispatch_walk_on_trigger`); overworld -> field is the entity SM's
 `OverworldPortal`. Every row below is asserted end-to-end by
-`engine-core/tests/scene_round_trip_disc.rs`.
+`engine-scene-host/tests/scene_round_trip_disc.rs`.
 
 | From | Trigger tile(s) | P2 record | To | Arrival tile | `dir` |
 |---|---|---|---|---|---|
@@ -1897,7 +1897,7 @@ neither census would have to be set by a direct call to the SET helper
   `3E FF 11` enters the fight; the post-battle field return re-runs `P1[0]`,
   whose `72 89` test arm spawns `P2[50]`, which sets `0x142` (and `62 89`
   clears the marker). Oracle:
-  `engine-core/tests/organic_beat_records_disc.rs`.
+  `engine-scene-host/tests/organic_beat_records_disc.rs`.
 - **`0x482`** (Drake mist walls): **no writer fires.** No script carries a
   clean set (the apparent `54 82` / `64 82` sites are text bytes - full-width
   SJIS digits and an `EXIT` label table - flagged by the census
@@ -2261,6 +2261,20 @@ landmark on model `32` (`+0x64 = 37` over a bank base of `5`). The swap lands
 on `World::object_live_models` (the table op `0x0E` writes) and the seat on
 `World::object_draw_displacements`; the native landmark pass and the browser
 page's overworld placements both draw a landmark's first stamp from the two.
+
+**An overworld MAN actor's height is the actor driver's, as in a field.**
+`FUN_8003BC08` runs its height arm (`0x8003BC3C..0x8003BCF4`) on every
+mode-3 actor with no world-map gate: a culled actor (`+0x10 & 2`) keeps its
+Y, one carrying `0x20000000` takes `+0x16 = -(+0x8E)`, and the rest snap or
+glide to the floor sample `FUN_80019278`. Zora's Floating Castle is `map03`
+`P1[1]`: its prologue picks one of four seats on the story word
+`0x56D..0x570`, raises the bit (`31 1D`) and sets `+0x8E = 900`
+(`4C 42 84 03`), and its motion stream drifts it across the kingdom; a retail
+`map03` capture holds the actor (pool model 49) at `(8256, -900, 6304)`. The
+Karisto cart (`map02` `P1[3..5]`, `map03` `P1[3]` / `P1[4]`) holds `228` the
+same way. The port runs `World::tick_field_npc_heights` on the world-map tick
+as the field tick does; disc-gated
+`crates/engine-scene-host/tests/map03_floating_castle_disc.rs`.
 
 ### Placing the continent terrain (engine port)
 
@@ -2950,9 +2964,11 @@ per-frame render context:
 | `-0x2bc` | Pointer to a per-Z LUT (2-byte entries, indexed by `Z >> 5`) whose entry is shifted **left by 16** and added to each vertex `SXY` word - i.e. a per-vertex **screen-Y nudge**, not an RGB tint (`0x801F776C..0x801F7794`). |
 | `+0x90`  | Z shift exponent (controls how aggressively far-plane Z compresses). |
 
-The per-slot disassembly and the WebGL port of this pass are in
-[`world-overview-viewer.md`](world-overview-viewer.md); how the walk view
-feeds `IR0` is under [ground texturing](#ground-texturing).
+The `-0x2bc` table is the curvature buffer `FUN_800271A8` builds
+([renderer](renderer.md#the-overworld-curvature-table-fun_800271a8)), not a
+fog ramp. How the walk view feeds `IR0` is under
+[ground texturing](#ground-texturing); the world-overview page's stand-in for
+that cue is in [`world-overview-viewer.md`](world-overview-viewer.md#distance-haze).
 
 ### Per-frame render-pass iterator - `FUN_8002519c`
 

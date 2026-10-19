@@ -27,7 +27,9 @@
 //!   preceding bone's channel (`anm_bones`).
 
 use crate::battle_char_assembly as bca;
-use crate::battle_char_assembly::{equip_diff, equip_isolate, equip_item, equip_repair};
+use crate::battle_char_assembly::{
+    equip_diff, equip_isolate, equip_item, equip_repair, equip_skin_mask,
+};
 use crate::battle_data_pack::BattleDataPack;
 use crate::mesh_raster;
 use crate::monster_archive::MonsterAnimation;
@@ -246,21 +248,33 @@ pub struct EquippedItem {
     pub alone: ItemAloneMesh,
 }
 
-/// The item-alone mesh plus what the repair added to it.
+/// The item-alone mesh plus what the skin mask and the repair did to it.
 pub struct ItemAloneMesh {
     pub mesh: legaia_tmd::mesh::VramMesh,
     pub object_ids: Vec<u32>,
     pub bridges: Vec<equip_repair::Bridge>,
+    /// Skin cut out of the kept primitives at texel level
+    /// ([`equip_skin_mask`]); the masked copies live in the loadout VRAM.
+    pub skin_mask: equip_skin_mask::SkinMaskReport,
 }
 
 impl ItemAloneMesh {
-    fn build(tmd: &legaia_tmd::Tmd, blob: &[u8], iso: &equip_isolate::IsolatedItem) -> Self {
-        let (mut mesh, mut object_ids) = equip_isolate::item_mesh(tmd, blob, iso);
+    fn build(
+        tmd: &legaia_tmd::Tmd,
+        blob: &[u8],
+        iso: &equip_isolate::IsolatedItem,
+        vram: &mut legaia_tim::Vram,
+        face: &std::collections::HashSet<u16>,
+    ) -> Self {
+        let (mut mesh, mut object_ids, prims) = equip_isolate::item_mesh_with_prims(tmd, blob, iso);
+        let skin_mask =
+            equip_skin_mask::mask_skin(&mut mesh, &mut object_ids, &prims, vram, face, false);
         let bridges = equip_repair::bridge_open_loops(&mut mesh, &mut object_ids);
         ItemAloneMesh {
             mesh,
             object_ids,
             bridges,
+            skin_mask,
         }
     }
     pub fn bridged_triangles(&self) -> usize {
@@ -676,7 +690,9 @@ pub fn build(
                 },
                 equip_isolate::rules().rule_for(cslot, id),
             );
-            let alone = ItemAloneMesh::build(&tmd, &asm.tmd, &isolation);
+            let face =
+                equip_skin_mask::face_colours(&equip_isolate::skin_colours(&w, &w_tmd, &w_vram));
+            let alone = ItemAloneMesh::build(&tmd, &asm.tmd, &isolation, &mut vram, &face);
             items.push(EquippedItem {
                 section: s,
                 id,

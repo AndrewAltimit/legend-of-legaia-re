@@ -314,6 +314,7 @@ mod battle_loss_window;
 mod battle_outcome_flag;
 mod battle_party_hp_seed;
 mod battle_queue_gates;
+mod battle_return_camera;
 mod battle_rot_gate;
 mod battle_small_party_seats;
 mod battle_small_party_settle_gate_disc;
@@ -376,7 +377,6 @@ mod spirit_gauge;
 mod summon_final_heal;
 mod system_bbox_target;
 mod take_item;
-mod three_tunnels_swap_redress_disc;
 mod tile_board;
 mod worldmap;
 

@@ -1,7 +1,7 @@
 //! Pad-driven ladder for the **fishing session kernels** - a full cast, a
 //! reel-cadence match, a strike, a landed catch and a snapped line.
 //!
-//! `crates/engine-core/tests/fishing_minigame_real.rs` drives the same session
+//! `crates/engine-scene-host/tests/fishing_minigame_real.rs` drives the same session
 //! through the world's pad path. The kernels this file reaches are the ones
 //! [`PondSession`] composes:
 //!

@@ -139,7 +139,7 @@ impl HeadlessPlayWindow {
     }
 
     /// The window's menu-overlay screen (shop, prize exchange, inn).
-    pub fn menu_runtime(&self) -> &legaia_engine_core::menu_runtime::MenuRuntime {
+    pub fn menu_runtime(&self) -> &legaia_engine_menu_runtime::menu_runtime::MenuRuntime {
         &self.app.menu_runtime
     }
 

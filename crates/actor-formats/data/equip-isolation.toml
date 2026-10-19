@@ -14,6 +14,8 @@
 #   note          what the visual pass saw - required
 #
 # Precedence: explicit primitive > whole object > palette column > mode.
+# A keep by object, column or `whole` mode still drops a primitive that passes
+# the skin test; only an explicit "tag:ordinal" keep is absolute.
 
 # ---- Vahn ----------------------------------------------------------------
 

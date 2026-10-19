@@ -38,7 +38,7 @@ pub struct FogVolumeDraw<'a> {
     pub mesh_cell: f32,
     pub mesh_dim: u32,
     /// `(mesh_dim + 1)²` vertices of `[x, floor_y, z, floor_weight]`,
-    /// row-major - uploaded
+    /// row-major (a negative weight marks the distant haze layer) - uploaded
     /// only when `ground_gen` changes.
     pub mesh_positions: &'a [f32],
     pub ground_gen: u32,
@@ -56,6 +56,31 @@ pub struct FogVolumeDraw<'a> {
     /// sheet fades into the scene surface behind it - the soft
     /// intersection.
     pub soft_distance: f32,
+    /// The spill streaks' flow phase
+    /// (`legaia_render_kernels::fog_volume::FogVolumeFrame::spill_phase`).
+    pub spill_phase: f32,
+    /// The spill and distant-haze shading constants
+    /// (`legaia_render_kernels::fog_volume::FOG_SPILL_CONSTANTS` /
+    /// `FOG_HAZE_CONSTANTS`).
+    pub spill_constants: [f32; 4],
+    pub haze_constants: [f32; 4],
+    /// The scene's ground coverage field, `None` for full coverage (battle,
+    /// or a field scene without one).
+    pub ground: Option<FogGroundTexture<'a>>,
+}
+
+/// The ground coverage field's texture
+/// (`legaia_render_kernels::fog_volume::FogGround::texels`), uploaded only
+/// when `ground_gen` changes.
+pub struct FogGroundTexture<'a> {
+    /// `[origin_x, origin_z, 1 / extent_x, 1 / extent_z]` - world X / Z to
+    /// texture UV.
+    pub uv_rect: [f32; 4],
+    pub w: u32,
+    pub h: u32,
+    /// `w * h` RGBA8 texels: coverage, spill, flow, unused.
+    pub texels: &'a [u8],
+    pub ground_gen: u32,
 }
 
 /// The sheet mesh's triangle list for `dim` quads a side.
@@ -85,10 +110,14 @@ struct FogU {
     params: vec4<f32>,
     consts: vec4<f32>,
     depth: vec4<f32>,
+    ground: vec4<f32>,
+    spill: vec4<f32>,
+    haze: vec4<f32>,
 };
 @group(0) @binding(0) var<uniform> u: FogU;
 @group(0) @binding(1) var dens: texture_2d<f32>;
 @group(0) @binding(2) var samp: sampler;
+@group(0) @binding(3) var gtex: texture_2d<f32>;
 @group(1) @binding(0) var scene_depth: texture_depth_2d;
 
 struct VOut {
@@ -98,22 +127,68 @@ struct VOut {
     @location(2) clip_w: f32,
     @location(3) world: vec3<f32>,
     @location(4) floor_w: f32,
+    @location(5) haze: f32,
+    @location(6) view: vec3<f32>,
 };
+
+// The spill's outward direction at ground-texture UV `guv`: the gradient of
+// the flow channel (distance past the rim), +X where it is flat.
+fn spill_dir(guv: vec2<f32>) -> vec2<f32> {
+    let e = u.ground.zw * 64.0;
+    let fx = textureSampleLevel(gtex, samp, guv + vec2<f32>(e.x, 0.0), 0.0).b
+        - textureSampleLevel(gtex, samp, guv - vec2<f32>(e.x, 0.0), 0.0).b;
+    let fz = textureSampleLevel(gtex, samp, guv + vec2<f32>(0.0, e.y), 0.0).b
+        - textureSampleLevel(gtex, samp, guv - vec2<f32>(0.0, e.y), 0.0).b;
+    let glen = length(vec2<f32>(fx, fz));
+    if (glen > 1.0e-4) {
+        return vec2<f32>(fx, fz) / glen;
+    }
+    return vec2<f32>(1.0, 0.0);
+}
+
+// The camera's position in the bank's space: the one point the matrix
+// sends to clip x = y = w = 0 (every view ray passes through it).
+fn eye_of(m: mat4x4<f32>) -> vec3<f32> {
+    let r0 = vec4<f32>(m[0].x, m[1].x, m[2].x, m[3].x);
+    let r1 = vec4<f32>(m[0].y, m[1].y, m[2].y, m[3].y);
+    let r3 = vec4<f32>(m[0].w, m[1].w, m[2].w, m[3].w);
+    let c01 = cross(r0.xyz, r1.xyz);
+    let c13 = cross(r1.xyz, r3.xyz);
+    let c30 = cross(r3.xyz, r0.xyz);
+    let det = dot(r0.xyz, c13);
+    if (abs(det) < 1.0e-12) {
+        return vec3<f32>(0.0);
+    }
+    return -(r0.w * c13 + r1.w * c30 + r3.w * c01) / det;
+}
 
 @vertex
 fn vs_main(@location(0) p: vec4<f32>, @builtin(instance_index) inst: u32) -> VOut {
     let s = (f32(inst) + 0.5) / u.params.y;
     // Sheets packed toward the floor (quadratic spacing); retail Y-down,
-    // so they stack upward from just above it.
+    // so they stack upward from just above it. A negative weight marks the
+    // distant haze layer, whose stack is deeper.
     let t = s * s;
-    let y = p.y - 2.0 - t * u.params.x;
+    let haze = select(0.0, 1.0, p.w < 0.0);
+    let y = p.y - 2.0 - t * u.params.x * mix(1.0, u.haze.x, haze);
+    // On the spill's near-vertical curtain a vertical stack slides the
+    // sheets along themselves; spread them outward instead, so the fall
+    // is a slab with depth rather than one bright plane seen edge-on.
+    var xz = p.xz;
+    let guv = (p.xz - u.ground.xy) * u.ground.zw;
+    let gv = textureSampleLevel(gtex, samp, guv, 0.0);
+    if (gv.g > 0.0 && haze == 0.0) {
+        xz = xz + spill_dir(guv) * (s * u.spill.w * min(gv.g * 4.0, 1.0));
+    }
     var o: VOut;
-    o.pos = u.m * vec4<f32>(p.x, y, p.z, 1.0);
+    o.pos = u.m * vec4<f32>(xz.x, y, xz.y, 1.0);
     o.xz = p.xz;
     o.layer = t;
     o.clip_w = o.pos.w;
-    o.world = vec3<f32>(p.x, y, p.z);
-    o.floor_w = p.w;
+    o.world = vec3<f32>(xz.x, y, xz.y);
+    o.view = o.world - eye_of(u.m);
+    o.floor_w = abs(p.w);
+    o.haze = haze;
     return o;
 }
 
@@ -187,10 +262,64 @@ fn fs_main(in: VOut) -> @location(0) vec4<f32> {
     // it by the surface's steepness (its screen-space normal).
     let nrm = cross(dpdx(in.world), dpdy(in.world));
     let flat_ = abs(nrm.y) / max(length(nrm), 1.0e-6);
-    let level = smoothstep(0.55, 0.85, flat_);
-    let a = u.color.a * d * crest * profile * edge * soft * level * in.floor_w * u.consts.z / u.params.y;
-    let rgb = u.color.rgb * (0.75 + 0.5 * f);
-    return vec4<f32>(rgb, clamp(a, 0.0, 1.0));
+    var level = smoothstep(0.55, 0.85, flat_);
+    // Ground field: full bank on the floor, a soft fade over its edge, and
+    // past a rim the spill - slow tendrils pouring down the falling sheet,
+    // parting and thinning with the fall.
+    let guv = (in.xz - u.ground.xy) * u.ground.zw;
+    let g = textureSampleLevel(gtex, samp, guv, 0.0);
+    var ground_a = g.r;
+    if (g.g > 0.0) {
+        let dir = spill_dir(guv);
+        // World units along the rim, and of drop below it (the
+        // `spill_drop` curve over the flow coordinate).
+        let along = dot(in.xz, vec2<f32>(-dir.y, dir.x));
+        let fall01 = g.b * sqrt(g.b);
+        let fall = fall01 * u.spill.y;
+        let ph = u.depth.w;
+        // Pour mask: long stretches of rim pour, others barely do; it
+        // evolves in place rather than scrolling.
+        let m = fog_noise(vec2<f32>(along * u.spill.z + 4.7, ph * 0.05 + 1.3));
+        let pour = 0.12 + 0.88 * smoothstep(0.32, 0.62, m);
+        // Tendrils: narrow along the rim, long down the fall, swaying
+        // slowly; the second octave flows at its own rate so the pattern
+        // changes as it falls.
+        let sway = (fog_noise(vec2<f32>(fall * 0.6 - ph * 0.4, along * u.spill.z * 2.0 + 9.1)) - 0.5) * 1.8;
+        // Each sheet of the slab a little apart, so the layers do not
+        // repeat one pattern.
+        let ta = along * u.spill.x + sway + sqrt(t) * 0.9;
+        let tn = 0.65 * fog_noise(vec2<f32>(ta, fall - ph))
+            + 0.35 * fog_noise(vec2<f32>(ta * 2.1 + 3.3, fall * 1.7 - ph * 1.35 + 5.2));
+        // High-frequency erosion: only matters near the threshold, so it
+        // rags each tendril's edges and leaves its core.
+        let er = fog_noise(vec2<f32>(along * u.spill.x * 4.3 + 1.9, fall * 5.0 - ph * 2.3)) - 0.5;
+        let th = 0.34 + 0.24 * fall01;
+        let tendril = smoothstep(th, th + 0.3, tn + er * 0.3);
+        // Puffs: the tendrils fall as clumps with thin gaps between them,
+        // not as unbroken lines.
+        let puff = smoothstep(0.3, 0.7, fog_noise(vec2<f32>(along * u.spill.z * 3.7 + 2.0, fall * 1.3 - ph * 0.8 + 6.1)));
+        let spill = 1.4 * g.g * pour * tendril * (0.45 + 0.55 * puff) * (0.35 + 0.65 * f);
+        ground_a = max(ground_a * pour * (0.4 + 0.6 * tendril), spill);
+        // The spill sheet falls steeply on purpose: exempt it from the
+        // cliff-face fade, but thin a sheet seen edge-on, where each layer
+        // of the slab would draw as one bright line.
+        let facing = abs(dot(nrm, in.view)) / max(length(nrm) * length(in.view), 1.0e-6);
+        level = mix(level, smoothstep(0.1, 0.45, facing), clamp(g.g * 4.0, 0.0, 1.0) * (1.0 - g.r));
+    }
+    let a = u.color.a * d * crest * profile * edge * soft * level * ground_a * in.floor_w * u.consts.z / u.params.y;
+    // The distant haze: broad, soft banks drifting slower than the bank,
+    // thickest mid-stack, faint.
+    var haze_a = 0.0;
+    if (in.haze > 0.0) {
+        let hq = (in.xz - u.params.zw * u.haze.w) * u.haze.z;
+        let hn = 0.6 * fog_noise(hq + vec2<f32>(t * 0.9, 2.3))
+            + 0.4 * fog_noise(hq * 2.3 + vec2<f32>(7.7, t * 1.7));
+        let bank = smoothstep(0.25, 0.8, hn);
+        let hp = 4.0 * t * (1.0 - t);
+        haze_a = u.color.a * u.haze.y * bank * hp * edge * soft * in.floor_w * in.haze * u.consts.z / u.params.y;
+    }
+    let rgb = u.color.rgb * mix(0.75 + 0.5 * f, 0.9, in.haze);
+    return vec4<f32>(rgb, clamp(a * (1.0 - in.haze) + haze_a, 0.0, 1.0));
 }
 "#;
 
@@ -205,6 +334,9 @@ struct FogUniforms {
     params: [f32; 4],
     consts: [f32; 4],
     depth: [f32; 4],
+    ground: [f32; 4],
+    spill: [f32; 4],
+    haze: [f32; 4],
 }
 
 /// The pass's GPU resources.
@@ -213,6 +345,12 @@ pub(crate) struct FogVolumePass {
     depth_bgl: wgpu::BindGroupLayout,
     ubuf: wgpu::Buffer,
     tex: wgpu::Texture,
+    /// Kept to rebuild [`Self::bg`] when the ground texture is replaced.
+    bgl: wgpu::BindGroupLayout,
+    sampler: wgpu::Sampler,
+    ground_tex: wgpu::Texture,
+    ground_dim: (u32, u32),
+    ground_tex_gen: Option<Option<u32>>,
     bg: wgpu::BindGroup,
     vbuf: wgpu::Buffer,
     ibuf: wgpu::Buffer,
@@ -259,8 +397,18 @@ impl FogVolumePass {
                 },
                 wgpu::BindGroupLayoutEntry {
                     binding: 2,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
                     ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 3,
+                    visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
                     count: None,
                 },
             ],
@@ -285,7 +433,6 @@ impl FogVolumePass {
             usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
             view_formats: &[],
         });
-        let view = tex.create_view(&wgpu::TextureViewDescriptor::default());
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             label: Some("fog volume sampler"),
             address_mode_u: wgpu::AddressMode::ClampToEdge,
@@ -294,24 +441,8 @@ impl FogVolumePass {
             min_filter: wgpu::FilterMode::Linear,
             ..Default::default()
         });
-        let bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("fog volume bg"),
-            layout: &bgl,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: ubuf.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: wgpu::BindingResource::TextureView(&view),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 2,
-                    resource: wgpu::BindingResource::Sampler(&sampler),
-                },
-            ],
-        });
+        let ground_tex = Self::ground_texture(device, 1, 1);
+        let bg = Self::bind_group(device, &bgl, &ubuf, &tex, &sampler, &ground_tex);
         let depth_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("fog volume scene depth bgl"),
             entries: &[wgpu::BindGroupLayoutEntry {
@@ -406,6 +537,11 @@ impl FogVolumePass {
             depth_bgl,
             ubuf,
             tex,
+            bgl,
+            sampler,
+            ground_tex,
+            ground_dim: (1, 1),
+            ground_tex_gen: None,
             bg,
             vbuf,
             ibuf,
@@ -417,7 +553,108 @@ impl FogVolumePass {
         }
     }
 
-    fn stage(&mut self, queue: &wgpu::Queue, d: &FogVolumeDraw<'_>) {
+    /// An RGBA8 ground-field texture of `w x h`.
+    fn ground_texture(device: &wgpu::Device, w: u32, h: u32) -> wgpu::Texture {
+        device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("fog volume ground field"),
+            size: wgpu::Extent3d {
+                width: w,
+                height: h,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba8Unorm,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
+        })
+    }
+
+    fn bind_group(
+        device: &wgpu::Device,
+        bgl: &wgpu::BindGroupLayout,
+        ubuf: &wgpu::Buffer,
+        tex: &wgpu::Texture,
+        sampler: &wgpu::Sampler,
+        ground: &wgpu::Texture,
+    ) -> wgpu::BindGroup {
+        let view = tex.create_view(&wgpu::TextureViewDescriptor::default());
+        let gview = ground.create_view(&wgpu::TextureViewDescriptor::default());
+        device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("fog volume bg"),
+            layout: bgl,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: ubuf.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::TextureView(&view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: wgpu::BindingResource::Sampler(sampler),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: wgpu::BindingResource::TextureView(&gview),
+                },
+            ],
+        })
+    }
+
+    /// Upload the frame's ground field (or the one full-coverage texel when
+    /// it has none), only when it changed.
+    fn stage_ground(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, d: &FogVolumeDraw<'_>) {
+        let want = d.ground.as_ref().map(|g| g.ground_gen);
+        if self.ground_tex_gen == Some(want) {
+            return;
+        }
+        let none = legaia_render_kernels::fog_volume::FOG_GROUND_NONE_TEXEL;
+        let (w, h, texels): (u32, u32, &[u8]) = match &d.ground {
+            Some(g) if g.texels.len() == (g.w * g.h * 4) as usize && g.w > 0 && g.h > 0 => {
+                (g.w, g.h, g.texels)
+            }
+            _ => (1, 1, &none),
+        };
+        if self.ground_dim != (w, h) {
+            self.ground_tex = Self::ground_texture(device, w, h);
+            self.ground_dim = (w, h);
+            self.bg = Self::bind_group(
+                device,
+                &self.bgl,
+                &self.ubuf,
+                &self.tex,
+                &self.sampler,
+                &self.ground_tex,
+            );
+        }
+        queue.write_texture(
+            wgpu::TexelCopyTextureInfo {
+                texture: &self.ground_tex,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            texels,
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(w * 4),
+                rows_per_image: Some(h),
+            },
+            wgpu::Extent3d {
+                width: w,
+                height: h,
+                depth_or_array_layers: 1,
+            },
+        );
+        self.ground_tex_gen = Some(want);
+    }
+
+    fn stage(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, d: &FogVolumeDraw<'_>) {
+        self.stage_ground(device, queue, d);
         if self.ground_gen != Some(d.ground_gen) {
             queue.write_buffer(&self.vbuf, 0, bytemuck::cast_slice(d.mesh_positions));
             self.ground_gen = Some(d.ground_gen);
@@ -460,7 +697,10 @@ impl FogVolumePass {
             color: [d.color[0], d.color[1], d.color[2], d.opacity],
             params: [d.height, d.layers as f32, d.drift[0], d.drift[1]],
             consts: d.shader_constants,
-            depth: [a, b, d.soft_distance.max(1.0e-3), 0.0],
+            depth: [a, b, d.soft_distance.max(1.0e-3), d.spill_phase],
+            ground: d.ground.as_ref().map_or([0.0; 4], |g| g.uv_rect),
+            spill: d.spill_constants,
+            haze: d.haze_constants,
         };
         queue.write_buffer(&self.ubuf, 0, bytemuck::cast_slice(&[u]));
         self.layers = d.layers;
@@ -509,7 +749,7 @@ impl Renderer {
         let pass = slot.get_or_insert_with(|| {
             FogVolumePass::new(&self.device, self.view_format, d.sim_dim, d.mesh_dim)
         });
-        pass.stage(&self.queue, d);
+        pass.stage(&self.device, &self.queue, d);
         self.fog_volume_active.set(true);
     }
 
@@ -599,10 +839,10 @@ mod tests {
     }
 
     /// The uniform block is the size the WGSL struct declares
-    /// (a mat4 and six vec4s).
+    /// (a mat4 and nine vec4s).
     #[test]
     fn uniform_block_matches_the_wgsl_struct() {
-        assert_eq!(std::mem::size_of::<FogUniforms>(), 64 + 6 * 16);
+        assert_eq!(std::mem::size_of::<FogUniforms>(), 64 + 9 * 16);
     }
 
     #[test]

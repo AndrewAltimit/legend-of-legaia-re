@@ -19,7 +19,8 @@ impl PlayWindowApp {
     /// The seat, the choreography, the camera and the buffers are the
     /// engine's (`legaia_engine_minigame_scenes::muscle_dome_scene::MuscleDomeSurface::
     /// frame`, the call the browser play page makes too); this host uploads
-    /// the dome VRAM on a generation change and the posed mesh every frame,
+    /// the dome VRAM on a generation change and the posed mesh whenever it
+    /// moved,
     /// and the redraw draws them under `DomeCamera::vp_raw` (the battle
     /// camera script's pose for the leg). Drops the GPU
     /// copy whenever no dome session is on screen.
@@ -49,6 +50,7 @@ impl PlayWindowApp {
             .is_none()
         {
             self.muscle_gpu = None;
+            self.muscle_mesh_key = None;
             return;
         }
         let (Some(r), Some(scene)) = (self.win.renderer.as_ref(), self.muscle_surface.scene())
@@ -59,6 +61,31 @@ impl PlayWindowApp {
         let (sw, sh) = r.surface_size();
         let (_, aspect) = super::super::geometry::scene_viewport_for(sw, sh);
         let mvp = Mat4::from_cols_array(&scene.camera.vp_raw(aspect));
+        let stale = generation != generation_before
+            || self
+                .muscle_gpu
+                .as_ref()
+                .is_none_or(|g| g.generation != generation);
+        // A frame whose pose did not move (the hub screens over the arena,
+        // the command cluster between idle frames) keeps last frame's
+        // buffers: building two fresh vertex + index buffer sets per frame
+        // was most of the dome's frame time.
+        let same_mesh = self.muscle_mesh_key.as_ref().is_some_and(|k| {
+            k.positions == scene.positions
+                && k.uvs == scene.uvs
+                && k.cba_tsb == scene.cba_tsb
+                && k.colors == scene.colors
+                && k.flat_rgba == scene.flat_rgba
+                && k.textured_indices == scene.textured_indices
+                && k.untextured_indices == scene.untextured_indices
+        });
+        if !stale
+            && same_mesh
+            && let Some(gpu) = self.muscle_gpu.as_mut()
+        {
+            gpu.mvp = mvp;
+            return;
+        }
         let normals = vec![[0.0f32; 3]; scene.positions.len()];
         let textured = r
             .upload_vram_mesh(
@@ -85,11 +112,15 @@ impl PlayWindowApp {
                     .ok()
             })
             .flatten();
-        let stale = generation != generation_before
-            || self
-                .muscle_gpu
-                .as_ref()
-                .is_none_or(|g| g.generation != generation);
+        self.muscle_mesh_key = Some(MeshKey {
+            positions: scene.positions.clone(),
+            uvs: scene.uvs.clone(),
+            cba_tsb: scene.cba_tsb.clone(),
+            colors: scene.colors.clone(),
+            flat_rgba: scene.flat_rgba.clone(),
+            textured_indices: scene.textured_indices.clone(),
+            untextured_indices: scene.untextured_indices.clone(),
+        });
         let vram = if stale {
             match self.muscle_surface.vram().map(|v| r.upload_vram(v)) {
                 Some(Ok(v)) => v,

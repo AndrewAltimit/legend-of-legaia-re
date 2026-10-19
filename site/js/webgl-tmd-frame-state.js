@@ -1,6 +1,6 @@
 /* webgl-tmd-frame-state.js - the TmdRenderer state a frame draws with.
  *
- * Part of the TmdRenderer class (webgl-tmd.js): the fog LUT, the colour
+ * Part of the TmdRenderer class (webgl-tmd.js): the distance haze, the colour
  * grade and depth cue, the nclip / near-plane / PSX-mode toggles, enhanced
  * lighting (staging, shadow maps, glow), the camera-occlusion fade and the
  * ocean plane. Everything here is either a setter the page calls or the
@@ -10,40 +10,39 @@
  * MOOD_WORDS constants) and site-util.js (LegaiaUtil.installMethods). */
 
 window.LegaiaUtil.installMethods(TmdRenderer, class {
-  /* Upload a 512-entry fog LUT + scalar params. `lut` is a Uint16Array of
-   * BGR555 entries (matches the bytes the retail Lua probe dumps to
-   * fog_probe.lut.bin). `params` keys override the cached defaults; pass
-   * only the fields that changed. */
-  uploadFogLut(lut, params) {
-    const gl = this.gl;
-    if (lut && lut.length >= FOG_LUT_SIZE) {
-      gl.bindTexture(gl.TEXTURE_2D, this.fogTex);
-      gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
-      gl.texSubImage2D(
-        gl.TEXTURE_2D, 0, 0, 0, FOG_LUT_SIZE, 1,
-        gl.RED_INTEGER, gl.UNSIGNED_SHORT,
-        lut.subarray(0, FOG_LUT_SIZE),
-      );
-    }
-    if (params) {
-      if (params.enable !== undefined) this.fogParams.enable = params.enable ? 1 : 0;
-      if (params.zShift !== undefined) this.fogParams.zShift = +params.zShift;
-      if (params.farRef !== undefined) this.fogParams.farRef = +params.farRef;
-      if (params.color) {
-        this.fogParams.color = {
-          r: +params.color.r,
-          g: +params.color.g,
-          b: +params.color.b,
-        };
-      }
-      if (params.origin) this.fogParams.origin = params.origin.slice(0, 3);
-    }
+  /* World-overview distance haze: retail's overworld walk-view depth cue
+   * stood in from a virtual walk camera (see the u_haze_* uniforms in
+   * webgl-shaders.js). `params` keys override the stored ones; pass only
+   * the fields that changed. `origin: null` follows the camera centre. */
+  setDistanceHaze(params) {
+    if (!params) return;
+    const h = this.hazeParams;
+    if (params.enable !== undefined) h.enable = params.enable ? 1 : 0;
+    if (params.eyeZ !== undefined) h.eyeZ = +params.eyeZ;
+    if (params.scale !== undefined) h.scale = +params.scale;
+    if (params.origin !== undefined) h.origin = params.origin ? params.origin.slice(0, 3) : null;
   }
 
-  /* Convenience setter for the per-frame fog origin (typically the
-   * top-down camera target so silhouettes near the player fade last). */
-  setFogOrigin(x, y, z) {
-    this.fogParams.origin = [x, y, z];
+  /* One draw's distance-haze mode: 0 off, 1 the continent ground (per
+   * vertex, far colour 0x100), 2 a decoration (one IR0 from its origin at
+   * world (x, z), far colour 0xD0). The far word is over 128 with DPCS's
+   * 0xFF saturation folded in. */
+  _setHazeDraw(mode, x, z) {
+    const gl = this.gl;
+    const h = this.hazeParams;
+    if (!h.enable) mode = 0;
+    gl.uniform1i(this.locFogEnable, mode);
+    if (mode === 1) {
+      gl.uniform1f(this.locHazeFar, 255 / 128);
+    } else if (mode === 2) {
+      const o = this._hazeOrigin;
+      const d = Math.hypot(x - o[0], z - o[2]);
+      const trz = h.eyeZ + h.scale * d;
+      /* FUN_801F69D8: IR0 = min(max(TRZ - 0x5000, 0) >> 3, 0x1000). */
+      const ir0 = Math.min(Math.max(trz - 0x5000, 0) / 8, 0x1000) / 0x1000;
+      gl.uniform1f(this.locHazeIr0, ir0);
+      gl.uniform1f(this.locHazeFar, 0xD0 / 128);
+    }
   }
 
   /* Prologue colour grade: `rgb` = [r,g,b] multiply tint in 0..1 (or null

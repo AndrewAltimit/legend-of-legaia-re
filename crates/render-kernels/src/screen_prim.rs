@@ -51,16 +51,15 @@
 //! stretches over the whole surface. Handing it the window size instead pins a
 //! 320x240 overlay into the top-left corner of a 960x720 frame.
 //!
-//! # Simplifications vs. hardware (documented, not hidden)
+//! # Semi-transparency is per texel
 //!
 //! A semi-transparent *textured* PSX prim honours the per-texel STP bit (STP=0
-//! texels draw opaque even inside a blended prim). This model treats a
-//! semi-transparent prim as fully blended (every non-zero texel goes through
-//! the ABR equation), matching how the untextured colour-mesh blend path
-//! already behaves. Texel `0x0000` is still never drawn. That is faithful for
-//! the afterimage trail (additive, ABR mode 1, no opaque STP texels) and for
-//! flat quads; a per-texel STP split can be layered on later without changing
-//! this module's public shape.
+//! texels draw opaque even inside a blended prim). The prim record carries no
+//! per-texel state, so the split happens at draw time on every consumer: the
+//! native overlay draws a semi run twice (`fs_semi_opaque`, then the ABR
+//! pipeline), the play page's pass does the same through `u_stp_pass`, and
+//! [`crate::screen_prim_raster`] tests the bit per pixel. An untextured semi
+//! prim blends every pixel. Texel `0x0000` is never drawn.
 
 /// PSX display width in pixels - the space every retail screen-space emitter
 /// authors its corners in.

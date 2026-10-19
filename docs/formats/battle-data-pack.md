@@ -341,6 +341,10 @@ reports). Each rule carries a note. The cases the table exists for:
   bare wrist band.
 - Gala's two headbands are dark leather that the colour diff loses and the identity reading finds.
 
+A keep by object, by column or by `whole` mode still leaves the flesh behind: those overrides say
+"this object / column is the item", not "this skin is", so a primitive they force in is dropped
+again when it passes the skin test. Only an explicit `"tag:ordinal"` keep is absolute.
+
 Every rule must name a record, a column, an object and primitives that exist -
 `crates/actor-formats/tests/equip_isolate_real.rs` checks that, and that every one of the 132 records
 still keeps something and (for a held item) leaves the hand behind.
@@ -349,6 +353,43 @@ The item-alone cut is **not** the disc's answer - the palette cut is, and it sta
 record-keeping export. Whether a full-arm gauntlet, the elbow segment a Ra-Seru grows over, or the
 shorts an armour record re-authors are "the item" is a call, and the table is where a different
 call goes.
+
+### Skin inside a kept primitive: masked at texel level
+
+Deciding per primitive leaves one case open: a quad whose texture paints the item **and** the
+flesh beside it. Noa's three Clips are eight such quads (the band plus the forehead around it),
+the top of her robes paints the shoulders above the neckline, Vahn's Seals the brow under the
+circlet and his armours the neck inside the collar, a claw the knuckles, Gala's plates the
+V of the chest. Each samples a 4 - 45 % skin share, under the drop threshold, so the whole quad
+stays and the skin comes with it.
+
+[`equip_skin_mask`](../../crates/actor-formats/src/battle_char_assembly/equip_skin_mask.rs) cuts
+that skin out instead of dropping the quad:
+
+1. A kept primitive is **mixed** when at least 4 % of its sampled texels are flesh *and* at least
+   25 % are clearly not (neither flesh nor any warm tone). The second bar keeps horns, claw tips
+   and bone blades whole: they are one warm material shaded light to dark, so their light shades
+   match skin and their dark shades are warm too.
+2. A **flesh texel** is in a band narrower than the primitive test's - hue 12 - 36 degrees,
+   saturation 0.30 - 0.62, `r >= 12/31`, at any brightness, which takes every character's skin
+   ramp (Gala's dark one included) and leaves ivory and horn below the saturation floor or above
+   the hue ceiling - or within one 5-bit step of a colour the character's own face samples.
+3. Per source page (CBA, TSB), flesh texels form 4-connected patches over the mixed primitives'
+   footprint; patches of at least 6 texels are masked, grow up to three rounds into touching warm
+   texels (the skin's shadowed edge) and swallow single opaque specks they surround.
+4. The footprint, plus a two-texel margin a GPU sampler reads past a UV edge, is copied through
+   the CLUT into an unused 15-bit direct page of the loadout VRAM with the masked texels written
+   as `0x0000` - the PSX transparent word every host's sampler discards and the glTF baker exports
+   as alpha 0 - and the mixed primitives' TSB is pointed at the copy. UVs do not change; a
+   primitive left with nothing opaque is dropped.
+
+The copy lives only in the loadout VRAM, which the full-character model never samples there, and
+only the item-alone mesh (export, preview, thumbnail) is re-pointed at it.
+`crates/actor-formats/tests/equip_alone_skin_real.rs` builds every record through the shared
+loadout path, asserts no mostly-flesh triangle and at most a 1 % flesh share on pinned records
+(both Clips the report named, robes, a Seal, armour, plates, a band, the Mace, the Great Axe), and
+a geometry floor on all of them; `LEGAIA_ITEM_ALONE_SHEETS=<dir>` writes the contact sheets the
+thresholds were set against.
 
 ### The grip is inferred: bridging the shaft the fist hid
 
@@ -1159,6 +1200,19 @@ precisely the pages and CLUT row the registration-time mesh relocation `FUN_8005
 ([`character-mesh.md` § Battle render](character-mesh.md#battle-render-load-time-tsbcba-relocation)).
 Unflagged sections upload nothing; their band area keeps whatever the other blocks wrote.
 
+**One unflagged record is a stripped pool, not an empty one.** Noa's Force Blade (`0x25`, section
+3) is her Short Sword (`0x24`) record up to the pool: same attach list and TMD, same pool offset at
+`+0x0C`, one swing-record byte apart, with the flag at `+0x12` cleared and the decode ending exactly
+at that pool offset. Its blade primitives sample section 3's rect and CLUT column 12, which only
+that missing pool fills, so under retail's loader the blade draws whatever the rect last held - in a
+fresh VRAM nothing at all, in the item-alone cut, the item-plus-limb cut and the assembled model
+alike. Retail never reaches the record: the [equipment table](equipment-table.md) mask makes the
+Force Blade Vahn's alone. The port uploads the Short Sword's pool for it
+(`battle_char_assembly::stripped_pool_donor`, called from `character_texture_uploads`): a flagged
+record of the same section with an identical loader frame, TMD and pool offset. It is the only such
+record in the four files (`crates/actor-formats/tests/equip_texture_coverage_real.rs`, which also
+checks that no textured primitive of any of the 132 records samples only unwritten VRAM).
+
 **Validation** (disc + save-library gated `parity/tests/battle_char_texture_live.rs`):
 decoding the player files with the live party ids (`DAT_8007BD10`) and equipped item ids (char
 record `+0x196`) and comparing every block against captured battle VRAM reproduces the bands at
@@ -1269,6 +1323,7 @@ Every module below is in `legaia_actor_formats` (`crates/actor-formats`).
 | [`battle_char_assembly::equip_diff`](../../crates/actor-formats/src/battle_char_assembly/equip_diff.rs) | Presentation aid: what one loadout changed against the all-defaults assembly, by the radius-envelope test. Approximate by construction, not a port - retail never compares two assemblies. |
 | [`battle_char_assembly::equip_item`](../../crates/actor-formats/src/battle_char_assembly/equip_item.rs) | The exact cut: `item_partition` splits a weapon / Ra-Seru section into held item and limb by palette column, falling through to `fused`. Swept by `crates/actor-formats/tests/equip_item_real.rs`. |
 | [`battle_char_assembly::equip_isolate`](../../crates/actor-formats/src/battle_char_assembly/equip_isolate.rs) | The opinionated cut: `isolate_item` plus the override table. Swept by `crates/actor-formats/tests/equip_isolate_real.rs`. |
+| [`battle_char_assembly::equip_skin_mask`](../../crates/actor-formats/src/battle_char_assembly/equip_skin_mask.rs) | Texel-level skin mask on the item-alone mesh: mixed primitives re-pointed at a masked direct-colour copy. Swept by `crates/actor-formats/tests/equip_alone_skin_real.rs`. |
 | [`battle_char_assembly::equip_repair`](../../crates/actor-formats/src/battle_char_assembly/equip_repair.rs) | Grip bridging on the item-alone export. |
 | [`battle_texture_catalog`](../../crates/actor-formats/src/battle_texture_catalog.rs) | The texture-pool blocks as a texture tier; `resolve_block` / `assemble_clut_row` read one back. |
 | [`battle_data_pack`](../../crates/actor-formats/src/battle_data_pack.rs) | The slot walker over the `[id, offset, size]` table. |

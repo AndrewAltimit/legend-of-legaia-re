@@ -551,7 +551,7 @@ pub struct BattleState {
     /// the arrival's hand-back rebind
     /// ([`legaia_engine_battle::battle_stage_module::StageEffect::RebindBackdrop`]). Both
     /// hosts build the stage shell from
-    /// [`crate::scene_host::SceneHost::battle_stage_object_indices`], which reads
+    /// [`legaia_engine_scene_host::scene_host::SceneHost::battle_stage_object_indices`], which reads
     /// it; reset at battle entry.
     pub backdrop_rebound: bool,
     /// The sparring fight's first round start is waiting on the battle open
@@ -638,7 +638,7 @@ pub struct BattleState {
     /// The player's **Auto** attack: the per-fighter flag, the round-start
     /// pool-arm queues and their disc inputs
     /// ([`crate::world::AutoComboState`]).
-    pub(crate) auto_combo: crate::world::AutoComboState,
+    pub auto_combo: crate::world::AutoComboState,
     /// The phase-scripted battle camera's state
     /// (`legaia_engine_battle_vm::battle_cam_script::BattleCamera`), stepped by
     /// `World::tick_battle_camera` from `World::tick` for every host; `None`
@@ -782,6 +782,21 @@ pub struct BattleState {
     /// a field encounter to [`legaia_engine_mode::mode::SceneMode::Field`]). Defaults to
     /// [`legaia_engine_mode::mode::SceneMode::Field`].
     pub return_mode: SceneMode,
+    /// Raised by [`crate::world::World::finish_battle`] on every return to
+    /// the field or the overworld, taken by the host's camera half
+    /// ([`crate::frame_step::camera_after_world_tick`]): the field camera
+    /// re-seats on the player as a scene entry does.
+    ///
+    /// Retail leaves a battle through MAIN INIT back into field mode 3, whose
+    /// init `FUN_801D6704` runs the camera reset `FUN_80025C24`
+    /// unconditionally (`0x801D698C`) and, on the back-from-battle word
+    /// `_DAT_8007B8B8 == 2`, re-centres the window on the saved player tile
+    /// (`0x801D6E0C..0x801D6ECC`, `FUN_80017DD4`). The port keeps the field
+    /// scene resident across the fight and emits no scene entry, so without
+    /// this the camera kept the focus its non-zone follow arm pinned onto the
+    /// party's *battle* seat, clamped to the region box's corner, until the
+    /// player moved.
+    pub(crate) field_camera_reseat: bool,
     /// This frame's clip-tag streak ribbon, raised by `FUN_8004CE2C` pass
     /// 2's Gala tag-`0x67` arm (`0x8004D1E8..0x8004D248`): on every frame the
     /// clip cursor sits in `0xB0..=0xF0` retail calls
@@ -833,7 +848,7 @@ pub struct BattleState {
     /// Bumped by every [`crate::world::World::enter_battle`]: the identity of
     /// the fight in progress. Per-battle work that lives outside the world -
     /// the scene host's party battle-form install
-    /// ([`crate::scene_host::SceneHost::ensure_battle_party_forms`]) - keys on it,
+    /// ([`legaia_engine_scene_host::scene_host::SceneHost::ensure_battle_party_forms`]) - keys on it,
     /// so two fights with no field tick between them still install twice.
     /// Not a retail word.
     pub entry_serial: u32,
@@ -967,6 +982,7 @@ impl BattleState {
             victory: None,
             loot_applied: false,
             return_mode: SceneMode::Field,
+            field_camera_reseat: false,
             clip_ribbon: None,
             burn_emit_accum: 0,
             ambient_stored: legaia_engine_battle_vm::battle_ground_grid::GRID_FAR_BASE_NEUTRAL,

@@ -1191,7 +1191,7 @@ hands off to the overlay; Vahn's walk-out plays after the name commits. In the
 `name_input_ui` state the op-`0x49` state slot `_DAT_8007B450` holds
 `0x800EB297`, the op's RAM address + 1 (the record loads with body `0x02b0` at
 RAM `0x800EB280`, byte-identical), so the script is parked exactly on this op.
-Regression: `crates/engine-core/tests/town01_opening_timeline_trace.rs`.
+Regression: `crates/engine-scene-host/tests/town01_opening_timeline_trace.rs`.
 
 **Only the script freezes.** The prompt is an actor on the field list, not a
 mode, so the field frame and the camera mover `FUN_801DC0BC` keep running. The

@@ -459,6 +459,22 @@ impl DomeContest {
         cursor_round(self.word)
     }
 
+    /// Whether the hub opens the next leg on its **first visit** (the
+    /// Welcome strip, the title zoom and the course card, arms `0..=6`)
+    /// rather than on the between-legs INTERVAL screen.
+    ///
+    /// Retail decides it once per arena entry: `FUN_801CEA6C` seeds the hub
+    /// state `DAT_801D1A78 = 0` (`0x801CECA4`) and keeps it only when the
+    /// decoded round `DAT_801D1A94` is zero (`beqz a1, 0x801CEE90` at
+    /// `0x801CECE8`); every other entry overwrites it with `0x0A` or `0x32`.
+    /// A reported leg has already advanced the word (`0x801CEC00`), so the
+    /// round is never zero again in the same contest: the intro plays once.
+    ///
+    /// PORT: FUN_801cea6c (`0x801CECA4` / `0x801CECE8`)
+    pub fn opens_on_first_visit(&self) -> bool {
+        self.round() == 0
+    }
+
     /// The running coin tally (`_DAT_80084440`).
     pub fn tally(&self) -> i32 {
         self.tally

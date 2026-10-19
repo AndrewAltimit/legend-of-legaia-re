@@ -731,7 +731,7 @@ poke), and no `FUN_801E4470` actor sat in the lists.
 | 5 | **Arm the timed sound-source auto-release** for `signed16(operand0, operand1)` vsyncs: `func_0x800267A8(0, operand)` at `0x801E01B4`, whose tick half `FUN_800267FC` runs from the frame-begin driver. Not a volume set - the volume the arm applies is a *side effect* of the libsnd wrapper it tail-calls, and the operand is a deadline. Port: `engine-core::World::arm_sound_release`. |
 | 6 | Flag set. |
 | 7 | Target-sound-set (`_DAT_8007B880`). |
-| 8 | Re-attach + volume re-apply (`func_0x80019898`): re-attaches the BGM slot's sound source (`FUN_80026478(0x8007057C)`) then re-applies the field volume global `DAT_8007B6EC` - level `(raw << 15) >> 16` - to both channels of the slot's voice via `FUN_80064890`. Port: `engine-core::scene_host::bgm_reattach_volume`. |
+| 8 | Re-attach + volume re-apply (`func_0x80019898`): re-attaches the BGM slot's sound source (`FUN_80026478(0x8007057C)`) then re-applies the field volume global `DAT_8007B6EC` - level `(raw << 15) >> 16` - to both channels of the slot's voice via `FUN_80064890`. Port: `engine-scene-host::scene_host::bgm_reattach_volume`. |
 | 9 | **Start behind a load barrier** - stalls the script until the previous BGM load has settled, then makes sub-op 1's own track select. [Detail](#sub-op-9-is-a-start-not-a-queue). |
 | 10 | **Swap-commit** - waits on flag bit 3 (the resolver's load-settle bit), releases the paused BGM slot (`FUN_800266E0` + `FUN_80026520`), sets ack bit 4, clears pause bit 1. [Detail](#sub-op-0xa-is-the-swap-commit). Port: `BgmDirector::unhalt_pause` via `SceneHost::route_bgm_events`. |
 | 11 | `_DAT_8007BA9C = -1` - arms sub-op 9's barrier (no resolved index equals `-1`). |
@@ -811,7 +811,7 @@ release the source only if the pause latch is still set (no start
 intervened), then clear the latch unconditionally. Dropping the op instead
 leaves the score paused after every cutscene that pairs sub-op 2 with a
 later sub-op `0xA` (`town01`'s opening records carry the op;
-`crates/engine-core/tests/bgm_midscene_change_disc.rs` pins the pairing).
+`crates/engine-scene-host/tests/bgm_midscene_change_disc.rs` pins the pairing).
 
 #### 0x36 SOUND_CUE
 
@@ -1034,7 +1034,7 @@ The disc carries ten clean non-`0xFF` sites (`asset field-op-census --only
 `jagaroom` `3E 01 00` once, each behind a flag SET and a wait or a battle
 BGM cue - the shape of every `3E FF` boss entry. Engine:
 `FieldSceneHost::scripted_battle` → `World::trigger_scripted_battle` for every
-`op0`; `engine-core/tests/scripted_battle_low_op0_disc.rs` steps one site per
+`op0`; `engine-scene-host/tests/scripted_battle_low_op0_disc.rs` steps one site per
 scene into `SceneMode::Battle` against the named MAN row.
 
 #### The region battle setup
@@ -1070,7 +1070,7 @@ and the return triple as they were, and the store does too).
 both play hosts build the battle backdrop from; `World::bag_use_rows` reads
 the Door gates. Not modelled: the world-map return triple's consumer
 (the world map keeps its own visit table) and the world-map region tracker's
-setup half. Tests `engine-core/tests/region_battle_setup_disc.rs`.
+setup half. Tests `engine-scene-host/tests/region_battle_setup_disc.rs`.
 
 #### 0x3E WARP (mode-24 minigame door-warp)
 
@@ -1136,7 +1136,12 @@ through `FUN_8003D254`. No camera mode changes and nothing latches: the follow
 ease keeps running from the player's handler afterwards. APPLY is therefore how
 a script releases a shot it staged, and scenes such as `rugi` run it from a
 looping record every frame, which pins the camera on the composed follow pose.
-The engine ports it as `Camera::apply_follow_shot`. Reading APPLY as "commit
+The engine ports it as `Camera::apply_follow_shot`. Because the compose
+overwrites the staging block, no scripted shot survives APPLY, and the port
+drops its mirror of the staged slots (`camera.state.params`) there too: kept,
+it handed the frame back to the stale shot through the release glide and on
+every later camera-less record of the scene (`taiku` P2[4]'s security-door
+shot reappearing on the P2[0] / P2[1] bulkhead toggles). Reading APPLY as "commit
 the staged shot and go cinematic" freezes such a scene's camera on the
 terrain-less fallback pose (`H = 512`, the zone-miss depth) instead of the
 region's own shot.
@@ -1723,7 +1728,7 @@ not in the plaza". A capture therefore cannot be read as evidence about what the
 entry *ran* - `conc`'s entry both clears and re-arms it - and the engine's own
 cold entry at entry point 0 stands inside the box, where retail writes nothing
 either. Pinned both ways by
-`crates/engine-core/tests/conc_flag_6de_position_latch_disc.rs`.
+`crates/engine-scene-host/tests/conc_flag_6de_position_latch_disc.rs`.
 
 The port consequence is the anchor these tests read. Retail resolves the
 cross-context target `0xF8` to the live player object on every evaluation; the
@@ -1889,7 +1894,7 @@ The resident copy byte-matches PROT `0157_rikuroa`'s chunk, and the story-flag `
 The carrier's records also pin **how** `P2[50]` runs: the boss stager `P1[3]` SETs the transient marker `0x289` (`52 89`) right before its battle-entry op (`3E FF 11`),
 and the scene-entry system script `P1[0]` tests that marker on the post-battle scene re-entry (`72 89` at `+0x13A`) - its taken arm (`+0x7E6`: fade, BGM, `44 5C`) issues the op-`0x44` spawn of global record `0x5C` = `P2[50]`, C1-gate-checked by the dispatcher.
 The same shape sits one branch level up: `P1[0]`'s first-arrival arm spawns `P2[43]` (`44 55`) while flag `0x2FB` is clear, and that record's own `52 FB` latches it.
-The from-scratch engine executes this chain organically - the host re-runs the entry script on the battle-to-field mode edge (`SceneHost::tick`) and the spawned record's own script bytes land `0x142`; disc-gated oracle `engine-core/tests/organic_beat_records_disc.rs`.
+The from-scratch engine executes this chain organically - the host re-runs the entry script on the battle-to-field mode edge (`SceneHost::tick`) and the spawned record's own script bytes land `0x142`; disc-gated oracle `engine-scene-host/tests/organic_beat_records_disc.rs`.
 Thirteen retail blocks ship such a **streaming variant MAN** (extraction indices: `dolk2` 70, `rikuroa2` 122, `rikuroa` 157, `rayman` 201, `station` 228, `balden2` 320, `ropeway2` 339, `taiku` 373, `doman` 401, `taiku2` 427, `nilboa2` 648, `edbalden` 792, `eddoman` 817); for the v12-family dungeons (`rikuroa` / `dolk2`, whose own bundle is the MAN-less `count=4` form) the streaming carrier is the scene's **only** MAN.
 
 `system_flag_census` (and the motion / op-`0x49` censuses) walk **every** carrier per scene - the bundle MAN plus the streaming variants, enumerated by `legaia_engine_scene::man_census::scene_man_carriers` - so the variant-resident writers surface: the `0x142` setters above, the `0x63A` beat writers. Disc-gated pins: `crates/engine-scene/tests/man_variant_carrier_census_disc.rs`. CLI: `legaia-engine man-scripts --scene <name> --variant <entry_idx>` targets a variant carrier directly (census rows tag them `VARIANT-MAN`); `--p2-gates` prints every partition-2 record's C1/C2 header gate lists + name (the `FUN_8003BDE0` spawn-condition surface the inline-op censuses cannot see).
@@ -2061,7 +2066,7 @@ entry script; an engine that applies them only from the entry script leaves
 `town01`'s south gate sealed in every story state. The paints themselves,
 their `327`/`321` branch and the resulting grid are in
 [`world-map.md`](world-map.md#the-drake-round-trip-rim-elm---map01---cave01);
-`engine-core/tests/south_gate_disc.rs` pins all three states off the disc.
+`engine-scene-host/tests/south_gate_disc.rs` pins all three states off the disc.
 
 **None of the four paints ends the dispatch slice.** There is no label-call
 idiom in the nibble-7 arms: all four subs perform an ordinary `return`, with
@@ -2459,7 +2464,7 @@ record `0x801F2278`, whose first byte is `0x0B`, into `_DAT_8007B450` on the
 tick the Incense window reaches zero, so the enter half's table read lands on
 this row ([field-menu.md](field-menu.md#command-sub-flows-use--throw-out--arrange)). The "sub-menu"
 name described the state machine's shape, not what it draws. Port: `legaia_engine_field::submode_hub_actors::OP49_SUBOP_SLOTS`, with
-the disc pin in `crates/engine-core/tests/hub_tables_disc.rs`.
+the disc pin in `crates/engine-scene-host/tests/hub_tables_disc.rs`.
 
 #### Sub-op `2`: the code lock
 

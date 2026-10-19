@@ -5,7 +5,7 @@ the UI is a set of windows in the **menu overlay** (PROT 0899, the same image
 that hosts the pause menu and save screen), each shop's stock is a record
 inline in its scene's field-VM script, and prices come from the static item
 table in `SCUS_942.54`. The port runs the same flow on both play hosts through
-`engine-core`'s `MenuRuntime` and one shared screen builder. (An inn is *not*
+`engine-menu-runtime`'s `MenuRuntime` and one shared screen builder. (An inn is *not*
 a menu-overlay session - see [inn.md](inn.md).)
 
 ## At a glance
@@ -18,7 +18,8 @@ a menu-overlay session - see [inn.md](inn.md).)
 | Is there a Yes / No confirm? | No. The quantity stepper commits the transaction itself. |
 | Stack cap | 99 per item id. |
 | Extra purses | The Point Card bank (`_DAT_800845B4`, [below](#point-card)); the casino coin bank belongs to the prize exchange, a separate table. |
-| Port | `engine-menus::shop` (rules and sessions) + `engine-core`'s `MenuRuntime`, drawn by `legaia_engine_screens::gold_shop_screen` on both hosts. |
+| Where is the text? | Every label is a menu-overlay string, read off the disc at boot ([window text](#window-text)). |
+| Port | `engine-menus::shop` (rules and sessions) + `engine-menu-runtime`'s `MenuRuntime`, drawn by `legaia_engine_screens::gold_shop_screen` on both hosts. |
 
 ```mermaid
 stateDiagram-v2
@@ -169,6 +170,121 @@ on the way out of the beat. Neither host draws a caption on `ShopExit`,
 **After a quantity screen** the hand returns to the list row it left - the
 kind-4 list keeps its selection behind the stepper - clamped to the rebuilt
 list after a sale.
+
+## Window text
+
+Every label a shop window prints is a string in the menu overlay's own pool,
+loaded by VA by the window's renderer; none is computed. The port reads them
+out of the user's PROT 0899 at boot (`engine-menus::shop::ShopLabels`,
+installed by `World::install_menu_overlay_tables` on `World::menu.shop_labels`)
+and a session without the overlay draws those windows with no label text
+rather than with invented text.
+
+| Window | Renderer | Labels (overlay VA) |
+|---|---|---|
+| 42 picker | `FUN_801D4868` | rows `0x801CEB94` / `0x801CEB9C` / `0x801CEBA4` |
+| 41 party compare | `FUN_801D4C28` | notes `0x801CEBAC` (ink 4) / `0x801CEBB8` (ink 9); stat labels `0x801CE9A0` / `A4` / `A8` |
+| 35 buy quantity | `FUN_801D5510` | held head `0x801CEBC8`, tail `0x801CEBD0`, none-held `0x801CEBD4`, prompt `0x801CEBDC` |
+| 36 recipient | `FUN_801D56FC` | bag row `0x801CEBF8`; one row per character id `0..=2`: `0x801CEC08` / `18` / `28` |
+| 37 sell quantity | `FUN_801D5944` | prompt `0x801CEC38` |
+| 39 sell detail | `FUN_801D5AE8` | price `0x801CEC54`, unsellable `0x801CEC5C` |
+| 31 Point Card toast | `FUN_801DCE20` | heading `0x801CEA40`, unit `0x801CEA50` |
+
+Three of these carry the string primitive's **name escapes**, two bytes each
+and expanded at draw time (`FUN_80036888`): every recipient row opens with
+`0xC1 n`, character `n`'s record name, so a row reads as that character's
+own sentence; and the toast heading opens with `0xC2 0xFE`, item `0xFE`'s
+name. An escape's operand can be `0`, which is why a plain C-string read of
+those labels stops at the operand (`ShopLabel::read` keeps escapes whole).
+Port: `engine-menus::shop::{ShopLabel, expand_name_escapes}`;
+`legaia_engine_screens::shop::menu_name_escape` resolves the names off the
+live roster and item table.
+
+### The party compare (window 41)
+
+`FUN_801D4C28` draws one block per **present party member**: it walks
+`DAT_80084594` rows through the party list at `0x80084598`, `0x37` lines per
+member, the name at the origin. A member who has not joined has no block. For
+each member, in order:
+
+1. any of the member's eight equip bytes (`+0x196..+0x19D`) equal to the
+   staged id prints the equipped note at `(WX + 0xC, Y + 0x14)` and nothing
+   else;
+2. otherwise a non-equipment id (item record `+0 != 1`) prints the member's
+   current ATK / UDF / LDF - labels at `WX + 4`, 3-cell values at `WX + 0x2C`,
+   rows `0xD` apart from `Y + 0xD` - with no arrows;
+3. otherwise a member the equip record's `+6` mask excludes prints the
+   cannot-equip note (the mask test covers characters `0..=2`; any other id
+   passes);
+4. otherwise the trial equip: the staged piece is written into the record
+   byte its class names, the stats recomputed (`FUN_801CF650` around
+   `FUN_80042558`), the byte restored. The class is `(+7 & 0x60) >> 5`
+   remapped, and the byte is **not** the class index: the weapon goes to the
+   per-character halfword `DAT_8007B42C` (`2, 3, 2`), head, body and legs
+   through `DAT_801E43E8` to bytes `1`, `0` and `4`. Each row prints the
+   current value; when the trial value differs, the separator glyph `4`
+   (rise, ink 6) or `5` (fall, ink 1) at `WX + 0x48` and the trial value at
+   `WX + 0x54` in ink 7. An unchanged stat prints the current value alone.
+
+The arrows are cells of the menu-glyph page, not font characters:
+`FUN_8003C1F8(g, x, y)` blits the 8x12 cell at `uv = (0x50 + g * 8, 0xD0)`,
+the row right after the numerals, under the staged ink. The port attaches
+those cells to the font with the numerals
+(`save_menu_atlas::menu_font_cells`, ids `sprite_cell_ids::SEPARATOR + g`) and
+every separator glyph - the compare arrows here and on the Equip screen, the
+quantity windows' slash - draws them.
+
+Port: `engine-menus::shop::party_compare_members_of` (the model, fed the
+present party list) and `engine-ui::party_compare_panel_fields`.
+
+### The recipient rows (window 36)
+
+The bag row sits at `WX + 0x18` with the hand at `WX + 4`. Each present
+member follows one `0xE` row lower, its text the row string for its
+character id (character `3` has none and prints nothing). A member the item's
+mask excludes keeps its row in the dim ink `0` (`sw zero` into the ink global
+at `0x801D5838`); the hand still lands on it and a confirm there buzzes.
+
+### The item detail line (window 34)
+
+Window 34 prints the item name and the held count (ink 6), then hands the
+item to the detail printer `FUN_800337B0` at `(WX + 8, WY + 0xE)`, except for
+an accessory whose passive index is `< 0x40`, which prints the passive's
+description instead. For anything but equipment the printer prints the item's
+description. For equipment it prints the description or, when the record has
+none, a slot template out of the pointer table `0x80073E2C` - per slot class
+an icon-led line naming one character through a `0xC1` escape whose operand
+the printer patches from the `+6` mask (`1` for bit `2`, `2` for bit `4`),
+and a shorter form at `class + 4` for a piece every character wears - and
+then a stat line `0xD` lower: one or two label / value pairs (labels at
+`0x8007B4B0..0x8007B4BC`, values the equipment record's own bonus bytes as a
+3-cell field):
+
+| Class | Pairs (label `x`, value `x`) |
+|---|---|
+| weapon | ATK `+1` at `0x50` / `0x78` |
+| head | UDF `+2` at `0xC` / `0x34`; INT `+0` at `0x56` / `0x78` |
+| body | UDF `+2` at `0xC` / `0x34`; LDF `+3` at `0x50` / `0x78` |
+| legs | ATK `+1` at `0xC` / `0x34`; LDF `+3` at `0x50` / `0x78` |
+
+Every string comes off the user's executable (`engine-menus::shop::ItemDetailTables`,
+on `MenuTextTables::item_detail`); the description keeps its `0xCE` icon
+escape for the font's byte layout and has its name escapes expanded. Port:
+`engine-menus::shop::item_detail_line`, drawn by
+`legaia_engine_screens::shop::item_detail_draws`.
+
+### Capturing the screens
+
+All of the above is capture-confirmed on Retock's Arms Shop and Items Shop
+(retail, `retock_field_card_boot`). The shops are interiors of the same
+scene, reached only through their doors - a position poke straight into a
+shop leaves its room inactive, its merchant neither drawn nor talkable. A
+tile poke onto the door at `(4800, 9152)` arrives in the Arms Shop at
+`(12864, 1152)`, merchant record `+0x90 = 0x800EACF6`; the door at
+`(4800, 10432)` arrives in the Items Shop at `(12736, 2816)`, merchant
+`0x800EAEE1` (approach on waypoint tile `(100, 23)`). From there
+`autorun_talk_to_npc.lua` opens the conversation and the shop opens on the
+next confirm presses.
 
 ## Mode-select panel (Buy / Sell / Quit)
 
@@ -356,7 +472,7 @@ empty sentinel is id `0` ([inventory.md](inventory.md)), so the first probe is
 card's exclusive stock: a record padded with three template ids loses nothing
 without the card, and a shorter-padded one withholds two or three items. Across
 the disc's shop records, the ones carrying a band are the ones a card-less
-party sees shortened (`crates/engine-core/tests/shop_catalog_disc.rs` pins that
+party sees shortened (`crates/engine-scene-host/tests/shop_catalog_disc.rs` pins that
 the card-less list is always the card list minus its band).
 
 Retail confirms the gate. `scripts/pcsx-redux/autorun_shop_buy_list.lua`
@@ -488,7 +604,10 @@ purchase arms. `see ghidra/scripts/funcs/overlay_menu_801db7f4.txt`.
 a script whose entire body is `01 1F` plus the terminator - one command,
 "open window `0x1F`" (`0x801E4EDC` from the quantity commit, `0x801E4EA8`
 from the recipient picker), and then parks in a phase that returns to the
-buy list only on a confirm / cancel press. Window 31's renderer
+buy list only on a confirm / cancel press. The quantity commit closes the
+stepper first (`0x801E4ED4` is `04 23`), so the toast rides over windows 33,
+32, 34 and 41 alone, the buy list coming back with `0x801E4E64` after the
+press (capture-confirmed; `shop_screen_windows(BuyQuantity, true)`). Window 31's renderer
 `FUN_801DCE20` prints the counter as an 8-digit field between a heading and
 a "point(s)" unit label; see
 [field-menu.md](field-menu.md#ported-painters).

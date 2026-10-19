@@ -641,13 +641,32 @@ pub fn compare_panel_ink(staging: u8) -> [f32; 4] {
     }
 }
 
+/// A rise / fall arrow: the separator glyph `4` / `5` cell off the
+/// menu-glyph page (`FUN_8003C1F8`), tinted by the staged ink. A font without
+/// the glyph page attached falls back to `+` / `-` so the direction still
+/// reads.
+pub(crate) fn compare_arrow_draws(
+    font: &legaia_font::Font,
+    glyph: u8,
+    pen: (i32, i32),
+    ink: u8,
+) -> Vec<TextDraw> {
+    let color = compare_panel_ink(ink);
+    let cell = crate::menu::window_painters::separator_glyph_draws(font, glyph, pen, color);
+    if !cell.is_empty() {
+        return cell;
+    }
+    let ch = if glyph == ARROW_RISE { "+" } else { "-" };
+    text_draws_for(&font.layout_ascii(ch), pen, color)
+}
+
 /// Fixed decimal-cell pitch of `FUN_80034B78` (8 px per digit).
 const NUM_CELL_W: i32 = 8;
 
 /// Render a field list to [`TextDraw`]s. [`ComparePanelField::Icon`] is
 /// dropped - it is a UI-icon-atlas sprite, not a font glyph, and the host
-/// owns that atlas. [`ComparePanelField::Arrow`] renders as an ASCII
-/// stand-in until the separator-glyph page is uploaded.
+/// owns that atlas. [`ComparePanelField::Arrow`] draws the separator glyph
+/// page's arrow cell ([`compare_arrow_draws`]).
 ///
 /// PORT: FUN_801d1290 / FUN_801d4c28 (the text half of both)
 pub fn compare_panel_draws_for(
@@ -686,12 +705,7 @@ pub fn compare_panel_draws_for(
                 }
             }
             ComparePanelField::Arrow { x, y, glyph, ink } => {
-                let ch = if *glyph == ARROW_RISE { '+' } else { '-' };
-                out.extend(text_draws_for(
-                    &font.layout_ascii(&ch.to_string()),
-                    (*x, *y),
-                    compare_panel_ink(*ink),
-                ));
+                out.extend(compare_arrow_draws(font, *glyph, (*x, *y), *ink));
             }
         }
     }
@@ -701,19 +715,6 @@ pub fn compare_panel_draws_for(
 // ---------------------------------------------------------------------
 // The equipment-buy recipient sub-screen (windows 36 / 25 / 41)
 // ---------------------------------------------------------------------
-
-/// Window 36's header row - the picker's **bag row** (marker index 0), not a
-/// caption: confirming it buys one copy into the inventory. Retail's own
-/// string is a menu-overlay rodata literal; the port stages an
-/// engine-authored line in the same slot so the translation layer owns the
-/// text.
-pub const RECIPIENT_HEADING: &str = "Put in bag";
-
-/// Window 41's note for a member already wearing the staged item.
-pub const RECIPIENT_NOTE_EQUIPPED: &str = "Equipped";
-
-/// Window 41's note for a member the item's character mask excludes.
-pub const RECIPIENT_NOTE_CANNOT_EQUIP: &str = "Cannot equip";
 
 /// Stat-row labels for [`CompareRows::AtkUdfLdf`], in emit order.
 pub const COMPARE_LABELS_ATK: [&str; 3] = ["ATK", "UDF", "LDF"];
@@ -750,6 +751,11 @@ pub struct RecipientWindowRects {
 pub struct RecipientMemberView<'a> {
     /// Display name from the character record `+0x2A7`.
     pub name: &'a str,
+    /// Window 36's row text for this member: retail's per-character string
+    /// (`0x801CEC08` / `0x801CEC18` / `0x801CEC28`, each opening `[0xC1 id]`)
+    /// with the name escape expanded. Empty for a character with no row
+    /// string (id `3`), which retail leaves blank.
+    pub row_label: &'a str,
     /// `false` when the staged item's character mask excludes this member.
     pub equippable: bool,
     /// The member already wears the staged item, so window 41 prints the
@@ -771,8 +777,10 @@ pub struct RecipientMemberView<'a> {
 /// plus the two stat-compare readouts beside it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct RecipientPickerView<'a> {
-    /// Heading of window 36's list.
+    /// Heading of window 36's list - the bag row (`0x801CEBF8`).
     pub heading: &'a str,
+    /// Window 41's notes and stat labels.
+    pub compare_labels: crate::shop_screen::ShopCompareLabels<'a>,
     /// Session cursor word (`DAT_801E46C0`): row 0 is the bag, rows `1..`
     /// are party members, and the high bits carry the marker flags.
     pub cursor: u32,
@@ -840,7 +848,7 @@ pub fn recipient_picker_draws_for(
                         member_class: i as u8,
                         equippable: m.equippable,
                     },
-                    m.name,
+                    m.row_label,
                 )
             })
             .collect();
@@ -858,14 +866,14 @@ pub fn recipient_picker_draws_for(
             .map(|m| PartyCompareMemberView {
                 name: m.name,
                 outcome: if m.already_equipped {
-                    PartyCompareOutcome::Equipped(RECIPIENT_NOTE_EQUIPPED)
+                    PartyCompareOutcome::Equipped(view.compare_labels.equipped)
                 } else if !m.equippable {
-                    PartyCompareOutcome::CannotEquip(RECIPIENT_NOTE_CANNOT_EQUIP)
+                    PartyCompareOutcome::CannotEquip(view.compare_labels.cannot_equip)
                 } else {
                     PartyCompareOutcome::Stats {
                         current: m.current,
                         candidate: Some(m.candidate),
-                        labels: COMPARE_LABELS_ATK,
+                        labels: view.compare_labels.stats,
                     }
                 },
             })
@@ -1198,9 +1206,18 @@ mod tests {
         h: 158,
     };
 
+    /// Synthetic window-41 labels (the real ones are disc strings).
+    const LABELS: crate::shop_screen::ShopCompareLabels<'static> =
+        crate::shop_screen::ShopCompareLabels {
+            equipped: "e",
+            cannot_equip: "c",
+            stats: ["a", "u", "l"],
+        };
+
     fn member(name: &str, equippable: bool, already: bool) -> RecipientMemberView<'_> {
         RecipientMemberView {
             name,
+            row_label: name,
             equippable,
             already_equipped: already,
             current: block(10, 20, 30),
@@ -1234,6 +1251,7 @@ mod tests {
         for cursor in 0..=2 {
             let view = RecipientPickerView {
                 heading: "h",
+                compare_labels: LABELS,
                 cursor,
                 members: &members,
                 staged_category: CATEGORY_DEFAULT,
@@ -1251,6 +1269,7 @@ mod tests {
         let members = [member("A", true, false), member("B", false, false)];
         let view = RecipientPickerView {
             heading: "h",
+            compare_labels: LABELS,
             cursor: 2,
             members: &members,
             staged_category: CATEGORY_DEFAULT,
@@ -1274,6 +1293,7 @@ mod tests {
         ];
         let view = RecipientPickerView {
             heading: "h",
+            compare_labels: LABELS,
             cursor: 0,
             members: &members,
             staged_category: CATEGORY_DEFAULT,
@@ -1294,16 +1314,16 @@ mod tests {
                 outcome: PartyCompareOutcome::Stats {
                     current: block(10, 20, 30),
                     candidate: Some(block(15, 20, 25)),
-                    labels: COMPARE_LABELS_ATK,
+                    labels: LABELS.stats,
                 },
             },
             PartyCompareMemberView {
                 name: "B",
-                outcome: PartyCompareOutcome::CannotEquip(RECIPIENT_NOTE_CANNOT_EQUIP),
+                outcome: PartyCompareOutcome::CannotEquip(LABELS.cannot_equip),
             },
             PartyCompareMemberView {
                 name: "C",
-                outcome: PartyCompareOutcome::Equipped(RECIPIENT_NOTE_EQUIPPED),
+                outcome: PartyCompareOutcome::Equipped(LABELS.equipped),
             },
         ];
         let expect =
@@ -1351,6 +1371,7 @@ mod tests {
         let members = [member("A", true, false)];
         let view = RecipientPickerView {
             heading: "h",
+            compare_labels: LABELS,
             cursor: 1,
             members: &members,
             staged_category: CATEGORY_DEFAULT,

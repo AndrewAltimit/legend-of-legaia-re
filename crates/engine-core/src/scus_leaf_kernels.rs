@@ -9,7 +9,7 @@ use legaia_engine_system::scus_leaf_kernels::SCENE_CONTROL_BLOCK_RESET;
 impl crate::world::World {
     /// Allocate + reset the scene control block. `FUN_8003A024`.
     ///
-    /// Called from [`crate::scene_host::SceneHost::load_scene`], which is where
+    /// Called from [`legaia_engine_scene_host::scene_host::SceneHost::load_scene`], which is where
     /// retail runs it: the block is re-allocated per scene and the per-scene
     /// contents are installed afterwards by `FUN_8003A110` from the scene MAN.
     ///

@@ -404,7 +404,7 @@ with waivers in
 
 `engine-core` hands hosts their behaviour through traits, and several give
 every method a default body - `BgmDirector`, in
-`crates/engine-core/src/scene_host.rs`, is the one to look at. That is a
+`crates/engine-scene-host/src/scene_host.rs`, is the one to look at. That is a
 deliberate convenience (a test stub can implement it with an empty block) and
 a silent failure mode: a host that never types `start_owned_vab` loses every
 global-pool track, which is every real music cue, with no compile error and
@@ -1296,7 +1296,7 @@ decidable per instance, not from a source pattern.
 | **A queue only a consumer empties.** | `World::pending_field_events` grew on the page: only the BGM router drained it and handed the rest back. | Drain every frame. |
 | **A retained pass no draw list shows.** | The WebGL ground pass (`uploadGround`) drew the field heightfield through the battle camera. | Tier-7 rule `setGroundEnable(false)`. |
 | **A texture upload one resource builder skips.** Reads as "the draw is broken": the quads exist, the texels do not. | Native field VRAM lacked the PROT 0874 section-2 effect pool, so fog quads (page `0x0027` = `(448, 0)`, CLUT `(0, 473)`) sampled zero. | Layer the pool under the scene build. |
-| **A draw one host carries on a side channel.** | Fishing gauge fills came from a page-only `bars` payload. | Hand the shared consumer the solid texel. |
+| **A draw one host carries on a side channel.** | Fishing gauge fills came from a page-only `bars` payload. | The shared sprite pass emits the fill (`BarFrame::fill_rect`); `bars` is the no-table fallback. |
 | <a id="a-gl-state-word-the-engine-does-not-own"></a>**A GL state word the engine does not own.** | NCLIP cull, clear colour and the palette-collapse half of the prologue grade were JS decisions or had no uniform to land on. | `camera_frame::nclip_cull_mode`, `battle_stage_clear::scene_clear`, `World::frame_grade`; the GL call only applies the answer. |
 | **A host-side handle the world does not hold.** | The browser's summon actor seat survived `World::finish_battle` and was handed out twice. | - |
 | **A write durable on one host only.** | A native Save persists in the commit (`card.persist()`); the page stored the card only on Export. | The runtime raises `card_take_written` and the page stores on it. |
@@ -1585,7 +1585,7 @@ screens.
 | shop-family draw | `legaia_engine_screens::shop_overlay_frame`; frame rect from `shop_panel_rows` + `shop_panel_frame_rect`; labels `menu_runtime::shop_root_labels`, `MenuState::item_label` |
 | Seru-trade text | `seru_trade::trade_screen_text` |
 | save-select | `engine-screens::pause_screens::save_select_overlay_draws` over `SaveScreenFlow::overlay_model` and `engine-ui`'s `save_select_overlay_draws`, `title_band_sprites` + `TitleBandState` (page backdrop: `boot_title_backdrop_draws_json`) |
-| Load / New Game | `engine-core::resume` (`resume_card_load`, `enter_new_game`), `TitleSession::for_front_end`, `SceneHost::current_resume` ([`save-screen.md`](../subsystems/save-screen.md#where-a-load-lands-and-when-continue-is-live)) |
+| Load / New Game | `engine-scene-host::resume` (`resume_card_load`, `enter_new_game`), `TitleSession::for_front_end`, `SceneHost::current_resume` ([`save-screen.md`](../subsystems/save-screen.md#where-a-load-lands-and-when-continue-is-live)) |
 | card write | `engine-core::card_write::write_save_into_card`, `MountedCard::persist` |
 | menu blips | `menu_cues::menu_edge_blip`; a blip is a one-cue batch (`SfxFireBatch::immediate`) and ages no other cue |
 | name entry | `NameEntryInput::from_pad_edge`; view `engine-screens::field_screens::name_entry_view` (`NameEntry::cursor_cells`, `name_entry::caret_on`) |
@@ -1627,10 +1627,11 @@ skips the picker's story baseline, which would otherwise clear system flags
 | world-map markers | `legaia_engine_core::world_map_markers` + `screen_prim::world_map_marker_prim` |
 | narration crawl, title card | `cutscene_text_stage_draws` (stage pixels) |
 | dialog reading box (snapshot, layout, both halves) | `engine-screens::dialog_screens`; box height off the pager's row word `_DAT_801F2740` |
+| field message layer (balloon, map labels, tile-board prompt, Incense notice, reading box: order and gates) | `engine-screens::field_messages::field_message_frame`; balloon width `commit_text_balloon_measure` |
 | picker labels, two-line descriptions | `OwnedDialogPanel::picker_labels`; `broken_text_draws_for` (`FUN_80036888` breaks on `0x7C`) |
 
 The site's full-map viewer is a fifth consumer of the same kernels:
-`engine-core::scene_live::LiveScene` enters the scene through `SceneHost` and
+`engine-scene-host::scene_live::LiveScene` enters the scene through `SceneHost` and
 ticks it headless, and `web-viewer::field_actors::FieldActors` +
 `site/js/field-actors.js` are the one actor path both pages use. The disc-gated
 `crates/web-viewer/tests/field_scene_anim.rs` runs the viewer and

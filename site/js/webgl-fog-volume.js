@@ -1,9 +1,9 @@
 /* Volumetric ground fog on the play page - the browser twin of the native
  * renderer's `fog_volume` pass (crates/engine-render/src/renderer/
  * fog_volume.rs). An ENHANCEMENT, not retail: the bank is simulated by the
- * engine (crates/engine-core/src/fog_volume.rs, stepped inside World::tick)
- * and handed over each frame through four wasm exports; this file only
- * draws it.
+ * engine (crates/render-kernels/src/fog_volume.rs, stepped inside
+ * World::tick) and handed over each frame through five wasm exports; this
+ * file only draws it.
  *
  * The bank is a stack of horizontal alpha-blended sheets over the walk
  * ground, depth-tested against the scene already in the framebuffer and
@@ -12,7 +12,13 @@
  * native WGSL - keep the two in step. The recipe's numbers (noise scales,
  * sheet gain, profile exponent) come from the frame header, not from here.
  *
- * Header layout: legaia_engine_core::fog_volume::header. */
+ * The scene's ground coverage field (fog_volume::FogGround) arrives as an
+ * RGBA8 texture - coverage, spill, flow - so the bank lies on the drawn
+ * floor and spills off its rims; without one (battle, an older bundle) the
+ * pass binds a single full-coverage texel and draws the bank as before. A
+ * negative mesh-vertex weight marks the distant haze layer far below a rim.
+ *
+ * Header layout: legaia_render_kernels::fog_volume::header. */
 (function () {
   'use strict';
 
@@ -23,30 +29,87 @@
     COLOR_R: 8, COLOR_G: 9, COLOR_B: 10, OPACITY: 11,
     HEIGHT: 12, LAYERS: 13, DRIFT_X: 14, DRIFT_Z: 15,
     GROUND_GEN: 16, SPACE: 17, SHADER_CONSTANTS: 18, SOFT_DISTANCE: 22, LEN: 23,
+    /* The ground-field tail (absent from a header shorter than FULL_LEN). */
+    SPILL_PHASE: 23, GROUND_TEX_ORIGIN_X: 24, GROUND_TEX_ORIGIN_Z: 25,
+    GROUND_TEX_EXTENT_X: 26, GROUND_TEX_EXTENT_Z: 27, GROUND_TEX_W: 28,
+    GROUND_TEX_H: 29, GROUND_TEX_GEN: 30, FULL_LEN: 31,
+    /* The spill / haze constants (fog_volume::FOG_SPILL_CONSTANTS,
+     * FOG_HAZE_CONSTANTS), absent from a header shorter than SPILL_LEN. */
+    SPILL_CONSTANTS: 31, HAZE_CONSTANTS: 35, SPILL_LEN: 39,
   };
+  /* fog_volume::FOG_GROUND_NONE_TEXEL: full coverage, no spill. */
+  const GROUND_NONE = new Uint8Array([255, 0, 0, 255]);
+
+  /* The spill's outward direction at ground-texture UV `guv`: the gradient
+   * of the flow channel (distance past the rim), +X where it is flat. Shared
+   * by both stages (the native `spill_dir`). */
+  const SPILL_DIR_GLSL = `
+vec2 spill_dir(vec2 guv) {
+  vec2 e = u_ground.zw * 64.0;
+  float fx = textureLod(u_gtex, guv + vec2(e.x, 0.0), 0.0).b
+    - textureLod(u_gtex, guv - vec2(e.x, 0.0), 0.0).b;
+  float fz = textureLod(u_gtex, guv + vec2(0.0, e.y), 0.0).b
+    - textureLod(u_gtex, guv - vec2(0.0, e.y), 0.0).b;
+  float glen = length(vec2(fx, fz));
+  return glen > 1.0e-4 ? vec2(fx, fz) / glen : vec2(1.0, 0.0);
+}
+`;
 
   const VS = `#version 300 es
 precision highp float;
 layout(location = 0) in vec4 a_pos;
 uniform mat4 u_m;
 uniform vec4 u_params;
+uniform vec4 u_haze;
+uniform vec4 u_ground;
+uniform vec4 u_spill;
+uniform sampler2D u_gtex;
 out vec2 v_xz;
 out float v_layer;
 out float v_clip_w;
 out vec3 v_world;
 out float v_floor_w;
+out float v_haze;
+out vec3 v_view;
+${SPILL_DIR_GLSL}
+/* The camera's position in the bank's space: the one point the matrix sends
+ * to clip x = y = w = 0 (every view ray passes through it). */
+vec3 eye_of(mat4 m) {
+  vec4 r0 = vec4(m[0].x, m[1].x, m[2].x, m[3].x);
+  vec4 r1 = vec4(m[0].y, m[1].y, m[2].y, m[3].y);
+  vec4 r3 = vec4(m[0].w, m[1].w, m[2].w, m[3].w);
+  vec3 c01 = cross(r0.xyz, r1.xyz);
+  vec3 c13 = cross(r1.xyz, r3.xyz);
+  vec3 c30 = cross(r3.xyz, r0.xyz);
+  float det = dot(r0.xyz, c13);
+  if (abs(det) < 1.0e-12) return vec3(0.0);
+  return -(r0.w * c13 + r1.w * c30 + r3.w * c01) / det;
+}
 void main() {
   float s = (float(gl_InstanceID) + 0.5) / u_params.y;
   /* Sheets packed toward the floor (quadratic spacing); retail Y-down, so
-   * they stack upward from just above it. */
+   * they stack upward from just above it. A negative weight marks the
+   * distant haze layer, whose stack is deeper. */
   float t = s * s;
-  float y = a_pos.y - 2.0 - t * u_params.x;
-  gl_Position = u_m * vec4(a_pos.x, y, a_pos.z, 1.0);
+  float haze = a_pos.w < 0.0 ? 1.0 : 0.0;
+  float y = a_pos.y - 2.0 - t * u_params.x * mix(1.0, u_haze.x, haze);
+  /* On the spill's near-vertical curtain a vertical stack slides the sheets
+   * along themselves; spread them outward instead, so the fall is a slab
+   * with depth rather than one bright plane seen edge-on. */
+  vec2 xz = a_pos.xz;
+  vec2 guv = (a_pos.xz - u_ground.xy) * u_ground.zw;
+  vec4 gv = textureLod(u_gtex, guv, 0.0);
+  if (gv.g > 0.0 && haze == 0.0) {
+    xz += spill_dir(guv) * (s * u_spill.w * min(gv.g * 4.0, 1.0));
+  }
+  gl_Position = u_m * vec4(xz.x, y, xz.y, 1.0);
   v_xz = a_pos.xz;
   v_layer = t;
   v_clip_w = gl_Position.w;
-  v_world = vec3(a_pos.x, y, a_pos.z);
-  v_floor_w = a_pos.w;
+  v_world = vec3(xz.x, y, xz.y);
+  v_view = v_world - eye_of(u_m);
+  v_floor_w = abs(a_pos.w);
+  v_haze = haze;
 }`;
 
   /* The play page's log-of-w depth (webgl-shaders.js LOG_DEPTH_GLSL): when
@@ -71,14 +134,22 @@ uniform vec4 u_color;
 uniform vec4 u_params;
 uniform vec4 u_consts;
 uniform vec4 u_depth;
+uniform vec4 u_ground;
+uniform float u_spill_phase;
+uniform vec4 u_spill;
+uniform vec4 u_haze;
 uniform sampler2D u_dens;
+uniform sampler2D u_gtex;
 uniform highp sampler2D u_scene_depth;
 in vec2 v_xz;
 in float v_layer;
 in float v_clip_w;
 in vec3 v_world;
 in float v_floor_w;
+in float v_haze;
+in vec3 v_view;
 out vec4 o_color;
+${SPILL_DIR_GLSL}
 
 float fog_hash(ivec2 i) {
   uint x = uint(i.x & 0xffff);
@@ -149,9 +220,63 @@ void main() {
   vec3 nrm = cross(dFdx(v_world), dFdy(v_world));
   float flat_ = abs(nrm.y) / max(length(nrm), 1.0e-6);
   float level = smoothstep(0.55, 0.85, flat_);
-  float a = u_color.a * d * crest * profile * edge * soft * level * v_floor_w * u_consts.z / u_params.y;
-  vec3 rgb = u_color.rgb * (0.75 + 0.5 * f);
-  o_color = vec4(rgb, clamp(a, 0.0, 1.0));
+  /* Ground field: full bank on the floor, a soft fade over its edge, and
+   * past a rim the spill - slow tendrils pouring down the falling sheet,
+   * parting and thinning with the fall. */
+  vec2 guv = (v_xz - u_ground.xy) * u_ground.zw;
+  vec4 g = textureLod(u_gtex, guv, 0.0);
+  float ground_a = g.r;
+  if (g.g > 0.0) {
+    vec2 dir = spill_dir(guv);
+    /* World units along the rim, and of drop below it (the spill_drop
+     * curve over the flow coordinate). */
+    float along = dot(v_xz, vec2(-dir.y, dir.x));
+    float fall01 = g.b * sqrt(g.b);
+    float fall = fall01 * u_spill.y;
+    float ph = u_spill_phase;
+    /* Pour mask: long stretches of rim pour, others barely do; it evolves
+     * in place rather than scrolling. */
+    float m = fog_noise(vec2(along * u_spill.z + 4.7, ph * 0.05 + 1.3));
+    float pour = 0.12 + 0.88 * smoothstep(0.32, 0.62, m);
+    /* Tendrils: narrow along the rim, long down the fall, swaying slowly;
+     * the second octave flows at its own rate so the pattern changes as it
+     * falls. */
+    float sway = (fog_noise(vec2(fall * 0.6 - ph * 0.4, along * u_spill.z * 2.0 + 9.1)) - 0.5) * 1.8;
+    /* Each sheet of the slab a little apart, so the layers do not repeat
+     * one pattern. */
+    float ta = along * u_spill.x + sway + sqrt(t) * 0.9;
+    float tn = 0.65 * fog_noise(vec2(ta, fall - ph))
+      + 0.35 * fog_noise(vec2(ta * 2.1 + 3.3, fall * 1.7 - ph * 1.35 + 5.2));
+    /* High-frequency erosion: only matters near the threshold, so it rags
+     * each tendril's edges and leaves its core. */
+    float er = fog_noise(vec2(along * u_spill.x * 4.3 + 1.9, fall * 5.0 - ph * 2.3)) - 0.5;
+    float th = 0.34 + 0.24 * fall01;
+    float tendril = smoothstep(th, th + 0.3, tn + er * 0.3);
+    /* Puffs: the tendrils fall as clumps with thin gaps between them, not
+     * as unbroken lines. */
+    float puff = smoothstep(0.3, 0.7, fog_noise(vec2(along * u_spill.z * 3.7 + 2.0, fall * 1.3 - ph * 0.8 + 6.1)));
+    float spill = 1.4 * g.g * pour * tendril * (0.45 + 0.55 * puff) * (0.35 + 0.65 * f);
+    ground_a = max(ground_a * pour * (0.4 + 0.6 * tendril), spill);
+    /* The spill sheet falls steeply on purpose: exempt it from the
+     * cliff-face fade, but thin a sheet seen edge-on, where each layer of
+     * the slab would draw as one bright line. */
+    float facing = abs(dot(nrm, v_view)) / max(length(nrm) * length(v_view), 1.0e-6);
+    level = mix(level, smoothstep(0.1, 0.45, facing), clamp(g.g * 4.0, 0.0, 1.0) * (1.0 - g.r));
+  }
+  float a = u_color.a * d * crest * profile * edge * soft * level * ground_a * v_floor_w * u_consts.z / u_params.y;
+  /* The distant haze: broad, soft banks drifting slower than the bank,
+   * thickest mid-stack, faint. */
+  float haze_a = 0.0;
+  if (v_haze > 0.0) {
+    vec2 hq = (v_xz - u_params.zw * u_haze.w) * u_haze.z;
+    float hn = 0.6 * fog_noise(hq + vec2(t * 0.9, 2.3))
+      + 0.4 * fog_noise(hq * 2.3 + vec2(7.7, t * 1.7));
+    float bank = smoothstep(0.25, 0.8, hn);
+    float hp = 4.0 * t * (1.0 - t);
+    haze_a = u_color.a * u_haze.y * bank * hp * edge * soft * v_floor_w * v_haze * u_consts.z / u_params.y;
+  }
+  vec3 rgb = u_color.rgb * mix(0.75 + 0.5 * f, 0.9, v_haze);
+  o_color = vec4(rgb, clamp(a * (1.0 - v_haze) + haze_a, 0.0, 1.0));
 }`;
 
   function compile(gl, type, src) {
@@ -207,6 +332,11 @@ void main() {
         depth: gl.getUniformLocation(prog, 'u_depth'),
         logDepth: gl.getUniformLocation(prog, 'u_log_depth'),
         dens: gl.getUniformLocation(prog, 'u_dens'),
+        ground: gl.getUniformLocation(prog, 'u_ground'),
+        spillPhase: gl.getUniformLocation(prog, 'u_spill_phase'),
+        spill: gl.getUniformLocation(prog, 'u_spill'),
+        haze: gl.getUniformLocation(prog, 'u_haze'),
+        gtex: gl.getUniformLocation(prog, 'u_gtex'),
         sceneDepth: gl.getUniformLocation(prog, 'u_scene_depth'),
       };
       this.vao = gl.createVertexArray();
@@ -216,6 +346,10 @@ void main() {
       this.groundGen = null;
       this.tex = gl.createTexture();
       this.texDim = 0;
+      /* The ground coverage field; `groundTexGen` is the header generation
+       * last uploaded (`-1` = the full-coverage texel, `null` = nothing). */
+      this.gtex = gl.createTexture();
+      this.groundTexGen = null;
       /* Scene-depth copy for the soft intersection: the default framebuffer's
        * depth cannot be sampled, so it is blitted into a depth texture each
        * frame. `null` until first use, `false` once the copy proved
@@ -323,6 +457,34 @@ void main() {
         gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, dim, dim, gl.RED, gl.UNSIGNED_BYTE, dens);
       }
 
+      /* The ground coverage field: re-uploaded only when its generation
+       * changes; a frame without one binds the full-coverage texel. */
+      const hasGround = h.length >= H.FULL_LEN && h[H.GROUND_TEX_W] > 0
+        && h[H.GROUND_TEX_EXTENT_X] > 0 && h[H.GROUND_TEX_EXTENT_Z] > 0;
+      const wantGen = hasGround ? h[H.GROUND_TEX_GEN] : -1;
+      if (this.groundTexGen !== wantGen) {
+        let gw = 1, gh = 1, texels = GROUND_NONE;
+        if (hasGround) {
+          const t = rt.play_fog_volume_ground ? rt.play_fog_volume_ground() : null;
+          const w = h[H.GROUND_TEX_W] | 0, hh = h[H.GROUND_TEX_H] | 0;
+          if (t && t.length === w * hh * 4) { gw = w; gh = hh; texels = t; }
+        }
+        gl.activeTexture(gl.TEXTURE2);
+        gl.bindTexture(gl.TEXTURE_2D, this.gtex);
+        gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, gw, gh, 0, gl.RGBA, gl.UNSIGNED_BYTE, texels);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+        gl.activeTexture(gl.TEXTURE0);
+        this.groundTexGen = wantGen;
+        this.groundRect = (hasGround && gw > 1)
+          ? [h[H.GROUND_TEX_ORIGIN_X], h[H.GROUND_TEX_ORIGIN_Z],
+            1 / h[H.GROUND_TEX_EXTENT_X], 1 / h[H.GROUND_TEX_EXTENT_Z]]
+          : [0, 0, 0, 0];
+      }
+
       /* The bank's space -> the page's Y-up draw frame: the field world is
        * retail Y-down (one Y negation, the per-model flip every field
        * placement carries); the battle stage is raw units under the stage's
@@ -356,6 +518,20 @@ void main() {
       gl.uniform2f(this.loc.logDepth, logDepth ? 1 : 0, LOG_RANGE);
       gl.uniform4f(this.loc.depth, A, B, Math.max(h[H.SOFT_DISTANCE] || 0, 1e-3), depthTex ? 1 : 0);
       gl.uniform1i(this.loc.dens, 0);
+      const gr = this.groundRect || [0, 0, 0, 0];
+      gl.uniform4f(this.loc.ground, gr[0], gr[1], gr[2], gr[3]);
+      gl.uniform1f(this.loc.spillPhase, h.length >= H.FULL_LEN ? h[H.SPILL_PHASE] : 0);
+      /* A header without the spill / haze tail (a stale bundle) draws a
+       * still spill and no haze rather than reading past its end. */
+      const sc = H.SPILL_CONSTANTS, hc = H.HAZE_CONSTANTS;
+      const tail = h.length >= H.SPILL_LEN;
+      gl.uniform4f(this.loc.spill, tail ? h[sc] : 0, tail ? h[sc + 1] : 0,
+        tail ? h[sc + 2] : 0, tail ? h[sc + 3] : 0);
+      gl.uniform4f(this.loc.haze, tail ? h[hc] : 1, tail ? h[hc + 1] : 0,
+        tail ? h[hc + 2] : 0, tail ? h[hc + 3] : 0);
+      gl.activeTexture(gl.TEXTURE2);
+      gl.bindTexture(gl.TEXTURE_2D, this.gtex);
+      gl.uniform1i(this.loc.gtex, 2);
       gl.activeTexture(gl.TEXTURE1);
       gl.bindTexture(gl.TEXTURE_2D, depthTex || null);
       gl.uniform1i(this.loc.sceneDepth, 1);
@@ -384,6 +560,7 @@ void main() {
       gl.deleteBuffer(this.ibuf);
       gl.deleteVertexArray(this.vao);
       gl.deleteTexture(this.tex);
+      gl.deleteTexture(this.gtex);
       if (this.depthCopy) {
         gl.deleteFramebuffer(this.depthCopy.fbo);
         gl.deleteTexture(this.depthCopy.tex);

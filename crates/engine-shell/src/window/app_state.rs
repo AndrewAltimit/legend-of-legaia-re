@@ -61,36 +61,7 @@ pub(crate) struct PosedPropDraw {
     pub cull_radius: u8,
 }
 
-/// Per-party-member battle facial-animation state: the member's per-action
-/// face tracks (entry `+0x8C` eyes / `+0x98` mouth, indexed by the playing
-/// clip's `action_id`) plus the last applied stamp set, so the VRAM is only
-/// re-uploaded when the stamped face actually changes. See
-/// `legaia_actor_formats::face_anim` / `tick_battle_face_stamps`.
-pub(super) struct BattleMemberFace {
-    /// World actor slot (= present-party band ordinal, 0..3).
-    pub(super) actor_slot: usize,
-    /// Character index (0 Vahn / 1 Noa / 2 Gala; Terra never gets an entry -
-    /// the retail animator skips char 3).
-    pub(super) char_index: usize,
-    /// Face tracks indexed by action slot (record[0] entries + the
-    /// equipment-spliced swing slots 0xC..0xF).
-    pub(super) tracks: Vec<Option<legaia_actor_formats::face_anim::FaceTracks>>,
-    /// Face tracks of the art-bank records' embedded entries, indexed by
-    /// bank record (= playing clip `action_id - 0x10`). Retail reads these
-    /// through the `FUN_8004AD80`-installed entry pointer (bank record
-    /// `+0x24`), i.e. record `+0xB0` eyes / `+0xBC` mouth - the mid-battle
-    /// art-strike faces.
-    pub(super) art_tracks: Vec<Option<legaia_actor_formats::face_anim::FaceTracks>>,
-    /// Stamp set applied on the previous frame (`None` = nothing applied
-    /// yet, force the first stamp).
-    pub(super) last_stamps: Option<Vec<legaia_actor_formats::face_anim::FaceStamp>>,
-    /// Victory-window frame counter - the engine's per-member equivalent
-    /// of the retail global `gp+0x9EA` (reset to 0 when the win pose is
-    /// staged, advanced per frame; the stamp pass halves it). `Some`
-    /// while the member's mouth-override window is open, `None` outside
-    /// it.
-    pub(super) art_counter: Option<u16>,
-}
+pub(super) use legaia_engine_session::battle_vram::BattleMemberFace;
 
 /// Windowed in-flow cutscene playback state: the decoded STR frames the
 /// field VM's FMV-trigger op resolved to, plus the current frame cursor and
@@ -610,21 +581,14 @@ pub(super) struct PlayWindowApp {
     /// Per-member battle facial-animation state (face tracks + last stamp
     /// set), populated by `enter_battle_render` for each assembled party
     /// member whose band pixels are the real texture-pool uploads. Driven
-    /// per tick by `tick_battle_face_stamps`; cleared on battle exit.
+    /// per tick by `tick_battle_vram_restamps`; cleared on battle exit.
     pub(super) battle_faces: Vec<BattleMemberFace>,
-    /// The static SCUS face-frame tables (`legaia_actor_formats::face_anim`),
-    /// lazily read from the boot source's `SCUS_942.54` on first battle
-    /// entry. `None` after a failed attempt (disc-free runs) - facial
+    /// The static SCUS face-frame and victory-mouth tables, lazily read from
+    /// the boot source's `SCUS_942.54` on first battle entry
+    /// (`legaia_engine_session::battle_vram::BattleFaceTables`, the page's
+    /// too). Unavailable after a failed attempt (disc-free runs) - facial
     /// animation is skipped.
-    pub(super) face_tables: Option<legaia_actor_formats::face_anim::FaceFrameTables>,
-    /// The static SCUS victory-window mouth-override table (the
-    /// `0x80077E80` per-(char, staged-id) tracks), loaded alongside
-    /// `face_tables`. `None` skips the override (the entry tracks still
-    /// animate).
-    pub(super) art_mouth_tables: Option<legaia_actor_formats::face_anim::ArtMouthTables>,
-    /// Whether the lazy `face_tables` load already ran (so a missing
-    /// executable is only probed once).
-    pub(super) face_tables_attempted: bool,
+    pub(super) battle_face_tables: legaia_engine_session::battle_vram::BattleFaceTables,
     /// The opt-in developer menu (`LEGAIA_DEV_MENU=1`), created on the first
     /// ticked frame. `None` on every default run, which is what keeps the
     /// dev screen out of a player build.
@@ -673,6 +637,9 @@ pub(super) struct PlayWindowApp {
     pub(super) muscle_surface: legaia_engine_minigame_scenes::muscle_dome_scene::MuscleDomeSurface,
     /// The dome surface on the GPU while a dome session is live.
     pub(super) muscle_gpu: Option<minigames::BakaDuelGpu>,
+    /// The posed dome mesh `muscle_gpu` holds, so a frame whose pose did
+    /// not move reuses the GPU buffers instead of building new ones.
+    pub(super) muscle_mesh_key: Option<minigames::MeshKey>,
     /// The fishing pond surface (`legaia_engine_minigame_scenes::fishing_scene`) and its
     /// GPU copy while a fishing session is up.
     pub(super) fishing_surface: legaia_engine_minigame_scenes::fishing_scene::FishingSurface,
@@ -796,7 +763,7 @@ pub(super) struct PlayWindowApp {
     pub(super) pending_key_name: Option<&'static str>,
     /// Menu runtime - drives shop / inn / status screens. Ticked per frame
     /// when `is_open()`; renders shop overlay via `shop_draws_for`.
-    pub(super) menu_runtime: legaia_engine_core::menu_runtime::MenuRuntime,
+    pub(super) menu_runtime: legaia_engine_menu_runtime::menu_runtime::MenuRuntime,
     /// Pad state from the previous frame - used to compute newly-pressed bits
     /// for boot-UI edge detection.
     pub(super) prev_pad: u16,
@@ -887,26 +854,6 @@ pub(super) struct PlayWindowApp {
     /// the HUD status line. Default `false` = the faithful pixel-identical
     /// render.
     pub(super) dynamic_lighting: bool,
-    /// **Shadows** of the dynamic-lighting enhancement's per-scene point
-    /// lights (candle / wall-light sources derived from the scene's emissive
-    /// prims, [`legaia_engine_render::scene_lights`]): per-light PCF shadow
-    /// maps. Off leaves the lamps lighting the scene, unshadowed - the play
-    /// page's "Lamp shadows" box means the same. Default `true`, but only effective
-    /// while `dynamic_lighting` is on; disable with `--no-dyn-shadows`, or
-    /// toggle at runtime with the `Y` key. Mirrored into the renderer via
-    /// [`legaia_engine_render::Renderer::set_dyn_shadows`].
-    pub(super) dyn_shadows: bool,
-    /// Camera-occlusion fade ENHANCEMENT (see-through walls): field scene
-    /// geometry between the camera and the player dissolves to a
-    /// screen-door dither in a circle around the character, so the
-    /// character is always at least partly visible. Default `true`
-    /// (clearly the better play experience); disable with
-    /// `--no-occlusion-fade`, or toggle at runtime with the `F4` key.
-    /// Mirrored into the renderer via
-    /// [`legaia_engine_render::Renderer::set_occlusion_fade`]; the
-    /// per-frame focus is staged by the redraw pass in field free-roam
-    /// only, so cutscene / battle / world-map framing is untouched.
-    pub(super) occlusion_fade: bool,
     /// Start in PSX-faithful rasterisation (`--psx-render` or
     /// `LEGAIA_PSX_RENDER=1`), applied to the renderer once it opens.
     pub(super) psx_render: bool,
@@ -1057,7 +1004,7 @@ pub(super) enum BootUiState {
     /// sub instead of the menu and the menu sits in `Suspended`
     /// underneath.
     FieldMenu {
-        sub: Option<legaia_engine_core::field_menu_dispatch::FieldMenuSubsession>,
+        sub: Option<legaia_engine_menu_runtime::field_menu_dispatch::FieldMenuSubsession>,
     },
     /// Game-over panel is active after a party wipe.
     #[allow(dead_code)]

@@ -11,11 +11,11 @@
 //! draw half, which only reads it. One resolver replaces the two hosts'
 //! copies of the stage build.
 
-use legaia_engine_core::scene_host::SceneHost;
 use legaia_engine_scene::scene::Scene;
 use legaia_engine_scene::scene_resources::{
     BuildOptions, FIELD_SHARED_BLOCKS, SceneLoadKind, SceneResources,
 };
+use legaia_engine_scene_host::scene_host::SceneHost;
 use legaia_scene_formats::battle_backdrop::{MirrorXTable, SecondCopy};
 
 /// The PROT entry of the monster archive (meshes, idle clips).

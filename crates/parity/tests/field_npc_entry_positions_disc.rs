@@ -24,8 +24,8 @@
 
 use std::path::PathBuf;
 
-use legaia_engine_core::scene_host::SceneHost;
 use legaia_engine_scene::scene::DefaultMapIdResolver;
+use legaia_engine_scene_host::scene_host::SceneHost;
 use legaia_mednafen::SaveState;
 use legaia_ram_image::ScenarioManifest;
 

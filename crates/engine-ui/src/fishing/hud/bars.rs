@@ -30,6 +30,35 @@ pub struct BarFrame {
     pub axis: BarAxis,
 }
 
+impl BarFrame {
+    /// The fill quad's screen rect `(x0, y0, x1, y1)` as the bar helpers write
+    /// it into their `POLY_GT4` - or `None` when there is nothing to fill.
+    ///
+    /// - [`BarAxis::Horizontal`] (`FUN_801d1870`, `0x801D1974..0x801D19E0`):
+    ///   `x + 8 ..= x + 8 + fill`, `y + 5 ..= y + 11` - an inset strip that
+    ///   starts past the start cap.
+    /// - [`BarAxis::Vertical`] (`FUN_801d1a90`, `0x801D1B10..0x801D1BB8`):
+    ///   `x + 5 ..= x + 11`, from the bottom cap's `y` up by `fill`.
+    ///
+    /// Both helpers `AddPrim` the fill *before* their three frame glyphs into
+    /// the same bucket, so the ordering-table walk draws it **over** the
+    /// frame; the frame's palette is STP-clear, so a fill drawn under it would
+    /// be hidden.
+    pub fn fill_rect(&self) -> Option<(i32, i32, i32, i32)> {
+        if self.fill_len <= 0 {
+            return None;
+        }
+        let (x, y) = self.positions[0];
+        Some(match self.axis {
+            BarAxis::Horizontal => (x + 8, y + 5, x + 8 + self.fill_len, y + 0xb),
+            BarAxis::Vertical => {
+                let end = self.positions[2].1;
+                (x + 5, end - self.fill_len, x + 0xb, end)
+            }
+        })
+    }
+}
+
 /// The axis a [`BarFrame`] runs along.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BarAxis {

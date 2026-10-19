@@ -35,6 +35,7 @@ pub mod measure;
 mod tests;
 
 use disc_source::*;
+pub use disc_source::{FONT_SHADOW_ALPHA, FONT_SHADOW_TEXEL};
 pub use escape_table::{EscapeEntry, EscapeTable};
 use extracted_dir::{decode_atlas_png, parse_widths_csv};
 pub use extracted_dir::{export_extracted_font_dir, extracted_font_dir};
@@ -142,6 +143,12 @@ pub mod sprite_cell_ids {
     /// fixed-width number primitive `FUN_80034B78` blits (menu-glyph page
     /// `(960, 256)`, `uv = (d * 8, 208)`).
     pub const NUMERAL: u16 = 0x100;
+    /// The 8x12 separator glyph `g` (`0..14`) is `SEPARATOR + g` - the cells
+    /// the separator primitive `FUN_8003C1F8` blits, on the numerals' row
+    /// right after the digits (`uv = (0x50 + g * 8, 208)`): `x + - ±`, the
+    /// rise / fall arrows (`4` / `5`), `/ ( ) :`.
+    pub const SEPARATOR: u16 = 0x110;
+    // `SEPARATOR + 13` is the last; `0x11E..` is free.
     /// The list page header's "PAGE" tag (UI-icon `0x76`, 24x8).
     pub const PAGE_TAG: u16 = 0x200;
     /// The page header's 6x8 digit `d` is `PAGE_DIGIT + d` (icons
@@ -227,16 +234,23 @@ impl Font {
         // the load-screen `(206,206,206)` requires a `>1.0` multiplier
         // against the baked `(131,131,131)`, which clamps).
         //
-        // The shadow texels are left at `(32,32,32)`: tinted by any
-        // typical foreground colour they fade to near-black, which
-        // blends into dark UI panels the same way retail's dim-CLUT-
-        // entry shadows do. Keeping shadow texels stops a one-pixel
-        // bold-outline halo when the tint goes bright (~white).
+        // The shadow texels stay dark, at [`FONT_SHADOW_TEXEL`]: the grey
+        // that lands on retail's fixed `(33,33,33)` shadow under the tier-7
+        // ink, whatever tone the extraction baked them in.
         for px in atlas_rgba.as_chunks_mut::<4>().0 {
-            if px[3] != 0 && px[0] >= 0x80 && px[1] >= 0x80 && px[2] >= 0x80 {
-                px[0] = 0xFF;
-                px[1] = 0xFF;
-                px[2] = 0xFF;
+            if px[3] == 0 {
+                continue;
+            }
+            let v = if px[0] >= 0x80 && px[1] >= 0x80 && px[2] >= 0x80 {
+                0xFF
+            } else {
+                FONT_SHADOW_TEXEL
+            };
+            px[0] = v;
+            px[1] = v;
+            px[2] = v;
+            if v != 0xFF {
+                px[3] = FONT_SHADOW_ALPHA;
             }
         }
         Ok(Self {

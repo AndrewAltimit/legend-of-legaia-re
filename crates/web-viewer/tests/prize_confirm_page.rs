@@ -44,7 +44,7 @@ fn tick(rt: &mut LegaiaRuntime, n: usize) {
 /// Neutral frames through the open menu runtime - the page feeds it one
 /// word a frame while it is up, and its fade / slide advance on that clock.
 fn settle(rt: &mut LegaiaRuntime) {
-    let frames = legaia_engine_core::menu_runtime::SHOP_FADE_FRAMES as usize
+    let frames = legaia_engine_menu_runtime::menu_runtime::SHOP_FADE_FRAMES as usize
         + usize::from(legaia_engine_menus::shop::SHOP_SLIDE_FRAMES)
         + 2;
     for _ in 0..frames {

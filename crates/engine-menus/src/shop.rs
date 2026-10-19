@@ -15,6 +15,8 @@
 
 mod buy_quantity;
 mod buy_recipient;
+mod item_detail;
+mod labels;
 mod quantity_picker;
 mod row_style;
 mod screen_windows;
@@ -23,6 +25,8 @@ mod session;
 
 pub use buy_quantity::*;
 pub use buy_recipient::*;
+pub use item_detail::*;
+pub use labels::*;
 pub use quantity_picker::*;
 pub use row_style::*;
 pub use screen_windows::*;

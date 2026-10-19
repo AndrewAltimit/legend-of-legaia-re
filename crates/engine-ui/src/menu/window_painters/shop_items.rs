@@ -141,9 +141,7 @@ pub struct EquipTargetRow {
     /// Party-member class byte (`0x80084598 + i`).
     pub member_class: u8,
     /// `false` when the selected equipment's character mask excludes this
-    /// member. Retail still draws the row - it drops the draw-order word
-    /// to `0` instead of skipping, which sinks the glyphs behind the rest
-    /// of the frame rather than removing them.
+    /// member. Retail still draws the row, in the dim ink `0`.
     pub equippable: bool,
 }
 
@@ -169,8 +167,8 @@ pub fn equip_class_mask(member_class: u8) -> u8 {
 /// (`legaia_game_tables::equip_stats::EquipBonus::equip_mask`) can be worn by a
 /// member of `member_class`.
 ///
-/// REF: FUN_801D56FC (`and v0,s6,v0; bne v0,zero` - a zero result drops
-/// the draw order to 0 rather than skipping the row)
+/// REF: FUN_801D56FC (`and v0,s6,v0; bne v0,zero` - a zero result stages
+/// the dim ink `0` rather than skipping the row)
 pub fn equip_row_enabled(equip_mask: u8, member_class: u8) -> bool {
     equip_mask & equip_class_mask(member_class) != 0
 }
@@ -216,14 +214,16 @@ pub fn equip_target_list_draws_for(
     }
     for (i, (row, label)) in rows.iter().enumerate() {
         let y = rect.y + (i as i32 + 1) * PAINTER_ROW_PITCH;
-        // A non-equippable row still emits its glyphs; only the draw
-        // order changes, which this crate leaves to the host.
-        let _ = row.equippable;
-        text.extend(text_draws_for(
-            &font.layout_ascii(label),
-            (label_x, y),
-            MENU_TEXT_WHITE,
-        ));
+        // A member the item's mask excludes keeps its row, in ink 0: the
+        // renderer stages `7`, then stores zero into the ink global when
+        // `mask & 0x801E43F0[char]` is clear (`sw zero,-0x4bac(s4)` at
+        // `0x801D5838`) - the dim pen, as the Retock capture shows.
+        let ink = if row.equippable {
+            MENU_TEXT_WHITE
+        } else {
+            crate::MENU_TEXT_GREY
+        };
+        text.extend(text_draws_for(&font.layout_ascii(label), (label_x, y), ink));
         if let Some(variant) = flags.marker_variant(i as u32 + 1) {
             sprites.push(PainterSprite {
                 sprite: 0,
@@ -272,20 +272,18 @@ pub fn sell_total(quantity: u32, unit_price: u32) -> u32 {
     quantity.saturating_mul(unit_price) / 2
 }
 
-/// Heading the sell quantity window prints at its content origin (overlay
-/// rodata `0x801CEC38`, loaded by `FUN_801D5944`).
-pub const SELL_QUANTITY_HEADING: &str = "How many will you sell?";
-/// Label the buy quantity window prints at its content origin, ahead of the
-/// held count (rodata `0x801CEBC8`, `FUN_801D5510`'s first string draw).
-pub const BUY_QUANTITY_HELD_HEAD: &str = "Have";
-/// Label the buy quantity window prints after the held count (`0x801CEBD0`,
-/// at `WX + 0x30`).
-pub const BUY_QUANTITY_HELD_TAIL: &str = ".";
-/// Label the buy quantity window prints in place of the held line when the
-/// bag scan returned retail's `0x100` "nothing held" sentinel (`0x801CEBD4`).
-pub const BUY_QUANTITY_NONE_HELD: &str = "None";
-/// Prompt the buy quantity window prints on its second line.
-pub const BUY_QUANTITY_PROMPT: &str = "How many will you buy?";
+/// Window 35's four label strings (`FUN_801D5510`), retail's own: the held
+/// line's head (`0x801CEBC8`) and tail (`0x801CEBD0`, at `WX + 0x30`), the
+/// line printed instead when the bag scan returns the `0x100` nothing-held
+/// sentinel (`0x801CEBD4`), and the prompt (`0x801CEBDC`). A host reads them
+/// off the menu overlay (`engine-menus::shop::ShopLabels`).
+#[derive(Debug, Clone, Copy, Default)]
+pub struct BuyQuantityLabels<'a> {
+    pub have_head: &'a str,
+    pub have_tail: &'a str,
+    pub none_held: &'a str,
+    pub prompt: &'a str,
+}
 
 /// Window 35: the buy quantity panel, sibling of
 /// [`sell_quantity_draws_for`].
@@ -309,6 +307,7 @@ pub const BUY_QUANTITY_PROMPT: &str = "How many will you buy?";
 pub fn buy_quantity_draws_for(
     font: &legaia_font::Font,
     rect: PainterRect,
+    labels: BuyQuantityLabels<'_>,
     held: Option<u32>,
     quantity: u32,
     max: u32,
@@ -323,7 +322,7 @@ pub fn buy_quantity_draws_for(
     match held {
         Some(count) => {
             out.extend(text_draws_for(
-                &font.layout_ascii(BUY_QUANTITY_HELD_HEAD),
+                &font.layout_ascii(labels.have_head),
                 (rect.x, rect.y),
                 MENU_TEXT_WHITE,
             ));
@@ -336,19 +335,19 @@ pub fn buy_quantity_draws_for(
                 MENU_TEXT_WHITE,
             ));
             out.extend(text_draws_for(
-                &font.layout_ascii(BUY_QUANTITY_HELD_TAIL),
+                &font.layout_ascii(labels.have_tail),
                 (rect.x + 0x30, rect.y),
                 MENU_TEXT_WHITE,
             ));
         }
         None => out.extend(text_draws_for(
-            &font.layout_ascii(BUY_QUANTITY_NONE_HELD),
+            &font.layout_ascii(labels.none_held),
             (rect.x, rect.y),
             MENU_TEXT_WHITE,
         )),
     }
     out.extend(text_draws_for(
-        &font.layout_ascii(BUY_QUANTITY_PROMPT),
+        &font.layout_ascii(labels.prompt),
         (rect.x, rect.y + PAINTER_ROW_PITCH),
         MENU_TEXT_WHITE,
     ));

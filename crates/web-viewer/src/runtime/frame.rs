@@ -158,7 +158,7 @@ impl LegaiaRuntime {
         // only ever emptied by a consumer, and this host used to leave the
         // non-BGM events on it forever: a session's queue grew with every
         // camera beat, item grant and dialog open.
-        self.drain_and_route_field_events_web();
+        self.drain_and_route_field_events();
         // The FMV hand-off loaded a scene without going through the field
         // VM's transition op, so it produces no `SceneEntered` event - the
         // page still has to rebuild, or it draws the old scene's meshes over
@@ -252,7 +252,7 @@ impl LegaiaRuntime {
 
     /// Drain this tick's field-VM BGM events into the page's director.
     /// Runs only while a director exists (on wasm: audio is up); until then
-    /// the events are dropped by `drain_and_route_field_events_web`, as an
+    /// the events are dropped by `drain_and_route_field_events`, as an
     /// unheard retail op-`0x35` would be, and the late-audio start
     /// (`start_current_bgm_on_late_audio`) brings the scene's track up.
     fn route_bgm(&mut self) {
@@ -277,29 +277,20 @@ impl LegaiaRuntime {
     /// op-`0x35` would be. `ActorSpawned` is noted for the page's dynamic
     /// mesh upload; everything else is presentation this host reads off the
     /// world's own state instead (the cutscene camera params, the dialog box).
-    pub(crate) fn drain_and_route_field_events_web(&mut self) {
-        use legaia_engine_field::field_events::FieldEvent;
+    pub(crate) fn drain_and_route_field_events(&mut self) {
         // Route any BGM event the frame's own steps raised since the routing
         // pass after the scene tick (a battle-presentation or minigame swap,
         // a dance song ending) before the drain below drops whatever is left.
         // The native `drain_and_route_field_events` opens with the same pass.
         self.route_bgm();
+        // Only the session arm of `tick_frame` reaches this step: the
+        // disc-free scaffold world returns before it.
         let Some(host) = self.scene_host.host_mut() else {
-            self.world.drain_field_events();
             return;
         };
-        for ev in host.world.drain_field_events() {
-            if let FieldEvent::ActorSpawned { slot, .. } = ev {
-                let has_tmd = host
-                    .world
-                    .actors
-                    .get(slot as usize)
-                    .is_some_and(|a| a.tmd_ref.is_some());
-                if has_tmd && !self.pending_dynamic_mesh_slots.contains(&slot) {
-                    self.pending_dynamic_mesh_slots.push(slot);
-                }
-            }
-        }
+        // The one drain both hosts run (`World::drain_spawned_mesh_slots`).
+        host.world
+            .drain_spawned_mesh_slots(&mut self.pending_dynamic_mesh_slots);
     }
 }
 

@@ -93,7 +93,7 @@ impl PlayWindowApp {
             BootUiState::FieldMenu {
                 sub: Some(active), ..
             } => {
-                use legaia_engine_core::field_menu_dispatch::FieldMenuSubsession;
+                use legaia_engine_menu_runtime::field_menu_dispatch::FieldMenuSubsession;
                 if let FieldMenuSubsession::Save(s) = active {
                     s
                 } else {
@@ -151,7 +151,7 @@ impl PlayWindowApp {
         surface_w: u32,
         surface_h: u32,
     ) -> Vec<legaia_engine_ui::SpriteDraw> {
-        use legaia_engine_core::field_menu_dispatch::FieldMenuSubsession;
+        use legaia_engine_menu_runtime::field_menu_dispatch::FieldMenuSubsession;
         if self.save_menu.is_none() {
             return Vec::new();
         }

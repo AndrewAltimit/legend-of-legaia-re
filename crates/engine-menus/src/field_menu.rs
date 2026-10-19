@@ -579,7 +579,7 @@ impl FieldMenuSession {
     ///
     /// The save entry lands as `Suspended { row: Save }`, which is the state a
     /// picker confirm leaves, so every host's
-    /// `legaia_engine_core::field_menu_dispatch::tick_root_list` builds the Save
+    /// `legaia_engine_menu_runtime::field_menu_dispatch::tick_root_list` builds the Save
     /// sub-session on its next frame through the path it already has.
     /// [`Self::resume`] then ends the menu rather than showing the picker.
     ///

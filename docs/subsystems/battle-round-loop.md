@@ -88,7 +88,7 @@ The tracker's trigger branch is destructive: it draws RNG, latches the anti-repe
 - `World::on_field_step` re-installs a bare bracket (`World::install_encounter_bracket`) when the session is missing (`World::begin_new_game` clears it).
 - Every remaining way a roll can fail to become a battle logs at error: an unregistered formation in `begin_encounter_battle`, a scripted arm with no session, and a table / def id mismatch caught at `install_man_encounter`.
 
-The MAN formation-row index the roll produces and the `World::tables.formation_table` key the battle load resolves are pinned equal across the scene corpus by [`scene_encounter_formations_disc.rs`](../../crates/engine-core/tests/scene_encounter_formations_disc.rs), which also carries the New-Game-reset regression.
+The MAN formation-row index the roll produces and the `World::tables.formation_table` key the battle load resolves are pinned equal across the scene corpus by [`scene_encounter_formations_disc.rs`](../../crates/engine-scene-host/tests/scene_encounter_formations_disc.rs), which also carries the New-Game-reset regression.
 
 `World::force_encounter(row)` arms a named row through the same bracket. It is the engine side of `play-window --battle` ([playing-and-viewing.md](../guides/playing-and-viewing.md#getting-into-a-battle-on-purpose)) and does not shortcut into `enter_battle_from_formation`, so the harness exercises the path it verifies.
 
@@ -120,7 +120,7 @@ So the formation is the scene's own MAN encounter-section row, selected by index
 - The battle enters through the same immediate latch the field-carrier SM uses - no field step, no synthetic boss formation id.
 - Boss-stager placements are derived from the MAN at scene entry (`man_field_scripts::boss_stager_placements` in `crates/engine-field` -> `World::install_boss_stagers_from_man`): the `3E FF` site, the park-gate flag and the station tile all decode from the record's bytes. They run on approach / interact via `World::run_boss_stager_record`.
 
-Oracles: [`organic_zeto_encounter_disc.rs`](../../crates/engine-core/tests/organic_zeto_encounter_disc.rs), [`organic_beat_records_disc.rs`](../../crates/engine-core/tests/organic_beat_records_disc.rs).
+Oracles: [`organic_zeto_encounter_disc.rs`](../../crates/engine-scene-host/tests/organic_zeto_encounter_disc.rs), [`organic_beat_records_disc.rs`](../../crates/engine-scene-host/tests/organic_beat_records_disc.rs).
 
 #### `DAT_8007b7fc` is a writer-less debug forced-battle id
 
@@ -165,7 +165,7 @@ Per frame:
 - **Return** (`World::finish_battle`). See [what `finish_battle` does](#battle-end-both-hosts). When a BGM swap was active, `World::restore_field_bgm` queues a `FieldEvent::Bgm{sub_op: 1}` for the stashed field track, or a stop (sub-op 4) if none was playing at encounter start.
 - **Post-battle script re-entry** (`SceneHost::tick`). Retail reloads the field scene after every battle, re-running the scene-entry system script `P1[0]` (`FUN_8003ab2c`). The host mirrors that on the `Battle -> Field` mode edge (`Scene::field_man_entry_script` -> `World::load_field_script_at`).
 
-The re-run is what dispatches post-battle beat records. Rikuroa's `P1[0]` tests the transient staged marker `0x289` (SET by the stager `P1[3]`'s own `52 89` bytes before the battle) and issues the op-`0x44` spawn of the post-victory record `P2[50]` through the C1-gated dispatch, whose script bytes SET the progression gate `0x142`. No engine code writes the gate flag or the marker; both land from record execution. Oracle: `engine-core/tests/organic_beat_records_disc.rs`.
+The re-run is what dispatches post-battle beat records. Rikuroa's `P1[0]` tests the transient staged marker `0x289` (SET by the stager `P1[3]`'s own `52 89` bytes before the battle) and issues the op-`0x44` spawn of the post-victory record `P2[50]` through the C1-gated dispatch, whose script bytes SET the progression gate `0x142`. No engine code writes the gate flag or the marker; both land from record execution. Oracle: `engine-scene-host/tests/organic_beat_records_disc.rs`.
 
 Integration test: `crates/engine-core/tests/live_loop_tick.rs` drives boot -> walk -> encounter -> victory -> return through `tick` alone.
 
@@ -345,6 +345,14 @@ Port: the two defeat pieces are read off PROT 0898 (`battle_party_panel::DefeatT
 - **The exit's party loop runs on every exit** (`battle_formulas::battle_exit_party_reset`): statuses clear unless the special-battle word carries the arena bit, and a member at 0 HP stands up at 1 - see [battle-formulas.md](battle-formulas.md#the-flow-readers).
 - **The return flags** are folded by `battle_return_flags` (`crates/engine-battle`); see step 5 of the [wipe destination](#the-retail-wipe-destination-is-the-card-continue-screen).
 - It ends the encounter session's battle (grace + suppression), restores the `field_return` snapshot and flips `mode` to `Field`.
+- **The field camera re-seats on the player**, as a scene entry does. Retail leaves the battle through MAIN INIT back into field mode 3, whose init `FUN_801D6704` runs the camera reset `FUN_80025C24` unconditionally (`0x801D698C`) and, on the back-from-battle word `_DAT_8007B8B8 == 2`, re-centres the window on the saved player tile (`0x801D6E0C..0x801D6ECC`, `FUN_80017DD4`). The port keeps the scene resident and reports no scene entry, so `finish_battle` runs `World::recentre_field_window_on_player` and raises a latch that `frame_step::camera_after_world_tick` takes ahead of the camera step. Without it the camera kept the focus it had pinned onto the party's battle seat, clamped to the region box's corner, until the player moved.
+
+### A battle left before its exit
+
+Retail leaves a battle only through `finish_battle`'s path. The port's hosts can leave one early: a scene picker, a debug seat, or a test that runs several fights on one runtime. Two resets keep such a battle out of the next one:
+
+- **Battle entry clears the results sequencer.** Battle init `FUN_80055B6C` stores zero to the end-of-battle marker `DAT_8007BD71` (`0x80056014`), the byte whose `0xFE` gives the battle frame to the results sequencer. `World::enter_battle` clears `World::battle.victory` to match, along with its rewards latch and result-window glide. If the sequence survived, it owned the new fight from its first frame: no round prompt and no command session, and the fight ended when the stale sequence did.
+- **A scene load or New Game abandons a live battle** (`World::abandon_live_battle`, called from `SceneHost::load_scene` and `World::begin_new_game`). This is a port-only path. It drops the sequencer, the command sessions, the battle effects and the fade, and restores the field actor snapshot. It stores no outcome: no loot, no return flags and no HP persisted.
 
 ### Battle rewards composite
 

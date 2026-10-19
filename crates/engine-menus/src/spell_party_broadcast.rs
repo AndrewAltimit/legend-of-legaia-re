@@ -113,7 +113,7 @@ impl BroadcastRoster {
 /// with `FUN_8003FB10` run as a *validity* gate per roster member - not an
 /// effect broadcast.
 ///
-/// WIRED: `legaia_engine_core::menu_validator::spell_affects_anyone` runs it with the
+/// WIRED: `legaia_engine_menu_runtime::menu_validator::spell_affects_anyone` runs it with the
 /// validator over the roster records (`menu_validator::RosterValidator`), and
 /// `field_menu_dispatch::build_spell_session` - the Magic screen both play
 /// hosts open - greys and refuses every spell it answers `0` for.

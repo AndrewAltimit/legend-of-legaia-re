@@ -273,7 +273,7 @@ impl World {
     /// mirrors it (if that character is in the present party). Every field
     /// write to a record's pools goes through here, so the mirrors a battle
     /// seats from - and [`Self::save_party`] writes back - never go stale.
-    pub(crate) fn mirror_roster_hp_mp(&mut self, rslot: usize) {
+    pub fn mirror_roster_hp_mp(&mut self, rslot: usize) {
         let Some(rec) = self.party.roster.members.get(rslot) else {
             return;
         };

@@ -1,0 +1,636 @@
+//! Disc-gated: drive the **real** parsed dance step chart (PROT 0980) through
+//! the engine dance rules engine ([`legaia_engine_minigames::dance`]).
+//!
+//! The chart parser itself is pinned by `legaia-minigame-formats`' `dance_chart_real`;
+//! this closes the engine end - that [`DanceGame::from_overlay`] loads the baked
+//! chart off the user's disc and a full beat-clock + judge run is driveable on
+//! it (no synthetic fixture). No Sony bytes are asserted, only structural facts:
+//! the chart loads, a perfectly-timed play-through of the active lane's own
+//! chart symbols scores and passes, and the song clock terminates the run.
+//!
+//! Skips + passes when `LEGAIA_DISC_BIN` / `extracted/PROT.DAT` are absent.
+
+use std::path::PathBuf;
+
+use legaia_engine_minigames::dance::{
+    DANCE_SCORE_BOX_X, DanceDir, DanceEvent, DanceGame, DanceHudDraw, Judge, SpritePartEmit,
+};
+use legaia_overlay_images::static_overlay;
+use legaia_prot::archive::Archive;
+
+fn prot_dat() -> Option<PathBuf> {
+    std::env::var_os("LEGAIA_DISC_BIN")?;
+    for p in ["extracted/PROT.DAT", "../../extracted/PROT.DAT"] {
+        let f = PathBuf::from(p);
+        if f.is_file() {
+            return Some(f);
+        }
+    }
+    None
+}
+
+fn dance_overlay() -> Option<Vec<u8>> {
+    let prot = prot_dat()?;
+    let mut archive = Archive::open(&prot).expect("open PROT.DAT");
+    let rec = static_overlay::overlay_map()
+        .by_prot_index(legaia_minigame_formats::dance_chart::DANCE_OVERLAY_PROT_INDEX as u32)
+        .expect("dance overlay in static map");
+    let entry = archive
+        .entries
+        .iter()
+        .find(|e| e.index == rec.prot_index)
+        .cloned()
+        .expect("PROT entry present");
+    let mut raw = Vec::new();
+    archive.read_entry(&entry, &mut raw).expect("read entry");
+    Some(static_overlay::as_loaded(&raw, rec).expect("as-loaded form"))
+}
+
+#[test]
+fn real_dance_chart_drives_a_scoring_run() {
+    let Some(overlay) = dance_overlay() else {
+        eprintln!("[skip] dance overlay unavailable (disc-gated)");
+        return;
+    };
+
+    let mut game = DanceGame::from_overlay(&overlay, false).expect("real chart loads");
+
+    // Auto-play the run frame by frame (the beat clock advances 10 phase units
+    // per frame; a beat spans BEAT_PERIOD=281 units, so ~28 frames per beat).
+    // On the first frame of each new beat the intra-beat phase is smallest -
+    // inside the acceptance window - so that is when a CPU dancer presses the
+    // note the chart calls for. This proves the real chart yields judgeable,
+    // scoring notes through the engine judge.
+    let mut hits = 0usize;
+    let mut notes_seen = 0usize;
+    let mut last_beat = game.beat_index();
+    let mut frames = 0u32;
+    while !game.song_over() && frames < 100_000 {
+        game.advance(1);
+        frames += 1;
+        let beat = game.beat_index();
+        // Only act once per beat, on the frame the beat index first changes.
+        if beat == last_beat {
+            continue;
+        }
+        last_beat = beat;
+        // Press exactly what the hit judge expects for this lane + beat (the raw
+        // chart cell, `FUN_801d1960`'s source - not the display path's held-
+        // sequence substitution), so a well-timed press never misses.
+        if let Some(symbol) = game.judged_symbol()
+            && symbol != 0
+        {
+            notes_seen += 1;
+            let dir = match symbol {
+                1 => DanceDir::A,
+                2 => DanceDir::B,
+                _ => DanceDir::C,
+            };
+            match game.judge_press(dir) {
+                Judge::Hit { weight } | Judge::Sequence { weight } => {
+                    assert!(
+                        weight > 0,
+                        "an in-window press carries a positive accuracy weight"
+                    );
+                    hits += 1;
+                }
+                Judge::Miss => panic!("a required-symbol press inside the window must not miss"),
+            }
+        }
+    }
+
+    assert!(
+        notes_seen > 0,
+        "the real lane-0 chart must present judgeable notes during the run"
+    );
+    assert_eq!(
+        hits, notes_seen,
+        "every well-timed press on a real note scored"
+    );
+    assert!(game.score() > 0, "an auto-played run scores points");
+    assert!(game.song_over(), "the beat clock terminates the run");
+    eprintln!(
+        "[dance] real-chart run: {hits}/{notes_seen} notes hit, final score {}",
+        game.score()
+    );
+}
+
+/// The **competitors' runs are real**: retail synthesises each CPU dancer's pad
+/// word from the same chart (`FUN_801d1820` -> `FUN_801d4040`) and runs it
+/// through the same award routine (`FUN_801d1af4`), so their scores climb off
+/// the disc's own per-kind bonus row (`DAT_801d41a4`) and they spend their three
+/// triangles on the disc's own schedule (`DAT_801d41e4`). Drive a hands-off run
+/// on the real overlay tables and assert exactly that.
+#[test]
+fn real_tables_drive_the_rival_dancers() {
+    let Some(overlay) = dance_overlay() else {
+        eprintln!("[skip] dance overlay unavailable (disc-gated)");
+        return;
+    };
+    let tables = legaia_minigame_formats::dance_chart::parse_tables(&overlay)
+        .expect("scoring tables decode");
+    // Every kind's bonus row is the retail `k, 2k, 3k` shape - the (lane + 1)
+    // scaling is baked into the data, not applied by the code.
+    for kind in 0..4 {
+        let base = tables.bonus(kind, 0);
+        assert!(base > 0, "kind {kind} has a sequence-bonus row");
+        assert_eq!(tables.bonus(kind, 1), base * 2);
+        assert_eq!(tables.bonus(kind, 2), base * 3);
+    }
+
+    let mut game = DanceGame::from_overlay(&overlay, false).expect("real chart + tables load");
+    assert_eq!(
+        game.dancer_count(),
+        3,
+        "the qualifier floor is three dancers"
+    );
+    assert_eq!(game.dancer_kind(0), 0, "slot 0 is Noa (the human)");
+    for i in 0..3 {
+        assert_eq!(game.dancer_triangles(i), 3, "three groovy moves per song");
+    }
+
+    // Hands off the pad: only the CPU auto-feed runs.
+    let mut climbed = [0u32; 2];
+    while !game.song_over() {
+        game.advance(1);
+        for (n, c) in climbed.iter_mut().enumerate() {
+            *c = game.dancer_score(n + 1);
+        }
+    }
+    assert_eq!(game.score(), 0, "the human never pressed");
+    for (n, score) in climbed.iter().enumerate() {
+        assert!(*score > 0, "rival {} scored off the real chart", n + 1);
+    }
+    // Both rivals spent at least one triangle on the disc schedule, and no rival
+    // ever exceeded its stock of three.
+    let spent: Vec<u32> = (1..3).map(|i| 3 - game.dancer_triangles(i)).collect();
+    assert!(
+        spent.iter().any(|&s| s > 0),
+        "the disc schedule fires a CPU groovy move during the song"
+    );
+    assert!(spent.iter().all(|&s| s <= 3));
+    assert!(
+        !game.beating_rivals(),
+        "a player who never presses loses the qualifier"
+    );
+    eprintln!(
+        "[dance] hands-off run: rivals {:?} (kinds {:?}), triangles spent {:?}",
+        climbed,
+        [game.dancer_kind(1), game.dancer_kind(2)],
+        spent
+    );
+}
+
+/// Mirror the **play-window K-key path** exactly: open the disc as a
+/// [`ProtIndex`], read the dance overlay through `entry_bytes_extended`, lift it
+/// to loaded form, parse the chart, then drive it through `World::enter_dance` +
+/// `World::tick`. This is the load path `start_dance_minigame` uses in the
+/// engine binary (which can't be unit-tested through its wgpu window), so this
+/// locks that the runtime entry point resolves a real, scoreable chart.
+#[test]
+fn playwindow_load_path_enters_and_scores_a_dance() {
+    use legaia_engine_core::world::World;
+    use legaia_engine_mode::mode::SceneMode;
+    use legaia_engine_scene_host::scene_host::SceneHost;
+    use legaia_engine_system::input::PadButton;
+
+    let Some(disc) = std::env::var_os("LEGAIA_DISC_BIN") else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
+        return;
+    };
+    let host = match SceneHost::open_disc(&disc) {
+        Ok(h) => h,
+        Err(e) => {
+            eprintln!("[skip] open_disc failed: {e:#}");
+            return;
+        }
+    };
+    let rec = static_overlay::overlay_map()
+        .by_prot_index(legaia_minigame_formats::dance_chart::DANCE_OVERLAY_PROT_INDEX as u32)
+        .expect("dance overlay in static map");
+    let raw = host
+        .index
+        .entry_bytes_extended(rec.prot_index)
+        .expect("read PROT 0980 (extended)");
+    let loaded = static_overlay::as_loaded(&raw, rec).expect("as-loaded form");
+    let game = DanceGame::from_overlay(&loaded, false).expect("real chart loads via shell path");
+
+    let mut world = World::new();
+    world.mode = SceneMode::Field;
+    world.enter_dance(game);
+    assert_eq!(world.mode, SceneMode::Dance);
+
+    // Drive several beats, pressing the arrow the chart calls for on each first
+    // in-window frame. Proves the wired tick judges real chart data into score.
+    let mut pressed_any = false;
+    for _ in 0..600 {
+        if world.mode != SceneMode::Dance {
+            break;
+        }
+        // Press what the hit judge matches against - the raw chart cell
+        // (`judged_symbol`), not the display path's held-sequence substitution.
+        // `tick_dance` advances the clock then judges this frame's press, so a
+        // press on any in-window frame carrying a note scores.
+        let want = world
+            .minigames
+            .dance
+            .as_ref()
+            .filter(|g| !g.in_dead_zone())
+            .and_then(|g| g.judged_symbol())
+            .filter(|s| *s != 0);
+        // The judged buttons are the retail pad bits `DanceDir::pad_bit`
+        // names: symbol 1 = Square (0x80), 2 = Circle (0x20), 3 = Triangle
+        // (0x10).
+        let button = match want {
+            Some(1) => Some(PadButton::Square),
+            Some(2) => Some(PadButton::Circle),
+            Some(3) => Some(PadButton::Triangle),
+            _ => None,
+        };
+        world.set_pad(0);
+        if let Some(b) = button {
+            world.set_pad(b.mask());
+            pressed_any = true;
+        }
+        let _ = world.tick();
+    }
+    assert!(pressed_any, "the real chart called for at least one arrow");
+    let final_game = world.exit_dance().expect("game still installed");
+    // A cooperating play-through banks a non-zero score off the real chart.
+    assert!(
+        final_game.score() > 0,
+        "expected a scoring run off the real dance chart"
+    );
+}
+
+/// The four modes are four **floors**, not four gradings of one floor.
+///
+/// `FUN_801d0190` picks both the spawn table and how many of its records to
+/// spawn, so the cast size differs per mode: six dancers in free play, one in
+/// the how-to demo, three in the two competitive modes. A host that always
+/// loads the qualifier's three is wrong in half the modes, and that is exactly
+/// what this pins - off the real table, not a fixture.
+#[test]
+fn each_mode_spawns_its_own_floor() {
+    use legaia_engine_minigames::dance::DanceMode;
+
+    let Some(overlay) = dance_overlay() else {
+        eprintln!("[skip] dance overlay unavailable (disc-gated)");
+        return;
+    };
+
+    let cast = |mode: DanceMode| {
+        let g =
+            DanceGame::from_overlay_for_mode(&overlay, mode, true).expect("real cast table loads");
+        (0..g.dancer_count())
+            .map(|i| g.dancer_kind(i))
+            .collect::<Vec<_>>()
+    };
+
+    let qualifier = cast(DanceMode::Qualifier);
+    let finals = cast(DanceMode::Finals);
+    let how_to = cast(DanceMode::HowTo);
+    let free_play = cast(DanceMode::FreePlay);
+
+    // The sizes are the retail per-mode spawn counts.
+    assert_eq!(qualifier.len(), 3, "qualifier floor");
+    assert_eq!(finals.len(), 3, "finals floor");
+    assert_eq!(how_to.len(), 1, "the how-to demo dances alone");
+    assert_eq!(free_play.len(), 6, "free play fills the floor");
+
+    // Every floor is led by the human (kind 0 = Noa).
+    for (name, roster) in [
+        ("qualifier", &qualifier),
+        ("finals", &finals),
+        ("how-to", &how_to),
+        ("free play", &free_play),
+    ] {
+        assert_eq!(roster[0], 0, "{name} is led by Noa");
+    }
+
+    // The competitive floors are genuinely different rosters, not the same
+    // three dancers regraded - the finals swap in a rival the qualifier lacks.
+    assert_ne!(
+        qualifier, finals,
+        "the finals floor is a different cast from the qualifier"
+    );
+
+    // The how-to demo is the qualifier table truncated to its first record.
+    assert_eq!(how_to[..], qualifier[..1]);
+
+    // Mode 2 forces the short song regardless of the caller's request.
+    let demo = DanceGame::from_overlay_for_mode(&overlay, DanceMode::HowTo, true).unwrap();
+    assert_eq!(
+        demo.song_len(),
+        legaia_engine_minigames::dance::SONG_LEN_SHORT,
+        "the how-to demo's song length is fixed short"
+    );
+}
+
+/// The HUD driver and its quad emitter are ported but **not** reached by any
+/// host (see the `NOT WIRED:` notes on both). That makes them exactly the shape
+/// that is easy to get wrong without noticing: a kernel nothing calls can rot
+/// into one that would produce nothing even if it were called, and the two are
+/// indistinguishable from the outside.
+///
+/// So pin the *output*, not the call. Against the real overlay's widget table
+/// this asserts the driver emits a full frame and the emitter turns the score
+/// boxes into geometry with real disc-derived fields - so when a host does
+/// arrive, the only missing piece is the host surface.
+#[test]
+fn the_hud_driver_and_emitter_produce_real_draws_off_the_disc() {
+    let Some(overlay) = dance_overlay() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN / extracted/PROT.DAT unset (disc-gated)");
+        return;
+    };
+    let game = DanceGame::from_overlay(&overlay, false).expect("chart parses");
+
+    // The driver lays out a full frame: three score readouts, three box frames,
+    // the human's gauge and beat track.
+    let draws = game.hud_draws(false);
+    let count = |f: fn(&DanceHudDraw) -> bool| draws.iter().filter(|d| f(d)).count();
+    assert_eq!(count(|d| matches!(d, DanceHudDraw::Score { .. })), 3);
+    assert_eq!(count(|d| matches!(d, DanceHudDraw::ScoreBox { .. })), 3);
+    assert_eq!(count(|d| matches!(d, DanceHudDraw::Gauge { .. })), 1);
+    assert_eq!(count(|d| matches!(d, DanceHudDraw::BeatTrack { .. })), 1);
+
+    // The rival gate really gates: the two rival rows appear only with it set.
+    assert_eq!(
+        game.hud_draws(true).len(),
+        draws.len() + 4,
+        "the rival flag adds a gauge + track per rival"
+    );
+
+    // The emitter resolves those boxes into geometry off the overlay's own
+    // widget table - the part that would silently return empty if the table
+    // failed to parse or the ABR byte lift went out of range.
+    let quads = game.hud_quads(false);
+    assert_eq!(quads.len(), 3, "one quad per score box");
+    for q in &quads {
+        assert!(q.x1 > q.x0 && q.y1 > q.y0, "a box quad has real extent");
+        assert_eq!(q.poly_code & 0xFC, 0x3C, "POLY_GT4 command byte");
+        // The retail HUD rows all name the 4bpp page at (512, 0) with a CLUT
+        // on the row-500 strip; a mis-offset decode fails this immediately.
+        assert_eq!(q.tpage_attr & 0x1F, 0x08, "the HUD texture page");
+        assert_eq!(q.clut & 0xFFC0, 0x7D00, "a row-500 CLUT");
+        assert!(
+            q.uv[3].0 > q.uv[0].0 && q.uv[3].1 > q.uv[0].1,
+            "the cell rect is non-degenerate"
+        );
+    }
+    // The three boxes sit at the three traced screen positions, centred.
+    let mut xs: Vec<i16> = quads.iter().map(|q| (q.x0 + q.x1) / 2).collect();
+    xs.sort_unstable();
+    let mut want = DANCE_SCORE_BOX_X.to_vec();
+    want.sort_unstable();
+    assert_eq!(xs, want);
+
+    // The full HUD quad frame (the play window's per-frame list) carries the
+    // box frames plus the gauge readout pair; a zero score draws one `0`
+    // digit (the number renderer seeds its units slot, `0x801D3358`). The
+    // gauge is the `Lv.` pair alone (`FUN_801d3e28`'s two emits): no
+    // style-B counter beside it, which once drew a stray `0` mid-track.
+    // Plus the human's beat track (`FUN_801D2524`): the arrow and caps, the
+    // clipped notes and body, the stock markers (submission order).
+    let frame = game.hud_draw_quads(false);
+    let (tx, ty) = legaia_engine_minigames::dance::DANCE_TRACK_XY;
+    let track = game.beat_track_quads(0, tx, ty);
+    assert!(
+        track.len() >= 3 + 12 + 3,
+        "three stock markers, the body tiles and caps + arrow: {}",
+        track.len()
+    );
+    assert_eq!(
+        frame.len(),
+        3 + 3 + 2 + track.len(),
+        "three box frames + three `0` scores + the Lv. pair + the beat track"
+    );
+    let narrow = game.widget(0x21).expect("widget 0x21 decodes").0;
+    assert!(
+        !frame
+            .iter()
+            .any(|q| q.uv[0].1 == narrow.v && q.clut == narrow.clut),
+        "no style-B counter digit (widget 0x21) in the HUD frame"
+    );
+    // Body and notes stay inside the track's [x, x + 0x50) draw area.
+    assert!(
+        track[3..track.len() - 3]
+            .iter()
+            .filter(|q| q.y1 <= ty + 0x10)
+            .all(|q| q.x0 >= tx && q.x1 <= tx + 0x50),
+        "the body and notes are clipped to the track window"
+    );
+    // A non-zero score adds its style-A digit run with the glyph-U patched
+    // per digit.
+    let digits = game.number_quads(false, 123, 0x40, 0x14);
+    assert_eq!(digits.len(), 3);
+    for (q, d) in digits.iter().zip([1u8, 2, 3]) {
+        assert_eq!(q.uv[0].0, d * 0x10, "style-A glyph-U = digit * 16");
+    }
+    let narrow = game.number_quads(true, 7, 0, 0);
+    assert_eq!(narrow.len(), 1);
+    assert_eq!(narrow[0].uv[0].0, 7 * 8 + 0x40, "style-B glyph-U");
+}
+
+/// The **dancer actor pool** off the real overlay: one record per floor slot,
+/// each carrying the spawn table's own world position and the kind
+/// descriptor's own clip id, with the three per-dancer draw kernels
+/// (`FUN_801d387c`'s emit dispatch + its fade prologue, `FUN_801d4098`'s clip
+/// gate) reading those records instead of loose arguments.
+#[test]
+fn real_dance_cast_populates_the_dancer_actor_records() {
+    let Some(overlay) = dance_overlay() else {
+        eprintln!("[skip] dance overlay unavailable (disc-gated)");
+        return;
+    };
+    let mut game = DanceGame::from_overlay(&overlay, false).expect("real chart loads");
+
+    let cast = legaia_minigame_formats::dance_cast::parse(&overlay).expect("cast tables decode");
+    assert_eq!(game.dancer_actors().len(), game.dancer_count());
+    assert_eq!(
+        game.dancer_actors().len(),
+        3,
+        "the qualifier floor is three dancers"
+    );
+
+    // Every actor stands where the disc's own spawn record puts it.
+    for (a, s) in game.dancer_actors().iter().zip(cast.qualifier.iter()) {
+        assert_eq!(a.pos, [s.x, s.y, s.z], "actor position = spawn record");
+    }
+    // At least one spawn is off the origin - otherwise the check above is
+    // vacuous against the chart-only default.
+    assert!(
+        game.dancer_actors().iter().any(|a| a.pos != [0, 0, 0]),
+        "the real floor is not all-origin"
+    );
+
+    // `FUN_801d0190` binds the kind descriptor's idle clip into `+0x5C`,
+    // masked to 0x1FF. Every kind's idle id is non-zero (the parser rejects a
+    // table where it is not), so the clip-driver gate's *first* arm - the one
+    // an earlier reading mistook for a groovy-spin counter - fires for every
+    // dancer.
+    for (a, s) in game.dancer_actors().iter().zip(cast.qualifier.iter()) {
+        let idle = cast.kinds[s.kind as usize].idle.anim_id & 0x1FF;
+        assert_eq!(a.field_5c, idle as i16, "+0x5C = the bound idle clip id");
+        assert!(a.field_5c > 0);
+    }
+    let frames = game.dancer_clip_frames();
+    assert_eq!(frames.len(), 3);
+    assert!(
+        frames.iter().all(|f| f.clip_driver),
+        "a dancer with a clip bound is handed to the shared clip driver"
+    );
+
+    // A judged press rebinds the actor's clip to the judge's move pair, which
+    // is the second half of `FUN_801d1358`'s binding.
+    let before = game.dancer_actors()[0].field_5c;
+    // Force a miss: press in the dead zone between beats.
+    while !game.in_dead_zone() {
+        game.advance(1);
+    }
+    let ev = game.press(DanceDir::A);
+    assert!(matches!(ev, DanceEvent::Miss), "{ev:?}");
+    let after = game.dancer_actors()[0].field_5c;
+    let miss = cast.kinds[cast.qualifier[0].kind as usize].moves
+        [legaia_minigame_formats::dance_cast::MOVE_MISS_SQUARE]
+        .anim_id
+        & 0x1FF;
+    assert_eq!(after, miss as i16, "the miss reaction clip is now bound");
+    assert_ne!(before, after, "the binding actually moved");
+    assert_eq!(
+        game.dancer_clip_frames()[0].clip_rate,
+        cast.kinds[cast.qualifier[0].kind as usize].moves
+            [legaia_minigame_formats::dance_cast::MOVE_MISS_SQUARE]
+            .rate,
+        "+0x6A takes the pair's rate word"
+    );
+
+    // The sprite-part half: a closed chain fires the banner spawns, and the
+    // emit dispatch resolves them at the `<< 3` / `>> 3` round trip.
+    while game.sprite_parts().is_empty() {
+        // Play the chart until the human closes a chain (lane 0 closes on its
+        // first matched note, so this terminates inside a beat or two).
+        if let Some(sym) = game.judged_symbol()
+            && sym != 0
+        {
+            let dir = match sym {
+                1 => DanceDir::A,
+                2 => DanceDir::B,
+                _ => DanceDir::C,
+            };
+            game.press(dir);
+        }
+        game.advance(1);
+        assert!(!game.song_over(), "a chain closes inside the song");
+    }
+    let parts = game.sprite_part_emits();
+    assert_eq!(parts.len(), 3, "banner + two stars");
+    for f in &parts {
+        match f.emit {
+            SpritePartEmit::Shadowed { x, y, flags } => {
+                assert_eq!(y, 0x90, "the banner row");
+                assert!((0x60..=0xE0).contains(&x), "on-screen x, got {x}");
+                assert_eq!(flags, [f.sprite | 0x400, f.sprite | 0x800]);
+            }
+            other => panic!("a part takes the shadowed arm, got {other:?}"),
+        }
+    }
+    // The fade prologue runs off each part's own `+0x78`: full weight while
+    // the banner holds, decaying to nothing, then the part retires.
+    assert!(
+        parts.iter().all(|f| f.fade == 0xFF),
+        "spawned at full weight"
+    );
+    let mut frames = 0u32;
+    while !game.sprite_parts().is_empty() && frames < 600 {
+        game.advance(1);
+        frames += 1;
+    }
+    assert!(
+        game.sprite_parts().is_empty(),
+        "the parts retire when their fade runs out"
+    );
+    assert!(frames > 1, "and not on the very next frame");
+}
+
+/// The step-marker flipbook (`FUN_801D0640`) parsed off the real overlay and
+/// advanced by the live `DanceGame::advance`.
+///
+/// Structural facts only: the four class rows exist, every class stages a
+/// mesh once its first step fires, and a class's mesh actually changes over a
+/// run - i.e. the table is a flipbook and the cursor walks it.
+#[test]
+fn real_step_marker_flipbook_cycles_every_class() {
+    let Some(overlay) = dance_overlay() else {
+        eprintln!("[skip] dance overlay unavailable (disc-gated)");
+        return;
+    };
+    let mut game = DanceGame::from_overlay(&overlay, false).expect("real chart loads");
+    for class in 0..4 {
+        assert!(
+            game.step_marker_steps(class) > 1,
+            "class {class} must carry a multi-step row"
+        );
+        assert!(
+            game.step_marker_mesh(class).is_none(),
+            "nothing is staged before the first advance"
+        );
+    }
+    let mut seen: Vec<std::collections::BTreeSet<i16>> = vec![Default::default(); 4];
+    for _ in 0..240 {
+        game.advance(1);
+        for (class, set) in seen.iter_mut().enumerate() {
+            if let Some(m) = game.step_marker_mesh(class) {
+                set.insert(m);
+            }
+        }
+    }
+    for (class, set) in seen.iter().enumerate() {
+        assert!(
+            set.len() > 1,
+            "class {class} must swap mesh over a run, saw {} distinct",
+            set.len()
+        );
+    }
+    // The four classes are the same loop at different phase offsets, so at
+    // least two of them are on different steps at the same instant.
+    let now: Vec<Option<i16>> = (0..4).map(|c| game.step_marker_mesh(c)).collect();
+    assert!(
+        now.iter().collect::<std::collections::BTreeSet<_>>().len() > 1,
+        "the four classes must not be in lockstep: {now:?}"
+    );
+}
+
+/// The song end runs the overlay's own countdown programs (states `0xB` /
+/// `0xC`): `3`, `2`, `1`, `FINISH!` come up in that order, each with its own
+/// cue, and the run reaches its results only after the wipe.
+#[test]
+fn the_song_end_counts_down_3_2_1_finish() {
+    let Some(overlay) = dance_overlay() else {
+        eprintln!("[skip] dance overlay unavailable (disc-gated)");
+        return;
+    };
+    eprintln!("[ran] dance song-end countdown");
+    let mut game = DanceGame::from_overlay(&overlay, false).expect("real chart loads");
+    while !game.song_over() {
+        game.advance(1);
+    }
+    assert!(!game.finished(), "the countdown runs after the song");
+    let mut first_seen: Vec<u16> = Vec::new();
+    let mut cues = Vec::new();
+    let mut vsyncs = 0;
+    while !game.finished() {
+        game.advance(1);
+        vsyncs += 1;
+        cues.extend(game.take_finish_cues());
+        for f in game.sprite_part_emits() {
+            if (0x17..=0x1A).contains(&f.sprite) && !first_seen.contains(&f.sprite) && f.fade > 0 {
+                first_seen.push(f.sprite);
+            }
+        }
+        assert!(vsyncs < 2000, "the wipe never reached the results");
+    }
+    eprintln!("countdown: {first_seen:x?}, cues {cues:x?}, {vsyncs} vsyncs");
+    assert_eq!(first_seen, vec![0x1A, 0x19, 0x18, 0x17], "3, 2, 1, FINISH!");
+    assert_eq!(cues, vec![0x209, 0x208, 0x207, 0x206]);
+}

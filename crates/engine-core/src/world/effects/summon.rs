@@ -8,7 +8,7 @@ impl World {
     /// extraction PROT 0903, Gimard *Burning Attack*) at `origin` (world units).
     /// `record_bytes` is the overlay's raw bytes (the buffer `overlay` was parsed
     /// from); `model_base` is the pool index a part's `model_sel == 0` resolves to
-    /// (the summon's mesh-set base, e.g. [`crate::scene_host::GIMARD_TAIL_FIRE_MODEL_INDEX`]).
+    /// (the summon's mesh-set base, e.g. [`legaia_engine_scene_host::scene_host::GIMARD_TAIL_FIRE_MODEL_INDEX`]).
     /// Replaces any in-flight summon. Tick it with [`Self::tick_summon`].
     ///
     /// NOTE this drives the engine's **move-VM scene-graph stand-in**

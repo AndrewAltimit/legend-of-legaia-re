@@ -94,8 +94,12 @@ impl PlayWindowApp {
                 format!(
                     "  light {} {} (I/F8){}",
                     self.options_state.lighting_time_of_day,
-                    if self.dyn_shadows { "+shadows" } else { "" },
-                    if self.dyn_shadows {
+                    if self.options_state.light_shadows {
+                        "+shadows"
+                    } else {
+                        ""
+                    },
+                    if self.options_state.light_shadows {
                         ""
                     } else {
                         " shadows off (Y)"
@@ -114,7 +118,7 @@ impl PlayWindowApp {
             };
             // Camera-occlusion fade is default-on; flag the non-default state
             // (`F4` toggles) so a "why is the wall solid again" session sees it.
-            let occl_str = if self.occlusion_fade {
+            let occl_str = if self.options_state.occlusion_fade {
                 ""
             } else {
                 "  occl-fade off (F4)"
@@ -664,88 +668,13 @@ impl PlayWindowApp {
             legaia_engine_ui::scale_stage_text_draws(&mut draws, stage_origin, stage_scale);
             out.extend(draws);
         }
-        // Dialog box text: the active NPC / event message (simplified
-        // panel, cutscene-timeline segment, or the inline-script
-        // field-VM runner - `dialog_snapshot` picks whichever is
-        // live). Laid out in stage pixels inside the retail box rect
-        // computed by `dialog_stage_layout`, then upscaled with the
-        // same stage transform the window chrome uses so text and
-        // frame stay locked together. The chrome itself is emitted in
-        // the sprite layer (`dialog_chrome_sprite_draws`).
-        if let Some(snap) = self.dialog_snapshot() {
-            let (stage_origin, stage_scale) = self.save_select_stage(w, h);
-            let mut draws = legaia_engine_screens::dialog_screens::dialog_box_text_draws(
-                &self.font,
-                &snap,
-                self.save_menu.is_some(),
-            );
-            legaia_engine_ui::scale_stage_text_draws(&mut draws, stage_origin, stage_scale);
-            out.extend(draws);
-        }
-        // The `4C E1` text balloon: the single line at the retail pen -
-        // centred on the full 320-px screen, not on its own frame (retail's
-        // `FUN_80036888(text, 0, 0, x, y)`; a wide line overhangs the frame,
-        // and both halves are retail). `text_balloon_drawing` gates out the
-        // startup band; the pen is `Some` because `sync_text_balloon`
-        // committed the measurement in the tick phase. The chrome frame is
-        // emitted in the sprite layer (`dialog_chrome_sprite_draws`), like
-        // the reading box's.
-        if let Some(text) = self.session.host.world.text_balloon_drawing()
-            && let Some(pen) = self
-                .session
-                .host
-                .world
-                .cutscene
-                .text_balloon
-                .as_ref()
-                .and_then(|b| b.pen())
+        // The field message layer - balloon, map labels, tile-board prompt,
+        // Incense notice, dialog reading box - composed once for both hosts
+        // (`legaia_engine_screens::field_messages`); its chrome is the sprite
+        // layer's (`dialog_chrome_sprite_draws`).
         {
+            let mut draws = self.field_message_frame(w, h).stage_texts;
             let (stage_origin, stage_scale) = self.save_select_stage(w, h);
-            let mut draws = legaia_engine_ui::text_balloon_text_draws_for(&self.font, text, pen);
-            legaia_engine_ui::scale_stage_text_draws(&mut draws, stage_origin, stage_scale);
-            out.extend(draws);
-        }
-        // The overworld map display (retail game mode `0x0D`): each
-        // discovered place's name over its box, and the mini-map panel's
-        // compass letters.
-        {
-            let world = &self.session.host.world;
-            let labels = legaia_engine_core::world_map_labels::map_display_labels_now(world);
-            let marks = legaia_engine_core::world_map_labels::map_display_compass_marks(world);
-            if !labels.is_empty() || !marks.is_empty() {
-                let (stage_origin, stage_scale) = self.save_select_stage(w, h);
-                let rows: Vec<legaia_engine_ui::MapLabelDraw<'_>> = labels
-                    .iter()
-                    .map(|l| (l.name.as_slice(), l.sx, l.sy))
-                    .collect();
-                let mut draws = legaia_engine_ui::map_label_text_draws_for(&self.font, &rows);
-                draws.extend(legaia_engine_ui::map_compass_text_draws_for(
-                    &self.font, &marks,
-                ));
-                legaia_engine_ui::scale_stage_text_draws(&mut draws, stage_origin, stage_scale);
-                out.extend(draws);
-            }
-        }
-        // The tile board's quit prompt (walk-SM state 5): the title and the
-        // two rows, read off the field overlay's own strings.
-        if let Some(lay) = self.tile_board_prompt_layout()
-            && let Some(lines) = self.session.host.tile_board_prompt_lines()
-        {
-            let (stage_origin, stage_scale) = self.save_select_stage(w, h);
-            let mut draws =
-                legaia_engine_ui::tile_board_prompt_text_draws_for(&self.font, &lay, &lines);
-            legaia_engine_ui::scale_stage_text_draws(&mut draws, stage_origin, stage_scale);
-            out.extend(draws);
-        }
-        // The Incense wear-off notice (`FUN_801F1E48`): one line of the field
-        // overlay's own text.
-        if let Some(line) = self.session.host.incense_notice_line() {
-            let (stage_origin, stage_scale) = self.save_select_stage(w, h);
-            let mut draws = legaia_engine_ui::incense_notice_text_draws_for(
-                &self.font,
-                legaia_engine_core::incense_notice::notice_text_pen(),
-                &line,
-            );
             legaia_engine_ui::scale_stage_text_draws(&mut draws, stage_origin, stage_scale);
             out.extend(draws);
         }

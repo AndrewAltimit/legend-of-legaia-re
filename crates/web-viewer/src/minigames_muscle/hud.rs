@@ -428,6 +428,18 @@ impl LegaiaMinigames {
         self.muscle_hub = Some(legaia_engine_minigames::muscle_ringside::FirstVisitHub::new());
     }
 
+    /// Whether the leg the page is opening is owed the hub's first visit:
+    /// only a contest's first leg is
+    /// ([`legaia_engine_minigames::muscle_dome::DomeContest::opens_on_first_visit`],
+    /// the rule the play hosts' `HubTimers` apply). A later leg of the same
+    /// run opens on its ROUND card, after the INTERVAL screen. `true` with no
+    /// contest open (a fresh one is about to be).
+    pub fn muscle_first_visit_owed(&self) -> bool {
+        self.muscle_run
+            .as_ref()
+            .is_none_or(legaia_engine_minigames::muscle_dome::DomeContest::opens_on_first_visit)
+    }
+
     /// Step the live first visit one tick. `pressed` is whether the player
     /// pressed a button this tick (the page has no retail pad word; any press
     /// stands for the hold arms' `0xF4` mask). Starts the CD-XA line the tick

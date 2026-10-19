@@ -1,0 +1,12 @@
+//! The pause-menu runtime over a running `World`: the menu state machine's
+//! host ([`menu_runtime::MenuRuntime`]), the field-menu sub-session
+//! dispatcher ([`field_menu_dispatch`]) and the out-of-battle action
+//! validator host ([`menu_validator`]).
+//!
+//! The menu rules and screens are `legaia-engine-menus`, which names no
+//! `World`; the `World` they edit is `legaia-engine-core`'s. This crate is the
+//! seam between the two, above `engine-core` and below the play hosts.
+
+pub mod field_menu_dispatch;
+pub mod menu_runtime;
+pub mod menu_validator;

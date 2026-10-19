@@ -4,7 +4,7 @@
 //! PORT: FUN_801D9C3C, FUN_801DE478, FUN_801E6984
 //!
 //! A field script reaches a sub-screen through actor `+0x50` handler slots (see
-//! `legaia_engine_core::field_menu_dispatch` and `docs/subsystems/script-vm.md`). The three
+//! `legaia_engine_menu_runtime::field_menu_dispatch` and `docs/subsystems/script-vm.md`). The three
 //! routines here are the entry side of that:
 //!
 //! - [`open_submode`] - `FUN_801D9C3C`: reset the submode's context block and

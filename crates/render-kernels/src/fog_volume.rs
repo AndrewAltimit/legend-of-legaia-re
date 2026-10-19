@@ -44,6 +44,9 @@
 //! (see [`FOG_SHADER_CONSTANTS`]).
 
 mod frame;
+mod ground;
+#[cfg(test)]
+mod ground_tests;
 mod interior;
 mod luminance;
 mod region;
@@ -53,6 +56,7 @@ mod tests;
 mod volume;
 
 pub use frame::*;
+pub use ground::*;
 pub use interior::*;
 pub use luminance::*;
 pub use region::*;
@@ -111,3 +115,26 @@ const STRENGTH_STEP: f32 = 1.0 / 90.0;
 /// [3] vertical profile exponent
 /// ```
 pub const FOG_SHADER_CONSTANTS: [f32; 4] = [1.0 / 380.0, 1.0 / 1400.0, 6.0, 2.2];
+
+/// The rim spill's shading constants, shared by both shader transcriptions
+/// through the frame header ([`header::SPILL_CONSTANTS`]):
+///
+/// ```text
+/// [0] tendril scale along the rim (1 / world units) - how wide a tendril is
+/// [1] tendril cells down the whole fall (SPILL_DEPTH / a tendril's length)
+/// [2] pour-mask scale along the rim (1 / world units) - how long a stretch
+///     of rim pours (or barely does) before the next
+/// [3] how far outward the sheets spread on the curtain, world units - its
+///     depth as a slab
+/// ```
+pub const FOG_SPILL_CONSTANTS: [f32; 4] = [1.0 / 220.0, SPILL_DEPTH / 520.0, 1.0 / 1300.0, 120.0];
+
+/// The distant haze's shading constants ([`header::HAZE_CONSTANTS`]):
+///
+/// ```text
+/// [0] layer stack depth relative to the bank's height (a thicker layer)
+/// [1] alpha gain relative to the bank's
+/// [2] noise scale (1 / world units) - broad, soft banks
+/// [3] share of the bank's drift it moves at (slower than the bank)
+/// ```
+pub const FOG_HAZE_CONSTANTS: [f32; 4] = [8.0, 4.0, 1.0 / 2400.0, 0.3];

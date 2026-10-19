@@ -35,10 +35,15 @@ fn builds_real_save_menu_atlas_when_disc_extracted() {
     // CLUT extension, so the three status badges on sub-palettes 16..18
     // come along; `build_atlas` splits that leading TIM back off.
     let hud_slice = &prot_dat[SYSTEM_UI_CLUT_EXT_TIM_OFFSET..end];
-    // The menu font's sprite cells: ten numerals, the PAGE tag, ten page
-    // digits, the slash and two triangles - every one carrying ink.
+    // The menu font's sprite cells: ten numerals, fourteen separator glyphs,
+    // the PAGE tag, ten page digits, the slash and two triangles - every one
+    // carrying ink.
     let cells = menu_font_cells(hud_slice, Some(glyph_tim));
-    assert_eq!(cells.len(), 24, "every menu sprite cell decodes");
+    assert_eq!(
+        cells.len(),
+        24 + SEPARATOR_GLYPHS as usize,
+        "every menu sprite cell decodes"
+    );
     for c in &cells {
         let opaque = c.rgba.chunks(4).filter(|p| p[3] != 0).count();
         assert!(opaque > 3, "menu sprite cell {:#x} decoded empty", c.id);

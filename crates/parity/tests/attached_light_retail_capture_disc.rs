@@ -37,8 +37,8 @@
 //! `extracted/`, or the save library directory.
 
 use legaia_engine_camera::psx_camera::FieldCameraView;
-use legaia_engine_core::scene_host::SceneHost;
 use legaia_engine_field::field_script_actor_state::ScriptActorRef;
+use legaia_engine_scene_host::scene_host::SceneHost;
 use std::path::PathBuf;
 
 /// `drake_castle_to_worldmap` (retail SCUS; `patch_taint_audit.py states`).

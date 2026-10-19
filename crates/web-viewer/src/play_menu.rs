@@ -73,7 +73,7 @@
 
 use super::*;
 use crate::runtime::LegaiaRuntime;
-use legaia_engine_core::field_menu_dispatch::{self, FieldMenuSubsession};
+use legaia_engine_menu_runtime::field_menu_dispatch::{self, FieldMenuSubsession};
 use legaia_engine_menus::field_menu::{FieldMenuOutcome, FieldMenuRow, FieldMenuSession};
 use legaia_engine_menus::save_menu_atlas::{SaveMenuAtlas, build_atlas};
 use legaia_engine_menus::save_screen::{SaveCommitKind, SaveRefusal, SaveScreenFlow};
@@ -225,7 +225,7 @@ mod blip_tests {
     #[test]
     fn title_continue_opens_where_the_pause_menu_would_not() {
         let mut rt = LegaiaRuntime::new();
-        let host = legaia_engine_core::scene_host::SceneHost::from_prot_bytes(
+        let host = legaia_engine_scene_host::scene_host::SceneHost::from_prot_bytes(
             crate::play_fmv::tests::synthetic_prot(),
             None,
         )
@@ -265,7 +265,7 @@ mod blip_tests {
     #[test]
     fn a_press_the_refusal_box_swallows_does_not_blip() {
         let mut rt = LegaiaRuntime::new();
-        let host = legaia_engine_core::scene_host::SceneHost::from_prot_bytes(
+        let host = legaia_engine_scene_host::scene_host::SceneHost::from_prot_bytes(
             crate::play_fmv::tests::synthetic_prot(),
             None,
         )

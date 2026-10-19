@@ -34,6 +34,7 @@ pub mod equip_diff;
 pub mod equip_isolate;
 pub mod equip_item;
 pub mod equip_repair;
+pub mod equip_skin_mask;
 pub mod loadout;
 mod swing;
 mod texture;

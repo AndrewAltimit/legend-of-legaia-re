@@ -281,7 +281,7 @@ pub struct InventoryUseSession {
     /// Item ids the pause-menu Throw Out sub-flow discarded (whole stacks -
     /// the retail confirm zeroes both bytes of the bag slot pair,
     /// `FUN_801D8734`). Applied to the world by
-    /// `legaia_engine_core::field_menu_dispatch::apply_inventory_outcome` regardless of
+    /// `legaia_engine_menu_runtime::field_menu_dispatch::apply_inventory_outcome` regardless of
     /// whether a use also completed.
     pub thrown_items: Vec<u8>,
     /// Physical bag slot of each entry in [`Self::thrown_items`], when the
@@ -298,7 +298,7 @@ pub struct InventoryUseSession {
     /// throw-out zeroes the whole stack while these take exactly one copy.
     /// A list, not an `Option`, because the Incense route returns to the Use
     /// list and can commit again before the screen closes.
-    /// Drained by `legaia_engine_core::field_menu_dispatch::apply_inventory_outcome`.
+    /// Drained by `legaia_engine_menu_runtime::field_menu_dispatch::apply_inventory_outcome`.
     pub consumed_items: Vec<u8>,
 }
 

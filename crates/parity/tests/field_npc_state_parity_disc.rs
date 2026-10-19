@@ -31,8 +31,8 @@
 
 use std::path::{Path, PathBuf};
 
-use legaia_engine_core::scene_host::SceneHost;
 use legaia_engine_scene::scene::{DefaultMapIdResolver, is_world_map_scene};
+use legaia_engine_scene_host::scene_host::SceneHost;
 use legaia_ram_image::ScenarioManifest;
 use legaia_ram_image::scenarios::library_backup_for;
 

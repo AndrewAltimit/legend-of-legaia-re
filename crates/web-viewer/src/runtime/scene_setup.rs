@@ -30,7 +30,7 @@ impl LegaiaRuntime {
         // The title theme hands the score to the field: stop it so the
         // prologue's own BGM (or its scripted silence) owns the audio.
         if let Some(d) = self.scene_host.director_mut() {
-            use legaia_engine_core::scene_host::BgmDirector;
+            use legaia_engine_scene_host::scene_host::BgmDirector;
             d.stop();
         }
         let Some(host) = self.scene_host.host_mut() else {
@@ -144,7 +144,7 @@ impl LegaiaRuntime {
         // latch, so the scene's own op-`0x35` start is honoured (and re-stages
         // its track's bank) even if it names the track already playing. No
         // scene bank is staged: retail loads a bank only with its track
-        // (`legaia_engine_core::scene_host::SCENE_LOCAL_BGM_FALLBACK_ID`).
+        // (`legaia_engine_scene_host::scene_host::SCENE_LOCAL_BGM_FALLBACK_ID`).
         // New scene -> drop any SFX cues still queued for the old one (the
         // native boot's `clear_sfx` on scene entry).
         self.on_scene_change_audio();
@@ -214,6 +214,21 @@ impl LegaiaRuntime {
             &host.world.object_render_scales(),
             &|r, x, z| host.world.object_floor_follow_y(&follow, r, x, z),
         ));
+        // Volumetric fog: where the ground is, so the bank lies on it and
+        // spills off its rims - the call the native window makes at its
+        // scene load (`install_fog_ground`), over the same static draws.
+        if let Some(host) = self.scene_host.host_mut()
+            && let (Some(scene), Some(res)) = (host.scene.as_ref(), host.resources.as_ref())
+            && let Some(fr) = self.field.as_ref()
+        {
+            let field = legaia_engine_scene::fog_ground::build_for_scene(
+                &[&fr.terrain, &fr.placements],
+                res,
+                scene,
+                &host.index,
+            );
+            host.world.fog_volume.set_ground_field(&scene.name, field);
+        }
         // The scene's actors, bound to the world by the step the native
         // window runs too (`scene_actors::bind_scene_actors`): the lead's
         // locomotion clips, the NPC clip cursors, the floor snap. It hands
@@ -418,7 +433,7 @@ impl LegaiaRuntime {
         if !matches!(host.world.mode, SceneMode::Field | SceneMode::WorldMap) {
             return;
         }
-        let roster_lead = host.world.party.active_party.first().copied().unwrap_or(0) as usize;
+        let roster_lead = usize::from(host.world.field_leader());
         // The lead's field form, or the model a `CC F8 50` re-staged the
         // player onto - one resolution for both hosts
         // (`SceneHost::player_rig_mesh`).

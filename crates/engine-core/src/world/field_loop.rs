@@ -208,7 +208,7 @@ impl World {
     /// Restore the field track stashed by [`World::swap_to_battle_bgm`] when
     /// a battle ends. No-op unless a battle swap is active. Queues a
     /// `FieldEvent::Bgm` start for the stashed track, or a stop
-    /// ([`crate::scene_host::BGM_SUB_OP_ENGINE_STOP`]) when no field track was
+    /// ([`crate::world::BGM_SUB_OP_ENGINE_STOP`]) when no field track was
     /// playing at encounter start.
     pub(crate) fn restore_field_bgm(&mut self) {
         if !self.audio.battle_bgm_active {
@@ -227,7 +227,7 @@ impl World {
                 self.audio.current_bgm = None;
                 self.pending_field_events.push(FieldEvent::Bgm {
                     text_id: 0,
-                    sub_op: crate::scene_host::BGM_SUB_OP_ENGINE_STOP,
+                    sub_op: crate::world::BGM_SUB_OP_ENGINE_STOP,
                 });
             }
         }
@@ -238,7 +238,7 @@ impl World {
     /// The three minigames whose overlay init loads a track of its own - the
     /// dance chart loops, the Baka Fighter overture, the Muscle Dome battle
     /// theme - call this from the shared door-warp entry
-    /// ([`crate::scene_host::SceneHost::drain_minigame_warp`]), so **both** hosts
+    /// ([`legaia_engine_scene_host::scene_host::SceneHost::drain_minigame_warp`]), so **both** hosts
     /// start the same music on the same frame. The slot machine and fishing
     /// pass `None` and inherit the host scene's BGM, which is retail's own
     /// behaviour for those two.
@@ -249,7 +249,7 @@ impl World {
     /// the native window and the browser play page reach the same code.
     /// `current_bgm` is deliberately **not** overwritten - it names the
     /// *scene's* track, which [`Self::restore_minigame_bgm`] resumes.
-    pub(crate) fn swap_to_minigame_bgm(&mut self, bgm_id: u16) {
+    pub fn swap_to_minigame_bgm(&mut self, bgm_id: u16) {
         if self.audio.minigame_bgm_active {
             return;
         }
@@ -264,7 +264,7 @@ impl World {
     /// Resume the field track a minigame's own music displaced, on the
     /// mode-24 return warp. No-op unless [`Self::swap_to_minigame_bgm`] armed
     /// the swap. A scene that had no track at entry gets a stop
-    /// ([`crate::scene_host::BGM_SUB_OP_ENGINE_STOP`]) rather than being left with the minigame's music running under the
+    /// ([`crate::world::BGM_SUB_OP_ENGINE_STOP`]) rather than being left with the minigame's music running under the
     /// field.
     pub(crate) fn restore_minigame_bgm(&mut self) {
         if !self.audio.minigame_bgm_active {
@@ -283,7 +283,7 @@ impl World {
                 self.audio.current_bgm = None;
                 self.pending_field_events.push(FieldEvent::Bgm {
                     text_id: 0,
-                    sub_op: crate::scene_host::BGM_SUB_OP_ENGINE_STOP,
+                    sub_op: crate::world::BGM_SUB_OP_ENGINE_STOP,
                 });
             }
         }
@@ -670,7 +670,7 @@ impl World {
     ///
     /// This is the warp-arrival placement: a door transition (field-VM op
     /// `0x3F`) carries the destination entry tile in its trailing bytes, and
-    /// [`crate::scene_host::SceneHost::tick`] calls this after the destination
+    /// [`legaia_engine_scene_host::scene_host::SceneHost::tick`] calls this after the destination
     /// scene loads so the player stands at the door it arrived through
     /// instead of the cold-boot spawn. The floor height is sampled so the
     /// player lands on the destination's terrain tier rather than `y = 0`.

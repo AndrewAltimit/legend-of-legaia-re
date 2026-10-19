@@ -11,7 +11,7 @@ The crate serves three different things, and each has its own corner of
 
 | Product | What it is | Where in `src/` |
 |---|---|---|
-| **Asset inspectors** | The disc browser and the viewer pages: entry classification, TIM / TMD / MES / SEQ / VAB inspectors, full-map field scenes, NPC, arts, summon and equipment viewers, `.glb` export, the world-overview geometry. | `nav_disc`, `inspect`, `viewer_render`, `disc`, `catalog`, `field_scene`, `field_npc`, `character`, `monster`, `arts_view`, `equipment_view`, `summon_view`, `sfx_view`, `scene_export`, `scene_geom`, `audio_api` |
+| **Asset inspectors** | The disc browser and the viewer pages: entry classification, TIM / TMD / MES / SEQ / VAB inspectors, full-map field scenes, NPC, shop-vendor, arts, summon and equipment viewers, `.glb` export, the world-overview geometry. | `nav_disc`, `inspect`, `viewer_render`, `disc`, `catalog`, `field_scene`, `field_npc`, `shop_vendors`, `character`, `monster`, `arts_view`, `equipment_view`, `summon_view`, `sfx_view`, `scene_export`, `scene_geom`, `audio_api` |
 | **The play / minigames runtime** | The browser hosts of the port. `LegaiaRuntime` holds the same `BootSession` the native window ticks; `LegaiaMinigames` drives the minigame rules engines outside a scene. | `runtime/`, `play/`, every `play_*` module, `boot_title`, `host_slot`, `pad_bindings`, `session_save`, `cards`, `resume`; `minigames/` and every `minigames_*` module |
 | **The ROM patcher** | The client-side randomizer, texture replacer and language-pack workbench over `legaia-patcher` and its layer crates. | `rom_patcher/`, `texture_registry`, `texture_pack`, `translate_workbench` |
 

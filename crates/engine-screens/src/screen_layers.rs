@@ -26,8 +26,8 @@
 //! the Cross Beam, the Swordie split, the Deadly Rain, the shop and pause
 //! fades - is read here.
 
-use legaia_engine_core::menu_runtime::MenuRuntime;
 use legaia_engine_core::world::World;
+use legaia_engine_menu_runtime::menu_runtime::MenuRuntime;
 use legaia_render_kernels::screen_prim::{self, FlatQuad, ScreenPrim, ScreenQuad};
 
 /// The primitives a host projects itself (its camera, its VRAM residency),

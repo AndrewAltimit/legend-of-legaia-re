@@ -332,7 +332,7 @@ pub fn field_party_hud_draws_for(
                         b.separator.3 * scale as u32,
                     ),
                     src: b.separator,
-                    color: c,
+                    color: numeral_cell_tint(c),
                 }),
                 None => stage_text(text, "/", x, y, c),
             }
@@ -365,7 +365,7 @@ pub fn field_party_hud_draws_for(
                         src.3 * scale as u32,
                     ),
                     src,
-                    color: c,
+                    color: numeral_cell_tint(c),
                 }),
                 None => {
                     let glyph = [ch];

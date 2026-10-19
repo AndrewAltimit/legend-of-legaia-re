@@ -181,7 +181,56 @@ afterimage_screen_quad` lifts it into a `ScreenPrim` that the
 [`screen_overlay`](../../crates/engine-render/src/screen_overlay.rs) pass links into the screen-space
 ordering table and the wgpu renderer draws via `RenderTarget::ScreenOverlay`.
 
+## Volumetric ground fog (enhancement, NOT retail)
+
+`Renderer::set_fog_volume` stages one frame's mist bank
+(`render-kernels::fog_volume`, simulated by the `World`); `None` draws
+nothing and, if the pass was never built, costs nothing. The pass
+(`renderer/fog_volume.rs`) draws twelve instanced horizontal sheets over a
+48 x 48 quad mesh between the two halves of the scene pass, depth-tested
+against the scene and reading its depth for a soft intersection. The browser
+play page draws the same frame through `site/js/webgl-fog-volume.js`, a GLSL
+transcription. The simulation, the scene styles and the shading recipe are
+on [renderer.md](renderer.md#volumetric-ground-fog-enhancement).
+
+**Ground field.** Each field scene's `FogGround`
+(`engine-scene::fog_ground::build_for_scene`, built once at scene load by
+both hosts over their static draw lists) puts the sheet mesh on the drawn
+floor and stops it over open air, so a tower top such as `teien` no longer
+carries a flat bank across the sky around it. Past a rim the mesh keeps
+going as a near-vertical spill curtain hugging the wall face, then, further
+out and far below the rim, as a faint distant haze layer (a negative mesh
+weight) that lies only where nothing drawn stands above it. The field also
+reaches the shader as an RGBA8 texture at binding 3, visible to both stages
+(coverage, spill, flow; at most 256 x 256 texels of 64 world units, uploaded
+only when its generation changes): it fades the bank across the floor's edge
+at fragment resolution, and breaks the spill into slow, falling tendrils
+with gaps - a pour mask along the rim, eroded tendrils, puffs - spread
+outward as a slab, with the constants in the frame header
+(`FOG_SPILL_CONSTANTS`, `FOG_HAZE_CONSTANTS`). A frame without a field binds
+one full-coverage texel, which is the bank as it was before. The recipe is
+on [renderer.md](renderer.md#volumetric-ground-fog-enhancement).
+
+**Battle profile.** `fog_volume::BATTLE_FOG` sets a battle's bank to a third
+of the field opacity and an ankle-high depth, so the stage floor stays
+readable; a field-to-battle switch eases it in from zero instead of popping.
+
+**Cost.** The field is CPU work at scene load only: one rasterisation of
+the static triangles plus two nearest-site sweeps over at most 65,536
+cells. Per frame the pass adds one texture sample per sheet fragment and
+per vertex (four more on spill vertices and fragments), a handful of noise
+evaluations on spill and haze fragments, and nothing on the CPU.
+
 ## Screen-space overlay pass
+
+**The tint is retail's, 5-bit.** The text / sprite shader tints every quad
+through `ui_tint` - WGSL generated from `legaia_render_kernels::ui_tint`, the
+same kernel the browser page tints its atlas copies with: the texel truncated
+to 5 bits, times the colour, truncated again (`(T5 * C) >> 7`), and a font
+drop shadow under a known ink drawn as that ink's own CLUT entry rather than a
+multiply of the fill ([dialog font](../formats/dialog-font.md)). The
+truncation is the pipeline-overridable `UI_QUANTIZE`; the renderer keeps both
+pipeline sets and `Renderer::set_ui_psx_tint` picks one, retail by default.
 
 [`screen_overlay`](../../crates/engine-render/src/screen_overlay.rs) is the render capability behind
 `RenderTarget::ScreenOverlay`: a `ScreenPrim` is either a textured
@@ -192,9 +241,15 @@ walk - farthest bucket first, later-submitted-first within a bucket (the
 same convention as `psx_blend::sort_blend_list`). `build_geometry` emits a
 flat NDC vertex/index buffer plus a run list coalesced by blend class, which
 the renderer uploads once per frame and draws one indexed run at a time
-(opaque pipeline or the matching per-ABR blend pipeline). A semi-transparent
-prim is treated as fully blended (no per-texel STP split yet - faithful for
-the additive afterimage trail and flat quads; documented in the module).
+(opaque pipeline or the matching per-ABR blend pipeline). Semi-transparency
+is per texel, as on the GPU: a semi run draws twice, its textured prims'
+STP-clear texels solid through `fs_semi_opaque` and then the STP-set texels
+plus every pixel of its untextured prims through the blend pipeline. The play
+page's screen-prim pass (`u_stp_pass`) and the CPU twin
+`screen_prim_raster` apply the same rule. Blending every texel instead is
+visible: the fishing HUD draws an additive `m` glyph under its LINE plate,
+which retail's all-STP-clear palette hides and a whole-quad blend shows
+through the digits.
 
 The corner projection itself is ported in [`billboard`](../../crates/render-kernels/src/billboard.rs)
 (`FUN_800195a8`): `project_billboard` transforms a center point to view

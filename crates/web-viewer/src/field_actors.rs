@@ -6,14 +6,14 @@
 //! [`crate::runtime::LegaiaRuntime`] holds one over its scene host and exports
 //! it as the `play_npc_*` accessors; the map viewer's
 //! [`crate::field_scene::FieldScenePack`] holds one over its headless
-//! [`legaia_engine_core::scene_live::LiveScene`] and exports the same
+//! [`legaia_engine_scene_host::scene_live::LiveScene`] and exports the same
 //! accessors as `field_scene_npc_*`. Every answer is computed here from the
 //! [`SceneHost`] passed in, so the two pages cannot pose, place or re-bind an
 //! actor differently. `site/js/field-actors.js` is the one JS draw path both
 //! pages run over those accessors.
 
 use legaia_actor_formats::player_anm::PlayerAnmBundle;
-use legaia_engine_core::scene_host::SceneHost;
+use legaia_engine_scene_host::scene_host::SceneHost;
 use std::collections::HashMap;
 
 use crate::play::{NpcClip, NpcRender};

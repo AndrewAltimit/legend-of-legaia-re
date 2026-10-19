@@ -34,11 +34,25 @@ fn blend_spans_split_the_draw_list_in_draw_order() {
 /// pipeline over `clear`, sampling a 1x1 atlas texel `texel`, tinted
 /// `tint`; return the centre pixel.
 fn blend_quad(mode: u8, clear: f64, texel: [u8; 4], tint: [f32; 4]) -> Option<[u8; 4]> {
-    let (device, queue) = headless_device()?;
+    let gpu = headless_device()?;
+    overlay_quad(&gpu, Some(mode), false, clear, texel, tint)
+}
+
+/// [`blend_quad`] for any overlay entry: `mode` `None` is the alpha
+/// pipeline's `fs_main`, and `quantize` sets the shader's `UI_QUANTIZE`.
+fn overlay_quad(
+    gpu: &(wgpu::Device, wgpu::Queue),
+    mode: Option<u8>,
+    quantize: bool,
+    clear: f64,
+    texel: [u8; 4],
+    tint: [f32; 4],
+) -> Option<[u8; 4]> {
+    let (device, queue) = (&gpu.0, &gpu.1);
     let format = wgpu::TextureFormat::Rgba8Unorm;
     let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: Some("test text shader"),
-        source: wgpu::ShaderSource::Wgsl(TEXT_SHADER_SRC.into()),
+        source: wgpu::ShaderSource::Wgsl(crate::shaders::text_shader_src().into()),
     });
     let bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
         label: None,
@@ -62,7 +76,7 @@ fn blend_quad(mode: u8, clear: f64, texel: [u8; 4], tint: [f32; 4]) -> Option<[u
         ],
     });
     let atlas = device.create_texture_with_data(
-        &queue,
+        queue,
         &wgpu::TextureDescriptor {
             label: None,
             size: wgpu::Extent3d {
@@ -119,11 +133,12 @@ fn blend_quad(mode: u8, clear: f64, texel: [u8; 4], tint: [f32; 4]) -> Option<[u
             format: wgpu::VertexFormat::Float32x4,
         },
     ];
-    let entry = if crate::psx_blend::src_shader_scale(mode) == 1.0 {
-        "fs_blend"
-    } else {
-        "fs_blend_quarter"
+    let entry = match mode {
+        None => "fs_main",
+        Some(m) if crate::psx_blend::src_shader_scale(m) == 1.0 => "fs_blend",
+        Some(_) => "fs_blend_quarter",
     };
+    let consts = [("UI_QUANTIZE", if quantize { 1.0 } else { 0.0 })];
     let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
         label: None,
         layout: Some(&layout),
@@ -142,10 +157,16 @@ fn blend_quad(mode: u8, clear: f64, texel: [u8; 4], tint: [f32; 4]) -> Option<[u
             entry_point: Some(entry),
             targets: &[Some(wgpu::ColorTargetState {
                 format,
-                blend: Some(crate::psx_blend::blend_state(mode)),
+                blend: Some(match mode {
+                    Some(m) => crate::psx_blend::blend_state(m),
+                    None => wgpu::BlendState::ALPHA_BLENDING,
+                }),
                 write_mask: wgpu::ColorWrites::ALL,
             })],
-            compilation_options: Default::default(),
+            compilation_options: wgpu::PipelineCompilationOptions {
+                constants: &consts,
+                ..Default::default()
+            },
         }),
         primitive: wgpu::PrimitiveState::default(),
         depth_stencil: None,
@@ -277,4 +298,56 @@ fn sprite_blend_pipelines_apply_each_psx_equation() {
     // A transparent atlas texel (PSX 0x0000) draws nothing.
     let hole = blend_quad(2, 0.6, [0, 0, 0, 0], f).unwrap();
     assert!(near(hole[0], 153), "0x0000 texel discards: {hole:?}");
+}
+
+/// The native overlay shader against the shared kernel
+/// (`legaia_render_kernels::ui_tint`), texel for texel: retail's 5-bit
+/// modulation, the font CLUTs' shadows under each ink, and the plain multiply
+/// with `UI_QUANTIZE` off. Skips without a GPU adapter.
+#[test]
+fn overlay_shader_tints_like_the_shared_kernel() {
+    use legaia_render_kernels::ui_tint::{INK_SHADOWS, ink_component, tint_texel};
+    let shadow = [
+        legaia_font::FONT_SHADOW_TEXEL,
+        legaia_font::FONT_SHADOW_TEXEL,
+        legaia_font::FONT_SHADOW_TEXEL,
+        legaia_font::FONT_SHADOW_ALPHA,
+    ];
+    let mut cases: Vec<([u8; 4], [f32; 3])> = Vec::new();
+    for e in INK_SHADOWS {
+        let ink = e.fill.map(ink_component);
+        cases.push(([255, 255, 255, 255], ink));
+        cases.push((shadow, ink));
+    }
+    // The menu fill's band greys over patch texels.
+    for grey in [64u8, 75, 84, 97, 119, 136] {
+        let c = f32::from(grey) / 128.0;
+        for t in [16u8, 24, 41, 123, 156] {
+            cases.push(([t, t / 2, t, 255], [c, c, c]));
+        }
+    }
+    let Some(gpu) = headless_device() else {
+        eprintln!("[skip] no GPU adapter");
+        return;
+    };
+    for quantize in [true, false] {
+        for &(texel, rgb) in &cases {
+            let got = overlay_quad(
+                &gpu,
+                None,
+                quantize,
+                0.0,
+                texel,
+                [rgb[0], rgb[1], rgb[2], 1.0],
+            )
+            .expect("overlay quad readback");
+            let want = tint_texel(texel, rgb, quantize);
+            for k in 0..3 {
+                assert!(
+                    (i32::from(got[k]) - i32::from(want[k])).abs() <= 1,
+                    "texel {texel:?} tint {rgb:?} quantize {quantize}: shader {got:?}, kernel {want:?}"
+                );
+            }
+        }
+    }
 }

@@ -333,6 +333,15 @@ impl LegaiaRuntime {
     /// `[strength, centre xyz, feet xyz]` in the page's Y-up draw frame when
     /// a focus is to be staged, empty otherwise. The page used to carry the
     /// ramp's ease and snap in `play-app.js`.
+    ///
+    /// `screen_owned` is only the screens the **page** owns; the ones the
+    /// engine owns - the pause menu and a menu-runtime screen (shop, inn,
+    /// prize exchange), the native window's `menu_runtime.is_open()` term -
+    /// are folded in here ([`Self::occlusion_screen_owned`]). The page used
+    /// to spell them as three frame locals; when the tick owner moved into
+    /// the engine (`play_frame_ticks`) the locals went with it and the
+    /// argument became a `ReferenceError` the frame's `try` swallowed, so
+    /// the fade never staged on the page at all.
     pub fn play_occlusion_fade(
         &mut self,
         eye_x: f32,
@@ -347,7 +356,7 @@ impl LegaiaRuntime {
         let terms = fo::FadeHostTerms {
             enabled,
             debug_camera,
-            screen_owned,
+            screen_owned: screen_owned || self.occlusion_screen_owned(),
         };
         let focus = self.scene_host.host().and_then(|host| {
             let w = &host.world;
@@ -366,6 +375,14 @@ impl LegaiaRuntime {
             Some(s) => vec![s, c[0], -c[1], c[2], f[0], -f[1], f[2]],
             None => Vec::new(),
         }
+    }
+
+    /// Whether an engine-owned screen covers the field this frame - the
+    /// pause menu or a menu-runtime screen - so the occlusion fade stands
+    /// down under it ([`Self::play_occlusion_fade`]'s engine half of the
+    /// `screen_owned` term).
+    pub(crate) fn occlusion_screen_owned(&self) -> bool {
+        self.play_menu.is_some() || self.menu.is_open()
     }
 
     /// Project the lead onto the 240-line stage and hand the result to the

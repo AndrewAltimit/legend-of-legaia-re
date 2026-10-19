@@ -9,7 +9,7 @@
 //! (`actor[+0x1df]`, carried on the engine side as a battle move id) resolves
 //! straight to its power record.
 //!
-//! Loaded lazily from PROT entry 0898 by `legaia_engine_core::scene_host::SceneHost` and parked
+//! Loaded lazily from PROT entry 0898 by `legaia_engine_scene_host::scene_host::SceneHost` and parked
 //! on `legaia_engine_core::world::DiscTables::move_power`; the monster special-attack damage
 //! path consumes it (see `World::enemy_move_predamage`). Disc-free / synthetic
 //! battles leave it `None` and keep the placeholder damage path, so no

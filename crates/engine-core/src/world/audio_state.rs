@@ -6,6 +6,16 @@
 use super::*;
 use legaia_engine_mode::mode::SceneMode;
 
+/// The `FieldEvent::Bgm` sub-op the **engine** raises to stop the score -
+/// the battle and minigame restores when no field track was playing. It is
+/// not a retail op-`0x35` word: the field overlay's arm table (`0x801CEE00`)
+/// is indexed `sub - 1` behind `sltiu 0xB`, so this value would be a no-op
+/// in retail's dispatcher, and the disc-wide census carries no sub-op outside
+/// `1..=0xA`. Retail's sub-op `4` - which this port once routed as the stop -
+/// is the re-attach (`0x801E0180`: clear pause bit 1, `FUN_80026478` on the
+/// BGM slot).
+pub const BGM_SUB_OP_ENGINE_STOP: u8 = 0xFF;
+
 /// Audio-side state: BGM selection and resume, the SFX cue / delay slots, sound-bank handshakes and the battle SFX / XA / shout cue queues.
 pub struct AudioState {
     /// "Sound bank ready" gate.
@@ -45,7 +55,7 @@ pub struct AudioState {
     /// (`gp+0x678`, [`legaia_engine_battle::sfx_cue::route_sfx_cue`]'s `element_write`), so
     /// a host resolving a runtime ring id reads the category the firing actor
     /// chose. `None` outside battle or on a disc-free boot.
-    pub(crate) battle_sfx_bank: Option<Vec<u8>>,
+    pub battle_sfx_bank: Option<Vec<u8>>,
     /// CD-XA one-shot clip requests the **field** raised this tick - the
     /// field VM's op `0x36` bit-15-clear arm (`FUN_8003D53C(arg >> 3,
     /// arg & 7, sel)` at `0x801E0420`) and the scripted-scene programs' voice
@@ -62,7 +72,7 @@ pub struct AudioState {
     /// [`crate::world::World::queue_xa_prestage`]). Advisory, like
     /// [`Self::battle_xa_prestage`]: the op still raises its clip on
     /// [`Self::field_xa_cues`].
-    pub(crate) field_xa_prestage: Vec<legaia_engine_system::sound_state::XaVoiceClip>,
+    pub field_xa_prestage: Vec<legaia_engine_system::sound_state::XaVoiceClip>,
     /// Vsyncs the modelled drive stays busy after a field clip start - the
     /// field's reading of `_DAT_8007BC20 != 0`, which a one-shot holds at `2`
     /// until the callback ring's end-of-clip teardown. Same `dur`-vsyncs span

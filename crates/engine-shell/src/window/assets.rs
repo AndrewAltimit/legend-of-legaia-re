@@ -153,6 +153,9 @@ impl PlayWindowApp {
         // the see-through fade arms only when the character is completely
         // hidden. Same static draw list as the coplanar pass above.
         self.field_occluders = self.build_field_occluders(&res);
+        // Volumetric fog: where the ground is, so the bank lies on it and
+        // spills off its rims (an enhancement; nothing reads it back).
+        self.install_fog_ground(&res);
         let draws = self.resolve_field_draws(&res, &geo, scene_bundle.as_ref());
         let light_samples = static_layer_light_samples(&geo, &draws);
         let world_map = self.resolve_world_map_draws(&res, &geo);

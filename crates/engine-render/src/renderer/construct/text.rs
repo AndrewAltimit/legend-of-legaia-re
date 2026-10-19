@@ -5,8 +5,10 @@ use super::*;
 
 /// The text pipelines, the atlas layout + sampler, and the quad buffers.
 pub(super) struct TextParts {
-    pub(super) pipeline: wgpu::RenderPipeline,
-    pub(super) blend_pipelines: [wgpu::RenderPipeline; 4],
+    /// The alpha pipeline, indexed by `UI_QUANTIZE` (`[smooth, retail]`).
+    pub(super) pipeline: [wgpu::RenderPipeline; 2],
+    /// The per-ABR pipelines, indexed the same way.
+    pub(super) blend_pipelines: [[wgpu::RenderPipeline; 4]; 2],
     pub(super) atlas_bgl: wgpu::BindGroupLayout,
     pub(super) sampler: wgpu::Sampler,
     pub(super) vbuf: wgpu::Buffer,
@@ -24,7 +26,7 @@ pub(super) fn build_text_overlay(
 ) -> TextParts {
     let text_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: Some("legaia text shader"),
-        source: wgpu::ShaderSource::Wgsl(TEXT_SHADER_SRC.into()),
+        source: wgpu::ShaderSource::Wgsl(text_shader_src().into()),
     });
     let text_atlas_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
         label: Some("text atlas bgl"),
@@ -79,57 +81,12 @@ pub(super) fn build_text_overlay(
             },
         ],
     };
-    let text_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-        label: Some("legaia text pipeline"),
-        layout: Some(&text_pipeline_layout),
-        vertex: wgpu::VertexState {
-            module: &text_shader,
-            entry_point: Some("vs_main"),
-            buffers: std::slice::from_ref(&text_vertex_layout),
-            compilation_options: Default::default(),
-        },
-        fragment: Some(wgpu::FragmentState {
-            module: &text_shader,
-            entry_point: Some("fs_main"),
-            targets: &[Some(wgpu::ColorTargetState {
-                format: view_format,
-                blend: Some(wgpu::BlendState::ALPHA_BLENDING),
-                write_mask: wgpu::ColorWrites::ALL,
-            })],
-            compilation_options: Default::default(),
-        }),
-        primitive: wgpu::PrimitiveState {
-            topology: wgpu::PrimitiveTopology::TriangleList,
-            ..Default::default()
-        },
-        // Scene render pass binds a depth attachment; every pipeline used
-        // in that pass must declare a matching depth-stencil format.
-        // Text never reads or writes depth - `Always` + write disabled
-        // keeps it a pure overlay pass.
-        depth_stencil: Some(wgpu::DepthStencilState {
-            format: DEPTH_FORMAT,
-            depth_write_enabled: false,
-            depth_compare: wgpu::CompareFunction::Always,
-            stencil: wgpu::StencilState::default(),
-            bias: wgpu::DepthBiasState::default(),
-        }),
-        multisample: wgpu::MultisampleState::default(),
-        multiview: None,
-        cache: None,
-    });
-    // The same quads through a PSX semi-transparency equation, one
-    // pipeline per ABR mode (`OverlayBlendSpan`). Mode 3's `F/4` is
-    // pre-scaled in `fs_blend_quarter`, mode 0's halves come from the
-    // blend constant the draw binds.
-    let text_blend_pipelines: [wgpu::RenderPipeline; 4] = std::array::from_fn(|m| {
-        let mode = m as u8;
-        let entry = if psx_blend::src_shader_scale(mode) == 1.0 {
-            "fs_blend"
-        } else {
-            "fs_blend_quarter"
-        };
+    // `UI_QUANTIZE` per variant: index 0 = the plain 8-bit multiply, index
+    // 1 = retail's 5-bit modulation (`legaia_render_kernels::ui_tint`).
+    let quant_consts: [[(&str, f64); 1]; 2] = [[("UI_QUANTIZE", 0.0)], [("UI_QUANTIZE", 1.0)]];
+    let pipeline_for = |q: usize, entry: &str, blend: wgpu::BlendState, label: &str| {
         device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("legaia text blend pipeline"),
+            label: Some(label),
             layout: Some(&text_pipeline_layout),
             vertex: wgpu::VertexState {
                 module: &text_shader,
@@ -142,15 +99,22 @@ pub(super) fn build_text_overlay(
                 entry_point: Some(entry),
                 targets: &[Some(wgpu::ColorTargetState {
                     format: view_format,
-                    blend: Some(psx_blend::blend_state(mode)),
+                    blend: Some(blend),
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
-                compilation_options: Default::default(),
+                compilation_options: wgpu::PipelineCompilationOptions {
+                    constants: &quant_consts[q],
+                    ..Default::default()
+                },
             }),
             primitive: wgpu::PrimitiveState {
                 topology: wgpu::PrimitiveTopology::TriangleList,
                 ..Default::default()
             },
+            // Scene render pass binds a depth attachment; every pipeline used
+            // in that pass must declare a matching depth-stencil format.
+            // Text never reads or writes depth - `Always` + write disabled
+            // keeps it a pure overlay pass.
             depth_stencil: Some(wgpu::DepthStencilState {
                 format: DEPTH_FORMAT,
                 depth_write_enabled: false,
@@ -161,6 +125,34 @@ pub(super) fn build_text_overlay(
             multisample: wgpu::MultisampleState::default(),
             multiview: None,
             cache: None,
+        })
+    };
+    let text_pipeline: [wgpu::RenderPipeline; 2] = std::array::from_fn(|q| {
+        pipeline_for(
+            q,
+            "fs_main",
+            wgpu::BlendState::ALPHA_BLENDING,
+            "legaia text pipeline",
+        )
+    });
+    // The same quads through a PSX semi-transparency equation, one
+    // pipeline per ABR mode (`OverlayBlendSpan`). Mode 3's `F/4` is
+    // pre-scaled in `fs_blend_quarter`, mode 0's halves come from the
+    // blend constant the draw binds.
+    let text_blend_pipelines: [[wgpu::RenderPipeline; 4]; 2] = std::array::from_fn(|q| {
+        std::array::from_fn(|m| {
+            let mode = m as u8;
+            let entry = if psx_blend::src_shader_scale(mode) == 1.0 {
+                "fs_blend"
+            } else {
+                "fs_blend_quarter"
+            };
+            pipeline_for(
+                q,
+                entry,
+                psx_blend::blend_state(mode),
+                "legaia text blend pipeline",
+            )
         })
     });
     let initial_text_quads: u32 = 64;

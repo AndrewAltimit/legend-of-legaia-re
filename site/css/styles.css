@@ -3468,6 +3468,25 @@ kbd {
 .btn-ghost:hover { border-color: var(--border-hi); color: var(--text-bright); text-decoration: none; }
 .cta-tertiary { font-weight: 600; font-size: 0.85rem; }
 
+/* Accent action button: downloads (.glb, .tmd, PNG) and the play page's
+   Fullscreen. Filled with the accent so the one action a panel exists for
+   stands out from its row of toggles. `:root` lifts the selector to (0,2,0)
+   so it outranks the page-local `.x-controls button` rules (0,1,1) that the
+   pages' own <style> blocks declare after this sheet. */
+:root .btn-accent {
+  background: var(--acc-fill); border-color: var(--acc-fill); color: #fff;
+  font-weight: 600; opacity: 1;
+  box-shadow: 0 2px 10px var(--accent-line);
+}
+:root .btn-accent:hover:not(:disabled) {
+  background: var(--acc-fill); border-color: var(--acc-fill); color: #fff;
+  filter: brightness(1.12);
+}
+:root .btn-accent:focus-visible { outline: 2px solid var(--text-bright); outline-offset: 2px; }
+:root .btn-accent:disabled, :root .btn-accent[disabled] {
+  opacity: 0.45; box-shadow: none; filter: none; cursor: not-allowed;
+}
+
 .hero-media { position: relative; min-height: 320px; border-left: 1px solid var(--line-soft); background: #0b0e13; }
 .hero-media video, .hero-media img.poster {
   position: absolute; inset: 0;
@@ -3476,7 +3495,9 @@ kbd {
   object-position: 70% 40%;
 }
 .hero-media .caption {
-  position: absolute; left: 0; right: 0; top: 0;
+  /* margin: 0 overrides the site-wide .caption top margin, which pushed the
+     overlay down and left a strip of un-darkened video above it. */
+  position: absolute; left: 0; right: 0; top: 0; margin: 0;
   padding: 0.65rem 1.2rem 1.4rem;
   background: linear-gradient(to bottom, rgba(10, 12, 16, 0.8), transparent);
   font-family: var(--font-mono);
@@ -3485,8 +3506,15 @@ kbd {
   text-align: center;
   pointer-events: none;
 }
+.hero-media .caption a { color: #e6ebf3; pointer-events: auto; }
+/* The still stands in for the gameplay loop only under reduced motion. */
+.hero-media img.poster { display: none; }
+@media (prefers-reduced-motion: reduce) {
+  .hero-media video.hero-loop { display: none; }
+  .hero-media img.poster { display: block; }
+}
 
-/* Disc slot: THE prominent global "insert your .bin" affordance. One place,
+/* Disc slot:THE prominent global "insert your .bin" affordance. One place,
    instead of a NEEDS-DISC label repeated on every tile. */
 .disc-slot {
   margin-top: 0.9rem;
@@ -3683,8 +3711,11 @@ a.stat-link:hover .lbl { color: var(--text); }
 .tile:hover { transform: translateY(-2px); border-color: var(--border-hi); background: var(--bg-card-hi); text-decoration: none; color: var(--text); }
 .tile:hover h3 { color: var(--accent); }
 
+/* Shots are shown whole: the box takes the 4:3 shape most tile images
+   share, and an image of another shape (the wide UI captures) letterboxes
+   on the shot's own dark ground instead of being cropped. */
 .tile .shot {
-  height: 150px;
+  aspect-ratio: 4 / 3;
   position: relative;
   background: #0b0e13;
   border-bottom: 1px solid var(--line-soft);
@@ -3693,10 +3724,10 @@ a.stat-link:hover .lbl { color: var(--text); }
 .tile .shot > img {
   position: absolute; inset: 0;
   width: 100%; height: 100%;
-  object-fit: cover;
+  object-fit: contain;
   transition: transform 0.25s ease;
 }
-.tile:hover .shot > img { transform: scale(1.04); }
+.tile:hover .shot > img { transform: scale(1.02); }
 .tile .shot::after {
   content: "";
   position: absolute; inset: 0;
@@ -3720,12 +3751,14 @@ a.stat-link:hover .lbl { color: var(--text); }
 
 /* Large tiles (Play group): collage of one main + two stacked shots */
 .tile.lg { grid-column: span 2; }
-.tile.lg .shot, .tile.lg .collage { height: 190px; }
+/* A 2:1 collage of a 2fr main cell and two stacked 1fr cells makes every
+   cell 4:3, the shape of the captures, so cover no longer crops them. */
+.tile.lg .collage { aspect-ratio: 2 / 1; }
 .tile.lg .tile-body h3 { font-size: 1rem; }
 .collage {
   position: relative;
   display: grid;
-  grid-template-columns: 2.1fr 1fr;
+  grid-template-columns: 2fr 1fr;
   gap: 2px;
   background: var(--line-soft);
   border-bottom: 1px solid var(--line-soft);
@@ -3746,7 +3779,7 @@ a.stat-link:hover .lbl { color: var(--text); }
 
 /* Wide banner tile (single-tool group) */
 .tile.wide { grid-column: 1 / -1; flex-direction: row; align-items: stretch; }
-.tile.wide .shot { width: 260px; height: auto; min-height: 118px; flex: none; border-bottom: none; border-right: 1px solid var(--line-soft); }
+.tile.wide .shot { width: 260px; aspect-ratio: auto; min-height: 118px; flex: none; border-bottom: none; border-right: 1px solid var(--line-soft); }
 .tile.wide .tile-body { justify-content: center; gap: 0.4rem; padding: 1.1rem 1.4rem; }
 .tile.wide .tile-body h3 { font-size: 1rem; }
 .tile.wide .tile-body p { max-width: var(--measure); font-size: 0.85rem; }
@@ -3759,7 +3792,7 @@ a.stat-link:hover .lbl { color: var(--text); }
   .tiles, .tiles.cols3 { grid-template-columns: 1fr; }
   .tile.lg { grid-column: auto; }
   .tile.wide { flex-direction: column; }
-  .tile.wide .shot { width: 100%; height: 150px; border-right: none; border-bottom: 1px solid var(--line-soft); }
+  .tile.wide .shot { width: 100%; aspect-ratio: 3 / 2; border-right: none; border-bottom: 1px solid var(--line-soft); }
   .hero-tile { grid-template-columns: 1fr; }
   .hero-media { min-height: 240px; border-left: none; border-top: 1px solid var(--line-soft); }
 }

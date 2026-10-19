@@ -26,7 +26,7 @@ impl<S: AudioSink> BootSession<S> {
     /// ([`Self::begin_new_game`]), the title theme stopped so the prologue's
     /// own BGM (or its scripted silence) owns the audio, then the opening
     /// scene through the shared order
-    /// ([`legaia_engine_core::resume::enter_new_game`]: the prologue cutscene
+    /// ([`legaia_engine_scene_host::resume::enter_new_game`]: the prologue cutscene
     /// `opdeene`, else `town01`). Returns the scene entered, or `None` when
     /// neither would enter (the world keeps its seeded slate on whatever
     /// scene was running).
@@ -38,7 +38,7 @@ impl<S: AudioSink> BootSession<S> {
         if let Some(bgm) = self.bgm.as_mut() {
             bgm.stop();
         }
-        legaia_engine_core::resume::enter_new_game(|scene| {
+        legaia_engine_scene_host::resume::enter_new_game(|scene| {
             self.enter_field_live(scene, opts)?;
             self.confirm_scene_landed(scene)
         })
@@ -287,9 +287,9 @@ impl<S: AudioSink> BootSession<S> {
     }
 
     /// Resume a loaded save the way both hosts resume one,
-    /// [`legaia_engine_core::resume::resume_card_load`]: seed the saved
+    /// [`legaia_engine_scene_host::resume::resume_card_load`]: seed the saved
     /// story flags, land it through
-    /// [`legaia_engine_core::resume::land_save`] (the save's own scene, else
+    /// [`legaia_engine_scene_host::resume::land_save`] (the save's own scene, else
     /// the scene already running, else the opening town - never a New Game),
     /// entering scenes through [`Self::enter_scene_live`], then hydrate the
     /// whole save over the landing.
@@ -299,16 +299,16 @@ impl<S: AudioSink> BootSession<S> {
     /// render-side scene state when [`ResumeLanding::entered_scene`] is set.
     /// The browser play page's `play_resume_save` is the paired entry.
     ///
-    /// [`ResumeLanding::entered_scene`]: legaia_engine_core::resume::ResumeLanding::entered_scene
+    /// [`ResumeLanding::entered_scene`]: legaia_engine_scene_host::resume::ResumeLanding::entered_scene
     pub fn resume_save(
         &mut self,
         save: legaia_save::SaveFile,
         save_scene: &str,
         opts: &FieldLiveOpts,
-    ) -> legaia_engine_core::resume::ResumeLanding {
+    ) -> legaia_engine_scene_host::resume::ResumeLanding {
         // The order (story flags, landing, whole save) is the shared
         // kernel's - `resume_card_load`, which the browser page runs too.
-        let landing = legaia_engine_core::resume::resume_card_load(
+        let landing = legaia_engine_scene_host::resume::resume_card_load(
             &mut SessionCardLoad {
                 session: self,
                 opts,
@@ -326,7 +326,7 @@ impl<S: AudioSink> BootSession<S> {
     }
 
     /// Where a save written now would resume
-    /// ([`legaia_engine_core::scene_host::SceneHost::current_resume`], the one
+    /// ([`legaia_engine_scene_host::scene_host::SceneHost::current_resume`], the one
     /// derivation the page's card and LGSF writers call too).
     pub fn current_resume(&self) -> legaia_save::SaveResume {
         self.host.current_resume()
@@ -334,13 +334,13 @@ impl<S: AudioSink> BootSession<S> {
 }
 
 /// The session's half of a card load
-/// ([`legaia_engine_core::resume::resume_card_load`]).
+/// ([`legaia_engine_scene_host::resume::resume_card_load`]).
 struct SessionCardLoad<'a, S: AudioSink> {
     session: &'a mut BootSession<S>,
     opts: &'a FieldLiveOpts,
 }
 
-impl<S: AudioSink> legaia_engine_core::resume::CardLoadHost for SessionCardLoad<'_, S> {
+impl<S: AudioSink> legaia_engine_scene_host::resume::CardLoadHost for SessionCardLoad<'_, S> {
     fn card_load_world(&mut self) -> &mut legaia_engine_core::world::World {
         &mut self.session.host.world
     }

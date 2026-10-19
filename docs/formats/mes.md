@@ -223,7 +223,7 @@ The advance loop in `FUN_80039B7C` (state `0x2`, the `for (; 0x1e < *pbVar4; ...
 
 The rule matters most at a line's **head**: a line can open on an escape, and 113 of the 1586 talkable partition-1 records open their first line that way (`1F C1 00 ...`, the lead character's name, is the common case - `town01` `P1[16]` at record `+0x4C`). A scanner that ends a line at its first `0x00` reads such a line as one byte long, rejects it as a stray marker and resumes inside its text, so every consumer starts one line late.
 
-The engine's segment finder (`man_field_scripts::first_inline_dialog_offset`) walks lines with `legaia_mes::dialog_box::line_end` for that reason; the same walk also stops at the other terminators (`0x01..=0x1E`), so a stray `0x1F` byte in an opcode operand is not accepted as a line lead. Disc-gated pin: `engine-core/tests/dialog_escape_led_line_disc.rs`.
+The engine's segment finder (`man_field_scripts::first_inline_dialog_offset`) walks lines with `legaia_mes::dialog_box::line_end` for that reason; the same walk also stops at the other terminators (`0x01..=0x1E`), so a stray `0x1F` byte in an opcode operand is not accepted as a line lead. Disc-gated pin: `engine-scene-host/tests/dialog_escape_led_line_disc.rs`.
 
 Decoded by `legaia_mes::dialog_box`:
 
@@ -250,7 +250,7 @@ The draw adds `scroll >> 4` to every row's `y` (`0x801D9790`), so a row is `0xF0
 
 **Confirm while a page types.** Every arm that moves reads the new-press word masked by the confirm buttons (`_DAT_800846D0 | _DAT_800846D4`). In `0x0B` a press stores `speed = 0x25` and jumps to `0x0D` (`0x801D89B8..0x801D8A04`); during a short-row hold (dispatch case `0x10`, `0x801D86BC`) it does the same when `speed` is still `0x24`, and clears the hold; in `0x0C` and `0x0F` it only raises the speed, and `0x0C` then hands over to `0x0D`. State `5` puts the speed back to `0x24` for the next page.
 
-A PCSX-Redux trace of `town01` placement `P1[16]` (`scripts/pcsx-redux/autorun_dialog_typewriter_trace.lua`, the scroll word and the row table as record offsets per vsync) shows every arm at `dt = 2`: a two-row first page; a second page whose first row types beneath the two carried rows and whose next line scrolls in on its own (four calls at `72`), then one carried row scrolled away (`54` a call) before the wait; and, with confirm taps injected, the latch going to `0x25`, state `0x0D` completing the page in two calls, and the scrolls running at `74` and `56`. The engine (`engine-dialog::dialog_window`) reproduces both traces vsync for vsync - `crates/engine-core/tests/dialog_window_disc.rs`.
+A PCSX-Redux trace of `town01` placement `P1[16]` (`scripts/pcsx-redux/autorun_dialog_typewriter_trace.lua`, the scroll word and the row table as record offsets per vsync) shows every arm at `dt = 2`: a two-row first page; a second page whose first row types beneath the two carried rows and whose next line scrolls in on its own (four calls at `72`), then one carried row scrolled away (`54` a call) before the wait; and, with confirm taps injected, the latch going to `0x25`, state `0x0D` completing the page in two calls, and the scrolls running at `74` and `56`. The engine (`engine-dialog::dialog_window`) reproduces both traces vsync for vsync - `crates/engine-scene-host/tests/dialog_window_disc.rs`.
 
 ### Post-page dispatch (state `0x19`)
 

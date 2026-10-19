@@ -157,7 +157,7 @@ pub(crate) fn rack_has_save(cards: [Option<&MountedCard>; 2]) -> bool {
 /// Path of `slot`'s LGSF file under `save_dir` - the shape
 /// `MenuRuntime::slot_path` writes (`slot_NN.<SAVE_EXT>`, zero-padded).
 pub(crate) fn slot_file_path(save_dir: &Path, slot: u8) -> std::path::PathBuf {
-    use legaia_engine_core::menu_runtime::SAVE_EXT;
+    use legaia_engine_menu_runtime::menu_runtime::SAVE_EXT;
     save_dir.join(format!("slot_{slot:02}.{SAVE_EXT}"))
 }
 
@@ -287,7 +287,7 @@ pub(crate) fn scan_save_dir(
 #[cfg(test)]
 mod save_scan_tests {
     use super::scan_save_dir;
-    use legaia_engine_core::menu_runtime::SAVE_EXT;
+    use legaia_engine_menu_runtime::menu_runtime::SAVE_EXT;
     use legaia_engine_menus::save_select::{SaveSelectMode, SlotContent, SlotInfoMode};
     use legaia_save::{CharacterRecord, Party, SaveExt, SaveFile};
 
@@ -383,7 +383,7 @@ mod save_rack_tests {
         CARD_PORTS, MountedCard, PORT_ONE_CARD_FILE, card_port_blocks, card_save_rack,
         open_port_one_card, scan_save_dir,
     };
-    use legaia_engine_core::menu_runtime::SAVE_EXT;
+    use legaia_engine_menu_runtime::menu_runtime::SAVE_EXT;
     use legaia_engine_menus::save_screen::{
         SLOT_GRID_CELLS, SaveCommit, SaveCommitKind, SaveScreenFlow,
     };

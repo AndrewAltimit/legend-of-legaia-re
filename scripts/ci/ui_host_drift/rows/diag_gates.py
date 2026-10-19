@@ -85,6 +85,8 @@ DIAG_ROOTS = [
     REPO / "crates" / "engine-shell",
     REPO / "crates" / "engine-render",
     REPO / "crates" / "engine-core",
+    REPO / "crates" / "engine-menu-runtime",
+    REPO / "crates" / "engine-scene-host",
     REPO / "crates" / "engine-minigames",
     REPO / "crates" / "engine-fishing",
     REPO / "crates" / "engine-effects",

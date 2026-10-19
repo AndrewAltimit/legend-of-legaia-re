@@ -1029,7 +1029,7 @@ retail path copies between the two stores.
 ## Where a Load lands, and when Continue is live
 
 Retail resumes a save in the scene it was written in. The port decides the
-landing once, in `engine-core::resume::land_save`, used by both hosts (native
+landing once, in `engine-scene-host::resume::land_save`, used by both hosts (native
 `BootSession::resume_save`, page `play_resume_save`):
 
 1. the save's own scene, when it names one and the host can enter it - even if
@@ -1105,7 +1105,7 @@ is the whole precondition (`scene_mode_takes_menu_open` plus the engaged-bit
 stand-in `World::dialogue_owns_input`), and a host's Start edge calls it.
 `BootSession::open_field_menu` enforces only the engaged-bit refusal so
 headless drivers can build the session from any mode. Pinned by
-`crates/engine-core/tests/world_map_menu_gate.rs` (the mode partition, and
+`crates/engine-scene-host/tests/world_map_menu_gate.rs` (the mode partition, and
 that the admitted scene is the one whose MAN sets the Save bit) and
 `crates/engine-shell/tests/menu_replay.rs` rung 10 (by pad on `map01` through
 to a save commit; its siblings pin that a town greys the row and that Start is
@@ -1584,7 +1584,7 @@ sub15_frame, sub15_swap_rows}` is the record arithmetic and
 picker, the seven-row window with retail's Left / Right page arithmetic, and
 the latch / exchange confirm. Both hosts reach it by confirming on the pause
 menu's Status screen and draw it through one `engine-ui` builder. Closing it
-runs `engine-core::field_menu_dispatch::apply_list_order_outcome`, which
+runs `engine-menu-runtime::field_menu_dispatch::apply_list_order_outcome`, which
 re-derives the live row count and replays the exchanges onto the character's
 bytes, so a cancelled visit changes nothing and an exchange naming a row the
 record no longer carries is dropped.

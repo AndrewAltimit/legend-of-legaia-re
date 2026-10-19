@@ -224,7 +224,7 @@ impl World {
     /// for.
     ///
     /// - `DrawRecords` positions the records screen
-    ///   ([`crate::scene_host::SceneHost::soft_reset_records_pen`]).
+    ///   ([`legaia_engine_scene_host::scene_host::SceneHost::soft_reset_records_pen`]).
     /// - `WhiteFade` is `FUN_801D58F0(2, 0, 0xFFFFFF, 0, 0x78, -1)`
     ///   (`0x801EDFC8..0x801EDFE8`): a kind-2 fade from black to white over
     ///   `0x78` frames, held.

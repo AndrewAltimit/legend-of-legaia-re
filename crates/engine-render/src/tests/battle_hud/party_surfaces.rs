@@ -197,7 +197,11 @@ fn dead_member_reads_red_and_keeps_its_name_colour() {
     let slot = slot_view("Vahn", true, false, 0, 300, 20, 30);
     let draws = hud_draws(&font, &[slot], &[], &[]);
     let dead = gauge_fill_color(2);
-    assert_eq!(dead, [0.902, 0.125, 0.0, 1.0], "retail's dead tier is red");
+    assert_eq!(
+        dead.map(|c| (c * 31.0).round() as u8),
+        [28, 4, 0, 31],
+        "retail's dead tier is red"
+    );
     let glyphs: Vec<_> = draws.iter().filter(|d| d.src != SOLID).collect();
     assert!(
         !glyphs.is_empty(),

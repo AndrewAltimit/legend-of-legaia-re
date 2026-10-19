@@ -163,7 +163,7 @@ pub(super) fn pad_field_restore(session: &mut NativeSession, threshold: u32, mp:
             matches!(effect, ItemEffect::Heal { .. } | ItemEffect::HealAll)
         }
     };
-    use legaia_engine_core::field_menu_dispatch::FieldMenuSubsession;
+    use legaia_engine_menu_runtime::field_menu_dispatch::FieldMenuSubsession;
     use legaia_engine_menus::field_menu::FieldMenuRow;
     use legaia_engine_menus::inventory_use::InventoryUseState;
     use legaia_engine_menus::items::ItemEffect;
@@ -435,7 +435,7 @@ pub(super) fn pad_field_spell_heal(
     threshold: u32,
     keep_half: bool,
 ) -> usize {
-    use legaia_engine_core::field_menu_dispatch::FieldMenuSubsession;
+    use legaia_engine_menu_runtime::field_menu_dispatch::FieldMenuSubsession;
     use legaia_engine_menus::field_menu::{FieldMenuPhase, FieldMenuRow};
     use legaia_engine_menus::spell_menu::SpellMenuPhase;
     if !walking(session) || !released(session) || party_hp_permille(session) >= threshold {
@@ -568,7 +568,28 @@ thread_local! {
 /// tests (`FUN_801DDB30`; Ebony Jewel, Dark Stone and Dark Talisman for
 /// Dark). Elements past 6 have no guard.
 pub(super) fn guard_passive(element: u8) -> Option<u8> {
+    if element == STONE_GUARD_KEY {
+        return Some(STONE_GUARD);
+    }
     (element <= 6).then_some(0x1D + element)
+}
+
+/// The [`LOST_TO_ELEMENT`] value a wipe records when the boss Stoned a
+/// member (`+0x16E & 4`, which the `0x5A` wipe scan counts as down): the
+/// reload then wears [`STONE_GUARD`] rather than the boss's element guard.
+/// Above every element byte (`0..=7`).
+pub(super) const STONE_GUARD_KEY: u8 = 0x80;
+
+/// Stone Guard, the accessory passive that nullifies Stone (Stone Amulet;
+/// `docs/formats/accessory-passive-table.md`, mask `0xFFFB`).
+pub(super) const STONE_GUARD: u8 = 0x1A;
+
+/// Master Guard (Wonder Amulet) nullifies every status, Stone included.
+const MASTER_GUARD: u8 = 0x1C;
+
+/// Does a worn or carried passive answer the guard `want`?
+fn guards(passive: Option<u8>, want: u8) -> bool {
+    passive == Some(want) || (want == STONE_GUARD && passive == Some(MASTER_GUARD))
 }
 
 /// The Goods slot a guard goes into: the third (engine slot 7), the way a
@@ -586,7 +607,7 @@ pub(super) fn guard_item_for(w: &legaia_engine_core::world::World, element: u8) 
         .inventory
         .iter()
         .filter(|&(&id, &qty)| {
-            qty > 0 && w.tables.accessory_passives.passive_index(id) == Some(want)
+            qty > 0 && guards(w.tables.accessory_passives.passive_index(id), want)
         })
         .max_by_key(|&(&id, &qty)| (qty, std::cmp::Reverse(id)))
         .map(|(&id, _)| id)
@@ -602,7 +623,7 @@ pub(super) fn unguarded_members(w: &legaia_engine_core::world::World, element: u
         .filter(|&s| {
             w.party.roster.members.get(usize::from(s)).is_some_and(|m| {
                 !m.equipment().slots[5..].iter().any(|&id| {
-                    id != 0 && w.tables.accessory_passives.passive_index(id) == Some(want)
+                    id != 0 && guards(w.tables.accessory_passives.passive_index(id), want)
                 })
             })
         })
@@ -617,7 +638,7 @@ pub(super) fn unguarded_members(w: &legaia_engine_core::world::World, element: u
 /// (`FUN_801E5A08`'s port), so the bag gives up the item and takes back the
 /// one it replaced. Returns how many members it equipped.
 pub(super) fn pad_equip_guard(session: &mut NativeSession, element: u8) -> usize {
-    use legaia_engine_core::field_menu_dispatch::FieldMenuSubsession;
+    use legaia_engine_menu_runtime::field_menu_dispatch::FieldMenuSubsession;
     use legaia_engine_menus::equip_session::{EquipState, browse_row_for_slot};
     use legaia_engine_menus::field_menu::{FieldMenuPhase, FieldMenuRow};
     let Some(item) = guard_item_for(&session.host.world, element) else {
@@ -741,7 +762,7 @@ pub(super) fn pad_equip_guard(session: &mut NativeSession, element: u8) -> usize
 /// back out. Once for each present member, and only when the bag holds
 /// equipment at all. Returns how many members' equipment changed.
 pub(super) fn pad_equip_best(session: &mut NativeSession) -> usize {
-    use legaia_engine_core::field_menu_dispatch::FieldMenuSubsession;
+    use legaia_engine_menu_runtime::field_menu_dispatch::FieldMenuSubsession;
     use legaia_engine_menus::equip_session::{EquipState, SLOT_BROWSE_BEST_ROW};
     use legaia_engine_menus::field_menu::{FieldMenuPhase, FieldMenuRow};
     let worn = |s: &NativeSession| -> Vec<[u8; 8]> {
@@ -959,7 +980,7 @@ fn specialty_pick(session: &NativeSession, member: u8) -> Option<u8> {
 /// weapon to swing in the bag, best stats among equals, Yes. Returns how
 /// many members it re-armed.
 pub(super) fn pad_equip_specialty(session: &mut NativeSession) -> usize {
-    use legaia_engine_core::field_menu_dispatch::FieldMenuSubsession;
+    use legaia_engine_menu_runtime::field_menu_dispatch::FieldMenuSubsession;
     use legaia_engine_menus::equip_session::{EquipState, browse_row_for_slot};
     use legaia_engine_menus::equipment::EquipSlot;
     use legaia_engine_menus::field_menu::{FieldMenuPhase, FieldMenuRow};
@@ -1195,7 +1216,7 @@ fn worn_passives(w: &legaia_engine_core::world::World, m: u8) -> Vec<u8> {
 /// the Goods row, the accessory, Yes. A slot already worn is left alone, and
 /// a member never wears two of one passive. Returns how many it put on.
 pub(super) fn pad_equip_goods(session: &mut NativeSession) -> usize {
-    use legaia_engine_core::field_menu_dispatch::FieldMenuSubsession;
+    use legaia_engine_menu_runtime::field_menu_dispatch::FieldMenuSubsession;
     use legaia_engine_menus::equip_session::{EquipState, browse_row_for_slot};
     use legaia_engine_menus::field_menu::{FieldMenuPhase, FieldMenuRow};
     let mut skipped: HashSet<(u8, u8)> = HashSet::new();
@@ -1405,7 +1426,7 @@ pub(super) fn pad_ready(session: &mut NativeSession) -> Result<Option<String>, S
 /// all, whatever the rand stream deals (see `field-menu.md`, the Incense
 /// route `FUN_801D8D94`). Returns whether one was used.
 pub(super) fn pad_field_repel(session: &mut NativeSession, threshold: u32) -> bool {
-    use legaia_engine_core::field_menu_dispatch::FieldMenuSubsession;
+    use legaia_engine_menu_runtime::field_menu_dispatch::FieldMenuSubsession;
     use legaia_engine_menus::field_menu::FieldMenuRow;
     use legaia_engine_menus::inventory_use::InventoryUseState;
     use legaia_engine_menus::pause_screens::{INCENSE_ITEM_ID, PauseItemsFocus};

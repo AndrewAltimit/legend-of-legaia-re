@@ -41,7 +41,7 @@ pub(super) fn stage_shell_meshes(
 
 /// One copy of the given backdrop objects, textured and untextured halves -
 /// the mesh of a slot the backdrop draw transforms per frame, so nothing is
-/// baked in ([`legaia_engine_core::scene_host::BattleStageLayers`]).
+/// baked in ([`legaia_engine_scene_host::scene_host::BattleStageLayers`]).
 pub(super) fn stage_slot_meshes(
     tmd: &legaia_tmd::Tmd,
     raw: &[u8],
@@ -379,19 +379,17 @@ impl PlayWindowApp {
                         self.session.host.world.actors[member].tmd_binding = Some(idx);
                         registered.push(member);
                         // Facial animation (FUN_8004C7B4): the per-tick stamp
-                        // pass (`tick_battle_face_stamps`) re-stamps the
+                        // pass (`tick_battle_vram_restamps`) re-stamps the
                         // current eye/mouth frame onto the band's live face
                         // rows; the form only carries tracks when the band
                         // holds the real face-frame strip.
                         if let Some(tracks) = form.face_tracks {
-                            self.battle_faces.push(BattleMemberFace {
-                                actor_slot: member,
-                                char_index: form.cslot,
+                            self.battle_faces.push(BattleMemberFace::new(
+                                member,
+                                form.cslot,
                                 tracks,
-                                art_tracks: form.art_face_tracks,
-                                last_stamps: None,
-                                art_counter: None,
-                            });
+                                form.art_face_tracks,
+                            ));
                         }
                         self.scene_tmd_data.push((form.tmd, form.tmd_bytes));
                         party_bound += 1;

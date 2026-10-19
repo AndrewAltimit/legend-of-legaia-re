@@ -4,7 +4,7 @@ use super::*;
 use legaia_engine_audio::AudioSink;
 // `NativeAudioDirector::stop` is a `BgmDirector` trait item; the title/boot
 // hand-offs below stop the score through it.
-use legaia_engine_core::scene_host::BgmDirector as _;
+use legaia_engine_scene_host::scene_host::BgmDirector as _;
 
 /// What [`PlayWindowApp::service_title_attract`] wants done with the title
 /// screen's attract hand-off this frame.
@@ -47,7 +47,7 @@ impl PlayWindowApp {
     /// bytes - `disk_port_blocks` turns a port number into fifteen block
     /// snapshots, the same shape the browser's card rack hands over.
     fn service_save_flow(&mut self, edge: u16) -> u16 {
-        use legaia_engine_core::field_menu_dispatch::FieldMenuSubsession;
+        use legaia_engine_menu_runtime::field_menu_dispatch::FieldMenuSubsession;
         let session = match &self.boot_ui {
             BootUiState::SaveSelect(s) => Some(s),
             BootUiState::FieldMenu {
@@ -173,7 +173,7 @@ impl PlayWindowApp {
     /// ([`legaia_engine_session::native::NativeSession::current_resume`]). A
     /// **Load** resumes through [`legaia_engine_session::native::NativeSession::resume_save`],
     /// the landing order the browser page's `play_resume_save` shares
-    /// (`legaia_engine_core::resume::land_save`): the save's own scene - retail
+    /// (`legaia_engine_scene_host::resume::land_save`): the save's own scene - retail
     /// resumes a save where it was written - else the scene already running,
     /// never a New Game. The world is hydrated after the entry, so the field
     /// VM's first tick sees the saved story state in the saved scene. Returns
@@ -588,7 +588,7 @@ impl PlayWindowApp {
                 true
             }
             BootUiState::FieldMenu { sub } => {
-                use legaia_engine_core::field_menu_dispatch::{
+                use legaia_engine_menu_runtime::field_menu_dispatch::{
                     FieldMenuSubsession, SubsessionHandoff, finish_subsession,
                     tick_open_subsession, tick_root_list,
                 };
@@ -747,27 +747,14 @@ impl PlayWindowApp {
                 true
             }
             BootUiState::GameOver(session) => {
-                use legaia_engine_menus::game_over::GameOverOutcome;
                 // No input arm: retail's wipe path offers the player nothing.
                 // It stores `game_mode = 0x16` + `_DAT_8007BB00 = 1`
                 // (`FUN_8003AEB0` `0x8003B5D0` / `0x8003B5E0`) and the title
-                // overlay takes the screen. The hold below stands in for the
-                // menu-overlay stream retail spends that window on.
-                session.tick();
-                if let Some(GameOverOutcome::ReturnToTitle) = session.outcome() {
-                    // The hold froze the world mid-battle (`finish_battle`
-                    // deferred the field restore so the final battle frame
-                    // stayed up). Complete the deferred restore before the
-                    // title takes the screen, so Continue / New Game starts
-                    // from a field-shaped world.
-                    self.session.host.world.resolve_game_over_hold();
-                    // The wipe left the battle track running; the title
-                    // overlay owns the screen now, so swap the score with
-                    // it. Stop first so a failed title-theme start leaves
-                    // silence rather than the stale battle BGM.
-                    if let Some(bgm) = self.session.bgm.as_mut() {
-                        bgm.stop();
-                    }
+                // overlay takes the screen. The hold stands in for the
+                // menu-overlay stream retail spends that window on; its
+                // resolve (the deferred field restore, the battle track
+                // stopped) is the session's step, the page's too.
+                if self.session.step_party_wipe_hold(session) {
                     self.boot_ui = BootUiState::Title(title_session(
                         rack_has_save(self.card_ports()),
                         self.session.mode_seat.title_row(),
@@ -882,7 +869,7 @@ impl PlayWindowApp {
         &mut self,
         row: legaia_engine_menus::field_menu::FieldMenuRow,
     ) -> bool {
-        use legaia_engine_core::field_menu_dispatch::FieldMenuSubsession;
+        use legaia_engine_menu_runtime::field_menu_dispatch::FieldMenuSubsession;
         use legaia_engine_menus::field_menu::{FieldMenuInput, FieldMenuPhase};
         self.session.open_field_menu();
         let Some(menu) = self.session.field_menu.as_mut() else {
@@ -1011,7 +998,7 @@ impl PlayWindowApp {
                 self.save_select_overlay(s, surface_w, surface_h).texts
             }
             BootUiState::FieldMenu { sub } => {
-                use legaia_engine_core::field_menu_dispatch::FieldMenuSubsession;
+                use legaia_engine_menu_runtime::field_menu_dispatch::FieldMenuSubsession;
                 // The kind-0x0D pair replaces the root list rather than
                 // overlaying it: both sub-screens hand the widget VM a
                 // script that opens with `05 00` (close every window) and
@@ -1049,51 +1036,35 @@ impl PlayWindowApp {
         }
     }
 
-    /// Drain world field events and route them to whichever subsystem
-    /// owns them. Currently:
-    /// - [`FieldEvent::ActorSpawned`]: when the actor carries a non-`None`
-    ///   `Actor::tmd_ref` (the `0x4C 0xD8` synchronous-spawn path), queue
-    ///   the slot in [`Self::pending_dynamic_mesh_slots`] so the next
-    ///   render pass uploads its mesh. ActorSpawned events without a
-    ///   `tmd_ref` (the `0x4C 0x80` halt-acquire-gated bytecode-only
-    ///   path) are dropped silently here - those actors have no visual
-    ///   in this renderer until their bytecode runs.
-    /// - All other events: not relevant to the play-window renderer yet,
-    ///   surfaced via the HUD log instead by callers that want them.
+    /// Drain world field events: a late BGM route, then the shared drain
+    /// (`World::drain_spawned_mesh_slots`, the page's step too) queueing
+    /// each script-spawned actor with a TMD reference in
+    /// [`Self::pending_dynamic_mesh_slots`] for the next render pass's
+    /// mesh upload.
     pub(super) fn drain_and_route_field_events(&mut self) {
-        use legaia_engine_field::field_events::FieldEvent;
         // Route any BGM event the frame's own steps raised after the session
         // tick's routing pass - a dance song ending on its own
         // (`World::exit_dance` -> `restore_minigame_bgm`), a minigame swap -
         // before the drain below drops every non-spawn event. Without this the
         // hall's track restart was thrown away here and the chart loop played
         // on over the field. The browser page makes the same second pass
-        // (`route_bgm_wasm` ahead of `drain_and_route_field_events_web`).
+        // (`route_bgm` ahead of its own `drain_and_route_field_events`).
         if let Some(bgm) = self.session.bgm.as_mut()
             && let Err(e) = self.session.host.route_bgm_events(bgm)
         {
             log::error!("late BGM route: {e:#}");
         }
-        let world = &mut self.session.host.world;
-        let events = world.drain_field_events();
-        // `ActorSpawned` is the only variant this drain answers, and there is
-        // deliberately no `CameraConfigure` arm: `Camera::route_camera_events`
-        // has already consumed every one off the world queue during the
-        // session tick and does not restore it, so an arm here could never
-        // fire. The `apply == 0` snap beats are banked on the camera instead
+        // `ActorSpawned` is the only variant the shared drain answers, and
+        // there is deliberately no `CameraConfigure` arm: the session tick's
+        // `Camera::route_camera_events` has already consumed every one off
+        // the world queue and does not restore it. The `apply == 0` snap
+        // beats are banked on the camera instead
         // (`Camera::take_camera_snap_beats`, replayed by
         // `frame_step::CutsceneGlide::advance`).
-        for ev in events {
-            if let FieldEvent::ActorSpawned { slot, .. } = ev {
-                let has_tmd = world
-                    .actors
-                    .get(slot as usize)
-                    .is_some_and(|a| a.tmd_ref.is_some());
-                if has_tmd {
-                    self.pending_dynamic_mesh_slots.push(slot);
-                }
-            }
-        }
+        self.session
+            .host
+            .world
+            .drain_spawned_mesh_slots(&mut self.pending_dynamic_mesh_slots);
     }
 
     /// Start windowed cutscene playback when the world has flipped into

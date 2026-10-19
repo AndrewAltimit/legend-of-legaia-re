@@ -1,21 +1,8 @@
-//! Entry inspector, VRAM/mesh accessors, fog LUT, save-state replay + status exports.
+//! Entry inspector, VRAM/mesh accessors, save-state replay + status exports.
 use super::*;
 
 #[wasm_bindgen]
 impl LegaiaViewer {
-    /// Fog LUT bytes extracted from `SCUS_942.54` at disc-load time.
-    /// 4 KiB = 2048 u16 BGR555-shaped entries that the world-map overlay's
-    /// per-prim leaves at `0x801F7644..0x801F8690` consult on every vertex
-    /// (the shared depth-cue ramp; the per-kingdom hue mixes in from the
-    /// `fog_color` field at gp-0x2DC).
-    ///
-    /// Returns an empty Vec when no LUT was located - the JS side should
-    /// treat empty as "fall back to the kingdom-tinted baseline" and not
-    /// upload anything to the renderer.
-    pub fn fog_lut_bytes(&self) -> Vec<u8> {
-        self.fog_lut.clone().unwrap_or_default()
-    }
-
     /// `flags` packs the prim cmd-byte mode bits: bit 0 = semi-transparent,
     /// bit 1 = raw texture (skip color modulation). JS computes the model-view
     /// matrix from `screen_w / screen_h` (orthographic 0..w x h..0 viewport).

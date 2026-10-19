@@ -71,7 +71,7 @@ impl LegaiaRuntime {
     /// doesn't resolve - the stop still ran, leaving silence rather than
     /// the stale track.
     pub fn play_title_bgm(&mut self) -> bool {
-        use legaia_engine_core::scene_host::BgmDirector;
+        use legaia_engine_scene_host::scene_host::BgmDirector;
         let id = legaia_engine_system::music_labels::TITLE_THEME_BGM_ID;
         let Some(d) = self.audio_director() else {
             return false;

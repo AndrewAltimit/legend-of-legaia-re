@@ -33,31 +33,26 @@ impl FogSpace {
             FogSpace::Battle => 180.0,
         }
     }
-    /// Bank depth relative to a style's (field-unit) height: the battle
-    /// forms stand several times taller in stage units than the field forms
-    /// do in world units, so the same knee-to-waist bank is deeper there.
     /// [`FOG_SHADER_CONSTANTS`] for this space: the noise scales follow the
-    /// bank's size ([`Self::height_scale`]), so a battle arena shows as many
-    /// wisps across it as a field screen does.
+    /// arena's size ([`BATTLE_FOG`]`.noise_scale`), so a battle arena shows
+    /// as many wisps across it as a field screen does, and the sheet gain is
+    /// the profile's.
     pub fn shader_constants(self) -> [f32; 4] {
-        let k = self.height_scale();
         let c = FOG_SHADER_CONSTANTS;
-        // A battle's low, close framing looks through the bank at a grazing
-        // angle across few sheets' worth of crest; it takes a larger gain to
-        // read as the thick layer the field shows from above.
-        let gain = match self {
-            FogSpace::Field => 1.0,
-            FogSpace::Battle => 2.6,
-        };
-        [c[0] / k, c[1] / k, c[2] * gain, c[3]]
+        match self {
+            FogSpace::Field => c,
+            FogSpace::Battle => {
+                let k = BATTLE_FOG.noise_scale;
+                [c[0] / k, c[1] / k, c[2] * BATTLE_FOG.gain, c[3]]
+            }
+        }
     }
 
-    /// Opacity relative to a style's: a battle is framed low and close on
-    /// the fighters' legs, where the concept is a thick swirling layer.
+    /// Opacity relative to a style's ([`BATTLE_FOG`] in battle).
     pub fn density_scale(self) -> f32 {
         match self {
             FogSpace::Field => 1.0,
-            FogSpace::Battle => 2.2,
+            FogSpace::Battle => BATTLE_FOG.density,
         }
     }
 
@@ -68,17 +63,49 @@ impl FogSpace {
     pub fn soft_distance(self) -> f32 {
         match self {
             FogSpace::Field => 50.0,
-            FogSpace::Battle => 160.0,
+            FogSpace::Battle => BATTLE_FOG.soft_distance,
         }
     }
 
+    /// Bank depth relative to a style's (field-unit) height
+    /// ([`BATTLE_FOG`] in battle).
     pub fn height_scale(self) -> f32 {
         match self {
             FogSpace::Field => 1.0,
-            FogSpace::Battle => 2.5,
+            FogSpace::Battle => BATTLE_FOG.height,
         }
     }
 }
+
+/// How a battle's bank differs from its field scene's - the one parameter
+/// set both hosts read (through [`FogSpace`] and the frame header).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct BattleFogProfile {
+    /// Opacity relative to the field style's.
+    pub density: f32,
+    /// Bank depth relative to the field style's height (field units), in
+    /// stage units. The battle forms stand about 2.5x taller in stage units
+    /// than the field forms do in world units, so `1.0` is a bank about
+    /// 2.5x lower against the fighters than the field's against the walkers.
+    pub height: f32,
+    /// Noise-scale divisor: the arena is about 2.5x larger in stage units.
+    pub noise_scale: f32,
+    /// Sheet gain relative to the field's.
+    pub gain: f32,
+    /// Soft-intersection span, stage-matrix clip `w` units.
+    pub soft_distance: f32,
+}
+
+/// The battle profile: a thin, low ground haze so the stage floor reads
+/// clearly under it - about a third of the field bank's opacity, at ankle
+/// height on the fighters.
+pub const BATTLE_FOG: BattleFogProfile = BattleFogProfile {
+    density: 0.3,
+    height: 1.0,
+    noise_scale: 2.5,
+    gain: 1.0,
+    soft_distance: 160.0,
+};
 
 /// One scene's look: what colour the bank is, how thick, how deep, and
 /// which way it drifts.

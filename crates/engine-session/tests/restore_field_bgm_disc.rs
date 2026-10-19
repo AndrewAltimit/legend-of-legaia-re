@@ -1,13 +1,13 @@
 //! A card load restores the save's field track through
 //! `BootSession::restore_field_bgm`, and a scene-local id there loads retail's
-//! fallback track (`legaia_engine_core::scene_host::bgm_bank_id`) exactly as the
+//! fallback track (`legaia_engine_scene_host::scene_host::bgm_bank_id`) exactly as the
 //! op-`0x35` route does. Driven over the device-free `TestAudioSink`, so the
 //! session's real director runs with no audio device.
 //!
 //! Disc-gated: skips and passes when `LEGAIA_DISC_BIN` is unset.
 
 use legaia_engine_audio::{SPU_INTERNAL_RATE, TestAudioSink};
-use legaia_engine_core::scene_host::{GLOBAL_BGM_BASE, SceneHost};
+use legaia_engine_scene_host::scene_host::{GLOBAL_BGM_BASE, SceneHost};
 use legaia_engine_session::{BootConfig, BootSession};
 
 fn session() -> Option<BootSession<TestAudioSink>> {

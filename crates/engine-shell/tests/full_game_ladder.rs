@@ -86,7 +86,6 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::{Path, PathBuf};
 
-use legaia_engine_core::scene_host::{FmvHandoffOutcome, SceneTickEvent};
 use legaia_engine_core::world::world_map_camera_relative_bits;
 use legaia_engine_field::field_regions::TileTrigger;
 use legaia_engine_field::man_field_scripts::{overworld_portal_sites, scene_destinations};
@@ -94,6 +93,7 @@ use legaia_engine_field::world_map_entity_config::WorldMapEntityConfig;
 use legaia_engine_mode::mode::SceneMode;
 use legaia_engine_scene::man_census::{scene_man_carriers, system_flag_census};
 use legaia_engine_scene::scene::{ProtIndex, Scene};
+use legaia_engine_scene_host::scene_host::{FmvHandoffOutcome, SceneTickEvent};
 use legaia_engine_session::native::NativeSession;
 use legaia_engine_session::session::{BootConfig, FieldLiveOpts};
 use legaia_engine_system::input::PadButton;
@@ -170,6 +170,10 @@ struct Baseline {
     /// Part C: milestones one continuous New Game reaches.
     #[serde(default)]
     continuous: BTreeMap<String, usize>,
+    /// Part C under `LEGAIA_FGL_RNG_SEED=<n>`: the same score on another
+    /// hand of the rand stream, keyed `seed_<n>` (decimal).
+    #[serde(default)]
+    continuous_seeds: BTreeMap<String, usize>,
 }
 
 fn read_baseline() -> Baseline {

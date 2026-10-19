@@ -13,6 +13,7 @@ legaia-engine-camera.workspace = true
 legaia-engine-battle-vm.workspace = true
 legaia-engine-cast.workspace = true
 legaia-engine-core.workspace = true
+legaia-engine-scene-host.workspace = true
 legaia-art.workspace = true
 legaia-engine-battle.workspace = true
 legaia-engine-dialog.workspace = true

@@ -12,12 +12,10 @@
   /* ---------- Per-kingdom data (world-overview-kingdoms.js) ----------- */
   const {
     KINGDOM_PROT, KINGDOM_CAM, KINGDOM_TOPVIEW_CAM, UNPLACED_TARGET_FOOTPRINT,
-    KINGDOM_FOG_TINT, DEFAULT_FOG_PARAMS,
+    KINGDOM_WALK_EYE, KINGDOM_MIST,
   } = window.LegaiaWorldOverviewKingdoms;
   /* ---------- Top-down map (world-overview-minimap.js) ---------------- */
   const { createMinimap, classifyGround } = window.LegaiaWorldOverviewMinimap;
-  /* ---------- Quick-travel menu panel (world-overview-quick-travel.js) -- */
-  const { renderQuickTravel } = window.LegaiaWorldOverviewQuickTravel;
   /* ---------- Ground sampler + camera framing (world-overview-ground.js) */
   const { buildSampler, frameCamera } = window.LegaiaWorldOverviewGround;
 
@@ -42,7 +40,9 @@
   const $autoRotWrap = document.getElementById('wo-auto-rotate-wrap');
   const $showUnplaced = document.getElementById('wo-show-unplaced');
   const $normalizeUnplaced = document.getElementById('wo-normalize-unplaced');
-  const $fogEnable  = document.getElementById('wo-fog-enable');
+  const $hazeEnable = document.getElementById('wo-haze-enable');
+  const $mistEnable = document.getElementById('wo-mist-enable');
+  const $mistStatus = document.getElementById('wo-mist-status');
   const $showTerrain = document.getElementById('wo-show-terrain');
   const $showLandmarks = document.getElementById('wo-show-landmarks');
   const $lockTopView = document.getElementById('wo-lock-topview');
@@ -52,8 +52,10 @@
   const minimap = $canvas2d ? createMinimap({ canvas: $canvas2d, hover: $hover }) : null;
   const minimapData = {};
   let   viewMode    = 'world';  /* 'world' (assembled scene from disc) | 'mesh' (single TMD inspector) */
-  let   fogLut      = null;     /* Uint16Array(512) BGR555 entries, or null */
-  let   fogParams   = { ...DEFAULT_FOG_PARAMS };
+  /* The Mist overlay (world-overview-mist.js) for the loaded kingdom, and
+   * the fog sheet art read off the disc once per load. */
+  let   mist        = null;
+  let   mistSheet   = null;
 
   /* Authored default-state suppression for script-managed walk stamps.
    * Drake has two golden-bridge (mesh 6) stamps: record 441, a plain
@@ -357,12 +359,13 @@
     $prev.hidden = !meshOnly;
     $next.hidden = !meshOnly;
     $autoRotWrap.hidden = !meshOnly;
-    /* Unplaced-TMD toggle, normalisation, fog, top-view lock only make
+    /* Unplaced-TMD toggle, normalisation, haze, Mist, top-view lock only make
      * sense in world mode (mesh inspector already walks the whole pack
      * one mesh at a time). */
     const $unplacedWrap = document.getElementById('wo-show-unplaced-wrap');
     const $normalizeWrap = document.getElementById('wo-normalize-unplaced-wrap');
-    const $fogWrap = document.getElementById('wo-fog-wrap');
+    const $hazeWrap = document.getElementById('wo-haze-wrap');
+    const $mistWrap = document.getElementById('wo-mist-wrap');
     const $terrainWrap = document.getElementById('wo-show-terrain-wrap');
     const $landmarksWrap = document.getElementById('wo-show-landmarks-wrap');
     /* The unplaced-slot-1 layout grid only drives the legacy
@@ -371,7 +374,8 @@
      * hidden regardless of view mode. */
     if ($unplacedWrap)  $unplacedWrap.hidden  = true;
     if ($normalizeWrap) $normalizeWrap.hidden = true;
-    if ($fogWrap)       $fogWrap.hidden       = meshOnly;
+    if ($hazeWrap)      $hazeWrap.hidden      = meshOnly;
+    if ($mistWrap)      $mistWrap.hidden      = meshOnly;
     if ($terrainWrap)   $terrainWrap.hidden   = meshOnly;
     if ($landmarksWrap) $landmarksWrap.hidden = meshOnly;
     if ($lockTopView)   $lockTopView.hidden   = meshOnly;
@@ -399,11 +403,11 @@
       if (viewMode === 'world') selectKingdom(currentKingdom);
     });
   }
-  if ($fogEnable) {
-    $fogEnable.addEventListener('change', () => {
-      fogParams.enable = $fogEnable.checked ? 1 : 0;
-      pushFogParamsToRenderer();
-    });
+  if ($hazeEnable) {
+    $hazeEnable.addEventListener('change', () => pushHazeToRenderer());
+  }
+  if ($mistEnable) {
+    $mistEnable.addEventListener('change', () => updateMistStatus());
   }
   const $oceanEnable = document.getElementById('wo-ocean-enable');
   if ($oceanEnable) {
@@ -454,33 +458,37 @@
     });
   }
 
-  /* Push the latest (fogLut, fogParams) snapshot into the GL renderer.
-   * Safe to call even when glRenderer isn't a TmdRenderer (mesh-inspector
-   * mode binds the same class, so uploadFogLut always exists). */
-  function pushFogParamsToRenderer() {
-    if (!glRenderer || typeof glRenderer.uploadFogLut !== 'function') return;
-    /* Compose the color, preferring (in order):
-     *   1. explicit param override (fogParams.color from the UI picker)
-     *   2. per-kingdom captured haze from world-overview.json
-     *      (`fog_color` field, populated by
-     *      scripts/mednafen/resolve_bulk_terrain.py when the save state
-     *      has an active FUN_801E3E00 atmospheric-tick actor)
-     *   3. KINGDOM_FOG_TINT hardcoded fallback (eyeballed defaults). */
-    let color = fogParams.color;
-    if (!color && placements?.[currentKingdom]?.fog_color) {
-      const f = placements[currentKingdom].fog_color;
-      color = { r: f.r, g: f.g, b: f.b };
-    }
-    if (!color) {
-      color = KINGDOM_FOG_TINT[currentKingdom]
-        || { r: 0.20, g: 0.20, b: 0.30 };
-    }
-    glRenderer.uploadFogLut(fogLut, {
-      enable: fogParams.enable,
-      zShift: fogParams.zShift,
-      farRef: fogParams.farRef,
-      color,
+  /* Push the distance-haze state into the GL renderer: retail's overworld
+   * walk-view depth cue, with the kingdom's walk eye depth and pitch
+   * (KINGDOM_WALK_EYE) and the camera centre as the virtual walk focus. */
+  function pushHazeToRenderer() {
+    if (!glRenderer || typeof glRenderer.setDistanceHaze !== 'function') return;
+    const eye = KINGDOM_WALK_EYE[currentKingdom] || KINGDOM_WALK_EYE.drake;
+    glRenderer.setDistanceHaze({
+      enable: $hazeEnable ? $hazeEnable.checked : false,
+      eyeZ: eye.eyeZ,
+      scale: 6 * Math.cos(eye.pitch * Math.PI * 2 / 4096),
+      origin: null,
     });
+  }
+  /* The "Mist:" status line: what the loaded kingdom's fog-region table
+   * holds and what the overlay is drawing. */
+  function updateMistStatus() {
+    if (!$mistStatus) return;
+    if (!mist) {
+      $mistStatus.textContent = mistSheet
+        ? 'Mist: load a kingdom in the assembled view to read its fog regions.'
+        : 'Mist: fog sheet art not read from the disc (PROT 0874 missing).';
+      return;
+    }
+    const st = mist.stats();
+    const regs = mist.regions();
+    const flags = [...new Set(regs.map(r => '0x' + r.flag.toString(16).toUpperCase()))];
+    const on = $mistEnable && $mistEnable.checked;
+    $mistStatus.textContent =
+      `Mist: ${st.regions} fog regions in this kingdom's MAN (story flags ${flags.join(', ')}); `
+      + `${st.mistTiles} tiles under Mist before it lifts`
+      + (on ? `, ${st.live} sheets live of a ${st.cap} cap.` : ' - tick "Mist" to draw it.');
   }
   /* Push the latest per-kingdom ocean colour + enable flag into the GL
    * renderer. Composes the colour preferring the captured
@@ -649,39 +657,18 @@
       const tot = Object.values(kingdomSlots).reduce((a,b)=>a+b.length, 0);
       $status.textContent = `Loaded ${f.name} - ${count} viewable PROT entries, ${tot} TMDs in world-map blocks (Drake: ${kingdomSlots.drake.length}, Sebucus: ${kingdomSlots.sebucus.length}, Karisto: ${kingdomSlots.karisto.length}).`;
       if (prog) prog.done(`${count} PROT entries, ${tot} world-map TMDs.`);
-      /* Auto-extract the world-map fog LUT from SCUS. The runtime
-       * adds these per-Z scalar entries to vertex SXY+offset words in
-       * the overlay leaves at 0x801F7644..0x801F8690; the WebGL port
-       * reuses them as the per-tier fade curve and mixes the diffuse
-       * term toward the per-kingdom haze color from KINGDOM_FOG_TINT.
-       * An empty return means SCUS extraction failed (raw PROT.DAT,
-       * regional variant, modded disc) - the kingdom-tinted fallback
-       * still works without it. */
+      /* The Mist's sheet art: PROT 0874 section 2's (448, 0) page cells
+       * through CLUT (0, 473) - the texels retail's fog pool samples. */
+      mistSheet = null;
       try {
-        const raw = viewer.fog_lut_bytes();
-        if (raw && raw.length >= 4096) {
-          fogLut = new Uint16Array(raw.buffer, raw.byteOffset, raw.length / 2);
-          if ($fogLutStatus) {
-            $fogLutStatus.textContent =
-              `Fog LUT: auto-extracted from SCUS_942.54 (${raw.length} B, ${fogLut.length} per-Z scalar entries).`;
-          }
-        } else if ($fogLutStatus) {
-          $fogLutStatus.textContent =
-            'Fog LUT: not located in SCUS - kingdom-tinted fallback active.';
+        if (typeof viewer.mist_sheet_rgba === 'function') {
+          const rgba = viewer.mist_sheet_rgba();
+          if (rgba && rgba.length > 0) mistSheet = rgba;
         }
       } catch (err) {
-        console.warn('fog_lut_bytes:', err);
+        console.warn('mist_sheet_rgba:', err);
       }
-      /* Populate the whole-Legaia quick-travel section from SCUS data
-       * the viewer parsed during load_disc(). Failures are silent: the
-       * section just stays in its "load a disc" state. */
-      try {
-        const json = viewer.worldmap_menu_json();
-        const menu = JSON.parse(json);
-        if (menu) renderQuickTravel(menu);
-      } catch (e) {
-        console.warn('worldmap_menu_json:', e);
-      }
+      updateMistStatus();
       $prev.disabled = false;
       $next.disabled = false;
       currentMeshIdx = 0;
@@ -701,11 +688,6 @@
   } else {
     $file.addEventListener('change', () => { if ($file.files[0]) loadDisc(); });
   }
-
-  /* Status line for the auto-extracted fog LUT. The disc-load path
-   * populates this; there is no manual upload affordance because the
-   * SCUS bytes are the authoritative source. */
-  const $fogLutStatus = document.getElementById('wo-fog-lut-status');
 
   /* ---------- Mesh navigation ----------- */
   function selectKingdom(k) {
@@ -741,6 +723,7 @@
     worldDrawState = null;
     groundSampler = null;
     if (rafId !== null) { cancelAnimationFrame(rafId); rafId = null; }
+    if (mist) { mist.dispose(); mist = null; }
     if (glRenderer) { glRenderer.dispose(); glRenderer = null; }
     const old = document.getElementById('wo-canvas3d');
     if (!old) return null;
@@ -774,10 +757,10 @@
       $meshInfo.textContent = 'WebGL2 init failed: ' + (err.message || err);
       return;
     }
-    /* Top-view-lock + fog become available in world-view mode; mesh
-     * inspector mode hides them again. */
+    /* Top-view-lock, haze and Mist become available in world-view mode;
+     * mesh inspector mode hides them again. */
     if ($lockTopView) $lockTopView.hidden = false;
-    pushFogParamsToRenderer();
+    pushHazeToRenderer();
     pushOceanParamsToRenderer();
     /* Load kingdom bundle (TIM_LIST -> VRAM, TMD pack parsed). */
     let packCount;
@@ -811,6 +794,27 @@
     glRenderer.setGroundEnable(!$showTerrain || $showTerrain.checked);
     /* Terrain-height sampler for the VR "on the ground" mode. */
     groundSampler = groundQuads > 0 ? buildGroundSampler() : null;
+    /* The Mist: the kingdom MAN's fog regions drawn through retail's fog
+     * pool rules (world-overview-mist.js), over the same depth buffer. */
+    if (mistSheet && typeof viewer.walk_mist_regions === 'function'
+        && window.LegaiaWorldOverviewMist) {
+      try {
+        mist = window.LegaiaWorldOverviewMist.create(glRenderer.gl);
+        mist.setSheet(mistSheet);
+        const km = KINGDOM_MIST[currentKingdom] || { flagsSet: [], yControl: 60 };
+        const sampler = groundSampler;
+        mist.setKingdom({
+          regions: viewer.walk_mist_regions(k.prot_base),
+          flagsSet: km.flagsSet,
+          yControl: km.yControl,
+          groundUp: (x, z) => (sampler ? sampler(x + 64, z + 64) : 0),
+        });
+      } catch (err) {
+        console.warn('mist:', err);
+        mist = null;
+      }
+    }
+    updateMistStatus();
     /* The top-down map plots this same load: gathered here, off the
      * accessors rather than the draw list, so the "landmarks + trees"
      * toggle hides the 3D layer without emptying the map. */
@@ -883,6 +887,9 @@
          * (unrotated). */
         const rots = (typeof viewer.walk_placement_rot_y === 'function')
           ? viewer.walk_placement_rot_y() : null;
+        /* 1 = placed object, 0 = decoration-layer stamp. */
+        const layer = (typeof viewer.walk_placement_placed === 'function')
+          ? viewer.walk_placement_placed() : null;
         for (let i = 0; i < wpCount; i++) {
           const ms = slots[i];
           if (suppress.some((s) =>
@@ -909,6 +916,10 @@
             scale: 1.0,
             kind: 'walk_landmark',
             class: 'landmark',
+            /* A decoration-layer stamp: the distance haze cues it by its
+             * origin toward 0xD0 (FUN_801F69D8); placed landmarks are not
+             * that sweep's and take no cue. */
+            hazeDeco: !!(layer && layer[i] === 0),
           });
           walkLandmarkCount++;
         }
@@ -1206,9 +1217,15 @@
     }
     worldDrawState = { draws: drawPlacements, ext };
     if (vr) vr.setReady(true);
+    let mistStatusAt = 0;
     worldTick = () => {
       stepKingdomClut();
       glRenderer.renderAssembled(worldDrawState.draws, worldDrawState.ext, worldCam);
+      if (mist && $mistEnable && $mistEnable.checked) {
+        mist.draw(glRenderer.lastVp);
+        const now = performance.now();
+        if (now - mistStatusAt > 1000) { mistStatusAt = now; updateMistStatus(); }
+      }
       rafId = requestAnimationFrame(worldTick);
     };
     rafId = requestAnimationFrame(worldTick);

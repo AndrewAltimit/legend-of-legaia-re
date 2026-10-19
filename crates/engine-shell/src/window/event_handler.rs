@@ -60,8 +60,8 @@ impl ApplicationHandler for PlayWindowApp {
         // default-on see-through walls; inert until the field redraw pass
         // stages a player focus, so staging the toggle here is safe too.
         if let Some(r) = self.win.renderer.as_ref() {
-            r.set_dyn_shadows(self.dyn_shadows);
-            r.set_occlusion_fade(self.occlusion_fade);
+            r.set_dyn_shadows(self.options_state.light_shadows);
+            r.set_occlusion_fade(self.options_state.occlusion_fade);
         }
         self.upload_assets();
         self.win.request_redraw();

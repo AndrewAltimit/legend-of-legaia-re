@@ -17,8 +17,8 @@
 //! `legaia_actor_formats::battle_char_palette` decodes the party CLUTs and the
 //! loader STP-copies them to `481 + slot`; `engine-battle::battle_status_clut`
 //! holds the per-actor palette copy and the `actor[+0x220..=+0x223]` latch,
-//! `BattleHud::sync_status` arms it, and the native window's
-//! `tick_battle_status_clut` runs the pass against the stashed battle VRAM.
+//! `BattleHud::sync_status` arms it, and both play hosts run the pass against
+//! their battle VRAM through `engine-session::battle_vram::step_battle_vram_edits`.
 //!
 //! Two limits on that wire. The **Rot arm** is out: it tints over a
 //! per-character index window from `DAT_80078630`, which no crate parses.

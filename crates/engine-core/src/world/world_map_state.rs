@@ -58,11 +58,11 @@ pub struct WorldMapState {
     /// per-tile step detection. `None` until the first world-map tick seeds it.
     pub last_tile: Option<(i32, i32)>,
     /// The tile a debug seat put a **standing** player on
-    /// ([`crate::scene_host::SceneHost::debug_seat_standing`]). Portal auto-engage
+    /// ([`legaia_engine_scene_host::scene_host::SceneHost::debug_seat_standing`]). Portal auto-engage
     /// skips it until the player steps off: a capture of a player stood on a
     /// portal tile is one whose portal has already fired, so re-engaging it on
     /// the first tick would cross the door a second time. `None` otherwise.
-    pub(crate) seat_hold_tile: Option<(i32, i32)>,
+    pub seat_hold_tile: Option<(i32, i32)>,
     /// Sub-step carry of the overworld walk, in `1 / WORLD_MAP_FRAME_STEP`
     /// units: each tick adds one retail frame's (2-unit-rounded) step and
     /// commits a 2-unit sub-step per `2 * WORLD_MAP_FRAME_STEP` it holds, so

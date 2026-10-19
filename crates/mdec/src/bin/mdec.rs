@@ -472,7 +472,11 @@ fn cmd_decode_str(
         loop {
             match player.next_frame() {
                 Ok(frame) => {
-                    let dec = MdecDecoder::new(slot.width, slot.height);
+                    // Decode at the frame's own (sector-header) size: the
+                    // slot's 320x240 is not what the movies carry (320x224),
+                    // and an Iki frame decoded at the wrong height lays its
+                    // column-major macroblocks out skewed.
+                    let dec = MdecDecoder::new(frame.width, frame.height);
                     match dec.decode_frame(&frame.bitstream) {
                         Ok(rgba) => {
                             let path = out_dir.join(format!(
@@ -480,7 +484,7 @@ fn cmd_decode_str(
                                 frame.frame_number,
                                 format.ext()
                             ));
-                            write_image(&path, &rgba, slot.width, slot.height, format)?;
+                            write_image(&path, &rgba, frame.width, frame.height, format)?;
                         }
                         Err(e) => eprintln!("frame {}: decode error: {}", frame.frame_number, e),
                     }

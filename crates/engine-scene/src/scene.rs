@@ -17,7 +17,7 @@
 //! No Sony bytes - this is plumbing over the format crates.
 //!
 //! The scene *host* that ticks a loaded scene against a `World` is
-//! `legaia_engine_core::scene_host`.
+//! `legaia_engine_scene_host::scene_host`.
 
 use std::collections::HashMap;
 use std::path::Path;

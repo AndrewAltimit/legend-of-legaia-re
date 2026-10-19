@@ -150,7 +150,7 @@ their records through the field VM - the world-map entity keeps only the
 open the entrance record (`record_leading_flag_writes`: SETs and CLEARs in
 order, TESTs followed the way the VM's `0x70` arm follows them, stopping at
 the first other instruction). That is what raises flag 2 on the crossing. Disc
-pins: `crates/engine-core/tests/place_name_banner_disc.rs`, including the walk
+pins: `crates/engine-scene-host/tests/place_name_banner_disc.rs`, including the walk
 from `map01` into Rim Elm.
 
 ### The latch is the save screen's, not the banner's

@@ -80,6 +80,21 @@ pub const BAR_ENDS_W: i32 = title_pak::OVERLAY_SYSTEM_UI_ARTS_BAR_END_L.2 as i32
 /// Shortest bar drawn: the two end pieces with no body.
 pub const BAR_W_MIN: i32 = BAR_ENDS_W;
 
+/// How far the bar's tiled body runs **under** the arrow end, in stage px.
+///
+/// The bar is placement record `0x0F`, style `5`: widget record `0x05`,
+/// class 3 with tile-set `0`, whose cap pair is the bar's own end pieces at
+/// `0x80073A60`. That arm of `FUN_8002C69C` seats the arrow at `pen + w`
+/// (`lhu t3,0x28(sp)` at `0x8002E8DC`, the unbiased `x + w` of `0x8002C790`)
+/// but tiles the body from `pen` over `w + 8` (`addiu a0,t2,0x8` at
+/// `0x8002E934`), so the red trough reaches eight pixels into the 18-wide
+/// arrow and shows through its transparent left corners up to the diamond's
+/// centre. The body is queued after both caps into the same ordering-table
+/// slot, so it draws beneath them. Captured: `nivora_duel_pre_megaton_press`
+/// holds record `0x0F` at `w = 210`, and its frame puts the arrow's diamond
+/// on columns `226..=241` with the trough's last column at `233`.
+pub const BAR_BODY_UNDER_ARROW: i32 = 8;
+
 /// Stage `x` the **pennant anchor** of slot 0 sits at - the cursor
 /// `ctx[+0x6D8]`, seeded to 16 on the gauge build (`0x801D3A3C` /
 /// `0x801D3A44`) and advanced by each committed command's own `+0x74` cost
@@ -482,7 +497,10 @@ pub fn arts_input_chrome_draws(
         rects.bar_end_l.2,
         rects.bar_end_l.3,
     );
-    let body_end = (BAR_X + bar_w - arrow_w).max(BAR_X + end_w);
+    let arrow_x = (BAR_X + bar_w - arrow_w).max(BAR_X + end_w);
+    // The body runs from the record's pen to `w + 8` past it: under the
+    // arrow's left half ([`BAR_BODY_UNDER_ARROW`]), drawn beneath it.
+    let body_end = arrow_x + BAR_BODY_UNDER_ARROW;
     let mut x = BAR_X + end_w;
     while x < body_end {
         let w = body_w.min(body_end - x);
@@ -492,7 +510,7 @@ pub fn arts_input_chrome_draws(
     }
     push(
         rects.bar_arrow,
-        body_end,
+        arrow_x,
         BAR_Y,
         rects.bar_arrow.2,
         rects.bar_arrow.3,
@@ -973,6 +991,60 @@ mod tests {
         assert_eq!(f.bar_width(), 199 + BAR_ENDS_W);
         f.pool_max = 4;
         assert_eq!(f.bar_width(), BAR_W_MIN, "no body below the bias");
+    }
+
+    /// Retail's tile-set-0 bar arm tiles the body over `w + 8` from the pen
+    /// and seats the arrow at `pen + w`, so the trough ends eight pixels into
+    /// the 18-wide arrow, at the diamond's centre, and draws beneath it.
+    #[test]
+    fn bar_body_runs_under_the_arrow_to_its_centre() {
+        let r = ArtsInputAtlasRects::BAKED;
+        let mut f = frame(&[], &[]);
+        for pool in [100u16, 194, 216, 4] {
+            f.pool_max = pool;
+            let draws = arts_input_chrome_draws(&r, &f, (0, 0), 1);
+            let body_src = (r.bar_body.0, r.bar_body.1);
+            let body: Vec<_> = draws
+                .iter()
+                .enumerate()
+                .filter(|(_, d)| (d.src.0, d.src.1) == body_src && d.dst.1 == BAR_Y)
+                .collect();
+            let (arrow_i, arrow) = draws
+                .iter()
+                .enumerate()
+                .find(|(_, d)| d.src == r.bar_arrow)
+                .expect("arrow");
+            let w = (i32::from(pool) - COST_WIDTH_BIAS).max(0);
+            let pen = BAR_X + r.bar_end_l.2 as i32;
+            assert_eq!(arrow.dst.0, pen + w, "arrow at pen + w (pool {pool})");
+            let first = body.first().expect("body").1.dst.0;
+            let last = body.last().unwrap().1;
+            let right = last.dst.0 + last.dst.2 as i32;
+            assert_eq!(first, pen, "body starts at the pen (pool {pool})");
+            assert_eq!(right, pen + w + 8, "body spans w + 8 (pool {pool})");
+            assert_eq!(right, arrow.dst.0 + BAR_BODY_UNDER_ARROW);
+            // Contiguous tiling, no gaps or overlaps.
+            for pair in body.windows(2) {
+                let (a, b) = (pair[0].1, pair[1].1);
+                assert_eq!(a.dst.0 + a.dst.2 as i32, b.dst.0);
+            }
+            assert!(
+                body.iter().all(|(i, _)| *i < arrow_i),
+                "body beneath the arrow"
+            );
+        }
+        // The capture: record 0x0F at w = 210 (pool 216) puts the arrow at
+        // 226 and the trough's last column at 233.
+        f.pool_max = 216;
+        let draws = arts_input_chrome_draws(&r, &f, (0, 0), 1);
+        let arrow = draws.iter().find(|d| d.src == r.bar_arrow).unwrap();
+        assert_eq!(arrow.dst.0, 226);
+        let body_right = draws
+            .iter()
+            .filter(|d| (d.src.0, d.src.1) == (r.bar_body.0, r.bar_body.1))
+            .map(|d| d.dst.0 + d.dst.2 as i32)
+            .max();
+        assert_eq!(body_right, Some(234));
     }
 
     #[test]

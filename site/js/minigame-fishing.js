@@ -444,9 +444,13 @@ window.MgFishing = (function () {
             g.strokeStyle = 'rgba(255,255,255,0.5)';
             g.strokeRect(it.x * SCALE + 0.5, it.y * SCALE + 0.5, w, h);
           }
-          g.fillStyle = rgb;
-          g.fillRect((it.x + 4) * SCALE, (it.y + 1) * SCALE,
-                     Math.max(0, it.fill) * SCALE, h - 2 * SCALE);
+          /* With the sprite pass up, the fill is its prim (drawn over the
+           * frame, at retail's rect); this only fills the text fallback. */
+          if (!sprites) {
+            g.fillStyle = rgb;
+            g.fillRect((it.x + 4) * SCALE, (it.y + 1) * SCALE,
+                       Math.max(0, it.fill) * SCALE, h - 2 * SCALE);
+          }
         } else {
           const h = (it.end_y - it.y) * SCALE, w = 8 * SCALE;
           if (!sprites) {
@@ -457,9 +461,11 @@ window.MgFishing = (function () {
           }
           /* The power bar fills UPWARD from the bottom cap. */
           const fh = Math.max(0, it.fill) * SCALE;
-          g.fillStyle = rgb;
-          g.fillRect((it.x + 1) * SCALE, it.y * SCALE + h - 4 - fh,
-                     w - 2 * SCALE, fh);
+          if (!sprites) {
+            g.fillStyle = rgb;
+            g.fillRect((it.x + 1) * SCALE, it.y * SCALE + h - 4 - fh,
+                       w - 2 * SCALE, fh);
+          }
         }
         g.restore();
       }

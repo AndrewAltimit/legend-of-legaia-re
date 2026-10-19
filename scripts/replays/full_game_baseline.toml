@@ -31,6 +31,19 @@ tier_sum = 140
 [continuous]
 reached = 35
 
+# Part C on other hands of the rand stream: a run under
+# LEGAIA_FGL_RNG_SEED=<n> is asserted against its own seed_<n> row. One
+# stream's score can rest on a boss the hand only won by the deal; the set
+# says the route holds across deals. Asserted `>=` like the rest.
+[continuous_seeds]
+seed_3 = 35
+seed_4 = 35
+seed_5 = 35
+seed_6 = 35
+seed_7 = 35
+seed_8 = 35
+seed_9 = 35
+
 [segments]
 rim_elm = 4
 tetsu_spar = 4

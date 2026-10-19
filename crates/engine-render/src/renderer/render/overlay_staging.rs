@@ -281,7 +281,7 @@ impl Renderer {
         rp.set_bind_group(0, &overlay.atlas.bind_group, &[]);
         for (start, n, abr) in OverlayBlendSpan::segments(overlay.blend, count) {
             match abr {
-                None => rp.set_pipeline(&self.text_pipeline),
+                None => rp.set_pipeline(&self.text_pipeline[usize::from(self.ui_psx_tint.get())]),
                 Some(mode) => {
                     let c = psx_blend::MODE0_BLEND_CONSTANT;
                     rp.set_blend_constant(wgpu::Color {
@@ -290,7 +290,10 @@ impl Renderer {
                         b: c,
                         a: c,
                     });
-                    rp.set_pipeline(&self.text_blend_pipelines[mode as usize]);
+                    rp.set_pipeline(
+                        &self.text_blend_pipelines[usize::from(self.ui_psx_tint.get())]
+                            [mode as usize],
+                    );
                 }
             }
             let first = (base_quad + start) * 6;
@@ -359,18 +362,28 @@ impl Renderer {
         let ibuf_borrow = self.screen_overlay_ibuf.borrow();
         rp.set_vertex_buffer(0, vbuf_borrow.slice(..));
         rp.set_index_buffer(ibuf_borrow.slice(..), wgpu::IndexFormat::Uint32);
-        let mut bound: Option<BlendClass> = None;
+        // A semi-transparent run draws twice: its textured prims' STP-clear
+        // texels solid first (`fs_semi_opaque`), then the blend pipeline for
+        // the STP-set texels and the untextured prims - the PSX per-texel
+        // rule, which a single fixed-function blend state cannot express.
+        let mut bound_opaque = false;
         for run in runs.iter() {
-            if bound != Some(run.class) {
-                match run.class {
-                    BlendClass::Opaque => rp.set_pipeline(&self.screen_overlay_pipeline),
-                    BlendClass::Semi(mode) => {
-                        rp.set_pipeline(&self.screen_overlay_blend_pipelines[(mode & 0x3) as usize])
+            let range = run.index_start..run.index_start + run.index_count;
+            match run.class {
+                BlendClass::Opaque => {
+                    if !bound_opaque {
+                        rp.set_pipeline(&self.screen_overlay_pipeline);
+                        bound_opaque = true;
                     }
                 }
-                bound = Some(run.class);
+                BlendClass::Semi(mode) => {
+                    rp.set_pipeline(&self.screen_overlay_semi_opaque_pipeline);
+                    rp.draw_indexed(range.clone(), 0, 0..1);
+                    rp.set_pipeline(&self.screen_overlay_blend_pipelines[(mode & 0x3) as usize]);
+                    bound_opaque = false;
+                }
             }
-            rp.draw_indexed(run.index_start..run.index_start + run.index_count, 0, 0..1);
+            rp.draw_indexed(range, 0, 0..1);
         }
     }
 }

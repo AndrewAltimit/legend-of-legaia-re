@@ -38,7 +38,6 @@ legaia-art.workspace = true
 legaia-save.workspace = true
 legaia-cheats.workspace = true
 legaia-actor-formats.workspace = true
-legaia-container-formats.workspace = true
 legaia-engine-dialog.workspace = true
 legaia-engine-motion-vm.workspace = true
 legaia-game-tables.workspace = true
@@ -49,14 +48,9 @@ legaia-ui-formats.workspace = true
 legaia-engine-fishing.workspace = true
 
 [dev-dependencies]
-tempfile.workspace = true
 # Named only by tests: format crates the disc-gated chains walk directly.
-legaia-disc-audit.workspace = true
+legaia-container-formats.workspace = true
 legaia-lzs.workspace = true
-legaia-mdt.workspace = true
-legaia-seq.workspace = true
-legaia-vab.workspace = true
-legaia-gamedata.workspace = true
 
 [[test]]
 name = "integration"

@@ -50,7 +50,7 @@ pub enum PauseItemsFocus {
 /// layered over the item-use flow. The inner
 /// [`InventoryUseSession`] stays the behaviour driver (admissibility
 /// filter, target select, outcome) - hosts keep applying its outcome via
-/// `legaia_engine_core::field_menu_dispatch::apply_inventory_outcome` with
+/// `legaia_engine_menu_runtime::field_menu_dispatch::apply_inventory_outcome` with
 /// [`Self::inner`].
 pub struct PauseItemsSession {
     /// The item-use flow. Its `items` list is id-sorted, one entry per
@@ -79,13 +79,13 @@ pub struct PauseItemsSession {
     special_committed: bool,
     /// The Door of Wind destination rows, resolved at session build from
     /// the disc placement table + the live discovery flags
-    /// (`legaia_engine_core::field_menu_dispatch::warp_destinations`). Empty when the
+    /// (`legaia_engine_menu_runtime::field_menu_dispatch::warp_destinations`). Empty when the
     /// executable was not reachable at boot - the route then opens an
     /// empty list rather than an invented one.
     warp_destinations: Vec<WarpDestination>,
     /// Destination a committed Door of Wind pick staged, in retail's
     /// `0x80084624`/`28`/`2C` shape. Drained by
-    /// `legaia_engine_core::field_menu_dispatch::apply_pause_items_outcome` onto
+    /// `legaia_engine_menu_runtime::field_menu_dispatch::apply_pause_items_outcome` onto
     /// `legaia_engine_core::world::MenuState::pending_warp`.
     staged_warp: Option<StagedWarp>,
     /// Menu exit code the finished screen hands the outer menu SM
@@ -115,7 +115,7 @@ pub struct PauseItemsSession {
     /// Incense confirms committed while the screen was up. Each one is a
     /// `FUN_800402F4` class-`0x82` apply - one `FUN_80046870` top-up of the
     /// Incense window - which
-    /// `legaia_engine_core::field_menu_dispatch::apply_pause_items_outcome` replays onto
+    /// `legaia_engine_menu_runtime::field_menu_dispatch::apply_pause_items_outcome` replays onto
     /// the world when the screen finishes.
     incense_uses: u8,
     /// The Use list's Incense row is greyed: the Incense window already

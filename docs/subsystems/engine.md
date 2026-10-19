@@ -59,7 +59,9 @@ flowchart BT
     EMENU["engine-menus"]
     EMGS["engine-minigame-scenes"]
     ESCN["engine-scene<br/>Scene, ProtIndex"]
-    CORE["engine-core<br/>World, SceneHost"]
+    CORE["engine-core<br/>World"]
+    SH["engine-scene-host<br/>SceneHost"]
+    MR["engine-menu-runtime<br/>MenuRuntime"]
     EUI["engine-ui"]
     EREN["engine-render<br/>wgpu"]
     EAUD["engine-audio<br/>SPU + sequencer"]
@@ -106,9 +108,11 @@ flowchart BT
     EUI --> ECAST
     EREN --> EUI
     EAUD --> FMT
-    SESS --> CORE
+    SH --> CORE
+    MR --> SH
+    SESS --> MR
     SESS --> EAUD
-    SCR --> CORE
+    SCR --> MR
     SCR --> EUI
     PAR --> SESS
     SHELL --> PAR
@@ -128,8 +132,9 @@ The shape to read off it:
 - **`engine-cast` sits one rank above `engine-battle-vm`.** It holds the slot-B cast / summon module bodies the battle action SM pages in; they call the action SM's helpers, the formulas and the camera script, and nothing below names them.
 - **A ring of `World`-free kernel crates sits above them** (`engine-mode`, `engine-battle`, `engine-effects`, `engine-field`, `engine-fishing`, `engine-minigames`, `engine-menus`, `engine-scene`, `engine-minigame-scenes`). Each holds rules and state that never touch the `World` struct, so it can be unit-tested alone.
 - **`engine-scene` is the disc-facing half of scene handling.** It resolves a CDNAME scene to its PROT entries (`Scene`, `ProtIndex`), decodes what the scene is built from (`SceneResources`, `SceneAssets`, the model bank, the environment draw resolver and assembly kernel) and holds the virtual filesystem. It names no `World`, so a tool that only reads scenes links it without the simulation, and it is a row of the layering table like the other kernels: `engine-minigame-scenes` builds the dance and fishing venues on it.
-- **`engine-core` is where they meet.** It owns `World` and `SceneHost` and implements the per-VM `Host` traits. A module there that shares its name with a kernel module (`shop`, `dance`, `tile_board`, `mode`, `camera`, ...) holds only the functions that read a `World` or a `Scene`; the rules are in the kernel crate.
+- **`engine-core` is where they meet.** It owns `World` and implements the per-VM `Host` traits. A module there that shares its name with a kernel module (`shop`, `dance`, `tile_board`, `mode`, `camera`, ...) holds only the functions that read a `World` or a `Scene`; the rules are in the kernel crate.
 - **Presentation is a separate branch.** `render-kernels` -> `engine-ui` -> `engine-render` and `engine-audio` do not depend on `engine-core`; the hosts compose them with it. `render-kernels` is also what the effect, field and minigame kernels link for GTE math.
+- **Two layers drive a `World` from outside, directly above `engine-core`.** `engine-scene-host` holds `SceneHost` (scene entry and tick, BGM routing, the FMV hand-off, save resume, the live-scene preview); `engine-menu-runtime` holds the pause menu over the world (`MenuRuntime`, the field-menu dispatcher). Nothing in `engine-core` names either, so a `World` change rebuilds them but a scene-host or menu change does not rebuild the simulation. The `World` fields the scene entry seeds are `pub` for that reason.
 - **`engine-session` and `engine-screens` are the host-shared top.** `BootSession` (scene host + per-frame order + BGM director) and the shop-family screens are written once and ticked by both play hosts.
 - **`engine-export` is a tool layer above `engine-core`, not a host layer.** The `.glb` world exporter steps a scratch `World` to bake animation and traversal data, so it needs the simulation; nothing in the simulation needs it, and only the native binary links it.
 
@@ -181,17 +186,19 @@ Internal dependencies as declared in each crate's `Cargo.toml`. "Format-family c
 | `engine-menus` | `engine-minigames`, `engine-field`, `engine-dialog`, `engine-battle`, `engine-battle-vm`, `engine-system`, `engine-vm`, `actor-formats`, `game-tables`, `minigame-formats`, `scene-formats`, `ui-formats`, `art`, `font`, `save`, `tim` | Menu, title and memory-card front end. |
 | `engine-minigame-scenes` | `engine-scene`, `engine-menus`, `engine-minigames`, `engine-fishing`, `engine-field`, `engine-battle`, `engine-battle-vm`, `engine-camera`, `engine-mode`, `engine-system`, `engine-vm`, `render-kernels`, `actor-formats`, `container-formats`, `game-tables`, `minigame-formats`, `overlay-images`, `scene-formats`, `prot`, `tim`, `tmd` | The minigames' 3D scene surfaces, venues and the `World`'s minigame seat. |
 | `engine-scene` | `engine-field`, `engine-dialog`, `engine-system`, `engine-vm`, `render-kernels`, `disc-audit` + the format-family and parser crates | Scene resolution and loading, environment draws, virtual filesystem; no `World`. |
-| `engine-core` | `engine-scene`, every `engine-*` kernel crate above, `render-kernels` + the format-family and parser crates | `World`, scene host, battle loop, menu runtime, saves. |
+| `engine-core` | `engine-scene`, every `engine-*` kernel crate above, `render-kernels` + the format-family and parser crates | `World`, the tick, battle loop, saves. |
+| `engine-scene-host` | `engine-core`, `engine-scene`, the kernel crates it enters scenes through + format-family and parser crates | `SceneHost`: scene entry and tick, BGM routing, resume, live preview. |
+| `engine-menu-runtime` | `engine-scene-host`, `engine-core`, `engine-menus`, `engine-battle`, `engine-battle-vm`, `engine-field`, `engine-minigames`, `engine-system`, `art`, `game-tables`, `save` | The pause menu over `World`. |
 | `engine-ui` | `render-kernels`, `engine-battle-vm`, `engine-cast`, `game-tables`, `minigame-formats`, `ui-formats`, `tim`, `font` | Draw-list builders; no wgpu. |
 | `engine-render` | `engine-ui`, `render-kernels`, `engine-camera`, `tim`, `font` | wgpu renderer. |
 | `engine-audio` | `xa`, `vab`, `seq`, `prot` | SPU model, sequencer, output backends. |
-| `engine-session` | `engine-core`, `engine-scene`, `engine-audio`, `engine-menus`, `engine-minigame-scenes`, `engine-battle`, `engine-field`, `engine-mode`, `engine-system` + format-family and parser crates | `BootSession` + BGM director; no wgpu or winit. |
-| `engine-screens` | `engine-core`, `engine-scene`, `engine-ui`, `engine-battle`, `engine-dialog`, `engine-effects`, `engine-field`, `engine-fishing`, `engine-menus`, `engine-minigame-scenes`, `engine-minigames`, `engine-mode`, `engine-system`, `render-kernels`, `game-tables`, `minigame-formats`, `font` | The screens both hosts draw: shop family, battle HUD, pause menu, dialog box. |
+| `engine-session` | `engine-menu-runtime`, `engine-scene-host`, `engine-core`, `engine-scene`, `engine-audio`, `engine-menus`, `engine-minigame-scenes`, `engine-battle`, `engine-field`, `engine-mode`, `engine-system` + format-family and parser crates | `BootSession` + BGM director; no wgpu or winit. |
+| `engine-screens` | `engine-menu-runtime`, `engine-scene-host`, `engine-core`, `engine-scene`, `engine-ui`, `engine-battle`, `engine-dialog`, `engine-effects`, `engine-field`, `engine-fishing`, `engine-menus`, `engine-minigame-scenes`, `engine-minigames`, `engine-mode`, `engine-system`, `render-kernels`, `game-tables`, `minigame-formats`, `font` | The screens both hosts draw: shop family, battle HUD, pause menu, dialog box. |
 | `engine-export` | `engine-core`, `engine-scene`, `engine-field`, `engine-vm`, `actor-formats`, `game-tables`, `scene-formats`, `tim`, `tmd` | The `.glb` world exporter behind `export-glb`. |
-| `engine-capture` | `engine-core`, `engine-battle`, `engine-battle-vm`, `engine-camera`, `engine-cast`, `engine-dialog`, `engine-effects`, `engine-field`, `engine-menus`, `engine-mode`, `engine-system`, `art`, `save`, `scene-formats` | Capture seeds, gates and pad drives shared by `parity` and the native capture child. |
-| `parity` | `engine-capture`, `engine-session`, `engine-core`, `engine-scene`, `engine-audio`, `engine-ui`, the kernel crates it measures, `mednafen`, `pcsx-redux`, `ram-image` + parser crates | Parity oracles + retail comparison. |
-| `engine-shell` | `parity`, `engine-capture`, `engine-session`, `engine-screens`, `engine-export`, `engine-core`, `engine-scene`, `engine-render`, `engine-ui`, `engine-audio`, the kernel crates + format-family and parser crates | The native host. |
-| `web-viewer` | `engine-session`, `engine-screens`, `engine-core`, `engine-scene`, `engine-ui`, `engine-audio`, the kernel crates, `patcher` and its layer crates + format-family and parser crates | The browser hosts and site tools. |
+| `engine-capture` | `engine-scene-host`, `engine-core`, `engine-battle`, `engine-battle-vm`, `engine-camera`, `engine-cast`, `engine-dialog`, `engine-effects`, `engine-field`, `engine-menus`, `engine-mode`, `engine-system`, `art`, `save`, `scene-formats` | Capture seeds, gates and pad drives shared by `parity` and the native capture child. |
+| `parity` | `engine-capture`, `engine-session`, `engine-menu-runtime`, `engine-scene-host`, `engine-core`, `engine-scene`, `engine-audio`, `engine-ui`, the kernel crates it measures, `mednafen`, `pcsx-redux`, `ram-image` + parser crates | Parity oracles + retail comparison. |
+| `engine-shell` | `parity`, `engine-capture`, `engine-session`, `engine-screens`, `engine-export`, `engine-menu-runtime`, `engine-scene-host`, `engine-core`, `engine-scene`, `engine-render`, `engine-ui`, `engine-audio`, the kernel crates + format-family and parser crates | The native host. |
+| `web-viewer` | `engine-session`, `engine-screens`, `engine-menu-runtime`, `engine-scene-host`, `engine-core`, `engine-scene`, `engine-ui`, `engine-audio`, the kernel crates, `patcher` and its layer crates + format-family and parser crates | The browser hosts and site tools. |
 | `asset-viewer` | `engine-core`, `engine-scene`, `engine-vm`, `engine-battle-vm`, `engine-dialog`, `engine-field`, `engine-mode`, `engine-system`, `engine-ui`, `engine-render`, `engine-audio`, `disc-audit` + format-family and parser crates | Standalone asset viewer. |
 
 ### The layering gate
@@ -248,7 +255,7 @@ flowchart LR
     subgraph shared ["shared engine"]
         BS["BootSession<br/>engine-session"]
         SCR["engine-screens"]
-        W["World + SceneHost<br/>engine-core"]
+        W["World + SceneHost<br/>engine-core, engine-scene-host"]
         MG["minigame rules<br/>engine-minigames"]
         UI["draw kernels<br/>engine-ui"]
     end
@@ -278,7 +285,7 @@ A feature wired into one host and not another is a defect class of its own. The 
 
 ### The browser host
 
-`legaia_web_viewer::runtime::LegaiaRuntime` owns a real [`SceneHost`](../../crates/engine-core/src/scene_host.rs), so the browser executes the same field / event VM, free-movement controller, floor sampler, NPC motion VMs, interaction probe and inline-dialogue runner as the native window. The per-frame contract is small: hand the engine a pad word, tell it the camera azimuth (so the d-pad remaps camera-relative), tick it, draw what it reports. Rendering goes through the site's shared WebGL TMD renderer rather than `engine-render`'s wgpu path.
+`legaia_web_viewer::runtime::LegaiaRuntime` owns a real [`SceneHost`](../../crates/engine-scene-host/src/scene_host.rs), so the browser executes the same field / event VM, free-movement controller, floor sampler, NPC motion VMs, interaction probe and inline-dialogue runner as the native window. The per-frame contract is small: hand the engine a pad word, tell it the camera azimuth (so the d-pad remaps camera-relative), tick it, draw what it reports. Rendering goes through the site's shared WebGL TMD renderer rather than `engine-render`'s wgpu path.
 
 It reaches field and town scenes (map, player, NPCs, doors, dialogue), live battles (`play_battle*`), the title and opening chain (`boot_title`, `play_cutscene`, `play_fmv`), the pause menu and shops (`play_menu`, `play_shop`), the minigames (`play_minigames`, `play_fishing`) and audio (`play_bgm`, `play_sfx`, `play_xa`). Each screen is drawn from engine state through the shared `engine-ui` builders.
 
@@ -343,10 +350,10 @@ options is safe by default. A headless comparison against retail calls
 | Knob | Default | Effect |
 |---|---|---|
 | `Renderer::set_dynamic_lighting` - enhanced lighting (`I` in `play-window`, `--dynamic-lighting` / `--no-dynamic-lighting` force it; "Enhanced lighting" checkbox on the browser play page; persisted `OptionsState::enhanced_lighting`) | **on** in `play-window` + browser play page | A time-of-day mood over the baked shading, point lights at the scene's glowing props, emissive surfaces (the Genesis Tree), lit town windows at dusk and night and additive halos, from the one `legaia_render_kernels::scene_lighting` kernel on both hosts ([renderer](renderer.md#enhanced-lighting-enhancement-default-on)). Off is pixel-identical to the faithful render; replays and `retail-compare` force it off. |
-| `Renderer::set_dyn_shadows` (`--no-dyn-shadows` disables, `Y` in `play-window`) | on | PCF shadow maps for the enhanced-lighting point lights, on both hosts (the page's "Lamp shadows" box). Shadows only: off, the lamps still light the scene. Inert while enhanced lighting is off. |
+| `Renderer::set_dyn_shadows` (`--no-dyn-shadows` disables for the session, `Y` on both hosts; persisted `OptionsState::light_shadows`) | on | PCF shadow maps for the enhanced-lighting point lights, on both hosts (the page's "Lamp shadows" box). Shadows only: off, the lamps still light the scene. Inert while enhanced lighting is off. |
 | `OptionsState::lighting_time_of_day` (`F8` in `play-window`; the page's time-of-day selector) | `auto` | The mood enhanced lighting lights under: `auto` follows the scene (daylight outdoors, a dim mood for caves and dungeons), `day` / `dusk` / `night` force one. |
-| `Renderer::set_occlusion_fade` (`--no-occlusion-fade` disables, `F4` in `play-window`; "See-through walls" checkbox on the browser play page) | **on** in `play-window` + browser play page | Camera-occlusion fade: when a ray-cast visibility gate finds the character **completely** hidden, the covering geometry dissolves to a screen-door dither in a circle around them, above the line of their feet so the ground in front of them never fades - a partially visible character never fades ([renderer](renderer.md#camera-occlusion-fade-see-through-walls-enhancement)). Presentation-only; replays force it off. |
-| `OptionsState::volumetric_fog` -> `World::toggles.volumetric_fog` (`--no-volumetric-fog` disables, `F9` in `play-window`; "Ground fog" checkbox on the browser play page) | **on** in `play-window` + browser play page; off in headless hosts | Volumetric ground fog: a low drifting mist bank over the outdoor areas of the scenes that read as misty or night (never inside a door-reached room), parted by every character walking through it, with wakes that refill; a battle inherits its field scene's bank ([renderer](renderer.md#volumetric-ground-fog-enhancement)). The engine simulates it once per tick; off draws the frame without it. Presentation-only; replays and the retail comparison corpus force it off. |
+| `Renderer::set_occlusion_fade` (`--no-occlusion-fade` disables for the session, `F4` on both hosts; "See-through walls" checkbox on the browser play page; persisted `OptionsState::occlusion_fade`) | **on** in `play-window` + browser play page | Camera-occlusion fade: when a ray-cast visibility gate finds the character **completely** hidden, the covering geometry dissolves to a screen-door dither in a circle around them, above the line of their feet so the ground in front of them never fades - a partially visible character never fades ([renderer](renderer.md#camera-occlusion-fade-see-through-walls-enhancement)). Presentation-only; replays force it off. |
+| `OptionsState::volumetric_fog` -> `World::toggles.volumetric_fog` (`--no-volumetric-fog` disables, `F9` in `play-window`; "Ground fog" checkbox on the browser play page) | **on** in `play-window` + browser play page; off in headless hosts | Volumetric ground fog: a low drifting mist bank over the outdoor areas of the scenes that read as misty or night (never inside a door-reached room), parted by every character walking through it, with wakes that refill; it lies on the drawn ground and spills off its rims, and a battle inherits its field scene's bank as a thin, ankle-high haze ([renderer](renderer.md#volumetric-ground-fog-enhancement)). The engine simulates it once per tick; off draws the frame without it. Presentation-only; replays and the retail comparison corpus force it off. |
 | `World::locomotion.precise_movement` (`R` in `play-window`; "Precise movement" checkbox on the browser play page; persisted `OptionsState::precise_movement`) | off | Free-angle locomotion instead of retail's 4/8-way quantisation. |
 | `World::locomotion.leading_edge_wall_probes` (`--no-edge-collision` disables) | **on** in `play-window` + browser play page | Retail's three-probe leading-edge wall footprint (`FUN_801cfe4c`'s `DAT_801f2214` table): the player rests ~47 units off a wall plane ([field-locomotion](field-locomotion.md#collision---fun_801cfe4c)). Off = the single candidate-centre test the locomotion oracles and BFS nav drivers run on, which is why the `World` field itself still defaults off. |
 | `World::toggles.hop_landing_guard` | **on** (off under `pin_retail` / `--retail`) | Refuses a field ledge hop whose landing the walk could not leave in any direction. Retail tests no landing, and a diagonal step-up hop can set the player boxed in a raised pocket for good ([field-locomotion](field-locomotion.md#vertical-settle--ledge-hop---fun_801d1ba0--fun_801d1878)). |
@@ -535,7 +542,7 @@ The shell loop closes: title -> save-select -> field / encounter -> battle -> sa
 | Equipment | `engine-menus::equipment` | The typed 8-slot model and the catalog, overridable per id (`EquipmentCatalog::set`). |
 | Seru capture + spell learning | `engine-battle::seru_learning` | Per-character per-Seru point accumulator with banner session. |
 | Tactical Arts chain editor | `engine-battle::tactical_arts_editor` | Menu-side compose / name / save flow with a per-character library. |
-| Field scenes + dialogue | `engine-core` scene host, `engine-field`, `engine-dialog` | Scenes load and run their own MAN bytecode. `World::step_inline_dialogue` ports the retail dialog state machine `FUN_80039B7C` through the field VM (`play-window --simple-dialogue` opts out to the segment-pool fallback). |
+| Field scenes + dialogue | `engine-scene-host`, `engine-core`, `engine-field`, `engine-dialog` | Scenes load and run their own MAN bytecode. `World::step_inline_dialogue` ports the retail dialog state machine `FUN_80039B7C` through the field VM (`play-window --simple-dialogue` opts out to the segment-pool fallback). |
 | Dialog text | `legaia-mes::DialogPlayer` | Paces glyph / spacing / substitution / page-break events; both hosts render the `DialogSnapshot` at the retail geometry (`FUN_801D84D0`, the per-frame line pager). Encoding: [mes](../formats/mes.md) (`FUN_8003CA38` / `FUN_80036044` / `FUN_80036888` / `FUN_80036514`). |
 | Save / load | `World::save_full` / `load_full`, `legaia_save` | LGSF files and real memory-card blocks (`legaia_save::card::write_block`). |
 

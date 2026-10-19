@@ -159,27 +159,3 @@ pub fn coin_counter_lines(
     }
     out
 }
-
-impl crate::scene_host::SceneHost {
-    /// [`coin_counter_lines`] with the labels read off the user's disc (the
-    /// field overlay, extraction entry `0897`). The native window and the
-    /// browser play page both draw this, through
-    /// `legaia_engine_ui::text_lines::pen_line_draws_for`.
-    pub fn coin_counter_lines(&self) -> Vec<SubmodeLine> {
-        let screen = &self.world.field_vm.submode_screen;
-        if !screen.is_open() || screen.actor.state != slot::COIN_COUNTER {
-            return Vec::new();
-        }
-        let bytes = self
-            .index
-            .entry_bytes(crate::incense_notice::FIELD_OVERLAY_PROT_INDEX)
-            .ok();
-        coin_counter_lines(screen, |va| {
-            bytes
-                .as_deref()
-                .and_then(|b| legaia_engine_field::field_overlay::field_overlay_cstr(b, va))
-                .map(<[u8]>::to_vec)
-                .unwrap_or_default()
-        })
-    }
-}

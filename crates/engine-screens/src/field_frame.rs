@@ -2,9 +2,9 @@
 //! draw - the ones that need the engine's world and a render kernel at once,
 //! which is why they live here rather than in `engine-core` or `engine-ui`.
 
-use legaia_engine_core::scene_host::SceneHost;
 use legaia_engine_mode::mode::SceneMode;
 use legaia_engine_scene::scene::is_world_map_scene;
+use legaia_engine_scene_host::scene_host::SceneHost;
 use legaia_render_kernels::scene_lighting::{
     PropLights, ScenePointLight, nearest_lights, place_prop_lights,
 };
@@ -75,7 +75,7 @@ pub fn field_scene_lights(
 pub fn frame_clear_color(
     world: &legaia_engine_core::world::World,
     boot_ui: bool,
-    menu: &legaia_engine_core::menu_runtime::MenuRuntime,
+    menu: &legaia_engine_menu_runtime::menu_runtime::MenuRuntime,
     stage_battle: bool,
 ) -> [f32; 4] {
     legaia_engine_ui::battle_stage_clear::scene_clear(

@@ -27,7 +27,7 @@ pub struct FieldPropState {
     /// teardown can re-seat the player here if a partially-executed spawned
     /// record left them inside a wall (see [`crate::world::World::step_helper_contexts`]).
     /// `None` outside field scenes.
-    pub(crate) resolved_cold_spawn: Option<(i16, i16)>,
+    pub resolved_cold_spawn: Option<(i16, i16)>,
     /// Per-scene bank of placed-prop animation + interaction runtimes (the
     /// door swings, the searchable cupboards), keyed by the placement's
     /// footprint-anchor tile. Built at field-scene entry
@@ -78,7 +78,7 @@ pub struct FieldPropState {
     /// partition-0 record of its bind
     /// ([`crate::world::World::sync_prop_colliders_to_object_actors`]). Scene-scoped:
     /// cleared with [`Self::colliders`].
-    pub(crate) object_shifts: std::collections::HashMap<usize, (i32, i32)>,
+    pub object_shifts: std::collections::HashMap<usize, (i32, i32)>,
     /// The current scene's **field move-VM stager table** - the prescript
     /// records (`scene_event_scripts` / `scene_v12_table` offset `0x800`) parsed
     /// as summon-format move-VM stager records, the field-resident sibling of the

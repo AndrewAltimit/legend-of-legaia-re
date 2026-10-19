@@ -109,8 +109,11 @@ The patched disc image is for your own play only; do not share it.
 
 Steps 3 to 7 can also happen on the site's **Translation workbench** page
 instead of in a text editor. Pick your disc there, then load a published
-pack, your own `.yaml`, or start fresh. Every line is listed with its English,
-a box for your translation, and live feedback as you type:
+pack, your own `.yaml`, or start fresh. The page is one working screen: a
+compact list of lines on the left (filter by section or status, search, and
+see how much of the pack is translated), and an editor on the right for the
+line you picked, holding its English, the other rows of its dialog box, a box
+for your translation and live feedback as you type:
 
 - its size in bytes against its room (for a name, also the free bytes it could
   move into), with any character the game cannot draw highlighted and the
@@ -120,13 +123,16 @@ a box for your translation, and live feedback as you type:
   menu column allows, and a picture of the dialog box as the game draws it;
 - a moment after you stop typing, whether its scene still fits.
 
-An **Accents** panel sets how accented letters reach the disc (see
-[Accents](#accents)), shows how many lines still hold a character the game
-will not draw, and has a character palette per language that types into the
-line you are editing. Beside it, a **Symbols** palette shows every button and
-icon the game can draw inside text, taken from your own disc; click one to
-insert it (see [Buttons and icons](#buttons-and-icons)). A dashboard shows where the room is: per section, per name table, per menu
-pool, and every scene from the fullest down. Click a row to list its lines.
+Right under the translation box sit a character palette per language and a
+**Symbols** palette with every button and icon the game can draw inside text,
+taken from your own disc; click one to insert it at your cursor (see
+[Buttons and icons](#buttons-and-icons)). Beside the palette, **Accents** sets
+how accented letters reach the disc (see [Accents](#accents)); the list says
+how many lines still hold a character the game will not draw.
+**Ctrl+Enter** or **Alt+Down** moves to the next line, **Alt+Up** to the
+previous one. The collapsed **Space and budgets** section shows where the room
+is: per section, per name table, per menu pool, and every scene from the
+fullest down. Click a row to list its lines.
 *Check against my disc* runs the full check. Your edits are saved in the
 browser as you type, and the page offers to resume them next time. Download
 the working pack to keep your own copy, and the shareable pack to share. The

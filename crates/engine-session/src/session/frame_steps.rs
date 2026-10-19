@@ -188,6 +188,28 @@ impl<S: AudioSink> BootSession<S> {
         Some(GameOverSession::new())
     }
 
+    /// One frame of the return-to-title hold [`Self::take_party_wipe`]
+    /// handed back. `true` on the frame it resolves: the world's deferred
+    /// field restore is complete (`World::resolve_game_over_hold` - the hold
+    /// froze it on the last battle frame) and the wipe's battle track is
+    /// stopped, so a failed title-theme start leaves silence rather than the
+    /// stale score. The host then drops the hold and raises its title screen.
+    ///
+    /// No input: retail's wipe arm offers the player nothing.
+    pub fn step_party_wipe_hold(&mut self, hold: &mut GameOverSession) -> bool {
+        use legaia_engine_menus::game_over::GameOverOutcome;
+        use legaia_engine_scene_host::scene_host::BgmDirector;
+        hold.tick();
+        if hold.outcome() != Some(GameOverOutcome::ReturnToTitle) {
+            return false;
+        }
+        self.host.world.resolve_game_over_hold();
+        if let Some(bgm) = self.bgm.as_mut() {
+            bgm.stop();
+        }
+        true
+    }
+
     /// The field-overlay poll of the frame tail: open the shop (field-VM op
     /// `0x49` sub-0) or casino prize counter (sub-7) the field VM requested
     /// this tick, take the screen's first step on no edge
@@ -204,7 +226,7 @@ impl<S: AudioSink> BootSession<S> {
     /// its draw pass reads. Returns whether a screen opened.
     pub fn poll_field_overlay(
         &mut self,
-        menu: &mut legaia_engine_core::menu_runtime::MenuRuntime,
+        menu: &mut legaia_engine_menu_runtime::menu_runtime::MenuRuntime,
     ) -> bool {
         let Some(cue) = menu.poll_field_overlay(&mut self.host.world) else {
             return false;

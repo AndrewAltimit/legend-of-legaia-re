@@ -18,8 +18,8 @@
 //! passed.
 
 use legaia_engine_core::field_submode_screen::SubmodeLine;
-use legaia_engine_core::menu_runtime::MenuRuntime;
 use legaia_engine_core::world::World;
+use legaia_engine_menu_runtime::menu_runtime::MenuRuntime;
 use legaia_engine_ui::{SaveMenuAtlasRects, SpriteDraw, TextDraw};
 use legaia_game_tables::menu_windows::MenuWindowTable;
 
@@ -28,6 +28,7 @@ pub mod battle_command;
 mod battle_item;
 pub mod dev_menu;
 pub mod field_frame;
+pub mod field_messages;
 mod fishing;
 mod inventory_use;
 pub mod minigame_hud;
@@ -85,13 +86,6 @@ pub const RENDERER_BUY_QUANTITY: u32 = 0x801D_5510;
 /// Renderer VA of window 39 (`FUN_801D5AE8`), the pens-only sibling of
 /// window 35 (`engine_core::shop::shop_sell_detail_panel`).
 pub const RENDERER_SELL_DETAIL: u32 = 0x801D_5AE8;
-
-/// Window 39's price label. Retail's own string is a menu-overlay rodata
-/// literal; staging it here keeps the translation layer owning the text.
-pub const SELL_DETAIL_PRICE_LABEL: &str = "Price";
-/// What window 39 prints in place of the price row when the item's `+2` buy
-/// price is zero - retail's quest-item / unsellable arm.
-pub const SELL_DETAIL_CANNOT_SELL: &str = "Cannot sell";
 
 /// Everything the screens read, borrowed from whichever host holds it.
 #[derive(Clone, Copy)]
@@ -186,11 +180,14 @@ pub fn shop_item_label(world: &World, id: u8) -> String {
 /// The description line window 34 draws.
 ///
 /// `FUN_801D4A80` routes an **accessory** (item record kind byte `2`) through
-/// the passive table instead of the item's own description word, and draws
-/// nothing at all when that passive index is the `>= 0x40` sentinel.
+/// the passive table instead of the item's own description word; a passive
+/// index at the `>= 0x40` sentinel falls through to the description
+/// (`beq v0,zero,0x801D4BD8` at `0x801D4B8C`).
 /// `MenuTextTables::item_passive_text` resolves the same chain
 /// (`legaia_game_tables::accessory_passive`, which applies the sentinel bound), so a
-/// `Some` there is the accessory arm and a `None` is the item arm.
+/// `Some` there is the accessory arm and a `None` is the item arm. With the
+/// executable's detail tables installed, window 34 draws through
+/// `shop::item_detail_draws` instead, which adds the equipment arm.
 pub fn shop_item_description(world: &World, id: u8) -> String {
     let Some(text) = world.menu.text.as_ref() else {
         return String::new();

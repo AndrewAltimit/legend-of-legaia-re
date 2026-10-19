@@ -314,14 +314,15 @@ fn a_battle_item_heal_keeps_the_readout_and_the_turn_pump_alive() {
         settle_until(&mut world, 600, |w| w.battle.command.is_some()),
         "no command session to drive"
     );
-    // Begin -> the ring, whose first arm is Item.
+    // Begin -> the ring, which opens on its Left arm (Attack, the arm the
+    // confirm mask takes); Up is the Item arm.
     tap(&mut world, PadButton::Cross);
     assert_eq!(
         world.battle.command.as_ref().and_then(|s| s.menu_command()),
-        Some(BattleCommand::Item),
-        "the ring's seated arm should be Item"
+        Some(BattleCommand::Attack),
+        "the ring opens on the Left arm"
     );
-    tap(&mut world, PadButton::Cross);
+    tap(&mut world, PadButton::Up);
     assert!(
         world.battle.item_menu.is_some(),
         "the Item arm opened no item menu"

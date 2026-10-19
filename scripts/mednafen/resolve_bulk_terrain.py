@@ -26,8 +26,8 @@ PCSX-Redux version:
      points into the MAN buffer at ``_DAT_8007B898``.
   2. Actors whose tick word is ``0x801E3E00`` would surface their
      ``actor[+0x74]`` as ``fog_color``; none exists (that address is the
-     attached light's keyframe script, not a tick), so the viewer draws its
-     hardcoded ``KINGDOM_FOG_TINT``.
+     attached light's keyframe script, not a tick). The viewer reads no
+     haze colour: retail's world-map far colours are fixed in PROT 0901.
   3. The full MAN buffer pointer ``_DAT_8007B898`` and disc-side
      record count are surfaced so the viewer can cross-reference
      actors to their MAN-record names without re-doing the parse.

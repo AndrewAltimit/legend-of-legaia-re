@@ -381,6 +381,14 @@ window.LegaiaUtil.installMethods(TmdRenderer, class {
        * the sea reads as one layer. (This tracked the old synthetic Lambert
        * shade before the textured path became retail's texel * colour / 128.) */
       gl.uniform1f(this.locOceanShade, 1.0);
+      /* The ground's distance haze, so the backdrop stays one layer with
+       * the water cells (origin: the camera centre unless pinned). */
+      {
+        const hp = this.hazeParams;
+        const o = hp.origin || [cam ? cam.centerX : 0, 0, cam ? cam.centerZ : 0];
+        gl.uniform4f(this.locOceanHaze, hp.enable ? 1 : 0, hp.eyeZ, hp.scale, p.tileWorldSize);
+        gl.uniform2f(this.locOceanHazeOrigin, o[0], o[2]);
+      }
       const c = p.color;
       gl.uniform4f(this.locOceanColor, c.r, c.g, c.b, 1.0);
       gl.activeTexture(gl.TEXTURE0);
@@ -471,25 +479,17 @@ window.LegaiaUtil.installMethods(TmdRenderer, class {
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, this.tex);
     gl.uniform1i(this.locVram, 0);
-    /* Fog uniforms. The cam's centre doubles as the fog origin when no
-     * explicit override has been pushed - silhouettes near the camera
-     * stay tinted least, matching the runtime's per-vertex pipeline. */
-    gl.activeTexture(gl.TEXTURE1);
-    gl.bindTexture(gl.TEXTURE_2D, this.fogTex);
-    gl.uniform1i(this.locFogLut, 1);
-    gl.uniform1i(this.locFogEnableFs, this.fogParams.enable);
-    gl.uniform3f(
-      this.locFogColor,
-      this.fogParams.color.r,
-      this.fogParams.color.g,
-      this.fogParams.color.b,
-    );
-    const fogOrigin = this.fogParams.origin && this.fogParams.origin.length === 3
-      ? this.fogParams.origin
-      : [cam.centerX, 0, cam.centerZ];
-    gl.uniform3f(this.locFogOrigin, fogOrigin[0], fogOrigin[1], fogOrigin[2]);
-    gl.uniform1f(this.locFogFarRef, this.fogParams.farRef);
-    gl.uniform1f(this.locFogZShift, this.fogParams.zShift);
+    /* Distance haze (setDistanceHaze): the virtual walk focus is the
+     * camera centre unless the page pinned one. Off (mode 0) for every
+     * draw but the ground and the hazeDeco stamps. */
+    {
+      const hp = this.hazeParams;
+      this._hazeOrigin = hp.origin || [cam ? cam.centerX : 0, 0, cam ? cam.centerZ : 0];
+      gl.uniform3f(this.locFogOrigin, this._hazeOrigin[0], this._hazeOrigin[1], this._hazeOrigin[2]);
+      gl.uniform1f(this.locHazeEyeZ, hp.eyeZ);
+      gl.uniform1f(this.locHazeScale, hp.scale);
+      gl.uniform1i(this.locFogEnable, 0);
+    }
 
     /* Continent ground heightfield: one draw, fixed Y-flip model (the
      * mesh is already in world coords, PSX +Y down). Drawn after the
@@ -508,9 +508,11 @@ window.LegaiaUtil.installMethods(TmdRenderer, class {
       gl.uniformMatrix4fv(this.locModel, false, flipY);
       /* The ground is environment: the occlusion fade may dissolve it. */
       gl.uniform1i(this.locOcclAllow, 1);
+      this._setHazeDraw(1);
       gl.bindVertexArray(this.ground.vao);
       gl.drawElements(gl.TRIANGLES, this.ground.indexCount, gl.UNSIGNED_INT, 0);
       gl.bindVertexArray(null);
+      this._setHazeDraw(0);
     }
 
     /* Group draws by meshId so we bind each VAO once per frame. */
@@ -525,6 +527,8 @@ window.LegaiaUtil.installMethods(TmdRenderer, class {
     /* Which cue record is currently staged, so a frame with no per-draw cues
      * costs no extra uniform writes. `undefined` = the frame-global one. */
     let cueOn;
+    /* Whether a decoration's distance-haze IR0 is staged (`_setHazeDraw`). */
+    let hazeOn = false;
     /* Whether an object-effect clip is staged (`_setEffectClip`). */
     let eclipOn = this._setEffectClip(null, true);
     /* The NCLIP word staged for the current placement (`_setPlacementNclip`);
@@ -549,6 +553,10 @@ window.LegaiaUtil.installMethods(TmdRenderer, class {
           || this.cueParams;
         if (wantCue !== cueOn) { this._setCue(wantCue); cueOn = wantCue; }
         gl.uniformMatrix4fv(this.locModel, false, model);
+        if (p.hazeDeco || hazeOn) {
+          this._setHazeDraw(p.hazeDeco ? 2 : 0, model[12], model[14]);
+          hazeOn = !!p.hazeDeco;
+        }
         /* Actor draws (the player, NPCs - `noOccl` on the placement) must
          * never dissolve; environment placements may. */
         gl.uniform1i(this.locOcclAllow, p.noOccl ? 0 : 1);
@@ -603,6 +611,10 @@ window.LegaiaUtil.installMethods(TmdRenderer, class {
           strictOn = wantStrict;
         }
         gl.uniformMatrix4fv(this.locModel, false, model);
+        if (p.hazeDeco || hazeOn) {
+          this._setHazeDraw(p.hazeDeco ? 2 : 0, model[12], model[14]);
+          hazeOn = !!p.hazeDeco;
+        }
         gl.uniform1i(this.locOcclAllow, p.noOccl ? 0 : 1);
         nclipOn = this._setPlacementNclip(p.nclip, nclipOn);
         eclipOn = this._setEffectClip(p.effectClip, eclipOn);
@@ -624,10 +636,14 @@ window.LegaiaUtil.installMethods(TmdRenderer, class {
     }
     if (strictOn) gl.depthFunc(gl.LEQUAL);
     if (eclipOn) this._setEffectClip(null, true);
+    if (hazeOn) this._setHazeDraw(0);
     this._setPlacementNclip(undefined, nclipOn);
     gl.bindVertexArray(null);
     /* Enhanced lighting's halos + light shafts over the finished scene. */
     this._drawGlow(vp);
+    /* The frame's view-projection, for overlay passes drawn after this
+     * one into the same depth buffer (the world overview's Mist). */
+    this.lastVp = vp;
   }
 
   /* Model matrix for one renderAssembled placement (shared by the opaque

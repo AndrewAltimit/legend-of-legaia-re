@@ -154,7 +154,7 @@ pub(super) fn tick_menu_session(
     edge: u16,
 ) {
     if menu.is_open() {
-        let input = legaia_engine_core::menu_runtime::menu_input_from_pad_edges(edge);
+        let input = legaia_engine_menu_runtime::menu_runtime::menu_input_from_pad_edges(edge);
         menu.tick(world, input);
     }
     if world.shops.shop_open && !menu.is_open() {

@@ -242,6 +242,13 @@
       const hasLit = typeof v.field_scene_mesh_posed_lit === 'function';
       const litSlot = new Map(), litIds = new Map();
       let litCount = 0;
+      /* Every lit copy's shading inputs, so `_syncFieldLight` can re-shade
+       * them: they are built here, before the live scene's first tick, so
+       * under the scene loader's light - the scene's own 4C 8A (Rim Elm's
+       * white back colour) lands on that first tick. */
+      this.litMeshes = [];
+      this._fieldLightKey = (typeof v.field_scene_light_key === 'function')
+        ? v.field_scene_light_key() : '';
       const ensureLit = (slot, anim, rx, ry, rz, inst) => {
         if (!hasLit) return -1;
         let has = litSlot.get(slot);
@@ -264,6 +271,7 @@
         this.renderer.uploadSceneMesh(id, positions, v.field_scene_mesh_uvs(),
           v.field_scene_mesh_cba_tsb(), indices, flat.length ? flat : null);
         litIds.set(key, id);
+        this.litMeshes.push({ id, slot, anim, rx: rx & 0xFFF, ry: ry & 0xFFF, rz: rz & 0xFFF });
         return id;
       };
       const pushDraws = (slots, pos, rots, rotsX, rotsZ, anims, floorBase) => {
@@ -483,9 +491,37 @@
           if (pos.length) this.renderer.updateSceneMeshPositions(slots[i], pos);
         }
       }
+      this._syncFieldLight();
       this._applyFloorWave();
       this._applyGroundWave();
       this._applyPropFrames();
+    }
+
+    /* Re-shade the lit copies when the live field light moves (op 4C 8A) -
+     * the play page's `_syncFieldLight`. A posed copy comes back at its rest
+     * pose, so its prop cursor is reset for `_applyPropFrames` to re-pose. */
+    _syncFieldLight() {
+      const v = this.viewer;
+      if (!this.litMeshes || !this.litMeshes.length
+          || typeof v.field_scene_light_key !== 'function') return;
+      const key = v.field_scene_light_key();
+      if (key === this._fieldLightKey) return;
+      this._fieldLightKey = key;
+      for (const m of this.litMeshes) {
+        try { v.field_scene_mesh_posed_lit(m.slot, m.anim, m.rx, m.ry, m.rz); }
+        catch (e) { continue; }
+        const positions = v.field_scene_mesh_positions();
+        const indices = v.field_scene_mesh_indices();
+        if (!positions.length || !indices.length) continue;
+        const flat = v.field_scene_mesh_flat_rgba();
+        this.renderer.uploadSceneMesh(m.id, positions, v.field_scene_mesh_uvs(),
+          v.field_scene_mesh_cba_tsb(), indices, flat.length ? flat : null);
+      }
+      if (this.animProps) {
+        for (const p of this.animProps) {
+          if (this.litMeshes.some(m => m.id === p.meshId)) p.lastFrame = 0;
+        }
+      }
     }
 
     /* The floor-height ladder the scene's scripts animate (field-VM op 0x4C

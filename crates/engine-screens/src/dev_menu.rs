@@ -94,6 +94,31 @@ pub fn dev_records_model(records: &[&[u8]], play_time_seconds: u32) -> RecordsSc
     records_screen(0, 0, play_frames, &chars, 0, 0)
 }
 
+/// The records screen (`FUN_801ED710`) for the live `world` at `pen`, retail
+/// stage pixels: the dev Records page and the end-of-game soft reset
+/// (`World::soft_reset_records_pen`) draw it at different origins.
+///
+/// Per-character counters come off the first three roster records - the
+/// three columns retail's own loops walk (`s2 < 3` from record slot 0) - and
+/// the play clock is the world's own second counter. Both play hosts call
+/// this; each used to spell the roster walk itself.
+pub fn records_draws_for_world(
+    world: &legaia_engine_core::world::World,
+    font: &legaia_font::Font,
+    pen: (i32, i32),
+) -> Vec<TextDraw> {
+    let records: Vec<&[u8]> = world
+        .party
+        .roster
+        .members
+        .iter()
+        .take(3)
+        .map(|m| m.raw.as_slice())
+        .collect();
+    let model = dev_records_model(&records, world.clock.play_time_seconds);
+    ui::records_screen_draws_for(font, &records_view(&model), pen)
+}
+
 /// Project the records model onto the draw builder's view, with
 /// [`RECORDS_LABELS`] attached.
 pub fn records_view(model: &RecordsScreen) -> ui::RecordsScreenView<'static> {

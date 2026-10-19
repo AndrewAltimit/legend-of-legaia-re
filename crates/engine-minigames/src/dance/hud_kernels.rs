@@ -92,8 +92,11 @@ pub fn dance_score_digit_u(digit: u8) -> u8 {
 }
 
 // Wired: [`DanceGame::number_quads`] (style B) patches this into widget
-// `0x21`'s texture-U per drawn digit slot, on the same live HUD path as
-// [`dance_score_digit_u`].
+// `0x21`'s texture-U per drawn digit slot. Retail's only style-B caller is
+// the free-play (mode 3) counter in the beat-clock SM (`jal 0x801d32f8` at
+// `0x801CF5E8`, beside widget `0x20` at `(0x28, 0x10)`); the HUD frame
+// (`DanceGame::hud_draw_quads`) does not emit it - the gauge is the `Lv.`
+// pair alone.
 /// PORT: FUN_801d32f8 style-B digit glyph-U (widget `0x21`, the narrow counter):
 /// `digit * 8 + 0x40` - 8-texel glyphs offset `0x40` into the page, 8-px x step.
 pub fn dance_level_digit_u(digit: u8) -> u8 {

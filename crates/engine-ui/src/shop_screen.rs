@@ -133,7 +133,7 @@ pub fn page_arrows_blink_on(frame: u32) -> bool {
 #[derive(Debug, Clone, Copy)]
 pub struct ShopPickerView<'a> {
     /// `(label, ink)` per row.
-    pub rows: &'a [(&'a str, u8)],
+    pub rows: &'a [(String, u8)],
     /// The hand's row, or `None` while the picker is parked.
     pub cursor: Option<usize>,
 }
@@ -161,6 +161,18 @@ pub struct ShopScreenView<'a> {
     pub list: Option<ShopListView<'a>>,
     /// Window 41's members. Drawn only when window 41 is in the set.
     pub party: &'a [ShopCompareMember<'a>],
+    /// Window 41's labels, retail's own strings (the host reads them off the
+    /// menu overlay - `engine-menus::shop::ShopLabels`).
+    pub compare_labels: ShopCompareLabels<'a>,
+}
+
+/// Window 41's label strings (`FUN_801D4C28`): the two notes and the
+/// ATK / UDF / LDF row labels.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct ShopCompareLabels<'a> {
+    pub equipped: &'a str,
+    pub cannot_equip: &'a str,
+    pub stats: [&'a str; 3],
 }
 
 /// The host-side context: the content-rect resolver, the chrome atlas rects
@@ -559,6 +571,7 @@ pub fn shop_picker_draws(ctx: &ShopScreenCtx<'_>, picker: &ShopPickerView<'_>) -
 /// Window 41's members as the party-compare painter takes them.
 pub fn shop_party_compare_views<'a>(
     members: &[ShopCompareMember<'a>],
+    labels: ShopCompareLabels<'a>,
 ) -> Vec<PartyCompareMemberView<'a>> {
     members
         .iter()
@@ -567,14 +580,14 @@ pub fn shop_party_compare_views<'a>(
             PartyCompareMemberView {
                 name: m.name,
                 outcome: if m.already_equipped {
-                    PartyCompareOutcome::Equipped(crate::RECIPIENT_NOTE_EQUIPPED)
+                    PartyCompareOutcome::Equipped(labels.equipped)
                 } else if !m.equippable {
-                    PartyCompareOutcome::CannotEquip(crate::RECIPIENT_NOTE_CANNOT_EQUIP)
+                    PartyCompareOutcome::CannotEquip(labels.cannot_equip)
                 } else {
                     PartyCompareOutcome::Stats {
                         current,
                         candidate: m.candidate.map(|w| EquipStatBlock::from_words(&w)),
-                        labels: crate::COMPARE_LABELS_ATK,
+                        labels: labels.stats,
                     }
                 },
             }
@@ -610,7 +623,7 @@ pub fn shop_screen_draws(ctx: &ShopScreenCtx<'_>, view: &ShopScreenView<'_>) -> 
     }
     if has(WIN_SHOP_PARTY_COMPARE) && !view.party.is_empty() {
         let (x, y, _, _) = ctx.rects.rect(WIN_SHOP_PARTY_COMPARE);
-        let views = shop_party_compare_views(view.party);
+        let views = shop_party_compare_views(view.party, view.compare_labels);
         let fields = crate::party_compare_panel_fields(&views, (x, y));
         out.texts
             .extend(crate::compare_panel_draws_for(ctx.font, &fields));

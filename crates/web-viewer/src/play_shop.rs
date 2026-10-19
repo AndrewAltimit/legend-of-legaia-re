@@ -1,7 +1,7 @@
 //! Browser **field shop** + post-action **banner overlays**.
 //!
 //! Both halves are pure wiring: the state machine is
-//! [`legaia_engine_core::menu_runtime::MenuRuntime`] and the screens are
+//! [`legaia_engine_menu_runtime::menu_runtime::MenuRuntime`] and the screens are
 //! [`legaia_engine_screens::shop_overlay_frame`] - the composition the native
 //! `play-window` calls. Nothing here re-implements a screen; it projects the
 //! shared draw lists into the page's `{ sprites, texts }` quad JSON, exactly
@@ -250,7 +250,7 @@ impl LegaiaRuntime {
     /// input and routes pad edges to [`Self::play_shop_input`] while this
     /// holds, the same way it defers to the pause menu.
     ///
-    /// The answer is [`legaia_engine_core::menu_runtime::MenuRuntime::is_open`],
+    /// The answer is [`legaia_engine_menu_runtime::menu_runtime::MenuRuntime::is_open`],
     /// the predicate the native window feeds the field a neutral pad on. The
     /// page used to spell out `shop_session || prize_session` here, which
     /// agreed only while no other menu-runtime screen could be up.
@@ -285,7 +285,7 @@ impl LegaiaRuntime {
     /// one call per display frame ran them at the monitor's rate.
     ///
     /// The step is the shared
-    /// [`MenuRuntime::step_field_session`](legaia_engine_core::menu_runtime::MenuRuntime::step_field_session),
+    /// [`MenuRuntime::step_field_session`](legaia_engine_menu_runtime::menu_runtime::MenuRuntime::step_field_session),
     /// the native window's call too: the tick, the shop's blip, and - once the
     /// whole runtime has closed - `World::finish_field_shop`, so the suspended
     /// op-`0x49` flips Armed -> Done and the field VM advances past the

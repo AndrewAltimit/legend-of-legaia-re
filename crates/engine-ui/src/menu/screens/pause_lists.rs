@@ -35,14 +35,29 @@ use crate::*;
 
 /// Retail grey text ink - CLUT staging index 0, the non-focused-list row
 /// ink (VRAM row-510 CLUT entry 15 reads `(132,132,132)`).
-pub const MENU_TEXT_GREY: [f32; 4] = [0.517_647_1, 0.517_647_1, 0.517_647_1, 1.0];
+pub const MENU_TEXT_GREY: [f32; 4] = [
+    legaia_render_kernels::ui_tint::ink_component(16),
+    legaia_render_kernels::ui_tint::ink_component(16),
+    legaia_render_kernels::ui_tint::ink_component(16),
+    1.0,
+];
 /// Retail green text ink - CLUT staging index 4 (skill passives, the
 /// magic info window's "MP Used" row; entry 15 reads `(107,222,107)`).
-pub const MENU_TEXT_GREEN: [f32; 4] = [0.419_607_8, 0.870_588_2, 0.419_607_8, 1.0];
+pub const MENU_TEXT_GREEN: [f32; 4] = [
+    legaia_render_kernels::ui_tint::ink_component(13),
+    legaia_render_kernels::ui_tint::ink_component(27),
+    legaia_render_kernels::ui_tint::ink_component(13),
+    1.0,
+];
 /// The list-page "PAGE" header label ink - a teal-green distinct from the
 /// staged-ink CLUT rows (capture-measured `(16,181,156)`; the header
 /// glyphs are small-cap sprites, not dialog-font text).
-pub const MENU_TEXT_PAGE_TEAL: [f32; 4] = [0.062_745_1, 0.709_803_9, 0.611_764_7, 1.0];
+pub const MENU_TEXT_PAGE_TEAL: [f32; 4] = [
+    legaia_render_kernels::ui_tint::ink_component(2),
+    legaia_render_kernels::ui_tint::ink_component(22),
+    legaia_render_kernels::ui_tint::ink_component(19),
+    1.0,
+];
 
 /// Descriptor-table window ids spawned by the pause-menu Items / Magic
 /// screens (live window structs carry the id at `+0x8`; sets read from

@@ -611,12 +611,21 @@ window.MgMuscle = (function () {
       artsBanner = null;
       banner = null;
       /* Retail contest entry: the black "Welcome to the Muscle Dome!" card,
-       * then straight into round 1's command menu. Skippable. */
+       * then straight into round 1's command menu. Skippable. Only a
+       * contest's FIRST leg opens on it: the arena keeps hub state 0 only
+       * while the decoded round is zero (FUN_801CEA6C, `beqz` at
+       * 0x801CECE8), so a later leg goes from the INTERVAL screen straight
+       * to its ROUND card - the engine's `muscle_first_visit_owed`, the rule
+       * the play hosts' hub applies. */
+      let owed = true;
+      if (typeof api.muscle_first_visit_owed === 'function') {
+        try { owed = !!api.muscle_first_visit_owed(); } catch (e) { owed = true; }
+      }
       mode = 'intro';
       introT = 0;
       /* The live first visit (the play hosts' `FirstVisitHub`): a press ends
        * a card hold early and the announcer lines play. */
-      introLive = !!(api && api.muscle_first_visit_reset && api.muscle_first_visit_step);
+      introLive = owed && !!(api && api.muscle_first_visit_reset && api.muscle_first_visit_step);
       if (introLive) { try { api.muscle_first_visit_reset(); } catch (e) { introLive = false; } }
       introPress = false;
       introFvOk = false;
@@ -627,6 +636,7 @@ window.MgMuscle = (function () {
       pennantFx = [];
       confirmSel = 0;
       legCaption = '';
+      if (!owed) beginSelect();
       return true;
     }
 
@@ -1164,8 +1174,12 @@ window.MgMuscle = (function () {
       const pool = state.stats ? state.stats[0].budget_pool : 100;
       const len = Math.max(48, Math.round(128 * pool / 100));
       blit(0, p.bar_end_l.pal, ...p.bar_end_l.r, 0, 188);
-      for (let x = 16; x < len - 16; x += 16) {
-        const w = Math.min(16, len - 16 - x);
+      /* The body runs 8 px under the arrow, to the diamond's centre
+       * (FUN_8002C69C tiles it over w + 8 and seats the arrow at w;
+       * engine-ui arts_input::BAR_BODY_UNDER_ARROW). */
+      const bodyEnd = len - 18 + 8;
+      for (let x = 16; x < bodyEnd; x += 16) {
+        const w = Math.min(16, bodyEnd - x);
         blit(0, p.bar_body.pal, p.bar_body.r[0], p.bar_body.r[1], w, 18, x, 188);
       }
       blit(0, p.bar_arrow.pal, ...p.bar_arrow.r, len - 18, 188);

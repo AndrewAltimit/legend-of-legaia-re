@@ -58,11 +58,7 @@ impl FieldHostImpl<'_> {
                 *dst = src;
             }
             let saved_leader = w.party.party_leader_slot;
-            let leader = w
-                .party
-                .party_leader_slot
-                .or_else(|| w.party.party_actor_slots.first().copied().flatten())
-                .unwrap_or(0);
+            let leader = w.field_leader();
             w.party.party_actor_slots = vec![Some(leader)];
             w.party.party_leader_slot = Some(leader);
             w.system_flag_clear(0x10);

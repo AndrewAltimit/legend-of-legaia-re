@@ -120,7 +120,10 @@ top of the 320x240 stage, picker `(0x26, 0x94 + ((4-n)*0xF)/2, ...)`, text
 pen at the box origin with 15-px row pitch in the staged CLUT-7 white, the
 chrome via `legaia_engine_ui::dialog_window_chrome_draws_for` (fill at
 centre+4, border ring at centre+8) and the option / page-advance hand
-sprites. The page's DOM text box remains only as a fallback for a cached
+sprites. The same channel carries the `4C E1` balloon, the map display's
+labels, the tile-board prompt and the Incense notice; the whole layer is
+`legaia_engine_screens::field_messages::field_message_frame`, the native
+window's composition too. The page's DOM text box remains only as a fallback for a cached
 WASM without this API.
 
 ## Opening prologue chain (`play_cutscene`)
@@ -176,7 +179,12 @@ Two things the browser host has to do that the native one gets for free:
 - **Framing.** The page frames every field / overworld / cutscene shot with the
   ENGINE camera (`play_camera`, below), so the vantage is retail's rather than
   the page's own. The camera-occlusion fade dissolves whatever geometry sits
-  between that lens and the character; nothing is culled.
+  between that lens and the character; nothing is culled. One export,
+  `play_occlusion_fade`, runs the fade's whole frame (arming, gate, ramp); it
+  folds the engine-owned screens (pause menu, a menu-runtime screen) into the
+  arming term itself, so the page passes only its own vantage terms. The call
+  sits inside the frame's `try`, so a throw there costs the fade silently -
+  `tests/occlusion_fade_page.rs` pins that its arguments are declared.
 
 ## The camera (`play_camera`)
 
@@ -229,7 +237,7 @@ over the GL view) blits the quads with a per-quad multiply tint.
 
 The top-level command list plus the Items / Magic / Equip / Status / Options
 sub-screens all run the real
-`legaia_engine_core::field_menu_dispatch::FieldMenuSubsession` the native
+`legaia_engine_menu_runtime::field_menu_dispatch::FieldMenuSubsession` the native
 `play-window` builds - the disc equipment / spell / item catalogs are installed
 on the host world at `load_disc` - and render through the exact same
 `legaia-engine-ui` draw builders (`inventory_use_draws_for` /
@@ -243,7 +251,7 @@ card-read beat, and the card's fifteen blocks then come up as retail's 5x3
 portrait grid with the focused block's info panel sliding up beneath it. Load
 lifts that block into the live world and parks it; the page then lands it with
 one call, `play_resume_save` (`resume.rs`, over the shared
-`engine-core::resume::land_save`: the saved scene, else the running scene,
+`engine-scene-host::resume::land_save`: the saved scene, else the running scene,
 else the opening town - never a New Game); Save raises the
 overwrite prompt and writes the session into the card image. The block-grid
 cursor is this crate's, not the session's - `SelectPhase::SlotPreview` ignores
@@ -359,7 +367,7 @@ A field-VM op-`0x49` sub-0 merchant record opens the retail gold shop, and the
 post-battle level-up / Seru-capture banners draw over the live field. Both are
 the one composition the native window calls,
 `legaia_engine_screens::shop_overlay_frame`, driven by the real
-`legaia_engine_core::menu_runtime::MenuRuntime`; `play_overlay_draws_json`
+`legaia_engine_menu_runtime::menu_runtime::MenuRuntime`; `play_overlay_draws_json`
 serves the quads. The screen steps per sim tick, from the page's tick loop:
 the shared tick claim lets a shop or the prize exchange take the tick (one
 `play_shop_input` step) and holds the pad neutral under an inn, and
@@ -599,9 +607,10 @@ against the page's field view-projection in page space), and actors a scene
 script spawns with a TMD (`FieldEvent::ActorSpawned`) get their rest-pose
 mesh uploaded and drawn from the live actor transform. The field party HUD
 reads the lead's projected stage-Y off the same view-projection. The page
-also drains every remaining field-VM event each tick, the twin of the native
-`drain_and_route_field_events` - `World::pending_field_events` is only ever
-emptied by a consumer.
+also drains every remaining field-VM event each tick through the one kernel
+the native window runs, `World::drain_spawned_mesh_slots`, in a step named as
+the window's (`drain_and_route_field_events`) - `World::pending_field_events`
+is only ever emptied by a consumer.
 
 The menu rows have the same two sources the native window has, and exactly one
 draws at a time: with PROT 0888 resolved the title TIM's own NEW GAME /
@@ -713,7 +722,7 @@ Rim Elm windmill); the ambient move-VM tree and scripted CLUT effects write
 VRAM; VDF morphs move vertices.
 
 So `field_scene_anim_init` enters the scene **live and headless** through
-`engine-core::scene_live::LiveScene` - an ordinary `SceneHost` entered the
+`engine-scene-host::scene_live::LiveScene` - an ordinary `SceneHost` entered the
 way the play pages' scene picker enters it, ticked once per retail vsync
 with no pad, never following the scene out (a door or scripted battle
 re-enters it; repeated exits stop the ticking). The page reads that world
@@ -787,6 +796,26 @@ Party / save-point heads (`model_index >= 0xF0`) draw from the global pool
 instead of the scene's and are routed to the characters page
 (`special_count`). Off-map "hidden" spawns are script-gated story actors,
 fully resolvable, so they *are* listed - flagged `conditional`.
+
+## Shop vendors (`shop_vendors`)
+
+`scene_shop_vendors_json()` ties each gold shop of the scene loaded by
+`set_scene_npcs` to the actor that opens it. A shop is an op-`0x49` record
+inline in the MAN's script bytes ([shop.md](shop.md)), and the MAN's three
+record partitions tile its data region with contiguous script records, so
+the record whose span holds the shop's `count` byte is the one that issues
+it. A partition-1 record at index `>= 1` is a placement, and its index is the
+catalog's `slot`; the JSON carries that catalog index as `npc`, or a `why`
+when the owner is the scene controller (partition 1, record 0), a
+partition-0 / partition-2 record, or an actor the curated catalog withholds.
+Across the disc every gold shop the `asset shop-stock` scan finds ties to a
+catalogued merchant except the Ancient Wind Cave's four, which sit in
+partition-0 records (disc-gated test:
+`crates/web-viewer/tests/shop_vendors_real.rs`). The shops page loads each
+town's shop scenes, poses every vendor into one WebGL canvas through the NPC
+page's poser (`site/js/field-npc-model.js`) and copies each out as a still
+(`MeshView.snapshot`); its item renders reuse the characters page's cards
+through `site/js/item-thumbs.js`.
 
 ## Tactical Arts viewer (`arts_view`)
 
@@ -892,7 +921,11 @@ summary's per-item `isolation` object and the glTF root name carry the mode,
 the kept / dropped primitive counts and whether a rule hand-checked the
 record, and the grip repair's `bridges` / `bridged_triangles`
 (`equip_repair` lofts a tube between the two shaft rims a welded weapon
-leaves where the fist hid the haft; the root name says `grip inferred`).
+leaves where the fist hid the haft; the root name says `grip inferred`)
+and `skin_masked_primitives` (kept primitives whose painted skin
+`equip_skin_mask` made transparent: their `cba_tsb` points at a masked
+15-bit copy inside `equipped_vram_bytes()`, so the preview needs no
+extra upload).
 The `equipped_item_only_{positions,uvs,cba_tsb,indices,object_ids,flat_rgba,bounds}(section)`
 family is that same repaired geometry as mesh streams, parallel to the
 `equipped_mesh_*` set, so the page's preview toggle draws exactly what the
@@ -1207,7 +1240,7 @@ reference TIMs sitting in other PROT entries.
 |---|---|
 | [`nav_disc`](../../crates/web-viewer/src/nav_disc.rs) / [`inspect`](../../crates/web-viewer/src/inspect.rs) / [`viewer_render`](../../crates/web-viewer/src/viewer_render.rs) | `LegaiaViewer`'s disc load + entry navigation, the entry inspector's exports, and its internal render helpers. |
 | [`scene_geom`](../../crates/web-viewer/src/scene_geom.rs) | Kingdom / walk-ground / continent / ocean / slot-4 geometry exports behind the world-overview pages. |
-| [`fog_lut`](../../crates/web-viewer/src/fog_lut.rs) | Static locator for the world-map distance-cue fog LUT. |
+| [`world_mist`](../../crates/web-viewer/src/world_mist.rs) | The kingdom MAN's fog-region table and the fog sheet art, for the world overview's Mist overlay. |
 | [`sentinel_placements`](../../crates/web-viewer/src/sentinel_placements.rs) | Cross-references a save state's live world-map actors against the disc's MAN placement records. |
 | [`prot_locate`](../../crates/web-viewer/src/prot_locate.rs) | `PROT.DAT` offset to owning-entry lookup, the browser twin of `prot-extract locate`. |
 | [`player_anm`](../../crates/web-viewer/src/player_anm.rs) | Player-ANM corpus + record decode exports. |

@@ -639,7 +639,7 @@ impl PlayWindowApp {
         // debug vantage, and a boot / menu-runtime screen owning the
         // frame. The browser play page fills the same terms.
         let host_terms = legaia_engine_core::field_occlusion::FadeHostTerms {
-            enabled: self.occlusion_fade,
+            enabled: self.options_state.occlusion_fade,
             debug_camera: self.field_debug_camera,
             screen_owned: self.boot_ui.is_active() || self.menu_runtime.is_open(),
         };

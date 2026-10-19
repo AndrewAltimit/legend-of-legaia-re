@@ -3,7 +3,7 @@
  * file modularity; consumed by webgl-tmd.js's TmdRenderer class.
  *
  * Loads as a classic global script - exposes: VRAM_W, VRAM_H,
- * FOG_LUT_SIZE, OCEAN_VS_SRC, OCEAN_FS_SRC, VS_SRC, FS_SRC, the DYN_*
+ * OCEAN_VS_SRC, OCEAN_FS_SRC, VS_SRC, FS_SRC, the DYN_*
  * dynamic-lighting constants and glslFloat.
  * Must be loaded before webgl-tmd.js.
  */
@@ -63,9 +63,24 @@ uniform float u_shade;            /* packet-colour modulation of the main progra
                                    * water cells, so the backdrop plane matches them exactly
                                    * and the sea reads as one continuous layer. 1.0 = the
                                    * neutral 0x80 word the generated heightfield carries. */
+/* The distance haze the main program runs on the ground's water cells
+ * (setDistanceHaze), so the backdrop keeps matching them: x = on, y = the
+ * walk eye's TRZ, z = SZ per world unit, w = world units per texture wrap
+ * (v_uv * w is the fragment's world XZ). u_haze_origin = the walk focus. */
+uniform vec4 u_haze;
+uniform vec2 u_haze_origin;
 
 in vec2 v_uv;
 out vec4 o_color;
+
+/* Retail's ground cue toward far colour 0x100 (saturating at 0xFF):
+ * texel * mix(0x80, 0xFF, IR0) / 128. */
+vec3 ocean_haze(vec3 c) {
+  if (u_haze.x < 0.5) return c;
+  float sz = u_haze.y + u_haze.z * length(v_uv * u_haze.w - u_haze_origin);
+  float ir0 = clamp((sz - 20480.0) / 32768.0, 0.0, 1.0);
+  return mix(c, clamp(c * (255.0 / 128.0), vec3(0.0), vec3(1.0)), ir0);
+}
 
 vec3 bgr555_to_rgb(uint c) {
   return vec3(
@@ -77,7 +92,7 @@ vec3 bgr555_to_rgb(uint c) {
 
 void main() {
   if (u_ocean_textured == 0) {
-    o_color = u_color;
+    o_color = vec4(ocean_haze(u_color.rgb), u_color.a);
     return;
   }
   /* Wrap UVs into [0, 1) and sample only the top-left region of the
@@ -101,17 +116,12 @@ void main() {
    * renderer never samples this in the ocean region; if we hit it the
    * texture is mis-sized so we fall back to the kingdom tint colour. */
   if (entry == 0u) {
-    o_color = u_color;
+    o_color = vec4(ocean_haze(u_color.rgb), u_color.a);
     return;
   }
-  o_color = vec4(bgr555_to_rgb(entry) * u_shade, 1.0);
+  o_color = vec4(ocean_haze(bgr555_to_rgb(entry) * u_shade), 1.0);
 }
 `;
-
-/* Matches the retail fog-LUT shape: 2048 u16 entries indexed by
- * Z >> 5 (where Z is the 16-bit GTE-output Z, range 0..65535). The
- * shader samples this via `int(v_fog_t * (FOG_LUT_SIZE - 1))`. */
-const FOG_LUT_SIZE = 2048;
 
 /* Camera-occlusion fade (see-through walls) tunables - the GLSL twin of
  * the native renderer's `crates/engine-render/src/occlusion_fade.rs`
@@ -255,13 +265,21 @@ precision highp int;
 uniform mat4 u_mvp;
 uniform mat4 u_model;   /* per-draw model matrix (identity for single-mesh mode) */
 
-/* Fog (mirrors the overlay leaves at 0x801F7644..0x801F8690 - per-vertex
- * distance-cue tint added between GTE projection and OT packet write.
- * Disabled per-draw via u_fog_enable=0; see uploadFogLut.) */
-uniform vec3 u_fog_origin;   /* world-space camera/eye origin (XZ floor plane) */
-uniform float u_fog_far_ref; /* retail gp-0x2E0; far-plane reference Z */
-uniform float u_fog_z_shift; /* retail gp+0x90; exponent for Z_far = Z >> shift */
-uniform int u_fog_enable;    /* 0 = no fog; mirrors gp-0x2D1 & 0x10 gate */
+/* World-overview distance haze: the kingdom overworld's walk-view depth cue
+ * (PROT 0901, docs/subsystems/world-map.md#ground-texturing) measured from a
+ * virtual walk camera seated on u_fog_origin. Retail's cue is
+ * IR0 = clamp((SZ - 0x5000) >> 3, 0, 0x1000); the page stands SZ in as
+ * u_haze_eye_z + u_haze_scale * (XZ distance from the origin) - the walk
+ * eye's TRZ plus the 6x world scale times the pitch's forward cosine, i.e.
+ * the depth a point at that distance has ahead of a player standing on the
+ * origin. u_fog_enable: 0 off, 1 per-vertex (the continent ground), 2 one
+ * IR0 for the whole draw (u_haze_ir0, a decoration's origin - retail cues a
+ * decoration by its object's TRZ). Set by setDistanceHaze. */
+uniform vec3 u_fog_origin;   /* virtual walk focus (XZ floor plane) */
+uniform float u_haze_eye_z;  /* the walk eye's TRZ (eye trio Z) */
+uniform float u_haze_scale;  /* 6 * cos(walk pitch): SZ per world unit */
+uniform float u_haze_ir0;    /* mode 2: the draw's IR0 / 0x1000 */
+uniform int u_fog_enable;    /* 0 off, 1 per-vertex, 2 per-draw */
 
 /* The kingdom overworld's per-vertex screen-Y curvature - the GLSL twin of
  * engine-render's OVERWORLD_CURVE_WGSL. Retail's overworld prim leaves add
@@ -488,7 +506,7 @@ out vec2 v_uv_pw;
 out vec4 v_flat_rgba_pw;
 out float v_affine_w;
 flat out uvec2 v_cba_tsb;
-out float v_fog_t;     /* 0..1, fraction of u_fog_far_ref */
+out float v_fog_t;     /* distance-haze IR0 / 0x1000 (0..1) */
 out float v_view_z;    /* perspective view depth (clip w) for the depth cue */
 out float v_depth_w;   /* the w the log-depth write keys on */
 /* 1 on a sloped far-bucket field ground cell (fieldFarBucket), 2 on a flat
@@ -505,20 +523,16 @@ void main() {
   vec4 flat_rgba = vec4(overworldGroundCue(a_flat_rgba.rgb, u_mvp * u_model,
                                         a_ground_ref_xz, a_ground_ref_y),
                      a_flat_rgba.a);
-  /* Mirror the per-vertex Z_far the overlay leaves compute. The retail
-   * pipeline pulls Z from the GTE's screen-space pipeline after rtpt;
-   * here we approximate using XZ-plane distance to the camera origin
-   * since the world-overview camera is a top-down ortho looking straight
-   * down. The far-ref + shift come straight from gp-0x2E0 / gp+0x90. */
-  if (u_fog_enable != 0 && u_fog_far_ref > 0.0) {
+  /* Distance haze (u_fog_enable): retail's IR0 = (SZ - 0x5000) >> 3,
+   * saturating at 0x1000, with SZ stood in from the XZ distance to the
+   * virtual walk focus (see the uniform block). */
+  if (u_fog_enable == 1) {
     float dx = world_pos.x - u_fog_origin.x;
     float dz = world_pos.z - u_fog_origin.z;
-    float dist = sqrt(dx * dx + dz * dz);
-    /* Retail does Z_far = Z >> shift. The same right-shift here in float
-     * space is exp2(-shift); applied to dist before normalisation against
-     * u_fog_far_ref. */
-    float shifted = dist * exp2(-u_fog_z_shift);
-    v_fog_t = clamp(shifted / u_fog_far_ref, 0.0, 1.0);
+    float sz = u_haze_eye_z + u_haze_scale * sqrt(dx * dx + dz * dz);
+    v_fog_t = clamp((sz - 20480.0) / 32768.0, 0.0, 1.0);
+  } else if (u_fog_enable == 2) {
+    v_fog_t = clamp(u_haze_ir0, 0.0, 1.0);
   } else {
     v_fog_t = 0.0;
   }
@@ -552,13 +566,11 @@ precision highp int;
 precision highp usampler2D;
 
 uniform usampler2D u_vram;
-uniform usampler2D u_fog_lut;  /* 512x1 R16UI, BGR555 entries; indexed by Z >> 5 */
 /* When non-zero, render transparent samples as opaque (with a tinted
  * fallback so they're visible). Used by the assembled top-view map where
  * CLUT collisions are expected and discarded fragments leave holes. */
 uniform int u_no_discard;
-/* When non-zero, blend the per-vertex distance-cue fog LUT into the
- * diffuse term. Mirrors the overlay leaves' dpcs/dpct post-process. */
+/* Non-zero: the world overview's distance haze runs (v_fog_t = IR0). */
 uniform int u_fog_enable;
 /* When non-zero, the hybrid path is active: vertices whose a_flat_rgba.a < 0.5
  * are untextured (flat/gouraud) prims and are FILLED from v_flat_rgba.rgb
@@ -578,10 +590,9 @@ uniform int u_use_flat_colors;
  * bit is set: STP=0 texels draw opaque even inside a semi-transparent prim.
  * Untextured (flat-colour) prims have no STP; the whole prim blends. */
 uniform int u_semi_pass;
-/* Per-kingdom baseline fog tint (BGR555 -> RGB linear in 0..1). Used as
- * the fog color when u_fog_lut hasn't been bound to a captured LUT yet
- * so the LUT-less path still produces a visually-meaningful gradient. */
-uniform vec3 u_fog_color;
+/* Distance haze far colour over 128 (retail SetFarColor): 0x100 / 128 = 2.0
+ * for the continent ground, 0xD0 / 128 for a decoration. */
+uniform float u_haze_far;
 /* After-image ("ghost") pass: rgb = tint, a = intensity. When a > 0 the
  * fragment collapses to a tinted-luminance silhouette of the lit texel -
  * the caller draws it additively over the opaque pose (the retail arts
@@ -961,39 +972,21 @@ float occl_keep(vec2 frag_px, float frag_w) {
   return mix(1.0, mix(u_occl_params.y, 1.0, t), s * lift);
 }
 
-/* World-overview distance haze, applied to BOTH prim families: retail's
- * overlay renderers run the dpcs/dpct cue pass on every prim they emit,
- * untextured F* / G* leaves included (the four untextured slots of the
- * 0x801F8968 row carry the same post-process as the textured four), so a
- * flat-filled roof hazes with distance exactly like the textured wall
- * under it. Identity when u_fog_enable is 0. */
+/* World-overview distance haze - retail's walk-view DPCS, applied to BOTH
+ * prim families: the overlay leaves run the cue on every prim they emit,
+ * untextured F* / G* leaves included, so a flat-filled roof hazes like the
+ * textured wall under it. DPCS moves the packet colour toward the far
+ * colour by IR0 (v_fog_t): an untextured prim IS that colour, a textured
+ * one is texel * colour / 128, so its far term is texel * far / 128.
+ * u_haze_far is far / 128 with the DPCS 0xFF saturation folded in. Identity
+ * when u_fog_enable is 0. */
 vec3 apply_distance_fog(vec3 lit) {
   if (u_fog_enable == 0) return lit;
-  /* The retail LUT at gp-0x2BC stores a per-Z SCALAR (entries climb
-   * from 0x0000 at near-Z to ~0x01FF at far-Z) that the overlay
-   * leaves add to vertex SXY+offset words; the per-kingdom haze
-   * COLOR comes from the GTE FAR_COLOR register, set via ctc2
-   * during kingdom init. The retail visual is "diffuse fades toward
-   * a kingdom-tinted haze color with distance" - not a color tint
-   * baked into the LUT itself.
-   *
-   * The WebGL approximation mirrors that split: sample the LUT as a
-   * scalar fog factor in 0..1, then mix(lit, u_fog_color, factor)
-   * with u_fog_color = the kingdom haze tint. When v_fog_t already
-   * encodes the distance signal, the LUT shapes the per-tier
-   * curve (retail samples discrete tiers at Z >> 5 boundaries). */
-  float lut_idx_f = clamp(v_fog_t * 2047.0, 0.0, 2047.0);
-  int lut_idx = int(lut_idx_f);
-  uint lut_word = texelFetch(u_fog_lut, ivec2(lut_idx, 0), 0).r;
-  /* The retail LUT saturates at 0x01FF (= 511); normalise to 0..1.
-   * Without a captured LUT (the 1D texture is seeded to all zeros)
-   * we fall back to v_fog_t directly so the toggle still produces
-   * a distance-based fade. */
-  float lut_factor = float(lut_word) / 511.0;
-  float factor = (lut_word == 0u && v_fog_t > 0.0)
-    ? v_fog_t
-    : clamp(lut_factor, 0.0, 1.0);
-  return mix(lit, u_fog_color, factor);
+  return mix(lit, vec3(u_haze_far * (128.0 / 255.0)), v_fog_t);
+}
+vec3 apply_distance_fog_tex(vec3 lit, vec3 texel) {
+  if (u_fog_enable == 0) return lit;
+  return mix(lit, clamp(texel * u_haze_far, vec3(0.0), vec3(1.0)), v_fog_t);
 }
 
 void main() {
@@ -1177,7 +1170,7 @@ void main() {
   lit = dyn_window(dyn_light(lit, v_normal, geo_n, (tsb & 0x2000u) != 0u),
                    color.rgb, (tsb & 0x1000u) != 0u);
 
-  lit = apply_distance_fog(lit);
+  lit = apply_distance_fog_tex(lit, color.rgb);
 
   /* Prologue grade + depth-cue ramp (identity when unset). Retail order:
    * the grade tints the NEAR term; the far term is texel * far colour

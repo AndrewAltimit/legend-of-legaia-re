@@ -223,6 +223,7 @@ canvas.char-viewer-canvas:active { cursor: grabbing; }
 <script src="js/rom-cache.js"></script>
 <script src="js/disc-info.js"></script>
 <script src="js/load-progress.js"></script>
+<script src="js/item-thumbs.js"></script>
 -->
 <header class="page-header">
   <div class="breadcrumb"><a href="index.html">home</a> · characters</div>
@@ -299,8 +300,8 @@ canvas.char-viewer-canvas:active { cursor: grabbing; }
 
         <div class="char-section-label">Download</div>
         <div class="char-controls">
-          <button id="char-glb-btn" type="button" title="Download this character as a textured glTF model with the form's real animation clips baked in (battle: the action bank, the weapon swings and every Tactical Art; field: the party walk/idle locomotion bank; Baka Fighter: the 9-record battle bank)">⬇ .glb</button>
-          <button id="char-tmd-btn" type="button" title="Download the (possibly equipment-patched) Legaia TMD body">⬇ .tmd</button>
+          <button id="char-glb-btn" class="btn-accent" type="button" title="Download this character as a textured glTF model with the form's real animation clips baked in (battle: the action bank, the weapon swings and every Tactical Art; field: the party walk/idle locomotion bank; Baka Fighter: the 9-record battle bank)">Download .glb</button>
+          <button id="char-tmd-btn" class="btn-accent" type="button" title="Download the (possibly equipment-patched) Legaia TMD body">Download .tmd</button>
         </div>
 
         <div class="char-section-label">Animation</div>
@@ -352,7 +353,7 @@ canvas.char-viewer-canvas:active { cursor: grabbing; }
   <p>"No separate object" does not mean "inseparable". A weapon is drawn from its <strong>own palette column</strong>, and across all 81 weapon and Ra-Seru records on the disc <strong>no primitive mixes the two</strong>, so the item is an exact primitive subset of the hand object, selected by material. The side panel offers two cuts per equipped piece:</p>
   <ul>
     <li><strong>Record-keeping cut</strong> - the exact palette subset plus the limb it came from, as two named nodes in one file. The host limb is ground truth, so it is always included. Where there is no material boundary (armour, headgear, footwear), you get the piece as spliced in.</li>
-    <li><strong>Item-alone cut</strong> (the equipment panel's ⬇ buttons) - the great axe with no hand, the helmet with no face. This is a deliberate policy plus a hand-checked per-record rule table, because nothing on the disc says which primitives of a re-authored hand are "the axe". The <em>preview</em> toggle draws exactly what the file will contain.</li>
+    <li><strong>Item-alone cut</strong> (the equipment panel's Download buttons) - the great axe with no hand, the helmet with no face. This is a deliberate policy plus a hand-checked per-record rule table, because nothing on the disc says which primitives of a re-authored hand are "the axe". The <em>preview</em> toggle draws exactly what the file will contain.</li>
   </ul>
   <p><strong>How to read the labels.</strong> Each piece is tagged by how cleanly it came away, and the glTF root node carries the same words. Four cases occur across the disc's 132 equipment records:</p>
   <table>
@@ -365,6 +366,7 @@ canvas.char-viewer-canvas:active { cursor: grabbing; }
     </tbody>
   </table>
   <p>The item-alone rule keeps a primitive only if it is not the character's own flesh and not an unchanged piece of them: read as <em>colour</em> against the bare limb for held items and headgear, and as <em>geometry-and-colour identity</em> for body and footwear (the default outfit is a real garment, so a dark robe is not "body" just because the default robe is dark). Every card says which reading decided it and whether the record is hand-checked. Completeness beats purity: every equipped section gets a download rather than a silently empty slot.</p>
+  <p>Some primitives are both: one textured quad that paints the item <em>and</em> the flesh beside it - the forehead around Noa's clips, the shoulders above her robes' neckline, the brow under Vahn's seals, the neck inside his armour's collar. Dropping such a quad would lose the item and keeping it keeps the skin, so the cut goes one level finer and makes the <strong>skin texels transparent</strong>: the quad's texels are copied into a spare corner of the character's texture memory with the flesh-toned patches cleared, and the quad is pointed at the copy. A quad only counts as mixed when a good part of it is clearly not flesh, so horns, claw tips and bone blades - one warm material shaded light to dark - stay whole.</p>
 
   <h3 id="grip-repair">The grip is inferred, and the file says so</h3>
   <p>A welded item leaves the cut with an <strong>open grip</strong>: the part of the shaft inside the closed fist was never modelled, so Vahn's Great Axe comes away as an axe head on a stub of haft and a pommel end, each ending in an open ring where it met the fingers. Two coaxial rings of similar size facing each other across a hand's width are the two ends of one straight shaft, so the item-alone cut <strong>bridges</strong> such pairs with a tube lofted between the rims and marks the result <em>grip inferred</em> on the card, in the summary and in the glTF root name. Nine of the 81 held-item records take a bridge (all Vahn's: the axes, maces and shorter blades).</p>
@@ -878,8 +880,8 @@ canvas.char-viewer-canvas:active { cursor: grabbing; }
       return `<div class="char-item-row">
         <b>${escapeHtml(name)}${tags ? ' <i>' + tags + '</i>' : ''}</b>
         <div class="char-item-btns">
-          <button class="char-equip-btn" data-item-only-section="${it.section}" ${canAlone ? '' : 'disabled'} title="Download just this piece - no limb, no skin, no unchanged default geometry; the grip is bridged where two shaft ends face each other. An opinionated cut, not a disc fact (${escapeHtml(ISOLATION_MODE_NOTE[iso ? iso.mode : ''] || '')})">⬇ alone</button>
-          <button class="char-equip-btn" data-item-section="${it.section}" title="Download this piece plus the limb it sits on, as named nodes in one glTF file - the exact palette cut, for the record (${escapeHtml(it.describe || it.class)})">⬇ + limb</button>
+          <button class="char-equip-btn btn-accent" data-item-only-section="${it.section}" ${canAlone ? '' : 'disabled'} title="Download just this piece - no limb, no skin, no unchanged default geometry; the grip is bridged where two shaft ends face each other. An opinionated cut, not a disc fact (${escapeHtml(ISOLATION_MODE_NOTE[iso ? iso.mode : ''] || '')})">Download alone</button>
+          <button class="char-equip-btn btn-accent" data-item-section="${it.section}" title="Download this piece plus the limb it sits on, as named nodes in one glTF file - the exact palette cut, for the record (${escapeHtml(it.describe || it.class)})">Download + limb</button>
           <button class="char-equip-btn${previewing ? ' is-active' : ''}" data-item-preview-section="${it.section}" ${canAlone ? '' : 'disabled'} title="Show only what the alone download will contain">${previewing ? '● previewing' : '○ preview'}</button>
         </div>
       </div>`;
@@ -891,40 +893,15 @@ canvas.char-viewer-canvas:active { cursor: grabbing; }
   // Card thumbnails are software-rendered in WASM (`equipment_item_card_*`),
   // one build per (character, section, id) - about the cost of one loadout
   // assembly each - so they are produced through a queue that yields to the
-  // main viewer between cards, and cached for the session.
-  const cardCache = new Map();   // key -> { json, pixels(Uint8ClampedArray), size }
+  // main viewer between cards, and cached for the session. The renderer,
+  // queue and cache are js/item-thumbs.js, shared with the shops page.
   const CARD_PX = 96;
-  let cardQueue = [];            // [{ cslot, section, id }]
-  let cardQueueToken = 0;        // bumped per render; a stale pump stops
-  const cardKey = (cslot, section, id) => `${cslot}:${section}:${id}`;
-
-  function ensureCard(cslot, section, id) {
-    const key = cardKey(cslot, section, id);
-    if (cardCache.has(key)) return cardCache.get(key);
-    if (!viewer || typeof viewer.equipment_item_card_json !== 'function') return null;
-    let json = null;
-    try { json = JSON.parse(viewer.equipment_item_card_json(cslot, section, id)); } catch (e) { json = null; }
-    let pixels = null;
-    if (json && json.ok) {
-      const px = viewer.equipment_item_card_pixels(CARD_PX);
-      if (px && px.length === CARD_PX * CARD_PX * 4) pixels = new Uint8ClampedArray(px);
-    }
-    const entry = { json, pixels, size: CARD_PX };
-    cardCache.set(key, entry);
-    return entry;
-  }
+  const thumbs = new window.ItemThumbs(() => viewer, { size: CARD_PX });
+  const ensureCard = (cslot, section, id) => thumbs.ensure(cslot, section, id);
 
   function paintCard(cardEl, entry) {
-    const cv = cardEl.querySelector('canvas.char-item-thumb');
     const tags = cardEl.querySelector('.char-item-tags');
-    if (cv && entry && entry.pixels) {
-      const ctx = cv.getContext('2d');
-      ctx.putImageData(new ImageData(entry.pixels, entry.size, entry.size), 0, 0);
-      cv.classList.remove('is-pending');
-    } else if (cv) {
-      cv.classList.remove('is-pending');
-      cv.title = 'this piece did not assemble on its own';
-    }
+    thumbs.paint(cardEl.querySelector('canvas.char-item-thumb'), entry);
     if (tags && entry && entry.json && entry.json.ok) {
       const j = entry.json;
       tags.innerHTML = isoTags(j.isolation) || `<span title="${escapeHtml(j.describe || '')}">${escapeHtml(j.class)}</span>`;
@@ -934,26 +911,12 @@ canvas.char-viewer-canvas:active { cursor: grabbing; }
     }
   }
 
-  function pumpCardQueue(token) {
-    if (token !== cardQueueToken) return;
-    const next = cardQueue.shift();
-    if (!next) return;
-    const cardEl = equipPanelEl.querySelector(`.char-item-card[data-section="${next.section}"][data-id="${next.id}"]`);
-    if (cardEl) {
-      const entry = ensureCard(next.cslot, next.section, next.id);
-      paintCard(cardEl, entry);
-    }
-    // Yield: let the orbit view draw a frame between cards.
-    setTimeout(() => pumpCardQueue(token), 0);
-  }
-
   function renderEquipPanel() {
     const meta = equipSlotMeta();
     if (!isEquipLoadoutForm(curForm) || !meta) {
       equipPanelEl.style.display = 'none';
       equipPanelEl.innerHTML = '';
-      cardQueueToken++;
-      cardQueue = [];
+      thumbs.cancel();
       return;
     }
     equipPanelEl.style.display = '';
@@ -964,15 +927,14 @@ canvas.char-viewer-canvas:active { cursor: grabbing; }
         <div class="char-item-card is-none${equipIds[sec.index] === 0 ? ' is-active' : ''}" data-section="${sec.index}" data-id="0" title="The section's unequipped default">
           <span class="char-item-name">none</span>
         </div>`].concat(sec.items.map(it => {
-        const key = cardKey(cslot, sec.index, it.id);
-        const cached = cardCache.get(key);
+        const cached = thumbs.cached(cslot, sec.index, it.id);
         const active = equipIds[sec.index] === it.id;
         return `
         <div class="char-item-card${active ? ' is-active' : ''}" data-section="${sec.index}" data-id="${it.id}">
           <canvas class="char-item-thumb${cached ? '' : ' is-pending'}" width="${CARD_PX}" height="${CARD_PX}"></canvas>
           <span class="char-item-name">${escapeHtml(it.name || ('id ' + it.id))}</span>
           <span class="char-item-tags"></span>
-          <button class="char-item-dl" type="button" data-dl-section="${sec.index}" data-dl-id="${it.id}" title="Download this piece alone as .glb (grip repaired where it can be)">⬇</button>
+          <button class="char-item-dl btn-accent" type="button" data-dl-section="${sec.index}" data-dl-id="${it.id}" title="Download this piece alone as .glb (grip repaired where it can be)">Download</button>
         </div>`;
       }));
       const wornHere = equipIds[sec.index]
@@ -986,22 +948,24 @@ canvas.char-viewer-canvas:active { cursor: grabbing; }
     }).join('');
     equipPanelEl.innerHTML = `<div class="char-equip-panel-head">
         <h3>Equipment</h3>
-        <span>every piece the disc offers ${escapeHtml(meta.label)}, each drawn on its own · click to put on, ⬇ to download it alone</span>
+        <span>every piece the disc offers ${escapeHtml(meta.label)}, each drawn on its own · click to put on, Download to save it alone</span>
         <button class="char-equip-btn" id="char-panel-strip" type="button"${worn ? '' : ' disabled'}>strip all</button>
       </div>` + slots;
-    // Paint cached cards now; queue the rest.
-    cardQueueToken++;
-    const token = cardQueueToken;
-    cardQueue = [];
+    // Paint cached cards now; queue the rest. The equipment panel is
+    // rebuilt whole, so a pending job always looks its card up afresh.
+    thumbs.cancel();
     for (const sec of meta.sections) {
       for (const it of sec.items) {
-        const cardEl = equipPanelEl.querySelector(`.char-item-card[data-section="${sec.index}"][data-id="${it.id}"]`);
-        const cached = cardCache.get(cardKey(cslot, sec.index, it.id));
+        const sel = `.char-item-card[data-section="${sec.index}"][data-id="${it.id}"]`;
+        const cached = thumbs.cached(cslot, sec.index, it.id);
+        const cardEl = equipPanelEl.querySelector(sel);
         if (cached && cardEl) paintCard(cardEl, cached);
-        else cardQueue.push({ cslot, section: sec.index, id: it.id });
+        else thumbs.enqueue({ cslot, section: sec.index, id: it.id, done: (entry) => {
+          const el = equipPanelEl.querySelector(sel);
+          if (el) paintCard(el, entry);
+        } });
       }
     }
-    if (cardQueue.length) setTimeout(() => pumpCardQueue(token), 0);
   }
 
   // The raw `.tmd` download hands back the model's **on-disc** blob, and the
@@ -1984,7 +1948,7 @@ canvas.char-viewer-canvas:active { cursor: grabbing; }
       prog.indeterminate('Parsing PROT.DAT…');
       await prog.paint();
       viewer.load_disc(buf);
-      cardCache.clear();
+      thumbs.clear();
 
       prog.indeterminate('Decoding character pack…');
       await prog.paint();

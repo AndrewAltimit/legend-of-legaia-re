@@ -458,6 +458,12 @@ body (Gi's blade under Noa's Spirit charge).
   words and ABR bits untouched. It merges into the baked hand at record-rewrite
   time, after the hand's centroid seat + FK inset, so the blade never drags the
   fist's placement.
+- The fusion takes the cut's **primitive** decision, not the viewer's texel
+  skin mask (`equip_skin_mask` repoints a mixed prim's TSB at a copy in the
+  viewer's own VRAM, which no disc upload fills). A primitive that is mostly
+  the host's flesh is therefore dropped whole, even under a column or object
+  keep: Gala's Mace and Ra-Seru Club lose the bare-forearm quads of their
+  column-14 gauntlet, so Gala's skin is not grafted onto the sibling's arm.
 - The weapon keeps its **real texture**, on three measured invariants: every
   fusable weapon's UVs stay inside its own section's band tile; every weapon
   uses at most two CLUT columns; and a held-section record's pool upload is a

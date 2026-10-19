@@ -25,13 +25,14 @@ impl PlayWindowApp {
     /// sub-screen idle sway.
     ///
     /// All of it is the shared engine kernel
-    /// ([`legaia_engine_core::fishing_venue::tick_fishing_venue_on_host`]),
+    /// ([`legaia_engine_scene_host::fishing_venue::tick_fishing_venue_on_host`]),
     /// whose actors live on `World::minigames.fishing_venue`; the browser play
     /// page runs the same call. This host only applies the camera writes to
     /// its own session camera.
     pub(in crate::window) fn tick_fishing_actors(&mut self) {
-        let writes =
-            legaia_engine_core::fishing_venue::tick_fishing_venue_on_host(&mut self.session.host);
+        let writes = legaia_engine_scene_host::fishing_venue::tick_fishing_venue_on_host(
+            &mut self.session.host,
+        );
         writes.apply(&mut self.session.camera);
     }
 }

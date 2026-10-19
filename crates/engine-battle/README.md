@@ -87,7 +87,7 @@ resolve a link into a dependent crate.
 - `battle_tutorial` - the sparring-tutorial prompt machine of the stage
   overlay (PROT 967): the `(flow state, lesson)` dispatch, the box styles and
   rects, and the prompt corpus parser `BattleTutorialScript::from_overlay`.
-  The disc read that feeds it is `engine-core::disc_readers::battle_tutorial`.
+  The disc read that feeds it is `engine-scene-host::disc_readers::battle_tutorial`.
 - `battle_seats` - the authored stage seats battle setup stamps into every
   combatant (`FUN_800513F0`).
 - `battle_return_flags` - MAIN INIT's back-from-battle story-flag arm.

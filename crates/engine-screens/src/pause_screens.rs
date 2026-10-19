@@ -8,8 +8,10 @@
 //! `menu_draws.rs` and the browser play page's `play_menu/` - line for line.
 //! A host now builds its [`PauseMenuCtx`] and calls one entry per screen.
 
-use legaia_engine_core::field_menu_dispatch::{self, ArtsEditorPhaseTag, FieldMenuSubsession};
 use legaia_engine_core::world::World;
+use legaia_engine_menu_runtime::field_menu_dispatch::{
+    self, ArtsEditorPhaseTag, FieldMenuSubsession,
+};
 use legaia_engine_menus::equipment::DiscEquipInfo;
 use legaia_engine_menus::field_menu::FieldMenuSession;
 use legaia_engine_menus::pause_screens as ps;
@@ -600,9 +602,7 @@ pub fn equip_draws(
     world: Option<&World>,
     equip_info: Option<&DiscEquipInfo>,
 ) -> PauseMenuDraws {
-    let names = world
-        .map(field_menu_dispatch::roster_names)
-        .unwrap_or_default();
+    let names = world.map(|w| w.party.roster_names()).unwrap_or_default();
     // Item ids resolve through the world's own disc text tables, the same
     // resolver the Items screen's rows use - without it the screen spells
     // every candidate as a raw id.

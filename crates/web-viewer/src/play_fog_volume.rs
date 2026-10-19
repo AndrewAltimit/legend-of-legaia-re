@@ -6,7 +6,7 @@
 //! `WorldToggles::volumetric_fog` is raised, which this page drives from the
 //! persisted `OptionsState::volumetric_fog` through the same
 //! `apply_to_world` push the native window makes. The page reads it back
-//! through four exports and draws it in `site/js/webgl-fog-volume.js`
+//! through five exports and draws it in `site/js/webgl-fog-volume.js`
 //! (the GLSL transcription of the native `fog_volume` WGSL).
 
 use legaia_render_kernels::fog_volume::{FogVolumeFrame, mesh_indices};
@@ -79,6 +79,17 @@ impl LegaiaRuntime {
     pub fn play_fog_volume_mesh(&self) -> Vec<f32> {
         self.fog_volume_frame()
             .map(|f| f.mesh_positions())
+            .unwrap_or_default()
+    }
+
+    /// The scene's ground coverage field as `GROUND_TEX_W x GROUND_TEX_H`
+    /// RGBA8 texels (`legaia_render_kernels::fog_volume::FogGround::texels`),
+    /// to re-upload whenever the header's `GROUND_TEX_GEN` changes; empty
+    /// when the frame has none (the page then binds one full-coverage
+    /// texel).
+    pub fn play_fog_volume_ground(&self) -> Vec<u8> {
+        self.fog_volume_frame()
+            .and_then(|f| f.ground_tex.map(|g| g.texels.to_vec()))
             .unwrap_or_default()
     }
 

@@ -87,7 +87,7 @@ pub fn build_npc_catalog(
 /// [`build_npc_catalog`] against an already-built
 /// [`SceneResources`](legaia_engine_scene::scene_resources::SceneResources) - the
 /// form the play page uses, whose resources come from the running
-/// [`SceneHost`](legaia_engine_core::scene_host::SceneHost) rather than a viewer-side
+/// [`SceneHost`](legaia_engine_scene_host::scene_host::SceneHost) rather than a viewer-side
 /// scene build. `res.tmds` is the model-byte index space either way.
 pub fn build_npc_catalog_res(
     index: &ProtIndex,

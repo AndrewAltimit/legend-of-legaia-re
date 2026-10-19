@@ -9,24 +9,52 @@
 /// `choose_surface_format`). Same ink as [`OPTIONS_INK_WHITE`].
 ///
 /// [`OPTIONS_INK_WHITE`]: crate::OPTIONS_INK_WHITE
-pub const MENU_TEXT_WHITE: [f32; 4] = [0.807_843_1, 0.807_843_1, 0.807_843_1, 1.0];
+/// Stored on the 5-bit grid (`25 / 31`), as every staged ink is: the CLUT
+/// entry is 5-bit, and the overlay's 5-bit tint lands an ink stored so on
+/// exactly that entry (`legaia_render_kernels::ui_tint`).
+pub const MENU_TEXT_WHITE: [f32; 4] = [
+    legaia_render_kernels::ui_tint::ink_component(25),
+    legaia_render_kernels::ui_tint::ink_component(25),
+    legaia_render_kernels::ui_tint::ink_component(25),
+    1.0,
+];
 /// Retail teal ink for the parenthesised base/growth values on the
 /// status page (the HP/MP `( base)` group and the stat grid's
 /// `( growth)` group, parens included): RGB `(66, 222, 222)` in the
 /// golden capture - the CLUT row the separator-staging value 5 selects.
 /// Byte values, like [`MENU_TEXT_WHITE`].
-pub const MENU_TEXT_TEAL: [f32; 4] = [0.258_823_5, 0.870_588_2, 0.870_588_2, 1.0];
+pub const MENU_TEXT_TEAL: [f32; 4] = [
+    legaia_render_kernels::ui_tint::ink_component(8),
+    legaia_render_kernels::ui_tint::ink_component(27),
+    legaia_render_kernels::ui_tint::ink_component(27),
+    1.0,
+];
 /// Retail gold/yellow warning ink - staging id 6. The string-CLUT rows
 /// live at VRAM row 510, cell `x = 16*(6+id)`; the main ink is palette
 /// entry 15, and id 6 decodes to RGB `(231, 173, 0)` (read from the
 /// golden `menu_status_town` VRAM).
-pub const MENU_TEXT_GOLD: [f32; 4] = [0.905_882_4, 0.678_431_4, 0.0, 1.0];
+pub const MENU_TEXT_GOLD: [f32; 4] = [
+    legaia_render_kernels::ui_tint::ink_component(28),
+    legaia_render_kernels::ui_tint::ink_component(21),
+    legaia_render_kernels::ui_tint::ink_component(0),
+    1.0,
+];
 /// Retail orange "critical" ink - staging id 9, RGB `(222, 90, 0)`
 /// (same VRAM CLUT-row decode as [`MENU_TEXT_GOLD`]).
-pub const MENU_TEXT_ORANGE: [f32; 4] = [0.870_588_2, 0.352_941_2, 0.0, 1.0];
+pub const MENU_TEXT_ORANGE: [f32; 4] = [
+    legaia_render_kernels::ui_tint::ink_component(27),
+    legaia_render_kernels::ui_tint::ink_component(11),
+    legaia_render_kernels::ui_tint::ink_component(0),
+    1.0,
+];
 /// Retail red "downed" ink - staging id 2, RGB `(231, 33, 0)`
 /// (same VRAM CLUT-row decode as [`MENU_TEXT_GOLD`]).
-pub const MENU_TEXT_RED: [f32; 4] = [0.905_882_4, 0.129_411_8, 0.0, 1.0];
+pub const MENU_TEXT_RED: [f32; 4] = [
+    legaia_render_kernels::ui_tint::ink_component(28),
+    legaia_render_kernels::ui_tint::ink_component(4),
+    legaia_render_kernels::ui_tint::ink_component(0),
+    1.0,
+];
 
 /// Menu HP health-tier ink - the retail per-character colour fn
 /// `FUN_800349EC` the status / party panels stage before drawing the

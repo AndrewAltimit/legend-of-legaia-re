@@ -37,7 +37,7 @@ pub fn sync_battle_hud_rows(hud: &mut BattleHud, world: &crate::world::World) {
         return;
     }
     let pc = (world.party.party_count.clamp(1, 3) as usize).min(world.actors.len());
-    let party_names = crate::field_menu_dispatch::roster_names(world);
+    let party_names = world.party.roster_names();
 
     // Party rows. `character_max_mp` is the only MP ceiling the world carries
     // (`BattleActor` has live `mp` but no max), and it is keyed by battle

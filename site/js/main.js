@@ -311,16 +311,37 @@
     return err;
   };
 
+  /* ---------- Home hero loop ----------
+   * The CSS already hides the autoplaying gameplay loop under
+   * prefers-reduced-motion; this stops it decoding and downloading too. */
+  function setupHeroLoop() {
+    const video = document.querySelector('.hero-media video.hero-loop');
+    if (!video || !window.matchMedia) return;
+    const mq = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const apply = () => {
+      if (mq.matches) {
+        video.removeAttribute('autoplay');
+        video.pause();
+      } else if (video.paused) {
+        video.play().catch(() => { /* autoplay refused: the poster stays */ });
+      }
+    };
+    apply();
+    if (mq.addEventListener) mq.addEventListener('change', apply);
+  }
+
   /* ---------- Init ---------- */
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', () => {
       setupTocSpy();
       setupCopyButtons();
       setupSearch();
+      setupHeroLoop();
     });
   } else {
     setupTocSpy();
     setupCopyButtons();
     setupSearch();
+    setupHeroLoop();
   }
 })();

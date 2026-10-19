@@ -1376,11 +1376,9 @@ what keeps a second host from getting a different edge for free.
 **x** and `FUN_80058490` is `MoveImage`, so the SFX scheduler was being handed
 palette columns to look up in a sound bank. The arm is now
 `engine-battle::battle_effect_clut::stage_effect_clut` - a 16x1 copy from
-`(map[code], 476)` onto `(224, 476)` - drained by the native window's
-`tick_battle_effect_clut` under the same mid-battle re-upload protocol as the
-status-CLUT recolour. The browser host has no mid-battle VRAM channel, so it
-takes the same disclosure the face stamps and the status CLUT already carry in
-`web-viewer::play_battle_render`.
+`(map[code], 476)` onto `(224, 476)` - drained on both play hosts by
+`engine-session::battle_vram::step_battle_vram_edits`, beside the status-CLUT
+recolour and the face stamps, against each host's battle VRAM copy.
 
 ### The rows this page had never reached
 

@@ -273,7 +273,7 @@ match: they stage no scene bank, and `SceneHost::route_bgm_events` plays a
 scene-local id through the owned-VAB path on
 `SCENE_LOCAL_BGM_FALLBACK_ID`'s entry, keeping the id itself for the
 directors' same-track test (as retail's change test keeps its own index);
-`engine-core/tests/global_bgm_owned_vab_disc.rs` pins it. The disc-wide
+`engine-scene-host/tests/global_bgm_owned_vab_disc.rs` pins it. The disc-wide
 op-`0x35` census has no scene-local start, so no shipped script takes the arm.
 
 #### `0x1000` is a park sentinel, not a track
@@ -299,7 +299,7 @@ so a director's last start cannot stand in for the word. The host keeps the
 word itself: `SceneHost::bgm_track_word` takes every sub-op `1` / `9` id as
 the start arm stores it, the sentinel included, and is what the retail
 comparison corpus compares against a state's `0x8007BAC8`
-(`engine-core/tests/bgm_track_word_disc.rs`).
+(`engine-scene-host/tests/bgm_track_word_disc.rs`).
 
 ### Which track a scene plays
 
@@ -543,7 +543,7 @@ choreography behind it, so the authored pause would park the BGM forever
 (`World::seed_free_roam_story_baseline`) drops a sub-op 2 issued inside the
 scene-entry window on picker entries only; the new-game chain keeps the
 authored pause. The same staging seeds story-twin scenery flags (e.g.
-`town0c`'s blown gate). Disc pins: `engine-core/tests/free_roam_staging_disc.rs`.
+`town0c`'s blown gate). Disc pins: `engine-scene-host/tests/free_roam_staging_disc.rs`.
 
 A twin's flags pick its **track** too. `town0b` (Rim Elm under attack) is
 reached only through `MV2.STR`'s hand-off, after `town01`'s attack timeline
@@ -614,7 +614,7 @@ zeroes the set after the fight whose first monster is `0xA6`.
 Each bundle of the battle bank (extraction `877 + N`) carries a byte-identical
 copy of one `music_01` score: `0..9` = `2026`, `2027`, `2028`, `2030`, `2032`,
 `2031`, `2051`, `2067`, `2061`, `2073` (`music_labels::BATTLE_BANK_BGM_IDS`,
-pinned by `engine-core/tests/battle_bank_bgm_disc.rs`); the evolved-Cort fight
+pinned by `engine-scene-host/tests/battle_bank_bgm_disc.rs`); the evolved-Cort fight
 selects `8`. `World::swap_to_battle_bgm` follows the set: no swap and no stash
 for `-1`, the bank's track for `N > 0`, the configured theme for `0`.
 
@@ -720,7 +720,7 @@ self-contained `[VAB][SEQ]` pair - a DATA_FIELD chunk stream whose type-`0` chun
 is the `pQES` score, in `(0, 1, 2)` or `(0, 2, 1)` order. Not every slot is one: of the
 81, slot `72` carries a score and no bank, slots `76..=79` are one-sector placeholder
 fills, and slot `80` is a bank with no score, so those six have no pair to play
-(`engine-core/tests/seq_chunk_walk_disc.rs`). The bank is **piecewise** in extraction
+(`engine-scene-host/tests/seq_chunk_walk_disc.rs`). The bank is **piecewise** in extraction
 space (`988 + i` for index `i <= 67`, `990 + i` for `i >= 68`, a 2-entry gap at
 `1056`/`1057`); `music_labels::prot_entry_for_bgm_id` owns that map. Playing one means
 uploading **that entry's own VAB** into SPU RAM and driving the sequencer against it,
@@ -744,7 +744,7 @@ So the slot-10 load is not a sound-effect bank: it is the credits music. Raw `0x
 
 The mednafen ending states confirm the staging (`ending_banner_mask_closed`, `ending_vignette_fullscreen`, `ending_panel_corner` in `edteien`; `ending_vignette_biron` in `edbylon`): slot 10's sequence record is open (`+8 = 1`, VAB id `+0xC = 10`) while the BGM record is closed, its sequence buffer holds extraction `1062`'s SEQ chunk byte for byte, VAB 10's SPU base is slot 0's (`0x800917B0[10] == 0x1010`), and the sounding voices start inside the region that bank was sent to. Every program change in the score names a program only `1056` defines. The credits then run on the park sentinel `0x1000`, so the track keeps playing across the vignette scenes.
 
-The engine composes the pair into one owned-VAB stream (`mode_entry_init::two_part_bgm_stream`, score first) whenever `SceneHost::music_bank_entry_bytes` is asked for `0x814`, so both play hosts stage it through the path above; `engine-core/tests/credits_two_part_bgm_disc.rs` pins it. Where the bank lands is the next section.
+The engine composes the pair into one owned-VAB stream (`mode_entry_init::two_part_bgm_stream`, score first) whenever `SceneHost::music_bank_entry_bytes` is asked for `0x814`, so both play hosts stage it through the path above; `engine-scene-host/tests/credits_two_part_bgm_disc.rs` pins it. Where the bank lands is the next section.
 
 #### Where the credits bank lands in SPU RAM
 
@@ -1694,7 +1694,7 @@ request ([`sfx-table.md`](../formats/sfx-table.md#the-side-band-bank-a-field-scr
 Across every scene MAN on the disc, every scripted id resolves to a row of its
 own scene's bank except one: `balden2`'s scripts push `0x20B`, one row past its
 eleven-row record 0, which reads the next record's header - voice count zero -
-and keys nothing in retail either. `engine-core/tests/field_sfx_ring_disc.rs`
+and keys nothing in retail either. `engine-scene-host/tests/field_sfx_ring_disc.rs`
 is the census. No scene reaches either producer with no input in its first
 4000 ticks: the sites sit behind interactions, walk-ons and timeline branches.
 

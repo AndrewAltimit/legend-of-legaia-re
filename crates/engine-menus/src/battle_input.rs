@@ -389,15 +389,13 @@ impl BattleCommandSession {
     /// the mid-round entry, used when a submenu is backed out of and when a
     /// later party member of the same round takes its turn.
     pub fn new(actor: u8, party_slot: u8) -> Self {
-        let cursor = BattleCommand::MENU
-            .iter()
-            .position(|c| c.enabled())
-            .unwrap_or(0) as u8;
         Self {
             actor,
             party_slot,
             no_escape: false,
-            phase: CommandPhase::Menu { cursor },
+            phase: CommandPhase::Menu {
+                cursor: RING_OPEN_CURSOR,
+            },
         }
     }
 
@@ -600,6 +598,21 @@ pub enum Resolution {
     Reselect,
 }
 
+/// Where a fresh ring's cursor rests: the **Left** arm, `Attack`.
+///
+/// Under the default directional entry the ring's confirm mask falls into
+/// the Left arm's own test: `0x801D152C bne v0,zero,0x801D1548` takes the
+/// Left bit (`andi v0,s2,0x8000` in the slot at `0x801D1404`), and
+/// `0x801D1534..0x801D1540` sends the confirm mask `0x800846D0` to the same
+/// `0x801D1548` - after Up (`0x1000`) and Right (`0x2000`) and before Down
+/// (`0x4000`). So Cross on the ring is `Attack`, never `Item`. Under the
+/// cross-button entry the highlight word `ctx[+0x880]` the confirm reads
+/// rests on the same arm: `0x8000` from the round's turn setup (`0x801D0ECC`)
+/// and from the window opener's reset (`FUN_801D388C`, `0x801D4C74`).
+///
+/// PORT: FUN_801D0748 (`0x801D152C..0x801D1548`)
+const RING_OPEN_CURSOR: u8 = 1;
+
 /// Index of `command` within [`BattleCommand::MENU`].
 fn menu_index(command: BattleCommand) -> u8 {
     BattleCommand::MENU
@@ -695,11 +708,9 @@ fn step_round_prompt(cursor: u8, ev: BattleCommandInput) -> CommandPhase {
     if pressed || ev.cross {
         match RoundChoice::PROMPT[cursor as usize] {
             RoundChoice::Begin => {
-                let ring = BattleCommand::MENU
-                    .iter()
-                    .position(|c| c.enabled())
-                    .unwrap_or(0) as u8;
-                return CommandPhase::Menu { cursor: ring };
+                return CommandPhase::Menu {
+                    cursor: RING_OPEN_CURSOR,
+                };
             }
             RoundChoice::Run => return CommandPhase::RunAway,
         }
@@ -961,13 +972,47 @@ mod tests {
     fn begin_falls_through_to_the_command_ring() {
         let mut s = BattleCommandSession::new_round_open(0, 0, false);
         s.input(press(|e| e.left = true), party3(), one_monster());
-        assert_eq!(s.menu_command(), Some(BattleCommand::MENU[0]));
+        assert_eq!(s.menu_command(), Some(BattleCommand::Attack));
         assert!(s.resolved().is_none());
 
         let mut by_cross = BattleCommandSession::new_round_open(0, 0, false);
         by_cross.input(press_cross(), party3(), one_monster());
-        assert_eq!(by_cross.menu_command(), Some(BattleCommand::MENU[0]));
+        assert_eq!(by_cross.menu_command(), Some(BattleCommand::Attack));
         assert!(by_cross.resolved().is_none());
+    }
+
+    /// Cross on a fresh ring is `Attack` - retail's confirm mask falls into
+    /// the Left arm's test (`0x801D152C..0x801D1548`) - and Cross on the
+    /// attack-mode prompt is `Auto` (`0x801D1774..0x801D1794`), so a player
+    /// who only presses Cross commits a plain attack without the arts
+    /// entry. A mid-round ring (the next member, a submenu backed out of)
+    /// opens on the same arm.
+    #[test]
+    fn cross_on_a_fresh_ring_is_attack_then_auto() {
+        let mut s = BattleCommandSession::new_round_open(0, 0, false);
+        s.input(press_cross(), party3(), one_monster());
+        s.input(press_cross(), party3(), one_monster());
+        assert_eq!(s.attack_mode(), Some(AttackMode::Auto));
+        s.input(press_cross(), party3(), one_monster());
+        assert!(
+            !matches!(s.phase, CommandPhase::OpenArtsMenu),
+            "the confirm mask never reaches the arts entry"
+        );
+        assert!(matches!(
+            s.phase,
+            CommandPhase::Confirmed {
+                command: BattleCommand::Attack,
+                ..
+            } | CommandPhase::Targeting {
+                command: BattleCommand::Attack,
+                ..
+            }
+        ));
+
+        let mut mid = BattleCommandSession::new(1, 1);
+        assert_eq!(mid.menu_command(), Some(BattleCommand::Attack));
+        mid.input(press_cross(), party3(), one_monster());
+        assert_eq!(mid.attack_mode(), Some(AttackMode::Auto));
     }
 
     /// Both routes into `Run`: one Right press (the right chip, retail's
@@ -1023,9 +1068,9 @@ mod tests {
     }
 
     #[test]
-    fn opens_on_first_enabled_command() {
+    fn opens_on_the_left_arm() {
         let s = BattleCommandSession::new(0, 0);
-        assert_eq!(s.menu_command(), Some(BattleCommand::Item));
+        assert_eq!(s.menu_command(), Some(BattleCommand::Attack));
         assert!(s.resolved().is_none());
     }
 
@@ -1067,6 +1112,9 @@ mod tests {
     #[test]
     fn cross_commits_the_cursor_arm() {
         let mut s = BattleCommandSession::new(0, 0);
+        s.phase = CommandPhase::Menu {
+            cursor: menu_index(BattleCommand::Item),
+        };
         assert_eq!(s.menu_command(), Some(BattleCommand::Item));
         s.input(press_cross(), party3(), one_monster());
         assert_eq!(s.resolved(), Some(Resolution::OpenItemMenu));
@@ -1124,7 +1172,7 @@ mod tests {
         let mut s = BattleCommandSession::new_round_open(0, 0, false);
         // Begin - the left chip.
         s.input(press(|e| e.left = true), party3(), monsters);
-        assert_eq!(s.menu_command(), Some(BattleCommand::MENU[0]));
+        assert_eq!(s.menu_command(), Some(BattleCommand::Attack));
         // Ring: Left commits the left arm - Attack - onto the mode prompt.
         s.input(press(|e| e.left = true), party3(), monsters);
         assert_eq!(s.attack_mode(), Some(AttackMode::Auto));

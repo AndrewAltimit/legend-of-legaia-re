@@ -710,7 +710,7 @@ mod tests {
         // The page's one resume call (`play_resume_save`).
         assert_eq!(
             rt.resume_parked_save(),
-            Some(legaia_engine_core::resume::ResumeLanding::SavedScene(
+            Some(legaia_engine_scene_host::resume::ResumeLanding::SavedScene(
                 "town01".into()
             ))
         );

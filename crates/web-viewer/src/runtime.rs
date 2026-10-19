@@ -1,7 +1,7 @@
 //! Runtime engine bindings for the browser: the **simulation** half of the
 //! play page (`site/play.html`).
 //!
-//! [`LegaiaRuntime`] wraps a real [`legaia_engine_core::scene_host::SceneHost`] -
+//! [`LegaiaRuntime`] wraps a real [`legaia_engine_scene_host::scene_host::SceneHost`] -
 //! the same host the native `legaia-engine play-window` drives - so the browser
 //! runs the ported engine itself, not a re-implementation of it: the field /
 //! event VM, the free-movement controller with its per-scene walkability grid,
@@ -24,11 +24,11 @@
 use legaia_engine_audio::AudioSink;
 #[cfg(target_arch = "wasm32")]
 use legaia_engine_audio::WebAudioOut;
-use legaia_engine_core::menu_runtime::MenuRuntime;
-use legaia_engine_core::scene_host::{SceneHost, SceneTickEvent};
 use legaia_engine_core::world::World;
+use legaia_engine_menu_runtime::menu_runtime::MenuRuntime;
 use legaia_engine_menus::menu::{MenuInput, open as menu_open};
 use legaia_engine_mode::mode::SceneMode;
+use legaia_engine_scene_host::scene_host::{SceneHost, SceneTickEvent};
 use wasm_bindgen::prelude::*;
 
 use crate::play::{FieldRender, PlayerRig};
@@ -617,7 +617,7 @@ impl LegaiaRuntime {
 
     /// The page's menu-overlay screen (shop, prize exchange, inn) - read-only,
     /// for the same native tests. Not a wasm export.
-    pub fn debug_menu_runtime(&self) -> &legaia_engine_core::menu_runtime::MenuRuntime {
+    pub fn debug_menu_runtime(&self) -> &legaia_engine_menu_runtime::menu_runtime::MenuRuntime {
         &self.menu
     }
 

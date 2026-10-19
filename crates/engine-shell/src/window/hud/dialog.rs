@@ -1,6 +1,7 @@
-//! The dialog panel on the play window: mirroring the world's dialog and
-//! text-balloon requests into typed-out panels, the plain-string snapshot the
-//! text and chrome layers share, the stage layout and the chrome sprites.
+//! The dialog panel on the play window: mirroring the world's dialog request
+//! into a typed-out panel, committing the text balloon's measurement, and the
+//! field message layer the text and chrome passes both read
+//! (`legaia_engine_screens::field_messages`).
 
 use super::*;
 
@@ -52,127 +53,48 @@ impl PlayWindowApp {
     /// (`TextBalloon::pen` / `frame_rect`). The commit is idempotent, so the
     /// cheap `x.is_none()` guard is an optimisation, not a correctness gate.
     pub(in crate::window) fn sync_text_balloon(&mut self) {
-        let world = &mut self.session.host.world;
-        if world
-            .cutscene
-            .text_balloon
-            .as_ref()
-            .is_none_or(|b| b.x.is_some() || b.killed)
-        {
-            return;
-        }
-        let width = match world.cutscene.text_balloon.as_ref() {
-            Some(b) => legaia_engine_ui::text_balloon_text_width(&self.font, &b.text),
-            None => return,
-        };
-        world.commit_text_balloon_width(width);
+        legaia_engine_screens::field_messages::commit_text_balloon_measure(
+            &mut self.session.host.world,
+            &self.font,
+        );
     }
 }
 
 impl PlayWindowApp {
-    /// The live dialog source as a plain-string snapshot
-    /// (`legaia_engine_screens::dialog_screens::dialog_snapshot`, the browser
-    /// page's call too): this window's own typed-out panel first, then the
-    /// script / timeline panel, then the inline field-VM runner.
-    pub(in crate::window) fn dialog_snapshot(&self) -> Option<DialogSnapshot> {
-        legaia_engine_screens::dialog_screens::dialog_snapshot(
-            &self.session.host.world,
-            self.active_dialog.as_ref(),
+    /// This frame's field message layer
+    /// (`legaia_engine_screens::field_messages::field_message_frame`, the
+    /// browser page's call too): the balloon, the map labels, the tile-board
+    /// prompt, the Incense notice and the dialog reading box, in one order.
+    pub(in crate::window) fn field_message_frame(
+        &self,
+        surface_w: u32,
+        surface_h: u32,
+    ) -> legaia_engine_screens::field_messages::FieldMessageFrame {
+        use legaia_engine_screens::field_messages as fm;
+        fm::field_message_frame(
+            &fm::FieldMessageInputs {
+                host: &self.session.host,
+                host_panel: self.active_dialog.as_ref(),
+                font: &self.font,
+                chrome: self.save_menu.as_ref().map(|a| &a.rects),
+            },
+            surface_w,
+            surface_h,
         )
     }
-}
 
-impl PlayWindowApp {
-    /// Build the dialog-window chrome sprites (gradient fill + gold
-    /// 9-slice frame + hand cursors) for the active dialog box, if
-    /// any. Sampled from the resident system-UI atlas; composited in
-    /// the same sprite slot as the menu chrome, under the text layer.
+    /// The field message layer's chrome sprites (gradient fills, gold
+    /// 9-slice frames, hand cursors), sampled from the resident system-UI
+    /// atlas and composited in the menu-chrome sprite slot, under the text
+    /// layer. Empty without the atlas and under the boot UI.
     pub(in crate::window) fn dialog_chrome_sprite_draws(
         &self,
         surface_w: u32,
         surface_h: u32,
     ) -> Vec<legaia_engine_ui::SpriteDraw> {
-        let Some(assets) = self.save_menu.as_ref() else {
-            return Vec::new();
-        };
-        if self.boot_ui.is_active() {
+        if self.save_menu.is_none() || self.boot_ui.is_active() {
             return Vec::new();
         }
-        let (stage_origin, stage_scale) = self.save_select_stage(surface_w, surface_h);
-        // The `4C E1` balloon's frame: the fixed `0x58 x 0x90` window
-        // (`FUN_8002C69C(0x58, y, 0x90, 0xB)`), in the same chrome skin as
-        // the reading box. Drawn whether or not a reading box is also up -
-        // retail's balloon is its own actor and outlives any dialog
-        // engagement that spawned it.
-        let mut out: Vec<legaia_engine_ui::SpriteDraw> = Vec::new();
-        if self.session.host.world.text_balloon_drawing().is_some()
-            && let Some(rect) = self
-                .session
-                .host
-                .world
-                .cutscene
-                .text_balloon
-                .as_ref()
-                .map(|b| b.frame_rect())
-        {
-            out.extend(legaia_engine_ui::text_balloon_chrome_draws_for(
-                &assets.rects,
-                rect,
-                stage_origin,
-                stage_scale,
-            ));
-        }
-        // The overworld map display's place labels: one dialog-skin box per
-        // discovered place, at its projected map position.
-        let labels =
-            legaia_engine_core::world_map_labels::map_display_labels_now(&self.session.host.world);
-        if !labels.is_empty() {
-            let draws: Vec<legaia_engine_ui::MapLabelDraw<'_>> = labels
-                .iter()
-                .map(|l| (l.name.as_slice(), l.sx, l.sy))
-                .collect();
-            out.extend(legaia_engine_ui::map_label_chrome_draws_for(
-                &assets.rects,
-                &self.font,
-                &draws,
-                stage_origin,
-                stage_scale,
-            ));
-        }
-        if let Some(lay) = self.tile_board_prompt_layout()
-            && let Some(cursor) = self.session.host.world.tile_board_prompt_cursor()
-        {
-            out.extend(legaia_engine_ui::tile_board_prompt_sprites_for(
-                &assets.rects,
-                &lay,
-                cursor,
-                stage_origin,
-                stage_scale,
-            ));
-        }
-        if self.session.host.world.incense_notice_shown() {
-            out.extend(legaia_engine_ui::incense_notice_sprites_for(
-                &assets.rects,
-                legaia_engine_core::incense_notice::notice_frame_rect(),
-                stage_origin,
-                stage_scale,
-            ));
-        }
-        let Some(snap) = self.dialog_snapshot() else {
-            return out;
-        };
-        out.extend(
-            legaia_engine_screens::dialog_screens::dialog_box_chrome_draws(
-                &assets.rects,
-                &snap,
-                stage_origin,
-                stage_scale,
-            ),
-        );
-        out
+        self.field_message_frame(surface_w, surface_h).sprites
     }
 }
-
-/// Plain-string view of the live dialog panel shared by the text and
-/// chrome layers - the shared `engine-screens` type.
-pub(in crate::window) use legaia_engine_screens::dialog_screens::DialogSnapshot;

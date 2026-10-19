@@ -162,6 +162,12 @@ pub struct StFrame {
     pub frame_number: u32,
     /// Bitstream length the sector header declares for this frame.
     pub frame_size_bytes: u32,
+    /// Frame width in pixels from the sector header's `+0x10`. The ring slot
+    /// holds the whole 32-byte header, and the play loop's frame poll
+    /// (`FUN_801CF740`) reads the dimensions back off it every frame.
+    pub width: u16,
+    /// Frame height in pixels from the sector header's `+0x12`.
+    pub height: u16,
 }
 
 /// One ring slot header: the fields the demuxer keeps from the STR sector
@@ -173,6 +179,8 @@ struct Slot {
     chunks_per_frame: u16,
     frame_number: u32,
     frame_size_bytes: u32,
+    width: u16,
+    height: u16,
 }
 
 /// The retail STR sector ring and its demux state machine.
@@ -381,6 +389,8 @@ impl StRing {
             len: self.slots[slot].chunks_per_frame as usize * SECTOR_PAYLOAD_BYTES,
             frame_number: self.slots[slot].frame_number,
             frame_size_bytes: self.slots[slot].frame_size_bytes,
+            width: self.slots[slot].width,
+            height: self.slots[slot].height,
         })
     }
 
@@ -432,6 +442,8 @@ impl StRing {
         let chunks_per_frame = rd16(0x06);
         let frame_number = rd32(0x08);
         let frame_size_bytes = rd32(0x0C);
+        let width = rd16(0x10);
+        let height = rd16(0x12);
 
         // Seek-to-start: drop whole sectors until the segment's first frame.
         if self.seek_armed && self.start_frame != 0 {
@@ -505,6 +517,8 @@ impl StRing {
         self.slots[slot].chunks_per_frame = chunks_per_frame;
         self.slots[slot].frame_number = frame_number;
         self.slots[slot].frame_size_bytes = frame_size_bytes;
+        self.slots[slot].width = width;
+        self.slots[slot].height = height;
         self.next_chunk += 1;
 
         let src = &sector[SECTOR_HEADER_BYTES..sector.len().min(2048)];

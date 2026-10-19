@@ -63,7 +63,7 @@
 //!    (`crate::item_bag::ItemBag` is retail's 256-slot physical array, indexed
 //!    by slot, bounded by the same active window), so
 //!    [`build_use_list_rows`] is **wired**: `World::bag_use_rows` walks the
-//!    window and `legaia_engine_core::field_menu_dispatch::build_pause_items_session`
+//!    window and `legaia_engine_menu_runtime::field_menu_dispatch::build_pause_items_session`
 //!    takes its row order, which is what both hosts' Items screen draws.
 //!    `crate::pause_screens::PauseItemRow` still carries no ink field, so
 //!    the dim bit is computed and dropped at the draw - the *order* is
@@ -87,7 +87,7 @@
 //!    id-sorted and the committed row was a slot walk, so on a bag whose slot
 //!    order is not ascending by id the player sold a different stack than the
 //!    hand was on. Both sides read one seat now
-//!    (`legaia_engine_core::menu_runtime::MenuRuntime::sell_list_rows`).
+//!    (`legaia_engine_menu_runtime::menu_runtime::MenuRuntime::sell_list_rows`).
 //!
 //! Which window each builder fills is not a guess: the menu-overlay
 //! descriptor table ([`legaia_game_tables::menu_windows`]) carries the content id
@@ -391,7 +391,7 @@ pub struct UseListCtx<'a> {
 ///
 /// Wired through `World::bag_use_rows`, which supplies the window's slot
 /// array and the applicability probe;
-/// `legaia_engine_core::field_menu_dispatch::build_pause_items_session` takes the
+/// `legaia_engine_menu_runtime::field_menu_dispatch::build_pause_items_session` takes the
 /// resulting row order for the Items screen on both hosts. The dim bit
 /// survives as far as `legaia_engine_core::world::BagRow` and is dropped at the draw -
 /// see family 3 in the module heading.
@@ -530,7 +530,7 @@ pub fn build_throw_out_rows(
 /// price-gated bag list; `see ghidra/scripts/funcs/80030628.txt`).
 ///
 /// Wired through `World::bag_sell_rows` and
-/// `legaia_engine_core::menu_runtime::MenuRuntime::sell_list_rows`, which both the shop's
+/// `legaia_engine_menu_runtime::menu_runtime::MenuRuntime::sell_list_rows`, which both the shop's
 /// sell-list draw and its sell commit read on both hosts. The price source is
 /// `crate::shop_catalog::ShopItemData` - the item record's `+2` halfword for
 /// every id, already installed at boot - and **not** an open shop's stock

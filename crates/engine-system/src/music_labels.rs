@@ -78,7 +78,7 @@ pub const BATTLE_BANK_BASE_ENTRY: u32 = 877;
 /// The global-pool track each battle bundle `0x36F + N` plays, `N` being the
 /// battle sound set (`_DAT_8007B880`). Every entry of the battle bank carries a
 /// byte-identical copy of one `music_01` track's SEQ, which is what pins this
-/// join (`crates/engine-core/tests/battle_bank_bgm_disc.rs`): the two random-
+/// join (`crates/engine-scene-host/tests/battle_bank_bgm_disc.rs`): the two random-
 /// encounter themes, the boss themes, and the four story fights' own scores.
 pub const BATTLE_BANK_BGM_IDS: [u16; 10] =
     [2026, 2027, 2028, 2030, 2032, 2031, 2051, 2067, 2061, 2073];

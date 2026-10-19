@@ -197,7 +197,7 @@ impl VramSink for VramWriteLog {
 }
 
 /// A battle's whole party form set, built and installed once per fight by
-/// the engine ([`crate::scene_host::SceneHost::ensure_battle_party_forms`]) and
+/// the engine ([`legaia_engine_scene_host::scene_host::SceneHost::ensure_battle_party_forms`]) and
 /// kept for the renderers: the forms carry the meshes, rest poses and face
 /// tracks a host draws, [`Self::vram_writes`] the pixels it samples. By the
 /// time a host reads this, the clips, art bank and art records have already
@@ -215,7 +215,7 @@ pub struct BattlePartyForms {
 /// VRAM writes are recorded, not applied; a renderer replays them.
 ///
 /// This is the injection point for a session that holds a [`World`] but no
-/// [`crate::scene_host::SceneHost`] (and so no disc index): it calls this itself
+/// [`legaia_engine_scene_host::scene_host::SceneHost`] (and so no disc index): it calls this itself
 /// after [`crate::world::World::enter_battle`]. A world with no disc behind
 /// it has no player files to assemble, and its party fights with no clips
 /// and no arts.
