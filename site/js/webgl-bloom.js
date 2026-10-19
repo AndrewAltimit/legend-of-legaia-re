@@ -128,13 +128,25 @@ void main() {
       };
       this.vao = gl.createVertexArray();
       this.targets = null;
+      /* Whether the scene copy is RGB8 (`true`) or RGBA8 (`false`); `null`
+       * until a blit settles it. A blit out of the multisampled default
+       * framebuffer needs the copy's format to match the framebuffer's,
+       * which the context does not report: an `alpha: false` canvas is RGB8
+       * on some drivers and RGBA8 on others, so both are tried once. */
+      this.sceneRgb = null;
+      const attrs = gl.getContextAttributes();
+      this.preferRgb = !(attrs && attrs.alpha);
     }
 
-    _target(w, h) {
+    _target(w, h, rgb) {
       const gl = this.gl;
       const tex = gl.createTexture();
       gl.bindTexture(gl.TEXTURE_2D, tex);
-      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+      if (rgb) {
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB8, w, h, 0, gl.RGB, gl.UNSIGNED_BYTE, null);
+      } else {
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+      }
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
@@ -163,10 +175,38 @@ void main() {
       const qh = Math.max(1, Math.ceil(h / DOWNSCALE));
       this.targets = {
         w, h, qw, qh,
-        scene: this._target(w, h),
+        scene: this._target(w, h, this.sceneRgb === null ? this.preferRgb : this.sceneRgb),
         a: this._target(qw, qh),
         b: this._target(qw, qh),
       };
+    }
+
+    _blitScene(w, h) {
+      const gl = this.gl;
+      while (gl.getError() !== gl.NO_ERROR) { /* drain */ }
+      gl.bindFramebuffer(gl.READ_FRAMEBUFFER, null);
+      gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, this.targets.scene.fbo);
+      gl.blitFramebuffer(0, 0, w, h, 0, 0, w, h, gl.COLOR_BUFFER_BIT, gl.NEAREST);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+      return gl.getError() === gl.NO_ERROR;
+    }
+
+    /* Copy the default framebuffer into the scene target, settling its
+     * format on the first frame. */
+    _copyScene(w, h) {
+      if (this._blitScene(w, h)) {
+        if (this.sceneRgb === null) this.sceneRgb = this.preferRgb;
+        return true;
+      }
+      if (this.sceneRgb !== null) return false;
+      /* The format the context's alpha flag suggests failed: rebuild the
+       * copy in the other one and try once more. */
+      const gl = this.gl;
+      this.sceneRgb = !this.preferRgb;
+      gl.deleteFramebuffer(this.targets.scene.fbo);
+      gl.deleteTexture(this.targets.scene.tex);
+      this.targets.scene = this._target(w, h, this.sceneRgb);
+      return this._blitScene(w, h);
     }
 
     _pass(prog, src, dst) {
@@ -196,10 +236,13 @@ void main() {
 
       /* The finished frame into a sampleable texture (resolving the
        * multisampled default framebuffer on the way). */
-      gl.bindFramebuffer(gl.READ_FRAMEBUFFER, null);
-      gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, t.scene.fbo);
-      gl.blitFramebuffer(0, 0, w, h, 0, 0, w, h, gl.COLOR_BUFFER_BIT, gl.NEAREST);
-      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+      if (!this._copyScene(w, h)) {
+        gl.viewport(viewport[0], viewport[1], viewport[2], viewport[3]);
+        gl.enable(gl.DEPTH_TEST);
+        gl.depthMask(true);
+        if (scissor) gl.enable(gl.SCISSOR_TEST);
+        throw new Error('bloom: the frame cannot be copied on this driver');
+      }
 
       gl.bindVertexArray(this.vao);
       gl.viewport(0, 0, t.qw, t.qh);
