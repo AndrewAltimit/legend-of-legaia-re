@@ -56,6 +56,14 @@ WAIVED = {
     ("play-app.js", "FS_LAYER"): "the text-layer composite "
     "(`ScreenPrimPass.drawLayer`) draws with the depth test disabled and the "
     "depth mask off, so its fragment depth is neither compared nor written",
+    # --- lane L ---
+    ("webgl-bloom.js", "FS_EXTRACT"): "the bloom extract draws into its own "
+    "quarter-size target with no depth attachment",
+    ("webgl-bloom.js", "FS_BLUR"): "the bloom blur draws into its own "
+    "quarter-size targets with no depth attachment",
+    ("webgl-bloom.js", "FS_COMPOSITE"): "the bloom composite draws with the "
+    "depth test disabled and the depth mask off, so its fragment depth is "
+    "neither compared nor written",
 }
 
 SHADER_RE = re.compile(r"const\s+([A-Za-z_][A-Za-z0-9_]*)\s*=\s*`#version 300 es(.*?)`", re.S)

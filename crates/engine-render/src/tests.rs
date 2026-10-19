@@ -23,3 +23,5 @@ mod shader_eval;
 mod shading_law_parity;
 mod vertex_law_parity;
 // --- end lane B ---
+// --- lane L ---
+mod bloom_parity;

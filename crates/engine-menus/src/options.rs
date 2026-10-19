@@ -194,6 +194,14 @@ pub struct OptionsState {
     /// page's "See-through walls" box; `F4` on both). **Default on**; off is
     /// retail's authored framing. Pure presentation.
     pub occlusion_fade: bool,
+    // --- lane L ---
+    /// Bloom (engine-only, non-retail): the 3D frame's bright pixels - lamp
+    /// halos, emissive props, lit windows, sunlit sky - bleed a soft glow
+    /// into their surroundings (`Renderer::set_bloom` on the native window,
+    /// the page's "Bloom" box; `F10` on both). **Default off** while the
+    /// look matures. Pure presentation: the screen-space layers and the HUD
+    /// never bloom, and nothing reaches the simulation.
+    pub bloom: bool,
 }
 
 impl Default for OptionsState {
@@ -222,6 +230,7 @@ impl Default for OptionsState {
             lighting_time_of_day: "auto".to_string(),
             light_shadows: true,
             occlusion_fade: true,
+            bloom: false,
         }
     }
 }
@@ -245,6 +254,7 @@ impl OptionsState {
         self.enhanced_lighting = false;
         self.light_shadows = false;
         self.occlusion_fade = false;
+        self.bloom = false;
     }
 
     /// The options screen's rows as the config words a save block carries.
@@ -291,6 +301,9 @@ impl OptionsState {
         if knobs & OCCLUSION_FADE != 0 {
             self.occlusion_fade = from.occlusion_fade;
         }
+        if knobs & BLOOM != 0 {
+            self.bloom = from.bloom;
+        }
     }
 
     /// The engine-only knobs currently off their retail value, by field
@@ -323,6 +336,9 @@ impl OptionsState {
         }
         if self.occlusion_fade {
             out.push("occlusion_fade");
+        }
+        if self.bloom {
+            out.push("bloom");
         }
         out
     }
@@ -1106,6 +1122,8 @@ pub mod options_pin {
     /// for the session - the retail-compare child's Battle Camera word - so
     /// neither the options file nor a loaded save moves it.
     pub const ROW_FIRST: u32 = 1 << 9;
+    /// `bloom` - clear of the retail-row bits above [`ROW_FIRST`].
+    pub const BLOOM: u32 = 1 << 24;
     /// Every knob [`super::OptionsState::pin_retail`] writes.
     pub const RETAIL: u32 = CAMERA_DISTANCE
         | PRECISE_MOVEMENT
@@ -1115,7 +1133,8 @@ pub mod options_pin {
         | VOLUMETRIC_FOG
         | ENHANCED_LIGHTING
         | LIGHT_SHADOWS
-        | OCCLUSION_FADE;
+        | OCCLUSION_FADE
+        | BLOOM;
 }
 
 /// Session-only overrides of persisted options, and what to persist under
@@ -1297,6 +1316,8 @@ mod tests {
         o.retail_view_window = false;
         o.volumetric_fog = true;
         assert_eq!(o.retail_deviations().len(), 9);
+        o.bloom = true;
+        assert_eq!(o.retail_deviations().len(), 10);
         let rows = (o.battle_camera, o.field_move, o.audio);
         o.pin_retail();
         assert!(o.retail_deviations().is_empty());
@@ -1335,6 +1356,23 @@ mod tests {
     /// and an options file written before they existed reads them as on, not
     /// as `false` - an old store must not silently switch see-through walls
     /// or lamp shadows off.
+    #[test]
+    fn bloom_defaults_off_and_persists_an_explicit_on() {
+        let opts = OptionsState::default();
+        assert!(!opts.bloom);
+        let old: OptionsState = toml::from_str("muted = true\n").unwrap();
+        assert!(!old.bloom);
+        let on = OptionsState {
+            bloom: true,
+            ..opts
+        };
+        let back: OptionsState = toml::from_str(&toml::to_string(&on).unwrap()).unwrap();
+        assert!(back.bloom);
+        let mut pinned = back.clone();
+        pinned.pin_retail();
+        assert!(!pinned.bloom);
+    }
+
     #[test]
     fn occlusion_fade_and_light_shadows_default_on_and_survive_old_files() {
         let opts = OptionsState::default();

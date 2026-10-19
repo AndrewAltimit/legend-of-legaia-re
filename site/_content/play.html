@@ -411,6 +411,10 @@
             <input type="checkbox" id="play-dyn-shadows" checked> Lamp shadows
           </label>
           <label class="play-dev-menu"
+                 title="Bloom: the bright parts of the 3D scene - lamp halos, glowing props, lit windows, sunlit sky - bleed a soft glow into their surroundings, stronger at night (the native window's F10, persisted). Not retail; the HUD never blooms. Presentation only.">
+            <input type="checkbox" id="play-bloom"> Bloom
+          </label>
+          <label class="play-dev-menu"
                  title="Time of day for enhanced lighting (the native window's F8): Auto follows the scene - daylight outdoors, dim caves and dungeons; Day, Dusk and Night force one mood everywhere. Persisted.">
             <select id="play-time-of-day">
               <option value="auto">Auto</option>
@@ -767,6 +771,7 @@
 <script src="js/webgl-tmd-frame-state.js"></script>
 <script src="js/webgl-tmd-assembled-scene.js"></script>
 <script src="js/webgl-fog-volume.js"></script>
+<script src="js/webgl-bloom.js"></script>
 <script src="js/pad-bindings.js"></script>
 <script src="js/field-actors.js"></script>
 <script src="js/play-view-constants.js"></script>
@@ -2193,6 +2198,7 @@
   const dynLightEl = document.getElementById('play-dyn-light');
   const timeOfDayEl = document.getElementById('play-time-of-day');
   const dynShadowsEl = document.getElementById('play-dyn-shadows');
+  const bloomEl = document.getElementById('play-bloom');
   function applyRenderToggles() {
     const rt = window.__playRuntime;
     if (rt && typeof rt.set_enhanced_lighting === 'function') {
@@ -2200,12 +2206,14 @@
         rt.set_enhanced_lighting(!!dynLightEl.checked);
         timeOfDayEl.value = rt.set_lighting_time_of_day(timeOfDayEl.value);
         if (typeof rt.set_light_shadows === 'function') rt.set_light_shadows(!!dynShadowsEl.checked);
+        if (typeof rt.set_bloom === 'function') rt.set_bloom(!!bloomEl.checked);
       } catch (e) {}
     }
     if (!view) return;
     view.setPsxRender(!!psxRenderEl.checked);
     view.setDynamicLighting(!!dynLightEl.checked);
     view.setDynShadows(!!dynShadowsEl.checked);
+    if (view.setBloom) view.setBloom(!!bloomEl.checked);
   }
   function syncRenderToggles() {
     const rt = window.__playRuntime;
@@ -2214,6 +2222,7 @@
         dynLightEl.checked = !!rt.enhanced_lighting();
         timeOfDayEl.value = rt.lighting_time_of_day();
         if (typeof rt.light_shadows === 'function') dynShadowsEl.checked = !!rt.light_shadows();
+        if (typeof rt.bloom === 'function') bloomEl.checked = !!rt.bloom();
         if (typeof rt.occlusion_fade === 'function') seeThroughEl.checked = !!rt.occlusion_fade();
       } catch (e) {}
     }
@@ -2222,6 +2231,7 @@
   dynLightEl.addEventListener('change', () => { applyRenderToggles(); canvas.focus(); });
   timeOfDayEl.addEventListener('change', () => { applyRenderToggles(); canvas.focus(); });
   dynShadowsEl.addEventListener('change', () => { applyRenderToggles(); canvas.focus(); });
+  bloomEl.addEventListener('change', () => { applyRenderToggles(); canvas.focus(); });
   window.__playApplyRenderToggles = applyRenderToggles;
   window.__playSyncRenderToggles = syncRenderToggles;
 
@@ -2596,6 +2606,7 @@
     volumetric_fog: () => syncGroundFog(),
     enhanced_lighting: () => { syncRenderToggles(); applyRenderToggles(); },
     light_shadows: () => { syncRenderToggles(); applyRenderToggles(); },
+    bloom: () => { syncRenderToggles(); applyRenderToggles(); },
     camera_distance: () => syncCameraDistance(),
     precise_movement: () => syncPreciseMove(),
   };

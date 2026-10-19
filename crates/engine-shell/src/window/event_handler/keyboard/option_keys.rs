@@ -68,6 +68,7 @@ impl PlayWindowApp {
             HostHotkey::DebugCamera => self.key_debug_camera(),
             HostHotkey::CameraDistance => self.key_camera_distance(),
             HostHotkey::PreciseMovement => self.key_precise_movement(),
+            HostHotkey::Bloom => self.key_bloom(),
         }
         let notice = self.hotkey_notice(hotkey);
         self.show_notice(notice);
@@ -209,6 +210,20 @@ impl PlayWindowApp {
     /// while dynamic lighting (`I`) is on. The persisted
     /// `OptionsState::light_shadows`, flipped by the shared edit and pushed
     /// into the renderer by the options apply.
+    /// `F10`: toggle the bloom enhancement. The persisted
+    /// `OptionsState::bloom`, flipped by the shared edit and pushed into the
+    /// renderer by the options apply; pure renderer state.
+    fn key_bloom(&mut self) {
+        log::info!(
+            "render: bloom {}",
+            if self.options_state.bloom {
+                "ON"
+            } else {
+                "off"
+            }
+        );
+    }
+
     fn key_light_shadows(&mut self) {
         log::info!(
             "render: scene light-source shadows {}{}",

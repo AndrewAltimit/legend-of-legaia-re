@@ -551,6 +551,9 @@
        * enhancement - the native renderer's fog pass twin): over the
        * finished 3D frame, under the screen-prim layer and the HUD canvas. */
       if (!skipDraw && this._fogFrameOk) this._drawFogVolume(rt);
+      /* Bloom (an enhancement, off by default - the native renderer's bloom
+       * pass twin): over the fogged 3D frame, under the screen prims and HUD. */
+      if (!skipDraw && this._fogFrameOk && this.bloom) this._drawBloom(rt);
       if (!skipDraw) this._drawScreenPrims(rt);
 
       /* FPS + HUD, sampled twice a second. */
@@ -760,6 +763,22 @@
       } catch (e) {
         this._fogBroken = true;
         try { console.warn('fog volume pass disabled:', e); } catch (_) { /* no console */ }
+      }
+    }
+
+    /* Bloom over the finished 3D frame, at the engine's response for the
+     * current mood (`play_bloom_params`). A driver that cannot link the pass
+     * disables it for the session; the page keeps playing without it. */
+    _drawBloom(rt) {
+      if (this._bloomBroken) return;
+      if (typeof rt.play_bloom_params !== 'function'
+          || typeof window.LegaiaBloomPass !== 'function') return;
+      try {
+        if (!this._bloomPass) this._bloomPass = new window.LegaiaBloomPass(this.renderer.gl);
+        this._bloomPass.draw(rt.play_bloom_params());
+      } catch (e) {
+        this._bloomBroken = true;
+        try { console.warn('bloom pass disabled:', e); } catch (_) { /* no console */ }
       }
     }
 

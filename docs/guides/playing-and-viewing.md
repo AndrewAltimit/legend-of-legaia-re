@@ -142,6 +142,7 @@ enhancement has a retail-faithful off position
 | `Y` | Shadows cast by the enhanced point lights | on | `--no-dyn-shadows` |
 | `F4` | Camera-occlusion fade: walls between the camera and your character dissolve to a dither | on | `--no-occlusion-fade` |
 | `F9` | Volumetric ground fog | off | `--no-volumetric-fog` |
+| `F10` | Bloom: lamps, glowing props, lit windows and bright sky glow softly, stronger at night | off, remembered | - |
 | `R` | Precise free-angle movement | off (retail-style movement), remembered | - |
 | `T` | Camera distance preset: retail, far, farther | far, remembered | - |
 | `F3` | Wide debug orbit camera | off | - |

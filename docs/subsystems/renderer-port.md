@@ -233,6 +233,50 @@ cells. Per frame the pass adds one texture sample per sheet fragment and
 per vertex (four more on spill vertices and fragments), a handful of noise
 evaluations on spill and haze fragments, and nothing on the CPU.
 
+## Bloom (enhancement, NOT retail)
+
+`Renderer::set_bloom(true)` makes the bright parts of the 3D frame - lamp
+halos, emissive props, lit windows, sunlit sky - bleed a soft glow into
+their surroundings. **Off by default, and off IS the frame without it**: none
+of the passes below run and the scene is the single pass it always was.
+
+With it on, the scene half of a `RenderTarget::Scene` frame (the 3D draws,
+the glow sprites, the volumetric fog) renders into an offscreen target
+instead of the presented one, and `renderer/bloom.rs` runs four passes at a
+quarter of the surface on each axis:
+
+1. **extract** - four bilinear taps cover the 4x4 scene block under one
+   bloom texel, each weighted on its own by a soft-knee brightness law (the
+   largest channel against a threshold, a quadratic ease across the knee),
+   so one bright pixel does not lift its dark neighbours;
+2. **blur** - a separable 9-tap Gaussian as five linear taps, horizontal then
+   vertical, twice;
+3. **composite** - the scene texel plus the glow times the intensity,
+   saturating, written to the presented target.
+
+The screen-space layers (the attached-light pools, sprites, text, the
+composited ordering-table tail) draw after the composite, so the HUD never
+blooms.
+
+The response comes from `legaia_render_kernels::bloom::BloomParams`, keyed on
+enhanced lighting's mood: the darker the mood the lower the threshold and the
+stronger the glow (`for_glow` over `LightingMood::glow`), so at night the
+lamps, halos and the Genesis Tree carry it while daylight takes only a faint
+lift on its brightest surfaces; with enhanced lighting off the daylight
+response applies. The renderer derives it from its own staged mood.
+
+The browser play page draws the same passes through `site/js/webgl-bloom.js`:
+it blits the finished default framebuffer into a texture (it cannot sample
+the framebuffer itself), runs the same extract and blur, and adds the glow
+back with an additive blend - the sum the native composite writes - at the
+engine's response (`play_bloom_params`). The `bloom_parity` test evaluates
+each of the three fragment stages on both hosts through `shader_eval` and
+requires them to agree.
+
+**Cost.** One full-resolution composite pass plus four passes over a
+sixteenth of the pixels; on the page, one extra resolve blit. Nothing on the
+CPU beyond two uniform writes a frame.
+
 ## Screen-space overlay pass
 
 **The tint is retail's, 5-bit.** The text / sprite shader tints every quad

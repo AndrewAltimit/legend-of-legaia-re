@@ -30,6 +30,12 @@ pub struct Renderer {
     pub(super) fog_volume_pass: std::cell::RefCell<Option<fog_volume::FogVolumePass>>,
     /// Whether this frame has a bank staged.
     pub(super) fog_volume_active: std::cell::Cell<bool>,
+    // --- lane L ---
+    /// The bloom enhancement's passes and targets, built on the first
+    /// bloomed frame ([`Renderer::set_bloom`]).
+    pub(super) bloom_pass: std::cell::RefCell<Option<bloom::BloomPass>>,
+    /// Whether bloom is on (default off).
+    pub(super) bloom_on: std::cell::Cell<bool>,
     pub(super) surface: wgpu::Surface<'static>,
     pub(super) device: wgpu::Device,
     pub(super) queue: wgpu::Queue,

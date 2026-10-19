@@ -10,6 +10,8 @@ use legaia_tim::{VRAM_HEIGHT, VRAM_WIDTH, Vram};
 use std::sync::Arc;
 use wgpu::util::DeviceExt;
 
+// --- lane L ---
+pub mod bloom;
 mod construct;
 mod depth;
 mod fog_volume;
@@ -27,6 +29,9 @@ pub use fog_volume::{FogGroundTexture, FogVolumeDraw};
 // The fog sheets' WGSL, for the host-parity test that evaluates it.
 #[cfg(test)]
 pub(crate) use fog_volume::FOG_SHADER_SRC;
+// The bloom passes' WGSL, for the host-parity test.
+#[cfg(test)]
+pub(crate) use bloom::BLOOM_SHADER_SRC;
 pub(crate) use letterbox::letterbox_scale;
 pub use render::CaptureImage;
 pub use state::*;

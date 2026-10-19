@@ -198,6 +198,7 @@ impl PlayWindowApp {
         if let Some(r) = self.win.renderer.as_ref() {
             r.set_dyn_shadows(self.options_state.light_shadows);
             r.set_occlusion_fade(self.options_state.occlusion_fade);
+            r.set_bloom(self.options_state.bloom);
         }
     }
 }

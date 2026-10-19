@@ -945,6 +945,12 @@ void main() { o_color = texture(u_layer, v_uv); }
       this.dynShadows = !!on;
     }
 
+    /* Bloom (the native window's F10): drawn by `_drawBloom` over the
+     * finished 3D frame. Off unless the player ticked it. */
+    setBloom(on) {
+      this.bloom = !!on;
+    }
+
     /* Stage this frame's camera.
      *
      * Default: the ENGINE's. `play_camera_vp` resolves which camera owns the

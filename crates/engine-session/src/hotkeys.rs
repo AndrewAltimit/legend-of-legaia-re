@@ -51,10 +51,13 @@ pub enum HostHotkey {
     CameraDistance,
     /// `R`: precise (free-angle) movement.
     PreciseMovement,
+    // --- lane L ---
+    /// `F10`: the bloom enhancement ([`OptionsState::bloom`]).
+    Bloom,
 }
 
 /// Every hotkey with its `KeyboardEvent.code`.
-pub const HOST_HOTKEYS: [(HostHotkey, &str); 12] = [
+pub const HOST_HOTKEYS: [(HostHotkey, &str); 13] = [
     (HostHotkey::DiagRows, "F1"),
     (HostHotkey::AudioMute, "F2"),
     (HostHotkey::DebugCamera, "F3"),
@@ -67,6 +70,8 @@ pub const HOST_HOTKEYS: [(HostHotkey, &str); 12] = [
     (HostHotkey::LightShadows, "KeyY"),
     (HostHotkey::CameraDistance, "KeyT"),
     (HostHotkey::PreciseMovement, "KeyR"),
+    // --- lane L ---
+    (HostHotkey::Bloom, "F10"),
 ];
 
 impl HostHotkey {
@@ -103,6 +108,7 @@ impl HostHotkey {
             HostHotkey::LightShadows => "light_shadows",
             HostHotkey::CameraDistance => "camera_distance",
             HostHotkey::PreciseMovement => "precise_movement",
+            HostHotkey::Bloom => "bloom",
         }
     }
 
@@ -122,6 +128,7 @@ impl HostHotkey {
             HostHotkey::LightShadows => "Lamp shadows",
             HostHotkey::CameraDistance => "Camera distance",
             HostHotkey::PreciseMovement => "Precise movement",
+            HostHotkey::Bloom => "Bloom",
         }
     }
 
@@ -205,6 +212,7 @@ pub fn apply_options_hotkey(opts: &mut OptionsState, hotkey: HostHotkey) -> bool
         HostHotkey::PreciseMovement => opts.precise_movement = !opts.precise_movement,
         HostHotkey::OcclusionFade => opts.occlusion_fade = !opts.occlusion_fade,
         HostHotkey::LightShadows => opts.light_shadows = !opts.light_shadows,
+        HostHotkey::Bloom => opts.bloom = !opts.bloom,
         HostHotkey::DiagRows
         | HostHotkey::DebugCamera
         | HostHotkey::CheatMaxAp
@@ -232,6 +240,7 @@ pub fn options_hotkey_state(opts: &OptionsState, hotkey: HostHotkey) -> Option<S
         HostHotkey::PreciseMovement => on_off(opts.precise_movement),
         HostHotkey::OcclusionFade => on_off(opts.occlusion_fade),
         HostHotkey::LightShadows => on_off(opts.light_shadows),
+        HostHotkey::Bloom => on_off(opts.bloom),
         HostHotkey::DiagRows
         | HostHotkey::DebugCamera
         | HostHotkey::CheatMaxAp
@@ -331,6 +340,8 @@ mod tests {
         assert!(!o.occlusion_fade);
         assert!(apply_options_hotkey(&mut o, HostHotkey::LightShadows));
         assert!(!o.light_shadows);
+        assert!(apply_options_hotkey(&mut o, HostHotkey::Bloom));
+        assert!(o.bloom);
         let before = o.clone();
         assert!(!apply_options_hotkey(&mut o, HostHotkey::DebugCamera));
         assert_eq!(o, before);

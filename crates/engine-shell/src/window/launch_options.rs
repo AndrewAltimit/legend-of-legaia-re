@@ -655,6 +655,8 @@ pub(super) fn key_from_name(name: &str) -> Option<KeyCode> {
         "F7" => KeyCode::F7,
         "F8" => KeyCode::F8,
         "F9" => KeyCode::F9,
+        // `F10` bloom.
+        "F10" => KeyCode::F10,
         // The hotkey help panel (`help_key`): `F12`, or the `?` key.
         "F12" => KeyCode::F12,
         "/" | "?" | "SLASH" => KeyCode::Slash,
