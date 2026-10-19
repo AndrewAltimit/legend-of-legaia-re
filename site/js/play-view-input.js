@@ -237,34 +237,6 @@
 
     /* ---------- fishing minigame ---------- */
 
-    /* Is a fishing session live on the engine's world this frame? */
-    fishingActive() {
-      if (typeof this.rt.play_fishing_active !== 'function') return false;
-      try { return !!this.rt.play_fishing_active(); } catch (e) { return false; }
-    }
-
-    /* Start / leave the fishing minigame. The engine suspends the current
-     * scene mode and restores it on exit, banking the session's points into the
-     * world's persistent pool - so the field is exactly where it was left and
-     * the point total survives. Returns `true` on a state change. */
-    toggleFishing() {
-      const rt = this.rt;
-      if (typeof rt.play_fishing_start !== 'function') return false;
-      try {
-        if (this.fishingActive()) {
-          rt.play_fishing_stop();
-          /* Drop the HUD immediately rather than waiting for the next layer to
-           * claim the overlay. */
-          if (this._menuCtx && this.menuOverlay) {
-            this._menuCtx.clearRect(0, 0, this.menuOverlay.width, this.menuOverlay.height);
-            this._overlayActive = false;
-          }
-          return true;
-        }
-        return !!rt.play_fishing_start();
-      } catch (e) { return false; }
-    }
-
     /* The live session's readout (`{live, phase, cast_power, tension, ...}`), or
      * `{live:false}`. */
     fishingState() {

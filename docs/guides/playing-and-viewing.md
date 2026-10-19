@@ -364,8 +364,9 @@ button attacks, how to quit) sit **outside** the game picture, so the game's
 own chrome never covers them: in the window's title bar in `play-window`, and
 in the strip under the canvas on the browser play page, fullscreen included.
 
-The browser play page carries the fishing entry as a **Fish here** button under
-the canvas. Cross casts and reels, Square reels harder, Cross recasts once a
+On the browser play page fishing starts where the game starts it: a fishing
+spot's own script hands over through the field VM's minigame warp, as on the
+console - the page has no launcher button of its own. Cross casts and reels, Square reels harder, Cross recasts once a
 catch resolves - the same pad the field controller reads, because the driver is
 the shared per-frame fishing tick rather than a per-host input handler. Points
 bank into the world's persistent pool, so they survive leaving and re-entering,

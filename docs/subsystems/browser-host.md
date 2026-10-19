@@ -425,7 +425,10 @@ headings and the tick/records-model injection sites to the native host's.
 
 ## Fishing minigame (`play_fishing`)
 
-`LegaiaRuntime::play_fishing_start` lifts the fishing overlay (PROT 0972)
+The play page has no fishing button: a fishing spot's own script reaches the
+minigame through the mode-24 door warp (`SceneHost::drain_minigame_warp`'s
+fishing arm), exactly as natively. `LegaiaRuntime::play_fishing_start` is the
+export-level launcher kept for drivers; it lifts the fishing overlay (PROT 0972)
 through the static-overlay map and hands it to
 `SceneHost::enter_fishing_from_overlay` - the door warp's own entry, which the
 native window's `L` launcher calls too. That decodes the species, spawn and
