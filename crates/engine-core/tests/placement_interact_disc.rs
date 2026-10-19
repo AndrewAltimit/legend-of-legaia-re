@@ -328,6 +328,17 @@ fn interacting_with_a_door_runs_its_record() {
             // path and reports a boundary the record did not actually hit.
             world.minigames.casino_coins = 500;
             world.party.money = 50_000;
+            // Stand the player at the door, where an action press finds
+            // them: a casino seat walks the player onto its stool
+            // (`C7 F8 ..`) and parks the record until they land, so a player
+            // left at the origin spends the whole frame budget walking.
+            if let Some(&(anchor, _)) = world.props.walk_touch.get(&d.slot)
+                && let Some(p) = world.player_actor_slot
+                && let Some(actor) = world.actors.get_mut(p as usize)
+            {
+                actor.move_state.world_x = anchor.0;
+                actor.move_state.world_z = anchor.1;
+            }
 
             let prologue = world
                 .npcs

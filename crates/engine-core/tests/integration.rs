@@ -155,3 +155,5 @@ mod scene_clut_over_shared_layer;
 mod world_map_render_ladder;
 mod world_trig_lut;
 mod worldmap_save_screen_handoff;
+// --- lane K ---
+mod casino_seat_disc;

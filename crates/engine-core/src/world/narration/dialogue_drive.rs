@@ -70,6 +70,16 @@ impl World {
         // first visit inside the slice below (retail's actor tick runs the
         // dialog SM and then, same visit, the walk kernel).
         self.step_talk_face_ramp(&mut id);
+        // A player leg the record armed (`C7 F8 <tx> <tz> <mode>` walk,
+        // `B8 F8 <op0> <op1>` budgeted turn): the walk kernel plays it on the
+        // player one frame per visit, and the record stays parked on the op
+        // until the leg lands. Only a player target parks the caller
+        // (`0x801DF034..0x801DF044` for the walk, `0x801DEEFC` for the turn).
+        // REF: FUN_801DE840 (0x801DEFC0..0x801DF054), FUN_8003774C (cases 0x38 / 0x47)
+        if self.step_talk_player_legs(&mut id) {
+            self.dialog.inline = Some(id);
+            return;
+        }
         // A box held for its press's own frame only (`HeldBox`) is gone by
         // the next pager call: the idle state after the dispatch clears it.
         if id.held_box.as_ref().is_some_and(|h| !h.until_next_line) {
@@ -329,6 +339,28 @@ impl World {
             // REF: FUN_801DE840 (0x801E2148..0x801E21DC), FUN_8003774C (the 0x4C arm)
             // A cross-context `B8 <id> ..` turn lands on `<id>` the same way;
             // stepped on the talk's context it turned the talker instead.
+            // The player's own legs (`C7 F8 ..` walk-to-tile, `B8 F8 ..`
+            // turn): `FUN_8003C83C` resolves `0xF8` to the player, so the
+            // walk kernel moves and turns the player, and the record parks
+            // on the leg. Stepped on the talker's context instead, the
+            // player stayed wherever the touch found them and the casino
+            // seats (`koin1` P1[51..=56]: walk to the stool tile, turn to
+            // the cabinet, `A2 F8 05` sit) played the sit clip off the
+            // stool.
+            // REF: FUN_801DE840 (0x801DEE90..0x801DEF24, 0x801DEFC0..0x801DF054)
+            if ext_target == Some(legaia_engine_scene::field_env::PLAYER_ANCHOR_TARGET)
+                && let Some(next_pc) = host.world.arm_talk_player_leg(&mut id)
+            {
+                if id.pc < id.visited.len() {
+                    id.visited[id.pc] = true;
+                }
+                id.pc = next_pc;
+                id.park_frames = 0;
+                if id.player_walk.is_some() || id.player_turn.is_some() {
+                    break;
+                }
+                continue;
+            }
             if let Some(next_pc) = host.world.run_placement_facing_op(&id.bytecode, id.pc) {
                 if id.pc < id.visited.len() {
                     id.visited[id.pc] = true;
@@ -964,6 +996,103 @@ impl World {
             }
             _ => None,
         }
+    }
+
+    /// Arm the player leg a talk record's cross-context op on the player
+    /// names, when it names one: `C7 F8 <tx> <tz> <mode>` (op `0x47`
+    /// walk-to-tile) or `B8 F8 <op0> <op1>` (op `0x38`; a zero budget is the
+    /// instant compass write, any other the RotateToAngle ramp). Returns the
+    /// PC past the op, with [`InlineDialogue::player_walk`] /
+    /// [`InlineDialogue::player_turn`] set when a leg is now in flight, or
+    /// `None` when the op is neither. The leg's first frame runs on the
+    /// next visit ([`Self::step_talk_player_legs`]), as the walk kernel
+    /// runs after the dispatcher in retail's actor tick.
+    ///
+    /// The tile decode is the `0x47` arm's (`0x80037B84..0x80037C04`): tile
+    /// `* 0x80 + 0x40`, a set high bit moving the target to the tile's far
+    /// edge (`+ 0x80`). The parked sentinel tile `(0x7F, 0x7F)` arms nothing.
+    ///
+    /// [`InlineDialogue::player_walk`]: legaia_engine_field::inline_dialogue::InlineDialogue::player_walk
+    /// [`InlineDialogue::player_turn`]: legaia_engine_field::inline_dialogue::InlineDialogue::player_turn
+    // PORT: FUN_8003774C (case 0x47 target decode)
+    // REF: FUN_801DE840 (0x801DEE90..0x801DEF24, 0x801DEFC0..0x801DF054)
+    pub(super) fn arm_talk_player_leg(
+        &mut self,
+        id: &mut legaia_engine_field::inline_dialogue::InlineDialogue,
+    ) -> Option<usize> {
+        let bc = &id.bytecode;
+        let pc = id.pc;
+        match *bc.get(pc)? {
+            0xC7 => {
+                let (b0, b1, b2) = (*bc.get(pc + 2)?, *bc.get(pc + 3)?, *bc.get(pc + 4)?);
+                if (b0 & 0x7F, b1 & 0x7F)
+                    != legaia_engine_field::man_field_scripts::PARKED_SENTINEL_TILE
+                {
+                    let decode = |b: u8| -> i16 {
+                        i16::from(b & 0x7F) * 0x80 + if b & 0x80 != 0 { 0x80 } else { 0x40 }
+                    };
+                    id.player_walk = Some(legaia_engine_field::inline_dialogue::PropPlayerWalk {
+                        target: (decode(b0), decode(b1)),
+                        speed: crate::world::field_npc_walk_step_speed(0x80, b2 & 7),
+                        frames: 0,
+                    });
+                }
+                Some(pc + 5)
+            }
+            0xB8 => {
+                let (op0, op1) = (*bc.get(pc + 2)?, *bc.get(pc + 3)?);
+                if op1 & 0x7F == 0 {
+                    if let Some(h) =
+                        legaia_engine_field::man_field_scripts::facing_index_to_engine_heading(
+                            op0 & 0xF,
+                        )
+                    {
+                        self.set_timeline_facing(None, h);
+                    }
+                } else {
+                    let cur = self.timeline_facing(None).unwrap_or(0x800);
+                    id.player_turn = Some(legaia_engine_field::cutscene_timeline::TimelineFacing {
+                        slot: None,
+                        state: legaia_engine_motion_vm::motion_vm::MotionState {
+                            yaw: (cur as u16) & 0x0FFF,
+                            speed: 1,
+                            ..Default::default()
+                        },
+                        program: [0x38, op0, op1],
+                        resume_pc: pc + 4,
+                        frames: 0,
+                    });
+                }
+                Some(pc + 4)
+            }
+            _ => None,
+        }
+    }
+
+    /// One walk-kernel visit of the player legs a talk record armed
+    /// ([`Self::arm_talk_player_leg`]): the walk first, then the turn the
+    /// record reaches after it. `true` while a leg is still in flight - the
+    /// record stays parked this frame.
+    // REF: FUN_8003774C (cases 0x38 / 0x47)
+    pub(super) fn step_talk_player_legs(
+        &mut self,
+        id: &mut legaia_engine_field::inline_dialogue::InlineDialogue,
+    ) -> bool {
+        if let Some(mut walk) = id.player_walk.take() {
+            walk.frames += 1;
+            let arrived = self.step_player_walk_leg(walk.target, walk.speed);
+            if !arrived && walk.frames < WALK_PARK_TIMEOUT {
+                id.player_walk = Some(walk);
+                return true;
+            }
+        }
+        if let Some(mut leg) = id.player_turn.take()
+            && !self.step_npc_rotate_leg(&mut leg)
+        {
+            id.player_turn = Some(leg);
+            return true;
+        }
+        false
     }
 
     /// One frame of a free-standing `0x38` rotate leg; `true` once it snaps.
