@@ -1054,3 +1054,56 @@ fn a_scene_load_clears_the_tile_board_with_the_control_block() {
         legaia_engine_system::scus_leaf_kernels::SCENE_CONTROL_BLOCK_RESET
     );
 }
+
+/// The swirl (formation slot 0 `0xB5`) runs retail's 252-frame transition;
+/// every other style keeps 132. The session arms before the style is known,
+/// so the world rebases it on the transition's first frame - and the entity
+/// clock counts the whole longer window.
+#[test]
+fn the_swirl_transition_runs_its_own_252_frames() {
+    use legaia_engine_battle::encounter::{EncounterPhase, EncounterRoll};
+    use legaia_engine_battle::monster_catalog::{FormationDef, FormationSlot};
+    use legaia_render_kernels::battle_intro_styles::{
+        INTRO_DURATION_FRAMES, INTRO_DURATION_FRAMES_SWIRL,
+    };
+
+    let run = |slot0: u16| {
+        let mut world = World::new();
+        world
+            .tables
+            .formation_table
+            .insert(FormationDef::new(7, vec![FormationSlot::new(slot0)]));
+        let mut session = legaia_engine_battle::encounter::EncounterSession::new(
+            legaia_engine_battle::encounter::EncounterTracker::new(
+                legaia_engine_battle::encounter::EncounterTable::default(),
+            ),
+        );
+        session.trigger_with(EncounterRoll {
+            formation_id: 7,
+            row_index: 0,
+            roll_q8: 0,
+        });
+        world.encounters.session = Some(session);
+        let mut ticks = 0;
+        let mut last_elapsed = 0;
+        while matches!(
+            world.encounters.session.as_ref().unwrap().phase(),
+            EncounterPhase::Transition { .. }
+        ) {
+            world.tick_encounter();
+            if let Some(e) = world.battle.intro {
+                last_elapsed = e.elapsed;
+            }
+            ticks += 1;
+            assert!(ticks < 1000, "the transition ends");
+        }
+        (ticks, last_elapsed)
+    };
+
+    let (swirl_ticks, swirl_clock) = run(0xB5);
+    assert_eq!(swirl_clock as i32, INTRO_DURATION_FRAMES_SWIRL);
+    assert_eq!(swirl_ticks, INTRO_DURATION_FRAMES_SWIRL + 1);
+    let (plain_ticks, plain_clock) = run(0x01);
+    assert_eq!(plain_clock as i32, INTRO_DURATION_FRAMES);
+    assert_eq!(plain_ticks, INTRO_DURATION_FRAMES + 1);
+}

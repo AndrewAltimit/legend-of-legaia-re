@@ -1332,7 +1332,15 @@ an armed fight), and the `WorldMap` tick (which drains into
 `DAT_801D2458`: 132 display frames, 252 for the swirl
 (`battle_intro_styles::intro_duration_frames`,
 [`cutscene.md`](cutscene.md#how-long-a-transition-runs-dat_801d2458)). The
-entity clock counts up to the number the session counts down from. Every fade
+entity clock counts up to the number the session counts down from. The session
+arms before the style is known, so `World::tick_battle_intro` resolves the style
+on the transition's first frame (`World::battle_intro_style_inputs`, the same
+resolver both hosts arm their emitters through) and rebases the countdown onto
+its length (`EncounterSession::set_transition_length`); a caller that set its
+own length keeps it. Both clocks count display frames: the entity adds the
+frame step `0x1F800393` per tick (`0x801D19F0..0x801D19FC` in the swirl,
+`0x801D0E24..0x801D0E34` in the shatter), and one world tick is one display
+frame, so the swirl runs 4.2 s and every other style 2.2 s. Every fade
 ramp is a lead before it, and the tile shatter's records hold at their seeded
 pose until `delay < elapsed * 0x3C` with `delay = rand() % 5000`, so the grid
 needs ~84 frames just to finish starting.

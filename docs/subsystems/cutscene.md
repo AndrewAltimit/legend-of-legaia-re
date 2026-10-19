@@ -2456,6 +2456,15 @@ outer bands stop being circular and become the screen rectangle.
   light register (`cr8..cr20`).
 - The tick also washes the screen `0x101010` once the *previous* frame's clock has passed the
   bound.
+- **Inbound bands are cut by the GPU, not by a clip.** The prim leaves hand the GPU the GTE's
+  saturated `SXY`, and the GPU skips either triangle of a quad whose corners lie more than `1023`
+  pixels apart across or `511` down ([renderer](renderer.md#the-gpu-polygon-size-limit)). A band
+  flying at the lens carries the clamped screen-rectangle corners, so its quads saturate and
+  vanish on the console well before the `> 0x80` gate drops the band. The port applies the same
+  per-triangle rule to every intro quad (`battle_intro::gpu_span_cut`, shared with the tile
+  shatter); short of it, the captured frame painted the screen at many times its size. A band in
+  the last few hundred units before that cut still magnifies the capture several-fold, which is
+  the console's behaviour too.
 - The two texture pages pin the trig tables' phase: the primary half's `u = (x >> 4) + 0x20` and
   the mirrored half's `-0x61 - (x >> 4)` stay inside their capture halves only when x is
   non-negative over the sampled half turn, so `_DAT_8007B81C` (the x lane) is sine-phased and

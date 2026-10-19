@@ -247,8 +247,13 @@ pub(super) fn push_ft4_quad(
     if otz < INTRO_NEAR_OTZ {
         return false;
     }
+    let Some(xy) = gpu_span_cut(std::array::from_fn(|i| {
+        (p[i].xy.x as i16, p[i].xy.y as i16)
+    })) else {
+        return false;
+    };
     prims.push(ScreenPrim::Textured(ScreenQuad {
-        xy: std::array::from_fn(|i| (p[i].xy.x as i16, p[i].xy.y as i16)),
+        xy,
         uv,
         clut,
         tpage,
@@ -261,9 +266,59 @@ pub(super) fn push_ft4_quad(
     true
 }
 
+/// The GPU's polygon-size limit on one projected `POLY_FT4`.
+///
+/// The prim leaves hand the GPU the GTE's saturated `SXY` with no clip of
+/// their own, and the GPU draws a quad as the triangles `(0, 1, 2)` and
+/// `(1, 2, 3)`, skipping either whose corners lie more than `1023` pixels
+/// apart horizontally or `511` vertically
+/// ([`crate::prim_near_reject::GPU_MAX_SPAN`]). A swirl band flying at the
+/// lens projects its clamped screen-rectangle corners to the saturation
+/// bounds, so on the console those quads vanish where an unclipped port
+/// paints the captured frame across the screen at many times its size.
+///
+/// Returns the corners to draw - with a skipped triangle collapsed onto a
+/// shared edge so only its partner rasterises - or `None` when both go.
+pub fn gpu_span_cut(xy: [(i16, i16); 4]) -> Option<[(i16, i16); 4]> {
+    use crate::prim_near_reject::GPU_MAX_SPAN;
+    let over = |tri: [usize; 3]| {
+        (0..2).any(|axis| {
+            let v = tri.map(|i| i32::from(if axis == 0 { xy[i].0 } else { xy[i].1 }));
+            let (lo, hi) = (v.iter().min().unwrap(), v.iter().max().unwrap());
+            (hi - lo) as f32 > GPU_MAX_SPAN[axis]
+        })
+    };
+    match (over([0, 1, 2]), over([1, 2, 3])) {
+        (false, false) => Some(xy),
+        (true, true) => None,
+        // Keep `(1, 2, 3)`: corner 0 onto corner 1 degenerates the first.
+        (true, false) => Some([xy[1], xy[1], xy[2], xy[3]]),
+        // Keep `(0, 1, 2)`: corner 3 onto corner 2 degenerates the second.
+        (false, true) => Some([xy[0], xy[1], xy[2], xy[2]]),
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::unwrap_bottom_edge_v;
+    use super::{gpu_span_cut, unwrap_bottom_edge_v};
+
+    /// A quad whose corners sit at the `SXY` saturation bounds is skipped
+    /// whole; a quad with one over-wide triangle keeps its partner; an
+    /// on-screen quad is untouched.
+    #[test]
+    fn the_gpu_span_limit_drops_saturated_quads() {
+        let screen = [(0, 0), (320, 0), (0, 240), (320, 240)];
+        assert_eq!(gpu_span_cut(screen), Some(screen));
+        let saturated = [(-1024, -1024), (1023, -1024), (-1024, 1023), (1023, 1023)];
+        assert_eq!(gpu_span_cut(saturated), None);
+        // Corner 3 flung off: triangle (1, 2, 3) spans 1300 px, (0, 1, 2)
+        // stays on screen.
+        let one = [(0, 0), (100, 0), (0, 100), (1000, 1000)];
+        assert_eq!(
+            gpu_span_cut(one),
+            Some([(0, 0), (100, 0), (0, 100), (0, 100)])
+        );
+    }
 
     /// The bottom tile row's stored bytes (`v = 240` top, `0` bottom - the
     /// `0x100` the seeder's `sb` wrapped) read as `240..=255`; every other
