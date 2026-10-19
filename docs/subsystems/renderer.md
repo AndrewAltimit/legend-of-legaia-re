@@ -2283,6 +2283,14 @@ leg CLUT tops out at `(128, 88, 0)`), so `B + F/4` under `(67, 67, 179)` adds
 under twenty a channel - which is why the single-sided
 [body cull](#the-field-pass-culls-back-faces) matters to its brightness.
 
+**A kill camera through the monster.** The defeat camera sweeps from the
+dying monster to the victor, and on the way it passes close enough that the
+body's near faces fill half the frame for a couple of frames. A PCSX-Redux film
+of the Caruban fight (`rikuroa_pre_caruban`, monster HP poked to 1,
+`scripts/pcsx-redux/autorun_film.lua`) shows two such frames on the console;
+the port's flat dark-blue frames on the same sweep are that, not a stray
+primitive.
+
 ## Coplanar surfaces: retail's ordering model, the port's depth policy
 
 Retail has **no depth buffer**. Every primitive goes into the ordering table
