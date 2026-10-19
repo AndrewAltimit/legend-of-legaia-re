@@ -256,6 +256,27 @@ impl TargetPickerSession {
         self.state
     }
 
+    /// Move a live cursor onto `slot` of `row` when that slot is a target
+    /// this picker accepts; `false` (and the cursor left where it is)
+    /// otherwise, or once the picker has resolved.
+    ///
+    /// The attack-target cursor opens on the actor's current target byte
+    /// `+0x1DD`, not on the first live slot: the ring's confirm arm keeps a
+    /// monster-slot target (`+0x1DD - 3 < 5`) and re-picks only anything
+    /// else through `FUN_801DB8B4` (`0x801D1574..0x801D15AC`), and the
+    /// round boundary re-picks only a dead or past-slot-6 one
+    /// (`FUN_801D88CC`). So a member who struck a monster last round opens
+    /// on it again while it stands. The host seats that slot through here.
+    ///
+    /// REF: FUN_801D0748 (0x801D1574..0x801D15AC)
+    pub fn seat_cursor(&mut self, row: CursorRow, slot: u8) -> bool {
+        if matches!(self.state, PickerState::Done(_)) || !self.is_valid(row, slot) {
+            return false;
+        }
+        self.state = PickerState::Cursor { row, slot };
+        true
+    }
+
     pub fn kind(&self) -> TargetKind {
         self.kind
     }
@@ -317,9 +338,12 @@ impl TargetPickerSession {
     }
 
     /// Pool slots the retail attack-target scans cover: `3..=6`, i.e. the
-    /// first four monster rows. Retail seats at most four monsters
-    /// ([`crate::battle_seats::MONSTER_SEATS`] rows are four wide), so a fifth
-    /// engine slot has no ring entry and falls back to the linear scan.
+    /// first four monster rows. `FUN_801D8A88`'s count loop stops at
+    /// `sltiu s0,0x7` and its angle loop runs four entries, so the fifth
+    /// seat (pool slot `7`, a Divide clone's) has no ring entry in retail
+    /// either: it is a target only once the four below it are down, as the
+    /// default (`FUN_801DB8B4` falls through to `7`). The linear scan from
+    /// that seat finds nothing else standing.
     const RING_MONSTERS: usize = 4;
 
     /// Step the **enemy** cursor the way retail does: to the angularly nearest

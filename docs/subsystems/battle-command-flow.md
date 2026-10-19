@@ -522,7 +522,20 @@ Drives the post-action target cursor. Parameterised on a `TargetKind` enum const
 
 Sweep kinds resolve in `init_cursor`; single-target picks walk valid candidates with cursor-wrap and auto-skip-dead. Implementation: [`engine-battle::target_picker`](../../crates/engine-battle/src/target_picker.rs).
 
-The **enemy** row is not a slot-order walk. Each picker row carries the slot's battle-world seat (`actor[+0x34]` / `+0x38`, filled by `World::battle_target_rows` from the actor's `move_state`), and a `SingleEnemy` cursor steps through retail's attack-target ring - `FUN_801D8A88` builds the ring and `FUN_801D8D00` steps it, so Left/Right move to the *angularly* nearest live monster. Retail seats at most four monsters, so a fifth engine slot has no ring entry; that slot, an un-seated host (all seats at the origin), and a ring entry that is not a live monster each fall the cursor back to the plain scan. See [`battle-action.md`](battle-action-helpers.md#actor-pool-leaf-helpers) for the two kernels.
+The **enemy** row is not a slot-order walk. Each picker row carries the slot's battle-world seat (`actor[+0x34]` / `+0x38`, filled by `World::battle_target_rows` from the actor's `move_state`), and a `SingleEnemy` cursor steps through retail's attack-target ring - `FUN_801D8A88` builds the ring and `FUN_801D8D00` steps it, so Left/Right move to the *angularly* nearest live monster.
+
+The cursor opens on the member's current target `+0x1DD` (`World::seat_attack_cursor`), not on the first live slot; [below](#the-cursors-opening-and-the-fifth-seat) is why, and how far the ring reaches. An un-seated host (all seats at the origin) and a ring entry that is not a live monster fall the cursor back to the plain scan. See [`battle-action.md`](battle-action-helpers.md#actor-pool-leaf-helpers) for the two kernels.
+
+### The cursor's opening and the fifth seat
+
+The ring's Attack confirm (`0x801D1574..0x801D15AC`) keeps `+0x1DD` when it names a monster slot (`+0x1DD - 3 < 5`, pool slots `3..=7`) and re-picks anything else through `FUN_801DB8B4`. The round boundary `FUN_801D88CC` re-picks only a target that is dead or past slot 6. Nothing else writes the byte before the `0x5A` cursor opens, and the ring builder takes it as the cursor's start. So a member who struck a monster last round opens on that monster while it stands, and a bare confirm strikes it again.
+
+The ring covers pool slots `3..=6` only. `FUN_801D8A88` counts live monsters over `3..7` (`sltiu s0,0x7`) into `ctx[+0x244]`, and its angle and pick loops run four entries from the slot-3 pointer. A fifth monster - the seat a Divide clone takes, pool slot `7`, `ctx[+1] < 5` - has no ring entry. It can still be the target in two cases:
+
+- **It is the default.** `FUN_801DB8B4` scans `3..=6` and falls through to `7` once all four are down.
+- **It is the stored target.** The round boundary re-picks a `+0x1DD` of `7` (`> 6`) while a lower seat stands, so this holds only while slots `3..=6` are empty too.
+
+While any of the first four seats stands, the fifth cannot be targeted by the cursor at all. The engine's four-seat ring matches that. Its fallback scan from a cursor sitting on the fifth seat reaches only that seat, since by then nothing else stands; retail's step there returns a stale ring byte and leaves the redirect to the dispatch. The boundary's `> 6` test is in retail's fixed seating, so the engine converts its compacted slot (`party_count + k`) to `3 + k` before testing it: a lone member's fifth seat is engine slot 5.
 
 A sweep reaches the action SM as retail's target-group code, not a sentinel: the live command flow writes `+0x1DD = 8` for the party and `9` for the enemy row (absolute numbering, mirrored for a monster caster), and a self-target writes the caster's own slot - the values `FUN_801E295C`'s cast-begin split (`sltiu v0,t2,0x8` at `0x801E433C`) and self-skip (`beq v0,t2` at `0x801E4350`) decode.
 

@@ -324,3 +324,37 @@ fn an_art_inside_the_innate_band_is_never_learned() {
     );
     assert!(w.party.tactical_arts.learned_ids(0).is_empty());
 }
+
+/// The attack cursor opens on the member's current target `+0x1DD`, not on
+/// the first live monster: retail's Attack confirm keeps a monster-slot
+/// target (`0x801D1574..0x801D15AC`) and the ring builder starts the cursor
+/// there, so a bare confirm strikes last round's foe again while it stands.
+#[test]
+fn attack_cursor_opens_on_the_current_target() {
+    use legaia_engine_menus::battle_input::{BattleCommandSession, CommandPhase};
+    let mut w = seated_battle();
+    w.battle_ctx.active_actor = 0;
+    // Monster row 2 (engine slot 3) is the member's standing target.
+    w.actors[0].battle.active_target = 3;
+    w.battle.command = Some(BattleCommandSession {
+        actor: 0,
+        party_slot: 0,
+        no_escape: false,
+        phase: CommandPhase::AttackMode { cursor: 0 },
+    });
+    w.set_pad(0);
+    w.set_pad(PadButton::Left.mask());
+    w.tick_battle_command();
+    w.set_pad(0);
+    let state = match w.battle.command.as_ref().map(|c| &c.phase) {
+        Some(CommandPhase::Targeting { picker, .. }) => picker.state(),
+        other => panic!("expected the target cursor, got {other:?}"),
+    };
+    assert_eq!(
+        state,
+        PickerState::Cursor {
+            row: CursorRow::Enemy,
+            slot: 2
+        }
+    );
+}

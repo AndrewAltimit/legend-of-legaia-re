@@ -183,7 +183,18 @@ impl BattleRound {
                 .get(target as usize)
                 .map(|a| a.battle.hp)
                 .unwrap_or(0);
-            if legaia_engine_battle_vm::battle_formulas::needs_retarget(target, target_hp) {
+            // `needs_retarget`'s `> 6` bound is in retail's fixed seating,
+            // where monster `k` is pool slot `3 + k` whatever the party size
+            // and the fifth seat (a Divide clone's, `ctx[+1] < 5`) is slot
+            // `7`. The engine compacts monster `k` to `party_count + k`, so a
+            // small party's fifth seat read as a slot under 7 and was kept as
+            // a target retail re-picks.
+            let retail_slot = if (target as usize) >= party_count {
+                (3 + target as usize - party_count).min(usize::from(u8::MAX)) as u8
+            } else {
+                target
+            };
+            if legaia_engine_battle_vm::battle_formulas::needs_retarget(retail_slot, target_hp) {
                 world.actors[slot].battle.active_target = Self::first_living_monster(world);
             }
             world.actors[slot].battle.action_category = 0;
@@ -609,6 +620,25 @@ mod tests {
 
         assert_eq!(world.actors[0].battle.active_target, 1);
         assert_eq!(world.actors[0].battle.action_category, 0);
+    }
+
+    /// The fifth monster seat (retail pool slot `7`, a Divide clone's) is
+    /// re-picked while a lower seat stands, at every party size: retail's
+    /// `+0x1DD > 6` test is in its fixed seating, and a lone member's fifth
+    /// seat is engine slot 5.
+    #[test]
+    fn boundary_retargets_off_the_fifth_seat_for_a_lone_member() {
+        let mut world = World::new();
+        world.enter_battle(1, 5); // slot 0 party, slots 1..=5 monsters
+        for slot in 1..=5 {
+            world.actors[slot].battle.hp = 50;
+            world.actors[slot].battle.liveness = 1;
+        }
+        world.actors[0].battle.active_target = 5;
+
+        BattleRound::boundary(&mut world);
+
+        assert_eq!(world.actors[0].battle.active_target, 1);
     }
 
     /// A live target is left alone - the predicate is "still usable", not

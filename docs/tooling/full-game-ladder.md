@@ -361,15 +361,17 @@ member casts only a spell that leaves it half its MP; a fight that forbids
 running is cast at freely.
 
 **It aims.** A strike, an Arts string or a damage cast at one foe goes to
-the foe the hand picks, not the one the target cursor opens on: a cast to
+the foe the hand picks, not the one the target cursor opens on (the
+member's last target while it stands): a cast to
 the standing foe the element matrix lands it hardest on
 (`matrix[summon creature element][foe element]`, `FUN_801DD864`), a strike
 and a tie to the standing foe with the least HP left. It steps the cursor
 there with Right, which runs retail's angular attack-target ring
 (`FUN_801D8A88` builds it from the seats, `FUN_801D8D00` steps it), and
 confirms where the cursor stands after a dozen presses that have not
-brought it there: the ring covers four seats, so a fifth foe can be one it
-never visits. The spell it casts is chosen against the same best foe. The
+brought it there: the ring covers four seats, and a fifth foe (a Divide
+clone) is one no cursor reaches while the four below it stand
+([`battle-command-flow.md`](../subsystems/battle-command-flow.md#the-cursors-opening-and-the-fifth-seat)). The spell it casts is chosen against the same best foe. The
 segmented hands confirm the opening slot, so in them the ring is never
 stepped. The run's `[aim]` line counts the frames spent asking for a step
 and the commits that landed off the opening foe, and checks the engine
