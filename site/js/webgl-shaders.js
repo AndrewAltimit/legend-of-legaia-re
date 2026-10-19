@@ -804,7 +804,12 @@ vec3 point_gain(vec3 n) {
     float att = clamp(1.0 - (d * d) / (r * r), 0.0, 1.0);
     att = att * att;
     float lam = DYN_LAMBERT_FALLBACK;
-    if (n_len > 1e-6 && d > 1e-3) lam = abs(dot(n / n_len, to_l / d)) * 0.5 + 0.5;
+    /* The normal is in the mesh's retail (Y-down) frame and v_world in this
+     * page's (x, -y, z), so the direction to the light goes back to the
+     * retail frame for the dot - as the native shader takes it, where both
+     * are retail. */
+    vec3 to_l_retail = vec3(to_l.x, -to_l.y, to_l.z);
+    if (n_len > 1e-6 && d > 1e-3) lam = abs(dot(n / n_len, to_l_retail / d)) * 0.5 + 0.5;
     g += u_light_col[i].rgb * (att * lam * light_shadow(i, v_world));
   }
   return g;
@@ -1034,8 +1039,11 @@ void main() {
    * camera and the player. Placed before the untextured early-return so
    * both prim families fade; identity while u_occl_focus.w is zero, and
    * actor draws (u_occl_allow == 0) never fade. */
+  /* The Bayer threshold is authored top-down, as the native renderer reads
+   * it off its top-left pixel origin; the keep circle is in gl_FragCoord
+   * space, where its focus is staged. */
   if (u_occl_allow != 0
-      && occl_bayer(gl_FragCoord.xy) >= occl_keep(gl_FragCoord.xy, gl_FragCoord.w)) discard;
+      && occl_bayer(frag_top_px()) >= occl_keep(gl_FragCoord.xy, gl_FragCoord.w)) discard;
   uint u_pix = uint(v_uv.x) & 255u;
   uint v_pix = uint(v_uv.y) & 255u;
 
