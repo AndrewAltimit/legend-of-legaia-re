@@ -126,6 +126,9 @@ impl PlayWindowApp {
             // the same `battle_vram` residency, opposite ways.
             hud.extend(self.battle_value_readout_draws(cam, w, h));
         }
+        // The window's own chrome (quit prompt, hotkey notice, hotkey help)
+        // last, so nothing in the text layer covers it.
+        hud.extend(self.window_chrome_draws(w, h));
 
         // Boot-phase sprite overlay: alternates between the
         // publisher-logos atlas (during PublisherLogos) and

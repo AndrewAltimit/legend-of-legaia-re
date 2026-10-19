@@ -33,6 +33,9 @@ impl PlayWindowApp {
             game_over: matches!(self.boot_ui, BootUiState::GameOver(_)),
         };
         if hotkey.refused(screens) {
+            // The key reached the window; say why nothing changed rather
+            // than leave the press looking dead.
+            self.show_notice(legaia_engine_session::hotkeys::refused_notice(hotkey));
             return false;
         }
         if hotkey == HostHotkey::EnhancedLighting {
@@ -58,6 +61,79 @@ impl PlayWindowApp {
             HostHotkey::DebugCamera => self.key_debug_camera(),
             HostHotkey::CameraDistance => self.key_camera_distance(),
             HostHotkey::PreciseMovement => self.key_precise_movement(),
+        }
+        let notice = self.hotkey_notice(hotkey);
+        self.show_notice(notice);
+        true
+    }
+
+    /// The state `hotkey` is in now, worded for the notice line and the
+    /// hotkey help: the shared wording for an options key, this window's
+    /// own for the keys whose state it holds.
+    pub(in crate::window) fn hotkey_state(&self, hotkey: HostHotkey) -> String {
+        use legaia_engine_session::hotkeys::options_hotkey_state;
+        if hotkey == HostHotkey::EnhancedLighting {
+            // A launch switch may hold the renderer off the stored option.
+            return if self.dynamic_lighting { "on" } else { "off" }.to_string();
+        }
+        if let Some(s) = options_hotkey_state(&self.options_state, hotkey) {
+            return s;
+        }
+        match hotkey {
+            HostHotkey::DiagRows => if self.diag_rows { "on" } else { "off" }.to_string(),
+            HostHotkey::DebugCamera => {
+                if self.field_debug_camera { "on" } else { "off" }.to_string()
+            }
+            HostHotkey::CheatEncounters => if self.session.host.world.toggles.live_gameplay_loop {
+                "on"
+            } else {
+                "off"
+            }
+            .to_string(),
+            _ => String::new(),
+        }
+    }
+
+    /// The notice a press of `hotkey` shows: `"Ground fog: off"`, with a
+    /// hint when the key changed something enhanced lighting gates.
+    fn hotkey_notice(&self, hotkey: HostHotkey) -> String {
+        if hotkey == HostHotkey::CheatMaxAp {
+            return format!("{}: done", hotkey.label());
+        }
+        let mut s =
+            legaia_engine_session::hotkeys::toggle_notice(hotkey, &self.hotkey_state(hotkey));
+        if matches!(hotkey, HostHotkey::TimeOfDay | HostHotkey::LightShadows)
+            && !self.dynamic_lighting
+        {
+            s.push_str(" (needs enhanced lighting: I)");
+        }
+        s
+    }
+
+    /// Show `text` on the window's notice line for
+    /// [`crate::window::app_state::NOTICE_DURATION`].
+    pub(in crate::window) fn show_notice(&mut self, text: String) {
+        self.notice = Some((text, std::time::Instant::now()));
+    }
+
+    /// `F12` or `/` (the `?` key): the hotkey help panel, on or off. Window
+    /// chrome on keys no pad binding can hold (`keycode_to_name` has neither),
+    /// so it never takes a button off the keyboard.
+    pub(super) fn help_key(&mut self, code: KeyCode, state: ElementState) -> bool {
+        if !matches!(code, KeyCode::F12 | KeyCode::Slash) {
+            return false;
+        }
+        // A held key repeats as a stream of `Pressed` events; only the
+        // leading edge flips the panel.
+        match state {
+            ElementState::Pressed if self.help_key_held != Some(code) => {
+                self.help_key_held = Some(code);
+                self.hotkey_help = !self.hotkey_help;
+            }
+            ElementState::Released if self.help_key_held == Some(code) => {
+                self.help_key_held = None;
+            }
+            _ => {}
         }
         true
     }

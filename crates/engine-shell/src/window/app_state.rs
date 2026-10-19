@@ -214,6 +214,10 @@ pub(super) type ResolvedChromeDraw = (
 pub(in crate::window) const QUIT_CONFIRM_WINDOW: std::time::Duration =
     std::time::Duration::from_secs(3);
 
+/// How long a hotkey's notice line ("Ground fog: off") stays up.
+pub(in crate::window) const NOTICE_DURATION: std::time::Duration =
+    std::time::Duration::from_millis(2500);
+
 /// What an `Escape` press does, given when the last unconfirmed one was.
 pub(in crate::window) fn escape_quits(
     armed: Option<std::time::Instant>,
@@ -940,6 +944,13 @@ pub(super) struct PlayWindowApp {
     /// within [`QUIT_CONFIRM_WINDOW`] quits, and the HUD shows the prompt
     /// meanwhile.
     pub(super) quit_prompt: Option<std::time::Instant>,
+    /// The last hotkey's notice line and when it went up; drawn under the
+    /// quit prompt for [`NOTICE_DURATION`].
+    pub(super) notice: Option<(String, std::time::Instant)>,
+    /// The hotkey help panel (`F12` / `?`) is up.
+    pub(super) hotkey_help: bool,
+    /// The help key held down, so its auto-repeat does not flip the panel.
+    pub(super) help_key_held: Option<KeyCode>,
     /// The title bar text last written (`sync_minigame_caption_title`): the
     /// window's name, plus the live minigame's status caption.
     pub(super) caption_title: String,

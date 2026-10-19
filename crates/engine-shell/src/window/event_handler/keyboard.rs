@@ -67,6 +67,7 @@ impl PlayWindowApp {
         if self.debug_spawn_key(code, state)
             || self.minigame_key(code, state)
             || self.option_key(code, state)
+            || self.help_key(code, state)
             || self.key_name_entry(code, state)
         {
             return;
@@ -141,6 +142,22 @@ mod tests {
     use super::*;
     use crate::window::app_state::QUIT_CONFIRM_WINDOW;
     use std::time::{Duration, Instant};
+
+    /// The help keys take no pad button off the keyboard: neither is a
+    /// bindable key name, on this host or the page.
+    #[test]
+    fn help_keys_are_not_bindable() {
+        for code in [KeyCode::F12, KeyCode::Slash] {
+            assert_eq!(keycode_to_name(code), "");
+            assert!(
+                legaia_engine_system::input::key_name_for_dom_code(&format!("{code:?}")).is_none()
+            );
+            assert!(
+                legaia_engine_session::hotkeys::HostHotkey::from_dom_code(&format!("{code:?}"))
+                    .is_none()
+            );
+        }
+    }
 
     #[test]
     fn escape_quits_only_on_a_second_press_inside_the_window() {

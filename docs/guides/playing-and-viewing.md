@@ -107,7 +107,7 @@ Keyboard defaults are arrows = D-pad, then:
 | `RShift` | Select |
 
 `Esc` twice quits: the first press only shows *Press Esc again to quit* at
-the top of the window, and a second press within three seconds closes it,
+the bottom left of the window, and a second press within three seconds closes it,
 so a stray press does not lose an unsaved game. The browser play page ships a *different* default layout (`X` is
 Circle there, `C` / `V` carry Triangle / Square, and WASD doubles the arrows),
 so a key that works in the tab is not necessarily the same button in the
@@ -143,6 +143,12 @@ enhancement has a retail-faithful off position
 | `F3` | Wide debug orbit camera | off | - |
 | `F2` | Mute audio | off | `--no-audio` |
 | `F1` | The engine's diagnostic text rows | off | - |
+
+In the native window each press shows the toggle's new state at the bottom
+left for a moment (*Ground fog: off*). A key that only acts while you walk
+around (`F3`, `T`, `R`) says so when pressed on the title screen or in a menu.
+`F12` (or `?`) opens a panel listing every toggle key with its current state;
+press it again to close it.
 
 The browser play page answers the same keys from the same table, with the
 canvas focused: each moves the matching checkbox or button under the canvas,

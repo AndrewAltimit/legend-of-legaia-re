@@ -106,6 +106,31 @@ impl HostHotkey {
         }
     }
 
+    /// What the key changes, as a play host's on-screen notice and its
+    /// hotkey help name it ("Ground fog").
+    pub fn label(self) -> &'static str {
+        match self {
+            HostHotkey::DiagRows => "Diagnostics",
+            HostHotkey::AudioMute => "Sound",
+            HostHotkey::DebugCamera => "Debug camera",
+            HostHotkey::OcclusionFade => "See-through walls",
+            HostHotkey::CheatMaxAp => "Cheat: fill AP",
+            HostHotkey::CheatEncounters => "Encounters",
+            HostHotkey::TimeOfDay => "Time of day",
+            HostHotkey::VolumetricFog => "Ground fog",
+            HostHotkey::EnhancedLighting => "Enhanced lighting",
+            HostHotkey::LightShadows => "Lamp shadows",
+            HostHotkey::CameraDistance => "Camera distance",
+            HostHotkey::PreciseMovement => "Precise movement",
+        }
+    }
+
+    /// The key as a player reads it: `F9`, or `I` for `KeyI`.
+    pub fn key_label(self) -> &'static str {
+        let code = self.dom_code();
+        code.strip_prefix("Key").unwrap_or(code)
+    }
+
     /// Whether the key is refused while a front-end screen (boot logos,
     /// title, save select) owns the frame: the field camera's vantage and
     /// distance and the field locomotion knob have nothing to act on there.
@@ -188,6 +213,46 @@ pub fn apply_options_hotkey(opts: &mut OptionsState, hotkey: HostHotkey) -> bool
     true
 }
 
+fn on_off(on: bool) -> String {
+    if on { "on" } else { "off" }.to_string()
+}
+
+/// The state an options hotkey leaves, worded for the toggle notice
+/// ([`toggle_notice`]): `on` / `off`, the time-of-day name, the camera
+/// distance preset. `None` for a hotkey whose state the host holds (the
+/// diagnostic readout, the debug vantage, the cheats), which the host words
+/// itself.
+pub fn options_hotkey_state(opts: &OptionsState, hotkey: HostHotkey) -> Option<String> {
+    Some(match hotkey {
+        HostHotkey::AudioMute => if opts.muted { "muted" } else { "on" }.to_string(),
+        HostHotkey::EnhancedLighting => on_off(opts.enhanced_lighting),
+        HostHotkey::TimeOfDay => opts.lighting_time_of_day.clone(),
+        HostHotkey::VolumetricFog => on_off(opts.volumetric_fog),
+        HostHotkey::CameraDistance => opts.camera_distance.label().to_string(),
+        HostHotkey::PreciseMovement => on_off(opts.precise_movement),
+        HostHotkey::OcclusionFade => on_off(opts.occlusion_fade),
+        HostHotkey::LightShadows => on_off(opts.light_shadows),
+        HostHotkey::DiagRows
+        | HostHotkey::DebugCamera
+        | HostHotkey::CheatMaxAp
+        | HostHotkey::CheatEncounters => return None,
+    })
+}
+
+/// The transient line a play host shows after a hotkey press:
+/// `"Ground fog: off"`. The hotkeys change state nothing else on screen
+/// names, so without it a press reads as nothing happening.
+pub fn toggle_notice(hotkey: HostHotkey, state: &str) -> String {
+    format!("{}: {state}", hotkey.label())
+}
+
+/// The notice for a hotkey a front-end screen refused
+/// ([`HostHotkey::refused`]): the key did reach the host, it just has
+/// nothing to act on yet.
+pub fn refused_notice(hotkey: HostHotkey) -> String {
+    format!("{}: only while walking around", hotkey.label())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -216,6 +281,36 @@ mod tests {
             assert_eq!(hk.dom_code(), code);
         }
         assert_eq!(HostHotkey::from_dom_code("KeyZ"), None);
+    }
+
+    #[test]
+    fn every_hotkey_has_a_label_and_a_printable_key() {
+        let mut labels = std::collections::HashSet::new();
+        for (hk, _) in HOST_HOTKEYS {
+            assert!(labels.insert(hk.label()), "{hk:?} label is shared");
+            assert!(!hk.key_label().starts_with("Key"), "{hk:?}");
+        }
+        assert_eq!(HostHotkey::EnhancedLighting.key_label(), "I");
+        assert_eq!(HostHotkey::VolumetricFog.key_label(), "F9");
+    }
+
+    #[test]
+    fn notices_name_the_toggle_and_its_new_state() {
+        let mut o = OptionsState {
+            volumetric_fog: true,
+            ..OptionsState::default()
+        };
+        apply_options_hotkey(&mut o, HostHotkey::VolumetricFog);
+        let state = options_hotkey_state(&o, HostHotkey::VolumetricFog).unwrap();
+        assert_eq!(
+            toggle_notice(HostHotkey::VolumetricFog, &state),
+            "Ground fog: off"
+        );
+        assert_eq!(
+            options_hotkey_state(&o, HostHotkey::TimeOfDay).as_deref(),
+            Some(o.lighting_time_of_day.as_str())
+        );
+        assert_eq!(options_hotkey_state(&o, HostHotkey::DiagRows), None);
     }
 
     #[test]

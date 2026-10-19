@@ -650,6 +650,9 @@ pub(super) fn key_from_name(name: &str) -> Option<KeyCode> {
         "F7" => KeyCode::F7,
         "F8" => KeyCode::F8,
         "F9" => KeyCode::F9,
+        // The hotkey help panel (`help_key`): `F12`, or the `?` key.
+        "F12" => KeyCode::F12,
+        "/" | "?" | "SLASH" => KeyCode::Slash,
         "W" => KeyCode::KeyW,
         "X" => KeyCode::KeyX,
         "Y" => KeyCode::KeyY,
@@ -820,6 +823,7 @@ mod key_script_tests {
         names.extend((b'A'..=b'Z').map(|c| (c as char).to_string()));
         names.extend((0..=9).map(|d| d.to_string()));
         names.extend((1..=12).map(|f| format!("F{f}")));
+        names.push("/".to_string());
         let reachable: std::collections::BTreeSet<String> = names
             .iter()
             .filter_map(|n| key_from_name(n))

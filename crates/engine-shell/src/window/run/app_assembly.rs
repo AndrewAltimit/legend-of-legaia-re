@@ -228,6 +228,9 @@ impl PlayWindowApp {
             field_party_hud_scene: None,
             diag_rows: legaia_engine_ui::diag_hud_enabled(),
             quit_prompt: None,
+            notice: None,
+            hotkey_help: false,
+            help_key_held: None,
             caption_title: crate::window::minigames::WINDOW_TITLE.to_string(),
         }
     }

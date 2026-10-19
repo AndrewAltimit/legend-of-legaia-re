@@ -852,7 +852,9 @@ pub(crate) enum Cmd {
     /// persisted); `F3` toggles the wide debug orbit vantage; `I` toggles
     /// dynamic lighting; `F4` toggles the camera-occlusion fade; `F2` mutes
     /// audio; `F6` fills the party's AP gauge and `F7` toggles random
-    /// encounters (cheats). The shell's own toggles sit on function keys because every
+    /// encounters (cheats). Each toggle shows its new state at the bottom
+    /// left for a moment ("Ground fog: off"); `F12` (or `?`) opens a panel
+    /// listing every toggle key and its state. The shell's own toggles sit on function keys because every
     /// letter is bindable to a pad button - a toggle on a bound letter
     /// consumes the event and deletes that button from the keyboard.
     ///
@@ -1049,7 +1051,7 @@ pub(crate) enum Cmd {
         /// e.g. `--key-script "40:L,120:P,140:Down,160:Enter"`. Each entry
         /// presses KEY and releases it on that same world tick, in the order
         /// listed. KEY is a physical key name (letters `A`-`Z`, `Up`/`Down`/
-        /// `Left`/`Right`, `Enter`, `Space`, digits, `F1`-`F9`).
+        /// `Left`/`Right`, `Enter`, `Space`, digits, `F1`-`F9`, `F12`, `/`).
         ///
         /// This reaches what `--pad-script` cannot: `--pad-script` writes the
         /// pad word and the keyboard handler never runs, but every minigame
