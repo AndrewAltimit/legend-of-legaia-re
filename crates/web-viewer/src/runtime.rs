@@ -108,6 +108,13 @@ pub struct LegaiaRuntime {
     /// `Some` only while the encounter session sits in its `Transition`
     /// phase; owns the captured-field VRAM clone the style bodies sample.
     pub(crate) battle_intro: Option<legaia_render_kernels::battle_intro::BattleIntro>,
+    // --- lane B2 ---
+    /// The page reads its finished frame back for the intro capture
+    /// ([`LegaiaRuntime::play_set_intro_readback`]). Only then does the
+    /// arming frame leave the transition layer out for the readback to see
+    /// the bare field: a host that never lands a capture (a headless run, a
+    /// cached page without the readback) keeps the transition on screen.
+    pub(crate) intro_readback: bool,
     /// The between-beat cutscene glide and its display-frame clock - the
     /// shared kernel (`frame_step::CutsceneGlide`) the native window owns
     /// one of too. Without it every `apply > 0` Camera Configure beat snapped
@@ -441,6 +448,7 @@ impl LegaiaRuntime {
             field_vram_dirty: false,
             scene_lights: None,
             battle_intro: None,
+            intro_readback: false,
             // The host framing bias the retail follow view is rendered with,
             // pushed in exactly where the native window pushes it
             // (`window/run.rs`), through the one shared expression.
