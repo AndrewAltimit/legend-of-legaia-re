@@ -1,7 +1,7 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">subsystems</a> &middot; battle HUD</div>
   <h1>Battle HUD and screen chrome</h1>
-  <p class="lede">Everything the battle screen draws around the fight: the actor-name plaque, the party status readout, the command chips, banners, status and element badges, the item window. Retail does not draw this per frame from game state. It keeps a list of retained text actors, rebuilds that list from <strong>disc data</strong> at every state transition, and frames each actor with sprites looked up in two static tables. Knowing those two tables is enough to derive every seat, plate and palette on the screen.</p>
+  <p class="lede">Everything the battle screen draws around the fight: the actor-name plaque, the party status readout, the command chips, banners, status and element badges, the item and magic windows. Retail does not draw this per frame from game state. It keeps a list of retained text actors, rebuilds that list from <strong>disc data</strong> at every state transition, and frames each actor with sprites looked up in two static tables. Knowing those two tables is enough to derive every seat, plate and palette on the screen.</p>
 </header>
 
 <section class="doc-section" id="at-a-glance">
@@ -128,7 +128,7 @@
 
 <section class="doc-section" id="see-also">
   <h2>See also</h2>
-  <p>The full write-up - each plate's derivation, the per-phase sub-draw rule, the opening glides, the badge sheet, banners, the item window, the Arts announcement banner and the port's HUD model - is in <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/battle-hud.md" target="_blank" rel="noopener"><code>docs/subsystems/battle-hud.md</code></a>.</p>
+  <p>The full write-up - each plate's derivation, the per-phase sub-draw rule, the opening glides, the badge sheet, banners, the item and magic windows, the Arts announcement banner and the port's HUD model - is in <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/battle-hud.md" target="_blank" rel="noopener"><code>docs/subsystems/battle-hud.md</code></a>.</p>
   <div class="see-also">
     <span class="see-also-label">Reference</span>
     <a href="battle.html">Battle</a>

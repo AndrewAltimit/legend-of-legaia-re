@@ -361,6 +361,15 @@ pub fn battle_chrome_sprite_draws(
             )
         }));
     }
+    // The magic window (`0x46`): the item window's two windows, the `Lv` /
+    // `MP` tabs and the hand; its breadcrumb trail is the HUD's.
+    if let (Some(rects), Some(model)) = (inputs.chrome, w.battle_spell_menu_model()) {
+        out.extend(crate::with_battle_spell_frame(&model, |frame| {
+            legaia_engine_ui::battle_item_ui::battle_spell_window_sprites(
+                rects, frame, origin, scale,
+            )
+        }));
+    }
     // The command chips sample the same blue plate 3-slice the party bar
     // does, so they ride this list rather than a second one.
     if let (Some(rects), Some(battle), Some((chips, cursor, phase))) = (
@@ -660,44 +669,21 @@ pub fn battle_text_draws(
         }
     } else if let Some(spell) = &w.battle.spell_menu {
         use legaia_engine_battle::battle_magic::SpellPhase;
-        let mut my = BATTLE_MENU_Y;
         match &spell.phase {
-            SpellPhase::Select { cursor } => {
-                let header = format!("P{} - magic:", spell.actor + 1);
-                out.extend(text_draws_for(
-                    &font.layout_ascii(&header),
-                    (BATTLE_MENU_X, my),
-                    MENU_WHITE,
-                ));
-                my += 16;
-                if spell.spells.is_empty() {
-                    out.extend(text_draws_for(
-                        &font.layout_ascii("  (no spells)"),
-                        (BATTLE_MENU_X + 8, my),
-                        MENU_DOWN,
-                    ));
-                }
-                for (i, row) in spell.spells.iter().enumerate() {
-                    let sel = i as u8 == *cursor;
-                    let marker = if sel { ">" } else { " " };
-                    let line = format!("{} {} {:>2}MP", marker, row.name, row.mp_cost);
-                    let color = if !row.affordable {
-                        MENU_DOWN
-                    } else if sel {
-                        MENU_WHITE
-                    } else {
-                        MENU_DIM
-                    };
-                    out.extend(text_draws_for(
-                        &font.layout_ascii(&line),
-                        (BATTLE_MENU_X + 8, my),
-                        color,
-                    ));
-                    my += 14;
+            SpellPhase::Select { .. } => {
+                // Retail's magic window (state `0x46`): the windowed list,
+                // description and `Lv` / `MP` tabs, not a text column. The
+                // window chrome rides `battle_chrome_sprite_draws`.
+                if let Some(model) = w.battle_spell_menu_model() {
+                    out.extend(crate::with_battle_spell_frame(&model, |frame| {
+                        legaia_engine_ui::battle_item_ui::battle_spell_window_text(
+                            font, frame, origin, scale,
+                        )
+                    }));
                 }
             }
             SpellPhase::Targeting { picker, .. } => {
-                out.extend(target_lines(font, picker, "cast", my));
+                out.extend(target_lines(font, picker, "cast", BATTLE_MENU_Y));
             }
             _ => {}
         }

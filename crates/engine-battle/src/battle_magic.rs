@@ -41,6 +41,21 @@ pub struct SpellRow {
     pub affordable: bool,
 }
 
+/// Owned projection of the open battle Magic window for the windowed
+/// surface both hosts draw (`legaia_engine_ui::battle_item_ui`'s spell
+/// window, retail state `0x46`).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct BattleSpellMenuModel {
+    /// `(name, affordable, ra_seru)` per row, in list order.
+    pub rows: Vec<(String, bool, bool)>,
+    /// Row under the hand.
+    pub cursor: Option<usize>,
+    /// The highlighted spell's info-window lines.
+    pub description: Vec<String>,
+    /// The highlighted spell's level and effective MP cost.
+    pub level_mp: Option<(u8, u16)>,
+}
+
 /// Sub-phase of the battle Magic submenu.
 #[derive(Debug, Clone)]
 pub enum SpellPhase {

@@ -45,7 +45,7 @@ pub mod screen_layers;
 mod shop;
 
 pub use banners::banner_stage_draws;
-pub use battle_item::with_battle_item_frame;
+pub use battle_item::{with_battle_item_frame, with_battle_spell_frame};
 pub use fishing::{
     fishing_banner_frame, fishing_exchange_draws, fishing_hud_items, fishing_line_screen_prims,
 };
