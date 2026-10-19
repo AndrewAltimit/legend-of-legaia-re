@@ -289,7 +289,7 @@ impl LegaiaRuntime {
 
     /// The camera-occlusion fade's focus point for this frame, in the page's
     /// **Y-up draw frame**, or empty when the engine side of the arming gate
-    /// says no ([`legaia_engine_core::field_occlusion::fade_armed`] + a live
+    /// says no ([`legaia_engine_screens::field_occlusion::fade_armed`] + a live
     /// player actor).
     ///
     /// It is the same point [`Self::field_player_occluded`] ray-casts to -
@@ -302,7 +302,7 @@ impl LegaiaRuntime {
     /// first-person eye) stay on the page.
     ///
     /// Six floats: the body centre, then the floor point under it
-    /// ([`legaia_engine_core::field_occlusion::player_feet`]) - the anchor of
+    /// ([`legaia_engine_screens::field_occlusion::player_feet`]) - the anchor of
     /// the feet-line rule that keeps the ground in front of the character
     /// from dissolving.
     pub fn play_occlusion_focus(&self) -> Vec<f32> {
@@ -310,13 +310,13 @@ impl LegaiaRuntime {
         let Some(host) = self.scene_host.host() else {
             return Vec::new();
         };
-        if !legaia_engine_core::field_occlusion::fade_armed(&host.world, cutscene) {
+        if !legaia_engine_screens::field_occlusion::fade_armed(&host.world, cutscene) {
             return Vec::new();
         }
         let w = &host.world;
         match (
-            legaia_engine_core::field_occlusion::player_body_centre(w),
-            legaia_engine_core::field_occlusion::player_feet(w),
+            legaia_engine_screens::field_occlusion::player_body_centre(w),
+            legaia_engine_screens::field_occlusion::player_feet(w),
         ) {
             // Retail Y-down -> the page's Y-up draw frame.
             (Some(c), Some(f)) => vec![c[0], -c[1], c[2], f[0], -f[1], f[2]],
@@ -351,7 +351,7 @@ impl LegaiaRuntime {
         debug_camera: bool,
         screen_owned: bool,
     ) -> Vec<f32> {
-        use legaia_engine_core::field_occlusion as fo;
+        use legaia_engine_screens::field_occlusion as fo;
         let cutscene = self.cutscene_owns_frame();
         let terms = fo::FadeHostTerms {
             enabled,

@@ -33,6 +33,7 @@ pub mod dev_menu;
 pub mod field_frame;
 pub mod field_messages;
 // --- lane B ---
+pub mod field_occlusion;
 pub mod world_map_labels;
 // --- end lane B ---
 mod fishing;

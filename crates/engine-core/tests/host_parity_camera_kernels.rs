@@ -6,7 +6,6 @@
 //! it" reading gets backwards.
 
 use legaia_engine_camera::psx_camera::CutsceneCameraInterp;
-use legaia_engine_core::field_occlusion;
 use legaia_engine_core::world::World;
 use legaia_engine_field::camera::Camera;
 use legaia_engine_field::camera_frame;
@@ -131,38 +130,6 @@ fn debug_orbit_writes_manual_orbit_ungated_but_field_only() {
     };
     assert!(!cam.debug_orbit_by(&battle, 0.5));
     assert!((cam.manual_orbit - 0.5).abs() < 1e-6);
-}
-
-/// The fade's world half: field mode, no scripted shot.
-#[test]
-fn occlusion_fade_arms_in_field_free_roam_only() {
-    let field = World {
-        mode: SceneMode::Field,
-        ..World::default()
-    };
-    assert!(field_occlusion::fade_armed(&field, false));
-    assert!(
-        !field_occlusion::fade_armed(&field, true),
-        "cutscene camera"
-    );
-    let battle = World {
-        mode: SceneMode::Battle,
-        ..World::default()
-    };
-    assert!(!field_occlusion::fade_armed(&battle, false));
-    let map = World {
-        mode: SceneMode::WorldMap,
-        ..World::default()
-    };
-    assert!(!field_occlusion::fade_armed(&map, false));
-}
-
-/// With no player actor there is no body centre - the same guard that stops
-/// the fade arming at all, so neither host can stage a focus at the origin.
-#[test]
-fn occlusion_focus_needs_a_player_actor() {
-    let w = World::default();
-    assert!(field_occlusion::player_body_centre(&w).is_none());
 }
 
 /// Retail raises the overwrite / delete prompt FROM the preview, so a

@@ -5,4 +5,5 @@
 //! one per file. Run a single file's tests with
 //! `cargo test -p legaia-engine-screens --test integration <name>::`.
 
+mod field_occlusion_fade;
 mod map_display_disc;

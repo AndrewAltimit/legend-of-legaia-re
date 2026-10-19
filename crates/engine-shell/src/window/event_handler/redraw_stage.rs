@@ -638,17 +638,19 @@ impl PlayWindowApp {
         // prompt) and this host's terms - its master toggle, the `F3`
         // debug vantage, and a boot / menu-runtime screen owning the
         // frame. The browser play page fills the same terms.
-        let host_terms = legaia_engine_core::field_occlusion::FadeHostTerms {
+        let host_terms = legaia_engine_screens::field_occlusion::FadeHostTerms {
             enabled: self.options_state.occlusion_fade,
             debug_camera: self.field_debug_camera,
             screen_owned: self.boot_ui.is_active() || self.menu_runtime.is_open(),
         };
-        let occl_focus = legaia_engine_core::field_occlusion::host_fade_armed(
+        let occl_focus = legaia_engine_screens::field_occlusion::host_fade_armed(
             &self.session.host.world,
             cutscene_cam.is_some(),
             host_terms,
         )
-        .then(|| legaia_engine_core::field_occlusion::player_body_centre(&self.session.host.world))
+        .then(|| {
+            legaia_engine_screens::field_occlusion::player_body_centre(&self.session.host.world)
+        })
         .flatten();
         let mut occl_staged = false;
         if let Some(centre) = occl_focus {
@@ -696,7 +698,7 @@ impl PlayWindowApp {
                 // The floor point under the character anchors the
                 // feet-line rule: nothing below it on screen fades.
                 let feet =
-                    legaia_engine_core::field_occlusion::player_feet(&self.session.host.world)
+                    legaia_engine_screens::field_occlusion::player_feet(&self.session.host.world)
                         .unwrap_or(centre);
                 let feet_clip = cam * Vec4::new(feet[0], feet[1], feet[2], 1.0);
                 r.set_occlusion_focus(clip.to_array(), feet_clip.to_array(), s, scale_y);

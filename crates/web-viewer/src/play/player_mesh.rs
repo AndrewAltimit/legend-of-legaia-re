@@ -156,7 +156,8 @@ impl LegaiaRuntime {
         // (`field_occlusion::player_body_centre` - the floor tier under the
         // actor lifted half a character height). This page used to rebuild
         // it here with its own copy of the half-height constant.
-        let Some(centre) = legaia_engine_core::field_occlusion::player_body_centre(&h.world) else {
+        let Some(centre) = legaia_engine_screens::field_occlusion::player_body_centre(&h.world)
+        else {
             return false;
         };
         f.occluders.fully_occluded([eye_x, eye_y, eye_z], centre)

@@ -6,7 +6,7 @@
 //! module holds what reads one: whether the fade arms this frame, and the
 //! two points on the player the gate and the shader both anchor to.
 
-use crate::world::World;
+use legaia_engine_core::world::World;
 use legaia_engine_scene::field_occlusion::HALF_CHAR_HEIGHT;
 
 /// The world-side arming terms of the camera-occlusion fade.
