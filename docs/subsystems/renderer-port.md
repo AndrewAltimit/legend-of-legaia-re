@@ -242,8 +242,8 @@ of the passes below run and the scene is the single pass it always was.
 
 With it on, the scene half of a `RenderTarget::Scene` frame (the 3D draws,
 the glow sprites, the volumetric fog) renders into an offscreen target
-instead of the presented one, and `renderer/bloom.rs` runs four passes at a
-quarter of the surface on each axis:
+instead of the presented one, and `renderer/bloom.rs` runs an extract and
+four blur passes at a quarter of the surface on each axis, then a composite:
 
 1. **extract** - four bilinear taps cover the 4x4 scene block under one
    bloom texel, each weighted on its own by a soft-knee brightness law (the
@@ -273,7 +273,7 @@ engine's response (`play_bloom_params`). The `bloom_parity` test evaluates
 each of the three fragment stages on both hosts through `shader_eval` and
 requires them to agree.
 
-**Cost.** One full-resolution composite pass plus four passes over a
+**Cost.** One full-resolution composite pass plus five passes over a
 sixteenth of the pixels; on the page, one extra resolve blit. Nothing on the
 CPU beyond two uniform writes a frame.
 

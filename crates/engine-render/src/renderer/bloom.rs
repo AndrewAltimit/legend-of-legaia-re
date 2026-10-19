@@ -5,7 +5,8 @@
 //! With the toggle on ([`Renderer::set_bloom`]) the scene half of a
 //! [`RenderTarget::Scene`] frame (the 3D draws, the glow sprites and the
 //! volumetric fog) renders into an offscreen colour target instead of the
-//! presented one. Four short passes then run at quarter resolution:
+//! presented one. An extract and four blur passes then run at quarter
+//! resolution, and a composite at full resolution:
 //!
 //! 1. **extract** - four bilinear taps cover each 4x4 block of the scene,
 //!    each weighted by the soft-knee brightness law (`bloom_weight`), so
