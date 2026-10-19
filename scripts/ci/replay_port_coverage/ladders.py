@@ -59,7 +59,7 @@ CANONICAL_LADDERS = [
     # module docstring's "a release export loses executed code". These two
     # ladders are where that was measured.
     ("fmv_ladder", "legaia-mdec"),
-    ("narration_ladder", "legaia-engine-core"),
+    ("narration_ladder", "legaia-engine-scene-host"),
     # --- lane W1-C ---
     ("battle_render_ladder", "legaia-web-viewer"),
     ("arts_swing_ladder", "legaia-engine-shell"),
@@ -72,8 +72,8 @@ CANONICAL_LADDERS = [
     # web-viewer ladder does, so leaving them out is a different number rather
     # than a smaller one.
     ("submode_screen_ladder", "legaia-engine-core"),
-    ("baka_duel_ladder", "legaia-engine-core"),
-    ("dome_leg_ladder", "legaia-engine-core"),
+    ("baka_duel_ladder", "legaia-engine-scene-host"),
+    ("dome_leg_ladder", "legaia-engine-scene-host"),
     # --- lanes W1-D / W1-E / W1-F, plus four older ladders ---
     # These existed and ran green while being absent from this list, which is
     # the export *recipe* - so nobody exported them, no `cov-*.json` was ever
@@ -84,11 +84,11 @@ CANONICAL_LADDERS = [
     ("world_map_render_ladder", "legaia-engine-core"),
     ("dev_menu_equip_ladder", "legaia-web-viewer"),
     ("audio_session_ladder", "legaia-engine-audio"),
-    ("scene_bgm_transition_ladder", "legaia-engine-core"),
+    ("scene_bgm_transition_ladder", "legaia-engine-scene-host"),
     ("battle_tutorial_ladder", "legaia-engine-core"),
     ("fishing_pond_ladder", "legaia-engine-fishing"),
     ("fishing_banner_ladder", "legaia-web-viewer"),
-    ("pause_special_use_ladder", "legaia-engine-core"),
+    ("pause_special_use_ladder", "legaia-engine-menu-runtime"),
     ("menu_depth_ladder", "legaia-web-viewer"),
     ("battle_depth_replay", "legaia-engine-shell"),
     ("battle_flee_ladder", "legaia-engine-core"),
@@ -177,8 +177,8 @@ CANONICAL_LADDERS = [
     # --- lane L2 ---
     # The pause menu's three data-driven kernels, driven to their OUTPUT (bag
     # count, picked weapon id, destination rows) rather than to their call.
-    ("menu_data_wiring", "legaia-engine-core"),
-    ("menu_data_wiring_disc", "legaia-engine-core"),
+    ("menu_data_wiring", "legaia-engine-menu-runtime"),
+    ("menu_data_wiring_disc", "legaia-engine-menu-runtime"),
     # --- lane L3 ---
     # Five fixtures for the GATED-(b) rows: content behind a story flag, a
     # scene, or a battle state no pad stream reaches from a cold boot.
@@ -197,11 +197,11 @@ CANONICAL_LADDERS = [
     #
     # Export them WITHOUT `--release` (see "a release export loses executed
     # code" above) - several of the kernels here are small enough to inline.
-    ("scripted_scene_program_gate", "legaia-engine-core"),
+    ("scripted_scene_program_gate", "legaia-engine-scene-host"),
     ("gated_field_arms_disc", "legaia-engine-core"),
     ("confused_monster_target_gate", "legaia-engine-core"),
     ("travel_art_visited_gate", "legaia-engine-core"),
-    ("field_ledge_hop_disc", "legaia-engine-core"),
+    ("field_ledge_hop_disc", "legaia-engine-scene-host"),
     # --- lane W2C ---
     # Five existing tests that were already the honest drivers for
     # never-entered rows and were simply absent from this list (the W1-D/E/F
@@ -259,8 +259,8 @@ CANONICAL_LADDERS = [
     #
     # Both are disc-gated and skip-pass without `LEGAIA_DISC_BIN`; export both
     # WITHOUT `--release` (see "a release export loses executed code" above).
-    ("dialog_picker_ladder", "legaia-engine-core"),
-    ("fmv_handoff_ladder", "legaia-engine-core"),
+    ("dialog_picker_ladder", "legaia-engine-scene-host"),
+    ("fmv_handoff_ladder", "legaia-engine-scene-host"),
     # --- lane L4 (playable-ch1) ---------------------------------------- <L4>
     # `chapter1_frontier_ladder` is the only union member denominated in
     # SCENES rather than in a route: it takes the BFS closure of `town01` over
@@ -455,7 +455,7 @@ CANONICAL_LADDERS = [
     ("arts_banner_ladder", "legaia-engine-core"),
     ("morph_page_ladder", "legaia-web-viewer"),
     ("play_minigames_host", "legaia-web-viewer"),
-    ("conc_flag_6de_position_latch_disc", "legaia-engine-core"),
+    ("conc_flag_6de_position_latch_disc", "legaia-engine-scene-host"),
     # --- lane W7-C (reach burn-down) ---
     # One new ladder, nine promotions and four whole-game instruments.
     #
@@ -492,12 +492,12 @@ CANONICAL_LADDERS = [
     ("steal_attack_round_disc", "legaia-engine-core"),
     ("battle_always_resolves", "legaia-engine-core"),
     ("battle_member_step_back", "legaia-engine-core"),
-    ("shop_quantity_stepper", "legaia-engine-core"),
+    ("shop_quantity_stepper", "legaia-engine-menu-runtime"),
     ("shop_quantity_compose", "legaia-engine-ui"),
-    ("fishing_hub_and_floor_window_disc", "legaia-engine-core"),
+    ("fishing_hub_and_floor_window_disc", "legaia-engine-scene-host"),
     ("play_ringside_still_disc", "legaia-web-viewer"),
     ("attached_light_page_prims", "legaia-web-viewer"),
-    ("code_lock_doman_disc", "legaia-engine-core"),
+    ("code_lock_doman_disc", "legaia-engine-scene-host"),
     ("full_game_ladder", "legaia-engine-shell"),
     ("boss_approach_disc", "legaia-engine-shell"),
     ("monster_approach_sweep_disc", "legaia-engine-core"),
@@ -515,7 +515,7 @@ CANONICAL_LADDERS = [
     # `World::step_world_frame_tail` (`801e45bc`); plus shipped `4C D4` /
     # `4C D5` mask-bit runs through the same VRAM tail (`8005842c` /
     # `800583c8`).
-    ("world_frame_tail_ladder", "legaia-engine-core"),
+    ("world_frame_tail_ladder", "legaia-engine-scene-host"),
     # An all-target spell committed on the play page from a played-through
     # card, so the commit log copies the whole-row label (`801d57e8`).
     ("commit_log_all_target_page", "legaia-web-viewer"),
@@ -565,7 +565,7 @@ CANONICAL_LADDERS = [
     # `SceneHost::enter_world_map_scene`, opens the display by pad, and
     # requires Square to seat the survey on the kingdom's last record.
     # Disc-gated; export WITHOUT `--release`.
-    ("map_display_disc", "legaia-engine-core"),
+    ("map_display_disc", "legaia-engine-screens"),
     # The sparring tutorial's countdown arm (`801f7628`), which only the
     # completion tail calls - after the fourth lesson. `battle_tutorial_ladder`
     # walks the hooks with Cross alone and never finishes the drill;
