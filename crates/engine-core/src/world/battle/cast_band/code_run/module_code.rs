@@ -443,7 +443,21 @@ impl World {
                         a.battle.strike_index =
                             legaia_engine_battle_vm::battle_action::STRIKE_CURSOR_PARKED;
                     }
-                    Some(ticks::astral_slash_tick(&mut ctx, &mut caster, &mut victim))
+                    // Arms 0 and 1 poll `FUN_8004E2F0(ctx[+0x13],
+                    // caster[+0x1DD])`; arm 0 draws one `rand()` first.
+                    let arrived = self.battle_range_metric(caster_slot, victim_slot) == 0;
+                    let arm0_rand = if ctx.phase == 0 {
+                        self.next_rand() as u16
+                    } else {
+                        0
+                    };
+                    Some(ticks::astral_slash_tick(
+                        &mut ctx,
+                        &mut caster,
+                        &mut victim,
+                        arrived,
+                        arm0_rand,
+                    ))
                 }
                 (945, Some(ticks::WATER_COLUMN_TICK)) => {
                     Some(ticks::water_column_tick(&mut ctx, &mut victim, None, 0))

@@ -58,9 +58,11 @@ fn a_tick_advances_the_phase_exactly_once_and_the_terminal_arm_ends_the_module()
     let mut ctx = CastModuleCtx::default();
     let mut caster = actor(100);
     let mut victim = actor(500);
-    for expect in 1..=ASTRAL_SLASH_TERMINAL_ARM {
+    // In reach, arm 0 advances twice (`0x801F6AFC` and `0x801F6BA4`), so
+    // the chain runs 0 -> 2 -> 3 -> 4.
+    for expect in [2, 3, ASTRAL_SLASH_TERMINAL_ARM] {
         assert_eq!(
-            astral_slash_tick(&mut ctx, &mut caster, &mut victim),
+            astral_slash_tick(&mut ctx, &mut caster, &mut victim, true, 0),
             CastTickStep::Busy
         );
         assert_eq!(ctx.phase, expect);
@@ -69,7 +71,7 @@ fn a_tick_advances_the_phase_exactly_once_and_the_terminal_arm_ends_the_module()
     // countdown expiry, `clear s6` at `0x801F70DC`): the module is done and
     // the phase stays where it is.
     assert_eq!(
-        astral_slash_tick(&mut ctx, &mut caster, &mut victim),
+        astral_slash_tick(&mut ctx, &mut caster, &mut victim, true, 0),
         CastTickStep::Done
     );
     assert_eq!(ctx.phase, ASTRAL_SLASH_TERMINAL_ARM);
@@ -85,7 +87,7 @@ fn a_phase_past_the_bound_falls_through_and_writes_nothing() {
     let mut victim = actor(500);
     let before = (caster, victim, ctx);
     assert_eq!(
-        astral_slash_tick(&mut ctx, &mut caster, &mut victim),
+        astral_slash_tick(&mut ctx, &mut caster, &mut victim, true, 0),
         CastTickStep::Done
     );
     assert_eq!((caster, victim, ctx), before);
@@ -99,12 +101,12 @@ fn astral_slash_drops_and_restores_the_animation_rate() {
     };
     let mut caster = actor(100);
     let mut victim = actor(500);
-    astral_slash_tick(&mut ctx, &mut caster, &mut victim);
+    astral_slash_tick(&mut ctx, &mut caster, &mut victim, true, 0);
     assert_eq!(caster.staged_anim, ASTRAL_SLASH_ARM2_CLIP);
     assert_eq!(caster.restage, 1);
     assert_eq!((caster.anim_rate, victim.anim_rate), (1, 1));
     // Arm 3 restores the caster and leaves the victim slowed.
-    astral_slash_tick(&mut ctx, &mut caster, &mut victim);
+    astral_slash_tick(&mut ctx, &mut caster, &mut victim, true, 0);
     assert_eq!(caster.staged_anim, 0);
     assert_eq!(caster.restage, 1, "arm 3's `+0x1DA` store is unpaired");
     assert_eq!((caster.anim_rate, victim.anim_rate), (ANIM_RATE_NORMAL, 2));
@@ -422,4 +424,31 @@ fn blazing_slash_ends_on_its_terminal_arm() {
     }
     assert_eq!(steps, usize::from(BLAZING_SLASH_LAST_ARM) + 1);
     assert_eq!(ctx.phase, BLAZING_SLASH_TERMINAL_ARM);
+}
+
+/// PROT 0952 arms 0 and 1 out of reach: arm 0 advances once and stages the
+/// walk literal `1` with a bump (`0x801F6B7C` / `0x801F6BBC`), whatever the
+/// caster's current clip; arm 1 holds without staging until the range poll
+/// reads zero, then advances to arm 2. `ctx[+0x0D]` takes `rand % 4`.
+#[test]
+fn astral_slash_walks_in_on_the_literal_walk_clip_and_waits_for_reach() {
+    let mut ctx = CastModuleCtx::default();
+    let mut caster = actor(100);
+    caster.staged_anim = 6;
+    let mut victim = actor(500);
+    astral_slash_tick(&mut ctx, &mut caster, &mut victim, false, 7);
+    assert_eq!(ctx.phase, 1);
+    assert_eq!(ctx.ctx_0d, 3);
+    assert_eq!(caster.staged_anim, ASTRAL_SLASH_WALK_CLIP);
+    assert_eq!(caster.restage, 1);
+    for _ in 0..3 {
+        assert_eq!(
+            astral_slash_tick(&mut ctx, &mut caster, &mut victim, false, 0),
+            CastTickStep::Busy
+        );
+        assert_eq!(ctx.phase, 1, "arm 1 holds out of reach");
+        assert_eq!(caster.restage, 1, "arm 1 stages nothing");
+    }
+    astral_slash_tick(&mut ctx, &mut caster, &mut victim, true, 0);
+    assert_eq!(ctx.phase, 2);
 }
