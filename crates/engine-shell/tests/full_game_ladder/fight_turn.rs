@@ -114,8 +114,15 @@ fn aim_press(
         AIM_TALLY.with(|t| t.set((t.get().0 + 1, t.get().1)));
         return PadButton::Right.mask();
     }
-    if AIM_SPENT.with(|c| c.replace(0)) > 0 && !off_aim {
+    let spent = AIM_SPENT.with(|c| c.replace(0));
+    if spent > 0 && !off_aim {
         AIM_TALLY.with(|t| t.set((t.get().0, t.get().1 + 1)));
+    }
+    if off_aim && std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
+        eprintln!(
+            "    [aim] cursor never reached foe row {aim:?} in {AIM_TRIES} asks; confirming {:?}",
+            picker.state()
+        );
     }
     if let (
         Some(m),

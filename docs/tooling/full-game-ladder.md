@@ -749,7 +749,7 @@ Each run is a full New Game, about twenty minutes, so the set is run one
 seed at a time:
 
 ```bash
-for s in 3 4 5 6 7 8 9; do
+for s in $(seq 3 16); do
   LEGAIA_FGL_RNG_SEED=$s cargo test -p legaia-engine-shell --profile release-test \
     --test integration full_game_ladder::continuous:: -- --nocapture --test-threads 1
 done
@@ -1700,7 +1700,7 @@ clips and matches the same arts a windowed one does. Beyond that:
 
 | Variable | Prints |
 |---|---|
-| `LEGAIA_FGL_TRACE=1` | One line per played beat: what ran, how it ended and the flags it set. As `[hop]`, the hop failure that sent the pass to the beats, which the final stall would otherwise hide. A `[battle]` line at each fight's start and end (formation, both sides' HP, the action-SM state). Each pad segment's frames and planner cost. On success, the seated tier's trail, so a pad stall can be read against the route the seated tier took. |
+| `LEGAIA_FGL_TRACE=1` | One line per played beat: what ran, how it ended and the flags it set. As `[hop]`, the hop failure that sent the pass to the beats, which the final stall would otherwise hide. A `[battle]` line at each fight's start and end (formation, both sides' HP, the action-SM state). Each pad segment's frames and planner cost. In part C, an `[aim]` line for each target cursor the aim gave up on, with where the cursor stood. On success, the seated tier's trail, so a pad stall can be read against the route the seated tier took. |
 | `LEGAIA_FGL_TRACE_BATTLE=1` | A `[battle]` line every 1000 ticks. |
 | `LEGAIA_FGL_TRACE_HITS=1` | Each HP change with its actor and action state. |
 | `LEGAIA_FGL_CAPS=1` | Each script context the engine's anti-hang timeline cap ends (`World::cutscene.capped`): scene, modal or helper, record length, PC and opcode. Retail has no such cap, so each line is a record the engine cut short; over both passes there are none. |
