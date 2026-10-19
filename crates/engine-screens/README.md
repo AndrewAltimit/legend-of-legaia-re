@@ -22,7 +22,9 @@ nothing. This crate is the projection between them for:
   events seed the one-shot timers and the tick's draws come back for a draw
   pass that cannot advance them; the **fishing HUD draw list**
   (`fishing_hud_items`: persistent rows, catch HUD, result plate, banners)
-  and the **rod and line** screen prims (`fishing_line_screen_prims`);
+  and the **rod and line** screen prims (`fishing_line_screen_prims`), and
+  the **point-exchange screen** (`fishing_exchange_draws`) on the swaying
+  venue panel;
 - the **battle value readout's layout** (`battle_value_readout_layout`): the
   combo cluster and the newest numeral per struck actor, seated through the
   host's camera;
@@ -55,7 +57,9 @@ nothing. This crate is the projection between them for:
   projected off the world-map camera, which `field_messages` and
   `screen_layers` draw;
 - the **field-side projections** (`field_screens`): the save-menu atlas'
-  band table and badge cells, the name-entry view, the field party HUD;
+  band table and badge cells, the name-entry view, the field party HUD, and
+  the passive-ability badge column over the player's head
+  (`passive_hud_icons` through the host's camera, `passive_hud_text_draws`);
 - the **frame's field decisions** (`field_frame`): the enhanced scene lights
   a frame draws and the frame clear colour, off the world and the open
   screen; and the camera-occlusion fade's world half (`field_occlusion`:
@@ -94,5 +98,6 @@ each host that calls one of the crate's entries (`shop_overlay_frame`,
 `field_menu_root_draws`, `field_menu_sub_draws`, `battle_text_draws`,
 `dialog_box_chrome_draws`, `dialog_box_text_draws`, `field_party_hud_draws`,
 `save_select_overlay_draws`, `battle_value_readout_layout`,
-`fishing_hud_items`, `fishing_line_screen_prims`;
+`fishing_hud_items`, `fishing_line_screen_prims`, `fishing_exchange_draws`,
+`passive_hud_text_draws`;
 [`host-drift.md`](../../docs/tooling/host-drift.md)).

@@ -692,9 +692,11 @@ SIM_PAIRS: list[dict[str, object]] = [
         "availability with the other two gates forced open, one shifted the "
         "purchased mask by hand, and the play page never asked at all and "
         "exposed only the folded bool. Both sites must read "
-        "`PrizeExchange::is_latched`",
+        "`PrizeExchange::is_latched`. The native window's exchange screen is "
+        "the shared `engine-screens` composition (`fishing_exchange_draws`, "
+        "which the page's screen draws through too), so that is its site",
         "sites": {
-            "native": ("crates/engine-shell/src/window/hud/text_list.rs", "build_hud"),
+            "native": ("crates/engine-screens/src/fishing.rs", "fishing_exchange_draws"),
             "web": (WEB_PLAY_FISHING, "play_fishing_prizes_json"),
         },
         "mode": "symbols_all",

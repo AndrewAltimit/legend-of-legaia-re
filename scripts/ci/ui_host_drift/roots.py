@@ -44,6 +44,8 @@ SHARED_COMPOSERS: dict[Path, tuple[str, ...]] = {
         "battle_value_readout_layout",
         "fishing_hud_items",
         "fishing_line_screen_prims",
+        "fishing_exchange_draws",
+        "passive_hud_text_draws",
         # --- end lane B ---
     ),
 }

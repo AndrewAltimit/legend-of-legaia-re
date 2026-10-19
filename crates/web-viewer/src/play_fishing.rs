@@ -445,70 +445,20 @@ impl LegaiaRuntime {
         .to_string()
     }
 
-    /// The open point-exchange sub-screen's draws, through the shared
-    /// composition.
-    ///
-    /// The panel anchor is the same one the native window resolves - retail's
-    /// menu-picker rect (`FUN_801d74b0`) - offset by the venue's idle sway
-    /// (`FUN_801d03b0`), which the shared venue step
-    /// ([`Self::tick_fishing_actors`]) advances on the world for both hosts.
+    /// The open point-exchange sub-screen's draws, through the composition
+    /// both hosts share (`legaia_engine_screens::fishing_exchange_draws`: the
+    /// swaying venue panel, the rows and their live bag counts).
     fn fishing_exchange_draws(&self, font: &legaia_font::Font) -> Vec<TextDraw> {
-        use legaia_engine_ui::fishing::exchange as fx;
         let Some(world) = self.scene_host.host().map(|h| &h.world) else {
             return Vec::new();
         };
-        let Some(ex) = world.minigames.fishing_exchange.as_ref() else {
-            return Vec::new();
-        };
-        let names: Vec<String> = ex
-            .rows
-            .iter()
-            .map(|r| {
-                r.name
-                    .clone()
-                    .unwrap_or_else(|| format!("item {:#04x}", r.item_id))
-            })
-            .collect();
-        let rows: Vec<fx::ExchangeRowView<'_>> = ex
-            .rows
-            .iter()
-            .enumerate()
-            .map(|(i, r)| {
-                let owned = *world.party.inventory.get(&r.item_id).unwrap_or(&0) as u32;
-                fx::ExchangeRowView {
-                    name: names[i].as_str(),
-                    price: r.price,
-                    owned,
-                    available: ex.is_available(
-                        i,
-                        world.minigames.fishing_points,
-                        owned,
-                        world.minigames.fishing_prizes_purchased,
-                    ),
-                    one_time: r.is_one_time(),
-                    latched: ex.is_latched(i, world.minigames.fishing_prizes_purchased),
-                }
-            })
-            .collect();
-        let view = fx::ExchangeView {
-            venue: ex.venue as u8,
-            points: world.minigames.fishing_points,
-            cursor: ex.cursor,
-            first_visible: ex.first_visible(world.minigames.fishing_points),
-            rows: &rows,
-        };
-        let sway = world.minigames.fishing_venue.sway_offset;
-        let pen = legaia_engine_fishing::fishing_chrome::centred_panel(0xA0, 0x50, 0x68, 0x50)
-            .map(|p| (p.x as i32 + sway.0 as i32, p.y as i32 + sway.1 as i32))
-            .unwrap_or((8, 98));
-        fx::exchange_screen_draws_for(
+        legaia_engine_screens::fishing_exchange_draws(
+            world,
             font,
-            &view,
             // The page drives this screen from its click panel (Buy, the
             // venue tabs, Close) - it binds no key to it, so the footer
             // names the panel rather than the native window's keys.
             "   (Buy / venue tabs / Close in the panel)",
-            pen,
             [1.0, 1.0, 1.0, 1.0],
             [0.65, 0.72, 0.8, 1.0],
         )

@@ -46,7 +46,9 @@ mod shop;
 
 pub use banners::banner_stage_draws;
 pub use battle_item::with_battle_item_frame;
-pub use fishing::{fishing_banner_frame, fishing_hud_items, fishing_line_screen_prims};
+pub use fishing::{
+    fishing_banner_frame, fishing_exchange_draws, fishing_hud_items, fishing_line_screen_prims,
+};
 pub use inventory_use::inventory_use_session_draws;
 pub use panel::{FallbackPanel, fallback_panel_draws, panel_frame_rect};
 pub use prize::{coin_counter_window_draws, prize_window_draws};

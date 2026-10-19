@@ -129,42 +129,25 @@ impl LegaiaRuntime {
         if self.field_party_hud_suppressed() {
             return;
         }
-        let Some(points) = self
-            .scene_host
-            .host()
-            .map(|h| &h.world)
-            .filter(|w| w.passive_hud_active())
-            .and_then(|w| w.passive_hud_points())
-        else {
+        // Build the view-projection only when there is a column to seat:
+        // `play_camera_vp` also caches the frame it resolves.
+        let has_column = self.scene_host.host().is_some_and(|h| {
+            h.world.passive_hud_active() && h.world.passive_hud_points().is_some()
+        });
+        if !has_column {
             return;
-        };
+        }
         // The retail stage, so the projected pair lands in the same
         // 320x240 space the icon seats are authored in.
         let vp = self.play_camera_vp(320.0, 240.0);
-        if vp.len() != 16 {
-            return;
-        }
-        let project = |p: [f32; 3]| -> Option<(i32, i32)> {
-            let v = [p[0], p[1], p[2], 1.0];
-            let mut clip = [0.0f32; 4];
-            for (i, c) in clip.iter_mut().enumerate() {
-                *c = (0..4).map(|j| vp[j * 4 + i] * v[j]).sum();
-            }
-            if clip[3] <= 0.01 {
-                return None;
-            }
-            Some((
-                ((clip[0] / clip[3] * 0.5 + 0.5) * 320.0) as i32,
-                ((0.5 - clip[1] / clip[3] * 0.5) * 240.0) as i32,
-            ))
-        };
-        let (Some(first), Some(third)) = (project(points[0]), project(points[2])) else {
+        let Ok(vp) = <[f32; 16]>::try_from(vp.as_slice()) else {
             return;
         };
         let Some(world) = self.scene_host.host().map(|h| &h.world) else {
             return;
         };
-        self.passive_hud_icons = world.passive_hud_icons((first.0, third.1));
+        self.passive_hud_icons =
+            legaia_engine_screens::field_screens::passive_hud_icons(world, &vp);
     }
 
     /// The cached passive-ability badges as surface-pixel text draws.
@@ -187,14 +170,12 @@ impl LegaiaRuntime {
         };
         let font = assets.font_ref();
         let (origin, scale) = crate::play_menu::stage_transform(surface_w.max(1), surface_h.max(1));
-        let mut out = Vec::new();
-        for i in &self.passive_hud_icons {
-            let mut draws =
-                ui::text_draws_for(&font.layout_ascii("*"), (i.x, i.y), ui::MENU_TEXT_GOLD);
-            ui::scale_stage_text_draws(&mut draws, origin, scale);
-            out.extend(draws);
-        }
-        out
+        legaia_engine_screens::field_screens::passive_hud_text_draws(
+            font,
+            &self.passive_hud_icons,
+            origin,
+            scale,
+        )
     }
 
     /// This frame's HUD, split the way the page's overlay JSON wants it:

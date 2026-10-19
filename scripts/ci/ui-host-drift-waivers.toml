@@ -669,7 +669,7 @@ reason = "Caches the frame's screen-prim layers (the field-to-battle transition 
 host = "web"
 kernel = "tick_passive_hud"
 host_only = true
-reason = "The passive-ability badge column's projection. The page's draw pass has no camera and no `&mut self`, so the anchor is resolved on the tick and cached; the native window projects inside `passive_hud_draws`, which is handed the frame's camera matrix."
+reason = "The passive-ability badge column's projection, one kernel on both hosts (`legaia_engine_screens::field_screens::passive_hud_icons`, drawn through `passive_hud_text_draws`). The page's draw pass has no camera and no `&mut self`, so the page runs it on the tick and caches the icons; the native window runs it inside `passive_hud_draws`, which is handed the frame's camera matrix."
 
 [[frame_kernel]]
 host = "web"

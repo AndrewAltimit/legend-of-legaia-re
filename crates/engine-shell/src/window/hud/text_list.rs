@@ -383,74 +383,16 @@ impl PlayWindowApp {
         }
         // Fishing point-exchange list: the venue's prize rows with the retail
         // gating (row 0 hidden until affordable, greyed unavailable rows,
-        // one-time prizes latched after purchase).
-        if self.session.host.world.mode == SceneMode::Fishing
-            && let Some(ex) = &self.session.host.world.minigames.fishing_exchange
-        {
-            let world = &self.session.host.world;
-            // The venue sub-screen's panel frame (FUN_801d74b0): the retail
-            // menu-picker rect, centre-x converted to a left edge with the
-            // two-left / six-down skin bias, swaying on the overlay's idle
-            // sway triple (FUN_801d03b0). The list is anchored inside it.
-            let sway = world.minigames.fishing_venue.sway_offset;
-            let panel =
-                legaia_engine_fishing::fishing_chrome::centred_panel(0xA0, 0x50, 0x68, 0x50);
-            let (px, py) = panel
-                .map(|p| (p.x as i32 + sway.0 as i32, p.y as i32 + sway.1 as i32))
-                .unwrap_or((8, 98));
-            let names: Vec<String> = ex
-                .rows
-                .iter()
-                .map(|r| {
-                    r.name
-                        .clone()
-                        .unwrap_or_else(|| format!("item {:#04x}", r.item_id))
-                })
-                .collect();
-            // The screen itself is `legaia_engine_ui::fishing::exchange`,
-            // shared with the browser play page: the row layout, the ink
-            // rule and the one-time tag are decided once. This host supplies
-            // the pen (the swaying panel above), its own key legend, and the
-            // live bag reads the view needs.
-            use legaia_engine_ui::fishing::exchange as fx;
-            let rows: Vec<fx::ExchangeRowView<'_>> = ex
-                .rows
-                .iter()
-                .enumerate()
-                .map(|(i, r)| {
-                    let owned = *world.party.inventory.get(&r.item_id).unwrap_or(&0) as u32;
-                    fx::ExchangeRowView {
-                        name: names[i].as_str(),
-                        price: r.price,
-                        owned,
-                        available: ex.is_available(
-                            i,
-                            world.minigames.fishing_points,
-                            owned,
-                            world.minigames.fishing_prizes_purchased,
-                        ),
-                        one_time: r.is_one_time(),
-                        latched: ex.is_latched(i, world.minigames.fishing_prizes_purchased),
-                    }
-                })
-                .collect();
-            let view = fx::ExchangeView {
-                venue: ex.venue as u8,
-                points: world.minigames.fishing_points,
-                cursor: ex.cursor,
-                first_visible: ex.first_visible(world.minigames.fishing_points),
-                rows: &rows,
-            };
-            // The pen is the retail panel rect, a 320x240 stage position, so
-            // the rows scale onto the surface through the same stage the
-            // HUD rows and the browser play page use. Drawn in raw surface
-            // pixels they sat in the window's top-left at a third of the
-            // page's size.
-            let mut ex_draws = fx::exchange_screen_draws_for(
+        // one-time prizes latched after purchase), composed once for both
+        // hosts (`legaia_engine_screens::fishing_exchange_draws`) on the
+        // swaying venue panel. This host supplies its key legend; the pen is
+        // a 320x240 stage position, so the rows scale onto the surface
+        // through the same stage the HUD rows and the browser play page use.
+        if self.session.host.world.mode == SceneMode::Fishing {
+            let mut ex_draws = legaia_engine_screens::fishing_exchange_draws(
+                &self.session.host.world,
                 &self.font,
-                &view,
                 "   (Enter = trade, Left/Right = venue, P = close)",
-                (px, py),
                 white,
                 dim,
             );
