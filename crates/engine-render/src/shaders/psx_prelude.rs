@@ -94,22 +94,36 @@ fn apply_grade(rgb: vec3<f32>, grade: vec4<f32>) -> vec3<f32> {
     return mix(rgb, rgb * grade.rgb, grade.a);
 }
 
-// Prologue palette-collapse law - the retail gold grade's ASSET half,
-// capture-pinned against the recomp's live VRAM during the opdeene opening:
-// every terrain/prop CLUT entry the scene uploaded had been rewritten from
-// the disc TIM's entry `(r, g, b)` to
-//     L = max(r, g, b);  (L, max(L - 1, 0), L >> 1)
-// in 5-bit BGR555 space, STP bit preserved (0 mismatches across the graded
-// rows - see docs/subsystems/cutscene.md "full-scene sepia grade"). Because
-// a CLUT rewrite is per palette entry and a 4/8bpp texel IS a palette entry,
+// Prologue palette-collapse law - the retail gold grade's ASSET half. Two
+// pairs of mode-3 CLUT-cell cyclers (`FUN_80019D50`) re-upload the CLUT
+// strip every frame: one pair greys the disc entry (saturation -1024, so
+// L = max(r, g, b)), the other captured that grey and tints it at hue
+// +0x38 / saturation +0x80. Composed, in 5-bit BGR555 space with the STP
+// bit preserved:
+//     L = max(r, g, b);  (L, (L * 247) >> 8, L >> 1)
+// (see docs/subsystems/cutscene.md "full-scene sepia grade"). Because a
+// CLUT rewrite is per palette entry and a 4/8bpp texel IS a palette entry,
 // applying the law to the decoded texel word is exactly equivalent.
 fn palette_law_word(w: u32) -> u32 {
     let r = w & 0x1Fu;
     let g = (w >> 5u) & 0x1Fu;
     let b = (w >> 10u) & 0x1Fu;
     let l = max(r, max(g, b));
-    let g2 = max(l, 1u) - 1u;
+    let g2 = (l * 247u) >> 8u;
     return (w & 0x8000u) | ((l >> 1u) << 10u) | (g2 << 5u) | l;
+}
+
+// Whether a prim's texels go through `palette_law_word`: retail's cyclers
+// capture and re-upload exactly two VRAM rects, `(0, 473, 320, 2)` and
+// `(0, 476, 320, 34)`, so only a 4/8bpp prim whose CLUT base sits there is
+// graded - a 15-bit page has no CLUT, and rows 475, 510 and 511 and every
+// column from 320 keep their disc colours.
+fn palette_law_reaches(cba: u32, tsb: u32) -> bool {
+    let depth = (tsb >> 7u) & 0x3u;
+    let cx = (cba & 0x3Fu) * 16u;
+    let cy = (cba >> 6u) & 0x1FFu;
+    let row = (cy >= 473u && cy <= 474u) || (cy >= 476u && cy <= 509u);
+    return depth < 2u && cx < 320u && row;
 }
 
 // The packet-colour half of the same grade: the prologue scripts' two

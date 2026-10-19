@@ -211,9 +211,10 @@ palette-space collapse, not a depth cue.
   accumulate `DAT_1F800393`); `FUN_8002519C` walks the actor lists in full every frame, so there
   is no hidden step parallelism
   ([`script-vm.md`](../../subsystems/script-vm.md#per-frame-scheduling)).
-- **Gold grade.** The cutscene host rewrites every CLUT the `opdeene` bundle uploads to
-  `L = max(r,g,b) → (L, max(L-1,0), L>>1)` (5-bit, STP preserved; 0 mismatches over 768 entries
-  of terrain rows 509 / 508 / 501) and collapses authored colour packets to the amber family
+- **Gold grade.** Four CLUT-cell cyclers in the prologue's effect scripts grey and re-tint the
+  CLUT rects `(0, 473, 320, 2)` / `(0, 476, 320, 34)` to
+  `L = max(r,g,b) → (L, (L*247)>>8, L>>1)` (5-bit, STP preserved;
+  [settled](rendering-camera.md)) and the scripts collapse authored colour packets to the amber family
   `~(M, 0.94M, 0.43M)`; neutral `0x80` ground quads stay neutral. Node `+0x78` (`IR0`) is 0 on
   every render node (`0x8007C34C..`) at every beat, so there is no per-node depth cue
   ([`re-do-not-re-walk.md`](../re-do-not-re-walk.md#field--locomotion)).

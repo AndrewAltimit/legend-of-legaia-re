@@ -355,7 +355,7 @@ fn fs_main(in: VsOut, @builtin(front_facing) front_facing: bool) -> @location(0)
     // (exactly equivalent - see `palette_law_word`). Transparency is judged
     // on the raw word below, which the law preserves (0 -> 0, STP kept).
     let palette_on = u.palette.w > 0.5;
-    if palette_on {
+    if palette_on && palette_law_reaches(cba, tsb) {
         word = palette_law_word(word);
     }
     let color = bgr555_to_rgba(word);
@@ -473,7 +473,7 @@ fn blend_pass_color(in: VsOut, front_facing: bool, f_scale: f32) -> vec4<f32> {
     // Same prologue palette-collapse as the opaque pass (STP preserved, so
     // the discard test above is unaffected by ordering).
     let palette_on = u.palette.w > 0.5;
-    if palette_on {
+    if palette_on && palette_law_reaches(cba, tsb) {
         word = palette_law_word(word);
     }
     let color = bgr555_to_rgba(word);

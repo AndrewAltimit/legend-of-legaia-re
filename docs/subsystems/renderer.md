@@ -2007,13 +2007,15 @@ use separate shaders and are never graded.
   (`strength = 0` is a no-op).
 - **Palette-collapse mode** (`Renderer::set_palette_grade`) - what the
   prologue's gold sepia (`opdeene` / `opstati` / `opurud`) uses. Retail
-  applies the grade to the *loaded assets*: every uploaded CLUT entry is
-  rewritten to `L = max(r, g, b) -> (L, max(L-1, 0), L >> 1)`, and every
+  applies the grade to the *loaded assets*: four CLUT-cell cyclers rewrite
+  the CLUT rects `(0, 473, 320, 2)` and `(0, 476, 320, 34)` to
+  `L = max(r, g, b) -> (L, (L*247) >> 8, L >> 1)`, and every
   resident TMD colour word is rewritten by the scripts' two `4C E6` HSV ops
   to `(V, V*246 >> 8, V*112 >> 8)`, `V = min(max(rgb), 0xF8) - 30`. The
   port's shaders apply the same laws per decoded texel / packet colour
-  (`palette_law_word`, `prologue_sepia_word`), with runtime-neutral `0x80`
-  words kept neutral. The gold coefficients play no part in this mode.
+  (`palette_law_word`, `prologue_sepia_word`), the texel law only for a
+  4/8bpp prim whose CLUT base is inside those rects (`palette_law_reaches`),
+  with runtime-neutral `0x80` words kept neutral. The gold coefficients play no part in this mode.
 - **Depth-cue ramp.** Retail's per-render-node depth cue also crushes
   far-field blue (`B/R` down to about `0.13`).
   `Renderer::set_depth_cue_ramp(far, near_z, far_z, max_ir0)` stages it as a

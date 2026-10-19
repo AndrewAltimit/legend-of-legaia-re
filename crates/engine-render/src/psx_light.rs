@@ -108,18 +108,21 @@ pub fn depth_cue(rgb: [f32; 3], far: [f32; 3], ir0: f32) -> [f32; 3] {
 /// retail gold grade's asset half, mirrored from the `palette_law_word` WGSL
 /// helper.
 ///
-/// Capture-pinned: during the retail opening (recomp, cold boot) every CLUT
-/// entry the `opdeene` scene uploaded reads back as this function of the disc
-/// TIM's entry - `L = max(r, g, b)`, output `(L, max(L - 1, 0), L >> 1)`,
-/// STP bit preserved - with zero mismatches across the graded terrain rows.
-/// Because a 4/8bpp texel *is* a palette entry, applying the law per decoded
-/// texel is exactly equivalent to the CLUT rewrite.
+/// Retail writes it with two pairs of mode-3 CLUT-cell cyclers
+/// (`FUN_80019D50`, the move-VM render tail's HSV re-upload): the first pair
+/// captures the disc CLUT strip and re-uploads it at saturation `-1024`
+/// (grey, `L = max(r, g, b)`), the second captured that grey and re-uploads
+/// it at hue `+0x38` / saturation `+0x80`. Composed through the 8-bit HSV
+/// pair (`c << 3` in, `>> 3` out), STP bit preserved:
+/// `(L, (L * 247) >> 8, L >> 1)` - which is `L - 1` on green for `L <= 28`
+/// and `L - 2` above. Because a 4/8bpp texel *is* a palette entry, applying
+/// the law per decoded texel is exactly equivalent to the CLUT rewrite.
 pub fn palette_law(word: u16) -> u16 {
     let r = word & 0x1F;
     let g = (word >> 5) & 0x1F;
     let b = (word >> 10) & 0x1F;
     let l = r.max(g).max(b);
-    (word & 0x8000) | ((l >> 1) << 10) | (l.saturating_sub(1) << 5) | l
+    (word & 0x8000) | ((l >> 1) << 10) | (((l * 247) >> 8) << 5) | l
 }
 
 /// The packet-colour half of the palette grade: a loaded TMD colour word
@@ -251,8 +254,8 @@ mod tests {
 
     /// The palette-collapse law's fixed points and shape: black and the
     /// STP-only word are unchanged (transparency judgements survive the law),
-    /// a pure green entry collapses to the warm `(L, L-1, L/2)` gold, and a
-    /// grey ramp keeps its luminance while gaining the gold chroma.
+    /// a pure green entry collapses to the warm `(L, L*247/256, L/2)` gold,
+    /// and a grey ramp keeps its luminance while gaining the gold chroma.
     #[test]
     fn palette_law_shape() {
         assert_eq!(palette_law(0x0000), 0x0000);
@@ -268,7 +271,7 @@ mod tests {
             let grey = l | (l << 5) | (l << 10);
             let g = palette_law(grey);
             assert_eq!(g & 0x1F, l, "R carries the luminance");
-            assert_eq!((g >> 5) & 0x1F, l.saturating_sub(1));
+            assert_eq!((g >> 5) & 0x1F, (l * 247) >> 8);
             assert_eq!((g >> 10) & 0x1F, l >> 1);
         }
         // STP bit rides through on a coloured entry too.
@@ -318,6 +321,38 @@ mod tests {
                     assert_eq!(out, want, "word {c:?}");
                 }
             }
+        }
+    }
+
+    /// The CLUT law is the two cycler passes `FUN_80019D50` runs, through
+    /// the ported HSV pair: 5-bit to 8-bit by `<< 3`, grey at saturation
+    /// `-1024`, re-tint at hue `+0x38` / saturation `+0x80` (hue folded
+    /// `% 0x168`, `S` / `V` clamped `0..=0xFF`, `FUN_8001A6C8`'s `0xF8` cap),
+    /// `>> 3` back - for every 15-bit word. The capture's top three
+    /// luminances pin the green channel: `29 -> 27`, `30 -> 28`, `31 -> 29`.
+    #[test]
+    fn palette_law_is_the_two_cycler_passes() {
+        use legaia_engine_vm::move_vm::{hsv_to_rgb, rgb_to_hsv};
+        let pass = |c: [i32; 3], dh: i32, ds: i32| -> [i32; 3] {
+            let (h, s, v) = rgb_to_hsv(c[0], c[1], c[2]);
+            let h = (h + dh).rem_euclid(0x168);
+            let (r, g, b) = hsv_to_rgb(h, (s + ds).clamp(0, 0xFF), v.clamp(0, 0xFF));
+            [r.min(0xF8), g.min(0xF8), b.min(0xF8)]
+        };
+        for w in 1u16..0x8000 {
+            let c = [
+                i32::from(w & 0x1F) << 3,
+                i32::from((w >> 5) & 0x1F) << 3,
+                i32::from((w >> 10) & 0x1F) << 3,
+            ];
+            let out = pass(pass(c, 0, -1024), 0x38, 0x80);
+            let got = (out[0] >> 3) as u16
+                | (((out[1] >> 3) as u16) << 5)
+                | (((out[2] >> 3) as u16) << 10);
+            assert_eq!(got, palette_law(w), "word {w:#06x}");
+        }
+        for (l, g) in [(29u16, 27u16), (30, 28), (31, 29)] {
+            assert_eq!((palette_law(l << 5) >> 5) & 0x1F, g);
         }
     }
 

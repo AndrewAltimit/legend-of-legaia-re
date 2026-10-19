@@ -68,6 +68,11 @@ Readings a re-audit against the disassembly or a capture overturned. They are
 listed here as well as in the registers, because a claim that was wrong once is
 the cheapest place to look for a claim that is still wrong.
 
+- **The prologue's gold CLUTs are effect-script cyclers, and the law bends at
+  the top.** Four mode-3 CLUT-cell cyclers grey and re-tint the CLUT rects
+  `(0, 473, 320, 2)` / `(0, 476, 320, 34)`; green is `(L * 247) >> 8`, not
+  `L - 1`, which parts company for `L >= 29`, and rows outside the rects stay
+  ungraded ([settled](re-settled-threads/rendering-camera.md)).
 - **A plain monster swing is elemental, and Astral Slash is one.** The
   melee kernel's guard ladder keys on the attacking monster's record element
   `+0x1D`, so a matching jewel halves an ordinary monster strike; the port had
@@ -156,7 +161,6 @@ Answered questions: [settled field / locomotion](re-settled-threads/field.md), [
 | Thread | Status | What would close it |
 |---|---|---|
 | What is left of the juggle window? | partial (the per-frame law is pinned) | Three residuals ([battle-formulas.md](../subsystems/battle-formulas.md#the-juggle-window---what-makes-a-monster-juggleable)): `FUN_80050E00`'s all-non-zero fall-through hands back a load-address-dependent index, reachable only from an attack-band entry's own `+0x1F7` (no reaction entry has such a list); the measured window runs 1-2 ticks past `32 * beat / (speed * rate)` because the cursor's sub-frame carry at the commit is unmodelled; and whether the counter / guard window at `0x8004AFC0..` uses the same beat for a parry is untraced. A capture of an attack-band window, and the disassembly of the commit's carry, close the first two. |
-| What rewrites the prologue's CLUT rows to gold? | open | The CLUT law `L = max(r,g,b) -> (L, max(L-1,0), L>>1)` is capture-pinned over every graded row, but no CPU loop in 0970, 0897 or `SCUS_942.54` matches it, which points at a table or a DMA upload ([cutscene.md](../subsystems/cutscene.md#full-scene-sepia-grade-the-gold-prologue-look)). A VRAM write watch on a graded CLUT row during the `opdeene` load names the writer. |
 
 Answered questions: [settled battle / arts / level-up](re-settled-threads/battle.md), [settled rendering / camera](re-settled-threads/rendering-camera.md), [settled world map](re-settled-threads/world-map.md); falsified readings: [battle](re-do-not-re-walk.md#battle--arts--level-up), [rendering / camera](re-do-not-re-walk.md#rendering--camera).
 
