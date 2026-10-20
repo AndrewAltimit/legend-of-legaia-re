@@ -186,6 +186,9 @@ impl PlayWindowApp {
             && let Some(cam) = self.session.host.world.battle.camera.as_mut()
         {
             cam.align_glide_origin(live, end);
+            // The near-camera ghost bits are derived from the pose; the tick
+            // computed them on the unaligned one.
+            self.session.host.world.refresh_battle_camera_ghost();
         }
     }
 

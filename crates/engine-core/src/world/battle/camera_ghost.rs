@@ -55,6 +55,16 @@ impl World {
         self.battle_seat_map().retail(e).get()
     }
 
+    /// Re-run the ghost pass on the camera as it now stands. The pass is a
+    /// function of the camera pose (`FUN_8004DC68` reads the focus, yaw and
+    /// depth the frame's camera update just wrote), so a caller that moves
+    /// the camera after the tick - a capture seat aligning the glide onto a
+    /// retail pose - re-derives the bits from the pose it will draw, not
+    /// from the one the tick left.
+    pub fn refresh_battle_camera_ghost(&mut self) {
+        self.tick_battle_camera_ghost();
+    }
+
     /// One frame of the ghost pass. No-op outside battle.
     pub(in crate::world) fn tick_battle_camera_ghost(&mut self) {
         use legaia_engine_battle_vm::battle_action::{GhostInputs, GhostSlot, camera_ghost_pass};

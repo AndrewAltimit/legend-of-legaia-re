@@ -1448,6 +1448,14 @@ frames further into the wait than the accumulator shows, a fifth of a turn of
 yaw. Held so, the engine lands where every such capture is framed - pitch `0`,
 `TR y = 0x500`, focus on the caster's seat.
 
+A caster standing on its idle loop (`+0x1D9 == 0`) drops the accumulator
+from the hold. The loop's natural end re-commits it and zeroes the word
+([above](#the-keyframe-each-body-stands-on)), so the reading is a phase of the
+idle, not of the cast, and the engine's idle wraps on its own clock: held on
+both, `zora_glare_petrify_pre`'s `0x6E` waited out the engine's next wrap and
+reached the capture fourteen counter units past retail's `0x848`, the yaw
+fourteen units round. The yaw counter alone places it to the unit.
+
 What a `0x70` capture still reads is the cast module's own shot (Cort's Ultra
 Charge pulls out to `TR (0, 3072, 7315)`), which the body's camera director
 arms ([cast-module](../subsystems/cast-module.md)); a body with no director
@@ -3091,9 +3099,14 @@ every pass, so it moves with the phase of both clips):
   units, before the strike loop. The case-7 yaw endpoint still lands on
   retail's (`2356` against `2358`); what the nearer ground moves is the
   focus endpoint, `16` units off, which takes the yaw's phase
-  ([above](#an-ease-out-camera-carries-its-history)). What the frame still
-  shows is the skeleton drawn solid where retail's near-camera ghost pass
-  fades it.
+  ([above](#an-ease-out-camera-carries-its-history)). The second skeleton,
+  which stands off the action at `(56, -622)`, is ghosted in retail's frame:
+  the near-camera ghost pass measures it `1172` units from its point on the
+  view axis, on the radius `dist / 4` itself. The pass reads the camera the
+  frame draws, and the image child aligns the glide onto retail's live pose
+  after the tick has run the pass on the engine's own, so it re-runs the pass
+  on the aligned pose (`World::refresh_battle_camera_ghost`); run on the
+  unaligned glide the skeleton stood solid (`image` `.929` to `.978`).
 - **A pose two frames on.** `battle_noa_miracle_art_combo`'s case-7 focus
   is the midpoint of two body pairs, and at the capture's accumulator
   (`72`, nine vsyncs after the swing clip's commit) retail's Noa reads body
