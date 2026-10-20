@@ -1458,6 +1458,14 @@ raw the engine's could wrap just as its yaw counter came due:
 capture fourteen counter units past retail's `0x848`, the yaw fourteen units
 round. On the clip age the yaw counter places it to the unit.
 
+A capture taken in `0x6F` also lands the engine's camera step on the tick its
+ramp reaches retail's depth. Retail ramps `ctx[+0x6D0]` and arms case 6 on the
+new depth in the same pass (`0x801E5014` / `0x801E501C`); the engine ramps a
+vsync at a time and steps its camera every frame step on its own phase, so
+its gate tick could frame the depth one ramp step behind
+(`zora_glare_petrify_pre`: TR z `4633` against `4608`). The drive moves the
+camera's step phase onto the landing tick (`BattleCamera::sync_step_phase`).
+
 What a `0x70` capture still reads is the cast module's own shot (Cort's Ultra
 Charge pulls out to `TR (0, 3072, 7315)`), which the body's camera director
 arms ([cast-module](../subsystems/cast-module.md)); a body with no director
