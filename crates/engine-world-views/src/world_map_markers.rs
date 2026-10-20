@@ -87,6 +87,21 @@ pub fn marker_quads(
         .collect()
 }
 
+/// [`marker_quads`] wrapped by `screen_prim::world_map_marker_prim` - the
+/// one-pixel quads both hosts' screen-prim passes draw (the page has no line
+/// primitive, which is why the kernel emits quads rather than lines).
+pub fn marker_prims(
+    world: &World,
+    frame: &FieldCameraFrame,
+    aabb: ([f32; 3], [f32; 3]),
+    draw_player: bool,
+) -> Vec<legaia_render_kernels::screen_prim::ScreenPrim> {
+    marker_quads(world, frame, aabb, draw_player)
+        .iter()
+        .map(|q| legaia_render_kernels::screen_prim::world_map_marker_prim(q.xy, q.rgba, q.depth))
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -1,9 +1,10 @@
 //! The battle value readout's layout (damage / heal numerals and the combo
 //! cluster) for one frame, shared by both play hosts.
 //!
-//! Each host keeps its own camera and its own emit (retail-art prims or the
-//! font fallback); the layout between them is this one function, so the two
-//! cannot seat the same number differently.
+//! Each host keeps only its own camera and its answer to "is the battle
+//! effect atlas resident"; the layout and both emits (retail-art prims, or
+//! the font fallback before the atlas exists) are the functions here, so
+//! the two cannot seat or draw the same number differently.
 
 use legaia_engine_battle::battle_hud_state::{BattleHud, DamagePopup};
 use legaia_engine_battle_vm::battle_value_readout as vr;
@@ -81,4 +82,73 @@ pub fn battle_value_readout_layout(
         }
     }
     Some((cluster, runs))
+}
+
+/// The layout as retail's own 24x24 numeral cells off the resident battle
+/// effect atlas: the combo cluster, then every digit run, through
+/// `legaia_engine_ui::battle_numerals` at the readout's ordering-table
+/// index. A host calls this only while the battle VRAM holding the sheet is
+/// resident, and [`value_readout_fallback_draws`] otherwise - never both, or
+/// every number draws twice.
+pub fn value_readout_prims(
+    layout: &ValueReadoutLayout,
+) -> Vec<legaia_render_kernels::screen_prim::ScreenPrim> {
+    use legaia_engine_ui::battle_numerals as bn;
+    let (cluster, runs) = layout;
+    let mut out = Vec::new();
+    if let Some(c) = cluster.as_ref() {
+        out.extend(bn::combo_cluster_prims(c, bn::VALUE_READOUT_OT));
+    }
+    for cells in runs {
+        out.extend(bn::digit_run_prims(cells, bn::VALUE_READOUT_OT));
+    }
+    out
+}
+
+/// The layout as **font text** for the frames before the battle VRAM
+/// exists, on the stage transform `origin` / `scale` the rest of the battle
+/// chrome uses: the combo cluster's words and digits, then each run's digits
+/// in `VALUE_READOUT_FALLBACK_COLOR`.
+pub fn value_readout_fallback_draws(
+    font: &legaia_font::Font,
+    layout: &ValueReadoutLayout,
+    origin: (i32, i32),
+    scale: u32,
+) -> Vec<legaia_engine_ui::TextDraw> {
+    use legaia_engine_ui as ui;
+    let view = |k: &vr::ValueCell| ui::ValueCellView {
+        digit: k.digit,
+        x: k.x,
+        y: k.y,
+        w: k.w,
+        h: k.h,
+    };
+    let (cluster, runs) = layout;
+    let mut out = Vec::new();
+    if let Some(c) = cluster.as_ref() {
+        let labels: Vec<ui::ComboLabelView<'_>> = c
+            .labels
+            .iter()
+            .map(|l| ui::ComboLabelView {
+                word: l.word,
+                x: l.x,
+                y: l.y,
+            })
+            .collect();
+        let cells: Vec<ui::ValueCellView> = c.cells.iter().map(view).collect();
+        out.extend(ui::battle_combo_cluster_draws_for(
+            font, &labels, &cells, origin, scale,
+        ));
+    }
+    for run in runs {
+        let cells: Vec<ui::ValueCellView> = run.iter().map(view).collect();
+        out.extend(ui::battle_value_readout_draws_for(
+            font,
+            &cells,
+            ui::VALUE_READOUT_FALLBACK_COLOR,
+            origin,
+            scale,
+        ));
+    }
+    out
 }

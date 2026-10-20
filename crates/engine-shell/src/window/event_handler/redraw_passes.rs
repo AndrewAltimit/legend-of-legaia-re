@@ -661,29 +661,19 @@ impl PlayWindowApp {
     pub(super) fn world_map_marker_prims(
         &self,
     ) -> Vec<legaia_render_kernels::screen_prim::ScreenPrim> {
-        let world = &self.session.host.world;
-        if world.mode != SceneMode::WorldMap || self.boot_ui.is_active() {
+        if self.boot_ui.is_active() {
             return Vec::new();
         }
-        let aabb = (self.scene_aabb.0, self.scene_aabb.1);
-        let frame = legaia_engine_core::camera_view::resolve_field_camera(
-            world,
-            &self.session.camera,
-            None,
-            [(aabb.0[0] + aabb.1[0]) * 0.5, (aabb.0[2] + aabb.1[2]) * 0.5],
-        );
+        let world = &self.session.host.world;
         let player_mesh_drawn = world
             .player_actor_slot
             .is_some_and(|pslot| self.drained_spawn_slots.contains(&pslot));
-        legaia_engine_world_views::world_map_markers::marker_quads(
+        legaia_engine_world_views::screen_passes::world_map_marker_screen_prims(
             world,
-            &frame,
-            aabb,
+            &self.session.camera,
+            self.scene_aabb,
             !player_mesh_drawn,
         )
-        .iter()
-        .map(|q| legaia_render_kernels::screen_prim::world_map_marker_prim(q.xy, q.rgba, q.depth))
-        .collect()
     }
 
     /// The overworld sky band (`FUN_801F73E4`) as screen primitives, through
@@ -694,20 +684,14 @@ impl PlayWindowApp {
     pub(super) fn world_map_sky_prims(
         &self,
     ) -> Vec<legaia_render_kernels::screen_prim::ScreenPrim> {
-        let world = &self.session.host.world;
-        if world.mode != SceneMode::WorldMap || self.boot_ui.is_active() {
+        if self.boot_ui.is_active() {
             return Vec::new();
         }
-        let aabb = (self.scene_aabb.0, self.scene_aabb.1);
-        let frame = legaia_engine_core::camera_view::resolve_field_camera(
-            world,
+        legaia_engine_world_views::screen_passes::world_map_sky_screen_prims(
+            &self.session.host.world,
             &self.session.camera,
-            None,
-            [(aabb.0[0] + aabb.1[0]) * 0.5, (aabb.0[2] + aabb.1[2]) * 0.5],
-        );
-        let sprites =
-            legaia_engine_world_views::world_map_sky::sky_band(world, &self.session.camera, &frame);
-        legaia_render_kernels::screen_prim::sky_band_prims(&sprites)
+            self.scene_aabb,
+        )
     }
 
     /// The live effect layer's 3D draws, uploaded: the `etmd` effect
@@ -952,94 +936,46 @@ impl PlayWindowApp {
             .collect()
     }
 
-    /// This frame's actor drop shadows (`legaia_render_kernels::drop_shadow`,
-    /// retail's `FUN_8001C394` blob): `World::field_drop_shadows` through the
-    /// same follow camera as the fog sheets, wrapped by the shared
-    /// `drop_shadow_prim` so the blend class and vertex order are the browser
-    /// play page's too. Each cell is depth-tested against the scene already
-    /// drawn, which keeps it under the actor standing on it and over the
-    /// ground - retail's `+0xA0` OT bias and far-bucket ground, in depth-buffer
-    /// terms. Empty outside game mode 3.
+    /// This frame's actor drop shadows (retail's `FUN_8001C394` blob), the
+    /// shared pass both hosts draw
+    /// (`legaia_engine_world_views::screen_passes::drop_shadow_screen_prims`).
+    /// Each cell is depth-tested against the scene already drawn, which keeps
+    /// it under the actor standing on it and over the ground - retail's
+    /// `+0xA0` OT bias and far-bucket ground, in depth-buffer terms.
     pub(super) fn field_drop_shadow_prims(
         &self,
     ) -> Vec<legaia_render_kernels::screen_prim::ScreenPrim> {
-        use legaia_engine_core::camera_view::resolve_field_camera;
-        use legaia_render_kernels::screen_prim::drop_shadow_prim;
-        let world = &self.session.host.world;
-        if !legaia_engine_core::world::World::fog_mode(world.mode) {
-            return Vec::new();
-        }
-        let center = [
-            (self.scene_aabb.0[0] + self.scene_aabb.1[0]) * 0.5,
-            (self.scene_aabb.0[2] + self.scene_aabb.1[2]) * 0.5,
-        ];
-        let frame = resolve_field_camera(world, &self.session.camera, None, center);
-        let Some(view) = frame.field_view() else {
-            return Vec::new();
-        };
-        world
-            .field_drop_shadows(&view)
-            .iter()
-            .map(|q| drop_shadow_prim(q.xy, q.uv, q.clut, q.tpage, q.rgb, q.ot_index, q.depth))
-            .collect()
+        legaia_engine_world_views::screen_passes::drop_shadow_screen_prims(
+            &self.session.host.world,
+            &self.session.camera,
+            self.scene_aabb,
+        )
     }
 
-    /// This frame's move-VM strip spans: every extension sub-op `0x2C`
-    /// execution of the most recent tick (the scanline strip emitter
-    /// `FUN_801D31B0`, `MoveVmGlobals::strip_frame`), projected through the
-    /// same follow camera as the fog sheets by the shared `move_strip_prims`
-    /// kernel the browser play page draws them with. Drawn only in a field
-    /// scene - the extension dispatcher exists only in the field overlay.
+    /// This frame's move-VM strip spans (`FUN_801D31B0`), the shared pass
+    /// both hosts draw
+    /// (`legaia_engine_world_views::screen_passes::move_strip_screen_prims`).
     pub(super) fn take_move_strip_prims(
         &mut self,
     ) -> Vec<legaia_render_kernels::screen_prim::ScreenPrim> {
-        use legaia_engine_core::camera_view::resolve_field_camera;
-        use legaia_engine_field::camera_frame::FieldCameraFrame;
-        let world = &self.session.host.world;
-        // The latest tick's set, not drained: an idle redraw draws it again
-        // (`MoveVmGlobals::strip_frame`).
-        let requests = world.move_vm.strip_frame();
-        if requests.is_empty() || world.mode != SceneMode::Field {
-            return Vec::new();
-        }
-        let center = [
-            (self.scene_aabb.0[0] + self.scene_aabb.1[0]) * 0.5,
-            (self.scene_aabb.0[2] + self.scene_aabb.1[2]) * 0.5,
-        ];
-        let frame = resolve_field_camera(world, &self.session.camera, None, center);
-        let (FieldCameraFrame::Follow(view) | FieldCameraFrame::Cutscene(view)) = frame else {
-            return Vec::new();
-        };
-        legaia_render_kernels::move_strip::move_strip_prims(requests, &view)
+        legaia_engine_world_views::screen_passes::move_strip_screen_prims(
+            &self.session.host.world,
+            &self.session.camera,
+            self.scene_aabb,
+        )
     }
 
-    /// This frame's attached lights - the field VM's op `0x34` sub-1 light
-    /// pools (`World::field_light_draws`, the `FUN_801E4470` draw feeding
-    /// `FUN_801E3984`) - through the same follow camera as the fog sheets and
-    /// the shared `light_pool_prims` wrapper the browser play page uses.
-    /// Empty outside a field scene or with no light live.
+    /// This frame's attached lights (op `0x34` sub-1, `FUN_801E3984`), the
+    /// shared pass both hosts draw
+    /// (`legaia_engine_world_views::screen_passes::light_screen_prims`).
     pub(super) fn field_light_screen_prims(
         &self,
     ) -> Vec<legaia_render_kernels::screen_prim::ScreenPrim> {
-        use legaia_engine_core::camera_view::resolve_field_camera;
-        use legaia_engine_field::camera_frame::FieldCameraFrame;
-        let world = &self.session.host.world;
-        if world.mode != SceneMode::Field || world.script_actors.lights.is_empty() {
-            return Vec::new();
-        }
-        let center = [
-            (self.scene_aabb.0[0] + self.scene_aabb.1[0]) * 0.5,
-            (self.scene_aabb.0[2] + self.scene_aabb.1[2]) * 0.5,
-        ];
-        let frame = resolve_field_camera(world, &self.session.camera, None, center);
-        let (FieldCameraFrame::Follow(view) | FieldCameraFrame::Cutscene(view)) = frame else {
-            return Vec::new();
-        };
-        world
-            .field_light_draws(&view)
-            .iter()
-            .flat_map(|d| legaia_render_kernels::screen_prim::light_pool_prims(d.abr, &d.polys))
-            .collect()
+        legaia_engine_world_views::screen_passes::light_screen_prims(
+            &self.session.host.world,
+            &self.session.camera,
+            self.scene_aabb,
+        )
     }
 
     pub(super) fn weapon_trail_screen_prims(

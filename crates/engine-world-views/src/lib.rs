@@ -24,3 +24,5 @@ pub mod timed_fight;
 pub mod world_map_markers;
 pub mod world_map_panel_host;
 pub mod world_map_sky;
+// --- lane D ---
+pub mod screen_passes;

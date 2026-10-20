@@ -415,7 +415,6 @@ impl PlayWindowApp {
         &self,
         cam: Mat4,
     ) -> Vec<legaia_render_kernels::screen_prim::ScreenPrim> {
-        use legaia_engine_ui::battle_numerals as bn;
         // The retail-art half: only while the sheet the quads sample is
         // resident. Before that the frame takes the font fallback instead
         // ([`Self::battle_value_readout_draws`]); the two are mutually
@@ -427,17 +426,9 @@ impl PlayWindowApp {
         // `cam` is the FX camera, the battle camera with the stage scale
         // composed; the layout takes the camera alone.
         let cam = cam * Mat4::from_scale(Vec3::splat(1.0 / self.battle_stage_scale()));
-        let Some((cluster, runs)) = self.battle_value_readout_layout(cam) else {
-            return Vec::new();
-        };
-        let mut out = Vec::new();
-        if let Some(c) = cluster.as_ref() {
-            out.extend(bn::combo_cluster_prims(c, bn::VALUE_READOUT_OT));
-        }
-        for cells in &runs {
-            out.extend(bn::digit_run_prims(cells, bn::VALUE_READOUT_OT));
-        }
-        out
+        self.battle_value_readout_layout(cam)
+            .map(|l| legaia_engine_screens::battle_value_readout::value_readout_prims(&l))
+            .unwrap_or_default()
     }
 
     /// The battle value readout as **font text**, for the frames before the
@@ -453,46 +444,13 @@ impl PlayWindowApp {
         if self.battle_vram.is_some() || w == 0 || h == 0 {
             return Vec::new();
         }
-        let Some((cluster, runs)) = self.battle_value_readout_layout(cam) else {
+        let Some(layout) = self.battle_value_readout_layout(cam) else {
             return Vec::new();
         };
         let (origin, scale) = self.save_select_stage(w, h);
-        let view = |k: &legaia_engine_battle_vm::battle_value_readout::ValueCell| {
-            legaia_engine_ui::ValueCellView {
-                digit: k.digit,
-                x: k.x,
-                y: k.y,
-                w: k.w,
-                h: k.h,
-            }
-        };
-        let mut out = Vec::new();
-        if let Some(c) = cluster.as_ref() {
-            let labels: Vec<legaia_engine_ui::ComboLabelView<'_>> = c
-                .labels
-                .iter()
-                .map(|l| legaia_engine_ui::ComboLabelView {
-                    word: l.word,
-                    x: l.x,
-                    y: l.y,
-                })
-                .collect();
-            let cells: Vec<legaia_engine_ui::ValueCellView> = c.cells.iter().map(view).collect();
-            out.extend(legaia_engine_ui::battle_combo_cluster_draws_for(
-                &self.font, &labels, &cells, origin, scale,
-            ));
-        }
-        for run in &runs {
-            let cells: Vec<legaia_engine_ui::ValueCellView> = run.iter().map(view).collect();
-            out.extend(legaia_engine_ui::battle_value_readout_draws_for(
-                &self.font,
-                &cells,
-                legaia_engine_ui::VALUE_READOUT_FALLBACK_COLOR,
-                origin,
-                scale,
-            ));
-        }
-        out
+        legaia_engine_screens::battle_value_readout::value_readout_fallback_draws(
+            &self.font, &layout, origin, scale,
+        )
     }
 
     /// The world scale a battle's actors and effects are drawn at: the

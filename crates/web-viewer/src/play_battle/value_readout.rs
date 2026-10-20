@@ -4,14 +4,6 @@
 use super::*;
 
 impl LegaiaRuntime {
-    /// The live sparring-tutorial prompt's box rect in 320x240 **stage**
-    /// pixels, or `None` when no box is up.
-    ///
-    /// The width is measured in this host's font (retail measures it with
-    /// `FUN_80035F04`) and `engine-core` applies the emitter's placement +
-    /// sizing arithmetic (`FUN_801F747C`). Shared by the text and chrome
-    /// layers so the frame and the rows cannot disagree - the native window's
-    /// `battle_tutorial_stage_rect` twin.
     /// This frame's value readout, laid out in 320x240 **stage** pixels: the
     /// combo counter cluster and the digit cells of every struck actor's run
     /// (`legaia_engine_screens::battle_value_readout`, the layout the native
@@ -30,24 +22,19 @@ impl LegaiaRuntime {
     /// draws its numbers through the font fallback.
     fn battle_value_readout_layout(
         &self,
-    ) -> Option<(
-        Option<legaia_engine_battle_vm::battle_value_readout::ComboCluster>,
-        Vec<legaia_engine_battle_vm::battle_value_readout::ValueCell>,
-    )> {
+    ) -> Option<legaia_engine_screens::battle_value_readout::ValueReadoutLayout> {
         let world = &self.scene_host.host()?.world;
         let vp = legaia_engine_camera::projection::battle_vp(
             &self.battle_cam_pose(),
             BATTLE_WORLD_SCALE_LOCAL,
             4.0 / 3.0,
         );
-        let (cluster, runs) =
-            legaia_engine_screens::battle_value_readout::battle_value_readout_layout(
-                world,
-                &self.battle_hud,
-                &vp,
-                BATTLE_WORLD_SCALE_LOCAL,
-            )?;
-        Some((cluster, runs.into_iter().flatten().collect()))
+        legaia_engine_screens::battle_value_readout::battle_value_readout_layout(
+            world,
+            &self.battle_hud,
+            &vp,
+            BATTLE_WORLD_SCALE_LOCAL,
+        )
     }
 
     /// Is the battle effect atlas's glyph page resident in the VRAM texture
@@ -74,19 +61,12 @@ impl LegaiaRuntime {
     pub(crate) fn battle_value_readout_prims(
         &self,
     ) -> Vec<legaia_render_kernels::screen_prim::ScreenPrim> {
-        use legaia_engine_ui::battle_numerals as bn;
         if !self.battle_value_readout_has_atlas() {
             return Vec::new();
         }
-        let Some((cluster, cells)) = self.battle_value_readout_layout() else {
-            return Vec::new();
-        };
-        let mut out = Vec::new();
-        if let Some(c) = cluster.as_ref() {
-            out.extend(bn::combo_cluster_prims(c, bn::VALUE_READOUT_OT));
-        }
-        out.extend(bn::digit_run_prims(&cells, bn::VALUE_READOUT_OT));
-        out
+        self.battle_value_readout_layout()
+            .map(|l| legaia_engine_screens::battle_value_readout::value_readout_prims(&l))
+            .unwrap_or_default()
     }
 
     /// Font-fallback draw list for the value readout, in surface pixels.
@@ -105,47 +85,13 @@ impl LegaiaRuntime {
         if surface_w == 0 || surface_h == 0 || self.battle_value_readout_has_atlas() {
             return Vec::new();
         }
-        let Some((cluster, cells)) = self.battle_value_readout_layout() else {
+        let Some(layout) = self.battle_value_readout_layout() else {
             return Vec::new();
         };
         // The stage transform the rest of the battle chrome uses.
         let (origin, scale) = crate::play_menu::stage_transform(surface_w, surface_h);
-        let view =
-            |k: &legaia_engine_battle_vm::battle_value_readout::ValueCell| ui::ValueCellView {
-                digit: k.digit,
-                x: k.x,
-                y: k.y,
-                w: k.w,
-                h: k.h,
-            };
-        let mut out = Vec::new();
-        if let Some(c) = cluster.as_ref() {
-            let labels: Vec<ui::ComboLabelView<'_>> = c
-                .labels
-                .iter()
-                .map(|l| ui::ComboLabelView {
-                    word: l.word,
-                    x: l.x,
-                    y: l.y,
-                })
-                .collect();
-            let cluster_cells: Vec<ui::ValueCellView> = c.cells.iter().map(view).collect();
-            out.extend(ui::battle_combo_cluster_draws_for(
-                font,
-                &labels,
-                &cluster_cells,
-                origin,
-                scale,
-            ));
-        }
-        let popup_cells: Vec<ui::ValueCellView> = cells.iter().map(view).collect();
-        out.extend(ui::battle_value_readout_draws_for(
-            font,
-            &popup_cells,
-            ui::VALUE_READOUT_FALLBACK_COLOR,
-            origin,
-            scale,
-        ));
-        out
+        legaia_engine_screens::battle_value_readout::value_readout_fallback_draws(
+            font, &layout, origin, scale,
+        )
     }
 }

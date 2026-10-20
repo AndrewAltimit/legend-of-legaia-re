@@ -6,22 +6,16 @@
 //! kind-coded post + cross at each placement (a debug overlay,
 //! `WorldToggles::overworld_marker_overlay`, off by default) and a
 //! facing-ticked post for the player when the leader's mesh is missing.
-//! The geometry, colours, sizing and projection all come out of
-//! `legaia_engine_world_views::world_map_markers`; this file only wraps its quads
-//! through `legaia_render_kernels::screen_prim::world_map_marker_prim` onto the
-//! page's existing screen-prim pass - the page has no line primitive, which
-//! is why the kernel emits one-pixel quads rather than lines. The native
-//! window's twin is `world_map_marker_prims`.
-//!
-//! The camera is the resolver's non-scripted frame (`resolve_field_camera`
-//! with no cutscene view), the same call the native window makes, so the
-//! draw step never advances the cutscene glide.
+//! The geometry, colours, sizing, projection and the prim wrap all come out
+//! of `legaia_engine_world_views::screen_passes`, the pass the native window
+//! draws too; this file only answers the one question the page holds alone
+//! (is the leader's mesh resident) and hands the prims to the page's
+//! screen-prim pass.
 
-use legaia_engine_core::camera_view::resolve_field_camera;
-use legaia_engine_mode::mode::SceneMode;
-use legaia_engine_world_views::world_map_markers::marker_quads;
-use legaia_engine_world_views::world_map_sky::sky_band;
-use legaia_render_kernels::screen_prim::{ScreenPrim, sky_band_prims, world_map_marker_prim};
+use legaia_engine_world_views::screen_passes::{
+    world_map_marker_screen_prims, world_map_sky_screen_prims,
+};
+use legaia_render_kernels::screen_prim::ScreenPrim;
 use wasm_bindgen::prelude::wasm_bindgen;
 
 use crate::runtime::LegaiaRuntime;
@@ -29,46 +23,25 @@ use crate::runtime::LegaiaRuntime;
 impl LegaiaRuntime {
     /// This frame's marker primitives. Empty outside the world map.
     pub(crate) fn world_map_marker_prims(&mut self) -> Vec<ScreenPrim> {
-        let in_world_map = self
-            .scene_host
-            .host()
-            .is_some_and(|h| h.world.mode == SceneMode::WorldMap);
-        if !in_world_map {
-            return Vec::new();
-        }
         let aabb = self.scene_aabb();
         // The party leader's real mesh draws whenever it resolved; the
         // marker is the stand-in for when it did not (the native window's
         // gate is the same question about its own upload).
         let draw_player = self.player.is_none();
-        let Some(host) = self.scene_host.host() else {
+        let Some((host, camera)) = self.scene_host.host_cam() else {
             return Vec::new();
         };
-        let world = &host.world;
-        let centre = [(aabb.0[0] + aabb.1[0]) * 0.5, (aabb.0[2] + aabb.1[2]) * 0.5];
-        let frame = resolve_field_camera(world, self.scene_host.camera(), None, centre);
-        marker_quads(world, &frame, aabb, draw_player)
-            .iter()
-            .map(|q| world_map_marker_prim(q.xy, q.rgba, q.depth))
-            .collect()
+        world_map_marker_screen_prims(&host.world, camera, aabb, draw_player)
     }
 
-    /// This frame's overworld sky band (`FUN_801F73E4`), through the gate
-    /// (`legaia_engine_world_views::world_map_sky`) and wrapper (`sky_band_prims`)
-    /// the native window draws it with. Empty outside the world map.
+    /// This frame's overworld sky band (`FUN_801F73E4`), the shared pass the
+    /// native window draws too. Empty outside the world map.
     pub(crate) fn world_map_sky_prims(&mut self) -> Vec<ScreenPrim> {
         let aabb = self.scene_aabb();
-        let Some(host) = self.scene_host.host() else {
+        let Some((host, camera)) = self.scene_host.host_cam() else {
             return Vec::new();
         };
-        let world = &host.world;
-        if world.mode != SceneMode::WorldMap {
-            return Vec::new();
-        }
-        let centre = [(aabb.0[0] + aabb.1[0]) * 0.5, (aabb.0[2] + aabb.1[2]) * 0.5];
-        let cam = self.scene_host.camera();
-        let frame = resolve_field_camera(world, cam, None, centre);
-        sky_band_prims(&sky_band(world, cam, &frame))
+        world_map_sky_screen_prims(&host.world, camera, aabb)
     }
 }
 

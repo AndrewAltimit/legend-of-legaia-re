@@ -20,9 +20,7 @@
 //! where the effect atlas page `0x27` the fog cells live on is resident from
 //! field entry (`upload_effect_textures_into_vram`).
 
-use legaia_engine_core::camera_view::resolve_field_camera;
-use legaia_engine_field::camera_frame::FieldCameraFrame;
-use legaia_engine_mode::mode::SceneMode;
+use legaia_engine_world_views::screen_passes;
 use legaia_render_kernels::screen_prim::{ScreenPrim, fog_puff_prim};
 use wasm_bindgen::prelude::wasm_bindgen;
 
@@ -43,9 +41,14 @@ impl LegaiaRuntime {
     /// fills the cache before any draw pass runs, and before the first
     /// resolve there is no scene camera to fall back from.
     pub(crate) fn field_camera_centre(&self) -> [f32; 2] {
-        self.scene_aabb
-            .map(|(lo, hi)| [(lo[0] + hi[0]) * 0.5, (lo[2] + hi[2]) * 0.5])
-            .unwrap_or([0.0, 0.0])
+        screen_passes::scene_centre(self.field_pass_box())
+    }
+
+    /// The scene box the field screen passes resolve their camera against:
+    /// the AABB cache, or the empty box (centre `[0, 0]`) before the first
+    /// camera resolve has filled it.
+    pub(crate) fn field_pass_box(&self) -> ([f32; 3], [f32; 3]) {
+        self.scene_aabb.unwrap_or_default()
     }
 
     /// Run the fog pool's render step for this tick and return its sheets as
@@ -97,88 +100,43 @@ impl LegaiaRuntime {
 }
 
 impl LegaiaRuntime {
-    /// This tick's actor drop shadows (`legaia_render_kernels::drop_shadow`,
-    /// retail's `FUN_8001C394` blob) as screen primitives: the native
-    /// window's `field_drop_shadow_prims` twin - `World::field_drop_shadows`
-    /// through the same follow camera as the fog sheets, wrapped by the shared
-    /// `drop_shadow_prim`. Each cell carries its corners' scene depth, so the
-    /// page's screen-prim pass tests it against the field it already drew:
-    /// under the actor standing on it, over the ground. The blob texels live
+    /// This tick's actor drop shadows (retail's `FUN_8001C394` blob) as
+    /// screen primitives: the shared pass both hosts draw
+    /// (`legaia_engine_world_views::screen_passes::drop_shadow_screen_prims`).
+    /// Each cell carries its corners' scene depth, so the page's screen-prim
+    /// pass tests it against the field it already drew. The blob texels live
     /// on the menu-glyph atlas page `(960, 256)`, resident in the field VRAM
-    /// through the boot system-UI underlay. Empty outside game mode 3.
+    /// through the boot system-UI underlay.
     pub(crate) fn field_drop_shadow_prims(&self) -> Vec<ScreenPrim> {
-        let centre = self.field_camera_centre();
+        let aabb = self.field_pass_box();
         let Some((host, camera)) = self.scene_host.host_cam() else {
             return Vec::new();
         };
-        let world = &host.world;
-        if !legaia_engine_core::world::World::fog_mode(world.mode) {
-            return Vec::new();
-        }
-        let frame = resolve_field_camera(world, camera, None, centre);
-        let Some(view) = frame.field_view() else {
-            return Vec::new();
-        };
-        world
-            .field_drop_shadows(&view)
-            .iter()
-            .map(|q| {
-                legaia_render_kernels::screen_prim::drop_shadow_prim(
-                    q.xy, q.uv, q.clut, q.tpage, q.rgb, q.ot_index, q.depth,
-                )
-            })
-            .collect()
+        screen_passes::drop_shadow_screen_prims(&host.world, camera, aabb)
     }
 }
 
 impl LegaiaRuntime {
     /// This tick's move-VM strip spans (the extension sub-op `0x2C` callee
-    /// `FUN_801D31B0`) as screen primitives - the native window's
-    /// `take_move_strip_prims` twin, through the same shared kernel and the
-    /// same follow camera as the fog sheets. The captured requests drain on
-    /// every call; only a field scene draws them.
+    /// `FUN_801D31B0`) as screen primitives - the shared pass both hosts draw
+    /// (`legaia_engine_world_views::screen_passes::move_strip_screen_prims`).
     pub(crate) fn tick_move_strip_prims(&mut self) -> Vec<ScreenPrim> {
-        let centre = self.field_camera_centre();
-        let Some((host, camera)) = self.scene_host.host_cam_mut() else {
-            return Vec::new();
-        };
-        let world = &host.world;
-        // The latest tick's set, the native window's read
-        // (`MoveVmGlobals::strip_frame`).
-        let requests = world.move_vm.strip_frame();
-        if requests.is_empty() || world.mode != SceneMode::Field {
-            return Vec::new();
-        }
-        let frame = resolve_field_camera(world, camera, None, centre);
-        let (FieldCameraFrame::Follow(view) | FieldCameraFrame::Cutscene(view)) = frame else {
-            return Vec::new();
-        };
-        legaia_render_kernels::move_strip::move_strip_prims(requests, &view)
-    }
-
-    /// This frame's attached lights (the field VM's op `0x34` sub-1 light
-    /// pools, `World::field_light_draws`) as screen primitives, through the
-    /// same follow camera as the fog and the shared
-    /// `legaia_render_kernels::screen_prim::light_pool_prims` wrapper - the native
-    /// window's `field_light_screen_prims` twin. Empty outside a field scene.
-    pub(crate) fn field_light_prims(&self) -> Vec<ScreenPrim> {
-        let centre = self.field_camera_centre();
+        let aabb = self.field_pass_box();
         let Some((host, camera)) = self.scene_host.host_cam() else {
             return Vec::new();
         };
-        let world = &host.world;
-        if world.mode != SceneMode::Field || world.script_actors.lights.is_empty() {
-            return Vec::new();
-        }
-        let frame = resolve_field_camera(world, camera, None, centre);
-        let (FieldCameraFrame::Follow(view) | FieldCameraFrame::Cutscene(view)) = frame else {
+        screen_passes::move_strip_screen_prims(&host.world, camera, aabb)
+    }
+
+    /// This frame's attached lights (the field VM's op `0x34` sub-1 light
+    /// pools) as screen primitives - the shared pass both hosts draw
+    /// (`legaia_engine_world_views::screen_passes::light_screen_prims`).
+    pub(crate) fn field_light_prims(&self) -> Vec<ScreenPrim> {
+        let aabb = self.field_pass_box();
+        let Some((host, camera)) = self.scene_host.host_cam() else {
             return Vec::new();
         };
-        world
-            .field_light_draws(&view)
-            .iter()
-            .flat_map(|d| legaia_render_kernels::screen_prim::light_pool_prims(d.abr, &d.polys))
-            .collect()
+        screen_passes::light_screen_prims(&host.world, camera, aabb)
     }
 }
 

@@ -553,7 +553,7 @@ construction - and this tree has **five** render surfaces, not two:
 
 | surface | assembles |
 |---|---|
-| native `play-window` | `field_render.rs` + `geometry.rs` |
+| native `play-window` | `window/field_render/` + `window/geometry.rs` |
 | browser play page | `play.rs` |
 | browser field-scene viewer | `field_scene.rs` (+ `scene_geom.rs` for the world map) |
 | browser dance-hall venue | `minigames_dance.rs` |
@@ -563,6 +563,19 @@ The last two resolve `EnvDraw`s and instance env-pack meshes exactly like the
 first three, and the tier-3 coplanar rows named three of the five. So here the
 surface is **derived**: every non-test source under the render roots. A new
 surface joins the measurement by existing.
+
+That holds only while the roots name where the surfaces live. The native
+window moved out of the binary's `src/bin` into the library's `src/window`
+(`HeadlessPlayWindow` needs it importable), and the root kept pointing at
+`src/bin`: every rule went on reporting green while counting the browser
+surfaces alone - one surface each for the value readout, the markers and the
+lights, two for the coplanar lifts. The roots are now the whole
+`engine-shell/src`, plus `engine-world-views` and `engine-screens`, where the
+single assemblers live (a rule there checks the one copy every host calls).
+A rule whose surface count drops to the shared crate's `1` is the
+[single-assembler](#the-version-of-this-tier-that-needs-no-rule) form, not a
+lost surface; a count that drops to `0` is a rule pointed at a directory
+that no longer holds its draw list.
 
 ### The two rule kinds
 
@@ -582,11 +595,11 @@ naming `coplanar_draw_offsets` is prose, not a wiring, and under-counting
 
 | kernel | rule |
 |---|---|
-| cross-draw coplanar lifts | resolving `EnvDraw`s requires `draw_plane_summaries` + `coplanar_draw_offsets` |
+| cross-draw coplanar lifts | resolving `EnvDraw`s requires `draw_plane_summaries` + `coplanar_draw_offsets`; exempt: the native bake-key enumeration (`prop_animation.rs`), which draws nothing |
 | walk-ground heightfield sink | emitting the heightfield's vertices requires `GROUND_SINK` |
 | packet-colour stream fill | a packet-colour stream may not be filled with white |
 | placement tilt composition | reading `placement_rot_y` requires `rot_x` + `rot_z` |
-| shared value layout -> shared quad emitter | resolving `battle_value_readout` requires `battle_numerals` + one of its prim builders |
+| shared value layout -> shared quad emitter | resolving `battle_value_readout` requires `battle_numerals` + one of its prim builders, or the shared emitter `value_readout_prims` |
 | world-map markers through the shared quad kernel | reading the marker seams (`world_map_entity_markers` / `world_map_player_marker`) or `marker_quads` requires `marker_quads` + `world_map_marker_prim` |
 | field attached lights through the shared prim kernel | reading `field_light_draws` requires `light_pool_prims` |
 | retained field ground pass gated off in battle | a file that both uploads a field ground (`uploadGround`) and drives a battle frame (`play_battle_active`) requires `setGroundEnable(false)` |
@@ -1767,9 +1780,10 @@ the dialogue, the party readout and the menu at full brightness.
 | battle transition (confetti, shatter, curtain, swirl, ring, backdrop, fade) | `render-kernels::battle_intro` | Per host: turning the drawn frame into RGBA (`Renderer::capture_rgba`; `gl.readPixels` into `play_intro_land_capture`). The page has one VRAM texture, so `field_vram_bytes` returns the captured clone while one is live. |
 | field fog sheets | `BootSession::step_field_fog` (per sim tick, over `World::fog_render_step`) + `screen_prim::fog_puff_prim` | Retail's `FUN_8003F348` ages and emits in the render pass, once per game frame with the frame step as `dt` ([`renderer.md`](../subsystems/renderer.md#field-fog-sheets-fun_8003f348)). Both resolve the camera without the cutscene view; gate `World::fog.gate`. Depth through `World::field_fx_view` ([`field-ambient-fx.md`](../subsystems/field-ambient-fx.md#the-fog-pool-spawner-records-render-pass)). |
 | screen-effect wash (op `0x34` sub-0) | `screen_prim::screen_effect_push_prims`, `_split` | `FUN_80024EE4(a0, a1, packed)`: `a0` is an OT bucket, `a1` an ABR equation, `packed` a GP0 colour word with red in the low byte. Glyphs sit at bucket `1`; a push at bucket `0` draws over them ([`cutscene.md`](../subsystems/cutscene.md#a-push-in-front-of-the-text-or-behind-it)). |
+| drop shadow, move strips, attached lights, world-map markers, sky band | `engine-world-views::screen_passes` | One call each from `World` to finished prims: the mode gate, the resolver's non-scripted frame on the scene box's centre, the kernel and its prim wrap. A host adds only what it holds alone - the window's boot-title gate on the overworld pair, each host's "is the leader's mesh resident" answer for the player marker. |
 | drop shadow | `render-kernels::drop_shadow`, `World::field_drop_shadows`, `screen_prim::drop_shadow_prim` | `FUN_8001C394`, called from `FUN_8001B964`; matched to retail on three captured frames (`drop_shadow_retail_capture_disc.rs`). |
-| world-map markers | `marker_quads` + `world_map_marker_prim` | A port marker, not a retail draw; `MarkerQuad::depth` restores occlusion. |
-| battle numerals | `engine-battle-vm::battle_value_readout` + `engine-ui::battle_numerals` | 24x24 cells off page `0x27` / CLUT `0x7703`; the font builders are the mutually exclusive before-the-atlas fallback on both hosts. |
+| world-map markers | `world_map_markers::marker_prims` (`marker_quads` + `world_map_marker_prim`) | A port marker, not a retail draw; `MarkerQuad::depth` restores occlusion. |
+| battle numerals | `engine-screens::battle_value_readout`: the layout, `value_readout_prims` and `value_readout_fallback_draws` | 24x24 cells off page `0x27` / CLUT `0x7703` through `engine-ui::battle_numerals`; the font builders are the mutually exclusive before-the-atlas fallback. Each host supplies only its camera and its atlas-residency answer. |
 | effect billboards | `EffectSprite::packet_tsb` | Retail sends prim code `0x2E` (semi-transparency bit set); the port forces TSB bit 15. |
 | dance HUD | `engine-ui::dance::dance_hud_prims`, `dance_countin_prims` | `DanceGame::hud_draw_quads` emits in `FUN_801d231c`'s order: digits, frames, gauges. |
 
