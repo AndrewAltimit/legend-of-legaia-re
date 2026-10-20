@@ -956,7 +956,11 @@ walk cycle (Mei: clip 61 walking, 60 idle). Engine port:
 `CutsceneTimeline::npc_walks` for an NPC (the record runs on) and
 `CutsceneTimeline::walk_wait` for the player (the record parks), over the
 motion-VM glide (`engine-core`), with the NPC anim cue surfaced from
-`exec_move`.
+`exec_move`. A talk record's `B7` / `C1 <id>` compass walk on a placement
+runs the same way outside a timeline (`FieldNpcState::glide_legs`): the
+talk advances past the op, and a later cross-context op on the walking
+placement waits for the landing - `town0c` `P1[21]`'s two `C1 3B` legs in
+the queen-bee beat.
 
 A walk is exclusive. The park leaves the target's halt bit `0x400` set until
 the kernel lands it, and the dispatcher prologue (`0x801DE90C..0x801DE944`)
