@@ -30,6 +30,11 @@ over its `AudioOut`); a `wasm32` build never links cpal.
   and the world state it leaves (stage class, fog stage cap, monster texture
   slots), and the summon creature's seat; both hosts' battle builds read the
   result.
+- [`battle_presentation`](src/battle_presentation.rs) - the per-tick battle
+  presentation step (`BootSession::step_battle_presentation`: battle audio,
+  strike popups, the per-hit drain, effect-spawn routing, the HUD row and
+  status fold) and the `Field <-> Battle` edge latch with its two edge steps;
+  each host keeps its render build and its log.
 - [`battle_fx`](src/battle_fx.rs) - the battle presentation decisions both
   hosts take in their per-tick effect step: `spawn_pending_move_fx` seats a
   pending move effect and resolves its sound cue through the retail dispatch

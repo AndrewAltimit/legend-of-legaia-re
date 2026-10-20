@@ -8,7 +8,8 @@
 //! a summon puts *on top* of it. Four seams, each the same `World` API the
 //! native window drains:
 //!
-//! * **effect-script spawns** ([`LegaiaRuntime::drain_battle_effect_spawns_web`]):
+//! * **effect-script spawns** (`BootSession::step_battle_presentation`, run
+//!   from [`LegaiaRuntime::tick_battle_presentation`]):
 //!   one request per effect record the per-actor effect-script walk consumed
 //!   (the `FUN_801DEA50` port driven from the animation tick). The direct
 //!   (`0x80`-flagged) form lands in the 2D effect pool
@@ -275,26 +276,6 @@ fn sprite_corners(
 }
 
 impl LegaiaRuntime {
-    /// Route this tick's battle effect-script spawn requests into the world's
-    /// matching spawn path - the browser twin of the native window's
-    /// `drain_and_log_battle_events` FX block. Without it every magic cast,
-    /// art impact and enemy special in the browser produced a spawn request
-    /// that nothing consumed, so the whole effect layer was inert.
-    ///
-    /// REF: FUN_801DEA50
-    pub(crate) fn drain_battle_effect_spawns_web(&mut self) {
-        let Some(host) = self.scene_host.host_mut() else {
-            return;
-        };
-        // The routing is the engine's, shared with the native window.
-        for r in host.world.route_battle_effect_spawns() {
-            crate::play_battle_render::web_log(&format!(
-                "play battle FX: effect {:#04x} actor {} at {:?} direct={} staged={:?}",
-                r.spawn.effect, r.spawn.actor_slot, r.spawn.at, r.spawn.direct, r.table_staged
-            ));
-        }
-    }
-
     /// The live FX camera: the page's battle view-projection with the retail
     /// 4x world scale composed on, i.e. the native `fx_cam`.
     fn fx_cam(&self, aspect: f32) -> Option<[f32; 16]> {

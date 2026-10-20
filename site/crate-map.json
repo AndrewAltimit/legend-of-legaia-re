@@ -935,6 +935,7 @@
    "scope": "The battle HUD's reads of a running <code>World</code>: the phase word, command chips, commit log, plaques and glides, banners, badges, and the <code>BattleHud</code> row sync both hosts and <code>engine-screens</code> draw from. Above <code>engine-core</code>.",
    "dependents": [
     "engine-screens",
+    "engine-session",
     "engine-shell",
     "parity",
     "web-viewer"
@@ -2100,6 +2101,7 @@
     "container-formats",
     "engine-audio",
     "engine-battle",
+    "engine-battle-hud",
     "engine-battle-vm",
     "engine-core",
     "engine-effects",
@@ -2138,6 +2140,7 @@
    "modules": [
     "audio_director",
     "battle_fx",
+    "battle_presentation",
     "battle_stage",
     "battle_vram",
     "host_trace",
@@ -3801,7 +3804,6 @@
     "pad_bindings",
     "play",
     "play_battle",
-    "play_battle_audio",
     "play_battle_body_blend",
     "play_battle_fx",
     "play_battle_limb_dim",

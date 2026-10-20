@@ -2452,6 +2452,7 @@ dependencies = [
  "legaia-container-formats",
  "legaia-engine-audio",
  "legaia-engine-battle",
+ "legaia-engine-battle-hud",
  "legaia-engine-battle-vm",
  "legaia-engine-cheats",
  "legaia-engine-core",

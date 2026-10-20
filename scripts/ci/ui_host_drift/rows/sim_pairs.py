@@ -87,18 +87,34 @@ SIM_PAIRS: list[dict[str, object]] = [
         "symbols": ["step_dance_tail"],
     },
     {
-        "what": "battle audio routing, native vs play page - the duck target, "
-        "the strike / cast cues, the cast-voice prestage, the one-shot CD-XA "
-        "clips and the arts shouts were drained and routed once per host "
-        "(the page through a CD-XA lane of its own). Both hand the tick's "
-        "battle events to the one session step "
-        "`BootSession::route_battle_audio`",
+        "what": "battle presentation step, native vs play page - the battle "
+        "audio routing (duck, strike / cast cues, cast-voice prestage, CD-XA "
+        "clips, arts shouts), the strike popups, the per-hit drain, the "
+        "effect-script spawn routing and the HUD row / status fold were one "
+        "copy per host, and the copies drifted (the status CLUT pass ran a "
+        "tick before the fold that arms its latch on the native window). "
+        "Both run the one session step "
+        "`BootSession::step_battle_presentation`",
         "sites": {
             "native": ("crates/engine-shell/src/window/battle.rs", "drain_and_log_battle_events"),
-            "web": ("crates/web-viewer/src/play_battle_audio.rs", "drain_battle_audio_cues"),
+            "web": ("crates/web-viewer/src/play_battle.rs", "tick_battle_presentation"),
         },
         "mode": "symbols_all",
-        "symbols": ["route_battle_audio"],
+        "symbols": ["step_battle_presentation"],
+    },
+    {
+        "what": "battle mode edge, native vs play page - the Field <-> Battle "
+        "latch, the encounter banner it arms and the exit edge's reset of the "
+        "popups and the status CLUT's palette copies and Stone latches "
+        "(retail rebuilds that context per fight) were spelled per host and "
+        "reset at different moments. Both latch through "
+        "`battle_presentation::battle_mode_edge` and run its two edge steps",
+        "sites": {
+            "native": ("crates/engine-shell/src/window/battle.rs", "sync_battle_render"),
+            "web": ("crates/web-viewer/src/play_battle.rs", "tick_battle_presentation"),
+        },
+        "mode": "symbols_all",
+        "symbols": ["battle_mode_edge", "on_battle_entered", "on_battle_left"],
     },
     {
         "what": "the tick's audio frame, native vs play page - the footstep "

@@ -37,8 +37,6 @@
 //! [`crate::play_battle_fx`].
 
 use crate::runtime::LegaiaRuntime;
-use legaia_engine_battle::battle_hud_state::DamagePopup;
-use legaia_engine_battle_hud::{encounter_banner_label, sync_battle_hud_rows};
 use legaia_engine_mode::mode::SceneMode;
 use legaia_engine_ui::{self as ui, SpriteDraw, TextDraw};
 use legaia_render_kernels::battle_intro::BattleIntro;
@@ -52,10 +50,6 @@ mod test_probes;
 mod tutorial;
 mod value_readout;
 
-/// Frames the encounter-transition banner stays on screen after a
-/// `Field -> Battle` mode change (~1.5 s at the 60 Hz sim tick; the native
-/// window's `ENCOUNTER_BANNER_FRAMES`).
-const ENCOUNTER_BANNER_FRAMES: u16 = 90;
 /// The retail 4x battle world scale (`play_battle_render::BATTLE_WORLD_SCALE`,
 /// private to that module) - the actor stage the battle view-projection is
 /// built for, so an actor origin has to be scaled before it is projected.
@@ -89,111 +83,69 @@ impl LegaiaRuntime {
     }
 
     /// Per-tick battle presentation, called from [`LegaiaRuntime::tick_frame`]:
-    /// the browser twin of the native `sync_battle_render` mode-edge latch +
-    /// `drain_and_log_battle_events`. Cheap no-op while no scene is up.
+    /// the mode-edge latch and the presentation step both hosts run
+    /// ([`legaia_engine_session::battle_presentation`]), then this page's
+    /// battle VRAM re-stamps. Cheap no-op while no scene is up.
     pub(crate) fn tick_battle_presentation(&mut self) {
+        use legaia_engine_session::battle_presentation::{
+            BattleModeEdge, battle_mode_edge, on_battle_entered, on_battle_left,
+        };
         let Some(host) = self.scene_host.host_mut() else {
             return;
         };
         // Mode-edge latch: arm the ENCOUNTER! banner + build the battle 3D
-        // render entering battle; drop both (and any stale popups) leaving -
-        // the browser twin of the native `sync_battle_render` edge.
-        let mode = host.world.mode;
-        let prev = self.prev_scene_mode.replace(mode);
-        if prev != Some(mode) {
-            match (prev, mode) {
-                (_, SceneMode::Battle) => {
-                    self.encounter_banner =
-                        Some((ENCOUNTER_BANNER_FRAMES, encounter_banner_label(&host.world)));
-                    // The world half first: the stage class, the fog's stage
-                    // cap, each monster's texture slot and idle - the step
-                    // the native window runs on its own edge.
-                    let archive = host
-                        .index
-                        .entry_bytes_extended(
-                            legaia_engine_session::battle_stage::MONSTER_ARCHIVE_PROT_INDEX,
-                        )
-                        .ok();
-                    let stage = legaia_engine_session::battle_stage::stage_battle_world(
-                        host,
-                        self.scus.as_deref(),
-                        archive.as_deref(),
-                    );
-                    // 3D layer: battle VRAM + backdrop / grid / monster /
-                    // party meshes ([`crate::play_battle_render`]).
-                    self.enter_battle_render(stage, archive);
-                }
-                (Some(SceneMode::Battle), _) => {
-                    self.encounter_banner = None;
-                    self.battle_hud.clear_popups();
-                    self.exit_battle_render();
-                }
-                _ => {}
+        // render entering battle; drop both (and the popups and status CLUT
+        // state) leaving - the same edge the native window latches.
+        match battle_mode_edge(&mut self.prev_scene_mode, host.world.mode) {
+            Some(BattleModeEdge::Entered) => {
+                on_battle_entered(&host.world, &mut self.encounter_banner);
+                // The world half first: the stage class, the fog's stage
+                // cap, each monster's texture slot and idle - the step the
+                // native window runs on its own edge.
+                let archive = host
+                    .index
+                    .entry_bytes_extended(
+                        legaia_engine_session::battle_stage::MONSTER_ARCHIVE_PROT_INDEX,
+                    )
+                    .ok();
+                let stage = legaia_engine_session::battle_stage::stage_battle_world(
+                    host,
+                    self.scus.as_deref(),
+                    archive.as_deref(),
+                );
+                // 3D layer: battle VRAM + backdrop / grid / monster /
+                // party meshes ([`crate::play_battle_render`]).
+                self.enter_battle_render(stage, archive);
             }
+            Some(BattleModeEdge::Left) => {
+                on_battle_left(&mut self.battle_hud, &mut self.encounter_banner);
+                self.exit_battle_render();
+            }
+            None => {}
         }
         // The battle camera is stepped inside `World::tick` for every host
         // (`World::tick_battle_camera`), independent of this page's render
         // build.
-        let Some(host) = self.scene_host.host_mut() else {
+        let Some(session) = self.scene_host.session_mut() else {
             return;
         };
-        // Floating damage / heal numbers: the live loop resolves HP itself
-        // and queues a presentation-only FX per strike.
-        let fx = host.world.drain_battle_hit_fx();
-        for f in fx {
-            if f.is_heal {
-                self.battle_hud.push_heal(f.target_slot, f.amount);
-            } else if f.is_crit {
-                self.battle_hud
-                    .push_popup(DamagePopup::damage(f.target_slot, f.amount).crit());
-            } else {
-                self.battle_hud.push_damage(f.target_slot, f.amount);
-            }
+        // The step both hosts run: battle audio, strike popups, the per-hit
+        // drain, the effect-script spawn routing (so the FX render layers in
+        // [`crate::play_battle_fx`] have something to draw), the HUD row and
+        // status fold, the popup and banner ages.
+        let step =
+            session.step_battle_presentation(&mut self.battle_hud, &mut self.encounter_banner);
+        // Counted whether or not a director exists to hear them.
+        self.sfx.queued += step.sfx_queued;
+        for r in &step.routed_effect_spawns {
+            crate::play_battle_render::web_log(&format!(
+                "play battle FX: effect {:#04x} actor {} at {:?} direct={} staged={:?}",
+                r.spawn.effect, r.spawn.actor_slot, r.spawn.at, r.spawn.direct, r.table_staged
+            ));
         }
-        // Per-hit events of the attack band (`World::tick_battle_hit_events`):
-        // the channel the impact-FX and HIT / TOTAL counter layers read.
-        // Drained so the world never accumulates it; nothing on this host
-        // consumes it yet (the popups above already carry each hit's number).
-        let _hits = host.world.drain_battle_hit_events();
-        // Battle effect-script spawn requests (one per effect record the
-        // per-actor effect-script walk consumed this tick). Routed into the
-        // world's own spawn paths so the FX render layers
-        // ([`crate::play_battle_fx`]) have something to draw - the browser
-        // used to leave this queue undrained, which is why every cast, art
-        // impact and enemy special was visually a no-op here.
-        self.drain_battle_effect_spawns_web();
-        let Some(host) = self.scene_host.host_mut() else {
-            return;
-        };
-        // Refresh per-slot rows + status icons through the shared fold, then
-        // age the popups one frame.
-        if host.world.mode == SceneMode::Battle {
-            sync_battle_hud_rows(&mut self.battle_hud, &host.world);
-            for slot in 0..self.battle_hud.slots.len() as u8 {
-                self.battle_hud
-                    .sync_status(slot, &host.world.battle.status_effects);
-            }
-        } else if host.world.mode == SceneMode::MuscleDome {
-            // A dome leg is a battle on the same HUD: the shared fold seats
-            // the lead fighter's row off the dome session, as the native
-            // window's does.
-            sync_battle_hud_rows(&mut self.battle_hud, &host.world);
-        }
-        self.battle_hud.tick();
-        // Age the encounter-transition banner one frame; drop it at zero.
-        if let Some((frames, _)) = &mut self.encounter_banner {
-            *frames = frames.saturating_sub(1);
-            if *frames == 0 {
-                self.encounter_banner = None;
-            }
-        }
-        // Audio side of the battle tick: typed battle events (audio duck),
-        // strike / cast SFX cues, arts-voice shouts, XA clip requests. Lives
-        // in [`crate::play_battle_audio`]; every queue is drained there so
-        // the world never accumulates one.
-        self.drain_battle_audio_cues();
         // Mid-battle VRAM re-stamps (facial animation, status-effect actor
-        // recolour, effect CLUT stage) - [`crate::play_battle_vram`].
+        // recolour, effect CLUT stage) - [`crate::play_battle_vram`]. After
+        // the HUD fold, which arms the status CLUT latch they read.
         self.tick_battle_vram_channel();
     }
 }

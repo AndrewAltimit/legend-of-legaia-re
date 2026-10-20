@@ -1292,7 +1292,6 @@ reference TIMs sitting in other PROT entries.
 | [`translate_workbench`](../../crates/web-viewer/src/translate_workbench.rs) | `Workbench` - the in-browser language-pack editor over the visitor's own disc. |
 | [`minigames_fishing_scene`](../../crates/web-viewer/src/minigames_fishing_scene.rs) | The fishing venue's 3D field scene and the player's body for the minigames page. |
 | [`play_minigame_arena`](../../crates/web-viewer/src/play_minigame_arena.rs) / [`play_minigame_slots`](../../crates/web-viewer/src/play_minigame_slots.rs) / [`play_dance_art`](../../crates/web-viewer/src/play_dance_art.rs) | The play page's in-world Muscle Dome / Baka Fighter / dance and slot-machine read-outs and art. |
-| [`play_battle_audio`](../../crates/web-viewer/src/play_battle_audio.rs) | The audio half of the play page's battle tick, twin of the native `window/battle.rs` cue block. |
 | [`play_battle_body_blend`](../../crates/web-viewer/src/play_battle_body_blend.rs) / [`play_battle_limb_dim`](../../crates/web-viewer/src/play_battle_limb_dim.rs) | Browser seats of the battle body's whole-mesh semi-transparency and the Rot limb dimming. |
 | [`play_field_fx`](../../crates/web-viewer/src/play_field_fx.rs) | Field fog sheets, actor drop shadows and op `0x34` sub-1 attached lights. |
 | [`play_field_hud`](../../crates/web-viewer/src/play_field_hud.rs) | The field party-status HUD (name / `LV` / `HP` / `MP`). |

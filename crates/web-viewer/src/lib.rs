@@ -27,7 +27,6 @@ mod packet_color;
 pub mod pad_bindings;
 pub mod play;
 pub mod play_battle;
-pub mod play_battle_audio;
 pub mod play_battle_body_blend;
 pub mod play_battle_fx;
 pub mod play_battle_limb_dim;

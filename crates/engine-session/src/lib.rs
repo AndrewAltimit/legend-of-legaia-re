@@ -27,6 +27,7 @@
 
 pub mod audio_director;
 pub mod battle_fx;
+pub mod battle_presentation;
 pub mod battle_stage;
 pub mod battle_vram;
 pub mod host_trace;

@@ -1461,7 +1461,8 @@ side, so they pair by call rather than by step name:
 | `BootSession::step_dance_tail` | `sync_dance_venue`, inside `tick_minigame_extras` | `tick_minigame_ui` |
 | `BootSession::sound_muscle_hub` | `tick_muscle_hub`, inside `tick_minigame_extras` | `tick_muscle_hub`, inside `tick_minigame_ui` |
 | `BootSession::sound_baka_announcer` | `tick_baka_chrome`, inside `tick_minigame_extras` | `tick_baka_ui`, inside `tick_minigame_ui` |
-| `BootSession::route_battle_audio` | `drain_and_log_battle_events` | `drain_battle_audio_cues`, inside `tick_battle_presentation` |
+| `BootSession::step_battle_presentation` (battle audio, popups, hit drain, effect-spawn routing, HUD fold) | `drain_and_log_battle_events` | `tick_battle_presentation` |
+| `battle_presentation::{battle_mode_edge, on_battle_entered, on_battle_left}` | `sync_battle_render` | `tick_battle_presentation` |
 | `BootSession::step_overlay_sfx` | `tick_menu_sfx`, in the arms that freeze the field | the export `play_tick_overlay_sfx`, from the page's frame loop |
 | `session::step_npc_clip_players` | `drain_anim_cues`, after the tick's re-targets | `drive_npc_clips` (`FieldActors::drive`), after the same |
 | `BootSession::step_name_entry_frame` | `BootSession::claim_tick`, from `sim_tick` | `BootSession::claim_tick`, from `frame_ticks` |
