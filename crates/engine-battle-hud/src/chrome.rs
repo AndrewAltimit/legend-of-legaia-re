@@ -34,7 +34,7 @@ pub fn battle_begin_tab_visible(world: &legaia_engine_core::world::World) -> boo
 ///
 /// Choosing a ring arm glides that arm's chip onto the trail: record `0x0D`
 /// (`Attack`, the SCUS label `0x8007B674`) opens at the attack-mode prompt
-/// (`0x78`, step `0x30`: `0D/0`) and stays through the target cursor
+/// (`0x78`, step `0x2A`: `0D/0`) and stays through the target cursor
 /// (`0x5A`: `0D/3`) and the arts entry (`0x50`: `0D/0`); record `0x0E` (the
 /// magic arm, whose label case `0xE` of `FUN_801D8DE8` points at the
 /// member's Ra-Seru name) opens with the spell window (`0x46`, step 7:

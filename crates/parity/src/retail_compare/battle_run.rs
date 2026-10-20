@@ -465,12 +465,15 @@ pub(super) fn battle_image(
     // rest seat whatever the replay's own seed-to-phase time was (a seat
     // seeded on its captured ground skips the approach retail spent the
     // sixteen-frame raise on).
-    if battle.hud_glides_landed {
+    // A menu capture whose displayed frame predates every glide in flight
+    // shows the surface before them, which the player sat on: landed.
+    let displayed_menu = battle.displayed_menu_flow().is_some();
+    if battle.hud_glides_landed || displayed_menu {
         env.push(("LEGAIA_SEAT_HUD_GLIDES_LANDED", "1".to_string()));
     }
     // Glides still in flight: each seated on the elapsed the displayed
     // frame shows (`HudGlideSeat`).
-    if !battle.hud_glides.is_empty() {
+    if !battle.hud_glides.is_empty() && !displayed_menu {
         env.push((
             "LEGAIA_SEAT_HUD_GLIDES",
             legaia_engine_capture::hud_glide::HudGlideSeat::to_env(&battle.hud_glides),
@@ -531,7 +534,7 @@ pub(super) fn battle_image(
     // A menu capture or any other action in flight is walked there through
     // the pad path, the same drive the headless seed ran, and captured the
     // first frame it holds.
-    if let Some(drive) = battle.battle_drive() {
+    if let Some(drive) = battle.image_drive() {
         if engine.driven == Some(None) {
             report.detail.insert(
                 "image".into(),

@@ -107,6 +107,8 @@ pub(crate) const BATTLE_ENTRY_TAIL_FLAGS: [u16; 3] = [
 ];
 /// The options screen's Battle Camera config word.
 const BATTLE_CAMERA_OPTION: u32 = 0x8008_46C0;
+/// The options screen's Select Attack config word.
+const SELECT_ATTACK_OPTION: u32 = 0x8008_46C4;
 /// Eight-slot battle actor pointer table.
 const ACTOR_TABLE: u32 = 0x801C_9370;
 /// The tint-state byte `actor[+0x21C]`'s defeat-fade value.
@@ -382,6 +384,16 @@ pub struct RetailBattle {
     /// The HUD widget glides in flight, each as the displayed frame shows
     /// it ([`HudGlideSeat`]); empty when every record has landed.
     pub hud_glides: Vec<HudGlideSeat>,
+    /// The glide table holds records and every one of them was spawned
+    /// after the displayed frame was built: its raw `elapsed` is under
+    /// [`Self::display_lag`]. The menu state the RAM holds opened its
+    /// surface on a pass the display has not shown yet
+    /// ([`Self::displayed_menu_flow`]).
+    pub hud_glides_unseen: bool,
+    /// The options screen's Select Attack word `0x800846C4` (Select `0` /
+    /// Automatic `1` / Command `2`): whether the ring's Attack arm opens
+    /// the `Auto | Command` prompt `0x78`.
+    pub select_attack: u8,
     /// `ctx[+0x269]` - the Seru a killing blow absorbed this action, staged
     /// for the Done band's grant (`sb v0,0x269(a0)` at `0x801EE2E8`) and
     /// cleared when `0x52` leaves.

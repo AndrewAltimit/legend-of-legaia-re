@@ -504,13 +504,20 @@ The steps the menu SM runs (`engine-battle::battle_hud_state::subdraw_steps` /
 | `0x1E` -> `0x28` ring | 1 | park | up | both slide in | slides in |
 | `0x28` -> `0x3C` item / `0x46` magic window | 5 / 7 | back up | park | snap | leaves |
 | item / magic target step | `0x18` / `0x1B` | park | up, pointed member | snap | - |
-| `0x28` -> `0x78` attack mode, `0x78` -> `0x5A` cursor | `0x30` / `0x2D` | - | park | snap | leaves |
-| `0x28` -> `0x50` arts entry | 9 | - | park (AP bar 15 takes the seat) | snap | snap |
+| `0x28` -> `0x78` attack-mode prompt | `0x2A` | - | snap | snap | snap |
+| `0x5A` cursor cancelled -> `0x78` prompt | `0x2E` | - | up | snap | slides in |
+| `0x78` -> `0x5A` cursor, or `0x28` -> `0x5A` under `Automatic` | `0x2D` / `0x30` | - | park | snap | leaves |
+| `0x28` / `0x78` -> `0x50` arts entry | 9 / `0x2C` | - | park (AP bar 15 takes the seat) | snap | snap |
 | `0x28` -> `0x6E` all committed | `0x23` | - | - | tab only | leaves |
 
 So the roster panels belong to the round prompt and the browsed windows, the
-full-width bar to the ring and the target steps, and the ring alone carries the
-AP plate.
+full-width bar to the ring, the attack-mode prompt and the target steps, and
+the AP plate to the ring, the attack-mode prompt and the arts entry. The prompt
+is the ring with its arms swapped: step `0x2A` (`55/0 54/0 01/3 07/3 08/1 0A/1
+0B/1 0D/0 1A/3 52/3`) opens the `Auto` / `Command` chips (records `0x54` /
+`0x55`) on the left and right arm seats, sends the other three arms off and
+keeps everything else where it stands (`arts_input_start_gala_nail`'s
+displayed frame).
 
 The handle lists of the catalogued states agree with the table element for
 element:

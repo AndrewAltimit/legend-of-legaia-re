@@ -31,7 +31,10 @@ pub fn battle_readout_bar_slot(world: &legaia_engine_core::world::World) -> Opti
     let pc = party_count(world) as u8;
     match battle_hud_phase(world) {
         BattleHudPhase::CommandEntry => match battle_command_surface(world)? {
-            CommandSurface::Ring => command_entry_actor(world).filter(|s| *s < pc),
+            // The attack-mode prompt's step `0x2A` keeps the bar (`07/3`).
+            CommandSurface::Ring | CommandSurface::AttackMode => {
+                command_entry_actor(world).filter(|s| *s < pc)
+            }
             CommandSurface::ItemTarget(slot) | CommandSurface::SpellTarget(slot) => {
                 slot.filter(|s| *s < pc)
             }
@@ -93,12 +96,16 @@ pub fn battle_readout_bar_slot(world: &legaia_engine_core::world::World) -> Opti
 /// shows, or `None` when the plate is not up.
 ///
 /// Step 1 slides it in (`52/0`) and every step that leaves the ring sends it
-/// off (`52/1`) except the arts-entry screen, which keeps it and draws its
+/// off (`52/1`) except two: the `Auto | Command` prompt's step `0x2A`
+/// keeps it (`52/3`), and so does the arts-entry screen, which draws its
 /// own copy in the port. `FUN_801D8DE8` case `0x52` (`0x801D9028`) reads
 /// the acting member's actor `+0x170` - the Spirit gauge, `0` for a level-1
 /// Vahn in the sparring fight's `v0_1_battle_command_submenu` frame.
 pub fn battle_ring_ap_plate_value(world: &legaia_engine_core::world::World) -> Option<u8> {
-    if battle_command_surface(world) != Some(CommandSurface::Ring) {
+    if !matches!(
+        battle_command_surface(world),
+        Some(CommandSurface::Ring | CommandSurface::AttackMode)
+    ) {
         return None;
     }
     if world.mode == legaia_engine_mode::mode::SceneMode::MuscleDome {

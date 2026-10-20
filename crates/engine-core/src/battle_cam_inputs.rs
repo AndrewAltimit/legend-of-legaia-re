@@ -169,10 +169,11 @@ pub fn battle_cam_inputs(world: &World) -> script::BattleCamInputs {
 /// cursor step against the cursor's scope: one enemy takes case `1` on the
 /// commanding member (`0x801D43C0..0x801D43C8`), one party member case `3`
 /// on that member (`0x801D43D8..0x801D43F8`), and a whole side the no-op
-/// cases `4` / `5`. The Attack command's `Auto` / `Command` prompt and the
-/// cursor it opens (steps `0x0C` / `0x2D` / `0x30`) take the enemy arm on the
-/// member's current `+0x1DD` before the cursor has moved
-/// (`j 0x801d43c0` at `0x801D3E30`).
+/// cases `4` / `5`. The cursor the `Auto` pick opens (steps `0x0C` / `0x2D`
+/// / `0x30`) takes the enemy arm on the member's current `+0x1DD` before the
+/// cursor has moved (`j 0x801d43c0` at `0x801D3E30`). The `Auto | Command`
+/// prompt itself frames nothing: it is the member's close-up
+/// ([`member_surface_open`]).
 ///
 /// The ring's attack cursor and the spell picker's cursor are the two the
 /// engine raises; the item window's party picker draws its own pointer
@@ -205,17 +206,6 @@ fn battle_cursor_framing(
     if let Some(c) = b.command.as_ref() {
         return match &c.phase {
             CommandPhase::Targeting { picker, .. } => from_picker(picker.state()),
-            CommandPhase::AttackMode { .. } => {
-                // The member's `+0x1DD` as the ring left it; a stale party
-                // or dead slot reads as the first standing monster, which is
-                // where the cursor opens.
-                let own = world
-                    .actors
-                    .get(usize::from(c.actor))
-                    .map(|a| a.battle.active_target)
-                    .and_then(enemy_at);
-                own.or_else(|| (party_count..world.actors.len() as u8).find_map(enemy_at))
-            }
             _ => None,
         };
     }
@@ -236,6 +226,17 @@ fn battle_cursor_framing(
 /// round prompt (`0x1E`) reads case `9`'s far framing. The item and magic
 /// windows (`0x3C` / `0x46`) are pickers of the same member and keep its
 /// close-up.
+///
+/// So does the `Auto | Command` prompt `0x78`: no step that opens it arms a
+/// framing. The ring's Attack arm opens it with step `0x2A` (`0x801D1604`),
+/// whose body `0x801D3980` stores one placement seat and takes the shared
+/// tail; the arts entry's cancel opens it with `0x2F` (`0x801D219C`), a
+/// plain tail entry. Both leave the ring's case `0` standing. The target
+/// cursor's cancel opens it with `0x2E` (`0x801D23B0`), whose body
+/// `0x801D4758` re-arms case `0` on the member
+/// (`FUN_801D5854(ctx[+0x13], 0)`), so the prompt is the close-up whichever
+/// way it was reached (`FUN_801D388C`'s step table at `0x801CE880`).
+/// `arts_input_start_gala_nail` shows the prompt on that framing.
 fn member_surface_open(world: &World) -> bool {
     use legaia_engine_menus::battle_input::CommandPhase;
     let b = &world.battle;
@@ -247,6 +248,7 @@ fn member_surface_open(world: &World) -> bool {
             matches!(
                 c.phase,
                 CommandPhase::Menu { .. }
+                    | CommandPhase::AttackMode { .. }
                     | CommandPhase::StepBack
                     | CommandPhase::OpenItemMenu
                     | CommandPhase::OpenSpellMenu

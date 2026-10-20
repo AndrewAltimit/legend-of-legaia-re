@@ -216,6 +216,36 @@ impl RetailBattle {
             .fold(0, |m, (s, _)| m | 1 << s)
     }
 
+    /// The command surface the **displayed** frame shows, when it is not the
+    /// one the RAM holds: a capture taken on the pass that opened the arts
+    /// entry `0x50` ([`Self::hud_glides_unseen`] - its own spawns, the
+    /// `Auto` / `Command` chips leaving and the directional chips arriving,
+    /// all younger than the display lag) still shows the `Auto | Command`
+    /// prompt `0x78` the player pressed Right on, at rest. Only under Select
+    /// Attack `0`: the other options reach `0x50` straight from the ring.
+    pub fn displayed_menu_flow(&self) -> Option<BattleFlowState> {
+        match self.seed_plan() {
+            SeedPlan::Menu {
+                flow: BattleFlowState::ArtsCommandEntry,
+                ..
+            } if self.hud_glides_unseen && self.select_attack == 0 => {
+                Some(BattleFlowState::AttackModePrompt)
+            }
+            _ => None,
+        }
+    }
+
+    /// [`Self::battle_drive`] for the image child: a menu drive walks to the
+    /// surface the displayed frame shows ([`Self::displayed_menu_flow`]).
+    pub fn image_drive(&self) -> Option<BattleDrive> {
+        match (self.battle_drive(), self.displayed_menu_flow()) {
+            (Some(BattleDrive::Menu { seat, spirit, .. }), Some(flow)) => {
+                Some(BattleDrive::Menu { flow, seat, spirit })
+            }
+            (drive, _) => drive,
+        }
+    }
+
     /// The pad drive that reaches this capture, when its plan has one.
     pub fn battle_drive(&self) -> Option<BattleDrive> {
         match self.seed_plan() {

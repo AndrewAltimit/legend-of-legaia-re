@@ -811,9 +811,14 @@ the close-up when the actor changes under it. The item window carries no member
 of its own and frames the member whose ring opened it.
 
 **The target cursor is cases 1 and 3.** The menu driver re-arms `FUN_801D5854`
-on every cursor step against the cursor's scope. The Attack command's steps
-`0x0C` / `0x2D` / `0x30` (the `Auto` / `Command` prompt and the cursor it
-opens) jump to `0x801D43C0`, case `1` on the commanding member. The item /
+on every cursor step against the cursor's scope. The Attack command's
+cursor steps `0x0C` / `0x2D` / `0x30` (the prompt's `Auto`, and the ring's
+Attack arm under the `Automatic` option) jump to `0x801D43C0`, case `1` on
+the commanding member. The `Auto | Command` prompt `0x78` itself is case 0:
+its opening step `0x2A` (`0x801D3980`) and the arts entry's cancel `0x2F`
+take the shared tail without a framing call, leaving the ring's close-up, and
+the cursor's cancel `0x2E` (`0x801D4758`) re-arms case 0 on the member
+(step table `0x801CE880`; `arts_input_start_gala_nail`). The item /
 magic cursor steps switch on their scope argument: one enemy takes case `1`,
 one party member case `3` on that member (`lbu a0,0x1dd` at `0x801D43F0`), and
 a whole side cases `4` / `5`, which leave the framing as it stands.

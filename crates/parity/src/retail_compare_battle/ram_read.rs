@@ -178,6 +178,16 @@ impl RetailBattle {
                 }
                 seats
             },
+            hud_glides_unseen: {
+                let lag = display_lag_vsyncs(ram);
+                let live: Vec<u8> = (0..HUD_GLIDE_SLOTS)
+                    .map(|s| ctx + HUD_GLIDE_TABLE + s * HUD_GLIDE_STRIDE)
+                    .filter(|&r| game_anchors::u8_at(ram, r) != 0)
+                    .map(|r| game_anchors::u8_at(ram, r + 1))
+                    .collect();
+                !live.is_empty() && live.iter().all(|&e| u16::from(e) < lag)
+            },
+            select_attack: game_anchors::u8_at(ram, SELECT_ATTACK_OPTION),
             entry_counter: game_anchors::u8_at(ram, ENTRY_COUNTER),
             absorbed_seru: game_anchors::u8_at(ram, ctx + 0x269),
             magic_level_up: game_anchors::u8_at(ram, ctx + 0x26) == MAGIC_LEVEL_BANNER,

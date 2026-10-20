@@ -945,6 +945,17 @@ capture with an empty glide table takes that table's `elapsed` less one step
 as the prompt's seat (`round_prompt_pool_seat`; twelve here, which is the
 `x = 106` on screen).
 
+A menu capture can be younger than the display lag outright.
+`arts_input_start_gala_nail` was saved on the pass that pressed `Command`: the
+RAM holds the arts entry `0x50` with every glide record at `elapsed 0` (the
+`Auto` / `Command` chips leaving from their rest seats, the directional chips
+arriving), while the frame on screen is still the `Auto | Command` prompt at
+rest. When the table holds records and each one's `elapsed` is under the
+display lag, every glide was spawned after the displayed frame was built, so
+the image child drives to the surface before it - the prompt `0x78` under
+Select Attack `0` (`RetailBattle::displayed_menu_flow`, `image_drive`) - and
+lands its glides. The `phase` channel still scores the RAM's `0x50`.
+
 The second limit: a replayed cast or strike reaches its phase on its own
 clock, which the raise does not share:
 `nivora_duel_mid_blazing_slash` holds plaque and bar ten vsyncs into the raise

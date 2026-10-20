@@ -131,11 +131,17 @@ pub enum CommandSurface {
     /// for the acting member, the plaque (26) drops in behind the tab at
     /// `(68, 14)` and the AP plate (82) slides in to `(208, 174)`.
     Ring,
-    /// `0x78`, step `0x30`: `01/3 07/1 08/1 0A/1 0B/1 0D/0 1A/3 29/0 52/1`
-    /// - the bar parks and the AP plate leaves; tab and plaque stay.
+    /// `0x78`, step `0x2A`: `55/0 54/0 01/3 07/3 08/1 0A/1 0B/1 0D/0 1A/3
+    /// 52/3` - the `Auto` / `Command` chips (records `0x54` / `0x55`) open
+    /// on the ring's left and right arm seats, the other three arms leave,
+    /// and the bar, tab, plaque and AP plate all stay. A target cursor
+    /// backed out of reopens it with step `0x2E` (`55/0 54/0 01/3 07/0 0D/3
+    /// 1A/3 29/1 52/0`), which slides the bar and the plate back in.
     AttackMode,
-    /// `0x5A`, step `0x2D`: `01/3 07/1 0D/3 1A/3 29/0 52/1 54/1 57/1` -
-    /// same as the attack-mode prompt for the party surfaces.
+    /// `0x5A`, step `0x2D` from the prompt's `Auto`: `01/3 07/1 0D/3 1A/3
+    /// 29/0 52/1 54/1 57/1` - the bar parks and the AP plate leaves; tab and
+    /// plaque stay. Step `0x30` (the ring's Attack arm under the `Automatic`
+    /// option) does the same from the ring.
     Targeting,
     /// `0x50`, step 9: `01/3 07/1 08/1 0A/1 0B/1 0D/0 0F/0 1A/3 1B/0 1C/0
     /// 1D/0 1E/0 52/3` - the bar parks and the AP **bar** (15) takes its
