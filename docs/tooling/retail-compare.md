@@ -1887,8 +1887,9 @@ clip tick paces rather than the wait.
 
 The facing channel only scores a placement within 96 units of its retail
 seat, so a placement standing in the wrong place, or one the engine draws
-while retail has it parked on the off-map seat (`16320, 16320`, or one tile
-short of it on an axis), was scored nowhere. This channel scores where each
+while retail has it parked on the off-map seat (`16320, 16320`, or half a
+tile short of it on an axis, where a spawn section's `41` step after the
+park seat leaves it), was scored nowhere. This channel scores where each
 placement stands, matched by the same flat index, with ambient walkers left
 out for the same reason as there. The detail lists every miss with both
 positions and which side parks it.
