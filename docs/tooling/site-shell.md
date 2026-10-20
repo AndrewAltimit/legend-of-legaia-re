@@ -45,6 +45,31 @@ Three fields shape what a reader sees:
   before. Five of them expanded at once is a 150-row list that buries the two
   short sections a newcomer wants.
 
+Every long section is grouped, and the groups are not the sidebar's alone: a
+section's index page (`site/_content/<section>/index.html`) presents its cards
+under the same headings in the same order, and for the formats section so do
+`docs/formats/overview.md` and the formats table in `CLAUDE.md`. Moving a page
+between groups means moving it in each. Items inside a group run from overview
+to detail; a companion page (internals, a runbook, a sub-reference) is
+indented under the page it extends.
+
+The explore sidebar is built from `EXPLORE_GROUPS` rather than from `NAV`
+sections. A `'#Name'` entry in a group's `keys` is a subhead row there, the
+explore counterpart of a `{ heading }` row.
+
+Two things the shell derives from `NAV` instead of trusting the page:
+
+- **The breadcrumb.** Each page's hand-written `.breadcrumb` is the no-JS
+  fallback; `syncBreadcrumb()` rewrites it on docs pages as Home, the section
+  (linked to its index when it has one), any series index or indented parent
+  above the page, then the page's own sidebar label. Hand-written trails had
+  drifted - some linked their section, some did not, and leaves kept the
+  wording of a page's first draft.
+- **The drawer's scroll position.** `revealActiveRow()` scrolls the current
+  page's row into view after the saved scroll position is restored and every
+  time the phone drawer opens. Without it the drawer opened on the two
+  always-expanded sections, with the reader's own page below its fold.
+
 ## Themes
 
 Dark is the default; light is opt-in through the top-bar toggle

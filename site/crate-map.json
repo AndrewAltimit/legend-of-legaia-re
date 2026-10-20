@@ -1095,6 +1095,7 @@
     "clip_cursors",
     "field_seeds",
     "formation_cell",
+    "ground_snap",
     "hud_glide",
     "phase_gate",
     "script_gate"

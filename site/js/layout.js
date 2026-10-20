@@ -42,23 +42,23 @@ const NAV = [
     label: 'overview',
     title: 'Start here',
     items: [
-      { href: 'index.html',                     text: 'Home',                     key: 'home' },
-      { href: 'architecture.html',              text: 'How it stacks',            key: 'architecture' },
-      { href: 'crates.html',                    text: 'Crate map',                key: 'crates' },
-      { href: 'quickstart.html',                text: 'Quick start',              key: 'quickstart' },
+      { href: 'index.html', text: 'Home', key: 'home' },
+      { href: 'architecture.html', text: 'How it stacks', key: 'architecture' },
+      { href: 'quickstart.html', text: 'Quick start', key: 'quickstart' },
+      { href: 'crates.html', text: 'Crate map', key: 'crates' },
     ],
   },
   {
     label: 'guides',
     title: 'Guides',
     items: [
-      { href: 'guides/getting-started.html',         text: 'Getting started',          key: 'guides/getting-started' },
-      { href: 'guides/desktop-apps.html',            text: 'Desktop apps',             key: 'guides/desktop-apps' },
-      { href: 'guides/extracting-assets.html',       text: 'Extracting assets',        key: 'guides/extracting-assets' },
-      { href: 'guides/playing-and-viewing.html',     text: 'Playing + viewing',        key: 'guides/playing-and-viewing' },
-      { href: 'guides/modding-and-translation.html', text: 'Modding + translation',    key: 'guides/modding-and-translation' },
-      { href: 'guides/translating.html',             text: 'Translating the game',     key: 'guides/translating', indent: true },
-      { href: 'guides/vrchat-world.html',            text: 'VRChat world',             key: 'guides/vrchat-world' },
+      { href: 'guides/getting-started.html', text: 'Getting started', key: 'guides/getting-started' },
+      { href: 'guides/desktop-apps.html', text: 'Desktop apps', key: 'guides/desktop-apps' },
+      { href: 'guides/extracting-assets.html', text: 'Extracting assets', key: 'guides/extracting-assets' },
+      { href: 'guides/playing-and-viewing.html', text: 'Playing and viewing', key: 'guides/playing-and-viewing' },
+      { href: 'guides/modding-and-translation.html', text: 'Modding and translation', key: 'guides/modding-and-translation' },
+      { href: 'guides/translating.html', text: 'Translating the game', key: 'guides/translating', indent: true },
+      { href: 'guides/vrchat-world.html', text: 'VRChat world', key: 'guides/vrchat-world' },
     ],
   },
   {
@@ -86,26 +86,29 @@ const NAV = [
     label: 'write-ups',
     title: 'Write-ups',
     items: [
-      { href: 'writeups/index.html',                              text: 'Technical write-ups',     key: 'writeups/index' },
-      { href: 'writeups/gaza-orbit-softlock.html',                text: 'The endless orbit',       key: 'writeups/gaza-orbit-softlock' },
-      { href: 'writeups/spirit-fish.html',                        text: 'The Spirit fish gate',    key: 'writeups/spirit-fish' },
+      { href: 'writeups/index.html', text: 'Technical write-ups', key: 'writeups/index' },
+      { heading: 'Investigations' },
+      { href: 'writeups/gaza-orbit-softlock.html', text: 'The endless camera orbit', key: 'writeups/gaza-orbit-softlock' },
+      { href: 'writeups/spirit-fish.html', text: 'The Spirit fish gate', key: 'writeups/spirit-fish' },
+      { heading: 'Glitches and oversights' },
       { href: 'writeups/glitches/index.html', text: 'Glitches, traced', key: 'writeups/glitches/index' },
-      { href: 'writeups/glitches/name-centering.html', text: 'Off-centre attack names', key: 'writeups/glitches/name-centering', indent: true },
-      { href: 'writeups/glitches/turn-order-and-arts.html', text: 'Turn order, double attacks and kicks', key: 'writeups/glitches/turn-order-and-arts', indent: true },
-      { href: 'writeups/glitches/status-and-damage.html', text: 'Status rolls, jewels and boss immunities', key: 'writeups/glitches/status-and-damage', indent: true },
-      { href: 'writeups/glitches/lapis-and-cort.html', text: 'Lapis and Mystic Shield Cort', key: 'writeups/glitches/lapis-and-cort', indent: true },
-      { href: 'writeups/glitches/summons-and-jette.html', text: "Ra-Seru levels, Orb and Jette's Clone", key: 'writeups/glitches/summons-and-jette', indent: true },
-      { href: 'writeups/glitches/items-and-equipment.html', text: 'Items, stats and equipment', key: 'writeups/glitches/items-and-equipment', indent: true },
-      { href: 'writeups/glitches/field-sequence-breaks.html', text: 'Incense, doors and the Door of Light', key: 'writeups/glitches/field-sequence-breaks', indent: true },
-      { href: 'writeups/glitches/field-oddities.html', text: 'WORK ERR, missing encounters and script slips', key: 'writeups/glitches/field-oddities', indent: true },
-      { href: 'writeups/disc-patching/index.html',                text: 'Patching a sealed disc',  key: 'writeups/disc-patching/index' },
-      { href: 'writeups/disc-patching/a-static-tables.html',       text: 'Tier A - static tables',  key: 'writeups/disc-patching/a-static-tables', indent: true },
-      { href: 'writeups/disc-patching/b-lzs-slots.html',           text: 'Tier B - editing inside LZS', key: 'writeups/disc-patching/b-lzs-slots', indent: true },
-      { href: 'writeups/disc-patching/c-field-vm-operands.html',   text: 'Tier C - field-VM bytecode', key: 'writeups/disc-patching/c-field-vm-operands', indent: true },
-      { href: 'writeups/disc-patching/d-man-relocation.html',      text: 'Tier D - MAN relocation',  key: 'writeups/disc-patching/d-man-relocation', indent: true },
-      { href: 'writeups/disc-patching/e-rodata-gap-code.html',     text: 'Tier E - rodata-gap code', key: 'writeups/disc-patching/e-rodata-gap-code', indent: true },
-      { href: 'writeups/disc-patching/f-overlay-dead-region.html', text: 'Tier F - overlay dead-region', key: 'writeups/disc-patching/f-overlay-dead-region', indent: true },
-      { href: 'writeups/disc-patching/g-ram-payload-carrier.html', text: 'Tier G - RAM-patch carrier', key: 'writeups/disc-patching/g-ram-payload-carrier', indent: true },
+      { href: 'writeups/glitches/name-centering.html', text: 'Off-centre attack names', key: 'writeups/glitches/name-centering' },
+      { href: 'writeups/glitches/turn-order-and-arts.html', text: 'Turn order and double attacks', key: 'writeups/glitches/turn-order-and-arts' },
+      { href: 'writeups/glitches/status-and-damage.html', text: 'Status rolls and immunities', key: 'writeups/glitches/status-and-damage' },
+      { href: 'writeups/glitches/lapis-and-cort.html', text: 'Lapis and Mystic Shield Cort', key: 'writeups/glitches/lapis-and-cort' },
+      { href: 'writeups/glitches/summons-and-jette.html', text: 'Ra-Seru levels and Jette\'s Clone', key: 'writeups/glitches/summons-and-jette' },
+      { href: 'writeups/glitches/items-and-equipment.html', text: 'Items, stats and equipment', key: 'writeups/glitches/items-and-equipment' },
+      { href: 'writeups/glitches/field-sequence-breaks.html', text: 'Incense and door skips', key: 'writeups/glitches/field-sequence-breaks' },
+      { href: 'writeups/glitches/field-oddities.html', text: 'WORK ERR and script slips', key: 'writeups/glitches/field-oddities' },
+      { heading: 'Disc patching' },
+      { href: 'writeups/disc-patching/index.html', text: 'Patching a sealed disc', key: 'writeups/disc-patching/index' },
+      { href: 'writeups/disc-patching/a-static-tables.html', text: 'Tier A: static tables', key: 'writeups/disc-patching/a-static-tables' },
+      { href: 'writeups/disc-patching/b-lzs-slots.html', text: 'Tier B: editing inside LZS', key: 'writeups/disc-patching/b-lzs-slots' },
+      { href: 'writeups/disc-patching/c-field-vm-operands.html', text: 'Tier C: field-VM bytecode', key: 'writeups/disc-patching/c-field-vm-operands' },
+      { href: 'writeups/disc-patching/d-man-relocation.html', text: 'Tier D: MAN relocation', key: 'writeups/disc-patching/d-man-relocation' },
+      { href: 'writeups/disc-patching/e-rodata-gap-code.html', text: 'Tier E: rodata-gap code', key: 'writeups/disc-patching/e-rodata-gap-code' },
+      { href: 'writeups/disc-patching/f-overlay-dead-region.html', text: 'Tier F: overlay dead region', key: 'writeups/disc-patching/f-overlay-dead-region' },
+      { href: 'writeups/disc-patching/g-ram-payload-carrier.html', text: 'Tier G: RAM-patch carrier', key: 'writeups/disc-patching/g-ram-payload-carrier' },
     ],
   },
   {
@@ -194,113 +197,129 @@ const NAV = [
   {
     label: 'formats',
     title: 'File formats',
+    /* Groups follow the disc's layering, outermost first: the archive, how
+       an entry is unpacked and routed, the bundles a scene or a battle loads
+       as a unit, then single assets by kind, the static tables, and the
+       archive entries that hold code. formats/index.html and
+       docs/formats/overview.md use the same groups in the same order. */
     items: [
-      { href: 'formats/index.html',                  text: 'Formats index',            key: 'formats/index' },
+      { href: 'formats/index.html', text: 'Formats index', key: 'formats/index' },
       { heading: 'Disc and archive' },
-      { href: 'formats/disc.html',                   text: 'PSX disc geometry',        key: 'formats/disc' },
-      { href: 'formats/prot.html',                   text: 'PROT.DAT TOC',             key: 'formats/prot' },
-      { href: 'formats/cdname.html',                 text: 'CDNAME.TXT name map',      key: 'formats/cdname' },
-      { href: 'formats/dmy.html',                    text: 'DMY.DAT (dev fixtures)',   key: 'formats/dmy' },
-      { heading: 'Containers and bundles' },
-      { href: 'formats/lzs.html',                    text: 'Legaia LZS',               key: 'formats/lzs' },
-      { href: 'formats/asset-type.html',             text: 'Asset type dispatcher',    key: 'formats/asset-type' },
-      { href: 'formats/asset-descriptor.html',       text: 'Asset descriptor',         key: 'formats/asset-descriptor' },
-      { href: 'formats/data-field.html',             text: 'DATA_FIELD streaming',     key: 'formats/data-field' },
-      { href: 'formats/pack.html',                   text: 'Pack format',              key: 'formats/pack' },
-      { href: 'formats/tim-pack.html',               text: 'TIM-pack',                 key: 'formats/tim-pack' },
-      { href: 'formats/field-pack.html',             text: 'Field-pack',               key: 'formats/field-pack' },
-      { href: 'formats/battle-data-pack.html',       text: 'Battle-data pack',         key: 'formats/battle-data-pack' },
-      { href: 'formats/npc-palette.html',            text: 'NPC palettes',             key: 'formats/npc-palette' },
-      { href: 'formats/effect.html',                 text: 'Effect bundles',           key: 'formats/effect' },
-      { href: 'formats/summon-readef.html',          text: 'Summon / readef slots',    key: 'formats/summon-readef' },
-      { href: 'formats/scene-bundles.html',          text: 'Scene bundles',            key: 'formats/scene-bundles' },
-      { href: 'formats/scene-v12-table.html',        text: 'Scene V12 table',          key: 'formats/scene-v12-table' },
+      { href: 'formats/disc.html', text: 'PSX disc geometry', key: 'formats/disc' },
+      { href: 'formats/prot.html', text: 'PROT.DAT archive', key: 'formats/prot' },
+      { href: 'formats/cdname.html', text: 'CDNAME.TXT name map', key: 'formats/cdname' },
+      { href: 'formats/dmy.html', text: 'DMY.DAT dev fixtures', key: 'formats/dmy' },
+      { href: 'formats/pochi.html', text: 'Pochi fill slots', key: 'formats/pochi' },
+      { heading: 'Compression and dispatch' },
+      { href: 'formats/lzs.html', text: 'LZS compression', key: 'formats/lzs' },
+      { href: 'formats/data-field.html', text: 'DATA_FIELD chunk stream', key: 'formats/data-field' },
+      { href: 'formats/asset-type.html', text: 'Asset type dispatcher', key: 'formats/asset-type' },
+      { href: 'formats/asset-descriptor.html', text: 'Asset descriptor', key: 'formats/asset-descriptor' },
+      { href: 'formats/pack.html', text: 'Pack format', key: 'formats/pack' },
+      { href: 'formats/tim-pack.html', text: 'TIM-pack reader', key: 'formats/tim-pack' },
+      { href: 'formats/field-pack.html', text: 'Field-pack (not a format)', key: 'formats/field-pack' },
+      { heading: 'Scene and battle bundles' },
+      { href: 'formats/scene-bundles.html', text: 'Scene bundles', key: 'formats/scene-bundles' },
       { href: 'formats/field-map.html', text: 'Field map (.MAP)', key: 'formats/field-map' },
-      { href: 'formats/slot-b-module-layout.html',    text: 'Slot-B module layout',     key: 'formats/slot-b-module-layout' },
-      { href: 'formats/world-map-overlay.html',      text: 'World-map overlay',        key: 'formats/world-map-overlay' },
-      { href: 'formats/place-names.html',            text: 'Place names',              key: 'formats/place-names' },
-      { heading: 'Assets and data tables' },
-      { href: 'formats/tim.html',                    text: 'PSX TIM',                  key: 'formats/tim' },
-      { href: 'formats/tmd.html',                    text: 'Legaia TMD',               key: 'formats/tmd' },
-      { href: 'formats/vab.html',                    text: 'VAB sound bank',           key: 'formats/vab' },
-      { href: 'formats/seq.html',                    text: 'PsyQ SEQ',                 key: 'formats/seq' },
-      { href: 'formats/xa.html',                     text: 'XA-ADPCM',                 key: 'formats/xa' },
-      { href: 'formats/mes.html',                    text: 'MES dialog',               key: 'formats/mes' },
-      { href: 'formats/anm.html',                    text: 'ANM animation',            key: 'formats/anm' },
-      { href: 'formats/monster-animation.html',      text: 'Monster animation',        key: 'formats/monster-animation' },
-      { href: 'formats/character-mesh.html',         text: 'Character meshes',         key: 'formats/character-mesh' },
-      { href: 'formats/mdt.html',                    text: 'MDT move table',           key: 'formats/mdt' },
-      { href: 'formats/move-power.html',             text: 'Move-power table',         key: 'formats/move-power' },
-      { href: 'formats/battle-attack-camera-table.html', text: 'Attack-camera table', key: 'formats/battle-attack-camera-table' },
-      { href: 'formats/art-data.html',               text: 'Art data',                 key: 'formats/art-data' },
-      { href: 'formats/spell-table.html',            text: 'Spell table',              key: 'formats/spell-table' },
-      { href: 'formats/item-table.html',             text: 'Item-name table',          key: 'formats/item-table' },
-      { href: 'formats/item-effect-table.html',      text: 'Item-effect table',        key: 'formats/item-effect-table' },
-      { href: 'formats/equipment-table.html',        text: 'Equipment stats table',    key: 'formats/equipment-table' },
-      { href: 'formats/accessory-passive-table.html', text: 'Accessory passives',      key: 'formats/accessory-passive-table' },
-      { href: 'formats/steal-table.html',            text: 'Steal table',              key: 'formats/steal-table' },
-      { href: 'formats/new-game-table.html',         text: 'New-game party table',     key: 'formats/new-game-table' },
-      { href: 'formats/dialog-font.html',            text: 'Dialog font',              key: 'formats/dialog-font' },
+      { href: 'formats/scene-v12-table.html', text: 'Walk-on triggers (.PCH)', key: 'formats/scene-v12-table' },
+      { href: 'formats/encounter.html', text: 'Encounter record', key: 'formats/encounter' },
+      { href: 'formats/man-relocation.html', text: 'MAN relocation', key: 'formats/man-relocation' },
+      { href: 'formats/world-map-overlay.html', text: 'World-map animation bank', key: 'formats/world-map-overlay' },
+      { href: 'formats/str-fmv-table.html', text: 'FMV dispatch table', key: 'formats/str-fmv-table' },
+      { href: 'formats/effect.html', text: 'Effect bundles', key: 'formats/effect' },
+      { href: 'formats/summon-readef.html', text: 'Summon and readef slots', key: 'formats/summon-readef' },
+      { href: 'formats/navmesh.html', text: 'Not a navmesh: scratch buffer', key: 'formats/navmesh' },
+      { heading: 'Textures and models' },
+      { href: 'formats/tim.html', text: 'PSX TIM', key: 'formats/tim' },
+      { href: 'formats/tmd.html', text: 'Legaia TMD', key: 'formats/tmd' },
+      { href: 'formats/npc-palette.html', text: 'NPC palettes (row 479)', key: 'formats/npc-palette' },
       { href: 'formats/save-icon.html', text: 'Save-slot portraits', key: 'formats/save-icon' },
-      { href: 'formats/window-script.html', text: 'Window widget scripts', key: 'formats/window-script' },
-      { heading: 'Auxiliary and negative results' },
-      { href: 'formats/sfx-table.html',              text: 'SFX table',                key: 'formats/sfx-table' },
+      { href: 'formats/ringside-still.html', text: 'Ringside stills', key: 'formats/ringside-still' },
+      { heading: 'Characters and animation' },
+      { href: 'formats/character-mesh.html', text: 'Character meshes', key: 'formats/character-mesh' },
+      { href: 'formats/battle-data-pack.html', text: 'Player battle files', key: 'formats/battle-data-pack' },
+      { href: 'formats/anm.html', text: 'ANM animation', key: 'formats/anm' },
+      { href: 'formats/mdt.html', text: 'MDT clip bank', key: 'formats/mdt' },
+      { href: 'formats/monster-animation.html', text: 'Monster animation', key: 'formats/monster-animation' },
+      { href: 'formats/art-data.html', text: 'Art data', key: 'formats/art-data' },
+      { heading: 'Sound' },
+      { href: 'formats/vab.html', text: 'VAB sound bank', key: 'formats/vab' },
+      { href: 'formats/seq.html', text: 'SEQ sequences', key: 'formats/seq' },
+      { href: 'formats/xa.html', text: 'XA-ADPCM audio', key: 'formats/xa' },
+      { href: 'formats/sfx-table.html', text: 'SFX table', key: 'formats/sfx-table' },
       { href: 'formats/bse-dat.html', text: 'bse.dat battle SFX bank', key: 'formats/bse-dat' },
-      { href: 'formats/sound-driver.html',           text: 'Sound-driver paths',       key: 'formats/sound-driver' },
-      { href: 'formats/pochi.html',                  text: 'Pochi-filler',             key: 'formats/pochi' },
-      { href: 'formats/ringside-still.html',         text: 'Headerless stills',        key: 'formats/ringside-still' },
-      { href: 'formats/mips-overlay.html',           text: 'MIPS overlay code',        key: 'formats/mips-overlay' },
-      { href: 'formats/overlay-ptr-table.html',      text: 'Overlay ptr-table code',   key: 'formats/overlay-ptr-table' },
-      { href: 'formats/navmesh.html',                text: 'Per-scene scratch buffer', key: 'formats/navmesh' },
-      { href: 'formats/encounter.html',              text: 'Encounter record',         key: 'formats/encounter' },
-      { href: 'formats/man-relocation.html',         text: 'MAN relocation',           key: 'formats/man-relocation' },
-      { href: 'formats/str-fmv-table.html',          text: 'STR FMV table',            key: 'formats/str-fmv-table' },
-      { href: 'formats/save-record.html',            text: 'Per-character save record', key: 'formats/save-record' },
+      { href: 'formats/sound-driver.html', text: 'Sound-driver files', key: 'formats/sound-driver' },
+      { heading: 'Text' },
+      { href: 'formats/mes.html', text: 'MES dialog', key: 'formats/mes' },
+      { href: 'formats/dialog-font.html', text: 'Dialog font', key: 'formats/dialog-font' },
+      { href: 'formats/place-names.html', text: 'Place names', key: 'formats/place-names' },
+      { heading: 'Static tables' },
+      { href: 'formats/item-table.html', text: 'Item-name table', key: 'formats/item-table' },
+      { href: 'formats/item-effect-table.html', text: 'Item-effect table', key: 'formats/item-effect-table' },
+      { href: 'formats/equipment-table.html', text: 'Equipment stats table', key: 'formats/equipment-table' },
+      { href: 'formats/accessory-passive-table.html', text: 'Accessory passives', key: 'formats/accessory-passive-table' },
+      { href: 'formats/spell-table.html', text: 'Spell table', key: 'formats/spell-table' },
+      { href: 'formats/steal-table.html', text: 'Steal table', key: 'formats/steal-table' },
+      { href: 'formats/move-power.html', text: 'Move-power table', key: 'formats/move-power' },
+      { href: 'formats/battle-attack-camera-table.html', text: 'Attack-camera table', key: 'formats/battle-attack-camera-table' },
+      { href: 'formats/new-game-table.html', text: 'New-game party', key: 'formats/new-game-table' },
+      { href: 'formats/save-record.html', text: 'Character save record', key: 'formats/save-record' },
+      { href: 'formats/window-script.html', text: 'Window widget scripts', key: 'formats/window-script' },
+      { heading: 'Code overlays' },
+      { href: 'formats/mips-overlay.html', text: 'MIPS overlay code', key: 'formats/mips-overlay' },
+      { href: 'formats/overlay-ptr-table.html', text: 'Overlay pointer tables', key: 'formats/overlay-ptr-table' },
+      { href: 'formats/slot-b-module-layout.html', text: 'Slot-B module layout', key: 'formats/slot-b-module-layout' },
     ],
   },
   {
     label: 'tooling',
     title: 'Tools and methods',
+    /* Task groups, in the order tooling/index.html presents them. The two
+       in-browser tools (ROM patcher, translation workbench) are explore
+       pages and live in the rail, not here. */
     items: [
-      { href: 'tooling/index.html',                  text: 'Tooling index',            key: 'tooling/index' },
-      { heading: 'Extract and analyse' },
-      { href: 'tooling/extraction.html',             text: 'Extraction CLIs',          key: 'tooling/extraction' },
-      { href: 'tooling/ghidra.html',                 text: 'Ghidra in Docker',         key: 'tooling/ghidra' },
-      { href: 'tooling/overlay-capture.html',        text: 'Overlay capture',          key: 'tooling/overlay-capture' },
-      { href: 'tooling/static-overlay-pipeline.html', text: 'Static overlay pipeline',  key: 'tooling/static-overlay-pipeline' },
-      { href: 'tooling/mednafen-automation.html',    text: 'Mednafen automation',      key: 'tooling/mednafen-automation' },
-      { href: 'tooling/pcsx-redux-automation.html',  text: 'PCSX-Redux automation',    key: 'tooling/pcsx-redux-automation' },
+      { href: 'tooling/index.html', text: 'Tooling index', key: 'tooling/index' },
+      { heading: 'Extract assets' },
+      { href: 'tooling/extraction.html', text: 'Extraction CLIs', key: 'tooling/extraction' },
+      { heading: 'Patch a disc' },
+      { href: 'tooling/randomizer.html', text: 'Randomizer and disc patcher', key: 'tooling/randomizer' },
+      { href: 'tooling/randomizer-internals.html', text: 'Randomizer: internals', key: 'tooling/randomizer-internals', indent: true },
+      { href: 'tooling/translation.html', text: 'Translation packs', key: 'tooling/translation' },
+      { heading: 'Dig in Ghidra' },
+      { href: 'tooling/ghidra.html', text: 'Ghidra in Docker', key: 'tooling/ghidra' },
+      { href: 'tooling/static-overlay-pipeline.html', text: 'Static overlay pipeline', key: 'tooling/static-overlay-pipeline' },
+      { href: 'tooling/address-reference-scan.html', text: 'Address-reference scan', key: 'tooling/address-reference-scan' },
+      { heading: 'Capture the emulator' },
+      { href: 'tooling/overlay-capture.html', text: 'Overlay capture', key: 'tooling/overlay-capture' },
+      { href: 'tooling/mednafen-automation.html', text: 'Mednafen automation', key: 'tooling/mednafen-automation' },
+      { href: 'tooling/pcsx-redux-automation.html', text: 'PCSX-Redux automation', key: 'tooling/pcsx-redux-automation' },
       { href: 'tooling/spine-flag-writers-capture.html', text: 'Spine flag-writers capture', key: 'tooling/spine-flag-writers-capture', indent: true },
-      { href: 'tooling/recomp-differential.html',    text: 'Recomp differential',      key: 'tooling/recomp-differential' },
       { heading: 'Measure the port' },
-      { href: 'tooling/port-catalog.html',           text: 'Port catalog',             key: 'tooling/port-catalog' },
-      { href: 'tooling/disc-coverage.html',           text: 'Disc coverage',            key: 'tooling/disc-coverage' },
-      { href: 'tooling/byte-accounting.html',         text: 'Byte accounting',          key: 'tooling/byte-accounting', indent: true },
-      { href: 'tooling/address-reference-scan.html',  text: 'Address-reference scan',   key: 'tooling/address-reference-scan' },
-      { href: 'tooling/determinism-replay.html',     text: 'Determinism replay',       key: 'tooling/determinism-replay' },
-      { heading: 'Patch and translate' },
-      { href: 'tooling/randomizer.html',             text: 'Randomizer / disc patcher', key: 'tooling/randomizer' },
-      { href: 'tooling/randomizer-internals.html',   text: 'Randomizer: internals',   key: 'tooling/randomizer-internals', indent: true },
-      { href: 'tooling/translation.html',            text: 'Translation / language packs', key: 'tooling/translation' },
+      { href: 'tooling/port-catalog.html', text: 'Port catalog', key: 'tooling/port-catalog' },
+      { href: 'tooling/disc-coverage.html', text: 'Disc coverage', key: 'tooling/disc-coverage' },
+      { href: 'tooling/byte-accounting.html', text: 'Byte accounting', key: 'tooling/byte-accounting', indent: true },
+      { href: 'tooling/recomp-differential.html', text: 'Recomp differential', key: 'tooling/recomp-differential' },
+      { href: 'tooling/determinism-replay.html', text: 'Determinism replay', key: 'tooling/determinism-replay' },
     ],
   },
   {
     label: 'reference',
     title: 'Reference',
     items: [
-      { href: 'reference/index.html',           text: 'Reference index',          key: 'reference/index' },
-      { heading: 'Lookup tables' },
-      { href: 'reference/functions.html',       text: 'Key functions',            key: 'reference/functions' },
-      { href: 'reference/memory-map.html',      text: 'PSX RAM map',              key: 'reference/memory-map' },
-      { href: 'reference/cheats.html',          text: 'Cheat databases',          key: 'reference/cheats' },
-      { href: 'reference/gamedata.html',        text: 'Curated game-data tables', key: 'reference/gamedata' },
-      { href: 'reference/music-tracks.html',    text: 'Music tracks',             key: 'reference/music-tracks' },
-      { href: 'reference/scene-names.html',     text: 'Scene names',              key: 'reference/scene-names' },
-      { href: 'reference/builds.html',          text: 'Builds + debug features',  key: 'reference/builds' },
-      { heading: 'Research threads' },
-      { href: 'reference/open-rev-eng-threads.html', text: 'Open RE threads',     key: 'reference/open-rev-eng-threads' },
-      { href: 'reference/re-settled-threads.html', text: 'Settled RE threads',   key: 'reference/re-settled-threads' },
-      { href: 'reference/re-do-not-re-walk.html', text: 'Do not re-walk',        key: 'reference/re-do-not-re-walk' },
+      { href: 'reference/index.html', text: 'Reference index', key: 'reference/index' },
+      { heading: 'Code and memory' },
+      { href: 'reference/functions.html', text: 'Key functions', key: 'reference/functions' },
+      { href: 'reference/memory-map.html', text: 'PSX RAM map', key: 'reference/memory-map' },
+      { href: 'reference/builds.html', text: 'Builds and debug features', key: 'reference/builds' },
+      { heading: 'Names and labels' },
+      { href: 'reference/gamedata.html', text: 'Game-data tables', key: 'reference/gamedata' },
+      { href: 'reference/cheats.html', text: 'Cheat databases', key: 'reference/cheats' },
+      { href: 'reference/music-tracks.html', text: 'Music tracks', key: 'reference/music-tracks' },
+      { href: 'reference/scene-names.html', text: 'Scene names', key: 'reference/scene-names' },
+      { heading: 'State of the research' },
+      { href: 'reference/open-rev-eng-threads.html', text: 'Open RE threads', key: 'reference/open-rev-eng-threads' },
+      { href: 'reference/re-settled-threads.html', text: 'Settled RE threads', key: 'reference/re-settled-threads' },
+      { href: 'reference/re-do-not-re-walk.html', text: 'Do not re-walk', key: 'reference/re-do-not-re-walk' },
     ],
   },
 ];
@@ -328,7 +347,10 @@ function zoneForKey(key) {
 const EXPLORE_GROUPS = [
   { label: 'play',           title: 'Play', keys: ['play', 'minigames'] },
   { label: 'modding',        title: 'Mod your disc', keys: ['tooling/rom-patcher', 'tooling/translation-workbench'] },
-  { label: 'browse the disc', title: 'Explore the game data', keys: ['viewer', 'media', 'world', 'world-overview', 'characters', 'npcs', 'monsters', 'shops', 'arts', 'magic', 'disc-map'] },
+  { label: 'browse the disc', title: 'Explore the game data', keys: [
+    '#Viewers', 'viewer', 'media', 'world-overview', 'disc-map',
+    '#Game guide', 'world', 'characters', 'npcs', 'monsters', 'arts', 'magic', 'shops',
+  ] },
 ];
 
 function exploreNavSections() {
@@ -337,7 +359,8 @@ function exploreNavSections() {
   return EXPLORE_GROUPS.map(g => ({
     label: g.label,
     title: g.title,
-    items: g.keys.map(k => byKey.get(k)).filter(Boolean),
+    /* A '#Name' key is a subhead row, rendered like a docs group heading. */
+    items: g.keys.map(k => (k.startsWith('#') ? { heading: k.slice(1) } : byKey.get(k))).filter(Boolean),
   }));
 }
 
@@ -485,6 +508,61 @@ function buildSidebar(active, depth, zone) {
   sidebar.appendChild(foot);
 
   return sidebar;
+}
+
+/* ---------- Breadcrumb ----------
+ * Every docs page's header carries a hand-written `.breadcrumb`, the no-JS
+ * fallback. Written by hand, the trails drifted: some linked their section and
+ * some did not, and the leaf text was whatever the page's first draft called
+ * itself. Rebuilt here from NAV, every trail reads the same way - Home, the
+ * section (linked to its index page when it has one), any index page the page
+ * sits under (a write-up series, an indented companion's parent), then the
+ * page's own sidebar label. */
+function syncBreadcrumb(active, depth) {
+  const crumb = document.querySelector('.page-header .breadcrumb');
+  if (!crumb) return;
+  const section = NAV.find(s => DOCS_SECTIONS.has(s.label) && s.items.some(i => i.key === active));
+  if (!section) return;
+  const pages = section.items.filter(i => i.key);
+  const byKey = new Map(pages.map(i => [i.key, i]));
+  const sectionIndex = pages.find(i => /^[^/]+\/index$/.test(i.key));
+  const trail = [{ text: 'Home', href: 'index.html' }];
+  if (sectionIndex && sectionIndex.key === active) {
+    trail.push({ text: section.title });
+  } else {
+    trail.push({ text: section.title, href: sectionIndex && sectionIndex.href });
+    /* A nested series index: writeups/glitches/x sits under writeups/glitches/index. */
+    const parts = active.split('/');
+    for (let n = 2; n < parts.length; n++) {
+      const parentKey = parts.slice(0, n).join('/') + '/index';
+      const parent = byKey.get(parentKey);
+      if (parent && parentKey !== active) trail.push({ text: parent.text, href: parent.href });
+    }
+    /* An indented companion page: its parent is the nearest unindented row above it. */
+    const at = section.items.findIndex(i => i.key === active);
+    const self = section.items[at];
+    if (self.indent) {
+      for (let j = at - 1; j >= 0; j--) {
+        const up = section.items[j];
+        if (!up.key || up.indent) continue;
+        if (!trail.some(t => t.href === up.href)) trail.push({ text: up.text, href: up.href });
+        break;
+      }
+    }
+    trail.push({ text: self.text });
+  }
+  crumb.textContent = '';
+  trail.forEach((step, k) => {
+    if (k) crumb.appendChild(document.createTextNode(' · '));
+    if (step.href) {
+      const a = document.createElement('a');
+      a.href = resolveHref(step.href, depth);
+      a.textContent = step.text;
+      crumb.appendChild(a);
+    } else {
+      crumb.appendChild(document.createTextNode(step.text));
+    }
+  });
 }
 
 /* ---------- Wide tables ----------
@@ -897,6 +975,23 @@ function restoreSidebarScroll(sidebar) {
   }, { passive: true });
 }
 
+/* The current page's row, scrolled into the sidebar's view when the restored
+   position (or the top, on a first visit) leaves it off screen. On a phone the
+   drawer opens with the two always-expanded sections first, so without this
+   the reader's own page sat below the fold of the drawer that is meant to show
+   where they are. */
+function revealActiveRow(sidebar) {
+  /* Scoped to the page list: the zone strip above it marks its own entry
+     active too, and that one is always at the top. */
+  const row = sidebar.querySelector('.sidebar-nav a.active');
+  if (!row) return;
+  const box = sidebar.getBoundingClientRect();
+  const r = row.getBoundingClientRect();
+  if (r.top < box.top || r.bottom > box.bottom) {
+    sidebar.scrollTop += (r.top - box.top) - box.height / 3;
+  }
+}
+
 /* ---------- Main ---------- */
 function injectLayout(opts) {
   const { active } = opts || {};
@@ -931,6 +1026,7 @@ function injectLayout(opts) {
     /* Lock the page behind the drawer so a swipe scrolls the nav, not the
        article underneath it. */
     document.body.classList.toggle('nav-open', open);
+    if (open) revealActiveRow(sidebar);
   }
 
   toggle.addEventListener('click', () => setDrawer(!sidebar.classList.contains('open')));
@@ -953,7 +1049,9 @@ function injectLayout(opts) {
   topbar.insertBefore(buildThemeToggle(), topbar.querySelector('.tb-gh'));
   document.body.appendChild(scrim);
   restoreSidebarScroll(sidebar);
+  revealActiveRow(sidebar);
 
+  if (zone === 'docs') syncBreadcrumb(active, depth);
   wrapWideTables();
 
   /* Order matters: assign IDs first → build TOC (clean text) → add § anchors */
