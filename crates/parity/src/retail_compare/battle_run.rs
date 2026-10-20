@@ -431,6 +431,17 @@ pub(super) fn battle_image(
     }
     // The captured phase's glide starts where retail's stood, as the
     // headless channel aligns it (`BattleCamera::align_glide_origin`).
+    // A replayed cast in the invoke `0x32`: the frame on screen is two game
+    // frames back along retail's ease (`RetailBattle::cast_glide_aligned`).
+    if battle.cast_glide_aligned() {
+        env.push((
+            "LEGAIA_BATTLE_CAM_ALIGN",
+            legaia_engine_capture::camera_align::cam_align_to_env(&(
+                battle.displayed_cam_live,
+                battle.cam_tween.1,
+            )),
+        ));
+    }
     if matches!(
         battle.battle_drive(),
         Some(legaia_engine_capture::battle_drive::BattleDrive::Action { .. })

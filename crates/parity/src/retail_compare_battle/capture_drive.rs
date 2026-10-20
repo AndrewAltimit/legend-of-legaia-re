@@ -102,6 +102,29 @@ impl RetailBattle {
             && matches!(self.span_gate, SpanGate::DoneHold { .. })
     }
 
+    /// Whether a replayed cast's camera takes retail's pose as its glide
+    /// origin (`BattleCamera::align_glide_origin`), as a pad drive's does
+    /// ([`Self::displayed_camera`]): a capture in the summon invoke `0x32`,
+    /// which re-arms `FUN_801D5854(actor, 6)` every pass (`0x801E4984`) on
+    /// the ease `0x29`'s route arm opened onto the summon close-up's depth.
+    /// That ease sets out from whatever the fight framed before the cast -
+    /// the round's history, which the replay, seeded at the dispatch, does
+    /// not share (`flute_lippian_midcast`: retail's pitch `10` closing on
+    /// `0` from above, the replay's glide having set out at `0`).
+    ///
+    /// The headless seed takes retail's live pose, which the `camera`
+    /// channel scores. The image child takes the pose the **displayed**
+    /// frame was drawn at - the live pose walked back two game frames along
+    /// the step table ([`Self::displayed_cam_live`]): retail's RAM is one
+    /// pass into the ease, and the frame on screen is older than it. Aligned
+    /// to the RAM's pose the frame lands on the wrong side of it
+    /// (`flute_spikefish_midcast` `.910` to `.810`); to the displayed one
+    /// both flute captures rise (`.910` to `.929`, `.740` to `.942`). The
+    /// summon close-up and the module shots keep the replay's own pose.
+    pub fn cast_glide_aligned(&self) -> bool {
+        matches!(self.seed_plan(), SeedPlan::Cast) && self.action_state == 0x32
+    }
+
     /// Every captured combatant's live pair and heading by engine slot - the
     /// ground the capture holds, not the seed's (which [`Self::undrift`]
     /// may have moved) - for the phase's ground seat

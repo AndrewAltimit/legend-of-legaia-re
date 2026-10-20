@@ -517,6 +517,11 @@ pub fn run_engine_battle(
                 }
                 if gate.met(&session.host.world) {
                     gate.align_camera(&mut session.host.world);
+                    if battle.cast_glide_aligned()
+                        && let Some(cam) = session.host.world.battle.camera.as_mut()
+                    {
+                        cam.align_glide_origin(battle.cam_tween.0, battle.cam_tween.1);
+                    }
                     phase_tick = Some(t);
                     break;
                 }

@@ -2919,10 +2919,10 @@ alignment's tolerance, and the channel read the start of the ease instead
 of the framing.
 
 Replayed
-casts are left out: their close-ups and module shots measured worse aligned
-(`flute_spikefish_midcast` `image` `.910` to `.828`,
-`shiny_refactor_gimard_precast` `.904` to `.861`, with the camera channel
-level), so the step table there is not the whole of what retail framed. A
+casts are left out but for the summon invoke `0x32`: their close-ups and
+module shots measured worse aligned (`shiny_refactor_gimard_precast` `.904`
+to `.861`, with the camera channel level), so the step table there is not the
+whole of what retail framed. The invoke is the exception, below. A
 correct camera can also cost a frame whose content differs: aligned,
 `battle_melee_hit_spark` films the engine's mid-somersault Vahn closer up
 (`camera` `.948` to `.990`, `image` `.566` to `.536`). The `super_queue_replace_*`
@@ -3152,6 +3152,17 @@ every pass, so it moves with the phase of both clips):
   history before the item command, which the capture does not record. The
   image gate takes the displayed frame two game frames older, the pass
   that entered the state, so it leaves the hold off.
+
+  Both sides then start the ease from retail's pose
+  (`RetailBattle::cast_glide_aligned`), the in-action alignment applied to
+  the one cast state whose camera is an ease rather than a close-up: the
+  headless seed from the live pose, which the channel scores, and the image
+  child from the **displayed** one, the live pose walked back two game
+  frames along the step table (`displayed_cam_live`). Retail's RAM is one
+  pass into the ease and the frame on screen older than it, so the RAM's
+  pose lands the frame past retail's (`flute_spikefish_midcast` `.910` to
+  `.810`) and the displayed one on it (`.910` to `.929`;
+  `flute_lippian_midcast` `.740` to `.942`).
 - **An opening sampled after the sweep.** `v0_1_battle_start_tetsu` (flow
   `0x14`, past the intro timer) is taken once the engine's entry sweep and
   then its intro-name hold are over - the order retail runs them in, since
