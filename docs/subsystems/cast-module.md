@@ -2067,10 +2067,29 @@ their own image and open most arms on it: drain, store, return busy while it
 is positive, and on the tick it is not run the arm's writes, re-arm the word
 and advance. Their tick bodies are ported; the holds are
 `cast_module_camera::summon_holds`, one table per module, run as a director
-ahead of the body. For 0919, 0924 and 0925 the hold is the whole director:
-it arms no camera, so the band keeps its framing. 0918, 0922 and 0927 have
+ahead of the body. For 0919 and 0924 the hold is the whole director: it
+arms no camera, so the band keeps its framing. 0925's adds the body's
+camera writes (`spikefish_direct`), all literal: arm 0 cuts to pitch `0`,
+TR `(0, 0x500, 0x300)`; arm 3 drifts TR y `-2` and TR z `+8` a frame step;
+arm 5 drifts TR y `+12`, TR z `+8`, yaw `+8` and pitch `-1` a step and
+cuts to pitch `0x80`, TR `(0, 0x1400, 0x4000)` on its pass; arms 6 and 8
+re-arm a `0x40`- and a `0x20`-frame tween to TR `(0, 0x2400, 0x2400)` and
+`(0, 0x2400, 0x4E20)` on every pass ahead of their gates. Every shot's
+focus is the stage origin. 0918, 0922 and 0927 have
 full directors over the same tables ([below](#prot-0918-0922-and-0927-directors)).
 Each module's profile paces the band, so `0x36` lasts as long as the module.
+
+PROT 0924's finale is a one-in-128 kill. Arm 0 draws `rand()`
+(`0x801F6B0C`) and raises the word `0x801F7C4C` only when the low seven bits
+are zero; arm 2 picks its cue off the word (`0x189` on the kill path, `0x18A`
+otherwise), arm 9 puts up the module's own "Ultimate Rave" title off the
+kill path, and arm 10 - head-table word 10, `0x801F75A8` - zeroes the
+victim's HP and stages its knockdown only on it (`beq a0,zero` at
+`0x801F7664`, the store at `0x801F76A0`). The port draws the verdict on the
+module's first tick from the world `rand()` stream
+(`ultimate_rave_kill_verdict`) and lands the kill on arm 10's pass; the
+head cue the arming seam raises is still the census literal `0x189`
+whichever path the roll takes.
 
 | PROT | word | drain | gate shapes beyond the plain countdown |
 |---|---|---|---|
@@ -2414,7 +2433,14 @@ is the module's, moved with two kernels:
   through `FUN_80019B28`;
 - **drifts**: values added straight into the pitch / yaw / TR globals every
   pass an arm runs (pitch `0x8007B790`, TR x / y / z `0x800840B8` /
-  `0x800840BC` / `0x800840C0`), behind the module countdown.
+  `0x800840BC` / `0x800840C0`), behind the module countdown. Under a shot
+  still in flight a drift is spent on every component the shot moves: the
+  walker `FUN_8002149C` adds `increment * step` and stores the endpoint back
+  once the component reaches it (`0x800215C8` / `0x8002165C`), and its task
+  lives until every component has landed, so the shot ends on its own
+  endpoint. A component the shot leaves alone has increment `0`, which the
+  walker skips, and keeps the drift; so does every component once the shot
+  has landed (`BattleCamera::drift_module`).
 
 Port: `cast_module_camera` (`ModuleCountdown`, `ModuleFollow`; the shot itself,
 `ModuleShot`, is `battle_cam_script`'s) with one director per module. A director runs on the phase the body is about

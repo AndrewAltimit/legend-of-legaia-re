@@ -452,3 +452,28 @@ fn astral_slash_walks_in_on_the_literal_walk_clip_and_waits_for_reach() {
     astral_slash_tick(&mut ctx, &mut caster, &mut victim, true, 0);
     assert_eq!(ctx.phase, 2);
 }
+
+/// PROT 0924 (Ultimate Rave) kills only on arm 0's one-in-128 roll, and
+/// only on arm 10's pass: off the kill path the victim keeps its HP.
+#[test]
+fn ultimate_rave_kills_on_its_roll_alone_and_on_arm_10() {
+    assert!(ultimate_rave_kill_verdict(0x100));
+    assert!(!ultimate_rave_kill_verdict(0x101));
+    assert_eq!(
+        (0..0x8000u32)
+            .filter(|&r| ultimate_rave_kill_verdict(r))
+            .count(),
+        0x8000 / 128
+    );
+    for kill in [false, true] {
+        let mut caster = actor(100);
+        let mut victim = actor(500);
+        let mut ctx = CastModuleCtx::default();
+        while ctx.phase < ULTIMATE_RAVE_FINALE_ARM {
+            ultimate_rave_tick(&mut ctx, &mut caster, &mut victim, kill);
+            assert_eq!(victim.hp, 500, "no arm before 10 touches the HP");
+        }
+        ultimate_rave_tick(&mut ctx, &mut caster, &mut victim, kill);
+        assert_eq!(victim.hp == 0, kill);
+    }
+}

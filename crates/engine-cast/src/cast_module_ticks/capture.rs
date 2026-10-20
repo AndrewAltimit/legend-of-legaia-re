@@ -415,10 +415,18 @@ pub fn spikefish_round_tail(ctx: &mut CastModuleCtx, party: &mut [CastActorState
 /// Its one HP write is not a hit: `sh zero, 0x14c(s3)` at `0x801F76A0` zeroes
 /// the victim's HP outright in the finale arm, next to `+0x225` / `+0x21C`
 /// render flags - the seat-0 "declare the victim dead" shape the module docs
-/// name, not a roll through a wrapper.
+/// name, not a roll through a wrapper. It runs only on the kill path: arm 0
+/// draws `rand()` (`jal 0x80056798` at `0x801F6B0C`) and raises the word
+/// `0x801F7C4C` only when its low seven bits are zero
+/// ([`ultimate_rave_kill_verdict`]), and arm 10 tests that word
+/// (`beq a0,zero` at `0x801F7664`) before the store. The same word picks
+/// the cue arm 2 fires (`0x189` on the kill path, `0x18A` otherwise,
+/// `0x801F6CFC..0x801F6D10`) and arm 9's banner (the module's own "Ultimate
+/// Rave" string at `0x801F69D8` only off the kill path).
 ///
 /// Ported: the bound, the phase walk, the stage/restage pairs and the finale
-/// HP zero. Not ported: the packet and camera arms.
+/// HP zero on the kill path (`kill`, the host's arm-0 draw). Not ported: the
+/// packet and camera arms.
 ///
 /// Wired: `World::run_cast_module_code`.
 ///
@@ -428,6 +436,7 @@ pub fn ultimate_rave_tick(
     ctx: &mut CastModuleCtx,
     caster: &mut CastActorState,
     victim: &mut CastActorState,
+    kill: bool,
 ) -> CastTickStep {
     // Arm 11 ends the module once its countdown has run out (`move fp,zero`
     // at `0x801F77D0`, past the `bgtz` the hold director carries).
@@ -436,7 +445,7 @@ pub fn ultimate_rave_tick(
         return CastTickStep::Done;
     }
     run_tick(ctx, 12, |c| {
-        if c.phase == ULTIMATE_RAVE_FINALE_ARM {
+        if c.phase == ULTIMATE_RAVE_FINALE_ARM && kill {
             victim.hp = 0;
             victim.render_flag = 2;
             victim.anim_rate = 2;
@@ -453,8 +462,16 @@ pub fn ultimate_rave_tick(
 pub const ULTIMATE_RAVE_TERMINAL_ARM: u8 = 11;
 
 /// The arm PROT 0924 zeroes the victim's HP in (`sh zero, 0x14c(s3)` at
-/// `0x801F76A0`).
-pub const ULTIMATE_RAVE_FINALE_ARM: u8 = 9;
+/// `0x801F76A0`): head-table word 10 (`0x801F75A8`; the table starts at
+/// `0x801F69E8`, four words into the image), between arm 9's gate at
+/// `0x801F74D4` and arm 11's entry at `0x801F7764`.
+pub const ULTIMATE_RAVE_FINALE_ARM: u8 = 10;
+
+/// PROT 0924's arm-0 verdict: `rand() & 0x7F == 0` raises the kill word
+/// `0x801F7C4C` (`0x801F6B0C..0x801F6B2C`), so one cast in 128 kills.
+pub fn ultimate_rave_kill_verdict(roll: u32) -> bool {
+    roll & 0x7F == 0
+}
 
 /// PROT 0922 (Puera) tick body - 2474 instructions, the band's longest.
 ///
