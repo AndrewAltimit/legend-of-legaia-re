@@ -187,3 +187,10 @@ changes = [
   ["states/noa_levelup_fight_pre/camera", 0.981, 0.97],
   ["states/noa_levelup_fight_pre/image", 0.832, 0.79],
 ]
+
+[[loosening]]
+file = "scripts/ci/retail-compare-baseline.json"
+reason = "Monster specials now roll on the move-power word FUN_801DD0AC actually reads (the whole +0 halfword, not its >> 2 modulus base), so Tail Fire deals retail's 10..22 instead of 6-7 and draws three stream values where the quartered roll's retry arm drew five. Every later draw moves, and with it the flame's particle realisation. Re-swept all 48 streams under the fixed roll: the best frame is 0xA54FF53A at 0.805 (old pin 0x1F83D9AB now 0.765); the 0.809 was the old stream's luck. The sibling battle_gimard_tail_fire_a rose 0.808 -> 0.818 on the same change."
+changes = [
+  ["states/battle_gimard_tail_fire_b/image", 0.809, 0.805],
+]

@@ -232,7 +232,7 @@ pub const BATTLE_RNG_PINS: &[(&str, u32)] = &[
     ("battle_gaza2_park_0x19", 0xAB1C_5ED5),
     ("battle_gaza2_park_0x19_summon_melee", 0xBC5D_413F),
     ("battle_gaza2_park_0x19_target_vahn", 0x428A_2F98),
-    ("battle_gimard_tail_fire_b", 0x1F83_D9AB),
+    ("battle_gimard_tail_fire_b", 0xA54F_F53A),
     ("battle_melee_hit_spark", 0x9E37_79B9),
     ("battle_noa_miracle_art_combo", 0x1283_5B01),
     ("battle_vahn_tri_somersault_super", 0x8BAE_8BFB),
