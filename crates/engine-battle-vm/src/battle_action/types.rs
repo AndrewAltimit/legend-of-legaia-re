@@ -552,6 +552,9 @@ pub struct BattleActor {
     /// The same carry for the strike loop's swing drift, which retail
     /// truncates on its own (`0x801E386C..0x801E3994`).
     pub drift_carry: crate::battle_action::motion::RootMotionCarry,
+    /// The same carry for the anim tick's in-range back-off, another term
+    /// retail truncates on its own (`0x80047C3C..0x80047D1C`).
+    pub backoff_carry: crate::battle_action::motion::RootMotionCarry,
     /// `+0x1DD` - active-target slot index (used by Magic / Item to retarget
     /// mid-chain).
     pub active_target: u8,

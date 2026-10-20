@@ -1266,6 +1266,10 @@ The port's `World::refresh_battle_body_pairs` makes the same store at the head o
 
 `tick_battle_locomotion` drives every playing clip's own `+0x0C` root speed (`drive_playing_root_motion`, the signed `0x80047D20..0x80047E18` term: `bltz` routes a negative speed straight to the step with no range test, a positive one steps only while the range poll fails, and the `+0x1DC` bit-3 latch blocks both).
 
+Just ahead of that term the same tick runs an **in-range back-off** (`0x80047C3C..0x80047D1C`). It measures each actor against its own target `+0x1DD` (`jal 0x8004E2F0` at `0x80047C40`) and, when the range law reads in range, the command flow `ctx[+0x06]` is `0xFF`, the category `+0x1DE` is `3` (Attack) and the actor is the acting seat `ctx[+0x13]`, steps the live pair back along the heading: `+0x38 -= (cos[f] * DAT_1F800393 * +0x21D) >> 13`, `+0x34` the same with `sin`.
+
+The shift is two less than the root term's, so it is a speed of `-4` on the same law, and it holds an attacker whose strikes carry it into its target at the edge of its reach for as long as the attack runs: `player_steal_skeleton_pre` captures Vahn in the strike loop with the range law reading `361` against the skeleton's `352`, just outside. Port: `World::drive_in_range_backoff`, with its own truncation carry (`BattleActor::backoff_carry`).
+
 The negative speeds in the player files are the reactions' - knockdown, block, some flinches - so a struck actor slides back; there is no recover backstep. Entry 8 carries speed `0` in every file and is the downed party member's kneel ([battle.md](battle-actor-rendering.md#the-commits-clip-tag-ladder)); the SM's pose `8` is a camera program.
 
 ### The sound a melee swing makes, and which half of it the port has
