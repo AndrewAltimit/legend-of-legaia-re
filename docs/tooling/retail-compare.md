@@ -2133,6 +2133,34 @@ Shapes the corpus separates, each with what it indicates:
 | a town label over the overworld's `H`, word `2000` and fog gate | a door caught before the town's field init ran; scored as the overworld `0x80084540` names ([below](#arrival-states-are-captured-before-the-town-runs)) |
 | retail word held by a flag the entry script already consumed (`garmel`'s `0x196`) | script progress: the track was started by a beat that has since cleared its trigger flag, so a card load would not restart it |
 | camera depth and position off on an ending vignette (`ending_vignette_rimelm_walkaway`) | a residue of about a dozen frames of the credits walk against the camera glide ([below](#ending-vignettes-are-mid-script)) |
+| a translucent near-camera body brighter or wider in the engine frame (`theeder_summon_mid_cast`, `nivora_duel_pre_megaton_press`) | the near-camera ghost (`0x8300_0000`, bank 2, `B + F/4`) a frame or two off the displayed one, not a blend defect ([below](#a-near-camera-ghost-is-checked-against-retails-own-packets)) |
+
+### A near-camera ghost is checked against retail's own packets
+
+A body the near-camera ghost pass `FUN_8004DC68` flags draws its whole mesh
+`B + F/4` through the dispatcher's bank 2
+([battle-actor-rendering](../subsystems/battle-actor-rendering.md#the-near-camera-ghost-pass-fun_8004dc68)).
+Its packets are in the state's ordering tables (tpage `0x75`, ABR `3`, flat
+`POLY_FT3` / `POLY_FT4`), so its contribution can be recomputed offline:
+rasterise each packet over the state's VRAM texels and CLUT, modulate by the
+packet colour, add a quarter. That is the yardstick for the engine's ghost,
+measured as its frame less the same frame with the ghost's colours zeroed.
+
+- `nivora_duel_pre_megaton_press` (Che, word `0x87808080`, weight `0xC8`,
+  packet colours `89` and `128`): the packets add a mean `(9.3, 6.7, 4.9)`
+  over the pixels they cover, the engine `(9.1, 6.7, 4.7)`. The draw inputs
+  agree as well - the colour word, the baked vertex colours, the ABE / ABR
+  on every TSB, and the texture page and CLUT rows byte for byte. Both
+  retail framebuffers (the displayed one at VRAM `y = 244` and the one
+  being built at `y = 4`) show a fainter ghost than retail's own packets
+  predict, which is open; seated on the captured heading `1933` (the replay
+  leaves Che on `2048`) the frame rises `.893` to `.899`.
+- `theeder_summon_mid_cast`: the yellow blade at the bottom right is the
+  third Gilium's leg (word `0x87FF2020`, the Venom tint under the ghost
+  mode). Retail draws the same blade in the frame it is building (VRAM
+  `y = 4`), and the displayed frame two passes older (`y = 244`) does not
+  have it in view yet. A sweep of a leg past the frame edge in two passes
+  is the residual, not the ghost's colour.
 
 ### A script-held height is not a footing
 
