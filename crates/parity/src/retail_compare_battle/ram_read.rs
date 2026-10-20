@@ -65,6 +65,67 @@ pub(super) fn retail_cast_parts(ram: &[u8]) -> Vec<legaia_engine_effects::summon
         .collect()
 }
 
+/// `ctx[+0x273]` - the pushes the damage-number ring took this action.
+const RING_PUSHES: u32 = 0x273;
+/// `ctx[+0x83C + i * 4]` - ring entry `i`'s amount.
+const RING_VALUE: u32 = 0x83C;
+/// `ctx[+0x318 + i * 2]` - ring entry `i`'s pool slot.
+const RING_SEAT: u32 = 0x318;
+/// The ring's entry count (`FUN_801F44A0` folds its cursor `mod 8`).
+const RING_LEN: u8 = 8;
+
+/// The hits the action in flight has landed on each pool slot's HP, off the
+/// damage-number ring `FUN_801F44A0` pushes (inlined at `0x801E1898..0x801E1918`
+/// in the monster cast tick, at `0x801EDDE4` in the melee kernel):
+/// `(pool slot, amount)`.
+///
+/// The action seed `0x0C` zeroes the push count `ctx[+0x273]` and the cursor
+/// `ctx[+0x262]` at the head of every action (`0x801E2C3C` / `0x801E2C40`),
+/// so inside an action entries `0..count` are exactly its own pushes. Ahead
+/// of that pass (the round states and `0x0C` itself) the ring still holds
+/// the previous action's, which no replay re-deals, and a count past the
+/// ring's length has overwritten its first hits; both read as none.
+///
+/// A push is not always on the bar yet. The monster cast tick stores the HP
+/// beside its push (`0x801E1960`), but the melee kernel banks a swing's
+/// damage in the victim's word `+0x00` (`0x801EDB40`, the amount it pushes)
+/// and takes the whole bank off `+0x14C`
+/// later (`0x801EEA3C`, zeroing the bank at `0x801EEA74`): a capture
+/// mid-combo shows the hits on the ring and the victim's HP untouched
+/// (`battle_vahn_tri_somersault_super`: `242` pushed, `442` banked, full
+/// HP). What the bank still holds is taken off the slot's sum.
+pub(super) fn action_hits(ram: &[u8], ctx: u32) -> Vec<(u8, u16)> {
+    let state = game_anchors::u8_at(ram, ctx + 7);
+    let count = game_anchors::u8_at(ram, ctx + RING_PUSHES);
+    if game_anchors::u8_at(ram, ctx + 6) != 0xFF
+        || PRE_SEED_STATES.contains(&state)
+        || state == 0x0C
+        || count > RING_LEN
+    {
+        return Vec::new();
+    }
+    let mut pushed = [0u32; 8];
+    for i in 0..u32::from(count) {
+        let value = game_anchors::u16_at(ram, ctx + RING_VALUE + i * 4) as i16;
+        let seat = game_anchors::u16_at(ram, ctx + RING_SEAT + i * 2);
+        if value > 0 && seat < 8 {
+            pushed[seat as usize] += value as u32;
+        }
+    }
+    (0..8u8)
+        .filter_map(|slot| {
+            let p = game_anchors::u32_at(ram, ACTOR_TABLE + u32::from(slot) * 4);
+            let banked = if in_ram(p) {
+                game_anchors::u32_at(ram, p)
+            } else {
+                0
+            };
+            let landed = pushed[slot as usize].saturating_sub(banked);
+            (landed > 0).then_some((slot, landed.min(u32::from(u16::MAX)) as u16))
+        })
+        .collect()
+}
+
 impl RetailBattle {
     /// Read the battle observables; `Err` names why the state is not a
     /// seedable battle.
@@ -210,6 +271,7 @@ impl RetailBattle {
                 .then(|| active.map(|p| game_anchors::u8_at(ram, p + 0x1DB)))
                 .flatten(),
             module_phase: game_anchors::u8_at(ram, ctx + 0x279),
+            action_hits: action_hits(ram, ctx),
             entry_latches: Vec::new(),
             clip_cursors: (0..8u32)
                 .filter_map(|slot| {

@@ -427,6 +427,11 @@ pub struct RetailBattle {
     /// stream, so a seed that reaches the phase on another pose frames
     /// another shot.
     pub win_pose: Option<u8>,
+    /// The hits the action in flight has already landed, as `(pool slot,
+    /// amount)` pairs off the damage-number ring ([`action_hits`]). The
+    /// replay re-deals them, so the seed takes them back off the bars
+    /// ([`Self::pre_action_hp`]).
+    pub action_hits: Vec<(u8, u16)>,
     /// Each pool slot's live `+0x34` / `+0x38` pair (party `0..=2`,
     /// monsters `3..=7`), `None` for an empty slot.
     pub ground: Vec<Option<[i16; 2]>>,

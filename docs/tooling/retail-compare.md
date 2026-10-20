@@ -758,6 +758,7 @@ for a reason that is not a port defect:
 | [Raise the Mystic Shield](#the-mystic-shield-a-capture-already-holds) | the shield word `_DAT_8007BD84` | `World::raise_mystic_shield`, `LEGAIA_BATTLE_MYSTIC_SHIELD=1` |
 | [Seat the per-pass parts](#parts-a-module-seats-on-every-pass) | the live parts of every record a module seats on every pass | `SummonScene::install_part_snapshot`, `LEGAIA_SEAT_CAST_PARTS` |
 | [Land each body's clip](#the-keyframe-each-body-stands-on) | anim node cursor `*(+0x22C) + 0x68`, clip `+0x1D9`, rates `+0x21D` / entry `+0x78` | `World::seat_battle_clip_cursor`, `LEGAIA_SEAT_BATTLE_CLIPS` |
+| [Take back landed hits](#hits-already-landed) | this action's damage-number ring pushes `ctx[+0x83C]` / `+0x318`, count `ctx[+0x273]` | `RetailBattle::pre_action_hp` |
 | [Take back rewards](#rewards-already-granted) | EXP share `gp+0xA04`, stat window, banner element `ctx[+0x26]` | `ungrant_results_rewards`, `ungrant_magic_level_up` |
 | [Place the phase](#placing-the-phase) | command-flow byte `ctx[+0x06]`, cursor `ctx[+0x07]`, seat `ctx[+0x13]` | `SeedPlan` |
 
@@ -1205,6 +1206,33 @@ retail's `(920, -463)`, where her idle stood at `(803, -313)`. The member also s
 round, so the heading its fall left it on is seeded with its ground pair, as
 a spent combatant's is (`RetailBattle::seeded_facing`): Noa's kneel faces
 `3723`, and drawn along the engine's `0` it spread across the frame.
+
+### Hits already landed
+
+A capture inside an action after its hits holds the victims' HP with those hits
+taken. The drive (and a replayed cast) plays the action from its prompt and
+deals them again, so a bar seeded with the capture's HP reads every landed hit
+twice: `battle_gimard_tail_fire_a` showed Vahn's `154` less a second Tail Fire.
+
+The damage-number ring says which hits are the action's own. The action seed
+`0x0C` zeroes its push count `ctx[+0x273]` and cursor `ctx[+0x262]`
+(`0x801E2C3C` / `0x801E2C40`), and every push (`FUN_801F44A0`, inlined in the
+monster cast tick and the melee kernel) stores the amount at
+`ctx[+0x83C + i*4]` and the pool slot at `ctx[+0x318 + i*2]`. So past the seed
+entries `0..count` are this action's hits, and the seed adds each back onto
+its slot's bar (`RetailBattle::action_hits`, `pre_action_hp`). A push is not
+always on the bar yet: the monster cast tick stores the HP beside its push
+(`0x801E1960`), but the melee kernel banks each swing in the victim's word
+`+0x00` (`0x801EDB40`) and takes the whole bank off `+0x14C` later
+(`0x801EEA3C`, zeroed at `0x801EEA74`), so what the bank still holds is not
+added back (`battle_vahn_tri_somersault_super`: `242` pushed, `442` banked,
+the monster at full HP). Ahead of the
+seed (the round states and `0x0C` itself) the ring is the previous action's,
+and a count past the ring's eight entries has lost its first hits; both are
+left alone. A slot the action left at `0` keeps its HP: reviving a kill is
+[`action_victims`](#driving-to-the-phase)' job. The HP channels still score the
+seed against the capture, so the snapshot they read is taken with the hits
+landed.
 
 ### Rewards already granted
 

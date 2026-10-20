@@ -390,7 +390,7 @@ pub fn run_engine_battle(
                 let hp = if slot >= pc && victims.contains(&(slot - pc)) {
                     1
                 } else {
-                    c.hp
+                    battle.pre_action_hp(retail_slot(pc, slot), c)
                 };
                 Some(BarSeed {
                     slot: u8::try_from(slot).ok()?,
@@ -534,7 +534,42 @@ pub fn run_engine_battle(
         (SeedPlan::Menu { .. } | SeedPlan::Action { .. }, _) if prompt_tick.is_some() => {
             if let Some(drive) = battle.battle_drive() {
                 let track = session.host.bgm_track_word.or(director.last);
-                pre_drive = Some(combat_snapshot(&mut session.host.world, track));
+                let mut snap = combat_snapshot(&mut session.host.world, track);
+                // The bars were seeded ahead of the action's landed hits
+                // ([`RetailBattle::pre_action_hp`]); the channel scores the
+                // seed against the capture, so it reads them landed.
+                let dealt = |slot: u8, hp: u16| -> u16 {
+                    let sum: u32 = battle
+                        .action_hits
+                        .iter()
+                        .filter(|&&(s, _)| s == slot)
+                        .map(|&(_, v)| u32::from(v))
+                        .sum();
+                    (u32::from(hp).saturating_sub(sum)) as u16
+                };
+                for (s, c) in snap.party.iter_mut().enumerate() {
+                    if battle
+                        .party
+                        .get(s)
+                        .copied()
+                        .flatten()
+                        .is_some_and(|r| r.hp != 0)
+                    {
+                        c.hp = dealt(s as u8, c.hp);
+                    }
+                }
+                for (m, c) in snap.monsters.iter_mut().enumerate() {
+                    if battle
+                        .monsters
+                        .get(m)
+                        .copied()
+                        .flatten()
+                        .is_some_and(|r| r.hp != 0)
+                    {
+                        c.hp = dealt(3 + m as u8, c.hp);
+                    }
+                }
+                pre_drive = Some(snap);
                 driven = Some(run_drive(
                     &mut session,
                     &mut director,
@@ -736,6 +771,17 @@ pub fn run_engine_battle(
 }
 
 /// The combatant-side observables a battle state is scored on.
+/// Retail's pool slot for the engine's bar slot `slot`: party seats share
+/// the index, monster `m` sits at `pc + m` in the engine and `3 + m` in
+/// retail's actor table.
+fn retail_slot(pc: usize, slot: usize) -> u8 {
+    if slot < pc {
+        slot as u8
+    } else {
+        (3 + slot - pc) as u8
+    }
+}
+
 pub(super) struct CombatSnapshot {
     pub(super) mode: SceneMode,
     pub(super) monster_ids: Vec<Option<u16>>,

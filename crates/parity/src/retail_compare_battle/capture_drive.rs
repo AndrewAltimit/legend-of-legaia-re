@@ -43,6 +43,26 @@ impl RetailBattle {
             .collect()
     }
 
+    /// `c`'s HP before the action in flight landed its hits on pool slot
+    /// `slot` ([`Self::action_hits`]): the replay plays that action from its
+    /// prompt and deals them again, so a bar seeded with the capture's HP
+    /// would read them twice (`battle_gimard_tail_fire_a` showed Vahn's
+    /// `154` less a second Tail Fire). A seat the action left at `0` keeps
+    /// its HP, which [`Self::action_victims`] owns, and the sum is clamped to
+    /// the bar's maximum.
+    pub fn pre_action_hp(&self, slot: u8, c: &Combatant) -> u16 {
+        if c.hp == 0 {
+            return c.hp;
+        }
+        let dealt: u32 = self
+            .action_hits
+            .iter()
+            .filter(|&&(s, _)| s == slot)
+            .map(|&(_, v)| u32::from(v))
+            .sum();
+        (u32::from(c.hp) + dealt).min(u32::from(c.hp_max.max(c.hp))) as u16
+    }
+
     /// Whether the image child takes the frame the display showed - the
     /// drive's tick less [`Self::display_lag`] - rather than the RAM's
     /// (`LEGAIA_CAPTURE_DISPLAY_LAG`; the child keeps the gate's own frame
