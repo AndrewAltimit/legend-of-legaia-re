@@ -289,3 +289,56 @@ fn a_rounds_committed_spells_list_their_cast_voices_ahead() {
     assert_eq!(w.audio.battle_xa_busy_frames, 0, "and holds no drive");
     eprintln!("[ok] round prestage lists {triples:?}");
 }
+
+/// PROT 0924 (Ultimate Rave, the Lippian flute's `0x96`) plays its cue off
+/// arm 0's kill roll: `0x189` on the one-in-128 kill, `0x18A` on a miss
+/// (`0x801F6CFC..0x801F6D10`). The roll is drawn at the arming seam and
+/// held for the finale arm, so the cue and the kill always agree.
+#[test]
+fn ultimate_rave_cues_its_kill_roll() {
+    use legaia_engine_battle_vm::battle_cast_cue::{
+        VoiceCueGates, VoiceCueVerdict, admit_voice_cue,
+    };
+    use legaia_engine_cast::cast_module_ticks::ultimate_rave_cue;
+    let Some(dir) = extracted_dir() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset or extracted/ incomplete");
+        return;
+    };
+    let mut seen = [false; 2];
+    for seed in 0u32..4096 {
+        let mut w = battle_world(&dir);
+        w.rng_state = seed;
+        w.arm_summon_stager(0, 0x96);
+        let kill = w
+            .casting
+            .module_cam
+            .kill
+            .expect("the roll is drawn at arming");
+        let id = ultimate_rave_cue(kill);
+        let raw = w
+            .audio
+            .xa_cue_durations
+            .as_deref()
+            .and_then(|t| t.get(usize::from(id) - 0x100).copied());
+        let gates = VoiceCueGates {
+            side_band_stage: 0,
+            clip_span_left: 0,
+        };
+        let VoiceCueVerdict::Play(want) = admit_voice_cue(id, gates, raw) else {
+            panic!("cue {id:#x} plays");
+        };
+        let xa = w.drain_battle_xa_cues();
+        assert_eq!(xa.len(), 1);
+        assert_eq!(
+            (xa[0].clip, xa[0].channel, xa[0].duration_sectors),
+            (want.clip_slot, want.channel, want.duration_sectors),
+            "seed {seed}: kill {kill}"
+        );
+        seen[usize::from(kill)] = true;
+        if seen == [true, true] {
+            break;
+        }
+    }
+    assert_eq!(seen, [true, true], "both paths reached");
+    eprintln!("[ok] PROT 0924 cues 0x18A on a miss, 0x189 on the kill");
+}

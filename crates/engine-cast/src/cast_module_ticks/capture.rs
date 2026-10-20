@@ -473,6 +473,19 @@ pub fn ultimate_rave_kill_verdict(roll: u32) -> bool {
     roll & 0x7F == 0
 }
 
+/// PROT 0924's own CD-XA cue, fired from arm 2 off the kill word
+/// (`0x801F6CFC..0x801F6D10`: `li a0,0x18A` in the `beq` delay slot, then
+/// `li a0,0x189` when the word is set, into `jal 0x8004FCC8`). The module's
+/// head-cue scan reads the kill path's literal; a missed roll plays the
+/// other one.
+pub fn ultimate_rave_cue(kill: bool) -> u16 {
+    if kill { 0x189 } else { 0x18A }
+}
+
+/// PROT 0924's entry, the module [`ultimate_rave_tick`] and
+/// [`ultimate_rave_cue`] belong to.
+pub const ULTIMATE_RAVE_ENTRY: u32 = 924;
+
 /// PROT 0922 (Puera) tick body - 2474 instructions, the band's longest.
 ///
 /// Twenty-five phase arms behind `sltiu a0, 0x19` (`0x801F6AB4`) through the

@@ -2085,11 +2085,12 @@ are zero; arm 2 picks its cue off the word (`0x189` on the kill path, `0x18A`
 otherwise), arm 9 puts up the module's own "Ultimate Rave" title off the
 kill path, and arm 10 - head-table word 10, `0x801F75A8` - zeroes the
 victim's HP and stages its knockdown only on it (`beq a0,zero` at
-`0x801F7664`, the store at `0x801F76A0`). The port draws the verdict on the
-module's first tick from the world `rand()` stream
-(`ultimate_rave_kill_verdict`) and lands the kill on arm 10's pass; the
-head cue the arming seam raises is still the census literal `0x189`
-whichever path the roll takes.
+`0x801F7664`, the store at `0x801F76A0`). The port draws the verdict at the
+arming seam - the module's first tick - from the world `rand()` stream
+(`World::ultimate_rave_verdict` over `ultimate_rave_kill_verdict`), raises
+the cue it picks (`ultimate_rave_cue`) there, and lands the kill on arm 10's
+pass. The head-cue census reads `0x189` for 0924 because the scan takes the
+kill path's literal; a missed roll plays `0x18A`.
 
 | PROT | word | drain | gate shapes beyond the plain countdown |
 |---|---|---|---|

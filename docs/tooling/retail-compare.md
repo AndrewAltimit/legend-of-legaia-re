@@ -1078,6 +1078,16 @@ frame (`SummonScene::install_part_snapshot`): position, rotation banks, wait
 retired and a shortfall clones a live one; no record is invented. The
 frame rose from `.580` to `.809`.
 
+That rise is retail's own history injected into the engine's frame, not
+engine parity: the seat hands the engine retail's `rand()` rolls and pass
+cadence for these parts, so the score then measures everything **except**
+the per-pass spawn pattern - how many rays the engine keeps alive, how far
+apart in age, at which angles. The engine's own pattern (47 rays, `64`
+apart, its own stream's angles) is what the pre-seat `.580` scored, and it
+remains a difference this channel no longer sees; the
+[cast-sequence oracle](cast-sequence-oracle.md) without the seat is the
+instrument for it.
+
 The snapshot is kept to those records. A part seated once runs on a clock
 the replay already aligns, and the RAM is one frame-pair ahead of the
 displayed frame: seated from the RAM, Ultra Charge's camera-locked discs

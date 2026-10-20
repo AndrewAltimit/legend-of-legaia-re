@@ -476,4 +476,6 @@ fn ultimate_rave_kills_on_its_roll_alone_and_on_arm_10() {
         ultimate_rave_tick(&mut ctx, &mut caster, &mut victim, kill);
         assert_eq!(victim.hp == 0, kill);
     }
+    assert_eq!(ultimate_rave_cue(true), 0x189);
+    assert_eq!(ultimate_rave_cue(false), 0x18A);
 }

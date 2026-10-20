@@ -1042,14 +1042,7 @@ impl World {
                 924 => {
                     // Arm 0's kill roll, drawn once per cast and held for
                     // arm 10 (the word `0x801F7C4C`).
-                    let kill = match self.casting.module_cam.kill {
-                        Some(k) => k,
-                        None => {
-                            let k = ticks::ultimate_rave_kill_verdict(self.next_rand());
-                            self.casting.module_cam.kill = Some(k);
-                            k
-                        }
-                    };
+                    let kill = self.ultimate_rave_verdict();
                     Some(ticks::ultimate_rave_tick(
                         &mut ctx,
                         &mut caster,
