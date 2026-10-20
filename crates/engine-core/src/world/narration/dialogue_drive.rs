@@ -384,6 +384,49 @@ impl World {
                 id.park_frames = 0;
                 continue;
             }
+            // A placement the talk set walking carries `0x400` until the
+            // kernel lands it, and the dispatcher prologue returns any
+            // cross-context op aimed at it at its own PC: the talk retries
+            // next frame. `town0c` `P1[21]` (the queen-bee beat) sends
+            // `C1 3B 02 46` then `C1 3B 02 41`, and the second leg starts
+            // where the first one landed.
+            // REF: FUN_801DE840 (0x801DE90C..0x801DE944)
+            let walking_target = ext_target
+                .and_then(|t| host.world.placement_slot_for_target(t))
+                .filter(|slot| host.world.npcs.glide_legs.contains_key(slot));
+            if walking_target.is_some() {
+                break;
+            }
+            // A compass walk aimed at a placement (`B7` / `C1 <id> b0 b1`):
+            // the arm seats the op on the target's `+0x94`, raises its
+            // `0x400` and advances the record past the op (`s7 = 3` plus the
+            // target byte) - only a player target parks the caller. Run on
+            // the talk's stand-in context it walked nobody.
+            // REF: FUN_801DE840 (0x801DEE90..0x801DEF1C), FUN_8003774C (the 0x37 / 0x41 arm)
+            if matches!(b, 0xB7 | 0xC1)
+                && let Some(slot) = ext_target.and_then(|t| host.world.placement_slot_for_target(t))
+                && let Some((body0, body1, rate)) =
+                    super::field_channels::compass_walk_operands(&id.bytecode, id.pc)
+            {
+                host.world.npcs.motions.remove(&slot);
+                host.world.npcs.glide_legs.insert(
+                    slot,
+                    legaia_engine_field::cutscene_timeline::TimelineNpcGlide {
+                        slot,
+                        state: legaia_engine_motion_vm::motion_vm::MotionState::default(),
+                        body0,
+                        body1,
+                        rate,
+                        frames: 0,
+                    },
+                );
+                if id.pc < id.visited.len() {
+                    id.visited[id.pc] = true;
+                }
+                id.pc += 4;
+                id.park_frames = 0;
+                continue;
+            }
             // `A2 <target> <clip>` - a cross-context ExecMove. Retail writes
             // the target's `+0x5C` and calls the anim tick, which re-points its
             // `+0x4C` clip pointer and zeroes its cursor; the port binds the

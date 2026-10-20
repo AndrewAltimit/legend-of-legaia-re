@@ -669,3 +669,52 @@ fn a_talkers_own_compass_walk_moves_the_talker_before_the_box() {
     let id = world.dialog.inline.as_ref().unwrap();
     assert_eq!(id.ctx.flags & 0x400, 0, "the landed walk cleared the bit");
 }
+
+#[test]
+fn a_talks_cross_context_compass_walks_move_their_target_in_turn() {
+    // `C1 3B 02 46` then `C1 3B 02 41` (`town0c` `P1[21]`): each walks
+    // placement `0x3B` along `-X` (6 then 1 half-tiles); the record runs on
+    // past the first, and the second waits at its PC until the first lands.
+    use legaia_engine_field::field_channels::FieldChannel;
+    use legaia_engine_vm::field::FieldCtx;
+    let mut world = World {
+        mode: legaia_engine_mode::mode::SceneMode::Field,
+        ..World::default()
+    };
+    world.field_vm.channels = vec![FieldChannel {
+        placement_index: 23,
+        ctx: FieldCtx {
+            script_id: 0x3B,
+            ..FieldCtx::default()
+        },
+        record_offset: 0,
+        pc: 0,
+        done: false,
+        object_bind: false,
+    }];
+    world.npcs.positions.insert(23, (2752, 2752));
+    let body = vec![
+        0xC1, 0x3B, 0x02, 0x46, 0xC1, 0x3B, 0x02, 0x41, 0x1F, b'B', 0x00,
+    ];
+    world.start_inline_dialogue_with_prologue(body, 0, 8);
+    world.step_inline_dialogue(false, false, false);
+    assert!(
+        world.npcs.glide_legs.contains_key(&23),
+        "the first leg is armed"
+    );
+    assert_eq!(
+        world.dialog.inline.as_ref().unwrap().pc,
+        4,
+        "held on the second"
+    );
+    for _ in 0..80 {
+        world.tick_field_npc_motions();
+    }
+    assert_eq!(world.npcs.positions.get(&23), Some(&(2368, 2752)));
+    world.step_inline_dialogue(false, false, false);
+    for _ in 0..80 {
+        world.tick_field_npc_motions();
+    }
+    assert_eq!(world.npcs.positions.get(&23), Some(&(2304, 2752)));
+    assert_eq!(run_inline_until_box(&mut world), b"B");
+}
