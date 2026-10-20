@@ -177,3 +177,13 @@ changes = [
   ["states/noa_levelup_fight_pre/image", 0.832, 0.787],
   ["states/rim_elm_gimard_victory/image", 0.908, 0.841],
 ]
+
+[[loosening]]
+file = "scripts/ci/retail-compare-baseline.json"
+reason = "The Auto | Command prompt 0x78 now keeps the member's case-0 close-up: its opening step 0x2A (FUN_801D388C body 0x801D3980) arms no framing, where the port had framed the enemy on case 1. noa_levelup_fight_pre's pad drive passes the prompt on every member's turn, so the replayed rounds reach the Done band on a camera history a step different; its case-8 yaw lands at 1276 against the previous 1274 (retail 1202 - the ctx[+0x6DA] clock gap the previous entry records), while the same run's image rose 0.787 -> 0.790. The rest of the battle set did not move on this change."
+changes = [
+  ["states/noa_levelup_fight_pre/camera", 0.971, 0.97],
+  # The net move against main, stacked on the back-off entry above.
+  ["states/noa_levelup_fight_pre/camera", 0.981, 0.97],
+  ["states/noa_levelup_fight_pre/image", 0.832, 0.79],
+]

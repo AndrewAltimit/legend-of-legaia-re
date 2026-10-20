@@ -1617,11 +1617,11 @@
     "noa_levelup_fight_pre": {
       "battle_party": 1.0,
       "bgm": 1.0,
-      "camera": 0.971,
+      "camera": 0.97,
       "enemies": 1.0,
       "enemy_hp": 1.0,
       "flags": 1.0,
-      "image": 0.787,
+      "image": 0.79,
       "inventory": 1.0,
       "mode": 1.0,
       "phase": 1.0,
