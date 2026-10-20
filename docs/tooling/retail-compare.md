@@ -891,6 +891,16 @@ case aims at those positions - case 6 on a caster, case 0 on a member, case
   combatant's heading, the target included after the strike, moves the corpus
   both ways: `rim_elm_gimard_victory`'s Gimard, struck twice, fell from `.909`
   to `.792`.
+
+  A [replayed cast](#replayed-casts) runs no earlier round at all: it is
+  dispatched at the fight's first prompt. Every heading the cast itself does
+  not write is then one nothing restores, so each placed combatant takes its
+  captured heading except the caster (the cast's `0x28` recomputes it from
+  the target bearing) and the cast's targets (the target byte's seat, or its
+  whole side for `8` / `9`). `theeder_summon_mid_cast` rose from `.857` to
+  `.867` and `orb_summon_mid_cast` from `.995` to `1.0`; the rule took
+  `shiny_refactor_gimard_levelup`'s `camera` down a step while it also seated
+  the cast's target, which the cast had turned.
 - **Defeat tint.** A body whose tint state `+0x21C` is the defeat fade takes its
   colour lanes `+0x04` (a `:d<hex>` field). A monster killed earlier has stepped
   them to black and is no longer drawn; without the field a `0`-HP body with

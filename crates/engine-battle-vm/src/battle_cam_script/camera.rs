@@ -49,6 +49,12 @@ pub(super) struct Glide {
 }
 
 impl Glide {
+    /// Whether an arrive-together glide has taken its last step: it holds
+    /// the pose it landed and moves nothing more.
+    pub(super) fn landed(&self) -> bool {
+        self.steps_left == Some(0)
+    }
+
     /// Linear glide: every component arrives together after `steps` steps.
     ///
     /// The rate table is **retail's**. `build_camera_angle_tween` is
