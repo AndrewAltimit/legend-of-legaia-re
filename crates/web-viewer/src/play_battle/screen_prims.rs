@@ -161,46 +161,41 @@ impl LegaiaRuntime {
     fn tick_battle_intro_prims(
         &mut self,
     ) -> Option<Vec<legaia_render_kernels::screen_prim::ScreenPrim>> {
-        use legaia_engine_battle::encounter::EncounterPhase;
-
+        use legaia_engine_session::battle_intro::{BattleIntroStep, step_battle_intro};
         let Some(host) = self.scene_host.host() else {
             self.drop_battle_intro();
             return None;
         };
-        let phase = host.world.encounters.session.as_ref().map(|s| s.phase());
-        let Some(EncounterPhase::Transition { roll, .. }) = phase else {
-            self.drop_battle_intro();
-            return None;
-        };
-        let Some(entity) = host.world.battle.intro else {
-            // The transition is armed but its entity has not ticked yet:
-            // keep the emitter (the native window does the same), just show
-            // nothing this frame.
-            return None;
-        };
-        let total = host
-            .world
-            .encounters
-            .session
-            .as_ref()
-            .map(|s| i32::from(s.transition_frames))
-            .unwrap_or(0);
-        if self.battle_intro.is_none() {
-            self.battle_intro = Some(self.arm_battle_intro(roll.formation_id, total));
+        // The arming and the clock step are the step both hosts run;
+        // `gl.readPixels` hands capture rows bottom-up, so the emitter flips
+        // them.
+        match step_battle_intro(host, &mut self.battle_intro, true) {
+            BattleIntroStep::Idle { dropped } => {
+                if dropped {
+                    self.field_vram_dirty = true;
+                }
+                self.battle_intro_geom = None;
+                None
+            }
+            // Armed but the entity has not ticked yet: keep the emitter,
+            // show nothing this frame.
+            BattleIntroStep::Pending => None,
+            BattleIntroStep::Frame { prims, .. } => {
+                // The curtain's CPU two-pass composition (and nothing else,
+                // for the other styles) changes the captured page per frame;
+                // the page re-uploads through the same dirty flag the field
+                // CLUT effects use.
+                if self
+                    .battle_intro
+                    .as_mut()
+                    .and_then(|i| i.refresh_captured_page())
+                    .is_some()
+                {
+                    self.field_vram_dirty = true;
+                }
+                Some(prims)
+            }
         }
-        let mut intro = self.battle_intro.take().expect("armed above");
-        // Stepped to the entity's clock, one step per clock unit - the same
-        // call the native window makes, whose redraws do not run one per
-        // world tick (`BattleIntro::advance_to`).
-        let frame = intro.advance_to(entity.elapsed);
-        // The curtain's CPU two-pass composition (and nothing else, for the
-        // other styles) changes the captured page per frame; the page
-        // re-uploads through the same dirty flag the field CLUT effects use.
-        if intro.refresh_captured_page().is_some() {
-            self.field_vram_dirty = true;
-        }
-        self.battle_intro = Some(intro);
-        Some(frame.prims)
     }
 
     /// This frame's in-battle screen FX primitives - the browser seat of
@@ -336,39 +331,6 @@ impl LegaiaRuntime {
             self.field_vram_dirty = true;
         }
         self.battle_intro_geom = None;
-    }
-
-    /// Build the emitter for the battle about to open - the mirror of the
-    /// native window's `arm_battle_intro`, resolving the same three selector
-    /// inputs: the formation's **first monster id** (not the row index -
-    /// reading the row is what made every id-keyed override unreachable), the
-    /// row's own per-battle flags byte (`DAT_8007BD60` bit `0x80`, the only
-    /// bit the selector reads), and the scene's PROT base (`DAT_80084540`).
-    fn arm_battle_intro(&self, formation_id: u16, total: i32) -> BattleIntro {
-        let host = self.scene_host.host().expect("caller checked");
-        // One engine-side resolver for all three inputs
-        // (`SceneHost::battle_intro_style_inputs`) and one arming
-        // (`BattleIntro::arm_for_battle`, the native window's call too): the
-        // PROT 0979 tables with their disc-free fallbacks, the shade pack,
-        // the env seeds.
-        let inputs = host.battle_intro_style_inputs(formation_id);
-        let overlay = host
-            .index
-            .entry_bytes_extended(legaia_render_kernels::battle_intro::INTRO_OVERLAY_PROT)
-            .ok();
-        let shade = host
-            .index
-            .entry_bytes(legaia_actor_formats::field_char_textures::PROT_ENTRY_INDEX)
-            .ok();
-        BattleIntro::arm_for_battle(
-            &inputs,
-            total,
-            overlay.as_deref(),
-            shade.as_deref().map(Vec::as_slice),
-            host.world.rng_state,
-        )
-        // `gl.readPixels` hands rows bottom-up; the shared blit flips them.
-        .with_flipped_capture()
     }
 }
 

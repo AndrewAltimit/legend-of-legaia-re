@@ -39,7 +39,6 @@
 use crate::runtime::LegaiaRuntime;
 use legaia_engine_mode::mode::SceneMode;
 use legaia_engine_ui::{self as ui, SpriteDraw, TextDraw};
-use legaia_render_kernels::battle_intro::BattleIntro;
 use wasm_bindgen::prelude::*;
 
 mod overlay_draws;

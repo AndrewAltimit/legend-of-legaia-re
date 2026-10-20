@@ -24,7 +24,7 @@
 //! | # | rung | how it is driven |
 //! |---|---|---|
 //! | 1 | selector census | `select_intro_style` over its whole documented input space + over every formation the loaded disc's own table registers |
-//! | 2 | five style emitters | the page's own `BattleIntro`, armed from the same PROT 0979 tables `arm_battle_intro` parses, ticked for the full retail duration |
+//! | 2 | five style emitters | the page's own `BattleIntro`, armed from the same PROT 0979 tables `battle_intro::arm_battle_intro` parses, ticked for the full retail duration |
 //! | 3 | curtain two-pass | the capture landing + `refresh_captured_page` chain (`FUN_801D1D9C`'s subtractive mid-pass decay and the no-clear display trail) |
 //! | 4 | target ring, pad-driven | a real forced encounter on the play page, walked into the target cursor with **D-pad Left** and cycled with Left/Right |
 //! | 5 | target ring, property | the ring builder + cursor step + the sweep-group aim, pinned against the disassembly's stated intent |
@@ -70,7 +70,7 @@ use legaia_web_viewer::runtime::LegaiaRuntime;
 const W: u32 = 960;
 const H: u32 = 720;
 /// PROT entry carrying the field-to-battle intro overlay - the same constant
-/// the page's `arm_battle_intro` uses for its two in-overlay data tables.
+/// the shared `battle_intro::arm_battle_intro` uses for its two in-overlay data tables.
 const INTRO_OVERLAY_PROT: u32 = 979;
 
 fn disc_bytes() -> Option<Vec<u8>> {
@@ -165,7 +165,7 @@ fn rung1_selector_census() -> Result<(), String> {
 // Rungs 2 + 3 - the five style emitters
 // ---------------------------------------------------------------------------
 
-/// The PROT 0979 tables the page's `arm_battle_intro` parses: the curtain's
+/// The PROT 0979 tables the shared `battle_intro::arm_battle_intro` parses: the curtain's
 /// quad-descriptor table and the tile seeder's corner table, both read out of
 /// the intro overlay relocated to its static load base.
 fn intro_tables(index: &ProtIndex) -> (IntroQuadTable, [i32; 4]) {
@@ -227,7 +227,7 @@ struct StyleRun {
     column_quads: u64,
 }
 
-/// Arm the emitter for `style` exactly as the page's `arm_battle_intro` does -
+/// Arm the emitter for `style` exactly as the shared `battle_intro::arm_battle_intro` does -
 /// same tables, same corner set, same `IntroEnv` seeding - and run it for the
 /// style's own retail duration.
 fn run_style(

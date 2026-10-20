@@ -103,6 +103,19 @@ SIM_PAIRS: list[dict[str, object]] = [
         "symbols": ["step_battle_presentation"],
     },
     {
+        "what": "field-to-battle intro emitter, native vs play page - the "
+        "Transition-phase gate, the arming off the formation's style inputs "
+        "and the step to the transition entity's clock were one copy per "
+        "host. Both run the one session step "
+        "`battle_intro::step_battle_intro`; each keeps only its capture",
+        "sites": {
+            "native": ("crates/engine-shell/src/window/battle/intro.rs", "take_battle_intro_frame"),
+            "web": ("crates/web-viewer/src/play_battle/screen_prims.rs", "tick_battle_intro_prims"),
+        },
+        "mode": "symbols_all",
+        "symbols": ["step_battle_intro"],
+    },
+    {
         "what": "battle mode edge, native vs play page - the Field <-> Battle "
         "latch, the encounter banner it arms and the exit edge's reset of the "
         "popups and the status CLUT's palette copies and Stone latches "
@@ -526,19 +539,13 @@ SIM_PAIRS: list[dict[str, object]] = [
         "mode": "symbols_all",
         "symbols": ["vp_raw"],
     },
-    {
-        "what": "battle-intro arming, native vs play page - the PROT 0979 "
-        "load and relocation, the curtain table and tile-corner fallbacks, "
-        "the shade-pack parse and the two env seeds were written out once per "
-        "host, only the style inputs shared. Both arms must build the "
-        "emitter through `BattleIntro::arm_for_battle`",
-        "sites": {
-            "native": ("crates/engine-shell/src/window/battle/intro.rs", "arm_battle_intro"),
-            "web": (WEB_PLAY_BATTLE_SCREEN_PRIMS, "arm_battle_intro"),
-        },
-        "mode": "symbols_all",
-        "symbols": ["arm_for_battle"],
-    },
+    # The "battle-intro arming" and "battle-intro style inputs" rows
+    # (each host's `arm_battle_intro` had to build through
+    # `BattleIntro::arm_for_battle` off `SceneHost::battle_intro_style_inputs`)
+    # are gone because the per-host arming is: both hosts step the intro
+    # through `legaia_engine_session::battle_intro::step_battle_intro`, whose
+    # one `arm_battle_intro` reads both (the "field-to-battle intro emitter"
+    # row). A re-duplicated arming needs the rows back.
     # The "Options screen model" row (both Options builders must read
     # `OptionsSession::screen_model`) is gone because the second builder is:
     # both hosts draw the Options screen through
@@ -691,24 +698,6 @@ SIM_PAIRS: list[dict[str, object]] = [
             "arts_banner_prims",
             "draw_quads",
         ],
-    },
-    {
-        "what": "battle-intro style inputs, native vs play page - the style "
-        "selector reads three retail globals (`DAT_8007BD60`, `DAT_8007BD0C`, "
-        "`DAT_80084540`) and not one of them is a host choice: they are "
-        "properties of the rolled formation row and the loaded scene. Both "
-        "hosts resolved them inline and disagreed on `formation_slot0`, which "
-        "is the input EVERY id-keyed style override keys on - the page went "
-        "straight from the formation-table lookup to the bare row index, with "
-        "no live-monster-table leg, so an in-battle re-arm fed the selector a "
-        "row index and drew the default style. Both sites must read "
-        "`SceneHost::battle_intro_style_inputs`",
-        "sites": {
-            "native": ("crates/engine-shell/src/window/battle/intro.rs", "arm_battle_intro"),
-            "web": (WEB_PLAY_BATTLE_SCREEN_PRIMS, "arm_battle_intro"),
-        },
-        "mode": "symbols_all",
-        "symbols": ["battle_intro_style_inputs"],
     },
     {
         "what": "dance HUD frame rows, native vs play page - which rows the "
