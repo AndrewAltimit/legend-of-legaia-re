@@ -201,7 +201,7 @@ mod npc_morph;
 pub use npc_morph::MorphOwner;
 mod object_actor_height;
 pub use object_actor_height::{
-    ActorTint, ActorTintKey, ObjectRampSlot, ObjectSlotRamp, TintRamp, tint_cue,
+    ActorTint, ActorTintKey, ObjectGlideLeg, ObjectRampSlot, ObjectSlotRamp, TintRamp, tint_cue,
 };
 pub mod pause_session;
 mod prop_interact;

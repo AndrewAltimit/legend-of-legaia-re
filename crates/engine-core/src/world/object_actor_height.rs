@@ -62,6 +62,33 @@ pub struct ObjectSlotRamp {
     pub elapsed: u16,
 }
 
+/// A compass walk (`37` / `41`) parked on an object-bind actor's own
+/// context: the operands of the parked op and the walk kernel's progress
+/// cursor (`+0x54`).
+///
+/// `FUN_8003A55C` runs a bound object's spawn prologue through the field VM
+/// at scene load; a `37 b0 b1` there parks the context under the halt bit and
+/// seats the op on the actor's `+0x94`, and the object actor's tick
+/// (`FUN_8003BC08`) hands it to the walk kernel `FUN_8003774C` until it
+/// lands. `conc`'s glass-tube floor disc (`P0[17]`, `.MAP` record 365 at cell
+/// `(31, 31)`, `x_off` `-32`) opens `37 02 01`: one tile along `-X`, so a
+/// retail `conc` state holds its actor at `X = 3872`, centred in the tube,
+/// not at the `4000` the `.MAP` seat alone gives.
+// REF: FUN_8003A55C (the prologue run), FUN_8003BC08, FUN_8003774C (0x8003789C..0x800379F8)
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ObjectGlideLeg {
+    /// Direction / divisor-selector byte.
+    pub body0: u8,
+    /// Length / divisor-selector byte.
+    pub body1: u8,
+    /// `0x80` for op `0x37`, `0x40` for op `0x41`.
+    pub rate: i32,
+    /// Speed units spent so far (`+0x54`).
+    pub spent: u16,
+    /// Ticks the leg has played, bounded by the walk park timeout.
+    pub frames: u32,
+}
+
 /// A straight line from `start` to `end` after `elapsed` of `total` frames,
 /// landing exactly on `end`.
 fn lerp(start: i32, end: i32, elapsed: u16, total: u16) -> i32 {
@@ -232,6 +259,7 @@ impl World {
     /// tween, then pin each object actor carrying `0x20000000` to
     /// `-(+0x8E)` (the height arm's first branch).
     pub(crate) fn tick_object_actor_heights(&mut self) {
+        self.tick_object_glide_legs();
         let mut ramps = std::mem::take(&mut self.field_vm.object_slot_ramps);
         for r in &mut ramps {
             r.elapsed = r.elapsed.saturating_add(1);
@@ -259,6 +287,68 @@ impl World {
             }
         }
         self.tick_actor_tints();
+    }
+
+    /// Arm a compass walk (`(body0, body1, rate)`, the parked `37` / `41`
+    /// op's operands) on object-bind actor `record`.
+    pub(crate) fn arm_object_glide_leg(
+        &mut self,
+        record: u16,
+        (body0, body1, rate): (u8, u8, i32),
+    ) {
+        self.field_vm.object_glide_legs.insert(
+            record,
+            ObjectGlideLeg {
+                body0,
+                body1,
+                rate,
+                spent: 0,
+                frames: 0,
+            },
+        );
+    }
+
+    /// One walk-kernel frame of every object-bind compass walk: the actor's
+    /// `+0x14` / `+0x18` move by the leg's step, and on landing the shared
+    /// epilogue clears the context's halt bit `0x400` so the record runs
+    /// on. The draw follows through
+    /// [`Self::object_draw_displacements`], which measures the context's
+    /// position against its `.MAP` seat.
+    // REF: FUN_8003BC08 (the 0x400 kernel visit), FUN_8003774C (the 0x37 / 0x41 arm)
+    fn tick_object_glide_legs(&mut self) {
+        if self.field_vm.object_glide_legs.is_empty() {
+            return;
+        }
+        let speed = self.clock.display_frame_step.max(1);
+        for (record, mut leg) in std::mem::take(&mut self.field_vm.object_glide_legs) {
+            let Some(c) = self
+                .field_vm
+                .channels
+                .iter_mut()
+                .find(|c| c.object_bind && c.ctx.script_id == record)
+            else {
+                continue;
+            };
+            let mut state = legaia_engine_motion_vm::motion_vm::MotionState {
+                world_x: c.ctx.world_x as i16,
+                world_z: c.ctx.world_z as i16,
+                speed,
+                op_accum: leg.spent,
+                ..Default::default()
+            };
+            let done = legaia_engine_motion_vm::motion_vm::compass_walk(
+                &mut state, leg.body0, leg.body1, leg.rate,
+            );
+            c.ctx.world_x = state.world_x as u16;
+            c.ctx.world_z = state.world_z as u16;
+            leg.spent = state.op_accum;
+            leg.frames += 1;
+            if done || leg.frames >= WALK_PARK_TIMEOUT {
+                c.ctx.flags &= !0x400;
+            } else {
+                self.field_vm.object_glide_legs.insert(record, leg);
+            }
+        }
     }
 
     /// Op `4C 81`: the three arms of `0x801E1FC4..0x801E2068`, landed on
@@ -635,5 +725,26 @@ mod tests {
         assert_eq!(t.colour, 0x4040FF);
         t.tick();
         assert!(t.blend > 0 && t.blend < 0x100);
+    }
+
+    /// `conc`'s tube floor (`P0[17]`): a prologue `37 02 01` parked on the
+    /// object's own actor walks it one tile along `-X` over four speed
+    /// units, then lifts the halt bit.
+    #[test]
+    fn a_parked_compass_walk_moves_the_object_and_unparks_it() {
+        let mut w = World::default();
+        let mut c = channel(17, 17, true);
+        c.ctx.world_x = 4000;
+        c.ctx.world_z = 4032;
+        c.ctx.flags = 0x401;
+        w.field_vm.channels = vec![c];
+        w.arm_object_glide_leg(17, (0x02, 0x01, 0x80));
+        for _ in 0..8 {
+            w.tick_object_actor_heights();
+        }
+        let c = &w.field_vm.channels[0];
+        assert_eq!((c.ctx.world_x, c.ctx.world_z), (3872, 4032));
+        assert_eq!(c.ctx.flags & 0x400, 0, "the landed leg releases the halt");
+        assert!(w.field_vm.object_glide_legs.is_empty());
     }
 }

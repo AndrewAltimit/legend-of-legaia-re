@@ -153,7 +153,12 @@ move publishes `-Y` into `+0x8E` and the arm writes it back), the snap is
 a host places it, and the glide is `World::tick_field_npc_heights`, which
 steps `rotate_toward_clamped` per actor tick for a slot whose flag word
 carries `0x2000` - on the disc that is almost only a partition-2 cutscene's
-cross-context `0x31` poke. The cull is ported too
+cross-context `0x31` poke. The engine runs that pass over **every**
+placement context, not only the ones it tracks a live position for (the
+talk NPCs and whatever a script has moved): `rayman`'s plank bridges
+(`P1[70..=83]`, `31 1D` + `4C 42 40 01`) never move, and outside the pass
+they fell to the floor sample 64 units above the ledges they span instead of
+the `-320` their prologue holds. The cull is ported too
 (`World::field_npc_culled`, `field_actor_culled` in
 `engine-core::world::field_npc_cull`): the glide runs behind it over the
 camera view the hosts publish, so an off-window glider keeps the Y it had, and
@@ -251,6 +256,8 @@ Both opcodes land on one case body, `0x8003789C..0x800379F8` in `FUN_8003774C` (
 | `(b1 >> 6) \| ((b0 >> 5) & 4)` | duration selector `sel`: the leg's budget is `count * (4 << sel)` progress units |
 
 Each tick the arm spends `DAT_1F800393` progress units (clamped to what is left of the budget) and moves `rate * spent / (4 << sel)` along each axis bit set in the direction byte (X at actor `+0x14`, Z at `+0x18`). Progress accumulates in `+0x54`; the leg finishes when it reaches the budget. `B7 F8 00 81` is therefore one tile along `-Z` over 16 progress units. The port is `motion_vm::CompassWalkFast` / `CompassWalkSlow` with the table as `COMPASS_AXIS_SIGNS`.
+
+A `.MAP` placed object walks the same way. `FUN_8003A55C` runs a bound object's spawn prologue through the field VM at scene load, a `37` there parks the object's own context, and the object actor's tick `FUN_8003BC08` hands the op to this arm until it lands. `conc`'s glass-tube floor disc (`P0[17]`, `.MAP` record 365, cell `(31, 31)`) and its twin `P0[14]` both open `37 02 01`, one tile along `-X`: the `conc_field_card_boot` retail state holds them at `X = 3872` and `11168`, one tile west of their `.MAP` seats, which centres the disc in the tube. The engine arms the leg in its object-prologue pre-run and steps it in the object actor tick (`World::tick_object_actor_heights`); the draw follows through `World::object_draw_displacements`.
 
 ## How an actor's facing changes
 

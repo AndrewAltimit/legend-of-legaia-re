@@ -51,13 +51,12 @@ impl World {
     /// REF: FUN_8003BC08 (the height arm), FUN_80019278, FUN_801D79E8 (ported
     /// as `field_actor_culled`)
     pub fn tick_field_npc_heights(&mut self) {
-        if self.npcs.positions.is_empty() {
+        let slots = self.field_npc_height_slots();
+        if slots.is_empty() {
             self.npcs.glide_y.clear();
             return;
         }
         let step = self.clock.frame_step.max(1);
-        let slots: Vec<(u8, (i16, i16))> =
-            self.npcs.positions.iter().map(|(&s, &p)| (s, p)).collect();
         for (slot, (x, z)) in slots {
             if self.script_actors.npc_heights.contains_key(&slot) {
                 continue;
@@ -105,6 +104,31 @@ impl World {
                 }
             }
         }
+    }
+
+    /// Every placement the height arm runs on, at where it stands: the live
+    /// position [`crate::world::FieldNpcState::positions`] holds for a slot
+    /// that has one, else the placement context's own seat.
+    ///
+    /// `positions` lists only the text-bearing NPCs and the slots a script or
+    /// motion stream has moved, but retail's actor driver runs the arm on
+    /// every placement actor. A never-moved prop that holds a scripted height
+    /// would otherwise fall to the floor sample: `rayman`'s plank bridges
+    /// (`P1[70..=83]`, `31 1D` + `4C 42 40 01`, `+0x8E = 320`) stand on the
+    /// chasm floor 64 units above the ledges they span instead of level with
+    /// them.
+    // REF: FUN_8003BC08 (height arm, 0x8003BC50..0x8003BCF4)
+    fn field_npc_height_slots(&self) -> Vec<(u8, (i16, i16))> {
+        let mut slots: std::collections::BTreeMap<u8, (i16, i16)> =
+            self.npcs.positions.iter().map(|(&s, &p)| (s, p)).collect();
+        for c in self.field_vm.channels.iter().filter(|c| !c.object_bind) {
+            if let Ok(slot) = u8::try_from(c.placement_index) {
+                slots
+                    .entry(slot)
+                    .or_insert((c.ctx.world_x as i16, c.ctx.world_z as i16));
+            }
+        }
+        slots.into_iter().collect()
     }
 }
 
@@ -224,5 +248,29 @@ mod tests {
         w.field_vm.channels[0].ctx.flags = 0;
         w.tick_field_npc_heights();
         assert_eq!(w.field_npc_render_y(4, nx, z), -200);
+    }
+
+    /// A placement no script has moved has no `positions` entry, but the
+    /// height arm still runs on it: `rayman`'s plank bridges hold
+    /// `-(+0x8E)` from their prologue, not the floor.
+    #[test]
+    fn an_unmoved_held_height_placement_leaves_the_floor() {
+        let mut w = stepped_world(64);
+        let mut c = legaia_engine_field::field_channels::FieldChannel {
+            placement_index: 77,
+            ctx: Default::default(),
+            record_offset: 0,
+            pc: 0,
+            done: false,
+            object_bind: false,
+        };
+        c.ctx.world_x = 6 * 128 + 64;
+        c.ctx.world_z = 2 * 128 + 64;
+        c.ctx.flags = 0x2000_0000;
+        c.ctx.field_8e = 320;
+        w.field_vm.channels.push(c);
+        assert!(w.npcs.positions.is_empty());
+        w.tick_field_npc_heights();
+        assert_eq!(w.field_npc_render_y(77, 6 * 128 + 64, 2 * 128 + 64), -320);
     }
 }

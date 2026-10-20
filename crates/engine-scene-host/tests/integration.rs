@@ -63,6 +63,7 @@ mod field_reflection_conc2_capture_disc;
 mod field_region_encounter_disc;
 mod field_regions_disc;
 mod field_script_arc_disc;
+mod field_scripted_prop_seats_disc;
 mod field_sfx_ring_disc;
 mod field_shake_tremor_disc;
 mod field_spawn_ashore_disc;

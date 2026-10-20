@@ -745,6 +745,13 @@ impl World {
                         }
                     }
                     FieldStepResult::Yield { resume_pc } => {
+                        // A compass walk on the object's own actor: the
+                        // walk kernel moves it from the next tick.
+                        // REF: FUN_8003BC08, FUN_8003774C
+                        if let Some(leg) = compass_walk_operands(bc, pc).filter(|_| op & 0x80 == 0)
+                        {
+                            self.arm_object_glide_leg(c.ctx.script_id, leg);
+                        }
                         c.pc = resume_pc;
                         break;
                     }
