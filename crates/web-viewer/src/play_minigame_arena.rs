@@ -156,8 +156,9 @@ impl LegaiaRuntime {
         }
     }
 
-    /// This frame's hub-screen rows, the native `muscle_hub_sprite_draws`
-    /// selection over the shared emitters: blit rows for the quads, plus a
+    /// This frame's hub-screen rows, the shared selection
+    /// (`legaia_engine_screens::minigame_hud::muscle_hub_quads`) the native
+    /// window draws too: blit rows for the quads, plus a
     /// `shade` row for the first visit's backdrop shade between the wall
     /// tiles and the screens drawn over them.
     fn muscle_hub_rows(&self) -> Vec<serde_json::Value> {
@@ -168,83 +169,11 @@ impl LegaiaRuntime {
         let Some(host) = self.scene_host.host() else {
             return Vec::new();
         };
-        let world = &host.world;
-        let timers = &world.minigames.muscle_hub;
-        // A leg is open; otherwise the arena hub is between legs (or the
-        // contest has handed the field back) and the INTERVAL + still screens
-        // are the hub's own - the native window's same test.
-        let in_dome = world.mode == legaia_engine_mode::mode::SceneMode::MuscleDome
-            && world.minigames.muscle_dome.is_some();
-        let mut table = table.clone();
-        let mut quads = Vec::new();
-        let mut shade_row: Option<(usize, serde_json::Value)> = None;
-        if in_dome {
-            // A first visit's frame: wall + shade behind the arm's screens,
-            // through the shared kernel the native window draws with.
-            if let Some(hub) = timers.first_visit {
-                use legaia_engine_ui::ringside_backdrop as rb;
-                let f = hub.frame();
-                let levels = rb::FirstVisitLevels {
-                    backdrop: f.backdrop,
-                    intro: f.intro,
-                    title_scale: f.title_scale,
-                    course_card: f.course_card,
-                    round_card: f.round_card,
-                };
-                let (course, round) = world
-                    .minigames
-                    .muscle_contest
-                    .as_ref()
-                    .map_or((0, 1), |c| (c.course() as i32, c.round() as i32 + 1));
-                let d = rb::first_visit_hub_draw(&mut table, &levels, course, round);
-                quads.extend(d.tiles);
-                if let Some(sh) = d.shade {
-                    shade_row = Some((quads.len(), shade_json(&sh)));
-                }
-                quads.extend(d.hud);
-            } else if let Some((round, banner)) = timers.round_banner {
-                quads.extend(hud::hub_screen_quads(
-                    &mut table,
-                    &hud::round_banner_draws(round),
-                    banner.brightness(),
-                ));
-            }
-        } else if let Some(interval) = timers.interval {
-            let bright = interval.brightness();
-            quads.extend(hud::hub_screen_quads(
-                &mut table,
-                hud::HUB_INTERVAL_HEADING,
-                bright,
-            ));
-            let (values, row_bright) = match timers.tally.as_ref() {
-                Some((ramp, tally)) => (ramp.row_values(*tally), ramp.row_brightness(bright)),
-                None => {
-                    let (rows, tally) = world
-                        .minigames
-                        .muscle_contest
-                        .as_ref()
-                        .map_or((Default::default(), 0), |c| (c.rows(), c.tally()));
-                    ([0, 0, 0, rows.hp_restore(), 0, tally], [bright; 6])
-                }
-            };
-            quads.extend(hud::score_tally_quads(&mut table, values, row_bright));
-        }
-        // The re-entered hub's ROUND card (arms 0x15 / 0x16) over the still.
-        if !in_dome
-            && timers.interval.is_none()
-            && let Some(card) = timers.backdrop.and_then(|b| b.card_brightness())
-        {
-            let round = world
-                .minigames
-                .muscle_contest
-                .as_ref()
-                .map_or(1, |c| c.round() as i32 + 1);
-            quads.extend(hud::hub_screen_quads(
-                &mut table,
-                &hud::round_banner_draws(round),
-                card,
-            ));
-        }
+        // The quad selection is the one both hosts draw from; this page keeps
+        // only the blit-row form.
+        let hub = legaia_engine_screens::minigame_hud::muscle_hub_quads(&host.world, table);
+        let quads = hub.quads;
+        let shade_row = hub.shade.map(|(at, sh)| (at, shade_json(&sh)));
         let mut rows: Vec<serde_json::Value> = quads
             .iter()
             .map(|q| hub_quad_json(q, &ui.palette_stp))

@@ -398,118 +398,19 @@ impl PlayWindowApp {
         Vec<legaia_engine_ui::SpriteDraw>,
         Vec<legaia_engine_render::OverlayBlendSpan>,
     ) {
-        use legaia_engine_ui::muscle_dome_hud as hud;
         let Some(assets) = self.muscle_hub.as_ref() else {
             return (Vec::new(), Vec::new());
         };
-        let world = &self.session.host.world;
-        // A leg is open (the first visit / the leg-open ROUND card draw over
-        // it); otherwise the arena hub is between legs, or the contest has
-        // handed the field back, and the INTERVAL + still screens are the
-        // hub's own.
-        let in_dome = world.mode == SceneMode::MuscleDome && world.minigames.muscle_dome.is_some();
-        // The retail emitters mutate the shared table (variant write-back),
-        // so run them over a per-frame copy of the pristine parse.
-        let mut table = assets.table.clone();
-        // The brightness argument is the screen's own fade counter, which
-        // clamps at `HUB_FADE_FULL` (0x80) - the emitter's neutral, since it
-        // scales each stored channel by `c * brightness / 256`. The host used
-        // to pass 0x100, which drew every hub screen at twice retail's
-        // brightness.
-        let mut quads: Vec<hud::HudQuad> = Vec::new();
-        // The first visit's shade and the screens drawn over it: the shade
-        // sits between the wall tiles (`quads`) and these.
-        let mut shade: Option<legaia_engine_ui::ringside_backdrop::BackdropShade> = None;
-        let mut front: Vec<hud::HudQuad> = Vec::new();
-        if in_dome {
-            // A first visit's frame: the brick wall + shade (the backdrop
-            // emitter's latch-0 arm) behind the arm's screens, all composed
-            // by the shared kernel the play page draws with.
-            if let Some(hub) = self.session.host.world.minigames.muscle_hub.first_visit {
-                let f = hub.frame();
-                let levels = legaia_engine_ui::ringside_backdrop::FirstVisitLevels {
-                    backdrop: f.backdrop,
-                    intro: f.intro,
-                    title_scale: f.title_scale,
-                    course_card: f.course_card,
-                    round_card: f.round_card,
-                };
-                let (course, round) = world
-                    .minigames
-                    .muscle_contest
-                    .as_ref()
-                    .map_or((0, 1), |c| (c.course() as i32, c.round() as i32 + 1));
-                let d = legaia_engine_ui::ringside_backdrop::first_visit_hub_draw(
-                    &mut table, &levels, course, round,
-                );
-                quads.extend(d.tiles);
-                shade = d.shade;
-                front.extend(d.hud);
-            } else if let Some((round, banner)) =
-                self.session.host.world.minigames.muscle_hub.round_banner
-            {
-                quads.extend(hud::hub_screen_quads(
-                    &mut table,
-                    &hud::round_banner_draws(round),
-                    banner.brightness(),
-                ));
-            }
-        } else if let Some(interval) = self.session.host.world.minigames.muscle_hub.interval {
-            let bright = interval.brightness();
-            quads.extend(hud::hub_screen_quads(
-                &mut table,
-                hud::HUB_INTERVAL_HEADING,
-                bright,
-            ));
-            // The six rows are the roll's own, not the settled totals: three
-            // recovery lanes counting down, the HP they count into, the score
-            // lane counting down and the coin tally counting up. With no roll
-            // armed the screen draws the settled values, which is where the
-            // roll ends anyway.
-            let (values, row_bright) =
-                match self.session.host.world.minigames.muscle_hub.tally.as_ref() {
-                    Some((ramp, tally)) => (ramp.row_values(*tally), ramp.row_brightness(bright)),
-                    None => {
-                        let (rows, tally) = world
-                            .minigames
-                            .muscle_contest
-                            .as_ref()
-                            .map_or((Default::default(), 0), |c| (c.rows(), c.tally()));
-                        ([0, 0, 0, rows.hp_restore(), 0, tally], [bright; 6])
-                    }
-                };
-            quads.extend(hud::score_tally_quads(&mut table, values, row_bright));
-        }
-        // The re-entered hub's ROUND card (arms 0x15 / 0x16) over the still.
-        if !in_dome
-            && self
-                .session
-                .host
-                .world
-                .minigames
-                .muscle_hub
-                .interval
-                .is_none()
-            && let Some(card) = self
-                .session
-                .host
-                .world
-                .minigames
-                .muscle_hub
-                .backdrop
-                .and_then(|b| b.card_brightness())
-        {
-            let round = world
-                .minigames
-                .muscle_contest
-                .as_ref()
-                .map_or(1, |c| c.round() as i32 + 1);
-            quads.extend(hud::hub_screen_quads(
-                &mut table,
-                &hud::round_banner_draws(round),
-                card,
-            ));
-        }
+        // The quad selection is the one both hosts draw from; this host
+        // keeps only the sprite-draw form and the ringside still under it.
+        let legaia_engine_screens::minigame_hud::MuscleHubQuads {
+            quads,
+            shade,
+            in_dome,
+        } = legaia_engine_screens::minigame_hud::muscle_hub_quads(
+            &self.session.host.world,
+            &assets.table,
+        );
         let mut out: Vec<legaia_engine_ui::SpriteDraw> = Vec::new();
         // The backdrop goes first: retail links the still's two packets at
         // the ordering table's far end (`OT + 0xFA0`), behind every sprite.
@@ -538,11 +439,13 @@ impl PlayWindowApp {
                 });
             }
         }
-        if quads.is_empty() && out.is_empty() && front.is_empty() {
+        if quads.is_empty() && out.is_empty() {
             return (Vec::new(), Vec::new());
         }
-        let shade_at = quads.len();
-        quads.extend(front);
+        // The first visit's shade sits between the wall tiles and the
+        // screens drawn over them.
+        let shade_at = shade.map_or(quads.len(), |(at, _)| at);
+        let shade = shade.map(|(_, sh)| sh);
         let mut blend = Vec::new();
         let push_shade =
             |out: &mut Vec<legaia_engine_ui::SpriteDraw>,

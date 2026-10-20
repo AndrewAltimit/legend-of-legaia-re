@@ -358,7 +358,7 @@ In the port the in-world dome's decided leg closes on Cross through `World::tick
 
 While the hub owns the frame neither host draws the field or battle chrome, and a decided leg puts no text up. Start between legs is the give-up arm (the contest ends and the tally is void). Locked by `engine-core/tests/muscle_contest_world.rs` and `web-viewer/tests/play_ringside_still_disc.rs`.
 
-Both hosts draw the hub screens through the shared `engine-ui::muscle_dome_hud` emitters: the browser dome page via `muscle_hub_quads_json`, the native play-window by baking the two hub page TIMs per referenced sub-palette into a sprite atlas and running the same builders (`crates/engine-shell/src/window/minigames.rs`, `muscle_hub_sprite_draws`).
+Both hosts draw the hub screens through the shared `engine-ui::muscle_dome_hud` emitters, and both take the frame's quad selection (first visit, ROUND banner, INTERVAL tally, the re-entered hub's ROUND card) from one function, `engine-screens::minigame_hud::muscle_hub_quads`. Each keeps only its output form: the browser dome page emits blit rows, the native play-window bakes the two hub page TIMs per referenced sub-palette into a sprite atlas and draws sprites (`muscle_hub_sprite_draws`).
 
 <a id="arena-backdrop-extraction-1225"></a>
 
