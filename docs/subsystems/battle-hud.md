@@ -1163,6 +1163,14 @@ span, so the prompt opens with the labels still up; and the engine's monster
 names carry no instance letter, so the port gives each member of a seated
 duplicate group one (`A`, `B`, ...) before the composer runs.
 
+The first difference stops at the round's hand-off. Retail's `0x0B` leaves
+only on the pass its timer expires (`bgtz` at `0x801D0E58`), to `0x14` or -
+when `ctx[+0x290]` reads `1` - straight to the execute arm `0xFE`, and sweeps
+the text actors on that pass (`jal 0x800355F0` at `0x801D0E7C` /
+`0x801D0EB4`), so no action ever runs under the names. A round the port hands
+to the action SM with the timer still running sweeps them there
+(`World::sweep_battle_intro_names`, from `begin_round_execution`).
+
 <a id="the-battle-item-window-0x3c---packet-pinned"></a>
 ## The battle item window (`0x3C`)
 

@@ -238,6 +238,7 @@ impl World {
         use legaia_engine_menus::battle_flow::BattleFlowState;
         self.battle.round_flow.phase = RoundPhase::Execute;
         self.battle.round_flow.flat_walk_last = None;
+        self.sweep_battle_intro_names();
         self.battle.commit_log_launch = None;
         // Retail's Begin moves the flow to `0xFE`, whose arm restarts the
         // action SM at `0x00`, and `0x00` opens with `FUN_801F0450`: the pool
@@ -318,6 +319,7 @@ impl World {
         self.battle.arts_menu = None;
         self.battle.arts_input = None;
         self.battle.round_flow.phase = RoundPhase::Execute;
+        self.sweep_battle_intro_names();
         self.set_battle_flow(legaia_engine_menus::battle_flow::BattleFlowState::Idle);
         // The capture's MP is already charged (the Magic band debits at
         // `0x28`, before the summon band); credit the catalog price back so
