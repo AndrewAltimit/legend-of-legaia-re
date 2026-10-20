@@ -1343,16 +1343,25 @@ pub(crate) fn aim_alive(world: &legaia_engine_core::world::World, row: u8) -> bo
 /// Whether the engine's battle-entry sweep
 /// ([`legaia_engine_battle_vm::battle_cam_script::BattleCamera::start_entry_sweep`])
 /// has run as far as retail's frame-driver counter `entry` reads: a counter
-/// inside the sweep (`0x80..=0xC0`) is met once the engine's has reached it,
-/// one past it (`0xFF`) once the engine's sweep is over, and one below it
-/// (the fight still loading) at once.
+/// inside the sweep (`0x80..=0xC0`) is met on the engine pass whose counter
+/// lies nearest it, one past it (`0xFF`) once the engine's sweep is over, and
+/// one below it (the fight still loading) at once.
+///
+/// The counter advances by the frame step a pass (`0x80046FE0..0x80046FF4`),
+/// and retail's step varies with load, so its counter need not share the
+/// engine's parity: `s5_tetsu_battle` reads `0xAF` on a step of `2`, where the
+/// engine's even counter passes `0xAE` and then `0xB0`. Its case-2 glide has
+/// run six two-vsync passes there (eye Y and Z `0.34` / `0.32` of the way
+/// from where the drift left them, `(10/12)^6 = 0.33`), the pass at `0xAE`;
+/// waiting for `0xB0` sampled a seventh. So a pass within half a step short of
+/// `entry` meets it, the earlier one on a tie.
 pub fn entry_sweep_reached(world: &legaia_engine_core::world::World, entry: u8) -> bool {
     if entry < 0x80 {
         return true;
     }
     world.battle.camera.as_ref().is_some_and(|c| {
         c.entry_sweep_counter()
-            .is_none_or(|n| entry != 0xFF && n >= u32::from(entry))
+            .is_none_or(|n| entry != 0xFF && n + u32::from(c.frame_step()) / 2 >= u32::from(entry))
     })
 }
 

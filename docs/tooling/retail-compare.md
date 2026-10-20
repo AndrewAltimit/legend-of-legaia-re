@@ -1319,7 +1319,12 @@ says how far in each capture is:
 An opening capture is taken once the engine's own sweep has run as far
 (`entry_sweep_reached`; the counter rides the drive as
 `opening,<swept>,<counter>`), and a counter of `0xFF` - the sweep over - waits
-for the engine's to end. Every other battle capture was taken after the sweep,
+for the engine's to end. "As far" is the engine pass whose counter lies
+nearest retail's, the earlier on a tie: the counter advances by the frame step,
+retail's step varies with load, and `s5_tetsu_battle` reads an odd `0xAF` on a
+step of `2` that the engine's even counter steps over. Its case-2 glide has run
+six passes there (eye Y and Z a third of the way from where the drift left
+them, `(10/12)^6`), the engine's pass at `0xAE`. Every other battle capture was taken after the sweep,
 since retail's battle tick opens no prompt under it, while the engine's prompt
 opens at the flip. So the seed waits the engine's sweep out before it counts
 the first prompt, the in-flight cast seed dispatches only once it is over, and
