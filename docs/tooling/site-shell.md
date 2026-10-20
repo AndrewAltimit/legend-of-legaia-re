@@ -39,7 +39,10 @@ Three fields shape what a reader sees:
 - **`{ heading: '...' }` rows are group subheads.** They render as
   `.sidebar-subhead` inside a long section and are not pages: every walker of
   `NAV` items skips a row with no `key`, which is what keeps them out of
-  prev / next and the explore groups.
+  prev / next and the explore groups. The sidebar wraps each subhead and the
+  items up to the next one in a `.sidebar-group`: the subhead is drawn as an
+  underlined accent label and the items hang off a guide rail
+  (`.sidebar-group-items`), so a grouped section reads as a tree.
 - **Long sections open collapsed.** `COLLAPSED_BY_DEFAULT` names the reference
   sections; one opens when it holds the current page or the reader opened it
   before. Five of them expanded at once is a 150-row list that buries the two

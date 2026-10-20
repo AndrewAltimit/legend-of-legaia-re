@@ -465,13 +465,23 @@ function buildSidebar(active, depth, zone) {
     const nav = document.createElement('nav');
     nav.className = 'sidebar-nav';
     nav.setAttribute('aria-label', section.title || section.label);
+    /* A `{ heading }` row opens a group: the subhead plus every item up to
+       the next heading sit in one .sidebar-group, so CSS can draw the group
+       as a tree branch (guide rail down the left of its items). */
+    let parent = nav;
     for (const item of section.items) {
       if (item.heading) {
         /* A group subhead inside a long section - not a link, not a page. */
+        const group = document.createElement('div');
+        group.className = 'sidebar-group';
         const h = document.createElement('div');
         h.className = 'sidebar-subhead';
         h.textContent = item.heading;
-        nav.appendChild(h);
+        group.appendChild(h);
+        parent = document.createElement('div');
+        parent.className = 'sidebar-group-items';
+        group.appendChild(parent);
+        nav.appendChild(group);
         continue;
       }
       if (item.key === 'home') continue; /* Home lives in the rail, not the docs tree */
@@ -481,7 +491,8 @@ function buildSidebar(active, depth, zone) {
       a.dataset.key = item.key;
       if (item.key === active) { a.classList.add('active'); a.setAttribute('aria-current', 'page'); }
       if (item.indent) a.classList.add('nav-child');
-      nav.appendChild(a);
+      parent.appendChild(a);
+      if (item.key === active && parent !== nav) parent.parentNode.classList.add('has-active');
     }
     sec.appendChild(nav);
 
