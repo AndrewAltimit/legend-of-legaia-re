@@ -17,7 +17,7 @@ depends on it. Hosts, tools and tests name its modules directly
 | `scene_assets` | `SceneAssets`: the typed per-scene snapshot (MES, SEQ / VAB stream entries, event scripts). |
 | `scene_resources` | `SceneResources`: a scene's TMD pools, ANM bundle and software VRAM, built per load kind (`build_targeted`). |
 | `model_bank` | The retail model pool `DAT_8007C018` (one slot = `GlobalTmd`) and the id space a placement's model byte and the scripted-motion VM's op `0x0E` share. |
-| `npc_catalog` | Every actor a scene's MAN places, resolved against a built `SceneResources` (and, for the play shape, the global model pool), plus the scene's ANM bundle lookup (`scene_anm_bundle`). |
+| `npc_catalog` | Every actor a scene's MAN places, resolved against a built `SceneResources` (and, for the play shape, the global model pool), with its conversation tree, plus the scene's ANM bundle lookup (`scene_anm_bundle`). |
 | `field_env` | The environment-geometry draw resolver: which `SceneResources` TMD each `.MAP` placement or terrain tile draws and where, object binds, prop animation, floor anchors. |
 | `coplanar_draws` | Cross-draw coplanar-surface separation over a resolved `EnvDraw` list. |
 | `field_view_window` | The camera's visible-tile crop: the cell rectangle one frame of `FUN_801F7088` walks (`view_cells`) and the per-cell decoration / ground gates. Whether a host crops this frame is `engine-world-views::field_view_window`. |

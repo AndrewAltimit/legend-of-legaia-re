@@ -23,6 +23,7 @@ mod inspect;
 pub mod minigames;
 mod monster;
 mod nav_disc;
+pub mod npc_dialog;
 mod packet_color;
 pub mod pad_bindings;
 pub mod play;

@@ -107,6 +107,7 @@ fn record_end_bound(man_file: &ManFile, man_len: usize, start: usize) -> usize {
 }
 
 mod carriers;
+mod dialog_tree;
 mod npc_motion;
 mod partitions;
 mod placements;
@@ -114,6 +115,7 @@ mod records;
 mod scene_triggers;
 
 pub use carriers::*;
+pub use dialog_tree::*;
 pub use npc_motion::*;
 pub use partitions::*;
 pub use placements::*;

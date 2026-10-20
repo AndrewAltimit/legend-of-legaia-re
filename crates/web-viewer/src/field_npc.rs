@@ -211,6 +211,7 @@ impl LegaiaViewer {
     ///       "kind": "talk",       // talk | door | prop
     ///       "target_map": null,
     ///       "dialog": "Hey, Vahn!",
+    ///       "dialog_pages": 5,    // text pages in the whole conversation tree
     ///       "conditional": false, // true = script-gated spawn (parked off-map)
     ///       "x": 1088, "z": 2624  // spawn, world units
     ///     }, ...
@@ -236,6 +237,7 @@ impl LegaiaViewer {
                     "kind": e.kind,
                     "target_map": e.target_map,
                     "dialog": e.dialog,
+                    "dialog_pages": e.dialog_tree.as_ref().map_or(0, |t| t.page_count()),
                     "conditional": e.conditional,
                     "x": e.placement.world_x,
                     "z": e.placement.world_z,
@@ -250,6 +252,26 @@ impl LegaiaViewer {
             "npcs": npcs,
         })
         .to_string()
+    }
+
+    /// One catalogued NPC's whole conversation as a tree - every page, choice,
+    /// story-flag branch and side effect its interaction script reaches
+    /// (shape: [`crate::npc_dialog::tree_json`]). `"null"` when the actor
+    /// has no interaction or no catalog is loaded.
+    pub fn field_npc_dialog_tree_json(&self, catalog_idx: u32) -> String {
+        let Some(tree) = self
+            .field_npcs
+            .as_ref()
+            .and_then(|n| n.entries.get(catalog_idx as usize))
+            .and_then(|e| e.dialog_tree.as_ref())
+        else {
+            return "null".to_string();
+        };
+        let names = crate::npc_dialog::NameTables {
+            items: self.item_names.as_ref(),
+            spells: self.spell_names.as_ref(),
+        };
+        crate::npc_dialog::tree_json(tree, names).to_string()
     }
 
     /// Build (and cache) one catalogued NPC's mesh. The **field-hybrid** build:
