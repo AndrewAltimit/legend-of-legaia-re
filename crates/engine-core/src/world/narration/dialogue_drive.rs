@@ -226,7 +226,9 @@ impl World {
             // until the walk kernel's terminal frame clears the bit.
             // REF: FUN_801DE840 (0x801DE90C..0x801DE944), FUN_8003774C (0x80038004)
             if let Some(slot) = id.own_turn {
-                if host.world.npcs.face_legs.contains_key(&slot) {
+                if host.world.npcs.face_legs.contains_key(&slot)
+                    || host.world.npcs.glide_legs.contains_key(&slot)
+                {
                     break;
                 }
                 id.own_turn = None;
@@ -649,21 +651,44 @@ impl World {
                     }
                 }
                 FieldStepResult::Yield { resume_pc } => {
+                    let op_pc = id.pc;
                     id.pc = resume_pc;
                     // The talker's own glide-step (`37` / `41` / `47` with no
                     // target byte) parks the record (`+0x10 |= 0x400`) and
                     // hands the step to the walk kernel, whose terminal frame
                     // clears the bit again (`FUN_8003774C`, the 0x37 / 0x41
-                    // arm). The runner plays no walk leg for the talker, so
-                    // the bit would never clear, and every later
-                    // cross-context op of the talk would take the dispatcher's
-                    // halted-target early-out and end the conversation:
+                    // arm). A compass walk is played on the talker as a
+                    // placement leg, and the record holds on `own_turn` until
+                    // it lands (the hold at the top of this loop). Left
+                    // unwalked, the bit never cleared and every later
+                    // cross-context op of the talk took the dispatcher's
+                    // halted-target early-out and ended the conversation:
                     // Xain's second stage (`tunnelc` P1[4], `41 07 C1` then
                     // `AC 0C 08`) ended there, before the picker that raises
-                    // `0x325` and the fight behind it. The step is taken as
-                    // done.
+                    // `0x325` and the fight behind it. A step with no talker
+                    // slot to walk (or a `47` walk-to-tile) is taken as done.
+                    // REF: FUN_801DE840 (0x801DE90C..0x801DE944), FUN_8003774C (the 0x37 / 0x41 arm)
                     if matches!(b, 0x37 | 0x41 | 0x47) {
-                        id.ctx.flags &= !0x400;
+                        match (
+                            host.world.dialog.stepping_inline_npc,
+                            super::field_channels::compass_walk_operands(&id.bytecode, op_pc),
+                        ) {
+                            (Some(slot), Some((body0, body1, rate))) => {
+                                host.world.npcs.glide_legs.insert(
+                                    slot,
+                                    legaia_engine_field::cutscene_timeline::TimelineNpcGlide {
+                                        slot,
+                                        state: legaia_engine_motion_vm::motion_vm::MotionState::default(),
+                                        body0,
+                                        body1,
+                                        rate,
+                                        frames: 0,
+                                    },
+                                );
+                                id.own_turn = Some(slot);
+                            }
+                            _ => id.ctx.flags &= !0x400,
+                        }
                     }
                 }
                 // op-0x4A WAIT_FRAMES halts at its own PC every tick until its

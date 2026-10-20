@@ -289,9 +289,15 @@ along `+X` to `(12928, 9920)`, then turned to compass index `0`. The
 ropeway's two shopkeepers (`41 05 01`, `+X +Z`) and `izumi` `P1[1]`
 (`41 01 01` from its header tile, `-X -Z`) do the same. Retail RAM holds
 each node on the walked position with `+0x8C` / `+0x8D` still on the seat
-tile. Port: the
-pre-run arms the leg (`FieldNpcState::glide_legs`) and
-`World::tick_field_npc_face_legs` steps it.
+tile. A parked placement's walk lands it one step short of the park seat:
+`town01` `P1[36]` parks on `4C 51 7F 7F` and then runs `41 00 01`, so
+retail holds it at `(16320, 16256)`. A talk record's own walk is the same
+leg on the talker, and there the record does wait: the dispatcher refuses
+every op of a context carrying `0x400` (`0x801DE90C..0x801DE944`), so the
+talk resumes past the op on the frame the kernel lands it (`tunnelc`
+`P1[4]`, Xain's `41 07 C1`). Port: the pre-run and the talk runner arm the
+leg (`FieldNpcState::glide_legs`), `World::tick_field_npc_face_legs` steps
+it, and a talk holds on `InlineDialogue::own_turn` until it lands.
 
 The partition-1 spawn loop itself runs only when the scene load actually
 loaded a MAN. The field-scene initializer (`FUN_801D6704` in PROT 0897) passes

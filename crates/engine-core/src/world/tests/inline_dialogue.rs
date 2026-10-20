@@ -642,3 +642,30 @@ fn a_picker_commit_on_a_teardown_continuation_draws_the_box_for_one_frame() {
     world.step_inline_dialogue(false, false, false);
     assert!(world.dialog.inline.as_ref().unwrap().held_box.is_none());
 }
+
+#[test]
+fn a_talkers_own_compass_walk_moves_the_talker_before_the_box() {
+    // `41 07 C1` with no target byte walks the talker itself (`tunnelc`
+    // `P1[4]`, Xain's second stage): direction 7 is `+X -Z`, half a tile
+    // over a 32-unit budget. The record holds at the next op until the walk
+    // kernel lands the leg and clears the talker's `0x400`.
+    let mut world = World {
+        mode: legaia_engine_mode::mode::SceneMode::Field,
+        ..World::default()
+    };
+    world.npcs.positions.insert(4, (3136, 3136));
+    let body = vec![0x41, 0x07, 0xC1, 0x1F, b'X', 0x00];
+    world.start_inline_dialogue_with_prologue(body, 0, 3);
+    world.dialog.inline.as_mut().unwrap().npc_slot = Some(4);
+    world.step_inline_dialogue(false, false, false);
+    assert!(world.npcs.glide_legs.contains_key(&4), "the leg is armed");
+    let id = world.dialog.inline.as_ref().unwrap();
+    assert!(id.page_bytes().is_empty(), "the box held for the walk");
+    for _ in 0..40 {
+        world.tick_field_npc_motions();
+    }
+    assert_eq!(world.npcs.positions.get(&4), Some(&(3200, 3072)));
+    assert_eq!(run_inline_until_box(&mut world), b"X");
+    let id = world.dialog.inline.as_ref().unwrap();
+    assert_eq!(id.ctx.flags & 0x400, 0, "the landed walk cleared the bit");
+}

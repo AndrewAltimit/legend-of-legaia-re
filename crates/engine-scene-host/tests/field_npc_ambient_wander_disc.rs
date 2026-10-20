@@ -320,6 +320,13 @@ fn town01_villagers_wander_through_the_real_scene_entry() {
     };
     host.enter_field_scene(legaia_game_tables::new_game::OPENING_SCENE, 0)
         .expect("enter town01");
+    // A spawn section's own compass walk is a script leg, not liveliness:
+    // town01 `P1[36]` (`41 00 01` after its park seat) steps half a tile in
+    // the ticks after the entry whatever `animate` says. Let those legs land
+    // before the snapshot.
+    for _ in 0..30 {
+        let _ = host.world.tick();
+    }
 
     let anchors = host.world.npcs.positions.clone();
     assert!(!anchors.is_empty(), "town01 seats field NPCs");
@@ -396,6 +403,13 @@ fn liveliness_off_publishes_neither_position_nor_walk_facing() {
     host.enter_field_scene(legaia_game_tables::new_game::OPENING_SCENE, 0)
         .expect("enter town01");
     assert!(!host.world.npcs.animate, "liveliness is off by default");
+    // A spawn section's own compass walk is a script leg, not liveliness:
+    // town01 `P1[36]` (`41 00 01` after its park seat) steps half a tile in
+    // the ticks after the entry whatever `animate` says. Let those legs land
+    // before the snapshot.
+    for _ in 0..30 {
+        let _ = host.world.tick();
+    }
 
     let walkers: Vec<u8> = host
         .world
