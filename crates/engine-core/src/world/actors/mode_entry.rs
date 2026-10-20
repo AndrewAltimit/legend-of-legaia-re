@@ -245,9 +245,11 @@ impl World {
         self.battle_ctx = legaia_engine_battle_vm::battle_action::BattleActionCtx::new();
         self.battle_ctx.action_state =
             legaia_engine_battle_vm::battle_action::ActionState::Begin.as_byte();
-        // Battle init's ambient seed (`0x80051C70..0x80051C84`): the floor,
-        // which the per-frame ramp lifts to the settled `0x80` while no cast
-        // holds `ctx[+0x243]` - the fight's floor fades in from dark.
+        // The stage loader's ambient seed (`FUN_800513F0`,
+        // `0x80051C70..0x80051C84`): the floor, which the per-frame ramp
+        // lifts to the settled `0x80` while no cast holds `ctx[+0x243]` -
+        // the fight's floor fades in from dark. The loader runs four entry
+        // counter units into the sweep; until then the floor holds.
         self.battle_ctx.ambient_base =
             legaia_engine_battle_vm::battle_ground_grid::AMBIENT_BASE_FLOOR;
         self.battle.ambient_stored = legaia_engine_battle_vm::battle_ground_grid::ambient_base_rgb(
@@ -255,6 +257,9 @@ impl World {
         );
         // Battle init spawns the backdrop records fresh: `+0x78` starts at 0.
         self.battle.backdrop_cue = 0;
+        // ... and the stage loader that re-seeds the floor runs four entry
+        // counter units into the sweep (`World::tick_battle_ambient`).
+        self.battle.stage_registration_pending = true;
         self.battle.ground_grid_drawn = true;
         self.battle.end = None;
         // The end-of-battle marker starts clear: battle init stores zero to

@@ -360,7 +360,7 @@ pub const GRID_RGBC_SETTLED: [u8; 3] = [0xC0; 3];
 // ---------------------------------------------------------------------------
 
 /// `ctx + 0x890`'s floor, packed `10:10:10` (channel `c` at bits `2 + 10c`):
-/// base `0x20` per channel. Battle init seeds it here (`lui v1,0x802;
+/// base `0x20` per channel. The stage loader `FUN_800513F0` seeds it here (`lui v1,0x802;
 /// ori v1,v1,0x80; sw v1,0x890(v0)` at `0x80051C70..0x80051C84`), so every
 /// fight's floor fades in from dark, and a cast's ramp clamps down to it
 /// (`0x80050660..0x800506A4`).

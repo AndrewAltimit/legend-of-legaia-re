@@ -837,6 +837,14 @@ pub struct BattleState {
     /// a cast that holds `ctx[+0x278]` bit 0 once the ambient sits on its
     /// floor (PROT 0927's `3`) takes the grid off the screen.
     pub(crate) ground_grid_drawn: bool,
+    /// Whether the frame driver has yet to register this fight's stage. The
+    /// stage loader `FUN_800513F0` - the call that seeds the ambient base's
+    /// floor (`sw v1,0x890(v0)` at `0x80051C84`) - runs from `FUN_80046A20`
+    /// on the first pass whose entry counter `gp+0x330` reads `0x84` or more
+    /// (`sltiu v0,a0,0x84` at `0x80046F04`, `jal 0x800513F0` at
+    /// `0x80046F74`), four counter units into the entry sweep, so the floor
+    /// starts its fade there rather than at the mode flip.
+    pub(crate) stage_registration_pending: bool,
     /// Whether the stage is one of `DAT_80078C1C`'s outdoor stages - the
     /// `0x8007BDA8` byte the backdrop ramp's ceiling reads. The host that
     /// resolved the stage sets it when it enters battle rendering.
@@ -988,6 +996,7 @@ impl BattleState {
             ambient_stored: legaia_engine_battle_vm::battle_ground_grid::GRID_FAR_BASE_NEUTRAL,
             backdrop_cue: 0,
             ground_grid_drawn: true,
+            stage_registration_pending: false,
             stage_outdoor: false,
             message_banner: None,
             entry_serial: 0,

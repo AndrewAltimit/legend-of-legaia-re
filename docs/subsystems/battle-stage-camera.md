@@ -174,8 +174,15 @@ the ambient beside the far colour on every stage class
 `step` is the frame step `0x1F800393`. Settled, the base is `0x808080`, so the
 floor's **near** colour is `0xC0` per channel: the texel is lifted by half
 before the cue blends it toward the far colour. Every catalogued battle capture
-outside a cast holds `0x8007B7B0 = 0xC0C0C0`. Battle init seeds the floor value
-(`0x80051C84`), so every fight's floor fades in over its first 48 vsyncs. A
+outside a cast holds `0x8007B7B0 = 0xC0C0C0`. The stage loader `FUN_800513F0`
+seeds the floor value (`0x80051C84`), so every fight's floor fades in over 48
+vsyncs from the stage load. The frame driver calls that loader on its first
+pass at entry counter `gp+0x330 >= 0x84` (`0x80046F04`, `jal 0x800513F0` at
+`0x80046F74`), four units into the [entry sweep](#the-battle-entry-sweep),
+and runs `FUN_80050120` later in the same pass, so the load pass already
+ramps once: `s5_tetsu_battle`, at counter `0xAF`, holds base `0x76` - 43 units
+of ramp - and near colour `0xB6`. The port holds the floor until its sweep
+counter reaches `0x84` (`World::tick_battle_ambient`). A
 cast pulls the near colour from `0xC0` toward `0x60`. The far colour
 `0x8007BB48` derives from the same word (`0x800507FC..0x80050834`).
 

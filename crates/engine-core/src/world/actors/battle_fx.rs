@@ -5,6 +5,11 @@
 use super::*;
 use legaia_engine_mode::mode::SceneMode;
 
+/// The entry counter `gp+0x330` from which the frame driver loads the
+/// fight's stage (`sltiu v0,a0,0x84` at `0x80046F04`, then
+/// `jal 0x800513F0` at `0x80046F74` while `ctx[+0x11]` is clear).
+pub(crate) const ENTRY_STAGE_LOAD_COUNTER: u32 = 0x84;
+
 impl World {
     /// Walk actor `i`'s committed effect script for one frame and queue the
     /// resulting spawn requests (drained via
@@ -607,6 +612,25 @@ impl World {
         let dt = self.battle.anim_pass_vsyncs;
         if dt == 0 {
             return;
+        }
+        // The stage loader `FUN_800513F0` seeds the floor (`0x80051C84`) on
+        // the frame driver's first pass at entry counter `0x84` or more
+        // (`0x80046F04` / `0x80046F74`) and the ramp below runs later in that
+        // same pass. Until then the fight has no stage to colour: the floor
+        // holds, so the fade-in starts four counter units into the sweep -
+        // `s5_tetsu_battle`, at counter `0xAF`, holds base `0x76`, 43 units
+        // of ramp. The camera reads here as last tick left it, which is the
+        // counter the retail pass tests before its own advance; no camera
+        // yet is the flip tick, before the driver's first sweep pass.
+        if self.battle.stage_registration_pending {
+            match self.battle.camera.as_ref().map(|c| c.entry_sweep_counter()) {
+                None => return,
+                Some(Some(c)) if c < ENTRY_STAGE_LOAD_COUNTER => return,
+                _ => {
+                    self.battle.stage_registration_pending = false;
+                    self.battle_ctx.ambient_base = grid::AMBIENT_BASE_FLOOR;
+                }
+            }
         }
         let ctx = &mut self.battle_ctx;
         ctx.ambient_base =
