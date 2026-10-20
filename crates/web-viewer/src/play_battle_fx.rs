@@ -8,7 +8,8 @@
 //! a summon puts *on top* of it. Four seams, each the same `World` API the
 //! native window drains:
 //!
-//! * **effect-script spawns** ([`LegaiaRuntime::drain_battle_effect_spawns_web`]):
+//! * **effect-script spawns** (`BootSession::step_battle_presentation`, run
+//!   from [`LegaiaRuntime::tick_battle_presentation`]):
 //!   one request per effect record the per-actor effect-script walk consumed
 //!   (the `FUN_801DEA50` port driven from the animation tick). The direct
 //!   (`0x80`-flagged) form lands in the 2D effect pool
@@ -39,14 +40,14 @@
 //! one.
 
 use crate::runtime::LegaiaRuntime;
-use legaia_engine_camera::psx_camera::{WORLD_FLIP, mat4_mul, mat4_scale, mat4_translation};
+use legaia_engine_camera::psx_camera::{WORLD_FLIP, mat4_mul, mat4_scale};
 use legaia_engine_mode::mode::SceneMode;
 use wasm_bindgen::prelude::*;
 
-/// Retail 4x uniform battle world scale - the same constant
-/// [`crate::play_battle_render`] exports to the page, repeated here because
-/// every FX matrix folds it in (the native `fx_cam = cam * scale(4.0)`).
-const BATTLE_WORLD_SCALE: f32 = 4.0;
+/// Retail 4x uniform battle world scale - the shared value both hosts read
+/// (`legaia_engine_session::battle_fx`), because every FX matrix folds it in
+/// (the native `fx_cam = cam * scale(4.0)`).
+use legaia_engine_session::battle_fx::BATTLE_WORLD_SCALE;
 
 /// Outline strip width as a fraction of the billboard's larger side, with a
 /// world-unit floor so a tiny sprite still reads. The native outline is a
@@ -240,61 +241,131 @@ fn transform_dir(m: &[f32; 16], v: [f32; 3]) -> [f32; 3] {
     }
 }
 
-/// The four world-space corners of a camera-facing billboard, TL / TR / BL /
-/// BR - the browser copy of the native `effect_sprite_corners`. The native
-/// `EFFECT_TEXEL_WORLD` extra scale is `1.0` (the sprite's `size` is already
-/// the retail pass-2 world size), so it does not appear here.
-///
-/// The half-extents come through [`legaia_render_kernels::effect_billboard`]
-/// because retail forms the corners in **view** space, after the camera
-/// transform (`FUN_800195A8`), so they must not take the battle base matrix's
-/// `BATTLE_WORLD_SCALE` a second time - the module carries the instruction
-/// evidence. Both hosts share the kernel so their effects cannot differ in
-/// size.
-fn sprite_corners(
-    sprite: &legaia_engine_core::world::EffectSprite,
-    right: [f32; 3],
-    up: [f32; 3],
-) -> [[f32; 3]; 4] {
-    let c = sprite.world_pos;
-    let (hw, hh) = legaia_render_kernels::effect_billboard::world_half_extents(
-        sprite.size,
-        BATTLE_WORLD_SCALE,
-    );
-    let mut out = [[0.0f32; 3]; 4];
-    // TL, TR, BL, BR: (-r +u), (+r +u), (-r -u), (+r -u).
-    for (i, (sr, su)) in [(-1.0f32, 1.0f32), (1.0, 1.0), (-1.0, -1.0), (1.0, -1.0)]
-        .into_iter()
-        .enumerate()
-    {
-        for k in 0..3 {
-            out[i][k] = c[k] + right[k] * hw * sr + up[k] * hh * su;
-        }
+/// Push one effect-pool billboard into the page's stream: the textured quad
+/// at `corners` (already in page space), then - behind the default-off
+/// [`FX_OUTLINE`] diagnostic - four thin untextured strips along its edges,
+/// faded by age like the native `effect_sprite_line_geometry`. `basis` is
+/// the camera's world `[right, up]`; `scale` is the factor the corners took
+/// on the way to page space, which the strip inset takes too.
+fn push_billboard(
+    frame: &mut BattleFxFrame,
+    b: &legaia_engine_world_views::effect_draws::FxBillboard,
+    corners: [[f32; 3]; 4],
+    basis: [[f32; 3]; 2],
+    scale: f32,
+) {
+    // The retail pass-2 brightness envelope writes `r = g = b = brightness`
+    // on the GPU packet, and the page's textured branch applies retail's
+    // `texel * colour / 128`, so the envelope rides the RGB lanes verbatim
+    // (`0x80` neutral; see `effect_vm::pool::pass2_brightness`).
+    let v = b.sprite.brightness;
+    push_quad(frame, corners, b.uv, b.cba_tsb, [v, v, v, 255]);
+    if !FX_OUTLINE.load(std::sync::atomic::Ordering::Relaxed) {
+        return;
     }
-    out
+    let col = outline_color(b.sprite.age01);
+    let t = outline_thickness(b.sprite.size) * scale;
+    let [right, up] = basis;
+    let inset =
+        |a: [f32; 3], dir: [f32; 3]| [a[0] + dir[0] * t, a[1] + dir[1] * t, a[2] + dir[2] * t];
+    let [tl, tr, bl, br] = corners;
+    let down = [-up[0], -up[1], -up[2]];
+    let left = [-right[0], -right[1], -right[2]];
+    // (outer_a, outer_b, inward) per edge: top, bottom, left, right.
+    for (a, b2, inward) in [
+        (tl, tr, down),
+        (bl, br, up),
+        (tl, bl, right),
+        (tr, br, left),
+    ] {
+        push_quad(
+            frame,
+            [a, b2, inset(a, inward), inset(b2, inward)],
+            [[0, 0]; 4],
+            [0, 0],
+            col,
+        );
+    }
+}
+
+/// One quad (TL / TR / BL / BR) into the page's billboard stream.
+fn push_quad(
+    frame: &mut BattleFxFrame,
+    corners: [[f32; 3]; 4],
+    uv: [[u8; 2]; 4],
+    cba_tsb: [u16; 2],
+    flat: [u8; 4],
+) {
+    let base = (frame.positions.len() / 3) as u32;
+    for (p, uv) in corners.iter().zip(uv) {
+        frame.positions.extend_from_slice(p);
+        frame.uvs.extend_from_slice(&uv);
+        frame.cba_tsb.extend_from_slice(&cba_tsb);
+        frame.flat.extend_from_slice(&flat);
+    }
+    frame
+        .indices
+        .extend_from_slice(&[base, base + 1, base + 2, base + 2, base + 1, base + 3]);
+}
+
+/// Bake a per-frame mesh into the billboard stream through `model` (the
+/// page's model list addresses library meshes by index, so a mesh only this
+/// frame has rides the stream instead).
+fn bake_mesh(frame: &mut BattleFxFrame, model: &[f32; 16], m: &legaia_tmd::mesh::VramMesh) {
+    let base = (frame.positions.len() / 3) as u32;
+    for (i, p) in m.positions.iter().enumerate() {
+        let w = [
+            model[0] * p[0] + model[4] * p[1] + model[8] * p[2] + model[12],
+            model[1] * p[0] + model[5] * p[1] + model[9] * p[2] + model[13],
+            model[2] * p[0] + model[6] * p[1] + model[10] * p[2] + model[14],
+        ];
+        frame.positions.extend_from_slice(&w);
+        frame.uvs.extend_from_slice(&m.uvs[i]);
+        frame.cba_tsb.extend_from_slice(&m.cba_tsb[i]);
+        let c = m.colors[i];
+        frame.flat.extend_from_slice(&[c[0], c[1], c[2], 255]);
+    }
+    frame.indices.extend(m.indices.iter().map(|&ix| base + ix));
+}
+
+/// The effect models and the summon / move-FX parts of `lists` into the
+/// page's model list, each behind the page's `outer` frame. A part whose
+/// render state is not its rest mesh (armed VDF morph lanes, a render scale,
+/// a colour word: the Spirit aura's cones grow, spin and fade) bakes
+/// `World::part_draw_vram_mesh` - the mesh the native part pass uploads.
+fn push_fx_models(
+    frame: &mut BattleFxFrame,
+    world: &legaia_engine_core::world::World,
+    lists: &legaia_engine_world_views::effect_draws::FxModelDraws,
+    outer: &[f32; 16],
+) {
+    for em in &lists.effect_models {
+        frame.models.push(FxModelDraw {
+            tmd_index: em.index,
+            source: FxModelSource::GlobalPool,
+            model: mat4_mul(outer, &em.model),
+        });
+    }
+    for p in &lists.parts {
+        if world.global_tmd(p.draw.model_index as i16).is_none() {
+            continue;
+        }
+        let model = mat4_mul(outer, &p.model);
+        if !p.draw.draws_rest_mesh()
+            && let Some(m) = world.part_draw_vram_mesh(&p.draw)
+        {
+            bake_mesh(frame, &model, &m);
+            continue;
+        }
+        frame.models.push(FxModelDraw {
+            tmd_index: p.draw.model_index,
+            source: FxModelSource::GlobalPool,
+            model,
+        });
+    }
 }
 
 impl LegaiaRuntime {
-    /// Route this tick's battle effect-script spawn requests into the world's
-    /// matching spawn path - the browser twin of the native window's
-    /// `drain_and_log_battle_events` FX block. Without it every magic cast,
-    /// art impact and enemy special in the browser produced a spawn request
-    /// that nothing consumed, so the whole effect layer was inert.
-    ///
-    /// REF: FUN_801DEA50
-    pub(crate) fn drain_battle_effect_spawns_web(&mut self) {
-        let Some(host) = self.scene_host.host_mut() else {
-            return;
-        };
-        // The routing is the engine's, shared with the native window.
-        for r in host.world.route_battle_effect_spawns() {
-            crate::play_battle_render::web_log(&format!(
-                "play battle FX: effect {:#04x} actor {} at {:?} direct={} staged={:?}",
-                r.spawn.effect, r.spawn.actor_slot, r.spawn.at, r.spawn.direct, r.table_staged
-            ));
-        }
-    }
-
     /// The live FX camera: the page's battle view-projection with the retail
     /// 4x world scale composed on, i.e. the native `fx_cam`.
     fn fx_cam(&self, aspect: f32) -> Option<[f32; 16]> {
@@ -333,6 +404,7 @@ impl LegaiaRuntime {
     /// as the native `build_effect_billboards` derives it, so both hosts'
     /// quads face the camera that actually draws them.
     fn build_battle_fx(&mut self, aspect: f32) {
+        use legaia_engine_world_views::effect_draws::{effect_billboards, effect_model_draws};
         let mut frame = BattleFxFrame::default();
         if !self.play_battle_active() {
             self.battle_fx = frame;
@@ -354,250 +426,56 @@ impl LegaiaRuntime {
         };
         let world = &host.world;
 
-        // --- 2D effect pool: one textured quad + one outline per child ----
-        let s = BATTLE_WORLD_SCALE;
-        let push_vertex =
-            |f: &mut BattleFxFrame, p: [f32; 3], uv: [u8; 2], ct: [u16; 2], flat: [u8; 4]| {
-                f.positions
-                    .extend_from_slice(&[p[0] * s, p[1] * s, p[2] * s]);
-                f.uvs.extend_from_slice(&uv);
-                f.cba_tsb.extend_from_slice(&ct);
-                f.flat.extend_from_slice(&flat);
-            };
-        for mut sprite in world.active_effect_sprites() {
-            // The battle camera consumes Y-up input; the pool is raw Y-down,
-            // and a billboard has no model matrix to carry the flip - the
-            // native window builds around the same flipped centre.
-            sprite.world_pos =
-                legaia_render_kernels::effect_billboard::battle_billboard_centre(sprite.world_pos);
-            let [u0, v0] = sprite.uv;
-            let u1 = u0
-                .saturating_add(sprite.uv_size[0].saturating_sub(1))
-                .min(255) as u8;
-            let v1 = v0
-                .saturating_add(sprite.uv_size[1].saturating_sub(1))
-                .min(255) as u8;
-            let (mut u0, mut u1) = ((u0 & 0xFF) as u8, u1);
-            let (mut v0, mut v1) = ((v0 & 0xFF) as u8, v1);
-            // Random UV-mirror corner order (retail pass 2).
-            if sprite.flip_h {
-                std::mem::swap(&mut u0, &mut u1);
-            }
-            if sprite.flip_v {
-                std::mem::swap(&mut v0, &mut v1);
-            }
-            let corners = sprite_corners(&sprite, right, up);
-            let corner_uv = [[u0, v0], [u1, v0], [u0, v1], [u1, v1]];
-            // The prim-ABE enable rides bit 15 (`EffectSprite::packet_tsb`,
-            // retail's semi-transparent prim code `0x2E`); the bare page drew
-            // every effect texel opaque.
-            let ct = [sprite.clut, sprite.packet_tsb()];
-            // The retail pass-2 brightness envelope writes `r = g = b =
-            // brightness` on the GPU packet, and the page's textured branch
-            // now applies retail's `texel * colour / 128`, so the envelope
-            // rides the RGB lanes verbatim. Writing 255 here would both
-            // discard the envelope and brighten every sprite by `255/128`.
-            // `0x80` is neutral; see `effect_vm::pool::pass2_brightness`.
-            let base = (frame.positions.len() / 3) as u32;
-            let b = sprite.brightness;
-            for (corner, uv) in corners.iter().zip(corner_uv) {
-                push_vertex(&mut frame, *corner, uv, ct, [b, b, b, 255]);
-            }
-            frame.indices.extend_from_slice(&[
-                base,
-                base + 1,
-                base + 2,
-                base + 2,
-                base + 1,
-                base + 3,
-            ]);
-
-            // Outline: four thin untextured strips along the quad edges,
-            // faded by age like the native `effect_sprite_line_geometry`.
-            // A **diagnostic**, off unless the page asked for it - see
-            // [`FX_OUTLINE`] for what leaving it on looked like on screen.
-            if !FX_OUTLINE.load(std::sync::atomic::Ordering::Relaxed) {
-                continue;
-            }
-            let col = outline_color(sprite.age01);
-            let t = outline_thickness(sprite.size);
-            let inset = |a: [f32; 3], dir: [f32; 3], amount: f32| {
-                [
-                    a[0] + dir[0] * amount,
-                    a[1] + dir[1] * amount,
-                    a[2] + dir[2] * amount,
-                ]
-            };
-            let [tl, tr, bl, br] = corners;
-            let down = [-up[0], -up[1], -up[2]];
-            let left = [-right[0], -right[1], -right[2]];
-            // (outer_a, outer_b, inward) per edge: top, bottom, left, right.
-            let edges = [
-                (tl, tr, down),
-                (bl, br, up),
-                (tl, bl, right),
-                (tr, br, left),
-            ];
-            for (a, b, inward) in edges {
-                let base = (frame.positions.len() / 3) as u32;
-                for p in [a, b, inset(a, inward, t), inset(b, inward, t)] {
-                    push_vertex(&mut frame, p, [0, 0], [0, 0], col);
-                }
-                frame.indices.extend_from_slice(&[
-                    base,
-                    base + 1,
-                    base + 2,
-                    base + 2,
-                    base + 1,
-                    base + 3,
-                ]);
-            }
+        // --- 2D effect pool: one textured quad (+ diag outline) per child --
+        // The list both hosts draw (`effect_draws::effect_billboards`): the
+        // centre flipped into the battle camera's Y-up frame (a billboard has
+        // no model matrix to carry the flip), the half-extents out of the 4x
+        // view scale, the texel corners mirrored, the TSB semi bit set. The
+        // page's VP is unscaled, so every corner takes the 4x here - the
+        // battle mode's base matrix, the scale the native window takes from
+        // the same kernel, stage or no stage.
+        let s = legaia_engine_session::battle_fx::battle_world_scale(world);
+        for b in effect_billboards(world, s) {
+            let corners = b.corners(right, up).map(|c| [c[0] * s, c[1] * s, c[2] * s]);
+            push_billboard(&mut frame, &b, corners, [right, up], s);
         }
 
         // --- 3D FX models ------------------------------------------------
-        // `etmd.dat` effect meshes (the model-spawn seam) followed by the
-        // move-VM scene-graph parts (summon + battle move-FX), the same two
-        // sources and the same order the native redraw pushes them in.
-        //
-        // A part whose `+0x52` carries a `0x780` bit is placed by the
-        // camera-relative prefix (`FUN_8001CF50`'s result under the full
-        // battle camera, the native `part_camera_pose` selection); every
-        // other part keeps `T(world_pos)`. Battle models carry the per-model
-        // Y-flip, the frame flip the prefix conjugates by.
+        // The model list both hosts draw (`effect_draws::effect_model_draws`,
+        // native frame), with the FX camera's 4x world scale folded in front
+        // (the page multiplies its unscaled battle VP by these). Effect
+        // models first, then the summon / move-FX parts, then the
+        // draw-kind-4 nodes and the battle ground shadows - the native order.
         let part_cam =
             legaia_render_kernels::gte::PartCameraPose::from_battle(&self.battle_cam_pose());
-        let flip = WORLD_FLIP;
-        let world_scale = mat4_scale(s);
-        let fx_translate = mat4_translation;
-        // The native battle pass's placement kernel: the frame flip on the
-        // translation as well as on the camera-relative prefix.
-        let place = |flags: u16, pos: [f32; 3]| -> [f32; 16] {
-            legaia_render_kernels::gte::part_model_place(flags, pos, Some(&part_cam), true)
-        };
-        for em in world.active_effect_models() {
-            if world.global_tmd(em.tmd_index as i16).is_none() {
-                continue;
-            }
-            let model = mat4_mul(&world_scale, &mat4_mul(&fx_translate(em.world_pos), &flip));
-            frame.models.push(FxModelDraw {
-                tmd_index: em.tmd_index,
-                source: FxModelSource::GlobalPool,
-                model,
-            });
-        }
-        let parts = world
-            .active_summon_part_draws()
-            .into_iter()
-            .chain(world.active_move_fx_part_draws());
-        for sp in parts {
-            if world.global_tmd(sp.model_index as i16).is_none() {
-                continue;
-            }
-            // `T * R * flip` (`gte::part_rotation`), the native part composition, with
-            // the FX camera's 4x world scale folded in front of it (the page
-            // multiplies its unscaled battle VP by this).
-            let model = mat4_mul(
-                &world_scale,
-                &mat4_mul(
-                    &place(sp.flags_52, sp.world_pos),
-                    &mat4_mul(
-                        &legaia_render_kernels::gte::part_rotation(sp.rot, true),
-                        &flip,
-                    ),
-                ),
-            );
-            // A part with armed VDF morph lanes, a render scale or a colour
-            // word (the Spirit aura's cones grow, spin and fade) draws
-            // `World::part_draw_vram_mesh` - the mesh the native part pass
-            // uploads. The page's model list addresses pool meshes by
-            // index, so a per-frame mesh is baked into the billboard stream
-            // instead, like the draw-kind-4 meshes below.
-            if !sp.draws_rest_mesh()
-                && let Some(m) = world.part_draw_vram_mesh(&sp)
-            {
-                let base = (frame.positions.len() / 3) as u32;
-                for (i, p) in m.positions.iter().enumerate() {
-                    let w = [
-                        model[0] * p[0] + model[4] * p[1] + model[8] * p[2] + model[12],
-                        model[1] * p[0] + model[5] * p[1] + model[9] * p[2] + model[13],
-                        model[2] * p[0] + model[6] * p[1] + model[10] * p[2] + model[14],
-                    ];
-                    frame.positions.extend_from_slice(&w);
-                    frame.uvs.extend_from_slice(&m.uvs[i]);
-                    frame.cba_tsb.extend_from_slice(&m.cba_tsb[i]);
-                    let c = m.colors[i];
-                    frame.flat.extend_from_slice(&[c[0], c[1], c[2], 255]);
-                }
-                frame.indices.extend(m.indices.iter().map(|&ix| base + ix));
-                continue;
-            }
-            frame.models.push(FxModelDraw {
-                tmd_index: sp.model_index,
-                source: FxModelSource::GlobalPool,
-                model,
-            });
-        }
-        // Draw-kind-4 nodes - effect ribbons (move-VM op `0x42`) and
-        // `0x4000` sprite-arm quads (op `0x23`): the emitter's per-frame
-        // mesh, composed like a part (the native redraw pushes the same list
-        // after its part draws) and baked into the billboard stream, whose
-        // positions are already in the page's 4x-scaled world space. The
-        // battle ground shadows (`FUN_80048A08`'s disc, the same default-arm
-        // builder `FUN_80028158`) ride the same stream, one per drawn body
-        // under the plan the page's actor pass draws with - the native
-        // window's part pass draws the same list.
-        let shadows = world.battle_ground_shadows(|i| self.battle_draw_plan(i));
-        for rb in world.active_effect_kind4_draws().into_iter().chain(shadows) {
-            let model = mat4_mul(
-                &world_scale,
-                &mat4_mul(
-                    &place(rb.flags_52, rb.world_pos),
-                    &mat4_mul(
-                        &legaia_render_kernels::gte::part_rotation(rb.rot, true),
-                        &flip,
-                    ),
-                ),
-            );
-            let base = (frame.positions.len() / 3) as u32;
-            let m = &rb.mesh;
-            for (i, p) in m.positions.iter().enumerate() {
-                let w = [
-                    model[0] * p[0] + model[4] * p[1] + model[8] * p[2] + model[12],
-                    model[1] * p[0] + model[5] * p[1] + model[9] * p[2] + model[13],
-                    model[2] * p[0] + model[6] * p[1] + model[10] * p[2] + model[14],
-                ];
-                frame.positions.extend_from_slice(&w);
-                frame.uvs.extend_from_slice(&m.uvs[i]);
-                frame.cba_tsb.extend_from_slice(&m.cba_tsb[i]);
-                let c = m.colors[i];
-                frame.flat.extend_from_slice(&[c[0], c[1], c[2], 255]);
-            }
-            frame.indices.extend(m.indices.iter().map(|&ix| base + ix));
+        let lists = effect_model_draws(world, Some(&part_cam), |i| self.battle_draw_plan(i));
+        let outer = mat4_scale(s);
+        push_fx_models(&mut frame, world, &lists, &outer);
+        for n in lists.kind4.iter().chain(&lists.shadows) {
+            bake_mesh(&mut frame, &mat4_mul(&outer, &n.model), &n.mesh);
         }
         self.battle_fx = frame;
     }
 
     /// The FIELD twin of [`Self::build_battle_fx`]: the effect-pool
-    /// billboards, the `etmd` effect models, the summon / move-FX parts and
-    /// the field move-VM stager parts that the native redraw draws on every
-    /// field frame (`redraw_passes.rs`: `build_effect_model_draws`,
-    /// `build_summon_and_move_fx_part_draws`, `build_field_fx_part_draws`,
-    /// all gated on `!in_world_map` except the draw-kind-4 list, which draws
-    /// on the overworld too). The page used to simulate these
-    /// (`tick_world_effects`) and draw none of them, because its only FX
-    /// draw call sat inside the battle branch - every field sparkle, steam
-    /// vent and creation glow was invisible in the browser.
+    /// billboards, the `etmd` effect models, the summon / move-FX parts, the
+    /// field move-VM stager parts and the draw-kind-4 nodes, out of the same
+    /// list the native redraw draws on every field frame
+    /// (`effect_draws`; on the overworld only the draw-kind-4 list carries
+    /// anything). The page used to simulate these (`tick_world_effects`)
+    /// and draw none of them, because its only FX draw call sat inside the
+    /// battle branch.
     ///
     /// `vp` is the page's field view-projection (column-major, the matrix
     /// `buildWorldOrbitVp` built for this frame), in **page space**: the
     /// retail world with Y negated, which is how every field draw on the
     /// page lands (`placementModelScaledY`'s `-sc` row). So each native
-    /// model matrix is composed here and then flipped through `diag(1,-1,1)`
-    /// as the LAST factor, and the billboard centres are flipped the same
-    /// way before the camera-basis corners are added. Field FX carry no
-    /// world scale (the native `fx_scale` is `1.0` outside a stage-dome
-    /// battle), so half-extents are the raw pass-2 size.
+    /// model matrix takes `diag(1,-1,1)` as its LAST (outermost) factor,
+    /// and each billboard centre is flipped the same way before the
+    /// camera-basis corners are added. Field FX carry no world scale, so
+    /// half-extents are the raw pass-2 size.
     fn build_field_fx(&mut self, vp: [f32; 16]) {
+        use legaia_engine_world_views::effect_draws::{effect_billboards, effect_model_draws};
         let mut frame = BattleFxFrame::default();
         let Some(host) = self.scene_host.host() else {
             self.battle_fx = frame;
@@ -608,11 +486,6 @@ impl LegaiaRuntime {
             self.battle_fx = frame;
             return;
         }
-        // On the overworld only the draw-kind-4 list below draws, as on the
-        // native window (`build_summon_and_move_fx_part_draws`): retail's
-        // `FUN_8001ADA4` makes no mode test on its case-4 arm, and `map01`'s
-        // `keikoku_chest_preload` state holds seven live sprite-arm nodes.
-        let overworld = world.mode == SceneMode::WorldMap;
         let Some(inv) = mat4_inverse(&vp) else {
             self.battle_fx = frame;
             return;
@@ -620,67 +493,10 @@ impl LegaiaRuntime {
         let right = transform_dir(&inv, [1.0, 0.0, 0.0]);
         let up = transform_dir(&inv, [0.0, 1.0, 0.0]);
         let flip = |p: [f32; 3]| [p[0], -p[1], p[2]];
-        let push_vertex =
-            |f: &mut BattleFxFrame, p: [f32; 3], uv: [u8; 2], ct: [u16; 2], flat: [u8; 4]| {
-                f.positions.extend_from_slice(&p);
-                f.uvs.extend_from_slice(&uv);
-                f.cba_tsb.extend_from_slice(&ct);
-                f.flat.extend_from_slice(&flat);
-            };
-        for sprite in world
-            .active_effect_sprites()
-            .into_iter()
-            .filter(|_| !overworld)
-        {
-            let [u0, v0] = sprite.uv;
-            let u1 = u0
-                .saturating_add(sprite.uv_size[0].saturating_sub(1))
-                .min(255) as u8;
-            let v1 = v0
-                .saturating_add(sprite.uv_size[1].saturating_sub(1))
-                .min(255) as u8;
-            let (mut u0, mut u1) = ((u0 & 0xFF) as u8, u1);
-            let (mut v0, mut v1) = ((v0 & 0xFF) as u8, v1);
-            if sprite.flip_h {
-                std::mem::swap(&mut u0, &mut u1);
-            }
-            if sprite.flip_v {
-                std::mem::swap(&mut v0, &mut v1);
-            }
-            let c = flip(sprite.world_pos);
-            let (hw, hh) =
-                legaia_render_kernels::effect_billboard::world_half_extents(sprite.size, 1.0);
-            let mut corners = [[0.0f32; 3]; 4];
-            for (i, (sr, su)) in [(-1.0f32, 1.0f32), (1.0, 1.0), (-1.0, -1.0), (1.0, -1.0)]
-                .into_iter()
-                .enumerate()
-            {
-                for k in 0..3 {
-                    corners[i][k] = c[k] + right[k] * hw * sr + up[k] * hh * su;
-                }
-            }
-            let corner_uv = [[u0, v0], [u1, v0], [u0, v1], [u1, v1]];
-            // The prim-ABE enable rides bit 15 (`EffectSprite::packet_tsb`,
-            // retail's semi-transparent prim code `0x2E`); the bare page drew
-            // every effect texel opaque.
-            let ct = [sprite.clut, sprite.packet_tsb()];
-            let base = (frame.positions.len() / 3) as u32;
-            let b = sprite.brightness;
-            for (corner, uv) in corners.iter().zip(corner_uv) {
-                push_vertex(&mut frame, *corner, uv, ct, [b, b, b, 255]);
-            }
-            frame.indices.extend_from_slice(&[
-                base,
-                base + 1,
-                base + 2,
-                base + 2,
-                base + 1,
-                base + 3,
-            ]);
+        for b in effect_billboards(world, 1.0) {
+            let corners = b.corners_at(flip(b.sprite.world_pos), right, up);
+            push_billboard(&mut frame, &b, corners, [right, up], 1.0);
         }
-
-        let flip_m = WORLD_FLIP;
-        let fx_translate = mat4_translation;
         // The engine camera the page draws through this frame (the same
         // `resolve_field_camera` frame [`Self::play_camera_vp`] built `vp`
         // from), for the parts' `+0x52` camera-relative bits. `None` when the
@@ -690,112 +506,21 @@ impl LegaiaRuntime {
             .filter(|(m, _)| *m == vp)
             .and_then(|(_, frame)| frame.field_view())
             .map(|v| legaia_render_kernels::gte::PartCameraPose::from_field_view(&v));
-        // Native field composition is `T * R` (`gte::part_rotation`) with an identity
-        // `fx_model_flip`; the page-space flip goes on the outside. A
-        // camera-relative part (`+0x52 & 0x780`) takes the `FUN_8001CF50`
-        // prefix in place of `T`, on the raw retail frame (no flip).
-        let part_model = |flags: u16, pos: [f32; 3], rot: [f32; 3]| -> [f32; 16] {
-            let place = legaia_render_kernels::gte::camera_relative_model_prefix(
-                flags,
-                pos,
-                part_cam.as_ref(),
-                false,
-            )
-            .unwrap_or_else(|| fx_translate(pos));
-            mat4_mul(
-                &flip_m,
-                &mat4_mul(
-                    &place,
-                    &legaia_render_kernels::gte::part_rotation(rot, false),
-                ),
-            )
-        };
-        for em in world
-            .active_effect_models()
-            .into_iter()
-            .filter(|_| !overworld)
-        {
-            if world.global_tmd(em.tmd_index as i16).is_none() {
-                continue;
-            }
-            frame.models.push(FxModelDraw {
-                tmd_index: em.tmd_index,
-                source: FxModelSource::GlobalPool,
-                model: mat4_mul(&flip_m, &fx_translate(em.world_pos)),
-            });
-        }
-        let parts = world
-            .active_summon_part_draws()
-            .into_iter()
-            .chain(world.active_move_fx_part_draws())
-            .filter(|_| !overworld);
-        for sp in parts {
-            if world.global_tmd(sp.model_index as i16).is_none() {
-                continue;
-            }
-            let model = part_model(sp.flags_52, sp.world_pos, sp.rot);
-            // A morphed / scaled / colour-worded part bakes its per-frame
-            // mesh (`World::part_draw_vram_mesh`), as the battle frame does.
-            if !sp.draws_rest_mesh()
-                && let Some(m) = world.part_draw_vram_mesh(&sp)
-            {
-                let base = (frame.positions.len() / 3) as u32;
-                for (i, p) in m.positions.iter().enumerate() {
-                    let w = [
-                        model[0] * p[0] + model[4] * p[1] + model[8] * p[2] + model[12],
-                        model[1] * p[0] + model[5] * p[1] + model[9] * p[2] + model[13],
-                        model[2] * p[0] + model[6] * p[1] + model[10] * p[2] + model[14],
-                    ];
-                    frame.positions.extend_from_slice(&w);
-                    frame.uvs.extend_from_slice(&m.uvs[i]);
-                    frame.cba_tsb.extend_from_slice(&m.cba_tsb[i]);
-                    let c = m.colors[i];
-                    frame.flat.extend_from_slice(&[c[0], c[1], c[2], 255]);
-                }
-                frame.indices.extend(m.indices.iter().map(|&ix| base + ix));
-                continue;
-            }
-            frame.models.push(FxModelDraw {
-                tmd_index: sp.model_index,
-                source: FxModelSource::GlobalPool,
-                model,
-            });
-        }
+        let lists = effect_model_draws(world, part_cam.as_ref(), |_| None);
+        let outer = WORLD_FLIP;
+        push_fx_models(&mut frame, world, &lists, &outer);
         // Field move-VM stager parts resolve against the SCENE's TMD pack
         // (`model_sel` relative to the spawn base = pack slot), not the
-        // battle pool - the page holds that pack as its env meshes.
-        for fp in world
-            .active_field_fx_part_draws()
-            .into_iter()
-            .filter(|_| !overworld)
-        {
+        // effect library - the page holds that pack as its env meshes.
+        for fp in &lists.field_parts {
             frame.models.push(FxModelDraw {
-                tmd_index: fp.model_index,
+                tmd_index: fp.index,
                 source: FxModelSource::ScenePack,
-                model: part_model(fp.flags_52, fp.world_pos, fp.rot),
+                model: mat4_mul(&outer, &fp.model),
             });
         }
-        // Draw-kind-4 nodes (the `0x4000` sprite-arm quads of the field's
-        // move-VM parts; the ribbon arm is battle-only), composed like a part
-        // and baked into the billboard stream in page space - the native
-        // field pass draws the same list (`build_summon_and_move_fx_part_draws`).
-        for rb in world.active_effect_kind4_draws() {
-            let model = part_model(rb.flags_52, rb.world_pos, rb.rot);
-            let base = (frame.positions.len() / 3) as u32;
-            let m = &rb.mesh;
-            for (i, p) in m.positions.iter().enumerate() {
-                let w = [
-                    model[0] * p[0] + model[4] * p[1] + model[8] * p[2] + model[12],
-                    model[1] * p[0] + model[5] * p[1] + model[9] * p[2] + model[13],
-                    model[2] * p[0] + model[6] * p[1] + model[10] * p[2] + model[14],
-                ];
-                frame.positions.extend_from_slice(&w);
-                frame.uvs.extend_from_slice(&m.uvs[i]);
-                frame.cba_tsb.extend_from_slice(&m.cba_tsb[i]);
-                let c = m.colors[i];
-                frame.flat.extend_from_slice(&[c[0], c[1], c[2], 255]);
-            }
-            frame.indices.extend(m.indices.iter().map(|&ix| base + ix));
+        for n in &lists.kind4 {
+            bake_mesh(&mut frame, &mat4_mul(&outer, &n.model), &n.mesh);
         }
         self.battle_fx = frame;
     }
@@ -1177,7 +902,18 @@ mod tests {
         };
         let right = [1.0, 0.0, 0.0];
         let up = [0.0, 1.0, 0.0];
-        let [tl, tr, bl, br] = sprite_corners(&sprite, right, up);
+        // The shared billboard (`effect_draws::FxBillboard`), sized by the
+        // same view-scale kernel the list builder uses.
+        let b = legaia_engine_world_views::effect_draws::FxBillboard {
+            sprite,
+            half: legaia_render_kernels::effect_billboard::world_half_extents(
+                sprite.size,
+                BATTLE_WORLD_SCALE,
+            ),
+            uv: legaia_engine_world_views::effect_draws::sprite_corner_uvs(&sprite),
+            cba_tsb: [sprite.clut, sprite.packet_tsb()],
+        };
+        let [tl, tr, bl, br] = b.corners(right, up);
         for k in 0..3 {
             assert!(((tl[k] + br[k]) * 0.5 - sprite.world_pos[k]).abs() < 1e-4);
             assert!(((tr[k] + bl[k]) * 0.5 - sprite.world_pos[k]).abs() < 1e-4);

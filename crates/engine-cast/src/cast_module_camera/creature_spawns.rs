@@ -3582,6 +3582,35 @@ const S934_24_EVERY: [ModuleSpawn; 3] = [
     ),
 ];
 
+/// Every record a summon-creature module seats on **every** pass of an arm
+/// ([`creature_arm_spawns`]' [`SpawnTiming::Every`] tables).
+pub const CREATURE_PER_PASS_SPAWNS: &[&[ModuleSpawn]] = &[
+    &S915_12_EVERY,
+    &S931_5_EVERY,
+    &S931_6_EVERY,
+    &S931_7_EVERY,
+    &S934_21_EVERY,
+    &S934_22_EVERY,
+    &S934_23_EVERY,
+    &S934_24_EVERY,
+];
+
+/// The slot-B records some module arm seats on every pass it runs, held or
+/// not ([`CAPTURE_PER_PASS_SPAWNS`], [`CREATURE_PER_PASS_SPAWNS`]). How many
+/// of them are live, how old each is and - for PROT 0962's rays - which way
+/// each was rolled is the history of the passes the frame driver made,
+/// which a replay at another frame cadence does not reproduce.
+pub fn per_pass_spawn_records() -> impl Iterator<Item = u32> {
+    super::CAPTURE_PER_PASS_SPAWNS
+        .iter()
+        .chain(CREATURE_PER_PASS_SPAWNS)
+        .flat_map(|t| t.iter())
+        .filter_map(|s| match s.record {
+            SpawnRecord::Module(va) => Some(va),
+            SpawnRecord::BattleProto(_) => None,
+        })
+}
+
 /// The spawn calls module `prot_entry`'s arm `phase` makes with `timing`
 /// ([`SpawnTiming`]); empty for an arm that makes none.
 pub fn creature_arm_spawns(

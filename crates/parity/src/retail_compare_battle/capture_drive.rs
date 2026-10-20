@@ -43,6 +43,26 @@ impl RetailBattle {
             .collect()
     }
 
+    /// `c`'s HP before the action in flight landed its hits on pool slot
+    /// `slot` ([`Self::action_hits`]): the replay plays that action from its
+    /// prompt and deals them again, so a bar seeded with the capture's HP
+    /// would read them twice (`battle_gimard_tail_fire_a` showed Vahn's
+    /// `154` less a second Tail Fire). A seat the action left at `0` keeps
+    /// its HP, which [`Self::action_victims`] owns, and the sum is clamped to
+    /// the bar's maximum.
+    pub fn pre_action_hp(&self, slot: u8, c: &Combatant) -> u16 {
+        if c.hp == 0 {
+            return c.hp;
+        }
+        let dealt: u32 = self
+            .action_hits
+            .iter()
+            .filter(|&&(s, _)| s == slot)
+            .map(|&(_, v)| u32::from(v))
+            .sum();
+        (u32::from(c.hp) + dealt).min(u32::from(c.hp_max.max(c.hp))) as u16
+    }
+
     /// Whether the image child takes the frame the display showed - the
     /// drive's tick less [`Self::display_lag`] - rather than the RAM's
     /// (`LEGAIA_CAPTURE_DISPLAY_LAG`; the child keeps the gate's own frame
@@ -79,9 +99,89 @@ impl RetailBattle {
     /// off retail's. Elsewhere it rose wherever it moved - with the frame
     /// itself left at the RAM's instant too (`battle_gimard_tail_fire_b`
     /// `0.745` to `0.772`).
+    ///
+    /// A Done-band capture takes the displayed pose only where the engine's
+    /// glide heads for retail's framing on every component
+    /// ([`Self::displayed_camera_on_agreement`]): it then walks retail's own
+    /// step table, and the displayed pose is one it passes through.
     pub fn displayed_camera(&self) -> bool {
         matches!(self.seed_plan(), SeedPlan::Action { .. })
             && !matches!(self.span_gate, SpanGate::DoneHold { .. })
+    }
+
+    /// The Done band's conditional twin of [`Self::displayed_camera`]: the
+    /// image child takes the displayed pose when its glide's endpoint
+    /// agrees with retail's on every component
+    /// (`BattleCamera::glide_endpoint_matches`), and the RAM's otherwise.
+    /// `zora_glare_petrify_post` (the caster's case 6, every endpoint
+    /// exact) reads `0.862` on the RAM's pose and `0.996` on the displayed
+    /// one; `noa_levelup_fight_pre`'s case 8 lands on a target pushed
+    /// elsewhere and keeps the RAM's.
+    pub fn displayed_camera_on_agreement(&self) -> bool {
+        matches!(self.seed_plan(), SeedPlan::Action { .. })
+            && matches!(self.span_gate, SpanGate::DoneHold { .. })
+    }
+
+    /// Whether a replayed cast's camera takes retail's pose as its glide
+    /// origin (`BattleCamera::align_glide_origin`), as a pad drive's does
+    /// ([`Self::displayed_camera`]): a capture in the summon invoke `0x32`,
+    /// which re-arms `FUN_801D5854(actor, 6)` every pass (`0x801E4984`) on
+    /// the ease `0x29`'s route arm opened onto the summon close-up's depth.
+    /// That ease sets out from whatever the fight framed before the cast -
+    /// the round's history, which the replay, seeded at the dispatch, does
+    /// not share (`flute_lippian_midcast`: retail's pitch `10` closing on
+    /// `0` from above, the replay's glide having set out at `0`).
+    ///
+    /// The headless seed takes retail's live pose, which the `camera`
+    /// channel scores. The image child takes the pose the **displayed**
+    /// frame was drawn at - the live pose walked back two game frames along
+    /// the step table ([`Self::displayed_cam_live`]): retail's RAM is one
+    /// pass into the ease, and the frame on screen is older than it. Aligned
+    /// to the RAM's pose the frame lands on the wrong side of it
+    /// (`flute_spikefish_midcast` `.910` to `.810`); to the displayed one
+    /// both flute captures rise (`.910` to `.929`, `.740` to `.942`). The
+    /// summon close-up and the module shots keep the replay's own pose.
+    pub fn cast_glide_aligned(&self) -> bool {
+        matches!(self.seed_plan(), SeedPlan::Cast) && self.action_state == 0x32
+    }
+
+    /// Every captured combatant's live pair and heading by engine slot - the
+    /// ground the capture holds, not the seed's (which [`Self::undrift`]
+    /// may have moved) - for the phase's ground seat
+    /// ([`legaia_engine_capture::ground_snap`]).
+    pub fn engine_ground_snaps(&self) -> Vec<legaia_engine_capture::ground_snap::GroundSnap> {
+        // Past the end signal the sequencer poses the winners and the results
+        // framing reads poses the replay's clips do not share; the ground
+        // stays the replay's.
+        if self.span_gate.is_end() {
+            return Vec::new();
+        }
+        let pc = usize::from(self.party_count.clamp(1, 3));
+        self.captured
+            .iter()
+            .enumerate()
+            .filter_map(|(pool, c)| {
+                let (live, body, clip, _) = (*c)?;
+                let slot = if pool < 3 {
+                    (pool < pc).then_some(pool)?
+                } else {
+                    let m = pool - 3;
+                    (m < usize::from(self.monster_count)).then_some(pc + m)?
+                };
+                Some(legaia_engine_capture::ground_snap::GroundSnap {
+                    slot: u8::try_from(slot).ok()?,
+                    x: live[0],
+                    z: live[1],
+                    facing: self.facing.get(pool).copied().flatten(),
+                    body: (if pool == usize::from(self.active_actor) {
+                        (0x1E..=0x20).contains(&self.action_state)
+                    } else {
+                        pool >= 3 && matches!(clip, 2..=5 | 0x0B)
+                    })
+                    .then_some(body),
+                })
+            })
+            .collect()
     }
 
     /// [`Self::clip_cursors`] on engine slots: the party's pool slots
@@ -157,6 +257,36 @@ impl RetailBattle {
             .enumerate()
             .filter(|&(_, &c)| c == 4)
             .fold(0, |m, (s, _)| m | 1 << s)
+    }
+
+    /// The command surface the **displayed** frame shows, when it is not the
+    /// one the RAM holds: a capture taken on the pass that opened the arts
+    /// entry `0x50` ([`Self::hud_glides_unseen`] - its own spawns, the
+    /// `Auto` / `Command` chips leaving and the directional chips arriving,
+    /// all younger than the display lag) still shows the `Auto | Command`
+    /// prompt `0x78` the player pressed Right on, at rest. Only under Select
+    /// Attack `0`: the other options reach `0x50` straight from the ring.
+    pub fn displayed_menu_flow(&self) -> Option<BattleFlowState> {
+        match self.seed_plan() {
+            SeedPlan::Menu {
+                flow: BattleFlowState::ArtsCommandEntry,
+                ..
+            } if self.hud_glides_unseen && self.select_attack == 0 => {
+                Some(BattleFlowState::AttackModePrompt)
+            }
+            _ => None,
+        }
+    }
+
+    /// [`Self::battle_drive`] for the image child: a menu drive walks to the
+    /// surface the displayed frame shows ([`Self::displayed_menu_flow`]).
+    pub fn image_drive(&self) -> Option<BattleDrive> {
+        match (self.battle_drive(), self.displayed_menu_flow()) {
+            (Some(BattleDrive::Menu { seat, spirit, .. }), Some(flow)) => {
+                Some(BattleDrive::Menu { flow, seat, spirit })
+            }
+            (drive, _) => drive,
+        }
     }
 
     /// The pad drive that reaches this capture, when its plan has one.

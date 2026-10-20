@@ -144,6 +144,12 @@ pub struct FieldVmState {
     /// Live op-`4C 42` `+0x8E` ramps on object-bind actors
     /// ([`crate::world::ObjectSlotRamp`]), stepped by the per-actor tick.
     pub object_slot_ramps: Vec<crate::world::ObjectSlotRamp>,
+    /// In-flight compass walks (`37` / `41`) on object-bind actors, by the
+    /// context's script id: the leg a bind-time prologue parks on its own
+    /// actor, stepped by the per-actor tick
+    /// ([`crate::world::World::tick_object_actor_heights`]) until it lands.
+    // REF: FUN_8003BC08, FUN_8003774C (the 0x37 / 0x41 arm)
+    pub(crate) object_glide_legs: std::collections::BTreeMap<u16, crate::world::ObjectGlideLeg>,
     /// Op-`4C 81` draw tints on the player, field NPCs and objects another
     /// script tinted ([`crate::world::ActorTint`]), stepped by the per-actor
     /// tick. Scene-scoped: retail re-spawns every actor on a scene load.
@@ -217,6 +223,7 @@ impl FieldVmState {
             object_channel_rots: Default::default(),
             object_channel_heights: Default::default(),
             object_slot_ramps: Vec::new(),
+            object_glide_legs: Default::default(),
             actor_tints: std::collections::HashMap::new(),
             pending_record_spawns: Vec::new(),
             system_pass_open: true,

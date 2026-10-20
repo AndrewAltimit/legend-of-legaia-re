@@ -436,7 +436,7 @@ impl SceneHost {
         session.set_special_word(special);
         // The Ra-Seru (magic) command class.
         if let Some(magic) =
-            legaia_engine_core::world_views::muscle_dome::magic_loadout_for(&self.world, 0, special)
+            legaia_engine_world_views::muscle_dome::magic_loadout_for(&self.world, 0, special)
         {
             session.install_magic(0, magic);
         }

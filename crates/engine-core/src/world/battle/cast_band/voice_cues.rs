@@ -43,8 +43,29 @@ impl World {
         else {
             return;
         };
-        let id = head.resolve(|| self.next_rand());
+        // PROT 0924 picks its cue off arm 0's kill roll; the arming seam is
+        // the module's first tick, so the roll is drawn here, ahead of the
+        // cue, as retail's arm 0 draws it ahead of arm 2's.
+        let id = if entry == legaia_engine_cast::cast_module_ticks::ULTIMATE_RAVE_ENTRY {
+            legaia_engine_cast::cast_module_ticks::ultimate_rave_cue(self.ultimate_rave_verdict())
+        } else {
+            head.resolve(|| self.next_rand())
+        };
         self.emit_battle_xa_cue(id);
+    }
+
+    /// PROT 0924's arm-0 kill roll (`ultimate_rave_kill_verdict`), drawn
+    /// once per cast off the world `rand()` stream and held on the module
+    /// state for the cue and the finale arm.
+    ///
+    /// REF: overlay_stager_ultimate_rave_0924_801f6a18 (`0x801F6B0C..0x801F6B2C`)
+    pub(in crate::world) fn ultimate_rave_verdict(&mut self) -> bool {
+        if let Some(k) = self.casting.module_cam.kill {
+            return k;
+        }
+        let k = legaia_engine_cast::cast_module_ticks::ultimate_rave_kill_verdict(self.next_rand());
+        self.casting.module_cam.kill = Some(k);
+        k
     }
 
     /// Run one CD-XA cue id through the dispatcher's CD-XA arm
@@ -115,6 +136,14 @@ impl World {
                     .collect(),
                 None => Vec::new(),
             };
+        // PROT 0924's cue follows its kill roll: either path's literal.
+        let ids = if entry == legaia_engine_cast::cast_module_ticks::ULTIMATE_RAVE_ENTRY {
+            [true, false]
+                .map(legaia_engine_cast::cast_module_ticks::ultimate_rave_cue)
+                .to_vec()
+        } else {
+            ids
+        };
         let open = legaia_engine_battle_vm::battle_cast_cue::VoiceCueGates {
             side_band_stage: 0,
             clip_span_left: 0,

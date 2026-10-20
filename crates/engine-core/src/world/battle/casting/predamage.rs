@@ -7,7 +7,7 @@ impl World {
     /// Roll a monster special-attack's damage through the faithful
     /// arts/physical kernel ([`legaia_engine_battle_vm::battle_formulas::arts_physical_predamage`],
     /// the non-summon branch of `FUN_801dd0ac`) seeded with the move's real
-    /// per-move power (the move-power table's `+0`, `>> 2`). Returns the
+    /// per-move power (the move-power table's whole `+0` word). Returns the
     /// pre-finisher damage clamped to `1..=9999`, or `None` when the table
     /// isn't loaded or `move_id` has no power record - in which case the caller
     /// keeps the MP-scaled spell placeholder.

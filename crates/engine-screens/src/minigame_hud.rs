@@ -154,3 +154,122 @@ fn quad_view(q: &legaia_engine_minigames::baka_fighter::HudWidgetQuad) -> ud::Da
         tpage: q.tpage_attr,
     }
 }
+
+/// One frame of the Muscle Dome arena hub's screen quads, selected off the
+/// world's hub timers ([`muscle_hub_quads`]).
+#[derive(Debug, Clone, Default)]
+pub struct MuscleHubQuads {
+    /// The hub-screen quads in draw order.
+    pub quads: Vec<legaia_engine_ui::muscle_dome_hud::HudQuad>,
+    /// The first visit's backdrop shade and the index in [`Self::quads`] it
+    /// draws before: the wall tiles sit below it, the screens composed over
+    /// the wall above it.
+    pub shade: Option<(usize, legaia_engine_ui::ringside_backdrop::BackdropShade)>,
+    /// A leg is open (`SceneMode::MuscleDome` with a dome session). Outside
+    /// one the arena hub is between legs, or the contest has handed the
+    /// field back, and the INTERVAL and still screens are the hub's own.
+    pub in_dome: bool,
+}
+
+/// The Muscle Dome hub screens this frame owes, off the world's hub timers
+/// (`world.minigames.muscle_hub`) and contest, through the shared emitters
+/// over a per-frame copy of the pristine PROT 0977 sprite `table` (the
+/// retail emitters write their variant back into the records).
+///
+/// Inside a leg: the first visit's composed frame
+/// (`ringside_backdrop::first_visit_hub_draw` - wall, shade, intro strip,
+/// title zoom, course card, ROUND card), else the leg-open ROUND banner.
+/// Between legs: the INTERVAL heading and the six-row score tally - the
+/// roll's own rows while a roll is armed, the settled values otherwise -
+/// then the re-entered hub's ROUND card over the still. Both play hosts
+/// draw from this one selection; each keeps only its output form (sprite
+/// draws on the native window, blit rows on the browser page) and the
+/// ringside still under it.
+pub fn muscle_hub_quads(
+    world: &legaia_engine_core::world::World,
+    table: &[legaia_engine_ui::muscle_dome_hud::HudSprite],
+) -> MuscleHubQuads {
+    use legaia_engine_ui::muscle_dome_hud as hud;
+    use legaia_engine_ui::ringside_backdrop as rb;
+    let timers = &world.minigames.muscle_hub;
+    let in_dome = world.mode == legaia_engine_mode::mode::SceneMode::MuscleDome
+        && world.minigames.muscle_dome.is_some();
+    // The brightness argument is the screen's own fade counter, which clamps
+    // at `HUB_FADE_FULL` (0x80) - the emitter's neutral, since it scales each
+    // stored channel by `c * brightness / 256`.
+    let mut table = table.to_vec();
+    let mut quads: Vec<hud::HudQuad> = Vec::new();
+    let mut shade = None;
+    if in_dome {
+        if let Some(hub) = timers.first_visit {
+            let f = hub.frame();
+            let levels = rb::FirstVisitLevels {
+                backdrop: f.backdrop,
+                intro: f.intro,
+                title_scale: f.title_scale,
+                course_card: f.course_card,
+                round_card: f.round_card,
+            };
+            let (course, round) = world
+                .minigames
+                .muscle_contest
+                .as_ref()
+                .map_or((0, 1), |c| (c.course() as i32, c.round() as i32 + 1));
+            let d = rb::first_visit_hub_draw(&mut table, &levels, course, round);
+            quads.extend(d.tiles);
+            shade = d.shade.map(|sh| (quads.len(), sh));
+            quads.extend(d.hud);
+        } else if let Some((round, banner)) = timers.round_banner {
+            quads.extend(hud::hub_screen_quads(
+                &mut table,
+                &hud::round_banner_draws(round),
+                banner.brightness(),
+            ));
+        }
+    } else if let Some(interval) = timers.interval {
+        let bright = interval.brightness();
+        quads.extend(hud::hub_screen_quads(
+            &mut table,
+            hud::HUB_INTERVAL_HEADING,
+            bright,
+        ));
+        // The six rows are the roll's own, not the settled totals: three
+        // recovery lanes counting down, the HP they count into, the score
+        // lane counting down and the coin tally counting up. With no roll
+        // armed the screen draws the settled values, which is where the roll
+        // ends anyway.
+        let (values, row_bright) = match timers.tally.as_ref() {
+            Some((ramp, tally)) => (ramp.row_values(*tally), ramp.row_brightness(bright)),
+            None => {
+                let (rows, tally) = world
+                    .minigames
+                    .muscle_contest
+                    .as_ref()
+                    .map_or((Default::default(), 0), |c| (c.rows(), c.tally()));
+                ([0, 0, 0, rows.hp_restore(), 0, tally], [bright; 6])
+            }
+        };
+        quads.extend(hud::score_tally_quads(&mut table, values, row_bright));
+    }
+    // The re-entered hub's ROUND card (arms 0x15 / 0x16) over the still.
+    if !in_dome
+        && timers.interval.is_none()
+        && let Some(card) = timers.backdrop.and_then(|b| b.card_brightness())
+    {
+        let round = world
+            .minigames
+            .muscle_contest
+            .as_ref()
+            .map_or(1, |c| c.round() as i32 + 1);
+        quads.extend(hud::hub_screen_quads(
+            &mut table,
+            &hud::round_banner_draws(round),
+            card,
+        ));
+    }
+    MuscleHubQuads {
+        quads,
+        shade,
+        in_dome,
+    }
+}

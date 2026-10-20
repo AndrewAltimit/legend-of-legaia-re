@@ -147,7 +147,7 @@
 
 <section class="doc-section" id="rate">
   <h2>Slow motion and after-images</h2>
-  <p><code>actor[+0x21D]</code> scales how far the animation cursor moves per frame: <code>8</code> normal, <code>4</code> half speed, <code>2</code> quarter, <code>0</code> a freeze. Every animation-driven edge - swing pacing, root motion, the strike loop&rsquo;s gate - stretches with it.</p>
+  <p><code>actor[+0x21D]</code> scales how far the animation cursor moves per frame: <code>8</code> normal, <code>4</code> half speed, <code>2</code> quarter, <code>0</code> a freeze. Every animation-driven edge - swing pacing, root motion, the strike loop&rsquo;s gate - stretches with it. A Stone or Numb body on its idle takes no step at all: the animation tick skips it and the body holds the keyframe it stood on.</p>
   <div class="table-wrap">
   <table>
     <thead><tr><th>Staged id</th><th>Effect on the rate</th></tr></thead>

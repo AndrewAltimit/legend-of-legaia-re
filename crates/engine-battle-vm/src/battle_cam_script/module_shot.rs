@@ -101,27 +101,50 @@ impl BattleCamera {
     }
 
     /// A capture-class arm's drift: [`Self::nudge_module`] plus the yaw
-    /// global `0x8007B792`, which the capture arms also walk. Retail's tween
-    /// walker adds increments to the globals rather than landing on its
-    /// endpoint, so a drift survives a shot in flight; the port folds it into
-    /// the armed shot's target, whose last step lands there.
+    /// global `0x8007B792`, which the capture arms also walk.
+    ///
+    /// What a shot in flight does with it depends on the component. The
+    /// tween walker `FUN_8002149C` skips a component whose increment is `0`
+    /// (`beq v1,zero` at `0x800214C8` / `0x80021574` / `0x80021608`), so a
+    /// drift on a component the shot does not move survives it; the port
+    /// folds that into the armed shot's target, whose last step lands there.
+    /// A component the shot moves is walked by `increment * step` and then
+    /// stored back on its endpoint once it reaches it (`sw a0,0x0(a1)` at
+    /// `0x800215C8` / `0x8002165C`, the angle lanes off their own remaining
+    /// count at `0x80021524..0x80021534`), and the walker task lives until
+    /// every component has landed. A drift on such a component only delays
+    /// the landing, and the shot ends on its own endpoint: the drift is
+    /// spent. `cort_guilty_cross_mid_cast`'s arm 1 drifts TR z `+4` a vsync
+    /// from the first pass of arm 0's `0x20`-frame shot, and the capture
+    /// reads `3420` - the endpoint `3276` plus only the drift since the shot
+    /// landed.
     pub fn drift_module(&mut self, pitch: i16, yaw: i16, tr_y: i16, tr_z: i16) {
         self.nudge_module(pitch, tr_y, tr_z);
         self.pose.yaw = (self.pose.yaw + f32::from(yaw)).rem_euclid(4096.0);
-        if let Some(g) = self.module_glide.as_mut() {
-            g.target.pitch += f32::from(pitch);
-            g.target.tr[1] += f32::from(tr_y);
-            g.target.tr[2] += f32::from(tr_z);
-            g.target.yaw = (g.target.yaw + f32::from(yaw)).rem_euclid(4096.0);
+        if let Some(g) = self.module_glide.as_mut().filter(|g| !g.landed()) {
+            if g.rate[0] == 0.0 {
+                g.target.pitch += f32::from(pitch);
+            }
+            if g.rate[3] == 0.0 {
+                g.target.tr[1] += f32::from(tr_y);
+            }
+            if g.rate[4] == 0.0 {
+                g.target.tr[2] += f32::from(tr_z);
+            }
+            if g.rate[1] == 0.0 {
+                g.target.yaw = (g.target.yaw + f32::from(yaw)).rem_euclid(4096.0);
+            }
         }
     }
 
     /// A capture arm's direct write into the TR x global `0x800840B8` - only
     /// PROT 0966's arms walk it. Folded into the armed shot's target like
-    /// [`Self::drift_module`].
+    /// [`Self::drift_module`], when the shot does not move TR x itself.
     pub fn drift_module_tr_x(&mut self, tr_x: i16) {
         self.pose.tr[0] += f32::from(tr_x);
-        if let Some(g) = self.module_glide.as_mut() {
+        if let Some(g) = self.module_glide.as_mut().filter(|g| !g.landed())
+            && g.rate[2] == 0.0
+        {
             g.target.tr[0] += f32::from(tr_x);
         }
     }

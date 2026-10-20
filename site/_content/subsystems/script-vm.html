@@ -148,6 +148,7 @@
     </tbody>
   </table>
   <p>The header tile is not always where the actor stands. The spawn section runs at load, and a flag-chosen arm that moves the actor (op <code>4C 51</code>, or a bare <code>0x23</code>) relocates it before the first frame draws - Rim Elm stages its two running kids on the standing kids' exact tiles and dispatches them across town that way.</p>
+  <p>A spawn section can also end on a compass walk of its own actor (op <code>0x41</code>). The walk halts the actor but the load slice runs on past it, and the <a href="motion-vm.html">walk kernel</a> plays the half-tile leg out over the next few frames. Shop staff use it to stand on a tile corner the tile grid cannot name: Drake Castle's vendors (<code>23 64 4D</code>, <code>41 06 01</code>) seat on their tile, then step half a tile along <code>+X</code> to stand behind their counter. A talk record's own step walks the talker the same way, and the conversation waits until it lands.</p>
 </section>
 
 <section class="doc-section" id="record-anatomy">

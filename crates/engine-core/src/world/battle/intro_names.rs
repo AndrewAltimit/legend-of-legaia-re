@@ -12,7 +12,13 @@
 //! Retail also holds the round prompt back for the whole span; the port does
 //! not park the command flow on it (the round prompt opens with the labels
 //! still up), because every recorded replay and scripted battle ladder paces
-//! its first input off the round prompt's current frame.
+//! its first input off the round prompt's current frame. What the port does
+//! keep is the order's consequence: `0x0B` leaves - to `0x14`, or straight to
+//! the execute arm `0xFE` when `ctx[+0x290]` reads `1` - only on the pass its
+//! timer expires, and sweeps the labels on that same pass (`jal 0x800355F0`
+//! at `0x801D0E7C` / `0x801D0EB4`), so no action ever runs under them. A
+//! round the port hands to the action SM first sweeps them
+//! ([`World::sweep_battle_intro_names`]).
 //!
 //! REF: FUN_801D0748 (flow states `0x0A` / `0x0B`), FUN_801D9D3C
 
@@ -43,6 +49,17 @@ impl World {
         } else {
             INTRO_HOLD_FRAMES
         };
+    }
+
+    /// Sweep the intro labels on a round's hand-off to the action SM.
+    /// Retail reaches the execute arm `0xFE` only through `0x0B`'s expiry,
+    /// which sweeps every text actor (`0x801D0E58..0x801D0EB8`), so an
+    /// action never runs under the names; the port opens its round prompt
+    /// under them and sweeps them here instead.
+    ///
+    /// REF: FUN_801D0748 (flow state `0x0B`), FUN_800355F0
+    pub(in crate::world) fn sweep_battle_intro_names(&mut self) {
+        self.battle.intro_names_frames = 0;
     }
 
     /// Whether the battle camera's entry sweep still owns the opening

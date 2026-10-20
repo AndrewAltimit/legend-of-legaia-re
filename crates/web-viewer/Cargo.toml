@@ -35,6 +35,7 @@ glam.workspace = true
 legaia-font.workspace = true
 legaia-save.workspace = true
 legaia-engine-core.workspace = true
+legaia-engine-world-views.workspace = true
 legaia-engine-battle-hud.workspace = true
 legaia-engine-cheats.workspace = true
 legaia-engine-scene-host.workspace = true

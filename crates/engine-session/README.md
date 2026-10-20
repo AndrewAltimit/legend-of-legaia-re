@@ -22,10 +22,23 @@ over its `AudioOut`); a `wasm32` build never links cpal.
   before building meshes: the lead's locomotion clips (`bind_lead_rig`, again
   on a rig change), the placed NPCs' clip players and world cursors, the floor
   snap. A host's mesh upload only reads what it returns.
+- [`party_spec`](src/party_spec.rs) - the present-party composition a host
+  installs on request (the native `--party` flag, the browser page's
+  `set_active_party_spec`): the spec parser and the install with its battle
+  stat fold and MP ceiling.
 - [`battle_stage`](src/battle_stage.rs) - the battle edge's stage resolve
   and the world state it leaves (stage class, fog stage cap, monster texture
   slots), and the summon creature's seat; both hosts' battle builds read the
   result.
+- [`battle_presentation`](src/battle_presentation.rs) - the per-tick battle
+  presentation step (`BootSession::step_battle_presentation`: battle audio,
+  strike popups, the per-hit drain, effect-spawn routing, the HUD row and
+  status fold) and the `Field <-> Battle` edge latch with its two edge steps;
+  each host keeps its render build and its log.
+- [`battle_intro`](src/battle_intro.rs) - the field-to-battle intro emitter's
+  host step: arm it off the formation's style inputs, step it to the
+  transition entity's clock, drop it when the transition ends. Each host
+  keeps only its frame capture.
 - [`battle_fx`](src/battle_fx.rs) - the battle presentation decisions both
   hosts take in their per-tick effect step: `spawn_pending_move_fx` seats a
   pending move effect and resolves its sound cue through the retail dispatch

@@ -9,7 +9,7 @@ pub struct MenuState {
     /// names / descriptions, accessory passive lines). `None` on a
     /// PROT.DAT-only load; install via [`crate::world::World::install_menu_text`] when
     /// the executable is reachable. The Items / Magic pause screens read
-    /// it through [`crate::world_views::pause_screens`].
+    /// it through `legaia_engine_world_views::pause_screens`.
     pub text: Option<legaia_engine_menus::pause_screens::MenuTextTables>,
     /// The Items screen's Arrange sort ranks, parsed from the menu
     /// overlay (PROT 0899 VA `0x801E4A88`,

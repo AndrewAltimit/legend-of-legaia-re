@@ -170,7 +170,7 @@ RENDER_KERNEL_RULES: list[dict[str, object]] = [
         "why": "the overworld entity / player markers were native-only for as "
         "long as the native window drew them as world-space lines through a "
         "pipeline the browser has no counterpart for. They are now one-pixel "
-        "quads out of `engine-core::world_map_markers::marker_quads`, wrapped "
+        "quads out of `engine-world-views::world_map_markers::marker_quads`, wrapped "
         "by `screen_prim::world_map_marker_prim` onto the screen-prim pass "
         "both hosts run; a surface that reads the marker seams must go "
         "through that pair, or the marker set is two implementations again",

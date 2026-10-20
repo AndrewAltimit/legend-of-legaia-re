@@ -322,7 +322,8 @@ pub(crate) fn facing_score(retail: &RetailObs, engine: &EngineObs) -> Option<(f6
 /// engine draws while retail has parked it, scored nowhere.
 pub(crate) fn npc_seat_score(retail: &RetailObs, engine: &EngineObs) -> Option<(f64, String)> {
     let hide = legaia_engine_field::man_field_scripts::FIELD_OFFMAP_HIDE_XZ;
-    // Retail parks at the seat itself or one tile short of it on an axis.
+    // Retail parks at the seat itself or half a tile short of it on an axis
+    // (a spawn section's `41` compass step after its park seat).
     let parked = |x: i16, z: i16| x >= hide - 64 && z >= hide - 64;
     let mut parts = Vec::new();
     let mut miss = Vec::new();

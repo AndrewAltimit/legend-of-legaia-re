@@ -8,7 +8,7 @@
 //! formation slot 0 is monster `0xB6` (Koru); the dome ladder tops out at
 //! `0xAA`, so no dome round raises it.
 //!
-//! The rules are the ported [`legaia_engine_core::world_views::muscle_dome`] engine (the
+//! The rules are the ported [`legaia_engine_world_views::muscle_dome`] engine (the
 //! four-direction deal, the AP-budget commit into the fighter's action queue,
 //! the turn counter, the opponent-HP-left readout and the
 //! win/lose bookkeeping). Damage resolves through the **shared retail

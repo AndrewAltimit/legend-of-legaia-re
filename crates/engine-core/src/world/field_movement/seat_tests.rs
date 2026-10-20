@@ -165,3 +165,35 @@ fn cold_spawn_prefers_an_enclosed_region_over_the_map_border() {
         (FIELD_COLD_SPAWN_XZ, FIELD_COLD_SPAWN_XZ)
     );
 }
+
+/// The picker's door-arrival seat takes the first arrival standing in an
+/// enclosed room: one in the open space around the map is skipped, and one
+/// on an avoided tile (a teleport pad, a walk-on trigger) is stepped off it.
+#[test]
+fn picker_arrival_seat_takes_the_first_enclosed_standable_arrival() {
+    // Walls everywhere except an open room over grid cells 10..30 (both
+    // axes) and the outer band (cols/rows >= 100), which reaches the map
+    // edges and so reads as the open space around the scene.
+    let walls: Vec<(usize, usize)> = (0..FIELD_GRID_STRIDE)
+        .flat_map(|c| (0..FIELD_GRID_STRIDE).map(move |r| (c, r)))
+        .filter(|&(c, r)| !((10..30).contains(&c) && (10..30).contains(&r)))
+        .filter(|&(c, r)| c < 100 && r < 100)
+        .collect();
+    let w = scene(&walls);
+    let room = cell_centre(20, 20);
+    let pad = cell_centre(15, 15);
+    let outside = cell_centre(110, 110);
+    let pad_tile = ((pad.0 >> 7) as u8, (pad.1 >> 7) as u8);
+    assert_eq!(
+        w.picker_arrival_seat(&[outside, room], &[pad_tile]),
+        Some((1, room)),
+        "the open-space arrival is skipped; a room arrival is taken as is"
+    );
+    let (i, seat) = w
+        .picker_arrival_seat(&[outside, pad, room], &[pad_tile])
+        .expect("the pad arrival steps off its pad");
+    assert_eq!(i, 1);
+    assert_ne!(((seat.0 >> 7) as u8, (seat.1 >> 7) as u8), pad_tile);
+    assert!((seat.0 - pad.0).abs() <= 128 && (seat.1 - pad.1).abs() <= 128);
+    assert_eq!(w.picker_arrival_seat(&[outside], &[]), None);
+}

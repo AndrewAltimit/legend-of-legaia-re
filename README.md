@@ -203,8 +203,8 @@ Top of the stack first. Every crate name links its README.
 - **Session, presentation, tools.** What both play hosts share above the simulation: the game session, the screens, the renderer and the audio stack; plus the tools that step a World from outside. \
   [`engine-session`](crates/engine-session/README.md), [`engine-screens`](crates/engine-screens/README.md), [`engine-render`](crates/engine-render/README.md), [`engine-audio`](crates/engine-audio/README.md), [`engine-export`](crates/engine-export/README.md),
   [`parity`](crates/parity/README.md), [`engine-capture`](crates/engine-capture/README.md)
-- **World drivers.** Layers that hold a running World from outside: scene entry and tick, the pause menu, the battle HUD's reads, the cheats. \
-  [`engine-scene-host`](crates/engine-scene-host/README.md), [`engine-menu-runtime`](crates/engine-menu-runtime/README.md), [`engine-battle-hud`](crates/engine-battle-hud/README.md), [`engine-cheats`](crates/engine-cheats/README.md)
+- **World drivers.** Layers that hold a running World from outside: scene entry and tick, the pause menu, the battle HUD's and the field screens' reads, the cheats. \
+  [`engine-scene-host`](crates/engine-scene-host/README.md), [`engine-menu-runtime`](crates/engine-menu-runtime/README.md), [`engine-battle-hud`](crates/engine-battle-hud/README.md), [`engine-world-views`](crates/engine-world-views/README.md), [`engine-cheats`](crates/engine-cheats/README.md)
 - **Simulation.** engine-core owns World and its tick, and implements each VM's Host trait. Everything below it names no World. \
   [`engine-core`](crates/engine-core/README.md)
 - **World-free kernels.** The ported VMs and rules engines, ranked by the committed layering table: a kernel depends only on kernels of a lower rank. \

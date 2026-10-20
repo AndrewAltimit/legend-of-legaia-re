@@ -58,6 +58,14 @@ impl PlayWindowApp {
             if due && let Some(arms) = sc.seat_sprite_arms.take() {
                 self.session.host.world.install_sprite_arm_snapshot(&arms);
             }
+            // ... and a captured cast's parts where retail's passes had put
+            // them (`LEGAIA_SEAT_CAST_PARTS`).
+            if due
+                && let Some(parts) = sc.seat_cast_parts.take()
+                && let Some(scene) = self.session.host.world.casting.active_summon.as_mut()
+            {
+                scene.install_part_snapshot(&parts);
+            }
             // A capture taken mid-glide shows the shot as far along as
             // retail's mover had come (its frame-skip history, which no
             // replay reproduces): the gate carries the frames it had left on
@@ -175,9 +183,42 @@ impl PlayWindowApp {
         if let Some((live, end)) = self.screenshot.as_ref().and_then(|sc| sc.battle_cam_align)
             && self.session.host.world.mode == SceneMode::Battle
             && self.capture_phase_met()
-            && let Some(cam) = self.session.host.world.battle.camera.as_mut()
+            && self.session.host.world.battle.camera.is_some()
         {
-            cam.align_glide_origin(live, end);
+            // Stand the combatants on the capture's own ground first, and
+            // align against the framing the camera's law arms there
+            // (`LEGAIA_BATTLE_GROUND_SNAP`, `ground_snap`).
+            let snaps = self
+                .screenshot
+                .as_ref()
+                .map(|sc| sc.battle_ground_snap.clone())
+                .unwrap_or_default();
+            let world = &mut self.session.host.world;
+            let target = legaia_engine_capture::ground_snap::snap_battle_ground(world, &snaps);
+            // A Done-band capture's displayed pose, where the glide walks
+            // retail's own table (`LEGAIA_BATTLE_CAM_ALIGN_DISPLAYED`).
+            let displayed = self
+                .screenshot
+                .as_ref()
+                .and_then(|sc| sc.battle_cam_align_displayed);
+            let world = &mut self.session.host.world;
+            let mask = match (world.battle.camera.as_mut(), target) {
+                (Some(cam), Some(target)) => {
+                    let live = match displayed {
+                        Some((shown, _)) if cam.glide_endpoint_matches_to(end, target) => shown,
+                        _ => live,
+                    };
+                    cam.align_glide_origin_to(live, end, target)
+                }
+                _ => 0,
+            };
+            // The near-camera ghost bits are derived from the pose, and the
+            // tick computed them on the unaligned one. Re-derive them only
+            // when every component took retail's value: a partly aligned
+            // pose is neither retail's camera nor the engine's own.
+            if mask == 0xFF {
+                world.refresh_battle_camera_ghost();
+            }
         }
     }
 
@@ -223,12 +264,28 @@ impl PlayWindowApp {
     pub(super) fn sync_field_view(
         &mut self,
     ) -> Option<legaia_engine_scene::field_view_window::ViewCells> {
+        // Diag: `LEGAIA_DIAG_FOLLOW_KNOBS=orbit,tilt,zoom` pins the user's
+        // follow knobs (radians, radians, factor) every frame - the mouse
+        // drag / wheel a screenshot run cannot send.
+        if let Some([orbit, tilt, zoom]) =
+            std::env::var("LEGAIA_DIAG_FOLLOW_KNOBS")
+                .ok()
+                .and_then(|s| {
+                    let v: Vec<f32> = s.split(',').filter_map(|t| t.trim().parse().ok()).collect();
+                    <[f32; 3]>::try_from(v).ok()
+                })
+        {
+            let cam = &mut self.session.camera;
+            cam.manual_orbit = orbit.rem_euclid(std::f32::consts::TAU);
+            cam.manual_tilt = tilt;
+            cam.manual_zoom = zoom;
+        }
         // Retail's visible-tile crop: the cell rectangle the field render
         // library walks this frame (`field_view_window`, the shared kernel the
         // browser play page asks too). The terrain draws are gated per draw
         // below; the ground re-uploads a cropped index list whenever the
         // rectangle moves.
-        let view_cells = legaia_engine_core::field_view_window::field_view_cells(
+        let view_cells = legaia_engine_world_views::field_view_window::field_view_cells(
             &self.session.host.world,
             legaia_engine_scene::field_view_window::framing_is_retail(&self.session.camera)
                 && !self.field_debug_camera,

@@ -70,7 +70,7 @@ fn world_with_resisting_party() -> World {
 
     world.tables.move_power = Some(
         legaia_engine_battle::move_power::MovePowerCatalog::from_overlay_0898(
-            &overlay_with_two_ids(2000),
+            &overlay_with_two_ids(500),
         )
         .expect("synthetic catalog parses"),
     );

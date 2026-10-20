@@ -755,7 +755,7 @@ impl FieldActors {
     }
 
     /// Per catalog entry: `1` = the actor cull hides it this frame under the
-    /// visible-tile crop `cells` ([`legaia_engine_core::field_view_window::npc_actor_visible`],
+    /// visible-tile crop `cells` ([`legaia_engine_world_views::field_view_window::npc_actor_visible`],
     /// the gate the native window's NPC pass asks). Empty while no crop
     /// applies.
     pub fn culled(
@@ -770,12 +770,14 @@ impl FieldActors {
             .entries
             .iter()
             .map(|e| {
-                u8::from(!legaia_engine_core::field_view_window::npc_actor_visible(
-                    &host.world,
-                    cells,
-                    e.placement.index as u8,
-                    (e.placement.world_x, e.placement.world_z),
-                ))
+                u8::from(
+                    !legaia_engine_world_views::field_view_window::npc_actor_visible(
+                        &host.world,
+                        cells,
+                        e.placement.index as u8,
+                        (e.placement.world_x, e.placement.world_z),
+                    ),
+                )
             })
             .collect()
     }

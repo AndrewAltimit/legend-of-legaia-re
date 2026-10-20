@@ -23,10 +23,10 @@ pub struct WorldToggles {
     /// retail-exact - this only shapes the VRAM presentation.
     pub(crate) reduce_flashing: bool,
     /// Retail's **visible-tile crop** on the field ground + decoration layers
-    /// ([`crate::field_view_window::field_view_cells`]), from
+    /// (`legaia_engine_world_views::field_view_window::field_view_cells`), from
     /// [`legaia_engine_menus::options::OptionsState::retail_view_window`]. Default on; it
     /// only takes effect at retail framing.
-    pub(crate) view_window_crop: bool,
+    pub view_window_crop: bool,
     /// The volumetric ground-fog **enhancement**
     /// ([`legaia_render_kernels::fog_volume`], stepped by `World::tick`), from
     /// [`legaia_engine_menus::options::OptionsState::volumetric_fog`]. Default **off** here
@@ -110,9 +110,9 @@ pub struct WorldToggles {
     /// `0xA0` frames, or never - so hosts mirror their `OptionsState` onto
     /// this through `crate::options::apply_to_world` and both ask
     /// `world_map_panel_host::field_hud_view_mode`.
-    pub(crate) field_hp_display: legaia_engine_menus::option_values::HpDisplayOpt,
+    pub field_hp_display: legaia_engine_menus::option_values::HpDisplayOpt,
     /// Draw the overworld's per-placement **entity markers**
-    /// ([`crate::world_map_markers`]: a cyan post at each portal, green at
+    /// (`legaia_engine_world_views::world_map_markers`: a cyan post at each portal, green at
     /// each NPC, red at each encounter zone). A port debug overlay, not a
     /// retail draw - a retail frame at a town entrance shows the town's own
     /// mesh and nothing over it - so it is off by default; the native window

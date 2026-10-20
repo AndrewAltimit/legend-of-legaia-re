@@ -22,6 +22,8 @@
 //!   script's phase, and the drive that resumes its record.
 //! - [`bar_seeds`], [`hud_glide`], [`camera_align`] - a fight's bars, HUD
 //!   glides and camera tween at the capture instant.
+//! - [`cast_parts`] - a captured cast's live parts, seated over the replay's
+//!   own on the capture frame.
 //! - [`formation_cell`] - [`FormationCell`](formation_cell::FormationCell), a
 //!   fight named by its formation cell where no MAN row carries it.
 //! - [`field_seeds`] - the field-side seeds: object clips, walkers, morphs,
@@ -30,9 +32,11 @@
 pub mod bar_seeds;
 pub mod battle_drive;
 pub mod camera_align;
+pub mod cast_parts;
 pub mod clip_cursors;
 pub mod field_seeds;
 pub mod formation_cell;
+pub mod ground_snap;
 pub mod hud_glide;
 pub mod phase_gate;
 pub mod script_gate;

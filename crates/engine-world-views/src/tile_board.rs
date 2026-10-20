@@ -63,7 +63,7 @@ pub struct TileActorDraw {
 ///
 /// PORT: overlay_0897_801e0f3c (per-cell tile-actor draw pass; the select +
 /// reposition halves live in `World::refresh_tile_board_draw_list`)
-pub fn tile_board_actor_draws(world: &crate::world::World) -> Vec<TileActorDraw> {
+pub fn tile_board_actor_draws(world: &legaia_engine_core::world::World) -> Vec<TileActorDraw> {
     world
         .board
         .draw_list
@@ -86,7 +86,7 @@ pub fn tile_board_actor_draws(world: &crate::world::World) -> Vec<TileActorDraw>
 /// renderer must upload before the per-cell draws can land. Unresolved
 /// templates (empty `tmd_ref`) are excluded: they allocated a slot but have
 /// nothing to upload.
-pub fn tile_actor_slots_needing_mesh(world: &crate::world::World) -> Vec<u8> {
+pub fn tile_actor_slots_needing_mesh(world: &legaia_engine_core::world::World) -> Vec<u8> {
     let mut out: Vec<u8> = Vec::new();
     for d in &world.board.draw_list {
         if out.contains(&d.slot) {
@@ -108,7 +108,7 @@ pub fn tile_actor_slots_needing_mesh(world: &crate::world::World) -> Vec<u8> {
 /// a tile actor draws once per cell through the deferred draw list, and its
 /// own transform only holds the *last* repositioned cell. Table slot 0 (the
 /// player) is not board-owned: the normal field path draws it.
-pub fn is_tile_actor_slot(world: &crate::world::World, slot: usize) -> bool {
+pub fn is_tile_actor_slot(world: &legaia_engine_core::world::World, slot: usize) -> bool {
     (CELL_DRAW_FIRST..=CELL_DRAW_LAST)
         .any(|v| world.board.actor_slots[v as usize].is_some_and(|s| s as usize == slot))
 }

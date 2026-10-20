@@ -130,7 +130,7 @@ pub fn flag_window_initial_row(flag_set: impl Fn(i32) -> bool, desc: FlagWindowD
 /// PORT: FUN_801ef014
 ///
 /// Wired: `PanelActorKind::FlagWindow` in
-/// `legaia_engine_core::world_views::world_map_panel_host`, over the world's shared system
+/// `legaia_engine_world_views::world_map_panel_host`, over the world's shared system
 /// flag bank, and - the path retail takes - handler slot `0x23` of the field
 /// submode dispatcher, `legaia_engine_core::field_submode_flag_window`, which
 /// the `kor` lift's `49 04` opens. The routine is a field-overlay (PROT 0897)

@@ -5,24 +5,38 @@
 </header>
 
 <section class="doc-section" id="index">
-  <h2>Reading list</h2>
-  <p>No reference page is required reading first - each article links out to the byte-level detail where it lives.</p>
+  <h2>Investigations</h2>
+  <p>Single findings followed from the symptom down to the instruction. No reference page is required reading first - each article links out to the byte-level detail where it lives.</p>
   <div class="card-grid">
-    <a class="card" href="disc-patching/index.html">
-      <div class="card-title">Patching a sealed disc</div>
-      <div class="card-body"><p><strong>What it is about.</strong> How the randomizer rewrites a retail Legaia disc with no source and no SDK - a ladder of seven injection techniques, from same-size byte edits up to hosting a whole new screen in an overlay's dead space and carrying a community RAM patch on disc behind an injected loader.</p><p><strong>Why you might care.</strong> If you have wondered how a randomizer can exist for a game that was never meant to be modified, this is the answer, one technique per page, with a generated mod catalog + roadmap.</p></div>
-    </a>
     <a class="card" href="gaza-orbit-softlock.html">
       <div class="card-title">The endless camera orbit</div>
       <div class="card-body"><p><strong>What it is about.</strong> Anatomy of a retail softlock: the "battle freezes while the camera circles the party" bug, traced to an approach animation that dies with nothing to re-stage it, reproduced on demand, and fixed with a nine-word in-place rewrite.</p><p><strong>Why you might care.</strong> If Gaza's second fight ever ate a save of yours, this is what happened - and the fix ships in the browser ROM patcher.</p></div>
     </a>
+    <a class="card" href="spirit-fish.html">
+      <div class="card-title">The Spirit fish gate</div>
+      <div class="card-body"><p><strong>What it is about.</strong> Fishing's rarest catch, decompiled: the Spirit's spawn column is not on the dice at all. It sits behind a six-condition strike-time gate, and only one of the four "Good!" reel cadences selects it.</p><p><strong>Why you might care.</strong> Twenty years of player folklore about the Spirit, each observation mapped to the mechanism that produced it, with the real per-catch probabilities.</p></div>
+    </a>
+  </div>
+</section>
+
+<section class="doc-section" id="glitches">
+  <h2>Glitches and oversights</h2>
+  <p>A series: the community's glitch list, one page per area of the game, each case traced to its cause.</p>
+  <div class="card-grid">
     <a class="card" href="glitches/index.html">
       <div class="card-title">Glitches and oversights, traced</div>
       <div class="card-body"><p><strong>What it is about.</strong> The community's list of Legaia glitches, each followed into the disc's code: the flute that erases a boss's turn, the attack name that sits off-centre, the Incense tick that walks through a cutscene trigger, the summon level that copies Palma's.</p><p><strong>Why you might care.</strong> Every case gives the cause in plain words, a diagram, and the addresses to check it in a debugger - including the ones the trace could not settle.</p></div>
     </a>
-    <a class="card" href="spirit-fish.html">
-      <div class="card-title">The Spirit fish gate</div>
-      <div class="card-body"><p><strong>What it is about.</strong> Fishing's rarest catch, decompiled: the Spirit's spawn column is not on the dice at all. It sits behind a six-condition strike-time gate, and only one of the four "Good!" reel cadences selects it.</p><p><strong>Why you might care.</strong> Twenty years of player folklore about the Spirit, each observation mapped to the mechanism that produced it, with the real per-catch probabilities.</p></div>
+  </div>
+</section>
+
+<section class="doc-section" id="disc-patching">
+  <h2>Disc patching</h2>
+  <p>A series of seven tiers, read in order: each technique is what the one before it could not do.</p>
+  <div class="card-grid">
+    <a class="card" href="disc-patching/index.html">
+      <div class="card-title">Patching a sealed disc</div>
+      <div class="card-body"><p><strong>What it is about.</strong> How the randomizer rewrites a retail Legaia disc with no source and no SDK - a ladder of seven injection techniques, from same-size byte edits up to hosting a whole new screen in an overlay's dead space and carrying a community RAM patch on disc behind an injected loader.</p><p><strong>Why you might care.</strong> If you have wondered how a randomizer can exist for a game that was never meant to be modified, this is the answer, one technique per page, with a generated mod catalog + roadmap.</p></div>
     </a>
   </div>
 </section>

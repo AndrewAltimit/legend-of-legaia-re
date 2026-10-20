@@ -310,6 +310,11 @@ pub enum SpanGate {
 /// is not aligned in the band.
 pub(crate) const CAPTURE_BAND: std::ops::RangeInclusive<u8> = 0x6E..=0x71;
 
+/// The depth `0x6F` takes off `ctx[+0x6D0]` a vsync tick:
+/// `16 * DAT_1F800393` a pass (`sll v1,v1,0x4` at `0x801E500C`), at the
+/// port's one-vsync step.
+const CAPTURE_RAMP_PER_TICK: u32 = 16;
+
 /// The capture band's states placed by its CD holds
 /// ([`SpanGate::CaptureFade`]).
 pub const CAPTURE_FADE_STATES: [u8; 3] = [0x6E, 0x6F, 0x70];
@@ -342,17 +347,21 @@ pub fn active_clip_age(world: &legaia_engine_core::world::World) -> u32 {
 /// as retail's `accum` (`ctx[+0x87C]`) says retail's did: the capture's
 /// value less what the `0x6F` frames still to come will add (half the depth
 /// ramp left, `8` against `16` per frame step).
+///
+/// The engine's side is the clip age ([`active_clip_age`]), the accumulator
+/// with a looping clip's natural-end re-commits left out, as the action
+/// gates read it. A caster that idles through the band restarts the
+/// accumulator at every wrap of its idle, on its own clock: read raw, the
+/// engine's could wrap just as the yaw counter came due and hold the band
+/// a whole idle cycle more (`zora_glare_petrify_pre`, fourteen counter units
+/// past retail's `0x848`).
 pub(crate) fn capture_accum_done(
     world: &legaia_engine_core::world::World,
     height: u16,
     accum: u16,
 ) -> bool {
     let want = accum.saturating_sub(capture_ramp_left(world, height) / 2);
-    world
-        .battle
-        .camera
-        .as_ref()
-        .is_none_or(|c| c.close_up_accum() >= u32::from(want))
+    active_clip_age(world) >= u32::from(want)
 }
 
 /// How far apart the engine's yaw counter `ctx[+0x6DA]` and a capture's may
@@ -1078,6 +1087,29 @@ impl BattleDrive {
             && !(capture_accum_done(world, height, accum) && capture_yaw_done(world, height, yaw)));
         world.battle.prev_action_cleared =
             !(ours && state == 0x6F && !capture_ramp_done(world, height));
+        // `0x6F` ramps `ctx[+0x6D0]` and then arms case 6 on the new depth in
+        // the same pass (`sh a0,0x6d0(v0)` at `0x801E5014`, `jal 0x801D5854`
+        // at `0x801E501C`), so the pass that lands the capture's depth also
+        // framed it. The engine ramps every vsync tick and steps its camera
+        // every frame step on its own phase, so the gate tick may frame the
+        // depth a tick behind (`zora_glare_petrify_pre`: TR z `4633`, the
+        // ramp's previous `2896`, against retail's `4608`). On a capture
+        // taken in `0x6F`, put the camera's step on the tick the ramp lands.
+        let left = u32::from(capture_ramp_left(world, height));
+        if ours
+            && state == 0x6F
+            && want == 0x6F
+            && left > 0
+            && let Some(cam) = world.battle.camera.as_mut()
+        {
+            let step = u32::from(cam.frame_step().max(1));
+            let ticks = left.div_ceil(CAPTURE_RAMP_PER_TICK);
+            // `sync_step_phase(t)` leaves the camera stepping on every tick
+            // whose count from now is `step - t` modulo the step; land one on
+            // the tick `ticks` from now.
+            let t = (step - (ticks - 1) % step) % step;
+            cam.sync_step_phase(u64::from(t));
+        }
     }
 
     /// The press that walks the engine one step toward the phase, or `None`

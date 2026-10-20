@@ -65,6 +65,7 @@ flowchart BT
     SH["engine-scene-host<br/>SceneHost"]
     MR["engine-menu-runtime<br/>MenuRuntime"]
     BHUD["engine-battle-hud<br/>HUD reads"]
+    WV["engine-world-views<br/>field reads"]
     ECHT["engine-cheats<br/>WorldCheats"]
     EUI["engine-ui"]
     EREN["engine-render<br/>wgpu"]
@@ -115,12 +116,16 @@ flowchart BT
     SH --> CORE
     MR --> SH
     BHUD --> CORE
+    WV --> CORE
+    SH --> WV
     ECHT --> CORE
     SESS --> MR
+    SESS --> BHUD
     SESS --> EAUD
     SCR --> MR
     SCR --> EUI
     SCR --> BHUD
+    SCR --> WV
     PAR --> BHUD
     PAR --> SESS
     SHELL --> PAR
@@ -142,10 +147,11 @@ The shape to read off it:
 - **`engine-cast` sits one rank above `engine-battle-vm`.** It holds the slot-B cast / summon module bodies the battle action SM pages in; they call the action SM's helpers, the formulas and the camera script, and nothing below names them.
 - **A ring of `World`-free kernel crates sits above them** (`engine-mode`, `engine-battle`, `engine-effects`, `engine-field`, `engine-fishing`, `engine-minigames`, `engine-menus`, `engine-scene`, `engine-minigame-scenes`). Each holds rules and state that never touch the `World` struct, so it can be unit-tested alone.
 - **`engine-scene` is the disc-facing half of scene handling.** It resolves a CDNAME scene to its PROT entries (`Scene`, `ProtIndex`), decodes what the scene is built from (`SceneResources`, `SceneAssets`, the model bank, the environment draw resolver and assembly kernel) and holds the virtual filesystem. It names no `World`, so a tool that only reads scenes links it without the simulation, and it is a row of the layering table like the other kernels: `engine-minigame-scenes` builds the dance and fishing venues on it.
-- **`engine-core` is where they meet.** It owns `World` and implements the per-VM `Host` traits. A module there that shares its name with a kernel module (`shop`, `dance`, `tile_board`, `mode`, `camera`, ...) holds only the functions that read a `World` or a `Scene`; the rules are in the kernel crate.
+- **`engine-core` is where they meet.** It owns `World` and implements the per-VM `Host` traits. A module there that shares its name with a kernel module (`dance`, `mode`, `camera`, ...) holds only the functions that read a `World` or a `Scene`; the rules are in the kernel crate.
 - **Presentation is a separate branch.** `render-kernels` -> `engine-ui` -> `engine-render` and `engine-audio` do not depend on `engine-core`; the hosts compose them with it. `render-kernels` is also what the effect, field and minigame kernels link for GTE math.
 - **Two layers drive a `World` from outside, directly above `engine-core`.** `engine-scene-host` holds `SceneHost` (scene entry and tick, BGM routing, the FMV hand-off, save resume, the live-scene preview); `engine-menu-runtime` holds the pause menu over the world (`MenuRuntime`, the field-menu dispatcher). Nothing in `engine-core` names either, so a `World` change rebuilds them but a scene-host or menu change does not rebuild the simulation. The `World` fields the scene entry seeds are `pub` for that reason.
 - **The battle HUD's reads of `World` are their own crate above `engine-core`.** `engine-battle-hud` answers what the in-battle screen shows off the battle state (phase word, command chips, commit log, plaques and their glides, banners, badges) and fills the `BattleHud` model. The simulation names none of it: the two battle-screen facts the battle loop decides on, the Ra-Seru refusal and the result windows' raise glide, are `BattleState` methods in `engine-core`, over the glide step `LogLaunch::seat_dy` in `engine-battle-vm` that both sides share.
+- **The hosts' other reads of `World` are a sibling crate.** `engine-world-views` holds what a host draws outside battle off the live world: the visible-tile crop policy, scene staging (placed-draw liveness, the story-hidden set, `assemble_field_scene`), the world-map markers and sky, the field party HUD, and the shop / pause / tile-board / timed-fight / Muscle Dome view models. The simulation names none of it; the per-frame camera resolution (`camera_view`) is the one host read still in `engine-core`.
 - **Cheats are a crate above `engine-core` too.** `engine-cheats` holds the player cheat list (`PlayerCheat`, applied through the `WorldCheats` extension trait on `World`) and the GameShark code applier. They write a `World` the host owns and nothing in the simulation calls them.
 - **`engine-session` and `engine-screens` are the host-shared top.** `BootSession` (scene host + per-frame order + BGM director) and the shop-family screens are written once and ticked by both play hosts.
 - **`engine-export` is a tool layer above `engine-core`, not a host layer.** The `.glb` world exporter steps a scratch `World` to bake animation and traversal data, so it needs the simulation; nothing in the simulation needs it, and only the native binary links it.
@@ -199,20 +205,21 @@ Internal dependencies as declared in each crate's `Cargo.toml`. "Format-family c
 | `engine-minigame-scenes` | `engine-scene`, `engine-menus`, `engine-minigames`, `engine-fishing`, `engine-field`, `engine-battle`, `engine-battle-vm`, `engine-camera`, `engine-mode`, `engine-system`, `engine-vm`, `render-kernels`, `actor-formats`, `container-formats`, `game-tables`, `minigame-formats`, `overlay-images`, `scene-formats`, `prot`, `tim`, `tmd` | The minigames' 3D scene surfaces, venues and the `World`'s minigame seat. |
 | `engine-scene` | `engine-field`, `engine-dialog`, `engine-system`, `engine-vm`, `render-kernels`, `disc-audit` + the format-family and parser crates | Scene resolution and loading, environment draws, virtual filesystem; no `World`. |
 | `engine-core` | `engine-scene`, every `engine-*` kernel crate above, `render-kernels` + the format-family and parser crates | `World`, the tick, battle loop, saves. |
-| `engine-scene-host` | `engine-core`, `engine-scene`, the kernel crates it enters scenes through + format-family and parser crates | `SceneHost`: scene entry and tick, BGM routing, resume, live preview. |
+| `engine-scene-host` | `engine-world-views`, `engine-core`, `engine-scene`, the kernel crates it enters scenes through + format-family and parser crates | `SceneHost`: scene entry and tick, BGM routing, resume, live preview. |
 | `engine-menu-runtime` | `engine-scene-host`, `engine-core`, `engine-scene`, `engine-menus`, `engine-battle`, `engine-battle-vm`, `engine-field`, `engine-minigames`, `engine-system`, `art`, `game-tables`, `save`, `ui-formats` | The pause menu over `World`, the memory-card Save writer, the dev menu's `World` seam. |
 | `engine-battle-hud` | `engine-core`, `engine-battle`, `engine-battle-vm`, `engine-cast`, `engine-menus`, `engine-mode`, `art`, `font`, `ui-formats` | The battle HUD's reads of `World`. |
+| `engine-world-views` | `engine-core`, `engine-scene`, `engine-battle`, `engine-camera`, `engine-effects`, `engine-field`, `engine-menus`, `engine-minigames`, `engine-mode`, `render-kernels`, `scene-formats`, `ui-formats`, `tmd` | The hosts' reads of `World` outside battle: crop policy, scene staging, world-map markers and sky, field party HUD, effect draw lists, menu and minigame view models. |
 | `engine-cheats` | `engine-core`, `engine-battle`, `engine-battle-vm`, `engine-menus`, `engine-system`, `cheats`, `game-tables`, `save` | The player cheat list and the GameShark code applier over `World`. |
 | `engine-ui` | `render-kernels`, `engine-battle-vm`, `engine-cast`, `game-tables`, `minigame-formats`, `ui-formats`, `tim`, `font` | Draw-list builders; no wgpu. |
 | `engine-render` | `engine-ui`, `render-kernels`, `engine-camera`, `tim`, `font` | wgpu renderer. |
 | `engine-audio` | `xa`, `vab`, `seq`, `prot` | SPU model, sequencer, output backends. |
-| `engine-session` | `engine-menu-runtime`, `engine-scene-host`, `engine-core`, `engine-scene`, `engine-audio`, `engine-menus`, `engine-minigame-scenes`, `engine-battle`, `engine-field`, `engine-mode`, `engine-system` + format-family and parser crates | `BootSession` + BGM director; no wgpu or winit. |
-| `engine-screens` | `engine-battle-hud`, `engine-menu-runtime`, `engine-scene-host`, `engine-core`, `engine-scene`, `engine-ui`, `engine-battle`, `engine-dialog`, `engine-effects`, `engine-field`, `engine-fishing`, `engine-menus`, `engine-minigame-scenes`, `engine-minigames`, `engine-mode`, `engine-system`, `render-kernels`, `game-tables`, `minigame-formats`, `font` | The screens both hosts draw: shop family, battle HUD, pause menu, dialog box. |
+| `engine-session` | `engine-battle-hud`, `engine-menu-runtime`, `engine-scene-host`, `engine-core`, `engine-scene`, `engine-audio`, `engine-menus`, `engine-minigame-scenes`, `engine-battle`, `engine-field`, `engine-mode`, `engine-system` + format-family and parser crates | `BootSession` + BGM director; no wgpu or winit. |
+| `engine-screens` | `engine-battle-hud`, `engine-world-views`, `engine-menu-runtime`, `engine-scene-host`, `engine-core`, `engine-scene`, `engine-ui`, `engine-battle`, `engine-dialog`, `engine-effects`, `engine-field`, `engine-fishing`, `engine-menus`, `engine-minigame-scenes`, `engine-minigames`, `engine-mode`, `engine-system`, `render-kernels`, `game-tables`, `minigame-formats`, `font` | The screens both hosts draw: shop family, battle HUD, pause menu, dialog box. |
 | `engine-export` | `engine-core`, `engine-scene`, `engine-field`, `engine-vm`, `actor-formats`, `game-tables`, `scene-formats`, `tim`, `tmd` | The `.glb` world exporter behind `export-glb`. |
 | `engine-capture` | `engine-scene-host`, `engine-core`, `engine-battle`, `engine-battle-vm`, `engine-camera`, `engine-cast`, `engine-dialog`, `engine-effects`, `engine-field`, `engine-menus`, `engine-mode`, `engine-system`, `art`, `save`, `scene-formats` | Capture seeds, gates and pad drives shared by `parity` and the native capture child. |
 | `parity` | `engine-capture`, `engine-battle-hud`, `engine-session`, `engine-menu-runtime`, `engine-scene-host`, `engine-core`, `engine-scene`, `engine-audio`, `engine-ui`, the kernel crates it measures, `mednafen`, `pcsx-redux`, `ram-image` + parser crates | Parity oracles + retail comparison. |
-| `engine-shell` | `parity`, `engine-capture`, `engine-session`, `engine-screens`, `engine-battle-hud`, `engine-cheats`, `engine-export`, `engine-menu-runtime`, `engine-scene-host`, `engine-core`, `engine-scene`, `engine-render`, `engine-ui`, `engine-audio`, the kernel crates + format-family and parser crates | The native host. |
-| `web-viewer` | `engine-session`, `engine-screens`, `engine-battle-hud`, `engine-cheats`, `engine-menu-runtime`, `engine-scene-host`, `engine-core`, `engine-scene`, `engine-ui`, `engine-audio`, the kernel crates, `patcher` and its layer crates + format-family and parser crates | The browser hosts and site tools. |
+| `engine-shell` | `parity`, `engine-capture`, `engine-session`, `engine-screens`, `engine-battle-hud`, `engine-world-views`, `engine-cheats`, `engine-export`, `engine-menu-runtime`, `engine-scene-host`, `engine-core`, `engine-scene`, `engine-render`, `engine-ui`, `engine-audio`, the kernel crates + format-family and parser crates | The native host. |
+| `web-viewer` | `engine-session`, `engine-screens`, `engine-battle-hud`, `engine-world-views`, `engine-cheats`, `engine-menu-runtime`, `engine-scene-host`, `engine-core`, `engine-scene`, `engine-ui`, `engine-audio`, the kernel crates, `patcher` and its layer crates + format-family and parser crates | The browser hosts and site tools. |
 | `asset-viewer` | `engine-core`, `engine-scene`, `engine-vm`, `engine-battle-vm`, `engine-dialog`, `engine-field`, `engine-mode`, `engine-system`, `engine-ui`, `engine-render`, `engine-audio`, `disc-audit` + format-family and parser crates | Standalone asset viewer. |
 
 ### The layering gate
@@ -305,12 +312,36 @@ It reaches field and town scenes (map, player, NPCs, doors, dialogue), live batt
 
 Two responsibilities fall to any host that enters a scene without a door to arrive through - the browser's scene picker is the case that exists:
 
-- **Seating.** `enter_field_scene` seeds the player at the retail cold-boot spawn (`FIELD_COLD_SPAWN_XZ`), which is authored for `town01`, the one scene retail cold-boots into. Every other scene expects a door warp to override X/Z. `World::resolve_cold_field_spawn` then resolves a cold entry:
+- **Seating.** A picker entry seats the party where the disc's doors land them. Both hosts call `SceneHost::arm_picker_entry_seat` before entering a picked scene (the page's `enter_field`, the native `--scene` entry); the entry then takes the first ranked door arrival the scene's walkability grid accepts. See [Picker door arrivals](#picker-door-arrivals) for the rule. A scene no door leads into, or whose every arrival is rejected, falls back to the cold seat below.
+- **The cold seat.** `enter_field_scene` seeds the player at the retail cold-boot spawn (`FIELD_COLD_SPAWN_XZ`), which is authored for `town01`, the one scene retail cold-boots into. Every other scene expects a door warp to override X/Z. `World::resolve_cold_field_spawn` then resolves a cold entry:
   - the retail seat is kept only when it is standable, inside the scene's **largest** connected walkable component (4-connected flood fill over the 64-unit sub-cell lattice: walk-visible floor, clear of the wall bits), and not a `.MAP` kind-0 teleport tile;
   - otherwise the spawn relocates to a kind-0 door-arrival destination inside that component, or to the component's centroid. A warp arrival still overrides X/Z afterwards.
   - Hosts seating a player by hand should also avoid gate-1 walk-on trigger tiles (`SceneHost::tile_has_walk_on_trigger`): the first tick would fire it and warp the scene away.
   - If an entry-spawned record ends with the player parked inside a wall (a first-visit record's `MoveTo` choreography, e.g. izumi's spring), the helper-context teardown re-seats them at the resolved spawn (`World::step_helper_contexts`).
 - **Framing.** Both hosts run the engine's retail follow camera ([`camera_view`](../../crates/engine-core/src/camera_view.rs)) and neither culls geometry. A wall or roof between the lens and the player is handled by the camera-occlusion fade, which the browser stages through `play_occlusion_fade`.
+
+### Picker door arrivals
+
+Every retail scene change carries its arrival: the field VM's `0x3F` op names the destination scene, the entry tile and a facing sector. `legaia_engine_scene::scene_arrivals::ArrivalCatalog` walks every scene's MAN for those ops (`man_edit::scene_change_sites`, the enumeration the door randomizer edits) and keys them by destination. The catalog is built once per `SceneHost`, on the first picker entry. Each arrival is classed:
+
+- **Entrance** - an overworld (`map01..03`) walk-on entrance into the scene, the town or dungeon gate;
+- **Walk door** - a field-scene door whose carrying partition-2 record a `.MAP` gate-1 walk-on trigger spawns (`man_edit::site_p2_slots` joined to the source scene's trigger table);
+- **Scripted** - any other `0x3F`, a scene change a script or cutscene runs.
+
+`ArrivalCatalog::ranked` orders one scene's arrivals:
+
+1. Class first: entrance, then walk door, then scripted.
+2. Then the arrival tile more inbound sites share.
+3. Then disc order: source scene in CDNAME order, then the op's offset. Arrivals that share a tile collapse onto the first.
+
+The entry seat is the first ranked arrival that `World::picker_arrival_seat` accepts once the scene's grids are loaded. A seat must be clear of the wall bits, off a kind-0 teleport pad, and one the player can walk off. It must also stand in a room: an open region reaching fewer than three map edges, of at least `PICKER_ARRIVAL_MIN_REGION_SUBCELLS`. That rejects the open space around a map, where cutscene hops park the party at tile `(0x7F, 0x7F)`, and sealed pockets. Each arrival is tried two ways:
+
+1. By retail's standing rule, the collision grid's wall bits alone (`World::field_wall_region`). A door tile is often a wall cell (a door is a gap in a wall), so the arrival is first nudged to the nearest wall-free sub-cell, within the seat-rescue radius. This seats the arrivals the port's walk-visible floor filter leaves off its authored area, Rim Elm's gate among them.
+2. By the authored-floor rule the cold seat uses (`field_spawn_is_valid` after `nearest_standable_seat`). This covers the towns whose wall grid leaves the land beyond their gates open to the map edges.
+
+Unlike the cold seat, an arrival need not be in the scene's largest region: a dungeon whose floors are disconnected rooms is entered through a door into one of them. The party faces along the arrival's sector, as through the door itself.
+
+Rim Elm (`town01`) is the exception: it is the one scene retail enters without a door, at the New Game seat in Vahn's yard, so a picked Rim Elm keeps the cold seat. The arm stands down when an entry operand is already armed (a door, a card load's saved seat), and while the opening chain or a cutscene timeline owns the entry. `SceneHost::picker_seat` reports the outcome: the arrival used, or the cold fallback. The browser's page-side relocation (`LegaiaRuntime::seat_player`) runs only on a fallback. The disc-gated sweep `crates/engine-scene-host/tests/picker_door_arrival_disc.rs` enters every scene the play page lists and prints the scenes that fall back.
 
 ## Fidelity and enhancements
 
@@ -399,6 +430,8 @@ Two directions are worth having straight, because they are not uniform:
 Retail never draws a field scene's whole map: the render library walks only the cells the camera's visible tile window reaches, and each region record sizes that window for retail's own frustum. The port reproduces the crop, but only where that frustum is what the player sees. The play-window's default `CameraDistance::Far`, the drag / tilt / zoom knobs and the `F3` vantage all show ground the window was never sized to cover, and cropping there would open black edges that retail's own frame never has.
 
 So the knob defaults on and the policy lifts it off retail framing: every frame at the retail vantage (including every `retail-compare` capture) is cropped as retail crops it, and every enhanced frame draws the map whole.
+
+The placed-object near reject follows the vantage the same way (`field_view_window::retail_vantage`, which also counts a scripted shot and a battle frame as retail's): it drops a whole placed object by its origin's depth, and under a swung, tilted or zoomed follow camera that origin can sit behind the lens while a ground slab fills the view ([renderer.md](renderer.md#the-placed-object-near-reject)). The per-primitive near reject and the GPU span limit stay armed off the retail vantage.
 
 `CameraDistance::Far` is the interactive `play-window` default (1.35x retail's eye-back distance); `CameraDistance::Retail` is the pinned retail framing and the type's own `Default`. The wheel zoom and drag tilt pivot the pose about the **character's body** (`camera_frame::FOLLOW_PIVOT_LIFT` above the feet), not about retail's floor-level focus - which sits a tier under the feet in `town01` and would walk the character out of frame. The tilt clamp is widened to include the scene's own pitch, and both knobs at identity return the retail pose bit for bit.
 

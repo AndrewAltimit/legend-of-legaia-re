@@ -51,9 +51,9 @@ crates = ["engine-session", "engine-screens", "engine-render", "engine-audio", "
 [[bands]]
 id = "drivers"
 title = "World drivers"
-blurb = "Layers that hold a running World from outside: scene entry and tick, the pause menu, the battle HUD's reads, the cheats."
+blurb = "Layers that hold a running World from outside: scene entry and tick, the pause menu, the battle HUD's and the field screens' reads, the cheats."
 track = "engine"
-crates = ["engine-scene-host", "engine-menu-runtime", "engine-battle-hud", "engine-cheats"]
+crates = ["engine-scene-host", "engine-menu-runtime", "engine-battle-hud", "engine-world-views", "engine-cheats"]
 
 [[bands]]
 id = "core"

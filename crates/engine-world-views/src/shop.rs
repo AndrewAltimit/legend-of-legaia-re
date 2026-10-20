@@ -9,7 +9,7 @@
 
 use legaia_engine_menus::shop::*;
 
-use crate::world::World;
+use legaia_engine_core::world::World;
 
 /// Window 41's model for staged item `item_id` off the live world: the
 /// roster and the equipment stat table are the only fields it reads. See

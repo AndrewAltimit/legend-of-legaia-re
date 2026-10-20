@@ -1475,3 +1475,42 @@ fn a_reaction_entry_takes_the_capture_cursor() {
         .map(|p| p.cursor_sixteenths());
     assert_eq!(cursor, Some(40));
 }
+
+/// `FUN_80047430` skips the whole advance for a body on its idle whose
+/// status word carries Stone (`0x4`) or Numb (`0x400`) (`andi v0,a0,0x404`
+/// at `0x80047640`, the clip test at `0x8004764C`, `j 0x800480B0`): a
+/// petrified member holds the keyframe it stood on, where a healthy one's
+/// idle keeps swaying.
+#[test]
+fn a_stone_or_numb_body_on_its_idle_holds_its_keyframe() {
+    use legaia_engine_battle_vm::status_effects::StatusKind;
+    let run = |status: Option<StatusKind>| {
+        let mut world = World::new();
+        world.actors[0].active = true;
+        let mut clips: Vec<Option<MonsterAnimation>> = vec![None; 22];
+        clips[0] = Some(pose_test_clip(0, 60, 0));
+        world.set_actor_battle_action_clips(0, std::sync::Arc::new(clips));
+        world.apply_battle_pose(0, legaia_engine_battle_vm::battle_action::Pose::Idle as u8);
+        if let Some(kind) = status {
+            world.battle.status_effects.apply(0, kind);
+        }
+        let frame = |w: &World| {
+            w.actors[0]
+                .battle_animation
+                .as_ref()
+                .map(|p| p.current_frame())
+        };
+        let before = frame(&world);
+        for _ in 0..8 {
+            world.tick_battle_animations();
+        }
+        (before, frame(&world))
+    };
+    let (before, after) = run(None);
+    assert!(before.is_some());
+    assert_ne!(before, after, "a healthy idle advances");
+    for kind in [StatusKind::Stone, StatusKind::Numb] {
+        let (before, after) = run(Some(kind));
+        assert_eq!(before, after, "{kind:?} freezes the idle");
+    }
+}

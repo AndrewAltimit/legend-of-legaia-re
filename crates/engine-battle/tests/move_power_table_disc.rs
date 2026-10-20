@@ -34,15 +34,16 @@ fn move_power_catalog_resolves_named_monster_attacks() {
     assert!(cat.len() >= 44, "full table parsed ({} records)", cat.len());
 
     // Tail Fire (move id 0x27) - a named monster special-attack - resolves to
-    // record index 0x12 with a real, positive power (the arts-roll modulus
-    // base). This is the move whose power the summon-reconciliation thread
+    // record index 0x12 with a real, positive power (the unshifted `+0` word
+    // the arts roll adds whole: `0x1E`). This is the move whose power the summon-reconciliation thread
     // pinned (enemy Tail Fire = move 0x27).
     let rec = cat
         .record_for_move_id(0x27)
         .expect("move id 0x27 (Tail Fire) has a power record");
     assert_eq!(rec.index, 0x12, "Tail Fire maps to power record index 0x12");
     let power = cat.power_for_move_id(0x27).expect("power resolves");
-    assert_eq!(power, rec.power());
+    assert_eq!(power, i32::from(rec.power_raw));
+    assert_eq!(power, 0x1E, "Tail Fire's power word");
     assert!(power > 0, "Tail Fire carries a positive power ({power})");
 
     // The whole named-attack band (move ids 0x25..=0x74 -> record indices

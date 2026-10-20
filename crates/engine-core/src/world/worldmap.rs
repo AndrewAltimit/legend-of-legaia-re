@@ -944,7 +944,7 @@ impl World {
 
     /// Drive the world-map band's **panel screen** for one frame.
     ///
-    /// This is the host side of [`crate::world_views::world_map_panel_host`]: it records the
+    /// This is the host side of `legaia_engine_world_views::world_map_panel_host`: it records the
     /// party's stored tile, binds the pad chords that install a panel actor,
     /// steps whichever actor is up, and applies what the frame produced. The
     /// phase machines themselves are the ports in

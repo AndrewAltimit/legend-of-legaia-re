@@ -46,6 +46,7 @@ ENGINE_API_CRATES = (
     "engine-core",
     "engine-menu-runtime",
     "engine-scene-host",
+    "engine-world-views",
     "engine-battle",
     "engine-effects",
     "engine-field",

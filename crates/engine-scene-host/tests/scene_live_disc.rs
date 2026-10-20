@@ -14,9 +14,9 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use legaia_engine_core::scene_staging::assemble_field_scene;
 use legaia_engine_scene::scene::ProtIndex;
 use legaia_engine_scene_host::scene_live::LiveScene;
+use legaia_engine_world_views::scene_staging::assemble_field_scene;
 
 fn open_index() -> Option<(Arc<ProtIndex>, PathBuf)> {
     if std::env::var_os("LEGAIA_DISC_BIN").is_none() {

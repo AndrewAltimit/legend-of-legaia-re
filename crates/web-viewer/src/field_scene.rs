@@ -125,7 +125,7 @@ pub fn build_field_scene(index: &ProtIndex, name: &str) -> Result<FieldScenePack
         terrain,
         ground,
         coplanar_offsets,
-    } = legaia_engine_core::scene_staging::assemble_field_scene(index, name)?;
+    } = legaia_engine_world_views::scene_staging::assemble_field_scene(index, name)?;
     Ok(FieldScenePack {
         name,
         res,

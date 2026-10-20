@@ -74,6 +74,13 @@ impl LegaiaRuntime {
         // `town01` re-enter through here too, and a card Load's resume is not
         // a picker visit either.
         host.world.stage_picker_entry(name, resume);
+        // A picked scene seats the party where the disc's doors land them
+        // (`SceneHost::arm_picker_entry_seat`, the native `--scene` entry's
+        // rule too). The arm stands down for the opening chain's legs and a
+        // cutscene-owned entry; a card Load's resume carries its own seat.
+        if !resume {
+            host.arm_picker_entry_seat(name);
+        }
         // The page's runtime twins of the native launch switches
         // (`crate::play_toggles`).
         self.apply_page_toggles();
@@ -306,8 +313,11 @@ impl LegaiaRuntime {
     /// non-warp entry. That is the right answer for `town01`, the one scene
     /// retail cold-boots into; every other scene is normally *entered through a
     /// door*, which overrides X/Z with the transition's entry tile. Dropping into
-    /// one from the scene picker has no door to supply that, so the cold spawn can
-    /// land outside the map entirely (a cave whose floor is nowhere near it).
+    /// one from the scene picker has no door to supply that, so the engine seats
+    /// it on a door arrival other scenes' `0x3F` ops name
+    /// (`SceneHost::arm_picker_entry_seat`) and this pass leaves that seat
+    /// alone. A scene no door leads into keeps the cold spawn, which can land
+    /// outside the map entirely (a cave whose floor is nowhere near it).
     ///
     /// So: keep the cold spawn when it is walkable and inside the scene's
     /// populated area, and otherwise fall back to the walkable terrain tile
@@ -318,6 +328,16 @@ impl LegaiaRuntime {
         let Some(host) = self.scene_host.host_mut() else {
             return;
         };
+        // A door arrival the engine seated the picker entry on is a
+        // retail-authored landing it has already validated against the
+        // walkability grid; this page-side heuristic is only for the scenes
+        // that fell back to the cold-entry seat.
+        if matches!(
+            host.picker_seat(),
+            Some(legaia_engine_scene_host::scene_host::PickerSeat::Arrival { .. })
+        ) {
+            return;
+        }
         let Some(slot) = host.world.player_actor_slot.map(|s| s as usize) else {
             return;
         };

@@ -32,6 +32,11 @@ pub struct NpcEntry {
     /// First line of the actor's inline dialog block, when it has one - the
     /// only human-readable label retail gives an NPC.
     pub dialog: Option<String>,
+    /// The placement's whole conversation - every page, choice and story
+    /// branch its interaction script reaches
+    /// ([`placement_dialog_tree`](legaia_engine_field::man_field_scripts::placement_dialog_tree)).
+    /// `None` when the placement has no interaction to walk.
+    pub dialog_tree: Option<legaia_engine_field::man_field_scripts::DialogTree>,
     /// Object count of the resolved TMD (the mesh's bone count ceiling).
     pub nobj: u32,
     /// Parked at the off-map hide box: a **conditional spawn** the scene only
@@ -138,6 +143,8 @@ pub fn catalog_scene_npcs(
     let mut special_count = 0u32;
     let mut unposable_count = 0u32;
     for (mut p, kind) in classify_placements(&mf, &man) {
+        let dialog_tree =
+            legaia_engine_field::man_field_scripts::placement_dialog_tree(&mf, &man, &p);
         // Retail's placement installer pre-runs the record's spawn prologue,
         // and a flag-dispatched spawn's taken arm relocates the actor before
         // the first frame draws - the header tile is only a staging square
@@ -213,6 +220,7 @@ pub fn catalog_scene_npcs(
             kind: label,
             target_map,
             dialog,
+            dialog_tree,
             conditional,
             special,
         });

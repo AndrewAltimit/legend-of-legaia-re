@@ -8,7 +8,7 @@
 
 use legaia_engine_menus::muscle_dome_session::*;
 
-use crate::world::World;
+use legaia_engine_core::world::World;
 
 /// Build a dome fighter's [`DomeMagic`] out of a live world's roster - the
 /// one door both native dome entry paths (the arena-door warp and the

@@ -471,3 +471,64 @@ fn special_render_nodes_are_split_from_the_mesh_draw_list() {
     assert_eq!(nodes[1].mode, RenderMode::SoundEmitter);
     assert_eq!(nodes[1].world_pos, [10.0, 20.0, 30.0]);
 }
+
+/// A captured cast's parts seat over the replay's parts of the same record
+/// in order: a record with fewer seeds than live parts retires the rest, one
+/// with more clones its first live part, and a record no seed names, or a
+/// seed whose record has no live part, is left alone.
+#[test]
+fn install_part_snapshot_reseats_parts_by_record() {
+    let (bytes, overlay) = synthetic();
+    let mut scene = SummonScene::spawn_parts(&overlay.parts, &bytes, 0, [0, 0, 0]);
+    let template = scene.parts[1].clone();
+    scene.parts.clear();
+    for (tag, n) in [(0x801F_876C_u32, 3), (0x801F_86B8, 1)] {
+        for _ in 0..n {
+            let mut p = template.clone();
+            p.tag = Some(tag);
+            scene.parts.push(p);
+        }
+    }
+    let ray = |roll: u16, age: u16| CastPartSeed {
+        tag: 0x801F_876C,
+        pokes: vec![(0x28, roll), (0xB6, age), (0x16, 0x10)],
+    };
+    scene.install_part_snapshot(&[
+        ray(0x2CC, 0x80),
+        ray(0x723, 0x100),
+        CastPartSeed {
+            tag: 0x801F_9999,
+            pokes: vec![(0x28, 1)],
+        },
+    ]);
+    let live_rays: Vec<_> = scene
+        .parts
+        .iter()
+        .filter(|p| !p.finished && p.tag == Some(0x801F_876C))
+        .collect();
+    assert_eq!(live_rays.len(), 2, "the third ray is retired");
+    assert_eq!(live_rays[0].state.render_28, 0x2CC);
+    assert_eq!(live_rays[0].state.actor_u16(0xB6), 0x80);
+    assert_eq!(live_rays[1].state.render_28, 0x723);
+    assert_eq!(live_rays[1].state.world_y_mirror, 0x10);
+    assert!(
+        scene
+            .parts
+            .iter()
+            .any(|p| !p.finished && p.tag == Some(0x801F_86B8)),
+        "a record no seed names is kept"
+    );
+    assert_eq!(
+        scene.parts.len(),
+        4,
+        "a seed with no live record spawns nothing"
+    );
+
+    scene.install_part_snapshot(&[ray(1, 0), ray(2, 0), ray(3, 0)]);
+    let live = scene
+        .parts
+        .iter()
+        .filter(|p| !p.finished && p.tag == Some(0x801F_876C))
+        .count();
+    assert_eq!(live, 3, "a seed past the live count clones a live part");
+}

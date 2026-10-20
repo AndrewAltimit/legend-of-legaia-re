@@ -93,7 +93,7 @@ impl FieldPartyHud {
     /// `hud_disabled` is retail's `_DAT_8007B868` - the "something else owns
     /// the screen" gate; hosts raise it for a menu, a dialog box, a cutscene
     /// or a battle. `view_mode` is `_DAT_800845C4`, the Field HP Display
-    /// option (`legaia_engine_core::world_views::world_map_panel_host::field_hud_view_mode`):
+    /// option (`legaia_engine_world_views::world_map_panel_host::field_hud_view_mode`):
     /// `0` Immediate (0x28-frame idle), `1` Gradual (0xA0), and `2` Display
     /// Off, which suppresses outright. `pad_held` is the **packed** held word, because
     /// the suppress mask is the packed D-pad - a raw word suppresses nothing.

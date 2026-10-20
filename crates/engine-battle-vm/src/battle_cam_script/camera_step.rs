@@ -572,6 +572,34 @@ impl BattleCamera {
         true
     }
 
+    /// Whether the glide in flight heads for retail's framing on every
+    /// component: its endpoint agrees with `end` (retail's tween-table
+    /// endpoints) within [`Self::align_glide_origin`]'s per-component
+    /// tolerances. A glide that does walks retail's own step table, so a pose
+    /// read off that table at another instant (the frame the display showed)
+    /// is one the engine's glide passes through too. Never in the far
+    /// framing's [`BattleCamPhase::Menu`] phase. Nothing in play calls it.
+    pub fn glide_endpoint_matches(&self, end: BattleCamPose) -> bool {
+        self.glide_endpoint_matches_to(end, self.glide_target())
+    }
+
+    /// [`Self::glide_endpoint_matches`] against an explicit framing
+    /// `target` rather than the glide in flight - the framing the camera
+    /// would arm on the ground as it now stands
+    /// (`World::battle_camera_framing_now`).
+    pub fn glide_endpoint_matches_to(&self, end: BattleCamPose, target: BattleCamPose) -> bool {
+        if self.phase == BattleCamPhase::Menu {
+            return false;
+        }
+        let ang = |a: f32, b: f32| ((a - b).rem_euclid(4096.0)).min((b - a).rem_euclid(4096.0));
+        ang(target.pitch, end.pitch) <= ALIGN_ANGLE_TOLERANCE
+            && ang(target.yaw, end.yaw) <= ALIGN_ANGLE_TOLERANCE
+            && (0..3).all(|k| {
+                (target.tr[k] - end.tr[k]).abs() <= ALIGN_TR_TOLERANCE
+                    && (target.focus[k] - end.focus[k]).abs() <= ALIGN_FOCUS_TOLERANCE
+            })
+    }
+
     /// Phase-align the glide's **origin** to a retail instant: every driven
     /// component whose framing endpoint agrees with retail's (`end`, the
     /// endpoints of retail's tween table `ctx[+0x118C]`) takes retail's live
@@ -590,10 +618,24 @@ impl BattleCamera {
     /// harness's handle for scoring the framing rather than that history,
     /// the in-action twin of the orbit alignment. Nothing in play calls it.
     pub fn align_glide_origin(&mut self, live: BattleCamPose, end: BattleCamPose) -> u8 {
+        let target = self.glide_target();
+        self.align_glide_origin_to(live, end, target)
+    }
+
+    /// [`Self::align_glide_origin`] against an explicit framing `target`:
+    /// the endpoint the camera's framing law arms on the ground as it now
+    /// stands, which a caller that has just moved the combatants supplies
+    /// (`World::battle_camera_framing_now`). The pose still takes retail's
+    /// live value only on the components whose endpoint agrees.
+    pub fn align_glide_origin_to(
+        &mut self,
+        live: BattleCamPose,
+        end: BattleCamPose,
+        target: BattleCamPose,
+    ) -> u8 {
         if self.phase == BattleCamPhase::Menu {
             return 0;
         }
-        let target = self.glides.front().map_or(self.pose, |g| g.target);
         let ang = |a: f32, b: f32| ((a - b).rem_euclid(4096.0)).min((b - a).rem_euclid(4096.0));
         let mut mask = 0u8;
         // Both angles keep the engine's own unwrap: each lands on the live

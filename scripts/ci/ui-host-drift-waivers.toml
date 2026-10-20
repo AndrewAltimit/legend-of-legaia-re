@@ -687,35 +687,37 @@ reason = "Builds the page's audio director on first use (off wasm; on wasm once 
 [[frame_content]]
 native = "drain_and_log_battle_events"
 web = "tick_battle_presentation"
-native_only = ["tick"]
-web_only = ["armed", "battle_monster_slots", "battle_party_forms", "battle_stage_object_indices", "clear_popups", "ensure_battle_party_forms", "entry_bytes_extended", "monster_tex_slots_used", "release_summon_seat", "replay", "reset", "stage_battle_world", "tmd_bytes", "upload_flame_atlas_into_vram"]
+native_only = ["battle_stage_layers"]
+web_only = ["armed", "battle_monster_slots", "battle_party_forms", "ensure_battle_party_forms", "entry_bytes_extended", "monster_tex_slots_used", "release_summon_seat", "replay", "reset", "stage_battle_world", "tmd_bytes", "upload_flame_atlas_into_vram"]
 reason = """
-The audio half is one session step on both hosts
-(`BootSession::route_battle_audio`: the duck target, the strike / cast cues,
-the cast-voice prestage, the one-shot CD-XA clips and the arts shouts), pinned
-by a SIM_PAIRS row, so it lists on neither side. Native-only `tick` is a name
-collision: the page defines a host fn of that name, which the walk excludes by
-name.
+The presentation itself is one session step on both hosts
+(`BootSession::step_battle_presentation`: the battle audio, the strike
+popups, the per-hit drain, the effect-script spawn routing, the HUD row and
+status fold, the popup and banner ages), and the battle VRAM re-stamps after
+it (`battle_vram::stamp_battle_faces` / `step_battle_vram_edits`, after the
+fold that arms the status CLUT latch). Both are pinned by SIM_PAIRS rows, so
+they list on neither side.
+
+Native-only `battle_stage_layers` is the window's mid-fight stage-shell
+rebuild (`tick_battle_stage_shell`, run after the re-stamps): the page's
+twin (`tick_battle_stage_shell_web`) re-reads the same
+`SceneHost::battle_stage_object_indices` and rebuilds through its own mesh
+path.
 
 The web-only list is where the code sits, not whether the host does it. The
 page folds its whole battle presentation frame into this one named step: the
-battle edge's world half (`battle_stage::stage_battle_world`: the stage
-resolve, its class, the fog's stage cap and the monster battle forms, pinned
-by a SIM_PAIRS row), the atlas upload, the party forms' read-back and the
-popup retire. The battle VRAM re-stamps (faces, status and effect CLUTs, the
-stage module's moves) are one session step on both hosts
-(`battle_vram::stamp_battle_faces` / `step_battle_vram_edits`), so they list
-on neither side. The native window does that same work spread
-across its draw section and window/battle.rs (`sync_battle_render` runs the
-edge step) rather than inside the kernel its frame path names. Checked name by
-name: every presentation call has a call site in the native sources. The arena object list is the engine's own
-`SceneHost::battle_stage_object_indices`, which the window reaches from its
-stage-rebuild path; the party forms are built by
-`SceneHost::ensure_battle_party_forms` from `SceneHost::tick` for every
-session, and both hosts call it again before their render build and replay its
-VRAM writes with `replay`. `entry_bytes_extended` is the page reading the
-monster archive off PROT inside this step; the window reads it from its
-cached copy.
+battle edge (`battle_presentation::battle_mode_edge` and its two edge steps,
+then `battle_stage::stage_battle_world`, pinned by SIM_PAIRS rows), the atlas
+upload, the party forms' read-back, and the status CLUT reset its VRAM
+channel runs on any tick outside a built battle (`armed` / `reset`, a
+superset of the shared exit-edge reset). The native window runs its edge in
+`sync_battle_render` rather than inside the kernel its frame path names.
+Checked name by name: every presentation call has a call site in the native
+sources. The party forms are built by `SceneHost::ensure_battle_party_forms`
+from `SceneHost::tick` for every session, and both hosts call it again before
+their render build and replay its VRAM writes with `replay`.
+`entry_bytes_extended` is the page reading the monster archive off PROT
+inside this step; the window reads it from its cached copy.
 """
 
 [[frame_content]]

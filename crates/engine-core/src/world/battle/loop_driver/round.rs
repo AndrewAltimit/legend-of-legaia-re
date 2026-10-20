@@ -4,6 +4,12 @@
 
 use super::*;
 
+/// The `+0x16E` bits of the command ring's refusal mask `0xF84` that leave
+/// a member with no command of its own: Stone `0x4`, Numb `0x400` and Sleep
+/// `0x800`. The delegation group `0x380` is the other part of the mask, and
+/// its members are filled by the delegated auto-pick instead.
+const NO_COMMAND_STATUS_BITS: u16 = 0x0C04;
+
 impl World {
     /// Turn cycling for the live loop - retail's round machine, keyed on the
     /// action SM idling at `EndOfAction`.
@@ -238,6 +244,7 @@ impl World {
         use legaia_engine_menus::battle_flow::BattleFlowState;
         self.battle.round_flow.phase = RoundPhase::Execute;
         self.battle.round_flow.flat_walk_last = None;
+        self.sweep_battle_intro_names();
         self.battle.commit_log_launch = None;
         // Retail's Begin moves the flow to `0xFE`, whose arm restarts the
         // action SM at `0x00`, and `0x00` opens with `FUN_801F0450`: the pool
@@ -318,6 +325,7 @@ impl World {
         self.battle.arts_menu = None;
         self.battle.arts_input = None;
         self.battle.round_flow.phase = RoundPhase::Execute;
+        self.sweep_battle_intro_names();
         self.set_battle_flow(legaia_engine_menus::battle_flow::BattleFlowState::Idle);
         // The capture's MP is already charged (the Magic band debits at
         // `0x28`, before the summon band); credit the catalog price back so
@@ -442,7 +450,7 @@ impl World {
     ///
     /// REF: FUN_801E295C (state `0x0C`: `FUN_801EED1C` for a party slot, the
     /// `0x380` re-target for a delegated one)
-    pub(super) fn dispatch_battle_turn(&mut self, next: u8) {
+    pub(in crate::world) fn dispatch_battle_turn(&mut self, next: u8) {
         let party_count = self.party.party_count.max(1);
         // The turn picker's head drops any counter latch the last pick left
         // unconsumed (`sw zero,0x6970(v0)` at `0x801DABB4`).
@@ -478,6 +486,21 @@ impl World {
             .map(|action| self.redirect_pending_off_dead_target(action));
         match pending {
             Some(action) => self.dispatch_pending_party_action(next, action),
+            // A member the command ring passed over for its status word -
+            // Stone, Numb or Sleep among the `0xF84` bits `FUN_801DBA04` /
+            // `FUN_801DB81C` refuse - committed nothing, and the round
+            // boundary's sweep left its category `+0x1DE` at `0`. The seed's
+            // category jump table (`0x801CF144`) sends `0` to `0x801E2E0C`,
+            // which only parks the camera depth and stores the Done state
+            // `0x50`: the turn passes without a swing. Armed as an Attack, a
+            // Numb member marked by a missed Kiss of Death (`+0x16E |= 0x400`
+            // with no tracker entry) stood frozen in the strike loop, the
+            // anim tick skipping its idle (`0x80047640`) so the staged swing
+            // never committed.
+            // REF: FUN_801E295C (`0x801E2D60..0x801E2D88`, `0x801E2E0C`)
+            None if self.raw_status_word(next) & NO_COMMAND_STATUS_BITS != 0 => {
+                self.arm_party_no_command(next)
+            }
             None => self.arm_party_physical(next),
         }
     }

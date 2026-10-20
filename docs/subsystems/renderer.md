@@ -1311,9 +1311,8 @@ forest trees (`0x180`), the `0x380` billboards of `deene` and `retona`.
   `gimard_burning_attack`) drew at another angle under the yaw-first,
   unflipped product the hosts used before.
 - *No prefix.* A part with no `0x780` bit gets none, and neither does any
-  part drawn through a host's own vantage (the debug orbits, the stage-less
-  battle orbit, the overworld top view), where there is no retail rotation
-  to undo.
+  part drawn through a host's own vantage (the debug orbits, the overworld
+  top view), where there is no retail rotation to undo.
 - *Summons.* `engine-effects::summon` runs a camera-locked part through the
   motion block and leaves its position to its program; its translation
   glide, which snaps a part to `origin + anim bank`, is kept for world-space
@@ -2214,9 +2213,26 @@ an additive mist shell (placement at `(11840, 0, 13784)`); retail holds that
 actor at view depth `-423`.
 
 Both hosts ask `field_env::placed_origin_near_culled` per placed draw with
-the origin's clip `w` under the frame's retail camera - the native placed,
-colour and posed-prop passes, and the play page's placed draws through the
-`field_placed_near_culled` export. The `F3` debug orbit is exempt.
+the origin's clip `w` under the frame's camera - the native placed, colour
+and posed-prop passes, and the play page's placed draws through the
+`field_placed_near_culled` export - and only from **retail's vantage**
+(`engine-world-views::field_view_window::retail_vantage`): `F3` off, and a
+battle frame, a scripted shot (the cutscene arm reads none of the user's
+knobs), or the follow camera at `CameraDistance::Retail` with the drag /
+tilt / zoom knobs at identity.
+
+The rule judges a whole object by its origin, which is a fair proxy for the
+object's extent only inside retail's frustum. A follow camera swung, tilted
+toward the horizon or wheeled in close puts a large ground slab's origin
+beside or behind the lens while most of the slab is in shot, and the reject
+removed it whole: `town01`'s floor lost slab-sized chunks as the camera
+swung (seated at `(3360, 5824)`, orbit `5.5`, tilt `-0.5`, zoom `0.7` on the
+play page, the slab in the foreground drops; it returns with the reject
+alone lifted). Off retail's vantage the object draws and the
+[per-primitive near reject](#the-per-primitive-near-reject), which stays
+armed, trims whatever of it sits at the lens. That rule is not lifted: on
+the same swung views it is what keeps a rock or trunk the lens has entered
+from painting across the frame, and it drops no floor there.
 
 ### The per-primitive near reject
 

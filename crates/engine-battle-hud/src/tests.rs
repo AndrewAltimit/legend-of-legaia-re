@@ -427,19 +427,19 @@ fn noa_gate_reads_the_byte_before_everyone_elses() {
 }
 
 #[test]
-fn attack_mode_and_targeting_park_the_bar_but_keep_tab_and_plaque() {
+fn attack_mode_keeps_bar_tab_plaque_and_ap_plate() {
     use legaia_engine_menus::battle_input::{BattleCommandSession, CommandPhase};
     let mut w = battle_world(1);
     let mut cmd = BattleCommandSession::new(0, 0);
     cmd.phase = CommandPhase::AttackMode { cursor: 0 };
     w.battle.command = Some(cmd);
     assert_eq!(battle_command_surface(&w), Some(CommandSurface::AttackMode));
-    assert_eq!(battle_readout_bar_slot(&w), None);
+    assert_eq!(battle_readout_bar_slot(&w), Some(0));
     assert!(!battle_panels_visible(&w));
     assert!(battle_begin_tab_visible(&w));
     assert!(battle_active_actor(&w).is_some());
     assert_eq!(battle_breadcrumb_third_tab(&w).as_deref(), Some("Attack"));
-    assert_eq!(battle_ring_ap_plate_value(&w), None);
+    assert!(battle_ring_ap_plate_value(&w).is_some());
     assert_eq!(
         battle_command_chips(&w).map(|c| c.phase),
         Some(CommandChipPhase::AttackMode)

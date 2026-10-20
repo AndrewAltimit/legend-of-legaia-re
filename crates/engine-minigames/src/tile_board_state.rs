@@ -10,7 +10,7 @@ pub struct TileBoardState {
     /// (retail field-VM op `0x49`). Drives discrete cell-to-cell player
     /// movement in the `SceneMode::Field` tick. This is *not* general
     /// town locomotion (Legaia towns use free movement). See
-    /// `legaia_engine_core::world_views::tile_board`.
+    /// `legaia_engine_world_views::tile_board`.
     pub grid: Option<crate::tile_board::TileBoard>,
     /// While stepping on a tile board, the world `(x, z)` the player
     /// actor is interpolating toward (the destination tile centre).

@@ -40,7 +40,7 @@
 //!
 //! ## Wiring status
 //!
-//! All seven are hosted by `legaia_engine_core::world_views::world_map_panel_host`, which
+//! All seven are hosted by `legaia_engine_world_views::world_map_panel_host`, which
 //! hangs off `WorldMapController::panels` and is stepped once a frame by
 //! `World::tick_world_map`. That host owns the scene-struct fields the
 //! terminal arms write, the `0x801F2B98` descriptor array the panel scripts

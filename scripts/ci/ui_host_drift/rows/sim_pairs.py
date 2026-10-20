@@ -87,18 +87,47 @@ SIM_PAIRS: list[dict[str, object]] = [
         "symbols": ["step_dance_tail"],
     },
     {
-        "what": "battle audio routing, native vs play page - the duck target, "
-        "the strike / cast cues, the cast-voice prestage, the one-shot CD-XA "
-        "clips and the arts shouts were drained and routed once per host "
-        "(the page through a CD-XA lane of its own). Both hand the tick's "
-        "battle events to the one session step "
-        "`BootSession::route_battle_audio`",
+        "what": "battle presentation step, native vs play page - the battle "
+        "audio routing (duck, strike / cast cues, cast-voice prestage, CD-XA "
+        "clips, arts shouts), the strike popups, the per-hit drain, the "
+        "effect-script spawn routing and the HUD row / status fold were one "
+        "copy per host, and the copies drifted (the status CLUT pass ran a "
+        "tick before the fold that arms its latch on the native window). "
+        "Both run the one session step "
+        "`BootSession::step_battle_presentation`",
         "sites": {
             "native": ("crates/engine-shell/src/window/battle.rs", "drain_and_log_battle_events"),
-            "web": ("crates/web-viewer/src/play_battle_audio.rs", "drain_battle_audio_cues"),
+            "web": ("crates/web-viewer/src/play_battle.rs", "tick_battle_presentation"),
         },
         "mode": "symbols_all",
-        "symbols": ["route_battle_audio"],
+        "symbols": ["step_battle_presentation"],
+    },
+    {
+        "what": "field-to-battle intro emitter, native vs play page - the "
+        "Transition-phase gate, the arming off the formation's style inputs "
+        "and the step to the transition entity's clock were one copy per "
+        "host. Both run the one session step "
+        "`battle_intro::step_battle_intro`; each keeps only its capture",
+        "sites": {
+            "native": ("crates/engine-shell/src/window/battle/intro.rs", "take_battle_intro_frame"),
+            "web": ("crates/web-viewer/src/play_battle/screen_prims.rs", "tick_battle_intro_prims"),
+        },
+        "mode": "symbols_all",
+        "symbols": ["step_battle_intro"],
+    },
+    {
+        "what": "battle mode edge, native vs play page - the Field <-> Battle "
+        "latch, the encounter banner it arms and the exit edge's reset of the "
+        "popups and the status CLUT's palette copies and Stone latches "
+        "(retail rebuilds that context per fight) were spelled per host and "
+        "reset at different moments. Both latch through "
+        "`battle_presentation::battle_mode_edge` and run its two edge steps",
+        "sites": {
+            "native": ("crates/engine-shell/src/window/battle.rs", "sync_battle_render"),
+            "web": ("crates/web-viewer/src/play_battle.rs", "tick_battle_presentation"),
+        },
+        "mode": "symbols_all",
+        "symbols": ["battle_mode_edge", "on_battle_entered", "on_battle_left"],
     },
     {
         "what": "the tick's audio frame, native vs play page - the footstep "
@@ -359,21 +388,63 @@ SIM_PAIRS: list[dict[str, object]] = [
         "symbols": ["StatusHost", "FishingKeys", "slot_machine_drawn", "prizes"],
     },
     {
-        "what": "effect-pool billboard TSB word, native vs play page (battle "
-        "and field FX) - retail sends every effect child as the semi-"
-        "transparent prim code 0x2E, which the atlas page byte cannot carry; "
-        "the page pushed the bare page, so every hit-dust / flame sprite drew "
-        "opaque. Each billboard builder must take `EffectSprite::packet_tsb`",
+        "what": "effect-pool billboards, native vs play page (battle and "
+        "field FX) - each host selected and built the billboards itself "
+        "(the battle centre flip, the view-scale half-extents, the UV "
+        "mirror, the prim-ABE bit retail's GP0 0x2E carries, which the atlas "
+        "page byte cannot: the page once pushed the bare page and every "
+        "flame drew opaque), and the two disagreed on the overworld, where "
+        "only the native window drew pool children although retail's walker "
+        "runs from the battle draw tick alone. Every billboard builder takes "
+        "the one list `effect_draws::effect_billboards`",
         "sites": {
             "native": (
-                "crates/engine-shell/src/window/geometry.rs",
-                "effect_billboard_mesh",
+                "crates/engine-shell/src/window/event_handler/redraw_passes.rs",
+                "build_effect_billboards",
             ),
             "web_battle": ("crates/web-viewer/src/play_battle_fx.rs", "build_battle_fx"),
             "web_field": ("crates/web-viewer/src/play_battle_fx.rs", "build_field_fx"),
         },
         "mode": "symbols_all",
-        "symbols": ["packet_tsb"],
+        "symbols": ["effect_billboards"],
+    },
+    {
+        "what": "effect model draws, native vs play page (battle and field "
+        "FX) - the `etmd` effect models, the summon / move-FX parts, the "
+        "draw-kind-4 nodes, the battle ground shadows and the field stager "
+        "parts were selected and placed once per host (about 250 lines "
+        "apiece, glam on one side and hand-rolled matrices on the other): "
+        "the overworld gate, the battle frame flip, the `+0x52` "
+        "camera-relative prefix. Every FX model builder takes the one list "
+        "`effect_draws::effect_model_draws`",
+        "sites": {
+            "native": (
+                "crates/engine-shell/src/window/event_handler/redraw_passes.rs",
+                "build_effect_draws",
+            ),
+            "web_battle": ("crates/web-viewer/src/play_battle_fx.rs", "build_battle_fx"),
+            "web_field": ("crates/web-viewer/src/play_battle_fx.rs", "build_field_fx"),
+        },
+        "mode": "symbols_all",
+        "symbols": ["effect_model_draws"],
+    },
+    {
+        "what": "battle effect world scale, native vs play page - the 4x "
+        "base matrix every battle FX layer composes (retail "
+        "`DAT_8007BF10 = 16384 * I`, a battle-mode value the backdrop is "
+        "only one more actor under): the native window took it only while "
+        "a stage mesh was loaded and fell back to 1x on a stageless fight, "
+        "the page always drew at 4x. Both take the one decision "
+        "`battle_fx::battle_world_scale`",
+        "sites": {
+            "native": (
+                "crates/engine-shell/src/window/event_handler/redraw_overlay.rs",
+                "build_fx_frame",
+            ),
+            "web": ("crates/web-viewer/src/play_battle_fx.rs", "build_battle_fx"),
+        },
+        "mode": "symbols_all",
+        "symbols": ["battle_world_scale"],
     },
     {
         "what": "battle stage world state, native vs play page - the stage "
@@ -510,19 +581,13 @@ SIM_PAIRS: list[dict[str, object]] = [
         "mode": "symbols_all",
         "symbols": ["vp_raw"],
     },
-    {
-        "what": "battle-intro arming, native vs play page - the PROT 0979 "
-        "load and relocation, the curtain table and tile-corner fallbacks, "
-        "the shade-pack parse and the two env seeds were written out once per "
-        "host, only the style inputs shared. Both arms must build the "
-        "emitter through `BattleIntro::arm_for_battle`",
-        "sites": {
-            "native": ("crates/engine-shell/src/window/battle/intro.rs", "arm_battle_intro"),
-            "web": (WEB_PLAY_BATTLE_SCREEN_PRIMS, "arm_battle_intro"),
-        },
-        "mode": "symbols_all",
-        "symbols": ["arm_for_battle"],
-    },
+    # The "battle-intro arming" and "battle-intro style inputs" rows
+    # (each host's `arm_battle_intro` had to build through
+    # `BattleIntro::arm_for_battle` off `SceneHost::battle_intro_style_inputs`)
+    # are gone because the per-host arming is: both hosts step the intro
+    # through `legaia_engine_session::battle_intro::step_battle_intro`, whose
+    # one `arm_battle_intro` reads both (the "field-to-battle intro emitter"
+    # row). A re-duplicated arming needs the rows back.
     # The "Options screen model" row (both Options builders must read
     # `OptionsSession::screen_model`) is gone because the second builder is:
     # both hosts draw the Options screen through
@@ -675,24 +740,6 @@ SIM_PAIRS: list[dict[str, object]] = [
             "arts_banner_prims",
             "draw_quads",
         ],
-    },
-    {
-        "what": "battle-intro style inputs, native vs play page - the style "
-        "selector reads three retail globals (`DAT_8007BD60`, `DAT_8007BD0C`, "
-        "`DAT_80084540`) and not one of them is a host choice: they are "
-        "properties of the rolled formation row and the loaded scene. Both "
-        "hosts resolved them inline and disagreed on `formation_slot0`, which "
-        "is the input EVERY id-keyed style override keys on - the page went "
-        "straight from the formation-table lookup to the bare row index, with "
-        "no live-monster-table leg, so an in-battle re-arm fed the selector a "
-        "row index and drew the default style. Both sites must read "
-        "`SceneHost::battle_intro_style_inputs`",
-        "sites": {
-            "native": ("crates/engine-shell/src/window/battle/intro.rs", "arm_battle_intro"),
-            "web": (WEB_PLAY_BATTLE_SCREEN_PRIMS, "arm_battle_intro"),
-        },
-        "mode": "symbols_all",
-        "symbols": ["battle_intro_style_inputs"],
     },
     {
         "what": "dance HUD frame rows, native vs play page - which rows the "

@@ -9,12 +9,13 @@
 //! the gate every arm took one tick and a summon that holds the screen for
 //! twenty seconds in retail was over in thirty frames.
 //!
-//! The director here is that gate and nothing else: it holds the phase
-//! while the arm's wait lasts, applies the arm's re-arm on the tick it lets
-//! the tick body run, and arms no camera (the modules' shot arms are not
-//! ported, so the battle camera keeps the band's framing) - for PROT 0919,
-//! 0924 and 0925. PROT 0918, 0922 and 0927 run full directors over these
-//! tables (`super::kemaro_direct`, `super::puera_direct`,
+//! The director here is that gate: it holds the phase while the arm's wait
+//! lasts and applies the arm's re-arm on the tick it lets the tick body
+//! run. For PROT 0919 and 0924 it is nothing else and arms no camera (their
+//! shot arms are not ported, so the battle camera keeps the band's framing);
+//! PROT 0925's adds the body's camera writes ([`spikefish_direct`]). PROT
+//! 0918, 0922 and 0927 run full directors over these tables
+//! (`super::kemaro_direct`, `super::puera_direct`,
 //! `super::juggernaut_direct`) that add their camera, drift, spawn and
 //! caption writes. The phase walk,
 //! staging and outcome stay in the tick bodies in
@@ -58,7 +59,10 @@
 //! 0924 from its extracted image, which has no dump); the per-row comments
 //! cite the gate and the re-arm stores.
 
-use super::{ArmDirection, ModuleCamSeats, ModuleCamState, ModuleProfile, SPEED_SCALAR};
+use super::{
+    ArmDirection, CaptureDrift, ModuleCamSeats, ModuleCamState, ModuleProfile, ModuleShot,
+    SPEED_SCALAR,
+};
 
 /// One arm's wait.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -400,9 +404,56 @@ pub fn ultimate_rave_direct(st: &mut ModuleCamState, phase: u8, _: ModuleCamSeat
     direct(ULTIMATE_RAVE, st, phase)
 }
 
-/// PROT 0925's director: [`SPIKEFISH`].
+/// PROT 0925's director: the holds of [`SPIKEFISH`] plus the body's camera
+/// writes. Every shot is a `FUN_801D829C` call on a zeroed stack trio with
+/// immediates over it, so its focus is the stage origin; every drift is
+/// the bare frame step `*(0x1F800393)` (the `lbu 0x7F` off `0x1F800314`)
+/// times a constant, one vsync's worth a tick.
+///
+/// | arm | every pass | on the pass |
+/// |---|---|---|
+/// | 0 (`0x801F6AB0`) | - | cut pitch `0`, yaw `0`, TR `(0, 0x500, 0x300)` |
+/// | 3 (`0x801F6E0C..0x801F6E38`) | TR y `-2`, TR z `+8` | - |
+/// | 5 (`0x801F6FAC..0x801F7014`) | TR y `+12`, TR z `+8`, yaw `+8`, pitch `-1` | cut pitch `0x80`, yaw `0`, TR `(0, 0x1400, 0x4000)` (`0x801F7078`) |
+/// | 6 (`0x801F7180`, before the gate) | a `0x40`-frame shot pitch `0`, yaw `0`, TR `(0, 0x2400, 0x2400)` | - |
+/// | 8 (`0x801F7364`, before the gate) | a `0x20`-frame shot pitch `0`, yaw `0`, TR `(0, 0x2400, 0x4E20)` | - |
+///
+/// Not carried: arm 5's growth of the creature's render scale (`+0x72 +=
+/// 10 * step` on its model node, `0x801F7018..0x801F7030`) and arm 8's flee
+/// staging, whose reverse-angle tween (`0x801F78C8`) belongs to the run
+/// band it hands the action to.
+///
+/// PORT: overlay_summon_spikefish_0925_801f6a00 (PROT 0925; camera arms 0, 3, 5, 6 and 8)
 pub fn spikefish_direct(st: &mut ModuleCamState, phase: u8, _: ModuleCamSeats) -> ArmDirection {
-    direct(SPIKEFISH, st, phase)
+    let held = hold_step(SPIKEFISH, st, phase);
+    let mut base = super::gate(held);
+    let shot = |pitch: i16, tr: [i16; 3], frames: u16| ModuleShot {
+        angles: [pitch, 0, 0],
+        tr,
+        focus: [0; 3],
+        frames,
+    };
+    let drift = |pitch: i32, yaw: i32, tr_y: i32, tr_z: i32| CaptureDrift {
+        pitch: pitch as i16,
+        yaw: yaw as i16,
+        tr_y: tr_y as i16,
+        tr_z: tr_z as i16,
+        tr_x: 0,
+    };
+    match phase {
+        0 if !held => base.shot = Some(shot(0, [0, 0x500, 0x300], 1)),
+        3 => base.drift = Some(drift(0, 0, -2 * T, 8 * T)),
+        5 => {
+            base.drift = Some(drift(-T, 8 * T, 12 * T, 8 * T));
+            if !held {
+                base.shot = Some(shot(0x80, [0, 0x1400, 0x4000], 1));
+            }
+        }
+        6 => base.shot = Some(shot(0, [0, 0x2400, 0x2400], 0x40)),
+        8 => base.shot = Some(shot(0, [0, 0x2400, 0x4E20], 0x20)),
+        _ => {}
+    }
+    base
 }
 
 /// The directed profile of a module this file covers: its holds pace the
@@ -600,6 +651,52 @@ mod tests {
             n += 1;
         }
         assert_eq!(n, SETTLE_TICK_LIMIT - 1);
+    }
+
+    /// PROT 0925's camera: arm 0's cut on the stage origin, arm 3's and
+    /// arm 5's per-pass drifts (held or not), arm 5's cut on its pass, and
+    /// the tweens arms 6 and 8 re-arm on every pass ahead of their gates.
+    #[test]
+    fn the_spikefish_arms_carry_the_body_camera() {
+        let seats = ModuleCamSeats::default();
+        let mut st = ModuleCamState::default();
+        let a0 = spikefish_direct(&mut st, 0, seats);
+        let s = a0.shot.expect("arm 0 cuts");
+        assert_eq!(
+            (s.angles, s.tr, s.focus, s.frames),
+            ([0; 3], [0, 0x500, 0x300], [0; 3], 1)
+        );
+
+        st.countdown.0 = 5;
+        let held = spikefish_direct(&mut st, 3, seats);
+        assert!(held.hold && held.shot.is_none());
+        let d = held.drift.expect("arm 3 drifts while held");
+        assert_eq!((d.tr_y, d.tr_z, d.pitch, d.yaw), (-2, 8, 0, 0));
+
+        st.countdown.0 = 1;
+        let pass = spikefish_direct(&mut st, 5, seats);
+        assert!(!pass.hold);
+        let d = pass.drift.expect("arm 5 drifts on its pass too");
+        assert_eq!((d.pitch, d.yaw, d.tr_y, d.tr_z), (-1, 8, 12, 8));
+        let s = pass.shot.expect("arm 5 cuts on its pass");
+        assert_eq!(
+            (s.angles, s.tr, s.frames),
+            ([0x80, 0, 0], [0, 0x1400, 0x4000], 1)
+        );
+
+        for (arm, tr, frames) in [
+            (6, [0, 0x2400, 0x2400], 0x40),
+            (8, [0, 0x2400, 0x4E20], 0x20),
+        ] {
+            st.countdown.0 = 100;
+            let held = spikefish_direct(&mut st, arm, seats);
+            assert!(held.hold);
+            let s = held.shot.expect("re-armed on a held pass");
+            assert_eq!(
+                (s.angles, s.tr, s.focus, s.frames),
+                ([0; 3], tr, [0; 3], frames)
+            );
+        }
     }
 
     #[test]

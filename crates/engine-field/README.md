@@ -80,7 +80,9 @@ a dependent crate.
   scene MAN's partition scripts (record spans, the scratchpad / system
   flag sites, inline encounter records, BGM starts, stager installs),
   placement classification and carrier derivation (`FieldCarrierConfig`),
-  NPC motion legs and the walk-step speed ladder, scene-change triggers,
+  NPC motion legs and the walk-step speed ladder, the per-placement
+  conversation tree (`placement_dialog_tree`: every page, choice, branch
+  and next talk an interaction script reaches), scene-change triggers,
   and the system-flag / op-`0x49` window / motion-flag censuses over a set
   of MAN carriers. `engine-scene::man_census` holds the carrier
   resolution off a loaded `Scene` and the censuses' scene-name entry points.

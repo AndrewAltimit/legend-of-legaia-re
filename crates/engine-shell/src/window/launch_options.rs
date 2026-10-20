@@ -138,6 +138,22 @@ pub struct ScreenshotConfig {
         legaia_engine_camera::projection::BattleCamPose,
         legaia_engine_camera::projection::BattleCamPose,
     )>,
+    /// `LEGAIA_BATTLE_CAM_ALIGN_DISPLAYED=<16 numbers>`: the displayed
+    /// frame's live pose and the same endpoints, taken over
+    /// [`Self::battle_cam_align`]'s live pose when the engine's glide heads
+    /// for those endpoints on every component
+    /// ([`legaia_engine_battle_vm::battle_cam_script::BattleCamera::glide_endpoint_matches`]).
+    /// Set by the retail-compare image channel on a Done-band capture.
+    /// `LEGAIA_BATTLE_GROUND_SNAP=slot:x:z[:facing],...`: the capture's
+    /// combatants' live pairs and headings, by engine slot, which the captured
+    /// frame stands them on before the camera is aligned
+    /// ([`legaia_engine_capture::ground_snap`]). Set by the retail-compare
+    /// image channel on an action drive.
+    pub battle_ground_snap: Vec<legaia_engine_capture::ground_snap::GroundSnap>,
+    pub battle_cam_align_displayed: Option<(
+        legaia_engine_camera::projection::BattleCamPose,
+        legaia_engine_camera::projection::BattleCamPose,
+    )>,
     /// `LEGAIA_SEAT_HUD_GLIDES_LANDED=1`: the retail capture's HUD widget
     /// glides had all landed, so the captured frame lands the engine's too
     /// (`World::land_battle_hud_glides`). Set by the retail-compare image
@@ -250,6 +266,10 @@ pub struct ScreenshotConfig {
     /// beside the bars as the headless seed raises it
     /// (`World::raise_mystic_shield`). Cleared once raised.
     pub mystic_shield: std::cell::Cell<bool>,
+    /// `LEGAIA_SEAT_CAST_PARTS`: a captured cast's live slot-B parts, seated
+    /// over the replay's parts of the same records on the frame the capture
+    /// is taken (`SummonScene::install_part_snapshot`); taken once.
+    pub seat_cast_parts: std::cell::Cell<Option<Vec<legaia_engine_effects::summon::CastPartSeed>>>,
     /// `LEGAIA_SEAT_BATTLE_CLIPS=slot:clip:cursor,...`: each body's playing
     /// clip cursor as the capture held it, landed on the capture frame
     /// ([`legaia_engine_capture::clip_cursors`]).
@@ -519,6 +539,12 @@ impl ScreenshotConfig {
             battle_cam_align: std::env::var("LEGAIA_BATTLE_CAM_ALIGN")
                 .ok()
                 .and_then(|v| legaia_engine_capture::camera_align::cam_align_from_env(&v)),
+            battle_ground_snap: std::env::var("LEGAIA_BATTLE_GROUND_SNAP")
+                .map(|v| legaia_engine_capture::ground_snap::ground_snaps_from_env(&v))
+                .unwrap_or_default(),
+            battle_cam_align_displayed: std::env::var("LEGAIA_BATTLE_CAM_ALIGN_DISPLAYED")
+                .ok()
+                .and_then(|v| legaia_engine_capture::camera_align::cam_align_from_env(&v)),
             seat_hud_glides_landed: std::env::var_os("LEGAIA_SEAT_HUD_GLIDES_LANDED").is_some(),
             seat_hud_glides: std::env::var("LEGAIA_SEAT_HUD_GLIDES")
                 .map(|v| legaia_engine_capture::hud_glide::HudGlideSeat::list_from_env(&v))
@@ -595,6 +621,11 @@ impl ScreenshotConfig {
                 .unwrap_or_default(),
             mystic_shield: std::cell::Cell::new(
                 std::env::var("LEGAIA_BATTLE_MYSTIC_SHIELD").is_ok_and(|v| v.trim() == "1"),
+            ),
+            seat_cast_parts: std::cell::Cell::new(
+                std::env::var("LEGAIA_SEAT_CAST_PARTS")
+                    .ok()
+                    .map(|v| legaia_engine_capture::cast_parts::cast_parts_from_env(&v)),
             ),
         }))
     }

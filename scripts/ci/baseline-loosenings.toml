@@ -168,3 +168,29 @@ reason = "A monster cast's homing hit now turns its victim onto the caster (FUN_
 changes = [
   ["states/battle_gimard_tail_fire_b/image", 0.805, 0.782],
 ]
+
+[[loosening]]
+file = "scripts/ci/retail-compare-baseline.json"
+reason = "The port now runs FUN_80047430's in-range back-off (0x80047C3C..0x80047D1C): an attacker inside its reach steps back along its facing every frame of an Attack. Both captures are strike-loop or Done-band frames of a party combo, so the replayed strikes now stand the attacker at the edge of its reach and the hits, knockbacks and the undrift search's winning run land on another timeline. The phase seat (ground_snap) now stands every combatant on its captured ground, which lifts victory's camera to 1.0 and seven other combo frames; what these two frames still read is the replay's clock. rim_elm_gimard_victory shows the engine's Vahn on another keyframe of the Somersault under hit-spark rays drawn on its own rand() stream. noa_levelup_fight_pre's case-8 yaw reads the swing counter ctx[+0x6DA], which the capture holds at 724 and the replay at 644 - 80 frames apart, outside the clock's slack, so no alignment carries it; the old frame's counter sat nearer only because another undrift run won, and its yaw was off too (1245 against 1202, now 1274)."
+changes = [
+  ["states/noa_levelup_fight_pre/camera", 0.981, 0.971],
+  ["states/noa_levelup_fight_pre/image", 0.832, 0.787],
+  ["states/rim_elm_gimard_victory/image", 0.908, 0.841],
+]
+
+[[loosening]]
+file = "scripts/ci/retail-compare-baseline.json"
+reason = "The Auto | Command prompt 0x78 now keeps the member's case-0 close-up: its opening step 0x2A (FUN_801D388C body 0x801D3980) arms no framing, where the port had framed the enemy on case 1. noa_levelup_fight_pre's pad drive passes the prompt on every member's turn, so the replayed rounds reach the Done band on a camera history a step different; its case-8 yaw lands at 1276 against the previous 1274 (retail 1202 - the ctx[+0x6DA] clock gap the previous entry records), while the same run's image rose 0.787 -> 0.790. The rest of the battle set did not move on this change."
+changes = [
+  ["states/noa_levelup_fight_pre/camera", 0.971, 0.97],
+  # The net move against main, stacked on the back-off entry above.
+  ["states/noa_levelup_fight_pre/camera", 0.981, 0.97],
+  ["states/noa_levelup_fight_pre/image", 0.832, 0.79],
+]
+
+[[loosening]]
+file = "scripts/ci/retail-compare-baseline.json"
+reason = "Monster specials now roll on the move-power word FUN_801DD0AC actually reads (the whole +0 halfword, not its >> 2 modulus base), so Tail Fire deals retail's 10..22 instead of 6-7 and draws three stream values where the quartered roll's retry arm drew five. Every later draw moves, and with it the flame's particle realisation. Re-swept all 48 streams under the fixed roll: the best frame is 0xA54FF53A at 0.805 (old pin 0x1F83D9AB now 0.765); the 0.809 was the old stream's luck. The sibling battle_gimard_tail_fire_a rose 0.808 -> 0.818 on the same change."
+changes = [
+  ["states/battle_gimard_tail_fire_b/image", 0.809, 0.805],
+]

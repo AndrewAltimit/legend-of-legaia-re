@@ -22,7 +22,8 @@
 //!
 //! This type owns no second implementation of any of them: it is a
 //! [`SceneHost`] entered the way the play pages' scene picker enters it
-//! ([`legaia_engine_core::world::World::stage_picker_entry`] then
+//! ([`legaia_engine_core::world::World::stage_picker_entry`] and
+//! [`SceneHost::arm_picker_entry_seat`], then
 //! [`SceneHost::enter_field_scene`], or
 //! [`SceneHost::enter_world_map_scene`] for a kingdom map), stepped by
 //! [`SceneHost::tick`], and read through the same kernels the play hosts
@@ -156,6 +157,10 @@ impl LiveScene {
         // The scene picker's free-roam staging, the one rule both play hosts
         // apply to a picker entry.
         host.world.stage_picker_entry(name, false);
+        // ...and its seat: where the disc's doors land the party. The scene's
+        // NPCs face and walk relative to the player, so a preview seated
+        // elsewhere would animate a different scene than the page shows.
+        host.arm_picker_entry_seat(name);
         host.world.npcs.animate = true;
         let entered = if world_map {
             host.enter_world_map_scene(name)

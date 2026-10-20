@@ -17,6 +17,7 @@ mod tick;
 mod walk_on_triggers;
 mod world_map_scene;
 
+pub use entry_seat::PickerSeat;
 pub use fmv_handoff::*;
 
 /// Extraction index of `bse.dat`, the battle runtime SFX descriptor bank (raw

@@ -390,7 +390,7 @@ pub fn run_engine_battle(
                 let hp = if slot >= pc && victims.contains(&(slot - pc)) {
                     1
                 } else {
-                    c.hp
+                    battle.pre_action_hp(retail_slot(pc, slot), c)
                 };
                 Some(BarSeed {
                     slot: u8::try_from(slot).ok()?,
@@ -517,6 +517,11 @@ pub fn run_engine_battle(
                 }
                 if gate.met(&session.host.world) {
                     gate.align_camera(&mut session.host.world);
+                    if battle.cast_glide_aligned()
+                        && let Some(cam) = session.host.world.battle.camera.as_mut()
+                    {
+                        cam.align_glide_origin(battle.cam_tween.0, battle.cam_tween.1);
+                    }
                     phase_tick = Some(t);
                     break;
                 }
@@ -529,7 +534,42 @@ pub fn run_engine_battle(
         (SeedPlan::Menu { .. } | SeedPlan::Action { .. }, _) if prompt_tick.is_some() => {
             if let Some(drive) = battle.battle_drive() {
                 let track = session.host.bgm_track_word.or(director.last);
-                pre_drive = Some(combat_snapshot(&mut session.host.world, track));
+                let mut snap = combat_snapshot(&mut session.host.world, track);
+                // The bars were seeded ahead of the action's landed hits
+                // ([`RetailBattle::pre_action_hp`]); the channel scores the
+                // seed against the capture, so it reads them landed.
+                let dealt = |slot: u8, hp: u16| -> u16 {
+                    let sum: u32 = battle
+                        .action_hits
+                        .iter()
+                        .filter(|&&(s, _)| s == slot)
+                        .map(|&(_, v)| u32::from(v))
+                        .sum();
+                    (u32::from(hp).saturating_sub(sum)) as u16
+                };
+                for (s, c) in snap.party.iter_mut().enumerate() {
+                    if battle
+                        .party
+                        .get(s)
+                        .copied()
+                        .flatten()
+                        .is_some_and(|r| r.hp != 0)
+                    {
+                        c.hp = dealt(s as u8, c.hp);
+                    }
+                }
+                for (m, c) in snap.monsters.iter_mut().enumerate() {
+                    if battle
+                        .monsters
+                        .get(m)
+                        .copied()
+                        .flatten()
+                        .is_some_and(|r| r.hp != 0)
+                    {
+                        c.hp = dealt(3 + m as u8, c.hp);
+                    }
+                }
+                pre_drive = Some(snap);
                 driven = Some(run_drive(
                     &mut session,
                     &mut director,
@@ -620,14 +660,6 @@ pub fn run_engine_battle(
             p(battle.cam_tween.1)
         ));
     }
-    if matches!(driven, Some(Some(_)))
-        && let Some(cam) = session.host.world.battle.camera.as_mut()
-    {
-        let mask = cam.align_glide_origin(battle.cam_tween.0, battle.cam_tween.1);
-        if let Some(t) = cam_trace.as_mut() {
-            t.push_str(&format!(" | aligned {mask:#010b}"));
-        }
-    }
     if let Some(t) = cam_trace.as_mut() {
         let pc = usize::from(battle.party_count);
         let world = &session.host.world;
@@ -654,12 +686,12 @@ pub fn run_engine_battle(
             ));
         }
     }
-    let world = &session.host.world;
     // How far the drive moved each placed combatant: a capture of a running
     // action stands its combatants where the action had already moved them,
     // and the drive replays the action from there.
     let mut ground_drift = [None; legaia_engine_core::world::INFLIGHT_GROUND_SLOTS];
     if matches!(driven, Some(Some(_))) {
+        let world = &session.host.world;
         for (slot, d) in ground_drift.iter_mut().enumerate() {
             let (Some([gx, gz]), Some(a)) = (ground[slot], world.actors.get(slot)) else {
                 continue;
@@ -670,6 +702,27 @@ pub fn run_engine_battle(
             ]);
         }
     }
+    // With the drift measured, the combatants stand on the capture's own
+    // ground for the camera, which is then aligned against the framing its
+    // law arms there (`legaia_engine_capture::ground_snap`); the image child
+    // does the same at its frame (`LEGAIA_BATTLE_GROUND_SNAP`).
+    if matches!(driven, Some(Some(_))) {
+        let world = &mut session.host.world;
+        let target = legaia_engine_capture::ground_snap::snap_battle_ground(
+            world,
+            &battle.engine_ground_snaps(),
+        );
+        let mask = match (world.battle.camera.as_mut(), target) {
+            (Some(cam), Some(target)) => {
+                cam.align_glide_origin_to(battle.cam_tween.0, battle.cam_tween.1, target)
+            }
+            _ => 0,
+        };
+        if let Some(t) = cam_trace.as_mut() {
+            t.push_str(&format!(" | aligned {mask:#010b}"));
+        }
+    }
+    let world = &session.host.world;
     let pose = world.battle_cam_pose();
     let camera = CameraObs {
         pitch: pose.pitch.round() as i16,
@@ -718,6 +771,17 @@ pub fn run_engine_battle(
 }
 
 /// The combatant-side observables a battle state is scored on.
+/// Retail's pool slot for the engine's bar slot `slot`: party seats share
+/// the index, monster `m` sits at `pc + m` in the engine and `3 + m` in
+/// retail's actor table.
+fn retail_slot(pc: usize, slot: usize) -> u8 {
+    if slot < pc {
+        slot as u8
+    } else {
+        (3 + slot - pc) as u8
+    }
+}
+
 pub(super) struct CombatSnapshot {
     pub(super) mode: SceneMode,
     pub(super) monster_ids: Vec<Option<u16>>,

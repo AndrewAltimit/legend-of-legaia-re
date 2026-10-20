@@ -171,7 +171,7 @@ impl PlayWindowApp {
         };
         // The placed-object actor cull (`field_view_window::placed_actor_visible`),
         // the same gate the static placed pass asks.
-        let view_cells = legaia_engine_core::field_view_window::field_view_cells(
+        let view_cells = legaia_engine_world_views::field_view_window::field_view_cells(
             &self.session.host.world,
             legaia_engine_scene::field_view_window::framing_is_retail(&self.session.camera)
                 && !self.field_debug_camera,
@@ -198,7 +198,7 @@ impl PlayWindowApp {
                 }
                 None => base,
             };
-            if !legaia_engine_core::field_view_window::placed_actor_visible(
+            if !legaia_engine_world_views::field_view_window::placed_actor_visible(
                 &self.session.host.world,
                 view_cells.as_ref(),
                 model.w_axis.x as i32,

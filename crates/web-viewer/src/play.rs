@@ -58,7 +58,7 @@ pub struct FieldRender {
     /// Which placed-object sweep owns each placement draw (parallel to
     /// [`Self::placements`]): `Some` for the sub-area window sweep's, which
     /// [`LegaiaRuntime::field_placement_live`] gates on the world's windowed
-    /// static-object list through [`legaia_engine_core::scene_staging::placed_draw_live`] - the kernel
+    /// static-object list through [`legaia_engine_world_views::scene_staging::placed_draw_live`] - the kernel
     /// the native play-window asks per frame.
     pub window_keys: Vec<Option<field_env::PlacedWindowKey>>,
     /// Per-placement bind record (parallel to [`Self::placements`], `None` =

@@ -188,42 +188,7 @@ impl SceneDoors {
     /// containing record can't be attributed unambiguously). The slot is the
     /// index the `.MAP` kind-1 triggers reference.
     pub fn site_p2_slots(&self) -> Vec<Option<usize>> {
-        let Ok(mf) = man_section::parse(&self.decoded) else {
-            return vec![None; self.sites.len()];
-        };
-        let dro = mf.data_region_offset;
-        // Every record start (all partitions) + section starts bound a record.
-        let mut bounds: Vec<usize> = Vec::new();
-        for part in &mf.partitions {
-            for &off in part {
-                bounds.push(dro + off as usize);
-            }
-        }
-        for s in &mf.sections {
-            bounds.push(s.offset);
-        }
-        bounds.sort_unstable();
-        bounds.dedup();
-        self.sites
-            .iter()
-            .map(|site| {
-                if site.partition != 2 {
-                    return None;
-                }
-                // Containing P2 record: greatest P2 start <= op_pc, with no
-                // other record/section start between it and the op.
-                let (slot, start) = mf.partitions[2]
-                    .iter()
-                    .enumerate()
-                    .map(|(ri, &off)| (ri, dro + off as usize))
-                    .filter(|&(_, st)| st <= site.op_pc)
-                    .max_by_key(|&(_, st)| st)?;
-                let intruded = bounds
-                    .iter()
-                    .any(|&b| b > start && b <= site.op_pc && b != start);
-                (!intruded).then_some(slot)
-            })
-            .collect()
+        man_edit::site_p2_slots(&self.decoded, &self.sites)
     }
 
     /// Classify each site for shuffle eligibility (see the module doc), in

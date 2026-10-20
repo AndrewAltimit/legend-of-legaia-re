@@ -213,11 +213,17 @@ pub(super) fn run_battle(
                     let reaches = e.mode == legaia_engine_mode::mode::SceneMode::Battle
                         && e.driven.is_some_and(|d| d.is_some())
                         && e.age_short.is_none();
-                    if !reaches || rule_best.as_ref().is_some_and(|(_, _, r)| residual >= *r) {
+                    if !reaches {
                         break;
                     }
+                    // A worse round is not the end of the iteration: the
+                    // push a replay lands is not monotone in where it
+                    // starts, so the next round, taken on this one's drift,
+                    // can land nearer than any before it.
                     drift = e.ground_drift;
-                    rule_best = Some((b, e, residual));
+                    if !rule_best.as_ref().is_some_and(|(_, _, r)| residual >= *r) {
+                        rule_best = Some((b, e, residual));
+                    }
                 }
                 // The first rule has only to beat the first run. A later one
                 // replaces a rule that already stands the fight nearer only
@@ -392,6 +398,15 @@ pub(super) fn battle_image(
     if battle.mystic_shield {
         env.push(("LEGAIA_BATTLE_MYSTIC_SHIELD", "1".to_string()));
     }
+    // The cast's live parts where retail's passes had put them: a part
+    // rolled off `rand()` or aged by the frame-skip history stands where no
+    // replay reproduces.
+    if !battle.cast_parts.is_empty() {
+        env.push((
+            "LEGAIA_SEAT_CAST_PARTS",
+            legaia_engine_capture::cast_parts::cast_parts_env(&battle.cast_parts),
+        ));
+    }
     // The live effect scrollers' rects as the displayed frame held them: a
     // scroller's rotation count is time since its effect was seated.
     if let Some(kv) = retail.vram_rects_env(opts.out_dir, &entry.label) {
@@ -416,6 +431,17 @@ pub(super) fn battle_image(
     }
     // The captured phase's glide starts where retail's stood, as the
     // headless channel aligns it (`BattleCamera::align_glide_origin`).
+    // A replayed cast in the invoke `0x32`: the frame on screen is two game
+    // frames back along retail's ease (`RetailBattle::cast_glide_aligned`).
+    if battle.cast_glide_aligned() {
+        env.push((
+            "LEGAIA_BATTLE_CAM_ALIGN",
+            legaia_engine_capture::camera_align::cam_align_to_env(&(
+                battle.displayed_cam_live,
+                battle.cam_tween.1,
+            )),
+        ));
+    }
     if matches!(
         battle.battle_drive(),
         Some(legaia_engine_capture::battle_drive::BattleDrive::Action { .. })
@@ -428,6 +454,19 @@ pub(super) fn battle_image(
                 battle.cam_tween
             }),
         ));
+        env.push((
+            "LEGAIA_BATTLE_GROUND_SNAP",
+            legaia_engine_capture::ground_snap::ground_snaps_to_env(&battle.engine_ground_snaps()),
+        ));
+        if battle.displayed_camera_on_agreement() {
+            env.push((
+                "LEGAIA_BATTLE_CAM_ALIGN_DISPLAYED",
+                legaia_engine_capture::camera_align::cam_align_to_env(&(
+                    battle.displayed_cam_live,
+                    battle.cam_tween.1,
+                )),
+            ));
+        }
     }
     env.push((
         "LEGAIA_BATTLE_CAMERA_OPTION",
@@ -437,12 +476,15 @@ pub(super) fn battle_image(
     // rest seat whatever the replay's own seed-to-phase time was (a seat
     // seeded on its captured ground skips the approach retail spent the
     // sixteen-frame raise on).
-    if battle.hud_glides_landed {
+    // A menu capture whose displayed frame predates every glide in flight
+    // shows the surface before them, which the player sat on: landed.
+    let displayed_menu = battle.displayed_menu_flow().is_some();
+    if battle.hud_glides_landed || displayed_menu {
         env.push(("LEGAIA_SEAT_HUD_GLIDES_LANDED", "1".to_string()));
     }
     // Glides still in flight: each seated on the elapsed the displayed
     // frame shows (`HudGlideSeat`).
-    if !battle.hud_glides.is_empty() {
+    if !battle.hud_glides.is_empty() && !displayed_menu {
         env.push((
             "LEGAIA_SEAT_HUD_GLIDES",
             legaia_engine_capture::hud_glide::HudGlideSeat::to_env(&battle.hud_glides),
@@ -503,7 +545,7 @@ pub(super) fn battle_image(
     // A menu capture or any other action in flight is walked there through
     // the pad path, the same drive the headless seed ran, and captured the
     // first frame it holds.
-    if let Some(drive) = battle.battle_drive() {
+    if let Some(drive) = battle.image_drive() {
         if engine.driven == Some(None) {
             report.detail.insert(
                 "image".into(),

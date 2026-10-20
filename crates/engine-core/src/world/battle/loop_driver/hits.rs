@@ -686,11 +686,27 @@ impl World {
         // target's absorbed hit still charges its gauge.
         self.accrue_spirit_gauge(target, dmg);
         // A petrified target (Stone) absorbs the hit - no HP loss.
-        let dmg = if self.actor_is_petrified(target) {
-            0
-        } else {
-            dmg
-        };
+        let petrified = self.actor_is_petrified(target);
+        let dmg = if petrified { 0 } else { dmg };
+        // The kernel's on-hit strip: a target that is not Stone loses the
+        // wakes-when-hit family `0x0F80` of its status word on every hit
+        // (`lhu a1,0x16e(a2)`, the Stone test `andi 0x4` at `0x801EDA30`,
+        // then `andi v0,a1,0xf07f` / `sh v0,0x16e(a2)` at `0x801EDA5C`).
+        // Numb `0x400` among them: a member marked by a missed Kiss of
+        // Death wakes when struck, and is no longer passed over as inert by
+        // the anim tick (`0x80047640`) when its turn comes up.
+        // PORT: FUN_801EC3E4 (`0x801EDA28..0x801EDA60`, the on-hit strip)
+        if !petrified
+            && self.raw_status_word(target)
+                & legaia_engine_battle_vm::status_effects::display_flags::STONE
+                == 0
+        {
+            if let Some(t) = self.actors.get_mut(target_i) {
+                t.battle.field_flags &=
+                    !legaia_engine_battle_vm::status_effects::display_flags::DAMAGE_CLEARS;
+            }
+            self.battle.status_effects.on_damaged(target);
+        }
         // Accumulate: the combo total and the bar's owed delta, never live HP
         // (`0x801EDB40` / `0x801EDB58`; the bar ramp is what the player sees
         // falling hit by hit).

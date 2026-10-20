@@ -50,11 +50,16 @@
       <div class="card-body">Run the randomizer client-side: supply your own disc image, toggle the settings, download a patched image. The patch runs in WASM in your tab.</div>
     </a>
     <a class="card" href="randomizer.html">
-      <div class="card-title">Randomizer / disc patcher</div>
+      <div class="card-title">Randomizer and disc patcher</div>
       <div class="card-body">The full CLI reference: loot, encounters, monster stats, shops, doors, arts, the starting party, tuning sliders, and the code-hook features retail has no table for.</div>
     </a>
+    <a class="card" href="randomizer-internals.html">
+      <span class="card-kicker">Companion to Randomizer</span>
+      <div class="card-title">Randomizer: internals</div>
+      <div class="card-body">How an edit travels from a PROT entry to a rewritten disc sector, the techniques every feature is built from, and where injected MIPS code is allowed to live.</div>
+    </a>
     <a class="card" href="translation.html">
-      <div class="card-title">Translation / language packs</div>
+      <div class="card-title">Translation packs</div>
       <div class="card-body"><code>legaia-patcher translate</code> exports a disc's text as an editable YAML pack and applies a filled pack back as a same-size patch. Built for community translations.</div>
     </a>
     <a class="card" href="translation-workbench.html">
@@ -99,13 +104,13 @@
       <div class="card-title">Overlay capture</div>
       <div class="card-body">Slice the RAM-resident overlays out of a save state and import them into Ghidra at the right base. The dynamic complement to the static pipeline.</div>
     </a>
-    <a class="card" href="pcsx-redux-automation.html">
-      <div class="card-title">PCSX-Redux automation</div>
-      <div class="card-body">Closed-loop Lua probes: load a save state, arm breakpoints, run N frames, write CSV or a snapshot. Quick start, probe catalogue, authoring pattern.</div>
-    </a>
     <a class="card" href="mednafen-automation.html">
       <div class="card-title">Mednafen automation</div>
       <div class="card-body">Scriptable substitute for an interactive memory-watchpoint debugger: pairwise save-state diffs, write-transition bisection, declarative scenarios.</div>
+    </a>
+    <a class="card" href="pcsx-redux-automation.html">
+      <div class="card-title">PCSX-Redux automation</div>
+      <div class="card-body">Closed-loop Lua probes: load a save state, arm breakpoints, run N frames, write CSV or a snapshot. Quick start, probe catalogue, authoring pattern.</div>
     </a>
     <a class="card" href="spine-flag-writers-capture.html">
       <div class="card-title">Spine flag-writers capture</div>

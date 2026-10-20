@@ -25,7 +25,11 @@ hiding one and keeping the other is not a safe simplification on its own.
 `NAV` in `layout.js` is the single source of truth for page order, the docs
 sidebar, prev / next and the explore sidebar's groups. A page exists for the
 shell only when it has a `NAV` entry, and exists at all only when `_gen.py`
-writes it - a new page needs both.
+writes it - a new page needs both. `check-site-links.py` holds the two tables
+to each other: a `PAGES` row with no `NAV` key is an orphan (the sidebar,
+prev / next and search never list it), and a `NAV` href the generator never
+writes is a dead sidebar row. Neither appears as an href in the generated
+HTML, so the page-link scan alone cannot see them.
 
 Three fields shape what a reader sees:
 
@@ -35,11 +39,39 @@ Three fields shape what a reader sees:
 - **`{ heading: '...' }` rows are group subheads.** They render as
   `.sidebar-subhead` inside a long section and are not pages: every walker of
   `NAV` items skips a row with no `key`, which is what keeps them out of
-  prev / next and the explore groups.
+  prev / next and the explore groups. The sidebar wraps each subhead and the
+  items up to the next one in a `.sidebar-group`: the subhead is drawn as an
+  underlined accent label and the items hang off a guide rail
+  (`.sidebar-group-items`), so a grouped section reads as a tree.
 - **Long sections open collapsed.** `COLLAPSED_BY_DEFAULT` names the reference
   sections; one opens when it holds the current page or the reader opened it
   before. Five of them expanded at once is a 150-row list that buries the two
   short sections a newcomer wants.
+
+Every long section is grouped, and the groups are not the sidebar's alone: a
+section's index page (`site/_content/<section>/index.html`) presents its cards
+under the same headings in the same order, and for the formats section so do
+`docs/formats/overview.md` and the formats table in `CLAUDE.md`. Moving a page
+between groups means moving it in each. Items inside a group run from overview
+to detail; a companion page (internals, a runbook, a sub-reference) is
+indented under the page it extends.
+
+The explore sidebar is built from `EXPLORE_GROUPS` rather than from `NAV`
+sections. A `'#Name'` entry in a group's `keys` is a subhead row there, the
+explore counterpart of a `{ heading }` row.
+
+Two things the shell derives from `NAV` instead of trusting the page:
+
+- **The breadcrumb.** Each page's hand-written `.breadcrumb` is the no-JS
+  fallback; `syncBreadcrumb()` rewrites it on docs pages as Home, the section
+  (linked to its index when it has one), any series index or indented parent
+  above the page, then the page's own sidebar label. Hand-written trails had
+  drifted - some linked their section, some did not, and leaves kept the
+  wording of a page's first draft.
+- **The drawer's scroll position.** `revealActiveRow()` scrolls the current
+  page's row into view after the saved scroll position is restored and every
+  time the phone drawer opens. Without it the drawer opened on the two
+  always-expanded sections, with the reader's own page below its fold.
 
 ## Themes
 
@@ -314,10 +346,27 @@ await ctx.addInitScript(() => {
 
 ## Script cache-busting is content-addressed
 
-`site/_gen.py` rewrites every `js/*.js` reference in every generated page to
-carry `?v=<content hash>`, discarding whatever marker the `_content` source
-had. Do not hand-write a version marker in `_content` - it is overwritten, and
-maintaining one is maintaining a lie.
+`site/_gen.py` rewrites every `js/*.js` reference and every linked `css/*.css`
+stylesheet in every generated page to carry `?v=<content hash>`, discarding
+whatever marker the `_content` source had. Do not hand-write a version marker
+in `_content` - it is overwritten, and maintaining one is maintaining a lie.
+
+The stylesheet was the last unstamped file, and it shows what an unstamped
+asset beside stamped ones does. `python3 -m http.server` sends `Last-Modified`
+and no `Cache-Control`, so Firefox treats a cached `styles.css` as
+heuristically fresh for a tenth of its age and reuses it after it has changed,
+while the `layout.js` beside it is current. New chrome then renders against old
+rules: a page served over the LAN came up partly styled. GitHub Pages sends
+`max-age=600` and never showed it.
+
+The web fonts are linked from the page head (`FONT_LINKS` in `_gen.py`), not
+`@import`ed from `styles.css`. An `@import` holds the stylesheet's load until a
+second, third-party fetch completes, and a parser-blocking stylesheet holds the
+page's scripts with it - so a client with a slow route to the font origin got a
+blank or half-built page for as long as that request took. The font sheet loads
+as `media="print"` and switches itself to `all` on load, which keeps it off
+the render-blocking path; text paints on the fallback stack until it arrives,
+as `display=swap` already does.
 
 Hand-written markers were the previous scheme and they fail silently: they only
 bust when someone remembers to bump them, and a forgotten bump is

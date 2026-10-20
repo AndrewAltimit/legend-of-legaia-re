@@ -45,7 +45,7 @@ pub const TIMED_FIGHT_HP_LEFT_X: i32 = 0xD2;
 pub const TIMED_FIGHT_HP_LEFT_DIGITS: usize = 3;
 
 /// One frame of the strip, projected by the host from
-/// `legaia_engine_core::world_views::timed_fight::timed_fight_strip`.
+/// `legaia_engine_world_views::timed_fight::timed_fight_strip`.
 #[derive(Debug, Clone, Copy)]
 pub struct TimedFightStripView<'a> {
     /// The format string off the disc (the two field labels, space padded).

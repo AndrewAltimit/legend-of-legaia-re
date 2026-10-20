@@ -204,7 +204,7 @@ pub fn two_line_choice_panel_draws_for(
 /// Its six labels are **static VAs in the menu overlay's own pool**, loaded
 /// by the `lui a0,0x801d` + `addiu` pairs at `0x801d636c..0x801d6448` - a
 /// multi-line battle briefing plus a one-byte control string, not content
-/// the entry-context record owns. `engine-core::world_views::pause_screens` carries the
+/// the entry-context record owns. `engine-world-views::pause_screens` carries the
 /// six coordinates and reads the text out of the caller's own image.
 ///
 /// PORT: FUN_801D6360

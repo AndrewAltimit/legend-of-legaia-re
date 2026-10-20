@@ -8,6 +8,14 @@ which mirror the same hrefs) and validates:
   - fragment links (`page.html#anchor` and bare `#anchor`) point at an
     element id that exists in the target page
 
+  - the sidebar `NAV` in site/js/layout.js and the page table `PAGES` in
+    site/_gen.py agree: every NAV href is a page the generator writes, and
+    every generated page has a NAV entry. The sidebar, prev / next and the
+    search index are all built from NAV at runtime, so a page missing from it
+    is an orphan no generated link points at, and a NAV href the generator
+    never writes is a dead sidebar row - neither shows up as an href in the
+    generated HTML, which is all the scan above can see.
+
 External links (http/https/mailto/data/javascript) are out of scope - this
 is the "no broken internal navigation" gate, not a crawler.
 
@@ -22,6 +30,7 @@ it when staged changes touch site/).
 from __future__ import annotations
 
 import argparse
+import ast
 import re
 import sys
 from html.parser import HTMLParser
@@ -62,6 +71,43 @@ def _parse(path: Path) -> _LinkParser:
     parser = _LinkParser()
     parser.feed(path.read_text(encoding="utf-8", errors="replace"))
     return parser
+
+
+NAV_ITEM = re.compile(r"\{\s*href:\s*'([^']+)'[^}]*?\bkey:\s*'([^']+)'")
+
+
+def _nav_items() -> list[tuple[str, str]]:
+    """(href, key) of every page row in layout.js's NAV (subheads have no key)."""
+    js = (SITE / "js" / "layout.js").read_text(encoding="utf-8")
+    start = js.index("const NAV = [")
+    end = js.index("\n];", start)
+    return NAV_ITEM.findall(js[start:end])
+
+
+def _gen_pages() -> list[tuple[str, str]]:
+    """(out_path, active_key) of every page site/_gen.py writes."""
+    tree = ast.parse((SITE / "_gen.py").read_text(encoding="utf-8"))
+    for node in tree.body:
+        target = node.target if isinstance(node, ast.AnnAssign) else (
+            node.targets[0] if isinstance(node, ast.Assign) else None)
+        if getattr(target, "id", None) == "PAGES":
+            return [(row[0], row[2]) for row in ast.literal_eval(node.value)]
+    raise SystemExit("site/_gen.py: no PAGES table found")
+
+
+def _nav_violations() -> list[str]:
+    nav = _nav_items()
+    pages = _gen_pages()
+    written = {out for out, _key in pages}
+    nav_keys = {key for _href, key in nav}
+    out: list[str] = []
+    for href, key in nav:
+        if href not in written:
+            out.append(f"site/js/layout.js: NAV row '{key}' links '{href}', which site/_gen.py never writes")
+    for page, key in pages:
+        if key not in nav_keys:
+            out.append(f"site/_gen.py: page '{page}' (key '{key}') has no NAV entry - an orphan the sidebar never lists")
+    return out
 
 
 def main() -> int:
@@ -116,6 +162,8 @@ def main() -> int:
                     violations.append(
                         f"{rel_page}:{line}: missing anchor '{path_part}#{frag}'"
                     )
+
+    violations.extend(_nav_violations())
 
     for v in violations:
         print(v)

@@ -236,6 +236,20 @@ impl World {
         true
     }
 
+    /// Arm a party member's turn with no command: category `0`, which the
+    /// action seed sends straight to the Done band (`0x801E2E0C`) - the
+    /// turn of a member the command ring passed over for its status word.
+    pub(in crate::world) fn arm_party_no_command(&mut self, slot: u8) {
+        use legaia_engine_battle_vm::battle_action::ActionState;
+        self.battle_ctx.active_actor = slot;
+        self.clear_action_stream(slot);
+        self.battle_ctx.queued_action = 0;
+        self.battle_ctx.action_state = ActionState::Begin.as_byte();
+        if let Some(a) = self.actors.get_mut(slot as usize) {
+            a.battle.action_category = 0;
+        }
+    }
+
     pub(in crate::world) fn arm_party_physical(&mut self, slot: u8) {
         use legaia_engine_battle_vm::battle_action::ActionState;
         if self.arm_ai_companion(slot) {

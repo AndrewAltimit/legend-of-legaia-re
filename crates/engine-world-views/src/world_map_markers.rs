@@ -5,12 +5,12 @@
 //! 320x240 display and the occlusion depth - is
 //! [`legaia_engine_field::world_map_markers`]. What reads the world stays
 //! here: the debug-overlay gate
-//! ([`crate::world::WorldToggles::overworld_marker_overlay`], off by default:
+//! ([`legaia_engine_core::world::WorldToggles::overworld_marker_overlay`], off by default:
 //! a retail frame at a town entrance shows the town's mesh and no post over
 //! it), the floor height a marker stands on, and the mode / cutscene gates.
 //! The player's marker is a stand-in for a missing leader mesh and stays on.
 
-use crate::world::World;
+use legaia_engine_core::world::World;
 use legaia_engine_field::camera_frame;
 use legaia_engine_field::camera_frame::FieldCameraFrame;
 use legaia_engine_field::world_map_markers::{
@@ -19,7 +19,7 @@ use legaia_engine_field::world_map_markers::{
 };
 
 /// Every marker segment this frame: one set per placed entity while the
-/// debug overlay is up ([`crate::world::WorldToggles::overworld_marker_overlay`]),
+/// debug overlay is up ([`legaia_engine_core::world::WorldToggles::overworld_marker_overlay`]),
 /// plus the player's when `draw_player` (a host passes `false` while it draws
 /// the party leader's real mesh, which the marker would otherwise stab
 /// through).
@@ -111,7 +111,7 @@ mod tests {
     #[test]
     fn player_marker_projects_on_screen_under_the_walk_camera() {
         let w = world_map_world();
-        let frame = crate::camera_view::resolve_field_camera(
+        let frame = legaia_engine_core::camera_view::resolve_field_camera(
             &w,
             &legaia_engine_field::camera::Camera::default(),
             None,
@@ -134,7 +134,7 @@ mod tests {
     #[test]
     fn no_player_marker_when_the_host_draws_the_mesh() {
         let w = world_map_world();
-        let frame = crate::camera_view::resolve_field_camera(
+        let frame = legaia_engine_core::camera_view::resolve_field_camera(
             &w,
             &legaia_engine_field::camera::Camera::default(),
             None,
@@ -171,7 +171,7 @@ mod tests {
     #[test]
     fn walk_camera_quads_carry_scene_depth() {
         let w = world_map_world();
-        let frame = crate::camera_view::resolve_field_camera(
+        let frame = legaia_engine_core::camera_view::resolve_field_camera(
             &w,
             &legaia_engine_field::camera::Camera::default(),
             None,

@@ -597,7 +597,7 @@ pub fn goods_candidate_accepts(kind: u8, marker: u8) -> bool {
 /// three Goods slots' candidate list through this whenever the session
 /// carries disc restrictions (a `GoodsIndexTables` adapter answers the two
 /// questions the filter asks from `DiscEquipInfo::install_goods`), and
-/// `legaia_engine_core::world_views::pause_screens` hands those rows to both hosts' equip screen. So
+/// `legaia_engine_world_views::pause_screens` hands those rows to both hosts' equip screen. So
 /// the Goods list is retail's shape - Remove always first, the equipped item
 /// second as a no-commit row, then bag slots in slot order - while the four
 /// armament lists keep the engine's id-sorted rows.

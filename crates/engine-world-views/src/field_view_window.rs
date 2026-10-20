@@ -3,19 +3,45 @@
 //! The crop kernel - the cell rectangle one frame of `FUN_801F7088` walks and
 //! its per-cell gates - is [`legaia_engine_scene::field_view_window`], which
 //! names no `World`. This module holds what reads one: whether a host crops
-//! this frame at all, and the placed-actor and field-NPC gates that run the
-//! world's own cull.
+//! this frame at all, the placed-actor and field-NPC gates that run the
+//! world's own cull, and whether the frame's camera stands where retail's
+//! would ([`retail_vantage`]).
 
-use crate::world::World;
+use legaia_engine_core::world::World;
+use legaia_engine_field::camera::Camera;
 use legaia_engine_mode::mode::SceneMode;
-use legaia_engine_scene::field_view_window::{ViewCells, view_cells};
+use legaia_engine_scene::field_view_window::{ViewCells, framing_is_retail, view_cells};
+
+/// Whether this frame's camera stands where retail's would: the host's own
+/// debug vantage (`F3`, `debug_camera`) is off, and the frame is a battle
+/// frame (the phase camera), a scripted shot
+/// ([`legaia_engine_core::camera_view::cutscene_owns_camera`] - the cutscene
+/// arm reads none of the user's follow knobs), or the follow camera at
+/// retail framing ([`framing_is_retail`]: the `Retail` distance preset with
+/// the drag / tilt / zoom knobs at identity).
+///
+/// Both play hosts gate retail's **placed-object near reject** on it
+/// (`field_env::placed_origin_near_culled`). That rule drops a whole placed
+/// object by its *origin's* view depth, which is only a fair proxy for the
+/// object's extent inside retail's own frustum. A follow camera swung,
+/// tilted toward the horizon or wheeled in close puts a large ground slab's
+/// origin beside or behind the lens while most of the slab is in shot, and
+/// the reject then removed it whole - `town01`'s floor chunks vanishing as
+/// the camera swung. Off retail's vantage the object draws and the
+/// per-primitive near reject trims whatever of it sits at the lens.
+pub fn retail_vantage(world: &World, camera: &Camera, debug_camera: bool) -> bool {
+    !debug_camera
+        && (world.mode == SceneMode::Battle
+            || legaia_engine_core::camera_view::cutscene_owns_camera(world)
+            || framing_is_retail(camera))
+}
 
 /// This frame's cell rectangle, or `None` when the host should draw the whole
 /// map - the one entry point both play hosts ask.
 ///
 /// `None` when:
 ///
-/// - the crop knob is off ([`crate::world::WorldToggles::view_window_crop`],
+/// - the crop knob is off ([`legaia_engine_core::world::WorldToggles::view_window_crop`],
 ///   from [`legaia_engine_menus::options::OptionsState::retail_view_window`]);
 /// - `retail_framing` is false - the host passes [`framing_is_retail`] and
 ///   clears it under its own debug camera. The window is authored for
@@ -25,7 +51,7 @@ use legaia_engine_scene::field_view_window::{ViewCells, view_cells};
 /// - the world is not in [`SceneMode::Field`]: the kingdom overworld is drawn
 ///   by the PROT 0901 library, not by the pair this module ports, and the
 ///   other modes draw no `.MAP` cells;
-/// - no camera view is published yet ([`crate::world::FieldNpcState::cull_view`]
+/// - no camera view is published yet ([`legaia_engine_core::world::FieldNpcState::cull_view`]
 ///   is `None` until the zone follow camera composes);
 /// - the focus tile lies outside the region box. Retail latches the box at
 ///   the camera's own re-centre tile (`FUN_80017DD4`), so the two agree by
@@ -68,7 +94,7 @@ pub fn field_view_cells(world: &World, retail_framing: bool) -> Option<ViewCells
 /// `FUN_8001ADA4` skips any actor carrying `flags & 0xA`
 /// (`0x8001AE4C..0x8001AE58`), so a culled object draws nothing. Over the
 /// 84 placed-object actors of each `rikuroa` capture
-/// ([`crate::world::field_npc_cull::field_actor_culled`] fed the state's
+/// ([`legaia_engine_core::world::field_npc_cull::field_actor_culled`] fed the state's
 /// focus, box and window) the kernel reproduces bit 1 for every one -
 /// including the ring of moss spires on the slopes below the summit, which
 /// retail never draws from it.
@@ -127,6 +153,33 @@ mod tests {
             focus_stored: [-4160, -11840],
             attr_box: [20, 77, 44, 108],
             window: [-8, -6, 8, 12],
+        }
+    }
+
+    /// The follow camera's knobs, a wider distance preset and the debug
+    /// vantage take the frame off retail's vantage; battle keeps it whatever
+    /// the field knobs hold.
+    #[test]
+    fn retail_vantage_is_the_retail_follow_framing_or_a_battle_frame() {
+        use legaia_engine_field::camera::CameraDistance;
+        let mut world = World::new();
+        world.mode = SceneMode::Field;
+        let cam = Camera::default();
+        assert!(retail_vantage(&world, &cam, false));
+        assert!(!retail_vantage(&world, &cam, true), "F3 debug vantage");
+        let knobs: [fn(&mut Camera); 4] = [
+            |c| c.manual_orbit = 0.8,
+            |c| c.manual_tilt = -0.4,
+            |c| c.manual_zoom = 0.5,
+            |c| c.distance = CameraDistance::Far,
+        ];
+        for knob in knobs {
+            let mut c = Camera::default();
+            knob(&mut c);
+            assert!(!retail_vantage(&world, &c, false));
+            world.mode = SceneMode::Battle;
+            assert!(retail_vantage(&world, &c, false), "the phase camera");
+            world.mode = SceneMode::Field;
         }
     }
 

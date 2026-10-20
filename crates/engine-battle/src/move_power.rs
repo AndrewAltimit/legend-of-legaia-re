@@ -113,11 +113,16 @@ impl MovePowerCatalog {
         self.table.get(idx)
     }
 
-    /// The roll-modulus base power `FUN_801dd0ac` derives from a move id's
-    /// record (`(i16)power >> 2`), or `None` when the id has no record. This is
-    /// the `power` fed to [`legaia_engine_battle_vm::battle_formulas::arts_physical_predamage`].
+    /// The `+0` power word of a move id's record, sign-extended and
+    /// **unshifted**, or `None` when the id has no record. This is the `power`
+    /// fed to [`legaia_engine_battle_vm::battle_formulas::arts_physical_predamage`]:
+    /// `FUN_801dd0ac` adds the whole word to the attacker roll (`sra a1,a1,0x10`
+    /// at `0x801dd240`, `addu` at `0x801dd254`) and derives its `>> 2` / `>> 1` /
+    /// `>> 3` terms from it itself, so passing the `>> 2` modulus base
+    /// ([`MoveRecord::power`]) would shift twice.
     pub fn power_for_move_id(&self, move_id: u8) -> Option<i32> {
-        self.record_for_move_id(move_id).map(|r| r.power())
+        self.record_for_move_id(move_id)
+            .map(|r| i32::from(r.power_raw))
     }
 
     /// The auxiliary spawn-prototype / SFX tables, when the overlay reached
@@ -343,7 +348,7 @@ mod tests {
         // map[4] = 1 (the structural guard + first mapped id), map[5] = 2.
         buf[MOVE_ID_INDEX_MAP_FILE_OFFSET + 4] = 1;
         buf[MOVE_ID_INDEX_MAP_FILE_OFFSET + 5] = 2;
-        // table record 1 power 0x02ee (>>2 = 187), record 2 power 0x09c4 (625).
+        // table record 1 power 0x02ee (750, >>2 = 187), record 2 power 0x09c4 (2500).
         buf[MOVE_POWER_TABLE_FILE_OFFSET + MOVE_POWER_RECORD_STRIDE] = 0xee;
         buf[MOVE_POWER_TABLE_FILE_OFFSET + MOVE_POWER_RECORD_STRIDE + 1] = 0x02;
         buf[MOVE_POWER_TABLE_FILE_OFFSET + MOVE_POWER_RECORD_STRIDE * 2] = 0xc4;
@@ -354,8 +359,8 @@ mod tests {
     #[test]
     fn resolves_move_ids_through_the_map() {
         let cat = MovePowerCatalog::from_overlay_0898(&synthetic_overlay()).expect("parses");
-        assert_eq!(cat.power_for_move_id(4), Some(187));
-        assert_eq!(cat.power_for_move_id(5), Some(625));
+        assert_eq!(cat.power_for_move_id(4), Some(750));
+        assert_eq!(cat.power_for_move_id(5), Some(2500));
         // Unmapped ids (map byte 0) resolve to no record.
         assert_eq!(cat.power_for_move_id(6), None);
         assert_eq!(cat.power_for_move_id(0), None);

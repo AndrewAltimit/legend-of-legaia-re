@@ -180,6 +180,15 @@ impl MuscleDomeSurface {
                     self.assets = Some(Arc::new(a));
                     self.failed = None;
                     self.generation = self.generation.wrapping_add(1);
+                    // The posed buffers are built once per seat (`pose`'s
+                    // `get_or_insert_with`), so a new pair must drop the old
+                    // seat's: kept, the next opponent was posed into the last
+                    // one's indices / UVs / CBA and body offsets - the round-2
+                    // corrupt opponent on a host that re-seats without a
+                    // session-less frame between legs (the minigames page).
+                    // The idle clips restart with the seat, as a fresh load's.
+                    self.scene = None;
+                    self.tick = 0;
                     self.reseat();
                 }
                 None => {

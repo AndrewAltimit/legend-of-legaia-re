@@ -324,6 +324,11 @@ impl SceneHost {
         let operand = self.pending_entry_seat.take().or_else(|| {
             new_game_seat.filter(|_| name == legaia_game_tables::new_game::OPENING_CUTSCENE_SCENE)
         });
+        // A scene-picker entry's ranked door arrivals
+        // (`SceneHost::arm_picker_entry_seat`), spent by this entry whether or
+        // not an operand overrides them.
+        let picker_arrivals = self.pending_picker_arrivals.take();
+        self.picker_seat = None;
         let cold = legaia_engine_system::mode_entry_init::field_spawn(
             legaia_engine_system::mode_entry_init::FieldEntryMode::Cold,
             operand.unwrap_or((0, 0)),
@@ -463,12 +468,57 @@ impl SceneHost {
             .chain(self.field_intra_teleports.1.iter())
             .map(|t| t.dest_world())
             .collect();
-        let resolved = match operand {
-            Some(seat) => seat,
-            None => self
+        // A picker entry first tries where the disc's doors land the party
+        // (`World::picker_arrival_seat`); an arrival the scene's grid rejects,
+        // or a scene no door leads into, falls through to the cold resolver.
+        let picker_arrival = match (operand, picker_arrivals.as_deref()) {
+            (None, Some(ranked)) if !ranked.is_empty() => {
+                let spots: Vec<(i16, i16)> = ranked.iter().map(|a| a.world_xz()).collect();
+                // Never seat a picker visit on a tile the first tick's
+                // stale-tile compare would fire: a kind-0 pad or a gate-1
+                // walk-on trigger (an exit, or the arrival's cutscene beat).
+                let mut avoid = teleport_tiles.clone();
+                avoid.extend(
+                    self.field_triggers
+                        .0
+                        .iter()
+                        .chain(self.field_triggers.1.iter())
+                        .filter(|t| t.gate == 1)
+                        .map(|t| (t.tile_x, t.tile_z)),
+                );
+                self.world
+                    .picker_arrival_seat(&spots, &avoid)
+                    .map(|(i, seat)| (ranked[i].clone(), seat, i))
+            }
+            _ => None,
+        };
+        let resolved = match (operand, &picker_arrival) {
+            (Some(seat), _) => seat,
+            (None, Some((_, seat, _))) => *seat,
+            (None, None) => self
                 .world
                 .resolve_cold_field_spawn(&teleport_tiles, &anchors),
         };
+        if operand.is_none()
+            && let Some(ranked) = picker_arrivals.as_deref()
+        {
+            self.picker_seat = Some(match &picker_arrival {
+                Some((arrival, seat, rejected)) => {
+                    // The door's facing: armed for the entry script's
+                    // `4C 3A` and applied now, as the `0x3F` arrival does.
+                    self.world.face_player_sector(arrival.dir);
+                    crate::scene_host::PickerSeat::Arrival {
+                        arrival: arrival.clone(),
+                        seat: *seat,
+                        rejected: *rejected,
+                    }
+                }
+                None => crate::scene_host::PickerSeat::ColdFallback {
+                    arrivals: ranked.len(),
+                    seat: resolved,
+                },
+            });
+        }
         // Remembered for the helper-context teardown rescue: a spawned
         // record that ends with the player inside a wall re-seats them here
         // (see `World::step_helper_contexts`).

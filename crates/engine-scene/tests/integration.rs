@@ -41,6 +41,7 @@ mod minigame_polar_trig_tables_disc;
 mod model_bank_disc;
 mod motion_flag_census_disc;
 mod move_vm_ext_size_uru2_disc;
+mod npc_dialog_tree_disc;
 mod op49_sub_op_census;
 mod op49_window_census_disc;
 mod opdeene_narration;

@@ -2149,6 +2149,7 @@ dependencies = [
  "legaia-engine-field",
  "legaia-engine-scene",
  "legaia-engine-vm",
+ "legaia-engine-world-views",
  "legaia-game-tables",
  "legaia-scene-formats",
  "legaia-tim",
@@ -2391,6 +2392,7 @@ dependencies = [
  "legaia-engine-scene",
  "legaia-engine-system",
  "legaia-engine-vm",
+ "legaia-engine-world-views",
  "legaia-font",
  "legaia-game-tables",
  "legaia-gamedata",
@@ -2432,6 +2434,7 @@ dependencies = [
  "legaia-engine-scene-host",
  "legaia-engine-system",
  "legaia-engine-ui",
+ "legaia-engine-world-views",
  "legaia-font",
  "legaia-game-tables",
  "legaia-minigame-formats",
@@ -2449,6 +2452,7 @@ dependencies = [
  "legaia-container-formats",
  "legaia-engine-audio",
  "legaia-engine-battle",
+ "legaia-engine-battle-hud",
  "legaia-engine-battle-vm",
  "legaia-engine-cheats",
  "legaia-engine-core",
@@ -2463,6 +2467,7 @@ dependencies = [
  "legaia-engine-scene-host",
  "legaia-engine-system",
  "legaia-engine-vm",
+ "legaia-engine-world-views",
  "legaia-font",
  "legaia-game-tables",
  "legaia-iso",
@@ -2520,6 +2525,7 @@ dependencies = [
  "legaia-engine-session",
  "legaia-engine-system",
  "legaia-engine-ui",
+ "legaia-engine-world-views",
  "legaia-font",
  "legaia-game-tables",
  "legaia-iso",
@@ -2596,6 +2602,30 @@ dependencies = [
  "legaia-minigame-formats",
  "legaia-prot",
  "legaia-scene-formats",
+]
+
+[[package]]
+name = "legaia-engine-world-views"
+version = "0.1.0"
+dependencies = [
+ "legaia-container-formats",
+ "legaia-engine-battle",
+ "legaia-engine-camera",
+ "legaia-engine-core",
+ "legaia-engine-effects",
+ "legaia-engine-field",
+ "legaia-engine-menus",
+ "legaia-engine-minigames",
+ "legaia-engine-mode",
+ "legaia-engine-scene",
+ "legaia-engine-system",
+ "legaia-lzs",
+ "legaia-render-kernels",
+ "legaia-save",
+ "legaia-scene-formats",
+ "legaia-tim",
+ "legaia-tmd",
+ "legaia-ui-formats",
 ]
 
 [[package]]
@@ -3124,6 +3154,7 @@ dependencies = [
  "legaia-engine-system",
  "legaia-engine-ui",
  "legaia-engine-vm",
+ "legaia-engine-world-views",
  "legaia-font",
  "legaia-game-tables",
  "legaia-gamedata",

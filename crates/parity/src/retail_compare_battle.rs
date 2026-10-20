@@ -107,6 +107,8 @@ pub(crate) const BATTLE_ENTRY_TAIL_FLAGS: [u16; 3] = [
 ];
 /// The options screen's Battle Camera config word.
 const BATTLE_CAMERA_OPTION: u32 = 0x8008_46C0;
+/// The options screen's Select Attack config word.
+const SELECT_ATTACK_OPTION: u32 = 0x8008_46C4;
 /// Eight-slot battle actor pointer table.
 const ACTOR_TABLE: u32 = 0x801C_9370;
 /// The tint-state byte `actor[+0x21C]`'s defeat-fade value.
@@ -230,7 +232,7 @@ pub const BATTLE_RNG_PINS: &[(&str, u32)] = &[
     ("battle_gaza2_park_0x19", 0xAB1C_5ED5),
     ("battle_gaza2_park_0x19_summon_melee", 0xBC5D_413F),
     ("battle_gaza2_park_0x19_target_vahn", 0x428A_2F98),
-    ("battle_gimard_tail_fire_b", 0x1F83_D9AB),
+    ("battle_gimard_tail_fire_b", 0xA54F_F53A),
     ("battle_melee_hit_spark", 0x9E37_79B9),
     ("battle_noa_miracle_art_combo", 0x1283_5B01),
     ("battle_vahn_tri_somersault_super", 0x8BAE_8BFB),
@@ -304,6 +306,11 @@ pub struct RetailBattle {
     /// replayed fight casts it again before the captured phase, so the seed
     /// raises it on the first battle tick (`World::raise_mystic_shield`).
     pub mystic_shield: bool,
+    /// The state's live slot-B cast parts (`FUN_80021DF4` nodes whose
+    /// record `+0x48` lies in the module image), each as the halfwords the
+    /// image child seats over the replay's part of the same record on the
+    /// capture frame (`LEGAIA_SEAT_CAST_PARTS`).
+    pub cast_parts: Vec<legaia_engine_effects::summon::CastPartSeed>,
     /// `0x800891D2` - the Y angle the backdrop draw turns its slot 1 by, in
     /// 4096ths of a turn. Time spent in keeping fights since boot, so a
     /// replay carries it over rather than winding its own.
@@ -377,6 +384,16 @@ pub struct RetailBattle {
     /// The HUD widget glides in flight, each as the displayed frame shows
     /// it ([`HudGlideSeat`]); empty when every record has landed.
     pub hud_glides: Vec<HudGlideSeat>,
+    /// The glide table holds records and every one of them was spawned
+    /// after the displayed frame was built: its raw `elapsed` is under
+    /// [`Self::display_lag`]. The menu state the RAM holds opened its
+    /// surface on a pass the display has not shown yet
+    /// ([`Self::displayed_menu_flow`]).
+    pub hud_glides_unseen: bool,
+    /// The options screen's Select Attack word `0x800846C4` (Select `0` /
+    /// Automatic `1` / Command `2`): whether the ring's Attack arm opens
+    /// the `Auto | Command` prompt `0x78`.
+    pub select_attack: u8,
     /// `ctx[+0x269]` - the Seru a killing blow absorbed this action, staged
     /// for the Done band's grant (`sb v0,0x269(a0)` at `0x801EE2E8`) and
     /// cleared when `0x52` leaves.
@@ -410,6 +427,11 @@ pub struct RetailBattle {
     /// stream, so a seed that reaches the phase on another pose frames
     /// another shot.
     pub win_pose: Option<u8>,
+    /// The hits the action in flight has already landed, as `(pool slot,
+    /// amount)` pairs off the damage-number ring ([`action_hits`]). The
+    /// replay re-deals them, so the seed takes them back off the bars
+    /// ([`Self::pre_action_hp`]).
+    pub action_hits: Vec<(u8, u16)>,
     /// Each pool slot's live `+0x34` / `+0x38` pair (party `0..=2`,
     /// monsters `3..=7`), `None` for an empty slot.
     pub ground: Vec<Option<[i16; 2]>>,

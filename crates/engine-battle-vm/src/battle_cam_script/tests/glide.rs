@@ -278,6 +278,33 @@ fn glide_origin_alignment_takes_only_agreeing_components() {
     assert_eq!(got.focus, [at.focus[0], 5.0, 6.0]);
 }
 
+/// The endpoint test that decides whether a Done-band capture takes the
+/// displayed pose: every component of the glide's target within the
+/// alignment tolerances, never in the orbit phase.
+#[test]
+fn glide_endpoint_match_needs_every_component() {
+    let mut cam = BattleCamera::new(BattleCamPhase::Menu, 0);
+    assert!(!cam.glide_endpoint_matches(cam.pose()), "the orbit phase");
+    cam.set_phase(BattleCamPhase::Action);
+    steps(&mut cam, 1);
+    let target = cam.glide_target();
+    assert!(cam.glide_endpoint_matches(target));
+    let mut end = target;
+    end.yaw += 1.0;
+    end.focus[2] += 7.0;
+    assert!(cam.glide_endpoint_matches(end), "within the tolerances");
+    for k in 0..8 {
+        let mut off = target;
+        match k {
+            0 => off.pitch += 3.0,
+            1 => off.yaw += 39.0,
+            2..=4 => off.tr[k - 2] += 3.0,
+            _ => off.focus[k - 5] += 9.0,
+        }
+        assert!(!cam.glide_endpoint_matches(off), "component {k}");
+    }
+}
+
 /// With the yaw on retail's endpoint, a focus endpoint a few units off
 /// takes retail's point in the ease: the engine's focus stands as far short
 /// of its own endpoint as retail's live focus stood from its. An endpoint

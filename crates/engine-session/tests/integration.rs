@@ -25,6 +25,7 @@ mod frame_step_kernels;
 mod free_roam_camera_reset;
 mod new_game_seed;
 mod npc_conversation_terminates;
+mod npc_run_clip_bind_disc;
 mod picker_party_disc;
 mod restore_field_bgm_disc;
 mod resume_landing;

@@ -359,6 +359,30 @@ impl FieldHostImpl<'_> {
         // The VM's `is_player` is the bit; retail's is an identity compare
         // (`0x801E1954`).
         let is_player = is_player && self.ctx_is_player(ctx);
+        // The actor words every arm writes ahead of the seat, on an NPC:
+        // the depth byte's bit 7 sets or clears the party-bank bit
+        // `0x01000000` of `+0x10` (`0x801E1828..0x801E1858`), the anim
+        // control word `+0x62` drops hold / clamp / reverse (`andi 0xFF75`
+        // at `0x801E1864`), and the NPC arm stores byte `+4` into `+0x5C`
+        // with `+0x5E = -2` and binds it through `FUN_800204F8`
+        // (`0x801E1A8C..0x801E1A9C`). So the op always leaves a looping
+        // clip of the named move playing, out of the bank the depth byte
+        // names - on the install pre-run and a cutscene's cross-context
+        // poke as much as on a live channel. The player arm picks its own
+        // clip (`field_player_script_clip` below) and keeps its words.
+        // REF: FUN_800204F8
+        if !is_player {
+            let party = legaia_engine_field::field_player_clip::PARTY_BANK_FLAG;
+            if depth_byte & 0x80 != 0 {
+                ctx.flags |= party;
+            } else {
+                ctx.flags &= !party;
+            }
+            ctx.local_flags &= !(legaia_engine_scene::field_env::ANIM_HOLD
+                | legaia_engine_scene::field_env::ANIM_CLAMP
+                | legaia_engine_scene::field_env::ANIM_REVERSE);
+            ctx.move_id = u16::from(move_id);
+        }
         // Scene-entry spawn-prologue pre-run
         // ([`World::pre_run_field_channel_prologues`]): the record's own
         // `4C 51` is the actor's initial SEAT - retail's install pre-run
@@ -428,6 +452,11 @@ impl FieldHostImpl<'_> {
             {
                 self.world.npcs.headings.insert(slot, heading);
             }
+            // The poke binds byte `+4` like any other NPC arm: a party
+            // member a cutscene seats and then walks (`korout` `P2[3]`'s
+            // `CC 09 51 .. 0A` / `CC 0A 51 .. 0F` ahead of their `C1`
+            // legs) plays its walk clip instead of gliding in the idle.
+            self.world.carry_npc_run_anim(slot, move_id);
             return;
         }
         // The parked-sentinel tile (127,127) decodes to (0x3FC0, 0x3FC0):

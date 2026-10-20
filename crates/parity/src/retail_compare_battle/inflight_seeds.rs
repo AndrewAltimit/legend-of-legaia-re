@@ -97,7 +97,7 @@ impl UndriftActing {
     pub const fn rounds(self) -> usize {
         match self {
             Self::WithTarget => 1,
-            Self::Own => 3,
+            Self::Own => 4,
         }
     }
 }
@@ -325,6 +325,27 @@ impl RetailBattle {
             )))
         {
             *a = true;
+        }
+        // A replayed cast is dispatched at the fight's first prompt, so no
+        // earlier round runs in the replay, and a heading the cast does not
+        // write is one nothing restores (`theeder_summon_mid_cast`'s third
+        // monster, turned to `2255`, swings its blade out of the close-up).
+        // The cast writes the caster's (its own `0x28` recomputes it from
+        // the target bearing) and may turn its targets as it lands, so
+        // those stay the replay's.
+        if self.seed_plan() == SeedPlan::Cast {
+            let pc = usize::from(self.party_count);
+            let caster = usize::from(engine_seat(self.active_actor, self.party_count));
+            let target = (self.target_code < 8)
+                .then(|| usize::from(engine_seat(self.target_code, self.party_count)));
+            for (s, o) in spent.iter_mut().enumerate() {
+                let targeted = match self.target_code {
+                    8 => s < pc,
+                    9 => s >= pc,
+                    _ => target == Some(s),
+                };
+                *o = s != caster && !targeted;
+            }
         }
         let ground = self.seeded_ground();
         let pc = usize::from(self.party_count);

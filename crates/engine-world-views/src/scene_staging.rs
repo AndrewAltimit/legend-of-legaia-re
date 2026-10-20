@@ -22,14 +22,14 @@ pub fn assemble_field_scene(index: &ProtIndex, name: &str) -> Result<AssembledSc
 ///
 /// A draw the init sweep owns (`key == None`) is always live. A window-owned
 /// one is live when the port draws the whole map (the default -
-/// [`crate::world::StaticObjectWindow::retail_windowing`] clear), and under
+/// [`legaia_engine_core::world::StaticObjectWindow::retail_windowing`] clear), and under
 /// retail windowing only while the list holds a **drawn** actor for it: inside
 /// the box the last camera re-centre latched, and with a non-zero draw kind
 /// ([`legaia_engine_field::field_regions::WindowSpawn::drawn`]).
 // REF: FUN_801D7B50 (the list), FUN_8001ADA4 (the draw-kind range check)
 pub fn placed_draw_live(
     key: Option<&PlacedWindowKey>,
-    window: &crate::world::StaticObjectWindow,
+    window: &legaia_engine_core::world::StaticObjectWindow,
 ) -> bool {
     match key {
         None => true,
@@ -42,9 +42,9 @@ pub fn placed_draw_live(
 /// the `field_env::retain_visible_placed_draws` input for hosts that assemble a scene
 /// statically (the site's full-map viewer, exporters).
 ///
-/// Spins a scratch [`World`](crate::world::World), stages it at the scene's
+/// Spins a scratch [`World`](legaia_engine_core::world::World), stages it at the scene's
 /// canonical free-roam visit
-/// ([`World::seed_free_roam_story_baseline`](crate::world::World::seed_free_roam_story_baseline)),
+/// ([`World::seed_free_roam_story_baseline`](legaia_engine_core::world::World::seed_free_roam_story_baseline)),
 /// and pre-runs the object-bind spawn prologues exactly as `enter_field_scene`
 /// does (`seed_object_channels` - the bind derivation mirrors the scene-entry
 /// host). A scene with no MAN / no bindable objects returns the empty set
@@ -84,7 +84,7 @@ pub fn story_hidden_records_for_scene(
             })
             .collect(),
     };
-    let mut w = crate::world::World::new();
+    let mut w = legaia_engine_core::world::World::new();
     w.seed_free_roam_story_baseline(&scene.name);
     w.seed_field_channels(&man_file, &man_bytes);
     w.set_object_bind_rots(

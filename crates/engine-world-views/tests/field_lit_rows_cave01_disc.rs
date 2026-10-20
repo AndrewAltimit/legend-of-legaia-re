@@ -13,9 +13,9 @@
 
 use std::path::PathBuf;
 
-use legaia_engine_core::scene_staging::assemble_field_scene;
 use legaia_engine_field::field_lit_mesh::{draw_rotation, has_lit_rows, shade_lit_rows};
 use legaia_engine_scene::scene::ProtIndex;
+use legaia_engine_world_views::scene_staging::assemble_field_scene;
 use legaia_render_kernels::field_light::FieldLight;
 
 fn extracted_root() -> Option<PathBuf> {

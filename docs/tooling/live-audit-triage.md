@@ -343,7 +343,7 @@ Every row is landed. What each wire had to be:
   ([motion-vm.md](../subsystems/motion-vm.md#the-motion-pause-kick)).
 - **`timed_fight_turns_left`** (`801d0748`). The strip it feeds is Koru's timed
   fight. A Muscle Dome round is an ordinary battle that ends on a knockout, so
-  wiring it *into the dome* would have been a bug; `engine-core::world_views::timed_fight`
+  wiring it *into the dome* would have been a bug; `engine-world-views::timed_fight`
   gates it on the formation's first monster seat and both hosts draw the strip.
 - **`tile_for_slot`** (`801e1934`, `crates/ui-formats/src/save_icon.rs`).
   The card-block icon writer in `engine-menu-runtime::card_write` routes through it;
@@ -426,7 +426,7 @@ section.
   and `0x2B`, which are not.
 - The panel-window host all of `world_map_panel_actors.rs`,
   `world_map_overlay.rs`, `world_map_panel.rs` and `travel_art_actor.rs` named
-  as missing is `legaia_engine_core::world_views::world_map_panel_host`
+  as missing is `legaia_engine_world_views::world_map_panel_host`
   ([`world-map.md`](../subsystems/world-map.md#the-panel-actor-state-machines)).
 
 ### The battle-camera rows
@@ -560,6 +560,9 @@ dispatch arm.
 | `801f1138` / `801f1e48` / `801f1fdc` / `801f1d90` / `801f20b0` / `801f2134` | the state machines | `WIRE` - slots `0x27` / `0x32` / `0x28` / `0x13` / `0x1a` / `0x00` |
 | `801f16c0` / `801f17d8` / `801f1890` / `801f1950` / `801f1a1c` / `801f1ab0` / `801f1b64` | the panel painters | `WIRE` - panel-window records, not handler slots |
 | `801f90dc` | `acquisition_caption` | `REPLACE` - the routine is `FUN_801D0F1C` |
+| `801f1278` | `enter_context` | `WIRE` - `World::run_submode_installer` on every op-`0x49` arm: the player's idle clip and party-bank bit (the field read as a "scroll" word is the clip id `+0x5C`) |
+| `801f1278` | `rearm_state` | `WIRE` - same call site: `DAT_801F2734` is the dialog pager's state, and its idle `4` is a held `0x24` box (`HeldBox::pager_state`) |
+| `801f1278` | `resolve_current_member` | `REPLACE` - `_DAT_8007B469`'s one reader `FUN_801E5B4C` is only called by `FUN_801F16C0`, which stores the byte first; the port passes it as `EquipPanelInput::char_index` |
 
 The painters are the `+0x18` callback of a record in the `0x801F2B98`
 panel-window table

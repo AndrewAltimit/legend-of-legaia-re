@@ -226,7 +226,9 @@ impl World {
             // until the walk kernel's terminal frame clears the bit.
             // REF: FUN_801DE840 (0x801DE90C..0x801DE944), FUN_8003774C (0x80038004)
             if let Some(slot) = id.own_turn {
-                if host.world.npcs.face_legs.contains_key(&slot) {
+                if host.world.npcs.face_legs.contains_key(&slot)
+                    || host.world.npcs.glide_legs.contains_key(&slot)
+                {
                     break;
                 }
                 id.own_turn = None;
@@ -379,6 +381,49 @@ impl World {
                     id.visited[id.pc] = true;
                 }
                 id.pc = next_pc;
+                id.park_frames = 0;
+                continue;
+            }
+            // A placement the talk set walking carries `0x400` until the
+            // kernel lands it, and the dispatcher prologue returns any
+            // cross-context op aimed at it at its own PC: the talk retries
+            // next frame. `town0c` `P1[21]` (the queen-bee beat) sends
+            // `C1 3B 02 46` then `C1 3B 02 41`, and the second leg starts
+            // where the first one landed.
+            // REF: FUN_801DE840 (0x801DE90C..0x801DE944)
+            let walking_target = ext_target
+                .and_then(|t| host.world.placement_slot_for_target(t))
+                .filter(|slot| host.world.npcs.glide_legs.contains_key(slot));
+            if walking_target.is_some() {
+                break;
+            }
+            // A compass walk aimed at a placement (`B7` / `C1 <id> b0 b1`):
+            // the arm seats the op on the target's `+0x94`, raises its
+            // `0x400` and advances the record past the op (`s7 = 3` plus the
+            // target byte) - only a player target parks the caller. Run on
+            // the talk's stand-in context it walked nobody.
+            // REF: FUN_801DE840 (0x801DEE90..0x801DEF1C), FUN_8003774C (the 0x37 / 0x41 arm)
+            if matches!(b, 0xB7 | 0xC1)
+                && let Some(slot) = ext_target.and_then(|t| host.world.placement_slot_for_target(t))
+                && let Some((body0, body1, rate)) =
+                    super::field_channels::compass_walk_operands(&id.bytecode, id.pc)
+            {
+                host.world.npcs.motions.remove(&slot);
+                host.world.npcs.glide_legs.insert(
+                    slot,
+                    legaia_engine_field::cutscene_timeline::TimelineNpcGlide {
+                        slot,
+                        state: legaia_engine_motion_vm::motion_vm::MotionState::default(),
+                        body0,
+                        body1,
+                        rate,
+                        frames: 0,
+                    },
+                );
+                if id.pc < id.visited.len() {
+                    id.visited[id.pc] = true;
+                }
+                id.pc += 4;
                 id.park_frames = 0;
                 continue;
             }
@@ -649,21 +694,44 @@ impl World {
                     }
                 }
                 FieldStepResult::Yield { resume_pc } => {
+                    let op_pc = id.pc;
                     id.pc = resume_pc;
                     // The talker's own glide-step (`37` / `41` / `47` with no
                     // target byte) parks the record (`+0x10 |= 0x400`) and
                     // hands the step to the walk kernel, whose terminal frame
                     // clears the bit again (`FUN_8003774C`, the 0x37 / 0x41
-                    // arm). The runner plays no walk leg for the talker, so
-                    // the bit would never clear, and every later
-                    // cross-context op of the talk would take the dispatcher's
-                    // halted-target early-out and end the conversation:
+                    // arm). A compass walk is played on the talker as a
+                    // placement leg, and the record holds on `own_turn` until
+                    // it lands (the hold at the top of this loop). Left
+                    // unwalked, the bit never cleared and every later
+                    // cross-context op of the talk took the dispatcher's
+                    // halted-target early-out and ended the conversation:
                     // Xain's second stage (`tunnelc` P1[4], `41 07 C1` then
                     // `AC 0C 08`) ended there, before the picker that raises
-                    // `0x325` and the fight behind it. The step is taken as
-                    // done.
+                    // `0x325` and the fight behind it. A step with no talker
+                    // slot to walk (or a `47` walk-to-tile) is taken as done.
+                    // REF: FUN_801DE840 (0x801DE90C..0x801DE944), FUN_8003774C (the 0x37 / 0x41 arm)
                     if matches!(b, 0x37 | 0x41 | 0x47) {
-                        id.ctx.flags &= !0x400;
+                        match (
+                            host.world.dialog.stepping_inline_npc,
+                            super::field_channels::compass_walk_operands(&id.bytecode, op_pc),
+                        ) {
+                            (Some(slot), Some((body0, body1, rate))) => {
+                                host.world.npcs.glide_legs.insert(
+                                    slot,
+                                    legaia_engine_field::cutscene_timeline::TimelineNpcGlide {
+                                        slot,
+                                        state: legaia_engine_motion_vm::motion_vm::MotionState::default(),
+                                        body0,
+                                        body1,
+                                        rate,
+                                        frames: 0,
+                                    },
+                                );
+                                id.own_turn = Some(slot);
+                            }
+                            _ => id.ctx.flags &= !0x400,
+                        }
                     }
                 }
                 // op-0x4A WAIT_FRAMES halts at its own PC every tick until its
@@ -1141,7 +1209,8 @@ impl World {
         }
     }
 
-    /// One walk-kernel frame of every free-standing NPC face-at leg.
+    /// One walk-kernel frame of every free-standing NPC face-at, rotate and
+    /// compass-walk leg.
     /// REF: FUN_8003774C (the 0x4C arm), FUN_8003BC08
     pub(crate) fn tick_field_npc_face_legs(&mut self) {
         for (slot, mut ramp) in std::mem::take(&mut self.npcs.face_legs) {
@@ -1152,6 +1221,32 @@ impl World {
         for (slot, mut leg) in std::mem::take(&mut self.npcs.rotate_legs) {
             if !self.step_npc_rotate_leg(&mut leg) {
                 self.npcs.rotate_legs.insert(slot, leg);
+            }
+        }
+        // A compass walk a placement's load-frame slice armed: the kernel
+        // spends the tick's frame step (`DAT_1F800393`) against the leg's
+        // budget and, on landing, clears the context's halt bit `0x400` and
+        // its `+0x54` cursor (the shared epilogue), so the record can be
+        // poked again.
+        // REF: FUN_8003BC08 (the 0x400 kernel visit), FUN_8003774C (the 0x37 / 0x41 arm)
+        for (slot, mut leg) in std::mem::take(&mut self.npcs.glide_legs) {
+            leg.state.speed = self.clock.display_frame_step.max(1);
+            if self.step_npc_glide(&mut leg) {
+                self.npcs.glide_legs.insert(slot, leg);
+                continue;
+            }
+            let pos = self.npcs.positions.get(&slot).copied();
+            if let Some(c) = self
+                .field_vm
+                .channels
+                .iter_mut()
+                .find(|c| !c.object_bind && c.placement_index == usize::from(slot))
+            {
+                c.ctx.flags &= !0x400;
+                if let Some((x, z)) = pos {
+                    c.ctx.world_x = x as u16;
+                    c.ctx.world_z = z as u16;
+                }
             }
         }
     }

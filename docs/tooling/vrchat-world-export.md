@@ -45,7 +45,7 @@ glb-export/town01/
 Everything composes through the same kernels the browser viewers render
 with, so the export matches the on-screen pages:
 
-- **World glb** - `engine-core::scene_staging::assemble_field_scene` (the
+- **World glb** - `engine-world-views::scene_staging::assemble_field_scene` (the
   field-scene page's build): ground heightfield (with the shared
   `GROUND_SINK`, minus the steep triangles of sloped far-bucket cells -
   see `field_ground::flat_refs`; a glb has no ordering table to draw them

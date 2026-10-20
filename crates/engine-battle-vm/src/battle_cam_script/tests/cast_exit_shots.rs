@@ -328,3 +328,42 @@ fn escape_wait_backs_the_eye_away() {
     cam.advance_to(402);
     assert_eq!(cam.pose.tr[2], settled - 64.0);
 }
+
+/// A module drift under a shot in flight, against the walker `FUN_8002149C`:
+/// a component the shot moves lands on the shot's endpoint whatever drifted
+/// into it meanwhile (the walk stores the endpoint once reached), while a
+/// component the shot leaves alone (increment `0`, skipped by the walker)
+/// keeps every drift. Once the shot has landed every drift sticks.
+#[test]
+fn a_drift_under_a_moving_shot_is_spent_and_kept_on_a_still_one() {
+    let mut cam = BattleCamera::new(BattleCamPhase::Menu, 0);
+    cam.pose = BattleCamPose {
+        pitch: 0.0,
+        yaw: 0.0,
+        tr: [0.0, 1536.0, 5000.0],
+        focus: [0.0, 0.0, 0.0],
+    };
+    let shot = ModuleShot {
+        angles: [0, 0, 0],
+        tr: [0, 0x600, 0x800],
+        focus: [0, 0, 0],
+        frames: 0x20,
+    };
+    let (target, raw_z) = shot.pose();
+    cam.arm_module_shot(target, raw_z, u32::from(shot.frames));
+    let mut drifted = 0.0;
+    while !cam.module_glide.is_some_and(|g| g.landed()) {
+        cam.drift_module(0, 0, 4, 4);
+        drifted += 4.0;
+        cam.step_module_shot();
+    }
+    assert_eq!(cam.pose.tr[2], target.tr[2], "TR z lands on the endpoint");
+    assert_eq!(cam.pose.tr[1], 1536.0 + drifted, "TR y keeps its drift");
+    cam.drift_module(0, 0, 0, 4);
+    cam.step_module_shot();
+    assert_eq!(
+        cam.pose.tr[2],
+        target.tr[2] + 4.0,
+        "a landed shot keeps a drift"
+    );
+}

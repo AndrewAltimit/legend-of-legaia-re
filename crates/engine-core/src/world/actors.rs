@@ -212,15 +212,12 @@ impl World {
     /// scene TMDs in the pointer table without allocating any, and the render
     /// dispatcher walks only the allocated list - so drawing them paints every
     /// scene-pack mesh at world `(0, 0, 0)`.
-    ///
-    /// `synthetic_battle_camera` is the one exception the native window keeps:
-    /// a battle with no stage dome frames every bound body round the origin.
     // REF: FUN_8001E890 (scene TMD registration - no actor allocation)
     // REF: FUN_8001D140 (the render dispatcher's allocated-list walk)
-    pub fn actor_slot_drawn(&self, slot: usize, synthetic_battle_camera: bool) -> bool {
+    pub fn actor_slot_drawn(&self, slot: usize) -> bool {
         self.actors
             .get(slot)
-            .is_some_and(|a| a.tmd_binding.is_some() && (a.active || synthetic_battle_camera))
+            .is_some_and(|a| a.tmd_binding.is_some() && a.active)
     }
 
     /// Whether the scene hides actor `slot` outright: the opening prologue

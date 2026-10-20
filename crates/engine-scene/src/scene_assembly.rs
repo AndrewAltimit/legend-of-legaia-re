@@ -166,7 +166,7 @@ fn mat3_to_quat(m: [[f32; 3]; 3]) -> [f32; 4] {
 /// `hidden_records` names the scene's story-hidden object records - the bind
 /// records whose spawn prologue parks the actor. Evaluating a prologue takes
 /// a field VM over simulation state, so the caller supplies it
-/// (`legaia_engine_core::scene_staging::assemble_field_scene` passes the
+/// (`legaia_engine_world_views::scene_staging::assemble_field_scene` passes the
 /// free-roam staging).
 pub fn assemble_field_scene_with(
     index: &ProtIndex,

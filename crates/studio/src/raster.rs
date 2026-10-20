@@ -153,11 +153,14 @@ pub struct Camera {
 }
 
 impl Default for Camera {
+    /// A three-quarter view of the model's front with some margin.
+    /// Character and monster meshes face `+Z` and the camera sits on the
+    /// `-Z` side at yaw 0, so the half turn puts the face toward the viewer.
     fn default() -> Self {
         Self {
-            yaw: 0.6,
+            yaw: std::f32::consts::PI + 0.6,
             pitch: -0.35,
-            zoom: 1.0,
+            zoom: 1.3,
         }
     }
 }

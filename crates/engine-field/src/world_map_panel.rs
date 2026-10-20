@@ -39,7 +39,7 @@
 //!
 //! ## Wiring status
 //!
-//! All three leaves are hosted. `legaia_engine_core::world_views::world_map_panel_host`
+//! All three leaves are hosted. `legaia_engine_world_views::world_map_panel_host`
 //! owns the `0x801F2B98` descriptor array and the live window objects, runs
 //! the command scripts through [`run_panel_script`], and drives the panel
 //! actors that call [`list_cursor_input`]; it hangs off
@@ -361,7 +361,7 @@ impl CursorOutcome {
 /// PORT: FUN_801e9dc8
 ///
 /// Wired: the sub-list, text-box and flag-window actors all read the pad
-/// through here, and `legaia_engine_core::world_views::world_map_panel_host` hosts all
+/// through here, and `legaia_engine_world_views::world_map_panel_host` hosts all
 /// three. It is fed the **packed** pad words - the confirm/cancel masks are
 /// packed-layout bits, so a raw BIOS word reads Cross as a d-pad press.
 pub fn list_cursor_input(

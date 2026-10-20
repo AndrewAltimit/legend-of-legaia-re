@@ -327,7 +327,7 @@ pub(super) struct PlayWindowApp {
     /// `field_placement_color_draws` (parallel lists): `Some` for the sub-area
     /// window sweep's placements, which the per-frame pass gates on the
     /// world's windowed static-object list through
-    /// `legaia_engine_core::scene_staging::placed_draw_live` - the same kernel the browser play page
+    /// `legaia_engine_world_views::scene_staging::placed_draw_live` - the same kernel the browser play page
     /// asks.
     pub(super) field_placement_window_keys:
         Vec<Option<legaia_engine_scene::field_env::PlacedWindowKey>>,
@@ -1058,9 +1058,10 @@ pub(super) const FIELD_WORLD_FLIP: Mat4 = Mat4::from_cols_array(&[
 
 /// The retail battle world scale: the battle base matrix `0x8007BF10` is
 /// `16384 * I` (GTE `4096` = 1.0) in every catalogued battle savestate - a
-/// **4.0x uniform scale** composed under the camera rotation. See
-/// [`PlayWindowApp::battle_dome_camera_mvp`].
-pub(super) const BATTLE_WORLD_SCALE: f32 = 4.0;
+/// **4.0x uniform scale** composed under the camera rotation. The one value
+/// both hosts read (`legaia_engine_session::battle_fx::BATTLE_WORLD_SCALE`).
+/// See [`PlayWindowApp::battle_dome_camera_mvp`].
+pub(super) const BATTLE_WORLD_SCALE: f32 = legaia_engine_session::battle_fx::BATTLE_WORLD_SCALE;
 
 /// World-map ocean CLUT animation state. Holds the 13 BGR555 frames (32 bytes
 /// each) decoded from the kingdom bundle and the current frame cursor + tick

@@ -38,7 +38,7 @@
 //! window the camera region or op `0x46` wrote. The port keeps that shape by
 //! never writing [`ViewCells::window`] back to the camera.
 //!
-//! Hosts reach this through `legaia_engine_core::field_view_window::field_view_cells`, which adds the port's policy:
+//! Hosts reach this through `legaia_engine_world_views::field_view_window::field_view_cells`, which adds the port's policy:
 //! the crop only holds at retail's own framing (see its docs).
 
 use legaia_engine_field::camera::FieldCullView;

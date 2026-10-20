@@ -6,7 +6,18 @@
 
 <section class="doc-section" id="confidence">
   <h2>How this section is organised</h2>
-  <p>Pages are grouped the way the disc is layered, outermost first: the disc and its one big archive, then how the game unpacks and routes what it loads, then the individual asset types, the stat tables baked into the executable, the bundles a scene loads as a unit, and the archive entries that hold code. New here? Start with <a href="disc.html">disc geometry</a> and <a href="prot.html">PROT.DAT</a> - every other page assumes those two.</p>
+  <p>Pages are grouped the way the disc is layered, outermost first: the disc and its one big archive, then how the game unpacks and routes what it loads, then the bundles a scene or a battle loads as a unit, then single assets by kind, the stat tables baked into the executable and overlays, and the archive entries that hold code. The sidebar uses the same groups in the same order. New here? Start with <a href="disc.html">disc geometry</a> and <a href="prot.html">PROT.DAT</a> - every other page assumes those two.</p>
+  <ol class="steps">
+    <li><b><a href="#disc-layer">Disc and archive</a></b><span>sectors, PROT.DAT, CDNAME.TXT</span></li>
+    <li><b><a href="#compression-dispatch">Compression and dispatch</a></b><span>LZS, chunk streams, packs</span></li>
+    <li><b><a href="#streaming-scene">Scene and battle bundles</a></b><span>what a room or a fight loads at once</span></li>
+    <li><b><a href="#graphics">Textures and models</a></b><span>TIM, TMD, palettes</span></li>
+    <li><b><a href="#characters-animation">Characters and animation</a></b><span>meshes, clip banks, arts</span></li>
+    <li><b><a href="#sound">Sound</a></b><span>VAB, SEQ, XA, SFX tables</span></li>
+    <li><b><a href="#text">Text</a></b><span>dialog, font, place names</span></li>
+    <li><b><a href="#battle-stat-tables">Static tables</a></b><span>items, spells, equipment, move power</span></li>
+    <li><b><a href="#overlay-carriers">Code overlays</a></b><span>MIPS code in archive entries</span></li>
+  </ol>
   <figure class="diagram">
     <svg viewBox="0 0 720 316" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="fi-title">
       <title id="fi-title">How the format pages stack. A disc image holds files; PROT.DAT holds numbered entries; an entry is decompressed and routed by type; scene bundles and packs hold many assets; each asset is a texture, mesh, sound bank or script. Beside that chain, the executable holds the stat tables and some archive entries hold code overlays.</title>
@@ -15,7 +26,7 @@
       <a href="#disc-layer"><rect class="dg-node-accent" x="20" y="72" width="420" height="46" rx="5"/><text class="dg-label" x="230" y="92">PROT.DAT entry</text><text class="dg-sub" x="230" y="108">one of 1233, named by CDNAME.TXT</text></a>
       <a href="#compression-dispatch"><rect class="dg-node" x="20" y="134" width="420" height="46" rx="5"/><text class="dg-label" x="230" y="154">Unpack and route</text><text class="dg-sub" x="230" y="170">LZS decompression, type-byte dispatch</text></a>
       <a href="#streaming-scene"><rect class="dg-node" x="20" y="196" width="420" height="46" rx="5"/><text class="dg-label" x="230" y="216">Bundles and packs</text><text class="dg-sub" x="230" y="232">many assets streamed as one unit</text></a>
-      <a href="#per-asset"><rect class="dg-node-ok" x="20" y="258" width="420" height="46" rx="5"/><text class="dg-label" x="230" y="278">Single asset</text><text class="dg-sub" x="230" y="294">TIM, TMD, VAB, SEQ, MES, ANM ...</text></a>
+      <a href="#graphics"><rect class="dg-node-ok" x="20" y="258" width="420" height="46" rx="5"/><text class="dg-label" x="230" y="278">Single asset</text><text class="dg-sub" x="230" y="294">TIM, TMD, VAB, SEQ, MES, ANM ...</text></a>
       <a href="#battle-stat-tables"><rect class="dg-node" x="500" y="10" width="200" height="46" rx="5"/><text class="dg-label" x="600" y="30">SCUS_942.54</text><text class="dg-sub" x="600" y="46">the executable</text></a>
       <a href="#battle-stat-tables"><rect class="dg-node" x="500" y="72" width="200" height="46" rx="5"/><text class="dg-label" x="600" y="92">Stat tables</text><text class="dg-sub" x="600" y="108">items, spells, equipment</text></a>
       <a href="#overlay-carriers"><rect class="dg-node" x="500" y="134" width="200" height="46" rx="5"/><text class="dg-label" x="600" y="154">Code overlays</text><text class="dg-sub" x="600" y="170">MIPS code in archive entries</text></a>
@@ -37,8 +48,8 @@
 </section>
 
 <section class="doc-section" id="disc-layer">
-  <h2>Disc + container layer</h2>
-  <p>The disc image before any in-game format is involved: the sector layout, the one archive that holds nearly everything, and the text file that names its contents. The <a href="../disc-map.html">disc map</a> draws all of it at once - every file and every <code>PROT.DAT</code> entry as nested boxes sized by sector count, each linked back to its page here.</p>
+  <h2>Disc and archive</h2>
+  <p>The disc image before any in-game format is involved: the sector layout, the one archive that holds nearly everything, the text file that names its contents, and the archive slots that hold nothing. The <a href="../disc-map.html">disc map</a> draws all of it at once - every file and every <code>PROT.DAT</code> entry as nested boxes sized by sector count, each linked back to its page here.</p>
   <div class="card-grid">
     <a class="card" id="disc" href="disc.html">
       <div class="card-title"><span>PSX disc geometry</span> <span class="tag tag-done">Confirmed</span></div>
@@ -56,16 +67,24 @@
       <div class="card-title"><span>DMY.DAT (dev fixtures)</span> <span class="tag tag-done">Confirmed</span></div>
       <div class="card-body">The archive's sibling file: a memory-bus test pattern plus paired random blobs, shipped on the retail disc but never loaded. The patcher uses it as an annex for oversized replacement assets.</div>
     </a>
+    <a class="card" href="pochi.html">
+      <div class="card-title"><span>Pochi-filler placeholder slots</span> <span class="tag tag-done">Confirmed</span></div>
+      <div class="card-body">Unused placeholder entries padded with the ASCII word "pochi": each exactly one 2048-byte sector of fill, none carrying a parseable asset.</div>
+    </a>
   </div>
 </section>
 
 <section class="doc-section" id="compression-dispatch">
-  <h2>Compression + dispatch</h2>
-  <p>How archive bytes become usable assets: the compression scheme, the type-byte dispatcher, and the several near-identical "many assets in one file" pack layouts.</p>
+  <h2>Compression and dispatch</h2>
+  <p>How archive bytes become usable assets: the compression scheme, the chunk stream an entry decompresses to, the type-byte dispatcher that routes each chunk, and the one "many assets in one file" pack layout with its two readers.</p>
   <div class="card-grid">
     <a class="card" id="lzs" href="lzs.html">
       <div class="card-title"><span>Legaia LZS</span> <span class="tag tag-done">Confirmed</span></div>
       <div class="card-body">The dictionary compression around most bulk assets - a custom LZSS variant with a 4096-byte zero-initialised ring buffer. Random input decodes without error, so always magic-check the output.</div>
+    </a>
+    <a class="card" href="data-field.html">
+      <div class="card-title"><span>DATA_FIELD streaming</span> <span class="tag tag-done">Confirmed</span></div>
+      <div class="card-body">The typed-chunk multi-asset container: a chain of <code>(type &lt;&lt; 24) | size</code> headers each followed by raw, uncompressed data, ended by a zero-size header. Carries the battle-form character / effect run and a family of scene bundles.</div>
     </a>
     <a class="card" id="asset-type" href="asset-type.html">
       <div class="card-title"><span>Asset type dispatcher</span> <span class="tag tag-done">Confirmed</span></div>
@@ -87,20 +106,59 @@
       <div class="card-title"><span>&ldquo;Field-pack&rdquo;</span> <span class="tag tag-done">Confirmed</span></div>
       <div class="card-body">Not a format: the <code>0x01059B84</code> word is a DATA_FIELD chunk header wrapping an ordinary pack of one scene's textures. The page records how it came to look like a magic number.</div>
     </a>
-    <a class="card" href="battle-data-pack.html">
-      <div class="card-title"><span>Player battle files</span> <span class="tag tag-done">Confirmed</span></div>
-      <div class="card-body">The per-character battle files <code>data\battle\PLAYER1..4</code>: an LZS animation record, a descriptor table keyed by equipment item, and one mesh + texture slot per item.</div>
+  </div>
+</section>
+
+<section class="doc-section" id="streaming-scene">
+  <h2>Scene and battle bundles</h2>
+  <p>What a scene or a battle loads as a unit - room geometry, textures, scripts and audio together - plus the records that drive encounters, scene transitions and movies, and the battle side-band slots streamed beside them.</p>
+  <div class="card-grid">
+    <a class="card" href="scene-bundles.html">
+      <div class="card-title"><span>Scene bundles</span> <span class="tag tag-done">Confirmed</span></div>
+      <div class="card-body">The family of per-scene container shapes, each read off its retail walker: battle backdrops, BGM streams, town asset tables, move-VM stager scripts.</div>
     </a>
-    <a class="card" href="npc-palette.html">
-      <div class="card-title"><span>Row-479 NPC CLUTs</span> <span class="tag tag-done">Confirmed</span></div>
-      <div class="card-body">NPC colour palettes: plain PSX TIMs in scene PROT entries whose palette block targets framebuffer row 479. Uploaded with merge-zeros semantics so several scene TIMs share the row.</div>
+    <a class="card" href="field-map.html">
+      <div class="card-title"><span>Per-scene field map</span> <span class="tag tag-done">Confirmed</span></div>
+      <div class="card-body">Slot 0 of every scene block, exactly <code>0x12000</code> bytes: object descriptors, the collision and floor grid, the per-tile object map and the trigger block.</div>
+    </a>
+    <a class="card" href="scene-v12-table.html">
+      <div class="card-title"><span>scene_v12_table</span> <span class="tag tag-done">Confirmed</span></div>
+      <div class="card-body">Per-scene <code>.PCH</code> walk-on trigger sidecar: a four-kind sub-table directory plus inline 4-byte trigger records, exactly one sector in all 97 scenes. The stager prescript is the next PROT entry.</div>
+    </a>
+    <a class="card" href="encounter.html">
+      <div class="card-title"><span>Encounter record</span> <span class="tag tag-done">Confirmed</span></div>
+      <div class="card-body">Which monsters you can meet where: three header bytes, a count, and up to four monster ids, armed on a field actor and copied into the battle loader's formation cell.</div>
+    </a>
+    <a class="card" href="man-relocation.html">
+      <div class="card-title"><span>MAN relocation</span> <span class="tag tag-done">Confirmed</span></div>
+      <div class="card-body">How to safely resize a record inside a scene's script bundle: fix the partition tables, the section-0 offset, intra-record jump deltas and the external descriptor size. Powers the door randomizer and translation packs.</div>
+    </a>
+    <a class="card" href="world-map-overlay.html">
+      <div class="card-title"><span>World-map slot-4 records</span> <span class="tag tag-done">Confirmed</span></div>
+      <div class="card-body">Slot 4 of each kingdom bundle: the world-map scene's ANM animation bank, the same clip container every field scene carries. Not a mesh library and not the continent terrain.</div>
+    </a>
+    <a class="card" href="str-fmv-table.html">
+      <div class="card-title"><span>STR FMV table</span> <span class="tag tag-done">Confirmed</span></div>
+      <div class="card-body">How the game finds its movies: a 23-slot dispatch table in the cutscene overlay, nine retail slots covering every movie on the disc; per-scene triggers are literal operands in the scene scripts.</div>
+    </a>
+    <a class="card" href="effect.html">
+      <div class="card-title"><span>Effect bundles</span> <span class="tag tag-done">Confirmed</span></div>
+      <div class="card-body">The hit sparks and spell flashes of battle: the runtime <code>efect.dat</code> 2-pack (extraction 0873) - a sprite atlas, frame-animation batches and spawn scripts indexed by effect id.</div>
+    </a>
+    <a class="card" href="summon-readef.html">
+      <div class="card-title"><span>summon.dat / readef.DAT</span> <span class="tag tag-done">Confirmed</span></div>
+      <div class="card-body">Battle side-band streaming slots (extraction 893 / 894), <code>0x10800</code> bytes each: per-special-attack palettes, texture pages, summon-creature actor records and the player art-animation "ME" archives.</div>
+    </a>
+    <a class="card" href="navmesh.html">
+      <div class="card-title"><span>Per-scene primitive scratch buffer</span> <span class="tag tag-partial">Inferred</span></div>
+      <div class="card-body">A negative finding: the RAM cluster once read as a navmesh is a per-scene scratch buffer the renderer fills with GPU primitive data on scene entry.</div>
     </a>
   </div>
 </section>
 
-<section class="doc-section" id="per-asset">
-  <h2>Per-asset formats</h2>
-  <p>What a single texture, model, sound bank or dialog file looks like once unpacked.</p>
+<section class="doc-section" id="graphics">
+  <h2>Textures and models</h2>
+  <p>What a single texture or mesh looks like once unpacked, and the palette and picture formats that ride beside them.</p>
   <div class="card-grid">
     <a class="card" id="tim" href="tim.html">
       <div class="card-title"><span>PSX TIM</span> <span class="tag tag-done">Confirmed</span></div>
@@ -110,6 +168,56 @@
       <div class="card-title"><span>Legaia TMD</span> <span class="tag tag-done">Confirmed</span></div>
       <div class="card-body">The 3D mesh format - a custom variant of stock PSX TMD, magic <code>0x80000002</code>: primitives batched behind an 8-byte group header, with a 6-row shape table setting each record's layout. Most rows carry baked colour; the lit rows shade through the GTE light.</div>
     </a>
+    <a class="card" href="npc-palette.html">
+      <div class="card-title"><span>Row-479 NPC CLUTs</span> <span class="tag tag-done">Confirmed</span></div>
+      <div class="card-body">NPC colour palettes: plain PSX TIMs in scene PROT entries whose palette block targets framebuffer row 479. Uploaded with merge-zeros semantics so several scene TIMs share the row.</div>
+    </a>
+    <a class="card" href="save-icon.html">
+      <div class="card-title"><span>Save-slot portrait sheet</span> <span class="tag tag-done">Confirmed</span></div>
+      <div class="card-body">Sixteen 16x16 tiles in one 256x16 strip in the menu overlay, one 16-colour palette per tile. Tile N is the memory-card icon for save N+1.</div>
+    </a>
+    <a class="card" href="ringside-still.html">
+      <div class="card-title"><span>Headerless 16bpp stills</span> <span class="tag tag-done">Confirmed</span></div>
+      <div class="card-body">Two entries that are a picture with nothing in the file saying so - raw BGR555 and a length. The 320 &times; 256 rectangle is four immediates in the routine that uploads them, and which of the two loads depends on the party leader's HP.</div>
+    </a>
+  </div>
+</section>
+
+<section class="doc-section" id="characters-animation">
+  <h2>Characters and animation</h2>
+  <p>How the party and the monsters are built and moved: the character meshes, the per-character battle files, the animation clip banks, and the art records that drive a Tactical Art.</p>
+  <div class="card-grid">
+    <a class="card" id="character-mesh" href="character-mesh.html">
+      <div class="card-title"><span>Player-character meshes</span> <span class="tag tag-done">Confirmed</span></div>
+      <div class="card-body">Where Vahn, Noa and Gala's models live. The field form is one pack (PROT 0874); the battle form is assembled per character from the equipment slots of the player battle files.</div>
+    </a>
+    <a class="card" href="battle-data-pack.html">
+      <div class="card-title"><span>Player battle files</span> <span class="tag tag-done">Confirmed</span></div>
+      <div class="card-body">The per-character battle files <code>data\battle\PLAYER1..4</code>: an LZS animation record, a descriptor table keyed by equipment item, and one mesh + texture slot per item.</div>
+    </a>
+    <a class="card" id="anm" href="anm.html">
+      <div class="card-title"><span>ANM animation</span> <span class="tag tag-done">Confirmed</span></div>
+      <div class="card-body">The animation container for party, NPCs and props: a frame-by-bone grid of 8-byte entries, each a packed translation and rotation that poses one mesh object directly. Rides asset type 5 (MOVE) despite the name.</div>
+    </a>
+    <a class="card" id="mdt" href="mdt.html">
+      <div class="card-title"><span>MDT - move tables</span> <span class="tag tag-done">Confirmed</span></div>
+      <div class="card-body">The per-scene <code>MOVE</code> buffer the script VM's <code>0x22 EXEC_MOVE</code> plays from - by its bytes the scene's ANM clip bank. Sourced per scene from a CDNAME slot, not from one boot-time PROT entry.</div>
+    </a>
+    <a class="card" id="monster-animation" href="monster-animation.html">
+      <div class="card-title"><span>Monster animation</span> <span class="tag tag-done">Confirmed</span></div>
+      <div class="card-body">Enemy battle animation inside the monster archive (extraction 0867): per-action rigid-transform keyframes, one part per TMD object. Action 0 is the idle loop; the entry's first byte is an action tag, not an index.</div>
+    </a>
+    <a class="card" id="art-data" href="art-data.html">
+      <div class="card-title"><span>Art data - Tactical Arts records</span> <span class="tag tag-partial">Inferred</span></div>
+      <div class="card-body">Per-character Tactical Art records (in each player battle file): command sequence, power bytes, hit-cue timing, impact-effect class. The menu's arrows are a separate table in the executable.</div>
+    </a>
+  </div>
+</section>
+
+<section class="doc-section" id="sound">
+  <h2>Sound</h2>
+  <p>Instrument banks, music sequences, streamed CD audio, and the tables that route a sound-effect cue to a bank.</p>
+  <div class="card-grid">
     <a class="card" id="vab" href="vab.html">
       <div class="card-title"><span>VAB sound bank</span> <span class="tag tag-done">Confirmed</span></div>
       <div class="card-body">PSX-standard instrument bank (program / tone / SPU-ADPCM sample). <code>crates/vab</code> extracts and decodes to WAV. The <code>vab_01</code> block (extraction 1070..1192) is wall-to-wall VAB.</div>
@@ -122,6 +230,25 @@
       <div class="card-title"><span>XA-ADPCM</span> <span class="tag tag-done">Confirmed</span></div>
       <div class="card-body">CD-XA Mode 2 Form 2 streaming audio (voice shouts, ambience). <code>crates/xa</code> demuxes per channel and emits one WAV per stream.</div>
     </a>
+    <a class="card" href="sfx-table.html">
+      <div class="card-title"><span>SFX descriptor table</span> <span class="tag tag-done">Confirmed</span></div>
+      <div class="card-body">The sound-effect lookup table in the executable: 100 8-byte rows naming a VAB program / tone, voice count, and the category that selects which of four open banks the cue plays from.</div>
+    </a>
+    <a class="card" href="bse-dat.html">
+      <div class="card-title"><span>bse.dat battle SFX bank</span> <span class="tag tag-done">Confirmed</span></div>
+      <div class="card-body">The runtime half of the sound-effect descriptor table: the rows behind cue ids <code>0x200</code> and up while a battle is on screen, loaded per battle.</div>
+    </a>
+    <a class="card" href="sound-driver.html">
+      <div class="card-title"><span>Sound-driver path strings</span> <span class="tag tag-done">Confirmed</span></div>
+      <div class="card-body">The filename extensions the sound driver appends (<code>.dpk</code>, <code>.spk</code>, <code>.MAP</code>, <code>.PCH</code>) and their consumers. The per-scene <code>.dpk</code> pack holds a VAB + SEQ pair.</div>
+    </a>
+  </div>
+</section>
+
+<section class="doc-section" id="text">
+  <h2>Text</h2>
+  <p>Dialog containers, the proportional font they are drawn with, and the place names the map screens show.</p>
+  <div class="card-grid">
     <a class="card" id="mes" href="mes.html">
       <div class="card-title"><span>MES dialog</span> <span class="tag tag-done">Confirmed</span></div>
       <div class="card-body">The dialog-text container, in Compact and Records variants. Message bytes are font-tile indices with two-byte escapes that splice in the hero's name, item and art names at display time.</div>
@@ -130,53 +257,17 @@
       <div class="card-title"><span>Dialog font</span> <span class="tag tag-done">Confirmed</span></div>
       <div class="card-body">The proportional Latin font the dialog renderer draws with: a 256-entry width table and a 38-entry escape table in the executable, 4bpp glyph bitmaps in VRAM at <code>(896, 0)</code>.</div>
     </a>
-    <a class="card" id="anm" href="anm.html">
-      <div class="card-title"><span>ANM animation</span> <span class="tag tag-done">Confirmed</span></div>
-      <div class="card-body">The animation container for party, NPCs and props: a frame-by-bone grid of 8-byte entries, each a packed translation and rotation that poses one mesh object directly. Rides asset type 5 (MOVE) despite the name.</div>
-    </a>
-    <a class="card" id="character-mesh" href="character-mesh.html">
-      <div class="card-title"><span>Player-character meshes</span> <span class="tag tag-done">Confirmed</span></div>
-      <div class="card-body">Where Vahn, Noa and Gala's models live. The field form is one pack (PROT 0874); the battle form is assembled per character from the equipment slots of the player battle files.</div>
-    </a>
-    <a class="card" id="monster-animation" href="monster-animation.html">
-      <div class="card-title"><span>Monster animation</span> <span class="tag tag-done">Confirmed</span></div>
-      <div class="card-body">Enemy battle animation inside the monster archive (extraction 0867): per-action rigid-transform keyframes, one part per TMD object. Action 0 is the idle loop; the entry's first byte is an action tag, not an index.</div>
-    </a>
-    <a class="card" id="mdt" href="mdt.html">
-      <div class="card-title"><span>MDT - move tables</span> <span class="tag tag-done">Confirmed</span></div>
-      <div class="card-body">The per-scene <code>MOVE</code> buffer the script VM's <code>0x22 EXEC_MOVE</code> plays from - by its bytes the scene's ANM clip bank. Sourced per scene from a CDNAME slot, not from one boot-time PROT entry.</div>
-    </a>
-    <a class="card" id="move-power" href="move-power.html">
-      <div class="card-title"><span>Move-power table</span> <span class="tag tag-done">Confirmed</span></div>
-      <div class="card-body">Per-move power + behaviour records (26-byte stride, PROT 0898): damage roll, homing, hit reaction, sound cue and spawned-effect lists, in the same id space as the spell table.</div>
-    </a>
-    <a class="card" id="art-data" href="art-data.html">
-      <div class="card-title"><span>Art data - Tactical Arts records</span> <span class="tag tag-partial">Inferred</span></div>
-      <div class="card-body">Per-character Tactical Art records (in each player battle file): command sequence, power bytes, hit-cue timing, impact-effect class. The menu's arrows are a separate table in the executable.</div>
-    </a>
-    <a class="card" href="save-icon.html">
-      <div class="card-title"><span>Save-slot portrait sheet</span> <span class="tag tag-done">Confirmed</span></div>
-      <div class="card-body">Sixteen 16x16 tiles in one 256x16 strip in the menu overlay, one 16-colour palette per tile. Tile N is the memory-card icon for save N+1.</div>
-    </a>
-    <a class="card" href="battle-attack-camera-table.html">
-      <div class="card-title"><span>Battle attack-camera table</span> <span class="tag tag-done">Confirmed</span></div>
-      <div class="card-body">Twenty rows of two signed halfwords in the battle overlay: the per-art swing camera offsets. The two columns are alternatives the game coin-flips between.</div>
-    </a>
-    <a class="card" id="save-record" href="save-record.html">
-      <div class="card-title"><span>Per-character save record</span> <span class="tag tag-done">Confirmed</span></div>
-      <div class="card-body">The in-RAM record holding one party member's whole state: <code>0x414</code> bytes per slot. Cheat-database-pinned offsets for stats, level, magic rank, spells, summons and equipment.</div>
+    <a class="card" href="place-names.html">
+      <div class="card-title"><span>Place names</span> <span class="tag tag-done">Confirmed</span></div>
+      <div class="card-body">One place name, three carriers: the executable's quick-travel cells, the label table trailing every kingdom MAN, and each scene MAN's banner name. Parser <code>legaia_scene_formats::place_names</code>.</div>
     </a>
   </div>
 </section>
 
 <section class="doc-section" id="battle-stat-tables">
-  <h2>Battle / stat tables</h2>
-  <p>The game's numbers - item names, spell stats, equipment bonuses, steal chances - are static tables inside <code>SCUS_942.54</code>, the main executable, not in the asset archive. Each is byte-pinned against the executable.</p>
+  <h2>Static tables</h2>
+  <p>The game's numbers - item names, spell stats, equipment bonuses, steal chances, move power - are static tables inside <code>SCUS_942.54</code>, the main executable, or the data segment of the battle and menu overlays, not in the asset archive. Each is byte-pinned against its image.</p>
   <div class="card-grid">
-    <a class="card" href="spell-table.html">
-      <div class="card-title"><span>Spell table</span> <span class="tag tag-done">Confirmed</span></div>
-      <div class="card-body">Static spell stats + name pointers, 12-byte stride. Player Seru-magic block <code>0x81..=0x8B</code>; named monster attacks from <code>0x25</code>. Parser <code>legaia_game_tables::spell_names</code>.</div>
-    </a>
     <a class="card" href="item-table.html">
       <div class="card-title"><span>Item-name table</span> <span class="tag tag-done">Confirmed</span></div>
       <div class="card-body">256 item ids, 12-byte stride - the id space monster drops, steals and equipment all index. Parser <code>legaia_game_tables::item_names</code>.</div>
@@ -193,74 +284,39 @@
       <div class="card-title"><span>Accessory passive table</span> <span class="tag tag-done">Confirmed</span></div>
       <div class="card-body">64-slot passive-index space mapping accessories ("Goods") to per-character ability bits, with stat-percent magnitudes inline. Parser <code>legaia_game_tables::accessory_passive</code>.</div>
     </a>
+    <a class="card" href="spell-table.html">
+      <div class="card-title"><span>Spell table</span> <span class="tag tag-done">Confirmed</span></div>
+      <div class="card-body">Static spell stats + name pointers, 12-byte stride. Player Seru-magic block <code>0x81..=0x8B</code>; named monster attacks from <code>0x25</code>. Parser <code>legaia_game_tables::spell_names</code>.</div>
+    </a>
     <a class="card" href="steal-table.html">
       <div class="card-title"><span>Steal table</span> <span class="tag tag-done">Confirmed</span></div>
       <div class="card-body">Per-monster <code>[chance, item]</code> pairs - chance first, the reverse of the drop fields. What the Evil God Icon steals. Parser <code>legaia_game_tables::steal_table</code>.</div>
+    </a>
+    <a class="card" id="move-power" href="move-power.html">
+      <div class="card-title"><span>Move-power table</span> <span class="tag tag-done">Confirmed</span></div>
+      <div class="card-body">Per-move power + behaviour records (26-byte stride, PROT 0898): damage roll, homing, hit reaction, sound cue and spawned-effect lists, in the same id space as the spell table.</div>
+    </a>
+    <a class="card" href="battle-attack-camera-table.html">
+      <div class="card-title"><span>Battle attack-camera table</span> <span class="tag tag-done">Confirmed</span></div>
+      <div class="card-body">Twenty rows of two signed halfwords in the battle overlay: the per-art swing camera offsets. The two columns are alternatives the game coin-flips between.</div>
     </a>
     <a class="card" href="new-game-table.html">
       <div class="card-title"><span>New-game starting party</span> <span class="tag tag-done">Confirmed</span></div>
       <div class="card-body">Four 26-byte records (Vahn / Noa / Gala / Terra) that seed the live character records; opening scene <code>town01</code>. Parser <code>legaia_game_tables::new_game</code>.</div>
     </a>
-    <a class="card" href="summon-readef.html">
-      <div class="card-title"><span>summon.dat / readef.DAT</span> <span class="tag tag-done">Confirmed</span></div>
-      <div class="card-body">Battle side-band streaming slots (extraction 893 / 894), <code>0x10800</code> bytes each: per-special-attack palettes, texture pages, summon-creature actor records and the player art-animation "ME" archives.</div>
+    <a class="card" id="save-record" href="save-record.html">
+      <div class="card-title"><span>Per-character save record</span> <span class="tag tag-done">Confirmed</span></div>
+      <div class="card-body">The in-RAM record holding one party member's whole state: <code>0x414</code> bytes per slot. Cheat-database-pinned offsets for stats, level, magic rank, spells, summons and equipment.</div>
     </a>
-  </div>
-</section>
-
-<section class="doc-section" id="streaming-scene">
-  <h2>Streaming + scene containers</h2>
-  <p>The bundle formats a scene loads as a unit - room geometry, textures, scripts and audio together - plus the records that drive encounters and scene transitions.</p>
-  <div class="card-grid">
-    <a class="card" href="data-field.html">
-      <div class="card-title"><span>DATA_FIELD streaming</span> <span class="tag tag-done">Confirmed</span></div>
-      <div class="card-body">The typed-chunk multi-asset container: a chain of <code>(type &lt;&lt; 24) | size</code> headers each followed by raw, uncompressed data, ended by a zero-size header. Carries the battle-form character / effect run and a family of scene bundles.</div>
-    </a>
-    <a class="card" href="scene-bundles.html">
-      <div class="card-title"><span>Scene bundles</span> <span class="tag tag-done">Confirmed</span></div>
-      <div class="card-body">The family of per-scene container shapes, each read off its retail walker: battle backdrops, BGM streams, town asset tables, move-VM stager scripts.</div>
-    </a>
-    <a class="card" href="field-map.html">
-      <div class="card-title"><span>Per-scene field map</span> <span class="tag tag-done">Confirmed</span></div>
-      <div class="card-body">Slot 0 of every scene block, exactly <code>0x12000</code> bytes: object descriptors, the collision and floor grid, the per-tile object map and the trigger block.</div>
-    </a>
-    <a class="card" href="scene-v12-table.html">
-      <div class="card-title"><span>scene_v12_table</span> <span class="tag tag-done">Confirmed</span></div>
-      <div class="card-body">Per-scene <code>.PCH</code> walk-on trigger sidecar: a four-kind sub-table directory plus inline 4-byte trigger records, exactly one sector in all 97 scenes. The stager prescript is the next PROT entry.</div>
-    </a>
-    <a class="card" href="place-names.html">
-      <div class="card-title"><span>Place names</span> <span class="tag tag-done">Confirmed</span></div>
-      <div class="card-body">One place name, three carriers: the executable's quick-travel cells, the label table trailing every kingdom MAN, and each scene MAN's banner name. Parser <code>legaia_scene_formats::place_names</code>.</div>
-    </a>
-    <a class="card" href="world-map-overlay.html">
-      <div class="card-title"><span>World-map slot-4 records</span> <span class="tag tag-done">Confirmed</span></div>
-      <div class="card-body">Slot 4 of each kingdom bundle: the world-map scene's ANM animation bank, the same clip container every field scene carries. Not a mesh library and not the continent terrain.</div>
-    </a>
-    <a class="card" href="effect.html">
-      <div class="card-title"><span>Effect bundles</span> <span class="tag tag-done">Confirmed</span></div>
-      <div class="card-body">The hit sparks and spell flashes of battle: the runtime <code>efect.dat</code> 2-pack (extraction 0873) - a sprite atlas, frame-animation batches and spawn scripts indexed by effect id.</div>
-    </a>
-    <a class="card" href="navmesh.html">
-      <div class="card-title"><span>Per-scene primitive scratch buffer</span> <span class="tag tag-partial">Inferred</span></div>
-      <div class="card-body">A negative finding: the RAM cluster once read as a navmesh is a per-scene scratch buffer the renderer fills with GPU primitive data on scene entry.</div>
-    </a>
-    <a class="card" href="encounter.html">
-      <div class="card-title"><span>Encounter record</span> <span class="tag tag-done">Confirmed</span></div>
-      <div class="card-body">Which monsters you can meet where: three header bytes, a count, and up to four monster ids, armed on a field actor and copied into the battle loader's formation cell.</div>
-    </a>
-    <a class="card" href="man-relocation.html">
-      <div class="card-title"><span>MAN relocation</span> <span class="tag tag-done">Confirmed</span></div>
-      <div class="card-body">How to safely resize a record inside a scene's script bundle: fix the partition tables, the section-0 offset, intra-record jump deltas and the external descriptor size. Powers the door randomizer and translation packs.</div>
-    </a>
-    <a class="card" href="str-fmv-table.html">
-      <div class="card-title"><span>STR FMV table</span> <span class="tag tag-done">Confirmed</span></div>
-      <div class="card-body">How the game finds its movies: a 23-slot dispatch table in the cutscene overlay, nine retail slots covering every movie on the disc; per-scene triggers are literal operands in the scene scripts.</div>
+    <a class="card" href="window-script.html">
+      <div class="card-title"><span>Window widget scripts</span> <span class="tag tag-done">Confirmed</span></div>
+      <div class="card-body">The bytecode behind the UI's window choreography - the shop's slide-in, the menu's staged windows. Fixed 4-byte instructions <code>[opcode][window id][operand]</code> in the menu overlay's data segment.</div>
     </a>
   </div>
 </section>
 
 <section class="doc-section" id="overlay-carriers">
-  <h2>Runtime overlay carriers</h2>
+  <h2>Code overlays</h2>
   <p>Archive entries that hold <em>code</em>, not assets: overlays are chunks of MIPS machine code the game loads into RAM on demand, and most of the game's logic lives in them.</p>
   <div class="card-grid">
     <a class="card" href="mips-overlay.html">
@@ -274,36 +330,6 @@
     <a class="card" href="slot-b-module-layout.html">
       <div class="card-title"><span>Slot-B module layout</span> <span class="tag tag-done">Confirmed</span></div>
       <div class="card-body">The file page for the 64 cast / summon modules that timeshare the second overlay window: head table, code, the spawn-record band that carries every effect the module fires, and the tail it inherits from another image.</div>
-    </a>
-  </div>
-</section>
-
-<section class="doc-section" id="auxiliary">
-  <h2>Auxiliary</h2>
-  <div class="card-grid">
-    <a class="card" href="window-script.html">
-      <div class="card-title"><span>Window widget scripts</span> <span class="tag tag-done">Confirmed</span></div>
-      <div class="card-body">The bytecode behind the UI's window choreography - the shop's slide-in, the menu's staged windows. Fixed 4-byte instructions <code>[opcode][window id][operand]</code> in the menu overlay's data segment.</div>
-    </a>
-    <a class="card" href="sfx-table.html">
-      <div class="card-title"><span>SFX descriptor table</span> <span class="tag tag-done">Confirmed</span></div>
-      <div class="card-body">The sound-effect lookup table in the executable: 100 8-byte rows naming a VAB program / tone, voice count, and the category that selects which of four open banks the cue plays from.</div>
-    </a>
-    <a class="card" href="bse-dat.html">
-      <div class="card-title"><span>bse.dat battle SFX bank</span> <span class="tag tag-done">Confirmed</span></div>
-      <div class="card-body">The runtime half of the sound-effect descriptor table: the rows behind cue ids <code>0x200</code> and up while a battle is on screen, loaded per battle.</div>
-    </a>
-    <a class="card" href="sound-driver.html">
-      <div class="card-title"><span>Sound-driver path strings</span> <span class="tag tag-done">Confirmed</span></div>
-      <div class="card-body">The filename extensions the sound driver appends (<code>.dpk</code>, <code>.spk</code>, <code>.MAP</code>, <code>.PCH</code>) and their consumers. The per-scene <code>.dpk</code> pack holds a VAB + SEQ pair.</div>
-    </a>
-    <a class="card" href="pochi.html">
-      <div class="card-title"><span>Pochi-filler placeholder slots</span> <span class="tag tag-done">Confirmed</span></div>
-      <div class="card-body">Unused placeholder entries padded with the ASCII word "pochi": each exactly one 2048-byte sector of fill, none carrying a parseable asset.</div>
-    </a>
-    <a class="card" href="ringside-still.html">
-      <div class="card-title"><span>Headerless 16bpp stills</span> <span class="tag tag-done">Confirmed</span></div>
-      <div class="card-body">Two entries that are a picture with nothing in the file saying so - raw BGR555 and a length. The 320 &times; 256 rectangle is four immediates in the routine that uploads them, and which of the two loads depends on the party leader's HP.</div>
     </a>
   </div>
 </section>

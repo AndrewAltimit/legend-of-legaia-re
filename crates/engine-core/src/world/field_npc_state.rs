@@ -180,6 +180,17 @@ pub struct FieldNpcState {
     /// stepped alongside [`Self::face_legs`].
     pub(crate) rotate_legs:
         std::collections::BTreeMap<u8, legaia_engine_field::cutscene_timeline::TimelineFacing>,
+    /// Compass-walk legs (`37` / `41 <b0> <b1>`, or the `B7` / `C1 <id>`
+    /// cross-context form) a placement's load-frame slice armed on itself
+    /// or on another placement, keyed by slot and stepped once per field
+    /// tick alongside [`Self::face_legs`]. The arm halts the context
+    /// (`+0x10 |= 0x400`) and seats the op on `+0x94`; `FUN_8003BC08` then
+    /// runs the walk kernel `FUN_8003774C` on every tick the halt holds, and
+    /// the kernel's landing clears it. `dolk`'s vendors (`P1[21]`
+    /// `23 64 4D` / `41 06 01`) end half a tile east of their `MOVE_TO`
+    /// tile that way, the counter between them and the player.
+    pub(crate) glide_legs:
+        std::collections::BTreeMap<u8, legaia_engine_field::cutscene_timeline::TimelineNpcGlide>,
     /// **Live per-slot model id**, keyed by placement `slot`: what the
     /// scripted-motion VM's op `0x0E` re-bound this actor's mesh to, in the
     /// raw operand space both model-pool consumers share (`< 0xF0` = the
@@ -336,6 +347,7 @@ impl FieldNpcState {
             motions: std::collections::BTreeMap::new(),
             face_legs: std::collections::BTreeMap::new(),
             rotate_legs: std::collections::BTreeMap::new(),
+            glide_legs: std::collections::BTreeMap::new(),
             models: std::collections::BTreeMap::new(),
             ambient: std::collections::BTreeMap::new(),
             object_ambient: std::collections::BTreeMap::new(),

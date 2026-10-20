@@ -255,10 +255,9 @@ impl<'m> DrawCtx<'_, 'm> {
             // uniform scale commutes with the per-model Y-flip, so
             // composing it on the camera side scales both the mesh
             // and the actor's stage translation, exactly like
-            // retail. Outside a stage-dome battle the synthetic
-            // AABB-framing camera stays unscaled (it frames the
-            // raw actor coordinates).
-            let actor_cam = if in_battle && app.battle_stage_mesh.is_some() {
+            // retail - stage or no stage: the scale is the battle
+            // mode's base matrix, not the backdrop's.
+            let actor_cam = if in_battle {
                 cam * Mat4::from_scale(Vec3::splat(BATTLE_WORLD_SCALE))
             } else {
                 cam

@@ -195,9 +195,11 @@ impl<'m> DrawCtx<'_, 'm> {
         // Retail's placed-object near reject
         // (`field_env::placed_origin_near_culled`): an object
         // whose origin sits within 160 units of the eye, or
-        // behind it, is not drawn. Judged under the retail
-        // camera only - the `F3` debug orbit frames from a
-        // vantage retail never had.
+        // behind it, is not drawn. Judged from retail's vantage
+        // only (`field_view_window::retail_vantage`): under a
+        // swung / tilted / zoomed follow camera, a wider distance
+        // preset or the `F3` debug orbit, a ground slab's origin
+        // can sit behind the lens while the slab is in shot.
         // A placed object a script has moved (`A3` seat, `4C 42`
         // lift under the actor's `0x20000000` height law) draws at
         // its actor's live position: retail's case-5 draw reads
@@ -253,8 +255,9 @@ impl<'m> DrawCtx<'_, 'm> {
             let &(colour, blend) = object_tints.get(&record?)?;
             tint_draw_cue((colour, blend))
         };
+        let retail_vantage = app.retail_vantage();
         let place_near_culled = |mvp: &Mat4| {
-            !app.field_debug_camera
+            retail_vantage
                 && legaia_engine_scene::field_env::placed_origin_near_culled(mvp.w_axis.w)
         };
         if layer_on("place") {
@@ -279,12 +282,12 @@ impl<'m> DrawCtx<'_, 'm> {
                 {
                     continue;
                 }
-                if !legaia_engine_core::scene_staging::placed_draw_live(
+                if !legaia_engine_world_views::scene_staging::placed_draw_live(
                     app.field_placement_window_keys
                         .get(di)
                         .and_then(Option::as_ref),
                     static_window,
-                ) || !legaia_engine_core::field_view_window::placed_actor_visible(
+                ) || !legaia_engine_world_views::field_view_window::placed_actor_visible(
                     &app.session.host.world,
                     view_cells.as_ref(),
                     model.w_axis.x as i32,
@@ -389,12 +392,12 @@ impl<'m> DrawCtx<'_, 'm> {
                     continue;
                 }
                 let model = &object_moved(model, record);
-                if !legaia_engine_core::scene_staging::placed_draw_live(
+                if !legaia_engine_world_views::scene_staging::placed_draw_live(
                     app.field_placement_color_window_keys
                         .get(di)
                         .and_then(Option::as_ref),
                     static_window,
-                ) || !legaia_engine_core::field_view_window::placed_actor_visible(
+                ) || !legaia_engine_world_views::field_view_window::placed_actor_visible(
                     &app.session.host.world,
                     view_cells.as_ref(),
                     model.w_axis.x as i32,

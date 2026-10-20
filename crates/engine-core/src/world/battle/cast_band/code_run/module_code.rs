@@ -1039,11 +1039,17 @@ impl World {
                 // `0x801CF4EC` arm calls them directly.
                 918 => ticks::kemaro_tick(&mut ctx, &mut victim, None),
                 922 => Some(ticks::puera_tick(&mut ctx, &mut victim, None)),
-                924 => Some(ticks::ultimate_rave_tick(
-                    &mut ctx,
-                    &mut caster,
-                    &mut victim,
-                )),
+                924 => {
+                    // Arm 0's kill roll, drawn once per cast and held for
+                    // arm 10 (the word `0x801F7C4C`).
+                    let kill = self.ultimate_rave_verdict();
+                    Some(ticks::ultimate_rave_tick(
+                        &mut ctx,
+                        &mut caster,
+                        &mut victim,
+                        kill,
+                    ))
+                }
                 925 => Some(ticks::spikefish_tick(&mut ctx, &mut caster)),
                 927 => Some(ticks::juggernaut_tick(&mut ctx, &mut victim, None)),
                 949 => Some(ticks::water_crystals_tick(&mut ctx, &mut victim, None)),

@@ -12,6 +12,7 @@ path = "src/lib.rs"
 
 [dependencies]
 legaia-engine-core.workspace = true
+legaia-engine-world-views.workspace = true
 legaia-engine-battle.workspace = true
 legaia-engine-battle-vm.workspace = true
 legaia-engine-dialog.workspace = true

@@ -68,7 +68,7 @@ pub struct FillFadeInput {
 /// PORT: FUN_801ee5d4
 ///
 /// Wired: `PanelActorKind::FillFade` in
-/// `legaia_engine_core::world_views::world_map_panel_host`.
+/// `legaia_engine_world_views::world_map_panel_host`.
 pub fn fill_fade_tick(phase: i16, input: FillFadeInput) -> (i16, i16, Vec<FillFadeEffect>) {
     let mut phase = phase;
     let mut timer = input.timer;

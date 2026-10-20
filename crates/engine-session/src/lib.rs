@@ -27,6 +27,8 @@
 
 pub mod audio_director;
 pub mod battle_fx;
+pub mod battle_intro;
+pub mod battle_presentation;
 pub mod battle_stage;
 pub mod battle_vram;
 pub mod host_trace;
@@ -34,6 +36,7 @@ pub mod hotkeys;
 pub mod mode_trace;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod native;
+pub mod party_spec;
 pub mod scene_actors;
 pub mod session;
 pub mod xa_banks;

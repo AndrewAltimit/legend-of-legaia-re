@@ -316,7 +316,7 @@ mod tests {
             );
             for slot in 0..4 {
                 assert_eq!(
-                    world.actor_slot_drawn(slot, false),
+                    world.actor_slot_drawn(slot),
                     slot == player,
                     "{pass}: actor {slot} drawn after the page resume"
                 );

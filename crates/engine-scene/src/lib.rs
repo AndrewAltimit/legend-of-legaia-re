@@ -23,6 +23,7 @@ pub mod model_bank;
 pub mod npc_catalog;
 pub mod overlay_loader;
 pub mod scene;
+pub mod scene_arrivals;
 pub mod scene_assembly;
 pub mod scene_assets;
 pub mod scene_bundle;

@@ -41,8 +41,10 @@ fn overworld_landmarks_parked_by_their_prologue_are_not_drawn() {
         // The live world (both play hosts) and the static assembly's scratch
         // world agree on what the prologues hide.
         let live = host.world.hidden_object_records();
-        let staged =
-            legaia_engine_core::scene_staging::story_hidden_records_for_scene(scene, &host.index);
+        let staged = legaia_engine_world_views::scene_staging::story_hidden_records_for_scene(
+            scene,
+            &host.index,
+        );
         for hidden in [&live, &staged] {
             let mut kept = all.clone();
             field_env::retain_visible_landmark_placements(&mut kept, &binds, hidden);

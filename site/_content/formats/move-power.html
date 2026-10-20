@@ -181,6 +181,7 @@
         </tbody>
       </table>
       <p>Both moduli are used as <code>rand % (x + 1)</code>, so power <code>&lt; 4</code> rolls a constant 0 on the <code>&gt;&gt; 2</code> branch and <code>&lt; 8</code> on <code>&gt;&gt; 3</code>. The half and eighth scales appear only in the retry arm, which re-floors a too-low attacker score. The roll is then scaled by the element-affinity matrix <code>FUN_801dd864</code>, a sibling table in the same overlay.</p>
+      <p>So the kernel takes the <strong>whole</strong> halfword and does every shift itself; the unshifted word is the biggest term of the attack roll. The power figures on this page (record 3's 1500 from raw <code>0x1770</code>, Freeze Thunder's 37) and the <code>asset move-power</code> column are the <code>&gt;&gt; 2</code> modulus base. Fed that quarter instead, the roll shifts twice: Tail Fire (raw <code>0x1E</code>) on a Spirit-guarding Vahn reads 16 on retail's damage ring, where the quartered roll lands on 6 or 7.</p>
     </div>
   </details>
 

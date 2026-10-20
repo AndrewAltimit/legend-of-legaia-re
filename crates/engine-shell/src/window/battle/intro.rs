@@ -25,45 +25,22 @@ impl PlayWindowApp {
     pub(in crate::window) fn take_battle_intro_frame(
         &mut self,
     ) -> (Option<BattleIntro>, Vec<ScreenPrim>) {
-        use legaia_engine_battle::encounter::EncounterPhase;
-
-        let phase = self
-            .session
-            .host
-            .world
-            .encounters
-            .session
-            .as_ref()
-            .map(|s| s.phase());
-        let Some(EncounterPhase::Transition { roll, .. }) = phase else {
-            self.battle_intro = None;
-            self.battle_intro_vram = None;
-            return (None, Vec::new());
-        };
-        let Some(entity) = self.session.host.world.battle.intro else {
-            return (self.battle_intro.take(), Vec::new());
-        };
-        let total = self
-            .session
-            .host
-            .world
-            .encounters
-            .session
-            .as_ref()
-            .map(|s| i32::from(s.transition_frames))
-            .unwrap_or(0);
-
-        if self.battle_intro.is_none() {
-            self.battle_intro = Some(self.arm_battle_intro(roll.formation_id, total));
-        }
+        use legaia_engine_session::battle_intro::{BattleIntroStep, step_battle_intro};
+        // The arming and the clock step are the step both hosts run; this
+        // window keeps only its captured page.
+        let (prims, elapsed) =
+            match step_battle_intro(&self.session.host, &mut self.battle_intro, false) {
+                BattleIntroStep::Idle { .. } => {
+                    self.battle_intro_vram = None;
+                    return (None, Vec::new());
+                }
+                BattleIntroStep::Pending => return (self.battle_intro.take(), Vec::new()),
+                BattleIntroStep::Frame { prims, elapsed, .. } => (prims, elapsed),
+            };
         // Hand the emitter out by value: the render pass needs it while the
         // renderer holds an immutable borrow of `self`, which a `&mut self`
         // method could not have. The caller puts it back.
-        let mut intro = self.battle_intro.take().expect("armed above");
-        // Stepped to the entity's clock, one step per clock unit: a redraw can
-        // drain several world ticks, and stepping once per redraw left the
-        // shatter behind the browser page's (`BattleIntro::advance_to`).
-        let prims = intro.advance_to(entity.elapsed).prims;
+        let intro = self.battle_intro.take();
         // Per-frame emitter yield. The styles differ by what they draw on top
         // of the captured field frame, so a style that emits nothing but the
         // fade is indistinguishable from a blank transition on screen - this
@@ -85,53 +62,12 @@ impl PlayWindowApp {
             }
             log::debug!(
                 "battle intro {:?} frame {} -> {} prim(s) screen bbox {lo:?}..{hi:?}",
-                intro.style(),
-                entity.elapsed,
+                intro.as_ref().map(|i| i.style()),
+                elapsed,
                 prims.len()
             );
         }
-        (Some(intro), prims)
-    }
-
-    /// Build the emitter for the battle about to open.
-    ///
-    /// The style is **not** a choice the port makes: `select_intro_style` is a
-    /// port of the intro overlay's own init block, which keys on the battle
-    /// flags byte, the formation's first monster id and the current scene. The
-    /// engine feeds it the resolved formation and the loaded scene so a given
-    /// battle gets the style retail gives it.
-    pub(super) fn arm_battle_intro(&self, formation_id: u16, total: i32) -> BattleIntro {
-        // All three selector inputs come out of one engine-side resolver
-        // (`SceneHost::battle_intro_style_inputs`), and the arming itself -
-        // the PROT 0979 tables with their disc-free fallbacks, the shade
-        // pack, the env seeds - is the one `BattleIntro::arm_for_battle` the
-        // browser play page calls too.
-        let host = &self.session.host;
-        let inputs = host.battle_intro_style_inputs(formation_id);
-        let overlay = host
-            .index
-            .entry_bytes_extended(legaia_render_kernels::battle_intro::INTRO_OVERLAY_PROT)
-            .ok();
-        let shade = host
-            .index
-            .entry_bytes(legaia_actor_formats::field_char_textures::PROT_ENTRY_INDEX)
-            .ok();
-        let intro = BattleIntro::arm_for_battle(
-            &inputs,
-            total,
-            overlay.as_deref(),
-            shade.as_deref().map(Vec::as_slice),
-            host.world.rng_state,
-        );
-        log::info!(
-            "play-window: battle intro style {:?} (sub {}) for formation slot0 {:#04x}, \
-             battle flags {:#04x}",
-            intro.style(),
-            intro.sub_style(),
-            inputs.formation_slot0,
-            inputs.battle_flags
-        );
-        intro
+        (intro, prims)
     }
 
     /// Bring the transition's private VRAM page up to date for this frame and

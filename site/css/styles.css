@@ -42,7 +42,9 @@
    lift it.
    ===================================================================== */
 
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;0,8..60,700;1,8..60,400&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
+/* Web fonts (Inter, Source Serif 4, JetBrains Mono) are linked from each
+   page's head by site/_gen.py (FONT_LINKS), not @imported here: an @import
+   holds this sheet's load until a second, third-party fetch finishes. */
 
 :root {
   --bg:            #0f1115;    /* shell */
@@ -482,6 +484,34 @@ body:has(> .app.no-chrome) { padding-top: 0; }
 }
 .sidebar-subhead:first-child { padding-top: 0.25rem; }
 
+/* A subhead and its items form one .sidebar-group (built by layout.js):
+   the subhead reads as a branch label - accent colour, underlined - and its
+   items hang off a guide rail, so a long section reads as a tree. The
+   active page's border sits on the rail. */
+.sidebar-group { margin: 0.55rem 0 0.15rem; }
+.sidebar-group:first-child { margin-top: 0.15rem; }
+.sidebar-group .sidebar-subhead {
+  margin: 0 0.5rem 0.2rem 1.4rem;
+  padding: 0 0 0.2rem;
+  font-size: 0.78rem;
+  font-weight: 650;
+  letter-spacing: 0.01em;
+  text-transform: none;
+  color: var(--accent);
+  border-bottom: 1px solid var(--accent-line);
+}
+.sidebar-group.has-active .sidebar-subhead { color: var(--accent-hi); }
+.sidebar-group-items {
+  display: flex;
+  flex-direction: column;
+  margin-left: 1.45rem;
+  border-left: 1px solid var(--border-hi);
+}
+.sidebar-nav .sidebar-group-items a {
+  margin-left: -1px;
+  padding-left: 0.85rem;
+}
+
 /* Visually nested child items (e.g. write-up tier pages under their series).
    Indented, smaller, with a guide rail; the active border stays at the rail. */
 .sidebar-nav a.nav-child {
@@ -500,6 +530,9 @@ body:has(> .app.no-chrome) { padding-top: 0; }
 .sidebar-nav a.nav-child { position: relative; }
 .sidebar-nav a.nav-child:hover,
 .sidebar-nav a.nav-child.active { color: var(--accent); }
+/* A child row inside a group: one more step in from the group's rail. */
+.sidebar-nav .sidebar-group-items a.nav-child { padding-left: 1.75rem; }
+.sidebar-nav .sidebar-group-items a.nav-child::before { left: 0.9rem; }
 
 .sidebar-foot {
   margin-top: auto;

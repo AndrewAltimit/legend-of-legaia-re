@@ -245,3 +245,22 @@ fn a_player_targeted_model_set_lands_on_the_player() {
     w.reset_field_warp_and_clip();
     assert_eq!(w.locomotion.player_live_model, None);
 }
+
+/// The op-`0x49` installer `FUN_801F1278` stands the player: clip base `2`,
+/// `+0x5C = 2 + leader * 7` and the party-bank bit
+/// (`0x801F1318..0x801F1354`), whatever clip was playing.
+#[test]
+fn an_op49_park_stands_the_player_on_the_leaders_idle_clip() {
+    let mut w = world_with_anim();
+    w.locomotion.clip_base = legaia_engine_field::field_player_clip::BASE_RUN;
+    w.locomotion.player_clip = 3;
+    w.locomotion.player_party_bank = false;
+    w.run_submode_installer();
+    assert_eq!(
+        w.locomotion.clip_base,
+        legaia_engine_field::field_player_clip::BASE_IDLE
+    );
+    assert_eq!(w.locomotion.player_clip, 2, "leader 0's idle id");
+    assert!(w.locomotion.player_party_bank);
+    assert_eq!(scene_record(&w), None, "bound in the party bank");
+}

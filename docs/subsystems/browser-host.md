@@ -172,10 +172,14 @@ Two things the browser host has to do that the native one gets for free:
 - **Seating.** Scene entry puts the player at the retail *cold-boot spawn*,
   which is only meaningful for `town01` - every other scene is normally entered
   through a door that supplies the arrival tile. Picking a scene from a list has
-  no door, so `LegaiaRuntime::seat_player` keeps the cold spawn when it has floor
-  under it and otherwise seats the player on the walk-ground heightfield, never
-  on a walk-on trigger tile (which would fire on the first tick and warp the
-  scene out from under them).
+  no door, so `enter_field` arms the engine's picker seat
+  (`SceneHost::arm_picker_entry_seat`, shared with the native `--scene` entry):
+  the party lands where another scene's door or the overworld entrance would
+  put it ([picker door arrivals](engine.md#picker-door-arrivals)). Only when no
+  arrival qualifies does `LegaiaRuntime::seat_player` relocate the cold spawn:
+  it keeps it when it has floor under it and otherwise seats the player on the
+  walk-ground heightfield, never on a walk-on trigger tile (which would fire on
+  the first tick and warp the scene out from under them).
 - **Framing.** The page frames every field / overworld / cutscene shot with the
   ENGINE camera (`play_camera`, below), so the vantage is retail's rather than
   the page's own. The camera-occlusion fade dissolves whatever geometry sits
@@ -809,6 +813,41 @@ instead of the scene's and are routed to the characters page
 (`special_count`). Off-map "hidden" spawns are script-gated story actors,
 fully resolvable, so they *are* listed - flagged `conditional`.
 
+### Conversation trees (`npc_dialog`)
+
+`field_npc_dialog_tree_json(catalog_idx)` is the actor's whole conversation,
+not the one line the card shows. The walk is the field kernel's
+`man_field_scripts::placement_dialog_tree` (built into each catalog entry as
+`NpcEntry::dialog_tree`); it starts at the record's interaction cursor - one
+instruction past the spawn section's `0x21` - and follows every arm of the
+script the dialog SM `FUN_80039B7C` would run:
+
+- consecutive `0x1F` lines are one **page**; the byte after a page is
+  classified as `FUN_80038050` does (`inline_dialogue::talk_dispatch`):
+  `0x21` ends the talk, `0x24` / `0x25` / `0x48` / `4C FF` / `4C FE xx`
+  continue, a picker opens a **choice**, and any other byte ends the talk
+  with the cursor parked on it - the tree's **next talk** arm, walked from
+  that byte;
+- every conditional jump in the [branch-encoding
+  table](script-vm.md#branch-encodings) is a **branch** labelled by the
+  condition its own operands name (story flag, gold / level / random
+  compare, held or worn item, tile box, ...); waits stay inline;
+- item / gold / party / flag writes, scene changes, battles, op-`0x49`
+  menus and movies are **actions**, and an op-`0x44` spawn whose record
+  carries text is an **event** with that record's own tree;
+- a path that reaches an instruction already shown becomes a **goto** to
+  the node that covers it, so the tree is finite and cycle-safe; an
+  instruction the decoder cannot size ends its path as `undecoded`, never
+  guessed past.
+
+`npc_dialog::tree_json` renders it, decoding lines in the browser from the
+loaded disc (`0xC1` default party names, `0xC2` / `0xC3` / `0xC4` item and
+spell names from the disc's SCUS tables). Retail stores no speaker per line:
+an actor's own pages are that actor's, and the page labels only balloons and
+event lines. Across the field corpus nearly every talker's tree reaches its
+text, about two-thirds reach several pages and almost half branch; disc-gated
+test `crates/engine-scene/tests/npc_dialog_tree_disc.rs`.
+
 ## Shop vendors (`shop_vendors`)
 
 `scene_shop_vendors_json()` ties each gold shop of the scene loaded by
@@ -1292,7 +1331,6 @@ reference TIMs sitting in other PROT entries.
 | [`translate_workbench`](../../crates/web-viewer/src/translate_workbench.rs) | `Workbench` - the in-browser language-pack editor over the visitor's own disc. |
 | [`minigames_fishing_scene`](../../crates/web-viewer/src/minigames_fishing_scene.rs) | The fishing venue's 3D field scene and the player's body for the minigames page. |
 | [`play_minigame_arena`](../../crates/web-viewer/src/play_minigame_arena.rs) / [`play_minigame_slots`](../../crates/web-viewer/src/play_minigame_slots.rs) / [`play_dance_art`](../../crates/web-viewer/src/play_dance_art.rs) | The play page's in-world Muscle Dome / Baka Fighter / dance and slot-machine read-outs and art. |
-| [`play_battle_audio`](../../crates/web-viewer/src/play_battle_audio.rs) | The audio half of the play page's battle tick, twin of the native `window/battle.rs` cue block. |
 | [`play_battle_body_blend`](../../crates/web-viewer/src/play_battle_body_blend.rs) / [`play_battle_limb_dim`](../../crates/web-viewer/src/play_battle_limb_dim.rs) | Browser seats of the battle body's whole-mesh semi-transparency and the Rot limb dimming. |
 | [`play_field_fx`](../../crates/web-viewer/src/play_field_fx.rs) | Field fog sheets, actor drop shadows and op `0x34` sub-1 attached lights. |
 | [`play_field_hud`](../../crates/web-viewer/src/play_field_hud.rs) | The field party-status HUD (name / `LV` / `HP` / `MP`). |

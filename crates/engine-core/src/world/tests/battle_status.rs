@@ -346,6 +346,13 @@ fn asleep_monster_loses_its_turn_and_never_attacks() {
                 .battle
                 .status_effects
                 .apply_with_duration(1, StatusKind::Sleep, 255);
+            // A landed hit wakes a sleeper (the on-hit strip at
+            // `0x801EDA5C`), so the party member is held Numb: nothing
+            // strikes the monster, and only its own turn could hurt.
+            world
+                .battle
+                .status_effects
+                .apply_with_duration(0, StatusKind::Numb, 255);
         }
         let start = world.actors[0].battle.hp;
         for _ in 0..600 {
@@ -424,6 +431,12 @@ fn live_loop_ticks_dot_at_the_round_boundary() {
             .battle
             .status_effects
             .apply_with_duration(1, StatusKind::Sleep, 255);
+        // The party member is held Numb so its strikes never wake the
+        // sleeper (the on-hit strip at `0x801EDA5C`).
+        world
+            .battle
+            .status_effects
+            .apply_with_duration(0, StatusKind::Numb, 255);
         world.actors[0].battle.max_hp = 800;
         world.actors[0].battle.hp = 800;
         world.actors[1].battle.max_hp = 9999;
@@ -506,4 +519,30 @@ fn all_party_item_heals_every_living_party_actor_in_battle() {
         world.actors[2].battle.hp, 0,
         "dead ally untouched by a heal"
     );
+}
+
+#[test]
+fn numb_party_member_with_no_command_passes_its_turn_without_a_swing() {
+    // A missed Kiss of Death raises `+0x16E` bit `0x400` with no tracker
+    // entry. The command ring refuses the member (`0xF84`), so it commits
+    // nothing; its turn arms category `0`, which the action seed sends to the
+    // Done band (`0x801E2E0C`) instead of a strike.
+    fn armed_category(field_flags: u16) -> u8 {
+        let mut world = World::new();
+        world.party.party_count = 3;
+        world.battle.player_driven = true;
+        for i in 0..5 {
+            world.actors[i].active = true;
+            world.actors[i].battle.liveness = 1;
+            world.actors[i].battle.hp = 100;
+            world.actors[i].battle.max_hp = 100;
+        }
+        world.actors[1].battle.field_flags = field_flags;
+        world.dispatch_battle_turn(1);
+        assert_eq!(world.battle_ctx.active_actor, 1);
+        world.actors[1].battle.action_category
+    }
+    assert_eq!(armed_category(0x0400), 0, "Numb: no command, no swing");
+    assert_eq!(armed_category(0x0800), 0, "Sleep: no command, no swing");
+    assert_eq!(armed_category(0), 3, "a free member still auto-strikes");
 }

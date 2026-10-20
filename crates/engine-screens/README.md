@@ -32,8 +32,9 @@ nothing. This crate is the projection between them for:
   window's frame (`with_battle_item_frame`), the command-menu chip cluster
   (`battle_command`), the inventory item-use screen
   (`inventory_use_session_draws`), the developer menu's row list and Records
-  page with their pens and headings (`dev_menu`), and the dance / Baka Fighter
-  HUD primitives (`minigame_hud`);
+  page with their pens and headings (`dev_menu`), the dance / Baka Fighter
+  HUD primitives and the Muscle Dome arena hub's screen-quad selection
+  (`minigame_hud::muscle_hub_quads`);
 - the **battle screens** (`battle_screens`): the HUD frame off the host's
   `BattleHud` model, its chrome sprites (strip, item window, command chips,
   the field-side banner frame), the sparring tutorial's boxes, the arts

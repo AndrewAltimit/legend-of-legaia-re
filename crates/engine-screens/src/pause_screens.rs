@@ -487,9 +487,7 @@ pub fn items_draws(
     let model = ps::items_screen_model(s);
     if model.target_select {
         if let Some(panel) = world
-            .and_then(|w| {
-                legaia_engine_core::world_views::pause_screens::target_panel_view_model(s, w)
-            })
+            .and_then(|w| legaia_engine_world_views::pause_screens::target_panel_view_model(s, w))
             .filter(|m| !m.members.is_empty())
         {
             let members = target_panel_members(&panel);

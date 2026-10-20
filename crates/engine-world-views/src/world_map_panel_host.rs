@@ -40,7 +40,7 @@ use legaia_engine_field::world_map_panel_host::*;
 /// them, reads `0`. Both hosts ask this one function.
 ///
 /// PORT: FUN_801d0d38 (`lw a2,0x45c4(v0)` at `0x801D0D74`)
-pub fn field_hud_view_mode(world: &crate::world::World) -> i32 {
+pub fn field_hud_view_mode(world: &legaia_engine_core::world::World) -> i32 {
     match world.toggles.field_hp_display {
         legaia_engine_menus::option_values::HpDisplayOpt::Immediate => 0,
         legaia_engine_menus::option_values::HpDisplayOpt::Gradual => 1,
@@ -49,7 +49,10 @@ pub fn field_hud_view_mode(world: &crate::world::World) -> i32 {
 }
 
 /// PORT: FUN_801d0d38 (`0x801D0D38..0x801D0DBC` suppress gate)
-pub fn field_hud_suppressed(world: &crate::world::World, host_panel_owns_frame: bool) -> bool {
+pub fn field_hud_suppressed(
+    world: &legaia_engine_core::world::World,
+    host_panel_owns_frame: bool,
+) -> bool {
     use legaia_engine_mode::mode::SceneMode;
     !matches!(world.mode, SceneMode::Field | SceneMode::WorldMap)
         || host_panel_owns_frame
@@ -88,7 +91,7 @@ pub fn field_hud_suppressed(world: &crate::world::World, host_panel_owns_frame: 
 
 /// `true` while the encounter session sits in its field-to-battle
 /// `Transition` phase - the frames PROT 0979 owns slot A.
-pub fn field_battle_transition_active(world: &crate::world::World) -> bool {
+pub fn field_battle_transition_active(world: &legaia_engine_core::world::World) -> bool {
     matches!(
         world.encounters.session.as_ref().map(|s| s.phase()),
         Some(legaia_engine_battle::encounter::EncounterPhase::Transition { .. })
@@ -108,15 +111,15 @@ pub fn field_battle_transition_active(world: &crate::world::World) -> bool {
 /// script holds the player for its whole run - every ending scene, whose
 /// entry script spawns the credits record and never releases it - shows no
 /// readout at all. The engine answers the same question with
-/// [`crate::world::World::script_context_engages_player`] and
-/// [`crate::world::World::dialogue_owns_input`], plus the bit itself where
+/// [`legaia_engine_core::world::World::script_context_engages_player`] and
+/// [`legaia_engine_core::world::World::dialogue_owns_input`], plus the bit itself where
 /// an engine path sets it on the player's `move_state`.
 ///
 /// Hosts call [`FieldPartyHud::rearm`] on a frame this returns `true`, before
 /// the tick.
 ///
 /// PORT: FUN_801d0d38 (`0x801D0DC0..0x801D0DD8`, the player-bit rearm term)
-pub fn field_hud_rearm_held(world: &crate::world::World) -> bool {
+pub fn field_hud_rearm_held(world: &legaia_engine_core::world::World) -> bool {
     let player_bit = world
         .player_actor_slot
         .and_then(|s| world.actors.get(usize::from(s)))
@@ -128,12 +131,14 @@ pub fn field_hud_rearm_held(world: &crate::world::World) -> bool {
 ///
 /// Retail's draw loop walks the present-party list at `0x80084598` for
 /// `0x80084594` entries and indexes the character records with it; the engine
-/// mirror is [`crate::world::World::party_roster_slot`] over
+/// mirror is [`legaia_engine_core::world::World::party_roster_slot`] over
 /// [`legaia_engine_menus::party_state::PartyState::party_count`]. Every number comes from the *record*,
 /// not from a battle actor: outside a fight the battle mirrors are stale (or
 /// zero for a party that has never fought), and a field readout that only
 /// works after the first battle is worse than none.
-pub fn field_party_hud_members(world: &crate::world::World) -> Vec<FieldHudMemberData> {
+pub fn field_party_hud_members(
+    world: &legaia_engine_core::world::World,
+) -> Vec<FieldHudMemberData> {
     let count = (world.party.party_count as usize).min(3);
     let fallback = world.party.roster_names();
     (0..count)
@@ -176,7 +181,7 @@ mod tests {
     /// Off never draws - and the scene kind changes none of it.
     #[test]
     fn the_hp_display_option_drives_the_hud_idle_on_every_scene_kind() {
-        use crate::world::World;
+        use legaia_engine_core::world::World;
         use legaia_engine_menus::option_values::HpDisplayOpt;
         use legaia_engine_menus::options::OptionsState;
         use legaia_engine_mode::mode::SceneMode;
@@ -192,7 +197,7 @@ mod tests {
                     field_hp_display: opt,
                     ..OptionsState::default()
                 };
-                crate::options::apply_to_world(&o, &mut w);
+                legaia_engine_core::options::apply_to_world(&o, &mut w);
                 assert_eq!(field_hud_view_mode(&w), mode, "{opt:?} on {scene:?}");
                 let mut hud = FieldPartyHud::new();
                 let drew = (0..=0x100u32).find(|_| {
@@ -211,7 +216,7 @@ mod tests {
     /// drops the readout waits out a full idle countdown before it returns.
     #[test]
     fn an_engaged_player_keeps_the_hud_rearming() {
-        let mut w = crate::world::World {
+        let mut w = legaia_engine_core::world::World {
             player_actor_slot: Some(0),
             ..Default::default()
         };
@@ -253,8 +258,8 @@ mod tests {
     // The host chain: World::tick -> tick_world_map -> tick_world_map_panels
     // ---------------------------------------------------------------------
 
-    fn world_on_the_overworld() -> crate::world::World {
-        let mut w = crate::world::World::default();
+    fn world_on_the_overworld() -> legaia_engine_core::world::World {
+        let mut w = legaia_engine_core::world::World::default();
         w.enter_world_map();
         w.world_map.ctrl.as_mut().unwrap().debug_enabled = true;
         w
@@ -283,7 +288,7 @@ mod tests {
     /// anything, so a default overworld is unchanged.
     #[test]
     fn the_screen_stays_shut_without_the_debug_gate() {
-        let mut w = crate::world::World::default();
+        let mut w = legaia_engine_core::world::World::default();
         w.enter_world_map();
         w.set_pad(legaia_engine_system::input::PadButton::Square.mask());
         let _ = w.tick();
@@ -388,7 +393,7 @@ mod tests {
     /// is not resident while the intro plays.
     #[test]
     fn the_battle_transition_suppresses_the_field_hud() {
-        use crate::world::World;
+        use legaia_engine_core::world::World;
         use legaia_engine_mode::mode::SceneMode;
         let mut world = World::new();
         world.mode = SceneMode::Field;

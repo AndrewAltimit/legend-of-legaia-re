@@ -1,5 +1,5 @@
 <header class="page-header">
-  <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">subsystems</a> &middot; field menu</div>
+  <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">subsystems</a> &middot; pause menu</div>
   <h1>Field Menu - Windows + Status Panel</h1>
   <p class="lede">How the pause menu is built - the screen you open in the field to check Status, change Equipment, or flip Options. It is data-driven: a 52-entry <strong>window-descriptor table</strong> on the disc places every screen's bordered windows and names each one's content-renderer, and the renderers draw window <em>contents</em> only - the gold 9-slice frame is emitted by the caller. This page pins the table, every screen's layout, and the from-scratch port that redraws it all.</p>
 </header>
@@ -11,7 +11,7 @@
     <dt>Record</dt><dd>0x10 bytes: content id, park edge, window class (2 tab / 3 standard / 4 list), content rect <code>x,y,w,h</code>, renderer VA</dd>
     <dt>Choreography</dt><dd>Windows slide in / out via the <a href="actor-vm.html">window-widget VM</a>; a closed window parks offscreen at its park edge</dd>
     <dt>Data read</dt><dd>The live <code>0x414</code>-byte character records at <code>0x80084708</code> - the same block the save file copies</dd>
-    <dt>In the port</dt><dd><code>engine-ui</code> draw builders (wgpu-free, shared by native window and browser) over <code>engine-core::world_views::pause_screens</code></dd>
+    <dt>In the port</dt><dd><code>engine-ui</code> draw builders (wgpu-free, shared by native window and browser) over <code>engine-world-views::pause_screens</code></dd>
     <dt>Confidence</dt><dd>Confirmed - table byte-matched disc-vs-RAM; layouts pinned by GPU-prim scans of menu captures (<a href="#how-we-know">how we know</a>)</dd>
   </dl>
   <table class="data-table">

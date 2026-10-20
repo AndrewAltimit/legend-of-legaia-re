@@ -137,6 +137,15 @@ pub fn commit_rate_decay(rate: AnimRate) -> AnimRate {
 /// cursor advance (`andi v0,v0,0x1000` at `0x800476E0`).
 pub const SLOW_STATUS_BIT: u16 = 0x1000;
 
+/// The Stone (`0x4`) and Numb (`0x400`) bits of `actor[+0x16E]`: with the
+/// actor on idle (`+0x1D9 == 0`), `FUN_80047430` takes neither cursor
+/// advance. It tests `andi v0,a0,0x404` at `0x80047640` and the clip at
+/// `0x8004764C`, refreshes the node's position and rotation from the actor,
+/// runs the tint pass (`jal 0x8004A908` at `0x800476C8`) and jumps to the
+/// epilogue (`j 0x800480B0`): no advance, no commit, no history push, so the
+/// body holds the keyframe it stood on when the status landed.
+pub const FROZEN_IDLE_STATUS_BITS: u16 = 0x0404;
+
 /// Scale a fixed-point anim-cursor step by the actor's rate, mirroring the
 /// retail advance `(dt * rate * clip_rate) >> 1`, or `>> 2` for a Slowed
 /// actor on idle, against the engine's base step (which equals the `>> 2`

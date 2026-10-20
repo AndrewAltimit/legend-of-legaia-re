@@ -911,7 +911,7 @@ as well as on the tick, so a decision that went stale on a guarded frame
 cannot reach the screen whichever host skipped the step.
 
 The predicate they ask is one kernel,
-`legaia_engine_core::world_views::world_map_panel_host::field_hud_suppressed`. It used to be
+`legaia_engine_world_views::world_map_panel_host::field_hud_suppressed`. It used to be
 an enumeration spelled out in each host, and the copies had drifted: the page's
 was missing all three of the window-side terms, and the native window gated the
 badge column on a different test again - which put the badges over every dialog
@@ -1461,7 +1461,11 @@ side, so they pair by call rather than by step name:
 | `BootSession::step_dance_tail` | `sync_dance_venue`, inside `tick_minigame_extras` | `tick_minigame_ui` |
 | `BootSession::sound_muscle_hub` | `tick_muscle_hub`, inside `tick_minigame_extras` | `tick_muscle_hub`, inside `tick_minigame_ui` |
 | `BootSession::sound_baka_announcer` | `tick_baka_chrome`, inside `tick_minigame_extras` | `tick_baka_ui`, inside `tick_minigame_ui` |
-| `BootSession::route_battle_audio` | `drain_and_log_battle_events` | `drain_battle_audio_cues`, inside `tick_battle_presentation` |
+| `BootSession::step_battle_presentation` (battle audio, popups, hit drain, effect-spawn routing, HUD fold) | `drain_and_log_battle_events` | `tick_battle_presentation` |
+| `battle_presentation::{battle_mode_edge, on_battle_entered, on_battle_left}` | `sync_battle_render` | `tick_battle_presentation` |
+| `battle_intro::step_battle_intro` (intro arming and clock step) | `take_battle_intro_frame` | `tick_battle_intro_prims`, inside `tick_battle_intro` |
+| `effect_draws::effect_billboards` (effect-pool billboards) | `build_effect_billboards` | `build_battle_fx` / `build_field_fx` |
+| `effect_draws::effect_model_draws` (effect models, parts, kind-4 nodes, shadows, field stager parts) | `build_effect_draws` | `build_battle_fx` / `build_field_fx` |
 | `BootSession::step_overlay_sfx` | `tick_menu_sfx`, in the arms that freeze the field | the export `play_tick_overlay_sfx`, from the page's frame loop |
 | `session::step_npc_clip_players` | `drain_anim_cues`, after the tick's re-targets | `drive_npc_clips` (`FieldActors::drive`), after the same |
 | `BootSession::step_name_entry_frame` | `BootSession::claim_tick`, from `sim_tick` | `BootSession::claim_tick`, from `frame_ticks` |
@@ -1623,7 +1627,7 @@ skips the picker's story baseline, which would otherwise clear system flags
 | clear colour | `engine-screens::field_frame::frame_clear_color`, `battle_stage_clear::scene_clear` |
 | prologue grade | `World::frame_grade` |
 | object-effect clip (field-VM `4C C2 1`) | `World::object_effect_mesh_clip` ([`renderer.md`](../subsystems/renderer.md#what-a-raised-0x42-draws)) |
-| world-map markers | `legaia_engine_core::world_map_markers` + `screen_prim::world_map_marker_prim` |
+| world-map markers | `legaia_engine_world_views::world_map_markers` + `screen_prim::world_map_marker_prim` |
 | narration crawl, title card | `cutscene_text_stage_draws` (stage pixels) |
 | dialog reading box (snapshot, layout, both halves) | `engine-screens::dialog_screens`; box height off the pager's row word `_DAT_801F2740` |
 | field message layer (balloon, map labels, tile-board prompt, Incense notice, reading box: order and gates) | `engine-screens::field_messages::field_message_frame`; balloon width `commit_text_balloon_measure` |

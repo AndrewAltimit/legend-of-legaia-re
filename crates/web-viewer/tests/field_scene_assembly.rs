@@ -327,8 +327,9 @@ fn world_map_scenes_include_the_walk_decoration_layer() {
             .field_object_binds(&index)
             .expect("field_object_binds")
         {
-            let hidden =
-                legaia_engine_core::scene_staging::story_hidden_records_for_scene(&scene, &index);
+            let hidden = legaia_engine_world_views::scene_staging::story_hidden_records_for_scene(
+                &scene, &index,
+            );
             field_env::retain_visible_landmark_placements(&mut landmarks, &binds, &hidden);
         }
         let deco = scene

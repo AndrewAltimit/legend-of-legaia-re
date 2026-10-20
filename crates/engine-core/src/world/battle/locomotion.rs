@@ -15,6 +15,11 @@
 //!   **no walk-home leg**: an action leaves its combatants standing where it
 //!   put them - see [`World::tick_battle_locomotion`] for the capture
 //!   evidence.
+//! - **An attacker inside its reach backs off.** The same tick, just ahead
+//!   of the root-motion term (`0x80047C3C..0x80047D1C`), steps the acting
+//!   seat of an Attack back along its facing while the range law reads in
+//!   range ([`World::drive_in_range_backoff`]), so a strike loop holds its
+//!   attacker at the edge of its reach.
 //! - **The body pair is re-derived every frame.** `+0x3C`/`+0x40`, the pair
 //!   the range law measures a target by and the separation pass measures
 //!   overlap on, is the live pair plus the facing-rotated pose centroid,
@@ -53,6 +58,15 @@ const FALLBACK_APPROACH: (i16, u8) = (20, 8);
 /// `legaia_actor_formats::monster_archive` - the anim cursor doc pins normal `4`),
 /// used when the actor's own `impact_step` byte is unset.
 const DEFAULT_SPEED_SCALE: u8 = 4;
+
+/// The action category the in-range back-off applies to (`li v0,0x3` against
+/// `+0x1DE` at `0x80047C68`): Attack.
+const BACKOFF_CATEGORY: u8 = 3;
+
+/// The in-range back-off as a root speed: its `>> 13` (`0x80047CCC` /
+/// `0x80047D14`) over the root term's `>> 15` is a factor of four, and the
+/// step runs against the facing (`subu`).
+const BACKOFF_SPEED: i16 = -4;
 
 /// Separation body radius of a party slot. Retail reads
 /// `(*(actor+0x22C))[+0x58]`; the enemy stager derives a monster's from its
@@ -380,6 +394,9 @@ impl World {
             state,
             ActionState::AttackWindup | ActionState::AttackAdvance | ActionState::AttackShortStep
         );
+        if active < self.actors.len() {
+            self.drive_in_range_backoff(active);
+        }
         if approaching && active < self.actors.len() {
             self.drive_attack_approach(active);
         }
@@ -439,6 +456,14 @@ impl World {
     /// none. An actor with no pose (no clip player) takes a zero centroid,
     /// so its pair is its live pair.
     // PORT: FUN_8004998C (`0x8004A3DC..0x8004A5F8`, the body-pair store)
+    /// [`Self::refresh_battle_body_pairs`] for a caller outside the world
+    /// that has just moved combatants' live pairs or headings (a capture
+    /// seat standing them on a capture's ground): the pairs the range law,
+    /// the separation pass and the framings read follow at once.
+    pub fn refresh_battle_body_pairs_now(&mut self) {
+        self.refresh_battle_body_pairs();
+    }
+
     pub(in crate::world) fn refresh_battle_body_pairs(&mut self) {
         for a in self.actors.iter_mut() {
             if a.battle.seat.is_none() {
@@ -494,6 +519,53 @@ impl World {
         let (dx, dz) = self.actors[slot]
             .battle
             .root_carry
+            .step_in_frame(frame, raw);
+        let ms = &mut self.actors[slot].move_state;
+        ms.world_x = ms.world_x.wrapping_add(dx as i16);
+        ms.world_z = ms.world_z.wrapping_add(dz as i16);
+    }
+
+    /// The anim tick's **in-range back-off** (`FUN_80047430`,
+    /// `0x80047C3C..0x80047D1C`), the term just ahead of the root-motion
+    /// step. On every tick it measures the actor against its own target
+    /// `+0x1DD` (`jal 0x8004E2F0` at `0x80047C40`), and when the range law
+    /// reads in range (`0`), the command flow `ctx[+0x06]` is `0xFF`, the
+    /// actor's category `+0x1DE` is `3` (Attack) and the actor is the acting
+    /// seat `ctx[+0x13]`, it steps the live pair back along its facing:
+    /// `+0x38 -= (cos[f] * DAT_1F800393 * +0x21D) >> 13`, and `+0x34` the same
+    /// with `sin` (`0x80047C90..0x80047D1C`). So an attacker standing inside
+    /// its reach drifts back toward the edge of it for as long as its attack
+    /// runs - the counterweight to its strike clips' positive root speed,
+    /// which steps it forward only while out of range. The shift is `13`
+    /// against the root term's `15`: a speed of `-4` on the same law.
+    // PORT: FUN_80047430 (`0x80047C3C..0x80047D1C`, the in-range back-off)
+    fn drive_in_range_backoff(&mut self, slot: usize) {
+        use crate::battle_round::RoundPhase;
+        if self.battle.round_flow.phase != RoundPhase::Execute {
+            return;
+        }
+        let (facing, target, category, rate) = {
+            let a = &self.actors[slot];
+            (
+                a.battle.facing_angle,
+                a.battle.active_target,
+                a.battle.action_category,
+                a.battle.anim_rate.get(),
+            )
+        };
+        if category != BACKOFF_CATEGORY
+            || target >= 8
+            || self.battle_range_metric(slot as u8, target) != 0
+        {
+            return;
+        }
+        // A frozen actor (`+0x21D == 0`) multiplies the step to nothing.
+        let (sin, cos) = legaia_engine_system::trig::trig12(facing);
+        let raw = motion::root_motion_raw(sin, cos, BACKOFF_SPEED, 1, rate);
+        let frame = self.battle_frame_id();
+        let (dx, dz) = self.actors[slot]
+            .battle
+            .backoff_carry
             .step_in_frame(frame, raw);
         let ms = &mut self.actors[slot].move_state;
         ms.world_x = ms.world_x.wrapping_add(dx as i16);
@@ -666,6 +738,50 @@ mod tests {
         // centroid): it is re-taken at the head of every pass.
         w.tick_battle_locomotion();
         assert_eq!(w.battle_seat_of(0), (0, arrived_z));
+    }
+
+    /// `FUN_80047430`'s in-range back-off (`0x80047C3C..0x80047D1C`): the
+    /// acting attacker of an Attack, while actions execute, steps back along
+    /// its facing by `(trig * step * +0x21D) >> 13` a frame for as long as
+    /// the range law reads in range, so it settles just outside its reach;
+    /// any other category stands still.
+    #[test]
+    fn an_attacker_inside_its_reach_backs_off_to_the_edge() {
+        let run = |category: u8| {
+            let mut w = battle_world();
+            w.actors[0].battle.active_target = 1;
+            w.actors[0].battle.action_category = category;
+            w.actors[1].battle.liveness = 1;
+            w.battle_ctx.active_actor = 0;
+            w.battle_ctx.action_state = ActionState::AttackChain.as_byte();
+            w.battle.round_flow.phase = crate::battle_round::RoundPhase::Execute;
+            w.tick_battle_locomotion(); // seed seats
+            // Stand the attacker deep inside its reach, facing the target.
+            let (tx, tz) = (
+                w.actors[1].move_state.world_x,
+                w.actors[1].move_state.world_z,
+            );
+            w.actors[0].move_state.world_x = tx;
+            w.actors[0].move_state.world_z = tz - 100;
+            w.actors[0].battle.facing_angle = 0;
+            for _ in 0..400 {
+                w.tick_battle_locomotion();
+            }
+            (
+                w.actors[0].move_state.world_z,
+                tz,
+                w.battle_range_metric(0, 1),
+            )
+        };
+        let (z, tz, metric) = run(3);
+        assert!(z < tz - 100, "backed away from the target: {z}");
+        assert_ne!(metric, 0, "settled outside its reach");
+        let (z_other, tz_other, _) = run(2);
+        assert_eq!(
+            z_other,
+            tz_other - 100,
+            "a non-Attack category stands still"
+        );
     }
 
     #[test]

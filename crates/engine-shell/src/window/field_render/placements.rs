@@ -499,7 +499,7 @@ impl PlayWindowApp {
         let mut floors = Vec::new();
         // Parallel to `draws`: which placed-object sweep owns each draw
         // (`Some` = the sub-area window sweep's, gated per frame on the
-        // world's windowed static-object list by `legaia_engine_core::scene_staging::placed_draw_live`).
+        // world's windowed static-object list by `legaia_engine_world_views::scene_staging::placed_draw_live`).
         let mut window_keys = Vec::new();
         // Parallel to `draws`: the grid cell + cull radius the visible-tile
         // crop (`field_view_window::terrain_draw_visible`) tests per frame.

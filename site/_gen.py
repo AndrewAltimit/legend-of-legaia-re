@@ -421,10 +421,10 @@ PROSE_WIDE_PAGES: set[str] = {
 
 
 # ---------------------------------------------------------------------------
-# Script cache-busting
+# Script and stylesheet cache-busting
 # ---------------------------------------------------------------------------
-# Every `js/*.js` a page loads is rewritten to carry `?v=<content hash>`,
-# replacing whatever hand-written marker was there.
+# Every `js/*.js` a page loads, and every `css/*.css` it links, is rewritten to
+# carry `?v=<content hash>`, replacing whatever hand-written marker was there.
 #
 # Hand-written markers are the failure: they only bust when someone remembers
 # to bump them, and forgetting is silent - a stale script and a current one
@@ -434,7 +434,16 @@ PROSE_WIDE_PAGES: set[str] = {
 # running the old file against a rebuilt engine until its cache expired on its
 # own. A content hash cannot be forgotten: it changes exactly when the bytes
 # change, and only then.
+#
+# The stylesheet is the same hazard, and it went unstamped longest. A static
+# server that sends `Last-Modified` and no `Cache-Control` (`python3 -m
+# http.server`) lets Firefox reuse a heuristically fresh `styles.css` for hours
+# after it changed, while the stamped `layout.js` beside it is current - so new
+# chrome rendered against old rules and a page came up partly styled. GitHub
+# Pages sends `max-age=600`, which is why the mismatch showed only on a LAN
+# server.
 _SCRIPT_SRC_RE = re.compile(r'(src=")((?:\.\./)*js/[A-Za-z0-9._-]+\.js)(?:\?[^"]*)?(")')
+_STYLE_HREF_RE = re.compile(r'(<link rel="stylesheet" href=")((?:\.\./)*css/[A-Za-z0-9._-]+\.css)(?:\?[^"]*)?(")')
 _asset_hash_cache: dict[str, str] = {}
 
 
@@ -449,7 +458,7 @@ def _asset_hash(rel: str) -> str | None:
 
 
 def version_script_srcs(page: str) -> str:
-    """Stamp every `js/*.js` reference in one page with its content hash."""
+    """Stamp every `js/*.js` and `css/*.css` reference in one page with its content hash."""
 
     def sub(m: re.Match[str]) -> str:
         head, ref, tail = m.group(1), m.group(2), m.group(3)
@@ -458,7 +467,7 @@ def version_script_srcs(page: str) -> str:
         # for a file that is not there would hide the missing file.
         return m.group(0) if digest is None else f"{head}{ref}?v={digest}{tail}"
 
-    return _SCRIPT_SRC_RE.sub(sub, page)
+    return _STYLE_HREF_RE.sub(sub, _SCRIPT_SRC_RE.sub(sub, page))
 
 
 def _wasm_version() -> str:
@@ -482,6 +491,31 @@ def _wasm_version() -> str:
 THEME_BOOT_JS = (
     "try{if(localStorage.getItem('site-theme')==='light')"
     "document.documentElement.setAttribute('data-theme','light')}catch(e){}"
+)
+
+
+# The web fonts, linked from the page head rather than `@import`ed from the
+# top of styles.css. An `@import` is fetched only after styles.css has arrived
+# and parsed, and the sheet does not count as loaded until the import does -
+# so every page's first styled paint waited on two round trips in series, the
+# second one to a third-party origin. A plain <link> would still block: the
+# page could not paint, nor its scripts run, until the font origin answered,
+# which on a LAN client with slow or no route to it is a blank or half-built
+# page for as long as the request takes to fail. So the font sheet loads as
+# `media="print"` (fetched, never render-blocking) and switches itself to
+# `all` on load; text paints on the fallback stack meanwhile, exactly as
+# `display=swap` already does once the sheet is in. The preconnects open both
+# font origins before the sheet is parsed.
+FONT_CSS_URL = (
+    "https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800"
+    "&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;0,8..60,700;1,8..60,400"
+    "&family=JetBrains+Mono:wght@400;500;600;700&display=swap"
+)
+FONT_LINKS = (
+    '<link rel="preconnect" href="https://fonts.googleapis.com">\n'
+    '  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>\n'
+    f'  <link rel="stylesheet" href="{html.escape(FONT_CSS_URL)}" media="print" onload="this.media=\'all\'">\n'
+    f'  <noscript><link rel="stylesheet" href="{html.escape(FONT_CSS_URL)}"></noscript>'
 )
 
 
@@ -511,6 +545,7 @@ def html_template(page_title: str, depth: int, active_key: str, body: str, extra
   {head_meta}
   <link rel="icon" href="{favicon}" type="image/svg+xml">
   <script>{THEME_BOOT_JS}</script>
+  {FONT_LINKS}
   <link rel="stylesheet" href="{css}">
   <script>window.LEGAIA_WASM_V="{_wasm_version()}";</script>
   <script src="{util_js}"></script>
@@ -656,9 +691,9 @@ PAGES: list[tuple[str, str, str, str]] = [
     ("formats/npc-palette.html",   "Row-479 NPC CLUTs",             "formats/npc-palette",        "formats/npc-palette.html"),
     ("formats/effect.html",        "Effect bundles",                "formats/effect",             "formats/effect.html"),
     ("formats/scene-bundles.html", "Scene bundles",                 "formats/scene-bundles",      "formats/scene-bundles.html"),
-    ("formats/scene-v12-table.html","scene_v12_table",              "formats/scene-v12-table",    "formats/scene-v12-table.html"),
+    ("formats/scene-v12-table.html","Walk-on trigger sidecar (.PCH)",              "formats/scene-v12-table",    "formats/scene-v12-table.html"),
     ("formats/slot-b-module-layout.html","Slot-B module layout",     "formats/slot-b-module-layout","formats/slot-b-module-layout.html"),
-    ("formats/world-map-overlay.html","Slot-4 records",              "formats/world-map-overlay",  "formats/world-map-overlay.html"),
+    ("formats/world-map-overlay.html","World-map animation bank (slot 4)",              "formats/world-map-overlay",  "formats/world-map-overlay.html"),
     ("formats/place-names.html",   "Place names",                   "formats/place-names",        "formats/place-names.html"),
     ("formats/tim.html",           "PSX TIM",                       "formats/tim",                "formats/tim.html"),
     ("formats/tmd.html",           "Legaia TMD",                    "formats/tmd",                "formats/tmd.html"),
@@ -669,7 +704,7 @@ PAGES: list[tuple[str, str, str, str]] = [
     ("formats/anm.html",           "ANM animation",                 "formats/anm",                "formats/anm.html"),
     ("formats/monster-animation.html","Monster animation",           "formats/monster-animation",  "formats/monster-animation.html"),
     ("formats/character-mesh.html","Player-character mesh pack",     "formats/character-mesh",     "formats/character-mesh.html"),
-    ("formats/mdt.html",           "MDT move table",                "formats/mdt",                "formats/mdt.html"),
+    ("formats/mdt.html",           "MDT - the MOVE clip bank",                "formats/mdt",                "formats/mdt.html"),
     ("formats/move-power.html",    "Move-power table",              "formats/move-power",         "formats/move-power.html"),
     ("formats/art-data.html",      "Art data",                      "formats/art-data",           "formats/art-data.html"),
     ("formats/dialog-font.html",   "Dialog font",                   "formats/dialog-font",        "formats/dialog-font.html"),
@@ -679,7 +714,7 @@ PAGES: list[tuple[str, str, str, str]] = [
     ("formats/ringside-still.html","Headerless 16bpp stills",       "formats/ringside-still",     "formats/ringside-still.html"),
     ("formats/mips-overlay.html",  "MIPS overlay code",             "formats/mips-overlay",       "formats/mips-overlay.html"),
     ("formats/overlay-ptr-table.html","Overlay pointer-table code", "formats/overlay-ptr-table",  "formats/overlay-ptr-table.html"),
-    ("formats/navmesh.html",       "Per-scene primitive scratch buffer", "formats/navmesh",       "formats/navmesh.html"),
+    ("formats/navmesh.html",       "The navmesh that wasn't", "formats/navmesh",       "formats/navmesh.html"),
     ("formats/encounter.html",     "Encounter record",              "formats/encounter",          "formats/encounter.html"),
     ("formats/man-relocation.html", "MAN relocation",               "formats/man-relocation",     "formats/man-relocation.html"),
     ("formats/str-fmv-table.html", "STR FMV table",                 "formats/str-fmv-table",      "formats/str-fmv-table.html"),
@@ -1953,6 +1988,7 @@ def main() -> int:
   <title>Page not found - {SITE_NAME}</title>
   <link rel="icon" href="{SITE_URL}/img/favicon.svg" type="image/svg+xml">
   <script>{THEME_BOOT_JS}</script>
+  {FONT_LINKS}
   <link rel="stylesheet" href="{SITE_URL}/css/styles.css">
 </head>
 <body>

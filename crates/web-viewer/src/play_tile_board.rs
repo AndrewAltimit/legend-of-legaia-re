@@ -8,7 +8,7 @@
 //! still refuses its `CELL_WALL` cells, so the player walks into nothing and
 //! stops, which reads as a softlock rather than a missing decoration.
 //!
-//! The assembly itself is shared - [`legaia_engine_core::world_views::tile_board`]'s
+//! The assembly itself is shared - [`legaia_engine_world_views::tile_board`]'s
 //! `tile_board_actor_draws` / `tile_actor_slots_needing_mesh` /
 //! `is_tile_actor_slot`, the same three the native `redraw` pass calls.
 //! This module is only the
@@ -30,7 +30,7 @@
 //! serves; the port of it is in `engine-core`.
 
 use crate::runtime::LegaiaRuntime;
-use legaia_engine_core::world_views::tile_board;
+use legaia_engine_world_views::tile_board;
 use wasm_bindgen::prelude::*;
 
 /// Floats per cell in [`LegaiaRuntime::play_tile_board_transforms`]:

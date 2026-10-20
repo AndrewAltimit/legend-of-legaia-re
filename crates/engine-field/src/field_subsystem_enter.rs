@@ -61,8 +61,10 @@
 //! 2. The player's `+0x8E` / `+0x8F` bytes are forced to `0xFF` around a
 //!    `FUN_801D9E1C(player, 0)` refresh and restored afterwards
 //!    ([`MaskedBytes`]).
-//! 3. `_DAT_8007BDD8 = 2`, player `[+0x5C]`, player `[+0x10] |= 0x1000000`, pad latch
-//!    re-set ([`enter_context`]).
+//! 3. The player's standing clip: the clip base `_DAT_8007BDD8 = 2` (the
+//!    idle base), player `[+0x5C] = 2 + leader * 7` (the leader's idle clip
+//!    in the locomotion bank), player `[+0x10] |= 0x1000000` (the party-bank
+//!    bit that clip binds through), pad latch re-set ([`enter_context`]).
 //! 4. `submode[+0x3E] = 1`, `actor[+0x1A] = 1`, `_DAT_8007B374 = 0`, the
 //!    current-member byte `_DAT_8007B469` re-resolved against the roster
 //!    ([`resolve_current_member`]).
@@ -91,14 +93,18 @@
 //! menu press, which both play hosts poll). [`STATE_PICK_HANDLER`] is also
 //! the handler `World::field_menu_button_state` hands the state pick.
 //!
-//! Only the handler is consumed. The other writes the same routine makes -
-//! the player flag bits, the pad latch, the masked byte pair, the current
-//! member, the submode-state rewind, the saved handler, the cursor home and
-//! the roster cells - land in state the engine mirrors only in part: of the
-//! submode context `*_DAT_801C6EA4` it keeps the dispatcher's fields, the
-//! submode state `DAT_801F2734` never reaches the values the rewind tests,
-//! and the pad latch `_DAT_1F800394` has no mirror. Each kernel that computes
-//! one of them says so on its own item.
+//! An op-`0x49` park runs the rest of what the engine mirrors through
+//! `World::run_submode_installer`: the player's idle clip and party-bank bit
+//! ([`enter_context`]) and the pager rewind ([`rearm_state`]). The current
+//! member is replaced by an argument ([`resolve_current_member`]). What stays
+//! unmodelled - the pad latch `_DAT_1F800394`, the masked byte pair around a
+//! refresh the engine does not port, the saved handler, the cursor home and
+//! the roster cells - lands in state the engine mirrors only in part: of the
+//! submode context `*_DAT_801C6EA4` it keeps the dispatcher's fields. Each
+//! kernel that computes one of them says so on its own item. The pause-menu
+//! button's run of the same routine changes nothing the engine draws: the
+//! menu overlay replaces the field, and the field comes back through a scene
+//! entry that seeds the idle base itself.
 //!
 //! The player flag bit [`CTX_SUBMODE_BUSY`] is the one write with an engine
 //! reader in waiting: `0x80000` in the player's `+0x10` word (the routine
@@ -136,13 +142,18 @@
 /// player loaded as `*(0x8007C348 + 0x1C)`) - the engaged bit the close path
 /// clears.
 pub const CTX_SUBMODE_BUSY: u32 = 0x0008_0000;
-/// Second player flag bit raised on the way in (`player[+0x10] |= 0x1000000`).
-pub const CTX_SUBSYSTEM_ACTIVE: u32 = 0x0100_0000;
+/// Second player flag bit raised on the way in (`player[+0x10] |= 0x1000000`,
+/// `0x801F1348..0x801F1354`): the **party-bank** bit
+/// ([`crate::field_player_clip::PARTY_BANK_FLAG`]), so the idle clip the same
+/// code stores resolves in the leader's locomotion bank.
+pub const CTX_PARTY_BANK: u32 = crate::field_player_clip::PARTY_BANK_FLAG;
 /// Pad-latch bit cleared and then re-set around the roster seed
 /// (`_DAT_1F800394 & ~0x8000`, then `| 0x8000`).
 pub const PAD_LATCH_BIT: u32 = 0x0000_8000;
-/// Submode kind word the enter path writes (`_DAT_8007BDD8 = 2`).
-pub const SUBMODE_KIND: u32 = 2;
+/// The clip base the enter path writes (`_DAT_8007BDD8 = 2`, `sw a2` at
+/// `0x801F1324`): the field clip base global, here the idle base
+/// ([`crate::field_player_clip::BASE_IDLE`]).
+pub const CLIP_BASE: u16 = crate::field_player_clip::BASE_IDLE;
 /// Default handler id installed into the actor's `+0x50` slot: slot `7` of
 /// the `0x801F33B4` table, the state pick `FUN_801F1F4C`
 /// ([`crate::field_state_pick`]), which hands on to the pause-menu session.
@@ -163,34 +174,40 @@ pub struct EnterContext {
     pub flags: u32,
     /// `_DAT_1F800394` after the clear-then-set round trip.
     pub pad_latch: u32,
-    /// The player's `+0x5C` (`sh v0,0x5c(a0)` at `0x801F133C`) -
-    /// `_DAT_8007B8F8 * 7` plus the submode kind word the same code just set
-    /// to `2`.
-    pub scroll: i16,
+    /// The clip base `_DAT_8007BDD8` (`0x801F1324`).
+    pub clip_base: u16,
+    /// The player's clip id `+0x5C` (`sh v0,0x5c(a0)` at `0x801F133C`): the
+    /// party leader `_DAT_8007B8F8` strided by `7` into its locomotion bank,
+    /// plus the clip base the same code just stored - the leader's idle clip.
+    pub player_clip: i16,
 }
 
 /// Apply the enter path's context writes.
 ///
-/// PORT: FUN_801F1278 (context-flag, pad-latch and scroll writes)
+/// PORT: FUN_801F1278 (context-flag, pad-latch and player-clip writes)
 ///
-/// NOT WIRED: nothing applies the result. The flag word is the player's
-/// `+0x10`, whose engaged bit changes nothing either reader sees (the
-/// module's wiring note); the pad latch `_DAT_1F800394` and the player's
-/// `+0x5C` have no engine mirror.
+/// Wired: an op-`0x49` park runs it (`World::run_submode_installer`), which
+/// applies the clip base, the idle clip and the party-bank bit to the player.
+/// The engaged bit [`CTX_SUBMODE_BUSY`] it also raises is left to the engine's
+/// own engagement model (the module's wiring note), and the pad latch
+/// `_DAT_1F800394` has no engine mirror.
 ///
-/// The `scroll` term is the one place the disassembly and a casual reading of
+/// The clip term is the one place the disassembly and a casual reading of
 /// the C part ways: the `+ 2` addend is not a literal, it is a **re-read of
 /// `_DAT_8007BDD8`** three instructions after that word was stored as `2`
-/// (`sw a2, -0x4228(a1)` then `lhu v0, -0x4228(a1)`). The value is `2`, but the
-/// dependency is on the submode-kind word, not on a constant.
-pub fn enter_context(flags_before: u32, pad_before: u32, scroll_base: u16) -> EnterContext {
+/// (`sw a2, -0x4228(a1)` then `lhu v0, -0x4228(a1)`): base plus leader times
+/// the bank stride, the same sum the settle tail `FUN_801D1BA0` forms.
+pub fn enter_context(flags_before: u32, pad_before: u32, leader: u16) -> EnterContext {
     EnterContext {
-        flags: flags_before | CTX_SUBMODE_BUSY | CTX_SUBSYSTEM_ACTIVE,
+        flags: flags_before | CTX_SUBMODE_BUSY | CTX_PARTY_BANK,
         // Cleared first, then re-set - the net effect on this bit is "set", and
         // the clear matters only to code that runs in between (the roster seed
         // call `FUN_801D9E1C`).
         pad_latch: (pad_before & !PAD_LATCH_BIT) | PAD_LATCH_BIT,
-        scroll: (scroll_base.wrapping_mul(7)).wrapping_add(SUBMODE_KIND as u16) as i16,
+        clip_base: CLIP_BASE,
+        player_clip: leader
+            .wrapping_mul(crate::field_player_clip::BANK_STRIDE)
+            .wrapping_add(CLIP_BASE) as i16,
     }
 }
 
@@ -228,10 +245,18 @@ impl MaskedBytes {
 ///
 /// PORT: FUN_801F1278 (the `_DAT_8007B469` re-resolve)
 ///
-/// NOT WIRED: the engine keeps no current-member byte `_DAT_8007B469` for
-/// the submode screens, and no reader of it after this store is traced; the
-/// hub's per-entry code at the same address is published by its own painter
-/// path.
+/// REPLACED-BY: the hub entry list `crate::submode_hub_actors::entry_list`,
+/// which hands each entry's character to the sub-draw as
+/// `EquipPanelInput::char_index` - the byte becomes an argument, so the
+/// value this store leaves is unobservable. The byte has one reader disc-wide:
+/// a `lui 0x8008` + `0xB469` load / store scan over SCUS and every PROT entry
+/// finds five sites, all in the field overlay (PROT 0897) - one in
+/// `FUN_801E5B4C`, two here, two in `FUN_801F16C0` - and the five-form
+/// reference scan finds the address in no other form. The reader is the
+/// equipment sub-draw `FUN_801E5B4C`, whose only caller
+/// `FUN_801F16C0` stores the entry's code into it before every call
+/// (`0x801F1724`) and restores the saved value after the loop
+/// (`0x801F17B4`).
 ///
 /// Retail scans the roster ids at `DAT_80084598..` for a match; if the scan runs
 /// off the end (including the `count == 0` case, where the loop is skipped and
@@ -333,10 +358,14 @@ pub fn installer_entry(caller_handler: u16, roster: &[u8], remap: Option<i8>) ->
 ///
 /// PORT: FUN_801F1278 (the `DAT_801F2734` rewind)
 ///
-/// NOT WIRED: the engine carries the word (`World::field_vm.submode_context`
-/// word `0`, seeded `1` on every MAN load) but no engine path ever stores `4`
-/// or `7` in it, and which retail code does is not traced - so the rewind
-/// would only ever see `1`. Wiring it waits for the writer of those states.
+/// `DAT_801F2734` is the dialog **pager's** state word (`FUN_801D84D0`,
+/// [`docs/formats/mes.md`](../../docs/formats/mes.md)), and `1` / `4` / `7`
+/// are its three idle states - the ones the hub dispatcher waits for. `4` is
+/// the idle a `0x24` continuation leaves, which keeps the box's rows and goes
+/// on drawing them; `1` draws nothing. So the rewind takes down a box a
+/// script left standing when its park opens a screen. Wired: an op-`0x49`
+/// park runs it over the box the pager still holds
+/// (`World::run_submode_installer`, `HeldBox::pager_state`).
 ///
 /// Retail rewinds `DAT_801F2734` from `4` or `7` only - any other state is left
 /// alone, which is what lets a re-arm resume mid-flow - and only on the park
@@ -362,10 +391,7 @@ mod tests {
     #[test]
     fn enter_sets_both_context_bits_and_leaves_the_latch_set() {
         let c = enter_context(0x0000_0001, 0, 0);
-        assert_eq!(
-            c.flags,
-            0x0000_0001 | CTX_SUBMODE_BUSY | CTX_SUBSYSTEM_ACTIVE
-        );
+        assert_eq!(c.flags, 0x0000_0001 | CTX_SUBMODE_BUSY | CTX_PARTY_BANK);
         assert_eq!(c.pad_latch, PAD_LATCH_BIT);
         // An already-set latch stays set.
         let c = enter_context(0, PAD_LATCH_BIT | 0x0F, 0);
@@ -373,11 +399,14 @@ mod tests {
     }
 
     #[test]
-    fn scroll_is_seven_times_the_base_plus_the_submode_kind() {
-        assert_eq!(enter_context(0, 0, 0).scroll, 2);
-        assert_eq!(enter_context(0, 0, 10).scroll, 72);
+    fn the_player_clip_is_the_leaders_idle_in_the_locomotion_bank() {
+        // Vahn / Noa / Gala: ids 2 / 9 / 16, their standing-idle bank slots.
+        assert_eq!(enter_context(0, 0, 0).player_clip, 2);
+        assert_eq!(enter_context(0, 0, 1).player_clip, 9);
+        assert_eq!(enter_context(0, 0, 2).player_clip, 16);
+        assert_eq!(enter_context(0, 0, 2).clip_base, 2);
         // Built as `(x << 3) - x`, so it wraps at the halfword like retail.
-        let big = enter_context(0, 0, 0x2000).scroll;
+        let big = enter_context(0, 0, 0x2000).player_clip;
         assert_eq!(big, (0x2000u16.wrapping_mul(7).wrapping_add(2)) as i16);
     }
 

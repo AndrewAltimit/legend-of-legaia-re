@@ -2,7 +2,7 @@
 //! `5`, shared by both hosts.
 //!
 //! The state machine and the geometry live in `engine-core`
-//! (`legaia_engine_core::world_views::tile_board`, `PROMPT_FRAME` / `PROMPT_ROW_Y` /
+//! (`legaia_engine_world_views::tile_board`, `PROMPT_FRAME` / `PROMPT_ROW_Y` /
 //! `PROMPT_CURSOR_X`) and arrive here as arguments, as the text balloon's
 //! do, so a second copy of the literals cannot drift.
 //!

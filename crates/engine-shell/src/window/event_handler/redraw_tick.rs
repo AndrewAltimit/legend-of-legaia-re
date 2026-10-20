@@ -613,19 +613,12 @@ impl PlayWindowApp {
     }
 
     /// The frame-tail effect passes after the scene-graph tick
-    /// (`tick_world_effects`): the battle face / CLUT / stage-shell steps,
-    /// the ocean shimmer, the scripted CLUT-cell effects and the battle VRAM
-    /// residency check.
+    /// (`tick_world_effects`): the ocean shimmer, the scripted CLUT-cell
+    /// effects and the battle VRAM residency check. The battle face / CLUT /
+    /// stage-shell steps run at the end of the battle presentation step
+    /// (`drain_and_log_battle_events`), after the HUD fold that arms the
+    /// status CLUT latch, as on the page.
     fn tick_frame_tail_effects(&mut self) {
-        // In battle, re-stamp the party's eye/mouth face frames
-        // from the playing clips' facial tracks (the retail
-        // per-frame facial animator). The clips themselves are
-        // advanced by `World::tick`'s Battle arm, which every host
-        // reaches - ticking them again here would run them at 2x.
-        if self.session.host.world.mode == SceneMode::Battle {
-            self.tick_battle_vram_restamps();
-            self.tick_battle_stage_shell();
-        }
         // World-map ocean shimmer: cycle the 13-frame CLUT animation
         // (self-gates to None off the world map).
         self.advance_ocean_animation();
