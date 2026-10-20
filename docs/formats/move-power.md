@@ -211,6 +211,18 @@ on the `>> 2` branch and power `< 8` on the `>> 3` branch. The half and eighth
 scales belong to the retry arm, which re-floors a too-low attacker score
 rather than clamping it.
 
+The kernel's operand is therefore the **whole** word: every shift above is
+taken inside `FUN_801dd0ac`, and the unshifted word is the largest term of the
+attacker roll. The `power` column `asset move-power` prints (and the figures
+quoted on this page, such as record 3's `1500` from raw `0x1770`) is the `>> 2`
+modulus base, `MoveRecord::power()`; the damage path takes `power_raw`
+(`MovePowerCatalog::power_for_move_id`). Fed the quarter, the roll shifts twice
+and the retry arm rebuilds almost every hit at a fraction of retail's: Tail
+Fire (raw `0x1E`) on a Spirit-guarding Vahn (INT `9`, UDF `16`, LDF `12`) from
+Gimard (INT `20`) reads `16` on the captured number ring
+(`battle_gimard_tail_fire_a`), where the quartered roll lands on `6` or `7`
+and the whole word on `10..=22`.
+
 The branch split is on the kernel's `param_2` (`s3`): `bne a1,0x7` at
 `0x801dd104` takes the non-summon path to the first table read, and
 `bne s0,0x7` at `0x801dd2f4` to the second. With `param_2 == 7` the magnitude

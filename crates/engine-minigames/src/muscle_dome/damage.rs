@@ -150,8 +150,8 @@ impl DomeDamageModel {
         let defender = attacker ^ 1;
         // The kernel's `a0` is `map[actor+0x1DF]`, the move-power table
         // index (`FUN_801E09F8` `0x801E1874..0x801E188C`, then the 26-byte
-        // stride at `0x801DD1A0`), and the power is that row's `+0` word
-        // arithmetic-shifted right by two.
+        // stride at `0x801DD1A0`), and the power is that row's whole `+0`
+        // word: the kernel derives its own `>> 2` / `>> 1` / `>> 3` terms.
         //
         // The four **direction** ids map to index 0, and the disc ships row 0
         // as 26 zero bytes - so a plain swing carries no power through this
@@ -162,7 +162,7 @@ impl DomeDamageModel {
         // Falling back to it is what stops every dome swing resolving at
         // power zero.
         let power = match move_power::record_for_move_id(&self.move_power, &self.move_map, cmd) {
-            Some(r) => r.power(),
+            Some(r) => i32::from(r.power_raw),
             None => legaia_engine_battle_vm::battle_formulas::command_power_scalar(cmd) as i32,
         };
         let hp = self.hp;
