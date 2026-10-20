@@ -109,6 +109,7 @@ These environment variables drive a run without a person at the keyboard
 |---|---|
 | `LEGAIA_STUDIO_OPEN` | Disc image or folder to open (same as the first argument). |
 | `LEGAIA_STUDIO_SELECT` | PROT index to select once loaded. |
+| `LEGAIA_STUDIO_TMD` | Show this TMD of the selected entry in the 3D model tab (the `TMD #` picker) instead of the first. |
 | `LEGAIA_STUDIO_TAB` | A preview tab (`overview`, `textures`, `model`, `audio`, `text`, `hex`), a view (`browse`, `actors`, `media`, `extract`), or `about` for the About box. |
 | `LEGAIA_STUDIO_SEARCH` | Start with this text in the archive search. |
 | `LEGAIA_STUDIO_MEDIA` | Open *Movies & voice* on an ISO path (`MOV/MV1.STR`, `XA/XA14.XA`), a movie optionally at `@<frame>`. |

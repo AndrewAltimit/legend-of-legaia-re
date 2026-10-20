@@ -104,6 +104,9 @@ impl Tab {
 pub struct Automation {
     /// `LEGAIA_STUDIO_SELECT`: PROT index to select once loaded.
     pub select: Option<u32>,
+    /// `LEGAIA_STUDIO_TMD`: which TMD of the selected entry the 3D model
+    /// tab shows (the `TMD #` picker), instead of the first.
+    pub tmd: Option<usize>,
     /// `LEGAIA_STUDIO_TAB`: preview tab (`textures`, `model`, `audio`, ...)
     /// or `extract`.
     pub tab: Option<String>,
@@ -133,6 +136,9 @@ impl Automation {
         let path = |k: &str| std::env::var_os(k).map(PathBuf::from);
         Self {
             select: std::env::var("LEGAIA_STUDIO_SELECT")
+                .ok()
+                .and_then(|s| s.trim().parse().ok()),
+            tmd: std::env::var("LEGAIA_STUDIO_TMD")
                 .ok()
                 .and_then(|s| s.trim().parse().ok()),
             tab: std::env::var("LEGAIA_STUDIO_TAB").ok(),
@@ -388,6 +394,9 @@ impl App {
             if let Some(pos) = lib.position_of(idx) {
                 self.select(pos);
                 self.reveal = Some(pos);
+                if let Some(t) = self.auto.tmd {
+                    self.tmd_sel = t;
+                }
             }
         }
         if !self.auto_extract_started
