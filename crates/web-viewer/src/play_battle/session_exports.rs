@@ -38,23 +38,7 @@ impl LegaiaRuntime {
     /// stats are left alone. Returns an empty string on success, else the
     /// reason. Caps at the three on-screen positions.
     pub fn set_active_party_spec(&mut self, spec: &str) -> String {
-        let parsed: Result<Vec<u8>, String> = spec
-            .split(',')
-            .map(|t| t.trim())
-            .filter(|t| !t.is_empty())
-            .map(|t| match t.to_ascii_lowercase().as_str() {
-                "vahn" => Ok(0u8),
-                "noa" => Ok(1),
-                "gala" => Ok(2),
-                "terra" => Ok(3),
-                other => other.parse::<u8>().map_err(|_| {
-                    format!(
-                        "unknown party member '{t}' (use vahn/noa/gala/terra or a roster index)"
-                    )
-                }),
-            })
-            .collect();
-        let slots = match parsed {
+        let slots = match legaia_engine_session::party_spec::parse_party_spec(spec) {
             Ok(s) if !s.is_empty() => s,
             Ok(_) => return "empty party spec".to_string(),
             Err(e) => return e,
@@ -66,23 +50,9 @@ impl LegaiaRuntime {
             let starting = defaults.party.clone();
             host.world.seed_party_members(&starting, &slots);
         }
-        let world = &mut host.world;
-        world.set_active_party(slots);
-        // Fold the freshly-seeded records into the battle stat mirrors
-        // (attack / defence split / SPD / AP base) and seed the MP ceiling
-        // the HUD draws - the same two follow-ups the native flag runs.
-        world.seed_party_battle_stats();
-        for member in 0..world.party.active_party.len() {
-            let rslot = world.party_roster_slot(member);
-            let mp_max = world
-                .party
-                .roster
-                .members
-                .get(rslot)
-                .map(|r| r.hp_mp_sp().mp_max)
-                .unwrap_or(0);
-            world.set_character_max_mp(member as u8, mp_max);
-        }
+        // The composition, the battle stat fold and the MP ceiling the HUD
+        // draws: the install the native `--party` flag shares.
+        legaia_engine_session::party_spec::install_party_composition(&mut host.world, slots);
         String::new()
     }
 

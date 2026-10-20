@@ -51,23 +51,10 @@ pub(super) fn apply_cheat_file(
 
 /// Parse a `--party` composition spec: comma-separated character names
 /// (case-insensitive `vahn`/`noa`/`gala`/`terra`) or 0-based roster
-/// indices, in battle order.
+/// indices, in battle order (`legaia_engine_session::party_spec`, the parser
+/// the browser page shares).
 pub(super) fn parse_party_spec(spec: &str) -> Result<Vec<u8>> {
-    spec.split(',')
-        .map(|t| t.trim())
-        .filter(|t| !t.is_empty())
-        .map(|t| match t.to_ascii_lowercase().as_str() {
-            "vahn" => Ok(0u8),
-            "noa" => Ok(1),
-            "gala" => Ok(2),
-            "terra" => Ok(3),
-            other => other.parse::<u8>().map_err(|_| {
-                anyhow::anyhow!(
-                    "unknown party member '{t}' (use vahn/noa/gala/terra or a roster index)"
-                )
-            }),
-        })
-        .collect()
+    legaia_engine_session::party_spec::parse_party_spec(spec).map_err(|e| anyhow::anyhow!(e))
 }
 
 /// Raise every `--set-flag` index in the world's shared system-flag bank.
@@ -690,30 +677,15 @@ pub(super) fn install_party_spec(session: &mut NativeSession, spec: &str) -> Res
         );
     }
     let world = &mut session.host.world;
-    world.set_active_party(slots.clone());
+    // The composition, the battle stat fold and the MP ceiling the battle
+    // HUD draws: the install the browser page shares.
+    legaia_engine_session::party_spec::install_party_composition(world, slots.clone());
     if world.party.active_party.len() != slots.len() {
         log::warn!(
             "play-window: --party {spec}: kept the first {} of {slots:?} \
                  (3 on-screen positions)",
             world.party.active_party.len()
         );
-    }
-    // Fold the freshly-seeded records into the battle stat mirrors
-    // (attack / defence split / SPD / AP base). `set_active_party` copies
-    // HP / MP only; without this the new members fight at zero attack.
-    world.seed_party_battle_stats();
-    // The MP ceiling the battle HUD draws is the only one the world
-    // carries and nothing else seeds it from a record.
-    for member in 0..world.party.active_party.len() {
-        let rslot = world.party_roster_slot(member);
-        let mp_max = world
-            .party
-            .roster
-            .members
-            .get(rslot)
-            .map(|r| r.hp_mp_sp().mp_max)
-            .unwrap_or(0);
-        world.set_character_max_mp(member as u8, mp_max);
     }
     log::info!(
         "play-window: present party = {:?} (roster slots, battle order)",

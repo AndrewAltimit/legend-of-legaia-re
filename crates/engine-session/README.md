@@ -22,6 +22,10 @@ over its `AudioOut`); a `wasm32` build never links cpal.
   before building meshes: the lead's locomotion clips (`bind_lead_rig`, again
   on a rig change), the placed NPCs' clip players and world cursors, the floor
   snap. A host's mesh upload only reads what it returns.
+- [`party_spec`](src/party_spec.rs) - the present-party composition a host
+  installs on request (the native `--party` flag, the browser page's
+  `set_active_party_spec`): the spec parser and the install with its battle
+  stat fold and MP ceiling.
 - [`battle_stage`](src/battle_stage.rs) - the battle edge's stage resolve
   and the world state it leaves (stage class, fog stage cap, monster texture
   slots), and the summon creature's seat; both hosts' battle builds read the
