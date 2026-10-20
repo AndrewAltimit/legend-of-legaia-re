@@ -1148,10 +1148,13 @@ runs both hosts and compares what they leave.
 Each scenario runs at three cadences - one tick per display frame, two (a
 30 Hz display) and one every other frame (120 Hz) - because a clock split
 between the redraw and the tick is invisible at 60 Hz. Each also asserts what
-it exercised (the lead moved, a menu opened and closed, a battle opened, the
-naming prompt came up, a dialogue opened), so agreement on a world that never
-moved fails. A pad that steers off the world comes from the native run and is
-replayed to the page.
+it exercised (the lead moved, a menu opened and closed, a battle opened, a
+fight was won through to the overworld, the naming prompt came up, a dialogue
+opened), so agreement on a world that never moved fails. A pad that steers off
+the world comes from the native run and is replayed to the page; the fight is
+driven off the native world's own command phase and pulsed, because a held
+word is one press to the command screens and a held drive parks on the round
+prompt for good.
 
 | Channel | What it holds | What parted it before the shared step |
 |---|---|---|
