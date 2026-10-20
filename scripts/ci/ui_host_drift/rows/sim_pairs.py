@@ -388,21 +388,45 @@ SIM_PAIRS: list[dict[str, object]] = [
         "symbols": ["StatusHost", "FishingKeys", "slot_machine_drawn", "prizes"],
     },
     {
-        "what": "effect-pool billboard TSB word, native vs play page (battle "
-        "and field FX) - retail sends every effect child as the semi-"
-        "transparent prim code 0x2E, which the atlas page byte cannot carry; "
-        "the page pushed the bare page, so every hit-dust / flame sprite drew "
-        "opaque. Each billboard builder must take `EffectSprite::packet_tsb`",
+        "what": "effect-pool billboards, native vs play page (battle and "
+        "field FX) - each host selected and built the billboards itself "
+        "(the battle centre flip, the view-scale half-extents, the UV "
+        "mirror, the prim-ABE bit retail's GP0 0x2E carries, which the atlas "
+        "page byte cannot: the page once pushed the bare page and every "
+        "flame drew opaque), and the two disagreed on the overworld, where "
+        "only the native window drew pool children although retail's walker "
+        "runs from the battle draw tick alone. Every billboard builder takes "
+        "the one list `effect_draws::effect_billboards`",
         "sites": {
             "native": (
-                "crates/engine-shell/src/window/geometry.rs",
-                "effect_billboard_mesh",
+                "crates/engine-shell/src/window/event_handler/redraw_passes.rs",
+                "build_effect_billboards",
             ),
             "web_battle": ("crates/web-viewer/src/play_battle_fx.rs", "build_battle_fx"),
             "web_field": ("crates/web-viewer/src/play_battle_fx.rs", "build_field_fx"),
         },
         "mode": "symbols_all",
-        "symbols": ["packet_tsb"],
+        "symbols": ["effect_billboards"],
+    },
+    {
+        "what": "effect model draws, native vs play page (battle and field "
+        "FX) - the `etmd` effect models, the summon / move-FX parts, the "
+        "draw-kind-4 nodes, the battle ground shadows and the field stager "
+        "parts were selected and placed once per host (about 250 lines "
+        "apiece, glam on one side and hand-rolled matrices on the other): "
+        "the overworld gate, the battle frame flip, the `+0x52` "
+        "camera-relative prefix. Every FX model builder takes the one list "
+        "`effect_draws::effect_model_draws`",
+        "sites": {
+            "native": (
+                "crates/engine-shell/src/window/event_handler/redraw_passes.rs",
+                "build_effect_draws",
+            ),
+            "web_battle": ("crates/web-viewer/src/play_battle_fx.rs", "build_battle_fx"),
+            "web_field": ("crates/web-viewer/src/play_battle_fx.rs", "build_field_fx"),
+        },
+        "mode": "symbols_all",
+        "symbols": ["effect_model_draws"],
     },
     {
         "what": "battle stage world state, native vs play page - the stage "

@@ -13,6 +13,8 @@ path = "src/lib.rs"
 [dependencies]
 legaia-engine-core.workspace = true
 legaia-engine-battle.workspace = true
+legaia-engine-camera.workspace = true
+legaia-engine-effects.workspace = true
 legaia-engine-field.workspace = true
 legaia-engine-menus.workspace = true
 legaia-engine-minigames.workspace = true
@@ -21,6 +23,7 @@ legaia-engine-scene.workspace = true
 legaia-render-kernels.workspace = true
 legaia-scene-formats.workspace = true
 legaia-ui-formats.workspace = true
+legaia-tmd.workspace = true
 
 [dev-dependencies]
 legaia-engine-system.workspace = true
@@ -29,7 +32,6 @@ legaia-save.workspace = true
 legaia-container-formats.workspace = true
 legaia-lzs.workspace = true
 legaia-tim.workspace = true
-legaia-tmd.workspace = true
 
 [[test]]
 name = "integration"

@@ -282,16 +282,11 @@ impl PlayWindowApp {
         in_world_map: bool,
         cutscene_cam: Option<CutsceneCam>,
     ) -> FxFrame {
-        // FX model matrices pair with the active render frame:
-        // battle cameras carry no world negation (keep the
-        // per-model Y-flip); the field cameras compose
-        // FIELD_WORLD_FLIP (draw raw PSX Y-down vertices).
+        // FX model matrices pair with the active render frame (battle
+        // cameras carry no world negation, so battle models keep the
+        // per-model Y-flip; the field cameras compose FIELD_WORLD_FLIP) -
+        // composed in `effect_draws`, the list both hosts draw.
         let fx_in_battle = self.session.host.world.mode == SceneMode::Battle;
-        let fx_model_flip = if fx_in_battle {
-            Mat4::from_scale(Vec3::new(1.0, -1.0, 1.0))
-        } else {
-            Mat4::IDENTITY
-        };
         // Battle FX ride the actor camera composition (the retail
         // 4x world-scale base under the shared rotation) so
         // effects land on the scaled actor stage; field FX use
@@ -350,35 +345,18 @@ impl PlayWindowApp {
         // has a model assigned (same per-frame model-matrix
         // convention as `actor_model`). Held in a local Vec so the
         // meshes outlive the render borrow.
-        let effect_model_draws = self.build_effect_model_draws(r, fx_model_flip, in_world_map);
-
-        // Active Seru-magic summon scene-graph (debug-spawned via
-        // `G`): one textured mesh per move-VM-driven part, posed by
-        // the part's interpreted transform (world pos + rotation
-        // banks). The animation computation is faithful (move VM);
-        // the transform composition is the open PROT 0900 piece.
-        // The retail camera the parts' `+0x52` camera-relative bits
-        // resolve against (`FUN_8001CF50`); `None` under a host vantage.
+        // Effect 3D models (`etmd.dat` - spell effects like Tail Fire are
+        // small Gouraud-shaded meshes textured by the resident `etim`
+        // texels, not billboards), the move-VM scene-graph parts (summon,
+        // battle move-FX), the draw-kind-4 nodes and the battle ground
+        // shadows, and the field move-VM stager parts (op 0x34 sub 3,
+        // resolved against the scene TMD pack). Held in local Vecs so the
+        // meshes outlive the render borrow. The parts' `+0x52`
+        // camera-relative bits resolve against the retail camera
+        // (`FUN_8001CF50`); `None` under a host vantage.
         let part_cam = self.part_camera_pose(in_world_map, cutscene_cam);
-        let summon_part_draws = self.build_summon_and_move_fx_part_draws(
-            r,
-            fx_model_flip,
-            in_world_map,
-            part_cam.as_ref(),
-        );
-        // Field move-VM effect parts (op 0x34 sub-3 stagers): resolve
-        // each mesh part against the SCENE's TMD pack - `env_tmds` =
-        // `res.tmds` filtered to the scene_asset_table bundle entry,
-        // the same source the field-placement renderer + the
-        // asset-viewer use - NOT the battle `global_tmd_pool`. Retail
-        // resolves a field stager's mesh as `DAT_8007C018[model_sel +
-        // DAT_8007B6F8]`, where `DAT_8007B6F8 = 5` is the character-mesh
-        // prefix and `DAT_8007C018[5..]` is exactly this scene pack; so
-        // the part's relative `model_sel` (spawn base 0, surfaced as
-        // `model_index`) indexes `env_tmds` directly, mirroring how a
-        // placement's `pack_index` does.
-        let field_fx_draws =
-            self.build_field_fx_part_draws(r, fx_model_flip, in_world_map, part_cam.as_ref());
+        let (effect_model_draws, summon_part_draws, field_fx_draws) =
+            self.build_effect_draws(r, part_cam.as_ref());
         // The move-FX afterimage streak, under an orthographic
         // screen-space MVP (PSX 320x240 frame). The PROT-0900
         // screen-effect widgets (mask / sprite / panel / letterbox) are

@@ -21,6 +21,11 @@ Each module is named for the kernel module whose types it fills in.
   staged at a scene's free-roam visit evaluates
   (`story_hidden_records_for_scene`), and the full static assembly built on
   it (`assemble_field_scene`).
+- **`effect_draws`** - the live effect layer's draw lists: the effect-pool
+  billboards (`effect_billboards`) and the effect models, move-VM parts,
+  draw-kind-4 nodes, battle ground shadows and field stager parts with
+  their placements composed (`effect_model_draws`). Each host resolves the
+  meshes and adds its own outer frame.
 - **`world_map_markers`** - which overworld marker segments the frame owes
   and the screen quads they become; the marker model is
   `engine-field::world_map_markers`.

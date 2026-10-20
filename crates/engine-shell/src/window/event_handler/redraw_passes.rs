@@ -582,19 +582,14 @@ impl PlayWindowApp {
         if self.boot_ui.is_active() {
             (None, None)
         } else {
-            let mut sprites = self.session.host.world.active_effect_sprites();
-            // The battle camera consumes Y-up input (its trailing flip
-            // cancels the per-model one a billboard does not have), so a
-            // battle billboard is built around the flipped centre; the field
-            // cameras compose the world flip themselves. The play page makes
-            // the same call.
-            if self.session.host.world.mode == SceneMode::Battle {
-                for s in &mut sprites {
-                    s.world_pos = legaia_render_kernels::effect_billboard::battle_billboard_centre(
-                        s.world_pos,
-                    );
-                }
-            }
+            // The billboard list both hosts draw
+            // (`legaia_engine_world_views::effect_draws`): centres in the
+            // camera's frame (flipped in battle), half-extents out of the
+            // view scale, texel corners mirrored, the TSB semi bit set.
+            let sprites = legaia_engine_world_views::effect_draws::effect_billboards(
+                &self.session.host.world,
+                view_scale,
+            );
             if sprites.is_empty() {
                 (None, None)
             } else {
@@ -603,7 +598,7 @@ impl PlayWindowApp {
                 let inv = cam.inverse();
                 let right = inv.transform_vector3(Vec3::X).normalize_or_zero();
                 let up = inv.transform_vector3(Vec3::Y).normalize_or_zero();
-                let mesh = effect_billboard_mesh(r, &sprites, right, up, view_scale);
+                let mesh = effect_billboard_mesh(r, &sprites, right, up);
                 // The wireframe outline is a **diagnostic**, off by default
                 // (`LEGAIA_DIAG_FX=1`). It exists to make a spawn readable
                 // when its texels are not resident, and it predates the
@@ -611,8 +606,7 @@ impl PlayWindowApp {
                 // textured quad draws, and leaving the outline on stamps a
                 // bright rectangle over every effect in normal play.
                 let lines = if std::env::var_os("LEGAIA_DIAG_FX").is_some() {
-                    let (pos, col, idx) =
-                        effect_sprite_line_geometry(&sprites, right, up, view_scale);
+                    let (pos, col, idx) = effect_sprite_line_geometry(&sprites, right, up);
                     match r.upload_lines(&pos, &col, &idx) {
                         Ok(m) => Some(m),
                         Err(e) => {
@@ -716,225 +710,103 @@ impl PlayWindowApp {
         legaia_render_kernels::screen_prim::sky_band_prims(&sprites)
     }
 
-    pub(super) fn build_effect_model_draws(
+    /// The live effect layer's 3D draws, uploaded: the `etmd` effect
+    /// models, then the summon / move-FX parts followed by the draw-kind-4
+    /// nodes and the battle ground shadows, then the field stager parts.
+    ///
+    /// Which draws exist and where each sits is the list both hosts draw
+    /// (`legaia_engine_world_views::effect_draws::effect_model_draws`: the
+    /// overworld gate, the battle frame flip, the `+0x52` camera-relative
+    /// placement against `part_cam`); this window resolves each to a mesh
+    /// upload. A part draws `World::part_draw_vram_mesh` - its morphed or
+    /// rest mesh with its render scale and colour word applied (the Spirit
+    /// aura's cones grow, spin and fade through it). A field stager part's
+    /// `model_index` is the stager record's relative `model_sel` (spawn
+    /// base 0) into the scene TMD pack (`field_stager_tmds`,
+    /// `DAT_8007C018[5 + model_sel]`), not the battle effect library.
+    #[allow(clippy::type_complexity)]
+    pub(super) fn build_effect_draws(
         &self,
         r: &legaia_engine_render::Renderer,
-        fx_model_flip: Mat4,
-        in_world_map: bool,
-    ) -> Vec<(UploadedVramMesh, Mat4)> {
-        let mut effect_model_draws: Vec<(UploadedVramMesh, Mat4)> = Vec::new();
-        if !self.boot_ui.is_active() && !in_world_map {
-            for em in self.session.host.world.active_effect_models() {
-                let Some(gtmd) = self
-                    .session
-                    .host
-                    .world
-                    .global_tmd(em.tmd_index as i16)
-                    .map(std::sync::Arc::clone)
-                else {
-                    continue;
-                };
-                let vmesh = legaia_tmd::mesh::tmd_to_vram_mesh(&gtmd.tmd, &gtmd.raw);
-                if vmesh.indices.is_empty() {
-                    continue;
-                }
-                match r.upload_vram_mesh(
-                    &vmesh.positions,
-                    &vmesh.uvs,
-                    &vmesh.cba_tsb,
-                    &vmesh.normals,
-                    &vmesh.colors,
-                    &vmesh.indices,
-                ) {
-                    Ok(m) => {
-                        let model =
-                            Mat4::from_translation(Vec3::from(em.world_pos)) * fx_model_flip;
-                        effect_model_draws.push((m, model));
-                    }
-                    Err(e) => log::warn!("effect model mesh upload: {e:#}"),
+        part_cam: Option<&legaia_render_kernels::gte::PartCameraPose>,
+    ) -> (
+        Vec<(UploadedVramMesh, Mat4)>,
+        Vec<(UploadedVramMesh, Mat4)>,
+        Vec<(UploadedVramMesh, Mat4)>,
+    ) {
+        if self.boot_ui.is_active() {
+            return (Vec::new(), Vec::new(), Vec::new());
+        }
+        let world = &self.session.host.world;
+        let lists =
+            legaia_engine_world_views::effect_draws::effect_model_draws(world, part_cam, |i| {
+                self.body_draw_plan(i)
+            });
+        let upload = |vmesh: &legaia_tmd::mesh::VramMesh, what: &str| {
+            if vmesh.indices.is_empty() {
+                return None;
+            }
+            match r.upload_vram_mesh(
+                &vmesh.positions,
+                &vmesh.uvs,
+                &vmesh.cba_tsb,
+                &vmesh.normals,
+                &vmesh.colors,
+                &vmesh.indices,
+            ) {
+                Ok(m) => Some(m),
+                Err(e) => {
+                    log::warn!("{what} mesh upload: {e:#}");
+                    None
                 }
             }
-        }
-        effect_model_draws
-    }
-
-    pub(super) fn build_summon_and_move_fx_part_draws(
-        &self,
-        r: &legaia_engine_render::Renderer,
-        fx_model_flip: Mat4,
-        in_world_map: bool,
-        part_cam: Option<&legaia_render_kernels::gte::PartCameraPose>,
-    ) -> Vec<(UploadedVramMesh, Mat4)> {
-        let mut summon_part_draws: Vec<(UploadedVramMesh, Mat4)> = Vec::new();
-        // A part's placement (`gte::part_model_place`, the browser page's
-        // too): `T(F world_pos)`, or - for a `+0x52 & 0x780` node - the
-        // camera-relative prefix `FUN_8001CF50` resolves to under this host's
-        // full-camera view. Battle models carry the per-model Y-flip, which is
-        // the frame flip `F` both the prefix and the translation take.
-        let frame_flip = self.session.host.world.mode == SceneMode::Battle;
-        let place = |flags: u16, pos: [f32; 3]| -> Mat4 {
-            Mat4::from_cols_array(&legaia_render_kernels::gte::part_model_place(
-                flags, pos, part_cam, frame_flip,
-            ))
         };
-        if !self.boot_ui.is_active() && !in_world_map {
-            // Summon parts and battle move-FX parts render identically
-            // (move-VM scene-graph parts resolving into the battle
-            // `global_tmd_pool` = PROT 0871 effect library). FIELD
-            // move-VM effects are drawn separately below: their meshes
-            // live in the SCENE's TMD pack, not the battle pool.
-            let part_draws = self
-                .session
-                .host
-                .world
-                .active_summon_part_draws()
-                .into_iter()
-                .chain(self.session.host.world.active_move_fx_part_draws());
-            for sp in part_draws {
-                // The part's morphed or rest mesh with its render scale and
-                // colour word applied (`World::part_draw_vram_mesh` - the
-                // Spirit aura's cones grow, spin and fade through it); the
-                // browser play page draws the same kernel.
-                let Some(vmesh) = self.session.host.world.part_draw_vram_mesh(&sp) else {
-                    continue;
-                };
-                if vmesh.indices.is_empty() {
-                    continue;
-                }
-                match r.upload_vram_mesh(
-                    &vmesh.positions,
-                    &vmesh.uvs,
-                    &vmesh.cba_tsb,
-                    &vmesh.normals,
-                    &vmesh.colors,
-                    &vmesh.indices,
-                ) {
-                    Ok(m) => {
-                        let model = place(sp.flags_52, sp.world_pos)
-                            * Mat4::from_cols_array(&legaia_render_kernels::gte::part_rotation(
-                                sp.rot, frame_flip,
-                            ))
-                            * fx_model_flip;
-                        summon_part_draws.push((m, model));
-                    }
-                    Err(e) => log::warn!("summon/move-FX part mesh upload: {e:#}"),
-                }
+        let effect_model_draws = lists
+            .effect_models
+            .iter()
+            .filter_map(|em| {
+                let gtmd = world.global_tmd(em.index as i16)?;
+                let vmesh = legaia_tmd::mesh::tmd_to_vram_mesh(&gtmd.tmd, &gtmd.raw);
+                Some((
+                    upload(&vmesh, "effect model")?,
+                    Mat4::from_cols_array(&em.model),
+                ))
+            })
+            .collect();
+        let mut part_draws: Vec<(UploadedVramMesh, Mat4)> = lists
+            .parts
+            .iter()
+            .filter_map(|p| {
+                let vmesh = world.part_draw_vram_mesh(&p.draw)?;
+                Some((
+                    upload(&vmesh, "summon/move-FX part")?,
+                    Mat4::from_cols_array(&p.model),
+                ))
+            })
+            .collect();
+        for (n, what) in lists
+            .kind4
+            .iter()
+            .map(|n| (n, "draw-kind-4"))
+            .chain(lists.shadows.iter().map(|n| (n, "battle ground shadow")))
+        {
+            if let Some(m) = upload(&n.mesh, what) {
+                part_draws.push((m, Mat4::from_cols_array(&n.model)));
             }
         }
-        // Draw-kind-4 nodes - effect ribbons (move-VM op `0x42`) and
-        // `0x4000` sprite-arm quads (op `0x23`): transform nodes whose model
-        // is the emitter's own per-frame output, composed like a part, in
-        // battle, on the field and on the overworld. Retail's per-actor
-        // dispatcher `FUN_8001ADA4` makes no mode test on its case-4 arm
-        // (`0x8001B060..0x8001B160`), and the `map01` overworld state
-        // `keikoku_chest_preload` holds seven live kind-4 sprite-arm nodes
-        // on list `_DAT_8007C350`. The browser play page draws the same list
-        // (`play_battle_fx.rs`, both FX frames).
-        if !self.boot_ui.is_active() {
-            for rb in self.session.host.world.active_effect_kind4_draws() {
-                let v = &rb.mesh;
-                match r.upload_vram_mesh(
-                    &v.positions,
-                    &v.uvs,
-                    &v.cba_tsb,
-                    &v.normals,
-                    &v.colors,
-                    &v.indices,
-                ) {
-                    Ok(m) => {
-                        let model = place(rb.flags_52, rb.world_pos)
-                            * Mat4::from_cols_array(&legaia_render_kernels::gte::part_rotation(
-                                rb.rot, frame_flip,
-                            ))
-                            * fx_model_flip;
-                        summon_part_draws.push((m, model));
-                    }
-                    Err(e) => log::warn!("draw-kind-4 mesh upload: {e:#}"),
-                }
-            }
-            // Battle ground shadows (`FUN_80048A08`'s disc, built by the same
-            // default-arm builder `FUN_80028158`): one per drawn body, judged
-            // by the plan the battle actor pass draws with. The browser play
-            // page draws the same list (`play_battle_fx.rs`).
-            let world = &self.session.host.world;
-            for rb in world.battle_ground_shadows(|i| self.body_draw_plan(i)) {
-                let v = &rb.mesh;
-                match r.upload_vram_mesh(
-                    &v.positions,
-                    &v.uvs,
-                    &v.cba_tsb,
-                    &v.normals,
-                    &v.colors,
-                    &v.indices,
-                ) {
-                    Ok(m) => {
-                        // Placed like a part - `T(F world_pos)`, the frame
-                        // flip on the translation too - as the page does
-                        // (`play_battle_fx.rs`). A bare `T(world_pos)` put
-                        // the disc's lift on the wrong side of the floor in
-                        // this Y-up frame, and the stage hid every shadow.
-                        let model = place(rb.flags_52, rb.world_pos) * fx_model_flip;
-                        summon_part_draws.push((m, model));
-                    }
-                    Err(e) => log::warn!("battle ground shadow upload: {e:#}"),
-                }
-            }
-        }
-        summon_part_draws
-    }
-
-    pub(super) fn build_field_fx_part_draws(
-        &self,
-        r: &legaia_engine_render::Renderer,
-        fx_model_flip: Mat4,
-        in_world_map: bool,
-        part_cam: Option<&legaia_render_kernels::gte::PartCameraPose>,
-    ) -> Vec<(UploadedVramMesh, Mat4)> {
-        let mut field_fx_draws: Vec<(UploadedVramMesh, Mat4)> = Vec::new();
-        if !self.boot_ui.is_active() && !in_world_map {
-            for fp in self.session.host.world.active_field_fx_part_draws() {
-                // `model_index` = the stager record's relative
-                // `model_sel` (spawn base 0) → the scene TMD pack
-                // (`field_stager_tmds`, the env_tmds / asset-viewer
-                // source = DAT_8007C018[5 + model_sel]).
-                let Some((tmd, raw)) = self.field_stager_tmds.get(fp.model_index) else {
-                    continue;
-                };
+        let field_fx_draws = lists
+            .field_parts
+            .iter()
+            .filter_map(|fp| {
+                let (tmd, raw) = self.field_stager_tmds.get(fp.index)?;
                 let vmesh = legaia_tmd::mesh::tmd_to_vram_mesh(tmd, raw);
-                if vmesh.indices.is_empty() {
-                    continue;
-                }
-                match r.upload_vram_mesh(
-                    &vmesh.positions,
-                    &vmesh.uvs,
-                    &vmesh.cba_tsb,
-                    &vmesh.normals,
-                    &vmesh.colors,
-                    &vmesh.indices,
-                ) {
-                    Ok(m) => {
-                        // Field frame: the models compose on the raw
-                        // retail frame, so no flip to conjugate by.
-                        let place = legaia_render_kernels::gte::camera_relative_model_prefix(
-                            fp.flags_52,
-                            fp.world_pos,
-                            part_cam,
-                            false,
-                        )
-                        .map(|m| Mat4::from_cols_array(&m))
-                        .unwrap_or_else(|| Mat4::from_translation(Vec3::from(fp.world_pos)));
-                        let model = place
-                            * Mat4::from_cols_array(&legaia_render_kernels::gte::part_rotation(
-                                fp.rot, false,
-                            ))
-                            * fx_model_flip;
-                        field_fx_draws.push((m, model));
-                    }
-                    Err(e) => log::warn!("field-FX part mesh upload: {e:#}"),
-                }
-            }
-        }
-        field_fx_draws
+                Some((
+                    upload(&vmesh, "field-FX part")?,
+                    Mat4::from_cols_array(&fp.model),
+                ))
+            })
+            .collect();
+        (effect_model_draws, part_draws, field_fx_draws)
     }
 
     /// This frame's move-FX afterimage streak, as screen-space quads on the

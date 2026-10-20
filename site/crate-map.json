@@ -1058,6 +1058,7 @@
     "engine-minigames",
     "engine-render",
     "engine-shell",
+    "engine-world-views",
     "parity",
     "render-kernels",
     "web-viewer"
@@ -1333,6 +1334,7 @@
     "engine-screens",
     "engine-session",
     "engine-shell",
+    "engine-world-views",
     "parity",
     "web-viewer"
    ],
@@ -2140,6 +2142,7 @@
    "modules": [
     "audio_director",
     "battle_fx",
+    "battle_intro",
     "battle_presentation",
     "battle_stage",
     "battle_vram",
@@ -2428,7 +2431,9 @@
    "package": "legaia-engine-world-views",
    "deps": [
     "engine-battle",
+    "engine-camera",
     "engine-core",
+    "engine-effects",
     "engine-field",
     "engine-menus",
     "engine-minigames",
@@ -2436,6 +2441,7 @@
     "engine-scene",
     "render-kernels",
     "scene-formats",
+    "tmd",
     "ui-formats"
    ],
    "dev_deps": [
@@ -2443,12 +2449,12 @@
     "engine-system",
     "lzs",
     "save",
-    "tim",
-    "tmd"
+    "tim"
    ],
    "bins": [],
    "lib": true,
    "modules": [
+    "effect_draws",
     "field_view_window",
     "muscle_dome",
     "pause_screens",
@@ -2462,7 +2468,7 @@
    ],
    "band": "drivers",
    "track": "engine",
-   "scope": "The hosts' reads of a running <code>World</code> outside battle: the visible-tile crop policy, scene staging, world-map markers and sky, the field party HUD, and the shop / pause / tile-board / timed-fight / Muscle Dome view models. Above <code>engine-core</code>.",
+   "scope": "The hosts' reads of a running <code>World</code> outside battle: the visible-tile crop policy, scene staging, world-map markers and sky, the field party HUD, the effect draw lists, and the shop / pause / tile-board / timed-fight / Muscle Dome view models. Above <code>engine-core</code>.",
    "dependents": [
     "engine-scene-host",
     "engine-screens",
@@ -3593,6 +3599,7 @@
     "engine-scene-host",
     "engine-session",
     "engine-shell",
+    "engine-world-views",
     "minigame-formats",
     "party-swap",
     "patcher",

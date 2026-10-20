@@ -1464,6 +1464,8 @@ side, so they pair by call rather than by step name:
 | `BootSession::step_battle_presentation` (battle audio, popups, hit drain, effect-spawn routing, HUD fold) | `drain_and_log_battle_events` | `tick_battle_presentation` |
 | `battle_presentation::{battle_mode_edge, on_battle_entered, on_battle_left}` | `sync_battle_render` | `tick_battle_presentation` |
 | `battle_intro::step_battle_intro` (intro arming and clock step) | `take_battle_intro_frame` | `tick_battle_intro_prims`, inside `tick_battle_intro` |
+| `effect_draws::effect_billboards` (effect-pool billboards) | `build_effect_billboards` | `build_battle_fx` / `build_field_fx` |
+| `effect_draws::effect_model_draws` (effect models, parts, kind-4 nodes, shadows, field stager parts) | `build_effect_draws` | `build_battle_fx` / `build_field_fx` |
 | `BootSession::step_overlay_sfx` | `tick_menu_sfx`, in the arms that freeze the field | the export `play_tick_overlay_sfx`, from the page's frame loop |
 | `session::step_npc_clip_players` | `drain_anim_cues`, after the tick's re-targets | `drive_npc_clips` (`FieldActors::drive`), after the same |
 | `BootSession::step_name_entry_frame` | `BootSession::claim_tick`, from `sim_tick` | `BootSession::claim_tick`, from `frame_ticks` |
